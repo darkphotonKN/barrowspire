@@ -1548,7 +1548,7 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     expect(gear.isOpen()).toBe(false);
   });
 
-  it("should do on the Menu icon exactly what one ESC does: open, then close the menu", () => {
+  it("should open the menu on one ESC with nothing open, and close it on the next", () => {
     const { hub, pressing } = withParty(false);
     pressing.pressEscape();
     expect(hub.menu).toBeDefined();
@@ -1556,7 +1556,7 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     expect(hub.menu).toBeUndefined();
   });
 
-  it("should do nothing on the Menu icon while a dialogue is open", () => {
+  it("should do nothing on ESC while a dialogue is open", () => {
     const { hub, pressing } = withParty(false);
     hub.dialogue = {};
     pressing.pressEscape();
@@ -4052,7 +4052,7 @@ describe("HubScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean) {
+function partyPanelOn(refused: () => boolean, opening?: () => void) {
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -4076,6 +4076,7 @@ function partyPanelOn(refused: () => boolean) {
     }),
     activeElement: () => null,
     blocked: refused,
+    opening,
   });
   return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
@@ -4132,5 +4133,205 @@ describe("HubScene the party panel over the inventory and the character panel (F
     party.pressT();
     pressIcon();
     expect(party.panel.isOpen()).toBe(false);
+  });
+});
+
+// The owner, 2026-11-12: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉
+// 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". The windows (the inventory, the character panel,
+// the party panel, the letter panel) give way: FS-3EBCA R15–R18; FS-1GZGD § Change C4; FS-R82NV
+// § Change C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Change C4.
+describe("HubScene the windows give way to the letter panel and the menu (FS-3EBCA R15–R18)", () => {
+  type Windowed = {
+    partyPanel?: unknown;
+    mailbox?: unknown;
+    refusesParty(): boolean;
+    refusesLetter(): boolean;
+    clearForLetter(): void;
+    closeLetter(): void;
+    pressMenuIcon(): void;
+    openMenu(): void;
+    mayChat(): boolean;
+    mountCorner(): void;
+  };
+  function town() {
+    const env = hubOnStage();
+    const hub = env.hub as unknown as typeof env.hub & Windowed;
+    const letter = { open: false };
+    const close = vi.fn(() => void (letter.open = false));
+    hub.mailbox = { isOpen: () => letter.open, close, relayout: vi.fn(), destroy: vi.fn(), covers: () => false };
+    const party = partyPanelOn(
+      () => hub.refusesParty(),
+      () => hub.closeLetter(),
+    );
+    hub.partyPanel = party.panel;
+    hub.mountCorner();
+    const plate = (icon: "menu" | "inventory" | "character" | "party") => {
+      const f = cornerIconFrame(icon, viewport);
+      return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    };
+    const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => plate(icon).handlers.pointerdown();
+    /** Every window shut, as the scene reads them. */
+    const shut = () => ({
+      inventory: env.gear.open,
+      character: env.gear.character,
+      stash: env.gear.stashOpen(),
+      party: party.panel.isOpen(),
+      letter: letter.open,
+    });
+    return { ...env, hub, letter, party, pressIcon, shut };
+  }
+  const NONE = { inventory: false, character: false, stash: false, party: false, letter: false };
+
+  describe("rule 1: the envelope opens the letter panel over any window, closing them (R15)", () => {
+    it.each([
+      ["the inventory", (t: ReturnType<typeof town>) => t.gear.toggle()],
+      ["the character panel", (t: ReturnType<typeof town>) => t.gear.toggleCharacter()],
+      [
+        "the inventory and the character panel",
+        (t: ReturnType<typeof town>) => {
+          t.gear.toggle();
+          t.gear.toggleCharacter();
+        },
+      ],
+      ["the stash with the inventory (R19)", (t: ReturnType<typeof town>) => t.gear.openStash()],
+      ["the party panel", (t: ReturnType<typeof town>) => t.party.pressT()],
+      [
+        "the party panel over the inventory",
+        (t: ReturnType<typeof town>) => {
+          t.gear.toggle();
+          t.party.pressT();
+        },
+      ],
+    ])("should not refuse the envelope with %s open, and close it first", (_open, open) => {
+      const t = town();
+      open(t);
+      expect(t.hub.refusesLetter()).toBe(false);
+      t.hub.clearForLetter();
+      expect(t.shut()).toEqual(NONE);
+    });
+
+    it.each([
+      ["a dialogue", (hub: Record<string, unknown>) => void (hub.dialogue = {})],
+      ["the ESC menu", (hub: Record<string, unknown>) => void (hub.menu = {})],
+    ])("should still refuse the envelope while %s owns the screen", (_owner, own) => {
+      const t = town();
+      own(t.hub as unknown as Record<string, unknown>);
+      expect(t.hub.refusesLetter()).toBe(true);
+    });
+  });
+
+  describe("rule 2: a window opens over the letter panel, closing it (R16)", () => {
+    it.each([
+      ["I", (t: ReturnType<typeof town>) => t.press(t.keys.i), () => ({ inventory: true })],
+      ["B", (t: ReturnType<typeof town>) => t.press(t.keys.b), () => ({ inventory: true })],
+      ["C", (t: ReturnType<typeof town>) => t.press(t.keys.c), () => ({ character: true })],
+      ["the Inventory icon", (t: ReturnType<typeof town>) => t.pressIcon("inventory"), () => ({ inventory: true })],
+      ["the Character icon", (t: ReturnType<typeof town>) => t.pressIcon("character"), () => ({ character: true })],
+      ["T", (t: ReturnType<typeof town>) => t.party.pressT(), () => ({ party: true })],
+      ["the Party icon", (t: ReturnType<typeof town>) => t.pressIcon("party"), () => ({ party: true })],
+    ])("should open its window on %s with the letter panel open, closing the letter panel", (_key, act, opened) => {
+      const t = town();
+      t.letter.open = true;
+      act(t);
+      expect(t.shut()).toEqual({ ...NONE, ...opened() });
+    });
+
+    it("should leave the letter panel alone when a window refused by a dialogue opens nothing", () => {
+      const t = town();
+      t.letter.open = true;
+      (t.hub as unknown as Record<string, unknown>).dialogue = {};
+      t.press(t.keys.i);
+      t.party.pressT();
+      expect(t.shut()).toEqual({ ...NONE, letter: true });
+    });
+  });
+
+  describe("rule 3: the menu opens over no window (R17)", () => {
+    it("should keep Esc's one press, one thing: the letter panel, the party panel, then the inventory, and only then the menu", () => {
+      const t = town();
+      t.gear.toggle();
+      t.party.pressT();
+      t.press(t.keys.esc);
+      expect(t.shut()).toEqual({ ...NONE, inventory: true });
+      expect(t.hub.menu).toBeUndefined();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeUndefined();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeDefined();
+    });
+
+    it.each([
+      ["the inventory, the character panel and the party panel", (t: ReturnType<typeof town>) => {
+        t.gear.toggle();
+        t.gear.toggleCharacter();
+        t.party.pressT();
+      }],
+      ["the stash", (t: ReturnType<typeof town>) => t.gear.openStash()],
+      ["the letter panel", (t: ReturnType<typeof town>) => void (t.letter.open = true)],
+    ])("should open the menu at once on the Menu icon with %s open, closing every window", (_open, open) => {
+      const t = town();
+      open(t);
+      t.pressIcon("menu");
+      expect(t.shut()).toEqual(NONE);
+      expect(t.hub.menu).toBeDefined();
+    });
+
+    it("should close every window whenever the menu opens", () => {
+      const t = town();
+      t.gear.toggle();
+      t.party.pressT();
+      t.letter.open = true;
+      t.hub.openMenu();
+      expect(t.shut()).toEqual(NONE);
+    });
+
+    it("should do nothing on the Menu icon while a dialogue is open", () => {
+      const t = town();
+      t.gear.toggle();
+      (t.hub as unknown as Record<string, unknown>).dialogue = {};
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.gear.open).toBe(true);
+    });
+  });
+
+  describe("rule 4: while the menu is open nothing else answers (R18)", () => {
+    function menuUp() {
+      const t = town();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeDefined();
+      return t;
+    }
+
+    it("should answer no corner icon, the Menu icon included", () => {
+      const t = menuUp();
+      const menu = t.hub.menu;
+      for (const icon of ["menu", "inventory", "character", "party"] as const) t.pressIcon(icon);
+      expect(t.hub.menu).toBe(menu);
+      expect(t.shut()).toEqual(NONE);
+    });
+
+    it("should answer no I, B, C or T, and refuse the envelope", () => {
+      const t = menuUp();
+      t.press(t.keys.i);
+      t.press(t.keys.b);
+      t.press(t.keys.c);
+      t.party.pressT();
+      expect(t.shut()).toEqual(NONE);
+      expect(t.hub.refusesLetter()).toBe(true);
+    });
+
+    it("should give the chat input no focus", () => {
+      const t = town();
+      expect(t.hub.mayChat()).toBe(true);
+      t.press(t.keys.esc);
+      expect(t.hub.mayChat()).toBe(false);
+    });
+
+    it("should still close on Esc", () => {
+      const t = menuUp();
+      t.press(t.keys.esc);
+      expect(t.hub.menu).toBeUndefined();
+    });
   });
 });

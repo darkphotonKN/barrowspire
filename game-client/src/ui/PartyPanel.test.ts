@@ -158,6 +158,7 @@ function setup(
     active?: FocusedElement | null;
     blocked?: boolean;
     commands?: PartyPanelDeps["commands"];
+    opening?: () => void;
   } = {},
 ) {
   const scene = fakeScene();
@@ -186,6 +187,7 @@ function setup(
     },
     activeElement: () => state.active,
     blocked: () => state.blocked,
+    opening: opts.opening,
   };
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
@@ -617,5 +619,32 @@ describe("PartyPanel over the inventory and the character panel (FS-3EBCA R8; FS
     env.state.active = { tagName: "INPUT", type: "text" };
     env.pressT();
     expect(env.panel.isOpen()).toBe(true);
+  });
+});
+
+// The owner, 2026-11-12: "開其他視窗時信箱會被關閉": opening the party panel closes the letter panel
+// first (FS-R82NV § Change C9; FS-3EBCA R16). The panel asks its scene through `opening`.
+describe("PartyPanel clears the letter panel as it opens (FS-R82NV § Change C9)", () => {
+  it("should call `opening` before T or the Party icon opens it, never on a close or a refusal", () => {
+    const opening = vi.fn();
+    const env = setup({ opening });
+    const openAt: boolean[] = [];
+    opening.mockImplementation(() => openAt.push(env.panel.isOpen()));
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(true);
+    expect(openAt).toEqual([false]);
+    env.pressT();
+    env.panel.toggle();
+    expect(openAt).toEqual([false, false]);
+    env.panel.toggle();
+    expect(opening).toHaveBeenCalledTimes(2);
+    env.state.blocked = true;
+    env.pressT();
+    env.panel.toggle();
+    env.state.blocked = false;
+    env.state.active = { tagName: "INPUT", type: "text" };
+    env.pressT();
+    expect(opening).toHaveBeenCalledTimes(2);
+    expect(env.panel.isOpen()).toBe(false);
   });
 });

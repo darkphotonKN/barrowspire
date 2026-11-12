@@ -667,6 +667,38 @@ describe("MailboxEnvelope (FS-1GZGD § Change C1–C3)", () => {
   });
 });
 
+// The owner, 2026-11-12: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉". The envelope
+// clears the screen before it opens the letter panel (FS-1GZGD § Change C4; FS-3EBCA R15).
+describe("MailboxEnvelope clears the screen first (FS-1GZGD § Change C4)", () => {
+  it("calls `opening` before it opens the panel, and never on a close or a refused press", () => {
+    const { scene, store, zones } = setup();
+    const order: string[] = [];
+    store.subscribe((s, p) => {
+      if (s.panelOpen && !p.panelOpen) order.push("open");
+    });
+    let blocked = false;
+    new MailboxEnvelope(scene, { store, blocked: () => blocked, opening: () => order.push("clear") });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    expect(order).toEqual(["clear", "open"]);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    blocked = true;
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    expect(order).toEqual(["clear", "open"]);
+  });
+
+  it("is handed the town's `opening` by the mailbox HUD", () => {
+    const { scene, store, zones } = setup();
+    const opening = vi.fn();
+    new MailboxHud(scene, { store, art, blocked: () => false, opening });
+    zones.find((z) => z.handlers.pointerdown)!.handlers.pointerdown();
+    expect(opening).toHaveBeenCalledTimes(1);
+    expect(store.getState().panelOpen).toBe(true);
+  });
+});
+
 describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
   it("fetches the summary on town entry, and drops mail_arrived once the town is left", async () => {
     const { scene, store, api } = setup();

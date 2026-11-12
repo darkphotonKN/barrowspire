@@ -1685,3 +1685,118 @@ describe("FieldScene the party panel over the inventory and the character panel 
     expect(party.panel.isOpen()).toBe(false);
   });
 });
+
+// The owner, 2026-11-12: "開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". In a field the windows are the
+// inventory, the character panel and the party panel (the mailbox is the town's): FS-3EBCA R17,
+// R18; FS-G4VMQ § Change C4.
+describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () => {
+  type Windowed = {
+    add: unknown;
+    input: unknown;
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    refusesParty(): boolean;
+    pressMenuIcon(): void;
+    mayChat(): boolean;
+    mountCorner(): void;
+    bindHudKeys(): void;
+  };
+
+  function fieldWindows() {
+    const env = fieldOnStage();
+    const field = env.field as unknown as Windowed;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const zones: { args: unknown[]; handlers: Record<string, () => void> }[] = [];
+    const zone = (...args: unknown[]) => {
+      const z = { args, handlers: {} as Record<string, () => void> };
+      zones.push(z);
+      const self: unknown = new Proxy(() => self, {
+        get: (_t, prop) =>
+          prop === "on" ? (event: string, fn: () => void) => ((z.handlers[event] = fn), self) : () => self,
+      });
+      return self;
+    };
+    field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
+    const keys = new Map<string, () => void>();
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const gear = { inventory: false, character: false };
+    field.equipment = {
+      isOpen: () => gear.inventory || gear.character,
+      hide: () => {
+        const was = gear.inventory || gear.character;
+        gear.inventory = false;
+        gear.character = false;
+        return was;
+      },
+      toggle: () => (gear.inventory = !gear.inventory),
+      toggleCharacter: () => (gear.character = !gear.character),
+      equipKey: () => false,
+    };
+    const party = partyPanelOn(() => field.refusesParty());
+    field.partyPanel = party.panel;
+    field.bindHudKeys();
+    field.mountCorner();
+    const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
+      const f = hudCorner.cornerIconFrame(icon, viewport);
+      zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
+    };
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const open = () => ({ ...gear, party: party.panel.isOpen() });
+    return { ...env, field, gear, party, pressIcon, key, open };
+  }
+  const NONE = { inventory: false, character: false, party: false };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should keep Esc's one press, one thing: the party panel, then the overlay, then the menu (R17)", () => {
+    const { field, gear, party, key, open } = fieldWindows();
+    gear.inventory = true;
+    party.pressT();
+    key("ESC");
+    expect(open()).toEqual({ ...NONE, inventory: true });
+    key("ESC");
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
+    const { field, gear, party, pressIcon, open } = fieldWindows();
+    gear.inventory = true;
+    gear.character = true;
+    party.pressT();
+    pressIcon("menu");
+    expect(open()).toEqual(NONE);
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should answer no corner icon while the menu is open, the Menu icon included (R18)", () => {
+    const { field, pressIcon, key, open } = fieldWindows();
+    key("ESC");
+    const menu = field.menu;
+    for (const icon of ["menu", "inventory", "character", "party"] as const) pressIcon(icon);
+    expect(field.menu).toBe(menu);
+    expect(open()).toEqual(NONE);
+  });
+
+  it("should answer no I, B, C or T while the menu is open, and give the chat input no focus (R18)", () => {
+    const { field, party, key, open } = fieldWindows();
+    expect(field.mayChat()).toBe(true);
+    key("ESC");
+    key("I");
+    key("B");
+    key("C");
+    party.pressT();
+    expect(open()).toEqual(NONE);
+    expect(field.mayChat()).toBe(false);
+    key("ESC");
+    expect(field.menu).toBeUndefined();
+  });
+});

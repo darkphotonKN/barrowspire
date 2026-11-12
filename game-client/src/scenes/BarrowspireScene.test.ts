@@ -4769,9 +4769,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     plate("character").handlers.pointerdown();
     expect(run.equipment?.isOpen()).toBe(false);
     plate("inventory").handlers.pointerdown();
+    // the Menu icon opens the menu at once, the inventory closing with it (FS-3EBCA R17)
     plate("menu").handlers.pointerdown();
     expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(run.menu).toBeDefined();
   });
 
   // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
@@ -4843,6 +4844,86 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       covered.on = false;
       env.press(at, 2);
       expect(env.sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+    });
+  });
+
+  // The owner, 2026-11-12: "開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". In a run the windows are the
+  // inventory, the character panel and the party panel (the mailbox is the town's): FS-3EBCA R17,
+  // R18; FS-G4VMQ § Change C4.
+  describe("the windows give way to the menu (FS-3EBCA R17, R18)", () => {
+    type Windowed = Overlaid & {
+      partyPanel?: unknown;
+      runEnded: boolean;
+      refusesParty(): boolean;
+      mayChat(): boolean;
+      mountCorner(): void;
+    };
+    function runWindows() {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Windowed;
+      const party = partyPanelOn(() => run.refusesParty());
+      run.partyPanel = party.panel;
+      run.mountCorner();
+      const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
+        const f = cornerIconFrame(icon, viewport);
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
+      };
+      const open = () => ({ gear: run.equipment?.isOpen() ?? false, party: party.panel.isOpen() });
+      return { ...env, run, party, pressIcon, open };
+    }
+    const NONE = { gear: false, party: false };
+
+    it("should keep Esc's one press, one thing: the party panel, then the overlay, then the menu (R17)", () => {
+      const { run, key, party, pressEsc, open } = runWindows();
+      key("I");
+      party.pressT();
+      pressEsc();
+      expect(open()).toEqual({ gear: true, party: false });
+      pressEsc();
+      expect(run.menu).toBeUndefined();
+      pressEsc();
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
+      const { run, key, party, pressIcon, open } = runWindows();
+      key("I");
+      key("C");
+      party.pressT();
+      pressIcon("menu");
+      expect(open()).toEqual(NONE);
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should only close every window on the Menu icon once the run has ended: there is no menu (R17)", () => {
+      const { run, key, party, pressIcon, open } = runWindows();
+      key("I");
+      key("C");
+      party.pressT();
+      run.runEnded = true;
+      pressIcon("menu");
+      expect(open()).toEqual(NONE);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should answer no corner icon, no I, B, C or T while the menu is open, the Menu icon included (R18)", () => {
+      const { run, key, party, pressEsc, pressIcon, open } = runWindows();
+      pressEsc();
+      const menu = run.menu;
+      for (const icon of ["menu", "inventory", "character", "party"] as const) pressIcon(icon);
+      key("I");
+      key("B");
+      key("C");
+      party.pressT();
+      expect(run.menu).toBe(menu);
+      expect(open()).toEqual(NONE);
+    });
+
+    it("should give the chat input no focus while the menu is open (R18)", () => {
+      const { run, pressEsc } = runWindows();
+      expect(run.mayChat()).toBe(true);
+      pressEsc();
+      expect(run.mayChat()).toBe(false);
     });
   });
 

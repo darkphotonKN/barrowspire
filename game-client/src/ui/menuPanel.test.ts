@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { BARROW_HEX } from "@/utils/theme";
 import { palette, toCss } from "@/utils/canvasPalette";
+import { viewport } from "@/render/viewport";
 import {
+  MENU_BLOCKER_DEPTH,
   MENU_DEPTH,
   MENU_LINE,
   MENU_PAD,
@@ -74,6 +76,16 @@ function recordingStage() {
         if (prop === "setName") return setter("name");
         if (prop === "setScrollFactor") return setter("scrollFactor");
         if (prop === "setColor") return setter("color");
+        if (prop === "setInteractive")
+          return () => {
+            target.interactive = true;
+            return proxy;
+          };
+        if (prop === "setSize")
+          return (width: number, height: number) => {
+            target.size = [width, height];
+            return proxy;
+          };
         if (prop === "setPosition")
           return (x: number, y: number) => {
             target.x = x;
@@ -352,5 +364,45 @@ describe("showMenuPanel", () => {
     expect(back).toHaveBeenCalledTimes(1);
     moveTo({ x: ORIGIN.x + 50, y: ORIGIN.y });
     expect(hit.x).toBe(ORIGIN.x + 50 + box.x + box.width / 2);
+  });
+
+  // FS-3EBCA R18 (owner 2026-11-12: "menu開啟時其他都不能按"): while the menu is open only its rows,
+  // its × and its keys answer; nothing drawn under it takes a press or a hover.
+  describe("the open menu is modal (FS-3EBCA R18)", () => {
+    afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+    it("should hang a camera-fixed blocker over the whole view, under its rows and × and over the HUD and every panel", () => {
+      const { find } = shown();
+      const blocker = find("menu-blocker") as Made & { interactive?: boolean };
+      expect(blocker?.kind).toBe("zone");
+      expect(blocker.args.slice(0, 4)).toEqual([0, 0, 1080, 720]);
+      expect(blocker.scrollFactor).toBe(0);
+      expect(blocker.interactive).toBe(true);
+      expect(blocker.depth).toBe(MENU_BLOCKER_DEPTH);
+      // under the box (2000) and its hits (2001), over the letter panel (1800) and the HUD (1000)
+      expect(MENU_BLOCKER_DEPTH).toBeLessThan(MENU_DEPTH);
+      expect(MENU_BLOCKER_DEPTH).toBeGreaterThan(1800);
+      expect(find("menu-back")!.depth).toBeGreaterThan(MENU_BLOCKER_DEPTH);
+      expect(find("menu-close")!.depth).toBeGreaterThan(MENU_BLOCKER_DEPTH);
+    });
+
+    it("should stop a press on it there: no scene-wide listener hears it (the world, the chat window)", () => {
+      const { find } = shown();
+      const stopPropagation = vi.fn();
+      const down = find("menu-blocker")!.handlers.pointerdown as unknown as (...a: unknown[]) => void;
+      down({ x: 10, y: 10 }, 10, 10, { stopPropagation });
+      expect(stopPropagation).toHaveBeenCalledTimes(1);
+      // and a call with no event (a stand-in) does not throw
+      expect(() => down()).not.toThrow();
+    });
+
+    it("should cover the new view when it changes, and go down with the menu", () => {
+      const { find, moveTo, container } = shown();
+      viewport.set({ width: 1280, height: 720, renderScale: 1 });
+      moveTo({ x: 640, y: 360 });
+      expect((find("menu-blocker") as Made & { size?: number[] }).size).toEqual([1280, 720]);
+      (container as unknown as { destroy(): void }).destroy();
+      expect(find("menu-blocker")).toBeUndefined();
+    });
   });
 });
