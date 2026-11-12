@@ -53,6 +53,7 @@ import {
   type RunMenuChoice,
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
@@ -1260,14 +1261,8 @@ export class BarrowspireScene extends Phaser.Scene {
     bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
     children.push(bg);
 
-    const title = this.add.text(0, -panelH / 2 + 16, "CONTROLS", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "16px",
-      color: toCss(palette.frameBright),
-      letterSpacing: 5,
-    });
-    title.setOrigin(0.5);
-    children.push(title);
+    // the windows' one title (FS-3EBCA R20, R22)
+    children.push(drawPanelTitle(this, { x: -panelW / 2, y: -panelH / 2, width: panelW }, "CONTROLS"));
 
 
     let curY = -panelH / 2 + 44;

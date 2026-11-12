@@ -6,6 +6,9 @@
  * FS-G4VMQ § Change: The menu wears the party panel's frame) and the gear overlay's inventory and
  * character panel (FS-HRH2J § Change C16) call it; none copies it.
  *
+ * Every window's title is drawn here too (`drawPanelTitle`, FS-3EBCA R20): one place, size,
+ * colour and case, so a later window takes it by calling it.
+ *
  * It draws only. What a press on the × does, and how it is hit, is each caller's: the party panel
  * makes the glyph interactive, the menu hangs a camera-fixed hit over it, the gear overlay
  * hit-tests it by hand with its other presses.
@@ -27,6 +30,21 @@ export const FRAME_PAD = 12;
 /** The × box's side, and the glyph's size. */
 export const FRAME_CLOSE = 24;
 export const FRAME_CLOSE_PX = 22;
+
+/**
+ * Every window's title (FS-3EBCA R20, R21; owner 2026-11-12: "每個ui視窗的標題都不同位置
+ * 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"): centred across the panel, its top this far below
+ * the panel's top edge, in the body face at this size and spacing, in `palette.frameBright`.
+ * The gear overlay's heading as it stood, the style most windows already wore.
+ */
+export const PANEL_TITLE_TOP = 14;
+export const PANEL_TITLE_PX = 14;
+export const PANEL_TITLE_SPACING = 4;
+/**
+ * The band at the panel's top that is the title's and the ×'s: what a window holds starts no
+ * higher than this below the panel's top, the × box's foot (12 + 24), under the title's line.
+ */
+export const PANEL_TITLE_BAND = 36;
 
 /** The × box of a panel at `panel` (FS-R82NV § Change C1). */
 export function frameClose(panel: Pick<FrameRect, "x" | "y" | "width">): FrameRect {
@@ -62,4 +80,24 @@ export function drawPanelFrame(
     })
     .setOrigin(0.5);
   return { close, glyph };
+}
+
+/**
+ * Draws a window's title at the top of `panel`, in `panel`'s space: the words in capitals, centred
+ * across it, in the one title style (FS-3EBCA R20, R21). The × keeps the top right; the title
+ * stays centred between the edges. Returns the text, for the caller to place and take down.
+ */
+export function drawPanelTitle(
+  scene: Pick<Phaser.Scene, "add">,
+  panel: Pick<FrameRect, "x" | "y" | "width">,
+  words: string,
+): Phaser.GameObjects.Text {
+  return scene.add
+    .text(panel.x + panel.width / 2, panel.y + PANEL_TITLE_TOP, words.toUpperCase(), {
+      fontFamily: CANVAS_FONT.body,
+      fontSize: `${PANEL_TITLE_PX}px`,
+      color: toCss(palette.frameBright),
+      letterSpacing: PANEL_TITLE_SPACING,
+    })
+    .setOrigin(0.5, 0);
 }

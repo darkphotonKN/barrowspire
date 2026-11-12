@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-9
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-8]
 labels: [ready-for-agent]
@@ -20,8 +20,8 @@ character, stash), the letter panel, the run's controls panel, the settlement re
 
 ## Acceptance Criteria
 
-- [ ] FS-3EBCA §E's acceptance line.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-3EBCA §E's acceptance line.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 

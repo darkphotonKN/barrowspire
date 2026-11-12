@@ -96,7 +96,7 @@ import {
 } from "./gearOverlayLayout";
 import { viewport } from "@/render/viewport";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
-import { drawPanelFrame, lightClose } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 
 /** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
 export const GEAR_OVERLAY_DEPTH = 1100;
@@ -491,13 +491,10 @@ export class GearOverlay implements HudPanel, PurseShelf {
       const r = layout[side];
       // the party panel's frame, the one every world panel wears (§ Change C16)
       const g = this.scene.add.graphics();
-      const { glyph } = drawPanelFrame(this.scene, g, {
-        x: r.x,
-        y: r.y,
-        width: r.w,
-        height: r.h,
-      });
-      parts.push(g, this.heading(r, title));
+      const frame = { x: r.x, y: r.y, width: r.w, height: r.h };
+      const { glyph } = drawPanelFrame(this.scene, g, frame);
+      // the windows' one title (FS-3EBCA R20)
+      parts.push(g, drawPanelTitle(this.scene, frame, title));
       this.closes.push(this.closeMark(side, panelClose(r), glyph));
     };
     if (this.leftShown()) open("left", this.stash ? "STASH" : "CHARACTER");
@@ -658,19 +655,6 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.layout = undefined;
     this.gear = undefined;
     this.stashGrid = undefined;
-  }
-
-  private heading(r: Rect, words: string): Phaser.GameObjects.Text {
-    const text = this.label(
-      r.x + r.w / 2,
-      r.y + 14,
-      words,
-      palette.frameBright,
-      14,
-      4,
-    );
-    text.setOrigin(0.5, 0);
-    return text;
   }
 
   private label(

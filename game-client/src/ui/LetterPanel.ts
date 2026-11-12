@@ -36,6 +36,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import type { MailboxState } from "@/stores/mailboxStore";
 import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
+import { drawPanelTitle } from "./panelFrame";
 import { itemTipRow } from "./gearOverlayLayout";
 import { itemShine, strokeWellOutline } from "./itemShine";
 import { buildItemTip, rarityEdge, topTier, type ItemTip } from "./itemTip";
@@ -253,13 +254,11 @@ export class LetterPanel {
     const g = this.keep(
       this.scene.add.graphics().setScrollFactor(0).setDepth(PANEL_DEPTH),
     );
-    const { panel, header, close, list, detail: right } = frame;
+    const { panel, close, list, detail: right } = frame;
     carvedPanel(g, panel.x, panel.y, panel.width, panel.height);
-    this.text(
-      header.x,
-      header.y + 4,
-      "MAILBOX",
-      style(palette.hudLabel, 12, { letterSpacing: 2 }),
+    // the windows' one title, centred (FS-3EBCA R20, R22)
+    this.keep(
+      drawPanelTitle(this.scene, panel, "MAILBOX").setScrollFactor(0).setDepth(PANEL_DEPTH),
     );
     // amber, as everything that can be pressed is; brighter under the pointer
     const x = this.text(
