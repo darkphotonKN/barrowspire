@@ -3,7 +3,20 @@ import * as THREE from "three";
 import { createRig, jointAt as J, mount } from "./rig.js";
 import { UNDER_CLEAR, belt, boots, cloak, cloakBones, legs, sash, skirt, skirtBones, torso } from "./anatomy.js";
 import { applyPose, clipsFor, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS, RUNNING_CLASS_ANIMATIONS } from "./clips.js";
-import { ARCHER_BUILD, ARCHER_QUIVER, ARCHER_STYLE, KNIGHT_BUILD, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_STYLE } from "./classStyles.js";
+import {
+  ARCHER_BUILD,
+  ARCHER_QUIVER,
+  ARCHER_STYLE,
+  KNIGHT_BUILD,
+  KNIGHT_SHEET,
+  KNIGHT_STYLE,
+  MERCENARY_BUILD,
+  MERCENARY_SHEET,
+  MERCENARY_STYLE,
+  WIZARD_BUILD,
+  WIZARD_SHEET,
+  WIZARD_STYLE,
+} from "./classStyles.js";
 import {
   CLEARANCE_PX,
   KNOWN_CLIPPING,
@@ -314,6 +327,9 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
   });
 });
 
+/** Each class's clip specs as cast.js bakes its sheet. */
+const SHEETS = { knight: KNIGHT_SHEET.animations, archer: RUNNING_CLASS_ANIMATIONS, wizard: WIZARD_SHEET.animations, mercenary: MERCENARY_SHEET.animations };
+
 /**
  * The four classes' garments as cast.js cuts them (the knight's hauberk to the knee, open at the
  * front, and his cloak to the calf; the archer's tunic and her ragged cloak; the wizard's robe to
@@ -322,7 +338,7 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
  * with its springs as the bake page runs them (page/main.js `characterPoses`). `specs` stands in
  * for the sheet's clip specs (RUNNING_CLASS_ANIMATIONS), `gownSegs` for the gown's columns.
  */
-function dressed(cls, { cut = "now", specs = RUNNING_CLASS_ANIMATIONS, gownSegs = 64, panelSegs } = {}) {
+function dressed(cls, { cut = "now", specs = SHEETS[cls], gownSegs = 64, panelSegs } = {}) {
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
   const [build, style] = { knight: [KNIGHT_BUILD, KNIGHT_STYLE], archer: [ARCHER_BUILD, ARCHER_STYLE], wizard: [WIZARD_BUILD, WIZARD_STYLE], mercenary: [MERCENARY_BUILD, MERCENARY_STYLE] }[cls];
   const rig = createRig(...build);
@@ -556,9 +572,9 @@ describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法
  * "弓箭手後退攻擊 腳跟處也會穿過斗篷".
  */
 describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guard measures a leg through the cloth)", () => {
-  it.each(["knight", "archer"])("the %s's cloak stays outside his legs and boots at rest, through the walk, the run and both attacks on the move at 1.5x", (cls) => {
+  it.each(["knight", "archer"])("the %s's cloak stays outside the legs and boots at rest, through the walk, the run, the attack and both attacks on the move at 1.5x", (cls) => {
     const { rig, posesOf } = dressed(cls);
-    for (const anim of ["idle", "walk", "run", "walk_attack", "backpedal_attack"]) {
+    for (const anim of ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"]) {
       const clips = cloakClearance(rig, posesOf(anim));
       expect(clips[anim].px, `${cls} ${anim} frame ${clips[anim].frame}`).toBeLessThanOrEqual(clearanceLimit(1.5));
     }
