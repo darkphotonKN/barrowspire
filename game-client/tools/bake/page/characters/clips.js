@@ -310,8 +310,11 @@ function steadyNeck(...chain) {
  * ({@link RUN_COUNTER}); the neck takes up every turn, roll and lean of the chest, so the head stays
  * steady and looks ahead. `style.run` scales it as `style.walk` scales the walk (stride, knee fold,
  * arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm near
- * straight and its swing short so the bow hangs along the side. `style.runExtra(i)` adds a class's
- * own.
+ * straight and its swing short so the bow hangs along the side. `style.run.hold`, when a class
+ * gives one, carries the weapon in the run in place of `style.hold` (the walk's carry holds an arm
+ * forward and bent, which the pump would add to: a sword or sceptre arm then pumps from the
+ * shoulder like a free arm, its wrist alone keeping the weapon's angle). `style.runExtra(i)` adds a
+ * class's own.
  */
 export function runCycle(style) {
   const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
@@ -351,7 +354,7 @@ export function runCycle(style) {
     });
   };
   const frames = [...half, ...half.map(mirror)];
-  return frames.map((p, i) => add(p, arms(i), style.hold, style.runExtra?.(i)));
+  return frames.map((p, i) => add(p, arms(i), r.hold ?? style.hold, style.runExtra?.(i)));
 }
 
 /**
@@ -420,6 +423,9 @@ const STANCE = pose({
 });
 
 const P = pose;
+
+/** The wizard's casting stance: the left foot forward, the right hip back. */
+const CAST_STANCE = pose({ thighL: [-0.25, 0, 0.05], shinL: [0.22, 0, 0], footL: [0.03, 0, 0], thighR: [0.15, 0, -0.06], shinR: [0.18, 0, 0], footR: [-0.33, 0, 0], hips: [0, -0.15, 0] });
 
 /**
  * An archer's stance on the aim line (FS-2325V § Change: The archer's draw stays on the aim line),
@@ -529,21 +535,25 @@ export const ATTACKS = {
     ].map((p) => add(AIM_STANCE, crouch, p));
   },
 
-  /** Wizard: gather, raise the staff, thrust it forward with an open palm, the orb flaring. */
-  cast: () => [
-    P({ upperArmR: [-0.3, 0, -0.08], foreArmR: [-1.15, 0, 0], upperArmL: [0.15, 0, 0.15], foreArmL: [-0.8, 0, 0] }, {}, { glow: 1.2 }),
-    P({ upperArmR: [-1.0, 0, -0.12], foreArmR: [-1.25, 0, 0], handR: [0.3, 0, 0], upperArmL: [0.35, 0, 0.35], foreArmL: [-1.4, 0, 0], chest: [-0.12, -0.15, 0], spine: [-0.06, 0, 0] }, {}, { glow: 2 }),
-    P({ upperArmR: [-2.1, 0, -0.15], foreArmR: [-0.6, 0, 0], handR: [0.5, 0, 0], upperArmL: [0.2, 0, 0.5], foreArmL: [-1.6, 0, 0], chest: [-0.18, -0.2, 0], spine: [-0.08, 0, 0] }, {}, { glow: 3.2 }),
-    P({ upperArmR: [-1.35, 0, -0.1], foreArmR: [-0.3, 0, 0], handR: [0.2, 0, 0], upperArmL: [-1.45, -0.2, 0.0], foreArmL: [-0.1, 0, 0], handL: [-0.9, 0, 0], chest: [0.15, 0.2, 0], spine: [0.1, 0, 0] }, { z: 0.03 }, { glow: 5 }),
-    P({ upperArmR: [-1.25, 0, -0.1], foreArmR: [-0.35, 0, 0], handR: [0.2, 0, 0], upperArmL: [-1.35, -0.2, 0.0], foreArmL: [-0.2, 0, 0], handL: [-0.7, 0, 0], chest: [0.12, 0.15, 0], spine: [0.08, 0, 0] }, { z: 0.03 }, { glow: 3.5 }),
-    P({ upperArmR: [-0.6, 0, -0.08], foreArmR: [-0.9, 0, 0], upperArmL: [-0.4, 0, 0.1], foreArmL: [-0.6, 0, 0] }, { z: 0.01 }, { glow: 1.8 }),
-    P({ upperArmR: [-0.3, 0, -0.08], foreArmR: [-1.15, 0, 0], upperArmL: [0.15, 0, 0.15], foreArmL: [-0.8, 0, 0] }, {}, { glow: 1.2 }),
-  ].map((p) =>
-    add(
-      pose({ thighL: [-0.25, 0, 0.05], shinL: [0.22, 0, 0], footL: [0.03, 0, 0], thighR: [0.15, 0, -0.06], shinR: [0.18, 0, 0], footR: [-0.33, 0, 0], hips: [0, -0.15, 0] }),
-      p,
-    ),
-  ),
+  /**
+   * Wizard (FS-2325V § Change: The class attacks move with weight and cut deep R1, R4): a thrust
+   * with the body behind it. The weight rocks back as the sceptre is drawn back by the right
+   * shoulder and the free hand reaches toward the aim (keys 0–1); the pelvis turns into the thrust
+   * first while the chest is still back (key 2); the chest follows, the weight comes onto the
+   * front foot and the sceptre thrusts toward the aim, the orb flaring, the free hand opening out
+   * to the side (key 3, the strike, as before); it carries on past (key 4) and settles back to the
+   * carry (keys 5–6). Each key's hips turn on top of the cast's stance.
+   */
+  cast: () =>
+    [
+      P({ hips: [0, -0.05, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.1, 0], upperArmR: [-0.15, 0, -0.25], foreArmR: [-1.5, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.25, 0, 0.15], foreArmL: [-0.7, 0, 0] }, { z: -0.008 }, { glow: 1.6 }),
+      P({ hips: [0, -0.17, 0], spine: [-0.06, -0.15, 0], chest: [-0.1, -0.22, 0], upperArmR: [0.4, 0, -0.9], foreArmR: [-1.9, 0, 0], handR: [0, 0, 0], upperArmL: [-1.0, 0, 0.2], foreArmL: [-0.35, 0, 0], handL: [-0.3, 0, 0] }, { z: -0.025 }, { glow: 2.8 }),
+      P({ hips: [0, 0.08, 0], spine: [0, -0.08, 0], chest: [-0.04, -0.18, 0], upperArmR: [-0.45, 0, -0.75], foreArmR: [-1.55, 0, 0], handR: [0.25, 0, 0], upperArmL: [-1.0, 0, 0.3], foreArmL: [-0.3, 0, 0], handL: [-0.4, 0, 0] }, {}, { glow: 3.8 }),
+      P({ hips: [0, 0.3, 0], spine: [0.08, 0.1, 0], chest: [0.12, 0.18, 0], upperArmR: [-1.5, 0, -0.12], foreArmR: [-0.2, 0, 0], handR: [0.15, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.04 }, { glow: 5 }),
+      P({ hips: [0, 0.33, 0], spine: [0.1, 0.14, 0], chest: [0.14, 0.24, 0], upperArmR: [-1.38, 0.1, 0.05], foreArmR: [-0.25, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.035 }, { glow: 3.6 }),
+      P({ hips: [0, 0.17, 0], spine: [0.04, 0.05, 0], chest: [0.04, 0.06, 0], upperArmR: [-0.8, 0, -0.1], foreArmR: [-1.0, 0, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
+      P({ upperArmR: [-0.35, 0, -0.08], foreArmR: [-1.15, 0, 0], handR: [-0.1, 0, 0], upperArmL: [0.1, 0, 0.15], foreArmL: [-0.5, 0, 0] }, { z: 0.004 }, { glow: 1.3 }),
+    ].map((p) => add(CAST_STANCE, p)),
 
   /** Ghoul: a lunging overhead chop, jaw gaping. */
   chop: () => [

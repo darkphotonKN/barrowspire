@@ -2,7 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
-import { CLASS_ANIMATIONS, MERC_ANIMATIONS, pose } from "./clips.js";
+import { CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
 
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
@@ -28,7 +28,11 @@ export const KNIGHT_STYLE = {
 
 export const WIZARD_BUILD = [1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 }];
 
-export const WIZARD_SHEET = { animations: CLASS_ANIMATIONS, scale: 2 };
+/**
+ * The wizard re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 7, FS-HF0WW
+ * § Change: Class sheets at 1.5x R35).
+ */
+export const WIZARD_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
 
 export const WIZARD_STYLE = {
   attack: "cast",
@@ -40,6 +44,10 @@ export const WIZARD_STYLE = {
     foreArmL: [-0.15, 0, 0],
   }),
   walk: { arms: [0.8, 0.4], lean: 0.05, stride: 0.95 },
+  // the run's carry (FS-JS7C8 R2): both arms pump free from the shoulder, a little out from the
+  // body so the sceptre and the tome swing clear of the hips; the wrist alone tilts the sceptre
+  // forward, so it never stands up into the face at the front of the swing
+  run: { hold: pose({ upperArmL: [0, 0, 0.14], upperArmR: [0, 0, -0.06], handR: [-0.6, 0, 0] }) },
   idleExtra: () => pose({}, {}, { glow: 1 }),
 };
 

@@ -374,11 +374,11 @@ describe("the shipped character sheets", () => {
       if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
   });
 
-  // the archer at 1.5x since its run re-bake, the other three at 2x until theirs (FS-HF0WW
-  // § Change: Class sheets at 1.5x R34, R35)
+  // the archer and the mage at 1.5x since their run re-bakes, the other two at 2x until theirs
+  // (FS-HF0WW § Change: Class sheets at 1.5x R34, R35)
   it.each([
     ["warrior", 2],
-    ["mage", 2],
+    ["mage", 1.5],
     ["archer", 1.5],
     ["mercenary", 2],
   ] as const)(
