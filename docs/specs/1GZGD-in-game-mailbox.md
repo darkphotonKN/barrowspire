@@ -1506,7 +1506,8 @@ world are FS-3EBCA §D.
 
 Amended again the same day, by the owner: "mailbox的x關閉按鈕好像位置跟其他的不太一樣" (the mailbox's ×
 close button seems to sit differently from the others'): C5 added; R36's panel keeps its size,
-place and contents.
+place and contents. And: "信箱的內文好像解析度有點差" (the mailbox's body text looks low-resolution): C6
+added.
 
 ### Requirements
 
@@ -1540,6 +1541,14 @@ C5. **The letter panel wears every window's frame and ×.** It is drawn by the s
     Its title stays the shared one (FS-3EBCA R22); nothing else in it moves: the list and the
     letter already begin below the title band. **(owner, 2026-11-12: "mailbox的x關閉按鈕好像位置跟其他的不太一樣";
     the shared frame derived here: the × is the frame's, so the panel takes the frame)**
+C6. **The letter's body is as crisp as the rest of the HUD's text** at every render scale (1, 1.5,
+    2; FS-ZAJMH R5). The body is clipped to its rect by a mask (R37's scroll); the mask must not
+    draw it at a lower resolution than it was rasterised at. Cause found: Phaser 4.2.1 draws a
+    masked object focused on itself into a framebuffer of its own logical size, so the body text,
+    rasterised at the render scale, was drawn down to one px a unit and scaled up again. The
+    shared mask (`maskInView`, ADR-0057) now draws a masked Text through the camera's own
+    framebuffer, in backing px, keeping its place by its scroll factor. **(owner, 2026-11-12:
+    "信箱的內文好像解析度有點差"; the cause and the fix derived here)**
 
 ### Acceptance Criteria
 
@@ -1551,6 +1560,7 @@ C5. **The letter panel wears every window's frame and ×.** It is drawn by the s
 - [ ] Under the pointer the envelope shows "Mailbox"; the label goes when the pointer leaves.
 - [ ] Esc and the × still close the panel.
 - [ ] The letter panel draws its frame through `drawPanelFrame`, and its one × stands at `frameClose(panel)`: (924, 122, 24, 24) at 1080 × 720.
+- [ ] The open letter's body reads as crisp as the party panel's text at render scale 1, 1.5 and 2, and stays in its rect while the town's camera follows the player.
 
 ### Edge States
 

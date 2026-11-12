@@ -429,6 +429,8 @@ export class LetterPanel {
     );
     // Clipped by a mask in screen space, not setCrop: a crop is in the text texture's pixels, which
     // crisp text renders at the device pixel ratio, so it no longer lined up with the body's rect.
+    // maskInView draws a masked Text through the camera's own framebuffer, so it keeps that
+    // resolution (FS-1GZGD § Change C6).
     const maskShape = this.keep(
       this.scene.make.graphics({}, false).setScrollFactor(0),
     );

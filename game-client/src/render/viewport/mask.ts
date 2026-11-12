@@ -24,6 +24,18 @@
  *   children's), so its camera-fixed lines stay put under the camera's scroll. Not filed upstream
  *   (repro prepared in I-ADR0057-2).
  *
+ * And one loss of detail (owner 2026-11-12: "信箱的內文好像解析度有點差"; FS-1GZGD § Change C6): an
+ * object focused on itself (`focusFilters`) is drawn into a framebuffer of its own width and
+ * height at zoom 1/scale (`setFilterSize`; `renderNodes/Camera.js` sizes the internal context by
+ * the filter camera). A Text's width is in logical units while its texture is rasterised at the
+ * render scale (`installCrispText`), so a masked Text was drawn down to one px a unit there and
+ * scaled back up by the camera's zoom: soft at render scale 1.5 and 2. A Text (what carries a
+ * `style`) is drawn through the context instead, whose framebuffer is the camera's own, in backing
+ * px, with the main camera's origin (the first correction) and its filter camera scrolled as its
+ * scroll factor says (the second bug's fix for it: Phaser's `focusFiltersOnCamera` copies the
+ * camera's scroll whatever the factor, so the focus is wrapped to scroll it by the factor). An
+ * Image keeps its own focus: its width is its frame's, in texture px, and loses nothing.
+ *
  * No Phaser import: it reads only what a game object and a camera carry.
  */
 
@@ -41,14 +53,27 @@ export interface ViewMask {
   invert: boolean;
 }
 
+/** The scene camera a context-focused filter camera copies on each draw (`focusFiltersOnCamera`). */
+export interface FocusCamera {
+  readonly scrollX: number;
+  readonly scrollY: number;
+}
+
 /** What of a game object a mask is laid on. A Phaser 4 Image, Text, Shape or Container is one. */
 export interface Maskable {
   readonly scrollFactorX: number;
   readonly scrollFactorY: number;
   readonly width?: number;
   readonly height?: number;
+  /** A Text's style; nothing else carries one. */
+  readonly style?: unknown;
   filtersFocusContext: boolean;
-  readonly filterCamera?: { setOrigin(x: number, y?: number): unknown } | null;
+  readonly filterCamera?: {
+    setOrigin(x: number, y?: number): unknown;
+    setScroll?(x: number, y: number): unknown;
+  } | null;
+  /** Phaser's focus on the drawing camera, run on each draw of a context-focused object. */
+  focusFiltersOnCamera?(camera: FocusCamera): unknown;
   readonly filters?: {
     external: {
       addMask(
@@ -86,13 +111,34 @@ export function maskInView(
       target.setMask(shape.createGeometryMask());
     return undefined;
   }
-  if (target.filtersFocusContext === true) {
+  if (target.style !== undefined) {
+    focusTextOnContext(target, camera);
+  } else if (target.filtersFocusContext === true) {
     const fixed = target.scrollFactorX === 0 && target.scrollFactorY === 0;
     const sized = (target.width ?? 0) > 0 && (target.height ?? 0) > 0;
     if (fixed && sized) target.filtersFocusContext = false;
     else target.filterCamera?.setOrigin(camera.originX, camera.originY);
   }
   return target.filters.external.addMask(source, invert, camera);
+}
+
+/**
+ * A Text drawn through the context, so its framebuffer is the camera's in backing px and the text
+ * keeps the resolution it was rasterised at: the camera's origin (the first correction), and on
+ * each draw, after Phaser's own focus copies the camera, its filter camera scrolled as the Text's
+ * scroll factor says, so a camera-fixed Text stays put while the camera follows the player.
+ */
+function focusTextOnContext(target: Maskable, camera: MaskCamera): void {
+  target.filtersFocusContext = true;
+  const filterCamera = target.filterCamera;
+  filterCamera?.setOrigin(camera.originX, camera.originY);
+  const focus = target.focusFiltersOnCamera?.bind(target);
+  if (!focus) return;
+  target.focusFiltersOnCamera = (view: FocusCamera) => {
+    focus(view);
+    filterCamera?.setScroll?.(view.scrollX * target.scrollFactorX, view.scrollY * target.scrollFactorY);
+    return target;
+  };
 }
 
 /** What of a Graphics a mask's area is drawn with. */
