@@ -19,14 +19,24 @@ import { RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose } from "./clips
  * ({@link REST_SCEPTRE}); in the walk her wrist takes back most of the arm's swing
  * ({@link WALK_WRIST}), so the sceptre sways a little with the step instead of swinging upright.
  *
- * In the run the weapon arm pumps about the chest like a free arm (RUN_ARM, RUN_ELBOW). The wrist
- * cocks a blade forward along the forearm and a little down ({@link RUN_BLADE}), taking back most
- * of the arm's pump ({@link RUN_WRIST}): the point ahead of the hand, 11–34° below level, lowest
- * as the arm swings back, never up and never behind the body. The sceptre stands up from the fist
- * ({@link RUN_SCEPTRE}), the wrist taking back more than the pump ({@link RUN_SCEPTRE_WRIST}) so it
- * leans forward as the hand rises to the chest and stands up as it falls: the orb above the hand
- * and under the shoulder all through (5–36° above level; a sceptre stood any straighter would
- * bring its head over the shoulder at the top of the pump).
+ * In the run (then "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些"
+ * and, of the sceptre, "只是要合理的位置 但跑步時為什麼手會擺到肩膀") the knight's and the mercenary's
+ * sword arm pumps about the chest like a free arm (RUN_ARM, RUN_ELBOW). The wrist holds a blade
+ * forward along the forearm, about level ({@link RUN_BLADE}, {@link MERC_RUN_BLADE}), taking back
+ * most of the arm's pump ({@link RUN_WRIST}): the point ahead of the hand and under the head, 5–8°
+ * below level to 10–12° above it ({@link RUN_BLADE_ELEV}), lowest as the arm swings back. At the front of the pump the
+ * upper arm turns in ({@link RUN_CROSS}, clips.js `run.cross`), so the hand crosses in toward the
+ * midline before the torso, about 0.07 H ({@link RUN_CROSS_REACH}), the blade angled about 19°
+ * across the body, and goes back out to the side behind.
+ *
+ * The wizard's sceptre arm pumps smaller ({@link SCEPTRE_RUN_ARM}) about a centre drawn back
+ * ({@link SCEPTRE_RUN_BACK}), so her hand peaks at the lower chest ({@link SCEPTRE_RUN_PEAK}), not by
+ * the shoulder (the shared pump's chest height, 0.70 H, sits just under this rig's shoulder at
+ * 0.74); her tome arm keeps the full pump. The sceptre stands up from the fist ({@link RUN_SCEPTRE}),
+ * the wrist taking back a little more than the pump ({@link RUN_SCEPTRE_WRIST}), so it leans
+ * forward a little as the hand rises and stands up as it falls: 23–38° off vertical
+ * ({@link SCEPTRE_RUN_TILT}), the orb ahead of the hand and of her face, at most about her chin, and
+ * her hand crossing in at the front as the swords' do.
  */
 const REST_ARM = [-0.05, 0, 0];
 const REST_ELBOW = [-0.12, 0, 0];
@@ -35,10 +45,25 @@ const REST_BLADE = [0.95, 0, 0];
 export const SCEPTRE_TILT = 40;
 const REST_SCEPTRE = [-0.68, -0.25, 0];
 const WALK_WRIST = [0, 0.7];
-const RUN_BLADE = [1.65, 0, 0];
-const RUN_WRIST = [0, 0.8];
-const RUN_SCEPTRE = [0.85, 0, 0];
-const RUN_SCEPTRE_WRIST = [0, 1.3];
+const RUN_BLADE = [1.2, 0, 0];
+/** The mercenary's: his curved blade's point rises about 6° off its line, so his wrist sets it a little lower. */
+const MERC_RUN_BLADE = [1.35, 0, 0];
+const RUN_WRIST = [0, 0.85];
+/** The band a blade keeps in the run, degrees from level (+ up): about level, never back up to the old upright carry. */
+export const RUN_BLADE_ELEV = [-10, 20];
+/** The weapon arm's turn in at the front of the run's pump (rad, the upper arm's twist; 0 at the back of the pump). */
+const RUN_CROSS = 0.3;
+/** How far in toward the midline the weapon hand comes at the front of the pump against the back (H). */
+export const RUN_CROSS_REACH = [0.05, 0.08];
+const RUN_SCEPTRE = [-0.1, 0, 0];
+const RUN_SCEPTRE_WRIST = [0, 1.2];
+/** The wizard's sceptre arm's share of the shared pump (RUN_ARM), and how far its centre is drawn back (rad). */
+const SCEPTRE_RUN_ARM = 0.76;
+const SCEPTRE_RUN_BACK = 0.25;
+/** Where the wizard's sceptre hand peaks in the run (H): the lower chest, under the chest bone. */
+export const SCEPTRE_RUN_PEAK = 0.61;
+/** The sceptre's band off vertical through the run's pump (degrees): reasonably upright. */
+export const SCEPTRE_RUN_TILT = [15, 40];
 
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
@@ -66,12 +91,13 @@ export const KNIGHT_STYLE = {
   }),
   walk: { arms: [0.2, 0.55], lean: 0.05 },
   // the run's carry (FS-JS7C8 R2): the sword arm pumps free from the shoulder, a little out from
-  // the hip, the blade held forward and a little down; the shield arm keeps the shield up before
-  // the chest, bent about 90° and swinging short
+  // the hip, crossing in at the front, the blade held forward about level; the shield arm keeps
+  // the shield up before the chest, bent about 90° and swinging short
   run: {
     arms: [0.3, 1],
     elbow: [0.2, 1],
     wrist: RUN_WRIST,
+    cross: [0, RUN_CROSS],
     hold: pose({ upperArmL: [-0.38, -0.85, 0.12], foreArmL: [-1.25, 0, 0], upperArmR: [0, 0, -0.06], handR: RUN_BLADE }),
   },
 };
@@ -96,8 +122,14 @@ export const WIZARD_STYLE = {
   }),
   walk: { arms: [0.8, 0.4], lean: 0.05, stride: 0.95, wrist: WALK_WRIST },
   // the run's carry (FS-JS7C8 R2): both arms pump from the shoulder, a little out from the body so
-  // the sceptre and the tome swing clear of the hips; the sceptre up from the fist, its head ahead
-  run: { wrist: RUN_SCEPTRE_WRIST, hold: pose({ upperArmL: [0, 0, 0.14], upperArmR: [0, 0, -0.06], handR: RUN_SCEPTRE }) },
+  // the sceptre and the tome swing clear of the hips, the sceptre arm smaller and drawn back so its
+  // hand peaks at the lower chest, crossing in at the front; the sceptre up from the fist, its head ahead
+  run: {
+    arms: [1, SCEPTRE_RUN_ARM],
+    wrist: RUN_SCEPTRE_WRIST,
+    cross: [0, RUN_CROSS],
+    hold: pose({ upperArmL: [0, 0, 0.14], upperArmR: [SCEPTRE_RUN_BACK, 0, -0.12], handR: RUN_SCEPTRE }),
+  },
   idleExtra: () => pose({}, {}, { glow: 1 }),
 };
 
@@ -122,8 +154,8 @@ export const MERCENARY_STYLE = {
   }),
   walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
   // the run's carry (FS-JS7C8 R2): both arms pump free from the shoulder, the sword arm a little
-  // out from the hip, the blade held forward and a little down
-  run: { wrist: RUN_WRIST, hold: pose({ upperArmR: [0, 0, -0.1], handR: RUN_BLADE }) },
+  // out from the hip, crossing in at the front, the blade held forward about level
+  run: { wrist: RUN_WRIST, cross: [0, RUN_CROSS], hold: pose({ upperArmR: [0, 0, -0.1], handR: MERC_RUN_BLADE }) },
   // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
   // little lean back from the blow
   guard: pose(
