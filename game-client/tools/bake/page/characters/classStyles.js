@@ -2,7 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
-import { MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose } from "./clips.js";
 
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
@@ -65,7 +65,11 @@ export const WIZARD_STYLE = {
 
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
-export const MERCENARY_SHEET = { animations: MERC_ANIMATIONS, scale: 2 };
+/**
+ * The mercenary re-baked with the run and the backward step at 1.5x, his parry kept (FS-JS7C8
+ * slice 8, FS-HF0WW § Change: Class sheets at 1.5x R35).
+ */
+export const MERCENARY_SHEET = { animations: RUNNING_MERC_ANIMATIONS, scale: 1.5 };
 
 export const MERCENARY_STYLE = {
   attack: "cut",
@@ -79,8 +83,9 @@ export const MERCENARY_STYLE = {
     handR: [-0.4, -0.4, 0],
   }),
   walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
-  // the knight's cut, without a shield to hide behind: the free arm swings out for balance
-  attackExtra: pose({ upperArmL: [0.28, 0.85, 0.06], foreArmL: [0.62, 0, 0] }),
+  // the run's carry (FS-JS7C8 R2): both arms pump free from the shoulder, the sword arm a little
+  // out from the hip, the wrist keeping the blade forward and up
+  run: { hold: pose({ upperArmR: [0, 0, -0.1], handR: [-0.4, -0.4, 0] }) },
   // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
   // little lean back from the blow
   guard: pose(

@@ -112,6 +112,9 @@ export const MERC_ANIMATIONS = withWalkAttack({
   parry: { frames: 4, fps: 24, loop: false },
 });
 
+/** The Mercenary's sheet re-baked with the run (FS-JS7C8 slice 8): his clips, the parry, and the running class's. */
+export const RUNNING_MERC_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, ...RUN_ANIMATIONS });
+
 /**
  * Hub folk (FS-2325V §G.1) only idle and walk: they never fight or fall. Their idle is a shorter
  * loop, the breath of someone standing about, which keeps their sheets small.
@@ -486,19 +489,25 @@ export const ATTACKS = {
     ].map((p) => add(STANCE, p)),
 
   /**
-   * Mercenary: the knight's old overhead diagonal slash, his own keys apart from the knight's so
-   * one class's re-bake never moves the other's atlas (FS-2325V § Change: The class attacks move
-   * with weight and cut deep R7); re-keyed with his own re-bake.
+   * Mercenary (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): a
+   * light, wide drawing cut with the curved blade, no shield to hide behind. The weight rocks back
+   * as the blade climbs high over the right shoulder and the free hand reaches toward the foe
+   * (keys 0–1); the pelvis snaps round first, the chest still back (key 2); the trunk whips
+   * through, the weight onto the front foot, the wrist turning the edge into a drawing cut across
+   * the front (key 3, the strike, as before) and on, wide, to low past the left hip, the free hand
+   * thrown out and back against the cut (key 4); a flick of the wrist brings the blade back up to
+   * his low guard (keys 5–6). His own keys, apart from the knight's (R7).
    */
-  cut: () => [
-    P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.6, -0.85, 0.12], foreArmL: [-1.25, 0, 0] }),
-    P({ upperArmR: [-2.3, 0.2, -0.55], foreArmR: [-1.35, 0, 0], handR: [0.5, 0, 0], chest: [-0.1, -0.45, 0], spine: [-0.06, -0.2, 0], upperArmL: [-0.75, -0.8, 0.15], foreArmL: [-1.3, 0, 0] }),
-    P({ upperArmR: [-2.4, 0.1, -0.3], foreArmR: [-0.7, 0, 0], handR: [0.2, 0, 0], chest: [-0.04, -0.2, 0], upperArmL: [-0.7, -0.8, 0.12], foreArmL: [-1.3, 0, 0] }),
-    P({ upperArmR: [-1.25, 0.5, 0.25], foreArmR: [-0.2, 0, 0], handR: [-0.15, 0, 0], chest: [0.18, 0.4, 0], spine: [0.12, 0.2, 0], upperArmL: [-0.45, -0.9, 0.2], foreArmL: [-1.15, 0, 0] }, { z: 0.035 }),
-    P({ upperArmR: [-0.55, 0.7, 0.5], foreArmR: [-0.35, 0, 0], handR: [-0.35, 0, 0], chest: [0.22, 0.55, 0], spine: [0.14, 0.25, 0], upperArmL: [-0.4, -0.9, 0.2], foreArmL: [-1.1, 0, 0] }, { z: 0.04 }),
-    P({ upperArmR: [-0.55, 0.3, 0.2], foreArmR: [-0.7, 0, 0], handR: [0.0, 0, 0], chest: [0.1, 0.2, 0], upperArmL: [-0.5, -0.85, 0.15], foreArmL: [-1.2, 0, 0] }, { z: 0.02 }),
-    P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.6, -0.85, 0.12], foreArmL: [-1.25, 0, 0] }),
-  ].map((p) => add(STANCE, p)),
+  cut: () =>
+    [
+      P({ hips: [0, -0.08, 0], spine: [-0.03, -0.1, 0], chest: [-0.05, -0.2, 0], upperArmR: [-1.8, -0.5, -0.8], foreArmR: [-1.2, 0, 0], handR: [0.4, 0, 0], upperArmL: [-0.5, 0, 0.2], foreArmL: [-0.6, 0, 0] }, { z: -0.012 }),
+      P({ hips: [0, -0.2, 0], spine: [-0.07, -0.2, 0], chest: [-0.1, -0.38, 0], upperArmR: [-2.4, -0.9, -1.2], foreArmR: [-0.8, 0, 0], handR: [0.3, 0, 0], upperArmL: [-0.9, 0, 0.35], foreArmL: [-0.3, 0, 0] }, { z: -0.03 }),
+      P({ hips: [0, 0.15, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.3, 0], upperArmR: [-3.0, -0.3, -0.5], foreArmR: [-0.05, 0, 0], handR: [1.0, 0, 0], upperArmL: [-0.6, 0, 0.5], foreArmL: [-0.4, 0, 0] }),
+      P({ hips: [0, 0.35, 0], spine: [0.12, 0.2, 0], chest: [0.14, 0.32, 0], upperArmR: [-1.7, -0.1, -0.2], foreArmR: [-0.1, 0, 0], handR: [0.9, 0.2, 0], upperArmL: [0.3, 0, 1.0], foreArmL: [-0.3, 0, 0] }, { z: 0.045 }),
+      P({ hips: [0, 0.42, 0], spine: [0.15, 0.25, 0], chest: [0.2, 0.45, 0], upperArmR: [-1.2, 0.8, 0.8], foreArmR: [-0.1, 0, 0], handR: [1.2, 0, 0], upperArmL: [0.45, 0, 1.1], foreArmL: [-0.2, 0, 0] }, { z: 0.04 }),
+      P({ hips: [0, 0.15, 0], spine: [0.05, 0.06, 0], chest: [0.06, 0.1, 0], upperArmR: [-1.3, 0.2, 0], foreArmR: [-1.0, 0, 0], handR: [-0.6, 0.6, 0], upperArmL: [0, 0, 0.5], foreArmL: [-0.5, 0, 0] }, { z: 0.015 }),
+      P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.32, 0, 0.18], foreArmL: [-0.63, 0, 0] }, { z: 0.005 }),
+    ].map((p) => add(STANCE, p)),
 
   /**
    * Archer: side-on, the bow hand forward on the aim line in front of the chest, the draw pulled
