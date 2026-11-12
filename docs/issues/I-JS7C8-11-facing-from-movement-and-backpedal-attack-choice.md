@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-11
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: []
 labels: [ready-for-agent]
@@ -45,20 +45,42 @@ that way.
 
 ## Acceptance Criteria
 
-- [ ] Moving the pointer never turns the local character, standing or moving, in the town, a field
+- [x] Moving the pointer never turns the local character, standing or moving, in the town, a field
       and a run; it faces its movement and keeps it standing.
-- [ ] Another player's figure faces its movement; nothing reads a `facing` from the state.
-- [ ] No `face` message is ever sent; `pointerFacing.ts` and `faceWire.ts` are gone, and
+- [x] Another player's figure faces its movement; nothing reads a `facing` from the state.
+- [x] No `face` message is ever sent; `pointerFacing.ts` and `faceWire.ts` are gone, and
       `ActionMap` and `PublicPlayerState` are as main has them for facing.
-- [ ] With a test sheet carrying `walk_attack` and `backpedal_attack`: attacking while moving at
+- [x] With a test sheet carrying `walk_attack` and `backpedal_attack`: attacking while moving at
       more than 90° from the aim plays `backpedal_attack`, at exactly 90° and below `walk_attack`,
       both turned to the aim, at time scale 1; with `walk_attack` only, `walk_attack` at any angle.
-- [ ] A `walk_attack` ↔ `backpedal_attack` swap mid-swing keeps the frame index; a new swing starts
+- [x] A `walk_attack` ↔ `backpedal_attack` swap mid-swing keeps the frame index; a new swing starts
       at frame 0; a charge plays `attack` whole.
-- [ ] Moving without attacking never plays a backward step; with `run` it runs turned to its
+- [x] Moving without attacking never plays a backward step; with `run` it runs turned to its
       movement at `speed / RUN_PACE`.
-- [ ] Hub folk, monsters and the menu figures choose exactly as before.
-- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `tsc` and the lint are green.
+- [x] Hub folk, monsters and the menu figures choose exactly as before.
+- [x] `npx vitest run --maxWorkers=4 --minWorkers=1`, `tsc` and the lint are green.
+
+## Outcome (2026-11-12)
+
+Done: tests `2fab7494` (seen red: 15 vitest failures and both `@ts-expect-error` absence checks
+unused under tsc), change `c6489c1b`. Every box above is met:
+
+- pointer: `pointerFacing.ts` is gone and nothing calls a `face` on an animator
+  (`character.test.ts` "facing its movement", the three scenes' "facing from movement" tests);
+- others: the scenes step every figure from its drawn position and keep no `wireFacing`;
+- wire: no `face` is sent in the run, field or town; `faceWire.ts` is gone; `ActionMap` and
+  `PublicPlayerState` equal the merge base (`client.test.ts`, `gameState.test.ts`, by tsc);
+- choice and swaps: `animationSelect.test.ts` and `character.test.ts` "the run and the backward
+  step while attacking" (over 90°, exactly 90°, a sheet without `backpedal_attack`, a charge, the
+  `walk_attack` ↔ `backpedal_attack` ↔ `attack` frame carry, a new swing at frame 0);
+- folk, monsters and the menu figures: the existing suites are unchanged and green;
+- whole client vitest (260 files, 6952 tests), `tsc --noEmit -p .` and `npm run lint` green
+  (the lint's one warning, `NotificationBell.tsx`, predates this slice).
+
+Left for I-JS7C8-12 (the bake): `manifest.test.ts` still names the archer's `backpedal` (the
+committed sheet carries it until the re-bake), the guideline's clip list still names `backpedal`
+and one `walk_attack` cycle, and `BACKPEDAL_PACE` stays exported, unused by the client, while
+`tools/bake/page/characters/clips.test.mjs` imports it.
 
 ## Blocked By
 
