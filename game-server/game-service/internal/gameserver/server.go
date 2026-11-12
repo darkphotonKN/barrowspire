@@ -306,6 +306,14 @@ func (s *Server) createHubSession() *game.Session {
 * FS-BDA7X §Requirements 5–6.
 **/
 func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID string) (*game.Session, error) {
+	return s.EnterHubAdmitting(ctx, conn, characterID, nil)
+}
+
+// EnterHubAdmitting is EnterHub with admit told the resolved character before it is seated: an
+// error from it refuses the entry, nothing seated. nil admits every character. The hub refuses a
+// character switch there while the player's party is in its run (FS-NCC9J §Change: Changing
+// character leaves the party, C12).
+func (s *Server) EnterHubAdmitting(ctx context.Context, conn *websocket.Conn, characterID string, admit func(types.CharacterInPlay) error) (*game.Session, error) {
 	player, exists := s.GetPlayerFromConn(conn)
 	if !exists {
 		return nil, errPlayerNotFound
@@ -338,6 +346,11 @@ func (s *Server) EnterHub(ctx context.Context, conn *websocket.Conn, characterID
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errCharactersUnavailable, err)
+	}
+	if admit != nil {
+		if err := admit(character); err != nil {
+			return nil, fmt.Errorf("enter hub as %s: %w", character.ID, err)
+		}
 	}
 
 	return s.joinHub(conn, character, s.travelMargin(ctx, player.ID))
@@ -723,8 +736,6 @@ var (
 	errLeaveHubQueued  = errors.New("queued members leave the queue first")
 	errLeaveHubInRun   = errors.New("member is in a run")
 	errLeaveHubNotHere = errors.New("member is not in the hub")
-	// their party is in its run on this pod (FS-NCC9J §Change: Changing character leaves the party, C4)
-	errLeaveHubPartyInRun = errors.New("member's party is in its run")
 )
 
 /**
@@ -1066,6 +1077,25 @@ func (s *Server) SeatedConns() map[uuid.UUID]*websocket.Conn {
 	conns := make(map[uuid.UUID]*websocket.Conn, len(s.connToPlayer))
 	for conn, player := range s.connToPlayer {
 		if player.CurrentGameSessionId == uuid.Nil {
+			continue
+		}
+		conns[player.ID] = conn
+	}
+	return conns
+}
+
+/**
+* RosterConns is everyone connected here and seated in no world, with their
+* connection: a player on the roster, gone back to it (leave_hub) or freshly
+* connected. FS-NCC9J §Change: Changing character leaves the party, C9.
+**/
+func (s *Server) RosterConns() map[uuid.UUID]*websocket.Conn {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	conns := make(map[uuid.UUID]*websocket.Conn)
+	for conn, player := range s.connToPlayer {
+		if player.CurrentGameSessionId != uuid.Nil {
 			continue
 		}
 		conns[player.ID] = conn

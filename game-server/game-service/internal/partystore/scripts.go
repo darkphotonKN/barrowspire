@@ -34,6 +34,9 @@ var createMatchedLua string
 //go:embed scripts/read.lua
 var readLua string
 
+//go:embed scripts/peek.lua
+var peekLua string
+
 //go:embed scripts/refresh.lua
 var refreshLua string
 
@@ -53,6 +56,7 @@ var (
 	createScript        = script(createLua)
 	createMatchedScript = script(createMatchedLua)
 	readScript          = script(readLua)
+	peekScript          = script(peekLua)
 	refreshScript       = script(refreshLua)
 	removeScript        = script(removeLua)
 	transferScript      = script(transferLua)
@@ -493,6 +497,25 @@ func (r *Redis) PartyOf(ctx context.Context, playerID uuid.UUID, now time.Time) 
 		return Arrival{}, fmt.Errorf("read party of %s: %w", playerID, err)
 	}
 	return Arrival{Party: p, In: p.has(playerID), Swept: swept[p.ID]}, nil
+}
+
+// Peek is the party playerID is in, read without changing anything: no member's record refreshed,
+// no TTL put back; in is false when they are in none. A player on the roster is sent it, and one
+// whose record is gone is compared by the name it holds for them (FS-NCC9J §Change: Changing
+// character leaves the party, C9, C13).
+func (r *Redis) Peek(ctx context.Context, playerID uuid.UUID) (p Party, in bool, err error) {
+	res, err := run(ctx, peekScript, r.client, []string{pointerKey(playerID)}, playerID.String())
+	if err != nil {
+		return Party{}, false, fmt.Errorf("peek at party of %s: %w", playerID, err)
+	}
+	if res.refusal() != "" {
+		return Party{}, false, nil
+	}
+	p, err = res.Party.party()
+	if err != nil {
+		return Party{}, false, fmt.Errorf("peek at party of %s: %w", playerID, err)
+	}
+	return p, p.has(playerID), nil
 }
 
 func (p Party) has(playerID uuid.UUID) bool {

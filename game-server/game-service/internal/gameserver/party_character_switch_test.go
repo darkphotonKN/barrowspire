@@ -196,13 +196,15 @@ func TestCharacterSwitch_LeaveHub_LeavesAnOpenInviteOpen(t *testing.T) {
 // Back from the roster as the same character: no switch, the party keeps them.
 func TestCharacterSwitch_FromTheRoster_SameCharacter_Stays(t *testing.T) {
 	rig := newPartyRig(t)
-	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
 	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
 	partyID := partyIDOf(t, rig, kaelen.ID)
 	character := kaelen.Character
 	toTheRoster(t, rig, kaelenConn, kaelenInbox)
 	rig.tick()
+	awaitUpdate(t, wrenInbox, "sync", wren.ID, "Wren") // her own arrival read
+	awaitRosterSync(t, kaelenInbox, kaelen.ID, "Kaelen")
 
 	enteredAs(t, rig, kaelenConn, kaelenInbox, character)
 
@@ -352,6 +354,7 @@ func TestCharacterSwitch_NewCharacterStartsWithNoParty(t *testing.T) {
 	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
 	rig.tick() // both read on arrival, so a second read is what a new seat does
+	awaitUpdate(t, kaelenInbox, "sync", kaelen.ID, "Kaelen")
 	toTheRoster(t, rig, kaelenConn, kaelenInbox)
 	rig.tick() // the cache sees Kaelen seated nowhere
 	awaitRosterSync(t, kaelenInbox, kaelen.ID, "Kaelen")
