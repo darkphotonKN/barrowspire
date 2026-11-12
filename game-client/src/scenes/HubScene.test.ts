@@ -436,6 +436,9 @@ function queuedHubOnStage() {
   const off = vi.spyOn(socketManager, "off").mockImplementation(() => {});
   const offError = vi.spyOn(socketManager, "offError").mockImplementation(() => {});
   const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+  // a visit under way: its first frame, which says the body stands still, is behind it
+  stage.hub.update(0, 16);
+  send.mockClear();
   stage.hub.listenForQueue();
   const reply = (action: string, payload: unknown = {}) => listeners.get(action)?.(payload);
   const refuse = (action: string, message: string, reason?: string) =>
@@ -3599,6 +3602,81 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
     expect(systems.input.manager?.captures).toEqual([]);
   });
 
+});
+
+// Reported 2026-11-12: a player who died in a run with a movement key held ran on by themselves in
+// the town, no key held. The server routes a move by the player's record, and the run's end moves
+// the record to the town before the client hears of it: the run's last frames, sent while the key
+// was held and the death was on its way, walk the town body. The town sent only on a change from
+// what it last sent, which on its first frame is "still", so with no key held it never stopped it.
+describe("HubScene the first frame of a visit (stuck walking after a death with a key held)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A start of the town, its socket wired as the server reads it: the body walks the last move. */
+  function visit() {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MenuHub & { init(data?: { arrival?: boolean }): void };
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const moves = () => send.mock.calls.filter(([action]) => action === ActionType.Move);
+    /** What the town body walks: the last move on the wire, whichever world sent it. */
+    const body = () => moves().at(-1)?.[1];
+    /** The run's last frames with the key held, landing on the town body after the run's end. */
+    const runStride = () => socketManager.sendMessage(ActionType.Move, { vx: 1, vy: 0 });
+    return { ...stage, hub, send, moves, body, runStride };
+  }
+
+  it("should stop the body on its first frame with no key held, after a stride the run sent", () => {
+    const { hub, body, runStride } = visit();
+    runStride();
+
+    hub.init({ arrival: false });
+    hub.update(0, 16);
+
+    expect(body()).toEqual({ vx: 0, vy: 0 });
+  });
+
+  it("should stop it on a return too, though the visit before ended standing still", () => {
+    const { hub, keys, body, runStride } = visit();
+    // the visit before: a walk, stopped, then into the Spire
+    keys.w.isDown = true;
+    hub.update(0, 16);
+    keys.w.isDown = false;
+    hub.update(0, 16);
+    hub.release("shutdown");
+    runStride();
+
+    hub.init({ arrival: false });
+    hub.update(0, 16);
+
+    expect(body()).toEqual({ vx: 0, vy: 0 });
+  });
+
+  it("should send that stop once, and nothing more while no key is held", () => {
+    const { hub, moves, runStride } = visit();
+    runStride();
+
+    hub.init({ arrival: false });
+    hub.update(0, 16);
+    hub.update(0, 16);
+    hub.update(0, 16);
+
+    expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+  });
+
+  it("should send a key held into the visit as its first move, once", () => {
+    const { hub, keys, moves, runStride } = visit();
+    runStride();
+
+    hub.init({ arrival: false });
+    keys.w.isDown = true;
+    hub.update(0, 16);
+    hub.update(0, 16);
+
+    expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: -1 }]]);
+  });
 });
 
 const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
