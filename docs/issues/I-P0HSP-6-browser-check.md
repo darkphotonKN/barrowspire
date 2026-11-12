@@ -20,8 +20,8 @@ Implements FS-P0HSP §Acceptance Criteria (whole FS), §User Stories 1–29
   where the three roads leave; the three buildings solid with their doors showing; walking into a
   building, the map unchanged.
 - The marks by eye: the tower (the Spire), the teleport marks (Forest, Meadows; the dev test room's
-  in a dev build), the chest (stash) and the bag (Quartermaster) side by side, the scroll (Elder). Is
-  the scroll right for the Elder? Should the Inn carry a neutral, non-amber mark?
+  in a dev build), the chest (stash) and the bag (Quartermaster) side by side; no mark at the Elder
+  (Nick, 2026-11-12: he only tells a story). Should the Inn carry a neutral, non-amber mark?
 - M through normal, enlarged and the overlay in the town and a field; the overlay's 1/8 in the town
   (300 × 150) by eye; the mode kept from a run into the town and back.
 - A field: the map filling in round you as you walk, the radius (480 world px) by eye, the road home's

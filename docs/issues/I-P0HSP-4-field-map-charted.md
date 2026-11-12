@@ -71,3 +71,8 @@ at most 13 redraws in 3 s (1 + 4 a second). Frame time, headless stand-in (Chrom
 the minimap mean 0.09 / 0.08 ms, p95 0.20 ms; with it mean 0.15 / 0.14 ms, p95 0.20 ms, 26 to 27
 map redraws in 6.5 s (4 a second). One existing field test helper (the arrival card's, which runs
 create on stubs that cannot hold a canvas texture) now unsets the minimap's stage after create.
+
+Amended 2026-11-12 (review round 1): `chartAround` now scans the circle on each state, as §D.21
+says, not only on entering another cell (which left up to ~57 px of the circle uncharted while
+the player stayed in one); a state at the same point scans nothing. The redraw and save waits
+moved into `ui/fieldChartKeeper.ts`, the minimap's HUD wiring into `ui/worldMinimapController.ts`.

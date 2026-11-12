@@ -719,8 +719,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   partitions or furnishings, and nothing changes when the player steps inside. Its **map marks**
   are amber glyphs on the run's dark ring, 9 × 9 on whole px at every mode's size, drawn in code: a
   tower for the Spire's gate, a teleport ring for each gate to another area, a chest for the stash,
-  a bag for the Quartermaster, a scroll for the Elder, a lozenge for any other function NPC; only
-  what the player can act on (no Inn, Smithy, mailbox, market or dressing), and two that would
+  a bag for the Quartermaster, a lozenge for any other function NPC; only what the player can act
+  on (no Elder, who only tells a story; no Inn, Smithy, mailbox, market or dressing), and two that would
   overlap stand side by side, 1 px apart. A field's map shows only its **charted ground**, the
   ground round the player as they walk: the same stone, the edge line and the tree stands and rocks
   solid only where charted, the road home's teleport ring once its spot is charted, and nothing at

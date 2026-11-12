@@ -208,10 +208,11 @@ export interface MinimapFixture {
 /**
  * A map mark's glyph (CONTEXT.md "Map mark"): the run's three fixtures, and the town's and the
  * fields' (FS-P0HSP §C.14): a tower for the Spire's gate, a teleport mark for a gate to another
- * area, a chest for the stash, a bag for the Quartermaster, a scroll for the Elder and a lozenge
- * for any other function NPC, in that order where marks stand side by side (§C.19).
+ * area, a chest for the stash, a bag for the Quartermaster and a lozenge for any other function
+ * NPC but the Elder, who only tells a story and is not marked; in that order where marks stand
+ * side by side (§C.19).
  */
-export const WORLD_MARKS = ["tower", "teleport", "chest", "bag", "scroll", "lozenge"] as const;
+export const WORLD_MARKS = ["tower", "teleport", "chest", "bag", "lozenge"] as const;
 export type MapMarkKind = MinimapFixture["kind"] | (typeof WORLD_MARKS)[number];
 
 /** A map mark: its glyph and where it stands, world px. */
@@ -443,8 +444,6 @@ const GLYPH_ART: Record<MapMarkKind, readonly string[]> = {
   chest: [".......", ".#####.", "#######", "#ooooo#", "###o###", "#######", "#######"],
   // a sack tied at its neck
   bag: ["..#.#..", "...#...", "..###..", ".#####.", "#######", "#######", ".#####."],
-  // a scroll rolled at both ends, lines written on it
-  scroll: ["#######", ".#ooo#.", ".#####.", ".#ooo#.", ".#####.", ".#ooo#.", "#######"],
   // FS-MRZH7's sigil shape
   lozenge: ["...#...", "..###..", ".#####.", "#######", ".#####.", "..###..", "...#..."],
 };
@@ -536,12 +535,11 @@ function seat(m: Point, before: number, after: number, panel: MinimapPanel | nul
 const MARK_GAP = 1;
 
 /**
- * Seats moved so no two marks' boxes overlap (FS-P0HSP §C.19): marks whose `box`-wide boxes would
- * overlap, and those overlapping them, are set side by side on one row, in {@link WORLD_MARKS}'
- * order left to right, {@link MARK_GAP} apart, the row centred on the mean of their seats, on the
- * grid of `perPx` px to a logical px and, in a panel, held inside the rim as a seat is.
+ * Where a minimap stands its marks, given each one's own seat (`seats`, in `marks`' order): a
+ * glyph `box` wide on the grid of `perPx` px to a logical px, `before` and `after` its seat, held
+ * inside `panel`'s rim where there is one. Each minimap supplies its own.
  */
-function spreadSeats(
+type SeatLayout = (
   marks: readonly MinimapMark[],
   seats: readonly Point[],
   box: number,
@@ -549,7 +547,18 @@ function spreadSeats(
   after: number,
   panel: MinimapPanel | null,
   perPx: number,
-): Point[] {
+) => readonly Point[];
+
+/** A dungeon floor's: every mark on its own seat, as found (FS-56CKV §A.6). */
+const ownSeats: SeatLayout = (_marks, seats) => seats;
+
+/**
+ * Seats moved so no two marks' boxes overlap (FS-P0HSP §C.19): marks whose `box`-wide boxes would
+ * overlap, and those overlapping them, are set side by side on one row, in {@link WORLD_MARKS}'
+ * order left to right, {@link MARK_GAP} apart, the row centred on the mean of their seats, on the
+ * grid of `perPx` px to a logical px and, in a panel, held inside the rim as a seat is.
+ */
+const spreadSeats: SeatLayout = (marks, seats, box, before, after, panel, perPx) => {
   const root = seats.map((_, i) => i);
   const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
   for (let i = 0; i < seats.length; i++)
@@ -575,7 +584,7 @@ function spreadSeats(
     row.forEach((i, n) => (out[i] = { x: x0 + n * step, y }));
   }
   return out;
-}
+};
 
 /** What the map layer draws: the seen regions, either state alike (FS-56CKV §A.4), and the fixtures found. */
 const contentKey = (c: MinimapContent) =>
@@ -643,15 +652,16 @@ abstract class MinimapView {
 
   /**
    * `renderScale` reads the backing px per logical px now (`viewport.renderScale`), the grid the
-   * overlay stands on, as every figure is drawn on it (ADR-0057). `spread` sets marks that would
-   * overlap side by side (FS-P0HSP §C.19).
+   * overlay stands on, as every figure is drawn on it (ADR-0057). `layoutSeats` stands the marks
+   * from their own seats: the run's where they are found, a world's side by side where they
+   * would overlap (FS-P0HSP §C.19).
    */
   protected constructor(
     stage: MinimapStage,
     private readonly world: MinimapWorld,
     private readonly renderScale: () => number,
     initial: MinimapPicture,
-    private readonly spread: boolean,
+    private readonly layoutSeats: SeatLayout,
   ) {
     this.shownPicture = initial;
     // made bottom to top: one depth draws in the order its objects were made (FS-56CKV §A.3)
@@ -892,8 +902,8 @@ abstract class MinimapView {
    * Each mark's glyph, its ring first and its ink over it (FS-56CKV §A.6). At a larger scale each
    * of the glyph's px is the whole-px span its edges round to (FS-1SEF0 §B.9): nearest neighbour,
    * every edge on a whole logical px; on the overlay, on a whole backing px at the render scale of
-   * now, the grid it stands on (§C.16). Where the minimap spreads its marks, those that would
-   * overlap stand side by side (FS-P0HSP §C.19).
+   * now, the grid it stands on (§C.16). Then stood as the minimap's seat layout says: a world's
+   * that would overlap side by side (FS-P0HSP §C.19).
    */
   private drawMarks(marks: readonly MinimapMark[]): void {
     const g = this.marks;
@@ -904,7 +914,7 @@ abstract class MinimapView {
     const q = k * r;
     const { box, before, after } = glyphBox(q);
     const seated = marks.map((f) => seat(project(f.at), before / r, after / r, panel, r));
-    const seats = this.spread ? spreadSeats(marks, seated, box / r, before / r, after / r, panel, r) : seated;
+    const seats = this.layoutSeats(marks, seated, box / r, before / r, after / r, panel, r);
     g.clear();
     marks.forEach((f, i) => {
       const p = seats[i];
@@ -947,7 +957,7 @@ export class Minimap extends MinimapView {
     private readonly grid: RegionGrid,
     renderScale: () => number = () => 1,
   ) {
-    super(stage, floorSize(grid), renderScale, floorPicture(grid, { regions: [], fixtures: [] }), false);
+    super(stage, floorSize(grid), renderScale, floorPicture(grid, { regions: [], fixtures: [] }), ownSeats);
   }
 
   /** What the map layer shows now, each seen region with its state, though both are drawn alike. */
@@ -970,7 +980,7 @@ export class Minimap extends MinimapView {
  */
 export class WorldMinimap extends MinimapView {
   constructor(stage: MinimapStage, world: MinimapWorld, renderScale: () => number = () => 1) {
-    super(stage, world, renderScale, NO_PICTURE, true);
+    super(stage, world, renderScale, NO_PICTURE, spreadSeats);
   }
 
   /** The plan now; the map and marks are redrawn only if its key changed. */

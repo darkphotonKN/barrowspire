@@ -51,10 +51,30 @@ describe("FieldChart (FS-P0HSP §D)", () => {
     expect(chart.version).toBe(before + 1);
   });
 
-  it("should do nothing while the player stays in one cell (§D.28: only the cells newly entered cost)", () => {
+  it("should chart on each state: a cell the circle reaches while the player stays in one cell is charted (§D.21)", () => {
+    const { cell, radius } = FIELD_CHART;
+    const from = { x: 205, y: 1005 };
+    const to = { x: 235, y: 1035 };
+    expect([Math.floor(to.x / cell), Math.floor(to.y / cell)]).toEqual([Math.floor(from.x / cell), Math.floor(from.y / cell)]);
+    const chart = new FieldChart(FOREST);
+    chart.chartAround(from);
+    // the cells whose centres the circle reaches only from the second point
+    const within = (p: { x: number; y: number }, cx: number, cy: number) => Math.hypot((cx + 0.5) * cell - p.x, (cy + 0.5) * cell - p.y) <= radius;
+    const reached: [number, number][] = [];
+    for (let cy = 0; cy < chart.rows; cy++)
+      for (let cx = 0; cx < chart.cols; cx++) if (within(to, cx, cy) && !within(from, cx, cy)) reached.push([cx, cy]);
+    expect(reached.length).toBeGreaterThan(0);
+    for (const [cx, cy] of reached) expect(chart.charted(cx, cy)).toBe(false);
+    expect(chart.chartAround(to)).toBe(true);
+    for (const [cx, cy] of reached) expect(chart.charted(cx, cy)).toBe(true);
+  });
+
+  it("should say nothing is new on a state at the same place (§D.28: no redraw while nothing new is charted)", () => {
     const chart = new FieldChart(FOREST);
     chart.chartAround({ x: 205, y: 1005 });
-    expect(chart.chartAround({ x: 215, y: 1015 })).toBe(false);
+    const { version } = chart;
+    expect(chart.chartAround({ x: 205, y: 1005 })).toBe(false);
+    expect(chart.version).toBe(version);
   });
 
   it("should keep to the field at its edges", () => {

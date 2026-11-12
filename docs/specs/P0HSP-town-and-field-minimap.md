@@ -8,8 +8,8 @@ The town and every field world get the run's minimap, in the run's look and with
 modes on M. The town's map shows whole from the first moment: its ground, its edge drawn as a line
 and open where each road leaves, its buildings as solid footprints with their doors cut open, and
 small amber marks for what a player walks to: a tower for the Spire's door, a teleport mark for each
-gate to another area, a chest for the stash, a bag for the Quartermaster and a scroll for the
-Elder. A field's map starts empty and fills in round the player as they walk: **charted ground**,
+gate to another area, a chest for the stash and a bag for the Quartermaster; the Elder, who only
+tells a story, is not marked. A field's map starts empty and fills in round the player as they walk: **charted ground**,
 kept per character in this browser, so a field once walked stays mapped on the next visit. The
 screen itself is never fogged. The party's dots show as in a run; no monsters, no other players, no
 labels.
@@ -91,7 +91,8 @@ Verified 2026-11-12 on `feat/world-hub-field-minimap` at 321d2b23; client paths 
 4. **One minimap, more plans.** The town's and a field's minimaps are the run's `Minimap` look
    (FS-56CKV §A), modes (FS-1SEF0) and marks, drawing a plan built from the world's data instead of
    a dungeon floor's region grid; the run's minimap behaves, draws and tests exactly as before.
-   **(derived here: one look, one set of modes, one place to tune; the run's tests stay as written)**
+   **(derived here: one look, one set of modes, one place to tune; the run's tests stay as written,
+   but for the one guard §A.1 supersedes, see Acceptance Criteria)**
 
 ### §B. What the map draws
 
@@ -146,13 +147,14 @@ Verified 2026-11-12 on `feat/world-hub-field-minimap` at 321d2b23; client paths 
     | The dev test room's gate (dev builds) | `gates[]` `dev_test_room`, kept by `gatesInThisBuild` | **teleport** |
     | The stash chest | `HUB_STASH_CHEST` | **chest** |
     | The Quartermaster (storekeeper; his store is the town's item shop) | `npcs[]` `function: "storekeeper"` | **bag** |
-    | The Elder (storyteller) | `npcs[]` `function: "storyteller"` | **scroll** |
-    | Any other function the client has no glyph for | `npcs[]`, `function` not `""` | **lozenge** (FS-MRZH7's sigil shape) |
+    | The Elder (storyteller) | `npcs[]` `function: "storyteller"` | **none**: he only tells a story, and is no lozenge either |
+    | Any other function the client has no glyph for | `npcs[]`, `function` not `""` nor `"storyteller"` | **lozenge** (FS-MRZH7's sigil shape) |
 
-    **(owner: "倉庫顯示寶箱 道具店顯示袋子 塔顯示塔的圖案", "其他地區接口顯示傳送的icon"; derived here: the
-    scroll for the storyteller, and the lozenge so a function the client cannot name yet is still
-    marked, as FS-MRZH7 req 1 marks it)**
-15. **Not marked, read from the code**: the Inn and the Smithy (buildings; the Alewife and the Smith
+    **(owner: "倉庫顯示寶箱 道具店顯示袋子 塔顯示塔的圖案", "其他地區接口顯示傳送的icon"; owner, 2026-11-12:
+    "只是講故事的 NPC 不需要在地圖上標", an NPC that only tells a story needs no map mark, which
+    withdrew the scroll this spec first gave the storyteller; derived here: the lozenge so a function
+    the client cannot name yet is still marked, as FS-MRZH7 req 1 marks it)**
+15. **Not marked, read from the code**: the Elder (§C.14: he only tells a story); the Inn and the Smithy (buildings; the Alewife and the Smith
     are fixed residents with no function, FS-B0H2D); the wandering residents and the Inn's patrons
     (ambient); the mailbox (a HUD envelope with no place in the world, FS-1GZGD); the marketplace (a
     web page, FS-8EGFA; the town's market stalls are dressing with nothing to do); the well, the
@@ -169,14 +171,14 @@ Verified 2026-11-12 on `feat/world-hub-field-minimap` at 321d2b23; client paths 
     dark, `.` none):
 
     ```
-    tower      teleport   chest      bag        scroll     lozenge
-    #.#.#.#    ..###..    .......    ..#.#..    #######    ...#...
-    #######    .#ooo#.    .#####.    ...#...    .#ooo#.    ..###..
-    .#####.    #oo#oo#    #######    ..###..    .#####.    .#####.
-    .##o##.    #o###o#    #ooooo#    .#####.    .#ooo#.    #######
-    .##o##.    #oo#oo#    ###o###    #######    .#####.    .#####.
-    .#####.    .#ooo#.    #######    #######    .#ooo#.    ..###..
-    #######    ..###..    #######    .#####.    #######    ...#...
+    tower      teleport   chest      bag        lozenge
+    #.#.#.#    ..###..    .......    ..#.#..    ...#...
+    #######    .#ooo#.    .#####.    ...#...    ..###..
+    .#####.    #oo#oo#    #######    ..###..    .#####.
+    .##o##.    #o###o#    #ooooo#    .#####.    #######
+    .##o##.    #oo#oo#    ###o###    #######    .#####.
+    .#####.    .#ooo#.    #######    #######    ..###..
+    #######    ..###..    #######    .#####.    ...#...
     ```
 
     **(owner: "drawn in code (Graphics), no baked art, at the minimap's existing marker size, in
@@ -312,7 +314,7 @@ the browser"), beside ADR-0063, which it leaves standing.
 4. As a player in the town, I want each road to a field marked, so that I can head for the Meadows or the Forest.
 5. As a player in the town, I want the stash marked as a chest, so that I find my storage.
 6. As a player in the town, I want the Quartermaster marked as a bag, so that I find the shop.
-7. As a player in the town, I want the Elder marked, so that I can find him when I want the story.
+7. As a player in the town, I want no mark for the Elder, who only tells a story, so that the marks are the places I go to do something (owner, 2026-11-12).
 8. As a player in the town, I want only the places I can use marked, so that the map is not cluttered with things I cannot do anything with.
 9. As a player in the town, I want buildings drawn solid with their doors open, so that I see how to get in.
 10. As a player in the town, I want the town's edge drawn with gaps where the roads leave, so that I see the ways out.
@@ -339,7 +341,7 @@ the browser"), beside ADR-0063, which it leaves standing.
 ## Acceptance Criteria
 
 - [ ] The town's minimap: its whole diamond in `minimapExplored`; the edge stroked in `minimapEdge`, a gap 160 world px wide at the Spire, Forest and Meadows gates and none for the dev test room's gate, every corner joined; each building's footprint filled in `minimapEdge` with its door gap cut as a notch at least `MINIMAP_WORLD.doorNotch` (2) px deep; no partition or furnishing drawn; built from a hub state (walls, npcs, gates) and `HUB_WIDTH`/`HUB_HEIGHT` alone (unit tests over the plan from the golden's walls).
-- [ ] The town's marks: a tower at the Spire gate, a teleport mark at each other gate in this build, a chest at `HUB_STASH_CHEST`, a bag at the storekeeper, a scroll at the storyteller, a lozenge at an NPC with any other function; none for an NPC with function `""` or anything in §C.15; each 9 × 9 in `interactable` on a 1 px `markerStroke` ring, ink ≥ 3:1, every rect on whole px, held inside the rim; the stash chest and the Quartermaster set side by side, 1 px apart, in every mode; the six glyphs read apart (distinct art, tested).
+- [ ] The town's marks: a tower at the Spire gate, a teleport mark at each other gate in this build, a chest at `HUB_STASH_CHEST`, a bag at the storekeeper, a lozenge at an NPC with any other function; none for the storyteller (the Elder: no scroll, no lozenge), an NPC with function `""` or anything in §C.15; each 9 × 9 in `interactable` on a 1 px `markerStroke` ring, ink ≥ 3:1, every rect on whole px, held inside the rim; the stash chest and the Quartermaster set side by side, 1 px apart, in every mode; the five glyphs read apart (distinct art, tested).
 - [ ] The map and marks are redrawn on a content change only: walking the town redraws neither (counted); the dots redraw only when one moves a whole px.
 - [ ] Party dots: self r 3 and allies r 2, each ringed; an `other_players` entry not in the party store draws nothing; no party, self only.
 - [ ] A field's minimap: nothing but the backing until charted; cells within 480 world px of the player's position charted on each state; charted ground in the one fill drawn as merged runs; the edge line only along charted edge cells, open at the road home's gap; keep-outs filled only over charted cells; the teleport mark at the road home only once its cell is charted; no line where charted meets uncharted; party members' positions chart nothing (unit tests over the chart and the plan).
@@ -349,7 +351,7 @@ the browser"), beside ADR-0063, which it leaves standing.
 - [ ] M in the town and a field cycles normal → enlarged → overlay → normal under the guards of §F.33, reads and writes `barrowspire_minimap_mode`, and does nothing before the minimap is built; the enlarged panel 324 × 162 and the overlay at 1/8 about the player, held as FS-1SEF0 §C.19, at depth 920, under the name plates (950) and the HUD, taking no input.
 - [ ] Placement at widths 1080 and 1280: the map's top at y 44, its right edge on `TOP_RIGHT_HUD`'s x, re-anchored on resize; the corner empty in overlay mode; the clearances of §G.37 hold (measured); an invite prompt and the ready check stepped right of the open party panel draw over the map.
 - [ ] No fog, veil or change on the screen in the town or a field (the scenes' world layers unchanged; a test that the field scene adds nothing above the ground for charting).
-- [ ] The run's minimap tests (`minimap.test.ts`, `minimapMode.test.ts`, `topRightColumn.test.ts`, `BarrowspireScene.test.ts`) pass as written.
+- [ ] The run's minimap tests (`minimap.test.ts`, `minimapMode.test.ts`, `topRightColumn.test.ts`, `BarrowspireScene.test.ts`) pass as written, with one exception: `BarrowspireScene.test.ts`'s "should not exist in the hub or field scenes" asserted no minimap at all in those scenes, which §A.1 supersedes, so it is rewritten to the narrowed guard: the hub and field scenes name no `new Minimap(` (a dungeon floor's region minimap), no `Fog`, no `Exploration`, no run fog helper (`fogShapes`, `fogField`) and import none of `render/world/fog`, `fogField` or `exploration`. Tests added beside the run's (a run's overlapping glyphs stay on their own seats) change none of them.
 - [ ] No raw colour literal added; no new token; the token fence passes.
 - [ ] The design guideline has a "Town and field minimap" bullet marked "Added by FS-P0HSP"; `CONTEXT.md`'s "Minimap" names the town and fields; no gallery card.
 - [ ] Headless captures of the town (normal, enlarged, overlay) and of the Forest part-charted, at 1080 × 720 and 1280 × 720, render scales 1 and 2, looked at by eye.

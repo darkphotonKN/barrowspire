@@ -24,8 +24,9 @@ export class FieldChart {
   readonly bits: Uint8Array;
   /** Bumped each time a cell is newly charted: what the map's key is read from. */
   version = 0;
-  /** The cell the player was last charted from: within it, nothing new can be charted worth the scan. */
-  private lastCell?: number;
+  /** Where the player was last charted from: from the same point, nothing new can be charted. */
+  private lastX = NaN;
+  private lastY = NaN;
 
   constructor(
     readonly size: WorldSize,
@@ -45,16 +46,16 @@ export class FieldChart {
   }
 
   /**
-   * Charts the cells round the player at `p` (§D.21): those whose centres lie within the radius.
-   * Scanned only when the player has entered another cell since the last call, row by row over the
-   * circle's span, so standing or walking within a cell costs nothing. True where any cell was
-   * newly charted.
+   * Charts the cells round the player at `p` (§D.21): those whose centres lie within the radius,
+   * on each state, so a cell the circle reaches as the player moves within a cell is charted too.
+   * Row by row over the circle's span (about 450 cells), allocating nothing; a state at the same
+   * point as the last scans nothing. True where any cell was newly charted.
    */
   chartAround(p: Point): boolean {
     const { cell, radius } = FIELD_CHART;
-    const here = Math.floor(p.y / cell) * this.cols + Math.floor(p.x / cell);
-    if (here === this.lastCell) return false;
-    this.lastCell = here;
+    if (p.x === this.lastX && p.y === this.lastY) return false;
+    this.lastX = p.x;
+    this.lastY = p.y;
     let added = false;
     const top = Math.max(0, Math.ceil((p.y - radius) / cell - 0.5));
     const bottom = Math.min(this.rows - 1, Math.floor((p.y + radius) / cell - 0.5));
