@@ -2,7 +2,7 @@
 id: I-3EBCA-3
 status: open
 implements: FS-3EBCA
-blocked_by: [I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6]
+blocked_by: [I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6, I-3EBCA-7]
 labels: [blocked]
 title: "FS-3EBCA slice 3: Nick's browser check of the corner icons and the panel controls (HITL)"
 ---
@@ -35,11 +35,15 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
 - The letter panel closes on a second press of the envelope.
 - The party panel: × at its top right, Esc closes it, centred near the top; with a party of 2–4
   it does not hide too much of you; prompts and the ready check beside it, not under it.
+- With the inventory, the character panel or both open, T and the Party icon open the party
+  panel over them in the town, a field and a run; it is drawn on top; the first Esc closes it,
+  the second the overlay; its invite field takes typing (I, C, B, T, E, Q type letters); a press
+  on it does nothing in the inventory or character panel underneath (FS-R82NV § Change C8).
 - A field: Esc with nothing open opens the menu; Change character takes you to the roster.
 - A run and a field: the ability card just above the icons; dead, Leave the barrow above them.
 - Look at: the left (character) panel is shortened too, to mirror the inventory; the right
-  panel's title now reads INVENTORY; Party and the envelope still refuse while either panel is
-  open (their owners' guards); with only the character panel open E talks to NPCs and opens doors
+  panel's title now reads INVENTORY; the envelope still refuses while either panel is open (its
+  owner's guard); with only the character panel open E talks to NPCs and opens doors
   and chests; in a run a prompt stepped beside the open party panel overlaps the minimap.
 
 ## Acceptance Criteria
@@ -48,7 +52,7 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
 
 ## Blocked By
 
-I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6
+I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6, I-3EBCA-7
 
 ## Spec Reference
 

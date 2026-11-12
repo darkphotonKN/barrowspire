@@ -30,7 +30,10 @@ FS-HRH2J § Change: Character and inventory apart; this FS takes the fifth icon,
 order and labels, and the row answering under the open overlay (R1–R3, R5, R7, R11, R12, edited
 in place on this work order). The same day: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框": the panels
 Menu, Inventory and Character open wear the party panel's frame (FS-G4VMQ § Change: The menu
-wears the party panel's frame; FS-HRH2J § Change C16).
+wears the party panel's frame; FS-HRH2J § Change C16). And, the same day: "開道具欄跟角色欄時開不了隊伍"
+(with the inventory or the character panel open, the party panel cannot be opened): T and the
+Party icon open the party panel over either or both, which it is drawn above (R8, R11; FS-R82NV
+§ Change C2, C8).
 
 Each requirement below is a **charter default** (the locked
 decisions, approved by the owner) or says **derived here** and why. Recorded without adversarial
@@ -131,10 +134,14 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
    its ESC menu is open. Opening either ends a Shadow Shot hold, as its key does. **(charter
    default; the two icons, owner 2026-11-12)**
 8. **Party** toggles the party panel as T does, under the scene's same `blocked` rule (in the
-   town: a dialogue, the ESC menu, the gear overlay or the letter panel; in a run: the ESC menu,
-   the run's end, the gear overlay or an open container; in a field: the ESC menu or the gear
-   overlay; "the gear overlay" being the inventory or the character panel, FS-HRH2J § Change C11). A text field holding focus does not stop a press: a press is not typing. **(charter
-   default; derived here: the T rule's text-focus clause exists so a typed T stays a letter)**
+   town: a dialogue, the ESC menu or the letter panel; in a run: the ESC menu, the run's end or an
+   open container; in a field: the ESC menu). The inventory and the character panel are not in
+   it: with either or both open, T and Party open and close the party panel, drawn above them
+   (FS-R82NV § Change C8), in every world. A text field holding focus does not stop a press: a
+   press is not typing. **(charter default; derived here: the T rule's text-focus clause exists so
+   a typed T stays a letter; the overlay taken out of the rule, owner 2026-11-12:
+   "開道具欄跟角色欄時開不了隊伍", replacing this requirement's first version, under which the open
+   inventory or character panel refused T and Party)**
 9. **Mail** in the town toggles the letter panel (FS-1GZGD § Change). **Outside the town, in a
    field and in a run alike, Mail is greyed**: its envelope lines and its dark seal in
    `palette.hudFaint`, no count, no brightening and no hand cursor under the pointer, and a press
@@ -145,11 +152,13 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
     starts a Shadow Shot hold, as a press on any other HUD piece. **(derived here)**
 11. **The row answers under the open overlay.** The inventory and the character panel stop above
     the row (FS-HRH2J § Change C12), so the row stays drawn and pressable while either is open,
-    each icon under its own rule: Menu does one Esc (which closes the overlay, R6), Inventory and
-    Character toggle their panels (R7); Party and Mail keep their owners' guard, which the open
-    overlay holds (R8, R9; FS-1GZGD). **(owner, 2026-11-12, as relayed: shorten the inventory "so
-    the row stays visible and clickable while it is open"; replaces this requirement's first
-    version, under which the panel covered the row and no icon answered)**
+    each icon under its own rule: Menu does one Esc (which closes the topmost, the party panel
+    before the overlay, R6), Inventory and Character toggle their panels (R7), Party opens and
+    closes the party panel over them (R8); Mail keeps its owner's guard, which the open overlay
+    holds (R9; FS-1GZGD). **(owner, 2026-11-12, as relayed: shorten the inventory "so the row
+    stays visible and clickable while it is open"; replaces this requirement's first version,
+    under which the panel covered the row and no icon answered; Party, owner 2026-11-12:
+    "開道具欄跟角色欄時開不了隊伍")**
 12. **The keys.** Esc, I and B, T and M keep their meaning; C, new, opens the character panel
     (FS-HRH2J § Change C2); Mail has no key. **(charter default; C, owner 2026-11-12)**
 
@@ -191,10 +200,10 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 - [ ] Under the pointer each icon shows "Menu (Esc)", "Inventory (I)", "Character (C)", "Party (T)", "Mailbox" or, greyed, "Mailbox · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
 - [ ] A press on Menu does what one Esc press does in the town, a field and a run (closes the one thing on top, else opens or closes the ESC menu).
 - [ ] A press on Inventory toggles the inventory and one on Character the character panel in every world, under the same guards as I and C there, and ends a Shadow Shot hold on opening.
-- [ ] A press on Party toggles the party panel in every world, refused while the scene's `blocked` holds, accepted while a text field has focus.
+- [ ] A press on Party toggles the party panel in every world, refused while the scene's `blocked` holds, accepted while a text field has focus; with the inventory, the character panel or both open it opens the party panel over them, as T does.
 - [ ] A press on the greyed Mail in a field or a run does nothing.
 - [ ] A press on an icon in a run or a field sends no attack, cast or hold.
-- [ ] While the inventory or the character panel is open the row stays drawn and answers: Inventory and Character close their panels on a second press, Menu does one Esc; Party and Mail keep their owners' guards.
+- [ ] While the inventory or the character panel is open the row stays drawn and answers: Inventory and Character close their panels on a second press, Menu does one Esc, Party toggles the party panel over them; Mail keeps its owner's guard.
 - [ ] Esc, I, B, T and M behave as before (Esc's new order and the field's menu are FS-R82NV's and FS-G4VMQ's changes); C toggles the character panel.
 - [ ] In a run and a field the ability card's bottom-right corner stands at (width − 16, 650); the dead spectator's leave button is centred at (width − 116, 631); neither overlaps the row; both follow a view-size change.
 - [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
@@ -208,7 +217,8 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 - **The letter panel open (town):** Menu closes it (one Esc); Mail closes it; Inventory, Character
   and Party open nothing.
 - **The inventory or the character panel open:** the row stays in view above them and answers
-  (R11); a press on Menu closes both panels, as one Esc does.
+  (R11); Party opens the party panel over them (R8); a press on Menu closes the party panel
+  first if it is open, else both panels, as one Esc does.
 - **The stash open (town):** Inventory closes the stash with the inventory, as I does; Character
   does nothing (FS-HRH2J § Change C9).
 - **The run has ended:** Menu only closes what is open; Party opens nothing; Inventory and
