@@ -165,7 +165,20 @@ import {
   type WallSheets,
 } from "@/render/world/walls";
 import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
-import { boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, anchorAt, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { WorldMinimap, minimapRect, type MinimapStage } from "@/ui/minimap";
+import {
+  browserMinimapStore,
+  nextMinimapMode,
+  readMinimapMode,
+  rememberMinimapMode,
+  type MinimapMode,
+  type MinimapModeStore,
+} from "@/ui/minimapMode";
+import { canvasImage } from "@/ui/paintKit";
+import { TOP_RIGHT_HUD } from "@/ui/topRightColumn";
+import { townMap } from "@/ui/townMap";
+import { partyOnMap } from "@/ui/worldMap";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
 
@@ -177,6 +190,8 @@ function easeToward(pos: Point, target: Point): void {
 
 const HUB_WIDTH = 2000;
 const HUB_HEIGHT = 1000;
+/** The town's size, as its minimap fits it (FS-P0HSP §B.5). */
+const HUB_SIZE = { width: HUB_WIDTH, height: HUB_HEIGHT } as const;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = HUB_CAMERA_MARGIN;
 /**
@@ -722,6 +737,19 @@ export class HubScene extends Phaser.Scene {
    * has one. While the panel is open it owns the keys, as the ESC menu does.
    */
   private mailbox?: MailboxHud;
+  /**
+   * The town's minimap at the top of the top-right column (FS-P0HSP): built with the first state
+   * that carries the town's walls, from the stage create wires; gone with the visit.
+   */
+  private townMinimap?: WorldMinimap;
+  /** What the town's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
+  private minimapStage?: MinimapStage;
+  /** How the town's minimap is shown (FS-P0HSP §F.32): the run's one remembered mode, read as the map is built; M steps it. */
+  private minimapMode: MinimapMode = "normal";
+  /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4). */
+  private readonly minimapStore: MinimapModeStore = browserMinimapStore;
+  /** The party members' entity ids in the last state: whose drawn figures the overlay's dots follow. */
+  private mapAllies: string[] = [];
   /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
   private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
@@ -862,6 +890,7 @@ export class HubScene extends Phaser.Scene {
       : undefined;
     if (!this.groundLayer) this.drawGround();
     this.bindInput();
+    this.bindMinimapKey();
     this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
@@ -910,6 +939,14 @@ export class HubScene extends Phaser.Scene {
     );
     this.watchGoldTakes();
 
+    // the town's minimap, built with the first state that carries the walls (FS-P0HSP §A.1); as
+    // the overlay, held against the screen from the main camera's frames (FS-1SEF0 §C.19)
+    this.minimapStage = {
+      graphics: () => this.add.graphics(),
+      canvasImage: (...image) => canvasImage(this, ...image),
+      frames: (listener) => afterFrameSetUp(this.cameras.main, listener),
+    };
+
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
@@ -935,6 +972,7 @@ export class HubScene extends Phaser.Scene {
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
+    this.placeTownMap();
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
@@ -1123,6 +1161,9 @@ export class HubScene extends Phaser.Scene {
     this.readyCheck = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
+    this.townMinimap?.destroy();
+    this.townMinimap = undefined;
+    this.minimapStage = undefined;
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
@@ -1182,6 +1223,7 @@ export class HubScene extends Phaser.Scene {
     this.offerGear();
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
+    this.followMapOverlay();
     this.offerConversation();
     this.updateBuildings();
     this.hideWhoIsElsewhere();
@@ -1998,6 +2040,7 @@ export class HubScene extends Phaser.Scene {
       present.add(other.entity_id);
     }
     this.partyFrames?.show(state);
+    this.showTownMap(state, gates);
 
     // anyone who left the hub since the last tick
     for (const [entityID, view] of this.views) {
@@ -2010,6 +2053,72 @@ export class HubScene extends Phaser.Scene {
     }
     // the town is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
     this.arrivalCard.built();
+  }
+
+  /**
+   * The town's minimap from this state (FS-P0HSP §A–§C, §E): built with the first state that
+   * carries the town's walls; its map and marks (this build's gates, the function NPCs, the stash)
+   * redrawn only when they change (a state without walls keeps what it shows), the party's dots on
+   * every state.
+   */
+  private showTownMap(state: ClientGameState, gates: readonly GateState[]): void {
+    const walls = state.walls ?? [];
+    if (!this.townMinimap) {
+      if (!this.minimapStage || walls.length === 0) return;
+      this.townMinimap = new WorldMinimap(this.minimapStage, HUB_SIZE, () => viewport.renderScale);
+      // the mode this browser kept, in a run or an earlier visit (FS-P0HSP §F.32)
+      this.minimapMode = readMinimapMode(this.minimapStore);
+      this.townMinimap.setMode(this.minimapMode);
+      this.placeTownMap();
+    }
+    if (walls.length > 0) this.townMinimap.show(townMap({ walls, gates, npcs: state.npcs ?? [] }, HUB_SIZE));
+    const members = usePartyStore.getState().party?.members.map((m) => m.player_id) ?? [];
+    this.townMinimap.party(partyOnMap(state, members));
+    this.mapAllies = (state.other_players ?? []).filter((p) => members.includes(p.id)).map((p) => p.entity_id);
+  }
+
+  /**
+   * M (FS-P0HSP §F.31, §F.33): the run's three modes on the town's minimap, kept in this browser on
+   * the run's one key. An event, never an added key: nothing is captured, so the letter types in
+   * any field. Not on a held key's repeat, while chat is typing, or while the menu, a dialogue card
+   * or the letter panel owns the keys; nothing before the map is built.
+   */
+  private bindMinimapKey(): void {
+    this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
+      if (event?.repeat || this.chatWindow?.isTyping()) return;
+      if (this.menu || this.dialogue || this.mailbox?.isOpen()) return;
+      const map = this.townMinimap;
+      if (!map) return;
+      this.minimapMode = nextMinimapMode(this.minimapMode);
+      rememberMinimapMode(this.minimapStore, this.minimapMode);
+      map.setMode(this.minimapMode);
+      this.placeTownMap();
+    });
+  }
+
+  /**
+   * The map overlay on the player (FS-P0HSP §F.31; FS-1SEF0 §C.14, §C.19): each frame, after the
+   * figures have eased, the player's drawn position and the party's drawn figures. A move of its
+   * layers, never a redraw; in a panel mode the minimap only notes these.
+   */
+  private followMapOverlay(): void {
+    const map = this.townMinimap;
+    const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
+    if (!map || !self) return;
+    const at = (p: Point) => ({ x: p.x, y: p.y });
+    const allies = this.mapAllies.flatMap((id) => {
+      const view = this.views.get(id);
+      return view ? [at(view.pos)] : [];
+    });
+    map.follow(at(self.pos), { self: at(self.pos), allies });
+  }
+
+  /** The town's minimap at the top of the top-right column, right-aligned on its x (FS-P0HSP §G.35). */
+  private placeTownMap(): void {
+    const panel = this.townMinimap?.panel;
+    if (!panel) return;
+    const corner = anchorAt(TOP_RIGHT_HUD);
+    this.townMinimap?.place(minimapRect(corner.x, corner.y, panel));
   }
 
   /**

@@ -8368,10 +8368,12 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         });
       });
 
-      it("should not exist in the hub or field scenes", () => {
+      // superseded in part by FS-P0HSP §A.1–§A.2 (2026-11-12): the town and the fields now have a
+      // minimap of their own plan, still no fog and never a dungeon floor's region map
+      it("should not exist in the hub or field scenes: no fog, no exploration, no floor's region minimap", () => {
         for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
           const source = readFileSync(join(__dirname, scene), "utf8");
-          expect(source).not.toMatch(/minimap/i);
+          expect(source).not.toMatch(/\bnew Minimap\(|\bFog\b|\bExploration\b/);
         }
       });
     });

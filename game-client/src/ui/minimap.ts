@@ -154,6 +154,40 @@ export function minimapRect(right: number, top: number, size: Pick<MinimapPanel,
   };
 }
 
+/** A world's size in world px: what the minimap fits to its panel. */
+export interface MinimapWorld {
+  width: number;
+  height: number;
+}
+
+/** A dungeon floor's size in world px. */
+const floorSize = (grid: RegionGrid): MinimapWorld => ({ width: grid.cols * grid.cell, height: grid.rows * grid.cell });
+
+/**
+ * The world's iso diamond fitted inside the panel's inset, centred (§E.21; FS-P0HSP §B.5): the
+ * scale it is drawn at, a multiple of the world's own projection, and a world point on the panel
+ * about its top-left.
+ */
+function fit(
+  world: MinimapWorld,
+  panel: Pick<MinimapPanel, "width" | "height" | "inset">,
+): { scale: number; project: (p: Point) => Point } {
+  const bounds = projectedBounds(world.width, world.height);
+  const k = Math.min(
+    (panel.width - panel.inset * 2) / bounds.width,
+    (panel.height - panel.inset * 2) / bounds.height,
+  );
+  const ox = (panel.width - bounds.width * k) / 2 - bounds.x * k;
+  const oy = (panel.height - bounds.height * k) / 2 - bounds.y * k;
+  return {
+    scale: k,
+    project: (p) => {
+      const s = worldToScreen(p.x, p.y);
+      return { x: ox + s.x * k, y: oy + s.y * k };
+    },
+  };
+}
+
 /**
  * A world point on the panel (§E.21), about its top-left: the whole floor's iso diamond, scaled to
  * fit inside the inset, centred. Floor 1's 72 × 48 cells project 2:1 and fill the height.
@@ -162,17 +196,7 @@ export function minimapProjection(
   grid: RegionGrid,
   panel: Pick<MinimapPanel, "width" | "height" | "inset"> = MINIMAP,
 ): (p: Point) => Point {
-  const bounds = projectedBounds(grid.cols * grid.cell, grid.rows * grid.cell);
-  const k = Math.min(
-    (panel.width - panel.inset * 2) / bounds.width,
-    (panel.height - panel.inset * 2) / bounds.height,
-  );
-  const ox = (panel.width - bounds.width * k) / 2 - bounds.x * k;
-  const oy = (panel.height - bounds.height * k) / 2 - bounds.y * k;
-  return (p) => {
-    const s = worldToScreen(p.x, p.y);
-    return { x: ox + s.x * k, y: oy + s.y * k };
-  };
+  return fit(floorSize(grid), panel).project;
 }
 
 /** A fixture the minimap marks once found (§E.22): where it stands. */
@@ -180,6 +204,42 @@ export interface MinimapFixture {
   kind: "switch" | "escape-door" | "stairs";
   at: Point;
 }
+
+/**
+ * A map mark's glyph (CONTEXT.md "Map mark"): the run's three fixtures, and the town's and the
+ * fields' (FS-P0HSP §C.14): a tower for the Spire's gate, a teleport mark for a gate to another
+ * area, a chest for the stash, a bag for the Quartermaster, a scroll for the Elder and a lozenge
+ * for any other function NPC, in that order where marks stand side by side (§C.19).
+ */
+export const WORLD_MARKS = ["tower", "teleport", "chest", "bag", "scroll", "lozenge"] as const;
+export type MapMarkKind = MinimapFixture["kind"] | (typeof WORLD_MARKS)[number];
+
+/** A map mark: its glyph and where it stands, world px. */
+export interface MinimapMark {
+  kind: MapMarkKind;
+  at: Point;
+}
+
+/**
+ * What a minimap draws, in world px (FS-P0HSP §A.4: one minimap, more plans): a dungeon floor's
+ * seen regions, or the town's or a field's plan. Its map and marks are redrawn only when `key`
+ * changes.
+ */
+export interface MinimapPicture {
+  key: string;
+  /** The ground, in the one fill: polygons. */
+  ground: readonly (readonly Point[])[];
+  /**
+   * Solid footprints in the walls' ink (FS-P0HSP §B.8, §B.10), as polygons at the projection
+   * scale the map is drawn at: a door's notch is as deep as reads on the map.
+   */
+  solids?: (scale: number) => readonly (readonly Point[])[];
+  /** The walls' line: runs of corner points. */
+  lines: readonly OutlineRun[];
+  marks: readonly MinimapMark[];
+}
+
+const NO_PICTURE: MinimapPicture = { key: "", ground: [], lines: [], marks: [] };
 
 /** What the map layer shows. */
 export interface MinimapContent {
@@ -367,13 +427,26 @@ interface PxRect {
 }
 
 /** Each glyph, a row per string (FS-56CKV §A.6): `#` inked, `o` the shape's own dark, in the ring's ink. */
-const GLYPH_ART: Record<MinimapFixture["kind"], readonly string[]> = {
+const GLYPH_ART: Record<MapMarkKind, readonly string[]> = {
   // a lever: a base, a pivot, a slanted handle with a knob at its end
   switch: [".....##", ".....##", "....#..", "...#...", "..###..", "#######", "#######"],
   // an arch over a dark doorway
   "escape-door": ["..###..", ".#####.", "##ooo##", "##ooo##", "##ooo##", "##ooo##", "##ooo##"],
   // a flight of three steps rising to the right
   stairs: [".....##", ".....##", "...####", "...####", ".######", ".######", "#######"],
+  // the town's and the fields' (FS-P0HSP §C.17), a starting draft for the owner's eye:
+  // a battlemented tower with a dark door
+  tower: ["#.#.#.#", "#######", ".#####.", ".##o##.", ".##o##.", ".#####.", "#######"],
+  // a ring round a dark swirl
+  teleport: ["..###..", ".#ooo#.", "#oo#oo#", "#o###o#", "#oo#oo#", ".#ooo#.", "..###.."],
+  // a chest: its lid, a dark band and the lock
+  chest: [".......", ".#####.", "#######", "#ooooo#", "###o###", "#######", "#######"],
+  // a sack tied at its neck
+  bag: ["..#.#..", "...#...", "..###..", ".#####.", "#######", "#######", ".#####."],
+  // a scroll rolled at both ends, lines written on it
+  scroll: ["#######", ".#ooo#.", ".#####.", ".#ooo#.", ".#####.", ".#ooo#.", "#######"],
+  // FS-MRZH7's sigil shape
+  lozenge: ["...#...", "..###..", ".#####.", "#######", ".#####.", "..###..", "...#..."],
 };
 
 /**
@@ -397,7 +470,7 @@ function glyphRects(art: readonly string[]): { ink: PxRect[]; ring: PxRect[] } {
 
 const GLYPHS = Object.fromEntries(
   Object.entries(GLYPH_ART).map(([kind, art]) => [kind, glyphRects(art)]),
-) as Record<MinimapFixture["kind"], ReturnType<typeof glyphRects>>;
+) as Record<MapMarkKind, ReturnType<typeof glyphRects>>;
 
 /**
  * A glyph's box at a scale, and from its seat px to the box's top-left and far side: the box's
@@ -411,21 +484,24 @@ function glyphBox(scale: number): { box: number; before: number; after: number }
 
 /**
  * How the layers draw in a mode: the panel they stand in (none for the overlay, which has no
- * backing, rim or bounds), the walls' line, the marks' scale, the fill's and line's alpha, and
- * where a world point falls about the layers' own origin.
+ * backing, rim or bounds), the walls' line, the marks' scale, the fill's and line's alpha, the
+ * scale the world's projection is drawn at, and where a world point falls about the layers' own
+ * origin.
  */
 interface Drawing {
   panel: MinimapPanel | null;
   edge: number;
   marks: number;
   alpha: number;
+  scale: number;
   project: (p: Point) => Point;
 }
 
-function drawingFor(mode: MinimapMode, grid: RegionGrid): Drawing {
+function drawingFor(mode: MinimapMode, world: MinimapWorld): Drawing {
   if (mode !== "overlay") {
     const panel = minimapPanel(mode);
-    return { panel, edge: panel.edge, marks: panel.marks, alpha: 1, project: minimapProjection(grid, panel) };
+    const { scale, project } = fit(world, panel);
+    return { panel, edge: panel.edge, marks: panel.marks, alpha: 1, scale, project };
   }
   // the world's own projection, scaled about the world's origin; glyphs and dots at its own marks (§C.16)
   const k = MINIMAP_OVERLAY.scale;
@@ -434,6 +510,7 @@ function drawingFor(mode: MinimapMode, grid: RegionGrid): Drawing {
     edge: MINIMAP_OVERLAY.edge,
     marks: MINIMAP_OVERLAY.marks,
     alpha: MINIMAP_OVERLAY.alpha,
+    scale: k,
     project: (p) => {
       const s = worldToScreen(p.x, p.y);
       return { x: s.x * k, y: s.y * k };
@@ -455,6 +532,51 @@ function seat(m: Point, before: number, after: number, panel: MinimapPanel | nul
   return { x: clamp(m.x, panel.width), y: clamp(m.y, panel.height) };
 }
 
+/** Where marks stand side by side, 1 logical px apart (FS-P0HSP §C.19). */
+const MARK_GAP = 1;
+
+/**
+ * Seats moved so no two marks' boxes overlap (FS-P0HSP §C.19): marks whose `box`-wide boxes would
+ * overlap, and those overlapping them, are set side by side on one row, in {@link WORLD_MARKS}'
+ * order left to right, {@link MARK_GAP} apart, the row centred on the mean of their seats, on the
+ * grid of `perPx` px to a logical px and, in a panel, held inside the rim as a seat is.
+ */
+function spreadSeats(
+  marks: readonly MinimapMark[],
+  seats: readonly Point[],
+  box: number,
+  before: number,
+  after: number,
+  panel: MinimapPanel | null,
+  perPx: number,
+): Point[] {
+  const root = seats.map((_, i) => i);
+  const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
+  for (let i = 0; i < seats.length; i++)
+    for (let j = i + 1; j < seats.length; j++)
+      if (Math.abs(seats[i].x - seats[j].x) < box && Math.abs(seats[i].y - seats[j].y) < box) root[find(j)] = find(i);
+  const out = [...seats];
+  const order = (k: MapMarkKind) => (WORLD_MARKS as readonly string[]).indexOf(k);
+  const grid = (v: number) => Math.round(v * perPx) / perPx;
+  for (const r of new Set(seats.map((_, i) => find(i)))) {
+    const row = seats.map((_, i) => i).filter((i) => find(i) === r);
+    if (row.length < 2) continue;
+    row.sort((a, b) => order(marks[a].kind) - order(marks[b].kind) || a - b);
+    const step = box + MARK_GAP;
+    const mean = (of: (p: Point) => number) => row.reduce((sum, i) => sum + of(seats[i]), 0) / row.length;
+    let x0 = grid(mean((p) => p.x) - ((row.length - 1) * step) / 2);
+    let y = grid(mean((p) => p.y));
+    if (panel) {
+      const inside = rimInside(panel);
+      const [lo, hi] = [Math.ceil(inside + before), Math.floor(panel.width - inside - after)];
+      x0 = Math.max(lo, Math.min(x0, hi - (row.length - 1) * step));
+      y = Math.min(Math.max(y, Math.ceil(inside + before)), Math.floor(panel.height - inside - after));
+    }
+    row.forEach((i, n) => (out[i] = { x: x0 + n * step, y }));
+  }
+  return out;
+}
+
 /** What the map layer draws: the seen regions, either state alike (FS-56CKV §A.4), and the fixtures found. */
 const contentKey = (c: MinimapContent) =>
   [
@@ -462,7 +584,34 @@ const contentKey = (c: MinimapContent) =>
     c.fixtures.map((f) => `${f.kind}@${f.at.x},${f.at.y}`).join(","),
   ].join("|");
 
-export class Minimap {
+/**
+ * A dungeon floor's picture (§E.22, FS-56CKV §A.4, §A.5): each seen region's cell rects as the
+ * ground, the walls' outline round them, and the fixtures found, all in world px.
+ */
+function floorPicture(grid: RegionGrid, content: MinimapContent): MinimapPicture {
+  const c = grid.cell;
+  const world = (p: Point): Point => ({ x: p.x * c, y: p.y * c });
+  return {
+    key: contentKey(content),
+    // each cell rect's footprint: projected, a parallelogram, as the floor lies on screen
+    ground: content.regions.flatMap((r) =>
+      r.cells.map(({ x, y, w, h }) => [
+        world({ x, y }),
+        world({ x: x + w, y }),
+        world({ x: x + w, y: y + h }),
+        world({ x, y: y + h }),
+      ]),
+    ),
+    lines: regionOutline(grid, content.regions).map(({ points, closed }) => ({ closed, points: points.map(world) })),
+    marks: content.fixtures,
+  };
+}
+
+/**
+ * The minimap's look, modes and layers (FS-56CKV §A, FS-1SEF0), whatever plan it draws: a dungeon
+ * floor's ({@link Minimap}) or a world's ({@link WorldMinimap}, FS-P0HSP §A.4).
+ */
+abstract class MinimapView {
   /** Times the map layer was drawn (§E.23); the marks are drawn with it. */
   redraws = 0;
   /** Times the dot layer was drawn. */
@@ -473,7 +622,8 @@ export class Minimap {
   private readonly marks: MinimapGraphics;
   private readonly dots: MinimapGraphics;
   private drawing: Drawing;
-  private shownContent: MinimapContent = { regions: [], fixtures: [] };
+  /** What the map and marks show now. */
+  private shownPicture: MinimapPicture;
   /** The party's places from the last broadcast: the panel modes' dots. */
   private shownParty?: MinimapParty;
   /** Where the party's figures were last drawn, given with the focus: the overlay's dots. */
@@ -493,13 +643,17 @@ export class Minimap {
 
   /**
    * `renderScale` reads the backing px per logical px now (`viewport.renderScale`), the grid the
-   * overlay stands on, as every figure is drawn on it (ADR-0057).
+   * overlay stands on, as every figure is drawn on it (ADR-0057). `spread` sets marks that would
+   * overlap side by side (FS-P0HSP §C.19).
    */
-  constructor(
+  protected constructor(
     stage: MinimapStage,
-    private readonly grid: RegionGrid,
-    private readonly renderScale: () => number = () => 1,
+    private readonly world: MinimapWorld,
+    private readonly renderScale: () => number,
+    initial: MinimapPicture,
+    private readonly spread: boolean,
   ) {
+    this.shownPicture = initial;
     // made bottom to top: one depth draws in the order its objects were made (FS-56CKV §A.3)
     this.map = stage.graphics();
     const vignette = (mode: "normal" | "enlarged") => {
@@ -511,17 +665,12 @@ export class Minimap {
     this.vignettes.enlarged.setVisible(false);
     this.marks = stage.graphics();
     this.dots = stage.graphics();
-    this.drawing = drawingFor("normal", grid);
+    this.drawing = drawingFor("normal", world);
     for (const layer of this.layers()) {
       layer.setScrollFactor(0);
       layer.setDepth(MINIMAP.depth);
     }
     this.unhear = stage.frames?.((scroll) => this.hold(scroll)) ?? (() => {});
-  }
-
-  /** What the map layer shows now, each seen region with its state, though both are drawn alike. */
-  get content(): MinimapContent {
-    return this.shownContent;
   }
 
   /** How it is shown (FS-1SEF0 §A): M steps it through normal, enlarged and the overlay. */
@@ -533,6 +682,11 @@ export class Minimap {
   get panel(): { width: number; height: number } | null {
     const { panel } = this.drawing;
     return panel && { width: panel.width, height: panel.height };
+  }
+
+  /** The key of what the map and marks were last drawn showing. */
+  protected get drawnKey(): string | undefined {
+    return this.drawn;
   }
 
   /** Stands every layer at the panel's top-left (§E.20); nothing is redrawn. The overlay is stood by {@link follow}. */
@@ -563,7 +717,7 @@ export class Minimap {
     const stand = (v: number) => (Math.round(v * r) - Math.round(v * k * r)) / r;
     this.stood = { x: stand(s.x), y: stand(s.y) };
     // a re-fit to another render scale: the glyphs onto the new backing grid, once
-    if (r !== this.marksPerPx) this.drawMarks(this.shownContent.fixtures);
+    if (r !== this.marksPerPx) this.drawMarks(this.shownPicture.marks);
     for (const layer of this.drawnLayers()) layer.setPosition(this.stood.x, this.stood.y);
     if (drawn) this.drawDots(drawn);
   }
@@ -594,15 +748,13 @@ export class Minimap {
     return this.renderScale() || 1;
   }
 
-  /** The party's exploration and the floor's fixtures now; the map is redrawn only if what it shows changed. */
-  show(state: (region: number) => ExplorationState, fixtures: readonly MinimapFixture[]): void {
-    const content = minimapContent(this.grid, state, fixtures);
-    this.shownContent = content;
-    const key = contentKey(content);
-    if (key === this.drawn) return;
-    this.drawn = key;
-    this.drawMap(content);
-    this.drawMarks(content.fixtures);
+  /** `picture` from now; the map and marks are redrawn only if what they show changed. */
+  protected showPicture(picture: MinimapPicture): void {
+    if (picture.key === this.drawn) return;
+    this.shownPicture = picture;
+    this.drawn = picture.key;
+    this.drawMap(picture);
+    this.drawMarks(picture.marks);
   }
 
   /**
@@ -652,7 +804,7 @@ export class Minimap {
   setMode(mode: MinimapMode): void {
     if (mode === this.shownMode) return;
     this.shownMode = mode;
-    this.drawing = drawingFor(mode, this.grid);
+    this.drawing = drawingFor(mode, this.world);
     this.vignettes.normal.setVisible(mode === "normal");
     this.vignettes.enlarged.setVisible(mode === "enlarged");
     const overlay = mode === "overlay";
@@ -683,22 +835,23 @@ export class Minimap {
 
   /** Every drawn layer again, as it shows now, at the look in force. */
   private redraw(): void {
-    this.drawn = contentKey(this.shownContent);
-    this.drawMap(this.shownContent);
-    this.drawMarks(this.shownContent.fixtures);
+    this.drawn = this.shownPicture.key;
+    this.drawMap(this.shownPicture);
+    this.drawMarks(this.shownPicture.marks);
     this.dotsDrawn = undefined;
     const party = this.partyShown;
     if (party) this.drawDots(party);
   }
 
   /**
-   * The panel, the seen regions' one fill, then the walls' outline (FS-56CKV §A.1, §A.4, §A.5); the
-   * overlay has no panel, and its fill and line are see-through (FS-1SEF0 §C.13, §C.16).
+   * The panel, the ground's one fill, the solid footprints, then the walls' outline (FS-56CKV
+   * §A.1, §A.4, §A.5; FS-P0HSP §B.13); the overlay has no panel, and its fills and line are
+   * see-through (FS-1SEF0 §C.13, §C.16).
    */
-  private drawMap(content: MinimapContent): void {
+  private drawMap(picture: MinimapPicture): void {
     this.redraws++;
     const g = this.map;
-    const { panel, edge, alpha, project } = this.drawing;
+    const { panel, edge, alpha, scale, project } = this.drawing;
     g.clear();
     if (panel) {
       g.fillStyle(palette.hudPanel, PANEL.alpha);
@@ -707,35 +860,27 @@ export class Minimap {
       g.strokeRect(0, 0, panel.width, panel.height);
     }
 
-    const c = this.grid.cell;
-    const cellPoint = (p: Point) => project({ x: p.x * c, y: p.y * c });
     // every seen region alike, explored or visible: the one the party stands in is not lit up
-    if (content.regions.length > 0) g.fillStyle(palette.minimapExplored, alpha);
-    // each cell rect's footprint, projected: a parallelogram, as the floor lies on screen
-    for (const r of content.regions)
-      for (const { x, y, w, h } of r.cells)
-        g.fillPoints(
-          [
-            cellPoint({ x, y }),
-            cellPoint({ x: x + w, y }),
-            cellPoint({ x: x + w, y: y + h }),
-            cellPoint({ x, y: y + h }),
-          ],
-          true,
-        );
+    if (picture.ground.length > 0) g.fillStyle(palette.minimapExplored, alpha);
+    for (const polygon of picture.ground) g.fillPoints(polygon.map(project), true);
 
-    // one line along the seen regions' walls (FS-56CKV §A.5): a loop closed so no corner is left
-    // open, a run that stops at a gap left open
-    const runs = regionOutline(this.grid, content.regions);
+    // what cannot be walked through, a mass where it is a building, in the walls' own ink (FS-P0HSP §B.8)
+    const solids = picture.solids?.(scale) ?? [];
+    if (solids.length > 0) g.fillStyle(palette.minimapEdge, alpha);
+    for (const polygon of solids) g.fillPoints(polygon.map(project), true);
+
+    // one line along the walls (FS-56CKV §A.5): a loop closed so no corner is left open, a run
+    // that stops at a gap left open
+    const runs = picture.lines;
     if (runs.length === 0) return;
     g.lineStyle(edge, palette.minimapEdge, alpha);
     g.beginPath();
     for (const { points, closed } of runs) {
       const [first, ...rest] = points;
-      const a = cellPoint(first);
+      const a = project(first);
       g.moveTo(a.x, a.y);
       for (const q of rest) {
-        const b = cellPoint(q);
+        const b = project(q);
         g.lineTo(b.x, b.y);
       }
       if (closed) g.closePath();
@@ -744,22 +889,25 @@ export class Minimap {
   }
 
   /**
-   * Each found fixture's glyph, its ring first and its ink over it (FS-56CKV §A.6). At a larger
-   * scale each of the glyph's px is the whole-px span its edges round to (FS-1SEF0 §B.9): nearest
-   * neighbour, every edge on a whole logical px; on the overlay, on a whole backing px at the
-   * render scale of now, the grid it stands on (§C.16).
+   * Each mark's glyph, its ring first and its ink over it (FS-56CKV §A.6). At a larger scale each
+   * of the glyph's px is the whole-px span its edges round to (FS-1SEF0 §B.9): nearest neighbour,
+   * every edge on a whole logical px; on the overlay, on a whole backing px at the render scale of
+   * now, the grid it stands on (§C.16). Where the minimap spreads its marks, those that would
+   * overlap stand side by side (FS-P0HSP §C.19).
    */
-  private drawMarks(fixtures: readonly MinimapFixture[]): void {
+  private drawMarks(marks: readonly MinimapMark[]): void {
     const g = this.marks;
     const { marks: k, project, panel } = this.drawing;
     const r = panel ? 1 : this.perPx();
     this.marksPerPx = r;
     // the glyph in grid px: logical in a panel, backing on the overlay
     const q = k * r;
-    const { before, after } = glyphBox(q);
+    const { box, before, after } = glyphBox(q);
+    const seated = marks.map((f) => seat(project(f.at), before / r, after / r, panel, r));
+    const seats = this.spread ? spreadSeats(marks, seated, box / r, before / r, after / r, panel, r) : seated;
     g.clear();
-    for (const f of fixtures) {
-      const p = seat(project(f.at), before / r, after / r, panel, r);
+    marks.forEach((f, i) => {
+      const p = seats[i];
       const ox = p.x - before / r;
       const oy = p.y - before / r;
       // a rect in the glyph's own px, the ink a ring's width in from the box's corner
@@ -774,7 +922,7 @@ export class Minimap {
       ring.forEach(fill);
       g.fillStyle(palette.interactable, 1);
       ink.forEach(fill);
-    }
+    });
   }
 
   private dot(p: Point, radius: number, colour: number): void {
@@ -783,5 +931,50 @@ export class Minimap {
     this.dots.fillCircle(p.x, p.y, (radius + DOT.outline) * k);
     this.dots.fillStyle(colour, 1);
     this.dots.fillCircle(p.x, p.y, radius * k);
+  }
+}
+
+/** A dungeon floor's minimap (FS-SRA9J §E): the regions the party has seen, and the fixtures in them. */
+export class Minimap extends MinimapView {
+  private shownContent: MinimapContent = { regions: [], fixtures: [] };
+
+  /**
+   * `renderScale` reads the backing px per logical px now (`viewport.renderScale`), the grid the
+   * overlay stands on, as every figure is drawn on it (ADR-0057).
+   */
+  constructor(
+    stage: MinimapStage,
+    private readonly grid: RegionGrid,
+    renderScale: () => number = () => 1,
+  ) {
+    super(stage, floorSize(grid), renderScale, floorPicture(grid, { regions: [], fixtures: [] }), false);
+  }
+
+  /** What the map layer shows now, each seen region with its state, though both are drawn alike. */
+  get content(): MinimapContent {
+    return this.shownContent;
+  }
+
+  /** The party's exploration and the floor's fixtures now; the map is redrawn only if what it shows changed. */
+  show(state: (region: number) => ExplorationState, fixtures: readonly MinimapFixture[]): void {
+    const content = minimapContent(this.grid, state, fixtures);
+    this.shownContent = content;
+    if (contentKey(content) === this.drawnKey) return;
+    this.showPicture(floorPicture(this.grid, content));
+  }
+}
+
+/**
+ * The town's and a field's minimap (FS-P0HSP §A.4): the run's look, modes and dots, drawing the
+ * world's plan; marks that would overlap stand side by side (§C.19).
+ */
+export class WorldMinimap extends MinimapView {
+  constructor(stage: MinimapStage, world: MinimapWorld, renderScale: () => number = () => 1) {
+    super(stage, world, renderScale, NO_PICTURE, true);
+  }
+
+  /** The plan now; the map and marks are redrawn only if its key changed. */
+  show(picture: MinimapPicture): void {
+    this.showPicture(picture);
   }
 }

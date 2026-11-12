@@ -419,13 +419,27 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   stands in it now: drawn in full). Its edges are feathered and a change of state eases in. Shared by the party, reset on reconnect and
   on a floor change. Presentation only, never a visibility rule: the server sends what interest
   allows (ADR-0060). On a dungeon floor it takes the place of the indoor blackout.
-- **Minimap**: the top-right HUD map of a dungeon floor: explored regions, the party, and the
-  switch, escape door and stairs once their region is explored. M steps it through its modes,
-  normal, enlarged and the map overlay, and the browser remembers the mode (FS-1SEF0); nothing
-  hides it. Not on floors without regions.
+- **Minimap**: the top-right HUD map of the world the player stands in. On a dungeon floor:
+  explored regions, the party, and the switch, escape door and stairs once their region is
+  explored; not on floors without regions. In the **town** (FS-P0HSP): the whole town from the
+  first moment, its buildings solid with their doors open, its edge open at each road, its **map
+  marks**. In a **field world**: its **charted ground** only. Everywhere the party's dots, never a
+  monster, another player or a label. M steps it through its modes, normal, enlarged and the map
+  overlay, and the browser remembers the mode, one for every world (FS-1SEF0, FS-P0HSP); nothing
+  hides it.
 - **Map overlay** (FS-1SEF0): the minimap's third mode, the floor's map drawn see-through over the
   whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
   map while it is up.
+- **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
+  can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
+  Spire gate), a teleport mark (a gate to another area), the stash chest, a bag (the
+  Quartermaster) and a scroll (the Elder); in a field the teleport mark of its road home. Never a
+  label, a monster or another player. Once FS-P0HSP ships the town and every field have a minimap.
+- **Charted ground** (FS-P0HSP): the part of a field the character has walked near, which that
+  field's minimap shows; the rest is **uncharted** and shown as nothing. Charting is the field's
+  minimap fog: on the minimap only, never on the screen, the character's own (not the party's),
+  kept in this browser per character and field (ADR-0078). Not **fog of war**, which veils a dungeon floor
+  in the world and is the party's (explored / unexplored are that one's words).
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether

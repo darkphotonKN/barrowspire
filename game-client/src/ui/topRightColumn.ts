@@ -2,11 +2,25 @@
  * The run's top-right column, its pure half (FS-56CKV §B): from the column's corner
  * (`anchorAt(TOP_RIGHT_HUD)`, under the fullscreen button), the minimap first when one is shown,
  * then the floor indicator, then the escaped count, each right-aligned on the corner's x. Where a
- * part is not shown the parts under it close up. The scene places what this returns.
+ * part is not shown the parts under it close up. The scene places what this returns. The town and
+ * the fields stand their minimap at the same corner (FS-P0HSP §G.35).
  */
 
 import type { Point, Rect } from "@/render/iso/projection";
+import type { Placement } from "@/render/viewport/anchor";
+import { FULLSCREEN_BUTTON_CLEARANCE } from "@/render/viewport/fullscreenButton";
 import { MINIMAP, minimapRect, type MinimapPanel } from "./minimap";
+
+/**
+ * The top-right column's corner (FS-ZAJMH R12; its order FS-56CKV §B, `topRightColumn`), stepped down
+ * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05). The run's,
+ * the town's and the fields' (FS-P0HSP §G.35).
+ */
+export const TOP_RIGHT_HUD: Placement = {
+  anchor: "top-right",
+  dx: -10,
+  dy: 10 + FULLSCREEN_BUTTON_CLEARANCE,
+};
 
 /** The floor indicator's and the escaped count's type and padding, and the gap between them (§B.9, §B.10). */
 export const TOP_RIGHT_LINE = { fontSize: "12px", padding: { x: 8, y: 3 }, gap: 4 } as const;

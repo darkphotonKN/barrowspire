@@ -4032,3 +4032,380 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
     expect(Object.keys(them)).not.toContain("wireFacing");
   });
 });
+
+const { MINIMAP: TOWN_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
+const { TOP_RIGHT_HUD } = await import("@/ui/topRightColumn");
+const { anchorAt } = await import("@/render/viewport");
+
+// FS-P0HSP §A, §B, §E, §G (I-P0HSP-1): the town's minimap at the top of the top-right column.
+describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
+  /** A Graphics or image as the minimap's stage makes it: where it stands, and what it drew. */
+  function layer() {
+    const calls: { name: string; args: unknown[] }[] = [];
+    const l = { calls, x: 0, y: 0, depth: 0, visible: true, destroyed: false };
+    const record = (name: string) => (...args: unknown[]) => (calls.push({ name, args }), l);
+    return Object.assign(l, {
+      clear: record("clear"),
+      fillStyle: record("fillStyle"),
+      fillRect: record("fillRect"),
+      fillPoints: record("fillPoints"),
+      fillCircle: record("fillCircle"),
+      lineStyle: record("lineStyle"),
+      strokeRect: record("strokeRect"),
+      beginPath: record("beginPath"),
+      moveTo: record("moveTo"),
+      lineTo: record("lineTo"),
+      closePath: record("closePath"),
+      strokePath: record("strokePath"),
+      setPosition: (x: number, y: number) => ((l.x = x), (l.y = y), l),
+      setDepth: (d: number) => ((l.depth = d), l),
+      setScrollFactor: () => l,
+      setVisible: (v: boolean) => ((l.visible = v), l),
+      destroy: () => void (l.destroyed = true),
+    });
+  }
+  /** The town's walls as hub_map.go walls them, each with its house's id. */
+  const TOWN_WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, width, height], j) => ({
+      entity_id: `house-${i}-wall-${j}`,
+      house_id: `house-${i}`,
+      position: { x, y },
+      width,
+      height,
+    })),
+  );
+
+  type MapHub = MenuHub & Record<string, unknown> & { relayoutHud(): void };
+
+  /** A hub whose states are rendered whole, its minimap's stage at hand, as create wires it. */
+  function townWithMap() {
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MapHub;
+    const layers: ReturnType<typeof layer>[] = [];
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+      minimapStage: {
+        graphics: () => {
+          const l = layer();
+          layers.push(l);
+          return l;
+        },
+        canvasImage: () => {
+          const l = layer();
+          layers.push(l);
+          return l;
+        },
+      },
+    });
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const render = (
+      position = AWAY,
+      others: { id: string; entity_id: string; position: { x: number; y: number } }[] = [],
+      walls: unknown[] = TOWN_WALLS,
+      npcs: unknown[] = [],
+    ) =>
+      hub.renderState({
+        world_type: "hub",
+        current_player: { id: "self", entity_id: "me", position },
+        other_players: others,
+        walls,
+        gates: HUB_GATES,
+        npcs,
+      });
+    const map = () => hub.townMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    /** The dot layer, the last made. */
+    const dots = () => layers[layers.length - 1];
+    return { ...stage, hub, layers, render, map, dots };
+  }
+
+  beforeEach(() => {
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    useAuthStore.setState({ memberInfo: { id: "self" } as never });
+  });
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    useAuthStore.setState({ memberInfo: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should build no map before a state carries the town's walls, then one with the first that does", () => {
+    const { render, map, layers } = townWithMap();
+    render(AWAY, [], []);
+    expect(map()).toBeUndefined();
+    expect(layers).toHaveLength(0);
+    render();
+    expect(map()).toBeInstanceOf(WorldMinimap);
+    render();
+    // one minimap: map, two vignettes, marks, dots
+    expect(layers).toHaveLength(5);
+  });
+
+  it.each([1080, 1280])("should stand at the column's top at logical width %i: right edge on TOP_RIGHT_HUD's x, top at y 44 (§G.35)", (width) => {
+    viewport.set({ width, height: 720, renderScale: 1 });
+    const { render, layers } = townWithMap();
+    render();
+    const corner = anchorAt(TOP_RIGHT_HUD);
+    expect(corner).toEqual({ x: width - 10, y: 44 });
+    for (const l of layers) expect({ x: l.x, y: l.y }).toEqual({ x: corner.x - TOWN_MINIMAP.width, y: 44 });
+  });
+
+  it("should follow its corner when the view changes (§G.35)", () => {
+    const { hub, render, layers } = townWithMap();
+    render();
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    hub.relayoutHud();
+    for (const l of layers) expect(l.x).toBe(1270 - TOWN_MINIMAP.width);
+  });
+
+  it("should redraw the map on a change of the town only, never as the player walks (§A.4)", () => {
+    const { render, map } = townWithMap();
+    render({ x: 1000, y: 500 });
+    render({ x: 1010, y: 500 });
+    render({ x: 1200, y: 600 });
+    expect(map()!.redraws).toBe(1);
+    expect(map()!.dotRedraws).toBe(3);
+    // a building's walls arriving late (never in practice): once more
+    render({ x: 1200, y: 600 }, [], TOWN_WALLS.slice(0, 5));
+    expect(map()!.redraws).toBe(2);
+  });
+
+  // FS-P0HSP §C (I-P0HSP-2): the marks from the state's gates and function NPCs, redrawn only on a change
+  it("should mark the gates, the stash, the Quartermaster and the Elder, and redraw them only when they change (§C.14, §C.20)", () => {
+    const { render, map, layers } = townWithMap();
+    const resident = (x: number) => ({ entity_id: "r1", name: "Resident", function: "", position: { x, y: 700 } });
+    const NPCS = [
+      { entity_id: "elder", name: "Elder", function: "storyteller", position: { x: 1140, y: 680 } },
+      { entity_id: "qm", name: "Quartermaster", function: "storekeeper", position: { x: 1280, y: 270 } },
+    ];
+    render(AWAY, [], TOWN_WALLS, [...NPCS, resident(600)]);
+    render({ x: 1010, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(640)]);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(680)]);
+    expect(map()!.redraws).toBe(1);
+    // the marks layer: one glyph a mark, each begun on its ring: tower, two teleports, chest, bag, scroll
+    const marks = layers[3].calls.filter((c) => c.name === "fillStyle" && c.args[0] === palette.markerStroke);
+    expect(marks).toHaveLength(6);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [NPCS[1], resident(680)]);
+    expect(map()!.redraws).toBe(2);
+  });
+
+  it("should dot the player and their party, no one else (§E.29, §E.30)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "hub" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "hub" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { render, dots } = townWithMap();
+    render(AWAY, [
+      { id: "wren", entity_id: "e-wren", position: { x: 400, y: 300 } },
+      { id: "stranger", entity_id: "e-stranger", position: { x: 1600, y: 800 } },
+    ]);
+    const radii = dots()
+      .calls.slice(dots().calls.map((c) => c.name).lastIndexOf("clear") + 1)
+      .filter((c) => c.name === "fillCircle")
+      .map((c) => c.args[2]);
+    // the ally's ring and dot, then the player's over it; the stranger draws nothing
+    expect(radii).toEqual([3, 2, 4, 3]);
+  });
+
+  it("should draw the player's dot alone with no party (§E.30)", () => {
+    const { render, dots } = townWithMap();
+    render(AWAY, [{ id: "stranger", entity_id: "e-stranger", position: { x: 1600, y: 800 } }]);
+    expect(dots().calls.filter((c) => c.name === "fillCircle").map((c) => c.args[2])).toEqual([4, 3]);
+  });
+
+  it("should go with the visit (§A.4)", () => {
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const { hub, render, layers, map } = townWithMap();
+    render();
+    hub.release("destroy");
+    expect(layers.every((l) => l.destroyed)).toBe(true);
+    expect(map()).toBeUndefined();
+  });
+
+  // §G.37: the map clear of the fullscreen button, the queue line, the arrival card, the party
+  // panel and the XP bar, and of a notice up to 628 px wide at 1080 (828 at 1280)
+  it.each([
+    [1080, 628],
+    [1280, 828],
+  ])("should keep clear of the HUD around it at logical width %i (§G.37)", (width, notice) => {
+    const corner = anchorAt(TOP_RIGHT_HUD, { width, height: 720 });
+    const left = corner.x - TOWN_MINIMAP.width;
+    // the fullscreen button's foot above the map's top
+    expect(corner.y).toBeGreaterThanOrEqual(26);
+    // a notice centred on the view, on y 72, ends at the map's left edge
+    expect(width / 2 + notice / 2).toBeLessThanOrEqual(left);
+    // the arrival card's widest line (x 360–720) and the party panel (x 280–580) left of the map
+    expect(720).toBeLessThan(left);
+  });
+});
+
+// FS-P0HSP §F, §G (I-P0HSP-3): M steps the town's minimap through the run's three modes.
+describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
+  function layer() {
+    const l = { x: 0, y: 0, depth: 0, visible: true, destroyed: false, scrollFactor: 0 };
+    const self: Record<string, unknown> = new Proxy(l as Record<string, unknown>, {
+      get: (t, key) => {
+        if (key in t) return t[key as string];
+        if (key === "setPosition") return (x: number, y: number) => ((l.x = x), (l.y = y), self);
+        if (key === "setDepth") return (d: number) => ((l.depth = d), self);
+        if (key === "setScrollFactor") return (f: number) => ((l.scrollFactor = f), self);
+        if (key === "setVisible") return (v: boolean) => ((l.visible = v), self);
+        if (key === "destroy") return () => void (l.destroyed = true);
+        return () => self;
+      },
+    });
+    return { l, self };
+  }
+  const WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
+    townOutline(b).map(([x, y, width, height], j) => ({
+      entity_id: `h${i}-${j}`,
+      house_id: `h${i}`,
+      position: { x, y },
+      width,
+      height,
+    })),
+  );
+
+  function townWithModes(held: string | null = null) {
+    const stage = hubOnStage();
+    const hub = stage.hub as unknown as MenuHub & Record<string, unknown> & { relayoutHud(): void };
+    const layers: ReturnType<typeof layer>["l"][] = [];
+    const make = () => {
+      const { l, self } = layer();
+      layers.push(l);
+      return self;
+    };
+    Object.assign(hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+      minimapStage: { graphics: make, canvasImage: make },
+    });
+    hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const store = { held, writes: [] as string[] };
+    hub.minimapStore = () => ({
+      getItem: () => store.held,
+      setItem: (_key: string, value: string) => void store.writes.push(value),
+      removeItem: () => {},
+    });
+    const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
+    hub.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    (hub as unknown as { bindMinimapKey(): void }).bindMinimapKey();
+    const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
+    const render = (others: unknown[] = []) =>
+      hub.renderState({
+        world_type: "hub",
+        current_player: { id: "self", entity_id: "me", position: AWAY },
+        other_players: others,
+        walls: WALLS,
+        gates: HUB_GATES,
+        npcs: [],
+      });
+    const map = () => hub.townMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    return { ...stage, hub, layers, store, pressM, render, map };
+  }
+
+  beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should step normal, enlarged, overlay and round again on M, keeping each in this browser (§F.31, §F.32)", () => {
+    const { pressM, render, map, store } = townWithModes();
+    render();
+    expect(map()!.mode).toBe("normal");
+    pressM();
+    expect(map()!.mode).toBe("enlarged");
+    pressM();
+    expect(map()!.mode).toBe("overlay");
+    pressM();
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+  });
+
+  it("should change nothing on M before the map is built (§F.33)", () => {
+    const { pressM, store, map } = townWithModes();
+    pressM();
+    expect(map()).toBeUndefined();
+    expect(store.writes).toEqual([]);
+  });
+
+  type Arrange = (hub: Record<string, unknown>) => void;
+  const GUARDS: [string, Arrange, Partial<KeyboardEvent>][] = [
+    ["a held key's repeat", () => {}, { repeat: true }],
+    ["chat typing", (hub) => void (hub.chatWindow = { isTyping: () => true }), {}],
+    ["the menu panel up", (hub) => void (hub.menu = {}), {}],
+    ["a dialogue card up", (hub) => void (hub.dialogue = {}), {}],
+    ["the letter panel open", (hub) => void (hub.mailbox = { isOpen: () => true }), {}],
+  ];
+  it.each(GUARDS)("should change nothing on M with %s (§F.33)", (_what, arrange, event) => {
+    const { hub, pressM, render, map, store } = townWithModes();
+    render();
+    arrange(hub as Record<string, unknown>);
+    pressM(event);
+    expect(map()!.mode).toBe("normal");
+    expect(store.writes).toEqual([]);
+  });
+
+  it("should build the map in the mode this browser kept, from a run or an earlier visit (§F.32)", () => {
+    const { render, map, layers } = townWithModes("enlarged");
+    render();
+    expect(map()!.mode).toBe("enlarged");
+    // the enlarged panel at the column's top, right-aligned
+    expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 44]);
+  });
+
+  it("should leave the corner empty as the overlay, and stand it about the player each frame (§F.31, §G.35)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "hub" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "hub" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { hub, pressM, render, map } = townWithModes("overlay");
+    render([{ id: "wren", entity_id: "e-wren", position: { x: 400, y: 300 } }]);
+    expect(map()!.panel).toBeNull();
+    const follow = vi.spyOn(map()!, "follow");
+    hub.selfEntityID = "me";
+    hub.views = new Map([
+      ["me", { pos: { x: 1010, y: 505 } }],
+      ["e-wren", { pos: { x: 410, y: 300 } }],
+    ]);
+    (hub as unknown as { followMapOverlay(): void }).followMapOverlay();
+    expect(follow).toHaveBeenCalledWith({ x: 1010, y: 505 }, { self: { x: 1010, y: 505 }, allies: [{ x: 410, y: 300 }] });
+    pressM();
+    expect(map()!.panel).toEqual({ width: 216, height: 108 });
+  });
+
+  it("should follow the overlay from update, after the figures are eased", () => {
+    const { hub } = townWithModes();
+    const order: string[] = [];
+    for (const step of ["offerMenu", "offerGear", "sendMovementIntent", "easeTowardServerPositions", "offerConversation", "updateBuildings", "hideWhoIsElsewhere", "showStashChest", "carryTheTorch", "followMapOverlay"])
+      hub[step] = () => void order.push(step);
+    hub.update(0, 16);
+    expect(order.indexOf("followMapOverlay")).toBeGreaterThan(order.indexOf("easeTowardServerPositions"));
+  });
+});
