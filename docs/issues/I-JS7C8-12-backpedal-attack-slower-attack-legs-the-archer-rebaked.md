@@ -88,3 +88,25 @@ user stories 5, 9, 19–21, 26. FS-2325V §Change: The archer's draw stays on th
   lasts the attack's 0.583 s and its legs step backward; the derived leg paces are at most 90 px/s
   (fails at today's one walk cycle, about 101).
 - GREEN: the clip, the specs, the cycle counts; then bake.
+
+## Bake record (2026-11-12, agent): stopped at the VRAM gate, atlas not committed
+
+| archer sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| main | 1 | 2924 × 3844 | 44.96 MB | 6,289,416 | 336 | 326 × 288 |
+| slice 5 (run + backpedal) | 1 | 3760 × 4008 | 60.28 MB | 8,466,924 | 464 | 326 × 288 |
+| this bake | 2 | 4088 × 4088 + 4088 × 1060 | 84.18 MB | 7,264,452 + 2,212,006 | 512 | 332 × 300 |
+
++87.2% RGBA against main (R39 estimated +47%; the coordinator's stop line was +55%), +39.6% against
+slice 5. The trimmed frames alone hold 67.67 MB (+58.7% against main's 42.64 MB): the 176 added
+frames cost about 0.33% each (attack-on-the-move frames are the widest), not R39's 0.27%, and the
+sheet no longer fits one 4096 page, so the second page adds the rest. The second page also makes
+the client's resident page list one longer (`sceneArt.test.ts`, `evict.test.ts`, the scene
+art-loading tests: 33 failures against the 17 resident pages they name). The atlas, manifest and
+the slice's code are left uncommitted in the worktree for the coordinator's call.
+
+Leg paces (pace.js on the archer's rig): walk_attack 0.75 walk cycles, about 76 px/s by WALK_PACE
+(82 by pace.js's walk at 79.7); backpedal_attack 1.25 cycles of the re-keyed backpedal legs (69 px/s
+at 18 fps, 30.7 px a cycle), about 66 px/s. The backpedal legs were re-keyed on the owner's word
+(2026-11-12, "後退像是在走路沒有後退的感覺"): see the clips.js `BACK_STEP` note; their shorter
+steps take 1.25 cycles rather than R10's 0.625 to stay near the ground's 90 px/s.

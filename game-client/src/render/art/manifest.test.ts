@@ -1190,12 +1190,12 @@ describe("the baked manifest (public/art/manifest.json)", () => {
 
     /**
      * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), every
-     * class's attack on the move (FS-HF0WW, FS-3V7GC), and a re-baked class's run and backpedal
-     * (FS-JS7C8 §A, §B: the archer first).
+     * class's attack on the move (FS-HF0WW, FS-3V7GC), and a re-baked class's run and its attack
+     * over the backpedal's legs (FS-JS7C8 §A, §B: the archer first; no standalone backpedal).
      */
     const OWN_CLIPS: Record<string, string[]> = {
       char_knight_base: ["walk_attack"],
-      char_archer_base: ["run", "backpedal", "walk_attack"],
+      char_archer_base: ["run", "walk_attack", "backpedal_attack"],
       char_wizard_base: ["walk_attack"],
       char_mercenary_base: ["parry", "walk_attack"],
     };
@@ -1262,17 +1262,28 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ]);
     });
 
-    it("gives the archer a run and a backpedal: 8 frames, looping, in the 8 facings, at its scale and trimmed (FS-JS7C8 R1, R8)", () => {
+    it("gives the archer a run: 8 frames, looping, in the 8 facings, at its scale and trimmed (FS-JS7C8 R1)", () => {
       const sheet = baked.sheets.char_archer_base;
       expect(sheet.scale).toBe(2);
       expect(sheet.trimmed).toBe(true);
-      for (const anim of ["run", "backpedal"]) {
-        const a = sheet.animations[anim];
-        expect(a, anim).toBeDefined();
-        expect(a.loop, anim).toBe(true);
-        expect(a.frames, anim).toHaveLength(8);
-        for (const dir of a.frames) expect(dir, anim).toHaveLength(8);
-      }
+      const a = sheet.animations.run;
+      expect(a).toBeDefined();
+      expect(a.loop).toBe(true);
+      expect(a.frames).toHaveLength(8);
+      for (const dir of a.frames) expect(dir).toHaveLength(8);
+    });
+
+    it("gives the archer backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", () => {
+      const sheet = baked.sheets.char_archer_base;
+      expect(sheet.animations).not.toHaveProperty("backpedal");
+      const a = sheet.animations.backpedal_attack;
+      const attack = sheet.animations.attack;
+      expect(a).toBeDefined();
+      expect(a.loop).toBe(false);
+      expect([a.frames[0].length, a.fps]).toEqual([14, 24]);
+      expect(a.frames[0].length / a.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
+      expect(a.frames).toHaveLength(8);
+      for (const dir of a.frames) expect(dir).toHaveLength(14);
     });
 
     it("loops idle and walk, and plays attack and death once", () => {

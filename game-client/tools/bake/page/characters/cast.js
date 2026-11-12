@@ -11,7 +11,8 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose, solveArm } from "./clips.js";
+import { ANIMATIONS, CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { drawGrip, solveDraw } from "./draw.js";
 import {
   arms,
   bareFeet,
@@ -42,7 +43,6 @@ import {
 import {
   cleaver,
   curvedSword,
-  gripAt,
   inHand,
   kiteShield,
   kneeCop,
@@ -152,7 +152,7 @@ export function archer() {
     walk: { arms: [0.7, 1], lean: 0.06 },
     // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
     // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-    // measured on
+    // measured on (`backpedal` scales the backpedal legs under backpedal_attack and for pace.js)
     run: { arms: [0.5, 1], elbow: [0.25, 1] },
     backpedal: { arms: [0.5, 1], elbow: [0.3, 1] },
   };
@@ -169,32 +169,14 @@ function bowInHand(rig, M, F) {
   const bow = longbow(rig, M, F);
   bowMount.add(bow.group);
 
-  // the string follows the right hand while drawing
+  // the string follows the right hand while drawing; the hand is solved onto the arrow line
+  // (draw.js)
   const handR = rig.bones.handR;
-  const gripR = gripAt(rig, "R");
-  const local = new THREE.Vector3(
-    gripR[0] * rig.H - rig.bind.handR.x,
-    gripR[1] * rig.H - rig.bind.handR.y,
-    gripR[2] * rig.H - rig.bind.handR.z,
-  );
+  const local = drawGrip(rig);
   const tmp = new THREE.Vector3();
   const inv = new THREE.Matrix4();
-  const drawLen = 0.36 * rig.H;
-  const gripBow = new THREE.Vector3(0, -0.012 * rig.H, 0);
-  const restNock = new THREE.Vector3(0, 0.075 * rig.H, 0);
   rig.hooks.push((r, p) => {
-    r.root.updateMatrixWorld(true);
-    const ik = p.fx.ik ?? 0;
-    if (ik > 0) {
-      // the draw hand travels back along the arrow line, from the string toward the jaw
-      const G = gripBow.clone().applyMatrix4(bow.group.matrixWorld);
-      const N = restNock.clone().applyMatrix4(bow.group.matrixWorld);
-      const dir = G.clone().sub(N).normalize();
-      const target = N.clone().addScaledVector(dir, -drawLen * ik);
-      const pole = target.clone().addScaledVector(dir, -0.3 * r.H).add(new THREE.Vector3(0, 0.12 * r.H, 0));
-      r.bones.handR.rotation.set(0, 0, 0);
-      solveArm(r, "R", target, pole, local);
-    }
+    solveDraw(r, bow.group, p, local);
     tmp.copy(local).applyMatrix4(handR.matrixWorld);
     inv.copy(bow.group.matrixWorld).invert();
     tmp.applyMatrix4(inv);
@@ -590,7 +572,8 @@ export const CAST = [
   // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
   // trimmed to its pixels (lib/trim.mjs)
   { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
-  // the archer runs and backpedals (FS-JS7C8: the first class re-baked, the owner's 2026-11-12 pick)
+  // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
+  // the first class re-baked, the owner's 2026-11-12 pick)
   { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },

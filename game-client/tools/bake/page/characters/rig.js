@@ -220,6 +220,12 @@ export function jointAt(rig, name) {
   return [b.x / rig.H, b.y / rig.H, b.z / rig.H];
 }
 
+/** Where a hand's grip sits in model space (bind pose), in H units: gear hangs from it (gear.js). */
+export function gripAt(rig, side) {
+  const [x, wy] = jointAt(rig, `hand${side}`);
+  return [x, wy - 0.036, 0.008];
+}
+
 /** A UV sphere scaled to radii (rx, ry, rz), for heads, hands and knobs. */
 export function ellipsoid(rx, ry, rz, seg = 16) {
   const g = new THREE.SphereGeometry(1, seg, Math.max(8, Math.round(seg * 0.7)));

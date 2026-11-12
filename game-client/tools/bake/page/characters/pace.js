@@ -1,7 +1,7 @@
 // How fast a looping clip carries the body (FS-JS7C8 R3, R10): the speed the planted foot slides
-// under it, measured on the rig rather than guessed, so the client's WALK_PACE, RUN_PACE and
-// BACKPEDAL_PACE (src/render/art/animationSelect.ts) are facts of the keys. Review and test
-// tooling: the bake itself never reads it.
+// under it, measured on the rig rather than guessed, so the client's WALK_PACE and RUN_PACE
+// (src/render/art/animationSelect.ts) and the backpedal legs' pace (clips.js BACKPEDAL_LEGS) are
+// facts of the keys. Review and test tooling: the bake itself never reads it.
 //
 // A foot is planted while its sole is on the ground (groundPose sets the lowest sole there; a
 // clip's flight lifts both off). While planted it should stay still in the world, so in the
@@ -35,9 +35,35 @@ function soleOf(bone) {
   return min;
 }
 
+const _inv = new THREE.Matrix4();
+const _l = new THREE.Vector3();
+
+/**
+ * How high a foot's toe and heel stand (model space y): the lowest point of the meshes riding the
+ * foot bone in front of the ankle by more than 0.06 H (the ball and toe) and behind it by more
+ * than 0.02 H (the heel), in the foot's own frame.
+ */
+function toeAndHeel(rig, bone) {
+  _inv.copy(bone.matrixWorld).invert();
+  let toe = Infinity;
+  let heel = Infinity;
+  bone.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh || o === bone) return;
+    const pos = o.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      _v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      _l.copy(_v).applyMatrix4(_inv);
+      if (_l.z > 0.06 * rig.H) toe = Math.min(toe, _v.y);
+      if (_l.z < -0.02 * rig.H) heel = Math.min(heel, _v.y);
+    }
+  });
+  return { toe, heel };
+}
+
 /**
  * Each foot's sole (its lowest point, model space) at fractional frame `f` of a looping clip,
- * posed and grounded as the bake poses it, and the head bone's world matrix.
+ * posed and grounded as the bake poses it, its toe and heel heights, and the head bone's world
+ * matrix.
  */
 export function footing(rig, frames, f) {
   applyPose(rig, sample(frames, f, true));
@@ -46,6 +72,8 @@ export function footing(rig, frames, f) {
   return {
     L: soleOf(rig.bones.footL),
     R: soleOf(rig.bones.footR),
+    toeHeelL: toeAndHeel(rig, rig.bones.footL),
+    toeHeelR: toeAndHeel(rig, rig.bones.footR),
     ankleL: ankle("L"),
     ankleR: ankle("R"),
     hips: new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld),
