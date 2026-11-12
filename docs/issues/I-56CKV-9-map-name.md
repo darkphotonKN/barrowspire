@@ -29,8 +29,8 @@ where they would meet. The dev readout moves under the column's last line in eve
 
 ## Acceptance Criteria
 
-- [ ] FS-56CKV §Change: Map name, every Acceptance Criterion but the browser check.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] FS-56CKV §Change: Map name, every Acceptance Criterion but the browser check.
+- [x] Typecheck, lint and the full vitest suite pass.
 - [ ] **Owner browser check (Nick):** a run's floor 1 and a climb, the town and a field, at 1080
       and 1280 wide, each mode: the name's words, its place (inside the map's top-right normal;
       left of the fullscreen button enlarged; left of the map mode icon in the overlay) and look;
@@ -51,3 +51,17 @@ FS-56CKV §Change: Map name, E1–E10.
   of the map mode icon and the button; the look and its contrast; give way to a frame; the
   readout under the column in every mode; each scene builds the name with its minimap.
 - GREEN: `minimapName.ts`, the corner's place, the scenes' wiring, the readout's place.
+
+## Status
+
+Code in, 2026-11-12; awaiting the owner's browser check (the one open box). `ui/minimapName.ts`
+(new: `MINIMAP_NAME`, `minimapPlaceName` = `placeCard(place).title`, `minimapNamePlace`,
+`minimapNameBox`, `MinimapName` with `giveWay`), `ui/topRightColumn.ts` (the corner hands the name's
+place), `ui/positionReadout.ts` (under the column always; takes no minimap), `ui/targetFrame.ts`
+(`shownRect`), `ui/worldMinimapController.ts` (`name`, `mapName`, `giveWay`),
+`scenes/BarrowspireScene.ts` (the floor's name with its minimap; gives way to the target frame),
+`scenes/HubScene.ts` (gives way to the queue line and its Leave button), `scenes/FieldScene.ts`.
+Layout at 1080: normal, the plate's top-right at (1066, 14); enlarged, its right edge 714, middle
+y 20; overlay, right edge 1033, middle y 16; at 1280 each x 200 more. Readout: 4 px under the
+escaped count (y 174 normal, 228 enlarged, 94 overlay/no map at 1080). Seen red first: 37 failing
+and the new module missing at the test commit. Suite 7486 passed; tsc and lint clean.
