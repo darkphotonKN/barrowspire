@@ -169,7 +169,7 @@ import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import { canvasImage } from "@/ui/paintKit";
-import { townMap } from "@/ui/townMap";
+import { TownPlan } from "@/ui/townMap";
 import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
@@ -734,6 +734,8 @@ export class HubScene extends Phaser.Scene {
    * that carries the town's walls, from the stage create wires; gone with the visit.
    */
   private minimap?: WorldMinimapController;
+  /** The town's map, built again only when its walls, gates or marked NPCs change (FS-P0HSP §C.20). */
+  private readonly townPlan = new TownPlan(HUB_SIZE);
   /** What the town's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
@@ -2052,7 +2054,7 @@ export class HubScene extends Phaser.Scene {
         renderScale: () => viewport.renderScale,
       });
     }
-    if (walls.length > 0) this.minimap.show(townMap({ walls, gates, npcs: state.npcs ?? [] }, HUB_SIZE));
+    if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
     this.minimap.party(state, usePartyStore.getState().party?.members.map((m) => m.player_id) ?? []);
   }
 
