@@ -8,6 +8,7 @@ import {
   RUN_ANIMATIONS,
   RUNNING_CLASS_ANIMATIONS,
   WALK_ATTACK_CYCLES,
+  applyPose,
   backpedalCycle,
   clipsFor,
   idleCycle,
@@ -18,8 +19,9 @@ import {
   walkCycle,
   withWalkAttack,
 } from "./clips.js";
-import { createRig, jointAt as J } from "./rig.js";
+import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
+import { drawGrip, solveDraw } from "./draw.js";
 import { GROUND_EPS, WORLD_PX_PER_UNIT, footing, measurePace } from "./pace.js";
 import { BACKPEDAL_PACE, RUN_PACE } from "../../../../src/render/art/animationSelect";
 
@@ -192,10 +194,135 @@ describe("the Bone Archer's shot (FS-B4SG9 §E R26)", () => {
     expect(arrow(keys[last])).toBe(false);
   });
 
+  it("keeps its own draw: no key moves the drawing elbow's pole, which only the delver's shot re-keys (FS-2325V § Change: The archer's draw stays on the aim line R7)", () => {
+    for (const p of keys) expect(p.fx.pole).toBeUndefined();
+  });
+
   it("is made by clipsFor for a style that asks for it", () => {
     const frames = clipsFor({ attack: "boneShot", hold: pose({}) }).attack;
     expect(frames).toHaveLength(ANIMATIONS.attack.frames);
     expect(frames.map((p) => p.fx)).toEqual(keys.map((p) => p.fx));
+  });
+});
+
+describe("the archer's draw stays on the aim line (FS-2325V § Change: The archer's draw stays on the aim line)", () => {
+  /**
+   * Where the drawing hand anchors, in the head bone's frame (H): by the jaw on the drawing side
+   * (the right, -x), a fist's width out from the cheek. The aim line runs from it along the
+   * facing (+z); the aim plane is the upright plane through it along the facing.
+   */
+  const ANCHOR = [-0.06, 0.005, 0.02];
+  /**
+   * Bands, in rig heights, model space (the model faces +z, its left is +x). Starting values, set
+   * from the measure of 2026-11-12 (I-2325V-8), where the delver's shot read: the bow hand 0.13
+   * to the left of the aim plane (0.18 as the bow came up); the full draw's hand 0.155 from the
+   * anchor; the drawing hand and forearm up to 0.08 across the centre plane onto the bow side;
+   * the elbow 0.08 on the bow side and 0.146 behind the chest, past its back (0.094 deep); the
+   * loose's hand 0.106 past the anchor, behind the head.
+   */
+  const BAND = {
+    /** the bow hand off the aim plane, either way */
+    bowOff: 0.03,
+    /** the bow hand at least this far ahead of the chest, along the facing */
+    bowAhead: 0.25,
+    /** the arrow line's sideways lean off the facing (|x| of its unit direction) */
+    arrowAcross: 0.05,
+    /** the drawing hand's distance from the arrow line */
+    onLine: 0.005,
+    /** at full draw, the drawing hand's distance from the anchor */
+    toAnchor: 0.04,
+    /** how far back past the anchor the hand may go (the loose opens off it, behind the jaw) */
+    pastAnchor: 0.06,
+    /** the drawing elbow's height against the drawing shoulder */
+    elbowRise: [-0.1, 0.1],
+    /** the drawing elbow no further behind the chest's centre than the back (its half depth) */
+    elbowBack: -0.094,
+  };
+
+  /** The archer's rig with the bow frame on the left hand's grip, where cast.js hangs the longbow. */
+  function archerBow() {
+    const rig = createRig(1.96, { shoulderW: 1.0, torsoW: 0.98 });
+    return { rig, bow: mount(rig, "handL", gripAt(rig, "L")) };
+  }
+
+  /** Poses `p` as the bake does (its hook solving the draw) and measures the draw (H, model space). */
+  function measureDraw({ rig, bow }, p) {
+    applyPose(rig, p);
+    const line = solveDraw(rig, bow, p);
+    rig.root.updateMatrixWorld(true);
+    const H = rig.H;
+    const at = (b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld).divideScalar(H);
+    const anchor = new THREE.Vector3(...ANCHOR).multiplyScalar(H).applyMatrix4(rig.bones.head.matrixWorld).divideScalar(H);
+    const bowHand = new THREE.Vector3().setFromMatrixPosition(bow.matrixWorld).divideScalar(H);
+    const hand = drawGrip(rig).applyMatrix4(rig.bones.handR.matrixWorld).divideScalar(H);
+    const [elbow, shoulder, neck, chest] = ["foreArmR", "upperArmR", "neck", "chest"].map(at);
+    const toChest = rig.bones.chest.getWorldQuaternion(new THREE.Quaternion()).invert();
+    // the drawing forearm, elbow to hand: its furthest point toward the bow side (+x) of the
+    // centre plane (the upright plane through the neck along the facing)
+    const cross = Math.max(...[0, 0.25, 0.5, 0.75, 1].map((t) => elbow.clone().lerp(hand, t).x - neck.x));
+    // the hand's distance from the arrow line (through the string's rest point, along `dir`)
+    const fromNock = line ? hand.clone().sub(line.nock.clone().divideScalar(H)) : null;
+    const onLine = line ? fromNock.addScaledVector(line.dir, -fromNock.dot(line.dir)).length() : 0;
+    return {
+      bowOff: bowHand.x - anchor.x,
+      bowAhead: bowHand.z - chest.z,
+      arrowAcross: line ? line.dir.x : 0,
+      onLine,
+      toAnchor: hand.distanceTo(anchor),
+      pastAnchor: anchor.z - hand.z,
+      cross,
+      elbowRise: elbow.y - shoulder.y,
+      elbowBack: elbow.clone().sub(chest).applyQuaternion(toChest).z,
+    };
+  }
+
+  /** Every band a frame of the shot's upper body must hold, by what the frame draws. */
+  function expectOnTheAimLine(m, p, label) {
+    const ik = p.fx.ik ?? 0;
+    expect(Math.abs(m.bowOff), `${label}: the bow hand off the aim plane`).toBeLessThanOrEqual(BAND.bowOff);
+    expect(m.bowAhead, `${label}: the bow hand ahead of the chest`).toBeGreaterThanOrEqual(BAND.bowAhead);
+    expect(m.cross, `${label}: the drawing hand or forearm across the centre plane`).toBeLessThanOrEqual(0);
+    if (ik <= 0) return;
+    expect(Math.abs(m.arrowAcross), `${label}: the arrow across the facing`).toBeLessThanOrEqual(BAND.arrowAcross);
+    expect(m.onLine, `${label}: the drawing hand off the arrow line`).toBeLessThanOrEqual(BAND.onLine);
+    expect(m.pastAnchor, `${label}: the drawing hand past the anchor`).toBeLessThanOrEqual(BAND.pastAnchor);
+    expect(m.elbowRise, `${label}: the elbow below the shoulder band`).toBeGreaterThanOrEqual(BAND.elbowRise[0]);
+    expect(m.elbowRise, `${label}: the elbow above the shoulder band`).toBeLessThanOrEqual(BAND.elbowRise[1]);
+    expect(m.elbowBack, `${label}: the elbow behind the back`).toBeGreaterThanOrEqual(BAND.elbowBack);
+    if (ik >= 1 && (p.fx.draw ?? 0) > 0.5) expect(m.toAnchor, `${label}: the full draw off the anchor`).toBeLessThanOrEqual(BAND.toAnchor);
+  }
+
+  // the archer's style as cast.js keys it, simplified to what the clips read
+  const archer = {
+    attack: "shot",
+    hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
+    walk: { arms: [0.7, 1], lean: 0.06 },
+    run: { arms: [0.5, 1], elbow: [0.25, 1] },
+    backpedal: { arms: [0.5, 1], elbow: [0.3, 1] },
+  };
+
+  it("on every key of the shot: the bow hand forward on the aim line, the hand drawn straight back along it to the jaw, never across the body, the elbow at about shoulder height and not behind the back", () => {
+    const at = archerBow();
+    const keys = ATTACKS.shot();
+    expect(keys.filter((p) => (p.fx.ik ?? 0) >= 1 && p.fx.draw > 0.5).length).toBeGreaterThanOrEqual(2);
+    keys.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `shot key ${i}`));
+  });
+
+  it("at the draw the bow arm points along the facing: the arrow runs straight ahead, the string drawn and the arrow nocked", () => {
+    const at = archerBow();
+    for (const [i, p] of ATTACKS.shot().entries()) {
+      if ((p.fx.ik ?? 0) < 1 || !(p.fx.draw > 0.5)) continue;
+      expect(p.fx.arrow, `key ${i}`).toBe(1);
+      const m = measureDraw(at, p);
+      expect(Math.abs(m.arrowAcross), `key ${i}`).toBeLessThanOrEqual(BAND.arrowAcross);
+      // the bow hand ahead of the anchor by the drawn length: the bow arm extended toward the aim
+      expect(m.bowAhead, `key ${i}`).toBeGreaterThanOrEqual(0.4);
+    }
+  });
+
+  it("holds on every frame of walk_attack, the shot's upper body over the walk", () => {
+    const at = archerBow();
+    clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack.forEach((p, i) => expectOnTheAimLine(measureDraw(at, p), p, `walk_attack frame ${i}`));
   });
 });
 
