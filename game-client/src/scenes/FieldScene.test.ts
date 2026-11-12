@@ -1680,6 +1680,20 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(map()!.mode).toBe("normal");
   });
 
+  // integration of FS-P0HSP §F.33 with FS-G4VMQ § Change C4: a field now has an ESC menu, and
+  // while it is up it owns the keys, M with them, as the town's menu does
+  it("should not step M while the field's ESC menu is open (§F.33; FS-G4VMQ § Change C4)", () => {
+    const { field, render, map, pressM, store } = forestWithMap();
+    render({ x: 600, y: 600 });
+    field.menu = {};
+    pressM();
+    expect(store.writes).toEqual([]);
+    expect(map()!.mode).toBe("normal");
+    field.menu = undefined;
+    pressM();
+    expect(store.writes).toEqual(["enlarged"]);
+  });
+
   it("should build the map in the mode this browser kept (§F.32)", () => {
     const { render, map, store } = forestWithMap();
     store.held = "overlay";

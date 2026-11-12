@@ -866,11 +866,15 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * M (FS-P0HSP §F.31, §F.33): the run's three modes on the field's minimap, kept in this browser
-   * on the run's one key. Not while chat is typing (a field has no other key owner); the rest of
-   * M's guards are the minimap's own.
+   * on the run's one key. Not while chat is typing, nor while the ESC menu is up, which owns the
+   * keys as the town's does (FS-G4VMQ § Change C4); the rest of M's guards are the minimap's own.
    */
   private bindMinimapKey(): void {
-    bindMinimapKey(this.input.keyboard ?? undefined, () => !!this.chatWindow?.isTyping(), () => this.minimap);
+    bindMinimapKey(
+      this.input.keyboard ?? undefined,
+      () => !!this.chatWindow?.isTyping() || !!this.menu,
+      () => this.minimap,
+    );
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */
