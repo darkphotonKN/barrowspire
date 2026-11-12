@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-1
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-R82NV-13]
 labels: [ready-for-agent]
@@ -17,9 +17,9 @@ under their guards, and re-places it on resize.
 
 ## Acceptance Criteria
 
-- [ ] FS-3EBCA acceptance criteria for the rects, the drawing, the labels and the Menu, Character and Party presses, in the town.
-- [ ] While the gear overlay is open no icon answers (R11).
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-3EBCA acceptance criteria for the rects, the drawing, the labels and the Menu, Character and Party presses, in the town.
+- [x] While the gear overlay is open no icon answers (R11).
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 

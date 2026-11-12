@@ -30,6 +30,7 @@ import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
+import { HudCorner } from "@/ui/HudCorner";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
@@ -723,6 +724,11 @@ export class HubScene extends Phaser.Scene {
    * has one. While the panel is open it owns the keys, as the ESC menu does.
    */
   private mailbox?: MailboxHud;
+  /**
+   * The corner row (FS-3EBCA): Menu, Character and Party, the Mailbox's slot left to the
+   * envelope. Each press is the key's own path: one Esc, I, T.
+   */
+  private corner?: HudCorner;
   /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
   private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
@@ -902,6 +908,15 @@ export class HubScene extends Phaser.Scene {
       () => this.characterLevel,
     );
     this.watchGoldTakes();
+    this.corner = new HudCorner(this, {
+      icons: [
+        { icon: "menu", press: () => this.pressEscape() },
+        { icon: "character", press: () => this.toggleGear() },
+        { icon: "party", press: () => this.partyPanel?.toggle() },
+      ],
+      // the open gear overlay's right panel covers the row: a press there is the overlay's
+      covered: (x, y) => this.gear?.covers(x, y) ?? false,
+    });
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
@@ -931,6 +946,7 @@ export class HubScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
+    this.corner?.relayout();
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
     this.dialogueChoices?.relayout();
@@ -1121,6 +1137,8 @@ export class HubScene extends Phaser.Scene {
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
+    this.corner?.destroy();
+    this.corner = undefined;
     this.unsubscribeGoldTaken?.();
     this.unsubscribeGoldTaken = undefined;
     this.queuePanel = undefined;
@@ -2867,7 +2885,12 @@ export class HubScene extends Phaser.Scene {
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (!pressed || this.menu || this.dialogue || this.mailbox?.isOpen()) return;
+    if (pressed) this.toggleGear();
+  }
+
+  /** I, B or the corner row's Character icon (FS-3EBCA R7): the overlay, under the same owners. */
+  private toggleGear(): void {
+    if (this.menu || this.dialogue || this.mailbox?.isOpen()) return;
     this.gear?.toggle();
   }
 
