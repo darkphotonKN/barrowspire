@@ -172,6 +172,21 @@ export class SocketManager {
     this.connect(this.gameUrl());
   }
 
+  /**
+   * Connects again from the main menu (FS-R6EYZ R16): to the server the player was last on
+   * (FS-K2HKP R29), as the same player, on a plain connection. If that server cannot be reached
+   * (the socket closes before it ever opens) and it is not the default address, which a rollout
+   * leaves a run's host address as, one more try at the default, whose landing pod sends a held
+   * player on to the pod holding them (FS-MCYWK R5). A socket open or opening is left alone.
+   */
+  reconnectFromMenu(): void {
+    if (this.serverAddr === DEFAULT_SERVER_ADDR) return this.reconnect();
+    this.connect(this.gameUrl(), () => {
+      this.serverAddr = DEFAULT_SERVER_ADDR;
+      this.reconnect();
+    });
+  }
+
   private gameUrl(): string {
     return `${this.serverAddr}?token=${this.currentToken()}&name=${this.name}`;
   }
