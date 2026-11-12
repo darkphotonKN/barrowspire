@@ -1,7 +1,7 @@
 // How fast a looping clip carries the body (FS-JS7C8 R3, R10): the speed the planted foot slides
 // under it, measured on the rig rather than guessed, so the client's WALK_PACE and RUN_PACE
-// (src/render/art/animationSelect.ts) and the backpedal legs' pace (clips.js BACKPEDAL_LEGS) are
-// facts of the keys. Review and test tooling: the bake itself never reads it.
+// (src/render/art/animationSelect.ts) and the attack-on-the-move clips' leg paces (clips.js
+// RUN_WALK_ATTACK_CYCLES, BACKPEDAL_ATTACK_CYCLES) are facts of the keys. Review and test tooling: the bake itself never reads it.
 //
 // A foot is planted while its sole is on the ground (groundPose sets the lowest sole there; a
 // clip's flight lifts both off). While planted it should stay still in the world, so in the

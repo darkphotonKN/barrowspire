@@ -152,9 +152,8 @@ export function archer() {
     walk: { arms: [0.7, 1], lean: 0.06 },
     // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
     // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-    // measured on (`backpedal` scales the backpedal legs under backpedal_attack and for pace.js)
+    // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle)
     run: { arms: [0.5, 1], elbow: [0.25, 1] },
-    backpedal: { arms: [0.5, 1], elbow: [0.3, 1] },
   };
   return { rig, style };
 }

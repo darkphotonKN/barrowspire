@@ -238,10 +238,11 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   R21).
 - **Backpedal-attack** (`backpedal_attack`): a playable class's attack drawn while it moves more
   than 90° away from the attack's facing: the attack from the waist up over the backpedal legs
-  (the feet stepping backward) from the waist down, composed as the walk-attack is and lasting as
-  long as the attack. The only backward step: a class that is not attacking never steps back. The
-  backpedal legs are a bake-only cycle; no sheet carries a standalone `backpedal` (FS-JS7C8,
-  owner change 2026-11-12).
+  from the waist down, composed as the walk-attack is and lasting as long as the attack. The
+  backpedal legs are the walk's legs run backward in time: the walk-attack's upright stance and
+  stride, the feet stepping back. The only backward step: a class that is not attacking never
+  steps back. The backpedal legs are a bake-only cycle; no sheet carries a standalone `backpedal`
+  (FS-JS7C8, owner changes 2026-11-12).
 - **Facing** (a character's): which of the 8 world directions its figure is turned to: its drawn
   movement, kept while it stands; a swing turns it to its aim. Never the pointer, and never sent to
   or received from the server: every client derives every figure's facing from the motion it
