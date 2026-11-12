@@ -144,8 +144,10 @@ function deepestCarry(rig, gear, frames) {
 }
 
 /**
- * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands)
- * and how far outside the body its carry must stay (H).
+ * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands),
+ * whether its weapon is a blade that trails behind the hand in the run, and the weapon's rest in
+ * the idle: `point` down and forward (a blade's tip toward the ground) or `upright` (the sceptre
+ * held low beside the leg, its head up).
  */
 const CLASSES = [
   {
@@ -155,6 +157,8 @@ const CLASSES = [
     sheet: KNIGHT_SHEET,
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
+    trails: true,
+    rest: "point",
   },
   {
     name: "mercenary",
@@ -162,6 +166,8 @@ const CLASSES = [
     style: MERCENARY_STYLE,
     sheet: MERCENARY_SHEET,
     pump: ["L", "R"],
+    trails: true,
+    rest: "point",
   },
   {
     name: "wizard",
@@ -169,6 +175,8 @@ const CLASSES = [
     style: WIZARD_STYLE,
     sheet: WIZARD_SHEET,
     pump: ["L", "R"],
+    trails: false,
+    rest: "upright",
   },
 ];
 
@@ -184,7 +192,7 @@ describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward 
   });
 });
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ build, style, pump }) => {
+describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, trails }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -230,6 +238,17 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
     }
   });
 
+  // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高"
+  it(`carries the weapon low on every sample: its tip never above the hand${trails ? ", a blade's trailing behind it" : ""}`, () => {
+    const tip = GEAR[name](rig).weapon.at(-1);
+    for (const f of SAMPLES) {
+      pose8(f);
+      const [hand, t] = [at(rig, "handR"), world(tip)];
+      expect((t.y - hand.y) / rig.H, `tip over the hand @${f}`).toBeLessThanOrEqual(0);
+      if (trails) expect((t.z - hand.z) / rig.H, `tip ahead of the hand @${f}`).toBeLessThanOrEqual(0);
+    }
+  });
+
   it("turns the shoulders 6.5–10° against the hips, and keeps the shared legs key for key", () => {
     const yaw = (l, r) => {
       const [a, b] = [at(rig, l), at(rig, r)];
@@ -255,12 +274,57 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
   });
 });
 
+// owner, 2026-11-12: "站立時武器應該可以放下手微微下垂"
+describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idle (FS-JS7C8 R2)", ({ name, build, style, sheet, rest }) => {
+  const rig = rigOf(build);
+  const gear = GEAR[name](rig);
+  const idle = clipsFor(style, sheet.animations).idle;
+
+  it("hangs the arm with the elbow a little bent and the hand a little below the waist, on every key", () => {
+    idle.forEach((p, i) => {
+      posed(rig, p);
+      const [sh, el, hand, hips] = [at(rig, "upperArmR"), at(rig, "foreArmR"), at(rig, "handR"), at(rig, "hips")];
+      const bend = 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG;
+      expect(bend, `elbow @${i}`).toBeGreaterThanOrEqual(5);
+      expect(bend, `elbow @${i}`).toBeLessThanOrEqual(30);
+      expect((hips.y - hand.y) / rig.H, `hand under the pelvis @${i}`).toBeGreaterThanOrEqual(0);
+      expect((hips.y - hand.y) / rig.H, `hand under the pelvis @${i}`).toBeLessThanOrEqual(0.12);
+    });
+  });
+
+  it(rest === "point" ? "points the blade down and forward, its tip toward the ground" : "holds the sceptre low and upright, its head under the shoulder", () => {
+    const tip = gear.weapon.at(-1);
+    idle.forEach((p, i) => {
+      posed(rig, p);
+      const [hand, t] = [at(rig, "handR"), world(tip)];
+      const d = t.clone().sub(hand);
+      const elev = Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+      if (rest === "point") {
+        expect(elev, `blade @${i}`).toBeGreaterThanOrEqual(-60);
+        expect(elev, `blade @${i}`).toBeLessThanOrEqual(-15);
+        expect(d.z, `tip ahead of the hand @${i}`).toBeGreaterThan(0);
+      } else {
+        expect(elev, `sceptre @${i}`).toBeGreaterThanOrEqual(45);
+        expect(t.y, `orb under the shoulder @${i}`).toBeLessThan(at(rig, "upperArmR").y);
+      }
+    });
+  });
+
+  if (name === "knight")
+    it("rests the shield before him, lowered: its centre under the chest bone", () => {
+      idle.forEach((p, i) => {
+        posed(rig, p);
+        expect(world(gear.other[0]).y, `shield @${i}`).toBeLessThan(at(rig, "chest").y);
+      });
+    });
+});
+
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
   const gear = GEAR[name](rig);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(["walk", "run", "attack", "walk_attack", "backpedal_attack"])("on every key of %s", (anim) => {
+  it.each(["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"])("on every key of %s", (anim) => {
     expect(clips[anim], anim).toBeDefined();
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
