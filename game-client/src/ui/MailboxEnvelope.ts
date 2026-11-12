@@ -3,7 +3,8 @@
  * envelope with a small wax seal, drawn with Phaser graphics on a carved plate (no emoji, no
  * Heroicon, no baked art). The seal is lit with the number of letters waiting and dark when none
  * do; a newer letter than the player last saw makes the envelope glow a few times, then the seal
- * stays lit. Pressing it opens the letter panel.
+ * stays lit. Pressing it opens the letter panel, and pressing it again closes it; it stands in the
+ * corner row's Mailbox slot and names itself "Mailbox" under the pointer (FS-1GZGD § Change).
  *
  * Game palette (ADR-0025): the envelope's lines are amber because it can always be pressed; the
  * lit seal is ember wax; the pulse is the torch's glow. It reads the mailbox store and decides
@@ -18,6 +19,8 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
+import { CornerLabel } from "./cornerLabel";
+import { CORNER_LABEL } from "./hudCornerLayout";
 
 export interface MailboxEnvelopeDeps {
   store: StoreApi<MailboxState>;
@@ -68,6 +71,7 @@ export class MailboxEnvelope {
   private count?: Phaser.GameObjects.Text;
   private pulse?: Phaser.Tweens.Tween;
   private hovered = false;
+  private readonly label: CornerLabel;
   private readonly unsubscribe: () => void;
 
   constructor(
@@ -75,6 +79,7 @@ export class MailboxEnvelope {
     private readonly deps: MailboxEnvelopeDeps,
   ) {
     this.frame = envelopeFrame(viewport);
+    this.label = new CornerLabel(scene);
     const hud = <T extends Phaser.GameObjects.Graphics>(g: T) =>
       g.setScrollFactor(0).setDepth(HUD_DEPTH);
     this.glow = hud(scene.add.graphics());
@@ -101,17 +106,19 @@ export class MailboxEnvelope {
     });
   }
 
-  /** The logical view changed: the envelope goes back to the bottom-right corner (FS-ZAJMH R12, R13). */
+  /** The logical view changed: the envelope goes back to its slot in the corner row (FS-ZAJMH R12, R13). */
   relayout(): void {
     this.frame = envelopeFrame(viewport);
     this.zone.setPosition(this.frame.x, this.frame.y);
     this.drawGlow();
     this.drawBody();
     this.drawSeal();
+    if (this.hovered) this.label.show(this.frame, CORNER_LABEL.mail);
   }
 
   destroy(): void {
     this.unsubscribe();
+    this.label.hide();
     this.pulse?.stop();
     this.pulse = undefined;
     this.glow.destroy();
@@ -122,15 +129,20 @@ export class MailboxEnvelope {
     this.zone.destroy();
   }
 
+  /** A press toggles the letter panel (§ Change C1): an open one always closes. */
   private press(): void {
-    if (this.deps.blocked() || this.deps.store.getState().panelOpen) return;
-    void this.deps.store.getState().openPanel();
+    const mailbox = this.deps.store.getState();
+    if (mailbox.panelOpen) return mailbox.closePanel();
+    if (this.deps.blocked()) return;
+    void mailbox.openPanel();
   }
 
   private hover(on: boolean): void {
     if (this.hovered === on) return;
     this.hovered = on;
     this.drawBody();
+    if (on) this.label.show(this.frame, CORNER_LABEL.mail);
+    else this.label.hide();
   }
 
   /** The envelope's corner of the screen, where its seal sits: the flap's point. */

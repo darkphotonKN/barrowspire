@@ -1,6 +1,6 @@
 ---
 id: I-1GZGD-12
-status: open
+status: done
 implements: FS-1GZGD
 blocked_by: [I-3EBCA-1]
 labels: [ready-for-agent]
@@ -15,8 +15,8 @@ closes it; under the pointer it shows the row's "Mailbox" label.
 
 ## Acceptance Criteria
 
-- [ ] FS-1GZGD § Change acceptance criteria, all five.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-1GZGD § Change acceptance criteria, all five.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 
