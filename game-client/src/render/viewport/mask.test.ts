@@ -236,14 +236,17 @@ describe("maskInView", () => {
       maskInView(world, graphicsSource(), camera(1.5));
       world.focusFiltersOnCamera!(view(300, 120));
       expect(world.filterScroll).toEqual({ x: 300, y: 120 });
-      const half = target({ focusContext: false, scrollFactor: [0.5, 0], width: 40, height: 18, style: {} });
+      const half = target({ focusContext: false, scrollFactor: [0.5, 0], width: 40, height: 18, style: { resolution: 1 } });
       maskInView(half, graphicsSource(), camera(1.5));
       half.focusFiltersOnCamera!(view(300, 120));
       expect(half.filterScroll).toEqual({ x: 150, y: 0 });
     });
 
-    it("leaves an Image, which carries no style, focused on itself", () => {
-      const t = target({ focusContext: false, scrollFactor: [0, 0], width: 40, height: 20 });
+    it.each([
+      ["an Image, which carries no style", undefined],
+      ["an object whose style is no text style (no numeric resolution)", { fill: 1 }],
+    ])("leaves %s focused on itself", (_, style) => {
+      const t = target({ focusContext: false, scrollFactor: [0, 0], width: 40, height: 20, style: style as never });
       maskInView(t, graphicsSource(), camera(2));
       expect(t.filtersFocusContext).toBe(false);
       t.focusFiltersOnCamera!(view(300, 120));
