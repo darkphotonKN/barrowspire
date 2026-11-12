@@ -133,3 +133,114 @@ On our own dev server, headless Chrome, account `phaser4-trial@example.test`, he
 - Attacking on the move for the other classes.
 - Fixing the moonwalk, foot slide and stance hitch of `walk_attack`.
 - Any server or game-rule change: animation is presentation only (ADR-0020).
+
+## Change: Class sheets at 1.5x
+Status: work-order
+Date: 2026-11-12
+
+> Anchored here, not on FS-3V7GC or within FS-JS7C8: this FS owns "High-detail character art",
+> the capability a sheet's `scale` serves, and the rule this change rewrites (R1's 2x archer, R2's
+> whole-number `scale`, R22's trim on multiples of `scale`). FS-3V7GC repeats this work order for
+> the other three classes under the same lines, and FS-JS7C8 owns the clips the re-bakes carry,
+> not their scale; both are pointed at from here (R39). Decision: [ADR-0076](../adr/0076-a-sheet-may-be-baked-at-1-5x-its-frame-and-trim-on-a-two-screen-px-grid.md),
+> amending ADR-0058 Decisions 1 and 3.
+
+The owner's words. On 2026-11-12, with the archer re-baked for FS-JS7C8 on two pages at 2x
+(84.70 MB RGBA, +88 % over main), he agreed to the plan "if 1.5x is acceptable, all four classes
+move to 1.5x", approved the spike (「好」), and after its side-by-side page of the archer at 1.5x
+and at 2x on his Retina screen said: 「感覺可以」.
+
+### Facts this change rests on
+
+- The spike (`spike/archer-1p5x`, 16adf4c4, throwaway): the archer at 1.5x is one page,
+  3820×2720, 41.56 MB RGBA, PNG 5.75 MB; against the 2x archer 15–22 % softer at render scale 2,
+  sharper at 1.5, equal at 1, no shimmer at any render scale. Its bake changes left every other
+  atlas byte-identical.
+- The client draws a sheet at 1/`scale` through `sheetScale` (R4–R8). Its readers:
+  `CharacterAnimator.artScale` (`dress`), `markerBase` (markers, `artScale`), `keepBodySize`
+  (BarrowspireScene, `artScale`), `MenuFigure` (the figure's size and the roster portrait's crop)
+  and the manifest validator (`screenScale`). The bust portrait reads the frame's own px and no
+  scale.
+- The roster portrait's crop is screen px × `scale`. At 1.5 a crop edge on an odd screen px is half
+  a frame px.
+
+### Requirements
+
+29. A sheet's `scale` is 1, 1.5, 2, 3 or 4 (ADR-0076 Decision 1). The validator refuses any other
+    value (1.25, 2.5, 3.5, 0.5, 5 among them), a frame size that is not a whole number of screen
+    px (`frameWidth / scale`, `frameHeight / scale` whole) and, on a trimmed sheet, a `trim` off the
+    grid of R31.
+30. At a fractional `scale` the bake cuts the 1x frame box on a grid of `q` 1x px, `q` the least
+    whole number making `scale × q` whole (2 at 1.5): each side of the anchor is rounded up to a
+    multiple of `q`, so the frame is exactly `scale` times the 1x box and the anchor is a whole px
+    in it. It renders at the supersample × `scale` (3x at 1.5) over that box and box-filters to
+    `scale`×. At a whole `scale` nothing changes: every sheet not at 1.5 keeps its bytes.
+31. A trimmed sheet's cut lies on whole multiples of `q` screen px: `scale × q` sheet px (3 at
+    1.5, two screen px; 2 at 2x and 1 at 1x, as R22 had it).
+32. The bake measures `crown` and `length` on the frames brought back to 1x by an exact area filter
+    (R3): at a fractional scale a nearest blow-up by `q`, then a `scale × q` box.
+33. Every reader of `sheetScale` works at 1.5, unchanged in what it gives: the display size, origin
+    and feet in world units are those of the 1x sheet (R4); markers sit over the head as for a 1x
+    sheet (R5); the run's arcade body keeps its 1x size (R6); the menu figure keeps its size (R7).
+    The roster portrait keeps its 44×56 screen-px window and its crop lies on whole frame px: at
+    1.5 its top edge is moved up to the `q`-screen-px grid (one more px of headroom when the crown
+    would put it between px), so the crop's origin and size are whole frame px. The bust portrait
+    cuts the same head from a 1.5x frame (R8).
+34. The archer's sheet (`char_archer_base`) is baked at `scale` 1.5 with every clip it carries
+    (FS-JS7C8: `run`, `walk_attack`, `backpedal_attack`), trimmed, in its own `archer` group. The
+    re-bake changes only the archer's pages and the manifest; every other atlas keeps its bytes.
+35. The knight, the wizard and the mercenary are baked at 1.5 when each is re-baked with `run` and
+    `backpedal_attack` (FS-JS7C8 slices 6–8, I-JS7C8-6..8), and not before: until then they stay
+    at 2, and the client draws each sheet at its own scale.
+36. The design guideline's "Linear filtering" says which sheets are 1.5x and why (memory against
+    crispness at render scale 2, the owner's eye-check); `CONTEXT.md`'s sheet scale names 1.5.
+37. The decoded memory of the archer's pages and of all atlases, before and after, is measured
+    from the manifest and recorded here (§ Verification), and in I-JS7C8-12's VRAM gate.
+38. The bake stays deterministic (R27).
+39. Pointers: FS-3V7GC R1 ("baked at `scale` 2") and FS-JS7C8 R1 ("baked with the class's sheet at
+    2x") read "at the class's scale, 1.5 from its FS-JS7C8 re-bake" for each class from this change
+    on.
+
+### Acceptance Criteria
+
+- [ ] The validator accepts `scale` 1, 1.5, 2, 3 and 4 and refuses 1.25, 2.5, 3.5, 0.5 and 5; at
+      1.5 it refuses a frame size that is not a whole number of screen px and a `trim` off the
+      3-sheet-px grid (`manifest.test.ts`).
+- [ ] The baker's frame box at 1.5: frame and anchor whole px, each side of the anchor a multiple
+      of two 1x px, the frame exactly 1.5 times the 1x box; at 1 and 2 the box is unchanged
+      (`frameBox` tests).
+- [ ] `trimRect` at grid 3: offset and size multiples of 3, lossless round trip (`trim.test.mjs`).
+- [ ] `downscale(…, 1.5)` equals a hand-computed area filter (`downscale.test.mjs`).
+- [ ] At `artScale` 2/3: the display size, the markers' rise, the arcade body (60×60) and the menu
+      figure's scale are the 1x sheet's; the roster portrait's crop is whole frame px with the
+      44×56 window (`character.test.ts`, `markers.test.ts`, `BarrowspireScene.test.ts`,
+      `menuFigure.test.ts`).
+- [ ] The archer's manifest entry has `scale: 1.5`, `trimmed: true`, its clips, one atlas page; no
+      other atlas changes bytes.
+- [ ] Memory recorded (§ Verification); `npm run bake -- --check` reports no changes; typecheck,
+      the full vitest suite and lint pass.
+- [ ] Guideline and `CONTEXT.md` updated.
+
+### Edge States
+
+- **Fractional render scale.** A 1.5x sheet drawn at its true size has its frame, anchor and cuts
+  on two-screen-px steps: whole backing px at render scale 1, 1.5 and 2, so ADR-0058's sub-px
+  offset of a trimmed frame is gone there. At 1.25 and 1.75 it remains, at most half a backing px.
+- **The menu hero** (its 1.3 menu scale, a sprite scale of 0.87 on a 1.5x sheet; the character
+  creation preview likewise): its cuts are still drawn up to a fraction of a backing px from where
+  the whole frame would draw them, as ADR-0058 describes for the 2x hero.
+- **The frame box grows** by at most one 1x px on each side of the anchor (the rounding to `q`):
+  the frame in screen px can be up to 2 px wider and taller than its 2x bake; the anchor fraction
+  moves by that px. Nothing in play moves: every size is screen px.
+- **A crown that puts the roster portrait's top on an odd screen px**: the crop starts one px
+  higher (one more px of headroom); the head is never cut.
+- **Two scales at once**: until slices 6–8 the archer is 1.5x and the other classes 2x; each sheet
+  is read at its own scale.
+- **An older manifest** (the archer at 2, or no `scale`): drawn at its own scale, as before.
+
+### Out of Scope
+
+- Baking creatures, folk, the boss or props at 1.5 (each its own work and reader check, ADR-0058).
+- Any fractional scale other than 1.5.
+- Re-baking the knight, wizard or mercenary here (FS-JS7C8 slices 6–8 do it at 1.5).
+- Changing the render-scale cap or the groups' residency (ADR-0056, ADR-0059).

@@ -13,6 +13,12 @@
 > **Edited in place again on 2026-11-12 (the backward step's legs, still a work-order):** R8, R10,
 > R43 and their acceptance criteria now build `backpedal_attack`'s legs from `walk_attack`'s; see
 > *Owner change, 2026-11-12: the backward step from the forward walk*.
+>
+> **Edited in place a third time on 2026-11-12 (the run's upper body, still a work-order):** R2,
+> R41, R43 and the run's acceptance criteria now make the run a fast run, leaning forward, its
+> arms pumping, its legs as baked; see *Owner change, 2026-11-12: a fast run from the waist up*.
+> The class sheets' scale moves to 1.5 (FS-HF0WW `## Change: Class sheets at 1.5x`), so R1's "at
+> 2x" and R39's figures read at the class's scale.
 
 ## Owner change, 2026-11-12
 
@@ -63,9 +69,28 @@ So `backpedal_attack`'s legs are `walk_attack`'s legs run backward in time (R8),
 pace rule (R10). The crouched gait and its requirements (`BACK_STEP`; knees at least 0.3 rad all
 round; the pelvis below the walk's; steps shorter than the walk's; the 1.25 cycles) are retired.
 
+## Owner change, 2026-11-12: a fast run from the waist up
+
+After seeing the archer's run (slice 12's bake), the owner said, in order:
+
+> "跑步時有點生硬 一般跑步應該會稍微前傾"
+> "現在的跑步有點像在慢跑 希望可以有快跑的感覺"
+> "但快跑沒有到疾跑"
+> "目前的腳步速度可以 只是上半身有一些變化"
+
+The run is a bit stiff, and a normal run leans slightly forward. Today it looks like a jog; it
+should feel like a fast run. But a fast run, not an all-out sprint. The step speed is fine as it
+is; only the upper body changes.
+
+So R2's "a jog and not a sprint" (a charter default) is retired: the run is a fast run between a
+jog and a sprint, and it gets there from the waist up only (R2). The legs, the stride, the cadence,
+the flight and the pelvis's bob stay as slice 5 keyed them, and `RUN_PACE` stays their measure
+(R3). The archer is baked once with this and the move to 1.5x (FS-HF0WW `## Change: Class sheets
+at 1.5x`, I-HF0WW-8); the other classes take the same run in their own slices.
+
 ## Summary
 
-The four playable classes run instead of speed-walking: a new `run` clip, a jog on the shared rig,
+The four playable classes run instead of speed-walking: a new `run` clip, a fast run on the shared rig,
 plays at about its own pace at the server's 200 px/s, turned the way the character moves. Attacking
 slows a player to a walk: the server cuts their move speed for the attack's own short action and
 the client plays `walk_attack`, its legs at no more than the slowed pace; moving more than 90°
@@ -129,20 +154,43 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
 ### §A. The run (game-client: bake and clip choice)
 
 1. **(owner)** knight, archer, wizard and mercenary each carry a `run` clip: 8 frames, looping, in
-   the 8 directions, hand-keyed on the shared rig (ADR-0021), baked with the class's sheet at 2x and
-   trimmed like its other clips (ADR-0058).
-2. **(owner)** The run is the whole body coordinated, a jog and not a sprint:
+   the 8 directions, hand-keyed on the shared rig (ADR-0021), baked with the class's sheet at the
+   class's scale (1.5 from its re-bake here: FS-HF0WW `## Change: Class sheets at 1.5x`; was 2x)
+   and trimmed like its other clips (ADR-0058).
+2. **(owner)** The run is the whole body coordinated, **(owner, 2026-11-12: "現在的跑步有點像在慢跑
+   希望可以有快跑的感覺", "但快跑沒有到疾跑")** a fast run, between a jog and a sprint:
    - arms and legs swing in opposition (the right arm forward with the left leg);
    - the upper body turns against the hips with the stride;
    - the centre of mass rises and falls once per step;
    - the head stays steady (it does not bob or roll with the chest);
    - each step has a brief flight phase, in which neither foot touches the ground.
    Cloth and other spring bones follow it as they follow the walk.
+   **(owner, 2026-11-12: "目前的腳步速度可以 只是上半身有一些變化")** The legs are slice 5's:
+   pelvis, thighs, shins, feet, the flight's lift, the stride and the 14 fps cadence are unchanged,
+   key for key. The fast run is made from the waist up **(charter defaults, each judged by the
+   owner at the contact sheet)**:
+   - **(owner, 2026-11-12: "跑步時有點生硬 一般跑步應該會稍微前傾")** the trunk leans forward
+     from the hips, `RUN_LEAN` about 10° (the hips-to-neck line, measured on the rig), held
+     through the cycle; the neck brings the head back up, so it looks ahead as at rest, not at the
+     ground;
+   - the arms pump from the shoulder, the elbows bent about 90° (80–100° in every frame), each
+     hand forward to about chest height (above the chest bone, below the shoulder) and back past
+     the hip;
+   - the shoulders counter-rotate against the hips more than the jog's (at least 6.5°, at most
+     10°, each way, against the hips' 6.9°);
+   - a class's own arm style stays: the archer's bow arm keeps its short swing and near-straight
+     elbow, so the bow hangs along the side and never sweeps across the body.
+   Reason for the numbers: the coordinator's charter from the owner's words (a slight lean, about
+   10°; elbows about 90°; hands to chest height, not chin, for "not a sprint").
+   *Retired 2026-11-12: "a jog and not a sprint" (a charter default); the jog's 0.12 rad lean
+   split over spine and chest (about 4° on the hips-to-neck line), its 77° elbows and its 4.5°
+   shoulder turn.*
 3. **(charter default)** The run is keyed so its measured pace, `RUN_PACE` (world px per second the
    run covers at 1x, measured as `WALK_PACE` is), lies within 180–220. Reason: the owner's "plays
    at about its own pace at 200 px/s". Cadence (fps) and stride are the bake's choice inside that,
    judged by the owner at the contact sheet. Slice 5's run (Fact 10) stays as baked (owner change
-   2026-11-12).
+   2026-11-12), its legs too after the upper body's change ("目前的腳步速度可以"): the lean moves no
+   foot, so `RUN_PACE` stays 194, re-measured.
 4. A class that moves at a drawn speed of at least `MOVING_SPEED` and is not attacking plays `run`
    at `speed / RUN_PACE`, capped as the walk is, turned to its movement (§D), whenever its sheet
    carries `run`. A sheet without `run` (hub folk, monsters, a class not yet re-baked) walks as
@@ -271,7 +319,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
     hand. Each class opts in to `run` and `backpedal_attack` on its own, so one class can be baked,
     reviewed and shipped before the next.
 37. **(owner)** The bake's contact sheet shows each class's `run`, `walk_attack` and
-    `backpedal_attack` in 8 directions at game scale, beside its `walk` and `attack`. A class's
+    `backpedal_attack` in 8 directions at game scale, beside its `walk` and `attack`. The archer's
+    re-bake with the fast run (R2) also shows the old run beside the new one, 8 facings. A class's
     re-baked sheet ships only after the owner approves its contact sheet (ADR-0021 §5).
 38. **(owner)** Each class slice reports, from the bake: the class's atlas pages and their
     dimensions before and after, the RGBA bytes before and after, and the growth in per cent. The
@@ -284,7 +333,7 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
     costs 112. A class may spill onto a second 4096 page.
 40. `npm run bake -- --check` is clean after each class slice: the committed atlases are what the
     bake produces.
-41. The design guideline's character clip list and the dev contact-sheet notes name `run`,
+41. The design guideline's character clip list (the run a fast run, leaning, arms pumping) and the dev contact-sheet notes name `run`,
     `walk_attack`'s legs and `backpedal_attack` for the playable classes; its "Eight facings" says
     a character faces its movement, never the pointer.
 48. The archer's re-bake carries FS-2325V `## Change: The archer's draw stays on the aim line`, so
@@ -296,7 +345,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
 42. Unit: clip choice (§A.4, §B.9, R11, R13, R45), facing from movement (§D.22, R24), the server's
     slow (§C.15–20), each with its own tests; the removal (R47) shown absence-first: `face` is
     refused as an unknown action and no player entry in the state carries `facing`.
-43. Bake: clip tests on the rig for the run's flight phase, opposite swing and pace band; the
+43. Bake: clip tests on the rig for the run's flight phase, opposite swing and pace band, its
+    forward lean, elbow bend, hand reach and shoulder counter-turn (R2), and its legs unchanged; the
     backpedal legs being the walk's run backward (the same poses in reverse order, the same pelvis
     height and stride, the pace the walk's negated); `walk_attack` and `backpedal_attack` each
     lasting exactly as long as `attack`, their legs' pace at most 90 px/s.
@@ -364,7 +414,11 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
       and `backpedal_attack` (14 frames at 24 fps, once), 8 directions, at the class's scale and
       trimmed; `walk` and `walk_attack` are still there; no class sheet carries `backpedal`.
 - [ ] Bake tests show the run's flight phase (a frame with both feet off the ground), its arms
-      swinging opposite its legs, and its pace within 180–220; the backpedal legs are the walk's
+      swinging opposite its legs, and its pace within 180–220; the fast run's trunk leaning
+      9–11° (8–12° in every sample), its pumping elbows at 80–100° in every frame, each hand
+      above the chest bone and below the shoulder at the front of its swing and at least 0.06 H
+      behind the hip at the back, the shoulders turning 6.5–10° against the hips, the head looking
+      ahead, its legs key for key slice 5's; the backpedal legs are the walk's
       run backward: the same leg poses in reverse order, the same pelvis height and stride (no
       crouch), the walk's pace negated.
 - [ ] `walk_attack` and `backpedal_attack` each last exactly as long as `attack`; on a sheet with
@@ -472,7 +526,8 @@ and the state's `facing` field that R27–R32 once specified are removed by the 
 
 1. *Settled 2026-11-12: no facing is stored or relayed, so no ADR on a client-chosen facing is
    needed, and ADR-0030 holds unchanged.*
-2. **VRAM:** about +83 MB resident (+47% of class art, R39), more than slice 5's +34% for the
+2. *Settled 2026-11-12: the class sheets move to 1.5x (ADR-0076, FS-HF0WW `## Change: Class
+   sheets at 1.5x`; the owner, after the spike's side-by-side: 「感覺可以」).* **VRAM:** about +83 MB resident (+47% of class art, R39), more than slice 5's +34% for the
    archer. Options: accept; bake `run` and `backpedal_attack` at 1x (about a quarter of that);
    `backpedal_attack` at 7 frames (one per attack key, 56 frames fewer a class, about 27 MB less in all, coarser legs);
    load class groups per class present (an ADR-0059 change).

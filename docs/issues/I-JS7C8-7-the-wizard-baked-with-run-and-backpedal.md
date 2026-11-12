@@ -2,7 +2,7 @@
 id: I-JS7C8-7
 status: open
 implements: FS-JS7C8
-blocked_by: [I-JS7C8-12]
+blocked_by: [I-JS7C8-12, I-HF0WW-8]
 labels: [ready-for-agent]
 title: "FS-JS7C8 slice 7: the wizard baked with run, backpedal_attack and the slowed walk_attack, the owner's contact-sheet approval (game-client)"
 ---
@@ -12,6 +12,10 @@ Implements FS-JS7C8 §A (R1–R3), §B (R8, R10), §C (R21), §F (R36–R40); Tu
 `backpedal`, `walk_attack`'s legs over 0.75 walk cycles; blocked by the archer's re-bake
 (I-JS7C8-12) instead of I-JS7C8-5. The file name keeps its old slug.*
 
+*Reworked again 2026-11-12 (ADR-0076, FS-HF0WW `## Change: Class sheets at 1.5x`): the wizard is
+re-baked at `scale` 1.5 (was 2), one page, with the fast run of FS-JS7C8 R2 (I-JS7C8-13); blocked
+by the capability and the archer's 1.5x bake (I-HF0WW-8) as well.*
+
 **Lane: agent, then HITL.** Ends at the owner's approval of the wizard's contact sheet (ADR-0021 §5).
 No hand-drawn or hand-edited pixels.
 
@@ -19,25 +23,30 @@ No hand-drawn or hand-edited pixels.
 
 1. The wizard's catalogue entry (`tools/bake/page/characters/cast.js`) opts in to the running
    class's specs from I-JS7C8-12: `run`, `walk_attack` over 0.75 walk cycles and
-   `backpedal_attack` over 0.625 backpedal cycles, no `backpedal`; with any per-class style the
+   `backpedal_attack` over 0.75 backward walk cycles, no `backpedal`, and `scale: 1.5` (was 2); with any per-class style the
    wizard needs for the run and the backpedal legs to read (garment, weapon carry, arm swing:
    `style.run`, `style.backpedal`), keyed on the shared rig.
 2. `npm run bake`; commit the wizard's atlas pages and `manifest.json`. The contact sheet shows the
    wizard's `walk`, `run`, `walk_attack`, `backpedal_attack` and `attack` in 8 directions.
-3. Check the wizard's measured paces: the run within 180–220 (R3), the backpedal legs within
+3. The fast run (FS-JS7C8 R2, I-JS7C8-13) is the shared `runCycle`; the wizard's own arm style, if
+   any (a shield or weapon carry), keeps the lean, the ~90° elbows and the hand reach of R2 and the
+   run's legs as baked.
+4. Check the wizard's measured paces: the run within 180–220 (R3), the backpedal legs within
    150–220, and both attack-on-the-move clips' leg paces at most 90 px/s (R10, R21): if the
    class's style moves them out, fix the keys, not the constants.
-4. Record the growth: pages and dimensions before and after, RGBA bytes before and after, per cent,
+5. Record the growth: pages and dimensions before and after, RGBA bytes before and after, per cent,
    against R39's estimate.
 
 ## Acceptance Criteria
 
 - [ ] `char_wizard_base` carries `run` (8, looping) and `backpedal_attack` (14 frames at 24 fps,
-      once), 8 directions, scale 2, trimmed, and still `walk` and `walk_attack` (legs over 0.75
+      once), 8 directions, scale 1.5, trimmed, and still `walk` and `walk_attack` (legs over 0.75
       walk cycles); no `backpedal`.
 - [ ] The wizard's run pace is within 180–220, its backpedal legs' within 150–220, and its
       `walk_attack` and `backpedal_attack` leg paces at most 90 px/s.
 - [ ] The leg-clearance guard (FS-HF0WW §C) passes for the new clips; none widens the frame box.
+- [ ] The fast run's bake tests (R2: lean, elbows, hand reach, counter-turn, legs as slice 5's)
+      pass on the class's rig and style.
 - [ ] `npm run bake -- --check` is clean; no other class's atlas changes.
 - [ ] Growth recorded (pages, dimensions, bytes, per cent).
 - [ ] **HITL:** the owner approves the wizard's contact sheet (`run`, `walk_attack`,
@@ -45,11 +54,13 @@ No hand-drawn or hand-edited pixels.
 
 ## Blocked By
 
-I-JS7C8-12 (the `backpedal_attack` clip, the slowed legs, the archer's approval)
+I-JS7C8-12 (the `backpedal_attack` clip, the slowed legs, the archer's approval); I-HF0WW-8 (a
+sheet at 1.5x, the archer re-baked on it)
 
 ## Spec Reference
 
-FS-JS7C8 §A R1–R3, §B R8, R10, §C R21, §F R36–R40; Facts 9, 10.
+FS-JS7C8 §A R1–R3, §B R8, R10, §C R21, §F R36–R40; Facts 9, 10. FS-HF0WW §Change: Class sheets at
+1.5x R35.
 
 ## Files it expects to touch
 
