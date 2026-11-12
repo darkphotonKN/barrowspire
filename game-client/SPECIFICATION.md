@@ -218,6 +218,7 @@ server state and sends intents. ✅
 ### Transport
 
 - [ ] Read the compressed game-state broadcast → FS-5QC03
+- [ ] Lost-connection notice → FS-R6EYZ
 
 ### Deployment
 

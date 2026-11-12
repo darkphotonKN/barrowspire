@@ -61,6 +61,14 @@ translation belongs to the surface that renders words.
   rule and one line, then the view back and the card burned away to ash (its dust and smoke are
   alternates a play may name). The climb's **floor card** is
   the arrival card of a floor; "floor card" stays the word for that one.
+- **Lost connection** — the game socket closing when the client did not let it go: a server
+  restart or rollout, a network loss, the browser closing it after sleep (FS-R6EYZ). Not a lost
+  connection: leaving /game, a handoff or a redirect (the old socket let go on purpose), or a
+  `4001` refusal the client is renewing its way past (FS-ZPX58). In code, `onConnectionLost`.
+- **Disconnect notice** — the carved panel a lost connection raises while the player is in a
+  world (town, field or run): "Disconnected", one line and **Return to menu**, the world dimmed
+  and still behind it (FS-R6EYZ). One at a time; it stays through scene changes until pressed.
+  The main menu it returns to reconnects.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.
