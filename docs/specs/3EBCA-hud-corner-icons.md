@@ -234,8 +234,9 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
     the drawing itself, so no caller can forget. **(owner: "都統一放在中間的樣式", "大小顏色也一樣",
     "全大寫也統一"; the style derived here: the most common one, the gear overlay's)**
 21. **Clear of the ×.** The title stays centred between the panel's edges; the × keeps its place at
-    the top right (R82NV § Change C1), and the title's band (its top 14 px down, its foot by 40 px:
-    `PANEL_TITLE_BAND`, below the × box's foot at 36) is the title's alone. No title is as wide as
+    the top right (R82NV § Change C1), and the title's band (its top 14 px down, its foot 36 px
+    down: `PANEL_TITLE_BAND`, the × box's foot, under the title's line) is the title's and the
+    ×'s alone. No title is as wide as
     its panel less both × margins. **(derived here)**
 22. **Which windows, and where their titles were.** The party panel ("Party" or "Party (n/m)",
     15 px, left at the inner edge, now "PARTY" or "PARTY (n/m)" centred at 14 px); the inventory,
