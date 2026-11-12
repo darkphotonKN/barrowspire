@@ -274,17 +274,6 @@ const RUN_STEP = {
  */
 export const RUN_LEAN = 0.24;
 
-/**
- * The softened flight (owner 2026-11-12: "跑步時好像有一種整個身體往下頓的感覺 不確定是不是上下起伏過高
- * 我想減少這種感覺"): the share of {@link RUN_STEP}'s flight lift a class takes as `style.run.lift`.
- * The flight key was a spike 0.046 H over the contact key, the body dropping back 5.3 baked px in
- * one frame at 1.5x; at this share the pelvis rises and falls 0.026 H in all (was 0.055), lowest at
- * mid-stance and highest in the flight, its largest drop 0.017 H. Only the lift moves: every leg
- * pose, so the stride, the planted feet and the pace on the baked keys, stays the shared run's.
- * Owner, 2026-11-12: "跑步的部分先完成弓箭手我看過再補其他職業": the archer takes it first.
- */
-export const RUN_SOFT_LIFT = 0.35;
-
 /** The run's elbow bend (rad, on the forearm): about 90°, opening a little on the back swing. */
 export const RUN_ELBOW = -1.57;
 
