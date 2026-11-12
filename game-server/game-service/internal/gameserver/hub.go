@@ -390,25 +390,27 @@ func (h *messageHub) checkGear(ctx context.Context, player *types.Player, client
 	}
 }
 
-// resolveGameSession answers which world a connection's messages belong to,
-// from the server's own record of the player. It deliberately takes no payload:
-// a client cannot address a world it is not in (FS-29KSH §Requirements 16).
-func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*game.Session, error) {
+// resolveGameSession answers who sent a connection's message and which world it
+// belongs to, both from the server's own record of the player. It deliberately
+// takes no payload: a client cannot address a world it is not in (FS-29KSH
+// §Requirements 16), nor act as a player it is not (§Change: The acting player
+// is the connection's, R37; ADR-0079).
+func (h *messageHub) resolveGameSession(conn *websocket.Conn) (*types.Player, *game.Session, error) {
 	player, exists := h.sessionManager.GetPlayerFromConn(conn)
 	if !exists {
-		return nil, errPlayerNotFound
+		return nil, nil, errPlayerNotFound
 	}
 
 	if player.CurrentGameSessionId == uuid.Nil {
-		return nil, fmt.Errorf("%w: %s", errPlayerNotInSession, player.Username)
+		return nil, nil, fmt.Errorf("%w: %s", errPlayerNotInSession, player.Username)
 	}
 
 	session, exists := h.sessionManager.GetGameSession(player.CurrentGameSessionId)
 	if !exists {
-		return nil, fmt.Errorf("%w: %s", errSessionNotFound, player.CurrentGameSessionId)
+		return nil, nil, fmt.Errorf("%w: %s", errSessionNotFound, player.CurrentGameSessionId)
 	}
 
-	return session, nil
+	return player, session, nil
 }
 
 func NewMessageHub(sessionManager SessionManager, sender *messaging.MessageSender, podID, podAddr string, announcer HandoffAnnouncer, chat chatRelayer, party partyKeeper, presence presenceTicker, jobs loopJobs, mail mailArrivalRelayer) *messageHub {
@@ -468,7 +470,7 @@ func (h *messageHub) Run(ctx context.Context) {
 			// will be propogated from the message hub to corresponding server.
 
 			if gameActions[messageAction] {
-				session, err := h.resolveGameSession(clientPackage.Conn)
+				player, session, err := h.resolveGameSession(clientPackage.Conn)
 
 				if err != nil {
 					// Detail stays server-side. The client no longer supplies a
@@ -483,7 +485,11 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 
-				// propogate message to corresponding game
+				// propogate message to corresponding game, as the connection's
+				// player: the world acts for whoever the hub stamps here, never for
+				// a player_id in the payload. FS-29KSH §Change: The acting player
+				// is the connection's, R37; ADR-0079.
+				clientPackage.PlayerID = player.ID
 				session.MessageCh <- clientPackage
 				continue
 			}

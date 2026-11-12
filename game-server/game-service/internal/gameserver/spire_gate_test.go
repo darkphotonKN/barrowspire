@@ -53,14 +53,15 @@ func headForSpireGate(t *testing.T, server *Server, conn *websocket.Conn, player
 	hub, ok := server.HubSession()
 	require.True(t, ok, "the server builds a hub at startup")
 
+	// straight into the hub world, so stamped as the message hub stamps it (ADR-0079)
 	hub.MessageCh <- types.ClientPackage{
-		Conn: conn,
+		Conn:     conn,
+		PlayerID: playerID,
 		Message: types.Message{
 			Action: string(constants.ActionMove),
 			Payload: map[string]interface{}{
-				"player_id": playerID.String(),
-				"vx":        0.0,
-				"vy":        -1.0,
+				"vx": 0.0,
+				"vy": -1.0,
 			},
 		},
 	}

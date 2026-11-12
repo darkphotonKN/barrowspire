@@ -98,12 +98,11 @@ func TestSession_GameLoopAppliesMovement_Integration(t *testing.T) {
 
 	const vx, vy = 0.81, 0.81
 	moveStart := time.Now()
-	session.MessageCh <- types.ClientPackage{Message: types.Message{
+	session.MessageCh <- types.ClientPackage{PlayerID: player1ID, Message: types.Message{
 		Action: string(gameconstants.ActionMove),
 		Payload: map[string]interface{}{
-			"player_id": player1ID.String(),
-			"vx":        vx,
-			"vy":        vy,
+			"vx": vx,
+			"vy": vy,
 		},
 	}}
 

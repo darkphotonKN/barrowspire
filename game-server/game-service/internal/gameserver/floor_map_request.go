@@ -43,7 +43,7 @@ func (a *floorMapAnswers) allow(conn *websocket.Conn, now time.Time) bool {
 // can be dropped on a full queue, so a client whose map never came asks for it
 // (FS-KE075 §F R33). Outside a run the request is ignored, with no refusal.
 func (h *messageHub) answerFloorMap(conn *websocket.Conn, now time.Time) {
-	session, err := h.resolveGameSession(conn)
+	_, session, err := h.resolveGameSession(conn)
 	if err != nil {
 		slog.Debug("request_floor_map from a connection in no world, ignored", "error", err)
 		return

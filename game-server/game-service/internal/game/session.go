@@ -496,19 +496,25 @@ func (s *Session) manageClientMessages() {
 				"action", msg.Message.Action,
 			)
 
+			// Who acts is the connection's player, stamped on the package by the
+			// message hub as it routed the message here; the payload names no one
+			// and a player_id in it is never read. Every reply, a refusal
+			// included, goes to that same player. FS-29KSH §Change: The acting
+			// player is the connection's, R37–R39; ADR-0079.
+			playerID := msg.PlayerID
+			if playerID == uuid.Nil {
+				slog.Warn("Dropping a message no player was stamped on", "sessionID", s.ID, "action", msg.Message.Action)
+				continue
+			}
+
 			switch constants.Action(msg.Message.Action) {
 			case constants.ActionMove:
 				// parse payload based on message action
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
-					slog.Error("Failed to parse payload - types don't match", "payload", parsedPayload, "error", err)
-					// Get playerID from payload if possible, otherwise skip sending error to specific player
-					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
-						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
-							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse move request")
-						}
-					}
+					slog.Error("Failed to parse payload - types don't match", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse move request")
 					continue
 				}
 
@@ -516,13 +522,6 @@ func (s *Session) manageClientMessages() {
 
 				slog.Debug("Parsed move payload", "payload", movePayload)
 
-				// update based on action payload
-				playerID, err := uuid.Parse(movePayload.PlayerID)
-				if err != nil {
-					slog.Error("Invalid PlayerID from session payload", "playerID", movePayload.PlayerID, "error", err)
-					// Cannot send error to player since we don't have valid playerID
-					continue
-				}
 				s.queueIntent(func() {
 					if err := s.handleMove(playerID, movePayload.Vx, movePayload.Vy); err != nil {
 						slog.Debug("Move refused", "player_id", playerID, "error", err)
@@ -535,24 +534,13 @@ func (s *Session) manageClientMessages() {
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
-					slog.Error("Failed to parse interact payload", "error", err)
-					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
-						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
-							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse interact request")
-						}
-					}
+					slog.Error("Failed to parse interact payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse interact request")
 					continue
 				}
 
 				interactPayload := parsedPayload.(types.PlayerSessionInteractPayload)
 				slog.Debug("Parsed interact payload", "payload", interactPayload)
-
-				playerID, err := uuid.Parse(interactPayload.PlayerID)
-
-				if err != nil {
-					slog.Error("Invalid PlayerID from session payload", "playerID", interactPayload.PlayerID, "error", err)
-					continue
-				}
 
 				entityIDUUID, err := uuid.Parse(interactPayload.EntityID)
 
@@ -588,24 +576,13 @@ func (s *Session) manageClientMessages() {
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
-					slog.Error("Failed to parse loot payload", "error", err)
-					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
-						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
-							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse loot request")
-						}
-					}
+					slog.Error("Failed to parse loot payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse loot request")
 					continue
 				}
 				attackPayload := parsedPayload.(types.PlayerSectionAttackPayload)
 				slog.Debug("Parse attack payload",
 					"attackPayload", attackPayload)
-
-				playerID, err := uuid.Parse(attackPayload.PlayerID)
-
-				if err != nil {
-					slog.Error("Invalid PlayerID from session payload", "playerID", attackPayload.PlayerID, "error", err)
-					continue
-				}
 
 				enemyEntityID, err := uuid.Parse(attackPayload.EnemyEntityID)
 
@@ -631,21 +608,11 @@ func (s *Session) manageClientMessages() {
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
-					slog.Error("Failed to parse cast_skill payload", "error", err)
-					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
-						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
-							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse cast_skill request")
-						}
-					}
+					slog.Error("Failed to parse cast_skill payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse cast_skill request")
 					continue
 				}
 				skillPayload := parsedPayload.(types.PlayerCastSkillPayload)
-
-				playerID, err := uuid.Parse(skillPayload.PlayerID)
-				if err != nil {
-					slog.Error("Invalid PlayerID from session payload", "playerID", skillPayload.PlayerID, "error", err)
-					continue
-				}
 
 				s.queueIntent(func() {
 					if err := s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY); err != nil {
@@ -662,13 +629,8 @@ func (s *Session) manageClientMessages() {
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
-					slog.Error("Failed to parse payload - types don't match", "payload", parsedPayload, "error", err)
-					// Get playerID from payload if possible, otherwise skip sending error to specific player
-					if playerIDStr, ok := msg.Message.Payload["player_id"].(string); ok {
-						if playerID, parseErr := uuid.Parse(playerIDStr); parseErr == nil {
-							s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse move request")
-						}
-					}
+					slog.Error("Failed to parse payload - types don't match", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse move request")
 					continue
 				}
 
@@ -681,16 +643,10 @@ func (s *Session) manageClientMessages() {
 
 				slog.Debug("ParsedPayload of item to equip / unequip",
 					"action", msg.Message.Action,
-					"player_id", playerEquipPayload.PlayerID,
+					"player_id", playerID,
 					"session_id", s.ID,
 					"item_entity_id", playerEquipPayload.ItemEntityID,
 				)
-
-				playerID, err := uuid.Parse(playerEquipPayload.PlayerID)
-				if err != nil {
-					slog.Error("Invalid PlayerID from session payload", "player_id", playerEquipPayload.PlayerID, "error", err)
-					continue
-				}
 
 				itemEntityID, err := uuid.Parse(playerEquipPayload.ItemEntityID)
 				if err != nil {
