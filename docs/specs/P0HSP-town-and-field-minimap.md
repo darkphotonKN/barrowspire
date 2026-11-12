@@ -300,6 +300,10 @@ fog learning to persist). **An ADR is warranted** and is escalated to the coordi
 title "A field's minimap fog is the player's own, shown on the minimap only, and kept per character
 in the browser". This FS does not wait on it: the requirements above stand on the owner's approval.
 
+**Recorded 2026-11-12 as [ADR-0078](../adr/0078-a-fields-minimap-fog-is-the-players-own-shown-on-the-minimap-only-and-kept-per-character-in-the-browser.md)**
+("A field's minimap fog is the player's own, shown on the minimap only, and kept per character in
+the browser"), beside ADR-0063, which it leaves standing.
+
 ## User Stories
 
 1. As a player in the town, I want a minimap in the corner, so that I know where I am among the buildings.
