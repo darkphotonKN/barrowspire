@@ -64,13 +64,30 @@ export function lightClose(glyph: Phaser.GameObjects.Text, lit: boolean): void {
 /**
  * Draws the frame of a panel at `panel` on `g`, in `g`'s space, and its × glyph in the same
  * space; returns the × box and the glyph, for the caller to place, hit and take down.
+ *
+ * Told `{ close: false }` it draws the frame alone, no ×, and returns nothing: for a window whose
+ * one way out is elsewhere (the disconnect notice, its button: FS-R6EYZ R9, R13). Untold, every
+ * window keeps its ×.
  */
 export function drawPanelFrame(
   scene: Pick<Phaser.Scene, "add">,
   g: Phaser.GameObjects.Graphics,
   panel: FrameRect,
-): { close: FrameRect; glyph: Phaser.GameObjects.Text } {
+): { close: FrameRect; glyph: Phaser.GameObjects.Text };
+export function drawPanelFrame(
+  scene: Pick<Phaser.Scene, "add">,
+  g: Phaser.GameObjects.Graphics,
+  panel: FrameRect,
+  options: { close: false },
+): void;
+export function drawPanelFrame(
+  scene: Pick<Phaser.Scene, "add">,
+  g: Phaser.GameObjects.Graphics,
+  panel: FrameRect,
+  options?: { close: false },
+): { close: FrameRect; glyph: Phaser.GameObjects.Text } | void {
   carvedPanel(g, panel.x, panel.y, panel.width, panel.height);
+  if (options?.close === false) return;
   const close = frameClose(panel);
   const glyph = scene.add
     .text(close.x + close.width / 2, close.y + close.height / 2, "×", {

@@ -1,13 +1,13 @@
 import * as Phaser from "phaser";
 import { NOTICE_SCENE, hideDomLayer, type DomLayer } from "@/components/disconnectNotice";
 import { relayoutOn, viewport } from "@/render/viewport";
-import { carvedPanel } from "@/ui/carvedPanel";
 import {
   DISCONNECT_NOTICE,
   NOTICE_DIM_ALPHA,
   NOTICE_TEXT_PX,
   disconnectNoticeFrame,
 } from "@/ui/disconnectNoticeLayout";
+import { drawPanelFrame, drawPanelTitle } from "@/ui/panelFrame";
 import type { Rect } from "@/ui/partyPanelLayout";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { onSceneEnd } from "./sceneEnd";
@@ -25,8 +25,9 @@ const text = (colour: number, px: number) => ({
 });
 
 /**
- * The disconnect notice (FS-R6EYZ §B): the world dimmed and held still behind a carved panel that
- * says "Disconnected", one line, and **Return to menu**. Its own scene, last in the game's scene
+ * The disconnect notice (FS-R6EYZ §B): the world dimmed and held still behind a panel in the
+ * shared window frame (no ×: its button is its one way out) under the shared title DISCONNECTED,
+ * one line, and **Return to menu** (R8, R9). Its own scene, last in the game's scene
  * list, so it is drawn over every world and outlives a world switch (R11); it draws on the game
  * palette, as every panel in the world does (design guideline "Panels in the world").
  *
@@ -79,12 +80,8 @@ export class DisconnectNoticeScene extends Phaser.Scene {
       .setInteractive();
 
     const panel = this.add.graphics().setScrollFactor(0);
-    carvedPanel(panel, f.panel.x, f.panel.y, f.panel.width, f.panel.height);
-
-    const title = this.add
-      .text(f.title.x, f.title.y, DISCONNECT_NOTICE.title, text(palette.hudText, NOTICE_TEXT_PX.title))
-      .setOrigin(0.5)
-      .setScrollFactor(0);
+    drawPanelFrame(this, panel, f.panel, { close: false });
+    const title = drawPanelTitle(this, f.panel, DISCONNECT_NOTICE.title).setScrollFactor(0);
     const line = this.add
       .text(f.line.x, f.line.y, DISCONNECT_NOTICE.line, text(palette.hudLabel, NOTICE_TEXT_PX.line))
       .setOrigin(0.5)
