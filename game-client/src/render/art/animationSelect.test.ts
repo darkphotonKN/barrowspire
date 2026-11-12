@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Facing8 } from "@/render/iso/facing";
 import {
-  BACKPEDAL_PACE,
   CHARACTER_ANIMATIONS,
   MAX_WALK_SCALE,
   RUN_PACE,
@@ -181,99 +180,97 @@ describe("selectAnimation", () => {
   });
 });
 
-describe("selectAnimation with a facing to turn to: run, backpedal, the pointer facing (FS-JS7C8)", () => {
-  const north = { vx: 0, vy: -200 };
-  const south = { vx: 0, vy: 200 };
-  const east = { vx: 200, vy: 0 };
-  const southEast = { vx: 141, vy: 141 };
-  const southWest = { vx: -141, vy: 141 };
-  /** A class sheet re-baked with both clips (slice 5 on). */
-  const both = { run: true, backpedal: true };
+describe("selectAnimation: the run, and the backward step only while attacking (FS-JS7C8)", () => {
+  const north = { vx: 0, vy: -90 };
+  const south = { vx: 0, vy: 90 };
+  const east = { vx: 90, vy: 0 };
+  const southEast = { vx: 64, vy: 64 };
+  const southWest = { vx: -64, vy: 64 };
+  const aimNorth = { x: 0, y: -50 };
+  const aimNorthEast = { x: 35, y: -35 };
+  /** A class sheet re-baked with run, walk_attack and backpedal_attack (I-JS7C8-12 on). */
+  const full = { run: true, walkAttack: true, backpedalAttack: true };
+  /** Attacking, as a swing on the move is told. */
+  const swinging = (aim: { x: number; y: number }, velocity: { vx: number; vy: number }) => ({
+    attacking: true,
+    aim,
+    velocity,
+  });
 
   it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
     [
-      "moving away from the facing backpedals, turned to the facing (R9)",
-      { face: "n", velocity: south, ...both },
-      { animation: "backpedal", facing: "n", direction: 6 },
+      "attacking while moving more than 90° from the aim steps back, turned to the aim (R9)",
+      { ...swinging(aimNorth, south), ...full },
+      { animation: "backpedal_attack", facing: "n", direction: 6 },
     ],
     [
-      "moving toward the facing runs, turned to the facing (R4)",
-      { face: "n", velocity: north, ...both },
-      { animation: "run", facing: "n", direction: 6 },
+      "attacking while moving at 135° from the aim steps back (R9)",
+      { ...swinging(aimNorth, southWest), ...full },
+      { animation: "backpedal_attack", facing: "n", direction: 6 },
     ],
     [
-      "moving at exactly 90° from the facing runs, turned to the facing: a side-run (R9)",
-      { face: "n", velocity: east, ...both },
-      { animation: "run", facing: "n", direction: 6 },
+      "attacking while moving at exactly 90° from the aim walks, turned to the aim (R9)",
+      { ...swinging(aimNorth, east), ...full },
+      { animation: "walk_attack", facing: "n", direction: 6 },
     ],
     [
-      "a diagonal facing at exactly 90° from the movement runs",
-      { face: "ne", velocity: southEast, ...both },
-      { animation: "run", facing: "ne", direction: 7 },
+      "a diagonal aim at exactly 90° from the movement walks (R9)",
+      { ...swinging(aimNorthEast, southEast), ...full },
+      { animation: "walk_attack", facing: "ne", direction: 7 },
     ],
     [
-      "moving at 135° from the facing backpedals",
-      { face: "n", velocity: southWest, ...both },
-      { animation: "backpedal", facing: "n", direction: 6 },
+      "attacking while moving toward the aim walks, turned to the aim (R9)",
+      { ...swinging(aimNorth, north), ...full },
+      { animation: "walk_attack", facing: "n", direction: 6 },
     ],
     [
-      "moving at 45° from the facing runs, turned to the facing",
-      { face: "e", velocity: southEast, ...both },
-      { animation: "run", facing: "e", direction: 0 },
+      "a sheet with walk_attack but no backpedal_attack walks at any angle (R11)",
+      { ...swinging(aimNorth, south), run: true, walkAttack: true },
+      { animation: "walk_attack", facing: "n", direction: 6 },
     ],
     [
-      "a sheet with run but no backpedal runs turned to its movement when over 90° (R11)",
-      { face: "n", velocity: south, run: true },
-      { animation: "run", facing: "s", direction: 2 },
-    ],
-    [
-      "a sheet with run but no backpedal runs turned to the facing at 90° or less",
-      { face: "n", velocity: east, run: true },
-      { animation: "run", facing: "n", direction: 6 },
-    ],
-    [
-      "with no facing given, a sheet with run runs turned to its movement",
-      { velocity: south, ...both },
-      { animation: "run", facing: "s", direction: 2 },
-    ],
-    [
-      "a sheet without run walks turned to its movement, as today, whatever the facing (R4)",
-      { face: "n", velocity: south },
-      { animation: "walk", facing: "s", direction: 2 },
-    ],
-    [
-      "standing turns idle to the facing (R24)",
-      { face: "w", facing: "se" },
-      { animation: "idle", facing: "w", direction: 4 },
-    ],
-    [
-      "standing turns idle to the facing on a sheet without run too (R22)",
-      { face: "nw", facing: "e" },
-      { animation: "idle", facing: "nw", direction: 5 },
-    ],
-    [
-      "the merc's guard turns to the facing, moving or not (R24)",
-      { face: "w", guarding: true, velocity: south },
-      { animation: "parry", facing: "w", direction: 4 },
-    ],
-    [
-      "an attack still faces its aim, not the facing (R24)",
-      { face: "w", attacking: true, aim: { x: 0, y: -50 } },
+      "a charge plays the whole attack whichever way the body is carried (Fact 11)",
+      { ...swinging(aimNorth, south), run: true, walkAttack: false, backpedalAttack: true },
       { animation: "attack", facing: "n", direction: 6 },
     ],
     [
-      "walk_attack still faces its aim, not the facing (R24)",
-      { face: "w", attacking: true, walkAttack: true, velocity: south, aim: { x: 50, y: 0 }, ...both },
-      { animation: "walk_attack", facing: "e", direction: 0 },
+      "attacking while standing is the whole-body attack",
+      { attacking: true, aim: aimNorth, ...full },
+      { animation: "attack", facing: "n", direction: 6 },
     ],
     [
-      "death keeps the facing it fell in, not the facing (R24)",
-      { face: "w", dead: true, facing: "ne", velocity: south, ...both },
+      "moving and not attacking runs turned to its movement (R4)",
+      { velocity: south, facing: "n", ...full },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "moving and not attacking never steps back, whatever it last faced (R45)",
+      { velocity: { vx: 0, vy: 200 }, facing: "n", ...full },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "a sheet without run walks turned to its movement, as today (R4)",
+      { velocity: south, facing: "n" },
+      { animation: "walk", facing: "s", direction: 2 },
+    ],
+    [
+      "standing keeps the last facing (R22)",
+      { facing: "w", ...full },
+      { animation: "idle", facing: "w", direction: 4 },
+    ],
+    [
+      "the merc's guard plays the way he is going (R24)",
+      { guarding: true, velocity: south, facing: "w", ...full },
+      { animation: "parry", facing: "s", direction: 2 },
+    ],
+    [
+      "death keeps the facing it fell in (R24)",
+      { dead: true, facing: "ne", velocity: south, ...full },
       { animation: "death", facing: "ne", direction: 7 },
     ],
     [
-      "a Shadow Shot hold turns to the held aim, not the facing (R24)",
-      { face: "w", holding: { x: 50, y: 0 }, velocity: south, ...both },
+      "a Shadow Shot hold turns to the held aim (R24)",
+      { holding: { x: 50, y: 0 }, velocity: south, ...full },
       { animation: "idle", facing: "e", direction: 0 },
     ],
   ])("%s", (_name, fields, want) => {
@@ -281,40 +278,42 @@ describe("selectAnimation with a facing to turn to: run, backpedal, the pointer 
     expect({ animation: got.animation, facing: got.facing, direction: got.direction }).toEqual(want);
   });
 
-  it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s", () => {
-    const got = selectAnimation(state({ face: "n", velocity: north, ...both }));
+  it.each<[string, Partial<CharacterState>]>([
+    ["backpedal_attack", { ...swinging(aimNorth, south), ...full }],
+    ["walk_attack", { ...swinging(aimNorth, east), ...full }],
+  ])("should play %s at its authored rate (R9)", (_name, fields) => {
+    expect(selectAnimation(state(fields)).timeScale).toBe(1);
+  });
+
+  it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s (R4)", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, ...full }));
+    expect(got.animation).toBe("run");
     expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
     expect(got.timeScale).toBeGreaterThanOrEqual(0.9);
     expect(got.timeScale).toBeLessThanOrEqual(1.1);
   });
 
-  it("should play the backpedal at the speed drawn over BACKPEDAL_PACE", () => {
-    const got = selectAnimation(state({ face: "n", velocity: south, ...both }));
-    expect(got.timeScale).toBeCloseTo(200 / BACKPEDAL_PACE);
-  });
-
-  it("should play a run turned to its movement (no backpedal) at the run's rate", () => {
-    const got = selectAnimation(state({ face: "n", velocity: south, run: true }));
-    expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
-  });
-
-  it.each<[string, Partial<CharacterState>]>([
-    ["run", { face: "e", velocity: { vx: 2000, vy: 0 }, ...both }],
-    ["backpedal", { face: "w", velocity: { vx: 2000, vy: 0 }, ...both }],
-  ])("should cap the %s's playback as the walk's for a burst", (_name, fields) => {
-    expect(selectAnimation(state(fields)).timeScale).toBe(MAX_WALK_SCALE);
+  it("should cap the run's playback as the walk's for a burst", () => {
+    expect(selectAnimation(state({ velocity: { vx: 2000, vy: 0 }, ...full })).timeScale).toBe(MAX_WALK_SCALE);
   });
 
   it("should keep a sheet without run walking at speed / WALK_PACE, as today", () => {
-    const got = selectAnimation(state({ face: "n", velocity: south }));
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: 200 } }));
     expect(got.timeScale).toBeCloseTo(200 / WALK_PACE);
   });
 
-  it("should keep both paces inside the bands the clips are keyed to (R3, R10)", () => {
+  it("should keep the run's pace inside the band it is keyed to (R3)", () => {
     expect(RUN_PACE).toBeGreaterThanOrEqual(180);
     expect(RUN_PACE).toBeLessThanOrEqual(220);
-    expect(BACKPEDAL_PACE).toBeGreaterThanOrEqual(150);
-    expect(BACKPEDAL_PACE).toBeLessThanOrEqual(220);
+  });
+
+  it("should never choose a standalone backward step, moving any way, attacking or not (R45)", () => {
+    for (const velocity of [north, south, east, southEast, southWest])
+      for (const attacking of [false, true])
+        for (const facing of ["n", "s", "e", "w"] as Facing8[])
+          expect(selectAnimation(state({ velocity, attacking, aim: aimNorth, facing, ...full })).animation).not.toBe(
+            "backpedal",
+          );
   });
 });
 
