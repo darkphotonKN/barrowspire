@@ -1,9 +1,9 @@
 ---
 id: I-P0HSP-3
-status: open
+status: done
 implements: FS-P0HSP
 blocked_by: [I-P0HSP-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-P0HSP slice 3: M cycles the town's minimap through normal, enlarged and the overlay, on the run's remembered mode (game-client)"
 ---
 Implements FS-P0HSP §F, §G
@@ -31,14 +31,14 @@ key, so a choice made in a run holds in the town and the other way round.
 
 ## Acceptance Criteria
 
-- [ ] FS-P0HSP §Acceptance Criteria: M in the town (cycle, guards, stored key, nothing before the map);
+- [x] FS-P0HSP §Acceptance Criteria: M in the town (cycle, guards, stored key, nothing before the map);
       enlarged and overlay as the run's; the corner empty in overlay mode; prompts and the ready check
       over the map where they overlap at 1080.
-- [ ] The overlay's placement and hold measured as FS-1SEF0's (no back-steps walking, within two
+- [x] The overlay's placement and hold measured as FS-1SEF0's (no back-steps walking, within two
       backing px of the figure's point, at render scales 1, 1.5 and 2).
-- [ ] Headless captures of the town in each mode at 1080 × 720 and 1280 × 720, render scales 1 and 2,
+- [x] Headless captures of the town in each mode at 1080 × 720 and 1280 × 720, render scales 1 and 2,
       looked at by eye.
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] Typecheck, lint and the full vitest suite pass.
 
 ## Blocked By
 
@@ -54,3 +54,17 @@ FS-P0HSP §F.31–§F.34, §G.35, §G.38; User Stories 21–23, 25, 27.
   each to the store; a press while chat is typing, or on a repeat, changes nothing; a scene started
   with "enlarged" stored builds the map enlarged.
 - GREEN: the binding and the mode, then the overlay's follow and hold wired to the hub's camera.
+
+## Status
+
+Done 2026-11-12. M is a keydown event in `HubScene.bindMinimapKey` (guards: repeat, chat typing, the
+menu, a dialogue card, the letter panel, no map yet); the mode is read from
+`barrowspire_minimap_mode` as the map is built with the first walled state (the scene's start, as
+far as M can tell: M does nothing before it) and written on each press. `followMapOverlay` runs
+each frame after the figures ease. The overlay's placement and hold are the run's own code
+(`MinimapView`), measured by `minimap.test.ts` at render scales 1, 1.5 and 2 and checked for the
+town in `worldMinimap.test.ts` (1/8 about the player, the town 300 x 150). Invite prompts and the
+ready check redraw their objects on every change, after the map, at the one HUD depth 1000, so they
+draw over it (`worldMinimap.test.ts`, §G.38). Captures (a headless stand-in, not the live scene:
+a flat world from the golden walls, the real WorldMinimap and townMap) in the session scratchpad
+`hub-minimap/town-{normal,enlarged,overlay}-{1080,1280}x720-x{1,2}.png`, looked at.
