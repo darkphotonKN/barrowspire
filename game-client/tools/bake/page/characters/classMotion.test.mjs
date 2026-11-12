@@ -4,8 +4,10 @@
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import { ATTACKS, ATTACK_TURN_LIMIT, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
-import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
-import { boots, legs } from "./anatomy.js";
+import { attach, createRig, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
+import { boots, coif, hair, head, legs, shortBeard } from "./anatomy.js";
+import { VIEW_DIR } from "../projection.js";
+import { FACINGS, yawFor } from "../facing.js";
 import { footing, measurePace } from "./pace.js";
 import {
   KNIGHT_BUILD,
@@ -16,6 +18,7 @@ import {
   MERCENARY_STYLE,
   RUN_BLADE_ELEV,
   RUN_CROSS_REACH,
+  RUN_TIP_CEIL,
   SCEPTRE_RUN_PEAK,
   SCEPTRE_RUN_TILT,
   SCEPTRE_TILT,
@@ -78,6 +81,46 @@ const GEAR = {
     other: riding(rig, "handL", gripAt(rig, "L"), { rx: -Math.PI / 2 }, [-1, 1].flatMap((x) => [-1, 1].flatMap((y) => [-1, 1].map((z) => [x * 0.018, -0.02 + y * 0.05, -0.03 + z * 0.039])))),
   }),
 };
+
+/**
+ * What a blade-carrying class wears on its head bone, the meshes a run blade must keep out of and
+ * never pass behind: the head (anatomy.js `head`), and the knight's mail coif and conical nasal helm
+ * (`coif`; gear.js `nasalHelm`, its cone and brow band rebuilt here from its own sizes, since gear.js
+ * reads the theme only the bake page serves), the mercenary's tied-back hair and beard (`hair`,
+ * `shortBeard`, as cast.js dresses him). Double-sided, so a ray from inside meets them too.
+ */
+function headMeshes(rig, name) {
+  const mat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const before = new Set(rig.bones.head.children);
+  head(rig, mat);
+  if (name === "knight") {
+    coif(rig, mat);
+    const [, hy, hz] = J(rig, "head");
+    const r = rig.p.headR;
+    const cone = [
+      { p: [0, hy + 0.058, hz - 0.004], r: [r * 1.15, r * 1.2] },
+      { p: [0, hy + 0.095, hz - 0.006], r: [r * 1.02, r * 1.07] },
+      { p: [0, hy + 0.138, hz - 0.004], r: [r * 0.55, r * 0.58] },
+      { p: [0, hy + 0.176, hz + 0.002], r: [r * 0.07, r * 0.07] },
+    ];
+    const band = [
+      { p: [0, hy + 0.054, hz - 0.004], r: [r * 1.19, r * 1.24] },
+      { p: [0, hy + 0.068, hz - 0.004], r: [r * 1.17, r * 1.22] },
+    ];
+    attach(rig, "head", rigidTube(rig.H, cone, { segs: 20, steps: 3 }), mat);
+    attach(rig, "head", rigidTube(rig.H, band, { segs: 20, steps: 1 }), mat);
+  } else {
+    hair(rig, mat, { tail: true });
+    shortBeard(rig, mat, { full: 0.8 });
+  }
+  return rig.bones.head.children.filter((c) => c.isMesh && !before.has(c));
+}
+
+/** The camera's direction in model space for each facing (the bake's view turned back by the facing's yaw, as clearance.test.mjs reads it). */
+const VIEWS = FACINGS.map((facing) => {
+  const yaw = -yawFor(facing);
+  return [facing, new THREE.Vector3(VIEW_DIR[0] * Math.cos(yaw) + VIEW_DIR[2] * Math.sin(yaw), VIEW_DIR[1], -VIEW_DIR[0] * Math.sin(yaw) + VIEW_DIR[2] * Math.cos(yaw)).normalize()];
+});
 
 /**
  * The torso as anatomy.js `torso` profiles it (bind, H): rings from the pelvis to the shoulders,
@@ -164,8 +207,10 @@ function deepestCarry(rig, gear, frames) {
  * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
  * `low` names the arm that pumps only to the lower chest ({@link SCEPTRE_RUN_PEAK}): the wizard's
  * sceptre arm. `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
- * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度":
- * the knight's 5° below to 12° above and the mercenary's 8° below to 10° above, each raised about 15°).
+ * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
+ * the knight's 5° below to 12° above and the mercenary's 8° below to 10° above each raised about 15°,
+ * then "戰士 傭兵 跑步時提劍的角度再提升15度": the knight's 9-26° and the mercenary's 7-24° raised about
+ * 15° again).
  */
 const CLASSES = [
   {
@@ -176,7 +221,7 @@ const CLASSES = [
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
     rest: "point",
-    runBlade: [8, 27],
+    runBlade: [23, 42],
   },
   {
     name: "mercenary",
@@ -185,7 +230,7 @@ const CLASSES = [
     sheet: MERCENARY_SHEET,
     pump: ["L", "R"],
     rest: "point",
-    runBlade: [6, 25],
+    runBlade: [21, 40],
   },
   {
     name: "wizard",
@@ -271,15 +316,20 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
   // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高",
   // then, of the held keys' fist turned over: "跑步時武器是不是拿反了", then of the low carry baked:
   // "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂" and, of the sceptre,
-  // "只是要合理的位置 但跑步時為什麼手會擺到肩膀", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度"
+  // "只是要合理的位置 但跑步時為什麼手會擺到肩膀", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度", then
+  // "戰士 傭兵 跑步時提劍的角度再提升15度"
   it(
     rest === "point"
-      ? `carries the blade a little above level on every sample (RUN_BLADE_ELEV, ${RUN_BLADE_ELEV?.join(" to ")}° from level; the ${name}'s ${runBlade?.join(" to ")}°), its tip ahead of the hand and the body, never over the head`
+      ? `carries the blade raised above level on every sample (RUN_BLADE_ELEV, ${RUN_BLADE_ELEV?.join(" to ")}° from level; the ${name}'s ${runBlade?.join(" to ")}°), its tip ahead of the hand and the body, under RUN_TIP_CEIL (${RUN_TIP_CEIL} H)`
       : `carries the sceptre reasonably upright on every sample (SCEPTRE_RUN_TILT, ${SCEPTRE_RUN_TILT?.join("–")}° off vertical), the orb above the hand and ahead of it, clear of the robe`,
     () => {
       const gear = GEAR[name](rig);
       const tip = gear.weapon.at(-1);
-      if (rest === "point") expect(RUN_BLADE_ELEV[0], "the band's foot, above level").toBeGreaterThanOrEqual(5);
+      if (rest === "point") {
+        expect(RUN_BLADE_ELEV[0], "the band's foot, raised above level").toBeGreaterThanOrEqual(20);
+        // never back up to the old near-upright carry (74-85° above level)
+        expect(RUN_BLADE_ELEV[1], "the band's top, short of upright").toBeLessThanOrEqual(50);
+      }
       for (const f of SAMPLES) {
         pose8(f);
         const [hand, t, hips, head] = [at(rig, "handR"), world(tip), at(rig, "hips"), at(rig, "head")];
@@ -291,10 +341,9 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
           expect(elev, `the ${name}'s blade @${f}`).toBeGreaterThanOrEqual(runBlade[0]);
           expect(elev, `the ${name}'s blade @${f}`).toBeLessThanOrEqual(runBlade[1]);
           expect(t.z - hips.z, `tip ahead of the body @${f}`).toBeGreaterThan(0);
-          // never back up to the old upright carry, its tip over the crown (the top of the head as
-          // \`inside\` models it: its centre 0.048 H over the head bone, its half height 1.05 headR)
-          const crown = head.y + (0.048 + 1.05 * rig.p.headR) * rig.H;
-          expect(t.y, `tip under the crown @${f}`).toBeLessThan(crown);
+          // raised, the point now rises past the crown (the top of the head as \`inside\` models it),
+          // but never past a ceiling a little above it (the head kept clear: the test below)
+          expect(t.y / rig.H, `tip under RUN_TIP_CEIL @${f}`).toBeLessThan(RUN_TIP_CEIL);
         } else {
           expect(90 - elev, `sceptre off vertical @${f}`).toBeGreaterThanOrEqual(SCEPTRE_RUN_TILT[0]);
           expect(90 - elev, `sceptre off vertical @${f}`).toBeLessThanOrEqual(SCEPTRE_RUN_TILT[1]);
@@ -304,6 +353,49 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
       }
     },
   );
+
+  // owner, 2026-11-12: "戰士 傭兵 跑步時提劍的角度再提升15度": raised, the point rises past the crown
+  if (rest === "point")
+    it("never passes the blade through the head, nor behind it, in any of the 8 facings", () => {
+      const hr = rigOf(build);
+      const heads = headMeshes(hr, name);
+      // the head's front, bind space (H): the most forward of its meshes
+      hr.root.updateMatrixWorld(true);
+      const front = Math.max(...heads.map((m) => new THREE.Box3().setFromObject(m).max.z)) / hr.H;
+      // the blade, pommel to point, sampled at twice the carry's points
+      const pts = GEAR[name](hr).weapon;
+      const blade = pts.flatMap((m, i) => {
+        if (i === 0) return [m];
+        const mid = new THREE.Object3D();
+        mid.position.copy(pts[i - 1].position).lerp(m.position, 0.5);
+        m.parent.add(mid);
+        return [mid, m];
+      });
+      const rc = new THREE.Raycaster();
+      for (const f of SAMPLES) {
+        footing(hr, run, f);
+        hr.root.updateMatrixWorld(true);
+        const w = blade.map(world);
+        // through: no segment of the blade crosses a head mesh's surface
+        for (let i = 1; i < w.length; i++) {
+          const d = w[i].clone().sub(w[i - 1]);
+          rc.set(w[i - 1], d.clone().normalize());
+          rc.far = d.length();
+          expect(rc.intersectObjects(heads, false).length, `@${f}: blade segment ${i} through the head`).toBe(0);
+        }
+        // behind: wherever the head stands between a blade point and the camera, the point is ahead
+        // of the face, as a back view shows a blade held before it; never beside or behind the head
+        rc.far = Infinity;
+        for (const [facing, v] of VIEWS)
+          w.forEach((p, i) => {
+            rc.set(p, v);
+            if (!rc.intersectObjects(heads, false).length) return;
+            expect(inBind(hr, "head", p).z, `${facing} @${f}: blade point ${i} behind the head`).toBeGreaterThan(front);
+            // and only with his back to the camera (the view from behind him: n, nw, w)
+            expect(v.z, `${facing} @${f}: blade point ${i} hidden by the head, facing the camera`).toBeLessThan(-0.5);
+          });
+      }
+    });
 
   // owner, 2026-11-12: "武器可以往內側擺動一些"
   it(`swings the weapon hand in toward the midline at the front of the pump (RUN_CROSS_REACH, ${RUN_CROSS_REACH?.join("–")} H), across the front of the torso, and back out to the side behind${rest === "point" ? ", the blade angled across the body" : ""}`, () => {
