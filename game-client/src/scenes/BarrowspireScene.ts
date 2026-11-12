@@ -141,6 +141,7 @@ import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
+import { MinimapModeIcon } from "@/ui/minimapModeIcon";
 import {
   browserMinimapStore,
   nextMinimapMode,
@@ -149,7 +150,7 @@ import {
   type MinimapMode,
   type MinimapModeStore,
 } from "@/ui/minimapMode";
-import { TOP_RIGHT_HUD, TOP_RIGHT_LINE, topRightColumn } from "@/ui/topRightColumn";
+import { TOP_RIGHT_HUD, TOP_RIGHT_LINE, cornerMinimap, topRightColumn } from "@/ui/topRightColumn";
 import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
@@ -427,6 +428,8 @@ interface DungeonFloor {
   fog?: Fog;
   /** Its minimap (FS-SRA9J §E), built with the fog and gone with the floor. */
   minimap?: Minimap;
+  /** Its minimap's map mode icon, built and gone with it (FS-56CKV §Change: Map mode icon, D4). */
+  modeIcon?: MinimapModeIcon;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
 }
@@ -3383,7 +3386,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
       this.containerView.pointerMove(at.x, at.y);
+      // the map mode icon lit under the pointer, unless a panel lies over it (FS-56CKV §Change: Map mode icon, D7)
+      if (this.panelTakes(at.x, at.y)) this.dungeon?.modeIcon?.pointerOut();
+      else this.dungeon?.modeIcon?.pointerMove(at.x, at.y);
     });
+    this.input.on("gameout", () => this.dungeon?.modeIcon?.pointerOut());
 
     // Disable browser right-click menu for equipment panel context menus
 
@@ -3395,15 +3402,9 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.combat.aiming) return;
       // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
-      // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
-      // clear middle band answers as with the overlay closed (FS-HRH2J R8)
-      if (this.equipment?.covers(at.x, at.y)) return;
-      // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-      if (this.chatWindow?.covers(at.x, at.y)) return;
-      // and one on the open party panel is the panel's (FS-R82NV R28)
-      if (this.partyPanel?.covers(at.x, at.y)) return;
-      // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-      if (this.invitePrompt?.covers(at.x, at.y)) return;
+      if (this.panelTakes(at.x, at.y)) return;
+      // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
+      if (this.dungeon?.modeIcon?.pointerDown(at.x, at.y, pointer.button === 0)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
       if (this.containerView.pointerDown(at.x, at.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
@@ -3465,6 +3466,22 @@ export class BarrowspireScene extends Phaser.Scene {
         }
       }
     });
+  }
+
+  /**
+   * Whether a press at (x, y), logical units, is a HUD panel's: no attack, no cast, no hold, and
+   * nothing under it takes it.
+   */
+  private panelTakes(x: number, y: number): boolean {
+    // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
+    // clear middle band answers as with the overlay closed (FS-HRH2J R8)
+    if (this.equipment?.covers(x, y)) return true;
+    // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
+    if (this.chatWindow?.covers(x, y)) return true;
+    // and one on the open party panel is the panel's (FS-R82NV R28)
+    if (this.partyPanel?.covers(x, y)) return true;
+    // and one on an invite prompt is the prompt's (FS-NCC9J R24)
+    return this.invitePrompt?.covers(x, y) ?? false;
   }
 
   /** The class this player's clicks answer for, lower-cased; a warrior when none is chosen. */
@@ -3851,6 +3868,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.chunks.clear();
     this.dungeon?.fog?.destroy();
     this.dungeon?.minimap?.destroy();
+    this.dungeon?.modeIcon?.destroy();
     this.dungeon = undefined;
     this.placeTopRightColumn();
   }
@@ -3931,6 +3949,11 @@ export class BarrowspireScene extends Phaser.Scene {
       () => viewport.renderScale,
     );
     dungeon.minimap.setMode(this.minimapMode);
+    // its map mode icon over it: a press is M's, under M's guards (FS-56CKV §Change: Map mode icon)
+    dungeon.modeIcon = new MinimapModeIcon(
+      { graphics: () => this.add.graphics(), text: (words, style) => this.add.text(0, 0, words, style) },
+      { press: () => this.cycleMinimap(), blocked: () => !!this.menu || !!this.chatWindow?.isTyping() },
+    );
     this.placeTopRightColumn();
   }
 
@@ -3938,24 +3961,25 @@ export class BarrowspireScene extends Phaser.Scene {
    * The top-right column from its anchor (FS-56CKV §B, superseding FS-SRA9J §E.20 in part): the
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
    * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
-   * dev readout goes with it (§C.14, §C.18): in the minimap's bottom-left corner, else under the
-   * column's last line. The minimap, normal or enlarged, stands at the very top with the fullscreen
+   * dev readout goes with it (§C.14, §C.18): in the minimap's top-right corner (§Change: Map mode
+   * icon, D8), else under the column's last line. The minimap, normal or enlarged, stands at the very top with the fullscreen
    * button at its left; in the overlay and with no minimap the button keeps the corner and the
    * column starts under it (§Change: Minimap at the top, fullscreen button beside it, as amended
-   * 2026-11-12).
+   * 2026-11-12). The map mode icon goes with the map, or beside the button with the overlay up
+   * (§Change: Map mode icon).
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
-    const panel = minimap?.panel;
     const column = topRightColumn({
       view: viewport,
-      minimap: panel && minimap ? { ...panel, mode: minimap.mode } : null,
+      minimap: cornerMinimap(minimap),
       floorHeight: floor?.visible ? floor.height : null,
       escapedHeight: this.escapedCountText?.height ?? 0,
     });
     this.fullscreenButton.hand(this, column.button);
     if (column.minimap) minimap?.place(column.minimap);
+    this.dungeon?.modeIcon?.place(column.modeIcon);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
     const readout = positionReadoutPlace(column.minimap, { right: column.escaped.x, bottom: column.bottom });

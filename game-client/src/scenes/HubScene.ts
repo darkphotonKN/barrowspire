@@ -168,9 +168,10 @@ import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render
 import { afterFrameSetUp, boundCamera, crispen, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
+import type { ModeIconStage } from "@/ui/minimapModeIcon";
 import { canvasImage } from "@/ui/paintKit";
 import { TownPlan } from "@/ui/townMap";
-import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
+import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { placeCard } from "@/ui/placeCard";
 
@@ -738,6 +739,8 @@ export class HubScene extends Phaser.Scene {
   private readonly townPlan = new TownPlan(HUB_SIZE);
   /** What the town's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
+  /** The map mode icon's own stage, its glyph and hint (FS-56CKV §Change: Map mode icon): the scene's graphics and text. */
+  private modeIconStage?: ModeIconStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
@@ -875,6 +878,7 @@ export class HubScene extends Phaser.Scene {
     if (!this.groundLayer) this.drawGround();
     this.bindInput();
     this.bindMinimapKey();
+    this.bindMinimapPointer();
     this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
@@ -929,6 +933,11 @@ export class HubScene extends Phaser.Scene {
       graphics: () => this.add.graphics(),
       canvasImage: (...image) => canvasImage(this, ...image),
       frames: (listener) => afterFrameSetUp(this.cameras.main, listener),
+    };
+    // the map mode icon's, apart from the map's layers (FS-56CKV §Change: Map mode icon)
+    this.modeIconStage = {
+      graphics: () => this.add.graphics(),
+      text: (words, style) => this.add.text(0, 0, words, style),
     };
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
@@ -1148,6 +1157,7 @@ export class HubScene extends Phaser.Scene {
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
+    this.modeIconStage = undefined;
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
@@ -2055,6 +2065,8 @@ export class HubScene extends Phaser.Scene {
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
         button: this.fullscreenButton,
+        // a press on its map mode icon is M's, under M's guards (FS-56CKV §Change: Map mode icon, D6)
+        icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
@@ -2067,11 +2079,21 @@ export class HubScene extends Phaser.Scene {
    * owns the keys; the rest of M's guards are the minimap's own.
    */
   private bindMinimapKey(): void {
-    bindMinimapKey(
-      this.input.keyboard ?? undefined,
-      () => !!this.chatWindow?.isTyping() || !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen(),
-      () => this.minimap,
-    );
+    bindMinimapKey(this.input.keyboard ?? undefined, () => this.minimapKeysOwned(), () => this.minimap);
+  }
+
+  /** M's guards in the town (FS-P0HSP §F.33): chat typing, or the menu, a dialogue card or the letter panel owning the keys. */
+  private minimapKeysOwned(): boolean {
+    return !!this.chatWindow?.isTyping() || !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen();
+  }
+
+  /**
+   * The map mode icon's pointer (FS-56CKV §Change: Map mode icon, D5–D7): lit under it, a press on
+   * it M's. A press or hover over the open gear overlay is the overlay's; the letter panel open is
+   * one of M's guards already.
+   */
+  private bindMinimapPointer(): void {
+    bindMinimapPointer(this.input, () => this.minimap, (x, y) => !!this.gear?.covers(x, y));
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */

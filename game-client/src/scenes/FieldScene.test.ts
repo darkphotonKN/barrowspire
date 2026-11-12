@@ -1434,7 +1434,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
   // 模式(M)"): a press on the icon is M's, never an attack
   it("should step the mode on a press on the map mode icon as M does, never an attack, and do nothing with one while chat is typing (FS-56CKV §Change: Map mode icon, D5, D6)", () => {
     const { field, render, map, store } = forestWithMap();
-    const takes = (x: number, y: number, primary = true) => (field as unknown as FieldUnderTest).takesPointer(x, y, primary);
+    const takes = (x: number, y: number, primary = true) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, primary);
     expect(takes(862, 109)).toBe(false);
     render({ x: 2900, y: 1480 });
     expect(takes(862, 109)).toBe(true);

@@ -398,12 +398,15 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   explored; not on floors without regions. In the **town** (FS-P0HSP): the whole town from the
   first moment, its buildings solid with their doors open, its edge open at each road, its **map
   marks**. In a **field world**: its **charted ground** only. Everywhere the party's dots, never a
-  monster, another player or a label. M steps it through its modes, normal, enlarged and the map
-  overlay, and the browser remembers the mode, one for every world (FS-1SEF0, FS-P0HSP); nothing
+  monster, another player or a label. M, or a press on its **map mode icon**, steps it through its
+  modes, normal, enlarged and the map overlay, and the browser remembers the mode, one for every world (FS-1SEF0, FS-P0HSP); nothing
   hides it.
 - **Map overlay** (FS-1SEF0): the minimap's third mode, the floor's map drawn see-through over the
   whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
   map while it is up.
+- **Map mode icon** (FS-56CKV §Change: Map mode icon): the small amber glyph in the minimap's
+  bottom-left corner (beside the fullscreen button while the map overlay is up) that does what M
+  does: a press steps the minimap to its next mode. Hovered, it says "Map mode (M)".
 - **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
   can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
   Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the
