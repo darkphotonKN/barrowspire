@@ -2,7 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
-import { CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
 
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
@@ -11,7 +11,11 @@ import { CLASS_ANIMATIONS, MERC_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } fro
  */
 export const KNIGHT_BUILD = [2.0, { shoulderW: 1.1, torsoW: 1.06 }];
 
-export const KNIGHT_SHEET = { animations: CLASS_ANIMATIONS, scale: 2 };
+/**
+ * The knight re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 6, FS-HF0WW
+ * § Change: Class sheets at 1.5x R35).
+ */
+export const KNIGHT_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
 
 export const KNIGHT_STYLE = {
   attack: "slash",
@@ -24,6 +28,14 @@ export const KNIGHT_STYLE = {
     handR: [-0.55, 0, 0],
   }),
   walk: { arms: [0.2, 0.55], lean: 0.05 },
+  // the run's carry (FS-JS7C8 R2): the sword arm pumps free from the shoulder, a little out from
+  // the hip, the wrist keeping the blade's angle; the shield arm keeps the shield up before the
+  // chest, bent about 90° and swinging short
+  run: {
+    arms: [0.3, 1],
+    elbow: [0.2, 1],
+    hold: pose({ upperArmL: [-0.38, -0.85, 0.12], foreArmL: [-1.25, 0, 0], upperArmR: [0, 0, -0.06], handR: [-0.55, 0, 0] }),
+  },
 };
 
 export const WIZARD_BUILD = [1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 }];
@@ -56,7 +68,7 @@ export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1
 export const MERCENARY_SHEET = { animations: MERC_ANIMATIONS, scale: 2 };
 
 export const MERCENARY_STYLE = {
-  attack: "slash",
+  attack: "cut",
   speed: 1.08,
   // a low guard: the blade forward and up, the free hand loose at the belt
   hold: pose({

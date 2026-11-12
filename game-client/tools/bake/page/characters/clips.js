@@ -465,8 +465,32 @@ const AIM_DRAW = { pole: [0.1, -0.1] };
 const LOOSE_IK = 1.12;
 
 export const ATTACKS = {
-  /** Knight: overhead diagonal slash behind the shield. */
-  slash: () => [
+  /**
+   * Knight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): a
+   * heavy, compact diagonal cut from behind the shield. The weight rocks back as the blade rises
+   * high over the right shoulder (keys 0–1); the pelvis turns in first while the chest is still
+   * back (key 2); the chest and the arm follow, the weight onto the front foot, the blade crossing
+   * the front of the chest (key 3, the strike, as before) and carried through, down and across, to
+   * low past the left hip (key 4); it comes back up to the guard (keys 5–6). The shield stays up
+   * before the chest throughout, drawn in as the sword comes down.
+   */
+  slash: () =>
+    [
+      P({ hips: [0, -0.05, 0], spine: [-0.02, -0.08, 0], chest: [-0.04, -0.15, 0], upperArmR: [-1.6, -0.4, -0.7], foreArmR: [-1.3, 0, 0], handR: [0.5, 0, 0], upperArmL: [-0.65, -0.85, 0.12], foreArmL: [-1.3, 0, 0] }, { z: -0.01 }),
+      P({ hips: [0, -0.15, 0], spine: [-0.06, -0.15, 0], chest: [-0.08, -0.3, 0], upperArmR: [-2.2, -0.8, -1.1], foreArmR: [-1.0, 0, 0], handR: [0.4, 0, 0], upperArmL: [-0.75, -0.8, 0.15], foreArmL: [-1.35, 0, 0] }, { z: -0.025 }),
+      P({ hips: [0, 0.12, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.25, 0], upperArmR: [-2.6, -0.3, -0.45], foreArmR: [-0.3, 0, 0], handR: [0, 0, 0], upperArmL: [-0.8, -0.78, 0.18], foreArmL: [-1.4, 0, 0] }),
+      P({ hips: [0, 0.3, 0], spine: [0.1, 0.15, 0], chest: [0.12, 0.25, 0], upperArmR: [-1.4, 0.1, 0], foreArmR: [-0.2, 0, 0], handR: [1.0, 0, 0], upperArmL: [-0.85, -1.2, 0.2], foreArmL: [-1.45, 0, 0] }, { z: 0.04 }),
+      P({ hips: [0, 0.35, 0], spine: [0.14, 0.2, 0], chest: [0.18, 0.35, 0], upperArmR: [-1.0, 0.8, 0.5], foreArmR: [-0.3, 0, 0], handR: [1.0, 0, 0], upperArmL: [-0.8, -1.3, 0.18], foreArmL: [-1.4, 0, 0] }, { z: 0.035 }),
+      P({ hips: [0, 0.15, 0], spine: [0.05, 0.08, 0], chest: [0.06, 0.12, 0], upperArmR: [-0.8, 0.3, 0.2], foreArmR: [-0.8, 0, 0], handR: [0.4, 0, 0], upperArmL: [-0.7, -1.0, 0.15], foreArmL: [-1.3, 0, 0] }, { z: 0.015 }),
+      P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.6, -0.85, 0.12], foreArmL: [-1.25, 0, 0] }, { z: 0.005 }),
+    ].map((p) => add(STANCE, p)),
+
+  /**
+   * Mercenary: the knight's old overhead diagonal slash, his own keys apart from the knight's so
+   * one class's re-bake never moves the other's atlas (FS-2325V § Change: The class attacks move
+   * with weight and cut deep R7); re-keyed with his own re-bake.
+   */
+  cut: () => [
     P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.6, -0.85, 0.12], foreArmL: [-1.25, 0, 0] }),
     P({ upperArmR: [-2.3, 0.2, -0.55], foreArmR: [-1.35, 0, 0], handR: [0.5, 0, 0], chest: [-0.1, -0.45, 0], spine: [-0.06, -0.2, 0], upperArmL: [-0.75, -0.8, 0.15], foreArmL: [-1.3, 0, 0] }),
     P({ upperArmR: [-2.4, 0.1, -0.3], foreArmR: [-0.7, 0, 0], handR: [0.2, 0, 0], chest: [-0.04, -0.2, 0], upperArmL: [-0.7, -0.8, 0.12], foreArmL: [-1.3, 0, 0] }),
