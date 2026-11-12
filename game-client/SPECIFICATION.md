@@ -147,6 +147,7 @@ server state and sends intents. ✅
 - [x] The Spire's entrance at the back of the hub → FS-0XMCP
 - [x] The Warden as storyteller, not the queue → FS-0XMCP
 - [x] Town building interiors → FS-B0H2D
+- [ ] Town minimap → FS-P0HSP
 
 ### Mailbox
 
@@ -161,6 +162,7 @@ server state and sends intents. ✅
 - [x] Gentle Meadows look and creature → FS-X2F2H
 - [x] Forlorn Forest look and creatures → FS-3QHQZ
 - [x] Field edges without a horizon → FS-KSD6K
+- [ ] Field minimap → FS-P0HSP
 
 ### Party
 

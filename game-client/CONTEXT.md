@@ -400,6 +400,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Map overlay** (FS-1SEF0): the minimap's third mode, the floor's map drawn see-through over the
   whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
   map while it is up.
+- **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
+  can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
+  Spire gate), a teleport mark (a gate to another area), the stash chest, a bag (the
+  Quartermaster) and a scroll (the Elder); in a field the teleport mark of its road home. Never a
+  label, a monster or another player. Once FS-P0HSP ships the town and every field have a minimap.
+- **Charted ground** (FS-P0HSP): the part of a field the character has walked near, which that
+  field's minimap shows; the rest is **uncharted** and shown as nothing. Charting is the field's
+  minimap fog: on the minimap only, never on the screen, the character's own (not the party's),
+  kept in this browser per character and field. Not **fog of war**, which veils a dungeon floor
+  in the world and is the party's (explored / unexplored are that one's words).
 - **Target frame** (FS-48CTQ): the HUD frame at the top centre that names one monster (name,
   level, HP bar) instead of plates over every head: the hovered monster, else an engaged boss, else
   the monster the local player last hit. A **marker mode** per world and floor says whether

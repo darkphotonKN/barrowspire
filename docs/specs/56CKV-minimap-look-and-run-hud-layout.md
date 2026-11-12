@@ -453,3 +453,5 @@ readout's content or its build switch; a dev-gallery family for HUD chrome; any 
 gateway change.
 
 ## Change: Minimap modes: enlarged and overlay → FS-1SEF0
+
+## Change: Minimap in the town and the fields → FS-P0HSP
