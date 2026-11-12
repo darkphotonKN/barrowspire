@@ -190,3 +190,5 @@ action.
 - Dying by choice from the hub, the main menu, or by an escaped or already dead delver.
 - Any change to how death is settled, ranked, rewarded or shown.
 - A `forfeited` result value or any new event.
+
+## Change: The menu wears the party panel's frame → FS-G4VMQ

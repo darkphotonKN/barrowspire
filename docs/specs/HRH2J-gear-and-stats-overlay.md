@@ -324,10 +324,9 @@ C3. **Esc and Q close both.** In the Esc order (FS-R82NV § Change C2) the overl
     whichever of the two panels are open, together, in one press, before anything under them and
     before the menu opens. `Q`, where it closes the overlay (run, field), closes both too.
     **(owner: "選單快捷鍵是esc"; derived here: the order keeps its one step for the overlay)**
-C4. **The ×.** Each panel has an × at its top right, in the party and letter panels' look: 22 px,
-    `palette.interactable`, `palette.interactableBright` under the pointer, a hand cursor, in a
-    24 × 24 box whose right edge stands 14 px (the panel padding) in from the panel's and whose top
-    stands 10 px below the panel's, level with the title. A left press there closes that panel
+C4. **The ×.** Each panel has an × at its top right, in the party panel's look and place (C16):
+    22 px, `palette.interactable`, `palette.interactableBright` under the pointer, a hand cursor,
+    in a 24 × 24 box whose right and top edges stand 12 px in from the panel's. A left press there closes that panel
     alone. A press on the × is the panel's (R8): never an attack, a cast or a hold. In stash mode
     either × closes the overlay (C9). **(owner: "這兩個右上角都要多加X關閉按鈕"; the look derived
     here: the × the other world panels already wear, FS-R82NV § Change C1)**
@@ -375,6 +374,11 @@ C14. **Titles.** The right panel's title reads **INVENTORY**, the name its key, 
     (FS-3EBCA) and its hover label use; the left keeps **CHARACTER**, and **STASH** in stash mode.
     **(derived here: the panel, its icon and its key name one thing; R13's slots and "BAG" keep
     their words)**
+C16. **The party panel's frame.** Both panels, and the stash's in stash mode, wear the party
+    panel's outer frame, drawn by the one drawing the party panel uses: the carved ground, its
+    double brass rule and corner studs, and its × (C4). What is inside each panel, and where, is
+    unchanged. **(owner, 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"; the ESC menu's frame
+    is FS-G4VMQ § Change: The menu wears the party panel's frame)**
 C15. **The controls help** (the run's H panel, and the web page's controls list) names `I / B`
     "Inventory" and `C` "Character", in place of `I / B` "Gear and bag" (R11). **(derived here)**
 
@@ -390,6 +394,7 @@ C15. **The controls help** (the run's H panel, and the web page's controls list)
 - [ ] Equip, unequip and stash moves behave as before (hover + right-click or `E`).
 - [ ] At 1080 × 720 the panels are (8, 29, 391, 621) and (681, 29, 391, 621), at 1280 × 720 465 wide; no panel covers the corner row; the 30 bag cells show whole without scrolling (44 px), the stash's 60 too.
 - [ ] The right panel's title reads INVENTORY; the run's H panel lists `I / B` Inventory and `C` Character.
+- [ ] Both panels (and the stash's) are drawn by the party panel's frame drawing, the × at 12 px in from the top and right edges.
 - [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
 
 ### Edge States

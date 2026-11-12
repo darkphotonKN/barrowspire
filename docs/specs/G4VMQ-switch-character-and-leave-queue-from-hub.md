@@ -394,3 +394,36 @@ C5. **It follows the view**: an open menu is re-centred when the view's size cha
 - A settings panel, or any new menu choice.
 - The run's menu (FS-9K8EZ), beyond the party panel step.
 - Any server change.
+
+## Change: The menu wears the party panel's frame
+Status: work-order
+Date: 2026-11-12
+
+The owner, 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框" (the menu, the inventory and the
+character panel take the party panel's outer frame). The menu's chrome (`showMenuPanel`) draws the
+town's and the field's ESC menu, the run's ESC menu and its Fall confirm (FS-9K8EZ), so all four
+change together; the inventory and the character panel are FS-HRH2J § Change: Character and
+inventory apart C16. Recorded without adversarial review.
+
+### Requirements
+
+C1. **The frame.** The menu panel is drawn by the party panel's own frame drawing, not a copy: its
+    carved ground, double brass rule and corner studs in place of R4's charcoal box with a brass
+    hairline. **(owner, above)**
+C2. **The ×.** An × stands at the menu's top right in the party panel's look and place (22 px,
+    `palette.interactable`, brighter under the pointer, a hand cursor, a 24 × 24 box 12 px in
+    from the top and right edges). A press on it does what Esc does with the menu open: the
+    cancel row's action (Back, or the Fall confirm's way back), or closing the menu. **(owner:
+    "跟party一樣外框", the party panel's frame carrying its ×)**
+C3. **Inside unchanged.** The rows, the copy line, the keys, the width, the height and the place
+    in the popup band are as before. **(owner, as relayed: contents and layout stay)**
+
+### Acceptance Criteria
+
+- [ ] The town's, the field's and the run's ESC menus and the Fall confirm are drawn by the party panel's frame drawing, with an × at the top right.
+- [ ] A press on the × closes the menu as Esc does; the rows, keys and place are unchanged.
+- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
+
+### Out of Scope
+
+- The NPC dialogue's card (already the carved panel), the letter panel, the chat window.

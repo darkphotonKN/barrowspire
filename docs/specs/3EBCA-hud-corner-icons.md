@@ -28,7 +28,9 @@ FS-G4VMQ § Change: The ESC menu in a field world.)
 inventory), and "選單快捷鍵是esc". The split itself, its keys, its × and the shortened panels are
 FS-HRH2J § Change: Character and inventory apart; this FS takes the fifth icon, the row's new
 order and labels, and the row answering under the open overlay (R1–R3, R5, R7, R11, R12, edited
-in place on this work order).
+in place on this work order). The same day: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框": the panels
+Menu, Inventory and Character open wear the party panel's frame (FS-G4VMQ § Change: The menu
+wears the party panel's frame; FS-HRH2J § Change C16).
 
 Each requirement below is a **charter default** (the locked
 decisions, approved by the owner) or says **derived here** and why. Recorded without adversarial

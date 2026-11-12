@@ -2,11 +2,11 @@
 id: I-3EBCA-3
 status: open
 implements: FS-3EBCA
-blocked_by: [I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5]
+blocked_by: [I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6]
 labels: [blocked]
 title: "FS-3EBCA slice 3: Nick's browser check of the corner icons and the panel controls (HITL)"
 ---
-Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The envelope toggles the letter panel and stands in the corner row; FS-R82NV §Change: The party panel closes on its × and stands nearer the middle; FS-G4VMQ §Change: The ESC menu in a field world; FS-HRH2J §Change: Character and inventory apart
+Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The envelope toggles the letter panel and stands in the corner row; FS-R82NV §Change: The party panel closes on its × and stands nearer the middle; FS-G4VMQ §Change: The ESC menu in a field world; FS-HRH2J §Change: Character and inventory apart; FS-G4VMQ §Change: The menu wears the party panel's frame
 
 **Lane: HITL (Nick).**
 
@@ -26,6 +26,8 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
   Character opens the stats beside it, the gear icon closes both. The inventory's slots, bag (30
   cells, no scroll bar), gold and hint read well at its shorter height; equipping by right-click
   or E as before.
+- The ESC menu (town, field, run, and the Fall confirm), the inventory and the character panel
+  wear the party panel's frame and its × at the top right; the menu's × closes it as Esc does.
 - At the stash chest: stash left, inventory right; an open character panel closes; C does
   nothing there.
 - The gear icon does what Esc does: in the town and a field the menu (Change character, Back),
@@ -46,8 +48,8 @@ Implements FS-3EBCA §Acceptance Criteria (whole FS); FS-1GZGD §Change: The env
 
 ## Blocked By
 
-I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5
+I-R82NV-13, I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5, I-3EBCA-2, I-3EBCA-4, I-3EBCA-5, I-3EBCA-6
 
 ## Spec Reference
 
-FS-3EBCA whole; the four change sections above.
+FS-3EBCA whole; the five change sections above.
