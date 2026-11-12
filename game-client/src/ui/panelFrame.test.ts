@@ -67,6 +67,49 @@ describe("panelFrame (FS-G4VMQ § Change C1, C2; FS-HRH2J § Change C4, C16)", (
       toCss(palette.interactable),
     );
   });
+
+  // The disconnect notice wears the frame but has one way out, its button (FS-R6EYZ R9, R13):
+  // a frame told `{ close: false }` draws no ×; every other window, untold, keeps its ×.
+  describe("with or without its × (FS-R6EYZ R9)", () => {
+    function framed(options?: { close: false }) {
+      const studs: number[] = [];
+      const g = new Proxy(
+        {},
+        {
+          get: (_t, prop) => {
+            if (prop === "fillCircle") return (x: number) => (studs.push(x), g);
+            return () => g;
+          },
+        },
+      ) as Phaser.GameObjects.Graphics;
+      const words: string[] = [];
+      const scene = {
+        add: {
+          text: (_x: number, _y: number, w: string) => {
+            words.push(w);
+            const self: Record<string, unknown> = { setOrigin: () => self };
+            return self;
+          },
+        },
+      } as unknown as Pick<Phaser.Scene, "add">;
+      const panel = { x: 0, y: 0, width: 200, height: 100 };
+      return { studs, words, drawn: options ? drawPanelFrame(scene, g, panel, options) : drawPanelFrame(scene, g, panel) };
+    }
+
+    it("should draw the carved ground and no × when told close: false", () => {
+      const { studs, words, drawn } = framed({ close: false });
+      expect(studs).toHaveLength(8);
+      expect(words).toEqual([]);
+      expect(drawn).toBeUndefined();
+    });
+
+    it("should still give every other window its ×, untold", () => {
+      const { studs, words, drawn } = framed();
+      expect(studs).toHaveLength(8);
+      expect(words).toEqual(["×"]);
+      expect(drawn?.close).toEqual({ x: 164, y: 12, width: 24, height: 24 });
+    });
+  });
 });
 
 // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":

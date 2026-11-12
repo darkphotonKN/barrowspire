@@ -9,10 +9,22 @@ vi.mock("phaser", () => {
   return { ...phaser, default: phaser };
 });
 
+// The shared frame and title, watched: the notice draws through them, not a copy (FS-R6EYZ R9).
+vi.mock("@/ui/panelFrame", async (importActual) => {
+  const actual = await importActual<typeof import("@/ui/panelFrame")>();
+  return {
+    ...actual,
+    drawPanelFrame: vi.fn(actual.drawPanelFrame),
+    drawPanelTitle: vi.fn(actual.drawPanelTitle),
+  };
+});
+
 const { DisconnectNoticeScene } = await import("./DisconnectNoticeScene");
 const { DISCONNECT_NOTICE } = await import("@/ui/disconnectNoticeLayout");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { drawPanelFrame, drawPanelTitle } = await import("@/ui/panelFrame");
+const { disconnectNoticeFrame } = await import("@/ui/disconnectNoticeLayout");
 
 type Handler = (...args: unknown[]) => void;
 
@@ -79,13 +91,26 @@ afterEach(() => {
 });
 
 describe("DisconnectNoticeScene (FS-R6EYZ R8–R13)", () => {
-  it("should draw the title, the line and the button's words", () => {
+  it("should draw the title in capitals, the line and the button's words, and no ×", () => {
     const { live } = noticeScene();
     expect(live().filter((p) => p.kind === "text").map((p) => p.text)).toEqual([
-      DISCONNECT_NOTICE.title,
+      "DISCONNECTED",
       DISCONNECT_NOTICE.line,
       DISCONNECT_NOTICE.button,
     ]);
+  });
+
+  // The owner, 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框", "每個ui視窗的標題都不同位置
+  // 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一" (FS-R6EYZ R9).
+  it("should wear the shared frame without its × and the shared title (R9, R13)", () => {
+    vi.mocked(drawPanelFrame).mockClear();
+    vi.mocked(drawPanelTitle).mockClear();
+    const { scene } = noticeScene();
+    const { panel } = disconnectNoticeFrame(viewport);
+    expect(drawPanelFrame).toHaveBeenCalledTimes(1);
+    expect(drawPanelFrame).toHaveBeenCalledWith(scene, expect.anything(), panel, { close: false });
+    expect(drawPanelTitle).toHaveBeenCalledTimes(1);
+    expect(drawPanelTitle).toHaveBeenCalledWith(scene, panel, DISCONNECT_NOTICE.title);
   });
 
   it("should hold the world still as it comes up and on every frame after (R10)", () => {
