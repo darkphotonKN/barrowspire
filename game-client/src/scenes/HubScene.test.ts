@@ -292,6 +292,12 @@ function recordingStage() {
             target.scrollFactor = factor;
             return proxy;
           };
+        // what it was made pressable with: the menu's blocker hands its own hit test (FS-3EBCA R18)
+        if (prop === "setInteractive")
+          return (...args: unknown[]) => {
+            target.interactiveArgs = args;
+            return proxy;
+          };
         if (prop === "setColor")
           return (color: string) => {
             target.color = color;
@@ -5045,12 +5051,39 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       return t;
     }
 
-    it("should answer no corner icon, the Menu icon included", () => {
+    it("should answer no corner icon but Menu", () => {
       const t = menuUp();
       const menu = t.hub.menu;
-      for (const icon of ["menu", "inventory", "character", "party"] as const) t.pressIcon(icon);
+      for (const icon of ["inventory", "character", "party"] as const) t.pressIcon(icon);
       expect(t.hub.menu).toBe(menu);
       expect(t.shut()).toEqual(NONE);
+    });
+
+    // owner 2026-11-12: "menu無法再按一次icon關閉"
+    it("should close on the Menu icon, as its × and Back do, and open again on the next press", () => {
+      const t = menuUp();
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.shut()).toEqual(NONE);
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeDefined();
+    });
+
+    it("should leave the Menu icon's plate alone to the icon under its blocker, and take a press beside it", () => {
+      const t = menuUp();
+      const blocker = t.stage.made.find((m) => m.name === "menu-blocker" && !m.destroyed)!;
+      const args = (blocker as unknown as { interactiveArgs?: unknown[] }).interactiveArgs ?? [];
+      const test = args.find((a) => typeof a === "function") as
+        | ((area: unknown, x: number, y: number, object: unknown) => boolean)
+        | undefined;
+      expect(test, "the blocker's own hit test").toBeTypeOf("function");
+      const takes = (x: number, y: number) => test!({}, x, y, blocker);
+      const plate = cornerIconFrame("menu", viewport);
+      const bag = cornerIconFrame("inventory", viewport);
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+      expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
+      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
+      expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
 
     it("should answer no I, B, C or T, and refuse the envelope", () => {

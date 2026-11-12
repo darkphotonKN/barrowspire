@@ -77,8 +77,9 @@ function recordingStage() {
         if (prop === "setScrollFactor") return setter("scrollFactor");
         if (prop === "setColor") return setter("color");
         if (prop === "setInteractive")
-          return () => {
+          return (...args: unknown[]) => {
             target.interactive = true;
+            target.interactiveArgs = args;
             return proxy;
           };
         if (prop === "setSize")
@@ -199,7 +200,14 @@ describe("showMenuPanel", () => {
     { id: "back", label: "Back  [Esc]", register: "cancel" },
   ];
 
-  function shown(spec: { line?: string; enabled?: Record<string, () => boolean>; withBack?: boolean } = {}) {
+  function shown(
+    spec: {
+      line?: string;
+      enabled?: Record<string, () => boolean>;
+      withBack?: boolean;
+      through?: (x: number, y: number) => boolean;
+    } = {},
+  ) {
     const stage = recordingStage();
     const fall = vi.fn();
     const leave = vi.fn();
@@ -214,6 +222,7 @@ describe("showMenuPanel", () => {
       origin: ORIGIN,
       hit: HIT,
       tones: TONES,
+      through: spec.through,
     });
     // the rows' labels, the frame's × and the title aside
     const labels = () =>
@@ -409,6 +418,53 @@ describe("showMenuPanel", () => {
       expect(stopPropagation).toHaveBeenCalledTimes(1);
       // and a call with no event (a stand-in) does not throw
       expect(() => down()).not.toThrow();
+    });
+
+    // FS-3EBCA R18 (owner 2026-11-12: "menu無法再按一次icon關閉"): the Menu icon's plate is left to the
+    // icon, so a press there closes the menu and a hover there brightens it; nothing else gets through.
+    describe("the point it lets through (the Menu icon's plate)", () => {
+      const PLATE = { x: 1006, y: 658, width: 58, height: 46 };
+      const onPlate = (x: number, y: number) =>
+        x >= PLATE.x && x <= PLATE.x + PLATE.width && y >= PLATE.y && y <= PLATE.y + PLATE.height;
+      type HitTest = (area: unknown, x: number, y: number, object: unknown) => boolean;
+      const hitTestOf = (blocker: Made) => {
+        const args = (blocker as Made & { interactiveArgs?: unknown[] }).interactiveArgs ?? [];
+        const test = args.find((a) => typeof a === "function") as HitTest | undefined;
+        expect(test, "the blocker's own hit test").toBeTypeOf("function");
+        return (x: number, y: number) => test!({}, x, y, blocker);
+      };
+
+      it("should take every point of the view but the plate it is told to let through", () => {
+        const takes = hitTestOf(shown({ through: onPlate }).find("menu-blocker")!);
+        expect(takes(10, 10)).toBe(true);
+        expect(takes(540, 360)).toBe(true);
+        // the plate's centre and its corners go to the icon under it
+        expect(takes(PLATE.x + 29, PLATE.y + 23)).toBe(false);
+        expect(takes(PLATE.x, PLATE.y)).toBe(false);
+        expect(takes(PLATE.x + PLATE.width, PLATE.y + PLATE.height)).toBe(false);
+        // a press beside the plate (the gap to Inventory, above it, the Inventory plate) is still the blocker's
+        expect(takes(PLATE.x - 4, PLATE.y + 23)).toBe(true);
+        expect(takes(PLATE.x + 29, PLATE.y - 2)).toBe(true);
+        expect(takes(969, 681)).toBe(true);
+        // off the view is no one's
+        expect(takes(-1, 10)).toBe(false);
+        expect(takes(1080, 10)).toBe(false);
+        expect(takes(10, 720)).toBe(false);
+      });
+
+      it("should take the whole view when told to let nothing through", () => {
+        const takes = hitTestOf(shown().find("menu-blocker")!);
+        expect(takes(PLATE.x + 29, PLATE.y + 23)).toBe(true);
+      });
+
+      it("should follow the view when it changes", () => {
+        const { find, moveTo } = shown({ through: onPlate });
+        viewport.set({ width: 1280, height: 720, renderScale: 1 });
+        moveTo({ x: 640, y: 360 });
+        const takes = hitTestOf(find("menu-blocker")!);
+        expect(takes(1200, 10)).toBe(true);
+        expect(takes(1280, 10)).toBe(false);
+      });
     });
 
     it("should cover the new view when it changes, and go down with the menu", () => {

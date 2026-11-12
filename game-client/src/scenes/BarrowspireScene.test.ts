@@ -4978,17 +4978,57 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(run.menu).toBeUndefined();
     });
 
-    it("should answer no corner icon, no I, B, C or T while the menu is open, the Menu icon included (R18)", () => {
+    it("should answer no corner icon but Menu, no I, B, C or T while the menu is open (R18)", () => {
       const { run, key, party, pressEsc, pressIcon, open } = runWindows();
       pressEsc();
       const menu = run.menu;
-      for (const icon of ["menu", "inventory", "character", "party"] as const) pressIcon(icon);
+      for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
       key("I");
       key("B");
       key("C");
       party.pressT();
       expect(run.menu).toBe(menu);
       expect(open()).toEqual(NONE);
+    });
+
+    // owner 2026-11-12: "menu無法再按一次icon關閉"
+    it("should close the menu on the Menu icon, as its × and Back do, and open it again on the next press (R6, R18)", () => {
+      const { run, pressEsc, pressIcon, open } = runWindows();
+      pressEsc();
+      pressIcon("menu");
+      expect(run.menu).toBeUndefined();
+      expect(open()).toEqual(NONE);
+      pressIcon("menu");
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should close the Fall confirm on the Menu icon, as its × and Not yet do: the whole menu goes, nothing sent (R18)", () => {
+      const { run, pressEsc, pressIcon, stage, sent } = runWindows();
+      pressEsc();
+      stage.made.find((m) => (m as { name?: string }).name === "menu-fall" && !m.destroyed)!.handlers.pointerup();
+      expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(true);
+      const before = sent.mock.calls.length;
+      pressIcon("menu");
+      expect(run.menu).toBeUndefined();
+      expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(false);
+      expect(sent.mock.calls.length).toBe(before);
+    });
+
+    it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+      const { pressEsc, stage } = runWindows();
+      pressEsc();
+      const blocker = stage.made.find((m) => (m as { name?: string }).name === "menu-blocker" && !m.destroyed)!;
+      const test = (blocker.last["setInteractive"] ?? []).find((a) => typeof a === "function") as
+        | ((area: unknown, x: number, y: number, object: unknown) => boolean)
+        | undefined;
+      expect(test, "the blocker's own hit test").toBeTypeOf("function");
+      const takes = (x: number, y: number) => test!({}, x, y, blocker);
+      const plate = cornerIconFrame("menu", viewport);
+      const bag = cornerIconFrame("inventory", viewport);
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+      expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
+      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
+      expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
 
     it("should give the chat input no focus while the menu is open (R18)", () => {

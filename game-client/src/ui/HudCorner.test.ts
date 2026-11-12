@@ -202,6 +202,17 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
     expect(env.corner.covers(800, 680)).toBe(false);
   });
 
+  // FS-3EBCA R18 (owner 2026-11-12: "menu無法再按一次icon關閉"): the open menu's blocker lets the
+  // Menu plate alone through, so the row says which points are that one plate's.
+  it("should say which points one icon's plate covers, and no other's", () => {
+    const env = setup();
+    expect(env.corner.covers(1030, 680, "menu")).toBe(true);
+    expect(env.corner.covers(1006, 658, "menu")).toBe(true);
+    expect(env.corner.covers(969, 680, "menu")).toBe(false);
+    expect(env.corner.covers(1002, 680, "menu")).toBe(false);
+    expect(env.corner.covers(969, 680, "inventory")).toBe(true);
+  });
+
   it("should take everything down on destroy", () => {
     const env = setup();
     env.zoneAt("party").handlers.pointerover();

@@ -2213,13 +2213,19 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     const env = fieldOnStage();
     const field = env.field as unknown as Windowed;
     const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
-    const zones: { args: unknown[]; handlers: Record<string, () => void> }[] = [];
+    type Zone = { args: unknown[]; handlers: Record<string, () => void>; name?: string; interactive?: unknown[] };
+    const zones: Zone[] = [];
     const zone = (...args: unknown[]) => {
-      const z = { args, handlers: {} as Record<string, () => void> };
+      const z: Zone = { args, handlers: {} };
       zones.push(z);
       const self: unknown = new Proxy(() => self, {
-        get: (_t, prop) =>
-          prop === "on" ? (event: string, fn: () => void) => ((z.handlers[event] = fn), self) : () => self,
+        get: (_t, prop) => {
+          if (prop === "on") return (event: string, fn: () => void) => ((z.handlers[event] = fn), self);
+          if (prop === "setName") return (name: string) => ((z.name = name), self);
+          // what it was made pressable with: the menu's blocker hands its own hit test (FS-3EBCA R18)
+          if (prop === "setInteractive") return (...a: unknown[]) => ((z.interactive = a), self);
+          return () => self;
+        },
       });
       return self;
     };
@@ -2253,7 +2259,7 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     };
     const key = (name: string) => keys.get(`keydown-${name}`)!();
     const open = () => ({ ...gear, party: party.panel.isOpen() });
-    return { ...env, field, gear, party, pressIcon, key, open };
+    return { ...env, field, gear, party, pressIcon, key, open, zones };
   }
   const NONE = { inventory: false, character: false, party: false };
 
@@ -2283,13 +2289,41 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     expect(field.menu).toBeDefined();
   });
 
-  it("should answer no corner icon while the menu is open, the Menu icon included (R18)", () => {
+  it("should answer no corner icon but Menu while the menu is open (R18)", () => {
     const { field, pressIcon, key, open } = fieldWindows();
     key("ESC");
     const menu = field.menu;
-    for (const icon of ["menu", "inventory", "character", "party"] as const) pressIcon(icon);
+    for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
     expect(field.menu).toBe(menu);
     expect(open()).toEqual(NONE);
+  });
+
+  // owner 2026-11-12: "menu無法再按一次icon關閉"
+  it("should close the menu on the Menu icon, as its × and Back do, and open it again on the next press (R6, R18)", () => {
+    const { field, pressIcon, key, open } = fieldWindows();
+    key("ESC");
+    pressIcon("menu");
+    expect(field.menu).toBeUndefined();
+    expect(open()).toEqual(NONE);
+    pressIcon("menu");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+    const { key, zones } = fieldWindows();
+    key("ESC");
+    const blocker = zones.filter((z) => z.name === "menu-blocker").at(-1)!;
+    const test = (blocker.interactive ?? []).find((a) => typeof a === "function") as
+      | ((area: unknown, x: number, y: number, object: unknown) => boolean)
+      | undefined;
+    expect(test, "the blocker's own hit test").toBeTypeOf("function");
+    const takes = (x: number, y: number) => test!({}, x, y, blocker);
+    const plate = hudCorner.cornerIconFrame("menu", viewport);
+    const bag = hudCorner.cornerIconFrame("inventory", viewport);
+    expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+    expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
+    expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
+    expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
   });
 
   it("should answer no I, B, C or T while the menu is open, and give the chat input no focus (R18)", () => {
