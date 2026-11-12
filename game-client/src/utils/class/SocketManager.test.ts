@@ -1487,3 +1487,79 @@ describe("SocketManager lost connection (FS-R6EYZ §A R1–R5: only a close the 
     expect(env.last().url).toBe(`${HOST}?token=jwt-1&session_id=run-1`);
   });
 });
+
+describe("SocketManager reconnect from the menu (FS-R6EYZ R16: the server last on, else once the default)", () => {
+  function moved() {
+    const sockets: FakeSocket[] = [];
+    const manager = new SocketManager((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    });
+    const lost = vi.fn();
+    manager.onConnectionLost(lost);
+    manager.connectToGame("jwt-1", "Ash");
+    sockets[0].open();
+    return { manager, sockets, lost, last: () => sockets[sockets.length - 1] };
+  }
+
+  /** Handed off to the run's host, then the host's socket lost. */
+  function lostOnTheHost() {
+    const env = moved();
+    env.sockets[0].receive(handoff());
+    env.sockets[1].open();
+    env.sockets[1].receive(runEntered);
+    env.sockets[1].serverClose(1006);
+    env.lost.mockClear();
+    return env;
+  }
+
+  it("should reconnect to the server the player was last on, as the same player, on a plain connection", () => {
+    const env = lostOnTheHost();
+    env.manager.reconnectFromMenu();
+    expect(env.last().url).toBe(`${HOST}?token=jwt-1&name=Ash`);
+  });
+
+  it("should try once at the default address when that server cannot be reached, which is then the server", () => {
+    const env = lostOnTheHost();
+    env.manager.reconnectFromMenu();
+    env.last().unreachable();
+    expect(env.lost).not.toHaveBeenCalled();
+    expect(env.manager.getConnectionStatus()).toBe("connecting");
+    expect(env.last().url).toBe(`${DEFAULT_SERVER_ADDR}?token=jwt-1&name=Ash`);
+    expect(env.manager.getServerAddress()).toBe(DEFAULT_SERVER_ADDR);
+
+    // the default out of reach too: an ordinary loss, and no third try
+    const count = env.sockets.length;
+    env.last().unreachable();
+    expect(env.sockets).toHaveLength(count);
+    expect(env.lost).toHaveBeenCalledTimes(1);
+    expect(env.manager.getConnectionStatus()).toBe("disconnected");
+  });
+
+  it("should not try the default twice when the server last on was the default", () => {
+    const env = moved();
+    env.sockets[0].serverClose(1006);
+    env.manager.reconnectFromMenu();
+    const count = env.sockets.length;
+    env.last().unreachable();
+    expect(env.sockets).toHaveLength(count);
+    expect(env.lost).toHaveBeenCalledTimes(2);
+  });
+
+  it("should leave a socket that is open alone", () => {
+    const env = moved();
+    env.manager.reconnectFromMenu();
+    expect(env.sockets).toHaveLength(1);
+  });
+
+  it("should take an opened socket's later close as an ordinary loss, with no fallback", () => {
+    const env = lostOnTheHost();
+    env.manager.reconnectFromMenu();
+    env.last().open();
+    const count = env.sockets.length;
+    env.last().serverClose(1006);
+    expect(env.sockets).toHaveLength(count);
+    expect(env.lost).toHaveBeenCalledTimes(1);
+  });
+});
