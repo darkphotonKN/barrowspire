@@ -7,6 +7,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -257,4 +258,120 @@ func TestCharacterSwitch_Queued_RefusedPartyStands(t *testing.T) {
 	leaveHubAssertRefused(t, kaelenInbox, leaveHubQueuedCopy)
 	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: nobody left")
 	assert.True(t, rig.mini.Exists(pointerKey(kaelen.ID)), "Kaelen is still in the party")
+}
+
+// The words enter_hub is refused with when it would change character during a delve
+// (FS-BDA7X R7), and now while the party's run is under way (C7).
+const switchMidRunCopy = "You cannot change character during a delve."
+
+// enterHubAs sends enter_hub naming character on conn, as the roster's DELVE does, and returns the
+// answer: world_entered, or the refusal on enter_hub itself.
+func enterHubAs(t *testing.T, rig *partyRig, conn *websocket.Conn, inbox *startSoloInbox, character types.CharacterInPlay) types.Message {
+	t.Helper()
+	sendEnterHub(rig.server, conn, map[string]interface{}{"characterId": character.ID.String()})
+	reply, answered := inbox.await(string(constants.ActionWorldEntered), string(constants.ActionEnterHub))
+	require.True(t, answered, "enter_hub was never answered")
+	return reply
+}
+
+// assertEnterHubRefused requires reply to be enter_hub refused with text.
+func assertEnterHubRefused(t *testing.T, reply types.Message, text string) {
+	t.Helper()
+	require.Equal(t, string(constants.ActionEnterHub), reply.Action, "refused on enter_hub itself, not with %q", reply.Action)
+	require.NotNil(t, reply.Error, "enter_hub was accepted")
+	assert.Equal(t, text, *reply.Error)
+}
+
+// A member whose party is in its run reaches the roster another way than the Esc menu (a page
+// reloaded after a drop, a second tab): the server puts them back in the run their record names,
+// and an enter_hub as another character is refused. Nobody leaves the party and no second body is
+// seated. FS-MCYWK; FS-BDA7X R7; C7. Pins today's behaviour.
+func TestCharacterSwitch_HeldInTheRun_BackToTheRunNeverAnother(t *testing.T) {
+	for _, how := range []string{"dropped and back within the grace", "a second tab"} {
+		t.Run(how, func(t *testing.T) {
+			rig := newPartyEntryRig(t, &MockItemsClient{}, WithPartySize(3))
+			p := newThreeParty(t, rig)
+			run := intoItsRun(t, rig, p)
+			if how == "dropped and back within the grace" {
+				_, _, held := rig.server.holdForReconnect(p.kaelenConn)
+				require.True(t, held)
+			}
+
+			// the new connection, as the handler serves it: the record found, its world announced
+			record, reconnected := rig.server.connectPlayer(p.kaelen.ID, "Kaelen-account", "token")
+			require.True(t, reconnected, "a member on record here reconnects in place")
+			msgChan := make(chan interface{}, clientWriterBuffer)
+			rig.server.announceCurrentWorld(msgChan, &record)
+			conn := &websocket.Conn{}
+			_, mapped := rig.server.MapConnToPlayer(conn, p.kaelen.ID, msgChan)
+			require.True(t, mapped)
+			inbox := startSoloListen(t, rig.server, conn)
+			entered := awaitParty(t, inbox, string(constants.ActionWorldEntered), "Kaelen")
+			assert.Equal(t, run.ID.String(), entered.Payload["session_id"], "announced the run he is held in")
+
+			brannoc := rig.characters.give(p.kaelen.ID, "archer", "Brannoc", 1, 0)
+			assertEnterHubRefused(t, enterHubAs(t, rig.partyRig, conn, inbox, brannoc), switchMidRunCopy)
+			leaveHubSend(rig.server, conn)
+			leaveHubAssertRefused(t, inbox, leaveHubInRunCopy)
+
+			now, _ := rig.server.currentWorldOf(p.kaelen.ID)
+			assert.Equal(t, run.ID, now, "still in the run")
+			assert.False(t, rig.hub.HasPlayer(p.kaelen.ID), "no body in the town")
+			assert.Equal(t, []uuid.UUID{p.wren.ID, p.kaelen.ID, p.marl.ID}, memberIDs(partyInRedis(t, rig, p.wren.ID)), "the party stands")
+		})
+	}
+}
+
+// Entering the town as another character straight from the roster, with no leave_hub first (the
+// main menu reached by a reload or a second tab), is changing character too: out of the party as
+// leave_hub would take them. C7.
+func TestCharacterSwitch_ByEnterHubAsAnother_LeavesTheParty(t *testing.T) {
+	rig := newPartyRig(t)
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	partyID, err := rig.mini.Get(pointerKey(kaelen.ID))
+	require.NoError(t, err)
+
+	brannoc := rig.characters.give(kaelen.ID, "archer", "Brannoc", 1, 0)
+	entered := enterHubAs(t, rig, kaelenConn, kaelenInbox, brannoc)
+	require.Equal(t, string(constants.ActionWorldEntered), entered.Action, "Brannoc is seated in the town")
+
+	final := awaitUpdate(t, kaelenInbox, "left", kaelen.ID, "Kaelen")
+	assert.Equal(t, []string{wren.ID.String()}, memberIDsOf(t, final), "his last update: the party without him")
+	awaitUpdate(t, wrenInbox, "left", kaelen.ID, "Wren")
+	assertOutOfTheParty(t, rig, kaelen.ID, partyID)
+}
+
+// The same character entered again is no switch: the party keeps them. C7.
+func TestCharacterSwitch_ByEnterHubAsTheSame_PartyStands(t *testing.T) {
+	rig := newPartyRig(t)
+	_, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	kaelen, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+
+	entered := enterHubAs(t, rig, kaelenConn, kaelenInbox, kaelen.Character)
+	require.Equal(t, string(constants.ActionWorldEntered), entered.Action)
+
+	assertNoParty(t, wrenInbox, partyUpdateAction, "Wren: nobody left")
+	assert.True(t, rig.mini.Exists(pointerKey(kaelen.ID)), "Kaelen is still in the party")
+}
+
+// A delver back in the town early (dead or escaped, the drop that is their leave included) while
+// their party's run is under way reaches the roster and asks in as another character: refused with
+// the mid-run words, as party_leave is refused there, and they stay as they were, in the party. C7.
+func TestCharacterSwitch_ByEnterHubBackInTownEarly_Refused(t *testing.T) {
+	rig := newPartyEntryRig(t, &MockItemsClient{}, WithPartySize(3))
+	p := newThreeParty(t, rig)
+	intoItsRun(t, rig, p)
+	backInTownEarly(t, rig, p.kaelen)
+	character := p.kaelen.Character
+
+	brannoc := rig.characters.give(p.kaelen.ID, "archer", "Brannoc", 1, 0)
+	assertEnterHubRefused(t, enterHubAs(t, rig.partyRig, p.kaelenConn, p.kaelenInbox, brannoc), switchMidRunCopy)
+
+	record, _ := rig.server.PlayerByID(p.kaelen.ID)
+	assert.Equal(t, character.ID, record.Character.ID, "still the character he went down as")
+	assertNoParty(t, p.wrenInbox, partyUpdateAction, "Wren: nobody left")
+	assert.Equal(t, []uuid.UUID{p.wren.ID, p.kaelen.ID, p.marl.ID}, memberIDs(partyInRedis(t, rig, p.wren.ID)), "the party stands")
 }
