@@ -1,9 +1,9 @@
 ---
 id: I-P0HSP-2
-status: open
+status: done
 implements: FS-P0HSP
 blocked_by: [I-P0HSP-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-P0HSP slice 2: the town's map marks: tower, teleport, chest, bag, scroll, lozenge, side by side where they would overlap (game-client)"
 ---
 Implements FS-P0HSP §C
@@ -30,12 +30,12 @@ apart, centred on their seats' mean, inside the rim.
 
 ## Acceptance Criteria
 
-- [ ] FS-P0HSP §Acceptance Criteria: the town's marks (which, where, glyph, ring, contrast, whole px,
+- [x] FS-P0HSP §Acceptance Criteria: the town's marks (which, where, glyph, ring, contrast, whole px,
       inside the rim, the six glyphs distinct), the side-by-side rule at normal and enlarged size and
       on the overlay's scale.
-- [ ] Marks redraw only on a change of the marks, not as the player walks (counted).
-- [ ] The run's three glyphs unchanged px for px (the run's tests pass as written).
-- [ ] Typecheck, lint and the full vitest suite pass.
+- [x] Marks redraw only on a change of the marks, not as the player walks (counted).
+- [x] The run's three glyphs unchanged px for px (the run's tests pass as written).
+- [x] Typecheck, lint and the full vitest suite pass.
 
 ## Blocked By
 
@@ -51,3 +51,12 @@ FS-P0HSP §C.14, §C.15, §C.17–§C.20; User Stories 3–8.
   tower, two teleports, a scroll, a bag and a chest, and nothing for the ambient NPC; the chest and
   the bag, 5 × 4 px apart on the normal map, are seated 10 px apart on one row.
 - GREEN: the marks in the plan, then the glyph art and the side-by-side seating.
+
+## Status
+
+Done 2026-11-12. The six glyphs (tower, teleport, chest, bag, scroll, lozenge) are the FS §C.17 draft
+art, drawn by the run's ring-then-ink rects; the run's three are untouched. Marks come from the
+build's gates (`gatesInThisBuild`), the function NPCs and `HUB_STASH_CHEST`, in the table's order.
+The side-by-side seating (`spreadSeats`, `WorldMinimap` only) landed with slice 1's view split;
+its tests here were seen red with it switched off. The chest's art has a blank top row, so its ring
+is 9 × 8 inside its 9 × 9 box: the owner's look (I-P0HSP-6) judges it.

@@ -8,14 +8,39 @@
 
 import { doorGaps, type DoorGap } from "@/render/world/buildingLooks";
 import { housesFrom, type House } from "@/render/world/houses";
-import type { GateState, WallState } from "@/types/gameState";
-import type { MinimapPicture } from "./minimap";
+import { HUB_STASH_CHEST } from "@/render/world/hubStash";
+import type { GateState, NPCState, WallState } from "@/types/gameState";
+import { WORLD_MARKS, type MapMarkKind, type MinimapMark, type MinimapPicture } from "./minimap";
 import { edgeRuns, footprint, notchDepth, roadGaps, type FootprintDoor, type WorldSize } from "./worldMap";
 
 /** What of a hub state the town's map is built from. */
 export interface TownState {
   walls: readonly WallState[];
   gates?: readonly Pick<GateState, "entity_id" | "destination" | "position" | "range">[];
+  /** Its residents; only those with a function are marked (§C.14, §C.15). */
+  npcs?: readonly Pick<NPCState, "function" | "position">[];
+}
+
+/** A function NPC's glyph (§C.14): the Quartermaster's bag, the Elder's scroll, a lozenge for any other. */
+const NPC_MARK: Record<string, MapMarkKind> = { storekeeper: "bag", storyteller: "scroll" };
+
+/**
+ * The town's marks (§C.14, §C.15), in {@link WORLD_MARKS}' order: a tower at the Spire's gate, a
+ * teleport mark at every other gate given (the build's own, `gatesInThisBuild`), a chest at the
+ * stash chest, and each function NPC's glyph where they stand. An ambient resident, a building,
+ * the mailbox, the market and the dressing are not marked.
+ */
+function townMarks(town: TownState): MinimapMark[] {
+  const at = (p: { x: number; y: number }) => ({ x: p.x, y: p.y });
+  const marks: MinimapMark[] = [
+    ...(town.gates ?? []).map((g) => ({ kind: g.destination === "spire" ? ("tower" as const) : ("teleport" as const), at: at(g.position) })),
+    { kind: "chest", at: at(HUB_STASH_CHEST.at) },
+    ...(town.npcs ?? [])
+      .filter((n) => n.function !== "")
+      .map((n) => ({ kind: NPC_MARK[n.function] ?? ("lozenge" as const), at: at(n.position) })),
+  ];
+  const order = (k: MapMarkKind) => (WORLD_MARKS as readonly string[]).indexOf(k);
+  return marks.map((m, i) => ({ m, i })).sort((a, b) => order(a.m.kind) - order(b.m.kind) || a.i - b.i).map(({ m }) => m);
 }
 
 const EPSILON = 1e-6;
@@ -31,11 +56,12 @@ function doorOf(gap: DoorGap, house: House): FootprintDoor & { thickness: number
   return { side, from: y, to: y + gap.height, thickness: gap.width };
 }
 
-/** What the town's map draws, as a key: its walls and the gates it opens and marks. */
-function townKey(town: TownState): string {
+/** What the town's map draws, as a key: its walls, the gates it opens, and its marks. */
+function townKey(town: TownState, marks: readonly MinimapMark[]): string {
   return [
     town.walls.map((w) => w.entity_id).join(","),
     (town.gates ?? []).map((g) => `${g.destination}@${g.position.x},${g.position.y}/${g.range}`).join(","),
+    marks.map((m) => `${m.kind}@${m.at.x},${m.at.y}`).join(","),
   ].join("|");
 }
 
@@ -43,12 +69,13 @@ function townKey(town: TownState): string {
 export function townMap(town: TownState, size: WorldSize): MinimapPicture {
   const houses = housesFrom(town.walls);
   const gaps = doorGaps(town.walls);
+  const marks = townMarks(town);
   const buildings = houses.map((house) => ({
     house,
     doors: gaps.filter((g) => g.houseId === house.id).map((g) => doorOf(g, house)),
   }));
   return {
-    key: townKey(town),
+    key: townKey(town, marks),
     ground: [
       [
         { x: 0, y: 0 },
@@ -63,6 +90,6 @@ export function townMap(town: TownState, size: WorldSize): MinimapPicture {
         footprint(house, doors, Math.max(0, ...doors.map((d) => notchDepth(d.thickness, k)))),
       ),
     lines: edgeRuns(size, roadGaps(size, town.gates ?? [])),
-    marks: [],
+    marks,
   };
 }

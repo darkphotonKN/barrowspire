@@ -2032,9 +2032,10 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The town's minimap from this state (FS-P0HSP §A–§B, §E): built with the first state that
-   * carries the town's walls; its map redrawn only when the town changes (a state without walls
-   * keeps what it shows), the party's dots on every state.
+   * The town's minimap from this state (FS-P0HSP §A–§C, §E): built with the first state that
+   * carries the town's walls; its map and marks (this build's gates, the function NPCs, the stash)
+   * redrawn only when they change (a state without walls keeps what it shows), the party's dots on
+   * every state.
    */
   private showTownMap(state: ClientGameState, gates: readonly GateState[]): void {
     const walls = state.walls ?? [];
@@ -2043,7 +2044,7 @@ export class HubScene extends Phaser.Scene {
       this.townMinimap = new WorldMinimap(this.minimapStage, HUB_SIZE, () => viewport.renderScale);
       this.placeTownMap();
     }
-    if (walls.length > 0) this.townMinimap.show(townMap({ walls, gates }, HUB_SIZE));
+    if (walls.length > 0) this.townMinimap.show(townMap({ walls, gates, npcs: state.npcs ?? [] }, HUB_SIZE));
     const members = usePartyStore.getState().party?.members.map((m) => m.player_id) ?? [];
     this.townMinimap.party(partyOnMap(state, members));
   }
