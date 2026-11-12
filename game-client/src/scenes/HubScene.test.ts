@@ -4453,6 +4453,12 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     });
     return { l, self };
   }
+  /** A text the stage makes, measured 80 × 17. */
+  function measuredText() {
+    const { l, self } = layer();
+    Object.assign(l, { width: 80, height: 17 });
+    return self;
+  }
   const WALLS = HUB_TOWN_GOLDEN.buildings.flatMap((b, i) =>
     townOutline(b).map(([x, y, width, height], j) => ({
       entity_id: `h${i}-${j}`,
@@ -4479,7 +4485,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       renderNPCs: vi.fn(),
       minimapStage: { graphics: make, canvasImage: make },
       // the map mode icon's own objects, kept apart from the map's layers (FS-56CKV §Change: Map mode icon)
-      modeIconStage: { graphics: () => layer().self, text: () => layer().self },
+      // its texts measured 80 × 17, as Phaser would (the map name's among them, FS-56CKV §Change: Map name)
+      modeIconStage: { graphics: () => layer().self, text: () => measuredText() },
     });
     hub.views = new Map([["me", { pos: { ...AWAY } }]]);
     const store = { held, writes: [] as string[] };
@@ -4614,6 +4621,40 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(() => pointers.pointerdown!(press(862, 109))).not.toThrow();
       expect(map()).toBeUndefined();
       expect(store.writes).toEqual([]);
+    });
+  });
+
+  // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
+  // "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the town's name, giving way to the queue line
+  describe("the map name (FS-56CKV §Change: Map name; I-56CKV-9)", () => {
+    const nameOf = (hub: Record<string, unknown>) => (hub.minimap as { mapName?: { words: string; shown: boolean } } | undefined)?.mapName;
+    const clear = (hub: Record<string, unknown>) => (hub as unknown as { keepMapNameClear(): void }).keepMapNameClear();
+    const line = (bounds: object, visible = true) => ({ active: true, visible, getBounds: () => bounds });
+
+    it("should name the town \"The Town\" on its minimap, as its arrival card does (E1, E6)", () => {
+      const { hub, render } = townWithModes();
+      expect(nameOf(hub)).toBeUndefined();
+      render();
+      expect(nameOf(hub)?.words).toBe("The Town");
+      expect(nameOf(hub)?.shown).toBe(true);
+    });
+
+    it("should hide it while the queue line or its Leave button meets it beside the enlarged map, and show it once they go (E7)", () => {
+      const { hub, render, pressM } = townWithModes();
+      render();
+      pressM();
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(true);
+      // the 80 × 17 name stands at x 634–714, y 12–29, left of the button: the line runs over it
+      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }) });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(false);
+      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }, false), leaveButton: line({ x: 700, y: 10, width: 60, height: 20 }) });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(false);
+      Object.assign(hub, { leaveButton: undefined, queuePanel: undefined });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(true);
     });
   });
 

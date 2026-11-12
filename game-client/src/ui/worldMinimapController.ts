@@ -5,16 +5,17 @@
  * the fullscreen button its place beside it or in the corner (FS-56CKV §Change: Minimap at the
  * top, fullscreen button beside it); its dots are the player's and the party's, and as the overlay
  * it follows their drawn figures. Its map mode icon, built with it, steps the mode on a press as M
- * does (FS-56CKV §Change: Map mode icon). The scene hands it the plan to draw and says who owns the
- * keys. Phaser-light: it draws through the scene's stage and reads the view's corner, nothing more.
+ * does (FS-56CKV §Change: Map mode icon); its map name, built with it, names the place
+ * (FS-56CKV §Change: Map name). The scene hands it the plan to draw and says who owns the keys. Phaser-light: it draws through the scene's stage and reads the view's corner, nothing more.
  */
 
-import type { Point } from "@/render/iso/projection";
+import type { Point, Rect } from "@/render/iso/projection";
 import { viewport } from "@/render/viewport";
 import type { FullscreenButtonPlace } from "@/render/viewport/fullscreenButton";
 import { WorldMinimap, type MinimapPicture, type MinimapStage, type MinimapWorld } from "./minimap";
 import { nextMinimapMode, readMinimapMode, rememberMinimapMode, type MinimapMode, type MinimapModeStore } from "./minimapMode";
 import { MinimapModeIcon, type ModeIconStage } from "./minimapModeIcon";
+import { MinimapName } from "./minimapName";
 import { cornerMinimap, topRightCorner } from "./topRightColumn";
 import { partyOnMap, type PartyOnMapState } from "./worldMap";
 
@@ -39,12 +40,19 @@ export interface WorldMinimapParts {
    * D6): a press on it then does nothing. None, and no icon is built.
    */
   icon?: { stage: ModeIconStage; blocked: () => boolean };
+  /**
+   * The place's name, the arrival card's title (FS-56CKV §Change: Map name, E1), drawn on the
+   * icon's stage. None, or no icon stage, and no name is built.
+   */
+  name?: string;
 }
 
 export class WorldMinimapController {
   readonly map: WorldMinimap;
   /** Its map mode icon (FS-56CKV §Change: Map mode icon), where the scene gave it a stage. */
   readonly modeIcon?: MinimapModeIcon;
+  /** Its map name (FS-56CKV §Change: Map name), where the scene gave it words and a stage. */
+  readonly mapName?: MinimapName;
   private readonly store: MinimapModeStore;
   private readonly button: WorldMinimapParts["button"];
   /** How it is shown (§F.32): the run's one remembered mode, read as the map is built; M steps it. */
@@ -52,12 +60,13 @@ export class WorldMinimapController {
   /** The party members' entity ids in the last state: whose drawn figures the overlay's dots follow. */
   private allies: string[] = [];
 
-  constructor({ stage, world, store, renderScale, button, icon }: WorldMinimapParts) {
+  constructor({ stage, world, store, renderScale, button, icon, name }: WorldMinimapParts) {
     this.store = store;
     this.button = button;
     this.map = new WorldMinimap(stage, world, renderScale);
     // over the map's layers: made after them (D1); a press is M's (D6)
     if (icon) this.modeIcon = new MinimapModeIcon(icon.stage, { press: () => this.cycle(), blocked: icon.blocked });
+    if (icon && name) this.mapName = new MinimapName(icon.stage, name);
     // the mode this browser kept, in a run, the town or a field (§F.32)
     this.mode = readMinimapMode(store);
     this.map.setMode(this.mode);
@@ -76,13 +85,21 @@ export class WorldMinimapController {
    * At the top of the top-right column, right-aligned on its x (§G.35): normal or enlarged at the
    * very top with the fullscreen button at its left; in overlay mode the corner holds only the
    * button (FS-56CKV §Change C1–C4, as amended 2026-11-12). Nothing stands under it (§G.36). The
-   * map mode icon in the map's bottom-left, or beside the button (§Change: Map mode icon, D2, D3).
+   * map mode icon in the map's bottom-left, or beside the button (§Change: Map mode icon, D2, D3);
+   * the map name in the normal map's top-right, or beside the button or the icon (§Change: Map
+   * name, E3–E5).
    */
   place(): void {
     const corner = topRightCorner(viewport, cornerMinimap(this.map));
     if (corner.minimap) this.map.place(corner.minimap);
     this.button.hand(this, corner.button);
     this.modeIcon?.place(corner.modeIcon);
+    this.mapName?.place(corner.name);
+  }
+
+  /** What stands at the top centre now, which the map name gives way to where they meet (§Change: Map name, E7). */
+  giveWay(covers: readonly (Rect | null | undefined)[]): void {
+    this.mapName?.giveWay(covers);
   }
 
   /** Whether a press at (x, y), logical units, is the map mode icon's (D5). */
@@ -136,10 +153,11 @@ export class WorldMinimapController {
     this.map.follow(at(self), { self: at(self), allies });
   }
 
-  /** Gone with its visit: every layer, its icon, and the button's place back to the corner (FS-56CKV §Change C6). */
+  /** Gone with its visit: every layer, its icon and its name, and the button's place back to the corner (FS-56CKV §Change C6). */
   destroy(): void {
     this.map.destroy();
     this.modeIcon?.destroy();
+    this.mapName?.destroy();
     this.button.takeBack(this);
   }
 }

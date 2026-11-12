@@ -726,6 +726,15 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   to the map's top-right corner, which the floor's diamond leaves as empty as the bottom-left.
   *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md) §Change: Map mode
   icon, the owner's "右上角地圖左下角多加小icon hover顯示可以切換大小或是模式(M)", 2026-11-12.)*
+  The **map name**, the place's name as its arrival card titles it ("The Town", "Gentle
+  Meadows", "The First Floor"), stands in 11px vellum body type letter-spaced 1px on a faint
+  `hudPanel` plate at 0.75, padded 4 × 2, square-cornered as the column's lines are: 4px inside the
+  normal map's top-right corner, right-aligned; left of the fullscreen button, centred on it, with
+  the map enlarged; left of the map mode icon in the overlay. It hides while a target frame or the
+  town's queue line stands over it, and the dev position readout now stands under the column's
+  last line in every mode. *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
+  §Change: Map name, the owner's "小地圖右上角顯示目前地圖的名字" and "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊",
+  2026-11-12.)*
 - **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
   **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
   drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole

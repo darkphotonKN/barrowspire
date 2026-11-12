@@ -1667,6 +1667,16 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(map()!.mode).toBe("enlarged");
   });
 
+  // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字"): the field's name
+  it("should name the field on its minimap, as its arrival card titles it, built with the map and gone with it (FS-56CKV §Change: Map name, E1, E6)", () => {
+    const { field, render } = forestWithMap();
+    const name = () => (field.minimap as { mapName?: { words: string; shown: boolean } } | undefined)?.mapName;
+    expect(name()).toBeUndefined();
+    render({ x: 2900, y: 1480 });
+    expect(name()?.words).toBe("The Forlorn Forest");
+    expect(name()?.shown).toBe(true);
+  });
+
   it("should build the map with the field's first state, at the column's top, the arrival charted at once (§G.35; Edge States)", () => {
     const { render, map, layers } = forestWithMap();
     expect(map()).toBeUndefined();

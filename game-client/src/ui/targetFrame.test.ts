@@ -620,3 +620,28 @@ describe("the frame's damage chip (FS-48CTQ §F.22)", () => {
     expect(parts.graphics[0].draws).toBe(1);
   });
 });
+
+// FS-56CKV §Change: Map name, E7: the map name beside the enlarged map's button gives way to the
+// frame where they meet, so the frame says where it stands while it is shown
+describe("the frame's shown box (FS-56CKV §Change: Map name, E7)", () => {
+  it("should have none before it names a monster", () => {
+    const { stage } = fakeStage();
+    expect(new TargetFrame(stage, () => 540).shownRect()).toBeNull();
+  });
+
+  it.each([
+    [false, TARGET_FRAME],
+    [true, TARGET_BOSS_FRAME],
+  ])("should be its frame's own box while shown, a boss %s, and none once it has faded out or is covered", (boss, size) => {
+    const { frame } = shownFrame(monster({ boss }), 640);
+    expect(frame.shownRect()).toEqual(targetFrameRect(640, size));
+    // fading out it still stands there
+    frame.update(TARGET_FADE_OUT_MS / 2, null, false);
+    expect(frame.shownRect()).toEqual(targetFrameRect(640, size));
+    frame.update(TARGET_FADE_OUT_MS, null, false);
+    expect(frame.shownRect()).toBeNull();
+    frame.update(TARGET_FADE_IN_MS, monster({ boss }), false);
+    frame.update(16, monster({ boss }), true);
+    expect(frame.shownRect()).toBeNull();
+  });
+});

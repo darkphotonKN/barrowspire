@@ -86,6 +86,7 @@ import type { ModeIconStage } from "@/ui/minimapModeIcon";
 import { canvasImage } from "@/ui/paintKit";
 import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
+import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
 
 /**
@@ -872,6 +873,8 @@ export class FieldScene extends Phaser.Scene {
         button: this.fullscreenButton,
         // a press on its map mode icon is M's, under M's guards in a field (FS-56CKV §Change: Map mode icon, D6)
         icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
+        // the field's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
+        name: minimapPlaceName({ world: "field", field: this.field }),
       });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
       const owner = useGameStore.getState().activeCharacterId;

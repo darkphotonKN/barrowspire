@@ -368,3 +368,5 @@ dev-gallery family for HUD chrome; any server, proto or gateway change.
 ## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
 
 ## Change: Map mode icon → FS-56CKV
+
+## Change: Map name → FS-56CKV

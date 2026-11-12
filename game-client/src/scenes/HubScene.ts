@@ -176,6 +176,7 @@ import { canvasImage } from "@/ui/paintKit";
 import { TownPlan } from "@/ui/townMap";
 import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui/worldMinimapController";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
+import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
 
 /** Moves a world position a step toward its target. */
@@ -1229,6 +1230,7 @@ export class HubScene extends Phaser.Scene {
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
     this.followMapOverlay();
+    this.keepMapNameClear();
     this.offerConversation();
     this.updateBuildings();
     this.hideWhoIsElsewhere();
@@ -2079,6 +2081,8 @@ export class HubScene extends Phaser.Scene {
         button: this.fullscreenButton,
         // a press on its map mode icon is M's, under M's guards (FS-56CKV §Change: Map mode icon, D6)
         icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
+        // the town's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
+        name: minimapPlaceName({ world: "hub" }),
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
@@ -2110,6 +2114,15 @@ export class HubScene extends Phaser.Scene {
       () => this.minimap,
       (x, y) => !!this.gear?.covers(x, y) || !!this.corner?.covers(x, y),
     );
+  }
+
+  /**
+   * The map name gives way to the queue line and its Leave button at the top centre where they
+   * meet, as it stands beside the enlarged map's button (FS-56CKV §Change: Map name, E7).
+   */
+  private keepMapNameClear(): void {
+    const shown = (line?: Phaser.GameObjects.Text) => (line?.active && line.visible ? line.getBounds() : null);
+    this.minimap?.giveWay([shown(this.queuePanel), shown(this.leaveButton)]);
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */
