@@ -1154,6 +1154,72 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     field.update(32, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
   });
+
+  // Reported 2026-11-12 (the town's twin, HubScene "the first frame of a visit"): the server routes
+  // a move by the player's record, which the world left moves here before the client hears of it,
+  // so that world's last move may walk the field body. The field sent only on a change from what
+  // it last sent, "still" at a start, so with no key held it never stopped it.
+  describe("the first frame of a visit", () => {
+    function visit(held: boolean) {
+      const stage = kitOnStage({ aiming: false });
+      const field = stage.field as unknown as Kitted & {
+        init(data?: { field?: string; arrival?: boolean }): void;
+        release(end: "shutdown" | "destroy"): void;
+        cursors: { right: { isDown: boolean } };
+      };
+      field.cursors.right.isDown = held;
+      const moves = () => stage.send.mock.calls.filter(([action]) => action === ActionType.Move);
+      /** What the field body walks: the last move on the wire, whichever world sent it. */
+      const body = () => moves().at(-1)?.[1];
+      /** The world left's last stride, landing on the field body after the switch. */
+      const strideBefore = () => socketManager.sendMessage(ActionType.Move, { vx: 0, vy: -1 });
+      return { ...stage, field, moves, body, strideBefore };
+    }
+
+    it("should stop the body on its first frame with no key held, after a stride the world left sent", () => {
+      const { field, body, strideBefore } = visit(false);
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(16, 16);
+
+      expect(body()).toEqual({ vx: 0, vy: 0 });
+    });
+
+    it("should stop it on a return too, though the visit before ended standing still", () => {
+      const { field, body, strideBefore } = visit(false);
+      field.update(16, 16);
+      field.release("shutdown");
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(32, 16);
+
+      expect(body()).toEqual({ vx: 0, vy: 0 });
+    });
+
+    it("should send that stop once, and nothing more while no key is held", () => {
+      const { field, moves, strideBefore } = visit(false);
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(16, 16);
+      field.update(32, 16);
+
+      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+    });
+
+    it("should send a key held into the visit as its first move, once", () => {
+      const { field, moves, strideBefore } = visit(true);
+      strideBefore();
+
+      field.init({ field: "gentle_meadows", arrival: false });
+      field.update(16, 16);
+      field.update(32, 16);
+
+      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+    });
+  });
 });
 
 const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");

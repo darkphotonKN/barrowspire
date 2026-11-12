@@ -4219,6 +4219,32 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(sentOf(ActionType.Move)).toHaveLength(0);
   });
 
+  // Reported 2026-11-12: dying with a movement key held left the player running on in the town.
+  // The run's end moves the player's record to the town, and the server routes a move by it, so a
+  // stride the run sends after its end walks the town body. The end locks the keyboard, which
+  // freezes a held key as held, and a player whose death the client never saw still reads in play:
+  // the run sent a stride each frame while the settlement record held the town back.
+  it("should send no stride once the run has ended, stopping one it interrupts once", () => {
+    const { run, sentOf } = menuOnStage();
+    run.sendMovementIntent(1, 0);
+    expect(sentOf(ActionType.Move)).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+
+    run.endRun();
+    run.sendMovementIntent(1, 0);
+    run.sendMovementIntent(1, 0);
+
+    expect(run.canSendMove()).toBe(false);
+    expect(sentOf(ActionType.Move).slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
+  });
+
+  it("should send nothing once the run has ended over a player standing still", () => {
+    const { run, sentOf } = menuOnStage();
+    run.sendMovementIntent(0, 0);
+    run.endRun();
+    run.sendMovementIntent(1, 0);
+    expect(sentOf(ActionType.Move)).toHaveLength(0);
+  });
+
   it("should drop E, F, I, Q and H while the menu is open, and answer them again once it closes", () => {
     const s = menuOnStage();
     s.run.bindRunInput();
