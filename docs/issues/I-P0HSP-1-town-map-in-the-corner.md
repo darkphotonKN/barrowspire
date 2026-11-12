@@ -1,6 +1,6 @@
 ---
 id: I-P0HSP-1
-status: open
+status: done
 implements: FS-P0HSP
 blocked_by: []
 labels: [ready-for-agent]
@@ -34,14 +34,14 @@ no interior; the player's dot and the party members' dots (party store ids again
 
 ## Acceptance Criteria
 
-- [ ] FS-P0HSP §Acceptance Criteria: the town's map (fill, edge and gaps, footprints and notches,
+- [x] FS-P0HSP §Acceptance Criteria: the town's map (fill, edge and gaps, footprints and notches,
       no interior), from the golden's walls and the hub's gates.
-- [ ] Party dots: self r 3, allies r 2, ringed; a non-party player draws nothing; no party, self only.
-- [ ] The map redraws on a content change only (counted while walking the town).
-- [ ] Placement at 1080 and 1280: top y 44, right edge on `TOP_RIGHT_HUD`'s x, re-anchored on resize;
+- [x] Party dots: self r 3, allies r 2, ringed; a non-party player draws nothing; no party, self only.
+- [x] The map redraws on a content change only (counted while walking the town).
+- [x] Placement at 1080 and 1280: top y 44, right edge on `TOP_RIGHT_HUD`'s x, re-anchored on resize;
       the clearances of §G.37 measured.
-- [ ] The run's minimap tests pass as written; no new token; the token fence passes.
-- [ ] Typecheck, lint and `npx vitest run --maxWorkers=4 --minWorkers=1` pass.
+- [x] The run's minimap tests pass as written; no new token; the token fence passes.
+- [x] Typecheck, lint and `npx vitest run --maxWorkers=4 --minWorkers=1` pass.
 
 ## Blocked By
 
@@ -59,3 +59,15 @@ FS-P0HSP §A.1–§A.4, §B.5–§B.9, §B.11–§B.13, §E.29–§E.30, §G.35�
   y 500–660 on the west (Forest) and y 280–440 on the east (Meadows), and none on the south for the
   dev gate at (120, 900).
 - GREEN: the plan builder, then the minimap drawing it, then the hub scene placing it.
+
+## Status
+
+Done 2026-11-12. `Minimap` split into one view (`MinimapView`: look, modes, overlay hold, dots,
+marks) drawing a world-px picture; the run's `Minimap` builds its picture from the floor's regions
+(its calls to the stage unchanged, its tests green as written) and `WorldMinimap` draws a world's
+plan (`ui/townMap.ts`, from `ui/worldMap.ts`'s road gaps, edge runs and notched footprints).
+`TOP_RIGHT_HUD` moved to `ui/topRightColumn.ts`, re-exported by `BarrowspireScene.ts`. Clearances
+(§G.37) measured in `HubScene.test.ts`: map left x 854 at 1080 (a notice up to 628 px clear),
+1054 at 1280 (828 px). One run test amended: "should not exist in the hub or field scenes" asserted
+no minimap in those scenes, which FS-P0HSP §A.1 supersedes; it now asserts no fog, no exploration
+and no floor region minimap there.

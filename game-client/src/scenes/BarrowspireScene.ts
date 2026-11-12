@@ -149,7 +149,7 @@ import {
   type MinimapMode,
   type MinimapModeStore,
 } from "@/ui/minimapMode";
-import { TOP_RIGHT_LINE, topRightColumn } from "@/ui/topRightColumn";
+import { TOP_RIGHT_HUD, TOP_RIGHT_LINE, topRightColumn } from "@/ui/topRightColumn";
 import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
@@ -212,7 +212,6 @@ import { GROUND_MARGIN } from "@/render/world/scene";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { thicknessPx, type WallHeight } from "@/render/world/walls";
 import {
-  FULLSCREEN_BUTTON_CLEARANCE,
   afterFrameSetUp,
   anchorAt,
   boundCamera,
@@ -221,7 +220,6 @@ import {
   relayoutOn,
   viewRect,
   viewport,
-  type Placement,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -323,15 +321,8 @@ const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
  * share the corner and are never up together: the card is down whenever the button is up.
  */
 const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
-/**
- * The top-right column's corner (FS-ZAJMH R12; its order FS-56CKV §B, `topRightColumn`), stepped down
- * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05).
- */
-export const TOP_RIGHT_HUD: Placement = {
-  anchor: "top-right",
-  dx: -10,
-  dy: 10 + FULLSCREEN_BUTTON_CLEARANCE,
-};
+/** The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). */
+export { TOP_RIGHT_HUD };
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label. Markers draw above the light-map and vignette (FS-2325V §C.9). The
