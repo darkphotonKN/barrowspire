@@ -486,6 +486,17 @@ const AIM_DRAW = { pole: [0.1, -0.1] };
 /** How far the loose carries the drawing hand (`ik`): just off the anchor, by the ear. */
 const LOOSE_IK = 1.12;
 
+/**
+ * The most a class's weapon may turn in one frame of its attack coming out of the carry and going
+ * back to it (degrees; FS-JS7C8 R2): from the idle into key 0, key 0 into the wind-up, and the
+ * follow-through through keys 5 and 6 back to the idle. With the carry lowered the blade turned
+ * about 150° from the idle into key 0 and 99° from key 6 back, a pop. The wind-up still turns the
+ * blade about 170° from the low carry to high over the right shoulder in two frames, so the limit
+ * is a little over half of it (the knight's 92° and 93°, the mercenary's 97° and 97°; the strike
+ * itself turns 127°, and is not held to it).
+ */
+export const ATTACK_TURN_LIMIT = 100;
+
 export const ATTACKS = {
   /**
    * Knight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): a
@@ -493,18 +504,22 @@ export const ATTACKS = {
    * high over the right shoulder (keys 0–1); the pelvis turns in first while the chest is still
    * back (key 2); the chest and the arm follow, the weight onto the front foot, the blade crossing
    * the front of the chest (key 3, the strike, as before) and carried through, down and across, to
-   * low past the left hip (key 4); it comes back up to the guard (keys 5–6). The shield stays up
-   * before the chest throughout, drawn in as the sword comes down.
+   * low past the left hip (key 4); it settles back to the lowered carry, the point down and ahead
+   * (keys 5–6). The wind-up starts from that carry: key 0 is half way from it to key 1 (each sword
+   * arm key here the bones' rotations slerped between the carry, idle key 0, and its neighbour),
+   * keys 5 and 6 0.45 and 0.85 of the way from key 4 to it, so the blade turns at most
+   * {@link ATTACK_TURN_LIMIT} a frame in and out. The shield stays up before the chest throughout,
+   * drawn in as the sword comes down.
    */
   slash: () =>
     [
-      P({ hips: [0, -0.05, 0], spine: [-0.02, -0.08, 0], chest: [-0.04, -0.15, 0], upperArmR: [-1.6, -0.4, -0.7], foreArmR: [-1.3, 0, 0], handR: [0.5, 0, 0], upperArmL: [-0.65, -0.85, 0.12], foreArmL: [-1.3, 0, 0] }, { z: -0.01 }),
+      P({ hips: [0, -0.05, 0], spine: [-0.02, -0.08, 0], chest: [-0.04, -0.15, 0], upperArmR: [-0.9, -0.64, -0.29], foreArmR: [-0.66, 0, 0], handR: [0.67, 0, 0], upperArmL: [-0.65, -0.85, 0.12], foreArmL: [-1.3, 0, 0] }, { z: -0.01 }),
       P({ hips: [0, -0.15, 0], spine: [-0.06, -0.15, 0], chest: [-0.08, -0.3, 0], upperArmR: [-2.2, -0.8, -1.1], foreArmR: [-1.0, 0, 0], handR: [0.4, 0, 0], upperArmL: [-0.75, -0.8, 0.15], foreArmL: [-1.35, 0, 0] }, { z: -0.025 }),
       P({ hips: [0, 0.12, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.25, 0], upperArmR: [-2.6, -0.3, -0.45], foreArmR: [-0.3, 0, 0], handR: [0, 0, 0], upperArmL: [-0.8, -0.78, 0.18], foreArmL: [-1.4, 0, 0] }),
       P({ hips: [0, 0.3, 0], spine: [0.1, 0.15, 0], chest: [0.12, 0.25, 0], upperArmR: [-1.4, 0.1, 0], foreArmR: [-0.2, 0, 0], handR: [1.0, 0, 0], upperArmL: [-0.85, -1.2, 0.2], foreArmL: [-1.45, 0, 0] }, { z: 0.04 }),
       P({ hips: [0, 0.35, 0], spine: [0.14, 0.2, 0], chest: [0.18, 0.35, 0], upperArmR: [-1.0, 0.8, 0.5], foreArmR: [-0.3, 0, 0], handR: [1.0, 0, 0], upperArmL: [-0.8, -1.3, 0.18], foreArmL: [-1.4, 0, 0] }, { z: 0.035 }),
-      P({ hips: [0, 0.15, 0], spine: [0.05, 0.08, 0], chest: [0.06, 0.12, 0], upperArmR: [-0.8, 0.3, 0.2], foreArmR: [-0.8, 0, 0], handR: [0.4, 0, 0], upperArmL: [-0.7, -1.0, 0.15], foreArmL: [-1.3, 0, 0] }, { z: 0.015 }),
-      P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.6, -0.85, 0.12], foreArmL: [-1.25, 0, 0] }, { z: 0.005 }),
+      P({ hips: [0, 0.15, 0], spine: [0.05, 0.08, 0], chest: [0.06, 0.12, 0], upperArmR: [-0.46, 0.5, 0.08], foreArmR: [-0.3, 0, 0], handR: [0.98, 0, 0], upperArmL: [-0.7, -1.0, 0.15], foreArmL: [-1.3, 0, 0] }, { z: 0.015 }),
+      P({ upperArmR: [-0.15, 0.14, -0.09], foreArmR: [-0.3, 0, 0], handR: [0.96, 0, 0], upperArmL: [-0.6, -0.85, 0.12], foreArmL: [-1.25, 0, 0] }, { z: 0.005 }),
     ].map((p) => add(STANCE, p)),
 
   /**
@@ -514,18 +529,20 @@ export const ATTACKS = {
    * (keys 0–1); the pelvis snaps round first, the chest still back (key 2); the trunk whips
    * through, the weight onto the front foot, the wrist turning the edge into a drawing cut across
    * the front (key 3, the strike, as before) and on, wide, to low past the left hip, the free hand
-   * thrown out and back against the cut (key 4); a flick of the wrist brings the blade back up to
-   * his low guard (keys 5–6). His own keys, apart from the knight's (R7).
+   * thrown out and back against the cut (key 4); the blade settles back to his lowered carry, the
+   * point down and ahead (keys 5–6, as the knight's: from key 4 0.45 and 0.85 of the way to it);
+   * the wind-up starts from it (key 0, 0.53 of the way from it to key 1). His own keys, apart from
+   * the knight's (R7).
    */
   cut: () =>
     [
-      P({ hips: [0, -0.08, 0], spine: [-0.03, -0.1, 0], chest: [-0.05, -0.2, 0], upperArmR: [-1.8, -0.5, -0.8], foreArmR: [-1.2, 0, 0], handR: [0.4, 0, 0], upperArmL: [-0.5, 0, 0.2], foreArmL: [-0.6, 0, 0] }, { z: -0.012 }),
+      P({ hips: [0, -0.08, 0], spine: [-0.03, -0.1, 0], chest: [-0.05, -0.2, 0], upperArmR: [-0.94, -0.73, -0.26], foreArmR: [-0.56, 0, 0], handR: [0.61, 0, 0], upperArmL: [-0.5, 0, 0.2], foreArmL: [-0.6, 0, 0] }, { z: -0.012 }),
       P({ hips: [0, -0.2, 0], spine: [-0.07, -0.2, 0], chest: [-0.1, -0.38, 0], upperArmR: [-2.4, -0.9, -1.2], foreArmR: [-0.8, 0, 0], handR: [0.3, 0, 0], upperArmL: [-0.9, 0, 0.35], foreArmL: [-0.3, 0, 0] }, { z: -0.03 }),
       P({ hips: [0, 0.15, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.3, 0], upperArmR: [-3.0, -0.3, -0.5], foreArmR: [-0.05, 0, 0], handR: [1.0, 0, 0], upperArmL: [-0.6, 0, 0.5], foreArmL: [-0.4, 0, 0] }),
       P({ hips: [0, 0.35, 0], spine: [0.12, 0.2, 0], chest: [0.14, 0.32, 0], upperArmR: [-1.7, -0.1, -0.2], foreArmR: [-0.1, 0, 0], handR: [0.9, 0.2, 0], upperArmL: [0.3, 0, 1.0], foreArmL: [-0.3, 0, 0] }, { z: 0.045 }),
       P({ hips: [0, 0.42, 0], spine: [0.15, 0.25, 0], chest: [0.2, 0.45, 0], upperArmR: [-1.2, 0.8, 0.8], foreArmR: [-0.1, 0, 0], handR: [1.2, 0, 0], upperArmL: [0.45, 0, 1.1], foreArmL: [-0.2, 0, 0] }, { z: 0.04 }),
-      P({ hips: [0, 0.15, 0], spine: [0.05, 0.06, 0], chest: [0.06, 0.1, 0], upperArmR: [-1.3, 0.2, 0], foreArmR: [-1.0, 0, 0], handR: [-0.6, 0.6, 0], upperArmL: [0, 0, 0.5], foreArmL: [-0.5, 0, 0] }, { z: 0.015 }),
-      P({ upperArmR: [-0.5, 0, -0.1], foreArmR: [-0.9, 0, 0], handR: [0.2, 0, 0], upperArmL: [-0.32, 0, 0.18], foreArmL: [-0.63, 0, 0] }, { z: 0.005 }),
+      P({ hips: [0, 0.15, 0], spine: [0.05, 0.06, 0], chest: [0.06, 0.1, 0], upperArmR: [-0.51, 0.56, 0.19], foreArmR: [-0.19, 0, 0], handR: [1.09, 0, 0], upperArmL: [0, 0, 0.5], foreArmL: [-0.5, 0, 0] }, { z: 0.015 }),
+      P({ upperArmR: [-0.15, 0.16, -0.08], foreArmR: [-0.27, 0, 0], handR: [0.99, 0, 0], upperArmL: [-0.32, 0, 0.18], foreArmL: [-0.63, 0, 0] }, { z: 0.005 }),
     ].map((p) => add(STANCE, p)),
 
   /**

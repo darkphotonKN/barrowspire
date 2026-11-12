@@ -527,8 +527,10 @@ describe.each([
   });
 
   it("winds the point up high on the right, above the shoulder, and cuts through to low on the left, below the hip, the strike between", () => {
-    const high = path.slice(0, STRIKE).findIndex((s, i) => s.tip.y > joints[i].shoulderR.y && s.tip.x < joints[i].shoulderR.x);
-    expect(high, "wound up above and right of the right shoulder").toBeGreaterThanOrEqual(0);
+    // the wind-up's height: its highest key before the strike (key 0 now rises from the low carry)
+    const high = path.slice(0, STRIKE).reduce((h, s, i) => (s.tip.y > path[h].tip.y ? i : h), 0);
+    expect(path[high].tip.y, "wound up above the right shoulder").toBeGreaterThan(joints[high].shoulderR.y);
+    expect(path[high].tip.x, "wound up right of the right shoulder").toBeLessThan(joints[high].shoulderR.x);
     const low = path.findIndex((s, i) => i > STRIKE && s.tip.y < joints[i].hips.y && s.tip.x > joints[i].hipL.x);
     expect(low, "through to below and left of the left hip").toBeGreaterThan(STRIKE);
     // the strike crosses the front between them
