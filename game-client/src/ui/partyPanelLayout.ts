@@ -4,6 +4,7 @@
  */
 
 import type { PartyActions, PartyUpdatePayload } from "@/stores/partyStore";
+import { frameClose } from "./panelFrame";
 
 export interface Rect {
   x: number;
@@ -116,8 +117,6 @@ const INVITE_BUTTON_W = 56;
 const LEAVE_H = 24;
 const LEAVE_W = 96;
 const GAP = 8;
-/** The × box at the panel's top right, the letter panel's (FS-R82NV § Change C1). */
-const CLOSE_SIZE = 24;
 
 /** The panel's left edge in a view `width` wide: centred across it (§ Change C3). */
 export function partyPanelLeft(width: number): number {
@@ -167,12 +166,8 @@ export function partyPanelFrame(
   const inner = { x: x + PAD, width: PARTY_PANEL_W - PAD * 2 };
   let at = y + PAD;
   const title: Rect = { ...inner, y: at, height: TITLE_H };
-  const close: Rect = {
-    x: inner.x + inner.width - CLOSE_SIZE,
-    y: at,
-    width: CLOSE_SIZE,
-    height: CLOSE_SIZE,
-  };
+  // the frame's × box, where every world panel's stands (`panelFrame`)
+  const close: Rect = frameClose({ x, y, width: PARTY_PANEL_W });
   at += TITLE_H;
 
   const rows = actions.members.map((): PartyRowFrame => {

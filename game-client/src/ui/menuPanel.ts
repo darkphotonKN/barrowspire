@@ -1,7 +1,9 @@
 /**
- * The chrome of a canvas menu, shared by the hub's ESC menu, the run's ESC menu and its Fall
- * confirm, and the hub's NPC dialogue: a camera-fixed charcoal box with a brass hairline in the
- * popup band, an optional line of copy over the rows, and one pressable row per choice. What a
+ * The chrome of a canvas menu, shared by the hub's ESC menu, the field's, the run's ESC menu and
+ * its Fall confirm, and the hub's NPC dialogue's rows: a camera-fixed box in the party panel's
+ * frame (`drawPanelFrame`, its × doing what Esc does; FS-G4VMQ § Change: The menu wears the party
+ * panel's frame) in the popup band, an optional line of copy over the rows, and one pressable row
+ * per choice. What a
  * menu offers is each scene's rule (`hubMenuChoices`, `runMenuChoices`, `FALL_CONFIRM`); what
  * it looks like and how its keys land is this module's.
  *
@@ -12,6 +14,7 @@
 import type Phaser from "phaser";
 import { crispen } from "@/render/viewport";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
+import { drawPanelFrame, lightClose } from "./panelFrame";
 
 /** The popup band: menus and dialogues sit here, over the HUD (1000) and the result card (1500). */
 export const MENU_DEPTH = 2000;
@@ -23,9 +26,9 @@ export const MENU_ROW = 40;
 
 /** What a menu is drawn in, as the scene's own palette tokens. */
 export interface MenuTones {
-  /** The panel's ground; also the fill of the invisible hit rectangles. */
+  /** The fill of the invisible hit rectangles (the ground itself is the party panel's frame). */
   panel: number;
-  /** The panel's hairline. */
+  /** Kept for the scenes' tone sets; the frame's brass is the party panel's. */
   frame: number;
   /** The copy line over the rows, and a row brightened under the pointer. */
   text: number;
@@ -168,11 +171,13 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
   const top = -panelHeight / 2;
 
   const panel = scene.add.graphics();
-  panel.fillStyle(tones.panel, 0.96);
-  panel.fillRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-  panel.lineStyle(1, tones.frame, 0.5);
-  panel.strokeRect(-MENU_WIDTH / 2, top, MENU_WIDTH, panelHeight);
-  const parts: Phaser.GameObjects.GameObject[] = [panel];
+  const frame = drawPanelFrame(scene, panel, {
+    x: -MENU_WIDTH / 2,
+    y: top,
+    width: MENU_WIDTH,
+    height: panelHeight,
+  });
+  const parts: Phaser.GameObjects.GameObject[] = [panel, frame.glyph];
   if (line) {
     parts.push(
       scene.add
@@ -221,9 +226,26 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
     .container(origin.x, origin.y, [...parts, ...options])
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH);
+
+  // the frame's ×, Esc's own way out (§ Change C2): its hit is camera-fixed beside the box, as a
+  // row's is, since Phaser hit-tests a container's child with the child's own scroll factor
+  const box = frame.close;
+  const centre = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const closeHit = scene.add
+    .rectangle(origin.x + centre.x, origin.y + centre.y, box.width, box.height, tones.panel, 0)
+    .setScrollFactor(0)
+    .setDepth(MENU_DEPTH + 1)
+    .setInteractive({ useHandCursor: true })
+    .setName("menu-close");
+  closeHit.on("pointerup", () => keys.dismiss());
+  closeHit.on("pointerover", () => lightClose(frame.glyph, true));
+  closeHit.on("pointerout", () => lightClose(frame.glyph, false));
+  container.once("destroy", () => closeHit.destroy());
+
   const moveTo = (at: { x: number; y: number }) => {
     container.setPosition(at.x, at.y);
     options.forEach((option) => option.place(at));
+    closeHit.setPosition(at.x + centre.x, at.y + centre.y);
     crispen([container]);
   };
   return { container, keys, moveTo };

@@ -11,6 +11,7 @@ import {
 } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
 import {
   GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
@@ -366,10 +367,11 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   });
 
   it("should draw in the game palette, never the menus' Bone & Soot (R3)", () => {
-    const { fills } = overlayOnStage([sword], worn({ head: helm }));
+    const { fills, strokes } = overlayOnStage([sword], worn({ head: helm }));
     const menu = Object.values(palette.menu);
     for (const c of fills) expect(menu).not.toContain(c);
-    expect(fills).toContain(palette.ink);
+    // the ground is the party panel's carved frame, in the game palette (FS-HRH2J § Change C16)
+    expect(strokes).toContain(BARROW_HEX.brass);
   });
 
   it("should show the item tip on hover (R15)", () => {

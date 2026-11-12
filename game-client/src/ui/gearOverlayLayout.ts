@@ -11,6 +11,7 @@
 import type { EquipmentSlot } from "@/types/gameState";
 import { BAG_CAPACITY } from "./bag";
 import { CORNER_ROW_CLEARANCE } from "./hudCornerLayout";
+import { frameClose } from "./panelFrame";
 import { STASH_CAPACITY } from "./stash";
 
 export interface Rect {
@@ -82,21 +83,13 @@ export function inRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
-/** The × box's side, and how far below the panel's top it stands, level with the title. */
-const CLOSE_SIZE = 24;
-const CLOSE_TOP = 10;
-
 /**
- * The box of a panel's × (FS-HRH2J § Change C4): at its top right, its right edge the panel
- * padding in from the panel's, its top level with the title.
+ * The box of a panel's × (FS-HRH2J § Change C4): the party panel's frame's (`frameClose`), in this
+ * module's rect shape.
  */
 export function panelClose(panel: Rect): Rect {
-  return {
-    x: panel.x + panel.w - PANEL_PAD - CLOSE_SIZE,
-    y: panel.y + CLOSE_TOP,
-    w: CLOSE_SIZE,
-    h: CLOSE_SIZE,
-  };
+  const box = frameClose({ x: panel.x, y: panel.y, width: panel.w });
+  return { x: box.x, y: box.y, w: box.width, h: box.height };
 }
 
 // ── The listed mark ───────────────────────────────────────────────────────

@@ -30,8 +30,8 @@
  * split in a tip on hover. It is a {@link PurseShelf}: the world's `PurseReader` hands it what the
  * wallet says, and it shows "—" until then. It takes no press and no `E`.
  *
- * Game palette world panels (design-guideline "UI Chrome"): dark ink and carved stone, a 1px
- * brass border, vellum text; rarity colour is the rarity edge and, on Runed and Fabled, the still
+ * Game palette world panels (design-guideline "UI Chrome") in the party panel's frame, the one
+ * drawing every world panel wears (`drawPanelFrame`, FS-HRH2J § Change C16), vellum text; rarity colour is the rarity edge and, on Runed and Fabled, the still
  * glow and the well's outline (FS-QE2QW §B). Icons are the baked item icons with their generic
  * fallback.
  */
@@ -96,13 +96,13 @@ import {
 } from "./gearOverlayLayout";
 import { viewport } from "@/render/viewport";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
+import { drawPanelFrame, lightClose } from "./panelFrame";
 
 /** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
 export const GEAR_OVERLAY_DEPTH = 1100;
 const TIP_DEPTH = 2200;
 const FLASH_DEPTH = 2300;
 
-const PANEL_RADIUS = 6;
 const WELL_RADIUS = 4;
 /** The rarity accent edge down a worn slot's or a bag cell's left side. */
 const EDGE_W = 3;
@@ -178,8 +178,6 @@ const PURSE_TIP_PAD = 10;
 const PURSE_TIP_SIZE = 12;
 /** The gap between the coins icon and the amount. */
 const PURSE_ICON_GAP = 6;
-/** The ×'s size, the party and letter panels' (FS-HRH2J § Change C4). */
-const CLOSE_PX = 22;
 
 /** Which panel: the inventory on the right, the character panel (or the stash) on the left. */
 type Side = "left" | "right";
@@ -485,8 +483,16 @@ export class GearOverlay implements HudPanel, PurseShelf {
     const parts: Phaser.GameObjects.GameObject[] = [];
     const open = (side: Side, title: string) => {
       const r = layout[side];
-      parts.push(this.panel(r), this.heading(r, title));
-      this.closes.push(this.closeMark(side, panelClose(r)));
+      // the party panel's frame, the one every world panel wears (§ Change C16)
+      const g = this.scene.add.graphics();
+      const { glyph } = drawPanelFrame(this.scene, g, {
+        x: r.x,
+        y: r.y,
+        width: r.w,
+        height: r.h,
+      });
+      parts.push(g, this.heading(r, title));
+      this.closes.push(this.closeMark(side, panelClose(r), glyph));
     };
     if (this.leftShown()) open("left", this.stash ? "STASH" : "CHARACTER");
     // the panel, its key and its corner icon name one thing (§ Change C14)
@@ -498,22 +504,15 @@ export class GearOverlay implements HudPanel, PurseShelf {
   }
 
   /**
-   * A panel's × (§ Change C4), in the party and letter panels' look. Its press is hit-tested by
-   * hand with the overlay's other presses (`onPointerDown`), so a scene that asks `covers` first
-   * still sees the panel there; the zone is only for the hand cursor.
+   * A panel's × (§ Change C4), drawn by the frame. Its press is hit-tested by hand with the
+   * overlay's other presses (`onPointerDown`), so a scene that asks `covers` first still sees the
+   * panel there; the zone is only for the hand cursor.
    */
-  private closeMark(side: Side, box: Rect): CloseMark {
-    const glyph = this.scene.add.text(
-      box.x + box.w / 2,
-      box.y + box.h / 2,
-      "×",
-      {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: `${CLOSE_PX}px`,
-        color: toCss(palette.interactable),
-      },
-    );
-    glyph.setOrigin(0.5);
+  private closeMark(
+    side: Side,
+    box: Rect,
+    glyph: Phaser.GameObjects.Text,
+  ): CloseMark {
     const zone = this.scene.add
       .zone(box.x, box.y, box.w, box.h)
       .setOrigin(0)
@@ -535,9 +534,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
       const lit = c === over;
       if (lit === c.lit) continue;
       c.lit = lit;
-      c.glyph.setColor(
-        toCss(lit ? palette.interactableBright : palette.interactable),
-      );
+      lightClose(c.glyph, lit);
     }
   }
 
@@ -655,18 +652,6 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.layout = undefined;
     this.gear = undefined;
     this.stashGrid = undefined;
-  }
-
-  /** A world panel: ink ground, a carved inner edge, a 1px brass border, a small radius. */
-  private panel(r: Rect): Phaser.GameObjects.Graphics {
-    const g = this.scene.add.graphics();
-    g.fillStyle(palette.ink, 0.94);
-    g.fillRoundedRect(r.x, r.y, r.w, r.h, PANEL_RADIUS);
-    g.lineStyle(1, palette.hudPanel, 0.9);
-    g.strokeRoundedRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, PANEL_RADIUS - 2);
-    g.lineStyle(1, palette.frame, 0.6);
-    g.strokeRoundedRect(r.x, r.y, r.w, r.h, PANEL_RADIUS);
-    return g;
   }
 
   private heading(r: Rect, words: string): Phaser.GameObjects.Text {

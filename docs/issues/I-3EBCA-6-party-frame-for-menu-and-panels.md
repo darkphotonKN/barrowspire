@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-6
-status: open
+status: done
 implements: FS-G4VMQ
 blocked_by: [I-3EBCA-5]
 labels: [ready-for-agent]
@@ -17,8 +17,8 @@ what Esc does; the overlay's × keeps its own hit test.
 
 ## Acceptance Criteria
 
-- [ ] FS-G4VMQ § Change acceptance criteria; FS-HRH2J § Change C16's.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-G4VMQ § Change acceptance criteria; FS-HRH2J § Change C16's.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 
