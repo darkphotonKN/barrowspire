@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-8
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-7]
 labels: [ready-for-agent]
@@ -23,8 +23,8 @@ blocker under the menu's rows takes every press and hover over the view.
 
 ## Acceptance Criteria
 
-- [ ] FS-3EBCA §D's acceptance lines; FS-1GZGD § Change C4's, FS-R82NV § Change C9's and FS-G4VMQ § Change C4's and C6's.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-3EBCA §D's acceptance lines; FS-1GZGD § Change C4's, FS-R82NV § Change C9's and FS-G4VMQ § Change C4's and C6's.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 
