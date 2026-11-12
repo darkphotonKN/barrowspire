@@ -982,3 +982,28 @@ func memberIDs(p partystore.Party) []uuid.UUID {
 	}
 	return ids
 }
+
+// InvitesTo reads every invite addressed to a player, oldest first, and writes nothing; one the
+// player answered is no longer among them. A player changing character has each spent
+// (FS-NCC9J §Change: Changing character leaves the party, C2).
+func TestInvitesTo_ReadsThePlayersInvites(t *testing.T) {
+	client, _ := testutil.NewRedis(t)
+	store := partystore.NewRedis(client)
+	ctx := context.Background()
+	wren, idris, kaelen := joiner("Wren"), joiner("Idris"), joiner("Kaelen")
+	fromWren := invite(t, store, wren, kaelen, 2, sentAt)
+	fromIdris := invite(t, store, idris, kaelen, 2, sentAt.Add(time.Second))
+
+	ids, err := store.InvitesTo(ctx, kaelen.PlayerID)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{fromWren.InviteID, fromIdris.InviteID}, ids, "oldest first")
+
+	decline(t, store, fromWren, kaelen.PlayerID, sentAt.Add(2*time.Second))
+	ids, err = store.InvitesTo(ctx, kaelen.PlayerID)
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{fromIdris.InviteID}, ids, "a spent invite is gone")
+
+	ids, err = store.InvitesTo(ctx, uuid.New())
+	require.NoError(t, err)
+	assert.Empty(t, ids, "a player nobody invited")
+}
