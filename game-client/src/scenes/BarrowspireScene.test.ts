@@ -304,11 +304,24 @@ describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
     Object.assign(scene, systems.scene);
     scene.init();
     (scene as unknown as { bindKeys(): void }).bindKeys();
-    expect(systems.input.manager?.captures).toContain(9);
+    expect(systems.input.manager?.captures).toContain(87);
 
     systems.shutdown();
 
     expect(systems.input.manager?.captures).toEqual([]);
+  });
+
+  // Tab is the game frame's to keep (keepTab, src/components/gameFocus.ts), and only while nothing on
+  // the page holds focus: a capture here held it on a focused header link or the fullscreen button
+  // too, so a keyboard player there could not Tab on (reported 2026-11-12).
+  it("should hear Tab without capturing it", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    scene.init();
+    (scene as unknown as { bindKeys(): void }).bindKeys();
+
+    expect(systems.input.manager?.captures).not.toContain(9);
   });
 });
 
