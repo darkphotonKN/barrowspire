@@ -91,7 +91,8 @@ Verified 2026-11-12 on `feat/world-hub-field-minimap` at 321d2b23; client paths 
 4. **One minimap, more plans.** The town's and a field's minimaps are the run's `Minimap` look
    (FS-56CKV §A), modes (FS-1SEF0) and marks, drawing a plan built from the world's data instead of
    a dungeon floor's region grid; the run's minimap behaves, draws and tests exactly as before.
-   **(derived here: one look, one set of modes, one place to tune; the run's tests stay as written)**
+   **(derived here: one look, one set of modes, one place to tune; the run's tests stay as written,
+   but for the one guard §A.1 supersedes, see Acceptance Criteria)**
 
 ### §B. What the map draws
 
@@ -350,7 +351,7 @@ the browser"), beside ADR-0063, which it leaves standing.
 - [ ] M in the town and a field cycles normal → enlarged → overlay → normal under the guards of §F.33, reads and writes `barrowspire_minimap_mode`, and does nothing before the minimap is built; the enlarged panel 324 × 162 and the overlay at 1/8 about the player, held as FS-1SEF0 §C.19, at depth 920, under the name plates (950) and the HUD, taking no input.
 - [ ] Placement at widths 1080 and 1280: the map's top at y 44, its right edge on `TOP_RIGHT_HUD`'s x, re-anchored on resize; the corner empty in overlay mode; the clearances of §G.37 hold (measured); an invite prompt and the ready check stepped right of the open party panel draw over the map.
 - [ ] No fog, veil or change on the screen in the town or a field (the scenes' world layers unchanged; a test that the field scene adds nothing above the ground for charting).
-- [ ] The run's minimap tests (`minimap.test.ts`, `minimapMode.test.ts`, `topRightColumn.test.ts`, `BarrowspireScene.test.ts`) pass as written.
+- [ ] The run's minimap tests (`minimap.test.ts`, `minimapMode.test.ts`, `topRightColumn.test.ts`, `BarrowspireScene.test.ts`) pass as written, with one exception: `BarrowspireScene.test.ts`'s "should not exist in the hub or field scenes" asserted no minimap at all in those scenes, which §A.1 supersedes, so it is rewritten to the narrowed guard: the hub and field scenes name no `new Minimap(` (a dungeon floor's region minimap), no `Fog`, no `Exploration`, no run fog helper (`fogShapes`, `fogField`) and import none of `render/world/fog`, `fogField` or `exploration`. Tests added beside the run's (a run's overlapping glyphs stay on their own seats) change none of them.
 - [ ] No raw colour literal added; no new token; the token fence passes.
 - [ ] The design guideline has a "Town and field minimap" bullet marked "Added by FS-P0HSP"; `CONTEXT.md`'s "Minimap" names the town and fields; no gallery card.
 - [ ] Headless captures of the town (normal, enlarged, overlay) and of the Forest part-charted, at 1080 × 720 and 1280 × 720, render scales 1 and 2, looked at by eye.
