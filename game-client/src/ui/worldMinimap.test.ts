@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { contrastRatio } from "@/render/lighting/lighting";
 import { palette } from "@/utils/canvasPalette";
-import { MINIMAP, MINIMAP_EDGE, WorldMinimap, minimapPanel, type MinimapPicture, type MinimapStage } from "./minimap";
+import {
+  MINIMAP,
+  MINIMAP_EDGE,
+  WORLD_MARKS,
+  WorldMinimap,
+  minimapPanel,
+  type MinimapMark,
+  type MinimapPicture,
+  type MinimapStage,
+} from "./minimap";
 
 // FS-P0HSP §A.4, §B, §E (I-P0HSP-1): the run's minimap drawing a world's plan: one look, one set
 // of modes, the plan in place of a dungeon floor's region grid.
@@ -50,7 +60,8 @@ function fakeGraphics() {
 }
 
 /** The scene as the minimap asks it: its graphics and vignette images, in the order made. */
-function fakeStage() {
+function fakeStage(renderScale = 1) {
+  void renderScale;
   const made: ReturnType<typeof fakeGraphics>[] = [];
   const images: ReturnType<typeof fakeGraphics>[] = [];
   const stage: MinimapStage = {
@@ -179,5 +190,105 @@ describe("WorldMinimap (FS-P0HSP §A.4, §B)", () => {
     map.show(picture());
     map.party({ self: { x: 1000, y: 500 }, allies: [] });
     expect(made[made.length - 1].drawn().filter((c) => c.name === "fillCircle")).toHaveLength(2);
+  });
+});
+
+// FS-P0HSP §C.17–§C.19 (I-P0HSP-2): the town's six glyphs, drawn as the run's are, and set side by
+// side where two would overlap.
+describe("WorldMinimap marks (FS-P0HSP §C)", () => {
+  type Box = { x: number; y: number; right: number; bottom: number; ink: Set<string>; ring: Set<string> };
+  /** Each mark the marks layer drew, in order: its ring's box, and its ink and ring px. */
+  function glyphs(calls: Call[]): Box[] {
+    const out: Box[] = [];
+    let colour = -1;
+    for (const c of calls) {
+      if (c.name === "fillStyle") {
+        colour = c.args[0] as number;
+        if (colour === palette.markerStroke)
+          out.push({ x: Infinity, y: Infinity, right: -Infinity, bottom: -Infinity, ink: new Set(), ring: new Set() });
+      }
+      if (c.name !== "fillRect") continue;
+      const [x, y, w, h] = c.args as number[];
+      const box = out[out.length - 1];
+      for (const v of [x, y, w, h]) expect(Number.isInteger(v)).toBe(true);
+      const into = colour === palette.interactable ? box.ink : box.ring;
+      for (let i = x; i < x + w; i++) for (let j = y; j < y + h; j++) into.add(`${i - 0},${j - 0}`);
+      if (colour === palette.markerStroke) {
+        box.x = Math.min(box.x, x);
+        box.y = Math.min(box.y, y);
+        box.right = Math.max(box.right, x + w);
+        box.bottom = Math.max(box.bottom, y + h);
+      }
+    }
+    return out;
+  }
+  const marked = (marks: MinimapMark[], mode?: "enlarged" | "overlay") => {
+    const { stage, made } = fakeStage();
+    const map = new WorldMinimap(stage, TOWN);
+    map.show({ ...picture(), marks });
+    if (mode) map.setMode(mode);
+    return glyphs(made[1].drawn());
+  };
+  const SPREAD = [
+    { kind: "tower", at: { x: 400, y: 200 } },
+    { kind: "teleport", at: { x: 1700, y: 200 } },
+    { kind: "chest", at: { x: 900, y: 500 } },
+    { kind: "bag", at: { x: 1300, y: 300 } },
+    { kind: "scroll", at: { x: 600, y: 800 } },
+    { kind: "lozenge", at: { x: 1500, y: 800 } },
+  ] as MinimapMark[];
+
+  it("should draw each of the six as a 9 × 9 box, its 7 × 7 amber ink on a 1 px ring, ink 3:1 against its ring, inside the rim (§C.17)", () => {
+    expect(WORLD_MARKS).toEqual(["tower", "teleport", "chest", "bag", "scroll", "lozenge"]);
+    const boxes = marked(SPREAD);
+    expect(boxes).toHaveLength(6);
+    for (const b of boxes) {
+      // the ring round the ink, within its 9 × 9 box (the chest's lid row is blank: 9 × 8)
+      expect(b.right - b.x).toBe(9);
+      expect(b.bottom - b.y).toBeGreaterThanOrEqual(8);
+      expect(b.bottom - b.y).toBeLessThanOrEqual(9);
+      const ink = [...b.ink].map((k) => k.split(",").map(Number));
+      expect(Math.max(...ink.map(([x]) => x)) - Math.min(...ink.map(([x]) => x)) + 1).toBe(7);
+      expect(Math.max(...ink.map(([, y]) => y)) - Math.min(...ink.map(([, y]) => y)) + 1).toBeLessThanOrEqual(7);
+      expect(b.x).toBeGreaterThanOrEqual(1);
+      expect(b.right).toBeLessThanOrEqual(MINIMAP.width - 1);
+    }
+    expect(contrastRatio(palette.interactable, palette.markerStroke)).toBeGreaterThanOrEqual(3);
+  });
+
+  it("should give each of the six its own art (§C.17)", () => {
+    const shapes = marked(SPREAD).map((b) =>
+      [...b.ink].map((k) => k.split(",").map(Number)).map(([x, y]) => `${x - b.x},${y - b.y}`).sort().join(";"),
+    );
+    expect(new Set(shapes).size).toBe(6);
+  });
+
+  // the stash chest (1180, 245) and the Quartermaster (1280, 270): 5 × 4 px apart on the normal map
+  const STASH_AND_QUARTERMASTER = [
+    { kind: "bag", at: { x: 1280, y: 270 } },
+    { kind: "chest", at: { x: 1180, y: 245 } },
+  ] as MinimapMark[];
+
+  it.each([[undefined], ["enlarged"], ["overlay"]] as const)(
+    "should set marks that would overlap side by side on one row, chest then bag, 1 px apart (mode %s; §C.19)",
+    (mode) => {
+      const [bag, chest] = marked(STASH_AND_QUARTERMASTER, mode);
+      // one row: both glyphs' foot rows are inked
+      expect(chest.bottom).toBe(bag.bottom);
+      expect(bag.x - chest.x).toBe(10);
+    },
+  );
+
+  it("should centre the row on the mean of their seats (§C.19)", () => {
+    const [bag, chest] = marked(STASH_AND_QUARTERMASTER);
+    const [lone] = marked([STASH_AND_QUARTERMASTER[0]]);
+    const [loneChest] = marked([STASH_AND_QUARTERMASTER[1]]);
+    expect(Math.abs((bag.x + chest.x) / 2 - (lone.x + loneChest.x) / 2)).toBeLessThanOrEqual(0.5);
+  });
+
+  it("should leave marks that do not overlap where they stand", () => {
+    const apart = marked(SPREAD);
+    const alone = SPREAD.map((m) => marked([m])[0]);
+    apart.forEach((b, i) => expect([b.x, b.y]).toEqual([alone[i].x, alone[i].y]));
   });
 });

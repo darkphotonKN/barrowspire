@@ -3965,6 +3965,7 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
       position = AWAY,
       others: { id: string; entity_id: string; position: { x: number; y: number } }[] = [],
       walls: unknown[] = TOWN_WALLS,
+      npcs: unknown[] = [],
     ) =>
       hub.renderState({
         world_type: "hub",
@@ -3972,6 +3973,7 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
         other_players: others,
         walls,
         gates: HUB_GATES,
+        npcs,
       });
     const map = () => hub.townMinimap as InstanceType<typeof WorldMinimap> | undefined;
     /** The dot layer, the last made. */
@@ -4028,6 +4030,25 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     expect(map()!.dotRedraws).toBe(3);
     // a building's walls arriving late (never in practice): once more
     render({ x: 1200, y: 600 }, [], TOWN_WALLS.slice(0, 5));
+    expect(map()!.redraws).toBe(2);
+  });
+
+  // FS-P0HSP §C (I-P0HSP-2): the marks from the state's gates and function NPCs, redrawn only on a change
+  it("should mark the gates, the stash, the Quartermaster and the Elder, and redraw them only when they change (§C.14, §C.20)", () => {
+    const { render, map, layers } = townWithMap();
+    const resident = (x: number) => ({ entity_id: "r1", name: "Resident", function: "", position: { x, y: 700 } });
+    const NPCS = [
+      { entity_id: "elder", name: "Elder", function: "storyteller", position: { x: 1140, y: 680 } },
+      { entity_id: "qm", name: "Quartermaster", function: "storekeeper", position: { x: 1280, y: 270 } },
+    ];
+    render(AWAY, [], TOWN_WALLS, [...NPCS, resident(600)]);
+    render({ x: 1010, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(640)]);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(680)]);
+    expect(map()!.redraws).toBe(1);
+    // the marks layer: one glyph a mark, each begun on its ring: tower, two teleports, chest, bag, scroll
+    const marks = layers[3].calls.filter((c) => c.name === "fillStyle" && c.args[0] === palette.markerStroke);
+    expect(marks).toHaveLength(6);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [NPCS[1], resident(680)]);
     expect(map()!.redraws).toBe(2);
   });
 

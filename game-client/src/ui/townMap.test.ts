@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { HUB_TOWN_GOLDEN } from "@/render/world/hubTownGolden";
 import { townOutline } from "@/render/world/hubTown.fixture";
 import type { WallState } from "@/types/gameState";
+import { HUB_STASH_CHEST } from "@/render/world/hubStash";
 import { notchDepth } from "./worldMap";
 import { townMap } from "./townMap";
 
@@ -90,5 +91,49 @@ describe("townMap (FS-P0HSP §B, I-P0HSP-1)", () => {
     expect(a.key).toBe(b.key);
     expect(townMap({ walls: WALLS.slice(1), gates: GATES }, TOWN).key).not.toBe(a.key);
     expect(townMap({ walls: WALLS, gates: GATES.slice(1) }, TOWN).key).not.toBe(a.key);
+  });
+});
+
+// FS-P0HSP §C (I-P0HSP-2): the town's map marks.
+describe("townMap marks (FS-P0HSP §C, I-P0HSP-2)", () => {
+  const npc = (entity_id: string, fn: string, x: number, y: number) => ({
+    entity_id,
+    name: entity_id,
+    function: fn as "",
+    position: { x, y },
+  });
+  const ELDER = npc("elder", "storyteller", 1140, 680);
+  const QUARTERMASTER = npc("quartermaster", "storekeeper", 1280, 270);
+  const RESIDENT = npc("resident", "", 600, 700);
+  const NPCS = [ELDER, QUARTERMASTER, RESIDENT];
+
+  it("should mark the Spire's gate a tower, every other gate a teleport, the stash a chest, the Quartermaster a bag and the Elder a scroll (§C.14)", () => {
+    const { marks } = townMap({ walls: WALLS, gates: GATES, npcs: NPCS }, TOWN);
+    expect(marks).toEqual([
+      { kind: "tower", at: { x: 1000, y: 50 } },
+      { kind: "teleport", at: { x: 40, y: 580 } },
+      { kind: "teleport", at: { x: 1960, y: 360 } },
+      { kind: "teleport", at: { x: 120, y: 900 } },
+      { kind: "chest", at: HUB_STASH_CHEST.at },
+      { kind: "bag", at: { x: 1280, y: 270 } },
+      { kind: "scroll", at: { x: 1140, y: 680 } },
+    ]);
+  });
+
+  it("should mark nothing for an ambient resident, and a lozenge for a function the client has no glyph for (§C.14, §C.15)", () => {
+    const { marks } = townMap({ walls: WALLS, gates: [], npcs: [RESIDENT, npc("smith", "smith", 1600, 200)] }, TOWN);
+    expect(marks).toEqual([
+      { kind: "chest", at: HUB_STASH_CHEST.at },
+      { kind: "lozenge", at: { x: 1600, y: 200 } },
+    ]);
+  });
+
+  it("should keep its key while only the residents walk, and change it when a function NPC or a gate does (§C.20)", () => {
+    const key = townMap({ walls: WALLS, gates: GATES, npcs: NPCS }, TOWN).key;
+    const walked = townMap({ walls: WALLS, gates: GATES, npcs: [ELDER, QUARTERMASTER, { ...RESIDENT, position: { x: 900, y: 650 } }] }, TOWN).key;
+    expect(walked).toBe(key);
+    const moved = townMap({ walls: WALLS, gates: GATES, npcs: [{ ...ELDER, position: { x: 1150, y: 680 } }, QUARTERMASTER] }, TOWN).key;
+    expect(moved).not.toBe(key);
+    expect(townMap({ walls: WALLS, gates: GATES, npcs: [QUARTERMASTER] }, TOWN).key).not.toBe(key);
   });
 });
