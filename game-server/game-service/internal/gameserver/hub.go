@@ -173,6 +173,9 @@ var (
 	// the queue entry holds the character the run is built from, so it cannot
 	// change while queued. FS-K2HKP §Requirements 7a.
 	errCharacterSwitchWhileQueued = errors.New("character switch while queued")
+	// the player's party is in its run on this pod (FS-NCC9J §Change: Changing character leaves
+	// the party, C7)
+	errCharacterSwitchPartyInRun = errors.New("character switch while the party's run is under way")
 )
 
 // characterResolveTimeout bounds how long entry waits on character-service
@@ -262,7 +265,7 @@ func enterHubRefusal(err error) string {
 		return "That character could not be found. Choose another."
 	case errors.Is(err, errCharactersUnavailable):
 		return "Characters are unavailable right now. Try again shortly."
-	case errors.Is(err, game.ErrCharacterSwitchMidRun):
+	case errors.Is(err, game.ErrCharacterSwitchMidRun), errors.Is(err, errCharacterSwitchPartyInRun):
 		return "You cannot change character during a delve."
 	case errors.Is(err, errCharacterSwitchWhileQueued):
 		return "Leave the queue before changing character."
@@ -274,14 +277,26 @@ func enterHubRefusal(err error) string {
 // enterHub resolves the character a client enters with and seats it. It runs
 // off the message hub's loop: it waits on character-service, and every other
 // connection's messages pass through that loop.
-func (h *messageHub) enterHub(clientPackage types.ClientPackage) {
+func (h *messageHub) enterHub(loopCtx context.Context, clientPackage types.ClientPackage, from characterSwitch) {
 	ctx, cancel := context.WithTimeout(context.Background(), characterResolveTimeout)
 	defer cancel()
 
 	characterID, _ := clientPackage.Message.Payload["characterId"].(string)
+	switching := from.to(characterID)
 
 	var reply types.Message
-	hub, err := h.sessionManager.EnterHub(ctx, clientPackage.Conn, characterID)
+	var hub *game.Session
+	var err error
+	if switching && from.locked {
+		// their party is in its run here: no switch, as no party_leave (C7, C4)
+		err = errCharacterSwitchPartyInRun
+	} else {
+		hub, err = h.sessionManager.EnterHub(ctx, clientPackage.Conn, characterID)
+	}
+	if err == nil && switching {
+		// another character seated: out of the party, as leave_hub takes them, on the loop (C7)
+		h.jobs.post(loopCtx, func() { h.party.leftForRoster(loopCtx, &from.player, clientPackage.Conn) })
+	}
 	if err != nil {
 		slog.Warn("Could not place player in the hub", "error", err)
 
@@ -298,6 +313,35 @@ func (h *messageHub) enterHub(clientPackage types.ClientPackage) {
 	if err := h.sender.SendMessageToConn(clientPackage.Conn, reply); err != nil {
 		slog.Warn("Could not answer enter_hub", "error", err)
 	}
+}
+
+// characterSwitch is what enter_hub needs to know, read on the loop, to tell a character switch:
+// the player and the character on their record, and whether their party's run, under way here,
+// holds them to it. FS-NCC9J §Change: Changing character leaves the party, C7.
+type characterSwitch struct {
+	player types.Player
+	locked bool
+}
+
+// characterSwitchOf reads, on the loop, who asks in on clientPackage's connection and as whom.
+func (h *messageHub) characterSwitchOf(ctx context.Context, clientPackage types.ClientPackage) characterSwitch {
+	player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+	if !exists {
+		return characterSwitch{}
+	}
+	return characterSwitch{player: *player, locked: h.party.switchLocked(ctx, player.ID)}
+}
+
+// to reports whether entering as characterID changes character: a player with a character on
+// record asking in as another. A player with none on record (a fresh connection) is choosing,
+// not changing.
+func (c characterSwitch) to(characterID string) bool {
+	current := c.player.Character.ID
+	if current == uuid.Nil {
+		return false
+	}
+	id, err := uuid.Parse(characterID)
+	return err == nil && id != current
 }
 
 // worldEnteredMessage tells a client which world it is now in. Every transition
@@ -503,7 +547,10 @@ func (h *messageHub) Run(ctx context.Context) {
 			case constants.ActionEnterHub:
 				// The request names the character by id; who it is comes from
 				// character-service, never the payload. FS-BDA7X §Requirements 5.
-				go h.enterHub(clientPackage)
+				// Whether it changes character, and whether the party lock holds
+				// that, is read here on the loop (FS-NCC9J §Change: Changing
+				// character leaves the party, C7).
+				go h.enterHub(ctx, clientPackage, h.characterSwitchOf(ctx, clientPackage))
 
 			case constants.ActionFindGame:
 				slog.Debug("ActionFindGame")
