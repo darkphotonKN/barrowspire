@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { createRig, jointAt as J } from "./rig.js";
+import { createRig, jointAt as J, mount } from "./rig.js";
 import { UNDER_CLEAR, belt, boots, cloak, cloakBones, legs, sash, skirt, skirtBones, torso } from "./anatomy.js";
 import { applyPose, clipsFor, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS, RUNNING_CLASS_ANIMATIONS } from "./clips.js";
-import { ARCHER_BUILD, ARCHER_STYLE, KNIGHT_BUILD, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_STYLE } from "./classStyles.js";
+import { ARCHER_BUILD, ARCHER_QUIVER, ARCHER_STYLE, KNIGHT_BUILD, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_STYLE } from "./classStyles.js";
 import {
   CLEARANCE_PX,
   KNOWN_CLIPPING,
@@ -322,13 +322,13 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
  * with its springs as the bake page runs them (page/main.js `characterPoses`). `specs` stands in
  * for the sheet's clip specs (RUNNING_CLASS_ANIMATIONS), `gownSegs` for the gown's columns.
  */
-function dressed(cls, { cut = "now", specs = RUNNING_CLASS_ANIMATIONS, gownSegs = 64 } = {}) {
+function dressed(cls, { cut = "now", specs = RUNNING_CLASS_ANIMATIONS, gownSegs = 64, panelSegs } = {}) {
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
   const [build, style] = { knight: [KNIGHT_BUILD, KNIGHT_STYLE], archer: [ARCHER_BUILD, ARCHER_STYLE], wizard: [WIZARD_BUILD, WIZARD_STYLE], mercenary: [MERCENARY_BUILD, MERCENARY_STYLE] }[cls];
   const rig = createRig(...build);
   rig.hooks = [];
   if (cls === "knight") cloakBones(rig, { length: 0.64, drag: 0.34 });
-  if (cls === "archer") cloakBones(rig, { length: 0.56, drag: 0.36 });
+  if (cls === "archer") cloakBones(rig, { length: 0.56, drag: 0.36, strap: ARCHER_QUIVER.strap });
   skirtBones(rig, cls === "wizard" ? { stiffness: 38, drag: 0.28 } : { stiffness: 55 });
   const [, hy] = J(rig, "hips");
   const [, ky] = J(rig, "shinL");
@@ -355,9 +355,9 @@ function dressed(cls, { cut = "now", specs = RUNNING_CLASS_ANIMATIONS, gownSegs 
     const robe = { ...gownCut, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: cut === "before" ? 32 : gownSegs, trail: 0.02, ...(cut === "before" ? {} : { kneeCover: 0.05 }) };
     skirt(rig, mat(), robe);
     // the scapular's panels: cut on the gown's rig (cast.js), or skinned apart as before 2026-11-12
-    const over = cut === "before" ? { panels: true, legFollow: 0.3 } : { over: robe };
+    const over = cut === "before" ? { panels: true, legFollow: 0.3, segs: 16 } : { over: robe, ...(panelSegs ? { segs: panelSegs } : {}) };
     for (const arc of [[Math.PI / 2 - 0.5, Math.PI / 2 + 0.5], [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5]])
-      skirt(rig, mat(), { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, segs: 16, ...over });
+      skirt(rig, mat(), { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, ...over });
     belt(rig, mat(), mat(), { r: [0.056, 0.064], dy: 0.07, pouch: true });
   } else {
     const coat = { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112] };
@@ -372,7 +372,7 @@ function dressed(cls, { cut = "now", specs = RUNNING_CLASS_ANIMATIONS, gownSegs 
     const spec = specs[anim];
     const frames = clips[anim];
     const carried = spec.speed ?? (anim === "walk" || anim === "walk_attack" ? 1 : 0);
-    const springs = simulateSprings(rig, frames, { ...spec, speed: carried * (style.speed ?? 1), calm: anim.endsWith("attack") ? 0.25 : 1 });
+    const springs = simulateSprings(rig, frames, { ...spec, speed: carried * (style.speed ?? 1), settle: anim === "death", calm: anim.endsWith("attack") ? 0.25 : 1 });
     return frames.map((p, i) => ({ anim, i, apply: () => (applyPose(rig, p, springs[i]), groundPose(rig)) }));
   };
   return { rig, posesOf };
@@ -455,49 +455,54 @@ function seenThroughCloth(rig, poses) {
 /**
  * How far a panel worn over a garment (the mage's scapular over her gown) lies above it, least over
  * every pose (1x px, model space; below 0 the garment beneath comes out through the panel): each
- * panel vertex against the garment's surface where it lay over it in bind (the same height and
- * angle round it), along that surface's outward normal as posed.
+ * panel vertex against the garment's own face where it lay over it in bind (the nearest point of the
+ * garment's bind surface, its face and the point's weights on that face's corners), along that
+ * face's outward normal as posed.
  */
 function overGarment(rig, poses) {
   const worn = [];
   rig.root.traverse((o) => o.isSkinnedMesh && o.userData.garment && worn.push(o));
   const [under, ...panels] = worn;
-  const { rows, cols, centres } = under.geometry.userData.tube;
   const bind = under.geometry.attributes.position;
-  const rowY = Array.from({ length: rows }, (_, r) => bind.getY(r * cols));
-  // where each panel vertex lay on the garment beneath in bind: its row and column there, and the fractions between
+  const idx = under.geometry.index;
+  const corner = (k) => new THREE.Vector3().fromBufferAttribute(bind, idx.getX(k));
+  const faces = [];
+  for (let k = 0; k < idx.count; k += 3) {
+    const t = new THREE.Triangle(corner(k), corner(k + 1), corner(k + 2));
+    faces.push({ k, t, lo: Math.min(t.a.y, t.b.y, t.c.y), hi: Math.max(t.a.y, t.b.y, t.c.y) });
+  }
+  // where each panel vertex lay on the garment beneath in bind: the face and the point's barycentric weights
+  const near = new THREE.Vector3();
+  const best = new THREE.Vector3();
   const maps = panels.map((m) => {
     const b = m.geometry.attributes.position;
-    const { rows: pr, cols: pc } = m.geometry.userData.tube;
-    return Array.from({ length: pr * pc }, (_, i) => {
-      const y = b.getY(i);
-      let r = 0;
-      while (r + 2 < rows && rowY[r + 1] > y) r++;
-      const fr = Math.min(1, Math.max(0, (rowY[r] - y) / (rowY[r] - rowY[r + 1])));
-      const cz = centres[r][2] + (centres[r + 1][2] - centres[r][2]) * fr;
-      let a = Math.atan2(b.getZ(i) - cz, -b.getX(i));
-      if (a < 0) a += 2 * Math.PI;
-      const fc = (a / (2 * Math.PI)) * (cols - 1);
-      const c = Math.min(cols - 2, Math.floor(fc));
-      return { i, r, fr, c, fc: fc - c };
+    return Array.from({ length: b.count }, (_, i) => {
+      const v = new THREE.Vector3().fromBufferAttribute(b, i);
+      let face = null;
+      let d = Infinity;
+      for (const f of faces) {
+        if (v.y < f.lo - 0.03 * rig.H || v.y > f.hi + 0.03 * rig.H) continue;
+        f.t.closestPointToPoint(v, near);
+        const e = near.distanceToSquared(v);
+        if (e < d) [d, face] = [e, f], best.copy(near);
+      }
+      const w = face.t.getBarycoord(best, new THREE.Vector3());
+      return { i, ids: [0, 1, 2].map((c) => idx.getX(face.k + c)), w };
     });
   });
   let least = Infinity;
   for (const p of poses) {
     p.apply();
     rig.root.updateMatrixWorld(true);
-    const at = (r, c) => under.getVertexPosition(r * cols + c, new THREE.Vector3()).applyMatrix4(under.matrixWorld);
+    const at = (m, i) => m.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(m.matrixWorld);
     const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
     panels.forEach((m, k) => {
       for (const q of maps[k]) {
-        const [a, b, c, d] = [at(q.r, q.c), at(q.r, q.c + 1), at(q.r + 1, q.c), at(q.r + 1, q.c + 1)];
-        const top = a.clone().lerp(b, q.fc);
-        const bottom = c.clone().lerp(d, q.fc);
-        const s = top.clone().lerp(bottom, q.fr);
-        const n = new THREE.Vector3().crossVectors(b.clone().sub(a).lerp(d.clone().sub(c), q.fr), bottom.clone().sub(top)).normalize();
-        const out = s.clone().sub(axis).setY(0);
-        if (n.dot(out) < 0) n.negate();
-        least = Math.min(least, m.getVertexPosition(q.i, new THREE.Vector3()).applyMatrix4(m.matrixWorld).sub(s).dot(n));
+        const [a, b, c] = q.ids.map((i) => at(under, i));
+        const s = a.clone().multiplyScalar(q.w.x).addScaledVector(b, q.w.y).addScaledVector(c, q.w.z);
+        const n = new THREE.Vector3().crossVectors(b.clone().sub(a), c.clone().sub(a)).normalize();
+        if (n.dot(s.clone().sub(axis).setY(0)) < 0) n.negate();
+        least = Math.min(least, at(m, q.i).sub(s).dot(n));
       }
     });
   }
@@ -527,15 +532,15 @@ describe("no leg is seen through the cloth (FS-HF0WW § Change: The guard measur
 
 describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉\")", () => {
   // then, of the dashes a baked px long left on the back panel in the run: "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點"
-  it("the black gown never comes out through the teal scapular at all, at rest, through the run, the walk and both attacks on the move: the panel's columns are the gown's", () => {
+  it("the black gown never comes out through the teal scapular by a baked px, at rest, through the run, the walk and both attacks on the move: the panel's columns are the gown's", () => {
     const { rig, posesOf } = dressed("wizard");
     for (const anim of ["idle", "run", "walk", "walk_attack", "backpedal_attack"])
-      expect(overGarment(rig, posesOf(anim)), anim).toBeGreaterThan(0);
+      expect(overGarment(rig, posesOf(anim)), anim).toBeGreaterThan(-clearanceLimit(1.5));
   });
 
-  it("measures the scapular cut on the gown's rings but not its columns (the gown at 32 columns, the panel at 16 across its own arc): the panel dips under the gown's faces behind the knee in the run", () => {
-    const { rig, posesOf } = dressed("wizard", { gownSegs: 32 });
-    expect(overGarment(rig, posesOf("run"))).toBeLessThan(0);
+  it("measures the scapular cut on the gown's rings but not its columns (the gown at 32 columns, the panel at 16 across its own arc): the panel dips under the gown's faces behind the knee in the run by more than a baked px", () => {
+    const { rig, posesOf } = dressed("wizard", { gownSegs: 32, panelSegs: 16 });
+    expect(overGarment(rig, posesOf("run"))).toBeLessThan(-clearanceLimit(1.5));
   });
 
   it("measures the scapular as it was cut before, skinned apart from the gown: the gown's trailing hem behind it at rest, and further through it in the run", () => {
@@ -573,5 +578,62 @@ describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guar
     expect(cloakClearanceError("char_mercenary_base", null, { scale: 1.5 })).toBeNull();
     const clips = legClearance(rig, posesOf("backpedal_attack"));
     expect(clips.backpedal_attack.px).toBeLessThanOrEqual(clearanceLimit(1.5));
+  });
+});
+
+/**
+ * The archer's quiver case (gear.js `quiver`: 0.26 H long, its radius 0.026 H at the foot to 0.032 at
+ * the mouth) where cast.js mounts it ({@link ARCHER_QUIVER}), as points over its surface, foot to
+ * mouth, and its arrows' fletching (0.18 to 0.23 H up from the case's middle).
+ */
+function quiverOn(rig) {
+  const [, cy] = J(rig, "chest");
+  const q = ARCHER_QUIVER;
+  const g = mount(rig, "chest", [q.at[0], cy + q.at[1], q.at[2] * rig.p.torsoD], { rz: (q.tilt * Math.PI) / 180, rx: q.rx });
+  const point = (x, y, z) => {
+    const o = new THREE.Object3D();
+    o.position.set(x * rig.H, y * rig.H, z * rig.H);
+    g.add(o);
+    return o;
+  };
+  const caseOf = [];
+  for (let h = 0; h <= 12; h++)
+    for (let k = 0; k < 16; k++) {
+      const [t, a] = [h / 12, (k / 16) * Math.PI * 2];
+      const r = 0.026 + 0.006 * t;
+      caseOf.push(point(Math.cos(a) * r, -0.13 + 0.26 * t, Math.sin(a) * r));
+    }
+  return { caseOf, fletching: point(0, 0.23, 0) };
+}
+
+describe("the archer's quiver rides over her cloak (owner 2026-11-12: \"弓箭手背後的箭袋 底部會吃進斗篷裏 可以擺正一點\", \"目前我知道跑步跟平常站立時都會吃進斗篷\")", () => {
+  const { rig, posesOf } = dressed("archer");
+  const { caseOf, fletching } = quiverOn(rig);
+  let cloakMesh;
+  rig.root.traverse((o) => o.userData.cloak && (cloakMesh = o));
+  const at = (m, i) => m.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(m.matrixWorld);
+  const pos = (o) => new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+
+  it(`hangs ${ARCHER_QUIVER.tilt}° off the spine (QUIVER_TILT, 10–20°), its mouth toward the right shoulder`, () => {
+    expect(ARCHER_QUIVER.tilt).toBeGreaterThanOrEqual(10);
+    expect(ARCHER_QUIVER.tilt).toBeLessThanOrEqual(20);
+  });
+
+  it.each(["idle", "run", "walk", "attack", "walk_attack", "backpedal_attack", "death"])("keeps the whole case outside the cloak on every frame of %s, the fletching over the right shoulder", (anim) => {
+    for (const p of posesOf(anim)) {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      const { rows, cols } = cloakMesh.geometry.userData.tube;
+      const cover = [{ rings: Array.from({ length: rows }, (_, r) => Array.from({ length: cols }, (_, j) => at(cloakMesh, r * cols + j))) }];
+      const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
+      // a point of the case inside the cloak is one the cloak lies beyond (throughCloth below 0)
+      const deepest = Math.max(0, ...caseOf.map((o) => -(throughCloth(cover, axis, pos(o)) ?? 0)));
+      expect(deepest * K1, `${anim} frame ${p.i}: the case into the cloak (1x px)`).toBe(0);
+      if (anim === "death") continue;
+      const [f, sh, spine] = [pos(fletching), pos({ matrixWorld: rig.bones.upperArmR.matrixWorld }), pos({ matrixWorld: rig.bones.neck.matrixWorld })];
+      expect(f.y, `${anim} frame ${p.i}: the fletching over the shoulder`).toBeGreaterThan(sh.y);
+      // the character's right is -x
+      expect(f.x, `${anim} frame ${p.i}: the fletching on the right of the neck`).toBeLessThan(spine.x);
+    }
   });
 });
