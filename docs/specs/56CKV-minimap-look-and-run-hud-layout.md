@@ -782,6 +782,22 @@ icon D8), and the readout must move out of the name's way. The words are FS-PQ2T
 read, not copied: one table names every place. No thin line changes: the name is the minimap's
 label, not a capability of its own.
 
+> **Amended 2026-11-12** by Nick, after looking at the name in the browser with I-56CKV-9 in. Four
+> answers, the same day, each written into the requirement it settles:
+> 1. On the overlay, asked whether "兩倍" meant it too: "目前這樣" (keep it as it is). E5 stands,
+>    and the open question in the Edge States is closed.
+> 2. "地城樓層顯示兩次 拿掉下面的" (a dungeon floor is shown twice, take away the one below): the
+>    run's floor line goes from under the map wherever the map name names the floor; the escaped
+>    count moves up into its place. E9 is replaced.
+> 3. "有小地圖時 x y座標不是要顯示在地圖框框內右下角嗎" (with a minimap, shouldn't the x/y readout be
+>    inside the map's frame, at its bottom-right?): it stands there in normal mode, on the name's
+>    plate. E8 is replaced.
+> 4. "2倍地圖時座標顯示在地區名稱左邊" (with the map enlarged, the readout stands left of the place's
+>    name): with the map enlarged the readout and the name share one line beside the fullscreen
+>    button. E8 is replaced (with 3), and E11 is added.
+>
+> Each changed line says *(Amended 2026-11-12, …)*.
+
 ### Requirements
 
 E1. **The words are the arrival card's title** (`placeCard(place).title`, FS-PQ2TW R19, R23): one
@@ -811,8 +827,9 @@ E5. **Overlay: in the top-right corner, left of the map mode icon**, which stand
     icon's box, centred on the button's height (y 16): at 1080 the right edge 1033, at 1280 1233.
     The corner holds no map, so the name keeps to the button row, above the column's first line
     (y 44). **(charter default: "beside the map mode icon / fullscreen button row"; derived here:
-    left of the icon, so neither is covered. Whether the owner meant the overlay too by "兩倍" is
-    open: see Edge States)**
+    left of the icon, so neither is covered; owner, asked whether "兩倍" meant the overlay too:
+    "目前這樣", keep it as it is, 2026-11-12)** *(Amended 2026-11-12, overlay settled: the open
+    question closed.)*
 E6. **Nowhere without a minimap**, as the icon (D4): none on a run's floor without regions, a
     dungeon floor before its map is in, the town or a field before its first state. It is built
     with its minimap and goes with it, so it names the place again on every world change and on
@@ -827,18 +844,51 @@ E7. **It gives way at the top centre.** Beside the enlarged map's button the pla
     view's left. **(derived here: the owner's place, the coordinator's "never under the boss target
     frame / top-centre notices"; hiding is the one way that keeps both, since at 1080 no width
     left of the button is clear of the boss frame)**
-E8. **The dev readout moves out of its way: under the column's last line in every mode.** 4 px
-    under the column's last line, right-aligned on its right edge (§C.18's place), normal, enlarged,
-    overlay and with no map alike; it no longer stands inside the map. This replaces D8's "4 px
-    inside the shown map's top-right" in a panel mode. Dev builds only, as before
-    (`showsPositionReadout`); only the run draws one. **(charter default: "under the map in the
-    column"; derived here: the bottom-right is too small on floor 1, D8's own note)**
-E9. **The run's floor line stays as it is.** "Floor 2" under the map and "The Second Floor" in it
-    say one thing in two wordings, not the same words, and the column's lines are FS-F6F88 req 29's;
-    nothing of the column changes. **(charter default: keep it unless the duplicate is exact)**
+E8. **The dev readout keeps out of the name's way, in the map where there is one.** *(Amended
+    2026-11-12, readout in the map: replaces "under the column's last line in every mode".)*
+    - **Normal mode: inside the map's bottom-right**, right-aligned, its plate's bottom-right
+      `MINIMAP.inset` (4) px in from the panel's bottom and right edges: at 1080 the map x
+      854–1070 y 10–118, so the plate's right edge 1066, its bottom 114; at 1280 each x 200 more.
+      It stays clear of the map mode icon in the bottom-left (D2) and of the name in the top-right
+      (E3). Over floor 1's diamond in that corner: accepted, the owner asked for the corner.
+      **(owner: "有小地圖時 x y座標不是要顯示在地圖框框內右下角嗎", 2026-11-12)**
+    - **Enlarged: left of the map name**, on the name's line (E11). **(owner:
+      "2倍地圖時座標顯示在地區名稱左邊", 2026-11-12)**
+    - **Overlay and no map: 4 px under the column's last line**, right-aligned on its right edge
+      (§C.18's place), as before. **(charter default, unchanged)**
+    - **Its look: the name's plate.** 10 px body face in `palette.hudText` (vellum) at full alpha,
+      on a plate of `palette.hudPanel` at 0.75 padded 4 × 2, as the name's (E2), in every place;
+      its ink keeps 4.5:1 or better over the plate laid on the minimap's fill, the backing and a
+      ground as light as vellum. This replaces §C.15's "no backing box, dim and semi-transparent"
+      and its 3:1: over the map's fill a dimmed, unbacked line does not read. **(charter default:
+      "small HUD text on the same faint plate the map name uses"; derived here: full alpha, since
+      a partial alpha would thin the plate too, and the 4.5:1, the name's)**
+    - Dev builds only, as before (`showsPositionReadout`); only the run draws one (the town and the
+      fields have none, and this change adds none). **(unchanged)**
+E9. **The run's floor line goes wherever the map name names the floor.** *(Amended 2026-11-12,
+    floor line dropped: replaces "the run's floor line stays as it is".)* While the floor's minimap
+    is built, and with it its name ("The First Floor"), the "Floor N" line under the map is hidden
+    in every mode (normal, enlarged, overlay), and the escaped count stands where it stood: 6 px
+    under the map normal and enlarged (y 124 and 178 at 1080 and 1280), the column's top in the
+    overlay (y 44). The line still shows wherever no name names the floor: a floor without regions
+    (a floor of buildings, the dev test room), and a dungeon floor before its map is in; there it
+    keeps its place, the column's top (y 44), the escaped count 4 px under it (y 69). It goes and
+    comes as the name does: built with the floor's minimap, back when the minimap goes (a climb,
+    a floor of buildings, the run's end). **(owner: "地城樓層顯示兩次 拿掉下面的", 2026-11-12;
+    derived here: the overlay too, since the name shows the floor there; the line kept where no
+    name shows it, so the floor is always said once)**
 E10. **Docs and gallery:** the design guideline's Minimap bullet gains a sentence for the name and
     the readout's new place; `game-client/CONTEXT.md` gains **Map name**. No dev-gallery card: HUD
     chrome is not a tracked family (FS-1819Q R3, §E.24). **(derived here)**
+E11. **Enlarged: the readout and the name on one line beside the button.** The readout's plate is
+    right-aligned `MINIMAP.gap` (6) px left of the name's plate's left edge, centred on the
+    button's height as the name is (middle y 20 at 1080 and 1280); where the floor has no name, 6
+    px left of the button. It gives way as the name does (E7): hidden while its plate overlaps a
+    shown target frame, shown again when the frame goes (only the run has a readout, so never the
+    town's queue line). The pair never runs off the view's left, nor meets the run's top-left
+    stack (§D), at 1080 and 1280 with the widest floor name and the widest readout. **(owner:
+    "2倍地圖時座標顯示在地區名稱左邊", 2026-11-12; derived here: the 6 px, the middle, the fallback
+    with no name, the give-way)** *(Added 2026-11-12, readout left of the name.)*
 
 ### Acceptance Criteria
 
@@ -855,8 +905,16 @@ E10. **Docs and gallery:** the design guideline's Minimap bullet gains a sentenc
 - [ ] Hidden while its plate overlaps a shown target frame (a run) or the queue line (the town);
       shown again once it goes; the notices' bands lie below its foot.
 - [ ] The look of E2, its 4.5:1, tokens only; the token fence passes.
-- [ ] The dev readout 4 px under the column's last line, right-aligned, in every mode, at 1080 and
-      1280; never inside the map.
+- [ ] The dev readout, at 1080 and 1280: normal, its plate's bottom-right at (map right − 4, map
+      bottom − 4), 1066/1266 and 114; enlarged, its plate's right edge 6 px left of the name's
+      plate, middle y 20, hidden while a shown target frame meets it, never off the view's left
+      nor over the top-left stack; overlay and no map, 4 px under the column's last line; never
+      over the map mode icon or the name. Its plate the name's, its ink 4.5:1. *(Amended
+      2026-11-12, readout in the map.)*
+- [ ] The floor line hidden under the map in every mode while the floor's name shows, the escaped
+      count in its place (y 124 normal, 178 enlarged, 44 overlay, at 1080 and 1280); shown at the
+      column's top on a floor without regions and before a dungeon floor's map is in. *(Amended
+      2026-11-12, floor line dropped.)*
 - [ ] The guideline's Minimap bullet and `CONTEXT.md`'s **Map name**; no gallery card.
 - [ ] Typecheck, lint and the full vitest suite pass.
 - [ ] Nick's browser check: a run's floor 1 and a climb, the town and a field, 1080 and 1280 wide,
@@ -869,8 +927,16 @@ E10. **Docs and gallery:** the design guideline's Minimap bullet gains a sentenc
   triangle the diamond leaves in the panel's top-right, so its left end lies over the diamond's
   upper-right edge by a few px. Accepted: the plate is there to read over the map, as the owner
   asked for the corner. **(derived here)**
-- **The overlay and "兩倍":** the owner's "兩倍" is the enlarged mode; whether he meant the overlay
-  too is not known, so the overlay keeps E5. Asked of him with this change.
+- **The overlay and "兩倍":** the owner's "兩倍" is the enlarged mode; asked whether he meant the
+  overlay too, he answered "目前這樣": the overlay keeps E5. *(Amended 2026-11-12, overlay
+  settled.)*
+- **A target frame at 1080 with the map enlarged and the readout beside the name:** the readout
+  stands further left than the name, so any frame that hides the name hides it too, and the normal
+  frame can hide it while the name still shows. Both are back the moment the frame fades out.
+  *(Added 2026-11-12, readout left of the name.)*
+- **The readout's text changes every frame:** right-aligned, so it grows to the left, away from
+  the name and the button; in normal mode its widest ("Awaiting the deep...", or a floor's largest
+  "X: … Y: …") stays clear of the map mode icon. *(Added 2026-11-12, readout in the map.)*
 - **The map mode icon's hint in the overlay** ("Map mode (M)", 6 px left of the icon) draws over
   the name while hovered (its depth is higher); it goes when the pointer leaves. Accepted.
 - **The fullscreen button's hint beside the enlarged map** (DOM, to the button's left, §Change C9)

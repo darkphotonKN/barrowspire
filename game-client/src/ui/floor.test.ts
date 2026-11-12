@@ -7,6 +7,7 @@ import {
   interactNotice,
   isTopFloor,
   refusesContainer,
+  showsFloorLine,
 } from "./floor";
 
 describe("floorLabel (FS-M8CSE R7)", () => {
@@ -16,6 +17,19 @@ describe("floorLabel (FS-M8CSE R7)", () => {
 
   it("should have nothing to show in the hub, where there is no floor", () => {
     expect(floorLabel({})).toBeNull();
+  });
+});
+
+// FS-56CKV §Change: Map name, E9 as amended 2026-11-12 (owner: "地城樓層顯示兩次 拿掉下面的")
+describe("showsFloorLine (FS-56CKV §Change: Map name, E9)", () => {
+  it.each<[string, number | undefined, number | undefined, boolean]>([
+    ["floor 1 with its map name up", 1, 1, false],
+    ["floor 3 with its map name up", 3, 3, false],
+    ["a floor with no map name (no regions, or its map not yet in)", 2, undefined, true],
+    ["a floor another floor's name still names", 2, 1, true],
+    ["no floor at all (the hub)", undefined, undefined, false],
+  ])("should answer %s: %s named %s → %s", (_what, floor, named, shown) => {
+    expect(showsFloorLine(floor, named)).toBe(shown);
   });
 });
 
