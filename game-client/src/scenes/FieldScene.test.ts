@@ -1393,3 +1393,120 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
     expect(f.open()).toEqual({ gear: false, party: false });
   });
 });
+
+// FS-G4VMQ § Change: The ESC menu in a field world (owner 2026-11-12: "目前野外按esc沒反應
+// 野外按esc跟村莊一樣行為"). I-G4VMQ-5.
+describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
+  type Menued = FieldUnderTest & {
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    input: unknown;
+    bindHudKeys(): void;
+    takesPointer(x: number, y: number, primary: boolean): boolean;
+    sendMovementIntent(): void;
+    cursors?: unknown;
+    wasd?: unknown;
+  };
+
+  function menuedField() {
+    const env = fieldOnStage();
+    const field = env.field as Menued;
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const labels: string[] = [];
+    const picks = new Map<string, () => void>();
+    field.add = new Proxy(
+      {},
+      {
+        get: (_t, key) =>
+          key === "text"
+            ? (_x: number, _y: number, content: string) => {
+                labels.push(content);
+                return any;
+              }
+            : () => any,
+      },
+    );
+    const keys = new Map<string, () => void>();
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const state = { gear: false, party: false };
+    field.equipment = {
+      isOpen: () => state.gear,
+      hide: () => ((state.gear = false), true),
+      toggle: () => void (state.gear = !state.gear),
+      equipKey: () => false,
+    };
+    field.partyPanel = {
+      isOpen: () => state.party,
+      close: () => ((state.party = false), true),
+      relayout: vi.fn(),
+      destroy: vi.fn(),
+    };
+    field.bindHudKeys();
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    return { ...env, field, labels, key, state, picks };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should open the town's menu on ESC with nothing open, and close it on a second ESC (C1, C2)", () => {
+    const { field, labels, key } = menuedField();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+    expect(labels).toContain("Change character  [1]");
+    expect(labels).toContain("Back  [Esc]");
+    key("ESC");
+    expect(field.menu).toBeUndefined();
+  });
+
+  it("should close the gear overlay, then the party panel, before the menu opens (C1)", () => {
+    const { field, key, state } = menuedField();
+    state.gear = true;
+    state.party = true;
+    key("ESC");
+    expect(state.gear).toBe(false);
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(state.party).toBe(false);
+    expect(field.menu).toBeUndefined();
+    key("ESC");
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should leave for the roster on Change character: one leave_hub, then MainMenuScene on world_left (C3)", () => {
+    const { field, key, send, reply } = menuedField();
+    key("ESC");
+    key("ONE");
+    key("ONE");
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toHaveLength(1);
+    reply("world_left", {});
+    expect(field.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should stay in the field and say why when the server refuses the leave (C3)", () => {
+    const { field, key, send, labels } = menuedField();
+    const onError = vi.mocked(socketManager.onError);
+    key("ESC");
+    key("ENTER");
+    const refused = onError.mock.calls.find(([a]) => a === ActionType.LeaveHub)?.[1];
+    refused?.({ action: ActionType.LeaveHub, error: "x", message: "You are not in the hub." });
+    expect(field.scene.start).not.toHaveBeenCalled();
+    expect(labels).toContain("You are not in the hub.");
+    key("ENTER");
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toHaveLength(2);
+  });
+
+  it("should own the keys and presses while open: no gear overlay, no attack (C4)", () => {
+    const { field, key, state } = menuedField();
+    key("ESC");
+    key("I");
+    expect(state.gear).toBe(false);
+    expect(field.takesPointer(400, 300, true)).toBe(true);
+  });
+});
