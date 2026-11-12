@@ -1,6 +1,6 @@
 ---
 id: I-MMA2H-5
-status: open
+status: done
 implements: FS-MMA2H
 blocked_by: [I-MMA2H-1, I-MMA2H-2, I-MMA2H-3, I-MMA2H-4]
 labels: [ready-for-agent]
@@ -32,3 +32,5 @@ I-MMA2H-1, I-MMA2H-2, I-MMA2H-3, I-MMA2H-4.
 ## Spec Reference
 
 FS-MMA2H §Acceptance Criteria "By eye"; user stories 1, 2, 3, 7, 8, 11.
+
+**Owner check, 2026-11-11.** Nick looked at the doors in the browser on the local branch `play/floor1-fixes` (this branch merged with the Bone Archer and the wall-corner and coffer fixes) and reported "門沒問題". He gave one verdict for the whole check, not one per line, so the boxes above are left as written.
