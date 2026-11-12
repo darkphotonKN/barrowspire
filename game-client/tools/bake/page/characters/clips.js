@@ -313,14 +313,16 @@ function steadyNeck(...chain) {
  * ({@link RUN_COUNTER}); the neck takes up every turn, roll and lean of the chest, so the head stays
  * steady and looks ahead. `style.run` scales it as `style.walk` scales the walk (stride, knee fold,
  * arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm near
- * straight and its swing short so the bow hangs along the side. `style.run.hold`, when a class
- * gives one, carries the weapon in the run in place of `style.hold` (the walk's carry holds an arm
- * forward and bent, which the pump would add to: a sword or sceptre arm then pumps from the
- * shoulder like a free arm, its wrist alone keeping the weapon's angle). `style.runExtra(i)` adds a
+ * straight and its swing short so the bow hangs along the side. `style.run.wrist` (per arm, 0 by
+ * default) is how much of the arm's pump the wrist takes back, so a weapon in that hand turns less
+ * than the forearm through the swing (1 would hold its angle to the chest). `style.run.hold`, when
+ * a class gives one, carries the weapon in the run in place of `style.hold` (the idle's carry
+ * hangs the arm at the side, which the pump would add to: a sword or sceptre arm then pumps from
+ * the shoulder like a free arm, its wrist setting the weapon's angle). `style.runExtra(i)` adds a
  * class's own.
  */
 export function runCycle(style) {
-  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
+  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], wrist: [0, 0], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
   const half = [0, 1, 2, 3].map((i) => {
     const c = swing(i);
     const hipsY = 0.12 * c * r.twist;
@@ -349,11 +351,15 @@ export function runCycle(style) {
   // the arms over the whole cycle, after the mirror, so each arm keeps its own swing and bend
   const arms = (i) => {
     const c = swing(i);
+    const pumpR = (RUN_ARM + 0.1) * c * r.arms[1];
+    const pumpL = -(RUN_ARM + 0.1) * c * r.arms[0];
     return pose({
       upperArmR: [RUN_ARM * c * r.arms[1], 0, 0],
       foreArmR: [RUN_ELBOW * r.elbow[1] + 0.1 * c * r.arms[1], 0, 0],
+      handR: [-pumpR * r.wrist[1], 0, 0],
       upperArmL: [-RUN_ARM * c * r.arms[0], 0, 0],
       foreArmL: [RUN_ELBOW * r.elbow[0] - 0.1 * c * r.arms[0], 0, 0],
+      handL: [-pumpL * r.wrist[0], 0, 0],
     });
   };
   const frames = [...half, ...half.map(mirror)];
