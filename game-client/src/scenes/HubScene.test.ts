@@ -4033,6 +4033,17 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     expect(map()!.redraws).toBe(2);
   });
 
+  // review round 1: an unchanged town's plan is not built again on every 30 Hz state
+  it("should hand the map the one plan it built while the town is unchanged (§A.4, §C.20)", () => {
+    const { render, map } = townWithMap();
+    render({ x: 1000, y: 500 });
+    const show = vi.spyOn(map()!, "show");
+    render({ x: 1010, y: 500 });
+    render({ x: 1020, y: 500 });
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show.mock.calls[1][0]).toBe(show.mock.calls[0][0]);
+  });
+
   // FS-P0HSP §C (I-P0HSP-2): the marks from the state's gates and function NPCs, redrawn only on a change
   it("should mark the gates, the stash and the Quartermaster, never the Elder, and redraw them only when they change (§C.14, §C.20)", () => {
     const { render, map, layers } = townWithMap();
