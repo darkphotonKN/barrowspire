@@ -336,3 +336,61 @@ the contract; nothing here touches it). The client gains type entries only (R18)
 - **Blocking the switch client-side while queued.** The server refuses it, and the main menu
   shows why.
 - **A confirmation step** on either action.
+
+## Change: The ESC menu in a field world
+Status: work-order
+Date: 2026-11-12
+
+Added to the charter "右下角圖示與面板操作" by the owner, 2026-11-12, before any slice was built:
+"目前野外按esc沒反應 野外按esc跟村莊一樣行為" (in a field Esc does nothing today; Esc in a field should
+behave as in the town). Made alongside [FS-3EBCA](3EBCA-hud-corner-icons.md), whose Menu icon is
+one Esc press in every world. The text above is not edited.
+
+**Facts (verified 2026-11-12 on main 321d2b23).** A field binds `keydown-ESC` to hiding the gear
+overlay and nothing else (`FieldScene.bindHudKeys`), so with nothing open Esc does nothing. The
+server accepts `leave_hub` from a field: the visit settles, the body goes, the record names no
+world, and it answers `world_left` (FS-X2F2H R18, `Server.LeaveHub` → `leaveFieldForRoster`). A
+run's Esc already closes the gear overlay, then opens or closes the run's menu (FS-9K8EZ,
+FS-HRH2J R5); it is not changed here beyond FS-R82NV § Change C2's party panel step.
+
+### Requirements
+
+C1. **Esc in a field does what it does in the town.** One press closes one thing: the gear
+    overlay, then the party panel (FS-R82NV § Change C2); with neither open it opens the ESC
+    menu, and with the menu open it closes it, as *Back* does. **(owner: "野外按esc跟村莊一樣行為")**
+C2. **The field's menu is the town's**: the same chrome and place (R4, centred in the popup band),
+    the same choices by the same rule (`hubMenuChoices`): *Change character* and *Back [Esc]*, and
+    *Leave the queue* only while queued (a field player is never queued: FS-X2F2H R20, so in
+    practice it never shows). Enter is the first choice and a number picks that choice, as in the
+    town. **(derived here: "the same as the town" read as the same menu, not a new one)**
+C3. ***Change character* leaves the field for the roster** exactly as from the town (R25): one
+    `leave_hub`, nothing more until it is answered; `world_left` switches to `MainMenuScene`; an
+    error reply keeps the player in the field with the message as a passing notice and the choice
+    usable again. The server already takes it from a field (FS-X2F2H R18): no server change.
+C4. **The menu owns the keys while open** (R5): movement is not sent, and I, B, T, E, F and Q,
+    a press in the world (attack, cast, Shadow Shot hold), the chat input and the party panel
+    open nothing. The world runs on behind it. **(R5, applied to the field)**
+C5. **It follows the view**: an open menu is re-centred when the view's size changes
+    (FS-ZAJMH R13), as the town's is.
+
+### Acceptance Criteria
+
+- [ ] In a field with nothing open, Esc opens the menu with *Change character* and *Back [Esc]*; Esc again, or *Back*, closes it.
+- [ ] With the gear overlay open, the first Esc closes it and does not open the menu; with the party panel open, the first Esc closes it.
+- [ ] *Change character* sends one `leave_hub`; a second press before the answer sends nothing; `world_left` starts `MainMenuScene`; an error reply shows its message and leaves the player in the field.
+- [ ] While the menu is open no `move` is sent, I, B and T open nothing, and a press in the world sends no attack or cast.
+- [ ] The run's Esc is unchanged apart from the party panel step.
+
+### Edge States
+
+- **Fallen in a field** (FS-X2F2H's fallen card): Esc still opens the menu; *Change character*
+  leaves as from anywhere in the field (the server settles the visit).
+- **`world_left` with no leave pending** (another tab): ignored, as in the town.
+- **A dialogue in a field:** fields have no NPC dialogue today; nothing to order.
+- **Leaving the field** for the town with the menu open: the menu goes with the scene.
+
+### Out of Scope
+
+- A settings panel, or any new menu choice.
+- The run's menu (FS-9K8EZ), beyond the party panel step.
+- Any server change.

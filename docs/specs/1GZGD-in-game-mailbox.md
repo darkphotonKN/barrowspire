@@ -1487,20 +1487,52 @@ carried `templateId`, `quantity` and an optional read-time `preview`.)*
   that accept an empty JWT secret (a follow-up in "Before GKE").
 
 ## Change: The envelope toggles the letter panel and stands in the corner row
-Status: draft
+Status: work-order
 Date: 2026-11-12
-
-### Scoping notes (raw)
 
 Charter "右下角圖示與面板操作", approved by the owner 2026-11-12 ("核准"). Owner: "信箱ui可以透過再按一次信箱關閉"
 (the letter panel can be closed by pressing the envelope again), "mail沒有快捷鍵 所以就顯示mail就好"
-(the mailbox has no key, so its hover text is just "Mail").
+(the mailbox has no key, so its hover text is just "Mail"). Made alongside
+[FS-3EBCA](3EBCA-hud-corner-icons.md), which owns the corner row the envelope joins. R33, R36
+and R40 above are not edited; where this section and they disagree, this section wins.
 
-- With the letter panel open, a press on the envelope closes it: the envelope toggles. Esc and
-  the × still close it (R40).
-- The envelope becomes the corner row's Mail icon (FS-3EBCA): town only, the row's leftmost slot,
-  left of Character and Party. Its plate, lines, seal, count and pulse are unchanged; only its
-  place moves.
-- Its hover text reads "Mail". This is the owner's word and overrides, for this one label, the
-  vocabulary rule that the screen never says "mail" (`game-client/CONTEXT.md` § Mailbox terms);
-  the panel still says MAILBOX.
+### Requirements
+
+C1. **The envelope toggles.** With the letter panel open, a press on the envelope closes it, as
+    the × and Esc do (R40), whatever else is open. With it shut, a press opens it as before (R36),
+    and opens nothing while a dialogue, the ESC menu or the gear overlay owns the screen.
+    **(charter default: owner, "信箱ui可以透過再按一次信箱關閉")**
+C2. **The envelope is the corner row's Mail icon.** It stands in the row's leftmost slot, left of
+    Menu, Character and Party (FS-3EBCA R1, R2): at 1080 × 720 its plate is (808, 658, 58, 46),
+    and it keeps that slot when the view's size changes. The mailbox stays town only (R33, D11);
+    outside the town the row draws a greyed envelope in the same slot that cannot be pressed
+    (FS-3EBCA R9; owner, "野外 email也不用消失 就顯示灰色表示不能按"), and nothing of the mailbox is
+    fetched there. Its plate, lines, seal, count and pulse are drawn exactly as before; only its
+    place moves. **(charter default)**
+C3. **It names itself under the pointer**: "Mail", in the row's hover label (FS-3EBCA R5). The
+    owner's word, and the one place the screen says "mail": the panel's caption stays "MAILBOX",
+    and every other word for it stays mailbox and letter (`game-client/CONTEXT.md` § Mailbox
+    terms). **(charter default: owner, "mail沒有快捷鍵 所以就顯示mail就好")**
+
+### Acceptance Criteria
+
+- [ ] With the letter panel open, a press on the envelope closes it; a second press opens it again.
+- [ ] With the panel shut, a press while a dialogue, the ESC menu or the gear overlay is open opens nothing.
+- [ ] At 1080 × 720 the envelope's plate is (808, 658, 58, 46) and at 1280 × 720 (1008, 658, 58, 46); its seal, count and pulse are unchanged.
+- [ ] Under the pointer the envelope shows "Mail"; the label goes when the pointer leaves.
+- [ ] Esc and the × still close the panel.
+
+### Edge States
+
+- **A press while the panel is still loading:** the panel is open as soon as it is asked for
+  (`openPanel` sets it open at once), so a second press closes it and the late answer applies to
+  nothing.
+- **A press on the envelope while the gear overlay is open:** the overlay's right panel covers the
+  row; nothing opens (FS-3EBCA R10).
+- **Leaving the town with the panel open:** as before (R44): it closes with the town.
+
+### Out of Scope
+
+- A key for the mailbox.
+- The mailbox outside the town (D11); the greyed icon there is FS-3EBCA's.
+- Any change to the letter panel's contents, the seal, or the summary's fetches.

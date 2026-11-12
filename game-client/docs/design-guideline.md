@@ -672,6 +672,14 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   world, the fog and the atmosphere, under the aim line, the floor veil and every piece of HUD, and
   takes no input. The scale, the 40% and the line are starting values to tune by eye.
   *(Added by [FS-1SEF0](../../docs/specs/1SEF0-minimap-modes-enlarged-and-overlay.md), 2026-11-12.)*
+- **Corner row.** The panel icons in the bottom-right corner of every world (`src/ui/HudCorner.ts`):
+  from the right Menu (a gear), Character (a bust), Party (two busts) and Mail (the envelope), each
+  a 58 × 46 carved plate at the envelope's 0.85, 8 px apart, 16 px in from the corner. Their lines
+  are the interactable amber, brighter under the pointer; a greyed icon (Mail outside the town)
+  is `hudFaint` and never brightens, since an amber thing the player cannot act on is a defect.
+  Under the pointer a 12 px vellum label on the HUD panel names the icon and its key. Drawn in
+  code from tokens, no baked art. The ability card stands directly above the row.
+  *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-12.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
