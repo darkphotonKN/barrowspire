@@ -780,7 +780,13 @@ export class HubScene extends Phaser.Scene {
   private unsubscribeQueue?: () => void;
 
   private unsubscribeState?: () => void;
-  private lastSent = { vx: 0, vy: 0 };
+  /**
+   * The last move this visit sent, which the town body walks; none yet at a start. The body may be
+   * walking already: the server routes a move by the player's record, which the world left moves
+   * to the town before the client hears of it, so that world's last frames (a run's stride, the
+   * key held as the player died) walk the town body. The first frame sends whatever the keys say.
+   */
+  private lastSent?: { vx: number; vy: number };
 
   /**
    * Whether this start is an arrival (FS-PQ2TW R5–R8): decided once, at the world switch, and
@@ -811,6 +817,8 @@ export class HubScene extends Phaser.Scene {
   init(data?: { arrival?: boolean }): void {
     this.arrival = data?.arrival ?? false;
     this.held = holdOneShots(this, socketManager, HUB_ONE_SHOTS);
+    // what the body walks is not known at a start: the first frame says (reported 2026-11-12)
+    this.lastSent = undefined;
   }
 
   preload(): void {
@@ -1923,10 +1931,10 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Sends velocity only when it changes, rather than every frame. While the menu or the letter
-   * panel is open the keys are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40): they read as
-   * released, so a stride either interrupted is stopped once and nothing more is sent until it
-   * closes.
+   * Sends velocity only when it changes, rather than every frame, and always on a visit's first
+   * frame, a stop included ({@link lastSent}). While the menu or the letter panel is open the keys
+   * are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40): they read as released, so a stride either
+   * interrupted is stopped once and nothing more is sent until it closes.
    */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
@@ -1941,7 +1949,7 @@ export class HubScene extends Phaser.Scene {
     const vx = (right ? 1 : 0) - (left ? 1 : 0);
     const vy = (down ? 1 : 0) - (up ? 1 : 0);
 
-    if (vx === this.lastSent.vx && vy === this.lastSent.vy) return;
+    if (vx === this.lastSent?.vx && vy === this.lastSent?.vy) return;
 
     this.lastSent = { vx, vy };
     socketManager.sendMessage(ActionType.Move, { vx, vy });
