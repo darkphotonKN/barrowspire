@@ -73,6 +73,8 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
+import { HudCorner } from "@/ui/HudCorner";
+import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -271,8 +273,10 @@ const RESOLVED_CARD_DEPTH = 1500;
  */
 const SPECTATE_HUD_Y = 10;
 /**
- * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, in the HUD band (1000) with
- * the counters, and away from the watched player at the centre and the HUD along the top edge.
+ * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, above the corner row
+ * (`LEAVE_BUTTON_PLACE`, FS-3EBCA R14), in the HUD band (1000) with the counters, and away from the
+ * watched player at the centre and the HUD along the top edge. Its margin is the bottom-centre
+ * row's.
  */
 const LEAVE_BUTTON_DEPTH = 1000;
 const LEAVE_BUTTON_MARGIN = 16;
@@ -319,11 +323,6 @@ const RESOURCE_HUD_X = RESOURCE_HUD_AT.run.x;
 const RESOURCE_HUD_Y = RESOURCE_HUD_AT.run.y;
 /** The potion cell (FS-P9G8R R24): just right of the resource bars, top-aligned with them. */
 const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
-/**
- * The ability card (FS-8AY7S req 29, 32): bottom-right, on the leave button's margins. The two
- * share the corner and are never up together: the card is down whenever the button is up.
- */
-const ABILITY_CARD_MARGIN = LEAVE_BUTTON_MARGIN;
 /**
  * The top-right column's corner (FS-ZAJMH R12; its order FS-56CKV §B, `topRightColumn`), stepped down
  * clear of the fullscreen button that keeps the frame's corner (R18; Nick, 2026-11-05).
@@ -676,6 +675,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private invitePrompt?: PartyInvitePrompt;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
+  /**
+   * The corner row (FS-3EBCA): Menu (one Esc), Character (I), Party (T) and the Mailbox greyed, as
+   * in every world outside the town. The ability card and the leave button stand above it.
+   */
+  private corner?: HudCorner;
   /**
    * The player's own class kit drawn (FS-MAMHR §G.32–§G.36, FS-JTNPR req 11), shared with the
    * field scene: the merc's cut, riposte, stance and parry flash, and the archer's aim line.
@@ -1131,6 +1135,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.abilityHud = undefined;
+    this.corner?.destroy();
+    this.corner = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
@@ -3216,10 +3222,33 @@ export class BarrowspireScene extends Phaser.Scene {
     // torch-lit barrow atmosphere — pure decoration, no game state
     this.createAtmosphere();
 
+    this.mountCorner();
+
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
     this.openHeldMessages();
+  }
+
+  /**
+   * The corner row (FS-3EBCA): each press the key's own path, one Esc, I or B, T; the Mailbox
+   * greyed, the mailbox being the town's (R9). Under the open gear overlay it answers nothing (R11).
+   */
+  private mountCorner(): void {
+    this.corner = new HudCorner(this, {
+      icons: [
+        { icon: "menu", press: () => this.pressEscape() },
+        {
+          icon: "character",
+          press: () => {
+            if (!this.menu) this.toggleInventory();
+          },
+        },
+        { icon: "party", press: () => this.partyPanel?.toggle() },
+        { icon: "mail", greyed: true },
+      ],
+      covered: (x, y) => this.equipment?.covers(x, y) ?? false,
+    });
   }
 
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
@@ -3241,6 +3270,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     this.abilityHud?.relayout();
+    this.corner?.relayout();
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
     this.invitePrompt?.relayout();
@@ -3408,6 +3438,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.chatWindow?.covers(at.x, at.y)) return;
       // and one on the open party panel is the panel's (FS-R82NV R28)
       if (this.partyPanel?.covers(at.x, at.y)) return;
+      // and one on the corner row is the row's (FS-3EBCA R10)
+      if (this.corner?.covers(at.x, at.y)) return;
       // and one on an invite prompt is the prompt's (FS-NCC9J R24)
       if (this.invitePrompt?.covers(at.x, at.y)) return;
       // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
@@ -5096,11 +5128,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastGameState;
     if (!state) return;
-    this.abilityHud ??= new AbilityHud(this, {
-      anchor: "bottom-right",
-      dx: -ABILITY_CARD_MARGIN,
-      dy: -ABILITY_CARD_MARGIN,
-    });
+    // just above the corner row, right-aligned with it (FS-3EBCA R13)
+    this.abilityHud ??= new AbilityHud(this, ABILITY_CARD_PLACE);
     this.abilityHud.show(
       abilityCard(state, {
         lockedOut: this.combat.lockedOut,
@@ -5520,11 +5549,8 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private placeLeaveInCorner(): void {
     if (this.resolvedKind !== "dead" || this.leaveButton) return;
-    const at = anchorAt({
-      anchor: "bottom-right",
-      dx: -LEAVE_BUTTON_MARGIN - BUTTON_W / 2,
-      dy: -LEAVE_BUTTON_MARGIN - BUTTON_H / 2,
-    });
+    // above the corner row, as the card it stands in for (FS-3EBCA R14)
+    const at = anchorAt(LEAVE_BUTTON_PLACE);
     this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)

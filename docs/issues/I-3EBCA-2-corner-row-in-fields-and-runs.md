@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-2
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-1, I-1GZGD-12, I-G4VMQ-5]
 labels: [ready-for-agent]
@@ -16,8 +16,8 @@ spectator's leave button stand 70 px up, right-aligned with the row.
 
 ## Acceptance Criteria
 
-- [ ] FS-3EBCA acceptance criteria for fields and runs: same rects, greyed Mail inert with "Mailbox · town only", presses, no attack under an icon, the card and button places.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-3EBCA acceptance criteria for fields and runs: same rects, greyed Mail inert with "Mailbox · town only", presses, no attack under an icon, the card and button places.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 

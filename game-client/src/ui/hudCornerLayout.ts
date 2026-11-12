@@ -5,6 +5,8 @@
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
+import type { Placement } from "@/render/viewport";
+
 export interface Rect {
   x: number;
   y: number;
@@ -40,6 +42,26 @@ export const CORNER_MARGIN = 16;
  */
 export const CORNER_ROW_CLEARANCE =
   CORNER_MARGIN + CORNER_ICON_H + CORNER_ICON_GAP;
+
+/**
+ * The ability card's place outside the town (R13; owner, "村莊以外會顯示右鍵的技能 就放在icon上方的位置"):
+ * its bottom-right corner right-aligned with the row and the row's gap above it, in a run and a
+ * field alike.
+ */
+export const ABILITY_CARD_PLACE: Placement = {
+  anchor: "bottom-right",
+  dx: -CORNER_MARGIN,
+  dy: -CORNER_ROW_CLEARANCE,
+};
+
+/** The run's dead-spectator Leave the barrow button, 200 × 38 (FS-QPDKN req 10). */
+const LEAVE_BUTTON = { width: 200, height: 38 };
+/** Its centre, above the row the same way (R14). */
+export const LEAVE_BUTTON_PLACE: Placement = {
+  anchor: "bottom-right",
+  dx: -CORNER_MARGIN - LEAVE_BUTTON.width / 2,
+  dy: -CORNER_ROW_CLEARANCE - LEAVE_BUTTON.height / 2,
+};
 
 /** Each icon's name and key under the pointer (R5); the Mailbox has no key. */
 export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {

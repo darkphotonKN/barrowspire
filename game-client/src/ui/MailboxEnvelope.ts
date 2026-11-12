@@ -62,6 +62,39 @@ export function drawWaxSeal(
   g.strokeCircle(x, y, r - 1);
 }
 
+/** The envelope inside its plate. */
+function envelopeRect(f: Rect): Rect {
+  return { x: f.x + 11, y: f.y + 11, width: f.width - 22, height: f.height - 21 };
+}
+
+/** Where the seal sits on an envelope drawn in plate `f`: the flap's point. */
+export function envelopeSealAt(f: Rect): { x: number; y: number } {
+  const e = envelopeRect(f);
+  return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
+}
+
+/**
+ * The envelope's lines in plate `f`, in `ink` (R33): its edge, the flap down to the seal and the
+ * folds at the foot. The corner row draws the greyed Mailbox with it too (FS-3EBCA R9).
+ */
+export function drawEnvelopeLines(
+  g: Pick<Phaser.GameObjects.Graphics, "lineStyle" | "strokeRoundedRect" | "lineBetween">,
+  f: Rect,
+  ink: number,
+  alpha: number,
+): void {
+  const e = envelopeRect(f);
+  const point = envelopeSealAt(f);
+  g.lineStyle(1.5, ink, alpha);
+  g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
+  // the flap, down to the seal
+  g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
+  g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
+  // the folds at the foot
+  g.lineBetween(e.x + 1, e.y + e.height - 1, e.x + e.width * 0.36, e.y + e.height * 0.5);
+  g.lineBetween(e.x + e.width - 1, e.y + e.height - 1, e.x + e.width * 0.64, e.y + e.height * 0.5);
+}
+
 export class MailboxEnvelope {
   private frame: Rect;
   private readonly glow: Phaser.GameObjects.Graphics;
@@ -145,57 +178,23 @@ export class MailboxEnvelope {
     else this.label.hide();
   }
 
-  /** The envelope's corner of the screen, where its seal sits: the flap's point. */
-  private sealAt(): { x: number; y: number } {
-    const e = this.envelope();
-    return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
-  }
-
-  private envelope(): Rect {
-    const f = this.frame;
-    return {
-      x: f.x + 11,
-      y: f.y + 11,
-      width: f.width - 22,
-      height: f.height - 21,
-    };
-  }
-
   /** The carved plate and the envelope's lines: amber, brighter under the pointer. */
   private drawBody(): void {
     const g = this.body.clear();
     const f = this.frame;
     carvedPanel(g, f.x, f.y, f.width, f.height, { opacity: 0.85 });
-    const e = this.envelope();
-    const point = this.sealAt();
-    g.lineStyle(
-      1.5,
+    drawEnvelopeLines(
+      g,
+      f,
       this.hovered ? palette.interactableBright : palette.interactable,
       this.hovered ? 1 : 0.85,
-    );
-    g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
-    // the flap, down to the seal
-    g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
-    g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
-    // the folds at the foot
-    g.lineBetween(
-      e.x + 1,
-      e.y + e.height - 1,
-      e.x + e.width * 0.36,
-      e.y + e.height * 0.5,
-    );
-    g.lineBetween(
-      e.x + e.width - 1,
-      e.y + e.height - 1,
-      e.x + e.width * 0.64,
-      e.y + e.height * 0.5,
     );
   }
 
   /** The seal: lit with the waiting count, dark with none (R35). */
   private drawSeal(): void {
     const { lit, count } = sealState(this.deps.store.getState().summary);
-    const at = this.sealAt();
+    const at = envelopeSealAt(this.frame);
     const g = this.seal.clear();
     drawWaxSeal(g, at.x, at.y, 8, lit);
     this.count?.destroy();

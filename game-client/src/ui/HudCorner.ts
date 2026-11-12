@@ -17,8 +17,10 @@ import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { CornerLabel } from "./cornerLabel";
+import { drawEnvelopeLines, drawWaxSeal, envelopeSealAt } from "./MailboxEnvelope";
 import {
   CORNER_LABEL,
+  CORNER_LABEL_GREYED_MAIL,
   cornerIconFrame,
   type CornerIcon,
   type Rect,
@@ -28,11 +30,18 @@ const HUD_DEPTH = 1000;
 /** The plate's opacity and the glyph's lines, the envelope's. */
 const PLATE_OPACITY = 0.85;
 const LINE_W = 1.5;
+/** The greyed Mailbox's lines. */
+const GREYED_ALPHA = 0.6;
+
+const labelOf = (spec: CornerIconSpec) =>
+  spec.greyed && spec.icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[spec.icon];
 
 export interface CornerIconSpec {
   icon: CornerIcon;
   /** What a press does; the scene's own key path (Esc, I, T). */
   press?: () => void;
+  /** Shown but not pressable (the Mailbox outside the town, R9): faint, no hand, no press. */
+  greyed?: boolean;
 }
 
 export interface HudCornerDeps {
@@ -80,7 +89,7 @@ export class HudCorner {
         .setOrigin(0)
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
-        .setInteractive({ useHandCursor: true });
+        .setInteractive({ useHandCursor: !spec.greyed });
       const drawn: DrawnIcon = { spec, frame, graphics, zone, hovered: false };
       zone.on("pointerdown", () => this.press(drawn));
       zone.on("pointerover", () => this.hover(drawn, true));
@@ -103,7 +112,7 @@ export class HudCorner {
       this.draw(icon);
     }
     const hovered = this.icons.find((i) => i.hovered);
-    if (hovered) this.label.show(hovered.frame, CORNER_LABEL[hovered.spec.icon]);
+    if (hovered) this.label.show(hovered.frame, labelOf(hovered.spec));
   }
 
   destroy(): void {
@@ -119,7 +128,7 @@ export class HudCorner {
   }
 
   private press(icon: DrawnIcon): void {
-    if (this.coveredAt(icon.frame)) return;
+    if (icon.spec.greyed || this.coveredAt(icon.frame)) return;
     icon.spec.press?.();
   }
 
@@ -128,7 +137,7 @@ export class HudCorner {
     if (icon.hovered === shown) return;
     icon.hovered = shown;
     this.draw(icon);
-    if (shown) this.label.show(icon.frame, CORNER_LABEL[icon.spec.icon]);
+    if (shown) this.label.show(icon.frame, labelOf(icon.spec));
     else this.label.hide();
   }
 
@@ -136,6 +145,13 @@ export class HudCorner {
     const g = icon.graphics.clear();
     const f = icon.frame;
     carvedPanel(g, f.x, f.y, f.width, f.height, { opacity: PLATE_OPACITY });
+    if (icon.spec.greyed) {
+      // never amber: an amber thing the player cannot act on is a defect (R9)
+      drawEnvelopeLines(g, f, palette.hudFaint, GREYED_ALPHA);
+      const seal = envelopeSealAt(f);
+      drawWaxSeal(g, seal.x, seal.y, 8, false);
+      return;
+    }
     const ink = icon.hovered ? palette.interactableBright : palette.interactable;
     const alpha = icon.hovered ? 1 : 0.85;
     const cx = f.x + f.width / 2;
