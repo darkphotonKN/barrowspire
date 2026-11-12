@@ -91,6 +91,11 @@ type partyKeeper interface {
 	// whether the party cache knows the player as a party member: read on the loop, no Redis call
 	// (FS-BJNYC R1)
 	inParty(playerID uuid.UUID) bool
+	// a character switch: refused while the player's party is in its run here, and once leave_hub
+	// is accepted, the player out of their party as party_leave would take them (FS-NCC9J
+	// §Change: Changing character leaves the party)
+	switchLocked(ctx context.Context, playerID uuid.UUID) bool
+	leftForRoster(ctx context.Context, player *types.Player, conn *websocket.Conn)
 	// a random match about to start here: every matched player, local and on other pods, makes one
 	// matched party first, off the loop; formed is handed the outcome back on the loop, and answers
 	// with the run it created, if any (FS-988SM R3, R3a, R8, R9)
@@ -220,6 +225,9 @@ func leaveHubRefusal(err error) string {
 		return "Leave the queue first."
 	case errors.Is(err, errLeaveHubInRun):
 		return "You are in a delve."
+	case errors.Is(err, errLeaveHubPartyInRun):
+		// the party lock's own words (FS-NCC9J R9)
+		return "Not while delving."
 	default:
 		return "You are not in the hub."
 	}
@@ -742,10 +750,19 @@ func (h *messageHub) Run(ctx context.Context) {
 
 			// A hub member leaving for the roster: body gone, record in no world,
 			// so a refresh lands on the roster. FS-G4VMQ §Requirements 23–24.
+			// It is changing character, so it is leaving their party too, and
+			// refused, as party_leave is, while the party is in its run here.
+			// FS-NCC9J §Change: Changing character leaves the party.
 			case constants.ActionLeaveHub:
 				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
 				if !exists {
 					slog.Debug("leave_hub from a connection with no player")
+					continue
+				}
+
+				if h.party.switchLocked(ctx, player.ID) {
+					slog.Warn("Refusing leave_hub", "player_id", player.ID, "error", errLeaveHubPartyInRun)
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, leaveHubRefusal(errLeaveHubPartyInRun))
 					continue
 				}
 
@@ -757,6 +774,7 @@ func (h *messageHub) Run(ctx context.Context) {
 					h.refuse(clientPackage.Conn, clientPackage.Message.Action, leaveHubRefusal(err))
 					continue
 				}
+				h.party.leftForRoster(ctx, player, clientPackage.Conn)
 
 				slog.Info("Delver left the hub for the roster", "player_id", player.ID)
 				if err := h.sender.SendMessageToConn(clientPackage.Conn, types.Message{

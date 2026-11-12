@@ -723,6 +723,8 @@ var (
 	errLeaveHubQueued  = errors.New("queued members leave the queue first")
 	errLeaveHubInRun   = errors.New("member is in a run")
 	errLeaveHubNotHere = errors.New("member is not in the hub")
+	// their party is in its run on this pod (FS-NCC9J §Change: Changing character leaves the party, C4)
+	errLeaveHubPartyInRun = errors.New("member's party is in its run")
 )
 
 /**

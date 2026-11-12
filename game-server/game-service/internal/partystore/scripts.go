@@ -658,6 +658,21 @@ func (r *Redis) Transfer(ctx context.Context, partyID, leader, target uuid.UUID)
 	return TransferResult{Party: p}, nil
 }
 
+// InvitesTo is every invite addressed to playerID still on record, oldest first, read without
+// changing anything: one may have lapsed, which Decline then ignores. A player changing character
+// has each spent (FS-NCC9J §Change: Changing character leaves the party, C2).
+func (r *Redis) InvitesTo(ctx context.Context, playerID uuid.UUID) ([]uuid.UUID, error) {
+	raw, err := r.client.ZRange(ctx, playerInvitesKey(playerID), 0, -1).Result()
+	if err != nil {
+		return nil, fmt.Errorf("read invites to %s: %w", playerID, err)
+	}
+	ids, err := parseIDs(raw)
+	if err != nil {
+		return nil, fmt.Errorf("parse invites to %s: %w", playerID, err)
+	}
+	return ids, nil
+}
+
 // LeaderOf is who leads the party playerID is in, read without changing anything; in is false when
 // they are in none. A pod deciding whether an arriving player joins their leader reads it
 // (FS-NCC9J R20).
