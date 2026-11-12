@@ -869,11 +869,8 @@ export class HubScene extends Phaser.Scene {
         coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
       },
     );
-    // T: the party panel, under the same key owners as the chat input (FS-R82NV R28)
-    this.partyPanel = mountPartyPanel(
-      this,
-      () => !!this.dialogue || !!this.menu || !!this.gear?.isOpen() || !!this.mailbox?.isOpen(),
-    );
+    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
     // (FS-R82NV R32, R33)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
@@ -890,6 +887,20 @@ export class HubScene extends Phaser.Scene {
       () => this.characterLevel,
     );
     this.watchGoldTakes();
+    this.mountCorner();
+
+    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
+    relayoutOn(this, () => this.relayoutHud());
+
+    this.listenForEnd();
+    this.openHeldMessages();
+  }
+
+  /**
+   * The corner row (FS-3EBCA): each press the key's own path, one Esc, I or B, C, T; the
+   * mailbox's envelope stands beside it, mounted with the mailbox.
+   */
+  private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
         { icon: "menu", press: () => this.pressEscape() },
@@ -898,12 +909,15 @@ export class HubScene extends Phaser.Scene {
         { icon: "party", press: () => this.partyPanel?.toggle() },
       ],
     });
+  }
 
-    // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
-    relayoutOn(this, () => this.relayoutHud());
-
-    this.listenForEnd();
-    this.openHeldMessages();
+  /**
+   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): a dialogue, the
+   * menu or the letter panel owns the screen. The inventory and the character panel do not: the
+   * party panel opens over them (FS-R82NV § Change C8).
+   */
+  private refusesParty(): boolean {
+    return !!this.dialogue || !!this.menu || !!this.mailbox?.isOpen();
   }
 
   /** What the server sent while the hub loaded, to the listeners create has made, in order. */
@@ -2843,7 +2857,7 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * One Esc press (FS-R82NV § Change C2; FS-HRH2J R5; FS-1GZGD R40): the one thing on top closes,
-   * the letter panel, the menu, the gear overlay, then the party panel; with nothing open the menu
+   * the letter panel, the menu, the party panel, then the gear overlay; with nothing open the menu
    * opens (`escapeStep`). A dialogue keeps its own Esc.
    */
   private pressEscape(): void {
@@ -2907,7 +2921,8 @@ export class HubScene extends Phaser.Scene {
    * the active character's, read from the store at each call (FS-50MTX R37).
    */
   private composeGear(): HubGear {
-    const overlay = new GearOverlay(this, this.art, WorldType.Hub);
+    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
+    const overlay = new GearOverlay(this, this.art, WorldType.Hub, (x, y) => this.partyPanel?.covers(x, y) ?? false);
     const gear: HubGear = new HubGear(
       overlay,
       gearAsCharacter(

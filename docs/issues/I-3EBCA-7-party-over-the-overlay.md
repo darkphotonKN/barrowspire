@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-7
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-6]
 labels: [ready-for-agent]
@@ -21,8 +21,8 @@ Esc closes the party panel before the overlay. The envelope and the chat input k
 
 ## Acceptance Criteria
 
-- [ ] FS-R82NV § Change C8's acceptance line; FS-3EBCA R8's and R11's.
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-R82NV § Change C8's acceptance line; FS-3EBCA R8's and R11's.
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 

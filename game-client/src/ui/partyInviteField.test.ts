@@ -57,7 +57,9 @@ function fieldOnStage() {
   return { ...doc, submit };
 }
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("domPartyInviteField (FS-R82NV R29; FS-3EBCA R8: typing over the open overlay)", () => {
   it.each(["i", "c", "b", "t", "e", "q", "I", "C", "B", "T", "E", "Q"])(

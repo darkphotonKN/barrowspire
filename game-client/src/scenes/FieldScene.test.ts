@@ -1542,15 +1542,17 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
     expect(field.menu).toBeUndefined();
   });
 
-  it("should close the gear overlay, then the party panel, before the menu opens (C1)", () => {
+  // the party panel is drawn over the gear overlay, so it goes first (FS-R82NV § Change C2, C8)
+  it("should close the party panel, then the gear overlay, before the menu opens (C1)", () => {
     const { field, key, state } = menuedField();
     state.gear = true;
     state.party = true;
     key("ESC");
-    expect(state.gear).toBe(false);
+    expect(state.party).toBe(false);
+    expect(state.gear).toBe(true);
     expect(field.menu).toBeUndefined();
     key("ESC");
-    expect(state.party).toBe(false);
+    expect(state.gear).toBe(false);
     expect(field.menu).toBeUndefined();
     key("ESC");
     expect(field.menu).toBeDefined();
