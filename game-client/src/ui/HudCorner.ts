@@ -94,9 +94,15 @@ export class HudCorner {
     });
   }
 
-  /** Whether a screen point lies on a plate: a press there is the row's, never the world's (R10). */
-  covers(x: number, y: number): boolean {
-    return this.icons.some(({ frame: f }) => x >= f.x && x <= f.x + f.width && y >= f.y && y <= f.y + f.height);
+  /**
+   * Whether a screen point lies on a plate, or on that icon's plate alone when one is named: a
+   * press there is the row's, never the world's (R10); the open menu lets the Menu plate through (R18).
+   */
+  covers(x: number, y: number, icon?: CornerIcon): boolean {
+    return this.icons.some(
+      ({ spec, frame: f }) =>
+        (icon === undefined || spec.icon === icon) && x >= f.x && x <= f.x + f.width && y >= f.y && y <= f.y + f.height,
+    );
   }
 
   /** The logical view changed: every plate back to the corner (FS-ZAJMH R12, R13). */

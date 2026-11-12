@@ -3311,11 +3311,15 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
-   * it opens; nothing while the menu is open, which owns the screen. After the run's end there is
-   * no menu: it only closes the windows.
+   * it opens. With the menu open it does what its × and Esc do (owner 2026-11-12: "menu無法再按一次icon關閉"):
+   * the menu closes, and from the Fall confirm the whole of it goes, as Not yet does, nothing sent.
+   * After the run's end there is no menu: it only closes the windows.
    */
   private pressMenuIcon(): void {
-    if (this.menu) return;
+    if (this.menu) {
+      this.menuChoices?.dismiss();
+      return;
+    }
     this.closeWindows();
     if (!this.runEnded) this.openMenu();
   }
@@ -5677,6 +5681,8 @@ export class BarrowspireScene extends Phaser.Scene {
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
+      // the Menu icon answers under the open menu and its Fall confirm: it closes them (FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menuChoices = keys;
     this.menu = container;

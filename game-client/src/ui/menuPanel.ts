@@ -4,7 +4,7 @@
  * frame (`drawPanelFrame`, its × doing what Esc does; FS-G4VMQ § Change: The menu wears the party
  * panel's frame) in the popup band, an optional line of copy over the rows, and one pressable row
  * per choice. While it is open it owns the screen: a blocker over the whole view under it takes
- * every press and hover (FS-3EBCA R18). What a
+ * every press and hover but the Menu icon's, which closes it (FS-3EBCA R18). What a
  * menu offers is each scene's rule (`hubMenuChoices`, `runMenuChoices`, `FALL_CONFIRM`); what
  * it looks like and how its keys land is this module's.
  *
@@ -155,6 +155,11 @@ export interface MenuPanelSpec<C extends MenuChoice> {
   origin: { x: number; y: number };
   hit: HitSize;
   tones: MenuTones;
+  /**
+   * A screen point the blocker leaves to what is drawn under it: the corner row's Menu plate, so a
+   * press there closes the menu and a hover there lights the icon (FS-3EBCA R18). Omitted, none.
+   */
+  through?: (x: number, y: number) => boolean;
 }
 
 export interface MenuPanel {
@@ -249,13 +254,19 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
 
   // the menu owns the screen while open (FS-3EBCA R18, owner: "menu開啟時其他都不能按"): Phaser hands a
   // press and a hover to the topmost interactive object only, so nothing drawn under the blocker
-  // hears one, and the press stops here, so no scene-wide listener (the world, the chat window) does
+  // hears one, and the press stops here, so no scene-wide listener (the world, the chat window) does.
+  // Its own hit test leaves out what `through` names, the Menu plate, which then is the topmost
+  // there (owner: "menu無法再按一次icon關閉"). The zone stands at the view's origin, so a local point
+  // is a screen point; it reads the view as it is now, as setSize keeps the zone to it.
+  const through = spec.through ?? (() => false);
+  const takes = (_area: unknown, x: number, y: number) =>
+    x >= 0 && y >= 0 && x < viewport.width && y < viewport.height && !through(x, y);
   const blocker = scene.add
     .zone(0, 0, viewport.width, viewport.height)
     .setOrigin(0)
     .setScrollFactor(0)
     .setDepth(MENU_BLOCKER_DEPTH)
-    .setInteractive()
+    .setInteractive({}, takes)
     .setName("menu-blocker");
   blocker.on(
     "pointerdown",

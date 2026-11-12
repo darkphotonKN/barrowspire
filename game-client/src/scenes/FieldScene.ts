@@ -408,11 +408,11 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
-   * it opens; nothing while the menu is open, which owns the screen.
+   * it opens; with the menu open it closes it, as its × and Back do (owner 2026-11-12: "menu無法再按一次icon關閉").
    */
   private pressMenuIcon(): void {
-    if (this.menu) return;
-    this.openMenu();
+    if (this.menu) this.closeMenu();
+    else this.openMenu();
   }
 
   /**
@@ -615,6 +615,8 @@ export class FieldScene extends Phaser.Scene {
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
+      // the Menu icon answers under the open menu: it closes it (FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menu = container;
     this.menuChoices = keys;

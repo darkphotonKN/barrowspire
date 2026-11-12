@@ -42,6 +42,9 @@ C1, C4; FS-R82NV § Change C8, C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Chang
 same day: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣" (every window's title sits somewhere different; put them all in one style,
 centred, the same size and colour), "menu目前沒標題也加上" (the menu has no title now; give it one) and
 "全大寫也統一" (all capitals too, uniformly): §E (R20–R24), this FS owning the shared frame's title.
+And, the same day: "menu無法再按一次icon關閉" (with the menu open, pressing its icon again does not
+close it): the Menu icon is a switch, the one corner icon the open menu lets through (R6, R18,
+edited in place).
 
 Each requirement below is a **charter default** (the locked
 decisions, approved by the owner) or says **derived here** and why. Recorded without adversarial
@@ -132,14 +135,17 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 ### §B. Presses
 
 6. **Menu** opens the world's ESC menu at once, closing every open window first (R17): in the
-   town, a field and a run alike. It does nothing while a dialogue is open (the dialogue keeps
-   Esc), nor while the menu is open (R18: the menu's ×, its Back row and Esc close it); after the
-   run's end, with no menu to open, it only closes every window. Esc itself keeps one press, one
+   town, a field and a run alike. With the menu open it closes it, as the menu's ×, its Back row
+   and Esc do (R18); in a run's Fall confirm it does what the confirm's × and Esc do there, Not
+   yet: the whole menu goes, nothing sent. It does nothing while a dialogue is open (the dialogue
+   keeps Esc); after the run's end, with no menu to open, it only closes every window. Esc itself keeps one press, one
    thing (FS-R82NV § Change C2's order). **(owner: "esc的icon也加入"; charter: "clicking it toggles
    the same thing Esc does", replaced by the owner's 2026-11-12 rules (§D): "開menu時其他視窗也會關閉
    然後menu開啟時其他都不能按"; the icon opening at once, where Esc closes the topmost first, derived
    here: a press on the menu's own icon asks for the menu, and players expect Esc to peel one
-   window at a time)**
+   window at a time; the icon closing the open menu, owner 2026-11-12: "menu無法再按一次icon關閉",
+   replacing this requirement's version under which it did nothing then; the Fall confirm's
+   answer derived here: the icon is the menu's ×, and there the × is Not yet)**
 7. **Inventory** toggles the inventory exactly as I does in that world, and **Character** the
    character panel exactly as C does (FS-HRH2J § Change C2), under the same guards: in the town
    not while the ESC menu or a dialogue is open; in a run or a field not while its ESC menu is
@@ -208,16 +214,20 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
     and it opens the menu only with none open. The Menu icon opens the menu at once, closing every
     window (R6). **(owner: "開menu時其他視窗也會關閉"; Esc's order kept and the icon opening at once,
     derived here, R6)**
-18. **The menu owns the screen.** While it is open only its rows (a press, Enter, a number), its ×
-    and Esc answer, in every world: no corner icon (Menu included), no I, B, C or T, no envelope,
+18. **The menu owns the screen.** While it is open only its rows (a press, Enter, a number), its ×,
+    Esc and the Menu icon (which closes it, R6) answer, in every world: no other corner icon, no
+    I, B, C or T, no envelope,
     no M and no map mode icon, no press in the world (attack, cast, Shadow Shot hold), no E or F,
     and nothing else drawn under it (the queue's Leave, the party frames' Travel, an invite
     prompt's or the ready check's buttons, the dead spectator's Leave the barrow, the chat window's
     tabs and names). The chat input takes no focus, by Enter or a click, and its row is hidden. The
     menu hangs a blocker over the whole view, under its rows and × and over the HUD and every panel,
-    which takes every press and hover there and lets none reach the world. **(owner:
-    "menu開啟時其他都不能按"; the blocker derived here: one rule for everything drawn under the menu
-    rather than a guard on each)**
+    which takes every press and hover there and lets none reach the world, but for the Menu
+    icon's plate, which it leaves to the icon: a press there closes the menu, a hover there
+    brightens the icon and shows its label, and a press beside the plate is the blocker's.
+    **(owner: "menu開啟時其他都不能按"; the blocker derived here: one rule for everything drawn
+    under the menu rather than a guard on each; the Menu plate let through, owner 2026-11-12:
+    "menu無法再按一次icon關閉", replacing the first version, under which no icon answered)**
 19. **The stash counts as the inventory.** At the stash chest the stash and the inventory open
     together (FS-HRH2J § Change C9); for R15 and R17 they are the inventory: the envelope and the
     menu close them together. **(derived here: the pairing opens and closes as one)**
@@ -289,7 +299,7 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
 - [ ] At 1080 × 720 the row's rects are Menu (1006, 658, 58, 46), Inventory (940, 658, 58, 46), Character (874, 658, 58, 46), Party (808, 658, 58, 46) and Mail (742, 658, 58, 46); at 1280 each is 200 px further right; the town, a field and a run draw them at the same rects.
 - [ ] Each live icon is drawn on a carved plate at depth 1000 with its glyph in `interactable`, brightening to `interactableBright` under the pointer; the greyed Mail is drawn in `hudFaint` and never brightens; no raw colour literal (the lint fence passes).
 - [ ] Under the pointer each icon shows "Menu (Esc)", "Inventory (I)", "Character (C)", "Party (T)", "Mailbox" or, greyed, "Mailbox · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
-- [ ] A press on Menu opens the ESC menu at once in the town, a field and a run, closing every open window; it does nothing while a dialogue or the menu is open; after the run's end it only closes every window. Esc still closes the topmost window first.
+- [ ] A press on Menu opens the ESC menu at once in the town, a field and a run, closing every open window; with the menu open (in a run its Fall confirm too) it closes it, nothing sent; it does nothing while a dialogue is open; after the run's end it only closes every window. Esc still closes the topmost window first.
 - [ ] A press on Inventory toggles the inventory and one on Character the character panel in every world, under the same guards as I and C there, and ends a Shadow Shot hold on opening.
 - [ ] A press on Party toggles the party panel in every world, refused while the scene's `blocked` holds, accepted while a text field has focus; with the inventory, the character panel or both open it opens the party panel over them, as T does.
 - [ ] A press on the greyed Mail in a field or a run does nothing.
@@ -298,7 +308,7 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
 - [ ] In the town, the envelope opens the letter panel with the inventory, the character panel, the stash or the party panel open, closing them; a dialogue or the ESC menu still refuses it.
 - [ ] In the town, with the letter panel open, I, B, C, T and the Inventory, Character and Party icons open their window and close the letter panel.
 - [ ] Opening the menu, by Esc or the Menu icon, leaves no window open, in every world.
-- [ ] While the menu is open no corner icon, no I, B, C or T, no envelope and no press under it answers, and the chat input takes no focus, in every world; Esc, its × and its rows still do.
+- [ ] While the menu is open no corner icon but Menu, no I, B, C or T, no envelope and no press under it answers (a press beside the Menu plate included), and the chat input takes no focus, in every world; Esc, its ×, its rows and the Menu icon still do, the Menu icon brightening and naming itself under the pointer.
 - [ ] Esc, I, B, T and M behave as before (Esc's new order and the field's menu are FS-R82NV's and FS-G4VMQ's changes); C toggles the character panel.
 - [ ] In a run and a field the ability card's bottom-right corner stands at (width − 16, 650); the dead spectator's leave button is centred at (width − 116, 631); neither overlaps the row; both follow a view-size change.
 - [ ] The party panel, the inventory, the character panel, the stash, the letter panel, the run's controls panel, the settlement record and every ESC menu (and the Fall confirm) draw their title through `drawPanelTitle`: centred, 14 px below the panel's top, 14 px `frameBright`, letter-spacing 4, in capitals; the menus read MENU, their rows moved down by the title band.
@@ -308,8 +318,10 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
 
 - **A dialogue open (town):** Menu, Inventory, Character and Party do nothing (the dialogue keeps Esc,
   FS-G4VMQ R2); Mail opens nothing.
-- **The ESC menu open:** no icon answers, Menu included, and nothing under the menu takes a
-  press or a hover (R18); Esc, its × or Back close it.
+- **The ESC menu open:** no icon but Menu answers, and nothing else under the menu takes a
+  press or a hover (R18); Esc, its ×, Back or the Menu icon close it (R6).
+- **The run's Fall confirm open:** the Menu icon closes it whole, as its × and Esc do (Not yet),
+  nothing sent (R6).
 - **The letter panel open (town):** Menu opens the menu, closing it; Mail closes it; Inventory,
   Character and Party open their window, closing it (R16).
 - **The inventory or the character panel open:** the row stays in view above them and answers
