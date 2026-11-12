@@ -50,12 +50,15 @@ export const RUN_WALK_ATTACK_CYCLES = 0.75;
 export const BACKPEDAL_ATTACK_CYCLES = 0.75;
 
 /**
- * The cloth's drag while `backpedal_attack` steps back (simulateSprings, rig heights per second,
- * in walks): backward, and held to half a walk. At the legs' full pace the drag swings a cloak
- * forward through the legs, while a cloak on a back that moves backward presses against it and
- * hangs.
+ * How `backpedal_attack` carries its cloth (simulateSprings, rig heights per second, in walks):
+ * out behind, as half a walk would. The body steps back, but each heel stepping back under the hem
+ * kicks the cloth out ahead of it (owner 2026-11-12: "騎士後退攻擊 腳會穿過斗篷", "弓箭手後退攻擊
+ * 腳跟處也會穿過斗篷"): dragged backward at half a walk (-0.5), the cloth pressed forward against the
+ * legs and the heels came out through the knight's cloak by 18.8 px and the archer's by 10.5
+ * (clearance.js `cloakClearance`); carried out from +0.3 neither does. Half a walk hangs it as a
+ * slow walk does, heavy, never flung.
  */
-export const BACKPEDAL_ATTACK_SPEED = -0.5;
+export const BACKPEDAL_ATTACK_SPEED = 0.5;
 
 /**
  * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the

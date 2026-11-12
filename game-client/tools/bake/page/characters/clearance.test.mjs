@@ -630,10 +630,11 @@ describe("the archer's quiver rides over her cloak (owner 2026-11-12: \"弓箭�
       const deepest = Math.max(0, ...caseOf.map((o) => -(throughCloth(cover, axis, pos(o)) ?? 0)));
       expect(deepest * K1, `${anim} frame ${p.i}: the case into the cloak (1x px)`).toBe(0);
       if (anim === "death") continue;
-      const [f, sh, spine] = [pos(fletching), pos({ matrixWorld: rig.bones.upperArmR.matrixWorld }), pos({ matrixWorld: rig.bones.neck.matrixWorld })];
+      // in the chest's frame, so the archer's side-on draw turns it with her (her right is -x)
+      const chest = new THREE.Matrix4().copy(rig.bones.chest.matrixWorld).invert();
+      const [f, sh, neck] = [pos(fletching), pos({ matrixWorld: rig.bones.upperArmR.matrixWorld }), pos({ matrixWorld: rig.bones.neck.matrixWorld })].map((v) => v.applyMatrix4(chest));
       expect(f.y, `${anim} frame ${p.i}: the fletching over the shoulder`).toBeGreaterThan(sh.y);
-      // the character's right is -x
-      expect(f.x, `${anim} frame ${p.i}: the fletching on the right of the neck`).toBeLessThan(spine.x);
+      expect(f.x, `${anim} frame ${p.i}: the fletching on the right of the neck`).toBeLessThan(neck.x);
     }
   });
 });

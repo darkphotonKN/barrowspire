@@ -10,7 +10,7 @@ import { TILE_H, TILE_W } from "./projection.js";
 import { FACINGS, yawFor } from "./facing.js";
 import { cssRgb } from "./palette.js";
 import { ANIMATIONS, applyPose, clipsFor, groundPose, simulateSprings } from "./characters/clips.js";
-import { clearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
+import { clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } from "./characters/clearance.js";
 
 let baker = null;
 
@@ -121,6 +121,9 @@ function bakeCharacterSheet(sheet) {
   // the guard: no clip may show a leg outside its garment by a baked px (characters/clearance.js)
   const error = clearanceError(sheet.name, legClearance(rig, poses), { scale, mirrored: mirroredGarment(rig) });
   if (error) throw new Error(error);
+  // and none may show a leg or a boot out through its cloak by a baked px (the same file)
+  const cloakError = cloakClearanceError(sheet.name, cloakClearance(rig, poses), { scale });
+  if (cloakError) throw new Error(cloakError);
   const out = baker.bakeCharacter(
     rig.root,
     poses.map((p) => p.apply),

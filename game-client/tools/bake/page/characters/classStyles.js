@@ -102,6 +102,39 @@ export const KNIGHT_STYLE = {
   },
 };
 
+export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
+
+export const ARCHER_STYLE = {
+  attack: "shot",
+  speed: 1.05,
+  hold: pose({
+    upperArmL: [0.02, 0, 0.04],
+    foreArmL: [-0.3, 0, 0],
+    handL: [-0.9, 0, 0],
+    foreArmR: [-0.1, 0, 0],
+  }),
+  walk: { arms: [0.7, 1], lean: 0.06 },
+  // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
+  // walk instead of sweeping across the body; the legs keep the shared stride the paces are
+  // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle).
+  // In absolute terms the jog's (a 0.25 rad swing, a 0.34 rad elbow) under the fast run's
+  // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps
+  run: { arms: [0.3, 1], elbow: [0.215, 1] },
+};
+
+/**
+ * The archer's quiver on her back, over her cloak (gear.js `quiver`; owner 2026-11-12: "弓箭手背後的
+ * 箭袋 底部會吃進斗篷裏 可以擺正一點", "目前我知道跑步跟平常站立時都會吃進斗篷"): `tilt` degrees off the
+ * spine (QUIVER_TILT; was 29, a diagonal whose foot sank into the cloak's flare), its mouth toward
+ * the right shoulder, the fletching over it; seated at `at` (H: right of the spine, over the chest
+ * bone, behind it by that much of the torso's depth; was 0.1, the case half inside the cloak), its
+ * foot tipped out `rx` rad with the cloak's flare. `strap` is how much of the cloak's top the
+ * quiver's strap holds to her back (anatomy.js `cloakBones`: cloak0's and cloak1's drag and
+ * fling scaled by it): free, the run's drag swung the cloak out past the case's foot by 21 px.
+ */
+export const QUIVER_TILT = 17;
+export const ARCHER_QUIVER = { tilt: QUIVER_TILT, at: [-0.045, 0.03, -0.15], rx: 0.12, strap: [0.2, 0.4] };
+
 export const WIZARD_BUILD = [1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 }];
 
 /**
