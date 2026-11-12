@@ -107,7 +107,7 @@ describe("townMap marks (FS-P0HSP §C, I-P0HSP-2)", () => {
   const RESIDENT = npc("resident", "", 600, 700);
   const NPCS = [ELDER, QUARTERMASTER, RESIDENT];
 
-  it("should mark the Spire's gate a tower, every other gate a teleport, the stash a chest, the Quartermaster a bag and the Elder a scroll (§C.14)", () => {
+  it("should mark the Spire's gate a tower, every other gate a teleport, the stash a chest and the Quartermaster a bag (§C.14)", () => {
     const { marks } = townMap({ walls: WALLS, gates: GATES, npcs: NPCS }, TOWN);
     expect(marks).toEqual([
       { kind: "tower", at: { x: 1000, y: 50 } },
@@ -116,8 +116,14 @@ describe("townMap marks (FS-P0HSP §C, I-P0HSP-2)", () => {
       { kind: "teleport", at: { x: 120, y: 900 } },
       { kind: "chest", at: HUB_STASH_CHEST.at },
       { kind: "bag", at: { x: 1280, y: 270 } },
-      { kind: "scroll", at: { x: 1140, y: 680 } },
     ]);
+  });
+
+  // Nick, 2026-11-12: "只是講故事的 NPC 不需要在地圖上標"
+  it("should mark nothing for the Elder: a storyteller only tells a story, and is no lozenge either (§C.14, §C.15)", () => {
+    const { marks } = townMap({ walls: WALLS, gates: [], npcs: [ELDER] }, TOWN);
+    expect(marks).toEqual([{ kind: "chest", at: HUB_STASH_CHEST.at }]);
+    expect(marks.some((m) => m.at.x === 1140 && m.at.y === 680)).toBe(false);
   });
 
   it("should mark nothing for an ambient resident, and a lozenge for a function the client has no glyph for (§C.14, §C.15)", () => {
@@ -132,8 +138,8 @@ describe("townMap marks (FS-P0HSP §C, I-P0HSP-2)", () => {
     const key = townMap({ walls: WALLS, gates: GATES, npcs: NPCS }, TOWN).key;
     const walked = townMap({ walls: WALLS, gates: GATES, npcs: [ELDER, QUARTERMASTER, { ...RESIDENT, position: { x: 900, y: 650 } }] }, TOWN).key;
     expect(walked).toBe(key);
-    const moved = townMap({ walls: WALLS, gates: GATES, npcs: [{ ...ELDER, position: { x: 1150, y: 680 } }, QUARTERMASTER] }, TOWN).key;
+    const moved = townMap({ walls: WALLS, gates: GATES, npcs: [ELDER, { ...QUARTERMASTER, position: { x: 1290, y: 270 } }, RESIDENT] }, TOWN).key;
     expect(moved).not.toBe(key);
-    expect(townMap({ walls: WALLS, gates: GATES, npcs: [QUARTERMASTER] }, TOWN).key).not.toBe(key);
+    expect(townMap({ walls: WALLS, gates: GATES, npcs: [ELDER, RESIDENT] }, TOWN).key).not.toBe(key);
   });
 });

@@ -199,7 +199,7 @@ describe("WorldMinimap (FS-P0HSP §A.4, §B)", () => {
   });
 });
 
-// FS-P0HSP §C.17–§C.19 (I-P0HSP-2): the town's six glyphs, drawn as the run's are, and set side by
+// FS-P0HSP §C.17–§C.19 (I-P0HSP-2): the town's five glyphs, drawn as the run's are, and set side by
 // side where two would overlap.
 describe("WorldMinimap marks (FS-P0HSP §C)", () => {
   type Box = { x: number; y: number; right: number; bottom: number; ink: Set<string>; ring: Set<string> };
@@ -240,14 +240,14 @@ describe("WorldMinimap marks (FS-P0HSP §C)", () => {
     { kind: "teleport", at: { x: 1700, y: 200 } },
     { kind: "chest", at: { x: 900, y: 500 } },
     { kind: "bag", at: { x: 1300, y: 300 } },
-    { kind: "scroll", at: { x: 600, y: 800 } },
     { kind: "lozenge", at: { x: 1500, y: 800 } },
   ] as MinimapMark[];
 
-  it("should draw each of the six as a 9 × 9 box, its 7 × 7 amber ink on a 1 px ring, ink 3:1 against its ring, inside the rim (§C.17)", () => {
-    expect(WORLD_MARKS).toEqual(["tower", "teleport", "chest", "bag", "scroll", "lozenge"]);
+  it("should draw each of the five as a 9 × 9 box, its 7 × 7 amber ink on a 1 px ring, ink 3:1 against its ring, inside the rim (§C.17)", () => {
+    // no scroll: the Elder only tells a story and is not marked (Nick, 2026-11-12)
+    expect(WORLD_MARKS).toEqual(["tower", "teleport", "chest", "bag", "lozenge"]);
     const boxes = marked(SPREAD);
-    expect(boxes).toHaveLength(6);
+    expect(boxes).toHaveLength(5);
     for (const b of boxes) {
       // the ring round the ink, within its 9 × 9 box (the chest's lid row is blank: 9 × 8)
       expect(b.right - b.x).toBe(9);
@@ -262,11 +262,11 @@ describe("WorldMinimap marks (FS-P0HSP §C)", () => {
     expect(contrastRatio(palette.interactable, palette.markerStroke)).toBeGreaterThanOrEqual(3);
   });
 
-  it("should give each of the six its own art (§C.17)", () => {
+  it("should give each of the five its own art (§C.17)", () => {
     const shapes = marked(SPREAD).map((b) =>
       [...b.ink].map((k) => k.split(",").map(Number)).map(([x, y]) => `${x - b.x},${y - b.y}`).sort().join(";"),
     );
-    expect(new Set(shapes).size).toBe(6);
+    expect(new Set(shapes).size).toBe(5);
   });
 
   // the stash chest (1180, 245) and the Quartermaster (1280, 270): 5 × 4 px apart on the normal map

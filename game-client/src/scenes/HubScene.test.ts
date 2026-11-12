@@ -4034,7 +4034,7 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
   });
 
   // FS-P0HSP §C (I-P0HSP-2): the marks from the state's gates and function NPCs, redrawn only on a change
-  it("should mark the gates, the stash, the Quartermaster and the Elder, and redraw them only when they change (§C.14, §C.20)", () => {
+  it("should mark the gates, the stash and the Quartermaster, never the Elder, and redraw them only when they change (§C.14, §C.20)", () => {
     const { render, map, layers } = townWithMap();
     const resident = (x: number) => ({ entity_id: "r1", name: "Resident", function: "", position: { x, y: 700 } });
     const NPCS = [
@@ -4045,10 +4045,14 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     render({ x: 1010, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(640)]);
     render({ x: 1020, y: 500 }, [], TOWN_WALLS, [...NPCS, resident(680)]);
     expect(map()!.redraws).toBe(1);
-    // the marks layer: one glyph a mark, each begun on its ring: tower, two teleports, chest, bag, scroll
+    // the marks layer: one glyph a mark, each begun on its ring: tower, two teleports, chest, bag;
+    // none for the Elder, who only tells a story (Nick, 2026-11-12)
     const marks = layers[3].calls.filter((c) => c.name === "fillStyle" && c.args[0] === palette.markerStroke);
-    expect(marks).toHaveLength(6);
+    expect(marks).toHaveLength(5);
+    // the Elder gone changes nothing the map shows; the Quartermaster gone does
     render({ x: 1020, y: 500 }, [], TOWN_WALLS, [NPCS[1], resident(680)]);
+    expect(map()!.redraws).toBe(1);
+    render({ x: 1020, y: 500 }, [], TOWN_WALLS, [resident(680)]);
     expect(map()!.redraws).toBe(2);
   });
 
