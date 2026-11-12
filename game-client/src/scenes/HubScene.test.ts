@@ -1626,6 +1626,44 @@ describe("HubScene changeCharacter leaves the hub (FS-G4VMQ §Requirements 25, 2
     expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 
+  /** An invite to this player, waiting in the store's prompts. */
+  const inviteWaiting = () => {
+    usePartyStore.setState({ invites: [] });
+    usePartyStore.getState().receiveInvite({
+      invite_id: "44444444-4444-4444-8444-444444444444",
+      party_id: "55555555-5555-4555-8555-555555555555",
+      party_pod_addr: "",
+      leader_name: "Wren",
+      member_count: 1,
+      size: 2,
+      expires_at: "2026-11-12T12:01:00Z",
+    });
+    expect(usePartyStore.getState().invites).toHaveLength(1);
+  };
+
+  it("should let go of every invite prompt on world_left, as the server spent them with the switch (FS-NCC9J §Change: Changing character leaves the party, C2)", () => {
+    const { keys, press, option, reply } = queuedHubOnStage();
+    inviteWaiting();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    reply("world_left", {});
+
+    expect(usePartyStore.getState().invites).toEqual([]);
+  });
+
+  it("should keep the invite prompts when the switch is refused", () => {
+    const { keys, press, option, refuse } = queuedHubOnStage();
+    inviteWaiting();
+    press(keys.esc);
+    option("change")?.handlers.pointerup();
+
+    refuse("leave_hub", "Not while delving.");
+
+    expect(usePartyStore.getState().invites).toHaveLength(1);
+    usePartyStore.setState({ invites: [] });
+  });
+
   it("should stay, re-enable the row and pass on the server's message on the error reply, then send again", () => {
     const { hub, stage, keys, press, option, refuse, send } = queuedHubOnStage();
     press(keys.esc);

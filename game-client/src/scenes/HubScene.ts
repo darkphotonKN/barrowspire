@@ -1078,6 +1078,10 @@ export class HubScene extends Phaser.Scene {
     socketManager.on("world_left", () => {
       if (!this.leavingHub) return;
       this.leavingHub = false;
+      // a character switch: the server took the player out of their party and spent every invite
+      // to them (FS-NCC9J §Change: Changing character leaves the party, C1, C2); the party itself
+      // goes with the server's last update, the prompts here
+      usePartyStore.getState().forgetInvites();
       this.scene.start("MainMenuScene");
     });
     socketManager.onError(ActionType.LeaveHub, (info) => {
