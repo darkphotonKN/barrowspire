@@ -104,3 +104,13 @@ Only the mercenary's page and the manifest changed in its bake commit; every oth
 −2.2 % RGBA against the 1.5x bake before (45.83 MB); crown 75 (was 92: the old low guard stood the blade over his crown, as FS-JS7C8 measured).
 
 The contact sheets (idle, walk, run with the old, held and new keys side by side, attack, walk_attack and backpedal_attack old beside new, 8 facings) and an animated preview are in the session scratchpad `carry-final/mercenary/`.
+
+## Re-built (2026-11-12, agent): the blade about level and swung in; waiting on the owner's contact sheet
+
+Re-baked once (FS-JS7C8 R2; owner 2026-11-12: "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些"): in the run the curved blade 8° below to 10° above level (was 11-33° below; his own `MERC_RUN_BLADE`, his point rising 6° off its line), its point ahead of the hand and under the head; at the front of the pump the sword hand comes 0.07 H in toward the midline, the blade 18° across the body. He has no cloak; his coat passes the garment guard on every clip. Only the mercenary's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| mercenary sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 2804 × 4000 | 44.86 MB | 5,987,488 | 544 | 297 × 261 |
+
++0.1 % RGBA against the bake before (44.81 MB); crown 75 as before. Old beside new (run, 8 facings) and an animated preview are in the session scratchpad `wizard-run-staff/mercenary/`.

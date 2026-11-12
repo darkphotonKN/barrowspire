@@ -103,3 +103,15 @@ Only the wizard's page and the manifest changed in its bake commit; every other 
 +1.1 % RGBA against the 1.5x bake before (32.77 MB); crown 74 (was 75).
 
 The contact sheets (idle, walk, run with the old, held and new keys side by side, attack, walk_attack and backpedal_attack old beside new, 8 facings) and an animated preview are in the session scratchpad `carry-final/wizard/`, with 4× zooms of the run's knee and waist frames (side views) and of its back views, old above new.
+
+The owner on the dashes above (2026-11-12): first "可以" (acceptable as they are); then, after playing, "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點" (in the run, behind the knee joint, the green panel has black dots): they go after all (below). On the robe fix itself: "法師長袍修正 沒問題" (the knee, the waist and the green panel are fine).
+
+## Re-built (2026-11-12, agent): the sceptre arm's lower pump, the sceptre upright, no dots on the back panel; waiting on the owner's contact sheet
+
+Re-baked once (FS-JS7C8 R2; FS-HF0WW § Change: The guard measures a leg through the cloth R31; owner 2026-11-12: "只是要合理的位置 但跑步時為什麼手會擺到肩膀", "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些", "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點"). Why her hand reached the shoulder: the shared fast run pumps every hand to chest height (0.70 H), just under this rig's shoulder (0.74 H). Now her sceptre arm pumps smaller about a centre drawn back, the hand peaking at 0.61 H, the lower chest; her tome arm keeps the full pump; the sceptre stands 23-38° off vertical (was 54-85°), the orb ahead of her face, at most about her chin (a sceptre that upright from a hand at the lower chest stands its orb over the shoulder; the owner asked for it higher); her hand comes 0.07 H in toward the midline at the front of the pump. The dots were the black gown through the teal panel: the panel was cut across its own arc (16 columns) over a gown of 32, and behind the knee the panel's vertices followed the skin's turn from one thigh to the other while the gown's coarser face cut straight across; the panel is now cut on the gown's columns (the gown at 64, the scapular's 10 on them). ID render of the run, all 8 facings at 1.5x: gown px inside the panel 4 over 64 frames, none in the back facings (was 254). Only the wizard's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| wizard sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 2056 × 4000 | 32.90 MB | 4,897,780 | 512 | 222 × 192 |
+
+−0.7 % RGBA against the bake before (33.13 MB); crown 74 as before. Old beside new (run, idle, walk, 8 facings), an animated preview, the run's back views at the knee at 4× and the sceptre at 4× are in the session scratchpad `wizard-run-staff/wizard/`.

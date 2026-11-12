@@ -28,6 +28,10 @@
 > work-order):** R2, R43 and the run's acceptance criteria now hold the weapon in a normal grip in
 > the run, lean the wizard's sceptre at rest, and ease the class attacks in and out of the lowered
 > carry; see *Owner change, 2026-11-12: a normal grip, the sceptre's lean*.
+>
+> **Edited in place a sixth time on 2026-11-12 (the run's weapon a little higher and swung in, the
+> sceptre arm's lower pump, the backward step's cloth, still a work-order):** R2, R10, R43 and the
+> run's acceptance criteria; see *Owner change, 2026-11-12: the weapon a little higher, swung in*.
 
 ## Owner change, 2026-11-12
 
@@ -144,6 +148,47 @@ back toward the heel, swaying a little with the step (R2). The blades' rest is a
 With the carry lowered the knight's and the mercenary's blade turned about 150° from the idle into
 the attack's first key and 99° from its last key back, a pop; the first key now starts from the
 carry and the last two settle back to it, the strike and the timing kept (R2).
+
+## Owner change, 2026-11-12: the weapon a little higher, swung in
+
+Shown the wizard's re-baked run, the owner asked, of her sceptre:
+
+> "只是要合理的位置 但跑步時為什麼手會擺到肩膀"
+
+He only wants the sceptre in a reasonable place, and asks why her hand swings up to the shoulder in
+the run. The answer: the shared fast run pumps every hand to chest height (`RUN_ARM`, the hand's
+peak about 0.70 H), and on the mage's rig the shoulder sits at about 0.74 H, so the sceptre hand
+nearly reached it; with the orb kept under the shoulder (R2 as edited a fifth time) the sceptre then
+had to lie almost level at the top of the pump (5° above level, 54-85° off vertical through it).
+
+Then, after looking at all three classes' re-baked runs:
+
+> "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些"
+
+The weapons' swing in the run looks a little unnatural: they can be a little higher in the run
+(they droop too much now), and they can swing a little inward.
+
+And, of the backward step while attacking (the play branch):
+
+> "騎士後退攻擊 腳會穿過斗篷"
+> "弓箭手後退攻擊 腳跟處也會穿過斗篷"
+
+In the knight's `backpedal_attack` his feet pass through his cloak; in the archer's, her heels.
+
+So (R2) the knight's and the mercenary's blade is held about level in the run, 10° below to 20°
+above it (was 11-34° below); the wizard's sceptre arm pumps smaller, its hand peaking at the lower
+chest (0.61 H) while her tome arm keeps the full pump, and the sceptre stands reasonably upright,
+15-40° off vertical (was 54-85°); every weapon hand swings in toward the midline at the front of
+the pump, 0.05-0.08 H, across the front of the torso, a blade angled a little across the body
+with it, and back out to the side behind. Standing up so near the hand, the sceptre's orb now rises
+over the shoulder at the top of the pump, ahead of her face at about her chin: on this rig a hand at
+the lower chest cannot hold a sceptre 15-40° off vertical with its orb under the shoulder (the orb
+stands 0.23-0.29 H over the fist), and the owner asked for it higher, so the orb's "under the
+shoulder" in the run is retired. And (R10) the backward step carries the cloth out behind, as half a
+walk would, instead of dragging it back against the legs; the knight's standing attack does the
+same for his cloak (FS-HF0WW `## Change: The guard measures a leg through the cloth` R29-R32 holds
+every leg and boot inside the cloaks, the archer's quiver over hers, and the mage's scapular over
+her gown column for column).
 
 ## Summary
 
@@ -263,6 +308,25 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
      level with the hand or below it at every moment of the cycle, a blade trailing back and down
      behind the hand, the sceptre's head forward and down"; for the sceptre's rest: "held up beside
      the leg (at least 45° above level)".*
+     **(owner, 2026-11-12: "只是要合理的位置 但跑步時為什麼手會擺到肩膀", "目前跑步時 武器擺動位置有點不自然
+     跑的時候可以高一點 有點過垂 武器可以往內側擺動一些"; edited a sixth time)** In the run a blade is
+     held about level, `RUN_BLADE_ELEV` 10° below to 20° above level on every sample (the knight's
+     5° below to 12° above, the mercenary's 8° below to 10° above), its point ahead of the hand and
+     the body and under the head; never back up to the old upright carry. The wizard's sceptre arm
+     pumps smaller about a centre drawn back (`SCEPTRE_RUN_ARM` 0.76, `SCEPTRE_RUN_BACK` 0.25 rad),
+     its hand peaking at the lower chest (`SCEPTRE_RUN_PEAK` 0.61 H, ±0.01; was 0.70, by the
+     shoulder); her tome arm keeps the chest-high pump; the sceptre stands reasonably upright,
+     `SCEPTRE_RUN_TILT` 15-40° off vertical on every sample (23-38° on the rig), the orb above the
+     fist, ahead of it and of her face, clear of the head and the robe. At the front of the pump
+     each weapon arm turns in about its length (`RUN_CROSS` 0.3 rad, clips.js `run.cross`), so the
+     weapon hand comes in toward the midline by `RUN_CROSS_REACH` 0.05-0.08 H against the back of the
+     pump (0.07 on the rig; was 0.026), before the torso, a blade angled 5-30° across the body (18-19°
+     on the rig), and goes back out to the side behind; the weapon clear of the free arm, and the
+     knight's blade never through his shield. The shoulders, the lean, the legs, the bob, the
+     cadence, the pace, the free arms, the rest carry and the attacks are unchanged. *Replaces, for
+     the run: "a blade ... 45° below level to 5° above, its point ahead of the hand, under the
+     shoulder"; "the sceptre stands up from the fist, the orb above the hand, ahead of it and under
+     the shoulder"; and, for the sceptre arm, "each hand forward to about chest height".*
    - **(charter default, 2026-11-12)** A class attack starts from the carry and settles back to
      it: coming out of the idle into its first key and on into the wind-up, and from its
      follow-through back to the idle, the weapon turns at most `ATTACK_TURN_LIMIT` (100°) a frame;
@@ -319,9 +383,14 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
     owner's "too fast" (R21) as one rule for both attack-on-the-move clips: the legs never outrun
     the ground; 0.75 already meets it, so the start value stands (one whole cycle would be about
     109 px/s). The bake measures the pace and derives the clip's leg pace from it, never guessed.
-    The cloth's drag on the backward step stays the slice's backward value (−0.5 walk speeds,
-    `BACKPEDAL_ATTACK_SPEED`), so a cloak presses against the back rather than flinging forward
-    through the legs. The owner tunes the cycle count at the contact sheet. *Retired 2026-11-12:
+    **(owner, 2026-11-12: "騎士後退攻擊 腳會穿過斗篷", "弓箭手後退攻擊 腳跟處也會穿過斗篷"; edited)** The
+    backward step carries its cloth out behind, as half a walk would (`BACKPEDAL_ATTACK_SPEED`
+    +0.5 walk speeds): the heels stepping back under the hem kick it out ahead of them. Dragged back
+    at −0.5, the cloak pressed forward against the legs and the knight's calves and boots came out
+    through it by 18.8 px, the archer's heels by 10.5 (FS-HF0WW R29's measure); from +0.3 neither
+    does. *Replaces: "The cloth's drag on the backward step stays the slice's backward value (−0.5
+    walk speeds, `BACKPEDAL_ATTACK_SPEED`), so a cloak presses against the back rather than flinging
+    forward through the legs."* The owner tunes the cycle count at the contact sheet. *Retired 2026-11-12:
     0.625 cycles of slice 5's legs, 1.25 of the crouched re-key, and the backpedal legs' own pace
     band (150–220).*
 11. **(charter default)** A sheet that carries `walk_attack` but not `backpedal_attack` plays
@@ -434,7 +503,8 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
     refused as an unknown action and no player entry in the state carries `facing`.
 43. Bake: clip tests on the rig for the run's flight phase, opposite swing and pace band, its
     forward lean, elbow bend, hand reach and shoulder counter-turn (R2), the weapon carried low at
-    rest and in the run (R2), and its legs unchanged; the
+    rest and held about level in the run, swung in at the front of the pump, the wizard's sceptre
+    hand peaking at the lower chest (R2), and its legs unchanged; the
     backpedal legs being the walk's run backward (the same poses in reverse order, the same pelvis
     height and stride, the pace the walk's negated); `walk_attack` and `backpedal_attack` each
     lasting exactly as long as `attack`, their legs' pace at most 90 px/s.
@@ -504,13 +574,16 @@ The owner's reason: "目前走動的方式有點怪像是在快走 目前的速�
 - [ ] Bake tests show the run's flight phase (a frame with both feet off the ground), its arms
       swinging opposite its legs, and its pace within 180–220; the fast run's trunk leaning
       9–11° (8–12° in every sample), its pumping elbows at 80–100° in every frame, each hand
-      above the chest bone and below the shoulder at the front of its swing and at least 0.06 H
+      above the chest bone and below the shoulder at the front of its swing (the wizard's sceptre
+      hand peaking at 0.61 ± 0.01 H, the lower chest, instead) and at least 0.06 H
       behind the hip at the back, the shoulders turning 6.5–10° against the hips, the head looking
       ahead, its legs key for key slice 5's; the knight's, the wizard's and the mercenary's weapon
       in a normal grip on every key of the idle, the walk and the run (the fist never turned over on
-      the forearm); in the run a blade 45° below to 5° above level with its tip ahead of the hand,
-      under the shoulder and ahead of the body, the sceptre's orb above the hand, ahead of it and
-      under the shoulder; at rest the weapon arm hanging (elbow 5–30°, hand under the pelvis bone
+      the forearm); in the run a blade 10° below to 20° above level with its tip ahead of the hand,
+      ahead of the body and under the head, the sceptre 15-40° off vertical, its orb above the hand,
+      ahead of it and clear of the robe, each weapon hand 0.05-0.08 H in toward the midline at the
+      front of the pump against the back, before the torso, a blade 5-30° across the body there,
+      the weapon clear of the free arm and the knight's blade never through his shield; at rest the weapon arm hanging (elbow 5–30°, hand under the pelvis bone
       by at most 0.12 H) with a blade pointing 15–60° below level and forward, the sceptre leaning
       30–45° off vertical on every key of the idle and the walk (40° ± 3° on average), forward and
       out, its head under the shoulder, clear of the robe; the knight's and the mercenary's attack

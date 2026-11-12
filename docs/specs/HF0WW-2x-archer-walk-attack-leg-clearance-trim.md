@@ -344,6 +344,54 @@ Date: 2026-11-12
     left unhidden on the knight, the wizard and the mercenary at rest, through the run, the walk and
     both attacks on the move.
 
+> **Edited in place again on 2026-11-12 (still a work-order): the cloaks, the dashes, the quiver.**
+> The owner, on the robe: "法師長袍修正 沒問題" (the robe fix is fine: knee, waist, green panel). Of
+> the dashes a baked px long left on the back panel at the knee in a few run frames (Verification
+> below), first "可以" (acceptable), then, after playing: "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點"
+> (in the wizard's run, behind the knee joint, the green panel shows black dots), so they go after
+> all. On the play branch: "騎士後退攻擊 腳會穿過斗篷" (in the knight's backward step while attacking
+> his feet pass through his cloak), "弓箭手後退攻擊 腳跟處也會穿過斗篷" (the archer's heels too), and
+> "弓箭手背後的箭袋 底部會吃進斗篷裏 可以擺正一點" (the bottom of the quiver on the archer's back sinks
+> into her cloak; set it straighter), then "目前我知道跑步跟平常站立時都會吃進斗篷" (he has seen it in
+> the run and standing). Measured, not guessed: the dots are the black gown through the teal
+> panel (an ID render: the gown's colour inside the panel's, 254 px over the run's 64 frames); the
+> cloak checks below read the legs and boots through the cloaks and the quiver inside the archer's.
+
+29. **Cloaks are guarded as garments are.** A cloak (anatomy.js `cloak`, tagged) must not show a leg
+    or a boot through it: each leg vertex and each vertex of a mesh riding a shin or a foot is
+    measured on R22's level ray against the cloak's surface as posed (cloth only between the axis and
+    the vertex: through, by its distance past it), and no clip but the death may show one through by
+    more than CLEARANCE_PX baked px (clearance.js `cloakClearance`, `cloakClearanceError`). The bake
+    holds the playable classes (the trimmed sheets) to it; the creatures' rag cloaks are held to it
+    once each is re-baked (today the ghost's attack reads 8.95 px), so their pixels do not move.
+    Seen red: the knight's `backpedal_attack` 18.8 px (653 vertex-facings in view from the bake
+    camera), the archer's 10.5 (268), the knight's standing `attack` 7.6 on its last key.
+30. **The backward step and the knight's attack carry the cloak out behind.** `backpedal_attack`
+    carries its cloth as half a walk would (FS-JS7C8 R10: `BACKPEDAL_ATTACK_SPEED` +0.5, was −0.5,
+    which pressed the cloak forward against the legs; from +0.3 neither cloak is crossed), and the
+    knight's standing attack carries his cloak the same way (`KNIGHT_ATTACK_CLOTH` 0.5, was still:
+    the slash's stance sets his right foot back under it; 0.25 left 3.3 px). The cloak still hangs
+    heavy, as in a slow walk: no flap, no bell.
+31. **A panel is cut on its garment's columns as on its rings (amends R25).** A panel worn over a
+    garment (`skirt({ over })`) has its arc snapped to the garment beneath's columns (`over.segs`
+    round the full turn) and one column per column, so each of its faces lies over a face of the
+    garment; the mage's gown is cut at 64 columns and her scapular's 10 lie on them (were 32, and 16
+    across the panel's own arc: behind the knee in the run the panel's vertices followed the skin's
+    turn from one thigh to the other while the gown's coarser face cut straight across, and the
+    panel dipped under it). R25's measure is taken on the gown's own face where the panel vertex lay
+    over it in bind (nearest point, its barycentric weights), not on a ring row read at one column,
+    which the rings' tilt put a row off: the cut before reads 0.91 px under the gown in the run and
+    fails; the cut now at most 0.28 (one vertex, at the crease), under a baked px.
+32. **The archer's quiver rides over her cloak.** It hangs `QUIVER_TILT` 17° off the spine (was 29),
+    its mouth toward the right shoulder and the fletching over it, seated 0.15 of her torso's depth
+    behind the chest (was 0.1), its foot tipped out 0.12 rad with the cloak's flare
+    (classStyles.js `ARCHER_QUIVER`); its strap holds the cloak's top to her back (anatomy.js
+    `cloakBones({ strap })`, cloak0's and cloak1's drag and fling at 0.2 and 0.4), so the run's drag
+    no longer swings the cloak out past the case's foot. No point of the case is inside the cloak on
+    any frame of the idle, the walk, the run, the attack, `walk_attack`, `backpedal_attack` or the
+    death. Seen red: its foot 5.5 px inside the cloak in the idle (62-77 of 208 case points every
+    frame, hidden in the back and side facings), 21.1 in the run, 10.2 the walk, 17.8 the death.
+
 ### Acceptance Criteria
 
 - [ ] The knight's hauberk, the wizard's robe and the mercenary's coat, each on its class's rig and
@@ -361,8 +409,17 @@ Date: 2026-11-12
 - [ ] The mage's scapular never sinks a baked px under her gown in those clips (seen red: -0.73 px
       at rest, -2.14 in the run, cut as before); her robe reaches no further in the run (its hem
       0.427 H from the pelvis, as before).
-- [ ] The owner judges the wizard's run on the contact sheet: no leg through the robe, the teal back
-      panel as clear in the run as in the walk.
+- [x] The owner judges the wizard's run on the contact sheet: no leg through the robe, the teal back
+      panel as clear in the run as in the walk ("法師長袍修正 沒問題", 2026-11-12).
+- [ ] No leg or boot of the knight or the archer through the cloak by a baked px in the idle, the
+      walk, the run, the attack, `walk_attack` and `backpedal_attack` (R29-R30; seen red: 18.8 px and
+      10.5 on `backpedal_attack`, 7.6 on the knight's attack).
+- [ ] The gown never through the scapular by a baked px on the face measure (R31; seen red: 0.91 px
+      in the run as cut before); the ID render shows no gown in the panel in the run's back facings.
+- [ ] The archer's quiver case nowhere inside her cloak in any clip, the fletching over the right
+      shoulder (R32; seen red: 5.5 px in the idle, 21.1 in the run).
+- [ ] The owner judges the knight's and the archer's `backpedal_attack`, the wizard's run from the
+      back and the archer's quiver on the contact sheets.
 
 ### Edge States
 
@@ -398,8 +455,17 @@ Date: 2026-11-12
   the teal 6 over the run (was 456, up to 29 a frame), the teal in the back views' lower band 3,800-3,900
   px a facing in the run (was 576-883; the walk 3,600-4,200), its mean light as the walk's; a pair
   of dashes about a baked px long remains on the back panel at the knee's height in a few run
-  frames, unmoved by a wider OVER_CLEAR, left for the owner's eye. The knight and the mercenary:
+  frames, unmoved by a wider OVER_CLEAR, left for the owner's eye (he first said "可以", then asked
+  for them gone: R31). The knight and the mercenary:
   no leg through the cloth, no garment change. Bake: every class clip reads 0 px; every
   `KNOWN_CLIPPING` sheet reads as before; only the three classes' pages and the manifest changed;
   `npm run bake -- --check` reports no changes.
+- **The cloaks, the dashes, the quiver (R29-R32; I-JS7C8-6, -7, -12).** Unit: the cloak check on
+  the knight's and the archer's rigs and styles reads 0 on every clip but the knight's walk (0.21
+  px, under the limit) (seen red: 18.8 / 10.5 px on `backpedal_attack`, 7.6 on the knight's
+  attack); the scapular at worst 0.28 px under the gown at one crease vertex (seen red: 0.91 cut as
+  before); the quiver case outside the cloak on every frame of every clip (seen red: 5.5 px in the
+  idle, 21.1 in the run). ID render of the wizard's run at 1.5x, all 8 facings: gown px inside the
+  teal panel 4 over 64 frames, none in the back facings (was 254). Bake: the archer, the knight, the
+  wizard and the mercenary re-baked once each; every creature's bytes unchanged.
 
