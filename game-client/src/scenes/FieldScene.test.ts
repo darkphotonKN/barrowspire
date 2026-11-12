@@ -61,6 +61,7 @@ const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
+const hudCorner = await import("@/ui/hudCornerLayout");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
@@ -1119,6 +1120,22 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       name: "Shadow Shot",
       greyed: false,
     });
+  });
+
+  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false });
+    field.renderState(archerState);
+    const { ABILITY_CARD_PLACE } = hudCorner;
+    expect((field as unknown as { abilityHud: { place: unknown } }).abilityHud.place).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should take a press on the corner row as the row's, never an attack (FS-3EBCA R10)", () => {
+    const { field } = kitOnStage({ lockedOut: false });
+    const f = field as unknown as { corner: unknown; takesPointer(x: number, y: number, p: boolean): boolean };
+    f.corner = { covers: (x: number, y: number) => x > 1000 && y > 650 };
+    expect(f.takesPointer(1030, 680, true)).toBe(true);
   });
 
   it("should grey the card while the ability lockout runs", () => {

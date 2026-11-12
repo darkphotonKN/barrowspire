@@ -205,3 +205,32 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
     expect(env.liveTexts()).toHaveLength(0);
   });
 });
+
+describe("HudCorner (FS-3EBCA R9: the Mailbox greyed outside the town)", () => {
+  function greyed() {
+    const press = vi.fn();
+    return { ...setup([{ icon: "mail", greyed: true, press }]), mailPress: press };
+  }
+
+  it("should draw the envelope in the faint HUD tone, never amber, with no hand cursor", () => {
+    const env = greyed();
+    const strokes = env.graphics.flatMap((g) => g.strokes);
+    expect(strokes).toContain(palette.hudFaint);
+    expect(strokes).not.toContain(palette.interactable);
+    expect(env.zoneAt("mail").handCursor).toBe(false);
+  });
+
+  it("should not brighten under the pointer, and name itself \"Mailbox · town only\"", () => {
+    const env = greyed();
+    env.zoneAt("mail").handlers.pointerover();
+    const strokes = env.graphics.flatMap((g) => g.strokes);
+    expect(strokes).not.toContain(palette.interactableBright);
+    expect(env.liveTexts().map((t) => t.words)).toContain("Mailbox · town only");
+  });
+
+  it("should answer no press", () => {
+    const env = greyed();
+    env.zoneAt("mail").handlers.pointerdown();
+    expect(env.mailPress).not.toHaveBeenCalled();
+  });
+});

@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { anchorAt } from "@/render/viewport";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
+  ABILITY_CARD_PLACE,
   CORNER_ROW_CLEARANCE,
+  LEAVE_BUTTON_PLACE,
   cornerIconFrame,
   cornerLabelAt,
 } from "./hudCornerLayout";
@@ -55,5 +58,21 @@ describe("corner labels (FS-3EBCA R5)", () => {
     const menu = cornerIconFrame("menu", view);
     // centred it would end at 1035 + 50 = 1085, past the edge
     expect(cornerLabelAt(menu, 100, view)).toEqual({ x: 1080 - 8 - 50, bottom: 652 });
+  });
+});
+
+describe("what stands above the row outside the town (FS-3EBCA R13, R14)", () => {
+  const view = { width: 1080, height: 720 };
+  const row = cornerIconFrame("menu", view);
+  it("should stand the ability card's bottom-right corner at (width - 16, 650), right-aligned with the row", () => {
+    expect(anchorAt(ABILITY_CARD_PLACE, view)).toEqual({ x: 1064, y: 650 });
+    expect(anchorAt(ABILITY_CARD_PLACE, view).x).toBe(row.x + row.width);
+    expect(anchorAt(ABILITY_CARD_PLACE, view).y).toBe(row.y - 8);
+    expect(anchorAt(ABILITY_CARD_PLACE, { width: 1280, height: 720 })).toEqual({ x: 1264, y: 650 });
+  });
+
+  it("should centre the dead spectator's leave button at (width - 116, 631), clear of the row", () => {
+    expect(anchorAt(LEAVE_BUTTON_PLACE, view)).toEqual({ x: 964, y: 631 });
+    expect(631 + 38 / 2).toBeLessThanOrEqual(row.y - 8);
   });
 });
