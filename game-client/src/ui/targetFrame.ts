@@ -200,6 +200,15 @@ export class TargetFrame {
     this.apply();
   }
 
+  /**
+   * Its box while it is drawn, fading in or out, or null (FS-56CKV §Change: Map name, E7): what
+   * the map name beside the enlarged map gives way to.
+   */
+  shownRect(): FrameRect | null {
+    if (this.alpha <= 0 || !this.shown) return null;
+    return targetFrameRect(this.centreX(), FRAME_STYLES[this.shown.boss ? "boss" : "normal"].size);
+  }
+
   /** Back to the view's centre (FS-ZAJMH R13), whatever it shows. */
   relayout(): void {
     this.drawn = undefined;

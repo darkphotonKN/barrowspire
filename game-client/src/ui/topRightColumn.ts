@@ -7,7 +7,8 @@
  * fullscreen button beside it, as amended 2026-11-12). The scene places what this returns, the
  * button's place included.
  * The town and the fields stand their minimap at the same corner (FS-P0HSP §G.35). The map mode
- * icon's place is the corner's too (FS-56CKV §Change: Map mode icon).
+ * icon's place is the corner's too (FS-56CKV §Change: Map mode icon), and so is the map name's
+ * (FS-56CKV §Change: Map name).
  */
 
 import type { Point, Rect } from "@/render/iso/projection";
@@ -20,6 +21,7 @@ import {
 import { MINIMAP, minimapRect, type MinimapPanel } from "./minimap";
 import type { MinimapMode } from "./minimapMode";
 import { minimapModeIconPlace, type MinimapModeIconPlace } from "./minimapModeIcon";
+import { minimapNamePlace, type MinimapNamePlace } from "./minimapName";
 
 /**
  * The column's corner where the minimap, normal or enlarged, holds the very top (FS-56CKV §Change
@@ -69,6 +71,8 @@ export interface TopRightCorner {
   button: FullscreenButtonSpot;
   /** Where the map mode icon stands, or null with no minimap (FS-56CKV §Change: Map mode icon, D2–D4). */
   modeIcon: MinimapModeIconPlace | null;
+  /** Where the map name stands, or null with no minimap (FS-56CKV §Change: Map name, E3–E6). */
+  name: MinimapNamePlace | null;
   /** The top of what stands under the minimap, or the column's top with none: whole logical px. */
   below: number;
   /** The column's right edge. */
@@ -85,11 +89,14 @@ export function topRightCorner(view: ViewSize, minimap: CornerMinimap | null): T
   const corner = anchorAt(panel ? TOP_RIGHT_EDGE : TOP_RIGHT_HUD, view);
   const map = panel ? minimapRect(corner.x, corner.y, panel) : null;
   const button = map ? { top: map.y, right: view.width - (map.x - MINIMAP.gap) } : FULLSCREEN_CORNER;
+  // in the map's bottom-left, or beside the button with the overlay up (FS-56CKV §Change: Map mode icon)
+  const modeIcon = minimapModeIconPlace(map, minimap?.mode === "overlay", button, view);
   return {
     minimap: map,
     button,
-    // in the map's bottom-left, or beside the button with the overlay up (FS-56CKV §Change: Map mode icon)
-    modeIcon: minimapModeIconPlace(map, minimap?.mode === "overlay", button, view),
+    modeIcon,
+    // in the normal map's top-right, left of the button enlarged, left of the icon in the overlay (§Change: Map name)
+    name: minimapNamePlace(map, minimap?.mode, button, modeIcon, view),
     below: map ? map.y + map.height + MINIMAP.gap : Math.round(corner.y),
     right: corner.x,
   };
@@ -106,7 +113,7 @@ export interface TopRightColumnParts {
   escapedHeight: number;
 }
 
-export interface TopRightColumn extends Pick<TopRightCorner, "minimap" | "button" | "modeIcon"> {
+export interface TopRightColumn extends Pick<TopRightCorner, "minimap" | "button" | "modeIcon" | "name"> {
   /** The floor indicator's top-right (origin 1, 0), where it stands even while hidden. */
   floor: Point;
   /** The escaped count's top-right (origin 1, 0). */
@@ -117,12 +124,13 @@ export interface TopRightColumn extends Pick<TopRightCorner, "minimap" | "button
 
 /** Every part's place in the column, each top on a whole logical px, and the fullscreen button's. */
 export function topRightColumn({ view, minimap, floorHeight, escapedHeight }: TopRightColumnParts): TopRightColumn {
-  const { minimap: map, button, modeIcon, below: floorTop, right } = topRightCorner(view, minimap);
+  const { minimap: map, button, modeIcon, name, below: floorTop, right } = topRightCorner(view, minimap);
   const escapedTop = floorHeight === null ? floorTop : Math.round(floorTop + floorHeight) + TOP_RIGHT_LINE.gap;
   return {
     minimap: map,
     button,
     modeIcon,
+    name,
     floor: { x: right, y: floorTop },
     escaped: { x: right, y: escapedTop },
     bottom: Math.round(escapedTop + escapedHeight),

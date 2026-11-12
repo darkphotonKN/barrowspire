@@ -407,6 +407,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Map mode icon** (FS-56CKV §Change: Map mode icon): the small amber glyph in the minimap's
   bottom-left corner (beside the fullscreen button while the map overlay is up) that does what M
   does: a press steps the minimap to its next mode. Hovered, it says "Map mode (M)".
+- **Map name** (FS-56CKV §Change: Map name): the name of the place the minimap shows, the same
+  words its arrival card titles it with (the town, a field, a floor of the Spire), in small text on
+  the minimap's top-right, or beside the fullscreen button or the map mode icon when the map is
+  enlarged or the overlay is up. Never a second list of names.
 - **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
   can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
   Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the

@@ -4348,15 +4348,13 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(true);
       // the 80 × 17 name stands at x 634–714, y 12–29, left of the button: the line runs over it
-      hub.queuePanel = line({ x: 600, y: 10, width: 200, height: 20 });
+      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }) });
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(false);
-      hub.queuePanel = line({ x: 600, y: 10, width: 200, height: 20 }, false);
-      hub.leaveButton = line({ x: 700, y: 10, width: 60, height: 20 });
+      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }, false), leaveButton: line({ x: 700, y: 10, width: 60, height: 20 }) });
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(false);
-      hub.leaveButton = undefined;
-      hub.queuePanel = undefined;
+      Object.assign(hub, { leaveButton: undefined, queuePanel: undefined });
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(true);
     });

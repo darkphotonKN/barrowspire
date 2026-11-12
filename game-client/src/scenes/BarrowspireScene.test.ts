@@ -5566,7 +5566,7 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
       for (const panel of panels) {
         const c = topRightColumn({ view, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
-        const at = positionReadoutPlace(c.minimap, { right: corner.x, bottom: c.bottom });
+        const at = positionReadoutPlace({ right: corner.x, bottom: c.bottom });
         const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
         // the button where the column hands it (FS-56CKV §Change C2), or in the corner
         const handed = { x: width - c.button.right - FULLSCREEN_BUTTON.height, y: c.button.top, width: FULLSCREEN_BUTTON.height, height: FULLSCREEN_BUTTON.height };

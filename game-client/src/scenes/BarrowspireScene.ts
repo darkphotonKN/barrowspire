@@ -141,7 +141,8 @@ import { markerMode, type MarkerMode } from "@/render/creatures/markerMode";
 import { BossEngagement, LastHitTracker, castTarget, pickTarget } from "@/render/creatures/targetPick";
 import { TargetFrame } from "@/ui/targetFrame";
 import { Minimap, type MinimapFixture } from "@/ui/minimap";
-import { MinimapModeIcon } from "@/ui/minimapModeIcon";
+import { MinimapModeIcon, type ModeIconStage } from "@/ui/minimapModeIcon";
+import { MinimapName, minimapPlaceName } from "@/ui/minimapName";
 import {
   browserMinimapStore,
   nextMinimapMode,
@@ -430,6 +431,8 @@ interface DungeonFloor {
   minimap?: Minimap;
   /** Its minimap's map mode icon, built and gone with it (FS-56CKV §Change: Map mode icon, D4). */
   modeIcon?: MinimapModeIcon;
+  /** Its minimap's map name, the floor's, built and gone with it (FS-56CKV §Change: Map name, E6). */
+  mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
 }
@@ -3869,6 +3872,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.fog?.destroy();
     this.dungeon?.minimap?.destroy();
     this.dungeon?.modeIcon?.destroy();
+    this.dungeon?.mapName?.destroy();
     this.dungeon = undefined;
     this.placeTopRightColumn();
   }
@@ -3950,10 +3954,16 @@ export class BarrowspireScene extends Phaser.Scene {
     );
     dungeon.minimap.setMode(this.minimapMode);
     // its map mode icon over it: a press is M's, under M's guards (FS-56CKV §Change: Map mode icon)
-    dungeon.modeIcon = new MinimapModeIcon(
-      { graphics: () => this.add.graphics(), text: (words, style) => this.add.text(0, 0, words, style) },
-      { press: () => this.cycleMinimap(), blocked: () => !!this.menu || !!this.chatWindow?.isTyping() },
-    );
+    const iconStage: ModeIconStage = { graphics: () => this.add.graphics(), text: (words, style) => this.add.text(0, 0, words, style) };
+    dungeon.modeIcon = new MinimapModeIcon(iconStage, {
+      press: () => this.cycleMinimap(),
+      blocked: () => !!this.menu || !!this.chatWindow?.isTyping(),
+    });
+    // the floor's name on it, the floor card's title (FS-56CKV §Change: Map name, E1)
+    if (this.builtFloor !== undefined) {
+      const top = this.lastGameState ? isTopFloor(this.lastGameState) : false;
+      dungeon.mapName = new MinimapName(iconStage, minimapPlaceName({ world: "run", floor: this.builtFloor, top }));
+    }
     this.placeTopRightColumn();
   }
 
@@ -3961,12 +3971,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * The top-right column from its anchor (FS-56CKV §B, superseding FS-SRA9J §E.20 in part): the
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
    * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
-   * dev readout goes with it (§C.14, §C.18): in the minimap's top-right corner (§Change: Map mode
-   * icon, D8), else under the column's last line. The minimap, normal or enlarged, stands at the very top with the fullscreen
-   * button at its left; in the overlay and with no minimap the button keeps the corner and the
+   * dev readout goes with it (§C.18): under the column's last line in every mode, the minimap's
+   * top-right being the map name's (§Change: Map name, E8). The minimap, normal or enlarged, stands
+   * at the very top with the fullscreen button at its left; in the overlay and with no minimap the button keeps the corner and the
    * column starts under it (§Change: Minimap at the top, fullscreen button beside it, as amended
    * 2026-11-12). The map mode icon goes with the map, or beside the button with the overlay up
-   * (§Change: Map mode icon).
+   * (§Change: Map mode icon); the map name with them (§Change: Map name, E3–E5).
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
@@ -3980,9 +3990,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.fullscreenButton.hand(this, column.button);
     if (column.minimap) minimap?.place(column.minimap);
     this.dungeon?.modeIcon?.place(column.modeIcon);
+    this.dungeon?.mapName?.place(column.name);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
-    const readout = positionReadoutPlace(column.minimap, { right: column.escaped.x, bottom: column.bottom });
+    const readout = positionReadoutPlace({ right: column.escaped.x, bottom: column.bottom });
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
   }
 
@@ -5006,6 +5017,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
+    // the map name beside the enlarged map gives way to the frame where they meet (FS-56CKV §Change: Map name, E7)
+    this.dungeon?.mapName?.giveWay([this.targetFrame.shownRect()]);
   }
 
   /**
