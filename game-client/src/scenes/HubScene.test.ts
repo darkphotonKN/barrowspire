@@ -3803,7 +3803,7 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
   };
   /** A view whose baked animator is stepped and shown, as on main: nothing else turns it. */
   const view = (x: number) => ({
-    sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => null },
+    sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60 }) },
     pos: { x, y: 0 },
     target: { x, y: 0 },
     anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
@@ -3831,7 +3831,7 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
 
     expect(me.anim.step).toHaveBeenCalledWith(me.pos, 200, 16, false);
     expect(them.anim.step).toHaveBeenCalledWith(them.pos, 200, 16, false);
-    expect(send.mock.calls.filter(([action]) => action === "face")).toEqual([]);
+    expect(send.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
   });
 
   it("should keep no facing from a state entry, the own echo or another's", () => {

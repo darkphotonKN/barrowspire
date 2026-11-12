@@ -5425,7 +5425,7 @@ describe("BarrowspireScene facing from movement, nothing on the wire (FS-JS7C8 Â
     run.update(200, 16);
 
     expect(anim.step).toHaveBeenCalledWith(run.playerPos, 200, 16, false);
-    expect(sent.mock.calls.filter(([action]) => action === "face")).toEqual([]);
+    expect(sent.mock.calls.filter(([action]) => (action as string) === "face")).toEqual([]);
   });
 
   it("should draw another player by their movement, never by a facing their entry carries", () => {
@@ -5435,7 +5435,7 @@ describe("BarrowspireScene facing from movement, nothing on the wire (FS-JS7C8 Â
       ...floorState(1),
       current_player: player("me", "Aldric", 130),
       other_players: [{ ...player("ally", "Wenna", 160), facing: "w" }],
-    } as GameState);
+    } as unknown as GameState);
     const ally = animator();
     run.otherPlayersAnim.set("ally", ally);
 
