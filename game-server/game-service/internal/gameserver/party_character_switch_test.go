@@ -176,21 +176,16 @@ func TestCharacterSwitch_NewCharacterStartsWithNoParty(t *testing.T) {
 	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
 	rig.tick() // both read on arrival, so a second read is what a new seat does
 	switchCharacter(t, rig, kaelenConn, kaelenInbox)
-	rig.tick() // the cache sees Kaelen seated nowhere
+	awaitUpdate(t, kaelenInbox, "left", kaelen.ID, "Kaelen") // the last update the switch sent
+	rig.tick()                                               // the cache sees Kaelen seated nowhere
 
 	brannoc := rig.characters.give(kaelen.ID, "archer", "Brannoc", 1, 0)
 	sendEnterHub(rig.server, kaelenConn, map[string]interface{}{"characterId": brannoc.ID.String()})
 	awaitParty(t, kaelenInbox, string(constants.ActionWorldEntered), "Brannoc")
 	rig.tick()
 
-	for {
-		update := awaitParty(t, kaelenInbox, partyUpdateAction, "Brannoc")
-		if update.Payload["reason"] == "left" {
-			continue // the last update the switch sent, if it was still on its way
-		}
-		assert.Empty(t, memberIDsOf(t, update), "Brannoc is shown no party")
-		break
-	}
+	update := awaitParty(t, kaelenInbox, partyUpdateAction, "Brannoc")
+	assert.Empty(t, memberIDsOf(t, update), "Brannoc is shown no party")
 	assert.False(t, rig.mini.Exists(pointerKey(kaelen.ID)), "Brannoc has no pointer")
 }
 
