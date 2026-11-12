@@ -51,6 +51,7 @@ import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { escapeStep } from "@/ui/escapeOrder";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -293,13 +294,15 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
-   * its anchor, open panels included. The bars, the chat window and the party frames and panel
+   * its anchor, open panels included. The bars, the chat window and the party frames
    * keep to the left and the bottom, which a width change does not move; the gear overlay follows
    * Phaser's resize itself.
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
     this.abilityHud?.relayout();
+    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
+    this.partyPanel?.relayout();
     this.satchel?.relayout();
     this.invitePrompt?.relayout();
     if (this.fallenView) {
@@ -421,6 +424,20 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
+   * One Esc press (FS-R82NV § Change C2): one press closes one thing, the gear overlay, then the
+   * party panel (`escapeStep`).
+   */
+  private pressEscape(): void {
+    const step = escapeStep({
+      menu: false,
+      gear: this.equipment?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+    });
+    if (step === "gear") this.equipment?.hide();
+    else if (step === "party") this.partyPanel?.close();
+  }
+
+  /**
    * The run's keys for the satchel and the equip HUD: I or B opens and closes the overlay, Q and
    * ESC close it (FS-HRH2J R4; a field has no ESC menu); E over the open overlay equips or
    * unequips, as in the run, else reaches for a pile or chest; F takes the satchel's first item.
@@ -438,7 +455,7 @@ export class FieldScene extends Phaser.Scene {
       });
     }
     this.input.keyboard?.on("keydown-Q", () => this.equipment?.hide());
-    this.input.keyboard?.on("keydown-ESC", () => this.equipment?.hide());
+    this.input.keyboard?.on("keydown-ESC", () => this.pressEscape());
     this.input.keyboard?.on("keydown-F", () => this.satchel?.lootFirst());
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)

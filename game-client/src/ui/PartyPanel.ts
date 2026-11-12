@@ -5,8 +5,11 @@
  * beside it, both live in the town and a field and greyed in a run, FS-NCC9J R23), Kick and Transfer on each other member for the leader,
  * Leave for any member, and a reserved slot for the loot rule (FS-V780R). Actions the server would refuse are greyed by role and by lock (`partyActions`).
  *
- * A carved panel on the game palette at the HUD's depth. The open state lives in the store, so
- * walking into a field with the panel open finds it open there; the scene only mounts it.
+ * A carved panel on the game palette at the HUD's depth, centred across the view with its top at
+ * 18% of its height, and an × at its top right that closes it, as Esc does (FS-R82NV § Change:
+ * The party panel closes on its × and stands nearer the middle). The open state lives in the
+ * store, so walking into a field with the panel open finds it open there; the scene only mounts
+ * it, and asks it to `relayout` when the view's size changes.
  */
 
 import type Phaser from "phaser";
@@ -83,6 +86,8 @@ const HUD_DEPTH = 1000;
 const FONT_PX = 14;
 const SMALL_PX = 12;
 const TITLE_PX = 15;
+/** The ×'s size, the letter panel's. */
+const CLOSE_PX = 22;
 /** An away or offline member's row, and a greyed action. */
 const GREYED_ALPHA = 0.45;
 
@@ -169,6 +174,27 @@ export class PartyPanel {
 
   isOpen(): boolean {
     return this.deps.store.getState().panelOpen;
+  }
+
+  /** Shuts an open panel (Esc, § Change C2): whether there was one to shut. */
+  close(): boolean {
+    if (!this.isOpen()) return false;
+    this.deps.store.getState().closePanel();
+    return true;
+  }
+
+  /**
+   * The corner row's Party icon (FS-3EBCA R8): T's toggle under the same owners of the screen, but
+   * not its text-focus rule, since a press is not typing.
+   */
+  toggle(): void {
+    if (this.deps.blocked()) return;
+    this.deps.store.getState().togglePanel();
+  }
+
+  /** The view's size changed: the panel, its × and the invite field to their new place (§ Change C5). */
+  relayout(): void {
+    this.draw();
   }
 
   /** Whether a screen point lies on the open panel: a click there is the panel's, not the world's. */
@@ -263,11 +289,27 @@ export class PartyPanel {
     this.texts.push(drawHudButton(this.scene, g, r, label, enabled, press));
   }
 
+  /** The × in the letter panel's look (§ Change C1): amber, brighter under the pointer. */
+  private drawClose(r: Rect): void {
+    const x = this.text(
+      r.x + r.width / 2,
+      r.y + r.height / 2,
+      "×",
+      palette.interactable,
+      CLOSE_PX,
+    )
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    x.on("pointerdown", () => this.close());
+    x.on("pointerover", () => x.setColor(toCss(palette.interactableBright)));
+    x.on("pointerout", () => x.setColor(toCss(palette.interactable)));
+  }
+
   private draw(): void {
     this.clear();
     const { party, panelOpen } = this.deps.store.getState();
     const actions = partyActions(party, this.deps.selfId(), this.deps.world());
-    const frame = partyPanelFrame(actions);
+    const frame = partyPanelFrame(actions, viewport);
     this.actions = actions;
     this.frame = frame;
     this.field ??= this.deps.makeField(this.scene, frame.inviteField, {
@@ -291,6 +333,7 @@ export class PartyPanel {
       palette.frameBright,
       TITLE_PX,
     );
+    this.drawClose(frame.close);
 
     actions.members.forEach((m, i) => {
       const { row, transfer, kick } = frame.rows[i];

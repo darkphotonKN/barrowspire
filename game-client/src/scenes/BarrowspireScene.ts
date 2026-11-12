@@ -72,6 +72,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { escapeStep } from "@/ui/escapeOrder";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -3240,6 +3241,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     this.abilityHud?.relayout();
+    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
+    this.partyPanel?.relayout();
     this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
@@ -5372,17 +5375,31 @@ export class BarrowspireScene extends Phaser.Scene {
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-    // one ESC closes one thing: the gear and bag overlay before the menu opens (FS-HRH2J R5)
-    if (esc && !this.menu && this.equipment?.hide()) return;
-    if (this.runEnded) return;
-
-    if (!this.menu) {
-      if (esc) this.openMenu();
+    if (esc) {
+      this.pressEscape();
       return;
     }
-    if (esc) this.menuChoices?.dismiss();
-    else if (confirm) this.menuChoices?.confirm();
+    if (this.runEnded || !this.menu) return;
+    if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+  }
+
+  /**
+   * One ESC press (FS-R82NV § Change C2; FS-HRH2J R5): one press closes one thing, the open menu,
+   * then the gear and bag overlay, then the party panel (`escapeStep`); with nothing open the
+   * menu opens. Once the run has ended there is no menu to open or close.
+   */
+  private pressEscape(): void {
+    const step = escapeStep({
+      menu: !!this.menu,
+      gear: this.equipment?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+    });
+    if (step === "gear") this.equipment?.hide();
+    else if (step === "party") this.partyPanel?.close();
+    else if (this.runEnded) return;
+    else if (step === "close-menu") this.menuChoices?.dismiss();
+    else this.openMenu();
   }
 
   /**

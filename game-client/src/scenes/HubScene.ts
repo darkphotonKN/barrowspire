@@ -29,6 +29,7 @@ import { BARROW_HEX } from "@/utils/theme";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
+import { escapeStep } from "@/ui/escapeOrder";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
@@ -922,7 +923,7 @@ export class HubScene extends Phaser.Scene {
   /**
    * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
    * its anchor, open panels included, their state untouched. The level bar, the chat window and
-   * the party frames and panel keep to the left, which a width change does not move; the gear
+   * the party frames keep to the left, which a width change does not move; the gear
    * overlay follows Phaser's resize itself.
    */
   private relayoutHud(): void {
@@ -930,6 +931,8 @@ export class HubScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
+    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
+    this.partyPanel?.relayout();
     this.dialogueChoices?.relayout();
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     if (this.queuePanel?.active) {
@@ -2817,32 +2820,44 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * ESC, read once a frame on the one ESC key the hub binds (FS-G4VMQ §Requirements 1, 2, 20).
-   * One press closes one thing (FS-HRH2J R5): while a dialogue is open the key is the
-   * dialogue's, read in offerConversation, so this does not touch it; then an open letter panel
-   * closes (FS-1GZGD R40), then an open gear overlay; otherwise ESC opens the menu, and pressed
-   * again closes it.
+   * While a dialogue is open the key is the dialogue's, read in offerConversation, so this does
+   * not touch it. Otherwise one press is `pressEscape`'s; with the menu open Enter is its first
+   * choice and a number that choice.
    */
   private offerMenu(): void {
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
-
-    if (this.mailbox?.isOpen()) {
-      if (esc) this.mailbox.close();
+    if (esc || this.mailbox?.isOpen() || !this.menu) {
+      if (esc) this.pressEscape();
       return;
     }
 
-    if (!this.menu) {
-      if (esc && !this.gear?.hide()) this.openMenu();
-      return;
-    }
-
-    // open: Esc closes, Enter is the first choice, a number is that choice. Every key is
-    // read each frame, so a press never lingers to answer the next one.
+    // open: Enter is the first choice, a number is that choice. Every key is read each frame, so
+    // a press never lingers to answer the next one.
     const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-    if (esc) this.closeMenu();
-    else if (confirm) this.menuChoices?.confirm();
+    if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+  }
+
+  /**
+   * One Esc press (FS-R82NV § Change C2; FS-HRH2J R5; FS-1GZGD R40): the one thing on top closes,
+   * the letter panel, the menu, the gear overlay, then the party panel; with nothing open the menu
+   * opens (`escapeStep`). A dialogue keeps its own Esc.
+   */
+  private pressEscape(): void {
+    if (this.dialogue) return;
+    const step = escapeStep({
+      letter: this.mailbox?.isOpen() ?? false,
+      menu: !!this.menu,
+      gear: this.gear?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+    });
+    if (step === "letter") this.mailbox?.close();
+    else if (step === "close-menu") this.closeMenu();
+    else if (step === "gear") this.gear?.hide();
+    else if (step === "party") this.partyPanel?.close();
+    else this.openMenu();
   }
 
   /**

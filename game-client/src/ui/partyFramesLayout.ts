@@ -230,8 +230,8 @@ export interface PartyFrameRect {
 
 /**
  * A frame's width (R34): exactly the level/XP frame's outer width, so the left edge of the HUD
- * reads as one column; a field, which has no XP bar, keeps the same. It ends left of the T panel
- * (`PARTY_PANEL_X` 280, R28).
+ * reads as one column; a field, which has no XP bar, keeps the same. It ends left of the T panel,
+ * centred across the view (FS-R82NV § Change C3: x 390 at its narrowest).
  */
 const FRAME_W = PROGRESS_HUD_W;
 const ROW_H = 40;

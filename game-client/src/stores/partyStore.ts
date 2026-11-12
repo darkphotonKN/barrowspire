@@ -468,6 +468,8 @@ export interface PartyState {
   /** How full the held check's countdown bar is now, 1 to 0, by the store's own clock (FS-B3NDZ R6). */
   readyFraction: (check: OpenReadyCheck) => number;
   togglePanel: () => void;
+  /** Shuts the panel: its ×, Esc (FS-R82NV § Change C1, C2). */
+  closePanel: () => void;
 }
 
 export interface PartyStoreDeps {
@@ -597,6 +599,7 @@ export function createPartyStore({
     readySecondsLeft: (check) => readyCheckSecondsLeft(check, now()),
     readyFraction: (check) => readyCheckFraction(check, now()),
     togglePanel: () => set((state) => ({ panelOpen: !state.panelOpen })),
+    closePanel: () => set({ panelOpen: false }),
   }));
 }
 
