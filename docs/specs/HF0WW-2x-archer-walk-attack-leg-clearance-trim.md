@@ -303,6 +303,47 @@ Date: 2026-11-12
     The limit, the death's exemption, `KNOWN_CLIPPING` and `MIRRORED_LEGACY` are unchanged.
 23. No garment, rig or clip changes for this; the guard only gates, so no sheet's bytes move by it.
 
+> **Edited in place on 2026-11-12 (still a work-order): the robe in the run.** After playing the
+> wizard at 1.5x, the owner said: "法師跑步會輕微破圖 膝蓋處會凸出衣服 腰部似乎也有一點" (the wizard's
+> run breaks slightly: at the knee the leg pokes out of the robe, and a little at the waist too),
+> then "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉" (at the back of the robe, around the calves,
+> the green panel of the hem seems to be eaten by black while running). The guard (R19, R22) had
+> passed the run at 0.41 px. Rendered from the bake's camera in all 8 facings with every part in a
+> flat colour, the run showed the leading knee through the gown and the teal scapular in keys 1 and
+> 5 (up to 26 baked px a frame at 1.5x), the thigh's root at the pinched waist (up to 3; 1 at rest),
+> and the black gown through the scapular (up to 29 px a frame) and flung out past its back panel
+> behind the calves (the back panel's lower band 576-883 px a back facing in the run against
+> 1,494 in the walk): the panel was not shaded dark, the gown in front of it. Two causes, both
+> measured: the guard read the knee as uncovered, not through (below), and the scapular was skinned
+> apart from the gown (`legFollow` 0.3 against 0.5, its own panel weight, rings at other heights),
+> so the layer that follows the legs further came out through the other; the gown also trailed past
+> the back panel's hem at rest. The owner had already chosen to change the garment rig for this
+> ("改衣服的骨架"), which R23 had set aside; R25-R27 do it for the robe. The knight's hauberk and the
+> mercenary's coat show no leg through the cloth by the same check, and keep their rig.
+
+24. Each band of rings claims the points between the planes square to its axis through its two
+    centres, so where a stride bends the line of the ring centres (a robe's front swung forward over
+    the knee, its back flung out behind) the outside of the bend lies past one band's end and before
+    the next one's start, in no band, and R19 read a leg there as uncovered. Such a point is measured
+    on the ring at the bend, in the plane square to the two bands' mean axis, and goes on to R22's
+    level ray when it reads outside. Every sheet but the wizard reads as before; the wizard's run as
+    cut before reads 1.08 px and fails the bake.
+25. A panel worn over a garment (`skirt({ over })`, the mage's scapular over her gown) is cut on
+    that garment's rig: its rings are the garment's ring for ring (heights, centres, trail), its
+    radii out from them by its own (`rTop - over.rTop` easing to `rBottom - over.rBottom`) and
+    `OVER_CLEAR` (0.002 H), its skin weights the garment's at the same ring, its hem lifted to its
+    own `bottom` on the last ring, where the weights beneath no longer change. The panel never sinks
+    a baked px under the garment, measured along the garment's normal where it lay over it in bind.
+26. A robe's thigh may carry the cloth over the knee it bends (`skirt({ kneeCover })`, H under the
+    knee where the thigh's share starts passing to the panels; 0 as before): the mage's 0.05, the
+    least in 0.01 steps that keeps her leading knee in through the run.
+27. Over a garment's top, where the torso alone covers the thigh's root, `legs({ under: { torso } })`
+    draws the root in under the torso's wall when it is the narrower (the mage's pinched waist).
+28. The check of R24-R27, in the clip tests: from the bake camera in all 8 facings, no thigh or knee
+    vertex lying outside the cloth round it on R22's level ray, and no vertex of the thigh's root, is
+    left unhidden on the knight, the wizard and the mercenary at rest, through the run, the walk and
+    both attacks on the move.
+
 ### Acceptance Criteria
 
 - [ ] The knight's hauberk, the wizard's robe and the mercenary's coat, each on its class's rig and
@@ -312,6 +353,16 @@ Date: 2026-11-12
       thighs wider than a tunic's top fail at rest, a belt is cover, a death is exempt.
 - [ ] A full bake passes with every `KNOWN_CLIPPING` sheet still past the limit and under its
       ceiling; `npm run bake -- --check` reports no changes.
+- [ ] The guard measures a point on the outside of a bend in the rings (R24); it fails the wizard's
+      run as cut before (seen red: 0.41 px, passing).
+- [ ] From the bake camera, no hip, thigh or knee of the knight, the wizard or the mercenary is seen
+      through the garment or the waist in any facing at rest, in `run`, `walk`, `walk_attack` and
+      `backpedal_attack` (R28; seen red: the wizard's waist at rest and her knee in the run).
+- [ ] The mage's scapular never sinks a baked px under her gown in those clips (seen red: -0.73 px
+      at rest, -2.14 in the run, cut as before); her robe reaches no further in the run (its hem
+      0.427 H from the pelvis, as before).
+- [ ] The owner judges the wizard's run on the contact sheet: no leg through the robe, the teal back
+      panel as clear in the run as in the walk.
 
 ### Edge States
 
@@ -322,8 +373,11 @@ Date: 2026-11-12
 
 ### Out of Scope
 
-- Changing any garment's skinning or the skirt panels (the owner's "改衣服的骨架" is not needed
-  for the guard; reopened if the contact sheet shows a leg through the cloth).
+- Changing the knight's or the mercenary's garment rig: the check of R28 finds no leg through their
+  cloth. (Was: any garment's skinning, "not needed for the guard; reopened if the contact sheet
+  shows a leg through the cloth": the owner's sheet did, for the robe, R25-R27.)
+- The flat-colour render of the check (a review probe, not a bake step): the clip tests hold the
+  geometry.
 
 ### Verification (2026-11-12, branch `feat/run-sheets-1p5x`)
 
@@ -333,6 +387,21 @@ Date: 2026-11-12
 - **Bake.** The wizard, the knight and the mercenary re-baked at 1.5x with the run: the guard
   reads the wizard's run at 0.41 px, every other class clip at 0; every `KNOWN_CLIPPING` sheet
   still clips past the limit and under its ceiling; `npm run bake -- --check` reports no changes.
+- **The robe in the run (R24-R28; I-JS7C8-7).** Unit: the guard measures a point on the outside of a
+  bend (seen red: null); from the bake camera no hip, thigh or knee of the three classes is seen
+  through the cloth at rest, in the run, the walk and both attacks on the move (seen red: the
+  wizard's waist at rest, 23-28 vertex-facings a pose, her knee in run keys 1 and 5); the scapular
+  never sinks a baked px under the gown (seen red: -0.73 px at rest, -2.14 in the run, cut as
+  before); the guard fails the robe as cut before (1.08 px; it read 0.41). Rendered with every
+  part in a flat colour from the bake's camera in all 8 facings at 1.5x (a review probe): leg px in
+  the wizard's run 0 (was 102 at the knee, up to 26 a frame, and 23 at the waist), gown px through
+  the teal 6 over the run (was 456, up to 29 a frame), the teal in the back views' lower band 3,800-3,900
+  px a facing in the run (was 576-883; the walk 3,600-4,200), its mean light as the walk's; a pair
+  of dashes about a baked px long remains on the back panel at the knee's height in a few run
+  frames, unmoved by a wider OVER_CLEAR, left for the owner's eye. The knight and the mercenary:
+  no leg through the cloth, no garment change. Bake: every class clip reads 0 px; every
+  `KNOWN_CLIPPING` sheet reads as before; only the three classes' pages and the manifest changed;
+  `npm run bake -- --check` reports no changes.
 
 
 ## Change: The folk's legs stay under their clothes

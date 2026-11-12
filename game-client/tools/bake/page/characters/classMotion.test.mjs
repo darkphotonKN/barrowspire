@@ -3,11 +3,11 @@
 // attack of FS-2325V § Change: The class attacks move with weight and cut deep.
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { ATTACKS, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
+import { ATTACKS, ATTACK_TURN_LIMIT, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { footing, measurePace } from "./pace.js";
-import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_SHEET, MERCENARY_STYLE, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
+import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, MERCENARY_BUILD, MERCENARY_SHEET, MERCENARY_STYLE, SCEPTRE_TILT, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
 import { MERC_ANIMATIONS, parryClip } from "./clips.js";
 
 const DEG = 180 / Math.PI;
@@ -144,8 +144,9 @@ function deepestCarry(rig, gear, frames) {
 }
 
 /**
- * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands)
- * and how far outside the body its carry must stay (H).
+ * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands) and
+ * its weapon's rest in the idle and the walk: `point` down and forward (a blade's tip toward the
+ * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
  */
 const CLASSES = [
   {
@@ -155,6 +156,7 @@ const CLASSES = [
     sheet: KNIGHT_SHEET,
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
+    rest: "point",
   },
   {
     name: "mercenary",
@@ -162,6 +164,7 @@ const CLASSES = [
     style: MERCENARY_STYLE,
     sheet: MERCENARY_SHEET,
     pump: ["L", "R"],
+    rest: "point",
   },
   {
     name: "wizard",
@@ -169,6 +172,7 @@ const CLASSES = [
     style: WIZARD_STYLE,
     sheet: WIZARD_SHEET,
     pump: ["L", "R"],
+    rest: "upright",
   },
 ];
 
@@ -184,7 +188,7 @@ describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward 
   });
 });
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ build, style, pump }) => {
+describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, rest }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -230,6 +234,30 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
     }
   });
 
+  // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高",
+  // then, of the held keys' fist turned over: "跑步時武器是不是拿反了"
+  it(
+    rest === "point"
+      ? "carries the blade forward and down or about level on every sample, its tip ahead of the hand, under the shoulder and never behind the body"
+      : "carries the sceptre up by its shaft on every sample, the orb above the hand and under the shoulder, ahead of the hand",
+    () => {
+      const tip = GEAR[name](rig).weapon.at(-1);
+      for (const f of SAMPLES) {
+        pose8(f);
+        const [hand, t, shoulder, hips] = [at(rig, "handR"), world(tip), at(rig, "upperArmR"), at(rig, "hips")];
+        const d = t.clone().sub(hand);
+        const elev = Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+        if (rest === "point") {
+          expect(elev, `blade @${f}`).toBeGreaterThanOrEqual(-45);
+          expect(elev, `blade @${f}`).toBeLessThanOrEqual(5);
+          expect(t.z - hips.z, `tip ahead of the body @${f}`).toBeGreaterThan(0);
+        } else expect(elev, `orb over the hand @${f}`).toBeGreaterThan(0);
+        expect(d.z, `tip ahead of the hand @${f}`).toBeGreaterThan(0);
+        expect(t.y, `tip under the shoulder @${f}`).toBeLessThan(shoulder.y);
+      }
+    },
+  );
+
   it("turns the shoulders 6.5–10° against the hips, and keeps the shared legs key for key", () => {
     const yaw = (l, r) => {
       const [a, b] = [at(rig, l), at(rig, r)];
@@ -255,16 +283,151 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
   });
 });
 
+// owner, 2026-11-12: "站立時武器應該可以放下手微微下垂"
+describe.each(CLASSES)("the $name's weapon arm rests down at the side in the idle (FS-JS7C8 R2)", ({ name, build, style, sheet, rest }) => {
+  const rig = rigOf(build);
+  const gear = GEAR[name](rig);
+  const idle = clipsFor(style, sheet.animations).idle;
+
+  it("hangs the arm with the elbow a little bent and the hand a little below the waist, on every key", () => {
+    idle.forEach((p, i) => {
+      posed(rig, p);
+      const [sh, el, hand, hips] = [at(rig, "upperArmR"), at(rig, "foreArmR"), at(rig, "handR"), at(rig, "hips")];
+      const bend = 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG;
+      expect(bend, `elbow @${i}`).toBeGreaterThanOrEqual(5);
+      expect(bend, `elbow @${i}`).toBeLessThanOrEqual(30);
+      expect((hips.y - hand.y) / rig.H, `hand under the pelvis @${i}`).toBeGreaterThanOrEqual(0);
+      expect((hips.y - hand.y) / rig.H, `hand under the pelvis @${i}`).toBeLessThanOrEqual(0.12);
+    });
+  });
+
+  it(rest === "point" ? "points the blade down and forward, its tip toward the ground" : "holds the sceptre up beside the leg, its head under the shoulder", () => {
+    const tip = gear.weapon.at(-1);
+    idle.forEach((p, i) => {
+      posed(rig, p);
+      const [hand, t] = [at(rig, "handR"), world(tip)];
+      const d = t.clone().sub(hand);
+      const elev = Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+      if (rest === "point") {
+        expect(elev, `blade @${i}`).toBeGreaterThanOrEqual(-60);
+        expect(elev, `blade @${i}`).toBeLessThanOrEqual(-15);
+        expect(d.z, `tip ahead of the hand @${i}`).toBeGreaterThan(0);
+      } else {
+        expect(elev, `sceptre @${i}`).toBeGreaterThanOrEqual(45);
+        expect(t.y, `orb under the shoulder @${i}`).toBeLessThan(at(rig, "upperArmR").y);
+      }
+    });
+  });
+
+  // owner, 2026-11-12, of the wizard's held keys: "法師走路時武器可以垂一點 現在手垂下來了 但是武器卻還是拿得很直"
+  if (rest === "upright")
+    it(`lets the sceptre lean with the relaxed hand in the idle and the walk: ${SCEPTRE_TILT}° off vertical, 30–45° on every key, the orb forward and out a little and under the shoulder, the foot of the shaft back toward the heel, clear of the robe`, () => {
+      const [butt, tip] = [gear.weapon[0], gear.weapon.at(-1)];
+      const walk = clipsFor(style, sheet.animations).walk;
+      const tilts = [];
+      for (const [anim, keys] of [["idle", idle], ["walk", walk]])
+        keys.forEach((p, i) => {
+          posed(rig, p);
+          const [hand, t, b] = [at(rig, "handR"), world(tip), world(butt)];
+          const d = t.clone().sub(hand);
+          const tilt = 90 - Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+          tilts.push(tilt);
+          expect(tilt, `${anim} tilt @${i}`).toBeGreaterThanOrEqual(30);
+          expect(tilt, `${anim} tilt @${i}`).toBeLessThanOrEqual(45);
+          expect(d.z, `${anim} orb forward @${i}`).toBeGreaterThan(0);
+          // the right hand: out is -x
+          expect((hand.x - t.x) / rig.H, `${anim} orb out @${i}`).toBeGreaterThanOrEqual(0.01);
+          expect(t.y, `${anim} orb under the shoulder @${i}`).toBeLessThan(at(rig, "upperArmR").y);
+          // the grip, 0.06 H up the shaft from its foot (gear.js `sceptre`, butt −0.06 to the orb's top 0.29)
+          const grip = b.clone().lerp(t, 0.06 / 0.35);
+          expect(b.z, `${anim} the shaft's foot behind the grip @${i}`).toBeLessThan(grip.z);
+          for (const m of gear.weapon) expect(outsideRobe(rig, world(m)), `${anim} @${i}: the sceptre into the robe`).toBeGreaterThan(0);
+        });
+      expect(Math.abs(tilts.reduce((a, b) => a + b) / tilts.length - SCEPTRE_TILT), "the mean tilt").toBeLessThanOrEqual(3);
+    });
+
+  if (name === "knight")
+    it("rests the shield before him, lowered: its centre under the chest bone", () => {
+      idle.forEach((p, i) => {
+        posed(rig, p);
+        expect(world(gear.other[0]).y, `shield @${i}`).toBeLessThan(at(rig, "chest").y);
+      });
+    });
+});
+
+/**
+ * How far a world point lies outside the mage's robe as cast.js cuts it (H; negative inside): the
+ * gown with the scapular over it (anatomy.js `skirt`, `overSkirt`), read in the pelvis's bind
+ * space, an ellipse at each height from the gown's top to its hem, its centre trailing back
+ * toward the hem.
+ */
+function outsideRobe(rig, w) {
+  const [, hy] = J(rig, "hips");
+  const [top, bottom] = [hy - 0.005, 0.016];
+  const b = inBind(rig, "hips", w);
+  if (b.y > top || b.y < bottom) return Infinity;
+  const t = (top - b.y) / (top - bottom);
+  const [rx, rz] = [0.116 + (0.162 - 0.116) * t, 0.088 + (0.148 - 0.088) * t];
+  const z = -0.02 * t * t;
+  return (Math.hypot(b.x / rx, (b.z - z) / rz) - 1) * Math.min(rx, rz);
+}
+
+// owner, 2026-11-12, of the held run keys' fist turned over (hand [0.7, π, 0]): "跑步時武器是不是拿反了"
+describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turned over in the hand (FS-JS7C8 R2)", ({ name, build, style, sheet }) => {
+  const rig = rigOf(build);
+  const clips = clipsFor(style, sheet.animations);
+
+  it.each(["idle", "walk", "run"])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
+    clips[anim].forEach((p, i) => {
+      posed(rig, p);
+      // the knuckles' axis (the hand's +x, about which the wrist cocks) in the forearm's frame: a
+      // fist rolled over on the forearm turns it about
+      const x = new THREE.Vector3(1, 0, 0).transformDirection(rig.bones.handR.matrixWorld);
+      const fore = new THREE.Matrix4().extractRotation(rig.bones.foreArmR.matrixWorld).invert();
+      expect(x.applyMatrix4(fore).x, `${name} ${anim} @${i}`).toBeGreaterThan(0);
+    });
+  });
+});
+
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
   const gear = GEAR[name](rig);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(["walk", "run", "attack", "walk_attack", "backpedal_attack"])("on every key of %s", (anim) => {
+  it.each(["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"])("on every key of %s", (anim) => {
     expect(clips[anim], anim).toBeDefined();
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
     expect(d.head, `${anim}: into the head`).toBeLessThan(0);
+  });
+});
+
+/**
+ * How far the weapon turns between two poses (degrees): the angle between its line, pommel to tip
+ * (`gear.weapon`), in one and in the other.
+ */
+function turnOf(rig, gear, a, b) {
+  const line = (p) => (posed(rig, p), world(gear.weapon.at(-1)).sub(world(gear.weapon[0])));
+  return line(a).angleTo(line(b)) * DEG;
+}
+
+// with the carry lowered (owner 2026-11-12: "站立時武器應該可以放下手微微下垂"), the blade turned
+// about 150° from the idle into the attack's first key and 99° from its last key back
+describe.each(CLASSES)("the $name's attack starts from the carry and settles back to it (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep)", ({ name, build, style, sheet }) => {
+  const rig = rigOf(build);
+  const gear = GEAR[name](rig);
+  const clips = clipsFor(style, sheet.animations);
+  const [carry, keys] = [clips.idle[0], clips.attack];
+
+  it(`turns the weapon at most ATTACK_TURN_LIMIT (${ATTACK_TURN_LIMIT}°) a frame from the carry into the wind-up and from the follow-through back to the carry`, () => {
+    const steps = [
+      ["carry → key 0", carry, keys[0]],
+      ["key 0 → key 1", keys[0], keys[1]],
+      ["key 4 → key 5", keys[4], keys[5]],
+      ["key 5 → key 6", keys[5], keys[6]],
+      ["key 6 → carry", keys[6], carry],
+    ];
+    for (const [step, a, b] of steps) expect(turnOf(rig, gear, a, b), `${name} ${step}`).toBeLessThanOrEqual(ATTACK_TURN_LIMIT);
   });
 });
 
@@ -364,8 +527,10 @@ describe.each([
   });
 
   it("winds the point up high on the right, above the shoulder, and cuts through to low on the left, below the hip, the strike between", () => {
-    const high = path.slice(0, STRIKE).findIndex((s, i) => s.tip.y > joints[i].shoulderR.y && s.tip.x < joints[i].shoulderR.x);
-    expect(high, "wound up above and right of the right shoulder").toBeGreaterThanOrEqual(0);
+    // the wind-up's height: its highest key before the strike (key 0 now rises from the low carry)
+    const high = path.slice(0, STRIKE).reduce((h, s, i) => (s.tip.y > path[h].tip.y ? i : h), 0);
+    expect(path[high].tip.y, "wound up above the right shoulder").toBeGreaterThan(joints[high].shoulderR.y);
+    expect(path[high].tip.x, "wound up right of the right shoulder").toBeLessThan(joints[high].shoulderR.x);
     const low = path.findIndex((s, i) => i > STRIKE && s.tip.y < joints[i].hips.y && s.tip.x > joints[i].hipL.x);
     expect(low, "through to below and left of the left hip").toBeGreaterThan(STRIKE);
     // the strike crosses the front between them
