@@ -655,7 +655,13 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md), 2026-11-12; outer
   outline only, on the owner's look the same day; one fill for every seen region, the owner's
   "目前的區域不特別亮", the same day; walls are lines and openings are gaps, corridors lined as rooms
-  are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)*
+  are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)* In its normal mode, in a run,
+  the town or a field, it stands at the very top of the top-right corner, 10px in from the top and
+  the right, with the fullscreen button at its left, top-aligned, 6px off, and the lines the column
+  stacks under it follow its bottom; enlarged, as the overlay or with no map, the button keeps the
+  corner and the column starts under it. *(Amended by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
+  §Change: Minimap at the top, fullscreen button beside it, the owner's "地圖移動到最上面
+  全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", 2026-11-12.)*
 - **Map overlay.** M steps the run's minimap through three modes: normal, **enlarged** and the
   **map overlay**. Enlarged is the same minimap half as large again, 324 × 162 at the same corner,
   drawn at its size and never stretched: the panel, its inset and its rim (2px) rounded to whole

@@ -808,16 +808,18 @@ body:has(.game-page) {
 }
 
 /* The fullscreen toggle (FS-ZAJMH R18): the canvas's top-right corner (its stage's, never the
-   frame's, where a bar may be), over the canvas and Phaser's DOM layer, in the web UI's palette
-   (ADR-0025) as a secondary button. Its inset and height are logical units (FullscreenButton sets
-   them from FULLSCREEN_BUTTON) times the canvas's CSS scale (--game-scale, mountViewport), so it
-   covers the same corner of the view at every fit and the run's top-right HUD can step clear of
-   it. Faded until hovered or focused. */
+   frame's, where a bar may be), or the normal minimap's left where that map holds the very top
+   (FS-56CKV §Change: Minimap at the top, fullscreen button beside it), over the canvas and Phaser's
+   DOM layer, in the web UI's palette (ADR-0025) as a secondary button. Its place and height are
+   logical units (FullscreenButton sets them from the place the scene hands it and
+   FULLSCREEN_BUTTON) times the canvas's CSS scale (--game-scale, mountViewport), so it covers the
+   same spot of the view at every fit and the top-right HUD can stand clear of it. Faded until
+   hovered or focused. */
 .fullscreen-button {
   --fullscreen-unit: calc(var(--game-scale, 1) * 1px);
   position: absolute;
-  top: calc(var(--fullscreen-inset) * var(--fullscreen-unit));
-  right: calc(var(--fullscreen-inset) * var(--fullscreen-unit));
+  top: calc(var(--fullscreen-top) * var(--fullscreen-unit));
+  right: calc(var(--fullscreen-right) * var(--fullscreen-unit));
   z-index: 2;
   /* a square around the icon: no words on the button, its name is the tooltip (asked 2026-11-05) */
   width: calc(var(--fullscreen-height) * var(--fullscreen-unit));

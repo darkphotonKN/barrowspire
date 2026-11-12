@@ -526,7 +526,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   in stage units (`stagePoint`). Not the HUD: HUD widgets keep to the view's edges by anchors.
 - **Game frame**: the DOM element that holds the canvas and Phaser's DOM container. It is what
   goes fullscreen. The fullscreen button sits over the canvas's top-right corner, never out in
-  the frame's bars.
+  the frame's bars; where the normal minimap holds the very top of that corner, it sits at the
+  minimap's left instead (FS-56CKV §Change: Minimap at the top, fullscreen button beside it).
 - **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
 
 ## Dev gallery terms (FS-1819Q)

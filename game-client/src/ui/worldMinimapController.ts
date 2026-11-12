@@ -1,17 +1,19 @@
 /**
  * The town's and a field's minimap on the HUD (FS-P0HSP §E, §F, §G): one {@link WorldMinimap},
  * built by the scene with the world's first state, in the mode this browser kept on the run's one
- * key; M steps it; it stands at the top of the top-right column and follows that corner; its dots
- * are the player's and the party's, and as the overlay it follows their drawn figures. The scene
- * hands it the plan to draw and says who owns the keys. Phaser-light: it draws through the
- * scene's stage and reads the view's corner, nothing more.
+ * key; M steps it; it stands at the top of the top-right column and follows that corner, and hands
+ * the fullscreen button its place beside it or in the corner (FS-56CKV §Change: Minimap at the
+ * top, fullscreen button beside it); its dots are the player's and the party's, and as the overlay
+ * it follows their drawn figures. The scene hands it the plan to draw and says who owns the keys.
+ * Phaser-light: it draws through the scene's stage and reads the view's corner, nothing more.
  */
 
 import type { Point } from "@/render/iso/projection";
-import { anchorAt } from "@/render/viewport";
-import { WorldMinimap, minimapRect, type MinimapPicture, type MinimapStage, type MinimapWorld } from "./minimap";
+import { viewport } from "@/render/viewport";
+import type { FullscreenButtonPlace } from "@/render/viewport/fullscreenButton";
+import { WorldMinimap, type MinimapPicture, type MinimapStage, type MinimapWorld } from "./minimap";
 import { nextMinimapMode, readMinimapMode, rememberMinimapMode, type MinimapMode, type MinimapModeStore } from "./minimapMode";
-import { TOP_RIGHT_HUD } from "./topRightColumn";
+import { topRightCorner } from "./topRightColumn";
 import { partyOnMap, type PartyOnMapState } from "./worldMap";
 
 /** What of a world's state the party's dots, and the overlay's figures, are read from. */
@@ -28,18 +30,22 @@ export interface WorldMinimapParts {
   store: MinimapModeStore;
   /** Backing px per logical px now (`viewport.renderScale`): the overlay's grid. */
   renderScale?: () => number;
+  /** Where the fullscreen button is stood: beside the normal map, else in its corner (FS-56CKV §Change C2–C4, C6). */
+  button: Pick<FullscreenButtonPlace, "hand" | "takeBack">;
 }
 
 export class WorldMinimapController {
   readonly map: WorldMinimap;
   private readonly store: MinimapModeStore;
+  private readonly button: WorldMinimapParts["button"];
   /** How it is shown (§F.32): the run's one remembered mode, read as the map is built; M steps it. */
   private mode: MinimapMode;
   /** The party members' entity ids in the last state: whose drawn figures the overlay's dots follow. */
   private allies: string[] = [];
 
-  constructor({ stage, world, store, renderScale }: WorldMinimapParts) {
+  constructor({ stage, world, store, renderScale, button }: WorldMinimapParts) {
     this.store = store;
+    this.button = button;
     this.map = new WorldMinimap(stage, world, renderScale);
     // the mode this browser kept, in a run, the town or a field (§F.32)
     this.mode = readMinimapMode(store);
@@ -55,12 +61,16 @@ export class WorldMinimapController {
     this.place();
   }
 
-  /** At the top of the top-right column, right-aligned on its x (§G.35); in overlay mode the corner stays empty. */
+  /**
+   * At the top of the top-right column, right-aligned on its x (§G.35): normal at the very top with
+   * the fullscreen button at its left, enlarged under the button in its corner; in overlay mode the
+   * corner holds only the button (FS-56CKV §Change C1–C4). Nothing stands under it (§G.36).
+   */
   place(): void {
     const panel = this.map.panel;
-    if (!panel) return;
-    const corner = anchorAt(TOP_RIGHT_HUD);
-    this.map.place(minimapRect(corner.x, corner.y, panel));
+    const corner = topRightCorner(viewport, panel && { ...panel, mode: this.mode });
+    if (corner.minimap) this.map.place(corner.minimap);
+    this.button.hand(this, corner.button);
   }
 
   /** The plan now; the map and marks are redrawn only if its key changed. */
@@ -94,8 +104,10 @@ export class WorldMinimapController {
     this.map.follow(at(self), { self: at(self), allies });
   }
 
+  /** Gone with its visit: every layer, and the button's place back to the corner (FS-56CKV §Change C6). */
   destroy(): void {
     this.map.destroy();
+    this.button.takeBack(this);
   }
 }
 
