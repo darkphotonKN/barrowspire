@@ -229,6 +229,12 @@ describe("wire guards", () => {
     expect(isPartyUpdate(at(7))).toBe(false);
   });
 
+  it("should take the roster's locked, and reject one that is not a boolean (FS-NCC9J §Change: Changing character leaves the party, C9)", () => {
+    expect(isPartyUpdate({ ...update(), locked: true })).toBe(true);
+    expect(isPartyUpdate({ ...update(), locked: false })).toBe(true);
+    expect(isPartyUpdate({ ...update(), locked: "yes" })).toBe(false);
+  });
+
   it("should accept a party_invite and reject a malformed one", () => {
     expect(isPartyInvite(invite("a"))).toBe(true);
     expect(isPartyInvite({ ...invite("a"), invite_id: 1 })).toBe(false);
