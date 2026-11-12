@@ -15,9 +15,11 @@ import {
   legsInGarments,
   mirroredGarment,
   outside,
+  throughCloth,
   wallAlong,
 } from "./clearance.js";
-import { K1 } from "../projection.js";
+import { K1, VIEW_DIR } from "../projection.js";
+import { FACINGS, yawFor } from "../facing.js";
 
 const mat = () => new THREE.MeshBasicMaterial();
 
@@ -308,7 +310,7 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
  * (classStyles.js), posed through a sheet's clips with its springs as the bake page runs them
  * (page/main.js `characterPoses`).
  */
-function dressed(cls) {
+function dressed(cls, { cut = "now" } = {}) {
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
   const [build, style] = { knight: [KNIGHT_BUILD, KNIGHT_STYLE], wizard: [WIZARD_BUILD, WIZARD_STYLE], mercenary: [MERCENARY_BUILD, MERCENARY_STYLE] }[cls];
   const rig = createRig(...build);
@@ -326,11 +328,14 @@ function dressed(cls) {
   } else if (cls === "wizard") {
     const gownCut = { top: hy - 0.005, bottom: 0.016, rTop: [0.108, 0.08], rBottom: [0.155, 0.138] };
     torso(rig, mat(), { waist: 0.76, neckW: 0.85 });
-    legs(rig, mat(), { under: gownCut });
+    legs(rig, mat(), { under: cut === "before" ? gownCut : { ...gownCut, torso: { waist: 0.76 } } });
     boots(rig, mat(), { top: 0.08 });
-    skirt(rig, mat(), { ...gownCut, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02 });
+    const robe = { ...gownCut, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 32, trail: 0.02, ...(cut === "before" ? {} : { kneeCover: 0.05 }) };
+    skirt(rig, mat(), robe);
+    // the scapular's panels: cut on the gown's rig (cast.js), or skinned apart as before 2026-11-12
+    const over = cut === "before" ? { panels: true, legFollow: 0.3 } : { over: robe };
     for (const arc of [[Math.PI / 2 - 0.5, Math.PI / 2 + 0.5], [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5]])
-      skirt(rig, mat(), { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, panels: true, legFollow: 0.3, segs: 16 });
+      skirt(rig, mat(), { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, segs: 16, ...over });
     belt(rig, mat(), mat(), { r: [0.056, 0.064], dy: 0.07, pouch: true });
   } else {
     const coat = { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112] };
@@ -358,5 +363,156 @@ describe("a leg is measured through the cloth where the cloth hangs (FS-HF0WW §
       const clips = legClearance(rig, posesOf(anim));
       expect(clips[anim]?.px ?? 0, `${cls} ${anim} frame ${clips[anim]?.frame}`).toBeLessThanOrEqual(clearanceLimit(1.5));
     }
+  });
+});
+
+/**
+ * The leg vertices the bake's camera sees through the cloth, per pose: in any of the 8 facings, a
+ * leg vertex no other part of the figure hides from the camera that is either
+ *  - a thigh or knee vertex (by its bind height: from 0.06 H under the knee up to the hip joint
+ *    less 0.03 H) lying outside the cloth hanging round it (on the level ray from the pelvis out
+ *    through it, cloth before it and none beyond: {@link throughCloth} above 0), so a knee out
+ *    through a robe counts, and a knee under a short hem, a heel kicked up under a lifted hem (no
+ *    cloth round it at its height) or a thigh seen through a split front (cloth beyond it) does not;
+ *  - or a vertex of the thigh's root (above that), which the torso, the garment's top and the belt
+ *    over it always hide.
+ */
+function seenThroughCloth(rig, poses) {
+  const fit = legsInGarments(rig);
+  const [, ty] = J(rig, "thighL");
+  const [, ky] = J(rig, "shinL");
+  const zoneOf = (y) => (y > ty - 0.03 ? "waist" : y > ky + 0.06 ? "thigh" : y > ky - 0.06 ? "knee" : "shin");
+  const occluders = [];
+  rig.root.traverse((o) => o.isMesh && occluders.push(o));
+  const world = (m) => {
+    const pos = m.geometry.attributes.position;
+    const v = new THREE.Vector3();
+    return Array.from({ length: pos.count }, (_, i) => (m.isSkinnedMesh ? m.getVertexPosition(i, v) : v.fromBufferAttribute(pos, i)).applyMatrix4(m.matrixWorld).clone());
+  };
+  const out = [];
+  for (const p of poses) {
+    p.apply();
+    rig.root.updateMatrixWorld(true);
+    const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
+    const covers = fit.covers.map((m) => {
+      const { rows, cols } = m.geometry.userData.tube;
+      const P = world(m);
+      return { rings: Array.from({ length: rows }, (_, r) => P.slice(r * cols, (r + 1) * cols)) };
+    });
+    const tris = [];
+    for (const m of occluders) {
+      const P = world(m);
+      const idx = m.geometry.index;
+      for (let i = 0; i < idx.count; i += 3) tris.push([P[idx.getX(i)], P[idx.getX(i + 1)], P[idx.getX(i + 2)]]);
+    }
+    const candidates = [];
+    for (const leg of fit.legs) {
+      const bind = leg.geometry.attributes.position;
+      world(leg).forEach((v, i) => {
+        const zone = zoneOf(bind.getY(i) / rig.H);
+        if (zone === "waist" || (zone !== "shin" && throughCloth(covers, axis, v) > 0)) candidates.push(v);
+      });
+    }
+    let seen = 0;
+    for (const facing of FACINGS) {
+      // the camera's direction in model space: the view turned back by the facing's yaw
+      const yaw = -yawFor(facing);
+      const d = new THREE.Vector3(VIEW_DIR[0] * Math.cos(yaw) + VIEW_DIR[2] * Math.sin(yaw), VIEW_DIR[1], -VIEW_DIR[0] * Math.sin(yaw) + VIEW_DIR[2] * Math.cos(yaw)).normalize();
+      const ray = new THREE.Ray();
+      const hit = new THREE.Vector3();
+      for (const v of candidates) {
+        ray.set(v, d);
+        if (!tris.some(([a, b, c]) => ray.intersectTriangle(a, b, c, false, hit) && hit.distanceTo(v) > 1e-4)) seen++;
+      }
+    }
+    out.push({ anim: p.anim, i: p.i, seen });
+  }
+  return out;
+}
+
+/**
+ * How far a panel worn over a garment (the mage's scapular over her gown) lies above it, least over
+ * every pose (1x px, model space; below 0 the garment beneath comes out through the panel): each
+ * panel vertex against the garment's surface where it lay over it in bind (the same height and
+ * angle round it), along that surface's outward normal as posed.
+ */
+function overGarment(rig, poses) {
+  const worn = [];
+  rig.root.traverse((o) => o.isSkinnedMesh && o.userData.garment && worn.push(o));
+  const [under, ...panels] = worn;
+  const { rows, cols, centres } = under.geometry.userData.tube;
+  const bind = under.geometry.attributes.position;
+  const rowY = Array.from({ length: rows }, (_, r) => bind.getY(r * cols));
+  // where each panel vertex lay on the garment beneath in bind: its row and column there, and the fractions between
+  const maps = panels.map((m) => {
+    const b = m.geometry.attributes.position;
+    const { rows: pr, cols: pc } = m.geometry.userData.tube;
+    return Array.from({ length: pr * pc }, (_, i) => {
+      const y = b.getY(i);
+      let r = 0;
+      while (r + 2 < rows && rowY[r + 1] > y) r++;
+      const fr = Math.min(1, Math.max(0, (rowY[r] - y) / (rowY[r] - rowY[r + 1])));
+      const cz = centres[r][2] + (centres[r + 1][2] - centres[r][2]) * fr;
+      let a = Math.atan2(b.getZ(i) - cz, -b.getX(i));
+      if (a < 0) a += 2 * Math.PI;
+      const fc = (a / (2 * Math.PI)) * (cols - 1);
+      const c = Math.min(cols - 2, Math.floor(fc));
+      return { i, r, fr, c, fc: fc - c };
+    });
+  });
+  let least = Infinity;
+  for (const p of poses) {
+    p.apply();
+    rig.root.updateMatrixWorld(true);
+    const at = (r, c) => under.getVertexPosition(r * cols + c, new THREE.Vector3()).applyMatrix4(under.matrixWorld);
+    const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
+    panels.forEach((m, k) => {
+      for (const q of maps[k]) {
+        const [a, b, c, d] = [at(q.r, q.c), at(q.r, q.c + 1), at(q.r + 1, q.c), at(q.r + 1, q.c + 1)];
+        const top = a.clone().lerp(b, q.fc);
+        const bottom = c.clone().lerp(d, q.fc);
+        const s = top.clone().lerp(bottom, q.fr);
+        const n = new THREE.Vector3().crossVectors(b.clone().sub(a).lerp(d.clone().sub(c), q.fr), bottom.clone().sub(top)).normalize();
+        const out = s.clone().sub(axis).setY(0);
+        if (n.dot(out) < 0) n.negate();
+        least = Math.min(least, m.getVertexPosition(q.i, new THREE.Vector3()).applyMatrix4(m.matrixWorld).sub(s).dot(n));
+      }
+    });
+  }
+  return least * K1;
+}
+
+describe("no leg is seen through the cloth (FS-HF0WW § Change: The guard measures a leg through the cloth, 2026-11-12: the owner's \"法師跑步會輕微破圖 膝蓋處會凸出衣服 腰部似乎也有一點\")", () => {
+  it.each(["knight", "wizard", "mercenary"])("the camera sees no hip, thigh or knee of the %s through the garment or the waist in any facing at rest, through the run, the walk and both attacks on the move", (cls) => {
+    const { rig, posesOf } = dressed(cls);
+    for (const anim of ["idle", "run", "walk", "walk_attack", "backpedal_attack"]) {
+      const worst = seenThroughCloth(rig, posesOf(anim)).reduce((m, f) => (f.seen > m.seen ? f : m), { seen: 0 });
+      expect(worst.seen, `${cls} ${anim} frame ${worst.i}`).toBe(0);
+    }
+  });
+
+  it("the guard holds the robe as it was cut before: its knee out through the gown in the run, where the rings find no band", () => {
+    // the gown and the scapular skinned apart: in the run the gown's ring centres kink at the knee
+    // and the rings claim no band for the leading knee, so the guard read it as uncovered
+    const { rig, posesOf } = dressed("wizard", { cut: "before" });
+    const seen = seenThroughCloth(rig, posesOf("run"));
+    expect(Math.max(...seen.map((f) => f.seen))).toBeGreaterThan(0);
+    const clips = legClearance(rig, posesOf("run"));
+    expect(clips.run.px).toBeGreaterThan(clearanceLimit(1.5));
+    expect(clearanceError("char_wizard_base", clips, { scale: 1.5 })).toMatch(/run frame \d+ by/);
+  });
+});
+
+describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉\")", () => {
+  it("the black gown never comes out through the teal scapular by a baked px, at rest, through the run, the walk and both attacks on the move", () => {
+    const { rig, posesOf } = dressed("wizard");
+    for (const anim of ["idle", "run", "walk", "walk_attack", "backpedal_attack"])
+      expect(overGarment(rig, posesOf(anim)), anim).toBeGreaterThan(-clearanceLimit(1.5));
+  });
+
+  it("measures the scapular as it was cut before, skinned apart from the gown: the gown's trailing hem behind it at rest, and further through it in the run", () => {
+    const { rig, posesOf } = dressed("wizard", { cut: "before" });
+    expect(overGarment(rig, posesOf("idle"))).toBeLessThan(-clearanceLimit(1.5));
+    expect(overGarment(rig, posesOf("run"))).toBeLessThan(overGarment(rig, posesOf("idle")));
   });
 });
