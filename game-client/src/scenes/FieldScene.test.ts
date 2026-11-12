@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
 // scene base class and the events the scene hangs its release on.
@@ -1298,6 +1298,8 @@ describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
 
     (field.init as (data?: { field?: string; arrival?: boolean }) => void)({ field: fieldId, arrival });
     field.create({ field: fieldId });
+    // the field's minimap paints a canvas texture the stub cannot hold; it has its own suite (FS-P0HSP)
+    Object.assign(field, { minimapStage: undefined });
 
     const veil = made.find((m) => m.kind === "rectangle" && m.depth === ARRIVAL_CARD.depth);
     const words = () => made.filter((m) => m.kind === "text").map((m) => String(m.args[2]));
@@ -1346,5 +1348,177 @@ describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
     field.relayoutHud();
 
     expect(relayout).toHaveBeenCalled();
+  });
+});
+
+const { MINIMAP: FIELD_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
+const { FIELD_CHART } = await import("@/ui/fieldChart");
+const { usePartyStore } = await import("@/stores/partyStore");
+const { FOREST_GATE, FOREST_WALLS } = await import("@/render/world/forest.fixture");
+
+// FS-P0HSP §B, §C.16, §D, §E, §F, §G (I-P0HSP-4): a field's minimap, charted as the player walks.
+describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
+  type Layer = { x: number; y: number; depth: number; destroyed: boolean; calls: string[] };
+  function layer(into: Layer[]) {
+    const l: Layer = { x: 0, y: 0, depth: 0, destroyed: false, calls: [] };
+    into.push(l);
+    const self: Record<string, unknown> = new Proxy(l as unknown as Record<string, unknown>, {
+      get: (t, key) => {
+        if (key in t) return t[key as string];
+        if (key === "setPosition") return (x: number, y: number) => ((l.x = x), (l.y = y), self);
+        if (key === "setDepth") return (d: number) => ((l.depth = d), self);
+        if (key === "destroy") return () => void (l.destroyed = true);
+        return () => (l.calls.push(String(key)), self);
+      },
+    });
+    return self;
+  }
+  const WALLS = FOREST_WALLS.map((r, i) => ({ entity_id: `s${i}`, house_id: `s${i}`, position: { x: r.x, y: r.y }, width: r.width, height: r.height }));
+  const GATE = { entity_id: "road", destination: "hub", position: FOREST_GATE, range: 80 };
+
+  function forestWithMap() {
+    const stage = fieldOnStage();
+    const field = stage.field as unknown as FieldUnderTest & Record<string, unknown>;
+    const layers: Layer[] = [];
+    const clock = { now: 0 };
+    Object.assign(field, {
+      field: "forlorn_forest",
+      size: FOREST_SIZE,
+      time: { delayedCall: vi.fn(), get now() { return clock.now; } },
+      minimapStage: { graphics: () => layer(layers), canvasImage: () => layer(layers) },
+      showClassHud: vi.fn(),
+    });
+    const store = { held: null as string | null, writes: [] as string[] };
+    field.minimapStore = () => ({ getItem: () => store.held, setItem: (_k: string, v: string) => void store.writes.push(v), removeItem: () => {} });
+    const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
+    field.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    (field as unknown as { bindMinimapKey(): void }).bindMinimapKey();
+    const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
+    const render = (position: { x: number; y: number }, others: unknown[] = []) =>
+      field.renderState({
+        world_type: "field",
+        current_player: { id: "self", entity_id: "me", position },
+        other_players: others,
+        walls: WALLS,
+        gates: [GATE],
+      });
+    const map = () => field.fieldMinimap as InstanceType<typeof WorldMinimap> | undefined;
+    const chart = () => field.chart as { charted(cx: number, cy: number): boolean; cols: number; rows: number };
+    /** A frame: the clock on, and the scene's update for the map alone. */
+    const frame = (ms: number) => {
+      clock.now += ms;
+      (field as unknown as { drawFieldMap(): void }).drawFieldMap();
+    };
+    return { ...stage, field, layers, clock, store, pressM, render, map, chart, frame };
+  }
+  const chartedCount = (c: { charted(cx: number, cy: number): boolean; cols: number; rows: number }) => {
+    let n = 0;
+    for (let cy = 0; cy < c.rows; cy++) for (let cx = 0; cx < c.cols; cx++) if (c.charted(cx, cy)) n++;
+    return n;
+  };
+
+  beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    usePartyStore.setState({ party: null });
+    vi.restoreAllMocks();
+  });
+
+  it("should build the map with the field's first state, at the column's top, the arrival charted at once (§G.35; Edge States)", () => {
+    const { render, map, layers } = forestWithMap();
+    expect(map()).toBeUndefined();
+    render({ x: 2900, y: 1480 });
+    expect(map()).toBeInstanceOf(WorldMinimap);
+    expect(layers).toHaveLength(5);
+    for (const l of layers) expect([l.x, l.y]).toEqual([1070 - FIELD_MINIMAP.width, 44]);
+    expect(map()!.redraws).toBe(1);
+  });
+
+  it("should chart round the player only, never round a party member (§D.24)", () => {
+    usePartyStore.setState({
+      party: {
+        party_id: "p1",
+        leader_id: "self",
+        members: [
+          { player_id: "self", name: "Aldric", class: "warrior", joined_at: "", where: "field" },
+          { player_id: "wren", name: "Wren", class: "archer", joined_at: "", where: "field" },
+        ],
+        size: 4,
+        reason: "joined",
+        subject_id: "wren",
+      } as never,
+    });
+    const { render, chart } = forestWithMap();
+    render({ x: 600, y: 600 }, [{ id: "wren", entity_id: "e-wren", position: { x: 2500, y: 1500 } }]);
+    const { cell } = FIELD_CHART;
+    expect(chart().charted(Math.floor(600 / cell), Math.floor(600 / cell))).toBe(true);
+    expect(chart().charted(Math.floor(2500 / cell), Math.floor(1500 / cell))).toBe(false);
+  });
+
+  it("should redraw at most 4 times a second walking uncharted Forest at full speed, and draw what was left once stopped (§D.28)", () => {
+    const { render, map, frame, chart } = forestWithMap();
+    let x = 200;
+    render({ x, y: 1000 });
+    // 3 s at 400 world px a second, a state every 33 ms, a frame every 16 ms
+    for (let t = 0; t < 3000; t += 33) {
+      x += (400 * 33) / 1000;
+      frame(16);
+      frame(17);
+      render({ x, y: 1000 });
+    }
+    expect(map()!.redraws).toBeLessThanOrEqual(1 + 3 * 4);
+    expect(map()!.redraws).toBeGreaterThan(4);
+    const shown = map()!.redraws;
+    frame(300);
+    frame(300);
+    // the last ground charted is drawn, then nothing more while nothing is new
+    expect(map()!.redraws).toBeLessThanOrEqual(shown + 1);
+    const settled = map()!.redraws;
+    frame(1000);
+    expect(map()!.redraws).toBe(settled);
+    expect(chartedCount(chart())).toBeGreaterThan(0);
+  });
+
+  it("should add nothing to the world for charting: its five layers, in the HUD band, and nothing more (§A.2, §D.23)", () => {
+    const { render, layers, frame } = forestWithMap();
+    for (let i = 0; i < 40; i++) {
+      render({ x: 200 + i * 40, y: 1000 });
+      frame(300);
+    }
+    expect(layers).toHaveLength(5);
+    for (const l of layers) expect(l.depth).toBe(FIELD_MINIMAP.depth);
+  });
+
+  it("should step M through the run's three modes on the stored key, and not on a repeat, while chat types, or before the map (§F.31–§F.33)", () => {
+    const { field, render, map, pressM, store } = forestWithMap();
+    pressM();
+    expect(store.writes).toEqual([]);
+    render({ x: 600, y: 600 });
+    pressM({ repeat: true });
+    field.chatWindow = { isTyping: () => true };
+    pressM();
+    expect(store.writes).toEqual([]);
+    field.chatWindow = undefined;
+    pressM();
+    pressM();
+    pressM();
+    expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
+    expect(map()!.mode).toBe("normal");
+  });
+
+  it("should build the map in the mode this browser kept (§F.32)", () => {
+    const { render, map, store } = forestWithMap();
+    store.held = "overlay";
+    render({ x: 600, y: 600 });
+    expect(map()!.mode).toBe("overlay");
+    expect(map()!.panel).toBeNull();
+  });
+
+  it("should go with the visit", () => {
+    const { field, render, layers, map } = forestWithMap();
+    render({ x: 600, y: 600 });
+    field.release("destroy");
+    expect(layers.every((l) => l.destroyed)).toBe(true);
+    expect(map()).toBeUndefined();
   });
 });
