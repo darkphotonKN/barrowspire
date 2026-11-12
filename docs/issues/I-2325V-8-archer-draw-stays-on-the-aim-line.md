@@ -1,6 +1,6 @@
 ---
 id: I-2325V-8
-status: open
+status: done
 implements: FS-2325V
 blocked_by: []
 labels: [ready-for-agent]
@@ -92,18 +92,18 @@ in line but 0.16 H over the shoulder. The pole is the owner's tune at the contac
 
 ## Acceptance Criteria
 
-- [ ] Today's measured values recorded in this issue before the re-key.
-- [ ] On every drawn key of the archer's `shot`: the bow hand ahead of the chest along the aim and
+- [x] Today's measured values recorded in this issue before the re-key.
+- [x] On every drawn key of the archer's `shot`: the bow hand ahead of the chest along the aim and
       near the aim line; the drawing hand on the arrow line, ending by the jaw or ear on the
       drawing side; neither drawing hand nor forearm across the body's centre plane; the elbow
       within the shoulder-height band and not behind the back.
-- [ ] The same holds for every frame of the archer's `walk_attack`.
-- [ ] The bow arm points along the facing at the draw; the string and the arrow still follow.
-- [ ] The Bone Archer's poses are unchanged (its clip tests and FS-B4SG9 §E R26 tests unchanged
+- [x] The same holds for every frame of the archer's `walk_attack`.
+- [x] The bow arm points along the facing at the draw; the string and the arrow still follow.
+- [x] The Bone Archer's poses are unchanged (its clip tests and FS-B4SG9 §E R26 tests unchanged
       and green); its atlas bytes are kept (checked at the bake in I-JS7C8-12).
-- [ ] The leg-clearance guard and the frame box still pass for the archer's clips (dry run; no
+- [x] The leg-clearance guard and the frame box still pass for the archer's clips (dry run; no
       atlas committed here).
-- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1` green (the bake's `.test.mjs` files included).
+- [x] `npx vitest run --maxWorkers=4 --minWorkers=1` green (the bake's `.test.mjs` files included).
 
 ## Blocked By
 
@@ -121,3 +121,7 @@ Acceptance Criteria 1–3, Edge States.
 - `game-client/tools/bake/page/characters/cast.js` (`bowInHand`, only if the measure needs it, and
   only for the delver archer)
 - `game-client/tools/bake/page/characters/clips.test.mjs`
+
+## Owner approval
+
+2026-11-12: the owner approved the archer's new draw ("角色目前可以") and asked for it on the Bone Archer ("拉弓姿勢可以用在怪物身上"), which I-2325V-9 did. The box "The Bone Archer's poses are unchanged" held when this issue landed; I-2325V-9 then changed them at the owner's ask.

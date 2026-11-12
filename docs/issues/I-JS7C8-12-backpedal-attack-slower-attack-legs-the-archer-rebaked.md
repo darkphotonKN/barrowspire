@@ -49,18 +49,18 @@ change together.
 
 ## Acceptance Criteria
 
-- [ ] `char_archer_base` carries `run` (8, looping), `walk_attack` and `backpedal_attack` (14 frames
+- [x] `char_archer_base` carries `run` (8, looping), `walk_attack` and `backpedal_attack` (14 frames
       at 24 fps, once), 8 directions, scale 2, trimmed, and still `walk`; no `backpedal`.
-- [ ] Clip tests: `backpedal_attack` and `walk_attack` last exactly as long as `attack`; their legs'
+- [x] Clip tests: `backpedal_attack` and `walk_attack` last exactly as long as `attack`; their legs'
       paces are at most 90 px/s; the backpedal legs' pace is within 150–220; the run's tests from
       slice 5 still pass.
-- [ ] The leg-clearance guard (FS-HF0WW §C) passes for `backpedal_attack` and the slowed
+- [x] The leg-clearance guard (FS-HF0WW §C) passes for `backpedal_attack` and the slowed
       `walk_attack`; neither widens the frame box.
-- [ ] I-2325V-8's draw test passes on the baked `attack`, `walk_attack` and `backpedal_attack`.
-- [ ] `npm run bake -- --check` is clean; every other atlas, the Bone Archer's included, keeps its
+- [x] I-2325V-8's draw test passes on the baked `attack`, `walk_attack` and `backpedal_attack`.
+- [x] `npm run bake -- --check` is clean; every other atlas, the Bone Archer's included, keeps its
       bytes.
-- [ ] Growth recorded (pages, dimensions, bytes, per cent) against main and against slice 5.
-- [ ] **HITL:** the owner approves the archer's contact sheet: `run`, `walk_attack`,
+- [x] Growth recorded (pages, dimensions, bytes, per cent) against main and against slice 5.
+- [x] **HITL:** the owner approves the archer's contact sheet: `run`, `walk_attack`,
       `backpedal_attack`, and the old `attack` beside the new. Not merged before.
 
 ## Blocked By
@@ -133,3 +133,7 @@ backward legs −79.7, one cycle 63.8 px each; across the 0.583 s swing at 0.75 
 (the crouched 67.67: only `backpedal_attack` grew, 16.37 → 16.85 MB, the walk's longer stride).
 The atlas is committed; the resident-page tests still fail on the second page (33, the owner's
 VRAM choice pending).
+
+## Owner approval
+
+2026-11-12: the owner approved the archer's contact sheet with the walk-run-backward `backpedal_attack` ("角色目前可以"). Still open: the VRAM choice. The archer is on two pages (84.7 MB RGBA, +88% over main), and the resident-page tests that name 17 pages fail until that choice is made.
