@@ -114,3 +114,13 @@ Re-baked once (FS-JS7C8 R2; owner 2026-11-12: "目前跑步時 武器擺動位�
 | this re-bake (1.5x) | 1 | 2804 × 4000 | 44.86 MB | 5,987,488 | 544 | 297 × 261 |
 
 +0.1 % RGBA against the bake before (44.81 MB); crown 75 as before. Old beside new (run, 8 facings) and an animated preview are in the session scratchpad `wizard-run-staff/mercenary/`.
+
+## Re-built (2026-11-12, agent): the run blade raised about 15°; waiting on the owner's contact sheet
+
+Re-baked once (Tunes FS-JS7C8 R2 `RUN_BLADE_ELEV`; owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度"): in the run the curved blade 7° to 24° above level (was 8° below to 10° above; `MERC_RUN_BLADE` 1.35 → 1.1 rad), in the normal grip, its point ahead of the hand and the body, never over the crown (0.91 H against 0.914), clear of the free arm, the torso and the head; the swing in unchanged (the blade 22° across the body at the front, was 18°). His coat passes the garment guard on every clip. Only the mercenary's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| mercenary sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 3428 × 3276 | 44.92 MB | 5,998,465 | 544 | 297 × 261 |
+
++0.1 % RGBA against the bake before (44.86 MB); crown 75 as before. The run old over new in 8 facings and an animated preview are in the session scratchpad `run-blade-up/`.

@@ -115,3 +115,13 @@ Re-baked once (FS-JS7C8 R2, R10; FS-HF0WW § Change: The guard measures a leg th
 | this re-bake (1.5x) | 1 | 3108 × 3648 | 45.35 MB | 7,363,119 | 512 | 276 × 228 |
 
 +2.2 % RGBA against the bake before (44.39 MB); crown 80 as before. Old beside new (run, attack, backpedal_attack, 8 facings), an animated preview and the heel and cloak at 4× (backpedal_attack and attack, back and side facings) are in the session scratchpad `wizard-run-staff/knight/`.
+
+## Re-built (2026-11-12, agent): the run blade raised about 15°; waiting on the owner's contact sheet
+
+Re-baked once (Tunes FS-JS7C8 R2 `RUN_BLADE_ELEV`; owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度"): in the run the blade 9° to 26° above level (was 5° below to 12° above; `RUN_BLADE` 1.2 → 0.95 rad), in the normal grip, its point ahead of the hand and the body, never over the crown (0.90 H against 0.914), clear of the shield, the free arm, the torso and the head; the swing in unchanged (the blade 23° across the body at the front, was 19°). The leg and cloak guards pass every clip. Only the knight's page and the manifest changed in its bake commit; `node tools/bake/bake.mjs --check` reports no changes.
+
+| knight sheet | pages | page px | RGBA | PNG bytes | frames | frame box |
+|---|---|---|---|---|---|---|
+| this re-bake (1.5x) | 1 | 2992 × 3792 | 45.38 MB | 7,345,414 | 512 | 276 × 228 |
+
++0.1 % RGBA against the bake before (45.35 MB); crown 80 as before. The run old over new in 8 facings and an animated preview are in the session scratchpad `run-blade-up/`.
