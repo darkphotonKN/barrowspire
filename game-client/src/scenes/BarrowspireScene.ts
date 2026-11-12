@@ -676,7 +676,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
-   * The corner row (FS-3EBCA): Menu (one Esc), Character (I), Party (T) and the Mailbox greyed, as
+   * The corner row (FS-3EBCA): Menu (one Esc), Inventory (I), Character (C), Party (T) and the Mailbox greyed, as
    * in every world outside the town. The ability card and the leave button stand above it.
    */
   private corner?: HudCorner;
@@ -3239,23 +3239,29 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The corner row (FS-3EBCA): each press the key's own path, one Esc, I or B, T; the Mailbox
-   * greyed, the mailbox being the town's (R9). Under the open gear overlay it answers nothing (R11).
+   * The corner row (FS-3EBCA): each press the key's own path, one Esc, I or B, C, T; the Mailbox
+   * greyed, the mailbox being the town's (R9). The overlay's panels stop above it, so it answers
+   * while they are open (R11).
    */
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
         { icon: "menu", press: () => this.pressEscape() },
         {
-          icon: "character",
+          icon: "inventory",
           press: () => {
             if (!this.menu) this.toggleInventory();
+          },
+        },
+        {
+          icon: "character",
+          press: () => {
+            if (!this.menu) this.toggleCharacter();
           },
         },
         { icon: "party", press: () => this.partyPanel?.toggle() },
         { icon: "mail", greyed: true },
       ],
-      covered: (x, y) => this.equipment?.covers(x, y) ?? false,
     });
   }
 

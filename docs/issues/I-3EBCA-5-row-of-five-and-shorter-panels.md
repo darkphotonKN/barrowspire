@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-5
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-4]
 labels: [ready-for-agent]
@@ -19,9 +19,9 @@ while the overlay is open.
 
 ## Acceptance Criteria
 
-- [ ] FS-3EBCA acceptance criteria 1–3, 5 and 9 as amended (five rects at 1080 and 1280, labels, the two presses, the row answering under the open overlay).
-- [ ] FS-HRH2J § Change acceptance criterion 9 (the panels' extent, whole bag and stash grids).
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-3EBCA acceptance criteria 1–3, 5 and 9 as amended (five rects at 1080 and 1280, labels, the two presses, the row answering under the open overlay).
+- [x] FS-HRH2J § Change acceptance criterion 9 (the panels' extent, whole bag and stash grids).
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 

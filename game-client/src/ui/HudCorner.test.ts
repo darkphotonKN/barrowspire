@@ -151,7 +151,8 @@ describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
     env.corner.relayout();
     expect(env.zoneAt("menu").x).toBe(1280 - 16 - 58);
     expect(env.corner.covers(1230, 680)).toBe(true);
-    expect(env.corner.covers(1030, 680)).toBe(false);
+    // left of the leftmost plate drawn (Party, 1008–1066 at 1280)
+    expect(env.corner.covers(1000, 680)).toBe(false);
   });
 });
 

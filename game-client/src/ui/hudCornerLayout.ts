@@ -1,7 +1,7 @@
 /**
  * The corner row's geometry and words (FS-3EBCA §A R1, R2, R5; §C R13): the panel icons in the
- * bottom-right corner of every world, from the right edge leftward Menu, Character, Party and
- * the Mailbox, each the envelope's plate, the same places in every world. Phaser-free, so the
+ * bottom-right corner of every world, from the right edge leftward Menu, Inventory, Character,
+ * Party and the Mailbox, each the envelope's plate, the same places in every world. Phaser-free, so the
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
@@ -19,11 +19,12 @@ export interface CornerView {
   height: number;
 }
 
-export type CornerIcon = "menu" | "character" | "party" | "mail";
+export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail";
 
-/** The row from the right edge leftward (R1). */
+/** The row from the right edge leftward (R1; the owner's row of five, 2026-11-12). */
 export const CORNER_ICONS: readonly CornerIcon[] = [
   "menu",
+  "inventory",
   "character",
   "party",
   "mail",
@@ -66,7 +67,8 @@ export const LEAVE_BUTTON_PLACE: Placement = {
 /** Each icon's name and key under the pointer (R5); the Mailbox has no key. */
 export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {
   menu: "Menu (Esc)",
-  character: "Character (I)",
+  inventory: "Inventory (I)",
+  character: "Character (C)",
   party: "Party (T)",
   mail: "Mailbox",
 };

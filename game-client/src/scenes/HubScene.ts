@@ -893,11 +893,10 @@ export class HubScene extends Phaser.Scene {
     this.corner = new HudCorner(this, {
       icons: [
         { icon: "menu", press: () => this.pressEscape() },
-        { icon: "character", press: () => this.toggleGear() },
+        { icon: "inventory", press: () => this.toggleGear() },
+        { icon: "character", press: () => this.toggleCharacter() },
         { icon: "party", press: () => this.partyPanel?.toggle() },
       ],
-      // the open gear overlay's right panel covers the row: a press there is the overlay's
-      covered: (x, y) => this.gear?.covers(x, y) ?? false,
     });
 
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)

@@ -608,7 +608,8 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
   }
 
   it("should keep every row, the header too, inside the panel on a short window (edge state: Small window)", () => {
-    const s = statsOnStage(worn({ weapon: sword }), 640, 100);
+    // the panels now stop 70 px above the bottom (FS-HRH2J § Change C12): a 200 px view is short
+    const s = statsOnStage(worn({ weapon: sword }), 640, 200);
     const { area, rows } = statsRowsShown(s);
 
     expect(rows.map((r) => r.content)).toContain("MAGE");

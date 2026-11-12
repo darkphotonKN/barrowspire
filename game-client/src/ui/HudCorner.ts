@@ -1,15 +1,15 @@
 /**
  * The corner row (FS-3EBCA): the panel icons in the bottom-right corner of every world, from the
- * right Menu (a gear: one Esc press), Character (a bust: the gear and bag overlay), Party (two
- * busts: the party panel) and the Mailbox. In the town the Mailbox is the mailbox's own envelope
+ * right Menu (a gear: one Esc press), Inventory (a bag: the inventory), Character (a bust: the
+ * character panel), Party (two busts: the party panel) and the Mailbox. In the town the Mailbox is the mailbox's own envelope
  * (`MailboxEnvelope`, FS-1GZGD § Change), which this row leaves its slot to; elsewhere it is drawn
  * here, greyed (R9).
  *
  * Each plate is the envelope's: a carved plate at 0.85 with its glyph in 1.5 px lines, the
  * interactable amber, brighter under the pointer, where a small label names the icon and its key
  * (R3, R5). Drawn in code from palette tokens (ADR-0013). The row decides nothing: what a press
- * does is the scene's, handed in per icon, and it answers no press while the gear overlay covers
- * it (R11).
+ * does is the scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
+ * while they are open too (R11; FS-HRH2J § Change C12).
  */
 
 import type Phaser from "phaser";
@@ -46,8 +46,6 @@ export interface CornerIconSpec {
 
 export interface HudCornerDeps {
   icons: CornerIconSpec[];
-  /** Whether the open gear overlay covers this screen point: the row then answers nothing (R11). */
-  covered?: (x: number, y: number) => boolean;
 }
 
 type Ink = Pick<
@@ -76,10 +74,7 @@ export class HudCorner {
   private readonly icons: DrawnIcon[];
   private readonly label: CornerLabel;
 
-  constructor(
-    scene: Phaser.Scene,
-    private readonly deps: HudCornerDeps,
-  ) {
+  constructor(scene: Phaser.Scene, deps: HudCornerDeps) {
     this.label = new CornerLabel(scene);
     this.icons = deps.icons.map((spec) => {
       const frame = cornerIconFrame(spec.icon, viewport);
@@ -123,21 +118,16 @@ export class HudCorner {
     }
   }
 
-  private coveredAt(f: Rect): boolean {
-    return this.deps.covered?.(f.x + f.width / 2, f.y + f.height / 2) ?? false;
-  }
-
   private press(icon: DrawnIcon): void {
-    if (icon.spec.greyed || this.coveredAt(icon.frame)) return;
+    if (icon.spec.greyed) return;
     icon.spec.press?.();
   }
 
   private hover(icon: DrawnIcon, on: boolean): void {
-    const shown = on && !this.coveredAt(icon.frame);
-    if (icon.hovered === shown) return;
-    icon.hovered = shown;
+    if (icon.hovered === on) return;
+    icon.hovered = on;
     this.draw(icon);
-    if (shown) this.label.show(icon.frame, labelOf(icon.spec));
+    if (on) this.label.show(icon.frame, labelOf(icon.spec));
     else this.label.hide();
   }
 
@@ -157,6 +147,7 @@ export class HudCorner {
     const cx = f.x + f.width / 2;
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
+    else if (icon.spec.icon === "inventory") drawBag(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "character") drawBust(g, cx, cy + 1, 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
@@ -177,6 +168,29 @@ export function drawGear(g: Ink, cx: number, cy: number, ink: number, alpha: num
       cy + Math.sin(a) * 13,
     );
   }
+}
+
+/**
+ * A bag (R3): a rounded pouch under a gathered neck tied with a cord, a flap across its top.
+ * The pouch is a half circle closed by a straight top, the neck a short gathered band above it.
+ */
+export function drawBag(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
+  const top = cy - 3;
+  const r = 11;
+  g.lineStyle(LINE_W, ink, alpha);
+  // the pouch: its rounded belly below the flap's line
+  g.beginPath();
+  g.arc(cx, top, r, 0, Math.PI, false);
+  g.closePath();
+  g.strokePath();
+  // the flap: a shallow curve from shoulder to shoulder, its point at the middle
+  g.lineBetween(cx - r, top, cx, top + 5);
+  g.lineBetween(cx, top + 5, cx + r, top);
+  // the gathered neck and the cord tied round it
+  g.lineBetween(cx - 4, top, cx - 3, top - 6);
+  g.lineBetween(cx + 4, top, cx + 3, top - 6);
+  g.lineBetween(cx - 5, top - 3, cx + 5, top - 3);
+  g.lineBetween(cx - 3, top - 6, cx + 3, top - 6);
 }
 
 /**

@@ -10,6 +10,7 @@
 
 import type { EquipmentSlot } from "@/types/gameState";
 import { BAG_CAPACITY } from "./bag";
+import { CORNER_ROW_CLEARANCE } from "./hudCornerLayout";
 import { STASH_CAPACITY } from "./stash";
 
 export interface Rect {
@@ -33,9 +34,8 @@ export const STASH_ROWS = STASH_CAPACITY / STASH_COLUMNS;
 
 /** How far a panel stands off its side edge: it may touch it, a hair off reads as a panel. */
 const EDGE_INSET = 8;
-/** The gap above each panel and its height, as fractions of the screen's height. */
+/** The gap above each panel, as a fraction of the screen's height. */
 const TOP_GAP = 0.04;
-const HEIGHT = 0.94;
 /** The clear middle band, as a fraction of the screen's width: inside R2's 20–30%. */
 const BAND = 0.26;
 
@@ -48,11 +48,15 @@ export interface OverlayLayout {
   band: { x: number; w: number };
 }
 
-/** Where the two mirrored panels sit on a screen of this size (R2). */
+/**
+ * Where the two mirrored panels sit on a screen of this size (R2): from a small gap at the top
+ * down to the corner row's clearance, so the row stays in view and pressable under them
+ * (FS-HRH2J § Change C12).
+ */
 export function overlayLayout(width: number, height: number): OverlayLayout {
   const w = Math.floor((width - Math.round(width * BAND)) / 2) - EDGE_INSET;
   const y = Math.round(height * TOP_GAP);
-  const h = Math.round(height * HEIGHT);
+  const h = height - CORNER_ROW_CLEARANCE - y;
   const left = { x: EDGE_INSET, y, w, h };
   const right = { x: width - EDGE_INSET - w, y, w, h };
   return { left, right, band: { x: left.x + w, w: right.x - (left.x + w) } };
@@ -243,6 +247,26 @@ export interface GearPanelLayout extends ItemGrid {
   slots: Record<EquipmentSlot, Rect>;
 }
 
+/** A gear slot's side and the gaps, for a bag cell this size. */
+function pitches(cell: number): { slot: number; slotGap: number; gap: number } {
+  return {
+    slot: Math.round(cell * SLOT_SCALE),
+    slotGap: Math.round(cell * SLOT_GAP_SCALE),
+    gap: Math.max(3, Math.round(cell * CELL_GAP_SCALE)),
+  };
+}
+
+/** How tall the paper doll and the bag's base rows stand, for a bag cell this size. */
+function dollAndBag(cell: number): number {
+  const { slot, slotGap, gap } = pitches(cell);
+  return (
+    DOLL_ROWS * slot +
+    (DOLL_ROWS - 1) * slotGap +
+    BAG_ROWS * cell +
+    (BAG_ROWS - 1) * gap
+  );
+}
+
 /**
  * The gear and bag panel's insides, for a bag of `count` items scrolled `scroll` rows down
  * (clamped), the purse line under the grid (FS-7TGZ3 R1). Cells are as large as the panel allows, so the 30 base cells never shrink for an
@@ -264,12 +288,13 @@ export function gearPanelLayout(
     (BAG_ROWS - 1) * CELL_GAP_SCALE;
   const byHeight = (panel.h - fixed) / perCell;
   const byWidth = innerW / (BAG_COLUMNS + (BAG_COLUMNS - 1) * CELL_GAP_SCALE);
-  const cell = Math.floor(
+  let cell = Math.floor(
     Math.min(MAX_CELL, Math.max(MIN_CELL, Math.min(byHeight, byWidth))),
   );
-  const slot = Math.round(cell * SLOT_SCALE);
-  const slotGap = Math.round(cell * SLOT_GAP_SCALE);
-  const gap = Math.max(3, Math.round(cell * CELL_GAP_SCALE));
+  // the slots and gaps round to whole px, so the estimate can overrun by a few: the cell steps
+  // down until the doll and all 30 base cells fit whole (FS-HRH2J § Change C13)
+  while (cell > MIN_CELL && dollAndBag(cell) > panel.h - fixed) cell--;
+  const { slot, slotGap, gap } = pitches(cell);
 
   const titleY = panel.y + PANEL_PAD;
   const dollTop = titleY + TITLE_H;

@@ -226,7 +226,7 @@ export class FieldScene extends Phaser.Scene {
   /** Invites waiting on an answer, top centre: an invite reaches a field too (FS-NCC9J R24). */
   private invitePrompt?: PartyInvitePrompt;
   private abilityHud?: AbilityHud;
-  /** The corner row (FS-3EBCA): Menu, Character, Party and the Mailbox greyed; the card above it. */
+  /** The corner row (FS-3EBCA): Menu, Inventory, Character, Party and the Mailbox greyed; the card above it. */
   private corner?: HudCorner;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -312,11 +312,11 @@ export class FieldScene extends Phaser.Scene {
     this.corner = new HudCorner(this, {
       icons: [
         { icon: "menu", press: () => this.pressEscape() },
-        { icon: "character", press: () => this.toggleGear() },
+        { icon: "inventory", press: () => this.toggleGear() },
+        { icon: "character", press: () => this.toggleCharacter() },
         { icon: "party", press: () => this.partyPanel?.toggle() },
         { icon: "mail", greyed: true },
       ],
-      covered: (x, y) => this.equipment?.covers(x, y) ?? false,
     });
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
