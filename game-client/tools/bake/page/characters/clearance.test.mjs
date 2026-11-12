@@ -61,6 +61,15 @@ describe("the leg-clearance geometry", () => {
     expect(outside(rings, centres, new THREE.Vector3(0.13, 1.1, 0))).toBeNull();
     expect(outside(rings, centres, new THREE.Vector3(0.13, 0.3, 0))).toBeNull();
   });
+
+  it("measures a point on the outside of a bend in the rings, past one band's end and before the next one's start, on the ring at the bend", () => {
+    // a garment bent 90° at its middle ring (y 0.5): the first band hangs down, the second runs out along +x
+    const rings = [ring(1, 0.1), ring(0.5, 0.1), ring(0.5, 0.1).map((p) => new THREE.Vector3(0.5, 0.5 + p.x, p.z))];
+    const centres = [new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0.5, 0), new THREE.Vector3(0.5, 0.5, 0)];
+    // below the first band's end and behind the second's start, out on the -x side of the bend
+    expect(outside(rings, centres, new THREE.Vector3(-0.13, 0.45, 0))).toBeGreaterThan(0);
+    expect(outside(rings, centres, new THREE.Vector3(-0.05, 0.45, 0))).toBeLessThan(0);
+  });
 });
 
 /** The archer's tunic, as cast.js cuts it, on a figure of his proportions. */
