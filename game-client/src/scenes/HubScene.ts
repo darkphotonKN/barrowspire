@@ -165,7 +165,7 @@ import {
   type WallSheets,
 } from "@/render/world/walls";
 import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
-import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, crispen, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import { canvasImage } from "@/ui/paintKit";
@@ -740,6 +740,8 @@ export class HubScene extends Phaser.Scene {
   private minimapStage?: MinimapStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
+  /** Where the fullscreen button is stood, beside the normal minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
   private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
@@ -2060,6 +2062,7 @@ export class HubScene extends Phaser.Scene {
         world: HUB_SIZE,
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
+        button: this.fullscreenButton,
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { anchorAt, viewport } from "@/render/viewport";
+import { FULLSCREEN_BUTTON, anchorAt, viewport } from "@/render/viewport";
+import { FullscreenButtonPlace } from "@/render/viewport/fullscreenButton";
 import { MINIMAP, minimapPanel, type MinimapStage } from "./minimap";
 import { MINIMAP_MODE_KEY } from "./minimapMode";
 import { TOP_RIGHT_HUD } from "./topRightColumn";
@@ -49,9 +50,13 @@ const TOWN = { width: 2000, height: 1000 };
 function controller(held: string | null = null) {
   const { stage, layers } = fakeStage();
   const { store, reach } = modeStore(held);
-  const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach });
-  return { minimap, layers, store };
+  const button = new FullscreenButtonPlace();
+  const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, button });
+  return { minimap, layers, store, button };
 }
+
+/** The button in the canvas's corner (FS-ZAJMH R18). */
+const CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
 
 beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 afterEach(() => {
@@ -82,6 +87,7 @@ describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
     minimap.cycle();
     expect(minimap.map.mode).toBe("normal");
     expect(layers[0].x).toBe(1070 - MINIMAP.width);
+    expect(layers[0].y).toBe(10);
     expect(store.writes).toEqual([
       [MINIMAP_MODE_KEY, "enlarged"],
       [MINIMAP_MODE_KEY, "overlay"],
@@ -93,7 +99,41 @@ describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
     const { minimap, layers } = controller();
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
     minimap.place();
-    for (const l of layers) expect([l.x, l.y]).toEqual([1270 - MINIMAP.width, 44]);
+    for (const l of layers) expect([l.x, l.y]).toEqual([1270 - MINIMAP.width, 10]);
+  });
+
+  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1–C4, C6 (owner 2026-11-12:
+  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角")
+  it.each([1080, 1280])(
+    "should stand the normal map at the very top, y 10, and hand the button the place at its left, at logical width %i (§Change C1, C2)",
+    (width) => {
+      viewport.set({ width, height: 720, renderScale: 1 });
+      const { layers, button } = controller();
+      for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - MINIMAP.width, 10]);
+      // the button's right edge 6 px left of the map's left, its top on the map's top
+      expect(button.current).toEqual({ top: 10, right: 10 + MINIMAP.width + MINIMAP.gap });
+    },
+  );
+
+  it.each([1080, 1280])("should hand the button the corner on M to enlarged, keep it there for the overlay, and beside the map again back at normal, at width %i (§Change C2–C4)", (width) => {
+    viewport.set({ width, height: 720, renderScale: 1 });
+    const { minimap, layers, button } = controller();
+    minimap.cycle();
+    expect(button.current).toEqual(CORNER);
+    expect(layers[0].y).toBe(44);
+    minimap.cycle();
+    expect(button.current).toEqual(CORNER);
+    minimap.cycle();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+  });
+
+  it("should hand the button the corner while built in the overlay, and take its place back when it goes (§Change C4, C6)", () => {
+    const { minimap, button } = controller("overlay");
+    expect(button.current).toEqual(CORNER);
+    minimap.cycle();
+    expect(button.current).toEqual({ top: 10, right: 232 });
+    minimap.destroy();
+    expect(button.current).toEqual(CORNER);
   });
 
   it("should dot the party from the state, and follow the overlay on the self's and the members' drawn figures (§E.29, §F.31)", () => {

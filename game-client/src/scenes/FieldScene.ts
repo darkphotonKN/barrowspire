@@ -69,7 +69,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
-import { afterFrameSetUp, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
 import { usePartyStore } from "@/stores/partyStore";
 import { useGameStore } from "@/stores/gameStore";
 import { browserFieldChartStore, type FieldChartStore } from "@/ui/fieldChart";
@@ -236,6 +236,8 @@ export class FieldScene extends Phaser.Scene {
   private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
+  /** Where the fullscreen button is stood, beside the normal minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   private abilityHud?: AbilityHud;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
@@ -700,6 +702,7 @@ export class FieldScene extends Phaser.Scene {
         world: this.size,
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
+        button: this.fullscreenButton,
       });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
       const owner = useGameStore.getState().activeCharacterId;

@@ -217,9 +217,11 @@ import {
   boundCamera,
   crispen,
   followWith,
+  fullscreenButtonPlace,
   relayoutOn,
   viewRect,
   viewport,
+  type FullscreenButtonPlace,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -926,6 +928,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private minimapMode: MinimapMode = "normal";
   /** Where this browser keeps the minimap's mode (FS-1SEF0 §A.4). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
+  /** Where the fullscreen button is stood, beside the normal minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
   /** The boss engaged with the party, latched across broadcasts (FS-48CTQ §D.10). */
@@ -995,6 +999,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * gone and are asked nothing (`SceneEnd`).
    */
   private resetRun(end: SceneEnd): void {
+    // the corner back to the fullscreen button, unless a later scene has stood it (FS-56CKV §Change C6)
+    this.fullscreenButton.takeBack(this);
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.floorMapUnsubscribe?.();
@@ -3934,17 +3940,21 @@ export class BarrowspireScene extends Phaser.Scene {
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
    * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
    * dev readout goes with it (§C.14, §C.18): in the minimap's bottom-left corner, else under the
-   * column's last line.
+   * column's last line. The normal minimap stands at the very top with the fullscreen button at its
+   * left; enlarged, in the overlay and with no minimap the button keeps the corner and the column
+   * starts under it (§Change: Minimap at the top, fullscreen button beside it).
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
     const floor = this.floorText;
+    const panel = minimap?.panel;
     const column = topRightColumn({
-      corner: anchorAt(TOP_RIGHT_HUD),
-      minimap: minimap?.panel ?? null,
+      view: viewport,
+      minimap: panel && minimap ? { ...panel, mode: minimap.mode } : null,
       floorHeight: floor?.visible ? floor.height : null,
       escapedHeight: this.escapedCountText?.height ?? 0,
     });
+    this.fullscreenButton.hand(this, column.button);
     if (column.minimap) minimap?.place(column.minimap);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);

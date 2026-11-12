@@ -186,3 +186,5 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 - The dev gallery's `EffectsPanel` (its own fixed 720×360 Phaser game).
 - Any change to game-server, map constants, the wire, or game rules.
 - Any change to the `Header`'s own design (it only hides in fullscreen because only the game frame is fullscreen).
+
+## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
