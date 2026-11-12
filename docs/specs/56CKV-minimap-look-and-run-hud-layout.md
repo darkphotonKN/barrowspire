@@ -617,3 +617,140 @@ C9. **The hover hint.** Hovering the button, or reaching it by keyboard (Shift+T
 The button's look, size, behaviour or key (but for the hint, C9); the minimap's look, size or modes; the top-left stack;
 the target frame and notices (the boss frame's overlap at 1080 is reported, not moved); any server
 change. *(Amended 2026-11-12, enlarged beside and hint.)*
+
+## Change: Map mode icon
+Status: work-order
+Date: 2026-11-12
+
+Owner request (Nick, 2026-11-12): "右上角地圖左下角多加小icon hover顯示可以切換大小或是模式(M)" (add a
+small icon at the bottom-left corner of the top-right map; on hover it shows that it switches the
+map's size or mode, with its key, M). Written `--from-thread` from the coordinator's defaults; no
+interview, no `challenge-me` pass. Each requirement says **owner**, **charter default** (the
+coordinator's brief) or **derived here**.
+
+**Why here.** This FS owns the minimap's chrome and look (§A), the top-right corner in every world
+(§Change: Minimap at the top, fullscreen button beside it, C1–C6) and the dev readout's place (§C,
+its only spec), and the readout must move out of the icon's way. What a press does is FS-1SEF0
+§A.2's M and FS-P0HSP §F.31–§F.33's, unchanged: the icon is a second way to press M, not a new
+behaviour of the modes. One change, here; FS-1SEF0 and FS-P0HSP carry pointer stubs. No thin line
+changes: the icon is the minimap's control, not a capability of its own.
+
+### Requirements
+
+D1. **The icon: a small code-drawn glyph, nested squares** (`MINIMAP_MODE_ICON`): a 7 × 7 ink of
+    two nested squares round a dark middle in `palette.interactable` (amber: it can be acted on,
+    the guideline's "Gameplay accent"), on a 1 px `palette.markerStroke` ring with the shape's own
+    dark filled, so a 9 × 9 dark tile like a map mark's (§A.6, `MINIMAP_GLYPH`), every rect on a
+    whole logical px. Hovered, the ink is `palette.interactableBright`. Tokens only, no new token,
+    no baked art. **(owner: "小icon"; charter default: the glyph, amber, brighter on hover; derived
+    here: the marks' build, so it sits in the map's own type)**
+D2. **Where, in normal and enlarged, in a run, the town and a field:** its 9 × 9 box `MINIMAP.inset`
+    (4) px in from the shown map's left and bottom edges, the same 4 px in either size (the icon
+    keeps its size, as the marks do, FS-1SEF0 §B.9). At logical width 1080: normal, the map x
+    854–1070 y 10–118, the box x 858–867 y 105–114; enlarged, the map x 746–1070 y 10–172, the box
+    x 750–759 y 159–168; at 1280 each x 200 more. The floor's diamond leaves the panel's
+    bottom-left corner empty (Facts: floor 1's fit; the town's and fields' worlds project 2:1 too),
+    so the icon covers no ground, line, mark or dot. **(owner: "右上角地圖左下角")**
+D3. **In the overlay: in the top-right corner, left of the fullscreen button.** With the overlay up
+    the corner holds no map and the button stands in its corner (§Change C4), x width − 26 to
+    width − 6, y 6–26. The icon's box stands 6 px (`MINIMAP.gap`) left of the button, centred on
+    its height: x width − 41 to width − 32, y 12–21 (1039–1048 at 1080, 1239–1248 at 1280).
+    **(charter default offered "the same relative corner of the overlay map, or else the
+    overlay's top-left"; derived here, the corner beside the button: the overlay's map moves with
+    the player and its corners leave the view, and the view's own corners hold the XP bar's stack
+    and the chat window; beside the button is where the map stood a press ago, clear of the column
+    under it, the target frame and the boss's)**
+D4. **Nowhere without a minimap:** no icon is drawn and none takes a press on a run's floor without
+    regions, a dungeon floor before its map is in, the town or a field before its first state, and
+    every scene with no minimap. It is built with its minimap and goes with it (a floor change,
+    leaving the run, the town or the field). **(charter default)**
+D5. **Its hit area is its own:** the box grown 2 px each side, 13 × 13, inside the map in a panel
+    mode (never on its rim). Only a press or a hover inside it is the icon's: everything outside,
+    the rest of the map included, reaches the game exactly as today (the minimap itself takes no
+    input). It hears no wheel and starts no drag. A press already another panel's first (the open
+    gear overlay, the chat window, the party panel, an invite prompt, in the order each scene
+    checks them) stays that panel's. **(charter default; derived here: 2 px, since a 9 px target is
+    small and 13 px still sits inside the map)**
+D6. **A press on it is M:** a primary press steps the mode exactly as M does, normal → enlarged →
+    overlay → normal, written to `barrowspire_minimap_mode` (FS-1SEF0 §A.2, §A.4; FS-P0HSP §F.31,
+    §F.32), the corner, the button and the column re-laid as on M, under M's own guards in that
+    scene: in a run not while the menu is open or chat is typing (FS-1SEF0 §A.2); in the town not
+    while chat is typing or the menu, a dialogue card or the letter panel owns the keys; in a field
+    not while chat is typing (FS-P0HSP §F.33). A press in its hit area, any button, guarded or not,
+    is never an attack, a cast, a Shadow Shot hold or a loot; a guarded one does nothing at all.
+    **(owner: "可以切換大小或是模式(M)"; charter default: same guards, same key)**
+D7. **The hover hint.** While the pointer is in the hit area and a press would act (no guard
+    holds), the ink brightens and a one-line hint shows: **"Map mode (M)"** (one mode key for the
+    cycle; terse, as the fullscreen button's). It goes when the pointer leaves the hit area or the
+    canvas, or a guard comes to hold. Its look is the fullscreen button's hint (§Change C9) in the
+    game palette, since it is drawn on the canvas (ADR-0025): the canvas item tip's ground
+    (`palette.mapEdge` at 0.97, a 1 px `palette.frame` hairline at 0.5, a 6 px corner, the
+    `tipGround` the hint's look was taken from), `palette.hudText` in the body face at 12 px,
+    padding 8 × 3, whole logical px. It stands **to the left of the map**, its right edge 6 px left
+    of the map's left edge and its middle on the icon's, never over the map; in the overlay 6 px
+    left of the icon. Drawn over the HUD (`MINIMAP.depth` + 2), under the gear overlay, notices and
+    the menu; it takes no input. The canvas takes no keyboard focus, so the icon is not reached by
+    Tab; its key, M, is the keyboard's way and the hint names it. **(owner: "hover顯示";
+    charter default: the words and the fullscreen hint's style; derived here: the side, the depth,
+    no focus)**
+D8. **The dev readout moves out of its way:** in a panel mode it stands 4 px inside the shown map's
+    **bottom-right** corner, right-aligned (its bottom-right on the point), normal and enlarged;
+    with the overlay up, or no map, 4 px under the column's last line as before (§C.18). Nothing
+    else on the map moves. This replaces §C.14's bottom-left, and FS-1SEF0 §B.11's and §D.22's
+    "bottom-left". **(charter default)**
+D9. **Docs and gallery:** the design guideline's Minimap bullet gains a sentence for the icon and
+    the readout's corner; `game-client/CONTEXT.md` gains **Map mode icon**. No dev-gallery card:
+    HUD chrome is not a tracked family (FS-1819Q R3, §E.24). **(derived here)**
+
+### Acceptance Criteria
+
+- [ ] Normal and enlarged, at logical widths 1080 and 1280, in a run, the town and a field: the
+      icon's 9 × 9 box at (map.x + 4, map.bottom − 13); its hit area 13 × 13 round it; at 1080 the
+      box x 858–867 y 105–114 normal and x 750–759 y 159–168 enlarged.
+- [ ] Overlay: the box at x width − 41, y 12, left of the fullscreen button in its corner; no icon
+      on a floor without regions, before a floor's map, before the town's or a field's first state.
+- [ ] The glyph: 7 × 7 nested squares in `interactable` on a 1 px `markerStroke` ring with the dark
+      filled, every rect on whole px inside its box; `interactableBright` while hovered; the ink
+      3:1 or better against the ring.
+- [ ] A primary press in the hit area steps the mode as M does and writes the stored mode; under M's
+      guards (run: menu, chat typing; town: chat, menu, dialogue, letter panel; field: chat) it
+      does nothing; in a run and a field it is never an attack or cast; a press 1 px outside the
+      hit area is the game's as today.
+- [ ] Hover in the hit area shows "Map mode (M)", to the left of the map (right edge map.x − 6) or of
+      the icon in the overlay, centred on the icon, item-tip ground and tokens, depth over the HUD;
+      it goes on leaving the hit area or the canvas, and is not shown while a guard holds.
+- [ ] The dev readout 4 px inside the map's bottom-right, right-aligned, normal and enlarged, at 1080
+      and 1280; under the column in the overlay and with no map.
+- [ ] The guideline's Minimap bullet and `CONTEXT.md`'s **Map mode icon**; no gallery card.
+- [ ] No raw colour literal added; the token fence passes.
+- [ ] Typecheck, lint and the full vitest suite pass.
+- [ ] Nick's browser check: a run's floor 1, the town and a field, 1080 and 1280 wide, each mode:
+      the icon's look and place, the hint on hover, a click stepping the mode as M does, the
+      readout in the bottom-right, and the overlay's icon beside the button.
+
+### Edge States
+
+- **A press on the icon while chat is typing:** nothing happens, not even an attack; the key M
+  would type a letter there, and the press keeps the same rule. **(derived here)**
+- **The hint beside the normal map at 1080 and a top-centre notice wider than 434 px:** the
+  notice (2000) draws over the hint's left end for its seconds. Accepted: both are brief.
+- **The hint over the town's invite prompts or ready check at 1080** (x 592–892 from y 92, under
+  the map's left, FS-P0HSP §G.38): while hovered, the hint draws over the prompt's right end; it
+  goes when the pointer leaves. Accepted.
+- **The hint over the arrival card at 1080 with the map enlarged:** the card's widest line ends at
+  x 720 and the hint starts near x 650 at y about 153–174; while hovered the hint is on top.
+  Accepted, as the card is gone in seconds.
+- **A press that steps to the overlay:** the icon jumps to the corner beside the button under the
+  pointer's old place; the pointer is then outside it and the hint goes. Accepted: the map jumps
+  too (§Change, "M pressed").
+- **The gear overlay open over the corner:** a press there is the overlay's; the icon neither
+  steps nor brightens.
+- **Render scales 1.5 and 2:** the icon's rects are on whole logical px, crisp at 1 and 2 and
+  blended at 1.5 as the normal minimap's glyphs are; the hint's text is rasterised at the render
+  scale of now and again on re-layout (FS-ZAJMH R5).
+
+### Out of Scope
+
+A keybinding setting; a separate control per mode; a menu of modes; keyboard focus on the canvas;
+the minimap's look, sizes or modes; the fullscreen button and its hint; the target frame and
+notices; any server change.
