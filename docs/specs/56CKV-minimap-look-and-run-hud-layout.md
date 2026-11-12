@@ -694,10 +694,16 @@ D7. **The hover hint.** While the pointer is in the hit area and a press would a
     charter default: the words and the fullscreen hint's style; derived here: the side, the depth,
     no focus)**
 D8. **The dev readout moves out of its way:** in a panel mode it stands 4 px inside the shown map's
-    **bottom-right** corner, right-aligned (its bottom-right on the point), normal and enlarged;
-    with the overlay up, or no map, 4 px under the column's last line as before (§C.18). Nothing
-    else on the map moves. This replaces §C.14's bottom-left, and FS-1SEF0 §B.11's and §D.22's
-    "bottom-left". **(charter default)**
+    **top-right** corner, right-aligned (its top-right on the point), normal and enlarged; with the
+    overlay up, or no map, 4 px under the column's last line as before (§C.18). Nothing else on the
+    map moves. This replaces §C.14's bottom-left, and FS-1SEF0 §B.11's and §D.22's "bottom-left".
+    *(Amended 2026-11-12 before the build, top-right: was "bottom-right", the brief's example. A
+    world wider than it is deep, floor 1's 72 × 48 cells, projects to a diamond whose bottom vertex
+    stands right of the middle (x 128 of 216), so the panel's bottom-right corner leaves a small
+    empty triangle (84 × 40) and the readout's widest line would lie over the floor by the bottom
+    vertex. The diamond is symmetric about its centre, so the top-right corner's empty triangle is
+    the bottom-left's own, which the readout was measured clear in (§C.17).)* **(charter default:
+    out of the icon's way; derived here: the corner)**
 D9. **Docs and gallery:** the design guideline's Minimap bullet gains a sentence for the icon and
     the readout's corner; `game-client/CONTEXT.md` gains **Map mode icon**. No dev-gallery card:
     HUD chrome is not a tracked family (FS-1819Q R3, §E.24). **(derived here)**
@@ -719,14 +725,15 @@ D9. **Docs and gallery:** the design guideline's Minimap bullet gains a sentence
 - [ ] Hover in the hit area shows "Map mode (M)", to the left of the map (right edge map.x − 6) or of
       the icon in the overlay, centred on the icon, item-tip ground and tokens, depth over the HUD;
       it goes on leaving the hit area or the canvas, and is not shown while a guard holds.
-- [ ] The dev readout 4 px inside the map's bottom-right, right-aligned, normal and enlarged, at 1080
-      and 1280; under the column in the overlay and with no map.
+- [ ] The dev readout 4 px inside the map's top-right, right-aligned, normal and enlarged, at 1080
+      and 1280, its widest line above floor 1's diamond's upper-right edge; under the column in the
+      overlay and with no map. *(Amended 2026-11-12 before the build, top-right.)*
 - [ ] The guideline's Minimap bullet and `CONTEXT.md`'s **Map mode icon**; no gallery card.
 - [ ] No raw colour literal added; the token fence passes.
 - [ ] Typecheck, lint and the full vitest suite pass.
 - [ ] Nick's browser check: a run's floor 1, the town and a field, 1080 and 1280 wide, each mode:
       the icon's look and place, the hint on hover, a click stepping the mode as M does, the
-      readout in the bottom-right, and the overlay's icon beside the button.
+      readout in the top-right, and the overlay's icon beside the button.
 
 ### Edge States
 
@@ -745,6 +752,8 @@ D9. **Docs and gallery:** the design guideline's Minimap bullet gains a sentence
   too (§Change, "M pressed").
 - **The gear overlay open over the corner:** a press there is the overlay's; the icon neither
   steps nor brightens.
+- **An archer drawing a Shadow Shot:** a press on the icon is ignored, as every other press is
+  while the hold lasts (FS-JTNPR req 16); M still steps the mode. **(derived here)**
 - **Render scales 1.5 and 2:** the icon's rects are on whole logical px, crisp at 1 and 2 and
   blended at 1.5 as the normal minimap's glyphs are; the hint's text is rasterised at the render
   scale of now and again on re-layout (FS-ZAJMH R5).
