@@ -621,6 +621,52 @@ describe("MailboxEnvelope (R33, R35)", () => {
   });
 });
 
+// FS-1GZGD § Change: The envelope toggles the letter panel and stands in the corner row. I-1GZGD-12.
+describe("MailboxEnvelope (FS-1GZGD § Change C1–C3)", () => {
+  it("closes the open panel on a second press, and opens it again on a third (C1)", async () => {
+    const { scene, store, zones } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(true);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(true);
+  });
+
+  it("closes the open panel even while something else is up, and opens nothing then (C1)", () => {
+    const { scene, store, zones } = setup();
+    let blocked = false;
+    new MailboxEnvelope(scene, { store, blocked: () => blocked });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    blocked = true;
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+    plate.handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
+  });
+
+  it("stands in the corner row's Mailbox slot, left of Menu, Character and Party (C2)", () => {
+    const { scene, store, zones } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    expect(plate.rect).toEqual({ x: 808, y: 658, w: 58, h: 46 });
+    expect(envelopeFrame({ width: 1280, height: 720 })).toEqual({ x: 1008, y: 658, width: 58, height: 46 });
+  });
+
+  it("names itself \"Mailbox\" under the pointer, and lets the label go on leaving (C3)", () => {
+    const { scene, store, zones, shown } = setup();
+    new MailboxEnvelope(scene, { store, blocked: () => false });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerover();
+    expect(shown()).toContain("Mailbox");
+    plate.handlers.pointerout();
+    expect(shown()).not.toContain("Mailbox");
+  });
+});
+
 describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
   it("fetches the summary on town entry, and drops mail_arrived once the town is left", async () => {
     const { scene, store, api } = setup();

@@ -11,6 +11,7 @@ import {
   bodyScrollAt,
   type Rect,
 } from "./letterPanelLayout";
+import { cornerIconFrame } from "./hudCornerLayout";
 
 // FS-1GZGD R33, R36, R37, R39 (D11, D14). I-1GZGD-6 and -7: where the envelope and the letter panel's parts sit.
 
@@ -28,10 +29,10 @@ const overlaps = (a: Rect, b: Rect) =>
   a.y < b.y + b.height &&
   b.y < a.y + a.height;
 
-describe("envelopeFrame (R33, D11)", () => {
-  it("sits at the bottom-right of the screen", () => {
+describe("envelopeFrame (R33, D11; FS-1GZGD § Change C2: the corner row's Mailbox slot)", () => {
+  it("sits at the bottom of the screen, the corner row's leftmost plate", () => {
     const env = envelopeFrame(SCREEN);
-    expect(env.x + env.width).toBe(SCREEN.width - ENVELOPE_MARGIN);
+    expect(env).toEqual(cornerIconFrame("mail", SCREEN));
     expect(env.y + env.height).toBe(SCREEN.height - ENVELOPE_MARGIN);
     expect(inside(env, { x: 0, y: 0, ...SCREEN })).toBe(true);
   });
