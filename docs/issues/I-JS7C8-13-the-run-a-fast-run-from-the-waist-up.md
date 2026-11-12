@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-13
-status: in-progress
+status: done
 implements: FS-JS7C8
 blocked_by: []
 labels: [ready-for-agent]
@@ -37,7 +37,7 @@ run beside the new on the contact sheet (ADR-0021 §5).
       of the measure, 194.
 - [x] The archer's bow arm: swing within 0.26 rad, elbow above −0.5 rad, in every frame.
 - [x] The leg-clearance guard passes the archer's run at bake.
-- [ ] **HITL:** the owner approves the archer's new run beside the old on the contact sheet.
+- [x] **HITL:** the owner approves the archer's new run beside the old on the contact sheet.
 
 ## Blocked By
 
@@ -68,3 +68,7 @@ archer at 1.5x in I-HF0WW-8; the leg-clearance guard passes. The comparison for 
 (2x) run beside the new (1.5x), 8 facings, at game size and ×2, plus an animated preview, in the
 session scratchpad `archer-1p5x-final/` (`run-old-vs-new-1x.png`, `run-old-vs-new-2x.png`,
 `preview-run-old-vs-new.html`).
+
+## Owner approval
+
+2026-11-12: the owner approved the archer at 1.5x with the new run after playing it ("好").
