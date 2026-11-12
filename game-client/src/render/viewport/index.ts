@@ -50,5 +50,7 @@ export {
   FULLSCREEN_CORNER,
   FullscreenButtonPlace,
   fullscreenButtonPlace,
+  fullscreenHintSide,
   type FullscreenButtonSpot,
+  type FullscreenHintSide,
 } from "./fullscreenButton";

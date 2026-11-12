@@ -740,7 +740,7 @@ export class HubScene extends Phaser.Scene {
   private minimapStage?: MinimapStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** Where the fullscreen button is stood, beside the normal minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
   private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
   private unsubscribeGoldTaken?: () => void;

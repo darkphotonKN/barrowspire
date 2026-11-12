@@ -928,7 +928,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private minimapMode: MinimapMode = "normal";
   /** Where this browser keeps the minimap's mode (FS-1SEF0 §A.4). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** Where the fullscreen button is stood, beside the normal minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
+  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
   private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
@@ -3940,9 +3940,10 @@ export class BarrowspireScene extends Phaser.Scene {
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
    * that; where no minimap is shown, or the floor indicator has no label, the rest closes up. The
    * dev readout goes with it (§C.14, §C.18): in the minimap's bottom-left corner, else under the
-   * column's last line. The normal minimap stands at the very top with the fullscreen button at its
-   * left; enlarged, in the overlay and with no minimap the button keeps the corner and the column
-   * starts under it (§Change: Minimap at the top, fullscreen button beside it).
+   * column's last line. The minimap, normal or enlarged, stands at the very top with the fullscreen
+   * button at its left; in the overlay and with no minimap the button keeps the corner and the
+   * column starts under it (§Change: Minimap at the top, fullscreen button beside it, as amended
+   * 2026-11-12).
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
