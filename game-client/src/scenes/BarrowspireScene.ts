@@ -1175,8 +1175,8 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!keyboard) return;
     // the run's end locks the keyboard, so the next run would start unable to move
     keyboard.enabled = true;
-    // Phaser's stop destroyed the run's keys already and kept their captures: Tab's would stop
-    // focus moving in the hub and its DOM overlays
+    // Phaser's stop destroyed the run's keys already and kept their captures: each would stay
+    // prevented in the hub and its DOM overlays
     releaseCaptures(keyboard, [
       ...Object.values(this.cursors ?? {}),
       ...Object.values(this.wasd ?? {}),
@@ -1198,9 +1198,10 @@ export class BarrowspireScene extends Phaser.Scene {
       right: this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D),
     };
 
-    // Tab: the next player to watch (FS-QPDKN req 8). Captured, so the browser does not move
-    // focus off the canvas; nothing happens unless this player is spectating.
-    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, true);
+    // Tab: the next player to watch (FS-QPDKN req 8); nothing happens unless this player is
+    // spectating. Not captured: the game frame keeps Tab from moving focus while nothing on the
+    // page holds it (keepTab, src/components/gameFocus.ts), so on a focused page control it moves on.
+    this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, false);
     this.tabKey.on("down", () => this.cycleWatched());
 
     // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter

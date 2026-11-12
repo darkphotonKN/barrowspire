@@ -16,6 +16,7 @@ import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
 import { releaseGame } from "./releaseGame";
+import { keepTab, takeFocusOnPress } from "./gameFocus";
 import GameFrame from "./GameFrame";
 import { installCrispText } from "@/render/crispText";
 import {
@@ -42,6 +43,7 @@ export default function PhaserGame() {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const unbindRef = useRef<(() => void) | null>(null);
+  const releaseFocusRef = useRef<(() => void) | null>(null);
 
   const initGame = useCallback(() => {
     if (gameRef.current || !containerRef.current || !frameRef.current) return;
@@ -109,6 +111,15 @@ export default function PhaserGame() {
     // banner, fullscreen) or a density change (another monitor), no reload (R10, R11, R16)
     unbindRef.current = mountViewport(game, frame);
 
+    // Tab stays in the game while nothing on the page holds focus, and a press on the game takes
+    // focus back from a page control (gameFocus.ts); both let go as the page unmounts
+    const releaseTab = keepTab(game, window, document);
+    const releasePress = takeFocusOnPress(containerRef.current, document);
+    releaseFocusRef.current = () => {
+      releaseTab();
+      releasePress();
+    };
+
     // THE transition. The server says which world the player is in — on entering
     // the hub, on a match, on returning, and on reconnecting after a refresh —
     // and the scene follows. One handler at the Phaser bridge rather than one
@@ -154,6 +165,8 @@ export default function PhaserGame() {
       cancelAnimationFrame(raf);
       unbindRef.current?.();
       unbindRef.current = null;
+      releaseFocusRef.current?.();
+      releaseFocusRef.current = null;
       if (gameRef.current) {
         // the keyboard goes back to the page now, not on the destroy's next frame (releaseGame.ts)
         releaseGame(gameRef.current, socketManager);
