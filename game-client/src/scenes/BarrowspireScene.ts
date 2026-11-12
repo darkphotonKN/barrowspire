@@ -1227,8 +1227,27 @@ export class BarrowspireScene extends Phaser.Scene {
       return;
     }
 
+    const controls = [
+      ["WASD", "Move"],
+      ["E", "Interact"],
+      ["F", "Take Item"],
+      ["I / B", "Inventory"],
+      ["C", "Character"],
+      ["T", "Party"],
+      ["ENTER", "Chat"],
+      ["Q", "Close Panel"],
+      ["LEFT CLICK", "Attack"],
+      // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
+      ["RIGHT CLICK", ABILITY_COPY[this.ownClass()]?.name ?? "Class ability"],
+      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
+      ["H", "Toggle Controls"],
+      ["ESC", "Menu"],
+    ];
+
     const panelW = 260;
-    const panelH = 300;
+    // the title, a 20 px row per control, and the hint under them, so a row added never runs
+    // into the hint
+    const panelH = 44 + controls.length * 20 + 32;
     const x = viewport.width / 2;
     const y = viewport.height / 2;
 
@@ -1250,21 +1269,6 @@ export class BarrowspireScene extends Phaser.Scene {
     title.setOrigin(0.5);
     children.push(title);
 
-    const controls = [
-      ["WASD", "Move"],
-      ["E", "Interact"],
-      ["F", "Take Item"],
-      ["I / B", "Gear and bag"],
-      ["T", "Party"],
-      ["ENTER", "Chat"],
-      ["Q", "Close Panel"],
-      ["LEFT CLICK", "Attack"],
-      // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
-      ["RIGHT CLICK", ABILITY_COPY[this.ownClass()]?.name ?? "Class ability"],
-      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
-      ["H", "Toggle Controls"],
-      ["ESC", "Menu"],
-    ];
 
     let curY = -panelH / 2 + 44;
     for (const [key, action] of controls) {
@@ -3030,12 +3034,16 @@ export class BarrowspireScene extends Phaser.Scene {
   // === 道具欄功能 ===
 
   /**
-   * I or B opens and closes the gear and bag overlay (FS-HRH2J R4); opening it ends a Shadow Shot
-   * hold (FS-JTNPR req 15).
+   * I or B opens and closes the inventory (FS-HRH2J R4); opening it ends a Shadow Shot hold
+   * (FS-JTNPR req 15).
    */
   private toggleInventory(): void {
-    this.equipment?.toggle();
-    if (this.equipment?.isOpen()) this.cancelAim();
+    if (this.equipment?.toggle()) this.cancelAim();
+  }
+
+  /** C opens and closes the character panel; opening it ends a hold too (FS-HRH2J § Change C2, C5). */
+  private toggleCharacter(): void {
+    if (this.equipment?.toggleCharacter()) this.cancelAim();
   }
 
   /**
@@ -3372,13 +3380,18 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // I or B opens and closes the gear and bag overlay (FS-HRH2J R4); not while the menu is open (R6)
+    // I or B opens and closes the inventory (FS-HRH2J R4), C the character panel (§ Change C2);
+    // not while the menu is open (R6)
     for (const key of ["keydown-I", "keydown-B"]) {
       this.input.keyboard?.on(key, () => {
         if (this.menu) return;
         this.toggleInventory();
       });
     }
+    this.input.keyboard?.on("keydown-C", () => {
+      if (this.menu) return;
+      this.toggleCharacter();
+    });
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {

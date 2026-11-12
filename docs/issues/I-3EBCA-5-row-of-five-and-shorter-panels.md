@@ -3,7 +3,7 @@ id: I-3EBCA-5
 status: open
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-4]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-3EBCA slice 5: the row of five (Menu, Inventory, Character, Party, Mailbox), the panels stopping above it, the row answering while they are open (game-client)"
 ---
 Implements FS-3EBCA §A R1–R3, R5; §B R7, R11, R12; FS-HRH2J §Change: Character and inventory apart (C12, C13)

@@ -696,6 +696,7 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     input: unknown;
     equipment?: InstanceType<typeof EquipmentHud>;
     piles?: unknown;
+    menu?: unknown;
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
     lootFromSatchel(item: unknown): void;

@@ -472,13 +472,18 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * I, B or the corner row's Character icon (FS-HRH2J R4; FS-3EBCA R7): the overlay, not while the
-   * ESC menu owns the keys (FS-G4VMQ R5). Opening it ends a Shadow Shot hold (FS-JTNPR req 15).
+   * I, B or the corner row's icon (FS-HRH2J R4; FS-3EBCA R7): the inventory, not while the ESC
+   * menu owns the keys (FS-G4VMQ R5). Opening it ends a Shadow Shot hold (FS-JTNPR req 15).
    */
   private toggleGear(): void {
     if (this.menu) return;
-    this.equipment?.toggle();
-    if (this.equipment?.isOpen()) this.fight?.cancelAim();
+    if (this.equipment?.toggle()) this.fight?.cancelAim();
+  }
+
+  /** C or the corner row's Character icon: the character panel, under I's rule (FS-HRH2J § Change C2, C5). */
+  private toggleCharacter(): void {
+    if (this.menu) return;
+    if (this.equipment?.toggleCharacter()) this.fight?.cancelAim();
   }
 
   /**
@@ -553,6 +558,7 @@ export class FieldScene extends Phaser.Scene {
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
     for (const key of ["keydown-I", "keydown-B"]) this.input.keyboard?.on(key, () => this.toggleGear());
+    this.input.keyboard?.on("keydown-C", () => this.toggleCharacter());
     this.input.keyboard?.on("keydown-Q", () => {
       if (!this.menu) this.equipment?.hide();
     });

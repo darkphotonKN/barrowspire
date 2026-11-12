@@ -650,8 +650,10 @@ export class HubScene extends Phaser.Scene {
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
-  /** I and B: either opens or closes the gear and bag overlay (FS-HRH2J R4). */
+  /** I and B: either opens or closes the inventory (FS-HRH2J R4; § Change C2). */
   private gearKeys: Phaser.Input.Keyboard.Key[] = [];
+  /** C: the character panel (FS-HRH2J § Change C2). */
+  private characterKey?: Phaser.Input.Keyboard.Key;
   /** The gear, bag and stats overlay, fed from REST (FS-HRH2J §E); one per visit. */
   private gear?: HubGear;
   /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
@@ -1165,6 +1167,7 @@ export class HubScene extends Phaser.Scene {
       this.confirmKey,
       this.dismissKey,
       ...this.gearKeys,
+      this.characterKey,
       ...this.choiceKeys,
     ]);
   }
@@ -1910,6 +1913,7 @@ export class HubScene extends Phaser.Scene {
     this.gearKeys = [Phaser.Input.Keyboard.KeyCodes.I, Phaser.Input.Keyboard.KeyCodes.B].map((code) =>
       keyboard.addKey(code),
     );
+    this.characterKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
     this.choiceKeys = [
       Phaser.Input.Keyboard.KeyCodes.ONE,
       Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -2859,19 +2863,32 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * I or B opens or closes the gear overlay over the live hub (FS-HRH2J R4, R40). While the menu,
-   * a dialogue or the letter panel is open they own the keyboard (R6, FS-1GZGD R40): the press is
-   * read and dropped, so it does not open the overlay the moment they close.
+   * I or B opens or closes the inventory over the live hub (FS-HRH2J R4, R40), and C the character
+   * panel (§ Change: Character and inventory apart, C2). While the menu, a dialogue or the letter
+   * panel is open they own the keyboard (R6, FS-1GZGD R40): the press is read and dropped, so it
+   * does not open a panel the moment they close.
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
     if (pressed) this.toggleGear();
+    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.toggleCharacter();
   }
 
-  /** I, B or the corner row's Character icon (FS-3EBCA R7): the overlay, under the same owners. */
+  /** Whether the menu, a dialogue or the letter panel owns the keys: no panel opens or closes. */
+  private gearRefused(): boolean {
+    return !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen();
+  }
+
+  /** I, B or the corner row's icon (FS-3EBCA R7): the inventory, under the same owners. */
   private toggleGear(): void {
-    if (this.menu || this.dialogue || this.mailbox?.isOpen()) return;
+    if (this.gearRefused()) return;
     this.gear?.toggle();
+  }
+
+  /** C or the corner row's Character icon (FS-HRH2J § Change C2): the character panel, under I's owners. */
+  private toggleCharacter(): void {
+    if (this.gearRefused()) return;
+    this.gear?.toggleCharacter();
   }
 
   /**

@@ -318,6 +318,7 @@ function overlayOnStage(
 describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   it("should cover the two panels while open, and nothing in the middle band or while closed (R8)", () => {
     const { overlay, camera } = overlayOnStage();
+    overlay.toggleCharacter();
     const { left, right, band } = overlayLayout(camera.width, camera.height);
     expect(overlay.covers(left.x + 10, left.y + 10)).toBe(true);
     expect(overlay.covers(right.x + 10, right.y + 10)).toBe(true);
@@ -328,9 +329,10 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   });
 
   it("should draw the stats panel on the left and the gear and bag on the right, above the HUD", () => {
-    const { shown, depths } = overlayOnStage([sword]);
+    const { overlay, shown, depths } = overlayOnStage([sword]);
+    overlay.toggleCharacter();
     expect(shown()).toEqual(
-      expect.arrayContaining(["CHARACTER", "GEAR", "BAG", "1 / 30"]),
+      expect.arrayContaining(["CHARACTER", "INVENTORY", "BAG", "1 / 30"]),
     );
     expect(Math.min(...depths)).toBeGreaterThanOrEqual(GEAR_OVERLAY_DEPTH);
     expect(GEAR_OVERLAY_DEPTH).toBeGreaterThan(1000);
@@ -516,7 +518,8 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
     const overlay = new GearOverlay(s.scene, s.art);
     overlay.updateEquipment(gear);
     overlay.updateCharacter(ignis);
-    overlay.show();
+    // the character panel, alone (FS-HRH2J § Change C1)
+    overlay.toggleCharacter();
     return { ...s, overlay };
   }
 
@@ -595,7 +598,11 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
     const area = statsPanelArea(left);
     const rows = s.texts.filter(
       (t) =>
-        !t.destroyed && t.x <= left.x + left.w && t.content !== "CHARACTER",
+        !t.destroyed &&
+        t.x <= left.x + left.w &&
+        t.content !== "CHARACTER" &&
+        // the panel's × stands level with its title (FS-HRH2J § Change C4)
+        t.content !== "×",
     );
     return { area, rows, left };
   }
@@ -690,7 +697,7 @@ describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
     expect(overlay.isVisible()).toBe(true);
     expect(overlay.isStashOpen()).toBe(true);
     expect(shown()).toEqual(
-      expect.arrayContaining(["STASH", "1 / 60", "GEAR", "BAG", "1 / 30"]),
+      expect.arrayContaining(["STASH", "1 / 60", "INVENTORY", "BAG", "1 / 30"]),
     );
     expect(shown()).not.toContain("CHARACTER");
     expect(shown()).not.toContain("Ignis");
@@ -851,13 +858,13 @@ describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
     ).toHaveLength(2);
   });
 
-  it("should end stash mode on closing, the next open showing the stats (R37)", () => {
+  it("should end stash mode on closing, the next open the inventory alone (R37; FS-HRH2J § Change C9)", () => {
     const { overlay, shown } = stashOnStage([axe]);
     overlay.hide();
     expect(overlay.isStashOpen()).toBe(false);
     overlay.show();
-    expect(shown()).toContain("CHARACTER");
-    expect(shown()).toContain("Ignis");
+    expect(shown()).toContain("INVENTORY");
+    expect(shown()).not.toContain("Ignis");
     expect(shown()).not.toContain("STASH");
     expect(shown()).not.toContain("1 / 60");
   });
@@ -874,7 +881,7 @@ describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
     overlay.show();
     overlay.openStash();
     expect(overlay.isStashOpen()).toBe(false);
-    expect(s.shown()).toContain("CHARACTER");
+    expect(s.shown()).toContain("INVENTORY");
   });
 });
 

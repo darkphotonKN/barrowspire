@@ -9,14 +9,16 @@
  * overlay at once and sent as one `updateLoadout`; while it is in flight the overlay says it is
  * busy and takes no other change. A refused change says so in the hub's notice (the full bag by
  * its `BAG_FULL` code) and loads the truth again. At the hub's stash chest it opens the overlay in
- * stash mode, the stash in the left panel, loaded by the same open (FS-VPD8Y §F R35–37). There a
+ * stash mode, the stash in the left panel, loaded by the same open (FS-VPD8Y §F R35–37); an open
+ * character panel closes then. There a
  * hovered bag or stash item moves to the other side as one `moveItemInstance`, pre-checked against
  * both caps and the item's status, under the same one-at-a-time rule and refusal path (R38–42).
  * An item still in a delve (`IN_RUN`, FS-18Z5F R38), listed on the Bazaar or its sale settling
  * (FS-GTNP8 §D), worn or carried, takes no change: no equip, unequip, swap or move of it is sent,
- * and the notice says why, by the item's standing. Every open, the stash chest's
+ * and the notice says why, by the item's standing. Every inventory open, the stash chest's
  * too, reads the purse line's gold, and the hub asks again after a Take that carries gold
- * (FS-7TGZ3 R8–9).
+ * (FS-7TGZ3 R8–9). The character panel opens on its own (`C`); opened with the inventory closed it
+ * loads the loadout too, for its "From gear", and reads no purse (FS-HRH2J § Change C8, C10).
  * Phaser-free: the hub hands it the overlay, the REST calls and its notice.
  */
 
@@ -297,21 +299,39 @@ export class HubGear {
     };
   }
 
+  /** Whether the inventory or the character panel is open (FS-HRH2J § Change C11). */
   isOpen(): boolean {
     return this.panel.isVisible();
   }
 
-  /** Whether a screen point lies over the open overlay's panels: a press there is the overlay's (R8). */
+  /** Whether a screen point lies over an open panel: a press there is the overlay's (R8). */
   covers(x: number, y: number): boolean {
     return this.panel.isVisible() && this.panel.covers(x, y);
   }
 
-  /** Opens or closes the overlay; every open loads from REST (R41) and reads the purse (FS-7TGZ3 R8). */
-  toggle(): void {
+  /**
+   * Opens or closes the inventory; every open loads from REST (R41) and reads the purse (FS-7TGZ3
+   * R8). Whether it is open now.
+   */
+  toggle(): boolean {
     this.panel.toggle();
-    if (!this.panel.isVisible()) return;
+    if (!this.panel.isInventoryOpen()) return false;
     void this.load();
     this.refreshPurse();
+    return true;
+  }
+
+  /**
+   * Opens or closes the character panel; refused while the stash is open (FS-HRH2J § Change C9).
+   * Opened beside a closed inventory it loads what is worn, for "From gear" (C8); it never reads
+   * the purse (C10). Whether it is open now.
+   */
+  toggleCharacter(): boolean {
+    const inventoryOpen = this.panel.isInventoryOpen();
+    this.panel.toggleCharacter();
+    if (!this.panel.isCharacterOpen()) return false;
+    if (!inventoryOpen) void this.load();
+    return true;
   }
 
   /** Its visit is over: a purse read still in flight answers nobody (FS-7TGZ3). */
@@ -326,10 +346,11 @@ export class HubGear {
 
   /**
    * Opens the overlay in stash mode at the stash chest, loading from REST as any open does
-   * (FS-VPD8Y R34–35); whether it opened. An open overlay is left as it is: `E` there is its own.
+   * (FS-VPD8Y R34–35); whether it opened. An open inventory is left as it is: `E` there is its
+   * own. An open character panel closes, the stash taking its side (FS-HRH2J § Change C9).
    */
   openStash(): boolean {
-    if (this.panel.isVisible()) return false;
+    if (this.panel.isInventoryOpen()) return false;
     this.panel.openStash();
     void this.load();
     this.refreshPurse();
@@ -341,16 +362,16 @@ export class HubGear {
     return this.panel.isStashOpen();
   }
 
-  /** Closes the overlay; whether it was open. A change in flight still finishes. */
+  /** Closes both panels; whether either was open. A change in flight still finishes. */
   hide(): boolean {
     if (!this.panel.isVisible()) return false;
     this.panel.hide();
     return true;
   }
 
-  /** E while open is the overlay's (R10); whether it took E. */
+  /** E while the inventory is open is its own (R10; FS-HRH2J § Change C7); whether it took E. */
   equipKey(): boolean {
-    if (!this.panel.isVisible()) return false;
+    if (!this.panel.isInventoryOpen()) return false;
     this.panel.handleEquipKey();
     return true;
   }

@@ -4664,15 +4664,16 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
 
   // FS-HRH2J § Change: Character and inventory apart (C1–C4, C14). I-3EBCA-4.
   it("should open the inventory alone on I and the character panel alone on C (§ Change C1, C2, C14)", () => {
-    const { run, key, shown, stage } = overlayOnStage();
+    const { run, key, shown } = overlayOnStage();
     key("I");
     expect(shown("INVENTORY")).toBe(true);
     expect(shown("WARRIOR")).toBe(false);
     key("C");
     expect(shown("WARRIOR")).toBe(true);
+    // I closes the inventory alone: the character panel stays over the run
     key("I");
     expect(run.equipment?.isOpen()).toBe(true);
-    expect(stage.texts().some((t) => t.content === "INVENTORY" && !t.destroyed)).toBe(false);
+    expect(run.equipment?.equipKey()).toBe(false);
     key("C");
     expect(run.equipment?.isOpen()).toBe(false);
   });

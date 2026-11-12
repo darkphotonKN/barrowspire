@@ -40,9 +40,9 @@ const HEIGHT = 0.94;
 const BAND = 0.26;
 
 export interface OverlayLayout {
-  /** The stats panel, on the left edge. */
+  /** The character panel (the stats, or the stash in stash mode), on the left edge. */
   left: Rect;
-  /** The gear and bag panel, on the right edge. */
+  /** The inventory (the gear slots, the bag and the purse line), on the right edge. */
   right: Rect;
   /** The clear middle band the world shows through. */
   band: { x: number; w: number };
@@ -58,17 +58,41 @@ export function overlayLayout(width: number, height: number): OverlayLayout {
   return { left, right, band: { x: left.x + w, w: right.x - (left.x + w) } };
 }
 
-/** Whether a screen point lies over either panel: a press there is the overlay's, never an attack (R8). */
+/**
+ * Whether a screen point lies over an open panel: a press there is the overlay's, never an attack
+ * (R8, and per panel, FS-HRH2J § Change C6).
+ */
 export function overPanel(
   layout: OverlayLayout,
   x: number,
   y: number,
+  open: { left: boolean; right: boolean } = { left: true, right: true },
 ): boolean {
-  return inRect(layout.left, x, y) || inRect(layout.right, x, y);
+  return (
+    (open.left && inRect(layout.left, x, y)) ||
+    (open.right && inRect(layout.right, x, y))
+  );
 }
 
 export function inRect(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
+/** The × box's side, and how far below the panel's top it stands, level with the title. */
+const CLOSE_SIZE = 24;
+const CLOSE_TOP = 10;
+
+/**
+ * The box of a panel's × (FS-HRH2J § Change C4): at its top right, its right edge the panel
+ * padding in from the panel's, its top level with the title.
+ */
+export function panelClose(panel: Rect): Rect {
+  return {
+    x: panel.x + panel.w - PANEL_PAD - CLOSE_SIZE,
+    y: panel.y + CLOSE_TOP,
+    w: CLOSE_SIZE,
+    h: CLOSE_SIZE,
+  };
 }
 
 // ── The listed mark ───────────────────────────────────────────────────────

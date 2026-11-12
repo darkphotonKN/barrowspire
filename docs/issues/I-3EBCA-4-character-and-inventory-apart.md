@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-4
-status: open
+status: done
 implements: FS-HRH2J
 blocked_by: [I-3EBCA-2]
 labels: [ready-for-agent]
@@ -21,8 +21,8 @@ and C Character.
 
 ## Acceptance Criteria
 
-- [ ] FS-HRH2J § Change acceptance criteria 1–8 and 10 (the extent is slice 5's).
-- [ ] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
+- [x] FS-HRH2J § Change acceptance criteria 1–8 and 10 (the extent is slice 5's).
+- [x] Whole client vitest, `tsc --noEmit`, `npm run lint` pass.
 
 ## Blocked By
 
