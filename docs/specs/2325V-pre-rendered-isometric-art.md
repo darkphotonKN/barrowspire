@@ -432,3 +432,138 @@ Date: 2026-11-12
 
 - Any other class's or creature's attack; the bow model; the Shadow Shot hold pose. *Retired
   2026-11-12: "The Bone Archer's shot (R7)".*
+
+## Change: The class attacks move with weight and cut deep
+Status: work-order
+Date: 2026-11-12
+
+> Written `--from-thread` by write-a-spec on 2026-11-12, during FS-JS7C8's class re-bakes
+> (I-JS7C8-6..8). The owner, after the archer's re-bake: "法師 騎士 傭兵 現在的攻擊動作像機器人一樣
+> 再順便幫我重新設計一個流暢一點的樣子" (the wizard's, knight's and mercenary's attacks look like a
+> robot; redesign them to be smoother while you are at it). Then, on the slashes: "現在砍的動作感覺都只
+> 砍了一半就收回 可以砍得深一點 右上砍到左下" (today's slashes look as if they cut only halfway and pull
+> back; cut deeper, from upper right to lower left). Then, on repeated slashes: "砍的動作是不是要有一些
+> 變化才不會像機器人 我是說連續按時要有兩三個軌跡" (should the slashes vary so they do not look robotic:
+> when clicking repeatedly there should be two or three paths), and his choice the same day: "那先兩種
+> 軌跡就好" (two paths for now), in the standing attack and both attacks on the move, for the
+> slashing classes. Requirements marked **(owner)** are those words; **(charter default)** settles
+> what they left open, with its reason (the coordinator's charter of 2026-11-12); every number is a
+> starting value the owner judges at the contact sheet. Anchored here because §E.2 owns each
+> class's attack clip ("warrior slash, mage cast"; the mercenary's cut is the knight's slash keyed
+> on his own rig, FS-MAMHR §H); the clips gain acceptance criteria they never had, so it is a
+> behaviour change, not a tune.
+
+### Facts
+
+1. The knight's attack is `ATTACKS.slash` (`game-client/tools/bake/page/characters/clips.js`):
+   7 keys at 12 fps (0.583 s) over a fixed `STANCE` (hips −0.28 rad about y, the left foot
+   forward). Only the arm and chest move: the pelvis never turns, the weight never shifts back,
+   and the blade goes from ready (key 0) to overhead (keys 1 and 2, almost the same pose) to
+   forward-across at chest height (key 3, a 0.035 H lunge) in one frame, then out to the right
+   side and back to ready. The mercenary's cut is the same keys with his free arm swung out
+   (`attackExtra`, `tools/bake/page/characters/classStyles.js`).
+2. The wizard's attack is `ATTACKS.cast`: the same 7 × 12 fps, over a fixed stance (hips −0.15);
+   the sceptre gathers, goes overhead (key 2) and thrusts forward at key 3, the orb's glow
+   peaking there (`fx.glow` 5), with both hands going forward.
+3. The server resolves a hit on the tick the cast arrives; no client event is tied to a frame of
+   the clip. The clip's strike is its key 3 (0.25 s in): the slash's blade crossing the front, the
+   cast's thrust and glow peak.
+4. The same upper body is drawn by `attack`, by `walk_attack` (FS-HF0WW) and by `backpedal_attack`
+   (FS-JS7C8 §B): those take the attack's keys from the waist up and the walk's legs below
+   (`layerPoses`), so the change reaches all three. The attack sizes the class's frame box (it is
+   not `boxed`); the two attacks on the move are `boxed` inside it.
+5. A class sheet is baked once per re-bake; FS-JS7C8 slices 6–8 re-bake the knight, the wizard and
+   the mercenary at 1.5x (FS-HF0WW `## Change: Class sheets at 1.5x`).
+
+### Requirements
+
+1. **(owner)** The wizard's, knight's and mercenary's attacks read as one body moving, not a
+   swap of poses. **(charter default)** Each has:
+   - **anticipation**: a wind-up opposite the strike (the weight back, the weapon drawn back)
+     before it;
+   - **the body leading the weapon**: the pelvis turns into the strike before the chest does,
+     the chest before the arm, the weapon last;
+   - **arcs**: the weapon's tip travels a curved path, never a straight jump between two keys;
+     the keys ease around the wind-up and the end and are far apart through the strike;
+   - **weight**: in the standing `attack` the weight goes back at the wind-up and onto the front
+     foot at the strike (in `walk_attack` and `backpedal_attack` the legs stay the walk's);
+   - **follow-through** past the strike, then a recover.
+   Cloth (cloak, robe) follows through the springs as it does today.
+2. **(owner, 2026-11-12: "砍得深一點 右上砍到左下")** A slash (the knight's slash, the mercenary's cut)
+   cuts a full diagonal: the wind-up raises the blade high on the character's own right, above
+   the right shoulder; the strike cuts down and across the front of the body, the body turning
+   into it, to low on the character's left, past the left hip; the follow-through carries to that
+   low-left end before the recover, never turning back at the middle. Right and left are the
+   character's own, so the cut reads the same in every facing. The strike key sits in the middle
+   of that arc.
+3. **(charter default)** The knight's shield arm counter-balances the cut (drawn in and up as the
+   sword comes down); the mercenary's free arm swings out against it.
+4. **(charter default)** The wizard's cast: the sceptre is drawn back by the right shoulder, the
+   free hand reaching toward the aim; the strike thrusts the sceptre toward the aim, the orb's
+   glow peaking, the free hand opening out to the side; then a follow-through and a recover.
+5. **(charter default)** Kept: 7 keys at 12 fps (0.583 s), the strike at key 3, the clip names,
+   the per-class attack ids and every other clip (R8 adds path 2's). Reason: the server's timing and the art budget
+   stay put. If 7 keys cannot read smooth, the best 7 are keyed and the cost of a 14-frame attack
+   is reported instead of growing it.
+6. No weapon passes through the body or the head on any key of `attack`, `walk_attack` or
+   `backpedal_attack` (checked on the 3D pose, the weapon sampled grip to tip).
+7. Each class's attack is re-keyed with that class's FS-JS7C8 re-bake (slices 6–8), so each sheet
+   is baked once; the knight's and the mercenary's attacks are separate keys, so one can be baked
+   without moving the other's atlas. The contact sheet shows the old `attack` beside the new one
+   in 8 facings, with the new `walk_attack` and `backpedal_attack`; each ships on the owner's
+   approval (§E.7, ADR-0021 §5).
+8. **(owner, 2026-11-12: "連續按時要有兩三個軌跡", "那先兩種軌跡就好")** The slashing classes (the
+   knight, the mercenary) carry two swing paths. Path 1, the forehand, is R2's cut, in today's
+   clips (`attack`, `walk_attack`, `backpedal_attack`). **(charter default)** Path 2, the backhand,
+   cuts from low on the character's left back up across the front of the body to high on its
+   right, ending near path 1's wind-up so a chain of swings flows; it keeps R1 (anticipation, the
+   body leading, arcs, easing, follow-through) and R5's length, frame count and strike key, and
+   is baked as `backhand`, `walk_backhand` and `backpedal_backhand` (the attack-on-the-move clips
+   named as `walk_attack` is: the legs' clip, then the upper body's; a suffix after `_` is a
+   palette variant, `character.ts` `clip`). The wizard has no second path.
+9. **(charter default)** The client alternates the local player's consecutive swings, path 1,
+   path 2, path 1 …, on a sheet that carries `backhand`; once `SWING_CHAIN_GAP_MS` (800 ms) passes
+   after a swing's clip ends with no new swing, the next starts at path 1. A charge (the warrior's
+   dash) plays path 1 whole and starts the chain again. A sheet without `backhand` plays path 1
+   every time. The choice of path is drawing only: the server, the hit area, damage, cooldowns and
+   the wire do not change (others' swings are not drawn today, FS-JS7C8 Fact 7).
+
+### Acceptance Criteria
+
+- [ ] Clip tests on each class's rig and style, seen red against today's keys where today fails
+      them: a wind-up opposite the strike (the tip drawn back against the facing, the weight
+      back) before key 3; the pelvis reaching the strike's turn before the chest; the tip's path
+      curved, no single key-to-key step carrying most of it; the strike at key 3, unchanged.
+- [ ] A slash's tip passes above the character's right shoulder and below its left hip, the
+      strike key between them (seen red against today's slash).
+- [ ] No weapon sample lies inside the torso or the head on any key of `attack`, `walk_attack` or
+      `backpedal_attack`.
+- [ ] `attack` keeps 7 frames at 12 fps; `walk_attack` and `backpedal_attack` still last exactly
+      as long.
+- [ ] The knight's and the mercenary's sheets carry `backhand`, `walk_backhand` and
+      `backpedal_backhand` (7, 14 and 14 frames, as path 1's); the backhand's tip runs from below
+      the left hip to above the right shoulder (seen red: no such clip).
+- [ ] The client alternates path 1 and path 2 on consecutive swings and starts at path 1 again
+      after `SWING_CHAIN_GAP_MS`; a sheet without `backhand` plays path 1 every time (seen red
+      first).
+- [ ] Each class's contact sheet shows its old `attack` beside the new one, 8 facings, with
+      `walk_attack` and `backpedal_attack` (and, for the slashing classes, path 2 beside path 1,
+      standing, walking and stepping back, and the chain 1 → 2 → 1 → 2 playing), and the owner
+      approves it.
+
+### Edge States
+
+- **The frame box.** A wider wind-up or follow-through may widen a class's frame (the attack
+  sizes it); the frames are trimmed, so the atlas grows only by the pixels drawn. The re-bake
+  records it.
+- **A repeated swing.** Each swing starts its clip from key 0, as today (FS-JS7C8 R13); on a
+  slashing class it is the other path's clip while the chain holds (R9).
+- **A swing that starts or stops moving mid-way** swaps between the standing and the moving clip
+  of the same path at the same point of the shot (FS-HF0WW R13).
+- **Walking or stepping back while attacking.** The legs are the walk's; only the weight shift of
+  R1 is lost there, by design.
+
+### Out of Scope
+
+- A third path; drawing other players' swings. The archer's shot (its own change above); the mercenary's parry (FS-MAMHR §G.35, a raise into
+  a held guard, unchanged); the creatures' attacks; the server's timing or any hit rule.
