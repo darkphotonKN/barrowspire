@@ -20,6 +20,14 @@ import {
 } from "./GearOverlay";
 import { BAG_CAPACITY } from "./bag";
 import { STASH_CAPACITY } from "./stash";
+import { drawPanelFrame } from "./panelFrame";
+
+// The party panel's frame is one drawing, which this surface must call, not copy (owner
+// 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame) };
+});
 import {
   gearPanelLayout,
   listedMark,
@@ -1703,7 +1711,7 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
     expect(crosses()).toHaveLength(2);
     for (const panel of [left, right]) {
       const box = panelClose(panel);
-      expect(box).toEqual({ x: panel.x + panel.w - 14 - 24, y: panel.y + 10, w: 24, h: 24 });
+      expect(box).toEqual({ x: panel.x + panel.w - 12 - 24, y: panel.y + 12, w: 24, h: 24 });
       expect(crosses().some((t) => t.x === box.x + 12 && t.y === box.y + 12 && t.size === 22)).toBe(true);
       expect(zones.some((z) => !z.destroyed && z.hand && z.x === box.x && z.y === box.y)).toBe(true);
     }
@@ -1801,5 +1809,25 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
     expect(overlay.covers(right.x + 2, right.y + 2)).toBe(true);
     events.emit("shutdown");
     expect(overlay.isVisible()).toBe(false);
+  });
+});
+
+describe("GearOverlay in the party panel's frame (FS-HRH2J § Change C16)", () => {
+  it("should draw each open panel, the stash's too, with the party panel's frame drawing", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const { left, right } = overlayLayout(1080, 720);
+    const asFrame = (r: typeof left) => ({ x: r.x, y: r.y, width: r.w, height: r.h });
+    frame.mockClear();
+    overlay.show();
+    expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(right)]);
+    frame.mockClear();
+    overlay.toggleCharacter();
+    expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(left), asFrame(right)]);
+    overlay.hide();
+    frame.mockClear();
+    overlay.openStash();
+    expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(left), asFrame(right)]);
   });
 });
