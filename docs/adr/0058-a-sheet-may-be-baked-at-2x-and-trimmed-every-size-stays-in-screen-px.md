@@ -13,6 +13,9 @@ trimmed sheet, each frame's `trim`. The rest of ADR-0020 stands.
 Builds on: [ADR-0056](0056-every-scene-camera-runs-at-origin-0-with-zoom-equal-to-render-scale.md)
 (render scale up to 2), [ADR-0057](0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md)
 (every quad corner rounded)
+Amended by: [ADR-0076](0076-a-sheet-may-be-baked-at-1-5x-its-frame-and-trim-on-a-two-screen-px-grid.md) — Decision 1
+(a sheet's `scale` may also be 1.5, its frame box on a two-1x-px grid) and Decision 3's grid (a
+cut on `q` screen px, two at 1.5)
 
 ## Context
 
