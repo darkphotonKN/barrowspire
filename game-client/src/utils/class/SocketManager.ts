@@ -90,6 +90,9 @@ export class SocketManager {
   private connectionStatus: ConnectionStatus = "disconnected";
   private connectionStatusListeners: Set<(status: ConnectionStatus) => void> =
     new Set();
+  // Told of each lost connection: the game socket closing when the client did not let it go
+  // (FS-R6EYZ R1, R2).
+  private lostListeners: Set<() => void> = new Set();
   private seq: number = 0;
   // Game state listeners
   private gameStateListeners: Set<(state: ClientGameState) => void> = new Set();
@@ -215,6 +218,20 @@ export class SocketManager {
     this.connectionStatusListeners.forEach((listener) => listener(status));
   }
 
+  /**
+   * Hears each lost connection (FS-R6EYZ R1–R3): the game's socket closing when the client did not
+   * let it go, opened or not. Not a socket `disconnect()`, a handoff or a redirect let go, not a
+   * `4001` (FS-ZPX58 R21), not a redirect target failing while the default address is still to
+   * try (FS-MCYWK R18), and nothing while a handoff is pending: the move decides. Returns the
+   * removal.
+   */
+  onConnectionLost(listener: () => void): () => void {
+    this.lostListeners.add(listener);
+    return () => {
+      this.lostListeners.delete(listener);
+    };
+  }
+
   setOnAuthError(callback: () => void) {
     this.onAuthError = callback;
   }
@@ -318,6 +335,7 @@ export class SocketManager {
 
       this.setConnectionStatus("disconnected");
       this.updateStatus("WebSocket Disconnected", toCss(palette.hudLabel));
+      if (current) this.lost();
     };
 
     socket.onmessage = (event) => {
@@ -654,6 +672,18 @@ export class SocketManager {
         if (generation === this.generation) next();
       },
     );
+  }
+
+  /**
+   * The game's socket closed and the client did not let it go (FS-R6EYZ R2). With a handoff
+   * pending the move decides: it lands, or its failure reconnects to the server the player was on,
+   * and that socket's close is the loss. The run last handed off to is forgotten, so a later
+   * handoff to it is followed (R5). Nothing is retried here (R4).
+   */
+  private lost() {
+    if (this.pending) return;
+    this.handoffSessionId = null;
+    this.lostListeners.forEach((listener) => listener());
   }
 
   private authFailed() {
