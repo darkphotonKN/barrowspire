@@ -446,7 +446,11 @@ Date: 2026-11-12
 > 變化才不會像機器人 我是說連續按時要有兩三個軌跡" (should the slashes vary so they do not look robotic:
 > when clicking repeatedly there should be two or three paths), and his choice the same day: "那先兩種
 > 軌跡就好" (two paths for now), in the standing attack and both attacks on the move, for the
-> slashing classes. Requirements marked **(owner)** are those words; **(charter default)** settles
+> slashing classes; on path 2: "但反手的軌跡不要角度都一樣 有一點變化" (but the backhand should not run at
+> the same angle; vary it a little); and on the two fighters: "傭兵有拿盾動作可以跟騎士做一點變化" (the
+> one with the shield can differ a little from the other; in the code the knight carries the
+> kite shield and the mercenary none, so read as: the knight's and the mercenary's swings differ,
+> each fitting its kit). Requirements marked **(owner)** are those words; **(charter default)** settles
 > what they left open, with its reason (the coordinator's charter of 2026-11-12); every number is a
 > starting value the owner judges at the contact sheet. Anchored here because §E.2 owns each
 > class's attack clip ("warrior slash, mage cast"; the mercenary's cut is the knight's slash keyed
@@ -521,12 +525,28 @@ Date: 2026-11-12
    is baked as `backhand`, `walk_backhand` and `backpedal_backhand` (the attack-on-the-move clips
    named as `walk_attack` is: the legs' clip, then the upper body's; a suffix after `_` is a
    palette variant, `character.ts` `clip`). The wizard has no second path.
+   **(owner, 2026-11-12: "但反手的軌跡不要角度都一樣 有一點變化"; charter default for the numbers)**
+   The backhand is not the forehand reversed: path 1 is steep, `FOREHAND_ANGLE` about 55° from
+   the horizontal in the character's frontal plane; path 2 is flatter and rising,
+   `BACKHAND_ANGLE` about 25°, from the left hip out in front of the body up to about the right
+   shoulder's height or a little below, passing further out in front of the chest than path 1.
+   The two tip paths' angles differ by at least 25° and path 2 does not retrace path 1's plane.
 9. **(charter default)** The client alternates the local player's consecutive swings, path 1,
    path 2, path 1 …, on a sheet that carries `backhand`; once `SWING_CHAIN_GAP_MS` (800 ms) passes
    after a swing's clip ends with no new swing, the next starts at path 1. A charge (the warrior's
    dash) plays path 1 whole and starts the chain again. A sheet without `backhand` plays path 1
    every time. The choice of path is drawing only: the server, the hit area, damage, cooldowns and
    the wire do not change (others' swings are not drawn today, FS-JS7C8 Fact 7).
+10. **(owner, 2026-11-12: "傭兵有拿盾動作可以跟騎士做一點變化"; charter default for the how)** The
+    knight and the mercenary swing differently, each to its kit, both keeping R2 and R8. The
+    knight (sword and kite shield): heavier and compact; the shield stays up before the chest
+    through both paths, never swinging wide nor dropping below the waist; the sword swings from
+    beside the shield's edge, its arcs a little shorter and lower than the mercenary's; a strong
+    hip turn and a firm step onto the front foot; little flourish. The mercenary (curved dueling
+    sword, no shield): lighter and wider; bigger arcs with a wrist turn in the curved blade (a
+    drawing cut), more turn of the trunk, the free hand thrown out to the opposite side on each
+    cut, a quicker snap through the strike and a short flourish in the recover; his parry still
+    raises over the run.
 
 ### Acceptance Criteria
 
