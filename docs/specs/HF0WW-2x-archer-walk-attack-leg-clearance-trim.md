@@ -430,3 +430,18 @@ Date: 2026-11-12
 - The monsters on the legacy lists (troll, zombie, ghost, ghoul, demon).
 - Any new clip, palette, scale or costume; the game server; game logic; which NPC uses which
   sheet.
+
+### Verification (2026-11-12, branch `feat/world-folk-legs`, I-HF0WW-9)
+
+- **Unit.** `characters/folk.test.mjs` poses each folk sheet as the bake does (`characters/poses.js`):
+  the guard's worst, 1x px, before → after: the trousered resident 4.42 → 0, the spirewarden
+  8.70 → 0, the quartermaster 8.25 → 0.66; the skirted resident has no legs to measure. None asks
+  for `mirrored`; `KNOWN_CLIPPING` keeps the troll, the zombie and the ghost, `MIRRORED_LEGACY`
+  those and the ghoul and the demon.
+- **Bake.** Only `folk-0` and the folk entries of `manifest.json` changed: 2036×2816 → 2036×2840,
+  22.93 → 23.13 MB RGBA, PNG 2,640,989 → 2,654,316 B. The skirted resident's frame grew 73×88 →
+  78×91 (her kirtle now swings out with her stride); every other folk frame box, anchor and crown
+  is unchanged. `npm run bake -- --check` reports no changes.
+- **Awaiting the owner:** a contact sheet per folk sheet (old above new, idle and walk, 8 facings)
+  and an animated preview. The skirted resident's kirtle visibly swings wider in the walk than
+  before (R43): kept or reverted on his word.

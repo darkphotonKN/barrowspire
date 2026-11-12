@@ -1,6 +1,6 @@
 ---
 id: I-HF0WW-9
-status: open
+status: in-progress
 implements: FS-HF0WW
 blocked_by: []
 labels: [ready-for-agent]
@@ -26,13 +26,13 @@ Implements FS-HF0WW §Change: The folk's legs stay under their clothes (R40–R4
 
 ## Acceptance Criteria
 
-- [ ] Each folk sheet asks for no `mirrored` garment and is on neither legacy list (seen red).
-- [ ] The trousered resident, the spirewarden and the quartermaster keep every leg within 1 px of
+- [x] Each folk sheet asks for no `mirrored` garment and is on neither legacy list (seen red).
+- [x] The trousered resident, the spirewarden and the quartermaster keep every leg within 1 px of
       the cloth through idle and walk in every palette (seen red: 4.42, 8.70, 8.25 px).
-- [ ] `KNOWN_CLIPPING` = troll, zombie, ghost; `MIRRORED_LEGACY` = those + ghoul, demon.
-- [ ] Only `folk-*` and the folk entries of `manifest.json` change; `npm run bake -- --check`
+- [x] `KNOWN_CLIPPING` = troll, zombie, ghost; `MIRRORED_LEGACY` = those + ghoul, demon.
+- [x] Only `folk-*` and the folk entries of `manifest.json` change; `npm run bake -- --check`
       reports no changes after the last commit.
-- [ ] The whole client vitest suite, `npx tsc --noEmit -p .` and `npm run lint` pass.
+- [x] The whole client vitest suite, `npx tsc --noEmit -p .` and `npm run lint` pass.
 - [ ] HITL: the owner approves each folk sheet's contact sheet (old beside new, idle and walk, 8
       facings).
 
