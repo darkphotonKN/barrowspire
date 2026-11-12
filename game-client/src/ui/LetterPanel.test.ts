@@ -19,12 +19,12 @@ import { LetterPanel } from "./LetterPanel";
 import { envelopeFrame, letterPanelFrame } from "./letterPanelLayout";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 import { MailboxHud } from "./mailboxHud";
-import { drawPanelTitle } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle, frameClose } from "./panelFrame";
 
-// The shared title drawing, watched (FS-3EBCA R20).
+// The shared title drawing and frame, watched (FS-3EBCA R20; FS-1GZGD § Change C5).
 vi.mock("./panelFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("./panelFrame")>();
-  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle), drawPanelFrame: vi.fn(real.drawPanelFrame) };
 });
 
 // FS-1GZGD R33, R35–R37, R39, R40; A5. I-1GZGD-6 and -7: the envelope and the letter panel as a scene draws them,
@@ -36,6 +36,8 @@ interface Pressable {
 }
 interface FakeText extends Pressable {
   content: string;
+  /** Where it was made, before any move. */
+  at?: { x: number; y: number };
   color?: string;
   style?: { wordWrap?: { width?: number; useAdvancedWrap?: boolean } };
   masked?: boolean;
@@ -99,6 +101,7 @@ function fakeScene() {
     ) => {
       const t: FakeText = {
         content,
+        at: { x: _x, y: _y },
         color: style?.color,
         style,
         handlers: {},
@@ -209,6 +212,7 @@ function fakeScene() {
   const find = (content: string) => live().find((t) => t.content === content);
   return {
     scene,
+    texts,
     live,
     shown,
     find,
@@ -688,6 +692,35 @@ describe("LetterPanel's title, shared (FS-3EBCA R20, R22)", () => {
     expect(at).toMatchObject({ x: panel.x, y: panel.y, width: panel.width });
     expect(words).toBe("MAILBOX");
     expect(shown().filter((t) => t === "MAILBOX")).toHaveLength(1);
+  });
+});
+
+// The owner, 2026-11-12: "mailbox的x關閉按鈕好像位置跟其他的不太一樣": the letter panel wears the shared
+// frame and its × (FS-1GZGD § Change C5; FS-3EBCA R25).
+describe("LetterPanel's frame, shared (FS-1GZGD § Change C5)", () => {
+  it("should draw its frame with the one frame drawing, round the whole panel, once", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const { scene, store } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const panel = letterPanelFrame(viewport, 0).panel;
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(frame.mock.calls[0][2]).toEqual(panel);
+    // the frame's own ×, with no options that would leave it off
+    expect(frame.mock.calls[0][3]).toBeUndefined();
+  });
+
+  it("should stand one × at the shared place, which closes the panel", () => {
+    const { scene, store, texts } = setup();
+    new LetterPanel(scene, { store, art, now: () => NOW });
+    open(store, []);
+    const crosses = texts.filter((t) => t.content === "×" && !t.destroyed);
+    expect(crosses).toHaveLength(1);
+    const box = frameClose(letterPanelFrame(viewport, 0).panel);
+    expect(crosses[0].at).toEqual({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    crosses[0].handlers.pointerdown();
+    expect(store.getState().panelOpen).toBe(false);
   });
 });
 

@@ -12,6 +12,7 @@ import {
   type Rect,
 } from "./letterPanelLayout";
 import { cornerIconFrame } from "./hudCornerLayout";
+import { PANEL_TITLE_BAND, frameClose } from "./panelFrame";
 
 // FS-1GZGD R33, R36, R37, R39 (D11, D14). I-1GZGD-6 and -7: where the envelope and the letter panel's parts sit.
 
@@ -47,6 +48,17 @@ describe("letterPanelFrame (R36, R37)", () => {
       expect(inside(part, f.panel)).toBe(true);
     expect(f.list.x + f.list.width).toBeLessThan(f.detail.x);
     expect(overlaps(f.close, f.detail)).toBe(false);
+  });
+
+  // FS-1GZGD § Change C5 (owner 2026-11-12: "mailbox的x關閉按鈕好像位置跟其他的不太一樣"): the × at the
+  // shared frame's place, 24 × 24, 12 px in from the top and right edges, as every other window's.
+  it("puts its × at the shared frame's place, the contents under the title band", () => {
+    for (const screen of [SCREEN, { width: 1280, height: 720 }]) {
+      const f = letterPanelFrame(screen, 2);
+      expect(f.close).toEqual(frameClose(f.panel));
+      expect(f.close).toEqual({ x: f.panel.x + f.panel.width - 36, y: f.panel.y + 12, width: 24, height: 24 });
+      for (const part of [f.list, f.detail]) expect(part.y).toBeGreaterThanOrEqual(f.panel.y + PANEL_TITLE_BAND);
+    }
   });
 
   it("has no Enclosed row without enclosures, and the body runs to the bottom", () => {
