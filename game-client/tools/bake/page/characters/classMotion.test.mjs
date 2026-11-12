@@ -7,7 +7,7 @@ import { ATTACKS, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, ru
 import { createRig, gripAt, jointAt as J, mount } from "./rig.js";
 import { boots, legs } from "./anatomy.js";
 import { footing, measurePace } from "./pace.js";
-import { WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
+import { KNIGHT_BUILD, KNIGHT_SHEET, KNIGHT_STYLE, WIZARD_BUILD, WIZARD_SHEET, WIZARD_STYLE } from "./classStyles.js";
 
 const DEG = 180 / Math.PI;
 
@@ -36,6 +36,21 @@ const along = (from, to, n) => Array.from({ length: n + 1 }, (_, i) => [0, 0, fr
  * grip frame (local +z from the fist), pommel to tip, the last point its tip.
  */
 const GEAR = {
+  /**
+   * The knight's longsword (gear.js `longsword`, pommel −0.05 to the point 0.45) and the kite
+   * shield strapped to his left forearm (`kiteShield`: its outline in the forearm's frame, long
+   * axis along the forearm's +z, width along its y), its centre the first point.
+   */
+  knight: (rig) => {
+    const [x, fy] = J(rig, "foreArmL");
+    const [, wy] = J(rig, "handL");
+    const [w, top, bot] = [0.115, 0.145, -0.27];
+    const outline = [[0, 0], [w, top * 0.72], [-w, top * 0.72], [0, top], [0, bot], [0.07, -0.1], [-0.07, -0.1], [0.1, 0.05], [-0.1, 0.05]];
+    return {
+      weapon: riding(rig, "handR", gripAt(rig, "R"), {}, along(-0.05, 0.45, 10)),
+      other: riding(rig, "foreArmL", [x + 0.042, (fy + wy) / 2 - 0.01, -0.03], {}, outline.map(([u, v]) => [0, u, v])),
+    };
+  },
   /** The wizard's sceptre (gear.js `sceptre`, butt −0.06 to the orb's top 0.29) and the tome hanging from her left hand by its spine (`tome`, mounted turned a quarter back). */
   wizard: (rig) => ({
     weapon: riding(rig, "handR", gripAt(rig, "R"), {}, along(-0.06, 0.29, 7)),
@@ -127,6 +142,14 @@ function deepestCarry(rig, gear, frames) {
  * and how far outside the body its carry must stay (H).
  */
 const CLASSES = [
+  {
+    name: "knight",
+    build: KNIGHT_BUILD,
+    style: KNIGHT_STYLE,
+    sheet: KNIGHT_SHEET,
+    // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
+    pump: ["R"],
+  },
   {
     name: "wizard",
     build: WIZARD_BUILD,
@@ -302,5 +325,78 @@ describe("the wizard's cast moves with weight (FS-2325V § Change: The class att
     const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
     for (const anim of ["walk_attack", "backpedal_attack"])
       clips[anim].forEach((p, i) => expect(p.b.upperArmR, `${anim} @${i}`).toEqual(add(ATTACKS.cast()[Math.floor(i / 2)]).b.upperArmR));
+  });
+});
+
+/**
+ * A slash (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): the
+ * blade's point, keyed on the class's rig and style, cutting a full diagonal from above the
+ * character's right shoulder to below its left hip (its left is +x), the strike in the middle.
+ */
+describe.each([["knight", KNIGHT_BUILD, KNIGHT_STYLE, KNIGHT_SHEET]])("the %s's slash cuts deep, with weight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10)", (name, build, style, sheet) => {
+  const rig = rigOf(build);
+  const gear = GEAR[name](rig);
+  const point = gear.weapon.at(-1);
+  const keys = clipsFor(style, sheet.animations).attack;
+  const path = attackPath(rig, point, keys);
+  const STRIKE = 3;
+  const joints = keys.map((p) => (posed(rig, p), { shoulderR: at(rig, "upperArmR").divideScalar(rig.H), hipL: at(rig, "thighL").divideScalar(rig.H), hips: at(rig, "hips").divideScalar(rig.H) }));
+
+  it("keeps 7 keys at 12 fps", () => {
+    expect([sheet.animations.attack.frames, sheet.animations.attack.fps]).toEqual([7, 12]);
+    expect(keys).toHaveLength(7);
+  });
+
+  it("winds the point up high on the right, above the shoulder, and cuts through to low on the left, below the hip, the strike between", () => {
+    const high = path.slice(0, STRIKE).findIndex((s, i) => s.tip.y > joints[i].shoulderR.y && s.tip.x < joints[i].shoulderR.x);
+    expect(high, "wound up above and right of the right shoulder").toBeGreaterThanOrEqual(0);
+    const low = path.findIndex((s, i) => i > STRIKE && s.tip.y < joints[i].hips.y && s.tip.x > joints[i].hipL.x);
+    expect(low, "through to below and left of the left hip").toBeGreaterThan(STRIKE);
+    // the strike crosses the front between them
+    expect(path[STRIKE].tip.y).toBeLessThan(path[high].tip.y);
+    expect(path[STRIKE].tip.y).toBeGreaterThan(path[low].tip.y);
+    expect(path[STRIKE].tip.x).toBeGreaterThan(path[high].tip.x);
+    expect(path[STRIKE].tip.x).toBeLessThan(path[low].tip.x);
+  });
+
+  it("winds up with the weight back and steps onto the front foot at the strike", () => {
+    const wind = path.slice(0, STRIKE).reduce((a, b) => (b.z < a.z ? b : a));
+    expect(wind.z).toBeLessThan(0);
+    expect(path[STRIKE].z - wind.z).toBeGreaterThanOrEqual(0.03);
+  });
+
+  it("turns the pelvis into the cut before the chest", () => {
+    const w = path.slice(0, STRIKE).reduce((a, b, i) => (b.chest < path[a].chest ? i : a), 0);
+    const half = (part) => {
+      const [from, to] = [path[w][part], path[STRIKE][part]];
+      return path.findIndex((s, i) => i > w && (s[part] - from) / (to - from) >= 0.5);
+    };
+    expect(path[STRIKE].hips - path[w].hips, "the pelvis turns").toBeGreaterThanOrEqual(0.2);
+    expect(half("hips")).toBeLessThan(half("chest"));
+  });
+
+  it("moves the point on a curve, eased at the ends, fastest through the strike", () => {
+    const steps = path.slice(1).map((s, i) => s.tip.distanceTo(path[i].tip));
+    const total = steps.reduce((a, b) => a + b, 0);
+    expect(Math.max(...steps) / total).toBeLessThanOrEqual(0.4);
+    const fast = Math.max(steps[STRIKE - 1], steps[STRIKE]);
+    expect(fast).toBeGreaterThan(steps[0]);
+    expect(fast).toBeGreaterThan(steps.at(-1));
+  });
+});
+
+describe("the knight's shield guards through the cut (FS-2325V § Change: The class attacks move with weight and cut deep R3, R10)", () => {
+  const rig = rigOf(KNIGHT_BUILD);
+  const gear = GEAR.knight(rig);
+  it("keeps the shield's centre before the chest and above the waist on every key of attack, walk_attack and backpedal_attack", () => {
+    const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
+    for (const anim of ["attack", "walk_attack", "backpedal_attack"])
+      clips[anim]?.forEach((p, i) => {
+        posed(rig, p);
+        const c = world(gear.other[0]).divideScalar(rig.H);
+        const [chest, hips] = [at(rig, "chest").divideScalar(rig.H), at(rig, "hips").divideScalar(rig.H)];
+        expect(c.y, `${anim} @${i}: above the waist`).toBeGreaterThan(hips.y + 0.05);
+        expect(c.z, `${anim} @${i}: before the chest`).toBeGreaterThan(chest.z + 0.05);
+      });
   });
 });
