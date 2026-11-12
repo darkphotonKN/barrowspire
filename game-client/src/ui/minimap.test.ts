@@ -891,6 +891,21 @@ describe("the minimap's look (FS-56CKV §A)", () => {
     it("should keep the glyph's ink 3:1 against its ring", () => {
       expect(contrastRatio(palette.interactable, palette.markerStroke)).toBeGreaterThanOrEqual(3);
     });
+
+    // FS-P0HSP §C.19 is the town's and the fields' alone (review round 1: the seat layout each
+    // minimap supplies): a run's glyphs stand where they are found, overlap or not
+    it("should leave two glyphs that would overlap each on its own seat, never side by side", () => {
+      const lever = FIXTURES[0];
+      const stairs: MinimapFixture = { kind: "stairs", at: at(lever.at.x + 20, lever.at.y) };
+      const drawn = (fixtures: MinimapFixture[]) => {
+        const { marks, show } = mapped();
+        show([lever.at, stairs.at], fixtures);
+        return marks.drawn();
+      };
+      const project = minimapProjection(grid);
+      expect(Math.abs(project(lever.at).x - project(stairs.at).x)).toBeLessThan(MINIMAP_GLYPH.box);
+      expect(drawn([lever, stairs])).toEqual([...drawn([lever]), ...drawn([stairs])]);
+    });
   });
 
   describe("the party dots (§A.7)", () => {
