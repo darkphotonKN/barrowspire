@@ -3,10 +3,12 @@ id: I-2325V-13
 status: open
 implements: FS-2325V
 blocked_by: []
-labels: [ready-for-agent]
+labels: [blocked]
 title: "FS-2325V change slice 13: the local player's consecutive swings alternate forehand and backhand, back to the forehand after a pause (game-client)"
 ---
 Implements FS-2325V §Change: The class attacks move with weight and cut deep (R9)
+
+**Parked by the owner, 2026-11-12: "先改回只有一刀好了 我再看看狀況 不過一刀還是要有各職業風格". Not built; FS-2325V R9 is parked with R8.**
 
 **Lane: agent.** Client presentation only; nothing on the wire, the server untouched.
 

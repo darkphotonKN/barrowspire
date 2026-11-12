@@ -8,6 +8,8 @@ title: "FS-2325V change slice 12: the mercenary's cut a full diagonal and a back
 ---
 Implements FS-2325V §Change: The class attacks move with weight and cut deep (R1–R3, R5–R8)
 
+*Reworked 2026-11-12 (owner: "先改回只有一刀好了 我再看看狀況 不過一刀還是要有各職業風格"): one cut, in the class's own style (FS-2325V R10); the backhand (items marked parked) is not built.*
+
 **Lane: agent.** Bake keys and clip tests; the mercenary's atlas is baked once in I-JS7C8-8. No
 hand-edited pixels.
 

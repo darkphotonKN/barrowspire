@@ -450,7 +450,10 @@ Date: 2026-11-12
 > the same angle; vary it a little); and on the two fighters: "傭兵有拿盾動作可以跟騎士做一點變化" (the
 > one with the shield can differ a little from the other; in the code the knight carries the
 > kite shield and the mercenary none, so read as: the knight's and the mercenary's swings differ,
-> each fitting its kit). Requirements marked **(owner)** are those words; **(charter default)** settles
+> each fitting its kit). Then, the same day: "先改回只有一刀好了 我再看看狀況 不過一刀還是要有各職業風格" (back to a single cut for now, I will see how
+> it goes; but the one cut should still have each class's style): R8 and R9 (the second path and
+> the chain) are **parked**, kept below as he left them; R2's deep cut and R10's kit styles stand.
+> Requirements marked **(owner)** are those words; **(charter default)** settles
 > what they left open, with its reason (the coordinator's charter of 2026-11-12); every number is a
 > starting value the owner judges at the contact sheet. Anchored here because §E.2 owns each
 > class's attack clip ("warrior slash, mage cast"; the mercenary's cut is the knight's slash keyed
@@ -516,7 +519,8 @@ Date: 2026-11-12
    without moving the other's atlas. The contact sheet shows the old `attack` beside the new one
    in 8 facings, with the new `walk_attack` and `backpedal_attack`; each ships on the owner's
    approval (§E.7, ADR-0021 §5).
-8. **(owner, 2026-11-12: "連續按時要有兩三個軌跡", "那先兩種軌跡就好")** The slashing classes (the
+8. *Parked 2026-11-12 (owner: "先改回只有一刀好了 我再看看狀況 不過一刀還是要有各職業風格"); not built, no `backhand` clip is baked.*
+   **(owner, 2026-11-12: "連續按時要有兩三個軌跡", "那先兩種軌跡就好")** The slashing classes (the
    knight, the mercenary) carry two swing paths. Path 1, the forehand, is R2's cut, in today's
    clips (`attack`, `walk_attack`, `backpedal_attack`). **(charter default)** Path 2, the backhand,
    cuts from low on the character's left back up across the front of the body to high on its
@@ -531,16 +535,17 @@ Date: 2026-11-12
    `BACKHAND_ANGLE` about 25°, from the left hip out in front of the body up to about the right
    shoulder's height or a little below, passing further out in front of the chest than path 1.
    The two tip paths' angles differ by at least 25° and path 2 does not retrace path 1's plane.
-9. **(charter default)** The client alternates the local player's consecutive swings, path 1,
+9. *Parked 2026-11-12 with R8; I-2325V-13 is not built.* **(charter default)** The client alternates the local player's consecutive swings, path 1,
    path 2, path 1 …, on a sheet that carries `backhand`; once `SWING_CHAIN_GAP_MS` (800 ms) passes
    after a swing's clip ends with no new swing, the next starts at path 1. A charge (the warrior's
    dash) plays path 1 whole and starts the chain again. A sheet without `backhand` plays path 1
    every time. The choice of path is drawing only: the server, the hit area, damage, cooldowns and
    the wire do not change (others' swings are not drawn today, FS-JS7C8 Fact 7).
 10. **(owner, 2026-11-12: "傭兵有拿盾動作可以跟騎士做一點變化"; charter default for the how)** The
-    knight and the mercenary swing differently, each to its kit, both keeping R2 and R8. The
+    knight and the mercenary swing differently, each to its kit, both keeping R2 (and R8 if it is
+    taken up again). The
     knight (sword and kite shield): heavier and compact; the shield stays up before the chest
-    through both paths, never swinging wide nor dropping below the waist; the sword swings from
+    through the cut, never swinging wide nor dropping below the waist; the sword swings from
     beside the shield's edge, its arcs a little shorter and lower than the mercenary's; a strong
     hip turn and a firm step onto the front foot; little flourish. The mercenary (curved dueling
     sword, no shield): lighter and wider; bigger arcs with a wrist turn in the curved blade (a
@@ -560,16 +565,15 @@ Date: 2026-11-12
       `backpedal_attack`.
 - [ ] `attack` keeps 7 frames at 12 fps; `walk_attack` and `backpedal_attack` still last exactly
       as long.
-- [ ] The knight's and the mercenary's sheets carry `backhand`, `walk_backhand` and
+- [ ] *Parked (R8):* The knight's and the mercenary's sheets carry `backhand`, `walk_backhand` and
       `backpedal_backhand` (7, 14 and 14 frames, as path 1's); the backhand's tip runs from below
       the left hip to above the right shoulder (seen red: no such clip).
-- [ ] The client alternates path 1 and path 2 on consecutive swings and starts at path 1 again
+- [ ] *Parked (R9):* The client alternates path 1 and path 2 on consecutive swings and starts at path 1 again
       after `SWING_CHAIN_GAP_MS`; a sheet without `backhand` plays path 1 every time (seen red
       first).
 - [ ] Each class's contact sheet shows its old `attack` beside the new one, 8 facings, with
-      `walk_attack` and `backpedal_attack` (and, for the slashing classes, path 2 beside path 1,
-      standing, walking and stepping back, and the chain 1 → 2 → 1 → 2 playing), and the owner
-      approves it.
+      `walk_attack` and `backpedal_attack` (for the slashing classes with the cut's tip trace), and
+      the owner approves it.
 
 ### Edge States
 
