@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
 import { fabrics } from "./fabrics.js";
-import { ANIMATIONS, RUNNING_CLASS_ANIMATIONS, RUN_SOFT_LIFT, pose } from "./clips.js";
+import { ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
 import { drawGrip, solveDraw } from "./draw.js";
 import {
   arms,
@@ -154,9 +154,8 @@ export function archer() {
     // walk instead of sweeping across the body; the legs keep the shared stride the paces are
     // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle).
     // In absolute terms the jog's (a 0.25 rad swing, a 0.34 rad elbow) under the fast run's
-    // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps.
-    // The flight softened (RUN_SOFT_LIFT): the archer first, the owner judging it before the rest
-    run: { arms: [0.3, 1], elbow: [0.215, 1], lift: RUN_SOFT_LIFT },
+    // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps
+    run: { arms: [0.3, 1], elbow: [0.215, 1] },
   };
   return { rig, style };
 }
