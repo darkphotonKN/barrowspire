@@ -11,6 +11,7 @@ import {
 } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
 import {
   GEAR_HINT,
   GEAR_OVERLAY_DEPTH,
@@ -20,10 +21,19 @@ import {
 } from "./GearOverlay";
 import { BAG_CAPACITY } from "./bag";
 import { STASH_CAPACITY } from "./stash";
+import { drawPanelFrame } from "./panelFrame";
+
+// The party panel's frame is one drawing, which this surface must call, not copy (owner
+// 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame) };
+});
 import {
   gearPanelLayout,
   listedMark,
   overlayLayout,
+  panelClose,
   stashPanelLayout,
   statsPanelArea,
 } from "./gearOverlayLayout";
@@ -175,6 +185,27 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     texts.push(t);
     const self: Record<string, unknown> = chain({
       destroy: () => void (t.destroyed = true),
+      setColor: (c: string) => ((t.color = c), self),
+    });
+    return self;
+  };
+  /** Every zone made, with its rect, whether it asked for the hand cursor, and whether it is gone. */
+  const zones: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    hand: boolean;
+    destroyed: boolean;
+  }[] = [];
+  const zone = (x: number, y: number, w: number, h: number) => {
+    const z = { x, y, w, h, hand: false, destroyed: false };
+    zones.push(z);
+    const self: Record<string, unknown> = chain({
+      setInteractive: (opts?: { useHandCursor?: boolean }) => (
+        (z.hand = opts?.useHandCursor ?? false), self
+      ),
+      destroy: () => void (z.destroyed = true),
     });
     return self;
   };
@@ -196,6 +227,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
       graphics,
       text,
       container,
+      zone,
       sprite: (x: number, y: number) => {
         const s = { x, y, alpha: 1, seq: seq++ };
         sprites.push(s);
@@ -247,6 +279,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     scale,
     events,
     texts,
+    zones,
     shown,
     fills,
     strokes,
@@ -294,6 +327,7 @@ function overlayOnStage(
 describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   it("should cover the two panels while open, and nothing in the middle band or while closed (R8)", () => {
     const { overlay, camera } = overlayOnStage();
+    overlay.toggleCharacter();
     const { left, right, band } = overlayLayout(camera.width, camera.height);
     expect(overlay.covers(left.x + 10, left.y + 10)).toBe(true);
     expect(overlay.covers(right.x + 10, right.y + 10)).toBe(true);
@@ -304,9 +338,10 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   });
 
   it("should draw the stats panel on the left and the gear and bag on the right, above the HUD", () => {
-    const { shown, depths } = overlayOnStage([sword]);
+    const { overlay, shown, depths } = overlayOnStage([sword]);
+    overlay.toggleCharacter();
     expect(shown()).toEqual(
-      expect.arrayContaining(["CHARACTER", "GEAR", "BAG", "1 / 30"]),
+      expect.arrayContaining(["CHARACTER", "INVENTORY", "BAG", "1 / 30"]),
     );
     expect(Math.min(...depths)).toBeGreaterThanOrEqual(GEAR_OVERLAY_DEPTH);
     expect(GEAR_OVERLAY_DEPTH).toBeGreaterThan(1000);
@@ -332,10 +367,11 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
   });
 
   it("should draw in the game palette, never the menus' Bone & Soot (R3)", () => {
-    const { fills } = overlayOnStage([sword], worn({ head: helm }));
+    const { fills, strokes } = overlayOnStage([sword], worn({ head: helm }));
     const menu = Object.values(palette.menu);
     for (const c of fills) expect(menu).not.toContain(c);
-    expect(fills).toContain(palette.ink);
+    // the ground is the party panel's carved frame, in the game palette (FS-HRH2J § Change C16)
+    expect(strokes).toContain(BARROW_HEX.brass);
   });
 
   it("should show the item tip on hover (R15)", () => {
@@ -492,7 +528,8 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
     const overlay = new GearOverlay(s.scene, s.art);
     overlay.updateEquipment(gear);
     overlay.updateCharacter(ignis);
-    overlay.show();
+    // the character panel, alone (FS-HRH2J § Change C1)
+    overlay.toggleCharacter();
     return { ...s, overlay };
   }
 
@@ -571,13 +608,18 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
     const area = statsPanelArea(left);
     const rows = s.texts.filter(
       (t) =>
-        !t.destroyed && t.x <= left.x + left.w && t.content !== "CHARACTER",
+        !t.destroyed &&
+        t.x <= left.x + left.w &&
+        t.content !== "CHARACTER" &&
+        // the panel's × stands level with its title (FS-HRH2J § Change C4)
+        t.content !== "×",
     );
     return { area, rows, left };
   }
 
   it("should keep every row, the header too, inside the panel on a short window (edge state: Small window)", () => {
-    const s = statsOnStage(worn({ weapon: sword }), 640, 100);
+    // the panels now stop 70 px above the bottom (FS-HRH2J § Change C12): a 200 px view is short
+    const s = statsOnStage(worn({ weapon: sword }), 640, 200);
     const { area, rows } = statsRowsShown(s);
 
     expect(rows.map((r) => r.content)).toContain("MAGE");
@@ -666,7 +708,7 @@ describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
     expect(overlay.isVisible()).toBe(true);
     expect(overlay.isStashOpen()).toBe(true);
     expect(shown()).toEqual(
-      expect.arrayContaining(["STASH", "1 / 60", "GEAR", "BAG", "1 / 30"]),
+      expect.arrayContaining(["STASH", "1 / 60", "INVENTORY", "BAG", "1 / 30"]),
     );
     expect(shown()).not.toContain("CHARACTER");
     expect(shown()).not.toContain("Ignis");
@@ -827,13 +869,13 @@ describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
     ).toHaveLength(2);
   });
 
-  it("should end stash mode on closing, the next open showing the stats (R37)", () => {
+  it("should end stash mode on closing, the next open the inventory alone (R37; FS-HRH2J § Change C9)", () => {
     const { overlay, shown } = stashOnStage([axe]);
     overlay.hide();
     expect(overlay.isStashOpen()).toBe(false);
     overlay.show();
-    expect(shown()).toContain("CHARACTER");
-    expect(shown()).toContain("Ignis");
+    expect(shown()).toContain("INVENTORY");
+    expect(shown()).not.toContain("Ignis");
     expect(shown()).not.toContain("STASH");
     expect(shown()).not.toContain("1 / 60");
   });
@@ -850,7 +892,7 @@ describe("GearOverlay stash mode (FS-VPD8Y §F R35–37)", () => {
     overlay.show();
     overlay.openStash();
     expect(overlay.isStashOpen()).toBe(false);
-    expect(s.shown()).toContain("CHARACTER");
+    expect(s.shown()).toContain("INVENTORY");
   });
 });
 
@@ -1581,5 +1623,213 @@ describe("GearOverlay listed and settling items (FS-GTNP8)", () => {
     move(...cell(0));
     shift(true);
     expect(shown()).toContain(LISTED_NOTE);
+  });
+});
+
+// FS-HRH2J § Change: Character and inventory apart (owner 2026-11-12: "道具欄跟角色面板拆開顯示 角色面板維持快捷鍵C
+// 道具欄是I", "這兩個右上角都要多加X關閉按鈕"). I-3EBCA-4.
+describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § Change C1–C9, C14)", () => {
+  const ignis = { username: "Ignis", class: "mage", level: 3 };
+
+  function apartOnStage(bag: ItemState[] = [sword], gear = worn({ head: helm })) {
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const onEquip = vi.fn();
+    const onMove = vi.fn();
+    overlay.onEquip = onEquip;
+    overlay.onMove = onMove;
+    overlay.updateCharacter(ignis);
+    overlay.updateInventory(bag);
+    overlay.updateEquipment(gear);
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const centre = (r: { x: number; y: number; w: number; h: number }) =>
+      [r.x + r.w / 2, r.y + r.h / 2] as const;
+    const closeOf = (panel: typeof left) => centre(panelClose(panel));
+    return { ...s, overlay, onEquip, onMove, left, right, centre, closeOf };
+  }
+
+  it("should open the inventory alone: the slots, the bag and its title, no stats (C1, C14)", () => {
+    const { overlay, shown, left, right } = apartOnStage();
+    overlay.show();
+    expect(shown()).toEqual(expect.arrayContaining(["INVENTORY", "BAG", "1 / 30"]));
+    expect(shown()).not.toContain("CHARACTER");
+    expect(shown()).not.toContain("Ignis");
+    expect(shown()).not.toContain("GEAR");
+    expect(overlay.isInventoryOpen()).toBe(true);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(overlay.covers(right.x + 10, right.y + 10)).toBe(true);
+    expect(overlay.covers(left.x + 10, left.y + 10)).toBe(false);
+  });
+
+  it("should open the character panel alone: the stats, no slots and no bag (C1)", () => {
+    const { overlay, shown, left, right } = apartOnStage();
+    overlay.toggleCharacter();
+    expect(shown()).toEqual(expect.arrayContaining(["CHARACTER", "Ignis", "FROM GEAR"]));
+    expect(shown()).not.toContain("INVENTORY");
+    expect(shown()).not.toContain("BAG");
+    expect(shown()).not.toContain("HEAD");
+    expect(overlay.isVisible()).toBe(true);
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(overlay.isCharacterOpen()).toBe(true);
+    expect(overlay.covers(left.x + 10, left.y + 10)).toBe(true);
+    expect(overlay.covers(right.x + 10, right.y + 10)).toBe(false);
+  });
+
+  it("should open either with the other, and close each on its own toggle, keeping its handlers until both are closed (C1)", () => {
+    const { overlay, shown, input } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    expect(shown()).toEqual(expect.arrayContaining(["INVENTORY", "CHARACTER", "Ignis", "BAG"]));
+    expect(input.listenerCount("pointerdown")).toBe(1);
+
+    overlay.toggle();
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(shown()).toContain("Ignis");
+    expect(shown()).not.toContain("BAG");
+    expect(input.listenerCount("pointerdown")).toBe(1);
+
+    overlay.toggleCharacter();
+    expect(overlay.isVisible()).toBe(false);
+    expect(shown()).not.toContain("Ignis");
+    expect(input.listenerCount("pointerdown")).toBe(0);
+  });
+
+  it("should close both on hide, as Esc and Q do (C3)", () => {
+    const { overlay, input, scale } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    overlay.hide();
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(input.listenerCount("pointerdown")).toBe(0);
+    expect(scale.listenerCount("resize")).toBe(0);
+  });
+
+  it("should draw an × at each open panel's top right, amber with a hand cursor, brighter under the pointer (C4)", () => {
+    const { overlay, texts, zones, move, left, right, closeOf } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    const crosses = () => texts.filter((t) => t.content === "×" && !t.destroyed);
+    expect(crosses()).toHaveLength(2);
+    for (const panel of [left, right]) {
+      const box = panelClose(panel);
+      expect(box).toEqual({ x: panel.x + panel.w - 12 - 24, y: panel.y + 12, w: 24, h: 24 });
+      expect(crosses().some((t) => t.x === box.x + 12 && t.y === box.y + 12 && t.size === 22)).toBe(true);
+      expect(zones.some((z) => !z.destroyed && z.hand && z.x === box.x && z.y === box.y)).toBe(true);
+    }
+    expect(crosses().every((t) => t.color === toCss(palette.interactable))).toBe(true);
+
+    move(...closeOf(right));
+    const lit = crosses().filter((t) => t.color === toCss(palette.interactableBright));
+    expect(lit).toHaveLength(1);
+    expect(lit[0].x).toBe(panelClose(right).x + 12);
+  });
+
+  it("should close only the inventory on its × and only the character panel on its own (C4)", () => {
+    const { overlay, press, left, right, closeOf, zones } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    press(...closeOf(right), 0);
+    expect(overlay.isInventoryOpen()).toBe(false);
+    expect(overlay.isCharacterOpen()).toBe(true);
+    // the closed panel's × goes with it
+    expect(zones.filter((z) => !z.destroyed && z.x === panelClose(right).x)).toHaveLength(0);
+
+    overlay.show();
+    press(...closeOf(left), 0);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(overlay.isInventoryOpen()).toBe(true);
+
+    press(...closeOf(right), 0);
+    expect(overlay.isVisible()).toBe(false);
+    expect(zones.every((z) => z.destroyed)).toBe(true);
+  });
+
+  it("should take no right-press over the character panel as an equip, and no E while only it is open (C7)", () => {
+    const { overlay, onEquip, press, move, left } = apartOnStage();
+    overlay.toggleCharacter();
+    move(left.x + left.w / 2, left.y + left.h / 2);
+    press(left.x + left.w / 2, left.y + left.h / 2, 2);
+    overlay.handleEquipKey();
+    expect(onEquip).not.toHaveBeenCalled();
+  });
+
+  it("should still wear a hovered bag item on right-click and E with both open (§B R16 unchanged)", () => {
+    const { overlay, onEquip, press, move, right } = apartOnStage();
+    overlay.toggleCharacter();
+    overlay.show();
+    const cell = gearPanelLayout(right, 1).cells[0].rect;
+    move(cell.x + 4, cell.y + 4);
+    press(cell.x + 4, cell.y + 4, 2);
+    expect(onEquip).toHaveBeenCalledWith(sword, "weapon");
+  });
+
+  it("should close an open character panel as the stash opens, and refuse it while the stash is open (C9)", () => {
+    const { overlay, shown } = apartOnStage();
+    overlay.toggleCharacter();
+    overlay.openStash();
+    expect(overlay.isStashOpen()).toBe(true);
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(shown()).toContain("STASH");
+    expect(shown()).not.toContain("CHARACTER");
+    expect(shown()).not.toContain("Ignis");
+
+    overlay.toggleCharacter();
+    expect(overlay.isCharacterOpen()).toBe(false);
+    expect(shown()).not.toContain("Ignis");
+  });
+
+  it("should not open the stash over an open inventory, as before", () => {
+    const { overlay } = apartOnStage();
+    overlay.show();
+    overlay.openStash();
+    expect(overlay.isStashOpen()).toBe(false);
+  });
+
+  it("should end stash mode on either ×, the next open the inventory alone (C9, FS-VPD8Y R37)", () => {
+    for (const side of ["left", "right"] as const) {
+      const s = apartOnStage();
+      s.overlay.openStash();
+      s.press(...s.closeOf(s[side]), 0);
+      expect(s.overlay.isVisible()).toBe(false);
+      expect(s.overlay.isStashOpen()).toBe(false);
+      s.overlay.show();
+      expect(s.shown()).toContain("INVENTORY");
+      expect(s.shown()).not.toContain("STASH");
+      expect(s.shown()).not.toContain("Ignis");
+    }
+  });
+
+  it("should lay out both again on a resize, and close both when the scene shuts down", () => {
+    const { overlay, scale, events } = apartOnStage();
+    overlay.show();
+    overlay.toggleCharacter();
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    scale.emit("resize");
+    const { left, right } = overlayLayout(1280, 720);
+    expect(overlay.covers(left.x + 2, left.y + 2)).toBe(true);
+    expect(overlay.covers(right.x + 2, right.y + 2)).toBe(true);
+    events.emit("shutdown");
+    expect(overlay.isVisible()).toBe(false);
+  });
+});
+
+describe("GearOverlay in the party panel's frame (FS-HRH2J § Change C16)", () => {
+  it("should draw each open panel, the stash's too, with the party panel's frame drawing", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const { left, right } = overlayLayout(1080, 720);
+    const asFrame = (r: typeof left) => ({ x: r.x, y: r.y, width: r.w, height: r.h });
+    frame.mockClear();
+    overlay.show();
+    expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(right)]);
+    frame.mockClear();
+    overlay.toggleCharacter();
+    expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(left), asFrame(right)]);
+    overlay.hide();
+    frame.mockClear();
+    overlay.openStash();
+    expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(left), asFrame(right)]);
   });
 });

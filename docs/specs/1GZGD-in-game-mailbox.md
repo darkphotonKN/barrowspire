@@ -1503,8 +1503,8 @@ C1. **The envelope toggles.** With the letter panel open, a press on the envelop
     and opens nothing while a dialogue, the ESC menu or the gear overlay owns the screen.
     **(charter default: owner, "信箱ui可以透過再按一次信箱關閉")**
 C2. **The envelope is the corner row's Mail icon.** It stands in the row's leftmost slot, left of
-    Menu, Character and Party (FS-3EBCA R1, R2): at 1080 × 720 its plate is (808, 658, 58, 46),
-    and it keeps that slot when the view's size changes. The mailbox stays town only (R33, D11);
+    Menu, Inventory, Character and Party (FS-3EBCA R1, R2): at 1080 × 720 its plate is (742, 658,
+    58, 46) (808 before FS-3EBCA's fifth icon, the owner's decision of 2026-11-12), and it keeps that slot when the view's size changes. The mailbox stays town only (R33, D11);
     outside the town the row draws a greyed envelope in the same slot that cannot be pressed
     (FS-3EBCA R9; owner, "野外 email也不用消失 就顯示灰色表示不能按"), and nothing of the mailbox is
     fetched there. Its plate, lines, seal, count and pulse are drawn exactly as before; only its
@@ -1517,7 +1517,7 @@ C3. **It names itself under the pointer**: "Mailbox", in the row's hover label (
 
 - [ ] With the letter panel open, a press on the envelope closes it; a second press opens it again.
 - [ ] With the panel shut, a press while a dialogue, the ESC menu or the gear overlay is open opens nothing.
-- [ ] At 1080 × 720 the envelope's plate is (808, 658, 58, 46) and at 1280 × 720 (1008, 658, 58, 46); its seal, count and pulse are unchanged.
+- [ ] At 1080 × 720 the envelope's plate is (742, 658, 58, 46) and at 1280 × 720 (942, 658, 58, 46); its seal, count and pulse are unchanged.
 - [ ] Under the pointer the envelope shows "Mailbox"; the label goes when the pointer leaves.
 - [ ] Esc and the × still close the panel.
 

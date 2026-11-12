@@ -12,11 +12,13 @@ import {
 
 // FS-3EBCA §A R1, R2, R5; §C R13. I-3EBCA-1: the corner row's geometry and words, without a canvas.
 describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward)", () => {
+  // the row of five, the owner's decision of 2026-11-12 (FS-3EBCA R1, R2). I-3EBCA-5.
   it.each([
     ["menu", 1006],
-    ["character", 940],
-    ["party", 874],
-    ["mail", 808],
+    ["inventory", 940],
+    ["character", 874],
+    ["party", 808],
+    ["mail", 742],
   ] as const)("should put %s at x %i, y 658, 58 x 46, in a 1080 x 720 view", (icon, x) => {
     expect(cornerIconFrame(icon, { width: 1080, height: 720 })).toEqual({
       x,
@@ -27,7 +29,7 @@ describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward
   });
 
   it("should keep each icon 200 px further right in a 1280-wide view", () => {
-    for (const icon of ["menu", "character", "party", "mail"] as const)
+    for (const icon of ["menu", "inventory", "character", "party", "mail"] as const)
       expect(cornerIconFrame(icon, { width: 1280, height: 720 }).x).toBe(
         cornerIconFrame(icon, { width: 1080, height: 720 }).x + 200,
       );
@@ -44,7 +46,8 @@ describe("corner labels (FS-3EBCA R5)", () => {
   it("should name each icon and its key", () => {
     expect(CORNER_LABEL).toEqual({
       menu: "Menu (Esc)",
-      character: "Character (I)",
+      inventory: "Inventory (I)",
+      character: "Character (C)",
       party: "Party (T)",
       mail: "Mailbox",
     });

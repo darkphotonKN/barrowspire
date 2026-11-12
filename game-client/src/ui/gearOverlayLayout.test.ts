@@ -18,6 +18,7 @@ import {
   statsPanelArea,
 } from "./gearOverlayLayout";
 import { STASH_CAPACITY } from "./stash";
+import { CORNER_ICONS, CORNER_ROW_CLEARANCE, cornerIconFrame } from "./hudCornerLayout";
 
 const SIZES: [number, number][] = [
   [1080, 720],
@@ -50,16 +51,40 @@ describe("overlayLayout (FS-HRH2J R2: two mirrored edge panels, a clear middle b
     },
   );
 
+  // FS-HRH2J § Change C12 (owner, as relayed 2026-11-12: the inventory shortened so the corner
+  // row stays visible and clickable while it is open). I-3EBCA-5.
   it.each(SIZES)(
-    "should stand about 95%% of the height with a small gap at the top at %ix%i",
+    "should keep a small gap at the top and stop the corner row's 70 px above the bottom at %ix%i",
     (w, h) => {
-      const { left } = overlayLayout(w, h);
+      const { left, right } = overlayLayout(w, h);
       expect(left.y).toBeGreaterThan(0);
       expect(left.y / h).toBeLessThanOrEqual(0.06);
-      expect(left.h / h).toBeGreaterThanOrEqual(0.9);
-      expect(left.y + left.h).toBeLessThanOrEqual(h);
+      expect(left.y + left.h).toBe(h - CORNER_ROW_CLEARANCE);
+      expect(right.y + right.h).toBe(h - CORNER_ROW_CLEARANCE);
     },
   );
+
+  it("should stand the panels at (8, 29, 391, 621) and (681, 29, 391, 621) at 1080 × 720, 465 wide at 1280 (§ Change C12)", () => {
+    expect(overlayLayout(1080, 720)).toMatchObject({
+      left: { x: 8, y: 29, w: 391, h: 621 },
+      right: { x: 681, y: 29, w: 391, h: 621 },
+    });
+    expect(overlayLayout(1280, 720).right).toEqual({ x: 807, y: 29, w: 465, h: 621 });
+  });
+
+  it.each([1080, 1280])("should cover none of the corner row's plates at %i wide (§ Change C12; FS-3EBCA R11)", (width) => {
+    const view = { width, height: 720 };
+    const layout = overlayLayout(width, 720);
+    for (const icon of CORNER_ICONS) {
+      const f = cornerIconFrame(icon, view);
+      for (const [x, y] of [
+        [f.x, f.y],
+        [f.x + f.width, f.y],
+        [f.x + f.width / 2, f.y + f.height / 2],
+      ])
+        expect(overPanel(layout, x, y)).toBe(false);
+    }
+  });
 });
 
 describe("overPanel (FS-HRH2J R8: a press over a panel is the overlay's)", () => {
@@ -112,6 +137,20 @@ describe("gearPanelLayout (FS-HRH2J R13–14, R23; edge state Small window)", ()
     expect(Math.min(...layout.cells.map((c) => c.rect.y))).toBeGreaterThan(
       lowestSlot,
     );
+  });
+
+  it("should show all 30 cells whole, unscrolled, at the shorter panel's 720 px view: 44 px cells, 51 px slots (§ Change C13)", () => {
+    const layout = gearPanelLayout(right, 30);
+    expect(layout.cell).toBe(44);
+    expect(layout.slot).toBe(51);
+    expect(layout.visibleRows).toBe(5);
+    expect(layout.rows).toBe(5);
+    expect(layout.cells).toHaveLength(30);
+    // the grid, the purse line and the hint keep their order, none over the next
+    expect(layout.grid.y + layout.grid.h).toBeLessThanOrEqual(layout.purse.y);
+    expect(layout.purse.y + layout.purse.h).toBeLessThanOrEqual(layout.hintY);
+    expect(layout.hintY + HINT_H).toBeLessThanOrEqual(right.y + right.h - PANEL_PAD);
+    expect(gearPanelLayout(overlayLayout(1280, 720).right, 30).visibleRows).toBe(5);
   });
 
   it("should fill cells left to right, top to bottom, in bag order", () => {
@@ -259,6 +298,8 @@ describe("stashPanelLayout (FS-VPD8Y R35–36: the stash grid in the left panel)
 
   it("should show all 60 cells, none over, in stash order on a normal window", () => {
     const stash = stashPanelLayout(left, 7);
+    // the shorter panel still holds the whole stash (FS-HRH2J § Change C13)
+    expect(stash.cell).toBe(50);
     expect(stash.cells).toHaveLength(60);
     expect(stash.visibleRows).toBe(10);
     expect(stash.cells.some((c) => c.over)).toBe(false);

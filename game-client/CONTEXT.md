@@ -510,12 +510,19 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   is lost if the player dies before escaping. Game-service's term (FS-18Z5F).
 
 - **Corner row** (FS-3EBCA): the row of drawn panel icons in the bottom-right corner of every
-  world, from the right **Menu** (a gear: one Esc press), **Character** (the gear and bag
-  overlay), **Party** (the party panel) and the **Mailbox** icon (the envelope; greyed outside the
-  town). Each
-  names itself and its key under the pointer. "Character" is the screen's name for the gear and
-  bag overlay's icon only; the overlay keeps its own titles. Not the party frames, not the
-  minimap's column.
+  world, from the right **Menu** (a gear: one Esc press), **Inventory** (a bag: the inventory),
+  **Character** (a bust: the character panel), **Party** (the party panel) and the **Mailbox**
+  icon (the envelope; greyed outside the town). Each names itself and its key under the pointer.
+  Not the party frames, not the minimap's column.
+- **Inventory** (panel; FS-HRH2J § Change: Character and inventory apart): the gear overlay's right
+  panel, titled INVENTORY: the ten gear slots, the **bag** under them and the purse line, opened
+  on its own by `I` or `B` or the corner row's Inventory icon. The screen's name for that panel
+  only: the items under the slots are still the **bag**, and the wire's `inventory` is still the
+  bag's items.
+- **Character panel** (FS-HRH2J § Change: Character and inventory apart): the gear overlay's left
+  panel, the stats (class, name, level and experience, health and resource, the class card, what
+  worn gear adds), opened on its own by `C` or the corner row's Character icon. Never shown in
+  stash mode, where the left panel is the **stash**.
 - **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
   player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S),
   standing directly above the **corner row** (FS-3EBCA).

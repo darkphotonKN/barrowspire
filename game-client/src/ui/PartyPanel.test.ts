@@ -6,6 +6,14 @@ import type { WorldType } from "@/assets/types/client";
 import { createPartyStore, type PartyUpdatePayload } from "@/stores/partyStore";
 import { PartyPanel, type PartyPanelDeps } from "./PartyPanel";
 import { partyCommands } from "./partyCommands";
+import { drawPanelFrame } from "./panelFrame";
+
+// The party panel's frame is one drawing, which this surface must call, not copy (owner
+// 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame) };
+});
 import type { PartyInviteFieldHandle } from "./partyInviteField";
 import {
   PARTY_HINT,
@@ -557,5 +565,19 @@ describe("PartyPanel (FS-R82NV § Change C3–C5: centred, following the view)",
     expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(false);
     expect(env.field.at!.x).toBe(fieldAt + 100);
     expect(env.find("×")!.at!.x).toBe(partyPanelLeft(1280) + 300 - 24);
+  });
+});
+
+describe("PartyPanel's frame, shared (FS-R82NV § Change C1; FS-G4VMQ § Change C1)", () => {
+  it("should draw its panel with the one frame drawing the menu and the gear overlay use", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const env = setup();
+    env.pressT();
+    expect(frame).toHaveBeenCalled();
+    const [, , panel] = frame.mock.calls.at(-1)!;
+    expect(panel.x).toBe(partyPanelLeft(1080));
+    expect(panel.y).toBe(partyPanelTop(720));
+    expect(panel.width).toBe(PARTY_PANEL_W);
   });
 });

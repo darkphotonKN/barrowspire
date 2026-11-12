@@ -20,6 +20,8 @@ interface FakeZone {
 }
 interface FakeGraphics {
   strokes: number[];
+  /** Every drawing call after the plate, by name, since the last clear. */
+  calls: string[];
   depth?: number;
   destroyed: boolean;
 }
@@ -36,10 +38,9 @@ function fakeScene() {
   const texts: FakeText[] = [];
   const add = {
     graphics: () => {
-      const rec: FakeGraphics = { strokes: [], destroyed: false };
+      const rec: FakeGraphics = { strokes: [], calls: [], destroyed: false };
       graphics.push(rec);
       const self: Record<string, unknown> = {};
-      const chain = () => self;
       for (const m of [
         "setScrollFactor",
         "fillStyle",
@@ -59,8 +60,8 @@ function fakeScene() {
         "fillGradientStyle",
         "setAlpha",
       ])
-        self[m] = chain;
-      self.clear = () => ((rec.strokes = []), self);
+        self[m] = () => (rec.calls.push(m), self);
+      self.clear = () => ((rec.strokes = []), (rec.calls = []), self);
       self.lineStyle = (_w: number, colour: number) => (rec.strokes.push(colour), self);
       self.setDepth = (d: number) => ((rec.depth = d), self);
       self.destroy = () => void (rec.destroyed = true);
@@ -99,23 +100,22 @@ function fakeScene() {
   return { scene, zones, graphics, liveTexts };
 }
 
-function setup(icons?: CornerIconSpec[], covered = false) {
+function setup(icons?: CornerIconSpec[]) {
   const stage = fakeScene();
-  const press = { menu: vi.fn(), character: vi.fn(), party: vi.fn() };
-  const state = { covered };
+  const press = { menu: vi.fn(), inventory: vi.fn(), character: vi.fn(), party: vi.fn() };
   const corner = new HudCorner(stage.scene, {
     icons: icons ?? [
       { icon: "menu", press: press.menu },
+      { icon: "inventory", press: press.inventory },
       { icon: "character", press: press.character },
       { icon: "party", press: press.party },
     ],
-    covered: () => state.covered,
   });
-  const zoneAt = (icon: "menu" | "character" | "party" | "mail") => {
+  const zoneAt = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
     const f = cornerIconFrame(icon, viewport);
     return stage.zones.find((z) => !z.destroyed && z.x === f.x && z.y === f.y)!;
   };
-  return { ...stage, press, state, corner, zoneAt };
+  return { ...stage, press, corner, zoneAt };
 }
 
 describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
@@ -123,7 +123,7 @@ describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
 
   it("should give each icon a pressable plate at its rect, in the HUD band, with a hand cursor", () => {
     const env = setup();
-    for (const icon of ["menu", "character", "party"] as const) {
+    for (const icon of ["menu", "inventory", "character", "party"] as const) {
       const z = env.zoneAt(icon);
       expect(z).toBeDefined();
       expect(z.width).toBe(58);
@@ -151,14 +151,16 @@ describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
     env.corner.relayout();
     expect(env.zoneAt("menu").x).toBe(1280 - 16 - 58);
     expect(env.corner.covers(1230, 680)).toBe(true);
-    expect(env.corner.covers(1030, 680)).toBe(false);
+    // left of the leftmost plate drawn (Party, 1008–1066 at 1280)
+    expect(env.corner.covers(1000, 680)).toBe(false);
   });
 });
 
 describe("HudCorner (FS-3EBCA R5: hover labels)", () => {
   it.each([
     ["menu", "Menu (Esc)"],
-    ["character", "Character (I)"],
+    ["inventory", "Inventory (I)"],
+    ["character", "Character (C)"],
     ["party", "Party (T)"],
   ] as const)("should name %s under the pointer, and take the label down on leaving", (icon, words) => {
     const env = setup();
@@ -175,19 +177,23 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
   it("should call each icon's press", () => {
     const env = setup();
     env.zoneAt("menu").handlers.pointerdown();
+    env.zoneAt("inventory").handlers.pointerdown();
     env.zoneAt("character").handlers.pointerdown();
     env.zoneAt("party").handlers.pointerdown();
     expect(env.press.menu).toHaveBeenCalledTimes(1);
+    expect(env.press.inventory).toHaveBeenCalledTimes(1);
     expect(env.press.character).toHaveBeenCalledTimes(1);
     expect(env.press.party).toHaveBeenCalledTimes(1);
   });
 
-  it("should answer no press, and show no label, while the gear overlay covers the row (R11)", () => {
-    const env = setup(undefined, true);
-    env.zoneAt("character").handlers.pointerdown();
-    env.zoneAt("character").handlers.pointerover();
-    expect(env.press.character).not.toHaveBeenCalled();
-    expect(env.liveTexts()).toHaveLength(0);
+  it("should draw the Inventory icon's bag apart from the Character icon's bust (R3)", () => {
+    const env = setup([{ icon: "inventory" }, { icon: "character" }]);
+    const [bag, bust] = env.graphics;
+    expect(bag.strokes).toContain(palette.interactable);
+    expect(bag.calls).not.toEqual(bust.calls);
+    // a pouch: its body and neck are paths, its cord a line, no circle for a head
+    expect(bag.calls).toContain("lineBetween");
+    expect(bag.calls).not.toContain("strokeCircle");
   });
 
   it("should say which points it covers, for the world's press to leave alone (R10)", () => {

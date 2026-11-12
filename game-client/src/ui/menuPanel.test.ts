@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { BARROW_HEX } from "@/utils/theme";
-import { toCss } from "@/utils/canvasPalette";
+import { palette, toCss } from "@/utils/canvasPalette";
 import {
   MENU_DEPTH,
   MENU_LINE,
@@ -12,6 +12,14 @@ import {
   type MenuStage,
   type MenuTones,
 } from "./menuPanel";
+import { drawPanelFrame, frameClose } from "./panelFrame";
+
+// The party panel's frame is one drawing, which this surface must call, not copy (owner
+// 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
+vi.mock("./panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./panelFrame")>();
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame) };
+});
 
 /** A scene object as the stand-in stage made it: what kind, with what, and whether it is gone. */
 interface Made {
@@ -195,7 +203,11 @@ describe("showMenuPanel", () => {
       hit: HIT,
       tones: TONES,
     });
-    const labels = () => stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    // the rows' labels, the frame's × aside
+    const labels = () =>
+      stage.made
+        .filter((m) => m.kind === "text" && !m.destroyed && m.args[2] !== "×")
+        .map((m) => String(m.args[2]));
     return { ...stage, ...panel, container: panel.container as unknown as Made, fall, leave, back, close, labels };
   }
 
@@ -310,6 +322,35 @@ describe("showMenuPanel", () => {
   it("should take every hit down with the container", () => {
     const { container, find } = shown();
     (container as unknown as { destroy(): void }).destroy();
-    for (const id of ["fall", "leave", "back"]) expect(find(`menu-${id}`)).toBeUndefined();
+    for (const id of ["fall", "leave", "back", "close"]) expect(find(`menu-${id}`)).toBeUndefined();
+  });
+
+  // FS-G4VMQ § Change: The menu wears the party panel's frame (C1–C3). I-3EBCA-6.
+  it("should draw its box with the party panel's frame drawing, centred on the origin, the rows unchanged (C1, C3)", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const { labels } = shown();
+    const height = MENU_PAD * 2 + choices.length * MENU_ROW;
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(frame.mock.calls[0][2]).toEqual({ x: -160, y: -height / 2, width: 320, height });
+    expect(labels()).toEqual(["Fall where you stand  [1]", "Leave the barrow  [2]", "Back  [Esc]"]);
+  });
+
+  it("should close on its × as Esc does: through the cancel row, camera-fixed over the box (C2)", () => {
+    const { find, made, back, container, moveTo } = shown();
+    const height = MENU_PAD * 2 + choices.length * MENU_ROW;
+    const box = frameClose({ x: -160, y: -height / 2, width: 320 });
+    const glyph = made.find((m) => m.kind === "text" && m.args[2] === "×")!;
+    expect(container.children).toContain(glyph);
+    const hit = find("menu-close") as Made & { x: number; y: number };
+    expect(hit.kind).toBe("rectangle");
+    expect(hit.scrollFactor).toBe(0);
+    expect([hit.x, hit.y]).toEqual([ORIGIN.x + box.x + box.width / 2, ORIGIN.y + box.y + box.height / 2]);
+    hit.handlers.pointerover();
+    expect(glyph.color).toBe(toCss(palette.interactableBright));
+    hit.handlers.pointerup();
+    expect(back).toHaveBeenCalledTimes(1);
+    moveTo({ x: ORIGIN.x + 50, y: ORIGIN.y });
+    expect(hit.x).toBe(ORIGIN.x + 50 + box.x + box.width / 2);
   });
 });

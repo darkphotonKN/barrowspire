@@ -26,7 +26,7 @@ import {
 import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
-import { carvedPanel } from "./carvedPanel";
+import { drawPanelFrame, lightClose } from "./panelFrame";
 import { partyCommands, type PartyCommands } from "./partyCommands";
 import {
   domPartyInviteField,
@@ -86,8 +86,6 @@ const HUD_DEPTH = 1000;
 const FONT_PX = 14;
 const SMALL_PX = 12;
 const TITLE_PX = 15;
-/** The ×'s size, the letter panel's. */
-const CLOSE_PX = 22;
 /** An away or offline member's row, and a greyed action. */
 const GREYED_ALPHA = 0.45;
 
@@ -289,20 +287,17 @@ export class PartyPanel {
     this.texts.push(drawHudButton(this.scene, g, r, label, enabled, press));
   }
 
-  /** The × in the letter panel's look (§ Change C1): amber, brighter under the pointer. */
-  private drawClose(r: Rect): void {
-    const x = this.text(
-      r.x + r.width / 2,
-      r.y + r.height / 2,
-      "×",
-      palette.interactable,
-      CLOSE_PX,
-    )
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+  /**
+   * The panel's frame, the one every world panel wears (`drawPanelFrame`): the carved ground and
+   * the × at its top right (§ Change C1), amber, brighter under the pointer, a press closing it.
+   */
+  private drawFrame(g: Phaser.GameObjects.Graphics, panel: Rect): void {
+    const { glyph: x } = drawPanelFrame(this.scene, g, panel);
+    x.setScrollFactor(0).setDepth(HUD_DEPTH).setInteractive({ useHandCursor: true });
+    this.texts.push(x);
     x.on("pointerdown", () => this.close());
-    x.on("pointerover", () => x.setColor(toCss(palette.interactableBright)));
-    x.on("pointerout", () => x.setColor(toCss(palette.interactable)));
+    x.on("pointerover", () => lightClose(x, true));
+    x.on("pointerout", () => lightClose(x, false));
   }
 
   private draw(): void {
@@ -325,7 +320,7 @@ export class PartyPanel {
     const g = this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
     this.graphics = g;
     const { panel, title } = frame;
-    carvedPanel(g, panel.x, panel.y, panel.width, panel.height);
+    this.drawFrame(g, panel);
     this.text(
       title.x,
       title.y,
@@ -333,7 +328,6 @@ export class PartyPanel {
       palette.frameBright,
       TITLE_PX,
     );
-    this.drawClose(frame.close);
 
     actions.members.forEach((m, i) => {
       const { row, transfer, kick } = frame.rows[i];

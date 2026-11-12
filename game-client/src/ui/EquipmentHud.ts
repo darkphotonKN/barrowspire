@@ -11,15 +11,20 @@ import type { CharacterSource } from "./characterSheet";
  * held in the inventory while its loot is pending, so it does not flicker out before the server
  * confirms it. The bag's capacity is pre-checked here (FS-HRH2J R20–21): an unequip or a pickup
  * into a full bag, pending pickups counted, is not sent and the port says why; the server's
- * refusal stays the gate. Each open also reads the purse line's gold (FS-7TGZ3 R8), though gold
- * cannot change inside a run. The run scene and the field scene each compose one; neither copies it.
+ * refusal stays the gate. Each inventory open also reads the purse line's gold (FS-7TGZ3 R8), though
+ * gold cannot change inside a run. The character panel opens and closes on its own (`C`), handed
+ * what is worn for its "From gear" and reading no purse (FS-HRH2J § Change: Character and
+ * inventory apart). The run scene and the field scene each compose one; neither copies it.
  * Phaser-free: the scene hands it the panel and a port for sends and words.
  */
 
 /** How long, in ms, an item taken but not yet in the server's inventory is held: the run's window. */
 export const PENDING_MS = 1000;
 
-/** What the HUD asks of the gear and bag panel. */
+/**
+ * What the HUD asks of the gear and bag overlay: the inventory (the slots and the bag) and the
+ * character panel (the stats), each opened on its own (FS-HRH2J § Change C1).
+ */
 export interface HudPanel {
   onEquip?: (item: ItemState, slot: EquipmentSlot) => void;
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
@@ -27,11 +32,19 @@ export interface HudPanel {
   mayEquip?: (item: ItemState, slot: EquipmentSlot) => boolean;
   /** Asked before an unequip: false leaves the item worn and nothing is sent. */
   mayUnequip?: (item: ItemState) => boolean;
-  /** Whether a screen point lies over the open panel, where a press is the panel's (FS-HRH2J R8). */
+  /** Whether a screen point lies over an open panel, where a press is the panel's (FS-HRH2J R8). */
   covers(x: number, y: number): boolean;
+  /** Opens or closes the inventory. */
   toggle(): void;
+  /** Opens or closes the character panel. */
+  toggleCharacter(): void;
+  /** Closes both. */
   hide(): void;
+  /** Whether either is open. */
   isVisible(): boolean;
+  isInventoryOpen(): boolean;
+  isCharacterOpen(): boolean;
+  /** E over the open inventory. */
   handleEquipKey(): void;
   updateInventory(items: ItemState[]): void;
   updateEquipment(equipped: EquippedItems): void;
@@ -40,7 +53,7 @@ export interface HudPanel {
   updateCharacter(player: CharacterSource): void;
 }
 
-/** The purse line's reader (FS-7TGZ3): asked once per open of the overlay, let go with its world. */
+/** The purse line's reader (FS-7TGZ3): asked once per open of the inventory, let go with its world. */
 export interface PurseRefresh {
   refresh(): void | Promise<void>;
   /** Drops a read in flight, so its answer draws nothing on a torn-down scene. */
@@ -112,6 +125,7 @@ export class EquipmentHud {
     return this.worn;
   }
 
+  /** Whether the inventory or the character panel is open: the overlay is over the world (§ Change C11). */
   isOpen(): boolean {
     return this.panel.isVisible();
   }
@@ -131,26 +145,43 @@ export class EquipmentHud {
     return false;
   }
 
-  /** Opens or closes the panel; opening fills it and reads the purse (FS-7TGZ3 R8). */
-  toggle(): void {
+  /**
+   * Opens or closes the inventory; opening fills it and reads the purse (FS-7TGZ3 R8). Whether it
+   * is open now.
+   */
+  toggle(): boolean {
     this.panel.toggle();
-    if (this.panel.isVisible()) {
-      this.panel.updateInventory(this.carried);
-      this.panel.updateEquipment(this.worn);
-      void this.purse?.refresh();
-    }
+    if (!this.panel.isInventoryOpen()) return false;
+    this.panel.updateInventory(this.carried);
+    this.panel.updateEquipment(this.worn);
+    void this.purse?.refresh();
+    return true;
   }
 
-  /** Closes the panel; whether it was open. */
+  /**
+   * Opens or closes the character panel; opening hands it what is worn, for "From gear", and reads
+   * no purse (FS-HRH2J § Change C1, C10). Whether it is open now.
+   */
+  toggleCharacter(): boolean {
+    this.panel.toggleCharacter();
+    if (!this.panel.isCharacterOpen()) return false;
+    this.panel.updateEquipment(this.worn);
+    return true;
+  }
+
+  /** Closes both panels; whether either was open. */
   hide(): boolean {
     if (!this.panel.isVisible()) return false;
     this.panel.hide();
     return true;
   }
 
-  /** E, while the panel is open, equips or unequips what the pointer is over; whether it took E. */
+  /**
+   * E, while the inventory is open, equips or unequips what the pointer is over; whether it took
+   * E. With only the character panel open E is the world's (FS-HRH2J § Change C7).
+   */
   equipKey(): boolean {
-    if (!this.panel.isVisible()) return false;
+    if (!this.panel.isInventoryOpen()) return false;
     this.panel.handleEquipKey();
     return true;
   }

@@ -1,11 +1,14 @@
 /**
  * The gear, bag and stats overlay (FS-HRH2J §A, §B): two mirrored panels on the screen's side
- * edges, drawn over the live world with a clear band between them. The right panel holds the
- * ten gear slots above the 6 × 5 bag; the left is the stats panel (§C), drawn from the player's
- * own world state, the worn gear and the class card (`characterSheet`), live while open. Both
- * open and close together. Opened at the hub's stash chest (`openStash`), the left panel shows
- * the account's stash instead of the stats until the overlay closes (FS-VPD8Y §F R35–37), and
- * the same gestures move a bag item to the stash and a stash item to the bag (R38).
+ * edges, drawn over the live world with a clear band between them. The right panel, the
+ * inventory, holds the ten gear slots above the 6 × 5 bag; the left, the character panel, is the
+ * stats (§C), drawn from the player's own world state, the worn gear and the class card
+ * (`characterSheet`), live while open. Each opens and closes on its own, `I` / `B` the inventory
+ * and `C` the character panel, and each has an × at its top right (FS-HRH2J § Change: Character
+ * and inventory apart). Opened at the hub's stash chest (`openStash`), the left panel shows the
+ * account's stash beside the inventory until the inventory closes (FS-VPD8Y §F R35–37; the
+ * character panel closes as it opens), and the same gestures move a bag item to the stash and a
+ * stash item to the bag (R38).
  *
  * It is the {@link HudPanel} `EquipmentHud` drives in a run and a field world, and `HubGear`
  * drives from REST in the hub (§E), so the sends, the pending pickups and the full-bag
@@ -27,8 +30,8 @@
  * split in a tip on hover. It is a {@link PurseShelf}: the world's `PurseReader` hands it what the
  * wallet says, and it shows "—" until then. It takes no press and no `E`.
  *
- * Game palette world panels (design-guideline "UI Chrome"): dark ink and carved stone, a 1px
- * brass border, vellum text; rarity colour is the rarity edge and, on Runed and Fabled, the still
+ * Game palette world panels (design-guideline "UI Chrome") in the party panel's frame, the one
+ * drawing every world panel wears (`drawPanelFrame`, FS-HRH2J § Change C16), vellum text; rarity colour is the rarity edge and, on Runed and Fabled, the still
  * glow and the well's outline (FS-QE2QW §B). Icons are the baked item icons with their generic
  * fallback.
  */
@@ -80,6 +83,7 @@ import {
   listedMark,
   overlayLayout,
   overPanel,
+  panelClose,
   rowWindow,
   stashPanelLayout,
   statsPanelArea,
@@ -92,13 +96,13 @@ import {
 } from "./gearOverlayLayout";
 import { viewport } from "@/render/viewport";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
+import { drawPanelFrame, lightClose } from "./panelFrame";
 
 /** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
 export const GEAR_OVERLAY_DEPTH = 1100;
 const TIP_DEPTH = 2200;
 const FLASH_DEPTH = 2300;
 
-const PANEL_RADIUS = 6;
 const WELL_RADIUS = 4;
 /** The rarity accent edge down a worn slot's or a bag cell's left side. */
 const EDGE_W = 3;
@@ -175,6 +179,18 @@ const PURSE_TIP_SIZE = 12;
 /** The gap between the coins icon and the amount. */
 const PURSE_ICON_GAP = 6;
 
+/** Which panel: the inventory on the right, the character panel (or the stash) on the left. */
+type Side = "left" | "right";
+
+/** A panel's ×: its drawn glyph, the zone that gives it the hand cursor, and its box. */
+interface CloseMark {
+  side: Side;
+  box: Rect;
+  glyph: Phaser.GameObjects.Text;
+  zone: Phaser.GameObjects.Zone;
+  lit: boolean;
+}
+
 export class GearOverlay implements HudPanel, PurseShelf {
   onEquip?: (item: ItemState, slot: EquipmentSlot) => void;
   onUnequip?: (item: ItemState, slot: EquipmentSlot) => void;
@@ -185,7 +201,10 @@ export class GearOverlay implements HudPanel, PurseShelf {
   /** A stash-mode move, drawn at once to the end of `to` (R38, R41). */
   onMove?: (item: ItemState, to: ItemLocation) => void;
 
-  private visible = false;
+  /** The inventory (the right panel) is open. */
+  private inventoryOpen = false;
+  /** The character panel (the left panel's stats) is open; never in stash mode (§ Change C9). */
+  private characterOpen = false;
   private equipped: EquippedItems = nothingWorn();
   private inventory: ItemState[] = [];
   private characterLevel?: number;
@@ -213,6 +232,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
   private stashGrid?: StashPanelLayout;
   /** The panels' frames and fixed words, rebuilt only on open and resize. */
   private frame?: Phaser.GameObjects.Container;
+  /** Each open panel's ×, rebuilt with the frame. */
+  private closes: CloseMark[] = [];
   /** The slots, cells, icons and count, rebuilt as what is carried or worn changes. */
   private content?: Phaser.GameObjects.Container;
   /** The stats panel's rows, rebuilt as the sheet they show changes. */
@@ -249,37 +270,51 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   // ── HudPanel ─────────────────────────────────────────────────────────────
 
+  /** Whether either panel is open: the overlay is over the world (§ Change C11). */
+  private get visible(): boolean {
+    return this.inventoryOpen || this.characterOpen;
+  }
+
+  /** `I` / `B`: the inventory opens or closes; the character panel is left as it is (§ Change C2). */
   toggle(): void {
-    if (this.visible) this.hide();
+    if (this.inventoryOpen) this.close("right");
     else this.show();
   }
 
+  /** The inventory opens, beside the character panel if that is open. */
   show(): void {
-    if (this.visible) return;
-    this.visible = true;
-    this.shift = this.scene.input.keyboard?.addKey("SHIFT", false);
-    this.comparing = this.shift?.isDown ?? false;
-    this.build();
-    // Phaser lets a key go on blur and as the chat input opens without an event, so Shift is
-    // read each frame rather than heard (R2, R6)
-    this.scene.events?.on("update", this.readShift, this);
-    this.scene.input.on("pointermove", this.onPointerMove, this);
-    this.scene.input.on("pointerdown", this.onPointerDown, this);
-    this.scene.input.on("wheel", this.onWheel, this);
-    this.scene.scale?.on("resize", this.relayout, this);
-    // a world switch while open takes the overlay with it (edge state "World switch while open")
-    this.scene.events?.once("shutdown", this.hide, this);
+    if (this.inventoryOpen) return;
+    const was = this.visible;
+    this.inventoryOpen = true;
+    this.present(was);
+  }
+
+  /** `C`: the character panel opens or closes; refused while the stash holds the left side (C9). */
+  toggleCharacter(): void {
+    if (this.characterOpen) {
+      this.close("left");
+      return;
+    }
+    if (this.stash) return;
+    const was = this.visible;
+    this.characterOpen = true;
+    this.present(was);
   }
 
   /**
-   * Opens the overlay in stash mode, the left panel showing the stash (FS-VPD8Y R35), empty until
-   * {@link updateStash} fills it. Only from closed: an open overlay keeps its mode.
+   * Opens the overlay in stash mode, the left panel showing the stash beside the inventory
+   * (FS-VPD8Y R35), empty until {@link updateStash} fills it. Only with the inventory closed: an
+   * open inventory keeps its mode. An open character panel closes, the stash taking its side
+   * (FS-HRH2J § Change C9).
    */
   openStash(): void {
-    if (this.visible) return;
+    if (this.inventoryOpen) return;
+    const was = this.visible;
+    this.characterOpen = false;
     this.stash = [];
     this.stashScroll = 0;
-    this.show();
+    this.inventoryOpen = true;
+    this.present(was);
   }
 
   /** Whether the overlay is open in stash mode. */
@@ -294,10 +329,12 @@ export class GearOverlay implements HudPanel, PurseShelf {
     if (this.visible) this.redraw();
   }
 
+  /** Both panels close: Esc, Q, a world switch (§ Change C3). */
   hide(): void {
     if (!this.visible) return;
-    this.visible = false;
-    // closing ends stash mode: the next open shows the stats (FS-VPD8Y R37)
+    this.inventoryOpen = false;
+    this.characterOpen = false;
+    // closing ends stash mode: the next open shows the inventory alone (FS-VPD8Y R37, C9)
     this.stash = undefined;
     this.scene.input?.off("pointermove", this.onPointerMove, this);
     this.scene.input?.off("pointerdown", this.onPointerDown, this);
@@ -316,16 +353,77 @@ export class GearOverlay implements HudPanel, PurseShelf {
     return this.visible;
   }
 
+  isInventoryOpen(): boolean {
+    return this.inventoryOpen;
+  }
+
+  isCharacterOpen(): boolean {
+    return this.characterOpen;
+  }
+
+  /**
+   * One panel closes, by its key or its × (§ Change C4); the other stays as it was. The last one
+   * open closes the overlay, and so does the inventory in stash mode, the stash going with it
+   * (FS-VPD8Y R37).
+   */
+  private close(side: Side): void {
+    const other = side === "right" ? this.characterOpen : this.inventoryOpen;
+    if (!other || this.stash) {
+      this.hide();
+      return;
+    }
+    if (side === "right") this.inventoryOpen = false;
+    else this.characterOpen = false;
+    this.present(true);
+  }
+
+  /**
+   * Draws what is open now: the first panel to open hangs the overlay's handlers on the scene,
+   * a second one (or one closing beside another) only draws again.
+   */
+  private present(wasOpen: boolean): void {
+    if (wasOpen) {
+      this.teardown();
+      this.build();
+      return;
+    }
+    this.shift = this.scene.input.keyboard?.addKey("SHIFT", false);
+    this.comparing = this.shift?.isDown ?? false;
+    this.build();
+    // Phaser lets a key go on blur and as the chat input opens without an event, so Shift is
+    // read each frame rather than heard (R2, R6)
+    this.scene.events?.on("update", this.readShift, this);
+    this.scene.input.on("pointermove", this.onPointerMove, this);
+    this.scene.input.on("pointerdown", this.onPointerDown, this);
+    this.scene.input.on("wheel", this.onWheel, this);
+    this.scene.scale?.on("resize", this.relayout, this);
+    // a world switch while open takes the overlay with it (edge state "World switch while open")
+    this.scene.events?.once("shutdown", this.hide, this);
+  }
+
   covers(x: number, y: number): boolean {
     return (
-      this.visible && this.layout !== undefined && overPanel(this.layout, x, y)
+      this.visible &&
+      this.layout !== undefined &&
+      overPanel(this.layout, x, y, {
+        left: this.leftShown(),
+        right: this.inventoryOpen,
+      })
     );
   }
 
-  /** E while open: wear or take off whatever the pointer is over; nothing hovered, nothing happens (R10). */
+  /**
+   * E while the inventory is open: wear or take off whatever the pointer is over; nothing hovered,
+   * nothing happens (R10). The character panel holds nothing to wear (§ Change C7).
+   */
   handleEquipKey(): void {
-    if (!this.visible) return;
+    if (!this.inventoryOpen) return;
     this.act();
+  }
+
+  /** Whether the left panel is drawn: the character panel, or the stash in stash mode. */
+  private leftShown(): boolean {
+    return this.characterOpen || this.stash !== undefined;
   }
 
   updateInventory(items: ItemState[]): void {
@@ -380,15 +478,64 @@ export class GearOverlay implements HudPanel, PurseShelf {
   // ── Building ─────────────────────────────────────────────────────────────
 
   private build(): void {
-    this.layout = overlayLayout(viewport.width, viewport.height);
-    this.frame = this.scene.add.container(0, 0, [
-      this.panel(this.layout.left),
-      this.panel(this.layout.right),
-      this.heading(this.layout.left, this.stash ? "STASH" : "CHARACTER"),
-      this.heading(this.layout.right, "GEAR"),
-    ]);
+    const layout = overlayLayout(viewport.width, viewport.height);
+    this.layout = layout;
+    const parts: Phaser.GameObjects.GameObject[] = [];
+    const open = (side: Side, title: string) => {
+      const r = layout[side];
+      // the party panel's frame, the one every world panel wears (§ Change C16)
+      const g = this.scene.add.graphics();
+      const { glyph } = drawPanelFrame(this.scene, g, {
+        x: r.x,
+        y: r.y,
+        width: r.w,
+        height: r.h,
+      });
+      parts.push(g, this.heading(r, title));
+      this.closes.push(this.closeMark(side, panelClose(r), glyph));
+    };
+    if (this.leftShown()) open("left", this.stash ? "STASH" : "CHARACTER");
+    // the panel, its key and its corner icon name one thing (§ Change C14)
+    if (this.inventoryOpen) open("right", "INVENTORY");
+    parts.push(...this.closes.map((c) => c.glyph));
+    this.frame = this.scene.add.container(0, 0, parts);
     this.frame.setDepth(GEAR_OVERLAY_DEPTH).setScrollFactor(0);
     this.redraw();
+  }
+
+  /**
+   * A panel's × (§ Change C4), drawn by the frame. Its press is hit-tested by hand with the
+   * overlay's other presses (`onPointerDown`), so a scene that asks `covers` first still sees the
+   * panel there; the zone is only for the hand cursor.
+   */
+  private closeMark(
+    side: Side,
+    box: Rect,
+    glyph: Phaser.GameObjects.Text,
+  ): CloseMark {
+    const zone = this.scene.add
+      .zone(box.x, box.y, box.w, box.h)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(GEAR_OVERLAY_DEPTH + 3)
+      .setInteractive({ useHandCursor: true });
+    return { side, box, glyph, zone, lit: false };
+  }
+
+  /** The × under the pointer, if any. */
+  private closeAt(x: number, y: number): CloseMark | undefined {
+    return this.closes.find((c) => inRect(c.box, x, y));
+  }
+
+  /** Each × brighter while the pointer is over it. */
+  private lightCloses(): void {
+    const over = this.closeAt(this.pointer.x, this.pointer.y);
+    for (const c of this.closes) {
+      const lit = c === over;
+      if (lit === c.lit) continue;
+      c.lit = lit;
+      lightClose(c.glyph, lit);
+    }
   }
 
   /**
@@ -408,8 +555,25 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.hoverRing?.destroy();
     this.hideTip();
     this.hidePurseTip();
+    const children: Phaser.GameObjects.GameObject[] = this.inventoryOpen
+      ? this.inventoryParts(this.layout.right)
+      : [];
+    if (this.stash) children.push(...this.stashPanel(this.stash));
+
+    this.content = this.scene.add.container(0, 0, children);
+    this.content.setDepth(GEAR_OVERLAY_DEPTH + 1).setScrollFactor(0);
+    this.hoverRing = this.scene.add.graphics();
+    this.hoverRing.setDepth(GEAR_OVERLAY_DEPTH + 2).setScrollFactor(0);
+    this.hovered = undefined;
+    this.updateHover();
+    // what is worn feeds "From gear" (R29)
+    this.redrawStats();
+  }
+
+  /** The inventory's insides: the slots, the bag and its count, the hint and the purse line. */
+  private inventoryParts(right: Rect): Phaser.GameObjects.GameObject[] {
     this.gear = gearPanelLayout(
-      this.layout.right,
+      right,
       this.inventory.length,
       this.scroll,
     );
@@ -466,16 +630,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     hint.setOrigin(0.5, 0);
     children.push(hint);
     children.push(...this.purseLine(g.purse));
-    if (this.stash) children.push(...this.stashPanel(this.stash));
-
-    this.content = this.scene.add.container(0, 0, children);
-    this.content.setDepth(GEAR_OVERLAY_DEPTH + 1).setScrollFactor(0);
-    this.hoverRing = this.scene.add.graphics();
-    this.hoverRing.setDepth(GEAR_OVERLAY_DEPTH + 2).setScrollFactor(0);
-    this.hovered = undefined;
-    this.updateHover();
-    // what is worn feeds "From gear" (R29)
-    this.redrawStats();
+    return children;
   }
 
   private teardown(): void {
@@ -489,24 +644,14 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.content?.destroy();
     this.hoverRing?.destroy();
     this.frame?.destroy();
+    for (const c of this.closes) c.zone.destroy();
+    this.closes = [];
     this.content = undefined;
     this.hoverRing = undefined;
     this.frame = undefined;
     this.layout = undefined;
     this.gear = undefined;
     this.stashGrid = undefined;
-  }
-
-  /** A world panel: ink ground, a carved inner edge, a 1px brass border, a small radius. */
-  private panel(r: Rect): Phaser.GameObjects.Graphics {
-    const g = this.scene.add.graphics();
-    g.fillStyle(palette.ink, 0.94);
-    g.fillRoundedRect(r.x, r.y, r.w, r.h, PANEL_RADIUS);
-    g.lineStyle(1, palette.hudPanel, 0.9);
-    g.strokeRoundedRect(r.x + 3, r.y + 3, r.w - 6, r.h - 6, PANEL_RADIUS - 2);
-    g.lineStyle(1, palette.frame, 0.6);
-    g.strokeRoundedRect(r.x, r.y, r.w, r.h, PANEL_RADIUS);
-    return g;
   }
 
   private heading(r: Rect, words: string): Phaser.GameObjects.Text {
@@ -834,8 +979,9 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   /** The left panel from the latest state and what is worn, only when what it shows changed. */
   private redrawStats(): void {
-    // in stash mode the left panel is the stash's (FS-VPD8Y R35)
-    if (!this.layout || !this.character || this.stash) return;
+    // only while the character panel is open; in stash mode the left panel is the stash's
+    // (FS-VPD8Y R35, § Change C9)
+    if (!this.layout || !this.character || !this.characterOpen) return;
     const sheet = characterSheet(this.character, this.equipped);
     const shows = JSON.stringify(sheet);
     if (`${this.statsScroll}:${shows}` === this.shownSheet) return;
@@ -951,12 +1097,18 @@ export class GearOverlay implements HudPanel, PurseShelf {
   }
 
   /**
-   * A right-press over an item wears or takes it off (R16–17), or in stash mode moves it
-   * (FS-VPD8Y R38); a left-press does nothing (R18).
+   * A left-press on a panel's × closes that panel (§ Change C4). A right-press over an item wears
+   * or takes it off (R16–17), or in stash mode moves it (FS-VPD8Y R38); a left-press on an item
+   * does nothing (R18).
    */
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     this.pointer = viewport.toLogical(pointer);
     this.updateHover();
+    if (pointer.button === 0) {
+      const mark = this.closeAt(this.pointer.x, this.pointer.y);
+      if (mark) this.close(mark.side);
+      return;
+    }
     if (pointer.button === 2) this.act();
   }
 
@@ -1035,6 +1187,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   private updateHover(): void {
     if (!this.visible) return;
+    this.lightCloses();
     this.updatePurseTip();
     const now = this.hitAt(this.pointer.x, this.pointer.y);
     if (hoverKey(now) === hoverKey(this.hovered)) {
