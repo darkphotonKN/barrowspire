@@ -1348,3 +1348,48 @@ describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
     expect(relayout).toHaveBeenCalled();
   });
 });
+
+// FS-R82NV § Change C2: in a field one Esc closes the gear overlay, then the party panel. I-R82NV-13.
+describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
+  function keyed() {
+    const keys = new Map<string, () => void>();
+    const field = new FieldScene() as unknown as {
+      input: unknown;
+      equipment?: unknown;
+      partyPanel?: unknown;
+      bindHudKeys(): void;
+    };
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+    };
+    let gear = true;
+    let party = true;
+    field.equipment = {
+      isOpen: () => gear,
+      hide: () => {
+        const was = gear;
+        gear = false;
+        return was;
+      },
+    };
+    field.partyPanel = {
+      isOpen: () => party,
+      close: () => {
+        const was = party;
+        party = false;
+        return was;
+      },
+    };
+    field.bindHudKeys();
+    return { esc: () => keys.get("keydown-ESC")!(), open: () => ({ gear, party }) };
+  }
+
+  it("should close the gear overlay first, then the party panel", () => {
+    const f = keyed();
+    f.esc();
+    expect(f.open()).toEqual({ gear: false, party: true });
+    f.esc();
+    expect(f.open()).toEqual({ gear: false, party: false });
+  });
+});

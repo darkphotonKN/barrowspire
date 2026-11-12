@@ -4087,6 +4087,24 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(labels()).toContain("Back  [Esc]");
   });
 
+  it("should close an open party panel on ESC before it opens the menu (FS-R82NV § Change C2)", () => {
+    const { run, keys, press } = menuOnStage();
+    let open = true;
+    (run as unknown as { partyPanel: unknown }).partyPanel = {
+      isOpen: () => open,
+      close: () => {
+        const was = open;
+        open = false;
+        return was;
+      },
+    };
+    press(keys.esc);
+    expect(open).toBe(false);
+    expect(run.menu).toBeUndefined();
+    press(keys.esc);
+    expect(run.menu).toBeDefined();
+  });
+
   it("should close the menu on a second ESC, and on Back, taking its hit areas with it", () => {
     const { run, keys, press, option, pick } = menuOnStage();
     press(keys.esc);
