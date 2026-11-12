@@ -343,6 +343,10 @@ Amended the same day, before the browser check, by the owner's finding "開道�
 (with the inventory or the character panel open, the party panel cannot be opened): C8, and C2's
 order with it. FS-3EBCA R8 takes the overlay out of T's and the Party icon's rule.
 
+Amended again the same day by the owner: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (opening the letter panel closes the other
+windows, opening another window closes it, opening the menu closes every window, and while the menu
+is open nothing else can be pressed): C8's refusals edited in place, C9 added (FS-3EBCA §D).
+
 ### Requirements
 
 C1. **An × closes the panel.** At the panel's top right, in its title row: "×" at 22 px in
@@ -377,8 +381,8 @@ C7. **A press on the open panel stays the panel's** wherever it now stands (R28'
     is never an attack, a cast or a hold, and it keeps the invite field's focus.
 C8. **It opens over the inventory and the character panel.** T and the Party icon open and close
     the panel whether or not the inventory, the character panel or both are open, in the town, a
-    field and a run (FS-3EBCA R8); the dialogue, the ESC menu, the letter panel, the run's end and
-    an open container still refuse them. The panel is drawn above the overlay's panels and their
+    field and a run (FS-3EBCA R8); the dialogue, the ESC menu, the run's end and an open container
+    still refuse them (the letter panel no longer does: C9). The panel is drawn above the overlay's panels and their
     × (depth 1110, over the overlay's 1100–1103, under the letter panel and the menu), overlapping
     their inner edges a little at its centred place (C3). Its invite field shows and takes typing
     over them, and keys typed into it (I, B, C, T, E, Q) reach none of the scene's keys, as
@@ -386,6 +390,12 @@ C8. **It opens over the inventory and the character panel.** T and the Party ico
     overlay underneath wears, takes off, closes or scrolls nothing there and shows no hover or
     tip. **(owner, 2026-11-12: "開道具欄跟角色欄時開不了隊伍"; the depth, the press rule and the Esc
     order (C2) derived here: the panel opened last over the overlay is the one on top)**
+C9. **It closes the letter panel as it opens, and the letter panel and the menu close it.** In
+    the town, T and the Party icon open the panel with the letter panel open, closing the letter
+    panel first; the envelope opening the letter panel closes the party panel; and opening the ESC
+    menu (Esc with nothing open, or the Menu icon) closes it in every world. While the menu is open
+    T and the Party icon open nothing (FS-3EBCA R15–R18). **(owner, 2026-11-12: "開信箱時其他視窗會被關閉
+    開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按")**
 
 ### Acceptance Criteria
 
@@ -396,11 +406,12 @@ C8. **It opens over the inventory and the character panel.** T and the Party ico
 - [ ] With the panel open, the invite prompts and the ready check stand at x 702 (1080) and do not overlap the panel; with it shut they are centred as before.
 - [ ] T still toggles the panel under its existing rule.
 - [ ] With the inventory, the character panel or both open, T and the Party icon open and close the panel in the town, a field and a run; it is drawn above them; the first Esc closes it and the second the overlay; its invite field takes typing; a press on it does nothing in the overlay underneath.
+- [ ] In the town, T and the Party icon open the panel with the letter panel open, closing the letter panel; the envelope closes the panel as it opens the letter panel; opening the ESC menu closes the panel in every world.
 
 ### Edge States
 
-- **Panel and letter panel both open (town):** the letter panel is drawn over it and the invite
-  field hides (the scene's `blocked`); Esc closes the letter panel first.
+- **Panel and letter panel both open (town):** no longer reachable: each closes the other as it
+  opens (C9).
 - **Panel and gear overlay both open:** the panel is drawn over the overlay, whichever opened
   first; Esc closes the panel first, then the overlay (C2, C8).
 - **A full party of four:** the panel grows down to about y 414 and may cover the player's head at

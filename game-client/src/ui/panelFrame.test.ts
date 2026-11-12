@@ -2,7 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
-import { FRAME_CLOSE_PX, drawPanelFrame, frameClose, lightClose } from "./panelFrame";
+import { CANVAS_FONT } from "@/utils/canvasPalette";
+import {
+  FRAME_CLOSE_PX,
+  PANEL_TITLE_BAND,
+  PANEL_TITLE_PX,
+  PANEL_TITLE_SPACING,
+  PANEL_TITLE_TOP,
+  drawPanelFrame,
+  drawPanelTitle,
+  frameClose,
+  lightClose,
+} from "./panelFrame";
 
 // The party panel's outer frame, one drawing for the party panel, the ESC menu, the inventory and
 // the character panel (owner 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"; FS-G4VMQ
@@ -55,5 +66,56 @@ describe("panelFrame (FS-G4VMQ § Change C1, C2; FS-HRH2J § Change C4, C16)", (
     expect((glyph as unknown as { setColor: ReturnType<typeof vi.fn> }).setColor).toHaveBeenLastCalledWith(
       toCss(palette.interactable),
     );
+  });
+});
+
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// one title drawing every window calls (FS-3EBCA R20, R21). I-3EBCA-9.
+describe("drawPanelTitle (FS-3EBCA R20, R21)", () => {
+  function titled(panel: { x: number; y: number; width: number }, words: string) {
+    const made: { x: number; y: number; words: string; style: Record<string, unknown>; origin?: number[] }[] = [];
+    const scene = {
+      add: {
+        text: (x: number, y: number, w: string, style: Record<string, unknown>) => {
+          const rec: (typeof made)[number] = { x, y, words: w, style };
+          made.push(rec);
+          const self: Record<string, unknown> = {
+            setOrigin: (ox: number, oy: number) => ((rec.origin = [ox, oy]), self),
+          };
+          return self;
+        },
+      },
+    } as unknown as Pick<Phaser.Scene, "add">;
+    drawPanelTitle(scene, panel, words);
+    return made;
+  }
+
+  it("should centre the words across the panel, their top a fixed inset below its top edge", () => {
+    const [title] = titled({ x: 100, y: 50, width: 300 }, "INVENTORY");
+    expect(title).toMatchObject({ x: 250, y: 50 + PANEL_TITLE_TOP, origin: [0.5, 0] });
+    expect(PANEL_TITLE_TOP).toBe(14);
+  });
+
+  it("should draw every title in one face, size, colour and spacing", () => {
+    const [title] = titled({ x: 0, y: 0, width: 200 }, "MENU");
+    expect(title.style).toEqual(
+      expect.objectContaining({
+        fontFamily: CANVAS_FONT.body,
+        fontSize: `${PANEL_TITLE_PX}px`,
+        color: toCss(palette.frameBright),
+        letterSpacing: PANEL_TITLE_SPACING,
+      }),
+    );
+    expect([PANEL_TITLE_PX, PANEL_TITLE_SPACING]).toEqual([14, 4]);
+  });
+
+  it("should put the words in capitals itself, so no caller can forget", () => {
+    expect(titled({ x: 0, y: 0, width: 300 }, "Party (2/4)")[0].words).toBe("PARTY (2/4)");
+  });
+
+  it("should keep its band clear of the ×: the band ends below the × box and below the title's line", () => {
+    const close = frameClose({ x: 0, y: 0, width: 300 });
+    expect(PANEL_TITLE_BAND).toBeGreaterThanOrEqual(close.y + close.height);
+    expect(PANEL_TITLE_BAND).toBeGreaterThanOrEqual(PANEL_TITLE_TOP + Math.ceil(PANEL_TITLE_PX * 1.3));
   });
 });

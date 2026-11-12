@@ -21,13 +21,13 @@ import {
 } from "./GearOverlay";
 import { BAG_CAPACITY } from "./bag";
 import { STASH_CAPACITY } from "./stash";
-import { drawPanelFrame } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle } from "./panelFrame";
 
 // The party panel's frame is one drawing, which this surface must call, not copy (owner
 // 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
 vi.mock("./panelFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("./panelFrame")>();
-  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame) };
+  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame), drawPanelTitle: vi.fn(real.drawPanelTitle) };
 });
 import {
   gearPanelLayout,
@@ -1832,6 +1832,36 @@ describe("GearOverlay in the party panel's frame (FS-HRH2J § Change C16)", () =
     frame.mockClear();
     overlay.openStash();
     expect(frame.mock.calls.map((c) => c[2])).toEqual([asFrame(left), asFrame(right)]);
+  });
+});
+
+// The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一":
+// the inventory's, the character panel's and the stash's titles through the shared drawing
+// (FS-3EBCA R20, R22). I-3EBCA-9.
+describe("GearOverlay's titles, shared (FS-3EBCA R20, R22)", () => {
+  it("should title each open panel, the stash's too, with the one title drawing over that panel", () => {
+    const title = vi.mocked(drawPanelTitle);
+    const s = recordingScene();
+    const overlay = new GearOverlay(s.scene, s.art);
+    const { left, right } = overlayLayout(1080, 720);
+    const asFrame = (r: typeof left) => ({ x: r.x, y: r.y, width: r.w, height: r.h });
+    const calls = () => title.mock.calls.map((c) => [c[1], c[2]]);
+    title.mockClear();
+    overlay.show();
+    expect(calls()).toEqual([[asFrame(right), "INVENTORY"]]);
+    title.mockClear();
+    overlay.toggleCharacter();
+    expect(calls()).toEqual([
+      [asFrame(left), "CHARACTER"],
+      [asFrame(right), "INVENTORY"],
+    ]);
+    overlay.hide();
+    title.mockClear();
+    overlay.openStash();
+    expect(calls()).toEqual([
+      [asFrame(left), "STASH"],
+      [asFrame(right), "INVENTORY"],
+    ]);
   });
 });
 

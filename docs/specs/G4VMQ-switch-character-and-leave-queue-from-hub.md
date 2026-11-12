@@ -343,8 +343,12 @@ Date: 2026-11-12
 
 Added to the charter "右下角圖示與面板操作" by the owner, 2026-11-12, before any slice was built:
 "目前野外按esc沒反應 野外按esc跟村莊一樣行為" (in a field Esc does nothing today; Esc in a field should
-behave as in the town). Made alongside [FS-3EBCA](3EBCA-hud-corner-icons.md), whose Menu icon is
-one Esc press in every world. The text above is not edited.
+behave as in the town). Made alongside [FS-3EBCA](3EBCA-hud-corner-icons.md), whose Menu icon
+opens the menu in every world. The text above is not edited.
+
+Amended the same day by the owner: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (opening the menu closes every window too, and
+while the menu is open nothing else can be pressed): C4 edited in place and C6 added, for the
+town's, the field's and the run's menu alike (FS-3EBCA R17, R18).
 
 **Facts (verified 2026-11-12 on main 321d2b23).** A field binds `keydown-ESC` to hiding the gear
 overlay and nothing else (`FieldScene.bindHudKeys`), so with nothing open Esc does nothing. The
@@ -367,18 +371,28 @@ C3. ***Change character* leaves the field for the roster** exactly as from the t
     `leave_hub`, nothing more until it is answered; `world_left` switches to `MainMenuScene`; an
     error reply keeps the player in the field with the message as a passing notice and the choice
     usable again. The server already takes it from a field (FS-X2F2H R18): no server change.
-C4. **The menu owns the keys while open** (R5): movement is not sent, and I, B, T, E, F and Q,
-    a press in the world (attack, cast, Shadow Shot hold), the chat input and the party panel
-    open nothing. The world runs on behind it. **(R5, applied to the field)**
+C4. **The menu owns the keys and the screen while open** (R5): movement is not sent, and I, B,
+    C, T, E, F, Q and M, a press in the world (attack, cast, Shadow Shot hold), the chat input
+    (no focus, its row hidden), the party panel, the corner row (Menu included: the menu's ×,
+    Back and Esc close it), the envelope, the map mode icon and every button drawn under the menu
+    open or do nothing; a blocker over the whole view, under the menu's rows, takes every press
+    and hover. In the town, a field and a run alike. The world runs on behind it. **(R5, applied
+    to the field; the screen, owner 2026-11-12: "menu開啟時其他都不能按", FS-3EBCA R18)**
 C5. **It follows the view**: an open menu is re-centred when the view's size changes
     (FS-ZAJMH R13), as the town's is.
+C6. **It opens over no window.** Opening the menu, in the town, a field or a run, first closes
+    every window: the inventory and the character panel (the stash with them), the party panel
+    and, in the town, the letter panel. Esc still closes the topmost window first and opens the
+    menu only with none open (C1); the corner row's Menu icon opens it at once, closing them
+    (FS-3EBCA R6, R17). **(owner, 2026-11-12: "開menu時其他視窗也會關閉")**
 
 ### Acceptance Criteria
 
 - [ ] In a field with nothing open, Esc opens the menu with *Change character* and *Back [Esc]*; Esc again, or *Back*, closes it.
 - [ ] With the gear overlay open, the first Esc closes it and does not open the menu; with the party panel open, the first Esc closes it.
 - [ ] *Change character* sends one `leave_hub`; a second press before the answer sends nothing; `world_left` starts `MainMenuScene`; an error reply shows its message and leaves the player in the field.
-- [ ] While the menu is open no `move` is sent, I, B and T open nothing, and a press in the world sends no attack or cast.
+- [ ] While the menu is open no `move` is sent, I, B, C, T and the corner icons (Menu included) open nothing, the chat input takes no focus, and a press in the world sends no attack or cast.
+- [ ] The Menu icon opens the menu with the inventory, the character panel or the party panel open, closing them; no window is open while the menu is.
 - [ ] The run's Esc is unchanged apart from the party panel step.
 
 ### Edge States
@@ -416,7 +430,10 @@ C2. **The ×.** An × stands at the menu's top right in the party panel's look a
     cancel row's action (Back, or the Fall confirm's way back), or closing the menu. **(owner:
     "跟party一樣外框", the party panel's frame carrying its ×)**
 C3. **Inside unchanged.** The rows, the copy line, the keys, the width, the height and the place
-    in the popup band are as before. **(owner, as relayed: contents and layout stay)**
+    in the popup band are as before. **(owner, as relayed: contents and layout stay)** Amended the
+    same day by the owner, "menu目前沒標題也加上" (the menu has no title; give it one): the menu and the
+    Fall confirm take the title MENU in the shared title band, their rows and copy line moved down
+    by the band and the box taller by as much (FS-3EBCA R20–R23).
 
 ### Acceptance Criteria
 

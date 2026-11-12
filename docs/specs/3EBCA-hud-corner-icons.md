@@ -33,7 +33,15 @@ Menu, Inventory and Character open wear the party panel's frame (FS-G4VMQ § Cha
 wears the party panel's frame; FS-HRH2J § Change C16). And, the same day: "開道具欄跟角色欄時開不了隊伍"
 (with the inventory or the character panel open, the party panel cannot be opened): T and the
 Party icon open the party panel over either or both, which it is drawn above (R8, R11; FS-R82NV
-§ Change C2, C8).
+§ Change C2, C8). And, the same day: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉
+開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (the mailbox seems to block the
+other panels; since the letter panel is full-screen, opening it closes the other windows, opening
+another window closes it, opening the menu closes every window too, and while the menu is open
+nothing else can be pressed): §D (R15–R19), with R6–R9 and R11 edited in place; FS-1GZGD § Change
+C1, C4; FS-R82NV § Change C8, C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Change C4. And, the
+same day: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣" (every window's title sits somewhere different; put them all in one style,
+centred, the same size and colour), "menu目前沒標題也加上" (the menu has no title now; give it one) and
+"全大寫也統一" (all capitals too, uniformly): §E (R20–R24), this FS owning the shared frame's title.
 
 Each requirement below is a **charter default** (the locked
 decisions, approved by the owner) or says **derived here** and why. Recorded without adversarial
@@ -123,26 +131,32 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 
 ### §B. Presses
 
-6. **Menu** does what one Esc press does in that world, under the same rules: in the town and a
-   field it closes the one thing on top (FS-R82NV § Change C2's order), else opens or closes the
-   ESC menu, and does nothing while a dialogue is open; in a run likewise with the run's menu, and
-   after the run's end it only closes what is open. **(owner: "esc的icon也加入"; charter: "clicking
-   it toggles the same thing Esc does")**
+6. **Menu** opens the world's ESC menu at once, closing every open window first (R17): in the
+   town, a field and a run alike. It does nothing while a dialogue is open (the dialogue keeps
+   Esc), nor while the menu is open (R18: the menu's ×, its Back row and Esc close it); after the
+   run's end, with no menu to open, it only closes every window. Esc itself keeps one press, one
+   thing (FS-R82NV § Change C2's order). **(owner: "esc的icon也加入"; charter: "clicking it toggles
+   the same thing Esc does", replaced by the owner's 2026-11-12 rules (§D): "開menu時其他視窗也會關閉
+   然後menu開啟時其他都不能按"; the icon opening at once, where Esc closes the topmost first, derived
+   here: a press on the menu's own icon asks for the menu, and players expect Esc to peel one
+   window at a time)**
 7. **Inventory** toggles the inventory exactly as I does in that world, and **Character** the
    character panel exactly as C does (FS-HRH2J § Change C2), under the same guards: in the town
-   not while the ESC menu, a dialogue or the letter panel is open; in a run or a field not while
-   its ESC menu is open. Opening either ends a Shadow Shot hold, as its key does. **(charter
-   default; the two icons, owner 2026-11-12)**
+   not while the ESC menu or a dialogue is open; in a run or a field not while its ESC menu is
+   open. An open letter panel closes as either opens (R16). Opening either ends a Shadow Shot hold,
+   as its key does. **(charter default; the two icons, owner 2026-11-12; the letter panel no longer
+   a guard, owner 2026-11-12, §D)**
 8. **Party** toggles the party panel as T does, under the scene's same `blocked` rule (in the
-   town: a dialogue, the ESC menu or the letter panel; in a run: the ESC menu, the run's end or an
-   open container; in a field: the ESC menu). The inventory and the character panel are not in
+   town: a dialogue or the ESC menu, an open letter panel closing as it opens, R16; in a run: the
+   ESC menu, the run's end or an open container; in a field: the ESC menu). The inventory and the character panel are not in
    it: with either or both open, T and Party open and close the party panel, drawn above them
    (FS-R82NV § Change C8), in every world. A text field holding focus does not stop a press: a
    press is not typing. **(charter default; derived here: the T rule's text-focus clause exists so
    a typed T stays a letter; the overlay taken out of the rule, owner 2026-11-12:
    "開道具欄跟角色欄時開不了隊伍", replacing this requirement's first version, under which the open
    inventory or character panel refused T and Party)**
-9. **Mail** in the town toggles the letter panel (FS-1GZGD § Change). **Outside the town, in a
+9. **Mail** in the town toggles the letter panel (FS-1GZGD § Change), closing every other window
+   as it opens (R15). **Outside the town, in a
    field and in a run alike, Mail is greyed**: its envelope lines and its dark seal in
    `palette.hudFaint`, no count, no brightening and no hand cursor under the pointer, and a press
    does nothing; only its label shows. **(owner, 2026-11-12: "野外 email也不用消失 就顯示灰色表示不能按";
@@ -154,11 +168,11 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
     the row (FS-HRH2J § Change C12), so the row stays drawn and pressable while either is open,
     each icon under its own rule: Menu does one Esc (which closes the topmost, the party panel
     before the overlay, R6), Inventory and Character toggle their panels (R7), Party opens and
-    closes the party panel over them (R8); Mail keeps its owner's guard, which the open overlay
-    holds (R9; FS-1GZGD). **(owner, 2026-11-12, as relayed: shorten the inventory "so the row
+    closes the party panel over them (R8); Mail opens the letter panel, closing them (R15; FS-1GZGD
+    § Change C4). **(owner, 2026-11-12, as relayed: shorten the inventory "so the row
     stays visible and clickable while it is open"; replaces this requirement's first version,
     under which the panel covered the row and no icon answered; Party, owner 2026-11-12:
-    "開道具欄跟角色欄時開不了隊伍")**
+    "開道具欄跟角色欄時開不了隊伍"; Mail, owner 2026-11-12: "開信箱時其他視窗會被關閉")**
 12. **The keys.** Esc, I and B, T and M keep their meaning; C, new, opens the character panel
     (FS-HRH2J § Change C2); Mail has no key. **(charter default; C, owner 2026-11-12)**
 
@@ -172,6 +186,79 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 14. **The dead spectator's Leave the barrow button stands above the row** the same way: centred
     116 px in from the right edge (as today) and 89 px up from the bottom (70 + half its height).
     The card is still down while it is up (FS-8AY7S req 32). **(derived here, as R13)**
+
+### §D. Windows give way (owner, 2026-11-12)
+
+The **windows** are the inventory, the character panel, the party panel and, in the town, the
+letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). **(owner,
+2026-11-12: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉
+開menu時其他視窗也會關閉 然後menu開啟時其他都不能按")**
+
+15. **The letter panel clears the screen.** Opening the letter panel (the envelope, the town
+    only) first closes the inventory, the character panel and the party panel; none of them refuses
+    the envelope any more. A dialogue and the ESC menu still do. **(owner: "信箱是全畫面
+    那設定成開信箱時其他視窗會被關閉")**
+16. **A window closes the letter panel.** I, B, the Inventory icon, C, the Character icon, T and the
+    Party icon open their window with the letter panel open, closing it first; the letter panel no
+    longer refuses them. `E` at the stash chest stays dropped under the letter panel, as a press to
+    talk is (FS-1GZGD R40): it reaches into the world, which the full-screen letter panel covers.
+    **(owner: "開其他視窗時信箱會被關閉"; E derived here)**
+17. **The menu opens over no window.** Opening the menu closes every window first, in every world.
+    Esc keeps one press, one thing: with a window open it closes the topmost (FS-R82NV § Change C2),
+    and it opens the menu only with none open. The Menu icon opens the menu at once, closing every
+    window (R6). **(owner: "開menu時其他視窗也會關閉"; Esc's order kept and the icon opening at once,
+    derived here, R6)**
+18. **The menu owns the screen.** While it is open only its rows (a press, Enter, a number), its ×
+    and Esc answer, in every world: no corner icon (Menu included), no I, B, C or T, no envelope,
+    no M and no map mode icon, no press in the world (attack, cast, Shadow Shot hold), no E or F,
+    and nothing else drawn under it (the queue's Leave, the party frames' Travel, an invite
+    prompt's or the ready check's buttons, the dead spectator's Leave the barrow, the chat window's
+    tabs and names). The chat input takes no focus, by Enter or a click, and its row is hidden. The
+    menu hangs a blocker over the whole view, under its rows and × and over the HUD and every panel,
+    which takes every press and hover there and lets none reach the world. **(owner:
+    "menu開啟時其他都不能按"; the blocker derived here: one rule for everything drawn under the menu
+    rather than a guard on each)**
+19. **The stash counts as the inventory.** At the stash chest the stash and the inventory open
+    together (FS-HRH2J § Change C9); for R15 and R17 they are the inventory: the envelope and the
+    menu close them together. **(derived here: the pairing opens and closes as one)**
+
+### §E. One title for every window (owner, 2026-11-12)
+
+**(owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "menu目前沒標題也加上", "全大寫也統一")**
+
+20. **One title drawing.** Every in-game window's title is drawn by one shared drawing beside the
+    shared frame (`panelFrame`'s `drawPanelTitle`), so a later window takes it by calling it:
+    centred across the panel, its top 14 px below the panel's top edge, in the body face at 14 px,
+    `palette.frameBright`, letter-spacing 4: the inventory's and the character panel's heading as
+    it stood, the style three of the five titled windows already wore. The words are uppercased by
+    the drawing itself, so no caller can forget. **(owner: "都統一放在中間的樣式", "大小顏色也一樣",
+    "全大寫也統一"; the style derived here: the most common one, the gear overlay's)**
+21. **Clear of the ×.** The title stays centred between the panel's edges; the × keeps its place at
+    the top right (R82NV § Change C1), and the title's band (its top 14 px down, its foot 36 px
+    down: `PANEL_TITLE_BAND`, the × box's foot, under the title's line) is the title's and the
+    ×'s alone. No title is as wide as
+    its panel less both × margins. **(derived here)**
+22. **Which windows, and where their titles were.** The party panel ("Party" or "Party (n/m)",
+    15 px, left at the inner edge, now "PARTY" or "PARTY (n/m)" centred at 14 px); the inventory,
+    the character panel and the stash (already centred at 14 px in this style, unchanged); the
+    letter panel ("MAILBOX" at 12 px `hudLabel`, letter-spacing 2, left at the header, now centred
+    in this style); the run's controls panel (H: "CONTROLS" centred at 16 px, letter-spacing 5, a
+    few px higher, now this style); the settlement record ("Escaped the barrow", "Fallen in the
+    barrow" or "Out of the delve" in the blackletter at 30 px `hudText`, now in this style and in
+    capitals; the guideline permits the blackletter there but does not require it). The town's,
+    the field's and the run's ESC menu and the run's Fall confirm, which had no title, take
+    **MENU** (R23). Not windows, so not titled here: the chest's satchel (no title), the NPC
+    dialogue card (the speaker's name plate), the party invite prompt and the ready check (a
+    question, no title), the arrival card, the run's resolved card and the field's fallen card
+    (notices that fade or wait, not windows a player opens). **(derived here: what is opened and
+    closed over the world, with a heading)**
+23. **The menu's title.** The ESC menu (town, field, run) and the run's Fall confirm (whose copy
+    line is not a heading) read **MENU** in the title band; the rows, the copy line and their keys
+    keep their order and gaps, moved down by the band, the box growing by as much; the width and
+    the centre in the popup band are as before. **(owner: "menu目前沒標題也加上"; the word derived
+    here: the corner icon's and the key help's name for it, in capitals like the other titles)**
+24. **Contents move only as needed.** Under every other title nothing moves: each already began
+    below the band. **(derived here)**
 
 ## User Stories
 
@@ -192,37 +279,46 @@ Verified 2026-11-12 on main 321d2b23; client paths under `game-client/src/`.
 15. As a player, I want the icons to look like the envelope, amber because I can press them, so that the HUD reads as one set.
 16. As a player who resizes the window, I want the icons and the card above them to keep to the corner, so that nothing ends up off-screen.
 17. As a player with my inventory open, I want the corner icons still in view and pressable, so that I can close it or open my stats with the mouse.
+18. As a player in town, I want the envelope to open my letters whatever window is open, closing it, so that the full-screen letter panel never fails to open.
+19. As a player reading my letters, I want I, C, T or their icons to open their window and put the letters away, so that I never have to close one to reach the other.
+20. As a player, I want the menu to stand alone, closing every window as it opens and letting nothing else answer while it is up, so that what I press while it is open is the menu's.
+21. As a player, I want every window's title in the same place, size, colour and case, so that the windows read as one set.
 
 ## Acceptance Criteria
 
 - [ ] At 1080 × 720 the row's rects are Menu (1006, 658, 58, 46), Inventory (940, 658, 58, 46), Character (874, 658, 58, 46), Party (808, 658, 58, 46) and Mail (742, 658, 58, 46); at 1280 each is 200 px further right; the town, a field and a run draw them at the same rects.
 - [ ] Each live icon is drawn on a carved plate at depth 1000 with its glyph in `interactable`, brightening to `interactableBright` under the pointer; the greyed Mail is drawn in `hudFaint` and never brightens; no raw colour literal (the lint fence passes).
 - [ ] Under the pointer each icon shows "Menu (Esc)", "Inventory (I)", "Character (C)", "Party (T)", "Mailbox" or, greyed, "Mailbox · town only" above it, kept inside the view's right edge; the label goes when the pointer leaves.
-- [ ] A press on Menu does what one Esc press does in the town, a field and a run (closes the one thing on top, else opens or closes the ESC menu).
+- [ ] A press on Menu opens the ESC menu at once in the town, a field and a run, closing every open window; it does nothing while a dialogue or the menu is open; after the run's end it only closes every window. Esc still closes the topmost window first.
 - [ ] A press on Inventory toggles the inventory and one on Character the character panel in every world, under the same guards as I and C there, and ends a Shadow Shot hold on opening.
 - [ ] A press on Party toggles the party panel in every world, refused while the scene's `blocked` holds, accepted while a text field has focus; with the inventory, the character panel or both open it opens the party panel over them, as T does.
 - [ ] A press on the greyed Mail in a field or a run does nothing.
 - [ ] A press on an icon in a run or a field sends no attack, cast or hold.
-- [ ] While the inventory or the character panel is open the row stays drawn and answers: Inventory and Character close their panels on a second press, Menu does one Esc, Party toggles the party panel over them; Mail keeps its owner's guard.
+- [ ] While the inventory or the character panel is open the row stays drawn and answers: Inventory and Character close their panels on a second press, Menu opens the menu closing them, Party toggles the party panel over them; Mail opens the letter panel closing them.
+- [ ] In the town, the envelope opens the letter panel with the inventory, the character panel, the stash or the party panel open, closing them; a dialogue or the ESC menu still refuses it.
+- [ ] In the town, with the letter panel open, I, B, C, T and the Inventory, Character and Party icons open their window and close the letter panel.
+- [ ] Opening the menu, by Esc or the Menu icon, leaves no window open, in every world.
+- [ ] While the menu is open no corner icon, no I, B, C or T, no envelope and no press under it answers, and the chat input takes no focus, in every world; Esc, its × and its rows still do.
 - [ ] Esc, I, B, T and M behave as before (Esc's new order and the field's menu are FS-R82NV's and FS-G4VMQ's changes); C toggles the character panel.
 - [ ] In a run and a field the ability card's bottom-right corner stands at (width − 16, 650); the dead spectator's leave button is centred at (width − 116, 631); neither overlaps the row; both follow a view-size change.
+- [ ] The party panel, the inventory, the character panel, the stash, the letter panel, the run's controls panel, the settlement record and every ESC menu (and the Fall confirm) draw their title through `drawPanelTitle`: centred, 14 px below the panel's top, 14 px `frameBright`, letter-spacing 4, in capitals; the menus read MENU, their rows moved down by the title band.
 - [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint` pass.
 
 ## Edge States
 
 - **A dialogue open (town):** Menu, Inventory, Character and Party do nothing (the dialogue keeps Esc,
   FS-G4VMQ R2); Mail opens nothing.
-- **The ESC menu open:** Menu closes it, as Esc does; Inventory, Character, Party and Mail open
-  nothing.
-- **The letter panel open (town):** Menu closes it (one Esc); Mail closes it; Inventory, Character
-  and Party open nothing.
+- **The ESC menu open:** no icon answers, Menu included, and nothing under the menu takes a
+  press or a hover (R18); Esc, its × or Back close it.
+- **The letter panel open (town):** Menu opens the menu, closing it; Mail closes it; Inventory,
+  Character and Party open their window, closing it (R16).
 - **The inventory or the character panel open:** the row stays in view above them and answers
-  (R11); Party opens the party panel over them (R8); a press on Menu closes the party panel
-  first if it is open, else both panels, as one Esc does.
+  (R11); Party opens the party panel over them (R8); Menu opens the menu, closing them and the
+  party panel (R17); Mail opens the letter panel, closing them (R15).
 - **The stash open (town):** Inventory closes the stash with the inventory, as I does; Character
-  does nothing (FS-HRH2J § Change C9).
-- **The run has ended:** Menu only closes what is open; Party opens nothing; Inventory and
-  Character toggle as I and C do.
+  does nothing (FS-HRH2J § Change C9); Mail and Menu close it with the inventory (R19).
+- **The run has ended:** Menu only closes every window, there being no menu (R6); Party opens
+  nothing; Inventory and Character toggle as I and C do.
 - **Spectating, dead:** the row stays; the leave button stands above it, the card down (R14).
 - **No class card (a class with no row):** the row is unchanged; the space above it stays empty.
 - **A resize while hovered:** the row and an open label move with the corner.

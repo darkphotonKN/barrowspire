@@ -355,7 +355,7 @@ export class FieldScene extends Phaser.Scene {
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
-    this.chatWindow = mountChatWindow(this, () => !this.menu && !this.equipment?.isOpen());
+    this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
     this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
@@ -370,11 +370,14 @@ export class FieldScene extends Phaser.Scene {
     onSceneEnd(this, (end) => this.release(end));
   }
 
-  /** The corner row, each press the key's own path; the Mailbox greyed, it is the town's (FS-3EBCA). */
+  /**
+   * The corner row: the Menu icon opens the menu (R6), the others each the key's own path; the
+   * Mailbox greyed, it is the town's (FS-3EBCA).
+   */
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.pressEscape() },
+        { icon: "menu", press: () => this.pressMenuIcon() },
         { icon: "inventory", press: () => this.toggleGear() },
         { icon: "character", press: () => this.toggleCharacter() },
         { icon: "party", press: () => this.partyPanel?.toggle() },
@@ -390,6 +393,26 @@ export class FieldScene extends Phaser.Scene {
    */
   private refusesParty(): boolean {
     return !!this.menu;
+  }
+
+  /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the gear overlay is up. */
+  private mayChat(): boolean {
+    return !this.menu && !this.equipment?.isOpen();
+  }
+
+  /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
+  private closeWindows(): void {
+    this.partyPanel?.close();
+    this.equipment?.hide();
+  }
+
+  /**
+   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
+   * it opens; nothing while the menu is open, which owns the screen.
+   */
+  private pressMenuIcon(): void {
+    if (this.menu) return;
+    this.openMenu();
   }
 
   /**
@@ -574,9 +597,10 @@ export class FieldScene extends Phaser.Scene {
   /**
    * The town's ESC menu, in the field (FS-G4VMQ § Change C2): Change character and Back, by
    * `hubMenuChoices`' rule (a field player is never queued, FS-X2F2H R20), centred in the popup
-   * band. The world runs on behind it.
+   * band. The world runs on behind it. Every window closes as it opens (FS-3EBCA R17).
    */
   private openMenu(): void {
+    this.closeWindows();
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.closeMenu(),

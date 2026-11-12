@@ -27,7 +27,7 @@ import {
 import { socketManager } from "@/utils/class/SocketManager";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
-import { drawPanelFrame, lightClose } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { partyCommands, type PartyCommands } from "./partyCommands";
 import {
   domPartyInviteField,
@@ -61,16 +61,20 @@ export interface PartyPanelDeps {
   /** The element holding keyboard focus: T is a letter while it takes typing (R28). */
   activeElement: () => FocusedElement | null;
   /**
-   * Whether a dialogue, a menu or the letter panel owns the keys now. Not the inventory or the
-   * character panel: the panel opens over them (FS-3EBCA R8).
+   * Whether a dialogue, the menu, a run's end or an open container owns the keys now. Not the
+   * inventory or the character panel: the panel opens over them (FS-3EBCA R8); nor the letter
+   * panel, which closes as the panel opens (`opening`).
    */
   blocked: () => boolean;
+  /** Closes what gives way to the panel, just before it opens: the town's letter panel (§ Change C9). */
+  opening?: () => void;
 }
 
 /** The panel as a scene hangs it: the app's party, the real socket and DOM field. */
 export function mountPartyPanel(
   scene: Phaser.Scene,
   blocked: () => boolean,
+  opening?: () => void,
 ): PartyPanel {
   return new PartyPanel(scene, {
     store: usePartyStore,
@@ -83,6 +87,7 @@ export function mountPartyPanel(
         ? null
         : (document.activeElement as FocusedElement | null),
     blocked,
+    opening,
   });
 }
 
@@ -95,7 +100,6 @@ const HUD_DEPTH = 1000;
 export const PARTY_PANEL_DEPTH = 1110;
 const FONT_PX = 14;
 const SMALL_PX = 12;
-const TITLE_PX = 15;
 /** An away or offline member's row, and a greyed action. */
 const GREYED_ALPHA = 0.45;
 
@@ -198,7 +202,7 @@ export class PartyPanel {
    */
   toggle(): void {
     if (this.deps.blocked()) return;
-    this.deps.store.getState().togglePanel();
+    this.flip();
   }
 
   /** The view's size changed: the panel, its × and the invite field to their new place (§ Change C5). */
@@ -234,6 +238,12 @@ export class PartyPanel {
       })
     )
       return;
+    this.flip();
+  }
+
+  /** Opens or shuts the panel; what gives way to it closes first (§ Change C9). */
+  private flip(): void {
+    if (!this.isOpen()) this.deps.opening?.();
     this.deps.store.getState().togglePanel();
   }
 
@@ -337,14 +347,13 @@ export class PartyPanel {
       .setScrollFactor(0)
       .setDepth(PARTY_PANEL_DEPTH);
     this.graphics = g;
-    const { panel, title } = frame;
+    const { panel } = frame;
     this.drawFrame(g, panel);
-    this.text(
-      title.x,
-      title.y,
-      partyPanelTitle(party),
-      palette.frameBright,
-      TITLE_PX,
+    // the windows' one title, centred and in capitals (FS-3EBCA R20, R22)
+    this.texts.push(
+      drawPanelTitle(this.scene, panel, partyPanelTitle(party))
+        .setScrollFactor(0)
+        .setDepth(PARTY_PANEL_DEPTH),
     );
 
     actions.members.forEach((m, i) => {

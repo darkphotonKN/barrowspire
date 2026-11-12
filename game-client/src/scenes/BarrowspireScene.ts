@@ -54,6 +54,7 @@ import {
   type RunMenuChoice,
 } from "@/ui/party";
 import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
@@ -1286,14 +1287,8 @@ export class BarrowspireScene extends Phaser.Scene {
     bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
     children.push(bg);
 
-    const title = this.add.text(0, -panelH / 2 + 16, "CONTROLS", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "16px",
-      color: toCss(palette.frameBright),
-      letterSpacing: 5,
-    });
-    title.setOrigin(0.5);
-    children.push(title);
+    // the windows' one title (FS-3EBCA R20, R22)
+    children.push(drawPanelTitle(this, { x: -panelW / 2, y: -panelH / 2, width: panelW }, "CONTROLS"));
 
 
     let curY = -panelH / 2 + 44;
@@ -3202,7 +3197,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
-    this.chatWindow = mountChatWindow(this, () => !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen);
+    this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
     this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
@@ -3265,14 +3260,14 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The corner row (FS-3EBCA): each press the key's own path, one Esc, I or B, C, T; the Mailbox
-   * greyed, the mailbox being the town's (R9). The overlay's panels stop above it, so it answers
-   * while they are open (R11).
+   * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
+   * path, I or B, C, T; the Mailbox greyed, the mailbox being the town's (R9). The overlay's
+   * panels stop above it, so it answers while they are open (R11).
    */
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.pressEscape() },
+        { icon: "menu", press: () => this.pressMenuIcon() },
         {
           icon: "inventory",
           press: () => {
@@ -3298,6 +3293,31 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private refusesParty(): boolean {
     return !!this.menu || this.runEnded || !!this.containerView?.isOpen;
+  }
+
+  /**
+   * Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18), the
+   * run's end, the gear overlay or an open chest owns the keys.
+   */
+  private mayChat(): boolean {
+    return !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen;
+  }
+
+  /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
+  private closeWindows(): void {
+    this.partyPanel?.close();
+    this.equipment?.hide();
+  }
+
+  /**
+   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
+   * it opens; nothing while the menu is open, which owns the screen. After the run's end there is
+   * no menu: it only closes the windows.
+   */
+  private pressMenuIcon(): void {
+    if (this.menu) return;
+    this.closeWindows();
+    if (!this.runEnded) this.openMenu();
   }
 
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
@@ -5574,6 +5594,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-QPDKN req 13), so the two entry points share one send and one pending flag.
    */
   private openMenu(): void {
+    // every window closes as it opens (FS-3EBCA R17)
+    this.closeWindows();
     // closing the menu does not resume the hold (FS-JTNPR req 15)
     this.cancelAim();
     const state = this.menuState();

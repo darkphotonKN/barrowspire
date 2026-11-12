@@ -21,6 +21,12 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
   },
 }));
 
+// The shared title drawing, watched: the run's windows title themselves through it (FS-3EBCA R20).
+vi.mock("@/ui/panelFrame", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/ui/panelFrame")>();
+  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
+
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
 // on the same emitter Phaser builds them from.
 vi.mock("phaser", async () => {
@@ -3769,7 +3775,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   it("should open the record at once on settlement, with what was carried, lost and earned", () => {
     const { run, shown } = settlingOnStage();
     run.showSettlement(settlement());
-    for (const line of ["Escaped the barrow", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
+    for (const line of ["ESCAPED THE BARROW", "Settling…", "Iron Blade", "Found", "Health Potion", "Used up"])
       expect(shown()).toContain(line);
     expect(shown()).toContain("Experience +40 · Level 2");
     expect(shown()).toContain("Slain 3 · 1:20 in the delve");
@@ -3828,7 +3834,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect((hit("settlement")!.args as number[])[0]).toBe(400);
     expect(hit("watch-the-delve")).toBeDefined();
     expect(hit("leave-the-barrow")).toBeDefined();
-    expect(shown()).toContain("Fallen in the barrow");
+    expect(shown()).toContain("FALLEN IN THE BARROW");
   });
 
   it("should close from its Close button and reopen from the Settlement button", () => {
@@ -4213,6 +4219,30 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     run.endRun();
     press(keys.esc);
     expect(run.menu).toBeUndefined();
+  });
+
+  // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"
+  // (FS-3EBCA R20, R22). I-3EBCA-9.
+  it("should title the controls panel CONTROLS with the shared title drawing, across its top", async () => {
+    const { drawPanelTitle } = await import("@/ui/panelFrame");
+    const title = vi.mocked(drawPanelTitle);
+    title.mockClear();
+    const { run } = menuOnStage();
+    run.toggleControlsPanel();
+    expect(title).toHaveBeenCalledTimes(1);
+    const [, panel, words] = title.mock.calls[0];
+    expect(words).toBe("CONTROLS");
+    expect(panel.width).toBe(260);
+    expect(panel.x).toBe(-130);
+  });
+
+  // FS-3EBCA R23 (owner 2026-11-12: "menu目前沒標題也加上"): the run's menu reads MENU.
+  it("should title the run's menu and its Fall confirm MENU", () => {
+    const { keys, press, labels } = menuOnStage();
+    press(keys.esc);
+    expect(labels()).toContain("MENU");
+    press(keys.one);
+    expect(labels().filter((l) => l === "MENU")).toHaveLength(1);
   });
 
   it("should list ESC as the menu in the controls panel", () => {
@@ -4811,9 +4841,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     plate("character").handlers.pointerdown();
     expect(run.equipment?.isOpen()).toBe(false);
     plate("inventory").handlers.pointerdown();
+    // the Menu icon opens the menu at once, the inventory closing with it (FS-3EBCA R17)
     plate("menu").handlers.pointerdown();
     expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(run.menu).toBeDefined();
   });
 
   // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
@@ -4885,6 +4916,86 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       covered.on = false;
       env.press(at, 2);
       expect(env.sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+    });
+  });
+
+  // The owner, 2026-11-12: "開menu時其他視窗也會關閉 然後menu開啟時其他都不能按". In a run the windows are the
+  // inventory, the character panel and the party panel (the mailbox is the town's): FS-3EBCA R17,
+  // R18; FS-G4VMQ § Change C4.
+  describe("the windows give way to the menu (FS-3EBCA R17, R18)", () => {
+    type Windowed = Overlaid & {
+      partyPanel?: unknown;
+      runEnded: boolean;
+      refusesParty(): boolean;
+      mayChat(): boolean;
+      mountCorner(): void;
+    };
+    function runWindows() {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Windowed;
+      const party = partyPanelOn(() => run.refusesParty());
+      run.partyPanel = party.panel;
+      run.mountCorner();
+      const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
+        const f = cornerIconFrame(icon, viewport);
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
+      };
+      const open = () => ({ gear: run.equipment?.isOpen() ?? false, party: party.panel.isOpen() });
+      return { ...env, run, party, pressIcon, open };
+    }
+    const NONE = { gear: false, party: false };
+
+    it("should keep Esc's one press, one thing: the party panel, then the overlay, then the menu (R17)", () => {
+      const { run, key, party, pressEsc, open } = runWindows();
+      key("I");
+      party.pressT();
+      pressEsc();
+      expect(open()).toEqual({ gear: true, party: false });
+      pressEsc();
+      expect(run.menu).toBeUndefined();
+      pressEsc();
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
+      const { run, key, party, pressIcon, open } = runWindows();
+      key("I");
+      key("C");
+      party.pressT();
+      pressIcon("menu");
+      expect(open()).toEqual(NONE);
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should only close every window on the Menu icon once the run has ended: there is no menu (R17)", () => {
+      const { run, key, party, pressIcon, open } = runWindows();
+      key("I");
+      key("C");
+      party.pressT();
+      run.runEnded = true;
+      pressIcon("menu");
+      expect(open()).toEqual(NONE);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should answer no corner icon, no I, B, C or T while the menu is open, the Menu icon included (R18)", () => {
+      const { run, key, party, pressEsc, pressIcon, open } = runWindows();
+      pressEsc();
+      const menu = run.menu;
+      for (const icon of ["menu", "inventory", "character", "party"] as const) pressIcon(icon);
+      key("I");
+      key("B");
+      key("C");
+      party.pressT();
+      expect(run.menu).toBe(menu);
+      expect(open()).toEqual(NONE);
+    });
+
+    it("should give the chat input no focus while the menu is open (R18)", () => {
+      const { run, pressEsc } = runWindows();
+      expect(run.mayChat()).toBe(true);
+      pressEsc();
+      expect(run.mayChat()).toBe(false);
     });
   });
 

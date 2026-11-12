@@ -310,16 +310,22 @@ Replaces, for this change: R1 ("Both open and close together; neither is shown a
 character panel is open, and R11's list. Amends FS-VPD8Y R35 and R37 (stash mode) and FS-7TGZ3 R8
 (which opens read the purse); each carries a stub pointing here.
 
+Amended the same day by the owner: "信箱似乎也會卡住其他面板 但信箱是全畫面 那設定成開信箱時其他視窗會被關閉 開其他視窗時信箱會被關閉 開menu時其他視窗也會關閉 然後menu開啟時其他都不能按" (opening the letter panel closes the other
+windows, opening another window closes it, opening the menu closes every window, and while the menu
+is open nothing else can be pressed): C2's and C11's letter panel clauses edited in place
+(FS-3EBCA §D).
+
 ### Requirements
 
 C1. **Two panels, opened apart.** The inventory (right) and the character panel (left) each open
     and close on their own: either may be open alone, or both. What each shows, and how, is
     unchanged (§B, §C, FS-7TGZ3, FS-VPD8Y §F). **(owner: "道具欄跟角色面板拆開顯示", "裝備欄一般不是跟著道具欄嗎")**
 C2. **Keys.** `I` and `B` toggle the inventory only; `C` toggles the character panel only; in the
-    hub, a run and a field world alike. `C` is refused exactly where `I` is (R6; the town's letter
-    panel, FS-1GZGD R40; a run's or a field's ESC menu, FS-G4VMQ R5), and a focused text field
-    keeps its letters, as it keeps I. **(owner: "角色面板維持快捷鍵C 道具欄是I"; the guards derived
-    here: the same owners own the keys)**
+    hub, a run and a field world alike. `C` is refused exactly where `I` is (R6; a run's or a
+    field's ESC menu, FS-G4VMQ R5), and a focused text field keeps its letters, as it keeps I. The
+    town's letter panel no longer refuses either: it closes as the panel opens (FS-3EBCA R16).
+    **(owner: "角色面板維持快捷鍵C 道具欄是I"; the guards derived here: the same owners own the keys;
+    the letter panel, owner 2026-11-12: "開其他視窗時信箱會被關閉")**
 C3. **Esc and Q close both.** In the Esc order (FS-R82NV § Change C2) the overlay's step closes
     whichever of the two panels are open, together, in one press, before anything under them and
     before the menu opens. `Q`, where it closes the overlay (run, field), closes both too.
@@ -354,9 +360,10 @@ C10. **Which opens read the purse.** Each inventory open reads the purse, in eve
     mode included (FS-7TGZ3 R8); a character panel open reads none. **(derived here: the purse line
     is the inventory's)**
 C11. **Where "the gear overlay is open" is asked, either panel counts.** Every rule that names the
-    open overlay (the town's chat input, T, the envelope and the invite prompts; a run's T; a
-    field's chat input and T; FS-3EBCA R8) reads it as "the inventory or the character panel is
-    open". **(derived here: those rules keep one thing over the world at a time, and either panel
+    open overlay (the town's chat input and the invite prompts; a field's chat input) reads it as
+    "the inventory or the character panel is open". The envelope no longer names it: the letter
+    panel opens, closing both (FS-3EBCA R15; FS-1GZGD § Change C4; owner 2026-11-12:
+    "開信箱時其他視窗會被關閉"); and the menu, as it opens, closes both (FS-3EBCA R17). **(derived here: those rules keep one thing over the world at a time, and either panel
     is such a thing)** T and the Party icon no longer name it: the party panel opens over either
     panel (FS-3EBCA R8; FS-R82NV § Change C8; owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍").
 C12. **The panels stop above the corner row.** Both panels' bottom edge stands 70 px above the
