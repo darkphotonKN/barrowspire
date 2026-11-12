@@ -63,24 +63,59 @@ comes up), the full draw ending 0.165 H from the jaw, the drawing hand and forea
 across the centre plane onto the bow side, the elbow 0.17 H behind the chest's centre (past its
 0.077 back), the loose 0.126 H past the anchor; on the nock the arrow leans 0.125 off the facing.
 
+## After the re-key (2026-11-12, agent)
+
+`ATTACKS.boneShot` stands in `AIM_STANCE` (which now holds its own values; `BOW_STANCE` and
+`bowArm` are gone) over its own crouch, with the delver's full-draw bow arm (`DRAW_ARM`), pole
+(`AIM_DRAW`, `[0.1, -0.1]`) and loose (`LOOSE_IK` 1.12, was 1.3), shared with the delver's shot.
+Two angles are its own, set on its rig: key 0 raises the bow low on the aim plane
+(`upperArmL [-0.05, -0.84, 0.64]`, the wrist as the delver's recovery holds it), and the nock's
+wrist is `handL [1.82, 0.9, -0.26]` (the delver's `[1.86, 0.89, -0.2]` leaned the arrow 0.087 off
+the facing on the hunched rig). The `ik` steps 0.1, 0.4, 0.75, 1, 1.03, the jaw, the crouch and the
+7 keys are unchanged.
+
+| key (`ik`) | bow hand off the aim plane | bow hand ahead of the chest | arrow across the facing | hand off the arrow line | hand to anchor | hand past anchor | hand/forearm across | elbow over shoulder | elbow, chest frame z |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 (none, raise) | 0 | 0.306 | | | | | -0.122 | | |
+| 1 (0.1, nock) | +0.001 | 0.281 | -0.007 | 0.018 | 0.196 | -0.158 | -0.062 | +0.017 | +0.138 |
+| 2 (0.4) | -0.007 | 0.464 | +0.013 | 0.018 | 0.211 | -0.205 | -0.078 | +0.009 | +0.105 |
+| 3 (0.75) | -0.007 | 0.464 | +0.013 | 0.015 | 0.078 | -0.075 | -0.064 | +0.034 | +0.156 |
+| 4 (1) | -0.008 | 0.462 | +0.010 | 0.013 | 0.030 | +0.019 | -0.053 | +0.073 | +0.127 |
+| 5 (1.03) | -0.010 | 0.461 | +0.008 | 0.014 | 0.039 | +0.029 | -0.053 | +0.076 | +0.119 |
+| 6 (1.12, loose) | -0.008 | 0.463 | +0.011 | 0.018 | 0.064 | +0.056 | -0.059 | +0.071 | +0.092 |
+
+The hand off the arrow line is the skeleton's grip offset (0.018 H: its arm chain hangs 0.01 H
+behind the model's centre while `gripAt` sets the grip at 0.008 H absolute), not a miss of the
+solve; the band holds each rig to its own offset plus 0.002.
+
+**Re-bake.** Only `creatures-1.png` (the Bone Archer's page, whole) and the manifest's
+`creature_bone_archer_base` and `creatures-1` entries change; every other atlas keeps its bytes,
+the delver archer's included. The frame is 154×141 (was 168×142), its anchor (0.403, 0.766) (was (0.429, 0.732)), its crown 76
+as before (from `idle`).
+
+| | pages | page px | MB RGBA | PNG bytes |
+|---|---|---|---|---|
+| before | 1 (`creatures-1`) | 2044×2740 | 22.40 | 1,129,651 |
+| after | 1 (`creatures-1`) | 2032×2580 | 20.97 | 1,126,663 |
+
 ## Acceptance Criteria
 
-- [ ] Today's measured values recorded in this issue before the re-key.
-- [ ] On every key of the Bone Archer's shot, its rig turned to each of the 8 facings: the bow
+- [x] Today's measured values recorded in this issue before the re-key.
+- [x] On every key of the Bone Archer's shot, its rig turned to each of the 8 facings: the bow
       hand ahead of the chest along the aim and near the aim line; the drawing hand on the arrow
       line (within its grip offset), ending by the jaw at the full draw; neither drawing hand nor
       forearm across the centre plane; the elbow within the shoulder-height band and not behind
       its back; the loose no further than the band past the anchor.
-- [ ] Its shot keeps FS-B4SG9 §E R26 (its clip tests unchanged and green): 7 keys, 0.6 s within a
+- [x] Its shot keeps FS-B4SG9 §E R26 (its clip tests unchanged and green): 7 keys, 0.6 s within a
       frame, nothing nocked on key 0, nocked before it draws, the pull growing to the full draw
       and held, the loose on the last key; the crouch and the jaw kept.
-- [ ] The delver archer's keys and atlas unchanged (its tests green; its atlas bytes kept).
-- [ ] `BOW_STANCE` and `bowArm` removed if unused.
-- [ ] Re-baked with the bake tool: only the Bone Archer's `creatures` atlas and the manifest
+- [x] The delver archer's keys and atlas unchanged (its tests green; its atlas bytes kept).
+- [x] `BOW_STANCE` and `bowArm` removed if unused.
+- [x] Re-baked with the bake tool: only the Bone Archer's `creatures` atlas and the manifest
       change; the leg-clearance guard and the frame box pass; `node tools/bake/bake.mjs --check`
       reports no changes after the last commit.
-- [ ] The Bone Archer's VRAM before and after recorded here.
-- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1` shows no failures beyond the known resident-page
+- [x] The Bone Archer's VRAM before and after recorded here.
+- [x] `npx vitest run --maxWorkers=4 --minWorkers=1` shows no failures beyond the known resident-page
       ones (the delver archer on two pages); `npx tsc --noEmit -p .` and `npm run lint` clean.
 - [ ] **(HITL)** The owner approves the Bone Archer's contact sheet: its old `attack` beside the
       new in the 8 facings, with `idle` and `walk` unchanged.
