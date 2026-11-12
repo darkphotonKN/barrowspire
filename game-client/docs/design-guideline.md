@@ -672,6 +672,24 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   world, the fog and the atmosphere, under the aim line, the floor veil and every piece of HUD, and
   takes no input. The scale, the 40% and the line are starting values to tune by eye.
   *(Added by [FS-1SEF0](../../docs/specs/1SEF0-minimap-modes-enlarged-and-overlay.md), 2026-11-12.)*
+- **Town and field minimap.** The town and every field world wear the run's minimap, its look and
+  its three modes unchanged (the same panel, rim, vignette, layer order and tokens, no new colour).
+  The town's map shows whole from the first moment: its ground in the one stone
+  (`minimapExplored`); its edge the walls' line (`minimapEdge`), left open as a gap where each road
+  leaves (the gate's reach either side of it); each building a solid footprint in the walls' own
+  ink, so what cannot be walked through reads as one thing, a line where it is thin and a mass where
+  it is a building, its door cut in as a notch at least 2 px deep at every size; never its rooms,
+  partitions or furnishings, and nothing changes when the player steps inside. Its **map marks**
+  are amber glyphs on the run's dark ring, 9 × 9 on whole px at every mode's size, drawn in code: a
+  tower for the Spire's gate, a teleport ring for each gate to another area, a chest for the stash,
+  a bag for the Quartermaster, a scroll for the Elder, a lozenge for any other function NPC; only
+  what the player can act on (no Inn, Smithy, mailbox, market or dressing), and two that would
+  overlap stand side by side, 1 px apart. A field's map shows only its **charted ground**, the
+  ground round the player as they walk: the same stone, the edge line and the tree stands and rocks
+  solid only where charted, the road home's teleport ring once its spot is charted, and nothing at
+  all, not even a line, where it is uncharted. The screen is never fogged in the town or a field.
+  The party's dots as in a run; no monsters, no other players, no labels, no roads.
+  *(Added by [FS-P0HSP](../../docs/specs/P0HSP-town-and-field-minimap.md), 2026-11-12.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
