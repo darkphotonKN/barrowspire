@@ -1403,7 +1403,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
         gates: [GATE],
       });
     const map = () => (field.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
-    const chart = () => field.chart as { charted(cx: number, cy: number): boolean; cols: number; rows: number };
+    const chart = () => (field.charting as { chart: { charted(cx: number, cy: number): boolean; cols: number; rows: number } }).chart;
     /** A frame: the clock on, and the scene's update for the map alone. */
     const frame = (ms: number) => {
       clock.now += ms;
@@ -1558,7 +1558,7 @@ describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)",
     });
     const render = (position: { x: number; y: number }) =>
       field.renderState({ world_type: "field", current_player: { id: "self", entity_id: "me", position }, other_players: [], walls: WALLS, gates: [GATE] });
-    const chart = () => field.chart as { charted(cx: number, cy: number): boolean } | undefined;
+    const chart = () => (field.charting as { chart: { charted(cx: number, cy: number): boolean } } | undefined)?.chart;
     const cellAt = (p: { x: number; y: number }) => chart()!.charted(Math.floor(p.x / FIELD_CHART.cell), Math.floor(p.y / FIELD_CHART.cell));
     const frame = (ms: number) => {
       clock.now += ms;

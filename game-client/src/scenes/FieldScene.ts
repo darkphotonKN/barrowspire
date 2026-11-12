@@ -72,14 +72,8 @@ import { gateAt, gateEdges } from "./hubGates";
 import { afterFrameSetUp, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 import { usePartyStore } from "@/stores/partyStore";
 import { useGameStore } from "@/stores/gameStore";
-import {
-  FIELD_CHART,
-  browserFieldChartStore,
-  readFieldChart,
-  writeFieldChart,
-  type FieldChart,
-  type FieldChartStore,
-} from "@/ui/fieldChart";
+import { browserFieldChartStore, type FieldChartStore } from "@/ui/fieldChart";
+import { FieldChartKeeper } from "@/ui/fieldChartKeeper";
 import { fieldMap } from "@/ui/fieldMap";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
@@ -225,18 +219,15 @@ export class FieldScene extends Phaser.Scene {
   private minimap?: WorldMinimapController;
   /** What the field's minimap draws with: the scene's graphics, its canvas images and the camera's frames. */
   private minimapStage?: MinimapStage;
-  /** This visit's charted ground (FS-P0HSP §D): the player's own, read at the first state. */
-  private chart?: FieldChart;
+  /**
+   * This visit's charted ground (FS-P0HSP §D), the player's own, read at the first state for the
+   * active character then, and when its map redraws and its browser write are due.
+   */
+  private charting?: FieldChartKeeper;
   /** Where this browser keeps charted ground (ADR-0078). */
   private readonly chartStore: FieldChartStore = browserFieldChartStore;
-  /** Whose ground it is: the active character as the map was built, for this whole visit. */
-  private chartOwner: string | null = null;
-  /** The chart's version last written to this browser, and when (the scene's clock). */
-  private chartSaved?: { version: number; at: number };
   /** The field's walls and gates as last sent: what its map is built from with the chart. */
   private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
-  /** What the map last drew (the chart's version, the walls' count), and when (the scene's clock): a redraw waits {@link FIELD_CHART}.redraw. */
-  private mapDrawn?: { version: number; walls: number; at: number };
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   private abilityHud?: AbilityHud;
@@ -536,14 +527,11 @@ export class FieldScene extends Phaser.Scene {
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
-    this.saveFieldChart(true);
+    this.charting?.saveLast();
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
-    this.chart = undefined;
-    this.chartSaved = undefined;
-    this.chartOwner = null;
-    this.mapDrawn = undefined;
+    this.charting = undefined;
     this.mapField = { walls: [], gates: [] };
     this.abilityHud = undefined;
     this.lastState = undefined;
@@ -581,7 +569,8 @@ export class FieldScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.sendMovementIntent();
     this.drawFieldMap();
-    this.saveFieldChart();
+    // the charted ground kept in this browser, as often as its keeper says (FS-P0HSP §D.25)
+    this.charting?.save(this.time.now);
     this.fight?.update(delta);
     this.drainFallen(this.time.now);
     for (const view of this.views.values()) {
@@ -693,7 +682,7 @@ export class FieldScene extends Phaser.Scene {
   /**
    * The field's minimap from this state (FS-P0HSP §B, §D, §E): built with the field's first state;
    * the ground round the local player charted, alive or fallen, never round a party member's; the
-   * map drawn at once the first time and after at most every {@link FIELD_CHART}.redraw while new
+   * map drawn at once the first time and after at most every `FIELD_CHART.redraw` while new
    * ground is charted ({@link drawFieldMap}); the party's dots on every state.
    */
   private showFieldMap(state: ClientGameState): void {
@@ -706,53 +695,27 @@ export class FieldScene extends Phaser.Scene {
         renderScale: () => viewport.renderScale,
       });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
-      this.chartOwner = useGameStore.getState().activeCharacterId;
-      this.chart = readFieldChart(this.chartStore, this.chartOwner, this.field, this.size);
-      this.chartSaved = { version: this.chart.version, at: this.time.now };
+      const owner = useGameStore.getState().activeCharacterId;
+      this.charting = new FieldChartKeeper(this.chartStore, owner, this.field, this.size, this.time.now);
     }
     const me = state.current_player;
-    if (me) this.chart?.chartAround(me.position);
+    if (me) this.charting?.chart.chartAround(me.position);
     this.mapField = { walls: state.walls ?? this.mapField.walls, gates: state.gates ?? this.mapField.gates };
     this.drawFieldMap();
-    this.saveFieldChart();
+    this.charting?.save(this.time.now);
     this.minimap.party(state, usePartyStore.getState().party?.members.map((m) => m.player_id) ?? []);
   }
 
   /**
    * The field's map drawn again where what it shows changed (FS-P0HSP §D.28): newly charted ground
-   * or the field's walls; at once the first time, and after no sooner than
-   * {@link FIELD_CHART}.redraw since the last, so walking uncharted ground redraws it at most four
-   * times a second. Each frame and each state; it builds nothing while nothing is new.
+   * or the field's walls, as often as the chart's keeper says is due. Each frame and each state;
+   * it builds nothing while nothing is new.
    */
   private drawFieldMap(): void {
     const map = this.minimap;
-    const chart = this.chart;
-    if (!map || !chart) return;
-    const { version } = chart;
-    const walls = this.mapField.walls.length;
-    const drawn = this.mapDrawn;
-    if (drawn && drawn.version === version && drawn.walls === walls) return;
-    const now = this.time.now;
-    if (drawn && now - drawn.at < FIELD_CHART.redraw) return;
-    this.mapDrawn = { version, walls, at: now };
-    map.show(fieldMap(chart, this.mapField, this.size));
-  }
-
-  /**
-   * The charted ground kept in this browser (FS-P0HSP §D.25, ADR-0078): written, unioned with what
-   * is stored, no sooner than {@link FIELD_CHART}.save since the last write and only while new
-   * ground has been charted; at the scene's end (`final`) whenever anything is unwritten. A number
-   * compare while nothing is new.
-   */
-  private saveFieldChart(final = false): void {
-    const chart = this.chart;
-    const saved = this.chartSaved;
-    if (!chart || !saved || chart.version === saved.version) return;
-    // the scene's clock is gone with a destroyed game: the last write asks it nothing
-    const now = final ? saved.at : this.time.now;
-    if (!final && now - saved.at < FIELD_CHART.save) return;
-    writeFieldChart(this.chartStore, this.chartOwner, this.field, chart);
-    this.chartSaved = { version: chart.version, at: now };
+    const kept = this.charting;
+    if (!map || !kept || !kept.redrawDue(this.mapField.walls.length, this.time.now)) return;
+    map.show(fieldMap(kept.chart, this.mapField, this.size));
   }
 
   /**
