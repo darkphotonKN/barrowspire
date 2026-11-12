@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { PartyUpdatePayload } from "@/stores/partyStore";
 import {
+  PARTY_MARK,
   ROSTER_PARTY_MARK,
   SWITCH_LOCKED,
   entryChoice,
   inPartyAs,
+  inkMiddle,
+  partyMarkLayout,
   switchConfirmText,
 } from "./rosterParty";
 
@@ -76,5 +79,53 @@ describe("entryChoice: what pressing ENTER THE TOWN does (C10-C12)", () => {
 
   it("should name the mark in capitals, no emoji", () => {
     expect(ROSTER_PARTY_MARK).toBe("IN A PARTY");
+  });
+});
+
+// FS-NCC9J §Change: Changing character leaves the party, C9 (owner 2026-11-12: "派對選角色畫面的 無限符號跟in
+// party文字 對齊一下中線 然後位置放在正中間"): the rings and the words on one midline, the mark centred on the card.
+describe("partyMarkLayout: the mark's place on its card (C9)", () => {
+  /** A roster card as the sidebar lays them: 172 wide, its name's box 14 below its top. */
+  const card = { x: 1070, y: 148, width: 172 };
+  const NAME_TOP = 14;
+
+  it.each([58, 63.4, 71])("should centre the plate across the card, words %s wide", (width) => {
+    const { plate } = partyMarkLayout(card, { width, inkMiddle: 5.5 });
+    expect(Math.abs(plate.x + plate.width / 2 - (card.x + card.width / 2))).toBeLessThanOrEqual(0.5);
+    expect(Number.isInteger(plate.x)).toBe(true);
+  });
+
+  it.each([5.5, 6.25, 4])("should put both rings' centres on the words' ink middle, %s below their top", (middle) => {
+    const { rings, text, plate } = partyMarkLayout(card, { width: 63, inkMiddle: middle });
+    expect(rings).toHaveLength(2);
+    for (const ring of rings) expect(ring.y).toBe(text.y + middle);
+    // and that midline is the plate's
+    expect(rings[0].y).toBe(plate.y + plate.height / 2);
+  });
+
+  it("should keep the plate's contents in order inside it: the rings, then the words", () => {
+    const { plate, rings, text } = partyMarkLayout(card, { width: 63, inkMiddle: 5.5 });
+    const r = PARTY_MARK.ring;
+    expect(rings[0].x - r).toBeGreaterThan(plate.x);
+    expect(rings[1].x).toBeGreaterThan(rings[0].x);
+    expect(text.x).toBeGreaterThan(rings[1].x + r);
+    expect(text.x + 63).toBeLessThan(plate.x + plate.width);
+  });
+
+  it("should stand in the card's top band, clear of the name under it", () => {
+    const { plate } = partyMarkLayout(card, { width: 63, inkMiddle: 5.5 });
+    expect(plate.y).toBeGreaterThan(card.y);
+    expect(plate.y + plate.height).toBeLessThanOrEqual(card.y + NAME_TOP);
+  });
+});
+
+describe("inkMiddle: where the words' ink is middled in their box (C9)", () => {
+  it("should be the baseline (the font's ascent) less half the ink above it plus half below", () => {
+    expect(inkMiddle(9, { ascent: 6.5, descent: 0 }, 12)).toBe(5.75);
+    expect(inkMiddle(9, { ascent: 7, descent: 1 }, 12)).toBe(6);
+  });
+
+  it("should fall back to the box's middle where the ink cannot be measured", () => {
+    expect(inkMiddle(9, undefined, 12)).toBe(6);
   });
 });
