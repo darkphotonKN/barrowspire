@@ -1,7 +1,8 @@
 // Hand-keyed clips on the shared rig (ADR-0021 §3, FS-2325V §E.1–E.2): idle, walk, a class
-// attack and death, plus spring-lagged secondary motion for cloaks, robes and beards.
+// attack and death, a class's run and backpedal (FS-JS7C8), plus spring-lagged secondary motion
+// for cloaks, robes and beards.
 //
-// A pose is { b: { bone: [rx, ry, rz] }, body: { rx, rz, x, z }, fx: { … } }. Bone angles are
+// A pose is { b: { bone: [rx, ry, rz] }, body: { rx, rz, x, y, z }, fx: { … } }. Bone angles are
 // offsets on top of the rig's rest pose, in radians, Euler XYZ. Signs, for a limb hanging along
 // -y in a model facing +z: +rx swings it BACK, -rx swings it forward; +rx on a shin folds the
 // knee; +rx on a foot points the toes down. The character's left is +x.
@@ -22,31 +23,59 @@ export const ANIMATIONS = {
 
 
 /**
- * How many walk cycles the legs of `walk_attack` take while the upper body shoots once. The run
- * plays the walk at about 2.7x (WALK_PACE in src/render/art/animationSelect.ts: the server's 200
- * world px/s over the 74 px/s the 1x stride covers), so one 8-frame cycle takes about 0.3 s, and
- * the shot lasts 7 frames at 12 fps, 0.58 s: two cycles fit it, so the feet stay nearly planted.
+ * How many walk cycles the legs of `walk_attack` take while the upper body shoots once, on a
+ * sheet without `run`. Such a class walks at about 2.7x (WALK_PACE in
+ * src/render/art/animationSelect.ts: the server's 200 world px/s over the 74 px/s the 1x stride
+ * covers), so one 8-frame cycle takes about 0.3 s, and the shot lasts 7 frames at 12 fps, 0.58 s:
+ * two cycles fit it, so the feet stay nearly planted.
  */
 export const WALK_ATTACK_CYCLES = 2;
+
+/**
+ * The same on a sheet that carries `run` (FS-JS7C8 R21, tuning FS-HF0WW): its class runs, and
+ * attacking slows it to about 90 world px/s (the server's attack slow, 0.45 × 200), over which
+ * one walk cycle (about 59 px) fits the 0.58 s swing, so the legs walk near their own pace.
+ */
+export const RUN_WALK_ATTACK_CYCLES = 1;
 
 /**
  * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
  * walk from the waist down, played while a class attacks on the move. It lasts exactly as long as
  * `specs.attack` (twice its frames at twice its fps: 14 at 24 for the 7 at 12), so the client's
  * attack window times it unchanged. The upper body steps through the attack's own keys, each held
- * two frames, just as the attack plays them; the legs stride at the doubled rate. It is `boxed`:
- * drawn in the frame the other clips set, never widening it, so the sheet keeps its frame box
- * (the bake fails if it would clip).
+ * two frames, just as the attack plays them; the legs walk `cycles` walk cycles across it (one on
+ * a sheet that runs, else two). It is `boxed`: drawn in the frame the other clips set, never
+ * widening it, so the sheet keeps its frame box (the bake fails if it would clip).
  */
 export function withWalkAttack(specs) {
-  return { ...specs, walk_attack: { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true } };
+  const cycles = specs.run ? RUN_WALK_ATTACK_CYCLES : WALK_ATTACK_CYCLES;
+  return { ...specs, walk_attack: { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true, cycles } };
 }
+
+/**
+ * A playable class's run and backpedal (FS-JS7C8 §A, §B), each 8 frames looping, at the fps that
+ * puts its measured pace (pace.js) in its band: the run's 180–220 world px/s, the backpedal's
+ * 150–220. `speed` is how fast the clip carries the body, in rig heights per second (the walk is
+ * 1), for the cloth's drag (simulateSprings). The backpedal's is backward, and held to a
+ * quarter of its pace: at its full pace the drag swings a cloak forward through the legs, while a
+ * cloak on a back that moves backward presses against it and hangs.
+ */
+export const RUN_ANIMATIONS = {
+  run: { frames: 8, fps: 14, loop: true, speed: 2.5 },
+  backpedal: { frames: 8, fps: 18, loop: true, speed: -0.5 },
+};
 
 /**
  * The playable classes' clips (FS-3V7GC): the four, and `walk_attack`. The knight, the archer
  * and the wizard; the mercenary's are {@link MERC_ANIMATIONS}.
  */
 export const CLASS_ANIMATIONS = withWalkAttack(ANIMATIONS);
+
+/**
+ * A class sheet re-baked with the run and the backpedal (FS-JS7C8 R36: one class at a time, the
+ * archer first): a class's clips, those two, and `walk_attack` walking its legs over one cycle.
+ */
+export const RUNNING_CLASS_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, ...RUN_ANIMATIONS });
 
 /**
  * The Mercenary's clips (FS-MAMHR §H): a class's, and the parry, which raises into the guard fast
@@ -180,6 +209,144 @@ export function walkCycle(style) {
   });
   const frames = [...half, ...half.map(mirror)];
   return frames.map((p, i) => add(p, style.hold, style.walkExtra?.(i)));
+}
+
+// --- the run and the backpedal ---------------------------------------------------------------
+
+/** cos over one 8-frame cycle, peaking at frame 7.5: the right arm furthest back (frame i). */
+const swing = (i) => Math.cos(((i + 0.5) / 8) * Math.PI * 2);
+
+/**
+ * One step of the run, right foot planted: contact (the foot strikes a little ahead, the knee
+ * soft), down (the knee takes the weight, the pelvis lowest), push (the leg extends behind, the
+ * heel up) and flight (both feet off, the pelvis highest). The left leg is in its swing: folding
+ * heel to seat, passing high, then reaching to land. Feet angles are LOCAL, keyed from the world
+ * angle each sole should hold (thigh + shin + foot; + is toes down), so the stance foot lands on
+ * its heel, flattens and pushes off its toes.
+ */
+const RUN_STEP = {
+  thighR: [-0.46, -0.13, 0.33, 0.32],
+  shinR: [0.3, 0.65, 0.35, 0.9],
+  footR: [0.01, -0.52, -0.08, -0.32],
+  thighL: [0.22, -0.28, -0.52, -0.48],
+  shinL: [1.35, 1.45, 1, 0.5],
+  footL: [-0.87, -0.68, -0.28, -0.12],
+  hipsZ: [-0.02, -0.05, -0.02, 0],
+  chestZ: [0.01, 0.04, 0.02, 0],
+  /** The body lifted off the ground after grounding (H): the flight. */
+  lift: [0, 0, 0, 0.045],
+};
+
+/**
+ * The 8-frame run for a style (FS-JS7C8 R2): a jog. The arms, bent at the elbow, swing against
+ * the legs (the right arm forward with the left leg); the pelvis turns with the stride and the
+ * chest against it, with the arms; the centre of mass rises and falls once per step and leaves
+ * the ground in each step's flight; the neck takes up every turn, roll and lean of the chest, so
+ * the head stays steady. `style.run` scales it as `style.walk` scales the walk (stride, knee
+ * fold, arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm
+ * near straight so the bow hangs along the side as in the walk. `style.runExtra(i)` adds a
+ * class's own.
+ */
+export function runCycle(style) {
+  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], lean: 0.12, twist: 1, lift: 1, ...(style.run ?? {}) };
+  const ARM = 0.5;
+  const ELBOW = -1.35;
+  const half = [0, 1, 2, 3].map((i) => {
+    const c = swing(i);
+    const hipsY = 0.12 * c * r.twist;
+    // the chest turns back past square, with the arms: its world turn is -0.08·c
+    const upperY = -(0.12 + 0.08) * c * r.twist;
+    const leg = (name, k) => [RUN_STEP[name][i] * k, 0, 0];
+    return pose(
+      {
+        thighR: leg("thighR", r.stride),
+        thighL: leg("thighL", r.stride),
+        shinR: leg("shinR", r.knee),
+        shinL: leg("shinL", r.knee),
+        footR: [RUN_STEP.footR[i] + RUN_STEP.thighR[i] * (1 - r.stride) + RUN_STEP.shinR[i] * (1 - r.knee), 0, 0],
+        footL: [RUN_STEP.footL[i] + RUN_STEP.thighL[i] * (1 - r.stride) + RUN_STEP.shinL[i] * (1 - r.knee), 0, 0],
+        hips: [0, hipsY, RUN_STEP.hipsZ[i]],
+        spine: [r.lean * 0.5, upperY * 0.4, RUN_STEP.chestZ[i] * 0.5],
+        chest: [r.lean * 0.5, upperY * 0.6, RUN_STEP.chestZ[i] * 0.5],
+        neck: [-r.lean * 0.85, -(hipsY + upperY), -(RUN_STEP.hipsZ[i] + RUN_STEP.chestZ[i])],
+      },
+      { y: RUN_STEP.lift[i] * r.lift },
+    );
+  });
+  // the arms over the whole cycle, after the mirror, so each arm keeps its own swing and bend
+  const arms = (i) => {
+    const c = swing(i);
+    return pose({
+      upperArmR: [ARM * c * r.arms[1], 0, 0],
+      foreArmR: [ELBOW * r.elbow[1] + 0.15 * c * r.arms[1], 0, 0],
+      upperArmL: [-ARM * c * r.arms[0], 0, 0],
+      foreArmL: [ELBOW * r.elbow[0] - 0.15 * c * r.arms[0], 0, 0],
+    });
+  };
+  const frames = [...half, ...half.map(mirror)];
+  return frames.map((p, i) => add(p, arms(i), style.hold, style.runExtra?.(i)));
+}
+
+/**
+ * One step of the backpedal, right foot planted: it lands behind the body on its toes, rolls
+ * under it, and leaves the ground in front, toes last; then a short flight. The left leg swings
+ * back beneath, the knee folded, and reaches back to land toes down. A short stride at a quick
+ * cadence.
+ */
+const BACK_STEP = {
+  thighR: [0.25, -0.08, -0.32, -0.3],
+  shinR: [0.3, 0.45, 0.25, 0.45],
+  footR: [-0.2, -0.22, 0.37, 0.35],
+  thighL: [-0.15, 0.05, 0.22, 0.32],
+  shinL: [0.9, 1, 0.75, 0.4],
+  footL: [-0.15, -0.35, -0.37, -0.27],
+  lift: [0, 0, 0.012, 0.03],
+};
+
+/**
+ * The 8-frame backpedal for a style (FS-JS7C8 R8): the upper body held to the facing, leaning a
+ * little into it, the feet stepping backward. The arms swing short against the legs; the pelvis
+ * barely turns and the chest takes that turn back, so the shoulders stay square to the facing.
+ * `style.backpedal` scales it (stride, knee, arms, elbow bend per arm, lean);
+ * `style.backpedalExtra(i)` adds a class's own.
+ */
+export function backpedalCycle(style) {
+  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], lean: 0.08, ...(style.backpedal ?? {}) };
+  const ARM = 0.2;
+  const ELBOW = -1.1;
+  const half = [0, 1, 2, 3].map((i) => {
+    // the right leg is behind at contact here, the right arm forward: the swing runs the other way
+    const c = -swing(i);
+    const hipsY = 0.05 * c;
+    const leg = (name, k) => [BACK_STEP[name][i] * k, 0, 0];
+    return pose(
+      {
+        thighR: leg("thighR", r.stride),
+        thighL: leg("thighL", r.stride),
+        shinR: leg("shinR", r.knee),
+        shinL: leg("shinL", r.knee),
+        footR: [BACK_STEP.footR[i] + BACK_STEP.thighR[i] * (1 - r.stride) + BACK_STEP.shinR[i] * (1 - r.knee), 0, 0],
+        footL: [BACK_STEP.footL[i] + BACK_STEP.thighL[i] * (1 - r.stride) + BACK_STEP.shinL[i] * (1 - r.knee), 0, 0],
+        hips: [0, hipsY, 0],
+        spine: [r.lean * 0.5, -hipsY * 0.5, 0],
+        chest: [r.lean * 0.5, -hipsY * 0.5, 0],
+        neck: [-r.lean * 0.85, 0, 0],
+      },
+      { y: BACK_STEP.lift[i] },
+    );
+  });
+  // the arms after the mirror, so each keeps its own swing and bend
+  const arms = (i) => {
+    const c = -swing(i);
+    return pose({
+      upperArmR: [ARM * c * r.arms[1], 0, 0],
+      foreArmR: [ELBOW * r.elbow[1], 0, 0],
+      upperArmL: [-ARM * c * r.arms[0], 0, 0],
+      foreArmL: [ELBOW * r.elbow[0], 0, 0],
+    });
+  };
+  const frames = [...half, ...half.map(mirror)];
+  return frames.map((p, i) => add(p, arms(i), style.hold, style.backpedalExtra?.(i)));
 }
 
 // --- idle ----------------------------------------------------------------------------------
@@ -385,8 +552,8 @@ export function layerPoses(upper, lower) {
  * The attack over the walk (`walk_attack`): `spec`'s frames span exactly the attack clip's
  * duration (`attackSpec`). The upper body is the attack key showing at that moment, as the
  * attack clip itself would show it (an in-between would be a pose the attack never draws, and
- * its bow sweeps wider than the frame); the legs walk {@link WALK_ATTACK_CYCLES} cycles over the
- * same span, sampled between the walk's keys.
+ * its bow sweeps wider than the frame); the legs walk `spec.cycles` cycles over the same span
+ * ({@link WALK_ATTACK_CYCLES} when the spec names none), sampled between the walk's keys.
  */
 export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
   const attack = ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
@@ -394,7 +561,7 @@ export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
   const duration = spec.frames / spec.fps;
   if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
     throw new Error(`clips: walk_attack lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
-  const stride = (WALK_ATTACK_CYCLES * walk.length) / spec.frames;
+  const stride = ((spec.cycles ?? WALK_ATTACK_CYCLES) * walk.length) / spec.frames;
   return Array.from({ length: spec.frames }, (_, i) =>
     layerPoses(
       attack[Math.min(attack.length - 1, Math.floor((i * attackSpec.fps) / spec.fps + 1e-9))],
@@ -458,6 +625,8 @@ export function clipsFor(style, specs = ANIMATIONS) {
   const make = {
     idle: () => idleCycle(style, specs.idle.frames),
     walk: () => walkCycle(style),
+    run: () => runCycle(style),
+    backpedal: () => backpedalCycle(style),
     attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
@@ -489,9 +658,14 @@ export function applyPose(rig, p, springAngles) {
   if (rig.bones.jaw && p.fx.jaw !== undefined) rig.bones.jaw.rotation.x = (rig.rest.jaw?.[0] ?? 0) + p.fx.jaw * 0.6;
   rig.body.rotation.set(p.body.rx ?? 0, 0, p.body.rz ?? 0);
   rig.body.position.set((p.body.x ?? 0) * H, 0, (p.body.z ?? 0) * H);
+  // a flight (the run's): the body held this far off the ground once grounded, never below it
+  rig.lift = Math.max(0, p.body.y ?? 0) * H;
 }
 
-/** Lowers or lifts the body so its lowest grounded vertex touches y = 0. */
+/**
+ * Lowers or lifts the body so its lowest grounded vertex touches y = 0, or stands `rig.lift`
+ * above it (a pose's `body.y`, applyPose: a run's flight, both feet off the ground).
+ */
 export function groundPose(rig) {
   rig.root.updateMatrixWorld(true);
   let min = Infinity;
@@ -505,7 +679,7 @@ export function groundPose(rig) {
       if (_v.y < min) min = _v.y;
     }
   }
-  rig.body.position.y -= min;
+  rig.body.position.y -= min - (rig.lift ?? 0);
   rig.root.updateMatrixWorld(true);
 }
 

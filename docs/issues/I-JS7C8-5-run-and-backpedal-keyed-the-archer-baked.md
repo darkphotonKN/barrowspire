@@ -64,3 +64,19 @@ FS-JS7C8 §A R1–R3, R5, §B R8, R10, §C R21, §F R36–R41; Facts 1, 8, 9; us
 - `game-client/src/render/art/animationSelect.ts` (+ test: the measured paces)
 - `game-client/public/art/archer-*.png`, `game-client/public/art/manifest.json`
 - `game-client/docs/design-guideline.md`, `game-client/CONTEXT.md`
+
+## Verification notes (2026-11-12, agent)
+
+- Paces, measured on the archer's legs by `tools/bake/page/characters/pace.js` (the planted foot's
+  slide under the body, averaged over the time a foot is down; it reads the walk at about 80
+  against `WALK_PACE`'s 74): run 193.7 world px/s at 14 fps (`RUN_PACE` = 194, played at 1.03x at
+  200 px/s); backpedal 165.4 at 18 fps, backward (`BACKPEDAL_PACE` = 165, 1.21x).
+- `walk_attack` on the archer walks its legs over one walk cycle (`RUN_WALK_ATTACK_CYCLES`); the
+  three other classes keep two.
+- Archer atlas, before → after: one page, `archer-0` 2924 × 3844 → 3760 × 4008; RGBA 44,959,424 B
+  (45.0 MB) → 60,280,320 B (60.3 MB), **+34.1%** (R39's estimate +38%); PNG 6,289,416 →
+  8,466,924 B (+34.6%). Frames 336 → 464; the frame box (326 × 288) and anchor unchanged. No
+  second page.
+- Leg-clearance guard passes on the run and the backpedal (the run's worst 0.40 of the 0.5 px
+  limit at 2x, frame 2).
+- Every other atlas keeps its bytes (only `archer-0.png` and the archer's manifest entry change).
