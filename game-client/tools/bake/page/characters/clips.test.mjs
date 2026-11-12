@@ -440,7 +440,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     attack: "shot",
     hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
     walk: { arms: [0.7, 1], lean: 0.06 },
-    run: { arms: [0.5, 1], elbow: [0.25, 1] },
+    run: { arms: [0.3, 1], elbow: [0.215, 1] },
   };
   const plain = { attack: "slash", hold: pose() };
   const rig = archerLegs();
@@ -620,7 +620,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
   });
 
   it("keeps a class's own arm on its own side all the way round: the bow arm's short swing and near-straight elbow in every frame", () => {
-    const bow = { hold: pose(), run: { arms: [0.5, 1], elbow: [0.25, 1] } };
+    const bow = { hold: pose(), run: archer.run };
     for (const clip of [runCycle(bow)])
       for (const p of clip) {
         expect(Math.abs(p.b.upperArmL[0])).toBeLessThanOrEqual(0.26);
@@ -669,7 +669,7 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(range(head)).toBeLessThanOrEqual(range(hips) * 1.1);
   });
 
-  it("the run: a jog's pace, within 180–220 world px/s, and RUN_PACE is that measure", () => {
+  it("the run: its pace within 180–220 world px/s, and RUN_PACE is that measure (the fast run's upper body moves no foot)", () => {
     const pace = measurePace(rig, run, RUN.fps);
     expect(pace).toBeGreaterThanOrEqual(180);
     expect(pace).toBeLessThanOrEqual(220);
@@ -677,6 +677,125 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     // so at the server's 200 px/s the run plays within 0.9–1.1x
     expect(200 / RUN_PACE).toBeGreaterThanOrEqual(0.9);
     expect(200 / RUN_PACE).toBeLessThanOrEqual(1.1);
+  });
+
+  describe("a fast run from the waist up (FS-JS7C8 R2, owner 2026-11-12: \"跑步時有點生硬 一般跑步應該會稍微前傾\", \"現在的跑步有點像在慢跑 希望可以有快跑的感覺\", \"但快跑沒有到疾跑\", \"目前的腳步速度可以 只是上半身有一些變化\")", () => {
+    const at = (b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld);
+    const DEG = 180 / Math.PI;
+    /** The pose at fractional frame `f`, grounded as the bake grounds it; then the rig's bones are read. */
+    const posed = (frames, f) => footing(rig, frames, f);
+    /** The hips-to-neck line's forward tilt from upright, in degrees (+ is leaning forward). */
+    const trunkLean = () => {
+      const [h, n] = [at("hips"), at("neck")];
+      return Math.atan2(n.z - h.z, n.y - h.y) * DEG;
+    };
+    /** The elbow's bend, 0 for a straight arm, in degrees. */
+    const elbowBend = (s) => {
+      const [sh, el, hand] = [at(`upperArm${s}`), at(`foreArm${s}`), at(`hand${s}`)];
+      return 180 - sh.sub(el).angleTo(hand.sub(el)) * DEG;
+    };
+    /** A line's turn about the vertical, from its left joint to its right, in degrees. */
+    const lineYaw = (l, r) => {
+      const [a, b] = [at(l), at(r)];
+      return Math.atan2(b.z - a.z, a.x - b.x) * DEG;
+    };
+    /** The head's pitch, + looking down, in degrees. */
+    const headPitch = () => {
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(rig.bones.head.matrixWorld);
+      return Math.atan2(-fwd.y, fwd.z) * DEG;
+    };
+    const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
+    const restPose = () => {
+      applyPose(rig, pose());
+      rig.root.updateMatrixWorld(true);
+    };
+
+    it("the trunk leans forward about 10° from the hips, held through the cycle", () => {
+      restPose();
+      const rest = trunkLean();
+      const leans = SAMPLES.map((f) => (posed(run, f), trunkLean() - rest));
+      const mean = leans.reduce((s, v) => s + v, 0) / leans.length;
+      expect(mean).toBeGreaterThanOrEqual(9);
+      expect(mean).toBeLessThanOrEqual(11);
+      for (const [k, v] of leans.entries()) {
+        expect(v, `sample ${k}`).toBeGreaterThanOrEqual(8);
+        expect(v, `sample ${k}`).toBeLessThanOrEqual(12);
+      }
+    });
+
+    it("the head comes back up over the lean: it looks ahead as at rest, not at the ground", () => {
+      restPose();
+      const rest = headPitch();
+      for (const f of SAMPLES) {
+        posed(run, f);
+        expect(Math.abs(headPitch() - rest), `frame ${f}`).toBeLessThanOrEqual(3);
+      }
+    });
+
+    it("the arms pump with the elbows bent about 90°, in every frame", () => {
+      for (const f of [0, 1, 2, 3, 4, 5, 6, 7]) {
+        posed(run, f);
+        for (const s of ["L", "R"]) {
+          expect(elbowBend(s), `${s} frame ${f}`).toBeGreaterThanOrEqual(80);
+          expect(elbowBend(s), `${s} frame ${f}`).toBeLessThanOrEqual(100);
+        }
+      }
+    });
+
+    it("each hand drives forward to about chest height and back past the hip", () => {
+      for (const s of ["L", "R"]) {
+        const samples = SAMPLES.map((f) => {
+          posed(run, f);
+          return { hand: at(`hand${s}`), chest: at("chest"), shoulder: at(`upperArm${s}`), hips: at("hips") };
+        });
+        const front = samples.reduce((a, b) => (b.hand.z - b.hips.z > a.hand.z - a.hips.z ? b : a));
+        const back = samples.reduce((a, b) => (b.hand.z - b.hips.z < a.hand.z - a.hips.z ? b : a));
+        // chest height: above the chest bone, below the shoulder (not a sprinter's chin-high drive)
+        expect(front.hand.y, `${s} front`).toBeGreaterThan(front.chest.y);
+        expect(front.hand.y, `${s} front`).toBeLessThan(front.shoulder.y);
+        expect((back.hips.z - back.hand.z) / rig.H, `${s} back`).toBeGreaterThanOrEqual(0.06);
+      }
+    });
+
+    it("the shoulders counter-turn against the hips, more than the jog's and short of a sprint's", () => {
+      const shoulders = [];
+      const hips = [];
+      for (const f of SAMPLES) {
+        posed(run, f);
+        shoulders.push(lineYaw("upperArmL", "upperArmR"));
+        hips.push(lineYaw("thighL", "thighR"));
+      }
+      expect(corr(shoulders, hips)).toBeLessThan(-0.8);
+      const turn = Math.max(...shoulders.map(Math.abs));
+      expect(turn).toBeGreaterThanOrEqual(6.5);
+      expect(turn).toBeLessThanOrEqual(10);
+    });
+
+    it("keeps slice 5's legs key for key: the pelvis, thighs, shins, feet and the flight's lift (\"目前的腳步速度可以\")", () => {
+      // slice 5's RUN_STEP, right foot planted: contact, down, push, flight; mirrored for the left
+      const STEP = {
+        thighR: [-0.46, -0.13, 0.33, 0.32],
+        shinR: [0.3, 0.65, 0.35, 0.9],
+        footR: [0.01, -0.52, -0.08, -0.32],
+        thighL: [0.22, -0.28, -0.52, -0.48],
+        shinL: [1.35, 1.45, 1, 0.5],
+        footL: [-0.87, -0.68, -0.28, -0.12],
+        hipsZ: [-0.02, -0.05, -0.02, 0],
+        lift: [0, 0, 0, 0.045],
+      };
+      const hipsY = (i) => 0.12 * Math.cos(((i + 0.5) / 8) * Math.PI * 2);
+      run.forEach((p, i) => {
+        const k = i % 4;
+        const [near, far] = i < 4 ? ["R", "L"] : ["L", "R"];
+        for (const part of ["thigh", "shin", "foot"]) {
+          expect(p.b[`${part}${near}`], `${part}${near} @${i}`).toEqual([STEP[`${part}R`][k], 0, 0]);
+          expect(p.b[`${part}${far}`], `${part}${far} @${i}`).toEqual([STEP[`${part}L`][k], 0, 0]);
+        }
+        [0, hipsY(i), (i < 4 ? 1 : -1) * STEP.hipsZ[k]].forEach((v, j) => expect(p.b.hips[j], `hips @${i}`).toBeCloseTo(v, 9));
+        expect(p.body.y ?? 0, `lift @${i}`).toBeCloseTo(STEP.lift[k], 9);
+        expect(Object.keys(p.body).filter((key) => key !== "y" && p.body[key] !== 0), `body @${i}`).toEqual([]);
+      });
+    });
   });
 
   it("measures the walk near WALK_PACE's 74 world px/s, so the run is measured as the walk was", () => {

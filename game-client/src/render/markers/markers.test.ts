@@ -251,4 +251,19 @@ describe("markerBase", () => {
       expect(markerBase(sheet2x, undefined, false, 0.5)).toBe(300 - 108);
     });
   });
+
+  describe("on a sheet baked at 1.5x, drawn at two thirds (ADR-0076)", () => {
+    // the same figure: its frame 1.5 times the px, the sprite at 2/3, the crown still screen px
+    const artScale = 1 / 1.5;
+    const sheet1p5 = { y: 300, displayOriginY: 162, scaleY: artScale };
+
+    it("should seat the markers where the 1x sheet's sit", () => {
+      expect(markerBase(sheet1p5, 76, false, artScale)).toBeCloseTo(markerBase(sheet, 76, false)!, 9);
+    });
+
+    it("should still scale with a size on top of the art scale (the menu hero's 1.3)", () => {
+      const sized = markerBase({ ...sheet1p5, scaleY: 1.3 * artScale }, 76, false, artScale);
+      expect(sized).toBeCloseTo(markerBase({ ...sheet, scaleY: 1.3 }, 76, false)!, 9);
+    });
+  });
 });

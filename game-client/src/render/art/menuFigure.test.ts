@@ -40,7 +40,7 @@ const sheet = (atlas: string) => ({
   licence: "Barrowspire-original",
 });
 
-function library({ trimmedArcher = false } = {}): ArtLibrary {
+function library({ trimmedArcher = false, mercenaryAt1p5 = false } = {}): ArtLibrary {
   const manifest: ArtManifest = {
     version: 1,
     tile: { width: 64, height: 32 },
@@ -71,6 +71,20 @@ function library({ trimmedArcher = false } = {}): ArtLibrary {
         scale: 2,
         ...(trimmedArcher ? { trimmed: true as const } : {}),
       },
+      // the mercenary as the knight's figure baked at 1.5x (ADR-0076): 1.5 times the px each way, the same anchor
+      // fraction and crown; 72 x 108 screen px to the anchor, an odd 47 from the window's left
+      // and 21 from its top for a 50 x 60 window
+      ...(mercenaryAt1p5
+        ? {
+            char_mercenary_base: {
+              ...sheet("characters-1"),
+              frameWidth: 240,
+              frameHeight: 219,
+              scale: 1.5,
+              trimmed: true as const,
+            },
+          }
+        : {}),
     },
   };
   return new ArtLibrary(manifest, quiet);
@@ -318,6 +332,32 @@ describe("MenuFigure", () => {
       k.crop = [1, 2, 3, 4];
       knight.frame(0);
       expect(k.crop).toEqual([1, 2, 3, 4]);
+    });
+  });
+
+  describe("a sheet baked at 1.5x (ADR-0076, FS-HF0WW § Change: Class sheets at 1.5x R33)", () => {
+    it("stands exactly as large as a 1x sheet at every menu scale", () => {
+      for (const scale of [1, 1.3, 1.5]) {
+        const scene = fakeScene();
+        new MenuFigure(asScene(scene), library({ mercenaryAt1p5: true }), 0, 0, "mercenary", { scale });
+        expect(scene.sprites[0].scale * 1.5, String(scale)).toBeCloseTo(scale, 12);
+      }
+    });
+
+    it("crops a portrait on whole frame px, the window kept and the head never cut", () => {
+      const portrait = { width: 50, height: 60 };
+      const scene = fakeScene();
+      new MenuFigure(asScene(scene), library({ mercenaryAt1p5: true }), 0, 0, "mercenary", { portrait });
+      const [m] = scene.sprites;
+      const [x, y, w, h] = m.crop!;
+      for (const v of [x, y, w, h]) expect(Number.isInteger(v), `crop ${m.crop}`).toBe(true);
+      // the window is 50 x 60 screen px
+      expect([w / 1.5, h / 1.5]).toEqual([50, 60]);
+      // its top is the sprite's rise above the anchor, in screen px, at least the crown and headroom
+      expect(y / 1.5).toBe(108 - m.y);
+      expect(m.y).toBeGreaterThanOrEqual(83 + 4);
+      // and the window stays about the anchor: within a screen px of centred
+      expect(Math.abs(x / 1.5 + 25 - 72)).toBeLessThanOrEqual(1);
     });
   });
 

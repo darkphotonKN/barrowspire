@@ -263,25 +263,67 @@ const RUN_STEP = {
 };
 
 /**
- * The 8-frame run for a style (FS-JS7C8 R2): a jog. The arms, bent at the elbow, swing against
- * the legs (the right arm forward with the left leg); the pelvis turns with the stride and the
- * chest against it, with the arms; the centre of mass rises and falls once per step and leaves
- * the ground in each step's flight; the neck takes up every turn, roll and lean of the chest, so
- * the head stays steady. `style.run` scales it as `style.walk` scales the walk (stride, knee
- * fold, arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm
- * near straight so the bow hangs along the side as in the walk. `style.runExtra(i)` adds a
- * class's own.
+ * The run's forward lean (FS-JS7C8 R2, owner 2026-11-12: "跑步時有點生硬 一般跑步應該會稍微前傾"): the
+ * trunk's bend forward, in radians, four fifths at the spine just over the pelvis and the rest at
+ * the chest, held through the cycle. On the rig it tilts the hips-to-neck line about 10° (the
+ * spine pivots above the pelvis, so the line turns less than the bones). The neck takes it back
+ * out, so the head looks ahead. One place to tune it; `style.run.lean` overrides it per class.
+ */
+export const RUN_LEAN = 0.24;
+
+/** The run's elbow bend (rad, on the forearm): about 90°, opening a little on the back swing. */
+export const RUN_ELBOW = -1.57;
+
+/**
+ * How far each arm pumps from the shoulder, each way (rad, on the upper arm, in the leaning
+ * chest's frame): the hand forward to about chest height and back past the hip (FS-JS7C8 R2).
+ */
+export const RUN_ARM = 0.85;
+
+/**
+ * How far the shoulders turn against the hips at the extremes of the stride (rad, in the world):
+ * the pelvis turns 0.12 one way, the chest this much the other (the jog's was 0.08).
+ */
+export const RUN_COUNTER = 0.14;
+
+/**
+ * The neck turn that takes out the pelvis's, spine's and chest's turns together (Euler XYZ, as a
+ * bone's rotation), so the head stays level and turned to the facing. Composed, not summed: the
+ * chest turns about the leaning spine's own axis, and undoing a lean and a turn angle by angle
+ * would leave the head rolling with the stride.
+ */
+function steadyNeck(...chain) {
+  const q = new THREE.Quaternion();
+  for (const r of chain) q.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(r[0], r[1], r[2], "XYZ")));
+  const e = new THREE.Euler().setFromQuaternion(q.invert(), "XYZ");
+  return [e.x, e.y, e.z];
+}
+
+/**
+ * The 8-frame run for a style (FS-JS7C8 R2): a fast run, between a jog and a sprint (owner
+ * 2026-11-12: "現在的跑步有點像在慢跑 希望可以有快跑的感覺", "但快跑沒有到疾跑"), made from the waist
+ * up on slice 5's legs ("目前的腳步速度可以 只是上半身有一些變化"). The legs: contact, down, push and
+ * flight, the centre of mass rising and falling once per step and leaving the ground in each
+ * step's flight. Above them the trunk leans forward ({@link RUN_LEAN}); the arms, bent about 90°
+ * ({@link RUN_ELBOW}), pump from the shoulder against the legs (the right arm forward with the left
+ * leg, {@link RUN_ARM}); the pelvis turns with the stride and the shoulders against it
+ * ({@link RUN_COUNTER}); the neck takes up every turn, roll and lean of the chest, so the head stays
+ * steady and looks ahead. `style.run` scales it as `style.walk` scales the walk (stride, knee fold,
+ * arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm near
+ * straight and its swing short so the bow hangs along the side. `style.runExtra(i)` adds a class's
+ * own.
  */
 export function runCycle(style) {
-  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], lean: 0.12, twist: 1, lift: 1, ...(style.run ?? {}) };
-  const ARM = 0.5;
-  const ELBOW = -1.35;
+  const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
   const half = [0, 1, 2, 3].map((i) => {
     const c = swing(i);
     const hipsY = 0.12 * c * r.twist;
-    // the chest turns back past square, with the arms: its world turn is -0.08·c
-    const upperY = -(0.12 + 0.08) * c * r.twist;
+    // the chest turns back past square, with the arms: its world turn is -RUN_COUNTER·c
+    const upperY = -(0.12 + RUN_COUNTER) * c * r.twist;
     const leg = (name, k) => [RUN_STEP[name][i] * k, 0, 0];
+    const hips = [0, hipsY, RUN_STEP.hipsZ[i]];
+    const spine = [r.lean * 0.8, upperY * 0.4, RUN_STEP.chestZ[i] * 0.5];
+    const chest = [r.lean * 0.2, upperY * 0.6, RUN_STEP.chestZ[i] * 0.5];
     return pose(
       {
         thighR: leg("thighR", r.stride),
@@ -290,10 +332,10 @@ export function runCycle(style) {
         shinL: leg("shinL", r.knee),
         footR: [RUN_STEP.footR[i] + RUN_STEP.thighR[i] * (1 - r.stride) + RUN_STEP.shinR[i] * (1 - r.knee), 0, 0],
         footL: [RUN_STEP.footL[i] + RUN_STEP.thighL[i] * (1 - r.stride) + RUN_STEP.shinL[i] * (1 - r.knee), 0, 0],
-        hips: [0, hipsY, RUN_STEP.hipsZ[i]],
-        spine: [r.lean * 0.5, upperY * 0.4, RUN_STEP.chestZ[i] * 0.5],
-        chest: [r.lean * 0.5, upperY * 0.6, RUN_STEP.chestZ[i] * 0.5],
-        neck: [-r.lean * 0.85, -(hipsY + upperY), -(RUN_STEP.hipsZ[i] + RUN_STEP.chestZ[i])],
+        hips,
+        spine,
+        chest,
+        neck: steadyNeck(hips, spine, chest),
       },
       { y: RUN_STEP.lift[i] * r.lift },
     );
@@ -302,10 +344,10 @@ export function runCycle(style) {
   const arms = (i) => {
     const c = swing(i);
     return pose({
-      upperArmR: [ARM * c * r.arms[1], 0, 0],
-      foreArmR: [ELBOW * r.elbow[1] + 0.15 * c * r.arms[1], 0, 0],
-      upperArmL: [-ARM * c * r.arms[0], 0, 0],
-      foreArmL: [ELBOW * r.elbow[0] - 0.15 * c * r.arms[0], 0, 0],
+      upperArmR: [RUN_ARM * c * r.arms[1], 0, 0],
+      foreArmR: [RUN_ELBOW * r.elbow[1] + 0.1 * c * r.arms[1], 0, 0],
+      upperArmL: [-RUN_ARM * c * r.arms[0], 0, 0],
+      foreArmL: [RUN_ELBOW * r.elbow[0] - 0.1 * c * r.arms[0], 0, 0],
     });
   };
   const frames = [...half, ...half.map(mirror)];

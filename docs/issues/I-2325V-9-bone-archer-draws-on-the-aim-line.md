@@ -1,6 +1,6 @@
 ---
 id: I-2325V-9
-status: open
+status: done
 implements: FS-2325V
 blocked_by: [I-2325V-8]
 labels: [ready-for-agent]
@@ -117,7 +117,7 @@ as before (from `idle`).
 - [x] The Bone Archer's VRAM before and after recorded here.
 - [x] `npx vitest run --maxWorkers=4 --minWorkers=1` shows no failures beyond the known resident-page
       ones (the delver archer on two pages); `npx tsc --noEmit -p .` and `npm run lint` clean.
-- [ ] **(HITL)** The owner approves the Bone Archer's contact sheet: its old `attack` beside the
+- [x] **(HITL)** The owner approves the Bone Archer's contact sheet: its old `attack` beside the
       new in the 8 facings, with `idle` and `walk` unchanged.
 
 ## Blocked By
@@ -135,3 +135,7 @@ Acceptance Criteria 6–8, Edge States (the grip offset, the frame).
   `AIM_STANCE`)
 - `game-client/tools/bake/page/characters/clips.test.mjs`
 - `game-client/public/art/creatures-*.png`, `game-client/public/art/manifest.json` (the bake)
+
+## Owner approval
+
+2026-11-12: the owner approved the Bone Archer's contact sheet ("角色目前可以").

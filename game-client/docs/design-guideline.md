@@ -57,11 +57,17 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
   darkens once. Free-standing things (props, door leaves, chests, characters) and the tower's
   outer wall's contact shadow stay baked.
 - **Linear filtering.** Baked sprites are drawn smoothed, at 1x from a 2x render. A sheet may
-  instead be baked at 2x from a 4x render and drawn at half scale, so it stays sharp at render
-  scale 2; today the four classes are (knight, archer, wizard, mercenary; FS-HF0WW, FS-3V7GC)
-  ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md)).
-  It stands exactly as large as at 1x, and every size around it (head height, markers, footprint)
-  stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
+  instead be baked at more px than it is drawn, so it stays sharper on a high-density screen
+  ([ADR-0058](../../docs/adr/0058-a-sheet-may-be-baked-at-2x-and-trimmed-every-size-stays-in-screen-px.md),
+  [ADR-0076](../../docs/adr/0076-a-sheet-may-be-baked-at-1-5x-its-frame-and-trim-on-a-two-screen-px-grid.md)):
+  at 2x from a 4x render, drawn at half scale, sharp at render scale 2; or at 1.5x from a 3x
+  render, drawn at two thirds, which costs a little over half the 2x memory and is a touch softer
+  at render scale 2 (sharper at 1.5, equal at 1). The playable classes move to 1.5x as each is
+  re-baked with its run (the archer today; the knight, wizard and mercenary are still at 2x;
+  FS-HF0WW, FS-3V7GC, FS-JS7C8): the owner judged the 1.5x archer by eye and took the memory.
+  At 1.5x the frame, its anchor and every trimmed cut sit on two-screen-px steps, so they land on
+  whole backing px at render scale 1, 1.5 and 2. Either way the sheet stands exactly as large as
+  at 1x, and every size around it (head height, markers, footprint) stays in screen px. The pixel-art rules (nearest-neighbour, dithering, hand-placed clusters,
   pixel-grid outlines, `image-rendering: pixelated`) no longer apply to the canvas.
 - **Readable silhouettes over detail.** At game scale a player is roughly one tile wide and a face
   is a handful of pixels. What makes a thing read is its silhouette, its material and its motion.
@@ -266,8 +272,10 @@ lit) while the player stands inside.
   Not photoreal, and not blocky cartoon mannequins.
 - **Each gets 8 directions** and idle, walk, attack and death animations, baked from that rig.
   The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
-  `run` (a jog: arms against legs, the chest turning against the hips, a bounce with a flight in
-  each step, the head steady), played turned to the way the character moves, and
+  `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
+  arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
+  past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
+  head steady and looking ahead), played turned to the way the character moves, and
   `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
   than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
   no crouch, the feet stepping back). A class with `run` walks the legs of each over 0.75 walk
@@ -339,7 +347,8 @@ lit) while the player stands inside.
   all four classes, through the mage's robe too). One clearance serves every class
   (`UNDER_CLEAR`, FS-3V7GC): never give one class its own. At rest and in every clip except the death, no
   leg may lie more than one baked px outside the cloth over it, from the garment's waistband to
-  its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, half a px at 2x (1x
+  its hem, a belt or sash over the waistband counting as cover: 1 px at 1x, two thirds of a px at
+  1.5x, half a px at 2x (1x
   px measured in model space, an upper bound on the screen). The bake checks every pose and
   fails the sheet that breaks this, naming the clip and frame (`characters/clearance.js`). Never
   give a new garment `mirrored`: that is the old weighting, which skinned each half of the skirt

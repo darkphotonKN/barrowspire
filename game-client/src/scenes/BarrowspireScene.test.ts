@@ -5889,6 +5889,14 @@ describe("keepBodySize (FS-HF0WW)", () => {
     expect([sprite.body.width, sprite.body.height]).toEqual([60, 60]);
   });
 
+  it("should keep a 1.5x sheet's body at the 1x size too (ADR-0076)", () => {
+    const sprite = spriteAt(1 / 1.5);
+    keepBodySize(sprite, 1 / 1.5);
+    keepBodySize(sprite, 1 / 1.5);
+    expect(sprite.body.width).toBeCloseTo(60, 9);
+    expect(sprite.body.height).toBeCloseTo(60, 9);
+  });
+
   it("should leave a 1x sheet's body alone", () => {
     const sprite = spriteAt(1);
     keepBodySize(sprite, 1);

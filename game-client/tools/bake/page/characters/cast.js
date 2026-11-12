@@ -152,8 +152,10 @@ export function archer() {
     walk: { arms: [0.7, 1], lean: 0.06 },
     // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
     // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-    // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle)
-    run: { arms: [0.5, 1], elbow: [0.25, 1] },
+    // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle).
+    // In absolute terms the jog's (a 0.25 rad swing, a 0.34 rad elbow) under the fast run's
+    // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps
+    run: { arms: [0.3, 1], elbow: [0.215, 1] },
   };
   return { rig, style };
 }
@@ -572,8 +574,10 @@ export const CAST = [
   // trimmed to its pixels (lib/trim.mjs)
   { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
   // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
-  // the first class re-baked, the owner's 2026-11-12 pick)
-  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 2, trim: true },
+  // the first class re-baked, the owner's 2026-11-12 pick), baked at 1.5× (ADR-0076, the owner's
+  // 「感覺可以」): each class moves to 1.5× when it is re-baked with the run (FS-HF0WW § Change:
+  // Class sheets at 1.5x)
+  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5, trim: true },
   { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, animations: CLASS_ANIMATIONS, scale: 2, trim: true },
   { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, animations: MERC_ANIMATIONS, scale: 2, trim: true },
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },

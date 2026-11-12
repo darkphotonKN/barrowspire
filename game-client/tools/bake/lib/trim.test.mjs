@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TRIM_MARGIN, cropFrame, expandFrame, trimRect } from "./trim.mjs";
+import { TRIM_MARGIN, cropFrame, expandFrame, trimGrid, trimRect } from "./trim.mjs";
 
 /** A blank `w × h` frame with the given px set (alpha, or a full RGBA). */
 function frame(w, h, set = []) {
@@ -35,6 +35,24 @@ describe("trimRect (a frame cut to its pixels)", () => {
     const rect = trimRect(px, 40, 32, { grid: 2 });
     expect(rect).toEqual({ x: 6, y: 4, w: 16, h: 16 });
     for (const v of Object.values(rect)) expect(v % 2).toBe(0);
+  });
+
+  it("lands on two screen px for a sheet baked at 1.5: offset and size multiples of 3 sheet px (§ Change: Class sheets at 1.5x R31)", () => {
+    expect(trimGrid(1.5)).toBe(3);
+    const px = frame(48, 36, [
+      [7, 6],
+      [20, 17],
+    ]);
+    // 7..20 grown to 6..22, out to multiples of 3: 6..24; 6..17 grown to 5..19, out to 3..21
+    const rect = trimRect(px, 48, 36, { grid: trimGrid(1.5) });
+    expect(rect).toEqual({ x: 6, y: 3, w: 18, h: 18 });
+    for (const v of Object.values(rect)) expect(v % 3).toBe(0);
+    expect(expandFrame(cropFrame(px, 48, rect), rect, 48, 36).equals(px)).toBe(true);
+  });
+
+  it("trimGrid is whole screen px at a whole scale and two screen px at 1.5 (ADR-0076 Decision 3)", () => {
+    expect([1, 2, 3, 4].map(trimGrid)).toEqual([1, 2, 3, 4]);
+    expect(trimGrid(1.5)).toBe(3);
   });
 
   it("stays inside the frame when the pixels touch its edge", () => {

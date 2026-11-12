@@ -545,6 +545,38 @@ describe("CharacterAnimator", () => {
     });
   });
 
+  describe("a sheet baked at 1.5x (ADR-0076, FS-HF0WW § Change: Class sheets at 1.5x R33)", () => {
+    /** The archer at 1.5x: its 164 x 144 screen px frame, 1.5 times the px each way. */
+    const at1p5 = () => {
+      const m = manifest();
+      m.sheets.char_archer_base = { ...m.sheets.char_archer_base, frameWidth: 246, frameHeight: 216, scale: 1.5 };
+      return new ArtLibrary(m, quiet);
+    };
+
+    it("should draw it at two thirds, so it stands exactly as large as a 1x sheet", () => {
+      const archer = new CharacterAnimator(at1p5(), "archer");
+      expect(archer.artScale).toBeCloseTo(2 / 3, 15);
+      const sprite = fakeSprite();
+      archer.dress(sprite);
+      // the frame drawn at its true size: 164 x 144 screen px
+      expect(246 * sprite.scale).toBeCloseTo(164, 9);
+      expect(216 * sprite.scale).toBeCloseTo(144, 9);
+      expect(sprite.origin).toEqual({ x: 0.423, y: 0.75 });
+    });
+
+    it("should compose a size with the art scale: the menu hero's 1.3 and a menu's 1.5", () => {
+      const sprite = fakeSprite();
+      new CharacterAnimator(at1p5(), "archer").dress(sprite, 1.3);
+      expect(sprite.scale * 1.5).toBeCloseTo(1.3, 12);
+      new CharacterAnimator(at1p5(), "archer").dress(sprite, 1.5);
+      expect(sprite.scale).toBeCloseTo(1, 12);
+    });
+
+    it("should keep its head height in screen px", () => {
+      expect(new CharacterAnimator(at1p5(), "archer").crown).toBe(78);
+    });
+  });
+
   describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
     /** An archer drawn walking east at the server's pace, then loosing at `aim`. */
     function shootingWhileWalking(aim: { x: number; y: number }) {

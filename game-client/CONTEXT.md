@@ -215,9 +215,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   A sheet may also record its **sheet scale** and be **trimmed** (both below). The client learns
   about art only through it.
 - **Sheet scale**: how many of a sheet's px make one screen px (`scale` in the manifest; absent
-  is 1). A sheet baked at 2x holds twice the detail each way and is drawn at half size, so it
-  stands exactly as large as at 1x; its frame size and atlas positions are in its own px, while
-  `crown`, markers, the footprint and every other size stay screen px (ADR-0058, FS-HF0WW).
+  is 1; one of 1, 1.5, 2, 3, 4). A sheet baked at 2x holds twice the detail each way and is drawn
+  at half size, one at 1.5x one and a half times and is drawn at two thirds, so either stands
+  exactly as large as at 1x; its frame size and atlas positions are in its own px, while
+  `crown`, markers, the footprint and every other size stay screen px (ADR-0058, ADR-0076,
+  FS-HF0WW). At 1.5 a screen px is a whole sheet px only every two screen px, so the frame box,
+  the anchor and the trim lie on that two-px step.
 - **Trimmed sheet**: a sheet whose frames were each cut, at bake time, to the box that holds their
   pixels; the atlas stores only the cut and the manifest says where it sits in the whole frame
   (`trim`). Drawn, anchored and sized as the whole frame (ADR-0058, FS-HF0WW).
@@ -227,8 +230,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   FS-3V7GC). On a sheet that runs, its legs never step faster than the slowed body moves
   (FS-JS7C8 R21). Moving more than 90° away from the aim, a class that carries it plays the
   backpedal-attack instead.
-- **Run** (`run`): a playable class's looping clip while it moves and is not attacking, a jog
-  keyed to the server's move speed so it plays at about its own pace, turned to its movement.
+- **Run** (`run`): a playable class's looping clip while it moves and is not attacking, a fast
+  run (short of a sprint, leaning forward, the arms pumping) keyed to the server's move speed so it plays at about its own pace, turned to its movement.
   Replaces the walk for the four classes; folk and creatures still walk. Not the walk, which the
   class sheets keep for later use (FS-JS7C8).
 - **Pace** (`WALK_PACE`, `RUN_PACE`; the backpedal legs' pace in the bake): the world px per
