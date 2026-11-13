@@ -262,7 +262,10 @@ describe("the UI scene's notices, said by the world reported (FS-TQZ5J A2 R33, R
   });
 });
 
-describe("a notice's chime (FS-WDM0X § Change: Menu, dialog and notice sounds, M16)", () => {
+// FS-WDM0X § Change: Menu, dialog and notice sounds, owner listening check 2026-11-14: a notice
+// plays no sound again, as before pass 1; `notify` is the town's envelope's alone, and
+// `notify_important` waits for the party invite (pass 2) and the server's system warnings.
+describe("a notice plays no sound (FS-WDM0X § Change: Menu, dialog and notice sounds, owner listening check)", () => {
   const aWorld = (world: "hub" | "field" | "run"): WorldReport => ({
     world,
     windows: () => ({ letter: false, party: false, inventory: false, character: false }),
@@ -280,30 +283,22 @@ describe("a notice's chime (FS-WDM0X § Change: Menu, dialog and notice sounds, 
     return { bridge, heard, layer, ...s };
   }
 
-  it("should play notify as an ordinary notice is drawn, in each world's look", () => {
+  it("should play nothing as a notice is drawn, in each world's look", () => {
     const t = heardLayer();
     t.bridge.report(aWorld("run"));
 
     t.bridge.notice(town("Your bag is full."));
-    t.bridge.notice(field("Your bag is full."));
+    t.bridge.notice(field("The field will not let you go yet. Ask again."));
     t.bridge.notice(run("Escape door opened!", palette.safe));
 
-    expect(t.heard()).toEqual(["notify", "notify", "notify"]);
-  });
-
-  it("should play notify_important as a notice marked important is drawn", () => {
-    const t = heardLayer();
-    t.bridge.report(aWorld("hub"));
-
-    t.bridge.notice({ ...town("The way is shut for now."), important: true });
-
-    expect(t.heard()).toEqual(["notify_important"]);
+    expect(t.lines.length).toBeGreaterThanOrEqual(3);
+    expect(t.heard()).toEqual([]);
   });
 
   it("should play nothing for a notice said while no world is reported: none is drawn", () => {
     const t = heardLayer();
 
-    t.bridge.notice({ ...town("Too late."), important: true });
+    t.bridge.notice(town("Too late."));
 
     expect(t.heard()).toEqual([]);
   });

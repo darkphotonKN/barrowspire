@@ -678,7 +678,7 @@ describe("the menu slot's sounds (FS-WDM0X § Change: Menu, dialog and notice so
     expect(t.heard()).toEqual(["dialog_open"]);
   });
 
-  it("should play dialog_confirm_heavy for Fall, and dialog_cancel alone for Not yet, its × and Esc", () => {
+  it("should play dialog_confirm_heavy for Fall, and settings_close alone for Not yet, its × and Esc: they close the whole menu (owner listening check)", () => {
     const t = onBridge();
     const run = aWorld("run");
     t.bridge.report(run.report);
@@ -693,15 +693,15 @@ describe("the menu slot's sounds (FS-WDM0X § Change: Menu, dialog and notice so
     expect(t.heard()).toEqual(["dialog_confirm_heavy"]);
     expect(run.asked).toEqual([{ kind: "fall" }]);
     t.row("not-yet");
-    expect(t.heard()).toEqual(["dialog_cancel"]);
+    expect(t.heard()).toEqual(["settings_close"]);
 
     confirm();
     t.shown()!.menu!.close();
-    expect(t.heard()).toEqual(["dialog_cancel"]);
+    expect(t.heard()).toEqual(["settings_close"]);
 
     confirm();
     t.esc();
-    expect(t.heard()).toEqual(["dialog_cancel"]);
+    expect(t.heard()).toEqual(["settings_close"]);
     expect(t.slot.isOpen()).toBe(false);
   });
 

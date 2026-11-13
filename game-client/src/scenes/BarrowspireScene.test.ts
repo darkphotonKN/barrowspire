@@ -5416,7 +5416,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       return r;
     }
 
-    it("should play dialog_open as the Fall confirm opens from the menu, and dialog_cancel alone on its Not yet (§ Change M11, M13)", () => {
+    it("should play dialog_open as the Fall confirm opens from the menu, and settings_close alone on its Not yet (§ Change M11; owner listening check)", () => {
       const r = heardRun();
       r.pressEsc();
       expect(r.heard()).toEqual(["settings_open"]);
@@ -5425,17 +5425,17 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(r.heard()).toEqual(["dialog_open"]);
       r.pick("menu-not-yet");
       expect(menuOver(r.run)).toBeUndefined();
-      expect(r.heard()).toEqual(["dialog_cancel"]);
+      expect(r.heard()).toEqual(["settings_close"]);
     });
 
     it.each<[string, (r: Run) => void]>([
       ["Esc", (r) => r.pressEsc()],
       ["the ×", (r) => r.pick("menu-close")],
-    ])("should play dialog_cancel alone as %s closes the whole menu from the Fall confirm (§ Change M13)", (_input, input) => {
+    ])("should play settings_close alone as %s closes the whole menu from the Fall confirm (S5; owner listening check)", (_input, input) => {
       const r = inFallConfirm();
       input(r);
       expect(menuOver(r.run)).toBeUndefined();
-      expect(r.heard()).toEqual(["dialog_cancel"]);
+      expect(r.heard()).toEqual(["settings_close"]);
     });
 
     it("should play settings_close as the Menu icon closes the whole menu from the Fall confirm (S5)", () => {
@@ -7067,7 +7067,7 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     const run = new BarrowspireScene() as unknown as {
       init(data?: object): void;
       connectToServer(): void;
-      showNotification(message: string, backing: number, important?: boolean): void;
+      showNotification(message: string, backing: number): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
     };
@@ -7093,16 +7093,6 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     reply({ success: false, message: "too far away to interact" });
 
     expect(run.reaching).toBeUndefined();
-  });
-
-  it("should say an interact's refusal and its good news as ordinary notices: item-level (FS-WDM0X § Change M16)", () => {
-    const { notified, reply } = connected();
-
-    reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
-    reply({ success: false, message: "that loot is reserved for its killer", reason: "loot_reserved" });
-    reply({ success: true, message: "The lever gives." });
-
-    expect(notified.mock.calls.map((call) => call[2] ?? false)).toEqual([false, false, false]);
   });
 
   it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {
@@ -10262,34 +10252,28 @@ describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's mu
   });
 });
 
-// FS-WDM0X § Change: Menu, dialog and notice sounds, M16 (I-WDM0X-6): the run's notification carries
-// whether it relays the server's refusal, as plain data the UI scene chimes by.
-describe("BarrowspireScene notices, ordinary or important (FS-WDM0X § Change M16)", () => {
+// FS-WDM0X § Change: Menu, dialog and notice sounds, owner listening check 2026-11-14: the run's
+// notification is its words and its look, nothing marked important, so none chimes; a fall refused too.
+describe("BarrowspireScene notices carry no importance (FS-WDM0X § Change, owner listening check)", () => {
   afterEach(() => void vi.restoreAllMocks());
 
-  it("should say a notification as important only where it is told so", () => {
+  it("should say the run's news and a fall refused alike: words and look, nothing marked important", () => {
     const { run } = onStage();
     run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
     const told: unknown[] = [];
     uiSceneOn(run, "run", { row: false }).bridge.onScreen({ notice: (n) => void told.push(n) });
-    const say = (run as unknown as { showNotification(message: string, backing: number, important?: boolean): void }).showNotification.bind(run);
+    const say = (run as unknown as { showNotification(message: string, backing: number): void }).showNotification.bind(run);
 
     say("Escape door opened!", palette.safe);
-    say("You are not in a delve.", palette.hudPanel, true);
+    (run as unknown as { fallRefused(info: { message?: string }): void }).fallRefused({ message: "You are not in a delve." });
 
     expect(told).toEqual([
       { text: "Escape door opened!", look: { world: "run", backing: palette.safe } },
-      { text: "You are not in a delve.", look: { world: "run", backing: palette.hudPanel }, important: true },
+      { text: "You are not in a delve.", look: { world: "run", backing: palette.hudPanel } },
     ]);
-  });
-
-  it("should say a fall refused as important", () => {
-    const { run } = onStage();
-    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
-    const notified = vi.spyOn(run as unknown as { showNotification(...args: unknown[]): void }, "showNotification").mockImplementation(() => {});
-
-    (run as unknown as { fallRefused(info: { message?: string }): void }).fallRefused({ message: "You are not in a delve." });
-
-    expect(notified.mock.calls.map((call) => call[2])).toEqual([true]);
+    expect(told.map((n) => Object.keys(n as object))).toEqual([
+      ["text", "look"],
+      ["text", "look"],
+    ]);
   });
 });

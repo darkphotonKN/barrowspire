@@ -625,7 +625,7 @@ describe("the town's notices through the UI bridge (FS-TQZ5J A2 R33, R34)", () =
 
     refuse("leave_queue", "Could not leave the queue, please try again.");
 
-    expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" }, important: true }]);
+    expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" } }]);
   });
 
   it("should say HubGear's refusals through the bridge, and a past visit's gear nothing (port.notice)", () => {
@@ -6207,9 +6207,9 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
 });
 
 // FS-WDM0X § Change: Menu, dialog and notice sounds (I-WDM0X-6): the town says when the player opened
-// a dialogue (dialog_open), marks the door's ways as confirms and a resident's Leave as a cancel, and
-// says which of its notices relay the server's refusal (notify_important).
-describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M11, M12, M15, M16)", () => {
+// a dialogue (dialog_open) and marks the door's ways as confirms and a resident's Leave as a cancel. Its
+// notices carry no importance: none chimes (owner listening check 2026-11-14).
+describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M11, M12, M15; owner listening check)", () => {
   afterEach(() => void vi.restoreAllMocks());
 
   it("should play dialog_open as E opens a figure's card, and menu_click alone as its Go on turns the page", () => {
@@ -6270,7 +6270,7 @@ describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog 
     expect(heardKeeper()).toEqual(["dialog_cancel"]);
   });
 
-  it("should say the server turning down a move between worlds as important, and an item-level notice as ordinary", () => {
+  it("should say the server turning down a move between worlds and an item-level notice alike: words and look, nothing marked important", () => {
     const { hub, ui, refuse } = queuedHubOnStage();
     const told: unknown[] = [];
     ui().bridge.onScreen({ notice: (n) => void told.push(n) });
@@ -6282,6 +6282,10 @@ describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog 
     hub.gear = gear;
     gear.port.notice("Your bag is full.");
 
-    expect(told.map((n) => (n as { important?: boolean }).important ?? false)).toEqual([true, true, false]);
+    expect(told.map((n) => Object.keys(n as object))).toEqual([
+      ["text", "look"],
+      ["text", "look"],
+      ["text", "look"],
+    ]);
   });
 });
