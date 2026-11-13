@@ -781,6 +781,7 @@ describe("worldMusic tracks, one per world (FS-28DDG § Change: The tower's musi
   it("should play the village track in the hub, the tower track in the run, and nothing in a field", () => {
     expect(worldTrack("hub")).toBe(VILLAGE_TRACK);
     expect(worldTrack("run")).toBe(TOWER_TRACK);
+    // @ts-expect-error a field plays no music, so it cannot ask for a track
     expect(worldTrack("field")).toBeUndefined();
   });
 

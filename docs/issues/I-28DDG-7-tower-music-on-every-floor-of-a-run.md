@@ -1,6 +1,6 @@
 ---
 id: I-28DDG-7
-status: open
+status: done
 implements: FS-28DDG
 blocked_by: []
 labels: [ready-for-agent]
@@ -29,9 +29,9 @@ Implements FS-28DDG §Change: The tower's music on every floor of a run
 
 ## Acceptance Criteria
 
-- [ ] Every criterion under *The module*, *The run*, *The town* and *Housekeeping* in the
+- [x] Every criterion under *The module*, *The run*, *The town* and *Housekeeping* in the
       section, except the owner's listening check (I-28DDG-8).
-- [ ] Tests pass: full vitest, tsc, lint, lint:fence.
+- [x] Tests pass: full vitest, tsc, lint, lint:fence.
 
 ## Blocked By
 

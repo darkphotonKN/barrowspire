@@ -57,6 +57,7 @@ import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
+import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { drawPanelTitle } from "@/ui/panelFrame";
@@ -702,6 +703,13 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
   private sounds?: UiSounds;
   /**
+   * The tower's music (FS-28DDG § Change: The tower's music on every floor of a run, W2): made with
+   * the first run, and kept with this scene instance, which is this game's, across its stops, as
+   * the fade-out outlives the stop (R3). A climb rebuilds the floor inside the running scene and
+   * leaves it be (W3).
+   */
+  private music?: WorldMusic;
+  /**
    * The player's own class kit drawn (FS-MAMHR §G.32–§G.36, FS-JTNPR req 11), shared with the
    * field scene: the merc's cut, riposte, stance and parry flash, and the archer's aim line.
    */
@@ -1037,6 +1045,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * gone and are asked nothing (`SceneEnd`).
    */
   private resetRun(end: SceneEnd): void {
+    // the tower's music falls away on the game's step, past this stop, a stop during preload
+    // included; a destroyed game took it (FS-28DDG R3, R13, R21; § Change W9)
+    this.music?.leave(end);
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.floorMapUnsubscribe?.();
@@ -1565,6 +1576,9 @@ export class BarrowspireScene extends Phaser.Scene {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
+    // the tower's music, with the run's art, so the torch bar counts it; skipped while still cached
+    // (FS-28DDG § Change: The tower's music on every floor of a run, W9)
+    preloadMusic(this, worldTrack("run"));
   }
 
   private createSoldierTextures(prefix: string, pal: WizardPalette): void {
@@ -3261,7 +3275,18 @@ export class BarrowspireScene extends Phaser.Scene {
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
+    this.enterMusic();
     this.openHeldMessages();
+  }
+
+  /**
+   * The tower's music rises as the run is entered; resetRun tells it the run was left (FS-28DDG
+   * § Change: The tower's music on every floor of a run, W4, W7).
+   */
+  private enterMusic(): void {
+    const track = worldTrack("run");
+    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.trim);
+    this.music.enter();
   }
 
   /**
@@ -5683,8 +5708,9 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C3, C7, C8, C13, C14,
    * C17), in the menu's slot so every guard on the open menu holds for it, and built for the state
-   * the menu was, so it yields as the menu does. No music plays in a run: its Music row only keeps
-   * the level for the next hub entry. Back, Esc and its × reopen the run's menu, rebuilt as it opens.
+   * the menu was, so it yields as the menu does. Its Music row sets the tower's music, which applies
+   * and keeps the level (§ Change: The tower's music on every floor of a run, W6). Back, Esc and its
+   * × reopen the run's menu, rebuilt as it opens.
    */
   private openOptions(): void {
     const state = this.menuState();
@@ -5695,7 +5721,9 @@ export class BarrowspireScene extends Phaser.Scene {
       tones: MENU_TONES,
       // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
       back: () => this.act(() => this.openMenu()),
-      music: storedMusicLevel(browserMusicStore),
+      // the run's playing music, which applies the level at once; before create made it, the level
+      // alone (FS-28DDG § Change: The tower's music on every floor of a run, W6)
+      music: this.music ?? storedMusicLevel(browserMusicStore),
       // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
       fullscreen: lentFullscreen(this.registry),
       // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)

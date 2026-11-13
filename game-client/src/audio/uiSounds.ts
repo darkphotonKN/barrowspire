@@ -4,7 +4,7 @@
  * player path runs through, and the player (S23).
  *
  * The rule and the player are Phaser-free, behind {@link UiSoundStage}; {@link sceneUiSoundStage}
- * is the game they act on, as `HubMusic` is behind `sceneMusicStage`. Each scene makes its
+ * is the game they act on, as `WorldMusic` is behind `sceneMusicStage`. Each scene makes its
  * {@link UiSounds} in `create` from its own `sound` and the shared store, reports its window
  * state, and runs each player input that can open or close a window through `act` (S9).
  */
@@ -179,7 +179,7 @@ export function sceneUiSoundStage(scene: UiSoundScene): UiSoundStage {
     // the only sound under an effect's key is one this stage added
     get: (key) => (scene.sound.get(key) as UiSound | null) ?? null,
     add: (key) => scene.sound.add(key),
-    // the check HubMusic's stage makes (S12)
+    // the check WorldMusic's stage makes (S12)
     audible: () => {
       const context = scene.sound.context;
       return context ? context.state === "running" : !scene.sound.locked;
