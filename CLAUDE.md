@@ -6,9 +6,10 @@ Next.js + Phaser client in `game-client/`.
 
 ## Two lanes
 
-- **game-server is the human lane.** Kranti hand-codes it to learn Go. Leave it alone unless
-  asked; use `/develop` there only for large features, and only when asked. A server change
-  with no spec is expected. `/spec-reconcile` catches the records up afterwards.
+- **game-server is the human lane.** Kranti hand-codes it to optimise the Go and keep a grip
+  on advanced Go. When asked directly to build a backend feature, build it. Never take one on
+  by inference: if client work seems to need a server change, say so and stop there. A
+  server change with no spec is expected; `/spec-reconcile` catches the records up afterwards.
 - **game-client is the agent lane, spec-first:** `/scope-it` → `/write-a-spec` →
   `/spec-to-issues` → `/develop` → `/code-review`.
 
