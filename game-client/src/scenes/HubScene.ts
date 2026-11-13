@@ -183,6 +183,7 @@ import { browserMusicStore } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
+import { lentFullscreen } from "@/ui/gameFullscreen";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -3268,6 +3269,8 @@ export class HubScene extends Phaser.Scene {
           this.openMenu();
         }),
       music,
+      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
+      fullscreen: lentFullscreen(this.registry),
       // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });

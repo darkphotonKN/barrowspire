@@ -122,7 +122,7 @@ describe("keepTab: Tab stays in the game while the game is played (reported 2026
     expect(keyboard.queue).toHaveLength(1);
   });
 
-  it("should leave Tab to the browser while a control on the page holds focus (a header link, the fullscreen button, a text field)", () => {
+  it("should leave Tab to the browser while a control on the page holds focus (a header link, a text field)", () => {
     const win = new EventTarget();
     const { game, boot } = gameOn(win);
     boot();

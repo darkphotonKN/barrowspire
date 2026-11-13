@@ -2,7 +2,8 @@
  * The logical view and the render scale (FS-ZAJMH §A): who owns them (`viewport`), how a camera
  * is fitted, bounded and made to follow under them (`camera`), how the game follows a change
  * (`game`), how a mask is laid in screen space (`mask`), how the HUD keeps to the view's edges
- * (`anchor`), the corner the fullscreen button keeps (`fullscreenButton`), and every game object
+ * (`anchor`), the empty spot the top-right HUD keeps for the gone fullscreen button
+ * (`fullscreenButton`, FS-T3DWX R2), and every game object
  * rounded to the backing px (`rounding`, ADR-0057), installed once by whatever configures a game
  * (the game bridge, the dev gallery). The Phaser plugin is imported from `./ViewportFit` by the
  * game bridge alone.
@@ -50,7 +51,5 @@ export {
   FULLSCREEN_CORNER,
   FullscreenButtonPlace,
   fullscreenButtonPlace,
-  fullscreenHintSide,
   type FullscreenButtonSpot,
-  type FullscreenHintSide,
 } from "./fullscreenButton";

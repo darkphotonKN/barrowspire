@@ -712,25 +712,30 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   "目前的區域不特別亮", the same day; walls are lines and openings are gaps, corridors lined as rooms
   are, on the owner's "小地圖很多是邊的地方都沒有匡線", the same day.)* In its normal mode, in a run,
   the town or a field, it stands at the very top of the top-right corner, 10px in from the top and
-  the right, with the fullscreen button at its left, top-aligned, 6px off, and the lines the column
-  stacks under it follow its bottom; enlarged, as the overlay or with no map, the button keeps the
-  corner and the column starts under it. *(Amended by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
+  the right, with the fullscreen button's spot at its left, top-aligned, 6px off, and the lines the
+  column stacks under it follow its bottom; as the overlay or with no map, that spot is the
+  corner's and the column starts under it. *(Amended by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
   §Change: Minimap at the top, fullscreen button beside it, the owner's "地圖移動到最上面
-  全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", 2026-11-12.)* A **map mode icon** sits 4px inside the map's
-  bottom-left corner, normal and enlarged, and beside the fullscreen button while the map overlay
-  is up: a 9 × 9 tile built as a map mark is, two nested squares in the interactable amber on the
+  全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", 2026-11-12.)* No button stands in that spot: the
+  canvas carries no fullscreen control, which is the OPTIONS panel's **Fullscreen** row (Off / On,
+  the state's word in the interactable amber, the other dim). The spot is kept empty, 20 × 20 at
+  the canvas's corner 6px in, or beside the map, so nothing round it moved. *(Amended by
+  [FS-T3DWX](../../docs/specs/T3DWX-fullscreen-in-the-options-panel.md), the owner's
+  "把右上角的全螢幕按鈕 搬到menu的options面板裏面", 2026-11-13.)* A **map mode icon** sits 4px inside the map's
+  bottom-left corner, normal and enlarged, and beside the fullscreen button's empty spot while the
+  map overlay is up: a 9 × 9 tile built as a map mark is, two nested squares in the interactable amber on the
   dark `markerStroke` ring, `interactableBright` under the pointer, drawn in code from tokens. A
   press does what M does. Hovered, it shows "Map mode (M)" beside the map, never over it, on the
   canvas item tip's ground (`tipGround`'s dark fill, faint brass hairline, 6px corner) in vellum
-  12px body type, the fullscreen button's hint in the game palette. The dev position readout moves
+  12px body type, the look the fullscreen button's hint had, in the game palette. The dev position readout moves
   to the map's top-right corner, which the floor's diamond leaves as empty as the bottom-left.
   *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md) §Change: Map mode
   icon, the owner's "右上角地圖左下角多加小icon hover顯示可以切換大小或是模式(M)", 2026-11-12.)*
   The **map name**, the place's name as its arrival card titles it ("The Town", "Gentle
   Meadows", "The First Floor"), stands in 11px vellum body type letter-spaced 1px on a faint
   `hudPanel` plate at 0.75, padded 4 × 2, square-cornered as the column's lines are: 4px inside the
-  normal map's top-right corner, right-aligned; left of the fullscreen button, centred on it, with
-  the map enlarged; left of the map mode icon in the overlay. It hides while a target frame or the
+  normal map's top-right corner, right-aligned; left of the fullscreen button's empty spot,
+  centred on it, with the map enlarged; left of the map mode icon in the overlay. It hides while a target frame or the
   town's queue line stands over it. *(Added by [FS-56CKV](../../docs/specs/56CKV-minimap-look-and-run-hud-layout.md)
   §Change: Map name, the owner's "小地圖右上角顯示目前地圖的名字" and "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊",
   2026-11-12.)* In a run the name says the floor, so the column's "Floor N" line is not drawn

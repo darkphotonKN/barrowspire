@@ -1,11 +1,10 @@
 /**
  * The fullscreen button's footprint over the canvas, in logical units (FS-ZAJMH R18). The button is
- * DOM over the canvas (never out in the frame's bars) and is drawn at the canvas's CSS scale, so it
- * covers the same logical spot at any fit; the HUD keeps clear of it from here (Nick, 2026-11-05:
- * the button keeps the corner in every scene; the run's top-right HUD steps down). Where the normal
- * minimap holds the very top of that corner the button stands at the minimap's left instead, a
- * place the scene hands it with the top-right column's layout (FS-56CKV §Change: Minimap at the
- * top, fullscreen button beside it; Nick, 2026-11-12).
+ * gone: fullscreen is the OPTIONS panel's Fullscreen row now (FS-T3DWX R1). Its footprint stays the
+ * spot the top-right HUD is laid out round, kept empty, so nothing in that corner moved (FS-T3DWX
+ * R2): in the canvas's corner, or at the minimap's left where the map holds the very top, a place
+ * the scene still hands with the top-right column's layout (FS-56CKV §Change: Minimap at the top,
+ * fullscreen button beside it; Nick, 2026-11-12).
  */
 export const FULLSCREEN_BUTTON = {
   /** From the canvas's top and right edges to the button, in its corner. */
@@ -32,17 +31,6 @@ export const FULLSCREEN_CORNER: FullscreenButtonSpot = {
   top: FULLSCREEN_BUTTON.inset,
   right: FULLSCREEN_BUTTON.inset,
 };
-
-/** Which side of the button its hover hint stands on (FS-56CKV §Change C9). */
-export type FullscreenHintSide = "below" | "left";
-
-/**
- * The hint's side for the button at `spot`, so it stays on screen and never under the map: below
- * the button in the canvas's corner, to its left where it stands beside the minimap.
- */
-export function fullscreenHintSide(spot: FullscreenButtonSpot): FullscreenHintSide {
-  return spot.top === FULLSCREEN_CORNER.top && spot.right === FULLSCREEN_CORNER.right ? "below" : "left";
-}
 
 /**
  * Where the button stands now, handed it by the scene that lays out the top-right column

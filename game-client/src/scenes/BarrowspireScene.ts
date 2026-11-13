@@ -55,6 +55,7 @@ import {
 } from "@/ui/party";
 import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
+import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -5710,6 +5711,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
       back: () => this.act(() => this.openMenu()),
       music: storedMusicLevel(browserMusicStore),
+      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
+      fullscreen: lentFullscreen(this.registry),
       // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });

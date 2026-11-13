@@ -160,7 +160,7 @@ export interface MountDeps {
  * fullscreen) and on a density change (another monitor), Phaser then re-reading where the canvas
  * is for the pointer, since it can move inside the frame without changing size; and the canvas's
  * CSS px per logical unit published on the frame as `--game-scale`, for DOM laid over the canvas
- * in logical units (the fullscreen button). The viewport is expected to hold the frame's first fit
+ * in logical units (none now: the fullscreen button is gone, FS-T3DWX R1). The viewport is expected to hold the frame's first fit
  * already: the game was made at its size. Returns the unmount.
  */
 export function mountViewport(

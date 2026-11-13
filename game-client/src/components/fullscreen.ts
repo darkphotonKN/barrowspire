@@ -1,9 +1,10 @@
 /**
  * Fullscreen for the game frame (FS-ZAJMH §E R18–R23). The page has two states, windowed and
  * fullscreen; the state is always the document's own (`fullscreenElement`), never a local
- * toggle, so leaving by Esc or the browser's UI reads the same as leaving by the button (R20).
+ * toggle, so leaving by Esc or the browser's UI reads the same as leaving by the toggle (R20). The
+ * toggle is the OPTIONS panel's Fullscreen row (FS-T3DWX), bound to the frame by `frameFullscreen`.
  *
- * Where the browser has the Keyboard Lock API (Chrome, Edge), a fullscreen entered by the button
+ * Where the browser has the Keyboard Lock API (Chrome, Edge), a fullscreen entered by the toggle
  * locks Esc, so it reaches the game; the player leaves by holding Esc (R21 as amended, A16).
  *
  * Safari before 16.4 and iPadOS speak only the webkit-prefixed API; iPhone Safari has none, and
@@ -52,7 +53,7 @@ export function keyboardLockOf(nav: object): KeyboardLock | null {
     : null;
 }
 
-/** The document's fullscreen, as the button needs it. */
+/** The document's fullscreen, as the toggle needs it. */
 export interface Fullscreen {
   /** Whether the page is fullscreen now. */
   active(): boolean;
@@ -126,77 +127,9 @@ export function fullscreenOf(
           if (keyboard && active()) holdEscape(keyboard);
         }
       } catch {
-        // refused: nothing changed, so `active()` and the button still read windowed
+        // refused: nothing changed, so `active()` and the toggle still read windowed
       }
     },
     watch,
   };
-}
-
-/**
- * The button's words in each state: its accessible name (R18) and the hint it shows on hover and
- * keyboard focus (FS-56CKV §Change C9; Nick, 2026-11-12: "hover時也有要提示文字"). The button itself
- * shows only its icon (asked 2026-11-05), so this is the only place the words live. The hint names
- * no key: the game binds none to fullscreen (R22).
- */
-export function fullscreenLabel(active: boolean): { name: string; hint: string } {
-  return active
-    ? { name: "縮小 / exit fullscreen", hint: "Exit fullscreen" }
-    : { name: "全螢幕 / enter fullscreen", hint: "Fullscreen" };
-}
-
-/** What of the button the keeping listens on. An `HTMLElement` is one. */
-export interface KeptElement {
-  addEventListener(type: string, listener: (event: Event) => void): void;
-  removeEventListener(type: string, listener: (event: Event) => void): void;
-}
-
-/** The pointer, mouse and touch presses Phaser listens for. */
-const PRESS_EVENTS = [
-  "pointerdown",
-  "pointerup",
-  "mousedown",
-  "mouseup",
-  "touchstart",
-  "touchend",
-] as const;
-
-/**
- * Phaser hears the mouse and touch on `window` as well as on the canvas (a press that ends off
- * the canvas is still a pointer-up for the scene), and the keyboard on `window`. Stopping the
- * button's own presses there keeps a click on it from ever being an in-game action (R22). The
- * click itself is left alone: React hears it at the root. Of the keys, only the two that press
- * a button stop; the rest still reach the game while it is focused. Returns the release.
- */
-export function keepFromGame(el: KeptElement): () => void {
-  const stop = (e: Event) => e.stopPropagation();
-  const stopPressKey = (e: Event) => {
-    const { key } = e as KeyboardEvent;
-    if (key === "Enter" || key === " ") e.stopPropagation();
-  };
-  const kept: [string, (e: Event) => void][] = [
-    ...PRESS_EVENTS.map((type): [string, (e: Event) => void] => [type, stop]),
-    ["keydown", stopPressKey],
-    ["keyup", stopPressKey],
-  ];
-  for (const [type, fn] of kept) el.addEventListener(type, fn);
-  return () => {
-    for (const [type, fn] of kept) el.removeEventListener(type, fn);
-  };
-}
-
-/** A click on the button, as far as {@link handBackFocus} reads it. */
-export interface ButtonClick {
-  /** How many clicks: 1 or more for a mouse or touch press, 0 for Enter or Space. */
-  detail: number;
-  currentTarget: { blur(): void };
-}
-
-/**
- * After a mouse or touch press on the button, focus goes back to the page, so Enter and the game's
- * other keys are the game's again (R22). After Enter or Space it stays: a keyboard player keeps
- * their place and the focus ring (R18).
- */
-export function handBackFocus(e: ButtonClick): void {
-  if (e.detail > 0) e.currentTarget.blur();
 }

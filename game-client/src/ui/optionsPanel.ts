@@ -2,12 +2,14 @@
  * The OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C3–C8, C13, C16): the one
  * settings page every world's ESC menu opens from its **Options** row. A camera-fixed box in the
  * windows' frame and title in the popup band, wider than the menu, a list of setting rows
- * (**Music**, then **Sound effects** (FS-WDM0X S17), each a stepped slider from 0 to 5) and
+ * (**Music**, then **Sound effects** (FS-WDM0X S17), each a stepped slider from 0 to 5, then
+ * **Fullscreen** (FS-T3DWX), an Off / On toggle, where the game has a fullscreen to offer) and
  * **Back  [Esc]** at its foot. While it is open it owns
  * the screen as the menu does: it stands in the scene's menu slot, under the menu's blocker.
  *
  * Each scene adds the row (through its menu rule), opens this with its tones, its Menu icon's
- * `through`, what Back does (reopen that world's ESC menu) and a music level control, and routes
+ * `through`, what Back does (reopen that world's ESC menu), a music level control and the
+ * fullscreen its game was lent (`lentFullscreen`, FS-T3DWX R12), and routes
  * ←/→ to `keys.nudge`. No scene draws a panel of its own. Colour comes in as the scene's tokens
  * (`MenuTones`, ADR-0013); the arrows and the steps are drawn in code, never as text glyphs, since
  * the canvas body face has no ◄ ► ■ □.
@@ -53,6 +55,8 @@ const ARROW_GAP = 10;
 /** The pressable area round each mark: the row's height, and the mark's share of the bar. */
 const MARK_HIT_H = 28;
 const ARROW_HIT_W = 24;
+/** The toggle's Off: right-aligned this far left of the row's right edge, where On ends (FS-T3DWX R4). */
+const TOGGLE_OFF_RIGHT = 40;
 
 /** A level, as the panel reads and sets it: the music's (C13) or the sound effects' (FS-WDM0X S19). */
 export interface LevelControl {
@@ -63,14 +67,42 @@ export interface LevelControl {
 /** The music's level (C13): the hub's music, or the stored level alone. */
 export type MusicLevelControl = LevelControl;
 
+/**
+ * The game frame's fullscreen, as the Fullscreen row reads and toggles it (FS-T3DWX R4–R6, R12):
+ * the page that owns the frame lends it, and its state is always the document's.
+ */
+export interface FullscreenControl {
+  /** Whether the page is fullscreen now. */
+  active(): boolean;
+  /** Asks for fullscreen, or leaves it; called inside the press, the gesture a browser needs. */
+  toggle(): void;
+  /** Hears every change of state, by any route; the returned function stops it. */
+  watch(changed: () => void): () => void;
+}
+
 /** One setting row: its label on the left, a stepped slider from 0 to `steps` on the right (C4, C5). */
 export interface SettingRow {
+  kind?: "slider";
   id: string;
   label: string;
   steps: number;
   value(): number;
   set(value: number): void;
 }
+
+/** One on/off row: its label on the left, Off and On on the right, the state's word lit (FS-T3DWX R4). */
+export interface ToggleRow {
+  kind: "toggle";
+  id: string;
+  label: string;
+  on(): boolean;
+  toggle(): void;
+  /** Hears the state change while the panel is open; the returned function stops it. */
+  watch(changed: () => void): () => void;
+}
+
+/** A row of the panel's list. */
+export type OptionsRow = SettingRow | ToggleRow;
 
 /** The panel's keys, in the menu slot's shape: Esc is Back, Enter and the numbers do nothing, ←/→ nudge (C6, C7). */
 export interface OptionsKeys extends MenuKeys {
@@ -100,6 +132,8 @@ export interface OptionsPanelSpec extends OptionsLayoutSpec {
    * control as it opens, since the effects have nothing to apply and read the level at each play.
    */
   effects?: LevelControl;
+  /** The game frame's fullscreen (FS-T3DWX R12); none where there is none to offer, and then no row (R7). */
+  fullscreen?: FullscreenControl | null;
 }
 
 export interface OptionsPanel {
@@ -111,8 +145,9 @@ export interface OptionsPanel {
 }
 
 /** The game's settings, in order (C4): a later one is one more entry here. */
-function settingRows(spec: OptionsPanelSpec): SettingRow[] {
+function settingRows(spec: OptionsPanelSpec): OptionsRow[] {
   const effects = spec.effects ?? storedSfxLevel(browserSfxStore);
+  const fullscreen = spec.fullscreen;
   return [
     {
       id: "music",
@@ -129,8 +164,23 @@ function settingRows(spec: OptionsPanelSpec): SettingRow[] {
       value: () => effects.level(),
       set: (level) => effects.setLevel(level),
     },
+    // pointer only too (FS-T3DWX R8), and only where the game has a fullscreen to offer (R7)
+    ...(fullscreen
+      ? [
+          {
+            kind: "toggle",
+            id: "fullscreen",
+            label: "Fullscreen",
+            on: () => fullscreen.active(),
+            toggle: () => fullscreen.toggle(),
+            watch: (changed: () => void) => fullscreen.watch(changed),
+          } satisfies ToggleRow,
+        ]
+      : []),
   ];
 }
+
+const isToggle = (row: OptionsRow): row is ToggleRow => row.kind === "toggle";
 
 /** The OPTIONS panel with the game's settings (C3), at `spec.origin`. */
 export function openOptionsPanel(scene: MenuStage, spec: OptionsPanelSpec): OptionsPanel {
@@ -147,7 +197,7 @@ interface Mark {
  * The OPTIONS panel's layout for any list of rows (C4): the title's band, one row per setting,
  * Back at the foot, the height following the rows. `openOptionsPanel` gives it the game's settings.
  */
-export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { rows: SettingRow[] }): OptionsPanel {
+export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { rows: OptionsRow[] }): OptionsPanel {
   const { rows, origin, tones, back } = spec;
   const height = PANEL_TITLE_BAND + rows.length * OPTIONS_ROW + MENU_ROW + MENU_PAD;
   const top = -Math.round(height / 2);
@@ -160,6 +210,8 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
 
   const marks: Mark[] = [];
   const hits: Phaser.GameObjects.Rectangle[] = [];
+  /** What the panel listens to while open, let go as it closes. */
+  const stops: (() => void)[] = [];
   const change = (row: SettingRow, value: number) => {
     const next = Math.min(row.steps, Math.max(0, value));
     if (next === row.value()) return;
@@ -205,17 +257,55 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
     marks.push({ draw, place: (at) => void hit.setPosition(at.x + centre.x, at.y + centre.y) });
   };
 
+  const rowText = (x: number, y: number, words: string) =>
+    scene.add.text(x, y, words, { fontFamily: CANVAS_FONT.body, fontSize: "15px", color: toCss(tones.text) });
+
+  /**
+   * Off and On, right-aligned on the sliders' right edge, the state's word in the actionable tone
+   * and the other dim; a press released anywhere on the row toggles it (FS-T3DWX R4, R5). The words
+   * follow the state's every change, by any route, never the press itself (R6).
+   */
+  const toggleAt = (row: ToggleRow, cy: number) => {
+    const name = `options-${row.id}`;
+    const right = box.x + box.width - OPTIONS_INSET;
+    const on = rowText(right, cy, "On").setOrigin(1, 0.5).setName(`${name}-on`);
+    const off = rowText(right - TOGGLE_OFF_RIGHT, cy, "Off").setOrigin(1, 0.5).setName(`${name}-off`);
+    parts.push(off, on);
+    let lit = false;
+    const draw = () => {
+      const [state, other] = row.on() ? [on, off] : [off, on];
+      state.setColor(toCss(lit ? tones.text : tones.actionable));
+      other.setColor(toCss(tones.dim));
+    };
+    const hit = scene.add
+      .rectangle(origin.x, origin.y + cy, box.width - 2 * OPTIONS_INSET + ARROW_HIT_W, MARK_HIT_H, tones.panel, 0)
+      .setScrollFactor(0)
+      .setDepth(MENU_DEPTH + 1)
+      .setInteractive()
+      .setName(name);
+    // on the release, as Phaser's ScaleManager asks: still inside the browser's mouse event (R5)
+    hit.on("pointerup", () => row.toggle());
+    hit.on("pointerover", () => {
+      lit = true;
+      draw();
+    });
+    hit.on("pointerout", () => {
+      lit = false;
+      draw();
+    });
+    hits.push(hit);
+    stops.push(row.watch(draw));
+    draw();
+    marks.push({ draw, place: (at) => void hit.setPosition(at.x, at.y + cy) });
+  };
+
   rows.forEach((row, i) => {
     const cy = below + OPTIONS_ROW * i + OPTIONS_ROW / 2;
-    parts.push(
-      scene.add
-        .text(box.x + OPTIONS_INSET, cy, row.label, {
-          fontFamily: CANVAS_FONT.body,
-          fontSize: "15px",
-          color: toCss(tones.text),
-        })
-        .setOrigin(0, 0.5),
-    );
+    parts.push(rowText(box.x + OPTIONS_INSET, cy, row.label).setOrigin(0, 0.5));
+    if (isToggle(row)) {
+      toggleAt(row, cy);
+      return;
+    }
 
     // ◄ steps ►, right-aligned in the row
     const span = 2 * (ARROW_W + ARROW_GAP) + row.steps * STEP_W + (row.steps - 1) * STEP_GAP;
@@ -290,7 +380,7 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
 
   const nudge = (by: -1 | 1) => {
     const row = rows[0];
-    if (row) change(row, row.value() + by);
+    if (row && !isToggle(row)) change(row, row.value() + by);
   };
   const keys: OptionsKeys = {
     // Enter and the numbers answer no row here (C6)
@@ -308,6 +398,7 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
   const closeHit = frameCloseHit(scene, { frame, origin, tones, name: "options-close", onPress: back });
   const blocker = menuBlocker(scene, { through: spec.through, name: "options-blocker" });
   container.once("destroy", () => {
+    stops.forEach((stop) => stop());
     hits.forEach((hit) => hit.destroy());
     closeHit.destroy();
     blocker.destroy();
