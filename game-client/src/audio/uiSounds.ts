@@ -83,10 +83,9 @@ export function windowSound(before: WindowState, after: WindowState): UiEffect |
   return closed ? closed.close : null;
 }
 
-/** An effect's sound, as far as the player plays it. */
+/** An effect's sound, as far as the player plays it: Phaser's `play(config)` merges `config` into the sound's and applies it. */
 export interface UiSound {
-  volume: number;
-  play(): boolean;
+  play(config: { volume: number }): boolean;
 }
 
 /** What the player asks of the game. */
@@ -104,6 +103,14 @@ export interface UiSoundStage {
 /** The wrapper's shape, for a module that hears its own input (S9). */
 export type UiAct = <T>(run: () => T) => T;
 
+/** The wrapper as a module that hears its own input is handed it (S9): a scene's {@link UiSounds} is one. */
+export interface UiActWrapper {
+  act(run: () => void): void;
+}
+
+/** The wrapper a module runs its own input through when it was handed none: the input runs as it is. */
+export const PASS_THROUGH: UiActWrapper = { act: (run) => run() };
+
 /** One scene's effects: the player (S10–S13) and the wrapper (S9) over its window state (S8). */
 export class UiSounds {
   /** How deep in `act` the scene is: an inner call joins the outer one. */
@@ -119,16 +126,16 @@ export class UiSounds {
    * Plays `effect` once, now, or not at all (S10–S13): only at a kept level above 0, read at this
    * play (S16), with the context running and the effect cached. One sound per effect per game,
    * restarted from the top on a repeat (S11). Nothing queues, and nothing but the sound's volume is
-   * written: never its pitch, rate or detune, never the manager's volume or mute (S10, S13).
+   * set, handed to its play: never its pitch, rate or detune, never the manager's volume or mute
+   * (S10, S13).
    */
   play = (effect: UiEffect): void => {
     const level = readSfxLevel(this.store);
     const key = uiSoundKey(effect);
     if (level <= 0 || !this.stage.audible() || !this.stage.cached(key)) return;
     const sound = this.stage.get(key) ?? this.stage.add(key);
-    sound.play();
-    // after the play: Phaser's play re-applies the sound's config volume (BaseSound.play → applyConfig)
-    sound.volume = sfxGain(level);
+    // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
+    sound.play({ volume: sfxGain(level) });
   };
 
   /**

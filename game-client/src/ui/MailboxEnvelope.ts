@@ -15,6 +15,7 @@ import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import { sealState } from "@/mailbox/mailbox";
 import type { MailboxState } from "@/stores/mailboxStore";
+import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { viewport } from "@/render/viewport";
@@ -35,7 +36,7 @@ export interface MailboxEnvelopeDeps {
    * Runs the envelope's press, the player's own input, as the town runs its own (the interface sounds' wrapper,
    * FS-WDM0X S9). None, and it runs as it is.
    */
-  wrapper?: { act(run: () => void): void };
+  wrapper?: UiActWrapper;
 }
 
 const HUD_DEPTH = 1000;
@@ -136,10 +137,7 @@ export class MailboxEnvelope {
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
       .setInteractive({ useHandCursor: true });
-    this.zone.on("pointerdown", () => {
-      if (this.deps.wrapper) this.deps.wrapper.act(() => this.press());
-      else this.press();
-    });
+    this.zone.on("pointerdown", () => (this.deps.wrapper ?? PASS_THROUGH).act(() => this.press()));
     this.zone.on("pointerover", () => this.hover(true));
     this.zone.on("pointerout", () => this.hover(false));
 

@@ -57,7 +57,11 @@ export function rememberSfxLevel(store: SfxSettingStore, level: number): void {
  * writes, every read goes through to it, so another tab's change is heard.
  */
 export function heldForVisit(store: SfxSettingStore): SfxSettingStore {
-  const held = new Map<string, string>();
+  return holdIn(new Map(), store);
+}
+
+/** {@link heldForVisit} over a given `held`, so the browser's can be reached by {@link resetHeldForTests}. */
+function holdIn(held: Map<string, string>, store: SfxSettingStore): SfxSettingStore {
   const kept: KeyValueStore = {
     getItem: (key) => held.get(key) ?? store()?.getItem(key) ?? null,
     setItem: (key, value) => {
@@ -99,7 +103,18 @@ export function storedSfxLevel(store: SfxSettingStore): { level(): number; setLe
   };
 }
 
+/** What {@link browserSfxStore} holds for this visit: the module's life, so every test in a node run shares it. */
+const browserHeld = new Map<string, string>();
+
 /** This browser's `localStorage`, or none while Next renders on the server, a refused change held for the visit. */
-export const browserSfxStore: SfxSettingStore = heldForVisit(() =>
+export const browserSfxStore: SfxSettingStore = holdIn(browserHeld, () =>
   typeof window === "undefined" ? null : window.localStorage,
 );
+
+/**
+ * Tests only: forgets every change {@link browserSfxStore} holds, as a new visit would. In node
+ * there is no window, so each level a test sets is held, and would carry into the next test.
+ */
+export function resetHeldForTests(): void {
+  browserHeld.clear();
+}

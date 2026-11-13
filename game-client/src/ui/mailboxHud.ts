@@ -10,6 +10,7 @@ import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { ArtLibrary } from "@/render/art/library";
 import { useMailboxStore, type MailboxState } from "@/stores/mailboxStore";
+import type { UiActWrapper } from "@/audio/uiSounds";
 import { LetterPanel } from "./LetterPanel";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 
@@ -23,7 +24,7 @@ export interface MailboxHudDeps {
   /** The character's level, where known: the enclosure tip tones a requirement above it. */
   level?: () => number | undefined;
   /** Runs the envelope's press and the panel's ×, the player's own inputs (the interface sounds' wrapper, FS-WDM0X S9). */
-  wrapper?: { act(run: () => void): void };
+  wrapper?: UiActWrapper;
 }
 
 /** The mailbox as the hub hangs it: the app's mailbox store, the scene's baked art. */
@@ -33,7 +34,7 @@ export function mountMailbox(
   blocked: () => boolean,
   level?: () => number | undefined,
   opening?: () => void,
-  wrapper?: { act(run: () => void): void },
+  wrapper?: UiActWrapper,
 ): MailboxHud {
   return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level, opening, wrapper });
 }

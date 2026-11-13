@@ -50,6 +50,7 @@ import { itemView, type ItemView } from "@/items/itemView";
 import { artSprite } from "@/render/art/phaser";
 import { iconSheet } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
+import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { nothingWorn, type HudPanel } from "./EquipmentHud";
 import { satchelIcon } from "./ContainerView";
@@ -273,7 +274,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     private readonly art: ArtLibrary,
     private readonly world?: WorldType,
     private readonly under: (x: number, y: number) => boolean = () => false,
-    private readonly wrapper: { act(run: () => void): void } = { act: (run) => run() },
+    private readonly wrapper: UiActWrapper = PASS_THROUGH,
   ) {}
 
   // ── HudPanel ─────────────────────────────────────────────────────────────

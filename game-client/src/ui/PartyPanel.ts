@@ -18,6 +18,7 @@ import type { StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
 import { useAuthStore } from "@/stores/authStore";
 import { useGameStore } from "@/stores/gameStore";
+import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
 import {
   partyActions,
   usePartyStore,
@@ -72,7 +73,7 @@ export interface PartyPanelDeps {
    * Runs the panel's own player inputs, T, the Party icon's toggle and the ×, as the scene runs its
    * own (the interface sounds' wrapper, FS-WDM0X S9). None, and each runs as it is.
    */
-  wrapper?: { act(run: () => void): void };
+  wrapper?: UiActWrapper;
 }
 
 /** The panel as a scene hangs it: the app's party, the real socket and DOM field. */
@@ -80,7 +81,7 @@ export function mountPartyPanel(
   scene: Phaser.Scene,
   blocked: () => boolean,
   opening?: () => void,
-  wrapper?: { act(run: () => void): void },
+  wrapper?: UiActWrapper,
 ): PartyPanel {
   return new PartyPanel(scene, {
     store: usePartyStore,
@@ -248,10 +249,9 @@ export class PartyPanel {
     this.ownInput(() => this.flip());
   }
 
-  /** One of the panel's own player inputs, through the scene's wrapper where it gave one (FS-WDM0X S9). */
+  /** One of the panel's own player inputs, through the scene's wrapper, or as it is where it gave none (FS-WDM0X S9). */
   private ownInput(run: () => void): void {
-    if (this.deps.wrapper) this.deps.wrapper.act(run);
-    else run();
+    (this.deps.wrapper ?? PASS_THROUGH).act(run);
   }
 
   /** Opens or shuts the panel; what gives way to it closes first (§ Change C9). */
