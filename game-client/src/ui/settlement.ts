@@ -29,20 +29,15 @@ export interface RecordRow {
 export interface RecordView {
   title: string;
   status: { text: string; tone: RecordTone };
-  /** What came home: the first {@link RECORD_ROWS_SHOWN}, and how many more there are. */
+  /** What came home, every item (FS-GV8WN §Change: The settlement record scrolls S1). */
   carried: RecordRow[];
-  carriedMore: number;
-  /** What was lost, finds left in the barrow before items used up, likewise capped. */
+  /** What was lost, every item: finds left in the barrow before items used up. */
   lost: RecordRow[];
-  lostMore: number;
   /** Experience and level: "Experience +120 · Risen to level 4". */
   earned: string;
   /** Kills and time: "Slain 7 · 12:05 in the delve". */
   delve: string;
 }
-
-/** Rows each list shows before it counts the rest: two columns of four. */
-export const RECORD_ROWS_SHOWN = 8;
 
 const TITLE: Record<SettlementPayload["outcome"], string> = {
   escaped: "Escaped the barrow",
@@ -83,10 +78,8 @@ export function settlementRecord(settlement: SettlementPayload): RecordView {
   return {
     title: TITLE[settlement.outcome] ?? UNKNOWN_TITLE,
     status: STATUS[settlement.status] ?? STATUS.pending,
-    carried: carried.slice(0, RECORD_ROWS_SHOWN),
-    carriedMore: Math.max(0, carried.length - RECORD_ROWS_SHOWN),
-    lost: lost.slice(0, RECORD_ROWS_SHOWN),
-    lostMore: Math.max(0, lost.length - RECORD_ROWS_SHOWN),
+    carried,
+    lost,
     earned: `Experience +${settlement.experience_gained} · ${levelLine(settlement)}`,
     delve: `Slain ${settlement.kills} · ${clock(settlement.seconds_in_run)} in the delve`,
   };
