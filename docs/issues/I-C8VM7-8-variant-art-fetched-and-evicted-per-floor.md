@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-8
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: [I-C8VM7-7]
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 8: a floor's pool art is fetched when its map arrives, and what the new pool does not name is evicted"
 ---
 Implements FS-C8VM7 §G (R40, R42-R43); Implements ADR-0081

@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-9
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: [I-C8VM7-7]
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 9: ability telegraphs and impacts, the dagger and rock flights, and their gallery cards"
 ---
 Implements FS-C8VM7 §F (R36-R39)

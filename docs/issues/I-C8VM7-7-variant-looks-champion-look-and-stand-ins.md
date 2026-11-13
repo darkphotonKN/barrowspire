@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-7
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 7: the client draws every variant, its stand-in until its art lands, and a champion at boss size"
 ---
 Implements FS-C8VM7 §F (R34-R35), §G (R41, R44)

@@ -1,9 +1,9 @@
 ---
 id: I-BDRTJ-5
-status: open
+status: done
 implements: FS-BDRTJ
 blocked_by: [I-BDRTJ-3]
-labels: [ready-for-agent, blocked]
+labels: []
 title: "FS-BDRTJ slice 5: client endgame test run gate (label, walk-in start, production ignores it)"
 ---
 Implements FS-BDRTJ §Change: Endgame test run

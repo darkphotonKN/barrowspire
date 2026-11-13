@@ -1,9 +1,9 @@
 ---
 id: I-3103M-5
-status: open
+status: done
 implements: FS-3103M
 blocked_by: [I-3103M-1, I-C8VM7-5]
-labels: [ready-for-agent, blocked]
+labels: []
 title: "FS-3103M slice 5: Vorsk's loot, and boss Fabled only on floors 6+"
 ---
 Implements FS-3103M §G

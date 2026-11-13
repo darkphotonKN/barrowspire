@@ -1,9 +1,9 @@
 ---
 id: I-3103M-7
-status: open
+status: done
 implements: FS-3103M
 blocked_by: [I-3103M-3, I-3103M-6, I-XWHZP-2]
-labels: [ready-for-agent]
+labels: []
 title: "FS-3103M slice 7: the client draws the tome and altar, speaks the lore, and asks before the burn"
 ---
 Implements FS-3103M §I (R24 and R26 as amended by Amendment A1, FS-XWHZP)

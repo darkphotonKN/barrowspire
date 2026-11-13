@@ -1,9 +1,9 @@
 ---
 id: I-BDRTJ-3
-status: open
+status: done
 implements: FS-BDRTJ
 blocked_by: [I-C8VM7-1, I-C8VM7-4]
-labels: [ready-for-agent, blocked]
+labels: []
 title: "FS-BDRTJ slice 3: server endgame test run (dev gate, start action, fixed height-10 run from floor 6, fixed pools and levels)"
 ---
 Implements FS-BDRTJ §Change: Endgame test run

@@ -1,9 +1,9 @@
 ---
 id: I-3103M-3
-status: open
+status: done
 implements: FS-3103M
 blocked_by: [I-3103M-2]
-labels: [ready-for-agent]
+labels: []
 title: "FS-3103M slice 3: taking the tome, and the altar without it"
 ---
 Implements FS-3103M §D, §E, §F

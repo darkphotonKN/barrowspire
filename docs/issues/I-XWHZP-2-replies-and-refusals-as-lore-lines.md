@@ -1,9 +1,9 @@
 ---
 id: I-XWHZP-2
-status: open
+status: done
 implements: FS-XWHZP
 blocked_by: [I-XWHZP-1]
-labels: [ready-for-agent]
+labels: []
 title: "FS-XWHZP slice 2: the copy table, and interact replies and a refused Fall as lore lines"
 ---
 Implements FS-XWHZP §D, §F

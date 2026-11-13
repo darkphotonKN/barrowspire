@@ -1,9 +1,9 @@
 ---
 id: I-3103M-6
-status: open
+status: done
 implements: FS-3103M
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-3103M slice 6: bake the tome and the altar"
 ---
 Implements FS-3103M §H

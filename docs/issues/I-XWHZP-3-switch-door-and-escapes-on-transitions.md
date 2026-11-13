@@ -1,9 +1,9 @@
 ---
 id: I-XWHZP-3
-status: open
+status: done
 implements: FS-XWHZP
 blocked_by: [I-XWHZP-1, I-XWHZP-2]
-labels: [ready-for-agent]
+labels: []
 title: "FS-XWHZP slice 3: the switch, the escape door and escapes as hope lines, on transitions only"
 ---
 Implements FS-XWHZP §D, §E

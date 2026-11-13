@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-6
-status: open
+status: done
 implements: FS-KE075
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "Tunes FS-KE075 (for FS-C8VM7 §I): dungeon floors hold 30-45 monsters, the counts that make it up scaled about -35%"
 ---
 Tunes FS-KE075

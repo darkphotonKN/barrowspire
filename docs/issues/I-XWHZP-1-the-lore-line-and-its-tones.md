@@ -1,9 +1,9 @@
 ---
 id: I-XWHZP-1
-status: open
+status: done
 implements: FS-XWHZP
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-XWHZP slice 1: the lore line, its three tones, its queue and dust, and their gallery cards"
 ---
 Implements FS-XWHZP §A, §B, §C, §G

@@ -1,9 +1,9 @@
 ---
 id: I-X2F2H-11
-status: open
+status: done
 implements: FS-X2F2H
 blocked_by: [I-3QHQZ-9]
-labels: [ready-for-agent, blocked]
+labels: []
 title: "Tune FS-X2F2H: field level bands, Gentle Meadows 1-4 to 1-2, Forlorn Forest 4-9 to 8-12"
 ---
 Tunes FS-X2F2H

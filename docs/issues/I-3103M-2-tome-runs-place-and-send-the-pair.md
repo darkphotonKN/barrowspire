@@ -1,9 +1,9 @@
 ---
 id: I-3103M-2
-status: open
+status: done
 implements: FS-3103M
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-3103M slice 2: tome runs place the tome and the altar, and send them"
 ---
 Implements FS-3103M §B, §C, §E

@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-4
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: [I-C8VM7-1]
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 4: each Spire floor draws a pool of five and spawns only from it; the floor map names the pool"
 ---
 Implements FS-C8VM7 §C (R19-R25), §G (R40)

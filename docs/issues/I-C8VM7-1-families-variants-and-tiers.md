@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-1
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 1: the roster as data: tiers, families, 25 variants, goblin looks, their drop and experience rows"
 ---
 Implements FS-C8VM7 §A (R1-R9), §E (R32-R33)

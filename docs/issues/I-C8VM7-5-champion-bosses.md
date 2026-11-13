@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-5
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: [I-C8VM7-4]
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 5: a champion holds the top floor of a height 3-9 run"
 ---
 Implements FS-C8VM7 §D (R26-R31)

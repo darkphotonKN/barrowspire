@@ -1,9 +1,9 @@
 ---
 id: I-3QHQZ-9
-status: open
+status: done
 implements: FS-3QHQZ
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-3QHQZ slice 9: the Forest's trail spawn points roll elite at the Meadows' chance"
 ---
 Implements FS-3QHQZ §Change: Elites on the Forest's trail

@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-13
-status: open
+status: done
 implements: FS-Q14EV
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "Content: FS-Q14EV (for FS-C8VM7 §H): the dark warrior rig and the Dark Reaper"
 ---
 Content: FS-Q14EV

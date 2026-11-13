@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-2
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: [I-C8VM7-1]
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 2: monster abilities as sheet data: slam, wail, cleave, dagger, volley and rock, with the ability state on the wire"
 ---
 Implements FS-C8VM7 §B (R10-R14, R17-R18)

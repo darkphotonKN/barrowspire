@@ -1,9 +1,9 @@
 ---
 id: I-3103M-4
-status: open
+status: done
 implements: FS-3103M
 blocked_by: [I-3103M-3]
-labels: [ready-for-agent]
+labels: []
 title: "FS-3103M slice 4: burning the tome at the altar summons Vorsk"
 ---
 Implements FS-3103M §F

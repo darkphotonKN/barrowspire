@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-12
-status: open
+status: done
 implements: FS-Q14EV
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "Content: FS-Q14EV (for FS-C8VM7 §H): the ogre rig and its tiers"
 ---
 Content: FS-Q14EV

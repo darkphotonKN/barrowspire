@@ -1,9 +1,9 @@
 ---
 id: I-BDRTJ-4
-status: open
+status: done
 implements: FS-BDRTJ
 blocked_by: [I-BDRTJ-3, I-3103M-2, I-3103M-3, I-3103M-4]
-labels: [ready-for-agent, blocked]
+labels: []
 title: "FS-BDRTJ slice 4: endgame test run always holds the tome on floor 6 and the altar on floor 8"
 ---
 Implements FS-BDRTJ §Change: Endgame test run

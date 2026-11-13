@@ -1,9 +1,9 @@
 ---
 id: I-3103M-1
-status: open
+status: done
 implements: FS-3103M
 blocked_by: []
-labels: [ready-for-agent]
+labels: []
 title: "FS-3103M slice 1: the Demon is Vorsk, and no floor below the top rolls it"
 ---
 Implements FS-3103M §A

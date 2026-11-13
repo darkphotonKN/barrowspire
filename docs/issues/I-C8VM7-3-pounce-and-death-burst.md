@@ -1,9 +1,9 @@
 ---
 id: I-C8VM7-3
-status: open
+status: done
 implements: FS-C8VM7
 blocked_by: [I-C8VM7-2]
-labels: [ready-for-agent]
+labels: []
 title: "FS-C8VM7 slice 3: the Ravener's pounce and the Blightborn's death burst"
 ---
 Implements FS-C8VM7 §B (R11, R15-R17)
