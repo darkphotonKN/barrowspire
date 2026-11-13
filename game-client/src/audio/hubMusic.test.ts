@@ -115,7 +115,7 @@ describe("hubMusic tunables (FS-28DDG R2, R3; § Change C10)", () => {
 });
 
 describe("HubMusic entering the hub (FS-28DDG R2, R10)", () => {
-  it("should add one sound at volume 0 and ramp it to the default level's 0.3 over 2000 ms", () => {
+  it("should add one sound at volume 0 and ramp it to the default level's gain over 2000 ms", () => {
     const stage = fakeStage();
     const music = new HubMusic(stage, ON);
 
@@ -502,10 +502,10 @@ describe("HubMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12
 
 describe("HubMusic entering at a stored level (FS-28DDG § Change C9, C12)", () => {
   it.each([
-    { held: "1", gain: 0.1 },
-    { held: "4", gain: 0.4 },
-    { held: "5", gain: 0.5 },
-    { held: "on", gain: 0.3 },
+    { held: "1", gain: musicGain(1) },
+    { held: "4", gain: musicGain(4) },
+    { held: "5", gain: musicGain(5) },
+    { held: "on", gain: musicGain(3) },
   ])("should fade in from silence to $gain over 2000 ms at stored $held", ({ held, gain }) => {
     const stage = fakeStage();
     const music = new HubMusic(stage, () => settingStore(held));
@@ -534,16 +534,16 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     return { stage, store, music, sound: stage.sounds[0] };
   }
 
-  it("should ramp 0.3 to 0.5 over 200 ms on the game's step for a change from 3 to 5, and keep it", () => {
+  it("should ramp level 3's gain to level 5's over 200 ms on the game's step for a change from 3 to 5, and keep it", () => {
     const { stage, store, music, sound } = playing();
 
     music.setLevel(5);
     expect(music.level()).toBe(5);
     stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
-    expect(sound.volume).toBeCloseTo(0.4, 9);
+    expect(sound.volume).toBeCloseTo(musicGain(4), 9);
     stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
 
-    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(5), 12);
     expect(store.writes).toEqual(["5"]);
     expect(stage.stepping()).toBe(0);
     expect(sound.plays).toBe(1);
@@ -557,10 +557,10 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
     music.setLevel(1);
     stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
-    expect(sound.volume).toBeCloseTo(0.25, 9);
+    expect(sound.volume).toBeCloseTo((musicGain(4) + musicGain(1)) / 2, 9);
     stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
 
-    expect(sound.volume).toBeCloseTo(0.1, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(1), 12);
     expect(store.writes).toEqual(["5", "1"]);
   });
 
@@ -570,14 +570,14 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS / 2);
     const [sound] = stage.sounds;
-    expect(sound.volume).toBeCloseTo(0.15, 9);
+    expect(sound.volume).toBeCloseTo(FULL / 2, 9);
 
     music.setLevel(5);
     stage.advance(MUSIC_FADE_IN_MS / 4);
-    expect(sound.volume).toBeCloseTo(0.325, 9);
+    expect(sound.volume).toBeCloseTo(FULL / 2 + (musicGain(5) - FULL / 2) / 2, 9);
     stage.advance(MUSIC_FADE_IN_MS / 4);
 
-    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(5), 12);
     expect(stage.stepping()).toBe(0);
     expect(sound.plays).toBe(1);
   });
@@ -592,12 +592,12 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
     music.setLevel(5);
     stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
-    expect(sound.volume).toBeCloseTo(reached + (0.5 - reached) / 2, 9);
+    expect(sound.volume).toBeCloseTo(reached + (musicGain(5) - reached) / 2, 9);
     stage.advance(MUSIC_LEVEL_RAMP_MS / 2 - 1);
-    expect(sound.volume).toBeLessThan(0.5);
+    expect(sound.volume).toBeLessThan(musicGain(5));
     stage.advance(1);
 
-    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(5), 12);
     expect(stage.stepping()).toBe(0);
   });
 
@@ -613,10 +613,10 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     expect(sound.volumes.every((v) => v === 0)).toBe(true);
     stage.canHear = true;
     stage.advance(MUSIC_FADE_IN_MS / 2);
-    expect(sound.volume).toBeCloseTo(0.25, 9);
+    expect(sound.volume).toBeCloseTo(musicGain(5) / 2, 9);
     stage.advance(MUSIC_FADE_IN_MS / 2);
 
-    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(5), 12);
   });
 
   it("should fade out over 1000 ms from where it stands and stop on a change to 0, kept for the running hub", () => {
@@ -645,10 +645,10 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     expect(sound.plays).toBe(2);
     expect(sound.at).toBe(0);
     stage.advance(MUSIC_FADE_IN_MS / 2);
-    expect(sound.volume).toBeCloseTo(0.2, 9);
+    expect(sound.volume).toBeCloseTo(musicGain(4) / 2, 9);
     stage.advance(MUSIC_FADE_IN_MS / 2);
 
-    expect(sound.volume).toBeCloseTo(0.4, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(4), 12);
     expect(stage.sounds).toHaveLength(1);
     expect(store.writes).toEqual(["0", "4"]);
   });
@@ -666,7 +666,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
     expect(stage.sounds).toHaveLength(1);
     expect(stage.sounds[0].plays).toBe(1);
-    expect(stage.sounds[0].volume).toBeCloseTo(0.2, 12);
+    expect(stage.sounds[0].volume).toBeCloseTo(musicGain(2), 12);
     expect(store.writes).toEqual(["2"]);
   });
 
@@ -695,10 +695,10 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
     music.setLevel(4);
     stage.advance(MUSIC_FADE_IN_MS / 2);
-    expect(sound.volume).toBeCloseTo(FULL / 2 + (0.4 - FULL / 2) / 2, 9);
+    expect(sound.volume).toBeCloseTo(FULL / 2 + (musicGain(4) - FULL / 2) / 2, 9);
     stage.advance(MUSIC_FADE_IN_MS / 2);
 
-    expect(sound.volume).toBeCloseTo(0.4, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(4), 12);
     expect(stage.sounds).toHaveLength(1);
     expect(sound.plays).toBe(1);
     expect(sound.stops).toBe(0);
@@ -732,7 +732,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     music.setLevel(9);
     stage.advance(MUSIC_LEVEL_RAMP_MS);
     expect(music.level()).toBe(5);
-    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(sound.volume).toBeCloseTo(musicGain(5), 12);
     expect(store.writes).toEqual(["5"]);
   });
 

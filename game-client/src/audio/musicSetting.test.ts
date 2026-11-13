@@ -37,16 +37,16 @@ const throwing = (): KeyValueStore => ({
 });
 
 describe("the music level's tunables (FS-28DDG § Change: Music volume in an Options panel, C9)", () => {
-  it("should cap the loudest level at half the file's loudness and default to level 3", () => {
-    expect(MUSIC_MAX_GAIN).toBe(0.5);
+  it("should cap the loudest level at 0.3 of the file's loudness and default to level 3", () => {
+    expect(MUSIC_MAX_GAIN).toBe(0.3);
     expect(MUSIC_DEFAULT_LEVEL).toBe(3);
     expect(MUSIC_TOP_LEVEL).toBe(5);
   });
 
-  it("should map levels 0–5 linearly onto the cap: 0, 0.1, 0.2, 0.3, 0.4 and 0.5", () => {
+  it("should map levels 0–5 linearly onto the cap: 0, 0.06, 0.12, 0.18, 0.24 and 0.3", () => {
     const gains = [0, 1, 2, 3, 4, 5].map((level) => musicGain(level));
-    [0, 0.1, 0.2, 0.3, 0.4, 0.5].forEach((gain, level) => expect(gains[level]).toBeCloseTo(gain, 12));
-    expect(musicGain(MUSIC_DEFAULT_LEVEL)).toBeCloseTo(0.3, 12);
+    [0, 0.06, 0.12, 0.18, 0.24, 0.3].forEach((gain, level) => expect(gains[level]).toBeCloseTo(gain, 12));
+    expect(musicGain(MUSIC_DEFAULT_LEVEL)).toBeCloseTo(0.18, 12);
   });
 
   it("should derive every level's gain from the cap, so another cap changes them all", () => {
