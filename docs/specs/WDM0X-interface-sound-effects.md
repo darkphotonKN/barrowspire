@@ -630,16 +630,19 @@ M15. **A dialogue option says its sound.** `DialogueOption` gains an optional `s
 M16. **`notify`** and **`notify_important`**, as a notice is drawn:
      - `notify_important`: a notice relaying the server's refusal or error: the queue's, the
        Spire's and the fields' refusals said in passing, *Leave the queue*'s and *Change
-       character*'s errors (town, field); a gear change the server refused (town); a pile's
-       refusal (field); an equip refused, an interact refused or waiting ("The stair waits…",
-       "It will not open."), a fall refused (run).
+       character*'s errors (town, field); a gear change the server refused (town); an equip
+       refused, an interact refused or waiting ("The stair waits…", "It will not open.", "too far
+       away"), a fall refused (run).
      - `notify`: every other notice: the client's own (a full bag on a pickup or an unequip, a
-       locked or busy item, a full stash) and the run's news (the switch thrown, the escape door
-       open, someone escaped, `exit_door_unlocked`, an interact success's words).
+       locked or busy item, a full stash), the pickup refusals whoever says them (a pile held for
+       its killer, said by the client or the server, field and run: the charter's "pickup
+       notices"), and the run's news (the switch thrown, the escape door open, someone escaped,
+       `exit_door_unlocked`, an interact success's words).
      - `notify` also plays as the town's envelope glows for a newer letter (town).
 
      `Notice` gains an optional `important` (plain data); the worlds' notice ports take it as a
-     second argument. A notice said while no world is reported is not drawn and plays nothing.
+     second argument (`HubGear`'s). A notice said while no world is reported is not drawn and plays
+     nothing.
      *Derived* from the charter's "server-sent warning notices" (see *Defaults that met the code*).
 
 ### Pass 2 (recorded, not built)
@@ -661,8 +664,8 @@ M16. **`notify`** and **`notify_important`**, as a notice is drawn:
    names it `dialog_cancel`. It plays `dialog_cancel` only (M2), as do its × and Esc.
 4. *Leave the barrow* is an ESC menu row (`menu_click`) that closes the whole menu
    (`settings_close`). It keeps `settings_close`, the charter's rule for closing the whole menu.
-5. No "pickup" notice exists: the pickup notices are refusals. A full bag (the client's) plays
-   `notify`; a pile held for its killer (the server's) plays `notify_important` by M16's rule.
+5. No "pickup" notice exists: the pickup notices are refusals. A full bag and a pile held for its
+   killer play `notify` whoever says them (M16), so the same words never chime two ways.
 6. No server "system warning" exists as a screen notice. `notify_important` goes to the notices
    that relay the server's refusals and errors (M16), the nearest reading of "server-sent warning
    notices". The chat's server notices (`chat_notice`) are chat's, pass 2.

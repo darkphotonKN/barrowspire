@@ -22,8 +22,8 @@ what they say: `dialog_open`, an option's `sound`, a notice's `important`.
 - **The envelope (M5, M10, M16).** `MailboxEnvelope` plays `menu_hover`, `menu_error` for a press
   under a dialogue, and `notify` on a newer letter's glow, through a `play` the town passes.
 - **The notices (M16).** `Notice.important`; `UiNoticeLayer` plays `notify` or `notify_important`
-  as it draws; each world's call site says it as M16 lists, the ports (`HubGear`, `fieldPiles`)
-  taking it as a second argument.
+  as it draws; each world's call site says it as M16 lists, `HubGear`'s port taking it as a
+  second argument.
 - **The main menu (M14).** A Phaser-free `confirmDeletion` (ask, then play); `MainMenuScene` makes
   its player in `create` and asks through it.
 
