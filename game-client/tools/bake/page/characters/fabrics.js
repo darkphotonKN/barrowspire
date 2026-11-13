@@ -354,6 +354,34 @@ export function folkFabrics(name) {
   });
 }
 
+const RETONED = new Map();
+
+/**
+ * The character set with a creature's body materials re-painted in other tones (FS-C8VM7 §H R45:
+ * a variant is its family's look in another shade). `tones` names the materials it changes
+ * (`bone`, `rag`, `troll`, `fur`), each painted exactly as `fabrics()` paints it but for the
+ * tone; every other material is the shared one. Painted once per tone set per bake.
+ */
+export function retonedFabrics(tones) {
+  const key = JSON.stringify(tones);
+  if (RETONED.has(key)) return RETONED.get(key);
+  const F = fabrics();
+  const D = THREE.DoubleSide;
+  const paintOf = {
+    bone: (t) => mat(bone(t), { rough: 0.7 }),
+    rag: (t) => mat(rag(t), { side: D }),
+    troll: (t) => mat(hide(t), { rough: 0.7, normal: 0.9 }),
+    fur: (t) => mat(hair(t, { seed: 41 }), { side: D }),
+  };
+  const set = { ...F };
+  for (const [name, tone] of Object.entries(tones)) {
+    if (!paintOf[name]) throw new Error(`fabrics: no re-tone for "${name}"`);
+    set[name] = paintOf[name](tone);
+  }
+  RETONED.set(key, set);
+  return set;
+}
+
 let SET = null;
 
 /** The character material set, painted once per bake. */
