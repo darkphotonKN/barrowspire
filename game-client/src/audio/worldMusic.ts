@@ -54,7 +54,7 @@ export const TOWER_TRACK: MusicTrack = {
 };
 
 /** Which track each world plays; a field plays none (W1). */
-const WORLD_TRACKS = {
+export const WORLD_TRACKS = {
   hub: VILLAGE_TRACK,
   run: TOWER_TRACK,
 } satisfies Partial<Record<WorldType, MusicTrack>>;
