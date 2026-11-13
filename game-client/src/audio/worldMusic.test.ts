@@ -9,6 +9,7 @@ import {
   MUSIC_LEVEL_RAMP_MS,
   TOWER_TRACK,
   VILLAGE_TRACK,
+  WORLD_TRACKS,
 } from "./worldMusic";
 import { MUSIC_DEFAULT_LEVEL, MUSIC_MAX_GAIN, MUSIC_SETTING_KEY, musicGain } from "./musicSetting";
 
@@ -45,12 +46,14 @@ class FakeSound {
 
 /**
  * The game as the module sees it: the audio cache, the sound manager, whether the context runs,
- * the hub's status and the game's step, which a test advances by hand.
+ * the hub's status and the game's step, which a test advances by hand. Its track is the village's
+ * unless `maxGain` names another track's ceiling.
  */
-function fakeStage(opts: { cached?: boolean; audible?: boolean } = {}) {
+function fakeStage(opts: { cached?: boolean; audible?: boolean; maxGain?: number } = {}) {
   const sounds: FakeSound[] = [];
   const steps = new Set<(delta: number) => void>();
   const stage = {
+    maxGain: opts.maxGain ?? VILLAGE_TRACK.maxGain,
     isCached: opts.cached ?? true,
     canHear: opts.audible ?? true,
     busy: false,
@@ -795,6 +798,15 @@ describe("worldMusic tracks, one per world (FS-28DDG § Change: The tower's musi
     expect(VILLAGE_TRACK.maxGain).toBe(MUSIC_MAX_GAIN);
     expect(VILLAGE_TRACK.maxGain).toBe(0.3);
   });
+
+  // Phaser does not clamp a Web Audio sound's volume: a ceiling over 1 would amplify past the file
+  it.each(Object.entries(WORLD_TRACKS))(
+    "should keep the %s track's ceiling above 0 and at most the file's full loudness, 1.0",
+    (_world, track) => {
+      expect(track.maxGain).toBeGreaterThan(0);
+      expect(track.maxGain).toBeLessThanOrEqual(1);
+    },
+  );
 });
 
 describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's music on every floor of a run, W5; Tunes FS-28DDG)", () => {
@@ -805,8 +817,8 @@ describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's
     { level: 4, gain: 0.8 },
     { level: 5, gain: 1 },
   ])("should fade the tower in to $gain at level $level", ({ level, gain }) => {
-    const stage = fakeStage();
-    const music = new WorldMusic(stage, () => settingStore(String(level)), TOWER_TRACK.maxGain);
+    const stage = fakeStage({ maxGain: TOWER_TRACK.maxGain });
+    const music = new WorldMusic(stage, () => settingStore(String(level)));
 
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
@@ -815,8 +827,8 @@ describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's
   });
 
   it("should fade the tower in to 0.6 at the default level", () => {
-    const stage = fakeStage();
-    const music = new WorldMusic(stage, ON, TOWER_TRACK.maxGain);
+    const stage = fakeStage({ maxGain: TOWER_TRACK.maxGain });
+    const music = new WorldMusic(stage, ON);
 
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
@@ -825,9 +837,9 @@ describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's
   });
 
   it("should ramp a tower level change to the new level's gain under its ceiling: 5 is 1.0", () => {
-    const stage = fakeStage();
+    const stage = fakeStage({ maxGain: TOWER_TRACK.maxGain });
     const store = settingStore(null);
-    const music = new WorldMusic(stage, () => store, TOWER_TRACK.maxGain);
+    const music = new WorldMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
@@ -838,9 +850,9 @@ describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's
   });
 
   it("should leave the village where it was: 0.18 at the default level, 0.3 at level 5", () => {
-    const stage = fakeStage();
+    const stage = fakeStage({ maxGain: VILLAGE_TRACK.maxGain });
     const store = settingStore(null);
-    const music = new WorldMusic(stage, () => store, VILLAGE_TRACK.maxGain);
+    const music = new WorldMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     expect(stage.sounds[0].volume).toBeCloseTo(0.18, 12);
@@ -851,18 +863,25 @@ describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's
     expect(stage.sounds[0].volume).toBeCloseTo(0.3, 12);
   });
 
-  it("should play under the shared cap without a ceiling of its own", () => {
-    const stage = fakeStage();
+  it("should read the ceiling from its track's stage alone, so the track is named once (review fix)", () => {
+    const stage = fakeStage({ maxGain: 0.5 });
     const music = new WorldMusic(stage, ON);
 
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
-    expect(stage.sounds[0].volume).toBe(FULL);
+    expect(stage.sounds[0].volume).toBeCloseTo(musicGain(MUSIC_DEFAULT_LEVEL, 0.5), 12);
+    expect(stage.sounds[0].volume).not.toBeCloseTo(FULL, 12);
   });
 });
 
 describe("sceneMusicStage for the tower track (FS-28DDG § Change: The tower's music on every floor of a run, W2, W9)", () => {
+  it.each([TOWER_TRACK, VILLAGE_TRACK])("should carry $key's own ceiling, the one source of it (W5)", (track) => {
+    const { scene } = fakeScene({ key: track.key });
+
+    expect(sceneMusicStage(scene, track).maxGain).toBe(track.maxGain);
+  });
+
   it("should add, find and free the given track's key, never the village's", () => {
     const { scene, audio, added } = fakeScene({ key: TOWER_TRACK.key, context: { state: "running" } });
     const stage = sceneMusicStage(scene, TOWER_TRACK);

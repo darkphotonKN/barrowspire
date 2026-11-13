@@ -10154,6 +10154,48 @@ describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's mu
     expect(events.listenerCount("step")).toBe(0);
   });
 
+  it("should do nothing when the run is stopped during its first preload, before any create made the music (W9)", () => {
+    const scene = new BarrowspireScene();
+    const run = scene as unknown as Musical;
+    scene.init();
+    const { add, sound, events, audio } = withTowerSound(run);
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+
+    expect(() => run.resetRun("shutdown")).not.toThrow();
+
+    expect(add).not.toHaveBeenCalled();
+    expect(sound.calls).toEqual([]);
+    expect(events.listenerCount("step")).toBe(0);
+    expect(audio.has(TOWER_TRACK.key)).toBe(true);
+  });
+
+  it("should fade a held, stopped sound from 0 and free it once SHUTDOWN when a later visit is stopped during its preload (W9, R13)", () => {
+    const { run, sound, step, settings, audio, add } = playing();
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    run.input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
+
+    // the first visit ends while the next one already loads: stopped, but held for it
+    run.resetRun("shutdown");
+    settings.status = 2;
+    step(MUSIC_FADE_OUT_MS + 16);
+    expect(sound.calls).toEqual(["play", "stop"]);
+    expect(audio.has(TOWER_TRACK.key)).toBe(true);
+    const heard = sound.volumes.length;
+
+    // that visit is stopped during its preload, before its create entered the music
+    run.resetRun("shutdown");
+    settings.status = 8;
+    step(MUSIC_FADE_OUT_MS + 16);
+
+    expect(sound.volumes.length).toBeGreaterThan(heard);
+    expect(sound.volumes.slice(heard).every((v) => v === 0)).toBe(true);
+    expect(sound.calls).toEqual(["play", "stop", "destroy"]);
+    expect(audio.has(TOWER_TRACK.key)).toBe(false);
+    expect(add).toHaveBeenCalledOnce();
+  });
+
   it("should play nothing, and throw nothing, when the tower track failed to load (R14)", () => {
     const s = onStage();
     const run = s.run as unknown as Musical;

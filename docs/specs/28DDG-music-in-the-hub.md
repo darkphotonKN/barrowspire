@@ -869,3 +869,29 @@ values.
 | tower gains for levels 0–5 | 0, 0.06, 0.12, 0.18, 0.24, 0.3 | 0, 0.2, 0.4, 0.6, 0.8, 1.0 |
 | tower at the default level 3 | 0.18 | 0.6 |
 | village ceiling | 0.3 (trim 1.0 × 0.3) | 0.3 (`MUSIC_MAX_GAIN`), unchanged |
+
+### Facts: the owner's newest tower mix (2026-11-14)
+
+A record of what changed after the Tunes above. No requirement and no value of this section
+changes. The owner replaced `tower.ogg` twice after the tune, in 6ca4ed0d and then 84d52624, and
+each time the m4a fallback was re-encoded from it. These facts supersede the Facts list's `tower.ogg`,
+`tower.m4a` and loudness lines and the Edge States' *Loudness* entry, where they state the old
+file. The text above is not edited.
+
+- Loudness, the newest `tower.ogg` decoded whole to 16-bit PCM: −16.0 dBFS RMS / −0.9 dBFS peak
+  (the first file: −27.3 / −3.0). The village is unchanged at −12.9 / −1.3.
+- `tower.m4a` is now encoded at 160 kbps (`afconvert -f m4af -d aac -b 160000 -q 127`), not 96:
+  AAC, 2 ch, 44.1 kHz, ~157 kbps, 2.38 MB, still 5,292,000 valid + 2112 priming + 992 remainder
+  frames.
+- At the default level the tower now plays roughly 7 dB louder than the village: about
+  −20.4 dBFS RMS (gain 0.6) against about −27.8 (gain 0.18). The old file played about 14 dB
+  under the village's file. Every gain stays at or under 1, so nothing plays past a file's own
+  loudness.
+- The owner heard the newest mix at the ceiling of 1.0 and approved it:
+
+  > 「沒問題可以合併回main跟push」
+
+  No problem: merge it back into main and push.
+
+The tower's ceiling stays 1.0 and the village's 0.3. A retune for the louder mix, if the owner
+wants one, is a new `Tunes FS-28DDG`.

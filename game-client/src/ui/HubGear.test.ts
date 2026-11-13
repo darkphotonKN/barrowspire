@@ -460,6 +460,116 @@ describe("HubGear (FS-HRH2J §E R40–44)", () => {
     },
   );
 
+  /** Closes the overlay and opens it again with REST not answering yet; the answer to give it. */
+  function reopenPending(
+    gear: HubGear,
+    api: ReturnType<typeof fakeApi>,
+    open: (gear: HubGear) => void = (g) => g.toggle(),
+  ) {
+    gear.hide();
+    const instances = deferred<{ result: { items: ItemInstance[] } }>();
+    api.getItemInstances.mockReturnValueOnce(instances.promise);
+    open(gear);
+    return (items: ItemInstance[]) => instances.resolve({ result: { items } });
+  }
+
+  it("should keep the last bag on show while the inventory reloads, so it never flashes empty, then take REST's answer", async () => {
+    const { gear, panel, api } = hubGearOnStage(
+      [instance("sword"), instance("helm"), instance("ring")],
+      { weaponId: "sword" },
+    );
+    gear.toggle();
+    // the first open knows nothing yet: the bag is empty until REST answers
+    expect(ids(panel.inventory)).toEqual([]);
+    await settle();
+
+    const answer = reopenPending(gear, api);
+
+    expect(panel.status).toBe(GEAR_LOADING);
+    expect(ids(panel.inventory)).toEqual(["helm", "ring"]);
+    answer([instance("sword"), instance("helm"), instance("boots")]);
+    await settle();
+    expect(panel.status).toBeUndefined();
+    expect(ids(panel.inventory)).toEqual(["helm", "boots"]);
+  });
+
+  it("should keep the last stash and bag on show while the stash chest reloads, then take REST's answer", async () => {
+    const { gear, panel, api } = hubGearOnStage([
+      instance("b1", { location: "bag" }),
+      instance("s1", { location: "stash" }),
+    ]);
+    gear.openStash();
+    await settle();
+
+    const answer = reopenPending(gear, api, (g) => g.openStash());
+
+    expect(panel.status).toBe(GEAR_LOADING);
+    expect(ids(panel.stash)).toEqual(["s1"]);
+    expect(ids(panel.inventory)).toEqual(["b1"]);
+    answer([
+      instance("b1", { location: "bag" }),
+      instance("s1", { location: "stash" }),
+      instance("s2", { location: "stash" }),
+    ]);
+    await settle();
+    expect(ids(panel.stash)).toEqual(["s1", "s2"]);
+  });
+
+  it("should keep the bag in step with an equip and an unequip, as the overlay drew them, for the next open", async () => {
+    const { gear, panel, api } = hubGearOnStage(
+      [instance("sword"), instance("helm"), instance("ring")],
+      { weaponId: "sword" },
+    );
+    gear.toggle();
+    await settle();
+    expect(equip(panel, panel.inventory[0], "head")).toBe(true);
+    await settle();
+    expect(unequip(panel, "weapon")).toBe(true);
+    await settle();
+
+    reopenPending(gear, api);
+
+    // the helm left the bag for its slot; the sword came off to the end of the bag
+    expect(ids(panel.inventory)).toEqual(["ring", "sword"]);
+    expect(panel.equipped.head?.entity_id).toBe("helm");
+    expect(panel.equipped.weapon).toBeNull();
+  });
+
+  it("should keep the bag in step with a swap, what was worn going to the end of the bag", async () => {
+    const { gear, panel, api } = hubGearOnStage(
+      [instance("sword"), instance("axe"), instance("ring")],
+      { weaponId: "sword" },
+    );
+    gear.toggle();
+    await settle();
+    expect(equip(panel, panel.inventory[0], "weapon")).toBe(true);
+    await settle();
+
+    reopenPending(gear, api);
+
+    expect(ids(panel.inventory)).toEqual(["ring", "sword"]);
+    expect(panel.equipped.weapon?.entity_id).toBe("axe");
+  });
+
+  it("should keep the bag and stash in step with a move, to the end of the other side, for the next open", async () => {
+    const { gear, panel, api } = hubGearOnStage([
+      instance("b1", { location: "bag" }),
+      instance("b2", { location: "bag" }),
+      instance("s1", { location: "stash" }),
+    ]);
+    gear.openStash();
+    await settle();
+    expect(moveItem(panel, panel.inventory[0], "stash")).toBe(true);
+    await settle();
+    expect(moveItem(panel, panel.stash[0], "bag")).toBe(true);
+    await settle();
+
+    reopenPending(gear, api, (g) => g.openStash());
+
+    expect(ids(panel.inventory)).toEqual(["b2", "s1"]);
+    expect(ids(panel.stash)).toEqual(["b1"]);
+  });
+
   it("should load again on every open (R41)", async () => {
     const { gear, api } = hubGearOnStage();
     gear.toggle();
