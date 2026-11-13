@@ -8,7 +8,7 @@
  */
 
 import { lootRefusalCopy } from "@/scenes/fieldRefusals";
-import type { InteractReply } from "./floor";
+import { CONTAINER_GUARDED, type InteractReply } from "./floor";
 import type { LoreLine } from "./loreLine";
 
 /** The reason the server gives when the stairs refuse a party that has not gathered (FS-F6F88 req 22). */
@@ -25,12 +25,15 @@ function gatherLine(missing?: number): string {
  * The interact replies with a reason, and what each says (R16), or `null` for one that says
  * nothing. The stair's wait is worked out from the reply's `missing`.
  */
-const REPLY_LINES: Record<string, ((reply: InteractReply) => LoreLine) | null> = {
+const REPLY_LINES: Record<string, ((reply: InteractReply) => LoreLine | null) | null> = {
   [PARTY_NOT_GATHERED]: (reply) => ({ text: gatherLine(reply.missing), tone: "lore" }),
   // the monsters around the chest say why (FS-KE075 §J R60)
-  container_guarded: () => ({ text: "It will not open.", tone: "lore" }),
-  // the field's words for the same reason (FS-X2F2H)
-  loot_reserved: () => ({ text: lootRefusalCopy("loot_reserved") ?? "", tone: "lore" }),
+  [CONTAINER_GUARDED]: () => ({ text: "It will not open.", tone: "lore" }),
+  // the field's words for the same reason (FS-X2F2H); none, no line
+  loot_reserved: () => {
+    const text = lootRefusalCopy("loot_reserved");
+    return text ? { text, tone: "lore" } : null;
+  },
   // FS-3103M R13, R16, R19 (Amendment A1): the tome and the altar
   tome_taken: () => ({ text: "Wonder if I can burn it.", tone: "lore" }),
   altar_without_tome: () => ({ text: "A tome was burned here once, they say, to insult a demon.", tone: "lore" }),

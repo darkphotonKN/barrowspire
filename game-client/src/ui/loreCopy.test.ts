@@ -1,6 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { lootRefusalCopy } from "@/scenes/fieldRefusals";
+import { CONTAINER_GUARDED } from "./floor";
 import { loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "./loreCopy";
+
+// the field's refusal words, real unless a test takes them away
+vi.mock("@/scenes/fieldRefusals", async (actual) => {
+  const real = await actual<typeof import("@/scenes/fieldRefusals")>();
+  return { ...real, lootRefusalCopy: vi.fn(real.lootRefusalCopy) };
+});
 
 // FS-XWHZP §D R16-R18, §F R25. I-XWHZP-2: what the world says inside the Spire, keyed on the event
 // or the reply's reason, in the client's own words.
@@ -27,7 +34,7 @@ describe("loreForReply (FS-XWHZP R16-R18)", () => {
   });
 
   it("should say a guarded chest will not open, and give no reason why (FS-KE075 §J R60)", () => {
-    const line = loreForReply({ success: false, message: "its guards still stand", reason: "container_guarded" });
+    const line = loreForReply({ success: false, message: "its guards still stand", reason: CONTAINER_GUARDED });
     expect(line).toEqual({ text: "It will not open.", tone: "lore" });
     expect(line?.text).not.toMatch(/guard|monster|lock|kill/i);
   });
@@ -37,6 +44,11 @@ describe("loreForReply (FS-XWHZP R16-R18)", () => {
       text: lootRefusalCopy("loot_reserved"),
       tone: "lore",
     });
+  });
+
+  it("should say nothing for a reserved pile when the field has no words for it, never an empty line", () => {
+    vi.mocked(lootRefusalCopy).mockReturnValueOnce(undefined);
+    expect(loreForReply({ success: false, message: "that loot is reserved for its killer", reason: "loot_reserved" })).toBeNull();
   });
 
   it("should write FS-3103M's tome and altar lines, as amended (R25)", () => {
