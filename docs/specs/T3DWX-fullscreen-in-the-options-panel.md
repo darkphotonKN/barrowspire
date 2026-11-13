@@ -223,3 +223,60 @@ to a case the charter did not name.
   scale.
 - A fullscreen control anywhere but the OPTIONS panel (the main menu, the site header).
 - Any change to the game-server.
+
+## Change: The top-right HUD fills the button's spot
+Status: draft
+Date: 2026-11-13
+
+### Scoping notes (raw)
+
+Asked by the owner on 2026-11-13, after the move: 「空出來的就補上」 (fill the gap the removed button
+left). This replaces R2's "the spot stays empty".
+
+**Approved defaults (coordinator's charter, 2026-11-13):**
+- Everything that laid itself out round the button's spot closes the gap: the minimap column, the
+  map mode icon, the map name, the dev readout, the gear overlay's top-right clearance, and
+  anything that reads `FullscreenButtonPlace`. The minimap stands in the true top-right corner at
+  the column's edge margins. The icon and the name keep their places relative to the minimap
+  (FS-56CKV's arrangement without the button), in the normal map, the enlarged map, the overlay
+  and with no map.
+- `FullscreenButtonPlace`, `fullscreenButton.ts` and the scenes' hand-off of the button's place go,
+  so nothing reserves the spot.
+- No size changes. Only positions move.
+- The guideline's map section and `CONTEXT.md` follow.
+
+**What the code says (read 2026-11-13 on feat/client-fullscreen-in-options f6cb7391):**
+- `topRightCorner` (`ui/topRightColumn.ts`) already stands the normal and the enlarged map on
+  `TOP_RIGHT_EDGE` (10 px from the right and the top), the true corner. The button stood to the
+  map's left, so in those modes only things placed off the button move:
+  - Enlarged: the map name stands `gap` (6) px left of the button, middle y 20. Without the
+    button, it stands 6 px left of the map (right edge 740 at 1080, was 714; 940 at 1280, was 914),
+    still middle y 20. The dev readout stays left of the name, so it follows.
+  - Normal: nothing moves. The name, the icon and the readout all sit inside the map.
+- With no map, the column starts at `TOP_RIGHT_HUD` (y 44 = 10 + the button's clearance 34). It
+  moves up to y 10 (`TOP_RIGHT_EDGE`). Nothing else stands there.
+- The gear overlay has no clearance in code, only a test (`gearOverlayLayout.test.ts`, "the
+  fullscreen button"). That test goes, and nothing moves.
+
+**Open question, not decided: the map overlay in the run.** With the overlay up, the corner held
+three things. At 1080:
+- the button: x 1054–1074, y 6–26;
+- the map mode icon: x 1039–1048, y 12–21, 6 px left of the button;
+- the map name: right edge 1033, middle y 16, 6 px left of the icon;
+- the column, under all three at y 44: in a run, the escaped count, with the dev readout under it.
+
+The defaults say both "the column closes the gap" and "the icon and the name keep their places
+without the button". In the overlay these collide. Moving the column up to y 10, as with no map,
+puts the escaped count on the icon's and the name's line, right where the icon would slide to.
+Options:
+- **A. The icon's row takes the corner, and the column stands under that row.** The icon goes
+  right-aligned on the column's x (right edge W − 10), top 10, with the name 6 px left of it, as
+  now. The column starts the row's height plus a gap under it, at about y 31. That is a new number.
+- **B. The column closes to y 10, and the icon and the name stand on its first line, to its
+  left.** The icon's x then follows the escaped count's width, which changes with the count.
+- **C. Only the row slides right into the corner.** The column stays at y 44 in the overlay
+  (y 10 with no map), held there by the row now rather than the button. That leaves about 19 px
+  of slack above it.
+
+In the town and a field the overlay has no column under the row (FS-P0HSP §G.36). There, only
+the row's x is in question, and A and C agree on it.
