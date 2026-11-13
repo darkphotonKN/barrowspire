@@ -3284,8 +3284,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * § Change: The tower's music on every floor of a run, W4, W7).
    */
   private enterMusic(): void {
-    const track = worldTrack("run");
-    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.maxGain);
+    this.music ??= new WorldMusic(sceneMusicStage(this, worldTrack("run")), browserMusicStore);
     this.music.enter();
   }
 

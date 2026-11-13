@@ -53,7 +53,7 @@ export const TOWER_TRACK: MusicTrack = {
   maxGain: 1,
 };
 
-/** Which track each world plays; a field plays none (W1). */
+/** Which track each world plays; a field plays none (W1). Each ceiling is in (0, 1]: Phaser does not clamp a sound's volume. */
 export const WORLD_TRACKS = {
   hub: VILLAGE_TRACK,
   run: TOWER_TRACK,
@@ -92,8 +92,10 @@ export interface MusicSound {
   destroy(): void;
 }
 
-/** What the module asks of the game. */
+/** What the module asks of the game, for one track. */
 export interface MusicStage {
+  /** The track's own ceiling (W5): the one place a {@link WorldMusic} learns it. */
+  readonly maxGain: number;
   /** The track is decoded and in the audio cache: none is added otherwise (R14). */
   cached(): boolean;
   /** The sound, added looping at silence (R7). */
@@ -134,11 +136,10 @@ export class WorldMusic {
   private ramp?: Ramp;
   private stopStepping?: () => void;
 
-  /** `maxGain` is the track's own ceiling (W5); the level and its store are shared by every world. */
+  /** The stage is one track's and carries its ceiling (W5); the level and its store are shared by every world. */
   constructor(
     private readonly stage: MusicStage,
     private readonly store: MusicSettingStore,
-    private readonly maxGain: number = MUSIC_MAX_GAIN,
   ) {}
 
   /** The level, as the Options panel's Music row reads it (C5). */
@@ -227,7 +228,7 @@ export class WorldMusic {
 
   /** The gain of the level as it stands, under the track's ceiling (C9, W5). */
   private target(): number {
-    return musicGain(this.current, this.maxGain);
+    return musicGain(this.current, this.stage.maxGain);
   }
 
   /** From the volume it has now, so a fade cut short is turned around where it stands (R4). */
@@ -313,6 +314,7 @@ export interface MusicScene {
  */
 export function sceneMusicStage(scene: MusicScene, track: MusicTrack): MusicStage {
   return {
+    maxGain: track.maxGain,
     cached: () => scene.cache.audio.exists(track.key),
     add: () => scene.sound.add(track.key, { loop: true, volume: 0 }),
     uncache: () => void scene.cache.audio.remove(track.key),
