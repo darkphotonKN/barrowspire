@@ -66,6 +66,14 @@ export const LORE_TONES: Record<LoreTone, { color: number; dust: LoreTint; ember
 
 const same = (a: LoreLine, b: LoreLine) => a.text === b.text && a.tone === b.tone;
 
+/** The box of a line's text centred on (x, y): what its dust rises from. */
+const boxOf = (text: Phaser.GameObjects.Text, x: number, y: number): LoreArea => ({
+  x: x - text.width / 2,
+  y: y - text.height / 2,
+  width: text.width,
+  height: text.height,
+});
+
 /**
  * The lines waiting once `line` arrives while `showing` shows (R11-R14): it waits at the back; a
  * dread line waits ahead of every non-dread line, behind an earlier dread one; past
@@ -87,6 +95,7 @@ export function enqueue(waiting: readonly LoreLine[], showing: LoreLine | undefi
 export interface LoreDustPlayer {
   start(area: LoreArea, tint: LoreTint, depth: number): boolean;
   burst(area: LoreArea, tint: LoreTint, depth: number): boolean;
+  move(area: LoreArea): void;
   stop(): void;
   clear(): void;
   forget(): void;
@@ -151,13 +160,14 @@ export class LoreLines {
     this.waiting = enqueue(this.waiting, this.showing?.line, line);
   }
 
-  /** The view changed: the line showing stands at its place in the new view. */
+  /** The view changed: the line showing, and its dust, stand at its place in the new view. */
   relayout(): void {
     const text = this.showing?.text;
     if (!text?.active) return;
     const { x, y } = this.centre();
     text.setPosition(x, y);
     crispen([text]);
+    this.dust.move(boxOf(text, x, y));
   }
 
   /** Every line down at once and the queue empty (R15): a reset, a floor change. */
@@ -204,7 +214,7 @@ export class LoreLines {
     this.cancelSceneEnd ??= onSceneEnd(scene, () => this.forget());
 
     scene.tweens.add({ targets: text, alpha: 1, duration: L.fadeInMs, ease: L.ease });
-    const area = { x: x - text.width / 2, y: y - text.height / 2, width: text.width, height: text.height };
+    const area = boxOf(text, x, y);
     this.dust.start(area, tone.dust, L.depth);
     if (tone.embers) this.dust.burst(area, tone.embers, L.depth);
     if (tone.tremor && !this.reducedMotion()) scene.cameras.main.shake(L.tremor.durationMs, L.tremor.intensity);

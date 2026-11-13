@@ -103,6 +103,7 @@ function stand(options: { reducedMotion?: boolean } = {}) {
   const dust = {
     start: vi.fn((_area: LoreArea, _tint: LoreTint, _depth: number) => true),
     burst: vi.fn((_area: LoreArea, _tint: LoreTint, _depth: number) => true),
+    move: vi.fn((_area: LoreArea) => undefined),
     stop: vi.fn(),
     clear: vi.fn(),
     forget: vi.fn(),
@@ -250,6 +251,15 @@ describe("LoreLines (FS-XWHZP §A-§C)", () => {
     Object.assign(view, { width: 800, height: 400, centerX: 400, centerY: 200 });
     lines.relayout();
     expect(texts[0].calls.setPosition).toEqual([400, 120]);
+  });
+
+  it("should move the dust with the line when the view changes, so new motes rise from its new place (R6)", () => {
+    const { lines, dust, view } = stand();
+    lines.say(hope("a"));
+    Object.assign(view, { width: 800, height: 400, centerX: 400, centerY: 200 });
+    lines.relayout();
+    // the 200 × 26 text now centred on (400, 120)
+    expect(dust.move).toHaveBeenCalledWith({ x: 300, y: 107, width: 200, height: 26 });
   });
 
   it("should take every line down and empty the queue on clear (R15)", () => {

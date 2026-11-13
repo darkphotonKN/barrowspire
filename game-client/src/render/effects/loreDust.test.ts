@@ -50,6 +50,16 @@ describe("LoreDust (FS-XWHZP R6, R7, R9)", () => {
     expect(p).toEqual({ x: 250, y: 215 });
   });
 
+  it("should seed new motes at the line's new place once moved, and ignore a move with no trail", () => {
+    const { dust, config } = stage();
+    dust.move(AREA);
+    dust.start(AREA, TINT, 1990);
+    dust.move({ x: 400, y: 100, width: 300, height: 30 });
+    const p = { x: 0, y: 0 };
+    (config().emitZone as { source: { getRandomPoint(p: object): void } }).source.getRandomPoint(p);
+    expect(p).toEqual({ x: 550, y: 115 });
+  });
+
   it("should stop emitting on stop, and go once the last mote has lived its life", () => {
     const { dust, made, timers } = stage();
     dust.start(AREA, TINT, 1990);

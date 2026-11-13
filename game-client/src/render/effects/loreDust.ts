@@ -93,6 +93,7 @@ function areaZone(area: LoreArea, random: () => number, foot = false) {
  *   const dust = new LoreDust(scene, () => art);
  *   dust.start(area, tint, depth); // a line holds: motes rise off it
  *   dust.burst(area, depth);       // a dread line starts: its embers
+ *   dust.move(area);               // the line moved: new motes rise from its new place
  *   dust.stop();                   // the line fades: no new motes, those in the air finish
  *   dust.forget();                 // the scene ended and took it
  */
@@ -103,6 +104,8 @@ export class LoreDust {
   private warned = false;
   /** The trail emitting now, if any. */
   private trail?: Emitter;
+  /** The box the trail's motes rise from, read at each mote: `move` shifts it. */
+  private trailArea?: LoreArea;
   /** Every emitter still in the air, with its end; taken by `clear`, let go by `forget`. */
   private live = new Map<Emitter, { remove(dispatchCallback?: boolean): unknown }>();
 
@@ -126,6 +129,7 @@ export class LoreDust {
     const sheet = this.sheet();
     if (!sheet) return false;
     const t = LORE_DUST.trail;
+    const at = { ...area };
     const config: EmitterConfig = {
       frame: sheet.frames,
       frequency: t.frequencyMs,
@@ -138,10 +142,19 @@ export class LoreDust {
       alpha: { start: t.alpha.from, end: t.alpha.to, ease: LORE_DUST.ease },
       color: [tint.from, tint.to],
       colorEase: LORE_DUST.ease,
-      emitZone: areaZone(area, this.random),
+      emitZone: areaZone(at, this.random),
     };
     this.trail = this.emitter(sheet.texture, config, depth);
+    this.trailArea = at;
     return true;
+  }
+
+  /**
+   * The line moved to `area`: the trail's new motes rise from there, those in the air keep their
+   * course. Harmless with none emitting.
+   */
+  move(area: LoreArea): void {
+    if (this.trailArea) Object.assign(this.trailArea, area);
   }
 
   /**
@@ -187,6 +200,7 @@ export class LoreDust {
     const trail = this.trail;
     if (!trail) return;
     this.trail = undefined;
+    this.trailArea = undefined;
     trail.stop();
     this.endAfter(trail, LORE_DUST.trail.lifespanMs);
   }
@@ -194,6 +208,7 @@ export class LoreDust {
   /** Every mote gone at once: a run's reset, a floor change. */
   clear(): void {
     this.trail = undefined;
+    this.trailArea = undefined;
     for (const [emitter, end] of this.live) {
       end.remove(false);
       emitter.destroy();
@@ -204,6 +219,7 @@ export class LoreDust {
   /** Lets go of the dust without touching it: at a scene's end, it went with the scene. */
   forget(): void {
     this.trail = undefined;
+    this.trailArea = undefined;
     this.live.clear();
   }
 
