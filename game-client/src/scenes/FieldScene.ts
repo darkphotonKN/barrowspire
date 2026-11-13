@@ -601,9 +601,9 @@ export class FieldScene extends Phaser.Scene {
    */
   private openMenu(): void {
     this.closeWindows();
-    const actions: Record<HubMenuChoice["id"], () => void> = {
+    // only the rows the field offers: no queue to leave, no music row (FS-X2F2H R20; FS-28DDG R19)
+    const actions: Partial<Record<HubMenuChoice["id"], () => void>> = {
       change: () => this.changeCharacter(),
-      leave: () => this.closeMenu(),
       back: () => this.closeMenu(),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {

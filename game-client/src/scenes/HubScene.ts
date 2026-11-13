@@ -178,6 +178,8 @@ import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
+import { HubMusic, MUSIC_KEY, MUSIC_URL, sceneMusicStage } from "@/audio/hubMusic";
+import { browserMusicStore } from "@/audio/musicSetting";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -817,6 +819,13 @@ export class HubScene extends Phaser.Scene {
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;
+  /**
+   * The town's music (FS-28DDG R20): made with the first visit, and kept with this scene instance,
+   * which is this game's, across its stops, as the fade-out outlives the stop (R3).
+   */
+  private music?: HubMusic;
+  /** Cancels the music's end listener of a start that has not reached create; create's own takes over. */
+  private cancelLoadingEnd?: () => void;
 
   constructor() {
     super({ key: "HubScene" });
@@ -830,6 +839,9 @@ export class HubScene extends Phaser.Scene {
   init(data?: { arrival?: boolean }): void {
     this.arrival = data?.arrival ?? false;
     this.held = holdOneShots(this, socketManager, HUB_ONE_SHOTS);
+    // a stop before create has no release: a sound kept for this load falls silent and is freed
+    // all the same, and a destroyed game took it (FS-28DDG R13, R21)
+    this.cancelLoadingEnd = onSceneEnd(this, (end) => this.music?.leave(end));
     // what the body walks is not known at a start: the first frame says (reported 2026-11-12)
     this.lastSent = undefined;
   }
@@ -840,6 +852,9 @@ export class HubScene extends Phaser.Scene {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
+    // the town's music, with its art, so the torch bar counts it; skipped while still cached
+    // (FS-28DDG R12, R13)
+    this.load.audio(MUSIC_KEY, MUSIC_URL);
   }
 
   create(): void {
@@ -946,8 +961,15 @@ export class HubScene extends Phaser.Scene {
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
+    this.enterMusic();
     this.listenForEnd();
     this.openHeldMessages();
+  }
+
+  /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
+  private enterMusic(): void {
+    this.music ??= new HubMusic(sceneMusicStage(this), browserMusicStore);
+    this.music.enter();
   }
 
   /**
@@ -1018,6 +1040,8 @@ export class HubScene extends Phaser.Scene {
 
   /** A stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN. */
   private listenForEnd(): void {
+    this.cancelLoadingEnd?.();
+    this.cancelLoadingEnd = undefined;
     onSceneEnd(this, (end) => this.release(end));
   }
 
@@ -1194,6 +1218,8 @@ export class HubScene extends Phaser.Scene {
    * destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
    */
   private release(end: SceneEnd): void {
+    // the music falls away on the game's step, past this stop; a destroyed game took it (FS-28DDG R3, R21)
+    this.music?.leave(end);
     this.unsubscribeState?.();
     this.unsubscribeQueue?.();
     this.held = undefined;
@@ -3128,17 +3154,19 @@ export class HubScene extends Phaser.Scene {
    * The hub's ESC menu: a way to the main menu, a way back (FS-G4VMQ §Requirements 3, 4). Built
    * from the scene's state as it opens, so what it offers is hubMenuChoices' rule, not the
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
-   * Every window closes as it opens (FS-3EBCA R17).
+   * Every window closes as it opens (FS-3EBCA R17). Its music row switches the town's music and
+   * redraws the menu in place, reading the other way (FS-28DDG R15, R16).
    */
   private openMenu(): void {
     this.closeWindows();
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.leaveQueue(),
+      music: () => this.switchMusic(),
       back: () => this.closeMenu(),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {
-      choices: hubMenuChoices({ queued: this.queued }),
+      choices: hubMenuChoices({ queued: this.queued, music: this.music?.setting }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
@@ -3152,6 +3180,13 @@ export class HubScene extends Phaser.Scene {
     this.menuChoices = keys;
     this.menu = container;
     this.moveMenu = moveTo;
+  }
+
+  /** The menu's music row (FS-28DDG R16): the music switched, the open menu redrawn with the other label. */
+  private switchMusic(): void {
+    this.music?.toggle();
+    this.closeMenu();
+    this.openMenu();
   }
 
   /**
