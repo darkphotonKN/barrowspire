@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { FULLSCREEN_BUTTON, FULLSCREEN_CORNER, FullscreenButtonPlace, fullscreenHintSide } from "./fullscreenButton";
+import { FULLSCREEN_BUTTON, FULLSCREEN_CORNER, FullscreenButtonPlace } from "./fullscreenButton";
 
 // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C6: the place the scene hands
 // the button with the column's layout, in logical units from the canvas's top and right edges.
@@ -56,17 +56,5 @@ describe("FullscreenButtonPlace (FS-56CKV §Change C6)", () => {
     stop();
     place.hand({}, beside);
     expect(heard).not.toHaveBeenCalled();
-  });
-});
-
-// FS-56CKV §Change C9 (owner 2026-11-12: "hover時也有要提示文字"): the hint stands on screen beside
-// the button and never under the map: below it in the corner, to its left beside the map
-describe("fullscreenHintSide (FS-56CKV §Change C9)", () => {
-  it.each([
-    ["the corner", FULLSCREEN_CORNER, "below"],
-    ["beside the normal map", { top: 10, right: 232 }, "left"],
-    ["beside the enlarged map", { top: 10, right: 340 }, "left"],
-  ] as const)("should stand the hint %s: %o -> %s", (_where, spot, side) => {
-    expect(fullscreenHintSide(spot)).toBe(side);
   });
 });

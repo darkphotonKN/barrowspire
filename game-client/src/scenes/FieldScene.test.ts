@@ -2269,6 +2269,22 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     expect(kept.get("barrowspire_music")).toBe("2");
   });
 
+  it("should hand the panel the fullscreen the page lent its game, so OPTIONS has the Fullscreen row (FS-T3DWX R11, R12)", async () => {
+    const { lendFullscreen } = await import("@/ui/gameFullscreen");
+    const { field, key, find, words } = optionedField();
+    const held = new Map<string, unknown>();
+    const registry = { get: (k: string) => held.get(k), set: (k: string, v: unknown) => void held.set(k, v) };
+    const fullscreen = { active: () => false, toggle: vi.fn(), watch: () => () => {} };
+    lendFullscreen(registry, fullscreen);
+    Object.assign(field, { registry });
+    key("ESC");
+    key("TWO");
+
+    expect(words()).toEqual(expect.arrayContaining(["Music", "Sound effects", "Fullscreen", "Off", "On"]));
+    find("options-fullscreen")!.handlers.pointerup();
+    expect(fullscreen.toggle).toHaveBeenCalledTimes(1);
+  });
+
   it("should do nothing on → or ← with only the menu open, or nothing open", () => {
     const { key, kept } = optionedField();
     key("RIGHT");

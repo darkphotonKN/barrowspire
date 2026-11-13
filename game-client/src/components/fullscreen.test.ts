@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  fullscreenLabel,
-  handBackFocus,
-  keepFromGame,
   fullscreenOf,
   type FullscreenDocument,
   type FullscreenFrame,
@@ -110,22 +107,6 @@ describe("fullscreen state", () => {
   });
 });
 
-// R18: in windowed it reads 全螢幕; in fullscreen the same control reads 縮小 / exit fullscreen.
-// FS-56CKV §Change C9 (owner 2026-11-12: "hover時也有要提示文字"): the hint's words, text only,
-// for the game binds no key to fullscreen (R22)
-describe("fullscreenLabel", () => {
-  it("should flip with the state, with a name and a hint for each", () => {
-    expect(fullscreenLabel(false)).toEqual({
-      name: "全螢幕 / enter fullscreen",
-      hint: "Fullscreen",
-    });
-    expect(fullscreenLabel(true)).toEqual({
-      name: "縮小 / exit fullscreen",
-      hint: "Exit fullscreen",
-    });
-  });
-});
-
 /** A frame that records what was asked of it; `refuse` makes the browser say no. */
 function fakeFrame(refuse = false) {
   const asked: string[] = [];
@@ -193,95 +174,6 @@ describe("fullscreen toggle", () => {
   it("should do nothing without a frame to put on screen", async () => {
     const { doc } = fakeDocument();
     await expect(fullscreenOf(doc)!.toggle(null)).resolves.toBeUndefined();
-  });
-});
-
-/** An element that records its listeners, and an event that records whether it was stopped. */
-function fakeElement() {
-  const listeners = new Map<string, Set<(e: never) => void>>();
-  const el = {
-    addEventListener(type: string, fn: (e: never) => void) {
-      if (!listeners.has(type)) listeners.set(type, new Set());
-      listeners.get(type)!.add(fn);
-    },
-    removeEventListener(type: string, fn: (e: never) => void) {
-      listeners.get(type)?.delete(fn);
-    },
-  };
-  /** Fires `type` at the element; true when the event was kept from bubbling on to the game. */
-  const fire = (type: string, key?: string) => {
-    let stopped = false;
-    const event = { type, key, stopPropagation: () => (stopped = true) };
-    for (const fn of [...(listeners.get(type) ?? [])]) fn(event as never);
-    return stopped;
-  };
-  const listening = () =>
-    [...listeners.values()].reduce((n, set) => n + set.size, 0);
-  return { el, fire, listening };
-}
-
-// R22: Phaser hears the mouse and touch on window as well as the canvas (a press that ends off
-// the canvas is still a pointer-up), and the keyboard on window. A press on the button stops at it.
-describe("keepFromGame", () => {
-  it.each([
-    "pointerdown",
-    "pointerup",
-    "mousedown",
-    "mouseup",
-    "touchstart",
-    "touchend",
-  ])("should keep the button's %s from the game", (type) => {
-    const { el, fire } = fakeElement();
-    keepFromGame(el);
-    expect(fire(type)).toBe(true);
-  });
-
-  it.each(["Enter", " "])(
-    "should keep the key that presses the button (%j) from the game",
-    (key) => {
-      const { el, fire } = fakeElement();
-      keepFromGame(el);
-      expect(fire("keydown", key)).toBe(true);
-      expect(fire("keyup", key)).toBe(true);
-    },
-  );
-
-  it("should let every other key through to the game, focused or not", () => {
-    const { el, fire } = fakeElement();
-    keepFromGame(el);
-    expect(fire("keydown", "w")).toBe(false);
-    expect(fire("keydown", "Escape")).toBe(false);
-  });
-
-  // React hears the click at the root: stopping it would stop the button itself
-  it("should leave the click alone", () => {
-    const { el, fire } = fakeElement();
-    keepFromGame(el);
-    expect(fire("click")).toBe(false);
-  });
-
-  it("should stop keeping once released", () => {
-    const { el, listening } = fakeElement();
-    const release = keepFromGame(el);
-    release();
-    expect(listening()).toBe(0);
-  });
-});
-
-describe("handBackFocus (FS-ZAJMH R18, R22: keyboard-focusable, and no stolen game keys)", () => {
-  const click = (detail: number) => {
-    const blur = vi.fn();
-    handBackFocus({ detail, currentTarget: { blur } });
-    return blur;
-  };
-
-  it("should give focus back to the page after a mouse or touch press, so the game's keys are its own again", () => {
-    expect(click(1)).toHaveBeenCalledTimes(1);
-    expect(click(2)).toHaveBeenCalledTimes(1);
-  });
-
-  it("should keep focus on the button after Enter or Space, so a keyboard player is not lost", () => {
-    expect(click(0)).not.toHaveBeenCalled();
   });
 });
 

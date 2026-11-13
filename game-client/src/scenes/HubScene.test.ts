@@ -4169,6 +4169,27 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
       expect(panelOpen(stage.made)).toBe(true);
     });
 
+    it("should hand the panel the fullscreen the page lent its game, so OPTIONS has the Fullscreen row (FS-T3DWX R11, R12)", async () => {
+      const { lendFullscreen } = await import("@/ui/gameFullscreen");
+      browserStore(null);
+      const music = hubWithSound();
+      const { hub, step, keys, press, stage } = music;
+      const held = new Map<string, unknown>();
+      const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+      const fullscreen = { active: () => false, toggle: vi.fn(), watch: () => () => {} };
+      lendFullscreen(registry, fullscreen);
+      Object.assign(hub, { registry });
+      hub.enterMusic();
+      step(MUSIC_FADE_IN_MS);
+      press(keys.esc);
+      press(keys.two);
+
+      const words = stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => m.args[2]);
+      expect(words).toEqual(expect.arrayContaining(["Music", "Sound effects", "Fullscreen", "Off", "On"]));
+      stage.made.find((m) => m.name === "options-fullscreen" && !m.destroyed)!.handlers.pointerup();
+      expect(fullscreen.toggle).toHaveBeenCalledTimes(1);
+    });
+
     it("should ramp the town's music to the next level on → and keep it, and fade it out to 0 on ← (C6, C10, C12)", () => {
       const { sound, step, keys, press, kept } = inThePanel();
 

@@ -4573,6 +4573,26 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       expect(fallen.panelOpen()).toBe(true);
     });
 
+    it("should hand the panel the fullscreen the page lent its game, so OPTIONS has the Fullscreen row (FS-T3DWX R11, R12)", async () => {
+      const { openOptionsPanel } = await import("@/ui/optionsPanel");
+      const { lendFullscreen } = await import("@/ui/gameFullscreen");
+      const open = vi.mocked(openOptionsPanel);
+      open.mockClear();
+      const s = optionsOnStage();
+      const held = new Map<string, unknown>();
+      const registry = { get: (k: string) => held.get(k), set: (k: string, v: unknown) => void held.set(k, v) };
+      const fullscreen = { active: () => false, toggle: vi.fn(), watch: () => () => {} };
+      lendFullscreen(registry, fullscreen);
+      Object.assign(s.run, { registry });
+      s.press(s.keys.esc);
+      s.press(s.keys.two);
+
+      expect(open.mock.calls[0][1].fullscreen).toBe(fullscreen);
+      expect(s.labels()).toEqual(expect.arrayContaining(["Music", "Sound effects", "Fullscreen", "Off", "On"]));
+      s.find("options-fullscreen")!.handlers.pointerup();
+      expect(fullscreen.toggle).toHaveBeenCalledTimes(1);
+    });
+
     it("should store the level on → and ←, one a press, clamped, and on a click of a step or an arrow, playing nothing (C5, C6, C14)", () => {
       const { run, arrows, kept, find } = inThePanel();
       const offer = () => (run as unknown as { offerMenu(): void }).offerMenu();
