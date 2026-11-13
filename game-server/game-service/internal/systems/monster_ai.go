@@ -116,7 +116,7 @@ func (s *MonsterAISystem) think(
 	target, hunting := s.target(monster, at, delvers)
 
 	if monster.AbilityPending.Remaining > 0 {
-		windUpAbility(deltaTime, entity, monster, at, velocity, target, hunting)
+		s.windUpAbility(deltaTime, entity, monster, at, velocity, target, hunting)
 		return
 	}
 	if monster.WindUpRemaining > 0 {

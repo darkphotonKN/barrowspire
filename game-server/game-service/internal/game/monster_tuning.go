@@ -190,7 +190,7 @@ var spireRoster = []monsterFamily{
 	{Name: "Ghoul", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeGhoul, Name: "Ghoul", Unlock: 1},
 		{Archetype: components.MonsterArchetypeGhast, Name: "Ghast", Unlock: 3},
-		{Archetype: components.MonsterArchetypeRavener, Name: "Ravener", Unlock: 6},
+		{Archetype: components.MonsterArchetypeRavener, Name: "Ravener", Unlock: 6, Ability: pounceAbility},
 	}},
 	{Name: "Skeleton", Role: roleRanged, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeBoneArcher, Name: "Bone Archer", Unlock: 1},
@@ -205,7 +205,7 @@ var spireRoster = []monsterFamily{
 	{Name: "Thrall", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeBarrowThrall, Name: "Barrow Thrall", Unlock: 1},
 		{Archetype: components.MonsterArchetypePlagueThrall, Name: "Plague Thrall", Unlock: 4},
-		{Archetype: components.MonsterArchetypeBlightborn, Name: "Blightborn", Unlock: 6},
+		{Archetype: components.MonsterArchetypeBlightborn, Name: "Blightborn", Unlock: 6, Ability: deathBurstAbility},
 	}},
 	{Name: "Ghost", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeSpireWraith, Name: "Spire Wraith", Unlock: 1},
@@ -467,6 +467,18 @@ var (
 		ProjectileType: boneArrowShot.ProjectileType, ShotSpeed: boneArrowShot.Speed,
 		ShotRadius: boneArrowShot.Radius, ShotMaxFlight: boneArrowShot.MaxFlight,
 		Shots: 3, Fan: 12,
+	}
+	// the Ravener's: a leap on the point its target stood on, then a small
+	// circle where it lands
+	pounceAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityPounce, Shape: components.AbilityLeap,
+		MinRange: 120, MaxRange: 300, WindUp: 0.5, Cooldown: 6, Multiplier: 1.5,
+		Radius: 60, LeapTime: 0.3,
+	}
+	// the Blightborn's: once, on its corpse, a fuse after its death
+	deathBurstAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityBurst, Shape: components.AbilityDeathBurst,
+		WindUp: 0.8, Multiplier: 2.0, Radius: 110,
 	}
 	// the Blood Troll's: a wide circle round itself, slow to wind
 	groundSlamAbility = components.MonsterAbility{

@@ -312,6 +312,9 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		}
 	}
 
+	// a death burst's fuse burns on its corpse (FS-C8VM7 §B R16)
+	s.burnFuses(deltaTime, entities)
+
 	for _, entity := range entities {
 		if tc, ok := entity.GetComponent(ecs.ComponentTypeBurningTrail); ok {
 			s.burn(entity, tc.(*components.BurningTrailComponent), deltaTime, entities)

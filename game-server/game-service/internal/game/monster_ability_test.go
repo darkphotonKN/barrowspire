@@ -6,10 +6,19 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // r11 is FS-C8VM7 §B R11's table, as the sheets must carry it.
 var r11 = map[components.MonsterAbilityKind]components.MonsterAbility{
+	components.MonsterAbilityPounce: {
+		Kind: components.MonsterAbilityPounce, Shape: components.AbilityLeap,
+		MinRange: 120, MaxRange: 300, WindUp: 0.5, Cooldown: 6, Multiplier: 1.5, Radius: 60, LeapTime: 0.3,
+	},
+	components.MonsterAbilityBurst: {
+		Kind: components.MonsterAbilityBurst, Shape: components.AbilityDeathBurst,
+		WindUp: 0.8, Multiplier: 2.0, Radius: 110,
+	},
 	components.MonsterAbilityVolley: {
 		Kind: components.MonsterAbilityVolley, Shape: components.AbilityShots,
 		MaxRange: 320, WindUp: 0.6, Cooldown: 5, Multiplier: 1.0,
@@ -42,6 +51,8 @@ var r11 = map[components.MonsterAbilityKind]components.MonsterAbility{
 // abilityHolders is who carries each ability: in the old families only the
 // tier-6 variant, in the new ones every variant, both goblin looks included.
 var abilityHolders = map[components.MonsterArchetype]components.MonsterAbilityKind{
+	components.MonsterArchetypeRavener:     components.MonsterAbilityPounce,
+	components.MonsterArchetypeBlightborn:  components.MonsterAbilityBurst,
 	components.MonsterArchetypeWightArcher: components.MonsterAbilityVolley,
 	components.MonsterArchetypeBloodTroll:  components.MonsterAbilityGroundSlam,
 	components.MonsterArchetypeBanshee:     components.MonsterAbilityWail,
@@ -114,4 +125,45 @@ func TestCreateMonsterEntity_CopiesTheAbility(t *testing.T) {
 			assert.Equal(t, components.PendingAbility{}, m.AbilityPending)
 		})
 	}
+}
+
+// A Blightborn that dies on the last tick before a floor change takes its burst
+// with it: the corpse goes with the floor, and nothing lands on the next one.
+// FS-C8VM7 §B R16, §Edge States.
+func TestRun_FloorChange_RemovesAPendingDeathBurst(t *testing.T) {
+	p := newParty(t, &countingItemsClient{})
+	s := p.s
+	tc, _ := delverEntity(t, s, p.carrier).GetComponent(ecs.ComponentTypeTransform)
+	at := tc.(*components.TransformComponent)
+	b := CreateMonsterEntity(s.EntityManager, MonsterConfig{Archetype: components.MonsterArchetypeBlightborn, Level: 30, X: at.X + 60, Y: at.Y})
+	hc, _ := b.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 0
+	tick(s)
+	require.Positive(t, monsterOf(b).AbilityPending.Remaining, "the fuse is lit")
+
+	require.NoError(t, s.regenerateFloor())
+
+	_, stays := s.EntityManager.GetEntity(b.ID)
+	assert.False(t, stays, "the corpse, and its burst, went with the floor")
+	for _, e := range s.EntityManager.GetAllEntities() {
+		if mc, ok := e.GetComponent(ecs.ComponentTypeEnemy); ok {
+			assert.NotEqual(t, components.AbilityDeathBurst, mc.(*components.MonsterComponent).Ability.Shape, "no Blightborn on the new floor's first tick")
+		}
+	}
+}
+
+// An elite Blightborn's burst is snapshotted at the elite's damage, × 2.0.
+// FS-C8VM7 §B R16, §Edge States.
+func TestRun_EliteBlightbornBurst_AtTheElitesDamage(t *testing.T) {
+	s := unstartedRun(t)
+	b := CreateMonsterEntity(s.EntityManager, MonsterConfig{Archetype: components.MonsterArchetypeBlightborn, Level: 30, Elite: true, X: 400, Y: 400})
+	want := monsterSheets[components.MonsterArchetypeBlightborn].statsAt(30).elite().Damage
+	hc, _ := b.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 0
+
+	tick(s)
+
+	burst := monsterOf(b).AbilityPending.Attack
+	assert.Equal(t, float64(want), burst.Power)
+	assert.Equal(t, 2.0, burst.Coefficient)
 }

@@ -188,6 +188,12 @@ func TestMonsterState_CarriesItsPendingAbility(t *testing.T) {
 			map[string]any{"kind": "cleave", "x": float64(300), "y": float64(200), "radius": float64(110), "arc": float64(120), "remaining": 0.25},
 		},
 		{
+			"a pounce, aimed where its target stood",
+			components.MonsterAbility{Kind: components.MonsterAbilityPounce, Shape: components.AbilityLeap, Radius: 60, LeapTime: 0.3},
+			components.PendingAbility{Remaining: 0.625, X: 500, Y: 420},
+			map[string]any{"kind": "pounce", "x": float64(500), "y": float64(420), "radius": float64(60), "arc": float64(0), "remaining": 0.625},
+		},
+		{
 			"a rock",
 			components.MonsterAbility{Kind: components.MonsterAbilityRock, Shape: components.AbilityShots, ShotRadius: 18},
 			components.PendingAbility{Remaining: 0.75, X: 300, Y: 200, FacingX: 1},
@@ -219,4 +225,21 @@ func TestMonsterState_CarriesItsPendingAbility(t *testing.T) {
 
 		assert.False(t, has)
 	})
+}
+
+// A dead Blightborn carries its burst until it lands: centred on its corpse,
+// its radius and the fuse left; its action stays `dead`. FS-C8VM7 §B R17.
+func TestMonsterState_DeadBlightbornCarriesItsBurst(t *testing.T) {
+	em := ecs.NewEntityManager()
+	e := addMonster(em, "Blightborn", 300, 200, 0, 100)
+	mc, _ := e.GetComponent(ecs.ComponentTypeEnemy)
+	m := mc.(*components.MonsterComponent)
+	m.Action = components.MonsterActionDead
+	m.Ability = components.MonsterAbility{Kind: components.MonsterAbilityBurst, Shape: components.AbilityDeathBurst, WindUp: 0.8, Radius: 110}
+	m.AbilityPending = components.PendingAbility{Remaining: 0.5, X: 300, Y: 200}
+
+	got := monsterWire(t, em)
+
+	assert.Equal(t, "dead", got["action"])
+	assert.Equal(t, map[string]any{"kind": "burst", "x": float64(300), "y": float64(200), "radius": float64(110), "arc": float64(0), "remaining": 0.5}, got["ability"])
 }

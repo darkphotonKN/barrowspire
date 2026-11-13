@@ -13,7 +13,8 @@ import (
 // moving and colliding (its Velocity goes, and MovementSystem only moves and
 // collides what has one), drops its target, any strike or ability it was
 // winding up and any claw it was showing (FS-VHGE7 §B R25), and is broadcast
-// as dead. Its
+// as dead. A Blightborn's death burst is lit on its corpse here (FS-C8VM7 §B
+// R16); the CombatSystem burns its fuse and lands it. Its
 // corpse lies for the lifetime given, so every client can play the death, then
 // the entity is removed.
 //
@@ -63,6 +64,11 @@ func (s *MonsterDeathSystem) layDown(entity *ecs.Entity, monster *components.Mon
 	monster.AbilityPending = components.PendingAbility{}
 	monster.ClawShowRemaining = 0
 	monster.CorpseRemaining = s.corpseLifetime
+	if monster.Ability.Shape == components.AbilityDeathBurst {
+		// its burst's fuse is lit on the corpse, which a floor change removes
+		// with it (FS-C8VM7 §B R16)
+		armBurst(entity, monster)
+	}
 
 	entity.RemoveComponent(ecs.ComponentTypeVelocity)
 }
