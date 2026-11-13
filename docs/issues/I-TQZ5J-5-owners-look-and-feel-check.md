@@ -2,7 +2,7 @@
 id: I-TQZ5J-5
 status: open
 implements: FS-TQZ5J
-blocked_by: [I-TQZ5J-2, I-TQZ5J-3, I-TQZ5J-4]
+blocked_by: [I-TQZ5J-2, I-TQZ5J-3, I-TQZ5J-4, I-TQZ5J-6]
 labels: [blocked]
 title: "FS-TQZ5J slice 5: the owner's look-and-feel check of phase 1 in the town, a field and the run (HITL)"
 ---
@@ -32,10 +32,14 @@ In the town, a field and the run, windowed and fullscreen, at render scale 1 and
 - [ ] Main menu and character creation show no corner row; the disconnect notice holds the menu shut.
 - [ ] The slices' screenshot sets: every named difference (R23) and depth overlap (R24) is accepted
       or sent back.
+- [ ] Across the scenes (FS-TQZ5J A1): an archer's Shadow Shot let go over the corner row fires; a
+      chat scrollbar drag let go there lets go; pressing a corner icon while typing in chat stops the
+      typing; a gear tip goes as the pointer jumps onto the row. The one picture A1 changes: no icon
+      lights under a press begun in the world (it once did); accept or send back.
 
 ## Blocked By
 
-I-TQZ5J-2, I-TQZ5J-3, I-TQZ5J-4.
+I-TQZ5J-2, I-TQZ5J-3, I-TQZ5J-4, I-TQZ5J-6.
 
 ## Spec Reference
 

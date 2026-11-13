@@ -379,3 +379,120 @@ unit-tested there.
 - The disconnect notice (stays its own scene, over the UI scene).
 - The main menu and character creation's own canvas menus.
 - The server.
+
+## Amendment A1 2026-11-14 (the pointer across the scenes)
+
+**Why.** I-TQZ5J-3 moved the corner row into the UI scene, and its developer found three things a
+player touches that changed, against the charter's "a player sees, hears and presses exactly what
+they do today". All three come from how Phaser hands a pointer event to the scenes: top down, and
+stopping at the first scene that has an interactive object under the pointer (or that just left one)
+as long as `InputManager.globalTopOnly` is on, which R7 keeps. Verified against Phaser 4.2.1 in the
+git-ignored harness `game-client/tmp/ui-scene-corner/` (before: 74ecdf3c, the row in the world;
+after: 27957a8f, the row in the UI scene):
+
+1. **A press begun in the world and let go over the row never ended in the world.** Before, the
+   world heard its `pointerup`; after, neither `pointerup` nor `pointerupoutside`, and not even a
+   release off the canvas once the press had passed over an icon (its out event made the UI scene
+   take the release). An archer's Shadow Shot hold let go over the icons stays drawn; a chat
+   scrollbar drag let go there stays grabbed.
+2. **A press on the row no longer let go of the game's text field.** The chat input's and the party
+   invite field's owners let go of their field for a press the world hears off their panel
+   (`ChatWindow.onPress`, `PartyPanel.onPress`); a press on the row never reaches the world (R7), so
+   pressing Party left the chat focused and the next keys went on landing in it.
+3. **A move onto the row was not heard by the world.** A single jump from a bag slot onto the row
+   left the gear overlay's item tip showing; a single jump back from the row onto the slot did not
+   show it again (the UI scene took that move too, for its out event).
+
+**Decision.** The integrator chose parity: today's behaviour back. The rules below hold for every
+piece the UI scene holds, the corner row now and each group a later phase moves (§ Phases); a later
+phase's `## Change:` inherits them without restating, and states only what it adds. They amend R7
+(whose press rule stands) and add R25–R27. Built as I-TQZ5J-6. **[integrator decision; harness]**
+
+### Requirements (added)
+
+25. **A world's press is the world's to its end.** A press that begins with nothing of the UI
+    scene's under the pointer (in the world, or on a held icon, R14) belongs to the world until no
+    button is down: its moves and its release reach the world wherever the pointer goes, the release
+    as `pointerup` over the canvas (over a UI piece included) and as `pointerupoutside` off it, with
+    the world's own aim point (`pointer.worldX/worldY` through the world's camera). The UI scene takes
+    no part of a press it did not start: while it is down, no UI piece is under the pointer for
+    Phaser, so none lights, labels or answers a press, a second button's included. Its pieces answer
+    again from the first event with no button down.
+    *Why:* a press belongs to the scene it began in, as a press begun on a UI piece is the UI scene's
+    (R7). Otherwise a hold or a drag the world began never ends in the world (Shadow Shot, the chat's
+    scrollbar), and a release over the UI scene would carry the UI camera's point. *How:* the UI
+    scene's cameras leave Phaser's hit test (`Camera.inputEnabled`, which
+    `CameraManager.getCamerasBelowPointer` reads) from the moment it hears a press with nothing of its
+    own under it until no pointer is down (heard on its release, the next move, or the next frame;
+    Phaser hears a release on window, so one off the canvas counts). With nothing of the UI scene's
+    hit, Phaser does not stop there and hands every event on, so the world hears its press exactly as
+    a world with no scene above it does. No global switch of Phaser's is turned, and no
+    `stopPropagation` (R21's rule kept for the pointer too). **[integrator decision; harness]**
+26. **A press on the UI scene lets go of a focused text field, as a press in the world does.** A
+    press the UI scene takes lets go of the game's own text field holding focus (the chat input, the
+    party invite field: the frame's DOM fields, inside Phaser's parent) after the piece pressed has
+    answered, the order one scene gave it. A field's owner keeps its field only for a press on its
+    own piece, as today (the chat keeps typing for a press on its panel). While an owner stands in a
+    world (both do in phase 1) any press the UI scene takes lets its field go; once an owner moves
+    into the UI scene (the party panel in phase 3, chat in phase 7), a press on that piece keeps its
+    field by the piece's own rule and a press on any other piece lets it go. A page control outside
+    the game (the site header) is let go of by the frame for any press on the game, as before
+    (`takeFocusOnPress`, unchanged).
+    *Why:* the owners hear the world's scene-wide `pointerdown`, which a press on the UI scene never
+    reaches (R7), and that press must stay out of the world (it would attack, walk or cast). The
+    field's letting go is the one part of the world's press a UI press must still have. *How:* the
+    UI scene blurs the focused element inside the game's frame itself (`letGoOfGameField`,
+    `gameFocus.ts`), on its own scene-wide `pointerdown` when Phaser lists one of its pieces under
+    the pointer. **[integrator decision; harness]**
+27. **Every move reaches the world.** A pointer move the UI scene takes (the pointer over one of its
+    pieces, or just leaving one) still reaches the world reported, through the world's own input
+    pass: over a UI piece as a move over nothing of the world's (the world's hovered objects get
+    their out, its scene-wide `pointermove` hears it with nothing under the pointer, so a tip or
+    hover the world shows goes), and just off a piece as any move (what lies under the pointer there
+    gets its over). A press, a wheel and the release of a press begun on a UI piece, over a piece,
+    still reach no world (R7).
+    *Why:* before, the row was the world's top object, so a move onto it ended the world's hovers
+    under it in the same pass, and a move off it lit what lay beyond; Phaser now stops those moves at
+    the UI scene. A world hover must not hang until some later move the world happens to hear.
+    *How:* the UI scene hands such a move to the world reported through the UI bridge, and the world
+    runs it through Phaser's own pass over a DOM event (`InputPlugin.update`, Phaser 4.2.1, private:
+    pinned by test to its source), with its cameras out of the hit test for a move over a UI piece.
+    The UI scene hands on only the moves Phaser stopped at it, so the world hears each move once.
+    A world piece that hovers by coordinates on its scene-wide `pointermove` (the gear overlay, the
+    satchel, the map mode icon) hears the pointer's coordinates as before; in phase 1 none lies under
+    the row (R15). A later phase that moves a UI piece over one names it (R24) and says how it yields.
+    **[integrator decision; harness]**
+
+### Acceptance Criteria (added)
+
+- [ ] A left or right press begun in the world and let go over the row reaches the world's
+      `pointerup` with the world's aim point, and one let go off the canvas its `pointerupoutside`;
+      the world hears every move of it over the row (harness, before vs after).
+- [ ] A press on a corner icon with the game's text field focused lets go of it; a press in the world
+      as before (harness, before vs after; unit).
+- [ ] A single move from a world hover (the gear overlay's item tip) onto the row ends it, and a single
+      move back shows it again (harness, before vs after).
+- [ ] A press and a wheel on the row still reach no world handler (R7; harness).
+- [ ] The corner row's before/after screenshots (R23) stay pixel-equal.
+- [ ] Unit tests for each rule; full client vitest, `tsc --noEmit`, `npm run lint` and
+      `npm run lint:fence` pass.
+
+### Edge States (added)
+
+- **A world press passing over the row.** No icon lights or labels under it. When the row was the
+  world's, an icon lit and labelled under a world press passing over it (the harness's before); this
+  is the one picture R25 changes, and it is named for the owner's check (I-TQZ5J-5). A second button
+  pressed over an icon during a world press is the world's, where it once pressed the icon.
+- **A world press still down as the UI scene sleeps or the world switches.** The UI scene's pieces
+  come back on its first move or frame with no button down; Phaser hears the release on window
+  either way.
+- **A release over an icon ending a world press.** The icon lights on the next move, not on the
+  release itself.
+- **Touch.** One UI scene for every pointer: a world press by one finger keeps the UI scene's pieces
+  from every finger until all are up. Touch is not a supported input.
+
+### Out of Scope (added)
+
+- The ESC menu and the dialogue (I-TQZ5J-4's scope, still the owner's to settle).
+- Keys: R21 stands as written.
+- Turning `globalTopOnly` off, or any other game-wide input switch.
