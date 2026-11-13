@@ -53,7 +53,9 @@ import {
   type ResolvedView,
   type RunMenuChoice,
 } from "@/ui/party";
-import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
+import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
+import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
@@ -640,10 +642,13 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;
-  /** The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6). It owns the keyboard and pointer. */
+  /**
+   * The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6), or the OPTIONS panel opened from it
+   * in its place (FS-28DDG § Change: Music volume in an Options panel, C8). It owns the keyboard and pointer.
+   */
   private menu?: Phaser.GameObjects.Container;
-  /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc. */
-  private menuChoices?: MenuKeys;
+  /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc; the panel's ←/→. */
+  private menuChoices?: MenuSlotKeys;
   /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
   private moveMenu?: (origin: { x: number; y: number }) => void;
   /** The state the open menu's rows were built for; a state that differs takes it down (req 6). */
@@ -3316,8 +3321,9 @@ export class BarrowspireScene extends Phaser.Scene {
    * After the run's end there is no menu: it only closes the windows.
    */
   private pressMenuIcon(): void {
+    // from the OPTIONS panel too: it closes, and the menu it came from does not reopen (FS-28DDG § Change C7)
     if (this.menu) {
-      this.menuChoices?.dismiss();
+      this.closeMenu();
       return;
     }
     this.closeWindows();
@@ -5550,6 +5556,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * nothing to open (edge state "Menu").
    */
   private offerMenu(): void {
+    // ←/→ are read every frame too, so a press made walking does not wait to move the panel's slider
+    const nudge = this.arrowPressed();
     if (!this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
@@ -5561,6 +5569,16 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.runEnded || !this.menu) return;
     if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+    else if (nudge) this.menuChoices?.nudge?.(nudge);
+  }
+
+  /** ← or → pressed since the last frame, as -1 or 1, both read; the OPTIONS panel's slider (FS-28DDG § Change C6). */
+  private arrowPressed(): -1 | 1 | undefined {
+    if (!this.cursors) return undefined;
+    const left = Phaser.Input.Keyboard.JustDown(this.cursors.left);
+    const right = Phaser.Input.Keyboard.JustDown(this.cursors.right);
+    if (left === right) return undefined;
+    return left ? -1 : 1;
   }
 
   /**
@@ -5610,9 +5628,34 @@ export class BarrowspireScene extends Phaser.Scene {
           this.leaveTheBarrow();
           this.closeMenu();
         },
+        options: () => this.openOptions(),
       },
       enabled: { leave: () => !this.leavePending },
     });
+    this.menuFor = state;
+  }
+
+  /**
+   * The OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C3, C7, C8, C13, C14,
+   * C17), in the menu's slot so every guard on the open menu holds for it, and built for the state
+   * the menu was, so it yields as the menu does. No music plays in a run: its Music row only keeps
+   * the level for the next hub entry. Back, Esc and its × reopen the run's menu, rebuilt as it opens.
+   */
+  private openOptions(): void {
+    const state = this.menuState();
+    this.closeMenu();
+    const { container, keys, moveTo } = openOptionsPanel(this, {
+      origin: { x: viewport.centerX, y: viewport.centerY },
+      hit: MENU_CHOICE_HIT,
+      tones: MENU_TONES,
+      back: () => this.openMenu(),
+      music: storedMusicLevel(browserMusicStore),
+      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
+    });
+    this.menuChoices = keys;
+    this.menu = container;
+    this.moveMenu = moveTo;
     this.menuFor = state;
   }
 

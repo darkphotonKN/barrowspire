@@ -8,18 +8,24 @@
  */
 
 import type { SceneEnd } from "@/scenes/sceneEnd";
-import { readMusicSetting, rememberMusicSetting, type MusicSetting, type MusicSettingStore } from "./musicSetting";
+import {
+  clampMusicLevel,
+  musicGain,
+  readMusicLevel,
+  rememberMusicLevel,
+  type MusicSettingStore,
+} from "./musicSetting";
 
 /** The track's key in the audio cache. */
 export const MUSIC_KEY = "music:village";
 /** The owner's track, mp3 alone (R6). */
 export const MUSIC_URL = "/audio/music/village.mp3";
-/** The music's own volume (R8). */
-export const MUSIC_VOLUME = 0.4;
-/** Silence to full on entering the hub (R2). */
+/** Silence to the level's gain on entering the hub, or on a change from level 0 (R2; § Change C12). */
 export const MUSIC_FADE_IN_MS = 2000;
-/** Full to silence on leaving it (R3). */
+/** Down to silence on leaving it, or on a change to level 0 (R3; § Change C12). */
 export const MUSIC_FADE_OUT_MS = 1000;
+/** From one audible level's gain to another's (§ Change: Music volume in an Options panel, C10). */
+export const MUSIC_LEVEL_RAMP_MS = 200;
 
 /** The music's sound, as far as the module plays it. */
 export interface MusicSound {
@@ -46,6 +52,8 @@ export interface MusicStage {
 }
 
 interface Ramp {
+  /** A fade-in from silence or level 0, a fade-out to silence, or a ramp between audible levels. */
+  kind: "in" | "out" | "level";
   from: number;
   to: number;
   ms: number;
@@ -55,17 +63,17 @@ interface Ramp {
 }
 
 /**
- * One game's music: HubScene says the hub was entered or left, or that the ESC menu's row was
- * pressed, and the rest is this (R20).
+ * One game's music: HubScene says the hub was entered or left, the Options panel's Music row sets
+ * its level, and the rest is this (R20; § Change C13).
  */
 export class HubMusic {
   private sound?: MusicSound;
-  /** On or off, as this browser keeps it: read on each entry, switched by the menu's row (R17). */
-  private current: MusicSetting = "on";
+  /** The level, 0 to 5, as this browser keeps it: read on each entry, set from the Options panel (C15). */
+  private current = 0;
   /** Whether the sound plays: a fade-out's end stops it, a stopped one may still be kept (R13). */
   private playing = false;
   /** The volume last given the sound, the module's own: a fade starts from it (R3, R4). */
-  private level = 0;
+  private volume = 0;
   private ramp?: Ramp;
   private stopStepping?: () => void;
 
@@ -74,30 +82,37 @@ export class HubMusic {
     private readonly store: MusicSettingStore,
   ) {}
 
-  /** Whether the music is on, as the menu's row reads it (R15). */
-  get setting(): MusicSetting {
+  /** The level, as the Options panel's Music row reads it (C5). */
+  level(): number {
     return this.current;
   }
 
   /**
-   * The hub was entered (its create). The setting is read again, so another tab's choice holds from
-   * the next entry; while it is off the music is not started, only added so leaving frees it (R13, R18).
+   * The hub was entered (its create). The level is read again, so a change made in a field, a run
+   * or another tab holds from the next entry; at 0 the music is not started, only added so leaving
+   * frees it (R13; § Change C12).
    */
   enter(): void {
-    this.current = readMusicSetting(this.store);
-    if (this.current === "on") this.rise();
+    this.current = readMusicLevel(this.store);
+    if (this.current > 0) this.rise();
     else this.hold();
   }
 
   /**
-   * The ESC menu's row (R16): silence fades the music out and leaves it stopped, play starts it and
-   * fades it in, a fade in flight turned around where it stands. The choice is kept (R17).
+   * The Options panel's Music row (C10–C12), the level kept (C15). To 0 the music fades out and is
+   * left stopped; from 0 it starts and fades in, a fade-out in flight turned round where it stands;
+   * between audible levels it ramps briefly, or a fade-in heads for the new gain in the time it has
+   * left, never less than the level ramp.
    */
-  toggle(): void {
-    this.current = this.current === "on" ? "off" : "on";
-    rememberMusicSetting(this.store, this.current);
-    if (this.current === "on") this.rise();
-    else this.fall();
+  setLevel(level: number): void {
+    const next = clampMusicLevel(level);
+    if (next === this.current) return;
+    const was = this.current;
+    this.current = next;
+    rememberMusicLevel(this.store, next);
+    if (next === 0) this.fall();
+    else if (was === 0) this.rise();
+    else this.retune();
   }
 
   /** The hub was left (its scene end). */
@@ -107,8 +122,8 @@ export class HubMusic {
   }
 
   /**
-   * Up to full over the fade-in, once it can be heard (R2, R10): the same sound taken back up if
-   * it is fading out (R4), or started from the top if it has stopped (R5).
+   * Up to the level's gain over the fade-in, once it can be heard (R2, R10): the same sound taken
+   * back up if it is fading out (R4), or started from the top if it has stopped (R5).
    */
   private rise(): void {
     this.hold();
@@ -117,9 +132,26 @@ export class HubMusic {
       // Phaser's stop resets the seek, and the sound was added at silence
       this.sound.play();
       this.playing = true;
-      this.level = 0;
+      this.volume = 0;
     }
-    this.rampTo(MUSIC_VOLUME, MUSIC_FADE_IN_MS, false);
+    this.rampTo("in", MUSIC_FADE_IN_MS, false);
+  }
+
+  /**
+   * From one audible level to another (C10, C11): a fade-in keeps its course and the time it has
+   * left, though never less than the level ramp, heading for the new gain from where it stands;
+   * otherwise a short ramp from where it stands. A hub-leaving fade-out is left to fall, and a stopped sound to wait for the next
+   * entry: the level is only kept.
+   */
+  private retune(): void {
+    const ramp = this.ramp;
+    if (!this.sound || !this.playing || ramp?.kind === "out") return;
+    if (ramp?.kind === "in") {
+      const ms = Math.max(ramp.ms - ramp.elapsed, MUSIC_LEVEL_RAMP_MS);
+      this.ramp = { ...ramp, from: this.volume, to: this.target(), ms, elapsed: 0 };
+      return;
+    }
+    this.rampTo("level", MUSIC_LEVEL_RAMP_MS, true);
   }
 
   /** The sound, added once per load; a track that failed to load, decode or play here costs only the music (R14). */
@@ -130,17 +162,19 @@ export class HubMusic {
   /** Down to silence over the fade-out, then stopped and, the hub gone, freed (R3, R13). */
   private fall(): void {
     // nothing to fade, or the fade-out already runs (Edge States: Two leaves in a row)
-    if (!this.sound || this.falling) return;
-    this.rampTo(0, MUSIC_FADE_OUT_MS, true);
+    if (!this.sound || this.ramp?.kind === "out") return;
+    this.rampTo("out", MUSIC_FADE_OUT_MS, true);
   }
 
-  private get falling(): boolean {
-    return this.ramp?.to === 0;
+  /** The gain of the level as it stands (C9). */
+  private target(): number {
+    return musicGain(this.current);
   }
 
   /** From the volume it has now, so a fade cut short is turned around where it stands (R4). */
-  private rampTo(to: number, ms: number, heard: boolean): void {
-    this.ramp = { from: this.level, to, ms, elapsed: 0, heard };
+  private rampTo(kind: Ramp["kind"], ms: number, heard: boolean): void {
+    const to = kind === "out" ? 0 : this.target();
+    this.ramp = { kind, from: this.volume, to, ms, elapsed: 0, heard };
     this.stopStepping ??= this.stage.onStep((delta) => this.step(delta));
   }
 
@@ -150,11 +184,11 @@ export class HubMusic {
     if (!ramp.heard) ramp.heard = this.stage.audible();
     if (!ramp.heard) return;
     ramp.elapsed += delta;
-    const t = Math.min(1, ramp.elapsed / ramp.ms);
-    this.level = ramp.from + (ramp.to - ramp.from) * t;
-    this.sound.volume = this.level;
+    const t = ramp.ms > 0 ? Math.min(1, ramp.elapsed / ramp.ms) : 1;
+    this.volume = t < 1 ? ramp.from + (ramp.to - ramp.from) * t : ramp.to;
+    this.sound.volume = this.volume;
     if (t < 1) return;
-    const fell = this.falling;
+    const fell = ramp.kind === "out";
     this.still();
     if (fell) this.fallen();
   }

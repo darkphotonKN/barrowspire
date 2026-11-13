@@ -238,26 +238,73 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH);
 
-  // the frame's ×, Esc's own way out (§ Change C2): its hit is camera-fixed beside the box, as a
-  // row's is, since Phaser hit-tests a container's child with the child's own scroll factor
+  // the frame's ×, Esc's own way out (§ Change C2)
+  const closeHit = frameCloseHit(scene, { frame, origin, tones, name: "menu-close", onPress: () => keys.dismiss() });
+  const blocker = menuBlocker(scene, { through: spec.through, name: "menu-blocker" });
+  container.once("destroy", () => {
+    closeHit.destroy();
+    blocker.destroy();
+  });
+
+  const moveTo = (at: { x: number; y: number }) => {
+    container.setPosition(at.x, at.y);
+    options.forEach((option) => option.place(at));
+    closeHit.place(at);
+    blocker.setSize(viewport.width, viewport.height);
+    crispen([container]);
+  };
+  return { container, keys, moveTo };
+}
+
+export interface FrameCloseHitSpec {
+  /** What `drawPanelFrame` returned: the × box in the panel's space, and its glyph. */
+  frame: { close: { x: number; y: number; width: number; height: number }; glyph: Phaser.GameObjects.Text };
+  /** Where the panel's box sits on the screen. */
+  origin: { x: number; y: number };
+  tones: Pick<MenuTones, "panel">;
+  name: string;
+  onPress: () => void;
+}
+
+/**
+ * A panel frame's × made pressable (FS-G4VMQ § Change C2): its hit is camera-fixed beside the box,
+ * as a row's is, since Phaser hit-tests a container's child with the child's own scroll factor.
+ * The caller takes it down with the panel, and stands it under the × again once the box moves.
+ */
+export function frameCloseHit(
+  scene: MenuStage,
+  spec: FrameCloseHitSpec,
+): Phaser.GameObjects.Rectangle & { place(origin: { x: number; y: number }): void } {
+  const { frame, origin, tones, name, onPress } = spec;
   const cross = frame.close;
   const centre = { x: cross.x + cross.width / 2, y: cross.y + cross.height / 2 };
-  const closeHit = scene.add
+  const hit = scene.add
     .rectangle(origin.x + centre.x, origin.y + centre.y, cross.width, cross.height, tones.panel, 0)
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH + 1)
     .setInteractive({ useHandCursor: true })
-    .setName("menu-close");
-  closeHit.on("pointerup", () => keys.dismiss());
-  closeHit.on("pointerover", () => lightClose(frame.glyph, true));
-  closeHit.on("pointerout", () => lightClose(frame.glyph, false));
+    .setName(name);
+  hit.on("pointerup", onPress);
+  hit.on("pointerover", () => lightClose(frame.glyph, true));
+  hit.on("pointerout", () => lightClose(frame.glyph, false));
+  return Object.assign(hit, {
+    place: (at: { x: number; y: number }) => void hit.setPosition(at.x + centre.x, at.y + centre.y),
+  });
+}
 
-  // the menu owns the screen while open (FS-3EBCA R18, owner: "menu開啟時其他都不能按"): Phaser hands a
-  // press and a hover to the topmost interactive object only, so nothing drawn under the blocker
-  // hears one, and the press stops here, so no scene-wide listener (the world, the chat window) does.
-  // Its own hit test leaves out what `through` names, the Menu plate, which then is the topmost
-  // there (owner: "menu無法再按一次icon關閉"). The zone stands at the view's origin, so a local point
-  // is a screen point; it reads the view as it is now, as setSize keeps the zone to it.
+/**
+ * The open menu's blocker (FS-3EBCA R18, owner: "menu開啟時其他都不能按"): a zone over the whole view
+ * under the panel. Phaser hands a press and a hover to the topmost interactive object only, so
+ * nothing drawn under it hears one, and the press stops here, so no scene-wide listener (the world,
+ * the chat window) does. Its own hit test leaves out what `through` names, the Menu plate, which
+ * then is the topmost there (owner: "menu無法再按一次icon關閉"). The zone stands at the view's origin,
+ * so a local point is a screen point; it reads the view as it is now, as the caller's setSize
+ * keeps the zone to it on a resize.
+ */
+export function menuBlocker(
+  scene: MenuStage,
+  spec: { through?: (x: number, y: number) => boolean; name: string },
+): Phaser.GameObjects.Zone {
   const through = spec.through ?? (() => false);
   const takes = (_area: unknown, x: number, y: number) =>
     x >= 0 && y >= 0 && x < viewport.width && y < viewport.height && !through(x, y);
@@ -267,22 +314,10 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
     .setScrollFactor(0)
     .setDepth(MENU_BLOCKER_DEPTH)
     .setInteractive({}, takes)
-    .setName("menu-blocker");
+    .setName(spec.name);
   blocker.on(
     "pointerdown",
     (_pointer: unknown, _x: number, _y: number, event?: { stopPropagation(): void }) => event?.stopPropagation(),
   );
-  container.once("destroy", () => {
-    closeHit.destroy();
-    blocker.destroy();
-  });
-
-  const moveTo = (at: { x: number; y: number }) => {
-    container.setPosition(at.x, at.y);
-    options.forEach((option) => option.place(at));
-    closeHit.setPosition(at.x + centre.x, at.y + centre.y);
-    blocker.setSize(viewport.width, viewport.height);
-    crispen([container]);
-  };
-  return { container, keys, moveTo };
+  return blocker;
 }

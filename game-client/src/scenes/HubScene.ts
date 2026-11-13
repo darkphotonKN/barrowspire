@@ -43,7 +43,7 @@ import { PurseReader } from "@/ui/purse";
 import { useMailboxStore } from "@/stores/mailboxStore";
 import { apiClient } from "@/utils/api";
 import { showDialogueCard } from "@/ui/npcDialogue";
-import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -180,6 +180,7 @@ import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
 import { HubMusic, MUSIC_KEY, MUSIC_URL, sceneMusicStage } from "@/audio/hubMusic";
 import { browserMusicStore } from "@/audio/musicSetting";
+import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -667,10 +668,13 @@ export class HubScene extends Phaser.Scene {
   private characterKey?: Phaser.Input.Keyboard.Key;
   /** The gear, bag and stats overlay, fed from REST (FS-HRH2J §E); one per visit. */
   private gear?: HubGear;
-  /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
+  /**
+   * The ESC menu while it is open (FS-G4VMQ §Requirements 1–5), or the OPTIONS panel opened from it
+   * in its place (FS-28DDG § Change: Music volume in an Options panel, C8). It owns the keyboard.
+   */
   private menu?: Phaser.GameObjects.Container;
-  /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
-  private menuChoices?: MenuKeys;
+  /** The open menu's choices by key: the n-th actionable one, and the first on Enter; the panel's ←/→. */
+  private menuChoices?: MenuSlotKeys;
   /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
   private moveMenu?: (origin: { x: number; y: number }) => void;
   /** Shown while queued, wherever the player walks. */
@@ -3038,6 +3042,8 @@ export class HubScene extends Phaser.Scene {
    * choice and a number that choice.
    */
   private offerMenu(): void {
+    // ←/→ are read every frame, so a press made walking does not wait to move the panel's slider
+    const nudge = this.arrowPressed();
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     if (esc || this.mailbox?.isOpen() || !this.menu) {
@@ -3051,6 +3057,16 @@ export class HubScene extends Phaser.Scene {
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
     if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+    else if (nudge) this.menuChoices?.nudge?.(nudge);
+  }
+
+  /** ← or → pressed since the last frame, as -1 or 1, both read; the OPTIONS panel's slider (FS-28DDG § Change C6). */
+  private arrowPressed(): -1 | 1 | undefined {
+    if (!this.cursors) return undefined;
+    const left = Phaser.Input.Keyboard.JustDown(this.cursors.left);
+    const right = Phaser.Input.Keyboard.JustDown(this.cursors.right);
+    if (left === right) return undefined;
+    return left ? -1 : 1;
   }
 
   /**
@@ -3067,7 +3083,8 @@ export class HubScene extends Phaser.Scene {
       party: this.partyPanel?.isOpen() ?? false,
     });
     if (step === "letter") this.mailbox?.close();
-    else if (step === "close-menu") this.closeMenu();
+    // the menu's Esc is its Back, and the OPTIONS panel's reopens the menu (FS-28DDG § Change C7)
+    else if (step === "close-menu") this.menuChoices?.dismiss();
     else if (step === "gear") this.gear?.hide();
     else if (step === "party") this.partyPanel?.close();
     else this.openMenu();
@@ -3154,19 +3171,19 @@ export class HubScene extends Phaser.Scene {
    * The hub's ESC menu: a way to the main menu, a way back (FS-G4VMQ §Requirements 3, 4). Built
    * from the scene's state as it opens, so what it offers is hubMenuChoices' rule, not the
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
-   * Every window closes as it opens (FS-3EBCA R17). Its music row switches the town's music and
-   * redraws the menu in place, reading the other way (FS-28DDG R15, R16).
+   * Every window closes as it opens (FS-3EBCA R17). Its Options row opens the OPTIONS panel in its
+   * place (FS-28DDG § Change: Music volume in an Options panel, C3).
    */
   private openMenu(): void {
     this.closeWindows();
     const actions: Record<HubMenuChoice["id"], () => void> = {
       change: () => this.changeCharacter(),
       leave: () => this.leaveQueue(),
-      music: () => this.switchMusic(),
+      options: () => this.openOptions(),
       back: () => this.closeMenu(),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {
-      choices: hubMenuChoices({ queued: this.queued, music: this.music?.setting }),
+      choices: hubMenuChoices({ queued: this.queued }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
@@ -3182,11 +3199,31 @@ export class HubScene extends Phaser.Scene {
     this.moveMenu = moveTo;
   }
 
-  /** The menu's music row (FS-28DDG R16): the music switched, the open menu redrawn with the other label. */
-  private switchMusic(): void {
-    this.music?.toggle();
+  /**
+   * The OPTIONS panel, in the menu's slot so every guard on the open menu holds for it (FS-28DDG
+   * § Change C3, C7, C8, C13). Its Music row sets the town's music, which applies and keeps the
+   * level; Back, Esc and its × reopen the ESC menu, rebuilt from the state as it is then.
+   */
+  private openOptions(): void {
+    // create's enterMusic sets the music before any menu can open; without it the panel stays shut
+    const music = this.music;
+    if (!music) return;
     this.closeMenu();
-    this.openMenu();
+    const { container, keys, moveTo } = openOptionsPanel(this, {
+      origin: { x: viewport.centerX, y: viewport.centerY },
+      hit: CHOICE_HIT,
+      tones: MENU_TONES,
+      back: () => {
+        this.closeMenu();
+        this.openMenu();
+      },
+      music,
+      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
+    });
+    this.menuChoices = keys;
+    this.menu = container;
+    this.moveMenu = moveTo;
   }
 
   /**

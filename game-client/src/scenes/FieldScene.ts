@@ -54,7 +54,9 @@ import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
 import { HudCorner } from "@/ui/HudCorner";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
-import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
+import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
+import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -211,10 +213,11 @@ export class FieldScene extends Phaser.Scene {
   private fight?: FieldCombat;
   /**
    * The ESC menu while it is open (FS-G4VMQ § Change: The ESC menu in a field world): the town's,
-   * Change character and Back. It owns the keys and presses while up.
+   * Change character, Options and Back; or the OPTIONS panel opened from it in its place (FS-28DDG
+   * § Change: Music volume in an Options panel, C8). It owns the keys and presses while up.
    */
   private menu?: Phaser.GameObjects.Container;
-  private menuChoices?: MenuKeys;
+  private menuChoices?: MenuSlotKeys;
   private moveMenu?: (origin: { x: number; y: number }) => void;
   /** A leave_hub has been sent from the menu and not answered yet (FS-G4VMQ R25). */
   private leavingHub = false;
@@ -590,20 +593,22 @@ export class FieldScene extends Phaser.Scene {
     });
     if (step === "gear") this.equipment?.hide();
     else if (step === "party") this.partyPanel?.close();
-    else if (step === "close-menu") this.closeMenu();
+    // the menu's Esc is its Back, and the OPTIONS panel's reopens the menu (FS-28DDG § Change C7)
+    else if (step === "close-menu") this.menuChoices?.dismiss();
     else this.openMenu();
   }
 
   /**
-   * The town's ESC menu, in the field (FS-G4VMQ § Change C2): Change character and Back, by
-   * `hubMenuChoices`' rule (a field player is never queued, FS-X2F2H R20), centred in the popup
+   * The town's ESC menu, in the field (FS-G4VMQ § Change C2): Change character, Options and Back,
+   * by `hubMenuChoices`' rule (a field player is never queued, FS-X2F2H R20), centred in the popup
    * band. The world runs on behind it. Every window closes as it opens (FS-3EBCA R17).
    */
   private openMenu(): void {
     this.closeWindows();
-    // only the rows the field offers: no queue to leave, no music row (FS-X2F2H R20; FS-28DDG R19)
+    // only the rows the field offers: no queue to leave (FS-X2F2H R20)
     const actions: Partial<Record<HubMenuChoice["id"], () => void>> = {
       change: () => this.changeCharacter(),
+      options: () => this.openOptions(),
       back: () => this.closeMenu(),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {
@@ -616,6 +621,30 @@ export class FieldScene extends Phaser.Scene {
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
       // the Menu icon answers under the open menu: it closes it (FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
+    });
+    this.menu = container;
+    this.menuChoices = keys;
+    this.moveMenu = moveTo;
+  }
+
+  /**
+   * The OPTIONS panel, in the menu's slot so every guard on the open menu holds for it (FS-28DDG
+   * § Change C3, C7, C8). No music plays in a field, so its Music row only keeps the level, read
+   * as the panel opens, for the next hub entry (C14). Back, Esc and its × reopen the field's menu.
+   */
+  private openOptions(): void {
+    this.closeMenu();
+    const { container, keys, moveTo } = openOptionsPanel(this, {
+      origin: { x: viewport.centerX, y: viewport.centerY },
+      hit: MENU_CHOICE_HIT,
+      tones: MENU_TONES,
+      back: () => {
+        this.closeMenu();
+        this.openMenu();
+      },
+      music: storedMusicLevel(browserMusicStore),
+      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menu = container;
@@ -661,8 +690,11 @@ export class FieldScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-F", () => {
       if (!this.menu) this.satchel?.lootFirst();
     });
-    // the open menu's keys, the town's: Enter is the first choice, a number that choice
+    // the open menu's keys, the town's: Enter is the first choice, a number that choice; ← and →
+    // move the OPTIONS panel's slider, one level a press (FS-28DDG § Change C6)
     this.input.keyboard?.on("keydown-ENTER", () => this.menuChoices?.confirm());
+    this.input.keyboard?.on("keydown-LEFT", () => this.menuChoices?.nudge?.(-1));
+    this.input.keyboard?.on("keydown-RIGHT", () => this.menuChoices?.nudge?.(1));
     ["ONE", "TWO", "THREE"].forEach((name, i) =>
       this.input.keyboard?.on(`keydown-${name}`, () => this.menuChoices?.pick(i)),
     );
