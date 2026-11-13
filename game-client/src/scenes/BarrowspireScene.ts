@@ -35,13 +35,15 @@ import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerVie
 import {
   climbed,
   floorLabel,
-  interactNotice,
   isTopFloor,
   showsFloorLine,
   type InteractReply,
   type NoticeTone,
 } from "@/ui/floor";
 import { placeCard } from "@/ui/placeCard";
+import { LoreLines } from "@/ui/loreLine";
+import { loreForFall, loreForReply } from "@/ui/loreCopy";
+import { LoreDust } from "@/render/effects/loreDust";
 import {
   FALL_CONFIRM,
   nextWatched,
@@ -1010,6 +1012,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * ash (FS-PQ2TW §Change: Ash R53). It lets its own card go at a scene end.
    */
   private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
+  /**
+   * The world speaking inside the Spire (FS-XWHZP): every Spire world message is a lore line,
+   * written by `loreCopy.ts`; interface messages stay HUD notices (R20). It lets its own lines go
+   * at a scene end; a floor change takes them down (R15).
+   */
+  private readonly loreLines = new LoreLines(this, new LoreDust(this, () => this.art));
 
   constructor() {
     super({ key: "BarrowspireScene" });
@@ -3420,6 +3428,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
     this.arrivalCard.relayout();
+    this.loreLines.relayout();
     this.targetFrame?.relayout();
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
     crispen([
@@ -3798,8 +3807,9 @@ export class BarrowspireScene extends Phaser.Scene {
       console.log("Interact response:", payload);
       // a refused reach opens no coffer (FS-KE075 §J R60); the empty frame after a reply refuses nothing
       if (!payload.success && (payload.reason || payload.message)) this.chestRefused();
-      const notice = interactNotice(payload);
-      if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
+      // the world's reply as a lore line, in the client's words where it has a reason (FS-XWHZP R16-R18)
+      const line = loreForReply(payload);
+      if (line) this.loreLines.say(line);
     });
 
     // A refused equip (FS-BDA7X req 32, 45): the server's words, as a refusal. The next state puts
@@ -4432,6 +4442,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
+    // the old floor's lore lines go with it; the floor card speaks for the new one (FS-XWHZP R15)
+    this.loreLines.clear();
     // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights
     // with it (§H.45)
     this.builtFloor = undefined;
@@ -5776,7 +5788,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.fallPending = false;
     this.menuChoices?.retone();
     if (this.runEnded) return;
-    this.showNotification(info.message ?? "The barrow will not take you yet.", toCss(palette.hudPanel));
+    this.loreLines.say(loreForFall(info.message));
   }
 
   /**

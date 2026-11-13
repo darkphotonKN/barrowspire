@@ -4559,10 +4559,13 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("fall-now");
     const before = option("fall-now")?.calls.length ?? 0;
 
+    const said = vi.spyOn((run as unknown as { loreLines: { say(line: object): void } }).loreLines, "say");
     run.fallRefused({ message: "You are not in a delve." });
 
     expect(run.fallPending).toBe(false);
     expect(labels()).toContain("You are not in a delve.");
+    // the barrow's refusal, as a lore line (FS-XWHZP R16)
+    expect(said).toHaveBeenCalledWith({ text: "You are not in a delve.", tone: "lore" });
     expect(option("fall-now")?.calls.slice(before)).not.toContain("destroy");
     pick("fall-now");
     expect(sentOf(ActionType.ForfeitRun)).toHaveLength(2);
@@ -7083,6 +7086,23 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
 // A floor-1 chest whose guards still stand is refused by the server: the coffer never opened (it
 // waits for the server), and the notice says only that it will not open (FS-KE075 §J R60).
+// FS-XWHZP R15 (I-XWHZP-2): the lines belong to the floor they were said on.
+describe("BarrowspireScene lore lines on a floor change (FS-XWHZP R15)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should take the old floor's lore lines down when the party leaves it", () => {
+    const { run } = onStage();
+    const floor = run as unknown as { leaveFloor(): void; loreLines: { clear(): void } };
+    const cleared = vi.spyOn(floor.loreLines, "clear");
+
+    floor.leaveFloor();
+
+    expect(cleared).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -7102,29 +7122,63 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       showNotification(message: string, color: string): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
+      loreLines: { say(line: { text: string; tone: string }): void };
     };
     run.init({ sessionID: "run-a" });
     run.containerView = { entityId: null, close: vi.fn() };
     run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
     run.connectToServer();
-    return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+    return {
+      run,
+      notified,
+      said,
+      reply: (payload: unknown) => listeners.get("interact")?.(payload),
+      equip: (payload: unknown) => listeners.get("equip")?.(payload),
+    };
   }
 
-  it("should give up the reach and say it will not open", () => {
-    const { run, notified, reply } = connected();
+  // FS-XWHZP R16: the world's reply is a lore line, in the client's words, never a HUD notice
+  it("should give up the reach and say it will not open, as a lore line", () => {
+    const { run, notified, said, reply } = connected();
     reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
 
     expect(run.reaching).toBeUndefined();
-    expect(notified).toHaveBeenCalledTimes(1);
-    expect(notified.mock.calls[0][0]).toBe("It will not open.");
+    expect(said).toHaveBeenCalledTimes(1);
+    expect(said).toHaveBeenCalledWith({ text: "It will not open.", tone: "lore" });
+    expect(notified).not.toHaveBeenCalled();
   });
 
-  it("should give up the reach on a chest out of reach too", () => {
-    const { run, reply } = connected();
+  it("should give up the reach on a chest out of reach too, the server's words a lore line (FS-XWHZP R17)", () => {
+    const { run, said, notified, reply } = connected();
     reply({ success: false, message: "too far away to interact" });
 
     expect(run.reaching).toBeUndefined();
+    expect(said).toHaveBeenCalledWith({ text: "too far away to interact", tone: "lore" });
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should say the stair's wait and the tome's line as lore lines (FS-XWHZP R16)", () => {
+    const { said, notified, reply } = connected();
+    reply({ success: false, message: "the party has not gathered at the stairs", reason: "party_not_gathered", missing: 2 });
+    reply({ success: true, message: "", reason: "tome_taken" });
+    reply({ success: false, message: "burned", reason: "altar_burned" });
+
+    expect(said.mock.calls.map(([line]) => line)).toEqual([
+      { text: "The stair waits. 2 of your party are not yet with you.", tone: "lore" },
+      { text: "Wonder if I can burn it.", tone: "lore" },
+    ]);
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should keep a refused equip a HUD notice: it is the interface's (FS-XWHZP R20)", () => {
+    const { said, notified, equip } = connected();
+    equip({ success: false, message: "You cannot wear that yet." });
+
+    expect(notified).toHaveBeenCalledTimes(1);
+    expect(notified.mock.calls[0][0]).toBe("You cannot wear that yet.");
+    expect(said).not.toHaveBeenCalled();
   });
 
   it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {
