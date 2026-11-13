@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { HudCorner, type CornerIconSpec } from "./HudCorner";
+import { BACKPACK_TONES, HudCorner, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
 import { envelopeFlapPoint } from "./MailboxEnvelope";
 
@@ -63,12 +63,18 @@ function fakeScene() {
         "fillPath",
         "fillTriangle",
         "fillGradientStyle",
+        "moveTo",
+        "lineTo",
+        "fillPoints",
+        "strokePoints",
+        "fillEllipse",
+        "strokeEllipse",
         "setAlpha",
       ])
         self[m] = (...args: number[]) => (rec.calls.push(m), rec.ops.push({ m, args }), self);
       self.clear = () => ((rec.strokes = []), (rec.alphas = []), (rec.calls = []), (rec.ops = []), self);
-      self.lineStyle = (_w: number, colour: number, alpha: number) => (
-        rec.strokes.push(colour), rec.alphas.push(alpha), self
+      self.lineStyle = (w: number, colour: number, alpha: number) => (
+        rec.strokes.push(colour), rec.alphas.push(alpha), rec.ops.push({ m: "lineStyle", args: [w, colour, alpha] }), self
       );
       self.setDepth = (d: number) => ((rec.depth = d), self);
       self.destroy = () => void (rec.destroyed = true);
@@ -193,12 +199,12 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
     expect(env.press.party).toHaveBeenCalledTimes(1);
   });
 
-  it("should draw the Inventory icon's bag apart from the Character icon's bust (R3)", () => {
+  it("should draw the Inventory icon's backpack apart from the Character icon's bust (R3; § Change: The inventory icon is an inked backpack)", () => {
     const env = setup([{ icon: "inventory" }, { icon: "character" }]);
     const [bag, bust] = env.graphics;
     expect(bag.strokes).toContain(palette.interactable);
     expect(bag.calls).not.toEqual(bust.calls);
-    // a pouch: its body and neck are paths, its cord a line, no circle for a head
+    // a backpack: its parts are paths, its hatching and stitches lines, no circle for a head
     expect(bag.calls).toContain("lineBetween");
     expect(bag.calls).not.toContain("strokeCircle");
   });
@@ -303,22 +309,25 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
     { icon: "mail", greyed: true },
   ];
 
-  it("should draw no plate and fill nothing under any icon, idle or under the pointer (R1, R3)", () => {
+  // the Inventory icon is the one filled exception (FS-3EBCA § Change: The inventory icon is an
+  // inked backpack, R5): these hold of the other four
+  it("should draw no plate and fill nothing under Menu, Character, Party or the greyed Mailbox, idle or under the pointer (R1, R3)", () => {
     const env = setup(row());
     for (const icon of ["menu", "inventory", "character", "party", "mail"] as const) {
       env.zoneAt(icon).handlers.pointerover();
       env.zoneAt(icon).handlers.pointerout();
     }
     env.zoneAt("party").handlers.pointerover();
-    for (const g of env.graphics) {
+    const [menu, , character, party, mail] = env.graphics;
+    for (const g of [menu, character, party, mail]) {
       expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
     }
   });
 
-  it("should stroke each graphics in its glyph's ink alone: no brass rule, no lit edge (R1, R2)", () => {
+  it("should stroke Menu, Character, Party and the greyed Mailbox each in its glyph's ink alone: no brass rule, no lit edge (R1, R2)", () => {
     const env = setup(row());
-    const [menu, inventory, character, party, mail] = env.graphics;
-    for (const g of [menu, inventory, character, party]) {
+    const [menu, , character, party, mail] = env.graphics;
+    for (const g of [menu, character, party]) {
       expect(new Set(g.strokes)).toEqual(new Set([palette.interactable]));
       expect(new Set(g.alphas)).toEqual(new Set([0.85]));
     }
@@ -377,5 +386,187 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
     // the front bust, whole: its head and the top of its shoulders
     expect(points.some((p) => p.centre === `${front.x},${front.headY}`)).toBe(true);
     expect(points.some((p) => p.centre === `${front.x},${front.shoulderY}`)).toBe(true);
+  });
+});
+
+// FS-3EBCA § Change: The inventory icon is an inked backpack (the owner, 2026-11-13: 「道具藍幫我重做成一個背包的圖示」,
+// 「不要寫實風格」, 「黑暗奇幻風格」). I-3EBCA-12.
+interface Mark {
+  kind: "fill" | "stroke";
+  colour: number;
+  alpha: number;
+  /** The line's width; 0 for a fill. */
+  width: number;
+  points: { x: number; y: number }[];
+}
+
+/** What a graphics lays down, fill by fill and stroke by stroke, with the points each covers. */
+function marks(g: FakeGraphics): Mark[] {
+  const out: Mark[] = [];
+  let line = { width: 1, colour: -1, alpha: 1 };
+  let fill = { colour: -1, alpha: 1 };
+  let path: { x: number; y: number }[] = [];
+  const stroke = (points: { x: number; y: number }[]) =>
+    out.push({ kind: "stroke", colour: line.colour, alpha: line.alpha, width: line.width, points });
+  for (const { m, args } of g.ops) {
+    if (m === "lineStyle") line = { width: args[0], colour: args[1], alpha: args[2] };
+    else if (m === "fillStyle") fill = { colour: args[0], alpha: args[1] ?? 1 };
+    else if (m === "beginPath") path = [];
+    else if (m === "moveTo" || m === "lineTo") path.push({ x: args[0], y: args[1] });
+    else if (m === "arc") {
+      const [x, y, r, start, end] = args;
+      for (let i = 0; i <= 32; i++) {
+        const a = start + ((end - start) * i) / 32;
+        path.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+      }
+    } else if (m === "fillPath") out.push({ kind: "fill", colour: fill.colour, alpha: fill.alpha, width: 0, points: [...path] });
+    else if (m === "strokePath") stroke([...path]);
+    else if (m === "lineBetween") stroke([{ x: args[0], y: args[1] }, { x: args[2], y: args[3] }]);
+    else if (m === "strokeCircle") {
+      const [x, y, r] = args;
+      stroke([{ x: x - r, y: y - r }, { x: x + r, y: y + r }]);
+    }
+  }
+  return out;
+}
+
+/** The box round everything drawn, a stroke's half width included. */
+function boxOf(ms: Mark[]) {
+  let [left, top, right, bottom] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const { width, points } of ms) {
+    for (const { x, y } of points) {
+      left = Math.min(left, x - width / 2);
+      right = Math.max(right, x + width / 2);
+      top = Math.min(top, y - width / 2);
+      bottom = Math.max(bottom, y + width / 2);
+    }
+  }
+  return { left, top, right, bottom, width: right - left, height: bottom - top };
+}
+
+describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  const backpack = () => {
+    const env = setup([{ icon: "inventory" }]);
+    return { ...env, g: env.graphics[0] };
+  };
+  const tones = new Set<number>([palette.ink, ...Object.values(BACKPACK_TONES)]);
+  const amber = new Set<number>([palette.interactable, palette.interactableBright]);
+
+  it("should fill in at least four tones of its own, none amber and no gradient (R2, R3, R5)", () => {
+    const { g } = backpack();
+    const fills = marks(g).filter((k) => k.kind === "fill");
+    const colours = new Set(fills.map((k) => k.colour));
+    expect(colours.size).toBeGreaterThanOrEqual(4);
+    for (const c of [BACKPACK_TONES.leather, BACKPACK_TONES.leatherDark, BACKPACK_TONES.brass, BACKPACK_TONES.cloth]) {
+      expect(colours).toContain(c);
+    }
+    for (const c of colours) {
+      expect(amber.has(c)).toBe(false);
+      expect(tones.has(c)).toBe(true);
+    }
+    expect(g.calls).not.toContain("fillGradientStyle");
+    // flat: every fill whole, never a stack of translucent ones standing in for a gradient
+    expect(fills.every((k) => k.alpha === 1)).toBe(true);
+  });
+
+  it("should take every tone from the palette, none of them amber (R3, R9)", () => {
+    const values = Object.values(BACKPACK_TONES);
+    expect(values.length).toBeGreaterThanOrEqual(4);
+    for (const c of values) expect(amber.has(c)).toBe(false);
+    expect(BACKPACK_TONES.brass).toBe(palette.frame);
+  });
+
+  it("should stroke everything but the amber edge in ink or its own tones (R2, R3)", () => {
+    const { g } = backpack();
+    for (const k of marks(g).filter((k) => k.kind === "stroke" && !amber.has(k.colour))) {
+      expect(tones.has(k.colour)).toBe(true);
+    }
+  });
+
+  it("should outline the silhouette in a heavy ink line, its parts in 1–1.5 px ink, its hatching faint and fine (R2)", () => {
+    const { g } = backpack();
+    const ink = marks(g).filter((k) => k.kind === "stroke" && k.colour === palette.ink);
+    const heavy = ink.filter((k) => k.width > 2);
+    expect(heavy).toHaveLength(1);
+    expect(heavy[0].alpha).toBe(1);
+    // part lines, stitching and scratches: 1.5 px or finer, never between 1.5 and the outline
+    expect(ink.filter((k) => k.width <= 2).every((k) => k.width <= 1.5)).toBe(true);
+    // hatching: fine and faint, and there is some
+    const faint = ink.filter((k) => k.alpha <= 0.6);
+    expect(faint.length).toBeGreaterThanOrEqual(6);
+    expect(faint.every((k) => k.width <= 1)).toBe(true);
+    // stitches and scratches: fine ink at a stronger alpha
+    expect(ink.filter((k) => k.alpha > 0.6 && k.width <= 1).length).toBeGreaterThanOrEqual(6);
+    // every ink stroke but the outline is fine (1.5 or less) or faint
+    expect(ink.filter((k) => k.alpha > 0.6 && k.width > 1.5)).toEqual(heavy);
+  });
+
+  it("should edge the silhouette in a 1 px amber line outside the ink outline, at 0.85 idle (R6)", () => {
+    const { g } = backpack();
+    const ms = marks(g);
+    const edges = ms.filter((k) => k.kind === "stroke" && amber.has(k.colour));
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ colour: palette.interactable, alpha: 0.85, width: 1 });
+    const outline = boxOf(ms.filter((k) => k.colour === palette.ink && k.width > 2));
+    const edge = boxOf(edges);
+    expect(edge.left).toBeLessThan(outline.left);
+    expect(edge.right).toBeGreaterThan(outline.right);
+    expect(edge.top).toBeLessThan(outline.top);
+    expect(edge.bottom).toBeGreaterThan(outline.bottom);
+  });
+
+  it("should brighten the amber edge alone under the pointer, every other op as it was (R6)", () => {
+    const { g, zoneAt } = backpack();
+    const neutral = (ops: { m: string; args: number[] }[]) =>
+      ops.map(({ m, args }) => (m === "lineStyle" && amber.has(args[1]) ? { m, args: [args[0], -1, -1] } : { m, args }));
+    const idle = [...g.ops];
+    expect(g.strokes).toContain(palette.interactable);
+    expect(g.strokes).not.toContain(palette.interactableBright);
+    zoneAt("inventory").handlers.pointerover();
+    expect(g.strokes).toContain(palette.interactableBright);
+    expect(g.strokes).not.toContain(palette.interactable);
+    const bright = g.ops.find(({ m, args }) => m === "lineStyle" && args[1] === palette.interactableBright)!;
+    expect(bright.args[2]).toBe(1);
+    expect(neutral(g.ops)).toEqual(neutral(idle));
+    zoneAt("inventory").handlers.pointerout();
+    expect(g.ops).toEqual(idle);
+  });
+
+  it("should stand 32–36 px tall and at most 44 wide, in its slot, centred on it (R4)", () => {
+    const { g } = backpack();
+    const box = boxOf(marks(g));
+    expect(box.height).toBeGreaterThanOrEqual(32);
+    expect(box.height).toBeLessThanOrEqual(36);
+    expect(box.width).toBeLessThanOrEqual(44);
+    expect(box.left).toBeGreaterThanOrEqual(940);
+    expect(box.right).toBeLessThanOrEqual(940 + 58);
+    expect(box.top).toBeGreaterThanOrEqual(658);
+    expect(box.bottom).toBeLessThanOrEqual(658 + 46);
+    expect(Math.abs((box.left + box.right) / 2 - 969)).toBeLessThanOrEqual(1);
+    expect(Math.abs((box.top + box.bottom) / 2 - 681)).toBeLessThanOrEqual(1);
+  });
+
+  it("should move with its slot when the view widens (R4; FS-ZAJMH R13)", () => {
+    const { g, corner } = backpack();
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    corner.relayout();
+    const box = boxOf(marks(g));
+    expect(Math.abs((box.left + box.right) / 2 - 1169)).toBeLessThanOrEqual(1);
+    expect(Math.abs((box.top + box.bottom) / 2 - 681)).toBeLessThanOrEqual(1);
+  });
+
+  it("should keep the Inventory zone, hand cursor, press and label, and go with destroy (R7, R11)", () => {
+    const env = setup([{ icon: "inventory", press: vi.fn() }]);
+    const g = env.graphics[0];
+    const z = env.zoneAt("inventory");
+    expect(z).toMatchObject({ x: 940, y: 658, width: 58, height: 46, handCursor: true });
+    expect(env.corner.covers(941, 659, "inventory")).toBe(true);
+    z.handlers.pointerover();
+    expect(env.liveTexts().map((t) => t.words)).toEqual(["Inventory (I)"]);
+    env.corner.destroy();
+    expect(g.destroyed).toBe(true);
+    expect(env.liveTexts()).toHaveLength(0);
   });
 });
