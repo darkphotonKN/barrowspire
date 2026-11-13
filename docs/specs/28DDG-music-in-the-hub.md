@@ -640,82 +640,206 @@ stated them ("half the file's loudness", 0.5, the default's 0.3), and the criter
 ## Change: Fullscreen in the OPTIONS panel → FS-T3DWX
 
 ## Change: The tower's music on every floor of a run
-Status: draft
+Status: work-order
 Date: 2026-11-14
-
-### Scoping notes (raw)
 
 Asked by the owner on 2026-11-14: 「把塔的背景音套用到目前塔內所有樓層的地圖中」 (apply the tower's
 background track to every floor map currently inside the tower). He supplied
-`game-client/public/audio/music/tower.ogg`. Charter run approved the same day; every decision
-below is a **[charter default]** (T1–T9) with its reason.
+`game-client/public/audio/music/tower.ogg`. Charter run approved the same day. Each decision
+below is a **[charter default]** (T1–T9), owner-approved 2026-11-14, with its reason.
 
-Ownership check: music is this FS's capability (`### Sound` → "Music in the hub", "Set the
-music's volume"). A second world playing music is a behavior change on it, not a new capability:
-R1 ("Only in the hub") and § Change C14 ("Field and run: the setting, not the sound") change. The
-thin line "Music in the hub" is made false by it and is reworded in place, pointer unchanged:
-"Music in the hub" ⇒ "Background music" (survives any later world, track or fade change).
+The text above is not edited. This section replaces R1 (music only in the hub) and, for the run,
+§ Change C14 (the run stores the level and plays nothing). It lifts "runs" out of the first Out of
+Scope line and "An ogg (or any second) encoding" out of the Out of Scope list, for the tower track
+only. R6 (mp3 alone) stands for the village track. Every other requirement above holds for both
+tracks: the fades (R2, R3), one sound per track (R4), from the top each new visit (R5), the loop
+(R7), autoplay and focus (R9–R11), loading and freeing (R12–R14), the game's end (R21), and the
+level and its ramps (C9–C12, C15). The thin line "Music in the hub" no longer holds and is
+reworded in place, pointer unchanged: "Background music".
 
-Decisions (charter defaults, owner-approved 2026-11-14):
+**Facts (verified 2026-11-14 on feat/client-tower-music, cut from main 95f58efa).**
 
-- T1 every floor of the run plays the same tower track; a floor change neither restarts nor
-  interrupts it. Reason: the owner asked for every floor; one track is the smallest v1.
-- T2 town → run: the village track fades out over 1 s and the tower track fades in over 2 s; run
-  → town is the reverse. Reason: R2/R3's fades, reused.
-- T3 in the run it keeps playing while dead/spectating and while the settlement record is open,
-  until the player actually leaves the run. Reason: the run is still the world on screen.
-- T4 one shared Music level and the 0.3 cap; each track gets its own trim factor (default 1.0) so
-  one constant balances loudness. Reason: one setting for the player, one knob per file.
-- T5 tower.ogg plus an afconvert tower.m4a (`afconvert -f m4af -d aac -b 96000 -q 127`), loaded as
-  [m4a, ogg] like the effects (FS-WDM0X S21). Reason: Safari's Ogg decode is unreliable and Phaser
-  never falls back on a decode failure.
-- T6 the tower track loads in the run's preload (counts toward its torch bar) and is freed after
-  leaving the run, by R13's rules incl. the mid-preload stop. Reason: scene-scoped, as R12/R13.
-- T7 generalize HubMusic into ONE world-music module that picks the track by world; town and run
-  share it, no second copy. Fields stay silent. Reason: one owner of the fades (R20).
-- T8 a seamless 120 s loop; a marker fixes an audible seam only if the owner hears one. Reason:
-  as R7 and the loop-point Edge State.
-- T9 the owner's listening check covers entering the run, changing floor, dying/spectating and
-  returning to the town.
-- Bounds: game-client only; the audio module(s), BarrowspireScene's music wiring, HubScene's
-  wiring if the module API changes, `public/audio/music/`, tests. No server. OPTIONS UI unchanged.
-
-Facts read in the code (feat/client-tower-music, cut from main 95f58efa):
-
-- A climb is a game-state broadcast: `handleGameStateUpdate` calls `leaveFloor()` when
-  `climbed(lastFloor, floor)`, which rebuilds the floor inside the running BarrowspireScene. No
-  `world_entered`, no scene stop. T1 holds with no floor-change code.
-- BarrowspireScene runs on through death, spectating, `end_game` and the settlement record. It
-  stops only when `switchWorld` applies another `world_entered` (the hub's held behind an open
-  record by `resultHold`, FS-GV8WN R23). T3 holds with no extra code: the music leaves on the scene's
-  end.
-- BarrowspireScene's `init` registers `onSceneEnd(this, resetRun)` once per start, so a stop
-  during preload already reaches `resetRun`. HubScene needed its own `cancelLoadingEnd` because
-  its release is registered in create; the run does not.
+- A climb is a game-state broadcast. `handleGameStateUpdate` calls `leaveFloor()` when
+  `climbed(lastFloor, floor)`, and the floor is rebuilt inside the running BarrowspireScene. No
+  `world_entered` comes and the scene does not stop.
+- BarrowspireScene keeps running through a death, spectating, `end_game` and the settlement
+  record. It stops only when `switchWorld` applies another `world_entered`. The hub's waits
+  behind an open record (`resultHold`, FS-GV8WN R23).
 - A reconnect mid-run restarts BarrowspireScene (`switchWorld` → `start` on a running scene): a
-  shutdown then a start, the same shape as R4's hub restart.
-- `HubMusic`'s instance lives on HubScene's instance across stops. The village fade-out runs on
-  the game's step after the hub stops. The same holds for an instance on BarrowspireScene. Each
-  world scene holding its own instance for its own track gives T2's two fades with no shared
-  state: the village falls while the run loads, the tower rises at the run's create.
+  shutdown, then a start. That is the same shape as the hub restart (Edge States).
+- BarrowspireScene's `init` registers `onSceneEnd(this, resetRun)` once per start, so a stop during
+  preload already reaches `resetRun`. HubScene registers its release in create, which is why it
+  needs `cancelLoadingEnd`. The run does not.
+- `HubMusic` lives on HubScene's instance, which Phaser keeps across stops. The village's fade-out
+  runs on the game's `step` after the hub stops. An instance on BarrowspireScene behaves the same
+  way.
 - The run's Options panel passes `storedMusicLevel` (C14). With music in the run, a change there
-  must reach the playing music, or it would play at the old level until the next entry: the run
-  passes its music instead (C13's shape, as the town does). This is the run's menu wiring, one
-  line, not only preload/create/release (Bounds note).
-- tower.ogg: Ogg Vorbis, 2 ch, 44.1 kHz, ~138 kbps, 5,292,000 valid frames (120.000 s) + 128
-  priming + 352 remainder (`afinfo`). The afconvert m4a: AAC, 2 ch, 44.1 kHz, ~88 kbps, 1.34 MB,
-  5,292,000 valid + 2112 priming + 992 remainder. Decoded: 5,292,000 × 2 × 4 B ≈ 42.3 MB.
-- Measured loudness, whole file decoded (afconvert to 16-bit PCM): tower −27.3 dBFS RMS / −3.0
-  dBFS peak; village −12.9 dBFS RMS / −1.3 dBFS peak. The tower is about 14 dB quieter. T4's
-  default trim 1.0 is kept as approved; the owner's listening check decides the tower's trim.
-- Phaser 4.2.1: `AudioFile.getAudioURL` takes the first URL whose extension the device plays;
-  `WebAudioSound#volume` writes the gain node unclamped.
+  has to reach the playing music. Otherwise it plays at the old level until the next entry.
+- `tower.ogg`: Ogg Vorbis, 2 ch, 44.1 kHz, ~138 kbps, 5,292,000 valid frames (120.000 s) + 128
+  priming + 352 remainder (`afinfo`). `tower.m4a` (`afconvert -f m4af -d aac -b 96000 -q 127`):
+  AAC, 2 ch, 44.1 kHz, ~88 kbps, 1.34 MB, 5,292,000 valid + 2112 priming + 992 remainder.
+  Decoded, 5,292,000 × 2 × 4 B ≈ 42.3 MB.
+- Loudness, whole file decoded to 16-bit PCM: tower −27.3 dBFS RMS / −3.0 dBFS peak; village
+  −12.9 dBFS RMS / −1.3 dBFS peak. The tower is about 14 dB quieter than the village.
+- Phaser 4.2.1: `AudioFile.getAudioURL` takes the first URL whose extension the device can play
+  and never falls back on a decode failure (as FS-WDM0X S21). `WebAudioSound#volume` writes its
+  gain node unclamped.
 
-Alternatives rejected:
+### Requirements
 
-- One game-wide music instance switching tracks: needs a registry outside the scenes and still
-  two sounds at once during the crossfade; per-scene instances of one class already do it.
-- A different track per floor: not asked; T1.
-- Normalizing the files instead of a trim: the owner's files stay as he made them.
+**A. One module, a track per world**
 
-Open, not settled here: the tower's trim value (listening check); a loop marker (only if heard).
+W1. **One world-music module.** `game-client/src/audio/hubMusic.ts` becomes
+    `game-client/src/audio/worldMusic.ts`, and `HubMusic` becomes `WorldMusic`. It is the same
+    class: enter, leave, the level, the fades and ramps, one sound, freeing. Nothing of it is
+    copied. A **track** is its cache key, its URLs in load order, and its trim (W5). The module
+    names which track each world plays: the hub plays the village track, the run plays the tower
+    track, and a field plays none. **[charter default T7]** Reason: one owner of the fades (R20).
+W2. **Each world scene holds its own music.** HubScene and BarrowspireScene each make one
+    `WorldMusic` for their world's track, on their first visit, and keep it on the scene instance
+    across stops, as HubScene does now (R20). The stage (`sceneMusicStage`) takes the track. Its
+    "kept for the next visit" check asks whether that world's scene runs or is loading again
+    (R13), so each track is freed by its own world. FieldScene is unchanged and plays nothing.
+    **[charter default T7]** Reason: the two fades of a switch (W4) run side by side with no
+    state shared between worlds.
+
+**B. The tower track in the run**
+
+W3. **Every floor plays the same track, uninterrupted.** The tower track plays from the run's
+    entry until the run is left. A climb to another floor neither restarts it, nor dips it, nor
+    stops it: the floor is rebuilt inside the running scene (Facts), and nothing in the floor
+    change touches the music. **[charter default T1]** Reason: the owner asked for every floor,
+    and one track is the smallest v1.
+W4. **Into the run and back.** Leaving the town for the run fades the village track out over
+    `MUSIC_FADE_OUT_MS` (R3, unchanged), and entering the run fades the tower track in over
+    `MUSIC_FADE_IN_MS` from the moment it can be heard (R2, R10, now for the run). Leaving the run
+    for the town does the reverse. The next world loads between the two fades, so the fade-in
+    starts at that world's create. That is usually after the other track has fallen silent, and
+    on a fast load the two overlap. Never two copies of one track (R4). **[charter default T2]**
+    Reason: R2's and R3's fades, reused.
+W5. **One shared level, a trim per track.** The music's target is the level's gain (C9) times the
+    track's trim: `musicGain(level) × trim`. The village's trim and the tower's are named
+    tunables, both 1.0. The Music level, its storage, its 0.3 cap and its ramps are shared and
+    unchanged. **[charter default T4]** Reason: one setting for the player, and one constant per
+    file to balance loudness.
+W6. **The run's Options panel drives the run's music.** In the run, the Music row's level control
+    is the run's `WorldMusic`, so C10–C12 apply there as they do in the town: a change ramps at
+    once, 0 fades out, and a change from 0 fades in. C14 now holds only for the field, which keeps
+    `storedMusicLevel`. The panel and its UI are unchanged. Derived from T4 and T7: without it, a
+    change in the run would only take effect at the next entry.
+W7. **It plays until the run is left.** Being dead, spectating, the run's end and an open
+    settlement record do not stop or dip it. Only BarrowspireScene's end does (R3's fade-out):
+    the hub's `world_entered` applied, once the record lets it in, a field, the roster, or a
+    restart. **[charter default T3]** Reason: the run is still the world on screen.
+
+**C. Format, loading and the loop**
+
+W8. **m4a first, ogg second.** The tower track loads as `["/audio/music/tower.m4a",
+    "/audio/music/tower.ogg"]`. `tower.ogg` is the owner's file. `tower.m4a` is made from it with
+    `afconvert -f m4af -d aac -b 96000 -q 127 tower.ogg tower.m4a`. Both are committed. The village
+    track stays `village.mp3` alone (R6). **[charter default T5]** Reason: as the effects
+    (FS-WDM0X S21). Safari's Ogg decode is unreliable, and Phaser never falls back on a decode
+    failure.
+W9. **Loaded by the run, freed after it.** BarrowspireScene's `preload()` queues the tower track
+    beside its art, so the run's torch bar counts it, and skips it while the key is still cached.
+    PreloadScene does not load it. Once the run's fade-out has ended and BarrowspireScene is
+    neither running nor loading, the sound is destroyed and the key removed from the audio cache
+    (R13). A stop during the run's preload reaches the music through the run's existing scene-end
+    listener. A failed load costs only the music (R14). **[charter default T6]** Reason:
+    scene-scoped, as R12 and R13 are.
+W10. **A seamless loop.** The tower track loops with Phaser's `loop: true`, as R7, and v1 adds no
+    marker. **[charter default T8]** Reason: a marker (Edge States: Loop point) is the fix only
+    if the owner hears a seam.
+
+**D. Wiring**
+
+W11. **The scenes only say entered, left, and pass the music.** BarrowspireScene changes only its
+    music wiring: `preload` (queue), `create` (enter), `resetRun` (leave), and `openOptions` (the
+    level control, W6). HubScene changes only what the module's new names require. No fade,
+    ramp or sound logic in either scene. **[Bounds]**
+
+### Acceptance Criteria
+
+**The module**
+
+- [ ] `game-client/src/audio/worldMusic.ts` exports `WorldMusic` and the village and tower
+      tracks. `hubMusic.ts` and `HubMusic` are gone, and nothing imports them. Asked for its
+      world's track, the module gives the village track for the hub, the tower track for the run,
+      and none for a field.
+- [ ] The tower track is keyed apart from the village's, with URLs `["/audio/music/tower.m4a",
+      "/audio/music/tower.ogg"]`. The village's URLs are `["/audio/music/village.mp3"]`. Both
+      trims are 1.0 and are named.
+- [ ] With a trim t, entering at level n fades in to `musicGain(n) × t`, and a level change ramps
+      to the new gain × t. Tested with a fake sound and a fake clock. Every test from
+      `hubMusic.test.ts` still passes against `WorldMusic`.
+- [ ] `sceneMusicStage(scene, track)` adds, finds and frees the given track's key. Its
+      kept-for-the-next-visit check reads the given scene's status.
+
+**The run**
+
+- [ ] BarrowspireScene's `preload()` queues the tower track's key with its two URLs, beside the
+      creatures and the boss, and queues nothing when the key is cached.
+- [ ] The run's create makes the run's music once and enters it. A second visit enters the same
+      instance.
+- [ ] The run's scene end (`resetRun`) leaves the music: `"shutdown"` fades it out on the game's
+      step past the stop, and `"destroy"` asks the sound and the sound manager nothing.
+- [ ] A climb (`leaveFloor`) neither stops nor restarts the sound, and changes nothing in its fade.
+- [ ] `endRun()` (the run's end) and a death leave the music playing at its level.
+- [ ] The run's Options panel gets the run's music as its level control. A change there writes the
+      setting and ramps the playing music. The field still gets `storedMusicLevel`.
+
+**The town**
+
+- [ ] HubScene's `preload()` queues the village track under its key with `["/audio/music/village.mp3"]`,
+      and its music behaves as before (the existing HubScene music tests pass on the new names).
+
+**Housekeeping**
+
+- [ ] `game-client/public/audio/music/tower.ogg` (the owner's) and `tower.m4a` (afconvert, as W8)
+      are committed.
+- [ ] FieldScene, PreloadScene, `gameAudio.ts`, the game config, the OPTIONS panel's UI, and every
+      server, proto and gateway file are unchanged.
+- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .`, `npm run lint` and
+      `npm run lint:fence` pass.
+- [ ] The owner's listening check passes (the HITL slice): entering the run, a climb, a death and
+      spectating, the settlement record, and back to the town.
+
+### Edge States
+
+- **Loudness.** The tower track is about 14 dB quieter than the village's (Facts). At trim 1.0 it
+  plays much softer than the town at the same level. The owner's listening check sets the tower's
+  trim, as a `Tunes FS-28DDG` of W5's named value. A trim above 1 / `MUSIC_MAX_GAIN` (3.33) can
+  push the gain past 1 at level 5, and Phaser does not clamp it.
+- **Reload straight into a run.** No gesture yet: the context is suspended and the tower stays
+  silent until the first click or key. The fade-in starts then (R10).
+- **Reconnect mid-run.** BarrowspireScene stops and starts in one go. The stop begins the fade-out
+  and the start's create takes the same sound back up (R4). The volume dips briefly. It never
+  restarts from 0 s and there are never two copies.
+- **Stopped during the run's preload.** The run never entered the music, so there is nothing to
+  fade. A load that completes later leaves the key cached for the next entry (R13's "Leaving while
+  still loading").
+- **Both tracks held at once.** For about a second around a switch, the falling track and the
+  rising one are both decoded in memory: about 39 MB (village) + 42 MB (tower). The falling one is
+  freed when its fade ends.
+- **A fast load.** If the run's assets are all cached, its create can come before the village has
+  fallen silent. The two fades then overlap briefly. Accepted (W4).
+- **Loop point.** If the owner hears a gap or click where the tower track wraps, the fix is R7's
+  marker (Edge States: Loop point above), sized to the file the browser picked. The m4a carries
+  2112 priming and 992 remainder frames; the ogg 128 and 352. It is written back as a `## Change:`.
+  v1 does not pre-build it.
+- **Firefox without AAC.** It takes the ogg (W8).
+- **Level 0 in the run.** Entering the run plays nothing, the track is still loaded, and leaving
+  frees it. → in the Options panel starts it with R2's fade-in (C12).
+- **Settlement record open, then Leave.** The tower plays on under the record. The hub's
+  `world_entered` applies when the record is closed or Leave is pressed, and the tower falls then.
+- **The field.** Still silent. Its Options panel only stores the level (C14).
+
+### Out of Scope
+
+- Music in a field, the main menu, the roster or character creation.
+- A track per floor, a boss track, or music that reacts to danger, a death or the run's end.
+- Overlapping the two fades on purpose, or timing one fade against the other's end.
+- Changing the files' own loudness (the trim does that), or retuning `MUSIC_MAX_GAIN`.
+- The loop marker, unless the listening check needs it.
+- The OPTIONS panel's UI, the ESC menus' rows, `gameAudio.ts`, the game config, PreloadScene.
+- Any server, proto or gateway change.
