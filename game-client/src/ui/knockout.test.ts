@@ -566,11 +566,11 @@ describe("Knockout (FS-S8Z2Y R4–R6: lit from above)", () => {
   );
 
   it("should lay it on the silhouette wherever it stands in the slot, not on the slot", () => {
-    const low: KnockoutPicture = { ...PICTURE, silhouette: [PICTURE.silhouette[0].map(([x, y]) => [x, y / 2 + 8] as const)] };
+    const low: KnockoutPicture = { ...PICTURE, silhouette: [PICTURE.silhouette[0].map(([x, y]) => [x, y + 4] as const)] };
     const env = stage();
     const knockout = new Knockout({ scene: env.scene, depth: 1000, picture: low, ink: BRONZE });
     knockout.show(SLOT, false);
-    expectLit(env.textures[0], BRONZE.idle.tint, 223 + 3, 223 + 13);
+    expectLit(env.textures[0], BRONZE.idle.tint, 223 - 6, 223 + 14);
     knockout.destroy();
   });
 

@@ -40,10 +40,14 @@ const HUD_DEPTH = 1000;
 const LINE_W = GLYPH_LINE_W;
 /** The greyed Mailbox's lines. */
 const GREYED_ALPHA = 0.6;
-/** The greyed Mailbox's knockout: the faint grey, never brightening under the pointer (FS-7TQN4 R9). */
+/**
+ * The greyed Mailbox's knockout: the faint grey, never brightening under the pointer (FS-7TQN4 R9),
+ * and flat, not lit from above, on the row's drop shadow (FS-S8Z2Y R6).
+ */
 const GREYED: KnockoutInk = {
   idle: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
   hover: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+  flat: true,
 };
 
 const labelOf = (spec: CornerIconSpec) =>

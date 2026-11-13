@@ -8,11 +8,15 @@
  * down; the tint gives it its colour, so hover never redraws it. A new render scale draws it again
  * (it watches the view itself). Where a scene cannot make that texture, it says so, once, and its
  * owner draws its line glyph instead. Drawn in code from palette tokens (ADR-0013).
+ *
+ * It stands embossed (FS-S8Z2Y; the owner, 2026-11-13: 「加上浮凸漸層」): its own texture is shown a
+ * second time under it as a drop shadow, and its tint is laid per corner so the bronze is lit from
+ * above. Neither draws anything more into the texture.
  */
 
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { mix, palette } from "@/utils/canvasPalette";
+import { mix, palette, shade } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
 import type { Rect } from "./hudCornerLayout";
 
@@ -58,10 +62,14 @@ export interface KnockoutPicture {
   holes?: readonly Circle[];
 }
 
-/** A knockout's tint and alpha, idle and under the pointer. */
+/**
+ * A knockout's tint and alpha, idle and under the pointer. It is lit from above unless `flat`: one
+ * tint over the whole silhouette (the greyed Mailbox, FS-S8Z2Y R6).
+ */
 export interface KnockoutInk {
   idle: { tint: number; alpha: number };
   hover: { tint: number; alpha: number };
+  flat?: boolean;
 }
 
 /** The row's bronze idle, lifted toward the bright amber under the pointer (FS-7TQN4 R10). */
@@ -72,6 +80,16 @@ export const BRONZE: KnockoutInk = {
 
 /** The cut lines' width, in logical px (FS-7TQN4 R2). */
 export const CUT_W = 1.6;
+/**
+ * The drop shadow (FS-S8Z2Y R1): the knockout's own texture in the charcoal ink, half seen, moved
+ * this far right and down in logical px, so the icon reads raised off the world.
+ */
+const SHADOW = { tint: palette.ink, alpha: 0.5, dx: 1, dy: 1 };
+/** How far the silhouette's top is lifted toward the bright amber, and its foot shaded (R4). */
+const LIFT = 0.25;
+const SHADE = 0.2;
+/** Phaser 4's `TintModes.FILL`: the tint replaces the texel's colour, its alpha kept. */
+const TINT_FILL = 1 as Phaser.TintModes;
 /** How much finer than the render scale its texture is drawn. */
 const SUPERSAMPLE = 2;
 
@@ -95,12 +113,17 @@ export interface KnockoutDeps {
  */
 export class Knockout {
   private image?: Phaser.GameObjects.RenderTexture;
+  private shadow?: Phaser.GameObjects.Image;
+  /** The silhouette's top and foot, in local px: where the gradient's two ends lie (R4). */
+  private readonly span: { top: number; foot: number };
   private builtAt = 0;
   private failed = false;
   private at?: { f: Rect; hovered: boolean };
   private readonly unwatch: () => void;
 
   constructor(private readonly deps: KnockoutDeps) {
+    const ys = deps.picture.silhouette.flatMap((shape) => shape.map(([, y]) => y));
+    this.span = { top: Math.min(...ys), foot: Math.max(...ys) };
     // the texture is drawn at the render scale, so a new one draws it again
     this.unwatch = viewport.onChange(() => {
       if (!this.image || !this.at || this.builtAt === viewport.renderScale) return;
@@ -123,9 +146,15 @@ export class Knockout {
       }
     }
     const ink = hovered ? this.deps.ink.hover : this.deps.ink.idle;
-    this.image!.setPosition(f.x + f.width / 2, f.y + f.height / 2)
-      .setTint(ink.tint)
-      .setAlpha(ink.alpha);
+    const [cx, cy] = [f.x + f.width / 2, f.y + f.height / 2];
+    const image = this.image!.setPosition(cx, cy).setAlpha(ink.alpha);
+    if (this.deps.ink.flat) image.setTint(ink.tint);
+    else {
+      const { top, foot } = topLit(ink.tint, this.span, f.height / 2);
+      image.setTint(top, top, foot, foot);
+    }
+    // the shadow never moves under the pointer (R3)
+    this.shadow!.setPosition(cx + SHADOW.dx, cy + SHADOW.dy);
     return true;
   }
 
@@ -136,14 +165,21 @@ export class Knockout {
   }
 
   private drop(): void {
+    this.shadow?.destroy();
+    this.shadow = undefined;
     this.image?.destroy();
     this.image = undefined;
   }
 
-  /** Whether the scene can make it: a test's stand-in scene cannot. */
+  /** Whether the scene can make it and its shadow: a test's stand-in scene cannot. */
   private possible(): boolean {
     const { scene } = this.deps;
-    return typeof scene.make?.graphics === "function" && typeof scene.add?.renderTexture === "function";
+    return (
+      typeof scene.make?.graphics === "function" &&
+      typeof scene.add?.renderTexture === "function" &&
+      typeof scene.add?.image === "function" &&
+      typeof scene.children?.moveBelow === "function"
+    );
   }
 
   private build(f: Rect, renderScale: number): void {
@@ -173,7 +209,18 @@ export class Knockout {
       const cuts = pen();
       eraseCuts(cuts, picture, k);
       image.draw(solid).erase(cuts).render();
+      // the drop shadow: the same texture shown again, so nothing is drawn twice (FS-S8Z2Y R1)
+      this.shadow = scene.add
+        .image(f.x + f.width / 2, f.y + f.height / 2, image.texture)
+        .setScrollFactor(0)
+        .setDepth(depth)
+        .setScale(1 / k)
+        .setTint(SHADOW.tint)
+        .setTintMode(TINT_FILL)
+        .setAlpha(SHADOW.alpha);
     } catch (err) {
+      this.shadow?.destroy();
+      this.shadow = undefined;
       image.destroy();
       throw err;
     } finally {
@@ -182,7 +229,28 @@ export class Knockout {
     this.image = image;
     this.builtAt = renderScale;
     this.deps.built?.(image);
+    // just under the image, wherever its owner has placed it (R2)
+    scene.children.moveBelow(this.shadow as Phaser.GameObjects.GameObject, image as Phaser.GameObjects.GameObject);
   }
+}
+
+/**
+ * The corner tints that light `base` from above (FS-S8Z2Y R4): lifted toward the bright amber at the
+ * silhouette's top, shaded at its foot, in a straight line between, carried out to the texture's
+ * top and foot `half` px from its middle, so the quad's own interpolation lays that line on the
+ * silhouette. Each channel is rounded and held to 0–255.
+ */
+function topLit(base: number, span: { top: number; foot: number }, half: number): { top: number; foot: number } {
+  const lit = mix(base, palette.interactableBright, LIFT);
+  const dark = shade(base, SHADE);
+  const at = (y: number) => {
+    const u = (y - span.top) / (span.foot - span.top);
+    return [16, 8, 0].reduce((c, bits) => {
+      const [a, b] = [(lit >> bits) & 0xff, (dark >> bits) & 0xff];
+      return c | (Math.max(0, Math.min(0xff, Math.round(a + u * (b - a)))) << bits);
+    }, 0);
+  };
+  return { top: at(-half), foot: at(half) };
 }
 
 /** Traces the line through `ps`, each point times `k`, as one path, closed when `closed`. */

@@ -1,6 +1,6 @@
 ---
 id: I-S8Z2Y-1
-status: open
+status: done
 implements: FS-S8Z2Y
 blocked_by: [I-7TQN4-1]
 labels: [ready-for-agent]
@@ -47,34 +47,89 @@ ink only), `HudCorner.test.ts`, `MailboxEnvelope.test.ts`, and the guideline's C
 
 ## Acceptance Criteria
 
-- [ ] One shadow per knockout build: `add.image` on its texture, depth 1000, scroll factor 0,
+- [x] One shadow per knockout build: `add.image` on its texture, depth 1000, scroll factor 0,
       scale `1 / k`, `palette.ink` in `FILL`, alpha 0.5, slot centre + (1, 1). Four for a town row,
       five for a field row, one for the town envelope; texture counts unchanged.
-- [ ] Each shadow directly under its image; in the town glow, shadow, envelope, badge, count after
+- [x] Each shadow directly under its image; in the town glow, shadow, envelope, badge, count after
       building, after a render-scale rebuild and after the count goes 0 → 3.
-- [ ] `relayout` moves the shadows, making none; render scale 1 → 2 makes new ones at `1 / 4` and
+- [x] `relayout` moves the shadows, making none; render scale 1 → 2 makes new ones at `1 / 4` and
       destroys the old; `destroy` destroys them and unwatches.
-- [ ] Hover and leave: no shadow moves or changes; nothing is made.
-- [ ] Live knockouts: corner tints top two equal, foot two equal; along the height,
+- [x] Hover and leave: no shadow moves or changes; nothing is made.
+- [x] Live knockouts: corner tints top two equal, foot two equal; along the height,
       `mix(tint, interactableBright, 0.25)` at the silhouette's top and `shade(tint, 0.2)` at its
       foot, within 1 per channel; bronze at 0.85 idle, lifted bronze at 1 hovered; the rucksack's
       included.
-- [ ] Greyed Mailbox: four corners `hudFaint`, alpha 0.6, hovered or not; its shadow present.
-- [ ] Into each texture: fill, erase, `render()` and nothing else.
-- [ ] Fallback (plain and throwing stand-ins): no image, no shadow, the line glyphs as at
+- [x] Greyed Mailbox: four corners `hudFaint`, alpha 0.6, hovered or not; its shadow present.
+- [x] Into each texture: fill, erase, `render()` and nothing else.
+- [x] Fallback (plain and throwing stand-ins): no image, no shadow, the line glyphs as at
       `73bcac1d`; `LetterPanel.test.ts` passes untouched.
-- [ ] No raw colour literal. `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p
+- [x] No raw colour literal. `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p
       .`, `npm run lint` and `npm run lint:fence` pass in `game-client`.
-- [ ] The guideline's Corner row paragraph reads as R10 and cites FS-S8Z2Y.
-- [ ] The plain and emboss shots exist, listed below. No harness file is committed.
+- [x] The guideline's Corner row paragraph reads as R10 and cites FS-S8Z2Y.
+- [x] The plain and emboss shots exist, listed below. No harness file is committed.
 
 ## Engraved cuts trial
 
-(Filled in by the slice: what was tried, at which render scales it read, and the shots.)
+Tried on 2026-11-13 as a throwaway change to the renderer, never committed: the silhouette filled
+a 0.8 grey instead of white, before the erase a dark stroke (0.5 grey) and a white stroke along
+each cut moved 0.6 px up and 0.6 px down, and the tint raised by 1/0.8 to match. At render scale 2
+the cuts read carved. At render scale 1 they **mush**: every cut reads wider and softer, the Party
+gap and the buckle lose their edge, the rucksack's ties blur; and the raised tint clips the bright
+channels, so the bronze drifts olive. Per charter G3 it is dropped (FS-S8Z2Y R7); the drop shadow
+seen through each cut's upper-left edge already gives the cuts a carved read.
+
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/crops/rs1-dark-x4-right-without-rims.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/crops/rs1-dark-x4-right-with-rims.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/crops/rs1-dark-x4-left-without-rims.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/crops/rs1-dark-x4-left-with-rims.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/crops/rs2-dark-x4-right-without-rims.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/crops/rs2-dark-x4-right-with-rims.png`
+- whole shots: `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/without-rims/` and `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/g3-trial/with-rims/`
 
 ## Screenshots
 
-(Filled in by the slice: absolute paths, each pair named `…-plain` and `…-emboss`.)
+Real WebGL Phaser 4.2.1 in headless Chrome, at backing resolution. `…-plain` is `73bcac1d`,
+`…-emboss` this slice. `-x4` is a 4× nearest-neighbour enlargement. Thirty-four pairs:
+
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-dark-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-dark-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-light-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-light-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-light-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1-light-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1.5-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1.5-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1.5-light-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs1.5-light-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs2-light-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/field-idle-rs2-light-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-glow-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-glow-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-character-rs1-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-character-rs1-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-character-rs1.5-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-character-rs1.5-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-character-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-character-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-mail-rs1-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-mail-rs1-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-mail-rs1.5-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-mail-rs1.5-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-mail-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-mail-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-menu-rs1-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-menu-rs1-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-menu-rs1.5-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-menu-rs1.5-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-menu-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-menu-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-party-rs1-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-party-rs1-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-party-rs1.5-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-party-rs1.5-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-party-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-hover-party-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-dark-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-dark-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-light-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-light-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-light-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1-light-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-dark-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-dark-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-light-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-light-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-light-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1.5-light-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1to2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs1to2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-dark-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-dark-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-dark-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-dark-x4-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-light-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-light-emboss.png`
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-light-x4-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/town-idle-rs2-light-x4-emboss.png`
+
+Close-up crops of the 4× shots (icons only), plain vs emboss:
+
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs1-dark-x4-left-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs1-dark-x4-left-emboss.png` (and `-right-`)
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs1-light-x4-left-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs1-light-x4-left-emboss.png` (and `-right-`)
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs1.5-dark-x4-left-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs1.5-dark-x4-left-emboss.png` (and `-right-`, and `-light-`)
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs2-dark-x4-left-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/town-rs2-dark-x4-left-emboss.png` (and `-right-`, and `-light-`)
+- `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/field-rs1-light-x4-mail-plain.png` vs `/private/tmp/claude-501/-Users-nick-projects-barrowspire/e7f028ee-e2d1-4894-9da7-e10f345b4846/scratchpad/emboss/crops/field-rs1-light-x4-mail-emboss.png` (the greyed Mailbox)
 
 ## Blocked By
 
