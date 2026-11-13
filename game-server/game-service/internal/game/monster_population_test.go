@@ -549,21 +549,13 @@ func TestPopulateMonsters_TopFloorHasExactlyOneChampion(t *testing.T) {
 	}
 }
 
-// Off the top floor the demon comes on its rare roll, at the configured rate on
-// floors 1 and 3; on the top floor, always a champion in its place.
-// FS-77AB6 §Requirements 24; FS-C8VM7 §D R26.
-func TestRollDemon_RateMatchesTheConfiguredChance(t *testing.T) {
-	const rolls = 40000
-
-	for _, floor := range []int{1, 3} {
-		rng := seededSpawns(uint64(100 + floor))
-		demons := 0
-		for range rolls {
-			if _, rolled := rollDemon(rng, tier1Pool(), 1, floor, false); rolled {
-				demons++
-			}
-		}
-		assert.InDelta(t, DemonChance, float64(demons)/rolls, 0.002, "floor %d", floor)
+// No floor below the top rolls Vorsk, whatever the draw; on the top floor a
+// champion always stands in its place. FS-3103M §A R2-R3; FS-C8VM7 §D R26.
+func TestRollDemon_NeverBelowTheTop(t *testing.T) {
+	for floor := 1; floor < MasterSpireHeight; floor++ {
+		// a source that always draws 0 would take any chance there is
+		_, rolled := rollDemon(&drawQueue{}, tier1Pool(), 1, floor, false)
+		assert.False(t, rolled, "floor %d", floor)
 	}
 
 	rng := seededSpawns(9)
@@ -573,6 +565,30 @@ func TestRollDemon_RateMatchesTheConfiguredChance(t *testing.T) {
 		assert.True(t, champion.Boss)
 		assert.True(t, champion.Champion)
 		assert.False(t, champion.Elite)
+	}
+}
+
+// Over many seeded populations of floors 1-9 that are not the top, dungeon
+// floors and floors of buildings alike, no demon is placed, even from a source
+// that always draws 0. FS-3103M §A R2.
+func TestPopulateMonsters_NoDemonBelowTheTop(t *testing.T) {
+	for floor := 1; floor < MasterSpireHeight; floor++ {
+		zero := rosterOnRun(t, uint64(floor), delverAt{level: 2, x: 100, y: 100})
+		zero.spawnRand = &drawQueue{}
+		zero.populateMonsters(floor, false, nil)
+		assert.Empty(t, bossesIn(zero)[components.MonsterArchetypeDemon], "floor %d, a zero source", floor)
+
+		for seed := uint64(1); seed <= 20; seed++ {
+			for _, fallback := range []bool{false, true} {
+				s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+				currentFloor(t, s).Count = MasterSpireHeight
+				if fallback {
+					failGeneration(s)
+				}
+				s.buildFloor(floor, nil)
+				assert.Empty(t, bossesIn(s)[components.MonsterArchetypeDemon], "floor %d seed %d fallback %v", floor, seed, fallback)
+			}
+		}
 	}
 }
 
@@ -771,27 +787,25 @@ func TestRollBloodDemon_RollsTheFloorsChance(t *testing.T) {
 	}
 }
 
-// The blood demon's roll is its own draw, after the green demon's: whichever
-// way the green one goes, the next draw alone decides the blood one.
+// The blood demon's roll is its own draw: below the top the demon's roll makes
+// none (FS-3103M §A R2), so the first draw alone decides the blood one.
 // FS-VHGE7 §A R6–8.
 func TestRollBloodDemon_IndependentOfTheGreenDemon(t *testing.T) {
 	tests := []struct {
-		name             string
-		green, blood     float64
-		wantGreen, wantB bool
+		name  string
+		blood float64
+		want  bool
 	}{
-		{"both", DemonChance / 2, 0.01, true, true},
-		{"green only", DemonChance / 2, 0.5, true, false},
-		{"blood only", 0.5, 0.01, false, true},
-		{"neither", 0.5, 0.5, false, false},
+		{"blood", 0.01, true},
+		{"none", 0.5, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rng := &drawQueue{floats: []float64{tt.green, tt.blood}}
+			rng := &drawQueue{floats: []float64{tt.blood}}
 			_, green := rollDemon(rng, tier1Pool(), 1, 1, false)
 			_, blood := rollBloodDemon(rng, 1, 1)
-			assert.Equal(t, tt.wantGreen, green)
-			assert.Equal(t, tt.wantB, blood)
+			assert.False(t, green)
+			assert.Equal(t, tt.want, blood)
 		})
 	}
 }
@@ -964,9 +978,9 @@ func TestBuildFloor_MasterSpireLowerFloorsKeepTheirRolls(t *testing.T) {
 }
 
 // The demon's roll names the top floor's boss, a champion below a Master
-// Spire's (from a tier-1 pool, its first member on these draws), and leaves
-// any other floor to its rare chance, a Master Spire's included.
-// FS-M8CSE §E R23-R25; FS-C8VM7 §D R26.
+// Spire's (from a tier-1 pool, its first member on these draws), and nothing
+// on any other floor, a Master Spire's included.
+// FS-M8CSE §E R23-R25; FS-C8VM7 §D R26; FS-3103M §A R2.
 func TestRollDemon_NamesTheFloorsBoss(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -980,8 +994,7 @@ func TestRollDemon_NamesTheFloorsBoss(t *testing.T) {
 		{"height 10's top", 10, true, nil, true, components.MonsterArchetypeDaagon, 4 + 9 + DaagonLevelBonus},
 		{"height 9's top", 9, true, nil, true, components.MonsterArchetypeGhoul, 4 + 8 + DemonLevelBonus},
 		{"height 3's top", 3, true, nil, true, components.MonsterArchetypeGhoul, 4 + 2 + DemonLevelBonus},
-		{"floor 9 of a Master Spire, on its chance", 9, false, []float64{0}, true, components.MonsterArchetypeDemon, 4 + 8 + DemonLevelBonus},
-		{"floor 9 of a Master Spire, off its chance", 9, false, []float64{DemonChance}, false, "", 0},
+		{"floor 9 of a Master Spire, never", 9, false, []float64{0}, false, "", 0},
 	}
 
 	for _, tt := range tests {
@@ -1054,4 +1067,26 @@ func TestBloodDemon_NeverInAFieldOrTheHub(t *testing.T) {
 			assert.NotEqual(t, components.MonsterArchetypeBloodDemon, monsterOf(m).Archetype, name)
 		}
 	}
+}
+
+// The Demon is Vorsk by name; its archetype stays `demon`, and a spawned one
+// reports the name on the wire. FS-3103M §A R1, R4.
+func TestDemon_IsNamedVorsk(t *testing.T) {
+	assert.Equal(t, "demon", string(components.MonsterArchetypeDemon))
+	assert.Equal(t, "Vorsk", monsterSheets[components.MonsterArchetypeDemon].Name)
+
+	s := rosterOnRun(t, 1, delverAt{level: 1, x: 100, y: 100})
+	vorsk := CreateMonsterEntity(s.EntityManager, MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 3, Boss: true, X: 900, Y: 700})
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
+	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
+	require.NoError(t, err)
+	state := stateSerializer.FormatStateToClientState(backendState, s.GetPlayerIDs()[0])
+	for _, m := range state.Monsters {
+		if m.EntityID == vorsk.ID {
+			assert.Equal(t, "Vorsk", m.Name)
+			assert.Equal(t, "demon", m.Archetype)
+			return
+		}
+	}
+	t.Fatal("Vorsk is not in the state")
 }

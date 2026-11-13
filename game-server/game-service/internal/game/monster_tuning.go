@@ -309,11 +309,9 @@ const (
 // from, as in "Scarred Boar", in place of the barrow ElitePrefixes.
 var FieldElitePrefixes = []string{"Old", "Scarred", "Great"}
 
-// The demon boss. FS-77AB6 §Requirements 21, 24.
+// The demon boss, Vorsk: no floor rolls it (FS-3103M §A R2). FS-77AB6
+// §Requirements 21, 24.
 const (
-	// chance of a demon on a floor that is not the top one; the top floor
-	// always has exactly one
-	DemonChance = 0.01
 	// demon level = party level + floor offset + bonus, with no spread
 	DemonLevelBonus = 2
 	// random positions sampled for the demon; it takes the valid one farthest
@@ -469,7 +467,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		AggroRadius: 220, LeashRadius: 480,
 	},
 	components.MonsterArchetypeDemon: {
-		Name: "Demon", HP: 1200, Damage: 28,
+		Name: "Vorsk", HP: 1200, Damage: 28,
 		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
