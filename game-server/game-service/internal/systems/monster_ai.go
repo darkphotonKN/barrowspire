@@ -22,8 +22,9 @@ inside its distances (FS-C8VM7 §B R12; monster_ability.go).
 
 It only sets a monster's velocity, facing and AI state. MovementSystem moves
 and collides it, exactly as it does a delver, and a strike is an attack intent
-the CombatSystem resolves later in the same tick. Runs in a run only, before
-movement.
+the CombatSystem resolves later in the same tick. The one exception is a
+Ravener's pounce: the leap moves the monster itself, colliding with nothing
+(pounce, monster_ability.go). Runs in a run only, before movement.
 
 On a dungeon floor it is given the floor's cell grid, and monsters chase,
 wander and walk home by A* paths over it (FS-KE075 §D, ADR-0062). With no grid
