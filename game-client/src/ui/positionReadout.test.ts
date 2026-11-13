@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { contrastRatio } from "@/render/lighting/lighting";
 import type { Rect } from "@/render/iso/projection";
-import { FULLSCREEN_CORNER } from "@/render/viewport/fullscreenButton";
 import { mix, palette } from "@/utils/canvasPalette";
 import { MINIMAP, MINIMAP_VIGNETTE, minimapPanel } from "./minimap";
 import { MINIMAP_NAME, minimapNameBox, minimapPlaceName } from "./minimapName";
@@ -111,7 +110,6 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
         minimap: corner.minimap,
         enlarged: minimap?.mode === "enlarged",
         name: nameBox,
-        button: corner.button,
         column: { right: corner.right, bottom: corner.below + 21 },
       },
     };
@@ -122,7 +120,7 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
     [1280, 1266],
   ])("should stand inside the normal map's bottom-right, 4 px in, right-aligned, at width %i (E8)", (width, right) => {
     const { corner, readout } = cornerOf(width, NORMAL);
-    const at = positionReadoutPlace(readout, viewOf(width));
+    const at = positionReadoutPlace(readout);
     expect(at).toEqual({ x: right, y: 114, origin: { x: 1, y: 1 } });
     expect(at.x).toBe(corner.minimap!.x + corner.minimap!.width - 4);
     expect(at.y).toBe(corner.minimap!.y + corner.minimap!.height - 4);
@@ -130,7 +128,7 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
 
   it.each([1080, 1280])("should keep its widest plate inside the normal map, clear of the map mode icon and the name, at width %i (E8)", (width) => {
     const { corner, nameBox, readout } = cornerOf(width, NORMAL);
-    const box = positionReadoutBox(positionReadoutPlace(readout, viewOf(width)), READOUT);
+    const box = positionReadoutBox(positionReadoutPlace(readout), READOUT);
     const map = corner.minimap!;
     expect(box.x).toBeGreaterThan(map.x);
     expect(box.y).toBeGreaterThan(map.y);
@@ -138,41 +136,43 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
     expect(overlaps(box, nameBox!)).toBe(false);
   });
 
-  it.each([1080, 1280])("should stand 6 px left of the name's plate with the map enlarged, centred on the button's height as the name is, at width %i (E11)", (width) => {
+  it.each([1080, 1280])("should stand 6 px left of the name's plate with the map enlarged, on the name's middle, at width %i (E11; FS-T3DWX G3)", (width) => {
     const { nameBox, readout } = cornerOf(width, ENLARGED, { width: 80, height: 17 });
-    const at = positionReadoutPlace(readout, viewOf(width));
-    expect(nameBox!.x + nameBox!.width).toBe(width === 1080 ? 714 : 914);
+    const at = positionReadoutPlace(readout);
+    expect(nameBox!.x + nameBox!.width).toBe(width === 1080 ? 740 : 940);
     expect(at).toEqual({ x: nameBox!.x - 6, y: 20, origin: { x: 1, y: 0.5 } });
-    expect(at.x).toBe(width === 1080 ? 714 - 80 - 6 : 914 - 80 - 6);
+    expect(at.x).toBe(width === 1080 ? 740 - 80 - 6 : 940 - 80 - 6);
   });
 
   it.each([
-    [1080, 720],
-    [1280, 920],
-  ])("should stand 6 px left of the button with the map enlarged where the floor has no name, at width %i (E11)", (width, buttonLeft) => {
+    [1080, 746],
+    [1280, 946],
+  ])("should stand 6 px left of the enlarged map where the floor has no name, at width %i (E11; FS-T3DWX G3)", (width, mapLeft) => {
     const { readout } = cornerOf(width, ENLARGED);
-    expect(positionReadoutPlace({ ...readout, name: null }, viewOf(width))).toEqual({ x: buttonLeft - 6, y: 20, origin: { x: 1, y: 0.5 } });
+    expect(positionReadoutPlace({ ...readout, name: null })).toEqual({ x: mapLeft - 6, y: 20, origin: { x: 1, y: 0.5 } });
   });
 
-  it.each([1080, 1280])("should keep the pair on the view, on one line, clear of each other, the button, the map and the icon, with the widest name and readout enlarged, at width %i (E11)", (width) => {
+  it.each([1080, 1280])("should keep the pair on the view, on one line, clear of each other, the map and the icon, with the widest name and readout enlarged, at width %i (E11)", (width) => {
     const { corner, nameBox, readout } = cornerOf(width, ENLARGED);
-    const box = positionReadoutBox(positionReadoutPlace(readout, viewOf(width)), READOUT);
-    const button = { x: width - corner.button.right - 20, y: corner.button.top, width: 20, height: 20 };
+    const box = positionReadoutBox(positionReadoutPlace(readout), READOUT);
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBe(nameBox!.x - 6);
     expect(Math.abs(box.y + box.height / 2 - (nameBox!.y + nameBox!.height / 2))).toBeLessThanOrEqual(1);
-    for (const other of [nameBox!, button, corner.minimap!, corner.modeIcon!.hit]) expect(overlaps(box, other)).toBe(false);
+    for (const other of [nameBox!, corner.minimap!, corner.modeIcon!.hit]) expect(overlaps(box, other)).toBe(false);
   });
 
-  it.each([OVERLAY, null])("should stand 4 px under the column's last line, right-aligned on the column's x, in the overlay and with no map (§C.18; E8): %o", (minimap) => {
+  it.each([
+    [OVERLAY, 31],
+    [null, 10],
+  ])("should stand 4 px under the column's last line, right-aligned on the column's x, in the overlay and with no map (§C.18; E8; FS-T3DWX G4, G5): %o", (minimap, top) => {
     for (const width of [1080, 1280]) {
       const { readout } = cornerOf(width, minimap);
-      expect(positionReadoutPlace(readout, viewOf(width))).toEqual({ x: width - 10, y: 44 + 21 + 4, origin: { x: 1, y: 0 } });
+      expect(positionReadoutPlace(readout)).toEqual({ x: width - 10, y: top + 21 + 4, origin: { x: 1, y: 0 } });
     }
   });
 
   it("should stand on whole logical px", () => {
-    const at = positionReadoutPlace({ minimap: null, enlarged: false, name: null, button: FULLSCREEN_CORNER, column: { right: 1069.6, bottom: 91.6 } }, viewOf(1080));
+    const at = positionReadoutPlace({ minimap: null, enlarged: false, name: null, column: { right: 1069.6, bottom: 91.6 } });
     expect([at.x, at.y]).toEqual([1070, 96]);
   });
 

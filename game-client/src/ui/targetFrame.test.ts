@@ -529,8 +529,8 @@ describe("the blood demon's frame (FS-VHGE7 §C R28)", () => {
 describe("the frame's layout at 1080 and 1280 (FS-48CTQ §E.14)", () => {
   /**
    * What the frame must clear, from FS-48CTQ "Facts" and §E.14: the notices from y ≈ 78, and the
-   * fullscreen button, the top-right column and the minimap from x ≥ 854 at the 1080 minimum,
-   * that is 226 px in from the right edge at any width (all right-anchored, TOP_RIGHT_HUD).
+   * top-right column and the minimap from x ≥ 854 at the 1080 minimum,
+   * that is 226 px in from the right edge at any width (all right-anchored on TOP_RIGHT_EDGE).
    */
   const NOTICE_TOP = 78;
   const RIGHT_COLUMN_INSET = 1080 - 854;

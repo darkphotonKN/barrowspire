@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { contrastRatio } from "@/render/lighting/lighting";
-import { FULLSCREEN_BUTTON, FULLSCREEN_CORNER } from "@/render/viewport/fullscreenButton";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { MINIMAP, minimapPanel } from "./minimap";
 import { MINIMAP_MODE_HINT } from "./minimapModeIcon";
@@ -128,39 +127,35 @@ describe("the map name's place (FS-56CKV §Change: Map name, E3–E6)", () => {
   });
 
   it.each([
-    [1080, 714],
-    [1280, 914],
-  ])("should stand left of the fullscreen button with the map enlarged, 6 px off, centred on its height, at width %i (E4)", (width, right) => {
+    [1080, 740],
+    [1280, 940],
+  ])("should stand 6 px left of the enlarged map, its middle 10 px under the map's top, at width %i (E4; FS-T3DWX G3)", (width, right) => {
     const corner = topRightCorner(viewOf(width), ENLARGED);
     expect(corner.name).toEqual({ right, y: 20, align: "middle" });
-    const buttonLeft = width - corner.button.right - FULLSCREEN_BUTTON.height;
-    expect(corner.name!.right).toBe(buttonLeft - 6);
-    expect(corner.name!.y).toBe(corner.button.top + FULLSCREEN_BUTTON.height / 2);
+    expect(corner.name!.right).toBe(corner.minimap!.x - 6);
+    expect(corner.name!.y).toBe(corner.minimap!.y + 10);
   });
 
-  it.each([1080, 1280])("should keep its widest plate outside the enlarged map, on the view, clear of the button and the icon, at width %i (E4)", (width) => {
+  it.each([1080, 1280])("should keep its widest plate outside the enlarged map, on the view, clear of the icon, at width %i (E4)", (width) => {
     const corner = topRightCorner(viewOf(width), ENLARGED);
     const box = minimapNameBox(corner.name!, plateOf(WIDEST));
-    const button = { x: width - corner.button.right - FULLSCREEN_BUTTON.height, y: corner.button.top, width: 20, height: 20 };
     expect(box.x).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThan(corner.minimap!.x);
-    expect(overlaps(box, button)).toBe(false);
     expect(overlaps(box, corner.modeIcon!.hit)).toBe(false);
   });
 
   it.each([
-    [1080, 1033],
-    [1280, 1233],
-  ])("should stand left of the map mode icon in the overlay, 6 px off, centred on the button's height, at width %i (E5)", (width, right) => {
+    [1080, 1055],
+    [1280, 1255],
+  ])("should stand left of the map mode icon in the overlay's corner, 6 px off, centred on it, at width %i (E5; FS-T3DWX G4)", (width, right) => {
     const corner = topRightCorner(viewOf(width), OVERLAY);
-    expect(corner.button).toEqual(FULLSCREEN_CORNER);
-    expect(corner.name).toEqual({ right, y: 16, align: "middle" });
+    expect(corner.name).toEqual({ right, y: 14.5, align: "middle" });
     expect(corner.name!.right).toBe(corner.modeIcon!.box.x - 6);
+    expect(corner.name!.y).toBe(corner.modeIcon!.box.y + 9 / 2);
     const box = minimapNameBox(corner.name!, plateOf(WIDEST));
-    const button = { x: width - 26, y: 6, width: 20, height: 20 };
-    expect(overlaps(box, button)).toBe(false);
     expect(overlaps(box, corner.modeIcon!.hit)).toBe(false);
-    // above the column's first line, which starts at y 44 under the button
+    // on the view, and above the column's first line, which starts at y 31 under the row
+    expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.y + box.height).toBeLessThanOrEqual(corner.below);
   });
 
@@ -204,7 +199,7 @@ describe("MinimapName (FS-56CKV §Change: Map name, E3–E7)", () => {
     expect(texts[0].resolution).toBeGreaterThan(0);
   });
 
-  // E7: beside the enlarged map's button the plate meets the top centre's frames at 1080
+  // E7: beside the enlarged map the plate meets the top centre's frames at 1080
   it("should give way to a target frame its plate meets, and show again when the frame goes (E7)", () => {
     const { stage, texts } = fakeStage();
     const name = new MinimapName(stage, "The First Floor");

@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { FULLSCREEN_BUTTON, anchorAt, viewport } from "@/render/viewport";
-import { FullscreenButtonPlace } from "@/render/viewport/fullscreenButton";
+import { anchorAt, viewport } from "@/render/viewport";
 import { MINIMAP, minimapPanel, type MinimapStage } from "./minimap";
 import { MINIMAP_MODE_KEY } from "./minimapMode";
-import { TOP_RIGHT_HUD } from "./topRightColumn";
+import { TOP_RIGHT_EDGE } from "./topRightColumn";
 import type { ModeIconStage } from "./minimapModeIcon";
 import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "./worldMinimapController";
 
@@ -71,13 +70,9 @@ const TOWN = { width: 2000, height: 1000 };
 function controller(held: string | null = null) {
   const { stage, layers } = fakeStage();
   const { store, reach } = modeStore(held);
-  const button = new FullscreenButtonPlace();
-  const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, button });
-  return { minimap, layers, store, button };
+  const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach });
+  return { minimap, layers, store };
 }
-
-/** The button in the canvas's corner (FS-ZAJMH R18). */
-const CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
 
 beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 afterEach(() => {
@@ -90,7 +85,7 @@ describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
   it("should build the map in the mode this browser kept, at the column's top (§F.32, §G.35; FS-56CKV §Change C3)", () => {
     const { minimap, layers } = controller("enlarged");
     expect(minimap.map.mode).toBe("enlarged");
-    const corner = anchorAt(TOP_RIGHT_HUD);
+    const corner = anchorAt(TOP_RIGHT_EDGE);
     for (const l of layers) expect([l.x, l.y]).toEqual([corner.x - minimapPanel("enlarged").width, 10]);
   });
 
@@ -124,40 +119,18 @@ describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
     for (const l of layers) expect([l.x, l.y]).toEqual([1270 - MINIMAP.width, 10]);
   });
 
-  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1–C4, C6 (owner 2026-11-12:
-  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角")
+  // FS-T3DWX §Change: The top-right HUD fills the button's spot, G1–G3: the map in the very corner,
+  // in either size, and no place handed to a button
   it.each([1080, 1280])(
-    "should stand the normal map at the very top, y 10, and hand the button the place at its left, at logical width %i (§Change C1, C2)",
+    "should stand the normal and the enlarged map in the very corner, y 10, at logical width %i (G2, G3)",
     (width) => {
       viewport.set({ width, height: 720, renderScale: 1 });
-      const { layers, button } = controller();
+      const { minimap, layers } = controller();
       for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - MINIMAP.width, 10]);
-      // the button's right edge 6 px left of the map's left, its top on the map's top
-      expect(button.current).toEqual({ top: 10, right: 10 + MINIMAP.width + MINIMAP.gap });
+      minimap.cycle();
+      for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - 324, 10]);
     },
   );
-
-  // §Change C3 as amended 2026-11-12 (owner: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側")
-  it.each([1080, 1280])("should hand the button the enlarged map's left on M, the corner for the overlay, and the normal map's left again back at normal, at width %i (§Change C2–C4)", (width) => {
-    viewport.set({ width, height: 720, renderScale: 1 });
-    const { minimap, layers, button } = controller();
-    minimap.cycle();
-    for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - 324, 10]);
-    expect(button.current).toEqual({ top: 10, right: 10 + 324 + MINIMAP.gap });
-    minimap.cycle();
-    expect(button.current).toEqual(CORNER);
-    minimap.cycle();
-    expect(button.current).toEqual({ top: 10, right: 232 });
-  });
-
-  it("should hand the button the corner while built in the overlay, and take its place back when it goes (§Change C4, C6)", () => {
-    const { minimap, button } = controller("overlay");
-    expect(button.current).toEqual(CORNER);
-    minimap.cycle();
-    expect(button.current).toEqual({ top: 10, right: 232 });
-    minimap.destroy();
-    expect(button.current).toEqual(CORNER);
-  });
 
   it("should dot the party from the state, and follow the overlay on the self's and the members' drawn figures (§E.29, §F.31)", () => {
     const { minimap } = controller("overlay");
@@ -215,7 +188,6 @@ describe("WorldMinimapController's step, heard (FS-WDM0X S7)", () => {
       stage,
       world: TOWN,
       store: reach,
-      button: new FullscreenButtonPlace(),
       icon: { stage: icon.stage, blocked: () => owned.now },
       stepped,
     });
@@ -308,8 +280,7 @@ describe("WorldMinimapController's map mode icon (FS-56CKV §Change: Map mode ic
     const { stage, layers } = fakeStage();
     const icon = iconStage();
     const { store, reach } = modeStore(held);
-    const button = new FullscreenButtonPlace();
-    const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, button, icon: { stage: icon.stage, blocked: () => owned.now } });
+    const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, icon: { stage: icon.stage, blocked: () => owned.now } });
     return { minimap, layers, store, owned, icon };
   }
 
@@ -325,9 +296,9 @@ describe("WorldMinimapController's map mode icon (FS-56CKV §Change: Map mode ic
     [1280, null, { x: 1058, y: 105 }],
     [1080, "enlarged", { x: 750, y: 159 }],
     [1280, "enlarged", { x: 950, y: 159 }],
-    [1080, "overlay", { x: 1039, y: 12 }],
-    [1280, "overlay", { x: 1239, y: 12 }],
-  ])("should stand the icon at width %i, kept mode %s: the map's bottom-left, or beside the button in the overlay (D2, D3)", (width, held, at) => {
+    [1080, "overlay", { x: 1061, y: 10 }],
+    [1280, "overlay", { x: 1261, y: 10 }],
+  ])("should stand the icon at width %i, kept mode %s: the map's bottom-left, or the very corner in the overlay (D2, D3; FS-T3DWX G4)", (width, held, at) => {
     viewport.set({ width, height: 720, renderScale: 1 });
     const { minimap } = withIcon(held);
     expect(minimap.modeIcon?.shownAt?.box).toEqual({ ...at, width: 9, height: 9 });
@@ -389,7 +360,7 @@ describe("bindMinimapPointer (FS-56CKV §Change: Map mode icon, D5–D7)", () =>
     const { stage } = fakeStage();
     const icon = iconStage();
     const { store, reach } = modeStore();
-    const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, button: new FullscreenButtonPlace(), icon: { stage: icon.stage, blocked: () => false } });
+    const minimap = new WorldMinimapController({ stage, world: TOWN, store: reach, icon: { stage: icon.stage, blocked: () => false } });
     bindMinimapPointer(input, () => built, (x, y) => covered.now && x > 0 && y > 0);
     return { on, minimap, store, covered, build: () => void (built = minimap) };
   }
@@ -442,7 +413,6 @@ describe("WorldMinimapController's map name (FS-56CKV §Change: Map name)", () =
       stage,
       world: TOWN,
       store: reach,
-      button: new FullscreenButtonPlace(),
       icon: { stage: icon.stage, blocked: () => false },
       name: "Gentle Meadows",
     });
@@ -459,11 +429,11 @@ describe("WorldMinimapController's map name (FS-56CKV §Change: Map name)", () =
   it.each([
     [1080, null, { x: 1066 - 74, y: 14 }],
     [1280, null, { x: 1266 - 74, y: 14 }],
-    [1080, "enlarged", { x: 714 - 74, y: 13 }],
-    [1280, "enlarged", { x: 914 - 74, y: 13 }],
-    [1080, "overlay", { x: 1033 - 74, y: 9 }],
-    [1280, "overlay", { x: 1233 - 74, y: 9 }],
-  ])("should stand it at width %i, kept mode %s: inside the map's top-right, left of the button enlarged, left of the icon in the overlay (E3–E5)", (width, held, at) => {
+    [1080, "enlarged", { x: 740 - 74, y: 13 }],
+    [1280, "enlarged", { x: 940 - 74, y: 13 }],
+    [1080, "overlay", { x: 1055 - 74, y: 7 }],
+    [1280, "overlay", { x: 1255 - 74, y: 7 }],
+  ])("should stand it at width %i, kept mode %s: inside the map's top-right, left of the map enlarged, left of the icon in the overlay (E3–E5; FS-T3DWX G3, G4)", (width, held, at) => {
     viewport.set({ width, height: 720, renderScale: 1 });
     // the stand-in text is 74 × 15
     const { text } = withName(held);
@@ -473,9 +443,9 @@ describe("WorldMinimapController's map name (FS-56CKV §Change: Map name)", () =
   it("should move it with the mode on M (E3–E5)", () => {
     const { minimap, text } = withName();
     minimap.cycle();
-    expect(text()).toMatchObject({ x: 714 - 74, y: 13 });
+    expect(text()).toMatchObject({ x: 740 - 74, y: 13 });
     minimap.cycle();
-    expect(text()).toMatchObject({ x: 1033 - 74, y: 9 });
+    expect(text()).toMatchObject({ x: 1055 - 74, y: 7 });
   });
 
   it("should give way where its plate meets what the scene hands it, and show again once that goes (E7)", () => {
@@ -494,7 +464,7 @@ describe("WorldMinimapController's map name (FS-56CKV §Change: Map name)", () =
 
   it("should build no name without words or without an icon stage", () => {
     const icon = iconStage();
-    const parts = { stage: fakeStage().stage, world: TOWN, store: modeStore().reach, button: new FullscreenButtonPlace() };
+    const parts = { stage: fakeStage().stage, world: TOWN, store: modeStore().reach };
     expect(new WorldMinimapController({ ...parts, icon: { stage: icon.stage, blocked: () => false } }).mapName).toBeUndefined();
     expect(new WorldMinimapController({ ...parts, name: "Gentle Meadows" }).mapName).toBeUndefined();
   });
