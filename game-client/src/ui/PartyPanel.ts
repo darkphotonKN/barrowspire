@@ -127,8 +127,9 @@ const within = (r: Rect, x: number, y: number) =>
  *
  * The whole outlined button answers a press, not only its words: the label carries a hit area the
  * size of the button. Phaser tests a press in the label's local frame with its display origin added
- * back (InputManager.pointWithinHitArea, 4.2.1), so the button's rect is placed from the label's
- * top-left there.
+ * back (InputManager.pointWithinHitArea, 4.2.1). The label stands at the button's centre, so there
+ * the button spans its display origin ± half the button; that is read when a press lands, so a
+ * label whose words change keeps the whole button.
  */
 export function drawHudButton(
   scene: Phaser.Scene,
@@ -152,16 +153,26 @@ export function drawHudButton(
     .setDepth(depth)
     .setOrigin(0.5, 0.5);
   if (!enabled) return t.setAlpha(GREYED_ALPHA);
-  const hitArea: Rect = {
-    x: r.x - (t.x - t.displayOriginX),
-    y: r.y - (t.y - t.displayOriginY),
-    width: r.width,
-    height: r.height,
-  };
+  const hitArea = { width: r.width, height: r.height };
   return t
     .setInteractive({
       hitArea,
-      hitAreaCallback: (area: Rect, x: number, y: number) => within(area, x, y),
+      hitAreaCallback: (
+        area: typeof hitArea,
+        x: number,
+        y: number,
+        label: Phaser.GameObjects.Text,
+      ) =>
+        within(
+          {
+            x: label.displayOriginX - area.width / 2,
+            y: label.displayOriginY - area.height / 2,
+            width: area.width,
+            height: area.height,
+          },
+          x,
+          y,
+        ),
       useHandCursor: true,
     })
     .on("pointerdown", press);
