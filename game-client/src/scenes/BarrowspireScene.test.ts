@@ -4627,7 +4627,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       s.arrows.right.justDown = true;
       offer();
       music.step(MUSIC_LEVEL_RAMP_MS);
-      expect(music.sound.volumes.at(-1)).toBeCloseTo(musicGain(4) * TOWER_TRACK.trim, 12);
+      expect(music.sound.volumes.at(-1)).toBeCloseTo(0.8, 12);
       expect(s.kept.get(MUSIC_KEY)).toBe("4");
 
       s.find("options-music-step-1")!.handlers.pointerup();
@@ -9971,7 +9971,6 @@ describe("BarrowspireScene arrival card (FS-PQ2TW §A–§C; I-PQ2TW-3)", () => 
 });
 
 const { TOWER_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
-const { MUSIC_DEFAULT_LEVEL, musicGain } = await import("@/audio/musicSetting");
 
 /**
  * The run's game as its music reaches it (FS-28DDG § Change: The tower's music on every floor of a
@@ -10025,8 +10024,8 @@ interface Musical {
 // death, the run's end and the record, and let go at the run's end (FS-28DDG § Change: The tower's
 // music on every floor of a run, W2–W4, W7, W9).
 describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's music on every floor of a run)", () => {
-  /** The default level's gain at the tower's trim: what the run plays at with no setting kept. */
-  const FULL = musicGain(MUSIC_DEFAULT_LEVEL) * TOWER_TRACK.trim;
+  /** The default level's gain under the tower's own ceiling of 1.0: what the run plays at with no setting kept (Tunes FS-28DDG). */
+  const FULL = 0.6;
 
   afterEach(() => {
     vi.restoreAllMocks();

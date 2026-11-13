@@ -10,7 +10,7 @@ import {
   TOWER_TRACK,
   VILLAGE_TRACK,
 } from "./worldMusic";
-import { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } from "./musicSetting";
+import { MUSIC_DEFAULT_LEVEL, MUSIC_MAX_GAIN, MUSIC_SETTING_KEY, musicGain } from "./musicSetting";
 
 /** The village track's key, which most of these tests play (FS-28DDG; § Change W1). */
 const MUSIC_KEY = VILLAGE_TRACK.key;
@@ -777,7 +777,7 @@ describe("WorldMusic.setLevel, from the Options panel's Music row (FS-28DDG § C
   });
 });
 
-describe("worldMusic tracks, one per world (FS-28DDG § Change: The tower's music on every floor of a run, W1, W5, W8)", () => {
+describe("worldMusic tracks, one per world (FS-28DDG § Change: The tower's music on every floor of a run, W1, W5, W8; Tunes FS-28DDG)", () => {
   it("should play the village track in the hub, the tower track in the run, and nothing in a field", () => {
     expect(worldTrack("hub")).toBe(VILLAGE_TRACK);
     expect(worldTrack("run")).toBe(TOWER_TRACK);
@@ -790,37 +790,68 @@ describe("worldMusic tracks, one per world (FS-28DDG § Change: The tower's musi
     expect(TOWER_TRACK.key).not.toBe(VILLAGE_TRACK.key);
   });
 
-  it("should give both tracks a named trim of 1.0", () => {
-    expect(VILLAGE_TRACK.trim).toBe(1);
-    expect(TOWER_TRACK.trim).toBe(1);
+  it("should top the tower at the file's full loudness and keep the village at the shared 0.3 (Tunes FS-28DDG, I-28DDG-8)", () => {
+    expect(TOWER_TRACK.maxGain).toBe(1);
+    expect(VILLAGE_TRACK.maxGain).toBe(MUSIC_MAX_GAIN);
+    expect(VILLAGE_TRACK.maxGain).toBe(0.3);
   });
 });
 
-describe("WorldMusic with a track's trim (FS-28DDG § Change: The tower's music on every floor of a run, W5)", () => {
-  it("should fade in to the level's gain times the trim", () => {
+describe("WorldMusic with a track's own ceiling (FS-28DDG § Change: The tower's music on every floor of a run, W5; Tunes FS-28DDG)", () => {
+  it.each([
+    { level: 1, gain: 0.2 },
+    { level: 2, gain: 0.4 },
+    { level: 3, gain: 0.6 },
+    { level: 4, gain: 0.8 },
+    { level: 5, gain: 1 },
+  ])("should fade the tower in to $gain at level $level", ({ level, gain }) => {
     const stage = fakeStage();
-    const music = new WorldMusic(stage, ON, 2);
+    const music = new WorldMusic(stage, () => settingStore(String(level)), TOWER_TRACK.maxGain);
 
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
-    expect(close(stage.sounds[0].volume, FULL * 2)).toBe(true);
+    expect(stage.sounds[0].volume).toBeCloseTo(gain, 12);
   });
 
-  it("should ramp a level change to the new level's gain times the trim", () => {
+  it("should fade the tower in to 0.6 at the default level", () => {
+    const stage = fakeStage();
+    const music = new WorldMusic(stage, ON, TOWER_TRACK.maxGain);
+
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS);
+
+    expect(stage.sounds[0].volume).toBeCloseTo(0.6, 12);
+  });
+
+  it("should ramp a tower level change to the new level's gain under its ceiling: 5 is 1.0", () => {
     const stage = fakeStage();
     const store = settingStore(null);
-    const music = new WorldMusic(stage, () => store, 0.5);
+    const music = new WorldMusic(stage, () => store, TOWER_TRACK.maxGain);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
     music.setLevel(5);
     stage.advance(MUSIC_LEVEL_RAMP_MS);
 
-    expect(close(stage.sounds[0].volume, musicGain(5) * 0.5)).toBe(true);
+    expect(stage.sounds[0].volume).toBeCloseTo(1, 12);
   });
 
-  it("should play at the level's gain alone without a trim", () => {
+  it("should leave the village where it was: 0.18 at the default level, 0.3 at level 5", () => {
+    const stage = fakeStage();
+    const store = settingStore(null);
+    const music = new WorldMusic(stage, () => store, VILLAGE_TRACK.maxGain);
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS);
+    expect(stage.sounds[0].volume).toBeCloseTo(0.18, 12);
+
+    music.setLevel(5);
+    stage.advance(MUSIC_LEVEL_RAMP_MS);
+
+    expect(stage.sounds[0].volume).toBeCloseTo(0.3, 12);
+  });
+
+  it("should play under the shared cap without a ceiling of its own", () => {
     const stage = fakeStage();
     const music = new WorldMusic(stage, ON);
 
