@@ -89,8 +89,7 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
 		}
-		// FS-BDRTJ R25: the endgame test run has no Blood Demon
-		if isMasterSpireTop(floor, topFloor) || s.endgame != nil {
+		if s.barsBloodDemon(floor, topFloor) {
 			return
 		}
 		// FS-VHGE7 §A R8, R10: after the demon, never in its room
@@ -123,8 +122,7 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 		s.placeDemon(&area, demon, floor, topFloor)
 	}
-	// FS-BDRTJ R25: the endgame test run has no Blood Demon
-	if isMasterSpireTop(floor, topFloor) || s.endgame != nil {
+	if s.barsBloodDemon(floor, topFloor) {
 		return
 	}
 	// FS-VHGE7 §A R8–9: after the demon, so its draws come first; never
@@ -186,6 +184,13 @@ func rollDemon(rng populationRand, pool floorPool, partyLevel, floor int, topFlo
 		return rollChampion(rng, pool, partyLevel, floor), true
 	}
 	return MonsterConfig{}, false
+}
+
+// barsBloodDemon is whether this floor rolls no blood demon: a Master Spire's
+// top, Daa'gon's alone (FS-M8CSE §E R24), and every floor of the endgame test
+// run (FS-BDRTJ R25).
+func (s *Session) barsBloodDemon(floor int, topFloor bool) bool {
+	return isMasterSpireTop(floor, topFloor) || s.endgame != nil
 }
 
 // isMasterSpireTop is whether this floor is the top of a Master Spire. Only the

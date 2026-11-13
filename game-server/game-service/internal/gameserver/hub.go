@@ -210,6 +210,11 @@ const partyEntersTogether = "Your party enters together."
 // FS-0XMCP §Requirements 12.
 const awayFromSpireGate = "Walk to the Spire's door first."
 
+// unknownAction refuses an action the hub does not handle, and the endgame
+// test run's start while its dev gate is off, so the two read the same.
+// FS-BDRTJ §Change: Endgame test run, R18.
+const unknownAction = "Unknown action"
+
 // awayFromGate refuses start_dev_endgame_run from anyone not at its gate.
 // FS-BDRTJ §Change: Endgame test run, R22.
 const awayFromGate = "Walk to the gate first."
@@ -794,7 +799,7 @@ func (h *messageHub) Run(ctx context.Context) {
 			// FS-BDRTJ §Change: Endgame test run, R18, R22, R23.
 			case constants.ActionStartDevEndgameRun:
 				if !h.sessionManager.EndgameRunOn() {
-					h.refuse(clientPackage.Conn, clientPackage.Message.Action, "Unknown action")
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, unknownAction)
 					continue
 				}
 				h.startRunOfOne(ctx, clientPackage, h.endgameRunDoor())
@@ -1071,7 +1076,7 @@ func (h *messageHub) Run(ctx context.Context) {
 				}(clientPackage.Conn, player, clientPackage.Message.Action)
 
 			default:
-				h.refuse(clientPackage.Conn, clientPackage.Message.Action, "Unknown action")
+				h.refuse(clientPackage.Conn, clientPackage.Message.Action, unknownAction)
 			}
 
 		case matched := <-h.sessionManager.GetMatchedChan(ctx):
