@@ -911,20 +911,7 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 // scaling stat plus the worn attribute, crit chance from the weapon's
 // critical_rate plus worn crit points, and a worn Lantern's pierce.
 func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
-	attack := components.AttackSnapshot{
-		AttackerEntityID: attacker.ID,
-		DamageType:       spec.damageType,
-		Coefficient:      spec.coefficient,
-		CritChance:       CritChance(0),
-		FromMonster:      attacker.HasComponent(ecs.ComponentTypeEnemy),
-	}
-
-	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
-		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
-	}
-	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
-		attack.Power = float64(cc.(*components.CombatComponent).Attack)
-	}
+	attack := bareSnapshot(attacker, spec)
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
 		stats := sc.(*components.StatsComponent)
 		attack.ScalingStat = scalingValue(spec.scaling, stats.Strength, stats.Agility, stats.Intelligence)
@@ -945,6 +932,26 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 		attack.Pierce = s.effects.PierceExtraTargets
 	}
 
+	return attack
+}
+
+// bareSnapshot is the part of an attack that needs nothing worn: who makes
+// it, its damage type and coefficient, the base crit, and its Combat attack
+// as the power. A monster wears nothing, so this is the whole of a monster's.
+func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
+	attack := components.AttackSnapshot{
+		AttackerEntityID: attacker.ID,
+		DamageType:       spec.damageType,
+		Coefficient:      spec.coefficient,
+		CritChance:       CritChance(0),
+		FromMonster:      attacker.HasComponent(ecs.ComponentTypeEnemy),
+	}
+	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
+		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
+	}
+	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
+		attack.Power = float64(cc.(*components.CombatComponent).Attack)
+	}
 	return attack
 }
 

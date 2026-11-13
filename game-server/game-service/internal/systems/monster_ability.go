@@ -279,25 +279,12 @@ func armBurst(entity *ecs.Entity, monster *components.MonsterComponent) {
 		Remaining: monster.Ability.WindUp,
 		X:         at.X,
 		Y:         at.Y,
-		Attack:    monsterHit(entity, monster.Ability.Multiplier),
+		Attack: bareSnapshot(entity, attackSpec{
+			damageType:  components.DamagePhysical,
+			scaling:     scaleNone,
+			coefficient: monster.Ability.Multiplier,
+		}),
 	}
-}
-
-// monsterHit is a monster's hit at its level damage × coefficient, as the
-// CombatSystem snapshots any monster's: physical, on no stat, at the base
-// crit (a monster wears nothing).
-func monsterHit(entity *ecs.Entity, coefficient float64) components.AttackSnapshot {
-	attack := components.AttackSnapshot{
-		AttackerEntityID: entity.ID,
-		DamageType:       components.DamagePhysical,
-		Coefficient:      coefficient,
-		CritChance:       CritChance(0),
-		FromMonster:      true,
-	}
-	if cc, ok := entity.GetComponent(ecs.ComponentTypeCombat); ok {
-		attack.Power = float64(cc.(*components.CombatComponent).Attack)
-	}
-	return attack
 }
 
 // burnFuses runs every corpse's death burst fuse on by a tick and lands each
