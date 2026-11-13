@@ -34,12 +34,13 @@ type ClassGrowth struct {
 }
 
 // CreateMatchProgressEntity makes the run-level entity: match progress, the
-// floor the run is on and its Spire height. It outlives every floor change.
-// FS-F6F88 §Requirements 3, FS-M8CSE §A Requirement 3.
-func CreateMatchProgressEntity(em *ecs.EntityManager, spireHeight int) *ecs.Entity {
+// floor the run begins on and its Spire height. It outlives every floor change.
+// FS-F6F88 §Requirements 3, FS-M8CSE §A Requirement 3; the endgame test run
+// begins above the first (FS-BDRTJ R25).
+func CreateMatchProgressEntity(em *ecs.EntityManager, startFloor, spireHeight int) *ecs.Entity {
 	entity := em.CreateEntity()
 	entity.AddComponent(components.NewMatchProgressComponent())
-	entity.AddComponent(components.NewFloorComponent(firstFloor, spireHeight))
+	entity.AddComponent(components.NewFloorComponent(startFloor, spireHeight))
 
 	return entity
 }

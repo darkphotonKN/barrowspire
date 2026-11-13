@@ -66,6 +66,10 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 
 	// FS-K2HKP R18: levelled to the whole matched party, the expected included
 	level := max(partyLevel(roster), expectedPartyLevel(expected))
+	// the endgame test run levels to its plan, whoever delves (FS-BDRTJ R27)
+	if s.endgame != nil {
+		level = s.endgame.partyLevel(floor)
+	}
 	area := spawnArea{
 		width:   s.mapWidth,
 		height:  s.mapHeight,
@@ -85,7 +89,8 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
 		}
-		if isMasterSpireTop(floor, topFloor) {
+		// FS-BDRTJ R25: the endgame test run has no Blood Demon
+		if isMasterSpireTop(floor, topFloor) || s.endgame != nil {
 			return
 		}
 		// FS-VHGE7 §A R8, R10: after the demon, never in its room
@@ -97,6 +102,7 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 
 	monsters := rollMonsters(s.spawnRand, pool, level, floor)
 	pool.capDarkWarriors(s.spawnRand, configsOf(monsters))
+	s.endgame.settle(s.spawnRand, pool, floor, configsOf(monsters))
 	for _, monster := range monsters {
 		x, y, ok := area.place(s.spawnRand)
 		if !ok {
@@ -117,7 +123,8 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 		s.placeDemon(&area, demon, floor, topFloor)
 	}
-	if isMasterSpireTop(floor, topFloor) {
+	// FS-BDRTJ R25: the endgame test run has no Blood Demon
+	if isMasterSpireTop(floor, topFloor) || s.endgame != nil {
 		return
 	}
 	// FS-VHGE7 §A R8–9: after the demon, so its draws come first; never
@@ -205,9 +212,13 @@ func rollBloodDemon(rng populationRand, partyLevel, floor int) (MonsterConfig, b
 /**
 * floorPoolFor is the pool a floor's standard monsters come from: drawn at the
 * tier of its base level (FS-C8VM7 §C R19-R20). The one place a floor comes by
-* its pool, so a fixed plan can stand in for the draw.
+* its pool, so the endgame test run's plan stands in for the draw (FS-BDRTJ
+* R26).
 **/
 func (s *Session) floorPoolFor(partyLevel, floor int) floorPool {
+	if s.endgame != nil {
+		return s.endgame.pool(floor)
+	}
 	return drawFloorPool(s.spawnRand, tierOf(floorBaseLevel(partyLevel, floor)))
 }
 

@@ -19,6 +19,9 @@ const (
 	// GateDestinationDevTestRoom is the dev test room's gate, in the hub only
 	// when the room is on. FS-BDRTJ §Requirements 4.
 	GateDestinationDevTestRoom GateDestination = "dev_test_room"
+	// GateDestinationDevEndgameRun is the endgame test run's gate, in the hub
+	// only when the dev test room is on. FS-BDRTJ §Change: Endgame test run, R19.
+	GateDestinationDevEndgameRun GateDestination = "dev_endgame_run"
 )
 
 // GateArrival is where a player coming back through a gate is set down: just

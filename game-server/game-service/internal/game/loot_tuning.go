@@ -237,9 +237,9 @@ var (
 var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
 	components.MonsterArchetypeGhoul:      GhoulMonsterDrop,
 	components.MonsterArchetypeTroll:      TrollMonsterDrop,
-	components.MonsterArchetypeDemon:      BossMonsterDrop,
-	components.MonsterArchetypeBloodDemon: BossMonsterDrop, // FS-VHGE7 §A R12: the boss row, no row of its own
-	components.MonsterArchetypeDaagon:     BossMonsterDrop, // FS-M8CSE §E R26
+	components.MonsterArchetypeDemon:      VorskMonsterDrop, // FS-3103M §G R21
+	components.MonsterArchetypeBloodDemon: BossMonsterDrop,  // FS-VHGE7 §A R12: the boss row, no row of its own
+	components.MonsterArchetypeDaagon:     BossMonsterDrop,  // FS-M8CSE §E R26
 	// FS-M8CSE §D R20: the ghoul row's values
 	components.MonsterArchetypeBarrowThrall: GhoulMonsterDrop,
 	components.MonsterArchetypeSpireWraith:  GhoulMonsterDrop,
@@ -280,8 +280,12 @@ var TrollMonsterDrop = MonsterDrop{Chance: 0.15, MinItems: 1, MaxItems: 1, Sourc
 // EliteMonsterDrop is any elite's row, whatever its archetype.
 var EliteMonsterDrop = MonsterDrop{Chance: 0.50, MinItems: 1, MaxItems: 1, Source: lootSourceElite, TypeSplit: standardDropSplit}
 
-// BossMonsterDrop is the demon's row: always 2 or 3 items.
+// BossMonsterDrop is every boss's row but Vorsk's: always 2 or 3 items.
 var BossMonsterDrop = MonsterDrop{Chance: 1, MinItems: 2, MaxItems: 3, Source: lootSourceDemon, TypeSplit: demonDropSplit}
+
+// VorskMonsterDrop is Vorsk's own row: the boss row's source and split, and
+// more of it, always 3 or 4 items. FS-3103M §G R21.
+var VorskMonsterDrop = MonsterDrop{Chance: 1, MinItems: 3, MaxItems: 4, Source: lootSourceDemon, TypeSplit: demonDropSplit}
 
 // The floor factor's shape. FS-M8CSE §F R28.
 const (
@@ -293,10 +297,16 @@ const (
 
 // The Fabled chance per item, before the floor factor. A flat roll, ahead of
 // the item type: consumables and the rarity weight multipliers cannot move it.
-// Anything without a rate here rolls no Fabled. FS-M8CSE §G R31, R32.
+// Anything without a rate here rolls no Fabled. FS-M8CSE §G R31, R32; the
+// table as FS-3103M §G R22 replaces it.
 const (
-	BossFabledChance   = 0.002
+	// Vorsk's, on any floor
+	VorskFabledChance  = 0.003
 	DaagonFabledChance = 0.004 // 0.5% per item on floor 10
+	// any other boss's: champions, the blood demon
+	BossFabledChance = 0.002
+	// any other boss below this floor rolls no Fabled
+	BossFabledMinFloor = 6
 	EliteFabledChance  = 0.001
 	// an elite below this floor rolls no Fabled
 	EliteFabledMinFloor = 6

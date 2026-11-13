@@ -95,6 +95,7 @@ func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, pool floorPo
 	p.corridors()
 	p.holdTotal(ordinary)
 	p.capDarkWarriors()
+	s.endgame.settle(p.rng, pool, depth, p.monsters())
 
 	area.placed = area.placed[:0]
 	// each room's guards, by entity id, for the chests that wait on them (§J)
@@ -294,11 +295,17 @@ func (p *dungeonPopulation) holdTotal(ordinary []int) {
 // capDarkWarriors holds the floor's Dark Warriors to its cap once its total
 // stands, recasting the excess in place (FS-C8VM7 §C R24).
 func (p *dungeonPopulation) capDarkWarriors() {
+	p.pool.capDarkWarriors(p.rng, p.monsters())
+}
+
+// monsters points at every monster placed so far, for a pass that changes
+// them in place.
+func (p *dungeonPopulation) monsters() []*MonsterConfig {
 	monsters := make([]*MonsterConfig, len(p.spawns))
 	for i := range p.spawns {
 		monsters[i] = &p.spawns[i].monster
 	}
-	p.pool.capDarkWarriors(p.rng, monsters)
+	return monsters
 }
 
 // trimOne removes one random monster placed as role; false when there is none.

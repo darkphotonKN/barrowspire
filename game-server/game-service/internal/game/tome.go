@@ -256,9 +256,13 @@ func (s *Session) summonVorsk(altar *ecs.Entity) {
 }
 
 // vorskLevel is the level Vorsk is summoned at on floor: the demon's level
-// rule, at the party's level as population takes it (FS-3103M §F R18). The one
-// place it is read, so a test run can set its own.
+// rule, at the party's level as population takes it (FS-3103M §F R18). The
+// endgame test run reads its plan's instead: the floor's level + 2, 30 on
+// floor 8 (FS-BDRTJ R27).
 func (s *Session) vorskLevel(floor int) int {
+	if s.endgame != nil {
+		return demonLevel(s.endgame.partyLevel(floor), floor)
+	}
 	return demonLevel(partyLevel(delversOf(s.EntityManager.GetAllEntities())), floor)
 }
 

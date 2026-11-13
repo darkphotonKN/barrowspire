@@ -36,6 +36,13 @@ func demonRecord(level int) systems.KillRecord {
 	}
 }
 
+// bloodDemonRecord is a boss on the generic boss row: any boss but Vorsk.
+func bloodDemonRecord(level int) systems.KillRecord {
+	record := demonRecord(level)
+	record.Archetype = components.MonsterArchetypeBloodDemon
+	return record
+}
+
 // dropPiles is every drop pile in the world.
 func dropPiles(s *Session) []*ecs.Entity {
 	var piles []*ecs.Entity
@@ -55,10 +62,18 @@ func pileItemIDs(t *testing.T, pile *ecs.Entity) []uuid.UUID {
 	return lc.(*components.ItemIDListComponent).ItemIDs
 }
 
-// The demon always drops 2 or 3 items, none of them Normal and none a
-// consumable, each at its level, in one pile where it fell.
-// FS-4R9M9 §Requirements 10, 21, 44, 46.
-func TestMonsterDrops_Demon_DropsTwoOrThreeNonNormalItemsInAPile(t *testing.T) {
+// Vorsk always drops 3 or 4 items, none of them Normal and none a consumable,
+// each at its level, in one pile where it fell: its own row, on the boss row's
+// rarity source and type split. FS-4R9M9 §Requirements 10, 21, 44, 46;
+// FS-3103M §G R21.
+func TestMonsterDrops_Vorsk_DropsThreeOrFourNonNormalItemsInAPile(t *testing.T) {
+	row, ok := monsterDropFor(demonRecord(9))
+	require.True(t, ok)
+	assert.Equal(t, VorskMonsterDrop, row)
+	assert.Equal(t, 1.0, row.Chance, "Vorsk always drops")
+	assert.Equal(t, BossMonsterDrop.Source, row.Source)
+	assert.Equal(t, BossMonsterDrop.TypeSplit, row.TypeSplit)
+
 	r := seeded()
 	counts := map[int]bool{}
 	for range 200 {
@@ -69,16 +84,16 @@ func TestMonsterDrops_Demon_DropsTwoOrThreeNonNormalItemsInAPile(t *testing.T) {
 		require.Len(t, piles, 1)
 		ids := pileItemIDs(t, piles[0])
 		counts[len(ids)] = true
-		require.Contains(t, []int{2, 3}, len(ids))
+		require.Contains(t, []int{3, 4}, len(ids))
 
 		for _, item := range itemsByID(s, ids) {
 			assert.NotEqual(t, rarityNormal, item.RarityCode, item.Name)
 			assert.NotEmpty(t, item.RarityCode, item.Name)
-			assert.NotEqual(t, types.ItemTypeConsumable, item.ItemType, "the demon drops no consumables")
+			assert.NotEqual(t, types.ItemTypeConsumable, item.ItemType, "Vorsk drops no consumables")
 			assert.Equal(t, 9, item.ItemLevel)
 		}
 	}
-	assert.Equal(t, map[int]bool{2: true, 3: true}, counts, "both counts occur")
+	assert.Equal(t, map[int]bool{3: true, 4: true}, counts, "both counts occur")
 }
 
 // fixedRand rolls the same Float64 every time and 0 for every IntN.
@@ -303,13 +318,13 @@ func (r *scriptedRand) IntN(int) int {
 // A drop with no ring template still lays its pile with the items that did
 // roll: the ring is skipped, the weapon and armor drop.
 // FS-4R9M9 §Requirements 46; §Edge States (no template of a type at the ilvl).
-func TestMonsterDrops_Demon_RingWithoutATemplate_SkipsOnlyTheRing(t *testing.T) {
+func TestMonsterDrops_Boss_RingWithoutATemplate_SkipsOnlyTheRing(t *testing.T) {
 	s := dropSession()
 	s.itemPool.Rings = nil
 	// 1 → three items; type rolls 0 → weapon, 99 → ring, 40 → armor (35 / 45 / 20)
 	r := &scriptedRand{f: 0, ints: []int{1, 0, 99, 40}}
 
-	newMonsterDrops(s, r).ConsumeKill(demonRecord(5))
+	newMonsterDrops(s, r).ConsumeKill(bloodDemonRecord(5))
 
 	piles := dropPiles(s)
 	require.Len(t, piles, 1)
@@ -402,7 +417,7 @@ func TestRegenerateFloor_ClearsDropPilesAndTheirItems(t *testing.T) {
 	piles := dropPiles(s)
 	require.Len(t, piles, 1)
 	ids := pileItemIDs(t, piles[0])
-	require.Contains(t, []int{2, 3}, len(ids))
+	require.Contains(t, []int{3, 4}, len(ids), "Vorsk's row")
 	carried := ids[0]
 	require.NoError(t, s.handleInteract(playerID, carried))
 
@@ -510,7 +525,7 @@ func TestMonsterDrops_FloorFactor_LiftsTheChanceAboveFloorFive(t *testing.T) {
 // what a real roll gives; it is the one that tells a clamped 1 from an unclamped
 // 1.25. FS-M8CSE §F R29.
 func TestMonsterDrops_FloorFactor_CapsTheBossAtCertainty(t *testing.T) {
-	floorTen := demonRecord(9)
+	floorTen := bloodDemonRecord(9)
 	floorTen.Floor = 10
 
 	clamped := dropSession()
@@ -535,11 +550,18 @@ func TestMonsterDrops_FloorFactor_CapsTheBossAtCertainty(t *testing.T) {
 }
 
 // The Fabled chance per item is by the kill's source, each times the floor
-// factor: any boss, Daa'gon's own base, elites only from floor 6, everything
-// else nothing. FS-M8CSE §G R32.
+// factor: Vorsk's own base on any floor, Daa'gon's own base, any other boss
+// (the blood demon, a champion) and elites only from floor 6, everything else
+// nothing. FS-M8CSE §G R32 as FS-3103M §G R22 replaces its table.
 func TestFabledChanceFor_MatchesTheRatesAtEachFloor(t *testing.T) {
-	boss := func(floor int) systems.KillRecord {
+	vorsk := func(floor int) systems.KillRecord {
 		return systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Boss: true, Floor: floor}
+	}
+	bloodDemon := func(floor int) systems.KillRecord {
+		return systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Boss: true, Floor: floor}
+	}
+	champion := func(floor int) systems.KillRecord {
+		return systems.KillRecord{Archetype: components.MonsterArchetypeOgreTyrant, Boss: true, Champion: true, Floor: floor}
 	}
 	daagon := func(floor int) systems.KillRecord {
 		return systems.KillRecord{Archetype: components.MonsterArchetypeDaagon, Boss: true, Floor: floor}
@@ -552,12 +574,19 @@ func TestFabledChanceFor_MatchesTheRatesAtEachFloor(t *testing.T) {
 		record systems.KillRecord
 		want   float64
 	}{
-		{"boss floor 1", boss(1), 0.002},
-		{"boss floor 5", boss(5), 0.002},
-		{"boss floor 6", boss(6), 0.0021},
-		{"boss floor 9", boss(9), 0.0024},
-		{"boss floor 10", boss(10), 0.0025},
-		{"blood demon floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Boss: true, Floor: 10}, 0.0025},
+		{"vorsk floor 1", vorsk(1), 0.003},
+		{"vorsk floor 5", vorsk(5), 0.003},
+		{"vorsk floor 6", vorsk(6), 0.00315},
+		{"vorsk floor 9", vorsk(9), 0.0036},
+		{"vorsk floor 10", vorsk(10), 0.00375},
+		{"blood demon floor 1", bloodDemon(1), 0},
+		{"blood demon floor 3", bloodDemon(3), 0},
+		{"blood demon floor 5", bloodDemon(5), 0},
+		{"blood demon floor 6", bloodDemon(6), 0.0021},
+		{"blood demon floor 9", bloodDemon(9), 0.0024},
+		{"blood demon floor 10", bloodDemon(10), 0.0025},
+		{"champion floor 3", champion(3), 0},
+		{"champion floor 9", champion(9), 0.0024},
 		{"daagon floor 1", daagon(1), 0.004},
 		{"daagon floor 5", daagon(5), 0.004},
 		{"daagon floor 6", daagon(6), 0.0042},
@@ -621,7 +650,9 @@ func TestMonsterDrops_FabledRate_PerItemFromTheKill(t *testing.T) {
 		record    systems.KillRecord
 		low, high float64
 	}{
-		{"boss on floor 1", systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Boss: true, Floor: 1}, 0.0008, 0.0036},
+		{"vorsk on floor 1", systems.KillRecord{Archetype: components.MonsterArchetypeDemon, Boss: true, Floor: 1}, 0.0012, 0.0054},
+		{"blood demon on floor 3", systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Boss: true, Floor: 3}, 0, 0},
+		{"blood demon on floor 9", systems.KillRecord{Archetype: components.MonsterArchetypeBloodDemon, Boss: true, Floor: 9}, 0.0008, 0.0044},
 		{"daagon on floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeDaagon, Boss: true, Floor: 10}, 0.0030, 0.0075},
 		{"elite on floor 10", systems.KillRecord{Archetype: components.MonsterArchetypeTroll, Elite: true, Floor: 10}, 0.00005, 0.0035},
 		{"elite on floor 5", systems.KillRecord{Archetype: components.MonsterArchetypeTroll, Elite: true, Floor: 5}, 0, 0},
