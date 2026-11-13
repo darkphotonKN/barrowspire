@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { palette } from "@/utils/canvasPalette";
-import { BACKPACK_TONES, HudCorner, type CornerIconSpec } from "./HudCorner";
+import { palette, tint } from "@/utils/canvasPalette";
+import { BACKPACK_HOVER_LIFT, BACKPACK_TONES, HudCorner, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
 import { envelopeFlapPoint } from "./MailboxEnvelope";
 
@@ -202,7 +202,8 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
   it("should draw the Inventory icon's backpack apart from the Character icon's bust (R3; § Change: The inventory icon is an inked backpack)", () => {
     const env = setup([{ icon: "inventory" }, { icon: "character" }]);
     const [bag, bust] = env.graphics;
-    expect(bag.strokes).toContain(palette.interactable);
+    // no amber on the backpack: the owner dropped its edge (「外匡不要了」)
+    expect(bag.strokes).not.toContain(palette.interactable);
     expect(bag.calls).not.toEqual(bust.calls);
     // a backpack: its parts are paths, its hatching and stitches lines, no circle for a head
     expect(bag.calls).toContain("lineBetween");
@@ -459,7 +460,8 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack
     const fills = marks(g).filter((k) => k.kind === "fill");
     const colours = new Set(fills.map((k) => k.colour));
     expect(colours.size).toBeGreaterThanOrEqual(4);
-    for (const c of [BACKPACK_TONES.leather, BACKPACK_TONES.leatherDark, BACKPACK_TONES.brass, BACKPACK_TONES.cloth]) {
+    // smoky leather, darker leather, blackened iron, wool (the owner's first tweak round)
+    for (const c of [BACKPACK_TONES.leather, BACKPACK_TONES.leatherDark, BACKPACK_TONES.iron, BACKPACK_TONES.wool]) {
       expect(colours).toContain(c);
     }
     for (const c of colours) {
@@ -471,18 +473,31 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack
     expect(fills.every((k) => k.alpha === 1)).toBe(true);
   });
 
-  it("should take every tone from the palette, none of them amber (R3, R9)", () => {
+  it("should take every tone from the palette: dark, never amber or brass (R3; tweak round 1: 「要更加黑暗」)", () => {
     const values = Object.values(BACKPACK_TONES);
     expect(values.length).toBeGreaterThanOrEqual(4);
-    for (const c of values) expect(amber.has(c)).toBe(false);
-    expect(BACKPACK_TONES.brass).toBe(palette.frame);
+    for (const c of values) {
+      expect(amber.has(c)).toBe(false);
+      expect([palette.frame, palette.frameBright]).not.toContain(c);
+    }
+    // the leather a deep, smoky brown: darker than barrow brown, the old satchel leather's base
+    const light = (c: number) => ((c >> 16) & 0xff) + ((c >> 8) & 0xff) + (c & 0xff);
+    for (const c of [BACKPACK_TONES.leather, BACKPACK_TONES.leatherDark, BACKPACK_TONES.leatherSide]) {
+      expect(light(c)).toBeLessThan(light(palette.floor));
+    }
   });
 
-  it("should stroke everything but the amber edge in ink or its own tones (R2, R3)", () => {
+  it("should draw no amber at all, idle or under the pointer (the owner, 「外匡不要了」)", () => {
+    const { g, zoneAt } = backpack();
+    const used = () => g.ops.filter(({ m }) => m === "lineStyle" || m === "fillStyle").map(({ m, args }) => (m === "lineStyle" ? args[1] : args[0]));
+    expect(used().some((c) => amber.has(c))).toBe(false);
+    zoneAt("inventory").handlers.pointerover();
+    expect(used().some((c) => amber.has(c))).toBe(false);
+  });
+
+  it("should stroke everything in ink or its own tones (R2, R3)", () => {
     const { g } = backpack();
-    for (const k of marks(g).filter((k) => k.kind === "stroke" && !amber.has(k.colour))) {
-      expect(tones.has(k.colour)).toBe(true);
-    }
+    for (const k of marks(g).filter((k) => k.kind === "stroke")) expect(tones.has(k.colour)).toBe(true);
   });
 
   it("should outline the silhouette in a heavy ink line, its parts in 1–1.5 px ink, its hatching faint and fine (R2)", () => {
@@ -503,33 +518,34 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack
     expect(ink.filter((k) => k.alpha > 0.6 && k.width > 1.5)).toEqual(heavy);
   });
 
-  it("should edge the silhouette in a 1 px amber line outside the ink outline, at 0.85 idle (R6)", () => {
+  it("should tool the flap's border with two fine lines, and shut it with an iron hasp and ring (tweak round 1)", () => {
     const { g } = backpack();
     const ms = marks(g);
-    const edges = ms.filter((k) => k.kind === "stroke" && amber.has(k.colour));
-    expect(edges).toHaveLength(1);
-    expect(edges[0]).toMatchObject({ colour: palette.interactable, alpha: 0.85, width: 1 });
-    const outline = boxOf(ms.filter((k) => k.colour === palette.ink && k.width > 2));
-    const edge = boxOf(edges);
-    expect(edge.left).toBeLessThan(outline.left);
-    expect(edge.right).toBeGreaterThan(outline.right);
-    expect(edge.top).toBeLessThan(outline.top);
-    expect(edge.bottom).toBeGreaterThan(outline.bottom);
+    const tooled = ms.filter((k) => k.kind === "stroke" && k.colour === BACKPACK_TONES.tooling);
+    expect(tooled).toHaveLength(2);
+    expect(tooled.every((k) => k.width <= 1)).toBe(true);
+    // the hasp, the ring and the rivets are iron, with a dull highlight
+    expect(ms.filter((k) => k.kind === "fill" && k.colour === BACKPACK_TONES.iron).length).toBeGreaterThanOrEqual(3);
+    expect(ms.some((k) => k.colour === BACKPACK_TONES.ironLit)).toBe(true);
   });
 
-  it("should brighten the amber edge alone under the pointer, every other op as it was (R6)", () => {
+  it("should lift every tone but its ink a little under the pointer, and nothing else (tweak round 1: D3 overridden)", () => {
     const { g, zoneAt } = backpack();
-    const neutral = (ops: { m: string; args: number[] }[]) =>
-      ops.map(({ m, args }) => (m === "lineStyle" && amber.has(args[1]) ? { m, args: [args[0], -1, -1] } : { m, args }));
     const idle = [...g.ops];
-    expect(g.strokes).toContain(palette.interactable);
-    expect(g.strokes).not.toContain(palette.interactableBright);
     zoneAt("inventory").handlers.pointerover();
-    expect(g.strokes).toContain(palette.interactableBright);
-    expect(g.strokes).not.toContain(palette.interactable);
-    const bright = g.ops.find(({ m, args }) => m === "lineStyle" && args[1] === palette.interactableBright)!;
-    expect(bright.args[2]).toBe(1);
-    expect(neutral(g.ops)).toEqual(neutral(idle));
+    const lifted = (c: number) => (c === palette.ink ? c : tint(c, BACKPACK_HOVER_LIFT));
+    expect(BACKPACK_HOVER_LIFT).toBeGreaterThan(0);
+    expect(BACKPACK_HOVER_LIFT).toBeLessThanOrEqual(0.2);
+    expect(g.ops).toHaveLength(idle.length);
+    g.ops.forEach((op, i) => {
+      const was = idle[i];
+      expect(op.m).toBe(was.m);
+      if (op.m === "fillStyle") expect(op.args).toEqual([lifted(was.args[0]), ...was.args.slice(1)]);
+      else if (op.m === "lineStyle") expect(op.args).toEqual([was.args[0], lifted(was.args[1]), was.args[2]]);
+      else expect(op.args).toEqual(was.args);
+    });
+    // and something did lift
+    expect(g.ops).not.toEqual(idle);
     zoneAt("inventory").handlers.pointerout();
     expect(g.ops).toEqual(idle);
   });

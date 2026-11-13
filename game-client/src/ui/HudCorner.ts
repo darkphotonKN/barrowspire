@@ -7,9 +7,10 @@
  *
  * Each icon is its bare glyph in 1.5 px lines over the world, with no plate under it and nothing
  * filled (FS-J1672 R1–R3): the interactable amber, brighter under the pointer, where a small label
- * names the icon and its key (R3, R5). The one exception is the Inventory icon, a small inked
- * illustration of a backpack with its own flat fills, ink and hatching, whose pressable cue is a
- * thin amber edge round it (FS-3EBCA § Change: The inventory icon is an inked backpack). Its 58 × 46 rect stays its press area (FS-J1672 R4). Drawn
+ * names the icon and its key (R3, R5). The one exception is the Inventory icon, a small, dark inked
+ * illustration of a backpack with its own flat fills, ink and hatching, with no amber at all: under
+ * the pointer its tones lift a little (FS-3EBCA § Change: The inventory icon is an inked backpack,
+ * as the owner's first tweak round changed it). Its 58 × 46 rect stays its press area (FS-J1672 R4). Drawn
  * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
  * scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
  * while they are open too (R11; FS-HRH2J § Change C12).
@@ -17,7 +18,7 @@
 
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { mix, palette, shade } from "@/utils/canvasPalette";
+import { mix, palette, shade, tint } from "@/utils/canvasPalette";
 import { CornerLabel } from "./cornerLabel";
 import { drawEnvelopeLines } from "./MailboxEnvelope";
 import {
@@ -34,32 +35,40 @@ const LINE_W = 1.5;
 /** The greyed Mailbox's lines. */
 const GREYED_ALPHA = 0.6;
 
-/** The body's leather: barrow brown warmed toward brass. */
-const LEATHER = mix(palette.floor, palette.frame, 0.45);
-
 /**
- * The inked backpack's tones (FS-3EBCA § Change: The inventory icon is an inked backpack, R3):
- * palette tokens and their mixes, each named once here. Its ink is `palette.ink`, never black.
- * None of them is amber, which is its edge's alone (R6).
+ * The inked backpack's tones (FS-3EBCA § Change: The inventory icon is an inked backpack, R3, as
+ * the owner's first tweak round darkened them, 2026-11-13: 「要更加黑暗 有古歐洲風格」): palette tokens
+ * and their mixes, each named once here. Smoky leather close to charcoal, blackened iron, dull
+ * wool and hemp; its ink is `palette.ink`, never black. Nothing of it is amber or brass.
  */
 export const BACKPACK_TONES = {
-  /** The body. */
-  leather: LEATHER,
-  /** The flap, the straps and the shoulder strap. */
-  leatherDark: mix(palette.floor, palette.ground, 0.5),
+  /** The body: a deep, smoky brown. */
+  leather: mix(palette.ground, palette.ink, 0.15),
+  /** The flap and the shoulder strap, a step darker. */
+  leatherDark: mix(palette.ground, palette.ink, 0.42),
   /** The side turned from the light, under its hatching. */
-  leatherSide: shade(LEATHER, 0.2),
-  /** The buckles: old brass. */
-  brass: palette.frame,
-  /** The bedroll: an undyed cloth. */
-  cloth: shade(palette.hudLabel, 0.15),
-  /** The bedroll's rolled end, turned from the light. */
-  clothEnd: shade(palette.hudLabel, 0.4),
-  /** The cords that tie it, darker than the cloth. */
-  cord: shade(palette.hudLabel, 0.65),
-  /** The ink: outlines, part lines, hatching, stitches and scratches. */
+  leatherSide: mix(palette.ground, palette.ink, 0.32),
+  /** The flap's tooled border: its incised lines, worn a little paler than the leather. */
+  tooling: mix(palette.ground, palette.hudLabel, 0.3),
+  /** The hasp, its ring and the rivets: blackened iron. */
+  iron: mix(palette.wall, palette.ink, 0.2),
+  /** Iron's one dull highlight. */
+  ironLit: mix(palette.wallTop, palette.wall, 0.35),
+  /** The bedroll: a rolled, dull grey-green wool blanket. */
+  wool: shade(mix(palette.hudFaint, palette.safeDeep, 0.35), 0.35),
+  /** The blanket's rolled end, turned from the light. */
+  woolEnd: shade(mix(palette.hudFaint, palette.safeDeep, 0.35), 0.55),
+  /** The hemp rope that ties it, and the pouch's drawstring. */
+  rope: shade(mix(palette.hudLabel, palette.floor, 0.4), 0.32),
+  /** The ink: outlines, part lines, hatching, tooling, stitches and scratches. */
   ink: palette.ink,
 } as const;
+
+/**
+ * Under the pointer the whole drawing lifts a little toward light, every tone but its ink: the
+ * owner dropped the amber edge (「外匡不要了」, 2026-11-13), so this and the label are the hover.
+ */
+export const BACKPACK_HOVER_LIFT = 0.15;
 
 const labelOf = (spec: CornerIconSpec) =>
   spec.greyed && spec.icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[spec.icon];
@@ -178,7 +187,7 @@ export class HudCorner {
     const cx = f.x + f.width / 2;
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
-    else if (icon.spec.icon === "inventory") drawBackpack(g, cx, cy, ink, alpha);
+    else if (icon.spec.icon === "inventory") drawBackpack(g, cx, cy, icon.hovered);
     else if (icon.spec.icon === "character") drawBust(g, cx, cy + 1, 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
@@ -204,9 +213,10 @@ export function drawGear(g: Ink, cx: number, cy: number, ink: number, alpha: num
 // ── The inked backpack (FS-3EBCA § Change: The inventory icon is an inked backpack) ─────────────
 //
 // Drawn in local px round its own middle, x to the right and y down, then laid on the slot's
-// centre. The pack is seen from the front, turned a little so its right side shows: the bedroll
-// across its top, the flap over its top third, two buckled straps, a pouch on the side and the
-// shoulder strap curving down behind that side.
+// centre. An old haversack seen from the front, turned a little so its right side shows: a wool
+// blanket rolled across its top and tied with hemp, a rounded flap with a tooled border shut by an
+// iron hasp and ring, iron rivets, a drawstring pouch hanging on the side and the shoulder strap
+// curving down behind that side (the owner's first tweak round, 2026-11-13).
 
 type Pt = readonly [number, number];
 
@@ -214,16 +224,13 @@ type Pt = readonly [number, number];
 const OUTLINE_W = 2.5;
 /** Lines between parts. */
 const PART_W = 1.25;
-/** Stitches, scratches and the bedroll's turns. */
+/** Stitches, scratches, tooling, the blanket's turns and the iron's own edges. */
 const FINE_W = 0.75;
 /** Hatching: fine, faint ink, so it reads as shade and not as a second outline (R2). */
 const HATCH_W = 1;
 const HATCH_ALPHA = 0.55;
 const STITCH_ALPHA = 0.85;
 const SCRATCH_ALPHA = 0.7;
-/** The amber edge: 1 px, just clear of the ink outline's outer side (R6). */
-const EDGE_W = 1;
-const EDGE_OFFSET = OUTLINE_W / 2 + EDGE_W / 2;
 
 /** The quadratic from `a` through the pull of `c` to `b`, in `steps` points, `a` left out. */
 function bend(a: Pt, c: Pt, b: Pt, steps = 8): Pt[] {
@@ -245,6 +252,9 @@ function oval(cx: number, cy: number, rx: number, ry: number, from: number, to: 
   }
   return out;
 }
+
+/** A whole circle, as a closed outline. */
+const disc = (x: number, y: number, r: number) => oval(x, y, r, r, 0, 2 * Math.PI, 16).slice(0, -1);
 
 /**
  * A closed outline through `corners`, each corner rounded by its radius (0 keeps it sharp), so a
@@ -275,35 +285,52 @@ function rounded(corners: readonly (readonly [number, number, number])[]): Pt[] 
 /** Sharp corners, for a list of points that is already smooth. */
 const sharp = (points: Pt[]) => points.map(([x, y]) => [x, y, 0] as const);
 
-/** The flap's lower edge: a curve dipping from side to side. */
-const FLAP_LEFT: Pt = [-11, -1.6];
-const FLAP_RIGHT: Pt = [7.9, -1.6];
-const FLAP_PULL: Pt = [-1.5, 3.8];
-/** Where the flap's lower edge crosses x. */
-function flapEdgeY(x: number): number {
-  const t = (x - FLAP_LEFT[0]) / (FLAP_RIGHT[0] - FLAP_LEFT[0]);
-  const u = 1 - t;
-  return u * u * FLAP_LEFT[1] + 2 * u * t * FLAP_PULL[1] + t * t * FLAP_RIGHT[1];
+/**
+ * The closed, clockwise outline `points` moved `d` along its normal at every point: outward for
+ * a positive `d`, inward for a negative one.
+ */
+function offset(points: Pt[], d: number): Pt[] {
+  const n = points.length;
+  const unit = (x: number, y: number): Pt => {
+    const l = Math.hypot(x, y) || 1;
+    return [x / l, y / l];
+  };
+  // clockwise on screen (y down): the outward normal of an edge (dx, dy) is (dy, -dx)
+  const out: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const [px, py] = points[(i + n - 1) % n];
+    const [x, y] = points[i];
+    const [nx, ny] = points[(i + 1) % n];
+    const [ax, ay] = unit(x - px, y - py);
+    const [bx, by] = unit(nx - x, ny - y);
+    const [mx, my] = unit(ay + by, -(ax + bx));
+    // a miter, capped so a sharp turn cannot throw the point far
+    const cos = Math.max(0.5, mx * ay - my * ax);
+    out.push([x + (mx * d) / cos, y + (my * d) / cos]);
+  }
+  return out;
 }
 
-/** The bedroll: its top and bottom, its rounded left end, and its rolled right end turned to the viewer. */
+/** The blanket roll: its top and bottom, its rounded left end, and its rolled right end turned to the viewer. */
 const ROLL_TOP = -15;
 const ROLL_BOTTOM = -8;
 const ROLL_LEFT = -14;
 const ROLL_END = { x: 11.5, y: -11.5, rx: 2.6, ry: 3.5 };
-/** The shoulder strap's outer edge, from behind the bedroll's end to behind the pouch. */
-const STRAP_OUTER = bend([13.6, -9.4], [19, -5], [16.6, 0.8], 10);
+/** The shoulder strap's outer edge, from behind the roll's end to behind the pouch's neck. */
+const STRAP_OUTER = bend([13.6, -9.4], [19.2, -4.5], [14.9, 2.4], 10);
+/** The drawstring pouch's round belly, hanging on the side. */
+const SACK = { x: 13.3, y: 7.9, rx: 3.2, ry: 3.6 };
 
-/** The whole pack's outer edge, clockwise from the bedroll's top left (R2). */
+/** The whole pack's outer edge, clockwise from the roll's top left (R2). */
 const SILHOUETTE = rounded([
   [ROLL_LEFT, ROLL_TOP, 3.5],
   [ROLL_END.x, ROLL_TOP, 0],
   ...sharp(oval(ROLL_END.x, ROLL_END.y, ROLL_END.rx, ROLL_END.ry, -Math.PI / 2, 0.6, 10).slice(1)),
   ...sharp(STRAP_OUTER.slice(0, -1)),
-  [16.6, 0.8, 0.8],
-  [16.4, 9.6, 3.5],
-  [13, 11, 0.5],
-  [13, 11.8, 2.5],
+  [14.9, 2.4, 0.6],
+  [14.4, 4.5, 0.6],
+  ...sharp(oval(SACK.x, SACK.y, SACK.rx, SACK.ry, -Math.PI / 3, 1.62, 12)),
+  [13, 11.8, 2],
   [8, 14.5, 1],
   [-1.8, 15.2, 8],
   [-11.5, 14.5, 5.5],
@@ -313,7 +340,7 @@ const SILHOUETTE = rounded([
 ]);
 
 /** The pack's parts, back to front. */
-const STRAP = [[13.6, -9.4] as Pt, ...STRAP_OUTER, [12.6, 0.8] as Pt, [12.6, -9.4] as Pt];
+const STRAP = [[13.6, -9.4] as Pt, ...STRAP_OUTER, [12.6, 2.4] as Pt, [12.6, -9.4] as Pt];
 const SIDE = rounded([
   [7.5, -9, 0],
   [13, -9, 0],
@@ -323,21 +350,8 @@ const SIDE = rounded([
 const SIDE_FLAP = rounded([
   [7.5, -9.5, 0],
   [13, -9.5, 0],
-  [13, -2.4, 0.6],
-  [7.9, -1.6, 0.6],
-]);
-const POUCH = rounded([
-  [9, 1, 1],
-  [16.4, 1, 1],
-  [16.4, 9.6, 3.5],
-  [9.2, 11.6, 1],
-]);
-const POUCH_FLAP = rounded([
-  [8.7, 0.3, 0.6],
-  [16.7, 0.3, 0.6],
-  [16.7, 3.4, 0.8],
-  ...sharp(bend([16.7, 3.4], [13.4, 6.6], [8.7, 4.4], 6).slice(0, -1)),
-  [8.7, 4.4, 0.8],
+  [13, -0.5, 1.5],
+  [8, 1.5, 1],
 ]);
 const FRONT = rounded([
   [-10.5, -9, 0],
@@ -347,39 +361,69 @@ const FRONT = rounded([
   [-11.5, 14.5, 5.5],
   [-12.2, 3, 8],
 ]);
+/** The flap: a rounded haversack flap over the front's upper half. */
 const FLAP = rounded([
   [-10.9, -9.5, 0],
   [7.8, -9.5, 0],
-  [FLAP_RIGHT[0], FLAP_RIGHT[1], 1],
-  ...sharp(bend(FLAP_RIGHT, FLAP_PULL, FLAP_LEFT, 12).slice(0, -1)),
-  [FLAP_LEFT[0], FLAP_LEFT[1], 1],
+  [7.85, -7, 0],
+  [8, 3.6, 5.5],
+  [-1.6, 5.4, 9],
+  [-11.3, 3.6, 5.5],
+  [-11, -7, 0],
 ]);
-/** The two straps' middles. */
-const STRAP_XS = [-5.4, 2.4];
-const strapOf = (x: number) =>
-  rounded([
-    [x - 1.5, -9.5, 0],
-    [x + 1.5, -9.5, 0],
-    [x + 1.5, 8.8, 0.8],
-    [x, 10.6, 0.8],
-    [x - 1.5, 8.8, 0.8],
-  ]);
-/** A buckle's frame, the gap inside it where the strap shows, and its tongue across that gap. */
-const buckleOf = (x: number) => ({
-  frame: rounded([
-    [x - 3, -3.6, 0.6],
-    [x + 3, -3.6, 0.6],
-    [x + 3, 0.8, 0.6],
-    [x - 3, 0.8, 0.6],
-  ]),
-  gap: rounded([
-    [x - 1.6, -2.1, 0.3],
-    [x + 1.6, -2.1, 0.3],
-    [x + 1.6, -0.9, 0.3],
-    [x - 1.6, -0.9, 0.3],
-  ]),
-  tongue: [x, -2.1, x, 0] as const,
-});
+/** Its tooled border: two incised lines just inside its edge, below the roll. */
+const TOOLING = [1.3, 2.1].map((d) => offset(FLAP, -d).filter(([, y]) => y >= -7.1));
+/** The flap's lower edge, from its right side round to its left. */
+const FLAP_HEM = FLAP.filter(([, y]) => y > 1);
+/** The iron hasp hanging from the flap's middle, its slot, and the ring it is shut on. */
+const HASP_X = -1.6;
+const HASP = rounded([
+  [HASP_X - 1.6, 1.2, 0.7],
+  [HASP_X + 1.6, 1.2, 0.7],
+  [HASP_X + 1.1, 7.4, 1],
+  [HASP_X - 1.1, 7.4, 1],
+]);
+const HASP_SLOT = rounded([
+  [HASP_X - 0.5, 5.2, 0.3],
+  [HASP_X + 0.5, 5.2, 0.3],
+  [HASP_X + 0.5, 6.8, 0.3],
+  [HASP_X - 0.5, 6.8, 0.3],
+]);
+const RING = { x: HASP_X, y: 8.6, r: 2.1, hole: 1.1 };
+/** Iron's dull highlights: down the hasp, and over the ring's upper left. */
+const HASP_LIT: [Pt, Pt] = [
+  [HASP_X - 0.9, 2.1],
+  [HASP_X - 0.6, 4.6],
+];
+const RING_LIT = oval(RING.x, RING.y, 1.6, 1.6, Math.PI * 1.05, Math.PI * 1.45, 4);
+/** Iron rivets: the flap's lower corners, the hasp's head, the pouch's thong. */
+const RIVETS: Pt[] = [
+  [-8.3, 1],
+  [5.2, 1],
+  [HASP_X, 2.4],
+  [11.6, -1.4],
+];
+const RIVET_R = 0.85;
+/** The drawstring pouch: its gathered neck and round belly. */
+const SACK_SHAPE = rounded([
+  [11.7, 2.4, 0.6],
+  [14.9, 2.4, 0.6],
+  [14.4, 4.5, 0.6],
+  ...sharp(oval(SACK.x, SACK.y, SACK.rx, SACK.ry, -Math.PI / 3, (4 * Math.PI) / 3, 20).slice(1, -1)),
+  [12.2, 4.5, 0.6],
+]);
+const SACK_GATHERS: [Pt, Pt][] = [
+  [[12.5, 2.7], [12.7, 4.2]],
+  [[13.3, 2.7], [13.3, 4.2]],
+  [[14.1, 2.7], [13.9, 4.2]],
+];
+/** The pouch's thong up to its rivet, its drawstring round the neck, and the string's two ends. */
+const SACK_THONG = [[11.6, -1.4] as Pt, ...bend([11.6, -1.4], [12.2, 1], [13.3, 2.5], 4)];
+const SACK_STRING = [[12, 4.6] as Pt, [14.6, 4.6] as Pt];
+const SACK_STRING_ENDS = [
+  [[14.2, 4.7] as Pt, ...bend([14.2, 4.7], [15.4, 5.8], [15.1, 7.6], 4)],
+  [[14.2, 4.7] as Pt, ...bend([14.2, 4.7], [14.6, 6.4], [14.1, 8], 4)],
+];
 const BEDROLL = rounded([
   [ROLL_LEFT, ROLL_TOP, 3.5],
   [ROLL_END.x, ROLL_TOP, 0],
@@ -387,13 +431,13 @@ const BEDROLL = rounded([
   [ROLL_LEFT, ROLL_BOTTOM, 3.5],
 ]);
 const ROLL_FACE = oval(ROLL_END.x, ROLL_END.y, ROLL_END.rx, ROLL_END.ry, 0, 2 * Math.PI, 20).slice(0, -1);
-/** The cloth wound round itself on the rolled face, a turn of it near that end, and the left end's curl. */
+/** The blanket wound round itself on the rolled face, a turn of it near that end, and the left end's curl. */
 const ROLL_SPIRAL = oval(ROLL_END.x + 0.2, ROLL_END.y + 0.2, 1.4, 2, -Math.PI / 2, Math.PI, 12);
 const ROLL_TURN = [[9, -14.8] as Pt, ...bend([9, -14.8], [7.4, -11.5], [9, -8.2], 8)];
 const ROLL_CURL = [[-11.4, -13.8] as Pt, ...bend([-11.4, -13.8], [-12.9, -11.5], [-11.4, -9.2], 6)];
-/** The cords: a tie round the roll, and its two loose ends hanging over the flap. */
-const CORD_XS = [-9, 5.6];
-const cordOf = (x: number) => ({
+/** The hemp: a rope round the roll, and its two loose ends hanging over the flap. */
+const ROPE_XS = [-9, 5.6];
+const ropeOf = (x: number) => ({
   tie: [[x - 0.3, -15.1] as Pt, ...bend([x - 0.3, -15.1], [x + 1, -11.5], [x - 0.3, -7.9], 6)],
   ends: [
     [[x - 0.3, -7.9] as Pt, ...bend([x - 0.3, -7.9], [x - 1.4, -6.5], [x - 1, -4.7], 4)],
@@ -413,20 +457,34 @@ function hatchBox(x0: number, y0: number, x1: number, y1: number, gap: number): 
   return out;
 }
 
-/** Short slanted strokes in a row, each hanging `drop` below the curve `y(x)`. */
-function hatchUnder(x0: number, x1: number, gap: number, y: (x: number) => number, drop: number): [Pt, Pt][] {
+/** Short strokes, one every `gap` along the line `along`, each from just past it by (dx, dy). */
+function hatchAlong(along: Pt[], gap: number, dx: number, dy: number, from = 0.9): [Pt, Pt][] {
   const out: [Pt, Pt][] = [];
-  for (let x = x0; x <= x1; x += gap) out.push([[x, y(x) + 0.9], [x + drop * 0.5, y(x) + 0.9 + drop]]);
+  let next = gap / 2;
+  let walked = 0;
+  for (let i = 1; i < along.length; i++) {
+    const [x0, y0] = along[i - 1];
+    const [x1, y1] = along[i];
+    const step = Math.hypot(x1 - x0, y1 - y0);
+    while (next <= walked + step) {
+      const t = (next - walked) / step;
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 + (y1 - y0) * t + from;
+      out.push([[x, y], [x + dx, y + dy]]);
+      next += gap;
+    }
+    walked += step;
+  }
   return out;
 }
 
 const HATCH = {
   side: hatchBox(8.2, -8.6, 12.6, 12.4, 1.4),
-  underRoll: hatchUnder(-10.2, 7.4, 1.3, () => ROLL_BOTTOM - 0.1, 1.6),
-  underFlap: hatchUnder(-10, 7.2, 1.3, flapEdgeY, 2),
-  // under the pouch's flap, its lower edge taken as a straight slope
-  underPouchFlap: hatchUnder(9.6, 15.6, 1.3, (x) => 4.4 - ((x - 9.6) / 6) * 0.6, 1.8),
-  rollUnderside: hatchUnder(-12.4, 8.4, 1.3, () => ROLL_BOTTOM - 3, 1.8),
+  underRoll: hatchAlong([[-10.2, ROLL_BOTTOM - 0.1], [7.4, ROLL_BOTTOM - 0.1]], 1.3, 0.8, 1.6),
+  underFlap: hatchAlong(FLAP_HEM, 1.3, 0.8, 1.8),
+  rollUnderside: hatchAlong([[-12.4, ROLL_BOTTOM - 3], [8.4, ROLL_BOTTOM - 3]], 1.3, 0.9, 1.8),
+  // the pouch's belly, its lower right turned from the light
+  sack: hatchAlong(oval(SACK.x, SACK.y, SACK.rx - 1.2, SACK.ry - 1.2, -0.2, 1.9, 8), 1.1, 0.6, 1, 0),
 };
 
 /** Stitches: dashes along a curve, a gap between each. */
@@ -436,21 +494,18 @@ function stitches(along: Pt[]): [Pt, Pt][] {
   return out;
 }
 
-const STITCHES = [
-  // along the flap's edge, just inside it
-  ...stitches(bend([FLAP_LEFT[0] + 1, FLAP_LEFT[1] - 1.4], [FLAP_PULL[0], FLAP_PULL[1] - 1.6], [FLAP_RIGHT[0] - 1, FLAP_RIGHT[1] - 1.4], 22)),
-  // the pouch's flap and its outer seam
-  ...stitches(bend([15.8, 3.2], [13.4, 5.6], [9.6, 4], 8)),
-  ...stitches(oval(15.4, 6.6, 0, 3, -Math.PI / 2, Math.PI / 2, 6)),
+const STITCHES = {
   // down the shoulder strap
-  ...stitches(bend([14.2, -8.4], [17.4, -5], [15.6, 0], 9)),
-];
+  strap: stitches(bend([14.2, -8.4], [17.4, -4.6], [14.4, 1.4], 9)),
+  // along the front's bottom seam
+  seam: stitches(bend([-8.6, 12.4], [-1.8, 14], [6.4, 12.4], 16)),
+};
 
 const SCRATCHES: [Pt, Pt][] = [
-  [[-9, 6], [-7.2, 7.8]],
-  [[-2.2, 10], [0.4, 9]],
-  [[4.8, 6.2], [5.8, 8.5]],
-  [[-8.2, -6.2], [-6.8, -4.6]],
+  [[-9, 8], [-7.2, 9.6]],
+  [[3.4, 9.2], [5, 11]],
+  [[-7.8, -5.6], [-6.4, -4.2]],
+  [[3.2, -4.4], [4.8, -5.6]],
 ];
 
 /** The middle of the box round the silhouette: the point laid on the slot's centre. */
@@ -460,41 +515,19 @@ const SIL_MID = (() => {
   return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2] as const;
 })();
 
-/** The closed outline `points` pushed out by `d` along its outward normal at every point. */
-function outset(points: Pt[], d: number): Pt[] {
-  const n = points.length;
-  const unit = (x: number, y: number): Pt => {
-    const l = Math.hypot(x, y) || 1;
-    return [x / l, y / l];
-  };
-  // clockwise on screen (y down): the outward normal of an edge (dx, dy) is (dy, -dx)
-  const out: Pt[] = [];
-  for (let i = 0; i < n; i++) {
-    const [px, py] = points[(i + n - 1) % n];
-    const [x, y] = points[i];
-    const [nx, ny] = points[(i + 1) % n];
-    const [ax, ay] = unit(x - px, y - py);
-    const [bx, by] = unit(nx - x, ny - y);
-    const [mx, my] = unit(ay + by, -(ax + bx));
-    // a miter, capped so a sharp turn cannot throw the point far out
-    const cos = Math.max(0.5, mx * ay - my * ax);
-    out.push([x + (mx * d) / cos, y + (my * d) / cos]);
-  }
-  return out;
-}
-
-const EDGE = outset(SILHOUETTE, EDGE_OFFSET);
-
 /**
- * The Inventory icon (FS-3EBCA § Change: The inventory icon is an inked backpack, R1–R6): a small
- * inked illustration of an adventurer's backpack, centred on (cx, cy). Flat fills of leather,
- * brass and cloth inside a heavy ink outline, ink part lines, hatching for its shade, stitches and
- * scratches; no gradient and no light. Its one amber is a 1 px edge outside the outline, `edge` at
- * `edgeAlpha`, the only thing that changes under the pointer.
+ * The Inventory icon (FS-3EBCA § Change: The inventory icon is an inked backpack, R1–R5, as the
+ * owner's first tweak round changed it): a small, dark inked illustration of an old haversack,
+ * centred on (cx, cy). Flat fills of smoky leather, blackened iron and dull wool inside a heavy ink
+ * outline, ink part lines, hatching for its shade, a tooled border, stitches and scratches; no
+ * gradient, no amber. `lifted`, under the pointer, draws every tone but the ink a little lighter
+ * ({@link BACKPACK_HOVER_LIFT}), the one thing that changes.
  */
-export function drawBackpack(g: FilledInk, cx: number, cy: number, edge: number, edgeAlpha: number): void {
+export function drawBackpack(g: FilledInk, cx: number, cy: number, lifted: boolean): void {
   const ox = cx - SIL_MID[0];
   const oy = cy - SIL_MID[1];
+  const T = BACKPACK_TONES;
+  const tone = (c: number) => (lifted && c !== T.ink ? tint(c, BACKPACK_HOVER_LIFT) : c);
   const trace = (points: Pt[], closed: boolean) => {
     g.beginPath();
     g.moveTo(ox + points[0][0], oy + points[0][1]);
@@ -502,76 +535,83 @@ export function drawBackpack(g: FilledInk, cx: number, cy: number, edge: number,
     if (closed) g.closePath();
   };
   const fill = (points: Pt[], colour: number) => {
-    g.fillStyle(colour, 1);
+    g.fillStyle(tone(colour), 1);
     trace(points, true);
     g.fillPath();
   };
   // the line style before the path: WebGL takes each point's width as the point is laid
   const line = (points: Pt[], width: number, colour: number, alpha: number, closed: boolean) => {
-    g.lineStyle(width, colour, alpha);
+    g.lineStyle(width, tone(colour), alpha);
     trace(points, closed);
     g.strokePath();
   };
-  const part = (points: Pt[], colour: number) => {
+  const part = (points: Pt[], colour: number, width = PART_W) => {
     fill(points, colour);
-    line(points, PART_W, BACKPACK_TONES.ink, 1, true);
+    line(points, width, T.ink, 1, true);
   };
-  const strokes = (segments: [Pt, Pt][], width: number, alpha: number) => {
-    g.lineStyle(width, BACKPACK_TONES.ink, alpha);
+  const strokes = (segments: [Pt, Pt][], width: number, colour: number, alpha: number) => {
+    g.lineStyle(width, tone(colour), alpha);
     for (const [[x0, y0], [x1, y1]] of segments) g.lineBetween(ox + x0, oy + y0, ox + x1, oy + y1);
   };
-
-  line(EDGE, EDGE_W, edge, edgeAlpha, true);
+  const rivet = ([x, y]: Pt) => {
+    part(disc(x, y, RIVET_R), T.iron, 0.6);
+    fill(disc(x - 0.3, y - 0.3, 0.3), T.ironLit);
+  };
 
   // the shoulder strap, behind the side; the side, turned from the light, hatched
-  part(STRAP, BACKPACK_TONES.leatherDark);
-  fill(SIDE, BACKPACK_TONES.leatherSide);
-  strokes(HATCH.side, HATCH_W, HATCH_ALPHA);
-  line(SIDE, PART_W, BACKPACK_TONES.ink, 1, true);
-  part(SIDE_FLAP, BACKPACK_TONES.leatherDark);
+  part(STRAP, T.leatherDark);
+  strokes(STITCHES.strap, FINE_W, T.ink, STITCH_ALPHA);
+  fill(SIDE, T.leatherSide);
+  strokes(HATCH.side, HATCH_W, T.ink, HATCH_ALPHA);
+  line(SIDE, PART_W, T.ink, 1, true);
+  part(SIDE_FLAP, T.leatherDark);
 
-  // the pouch on the side, under its own flap
-  part(POUCH, BACKPACK_TONES.leather);
-  strokes(HATCH.underPouchFlap, HATCH_W, HATCH_ALPHA);
-  part(POUCH_FLAP, BACKPACK_TONES.leather);
+  // the front, shaded under the flap, seamed and worn
+  part(FRONT, T.leather);
+  strokes(HATCH.underFlap, HATCH_W, T.ink, HATCH_ALPHA);
+  strokes(STITCHES.seam, FINE_W, T.ink, STITCH_ALPHA);
+  strokes(SCRATCHES.slice(0, 2), FINE_W, T.ink, SCRATCH_ALPHA);
 
-  // the front, shaded under the flap, worn
-  part(FRONT, BACKPACK_TONES.leather);
-  strokes(HATCH.underFlap, HATCH_W, HATCH_ALPHA);
+  // the flap, shaded under the roll, its border tooled, worn, riveted at its corners
+  fill(FLAP, T.leatherDark);
+  strokes(HATCH.underRoll, HATCH_W, T.ink, HATCH_ALPHA);
+  line(FLAP, PART_W, T.ink, 1, true);
+  for (const groove of TOOLING) line(groove, FINE_W, T.tooling, 1, false);
+  strokes(SCRATCHES.slice(2), FINE_W, T.ink, SCRATCH_ALPHA);
 
-  // the flap, shaded under the bedroll
-  fill(FLAP, BACKPACK_TONES.leatherDark);
-  strokes(HATCH.underRoll, HATCH_W, HATCH_ALPHA);
-  line(FLAP, PART_W, BACKPACK_TONES.ink, 1, true);
-  strokes(STITCHES, FINE_W, STITCH_ALPHA);
-  strokes(SCRATCHES, FINE_W, SCRATCH_ALPHA);
+  // the iron hasp over the flap's edge, shut on its ring
+  part(HASP, T.iron, FINE_W);
+  strokes([HASP_LIT], FINE_W, T.ironLit, 1);
+  fill(HASP_SLOT, T.ink);
+  part(disc(RING.x, RING.y, RING.r), T.iron, FINE_W);
+  part(disc(RING.x, RING.y, RING.hole), T.leather, FINE_W);
+  line(RING_LIT, FINE_W, T.ironLit, 1, false);
+  for (const at of RIVETS) rivet(at);
 
-  // the straps, each through its brass buckle
-  for (const x of STRAP_XS) {
-    part(strapOf(x), BACKPACK_TONES.leatherDark);
-    const buckle = buckleOf(x);
-    fill(buckle.frame, BACKPACK_TONES.brass);
-    fill(buckle.gap, BACKPACK_TONES.leatherDark);
-    line(buckle.frame, FINE_W, BACKPACK_TONES.ink, 1, true);
-    g.lineBetween(ox + buckle.tongue[0], oy + buckle.tongue[1], ox + buckle.tongue[2], oy + buckle.tongue[3]);
-  }
+  // the drawstring pouch hanging on the side by its thong
+  line(SACK_THONG, 1, T.rope, 1, false);
+  part(SACK_SHAPE, T.leather);
+  strokes(HATCH.sack, HATCH_W, T.ink, HATCH_ALPHA);
+  strokes(SACK_GATHERS, FINE_W, T.ink, STITCH_ALPHA);
+  line(SACK_STRING, PART_W, T.rope, 1, false);
+  for (const end of SACK_STRING_ENDS) line(end, 1, T.rope, 1, false);
 
-  // the bedroll across the top, its rolled end showing, tied with two cords
-  fill(BEDROLL, BACKPACK_TONES.cloth);
-  strokes(HATCH.rollUnderside, HATCH_W, HATCH_ALPHA);
-  line(BEDROLL, PART_W, BACKPACK_TONES.ink, 1, true);
-  line(ROLL_TURN, FINE_W, BACKPACK_TONES.ink, 1, false);
-  line(ROLL_CURL, FINE_W, BACKPACK_TONES.ink, 1, false);
-  part(ROLL_FACE, BACKPACK_TONES.clothEnd);
-  line(ROLL_SPIRAL, FINE_W, BACKPACK_TONES.ink, 1, false);
-  for (const x of CORD_XS) {
-    const cord = cordOf(x);
-    line(cord.tie, 1.5, BACKPACK_TONES.cord, 1, false);
-    for (const end of cord.ends) line(end, 1, BACKPACK_TONES.cord, 1, false);
+  // the wool blanket rolled across the top, its rolled end showing, tied with hemp
+  fill(BEDROLL, T.wool);
+  strokes(HATCH.rollUnderside, HATCH_W, T.ink, HATCH_ALPHA);
+  line(BEDROLL, PART_W, T.ink, 1, true);
+  line(ROLL_TURN, FINE_W, T.ink, 1, false);
+  line(ROLL_CURL, FINE_W, T.ink, 1, false);
+  part(ROLL_FACE, T.woolEnd);
+  line(ROLL_SPIRAL, FINE_W, T.ink, 1, false);
+  for (const x of ROPE_XS) {
+    const rope = ropeOf(x);
+    line(rope.tie, 1.5, T.rope, 1, false);
+    for (const end of rope.ends) line(end, 1, T.rope, 1, false);
   }
 
   // last, the heavy ink line round the whole silhouette
-  line(SILHOUETTE, OUTLINE_W, BACKPACK_TONES.ink, 1, true);
+  line(SILHOUETTE, OUTLINE_W, T.ink, 1, true);
 }
 
 /** A bust's outline: its head's circle and the half circle of its shoulders. */

@@ -783,14 +783,15 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   under the pointer; a greyed icon (Mail outside the town) is `hudFaint` and never brightens, since
   an amber thing the player cannot act on is a defect. Under the pointer a 12 px vellum label on
   the HUD panel names the icon and its key. **The Inventory icon is the one filled exception**: a
-  small inked illustration, with a heavy ink outline, flat fills of muted leather and old brass, and
-  ink hatching for its shade, but no gradient and no realistic light; its pressable cue is a thin
-  amber edge round its silhouette, brighter under the pointer. It is the owner's call for this one
-  icon, recorded here so the next icon does not copy it by accident. Everything is drawn in code
-  from tokens, with no baked art. The ability card stands directly above the row.
+  small, dark inked illustration of an old haversack, with a heavy ink outline, flat fills of smoky
+  leather near charcoal, blackened iron and dull wool, a tooled flap border and ink hatching for its
+  shade, but no gradient, no realistic light and no amber at all; under the pointer its tones lift a
+  little toward light, and its label shows. It is the owner's call for this one icon, recorded here
+  so the next icon does not copy it by accident. Everything is drawn in code from tokens, with no
+  baked art. The ability card stands directly above the row.
   *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-12; rewritten by
   [FS-3EBCA § Change: The inventory icon is an inked backpack](../../docs/specs/3EBCA-hud-corner-icons.md),
-  2026-11-13.)*
+  2026-11-13, and by its owner's first tweak round the same day.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
