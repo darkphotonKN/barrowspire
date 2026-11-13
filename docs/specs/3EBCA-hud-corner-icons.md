@@ -1133,3 +1133,5 @@ For the whole row:
   rucksack.
 - The guideline's art-direction sections beyond the Corner row paragraph.
 - Any server, proto, gateway or contract change.
+
+## Change: The whole corner row is knockout → FS-7TQN4

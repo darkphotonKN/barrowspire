@@ -1580,3 +1580,5 @@ C6. **The letter's body is as crisp as the rest of the HUD's text** at every ren
 ## Change: Bare corner icons → FS-J1672
 
 ## Change: Richer corner glyphs → FS-QHN87
+
+## Change: The whole corner row is knockout → FS-7TQN4

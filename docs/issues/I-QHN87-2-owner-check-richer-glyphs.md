@@ -1,6 +1,6 @@
 ---
 id: I-QHN87-2
-status: open
+status: done
 implements: FS-QHN87
 blocked_by: [I-QHN87-1]
 labels: [blocked]
@@ -45,3 +45,7 @@ I-QHN87-1.
 
 FS-QHN87 §Requirements R14, R15, §Acceptance Criteria "By eye", §Edge States "Render scale 1" and
 "Translucent strokes"; charter G7; user stories 1–14, 17 and 18.
+
+## Superseded
+
+2026-11-13: two tweak rounds built (`84d82e8a`, `4d6b6245`); the owner's next request (「其他icon不是也要反白嗎」, 「目前反白前的肩胛有點怪在調整一下」) is past this slice's two rounds, so it is a new change: FS-7TQN4 (I-7TQN4-1/2). Today's line glyphs stay as the knockouts' fallback.
