@@ -35,6 +35,45 @@ const (
 	MonsterArchetypeGhost  MonsterArchetype = "ghost"
 )
 
+// The Spire's variants past each family's first (FS-C8VM7 §A R3): each its own
+// sheet, named in snake case as on the wire. Which family, role and unlock tier
+// each has is the roster's data (spireRoster), never read off the constant.
+const (
+	// the ghoul family
+	MonsterArchetypeGhast   MonsterArchetype = "ghast"
+	MonsterArchetypeRavener MonsterArchetype = "ravener"
+	// the skeleton family, after the Bone Archer
+	MonsterArchetypeAshenArcher MonsterArchetype = "ashen_archer"
+	MonsterArchetypeWightArcher MonsterArchetype = "wight_archer"
+	// the troll family
+	MonsterArchetypeCaveTroll  MonsterArchetype = "cave_troll"
+	MonsterArchetypeBloodTroll MonsterArchetype = "blood_troll"
+	// the thrall family, after the Barrow Thrall
+	MonsterArchetypePlagueThrall MonsterArchetype = "plague_thrall"
+	MonsterArchetypeBlightborn   MonsterArchetype = "blightborn"
+	// the ghost family, after the Spire Wraith
+	MonsterArchetypeShade   MonsterArchetype = "shade"
+	MonsterArchetypePhantom MonsterArchetype = "phantom"
+	MonsterArchetypeBanshee MonsterArchetype = "banshee"
+	// the goblin family: each variant a blade look and a blade + shield look,
+	// two archetypes of one variant (FS-C8VM7 §A R8)
+	MonsterArchetypeGoblin                MonsterArchetype = "goblin"
+	MonsterArchetypeGoblinShield          MonsterArchetype = "goblin_shield"
+	MonsterArchetypeGoblinCutthroat       MonsterArchetype = "goblin_cutthroat"
+	MonsterArchetypeGoblinCutthroatShield MonsterArchetype = "goblin_cutthroat_shield"
+	MonsterArchetypeGoblinReaver          MonsterArchetype = "goblin_reaver"
+	MonsterArchetypeGoblinReaverShield    MonsterArchetype = "goblin_reaver_shield"
+	MonsterArchetypeGoblinWarchief        MonsterArchetype = "goblin_warchief"
+	MonsterArchetypeGoblinWarchiefShield  MonsterArchetype = "goblin_warchief_shield"
+	// the ogre family
+	MonsterArchetypeOgre       MonsterArchetype = "ogre"
+	MonsterArchetypeOgreMauler MonsterArchetype = "ogre_mauler"
+	MonsterArchetypeOgreTyrant MonsterArchetype = "ogre_tyrant"
+	// the dark warrior family
+	MonsterArchetypeDarkWarrior MonsterArchetype = "dark_warrior"
+	MonsterArchetypeDarkReaper  MonsterArchetype = "dark_reaper"
+)
+
 // MonsterAction is what a monster is doing, as the state broadcast names it.
 // `attack` covers the wind-up and the strike, a demon's slam included.
 // FS-77AB6 §Requirements 32. `claw` is a demon's fire claw, from the tick it

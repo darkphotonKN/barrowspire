@@ -236,7 +236,7 @@ var (
 // the fields with it; no field keeps a table of its own. FS-X2F2H §Requirements 31.
 var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
 	components.MonsterArchetypeGhoul:      GhoulMonsterDrop,
-	components.MonsterArchetypeTroll:      {Chance: 0.15, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit},
+	components.MonsterArchetypeTroll:      TrollMonsterDrop,
 	components.MonsterArchetypeDemon:      BossMonsterDrop,
 	components.MonsterArchetypeBloodDemon: BossMonsterDrop, // FS-VHGE7 §A R12: the boss row, no row of its own
 	components.MonsterArchetypeDaagon:     BossMonsterDrop, // FS-M8CSE §E R26
@@ -245,10 +245,37 @@ var MonsterDrops = map[components.MonsterArchetype]MonsterDrop{
 	components.MonsterArchetypeSpireWraith:  GhoulMonsterDrop,
 	// FS-B4SG9 §A R3: the ghoul's row, as a row of its own
 	components.MonsterArchetypeBoneArcher: GhoulMonsterDrop,
+	// FS-C8VM7 §E R32: each variant on its family's base row, the ghoul's for
+	// the fodder and ranged families, the troll's for the brutes. A goblin's
+	// shield look takes its blade look's row (spireRoster)
+	components.MonsterArchetypeGhast:           GhoulMonsterDrop,
+	components.MonsterArchetypeRavener:         GhoulMonsterDrop,
+	components.MonsterArchetypeAshenArcher:     GhoulMonsterDrop,
+	components.MonsterArchetypeWightArcher:     GhoulMonsterDrop,
+	components.MonsterArchetypePlagueThrall:    GhoulMonsterDrop,
+	components.MonsterArchetypeBlightborn:      GhoulMonsterDrop,
+	components.MonsterArchetypeShade:           GhoulMonsterDrop,
+	components.MonsterArchetypePhantom:         GhoulMonsterDrop,
+	components.MonsterArchetypeBanshee:         GhoulMonsterDrop,
+	components.MonsterArchetypeGoblin:          GhoulMonsterDrop,
+	components.MonsterArchetypeGoblinCutthroat: GhoulMonsterDrop,
+	components.MonsterArchetypeGoblinReaver:    GhoulMonsterDrop,
+	components.MonsterArchetypeGoblinWarchief:  GhoulMonsterDrop,
+	components.MonsterArchetypeCaveTroll:       TrollMonsterDrop,
+	components.MonsterArchetypeBloodTroll:      TrollMonsterDrop,
+	components.MonsterArchetypeOgre:            TrollMonsterDrop,
+	components.MonsterArchetypeOgreMauler:      TrollMonsterDrop,
+	components.MonsterArchetypeOgreTyrant:      TrollMonsterDrop,
+	components.MonsterArchetypeDarkWarrior:     TrollMonsterDrop,
+	components.MonsterArchetypeDarkReaper:      TrollMonsterDrop,
 }
 
 // GhoulMonsterDrop is the ghoul's row, and the tower monsters' with it.
 var GhoulMonsterDrop = MonsterDrop{Chance: 0.08, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit}
+
+// TrollMonsterDrop is the troll's row, and the brute families' with it
+// (FS-C8VM7 §E R32).
+var TrollMonsterDrop = MonsterDrop{Chance: 0.15, MinItems: 1, MaxItems: 1, Source: lootSourceStandard, TypeSplit: standardDropSplit}
 
 // EliteMonsterDrop is any elite's row, whatever its archetype.
 var EliteMonsterDrop = MonsterDrop{Chance: 0.50, MinItems: 1, MaxItems: 1, Source: lootSourceElite, TypeSplit: standardDropSplit}

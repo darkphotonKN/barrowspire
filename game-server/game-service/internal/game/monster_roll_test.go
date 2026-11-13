@@ -60,11 +60,13 @@ func TestBoneArcherSheet_CarriesItsNumbers(t *testing.T) {
 	}, sheet)
 }
 
-// Which archetypes shoot is sheet data, and the Bone Archer's is the only
-// sheet with a shot: every other one strikes in melee as before. FS-B4SG9 §A R1.
+// Which archetypes shoot is sheet data, and the Bone Archer's family is the
+// only one whose sheets carry a shot: every other one strikes in melee as
+// before. FS-B4SG9 §A R1; its later steps keep its shot (FS-C8VM7 §A R5).
 func TestMonsterSheets_OnlyTheBoneArcherCarriesAShot(t *testing.T) {
 	for archetype, sheet := range monsterSheets {
-		if archetype == components.MonsterArchetypeBoneArcher {
+		if entry, ok := variantOf(archetype); ok && entry.Family.Variants[0].Archetype == components.MonsterArchetypeBoneArcher {
+			assert.Equal(t, boneArrowShot, sheet.Shot, "%s shoots the Bone Archer's arrow", archetype)
 			continue
 		}
 		assert.Equal(t, monsterShot{}, sheet.Shot, "%s has no shot", archetype)

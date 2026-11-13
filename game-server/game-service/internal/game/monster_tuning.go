@@ -151,6 +151,84 @@ func rollSpireHeight(rng populationRand) int {
 }
 
 /*
+	The tiered roster: eight families of variants, each variant unlocked at a
+	tier of monster level. FS-C8VM7 §A R1-R9. The types and the functions that
+	read it are in monster_roster.go.
+*/
+
+// Tiers and the step rule.
+const (
+	// a tier is this many monster levels, tier 1 being levels 1-5; the last
+	// tier is open-ended
+	TierLevelSpan = 5
+	MaxTier       = 6
+
+	// step k of a family at level 1 is step 0's HP, damage, defence and magic
+	// resistance times these growths to the k (defence at least the step
+	// below's + 1), and its move speed plus k × the gain, in px/s (R5)
+	VariantStepHPGrowth         = 1.2
+	VariantStepDamageGrowth     = 1.15
+	VariantStepMitigationGrowth = 1.25
+	VariantStepSpeedGain        = 8.0
+
+	// each goblin spawned of a variant takes its blade + shield look at this
+	// share, with this much more defence than the blade look (R8)
+	GoblinShieldShare   = 0.5
+	GoblinShieldDefense = 3
+)
+
+// spireRoster is R3's table: each family's role and its variants, step 0
+// first, with their unlock tiers. A step past 0 is its family's step 0 under
+// the step rule; only step 0 has a sheet of its own in monsterSheets.
+var spireRoster = []monsterFamily{
+	{Name: "Ghoul", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeGhoul, Name: "Ghoul", Unlock: 1},
+		{Archetype: components.MonsterArchetypeGhast, Name: "Ghast", Unlock: 3},
+		{Archetype: components.MonsterArchetypeRavener, Name: "Ravener", Unlock: 6},
+	}},
+	{Name: "Skeleton", Role: roleRanged, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeBoneArcher, Name: "Bone Archer", Unlock: 1},
+		{Archetype: components.MonsterArchetypeAshenArcher, Name: "Ashen Archer", Unlock: 4},
+		{Archetype: components.MonsterArchetypeWightArcher, Name: "Wight Archer", Unlock: 6},
+	}},
+	{Name: "Troll", Role: roleBrute, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeTroll, Name: "Troll", Unlock: 1},
+		{Archetype: components.MonsterArchetypeCaveTroll, Name: "Cave Troll", Unlock: 3},
+		{Archetype: components.MonsterArchetypeBloodTroll, Name: "Blood Troll", Unlock: 6},
+	}},
+	{Name: "Thrall", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeBarrowThrall, Name: "Barrow Thrall", Unlock: 1},
+		{Archetype: components.MonsterArchetypePlagueThrall, Name: "Plague Thrall", Unlock: 4},
+		{Archetype: components.MonsterArchetypeBlightborn, Name: "Blightborn", Unlock: 6},
+	}},
+	{Name: "Ghost", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeSpireWraith, Name: "Spire Wraith", Unlock: 1},
+		{Archetype: components.MonsterArchetypeShade, Name: "Shade", Unlock: 2},
+		{Archetype: components.MonsterArchetypePhantom, Name: "Phantom", Unlock: 4},
+		{Archetype: components.MonsterArchetypeBanshee, Name: "Banshee", Unlock: 6},
+	}},
+	{Name: "Goblin", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeGoblin, Name: "Goblin", Unlock: 2,
+			ShieldLook: components.MonsterArchetypeGoblinShield},
+		{Archetype: components.MonsterArchetypeGoblinCutthroat, Name: "Goblin Cutthroat", Unlock: 3,
+			ShieldLook: components.MonsterArchetypeGoblinCutthroatShield},
+		{Archetype: components.MonsterArchetypeGoblinReaver, Name: "Goblin Reaver", Unlock: 5,
+			ShieldLook: components.MonsterArchetypeGoblinReaverShield},
+		{Archetype: components.MonsterArchetypeGoblinWarchief, Name: "Goblin Warchief", Unlock: 6,
+			ShieldLook: components.MonsterArchetypeGoblinWarchiefShield},
+	}},
+	{Name: "Ogre", Role: roleBrute, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeOgre, Name: "Ogre", Unlock: 4},
+		{Archetype: components.MonsterArchetypeOgreMauler, Name: "Ogre Mauler", Unlock: 5},
+		{Archetype: components.MonsterArchetypeOgreTyrant, Name: "Ogre Tyrant", Unlock: 6},
+	}},
+	{Name: "Dark Warrior", Role: roleBrute, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeDarkWarrior, Name: "Dark Warrior", Unlock: 6},
+		{Archetype: components.MonsterArchetypeDarkReaper, Name: "Dark Reaper", Unlock: 6},
+	}},
+}
+
+/*
 	Field tuning: the field worlds' numbers, beside the Spire's they derive from.
 	FS-X2F2H §Requirements 26–29, 36–37 (D14–D16, D24, D26). Every number is a
 	starting value, carried on each field place.
@@ -433,6 +511,29 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
+	// the new families' step 0s (FS-C8VM7 §A R6-R7); their later steps, and
+	// every old family's, are built by the step rule (spireRoster). The goblin:
+	// the ghoul's reach, quicker and keener, frail with a medium hit
+	components.MonsterArchetypeGoblin: {
+		Name: "Goblin", HP: 32, Damage: 8,
+		AttackInterval: 1.0, WindUp: 0.3, AttackRange: 45, MoveSpeed: 160,
+		Defense: 1, MagicResistance: 0,
+		AggroRadius: 280, LeashRadius: 540,
+	},
+	// the ogre: slower and harder-hitting than the troll
+	components.MonsterArchetypeOgre: {
+		Name: "Ogre", HP: 200, Damage: 24,
+		AttackInterval: 2.4, WindUp: 0.9, AttackRange: 70, MoveSpeed: 75,
+		Defense: 12, MagicResistance: 4,
+		AggroRadius: 220, LeashRadius: 480,
+	},
+	// the dark warrior: a disciplined greatsword, the demons' rhythm
+	components.MonsterArchetypeDarkWarrior: {
+		Name: "Dark Warrior", HP: 260, Damage: 30,
+		AttackInterval: 1.6, WindUp: 0.6, AttackRange: 70, MoveSpeed: 120,
+		Defense: 16, MagicResistance: 10,
+		AggroRadius: 320, LeashRadius: 600,
+	},
 }
 
 // killExperienceBase is what killing a level-1 monster of an archetype is worth,
@@ -452,6 +553,29 @@ var killExperienceBase = map[components.MonsterArchetype]int{
 	components.MonsterArchetypeSpireWraith:  20,
 	// FS-B4SG9 §A R3: the ghoul's
 	components.MonsterArchetypeBoneArcher: 10,
+	// FS-C8VM7 §E R33: step 0's base × the variant's HP over step 0's; the
+	// new families' step 0s by the same rule against the family they drop as.
+	// A goblin's shield look takes its blade look's row (spireRoster)
+	components.MonsterArchetypeGhast:           12,
+	components.MonsterArchetypeRavener:         15,
+	components.MonsterArchetypeAshenArcher:     12,
+	components.MonsterArchetypeWightArcher:     14,
+	components.MonsterArchetypeCaveTroll:       30,
+	components.MonsterArchetypeBloodTroll:      36,
+	components.MonsterArchetypePlagueThrall:    18,
+	components.MonsterArchetypeBlightborn:      22,
+	components.MonsterArchetypeShade:           24,
+	components.MonsterArchetypePhantom:         29,
+	components.MonsterArchetypeBanshee:         35,
+	components.MonsterArchetypeGoblin:          8,
+	components.MonsterArchetypeGoblinCutthroat: 10,
+	components.MonsterArchetypeGoblinReaver:    12,
+	components.MonsterArchetypeGoblinWarchief:  14,
+	components.MonsterArchetypeOgre:            36,
+	components.MonsterArchetypeOgreMauler:      43,
+	components.MonsterArchetypeOgreTyrant:      51,
+	components.MonsterArchetypeDarkWarrior:     46,
+	components.MonsterArchetypeDarkReaper:      56,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.
