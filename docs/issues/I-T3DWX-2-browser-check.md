@@ -1,6 +1,6 @@
 ---
 id: I-T3DWX-2
-status: open
+status: done
 implements: FS-T3DWX
 blocked_by: [I-T3DWX-1, I-T3DWX-3]
 labels: [blocked]
@@ -46,3 +46,7 @@ I-T3DWX-1, I-T3DWX-3
 ## Spec Reference
 
 FS-T3DWX §Acceptance Criteria (the owner's browser check), §Edge States; §Change: The top-right HUD fills the button's spot, Acceptance Criteria (the owner's browser check).
+
+## Owner sign-off
+
+2026-11-14: the owner tried the Fullscreen row in the OPTIONS panel and the corner fill (option A) in game: 「全螢幕沒問題」.

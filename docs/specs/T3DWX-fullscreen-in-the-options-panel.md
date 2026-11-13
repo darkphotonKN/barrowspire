@@ -1,6 +1,6 @@
 # FS-T3DWX: Fullscreen in the OPTIONS panel
 
-> Status: work-order · SPECIFICATION.md: none (a change FS has no thin line; owners
+> Status: shipped · SPECIFICATION.md: none (a change FS has no thin line; owners
 > [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) "Fullscreen and windowed play" (§E R18–R23, A16),
 > [FS-28DDG](28DDG-music-in-the-hub.md) "Set the music's volume" (§ Change: Music volume in an
 > Options panel, the OPTIONS panel's list, C4) and [FS-56CKV](56CKV-minimap-look-and-run-hud-layout.md)
@@ -225,7 +225,7 @@ to a case the charter did not name.
 - Any change to the game-server.
 
 ## Change: The top-right HUD fills the button's spot
-Status: work-order
+Status: shipped
 Date: 2026-11-13
 
 Asked by the owner on 2026-11-13, after the move: 「空出來的就補上」 (fill the gap the removed button
