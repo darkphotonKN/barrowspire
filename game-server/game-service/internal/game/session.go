@@ -3175,7 +3175,13 @@ func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
 func (s *Session) InitialSystems() {
 	// creates and setsup match progress entity within the entity manager; the
 	// run's height is rolled here, once, and never leaves the server
-	CreateMatchProgressEntity(s.EntityManager, rollSpireHeight(s.spawnRand))
+	height := rollSpireHeight(s.spawnRand)
+	CreateMatchProgressEntity(s.EntityManager, height)
+
+	// a tome run's plan is rolled with its height (FS-3103M §B R5)
+	if tomeFloor, altarFloor, ok := rollTomePlan(s.spawnRand, height, TomeRunChance); ok {
+		s.setTomePlan(tomeFloor, altarFloor)
+	}
 }
 
 type PlaceArea struct {

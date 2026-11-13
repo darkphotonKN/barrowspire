@@ -73,6 +73,12 @@ const (
 	ComponentTypeTimedOpen    ComponentType = "TimedOpen"
 
 	ComponentTypeRespawn ComponentType = "Respawn"
+
+	// a tome run's plan on the run-level entity, and the tome and altar
+	// themselves (FS-3103M §B-C)
+	ComponentTypeTomePlan ComponentType = "TomePlan"
+	ComponentTypeTome     ComponentType = "Tome"
+	ComponentTypeAltar    ComponentType = "Altar"
 )
 
 type Entity struct {

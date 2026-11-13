@@ -150,6 +150,13 @@ func rollSpireHeight(rng populationRand) int {
 	return spireHeightOdds[len(spireHeightOdds)-1].Height
 }
 
+// The Tome of Filth and the Altar of Consecration. FS-3103M §B R5.
+const (
+	// the chance a run has a tome, rolled once with its height; 1 forces a
+	// tome into every run in a local build
+	TomeRunChance = 0.02
+)
+
 /*
 	Field tuning: the field worlds' numbers, beside the Spire's they derive from.
 	FS-X2F2H §Requirements 26–29, 36–37 (D14–D16, D24, D26). Every number is a

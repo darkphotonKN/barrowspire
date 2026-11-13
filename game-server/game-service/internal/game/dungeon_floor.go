@@ -130,6 +130,7 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 
 	slog.Error("Dungeon floor fell back to a floor of buildings: this floor is a small one",
 		"sessionID", s.ID, "floor", depth, "tries", dungeonGenerations)
+	s.warnTomeRunFallback(depth)
 	return nil, dungeonFixtures{}
 }
 
@@ -195,6 +196,9 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 	}
 
 	s.layDungeonContainers(d)
+
+	// a tome run's tome or altar, after the containers (FS-3103M §C R8-R9)
+	s.layTomeAndAltar(depth, d)
 }
 
 /**
