@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { KeyValueStore } from "@/characters/roster";
 import { MUSIC_SETTING_KEY } from "@/audio/musicSetting";
-import { SFX_SETTING_KEY } from "@/audio/sfxSetting";
+import { SFX_SETTING_KEY, resetHeldForTests } from "@/audio/sfxSetting";
 import { BARROW_HEX } from "@/utils/theme";
 import { toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
@@ -17,6 +17,9 @@ import {
   type MusicLevelControl,
   type SettingRow,
 } from "./optionsPanel";
+
+// node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
+afterEach(() => resetHeldForTests());
 
 // The windows' frame and title are one drawing each, which this panel must call, not copy
 // (FS-28DDG § Change: Music volume in an Options panel, C3).

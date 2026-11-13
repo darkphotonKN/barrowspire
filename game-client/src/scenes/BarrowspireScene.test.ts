@@ -1,5 +1,9 @@
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetHeldForTests } from "@/audio/sfxSetting";
+
+// node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
+afterEach(() => resetHeldForTests());
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
 interface Emitter {

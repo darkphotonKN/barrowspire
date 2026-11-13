@@ -1,4 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetHeldForTests } from "@/audio/sfxSetting";
+
+// node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
+afterEach(() => resetHeldForTests());
 
 // Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
 // scene base class and the events the scene hangs its release on.

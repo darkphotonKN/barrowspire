@@ -44,27 +44,35 @@ describe("windowSound, the one rule (FS-WDM0X S8, S3, S5, S6)", () => {
 });
 
 /**
- * One effect's sound as Phaser 4.2.1 plays it: `play()` re-applies the sound's config, so a volume
- * written before the play is lost (`BaseSound.play` → `createAndStartBufferSource` →
- * `applyConfig`). Every property written on it is recorded.
+ * One effect's sound as Phaser 4.2.1 plays it: one config object, which `play(config)` merges the
+ * given config into, since `Extend` mutates its target, and then applies (`BaseSound.play`,
+ * BaseSound.js:318, :338, then `createAndStartBufferSource` → `applyConfig`). The volume setter
+ * writes that same config (`currentConfig === config`, BaseSound.js:147–149), so a volume written
+ * before a play holds as well. Every property written on the sound, and every config handed to
+ * its play, is recorded.
  */
 function fakeSound(key: string) {
   const writes: string[] = [];
+  const configs: object[] = [];
+  const config = { volume: 1 };
   const self = {
     key,
     plays: 0,
-    /** The volume it sounds at: its config's on each play, then whatever is written. */
-    heard: 1,
-    configVolume: 1,
+    configs,
+    /** The volume it sounds at: its config's. */
+    get heard() {
+      return config.volume;
+    },
     get volume() {
-      return self.heard;
+      return config.volume;
     },
     set volume(value: number) {
-      self.heard = value;
+      config.volume = value;
     },
-    play() {
+    play(given?: { volume?: number }) {
       self.plays++;
-      self.heard = self.configVolume;
+      configs.push({ ...given });
+      Object.assign(config, given);
       return true;
     },
   };
@@ -125,7 +133,7 @@ function player(opts: { cached?: UiEffect[]; audible?: boolean; level?: string |
   return { ...fake, level, windows, sounds, played, soundOf };
 }
 
-describe("the effects' files (FS-WDM0X S1, S21; S6 order set by the integrator)", () => {
+describe("the effects' files (FS-WDM0X S1, S21; S21 order set by the integrator)", () => {
   it("should name the owner's 11 effects", () => {
     expect([...UI_EFFECTS].sort()).toEqual(
       [
@@ -151,7 +159,7 @@ describe("the effects' files (FS-WDM0X S1, S21; S6 order set by the integrator)"
 });
 
 describe("UiSounds.play, the player (FS-WDM0X S10–S13, S16, S22)", () => {
-  it.each([1, 2, 3, 4, 5])("should start the effect's one sound at level %i's gain, set on the sound", (n) => {
+  it.each([1, 2, 3, 4, 5])("should start the effect's one sound at level %i's gain, handed to its play", (n) => {
     const p = player({ level: String(n) });
 
     p.sounds.play("inventory_open");
@@ -159,6 +167,7 @@ describe("UiSounds.play, the player (FS-WDM0X S10–S13, S16, S22)", () => {
     expect(p.added).toEqual(["sfx:inventory_open"]);
     const { self } = p.soundOf("sfx:inventory_open");
     expect(self.plays).toBe(1);
+    expect(self.configs).toEqual([{ volume: sfxGain(n) }]);
     expect(self.heard).toBeCloseTo((SFX_MAX_GAIN * n) / 5, 12);
     expect(self.heard).toBeCloseTo(sfxGain(n), 12);
   });
@@ -227,13 +236,15 @@ describe("UiSounds.play, the player (FS-WDM0X S10–S13, S16, S22)", () => {
     expect(p.soundOf("sfx:party_open").self.plays).toBe(2);
   });
 
-  it("should write only the sound's volume: no pitch, rate or detune", () => {
+  it("should hand its play only a volume and write nothing on the sound: no pitch, rate or detune", () => {
     const p = player();
 
     p.sounds.play("mailbox_open");
     p.sounds.play("mailbox_open");
 
-    expect(new Set(p.soundOf("sfx:mailbox_open").writes)).toEqual(new Set(["volume"]));
+    const { writes, self } = p.soundOf("sfx:mailbox_open");
+    expect(writes).toEqual([]);
+    expect(self.configs.map((given) => Object.keys(given))).toEqual([["volume"], ["volume"]]);
   });
 });
 

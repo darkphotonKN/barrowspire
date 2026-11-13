@@ -6,10 +6,12 @@ import {
   SFX_MAX_GAIN,
   SFX_SETTING_KEY,
   SFX_TOP_LEVEL,
+  browserSfxStore,
   clampSfxLevel,
   heldForVisit,
   readSfxLevel,
   rememberSfxLevel,
+  resetHeldForTests,
   sfxGain,
   storedSfxLevel,
 } from "./sfxSetting";
@@ -152,6 +154,18 @@ describe("heldForVisit, a refused change still holds for this visit (FS-WDM0X S1
     rememberSfxLevel(visit, 4);
     store.setItem(SFX_SETTING_KEY, "5"); // another tab
     expect(readSfxLevel(visit)).toBe(5);
+  });
+});
+
+describe("resetHeldForTests, a new visit for the next test", () => {
+  // node has no window: every write to the browser's store is refused and held for the module's life
+  it("should forget the level browserSfxStore holds, so the next test reads the default", () => {
+    rememberSfxLevel(browserSfxStore, 0);
+    expect(readSfxLevel(browserSfxStore)).toBe(0);
+
+    resetHeldForTests();
+
+    expect(readSfxLevel(browserSfxStore)).toBe(SFX_DEFAULT_LEVEL);
   });
 });
 
