@@ -199,33 +199,21 @@ describe("HubScene queue panel (FS-29KSH §Requirements 25, 27)", () => {
   });
 });
 
-describe("hubMenuChoices (FS-G4VMQ §Requirements 3)", () => {
-  it("should offer changing character and going back when not queued", () => {
-    expect(hubMenuChoices({ queued: false }).map((c) => c.id)).toEqual(["change", "back"]);
+describe("hubMenuChoices (FS-G4VMQ §Requirements 3; FS-28DDG § Change: Music volume in an Options panel, C1, C2)", () => {
+  it("should offer changing character, the options and going back when not queued, as the field's menu does", () => {
+    expect(hubMenuChoices({ queued: false }).map((c) => c.id)).toEqual(["change", "options", "back"]);
   });
 
-  it("should offer leaving the queue between them while queued", () => {
-    expect(hubMenuChoices({ queued: true }).map((c) => c.id)).toEqual(["change", "leave", "back"]);
-  });
-});
-
-// The town's music row sits after Leave the queue and before Back, so Leave the queue keeps its
-// [2]; the field calls the choices without the music and keeps its two rows (FS-28DDG R15, R19).
-describe("hubMenuChoices with the music (FS-28DDG R15, R19)", () => {
-  it.each([
-    { queued: false, music: "on" as const, ids: ["change", "music", "back"], label: "Silence the music" },
-    { queued: true, music: "on" as const, ids: ["change", "leave", "music", "back"], label: "Silence the music" },
-    { queued: false, music: "off" as const, ids: ["change", "music", "back"], label: "Let the music play" },
-    { queued: true, music: "off" as const, ids: ["change", "leave", "music", "back"], label: "Let the music play" },
-  ])("should offer the music row, amber, reading $label while queued $queued and the music $music", ({ queued, music, ids, label }) => {
-    const choices = hubMenuChoices({ queued, music });
-
-    expect(choices.map((c) => c.id)).toEqual(ids);
-    expect(choices.find((c) => c.id === "music")).toEqual({ id: "music", label, register: "actionable" });
+  it("should offer leaving the queue before the options while queued, so Leave the queue keeps its [2]", () => {
+    expect(hubMenuChoices({ queued: true }).map((c) => c.id)).toEqual(["change", "leave", "options", "back"]);
   });
 
-  it("should leave the choices as they were when called without the music, as the field calls them", () => {
-    expect(hubMenuChoices({ queued: false }).map((c) => c.id)).toEqual(["change", "back"]);
+  it("should offer the shared module's Options row, amber, just before Back", () => {
+    for (const queued of [false, true]) {
+      const choices = hubMenuChoices({ queued });
+      expect(choices.at(-2)).toEqual({ id: "options", label: "Options", register: "actionable" });
+      expect(choices.at(-1)).toEqual({ id: "back", label: "Back  [Esc]", register: "cancel" });
+    }
   });
 });
 
@@ -740,6 +728,10 @@ function hubOnStage() {
     i: key(),
     b: key(),
     c: key(),
+    left: key(),
+    right: key(),
+    a: key(),
+    d: key(),
   };
   const gear = fakeGear();
   hub.add = stage.add;
@@ -754,8 +746,8 @@ function hubOnStage() {
   hub.dismissKey = keys.esc;
   hub.interactKey = keys.e;
   hub.confirmKey = keys.enter;
-  hub.cursors = { up: key(), down: key(), left: key(), right: key() };
-  hub.wasd = { up: keys.w, down: key(), left: key(), right: key() };
+  hub.cursors = { up: key(), down: key(), left: keys.left, right: keys.right };
+  hub.wasd = { up: keys.w, down: key(), left: keys.a, right: keys.d };
   const press = (k: FakeKey) => {
     k.justDown = true;
     hub.update(0, 16);
@@ -3998,8 +3990,8 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
   });
 });
 
-const { MUSIC_KEY, MUSIC_URL, MUSIC_FADE_OUT_MS, MUSIC_VOLUME } = await import("@/audio/hubMusic");
-const { MUSIC_SETTING_KEY } = await import("@/audio/musicSetting");
+const { MUSIC_KEY, MUSIC_URL, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/hubMusic");
+const { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } = await import("@/audio/musicSetting");
 
 // The town's music is the hub's own load, beside its art, so the torch bar counts it and no other
 // scene pays for it (FS-28DDG R12, R13).
@@ -4097,6 +4089,7 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
     const hub = onStage.hub as unknown as {
       enterMusic(): void;
       release(end: "shutdown" | "destroy"): void;
+      update(time: number, delta: number): void;
       menu?: unknown;
     };
     /** The game steps on, in 16 ms frames. */
@@ -4119,69 +4112,214 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
     return kept;
   }
 
-  /** The music row's label as drawn, while the menu shows it. */
-  const musicLabel = (made: Made[]) =>
-    (made.find((m) => m.name === "menu-music-label" && !m.destroyed)?.children[0] as Made | undefined)?.args[2];
+  /** Whether the OPTIONS panel, or the ESC menu, is drawn now. */
+  const panelOpen = (made: Made[]) => made.some((m) => m.name === "options-music-up" && !m.destroyed);
+  const menuOpen = (made: Made[]) => made.some((m) => m.name === "menu-change" && !m.destroyed);
 
-  describe("the ESC menu's music row (FS-28DDG R15–R18)", () => {
+  describe("the ESC menu's Options and the OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel)", () => {
     afterEach(() => {
       vi.unstubAllGlobals();
     });
 
-    it("should silence the music on its number, keep the choice, and redraw the open menu to offer it back", () => {
-      const kept = browserStore(null);
-      const { hub, sound, step, keys, press, stage } = hubWithSound();
+    /** The town at the default level, its fade-in done, with the panel opened from the menu by `how`. */
+    function inThePanel(how: "number" | "click" = "number", held: string | null = null) {
+      const kept = browserStore(held);
+      const music = hubWithSound();
+      const { hub, step, keys, press, option } = music;
       hub.enterMusic();
-      step(2000);
+      step(MUSIC_FADE_IN_MS);
       press(keys.esc);
-      expect(musicLabel(stage.made)).toBe("Silence the music  [2]");
+      if (how === "number") press(keys.two);
+      else option("options")?.handlers.pointerup();
+      return { ...music, kept };
+    }
 
-      press(keys.two);
+    it.each(["number", "click"] as const)(
+      "should close the menu and open the shared panel in its slot on Options (a %s), every menu guard holding (C3, C8)",
+      (how) => {
+        const { hub, stage } = inThePanel(how);
+
+        expect(menuOpen(stage.made)).toBe(false);
+        expect(panelOpen(stage.made)).toBe(true);
+        expect(hub.menu).toBeDefined();
+        expect((hub.menu as Made).kind).toBe("container");
+        const words = stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => m.args[2]);
+        expect(words).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
+      },
+    );
+
+    it("should number Options [3] while queued, after Leave the queue's [2]", () => {
+      browserStore(null);
+      const { hub, keys, press, stage } = hubWithSound();
+      hub.enterMusic();
+      (hub as unknown as { queued: boolean }).queued = true;
+      press(keys.esc);
+      const label = stage.made.find((m) => m.name === "menu-options-label" && !m.destroyed)?.children[0];
+      expect(label?.args[2]).toBe("Options  [3]");
+
+      press(keys.three);
+      expect(panelOpen(stage.made)).toBe(true);
+    });
+
+    it("should ramp the town's music to the next level on → and keep it, and fade it out to 0 on ← (C6, C10, C12)", () => {
+      const { sound, step, keys, press, kept } = inThePanel();
+
+      press(keys.right);
+      step(MUSIC_LEVEL_RAMP_MS);
+      expect(sound.volumes.at(-1)).toBeCloseTo(musicGain(4), 12);
+      expect(kept.get(MUSIC_SETTING_KEY)).toBe("4");
+
+      for (let i = 0; i < 4; i++) press(keys.left);
       step(MUSIC_FADE_OUT_MS);
-
       expect(sound.volumes.at(-1)).toBe(0);
       expect(sound.calls).toEqual(["play", "stop"]);
-      expect(kept.get(MUSIC_SETTING_KEY)).toBe("off");
-      expect(hub.menu).toBeDefined();
-      expect(musicLabel(stage.made)).toBe("Let the music play  [2]");
+      expect(kept.get(MUSIC_SETTING_KEY)).toBe("0");
     });
 
-    it("should let the music play again on a click of the row, fading it in from the top", () => {
-      const kept = browserStore("off");
-      const { hub, sound, step, keys, press, option, stage } = hubWithSound();
+    it("should set the level on a click of a step, and of an arrow (C5)", () => {
+      const { stage, step, sound, kept } = inThePanel();
+      const hit = (part: string) => stage.made.find((m) => m.name === `options-music-${part}` && !m.destroyed)!;
+
+      hit("step-5").handlers.pointerup();
+      step(MUSIC_LEVEL_RAMP_MS);
+      expect(sound.volumes.at(-1)).toBeCloseTo(musicGain(5), 12);
+      hit("down").handlers.pointerup();
+      expect(kept.get(MUSIC_SETTING_KEY)).toBe("4");
+    });
+
+    it("should read a press of → held from walking before the panel opened as walking, not as a level change", () => {
+      const kept = browserStore(null);
+      const { hub, step, keys, press } = hubWithSound();
       hub.enterMusic();
-      step(2000);
-      expect(sound.calls).toEqual([]);
+      step(MUSIC_FADE_IN_MS);
+      keys.right.justDown = true;
+      keys.right.isDown = true;
+      hub.update(0, 16);
       press(keys.esc);
-      expect(musicLabel(stage.made)).toBe("Let the music play  [2]");
+      press(keys.two);
+      hub.update(0, 16);
 
-      option("music")?.handlers.pointerup();
-      step(2000);
-
-      expect(sound.calls).toEqual(["play"]);
-      expect(sound.volumes.at(-1)).toBe(MUSIC_VOLUME);
-      expect(kept.get(MUSIC_SETTING_KEY)).toBe("on");
-      expect(hub.menu).toBeDefined();
-      expect(musicLabel(stage.made)).toBe("Silence the music  [2]");
+      expect(kept.get(MUSIC_SETTING_KEY)).toBeUndefined();
     });
 
-    it("should play the music, and offer to silence it, where storage is refused (Edge States: Storage refused)", () => {
+    it("should do nothing on A, D, Enter or a number while the panel is open (C6)", () => {
+      const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const { hub, keys, press, kept, stage } = inThePanel();
+      send.mockClear();
+
+      for (const k of [keys.a, keys.d, keys.enter, keys.one, keys.two, keys.three]) press(k);
+
+      expect(kept.get(MUSIC_SETTING_KEY)).toBeUndefined();
+      expect(send.mock.calls.filter(([type]) => type !== ActionType.Move)).toEqual([]);
+      expect(panelOpen(stage.made)).toBe(true);
+      expect((hub as unknown as { leavingHub: boolean }).leavingHub).toBe(false);
+    });
+
+    it("should send no move while the panel is open, the arrows and A/D held included (C8)", () => {
+      const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const { hub, keys } = inThePanel();
+      send.mockClear();
+
+      keys.right.isDown = true;
+      keys.d.isDown = true;
+      keys.w.isDown = true;
+      hub.update(0, 16);
+
+      expect(send.mock.calls.filter(([, body]) => JSON.stringify(body) !== JSON.stringify({ vx: 0, vy: 0 }))).toEqual([]);
+    });
+
+    it("should reopen the town's ESC menu on Esc, on Back and on the ×, never closing everything (C7)", () => {
+      const { hub, keys, press, stage, option } = inThePanel();
+      const find = (name: string) => stage.made.find((m) => m.name === name && !m.destroyed);
+
+      press(keys.esc);
+      expect(panelOpen(stage.made)).toBe(false);
+      expect(menuOpen(stage.made)).toBe(true);
+
+      option("options")?.handlers.pointerup();
+      find("options-back")!.handlers.pointerup();
+      expect(menuOpen(stage.made)).toBe(true);
+
+      option("options")?.handlers.pointerup();
+      find("options-close")!.handlers.pointerup();
+      expect(menuOpen(stage.made)).toBe(true);
+      expect(panelOpen(stage.made)).toBe(false);
+      expect(hub.menu).toBeDefined();
+    });
+
+    it("should rebuild the menu from the state as Back reopens it (Edge States: Queue state changes while the panel is open)", () => {
+      const { hub, keys, press, option } = inThePanel();
+      (hub as unknown as { queued: boolean }).queued = true;
+
+      press(keys.esc);
+
+      expect(option("leave")).toBeDefined();
+    });
+
+    it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
+      const { hub, stage } = inThePanel();
+
+      (hub as unknown as { pressMenuIcon(): void }).pressMenuIcon();
+
+      expect(hub.menu).toBeUndefined();
+      expect(panelOpen(stage.made)).toBe(false);
+      expect(menuOpen(stage.made)).toBe(false);
+    });
+
+    it("should leave the Menu icon's plate through the panel's blocker (C8)", () => {
+      browserStore(null);
+      const { hub, keys, press, stage } = hubWithSound();
+      hub.enterMusic();
+      (hub as unknown as { corner: unknown }).corner = { covers: (x: number) => x > 1000, destroy: vi.fn(), relayout: vi.fn() };
+      press(keys.esc);
+      press(keys.two);
+
+      const blocker = stage.made.find((m) => m.name === "options-blocker" && !m.destroyed) as Made & {
+        interactiveArgs: unknown[];
+      };
+      const takes = blocker.interactiveArgs.find((a) => typeof a === "function") as (a: unknown, x: number, y: number) => boolean;
+      expect(takes({}, 10, 10)).toBe(true);
+      expect(takes({}, 1040, 10)).toBe(false);
+    });
+
+    it("should centre the open panel again when the view widens (C8, FS-ZAJMH R13)", () => {
+      const { hub } = inThePanel();
+      Object.assign(hub, { invitePrompt: undefined, readyCheck: undefined, mailbox: undefined });
+      viewport.set({ width: 1280, height: 720, renderScale: 1 });
+
+      (hub as unknown as { relayoutHud(): void }).relayoutHud();
+
+      expect((hub.menu as Made).x).toBe(640);
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    });
+
+    it("should open at the level the town plays at, and at 0 for a browser that silenced it (Edge States: Old setting)", () => {
+      const off = inThePanel("number", "off");
+      expect(off.sound.calls).toEqual([]);
+
+      off.press(off.keys.right);
+      off.step(MUSIC_FADE_IN_MS);
+      expect(off.sound.calls).toEqual(["play"]);
+      expect(off.sound.volumes.at(-1)).toBeCloseTo(musicGain(1), 12);
+      expect(off.kept.get(MUSIC_SETTING_KEY)).toBe("1");
+    });
+
+    it("should keep the level for this visit where storage is refused (C15)", () => {
       vi.stubGlobal("window", {
         get localStorage(): never {
           throw new Error("SecurityError");
         },
       });
-      const { hub, sound, step, keys, press, stage } = hubWithSound();
+      const { hub, sound, step, keys, press } = hubWithSound();
       hub.enterMusic();
-      step(2000);
+      step(MUSIC_FADE_IN_MS);
       press(keys.esc);
-      expect(sound.calls).toEqual(["play"]);
-      expect(musicLabel(stage.made)).toBe("Silence the music  [2]");
-
       press(keys.two);
-      step(MUSIC_FADE_OUT_MS);
-      expect(sound.calls).toEqual(["play", "stop"]);
-      expect(musicLabel(stage.made)).toBe("Let the music play  [2]");
+
+      press(keys.right);
+      step(MUSIC_LEVEL_RAMP_MS);
+
+      expect(sound.volumes.at(-1)).toBeCloseTo(musicGain(4), 12);
     });
   });
 
@@ -4193,7 +4331,7 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
 
     expect(add).toHaveBeenCalledOnce();
     expect(sound.calls).toEqual(["play"]);
-    expect(sound.volumes.at(-1)).toBe(MUSIC_VOLUME);
+    expect(sound.volumes.at(-1)).toBeCloseTo(musicGain(MUSIC_DEFAULT_LEVEL), 12);
   });
 
   it("should fade out after the hub stops, then stop the sound and free the track", () => {

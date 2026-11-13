@@ -7,6 +7,7 @@ import {
   runMenuChoices,
   watchable,
 } from "./party";
+import { OPTIONS_CHOICE } from "./optionsPanel";
 
 const player = (
   fields: {
@@ -165,10 +166,11 @@ describe("nextWatched (FS-QPDKN req 7, 8, 11)", () => {
 
 describe("runMenuChoices (FS-9K8EZ req 2)", () => {
   it.each([
-    ["in play", { resolved: false }, ["fall", "back"]],
+    // the shared Options row stands just before Back in both states (FS-28DDG § Change C1, C2)
+    ["in play", { resolved: false }, ["fall", "options", "back"]],
     // dead, left behind or escaped: an escaped player may leave too, settled at their escape
     // (FS-GV8WN R16)
-    ["resolved", { resolved: true }, ["leave", "back"]],
+    ["resolved", { resolved: true }, ["leave", "options", "back"]],
   ])("should offer %s: %j -> %j", (_, state, ids) => {
     expect(runMenuChoices(state).map((c) => c.id)).toEqual(ids);
   });
@@ -182,10 +184,18 @@ describe("runMenuChoices (FS-9K8EZ req 2)", () => {
   });
 
   it("should name the dead player's row as the card does, and keep Back in the cancel register", () => {
-    const [leave, back] = runMenuChoices({ resolved: true });
+    const [leave, , back] = runMenuChoices({ resolved: true });
     expect(leave.label).toBe("Leave the barrow");
     expect(back.label).toBe("Back  [Esc]");
     expect(back.register).toBe("cancel");
+  });
+});
+
+describe("runMenuChoices' Options row (FS-28DDG § Change: Music volume in an Options panel, C1, C2)", () => {
+  it.each([false, true])("should offer the shared Options choice, amber, second, with resolved %s", (resolved) => {
+    const options = runMenuChoices({ resolved })[1];
+    expect(options).toEqual(OPTIONS_CHOICE);
+    expect(options.register).toBe("actionable");
   });
 });
 

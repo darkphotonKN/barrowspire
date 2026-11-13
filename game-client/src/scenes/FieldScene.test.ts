@@ -2097,6 +2097,226 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
   });
 });
 
+// FS-28DDG § Change: Music volume in an Options panel (C1, C3, C6–C8, C13, C14): the field's ESC menu
+// offers the shared Options row, whose panel sets the stored level alone; no music plays here.
+describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options panel)", () => {
+  type Optioned = FieldUnderTest & {
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    input: unknown;
+    bindHudKeys(): void;
+    pressMenuIcon(): void;
+    sendMovementIntent(): void;
+    moveMenu?: (origin: { x: number; y: number }) => void;
+    cursors?: unknown;
+    wasd?: unknown;
+    fallen: { isDown(): boolean };
+  };
+  /** A stand-in object: named, with its handlers, destroyed with its container, as Phaser does. */
+  type Made = {
+    kind: string;
+    args: unknown[];
+    name?: string;
+    x: number;
+    destroyed: boolean;
+    children: Made[];
+    handlers: Record<string, () => void>;
+  };
+
+  function optionedField(held: string | null = null) {
+    const kept = new Map<string, string>(held === null ? [] : [["barrowspire_music", held]]);
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => kept.get(k) ?? null,
+        setItem: (k: string, v: string) => void kept.set(k, v),
+        removeItem: (k: string) => void kept.delete(k),
+      },
+    });
+    const env = fieldOnStage();
+    const field = env.field as Optioned;
+    const made: Made[] = [];
+    const make = (kind: string, args: unknown[]): unknown => {
+      const m: Made = { kind, args, x: typeof args[0] === "number" ? args[0] : 0, destroyed: false, children: [], handlers: {} };
+      if (kind === "container" && Array.isArray(args[2])) m.children.push(...(args[2] as Made[]));
+      made.push(m);
+      const kill = (o: Made) => {
+        if (o.destroyed) return;
+        o.destroyed = true;
+        o.children.forEach((c) => kill((c as unknown as { __m?: Made }).__m ?? c));
+        o.handlers.destroy?.();
+      };
+      const self: unknown = new Proxy(() => self, {
+        get: (_t, prop) => {
+          if (prop === "__m") return m;
+          if (prop === "then") return undefined;
+          if (prop === "on" || prop === "once") return (event: string, fn: () => void) => ((m.handlers[event] = fn), self);
+          if (prop === "setName") return (name: string) => ((m.name = name), self);
+          if (prop === "setPosition") return (x: number) => ((m.x = x), self);
+          if (prop === "destroy") return () => kill(m);
+          return () => self;
+        },
+      });
+      return self;
+    };
+    field.add = new Proxy({}, { get: (_t, kind) => (...args: unknown[]) => make(String(kind), args) });
+    const keys = new Map<string, () => void>();
+    field.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const state = { gear: false };
+    field.equipment = {
+      isOpen: () => state.gear,
+      hide: () => ((state.gear = false), true),
+      toggle: () => void (state.gear = !state.gear),
+      toggleCharacter: () => void (state.gear = !state.gear),
+      equipKey: () => false,
+    };
+    field.partyPanel = { isOpen: () => false, close: () => false, relayout: vi.fn(), destroy: vi.fn() };
+    field.bindHudKeys();
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
+    const words = () => made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => m.args[2]);
+    const panelOpen = () => !!find("options-music-up");
+    const menuOpen = () => !!find("menu-change");
+    return { ...env, field, kept, key, find, words, panelOpen, menuOpen, state };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("should offer Change character, Options and Back, Options on [2] (C1)", () => {
+    const { key, words, find } = optionedField();
+    key("ESC");
+    expect(words()).toEqual(expect.arrayContaining(["Change character  [1]", "Options  [2]", "Back  [Esc]"]));
+    expect(find("menu-leave")).toBeUndefined();
+  });
+
+  it.each(["number", "click"] as const)("should close the menu and open the shared panel in its slot on Options (a %s) (C3)", (how) => {
+    const { field, key, find, words, panelOpen, menuOpen } = optionedField();
+    key("ESC");
+    if (how === "number") key("TWO");
+    else find("menu-options")!.handlers.pointerup();
+
+    expect(menuOpen()).toBe(false);
+    expect(panelOpen()).toBe(true);
+    expect(field.menu).toBeDefined();
+    expect(words()).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
+  });
+
+  it("should write the level on → and ←, clamped, and play nothing (C6, C14)", () => {
+    const { key, kept } = optionedField();
+    key("ESC");
+    key("TWO");
+
+    key("RIGHT");
+    expect(kept.get("barrowspire_music")).toBe("4");
+    key("RIGHT");
+    key("RIGHT");
+    expect(kept.get("barrowspire_music")).toBe("5");
+    for (let i = 0; i < 7; i++) key("LEFT");
+    expect(kept.get("barrowspire_music")).toBe("0");
+  });
+
+  it("should read the stored level each time the panel opens, the on/off row's off as 0 (C15)", () => {
+    const { key, kept } = optionedField("off");
+    key("ESC");
+    key("TWO");
+    key("RIGHT");
+    expect(kept.get("barrowspire_music")).toBe("1");
+
+    kept.set("barrowspire_music", "5");
+    key("ESC");
+    key("TWO");
+    key("LEFT");
+    expect(kept.get("barrowspire_music")).toBe("4");
+  });
+
+  it("should set the level on a click of a step", () => {
+    const { key, find, kept } = optionedField();
+    key("ESC");
+    key("TWO");
+    find("options-music-step-2")!.handlers.pointerup();
+    expect(kept.get("barrowspire_music")).toBe("2");
+  });
+
+  it("should do nothing on → or ← with only the menu open, or nothing open", () => {
+    const { key, kept } = optionedField();
+    key("RIGHT");
+    key("ESC");
+    key("LEFT");
+    expect(kept.get("barrowspire_music")).toBeUndefined();
+  });
+
+  it("should answer no Enter or number while the panel is open (C6)", () => {
+    const { key, send, kept, panelOpen } = optionedField();
+    key("ESC");
+    key("TWO");
+    for (const k of ["ENTER", "ONE", "TWO", "THREE"]) key(k);
+    expect(send.mock.calls.filter(([a]) => a === ActionType.LeaveHub)).toEqual([]);
+    expect(kept.get("barrowspire_music")).toBeUndefined();
+    expect(panelOpen()).toBe(true);
+  });
+
+  it("should reopen the field's ESC menu on Esc, on Back and on the × (C7)", () => {
+    const { field, key, find, panelOpen, menuOpen } = optionedField();
+    key("ESC");
+    key("TWO");
+    key("ESC");
+    expect(panelOpen()).toBe(false);
+    expect(menuOpen()).toBe(true);
+
+    key("TWO");
+    find("options-back")!.handlers.pointerup();
+    expect(menuOpen()).toBe(true);
+
+    key("TWO");
+    find("options-close")!.handlers.pointerup();
+    expect(menuOpen()).toBe(true);
+    expect(field.menu).toBeDefined();
+  });
+
+  it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
+    const { field, key, panelOpen, menuOpen } = optionedField();
+    key("ESC");
+    key("TWO");
+    field.pressMenuIcon();
+    expect(field.menu).toBeUndefined();
+    expect(panelOpen()).toBe(false);
+    expect(menuOpen()).toBe(false);
+  });
+
+  it("should own the keys while open: no gear overlay, no move (C8)", () => {
+    const { field, key, state, send } = optionedField();
+    const held = { isDown: true };
+    const up = { isDown: false };
+    field.cursors = { up, down: up, left: up, right: held };
+    field.wasd = { up: held, down: up, left: up, right: held };
+    key("ESC");
+    key("TWO");
+    key("I");
+    key("C");
+    send.mockClear();
+    field.sendMovementIntent();
+
+    expect(state.gear).toBe(false);
+    expect(send.mock.calls.filter(([, body]) => JSON.stringify(body) !== JSON.stringify({ vx: 0, vy: 0 }))).toEqual([]);
+  });
+
+  it("should centre the open panel again when the view changes (C8, FS-ZAJMH R13)", () => {
+    const { field, key, find } = optionedField();
+    key("ESC");
+    key("TWO");
+    const before = find("options-music-up")!.x;
+    field.moveMenu?.({ x: 1000, y: 360 });
+    expect(find("options-music-up")!.x).not.toBe(before);
+  });
+});
+
 /**
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.

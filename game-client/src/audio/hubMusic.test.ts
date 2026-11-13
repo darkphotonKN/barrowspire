@@ -7,9 +7,9 @@ import {
   MUSIC_FADE_IN_MS,
   MUSIC_FADE_OUT_MS,
   MUSIC_KEY,
-  MUSIC_VOLUME,
+  MUSIC_LEVEL_RAMP_MS,
 } from "./hubMusic";
-import { MUSIC_SETTING_KEY } from "./musicSetting";
+import { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } from "./musicSetting";
 
 /** One sound as the module plays it, recording every volume written and each play and stop. */
 class FakeSound {
@@ -83,7 +83,10 @@ function fakeStage(opts: { cached?: boolean; audible?: boolean } = {}) {
 
 const close = (a: number, b: number) => Math.abs(a - b) < 1e-9;
 
-/** No store at all, which reads as on and keeps nothing (FS-28DDG R17). */
+/** The default level's gain, what a browser that never chose plays at (FS-28DDG § Change C9). */
+const FULL = musicGain(MUSIC_DEFAULT_LEVEL);
+
+/** No store at all, which reads as the default level and keeps nothing (FS-28DDG R17, § Change C15). */
 const ON = () => null;
 
 /** A browser store holding the music setting, recording each write. */
@@ -102,17 +105,17 @@ function settingStore(held: string | null) {
   return store;
 }
 
-describe("hubMusic tunables (FS-28DDG R2, R3, R8)", () => {
-  it("should name the volume and the fade lengths", () => {
-    expect(MUSIC_VOLUME).toBe(0.4);
+describe("hubMusic tunables (FS-28DDG R2, R3; § Change C10)", () => {
+  it("should name the fade lengths and the level ramp", () => {
     expect(MUSIC_FADE_IN_MS).toBe(2000);
     expect(MUSIC_FADE_OUT_MS).toBe(1000);
+    expect(MUSIC_LEVEL_RAMP_MS).toBe(200);
     expect(MUSIC_KEY).toBeTypeOf("string");
   });
 });
 
 describe("HubMusic entering the hub (FS-28DDG R2, R10)", () => {
-  it("should add one sound at volume 0 and ramp it to 0.4 over 2000 ms", () => {
+  it("should add one sound at volume 0 and ramp it to the default level's 0.3 over 2000 ms", () => {
     const stage = fakeStage();
     const music = new HubMusic(stage, ON);
 
@@ -122,10 +125,10 @@ describe("HubMusic entering the hub (FS-28DDG R2, R10)", () => {
     expect(sound.plays).toBe(1);
 
     stage.advance(1000);
-    expect(close(sound.volume, MUSIC_VOLUME / 2)).toBe(true);
+    expect(close(sound.volume, FULL / 2)).toBe(true);
     stage.advance(1000);
-    expect(sound.volume).toBe(MUSIC_VOLUME);
-    expect(Math.max(...sound.volumes)).toBe(MUSIC_VOLUME);
+    expect(sound.volume).toBe(FULL);
+    expect(Math.max(...sound.volumes)).toBe(FULL);
     expect(stage.stepping()).toBe(0);
   });
 });
@@ -144,9 +147,9 @@ describe("HubMusic under a suspended context (FS-28DDG R10, Edge States: Locked 
     stage.canHear = true;
     stage.advance(1000);
     expect(sound.volume).toBeGreaterThan(0);
-    expect(sound.volume).toBeLessThan(MUSIC_VOLUME);
+    expect(sound.volume).toBeLessThan(FULL);
     stage.advance(1000);
-    expect(sound.volume).toBe(MUSIC_VOLUME);
+    expect(sound.volume).toBe(FULL);
   });
 });
 
@@ -160,7 +163,7 @@ describe("HubMusic leaving the hub (FS-28DDG R3, R13)", () => {
 
     music.leave("shutdown");
     stage.advance(500);
-    expect(close(sound.volume, MUSIC_VOLUME / 2)).toBe(true);
+    expect(close(sound.volume, FULL / 2)).toBe(true);
     expect(sound.stops).toBe(0);
     stage.advance(500);
 
@@ -180,7 +183,7 @@ describe("HubMusic leaving the hub (FS-28DDG R3, R13)", () => {
 
     music.leave("shutdown");
     stage.advance(500);
-    expect(close(sound.volume, MUSIC_VOLUME / 4)).toBe(true);
+    expect(close(sound.volume, FULL / 4)).toBe(true);
     stage.advance(500);
     expect(sound.volume).toBe(0);
     expect(sound.destroyed).toBe(true);
@@ -200,14 +203,14 @@ describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restar
 
     music.enter();
     stage.advance(1000);
-    expect(close(sound.volume, MUSIC_VOLUME * 0.75)).toBe(true);
+    expect(close(sound.volume, FULL * 0.75)).toBe(true);
     stage.advance(1000);
 
     expect(stage.sounds).toHaveLength(1);
     expect(sound.plays).toBe(1);
     expect(sound.stops).toBe(0);
     expect(sound.at).toBe(atLeave + 2000);
-    expect(sound.volume).toBe(MUSIC_VOLUME);
+    expect(sound.volume).toBe(FULL);
   });
 
   it("should keep the stopped sound while the hub loads again, and play it from the top on entry", () => {
@@ -229,7 +232,7 @@ describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restar
     expect(sound.plays).toBe(2);
     expect(sound.at).toBe(0);
     stage.advance(MUSIC_FADE_IN_MS / 2);
-    expect(close(sound.volume, MUSIC_VOLUME / 2)).toBe(true);
+    expect(close(sound.volume, FULL / 2)).toBe(true);
   });
 
   it("should add a new sound from the top once the old one was freed and the track loaded again", () => {
@@ -247,7 +250,7 @@ describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restar
 
     expect(stage.sounds).toHaveLength(2);
     expect(stage.sounds[1].plays).toBe(1);
-    expect(stage.sounds[1].volume).toBe(MUSIC_VOLUME);
+    expect(stage.sounds[1].volume).toBe(FULL);
   });
 });
 
@@ -447,22 +450,23 @@ describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
   });
 });
 
-describe("HubMusic with the music set off (FS-28DDG R17, R18)", () => {
-  it("should read the setting on entering and start nothing while it is off", () => {
+describe("HubMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12, C15)", () => {
+  it.each(["off", "0"])("should read the level on entering and start nothing while it is 0 (stored %s)", (held) => {
     const stage = fakeStage();
-    const store = settingStore("off");
+    const store = settingStore(held);
     const music = new HubMusic(stage, () => store);
 
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
-    expect(music.setting).toBe("off");
+    expect(music.level()).toBe(0);
     expect(stage.sounds.every((sound) => sound.plays === 0)).toBe(true);
+    expect(store.writes).toEqual([]);
   });
 
   it("should still free the loaded track once the hub is left (R13)", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, () => settingStore("off"));
+    const music = new HubMusic(stage, () => settingStore("0"));
     music.enter();
 
     music.leave("shutdown");
@@ -473,31 +477,53 @@ describe("HubMusic with the music set off (FS-28DDG R17, R18)", () => {
     expect(stage.stepping()).toBe(0);
   });
 
-  it("should read it again on each entry, a change from another tab included (Edge States: Setting changed in another tab)", () => {
+  it("should read it again on each entry, a change from another tab included (Edge States: Changed in a field or a run)", () => {
     const stage = fakeStage();
     const store = settingStore(null);
     const music = new HubMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
-    expect(music.setting).toBe("on");
+    expect(music.level()).toBe(MUSIC_DEFAULT_LEVEL);
 
-    store.held = "off";
-    expect(music.setting).toBe("on");
+    store.held = "0";
+    expect(music.level()).toBe(MUSIC_DEFAULT_LEVEL);
     music.leave("shutdown");
     stage.busy = true;
     music.enter();
     stage.advance(MUSIC_FADE_OUT_MS);
 
-    expect(music.setting).toBe("off");
+    expect(music.level()).toBe(0);
     expect(sound.volume).toBe(0);
     expect(sound.stops).toBe(1);
     expect(sound.plays).toBe(1);
   });
 });
 
-describe("HubMusic switched from the ESC menu (FS-28DDG R16, R17)", () => {
-  /** The music playing at full in a running hub. */
+describe("HubMusic entering at a stored level (FS-28DDG § Change C9, C12)", () => {
+  it.each([
+    { held: "1", gain: 0.1 },
+    { held: "4", gain: 0.4 },
+    { held: "5", gain: 0.5 },
+    { held: "on", gain: 0.3 },
+  ])("should fade in from silence to $gain over 2000 ms at stored $held", ({ held, gain }) => {
+    const stage = fakeStage();
+    const music = new HubMusic(stage, () => settingStore(held));
+
+    music.enter();
+    const [sound] = stage.sounds;
+    stage.advance(MUSIC_FADE_IN_MS / 2);
+    expect(sound.volume).toBeCloseTo(gain / 2, 9);
+    stage.advance(MUSIC_FADE_IN_MS / 2);
+
+    expect(sound.volume).toBeCloseTo(gain, 12);
+    expect(Math.max(...sound.volumes)).toBeCloseTo(gain, 12);
+    expect(stage.stepping()).toBe(0);
+  });
+});
+
+describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Change C10–C12, C15)", () => {
+  /** The music playing at the default level, its fade-in done, in a running hub. */
   function playing(held: string | null = null) {
     const stage = fakeStage();
     stage.busy = true;
@@ -505,47 +531,129 @@ describe("HubMusic switched from the ESC menu (FS-28DDG R16, R17)", () => {
     const music = new HubMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
-    return { stage, store, music };
+    return { stage, store, music, sound: stage.sounds[0] };
   }
 
-  it("should fade the music out and leave it stopped, kept for the running hub, and write off", () => {
-    const { stage, store, music } = playing();
+  it("should ramp 0.3 to 0.5 over 200 ms on the game's step for a change from 3 to 5, and keep it", () => {
+    const { stage, store, music, sound } = playing();
+
+    music.setLevel(5);
+    expect(music.level()).toBe(5);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
+    expect(sound.volume).toBeCloseTo(0.4, 9);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
+
+    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(store.writes).toEqual(["5"]);
+    expect(stage.stepping()).toBe(0);
+    expect(sound.plays).toBe(1);
+    expect(stage.sounds).toHaveLength(1);
+  });
+
+  it("should ramp from where the volume stands for a second change mid-ramp", () => {
+    const { stage, store, music, sound } = playing();
+    music.setLevel(5);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
+
+    music.setLevel(1);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
+    expect(sound.volume).toBeCloseTo(0.25, 9);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
+
+    expect(sound.volume).toBeCloseTo(0.1, 12);
+    expect(store.writes).toEqual(["5", "1"]);
+  });
+
+  it("should retarget a fade-in: from the volume it reached to the new gain, over the time it has left", () => {
+    const stage = fakeStage();
+    const music = new HubMusic(stage, ON);
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS / 2);
+    const [sound] = stage.sounds;
+    expect(sound.volume).toBeCloseTo(0.15, 9);
+
+    music.setLevel(5);
+    stage.advance(MUSIC_FADE_IN_MS / 4);
+    expect(sound.volume).toBeCloseTo(0.325, 9);
+    stage.advance(MUSIC_FADE_IN_MS / 4);
+
+    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(stage.stepping()).toBe(0);
+    expect(sound.plays).toBe(1);
+  });
+
+  it("should give a fade-in retargeted near its end at least the level ramp's 200 ms, so no jump in loudness (C10)", () => {
+    const stage = fakeStage();
+    const music = new HubMusic(stage, ON);
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS - 10);
+    const [sound] = stage.sounds;
+    const reached = sound.volume;
+
+    music.setLevel(5);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2);
+    expect(sound.volume).toBeCloseTo(reached + (0.5 - reached) / 2, 9);
+    stage.advance(MUSIC_LEVEL_RAMP_MS / 2 - 1);
+    expect(sound.volume).toBeLessThan(0.5);
+    stage.advance(1);
+
+    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(stage.stepping()).toBe(0);
+  });
+
+  it("should only change the target of a fade-in not yet heard (R10)", () => {
+    const stage = fakeStage({ audible: false });
+    const music = new HubMusic(stage, ON);
+    music.enter();
+    stage.advance(500);
     const [sound] = stage.sounds;
 
-    music.toggle();
-    expect(music.setting).toBe("off");
+    music.setLevel(5);
+    stage.advance(500);
+    expect(sound.volumes.every((v) => v === 0)).toBe(true);
+    stage.canHear = true;
+    stage.advance(MUSIC_FADE_IN_MS / 2);
+    expect(sound.volume).toBeCloseTo(0.25, 9);
+    stage.advance(MUSIC_FADE_IN_MS / 2);
+
+    expect(sound.volume).toBeCloseTo(0.5, 12);
+  });
+
+  it("should fade out over 1000 ms from where it stands and stop on a change to 0, kept for the running hub", () => {
+    const { stage, store, music, sound } = playing();
+
+    music.setLevel(0);
     stage.advance(MUSIC_FADE_OUT_MS / 2);
-    expect(close(sound.volume, MUSIC_VOLUME / 2)).toBe(true);
+    expect(close(sound.volume, FULL / 2)).toBe(true);
+    expect(sound.stops).toBe(0);
     stage.advance(MUSIC_FADE_OUT_MS / 2);
 
     expect(sound.volume).toBe(0);
     expect(sound.stops).toBe(1);
     expect(sound.destroyed).toBe(false);
     expect(stage.uncached).toBe(0);
-    expect(store.writes).toEqual(["off"]);
+    expect(store.writes).toEqual(["0"]);
     expect(stage.stepping()).toBe(0);
   });
 
-  it("should start it from the top and fade it in on a second press, and write on", () => {
-    const { stage, store, music } = playing();
-    music.toggle();
+  it("should start it from the top and fade in over 2000 ms to the new gain on a change from 0", () => {
+    const { stage, store, music, sound } = playing();
+    music.setLevel(0);
     stage.advance(MUSIC_FADE_OUT_MS);
-    const [sound] = stage.sounds;
 
-    music.toggle();
-    expect(music.setting).toBe("on");
+    music.setLevel(4);
     expect(sound.plays).toBe(2);
     expect(sound.at).toBe(0);
     stage.advance(MUSIC_FADE_IN_MS / 2);
-    expect(close(sound.volume, MUSIC_VOLUME / 2)).toBe(true);
+    expect(sound.volume).toBeCloseTo(0.2, 9);
     stage.advance(MUSIC_FADE_IN_MS / 2);
 
-    expect(sound.volume).toBe(MUSIC_VOLUME);
+    expect(sound.volume).toBeCloseTo(0.4, 12);
     expect(stage.sounds).toHaveLength(1);
-    expect(store.writes).toEqual(["off", "on"]);
+    expect(store.writes).toEqual(["0", "4"]);
   });
 
-  it("should play at once and fade in when turned on in a hub entered with it off (R18)", () => {
+  it("should play at once and fade in on a change from 0 in a hub entered at 0", () => {
     const stage = fakeStage();
     stage.busy = true;
     const store = settingStore("off");
@@ -553,16 +661,16 @@ describe("HubMusic switched from the ESC menu (FS-28DDG R16, R17)", () => {
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
-    music.toggle();
+    music.setLevel(2);
     stage.advance(MUSIC_FADE_IN_MS);
 
     expect(stage.sounds).toHaveLength(1);
     expect(stage.sounds[0].plays).toBe(1);
-    expect(stage.sounds[0].volume).toBe(MUSIC_VOLUME);
-    expect(store.writes).toEqual(["on"]);
+    expect(stage.sounds[0].volume).toBeCloseTo(0.2, 12);
+    expect(store.writes).toEqual(["2"]);
   });
 
-  it("should turn a fade-in around where it stands on Silence (Edge States: Toggled during a fade)", () => {
+  it("should turn a fade-in around where it stands on a change to 0", () => {
     const stage = fakeStage();
     stage.busy = true;
     const music = new HubMusic(stage, ON);
@@ -570,39 +678,37 @@ describe("HubMusic switched from the ESC menu (FS-28DDG R16, R17)", () => {
     stage.advance(MUSIC_FADE_IN_MS / 2);
     const [sound] = stage.sounds;
 
-    music.toggle();
+    music.setLevel(0);
     stage.advance(MUSIC_FADE_OUT_MS / 2);
-    expect(close(sound.volume, MUSIC_VOLUME / 4)).toBe(true);
+    expect(close(sound.volume, FULL / 4)).toBe(true);
     stage.advance(MUSIC_FADE_OUT_MS / 2);
 
     expect(sound.volume).toBe(0);
     expect(sound.stops).toBe(1);
   });
 
-  it("should turn a fade-out around where it stands on Let the music play, with no second sound and no restart (Edge States: Toggled during a fade)", () => {
-    const { stage, music } = playing();
-    const [sound] = stage.sounds;
-    music.toggle();
+  it("should turn the fade-out of a change to 0 around where it stands, with no second sound and no restart (Edge States: Change during the fade-out)", () => {
+    const { stage, music, sound } = playing();
+    music.setLevel(0);
     stage.advance(MUSIC_FADE_OUT_MS / 2);
     const at = sound.at;
 
-    music.toggle();
+    music.setLevel(4);
     stage.advance(MUSIC_FADE_IN_MS / 2);
-    expect(close(sound.volume, MUSIC_VOLUME * 0.75)).toBe(true);
+    expect(sound.volume).toBeCloseTo(FULL / 2 + (0.4 - FULL / 2) / 2, 9);
     stage.advance(MUSIC_FADE_IN_MS / 2);
 
-    expect(sound.volume).toBe(MUSIC_VOLUME);
+    expect(sound.volume).toBeCloseTo(0.4, 12);
     expect(stage.sounds).toHaveLength(1);
     expect(sound.plays).toBe(1);
     expect(sound.stops).toBe(0);
     expect(sound.at).toBe(at + MUSIC_FADE_IN_MS);
   });
 
-  it("should free the stopped music as usual once the hub is left (Edge States: Toggled off, then leave)", () => {
-    const { stage, music } = playing();
-    music.toggle();
+  it("should free the stopped music as usual once the hub is left after a change to 0", () => {
+    const { stage, music, sound } = playing();
+    music.setLevel(0);
     stage.advance(MUSIC_FADE_OUT_MS);
-    const [sound] = stage.sounds;
 
     stage.busy = false;
     music.leave("shutdown");
@@ -614,7 +720,23 @@ describe("HubMusic switched from the ESC menu (FS-28DDG R16, R17)", () => {
     expect(stage.stepping()).toBe(0);
   });
 
-  it("should still switch the music when the store refuses the write (Edge States: Storage refused)", () => {
+  it("should change nothing and write nothing for the level it already holds, and clamp one outside 0–5", () => {
+    const { stage, store, music, sound } = playing();
+    const written = sound.volumes.length;
+
+    music.setLevel(MUSIC_DEFAULT_LEVEL);
+    stage.advance(MUSIC_LEVEL_RAMP_MS);
+    expect(sound.volumes).toHaveLength(written);
+    expect(store.writes).toEqual([]);
+
+    music.setLevel(9);
+    stage.advance(MUSIC_LEVEL_RAMP_MS);
+    expect(music.level()).toBe(5);
+    expect(sound.volume).toBeCloseTo(0.5, 12);
+    expect(store.writes).toEqual(["5"]);
+  });
+
+  it("should still apply the change when the store refuses the write (C15)", () => {
     const stage = fakeStage();
     stage.busy = true;
     const music = new HubMusic(stage, () => {
@@ -624,12 +746,29 @@ describe("HubMusic switched from the ESC menu (FS-28DDG R16, R17)", () => {
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
 
-    expect(music.setting).toBe("on");
-    expect(() => music.toggle()).not.toThrow();
+    expect(music.level()).toBe(MUSIC_DEFAULT_LEVEL);
+    expect(() => music.setLevel(0)).not.toThrow();
     stage.advance(MUSIC_FADE_OUT_MS);
 
-    expect(music.setting).toBe("off");
+    expect(music.level()).toBe(0);
     expect(sound.volume).toBe(0);
     expect(sound.stops).toBe(1);
+  });
+
+  it("should keep and store the level with no track, and play nothing (Edge States: Track failed to load)", () => {
+    const stage = fakeStage({ cached: false });
+    const store = settingStore(null);
+    const music = new HubMusic(stage, () => store);
+    music.enter();
+
+    music.setLevel(5);
+    music.setLevel(0);
+    music.setLevel(2);
+    stage.advance(MUSIC_FADE_IN_MS);
+
+    expect(music.level()).toBe(2);
+    expect(store.writes).toEqual(["5", "0", "2"]);
+    expect(stage.sounds).toHaveLength(0);
+    expect(stage.stepping()).toBe(0);
   });
 });

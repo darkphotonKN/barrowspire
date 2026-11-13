@@ -27,6 +27,12 @@ vi.mock("@/ui/panelFrame", async (importOriginal) => {
   return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
 });
 
+// The shared OPTIONS panel, watched: the run opens it and draws none of its own (FS-28DDG § Change C13).
+vi.mock("@/ui/optionsPanel", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/ui/optionsPanel")>();
+  return { ...real, openOptionsPanel: vi.fn(real.openOptionsPanel) };
+});
+
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
 // on the same emitter Phaser builds them from.
 vi.mock("phaser", async () => {
@@ -4467,6 +4473,212 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(run.menuChoices).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
+  });
+
+  describe("the run's Options and the shared OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C1, C13, C14, C17)", () => {
+    const MUSIC_KEY = "barrowspire_music";
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    /** The run's menu on stage, the arrows bound, this browser's store holding `held` under the music's key. */
+    function optionsOnStage(me: ReturnType<typeof player> | null = player("me", "Aldric", 130), held: string | null = null) {
+      const kept = new Map<string, string>(held === null ? [] : [[MUSIC_KEY, held]]);
+      vi.stubGlobal("window", {
+        localStorage: {
+          getItem: (k: string) => kept.get(k) ?? null,
+          setItem: (k: string, v: string) => void kept.set(k, v),
+          removeItem: (k: string) => void kept.delete(k),
+        },
+      });
+      const s = menuOnStage(me);
+      const arrows = { left: key(), right: key(), up: key(), down: key() };
+      (s.run as unknown as { cursors: unknown }).cursors = arrows;
+      const panelOpen = () => s.stage.made.some((m) => (m as { name?: string }).name === "options-music-up" && !m.destroyed);
+      const find = (name: string) => s.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+      return { ...s, kept, arrows, panelOpen, find };
+    }
+
+    /** The panel opened from the run's menu by `how`. */
+    function inThePanel(how: "number" | "click" = "number", me?: ReturnType<typeof player> | null, held?: string | null) {
+      const s = optionsOnStage(me, held);
+      s.press(s.keys.esc);
+      if (how === "number") s.press(s.keys.two);
+      else s.pick("options");
+      return s;
+    }
+
+    it.each(["number", "click"] as const)(
+      "should close the run's menu and open the shared panel in its slot on Options (a %s) (C3, C8, C13)",
+      async (how) => {
+        const { openOptionsPanel } = await import("@/ui/optionsPanel");
+        const open = vi.mocked(openOptionsPanel);
+        open.mockClear();
+        const { run, panelOpen, option, labels } = inThePanel(how);
+
+        expect(open).toHaveBeenCalledTimes(1);
+        const [, spec] = open.mock.calls[0];
+        expect(spec.tones.actionable).toBe(palette.interactable);
+        expect(spec.tones.cancel).toBe(palette.safe);
+        expect(spec.through).toBeTypeOf("function");
+        expect(panelOpen()).toBe(true);
+        expect(option("fall")).toBeUndefined();
+        expect(run.menu).toBeDefined();
+        expect(labels()).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
+      },
+    );
+
+    it("should number Options [2] after Fall where you stand, and after Leave the barrow once resolved (C1)", () => {
+      const living = optionsOnStage();
+      living.press(living.keys.esc);
+      expect(living.labels()).toContain("Options  [2]");
+
+      const fallen = optionsOnStage(player("me", "Aldric", 130, dead));
+      fallen.press(fallen.keys.esc);
+      expect(fallen.labels()).toContain("Options  [2]");
+      fallen.press(fallen.keys.two);
+      expect(fallen.panelOpen()).toBe(true);
+    });
+
+    it("should store the level on → and ←, one a press, clamped, and on a click of a step or an arrow, playing nothing (C5, C6, C14)", () => {
+      const { run, arrows, kept, find } = inThePanel();
+      const offer = () => (run as unknown as { offerMenu(): void }).offerMenu();
+
+      arrows.right.justDown = true;
+      offer();
+      expect(kept.get(MUSIC_KEY)).toBe("4");
+      for (let i = 0; i < 3; i++) {
+        arrows.right.justDown = true;
+        offer();
+      }
+      expect(kept.get(MUSIC_KEY)).toBe("5");
+      arrows.left.justDown = true;
+      offer();
+      expect(kept.get(MUSIC_KEY)).toBe("4");
+
+      find("options-music-step-1")!.handlers.pointerup();
+      expect(kept.get(MUSIC_KEY)).toBe("1");
+      find("options-music-down")!.handlers.pointerup();
+      expect(kept.get(MUSIC_KEY)).toBe("0");
+      expect((run as unknown as { sound?: { add?: unknown } }).sound?.add).toBeUndefined();
+    });
+
+    it("should open at the stored level, and at 0 for a browser that silenced the town (C15; Edge States: Old setting)", () => {
+      const { run, arrows, kept } = inThePanel("number", undefined, "off");
+      arrows.right.justDown = true;
+      (run as unknown as { offerMenu(): void }).offerMenu();
+      expect(kept.get(MUSIC_KEY)).toBe("1");
+    });
+
+    it("should read a → pressed in play as walking, not as a level change once the panel opens (C6)", () => {
+      const { run, keys, press, pick, arrows, kept, panelOpen } = optionsOnStage();
+      arrows.right.justDown = true;
+      arrows.right.isDown = true;
+      (run as unknown as { offerMenu(): void }).offerMenu();
+      press(keys.esc);
+      // a click opens the panel between frames, so no key read of that frame takes the press
+      pick("options");
+      expect(panelOpen()).toBe(true);
+      (run as unknown as { offerMenu(): void }).offerMenu();
+
+      expect(kept.get(MUSIC_KEY)).toBeUndefined();
+    });
+
+    it("should do nothing on Enter or a number while the panel is open (C6)", () => {
+      const { run, keys, press, kept, panelOpen, sent } = inThePanel();
+      for (const k of [keys.enter, keys.one, keys.two]) press(k);
+
+      expect(kept.get(MUSIC_KEY)).toBeUndefined();
+      expect(panelOpen()).toBe(true);
+      expect(sent).not.toHaveBeenCalled();
+      expect(run.fallPending).toBe(false);
+    });
+
+    it("should reopen the run's ESC menu on Esc, on Back and on the ×, never closing everything (C7)", () => {
+      const { run, keys, press, pick, panelOpen, option, find } = inThePanel();
+
+      press(keys.esc);
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeDefined();
+
+      pick("options");
+      find("options-back")!.handlers.pointerup();
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeDefined();
+
+      pick("options");
+      find("options-close")!.handlers.pointerup();
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeDefined();
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
+      const { run, panelOpen, option } = inThePanel();
+
+      (run as unknown as { pressMenuIcon(): void }).pressMenuIcon();
+
+      expect(run.menu).toBeUndefined();
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeUndefined();
+    });
+
+    it("should send no move while the panel is open, stopping a stride it interrupts once (C8)", () => {
+      const s = optionsOnStage();
+      s.run.sendMovementIntent(1, 0);
+      s.press(s.keys.esc);
+      s.press(s.keys.two);
+      expect(s.run.canSendMove()).toBe(false);
+      s.run.sendMovementIntent(1, 0);
+      s.run.sendMovementIntent(0, 1);
+      expect(s.sentOf(ActionType.Move)).toEqual([
+        [ActionType.Move, { vx: 1, vy: 0 }],
+        [ActionType.Move, { vx: 0, vy: 0 }],
+      ]);
+    });
+
+    it("should drop E, F, I, Q and H while the panel is open", () => {
+      const s = inThePanel();
+      s.run.bindRunInput();
+      for (const k of ["keydown-H", "keydown-Q", "keydown-F", "keydown-E", "keydown-I"]) s.keyHandlers[k]();
+      expect(s.run.controlsPanel).toBeUndefined();
+      expect(s.sent).not.toHaveBeenCalled();
+    });
+
+    it("should centre the open panel again when the view changes (C8, FS-ZAJMH R13)", () => {
+      const { run } = inThePanel();
+      const panel = run.menu as Made;
+      panel.last["setPosition"] = [];
+      Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+      (run as unknown as { relayoutHud(): void }).relayoutHud();
+      expect(panel.last["setPosition"]).toEqual([viewport.centerX, viewport.centerY]);
+    });
+
+    it("should take the panel down when the next state shows the player dead, and show the dead card (C17)", () => {
+      const { run, panelOpen, labels } = inThePanel();
+
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+
+      expect(run.menu).toBeUndefined();
+      expect(panelOpen()).toBe(false);
+      expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
+    });
+
+    it("should keep a dead player's panel up across the states that keep showing them dead (C17)", () => {
+      const { run, panelOpen } = inThePanel("number", player("me", "Aldric", 130, dead));
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+      expect(panelOpen()).toBe(true);
+    });
+
+    it("should take the panel down when end_game arrives, and open nothing on Esc after (C17)", () => {
+      const { run, keys, press, panelOpen } = inThePanel();
+      run.endRun();
+      expect(run.menu).toBeUndefined();
+      expect(panelOpen()).toBe(false);
+      press(keys.esc);
+      expect(run.menu).toBeUndefined();
+    });
   });
 });
 
