@@ -280,3 +280,100 @@ func TestEndgameRun_EscapingPublishesTheDelversItems(t *testing.T) {
 	require.NotNil(t, event.PlayerItems[0].Equipment.GetWeapon(), "the weapon is carried out")
 	assert.Equal(t, weapon.InstanceID.String(), event.PlayerItems[0].Equipment.Weapon.InstanceId)
 }
+
+// ----- The tome and the altar (I-BDRTJ-4) -----
+
+// endgameTomeRun is an endgame test run for one delver whose replies are
+// recorded, on a seeded spawn source.
+func endgameTomeRun(t *testing.T, seed uint64) (*Session, uuid.UUID) {
+	t.Helper()
+
+	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds(), withEndgameRunPlan(&endgameRunPlan))
+	s.sender = &recordingSender{}
+	s.spawnRand = seededSpawns(seed)
+	s.InitialSystems()
+	playerID := uuid.New()
+	s.AddPlayer(playerID, types.CharacterInPlay{ID: uuid.New(), Name: "Ravek", Class: "warrior", Level: 20}, "")
+	s.InitialMapObjects(nil)
+	return s, playerID
+}
+
+// Every endgame test run is a tome run: the tome lies on floor 6 and the altar
+// stands on floor 8, each placed by FS-3103M's placement, and no other floor
+// holds either. FS-BDRTJ R25, R29.
+func TestEndgameRun_TomeOnSixAltarOnEight_OnEverySeed(t *testing.T) {
+	for seed := uint64(1); seed <= 6; seed++ {
+		s, _ := endgameTomeRun(t, seed)
+		plan := planOf(t, s)
+		assert.Equal(t, 6, plan.TomeFloor, "seed %d", seed)
+		assert.Equal(t, 8, plan.AltarFloor, "seed %d", seed)
+
+		for depth := 6; depth <= 10; depth++ {
+			if depth > 6 {
+				require.NoError(t, s.regenerateFloor())
+			}
+			tomes := len(entityIDsWith(s, ecs.ComponentTypeTome))
+			altars := len(entityIDsWith(s, ecs.ComponentTypeAltar))
+			if s.dungeon == nil {
+				assert.Zero(t, tomes+altars, "seed %d floor %d: a fallback floor places neither", seed, depth)
+				continue
+			}
+			assert.Equal(t, boolInt(depth == 6), tomes, "seed %d floor %d: tomes", seed, depth)
+			assert.Equal(t, boolInt(depth == 8), altars, "seed %d floor %d: altars", seed, depth)
+		}
+	}
+}
+
+// The plan's tome and altar keep FS-3103M's rules inside the climb: the tome
+// on a floor the run builds, the altar above it, never the top. R29.
+func TestEndgamePlan_TomeBelowAltarBelowTheTop(t *testing.T) {
+	plan := endgameRunPlan
+	assert.GreaterOrEqual(t, plan.TomeFloor, plan.FirstFloor)
+	assert.Greater(t, plan.AltarFloor, plan.TomeFloor)
+	assert.Less(t, plan.AltarFloor, plan.Height)
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// Taken on floor 6 and burned at the altar on floor 8, the tome summons Vorsk
+// at 30: the altar floor's plan level, 28, + the demon's 2. FS-BDRTJ R27.
+func TestEndgameRun_BurningTheTomeSummonsVorskAtThirty(t *testing.T) {
+	s, id := endgameTomeRun(t, 3)
+	tome := onlyEntity(t, s, ecs.ComponentTypeTome)
+	standBy(t, s, id, tome)
+	require.NoError(t, s.handleInteract(id, tome.ID))
+	require.NoError(t, s.regenerateFloor())
+	require.NoError(t, s.regenerateFloor())
+	require.Equal(t, 8, currentFloor(t, s).Depth)
+
+	altar := onlyEntity(t, s, ecs.ComponentTypeAltar)
+	standBy(t, s, id, altar)
+	before := demonsIn(s)
+	require.NoError(t, s.handleInteract(id, altar.ID))
+
+	vorsk := summoned(t, s, before)
+	assert.Equal(t, 30, monsterOf(vorsk).Level)
+	assert.True(t, monsterOf(vorsk).Boss)
+}
+
+// The tome not taken: the altar still stands on floor 8 and gives its lore
+// line. FS-BDRTJ Edge States "Tome not picked up".
+func TestEndgameRun_TomeNotTaken_TheAltarStillGivesItsLine(t *testing.T) {
+	s, id := endgameTomeRun(t, 4)
+	require.NoError(t, s.regenerateFloor())
+	require.NoError(t, s.regenerateFloor())
+
+	altar := onlyEntity(t, s, ecs.ComponentTypeAltar)
+	standBy(t, s, id, altar)
+	require.NoError(t, s.handleInteract(id, altar.ID))
+
+	replies := repliesTo(s, id)
+	require.NotEmpty(t, replies)
+	assert.Equal(t, RefusalAltarWithoutTome, replies[len(replies)-1].Payload["reason"])
+	assert.Empty(t, demonsIn(s), "nothing is summoned")
+}

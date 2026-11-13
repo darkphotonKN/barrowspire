@@ -13,8 +13,9 @@ import (
 	The endgame test run (FS-BDRTJ §Change: Endgame test run): a dev-only Spire
 	run of one, behind the dev test room's guard, that climbs floors 6 to 10 of
 	a height-10 Spire on one fixed plan. Only what the run spawns is fixed: its
-	height, its first floor, each floor's pool and monster level, and no Blood
-	Demon. Layouts, counts, placement, the elite roll, Daa'gon and every drop
+	height, its first floor, each floor's pool and monster level, no Blood
+	Demon, and the tome and the altar's floors (Vorsk summoned at the altar
+	floor's level + 2). Layouts, counts, placement, the elite roll, Daa'gon and every drop
 	roll are a Spire run's as shipped, and it settles as any run does (R24, R32,
 	R33). A session without a plan behaves exactly as before (R35).
 */
@@ -30,6 +31,9 @@ type endgamePlan struct {
 	LevelOverFloor int
 	// Pools is each floor's pool of five, by variant, in place of the draw (R26)
 	Pools map[int][]components.MonsterArchetype
+	// TomeFloor and AltarFloor make every such run a tome run, in place of
+	// FS-3103M's TomeRunChance and its floor draws (R29)
+	TomeFloor, AltarFloor int
 }
 
 // endgameRunPlan is the one plan. Every 26+ variant is on at least one floor,
@@ -38,6 +42,8 @@ var endgameRunPlan = endgamePlan{
 	Height:         MasterSpireHeight,
 	FirstFloor:     6,
 	LevelOverFloor: 20,
+	TomeFloor:      6,
+	AltarFloor:     8,
 	Pools: map[int][]components.MonsterArchetype{
 		6: {
 			components.MonsterArchetypeDarkWarrior, components.MonsterArchetypeBloodTroll,

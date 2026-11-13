@@ -3192,10 +3192,11 @@ func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
 }
 
 func (s *Session) InitialSystems() {
-	// the endgame test run's height and first floor are its plan's, in place
-	// of the roll (FS-BDRTJ §Change: Endgame test run, R25)
+	// the endgame test run's height, first floor and tome plan are its plan's,
+	// in place of the rolls (FS-BDRTJ §Change: Endgame test run, R25, R29)
 	if s.endgame != nil {
 		CreateMatchProgressEntity(s.EntityManager, s.endgame.FirstFloor, s.endgame.Height)
+		s.setTomePlan(s.endgame.TomeFloor, s.endgame.AltarFloor)
 		return
 	}
 
