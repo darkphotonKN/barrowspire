@@ -7067,7 +7067,7 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     const run = new BarrowspireScene() as unknown as {
       init(data?: object): void;
       connectToServer(): void;
-      showNotification(message: string, backing: number): void;
+      showNotification(message: string, backing: number, important?: boolean): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
     };

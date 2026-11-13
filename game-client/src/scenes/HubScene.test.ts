@@ -2394,9 +2394,9 @@ describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", ()
         speaker: { name: "The Spire's door" },
         text: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
         options: [
-          { id: "solo", label: "Descend alone", register: "actionable", enabled: true },
-          { id: "queue", label: "Wait for company", register: "actionable", enabled: true },
-          { id: "enter", label: "Enter as a party", register: "actionable", enabled: true },
+          { id: "solo", label: "Descend alone", register: "actionable", enabled: true, sound: "confirm" },
+          { id: "queue", label: "Wait for company", register: "actionable", enabled: true, sound: "confirm" },
+          { id: "enter", label: "Enter as a party", register: "actionable", enabled: true, sound: "confirm" },
           { id: "dismiss", label: "Not yet", register: "cancel", enabled: true },
         ],
       },
@@ -6200,7 +6200,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
     expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui,\s*\);/);
-    expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\);/);
+    expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\(effect\) => this\.ui\.play\(effect\),\s*\);/);
     const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
   });
