@@ -168,7 +168,7 @@ import {
   type WallSheets,
 } from "@/render/world/walls";
 import { buildingWallShadows, shadowsWithin, type GroundShadows } from "@/render/world/wallShadows";
-import { afterFrameSetUp, boundCamera, crispen, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, crispen, followWith, relayoutOn, viewport } from "@/render/viewport";
 import type { MinimapStage } from "@/ui/minimap";
 import { browserMinimapStore, type MinimapModeStore } from "@/ui/minimapMode";
 import type { ModeIconStage } from "@/ui/minimapModeIcon";
@@ -737,8 +737,6 @@ export class HubScene extends Phaser.Scene {
   private modeIconStage?: ModeIconStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
-  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /**
    * The corner row (FS-3EBCA): Menu, Character and Party, the Mailbox's slot left to the
    * envelope. Each press is the key's own path: one Esc, I, T.
@@ -2209,7 +2207,6 @@ export class HubScene extends Phaser.Scene {
         world: HUB_SIZE,
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
-        button: this.fullscreenButton,
         // a press on its map mode icon is M's, under M's guards (FS-56CKV §Change: Map mode icon, D6)
         icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
         // the town's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)

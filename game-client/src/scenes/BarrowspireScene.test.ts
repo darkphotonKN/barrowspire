@@ -9099,7 +9099,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           // the corner re-laid as on M: the icon in the enlarged map's bottom-left
           expect(iconOf(run)?.shownAt?.box).toMatchObject({ x: 750, y: 159 });
           pointers.pointerdown(pointerAt(754, 163));
-          pointers.pointerdown(pointerAt(1043, 16));
+          // in the very corner, as the overlay is up (FS-T3DWX G4)
+          pointers.pointerdown(pointerAt(1065, 14));
           expect(map()!.mode).toBe("normal");
           expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
           // a right press on it is its too: no class ability at the corner, and no step

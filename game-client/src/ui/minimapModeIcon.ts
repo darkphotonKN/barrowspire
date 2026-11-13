@@ -1,7 +1,7 @@
 /**
  * The map mode icon (FS-56CKV §Change: Map mode icon; CONTEXT.md "Map mode icon"): a small amber
- * glyph in the minimap's bottom-left corner, normal and enlarged, and beside the fullscreen button
- * while the map overlay is up, in a run, the town and a field. Hovered it brightens and shows
+ * glyph in the minimap's bottom-left corner, normal and enlarged, and in the very top-right corner
+ * while the map overlay is up (FS-T3DWX G4), in a run, the town and a field. Hovered it brightens and shows
  * "Map mode (M)" beside the map; a press does what M does, under M's guards. The owner's words
  * (2026-11-12): "右上角地圖左下角多加小icon hover顯示可以切換大小或是模式(M)".
  *
@@ -15,9 +15,8 @@
  * top-right corner's ({@link minimapModeIconPlace}, from `topRightCorner`).
  */
 
-import type { Rect } from "@/render/iso/projection";
+import type { Point, Rect } from "@/render/iso/projection";
 import { crispen } from "@/render/viewport/crispen";
-import { FULLSCREEN_BUTTON, type FullscreenButtonSpot } from "@/render/viewport/fullscreenButton";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { paintTipGround, type TipGroundGraphics } from "./itemTip";
 import { MINIMAP, MINIMAP_GLYPH, glyphRects } from "./minimap";
@@ -25,20 +24,19 @@ import { MINIMAP, MINIMAP_GLYPH, glyphRects } from "./minimap";
 /**
  * The icon (D1–D3, D5): its 7 × 7 art, `#` inked, `o` the shape's own dark, on the marks' 1 px
  * ring, so a 9 × 9 tile; `inset` px in from the map's left and bottom edges, the same in either
- * size; `gap` px left of the fullscreen button in the overlay; its hit area `pad` px round its
+ * size; its hint `gap` px left of the map, or of the icon in the overlay; its hit area `pad` px round its
  * box; drawn over the minimap's layers.
  */
 export const MINIMAP_MODE_ICON = {
   // two nested squares round a dark middle: the map's sizes, one inside the next
   art: ["#######", "#ooooo#", "#o###o#", "#o#o#o#", "#o###o#", "#ooooo#", "#######"],
   inset: MINIMAP.inset,
-  gap: MINIMAP.gap,
   pad: 2,
   depth: MINIMAP.depth + 1,
 } as const;
 
 /**
- * Its hint (D7): the words, the type and padding of the fullscreen button's hint (FS-56CKV §Change
+ * Its hint (D7): the words, the type and padding the fullscreen button's hint had (FS-56CKV §Change
  * C9), its right edge `gap` px left of the map (or the icon), over the HUD.
  */
 export const MINIMAP_MODE_HINT = {
@@ -58,27 +56,21 @@ export interface MinimapModeIconPlace {
 
 /**
  * The icon's place (D2–D4), on whole logical px: 4 px inside `map`'s bottom-left where a map is
- * shown in the corner; with the `overlay` up, `gap` px left of the fullscreen button at `button`,
- * centred on its height; nowhere with neither. The hint's right edge `gap` px left of the map, or
- * of the icon in the overlay, its middle on the icon's.
+ * shown in the corner; with the overlay up, its top-right on `corner`, the view's top-right corner
+ * (FS-T3DWX G4, the owner's option A); nowhere with neither. The hint's right edge `gap` px left of
+ * the map, or of the icon in the overlay, its middle on the icon's.
  */
-export function minimapModeIconPlace(
-  map: Rect | null,
-  overlay: boolean,
-  button: FullscreenButtonSpot,
-  view: { width: number },
-): MinimapModeIconPlace | null {
+export function minimapModeIconPlace(map: Rect | null, corner: Point | null): MinimapModeIconPlace | null {
   const size = MINIMAP_GLYPH.box;
-  const { inset, gap, pad } = MINIMAP_MODE_ICON;
+  const { inset, pad } = MINIMAP_MODE_ICON;
   let x: number;
   let y: number;
   if (map) {
     x = Math.round(map.x) + inset;
     y = Math.round(map.y + map.height) - inset - size;
-  } else if (overlay) {
-    const buttonLeft = Math.round(view.width - button.right - FULLSCREEN_BUTTON.height);
-    x = buttonLeft - gap - size;
-    y = Math.round(button.top + (FULLSCREEN_BUTTON.height - size) / 2);
+  } else if (corner) {
+    x = Math.round(corner.x) - size;
+    y = Math.round(corner.y);
   } else return null;
   const box = { x, y, width: size, height: size };
   return {

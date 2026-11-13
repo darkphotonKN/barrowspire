@@ -1,6 +1,6 @@
 ---
 id: I-T3DWX-3
-status: open
+status: done
 implements: FS-T3DWX
 blocked_by: [I-T3DWX-1]
 labels: [ready-for-agent]

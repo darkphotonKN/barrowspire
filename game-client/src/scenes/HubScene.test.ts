@@ -5085,7 +5085,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(heard()).toEqual([]);
       pressM();
       expect(heard()).toEqual(["map_mode_switch"]);
-      pointers.pointerdown!({ x: 1043, y: 16, button: 0 });
+      pointers.pointerdown!({ x: 1065, y: 14, button: 0 });
       expect(heard()).toEqual(["map_mode_switch"]);
     });
 
@@ -5112,8 +5112,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(map()!.mode).toBe("enlarged");
       pointers.pointerdown!(press(754, 163));
       expect(map()!.mode).toBe("overlay");
-      // beside the fullscreen button in its corner, as the overlay is up
-      pointers.pointerdown!(press(1043, 16));
+      // in the very corner, as the overlay is up (FS-T3DWX G4)
+      pointers.pointerdown!(press(1065, 14));
       expect(map()!.mode).toBe("normal");
       expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
     });
