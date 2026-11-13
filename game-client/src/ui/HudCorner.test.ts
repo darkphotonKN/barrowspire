@@ -2004,3 +2004,42 @@ describe("HudCorner (FS-S8Z2Y R4–R6: lit from above; the greyed Mailbox flat)"
     expect(SHADOW_OF(env, t)).toMatchObject({ alpha: 0.5, tintMode: 1 });
   });
 });
+
+describe("HudCorner's hover and refusal for the interface sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10)", () => {
+  it("should tell an icon's hovered as the pointer comes onto it, once until it leaves", () => {
+    const hovered = vi.fn();
+    const env = setup([{ icon: "party", press: vi.fn(), hovered }]);
+
+    env.zoneAt("party").handlers.pointerover();
+    env.zoneAt("party").handlers.pointerover();
+    env.zoneAt("party").handlers.pointerout();
+    env.zoneAt("party").handlers.pointerover();
+
+    expect(hovered).toHaveBeenCalledTimes(2);
+  });
+
+  it("should tell the greyed Mailbox's refused on a press, and never its hovered", () => {
+    const hovered = vi.fn();
+    const refused = vi.fn();
+    const press = vi.fn();
+    const env = setup([{ icon: "mail", greyed: true, press, hovered, refused }]);
+
+    env.zoneAt("mail").handlers.pointerover();
+    env.zoneAt("mail").handlers.pointerdown();
+
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(hovered).not.toHaveBeenCalled();
+    expect(press).not.toHaveBeenCalled();
+  });
+
+  it("should tell no refused for a press on an icon that answers", () => {
+    const refused = vi.fn();
+    const press = vi.fn();
+    const env = setup([{ icon: "menu", press, refused }]);
+
+    env.zoneAt("menu").handlers.pointerdown();
+
+    expect(press).toHaveBeenCalledTimes(1);
+    expect(refused).not.toHaveBeenCalled();
+  });
+});

@@ -449,7 +449,7 @@ describe("OPTIONS in the slot (FS-TQZ5J R19; FS-28DDG § Change C3–C8, C17; FS
     expect(none.shown()!.options!.fullscreen).toBeNull();
   });
 
-  it("should play nothing as the menu gives way to OPTIONS and back, and settings_close as the whole closes (FS-WDM0X S5)", () => {
+  it("should play menu_click as the menu gives way to OPTIONS, menu_back as it comes back, and settings_close as the whole closes (FS-WDM0X S5; § Change M6, M7)", () => {
     const t = onBridge();
     t.bridge.report(aWorld("hub").report);
     t.esc();
@@ -458,7 +458,7 @@ describe("OPTIONS in the slot (FS-TQZ5J R19; FS-28DDG § Change C3–C8, C17; FS
     t.row("options");
     t.esc();
     t.row("options");
-    expect(t.heard()).toEqual([]);
+    expect(t.heard()).toEqual(["menu_click", "menu_back", "menu_click"]);
 
     t.slot.pressMenu();
     expect(t.heard()).toEqual([]);
@@ -603,5 +603,147 @@ describe("the town's menu and its queue (FS-TQZ5J R20; FS-G4VMQ R13)", () => {
     other.facts.queued = true;
     not.slot.sync();
     expect(not.slot.isOpen()).toBe(true);
+  });
+});
+
+describe("the menu slot's sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5–M10, M13)", () => {
+  it("should play menu_click for Options, Change character and Leave the queue, each once, by the pointer or its key", () => {
+    const t = onBridge();
+    const town = aWorld("hub", { queued: true });
+    t.bridge.report(town.report);
+    t.esc();
+    t.heard();
+
+    t.row("change");
+    t.press({ numbered: 1 });
+    t.press({ numbered: 2 });
+
+    expect(t.heard()).toEqual(["menu_click", "menu_click", "menu_click"]);
+    expect(town.asked).toEqual([{ kind: "changeCharacter" }, { kind: "leaveQueue" }]);
+    expect(t.shown()!.kind).toBe("options");
+  });
+
+  it("should play menu_back for OPTIONS' Back, its × and Esc, and nothing else for it", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.esc();
+    t.row("options");
+    t.heard();
+
+    t.shown()!.options!.back();
+    t.row("options");
+    t.esc();
+
+    expect(t.heard()).toEqual(["menu_back", "menu_click", "menu_back"]);
+  });
+
+  it("should play only settings_close as the menu's Back, its × or Esc closes the whole menu", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("field").report);
+    t.esc();
+    t.heard();
+    t.row("back");
+    expect(t.heard()).toEqual(["settings_close"]);
+
+    t.esc();
+    t.heard();
+    t.shown()!.menu!.close();
+    expect(t.heard()).toEqual(["settings_close"]);
+  });
+
+  it("should play only settings_close for Leave the barrow, which closes the whole menu", () => {
+    const t = onBridge();
+    const run = aWorld("run", { resolved: true });
+    t.bridge.report(run.report);
+    t.esc();
+    t.heard();
+
+    t.row("leave");
+
+    expect(t.heard()).toEqual(["settings_close"]);
+  });
+
+  it("should play dialog_open as Fall where you stand opens the confirm, by the pointer or 1", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.esc();
+    t.heard();
+    t.row("fall");
+    expect(t.heard()).toEqual(["dialog_open"]);
+
+    t.row("not-yet");
+    t.esc();
+    t.heard();
+    t.press({ numbered: 0 });
+    expect(t.heard()).toEqual(["dialog_open"]);
+  });
+
+  it("should play dialog_confirm_heavy for Fall, and dialog_cancel alone for Not yet, its × and Esc", () => {
+    const t = onBridge();
+    const run = aWorld("run");
+    t.bridge.report(run.report);
+    const confirm = () => {
+      t.esc();
+      t.row("fall");
+      t.heard();
+    };
+
+    confirm();
+    t.row("fall-now");
+    expect(t.heard()).toEqual(["dialog_confirm_heavy"]);
+    expect(run.asked).toEqual([{ kind: "fall" }]);
+    t.row("not-yet");
+    expect(t.heard()).toEqual(["dialog_cancel"]);
+
+    confirm();
+    t.shown()!.menu!.close();
+    expect(t.heard()).toEqual(["dialog_cancel"]);
+
+    confirm();
+    t.esc();
+    expect(t.heard()).toEqual(["dialog_cancel"]);
+    expect(t.slot.isOpen()).toBe(false);
+  });
+
+  it("should hand the menu, the Fall confirm and OPTIONS a feedback that plays menu_hover and menu_error", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.esc();
+    t.heard();
+    const menu = t.shown()!.menu!.feedback!;
+    menu.hovered();
+    menu.refused();
+    expect(t.heard()).toEqual(["menu_hover", "menu_error"]);
+
+    t.row("fall");
+    t.heard();
+    const confirm = t.shown()!.menu!.feedback!;
+    confirm.hovered();
+    confirm.refused();
+    expect(t.heard()).toEqual(["menu_hover", "menu_error"]);
+
+    t.row("not-yet");
+    t.esc();
+    t.row("options");
+    t.heard();
+    const options = t.shown()!.options!.feedback!;
+    options.hovered();
+    options.refused();
+    expect(t.heard()).toEqual(["menu_hover", "menu_error"]);
+  });
+
+  it("should hand OPTIONS a feedback that plays a tick for a step and the Fullscreen row's way for its press", () => {
+    const t = onBridge({ active: () => false, toggle: () => {}, watch: () => () => {} });
+    t.bridge.report(aWorld("hub").report);
+    t.esc();
+    t.row("options");
+    t.heard();
+    const options = t.shown()!.options!.feedback!;
+
+    options.stepped();
+    options.toggled(true);
+    options.toggled(false);
+
+    expect(t.heard()).toEqual(["menu_slider_tick", "menu_toggle_on", "menu_toggle_off"]);
   });
 });

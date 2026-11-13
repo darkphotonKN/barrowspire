@@ -63,7 +63,7 @@ describe("PreloadScene's boot screen (FS-C4JWH §D R18: unchanged)", () => {
     expect(scene.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 
-  it("should queue the 11 interface effects behind the same torch bar, each under its key as [m4a, ogg] (FS-WDM0X S20, S21)", () => {
+  it("should queue the 27 interface effects behind the same torch bar, each under its key as [m4a, ogg] (FS-WDM0X S20, S21)", () => {
     const { art, scene } = bootScreen();
 
     expect(art.queuedAudio).toEqual(
@@ -72,7 +72,7 @@ describe("PreloadScene's boot screen (FS-C4JWH §D R18: unchanged)", () => {
         url: [`/audio/sfx/${name}.m4a`, `/audio/sfx/${name}.ogg`],
       })),
     );
-    expect(art.queuedAudio).toHaveLength(11);
+    expect(art.queuedAudio).toHaveLength(27);
 
     art.finish();
 

@@ -3,6 +3,7 @@ import type * as Phaser from "phaser";
 import type { KeyValueStore } from "@/characters/roster";
 import { SFX_DEFAULT_LEVEL, SFX_MAX_GAIN, SFX_SETTING_KEY, sfxGain, type SfxSettingStore } from "./sfxSetting";
 import {
+  MENU_HOVER_COOLDOWN_MS,
   UI_EFFECTS,
   UiSounds,
   sceneUiSoundStage,
@@ -119,24 +120,41 @@ function levelStore(held: string | null = "3") {
   return { store, reach };
 }
 
-/** A player over a fake stage, a store and a window state the test moves by hand. */
+/** A player over a fake stage, a store, a window state and a clock the test moves by hand. */
 function player(opts: { cached?: UiEffect[]; audible?: boolean; level?: string | null } = {}) {
   const fake = fakeStage(opts);
   const level = levelStore(opts.level === undefined ? "3" : opts.level);
   const windows = open();
-  const sounds = new UiSounds(fake.stage, level.reach, () => ({ ...windows }));
+  const clock = { now: 0 };
+  const sounds = new UiSounds(fake.stage, level.reach, () => ({ ...windows }), () => clock.now);
   /** Every effect started, in order. */
   const played = () =>
     [...fake.sounds.values()].flatMap(({ self }) => Array.from({ length: self.plays }, () => self.key));
   /** The one sound added for `key`. */
   const soundOf = (key: string) => fake.sounds.get(key)!;
-  return { ...fake, level, windows, sounds, played, soundOf };
+  return { ...fake, level, windows, clock, sounds, played, soundOf };
 }
 
 describe("the effects' files (FS-WDM0X S1, S21; S21 order set by the integrator)", () => {
-  it("should name the owner's 11 effects", () => {
+  it("should name the owner's 27 effects: the 11 window and minimap sounds and the 16 of the menus, dialogs and notices (§ Change M1)", () => {
     expect([...UI_EFFECTS].sort()).toEqual(
       [
+        "dialog_cancel",
+        "dialog_confirm",
+        "dialog_confirm_heavy",
+        "dialog_open",
+        "menu_back",
+        "menu_click",
+        "menu_dropdown_close",
+        "menu_dropdown_open",
+        "menu_error",
+        "menu_hover",
+        "menu_slider_tick",
+        "menu_tab",
+        "menu_toggle_off",
+        "menu_toggle_on",
+        "notify",
+        "notify_important",
         "character_close",
         "character_open",
         "inventory_close",
@@ -397,5 +415,109 @@ describe("sceneUiSoundStage (FS-WDM0X S11–S13)", () => {
     { context: undefined, locked: false, audible: true },
   ])("should call a $context.state context (locked $locked) audible: $audible", ({ context, locked, audible }) => {
     expect(sceneUiSoundStage(fakeScene({ context, locked }).scene).audible()).toBe(audible);
+  });
+});
+
+describe("one action, one sound (FS-WDM0X § Change: Menu, dialog and notice sounds, M2)", () => {
+  it("should play the first effect an action asks for, in place of the rule's, once", () => {
+    const p = player();
+    p.windows.menu = true;
+
+    p.sounds.act(() => {
+      p.sounds.play("dialog_cancel");
+      p.windows.menu = false; // the Fall confirm's Not yet closes the whole menu
+      p.sounds.play("menu_click");
+    });
+
+    expect(p.played()).toEqual(["sfx:dialog_cancel"]);
+  });
+
+  it("should play the rule's effect where the action asked for none", () => {
+    const p = player();
+
+    p.sounds.act(() => void (p.windows.inventory = true));
+
+    expect(p.played()).toEqual(["sfx:inventory_open"]);
+  });
+
+  it("should hold an effect asked for inside an inner action for the outer one: Esc's step reaching OPTIONS' Back", () => {
+    const p = player();
+    p.windows.menu = true;
+
+    p.sounds.act(() => {
+      p.sounds.act(() => p.sounds.play("menu_back"));
+    });
+
+    expect(p.played()).toEqual(["sfx:menu_back"]);
+  });
+
+  it("should play an effect asked for outside any action at once", () => {
+    const p = player();
+
+    p.sounds.play("menu_slider_tick");
+
+    expect(p.played()).toEqual(["sfx:menu_slider_tick"]);
+  });
+
+  it("should forget what an action asked for once it is done, and play nothing for one that throws", () => {
+    const p = player();
+
+    expect(() =>
+      p.sounds.act(() => {
+        p.sounds.play("menu_error");
+        throw new Error("refused");
+      }),
+    ).toThrow("refused");
+    p.sounds.act(() => void (p.windows.party = true));
+
+    expect(p.played()).toEqual(["sfx:party_open"]);
+  });
+
+  it("should play nothing for an action that asks for nothing and changes nothing", () => {
+    const p = player();
+
+    p.sounds.act(() => undefined);
+
+    expect(p.played()).toEqual([]);
+  });
+});
+
+describe("the hover's cooldown (FS-WDM0X § Change M4)", () => {
+  it("should name the cooldown, 50 ms", () => {
+    expect(MENU_HOVER_COOLDOWN_MS).toBe(50);
+  });
+
+  it("should play menu_hover once for two hovers within the cooldown, and again once it has passed", () => {
+    const p = player();
+
+    p.sounds.play("menu_hover");
+    p.clock.now = 49;
+    p.sounds.play("menu_hover");
+    p.clock.now = 50;
+    p.sounds.play("menu_hover");
+
+    expect(p.played()).toEqual(["sfx:menu_hover", "sfx:menu_hover"]);
+  });
+
+  it("should count the cooldown from the last hover heard, not from one that played nothing", () => {
+    const p = player({ audible: false });
+
+    p.sounds.play("menu_hover");
+    p.state.audible = true;
+    p.clock.now = 10;
+    p.sounds.play("menu_hover");
+
+    expect(p.played()).toEqual(["sfx:menu_hover"]);
+  });
+
+  it("should give no other effect a cooldown", () => {
+    const p = player();
+
+    p.sounds.play("menu_slider_tick");
+    p.sounds.play("menu_slider_tick");
+    p.sounds.play("menu_error");
+    p.sounds.play("menu_error");
+
+    expect(p.played()).toEqual(["sfx:menu_slider_tick", "sfx:menu_slider_tick", "sfx:menu_error", "sfx:menu_error"]);
   });
 });

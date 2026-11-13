@@ -279,3 +279,63 @@ describe("the UI scene's corner row where the UI's menu or the world keeps the s
     expect("sync" in row).toBe(false);
   });
 });
+
+describe("the corner row's hover and refusal sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10)", () => {
+  /** The world reported and the row built for it, its windows answered as the world answers them. */
+  function standing(world: World) {
+    const t = onBridge();
+    const w = aWorld(world);
+    t.bridge.report(w.report);
+    t.row.show(t.bridge.world);
+    const spec = (icon: CornerIcon) => t.live()[0].icons.find((s) => s.icon === icon)!;
+    return { ...t, w, spec };
+  }
+
+  it("should play menu_hover for a hover on Menu, Inventory, Character and Party, in each world", () => {
+    for (const world of ["hub", "field", "run"] as const) {
+      const t = standing(world);
+      for (const icon of ["menu", "inventory", "character", "party"] as const) t.spec(icon).hovered?.();
+      expect(t.heard()).toEqual(["menu_hover", "menu_hover", "menu_hover", "menu_hover"]);
+    }
+  });
+
+  it("should give the greyed Mailbox no hover, and play menu_error for its press, outside the town", () => {
+    const t = standing("field");
+    const mail = t.spec("mail");
+
+    expect(mail.hovered).toBeUndefined();
+    mail.refused?.();
+
+    expect(t.heard()).toEqual(["menu_error"]);
+  });
+
+  it("should play menu_error for Party and Menu under the town's dialogue, and Inventory's own open", () => {
+    const t = standing("hub");
+    t.w.state.dialogue = true;
+
+    t.press("party");
+    t.press("inventory");
+
+    expect(t.heard()).toEqual(["menu_error", "inventory_open"]);
+  });
+
+  it("should play menu_error for a window icon the world turns away: its answer changed no window", () => {
+    const t = standing("run");
+    // the run turns Party away with a chest open: its answer leaves the panel shut
+    t.w.report.answer = (request) => void t.w.asked.push(request);
+
+    t.press("party");
+
+    expect(t.w.asked).toEqual([{ kind: "toggle", window: "party" }]);
+    expect(t.heard()).toEqual(["menu_error"]);
+  });
+
+  it("should play one sound for a press that changes a window, never menu_error beside it", () => {
+    const t = standing("field");
+
+    t.press("character");
+    t.press("character");
+
+    expect(t.heard()).toEqual(["character_open", "character_close"]);
+  });
+});
