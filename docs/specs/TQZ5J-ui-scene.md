@@ -81,8 +81,9 @@ Each phase is merged before the next starts. **[charter P1]** Later phases are e
 7. **Mouse.** A press on any interactive object of the UI scene never reaches a world scene: not
    its objects, not its scene-wide `pointerdown`, `pointerup` or `wheel`. A press anywhere else
    reaches the world exactly as today. This rests on Phaser's `InputManager.globalTopOnly`, which
-   stays at its default `true`; nothing turns it off. The UI scene never turns on pointer polling
-   (`setPollAlways`, `setPollRate`). **[charter P4; spike (a)]**
+   stays at its default `true`; nothing turns it off. It works only with the UI scene above the
+   worlds in the scene list (R1): registered below them, the world takes the panel's presses.
+   **[charter P4; spike (a), (order)]**
 
 ### B. The interface
 
@@ -167,14 +168,21 @@ Each phase is merged before the next starts. **[charter P1]** Later phases are e
     says the player's rows would now be wrong (resolved changed, FS-9K8EZ req 6), when the run ends,
     when a dialogue opens, and when the world changes (a switch takes the old world's menu down
     today). **[code]**
-21. **One owner per key.** A key is acted on by exactly one scene at any moment:
-    - **Keys the UI scene owns outright** (Esc in phase 1): no world scene binds them.
+21. **One owner per key.** A key is acted on by exactly one scene at any moment, and that is
+    settled by who binds it and by reported state, never by event order:
+    - **Keys the UI scene owns outright** (Esc in phase 1): no world scene binds them, by event or
+      by `addKey`.
     - **Keys shared by state** (Enter, 1–3, ←/→): the UI scene acts only while its menu slot is
       filled, and the world's handlers stay guarded by `menuOpen` (R10), as they are by `this.menu`
       today.
-    - **Belt and braces:** on a keydown it acted on, the UI scene calls the event's
-      `stopPropagation()`, so no world scene's handler or `Key` hears it. It never stops a keyup:
-      a key held as the menu opens (a stride) is still let go in the world.
+    - **No `stopPropagation` on keys.** Neither the UI scene nor a world scene calls a keyboard
+      event's `stopPropagation()` or `stopImmediatePropagation()` to settle ownership. Phaser hands a
+      key to each scene in the order the scenes' keyboard plugins subscribed (the order they
+      started), not in scene-list order, and a world switch restarts the world and moves it behind
+      the UI scene: a stop from the UI scene would shield the world in some sessions and not in
+      others. **[spike (b)]**
+    - **Keyups always reach the world:** a key held as the menu opens (a stride) is still let go
+      there. **[spike (b)]**
     - **The corner hotkeys move with their windows:** I, B and C with the gear overlay (phase 2), T
       with the party panel (phase 3), M with the minimap (phase 4). Until then they stay where they
       are. P5's end state (the UI scene owns every corner hotkey) is reached when the last of those
@@ -259,7 +267,10 @@ Each phase is merged before the next starts. **[charter P1]** Later phases are e
 - [ ] No scene class imports another scene class or calls another scene's methods for the UI;
       the world scenes and the UI scene use only the interface (by test or by the diff).
 - [ ] The world scenes no longer construct `HudCorner`, `showMenuPanel`, `openOptionsPanel` or
-      `UiSounds`, and no longer bind Esc.
+      `UiSounds`, and no longer bind Esc (no `keydown-ESC`, no `addKey(ESC)`).
+- [ ] No scene calls `stopPropagation()` or `stopImmediatePropagation()` on a keyboard event to
+      settle which scene answers a key; the key rules hold in the first world after a page load and
+      after a world switch alike.
 - [ ] A press on the corner row or on the open menu (blocker included) reaches no world handler;
       a press beside them does (a test on the scene list, and the owner's check).
 - [ ] Esc steps through dialogue, letter, menu, party, gear, menu-open, in every world, as
@@ -290,10 +301,14 @@ Each phase is merged before the next starts. **[charter P1]** Later phases are e
 - **The disconnect notice during a world switch**: the notice pauses whatever is running, the UI
   scene included.
 - **A press that starts on the interface and ends beside it**: the press is the interface's; the
-  release reaches the world as a `pointerup` with no press before it, which no world handler acts on
-  (the run's Shadow Shot releases only a hold it started). **[spike (a)]**
-- **A key held while the pointer rests on the interface**: the world still hears it (no pointer
-  polling in the UI scene, R7). **[spike (b)]**
+  release reaches the world as a `pointerup` with no press before it, as it does today inside one
+  scene, and no world handler acts on it (the run's Shadow Shot releases only a hold it started).
+  **[spike (a)]**
+- **A key held while the pointer rests on the interface**: the world still hears it. Keys do not go
+  through pointer polling, so this holds with or without polling in the UI scene. **[spike (b)]**
+- **The first world after the page loads vs every later one**: the world's keyboard plugin is
+  ahead of the UI scene's in the first, behind it after any switch (R21). Nothing may depend on
+  that order. **[spike (b)]**
 - **The menu open and the player dies, escapes, or the run ends**: R20.
 - **A dialogue opening under an open menu** cannot happen today (the menu refuses talk); if a report
   ever says so, the menu yields (R20).
@@ -302,7 +317,59 @@ Each phase is merged before the next starts. **[charter P1]** Later phases are e
 
 ## Spike findings
 
-(Folded in from the P8 spike; see below.)
+Run 2026-11-14 (P8). A standalone Phaser 4.2.1 page with no server: a fake world (a full-view
+interactive ground, scene-wide `pointerdown`/`pointerup`/`wheel`, and its own Esc, I, 1 and Enter
+handlers, by event and by `addKey` + `JustDown`, plus a held W) under a UI scene (one interactive
+panel, Esc and I as its own, 1 and Enter only while its "menu" is open). Bundled with the repo's
+esbuild straight from `src` (the tsconfig `@/` paths), so `ViewportFit`, `mountViewport`, `fitGame`,
+`relayoutOn` and `roundEveryObject` are **the repo's own, imported standalone, not mimicked**. Driven
+in headless Chrome by playwright-core `channel: "chrome"` (SwiftShader, as the bake runs). The page
+and driver stayed in git-ignored `game-client/tmp/ui-scene-spike/` and were never committed.
+
+**(a) Pointer: holds.** With the UI scene above the world and `globalTopOnly` at its default:
+
+- A click on the panel reaches the panel and no world handler, neither the ground nor the scene-wide
+  `pointerdown` or `pointerup`. A wheel over the panel reaches no world `wheel`.
+- A click or wheel beside the panel reaches the world's ground and its scene-wide handlers.
+- A press on the panel let go beside it: the press is the panel's alone, and the world's scene-wide
+  `pointerup` *is* heard. Today one scene hears both, so nothing changes; no world handler acts on a
+  lone release (the run's Shadow Shot releases only a hold it began).
+- The UI scene's own scene-wide `pointerdown` fires on every press, panel or not; it never stops the
+  world from hearing a press beside the panel.
+- With the UI scene registered *below* the world, a click on the panel goes to the world: the order
+  in the scene list is load-bearing (R1, R7).
+
+**(b) Keys: holds, by binding and state; `stopPropagation` does not.** Every keyboard plugin hears
+every key, in the order the plugins subscribed to the input manager's `process` event (each scene's
+keyboard plugin subscribes as the scene starts), *not* in scene-list order:
+
+- First world after load (the world starts and launches the UI): listeners "World then UI". The UI
+  scene's `stopPropagation()` on Esc came too late: the world's `keydown-ESC` and its `JustDown(ESC)`
+  both fired.
+- After a world switch (stop + start the world, the UI standing): "UI then World". The same stop now
+  shielded the world completely.
+- Without any stop, a world that still binds Esc acts on it alongside the UI (the control).
+- 1 and Enter with the UI's menu shut reach the world only; with it open the UI acts, and a world
+  handler not guarded by the menu state acts too.
+- A W held while Esc opens the menu: the world hears the keyup (`isDown` false, `keyup-W`).
+- With the pointer resting on the panel, the world still hears W, with and without pointer polling
+  in the UI scene: keys are dispatched from the DOM event, not from pointer polling.
+
+So the key split is the charter's P5 taken literally, **world scenes never bind the UI's keys**, plus
+state guards on shared keys, and no key ever relies on `stopPropagation` (R21). This sharpens P5's
+"world scenes stop binding them" from one option into the only safe one; no default changes.
+
+**(c) Render scale: holds, with the repo's own plugin.** Through `mountViewport` → `fitView` →
+`viewport.set` → `fitGame`, both scenes' cameras went 1080×720 zoom 1 → 1620×1080 zoom 1.5 →
+2160×1440 zoom 2; a frame grown to 1920×1080 (fullscreen-like) gave a 1280-wide view at 1.5 and fired
+both scenes' `relayoutOn`. At each scale the panel still took its click and a click beside still
+reached the world. One gap in the harness: headless Chrome's emulated density change did not fire
+the `(resolution: …dppx)` media query, so the driver nudged the frame by 1 px to run the same refit
+(`watchFrame` → `fitView(frame, devicePixelRatio)`); the density watch itself is FS-ZAJMH's and
+unit-tested there.
+
+**Defaults:** none changed. P4 holds as stated; P5 holds, its mechanism now fixed (no
+`stopPropagation`); P6 holds with no code of the UI scene's own.
 
 ## Out of Scope
 
