@@ -5,7 +5,8 @@ import { mountInterfaceSounds } from "./uiSceneSounds";
 /**
  * Test-only: the game's UI bridge with the UI scene's interface sounds lent to it, as the UI scene's
  * create lends them (FS-TQZ5J R22), playing on a recording stand-in for the game's sound: every
- * effect cached, the context running, the level the default (no store, so nothing kept is read).
+ * effect cached, the context running, the level the default (no store, so nothing kept is read), and
+ * a clock that moves a second at each read, so no two hovers fall in the cooldown (§ Change M4).
  * `heard` returns the effects played since the last read, by name (FS-WDM0X S10). On `onto`, a bridge
  * already lent, where given.
  */
@@ -18,7 +19,8 @@ export function heardInterfaceSounds(onto?: UiBridge) {
     audible: () => true,
   };
   const bridge = onto ?? new GameUiBridge();
-  const sounds = mountInterfaceSounds(bridge, stage, () => null);
+  let clock = 0;
+  const sounds = mountInterfaceSounds(bridge, stage, () => null, () => (clock += 1000));
   const heard = () => {
     const out = played;
     played = [];

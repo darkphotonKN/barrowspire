@@ -19,7 +19,8 @@ import { palette } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { escapeStep } from "./escapeOrder";
 import type { HitSize, MenuChoice, MenuPanelSpec, MenuTones } from "./menuPanel";
-import type { FullscreenControl, MenuSlotKeys, MusicLevelControl, OptionsPanelSpec } from "./optionsPanel";
+import type { FullscreenControl, MenuSlotKeys, MusicLevelControl, OptionsFeedback, OptionsPanelSpec } from "./optionsPanel";
+import type { UiEffect } from "@/audio/uiSounds";
 import { FALL_CONFIRM, runMenuChoices } from "./party";
 import type { UiBridge, UiRequest, World, WorldFacts, WorldReport } from "./uiBridge";
 
@@ -36,8 +37,8 @@ export interface MenuDraw {
   options(spec: OptionsPanelSpec): SlotPanel;
 }
 
-/** What of the bridge the slot reads, asks and reports through. */
-export type MenuBridge = Pick<UiBridge, "world" | "ui" | "act" | "request" | "reportUi">;
+/** What of the bridge the slot reads, asks, reports and plays through. */
+export type MenuBridge = Pick<UiBridge, "world" | "ui" | "act" | "play" | "request" | "reportUi">;
 
 export interface MenuSlotDeps {
   bridge: MenuBridge;
@@ -116,8 +117,22 @@ const toneKey = (facts: WorldFacts) => `${facts.leaving}|${facts.leavePending}|$
 
 export class UiMenuSlot {
   private filled: Filled | null = null;
+  /**
+   * What the chrome tells of the player's hand, played on the UI scene's player (FS-WDM0X § Change:
+   * Menu, dialog and notice sounds, M5, M8–M10): a hover, a refused press, a level moved, the
+   * Fullscreen row's way.
+   */
+  private readonly feedback: OptionsFeedback;
 
-  constructor(private readonly deps: MenuSlotDeps) {}
+  constructor(private readonly deps: MenuSlotDeps) {
+    const play = (effect: UiEffect) => () => deps.bridge.play(effect);
+    this.feedback = {
+      hovered: play("menu_hover"),
+      refused: play("menu_error"),
+      stepped: play("menu_slider_tick"),
+      toggled: (on) => deps.bridge.play(on ? "menu_toggle_on" : "menu_toggle_off"),
+    };
+  }
 
   /** Whether the slot is filled: the menu, OPTIONS or the Fall confirm (R10). */
   isOpen(): boolean {
@@ -222,7 +237,9 @@ export class UiMenuSlot {
    * The world's ESC menu, from its report as it opens (R16): the town's and a field's rows by
    * `hubMenuChoices` (a field is never queued), the run's by `runMenuChoices`; Change character dimmed
    * while `leaving`, Leave the barrow while `leavePending`. Every row and the × the player's, through
-   * the UI scene's act (FS-WDM0X S9).
+   * the UI scene's act (FS-WDM0X S9): an ordinary row plays `menu_click`, Fall where you stand
+   * `dialog_open`; Back and Leave the barrow close the whole menu, and keep the rule's
+   * `settings_close` (§ Change M6, M7, M11).
    */
   private openMenu(): void {
     const report = this.deps.bridge.world;
@@ -233,13 +250,13 @@ export class UiMenuSlot {
       this.show(report, {
         choices: runMenuChoices(facts),
         actions: {
-          // Fall and Options keep the slot filled and play nothing; Leave the barrow closes it (S5)
-          fall: this.played(() => this.openFallConfirm()),
+          // Fall and Options keep the slot filled; Leave the barrow closes it (S5)
+          fall: this.played(() => this.openFallConfirm(), "dialog_open"),
           leave: this.played(() => {
             this.ask({ kind: "leaveRun" });
             this.close();
           }),
-          options: this.played(() => this.openOptions()),
+          options: this.played(() => this.openOptions(), "menu_click"),
         },
         enabled: { leave: () => !live().leavePending },
       });
@@ -248,9 +265,9 @@ export class UiMenuSlot {
     this.show(report, {
       choices: hubMenuChoices({ queued: facts.queued }),
       actions: {
-        change: this.played(() => this.ask({ kind: "changeCharacter" })),
-        leave: this.played(() => this.ask({ kind: "leaveQueue" })),
-        options: this.played(() => this.openOptions()),
+        change: this.played(() => this.ask({ kind: "changeCharacter" }), "menu_click"),
+        leave: this.played(() => this.ask({ kind: "leaveQueue" }), "menu_click"),
+        options: this.played(() => this.openOptions(), "menu_click"),
         back: this.played(() => this.close()),
       },
       // dimmed while the server is asked, so a second press has nothing to land on
@@ -262,7 +279,7 @@ export class UiMenuSlot {
    * The OPTIONS panel in the slot (R19; FS-28DDG § Change C3–C8, C13, C17): Music the stored level,
    * each change also asked of the world, which applies it to the music it plays; Sound effects as the
    * panel keeps them; Fullscreen the frame's. Back, Esc and its × reopen the world's menu, rebuilt as
-   * it is then; the slot stays filled, so it plays nothing (FS-WDM0X S5).
+   * it is then; the slot stays filled, and they play `menu_back` (FS-WDM0X S5; § Change M7).
    */
   private openOptions(): void {
     const report = this.deps.bridge.world;
@@ -282,15 +299,20 @@ export class UiMenuSlot {
         origin: this.deps.centre(),
         hit: look.hit,
         tones: look.tones,
-        back: this.played(() => this.openMenu()),
+        back: this.played(() => this.openMenu(), "menu_back"),
         music,
         fullscreen: this.deps.fullscreen(),
         through: this.deps.through,
+        feedback: this.feedback,
       }),
     );
   }
 
-  /** Fall where you stand asks once (FS-9K8EZ req 3): the slot's rows become the confirm, nothing sent yet. */
+  /**
+   * Fall where you stand asks once (FS-9K8EZ req 3): the slot's rows become the confirm, nothing sent
+   * yet. Fall plays `dialog_confirm_heavy`; Not yet, and its × and Esc through it, close the whole
+   * menu with `dialog_cancel` alone (FS-WDM0X § Change M13, M2).
+   */
   private openFallConfirm(): void {
     const report = this.deps.bridge.world;
     if (!report) return;
@@ -298,26 +320,34 @@ export class UiMenuSlot {
     this.show(report, {
       line: FALL_CONFIRM.line,
       choices: FALL_CONFIRM.choices,
-      actions: { "fall-now": this.played(() => this.ask({ kind: "fall" })) },
+      actions: { "fall-now": this.played(() => this.ask({ kind: "fall" }), "dialog_confirm_heavy") },
       enabled: { "fall-now": () => !(this.deps.bridge.world?.facts() ?? facts).fallPending },
+      // Not yet has no action of its own: it is the close, as the × and Esc are
+      closing: "dialog_cancel",
     });
   }
 
-  /** A menu panel in the slot with the world's look; Back, Not yet, Esc and the × empty it (S5, S9). */
+  /**
+   * A menu panel in the slot with the world's look; Back, Not yet, Esc and the × empty it (S5, S9),
+   * with `closing` as their sound where it names one (the Fall confirm's `dialog_cancel`), else the
+   * rule's `settings_close`.
+   */
   private show(
     report: WorldReport,
-    spec: Pick<MenuPanelSpec<MenuChoice>, "line" | "choices" | "actions" | "enabled">,
+    spec: Pick<MenuPanelSpec<MenuChoice>, "line" | "choices" | "actions" | "enabled"> & { closing?: UiEffect },
   ): void {
     const look = MENU_LOOKS[report.world];
+    const { closing, ...panel } = spec;
     this.fill(
       report,
       this.deps.draw.menu({
-        ...spec,
-        close: this.played(() => this.close()),
+        ...panel,
+        close: this.played(() => this.close(), closing),
         origin: this.deps.centre(),
         hit: look.hit,
         tones: look.tones,
         through: this.deps.through,
+        feedback: this.feedback,
       }),
     );
   }
@@ -341,8 +371,15 @@ export class UiMenuSlot {
     this.sync();
   }
 
-  /** A player's press, run through the UI scene's act: the interface sounds' rule once (R22). */
-  private played(run: () => void): () => void {
-    return () => this.deps.bridge.act(run);
+  /**
+   * A player's press, run through the UI scene's act: its one sound (R22), `effect` where it names
+   * one, else the window rule's (FS-WDM0X § Change M2).
+   */
+  private played(run: () => void, effect?: UiEffect): () => void {
+    return () =>
+      this.deps.bridge.act(() => {
+        if (effect) this.deps.bridge.play(effect);
+        run();
+      });
   }
 }

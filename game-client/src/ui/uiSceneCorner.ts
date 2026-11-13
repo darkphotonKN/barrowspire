@@ -28,8 +28,8 @@ export interface CornerRow {
   covers(x: number, y: number, icon?: CornerIcon): boolean;
 }
 
-/** What of the bridge the row reads and asks through. */
-export type CornerBridge = Pick<UiBridge, "world" | "ui" | "act" | "request">;
+/** What of the bridge the row reads, asks and plays through. */
+export type CornerBridge = Pick<UiBridge, "world" | "ui" | "act" | "play" | "request">;
 
 /** The icons that toggle a world window (R14), in the row's order after Menu. */
 const TOGGLES: readonly UiToggle[] = ["inventory", "character", "party"];
@@ -84,21 +84,38 @@ export class UiCornerRow {
    * the town's: the town's own envelope stands in its slot there (R13; FS-3EBCA R9).
    */
   private icons(world: WorldReport["world"]): CornerIconSpec[] {
+    // a hover on a pressable icon, and the greyed Mailbox's press, sounded (FS-WDM0X § Change M5, M10)
+    const hovered = () => this.bridge.play("menu_hover");
     const icons: CornerIconSpec[] = [
-      { icon: "menu", press: () => this.send("menu", this.menu) },
+      { icon: "menu", press: () => this.send("menu", this.menu), hovered },
       ...TOGGLES.map((window) => ({
         icon: window,
         press: () => this.send(window, () => this.bridge.request({ kind: "toggle", window })),
+        hovered,
       })),
     ];
-    return world === "hub" ? icons : [...icons, { icon: "mail", greyed: true }];
+    const greyedMail: CornerIconSpec = { icon: "mail", greyed: true, refused: () => this.bridge.play("menu_error") };
+    return world === "hub" ? icons : [...icons, greyedMail];
   }
 
-  /** A press: its answer inside the UI scene's act, unless refused. */
+  /**
+   * A press: its answer inside the UI scene's act, unless refused. A press refused, or answered with
+   * no window changed (the world turned it away), plays `menu_error` (FS-WDM0X § Change M10); one that
+   * changed a window plays that window's sound alone.
+   */
   private send(icon: CornerIcon, answer: () => void): void {
     this.bridge.act(() => {
-      if (!this.refused(icon)) answer();
+      if (this.refused(icon)) return this.bridge.play("menu_error");
+      const before = this.screen();
+      answer();
+      if (this.screen() === before) this.bridge.play("menu_error");
     });
+  }
+
+  /** What a press can change, as one key: the world's windows and the UI's menu slot. */
+  private screen(): string {
+    const windows = this.bridge.world?.windows();
+    return JSON.stringify([windows?.letter, windows?.party, windows?.inventory, windows?.character, this.bridge.ui.menuOpen]);
   }
 
   /**

@@ -21,9 +21,11 @@ export function mountInterfaceSounds(
   bridge: Pick<UiBridge, "world" | "ui" | "lendSounds">,
   stage: UiSoundStage,
   store: SfxSettingStore,
+  /** The hover cooldown's clock (§ Change M4); the page's, unless a test hands its own. */
+  now?: () => number,
 ): UiSounds {
   const windows = (): WindowState => ({ ...(bridge.world?.windows() ?? NONE_OPEN), menu: bridge.ui.menuOpen });
-  const sounds = new UiSounds(stage, store, windows);
+  const sounds = new UiSounds(stage, store, windows, now);
   bridge.lendSounds(sounds);
   return sounds;
 }

@@ -1,6 +1,6 @@
 ---
 id: I-WDM0X-5
-status: in-progress
+status: done
 implements: FS-WDM0X
 blocked_by: []
 labels: [ready-for-agent]
@@ -31,11 +31,11 @@ Implements FS-WDM0X §Change: Menu, dialog and notice sounds (pass 1)
 
 ## Acceptance Criteria
 
-- [ ] FS-WDM0X § Change acceptance criteria 1–7 (the effects, `act`, the cooldown, the menu slot,
+- [x] FS-WDM0X § Change acceptance criteria 1–7 (the effects, `act`, the cooldown, the menu slot,
       OPTIONS, dimmed rows in the menu and the Fall confirm, the corner row).
-- [ ] Existing FS-WDM0X and FS-TQZ5J tests that asserted silence for an *Options* press, an OPTIONS
+- [x] Existing FS-WDM0X and FS-TQZ5J tests that asserted silence for an *Options* press, an OPTIONS
       back step or a dimmed press are updated to the new sounds, and no other existing test changes.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint`, `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint`, `npm run lint:fence` pass.
 
 ## Blocked By
 

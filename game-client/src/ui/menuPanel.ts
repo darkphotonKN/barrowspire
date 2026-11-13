@@ -81,6 +81,16 @@ export interface MenuKeys {
 /** The slice of a scene the chrome draws with. */
 export type MenuStage = Pick<Phaser.Scene, "add">;
 
+/**
+ * What the chrome tells of the player's hand, for the interface sounds (FS-WDM0X § Change: Menu,
+ * dialog and notice sounds, M5, M10): the pointer came onto an option it would answer, or a press or
+ * a key landed on one it will not. What sounds is the caller's; the chrome only tells.
+ */
+export interface MenuFeedback {
+  hovered(): void;
+  refused(): void;
+}
+
 export interface MenuOptionSpec {
   /** Where the label sits inside the box the caller builds at `origin`. */
   x: number;
@@ -97,6 +107,8 @@ export interface MenuOptionSpec {
   enabled?: () => boolean;
   hit: HitSize;
   tones: Pick<MenuTones, "panel" | "text" | "dim">;
+  /** Told a hover while it can be pressed, and a press while it cannot; omitted, nothing is told. */
+  feedback?: MenuFeedback;
 }
 
 /**
@@ -129,12 +141,15 @@ export function menuOption(scene: MenuStage, spec: MenuOptionSpec): MenuOption {
     .setInteractive()
     .setName(name);
   // The cursor stays the hand over a row; the text brightening is the hover cue
-  // (FS-KYPQ9 §H.3). A dimmed row neither brightens nor answers.
+  // (FS-KYPQ9 §H.3). A dimmed row neither brightens nor answers: its press is told refused.
   hit.on("pointerup", () => {
     if (enabled()) onPick();
+    else spec.feedback?.refused();
   });
   hit.on("pointerover", () => {
-    if (enabled()) text.setColor(toCss(tones.text));
+    if (!enabled()) return;
+    text.setColor(toCss(tones.text));
+    spec.feedback?.hovered();
   });
   hit.on("pointerout", () => text.setColor(tone()));
   option.once("destroy", () => hit.destroy());
@@ -160,6 +175,8 @@ export interface MenuPanelSpec<C extends MenuChoice> {
    * press there closes the menu and a hover there lights the icon (FS-3EBCA R18). Omitted, none.
    */
   through?: (x: number, y: number) => boolean;
+  /** Told a hover on a row it would answer or on its ×, and a press or key on a dimmed row (FS-WDM0X § Change M5, M10). */
+  feedback?: MenuFeedback;
 }
 
 export interface MenuPanel {
@@ -220,10 +237,13 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
       enabled: can(choice),
       hit: spec.hit,
       tones,
+      feedback: spec.feedback,
     }),
   );
   const press = (choice?: C) => {
-    if (choice && can(choice)()) act(choice)();
+    if (!choice) return;
+    if (can(choice)()) act(choice)();
+    else spec.feedback?.refused();
   };
   const cancel = choices.find((c) => c.register === "cancel");
 
@@ -239,7 +259,14 @@ export function showMenuPanel<C extends MenuChoice>(scene: MenuStage, spec: Menu
     .setDepth(MENU_DEPTH);
 
   // the frame's ×, Esc's own way out (§ Change C2)
-  const closeHit = frameCloseHit(scene, { frame, origin, tones, name: "menu-close", onPress: () => keys.dismiss() });
+  const closeHit = frameCloseHit(scene, {
+    frame,
+    origin,
+    tones,
+    name: "menu-close",
+    onPress: () => keys.dismiss(),
+    hovered: spec.feedback?.hovered,
+  });
   const blocker = menuBlocker(scene, { through: spec.through, name: "menu-blocker" });
   container.once("destroy", () => {
     closeHit.destroy();
@@ -264,6 +291,8 @@ export interface FrameCloseHitSpec {
   tones: Pick<MenuTones, "panel">;
   name: string;
   onPress: () => void;
+  /** Told as the pointer comes onto the × (FS-WDM0X § Change M5). */
+  hovered?: () => void;
 }
 
 /**
@@ -285,7 +314,10 @@ export function frameCloseHit(
     .setInteractive({ useHandCursor: true })
     .setName(name);
   hit.on("pointerup", onPress);
-  hit.on("pointerover", () => lightClose(frame.glyph, true));
+  hit.on("pointerover", () => {
+    lightClose(frame.glyph, true);
+    spec.hovered?.();
+  });
   hit.on("pointerout", () => lightClose(frame.glyph, false));
   return Object.assign(hit, {
     place: (at: { x: number; y: number }) => void hit.setPosition(at.x + centre.x, at.y + centre.y),

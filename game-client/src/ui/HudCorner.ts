@@ -62,6 +62,10 @@ export interface CornerIconSpec {
   press?: () => void;
   /** Shown but not pressable (the Mailbox outside the town, R9): faint, no hand, no press. */
   greyed?: boolean;
+  /** Told as the pointer comes onto a pressable icon (FS-WDM0X § Change M5); never for a greyed one. */
+  hovered?: () => void;
+  /** Told for a press on a greyed icon, which answers nothing else (FS-WDM0X § Change M10). */
+  refused?: () => void;
 }
 
 export interface HudCornerDeps {
@@ -170,7 +174,7 @@ export class HudCorner {
   }
 
   private press(icon: DrawnIcon): void {
-    if (icon.spec.greyed) return;
+    if (icon.spec.greyed) return icon.spec.refused?.();
     icon.spec.press?.();
   }
 
@@ -180,6 +184,7 @@ export class HudCorner {
     this.draw(icon);
     if (on) this.label.show(icon.frame, labelOf(icon.spec));
     else this.label.hide();
+    if (on && !icon.spec.greyed) icon.spec.hovered?.();
   }
 
   private draw(icon: DrawnIcon): void {

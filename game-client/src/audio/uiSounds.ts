@@ -1,7 +1,8 @@
 /**
  * The interface sound effects (FS-WDM0X): the corner windows' open and close sounds and the
- * minimap's mode switch, the one rule that says which a player action plays, the wrapper every
- * player path runs through, and the player (S23).
+ * minimap's mode switch, the menus', dialogs' and notices' sounds (§ Change: Menu, dialog and notice
+ * sounds), the one rule that says which a player action plays, the wrapper every player path runs
+ * through, and the player (S23).
  *
  * The rule and the player are Phaser-free, behind {@link UiSoundStage}; {@link sceneUiSoundStage}
  * is the game they act on, as `WorldMusic` is behind `sceneMusicStage`. The UI scene makes the
@@ -13,7 +14,11 @@
 
 import { readSfxLevel, sfxGain, type SfxSettingStore } from "./sfxSetting";
 
-/** The owner's 11 effects (S1), named as their files. */
+/**
+ * The owner's 27 effects, named as their files: the 11 window and minimap sounds (S1), then the 16
+ * of the menus, dialogs and notices (§ Change M1). `menu_tab` and `menu_dropdown_*` load now and play
+ * nowhere until pass 2 (the chat).
+ */
 export const UI_EFFECTS = [
   "inventory_open",
   "inventory_close",
@@ -26,6 +31,22 @@ export const UI_EFFECTS = [
   "settings_open",
   "settings_close",
   "map_mode_switch",
+  "menu_hover",
+  "menu_click",
+  "menu_back",
+  "menu_tab",
+  "menu_toggle_on",
+  "menu_toggle_off",
+  "menu_slider_tick",
+  "menu_error",
+  "menu_dropdown_open",
+  "menu_dropdown_close",
+  "dialog_open",
+  "dialog_confirm",
+  "dialog_confirm_heavy",
+  "dialog_cancel",
+  "notify",
+  "notify_important",
 ] as const;
 
 export type UiEffect = (typeof UI_EFFECTS)[number];
@@ -50,7 +71,7 @@ export interface UiSoundLoader {
   load: { audio(key: string, urls: string[]): unknown };
 }
 
-/** Queues all 11 effects (S20): called once, from `PreloadScene`, so they stay resident for the game's life. */
+/** Queues every effect (S20; § Change M1): called once, from `PreloadScene`, so they stay resident for the game's life. */
 export function preloadUiSounds(scene: UiSoundLoader): void {
   for (const effect of UI_EFFECTS) scene.load.audio(uiSoundKey(effect), uiSoundUrls(effect));
 }
@@ -113,51 +134,89 @@ export interface UiActWrapper {
 /** The wrapper a module runs its own input through when it was handed none: the input runs as it is. */
 export const PASS_THROUGH: UiActWrapper = { act: (run) => run() };
 
+/** Every window shut: the window state of a scene with none (the main menu, § Change M14). */
+export const NO_WINDOWS: Readonly<WindowState> = {
+  menu: false,
+  letter: false,
+  party: false,
+  inventory: false,
+  character: false,
+};
+
+/** How long after a hover sounds the next is held back, so a quick sweep over the rows does not stack (§ Change M4). Tunable. */
+export const MENU_HOVER_COOLDOWN_MS = 50;
+
 /** One scene's effects: the player (S10–S13) and the wrapper (S9) over its window state (S8). */
 export class UiSounds {
   /** How deep in `act` the scene is: an inner call joins the outer one. */
   private depth = 0;
+  /** The first effect the action under way asked for: its one sound, in place of the rule's (§ Change M2). */
+  private asked: UiEffect | null = null;
+  /** When `menu_hover` last sounded, on `now`'s clock. */
+  private hoveredAt = -Infinity;
 
   constructor(
     private readonly stage: UiSoundStage,
     private readonly store: SfxSettingStore,
     private readonly windows: () => WindowState,
+    /** The clock the hover's cooldown reads, in ms. */
+    private readonly now: () => number = () => performance.now(),
   ) {}
 
   /**
-   * Plays `effect` once, now, or not at all (S10–S13): only at a kept level above 0, read at this
-   * play (S16), with the context running and the effect cached. One sound per effect per game,
-   * restarted from the top on a repeat (S11). Nothing queues, and nothing but the sound's volume is
-   * set, handed to its play: never its pitch, rate or detune, never the manager's volume or mute
-   * (S10, S13).
+   * Plays `effect` once (S10–S13). Inside an action the first effect asked for becomes the action's
+   * one sound, played as it ends in place of the rule's; a later one is dropped (§ Change M2).
+   * Outside one it plays now, or not at all: only at a kept level above 0, read at this play (S16),
+   * with the context running and the effect cached, and a hover not within the cooldown of the last
+   * (M4). One sound per effect per game, restarted from the top on a repeat (S11). Nothing queues,
+   * and nothing but the sound's volume is set, handed to its play: never its pitch, rate or detune,
+   * never the manager's volume or mute (S10, S13).
    */
   play = (effect: UiEffect): void => {
-    const level = readSfxLevel(this.store);
-    const key = uiSoundKey(effect);
-    if (level <= 0 || !this.stage.audible() || !this.stage.cached(key)) return;
-    const sound = this.stage.get(key) ?? this.stage.add(key);
-    // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
-    sound.play({ volume: sfxGain(level) });
+    if (this.depth > 0) {
+      this.asked ??= effect;
+      return;
+    }
+    this.sound(effect);
   };
 
   /**
-   * Runs a player action and plays the rule's effect for the change it made (S8, S9). A call
-   * inside another joins it, so the outer action plays once; an action that throws plays nothing.
+   * Runs a player action and plays its one sound (S8, S9; § Change M2): the first effect it asked
+   * for, else the rule's effect for the change it made. A call inside another joins it, so the outer
+   * action plays once; an action that throws plays nothing.
    */
   act: UiAct = (run) => {
     if (this.depth > 0) return run();
     const before = this.windows();
     this.depth++;
     let result;
+    let asked: UiEffect | null;
     try {
       result = run();
     } finally {
       this.depth--;
+      asked = this.asked;
+      this.asked = null;
     }
-    const effect = windowSound(before, this.windows());
-    if (effect) this.play(effect);
+    const effect = asked ?? windowSound(before, this.windows());
+    if (effect) this.sound(effect);
     return result;
   };
+
+  /** Sounds `effect` now, where it can be heard (S11–S16, M4). */
+  private sound(effect: UiEffect): void {
+    const level = readSfxLevel(this.store);
+    const key = uiSoundKey(effect);
+    if (level <= 0 || !this.stage.audible() || !this.stage.cached(key)) return;
+    if (effect === "menu_hover") {
+      const now = this.now();
+      if (now - this.hoveredAt < MENU_HOVER_COOLDOWN_MS) return;
+      this.hoveredAt = now;
+    }
+    const sound = this.stage.get(key) ?? this.stage.add(key);
+    // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
+    sound.play({ volume: sfxGain(level) });
+  }
 }
 
 /** A Phaser scene, as far as the effects' stage reaches into its game. A `Phaser.Scene` is one. */
