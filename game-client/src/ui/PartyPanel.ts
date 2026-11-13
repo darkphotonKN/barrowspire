@@ -154,28 +154,32 @@ export function drawHudButton(
     .setOrigin(0.5, 0.5);
   if (!enabled) return t.setAlpha(GREYED_ALPHA);
   const hitArea = { width: r.width, height: r.height };
-  return t
-    .setInteractive({
-      hitArea,
-      hitAreaCallback: (
-        area: typeof hitArea,
-        x: number,
-        y: number,
-        label: Phaser.GameObjects.Text,
-      ) =>
-        within(
-          {
-            x: label.displayOriginX - area.width / 2,
-            y: label.displayOriginY - area.height / 2,
-            width: area.width,
-            height: area.height,
-          },
-          x,
-          y,
-        ),
-      useHandCursor: true,
-    })
-    .on("pointerdown", press);
+  return (
+    t
+      .setInteractive({
+        hitArea,
+        hitAreaCallback: (
+          area: typeof hitArea,
+          x: number,
+          y: number,
+          label: Phaser.GameObjects.Text,
+        ) =>
+          within(
+            {
+              x: label.displayOriginX - area.width / 2,
+              y: label.displayOriginY - area.height / 2,
+              width: area.width,
+              height: area.height,
+            },
+            x,
+            y,
+          ),
+        useHandCursor: true,
+      })
+      // on the release, as the invite prompt does: on the press its panel is still open and still
+      // claims it, so the world under it never takes it for an attack (FS-R82NV R28)
+      .on("pointerup", press)
+  );
 }
 
 /**
@@ -361,7 +365,9 @@ export class PartyPanel {
       .setDepth(PARTY_PANEL_DEPTH)
       .setInteractive({ useHandCursor: true });
     this.texts.push(x);
-    x.on("pointerdown", () => this.ownInput(() => this.close()));
+    // closed on the release: on the press the panel is still open, so the run and the field read
+    // the press as the panel's and attack nothing (FS-R82NV R28; owner 2026-11-14)
+    x.on("pointerup", () => this.ownInput(() => this.close()));
     x.on("pointerover", () => lightClose(x, true));
     x.on("pointerout", () => lightClose(x, false));
   }
