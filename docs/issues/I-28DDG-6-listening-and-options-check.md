@@ -71,3 +71,13 @@ I-28DDG-4, I-28DDG-5
 ## Spec Reference
 
 FS-28DDG whole (story 25) and §Change: Music volume in an Options panel (its HITL criterion).
+
+## Findings
+
+- **2026-11-13, loudness (Nick, listening):** 「感覺音量還是太大 滿格設定成0.3」 — still too loud;
+  set the top level to 0.3. Tuned `MUSIC_MAX_GAIN` 0.5 → 0.3 in
+  `game-client/src/audio/musicSetting.ts` (still marked temporary). The rule is unchanged,
+  gain = `MUSIC_MAX_GAIN` × level / 5, so the steps are now 0, 0.06, 0.12, 0.18, 0.24, 0.3 and
+  the default level 3 plays at 0.18. Levels, ramps, fades, migration and UI are unchanged.
+  FS-28DDG's stated cap (0.5, "half the file's loudness", default 0.3) is now stale and needs a
+  `write-a-spec` Tunes amendment; this file's "New" check line above still states the old values.

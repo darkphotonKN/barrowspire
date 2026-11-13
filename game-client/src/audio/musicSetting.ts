@@ -10,13 +10,14 @@ import type { KeyValueStore } from "@/characters/roster";
 /** Where this browser keeps it (R17, C15). */
 export const MUSIC_SETTING_KEY = "barrowspire_music";
 /**
- * The loudest level's gain, half the file's loudness (C9; owner: the village track is mastered
- * loud). Temporary: it stands until the track is remastered or the owner retunes it.
+ * The loudest level's gain, 0.3 of the file's loudness (C9; owner: the village track is mastered
+ * loud; retuned from 0.5 on 2026-11-13's listening check, I-28DDG-6). Temporary: it stands until
+ * the track is remastered or the owner retunes it.
  */
-export const MUSIC_MAX_GAIN = 0.5;
+export const MUSIC_MAX_GAIN = 0.3;
 /** The top level; 0 is silence. */
 export const MUSIC_TOP_LEVEL = 5;
-/** The level a browser plays at until it picks one (C9, C15): gain 0.3. */
+/** The level a browser plays at until it picks one (C9, C15): gain 0.18. */
 export const MUSIC_DEFAULT_LEVEL = 3;
 
 /** The music's gain at `level`: linear from silence to the cap (C9). */
