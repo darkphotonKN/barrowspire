@@ -361,3 +361,5 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
 - The split itself (its keys, its ×, stash mode, the panels' extent and titles): FS-HRH2J § Change:
   Character and inventory apart. First recorded here as out of scope and raised to the owner;
   settled 2026-11-12 (Summary).
+
+## Change: Bare corner icons → FS-J1672

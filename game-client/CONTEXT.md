@@ -168,13 +168,18 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   "inbox" or "email" (the account's email is a different thing on the web pages). Maps to
   notification-service's Mailbox and `/api/mail/*`.
 - **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
-  in Phaser with a small **wax seal**, the **corner row**'s Mail icon. Not an emoji and not a
-  Heroicon (the HUD is canvas). Its hover label reads "Mailbox" (FS-1GZGD § Change, 2026-11-12);
-  outside the town the row shows it greyed, "Mailbox · town only".
-- **Wax seal** (on the envelope) — the indicator: lit, with a count, while any letter is unread
-  or still holds unclaimed enclosures; dark only when everything is read and claimed. The
-  **pulse** is the envelope's few glows when a newer letter than the player last saw arrives;
-  after it the seal stays lit. A lit seal dot on a list row means that letter is unread.
+  in Phaser, bare (no plate, no seal; FS-J1672), the **corner row**'s Mail icon, carrying the
+  **count badge**. Not an emoji and not a Heroicon (the HUD is canvas). Its hover label reads
+  "Mailbox" (FS-1GZGD § Change, 2026-11-12); outside the town the row shows it greyed,
+  "Mailbox · town only".
+- **Count badge** (on the envelope; FS-J1672) — the indicator: a small ember badge with the
+  count at the envelope's top-right corner while any letter is unread or still holds unclaimed
+  enclosures; gone only when everything is read and claimed. The **pulse** is the envelope's few
+  glows when a newer letter than the player last saw arrives; after it the badge stays. Before
+  FS-J1672 this was the envelope's **wax seal** (lit with the count, dark at none).
+- **Wax seal** — the lit seal dot on a letter-list row, meaning that letter is unread. The
+  envelope no longer wears one (FS-J1672); the code's `sealState` still names the envelope's
+  count and lit state.
 - **`mail_arrived`** — the game WebSocket action (`{"action": "mail_arrived", "payload": {}}`)
   that tells a player standing in the town a letter has just been sent to them. It carries no
   letter: the client answers it by fetching the mailbox summary. It is the only thing that

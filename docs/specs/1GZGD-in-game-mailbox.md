@@ -1576,3 +1576,5 @@ C6. **The letter's body is as crisp as the rest of the HUD's text** at every ren
 - A key for the mailbox.
 - The mailbox outside the town (D11); the greyed icon there is FS-3EBCA's.
 - Any change to the letter panel's contents (its frame and × are C5's), the seal, or the summary's fetches.
+
+## Change: Bare corner icons → FS-J1672
