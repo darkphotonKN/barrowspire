@@ -128,7 +128,7 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 	}
 }
 
-// Floors above the first hold floor 1's 45-70 monsters besides their bosses,
+// Floors above the first hold floor 1's 30-45 monsters besides their bosses,
 // none in the start room. FS-M8CSE §C Requirement 12.
 func TestDungeonFloors_AboveTheFirstHoldTheFullPopulation(t *testing.T) {
 	for seed := uint64(1); seed <= 30; seed++ {
@@ -177,13 +177,8 @@ func TestDungeonFloors_GenerationFailureOnAClimbBuildsAFloorOfBuildings(t *testi
 			continue
 		}
 		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "the top floor has none")
-		demons := 0
-		for _, m := range monstersIn(s) {
-			if monsterOf(m).Archetype == components.MonsterArchetypeDemon {
-				demons++
-			}
-		}
-		assert.Equal(t, 1, demons, "the top floor keeps its demon")
+		// FS-C8VM7 §D R26: a champion stands where the demon stood
+		assert.Len(t, bossesIn(s)[championKey], 1, "the top floor keeps its boss")
 	}
 	assert.Contains(t, log.String(), `"level":"ERROR"`)
 	assert.Contains(t, log.String(), "fell back to a floor of buildings")
@@ -389,8 +384,8 @@ func TestDungeonFloor1_FloorMapCarriesCellSizeAndRegions(t *testing.T) {
 	for k := range payload {
 		keys = append(keys, k)
 	}
-	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls"}, keys,
-		"no room roles on the wire")
+	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls", "enemy_pool"}, keys,
+		"no room roles on the wire; the floor's enemy pool (FS-C8VM7 §G R40)")
 	assert.Equal(t, 80.0, payload["cell_size"])
 	assert.Equal(t, 5760.0, payload["width"])
 	assert.Equal(t, 3840.0, payload["height"])

@@ -16,10 +16,11 @@ import (
 * R18–20, ADR-0061 Decision 7): none in the start room, a pack in each hall,
 * elite guards in each treasure room, a few rolled monsters in every other
 * room and along the corridors, the floor's total held to
-* [DungeonMonstersMin, DungeonMonstersMax]. The mix, levels and elite chance
-* are the floor's own (rollMonster); only the treasure guards are always
-* elite. On every dungeon floor, Bone Archers take some ghouls' places in the
-* ordinary rooms and one in each hall pack (FS-B4SG9 §B).
+* [DungeonMonstersMin, DungeonMonstersMax]. Every monster is a variant of the
+* floor's pool (FS-C8VM7 §C); levels and elite chance are the floor's own
+* (rollMonster); only the treasure guards are always elite. On every dungeon
+* floor, the pool's ranged members take some fodder's places in the ordinary
+* rooms and one in each hall pack (FS-B4SG9 §B, FS-C8VM7 §C R22).
 *
 * Every monster stands on walkable cells of its region, off doorways, by the
 * same spacing and delver exclusion as on any floor (spawnArea.valid).
@@ -53,9 +54,11 @@ type dungeonPopulation struct {
 	floor   *dungeonFloor
 	area    *spawnArea
 	rng     populationRand
-	level   int
-	depth   int
-	spawns  []dungeonSpawn
+	// pool is the floor's variants, every monster's (FS-C8VM7 §C R19)
+	pool   floorPool
+	level  int
+	depth  int
+	spawns []dungeonSpawn
 }
 
 /**
@@ -64,10 +67,11 @@ type dungeonPopulation struct {
 * before the rolled monsters crowd the floor; the total is then held to its
 * bounds, and only then is anything created. area.placed ends holding exactly
 * the monsters created, so the demon after keeps clear of them. A chest in a
-* room of guards then waits on them (FS-KE075 §J).
+* room of guards then waits on them (FS-KE075 §J). Dark Warriors past the
+* floor's cap are recast once the total is held (FS-C8VM7 §C R24).
 **/
-func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, level, depth int) {
-	p := &dungeonPopulation{session: s.ID, floor: d, area: area, rng: s.spawnRand, level: level, depth: depth}
+func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, pool floorPool, level, depth int) {
+	p := &dungeonPopulation{session: s.ID, floor: d, area: area, rng: s.spawnRand, pool: pool, level: level, depth: depth}
 	roles := d.layout.Roles
 
 	var ordinary []int
@@ -90,6 +94,7 @@ func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, level, depth
 	}
 	p.corridors()
 	p.holdTotal(ordinary)
+	p.capDarkWarriors()
 
 	area.placed = area.placed[:0]
 	// each room's guards, by entity id, for the chests that wait on them (§J)
@@ -113,46 +118,53 @@ func (d *dungeonFloor) isHall(room int) bool {
 }
 
 /**
-* hallPack places a hall's pack: a troll and its ghouls, each within
-* HallPackRadius of the troll. It tries a few troll spots and keeps the first
-* that fits the whole pack, else the one that fitted the most; a member that
-* fits nowhere is skipped and the floor total tops up (FS-KE075 §Edge States
-* "A pack does not fit in its hall"). Members are placed in order, so the
-* first ghouls, the Bone Archers, are the last a short pack loses (FS-B4SG9 §B
-* R16).
+* hallPack places a hall's pack: a brute of the pool leading members drawn from
+* its fodder, each within HallPackRadius of the leader (FS-C8VM7 §C R23). It
+* tries a few leader spots and keeps the first that fits the whole pack, else
+* the one that fitted the most; a member that fits nowhere is skipped and the
+* floor total tops up (FS-KE075 §Edge States "A pack does not fit in its
+* hall"). Members are placed in order, so the first, the archer slots a ranged
+* member of the pool fills, are the last a short pack loses (FS-B4SG9 §B R16,
+* FS-C8VM7 §C R22).
 **/
 func (p *dungeonPopulation) hallPack(room int) {
 	region := p.floor.roomRegion(room)
-	troll := p.rollAs(components.MonsterArchetypeTroll, eliteChance(p.depth))
-	ghouls := make([]MonsterConfig, HallPackGhoulsMin+p.rng.IntN(HallPackGhoulsMax-HallPackGhoulsMin+1))
-	for i := range ghouls {
-		archetype := components.MonsterArchetypeGhoul
+	leader, ok := p.pool.brute(p.rng)
+	if !ok {
+		leader, _ = p.pool.fodder(p.rng)
+	}
+	head := p.rollAs(leader.rollLook(p.rng), eliteChance(p.depth))
+	followers := make([]MonsterConfig, HallPackGhoulsMin+p.rng.IntN(HallPackGhoulsMax-HallPackGhoulsMin+1))
+	for i := range followers {
+		member, _ := p.pool.fodder(p.rng)
 		if i < HallPackBoneArchers {
-			archetype = components.MonsterArchetypeBoneArcher
+			if archer, ok := p.pool.ranged(p.rng); ok {
+				member = archer
+			}
 		}
-		ghouls[i] = p.rollAs(archetype, eliteChance(p.depth))
+		followers[i] = p.rollAs(member.rollLook(p.rng), eliteChance(p.depth))
 	}
 
 	var best []point
 	for range HallPackTrollTries {
-		at := p.packAround(region, len(ghouls))
+		at := p.packAround(region, len(followers))
 		if len(at) > len(best) {
 			best = at
 		}
-		if len(best) == 1+len(ghouls) {
+		if len(best) == 1+len(followers) {
 			break
 		}
 	}
 	if len(best) == 0 {
-		slog.Warn("Hall pack skipped: no spot for its troll", "sessionID", p.session, "room", room)
+		slog.Warn("Hall pack skipped: no spot for its leader", "sessionID", p.session, "room", room)
 		return
 	}
-	if len(best) < 1+len(ghouls) {
-		slog.Warn("Hall pack short: not every ghoul fitted",
-			"sessionID", p.session, "room", room, "ghouls", len(best)-1, "rolled", len(ghouls))
+	if len(best) < 1+len(followers) {
+		slog.Warn("Hall pack short: not every follower fitted",
+			"sessionID", p.session, "room", room, "followers", len(best)-1, "rolled", len(followers))
 	}
 
-	members := append([]MonsterConfig{troll}, ghouls...)
+	members := append([]MonsterConfig{head}, followers...)
 	for i, at := range best {
 		p.add(members[i], at, spawnHallPack, room)
 	}
@@ -187,7 +199,8 @@ func (p *dungeonPopulation) packAround(region, n int) []point {
 }
 
 // treasureGuards places a treasure room's guard: one elite, or at
-// TreasureGuardPackShare a pack of elites, each archetype rolled.
+// TreasureGuardPackShare a pack of elites, each a rolled monster of the pool
+// (FS-C8VM7 §C R23).
 func (p *dungeonPopulation) treasureGuards(room int) {
 	n := 1
 	if p.rng.Float64() < TreasureGuardPackShare {
@@ -195,7 +208,7 @@ func (p *dungeonPopulation) treasureGuards(room int) {
 	}
 	for range n {
 		// Float64 is below 1, so every guard is promoted
-		guard := p.rollAs(rollArchetype(p.rng, p.depth), 1)
+		guard := p.rollAs(rollArchetype(p.rng, p.pool, p.depth), 1)
 		if !p.placeIn(p.floor.roomRegion(room), guard, spawnTreasureGuard, room) {
 			slog.Warn("Treasure guard skipped: no valid spawn point", "sessionID", p.session, "room", room)
 		}
@@ -204,15 +217,18 @@ func (p *dungeonPopulation) treasureGuards(room int) {
 
 /**
 * single places one rolled monster in room; false when it found no spot. A
-* roll that comes up a ghoul is a Bone Archer instead at BoneArcherRoomShare,
-* on a draw of its own, on every dungeon floor (FS-B4SG9 §B R14–R15).
+* roll that comes up fodder is a ranged member of the pool instead at
+* BoneArcherRoomShare, on a draw of its own, on every dungeon floor; with no
+* ranged member in the pool no draw is made (FS-B4SG9 §B R14–R15,
+* FS-C8VM7 §C R22).
 **/
 func (p *dungeonPopulation) single(room int) bool {
-	archetype := rollArchetype(p.rng, p.depth)
-	if archetype == components.MonsterArchetypeGhoul && p.rng.Float64() < BoneArcherRoomShare {
-		archetype = components.MonsterArchetypeBoneArcher
+	variant := p.pool.rolled(p.rng, p.depth)
+	if p.pool.isFodder(variant) && len(p.pool.of(roleRanged)) > 0 && p.rng.Float64() < BoneArcherRoomShare {
+		variant, _ = p.pool.ranged(p.rng)
 	}
-	return p.placeIn(p.floor.roomRegion(room), p.rollAs(archetype, eliteChance(p.depth)), spawnRoom, room)
+	monster := p.rollAs(variant.rollLook(p.rng), eliteChance(p.depth))
+	return p.placeIn(p.floor.roomRegion(room), monster, spawnRoom, room)
 }
 
 // corridors places the corridors' rolled monsters, one per segment at most,
@@ -232,7 +248,7 @@ func (p *dungeonPopulation) corridors() {
 		if placed == want {
 			break
 		}
-		if p.placeIn(segment, rollMonster(p.rng, p.level, p.depth), spawnCorridor, -1) {
+		if p.placeIn(segment, rollMonster(p.rng, p.pool, p.level, p.depth), spawnCorridor, -1) {
 			placed++
 		}
 	}
@@ -273,6 +289,16 @@ func (p *dungeonPopulation) holdTotal(ordinary []int) {
 		slog.Warn("Dungeon floor holds more monsters than its maximum",
 			"sessionID", p.session, "monsters", len(p.spawns), "max", DungeonMonstersMax)
 	}
+}
+
+// capDarkWarriors holds the floor's Dark Warriors to its cap once its total
+// stands, recasting the excess in place (FS-C8VM7 §C R24).
+func (p *dungeonPopulation) capDarkWarriors() {
+	monsters := make([]*MonsterConfig, len(p.spawns))
+	for i := range p.spawns {
+		monsters[i] = &p.spawns[i].monster
+	}
+	p.pool.capDarkWarriors(p.rng, monsters)
 }
 
 // trimOne removes one random monster placed as role; false when there is none.
@@ -361,6 +387,11 @@ func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon Mons
 		if room, ok := s.placeInRooms(d, area, demon, rooms, fit); ok {
 			return room, true
 		}
+	}
+	if odds == demonGuaranteed {
+		slog.Error("Guaranteed boss skipped: no valid spawn point on the dungeon floor even relaxed",
+			"sessionID", s.ID, "floor", floor, "archetype", demon.Archetype)
+		return -1, false
 	}
 	slog.Warn("Demon skipped: no valid spawn point on the dungeon floor", "sessionID", s.ID, "floor", floor)
 	return -1, false

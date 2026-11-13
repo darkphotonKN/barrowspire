@@ -283,7 +283,7 @@ func (s *Session) placeDungeonContainer(d *dungeonFloor, room int, kind componen
 func (s *Session) isFree(area PlaceArea) bool { return !s.IsAreaOccupied(area) }
 
 // shuffle puts xs in a random order drawn from rng (Fisher–Yates).
-func shuffle(rng populationRand, xs []int) {
+func shuffle[T any](rng populationRand, xs []T) {
 	for i := len(xs) - 1; i > 0; i-- {
 		j := rng.IntN(i + 1)
 		xs[i], xs[j] = xs[j], xs[i]

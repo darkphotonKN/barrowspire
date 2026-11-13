@@ -187,6 +187,10 @@ type Session struct {
 	// buildings and in every other world. Set by each floor build under mu and
 	// never written in place; the seat reads it under mu (FS-KE075 §B).
 	dungeon *dungeonFloor
+	// floorPool is the current run floor's pool, the variants its standard
+	// monsters come from (FS-C8VM7 §C R19). Set by each floor's population
+	// under mu; the floor map reads it under mu (§G R40).
+	floorPool floorPool
 	// generateDungeon builds a dungeon floor's layout from its parameters and
 	// seed: levelgen.GenerateDungeon, injected so a test can make it fail
 	// (FS-KE075 §B R17).

@@ -122,8 +122,9 @@ func TestFieldPopulation_ElitePointsAlwaysHoldAnElite(t *testing.T) {
 func TestRollMonsters_NeverAForestCreature(t *testing.T) {
 	rng := seededSpawns(18)
 	for floor := 1; floor <= 10; floor++ {
+		pool := drawFloorPool(rng, tierOf(floorBaseLevel(5, floor)))
 		for range 200 {
-			for _, m := range rollMonsters(rng, 5, floor) {
+			for _, m := range rollMonsters(rng, pool, 5, floor) {
 				assert.NotEqual(t, components.MonsterArchetypeZombie, m.Archetype)
 				assert.NotEqual(t, components.MonsterArchetypeGhost, m.Archetype)
 			}

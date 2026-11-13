@@ -47,6 +47,8 @@ type KillRecord struct {
 	Level           int
 	Elite           bool
 	Boss            bool
+	// Champion is a top floor's champion boss (FS-C8VM7 §D R31)
+	Champion bool
 	// KillerMemberID is the delver whose hit took it to 0, credited even when
 	// that delver died, escaped or left before a projectile of theirs landed.
 	KillerMemberID uuid.UUID
@@ -884,6 +886,7 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 		Level:           monster.Level,
 		Elite:           monster.Elite,
 		Boss:            monster.Boss,
+		Champion:        monster.Champion,
 		KillerMemberID:  attack.AttackerMemberID,
 		Floor:           s.floor,
 	}
