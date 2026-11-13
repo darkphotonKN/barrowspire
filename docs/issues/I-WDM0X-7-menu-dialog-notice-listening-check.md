@@ -13,6 +13,11 @@ the main menu, against the table below.
 
 ## Where each sound plays after pass 1
 
+Updated 2026-11-14 to the owner's listening-check overrides (FS-WDM0X § Change: Menu, dialog and
+notice sounds (pass 1), *Owner listening check*, O1–O6): `notify` is a new letter's alone, the
+notices play nothing again, `notify_important` plays nowhere yet, and the Fall confirm's close keeps
+`settings_close`.
+
 Worlds: **T** town, **F** field, **R** run, **MM** main menu. Every sound plays at the Sound
 effects level, never before the audio unlocks, and never two for one press (M2).
 
@@ -47,25 +52,25 @@ effects level, never before the audio unlocks, and never two for one press (M2).
 | `dialog_confirm` | dialogue: *Descend alone*, *Wait for company*, *Enter as a party* | pressed, or its number key / E / Enter | T |
 | `dialog_cancel` | dialogue: *Farewell*, *Not yet*, *I'll wait*, a resident's *Leave* | pressed, or its key | T |
 | `dialog_cancel` | dialogue card | Esc; E or Enter on a card with nothing to confirm | T |
-| `dialog_cancel` | Fall confirm *Not yet*, its ×, Esc | pressed (closes the whole menu: no `settings_close` too) | R |
 | `dialog_cancel` | delete-character confirm | answered Cancel (or the browser's Esc) | MM |
 | `dialog_confirm_heavy` | Fall confirm *Fall* | pressed, or 1 / Enter | R |
 | `dialog_confirm_heavy` | delete-character confirm | answered OK | MM |
 | `notify` | the town's envelope | glows for a letter newer than the player last saw (`mail_arrived`, or entering the town with one waiting) | T |
-| `notify` | notices, item-level | a full bag (a pickup or an unequip), a locked or busy item, a full stash, a gear change refused | T |
-| `notify` | notices, item-level | a full bag, a pile held for its killer (said by the client or the server) | F |
-| `notify` | notices, item-level | a full bag, an equip refused, an interact refused or waiting ("It will not open.", "The stair waits…", "too far away to interact", a pile held for its killer) | R |
-| `notify` | notices, the run's news | the switch thrown ("Exit door unlocked!"), the escape door open, someone escaped, the server's `exit_door_unlocked`, an interact success's words | R |
-| `notify_important` | notices: the server turning down a move between worlds | the Spire's and the queue's refusals in passing (*Descend alone*, *Wait for company*, a match called off), *Leave the queue*'s error, a field gate refused, *Change character*'s error | T |
-| `notify_important` | notices: the server turning down a move between worlds | *Change character*'s error, leaving the field refused ("You have fallen…") | F |
-| `notify_important` | notices: the server turning down a move between worlds | a fall refused | R |
+| `notify` | a friend coming online, a pickup notice | when they exist (neither does today) | |
+| `notify_important` | none in pass 1 | reserved: the party invite prompt (pass 2), the server's system warnings (when they exist) | |
+| `settings_close` | Fall confirm *Not yet*, its ×, Esc | pressed: closes the whole menu (S5, owner override O3) | R |
+| (none) | every notice: item-level (a full bag, a locked or busy item, a full stash, a gear change or equip refused, a pile held for its killer, an interact refused or waiting, "too far away"), the run's news (the switch thrown, the escape door open, someone escaped, `exit_door_unlocked`, an interact success's words), the server's refusals of a move between worlds | drawn: plays nothing, as before pass 1 (owner overrides O1, O2) | T F R |
 | `menu_tab` | none in pass 1 | (pass 2: the chat's channel tabs) | |
 | `menu_dropdown_open` | none in pass 1 | (pass 2: the chat's channel picker opens) | |
 | `menu_dropdown_close` | none in pass 1 | (pass 2: the chat's channel picker closes) | |
 
 Unchanged from FS-WDM0X: the eleven window and minimap sounds (`settings_open`/`settings_close`,
 `inventory_*`, `character_*`, `party_*`, `mailbox_*`, `map_mode_switch`). Closing the whole ESC
-menu (Menu icon, *Back*, ×, Esc, *Leave the barrow*) plays `settings_close`.
+menu (Menu icon, *Back*, ×, Esc, *Leave the barrow*, and the Fall confirm's *Not yet*, × and Esc)
+plays `settings_close`. Every panel's × and Esc keep their pre-pass-1 sound: inventory
+`inventory_close`, character `character_close`, party `party_close`, letter `mailbox_close`
+(owner override O4). OPTIONS' *Back*, × and Esc stay `menu_back` (O5: they return to the ESC menu;
+to confirm with the owner).
 
 ## Deferred to pass 2
 

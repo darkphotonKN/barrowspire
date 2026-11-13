@@ -743,3 +743,50 @@ M16. **`notify`** and **`notify_important`**, as a notice is drawn:
 - Sounds on the world's own hotkeys refused by a guard (S6 stands for keys).
 - The main menu's other buttons and the switch confirm; character creation; the roster.
 - Re-mastering or trimming the owner's files; per-effect volumes.
+
+### Owner listening check (2026-11-14)
+
+Appended after the owner listened to pass 1 (I-WDM0X-7). The text above is not edited; where it
+differs, this note overrides it. His words:
+
+> 「1 2沒提到的地方先不套用音效 3. menu關閉照原本音效 面板x關閉原本是什麼音效就什麼音效 4.沒問題 5 ok 6. ok」
+
+Items 1 and 2 (where nothing names a sound, apply none for now): the notices go back to silent. Item
+3 (closing the menu keeps its original sound; a panel's × keeps whatever it played before). Items
+4–6 are confirmed as built. Each line below is an **owner override**.
+
+- **O1. `notify` is a new letter's alone.** It plays only as the town's envelope glows for a letter
+  newer than the player last saw (M16's last bullet, unchanged). Every other M16 `notify` is
+  withdrawn: no item-level notice (a full bag, a locked or busy item, a full stash, a gear change or
+  an equip refused, a pile held for its killer, an interact refused or waiting, "too far away") and
+  none of the run's news (the switch thrown, the escape door open, someone escaped,
+  `exit_door_unlocked`, an interact success's words) plays a sound. A notice plays no sound and
+  takes no input again, as FS-TQZ5J A2 R33 said before pass 1. The owner's list also names a friend
+  coming online and a pickup notice for `notify`: neither exists today, and each takes `notify`
+  when it exists.
+- **O2. `notify_important` plays nowhere in pass 1.** M16's `notify_important` (the server turning
+  down a move between worlds: the Spire's and the queue's refusals in passing, *Leave the queue*'s
+  error, a field gate refused, *Change character*'s error, leaving the field refused, a fall
+  refused) is withdrawn; those notices are silent with the rest (O1). `Notice` loses its
+  `important`. The effect stays loaded (M1) and is reserved for the party invite prompt (pass 2,
+  unchanged) and the server's system warnings, when they exist.
+- **O3. Closing the whole menu keeps `settings_close`.** The Fall confirm's *Not yet*, its × and
+  Esc close the whole menu, so they play `settings_close` alone again (S5), not `dialog_cancel`.
+  This withdraws M13's Fall-confirm `dialog_cancel` bullet and *Defaults that met the code* 3, and
+  M2's example of it. `dialog_cancel` stays only on the NPC dialogue (*Farewell*, *Not yet*, *I'll
+  wait*, a resident's *Leave*, Esc on the card, E or Enter with nothing to confirm) and the main
+  menu's delete confirm answered Cancel.
+- **O4. Every panel's × and Esc keep their original sound.** Checked against pass 1: the
+  inventory's and the character panel's × (`inventory_close`, `character_close`), the party
+  panel's × (`party_close`), the letter panel's × (`mailbox_close`), the ESC menu's ×, *Back* and
+  Esc (`settings_close`), and Esc closing each of them in its turn, still play what they played
+  before pass 1. The Fall confirm (O3) was the only close pass 1 had changed.
+- **O5. OPTIONS' *Back*, × and Esc keep `menu_back`** (M7, unchanged): they return to the ESC menu
+  rather than close it, which the owner's own usage table names 「關閉子選單/返回上一層」 for
+  `menu_back`. Recorded so the integrator can confirm it with him.
+- **O6. Confirmed as built:** the delete confirm stays the browser's `confirm()` (Defaults 7);
+  refused hotkeys stay silent (M10, S6); the Fullscreen row plays its toggle on the press that asks
+  (M8).
+
+Built in 631920d7 (tests red in 8079e3c5). The listening check (I-WDM0X-7) stays open for the
+owner to hear the updated table.
