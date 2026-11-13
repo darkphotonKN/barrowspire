@@ -161,7 +161,7 @@ func (p floorPool) rolled(rng populationRand, floor int) monsterVariant {
 
 // isFodder is whether v is one of the pool's fodder.
 func (p floorPool) isFodder(v monsterVariant) bool {
-	return slices.ContainsFunc(p.of(roleFodder), func(m rosterEntry) bool { return m.Variant == v })
+	return slices.ContainsFunc(p.of(roleFodder), func(m rosterEntry) bool { return m.Variant.Archetype == v.Archetype })
 }
 
 // archetypes is every archetype the pool can spawn, a goblin variant both its

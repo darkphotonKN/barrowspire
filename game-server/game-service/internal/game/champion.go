@@ -15,13 +15,13 @@ import (
 
 /**
 * rollChampion is the top floor's champion (R26-R29): a variant unlocked at the
-* pool's tier and not in it, drawn uniformly, or from the pool when it holds
+* pool's level tier and not in it, drawn uniformly, or from the pool when it holds
 * every unlocked variant; a goblin in its rolled look. It stands at the old
 * demon's level, a boss and never an elite, named "<Name> the <Epithet>".
 **/
 func rollChampion(rng populationRand, pool floorPool, partyLevel, floor int) MonsterConfig {
 	left := slices.DeleteFunc(unlockedAt(pool.LevelTier), func(e rosterEntry) bool {
-		return slices.ContainsFunc(pool.Members, func(m rosterEntry) bool { return m.Variant == e.Variant })
+		return slices.ContainsFunc(pool.Members, func(m rosterEntry) bool { return m.Variant.Archetype == e.Variant.Archetype })
 	})
 	if len(left) == 0 {
 		left = pool.Members
