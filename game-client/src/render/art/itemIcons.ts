@@ -8,56 +8,92 @@
 
 import type { ArtManifest } from "./manifest";
 
-/** The categories item icons are baked under (`icon_<name>` in the sprite manifest). */
-export const ITEM_ICONS = [
+/** Gear: drawn in four tiers by item level, baked as `icon_<name>_t<tier>`. */
+export const GEAR_ICONS = [
   "sword",
   "dagger",
+  "axe",
+  "mace",
+  "spear",
   "bow",
   "staff",
   "helm",
   "cuirass",
   "gauntlets",
   "greaves",
+  "boots",
+  "ring",
+] as const;
+type GearIcon = (typeof GEAR_ICONS)[number];
+
+export const GEAR_TIERS = [1, 2, 3, 4] as const;
+export type GearTier = (typeof GEAR_TIERS)[number];
+
+/** The lowest item level of tiers 2, 3 and 4: levels 1-9 are tier 1, 25 and up tier 4. */
+const TIER_FLOORS = [10, 20, 25];
+
+/** The tier an item level is drawn in. Fixed by the level, never rolled. */
+export function gearTier(itemLevel?: number): GearTier {
+  const above = TIER_FLOORS.filter((floor) => (itemLevel ?? 1) >= floor);
+  return GEAR_TIERS[above.length];
+}
+
+/** Everything that is not gear has one look. */
+const PLAIN_ICONS = [
   "potion_health",
   "potion_mana",
   "vial_tonic",
-  "ring",
   "coins",
   "gem",
   "scroll",
   "skull",
   "generic",
 ] as const;
-export type ItemIconName = (typeof ITEM_ICONS)[number];
+type PlainIcon = (typeof PLAIN_ICONS)[number];
+
+export type ItemIconName = `${GearIcon}_t${GearTier}` | PlainIcon;
+
+/** Every baked icon (`icon_<name>` in the sprite manifest). */
+export const ITEM_ICONS: readonly ItemIconName[] = [
+  ...GEAR_ICONS.flatMap((g) => GEAR_TIERS.map((t) => `${g}_t${t}` as const)),
+  ...PLAIN_ICONS,
+];
 
 export const iconSheet = (icon: ItemIconName) => `icon_${icon}`;
 
-const WEAPON_ICONS: Record<string, ItemIconName> = {
+const WEAPON_ICONS: Record<string, GearIcon> = {
   sword: "sword",
   blade: "sword",
   dagger: "dagger",
   knife: "dagger",
+  axe: "axe",
+  mace: "mace",
+  hammer: "mace",
+  club: "mace",
+  spear: "spear",
+  polearm: "spear",
   bow: "bow",
   crossbow: "bow",
   staff: "staff",
   wand: "staff",
 };
 
-const ARMOR_ICONS: Record<string, ItemIconName> = {
+const ARMOR_ICONS: Record<string, GearIcon> = {
   head: "helm",
   chest: "cuirass",
   body: "cuirass",
   gloves: "gauntlets",
   hands: "gauntlets",
   legs: "greaves",
-  feet: "greaves",
+  feet: "boots",
+  boots: "boots",
   ring: "ring",
   ring_1: "ring",
   ring_2: "ring",
 };
 
 /** Words in an item's name that pick an icon when its stats do not. First match wins. */
-const NAME_ICONS: [RegExp, ItemIconName][] = [
+const NAME_ICONS: [RegExp, GearIcon | PlainIcon][] = [
   [/\b(ring|signet|band)\b/i, "ring"],
   [/\bscroll\b/i, "scroll"],
   [/\b(gold|coins?)\b/i, "coins"],
@@ -67,7 +103,14 @@ const NAME_ICONS: [RegExp, ItemIconName][] = [
   [/\b(dagger|knife)\b/i, "dagger"],
   [/\bbow\b/i, "bow"],
   [/\b(staff|wand)\b/i, "staff"],
+  [/\baxe\b/i, "axe"],
+  [/\b(mace|hammer)\b/i, "mace"],
+  [/\bspear\b/i, "spear"],
+  [/\bboots\b/i, "boots"],
 ];
+
+const isGear = (icon: GearIcon | PlainIcon): icon is GearIcon =>
+  (GEAR_ICONS as readonly string[]).includes(icon);
 
 /**
  * What the resolver reads from an item. The canvas `ItemState` and the items `ItemInstance`
@@ -85,14 +128,23 @@ export interface IconSubject {
   healingAmount?: number;
   mana_amount?: number;
   manaAmount?: number;
+  item_level?: number;
+  itemLevel?: number;
 }
 
 /**
  * The icon an item is drawn with: its weapon type or armour slot when one is baked, then its
  * restorative stats, then a ring by its item type (FS-4R9M9 R60), then its name. Anything else
- * is `generic` (FS-2325V §D.4).
+ * is `generic` (FS-2325V §D.4). Gear is drawn in the look of its item level's tier.
  */
 export function itemIcon(item: IconSubject): ItemIconName {
+  const icon = iconCategory(item);
+  return isGear(icon)
+    ? `${icon}_t${gearTier(item.item_level ?? item.itemLevel)}`
+    : icon;
+}
+
+function iconCategory(item: IconSubject): GearIcon | PlainIcon {
   const weaponType = item.weapon_type ?? item.weaponType;
   const armorSlot = item.armor_slot ?? item.armorSlot;
   const healing = item.healing_amount ?? item.healingAmount;

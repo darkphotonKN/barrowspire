@@ -9,7 +9,7 @@ import { itemIconCells } from "./itemIconCells";
 const manifest = {
   atlases: { "icons-0": { image: "icons-0.png", width: 200, height: 80 } },
   sheets: {
-    icon_sword: {
+    icon_sword_t1: {
       atlas: "icons-0",
       frameWidth: 64,
       frameHeight: 64,
@@ -38,7 +38,7 @@ describe("itemIconCells", () => {
   });
 
   it("should draw an unbaked icon as the generic one, under its own name", () => {
-    const helm = itemIconCells(manifest, 64).find((c) => c.name === "helm");
+    const helm = itemIconCells(manifest, 64).find((c) => c.name === "helm_t1");
     expect(helm?.crop?.position).toBe("-134px -2px");
   });
 });
