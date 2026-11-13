@@ -314,12 +314,13 @@ describe("mountViewport (FS-ZAJMH R9–R11, R16: the game fitted to its frame, a
     expect(game.domContainer.style).toEqual({ left: "0", top: "0" });
   });
 
-  it("should publish the canvas's CSS scale on the frame, now and on every change", () => {
+  // FS-T3DWX R1: nothing is laid over the canvas in logical units any more, so the frame carries
+  // no `--game-scale` (its one reader was the fullscreen button)
+  it("should set no CSS property on the frame, now or on a change", () => {
     const { props, resize } = mount();
-    expect(props["--game-scale"]).toBe("1");
     resize(1620, 1080);
     vi.advanceTimersByTime(REFIT_DEBOUNCE_MS);
-    expect(props["--game-scale"]).toBe("1.5");
+    expect(props).toEqual({});
   });
 
   it("should re-fit to the frame's new size and re-read the canvas's bounds after a resize settles (R10)", () => {
@@ -353,7 +354,7 @@ describe("mountViewport (FS-ZAJMH R9–R11, R16: the game fitted to its frame, a
     moveTo(2);
     v.set({ width: 1200, height: 720, renderScale: 1, cssScale: 1.2 });
     expect(calls).toEqual([]);
-    expect(props["--game-scale"]).toBe("1");
+    expect(props).toEqual({});
     expect(watching()).toBe(false);
     expect(listening()).toBe(0);
   });

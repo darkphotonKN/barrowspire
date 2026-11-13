@@ -697,7 +697,7 @@ describe("the Fullscreen row (FS-T3DWX)", () => {
     expect(p.effects.set).not.toHaveBeenCalled();
   });
 
-  it("should hang the row's hit camera-fixed over the panel, apart from the box, across the row inside the panel (R5)", () => {
+  it("should hang the row's hit camera-fixed over the panel, apart from the box, exactly across the row inside the panel's insets (R5)", () => {
     const p = withFullscreen();
     const hit = p.hit();
     const [x, y, width] = hit.args as number[];
@@ -708,10 +708,10 @@ describe("the Fullscreen row (FS-T3DWX)", () => {
     expect(hit.interactive).toBe(true);
     expect(p.container.children).not.toContain(hit);
     expect(y).toBe(ORIGIN.y + p.label("Fullscreen").y);
-    expect(x - width / 2).toBeLessThanOrEqual(ORIGIN.x + p.label("Fullscreen").x);
-    expect(x + width / 2).toBeGreaterThanOrEqual(ORIGIN.x + p.word("on").x);
-    expect(x - width / 2).toBeGreaterThan(ORIGIN.x - OPTIONS_WIDTH / 2);
-    expect(x + width / 2).toBeLessThan(ORIGIN.x + OPTIONS_WIDTH / 2);
+    // from the label's left edge to On's right edge, the row's insets, and not a px past either
+    expect(x - width / 2).toBe(ORIGIN.x + p.label("Fullscreen").x);
+    expect(x + width / 2).toBe(ORIGIN.x + p.word("on").x);
+    expect(width).toBe(408);
   });
 
   it("should brighten the state's word to the text tone under the pointer and give it back after (R5)", () => {

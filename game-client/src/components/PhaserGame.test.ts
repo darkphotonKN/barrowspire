@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Only what the game bridge does as it loads is under test: a Phaser stand-in with Phaser
-// 4.2.1's rounding decision (gameobjects/GameObject.js) and bare classes for the rest.
+// Only what the game bridge does as it loads, and as it builds its game, is under test: a Phaser
+// stand-in with Phaser 4.2.1's rounding decision (gameobjects/GameObject.js), a Game that records
+// its registry, and bare classes for the rest.
 vi.mock("phaser", async () => {
   class GameObject {
     vertexRoundMode = "safeAuto";
@@ -14,10 +15,44 @@ vi.mock("phaser", async () => {
     constructor(_config: unknown) {}
   }
   class ScenePlugin {}
+  /** A game as the bridge builds it: its registry, the per-game store a scene reads as `this.registry`. */
+  class Game {
+    static made: Game[] = [];
+    readonly held = new Map<string, unknown>();
+    readonly registry = {
+      get: (key: string) => this.held.get(key),
+      set: (key: string, value: unknown) => void this.held.set(key, value),
+    };
+    readonly events = { once: () => {}, off: () => {} };
+    readonly scene = { getScene: () => null };
+    constructor(readonly config: unknown) {
+      Game.made.push(this);
+    }
+  }
   // `import * as Phaser` reads the module namespace, so the stand-in is the module itself.
-  const phaser = { Scene, Plugins: { ScenePlugin }, GameObjects: { GameObject } };
+  const phaser = { AUTO: 0, Scale: { NONE: 0 }, Game, Scene, Plugins: { ScenePlugin }, GameObjects: { GameObject } };
   return { ...phaser, default: phaser };
 });
+
+// React's hooks as a single call of the component runs them: an effect at once, a ref a plain box,
+// so the bridge's effect can be driven without a DOM (vitest runs in node here)
+vi.mock("react", async (importOriginal) => {
+  const real = await importOriginal<typeof import("react")>();
+  return {
+    ...real,
+    useEffect: (effect: () => void) => void effect(),
+    useCallback: <T,>(fn: T) => fn,
+    useRef: <T,>(initial: T) => ({ current: initial }),
+  };
+});
+// what the game is fitted to and listened on is not under test here
+vi.mock("@/render/crispText", () => ({ installCrispText: vi.fn() }));
+vi.mock("./gameFocus", () => ({ keepTab: () => () => {}, takeFocusOnPress: () => () => {} }));
+vi.mock("./disconnectNotice", () => ({ watchConnectionLoss: () => () => {} }));
+vi.mock("@/render/viewport", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/render/viewport")>()),
+  mountViewport: () => () => {},
+}));
 
 describe("the game bridge (ADR-0057: rounding installed once, where the game is configured)", () => {
   it("should round every game object as soon as it is loaded, before any game or scene exists", async () => {
@@ -27,5 +62,60 @@ describe("the game bridge (ADR-0057: rounding installed once, where the game is 
     };
     // a quad zoomed by 1.25 is never "only translated"
     expect(new GameObjects.GameObject().willRoundVertices({ roundPixels: true }, false)).toBe(true);
+  });
+});
+
+// FS-T3DWX R12: the page that owns the game frame lends the frame's fullscreen to the game it builds
+describe("the game bridge lends the frame's fullscreen to its game (FS-T3DWX R12)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  /** The page with `doc` for its document, the bridge mounted on a frame, its game built; the frame records its asks. */
+  async function built(doc: object) {
+    const asked: string[] = [];
+    const frame = {
+      clientWidth: 1080,
+      clientHeight: 720,
+      requestFullscreen: async () => void asked.push("request"),
+    };
+    let paint: (() => void) | undefined;
+    vi.stubGlobal("window", { devicePixelRatio: 1 });
+    vi.stubGlobal("document", {
+      fullscreenElement: null,
+      addEventListener() {},
+      removeEventListener() {},
+      ...doc,
+    });
+    vi.stubGlobal("navigator", {});
+    vi.stubGlobal("requestAnimationFrame", (fn: () => void) => ((paint = fn), 1));
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    const { default: PhaserGame } = await import("./PhaserGame");
+    const { Game } = (await import("phaser")) as unknown as {
+      Game: { made: { registry: { get(key: string): unknown } }[] };
+    };
+    Game.made.length = 0;
+    // the refs the frame's markup would fill, filled as the browser paints it
+    const markup = PhaserGame() as unknown as { props: { frame: { current: unknown }; canvas: { current: unknown } } };
+    markup.props.frame.current = frame;
+    markup.props.canvas.current = {};
+    paint?.();
+    expect(Game.made).toHaveLength(1);
+    return { game: Game.made[0], asked };
+  }
+
+  it("should put the frame's fullscreen in the new game's registry, the toggle asking the frame", async () => {
+    const { lentFullscreen } = await import("@/ui/gameFullscreen");
+    const { game, asked } = await built({ fullscreenEnabled: true });
+
+    const lent = lentFullscreen(game.registry);
+    expect(lent).not.toBeNull();
+    expect(lent!.active()).toBe(false);
+    lent!.toggle();
+    expect(asked).toEqual(["request"]);
+  });
+
+  it("should lend none where the browser has no fullscreen to offer (FS-T3DWX R7)", async () => {
+    const { lentFullscreen } = await import("@/ui/gameFullscreen");
+    const { game } = await built({});
+    expect(lentFullscreen(game.registry)).toBeNull();
   });
 });
