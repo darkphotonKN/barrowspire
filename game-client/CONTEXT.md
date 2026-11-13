@@ -447,12 +447,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   whole view, about the figure the camera follows, under the HUD; the top-right corner holds no
   map while it is up.
 - **Map mode icon** (FS-56CKV §Change: Map mode icon): the small amber glyph in the minimap's
-  bottom-left corner (beside the fullscreen button while the map overlay is up) that does what M
+  bottom-left corner (in the very top-right corner while the map overlay is up) that does what M
   does: a press steps the minimap to its next mode. Hovered, it says "Map mode (M)".
 - **Map name** (FS-56CKV §Change: Map name): the name of the place the minimap shows, the same
   words its arrival card titles it with (the town, a field, a floor of the Spire), in small text on
-  the minimap's top-right, or beside the fullscreen button or the map mode icon when the map is
-  enlarged or the overlay is up. Never a second list of names.
+  the minimap's top-right, or left of the enlarged map, or left of the map mode icon while the
+  overlay is up. Never a second list of names.
 - **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
   can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
   Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the
@@ -597,9 +597,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   (`centreStage`), the backdrop reaching the view's edges; a menu's own hit test reads a pointer
   in stage units (`stagePoint`). Not the HUD: HUD widgets keep to the view's edges by anchors.
 - **Game frame**: the DOM element that holds the canvas and Phaser's DOM container. It is what
-  goes fullscreen. The fullscreen button sits over the canvas's top-right corner, never out in
-  the frame's bars; where the normal minimap holds the very top of that corner, it sits at the
-  minimap's left instead (FS-56CKV §Change: Minimap at the top, fullscreen button beside it).
+  goes fullscreen, from the OPTIONS panel's **Fullscreen** row; nothing stands over the canvas
+  (FS-T3DWX). The top-right HUD stands in the corner the button used to keep.
 - **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
 
 ## Dev gallery terms (FS-1819Q)

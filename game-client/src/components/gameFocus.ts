@@ -1,6 +1,6 @@
 /**
  * Who has the keyboard on /game: the game, while nothing on the page holds focus, and the page's
- * controls (the header, the fullscreen button, a text field) while one does. Phaser-free, so it is
+ * controls (the header, a text field) while one does. Phaser-free, so it is
  * tested against Phaser's own KeyboardManager.
  *
  * Tab moved the browser's focus off the game onto the page's buttons (reported 2026-11-12): only the
@@ -35,9 +35,9 @@ function withGame(doc: FocusDocument): boolean {
 
 /**
  * Keeps Tab from moving focus while the game has the keyboard; returns the release. Shift+Tab stays
- * the browser's, the keyboard player's way out to the page (the fullscreen button, FS-ZAJMH US 25),
- * and Tab on a focused control moves on as on any page. A field inside the game that owns Tab (the
- * chat's channel picker) stops it before window.
+ * the browser's, the keyboard player's way out to the page (the site header), and Tab on a focused
+ * control moves on as on any page. A field inside the game that owns Tab (the chat's channel
+ * picker) stops it before window.
  *
  * Heard on window behind Phaser's own listener, which drops a key whose default is already
  * prevented: so the run's Tab still cycles the watched player. The game's InputManager subscribes

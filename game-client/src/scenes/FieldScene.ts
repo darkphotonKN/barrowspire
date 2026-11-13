@@ -56,6 +56,7 @@ import { HudCorner } from "@/ui/HudCorner";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
 import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
+import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -78,7 +79,7 @@ import type { Rect } from "@/ui/partyPanelLayout";
 import { FALLEN_LINE, FallenCountdown, fallenFrame, isFallen } from "./fieldFallen";
 import { fieldRefusalCopy } from "./fieldRefusals";
 import { gateAt, gateEdges } from "./hubGates";
-import { afterFrameSetUp, boundCamera, followWith, fullscreenButtonPlace, relayoutOn, viewport, type FullscreenButtonPlace } from "@/render/viewport";
+import { afterFrameSetUp, boundCamera, followWith, relayoutOn, viewport } from "@/render/viewport";
 import { usePartyStore } from "@/stores/partyStore";
 import { useGameStore } from "@/stores/gameStore";
 import { browserFieldChartStore, type FieldChartStore } from "@/ui/fieldChart";
@@ -267,8 +268,6 @@ export class FieldScene extends Phaser.Scene {
   private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
-  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   private abilityHud?: AbilityHud;
   /** The corner row (FS-3EBCA): Menu, Inventory, Character, Party and the Mailbox greyed; the card above it. */
   private corner?: HudCorner;
@@ -689,6 +688,8 @@ export class FieldScene extends Phaser.Scene {
           this.openMenu();
         }),
       music: storedMusicLevel(browserMusicStore),
+      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
+      fullscreen: lentFullscreen(this.registry),
       // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
@@ -990,7 +991,6 @@ export class FieldScene extends Phaser.Scene {
         world: this.size,
         store: this.minimapStore,
         renderScale: () => viewport.renderScale,
-        button: this.fullscreenButton,
         // a press on its map mode icon is M's, under M's guards in a field (FS-56CKV §Change: Map mode icon, D6)
         icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
         // the field's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)

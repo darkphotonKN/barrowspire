@@ -55,6 +55,7 @@ import {
 } from "@/ui/party";
 import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
+import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -169,7 +170,7 @@ import {
   type MinimapMode,
   type MinimapModeStore,
 } from "@/ui/minimapMode";
-import { TOP_RIGHT_HUD, TOP_RIGHT_LINE, cornerMinimap, topRightColumn } from "@/ui/topRightColumn";
+import { TOP_RIGHT_EDGE, TOP_RIGHT_LINE, cornerMinimap, topRightColumn } from "@/ui/topRightColumn";
 import { canvasImage } from "@/ui/paintKit";
 import { PlayerCombat } from "@/render/combat/playerCombat";
 import { ClassKitFx } from "@/render/combat/classKitFx";
@@ -237,11 +238,9 @@ import {
   boundCamera,
   crispen,
   followWith,
-  fullscreenButtonPlace,
   relayoutOn,
   viewRect,
   viewport,
-  type FullscreenButtonPlace,
 } from "@/render/viewport";
 
 /** World px the placeholder roof overhangs its house's walls by. */
@@ -344,7 +343,7 @@ const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
  * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
  * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
  */
-export { TOP_RIGHT_HUD };
+export { TOP_RIGHT_EDGE };
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
  * top) to their name label. Markers draw above the light-map and vignette (FS-2325V §C.9). The
@@ -962,8 +961,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private minimapMode: MinimapMode = "normal";
   /** Where this browser keeps the minimap's mode (FS-1SEF0 §A.4). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** Where the fullscreen button is stood, beside the minimap or in its corner (FS-56CKV §Change: Minimap at the top, fullscreen button beside it). */
-  private readonly fullscreenButton: FullscreenButtonPlace = fullscreenButtonPlace;
   /** The monster the local player last hit, held 3 s from their last own hit (FS-48CTQ §C.6). */
   private readonly lastHit = new LastHitTracker();
   /** The boss engaged with the party, latched across broadcasts (FS-48CTQ §D.10). */
@@ -1040,8 +1037,6 @@ export class BarrowspireScene extends Phaser.Scene {
    * gone and are asked nothing (`SceneEnd`).
    */
   private resetRun(end: SceneEnd): void {
-    // the corner back to the fullscreen button, unless a later scene has stood it (FS-56CKV §Change C6)
-    this.fullscreenButton.takeBack(this);
     this.gameStateUnsubscribe?.();
     this.gameStateUnsubscribe = undefined;
     this.floorMapUnsubscribe?.();
@@ -4143,11 +4138,12 @@ export class BarrowspireScene extends Phaser.Scene {
    * that; where no minimap is shown, or the floor indicator has no label or the map name already
    * names the floor (§Change: Map name, E9), the rest closes up. The dev readout goes with it: in
    * the normal map's bottom-right, left of the enlarged map's name, under the column's last line
-   * in the overlay and with no map (§C.18; §Change: Map name, E8, E11). The minimap, normal or enlarged, stands
-   * at the very top with the fullscreen button at its left; in the overlay and with no minimap the button keeps the corner and the
-   * column starts under it (§Change: Minimap at the top, fullscreen button beside it, as amended
-   * 2026-11-12). The map mode icon goes with the map, or beside the button with the overlay up
-   * (§Change: Map mode icon); the map name with them (§Change: Map name, E3–E5).
+   * in the overlay and with no map (§C.18; §Change: Map name, E8, E11). The minimap, normal or
+   * enlarged, stands in the very corner; with the overlay up the map mode icon takes the corner and
+   * the column starts under its row, and with no minimap the column starts in the corner (FS-T3DWX
+   * §Change: The top-right HUD fills the button's spot). The map mode icon goes with the map, or
+   * in the corner with the overlay up (§Change: Map mode icon); the map name with them (§Change:
+   * Map name, E3–E5).
    */
   private placeTopRightColumn(): void {
     const minimap = this.dungeon?.minimap;
@@ -4161,7 +4157,6 @@ export class BarrowspireScene extends Phaser.Scene {
       floorHeight: floor?.visible ? floor.height : null,
       escapedHeight: this.escapedCountText?.height ?? 0,
     });
-    this.fullscreenButton.hand(this, column.button);
     if (column.minimap) minimap?.place(column.minimap);
     this.dungeon?.modeIcon?.place(column.modeIcon);
     this.dungeon?.mapName?.place(column.name);
@@ -4173,10 +4168,8 @@ export class BarrowspireScene extends Phaser.Scene {
         minimap: column.minimap,
         enlarged: minimap?.mode === "enlarged",
         name: this.dungeon?.mapName?.box ?? null,
-        button: column.button,
         column: { right: column.escaped.x, bottom: column.bottom },
       },
-      viewport,
     );
     this.readoutPlace = readout;
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
@@ -5144,7 +5137,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (showsPositionReadout()) this.createPositionReadout();
 
     // Escaped players count (top-right), last in the column (FS-56CKV §B.9)
-    const corner = anchorAt(TOP_RIGHT_HUD);
+    const corner = anchorAt(TOP_RIGHT_EDGE);
     this.escapedCountText = this.add.text(
       corner.x,
       corner.y,
@@ -5710,6 +5703,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
       back: () => this.act(() => this.openMenu()),
       music: storedMusicLevel(browserMusicStore),
+      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
+      fullscreen: lentFullscreen(this.registry),
       // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });

@@ -1558,8 +1558,6 @@ describe("FieldScene arrival card (FS-PQ2TW; I-PQ2TW-4)", () => {
 });
 
 const { MINIMAP: FIELD_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
-const { FULLSCREEN_BUTTON } = await import("@/render/viewport");
-const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
 const { FIELD_CHART } = await import("@/ui/fieldChart");
 const { usePartyStore } = await import("@/stores/partyStore");
 const { FOREST_GATE, FOREST_WALLS } = await import("@/render/world/forest.fixture");
@@ -1600,8 +1598,6 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     });
     const store = { held: null as string | null, writes: [] as string[] };
     field.minimapStore = () => ({ getItem: () => store.held, setItem: (_k: string, v: string) => void store.writes.push(v), removeItem: () => {} });
-    const button = new FullscreenButtonPlace();
-    field.fullscreenButton = button;
     const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
     field.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
     (field as unknown as { bindMinimapKey(): void }).bindMinimapKey();
@@ -1621,7 +1617,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
       clock.now += ms;
       (field as unknown as { drawFieldMap(): void }).drawFieldMap();
     };
-    return { ...stage, field, layers, clock, store, pressM, render, map, chart, frame, button };
+    return { ...stage, field, layers, clock, store, pressM, render, map, chart, frame };
   }
   const chartedCount = (c: { charted(cx: number, cy: number): boolean; cols: number; rows: number }) => {
     let n = 0;
@@ -1715,29 +1711,19 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(map()!.redraws).toBe(1);
   });
 
-  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1–C5 (owner 2026-11-12:
-  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側 地圖變2倍蛇才移動到右上角", "其他文字也要跟著往上移動"):
-  // nothing stands under a field's map (FS-P0HSP §G.36), so only the map and the button move
+  // FS-56CKV §Change C1; FS-T3DWX §Change: The top-right HUD fills the button's spot, G1–G3: the map
+  // in the very corner in either size, no button's place handed; nothing stands under a field's
+  // map (FS-P0HSP §G.36)
   it.each([1080, 1280])(
-    "should stand the normal map at the very top, y 10, with the fullscreen button 6 px to its left, and move the button on M, at logical width %i (FS-56CKV §Change C1–C4)",
+    "should stand the normal and the enlarged map in the very corner, y 10, on M, with no button's place, at logical width %i (FS-T3DWX G1–G3)",
     (width) => {
       viewport.set({ width, height: 720, renderScale: 1 });
-      const { render, layers, pressM, button } = forestWithMap();
-      const corner = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
-      // before the first state there is no map: the button keeps the corner
-      expect(button.current).toEqual(corner);
+      const { field, render, layers, pressM } = forestWithMap();
       render({ x: 2900, y: 1480 });
       for (const l of layers) expect([l.x, l.y]).toEqual([width - 10 - FIELD_MINIMAP.width, 10]);
-      expect(button.current).toEqual({ top: 10, right: 10 + FIELD_MINIMAP.width + FIELD_MINIMAP.gap });
-      // enlarged, at the very top too with the button at its left (§Change C3 as amended
-      // 2026-11-12: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側"); only the overlay hands it the corner
       pressM();
       expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 10]);
-      expect(button.current).toEqual({ top: 10, right: 10 + 324 + FIELD_MINIMAP.gap });
-      pressM();
-      expect(button.current).toEqual(corner);
-      pressM();
-      expect(button.current).toEqual({ top: 10, right: 232 });
+      expect(field).not.toHaveProperty("fullscreenButton");
     },
   );
 
@@ -2267,6 +2253,22 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     key("TWO");
     find("options-music-step-2")!.handlers.pointerup();
     expect(kept.get("barrowspire_music")).toBe("2");
+  });
+
+  it("should hand the panel the fullscreen the page lent its game, so OPTIONS has the Fullscreen row (FS-T3DWX R11, R12)", async () => {
+    const { lendFullscreen } = await import("@/ui/gameFullscreen");
+    const { field, key, find, words } = optionedField();
+    const held = new Map<string, unknown>();
+    const registry = { get: (k: string) => held.get(k), set: (k: string, v: unknown) => void held.set(k, v) };
+    const fullscreen = { active: () => false, toggle: vi.fn(), watch: () => () => {} };
+    lendFullscreen(registry, fullscreen);
+    Object.assign(field, { registry });
+    key("ESC");
+    key("TWO");
+
+    expect(words()).toEqual(expect.arrayContaining(["Music", "Sound effects", "Fullscreen", "Off", "On"]));
+    find("options-fullscreen")!.handlers.pointerup();
+    expect(fullscreen.toggle).toHaveBeenCalledTimes(1);
   });
 
   it("should do nothing on → or ← with only the menu open, or nothing open", () => {

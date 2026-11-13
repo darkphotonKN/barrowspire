@@ -14,6 +14,7 @@ import {
   OPTIONS_WIDTH,
   openOptionsPanel,
   showOptionsPanel,
+  type FullscreenControl,
   type MusicLevelControl,
   type SettingRow,
 } from "./optionsPanel";
@@ -591,5 +592,216 @@ describe("showOptionsPanel, the layout for any list of rows (FS-28DDG § Change 
     panel.keys.nudge(1);
     expect(rows[0].value()).toBe(4);
     expect(rows[1].value()).toBe(2);
+  });
+});
+
+/**
+ * The game frame's fullscreen as the page lends it (FS-T3DWX R12): `on` is the document's state,
+ * which only `change` moves, by any route, as the browser would; `toggle` only records the ask.
+ */
+function fullscreenAt(on: boolean) {
+  let state = on;
+  const listeners = new Set<() => void>();
+  const unwatch = vi.fn();
+  const control = {
+    active: () => state,
+    toggle: vi.fn(),
+    watch: vi.fn((changed: () => void) => {
+      listeners.add(changed);
+      return () => {
+        listeners.delete(changed);
+        unwatch();
+      };
+    }),
+  } satisfies FullscreenControl;
+  /** The document goes fullscreen, or leaves it, and says so. */
+  const change = (next: boolean) => {
+    state = next;
+    [...listeners].forEach((heard) => heard());
+  };
+  return { control, change, unwatch, listeners };
+}
+
+describe("the Fullscreen row (FS-T3DWX)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  /** The panel opened with the game's fullscreen `on` or off, its row's words and hit read off. */
+  function withFullscreen(on = false) {
+    vi.mocked(drawPanelFrame).mockClear();
+    const fullscreen = fullscreenAt(on);
+    const stage = recordingStage();
+    const music = musicAt(3);
+    const effects = musicAt(2);
+    const back = vi.fn();
+    const panel = openOptionsPanel(stage.scene, {
+      origin: ORIGIN,
+      hit: HIT,
+      tones: TONES,
+      back,
+      music,
+      effects,
+      fullscreen: fullscreen.control,
+    });
+    const height = vi.mocked(drawPanelFrame).mock.calls[0][2].height;
+    const word = (which: "off" | "on") => stage.find(`options-fullscreen-${which}`)!;
+    const label = (words: string) => stage.texts().find((t) => t.args[2] === words)!;
+    const hit = () => stage.find("options-fullscreen")!;
+    return { ...stage, ...panel, container: panel.container as unknown as Made, fullscreen, music, effects, back, height, word, label, hit };
+  }
+
+  it("should stand a Fullscreen row under Sound effects, one row apart, Back below it, the panel one row taller (R4)", () => {
+    const p = withFullscreen();
+    vi.mocked(drawPanelFrame).mockClear();
+    opened();
+    const without = vi.mocked(drawPanelFrame).mock.calls[0][2].height;
+
+    expect(p.label("Fullscreen").y - p.label("Sound effects").y).toBe(OPTIONS_ROW);
+    expect(p.label("Sound effects").y - p.label("Music").y).toBe(OPTIONS_ROW);
+    expect(p.label("Fullscreen").x).toBe(p.label("Music").x);
+    expect(p.find("options-back-label")!.y).toBeGreaterThan(p.label("Fullscreen").y);
+    expect(p.height - without).toBe(OPTIONS_ROW);
+  });
+
+  it("should show Off then On on the row's line, On right-aligned on the sliders' right edge (R4)", () => {
+    const p = withFullscreen();
+    const upMark = p.find("options-music-up-mark")!;
+    const sliderRight = Math.max(...upMark.drawn.filter((d) => d.call === "fillTriangle").flatMap((d) => [d.args[0], d.args[2], d.args[4]]));
+
+    expect(p.word("off").args[2]).toBe("Off");
+    expect(p.word("on").args[2]).toBe("On");
+    expect(p.word("on").x).toBe(sliderRight);
+    expect(p.word("on").origin).toEqual([1, 0.5]);
+    expect(p.word("off").x).toBeLessThan(p.word("on").x - 20);
+    expect(p.word("off").x).toBeGreaterThan(p.label("Fullscreen").x + 100);
+    expect(p.word("off").y).toBe(p.label("Fullscreen").y);
+    expect(p.word("on").y).toBe(p.label("Fullscreen").y);
+  });
+
+  it.each([
+    [false, "off", "on"],
+    [true, "on", "off"],
+  ] as const)("should light the state's word amber and dim the other: fullscreen %s lights %s (R4, R6)", (on, lit, dim) => {
+    const p = withFullscreen(on);
+    expect(p.word(lit).color).toBe(toCss(TONES.actionable));
+    expect(p.word(dim).color).toBe(toCss(TONES.dim));
+  });
+
+  it("should toggle the game's fullscreen once on a pointerup on the row, and answer no pointerdown (R5)", () => {
+    const p = withFullscreen();
+    expect(p.hit().handlers.pointerdown).toBeUndefined();
+
+    p.hit().handlers.pointerup();
+
+    expect(p.fullscreen.control.toggle).toHaveBeenCalledTimes(1);
+    expect(p.music.set).not.toHaveBeenCalled();
+    expect(p.effects.set).not.toHaveBeenCalled();
+  });
+
+  it("should hang the row's hit camera-fixed over the panel, apart from the box, exactly across the row inside the panel's insets (R5)", () => {
+    const p = withFullscreen();
+    const hit = p.hit();
+    const [x, y, width] = hit.args as number[];
+
+    expect(hit.kind).toBe("rectangle");
+    expect(hit.scrollFactor).toBe(0);
+    expect(hit.depth).toBe(MENU_DEPTH + 1);
+    expect(hit.interactive).toBe(true);
+    expect(p.container.children).not.toContain(hit);
+    expect(y).toBe(ORIGIN.y + p.label("Fullscreen").y);
+    // from the label's left edge to On's right edge, the row's insets, and not a px past either
+    expect(x - width / 2).toBe(ORIGIN.x + p.label("Fullscreen").x);
+    expect(x + width / 2).toBe(ORIGIN.x + p.word("on").x);
+    expect(width).toBe(408);
+  });
+
+  it("should brighten the state's word to the text tone under the pointer and give it back after (R5)", () => {
+    const p = withFullscreen();
+    p.hit().handlers.pointerover();
+    expect(p.word("off").color).toBe(toCss(TONES.text));
+    expect(p.word("on").color).toBe(toCss(TONES.dim));
+    p.hit().handlers.pointerout();
+    expect(p.word("off").color).toBe(toCss(TONES.actionable));
+  });
+
+  it("should keep showing the document's state after a toggle the browser has not answered (R6)", () => {
+    const p = withFullscreen();
+    p.hit().handlers.pointerup();
+    expect(p.word("off").color).toBe(toCss(TONES.actionable));
+    expect(p.word("on").color).toBe(toCss(TONES.dim));
+  });
+
+  it("should redraw the row in place whenever the document's state changes, by any route (R6)", () => {
+    const p = withFullscreen();
+    const texts = p.texts().length;
+
+    p.fullscreen.change(true);
+    expect(p.word("on").color).toBe(toCss(TONES.actionable));
+    expect(p.word("off").color).toBe(toCss(TONES.dim));
+
+    // left by Esc or the browser's own UI
+    p.fullscreen.change(false);
+    expect(p.word("off").color).toBe(toCss(TONES.actionable));
+    expect(p.word("on").color).toBe(toCss(TONES.dim));
+    expect(p.texts()).toHaveLength(texts);
+    expect(p.container.destroyed).toBe(false);
+  });
+
+  it("should stop listening when the panel closes (R6)", () => {
+    const p = withFullscreen();
+    expect(p.fullscreen.control.watch).toHaveBeenCalledTimes(1);
+    (p.container as unknown as { destroy(): void }).destroy();
+
+    expect(p.fullscreen.unwatch).toHaveBeenCalledTimes(1);
+    expect(p.fullscreen.listeners.size).toBe(0);
+  });
+
+  it.each([
+    ["none", undefined],
+    ["null", null],
+  ] as const)("should have no Fullscreen row with %s for a control, two rows as before (R7)", (_name, fullscreen) => {
+    vi.mocked(drawPanelFrame).mockClear();
+    const stage = recordingStage();
+    openOptionsPanel(stage.scene, { origin: ORIGIN, hit: HIT, tones: TONES, back: vi.fn(), music: musicAt(3), effects: musicAt(3), fullscreen });
+    const height = vi.mocked(drawPanelFrame).mock.calls[0][2].height;
+    vi.mocked(drawPanelFrame).mockClear();
+    opened();
+
+    expect(stage.texts().map((t) => t.args[2])).not.toContain("Fullscreen");
+    expect(stage.made.some((m) => named(m).startsWith("options-fullscreen"))).toBe(false);
+    expect(height).toBe(vi.mocked(drawPanelFrame).mock.calls[0][2].height);
+  });
+
+  it("should send ←/→ to Music only, and do nothing on Enter or a number, with the row there (R8)", () => {
+    const p = withFullscreen();
+    p.keys.nudge(1);
+    p.keys.nudge(-1);
+    p.keys.nudge(-1);
+    p.keys.confirm();
+    [0, 1, 2].forEach((i) => p.keys.pick(i));
+
+    expect(p.music.set.mock.calls).toEqual([[4], [3], [2]]);
+    expect(p.effects.set).not.toHaveBeenCalled();
+    expect(p.fullscreen.control.toggle).not.toHaveBeenCalled();
+    expect(p.back).not.toHaveBeenCalled();
+  });
+
+  it("should stay open after a toggle, and carry the row's hit with the box on a re-centre (R10)", () => {
+    const p = withFullscreen();
+    const before = { x: p.hit().x - ORIGIN.x, y: p.hit().y - ORIGIN.y };
+
+    p.hit().handlers.pointerup();
+    p.fullscreen.change(true);
+    expect(p.back).not.toHaveBeenCalled();
+    expect(p.container.destroyed).toBe(false);
+
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    p.moveTo({ x: 640, y: 360 });
+    expect([p.hit().x, p.hit().y]).toEqual([640 + before.x, 360 + before.y]);
+  });
+
+  it("should take the row's hit down with the box", () => {
+    const p = withFullscreen();
+    (p.container as unknown as { destroy(): void }).destroy();
+    expect(p.made.filter((m) => !m.destroyed && named(m).startsWith("options-"))).toEqual([]);
   });
 });

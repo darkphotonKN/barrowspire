@@ -4169,6 +4169,27 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
       expect(panelOpen(stage.made)).toBe(true);
     });
 
+    it("should hand the panel the fullscreen the page lent its game, so OPTIONS has the Fullscreen row (FS-T3DWX R11, R12)", async () => {
+      const { lendFullscreen } = await import("@/ui/gameFullscreen");
+      browserStore(null);
+      const music = hubWithSound();
+      const { hub, step, keys, press, stage } = music;
+      const held = new Map<string, unknown>();
+      const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+      const fullscreen = { active: () => false, toggle: vi.fn(), watch: () => () => {} };
+      lendFullscreen(registry, fullscreen);
+      Object.assign(hub, { registry });
+      hub.enterMusic();
+      step(MUSIC_FADE_IN_MS);
+      press(keys.esc);
+      press(keys.two);
+
+      const words = stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => m.args[2]);
+      expect(words).toEqual(expect.arrayContaining(["Music", "Sound effects", "Fullscreen", "Off", "On"]));
+      stage.made.find((m) => m.name === "options-fullscreen" && !m.destroyed)!.handlers.pointerup();
+      expect(fullscreen.toggle).toHaveBeenCalledTimes(1);
+    });
+
     it("should ramp the town's music to the next level on → and keep it, and fade it out to 0 on ← (C6, C10, C12)", () => {
       const { sound, step, keys, press, kept } = inThePanel();
 
@@ -4691,11 +4712,8 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
 });
 
 const { MINIMAP: TOWN_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
-const { TOP_RIGHT_HUD } = await import("@/ui/topRightColumn");
-const { FULLSCREEN_BUTTON, anchorAt } = await import("@/render/viewport");
-const { FullscreenButtonPlace } = await import("@/render/viewport/fullscreenButton");
-/** The fullscreen button in the canvas's corner (FS-ZAJMH R18). */
-const BUTTON_CORNER = { top: FULLSCREEN_BUTTON.inset, right: FULLSCREEN_BUTTON.inset };
+const { TOP_RIGHT_EDGE } = await import("@/ui/topRightColumn");
+const { anchorAt } = await import("@/render/viewport");
 
 // FS-P0HSP §A, §B, §E, §G (I-P0HSP-1): the town's minimap at the top of the top-right column.
 describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
@@ -4804,21 +4822,18 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     expect(layers).toHaveLength(5);
   });
 
-  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C1, C2, C5 (owner 2026-11-12:
-  // "地圖移動到最上面 全螢幕按鈕移動到地圖左側", "其他文字也要跟著往上移動"): nothing stands under the
-  // town's map (FS-P0HSP §G.36), so only the map and the button move
+  // FS-56CKV §Change C1; FS-T3DWX §Change: The top-right HUD fills the button's spot, G2: the map
+  // in the very corner, nothing beside it; nothing stands under the town's map (FS-P0HSP §G.36)
   it.each([1080, 1280])(
-    "should stand at the very top at logical width %i: right edge on TOP_RIGHT_HUD's x, top at y 10, the fullscreen button 6 px to its left on its top (§G.35; FS-56CKV §Change C1, C2)",
+    "should stand in the very corner at logical width %i: right edge on TOP_RIGHT_EDGE's x, top at y 10, no button's place handed (§G.35; FS-T3DWX G1, G2)",
     (width) => {
       viewport.set({ width, height: 720, renderScale: 1 });
       const { hub, render, layers } = townWithMap();
-      const button = new FullscreenButtonPlace();
-      hub.fullscreenButton = button;
       render();
-      const corner = anchorAt(TOP_RIGHT_HUD);
+      const corner = anchorAt(TOP_RIGHT_EDGE);
       expect(corner.x).toBe(width - 10);
       for (const l of layers) expect({ x: l.x, y: l.y }).toEqual({ x: corner.x - TOWN_MINIMAP.width, y: 10 });
-      expect(button.current).toEqual({ top: 10, right: width - (corner.x - TOWN_MINIMAP.width - TOWN_MINIMAP.gap) });
+      expect(hub).not.toHaveProperty("fullscreenButton");
     },
   );
 
@@ -4919,26 +4934,14 @@ describe("HubScene the town's minimap (FS-P0HSP; I-P0HSP-1)", () => {
     expect(map()).toBeUndefined();
   });
 
-  // §G.37: the map clear of the fullscreen button, the queue line, the arrival card, the party
-  // panel and the XP bar, and of a notice up to 628 px wide at 1080 (828 at 1280)
+  // §G.37: the map clear of the queue line, the arrival card, the party panel and the XP bar, and
+  // of a notice up to 628 px wide at 1080 (828 at 1280)
   it.each([
     [1080, 628],
     [1280, 828],
   ])("should keep clear of the HUD around it at logical width %i (§G.37)", (width, notice) => {
-    const corner = anchorAt(TOP_RIGHT_HUD, { width, height: 720 });
+    const corner = anchorAt(TOP_RIGHT_EDGE, { width, height: 720 });
     const left = corner.x - TOWN_MINIMAP.width;
-    // the button beside the enlarged map too (FS-56CKV §Change C3, C7 as amended 2026-11-12): its
-    // foot at y 30 above the notice band, its left edge (720 at 1080) never left of the arrival
-    // card's widest line's right end nor over the party panel
-    const enlargedButtonLeft = corner.x - 324 - TOWN_MINIMAP.gap - FULLSCREEN_BUTTON.height;
-    if (width === 1080) expect(enlargedButtonLeft).toBe(720);
-    expect(720).toBeLessThanOrEqual(enlargedButtonLeft);
-    // the button beside the normal map (§Change C2, C7): its foot at y 30, above the notice band
-    // (a 14 px line in 8 px padding centred on y 72) and the arrival card; its left edge right of
-    // the arrival card's widest line and the party panel
-    const buttonLeft = left - TOWN_MINIMAP.gap - FULLSCREEN_BUTTON.height;
-    expect(10 + FULLSCREEN_BUTTON.height).toBeLessThan(72 - 15);
-    expect(720).toBeLessThan(buttonLeft);
     // a notice centred on the view, on y 72, ends at the map's left edge
     expect(width / 2 + notice / 2).toBeLessThanOrEqual(left);
     // the arrival card's widest line (x 360–720) and the party panel (x 280–580) left of the map
@@ -5000,8 +5003,6 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     });
     hub.views = new Map([["me", { pos: { ...AWAY } }]]);
     const store = { held, writes: [] as string[] };
-    const button = new FullscreenButtonPlace();
-    hub.fullscreenButton = button;
     hub.minimapStore = () => ({
       getItem: () => store.held,
       setItem: (_key: string, value: string) => void store.writes.push(value),
@@ -5026,7 +5027,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
         npcs: [],
       });
     const map = () => (hub.minimap as { map: InstanceType<typeof WorldMinimap> } | undefined)?.map;
-    return { ...stage, hub, layers, store, pressM, render, map, button, pointers };
+    return { ...stage, hub, layers, store, pressM, render, map, pointers };
   }
 
   beforeEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
@@ -5084,7 +5085,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(heard()).toEqual([]);
       pressM();
       expect(heard()).toEqual(["map_mode_switch"]);
-      pointers.pointerdown!({ x: 1043, y: 16, button: 0 });
+      pointers.pointerdown!({ x: 1065, y: 14, button: 0 });
       expect(heard()).toEqual(["map_mode_switch"]);
     });
 
@@ -5111,8 +5112,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(map()!.mode).toBe("enlarged");
       pointers.pointerdown!(press(754, 163));
       expect(map()!.mode).toBe("overlay");
-      // beside the fullscreen button in its corner, as the overlay is up
-      pointers.pointerdown!(press(1043, 16));
+      // in the very corner, as the overlay is up (FS-T3DWX G4)
+      pointers.pointerdown!(press(1065, 14));
       expect(map()!.mode).toBe("normal");
       expect(store.writes).toEqual(["enlarged", "overlay", "normal"]);
     });
@@ -5213,31 +5214,20 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     expect([layers[0].x, layers[0].y]).toEqual([1070 - 324, 10]);
   });
 
-  // FS-56CKV §Change: Minimap at the top, fullscreen button beside it, C2–C4 (owner 2026-11-12,
-  // amended: "1.5倍地圖時全螢幕按鈕一樣要在地圖左側", replacing "地圖變2倍蛇才移動到右上角")
-  it.each([1080, 1280])("should move the fullscreen button on M: beside the enlarged map at its left, to the corner for the overlay, beside the map back at normal, at width %i (FS-56CKV §Change C2–C4)", (width) => {
+  // FS-T3DWX §Change: The top-right HUD fills the button's spot, G2–G4: on M the map stays in the
+  // very corner in either size, and the overlay's icon takes the corner
+  it.each([1080, 1280])("should keep the map in the very corner on M, in either size, and stand the overlay's icon there, at width %i (FS-T3DWX G2–G4)", (width) => {
     viewport.set({ width, height: 720, renderScale: 1 });
-    const { pressM, render, layers, button } = townWithModes();
+    const { hub, pressM, render, layers } = townWithModes();
     render();
-    expect(button.current).toEqual({ top: 10, right: 232 });
+    expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 216, 10]);
     pressM();
     expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 324, 10]);
-    expect(button.current).toEqual({ top: 10, right: 10 + 324 + 6 });
     pressM();
-    expect(button.current).toEqual(BUTTON_CORNER);
+    const icon = (hub as unknown as { minimap?: { modeIcon?: { shownAt?: { box: unknown } } } }).minimap?.modeIcon?.shownAt?.box;
+    expect(icon).toEqual({ x: width - 19, y: 10, width: 9, height: 9 });
     pressM();
-    expect(button.current).toEqual({ top: 10, right: 232 });
     expect([layers[0].x, layers[0].y]).toEqual([width - 10 - 216, 10]);
-  });
-
-  it("should hand the button's corner back when the visit ends (FS-56CKV §Change C6)", () => {
-    vi.spyOn(socketManager, "off").mockImplementation(() => {});
-    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
-    const { hub, render, button } = townWithModes();
-    render();
-    expect(button.current).toEqual({ top: 10, right: 232 });
-    (hub as unknown as { release(end: string): void }).release("destroy");
-    expect(button.current).toEqual(BUTTON_CORNER);
   });
 
   it("should leave the corner empty as the overlay, and stand it about the player each frame (§F.31, §G.35)", () => {

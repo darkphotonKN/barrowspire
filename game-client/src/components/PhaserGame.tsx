@@ -20,6 +20,9 @@ import { bootInProgress } from "./bootGate";
 import { releaseGame } from "./releaseGame";
 import { gameAudio } from "./gameAudio";
 import { keepTab, takeFocusOnPress } from "./gameFocus";
+import { frameFullscreen } from "./frameFullscreen";
+import { keyboardLockOf } from "./fullscreen";
+import { lendFullscreen } from "@/ui/gameFullscreen";
 import GameFrame from "./GameFrame";
 import { installCrispText } from "@/render/crispText";
 import {
@@ -116,6 +119,10 @@ export default function PhaserGame() {
     const game = new Phaser.Game(config);
     gameRef.current = game;
 
+    // the frame's fullscreen, lent to this game for the OPTIONS panel's Fullscreen row; none where
+    // the browser has none to offer (FS-T3DWX R7, R12)
+    lendFullscreen(game.registry, frameFullscreen(frame, document, keyboardLockOf(navigator)));
+
     // the DOM layer pinned to the canvas, and a re-fit on a resize of the frame (the window, the
     // banner, fullscreen) or a density change (another monitor), no reload (R10, R11, R16)
     unbindRef.current = mountViewport(game, frame);
@@ -190,6 +197,6 @@ export default function PhaserGame() {
     };
   }, [initGame]);
 
-  // the game frame (FS-ZAJMH "Terms"): the canvas, its DOM layer and the fullscreen toggle
+  // the game frame (FS-ZAJMH "Terms"): the canvas and its DOM layer, what goes fullscreen
   return <GameFrame frame={frameRef} canvas={containerRef} />;
 }

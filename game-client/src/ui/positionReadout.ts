@@ -8,7 +8,6 @@
  */
 
 import type { Point, Rect } from "@/render/iso/projection";
-import { FULLSCREEN_BUTTON, type FullscreenButtonSpot } from "@/render/viewport/fullscreenButton";
 import { palette } from "@/utils/canvasPalette";
 import { MINIMAP } from "./minimap";
 import { MINIMAP_NAME } from "./minimapName";
@@ -44,24 +43,22 @@ export interface ReadoutCorner {
   enlarged: boolean;
   /** The map name's plate where it stands now, or null where the floor has none. */
   name: Rect | null;
-  /** Where the fullscreen button stands. */
-  button: FullscreenButtonSpot;
   /** The column's right edge and its last line's bottom. */
   column: { right: number; bottom: number };
 }
 
 /**
- * Where the readout stands, on whole logical px (§C.18; §Change: Map name, E8, E11): its plate's
- * bottom-right `inset` px inside the normal map's; with the map enlarged, right-aligned `beside` px
- * left of the name's plate (of the button where there is no name), its middle on the button's, as
- * the name's is; otherwise its top-right `gap` px under the column's last line.
+ * Where the readout stands, on whole logical px (§C.18; §Change: Map name, E8, E11; FS-T3DWX G3):
+ * its plate's bottom-right `inset` px inside the normal map's; with the map enlarged, right-aligned
+ * `beside` px left of the name's plate (of the map where there is no name), on the name's middle;
+ * otherwise its top-right `gap` px under the column's last line.
  */
-export function positionReadoutPlace(corner: ReadoutCorner, view: { width: number }): PositionReadoutPlace {
-  const { minimap: map, enlarged, name, button, column } = corner;
+export function positionReadoutPlace(corner: ReadoutCorner): PositionReadoutPlace {
+  const { minimap: map, enlarged, name, column } = corner;
   const { inset, gap, beside } = POSITION_READOUT;
   if (map && enlarged) {
-    const left = name ? name.x : Math.round(view.width - button.right - FULLSCREEN_BUTTON.height);
-    return { x: left - beside, y: button.top + FULLSCREEN_BUTTON.height / 2, origin: { x: 1, y: 0.5 } };
+    const left = name ? name.x : Math.round(map.x);
+    return { x: left - beside, y: Math.round(map.y) + MINIMAP_NAME.beside, origin: { x: 1, y: 0.5 } };
   }
   if (map) return { x: Math.round(map.x + map.width) - inset, y: Math.round(map.y + map.height) - inset, origin: { x: 1, y: 1 } };
   return { x: Math.round(column.right), y: Math.round(column.bottom) + gap, origin: { x: 1, y: 0 } };

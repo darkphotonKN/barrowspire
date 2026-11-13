@@ -188,3 +188,5 @@ Engineering words for this feature. They extend `game-client/CONTEXT.md` § *Ren
 - Any change to the `Header`'s own design (it only hides in fullscreen because only the game frame is fullscreen).
 
 ## Change: Minimap at the top, fullscreen button beside it → FS-56CKV
+
+## Change: Fullscreen in the OPTIONS panel → FS-T3DWX

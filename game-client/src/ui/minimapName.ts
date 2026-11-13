@@ -1,8 +1,8 @@
 /**
  * The map name (FS-56CKV §Change: Map name; CONTEXT.md "Map name"): the name of the place the
  * minimap shows, in small vellum on a faint dark plate. Inside the map's top-right in its normal
- * mode; left of the fullscreen button with the map enlarged; left of the map mode icon while the
- * map overlay is up; in a run, the town and a field. The owner's words (2026-11-12):
+ * mode; left of the enlarged map, where the fullscreen button stood until FS-T3DWX; left of the
+ * map mode icon in the corner while the map overlay is up; in a run, the town and a field. The owner's words (2026-11-12):
  * "小地圖右上角顯示目前地圖的名字", then "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊".
  *
  * The words are the arrival card's title for the place (FS-PQ2TW R19, R23): one table. Game
@@ -15,7 +15,6 @@
 
 import type { Rect } from "@/render/iso/projection";
 import { crispen } from "@/render/viewport/crispen";
-import { FULLSCREEN_BUTTON, type FullscreenButtonSpot } from "@/render/viewport/fullscreenButton";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { MINIMAP } from "./minimap";
 import type { MinimapMode } from "./minimapMode";
@@ -24,8 +23,9 @@ import { placeCard, type Place } from "./placeCard";
 
 /**
  * Its look and place (E2–E5): 11 px vellum letter-spaced 1, on a `hudPanel` plate at 0.75 padded
- * 4 × 2; `inset` px inside the normal map's top-right, or `gap` px left of the button (enlarged) or
- * the icon (overlay); over the map's layers, under the icon's hint.
+ * 4 × 2; `inset` px inside the normal map's top-right, or `gap` px left of the map (enlarged, its
+ * middle `beside` px under the map's top) or of the icon (overlay); over the map's layers, under
+ * the icon's hint.
  */
 export const MINIMAP_NAME = {
   fontSize: "11px",
@@ -36,6 +36,8 @@ export const MINIMAP_NAME = {
   padding: { x: 4, y: 2 },
   inset: MINIMAP.inset,
   gap: MINIMAP.gap,
+  /** Its middle under the enlarged map's top, where it stood beside the fullscreen button (FS-T3DWX G3). */
+  beside: 10,
   depth: MINIMAP.depth + 1,
 } as const;
 
@@ -53,24 +55,18 @@ export interface MinimapNamePlace {
 
 /**
  * The name's place (E3–E6), on whole logical px: 4 px inside the normal map's top-right; `gap` px
- * left of the fullscreen button at `button` with the map enlarged, centred on its height; `gap` px
- * left of the map mode icon in the overlay, centred on the button's height; nowhere with no map.
+ * left of the enlarged map, its middle `beside` px under the map's top; `gap` px left of the map
+ * mode icon in the overlay, centred on it; nowhere with no map (FS-T3DWX G3, G4).
  */
 export function minimapNamePlace(
   map: Rect | null,
   mode: MinimapMode | undefined,
-  button: FullscreenButtonSpot,
   icon: MinimapModeIconPlace | null,
-  view: { width: number },
 ): MinimapNamePlace | null {
-  const { inset, gap } = MINIMAP_NAME;
-  const middle = button.top + FULLSCREEN_BUTTON.height / 2;
-  if (map && mode === "enlarged") {
-    const buttonLeft = Math.round(view.width - button.right - FULLSCREEN_BUTTON.height);
-    return { right: buttonLeft - gap, y: middle, align: "middle" };
-  }
+  const { inset, gap, beside } = MINIMAP_NAME;
+  if (map && mode === "enlarged") return { right: Math.round(map.x) - gap, y: Math.round(map.y) + beside, align: "middle" };
   if (map) return { right: Math.round(map.x + map.width) - inset, y: Math.round(map.y) + inset, align: "top" };
-  if (mode === "overlay" && icon) return { right: icon.box.x - gap, y: middle, align: "middle" };
+  if (mode === "overlay" && icon) return { right: icon.box.x - gap, y: icon.box.y + icon.box.height / 2, align: "middle" };
   return null;
 }
 

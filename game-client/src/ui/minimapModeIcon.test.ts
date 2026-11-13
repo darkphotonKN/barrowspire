@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { contrastRatio } from "@/render/lighting/lighting";
 import { viewport } from "@/render/viewport";
-import { FULLSCREEN_CORNER } from "@/render/viewport/fullscreenButton";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { MINIMAP, MINIMAP_GLYPH, minimapPanel } from "./minimap";
 import {
@@ -48,19 +47,17 @@ describe("the map mode icon's place (FS-56CKV §Change: Map mode icon, D2–D4)"
   });
 
   it.each([
-    [1080, 1039],
-    [1280, 1239],
-  ])("should stand it left of the fullscreen button in its corner, 6 px off and centred on its height, in the overlay, at width %i (D3)", (width, x) => {
+    [1080, 1061],
+    [1280, 1261],
+  ])("should stand it in the very corner in the overlay, its right edge on the column's x and its top at y 10, at width %i (D3; FS-T3DWX G4, owner's option A)", (width, x) => {
     const corner = topRightCorner(viewOf(width), OVERLAY);
-    expect(corner.button).toEqual(FULLSCREEN_CORNER);
-    expect(corner.modeIcon?.box).toEqual({ x, y: 12, width: 9, height: 9 });
-    // the button x width − 26 to width − 6, y 6–26
-    expect(corner.modeIcon!.box.x + 9).toBe(width - 26 - 6);
+    expect(corner.modeIcon?.box).toEqual({ x, y: 10, width: 9, height: 9 });
+    expect(corner.modeIcon!.box.x + 9).toBe(corner.right);
   });
 
   it("should stand none where no minimap is (D4)", () => {
     expect(topRightCorner(viewOf(1080), null).modeIcon).toBeNull();
-    expect(minimapModeIconPlace(null, false, FULLSCREEN_CORNER, viewOf(1080))).toBeNull();
+    expect(minimapModeIconPlace(null, null)).toBeNull();
   });
 
   it.each([NORMAL, ENLARGED, OVERLAY])("should give it a 13 × 13 hit area, its box grown 2 px each side (D5, %o)", (minimap) => {
@@ -79,7 +76,7 @@ describe("the map mode icon's place (FS-56CKV §Change: Map mode icon, D2–D4)"
   it.each([
     [NORMAL, 854 - 6, 109.5],
     [ENLARGED, 746 - 6, 163.5],
-    [OVERLAY, 1039 - 6, 16.5],
+    [OVERLAY, 1061 - 6, 14.5],
   ])("should stand the hint's right edge 6 px left of the map, or of the icon in the overlay, centred on the icon (D7, %o)", (minimap, right, middle) => {
     expect(topRightCorner(viewOf(1080), minimap).modeIcon?.hint).toEqual({ right, middle });
   });
@@ -283,10 +280,10 @@ describe("MinimapModeIcon (FS-56CKV §Change: Map mode icon, D1, D5–D7)", () =
     i.place(placeAt(NORMAL)!);
     i.pointerMove(860, 110);
     i.place(placeAt(OVERLAY)!);
-    expect([glyph.x, glyph.y]).toEqual([1039, 12]);
+    expect([glyph.x, glyph.y]).toEqual([1061, 10]);
     expect([i.hovered, hint.visible]).toEqual([false, false]);
-    i.pointerMove(1040, 15);
-    expect([ground.x + 91, hint.visible]).toEqual([1033, true]);
+    i.pointerMove(1062, 13);
+    expect([ground.x + 91, hint.visible]).toEqual([1055, true]);
   });
 
   it("should rasterise its hint at the render scale of now when it is placed (FS-ZAJMH R5)", () => {
