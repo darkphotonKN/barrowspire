@@ -388,6 +388,11 @@ func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon Mons
 			return room, true
 		}
 	}
+	if odds == demonGuaranteed {
+		slog.Error("Guaranteed boss skipped: no valid spawn point on the dungeon floor even relaxed",
+			"sessionID", s.ID, "floor", floor, "archetype", demon.Archetype)
+		return -1, false
+	}
 	slog.Warn("Demon skipped: no valid spawn point on the dungeon floor", "sessionID", s.ID, "floor", floor)
 	return -1, false
 }

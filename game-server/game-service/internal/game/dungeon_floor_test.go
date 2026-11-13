@@ -177,13 +177,8 @@ func TestDungeonFloors_GenerationFailureOnAClimbBuildsAFloorOfBuildings(t *testi
 			continue
 		}
 		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "the top floor has none")
-		demons := 0
-		for _, m := range monstersIn(s) {
-			if monsterOf(m).Archetype == components.MonsterArchetypeDemon {
-				demons++
-			}
-		}
-		assert.Equal(t, 1, demons, "the top floor keeps its demon")
+		// FS-C8VM7 §D R26: a champion stands where the demon stood
+		assert.Len(t, bossesIn(s)[championKey], 1, "the top floor keeps its boss")
 	}
 	assert.Contains(t, log.String(), `"level":"ERROR"`)
 	assert.Contains(t, log.String(), "fell back to a floor of buildings")

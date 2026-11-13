@@ -28,8 +28,9 @@ type populationRand interface {
 * levels, elites, the demon and placement. A monster that finds no valid spot is skipped and logged, never
 * overlapped or forced.
 *
-* The demon comes on top of the standard count (§Requirements 24): always on the
-* top floor, otherwise on its rare roll.
+* The demon comes on top of the standard count (§Requirements 24) on its rare
+* roll below the top floor. The top floor's boss stands in the same place: a
+* champion, a variant the floor's pool left out (FS-C8VM7 §D R26-R27).
 *
 * The blood demon comes after the demon, on its own roll at the floor's odds,
 * never guaranteed, never in the demon's dungeon room (FS-VHGE7 §A R5–10).
@@ -81,7 +82,7 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	if s.dungeon != nil {
 		s.populateDungeon(s.dungeon, &area, pool, level, floor)
 		demonRoom := -1
-		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
+		if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
 		}
 		if isMasterSpireTop(floor, topFloor) {
@@ -113,7 +114,7 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		area.placed = append(area.placed, point{x, y})
 	}
 
-	if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
+	if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 		s.placeDemon(&area, demon, floor, topFloor)
 	}
 	if isMasterSpireTop(floor, topFloor) {
@@ -162,10 +163,11 @@ func (s *Session) placeDemon(area *spawnArea, demon MonsterConfig, floor int, gu
 	area.placed = append(area.placed, point{x, y})
 }
 
-// rollDemon decides whether this floor has its demon: always on the top floor,
-// otherwise on its rare chance. There is never more than one. A Master Spire's
-// top floor has Daa'gon in its place (FS-M8CSE §E R24).
-func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (MonsterConfig, bool) {
+// rollDemon decides this floor's boss in the demon's place: on the top floor
+// always, a champion (FS-C8VM7 §D R26), otherwise the demon on its rare
+// chance. There is never more than one. A Master Spire's top floor has
+// Daa'gon in its place (FS-M8CSE §E R24).
+func rollDemon(rng populationRand, pool floorPool, partyLevel, floor int, topFloor bool) (MonsterConfig, bool) {
 	if isMasterSpireTop(floor, topFloor) {
 		return MonsterConfig{
 			Archetype: components.MonsterArchetypeDaagon,
@@ -173,8 +175,11 @@ func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (Monste
 			Boss:      true,
 		}, true
 	}
+	if topFloor {
+		return rollChampion(rng, pool, partyLevel, floor), true
+	}
 
-	if !topFloor && rng.Float64() >= DemonChance {
+	if rng.Float64() >= DemonChance {
 		return MonsterConfig{}, false
 	}
 

@@ -335,6 +335,28 @@ const (
 	DaagonLevelBonus = 5
 )
 
+// Champions: the boss of a height 3-9 run's top floor, a variant the floor's
+// pool left out. FS-C8VM7 §D R26-R29. Its level is the demon's (demonLevel),
+// its HP and damage the Demon sheet's at that level.
+const (
+	// a champion's defence and magic resistance over its variant's at its level
+	ChampionMitigationMultiplier = 1.5
+)
+
+// ChampionNames and ChampionEpithets are the authored lists a champion's name,
+// "<Name> the <Epithet>", is drawn from: clear of every elite prefix, Vorsk and
+// Daa'gon (FS-C8VM7 §D R29, R4).
+var (
+	ChampionNames = []string{
+		"Morgrath", "Skarn", "Ulveth", "Hesk", "Druun", "Caelith",
+		"Bellakar", "Ashka", "Thule", "Grend", "Myrrow", "Saelk",
+	}
+	ChampionEpithets = []string{
+		"Unburied", "Gnawer", "Ash-born", "Last Warden", "Rot-king", "Bone-crowned",
+		"Patient", "Grieving", "Lantern-eater", "Twice-slain", "Pale", "Unforgiven",
+	}
+)
+
 // BloodDemonChanceByFloor is the chance of a blood demon on each run floor,
 // floor 1 first. A floor past its end uses the last row, so a taller Spire
 // never quietly removes it. Its roll is independent of the demon's.

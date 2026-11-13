@@ -102,6 +102,9 @@ type MonsterComponent struct {
 	Level int
 	Elite bool
 	Boss  bool
+	// Champion marks a top floor's champion boss (FS-C8VM7 §D): a variant at a
+	// boss's size whose kill pays the Demon's experience. In-process only.
+	Champion bool
 	// Name is server-authored, elite prefix included and level excluded: every
 	// client shows the same one and adds the level itself.
 	Name string

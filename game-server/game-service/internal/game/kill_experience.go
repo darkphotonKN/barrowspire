@@ -82,8 +82,13 @@ func gainExperience(entity *ecs.Entity, growth ClassGrowth, amount int) {
 
 // killExperience is what one kill is worth to each member it is awarded to:
 // round(base × (1 + growth × (level − 1)) × multiplier). FS-BDA7X §Requirements 10.
+// A champion's base is the Demon's, not its variant's (FS-C8VM7 §D R31).
 func killExperience(record systems.KillRecord) int {
-	base, ok := killExperienceBase[record.Archetype]
+	archetype := record.Archetype
+	if record.Champion {
+		archetype = components.MonsterArchetypeDemon
+	}
+	base, ok := killExperienceBase[archetype]
 	if !ok {
 		return 0
 	}
