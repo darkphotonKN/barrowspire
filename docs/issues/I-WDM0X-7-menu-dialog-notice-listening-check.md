@@ -1,6 +1,6 @@
 ---
 id: I-WDM0X-7
-status: open
+status: done
 implements: FS-WDM0X
 blocked_by: [I-WDM0X-5, I-WDM0X-6]
 labels: [blocked]
@@ -96,3 +96,7 @@ I-WDM0X-5, I-WDM0X-6
 ## Spec Reference
 
 FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1): all of it.
+
+## Owner sign-off
+
+2026-11-14: the owner listened to the updated table (O1–O6) and approved it: 「沒問題」. OPTIONS Back/×/Esc keep menu_back; the Fall confirm opening keeps dialog_open.
