@@ -27,6 +27,7 @@ import { attach, createRig, ellipsoid, jointAt as J, skinTube } from "./rig.js";
 import { mat, paint, pf, pn } from "./fabrics.js";
 import { add, groundPose, idleCycle, pose, walkCycle } from "./clips.js";
 import { bareFeet, cloak, cloakBones, hair, legs, neck, overTorso, skirt, skirtBones, torso } from "./anatomy.js";
+import { variantTones } from "./variantTones.js";
 
 const P = pose;
 const sides = [
@@ -280,6 +281,13 @@ export const zombie = () => shamblingCorpse(TONE, { legacySkirt: true });
 /** The Spire's Barrow Thrall (FS-M8CSE §H R37): the zombie in grave-ash, its shroud on its own thighs. */
 export const barrowThrall = () => shamblingCorpse(ASH_TONE);
 
+/**
+ * The tiered thralls (FS-C8VM7 §H R45): the Barrow Thrall's look in a deeper shade with each step
+ * (variantTones.js), on the same rig and clips.
+ */
+export const plagueThrall = () => shamblingCorpse({ ...ASH_TONE, ...variantTones(mix, shade, "plague_thrall") });
+export const blightborn = () => shamblingCorpse({ ...ASH_TONE, ...variantTones(mix, shade, "blightborn") });
+
 function shamblingCorpse(tones, { legacySkirt = false } = {}) {
   const M = materials();
   const F = forlornFabrics(tones);
@@ -514,6 +522,16 @@ export const ghost = () => hoveringDead(TONE, { legacySkirt: true });
 
 /** The Spire's Spire Wraith (FS-M8CSE §H R37): the ghost in bone-white, its gown on its own thighs. */
 export const spireWraith = () => hoveringDead(BONE_TONE);
+
+/**
+ * The tiered wraiths (FS-C8VM7 §H R45): the Spire Wraith's look in a deeper shade with each step
+ * (variantTones.js), its baked translucence kept.
+ */
+// exported as `shade`; named apart here from palette.js's `shade`
+const shadeLook = () => hoveringDead({ ...BONE_TONE, ...variantTones(mix, shade, "shade") });
+export { shadeLook as shade };
+export const phantom = () => hoveringDead({ ...BONE_TONE, ...variantTones(mix, shade, "phantom") });
+export const banshee = () => hoveringDead({ ...BONE_TONE, ...variantTones(mix, shade, "banshee") });
 
 function hoveringDead(tones, { legacySkirt = false } = {}) {
   const F = forlornFabrics(tones);

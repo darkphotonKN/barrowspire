@@ -1637,6 +1637,120 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     });
   });
 
+  describe("the tiered roster's sheets (FS-C8VM7 §H R45-R47)", () => {
+    type TierSheet = {
+      atlas: string;
+      directions: number;
+      crown?: number;
+      animations: Record<
+        string,
+        { fps: number; loop: boolean; atlas?: string; frames: unknown[][] }
+      >;
+      source: string;
+      licence: string;
+    };
+    const PLAYERS = [
+      "char_knight_base",
+      "char_archer_base",
+      "char_wizard_base",
+    ];
+    const playerCrown =
+      PLAYERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      PLAYERS.length;
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    const FODDER: [number, number] = [0.85, 1.0];
+    const BRUTE: [number, number] = [1.2, 1.5];
+    /**
+     * Each sheet: its variant's group (R41), its builder (`<module>.js#<fn>`), the step-0 sheet
+     * of its family it is drawn after, and its size band as a crown ratio to the player mean (the
+     * old families' brute, the troll, has always baked at 1.23x and is drawn up to its tier).
+     */
+    const TIERED: [string, string, string, string, [number, number]][] = [
+      ["creature_ghast_base", "ghast", "cast.js#ghast", "creature_ghoul_base", FODDER],
+      ["creature_ravener_base", "ravener", "cast.js#ravener", "creature_ghoul_base", FODDER],
+      ["creature_ashen_archer_base", "ashen_archer", "cast.js#ashenArcher", "creature_bone_archer_base", FODDER],
+      ["creature_wight_archer_base", "wight_archer", "cast.js#wightArcher", "creature_bone_archer_base", FODDER],
+      ["creature_cave_troll_base", "cave_troll", "cast.js#caveTroll", "creature_troll_base", BRUTE],
+      ["creature_blood_troll_base", "blood_troll", "cast.js#bloodTroll", "creature_troll_base", BRUTE],
+      ["creature_plague_thrall_base", "plague_thrall", "forlorn.js#plagueThrall", "creature_barrow_thrall_base", FODDER],
+      ["creature_blightborn_base", "blightborn", "forlorn.js#blightborn", "creature_barrow_thrall_base", FODDER],
+      ["creature_shade_base", "shade", "forlorn.js#shade", "creature_spire_wraith_base", FODDER],
+      ["creature_phantom_base", "phantom", "forlorn.js#phantom", "creature_spire_wraith_base", FODDER],
+      ["creature_banshee_base", "banshee", "forlorn.js#banshee", "creature_spire_wraith_base", FODDER],
+    ];
+    const sheetOf = (name: string): TierSheet => baked.sheets[name];
+
+    it.each(TIERED)(
+      "%s packs whole into its variant's own group, %s (R41)",
+      (name, group) => {
+        const sheet = sheetOf(name);
+        expect(sheet, name).toBeDefined();
+        expect(atlasGroup(sheet.atlas)).toBe(group);
+        for (const a of Object.values(sheet.animations))
+          expect(a.atlas, name).toBeUndefined();
+      },
+    );
+
+    it.each(TIERED)(
+      "%s has 8-way idle, walk, attack and death at its family's rates",
+      (name, _group, _fn, family) => {
+        const sheet = sheetOf(name);
+        const from = sheetOf(family);
+        expect(sheet.directions).toBe(8);
+        expect(Object.keys(sheet.animations)).toEqual([
+          "idle",
+          "walk",
+          "attack",
+          "death",
+        ]);
+        for (const [clip, a] of Object.entries(from.animations)) {
+          const own = sheet.animations[clip];
+          expect([own.fps, own.loop], clip).toEqual([a.fps, a.loop]);
+          expect(own.frames, clip).toHaveLength(8);
+          expect(own.frames.map((f) => f.length), clip).toEqual(
+            a.frames.map((f) => f.length),
+          );
+        }
+      },
+    );
+
+    it.each(TIERED)(
+      "%s is authored in code (characters/%s), under the project's licence",
+      (name, _group, fn) => {
+        expect(sheetOf(name).source).toBe(
+          `authored: tools/bake/page/characters/${fn}`,
+        );
+        expect(sheetOf(name).licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(TIERED)(
+      "%s stands in its size band (a recolour stands as its family's step-0 sheet)",
+      (name, _group, _fn, family, [min, max]) => {
+        const crown = sheetOf(name).crown as number;
+        expect(Number.isInteger(crown)).toBe(true);
+        expect(crown / playerCrown).toBeGreaterThanOrEqual(min);
+        expect(crown / playerCrown).toBeLessThanOrEqual(max);
+        expect(crown).toBe(sheetOf(family).crown);
+      },
+    );
+
+    it("gives each variant group its own sheets only, and leaves the five tier-1 looks in creatures", () => {
+      const groups = new Map<string, string[]>();
+      for (const [name, sheet] of Object.entries(baked.sheets) as [string, TierSheet][])
+        groups.set(atlasGroup(sheet.atlas), [...(groups.get(atlasGroup(sheet.atlas)) ?? []), name]);
+      for (const [name, group] of TIERED) expect(groups.get(group)).toEqual([name]);
+      for (const name of [
+        "creature_ghoul_base",
+        "creature_bone_archer_base",
+        "creature_troll_base",
+        "creature_barrow_thrall_base",
+        "creature_spire_wraith_base",
+      ])
+        expect(atlasGroup(sheetOf(name).atlas), name).toBe("creatures");
+    });
+  });
+
   describe("the boar, on the quadruped rig (FS-X2F2H §H R61)", () => {
     type BoarSheet = {
       atlas: string;

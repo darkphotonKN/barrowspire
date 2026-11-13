@@ -10,7 +10,9 @@
 import * as THREE from "three";
 import { materials } from "../materials.js";
 import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./rig.js";
-import { fabrics } from "./fabrics.js";
+import { fabrics, retonedFabrics } from "./fabrics.js";
+import { mix, shade } from "../palette.js";
+import { variantTones } from "./variantTones.js";
 import { ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
 import { drawGrip, solveDraw } from "./draw.js";
 import {
@@ -58,7 +60,7 @@ import {
   tome,
 } from "./gear.js";
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
-import { barrowThrall, fadingEyes, ghost, spireWraith, zombie } from "./forlorn.js";
+import { banshee, barrowThrall, blightborn, fadingEyes, ghost, phantom, plagueThrall, shade as shadeWraith, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 import {
   ARCHER_BUILD,
@@ -318,9 +320,11 @@ function skull(rig, boneMat, eye) {
  * The ghoul's body, bare-handed: a hunched skeleton in grave rags, the skull's sockets lit with
  * `eye`. Shared by the ghoul and the Bone Archer. `legacySkirt` keeps the ghoul's rags on the old
  * weighting it was baked with (clearance.js MIRRORED_LEGACY); a new sheet never asks for it.
+ * `variant` names a tiered variant (FS-C8VM7 §H R45) whose bone and rags take its own tones
+ * (variantTones.js).
  */
-function skeleton({ eye, legacySkirt = false }) {
-  const F = fabrics();
+function skeleton({ eye, legacySkirt = false, variant = null }) {
+  const F = variant ? retonedFabrics(variantTones(mix, shade, variant)) : fabrics();
   const rig = createRig(1.9, {
     hunch: 1,
     jaw: true,
@@ -361,10 +365,18 @@ const GHOUL_MOTION = {
   idleExtra: (i, ph) => pose({ neck: [0, 0.18 * Math.sin(ph), 0.1 * Math.sin(ph * 2)] }, {}, { jaw: 0.1 + 0.08 * Math.sin(ph * 2) }),
 };
 
-export function ghoul() {
+export const ghoul = () => ghoulOf({ legacySkirt: true });
+
+/** The Ghast (FS-C8VM7 §H R45): the ghoul's look in grey-green bone, its rags on its own thighs. */
+export const ghast = () => ghoulOf({ variant: "ghast" });
+
+/** The Ravener (R45): the ghoul's look in blood-brown bone and near-black rags. */
+export const ravener = () => ghoulOf({ variant: "ravener" });
+
+function ghoulOf({ legacySkirt = false, variant = null }) {
   const M = materials();
   const F = fabrics();
-  const rig = skeleton({ eye: () => M.hostileEye, legacySkirt: true });
+  const rig = skeleton({ eye: () => M.hostileEye, legacySkirt, variant });
   inHand(rig, "R", { rx: 0.2 }).add(cleaver(rig, M, F));
 
   const style = {
@@ -389,10 +401,18 @@ export function ghoul() {
  * the bow with nothing nocked; the attack is the shot (clips.js `boneShot`), a draw held for the
  * server's wind-up; it dies as the ghoul does, bow in hand, the eyes out by the last frame.
  */
-export function boneArcher() {
+export const boneArcher = () => boneArcherOf();
+
+/** The Ashen Archer (FS-C8VM7 §H R45): the Bone Archer's look in ash-grey bone and soot rags. */
+export const ashenArcher = () => boneArcherOf("ashen_archer");
+
+/** The Wight Archer (R45): the Bone Archer's look in a wight's cold grey and black rags. */
+export const wightArcher = () => boneArcherOf("wight_archer");
+
+function boneArcherOf(variant = null) {
   const M = materials();
   const F = fabrics();
-  const rig = skeleton({ eye: fadingEyes });
+  const rig = skeleton({ eye: fadingEyes, variant });
   bowInHand(rig, M, F);
 
   const style = {
@@ -440,9 +460,23 @@ function trollHead(rig, mat, F, M) {
     attach(rig, "jaw", new THREE.ConeGeometry(r * 0.13 * H, r * 0.55 * H, 6), F.bone, [sx * r * 0.5, jy + 0.004, jz + r * 0.78], { rx: -0.25 });
 }
 
-export function troll() {
+export const troll = () => trollOf();
+
+/** The Cave Troll (FS-C8VM7 §H R45): the troll's look in cold cave-rock grey. */
+export const caveTroll = () => trollOf("cave_troll");
+
+/** The Blood Troll (R45): the troll's look in a brown-black hide with a blood cast. */
+export const bloodTroll = () => trollOf("blood_troll");
+
+/**
+ * The troll, or a tiered variant of it in its own tones (variantTones.js). The troll itself keeps
+ * the old opposite-thigh weighting of its fur (clearance.js KNOWN_CLIPPING), so its pixels do not
+ * move; a variant is a new sheet, so its fur is skinned to its own thighs and its legs drawn in
+ * under it.
+ */
+function trollOf(variant = null) {
   const M = materials();
-  const F = fabrics();
+  const F = variant ? retonedFabrics(variantTones(mix, shade, variant)) : fabrics();
   const rig = createRig(2.7, {
     hunch: 1,
     jaw: true,
@@ -473,11 +507,12 @@ export function troll() {
   torso(rig, F.troll, { hump: 0.022, neckW: 1.35 });
   neck(rig, F.troll, { w: 1.55 });
   arms(rig, F.troll, { bulk: 1.15 });
-  legs(rig, F.troll);
+  const furSkirt = { top: hy + 0.02, bottom: hy - 0.19, rTop: [0.128, 0.104], rBottom: [0.15, 0.13], legFollow: 0.55, panels: true, ragged: { teeth: 12, depth: 0.06, seed: 8 }, mirrored: !variant };
+  legs(rig, F.troll, variant ? { under: furSkirt } : {});
   hands(rig, F.troll, { size: 1.45, claws: F.bone });
   bareFeet(rig, F.troll, { size: 1.35, claws: F.bone });
   trollHead(rig, F.troll, F, M);
-  skirt(rig, F.fur, { top: hy + 0.02, bottom: hy - 0.19, rTop: [0.128, 0.104], rBottom: [0.15, 0.13], legFollow: 0.55, panels: true, ragged: { teeth: 12, depth: 0.06, seed: 8 }, mirrored: true });
+  skirt(rig, F.fur, furSkirt);
   belt(rig, F.leatherDark, F.bone, { r: [0.13, 0.108], dy: 0.03 });
   // a necklace of bones
   const [, ny] = J(rig, "neck");
@@ -542,6 +577,20 @@ export const CAST = [
   // the Spire's own dead (FS-M8CSE §H R37, R38): the Forest's two re-toned, in the group the run already holds
   { sheet: "creature_barrow_thrall_base", group: "creatures", fn: "barrowThrall", module: "forlorn", build: barrowThrall },
   { sheet: "creature_spire_wraith_base", group: "creatures", fn: "spireWraith", module: "forlorn", build: spireWraith },
+  // The old families' tiered variants (FS-C8VM7 §H R45, §G R41): each its family's look baked in a
+  // deeper shade with the step (variantTones.js), each in an on-demand group of its own named by
+  // its variant id, so no existing atlas reflows
+  { sheet: "creature_ghast_base", group: "ghast", fn: "ghast", build: ghast },
+  { sheet: "creature_ravener_base", group: "ravener", fn: "ravener", build: ravener },
+  { sheet: "creature_ashen_archer_base", group: "ashen_archer", fn: "ashenArcher", build: ashenArcher },
+  { sheet: "creature_wight_archer_base", group: "wight_archer", fn: "wightArcher", build: wightArcher },
+  { sheet: "creature_cave_troll_base", group: "cave_troll", fn: "caveTroll", build: caveTroll },
+  { sheet: "creature_blood_troll_base", group: "blood_troll", fn: "bloodTroll", build: bloodTroll },
+  { sheet: "creature_plague_thrall_base", group: "plague_thrall", fn: "plagueThrall", module: "forlorn", build: plagueThrall },
+  { sheet: "creature_blightborn_base", group: "blightborn", fn: "blightborn", module: "forlorn", build: blightborn },
+  { sheet: "creature_shade_base", group: "shade", fn: "shade", module: "forlorn", build: shadeWraith },
+  { sheet: "creature_phantom_base", group: "phantom", fn: "phantom", module: "forlorn", build: phantom },
+  { sheet: "creature_banshee_base", group: "banshee", fn: "banshee", module: "forlorn", build: banshee },
   // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
   { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
   { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },

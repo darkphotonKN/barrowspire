@@ -12,15 +12,23 @@ export const shippedManifest = (): ArtManifest =>
 
 /**
  * The shipped manifest's resident pages (FS-C4JWH §A R3), written out rather than derived, so a
- * test that compares against them checks the table: the four class groups and the 14 small ones.
+ * test that compares against them checks the table: the four class groups and the 14 small ones,
+ * and the tiered roster's variant groups (FS-C8VM7 §H), resident by §A R3 only until the client's
+ * table marks them floor-scoped (FS-C8VM7 §G R41, ADR-0081; I-C8VM7-7, I-C8VM7-8 take them out).
  */
 export const RESIDENT_ART_PAGES = [
   "archer-0",
   "architecture-0",
+  "ashen_archer-0",
+  "banshee-0",
+  "blightborn-0",
+  "blood_troll-0",
   "building-0",
+  "cave_troll-0",
   "containers-0",
   "forest-0",
   "fx-0",
+  "ghast-0",
   "ground-0",
   "hall-0",
   "icons-0",
@@ -28,10 +36,15 @@ export const RESIDENT_ART_PAGES = [
   "knight-0",
   "mercenary-0",
   "nature-0",
+  "phantom-0",
+  "plague_thrall-0",
   "props-0",
+  "ravener-0",
+  "shade-0",
   "spire-0",
   "tower-0",
   "town-0",
+  "wight_archer-0",
   "wizard-0",
 ] as const;
 
