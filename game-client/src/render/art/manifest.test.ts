@@ -1749,6 +1749,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["creature_goblin_reaver_shield_base", "goblin_reaver", "goblin.js#goblinReaverShield", "creature_goblin_base", FODDER],
       ["creature_goblin_warchief_base", "goblin_warchief", "goblin.js#goblinWarchief", "creature_goblin_base", FODDER],
       ["creature_goblin_warchief_shield_base", "goblin_warchief", "goblin.js#goblinWarchiefShield", "creature_goblin_base", FODDER],
+      ["creature_ogre_base", "ogre", "ogre.js#ogre", "creature_ogre_base", BRUTE],
+      ["creature_ogre_mauler_base", "ogre_mauler", "ogre.js#ogreMauler", "creature_ogre_base", BRUTE],
+      ["creature_ogre_tyrant_base", "ogre_tyrant", "ogre.js#ogreTyrant", "creature_ogre_base", BRUTE],
     ];
     /** The standard clips every roster sheet bakes (characters/clips.js ANIMATIONS). */
     const STANDARD: Record<string, [number, number, boolean]> = {
@@ -1804,6 +1807,12 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         expect(crown).toBe(sheetOf(family).crown);
       },
     );
+
+    it("stands the ogre over the troll, at the top of the brute band (R46, §F R34)", () => {
+      const ogre = sheetOf("creature_ogre_base").crown as number;
+      expect(ogre).toBeGreaterThan(sheetOf("creature_troll_base").crown as number);
+      expect(ogre / playerCrown).toBeGreaterThanOrEqual(1.45);
+    });
 
     it("stands the goblin below a ghoul's height (R46)", () => {
       expect(sheetOf("creature_goblin_base").crown).toBeLessThan(

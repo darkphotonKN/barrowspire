@@ -79,6 +79,11 @@ export const LINEUPS = [
       "creature_goblin_warchief_shield_base",
     ],
   },
+  {
+    // the ogre beside the troll it stands over, and its steps
+    file: "contact-ogre-2x.png",
+    sheets: ["creature_troll_base", "creature_ogre_base", "creature_ogre_mauler_base", "creature_ogre_tyrant_base"],
+  },
 ];
 
 /** The sheets each lineup names, from `sheets`; a lineup missing one is left out. */

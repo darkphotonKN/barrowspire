@@ -167,8 +167,11 @@ function lengthenArm(rig, side, { upper = 1, fore = 1 }) {
   for (const [name, b] of Object.entries(rig.bones)) rig.bind[name].setFromMatrixPosition(b.matrixWorld);
 }
 
-/** One arm, shoulder to wrist, as `arms()` builds it, with its own thickness (`r`) and swell. */
-function arm(rig, s, material, { r = 1, bulk = 1, fore = 1 } = {}) {
+/**
+ * One arm, shoulder to wrist, as `arms()` builds it, with its own thickness (`r`) and swell.
+ * Shared with the ogre, whose throwing arm is the heavier.
+ */
+export function arm(rig, s, material, { r = 1, bulk = 1, fore = 1 } = {}) {
   const ar = rig.p.armR * r;
   const [x, uy] = J(rig, `upperArm${s}`);
   const [, fy] = J(rig, `foreArm${s}`);

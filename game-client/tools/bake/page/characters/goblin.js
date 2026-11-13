@@ -20,10 +20,10 @@ import * as THREE from "three";
 import { materials } from "../materials.js";
 import { mix, shade } from "../palette.js";
 import { smoothstep, voronoi } from "../noise.js";
-import { attach, createRig, ellipsoid, jointAt as J, rigidTube } from "./rig.js";
+import { attach, createRig, ellipsoid, jointAt as J } from "./rig.js";
 import { arms, bareFeet, belt, hands, legs, neck, overTorso, skirt, skirtBones, torso } from "./anatomy.js";
 import { add, deathClip, idleCycle, pose, walkCycle } from "./clips.js";
-import { fabrics, mat, paint, pf, pn } from "./fabrics.js";
+import { mat, paint, pf, pn } from "./fabrics.js";
 import { inHand, limbGuard } from "./gear.js";
 import { fadingEyes } from "./forlorn.js";
 import { toneOf } from "./variantTones.js";
@@ -67,7 +67,7 @@ export const GOBLIN_STEPS = {
 function wartyHide(tone, seed) {
   return paint(
     (x, y) => {
-      const v = voronoi(x / 6, y / 6, seed, 128 / 6 >= 1 ? Math.floor(128 / 6) : 1);
+      const v = voronoi(x / 8, y / 8, seed, 16);
       const wart = (1 - smoothstep(0.08, 0.3, v.f1)) * (v.id > 0.72 ? 1 : 0);
       const crease = 1 - smoothstep(0.0, 0.08, v.f2 - v.f1);
       const mottle = pf(x, y, 32, seed + 2);
@@ -241,7 +241,6 @@ function buckler(rig, M) {
  */
 function goblinOf({ shield = false, step = "goblin" } = {}) {
   const M = materials();
-  const F = fabrics();
   const G = goblinFabrics(step);
   const rig = createRig(1.96, {
     hunch: 1,
@@ -303,7 +302,6 @@ function goblinOf({ shield = false, step = "goblin" } = {}) {
   for (const [s] of sides) limbGuard(rig, `foreArm${s}`, wy + 0.025, fy - 0.03, [0.028, 0.026], G.leather);
   inHand(rig, "R", { rx: 0.15 }).add(crudeBlade(rig, M, G));
   if (shield) buckler(rig, M);
-  void F;
 
   // the carry: hunched, the blade low and forward, the buckler held before the body
   const hold = pose({

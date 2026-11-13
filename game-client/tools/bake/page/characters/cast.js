@@ -63,6 +63,7 @@ import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { banshee, barrowThrall, blightborn, fadingEyes, ghost, phantom, plagueThrall, shade as shadeWraith, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 import * as goblins from "./goblin.js";
+import { ogre, ogreMauler, ogreTyrant } from "./ogre.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -602,6 +603,10 @@ export const CAST = [
   { sheet: "creature_goblin_reaver_shield_base", group: "goblin_reaver", fn: "goblinReaverShield", module: "goblin", build: goblins.goblinReaverShield },
   { sheet: "creature_goblin_warchief_base", group: "goblin_warchief", fn: "goblinWarchief", module: "goblin", build: goblins.goblinWarchief },
   { sheet: "creature_goblin_warchief_shield_base", group: "goblin_warchief", fn: "goblinWarchiefShield", module: "goblin", build: goblins.goblinWarchiefShield },
+  // The ogre family (R46), a new rig at the top of the brute band, each variant in its own group
+  { sheet: "creature_ogre_base", group: "ogre", fn: "ogre", module: "ogre", build: ogre },
+  { sheet: "creature_ogre_mauler_base", group: "ogre_mauler", fn: "ogreMauler", module: "ogre", build: ogreMauler },
+  { sheet: "creature_ogre_tyrant_base", group: "ogre_tyrant", fn: "ogreTyrant", module: "ogre", build: ogreTyrant },
   // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
   { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
   { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },
