@@ -3,7 +3,7 @@ id: I-TQZ5J-2
 status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-1]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J slice 2: the interface sounds move into the UI scene"
 ---
 Implements FS-TQZ5J §Requirements E (R22), R12

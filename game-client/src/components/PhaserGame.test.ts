@@ -183,7 +183,8 @@ describe("the game bridge's UI scene and UI bridge (FS-TQZ5J R1, R7, R8)", () =>
     const game = (await builtGame()) as unknown as { registry: { get(key: string): unknown }; asked: string[] };
     const { uiBridgeOf } = await import("@/ui/uiBridge");
 
-    uiBridgeOf(game.registry)!.report({ world: "hub" });
+    const shut = { menu: false, letter: false, party: false, inventory: false, character: false };
+    uiBridgeOf(game.registry)!.report({ world: "hub", windows: () => shut });
 
     expect(game.asked).toContain("UIScene");
   });

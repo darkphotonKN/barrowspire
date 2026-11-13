@@ -4,9 +4,11 @@
  * player path runs through, and the player (S23).
  *
  * The rule and the player are Phaser-free, behind {@link UiSoundStage}; {@link sceneUiSoundStage}
- * is the game they act on, as `WorldMusic` is behind `sceneMusicStage`. Each scene makes its
- * {@link UiSounds} in `create` from its own `sound` and the shared store, reports its window
- * state, and runs each player input that can open or close a window through `act` (S9).
+ * is the game they act on, as `WorldMusic` is behind `sceneMusicStage`. The UI scene makes the
+ * game's one {@link UiSounds} in `create` from its `sound` and the shared store, and lends it to its
+ * game's UI bridge (FS-TQZ5J R22, `src/ui/uiSceneSounds.ts`); each world scene reports its window
+ * state there and runs each player input that can open or close a window through the bridge's
+ * `act` (S9; FS-TQZ5J R12).
  */
 
 import { readSfxLevel, sfxGain, type SfxSettingStore } from "./sfxSetting";

@@ -153,7 +153,7 @@ import {
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { reportWorld } from "@/ui/uiBridge";
+import { NO_UI, reportWorld, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 
 /**
@@ -181,8 +181,6 @@ import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { browserMusicStore } from "@/audio/musicSetting";
-import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
-import { browserSfxStore } from "@/audio/sfxSetting";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 import { lentFullscreen } from "@/ui/gameFullscreen";
 
@@ -830,8 +828,13 @@ export class HubScene extends Phaser.Scene {
    * which is this game's, across its stops, as the fade-out outlives the stop (R3).
    */
   private music?: WorldMusic;
-  /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
-  private sounds?: UiSounds;
+  /**
+   * What the player's actions that can open or close a window, and the minimap's step, run through:
+   * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
+   * game's, from create on, before anything that hears a player; until then, and in a game lent no
+   * bridge, each action runs as it is. Nothing the game does on its own comes through here (S4).
+   */
+  private ui: WorldUi = NO_UI;
   /** Cancels the music's end listener of a start that has not reached create; create's own takes over. */
   private cancelLoadingEnd?: () => void;
 
@@ -869,8 +872,9 @@ export class HubScene extends Phaser.Scene {
     // an arrival is dark before anything of the town is made: the world's fade-in opens on the
     // dark, and the town's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "hub" }), { built: false });
-    // the UI scene comes up over this world, and sleeps when it stops (FS-TQZ5J R3, R9)
-    reportWorld(this, "hub");
+    // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
+    // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
+    this.ui = reportWorld(this, "hub", () => this.windows());
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
@@ -899,7 +903,6 @@ export class HubScene extends Phaser.Scene {
         })
       : undefined;
     if (!this.groundLayer) this.drawGround();
-    this.mountUiSounds();
     this.bindInput();
     this.bindMinimapKey();
     this.bindMinimapPointer();
@@ -935,7 +938,7 @@ export class HubScene extends Phaser.Scene {
       this,
       () => this.refusesParty(),
       () => this.closeLetter(),
-      this.sounds,
+      this.ui,
     );
     // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
     // (FS-R82NV R32, R33)
@@ -953,7 +956,7 @@ export class HubScene extends Phaser.Scene {
       () => this.refusesLetter(),
       () => this.characterLevel,
       () => this.clearForLetter(),
-      this.sounds,
+      this.ui,
     );
     this.watchGoldTakes();
     this.mountCorner();
@@ -979,17 +982,8 @@ export class HubScene extends Phaser.Scene {
     this.openHeldMessages();
   }
 
-  /**
-   * The interface sounds (FS-WDM0X S23): the player on the game's sound, the level this browser
-   * kept, and the town's windows as the rule reads them. Each player input that can open or close a
-   * window runs through its wrapper (`act`), here and in the modules it is handed to (S9).
-   */
-  private mountUiSounds(): void {
-    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
-  }
-
-  /** Which of the town's windows are open now (FS-WDM0X S8): the menu's slot, the letter panel, Party, Inventory, Character. */
-  private windowState(): WindowState {
+  /** Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the menu's slot, the letter panel, Party, Inventory, Character. */
+  private windows(): WorldWindows {
     return {
       menu: !!this.menu,
       letter: this.mailbox?.isOpen() ?? false,
@@ -997,15 +991,6 @@ export class HubScene extends Phaser.Scene {
       inventory: this.gear?.isInventoryOpen() ?? false,
       character: this.gear?.isCharacterOpen() ?? false,
     };
-  }
-
-  /**
-   * A player's action, through the interface sounds' wrapper (FS-WDM0X S9): the one effect its
-   * change of window plays. Before create made the player, it runs as it is. Nothing the game does
-   * on its own comes through here (S4).
-   */
-  private act<T>(run: () => T): T {
-    return this.sounds ? this.sounds.act(run) : run();
   }
 
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
@@ -1021,11 +1006,11 @@ export class HubScene extends Phaser.Scene {
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.act(() => this.pressMenuIcon()) },
-        { icon: "inventory", press: () => this.act(() => this.toggleGear()) },
-        { icon: "character", press: () => this.act(() => this.toggleCharacter()) },
+        { icon: "menu", press: () => this.ui.act(() => this.pressMenuIcon()) },
+        { icon: "inventory", press: () => this.ui.act(() => this.toggleGear()) },
+        { icon: "character", press: () => this.ui.act(() => this.toggleCharacter()) },
         // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
-        { icon: "party", press: () => this.act(() => this.partyPanel?.toggle()) },
+        { icon: "party", press: () => this.ui.act(() => this.partyPanel?.toggle()) },
       ],
     });
   }
@@ -1547,7 +1532,7 @@ export class HubScene extends Phaser.Scene {
     ];
     const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
     // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2)
-    if (nearest === "stash") this.act(() => this.gear?.openStash());
+    if (nearest === "stash") this.ui.act(() => this.gear?.openStash());
     else if (nearest) this.openDialogue(nearest);
   }
 
@@ -2215,7 +2200,7 @@ export class HubScene extends Phaser.Scene {
         // the town's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
         name: minimapPlaceName({ world: "hub" }),
         // only M and the icon step it, both the player's (FS-WDM0X S7)
-        stepped: () => this.sounds?.play("map_mode_switch"),
+        stepped: () => this.ui.play("map_mode_switch"),
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
@@ -3089,7 +3074,7 @@ export class HubScene extends Phaser.Scene {
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     if (esc || this.mailbox?.isOpen() || !this.menu) {
-      if (esc) this.act(() => this.pressEscape());
+      if (esc) this.ui.act(() => this.pressEscape());
       return;
     }
 
@@ -3151,8 +3136,8 @@ export class HubScene extends Phaser.Scene {
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (pressed) this.act(() => this.toggleGear());
-    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.act(() => this.toggleCharacter());
+    if (pressed) this.ui.act(() => this.toggleGear());
+    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.ui.act(() => this.toggleCharacter());
   }
 
   /** Whether the menu or a dialogue owns the keys: no panel opens or closes. */
@@ -3198,7 +3183,7 @@ export class HubScene extends Phaser.Scene {
       this.art,
       WorldType.Hub,
       (x, y) => this.partyPanel?.covers(x, y) ?? false,
-      this.sounds,
+      this.ui,
     );
     const gear: HubGear = new HubGear(
       overlay,
@@ -3227,17 +3212,17 @@ export class HubScene extends Phaser.Scene {
     this.closeWindows();
     // every row and the × the player's, through the interface sounds' wrapper (FS-WDM0X S9)
     const actions: Record<HubMenuChoice["id"], () => void> = {
-      change: () => this.act(() => this.changeCharacter()),
-      leave: () => this.act(() => this.leaveQueue()),
-      options: () => this.act(() => this.openOptions()),
-      back: () => this.act(() => this.closeMenu()),
+      change: () => this.ui.act(() => this.changeCharacter()),
+      leave: () => this.ui.act(() => this.leaveQueue()),
+      options: () => this.ui.act(() => this.openOptions()),
+      back: () => this.ui.act(() => this.closeMenu()),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {
       choices: hubMenuChoices({ queued: this.queued }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
-      close: () => this.act(() => this.closeMenu()),
+      close: () => this.ui.act(() => this.closeMenu()),
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: CHOICE_HIT,
       tones: MENU_TONES,
@@ -3265,7 +3250,7 @@ export class HubScene extends Phaser.Scene {
       tones: MENU_TONES,
       // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
       back: () =>
-        this.act(() => {
+        this.ui.act(() => {
           this.closeMenu();
           this.openMenu();
         }),

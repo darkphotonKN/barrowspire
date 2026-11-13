@@ -58,8 +58,6 @@ import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
-import { browserSfxStore } from "@/audio/sfxSetting";
 import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
@@ -69,7 +67,7 @@ import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { reportWorld } from "@/ui/uiBridge";
+import { NO_UI, reportWorld, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
@@ -701,8 +699,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * in every world outside the town. The ability card and the leave button stand above it.
    */
   private corner?: HudCorner;
-  /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
-  private sounds?: UiSounds;
+  /**
+   * What the player's actions that can open or close a window, and the minimap's step, run through:
+   * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
+   * game's, from create on, before anything that hears a player; until then, and in a game lent no
+   * bridge, each action runs as it is. Nothing the game does on its own comes through here (S4).
+   */
+  private ui: WorldUi = NO_UI;
   /**
    * The tower's music (FS-28DDG § Change: The tower's music on every floor of a run, W2): made with
    * the first run, and kept with this scene instance, which is this game's, across its stops, as
@@ -3212,16 +3215,16 @@ export class BarrowspireScene extends Phaser.Scene {
     // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
     // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.dark();
-    // the UI scene comes up over this world, and sleeps when it stops (FS-TQZ5J R3, R9)
-    reportWorld(this, "run");
+    // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
+    // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
+    this.ui = reportWorld(this, "run", () => this.windows());
     // Connect via SocketManager
     this.connectToServer();
-    this.mountUiSounds();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
-    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.sounds);
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.ui);
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
@@ -3292,19 +3295,10 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The interface sounds (FS-WDM0X S23): the player on the game's sound, the level this browser
-   * kept, and the run's windows as the rule reads them. Each player input that can open or close a
-   * window runs through its wrapper (`act`), here and in the modules it is handed to (S9).
-   */
-  private mountUiSounds(): void {
-    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
-  }
-
-  /**
-   * Which of the run's windows are open now (FS-WDM0X S8): the menu's slot (the menu, OPTIONS or
+   * Which of the run's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the menu's slot (the menu, OPTIONS or
    * the Fall confirm), Party, Inventory, Character; a run has no letter panel.
    */
-  private windowState(): WindowState {
+  private windows(): WorldWindows {
     return {
       menu: !!this.menu,
       letter: false,
@@ -3315,15 +3309,6 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * A player's action, through the interface sounds' wrapper (FS-WDM0X S9): the one effect its
-   * change of window plays. Before create made the player, it runs as it is. Nothing the game does
-   * on its own comes through here (S4): the menu yielding, the run's end, a climb, the scene's end.
-   */
-  private act<T>(run: () => T): T {
-    return this.sounds ? this.sounds.act(run) : run();
-  }
-
-  /**
    * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
    * path, I or B, C, T; the Mailbox greyed, the mailbox being the town's (R9). The overlay's
    * panels stop above it, so it answers while they are open (R11).
@@ -3331,23 +3316,23 @@ export class BarrowspireScene extends Phaser.Scene {
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.act(() => this.pressMenuIcon()) },
+        { icon: "menu", press: () => this.ui.act(() => this.pressMenuIcon()) },
         {
           icon: "inventory",
           press: () =>
-            this.act(() => {
+            this.ui.act(() => {
               if (!this.menu) this.toggleInventory();
             }),
         },
         {
           icon: "character",
           press: () =>
-            this.act(() => {
+            this.ui.act(() => {
               if (!this.menu) this.toggleCharacter();
             }),
         },
         // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
-        { icon: "party", press: () => this.act(() => this.partyPanel?.toggle()) },
+        { icon: "party", press: () => this.ui.act(() => this.partyPanel?.toggle()) },
         { icon: "mail", greyed: true },
       ],
     });
@@ -3459,7 +3444,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.art,
       WorldType.Run,
       (x, y) => this.partyPanel?.covers(x, y) ?? false,
-      this.sounds,
+      this.ui,
     );
     return new EquipmentHud(
       overlay,
@@ -3525,14 +3510,14 @@ export class BarrowspireScene extends Phaser.Scene {
     // not while the menu is open (R6); each through the interface sounds' wrapper (FS-WDM0X S9)
     for (const key of ["keydown-I", "keydown-B"]) {
       this.input.keyboard?.on(key, () =>
-        this.act(() => {
+        this.ui.act(() => {
           if (this.menu) return;
           this.toggleInventory();
         }),
       );
     }
     this.input.keyboard?.on("keydown-C", () =>
-      this.act(() => {
+      this.ui.act(() => {
         if (this.menu) return;
         this.toggleCharacter();
       }),
@@ -3546,7 +3531,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Q 鍵關閉任何打開的彈窗 (the gear overlay's close through the interface sounds' wrapper, FS-WDM0X S9)
     this.input.keyboard?.on("keydown-Q", () =>
-      this.act(() => {
+      this.ui.act(() => {
         if (this.menu) return;
         if (this.equipment?.hide()) return;
         this.containerView.close();
@@ -4217,7 +4202,7 @@ export class BarrowspireScene extends Phaser.Scene {
     minimap.setMode(this.minimapMode);
     this.placeTopRightColumn();
     // only M and the icon step it, both the player's (FS-WDM0X S7)
-    this.sounds?.play("map_mode_switch");
+    this.ui.play("map_mode_switch");
   }
 
   /**
@@ -5632,7 +5617,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
     if (esc) {
       // the player's, through the interface sounds' wrapper (FS-WDM0X S9)
-      this.act(() => this.pressEscape());
+      this.ui.act(() => this.pressEscape());
       return;
     }
     if (this.runEnded || !this.menu) return;
@@ -5694,13 +5679,13 @@ export class BarrowspireScene extends Phaser.Scene {
     // keep the slot filled and play nothing, Leave the barrow closes it (S5)
     this.showMenuPanel(undefined, runMenuChoices(state), {
       actions: {
-        fall: () => this.act(() => this.openFallConfirm()),
+        fall: () => this.ui.act(() => this.openFallConfirm()),
         leave: () =>
-          this.act(() => {
+          this.ui.act(() => {
             this.leaveTheBarrow();
             this.closeMenu();
           }),
-        options: () => this.act(() => this.openOptions()),
+        options: () => this.ui.act(() => this.openOptions()),
       },
       enabled: { leave: () => !this.leavePending },
     });
@@ -5722,7 +5707,7 @@ export class BarrowspireScene extends Phaser.Scene {
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
       // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
-      back: () => this.act(() => this.openMenu()),
+      back: () => this.ui.act(() => this.openMenu()),
       // the run's playing music, which applies the level at once; before create made it, the level
       // alone (FS-28DDG § Change: The tower's music on every floor of a run, W6)
       music: this.music ?? storedMusicLevel(browserMusicStore),
@@ -5741,7 +5726,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private openFallConfirm(): void {
     const state = this.menuState();
     this.showMenuPanel(FALL_CONFIRM.line, FALL_CONFIRM.choices, {
-      actions: { "fall-now": () => this.act(() => this.fallWhereYouStand()) },
+      actions: { "fall-now": () => this.ui.act(() => this.fallWhereYouStand()) },
       enabled: { "fall-now": () => !this.fallPending },
     });
     this.menuFor = state;
@@ -5799,7 +5784,7 @@ export class BarrowspireScene extends Phaser.Scene {
       actions: spec.actions,
       enabled: spec.enabled,
       // Back, Not yet, Esc and the ×, the menu's and its Fall confirm's: the player's (FS-WDM0X S5, S9)
-      close: () => this.act(() => this.closeMenu()),
+      close: () => this.ui.act(() => this.closeMenu()),
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,

@@ -58,8 +58,6 @@ import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
-import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
-import { browserSfxStore } from "@/audio/sfxSetting";
 import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -70,7 +68,7 @@ import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { reportWorld } from "@/ui/uiBridge";
+import { NO_UI, reportWorld, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -272,8 +270,13 @@ export class FieldScene extends Phaser.Scene {
   private abilityHud?: AbilityHud;
   /** The corner row (FS-3EBCA): Menu, Inventory, Character, Party and the Mailbox greyed; the card above it. */
   private corner?: HudCorner;
-  /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
-  private sounds?: UiSounds;
+  /**
+   * What the player's actions that can open or close a window, and the minimap's step, run through:
+   * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
+   * game's, from create on, before anything that hears a player; until then, and in a game lent no
+   * bridge, each action runs as it is. Nothing the game does on its own comes through here (S4).
+   */
+  private ui: WorldUi = NO_UI;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
   /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
@@ -314,8 +317,9 @@ export class FieldScene extends Phaser.Scene {
     // an arrival is dark before anything of the field is made: the world's fade-in opens on the
     // dark, and the field's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "field", field: this.field }), { built: false });
-    // the UI scene comes up over this world, and sleeps when it stops (FS-TQZ5J R3, R9)
-    reportWorld(this, "field");
+    // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
+    // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
+    this.ui = reportWorld(this, "field", () => this.windows());
     this.look = fieldLook(this.field);
     this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
     const { width, height } = this.size;
@@ -329,7 +333,6 @@ export class FieldScene extends Phaser.Scene {
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
-    this.mountUiSounds();
     this.bindInput();
 
     // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
@@ -367,7 +370,7 @@ export class FieldScene extends Phaser.Scene {
     this.listen();
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
-    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.sounds);
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.ui);
     // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
@@ -380,17 +383,8 @@ export class FieldScene extends Phaser.Scene {
     onSceneEnd(this, (end) => this.release(end));
   }
 
-  /**
-   * The interface sounds (FS-WDM0X S23): the player on the game's sound, the level this browser
-   * kept, and the field's windows as the rule reads them. Each player input that can open or close a
-   * window runs through its wrapper (`act`), here and in the modules it is handed to (S9).
-   */
-  private mountUiSounds(): void {
-    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
-  }
-
-  /** Which of the field's windows are open now (FS-WDM0X S8): the menu's slot, Party, Inventory, Character; a field has no letter panel. */
-  private windowState(): WindowState {
+  /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the menu's slot, Party, Inventory, Character; a field has no letter panel. */
+  private windows(): WorldWindows {
     return {
       menu: !!this.menu,
       letter: false,
@@ -401,26 +395,17 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * A player's action, through the interface sounds' wrapper (FS-WDM0X S9): the one effect its
-   * change of window plays. Before create made the player, it runs as it is. Nothing the game does
-   * on its own comes through here (S4).
-   */
-  private act<T>(run: () => T): T {
-    return this.sounds ? this.sounds.act(run) : run();
-  }
-
-  /**
    * The corner row: the Menu icon opens the menu (R6), the others each the key's own path; the
    * Mailbox greyed, it is the town's (FS-3EBCA).
    */
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.act(() => this.pressMenuIcon()) },
-        { icon: "inventory", press: () => this.act(() => this.toggleGear()) },
-        { icon: "character", press: () => this.act(() => this.toggleCharacter()) },
+        { icon: "menu", press: () => this.ui.act(() => this.pressMenuIcon()) },
+        { icon: "inventory", press: () => this.ui.act(() => this.toggleGear()) },
+        { icon: "character", press: () => this.ui.act(() => this.toggleCharacter()) },
         // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
-        { icon: "party", press: () => this.act(() => this.partyPanel?.toggle()) },
+        { icon: "party", press: () => this.ui.act(() => this.partyPanel?.toggle()) },
         { icon: "mail", greyed: true },
       ],
     });
@@ -592,7 +577,7 @@ export class FieldScene extends Phaser.Scene {
       this.art,
       WorldType.Field,
       (x, y) => this.partyPanel?.covers(x, y) ?? false,
-      this.sounds,
+      this.ui,
     );
     return new EquipmentHud(
       overlay,
@@ -652,16 +637,16 @@ export class FieldScene extends Phaser.Scene {
     // only the rows the field offers: no queue to leave (FS-X2F2H R20)
     // every row and the × the player's, through the interface sounds' wrapper (FS-WDM0X S9)
     const actions: Partial<Record<HubMenuChoice["id"], () => void>> = {
-      change: () => this.act(() => this.changeCharacter()),
-      options: () => this.act(() => this.openOptions()),
-      back: () => this.act(() => this.closeMenu()),
+      change: () => this.ui.act(() => this.changeCharacter()),
+      options: () => this.ui.act(() => this.openOptions()),
+      back: () => this.ui.act(() => this.closeMenu()),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {
       choices: hubMenuChoices({ queued: false }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
-      close: () => this.act(() => this.closeMenu()),
+      close: () => this.ui.act(() => this.closeMenu()),
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
@@ -686,7 +671,7 @@ export class FieldScene extends Phaser.Scene {
       tones: MENU_TONES,
       // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
       back: () =>
-        this.act(() => {
+        this.ui.act(() => {
           this.closeMenu();
           this.openMenu();
         }),
@@ -731,14 +716,14 @@ export class FieldScene extends Phaser.Scene {
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
     // the keys that open or close a window, each through the interface sounds' wrapper (FS-WDM0X S9)
-    for (const key of ["keydown-I", "keydown-B"]) this.input.keyboard?.on(key, () => this.act(() => this.toggleGear()));
-    this.input.keyboard?.on("keydown-C", () => this.act(() => this.toggleCharacter()));
+    for (const key of ["keydown-I", "keydown-B"]) this.input.keyboard?.on(key, () => this.ui.act(() => this.toggleGear()));
+    this.input.keyboard?.on("keydown-C", () => this.ui.act(() => this.toggleCharacter()));
     this.input.keyboard?.on("keydown-Q", () =>
-      this.act(() => {
+      this.ui.act(() => {
         if (!this.menu) this.equipment?.hide();
       }),
     );
-    this.input.keyboard?.on("keydown-ESC", () => this.act(() => this.pressEscape()));
+    this.input.keyboard?.on("keydown-ESC", () => this.ui.act(() => this.pressEscape()));
     this.input.keyboard?.on("keydown-F", () => {
       if (!this.menu) this.satchel?.lootFirst();
     });
@@ -999,7 +984,7 @@ export class FieldScene extends Phaser.Scene {
         // the field's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
         name: minimapPlaceName({ world: "field", field: this.field }),
         // only M and the icon step it, both the player's (FS-WDM0X S7)
-        stepped: () => this.sounds?.play("map_mode_switch"),
+        stepped: () => this.ui.play("map_mode_switch"),
       });
       // this character's ground in this field, as this browser kept it (FS-P0HSP §D.25)
       const owner = useGameStore.getState().activeCharacterId;
