@@ -18,6 +18,7 @@ import { WorldEnteredPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { bootInProgress } from "./bootGate";
 import { releaseGame } from "./releaseGame";
+import { gameAudio } from "./gameAudio";
 import { keepTab, takeFocusOnPress } from "./gameFocus";
 import GameFrame from "./GameFrame";
 import { installCrispText } from "@/render/crispText";
@@ -72,6 +73,9 @@ export default function PhaserGame() {
       // a DOM layer over the canvas, for the chat input's real text field: the only way the
       // player's input method (Chinese and the rest) reaches the game (FS-WJGFJ R26)
       dom: { createContainer: true },
+      // the page's one audio context, which a destroyed game suspends rather than closes, so
+      // leaving /game rejects no pending resume (gameAudio.ts)
+      audio: gameAudio(),
       // Soot, not umber: Boot and Preload are the gate into the menus, which wear the site's
       // Bone & Soot. The hub and the run set their own ground.
       backgroundColor: BARROW.menuSoot,
