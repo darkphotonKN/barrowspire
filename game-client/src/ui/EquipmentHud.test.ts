@@ -305,4 +305,19 @@ describe("EquipmentHud, the character panel apart (FS-HRH2J § Change C1–C10)"
     expect(p.isVisible()).toBe(false);
     expect(equipment.hide()).toBe(false);
   });
+
+  // the scene's window state for the interface sounds (FS-WDM0X S8): which panel, not only whether either
+  it("should say which of the two is open, each apart", () => {
+    const { equipment } = hud();
+    const open = () => [equipment.isInventoryOpen(), equipment.isCharacterOpen()];
+    expect(open()).toEqual([false, false]);
+    equipment.toggleCharacter();
+    expect(open()).toEqual([false, true]);
+    equipment.toggle();
+    expect(open()).toEqual([true, true]);
+    equipment.toggleCharacter();
+    expect(open()).toEqual([true, false]);
+    equipment.hide();
+    expect(open()).toEqual([false, false]);
+  });
 });

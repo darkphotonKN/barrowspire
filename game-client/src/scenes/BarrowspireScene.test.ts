@@ -1,5 +1,9 @@
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { resetHeldForTests } from "@/audio/sfxSetting";
+
+// node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
+afterEach(() => resetHeldForTests());
 
 /** Phaser's scene events are an eventemitter3 emitter: `once(event, fn, context)`. */
 interface Emitter {
@@ -25,6 +29,12 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
 vi.mock("@/ui/panelFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/ui/panelFrame")>();
   return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
+});
+
+// The shared OPTIONS panel, watched: the run opens it and draws none of its own (FS-28DDG § Change C13).
+vi.mock("@/ui/optionsPanel", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/ui/optionsPanel")>();
+  return { ...real, openOptionsPanel: vi.fn(real.openOptionsPanel) };
 });
 
 // Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
@@ -1121,7 +1131,7 @@ function partyState(
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean) {
+function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): void }) {
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -1145,8 +1155,36 @@ function partyPanelOn(refused: () => boolean) {
     }),
     activeElement: () => null,
     blocked: refused,
+    wrapper,
   });
   return { panel, pressT: () => keyboard.emit("keydown-T") };
+}
+
+const { UI_EFFECTS } = await import("@/audio/uiSounds");
+
+/**
+ * The run's interface sounds on a recording stand-in for the game's sound: every effect cached,
+ * the context running, the level the default (no `window`, so nothing kept is read or written).
+ * Makes the run's player as create does, and returns the effects played since the last read, by
+ * name (FS-WDM0X S10).
+ */
+function hearOn(scene: Record<string, unknown>): () => string[] {
+  let played: string[] = [];
+  Object.assign(scene, {
+    cache: { audio: { exists: (key: string) => UI_EFFECTS.some((e) => key === `sfx:${e}`) } },
+    sound: {
+      locked: false,
+      context: { state: "running" },
+      get: () => null,
+      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
+    },
+  });
+  (scene as unknown as { mountUiSounds(): void }).mountUiSounds();
+  return () => {
+    const heard = played;
+    played = [];
+    return heard;
+  };
 }
 
 function onStage() {
@@ -4468,6 +4506,212 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
   });
+
+  describe("the run's Options and the shared OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C1, C13, C14, C17)", () => {
+    const MUSIC_KEY = "barrowspire_music";
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    /** The run's menu on stage, the arrows bound, this browser's store holding `held` under the music's key. */
+    function optionsOnStage(me: ReturnType<typeof player> | null = player("me", "Aldric", 130), held: string | null = null) {
+      const kept = new Map<string, string>(held === null ? [] : [[MUSIC_KEY, held]]);
+      vi.stubGlobal("window", {
+        localStorage: {
+          getItem: (k: string) => kept.get(k) ?? null,
+          setItem: (k: string, v: string) => void kept.set(k, v),
+          removeItem: (k: string) => void kept.delete(k),
+        },
+      });
+      const s = menuOnStage(me);
+      const arrows = { left: key(), right: key(), up: key(), down: key() };
+      (s.run as unknown as { cursors: unknown }).cursors = arrows;
+      const panelOpen = () => s.stage.made.some((m) => (m as { name?: string }).name === "options-music-up" && !m.destroyed);
+      const find = (name: string) => s.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+      return { ...s, kept, arrows, panelOpen, find };
+    }
+
+    /** The panel opened from the run's menu by `how`. */
+    function inThePanel(how: "number" | "click" = "number", me?: ReturnType<typeof player> | null, held?: string | null) {
+      const s = optionsOnStage(me, held);
+      s.press(s.keys.esc);
+      if (how === "number") s.press(s.keys.two);
+      else s.pick("options");
+      return s;
+    }
+
+    it.each(["number", "click"] as const)(
+      "should close the run's menu and open the shared panel in its slot on Options (a %s) (C3, C8, C13)",
+      async (how) => {
+        const { openOptionsPanel } = await import("@/ui/optionsPanel");
+        const open = vi.mocked(openOptionsPanel);
+        open.mockClear();
+        const { run, panelOpen, option, labels } = inThePanel(how);
+
+        expect(open).toHaveBeenCalledTimes(1);
+        const [, spec] = open.mock.calls[0];
+        expect(spec.tones.actionable).toBe(palette.interactable);
+        expect(spec.tones.cancel).toBe(palette.safe);
+        expect(spec.through).toBeTypeOf("function");
+        expect(panelOpen()).toBe(true);
+        expect(option("fall")).toBeUndefined();
+        expect(run.menu).toBeDefined();
+        expect(labels()).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
+      },
+    );
+
+    it("should number Options [2] after Fall where you stand, and after Leave the barrow once resolved (C1)", () => {
+      const living = optionsOnStage();
+      living.press(living.keys.esc);
+      expect(living.labels()).toContain("Options  [2]");
+
+      const fallen = optionsOnStage(player("me", "Aldric", 130, dead));
+      fallen.press(fallen.keys.esc);
+      expect(fallen.labels()).toContain("Options  [2]");
+      fallen.press(fallen.keys.two);
+      expect(fallen.panelOpen()).toBe(true);
+    });
+
+    it("should store the level on → and ←, one a press, clamped, and on a click of a step or an arrow, playing nothing (C5, C6, C14)", () => {
+      const { run, arrows, kept, find } = inThePanel();
+      const offer = () => (run as unknown as { offerMenu(): void }).offerMenu();
+
+      arrows.right.justDown = true;
+      offer();
+      expect(kept.get(MUSIC_KEY)).toBe("4");
+      for (let i = 0; i < 3; i++) {
+        arrows.right.justDown = true;
+        offer();
+      }
+      expect(kept.get(MUSIC_KEY)).toBe("5");
+      arrows.left.justDown = true;
+      offer();
+      expect(kept.get(MUSIC_KEY)).toBe("4");
+
+      find("options-music-step-1")!.handlers.pointerup();
+      expect(kept.get(MUSIC_KEY)).toBe("1");
+      find("options-music-down")!.handlers.pointerup();
+      expect(kept.get(MUSIC_KEY)).toBe("0");
+      expect((run as unknown as { sound?: { add?: unknown } }).sound?.add).toBeUndefined();
+    });
+
+    it("should open at the stored level, and at 0 for a browser that silenced the town (C15; Edge States: Old setting)", () => {
+      const { run, arrows, kept } = inThePanel("number", undefined, "off");
+      arrows.right.justDown = true;
+      (run as unknown as { offerMenu(): void }).offerMenu();
+      expect(kept.get(MUSIC_KEY)).toBe("1");
+    });
+
+    it("should read a → pressed in play as walking, not as a level change once the panel opens (C6)", () => {
+      const { run, keys, press, pick, arrows, kept, panelOpen } = optionsOnStage();
+      arrows.right.justDown = true;
+      arrows.right.isDown = true;
+      (run as unknown as { offerMenu(): void }).offerMenu();
+      press(keys.esc);
+      // a click opens the panel between frames, so no key read of that frame takes the press
+      pick("options");
+      expect(panelOpen()).toBe(true);
+      (run as unknown as { offerMenu(): void }).offerMenu();
+
+      expect(kept.get(MUSIC_KEY)).toBeUndefined();
+    });
+
+    it("should do nothing on Enter or a number while the panel is open (C6)", () => {
+      const { run, keys, press, kept, panelOpen, sent } = inThePanel();
+      for (const k of [keys.enter, keys.one, keys.two]) press(k);
+
+      expect(kept.get(MUSIC_KEY)).toBeUndefined();
+      expect(panelOpen()).toBe(true);
+      expect(sent).not.toHaveBeenCalled();
+      expect(run.fallPending).toBe(false);
+    });
+
+    it("should reopen the run's ESC menu on Esc, on Back and on the ×, never closing everything (C7)", () => {
+      const { run, keys, press, pick, panelOpen, option, find } = inThePanel();
+
+      press(keys.esc);
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeDefined();
+
+      pick("options");
+      find("options-back")!.handlers.pointerup();
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeDefined();
+
+      pick("options");
+      find("options-close")!.handlers.pointerup();
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeDefined();
+      expect(run.menu).toBeDefined();
+    });
+
+    it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
+      const { run, panelOpen, option } = inThePanel();
+
+      (run as unknown as { pressMenuIcon(): void }).pressMenuIcon();
+
+      expect(run.menu).toBeUndefined();
+      expect(panelOpen()).toBe(false);
+      expect(option("fall")).toBeUndefined();
+    });
+
+    it("should send no move while the panel is open, stopping a stride it interrupts once (C8)", () => {
+      const s = optionsOnStage();
+      s.run.sendMovementIntent(1, 0);
+      s.press(s.keys.esc);
+      s.press(s.keys.two);
+      expect(s.run.canSendMove()).toBe(false);
+      s.run.sendMovementIntent(1, 0);
+      s.run.sendMovementIntent(0, 1);
+      expect(s.sentOf(ActionType.Move)).toEqual([
+        [ActionType.Move, { vx: 1, vy: 0 }],
+        [ActionType.Move, { vx: 0, vy: 0 }],
+      ]);
+    });
+
+    it("should drop E, F, I, Q and H while the panel is open", () => {
+      const s = inThePanel();
+      s.run.bindRunInput();
+      for (const k of ["keydown-H", "keydown-Q", "keydown-F", "keydown-E", "keydown-I"]) s.keyHandlers[k]();
+      expect(s.run.controlsPanel).toBeUndefined();
+      expect(s.sent).not.toHaveBeenCalled();
+    });
+
+    it("should centre the open panel again when the view changes (C8, FS-ZAJMH R13)", () => {
+      const { run } = inThePanel();
+      const panel = run.menu as Made;
+      panel.last["setPosition"] = [];
+      Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
+      (run as unknown as { relayoutHud(): void }).relayoutHud();
+      expect(panel.last["setPosition"]).toEqual([viewport.centerX, viewport.centerY]);
+    });
+
+    it("should take the panel down when the next state shows the player dead, and show the dead card (C17)", () => {
+      const { run, panelOpen, labels } = inThePanel();
+
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+
+      expect(run.menu).toBeUndefined();
+      expect(panelOpen()).toBe(false);
+      expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
+    });
+
+    it("should keep a dead player's panel up across the states that keep showing them dead (C17)", () => {
+      const { run, panelOpen } = inThePanel("number", player("me", "Aldric", 130, dead));
+      (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+      expect(panelOpen()).toBe(true);
+    });
+
+    it("should take the panel down when end_game arrives, and open nothing on Esc after (C17)", () => {
+      const { run, keys, press, panelOpen } = inThePanel();
+      run.endRun();
+      expect(run.menu).toBeUndefined();
+      expect(panelOpen()).toBe(false);
+      press(keys.esc);
+      expect(run.menu).toBeUndefined();
+    });
+  });
 });
 
 describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)", () => {
@@ -5036,6 +5280,362 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(run.mayChat()).toBe(true);
       pressEsc();
       expect(run.mayChat()).toBe(false);
+    });
+  });
+
+  // FS-WDM0X § Acceptance Criteria "The run": as the field, with the Fall confirm counted as part of
+  // the menu (S5), and every window the game closes on its own silent (S4). I-WDM0X-3.
+  describe("interface sounds (FS-WDM0X S1–S9; I-WDM0X-3)", () => {
+    type Heard = Overlaid & {
+      partyPanel?: unknown;
+      runEnded: boolean;
+      sounds?: { act(run: () => void): void };
+      containerView: { isOpen: boolean };
+      refusesParty(): boolean;
+      mountCorner(): void;
+      endRun(): void;
+      resetRun(end: "shutdown" | "destroy"): void;
+    };
+    const dead = { current_health: 0 };
+
+    /** The run's windows on stage, its player made as create makes it, the overlay handed its wrapper. */
+    function heardRun() {
+      const env = overlayOnStage();
+      const run = env.run as unknown as Heard;
+      const heard = hearOn(env.run as unknown as Record<string, unknown>);
+      // the overlay again, as create composes it once the player is made: its × through the wrapper
+      run.equipment = run.composeEquipment();
+      run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>));
+      const party = partyPanelOn(() => run.refusesParty(), run.sounds);
+      run.partyPanel = party.panel;
+      run.mountCorner();
+      const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
+        const f = cornerIconFrame(icon, viewport);
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)?.handlers.pointerdown?.();
+      };
+      const find = (name: string) => env.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+      const pick = (name: string) => find(name)!.handlers.pointerup();
+      /** A gear panel's ×: the inventory's on the right panel, the character panel's on the left. */
+      const closeX = (side: "inventory" | "character") => {
+        const box = panelClose(side === "inventory" ? layout.right : layout.left);
+        env.press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
+      };
+      const open = () => ({
+        menu: run.menu !== undefined,
+        party: party.panel.isOpen(),
+        gear: run.equipment?.isOpen() ?? false,
+      });
+      heard();
+      return { ...env, run, heard, party, pressIcon, find, pick, closeX, open };
+    }
+    type Run = ReturnType<typeof heardRun>;
+
+    /** The Fall confirm open, from the menu's Fall row. */
+    function inFallConfirm() {
+      const r = heardRun();
+      r.pressEsc();
+      r.pick("menu-fall");
+      expect(r.find("menu-not-yet")).toBeDefined();
+      r.heard();
+      return r;
+    }
+
+    /** OPTIONS open, from the menu's Options row. */
+    function inOptions() {
+      const r = heardRun();
+      r.pressEsc();
+      r.pick("menu-options");
+      expect(r.find("options-back")).toBeDefined();
+      r.heard();
+      return r;
+    }
+
+    it("should play nothing as the Fall confirm opens from the menu, and settings_close on its Not yet (S5)", () => {
+      const r = heardRun();
+      r.pressEsc();
+      expect(r.heard()).toEqual(["settings_open"]);
+      r.pick("menu-fall");
+      expect(r.find("menu-not-yet")).toBeDefined();
+      expect(r.heard()).toEqual([]);
+      r.pick("menu-not-yet");
+      expect(r.run.menu).toBeUndefined();
+      expect(r.heard()).toEqual(["settings_close"]);
+    });
+
+    it.each<[string, (r: Run) => void]>([
+      ["Esc", (r) => r.pressEsc()],
+      ["the ×", (r) => r.pick("menu-close")],
+      ["the Menu icon", (r) => r.pressIcon("menu")],
+    ])("should play settings_close as %s closes the whole menu from the Fall confirm (S5)", (_input, input) => {
+      const r = inFallConfirm();
+      input(r);
+      expect(r.run.menu).toBeUndefined();
+      expect(r.heard()).toEqual(["settings_close"]);
+    });
+
+    it("should play nothing on the Fall confirm's Fall, which sends and leaves the confirm up", () => {
+      const r = inFallConfirm();
+      r.pick("menu-fall-now");
+      expect(r.sentOf(ActionType.ForfeitRun)).toHaveLength(1);
+      expect(r.run.menu).toBeDefined();
+      expect(r.heard()).toEqual([]);
+    });
+
+    it("should play settings_close on Leave the barrow, which closes the menu in the same press", () => {
+      const r = heardRun();
+      r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+      r.pressEsc();
+      expect(r.find("menu-leave")).toBeDefined();
+      r.heard();
+      r.pick("menu-leave");
+      expect(r.sentOf(ActionType.LeaveRun)).toHaveLength(1);
+      expect(r.run.menu).toBeUndefined();
+      expect(r.heard()).toEqual(["settings_close"]);
+    });
+
+    it.each<[string, (r: Run) => void, string, string]>([
+      ["I", (r) => r.key("I"), "inventory_open", "inventory_close"],
+      ["B", (r) => r.key("B"), "inventory_open", "inventory_close"],
+      ["the Inventory icon", (r) => r.pressIcon("inventory"), "inventory_open", "inventory_close"],
+      ["C", (r) => r.key("C"), "character_open", "character_close"],
+      ["the Character icon", (r) => r.pressIcon("character"), "character_open", "character_close"],
+      ["T", (r) => r.party.pressT(), "party_open", "party_close"],
+      ["the Party icon", (r) => r.pressIcon("party"), "party_open", "party_close"],
+    ])("should open and close on %s, each with its own one sound", (_input, input, opened, closed) => {
+      const r = heardRun();
+      input(r);
+      expect(r.heard()).toEqual([opened]);
+      input(r);
+      expect(r.heard()).toEqual([closed]);
+    });
+
+    it.each<["inventory" | "character", string, string]>([
+      ["inventory", "I", "inventory_close"],
+      ["character", "C", "character_close"],
+    ])("should play its close on the %s panel's ×, through the wrapper the run hands the overlay", (side, opening, closed) => {
+      const r = heardRun();
+      r.key(opening);
+      r.heard();
+      r.closeX(side);
+      expect(r.run.equipment?.isOpen()).toBe(false);
+      expect(r.heard()).toEqual([closed]);
+    });
+
+    it("should play party_close on the party panel's ×, through the wrapper the run hands the panel", () => {
+      const r = heardRun();
+      r.party.pressT();
+      r.heard();
+      const x = r.party.panel as unknown as { deps: { wrapper?: { act(run: () => void): void } }; close(): boolean };
+      x.deps.wrapper!.act(() => void x.close());
+      expect(r.heard()).toEqual(["party_close"]);
+    });
+
+    it.each<[string, (r: Run) => void]>([
+      ["Esc", (r) => r.pressEsc()],
+      ["Q", (r) => r.key("Q")],
+    ])("should close both gear panels with one inventory_close on %s", (_k, press) => {
+      const r = heardRun();
+      r.key("I");
+      r.key("C");
+      r.heard();
+      press(r);
+      expect(r.open()).toEqual({ menu: false, party: false, gear: false });
+      expect(r.heard()).toEqual(["inventory_close"]);
+    });
+
+    it("should close the party panel with party_close on Esc, then the overlay, then open the menu with settings_open", () => {
+      const r = heardRun();
+      r.key("C");
+      r.party.pressT();
+      r.heard();
+      r.pressEsc();
+      expect(r.heard()).toEqual(["party_close"]);
+      r.pressEsc();
+      expect(r.heard()).toEqual(["character_close"]);
+      r.pressEsc();
+      expect(r.heard()).toEqual(["settings_open"]);
+    });
+
+    it("should play settings_open alone as the Menu icon opens the menu over every window", () => {
+      const r = heardRun();
+      r.key("I");
+      r.key("C");
+      r.party.pressT();
+      r.heard();
+      r.pressIcon("menu");
+      expect(r.open()).toEqual({ menu: true, party: false, gear: false });
+      expect(r.heard()).toEqual(["settings_open"]);
+    });
+
+    it.each<[string, (r: Run) => void]>([
+      ["Back", (r) => r.pick("menu-back")],
+      ["Esc", (r) => r.pressEsc()],
+      ["the ×", (r) => r.pick("menu-close")],
+      ["the Menu icon", (r) => r.pressIcon("menu")],
+    ])("should play settings_close as the menu's %s closes it", (_input, input) => {
+      const r = heardRun();
+      r.pressEsc();
+      r.heard();
+      input(r);
+      expect(r.run.menu).toBeUndefined();
+      expect(r.heard()).toEqual(["settings_close"]);
+    });
+
+    describe("the menu and OPTIONS, one settings space (S5)", () => {
+      it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+        const r = heardRun();
+        r.pressEsc();
+        r.heard();
+        r.pick("menu-options");
+        expect(r.find("options-back")).toBeDefined();
+        expect(r.heard()).toEqual([]);
+      });
+
+      it.each<[string, (r: Run) => void]>([
+        ["Back", (r) => r.pick("options-back")],
+        ["Esc", (r) => r.pressEsc()],
+        ["the ×", (r) => r.pick("options-close")],
+      ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+        const r = inOptions();
+        input(r);
+        expect(r.find("menu-fall")).toBeDefined();
+        expect(r.heard()).toEqual([]);
+      });
+
+      it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
+        const r = inOptions();
+        r.pressIcon("menu");
+        expect(r.run.menu).toBeUndefined();
+        expect(r.heard()).toEqual(["settings_close"]);
+      });
+    });
+
+    it.each<[string, (r: Run) => void]>([
+      ["I", (r) => r.key("I")],
+      ["B", (r) => r.key("B")],
+      ["C", (r) => r.key("C")],
+      ["Q", (r) => r.key("Q")],
+      ["T", (r) => r.party.pressT()],
+      ["the Inventory icon", (r) => r.pressIcon("inventory")],
+      ["the Character icon", (r) => r.pressIcon("character")],
+      ["the Party icon", (r) => r.pressIcon("party")],
+    ])("should play nothing on %s refused while the menu is open (S6)", (_press, refused) => {
+      const r = heardRun();
+      r.pressEsc();
+      r.heard();
+      refused(r);
+      expect(r.open()).toEqual({ menu: true, party: false, gear: false });
+      expect(r.heard()).toEqual([]);
+    });
+
+    it("should play nothing on T or the Party icon refused while a chest is open (S6)", () => {
+      const r = heardRun();
+      r.run.containerView.isOpen = true;
+      r.party.pressT();
+      r.pressIcon("party");
+      expect(r.party.panel.isOpen()).toBe(false);
+      expect(r.heard()).toEqual([]);
+    });
+
+    it("should play nothing on the greyed envelope", () => {
+      const r = heardRun();
+      r.pressIcon("mail");
+      expect(r.heard()).toEqual([]);
+    });
+
+    describe("what the game closes on its own plays nothing (S4)", () => {
+      it.each<[string, () => Run]>([
+        ["the menu", heardRun],
+        ["OPTIONS", inOptions],
+        ["the Fall confirm", inFallConfirm],
+      ])("should play nothing as %s yields to the player's death", (_open, opened) => {
+        const r = opened();
+        if (!r.run.menu) r.pressEsc();
+        r.heard();
+        r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+        expect(r.run.menu).toBeUndefined();
+        expect(r.heard()).toEqual([]);
+      });
+
+      it("should play nothing as the Fall confirm yields to the death its Fall asked for", () => {
+        const r = inFallConfirm();
+        r.pick("menu-fall-now");
+        r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
+        expect(r.run.menu).toBeUndefined();
+        expect(r.heard()).toEqual([]);
+      });
+
+      it("should play nothing as the run's end closes the menu", () => {
+        const r = heardRun();
+        r.pressEsc();
+        r.heard();
+        r.run.endRun();
+        expect(r.run.menu).toBeUndefined();
+        expect(r.heard()).toEqual([]);
+      });
+
+      it("should play nothing as the party climbs to the next floor with every window open", () => {
+        const r = heardRun();
+        r.key("I");
+        r.party.pressT();
+        r.heard();
+        const me = { ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>;
+        r.run.handleGameStateUpdate({ ...floorState(2), current_player: me, other_players: [] } as GameState);
+        expect(r.heard()).toEqual([]);
+      });
+
+      it.each<[string, (r: Run) => void]>([
+        ["the inventory, the character panel and the party panel", (r) => (r.key("I"), r.key("C"), r.party.pressT())],
+        ["the menu", (r) => r.pressEsc()],
+        ["OPTIONS", (r) => (r.pressEsc(), r.pick("menu-options"))],
+      ])("should play nothing as the scene stops or is destroyed with %s open", (_open, open) => {
+        for (const end of ["shutdown", "destroy"] as const) {
+          const r = heardRun();
+          // a stop hands the keyboard back (handBackKeyboard)
+          Object.assign((r.run as unknown as { input: { keyboard: object } }).input.keyboard, { removeCapture: vi.fn() });
+          open(r);
+          r.heard();
+          r.run.resetRun(end);
+          expect(r.run.menu).toBeUndefined();
+          expect(r.heard()).toEqual([]);
+        }
+      });
+    });
+
+    it("should still play a window's sound on a corner icon press after the run's end: the icons work then", () => {
+      const r = heardRun();
+      r.run.endRun();
+      r.pressIcon("inventory");
+      expect(r.heard()).toEqual(["inventory_open"]);
+      r.pressIcon("character");
+      expect(r.heard()).toEqual(["character_open"]);
+      r.pressIcon("character");
+      expect(r.heard()).toEqual(["character_close"]);
+      // the Menu icon only closes the windows now: there is no menu
+      r.pressIcon("menu");
+      expect(r.open()).toEqual({ menu: false, party: false, gear: false });
+      expect(r.heard()).toEqual(["inventory_close"]);
+    });
+
+    // create() can't run on the stand-ins, so its order is pinned from the source, as in the town
+    // and the field: the player made before the party panel, the keys, the gear and the corner, and
+    // its wrapper handed to every module that hears its own input
+    it("should make the player in create before anything that hears a player, and hand its wrapper to the overlay and the party panel", () => {
+      const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
+      const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+      const at = (line: RegExp) => create.search(line);
+      const mount = at(/this\.mountUiSounds\(\);/);
+      expect(mount).toBeGreaterThan(-1);
+      for (const later of [
+        /this\.partyPanel = mountPartyPanel\(/,
+        /this\.bindRunInput\(\);/,
+        /this\.equipment = this\.composeEquipment\(\);/,
+        /this\.mountCorner\(\);/,
+      ])
+        expect(mount, String(later)).toBeLessThan(at(later));
+      expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
+      const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+      expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
     });
   });
 
@@ -8373,6 +8973,35 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(map()!.mode).toBe("enlarged");
         run.chatWindow = undefined;
         expect(store.writes).toHaveLength(4);
+      });
+
+      // FS-WDM0X S7: each step the player makes, by M or the map mode icon, plays the mode switch;
+      // one refused, one on a floor with no minimap, or the map built in the kept mode plays nothing
+      it("should play map_mode_switch on each step by M and by the map mode icon, and nothing as the map is built, on a refused M or where there is no minimap (FS-WDM0X S7)", () => {
+        const { run, keys, pointers, map, handle } = mapped();
+        const heard = hearOn(run as unknown as Record<string, unknown>);
+        expect(map()).toBeDefined();
+        expect(heard()).toEqual([]);
+        keys["keydown-M"]();
+        expect(heard()).toEqual(["map_mode_switch"]);
+        // the enlarged map's icon, in its bottom-left (the map mode icon's own test)
+        pointers.pointerdown({ x: 754, y: 163, button: 0, worldX: 754, worldY: 163, leftButtonDown: () => true, rightButtonDown: () => false });
+        expect(map()!.mode).toBe("overlay");
+        expect(heard()).toEqual(["map_mode_switch"]);
+        keys["keydown-M"]({ repeat: true });
+        run.menu = {};
+        keys["keydown-M"]();
+        run.menu = undefined;
+        run.chatWindow = { isTyping: () => true };
+        keys["keydown-M"]();
+        run.chatWindow = undefined;
+        expect(heard()).toEqual([]);
+        // a floor of buildings: no minimap to step
+        useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+        handle(bare(floorState(2)));
+        expect(run.dungeon?.minimap).toBeUndefined();
+        keys["keydown-M"]();
+        expect(heard()).toEqual([]);
       });
 
       it("should have no off step left: no minimapOn, and no switch on the minimap to hide it (FS-1SEF0 §A.7)", () => {

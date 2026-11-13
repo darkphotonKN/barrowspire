@@ -1813,6 +1813,39 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
     events.emit("shutdown");
     expect(overlay.isVisible()).toBe(false);
   });
+
+  // FS-WDM0X S9: the panels' × is the overlay's own input, so it runs through the scene's wrapper,
+  // which reads the windows before and after it; nothing the scene asks of the overlay does
+  it("should run each panel's × through the wrapper it was given, and nothing the scene asks (FS-WDM0X S9)", () => {
+    const s = recordingScene();
+    const seen: string[] = [];
+    let overlay: GearOverlay | undefined;
+    const panels = () => `${overlay?.isInventoryOpen()}/${overlay?.isCharacterOpen()}`;
+    const wrapper = {
+      act: vi.fn((run: () => void) => {
+        seen.push(`before ${panels()}`);
+        run();
+        seen.push(`after ${panels()}`);
+      }),
+    };
+    overlay = new GearOverlay(s.scene, s.art, undefined, undefined, wrapper);
+    const { left, right } = overlayLayout(s.camera.width, s.camera.height);
+    const closeOf = (panel: typeof left) => {
+      const r = panelClose(panel);
+      return [r.x + r.w / 2, r.y + r.h / 2] as const;
+    };
+    overlay.show();
+    overlay.toggleCharacter();
+
+    s.press(...closeOf(right), 0);
+    s.press(...closeOf(left), 0);
+
+    expect(seen).toEqual(["before true/true", "after false/true", "before false/true", "after false/false"]);
+    overlay.toggle();
+    overlay.toggleCharacter();
+    overlay.hide();
+    expect(wrapper.act).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("GearOverlay in the party panel's frame (FS-HRH2J § Change C16)", () => {

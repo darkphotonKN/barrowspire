@@ -45,6 +45,11 @@ export interface WorldMinimapParts {
    * icon's stage. None, or no icon stage, and no name is built.
    */
   name?: string;
+  /**
+   * Told after each step of the mode, M's or the icon's (the interface sounds' mode switch,
+   * FS-WDM0X S7). Building the map in the kept mode is no step.
+   */
+  stepped?: () => void;
 }
 
 export class WorldMinimapController {
@@ -55,14 +60,16 @@ export class WorldMinimapController {
   readonly mapName?: MinimapName;
   private readonly store: MinimapModeStore;
   private readonly button: WorldMinimapParts["button"];
+  private readonly stepped?: () => void;
   /** How it is shown (§F.32): the run's one remembered mode, read as the map is built; M steps it. */
   private mode: MinimapMode;
   /** The party members' entity ids in the last state: whose drawn figures the overlay's dots follow. */
   private allies: string[] = [];
 
-  constructor({ stage, world, store, renderScale, button, icon, name }: WorldMinimapParts) {
+  constructor({ stage, world, store, renderScale, button, icon, name, stepped }: WorldMinimapParts) {
     this.store = store;
     this.button = button;
+    this.stepped = stepped;
     this.map = new WorldMinimap(stage, world, renderScale);
     // over the map's layers: made after them (D1); a press is M's (D6)
     if (icon) this.modeIcon = new MinimapModeIcon(icon.stage, { press: () => this.cycle(), blocked: icon.blocked });
@@ -73,12 +80,13 @@ export class WorldMinimapController {
     this.place();
   }
 
-  /** M (§F.31): the next mode, kept in this browser, the map placed for it. */
+  /** M (§F.31): the next mode, kept in this browser, the map placed for it; the step told (FS-WDM0X S7). */
   cycle(): void {
     this.mode = nextMinimapMode(this.mode);
     rememberMinimapMode(this.store, this.mode);
     this.map.setMode(this.mode);
     this.place();
+    this.stepped?.();
   }
 
   /**

@@ -192,3 +192,5 @@ action.
 - A `forfeited` result value or any new event.
 
 ## Change: The menu wears the party panel's frame → FS-G4VMQ
+
+## Change: Music volume in an Options panel → FS-28DDG

@@ -131,6 +131,13 @@ server state and sends intents. ✅
 - [ ] Canvas that resizes with the window → FS-ZAJMH
 - [ ] Fullscreen and windowed play → FS-ZAJMH
 
+### Sound
+
+- [ ] Music in the hub → FS-28DDG
+- [ ] Set the music's volume → FS-28DDG
+- [ ] Interface sound effects → FS-WDM0X
+- [ ] Set the sound effects' volume → FS-WDM0X
+
 ### HUD
 
 - [ ] Panel shortcut icons on the HUD → FS-3EBCA

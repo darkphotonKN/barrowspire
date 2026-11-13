@@ -1,5 +1,6 @@
 import * as Phaser from "phaser";
 
+import { preloadUiSounds } from "@/audio/uiSounds";
 import { preloadArt } from "@/render/art/phaser";
 import { RESIDENT_ART } from "@/render/art/sceneArt";
 import { drawTorchBar } from "@/ui/torchBar";
@@ -7,8 +8,8 @@ import { drawTorchBar } from "@/ui/torchBar";
 /**
  * The first frame a player ever sees, between the site's "Lighting the Torch" loader and the
  * main menu. It wears the menus' Bone & Soot (design-guideline "UI Chrome") so the hand-off from
- * the page to the canvas to the menu is one room, not three. It loads the resident art only; the
- * torch bar is the one a world scene shows while its own art downloads (`ui/torchBar.ts`).
+ * the page to the canvas to the menu is one room, not three. It loads the resident art and the
+ * interface sound effects; the torch bar is the one a world scene shows while its own art downloads (`ui/torchBar.ts`).
  */
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -27,6 +28,9 @@ export class PreloadScene extends Phaser.Scene {
     // (FS-2325V §F), and every later scene finds it already loaded; each world loads its own
     // creatures or townsfolk as it is entered (FS-C4JWH §B R6).
     preloadArt(this, RESIDENT_ART);
+    // The interface sound effects, resident for the game's life: no world loads or frees them,
+    // so the first press in any world can sound (FS-WDM0X S20).
+    preloadUiSounds(this);
   }
 
   create(): void {

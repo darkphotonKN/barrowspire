@@ -33,6 +33,7 @@ import {
 import { artSprite } from "@/render/art/phaser";
 import { iconSheet } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
+import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
 import type { MailboxState } from "@/stores/mailboxStore";
 import { CANVAS_FONT, palette, shade, toCss } from "@/utils/canvasPalette";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
@@ -62,6 +63,11 @@ export interface LetterPanelDeps {
   now?: () => number;
   /** The character's level, where known: the item tip tones a requirement above it (FS-BDA7X R45). */
   level?: () => number | undefined;
+  /**
+   * Runs the panel's ×, the player's own input, as the town runs its own (the interface sounds' wrapper,
+   * FS-WDM0X S9). None, and it runs as it is.
+   */
+  wrapper?: UiActWrapper;
 }
 
 /** Over the HUD (1000) and the gear overlay (1100), under the menus (2000) and item tips (2200). */
@@ -259,7 +265,9 @@ export class LetterPanel {
     const { glyph } = drawPanelFrame(this.scene, g, panel);
     const x = this.keep(glyph.setScrollFactor(0).setDepth(PANEL_DEPTH))
       .setInteractive({ useHandCursor: true });
-    x.on("pointerdown", () => this.deps.store.getState().closePanel());
+    x.on("pointerdown", () => {
+      (this.deps.wrapper ?? PASS_THROUGH).act(() => this.deps.store.getState().closePanel());
+    });
     x.on("pointerover", () => lightClose(x, true));
     x.on("pointerout", () => lightClose(x, false));
     // the windows' one title, centred (FS-3EBCA R20, R22)

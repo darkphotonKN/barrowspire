@@ -1345,4 +1345,20 @@ describe("HubGear, the character panel apart (FS-HRH2J § Change C1, C7–C10)",
     expect(panel.character).toBe(false);
     expect(gear.hide()).toBe(false);
   });
+
+  // the scene's window state for the interface sounds (FS-WDM0X S8): the stash view is the inventory's
+  it("should say which of the two is open, each apart, the stash view as the inventory", () => {
+    const { gear } = withPurse();
+    const open = () => [gear.isInventoryOpen(), gear.isCharacterOpen()];
+    expect(open()).toEqual([false, false]);
+    gear.toggleCharacter();
+    expect(open()).toEqual([false, true]);
+    gear.toggle();
+    expect(open()).toEqual([true, true]);
+    gear.hide();
+    gear.openStash();
+    expect(open()).toEqual([true, false]);
+    gear.hide();
+    expect(open()).toEqual([false, false]);
+  });
 });

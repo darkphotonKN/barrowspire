@@ -43,7 +43,7 @@ import { PurseReader } from "@/ui/purse";
 import { useMailboxStore } from "@/stores/mailboxStore";
 import { apiClient } from "@/utils/api";
 import { showDialogueCard } from "@/ui/npcDialogue";
-import { showMenuPanel, type MenuKeys, type MenuTones } from "@/ui/menuPanel";
+import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -178,6 +178,11 @@ import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
+import { HubMusic, MUSIC_KEY, MUSIC_URL, sceneMusicStage } from "@/audio/hubMusic";
+import { browserMusicStore } from "@/audio/musicSetting";
+import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
+import { browserSfxStore } from "@/audio/sfxSetting";
+import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -665,10 +670,13 @@ export class HubScene extends Phaser.Scene {
   private characterKey?: Phaser.Input.Keyboard.Key;
   /** The gear, bag and stats overlay, fed from REST (FS-HRH2J §E); one per visit. */
   private gear?: HubGear;
-  /** The ESC menu while it is open (FS-G4VMQ §Requirements 1–5). It owns the keyboard. */
+  /**
+   * The ESC menu while it is open (FS-G4VMQ §Requirements 1–5), or the OPTIONS panel opened from it
+   * in its place (FS-28DDG § Change: Music volume in an Options panel, C8). It owns the keyboard.
+   */
   private menu?: Phaser.GameObjects.Container;
-  /** The open menu's choices by key: the n-th actionable one, and the first on Enter. */
-  private menuChoices?: MenuKeys;
+  /** The open menu's choices by key: the n-th actionable one, and the first on Enter; the panel's ←/→. */
+  private menuChoices?: MenuSlotKeys;
   /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
   private moveMenu?: (origin: { x: number; y: number }) => void;
   /** Shown while queued, wherever the player walks. */
@@ -817,6 +825,15 @@ export class HubScene extends Phaser.Scene {
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;
+  /**
+   * The town's music (FS-28DDG R20): made with the first visit, and kept with this scene instance,
+   * which is this game's, across its stops, as the fade-out outlives the stop (R3).
+   */
+  private music?: HubMusic;
+  /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
+  private sounds?: UiSounds;
+  /** Cancels the music's end listener of a start that has not reached create; create's own takes over. */
+  private cancelLoadingEnd?: () => void;
 
   constructor() {
     super({ key: "HubScene" });
@@ -830,6 +847,9 @@ export class HubScene extends Phaser.Scene {
   init(data?: { arrival?: boolean }): void {
     this.arrival = data?.arrival ?? false;
     this.held = holdOneShots(this, socketManager, HUB_ONE_SHOTS);
+    // a stop before create has no release: a sound kept for this load falls silent and is freed
+    // all the same, and a destroyed game took it (FS-28DDG R13, R21)
+    this.cancelLoadingEnd = onSceneEnd(this, (end) => this.music?.leave(end));
     // what the body walks is not known at a start: the first frame says (reported 2026-11-12)
     this.lastSent = undefined;
   }
@@ -840,6 +860,9 @@ export class HubScene extends Phaser.Scene {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
+    // the town's music, with its art, so the torch bar counts it; skipped while still cached
+    // (FS-28DDG R12, R13)
+    this.load.audio(MUSIC_KEY, MUSIC_URL);
   }
 
   create(): void {
@@ -874,6 +897,7 @@ export class HubScene extends Phaser.Scene {
         })
       : undefined;
     if (!this.groundLayer) this.drawGround();
+    this.mountUiSounds();
     this.bindInput();
     this.bindMinimapKey();
     this.bindMinimapPointer();
@@ -909,6 +933,7 @@ export class HubScene extends Phaser.Scene {
       this,
       () => this.refusesParty(),
       () => this.closeLetter(),
+      this.sounds,
     );
     // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
     // (FS-R82NV R32, R33)
@@ -926,6 +951,7 @@ export class HubScene extends Phaser.Scene {
       () => this.refusesLetter(),
       () => this.characterLevel,
       () => this.clearForLetter(),
+      this.sounds,
     );
     this.watchGoldTakes();
     this.mountCorner();
@@ -946,8 +972,44 @@ export class HubScene extends Phaser.Scene {
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
+    this.enterMusic();
     this.listenForEnd();
     this.openHeldMessages();
+  }
+
+  /**
+   * The interface sounds (FS-WDM0X S23): the player on the game's sound, the level this browser
+   * kept, and the town's windows as the rule reads them. Each player input that can open or close a
+   * window runs through its wrapper (`act`), here and in the modules it is handed to (S9).
+   */
+  private mountUiSounds(): void {
+    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
+  }
+
+  /** Which of the town's windows are open now (FS-WDM0X S8): the menu's slot, the letter panel, Party, Inventory, Character. */
+  private windowState(): WindowState {
+    return {
+      menu: !!this.menu,
+      letter: this.mailbox?.isOpen() ?? false,
+      party: this.partyPanel?.isOpen() ?? false,
+      inventory: this.gear?.isInventoryOpen() ?? false,
+      character: this.gear?.isCharacterOpen() ?? false,
+    };
+  }
+
+  /**
+   * A player's action, through the interface sounds' wrapper (FS-WDM0X S9): the one effect its
+   * change of window plays. Before create made the player, it runs as it is. Nothing the game does
+   * on its own comes through here (S4).
+   */
+  private act<T>(run: () => T): T {
+    return this.sounds ? this.sounds.act(run) : run();
+  }
+
+  /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
+  private enterMusic(): void {
+    this.music ??= new HubMusic(sceneMusicStage(this), browserMusicStore);
+    this.music.enter();
   }
 
   /**
@@ -957,10 +1019,11 @@ export class HubScene extends Phaser.Scene {
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.pressMenuIcon() },
-        { icon: "inventory", press: () => this.toggleGear() },
-        { icon: "character", press: () => this.toggleCharacter() },
-        { icon: "party", press: () => this.partyPanel?.toggle() },
+        { icon: "menu", press: () => this.act(() => this.pressMenuIcon()) },
+        { icon: "inventory", press: () => this.act(() => this.toggleGear()) },
+        { icon: "character", press: () => this.act(() => this.toggleCharacter()) },
+        // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
+        { icon: "party", press: () => this.act(() => this.partyPanel?.toggle()) },
       ],
     });
   }
@@ -1018,6 +1081,8 @@ export class HubScene extends Phaser.Scene {
 
   /** A stop, or the game's destroy while in the hub (the page unmounts), which skips SHUTDOWN. */
   private listenForEnd(): void {
+    this.cancelLoadingEnd?.();
+    this.cancelLoadingEnd = undefined;
     onSceneEnd(this, (end) => this.release(end));
   }
 
@@ -1194,6 +1259,8 @@ export class HubScene extends Phaser.Scene {
    * destroy the scene's plugins are already gone and are asked nothing (`SceneEnd`).
    */
   private release(end: SceneEnd): void {
+    // the music falls away on the game's step, past this stop; a destroyed game took it (FS-28DDG R3, R21)
+    this.music?.leave(end);
     this.unsubscribeState?.();
     this.unsubscribeQueue?.();
     this.held = undefined;
@@ -1477,7 +1544,8 @@ export class HubScene extends Phaser.Scene {
       ...(this.inStashStore(self.pos) ? [{ at: HUB_STASH_CHEST.at, who: "stash" as const }] : []),
     ];
     const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
-    if (nearest === "stash") this.gear?.openStash();
+    // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2)
+    if (nearest === "stash") this.act(() => this.gear?.openStash());
     else if (nearest) this.openDialogue(nearest);
   }
 
@@ -2145,6 +2213,8 @@ export class HubScene extends Phaser.Scene {
         icon: this.modeIconStage && { stage: this.modeIconStage, blocked: () => this.minimapKeysOwned() },
         // the town's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
         name: minimapPlaceName({ world: "hub" }),
+        // only M and the icon step it, both the player's (FS-WDM0X S7)
+        stepped: () => this.sounds?.play("map_mode_switch"),
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
@@ -3012,10 +3082,12 @@ export class HubScene extends Phaser.Scene {
    * choice and a number that choice.
    */
   private offerMenu(): void {
+    // ←/→ are read every frame, so a press made walking does not wait to move the panel's slider
+    const nudge = this.arrowPressed();
     if (this.dialogue || !this.dismissKey) return;
     const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
     if (esc || this.mailbox?.isOpen() || !this.menu) {
-      if (esc) this.pressEscape();
+      if (esc) this.act(() => this.pressEscape());
       return;
     }
 
@@ -3025,6 +3097,16 @@ export class HubScene extends Phaser.Scene {
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
     if (confirm) this.menuChoices?.confirm();
     else if (numbered >= 0) this.menuChoices?.pick(numbered);
+    else if (nudge) this.menuChoices?.nudge?.(nudge);
+  }
+
+  /** ← or → pressed since the last frame, as -1 or 1, both read; the OPTIONS panel's slider (FS-28DDG § Change C6). */
+  private arrowPressed(): -1 | 1 | undefined {
+    if (!this.cursors) return undefined;
+    const left = Phaser.Input.Keyboard.JustDown(this.cursors.left);
+    const right = Phaser.Input.Keyboard.JustDown(this.cursors.right);
+    if (left === right) return undefined;
+    return left ? -1 : 1;
   }
 
   /**
@@ -3041,7 +3123,8 @@ export class HubScene extends Phaser.Scene {
       party: this.partyPanel?.isOpen() ?? false,
     });
     if (step === "letter") this.mailbox?.close();
-    else if (step === "close-menu") this.closeMenu();
+    // the menu's Esc is its Back, and the OPTIONS panel's reopens the menu (FS-28DDG § Change C7)
+    else if (step === "close-menu") this.menuChoices?.dismiss();
     else if (step === "gear") this.gear?.hide();
     else if (step === "party") this.partyPanel?.close();
     else this.openMenu();
@@ -3066,8 +3149,8 @@ export class HubScene extends Phaser.Scene {
    */
   private offerGear(): void {
     const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (pressed) this.toggleGear();
-    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.toggleCharacter();
+    if (pressed) this.act(() => this.toggleGear());
+    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.act(() => this.toggleCharacter());
   }
 
   /** Whether the menu or a dialogue owns the keys: no panel opens or closes. */
@@ -3107,7 +3190,14 @@ export class HubScene extends Phaser.Scene {
    */
   private composeGear(): HubGear {
     // what the party panel covers is the party panel's (FS-R82NV § Change C8)
-    const overlay = new GearOverlay(this, this.art, WorldType.Hub, (x, y) => this.partyPanel?.covers(x, y) ?? false);
+    // its panels' × run through the interface sounds' wrapper (FS-WDM0X S9)
+    const overlay = new GearOverlay(
+      this,
+      this.art,
+      WorldType.Hub,
+      (x, y) => this.partyPanel?.covers(x, y) ?? false,
+      this.sounds,
+    );
     const gear: HubGear = new HubGear(
       overlay,
       gearAsCharacter(
@@ -3128,25 +3218,57 @@ export class HubScene extends Phaser.Scene {
    * The hub's ESC menu: a way to the main menu, a way back (FS-G4VMQ §Requirements 3, 4). Built
    * from the scene's state as it opens, so what it offers is hubMenuChoices' rule, not the
    * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
-   * Every window closes as it opens (FS-3EBCA R17).
+   * Every window closes as it opens (FS-3EBCA R17). Its Options row opens the OPTIONS panel in its
+   * place (FS-28DDG § Change: Music volume in an Options panel, C3).
    */
   private openMenu(): void {
     this.closeWindows();
+    // every row and the × the player's, through the interface sounds' wrapper (FS-WDM0X S9)
     const actions: Record<HubMenuChoice["id"], () => void> = {
-      change: () => this.changeCharacter(),
-      leave: () => this.leaveQueue(),
-      back: () => this.closeMenu(),
+      change: () => this.act(() => this.changeCharacter()),
+      leave: () => this.act(() => this.leaveQueue()),
+      options: () => this.act(() => this.openOptions()),
+      back: () => this.act(() => this.closeMenu()),
     };
     const { container, keys, moveTo } = showMenuPanel(this, {
       choices: hubMenuChoices({ queued: this.queued }),
       actions,
       // dimmed while the server is asked, so a second press has nothing to land on
       enabled: { change: () => !this.leavingHub },
-      close: () => this.closeMenu(),
+      close: () => this.act(() => this.closeMenu()),
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: CHOICE_HIT,
       tones: MENU_TONES,
       // the Menu icon answers under the open menu: it closes it (FS-3EBCA R18)
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
+    });
+    this.menuChoices = keys;
+    this.menu = container;
+    this.moveMenu = moveTo;
+  }
+
+  /**
+   * The OPTIONS panel, in the menu's slot so every guard on the open menu holds for it (FS-28DDG
+   * § Change C3, C7, C8, C13). Its Music row sets the town's music, which applies and keeps the
+   * level; Back, Esc and its × reopen the ESC menu, rebuilt from the state as it is then.
+   */
+  private openOptions(): void {
+    // create's enterMusic sets the music before any menu can open; without it the panel stays shut
+    const music = this.music;
+    if (!music) return;
+    this.closeMenu();
+    const { container, keys, moveTo } = openOptionsPanel(this, {
+      origin: { x: viewport.centerX, y: viewport.centerY },
+      hit: CHOICE_HIT,
+      tones: MENU_TONES,
+      // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
+      back: () =>
+        this.act(() => {
+          this.closeMenu();
+          this.openMenu();
+        }),
+      music,
+      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menuChoices = keys;

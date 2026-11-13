@@ -50,6 +50,7 @@ import { itemView, type ItemView } from "@/items/itemView";
 import { artSprite } from "@/render/art/phaser";
 import { iconSheet } from "@/render/art/itemIcons";
 import type { ArtLibrary } from "@/render/art/library";
+import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { nothingWorn, type HudPanel } from "./EquipmentHud";
 import { satchelIcon } from "./ContainerView";
@@ -265,13 +266,15 @@ export class GearOverlay implements HudPanel, PurseShelf {
    * `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37).
    * `under` says whether a logical point lies under a panel drawn over the overlay (the party
    * panel, FS-R82NV § Change C8): a press, the pointer or the wheel there is that panel's, not the
-   * overlay's.
+   * overlay's. `wrapper` runs the overlay's own player input, the panels' ×, as the scene runs its
+   * own (the interface sounds' wrapper, FS-WDM0X S9); none, and the input runs as it is.
    */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly world?: WorldType,
     private readonly under: (x: number, y: number) => boolean = () => false,
+    private readonly wrapper: UiActWrapper = PASS_THROUGH,
   ) {}
 
   // ── HudPanel ─────────────────────────────────────────────────────────────
@@ -1106,7 +1109,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.updateHover();
     if (pointer.button === 0) {
       const mark = this.closeAt(this.pointer.x, this.pointer.y);
-      if (mark) this.close(mark.side);
+      if (mark) this.wrapper.act(() => this.close(mark.side));
       return;
     }
     if (pointer.button === 2) this.act();

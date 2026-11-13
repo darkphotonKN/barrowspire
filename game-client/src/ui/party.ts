@@ -6,6 +6,7 @@
  */
 
 import type { PlayerState } from "@/types/gameState";
+import { OPTIONS_CHOICE } from "./optionsChoice";
 
 /** The slice of a player these rules read. */
 type Player = Pick<PlayerState, "escape" | "current_health">;
@@ -98,7 +99,7 @@ export function nextWatched(
 
 /** One line of the run's ESC menu, or of the confirm that replaces its rows (FS-9K8EZ req 2, 3). */
 export interface RunMenuChoice {
-  id: "fall" | "leave" | "back" | "fall-now" | "not-yet";
+  id: "fall" | "leave" | "options" | "back" | "fall-now" | "not-yet";
   label: string;
   /** Amber for a thing the player can do, the cancel register for going back. */
   register: "actionable" | "cancel";
@@ -111,12 +112,14 @@ const BACK: RunMenuChoice = { id: "back", label: "Back  [Esc]", register: "cance
  * living player may fall where they stand; a resolved one, dead, left behind or escaped, may
  * leave the barrow, the same door as their card's or their Leave button (FS-GV8WN R16: an
  * escaped one was settled at their escape, so nothing holds them). The row says death, never a
- * forfeit or a withdrawal.
+ * forfeit or a withdrawal. The shared Options row follows in both states, just before Back
+ * (FS-28DDG § Change: Music volume in an Options panel, C1, C2).
  */
 export function runMenuChoices(state: { resolved: boolean }): RunMenuChoice[] {
-  if (!state.resolved)
-    return [{ id: "fall", label: "Fall where you stand", register: "actionable" }, BACK];
-  return [{ id: "leave", label: "Leave the barrow", register: "actionable" }, BACK];
+  const way: RunMenuChoice = state.resolved
+    ? { id: "leave", label: "Leave the barrow", register: "actionable" }
+    : { id: "fall", label: "Fall where you stand", register: "actionable" };
+  return [way, { ...OPTIONS_CHOICE }, BACK];
 }
 
 /** The one asking before a chosen death (FS-9K8EZ req 3): the line, and Fall or Not yet. */

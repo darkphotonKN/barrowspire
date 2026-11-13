@@ -756,6 +756,59 @@ describe("MailboxEnvelope clears the screen first (FS-1GZGD § Change C4)", () =
   });
 });
 
+// FS-WDM0X S9: the envelope's press and the letter panel's × are the mailbox's own player inputs,
+// so they run through the town's wrapper, which reads the windows before and after; the town's own
+// close (Esc, a window opening) and leaving the town run as they are.
+describe("the mailbox's own inputs through the town's wrapper (FS-WDM0X S9)", () => {
+  function wrapped(store: ReturnType<typeof setup>["store"]) {
+    const seen: string[] = [];
+    const wrapper = {
+      act: vi.fn((run: () => void) => {
+        seen.push(`before ${store.getState().panelOpen}`);
+        run();
+        seen.push(`after ${store.getState().panelOpen}`);
+      }),
+    };
+    return { seen, wrapper };
+  }
+
+  it("should run the envelope's press through the wrapper, the panel open as it returns, and a refused press too", () => {
+    const { scene, store, zones } = setup();
+    const { seen, wrapper } = wrapped(store);
+    let blocked = false;
+    new MailboxEnvelope(scene, { store, blocked: () => blocked, wrapper });
+    const plate = zones.find((z) => z.handlers.pointerdown)!;
+    plate.handlers.pointerdown();
+    plate.handlers.pointerdown();
+    blocked = true;
+    plate.handlers.pointerdown();
+    expect(seen).toEqual(["before false", "after true", "before true", "after false", "before false", "after false"]);
+  });
+
+  it("should run the letter panel's × through the wrapper", () => {
+    const { scene, store, texts } = setup();
+    const { seen, wrapper } = wrapped(store);
+    new LetterPanel(scene, { store, art, now: () => NOW, wrapper });
+    open(store, []);
+    texts.find((t) => t.content === "×" && !t.destroyed)!.handlers.pointerdown();
+    expect(seen).toEqual(["before true", "after false"]);
+  });
+
+  it("should be handed the town's wrapper by the mailbox HUD, for both, and close and leave outside it", async () => {
+    const { scene, store, zones, texts } = setup();
+    const { seen, wrapper } = wrapped(store);
+    const hud = new MailboxHud(scene, { store, art, blocked: () => false, wrapper });
+    zones.find((z) => z.handlers.pointerdown)!.handlers.pointerdown();
+    texts.find((t) => t.content === "×" && !t.destroyed)!.handlers.pointerdown();
+    expect(seen).toEqual(["before false", "after true", "before true", "after false"]);
+    await store.getState().openPanel();
+    hud.close();
+    await store.getState().openPanel();
+    hud.destroy();
+    expect(wrapper.act).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
   it("fetches the summary on town entry, and drops mail_arrived once the town is left", async () => {
     const { scene, store, api } = setup();

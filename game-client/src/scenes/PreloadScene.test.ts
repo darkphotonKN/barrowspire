@@ -12,6 +12,7 @@ vi.mock("phaser", () => {
 const { PreloadScene } = await import("./PreloadScene");
 const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
 const { atlasTextureKey } = await import("@/render/art/library");
+const { UI_EFFECTS } = await import("@/audio/uiSounds");
 
 /** The same dust every run: a small LCG in place of Math.random. */
 function steadyRandom() {
@@ -59,6 +60,23 @@ describe("PreloadScene's boot screen (FS-C4JWH §D R18: unchanged)", () => {
     art.finish();
 
     expect(art.queued.sort()).toEqual(RESIDENT_ART_PAGES.map(atlasTextureKey));
+    expect(scene.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+
+  it("should queue the 11 interface effects behind the same torch bar, each under its key as [m4a, ogg] (FS-WDM0X S20, S21)", () => {
+    const { art, scene } = bootScreen();
+
+    expect(art.queuedAudio).toEqual(
+      UI_EFFECTS.map((name) => ({
+        key: `sfx:${name}`,
+        url: [`/audio/sfx/${name}.m4a`, `/audio/sfx/${name}.ogg`],
+      })),
+    );
+    expect(art.queuedAudio).toHaveLength(11);
+
+    art.finish();
+
+    expect(UI_EFFECTS.every((name) => art.audio.has(`sfx:${name}`))).toBe(true);
     expect(scene.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 });
