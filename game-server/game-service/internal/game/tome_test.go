@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 
@@ -467,6 +468,72 @@ func TestHandleInteract_BurningTheTomeSummonsVorsk(t *testing.T) {
 	}
 }
 
+// recordingRand passes draws through from a source and records each, in order.
+type recordingRand struct {
+	src   populationRand
+	draws []float64
+}
+
+func (r *recordingRand) Float64() float64 {
+	f := r.src.Float64()
+	r.draws = append(r.draws, f)
+	return f
+}
+
+func (r *recordingRand) IntN(n int) int {
+	i := r.src.IntN(n)
+	r.draws = append(r.draws, float64(i))
+	return i
+}
+
+// replayRand hands back recorded draws in the order they were made.
+type replayRand struct{ draws []float64 }
+
+func (r *replayRand) Float64() float64 {
+	f := r.draws[0]
+	r.draws = r.draws[1:]
+	return f
+}
+
+func (r *replayRand) IntN(int) int { return int(r.Float64()) }
+
+// Vorsk stands on the nearest of the spots the summon drew in the altar's
+// room that is valid: off the doorways and clear of walls, the altar, every
+// fixture, monster and delver. No valid draw lies nearer the altar, and the
+// draws nearer than his spot each fail one of those. FS-3103M §F R18.
+func TestHandleInteract_BurningTheTomeSummonsVorskOnTheNearestValidSpot(t *testing.T) {
+	r := constants.PlayerRadius
+	for seed := uint64(1); seed <= 6; seed++ {
+		s, ids, altar := burnRun(t, seed)
+		standBy(t, s, ids[1], altar)
+		area := s.summonArea(s.EntityManager.GetAllEntities())
+		before := demonsIn(s)
+		recorder := &recordingRand{src: s.spawnRand}
+		s.spawnRand = recorder
+
+		require.NoError(t, s.handleInteract(ids[1], altar.ID), "seed %d", seed)
+
+		vorsk := transformOf(t, summoned(t, s, before))
+		altarAt := transformOf(t, altar)
+		region := s.dungeon.regionAt(altarAt.X, altarAt.Y)
+		replay := &replayRand{draws: recorder.draws}
+		nearest := math.Inf(1)
+		drawn := false
+		for range DemonPlacementSamples {
+			x, y := s.dungeon.draw(replay, region)
+			if x == vorsk.X && y == vorsk.Y {
+				drawn = true
+			}
+			if !s.dungeon.stands(centredArea(x, y, r, r), region, offDoorways) || !area.open(x, y) || onADelver(&area, x, y) {
+				continue
+			}
+			nearest = math.Min(nearest, math.Hypot(x-altarAt.X, y-altarAt.Y))
+		}
+		require.True(t, drawn, "seed %d: Vorsk stands on one of the spots drawn", seed)
+		assert.Equal(t, nearest, math.Hypot(vorsk.X-altarAt.X, vorsk.Y-altarAt.Y), "seed %d: the nearest valid spot", seed)
+	}
+}
+
 // Two delvers burning in one tick: the first burns and summons, the second is
 // refused altar_burned; one Vorsk. FS-3103M §F R19.
 func TestHandleInteract_TwoBurnsInOneTickSummonOneVorsk(t *testing.T) {
@@ -538,7 +605,8 @@ func TestHandleInteract_BurnWithNoRoomBesideTheAltar(t *testing.T) {
 
 		assert.Len(t, demonsIn(s), len(before), "no Vorsk")
 		assert.True(t, planOf(t, s).Burned, "the altar stays burned")
-		assert.Contains(t, log.String(), `"level":"ERROR","msg":"Vorsk not summoned`)
+		assert.Equal(t, 1, strings.Count(log.String(), `"level":"ERROR"`), "the failed placement is logged at ERROR once: %s", log.String())
+		assert.Contains(t, log.String(), `"level":"ERROR","msg":"Guaranteed boss skipped`)
 	})
 }
 

@@ -222,14 +222,15 @@ func (s *Session) reachAltar(playerID uuid.UUID, body *components.TransformCompo
 * nearest it, off doorways and clear of walls, fixtures and every delver's
 * body, among a bounded sample. With none it is placed as a guaranteed boss
 * is, the delver exclusion relaxed last, and logged loudly if even that fails.
-* It comes on top of the floor's count and beside any blood demon.
+* It comes on top of the floor's count and beside any blood demon. An altar
+* stands only on a dungeon floor (a floor of buildings places none).
 * FS-3103M §F R18, R20.
 **/
 func (s *Session) summonVorsk(altar *ecs.Entity) {
 	entities := s.EntityManager.GetAllEntities()
 	floor, ok := systems.CurrentFloor(entities)
-	if !ok {
-		slog.Error("Vorsk not summoned: the run has no floor", "sessionID", s.ID)
+	if !ok || s.dungeon == nil {
+		slog.Error("Vorsk not summoned: the run has no dungeon floor", "sessionID", s.ID)
 		return
 	}
 	vorsk := MonsterConfig{
@@ -239,20 +240,14 @@ func (s *Session) summonVorsk(altar *ecs.Entity) {
 	}
 
 	area := s.summonArea(entities)
-	if s.dungeon == nil {
-		s.placeDemon(&area, vorsk, floor.Depth, true)
-		return
-	}
 	if x, y, ok := s.besideAltar(s.dungeon, &area, altar); ok {
 		vorsk.X, vorsk.Y = x, y
 		CreateMonsterEntity(s.EntityManager, vorsk)
 		return
 	}
 	slog.Warn("Vorsk placed away from the altar: its room has no free spot", "sessionID", s.ID, "floor", floor.Depth)
-	if _, ok := s.placeDungeonDemon(s.dungeon, &area, vorsk, floor.Depth, demonGuaranteed); !ok {
-		slog.Error("Vorsk not summoned: no valid spawn point on the floor even relaxed",
-			"sessionID", s.ID, "floor", floor.Depth)
-	}
+	// a guaranteed boss that finds no spot even relaxed is logged there
+	s.placeDungeonDemon(s.dungeon, &area, vorsk, floor.Depth, demonGuaranteed)
 }
 
 // vorskLevel is the level Vorsk is summoned at on floor: the demon's level
@@ -267,8 +262,8 @@ func (s *Session) vorskLevel(floor int) int {
 }
 
 // summonArea is the floor as a summoned boss sees it mid-run: what it may not
-// stand on, the altar included, every delver in play and every monster
-// standing where it is now.
+// stand on (mapKeepOut, the altar included), every delver in play and every
+// monster standing where it is now.
 func (s *Session) summonArea(entities []*ecs.Entity) spawnArea {
 	area := spawnArea{
 		width:   s.mapWidth,
@@ -281,11 +276,8 @@ func (s *Session) summonArea(entities []*ecs.Entity) spawnArea {
 		if !ok {
 			continue
 		}
-		at := tc.(*components.TransformComponent)
-		switch {
-		case entity.HasComponent(ecs.ComponentTypeAltar):
-			area.keepOut = append(area.keepOut, centredArea(at.X, at.Y, commonconstants.ContainerWidthRadius, commonconstants.ContainerHeightRadius))
-		case entity.HasComponent(ecs.ComponentTypeEnemy):
+		if entity.HasComponent(ecs.ComponentTypeEnemy) {
+			at := tc.(*components.TransformComponent)
 			area.placed = append(area.placed, point{at.X, at.Y})
 		}
 	}

@@ -172,6 +172,20 @@ func TestMapKeepOut_CoversTheWholeBuilding(t *testing.T) {
 	assert.True(t, covered, "the floor enclosed by a building's walls is not open ground")
 }
 
+// A tome run's tome and altar are kept out as a container is: no monster
+// starts on either. FS-3103M §C R8.
+func TestMapKeepOut_CoversTheTomeAndTheAltar(t *testing.T) {
+	em := ecs.NewEntityManager()
+	CreateTomeEntity(em, 500, 400)
+	CreateAltarEntity(em, 900, 400)
+	keepOut := mapKeepOut(em.GetAllEntities())
+
+	for _, at := range []point{{500, 400}, {900, 400}} {
+		assert.Contains(t, keepOut, centredArea(at.x, at.y, constants.ContainerWidthRadius, constants.ContainerHeightRadius),
+			"no monster starts on the object at (%v, %v)", at.x, at.y)
+	}
+}
+
 // A floor deeper in the run is visibly harder: higher levels, by the floor
 // offset, with the same spread. FS-77AB6 §Requirements 21.
 func TestBuildFloor_LevelsMonstersByTheFloorDepth(t *testing.T) {

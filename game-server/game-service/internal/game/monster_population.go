@@ -345,7 +345,8 @@ func inPlayPositions(roster []*ecs.Entity) []point {
 /**
 * mapKeepOut is every area of the floor a monster's body may not overlap: each
 * building's whole footprint (its walls, door and the floor they enclose), every
-* door, container, switch, escape door and the stairs. A wall of no building, a
+* door, container, switch, escape door, the stairs, and a tome run's tome and
+* altar (FS-3103M §C R8). A wall of no building, a
 * dungeon floor's shell, is kept out by its own rect: grouped under the nil
 * house, a dungeon's walls would cover its whole floor.
 **/
@@ -385,10 +386,13 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 			continue
 		}
 
-		// containers, switches and escape doors stand centred on their position
+		// containers, switches, escape doors, the tome and the altar stand
+		// centred on their position, a container's size
 		if entity.HasComponent(ecs.ComponentTypeContainer) ||
 			entity.HasComponent(ecs.ComponentTypeSwitch) ||
-			entity.HasComponent(ecs.ComponentTypeEscapeDoor) {
+			entity.HasComponent(ecs.ComponentTypeEscapeDoor) ||
+			entity.HasComponent(ecs.ComponentTypeTome) ||
+			entity.HasComponent(ecs.ComponentTypeAltar) {
 			keepOut = append(keepOut, PlaceArea{
 				X: at.X - constants.ContainerWidthRadius,
 				Y: at.Y - constants.ContainerHeightRadius,

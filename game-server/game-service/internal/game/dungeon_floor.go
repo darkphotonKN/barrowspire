@@ -130,7 +130,6 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 
 	slog.Error("Dungeon floor fell back to a floor of buildings: this floor is a small one",
 		"sessionID", s.ID, "floor", depth, "tries", dungeonGenerations)
-	s.warnTomeRunFallback(depth)
 	return nil, dungeonFixtures{}
 }
 

@@ -3295,6 +3295,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	if dungeon != nil {
 		s.layDungeon(depth, dungeon, fixtures)
 	} else {
+		s.warnTomeRunFallback(depth)
 		s.layBuildings(depth)
 	}
 
