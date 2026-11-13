@@ -704,7 +704,7 @@ func TestCreateMonsterEntity_EliteHasMoreHealthAndDamage(t *testing.T) {
 // The broadcast names every monster as the server authored it: the demon as the
 // boss, an elite with its prefix, the rest plain. FS-77AB6 §Requirements 32.
 func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
-	s := rosterOnRun(t, 8, delverAt{level: 1, x: 100, y: 100})
+	s := rosterOnRun(t, 9, delverAt{level: 1, x: 100, y: 100})
 	s.populateMonsters(testSpireHeight, true, nil)
 	elite := CreateMonsterEntity(s.EntityManager, MonsterConfig{
 		Archetype: components.MonsterArchetypeTroll, Level: 2, Elite: true, Name: "Hollow Troll", X: 900, Y: 700,

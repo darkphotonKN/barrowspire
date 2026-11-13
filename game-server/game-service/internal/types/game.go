@@ -378,6 +378,21 @@ type StairsState struct {
 	Position *Position `json:"position"`
 }
 
+// TomeState is the Tome of Filth lying on the current floor: what it is and
+// where, nothing of the run's plan. FS-3103M §E R14-R15.
+type TomeState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+}
+
+// AltarState is the Altar of Consecration on its floor, burned once the tome
+// was burned at it. FS-3103M §E R14.
+type AltarState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Burned   bool      `json:"burned"`
+}
+
 // GateState is a hub gate as the client sees it: where it goes, where it
 // stands and how close counts. Its arrival point is server-only. FS-0XMCP
 // §Requirements 6.

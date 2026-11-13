@@ -136,6 +136,13 @@ func rollSpireHeight(rng populationRand) int {
 	return spireHeightOdds[len(spireHeightOdds)-1].Height
 }
 
+// The Tome of Filth and the Altar of Consecration. FS-3103M §B R5.
+const (
+	// the chance a run has a tome, rolled once with its height; 1 forces a
+	// tome into every run in a local build
+	TomeRunChance = 0.02
+)
+
 /*
 	The tiered roster: eight families of variants, each variant unlocked at a
 	tier of monster level. FS-C8VM7 §A R1-R9. The types and the functions that
@@ -246,14 +253,14 @@ const (
 
 	// the Gentle Meadows' level band, inclusive
 	MeadowsMinLevel = 1
-	MeadowsMaxLevel = 4
+	MeadowsMaxLevel = 2
 	// the Gentle Meadows' drop chance over the Spire's row (fieldDrops)
 	MeadowsDropFactor = 0.35
 
 	// the Forlorn Forest's level band, inclusive, and its drop chance over
 	// the Spire's (FS-X2F2H D15, D17)
-	ForestMinLevel   = 4
-	ForestMaxLevel   = 9
+	ForestMinLevel   = 8
+	ForestMaxLevel   = 12
 	ForestDropFactor = 0.5
 )
 

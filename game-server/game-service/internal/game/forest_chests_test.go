@@ -123,7 +123,7 @@ func itemCount(s *Session) int {
 }
 
 // A first open draws the item level uniformly from the Forest band, one draw
-// over the band's six levels, and every item it holds is at that level. R19.
+// over the band's five levels, and every item it holds is at that level. R19.
 func TestForestChest_FirstOpenRollsAtABandItemLevel(t *testing.T) {
 	tests := []struct {
 		name  string
