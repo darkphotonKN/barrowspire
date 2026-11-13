@@ -70,7 +70,7 @@ func TestSpireRoster_IsTheOwnersTable(t *testing.T) {
 // guarantee always holds; tiers only add. FS-C8VM7 §A R2, §C R20.
 func TestSpireRoster_EveryTierUnlocksABruteAndTwoFodder(t *testing.T) {
 	prev := 0
-	for tier := 1; tier <= MaxTier; tier++ {
+	for tier := 1; tier <= MaxLevelTier; tier++ {
 		roles := map[monsterRole]int{}
 		unlocked := 0
 		for _, family := range spireRoster {

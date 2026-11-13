@@ -90,7 +90,7 @@ func (p *endgamePlan) partyLevel(floor int) int {
 // pool is floor's pool, at the tier of its level. A variant the roster does
 // not have is left out; the plan's test fails on it first.
 func (p *endgamePlan) pool(floor int) floorPool {
-	pool := floorPool{Tier: tierOf(p.monsterLevel(floor))}
+	pool := floorPool{LevelTier: tierOf(p.monsterLevel(floor))}
 	for _, archetype := range p.Pools[floor] {
 		if entry, ok := variantOf(archetype); ok {
 			pool.Members = append(pool.Members, entry)

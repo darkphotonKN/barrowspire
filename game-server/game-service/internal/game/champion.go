@@ -20,7 +20,7 @@ import (
 * demon's level, a boss and never an elite, named "<Name> the <Epithet>".
 **/
 func rollChampion(rng populationRand, pool floorPool, partyLevel, floor int) MonsterConfig {
-	left := slices.DeleteFunc(unlockedAt(pool.Tier), func(e rosterEntry) bool {
+	left := slices.DeleteFunc(unlockedAt(pool.LevelTier), func(e rosterEntry) bool {
 		return slices.ContainsFunc(pool.Members, func(m rosterEntry) bool { return m.Variant == e.Variant })
 	})
 	if len(left) == 0 {

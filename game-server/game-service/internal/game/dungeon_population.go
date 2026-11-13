@@ -135,7 +135,7 @@ func (p *dungeonPopulation) hallPack(room int) {
 		leader, _ = p.pool.fodder(p.rng)
 	}
 	head := p.rollAs(leader.rollLook(p.rng), eliteChance(p.depth))
-	followers := make([]MonsterConfig, HallPackGhoulsMin+p.rng.IntN(HallPackGhoulsMax-HallPackGhoulsMin+1))
+	followers := make([]MonsterConfig, HallPackFodderMin+p.rng.IntN(HallPackFodderMax-HallPackFodderMin+1))
 	for i := range followers {
 		member, _ := p.pool.fodder(p.rng)
 		if i < HallPackBoneArchers {
@@ -147,7 +147,7 @@ func (p *dungeonPopulation) hallPack(room int) {
 	}
 
 	var best []point
-	for range HallPackTrollTries {
+	for range HallPackBruteTries {
 		at := p.packAround(region, len(followers))
 		if len(at) > len(best) {
 			best = at
@@ -171,9 +171,9 @@ func (p *dungeonPopulation) hallPack(room int) {
 	}
 }
 
-// packAround draws one troll spot in region and as many of n ghouls around it
-// as fit, returning their points, the troll's first; none when the troll
-// finds no spot. It places nothing: the area is left as it was found.
+// packAround draws one leader spot in region and as many of n followers
+// around it as fit, returning their points, the leader's first; none when the
+// leader finds no spot. It places nothing: the area is left as it was found.
 func (p *dungeonPopulation) packAround(region, n int) []point {
 	mark := len(p.area.placed)
 	defer func() { p.area.placed = p.area.placed[:mark] }()

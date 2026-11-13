@@ -54,14 +54,15 @@ const (
 	// as the generator draws rooms: up to 10 × 8)
 	HallMinWidth  = 8
 	HallMinHeight = 6
-	// a hall that is not the start or a treasure room holds one pack: a troll
-	// and a uniform [min, max] ghouls, each within the radius of the troll, in px
-	HallPackGhoulsMin = 1
-	HallPackGhoulsMax = 3
+	// a hall that is not the start or a treasure room holds one pack: a brute
+	// of the floor pool and a uniform [min, max] of the pool's fodder, each
+	// within the radius of the brute, in px
+	HallPackFodderMin = 1
+	HallPackFodderMax = 3
 	HallPackRadius    = 160.0
-	// troll spots a hall pack tries before it settles for the one that fitted
-	// the most of its ghouls
-	HallPackTrollTries = 20
+	// brute spots a hall pack tries before it settles for the one that fitted
+	// the most of its fodder
+	HallPackBruteTries = 20
 
 	// every other room but the start holds a uniform [min, max] rolled monsters;
 	// a top-up never takes a room past RoomMonstersTopUpMax
@@ -149,12 +150,12 @@ const (
 	read it are in monster_roster.go.
 */
 
-// Tiers and the step rule.
+// Level tiers and the step rule.
 const (
-	// a tier is this many monster levels, tier 1 being levels 1-5; the last
-	// tier is open-ended
-	TierLevelSpan = 5
-	MaxTier       = 6
+	// a level tier is this many monster levels, level tier 1 being levels 1-5;
+	// the last level tier is open-ended
+	LevelTierSpan = 5
+	MaxLevelTier  = 6
 
 	// step k of a family at level 1 is step 0's HP, damage, defence and magic
 	// resistance times these growths to the k (defence at least the step

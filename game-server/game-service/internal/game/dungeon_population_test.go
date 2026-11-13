@@ -124,8 +124,8 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 			require.Len(t, trolls, 1, "seed %d room %d: a hall holds one troll", seed, room)
 			assert.Len(t, archers, HallPackBoneArchers, "seed %d room %d: a floor-1 hall pack holds one Bone Archer", seed, room)
 			// the archer takes a ghoul's place: the pack's size is unchanged
-			assert.GreaterOrEqual(t, len(ghouls)+len(archers), HallPackGhoulsMin, "seed %d room %d", seed, room)
-			assert.LessOrEqual(t, len(ghouls)+len(archers), HallPackGhoulsMax, "seed %d room %d", seed, room)
+			assert.GreaterOrEqual(t, len(ghouls)+len(archers), HallPackFodderMin, "seed %d room %d", seed, room)
+			assert.LessOrEqual(t, len(ghouls)+len(archers), HallPackFodderMax, "seed %d room %d", seed, room)
 			for _, g := range append(ghouls, archers...) {
 				assert.LessOrEqual(t, dist(g.x, g.y, trolls[0].x, trolls[0].y), HallPackRadius,
 					"seed %d room %d: a ghoul strayed from its troll", seed, room)
@@ -353,7 +353,7 @@ func TestBuildFloor_BoneArchersOnEveryDungeonFloorAsOnFloor1(t *testing.T) {
 					want = HallPackBoneArchers
 				}
 				assert.Equal(t, want, members[roleRanged], "depth %d seed %d room %d: a hall pack's archer slot", depth, seed, room)
-				assert.LessOrEqual(t, slots, HallPackGhoulsMax, "depth %d seed %d room %d: the pack's size is unchanged", depth, seed, room)
+				assert.LessOrEqual(t, slots, HallPackFodderMax, "depth %d seed %d room %d: the pack's size is unchanged", depth, seed, room)
 			}
 		}
 		require.Positive(t, rolled, "depth %d", depth)
@@ -712,7 +712,7 @@ func TestPopulateMonsters_DungeonFloorPlacesARolledBloodDemon(t *testing.T) {
 // the treasure guards as they were.
 func TestDungeonPopulation_ThinnerFloorsTune(t *testing.T) {
 	assert.Equal(t, []int{30, 45}, []int{DungeonMonstersMin, DungeonMonstersMax})
-	assert.Equal(t, []int{1, 3}, []int{HallPackGhoulsMin, HallPackGhoulsMax})
+	assert.Equal(t, []int{1, 3}, []int{HallPackFodderMin, HallPackFodderMax})
 	assert.Equal(t, []int{0, 2, 3}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
 	assert.Equal(t, []int{3, 5}, []int{CorridorMonstersMin, CorridorMonstersMax})
 	assert.Equal(t, 0.5, TreasureGuardPackShare)

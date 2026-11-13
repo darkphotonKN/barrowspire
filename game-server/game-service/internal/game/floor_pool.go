@@ -9,31 +9,32 @@ import (
 
 /*
 	The floor pool: the five variants a Spire floor's standard monsters come
-	from, drawn when the floor is built from everything its tier unlocks.
+	from, drawn when the floor is built from everything its level tier
+	unlocks.
 	FS-C8VM7 §C R19-R25.
 */
 
 // floorPool is a floor's variants, each with its place on the roster, in the
 // order they were drawn.
 type floorPool struct {
-	Tier    int
-	Members []rosterEntry
+	LevelTier int
+	Members   []rosterEntry
 }
 
-// floorBaseLevel is the level a floor's tier is read from: the party's plus
+// floorBaseLevel is the level a floor's level tier is read from: the party's plus
 // the floor's offset, with no spread (FS-C8VM7 §A R1).
 func floorBaseLevel(partyLevel, floor int) int {
 	return monsterLevel(partyLevel, floor, 0)
 }
 
-// unlockedAt is every roster variant a floor of this tier may draw, in roster
-// order (FS-C8VM7 §A R2).
-func unlockedAt(tier int) []rosterEntry {
+// unlockedAt is every roster variant a floor of this level tier may draw, in
+// roster order (FS-C8VM7 §A R2).
+func unlockedAt(levelTier int) []rosterEntry {
 	var unlocked []rosterEntry
 	for i := range spireRoster {
 		family := &spireRoster[i]
 		for step, v := range family.Variants {
-			if v.Unlock <= tier {
+			if v.Unlock <= levelTier {
 				unlocked = append(unlocked, rosterEntry{Family: family, Step: step, Variant: v})
 			}
 		}
@@ -42,19 +43,19 @@ func unlockedAt(tier int) []rosterEntry {
 }
 
 /**
-* drawFloorPool is a floor's pool at its tier: FloorPoolSize distinct unlocked
+* drawFloorPool is a floor's pool at its level tier: FloorPoolSize distinct unlocked
 * variants, all of them when there are no more. One brute, then two fodder,
 * take the guaranteed places first, then the rest are drawn from everything
 * left; every draw is weighted by its family's pool weight, without
 * replacement (FS-C8VM7 §C R19-R20).
 **/
-func drawFloorPool(rng populationRand, tier int) floorPool {
-	left := unlockedAt(tier)
+func drawFloorPool(rng populationRand, levelTier int) floorPool {
+	left := unlockedAt(levelTier)
 	if len(left) <= FloorPoolSize {
-		return floorPool{Tier: tier, Members: left}
+		return floorPool{LevelTier: levelTier, Members: left}
 	}
 
-	pool := floorPool{Tier: tier}
+	pool := floorPool{LevelTier: levelTier}
 	take := func(fits func(rosterEntry) bool) {
 		if i, ok := weightedPick(rng, left, fits); ok {
 			pool.Members = append(pool.Members, left[i])

@@ -59,10 +59,10 @@ type rosterEntry struct {
 	Variant monsterVariant
 }
 
-// tierOf is the tier a base level falls in: five levels a tier, the last
-// open-ended (FS-C8VM7 §A R1).
+// tierOf is the level tier a base level falls in: five levels a level tier,
+// the last open-ended (FS-C8VM7 §A R1).
 func tierOf(baseLevel int) int {
-	return min((max(baseLevel, 1)-1)/TierLevelSpan+1, MaxTier)
+	return min((max(baseLevel, 1)-1)/LevelTierSpan+1, MaxLevelTier)
 }
 
 // variantOf is the roster's entry for an archetype, either look of a goblin;

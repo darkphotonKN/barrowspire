@@ -135,7 +135,7 @@ func TestEndgamePlan_NamesTheRostersVariants_EveryTwentySixPlusOne(t *testing.T)
 		for _, archetype := range named {
 			entry, ok := variantOf(archetype)
 			require.True(t, ok, "floor %d names %s, which the roster does not have", floor, archetype)
-			assert.Equal(t, MaxTier, entry.Variant.Unlock, "floor %d: %s is a 26+ variant", floor, archetype)
+			assert.Equal(t, MaxLevelTier, entry.Variant.Unlock, "floor %d: %s is a 26+ variant", floor, archetype)
 			roles[entry.Family.Role]++
 			if entry.Family.Capped {
 				darkWarriors++
@@ -148,8 +148,8 @@ func TestEndgamePlan_NamesTheRostersVariants_EveryTwentySixPlusOne(t *testing.T)
 		assert.Len(t, endgameRunPlan.pool(floor).Members, FloorPoolSize, "floor %d", floor)
 	}
 
-	for _, entry := range unlockedAt(MaxTier) {
-		if entry.Variant.Unlock == MaxTier {
+	for _, entry := range unlockedAt(MaxLevelTier) {
+		if entry.Variant.Unlock == MaxLevelTier {
 			assert.True(t, seen[entry.Variant.Archetype], "%s is on no floor", entry.Variant.Name)
 		}
 	}

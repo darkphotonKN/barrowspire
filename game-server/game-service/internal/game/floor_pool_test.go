@@ -33,7 +33,7 @@ func TestDrawFloorPool_Tier1IsTheFiveTier1Variants(t *testing.T) {
 		pool := drawFloorPool(seededSpawns(seed), 1)
 		assert.ElementsMatch(t, []components.MonsterArchetype{"ghoul", "bone_archer", "troll", "barrow_thrall", "spire_wraith"},
 			pool.archetypes(), "seed %d", seed)
-		assert.Equal(t, 1, pool.Tier)
+		assert.Equal(t, 1, pool.LevelTier)
 	}
 }
 
@@ -42,7 +42,7 @@ func TestDrawFloorPool_Tier1IsTheFiveTier1Variants(t *testing.T) {
 // is drawn. FS-C8VM7 §C R19-R20.
 func TestDrawFloorPool_FiveDistinctUnlockedWithTheRolesGuaranteed(t *testing.T) {
 	rng := seededSpawns(42)
-	for tier := 1; tier <= MaxTier; tier++ {
+	for tier := 1; tier <= MaxLevelTier; tier++ {
 		seen := map[components.MonsterArchetype]bool{}
 		for range 2000 {
 			pool := drawFloorPool(rng, tier)
@@ -65,7 +65,7 @@ func TestDrawFloorPool_FiveDistinctUnlockedWithTheRolesGuaranteed(t *testing.T) 
 // sits in tier-6 pools far more often than a weight-1 brute. FS-C8VM7 §C R20.
 func TestDrawFloorPool_DarkWarriorsWeighDouble(t *testing.T) {
 	rng := seededSpawns(9)
-	unlocked := unlockedAt(MaxTier)
+	unlocked := unlockedAt(MaxLevelTier)
 	brute := func(e rosterEntry) bool { return e.Family.Role == roleBrute }
 	picks := map[components.MonsterArchetype]int{}
 	const draws = 100000
@@ -81,7 +81,7 @@ func TestDrawFloorPool_DarkWarriorsWeighDouble(t *testing.T) {
 
 	in := map[components.MonsterArchetype]int{}
 	for range 20000 {
-		for _, a := range drawFloorPool(rng, MaxTier).archetypes() {
+		for _, a := range drawFloorPool(rng, MaxLevelTier).archetypes() {
 			in[a]++
 		}
 	}
@@ -198,7 +198,7 @@ func TestBuildFloor_DeepFloorsSpawnTheirPoolCappedAndNamed(t *testing.T) {
 		s := deepFloor(t, seed, 30, depth)
 		require.NotNil(t, s.dungeon, "seed %d", seed)
 		pool := s.floorPool
-		assert.Equal(t, MaxTier, pool.Tier)
+		assert.Equal(t, MaxLevelTier, pool.LevelTier)
 		require.Len(t, pool.Members, FloorPoolSize)
 
 		standard := standardMonstersIn(s)

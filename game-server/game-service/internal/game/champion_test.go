@@ -31,7 +31,7 @@ func TestBuildFloor_AHeight4TopFloorHoldsAChampionOutsideThePool(t *testing.T) {
 	for seed := uint64(1); seed <= 30; seed++ {
 		s := topOf(t, seed, 12, 4)
 		pool := s.floorPool
-		require.Equal(t, 3, pool.Tier, "seed %d: base level 15 is tier 3", seed)
+		require.Equal(t, 3, pool.LevelTier, "seed %d: base level 15 is tier 3", seed)
 
 		champions := bossesIn(s)[championKey]
 		require.Len(t, champions, 1, "seed %d", seed)
@@ -42,7 +42,7 @@ func TestBuildFloor_AHeight4TopFloorHoldsAChampionOutsideThePool(t *testing.T) {
 		assertChampion(t, champion, level, "seed %d", seed)
 
 		entry, _ := variantOf(champion.Archetype)
-		assert.LessOrEqual(t, entry.Variant.Unlock, pool.Tier, "seed %d: unlocked at the tier", seed)
+		assert.LessOrEqual(t, entry.Variant.Unlock, pool.LevelTier, "seed %d: unlocked at the tier", seed)
 		assert.NotContains(t, pool.archetypes(), champion.Archetype, "seed %d: not of the pool", seed)
 
 		sheet := monsterSheets[champion.Archetype]
@@ -77,7 +77,7 @@ func TestRollChampion_FromThePoolAtTier1(t *testing.T) {
 // weight, and a goblin champion rolls its look. FS-C8VM7 §D R26.
 func TestRollChampion_UniformAmongTheLeftoversAGoblinInItsLook(t *testing.T) {
 	pool := poolOf(t, "troll", "ghoul", "barrow_thrall", "spire_wraith", "bone_archer")
-	pool.Tier = 2 // leaves the Shade and the Goblin
+	pool.LevelTier = 2 // leaves the Shade and the Goblin
 	rng := seededSpawns(8)
 	counts := map[components.MonsterArchetype]int{}
 	for range 4000 {
