@@ -679,41 +679,41 @@ M16. **`notify`** and **`notify_important`**, as a notice is drawn:
 
 ### Acceptance Criteria
 
-- [ ] `UI_EFFECTS` names 27 effects; `PreloadScene` queues each as
+- [x] `UI_EFFECTS` names 27 effects; `PreloadScene` queues each as
       `[/audio/sfx/<name>.m4a, /audio/sfx/<name>.ogg]` under `sfx:<name>` and still reaches the
       main menu; `public/audio/sfx/` holds the 16 new ogg and m4a files, each m4a AAC in `m4af`,
       mono, 44.1 kHz, within 10 ms of its ogg.
-- [ ] Inside `act`, the first effect asked for plays in place of the rule's, once; with none
+- [x] Inside `act`, the first effect asked for plays in place of the rule's, once; with none
       asked for the rule's plays; outside `act` an effect plays at once (table-driven).
-- [ ] `menu_hover` played twice within 50 ms plays once; again after 50 ms plays again; the
+- [x] `menu_hover` played twice within 50 ms plays once; again after 50 ms plays again; the
       cooldown is a named export; other effects have none.
-- [ ] The ESC menu, OPTIONS and the Fall confirm, in each world: M5's hovers on enabled options
+- [x] The ESC menu, OPTIONS and the Fall confirm, in each world: M5's hovers on enabled options
       only; *Options*, *Change character*, *Leave the queue* play `menu_click`; OPTIONS' *Back*,
       × and Esc play `menu_back`; the menu's *Back*, ×, Esc, the Menu icon and *Leave the barrow*
       play `settings_close` only; *Fall where you stand* plays `dialog_open`; *Fall* plays
       `dialog_confirm_heavy`; *Not yet*, its × and Esc play `dialog_cancel` only.
-- [ ] OPTIONS: each level move by ◄, ►, a step or ←/→ plays one `menu_slider_tick`, a Sound effects
+- [x] OPTIONS: each level move by ◄, ►, a step or ←/→ plays one `menu_slider_tick`, a Sound effects
       tick at the new level; a step on the current level plays nothing; ◄ at 0, ► at 5 and ←/→ at
       the end play `menu_error`; Fullscreen plays `menu_toggle_on` from Off and `menu_toggle_off`
       from On.
-- [ ] A dimmed row pressed or picked by its key, in the menu, the Fall confirm or the dialogue
+- [x] A dimmed row pressed or picked by its key, in the menu, the Fall confirm or the dialogue
       card, plays `menu_error` and sends nothing; a hover on it plays nothing.
-- [ ] The corner row: a hover on Menu, Inventory, Character or Party plays `menu_hover`; on the
+- [x] The corner row: a hover on Menu, Inventory, Character or Party plays `menu_hover`; on the
       greyed Mailbox nothing, its press `menu_error`; a press that changes no window plays
       `menu_error`; a press that does keeps its window's one sound.
-- [ ] The dialogue card: its picks play `dialog_confirm` (the door's ways), `menu_click` (*Go
+- [x] The dialogue card: its picks play `dialog_confirm` (the door's ways), `menu_click` (*Go
       on*), `dialog_cancel` (*Farewell*, *Not yet*, *I'll wait*, a resident's *Leave*, Esc, E or
       Enter with nothing to confirm), each once, by the pointer or its key; the town plays
       `dialog_open` on E by a figure, E in the gate and stepping into it, and nothing on a card
       drawn again or a page turned.
-- [ ] The town's envelope: hover `menu_hover`; a press under a dialogue `menu_error`; a newer
+- [x] The town's envelope: hover `menu_hover`; a press under a dialogue `menu_error`; a newer
       letter's glow `notify`.
-- [ ] A notice drawn plays `notify`, or `notify_important` when it carries `important`; each
+- [x] A notice drawn plays `notify`, or `notify_important` when it carries `important`; each
       M16 call site says it as listed; nothing plays for a notice with no world reported.
-- [ ] The main menu: the delete press plays `dialog_open` then `dialog_confirm_heavy` on OK or
+- [x] The main menu: the delete press plays `dialog_open` then `dialog_confirm_heavy` on OK or
       `dialog_cancel` on Cancel, and deletes only on OK.
-- [ ] Nothing plays before the context runs, and nothing late (S12, unchanged).
-- [ ] No server, proto or gateway change. Full client vitest, `tsc --noEmit`, `npm run lint` and
+- [x] Nothing plays before the context runs, and nothing late (S12, unchanged).
+- [x] No server, proto or gateway change. Full client vitest, `tsc --noEmit`, `npm run lint` and
       `npm run lint:fence` pass.
 - [ ] The owner's listening check (HITL) passes, with the table of where each sound plays.
 
