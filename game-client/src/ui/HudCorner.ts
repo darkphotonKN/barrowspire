@@ -1,7 +1,7 @@
 /**
  * The corner row (FS-3EBCA): the panel icons in the bottom-right corner of every world, from the
  * right Menu (a riveted gear: one Esc press), Inventory (a haversack: the inventory), Character (a
- * hooded figure: the character panel), Party (two hooded figures: the party panel) and the Mailbox.
+ * bust with pauldrons: the character panel), Party (two such busts: the party panel) and the Mailbox.
  * In the town the Mailbox is the mailbox's own envelope (`MailboxEnvelope`, FS-1GZGD § Change),
  * which this row leaves its slot to; elsewhere it is drawn here, greyed (R9).
  *
@@ -155,7 +155,7 @@ export class HudCorner {
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "inventory") drawBackpack(g, cx, cy, ink, alpha);
-    else if (icon.spec.icon === "character") drawHooded(g, cx, cy + 1, 1, ink, alpha);
+    else if (icon.spec.icon === "character") drawBust(g, cx, cy + 1, 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
 }
@@ -362,7 +362,7 @@ const HAVERSACK_MID = (() => {
  * The Inventory icon (FS-3EBCA R3, § Change: The inventory icon is an inked backpack, as the
  * owner's second tweak round made it): an old haversack in the other glyphs' lines, centred on
  * (cx, cy), in `ink` at `alpha`. Nothing filled (FS-J1672 R3). Where the pouch hangs in front of
- * the body, the body's line is left undrawn, as the Party glyph's back figure is.
+ * the body, the body's line is left undrawn, as the Party glyph's back bust is.
  */
 export function drawBackpack(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
   const ox = cx - HAVERSACK_MID[0];
@@ -408,55 +408,67 @@ export function drawBackpack(g: Ink, cx: number, cy: number, ink: number, alpha:
   segment(POUCH_CORD);
 }
 
-// ── The hooded figure (FS-QHN87 R4, R5): the game's player, a head-and-shoulders figure in a hood
-//    and cloak. Drawn in local px at scale 1, x to the right and y down from the old bust's centre,
-//    so it keeps that bust's place and size.
+// ── The bust (FS-3EBCA R3, as FS-QHN87's round 1 made it, the owner 2026-11-13: 「組隊跟角色雖然是斗篷
+//    但不知道的會覺得怪 不要斗篷了」): a head over the curve of the shoulders, as before, now with a pair
+//    of rounded pauldrons over the shoulders and a collar at the neck. Drawn in local px at scale 1,
+//    x to the right and y down from the bust's centre.
 
-/** The hem: its right corner (the left is its mirror) and how far its middle sags below the corners. */
-const HEM_CORNER: Pt = [10.6, 9.4];
-const HEM_SAG = 4.4;
+/** The head: its centre's height and radius, set a little higher so it stands clear in the row's line. */
+const HEAD = { y: -6.6, r: 4.8 };
+/** The shoulders: the upper half of this circle, as before. */
+const SHOULDERS = { y: 12, r: 11 };
+const deg = (d: number) => (d * Math.PI) / 180;
+/** A point `r` from the shoulders' centre at angle `a` (a quarter turn up is -π/2). */
+const polar = (a: number, r: number): Pt => [Math.cos(a) * r, SHOULDERS.y + Math.sin(a) * r];
+/** The shoulders' curve from angle `from` to `to`, both ends kept. */
+const shoulderArc = (from: number, to: number, steps: number): Pt[] =>
+  Array.from({ length: steps + 1 }, (_, i) => polar(from + ((to - from) * i) / steps, SHOULDERS.r));
+/**
+ * A pauldron: a rounded plate over the shoulder, from the arm up to by the neck, standing this far
+ * out from the shoulders' curve at its middle; the curve under it is the plate's, so none is drawn.
+ */
+const PAULDRON = { arm: deg(190), neck: deg(236), out: 2.8 };
+function pauldronArc(from: number, to: number): Pt[] {
+  const a = polar(from, SHOULDERS.r);
+  const b = polar(to, SHOULDERS.r);
+  const peak = polar((from + to) / 2, SHOULDERS.r + PAULDRON.out);
+  // the quadratic whose middle is the peak: its pull is twice the peak less the chord's middle
+  return bend(a, [2 * peak[0] - (a[0] + b[0]) / 2, 2 * peak[1] - (a[1] + b[1]) / 2], b, 10);
+}
+const mirrored = (a: number) => 3 * Math.PI - a;
+/**
+ * The shoulders' line, one path from the left arm over the top to the right: up the arm, over the
+ * left pauldron, across the shoulders, over the right pauldron, down the arm. One path, so where a
+ * plate meets the shoulder its corner is joined (FS-QHN87 R2).
+ */
+const SHOULDER_LINE: Pt[] = [
+  ...shoulderArc(Math.PI, PAULDRON.arm, 2),
+  ...pauldronArc(PAULDRON.arm, PAULDRON.neck),
+  ...shoulderArc(PAULDRON.neck, mirrored(PAULDRON.neck), 16).slice(1),
+  ...pauldronArc(mirrored(PAULDRON.neck), mirrored(PAULDRON.arm)),
+  ...shoulderArc(mirrored(PAULDRON.arm), 2 * Math.PI, 2).slice(1),
+];
+/** Each pauldron's plate, closed along the shoulders' curve under it: the shape it covers. */
+const PAULDRONS: Pt[][] = [
+  [...pauldronArc(PAULDRON.arm, PAULDRON.neck), ...shoulderArc(PAULDRON.neck, PAULDRON.arm, 8)],
+  [...pauldronArc(mirrored(PAULDRON.neck), mirrored(PAULDRON.arm)), ...shoulderArc(mirrored(PAULDRON.arm), mirrored(PAULDRON.neck), 8)],
+];
+/**
+ * The collar: a gorget's edge across the chest under the neck, round the shoulders' centre this far
+ * out, wide enough that it reads as a plate's edge and not a mark on its own.
+ */
+const COLLAR_R = 6.2;
+const COLLAR: Pt[] = Array.from({ length: 17 }, (_, i) => polar(deg(222) + (deg(96) * i) / 16, COLLAR_R));
 
-/** Its right half from the hood's peak down to the hem's corner; the left is its mirror. */
-const HOOD_RIGHT: Pt[] = [
-  [0, -10.6],
-  ...bend([0, -10.6], [2.2, -9.2], [4.9, -7.2], 4),
-  ...bend([4.9, -7.2], [7.4, -5.4], [7.4, -2.6], 5),
-  // in at the neck, where the hood meets the cloak
-  ...bend([7.4, -2.6], [7.4, 0.6], [6.2, 2.4], 4),
-  // the cloak over the shoulder and down its side
-  ...bend([6.2, 2.4], [10.3, 2.8], HEM_CORNER, 7),
-];
-/** The hem's curve from the right corner to the left. */
-const HEM: Pt[] = bend(HEM_CORNER, [0, HEM_CORNER[1] + HEM_SAG], [-HEM_CORNER[0], HEM_CORNER[1]], 12);
-/** The whole outline, closed back to the peak: the peak and the hem's corners are vertices of it. */
-const HOODED: Pt[] = [
-  ...HOOD_RIGHT,
-  ...HEM,
-  ...HOOD_RIGHT.slice(1, -1)
-    .reverse()
-    .map(([x, y]) => [-x, y] as Pt),
-];
-/** The hood's opening: from the throat up its left side to a point under the peak and down again. */
-const HOOD_OPENING: Pt[] = [
-  [0, 2.6],
-  ...bend([0, 2.6], [-7.2, -1.2], [0, -6], 10),
-  ...bend([0, -6], [7.2, -1.2], [0, 2.6], 10).slice(0, -1),
-];
-/** The point of the hem at `x`, so a fold ends on it. */
-const HEM_AT = (x: number): Pt => {
-  const t = (1 - x / HEM_CORNER[0]) / 2;
-  return [x, HEM_CORNER[1] + 2 * HEM_SAG * t * (1 - t)];
-};
-/** The cloak's folds: from under each shoulder down to the hem. */
-const CLOAK_FOLDS: Pt[][] = [-1, 1].map((side) => [
-  [5.4 * side, 4.6] as Pt,
-  ...bend([5.4 * side, 4.6], [6.6 * side, 7.6], HEM_AT(6.2 * side), 5),
-]);
-
-/** A hooded figure laid at (cx, cy), scale s: its outline, opening and folds in screen px. */
-function hoodedAt(cx: number, cy: number, s: number) {
+/** A bust laid at (cx, cy), scale s: its head, and its lines in screen px. */
+function bustAt(cx: number, cy: number, s: number) {
   const place = (ps: readonly Pt[]) => ps.map(([x, y]) => [cx + x * s, cy + y * s] as Pt);
-  return { outline: place(HOODED), opening: place(HOOD_OPENING), folds: CLOAK_FOLDS.map(place) };
+  return {
+    head: { x: cx, y: cy + HEAD.y * s, r: HEAD.r * s },
+    shoulders: { x: cx, y: cy + SHOULDERS.y * s, r: SHOULDERS.r * s },
+    lines: [place(SHOULDER_LINE), place(COLLAR)],
+    pauldrons: PAULDRONS.map(place),
+  };
 }
 
 /** How far (x, y) stands from the segment a–b. */
@@ -467,21 +479,23 @@ function toSegment(x: number, y: number, a: Pt, b: Pt): number {
   return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
 }
 
-/**
- * Whether (x, y) lies on the shape `outline` closes round, its line's width included: where a figure
- * in front hides what is behind it.
- */
-function covers(outline: readonly Pt[], x: number, y: number): boolean {
-  let within = false;
+/** Whether (x, y) lies inside the shape `outline` closes round (its two ends joined). */
+function within(outline: readonly Pt[], x: number, y: number): boolean {
+  let hit = false;
   for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
     const [a, b] = [outline[i], outline[j]];
-    if (a[1] > y !== b[1] > y && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) within = !within;
-    if (toSegment(x, y, a, b) <= LINE_W) return true;
+    if (a[1] > y !== b[1] > y && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) hit = !hit;
   }
-  return within;
+  return hit;
 }
 
-/** How finely a line is cut where a figure in front covers it. */
+/** Whether (x, y) lies on the shape `outline` closes round, its line's width included. */
+function covers(outline: readonly Pt[], x: number, y: number): boolean {
+  if (within(outline, x, y)) return true;
+  return outline.some((a, i) => toSegment(x, y, a, outline[(i + 1) % outline.length]) <= LINE_W);
+}
+
+/** How finely a line is cut where a bust in front covers it. */
 const COVER_STEP = 0.25;
 
 /**
@@ -515,13 +529,22 @@ function uncovered(points: readonly Pt[], closed: boolean, hidden: (p: Pt) => bo
 }
 
 /**
- * A hooded figure (FS-3EBCA R3; FS-QHN87 R4), `s` its scale: a peaked hood whose opening is only
- * its inner curve, no face under it, and a cloak falling to a curved hem with two folds. With
- * `front`, the figure standing in front of this one, this one's lines are left undrawn where that
- * one covers them, its line's width included (FS-J1672 R3): nothing is filled, so no dark patch is
- * left on the world.
+ * Whether (x, y) lies on the bust's shape, its line's width included: its head, its shoulders or a
+ * pauldron. Where it stands in front, it hides what is behind it.
  */
-export function drawHooded(
+function onBust(b: ReturnType<typeof bustAt>, x: number, y: number): boolean {
+  if (Math.hypot(x - b.head.x, y - b.head.y) <= b.head.r + LINE_W) return true;
+  if (y <= b.shoulders.y && Math.hypot(x - b.shoulders.x, y - b.shoulders.y) <= b.shoulders.r + LINE_W) return true;
+  return b.pauldrons.some((plate) => covers(plate, x, y));
+}
+
+/**
+ * A bust (FS-3EBCA R3; FS-QHN87 round 1), `s` its scale: a head over the curve of the shoulders, a
+ * rounded pauldron over each shoulder and a collar at the neck; no face. With `front`, the bust
+ * standing in front of this one, this one's lines are left undrawn where that one covers them, its
+ * line's width included (FS-J1672 R3): nothing is filled, so no dark patch is left on the world.
+ */
+export function drawBust(
   g: Ink,
   cx: number,
   cy: number,
@@ -530,23 +553,25 @@ export function drawHooded(
   alpha: number,
   front?: { cx: number; cy: number; s: number },
 ): void {
-  const fig = hoodedAt(cx, cy, s);
-  const cover = front && hoodedAt(front.cx, front.cy, front.s).outline;
-  const hidden = (p: Pt) => (cover ? covers(cover, p[0], p[1]) : false);
+  const b = bustAt(cx, cy, s);
+  const cover = front && bustAt(front.cx, front.cy, front.s);
+  const hidden = (p: Pt) => (cover ? onBust(cover, p[0], p[1]) : false);
   g.lineStyle(LINE_W, ink, alpha);
-  const lines: [readonly Pt[], boolean][] = [
-    [fig.outline, true],
-    [fig.opening, true],
-    ...fig.folds.map((fold): [Pt[], boolean] => [fold, false]),
-  ];
-  for (const [points, closed] of lines) {
-    for (const run of uncovered(points, closed, hidden)) strokeLine(g, run.points, run.closed);
+  const head = Array.from({ length: 73 }, (_, i): Pt => {
+    const a = (i / 72) * 2 * Math.PI;
+    return [b.head.x + Math.cos(a) * b.head.r, b.head.y + Math.sin(a) * b.head.r];
+  });
+  // the head is a circle while nothing covers it, as the Party's back one stands clear
+  if (head.some(hidden)) for (const run of uncovered(head.slice(0, -1), true, hidden)) strokeLine(g, run.points, run.closed);
+  else g.strokeCircle(b.head.x, b.head.y, b.head.r);
+  for (const line of b.lines) {
+    for (const run of uncovered(line, false, hidden)) strokeLine(g, run.points, run.closed);
   }
 }
 
-/** Two hooded figures (FS-QHN87 R5): one stepped behind and above the other, the front one over it. */
+/** Two busts (FS-QHN87 round 1): one stepped behind and above the other, the front one over it. */
 export function drawParty(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
   const front = { cx: cx + 5, cy: cy + 2, s: 0.85 };
-  drawHooded(g, cx - 6, cy - 2, 0.8, ink, alpha, front);
-  drawHooded(g, front.cx, front.cy, front.s, ink, alpha);
+  drawBust(g, cx - 6, cy - 2, 0.8, ink, alpha, front);
+  drawBust(g, front.cx, front.cy, front.s, ink, alpha);
 }

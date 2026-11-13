@@ -777,24 +777,25 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   *(Added by [FS-P0HSP](../../docs/specs/P0HSP-town-and-field-minimap.md), 2026-11-12.)*
 - **Corner row.** The panel icons in the bottom-right corner of every world (`src/ui/HudCorner.ts`):
   from the right Menu (a gear with bevelled teeth and a riveted inner ring), Inventory (an old
-  haversack), Character (a hooded, cloaked figure with only shadow under the hood, the game's
-  player), Party (two such figures, the back one's lines left undrawn behind the front one) and
-  Mailbox (the envelope, tied with a diagonal cord and knot, a corner folded over and creases at
-  its flap, with no circle in its middle). They stand bare over the world, with no plate under
-  them ([FS-J1672](../../docs/specs/J1672-bare-corner-icons.md)), each on a 58 × 46 press area, 8 px
-  apart, 16 px in from the corner. All five are line glyphs at one 2.25 px width (`GLYPH_LINE_W`,
-  over the renderer's 2 px join threshold, every angled corner a vertex inside one path) of the
-  interactable amber, brighter under the pointer, with nothing filled; a greyed icon (Mail outside
-  the town) is `hudFaint` and never brightens, since an amber thing the player cannot act on is a
-  defect. The Inventory glyph is a haversack with a blanket rolled across its top and tied with
-  rope, a rounded flap with a tooled line inside its edge shut by a hasp on a ring, two rivets, and
-  a drawstring pouch hanging at its side. Under the pointer a 12 px vellum label on the HUD panel
-  names the icon and its key. Everything is drawn in code from tokens, with no baked art. The
-  ability card stands directly above the row.
+  haversack), Character (a bust: a head over the shoulders, a rounded pauldron standing out over
+  each shoulder and a gorget's edge across the chest, no face), Party (two such busts, the back
+  one's lines left undrawn behind the front one) and Mailbox (the plain envelope: its edge, the flap
+  down to its point and the folds at its foot, with nothing in its middle). They stand bare over
+  the world, with no plate under them ([FS-J1672](../../docs/specs/J1672-bare-corner-icons.md)),
+  each on a 58 × 46 press area, 8 px apart, 16 px in from the corner. All five are line glyphs at
+  one 2.25 px width (`GLYPH_LINE_W`, over the renderer's 2 px join threshold, every angled corner a
+  vertex inside one path) of the interactable amber, brighter under the pointer, with nothing
+  filled; a greyed icon (Mail outside the town) is `hudFaint` and never brightens, since an amber
+  thing the player cannot act on is a defect. The Inventory glyph is a haversack with a blanket
+  rolled across its top and tied with rope, a rounded flap with a tooled line inside its edge shut
+  by a hasp on a ring, two rivets, and a drawstring pouch hanging at its side. Under the pointer a
+  12 px vellum label on the HUD panel names the icon and its key. Everything is drawn in code from
+  tokens, with no baked art. The ability card stands directly above the row.
   *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-12; rewritten by
   [FS-3EBCA § Change: The inventory icon is an inked backpack](../../docs/specs/3EBCA-hud-corner-icons.md),
   2026-11-13, and by its owner's tweak rounds the same day; glyphs drawn richer by
-  [FS-QHN87](../../docs/specs/QHN87-richer-corner-glyphs.md), 2026-11-13.)*
+  [FS-QHN87](../../docs/specs/QHN87-richer-corner-glyphs.md), 2026-11-13, as its owner's first
+  tweak round left them: busts with pauldrons, not hooded figures, and the plain envelope.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

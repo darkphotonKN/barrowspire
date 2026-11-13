@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { HudCorner, drawHooded, type CornerIconSpec } from "./HudCorner";
+import { HudCorner, drawBust, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
 import { GLYPH_LINE_W, envelopeFlapPoint } from "./MailboxEnvelope";
 
@@ -694,75 +694,85 @@ describe("HudCorner (FS-QHN87 R3: a riveted gear)", () => {
   });
 });
 
-/** The figure's outline: the one closed path its graphics strokes, the largest if more. */
-const outlineOf = (ls: Line[]) =>
-  ls.filter((l) => l.closed).sort((a, b) => b.points.length - a.points.length)[0];
+// FS-QHN87 round 1 (the owner, 2026-11-13: 「組隊跟角色雖然是斗篷 但不知道的會覺得怪 不要斗篷了」): the
+// Character icon is a bust again, a head over the shoulders, now with a pair of pauldrons and a
+// collar; Party is two of them.
 
-describe("HudCorner (FS-QHN87 R4: Character, a hooded figure)", () => {
-  const figure = () => {
+/** A bust's own geometry at scale s on (cx, cy), as today's (f779a9b0) bust stood it. */
+const shouldersOf = (cx: number, cy: number, s: number) => ({ x: cx, y: cy + 12 * s, r: 11 * s });
+
+/** A bust's parts, read from its strokes: its head, its shoulders' line and its collar. */
+function bustParts(g: FakeGraphics, cx: number, cy: number, s: number) {
+  const sh = shouldersOf(cx, cy, s);
+  const off = (p: { x: number; y: number }) => Math.hypot(p.x - sh.x, p.y - sh.y) - sh.r;
+  const heads = g.ops.filter(({ m }) => m === "strokeCircle").map(({ args: [x, y, r] }) => ({ x, y, r }));
+  const lines = linesOf(g);
+  const at = (p: { x: number; y: number }, x: number, y: number) => Math.hypot(p.x - x, p.y - y) < 0.05;
+  // the shoulders' line: the one running from the left arm's foot to the right's
+  const shoulder = lines.filter((l) => at(l.points[0], cx - sh.r, sh.y) && at(l.points[l.points.length - 1], cx + sh.r, sh.y));
+  const collars = lines.filter((l) => !shoulder.includes(l));
+  return { sh, off, heads, shoulder, collars };
+}
+
+describe("HudCorner (FS-QHN87 round 1: Character, a bust with pauldrons)", () => {
+  const bust = () => {
     const env = setup([{ icon: "character" }]);
     const f = cornerIconFrame("character", viewport);
-    return { g: env.graphics[0], cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
+    const [cx, cy] = [f.x + f.width / 2, f.y + f.height / 2 + 1];
+    return { g: env.graphics[0], cx, cy, parts: bustParts(env.graphics[0], cx, cy, 1) };
   };
 
-  it("should draw no circle for a head or a face", () => {
-    const { g } = figure();
-    expect(g.calls).not.toContain("strokeCircle");
+  it("should draw a head over the shoulders' line, with nothing in the head: no face", () => {
+    const { g, cx, parts } = bust();
+    expect(parts.heads).toHaveLength(1);
+    const [head] = parts.heads;
+    expect(head.x).toBe(cx);
+    expect(head.r).toBeGreaterThan(4);
+    expect(head.r).toBeLessThan(6);
+    // the head stands clear over the shoulders' top, a line's width and more
+    expect(head.y + head.r + GLYPH_LINE_W).toBeLessThan(parts.sh.y - parts.sh.r + 1);
+    // the shoulders: one line from arm to arm over the top of their curve
+    expect(parts.shoulder).toHaveLength(1);
+    expect(parts.shoulder[0].points.some((p) => Math.hypot(p.x - cx, p.y - (parts.sh.y - parts.sh.r)) < 0.05)).toBe(true);
+    // no face: nothing else inside the head
+    const points = linesOf(g).flatMap((l) => l.points);
+    expect(points.filter((p) => Math.hypot(p.x - head.x, p.y - head.y) < head.r)).toEqual([]);
   });
 
-  it("should peak the hood at the top: its outline comes to a point there", () => {
-    const { g } = figure();
-    const ps = outlineOf(linesOf(g)).points.slice(0, -1);
-    const top = ps.reduce((i, p, k) => (p.y < ps[i].y ? k : i), 0);
-    const [prev, at, next] = [ps[(top - 1 + ps.length) % ps.length], ps[top], ps[(top + 1) % ps.length]];
-    const turn = Math.abs(Math.atan2(prev.y - at.y, prev.x - at.x) - Math.atan2(next.y - at.y, next.x - at.x));
-    const inner = Math.min(turn, 2 * Math.PI - turn);
-    // a point, not a round crown: the two sides meet at under 150°
-    expect((inner * 180) / Math.PI).toBeLessThan(150);
-  });
-
-  it("should open the hood in a deep inner curve, with at most two short strokes inside it and nothing else", () => {
-    const { g } = figure();
-    const lines = linesOf(g);
-    const outline = outlineOf(lines);
-    const height = (l: Line) => Math.max(...l.points.map((p) => p.y)) - Math.min(...l.points.map((p) => p.y));
-    // the opening: under the hood's top, at least 6 px deep
-    const top = Math.min(...outline.points.map((p) => p.y));
-    const opening = lines.find(
-      (l) => l !== outline && Math.min(...l.points.map((p) => p.y)) > top + 2 && height(l) >= 6 && l.points.length > 4,
-    )!;
-    expect(opening).toBeDefined();
-    const shape = opening.points;
-    const within = lines.filter((l) => l !== opening && l !== outline && l.points.every((p) => inside(shape, p.x, p.y)));
-    expect(within.length).toBeLessThanOrEqual(2);
-    for (const l of within) {
-      const len = l.points.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - l.points[i].x, p.y - l.points[i].y), 0);
-      expect(len).toBeLessThanOrEqual(5);
+  it("should round a pauldron over each shoulder: the shoulders' line standing out over each, one each side, mirrored", () => {
+    const { cx, parts } = bust();
+    const [line] = parts.shoulder;
+    for (const side of [-1, 1]) {
+      const plate = line.points.filter((p) => Math.sign(p.x - cx) === side && parts.off(p) > 0.05);
+      // rounded: it stands out from the shoulders' curve 2.5 px and more, clear of the neck
+      expect(Math.max(...plate.map(parts.off))).toBeGreaterThanOrEqual(2.5);
+      for (const p of plate) expect(Math.abs(p.x - cx)).toBeGreaterThan(3);
+    }
+    // across the neck the line keeps to the shoulders' curve
+    for (const p of line.points.filter((q) => Math.abs(q.x - cx) < 3)) expect(Math.abs(parts.off(p))).toBeLessThan(0.05);
+    // the two plates mirror each other
+    for (const p of line.points) {
+      expect(line.points.some((q) => Math.hypot(2 * cx - p.x - q.x, p.y - q.y) < 1e-6)).toBe(true);
     }
   });
 
-  it("should hang a cloak to a curved hem, with one or two folds in it", () => {
-    const { g } = figure();
-    const lines = linesOf(g);
-    const outline = outlineOf(lines);
-    const ps = outline.points;
-    const bottom = Math.max(...ps.map((p) => p.y));
-    const left = Math.min(...ps.map((p) => p.x));
-    const right = Math.max(...ps.map((p) => p.x));
-    // the hem is a curve: lowest in the middle, higher at its sides
-    const atSides = ps.filter((p) => p.x < left + 1 || p.x > right - 1).map((p) => p.y);
-    expect(bottom - Math.max(...atSides)).toBeGreaterThan(1);
-    // folds: open strokes in the cloak's lower half
-    const mid = (Math.min(...ps.map((p) => p.y)) + bottom) / 2;
-    const folds = lines.filter((l) => l !== outline && !l.closed && l.points.every((p) => p.y > mid - 2));
-    expect(folds.length).toBeGreaterThanOrEqual(1);
-    expect(folds.length).toBeLessThanOrEqual(2);
+  it("should draw a collar under the neck: one line on the chest, inside the shoulder line and clear of it", () => {
+    const { cx, parts } = bust();
+    expect(parts.collars).toHaveLength(1);
+    const [collar] = parts.collars;
+    for (const p of collar.points) {
+      expect(parts.off(p)).toBeLessThanOrEqual(-GLYPH_LINE_W - 1);
+      expect(Math.abs(p.x - cx)).toBeLessThan(6);
+    }
+    const [p, q] = [collar.points[0], collar.points[collar.points.length - 1]];
+    expect(p.x + q.x).toBeCloseTo(2 * cx, 9);
   });
 
-  it("should keep today's bust's place and size: within 3 px each way, centred within 1 px", () => {
-    const { g, cx, cy } = figure();
+  it("should fill nothing and keep today's bust's place and size: within 3 px each way, centred within 1 px", () => {
+    const { g, cx, cy } = bust();
+    expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
     const box = boxOf(marks(g));
-    const was = bustBox(cx, cy + 1, 1);
+    const was = bustBox(cx, cy, 1);
     expect(Math.abs(box.width - (was.right - was.left))).toBeLessThanOrEqual(3);
     expect(Math.abs(box.height - (was.bottom - was.top))).toBeLessThanOrEqual(3);
     expect(Math.abs(centreOf(box).x - centreOf(was).x)).toBeLessThanOrEqual(1);
@@ -770,7 +780,7 @@ describe("HudCorner (FS-QHN87 R4: Character, a hooded figure)", () => {
   });
 });
 
-describe("HudCorner (FS-QHN87 R5: Party, two hooded figures)", () => {
+describe("HudCorner (FS-QHN87 round 1: Party, two busts with pauldrons)", () => {
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 
   const party = () => {
@@ -778,36 +788,45 @@ describe("HudCorner (FS-QHN87 R5: Party, two hooded figures)", () => {
     const f = cornerIconFrame("party", viewport);
     return { g: env.graphics[0], corner: env.corner, cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
   };
-  /** One figure drawn alone, through the Character icon's own drawing, at (x, y) and scale s. */
+  /** One bust drawn alone, through the Character icon's own drawing, at (x, y) and scale s. */
   const alone = (x: number, y: number, s: number) => {
     const rec = fakeScene();
-    const g = rec.scene.add.graphics() as unknown as Parameters<typeof drawHooded>[0];
-    drawHooded(g, x, y, s, palette.interactable, 0.85);
+    const g = rec.scene.add.graphics() as unknown as Parameters<typeof drawBust>[0];
+    drawBust(g, x, y, s, palette.interactable, 0.85);
     return rec.graphics[0];
   };
+  /** Whether a point lies on the shape of the bust drawn on `g`: its head, or its shoulders, pauldrons and all. */
+  const onShape = (g: FakeGraphics, x: number, y: number, s: number) => {
+    const parts = bustParts(g, x, y, s);
+    const [head] = parts.heads;
+    return (p: { x: number; y: number }) =>
+      Math.hypot(p.x - head.x, p.y - head.y) < head.r || inside(parts.shoulder[0].points, p.x, p.y);
+  };
 
-  it("should draw the front figure whole, at scale 0.85 on (cx + 5, cy + 2)", () => {
+  it("should draw the front bust whole, at scale 0.85 on (cx + 5, cy + 2)", () => {
     const { g, cx, cy } = party();
     const front = alone(cx + 5, cy + 2, 0.85).ops;
     expect(g.ops.slice(g.ops.length - front.length)).toEqual(front);
   });
 
-  it("should leave the back figure, scale 0.8 on (cx − 6, cy − 2), undrawn where the front one covers it, and draw the rest", () => {
+  it("should leave the back bust, scale 0.8 on (cx − 6, cy − 2), undrawn where the front one covers it, and draw the rest", () => {
     const { g, cx, cy } = party();
     const front = alone(cx + 5, cy + 2, 0.85);
     const back = alone(cx - 6, cy - 2, 0.8);
-    const frontShape = outlineOf(linesOf(front)).points;
-    const drawnBack = linesOf({ ...g, ops: g.ops.slice(0, g.ops.length - front.ops.length) });
-    const backPoints = drawnBack.flatMap((l) => l.points);
+    const covered = onShape(front, cx + 5, cy + 2, 0.85);
+    const drawnBack = { ...g, ops: g.ops.slice(0, g.ops.length - front.ops.length) };
+    const backPoints = linesOf(drawnBack).flatMap((l) => l.points);
     expect(backPoints.length).toBeGreaterThan(0);
-    expect(backPoints.filter((p) => inside(frontShape, p.x, p.y))).toEqual([]);
-    // what the front leaves clear of the back's outline, by more than a line or two, is drawn
+    expect(backPoints.filter(covered)).toEqual([]);
+    // its head stands clear, whole
+    expect(drawnBack.ops.filter(({ m }) => m === "strokeCircle")).toEqual(back.ops.filter(({ m }) => m === "strokeCircle"));
+    // what the front leaves clear by more than two lines is drawn
+    const frontPoints = linesOf(front).flatMap((l) => l.points);
     const clear = (p: { x: number; y: number }) =>
-      !inside(frontShape, p.x, p.y) && frontShape.every((q) => Math.hypot(p.x - q.x, p.y - q.y) > 2 * GLYPH_LINE_W);
-    const wanted = outlineOf(linesOf(back)).points.filter(clear);
+      !covered(p) && frontPoints.every((q) => Math.hypot(p.x - q.x, p.y - q.y) > 2 * GLYPH_LINE_W);
+    const wanted = linesOf(back).flatMap((l) => l.points).filter(clear);
     expect(wanted.length).toBeGreaterThan(10);
     for (const p of wanted) expect(backPoints.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < 0.5)).toBe(true);
-    // nothing filled
     expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
   });
 
@@ -816,7 +835,6 @@ describe("HudCorner (FS-QHN87 R5: Party, two hooded figures)", () => {
     const box = boxOf(marks(g));
     const back = bustBox(cx - 6, cy - 2, 0.8);
     const front = bustBox(cx + 5, cy + 2, 0.85);
-    // today's back bust's shoulders end at its foot, above the front one's
     const was = { left: back.left, right: front.right, top: Math.min(back.top, front.top), bottom: front.bottom };
     expect(Math.abs(box.width - (was.right - was.left))).toBeLessThanOrEqual(3);
     expect(Math.abs(box.height - (was.bottom - was.top))).toBeLessThanOrEqual(3);
@@ -824,7 +842,7 @@ describe("HudCorner (FS-QHN87 R5: Party, two hooded figures)", () => {
     expect(Math.abs(centreOf(box).y - centreOf(was).y)).toBeLessThanOrEqual(1);
   });
 
-  it("should move both figures with the corner when the view widens (FS-ZAJMH R13)", () => {
+  it("should move both busts with the corner when the view widens (FS-ZAJMH R13)", () => {
     const { g, corner } = party();
     const before = boxOf(marks(g));
     viewport.set({ width: 1280, height: 720, renderScale: 1 });

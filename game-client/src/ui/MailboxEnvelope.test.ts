@@ -200,35 +200,6 @@ function strokesOf(ops: Op[]): Stroke[] {
   return out;
 }
 
-/** Every point along a stroke's segments, at most `step` apart. */
-function sampled(s: Stroke, step = 0.2): Pt[] {
-  const out: Pt[] = [s.pts[0]];
-  for (let i = 1; i < s.pts.length; i++) {
-    const [a, b] = [s.pts[i - 1], s.pts[i]];
-    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step));
-    for (let k = 1; k <= n; k++) out.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n });
-  }
-  return out;
-}
-
-/** How far `p` stands from the segment a–b. */
-function toSegment(p: Pt, a: Pt, b: Pt): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
-  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
-}
-
-/** Where segments a–b and c–d cross, strictly inside both, if they do. */
-function crossing(a: Pt, b: Pt, c: Pt, d: Pt): Pt | undefined {
-  const den = (b.x - a.x) * (d.y - c.y) - (b.y - a.y) * (d.x - c.x);
-  if (Math.abs(den) < 1e-9) return undefined;
-  const t = ((c.x - a.x) * (d.y - c.y) - (c.y - a.y) * (d.x - c.x)) / den;
-  const u = ((c.x - a.x) * (b.y - a.y) - (c.y - a.y) * (b.x - a.x)) / den;
-  if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) return undefined;
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
 /**
  * The outlines a graphics' stroked paths make, point by point, as Phaser 4.2.1's
  * GraphicsWebGLRenderer builds them before its DrawLine strokes each segment between two points
@@ -485,174 +456,26 @@ describe("MailboxEnvelope (FS-QHN87 R1: the row's line)", () => {
   });
 });
 
-describe("MailboxEnvelope (FS-QHN87 R6, R11: tied, folded, creased)", () => {
-  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
-
-  /** The envelope's own rect: 11 px in from the icon's left, top and right, 10 px up from its foot. */
-  const rectOf = () => {
+describe("MailboxEnvelope (FS-QHN87 round 1: back to the plain envelope, in the row's line)", () => {
+  // The owner, 2026-11-13: 「信箱有點怪 還是回到上一版好了」. The lines as at f779a9b0, at GLYPH_LINE_W,
+  // the flap one path so its point is joined (R2).
+  it("should draw only its edge, the flap down to its point as one path, and the two folds at its foot", () => {
+    const env = setup();
     const f = envelopeFrame(viewport);
-    return { x: f.x + 11, y: f.y + 11, w: f.width - 22, h: f.height - 21 };
-  };
-  const linesOf = (env: ReturnType<typeof setup>) =>
-    strokesOf(env.drawn().find((g) => g.ops.some((o) => o.m === "lineStyle" && o.args[0] === GLYPH_LINE_W))!.ops);
-  const onBorder = (p: Pt, e: ReturnType<typeof rectOf>) =>
-    (Math.abs(p.x - e.x) < 0.5 || Math.abs(p.x - e.x - e.w) < 0.5 || Math.abs(p.y - e.y) < 0.5 || Math.abs(p.y - e.y - e.h) < 0.5) &&
-    p.x > e.x - 0.5 && p.x < e.x + e.w + 0.5 && p.y > e.y - 0.5 && p.y < e.y + e.h + 0.5;
-  /** The cord: the long diagonal line from one edge of the envelope to another. */
-  const cordOf = (strokes: Stroke[], e: ReturnType<typeof rectOf>) =>
-    strokes.filter((s) => {
-      if (s.kind !== "line") return false;
-      const [a, b] = s.pts;
-      const angle = (Math.abs(Math.atan2(b.y - a.y, b.x - a.x)) * 180) / Math.PI;
-      const slant = Math.min(angle, 180 - angle);
-      return onBorder(a, e) && onBorder(b, e) && Math.hypot(b.x - a.x, b.y - a.y) >= 20 && slant > 15 && slant < 75;
-    });
-  /** The knot: the lines crossing the cord, where they cross each other, and the loose ends' path. */
-  const knotOf = (strokes: Stroke[], cord: Stroke) => {
-    const [a, b] = cord.pts;
-    const across = strokes.filter((s) => s !== cord && s.kind === "line" && crossing(s.pts[0], s.pts[1], a, b));
-    const at = across.length === 2 ? crossing(across[0].pts[0], across[0].pts[1], across[1].pts[0], across[1].pts[1]) : undefined;
-    const ends = at && strokes.filter((s) => s.kind === "path" && s.pts.slice(1, -1).some((p) => near(p, at, 1)));
-    return { across, at, ends: ends ?? [] };
-  };
-
-  it("should draw no circle and no arc closing on itself, waiting or not", () => {
-    for (const n of [0, 3]) {
-      const env = setup();
-      env.waiting(n);
-      const strokes = linesOf(env);
-      expect(strokes.filter((s) => s.kind === "circle")).toEqual([]);
-      const arcs = env.drawn().flatMap((g) => g.ops).filter((o) => o.m === "arc");
-      for (const { args } of arcs) expect(Math.abs(args[4] - args[3])).toBeLessThan(Math.PI * 2 - 1e-6);
-    }
-  });
-
-  it("should crease each flap line just inside it, near its top corner, well clear of the flap point", () => {
-    const env = setup();
-    const e = rectOf();
-    const point = envelopeFlapPoint(envelopeFrame(viewport));
-    const strokes = linesOf(env);
-    const flap = strokes.find((s) => s.pts.length === 3 && near(s.pts[1], point, 1e-9))!;
-    for (const corner of [flap.pts[0], flap.pts[2]]) {
-      const length = Math.hypot(point.x - corner.x, point.y - corner.y);
-      const along = { x: (point.x - corner.x) / length, y: (point.y - corner.y) / length };
-      const creases = strokes.filter((s) => {
-        if (s.kind !== "line") return false;
-        const [a, b] = s.pts;
-        const len = Math.hypot(b.x - a.x, b.y - a.y);
-        const parallel = Math.abs(((b.x - a.x) * along.x + (b.y - a.y) * along.y) / len) > Math.cos((12 * Math.PI) / 180);
-        const off = [a, b].map((p) => Math.abs((p.x - corner.x) * along.y - (p.y - corner.y) * along.x));
-        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        return (
-          parallel &&
-          off.every((d) => d >= 2 && d <= 5) &&
-          len <= length / 3 &&
-          Math.min(Math.hypot(a.x - point.x, a.y - point.y), Math.hypot(b.x - point.x, b.y - point.y)) >= 6 &&
-          Math.hypot(mid.x - corner.x, mid.y - corner.y) < Math.hypot(mid.x - point.x, mid.y - point.y) &&
-          mid.x > e.x && mid.x < e.x + e.w && mid.y > e.y && mid.y < e.y + e.h
-        );
-      });
-      expect(creases).toHaveLength(1);
-    }
-  });
-
-  it("should fold a bottom corner over: the corner cut by a short diagonal, the turned flap's edges inside it", () => {
-    const env = setup();
-    const e = rectOf();
-    const strokes = linesOf(env);
-    const points = strokes.flatMap((s) => sampled(s));
-    const corners = [
-      { x: e.x, y: e.y + e.h },
-      { x: e.x + e.w, y: e.y + e.h },
-    ];
-    const folded = corners.filter((c) => !points.some((p) => near(p, c, 2)));
-    expect(folded).toHaveLength(1);
-    const [c] = folded;
-    // the cut: a segment from the side edge to the bottom edge, both ends within 10 px of the corner
-    const segs = strokes.flatMap((s) => s.pts.slice(1).map((b, i) => [s.pts[i], b] as const));
-    const cut = segs.find(
-      ([a, b]) =>
-        [a, b].some((p) => Math.abs(p.x - c.x) < 0.5 && Math.abs(p.y - c.y) < 10 && Math.abs(p.y - c.y) > 2) &&
-        [a, b].some((p) => Math.abs(p.y - c.y) < 0.5 && Math.abs(p.x - c.x) < 10 && Math.abs(p.x - c.x) > 2),
-    );
-    expect(cut).toBeDefined();
-    // the turned flap: a path from one end of the cut to the other through a point inside the envelope
-    const flap = strokes.find(
-      (s) =>
-        s.kind === "path" &&
-        ((near(s.pts[0], cut![0], 0.01) && near(s.pts[s.pts.length - 1], cut![1], 0.01)) ||
-          (near(s.pts[0], cut![1], 0.01) && near(s.pts[s.pts.length - 1], cut![0], 0.01))) &&
-        s.pts.some((p) => p.x > e.x + 1.5 && p.x < e.x + e.w - 1.5 && p.y < e.y + e.h - 1.5),
-    );
-    expect(flap).toBeDefined();
-  });
-
-  it("should tie a cord across it on a diagonal, edge to edge, no nearer than 3 px to the flap point", () => {
-    const env = setup();
-    const e = rectOf();
-    const point = envelopeFlapPoint(envelopeFrame(viewport));
-    const cords = cordOf(linesOf(env), e);
-    expect(cords).toHaveLength(1);
-    expect(toSegment(point, cords[0].pts[0], cords[0].pts[1])).toBeGreaterThanOrEqual(3);
-  });
-
-  it("should knot the cord with crossing strokes and two loose ends, never a loop, 8 px or more from the flap point and the middle", () => {
-    const env = setup();
-    const e = rectOf();
-    const point = envelopeFlapPoint(envelopeFrame(viewport));
-    const strokes = linesOf(env);
-    const [cord] = cordOf(strokes, e);
-    const knot = knotOf(strokes, cord);
-    expect(knot.across).toHaveLength(2);
-    expect(knot.at).toBeDefined();
-    expect(toSegment(knot.at!, cord.pts[0], cord.pts[1])).toBeLessThan(1);
-    expect(Math.hypot(knot.at!.x - point.x, knot.at!.y - point.y)).toBeGreaterThanOrEqual(8);
-    expect(Math.hypot(knot.at!.x - (e.x + e.w / 2), knot.at!.y - (e.y + e.h / 2))).toBeGreaterThanOrEqual(8);
-    // the loose ends: one open path whose two ends hang below the knot
-    expect(knot.ends).toHaveLength(1);
-    const [ends] = knot.ends;
-    expect(ends.closed).toBe(false);
-    expect(near(ends.pts[0], ends.pts[ends.pts.length - 1], 1)).toBe(false);
-    for (const p of [ends.pts[0], ends.pts[ends.pts.length - 1]]) expect(p.y).toBeGreaterThan(knot.at!.y + 2);
-  });
-
-  it("should leave the envelope's other lines undrawn under the cord, as if it lay on top", () => {
-    const env = setup();
-    const e = rectOf();
-    const strokes = linesOf(env);
-    const [cord] = cordOf(strokes, e);
-    const knot = knotOf(strokes, cord);
-    const [a, b] = cord.pts;
-    const edge = strokes.reduce((x, y) => (sampled(y).length > sampled(x).length ? y : x));
-    const others = strokes.filter((s) => s !== cord && s !== edge && !knot.across.includes(s) && !knot.ends.includes(s));
-    for (const s of others) {
-      // the cord's own width and the other line's: no part of it under the cord
-      for (const p of sampled(s)) expect(toSegment(p, a, b)).toBeGreaterThanOrEqual(GLYPH_LINE_W);
-    }
-    // and some line is cut there: one of its ends stands at the cord's side
-    const cut = others.some((s) =>
-      [s.pts[0], s.pts[s.pts.length - 1]].some((p) => toSegment(p, a, b) < GLYPH_LINE_W + 1),
-    );
-    expect(cut).toBe(true);
-  });
-
-  it("should keep the cord, the knot and the folded corner out of the widest badge's box", () => {
-    const env = setup();
-    env.waiting(120);
-    const e = rectOf();
-    const [x, y, w, h] = env.badge()[0].args;
-    const half = GLYPH_LINE_W / 2;
-    const strokes = linesOf(env);
-    const [cord] = cordOf(strokes, e);
-    const knot = knotOf(strokes, cord);
-    const bottomCorner = (p: Pt) => p.y > e.y + e.h - 10 && (p.x < e.x + 10 || p.x > e.x + e.w - 10);
-    const fold = strokes.filter((s) => s.kind === "path" && s.pts.every(bottomCorner));
-    const kept = [cord, ...knot.across, ...knot.ends, ...fold];
-    expect(kept.length).toBeGreaterThanOrEqual(4);
-    for (const p of kept.flatMap((s) => sampled(s))) {
-      const inside = p.x + half > x && p.x - half < x + w && p.y + half > y && p.y - half < y + h;
-      expect(inside).toBe(false);
-    }
+    const e = { x: f.x + 11, y: f.y + 11, w: f.width - 22, h: f.height - 21 };
+    const point = envelopeFlapPoint(f);
+    const body = env.drawn().find((g) => g.ops.some((o) => o.m === "lineStyle" && o.args[0] === GLYPH_LINE_W))!;
+    expect(body.ops).toEqual([
+      { m: "lineStyle", args: [GLYPH_LINE_W, palette.interactable, 0.85] },
+      { m: "strokeRoundedRect", args: [e.x, e.y, e.w, e.h, 2] },
+      { m: "beginPath", args: [] },
+      { m: "moveTo", args: [e.x + 1, e.y + 1] },
+      { m: "lineTo", args: [point.x, point.y] },
+      { m: "lineTo", args: [e.x + e.w - 1, e.y + 1] },
+      { m: "strokePath", args: [] },
+      { m: "lineBetween", args: [e.x + 1, e.y + e.h - 1, e.x + e.w * 0.36, e.y + e.h * 0.5] },
+      { m: "lineBetween", args: [e.x + e.w - 1, e.y + e.h - 1, e.x + e.w * 0.64, e.y + e.h * 0.5] },
+    ]);
   });
 
   it("should draw its lines with only the stroke methods the letter panel's stand-in knows (R11)", () => {
