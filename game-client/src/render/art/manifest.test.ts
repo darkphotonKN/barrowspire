@@ -1735,11 +1735,90 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       },
     );
 
+    /**
+     * The new families' rigs (R46): sheet, its variant's group (a goblin variant's two looks
+     * share one), its builder, the family's step-0 sheet (a higher step is a recolour of it, so it
+     * stands at the same height), and its size band.
+     */
+    const NEW_RIGS: [string, string, string, string, [number, number]][] = [
+      ["creature_goblin_base", "goblin", "goblin.js#goblin", "creature_goblin_base", FODDER],
+      ["creature_goblin_shield_base", "goblin", "goblin.js#goblinShield", "creature_goblin_base", FODDER],
+      ["creature_goblin_cutthroat_base", "goblin_cutthroat", "goblin.js#goblinCutthroat", "creature_goblin_base", FODDER],
+      ["creature_goblin_cutthroat_shield_base", "goblin_cutthroat", "goblin.js#goblinCutthroatShield", "creature_goblin_base", FODDER],
+      ["creature_goblin_reaver_base", "goblin_reaver", "goblin.js#goblinReaver", "creature_goblin_base", FODDER],
+      ["creature_goblin_reaver_shield_base", "goblin_reaver", "goblin.js#goblinReaverShield", "creature_goblin_base", FODDER],
+      ["creature_goblin_warchief_base", "goblin_warchief", "goblin.js#goblinWarchief", "creature_goblin_base", FODDER],
+      ["creature_goblin_warchief_shield_base", "goblin_warchief", "goblin.js#goblinWarchiefShield", "creature_goblin_base", FODDER],
+    ];
+    /** The standard clips every roster sheet bakes (characters/clips.js ANIMATIONS). */
+    const STANDARD: Record<string, [number, number, boolean]> = {
+      idle: [6, 5, true],
+      walk: [8, 10, true],
+      attack: [7, 12, false],
+      death: [7, 9, false],
+    };
+
+    it.each(NEW_RIGS)(
+      "%s packs whole into its variant's group, %s (R41)",
+      (name, group) => {
+        const sheet = sheetOf(name);
+        expect(sheet, name).toBeDefined();
+        expect(atlasGroup(sheet.atlas)).toBe(group);
+        for (const a of Object.values(sheet.animations))
+          expect(a.atlas, name).toBeUndefined();
+      },
+    );
+
+    it.each(NEW_RIGS)(
+      "%s has 8-way idle, walk, attack and death at the standard rates (R47)",
+      (name) => {
+        const sheet = sheetOf(name);
+        expect(sheet.directions).toBe(8);
+        expect(Object.keys(sheet.animations)).toEqual(Object.keys(STANDARD));
+        for (const [clip, [frames, fps, loop]] of Object.entries(STANDARD)) {
+          const a = sheet.animations[clip];
+          expect([a.fps, a.loop], clip).toEqual([fps, loop]);
+          expect(a.frames, clip).toHaveLength(8);
+          for (const dir of a.frames) expect(dir, clip).toHaveLength(frames);
+        }
+      },
+    );
+
+    it.each(NEW_RIGS)(
+      "%s is authored in code (characters/%s), under the project's licence",
+      (name, _group, fn) => {
+        expect(sheetOf(name).source).toBe(
+          `authored: tools/bake/page/characters/${fn}`,
+        );
+        expect(sheetOf(name).licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(NEW_RIGS)(
+      "%s stands in its size band, at its family's step-0 height",
+      (name, _group, _fn, family, [min, max]) => {
+        const crown = sheetOf(name).crown as number;
+        expect(Number.isInteger(crown)).toBe(true);
+        expect(crown / playerCrown).toBeGreaterThanOrEqual(min);
+        expect(crown / playerCrown).toBeLessThanOrEqual(max);
+        expect(crown).toBe(sheetOf(family).crown);
+      },
+    );
+
+    it("stands the goblin below a ghoul's height (R46)", () => {
+      expect(sheetOf("creature_goblin_base").crown).toBeLessThan(
+        sheetOf("creature_ghoul_base").crown as number,
+      );
+    });
+
     it("gives each variant group its own sheets only, and leaves the five tier-1 looks in creatures", () => {
       const groups = new Map<string, string[]>();
       for (const [name, sheet] of Object.entries(baked.sheets) as [string, TierSheet][])
         groups.set(atlasGroup(sheet.atlas), [...(groups.get(atlasGroup(sheet.atlas)) ?? []), name]);
       for (const [name, group] of TIERED) expect(groups.get(group)).toEqual([name]);
+      for (const [name, group] of NEW_RIGS) expect(groups.get(group)).toContain(name);
+      for (const group of new Set(NEW_RIGS.map(([, g]) => g)))
+        expect(groups.get(group)).toEqual(NEW_RIGS.filter(([, g]) => g === group).map(([n]) => n));
       for (const name of [
         "creature_ghoul_base",
         "creature_bone_archer_base",

@@ -64,6 +64,21 @@ export const LINEUPS = [
       "creature_banshee_base",
     ],
   },
+  {
+    // the goblin beside the ghoul it stands below, each step's blade and shield looks
+    file: "contact-goblin-2x.png",
+    sheets: [
+      "creature_ghoul_base",
+      "creature_goblin_base",
+      "creature_goblin_shield_base",
+      "creature_goblin_cutthroat_base",
+      "creature_goblin_cutthroat_shield_base",
+      "creature_goblin_reaver_base",
+      "creature_goblin_reaver_shield_base",
+      "creature_goblin_warchief_base",
+      "creature_goblin_warchief_shield_base",
+    ],
+  },
 ];
 
 /** The sheets each lineup names, from `sheets`; a lineup missing one is left out. */

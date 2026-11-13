@@ -62,6 +62,7 @@ import {
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { banshee, barrowThrall, blightborn, fadingEyes, ghost, phantom, plagueThrall, shade as shadeWraith, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
+import * as goblins from "./goblin.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -591,6 +592,16 @@ export const CAST = [
   { sheet: "creature_shade_base", group: "shade", fn: "shade", module: "forlorn", build: shadeWraith },
   { sheet: "creature_phantom_base", group: "phantom", fn: "phantom", module: "forlorn", build: phantom },
   { sheet: "creature_banshee_base", group: "banshee", fn: "banshee", module: "forlorn", build: banshee },
+  // The goblin family (FS-C8VM7 §H R46), a new rig: each variant's two looks, blade and blade +
+  // shield, in one group named by the variant (R41), the higher steps its recolours
+  { sheet: "creature_goblin_base", group: "goblin", fn: "goblin", module: "goblin", build: goblins.goblin },
+  { sheet: "creature_goblin_shield_base", group: "goblin", fn: "goblinShield", module: "goblin", build: goblins.goblinShield },
+  { sheet: "creature_goblin_cutthroat_base", group: "goblin_cutthroat", fn: "goblinCutthroat", module: "goblin", build: goblins.goblinCutthroat },
+  { sheet: "creature_goblin_cutthroat_shield_base", group: "goblin_cutthroat", fn: "goblinCutthroatShield", module: "goblin", build: goblins.goblinCutthroatShield },
+  { sheet: "creature_goblin_reaver_base", group: "goblin_reaver", fn: "goblinReaver", module: "goblin", build: goblins.goblinReaver },
+  { sheet: "creature_goblin_reaver_shield_base", group: "goblin_reaver", fn: "goblinReaverShield", module: "goblin", build: goblins.goblinReaverShield },
+  { sheet: "creature_goblin_warchief_base", group: "goblin_warchief", fn: "goblinWarchief", module: "goblin", build: goblins.goblinWarchief },
+  { sheet: "creature_goblin_warchief_shield_base", group: "goblin_warchief", fn: "goblinWarchiefShield", module: "goblin", build: goblins.goblinWarchiefShield },
   // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
   { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
   { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },
