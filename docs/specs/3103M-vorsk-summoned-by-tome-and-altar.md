@@ -264,3 +264,31 @@ without the tome is told a tome was once burned there, and knows what it missed.
 - **Kill or match stats**, migrations, HTTP contract changes, `internal/matchmaker` and `internal/match_queue`.
 - **The dev endgame test run** forcing a tome and an altar onto fixed floors, and Vorsk's level there: FS-BDRTJ's (I-BDRTJ-4), which sets this FS's run-level plan (R7) in place of the roll and reads the summon's level hook (R18).
 - **CONTEXT.md entries** for Vorsk, the Tome of Filth, the Altar of Consecration and burning: routed to `domain-model` (a sibling owns vocabulary this session).
+
+## Amendment A1 2026-11-14 (the lines are lore lines, FS-XWHZP)
+
+**Why.** The owner's override, 2026-11-14, during this charter run: R24 had defaulted the tome's
+lines to the plain HUD notice; the owner wanted "in-game story pop up visual vibe lore thing"
+instead, then widened it to every Spire message, which became
+[FS-XWHZP](XWHZP-spire-messages-as-lore-lines.md). This amendment replaces the text of R24 and
+R26 and the client criteria that name their tones; the rest of §I stands. Built as I-3103M-7,
+on FS-XWHZP's lore module.
+
+- **R24, amended.** The tome pickup and altar-without-tome lines are **FS-XWHZP lore lines** in
+  the `lore` tone, not the HUD notice, written by the client from the reply's `reason` through
+  FS-XWHZP's copy table (its R16): `tome_taken` → *"Wonder if I can burn it."* (owner's words);
+  `altar_without_tome` → *"A tome was burned here once, they say, to insult a demon."*;
+  `altar_burned` → no line. The `waiting` tone and the charter default that chose it are
+  withdrawn.
+- **R26, amended.** The hell line, *"You hear a sound from hell"* (owner's words), is an FS-XWHZP
+  lore line in the `dread` tone (its ember burst and slight tremor), played on the same
+  unburned-to-burned flip with the same first-broadcast baseline, not the HUD notice in the
+  `refused` tone. Who sees which line is unchanged: the taker alone for `tome_taken` (R13), the
+  one who reached the altar for `altar_without_tome` (R16), everyone on the floor for the hell
+  line (R26).
+- **Client acceptance criteria, amended.** "`interactNotice` writes the R24 lines … in the
+  `waiting` tone" reads: FS-XWHZP's copy gives R24's lines for `tome_taken` and
+  `altar_without_tome` in the `lore` tone and nothing for `altar_burned`, and the run scene plays
+  them as lore lines. Add: the burn flip plays the hell line as a `dread` lore line, not a HUD
+  notice.
+- **Blocked by.** I-3103M-7 now also waits on FS-XWHZP's lore module and copy.
