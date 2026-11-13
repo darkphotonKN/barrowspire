@@ -322,7 +322,7 @@ describe("the corner row's hover and refusal sounds (FS-WDM0X § Change: Menu, d
   it("should play menu_error for a window icon the world turns away: its answer changed no window", () => {
     const t = standing("run");
     // the run turns Party away with a chest open: its answer leaves the panel shut
-    t.w.report.answer = (request) => void t.w.asked.push(request);
+    t.bridge.report({ ...t.w.report, answer: (request: UiRequest) => void t.w.asked.push(request) });
 
     t.press("party");
 

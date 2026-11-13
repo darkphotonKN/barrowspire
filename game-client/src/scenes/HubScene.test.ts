@@ -6027,24 +6027,24 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       return t;
     }
 
-    it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+    it("should play menu_click alone as Options opens OPTIONS in the menu's place (§ Change M6)", () => {
       const t = town();
       t.press(t.keys.esc);
       t.heard();
       t.option("options")!.handlers.pointerup();
       expect(t.find("options-back")).toBeDefined();
-      expect(t.heard()).toEqual([]);
+      expect(t.heard()).toEqual(["menu_click"]);
     });
 
     it.each<[string, (t: Town) => void]>([
       ["Back", (t) => t.find("options-back")!.handlers.pointerup()],
       ["Esc", (t) => t.press(t.keys.esc)],
       ["the ×", (t) => t.find("options-close")!.handlers.pointerup()],
-    ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+    ])("should play menu_back alone as OPTIONS' %s goes back to the menu (§ Change M7)", (_input, input) => {
       const t = inOptions();
       input(t);
       expect(t.option("change")).toBeDefined();
-      expect(t.heard()).toEqual([]);
+      expect(t.heard()).toEqual(["menu_back"]);
     });
 
     it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
@@ -6070,7 +6070,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
   });
 
   describe("the queue's and the roster's rows, which only send (S4)", () => {
-    it("should play nothing on Change character, nor as the menu closes with the visit", () => {
+    it("should play menu_click on Change character, and nothing as the menu closes with the visit (§ Change M6)", () => {
       vi.spyOn(socketManager, "off").mockImplementation(() => {});
       vi.spyOn(socketManager, "offError").mockImplementation(() => {});
       const t = town();
@@ -6080,11 +6080,12 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       t.option("change")!.handlers.pointerup();
       expect(send).toHaveBeenCalledWith(ActionType.LeaveHub, {});
       expect(menuOver(t.hub)).toBeDefined();
+      expect(t.heard()).toEqual(["menu_click"]);
       t.hub.release("shutdown");
       expect(t.heard()).toEqual([]);
     });
 
-    it("should play nothing on Leave the queue, nor as the server's answer closes the menu", () => {
+    it("should play menu_click on Leave the queue, and nothing as the server's answer closes the menu (§ Change M6)", () => {
       const listeners = new Map<string, (payload: unknown) => void>();
       vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
       vi.spyOn(socketManager, "onError").mockImplementation(() => {});
@@ -6095,7 +6096,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       t.heard();
       t.option("leave")!.handlers.pointerup();
       expect(menuOver(t.hub)).toBeDefined();
-      expect(t.heard()).toEqual([]);
+      expect(t.heard()).toEqual(["menu_click"]);
       listeners.get(ActionType.LeaveQueue)!({});
       expect(menuOver(t.hub)).toBeUndefined();
       expect(t.heard()).toEqual([]);
@@ -6121,14 +6122,30 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
   it.each<[string, (t: Town) => void, (t: Town) => void]>([
     ["I with the menu open", (t) => t.press(t.keys.esc), (t) => t.press(t.keys.i)],
     ["T with the menu open", (t) => t.press(t.keys.esc), (t) => t.party.pressT()],
-    ["the Party icon in a dialogue", (t) => void (t.hub.dialogue = {}), (t) => t.pressIcon("party")],
-    ["the Menu icon in a dialogue", (t) => void (t.hub.dialogue = {}), (t) => t.pressIcon("menu")],
-    ["the envelope with the menu open", (t) => t.press(t.keys.esc), (t) => t.envelope()],
-  ])("should play nothing on a refused press: %s (S6)", (_press, arrange, refused) => {
+  ])("should play nothing on a refused key: %s (S6)", (_press, arrange, refused) => {
     const t = town();
     arrange(t);
     t.heard();
     refused(t);
+    expect(t.heard()).toEqual([]);
+  });
+
+  it.each<[string, (t: Town) => void, (t: Town) => void]>([
+    ["the Party icon in a dialogue", (t) => void (t.hub.dialogue = {}), (t) => t.pressIcon("party")],
+    ["the Menu icon in a dialogue", (t) => void (t.hub.dialogue = {}), (t) => t.pressIcon("menu")],
+  ])("should play menu_error on a refused icon press: %s (§ Change M10)", (_press, arrange, refused) => {
+    const t = town();
+    arrange(t);
+    t.heard();
+    refused(t);
+    expect(t.heard()).toEqual(["menu_error"]);
+  });
+
+  it("should play nothing on the envelope pressed with the menu open: the menu's blocker takes that press first", () => {
+    const t = town();
+    t.press(t.keys.esc);
+    t.heard();
+    t.envelope();
     expect(t.heard()).toEqual([]);
   });
 

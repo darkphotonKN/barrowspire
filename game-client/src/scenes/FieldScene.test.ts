@@ -2828,25 +2828,25 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       return f;
     }
 
-    it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+    it("should play menu_click alone as Options opens OPTIONS in the menu's place (§ Change M6)", () => {
       const f = field();
       f.key("ESC");
       f.heard();
       f.key("TWO");
       expect(f.find("options-back")).toBeDefined();
-      expect(f.heard()).toEqual([]);
+      expect(f.heard()).toEqual(["menu_click"]);
     });
 
     it.each<[string, (f: Field) => void]>([
       ["Back", (f) => f.find("options-back")!.handlers.pointerup()],
       ["Esc", (f) => f.key("ESC")],
       ["the ×", (f) => f.find("options-close")!.handlers.pointerup()],
-    ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+    ])("should play menu_back alone as OPTIONS' %s goes back to the menu (§ Change M7)", (_input, input) => {
       const f = inOptions();
       f.heard();
       input(f);
       expect(f.find("menu-change")).toBeDefined();
-      expect(f.heard()).toEqual([]);
+      expect(f.heard()).toEqual(["menu_back"]);
     });
 
     it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
@@ -2870,14 +2870,14 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       expect(f.heard()).toEqual(["settings_close"]);
     });
 
-    it("should play nothing on Change character, which only sends", () => {
+    it("should play menu_click on Change character, which only sends (§ Change M6)", () => {
       const f = field();
       f.key("ESC");
       f.heard();
       f.key("ONE");
       expect(f.send).toHaveBeenCalledWith(ActionType.LeaveHub, {});
       expect(menuOver(f.field)).toBeDefined();
-      expect(f.heard()).toEqual([]);
+      expect(f.heard()).toEqual(["menu_click"]);
     });
   });
 
@@ -2886,8 +2886,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     ["C", (f) => f.key("C")],
     ["Q", (f) => f.key("Q")],
     ["T", (f) => f.party.pressT()],
-    ["the Party icon", (f) => f.pressIcon("party")],
-    ["the Inventory icon", (f) => f.pressIcon("inventory")],
   ])("should play nothing on %s refused while the menu is open (S6)", (_press, refused) => {
     const f = field();
     f.key("ESC");
@@ -2896,10 +2894,21 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(f.heard()).toEqual([]);
   });
 
-  it("should play nothing on the greyed envelope", () => {
+  it.each<[string, (f: Field) => void]>([
+    ["the Party icon", (f) => f.pressIcon("party")],
+    ["the Inventory icon", (f) => f.pressIcon("inventory")],
+  ])("should play menu_error on %s refused while the menu is open (§ Change M10)", (_press, refused) => {
+    const f = field();
+    f.key("ESC");
+    f.heard();
+    refused(f);
+    expect(f.heard()).toEqual(["menu_error"]);
+  });
+
+  it("should play menu_error on the greyed envelope (§ Change M10)", () => {
     const f = field();
     f.pressIcon("mail");
-    expect(f.heard()).toEqual([]);
+    expect(f.heard()).toEqual(["menu_error"]);
   });
 
   it.each<[string, (f: Field) => void]>([

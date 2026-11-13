@@ -5416,35 +5416,41 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       return r;
     }
 
-    it("should play nothing as the Fall confirm opens from the menu, and settings_close on its Not yet (S5)", () => {
+    it("should play dialog_open as the Fall confirm opens from the menu, and dialog_cancel alone on its Not yet (§ Change M11, M13)", () => {
       const r = heardRun();
       r.pressEsc();
       expect(r.heard()).toEqual(["settings_open"]);
       r.pick("menu-fall");
       expect(r.find("menu-not-yet")).toBeDefined();
-      expect(r.heard()).toEqual([]);
+      expect(r.heard()).toEqual(["dialog_open"]);
       r.pick("menu-not-yet");
       expect(menuOver(r.run)).toBeUndefined();
-      expect(r.heard()).toEqual(["settings_close"]);
+      expect(r.heard()).toEqual(["dialog_cancel"]);
     });
 
     it.each<[string, (r: Run) => void]>([
       ["Esc", (r) => r.pressEsc()],
       ["the ×", (r) => r.pick("menu-close")],
-      ["the Menu icon", (r) => r.pressIcon("menu")],
-    ])("should play settings_close as %s closes the whole menu from the Fall confirm (S5)", (_input, input) => {
+    ])("should play dialog_cancel alone as %s closes the whole menu from the Fall confirm (§ Change M13)", (_input, input) => {
       const r = inFallConfirm();
       input(r);
+      expect(menuOver(r.run)).toBeUndefined();
+      expect(r.heard()).toEqual(["dialog_cancel"]);
+    });
+
+    it("should play settings_close as the Menu icon closes the whole menu from the Fall confirm (S5)", () => {
+      const r = inFallConfirm();
+      r.pressIcon("menu");
       expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
-    it("should play nothing on the Fall confirm's Fall, which sends and leaves the confirm up", () => {
+    it("should play dialog_confirm_heavy on the Fall confirm's Fall, which sends and leaves the confirm up (§ Change M13)", () => {
       const r = inFallConfirm();
       r.pick("menu-fall-now");
       expect(r.sentOf(ActionType.ForfeitRun)).toHaveLength(1);
       expect(menuOver(r.run)).toBeDefined();
-      expect(r.heard()).toEqual([]);
+      expect(r.heard()).toEqual(["dialog_confirm_heavy"]);
     });
 
     it("should play settings_close on Leave the barrow, which closes the menu in the same press", () => {
@@ -5548,24 +5554,24 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     });
 
     describe("the menu and OPTIONS, one settings space (S5)", () => {
-      it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+      it("should play menu_click alone as Options opens OPTIONS in the menu's place (§ Change M6)", () => {
         const r = heardRun();
         r.pressEsc();
         r.heard();
         r.pick("menu-options");
         expect(r.find("options-back")).toBeDefined();
-        expect(r.heard()).toEqual([]);
+        expect(r.heard()).toEqual(["menu_click"]);
       });
 
       it.each<[string, (r: Run) => void]>([
         ["Back", (r) => r.pick("options-back")],
         ["Esc", (r) => r.pressEsc()],
         ["the ×", (r) => r.pick("options-close")],
-      ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+      ])("should play menu_back alone as OPTIONS' %s goes back to the menu (§ Change M7)", (_input, input) => {
         const r = inOptions();
         input(r);
         expect(r.find("menu-fall")).toBeDefined();
-        expect(r.heard()).toEqual([]);
+        expect(r.heard()).toEqual(["menu_back"]);
       });
 
       it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
@@ -5582,9 +5588,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       ["C", (r) => r.key("C")],
       ["Q", (r) => r.key("Q")],
       ["T", (r) => r.party.pressT()],
-      ["the Inventory icon", (r) => r.pressIcon("inventory")],
-      ["the Character icon", (r) => r.pressIcon("character")],
-      ["the Party icon", (r) => r.pressIcon("party")],
     ])("should play nothing on %s refused while the menu is open (S6)", (_press, refused) => {
       const r = heardRun();
       r.pressEsc();
@@ -5594,19 +5597,33 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(r.heard()).toEqual([]);
     });
 
-    it("should play nothing on T or the Party icon refused while a chest is open (S6)", () => {
+    it.each<[string, (r: Run) => void]>([
+      ["the Inventory icon", (r) => r.pressIcon("inventory")],
+      ["the Character icon", (r) => r.pressIcon("character")],
+      ["the Party icon", (r) => r.pressIcon("party")],
+    ])("should play menu_error on %s refused while the menu is open (§ Change M10)", (_press, refused) => {
+      const r = heardRun();
+      r.pressEsc();
+      r.heard();
+      refused(r);
+      expect(r.open()).toEqual({ menu: true, party: false, gear: false });
+      expect(r.heard()).toEqual(["menu_error"]);
+    });
+
+    it("should play nothing on T refused while a chest is open, and menu_error on the Party icon the run turns away (S6; § Change M10)", () => {
       const r = heardRun();
       r.run.containerView.isOpen = true;
       r.party.pressT();
+      expect(r.heard()).toEqual([]);
       r.pressIcon("party");
       expect(r.party.panel.isOpen()).toBe(false);
-      expect(r.heard()).toEqual([]);
+      expect(r.heard()).toEqual(["menu_error"]);
     });
 
-    it("should play nothing on the greyed envelope", () => {
+    it("should play menu_error on the greyed envelope (§ Change M10)", () => {
       const r = heardRun();
       r.pressIcon("mail");
-      expect(r.heard()).toEqual([]);
+      expect(r.heard()).toEqual(["menu_error"]);
     });
 
     describe("what the game closes on its own plays nothing (S4)", () => {
@@ -5626,6 +5643,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       it("should play nothing as the Fall confirm yields to the death its Fall asked for", () => {
         const r = inFallConfirm();
         r.pick("menu-fall-now");
+        r.heard();
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
         expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual([]);
