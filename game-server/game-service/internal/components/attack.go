@@ -38,6 +38,10 @@ const (
 	// its wind-up, aimed at the intent's TargetX, TargetY. Only the
 	// MonsterAISystem records it; no client message maps to it. FS-B4SG9 §A R8.
 	AttackMonsterShot AttackKind = "monster_shot"
+	// AttackMonsterAbility is a monster ability landing at the end of its
+	// wind-up: its area, cone or shots, as the monster's Ability gives them.
+	// Only the MonsterAISystem records it. FS-C8VM7 §B R14.
+	AttackMonsterAbility AttackKind = "monster_ability"
 )
 
 // AttackSnapshot is what an attacker brought to a hit, captured when the hit was
@@ -74,6 +78,10 @@ type AttackIntent struct {
 	// lands at its SlamMultiplier (FS-VHGE7 §B R16). Only the MonsterAISystem
 	// sets it; 0, as on every other intent, keeps the row's own.
 	Coefficient float64
+	// FacingX, FacingY is a monster ability's cone direction, fixed when its
+	// wind-up started; TargetX, TargetY is then the cone's apex, as it is an
+	// area's centre and a shot's aim (FS-C8VM7 §B R13).
+	FacingX, FacingY float64
 }
 
 // AttackIntentComponent holds an entity's unresolved attack requests, oldest first.

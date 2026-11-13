@@ -377,6 +377,11 @@ func tickCooldowns(entity *ecs.Entity, deltaTime float64) {
 // cost, or (for a targeted attack) with no valid target in range does nothing
 // at all: no damage, nothing spent, no cooldown started. FS-8AY7S §Requirements 10.
 func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackIntent, entities []*ecs.Entity) {
+	if intent.Kind == components.AttackMonsterAbility {
+		// a monster ability's shape and numbers are the monster's own
+		s.landAbility(attacker, intent, entities)
+		return
+	}
 	spec, ok := attackTable[intent.Kind]
 	if !ok {
 		return

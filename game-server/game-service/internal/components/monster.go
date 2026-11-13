@@ -85,7 +85,9 @@ const (
 	MonsterActionMove   MonsterAction = "move"
 	MonsterActionAttack MonsterAction = "attack"
 	MonsterActionClaw   MonsterAction = "claw"
-	MonsterActionDead   MonsterAction = "dead"
+	// MonsterActionAbility is a monster ability's wind-up (FS-C8VM7 §B R17)
+	MonsterActionAbility MonsterAction = "ability"
+	MonsterActionDead    MonsterAction = "dead"
 )
 
 // MonsterComponent marks a run entity as a monster. It rides the declared
@@ -158,6 +160,16 @@ type MonsterComponent struct {
 	ShotSpeed          float64 // px/s
 	ShotRadius         float64 // px
 	ShotMaxFlight      float64 // px
+
+	// Ability is its monster ability, copied from its sheet at spawn; the zero
+	// value for a monster with none (FS-C8VM7 §B R10).
+	Ability MonsterAbility
+	// AbilityCooldown is the seconds before its ability is ready again: 0 at
+	// spawn, so it is ready then (R12).
+	AbilityCooldown float64
+	// AbilityPending is the ability it is winding up, fixed where it will land;
+	// the zero value while none is (R13).
+	AbilityPending PendingAbility
 
 	// Timers, counting down in seconds.
 	AttackCooldown        float64

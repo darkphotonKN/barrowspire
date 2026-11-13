@@ -16,7 +16,9 @@ chase, wind up or strike. FS-77AB6 §Requirements 26. A demon, with the claw
 on its sheet, picks between its two moves: the slam when it has cooled, the
 fire claw otherwise (FS-VHGE7 §B R18). A ranged monster, with a shot on its
 sheet, chases until it is in its shooting range with line of sight, and
-shoots where the others strike (FS-B4SG9 §A R4–R6).
+shoots where the others strike (FS-B4SG9 §A R4–R6). A monster with an ability
+on its sheet uses it in place of a swing when it is ready and its target is
+inside its distances (FS-C8VM7 §B R12; monster_ability.go).
 
 It only sets a monster's velocity, facing and AI state. MovementSystem moves
 and collides it, exactly as it does a delver, and a strike is an attack intent
@@ -107,10 +109,16 @@ func (s *MonsterAISystem) think(
 	monster.AttackCooldown = max(monster.AttackCooldown-deltaTime, 0)
 	// the slam cools whatever it does: wandering, chasing, leashing home
 	monster.SlamCooldownRemaining = max(monster.SlamCooldownRemaining-deltaTime, 0)
+	// and so does a monster ability (FS-C8VM7 §B R12)
+	monster.AbilityCooldown = max(monster.AbilityCooldown-deltaTime, 0)
 	monster.Route.SearchIn = max(monster.Route.SearchIn-deltaTime, 0)
 
 	target, hunting := s.target(monster, at, delvers)
 
+	if monster.AbilityPending.Remaining > 0 {
+		windUpAbility(deltaTime, entity, monster, at, velocity, target, hunting)
+		return
+	}
 	if monster.WindUpRemaining > 0 {
 		s.windUp(deltaTime, entity, monster, at, velocity, target, hunting)
 		return
@@ -132,6 +140,14 @@ func (s *MonsterAISystem) think(
 
 	if !hunting {
 		s.wander(deltaTime, monster, at, velocity)
+		return
+	}
+
+	// a ready ability takes the next swing's place, and a monster out of its
+	// reach but inside the ability's distances stops chasing to use it
+	// (FS-C8VM7 §B R12)
+	if s.abilityReady(monster, at, target) {
+		startAbility(monster, at, velocity, target)
 		return
 	}
 

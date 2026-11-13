@@ -152,3 +152,71 @@ func TestRestBackendStatePool_ClearsMonsters(t *testing.T) {
 
 	assert.Empty(t, backendState.Monsters)
 }
+
+// monsterWire is the first monster of a run's broadcast as the client reads it.
+func monsterWire(t *testing.T, em *ecs.EntityManager) map[string]any {
+	t.Helper()
+	s := NewStateSerializer(em, nil)
+	backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
+	require.NoError(t, err)
+	monsters, ok := wireOf(t, s.FormatStateToClientState(backendState, uuid.New()))["monsters"].([]any)
+	require.True(t, ok)
+	require.Len(t, monsters, 1)
+	return monsters[0].(map[string]any)
+}
+
+// A monster's pending ability rides its state while it winds up: an area's or
+// a cone's centre, radius, full angle and seconds left; a shot's kind and
+// seconds left only. With none pending there is no `ability`. FS-C8VM7 §B R17.
+func TestMonsterState_CarriesItsPendingAbility(t *testing.T) {
+	tests := []struct {
+		name    string
+		ability components.MonsterAbility
+		pending components.PendingAbility
+		want    map[string]any
+	}{
+		{
+			"a ground slam",
+			components.MonsterAbility{Kind: components.MonsterAbilityGroundSlam, Shape: components.AbilityAreaAroundSelf, Radius: 130},
+			components.PendingAbility{Remaining: 0.5, X: 300, Y: 200, FacingX: 1},
+			map[string]any{"kind": "ground_slam", "x": float64(300), "y": float64(200), "radius": float64(130), "arc": float64(0), "remaining": 0.5},
+		},
+		{
+			"a cleave",
+			components.MonsterAbility{Kind: components.MonsterAbilityCleave, Shape: components.AbilityCone, Radius: 110, Arc: 120},
+			components.PendingAbility{Remaining: 0.25, X: 300, Y: 200, FacingX: 1},
+			map[string]any{"kind": "cleave", "x": float64(300), "y": float64(200), "radius": float64(110), "arc": float64(120), "remaining": 0.25},
+		},
+		{
+			"a rock",
+			components.MonsterAbility{Kind: components.MonsterAbilityRock, Shape: components.AbilityShots, ShotRadius: 18},
+			components.PendingAbility{Remaining: 0.75, X: 300, Y: 200, FacingX: 1},
+			map[string]any{"kind": "rock", "x": float64(0), "y": float64(0), "radius": float64(0), "arc": float64(0), "remaining": 0.75},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			e := addMonster(em, "Blood Troll", 300, 200, 100, 100)
+			mc, _ := e.GetComponent(ecs.ComponentTypeEnemy)
+			m := mc.(*components.MonsterComponent)
+			m.Ability, m.AbilityPending, m.Action = tt.ability, tt.pending, components.MonsterActionAbility
+
+			got := monsterWire(t, em)
+
+			assert.Equal(t, "ability", got["action"])
+			assert.Equal(t, tt.want, got["ability"])
+		})
+	}
+
+	t.Run("none pending", func(t *testing.T) {
+		em := ecs.NewEntityManager()
+		e := addMonster(em, "Blood Troll", 300, 200, 100, 100)
+		mc, _ := e.GetComponent(ecs.ComponentTypeEnemy)
+		mc.(*components.MonsterComponent).Ability = components.MonsterAbility{Kind: components.MonsterAbilityGroundSlam, Shape: components.AbilityAreaAroundSelf, Radius: 130}
+
+		_, has := monsterWire(t, em)["ability"]
+
+		assert.False(t, has)
+	})
+}
