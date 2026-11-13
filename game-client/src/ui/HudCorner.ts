@@ -1,15 +1,17 @@
 /**
  * The corner row (FS-3EBCA): the panel icons in the bottom-right corner of every world, from the
- * right Menu (a gear: one Esc press), Inventory (a haversack: the inventory), Character (a bust: the
- * character panel), Party (two busts: the party panel) and the Mailbox. In the town the Mailbox is the mailbox's own envelope
- * (`MailboxEnvelope`, FS-1GZGD § Change), which this row leaves its slot to; elsewhere it is drawn
- * here, greyed (R9).
+ * right Menu (a riveted gear: one Esc press), Inventory (a haversack: the inventory), Character (a
+ * hooded figure: the character panel), Party (two hooded figures: the party panel) and the Mailbox.
+ * In the town the Mailbox is the mailbox's own envelope (`MailboxEnvelope`, FS-1GZGD § Change),
+ * which this row leaves its slot to; elsewhere it is drawn here, greyed (R9).
  *
- * Each icon is its bare glyph in 1.5 px lines over the world, with no plate under it and nothing
- * filled (FS-J1672 R1–R3): the interactable amber, brighter under the pointer, where a small label
- * names the icon and its key (R3, R5). The Inventory icon is the most detailed of them, an old
- * haversack in line (FS-3EBCA § Change: The inventory icon is an inked backpack, as the owner's
- * second tweak round made it). Its 58 × 46 rect stays its press area (FS-J1672 R4). Drawn
+ * Each icon is its bare glyph over the world, with no plate under it and nothing filled (FS-J1672
+ * R1–R3), in the envelope's one line width, `GLYPH_LINE_W` (FS-QHN87 R1), every angled corner a
+ * vertex inside one path so the renderer joins it (R2): the interactable amber, brighter under the
+ * pointer, where a small label names the icon and its key (R3, R5). The glyphs are drawn richer so
+ * the row stops looking empty (FS-QHN87); the Inventory icon is an old haversack in line (FS-3EBCA
+ * § Change: The inventory icon is an inked backpack, as the owner's second tweak round made it).
+ * Its 58 × 46 rect stays its press area (FS-J1672 R4). Drawn
  * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
  * scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
  * while they are open too (R11; FS-HRH2J § Change C12).
@@ -19,7 +21,7 @@ import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { CornerLabel } from "./cornerLabel";
-import { drawEnvelopeLines } from "./MailboxEnvelope";
+import { GLYPH_LINE_W, drawEnvelopeLines } from "./MailboxEnvelope";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
@@ -29,8 +31,8 @@ import {
 } from "./hudCornerLayout";
 
 const HUD_DEPTH = 1000;
-/** The glyph's lines, the envelope's. */
-const LINE_W = 1.5;
+/** Every glyph's line, the envelope's (FS-QHN87 R1); the cover margins follow it. */
+const LINE_W = GLYPH_LINE_W;
 /** The greyed Mailbox's lines. */
 const GREYED_ALPHA = 0.6;
 
@@ -58,7 +60,6 @@ type Ink = Pick<
   | "beginPath"
   | "moveTo"
   | "lineTo"
-  | "arc"
   | "strokePath"
   | "closePath"
 >;
@@ -154,37 +155,67 @@ export class HudCorner {
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "inventory") drawBackpack(g, cx, cy, ink, alpha);
-    else if (icon.spec.icon === "character") drawBust(g, cx, cy + 1, 1, ink, alpha);
+    else if (icon.spec.icon === "character") drawHooded(g, cx, cy + 1, 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
 }
 
-/** A gear (R3): a ring with eight square teeth round a small hub. */
+type Pt = readonly [number, number];
+
+/** The gear (FS-QHN87 R3): its teeth's root and tip radii, and each tooth's half-width there. */
+const GEAR = { root: 11, tip: 15, rootHalf: 2.5, tipHalf: 1.5, teeth: 8 };
+/** Its inner ring at the hub, and the rivets set on that ring's line as beads. */
+const GEAR_RING = 6.2;
+/** Four: six (and five) run together into one ring at render scale 1, and even at 2 (FS-QHN87 R3). */
+const GEAR_RIVETS = 4;
+const GEAR_RIVET_R = 1.1;
+/** How many points draw the rim between two teeth. */
+const GEAR_RIM_STEPS = 4;
+
+/**
+ * The gear (FS-3EBCA R3; FS-QHN87 R3): eight bevelled teeth, each wider at its root than its tip,
+ * and the rim between them in one closed outline, so every corner is joined; inside it an inner
+ * ring at the hub with rivets set on it as beads.
+ */
 export function drawGear(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
-  g.lineStyle(LINE_W, ink, alpha);
-  g.strokeCircle(cx, cy, 9);
-  g.strokeCircle(cx, cy, 3.5);
-  g.lineStyle(3, ink, alpha);
-  for (let i = 0; i < 8; i++) {
-    const a = (i * Math.PI) / 4;
-    g.lineBetween(
-      cx + Math.cos(a) * 9.5,
-      cy + Math.sin(a) * 9.5,
-      cx + Math.cos(a) * 13,
-      cy + Math.sin(a) * 13,
-    );
+  const at = (a: number, r: number): Pt => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+  const pitch = (2 * Math.PI) / GEAR.teeth;
+  const root = Math.asin(GEAR.rootHalf / GEAR.root);
+  const tip = Math.asin(GEAR.tipHalf / GEAR.tip);
+  const outline: Pt[] = [];
+  for (let i = 0; i < GEAR.teeth; i++) {
+    const a = i * pitch;
+    outline.push(at(a - root, GEAR.root), at(a - tip, GEAR.tip), at(a + tip, GEAR.tip), at(a + root, GEAR.root));
+    // the rim on to the next tooth's root
+    for (let k = 1; k < GEAR_RIM_STEPS; k++) {
+      outline.push(at(a + root + ((pitch - 2 * root) * k) / GEAR_RIM_STEPS, GEAR.root));
+    }
   }
+  g.lineStyle(LINE_W, ink, alpha);
+  strokeLine(g, outline, true);
+  g.strokeCircle(cx, cy, GEAR_RING);
+  for (let i = 0; i < GEAR_RIVETS; i++) {
+    const [x, y] = at(((i + 0.5) * 2 * Math.PI) / GEAR_RIVETS, GEAR_RING);
+    g.strokeCircle(x, y, GEAR_RIVET_R);
+  }
+}
+
+/** Strokes a line through `points` as one path, closed back to its first when `closed`. */
+function strokeLine(g: Ink, points: readonly Pt[], closed = false): void {
+  g.beginPath();
+  g.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length; i++) g.lineTo(points[i][0], points[i][1]);
+  if (closed) g.closePath();
+  g.strokePath();
 }
 
 // ── The haversack (FS-3EBCA § Change: The inventory icon is an inked backpack, as the owner's
 //    second tweak round made it a line glyph, 2026-11-13: 「是不是要改成符號線條比較好」) ─────────────
 //
 // Drawn in local px, x to the right and y down, then laid on the slot's centre: an old haversack
-// from the front, in the other glyphs' 1.5 px lines and nothing else. A blanket rolled across its
+// from the front, in the other glyphs' lines (`GLYPH_LINE_W`, FS-QHN87 R9) and nothing else. A blanket rolled across its
 // top, tied with rope whose ends hang loose; a rounded flap with a tooled line inside its edge,
 // shut by an iron hasp on a ring; two rivets; a drawstring pouch hanging at its right side.
-
-type Pt = readonly [number, number];
 
 /** The quadratic from `a` through the pull of `c` to `b`, in `steps` points, `a` left out. */
 function bend(a: Pt, c: Pt, b: Pt, steps = 8): Pt[] {
@@ -208,8 +239,8 @@ function oval(cx: number, cy: number, rx: number, ry: number, from: number, to: 
 }
 
 /**
- * A line through `corners`, each corner rounded by its radius (0 keeps it sharp), so a 1.5 px line,
- * which WebGL never joins (§ Facts: only lines over 2 px are), shows no notch at render scale 2.
+ * A line through `corners`, each corner rounded by its radius (0 keeps it sharp): drawn when the
+ * row's line was 1.5 px, which WebGL never joins (only lines over 2 px are), so it showed no notch.
  * Open: its two ends are kept as they are.
  */
 function rounded(corners: readonly (readonly [number, number, number])[]): Pt[] {
@@ -331,7 +362,7 @@ const HAVERSACK_MID = (() => {
  * The Inventory icon (FS-3EBCA R3, § Change: The inventory icon is an inked backpack, as the
  * owner's second tweak round made it): an old haversack in the other glyphs' lines, centred on
  * (cx, cy), in `ink` at `alpha`. Nothing filled (FS-J1672 R3). Where the pouch hangs in front of
- * the body, the body's line is left undrawn, as the Party glyph's back bust is.
+ * the body, the body's line is left undrawn, as the Party glyph's back figure is.
  */
 export function drawBackpack(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
   const ox = cx - HAVERSACK_MID[0];
@@ -377,63 +408,120 @@ export function drawBackpack(g: Ink, cx: number, cy: number, ink: number, alpha:
   segment(POUCH_CORD);
 }
 
-/** A bust's outline: its head's circle and the half circle of its shoulders. */
-interface BustShape {
-  cx: number;
-  headY: number;
-  headR: number;
-  shoulderY: number;
-  shoulderR: number;
+// ── The hooded figure (FS-QHN87 R4, R5): the game's player, a head-and-shoulders figure in a hood
+//    and cloak. Drawn in local px at scale 1, x to the right and y down from the old bust's centre,
+//    so it keeps that bust's place and size.
+
+/** The hem: its right corner (the left is its mirror) and how far its middle sags below the corners. */
+const HEM_CORNER: Pt = [10.6, 9.4];
+const HEM_SAG = 4.4;
+
+/** Its right half from the hood's peak down to the hem's corner; the left is its mirror. */
+const HOOD_RIGHT: Pt[] = [
+  [0, -10.6],
+  ...bend([0, -10.6], [2.2, -9.2], [4.9, -7.2], 4),
+  ...bend([4.9, -7.2], [7.4, -5.4], [7.4, -2.6], 5),
+  // in at the neck, where the hood meets the cloak
+  ...bend([7.4, -2.6], [7.4, 0.6], [6.2, 2.4], 4),
+  // the cloak over the shoulder and down its side
+  ...bend([6.2, 2.4], [10.3, 2.8], HEM_CORNER, 7),
+];
+/** The hem's curve from the right corner to the left. */
+const HEM: Pt[] = bend(HEM_CORNER, [0, HEM_CORNER[1] + HEM_SAG], [-HEM_CORNER[0], HEM_CORNER[1]], 12);
+/** The whole outline, closed back to the peak: the peak and the hem's corners are vertices of it. */
+const HOODED: Pt[] = [
+  ...HOOD_RIGHT,
+  ...HEM,
+  ...HOOD_RIGHT.slice(1, -1)
+    .reverse()
+    .map(([x, y]) => [-x, y] as Pt),
+];
+/** The hood's opening: from the throat up its left side to a point under the peak and down again. */
+const HOOD_OPENING: Pt[] = [
+  [0, 2.6],
+  ...bend([0, 2.6], [-7.2, -1.2], [0, -6], 10),
+  ...bend([0, -6], [7.2, -1.2], [0, 2.6], 10).slice(0, -1),
+];
+/** The point of the hem at `x`, so a fold ends on it. */
+const HEM_AT = (x: number): Pt => {
+  const t = (1 - x / HEM_CORNER[0]) / 2;
+  return [x, HEM_CORNER[1] + 2 * HEM_SAG * t * (1 - t)];
+};
+/** The cloak's folds: from under each shoulder down to the hem. */
+const CLOAK_FOLDS: Pt[][] = [-1, 1].map((side) => [
+  [5.4 * side, 4.6] as Pt,
+  ...bend([5.4 * side, 4.6], [6.6 * side, 7.6], HEM_AT(6.2 * side), 5),
+]);
+
+/** A hooded figure laid at (cx, cy), scale s: its outline, opening and folds in screen px. */
+function hoodedAt(cx: number, cy: number, s: number) {
+  const place = (ps: readonly Pt[]) => ps.map(([x, y]) => [cx + x * s, cy + y * s] as Pt);
+  return { outline: place(HOODED), opening: place(HOOD_OPENING), folds: CLOAK_FOLDS.map(place) };
 }
 
-function bustShape(cx: number, cy: number, s: number): BustShape {
-  return { cx, headY: cy - 6 * s, headR: 5 * s, shoulderY: cy + 12 * s, shoulderR: 11 * s };
+/** How far (x, y) stands from the segment a–b. */
+function toSegment(x: number, y: number, a: Pt, b: Pt): number {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(x - (a[0] + dx * t), y - (a[1] + dy * t));
 }
-
-/** Whether (x, y) lies on the bust's shape, its lines' width included: where it hides what is behind it. */
-function onBust(b: BustShape, x: number, y: number): boolean {
-  if (Math.hypot(x - b.cx, y - b.headY) <= b.headR + LINE_W) return true;
-  return y <= b.shoulderY && Math.hypot(x - b.cx, y - b.shoulderY) <= b.shoulderR + LINE_W;
-}
-
-/** How finely an outline is cut where a bust in front covers it: half a degree. */
-const COVER_STEPS_PER_TURN = 720;
 
 /**
- * The runs of the arc of (x, y, r), clockwise from `start` to `end`, that `front` leaves in view
- * (FS-J1672 R3), as [from, to] angles.
+ * Whether (x, y) lies on the shape `outline` closes round, its line's width included: where a figure
+ * in front hides what is behind it.
  */
-function uncoveredRuns(
-  x: number,
-  y: number,
-  r: number,
-  start: number,
-  end: number,
-  front: BustShape,
-): [number, number][] {
-  const steps = Math.max(1, Math.round(((end - start) / (2 * Math.PI)) * COVER_STEPS_PER_TURN));
-  const angle = (i: number) => start + ((end - start) * i) / steps;
-  const shown = (i: number) =>
-    i <= steps && !onBust(front, x + Math.cos(angle(i)) * r, y + Math.sin(angle(i)) * r);
-  const runs: [number, number][] = [];
-  let from: number | undefined;
-  // one step past the end, never shown, closes the last run
-  for (let i = 0; i <= steps + 1; i++) {
-    if (shown(i)) from ??= i;
-    else if (from !== undefined) {
-      if (i - 1 > from) runs.push([angle(from), angle(i - 1)]);
-      from = undefined;
-    }
+function covers(outline: readonly Pt[], x: number, y: number): boolean {
+  let within = false;
+  for (let i = 0, j = outline.length - 1; i < outline.length; j = i++) {
+    const [a, b] = [outline[i], outline[j]];
+    if (a[1] > y !== b[1] > y && x < ((b[0] - a[0]) * (y - a[1])) / (b[1] - a[1]) + a[0]) within = !within;
+    if (toSegment(x, y, a, b) <= LINE_W) return true;
   }
+  return within;
+}
+
+/** How finely a line is cut where a figure in front covers it. */
+const COVER_STEP = 0.25;
+
+/**
+ * The runs of the line through `points` (closed back to its first when `closed`) that `hidden`
+ * leaves in view, each with the points it runs through: the line whole when nothing hides it.
+ */
+function uncovered(points: readonly Pt[], closed: boolean, hidden: (p: Pt) => boolean): { points: Pt[]; closed: boolean }[] {
+  const ring = closed ? [...points, points[0]] : [...points];
+  const samples: Pt[] = [ring[0]];
+  for (let i = 1; i < ring.length; i++) {
+    const [a, b] = [ring[i - 1], ring[i]];
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / COVER_STEP));
+    for (let k = 1; k <= n; k++) samples.push(k === n ? b : [a[0] + ((b[0] - a[0]) * k) / n, a[1] + ((b[1] - a[1]) * k) / n]);
+  }
+  const shown = samples.map((p) => !hidden(p));
+  if (shown.every(Boolean)) return [{ points: [...points], closed }];
+  // a closed line is cut from a hidden point round to itself, so a run across its start stays one
+  const from = closed ? shown.indexOf(false) : 0;
+  const order = closed ? [...samples.slice(from, -1), ...samples.slice(0, from + 1)] : samples;
+  const seen = closed ? [...shown.slice(from, -1), ...shown.slice(0, from + 1)] : shown;
+  const runs: { points: Pt[]; closed: boolean }[] = [];
+  let run: Pt[] = [];
+  order.forEach((p, i) => {
+    if (seen[i]) run.push(p);
+    if (!seen[i] || i === order.length - 1) {
+      if (run.length > 1) runs.push({ points: run, closed: false });
+      run = [];
+    }
+  });
   return runs;
 }
 
 /**
- * A bust (R3): a head over the curve of the shoulders, `s` its scale. With `front`, the bust
- * standing in front of this one, this one's shoulders are left undrawn where that one covers them
- * (FS-J1672 R3), its head standing clear: nothing is filled, so no dark patch is left on the world.
+ * A hooded figure (FS-3EBCA R3; FS-QHN87 R4), `s` its scale: a peaked hood whose opening is only
+ * its inner curve, no face under it, and a cloak falling to a curved hem with two folds. With
+ * `front`, the figure standing in front of this one, this one's lines are left undrawn where that
+ * one covers them, its line's width included (FS-J1672 R3): nothing is filled, so no dark patch is
+ * left on the world.
  */
-export function drawBust(
+export function drawHooded(
   g: Ink,
   cx: number,
   cy: number,
@@ -442,28 +530,23 @@ export function drawBust(
   alpha: number,
   front?: { cx: number; cy: number; s: number },
 ): void {
-  const b = bustShape(cx, cy, s);
-  const cover = front && bustShape(front.cx, front.cy, front.s);
+  const fig = hoodedAt(cx, cy, s);
+  const cover = front && hoodedAt(front.cx, front.cy, front.s).outline;
+  const hidden = (p: Pt) => (cover ? covers(cover, p[0], p[1]) : false);
   g.lineStyle(LINE_W, ink, alpha);
-  // the back head stands clear of the front bust, so only the shoulders are ever cut
-  g.strokeCircle(cx, b.headY, b.headR);
-
-  const shoulders = cover
-    ? uncoveredRuns(cx, b.shoulderY, b.shoulderR, Math.PI, 2 * Math.PI, cover)
-    : [[Math.PI, 0] as [number, number]];
-  for (const [from, to] of shoulders) strokeArc(g, cx, b.shoulderY, b.shoulderR, from, to);
+  const lines: [readonly Pt[], boolean][] = [
+    [fig.outline, true],
+    [fig.opening, true],
+    ...fig.folds.map((fold): [Pt[], boolean] => [fold, false]),
+  ];
+  for (const [points, closed] of lines) {
+    for (const run of uncovered(points, closed, hidden)) strokeLine(g, run.points, run.closed);
+  }
 }
 
-/** One open arc, clockwise. */
-function strokeArc(g: Ink, x: number, y: number, r: number, from: number, to: number): void {
-  g.beginPath();
-  g.arc(x, y, r, from, to, false);
-  g.strokePath();
-}
-
-/** Two busts (R3): one stepped behind and above the other, the front one standing over it. */
+/** Two hooded figures (FS-QHN87 R5): one stepped behind and above the other, the front one over it. */
 export function drawParty(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
   const front = { cx: cx + 5, cy: cy + 2, s: 0.85 };
-  drawBust(g, cx - 6, cy - 2, 0.8, ink, alpha, front);
-  drawBust(g, front.cx, front.cy, front.s, ink, alpha);
+  drawHooded(g, cx - 6, cy - 2, 0.8, ink, alpha, front);
+  drawHooded(g, front.cx, front.cy, front.s, ink, alpha);
 }

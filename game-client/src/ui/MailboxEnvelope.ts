@@ -107,6 +107,14 @@ export function drawWaxSeal(
   g.strokeCircle(x, y, r - 1);
 }
 
+/**
+ * The one line width of every corner-row glyph, the envelope's lines and the greyed Mailbox's
+ * included (FS-QHN87 R1): over the WebGL renderer's 2 px join threshold, so a path's corners are
+ * joined (Phaser 4.2.1 StrokePath). Named here, not in `HudCorner`, which imports the envelope's
+ * lines: the other way round would be a cycle.
+ */
+export const GLYPH_LINE_W = 2.25;
+
 /** The envelope's lines inside the icon's 58 × 46 rect. */
 function envelopeRect(f: Rect): Rect {
   return { x: f.x + 11, y: f.y + 11, width: f.width - 22, height: f.height - 21 };
@@ -118,26 +126,146 @@ export function envelopeFlapPoint(f: Rect): { x: number; y: number } {
   return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
 }
 
+type Pt = { x: number; y: number };
+
+/** The bottom-left corner turned over: cut this far up its side and along its foot (FS-QHN87 R6). */
+const FOLD = 6.5;
+/** The cord: from the foot this far in from the left, up to the right side this far down. */
+const CORD = { foot: 12, side: 11 };
+/** The knot: this far along the cord from its foot, clear of the flap point and the middle. */
+const KNOT_AT = 0.78;
+/** Its crossing strokes: each this long each side of the knot, slanted this far off the cord. */
+const KNOT_ARM = 2.5;
+const KNOT_SLANT = (50 * Math.PI) / 180;
+/** Its loose ends: this long, hanging at these angles (down is a quarter turn). */
+const KNOT_END = 4.2;
+const KNOT_ENDS = [(55 * Math.PI) / 180, (125 * Math.PI) / 180];
+/** The creases: this far inside each flap line, over this stretch of it from its top corner. */
+const CREASE_IN = 3.2;
+const CREASE_SPAN = [0.26, 0.56] as const;
+/** Past the cord's own width, a hair more of a line under it is left undrawn, so it lies on top. */
+const HAIR = 0.4;
+/** The corners' radius, as the rounded rect had it, and how finely each is drawn. */
+const CORNER_R = 2;
+const CORNER_STEPS = 4;
+
+/** How far `p` stands from the segment a–b. */
+function toSegment(p: Pt, a: Pt, b: Pt): number {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(p.x - (a.x + dx * t), p.y - (a.y + dy * t));
+}
+
+/** The runs of the line a–b left in view where `hidden` hides it, each as its two ends. */
+function brokenLine(a: Pt, b: Pt, hidden: (p: Pt) => boolean): [Pt, Pt][] {
+  const steps = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.1));
+  const at = (i: number): Pt => ({ x: a.x + ((b.x - a.x) * i) / steps, y: a.y + ((b.y - a.y) * i) / steps });
+  const runs: [Pt, Pt][] = [];
+  let from: number | undefined;
+  for (let i = 0; i <= steps + 1; i++) {
+    if (i <= steps && !hidden(at(i))) from ??= i;
+    else if (from !== undefined) {
+      if (i - 1 > from) runs.push([at(from), at(i - 1)]);
+      from = undefined;
+    }
+  }
+  return runs;
+}
+
 /**
- * The envelope's lines in rect `f`, in `ink` (R33): its edge, the flap down to its point and the
- * folds at the foot. The corner row draws the greyed Mailbox with it too (FS-3EBCA R9).
+ * The envelope's lines in rect `f`, in `ink` (R33; FS-QHN87 R6), all in the row's one width: its
+ * edge with the bottom-left corner turned over, the flap down to its point as one path, a crease
+ * inside each flap line by its top corner, the folds at the foot, and a cord tied across it on a
+ * diagonal, knotted on the right with two loose ends, the lines under it left undrawn. No circle,
+ * nothing round in the middle, and none of the cord, knot or fold under the count badge (FS-J1672
+ * R7). Only the stroke methods the letter panel's stand-in knows (R11). The corner row draws the
+ * greyed Mailbox with it too (FS-3EBCA R9).
  */
 export function drawEnvelopeLines(
-  g: Pick<Phaser.GameObjects.Graphics, "lineStyle" | "strokeRoundedRect" | "lineBetween">,
+  g: Pick<
+    Phaser.GameObjects.Graphics,
+    "lineStyle" | "lineBetween" | "beginPath" | "moveTo" | "lineTo" | "closePath" | "strokePath"
+  >,
   f: Rect,
   ink: number,
   alpha: number,
 ): void {
   const e = envelopeRect(f);
+  const at = (x: number, y: number): Pt => ({ x: e.x + x, y: e.y + y });
+  const w = e.width;
+  const h = e.height;
   const point = envelopeFlapPoint(f);
-  g.lineStyle(1.5, ink, alpha);
-  g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
-  // the flap, down to its point
-  g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
-  g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
-  // the folds at the foot
-  g.lineBetween(e.x + 1, e.y + e.height - 1, e.x + e.width * 0.36, e.y + e.height * 0.5);
-  g.lineBetween(e.x + e.width - 1, e.y + e.height - 1, e.x + e.width * 0.64, e.y + e.height * 0.5);
+  const path = (pts: Pt[], closed = false) => {
+    g.beginPath();
+    g.moveTo(pts[0].x, pts[0].y);
+    for (const p of pts.slice(1)) g.lineTo(p.x, p.y);
+    if (closed) g.closePath();
+    g.strokePath();
+  };
+  const line = (a: Pt, b: Pt) => g.lineBetween(a.x, a.y, b.x, b.y);
+  const corner = (cx: number, cy: number, from: number): Pt[] =>
+    Array.from({ length: CORNER_STEPS + 1 }, (_, i) => {
+      const a = from + (Math.PI / 2) * (i / CORNER_STEPS);
+      return at(cx + Math.cos(a) * CORNER_R, cy + Math.sin(a) * CORNER_R);
+    });
+
+  // the turned-over corner: cut from its side (a) to its foot (b), its tip (c) laid inside
+  const fold = { a: at(0, h - FOLD), c: at(FOLD, h - FOLD), b: at(FOLD, h) };
+  // the cord, its knot's crossing strokes and loose ends: what lies on top of the other lines
+  const cord = [at(CORD.foot, h), at(w, CORD.side)] as const;
+  const knot = {
+    x: cord[0].x + (cord[1].x - cord[0].x) * KNOT_AT,
+    y: cord[0].y + (cord[1].y - cord[0].y) * KNOT_AT,
+  };
+  const slope = Math.atan2(cord[1].y - cord[0].y, cord[1].x - cord[0].x);
+  const arms = [slope + KNOT_SLANT, slope - KNOT_SLANT].map((a) => {
+    const d = { x: Math.cos(a) * KNOT_ARM, y: Math.sin(a) * KNOT_ARM };
+    return [
+      { x: knot.x - d.x, y: knot.y - d.y },
+      { x: knot.x + d.x, y: knot.y + d.y },
+    ] as const;
+  });
+  const [left, right] = KNOT_ENDS.map((a) => ({ x: knot.x + Math.cos(a) * KNOT_END, y: knot.y + Math.sin(a) * KNOT_END }));
+  const ends = [right, knot, left];
+  const lying = [cord, ...arms, [right, knot] as const, [knot, left] as const];
+  const under = (p: Pt) => lying.some(([a, b]) => toSegment(p, a, b) < GLYPH_LINE_W + HAIR);
+
+  g.lineStyle(GLYPH_LINE_W, ink, alpha);
+  // the edge, its corners rounded as before but the turned-over one, which the cut closes
+  path(
+    [
+      fold.a,
+      ...corner(CORNER_R, CORNER_R, Math.PI),
+      ...corner(w - CORNER_R, CORNER_R, -Math.PI / 2),
+      ...corner(w - CORNER_R, h - CORNER_R, 0),
+      fold.b,
+    ],
+    true,
+  );
+  path([fold.a, fold.c, fold.b]);
+  // the flap, down to its point and up again: one path, so its point is joined
+  path([at(1, 1), point, at(w - 1, 1)]);
+  // a crease inside each flap line by its top corner
+  for (const top of [at(1, 1), at(w - 1, 1)]) {
+    const len = Math.hypot(point.x - top.x, point.y - top.y);
+    const along = { x: (point.x - top.x) / len, y: (point.y - top.y) / len };
+    // inside: away from the flap, toward the envelope's side
+    const side = Math.sign(e.x + w / 2 - top.x);
+    const inward = { x: -along.y * side, y: along.x * side };
+    const [s0, s1] = CREASE_SPAN.map((t) => ({
+      x: top.x + (point.x - top.x) * t + inward.x * CREASE_IN,
+      y: top.y + (point.y - top.y) * t + inward.y * CREASE_IN,
+    }));
+    line(s0, s1);
+  }
+  // the folds at the foot: the left one from the turned corner's tip, the right one under the cord
+  line(fold.c, at(w * 0.36, h * 0.5));
+  for (const [a, b] of brokenLine(at(w - 1, h - 1), at(w * 0.64, h * 0.5), under)) line(a, b);
+  // the cord and its knot, on top
+  line(cord[0], cord[1]);
+  for (const [a, b] of arms) line(a, b);
+  path(ends);
 }
 
 export class MailboxEnvelope {
