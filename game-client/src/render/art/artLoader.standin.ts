@@ -39,8 +39,9 @@ export const RESIDENT_ART_PAGES = [
  * Test-only: the slice of a Phaser 4.2.1 scene the art loading touches (its loader, texture
  * manager, animation manager and JSON cache), behaving as Phaser's own do:
  *
- * - `load.image` / `load.json` skip a key the texture manager or cache already holds, or the load
- *   already has (`LoaderPlugin.addFile` → `keyExists`), so no `filecomplete` fires for it.
+ * - `load.image` / `load.json` / `load.audio` skip a key the texture manager or cache already
+ *   holds, or the load already has (`LoaderPlugin.addFile` → `keyExists`), so no `filecomplete`
+ *   fires for it. A loaded audio file lands in the audio cache (`AudioFile`, decoded).
  * - `load.start` with nothing queued emits `complete` at once, synchronously
  *   (`LoaderPlugin.start`, `list.size === 0`). Otherwise each file completes in turn: an image
  *   becomes a texture, the manifest is cached, then `filecomplete-<type>-<key>` and `progress`
@@ -69,6 +70,8 @@ export function artLoaderStandin(opts: {
   textures?: string[];
   /** Keys whose download fails. */
   failing?: string[];
+  /** Keys already in the audio cache. */
+  audio?: string[];
   /** Every load is held until `finish()`, as `boot(…, { hold: true })` does: for a load started by Phaser's own scene manager. */
   hold?: boolean;
 }) {
@@ -77,6 +80,7 @@ export function artLoaderStandin(opts: {
   );
   const textures = new TextureManagerStandIn(opts.textures ?? []);
   const anims = new AnimationManagerStandIn();
+  const audio = new Set(opts.audio ?? []);
   const failing = new Set(opts.failing ?? []);
 
   /**
@@ -86,7 +90,7 @@ export function artLoaderStandin(opts: {
    * and still adds itself, unless its XHR was aborted or its completion taken away.
    */
   type File = {
-    type: "image" | "json";
+    type: "image" | "json" | "audio";
     key: string;
     xhrLoader: { aborted: boolean; done: boolean; abort(): void } | null;
     resetXHR(): void;
@@ -102,14 +106,18 @@ export function artLoaderStandin(opts: {
   let loading = false;
   /** Every image key queued, across loads, in order. */
   const queued: string[] = [];
+  /** Every audio file queued, across loads, in order: its key and its URLs. */
+  const queuedAudio: { key: string; url: unknown }[] = [];
   /** What Phaser would print with `console.error`: `TextureManager.checkKey` on a key in use. */
   const consoleErrors: string[] = [];
 
+  const cached = (type: File["type"], key: string) =>
+    type === "image" ? textures.exists(key) : type === "audio" ? audio.has(key) : json.has(key);
   const exists = (type: File["type"], key: string) =>
-    (type === "image" ? textures.exists(key) : json.has(key)) ||
-    list.some((f) => f.key === key);
+    cached(type, key) || list.some((f) => f.key === key);
   const addToCache = (file: File) => {
     if (file.type === "json") return void json.set(file.key, opts.manifest);
+    if (file.type === "audio") return void audio.add(file.key);
     if (textures.exists(file.key)) consoleErrors.push(`Texture key already in use: ${file.key}`);
     else textures.addImage(file.key);
   };
@@ -149,6 +157,10 @@ export function artLoaderStandin(opts: {
   const load = Object.assign(loaderEvents, {
     image: (key: string, _url?: string) => add("image", key),
     json: (key: string, _url?: string) => add("json", key),
+    audio: (key: string, url: unknown) => {
+      if (!exists("audio", key)) queuedAudio.push({ key, url });
+      add("audio", key);
+    },
     reset: () => {
       list = [];
       loading = false;
@@ -204,6 +216,10 @@ export function artLoaderStandin(opts: {
         exists: (key: string) => json.has(key),
         get: (key: string) => json.get(key),
       },
+      audio: {
+        exists: (key: string) => audio.has(key),
+        remove: (key: string) => void audio.delete(key),
+      },
     },
   };
 
@@ -212,6 +228,9 @@ export function artLoaderStandin(opts: {
     textures,
     anims,
     queued,
+    queuedAudio,
+    /** The audio cache's keys. */
+    audio,
     /** Runs `target` (which carries `scene`'s plugins) as Phaser's scene manager boots a scene. */
     boot(
       target: { init?(data?: unknown): void; preload?(): void; create?(data?: unknown): void },

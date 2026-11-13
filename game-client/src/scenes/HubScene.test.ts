@@ -209,6 +209,26 @@ describe("hubMenuChoices (FS-G4VMQ §Requirements 3)", () => {
   });
 });
 
+// The town's music row sits after Leave the queue and before Back, so Leave the queue keeps its
+// [2]; the field calls the choices without the music and keeps its two rows (FS-28DDG R15, R19).
+describe("hubMenuChoices with the music (FS-28DDG R15, R19)", () => {
+  it.each([
+    { queued: false, music: "on" as const, ids: ["change", "music", "back"], label: "Silence the music" },
+    { queued: true, music: "on" as const, ids: ["change", "leave", "music", "back"], label: "Silence the music" },
+    { queued: false, music: "off" as const, ids: ["change", "music", "back"], label: "Let the music play" },
+    { queued: true, music: "off" as const, ids: ["change", "leave", "music", "back"], label: "Let the music play" },
+  ])("should offer the music row, amber, reading $label while queued $queued and the music $music", ({ queued, music, ids, label }) => {
+    const choices = hubMenuChoices({ queued, music });
+
+    expect(choices.map((c) => c.id)).toEqual(ids);
+    expect(choices.find((c) => c.id === "music")).toEqual({ id: "music", label, register: "actionable" });
+  });
+
+  it("should leave the choices as they were when called without the music, as the field calls them", () => {
+    expect(hubMenuChoices({ queued: false }).map((c) => c.id)).toEqual(["change", "back"]);
+  });
+});
+
 /** A scene object as the stand-in stage made it: what kind, with what, and whether it is gone. */
 interface Made {
   kind: string;
@@ -3975,6 +3995,282 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
     art.boot({ preload: () => hub.preload() });
 
     expect(art.drawn).toEqual([]);
+  });
+});
+
+const { MUSIC_KEY, MUSIC_URL, MUSIC_FADE_OUT_MS, MUSIC_VOLUME } = await import("@/audio/hubMusic");
+const { MUSIC_SETTING_KEY } = await import("@/audio/musicSetting");
+
+// The town's music is the hub's own load, beside its art, so the torch bar counts it and no other
+// scene pays for it (FS-28DDG R12, R13).
+describe("HubScene music loading (FS-28DDG R12–R14)", () => {
+  const residentArt = () =>
+    artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+
+  it("should queue the village mp3 alone, under its one key, beside the folk", () => {
+    const art = residentArt();
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: MUSIC_URL }]);
+    expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
+  });
+
+  it("should skip the download while the track is still cached", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+      audio: [MUSIC_KEY],
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queuedAudio).toEqual([]);
+  });
+
+  it("should enter the hub as without music when the track fails to load", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+      failing: [MUSIC_KEY],
+    });
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+    const create = vi.fn();
+
+    art.boot({ preload: () => hub.preload(), create });
+
+    expect(create).toHaveBeenCalledOnce();
+    expect(art.audio.has(MUSIC_KEY)).toBe(false);
+  });
+});
+
+/** A sound as the hub's music plays it, recording its volumes, plays, stops and destroy. */
+function recordingSound() {
+  const sound = {
+    volumes: [] as number[],
+    calls: [] as string[],
+    set volume(value: number) {
+      sound.volumes.push(value);
+    },
+    play: () => (sound.calls.push("play"), true),
+    stop: () => (sound.calls.push("stop"), true),
+    destroy: () => void sound.calls.push("destroy"),
+  };
+  return sound;
+}
+
+// HubScene only says the hub was entered or left; the music module owns the rest, on the game's
+// step, which goes on after the hub has stopped (FS-28DDG R3, R20).
+describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function hubWithSound() {
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const onStage = hubOnStage();
+    const audio = new Set([MUSIC_KEY]);
+    const sound = recordingSound();
+    const add = vi.fn(() => sound);
+    const events = new EventEmitter();
+    const settings = { status: 5 };
+    Object.assign(onStage.hub, {
+      cache: {
+        audio: {
+          exists: (key: string) => audio.has(key),
+          remove: (key: string) => void audio.delete(key),
+        },
+      },
+      sound: { add, locked: false, context: { state: "running" } },
+      game: { events },
+      sys: { settings },
+    });
+    const hub = onStage.hub as unknown as {
+      enterMusic(): void;
+      release(end: "shutdown" | "destroy"): void;
+      menu?: unknown;
+    };
+    /** The game steps on, in 16 ms frames. */
+    const step = (ms: number) => {
+      for (let t = 0; t < ms; t += 16) events.emit("step", t, 16);
+    };
+    return { ...onStage, hub, audio, sound, add, step, settings };
+  }
+
+  /** This browser's store, as `window.localStorage`, holding `held` under the music's key. */
+  function browserStore(held: string | null) {
+    const kept = new Map<string, string>(held === null ? [] : [[MUSIC_SETTING_KEY, held]]);
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (key: string) => kept.get(key) ?? null,
+        setItem: (key: string, value: string) => void kept.set(key, value),
+        removeItem: (key: string) => void kept.delete(key),
+      },
+    });
+    return kept;
+  }
+
+  /** The music row's label as drawn, while the menu shows it. */
+  const musicLabel = (made: Made[]) =>
+    (made.find((m) => m.name === "menu-music-label" && !m.destroyed)?.children[0] as Made | undefined)?.args[2];
+
+  describe("the ESC menu's music row (FS-28DDG R15–R18)", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("should silence the music on its number, keep the choice, and redraw the open menu to offer it back", () => {
+      const kept = browserStore(null);
+      const { hub, sound, step, keys, press, stage } = hubWithSound();
+      hub.enterMusic();
+      step(2000);
+      press(keys.esc);
+      expect(musicLabel(stage.made)).toBe("Silence the music  [2]");
+
+      press(keys.two);
+      step(MUSIC_FADE_OUT_MS);
+
+      expect(sound.volumes.at(-1)).toBe(0);
+      expect(sound.calls).toEqual(["play", "stop"]);
+      expect(kept.get(MUSIC_SETTING_KEY)).toBe("off");
+      expect(hub.menu).toBeDefined();
+      expect(musicLabel(stage.made)).toBe("Let the music play  [2]");
+    });
+
+    it("should let the music play again on a click of the row, fading it in from the top", () => {
+      const kept = browserStore("off");
+      const { hub, sound, step, keys, press, option, stage } = hubWithSound();
+      hub.enterMusic();
+      step(2000);
+      expect(sound.calls).toEqual([]);
+      press(keys.esc);
+      expect(musicLabel(stage.made)).toBe("Let the music play  [2]");
+
+      option("music")?.handlers.pointerup();
+      step(2000);
+
+      expect(sound.calls).toEqual(["play"]);
+      expect(sound.volumes.at(-1)).toBe(MUSIC_VOLUME);
+      expect(kept.get(MUSIC_SETTING_KEY)).toBe("on");
+      expect(hub.menu).toBeDefined();
+      expect(musicLabel(stage.made)).toBe("Silence the music  [2]");
+    });
+
+    it("should play the music, and offer to silence it, where storage is refused (Edge States: Storage refused)", () => {
+      vi.stubGlobal("window", {
+        get localStorage(): never {
+          throw new Error("SecurityError");
+        },
+      });
+      const { hub, sound, step, keys, press, stage } = hubWithSound();
+      hub.enterMusic();
+      step(2000);
+      press(keys.esc);
+      expect(sound.calls).toEqual(["play"]);
+      expect(musicLabel(stage.made)).toBe("Silence the music  [2]");
+
+      press(keys.two);
+      step(MUSIC_FADE_OUT_MS);
+      expect(sound.calls).toEqual(["play", "stop"]);
+      expect(musicLabel(stage.made)).toBe("Let the music play  [2]");
+    });
+  });
+
+  it("should start the music on entering and fade it in on the game's step", () => {
+    const { hub, sound, add, step } = hubWithSound();
+
+    hub.enterMusic();
+    step(2000);
+
+    expect(add).toHaveBeenCalledOnce();
+    expect(sound.calls).toEqual(["play"]);
+    expect(sound.volumes.at(-1)).toBe(MUSIC_VOLUME);
+  });
+
+  it("should fade out after the hub stops, then stop the sound and free the track", () => {
+    const { hub, audio, sound, step, settings } = hubWithSound();
+    hub.enterMusic();
+    step(2000);
+
+    settings.status = 8;
+    hub.release("shutdown");
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.volumes.at(-1)).toBe(0);
+    expect(sound.calls).toEqual(["play", "stop", "destroy"]);
+    expect(audio.has(MUSIC_KEY)).toBe(false);
+  });
+
+  // create() runs no further than its camera on the stand-in (createUpToCamera, below), so its call
+  // is pinned from the source: entering the hub is what starts the music (R1, R2)
+  it("should start the music from create, each time the hub is entered", () => {
+    const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
+    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1];
+
+    expect(create).toMatch(/^\s*this\.enterMusic\(\);$/m);
+  });
+
+  /** Left, then started again: the fade-out ends while the hub loads, so the stopped sound is kept for it (R13). */
+  function keptWhileLoading() {
+    vi.spyOn(socketManager, "on").mockImplementation(() => {});
+    const music = hubWithSound();
+    const { hub, step, settings } = music;
+    hub.enterMusic();
+    step(2000);
+    settings.status = 8;
+    hub.release("shutdown");
+    // the hub starts again, its init and preload before any create
+    settings.status = 1;
+    (hub as unknown as { init(): void }).init();
+    step(MUSIC_FADE_OUT_MS);
+    return { ...music, events: (hub as unknown as { events: Emitter }).events };
+  }
+
+  // a world switch cuts the load short: no create ran, so no release tells the music (FS-28DDG R13)
+  it("should free a kept sound when the hub stops while loading again", () => {
+    const { audio, sound, step, settings, events } = keptWhileLoading();
+    expect(sound.calls).toEqual(["play", "stop"]);
+    expect(audio.has(MUSIC_KEY)).toBe(true);
+
+    settings.status = 8;
+    events.emit("shutdown");
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.calls).toEqual(["play", "stop", "destroy"]);
+    expect(audio.has(MUSIC_KEY)).toBe(false);
+  });
+
+  it("should ask a kept sound nothing when the game is destroyed while the hub loads", () => {
+    const { audio, sound, step, events } = keptWhileLoading();
+
+    events.emit("destroy");
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.calls).toEqual(["play", "stop"]);
+    expect(audio.has(MUSIC_KEY)).toBe(true);
+  });
+
+  it("should ask the sound nothing when the game is destroyed in the hub", () => {
+    const { hub, audio, sound, step } = hubWithSound();
+    hub.enterMusic();
+    step(1000);
+    const written = sound.volumes.length;
+
+    hub.release("destroy");
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.volumes).toHaveLength(written);
+    expect(sound.calls).toEqual(["play"]);
+    expect(audio.has(MUSIC_KEY)).toBe(true);
   });
 });
 
