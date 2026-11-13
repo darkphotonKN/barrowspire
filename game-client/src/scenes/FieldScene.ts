@@ -43,7 +43,7 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
-import { ContainerView } from "@/ui/ContainerView";
+import { ContainerView, type ContainerViewOptions } from "@/ui/ContainerView";
 import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
@@ -60,6 +60,7 @@ import { lentFullscreen } from "@/ui/gameFullscreen";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
+import { GameplaySounds, containerOpenEffect } from "@/audio/gameplaySounds";
 import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -273,6 +274,8 @@ export class FieldScene extends Phaser.Scene {
   private corner?: HudCorner;
   /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
   private sounds?: UiSounds;
+  /** The gameplay sound effects' player (FS-AND39 R16), made in `create` beside the interface effects', for the modules that play. */
+  private gameplaySounds?: GameplaySounds;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
   /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
@@ -327,6 +330,7 @@ export class FieldScene extends Phaser.Scene {
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
     this.mountUiSounds();
+    this.mountGameplaySounds();
     this.bindInput();
 
     // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
@@ -342,6 +346,7 @@ export class FieldScene extends Phaser.Scene {
         this.views.get(entityID)?.sprite.getByName("body") as Phaser.GameObjects.Sprite | undefined,
       takesPointer: (x, y, primary) => this.takesPointer(x, y, primary),
       lockout: () => this.showAbilityCard(),
+      sounds: this.gameplaySounds,
     });
     this.createPiles();
     this.equipment = this.composeEquipment();
@@ -384,6 +389,14 @@ export class FieldScene extends Phaser.Scene {
    */
   private mountUiSounds(): void {
     this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
+  }
+
+  /**
+   * The gameplay effects' player (FS-AND39 R13, R16), beside the interface effects': on the same
+   * stage and the same kept level, for the modules that play.
+   */
+  private mountGameplaySounds(): void {
+    this.gameplaySounds = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
   }
 
   /** Which of the field's windows are open now (FS-WDM0X S8): the menu's slot, Party, Inventory, Character; a field has no letter panel. */
@@ -500,6 +513,17 @@ export class FieldScene extends Phaser.Scene {
     });
   }
 
+  /** The satchel's hooks: a take, the player's level, the bag's room, and an open's sound. */
+  private satchelOptions(): ContainerViewOptions {
+    return {
+      onLoot: (item) => this.lootFromSatchel(item),
+      characterLevel: () => this.selfLevel,
+      mayTake: () => this.bagHasRoom(),
+      // every open of the satchel is the player's own, server-confirmed (FS-AND39 R5)
+      onOpen: (kind) => this.gameplaySounds?.play(containerOpenEffect(kind)),
+    };
+  }
+
   /**
    * The field's drop piles (§Requirements 56, 59): the run's heap texture and the run's satchel,
    * composed, never copied. A Forest clearing chest is the run's chest, opened through the same
@@ -530,11 +554,7 @@ export class FieldScene extends Phaser.Scene {
       g.generateTexture(SACK.placeholder[frame], SACK.width, SACK.height);
       g.destroy();
     }
-    const satchel = new ContainerView(this, this.art, {
-      onLoot: (item) => this.lootFromSatchel(item),
-      characterLevel: () => this.selfLevel,
-      mayTake: () => this.bagHasRoom(),
-    });
+    const satchel = new ContainerView(this, this.art, this.satchelOptions());
     this.satchel = satchel;
     this.piles = new FieldPiles(
       {
@@ -596,6 +616,7 @@ export class FieldScene extends Phaser.Scene {
       {
         send: (action, payload) => socketManager.sendMessage(action, payload),
         notice: (text) => this.notice(text),
+        gearChanged: () => this.gameplaySounds?.play("item_swap"),
       },
       Date.now,
       new PurseReader(apiClient, overlay),
@@ -790,9 +811,14 @@ export class FieldScene extends Phaser.Scene {
     return this.invitePrompt?.covers(x, y) ?? false;
   }
 
-  /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
+  /**
+   * An item taken from the satchel: sent by the piles, and held in the inventory while pending. It
+   * sounds only once sent: a reserved pile's refusal is its words alone (FS-AND39 R7).
+   */
   private lootFromSatchel(item: ItemState): void {
-    if (this.piles?.loot(item)) this.equipment?.taken(item);
+    if (!this.piles?.loot(item)) return;
+    this.gameplaySounds?.play("item_pickup");
+    this.equipment?.taken(item);
   }
 
   /**

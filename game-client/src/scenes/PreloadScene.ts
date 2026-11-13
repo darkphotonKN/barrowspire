@@ -1,5 +1,6 @@
 import * as Phaser from "phaser";
 
+import { installGameplaySounds } from "@/audio/gameplaySounds";
 import { preloadUiSounds } from "@/audio/uiSounds";
 import { preloadArt } from "@/render/art/phaser";
 import { RESIDENT_ART } from "@/render/art/sceneArt";
@@ -9,7 +10,7 @@ import { drawTorchBar } from "@/ui/torchBar";
  * The first frame a player ever sees, between the site's "Lighting the Torch" loader and the
  * main menu. It wears the menus' Bone & Soot (design-guideline "UI Chrome") so the hand-off from
  * the page to the canvas to the menu is one room, not three. It loads the resident art and the
- * interface sound effects; the torch bar is the one a world scene shows while its own art downloads (`ui/torchBar.ts`).
+ * interface sound effects, and installs the gameplay ones; the torch bar is the one a world scene shows while its own art downloads (`ui/torchBar.ts`).
  */
 export class PreloadScene extends Phaser.Scene {
   constructor() {
@@ -34,6 +35,10 @@ export class PreloadScene extends Phaser.Scene {
   }
 
   create(): void {
+    // The gameplay sound effects, built in code and resident for the game's life, so the first
+    // event in any world can sound. Only Phaser's Web Audio manager has a context; without one
+    // none is installed (FS-AND39 R12).
+    installGameplaySounds("context" in this.sound ? this.sound.context : undefined, this.cache.audio);
     this.scene.start("MainMenuScene");
   }
 }

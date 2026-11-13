@@ -4,6 +4,9 @@ import type { ContainerKind, ContainerState, ItemState } from "@/types/gameState
 import { RESERVED_PILE_ALPHA } from "@/render/world/dropPile";
 import { CHEST_OPEN_WINDOW_MS, FieldPiles, PILE_REACH, type PileSatchel, type PileStage } from "./fieldPiles";
 import { lootRefusalCopy } from "./fieldRefusals";
+import { containerOpenEffect } from "@/audio/gameplaySounds";
+import type { ArtLibrary } from "@/render/art/library";
+import { ContainerView } from "@/ui/ContainerView";
 
 const ME = "me";
 const item = (id: string) => ({ entity_id: id }) as ItemState;
@@ -20,8 +23,8 @@ function pile(id: string, x: number, reserved_for?: string, items = [item(`${id}
   };
 }
 
-/** The piles with a recording stage, satchel and port. */
-function piles() {
+/** The piles with a recording stage, satchel and port; `view`, when given, is the satchel they open instead. */
+function piles(view?: PileSatchel) {
   const sprites = new Map<string, { alpha: number; destroyed: boolean; at: { x: number; y: number } }>();
   let placed = 0;
   const stage: PileStage = {
@@ -85,7 +88,7 @@ function piles() {
   const notices: string[] = [];
   const send = vi.fn();
   let now = 10_000;
-  const fp = new FieldPiles(stage, satchel, { notice: (t) => notices.push(t), send }, () => now);
+  const fp = new FieldPiles(stage, view ?? satchel, { notice: (t) => notices.push(t), send }, () => now);
   const live = () => [...sprites.values()].filter((s) => !s.destroyed);
   const liveChests = () => [...chests.values()].filter((c) => !c.destroyed);
   const liveSacks = () => [...sacks.values()].filter((c) => !c.destroyed);
@@ -519,5 +522,65 @@ describe("FieldPiles container faces (FS-1D6BX §Requirements 15)", () => {
     fp.sync([make("c", 10, true, [item("a")])], ME);
     expect(satchel.entityId).toBe("c");
     expect(satchel.kind).toBe(kind);
+  });
+});
+
+describe("FieldPiles open sounds, through the run's coffer view (FS-AND39 R5)", () => {
+  /** The real coffer view on a Phaser stand-in, its open hook wired as the field's scene wires it. */
+  function heard() {
+    const numbers: Record<string, number> = { x: 0, y: 0, scaleX: 1, scaleY: 1, alpha: 1, width: 64, height: 64, now: 0 };
+    const stub: unknown = new Proxy(function () {}, {
+      get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : typeof key === "string" && key in numbers ? numbers[key] : stub),
+      apply: () => stub,
+    });
+    const play = vi.fn();
+    const view = new ContainerView(stub as Phaser.Scene, stub as ArtLibrary, {
+      onLoot: vi.fn(),
+      onOpen: (kind) => play(containerOpenEffect(kind)),
+      now: () => 0,
+    });
+    return { ...piles(view), play };
+  }
+
+  it("should play loot_open as my pile's view opens, and nothing as it closes", () => {
+    const { fp, play } = heard();
+    fp.sync([pile("mine", 10, ME)], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.sync([pile("mine", 10, ME)], ME);
+    fp.interact({ x: 0, y: 0 });
+    expect(play.mock.calls).toEqual([["loot_open"]]);
+  });
+
+  it("should play nothing for someone else's reserved pile", () => {
+    const { fp, play } = heard();
+    fp.sync([pile("theirs", 10, "killer")], ME);
+    fp.interact({ x: 0, y: 0 });
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["chest", chest, "chest_open"],
+    ["sack", sack, "loot_open"],
+  ] as const)("should play nothing at the reach for a %s, and %s once on the states that have it open", (_kind, make, effect) => {
+    const { fp, play } = heard();
+    fp.sync([make("c", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    fp.sync([make("c", 10)], ME);
+    expect(play).not.toHaveBeenCalled();
+
+    fp.sync([make("c", 10, true, [item("a")])], ME);
+    fp.sync([make("c", 10, true, [item("a")])], ME);
+    fp.sync([make("c", 10, true, [])], ME);
+    expect(play.mock.calls).toEqual([[effect]]);
+  });
+
+  it("should play nothing for a chest whose open the server refused, or one someone else opens", () => {
+    const { fp, play, wait } = heard();
+    fp.sync([chest("c", 10)], ME);
+    fp.interact({ x: 0, y: 0 });
+    wait(CHEST_OPEN_WINDOW_MS + 1);
+    fp.sync([chest("c", 10)], ME);
+    fp.sync([chest("c", 10, true, [item("a")])], ME);
+    expect(play).not.toHaveBeenCalled();
   });
 });

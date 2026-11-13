@@ -31,7 +31,7 @@ import { GearOverlay } from "@/ui/GearOverlay";
 import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
 import { apiClient } from "@/utils/api";
-import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
+import { ContainerContents, ContainerView, lootMessage, type ContainerViewOptions } from "@/ui/ContainerView";
 import {
   climbed,
   floorLabel,
@@ -60,6 +60,7 @@ import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
+import { GameplaySounds, containerOpenEffect } from "@/audio/gameplaySounds";
 import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
@@ -702,6 +703,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private corner?: HudCorner;
   /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
   private sounds?: UiSounds;
+  /** The gameplay sound effects' player (FS-AND39 R16), made in `create` beside the interface effects', for the modules that play. */
+  private gameplaySounds?: GameplaySounds;
   /**
    * The tower's music (FS-28DDG § Change: The tower's music on every floor of a run, W2): made with
    * the first run, and kept with this scene instance, which is this game's, across its stops, as
@@ -895,6 +898,8 @@ export class BarrowspireScene extends Phaser.Scene {
           ? this.playerAnim?.attack(this.time.now, aim)
           : this.playerAnim?.attack(this.time.now, aim, swing),
       lockout: () => this.showAbilityCard(),
+      // each class's ability sounds as it is sent (FS-AND39 R4)
+      abilityCast: (ability) => this.gameplaySounds?.play(ability),
     },
     () => this.lastGameState?.current_player,
   );
@@ -955,11 +960,15 @@ export class BarrowspireScene extends Phaser.Scene {
     hover: (monster) =>
       this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
   };
-  /** What a monster's actions play on the world (FS-VHGE7 §D R32–33): a demon's fire claw. */
+  /**
+   * What a monster's actions play on the world (FS-VHGE7 §D R32–33): a demon's fire claw; and a
+   * hit's thud (FS-AND39 R2).
+   */
   private readonly monsterEffects: MonsterEffects = {
     claw: (monster, at) => {
       if (this.fx) playDemonClaw(this.fx, monster.entity_id, at, monster.facing);
     },
+    hit: () => this.gameplaySounds?.play("hit_monster"),
   };
   /** The floor's marker mode (FS-48CTQ §A.1): overhead plates, or the target frame. */
   private markers: MarkerMode = "overhead";
@@ -3087,11 +3096,13 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * An item taken from the open satchel (icon click or F): the view has already hidden it and
-   * marked its loot pending; tell the server, and hold it in the inventory optimistically.
+   * marked its loot pending; tell the server, and hold it in the inventory optimistically. It
+   * sounds as it is sent (FS-AND39 R7); a full bag's take never reaches here.
    */
   private lootChestItem(item: ItemState): void {
     const { action, payload } = lootMessage(item);
     socketManager.sendMessage(action, payload);
+    this.gameplaySounds?.play("item_pickup");
     this.equipment?.taken(item);
   }
 
@@ -3214,6 +3225,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Connect via SocketManager
     this.connectToServer();
     this.mountUiSounds();
+    this.mountGameplaySounds();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
@@ -3238,16 +3250,7 @@ export class BarrowspireScene extends Phaser.Scene {
     );
     // the party frames cut their busts from the class sheets just registered (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
-    this.containerView = new ContainerView(
-      this,
-      this.art,
-      {
-        onLoot: (item) => this.lootChestItem(item),
-        characterLevel: () => this.characterLevel,
-        mayTake: () => this.bagHasRoom(),
-      },
-      new ContainerContents(this.PENDING_DURATION),
-    );
+    this.containerView = new ContainerView(this, this.art, this.cofferOptions(), new ContainerContents(this.PENDING_DURATION));
 
     // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
     // run always was; otherwise the map, when it comes
@@ -3279,6 +3282,17 @@ export class BarrowspireScene extends Phaser.Scene {
     this.openHeldMessages();
   }
 
+  /** The coffer view's hooks: a take, the player's level, the bag's room, and an open's sound. */
+  private cofferOptions(): ContainerViewOptions {
+    return {
+      onLoot: (item) => this.lootChestItem(item),
+      characterLevel: () => this.characterLevel,
+      mayTake: () => this.bagHasRoom(),
+      // every open of the view is the player's own, server-confirmed (FS-AND39 R5)
+      onOpen: (kind) => this.gameplaySounds?.play(containerOpenEffect(kind)),
+    };
+  }
+
   /**
    * The tower's music rises as the run is entered; resetRun tells it the run was left (FS-28DDG
    * § Change: The tower's music on every floor of a run, W4, W7).
@@ -3295,6 +3309,14 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private mountUiSounds(): void {
     this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
+  }
+
+  /**
+   * The gameplay effects' player (FS-AND39 R13, R16), beside the interface effects': on the same
+   * stage and the same kept level, for the modules that play.
+   */
+  private mountGameplaySounds(): void {
+    this.gameplaySounds = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
   }
 
   /**
@@ -3463,6 +3485,7 @@ export class BarrowspireScene extends Phaser.Scene {
       {
         send: (action, payload) => socketManager.sendMessage(action, payload),
         notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
+        gearChanged: () => this.gameplaySounds?.play("item_swap"),
       },
       Date.now,
       new PurseReader(apiClient, overlay),
@@ -3891,8 +3914,11 @@ export class BarrowspireScene extends Phaser.Scene {
       // 本身受傷變紅閃爍提示
       const health = healthIn(state.current_player);
       if (health) {
-        // part of the way toward oxblood and back (FS-KYPQ9 §G.1)
-        if (this.ownHealth && health.current < this.ownHealth.current && this.player) this.hits?.play(this.player);
+        // part of the way toward oxblood and back (FS-KYPQ9 §G.1), and the wound's thud (FS-AND39 R3)
+        if (this.ownHealth && health.current < this.ownHealth.current) {
+          if (this.player) this.hits?.play(this.player);
+          this.gameplaySounds?.play("hit_player");
+        }
         // a hit closes the container view, and only that: judged before this state's containers
         // are read, so a view this state opens for a reach stays (FS-1D6BX R19, R24, E4)
         if (costHealth(this.ownHealth, health) && this.containerView?.isOpen) this.containerView.close();

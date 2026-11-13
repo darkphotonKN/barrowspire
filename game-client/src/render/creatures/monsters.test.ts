@@ -2346,6 +2346,7 @@ describe("the fire claw (FS-VHGE7 §D)", () => {
     const played: { id: string; at: { x: number; y: number } }[] = [];
     const effects: MonsterEffects = {
       claw: (m, at) => played.push({ id: m.entity_id, at: { ...at } }),
+      hit: () => {},
     };
     const roster = new MonsterRoster(stage, art, undefined, effects);
     return { roster, sprites, played };
@@ -2472,5 +2473,70 @@ describe("the fire claw (FS-VHGE7 §D)", () => {
     expect(sprites[0].anims.currentAnim?.key).toBe(
       "creature_demon_base/attack/4",
     );
+  });
+});
+
+// FS-AND39 R2 (I-AND39-3): a shown monster's health drop is a hit the scene sounds, from any
+// source. One first seen, one back in the broadcast, and one hidden play nothing. Two struck in
+// one state are each reported; the player's restart (R13) makes them one sound.
+describe("the hit a scene sounds (FS-AND39 R2)", () => {
+  function hitStage() {
+    const { stage } = fakeStage();
+    const struck: string[] = [];
+    const effects: MonsterEffects = {
+      claw: () => {},
+      hit: (m) => struck.push(m.entity_id),
+    };
+    const roster = new MonsterRoster(stage, fixtureArt(), undefined, effects);
+    return { roster, struck };
+  }
+
+  it("should report a shown monster whose health drops, the killing blow too", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.sync([monster({ current_health: 0, action: "dead" })]);
+    expect(struck).toEqual(["m1", "m1"]);
+  });
+
+  it("should report nothing on first sight, or on health that holds or rises", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 50 })]);
+    roster.sync([monster({ current_health: 50 })]);
+    roster.sync([monster({ current_health: 60 })]);
+    expect(struck).toEqual([]);
+  });
+
+  it("should report nothing for a monster that comes back into the broadcast hurt", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([]);
+    roster.sync([monster({ current_health: 40 })]);
+    expect(struck).toEqual([]);
+  });
+
+  it("should report nothing for a hit taken while hidden, nor when it is shown again", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.hideWhere(() => true);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.hideWhere(() => false);
+    roster.sync([monster({ current_health: 90 })]);
+    expect(struck).toEqual([]);
+  });
+
+  it("should report each of two monsters struck in one state", () => {
+    const { roster, struck } = hitStage();
+    const two = (a: number, b: number) => [
+      monster({ entity_id: "a", current_health: a }),
+      monster({ entity_id: "b", current_health: b, position: { x: 500, y: 300 } }),
+    ];
+    roster.sync(two(120, 120));
+    roster.update(FRAME);
+    roster.sync(two(100, 80));
+    expect(struck).toEqual(["a", "b"]);
   });
 });

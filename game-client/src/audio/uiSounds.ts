@@ -100,6 +100,22 @@ export interface UiSoundStage {
   audible(): boolean;
 }
 
+/**
+ * Plays the effect cached under `key` once, now, or not at all (S10–S13), the rules every sound
+ * effect plays by, the interface's and the gameplay's (FS-AND39 R13): only at a kept level above 0,
+ * read at this play (S16), with the context running and the effect cached (S12, S22). One sound per
+ * effect per game, restarted from the top on a repeat (S11). Nothing queues, and nothing but the
+ * sound's volume is set, handed to its play: never its pitch, rate or detune, never the manager's
+ * volume or mute (S10, S13).
+ */
+export function playSfx(stage: UiSoundStage, store: SfxSettingStore, key: string): void {
+  const level = readSfxLevel(store);
+  if (level <= 0 || !stage.audible() || !stage.cached(key)) return;
+  const sound = stage.get(key) ?? stage.add(key);
+  // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
+  sound.play({ volume: sfxGain(level) });
+}
+
 /** The wrapper's shape, for a module that hears its own input (S9). */
 export type UiAct = <T>(run: () => T) => T;
 
@@ -123,20 +139,9 @@ export class UiSounds {
   ) {}
 
   /**
-   * Plays `effect` once, now, or not at all (S10–S13): only at a kept level above 0, read at this
-   * play (S16), with the context running and the effect cached. One sound per effect per game,
-   * restarted from the top on a repeat (S11). Nothing queues, and nothing but the sound's volume is
-   * set, handed to its play: never its pitch, rate or detune, never the manager's volume or mute
-   * (S10, S13).
+   * Plays `effect` once, now, or not at all, by {@link playSfx}'s rules (S10–S13).
    */
-  play = (effect: UiEffect): void => {
-    const level = readSfxLevel(this.store);
-    const key = uiSoundKey(effect);
-    if (level <= 0 || !this.stage.audible() || !this.stage.cached(key)) return;
-    const sound = this.stage.get(key) ?? this.stage.add(key);
-    // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
-    sound.play({ volume: sfxGain(level) });
-  };
+  play = (effect: UiEffect): void => playSfx(this.stage, this.store, uiSoundKey(effect));
 
   /**
    * Runs a player action and plays the rule's effect for the change it made (S8, S9). A call

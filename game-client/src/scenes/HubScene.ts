@@ -182,6 +182,7 @@ import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/w
 import { browserMusicStore } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
+import { GameplaySounds } from "@/audio/gameplaySounds";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 import { lentFullscreen } from "@/ui/gameFullscreen";
 
@@ -831,6 +832,8 @@ export class HubScene extends Phaser.Scene {
   private music?: WorldMusic;
   /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
   private sounds?: UiSounds;
+  /** The gameplay sound effects' player (FS-AND39 R16), made in `create` beside the interface effects', for the modules that play. */
+  private gameplaySounds?: GameplaySounds;
   /** Cancels the music's end listener of a start that has not reached create; create's own takes over. */
   private cancelLoadingEnd?: () => void;
 
@@ -897,6 +900,7 @@ export class HubScene extends Phaser.Scene {
       : undefined;
     if (!this.groundLayer) this.drawGround();
     this.mountUiSounds();
+    this.mountGameplaySounds();
     this.bindInput();
     this.bindMinimapKey();
     this.bindMinimapPointer();
@@ -983,6 +987,14 @@ export class HubScene extends Phaser.Scene {
    */
   private mountUiSounds(): void {
     this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
+  }
+
+  /**
+   * The gameplay effects' player (FS-AND39 R13, R16), beside the interface effects': on the same
+   * stage and the same kept level, for the modules that play.
+   */
+  private mountGameplaySounds(): void {
+    this.gameplaySounds = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
   }
 
   /** Which of the town's windows are open now (FS-WDM0X S8): the menu's slot, the letter panel, Party, Inventory, Character. */
@@ -1543,9 +1555,11 @@ export class HubScene extends Phaser.Scene {
       ...(this.inStashStore(self.pos) ? [{ at: HUB_STASH_CHEST.at, who: "stash" as const }] : []),
     ];
     const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
-    // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2)
-    if (nearest === "stash") this.act(() => this.gear?.openStash());
-    else if (nearest) this.openDialogue(nearest);
+    // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2); the
+    // chest's lid in the world plays beside it, only as it opens (FS-AND39 R6)
+    if (nearest === "stash") {
+      if (this.act(() => this.gear?.openStash())) this.gameplaySounds?.play("stash_open");
+    } else if (nearest) this.openDialogue(nearest);
   }
 
   /**
@@ -3207,6 +3221,7 @@ export class HubScene extends Phaser.Scene {
         notice: (text) => {
           if (this.gear === gear) this.notice(text);
         },
+        gearChanged: () => this.gameplaySounds?.play("item_swap"),
       },
       new PurseReader(apiClient, overlay),
     );

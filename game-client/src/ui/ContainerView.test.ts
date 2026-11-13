@@ -671,3 +671,47 @@ describe("ContainerView at another logical width (FS-ZAJMH R12, R13, R15)", () =
     expect([root.x, root.y]).toEqual([0, 0]);
   });
 });
+
+describe("ContainerView open hook (FS-AND39 R5)", () => {
+  const numbers: Record<string, number> = { x: 0, y: 0, scaleX: 1, scaleY: 1, alpha: 1, width: 64, height: 64, now: 0 };
+  const stub: unknown = new Proxy(function () {}, {
+    get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : typeof key === "string" && key in numbers ? numbers[key] : stub),
+    apply: () => stub,
+  });
+  function hooked() {
+    const onOpen = vi.fn();
+    const view = new ContainerView(stub as Phaser.Scene, stub as ArtLibrary, { onLoot: vi.fn(), onOpen, now: () => 0 });
+    return { view, onOpen };
+  }
+
+  it.each<ContainerKind>(["chest", "sack", "drop_pile"])("should call the hook once as a %s opens, with its kind", (kind) => {
+    const { view, onOpen } = hooked();
+    view.open("c1", kind);
+    expect(onOpen.mock.calls).toEqual([[kind]]);
+  });
+
+  it("should call it again for each fresh open: after a close, or for another container", () => {
+    const { view, onOpen } = hooked();
+    view.open("c1", "chest");
+    view.close();
+    view.open("c1", "chest");
+    view.open("p1", "drop_pile");
+    expect(onOpen.mock.calls).toEqual([["chest"], ["chest"], ["drop_pile"]]);
+  });
+
+  it("should not call it when the container it is open for is shown again, or for a refill or a close", () => {
+    const { view, onOpen } = hooked();
+    view.open("c1", "sack");
+    view.open("c1", "sack");
+    view.setItems([item({ name: "Iron Sword" })]);
+    view.close();
+    view.closeNow();
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("should open with no hook given", () => {
+    const view = new ContainerView(stub as Phaser.Scene, stub as ArtLibrary, { onLoot: vi.fn(), now: () => 0 });
+    expect(() => view.open("c1", "chest")).not.toThrow();
+    expect(view.entityId).toBe("c1");
+  });
+});

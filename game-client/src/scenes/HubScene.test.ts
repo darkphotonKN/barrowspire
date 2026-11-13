@@ -5884,6 +5884,59 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(t.heard()).toEqual(["inventory_close"]);
   });
 
+  // FS-AND39 R6: the chest's lid in the world beside the window's open; a refused E plays neither
+  describe("the stash chest's lid (FS-AND39 R6)", () => {
+    function atTheChest() {
+      const t = town();
+      const golden = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Quartermaster's store")!;
+      t.hub.roofs = [{ house: { id: "store", x: golden.x, y: golden.y, width: golden.w, height: golden.h }, baked: false, parts: [] }];
+      t.hub.selfEntityID = "me";
+      t.hub.views = new Map([["me", { pos: { x: HUB_STASH_CHEST.at.x + 30, y: HUB_STASH_CHEST.at.y } }]]);
+      t.hub.npcs = new Map();
+      const play = vi.fn();
+      Object.assign(t.hub, { gameplaySounds: { play } });
+      return { ...t, play };
+    }
+
+    it("should play stash_open and inventory_open as E opens the stash", () => {
+      const t = atTheChest();
+      t.answer(t.keys.e);
+      expect(t.gear.stashOpen()).toBe(true);
+      expect(t.heard()).toEqual(["inventory_open"]);
+      expect(t.play.mock.calls).toEqual([["stash_open"]]);
+    });
+
+    it("should play stash_open on the town's own sound, from the gameplay player create makes (FS-AND39 R13, R16)", () => {
+      const t = atTheChest();
+      (t.hub as unknown as { mountGameplaySounds(): void }).mountGameplaySounds();
+      t.answer(t.keys.e);
+      expect(t.heard()).toEqual(["inventory_open", "stash_open"]);
+    });
+
+    // create() runs no further than its camera on the stand-in, so its call is pinned from the source
+    it("should make the gameplay player in create, beside the interface effects'", () => {
+      const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
+      const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+      expect(create).toMatch(/this\.mountUiSounds\(\);\n\s*this\.mountGameplaySounds\(\);/);
+    });
+
+    it("should play neither on an E the stash refuses", () => {
+      const t = atTheChest();
+      t.gear.openStash.mockReturnValueOnce(false);
+      t.answer(t.keys.e);
+      expect(t.gear.openStash).toHaveBeenCalledTimes(1);
+      expect(t.heard()).toEqual([]);
+      expect(t.play).not.toHaveBeenCalled();
+    });
+
+    // the gear here is a stand-in; HubGear.test.ts covers when it says a change was sent
+    it("should play item_swap as the town's gear says a change was sent (FS-AND39 R7)", () => {
+      const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
+      const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+      expect(compose).toMatch(/gearChanged: \(\) => this\.gameplaySounds\?\.play\("item_swap"\)/);
+    });
+  });
+
   it.each<[string, (t: Town) => void, (t: Town) => void]>([
     ["I with the menu open", (t) => t.press(t.keys.esc), (t) => t.press(t.keys.i)],
     ["T with the menu open", (t) => t.press(t.keys.esc), (t) => t.party.pressT()],

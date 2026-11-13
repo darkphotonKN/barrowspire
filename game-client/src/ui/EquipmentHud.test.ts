@@ -47,8 +47,9 @@ function hud(now = () => 5000) {
   const p = panel();
   const send = vi.fn();
   const notice = vi.fn();
-  const equipment = new EquipmentHud(p, { send, notice }, now);
-  return { p, send, notice, equipment };
+  const gearChanged = vi.fn();
+  const equipment = new EquipmentHud(p, { send, notice, gearChanged }, now);
+  return { p, send, notice, gearChanged, equipment };
 }
 
 describe("EquipmentHud (FS-X2F2H §Requirements 56: the run's equip HUD, shared)", () => {
@@ -221,6 +222,66 @@ describe("EquipmentHud full bag (FS-HRH2J R20–22; edge states: Bag exactly ful
     expect(equipment.roomForOne()).toBe(false);
     expect(notice).toHaveBeenCalledTimes(1);
     expect(notice).toHaveBeenCalledWith(BAG_FULL_NOTICE);
+  });
+});
+
+// FS-AND39 R7: item_swap plays as each change the player makes is sent, one per change
+describe("EquipmentHud gear change sound (FS-AND39 R7)", () => {
+  it("should say a change was made as an equip is sent", () => {
+    const { p, send, gearChanged, equipment } = hud();
+    const sword = item("sword");
+    equipment.sync({ inventory: [sword], equipment: NOTHING_WORN });
+
+    p.onEquip?.(sword, "weapon");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say it once for a swap, though the worn item goes back to the bag", () => {
+    const { p, gearChanged, equipment } = hud();
+    const sword = item("sword");
+    equipment.sync({ inventory: [sword], equipment: { ...NOTHING_WORN, weapon: item("old") } });
+
+    p.onEquip?.(sword, "weapon");
+
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say a change was made as an unequip is sent", () => {
+    const { p, send, gearChanged, equipment } = hud();
+    const helm = item("helm");
+    equipment.sync({ inventory: [], equipment: { ...NOTHING_WORN, head: helm } });
+
+    p.onUnequip?.(helm, "head");
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say nothing for an unequip refused for room, which the panel never hands on", () => {
+    const { p, send, gearChanged, equipment } = hud();
+    const helm = item("helm");
+    equipment.sync({
+      inventory: Array.from({ length: BAG_CAPACITY }, (_, i) => item(`i${i}`)),
+      equipment: { ...NOTHING_WORN, head: helm },
+    });
+
+    // the overlay asks first and hands on only what may go
+    if (p.mayUnequip?.(helm)) p.onUnequip?.(helm, "head");
+
+    expect(send).not.toHaveBeenCalled();
+    expect(gearChanged).not.toHaveBeenCalled();
+  });
+
+  it("should still send with no sound hook", () => {
+    const p = panel();
+    const send = vi.fn();
+    new EquipmentHud(p, { send, notice: vi.fn() });
+
+    p.onEquip?.(item("sword"), "weapon");
+
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });
 

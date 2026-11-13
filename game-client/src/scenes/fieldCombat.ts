@@ -21,6 +21,7 @@ import { playDemonClaw } from "@/render/effects/demonClaw";
 import { cursorCss, cursorSource } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
 import { viewport } from "@/render/viewport";
+import type { GameplaySoundPlayer } from "@/audio/gameplaySounds";
 
 /**
  * A field's fighting (FS-X2F2H §Requirements 56), composed from the pieces the run scene draws
@@ -56,6 +57,8 @@ export interface FieldCombatParts {
   button?(): number | undefined;
   /** Lets go of everything the effects runtime still plays. */
   clearEffects?(): void;
+  /** The scene's gameplay sound effects: the player's own wound plays on them (FS-AND39 R3). */
+  sounds?: GameplaySoundPlayer;
 }
 
 export class FieldCombat {
@@ -88,7 +91,10 @@ export class FieldCombat {
     return this.combat.lockedOut;
   }
 
-  /** One field state: its monsters and projectiles are the whole truth; a struck player tints. */
+  /**
+   * One field state: its monsters and projectiles are the whole truth; a struck player tints, and
+   * this client's own wound sounds, never a teammate's (FS-AND39 R3).
+   */
   sync(state: Pick<ClientGameState, "current_player" | "other_players" | "monsters" | "projectiles">): void {
     this.monsters.sync(state.monsters ?? []);
     this.parts.projectiles?.sync((state.projectiles ?? []) as ProjectileState[]);
@@ -115,6 +121,7 @@ export class FieldCombat {
       if (before !== undefined && player.current_health < before) {
         const body = this.parts.bodyOf(player.entity_id);
         if (body) this.parts.hits?.play(body);
+        if (player === me) this.parts.sounds?.play("hit_player");
       }
       this.lastHealth.set(player.entity_id, player.current_health);
     }
@@ -194,6 +201,8 @@ export function fieldCombatOnScene(
     takesPointer?(x: number, y: number, primary: boolean): boolean;
     /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
     lockout?(): void;
+    /** The scene's gameplay sound effects: hits, the player's wound and abilities (FS-AND39 R2–R4). */
+    sounds?: GameplaySoundPlayer;
   },
 ): FieldCombat {
   const fx = new EffectsRuntime(scene, art, lightMap);
@@ -212,9 +221,11 @@ export function fieldCombatOnScene(
   let charge: Charge | undefined;
 
   // what a monster's actions play on the field, as on a run floor (FS-VHGE7 §D R32–33): a
-  // demon's fire claw, so one in a field (dev_test_room's) claws with its flame
+  // demon's fire claw, so one in a field (dev_test_room's) claws with its flame; and a hit's thud
+  // (FS-AND39 R2)
   const monsterEffects: MonsterEffects = {
     claw: (monster, at) => playDemonClaw(fx, monster.entity_id, at, monster.facing),
+    hit: () => hooks.sounds?.play("hit_monster"),
   };
 
   const combat = new FieldCombat({
@@ -253,6 +264,7 @@ export function fieldCombatOnScene(
       },
       attackClip: (aim, swing) => hooks.selfAnim()?.attack(scene.time.now, aim, swing),
       lockout: () => hooks.lockout?.(),
+      abilityCast: (ability) => hooks.sounds?.play(ability),
     },
     kit,
     projectiles: new ProjectileFlights(scene, art, fx, projectileFlightOf),
@@ -265,6 +277,7 @@ export function fieldCombatOnScene(
       charge = undefined;
       fx.clearAll();
     },
+    sounds: hooks.sounds,
   });
 
   // each frame: the charge's dust and the kit's tells ride on the drawn body, the merc's guard

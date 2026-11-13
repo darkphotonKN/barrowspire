@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetHeldForTests } from "@/audio/sfxSetting";
+import type { ContainerViewOptions } from "@/ui/ContainerView";
 
 // node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
 afterEach(() => resetHeldForTests());
@@ -76,6 +77,7 @@ const { createPartyStore } = await import("@/stores/partyStore");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
+const { GAMEPLAY_EFFECTS } = await import("@/audio/gameplaySounds");
 
 /** The road home as the Meadows' state carries it. */
 const ROAD_HOME = {
@@ -953,6 +955,46 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.lootFromSatchel({ entity_id: "coin" });
 
     expect(field.equipment?.inventory).toEqual([]);
+  });
+
+  it("should play item_pickup as a loot is sent, and nothing for a reserved pile's refusal (FS-AND39 R7)", () => {
+    const { field, piles } = hudOnStage();
+    const play = vi.fn();
+    Object.assign(field, { gameplaySounds: { play } });
+
+    field.lootFromSatchel({ entity_id: "coin" });
+    expect(play.mock.calls).toEqual([["item_pickup"]]);
+
+    piles.loot.mockReturnValue(false);
+    field.lootFromSatchel({ entity_id: "gem" });
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("should make the field's gameplay player on the field's own sound, beside the interface effects' (FS-AND39 R13, R16)", () => {
+    const { field } = hudOnStage();
+    const heard = hearOn(field as unknown as Record<string, unknown>, [...UI_EFFECTS, ...GAMEPLAY_EFFECTS]);
+    (field as unknown as { mountGameplaySounds(): void }).mountGameplaySounds();
+
+    field.lootFromSatchel({ entity_id: "coin" });
+
+    expect(heard()).toEqual(["item_pickup"]);
+  });
+
+  // FieldPiles.test.ts plays the opens through a coffer view of its own; this is the hook the
+  // field's satchel is made with
+  it.each([
+    ["chest", "chest_open"],
+    ["sack", "loot_open"],
+    ["drop_pile", "loot_open"],
+  ] as const)("should play a %s's open, %s, through the hooks the field's satchel is made with (FS-AND39 R5)", (kind, effect) => {
+    const { field } = hudOnStage();
+    const play = vi.fn();
+    Object.assign(field, { gameplaySounds: { play } });
+    const options = (field as unknown as { satchelOptions(): ContainerViewOptions }).satchelOptions();
+
+    options.onOpen?.(kind);
+
+    expect(play.mock.calls).toEqual([[effect]]);
   });
 
   it("should let the HUD go on release, so the next visit starts empty", () => {
@@ -2593,14 +2635,14 @@ const { UI_EFFECTS } = await import("@/audio/uiSounds");
 const { readFileSync } = await import("node:fs");
 
 /**
- * The field's interface sounds on a recording stand-in for the game's sound: every effect cached,
- * the context running, the level the default. Makes the field's player as create does, and returns
+ * The field's interface sounds on a recording stand-in for the game's sound: every effect cached
+ * (the interface effects, unless `effects` says which), the context running, the level the default. Makes the field's player as create does, and returns
  * the effects played since the last read, by name (FS-WDM0X S10).
  */
-function hearOn(scene: Record<string, unknown>): () => string[] {
+function hearOn(scene: Record<string, unknown>, effects: readonly string[] = UI_EFFECTS): () => string[] {
   let played: string[] = [];
   Object.assign(scene, {
-    cache: { audio: { exists: (key: string) => UI_EFFECTS.some((e) => key === `sfx:${e}`) } },
+    cache: { audio: { exists: (key: string) => effects.some((e) => key === `sfx:${e}`) } },
     sound: {
       locked: false,
       context: { state: "running" },
@@ -2891,5 +2933,25 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
     const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
+  });
+
+  // the fight takes the player as a value, so it must be made first
+  it("should make the gameplay player in create beside the interface effects', and hand it to the fight (FS-AND39 R3, R4, R16)", () => {
+    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
+    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    const at = (line: RegExp) => create.search(line);
+    expect(create).toMatch(/this\.mountUiSounds\(\);\n\s*this\.mountGameplaySounds\(\);/);
+    expect(at(/this\.mountGameplaySounds\(\);/)).toBeLessThan(at(/this\.fight = fieldCombatOnScene\(/));
+    const fight = create.match(/this\.fight = fieldCombatOnScene\(([\s\S]*?)\n {4}\}\);/)?.[1] ?? "";
+    expect(fight).toMatch(/\n\s*sounds: this\.gameplaySounds,?(\n|$)/);
+  });
+
+  // the overlay is a real one only on a full stage; the run's scene test plays it through a
+  // right-click, and the field composes its HUD the same way
+
+  it("should play item_swap as the equipment HUD says a change was sent (FS-AND39 R7)", () => {
+    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
+    const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    expect(compose).toMatch(/gearChanged: \(\) => this\.gameplaySounds\?\.play\("item_swap"\)/);
   });
 });

@@ -108,6 +108,8 @@ const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
 const await_minimap = await import("@/ui/minimap");
 const await_minimapMode = await import("@/ui/minimapMode");
+const { ContainerView } = await import("@/ui/ContainerView");
+const { GAMEPLAY_EFFECTS } = await import("@/audio/gameplaySounds");
 const await_topRightColumn = await import("@/ui/topRightColumn");
 const await_positionReadout = await import("@/ui/positionReadout");
 const await_minimapName = await import("@/ui/minimapName");
@@ -1162,15 +1164,15 @@ function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): 
 const { UI_EFFECTS } = await import("@/audio/uiSounds");
 
 /**
- * The run's interface sounds on a recording stand-in for the game's sound: every effect cached,
- * the context running, the level the default (no `window`, so nothing kept is read or written).
- * Makes the run's player as create does, and returns the effects played since the last read, by
- * name (FS-WDM0X S10).
+ * The run's interface sounds on a recording stand-in for the game's sound: every effect cached
+ * (the interface effects, unless `effects` says which), the context running, the level the default
+ * (no `window`, so nothing kept is read or written). Makes the run's player as create does, and
+ * returns the effects played since the last read, by name (FS-WDM0X S10).
  */
-function hearOn(scene: Record<string, unknown>): () => string[] {
+function hearOn(scene: Record<string, unknown>, effects: readonly string[] = UI_EFFECTS): () => string[] {
   let played: string[] = [];
   Object.assign(scene, {
-    cache: { audio: { exists: (key: string) => UI_EFFECTS.some((e) => key === `sfx:${e}`) } },
+    cache: { audio: { exists: (key: string) => effects.some((e) => key === `sfx:${e}`) } },
     sound: {
       locked: false,
       context: { state: "running" },
@@ -1261,6 +1263,223 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     expect(color).not.toBe(toCss(palette.markerHostile));
   });
 
+});
+
+describe("BarrowspireScene gameplay player (FS-AND39 R13, R16)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should make the run's gameplay player on the run's own sound, beside the interface effects'", () => {
+    const { run } = sceneOnStage();
+    const heard = hearOn(run as unknown as Record<string, unknown>, [...UI_EFFECTS, ...GAMEPLAY_EFFECTS]);
+    const scene = run as unknown as { mountGameplaySounds(): void; monsterEffects: { hit(m: unknown): void } };
+    scene.mountGameplaySounds();
+    scene.monsterEffects.hit(monster("m1", 100));
+    expect(heard()).toEqual(["hit_monster"]);
+  });
+
+  // create() can't run on the stand-ins, so its call is pinned from the source, as the interface
+  // effects' is
+  it("should make the gameplay player in create, beside the interface effects'", () => {
+    const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
+    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    expect(create).toMatch(/this\.mountUiSounds\(\);\n\s*this\.mountGameplaySounds\(\);/);
+  });
+});
+
+describe("BarrowspireScene combat sounds (FS-AND39 R2–R4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The run on stage, its gameplay sounds a recording stand-in for the one create makes. */
+  function hearingRun() {
+    const staged = onStage();
+    const play = vi.fn();
+    Object.assign(staged.run, { gameplaySounds: { play } });
+    const run = staged.run as unknown as typeof staged.run & {
+      monsterEffects: { hit(m: ReturnType<typeof monster>): void };
+      combat: { cast(button: "primary" | "special", cls: string, from: { x: number; y: number }, to: { x: number; y: number }): boolean };
+    };
+    return { run, play };
+  }
+
+  it("should play hit_player on a drop in the player's own health, and nothing on the first state", () => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { current_health: 100 })));
+    expect(play).not.toHaveBeenCalled();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { current_health: 70 })));
+    expect(play.mock.calls).toEqual([["hit_player"]]);
+  });
+
+  it("should play nothing for a teammate's drop, or for the player's own rise", () => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { current_health: 50 })));
+    run.handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130, { current_health: 90 }), player("ally", "Wenna", 160, { current_health: 20 })),
+    );
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("should play hit_monster for a monster's hit", () => {
+    const { run, play } = hearingRun();
+    run.monsterEffects.hit(monster("m1", 100));
+    expect(play.mock.calls).toEqual([["hit_monster"]]);
+  });
+
+  it("should play the mage's Triple Fireball as it is sent, and nothing for the primary fireball", () => {
+    const { run, play } = hearingRun();
+    run.combat.cast("primary", "mage", at(100, 300), at(200, 300));
+    expect(play).not.toHaveBeenCalled();
+    (run.time as { delayedCall: ReturnType<typeof vi.fn> }).delayedCall.mock.calls.forEach(([, fn]) => fn());
+    run.combat.cast("special", "mage", at(100, 300), at(200, 300));
+    expect(play.mock.calls).toEqual([["triple_fireball"]]);
+  });
+});
+
+describe("BarrowspireScene coffer and pickup sounds (FS-AND39 R5, R7)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const blade = { entity_id: "i1", name: "Blade" };
+  type TimedOpen = { entity_id: string; elapsed: number; duration: number };
+  /** Floor 1's container as `kind`, shut or open, with this client's player by it (it is at 150, 150). */
+  const floor = (kind: string, is_open = false, timed_open?: TimedOpen): GameState => {
+    const state = floorState(1);
+    return {
+      ...state,
+      current_player: { ...player("me", "Aldric", 150), position: at(150, 150), ...(timed_open ? { timed_open } : {}) },
+      containers: [{ ...state.containers[0], kind, is_open, items: is_open ? [blade] : [] }],
+    } as GameState;
+  };
+
+  /**
+   * The run on stage with a real coffer view on a Phaser stand-in, on the hooks `create` hands it
+   * (the bag's room and the clock aside), and its gameplay sounds a recording stand-in for the one
+   * `create` makes.
+   */
+  function hearingRun(room = true) {
+    const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const { run } = sceneOnStage();
+    const play = vi.fn();
+    const numbers: Record<string, number> = { x: 0, y: 0, scaleX: 1, scaleY: 1, alpha: 1, width: 64, height: 64, now: 0 };
+    const stub: unknown = new Proxy(function () {}, {
+      get: (_t, key) => (key === Symbol.toPrimitive ? () => 0 : typeof key === "string" && key in numbers ? numbers[key] : stub),
+      apply: () => stub,
+    });
+    const scene = run as unknown as FloorRun & {
+      containerView: InstanceType<typeof ContainerView>;
+      gameplaySounds: { play: typeof play };
+      toggleChest(id: string): void;
+      chestRefused(): void;
+      cofferOptions(): ConstructorParameters<typeof ContainerView>[2];
+    };
+    scene.gameplaySounds = { play };
+    scene.containerView = new ContainerView(stub as never, stub as never, {
+      ...scene.cofferOptions(),
+      mayTake: () => room,
+      now: () => 0,
+    });
+    run.time = { delayedCall: vi.fn(), now: 1000 };
+    return { run: scene, play, sent };
+  }
+
+  it.each([
+    ["chest", "chest_open"],
+    ["sack", "loot_open"],
+  ])("should play nothing at the reach for a shut %s, and %s once on the state that answers it", (kind, effect) => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(floor(kind));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(floor(kind));
+    expect(play).not.toHaveBeenCalled();
+
+    run.handleGameStateUpdate(floor(kind, true));
+    run.handleGameStateUpdate(floor(kind, true));
+    run.handleGameStateUpdate(floor(kind, true));
+    expect(play.mock.calls).toEqual([[effect]]);
+  });
+
+  it.each([
+    ["chest", "chest_open"],
+    ["sack", "loot_open"],
+    ["drop_pile", "loot_open"],
+  ])("should play at once for a %s the last state already showed open: %s", (kind, effect) => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(floor(kind, true));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(floor(kind, true));
+    expect(play.mock.calls).toEqual([[effect]]);
+  });
+
+  it("should play a timed open at the open, not at its start (FS-MQYEX)", () => {
+    const { run, play } = hearingRun();
+    const opening = (elapsed: number): TimedOpen => ({ entity_id: "c1", elapsed, duration: 1.5 });
+    run.handleGameStateUpdate(floor("chest"));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(floor("chest", false, opening(0.03)));
+    run.handleGameStateUpdate(floor("chest", false, opening(0.75)));
+    expect(play).not.toHaveBeenCalled();
+
+    run.handleGameStateUpdate(floor("chest", true));
+    expect(play.mock.calls).toEqual([["chest_open"]]);
+  });
+
+  it("should play nothing for a cancelled timed open, even once another opens the chest", () => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(floor("chest"));
+    run.toggleChest("c1");
+    run.handleGameStateUpdate(floor("chest", false, { entity_id: "c1", elapsed: 0.3, duration: 1.5 }));
+    run.handleGameStateUpdate(floor("chest"));
+    run.handleGameStateUpdate(floor("chest", true));
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing for a refused reach, or for a chest another player opens", () => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(floor("chest"));
+    run.toggleChest("c1");
+    run.chestRefused();
+    run.handleGameStateUpdate(floor("chest", true));
+    run.handleGameStateUpdate(floor("chest"));
+    run.handleGameStateUpdate(floor("sack", true));
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing as the player closes the coffer", () => {
+    const { run, play } = hearingRun();
+    run.handleGameStateUpdate(floor("chest", true));
+    run.toggleChest("c1");
+    run.toggleChest("c1");
+    expect(play.mock.calls).toEqual([["chest_open"]]);
+  });
+
+  it("should play item_pickup as a take from the open coffer is sent, by F or a click", () => {
+    const { run, play, sent } = hearingRun();
+    run.handleGameStateUpdate(floor("chest", true));
+    run.toggleChest("c1");
+    play.mockClear();
+
+    run.containerView.lootFirst();
+    expect(play.mock.calls).toEqual([["item_pickup"]]);
+    expect(sent).toHaveBeenLastCalledWith(ActionType.Interact, { entity_id: "i1" });
+  });
+
+  it("should play nothing for a take a full bag refuses, or with nothing left to take", () => {
+    const { run, play, sent } = hearingRun(false);
+    run.handleGameStateUpdate(floor("chest", true));
+    run.toggleChest("c1");
+    play.mockClear();
+    sent.mockClear();
+
+    run.containerView.lootFirst();
+    run.containerView.setItems([]);
+    run.containerView.lootFirst();
+    expect(play).not.toHaveBeenCalled();
+    expect(sent).not.toHaveBeenCalled();
+  });
 });
 
 describe("BarrowspireScene other players' names, no overhead bars (FS-CH21F R13, R14)", () => {
@@ -5042,6 +5261,17 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     press({ x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 }, 2);
     expect(sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
     expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
+  });
+
+  it("should play item_swap once as an equip is sent (FS-AND39 R7)", () => {
+    const { run, key, press, sentOf } = overlayOnStage();
+    const play = vi.fn();
+    Object.assign(run, { gameplaySounds: { play } });
+    key("I");
+    const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
+    press({ x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 }, 2);
+    expect(sentOf(ActionType.Equip)).toHaveLength(1);
+    expect(play.mock.calls).toEqual([["item_swap"]]);
   });
 
   it("should list I / B for the inventory and C for the character panel in the controls help (R11; § Change C15)", () => {

@@ -35,6 +35,7 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
     endAim: vi.fn(),
     attackClip: vi.fn(),
     lockout: vi.fn(),
+    abilityCast: vi.fn(),
   };
   const self = { me };
   const combat = new PlayerCombat(
@@ -342,5 +343,85 @@ describe("PlayerCombat castSent (FS-48CTQ §C.6: a cast that can strike names th
     combat.cast("primary", "mage", me, target);
     combat.strike(me, "boar-1", { x: 120, y: 100 });
     expect(castSent).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PlayerCombat abilityCast (FS-AND39 R4: each class's ability, once, at its send)", () => {
+  const target = { x: 300, y: 100 };
+  const stamina = (current: number): ResourceState => ({ kind: "stamina", current, max: 100, ability_cost: 25 });
+  const charges = (current: number): ResourceState => ({ kind: "parry_charges", current, max: 3, ability_cost: 0 });
+
+  it.each([
+    ["warrior", "dash"],
+    ["mage", "triple_fireball"],
+  ] as const)("should report a %s's right-click as %s, once, as it is sent", (cls, ability) => {
+    const { combat, send, look } = combatOnStage();
+    look.abilityCast.mockImplementation(() => expect(send).toHaveBeenCalledTimes(1));
+    combat.cast("special", cls, me, target);
+    expect(look.abilityCast).toHaveBeenCalledTimes(1);
+    expect(look.abilityCast).toHaveBeenCalledWith(ability);
+  });
+
+  it("should report an archer's fired Shadow Shot once, on the release and never the press", () => {
+    const { combat, look, elapse } = combatOnStage({ resource: stamina(100) });
+    combat.cast("special", "archer", me, target);
+    elapse(SHADOW_SHOT_MIN_HOLD_MS);
+    combat.aimFrame(me);
+    expect(look.abilityCast).not.toHaveBeenCalled();
+    expect(combat.releaseAim(me, target)).toBe(true);
+    expect(look.abilityCast).toHaveBeenCalledTimes(1);
+    expect(look.abilityCast).toHaveBeenCalledWith("shadow_shot");
+  });
+
+  it("should report a Mercenary's sent parry once", () => {
+    const { combat, look } = combatOnStage({ resource: charges(0) });
+    combat.cast("special", "mercenary", me, target);
+    expect(look.abilityCast).toHaveBeenCalledTimes(1);
+    expect(look.abilityCast).toHaveBeenCalledWith("parry");
+  });
+
+  it.each(["warrior", "archer", "mercenary", "mage"])("should report nothing for a %s's primary", (cls) => {
+    const { combat, look } = combatOnStage();
+    combat.cast("primary", cls, me, target);
+    expect(look.abilityCast).not.toHaveBeenCalled();
+  });
+
+  it("should report nothing for a strike", () => {
+    const { combat, look } = combatOnStage();
+    combat.strike(me, "boar-1", { x: 120, y: 100 });
+    expect(look.abilityCast).not.toHaveBeenCalled();
+  });
+
+  it("should report nothing for a cast the cooldown holds back", () => {
+    const { combat, look } = combatOnStage();
+    combat.cast("special", "mage", me, target);
+    combat.cast("special", "mage", me, target);
+    expect(look.abilityCast).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["released too soon", SHADOW_SHOT_MIN_HOLD_MS - 1, 100],
+    ["short of the cost", SHADOW_SHOT_MIN_HOLD_MS, 24],
+  ])("should report nothing for a Shadow Shot %s", (_, held, current) => {
+    const { combat, look, elapse } = combatOnStage({ resource: stamina(current) });
+    combat.cast("special", "archer", me, target);
+    elapse(held);
+    expect(combat.releaseAim(me, target)).toBe(false);
+    expect(look.abilityCast).not.toHaveBeenCalled();
+  });
+
+  it("should report nothing for a cancelled hold", () => {
+    const { combat, look, elapse } = combatOnStage({ resource: stamina(100) });
+    combat.cast("special", "archer", me, target);
+    elapse(SHADOW_SHOT_MIN_HOLD_MS);
+    combat.cancelAim();
+    combat.releaseAim(me, target);
+    expect(look.abilityCast).not.toHaveBeenCalled();
+  });
+
+  it("should report nothing for a refused parry", () => {
+    const { combat, look } = combatOnStage({ resource: charges(0), parry_open: true });
+    expect(combat.cast("special", "mercenary", me, target)).toBe(false);
+    expect(look.abilityCast).not.toHaveBeenCalled();
   });
 });

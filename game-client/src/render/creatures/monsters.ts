@@ -380,12 +380,18 @@ export interface MonsterSprite extends AnimatedSprite {
 type MonsterPointerEvent = "pointerdown" | "pointerover" | "pointerout";
 
 /**
- * The world effects a monster's actions play (FS-VHGE7 §D R32–33). The roster only says which
- * monster turned to what, and where it is drawn; the effect itself is the scene's.
+ * The world effects a monster's actions play (FS-VHGE7 §D R32–33), and what its hits sound
+ * (FS-AND39 R2). The roster only says which monster turned to what, and where it is drawn; the
+ * effect itself is the scene's.
  */
 export interface MonsterEffects {
   /** A shown monster turned to `claw`: once per turn, at its drawn world position. */
   claw(monster: MonsterState, at: Point): void;
+  /**
+   * A shown monster's health dropped since its last state, by anyone's hand: the hit the damage
+   * flash shows. Never for one first seen, one back in the broadcast, or one hidden.
+   */
+  hit(monster: MonsterState): void;
 }
 
 /**
@@ -581,7 +587,10 @@ export class MonsterRoster {
       }
       const shown = view.sprite.visible;
       const hit = monster.current_health < view.state.current_health && shown;
-      if (hit) this.flash(view);
+      if (hit) {
+        this.flash(view);
+        this.effects?.hit(monster);
+      }
       if (shown && monster.action === "claw" && view.state.action !== "claw")
         this.effects?.claw(monster, view.pos);
       view.state = monster;

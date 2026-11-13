@@ -53,6 +53,9 @@ export interface CombatPort {
   castSent?(): void;
 }
 
+/** The four class abilities a player casts, by the skill each sends (FS-AND39 R4). */
+export type AbilityCast = "dash" | "triple_fireball" | "shadow_shot" | "parry";
+
 /** How an attack is seen: each effect from the player toward its target, both world positions. */
 export interface CombatLook {
   slash(from: Point, to: Point): void;
@@ -80,6 +83,12 @@ export interface CombatLook {
   attackClip(aim: Point, swing?: Swing): void;
   /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
   lockout?(): void;
+  /**
+   * A class ability was just sent, once per send (FS-AND39 R4): its own hook, since the mage's
+   * Triple Fireball draws with the primary's `fireball`. Never a primary, a strike, the archer's
+   * press, or a cast held back.
+   */
+  abilityCast?(ability: AbilityCast): void;
 }
 
 /** This client's player as the latest state reported them: the parry, riposte and resource gates. */
@@ -195,6 +204,7 @@ export class PlayerCombat {
       target_y: target.y,
     });
     this.port.castSent?.();
+    this.look.abilityCast?.("shadow_shot");
     this.look.shadowShot(me, target);
     this.look.attackClip({ x: target.x - me.x, y: target.y - me.y });
 
@@ -238,6 +248,7 @@ export class PlayerCombat {
   private parry(target: Point): boolean {
     if (parryRefused(this.self())) return false;
     this.port.sendMessage(ActionType.CastSkill, { skill_id: "parry", target_x: target.x, target_y: target.y });
+    this.look.abilityCast?.("parry");
     this.look.parry();
     return true;
   }
@@ -291,10 +302,12 @@ export class PlayerCombat {
     if (playerClass === "warrior") {
       this.port.sendMessage(ActionType.CastSkill, { skill_id: "dash", ...at });
       this.port.castSent?.();
+      this.look.abilityCast?.("dash");
       this.look.dash(me, target);
     } else if (playerClass === "mage") {
       this.port.sendMessage(ActionType.CastSkill, { skill_id: "triple_fireball", ...at });
       this.port.castSent?.();
+      this.look.abilityCast?.("triple_fireball");
       this.look.fireball(me, target);
     }
   }
