@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { SettlementPayload } from "@/assets/types/client";
-import { RECORD_ROWS_SHOWN, settlementRecord } from "./settlement";
+import * as settlement from "./settlement";
+import { settlementRecord } from "./settlement";
 
 // FS-GV8WN §G R19–R21: what the settlement record says, from the `settlement` the server sends.
 
@@ -106,14 +107,28 @@ describe("settlementRecord (FS-GV8WN R19, R21)", () => {
     expect({ ...confirmed, status: pending.status }).toEqual(pending);
   });
 
-  it("should show the first rows of a long list and count the rest", () => {
-    const many = Array.from({ length: RECORD_ROWS_SHOWN + 3 }, (_, i) =>
-      item(`Relic ${i}`),
+  // FS-GV8WN §Change: The settlement record scrolls S1: no cap, no "and n more"
+  it("should list every row, with no count of the rest", () => {
+    const many = Array.from({ length: 11 }, (_, i) => item(`Relic ${i}`));
+    const record = settlementRecord(
+      settled({
+        carried: many,
+        lost: [
+          { ...item("Health Potion"), reason: "consumed" },
+          { ...item("Runed Axe"), reason: "unsafe" },
+          { ...item("Bone Ring"), reason: "unsafe" },
+        ],
+      }),
     );
-    const record = settlementRecord(settled({ carried: many, lost: [] }));
-    expect(record.carried).toHaveLength(RECORD_ROWS_SHOWN);
-    expect(record.carriedMore).toBe(3);
-    expect(record.lostMore).toBe(0);
+    expect(record.carried.map((r) => r.name)).toEqual(many.map((m) => m.name));
+    expect(record.lost.map((r) => r.name)).toEqual([
+      "Runed Axe",
+      "Bone Ring",
+      "Health Potion",
+    ]);
+    expect(record).not.toHaveProperty("carriedMore");
+    expect(record).not.toHaveProperty("lostMore");
+    expect(settlement).not.toHaveProperty("RECORD_ROWS_SHOWN");
   });
 
   it("should treat a missing list as empty", () => {
