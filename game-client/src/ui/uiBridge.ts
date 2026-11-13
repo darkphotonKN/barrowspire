@@ -42,14 +42,23 @@ export interface DialogueSpeaker {
 }
 
 /**
+ * How an answer sounds as it is picked (FS-WDM0X § Change: Menu, dialog and notice sounds, M15): an
+ * ordinary option, a yes that sends the player on, an irreversible one, or a cancel.
+ */
+export type DialogueSound = "click" | "confirm" | "heavy" | "cancel";
+
+/**
  * One answer on a dialogue card (A2 R29): its id, handed back when it is picked; its words, bare (the
- * UI scene puts its key on them); its register, the row's colour and key; whether it can be picked now.
+ * UI scene puts its key on them); its register, the row's colour and key; whether it can be picked now;
+ * how it sounds as it is picked, where it is not its register's (a cancel row `cancel`, any other
+ * `click`; FS-WDM0X § Change M15).
  */
 export interface DialogueOption {
   readonly id: string;
   readonly label: string;
   readonly register: "actionable" | "cancel";
   readonly enabled: boolean;
+  readonly sound?: DialogueSound;
 }
 
 /** World → UI: a dialogue the world shows, whole, as plain data (A2 R29). Sent again on any change. */
@@ -68,10 +77,14 @@ export type NoticeLook =
   | { readonly world: "field" }
   | { readonly world: "run"; readonly backing: number };
 
-/** World → UI: a passing notice, as plain data (A2 R33). */
+/**
+ * World → UI: a passing notice, as plain data (A2 R33). `important` where it relays the server turning
+ * down a move between worlds: it chimes `notify_important`, any other `notify` (FS-WDM0X § Change M16).
+ */
 export interface Notice {
   readonly text: string;
   readonly look: NoticeLook;
+  readonly important?: boolean;
 }
 
 /** What keeps the screen in the world (R9): the town's NPC dialogue, open. */

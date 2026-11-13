@@ -1,6 +1,6 @@
 ---
 id: I-WDM0X-6
-status: in-progress
+status: done
 implements: FS-WDM0X
 blocked_by: [I-WDM0X-5]
 labels: [ready-for-agent]
@@ -28,8 +28,8 @@ what they say: `dialog_open`, an option's `sound`, a notice's `important`.
 
 ## Acceptance Criteria
 
-- [ ] FS-WDM0X § Change acceptance criteria 6 (the dialogue card's dimmed rows), 8–12.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint`, `npm run lint:fence` pass.
+- [x] FS-WDM0X § Change acceptance criteria 6 (the dialogue card's dimmed rows), 8–12.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint`, `npm run lint:fence` pass.
 
 ## Blocked By
 

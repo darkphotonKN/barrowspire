@@ -166,7 +166,11 @@ export class UiMenuSlot {
   escape(): void {
     const report = this.deps.bridge.world;
     if (!report) return;
-    if (report.blockers().dialogue) return this.ask({ kind: "close", window: "dialogue" });
+    if (report.blockers().dialogue) {
+      // the dialogue cancelled: its sound, inside Esc's act (FS-WDM0X § Change M13)
+      this.deps.bridge.play("dialog_cancel");
+      return this.ask({ kind: "close", window: "dialogue" });
+    }
     const open = report.windows();
     const step = escapeStep({
       letter: open.letter,

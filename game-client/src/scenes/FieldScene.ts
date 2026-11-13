@@ -448,12 +448,12 @@ export class FieldScene extends Phaser.Scene {
       this.leavingHub = false;
       // Change character comes back on the menu (FS-TQZ5J R9)
       this.ui.changed();
-      this.notice(info.message ?? "The field will not let you go yet. Ask again.");
+      this.notice(info.message ?? "The field will not let you go yet. Ask again.", true);
     });
     socketManager.onError(ActionType.LeaveField, (info) => {
       if (!this.leavingField) return;
       this.leavingField = false;
-      this.notice(fieldRefusalCopy(ActionType.LeaveField, info.reason));
+      this.notice(fieldRefusalCopy(ActionType.LeaveField, info.reason), true);
     });
     // a refused pickup: a pile still held for its killer says so (§Requirements 33, 60)
     socketManager.on(ActionType.Interact, (reply: { success?: boolean; reason?: string } | undefined) => {
@@ -1180,9 +1180,10 @@ export class FieldScene extends Phaser.Scene {
 
   /**
    * A line said in passing, in the neutral HUD register. The UI scene draws it, over the interface,
-   * and takes it down as the field leaves (FS-TQZ5J A2 R33, R34).
+   * and takes it down as the field leaves (FS-TQZ5J A2 R33, R34). `important` where it relays the
+   * server turning down a move between worlds: it chimes `notify_important` (FS-WDM0X § Change M16).
    */
-  private notice(text: string): void {
-    this.ui.notice({ text, look: { world: "field" } });
+  private notice(text: string, important = false): void {
+    this.ui.notice({ text, look: { world: "field" }, ...(important ? { important } : {}) });
   }
 }

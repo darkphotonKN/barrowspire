@@ -154,6 +154,7 @@ import {
   NO_UI,
   answering,
   reportWorld,
+  type DialogueSound,
   type DialogueSpeaker,
   type WorldBlockers,
   type WorldFacts,
@@ -358,6 +359,8 @@ export interface DialogueChoice {
   enabled?: (pending: Pending) => boolean;
   /** Picking it turns the page: the same speaker goes on with this, instead of the box closing. */
   next?: () => Dialogue;
+  /** How it sounds as it is picked, where not its register's (FS-WDM0X § Change: Menu, dialog and notice sounds, M15). */
+  sound?: DialogueSound;
 }
 
 /** What an NPC says and offers: a line and its choices, any number of them. */
@@ -401,6 +404,8 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
     act: (scene) => scene.enterAsParty(),
     stays: true,
     enabled: ({ enterPending }) => !enterPending,
+    // a yes that sends the player on (FS-WDM0X § Change M12)
+    sound: "confirm",
   };
   const ways: DialogueChoice[] = [
     {
@@ -410,6 +415,7 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
       act: (scene) => scene.startSolo(),
       stays: true,
       enabled: ({ soloPending }) => !soloPending,
+      sound: "confirm",
     },
     {
       id: "queue",
@@ -418,6 +424,7 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
       act: (scene) => scene.joinQueue(),
       stays: true,
       enabled: ({ queuePending }) => !queuePending,
+      sound: "confirm",
     },
   ];
   const dismiss: DialogueChoice = { id: "dismiss", label: "Not yet", register: "cancel" };
@@ -448,7 +455,8 @@ function residentLine(npc: NPCState): Dialogue {
   const sum = [...npc.entity_id].reduce((total, c) => total + c.charCodeAt(0), 0);
   return {
     line: RESIDENT_LINES[sum % RESIDENT_LINES.length],
-    choices: [{ id: "leave", label: "Leave", register: "actionable" }],
+    // it only closes the box, so it sounds as a cancel (FS-WDM0X § Change M15)
+    choices: [{ id: "leave", label: "Leave", register: "actionable", sound: "cancel" }],
   };
 }
 
@@ -923,6 +931,7 @@ export class HubScene extends Phaser.Scene {
       () => this.characterLevel,
       () => this.clearForLetter(),
       this.ui,
+      (effect) => this.ui.play(effect),
     );
     this.watchGoldTakes();
 
@@ -1140,7 +1149,7 @@ export class HubScene extends Phaser.Scene {
     socketManager.onError(ActionType.LeaveQueue, (info) => {
       if (!this.leavePending) return;
       this.leavePending = false;
-      this.notice(info.message ?? "Could not leave the queue, please try again.");
+      this.notice(info.message ?? "Could not leave the queue, please try again.", true);
     });
     // A solo start the server would not give: the choice comes back and the door says why in its
     // own panel, or in passing once the door has closed (FS-NSV3D §Requirements 5; FS-BJNYC R22).
@@ -1160,7 +1169,7 @@ export class HubScene extends Phaser.Scene {
         this.queueGone();
         return this.refused(words);
       }
-      if (!this.queuePending) return this.notice(words);
+      if (!this.queuePending) return this.notice(words, true);
       this.queuePending = false;
       this.refused(words);
     });
@@ -1181,7 +1190,7 @@ export class HubScene extends Phaser.Scene {
       this.leavingHub = false;
       // Change character comes back on the menu (FS-TQZ5J R9)
       this.ui.changed();
-      this.notice(info.message ?? "The hub will not let you go yet. Ask again.");
+      this.notice(info.message ?? "The hub will not let you go yet. Ask again.", true);
     });
     // A field that would not take the player (FS-X2F2H §Requirements 10, 60): they stay where
     // they stand, told why in the client's words, and the next step into the gate asks again.
@@ -1189,7 +1198,7 @@ export class HubScene extends Phaser.Scene {
     socketManager.onError(ActionType.EnterField, (info) => {
       if (!this.enteringField) return;
       this.enteringField = false;
-      this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason));
+      this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason), true);
     });
     // A party_enter is answered by the ready check opening (I-BJNYC-5 draws it), by the run's
     // world_entered switching the scene, or by a refusal: the choice comes back on any of them.
@@ -1504,7 +1513,7 @@ export class HubScene extends Phaser.Scene {
 
     // E inside the gate reopens a panel dismissed there
     if (this.atGate?.destination === "spire") {
-      this.openDoor();
+      this.greetAtDoor();
       return;
     }
 
@@ -2259,7 +2268,7 @@ export class HubScene extends Phaser.Scene {
     if (left?.destination === "spire" && this.doorOpen) this.closeDialogue();
     if (fieldOf(left)) this.dropFieldSign();
 
-    if (entered?.destination === "spire" && !this.menuOpen && !this.dialogue) this.openDoor();
+    if (entered?.destination === "spire" && !this.menuOpen && !this.dialogue) this.greetAtDoor();
     const field = fieldOf(entered);
     if (entered && field) {
       // the dev test room's gate has its own label, and signpostOf would pick the Forest's post
@@ -2339,12 +2348,22 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
+   * The door's panel opened at the player's hand (E in the gate, or stepping into it), with
+   * `dialog_open`; the game's own redraws of it (a refusal, a party standing changed) open it with
+   * no sound (FS-WDM0X § Change M11).
+   */
+  private greetAtDoor(): void {
+    this.openDoor();
+    this.ui.play("dialog_open");
+  }
+
+  /**
    * A start_solo or find_game refused: said by the door the player pressed it at, every choice still
    * offered, or in passing once the door has closed (FS-BJNYC R22).
    */
   private refused(words: string): void {
     if (this.doorOpen) this.openDoor(words);
-    else this.notice(words);
+    else this.notice(words, true);
   }
 
   /** What a dialogue reads, as it stands now: the party is read afresh at each opening (FS-BJNYC R20). */
@@ -2469,10 +2488,11 @@ export class HubScene extends Phaser.Scene {
   /**
    * A line the hub says in passing, in the neutral HUD register: the player cannot act on it,
    * and it goes on its own. The UI scene draws it, over the interface, and takes it down as the
-   * town leaves (FS-TQZ5J A2 R33, R34).
+   * town leaves (FS-TQZ5J A2 R33, R34). `important` where it relays the server turning down a move
+   * between worlds: it chimes `notify_important` (FS-WDM0X § Change M16).
    */
-  private notice(text: string): void {
-    this.ui.notice({ text, look: { world: "hub" } });
+  private notice(text: string, important = false): void {
+    this.ui.notice({ text, look: { world: "hub" }, ...(important ? { important } : {}) });
   }
 
   private showQueueProgressText(text: string): void {
@@ -2967,6 +2987,8 @@ export class HubScene extends Phaser.Scene {
       NPC_DIALOGUE[npc.function]?.(this.hubState()) ??
       (lines ? telling(lines) : residentLine(npc));
     this.showDialogue({ name: npc.name, entityId: npc.entity_id }, dialogue);
+    // the player's E opened it (FS-WDM0X § Change M11)
+    this.ui.play("dialog_open");
   }
 
   /**
@@ -3009,6 +3031,7 @@ export class HubScene extends Phaser.Scene {
         label: choice.label,
         register: choice.register,
         enabled: this.canPick(choice),
+        ...(choice.sound ? { sound: choice.sound } : {}),
       })),
     });
   }

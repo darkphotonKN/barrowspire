@@ -17,6 +17,9 @@ import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { browserSfxStore } from "@/audio/sfxSetting";
+import { NO_WINDOWS, UiSounds, sceneUiSoundStage } from "@/audio/uiSounds";
+import { confirmDeletion } from "./deleteConfirm";
 import type { ArtLibrary } from "@/render/art/library";
 import { MenuFigure } from "@/render/art/menuFigure";
 import { SCENE_ART } from "@/render/art/sceneArt";
@@ -98,6 +101,8 @@ const SWITCH_CONFIRM = { width: 360, height: 150, button: { width: 130, height: 
 
 export class MainMenuScene extends Phaser.Scene {
   private unsubscribeConnectionStatus?: () => void;
+  /** The delete confirm's player, made in create (FS-WDM0X § Change M14). */
+  private sounds?: UiSounds;
   private buttonBg?: Phaser.GameObjects.Graphics;
   private startButtonText?: Phaser.GameObjects.Text;
   private connectionStatusText?: Phaser.GameObjects.Text;
@@ -165,6 +170,9 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the main menu has no UI scene: its own player on the game's one sound manager, at the same SFX
+    // level, for the delete confirm (FS-WDM0X § Change: Menu, dialog and notice sounds, M14)
+    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => NO_WINDOWS);
     // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
     centreStage(this.cameras.main);
     sharpenText(this);
@@ -854,7 +862,7 @@ export class MainMenuScene extends Phaser.Scene {
         card.deleteHit.off("pointerdown");
         card.deleteHit.on("pointerdown", (e: Phaser.Input.Pointer) => {
           e.event.stopPropagation();
-          if (confirm(`Delete character "${char.name}"?`)) {
+          if (confirmDeletion(char.name, { ask: (text) => confirm(text), play: (effect) => this.sounds?.play(effect) })) {
             // Deleted on the server (FS-BDA7X req 39); the card goes once it is gone there.
             useGameStore
               .getState()

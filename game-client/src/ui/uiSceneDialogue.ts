@@ -17,8 +17,9 @@
  * Phaser-free: the UI scene hands it the drawing, so the wiring is tested on its own.
  */
 
+import type { UiEffect } from "@/audio/uiSounds";
 import type { DialogueCardSpec } from "./npcDialogue";
-import type { DialogueOption, ShownDialogue, UiBridge, WorldReport } from "./uiBridge";
+import type { DialogueOption, DialogueSound, ShownDialogue, UiBridge, WorldReport } from "./uiBridge";
 import { MENU_LOOKS, type MenuKeysPressed, type UiMenuSlot } from "./uiSceneMenu";
 
 /** A card standing in the slot, as `showDialogueCard` returns it. */
@@ -28,8 +29,20 @@ export interface DrawnCard {
   relayout(): void;
 }
 
-/** What of the bridge the slot reads and asks through. */
-export type DialogueBridge = Pick<UiBridge, "world" | "request">;
+/** What of the bridge the slot reads, asks and plays through. */
+export type DialogueBridge = Pick<UiBridge, "world" | "request" | "act" | "play">;
+
+/** Each answer's sound as it is picked (FS-WDM0X § Change M15). */
+const PICKED: Readonly<Record<DialogueSound, UiEffect>> = {
+  click: "menu_click",
+  confirm: "dialog_confirm",
+  heavy: "dialog_confirm_heavy",
+  cancel: "dialog_cancel",
+};
+
+/** An answer's sound: the one it names, else its register's. */
+const soundOf = (option: DialogueOption): DialogueSound =>
+  option.sound ?? (option.register === "cancel" ? "cancel" : "click");
 
 /** The card's keys this frame: E or Enter, and 1–3 as 0–2 (-1 for none). */
 export interface CardKeysPressed {
@@ -96,14 +109,15 @@ export class UiDialogueSlot {
 
   /**
    * The keys pressed this frame, while a card is shown (R31): E or Enter its first actionable row,
-   * or with none a close as Esc's; a number that actionable row. A dimmed row answers nothing.
+   * or with none a close as Esc's (`dialog_cancel`); a number that actionable row. A dimmed row
+   * answers nothing but `menu_error` (FS-WDM0X § Change M10, M13).
    */
   keys(pressed: CardKeysPressed): void {
     const shown = this.standing?.shown;
     if (!shown) return;
     const actionable = shown.options.filter((o) => o.register === "actionable");
     if (pressed.confirm) {
-      if (actionable.length === 0) this.bridge.request({ kind: "close", window: "dialogue" });
+      if (actionable.length === 0) this.played("dialog_cancel", () => this.bridge.request({ kind: "close", window: "dialogue" }));
       else this.pick(actionable[0].id);
     } else if (pressed.numbered >= 0) {
       const option = actionable[pressed.numbered];
@@ -129,10 +143,24 @@ export class UiDialogueSlot {
     standing.card?.container.destroy();
   }
 
-  /** An option picked, by the pointer or its key: its id handed to the world, while it can be picked (R30). */
+  /**
+   * An option picked, by the pointer or its key: its id handed to the world, while it can be picked
+   * (R30), inside the UI scene's act with its one sound; a dimmed one only `menu_error` (FS-WDM0X
+   * § Change M2, M10, M15).
+   */
   private pick(id: string): void {
-    if (!this.option(id)?.enabled) return;
-    this.bridge.request({ kind: "pickDialogue", id });
+    const option = this.option(id);
+    if (!option) return;
+    if (!option.enabled) return this.bridge.play("menu_error");
+    this.played(PICKED[soundOf(option)], () => this.bridge.request({ kind: "pickDialogue", id }));
+  }
+
+  /** A player's press, run through the UI scene's act with `effect` its one sound (FS-WDM0X § Change M2). */
+  private played(effect: UiEffect, run: () => void): void {
+    this.bridge.act(() => {
+      this.bridge.play(effect);
+      run();
+    });
   }
 
   /** The option of the card standing now, by id: its `enabled` is the town's latest word. */
@@ -169,6 +197,7 @@ export class UiDialogueSlot {
       })),
       portrait: shown.speaker.portrait ? { ...shown.speaker.portrait } : undefined,
       tones,
+      feedback: { hovered: () => this.bridge.play("menu_hover"), refused: () => this.bridge.play("menu_error") },
     };
   }
 }
