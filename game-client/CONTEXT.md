@@ -69,6 +69,14 @@ translation belongs to the surface that renders words.
   world (town, field or run): "Disconnected", one line and **Return to menu**, the world dimmed
   and still behind it (FS-R6EYZ). One at a time; it stays through scene changes until pressed.
   The main menu it returns to reconnects.
+- **World scene** — one of the three Phaser scenes that draw a world the player stands in:
+  `HubScene` (the town), `FieldScene` (a field), `BarrowspireScene` (a run). A world switch
+  replaces one with another (`WORLD_SCENES`). Not the main menu or character creation.
+- **UI scene** — the one Phaser scene (`UIScene`) drawn over every world scene and under the
+  disconnect notice, holding the interface the worlds share: in phase 1 the corner row, the ESC
+  menu with OPTIONS, and the interface sounds (FS-TQZ5J, ADR-0081). It outlives world switches and
+  sleeps outside the worlds. It and the world scenes talk only through the **UI bridge**, a typed
+  channel: the world reports its state, the UI scene sends requests.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.
