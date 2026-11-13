@@ -64,6 +64,7 @@ import { banshee, barrowThrall, blightborn, fadingEyes, ghost, phantom, plagueTh
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 import * as goblins from "./goblin.js";
 import { ogre, ogreMauler, ogreTyrant } from "./ogre.js";
+import { darkReaper, darkWarrior } from "./darkWarrior.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -607,6 +608,9 @@ export const CAST = [
   { sheet: "creature_ogre_base", group: "ogre", fn: "ogre", module: "ogre", build: ogre },
   { sheet: "creature_ogre_mauler_base", group: "ogre_mauler", fn: "ogreMauler", module: "ogre", build: ogreMauler },
   { sheet: "creature_ogre_tyrant_base", group: "ogre_tyrant", fn: "ogreTyrant", module: "ogre", build: ogreTyrant },
+  // The dark warrior family (R46), a new rig in the brute band, each variant in its own group
+  { sheet: "creature_dark_warrior_base", group: "dark_warrior", fn: "darkWarrior", module: "darkWarrior", build: darkWarrior },
+  { sheet: "creature_dark_reaper_base", group: "dark_reaper", fn: "darkReaper", module: "darkWarrior", build: darkReaper },
   // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
   { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
   { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },

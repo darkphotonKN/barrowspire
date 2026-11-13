@@ -26,6 +26,8 @@ export const RESIDENT_ART_PAGES = [
   "building-0",
   "cave_troll-0",
   "containers-0",
+  "dark_reaper-0",
+  "dark_warrior-0",
   "forest-0",
   "fx-0",
   "ghast-0",

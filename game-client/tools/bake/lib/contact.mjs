@@ -84,6 +84,11 @@ export const LINEUPS = [
     file: "contact-ogre-2x.png",
     sheets: ["creature_troll_base", "creature_ogre_base", "creature_ogre_mauler_base", "creature_ogre_tyrant_base"],
   },
+  {
+    // the dark warrior and its Reaper, beside the ghoul (the bare skeleton it must not read as) and the troll
+    file: "contact-dark-warrior-2x.png",
+    sheets: ["creature_ghoul_base", "creature_troll_base", "creature_dark_warrior_base", "creature_dark_reaper_base"],
+  },
 ];
 
 /** The sheets each lineup names, from `sheets`; a lineup missing one is left out. */
