@@ -28,7 +28,7 @@ func delverPoints(t *testing.T, s *Session, ids []uuid.UUID) []point {
 	return at
 }
 
-// Floor 1 holds 45–70 monsters besides a demon, none in the start room and
+// Floor 1 holds 30–45 monsters besides a demon, none in the start room and
 // none within 350 px of a delver. FS-KE075 §C R18–19.
 func TestDungeonPopulation_TotalAndStartRoom(t *testing.T) {
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
@@ -83,7 +83,7 @@ func eligibleHall(d *dungeonFloor, room int) bool {
 	return d.isHall(room) && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room)
 }
 
-// Every hall that is not the start or a treasure room holds one troll and 2–4
+// Every hall that is not the start or a treasure room holds one troll and 1–3
 // ghouls, each within 160 px of the troll. On floor 1 one of those ghouls is a
 // Bone Archer, rolled for level and elite as the ghoul it replaces.
 // FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall archer".
@@ -414,9 +414,10 @@ func TestDungeonPopulation_TreasureGuardsRollTheSpiresMix(t *testing.T) {
 	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.05)
 }
 
-// The corridors hold 4–8 monsters in all, never two in one segment.
-// FS-KE075 §C R18.
-func TestDungeonPopulation_CorridorsHoldFourToEightOnePerSegment(t *testing.T) {
+// The corridors hold 3–5 monsters in all, never two in one segment. Fewer
+// only where holding the floor's total trimmed past every ordinary room's
+// monster into the corridors. FS-KE075 §C R18 (values FS-C8VM7 §I R49).
+func TestDungeonPopulation_CorridorsHoldTheirCountOnePerSegment(t *testing.T) {
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
 		s, _ := dungeonRun(t, seed, 4, 0)
 		d := s.dungeon
@@ -432,8 +433,15 @@ func TestDungeonPopulation_CorridorsHoldFourToEightOnePerSegment(t *testing.T) {
 			assert.Equal(t, 1, n, "seed %d: segment %d holds more than one monster", seed, segment)
 			total += n
 		}
-		assert.GreaterOrEqual(t, total, CorridorMonstersMin, "seed %d", seed)
 		assert.LessOrEqual(t, total, CorridorMonstersMax, "seed %d", seed)
+		if total < CorridorMonstersMin {
+			assert.Len(t, standardMonstersIn(s), DungeonMonstersMax, "seed %d: corridors short of their count only when the total is trimmed", seed)
+			for _, m := range floor1Monsters(t, s) {
+				ordinary := m.room >= 0 && m.room != d.layout.Roles.Start &&
+					!slices.Contains(d.layout.Roles.Treasure, m.room) && !eligibleHall(d, m.room)
+				assert.False(t, ordinary && !m.monster.Boss, "seed %d: corridors trimmed before an ordinary room", seed)
+			}
+		}
 	}
 }
 
@@ -669,6 +677,37 @@ func TestPopulateMonsters_DungeonFloorPlacesARolledBloodDemon(t *testing.T) {
 		assert.False(t, demonRooms[at.room], "seed %d: the blood demon shares the demon's room", seed)
 		for _, p := range keptClear {
 			assert.GreaterOrEqual(t, dist(at.at.x, at.at.y, p.x, p.y), MonsterDelverExclusion, "seed %d", seed)
+		}
+	}
+}
+
+// The floor's population is FS-C8VM7 §I R49's tune of FS-KE075 §C: 30-45 a
+// floor, hall packs of 1-3, ordinary rooms 0-2 topped up to 3, corridors 3-5;
+// the treasure guards as they were.
+func TestDungeonPopulation_ThinnerFloorsTune(t *testing.T) {
+	assert.Equal(t, []int{30, 45}, []int{DungeonMonstersMin, DungeonMonstersMax})
+	assert.Equal(t, []int{1, 3}, []int{HallPackGhoulsMin, HallPackGhoulsMax})
+	assert.Equal(t, []int{0, 2, 3}, []int{RoomMonstersMin, RoomMonstersMax, RoomMonstersTopUpMax})
+	assert.Equal(t, []int{3, 5}, []int{CorridorMonstersMin, CorridorMonstersMax})
+	assert.Equal(t, 0.5, TreasureGuardPackShare)
+	assert.Equal(t, []int{2, 3}, []int{TreasureGuardPackMin, TreasureGuardPackMax})
+}
+
+// No ordinary room holds more than a top-up allows. FS-KE075 §C R18.
+func TestDungeonPopulation_OrdinaryRoomsHoldAtMostTheTopUpCap(t *testing.T) {
+	for seed := uint64(1); seed <= floor1Builds; seed++ {
+		s, _ := dungeonRun(t, seed, 4, 0)
+		d := s.dungeon
+		inRoom := map[int]int{}
+		for _, m := range floor1Monsters(t, s) {
+			if m.room < 0 || m.monster.Boss || m.room == d.layout.Roles.Start ||
+				slices.Contains(d.layout.Roles.Treasure, m.room) || eligibleHall(d, m.room) {
+				continue
+			}
+			inRoom[m.room]++
+		}
+		for room, n := range inRoom {
+			assert.LessOrEqual(t, n, RoomMonstersTopUpMax, "seed %d room %d", seed, room)
 		}
 	}
 }

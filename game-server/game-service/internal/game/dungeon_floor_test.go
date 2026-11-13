@@ -128,7 +128,7 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 	}
 }
 
-// Floors above the first hold floor 1's 45-70 monsters besides their bosses,
+// Floors above the first hold floor 1's 30-45 monsters besides their bosses,
 // none in the start room. FS-M8CSE §C Requirement 12.
 func TestDungeonFloors_AboveTheFirstHoldTheFullPopulation(t *testing.T) {
 	for seed := uint64(1); seed <= 30; seed++ {

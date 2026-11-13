@@ -61,8 +61,8 @@ var spireNonTrollMix = []struct {
 const (
 	// the floor's monsters besides a demon, held to [min, max] by topping up
 	// ordinary rooms and trimming ordinary rooms, then corridors
-	DungeonMonstersMin = 45
-	DungeonMonstersMax = 70
+	DungeonMonstersMin = 30
+	DungeonMonstersMax = 45
 
 	// a hall is a room at least this many cells wide and tall (width × height,
 	// as the generator draws rooms: up to 10 × 8)
@@ -70,8 +70,8 @@ const (
 	HallMinHeight = 6
 	// a hall that is not the start or a treasure room holds one pack: a troll
 	// and a uniform [min, max] ghouls, each within the radius of the troll, in px
-	HallPackGhoulsMin = 2
-	HallPackGhoulsMax = 4
+	HallPackGhoulsMin = 1
+	HallPackGhoulsMax = 3
 	HallPackRadius    = 160.0
 	// troll spots a hall pack tries before it settles for the one that fitted
 	// the most of its ghouls
@@ -80,13 +80,13 @@ const (
 	// every other room but the start holds a uniform [min, max] rolled monsters;
 	// a top-up never takes a room past RoomMonstersTopUpMax
 	RoomMonstersMin      = 0
-	RoomMonstersMax      = 3
-	RoomMonstersTopUpMax = 4
+	RoomMonstersMax      = 2
+	RoomMonstersTopUpMax = 3
 
 	// the corridors hold a uniform [min, max] rolled monsters in all, at most one
 	// per corridor segment
-	CorridorMonstersMin = 4
-	CorridorMonstersMax = 8
+	CorridorMonstersMin = 3
+	CorridorMonstersMax = 5
 
 	// a treasure room is guarded by one elite, or with this chance by a pack of
 	// a uniform [min, max] elites; every guard is elite, its archetype rolled
