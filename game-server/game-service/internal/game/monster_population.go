@@ -24,8 +24,8 @@ type populationRand interface {
 * roster stands on it, so the party's level and every delver's position are
 * known.
 *
-* Everything is rolled fresh: count, mix, levels, elites, the demon and
-* placement. A monster that finds no valid spot is skipped and logged, never
+* Everything is rolled fresh: the floor's pool (FS-C8VM7 §C), count, mix,
+* levels, elites, the demon and placement. A monster that finds no valid spot is skipped and logged, never
 * overlapped or forced.
 *
 * The demon comes on top of the standard count (§Requirements 24): always on the
@@ -58,6 +58,8 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	// FS-K2HKP R18: a run whose whole party is still connecting is not empty
 	if len(roster) == 0 && len(expected) == 0 {
 		slog.Debug("Floor left unpopulated: no delvers placed", "sessionID", s.ID, "floor", floor)
+		// an empty floor has no pool; the last floor's is not its
+		s.setFloorPool(floorPool{})
 		return
 	}
 
@@ -70,10 +72,14 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		// FS-K2HKP R18: the spots kept for arrivals are kept clear too
 		delvers: append(inPlayPositions(roster), s.arrivalSlotPositions()...),
 	}
+	// FS-C8VM7 §C R19: the floor's standard monsters come only from its pool
+	pool := s.floorPoolFor(level, floor)
+	s.setFloorPool(pool)
+
 	// a dungeon floor's monsters are distributed by room and role, its demon
 	// in the farthest room (FS-KE075 §C R18–20)
 	if s.dungeon != nil {
-		s.populateDungeon(s.dungeon, &area, level, floor)
+		s.populateDungeon(s.dungeon, &area, pool, level, floor)
 		demonRoom := -1
 		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
 			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
@@ -88,7 +94,9 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		return
 	}
 
-	for _, monster := range rollMonsters(s.spawnRand, level, floor) {
+	monsters := rollMonsters(s.spawnRand, pool, level, floor)
+	pool.capDarkWarriors(s.spawnRand, configsOf(monsters))
+	for _, monster := range monsters {
 		x, y, ok := area.place(s.spawnRand)
 		if !ok {
 			slog.Warn("Monster skipped: no valid spawn point",
@@ -198,41 +206,57 @@ func rollBloodDemon(rng populationRand, partyLevel, floor int) (MonsterConfig, b
 	}, true
 }
 
+/**
+* floorPoolFor is the pool a floor's standard monsters come from: drawn at the
+* tier of its base level (FS-C8VM7 §C R19-R20). The one place a floor comes by
+* its pool, so a fixed plan can stand in for the draw.
+**/
+func (s *Session) floorPoolFor(partyLevel, floor int) floorPool {
+	return drawFloorPool(s.spawnRand, tierOf(floorBaseLevel(partyLevel, floor)))
+}
+
+// setFloorPool makes pool the current floor's, for its floor map.
+func (s *Session) setFloorPool(pool floorPool) {
+	s.mu.Lock()
+	s.floorPool = pool
+	s.mu.Unlock()
+}
+
 // rollMonsters decides a floor's standard monsters: how many, which archetype
 // each is, its level, and whether it is an elite. Where they stand is decided
 // afterwards.
-func rollMonsters(rng populationRand, partyLevel, floor int) []MonsterConfig {
+func rollMonsters(rng populationRand, pool floorPool, partyLevel, floor int) []MonsterConfig {
 	count := MonsterCountMin + rng.IntN(MonsterCountMax-MonsterCountMin+1)
 
 	monsters := make([]MonsterConfig, 0, count)
 	for range count {
-		monsters = append(monsters, rollMonster(rng, partyLevel, floor))
+		monsters = append(monsters, rollMonster(rng, pool, partyLevel, floor))
 	}
 
 	return monsters
 }
 
-// rollMonster is one standard monster: its archetype (rollArchetype), then its
-// level and elite roll (rollAs).
-func rollMonster(rng populationRand, partyLevel, floor int) MonsterConfig {
-	return rollAs(rng, rollArchetype(rng, floor), partyLevel, floor, eliteChance(floor))
+// rollMonster is one standard monster: its variant from the floor's pool and
+// its look (rollArchetype), then its level and elite roll (rollAs).
+func rollMonster(rng populationRand, pool floorPool, partyLevel, floor int) MonsterConfig {
+	return rollAs(rng, rollArchetype(rng, pool, floor), partyLevel, floor, eliteChance(floor))
 }
 
-// rollArchetype is a troll at the floor's troll share, otherwise a draw from the
-// Spire's non-troll mix. Only a Spire population reaches it: a field rolls its
-// own place's creatures.
-func rollArchetype(rng populationRand, floor int) components.MonsterArchetype {
-	if rng.Float64() < trollShare(floor) {
-		return components.MonsterArchetypeTroll
-	}
+// rollArchetype is a rolled monster's variant from the floor's pool, a brute
+// at the floor's brute share, else a fodder, then its look (FS-C8VM7 §C R21,
+// §A R8). Only a Spire population reaches it: a field rolls its own place's
+// creatures.
+func rollArchetype(rng populationRand, pool floorPool, floor int) components.MonsterArchetype {
+	return pool.rolled(rng, floor).rollLook(rng)
+}
 
-	draw := rng.Float64()
-	for _, row := range spireNonTrollMix {
-		if draw -= row.Share; draw < 0 {
-			return row.Archetype
-		}
+// configsOf points at each of monsters, for a pass that changes them in place.
+func configsOf(monsters []MonsterConfig) []*MonsterConfig {
+	out := make([]*MonsterConfig, len(monsters))
+	for i := range monsters {
+		out[i] = &monsters[i]
 	}
-	return spireNonTrollMix[len(spireNonTrollMix)-1].Archetype
+	return out
 }
 
 // rollAs is a monster of archetype at its level's spread, promoted to an elite

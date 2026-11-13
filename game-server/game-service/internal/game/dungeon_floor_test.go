@@ -389,8 +389,8 @@ func TestDungeonFloor1_FloorMapCarriesCellSizeAndRegions(t *testing.T) {
 	for k := range payload {
 		keys = append(keys, k)
 	}
-	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls"}, keys,
-		"no room roles on the wire")
+	assert.ElementsMatch(t, []string{"session_id", "floor", "width", "height", "cell_size", "regions", "walls", "enemy_pool"}, keys,
+		"no room roles on the wire; the floor's enemy pool (FS-C8VM7 §G R40)")
 	assert.Equal(t, 80.0, payload["cell_size"])
 	assert.Equal(t, 5760.0, payload["width"])
 	assert.Equal(t, 3840.0, payload["height"])

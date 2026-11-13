@@ -26,8 +26,13 @@ const (
 // monsterFamily groups the variants that share a body and a role, step 0
 // first: every step's sheet is built from step 0's by the step rule.
 type monsterFamily struct {
-	Name     string
-	Role     monsterRole
+	Name string
+	Role monsterRole
+	// PoolWeight is what each variant weighs in a floor pool's draw; 0 is 1
+	// (FS-C8VM7 §C R20)
+	PoolWeight int
+	// Capped families are held to DarkWarriorCapMax a floor (FS-C8VM7 §C R24)
+	Capped   bool
 	Variants []monsterVariant
 }
 

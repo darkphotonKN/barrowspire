@@ -224,7 +224,7 @@ func TestMonsterLevel_IsPartyPlusFloorOffsetPlusSpreadAtLeastOne(t *testing.T) {
 }
 
 // Over many seeded populations the mix matches the configured chance: a quarter
-// trolls on floor 1, more on floor 3, never more than the cap.
+// brutes, on a tier-1 pool trolls, on floor 1, more on floor 3, never more than the cap.
 // FS-77AB6 §Requirements 22.
 func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 	tests := []struct {
@@ -240,7 +240,7 @@ func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 		rng := seededSpawns(uint64(tt.floor))
 		trolls, total := 0, 0
 		for range 2000 {
-			for _, m := range rollMonsters(rng, 1, tt.floor) {
+			for _, m := range rollMonsters(rng, tier1Pool(), 1, tt.floor) {
 				total++
 				if m.Archetype == components.MonsterArchetypeTroll {
 					trolls++
@@ -251,34 +251,27 @@ func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 	}
 }
 
-// A rolled non-troll monster is 70% ghoul, 20% Barrow Thrall, 10% Spire Wraith
-// on every Spire floor, and nothing else, while the troll share stands.
-// FS-M8CSE §D R18.
-func TestRollArchetype_NonTrollMixOnEveryFloor(t *testing.T) {
+// On a tier-1 floor a rolled monster is the troll at the floor's brute share,
+// else one of the pool's three fodder, uniformly; never the Bone Archer, which
+// only fills an archer slot. The 70 / 20 / 10 mix is retired.
+// FS-C8VM7 §C R21-R22.
+func TestRollArchetype_Tier1PoolOnEveryFloor(t *testing.T) {
 	const rolls = 40000
+	pool := tier1Pool()
 	for floor := 1; floor <= 10; floor++ {
 		rng := seededSpawns(uint64(300 + floor))
 		counts := map[components.MonsterArchetype]int{}
 		for range rolls {
-			counts[rollArchetype(rng, floor)]++
+			counts[rollArchetype(rng, pool, floor)]++
 		}
 
-		nonTroll := float64(rolls - counts[components.MonsterArchetypeTroll])
-		assert.InDelta(t, trollShare(floor), float64(counts[components.MonsterArchetypeTroll])/rolls, 0.01, "floor %d troll share", floor)
-		assert.InDelta(t, 0.70, float64(counts[components.MonsterArchetypeGhoul])/nonTroll, 0.015, "floor %d ghouls", floor)
-		assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.015, "floor %d Barrow Thralls", floor)
-		assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.015, "floor %d Spire Wraiths", floor)
-		assert.Len(t, counts, 4, "floor %d rolls only the four", floor)
+		fodder := float64(rolls - counts[components.MonsterArchetypeTroll])
+		assert.InDelta(t, bruteShare(floor), float64(counts[components.MonsterArchetypeTroll])/rolls, 0.01, "floor %d brute share", floor)
+		for _, a := range []components.MonsterArchetype{components.MonsterArchetypeGhoul, components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeSpireWraith} {
+			assert.InDelta(t, 1.0/3, float64(counts[a])/fodder, 0.015, "floor %d %s", floor, a)
+		}
+		assert.Len(t, counts, 4, "floor %d rolls only the troll and the three fodder", floor)
 	}
-}
-
-// The shares of a non-troll roll make up the whole of it. FS-M8CSE §D R18.
-func TestSpireNonTrollMix_SharesSumToOne(t *testing.T) {
-	total := 0.0
-	for _, row := range spireNonTrollMix {
-		total += row.Share
-	}
-	assert.InDelta(t, 1.0, total, 1e-9)
 }
 
 // The Spire's roll stays the Spire's: populating is a run's alone, so a field
@@ -343,7 +336,7 @@ func TestRollMonsters_CountAndSpreadStayInRange(t *testing.T) {
 	levels := map[int]bool{}
 
 	for range 2000 {
-		monsters := rollMonsters(rng, 5, 1)
+		monsters := rollMonsters(rng, tier1Pool(), 5, 1)
 		counts[len(monsters)] = true
 		for _, m := range monsters {
 			levels[m.Level] = true
@@ -650,7 +643,7 @@ func TestRollMonsters_EliteRateMatchesTheFloor(t *testing.T) {
 		rng := seededSpawns(uint64(200 + tt.floor))
 		elites, total := 0, 0
 		for range 4000 {
-			for _, m := range rollMonsters(rng, 1, tt.floor) {
+			for _, m := range rollMonsters(rng, tier1Pool(), 1, tt.floor) {
 				total++
 				base := monsterSheets[m.Archetype].Name
 				if !m.Elite {

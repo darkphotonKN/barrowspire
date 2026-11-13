@@ -83,10 +83,12 @@ func eligibleHall(d *dungeonFloor, room int) bool {
 	return d.isHall(room) && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room)
 }
 
-// Every hall that is not the start or a treasure room holds one troll and 1–3
-// ghouls, each within 160 px of the troll. On floor 1 one of those ghouls is a
-// Bone Archer, rolled for level and elite as the ghoul it replaces.
-// FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall archer".
+// Every hall that is not the start or a treasure room holds one troll, floor
+// 1's only brute, and 1–3 of its fodder, each within 160 px of the troll. On
+// floor 1 the first of them is a Bone Archer, its ranged member, rolled for
+// level and elite as the fodder it replaces.
+// FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall archer";
+// FS-C8VM7 §C R22-R23.
 func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 	halls, eliteArchers := 0, 0
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
@@ -107,7 +109,7 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 				switch m.monster.Archetype {
 				case components.MonsterArchetypeTroll:
 					trolls = append(trolls, m.at)
-				case components.MonsterArchetypeGhoul:
+				case components.MonsterArchetypeGhoul, components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeSpireWraith:
 					ghouls = append(ghouls, m.at)
 				case components.MonsterArchetypeBoneArcher:
 					archers = append(archers, m.at)
@@ -116,7 +118,7 @@ func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
 						assert.True(t, strings.HasSuffix(m.monster.Name, " Bone Archer"), "seed %d room %d: %q", seed, room, m.monster.Name)
 					}
 				default:
-					assert.Failf(t, "a hall pack is a troll, a Bone Archer and ghouls", "seed %d room %d: %s", seed, room, m.monster.Archetype)
+					assert.Failf(t, "a hall pack is a troll, a Bone Archer and fodder", "seed %d room %d: %s", seed, room, m.monster.Archetype)
 				}
 			}
 			require.Len(t, trolls, 1, "seed %d room %d: a hall holds one troll", seed, room)
@@ -185,7 +187,7 @@ func TestHallPack_AShortPackKeepsItsArcher(t *testing.T) {
 					width: s.mapWidth, height: s.mapHeight,
 					keepOut: windowsOnly(s.mapWidth, s.mapHeight, c.x-70, c.x+30, c.y-w/2, w),
 				}
-				p := &dungeonPopulation{session: s.ID, floor: d, area: &area, rng: seededSpawns(seed), level: 1, depth: tt.depth}
+				p := &dungeonPopulation{session: s.ID, floor: d, area: &area, rng: seededSpawns(seed), pool: tier1Pool(), level: 1, depth: tt.depth}
 
 				p.hallPack(hall)
 
@@ -212,9 +214,10 @@ func ordinaryRoom(d *dungeonFloor, room int) bool {
 	return room != -1 && room != d.layout.Roles.Start && !slices.Contains(d.layout.Roles.Treasure, room) && !eligibleHall(d, room)
 }
 
-// On floor 1, about 1 in 4 of the ordinary rooms' ghoul rolls, top-ups
-// included, are Bone Archers; the troll share and the Barrow Thrall and Spire
-// Wraith shares are untouched. FS-B4SG9 §B R15.
+// On floor 1, about 1 in 4 of the ordinary rooms' fodder rolls, top-ups
+// included, are Bone Archers, the pool's ranged member; the brute share
+// stands and the three fodder share the rest evenly. FS-B4SG9 §B R15;
+// FS-C8VM7 §C R21-R22.
 func TestDungeonPopulation_Floor1RoomGhoulsAreBoneArchersAtTheirShare(t *testing.T) {
 	counts := map[components.MonsterArchetype]int{}
 	all := 0
@@ -229,14 +232,14 @@ func TestDungeonPopulation_Floor1RoomGhoulsAreBoneArchersAtTheirShare(t *testing
 		}
 	}
 
-	ghoulRolls := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBoneArcher])
-	nonTroll := float64(all - counts[components.MonsterArchetypeTroll])
-	require.Positive(t, ghoulRolls)
-	assert.InDelta(t, BoneArcherRoomShare, float64(counts[components.MonsterArchetypeBoneArcher])/ghoulRolls, 0.02, "the archers' share of ghoul rolls")
-	assert.InDelta(t, trollShare(firstFloor), float64(counts[components.MonsterArchetypeTroll])/float64(all), 0.02, "the troll share")
-	assert.InDelta(t, 0.70, ghoulRolls/nonTroll, 0.02, "the ghoul rolls' share")
-	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.02, "the Barrow Thrall share")
-	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.02, "the Spire Wraith share")
+	fodderRolls := float64(all - counts[components.MonsterArchetypeTroll])
+	require.Positive(t, fodderRolls)
+	assert.InDelta(t, BoneArcherRoomShare, float64(counts[components.MonsterArchetypeBoneArcher])/fodderRolls, 0.02, "the archers' share of fodder rolls")
+	assert.InDelta(t, bruteShare(firstFloor), float64(counts[components.MonsterArchetypeTroll])/float64(all), 0.02, "the brute share")
+	fodder := fodderRolls - float64(counts[components.MonsterArchetypeBoneArcher])
+	for _, a := range []components.MonsterArchetype{components.MonsterArchetypeGhoul, components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeSpireWraith} {
+		assert.InDelta(t, 1.0/3, float64(counts[a])/fodder, 0.02, "%s's share of the fodder", a)
+	}
 	for archetype := range counts {
 		assert.Contains(t, []components.MonsterArchetype{
 			components.MonsterArchetypeTroll, components.MonsterArchetypeGhoul, components.MonsterArchetypeBoneArcher,
@@ -276,71 +279,92 @@ func spireFloor(t *testing.T, seed uint64, depth int) *Session {
 	return s
 }
 
-// Every floor above the first, the top floor included, places Bone Archers as
-// floor 1 does: about 1 in 4 of the ordinary rooms' ghoul rolls, the first
-// ghoul of every hall pack, none in a corridor or among a treasure room's
-// guards; the floor's troll share and the Barrow Thrall and Spire Wraith
-// shares are untouched. FS-B4SG9 §B R14–R17 (owner decision 2026-11-12).
+// roleOf is an archetype's role on the roster; empty for a boss.
+func roleOf(archetype components.MonsterArchetype) monsterRole {
+	entry, _ := variantOf(archetype)
+	if entry.Family == nil {
+		return ""
+	}
+	return entry.Family.Role
+}
+
+// Every floor above the first, the top floor included, fills its archer slots
+// as floor 1 does, with its pool's ranged members: about 1 in 4 of the
+// ordinary rooms' fodder rolls, the first member of every hall pack, none in a
+// corridor or among a treasure room's guards, and none at all on a floor whose
+// pool has no ranged member; the floor's brute share stands, and every
+// monster is of the floor's pool. FS-B4SG9 §B R14–R17; FS-C8VM7 §C R21-R23.
 func TestBuildFloor_BoneArchersOnEveryDungeonFloorAsOnFloor1(t *testing.T) {
 	const seeds = 120
-	counts := map[components.MonsterArchetype]int{}
-	all, packs := 0, 0
+	fodderRolls, rangedRolls, packs, unranged := 0, 0, 0, 0
 	for depth := firstFloor + 1; depth <= MasterSpireHeight; depth++ {
-		trolls, rolled := 0, 0
+		brutes, rolled := 0, 0
 		for seed := uint64(1); seed <= seeds; seed++ {
 			s := spireFloor(t, seed, depth)
 			d := s.dungeon
 			require.NotNil(t, d, "depth %d seed %d: a Spire floor is a dungeon", depth, seed)
+			pool := s.floorPool
+			hasRanged := len(pool.of(roleRanged)) > 0
+			if !hasRanged {
+				unranged++
+			}
 
-			hallMembers := map[int]map[components.MonsterArchetype]int{}
+			hallMembers := map[int]map[monsterRole]int{}
 			for _, m := range floor1Monsters(t, s) {
 				if m.monster.Boss {
 					continue
 				}
-				archer := m.monster.Archetype == components.MonsterArchetypeBoneArcher
+				assert.Contains(t, pool.archetypes(), m.monster.Archetype, "depth %d seed %d: a monster of the pool", depth, seed)
+				role := roleOf(m.monster.Archetype)
+				ranged := role == roleRanged
+				assert.False(t, ranged && !hasRanged, "depth %d seed %d: ranged with none in the pool", depth, seed)
 				switch {
 				case m.room == -1:
-					assert.False(t, archer, "depth %d seed %d: a Bone Archer in a corridor", depth, seed)
+					assert.False(t, ranged, "depth %d seed %d: a ranged monster in a corridor", depth, seed)
 				case slices.Contains(d.layout.Roles.Treasure, m.room):
-					assert.False(t, archer, "depth %d seed %d: a Bone Archer guards a treasure room", depth, seed)
+					assert.False(t, ranged, "depth %d seed %d: a ranged monster guards a treasure room", depth, seed)
 				case eligibleHall(d, m.room):
 					if hallMembers[m.room] == nil {
-						hallMembers[m.room] = map[components.MonsterArchetype]int{}
+						hallMembers[m.room] = map[monsterRole]int{}
 					}
-					hallMembers[m.room][m.monster.Archetype]++
+					hallMembers[m.room][role]++
 				default:
-					counts[m.monster.Archetype]++
-					all++
 					rolled++
-					if m.monster.Archetype == components.MonsterArchetypeTroll {
-						trolls++
+					switch role {
+					case roleBrute:
+						brutes++
+					case roleRanged:
+						rangedRolls++
+						fodderRolls++
+					default:
+						fodderRolls++
 					}
 				}
 			}
 
 			for room, members := range hallMembers {
-				ghoulSlots := members[components.MonsterArchetypeGhoul] + members[components.MonsterArchetypeBoneArcher]
-				if members[components.MonsterArchetypeTroll] == 0 || ghoulSlots == 0 {
+				slots := members[roleFodder] + members[roleRanged]
+				if members[roleBrute] != 1 || slots == 0 {
 					continue
 				}
 				packs++
-				assert.Equal(t, HallPackBoneArchers, members[components.MonsterArchetypeBoneArcher],
-					"depth %d seed %d room %d: a hall pack holds one Bone Archer", depth, seed, room)
-				assert.LessOrEqual(t, ghoulSlots, HallPackGhoulsMax, "depth %d seed %d room %d: the pack's size is unchanged", depth, seed, room)
+				want := 0
+				if hasRanged {
+					want = HallPackBoneArchers
+				}
+				assert.Equal(t, want, members[roleRanged], "depth %d seed %d room %d: a hall pack's archer slot", depth, seed, room)
+				assert.LessOrEqual(t, slots, HallPackGhoulsMax, "depth %d seed %d room %d: the pack's size is unchanged", depth, seed, room)
 			}
 		}
 		require.Positive(t, rolled, "depth %d", depth)
-		assert.InDelta(t, trollShare(depth), float64(trolls)/float64(rolled), 0.03, "depth %d: the floor's troll share", depth)
+		assert.InDelta(t, bruteShare(depth), float64(brutes)/float64(rolled), 0.03, "depth %d: the floor's brute share", depth)
 	}
 
 	require.NotZero(t, packs, "the floors hold hall packs to check")
-	ghoulRolls := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBoneArcher])
-	nonTroll := float64(all - counts[components.MonsterArchetypeTroll])
-	require.Positive(t, ghoulRolls)
-	assert.InDelta(t, BoneArcherRoomShare, float64(counts[components.MonsterArchetypeBoneArcher])/ghoulRolls, 0.02, "the archers' share of ghoul rolls")
-	assert.InDelta(t, 0.70, ghoulRolls/nonTroll, 0.02, "the ghoul rolls' share")
-	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.02, "the Barrow Thrall share")
-	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.02, "the Spire Wraith share")
+	require.NotZero(t, unranged, "some floors drew no ranged member")
+	require.Positive(t, fodderRolls)
+	t.Logf("fodder rolls %d, ranged %d", fodderRolls, rangedRolls)
+	assert.Less(t, float64(rangedRolls)/float64(fodderRolls), BoneArcherRoomShare, "pools without a ranged member pull the share under its figure")
 }
 
 // A floor of buildings a failed generation leaves holds no Bone Archer, floor
@@ -356,7 +380,7 @@ func TestBuildFloor_NoBoneArcherOnAFloorOfBuildings(t *testing.T) {
 			require.Nil(t, s.dungeon, "depth %d seed %d: the floor fell back to buildings", depth, seed)
 			require.NotEmpty(t, monstersIn(s), "depth %d seed %d", depth, seed)
 			for _, m := range monstersIn(s) {
-				assert.NotEqual(t, components.MonsterArchetypeBoneArcher, monsterOf(m).Archetype, "fallback depth %d seed %d", depth, seed)
+				assert.NotEqual(t, roleRanged, roleOf(monsterOf(m).Archetype), "fallback depth %d seed %d", depth, seed)
 			}
 		}
 	}
@@ -392,8 +416,9 @@ func TestDungeonPopulation_TreasureGuardsAreElite(t *testing.T) {
 	assert.InDelta(t, TreasureGuardPackShare, share, 0.05, "a treasure room holds a pack about half the time")
 }
 
-// A treasure guard draws through the same roll as any rolled monster, so the
-// tower monsters stand guard at their shares. FS-M8CSE §D R18.
+// A treasure guard draws through the same roll as any rolled monster, so on
+// floor 1 the troll stands guard at the brute share and the three fodder
+// share the rest evenly; never the ranged member. FS-C8VM7 §C R21, R23.
 func TestDungeonPopulation_TreasureGuardsRollTheSpiresMix(t *testing.T) {
 	counts := map[components.MonsterArchetype]int{}
 	for seed := uint64(1); seed <= 300; seed++ {
@@ -408,10 +433,11 @@ func TestDungeonPopulation_TreasureGuardsRollTheSpiresMix(t *testing.T) {
 		}
 	}
 
-	nonTroll := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBarrowThrall] + counts[components.MonsterArchetypeSpireWraith])
-	require.Positive(t, nonTroll)
-	assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.05)
-	assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.05)
+	assert.Zero(t, counts[components.MonsterArchetypeBoneArcher])
+	fodder := float64(counts[components.MonsterArchetypeGhoul] + counts[components.MonsterArchetypeBarrowThrall] + counts[components.MonsterArchetypeSpireWraith])
+	require.Positive(t, fodder)
+	assert.InDelta(t, 1.0/3, float64(counts[components.MonsterArchetypeBarrowThrall])/fodder, 0.05)
+	assert.InDelta(t, 1.0/3, float64(counts[components.MonsterArchetypeSpireWraith])/fodder, 0.05)
 }
 
 // The corridors hold 3–5 monsters in all, never two in one segment. Fewer
@@ -472,8 +498,8 @@ func TestDungeonPopulation_OffDoorwaysClearAndApart(t *testing.T) {
 }
 
 // Every monster that is not a treasure guard keeps the floor's elite chance,
-// and the rolled ones, in ordinary rooms and corridors, the floor's troll
-// share. FS-KE075 §C R19.
+// and the rolled ones, in ordinary rooms and corridors, the floor's brute
+// share, floor 1's brute being the troll. FS-KE075 §C R19; FS-C8VM7 §C R21.
 func TestDungeonPopulation_EliteChanceAndTrollShareUnchanged(t *testing.T) {
 	var standard, elites, rolled, trolls int
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
@@ -496,7 +522,7 @@ func TestDungeonPopulation_EliteChanceAndTrollShareUnchanged(t *testing.T) {
 		}
 	}
 	assert.InDelta(t, eliteChance(firstFloor), float64(elites)/float64(standard), 0.006)
-	assert.InDelta(t, trollShare(firstFloor), float64(trolls)/float64(rolled), 0.015)
+	assert.InDelta(t, bruteShare(firstFloor), float64(trolls)/float64(rolled), 0.015)
 }
 
 // A demon goes in the room farthest from the start by walking distance, never

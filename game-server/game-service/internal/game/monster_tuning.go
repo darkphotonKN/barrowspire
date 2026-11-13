@@ -19,11 +19,11 @@ const (
 	MonsterCountMin = 8
 	MonsterCountMax = 14
 
-	// each standard monster is a troll with probability
-	// base + perFloor × (floor − 1), capped
-	TrollShareBase     = 0.25
-	TrollSharePerFloor = 0.10
-	TrollShareCap      = 0.60
+	// each standard monster is a brute of the floor's pool with probability
+	// base + perFloor × (floor − 1), capped (FS-C8VM7 §C R21, R25)
+	BruteShareBase     = 0.25
+	BruteSharePerFloor = 0.10
+	BruteShareCap      = 0.60
 
 	// monster level = party level + step × (floor − 1) ± spread, at least 1
 	MonsterLevelPerFloor = 1
@@ -40,20 +40,6 @@ const (
 	// random positions tried per monster before it is skipped
 	MonsterPlacementAttempts = 200
 )
-
-// spireNonTrollMix is what a rolled Spire monster is when it is not a troll, as
-// shares of those rolls, the same on every floor. Hall packs are not rolled and
-// stay a troll and ghouls, one of them a Bone Archer. FS-M8CSE §D R18; in a
-// dungeon's ordinary room a ghoul roll can turn (BoneArcherRoomShare,
-// FS-B4SG9 §B).
-var spireNonTrollMix = []struct {
-	Archetype components.MonsterArchetype
-	Share     float64
-}{
-	{components.MonsterArchetypeGhoul, 0.70},
-	{components.MonsterArchetypeBarrowThrall, 0.20},
-	{components.MonsterArchetypeSpireWraith, 0.10},
-}
 
 // A dungeon floor's population, by room and role (FS-KE075 §C R18–20, ADR-0061
 // Decision 7). It replaces MonsterCountMin/Max on a dungeon floor only; the
@@ -177,6 +163,17 @@ const (
 	GoblinShieldDefense = 3
 )
 
+// The floor pool. FS-C8VM7 §C R19-R24.
+const (
+	// the variants a Spire floor draws from everything its tier unlocks
+	FloorPoolSize = 5
+	// a dark warrior variant weighs this in a pool draw; every other weighs 1
+	DarkWarriorPoolWeight = 2
+	// a floor holds at most min(cap, ⌊its monsters / per⌋) dark warriors
+	DarkWarriorPer    = 12
+	DarkWarriorCapMax = 4
+)
+
 // spireRoster is R3's table: each family's role and its variants, step 0
 // first, with their unlock tiers. A step past 0 is its family's step 0 under
 // the step rule; only step 0 has a sheet of its own in monsterSheets.
@@ -222,7 +219,7 @@ var spireRoster = []monsterFamily{
 		{Archetype: components.MonsterArchetypeOgreMauler, Name: "Ogre Mauler", Unlock: 5},
 		{Archetype: components.MonsterArchetypeOgreTyrant, Name: "Ogre Tyrant", Unlock: 6},
 	}},
-	{Name: "Dark Warrior", Role: roleBrute, Variants: []monsterVariant{
+	{Name: "Dark Warrior", Role: roleBrute, PoolWeight: DarkWarriorPoolWeight, Capped: true, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeDarkWarrior, Name: "Dark Warrior", Unlock: 6},
 		{Archetype: components.MonsterArchetypeDarkReaper, Name: "Dark Reaper", Unlock: 6},
 	}},
@@ -633,9 +630,10 @@ func eliteChance(floor int) float64 {
 	return math.Min(EliteChanceBase+EliteChancePerFloor*float64(floor-1), EliteChanceCap)
 }
 
-// trollShare is the chance a standard monster on this floor is a troll.
-func trollShare(floor int) float64 {
-	return math.Min(TrollShareBase+TrollSharePerFloor*float64(floor-1), TrollShareCap)
+// bruteShare is the chance a standard monster on this floor is a brute of its
+// pool (FS-C8VM7 §C R21).
+func bruteShare(floor int) float64 {
+	return math.Min(BruteShareBase+BruteSharePerFloor*float64(floor-1), BruteShareCap)
 }
 
 // demonLevel is the demon's level: the party's, plus the floor's offset, plus
