@@ -178,7 +178,7 @@ import { WorldMinimapController, bindMinimapKey, bindMinimapPointer } from "@/ui
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
-import { HubMusic, MUSIC_KEY, MUSIC_URL, sceneMusicStage } from "@/audio/hubMusic";
+import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { browserMusicStore } from "@/audio/musicSetting";
 import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -828,7 +828,7 @@ export class HubScene extends Phaser.Scene {
    * The town's music (FS-28DDG R20): made with the first visit, and kept with this scene instance,
    * which is this game's, across its stops, as the fade-out outlives the stop (R3).
    */
-  private music?: HubMusic;
+  private music?: WorldMusic;
   /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
   private sounds?: UiSounds;
   /** Cancels the music's end listener of a start that has not reached create; create's own takes over. */
@@ -861,7 +861,7 @@ export class HubScene extends Phaser.Scene {
     });
     // the town's music, with its art, so the torch bar counts it; skipped while still cached
     // (FS-28DDG R12, R13)
-    this.load.audio(MUSIC_KEY, MUSIC_URL);
+    preloadMusic(this, worldTrack("hub"));
   }
 
   create(): void {
@@ -1007,7 +1007,8 @@ export class HubScene extends Phaser.Scene {
 
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
   private enterMusic(): void {
-    this.music ??= new HubMusic(sceneMusicStage(this), browserMusicStore);
+    const track = worldTrack("hub");
+    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.maxGain);
     this.music.enter();
   }
 

@@ -389,7 +389,7 @@ describe("sceneUiSoundStage (FS-WDM0X S11–S13)", () => {
 
   it.each([
     { context: { state: "suspended" }, locked: true, audible: false },
-    // Phaser still counts itself locked while a context handed to it already runs, as HubMusic's check
+    // Phaser still counts itself locked while a context handed to it already runs, as WorldMusic's check
     { context: { state: "running" }, locked: true, audible: true },
     { context: { state: "interrupted" }, locked: false, audible: false },
     // HTML5 audio, no context: Phaser's own lock says
