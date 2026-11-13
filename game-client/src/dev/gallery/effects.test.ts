@@ -70,6 +70,12 @@ describe("effect cards", () => {
       for (const card of EFFECT_CARDS.filter((c) => c.module === owner)) expect(card.demo).toBeTypeOf("function");
   });
 
+  it("should card a lore line in each tone, each playable (FS-XWHZP R26)", () => {
+    const cards = EFFECT_CARDS.filter((c) => c.module === "loreDust");
+    expect(cards.map((c) => c.name)).toEqual(["Lore line (lore)", "Lore line (dread)", "Lore line (hope)"]);
+    for (const card of cards) expect(card.demo).toBeTypeOf("function");
+  });
+
   it("should give every card that can't be played a reason", () => {
     const unexplained = EFFECT_CARDS.filter(
       (c) => c.demo === null && !c.reason.trim(),

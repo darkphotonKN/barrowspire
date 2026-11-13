@@ -159,6 +159,19 @@ export const palette = {
   frame: BARROW_HEX.brass,
   frameBright: BARROW_HEX.brassBright,
   /**
+   * A lore line's three tones (FS-XWHZP §B R8): the world speaking in parchment, dread in the
+   * lifted oxblood, hope in a lantern gold (never amber: a line is nothing to act on). Its dust
+   * fades to `loreFade`; a dread line's embers go from `loreEmber` to `loreEmberDeep`; its shadow
+   * is `loreShadow`.
+   */
+  loreText: BARROW_HEX.vellum,
+  loreDread: BARROW_HEX.oxbloodText,
+  loreHope: BARROW_HEX.brassBright,
+  loreFade: BARROW_HEX.vellumDark,
+  loreEmber: BARROW_HEX.ember,
+  loreEmberDeep: BARROW_HEX.oxblood,
+  loreShadow: BARROW_HEX.pitch,
+  /**
    * The experience bar and the level-up cue (FS-BDA7X req 42, 43): progress is neither an
    * interactable, a friend nor a harm, so it takes the HUD's bright brass, never amber.
    */

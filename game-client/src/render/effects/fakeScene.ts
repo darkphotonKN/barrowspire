@@ -44,6 +44,7 @@ const CHAINED = [
   "startFollow",
   "setVisible",
   "setScrollFactor",
+  "stop",
 ];
 
 export function fakeScene() {

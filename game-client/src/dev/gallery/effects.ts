@@ -22,6 +22,7 @@ import { EntranceMarker } from "@/render/effects/entrance";
 import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
 import { HitFeedback } from "@/render/effects/hit";
+import { LoreDust } from "@/render/effects/loreDust";
 import { addMist } from "@/render/effects/mist";
 import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
 import { ParryFx } from "@/render/effects/parry";
@@ -40,6 +41,7 @@ import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
 import { itemShine } from "@/ui/itemShine";
+import { LoreLines, type LoreLine } from "@/ui/loreLine";
 import { placeCard } from "@/ui/placeCard";
 
 /** What a demo plays on: the gallery's one figure, on its floor, under the run's light. */
@@ -147,6 +149,23 @@ function arrivalCardOn(s: Stage): ArrivalCard {
  */
 function playArrivalCard(s: Stage, leave: CardLeave): void {
   arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), { built: true }, leave);
+}
+
+/**
+ * The gallery's one lore line piece, so a replay queues behind the line still up as the game's
+ * next line would (FS-XWHZP §C, R26). Drawn over the gallery's own canvas, not the game's view.
+ */
+const loreLines = new WeakMap<Phaser.Scene, LoreLines>();
+
+function sayLore(s: Stage, line: LoreLine): void {
+  let lines = loreLines.get(s.scene);
+  if (!lines) {
+    const { width, height } = s.scene.scale;
+    const view = { width, height, centerX: width / 2, centerY: height / 2 };
+    lines = new LoreLines(s.scene, new LoreDust(s.scene, () => s.art), { view });
+    loreLines.set(s.scene, lines);
+  }
+  lines.say(line);
 }
 
 export const EFFECT_CARDS: EffectCard[] = [
@@ -266,6 +285,22 @@ export const EFFECT_CARDS: EffectCard[] = [
     module: "hit",
     name: "Hit tint",
     demo: (s) => new HitFeedback(s.scene).play(s.figure),
+  },
+  // FS-XWHZP R26: a lore line in each tone, through the game's own piece
+  {
+    module: "loreDust",
+    name: "Lore line (lore)",
+    demo: (s) => sayLore(s, { text: "The stair waits for the whole party.", tone: "lore" }),
+  },
+  {
+    module: "loreDust",
+    name: "Lore line (dread)",
+    demo: (s) => sayLore(s, { text: "You hear a sound from hell", tone: "dread" }),
+  },
+  {
+    module: "loreDust",
+    name: "Lore line (hope)",
+    demo: (s) => sayLore(s, { text: "The seal breaks. Somewhere, a door gives.", tone: "hope" }),
   },
   {
     module: "mist",
