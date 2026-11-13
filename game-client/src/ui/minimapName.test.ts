@@ -8,9 +8,10 @@ import { PLACE_CARDS, placeCard, type Place } from "./placeCard";
 import { TARGET_BOSS_FRAME, TARGET_FRAME, targetFrameRect } from "./targetFrame";
 import { topRightCorner } from "./topRightColumn";
 
-// FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
-// "兩倍地圖時不顯示", replaced by "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the place's name on the
-// minimap, its words, its look, its place in each mode, and where it gives way.
+// FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字"): the place's name
+// on the minimap, its words, its look, its place in each mode, and where it gives way. With the map
+// enlarged it stands inside, as on the normal map (§Change: The enlarged map keeps its labels
+// inside, owner 2026-11-14: 「小地圖1.5倍時 區域名稱跟座標也要放在地圖內跟1倍時的位置一樣」).
 
 const viewOf = (width: number) => ({ width, height: 720 });
 const NORMAL = { ...MINIMAP, mode: "normal" as const };
@@ -106,41 +107,30 @@ describe("the map name's look (FS-56CKV §Change: Map name, E2)", () => {
   });
 });
 
-describe("the map name's place (FS-56CKV §Change: Map name, E3–E6)", () => {
+describe("the map name's place (FS-56CKV §Change: Map name, E3–E6; §Change: The enlarged map keeps its labels inside, F1)", () => {
   it.each([
-    [1080, 1066],
-    [1280, 1266],
-  ])("should stand inside the normal map's top-right, 4 px in, right-aligned, at width %i (E3)", (width, right) => {
-    const corner = topRightCorner(viewOf(width), NORMAL);
+    [NORMAL, 1080, 1066],
+    [NORMAL, 1280, 1266],
+    [ENLARGED, 1080, 1066],
+    [ENLARGED, 1280, 1266],
+  ])("should stand inside the map's top-right, 4 px in from that map's own edges, right-aligned (%o at width %i; E3, F1)", (minimap, width, right) => {
+    const corner = topRightCorner(viewOf(width), minimap);
     expect(corner.name).toEqual({ right, y: 14, align: "top" });
     expect(corner.name!.right).toBe(corner.minimap!.x + corner.minimap!.width - 4);
     expect(corner.name!.y).toBe(corner.minimap!.y + 4);
   });
 
-  it.each([1080, 1280])("should keep its widest plate inside the normal map, clear of the map mode icon, at width %i (E3)", (width) => {
-    const corner = topRightCorner(viewOf(width), NORMAL);
+  it.each([
+    [NORMAL, 1080],
+    [NORMAL, 1280],
+    [ENLARGED, 1080],
+    [ENLARGED, 1280],
+  ])("should keep its widest plate inside the map, clear of the map mode icon (%o at width %i; E3, F3)", (minimap, width) => {
+    const corner = topRightCorner(viewOf(width), minimap);
     const box = minimapNameBox(corner.name!, plateOf(WIDEST));
     const map = corner.minimap!;
     expect(box.x).toBeGreaterThan(map.x);
     expect(box.y + box.height).toBeLessThan(map.y + map.height);
-    expect(overlaps(box, corner.modeIcon!.hit)).toBe(false);
-  });
-
-  it.each([
-    [1080, 740],
-    [1280, 940],
-  ])("should stand 6 px left of the enlarged map, its middle 10 px under the map's top, at width %i (E4; FS-T3DWX G3)", (width, right) => {
-    const corner = topRightCorner(viewOf(width), ENLARGED);
-    expect(corner.name).toEqual({ right, y: 20, align: "middle" });
-    expect(corner.name!.right).toBe(corner.minimap!.x - 6);
-    expect(corner.name!.y).toBe(corner.minimap!.y + 10);
-  });
-
-  it.each([1080, 1280])("should keep its widest plate outside the enlarged map, on the view, clear of the icon, at width %i (E4)", (width) => {
-    const corner = topRightCorner(viewOf(width), ENLARGED);
-    const box = minimapNameBox(corner.name!, plateOf(WIDEST));
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThan(corner.minimap!.x);
     expect(overlaps(box, corner.modeIcon!.hit)).toBe(false);
   });
 
@@ -199,38 +189,47 @@ describe("MinimapName (FS-56CKV §Change: Map name, E3–E7)", () => {
     expect(texts[0].resolution).toBeGreaterThan(0);
   });
 
-  // E7: beside the enlarged map the plate meets the top centre's frames at 1080
-  it("should give way to a target frame its plate meets, and show again when the frame goes (E7)", () => {
+  /** The name's plate as the stage measures it: the widest place's. */
+  const sized = (words: string) => {
     const { stage, texts } = fakeStage();
-    const name = new MinimapName(stage, "The First Floor");
-    Object.assign(texts[0], { width: plateOf("The First Floor").width, height: plateOf("The First Floor").height });
-    const at = topRightCorner(viewOf(1080), ENLARGED).name!;
-    name.place(at);
-    for (const size of [TARGET_FRAME, TARGET_BOSS_FRAME]) {
-      name.giveWay([targetFrameRect(540, size)]);
-      expect(texts[0].visible).toBe(false);
-      expect(name.shown).toBe(false);
-      name.giveWay([null]);
-      expect(texts[0].visible).toBe(true);
-    }
+    const name = new MinimapName(stage, words);
+    Object.assign(texts[0], plateOf(words));
+    return { name, text: texts[0] };
+  };
+
+  // E7 stands: hidden while its plate meets a shown cover, wherever it is placed
+  it("should give way to a cover its plate meets, and show again when the cover goes (E7, F4)", () => {
+    const { name, text } = sized(WIDEST);
+    name.place(topRightCorner(viewOf(1080), ENLARGED).name!);
+    const cover = { ...name.box!, x: name.box!.x + 10, width: 20 };
+    name.giveWay([cover]);
+    expect(text.visible).toBe(false);
+    expect(name.shown).toBe(false);
+    name.giveWay([null]);
+    expect(text.visible).toBe(true);
   });
 
-  it("should stay given way when placed again while the frame is up, and stand clear of a frame it does not meet (E7)", () => {
-    const { stage, texts } = fakeStage();
-    const name = new MinimapName(stage, "The Town");
-    Object.assign(texts[0], { width: plateOf("The Town").width, height: plateOf("The Town").height });
-    name.place(topRightCorner(viewOf(1080), ENLARGED).name!);
-    name.giveWay([targetFrameRect(540, TARGET_BOSS_FRAME)]);
-    name.place(topRightCorner(viewOf(1080), ENLARGED).name!);
-    expect(texts[0].visible).toBe(false);
-    // at 1280 a short name stands clear of the normal frame (x 510–770)
-    name.place(topRightCorner(viewOf(1280), ENLARGED).name!);
-    name.giveWay([targetFrameRect(640, TARGET_FRAME)]);
-    expect(texts[0].visible).toBe(true);
-    // and in normal mode, inside the map, no frame reaches it
+  it("should stay given way when placed again while the cover is up (E7)", () => {
+    const { name, text } = sized(WIDEST);
     name.place(topRightCorner(viewOf(1080), NORMAL).name!);
-    name.giveWay([targetFrameRect(540, TARGET_BOSS_FRAME)]);
-    expect(texts[0].visible).toBe(true);
+    name.giveWay([name.box!]);
+    name.place(topRightCorner(viewOf(1080), NORMAL).name!);
+    expect(text.visible).toBe(false);
+  });
+
+  // inside the map, normal or enlarged, neither target frame reaches it at either width (F4)
+  it.each([
+    [NORMAL, 1080],
+    [NORMAL, 1280],
+    [ENLARGED, 1080],
+    [ENLARGED, 1280],
+  ])("should stay shown inside the map while either target frame stands (%o at width %i; F4)", (minimap, width) => {
+    const { name, text } = sized(WIDEST);
+    name.place(topRightCorner(viewOf(width), minimap).name!);
+    for (const size of [TARGET_FRAME, TARGET_BOSS_FRAME]) {
+      name.giveWay([targetFrameRect(width / 2, size)]);
+      expect(text.visible).toBe(true);
+    }
   });
 
   it("should go with its minimap", () => {

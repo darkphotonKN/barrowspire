@@ -5172,8 +5172,9 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     });
   });
 
-  // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
-  // "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the town's name, giving way to the queue line
+  // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字"): the town's name,
+  // giving way to the queue line; inside the enlarged map too (§Change: The enlarged map keeps its
+  // labels inside, owner 2026-11-14)
   describe("the map name (FS-56CKV §Change: Map name; I-56CKV-9)", () => {
     const nameOf = (hub: Record<string, unknown>) => (hub.minimap as { mapName?: { words: string; shown: boolean } } | undefined)?.mapName;
     const clear = (hub: Record<string, unknown>) => (hub as unknown as { keepMapNameClear(): void }).keepMapNameClear();
@@ -5187,17 +5188,22 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(nameOf(hub)?.shown).toBe(true);
     });
 
-    it("should hide it while the queue line or its Leave button meets it beside the enlarged map, and show it once they go (E7)", () => {
+    it("should stand clear of the queue line and its Leave button at the top centre inside the enlarged map, and hide only while one meets it (E7; §Change: The enlarged map keeps its labels inside, F4)", () => {
       const { hub, render, pressM } = townWithModes();
       render();
       pressM();
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(true);
-      // the 80 × 17 name stands at x 634–714, y 12–29, left of the button: the line runs over it
-      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }) });
+      // the 80 × 17 name stands inside the enlarged map's top-right, x 986–1066, y 14–31: the line
+      // and its button about the top centre leave it shown
+      Object.assign(hub, { queuePanel: line({ x: 440, y: 20, width: 200, height: 20 }), leaveButton: line({ x: 646, y: 20, width: 60, height: 20 }) });
+      clear(hub);
+      expect(nameOf(hub)?.shown).toBe(true);
+      // the rule stands: one laid over it hides it, and it is back once that goes
+      Object.assign(hub, { queuePanel: line({ x: 900, y: 10, width: 200, height: 20 }) });
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(false);
-      Object.assign(hub, { queuePanel: line({ x: 600, y: 10, width: 200, height: 20 }, false), leaveButton: line({ x: 700, y: 10, width: 60, height: 20 }) });
+      Object.assign(hub, { queuePanel: line({ x: 900, y: 10, width: 200, height: 20 }, false), leaveButton: line({ x: 1000, y: 10, width: 60, height: 20 }) });
       clear(hub);
       expect(nameOf(hub)?.shown).toBe(false);
       Object.assign(hub, { leaveButton: undefined, queuePanel: undefined });

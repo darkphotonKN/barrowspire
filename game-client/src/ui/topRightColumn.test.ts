@@ -160,7 +160,8 @@ describe("topRightColumn and the map mode icon (FS-56CKV §Change: Map mode icon
 describe("topRightColumn and the map name (FS-56CKV §Change: Map name)", () => {
   it.each([
     [NORMAL, { right: 1066, y: 14, align: "top" }],
-    [ENLARGED, { right: 740, y: 20, align: "middle" }],
+    // inside, as the normal map's (§Change: The enlarged map keeps its labels inside, F1)
+    [ENLARGED, { right: 1066, y: 14, align: "top" }],
     [{ ...MINIMAP, mode: "overlay" as const }, { right: 1055, y: 14.5, align: "middle" }],
     [null, null],
   ])("should hand on the name's place with the column (minimap: %o)", (minimap, name) => {
