@@ -954,3 +954,104 @@ words; the minimap's look, sizes or modes; the target frame, notices and the que
 change.
 
 ## Change: Fullscreen in the OPTIONS panel → FS-T3DWX
+
+## Change: The enlarged map keeps its labels inside
+Status: work-order
+Date: 2026-11-14
+
+Owner request (Nick, 2026-11-14): 「小地圖1.5倍時 區域名稱跟座標也要放在地圖內跟1倍時的位置一樣」 (with
+the minimap at 1.5 ×, the area name and the coordinates must also sit inside the map, where they sit
+on the 1 × map). The enlarged mode is 1.5 × in code (FS-1SEF0 §B). An approved owner decision,
+written `--from-thread` from the coordinator's charter; no interview. Each requirement says
+**owner**, **charter default** or **derived here**.
+
+**Why here.** This FS owns the map name and the dev readout's places (§Change: Map name, E3–E8,
+E11). FS-T3DWX § Change: The top-right HUD fills the button's spot, G3, moved the enlarged map's
+pair right by the old button's width but kept them outside the map; it carries a pointer stub to
+this section. No thin line changes: the name and the readout are the minimap's labels, not
+capabilities of their own.
+
+**Supersedes:** §Change: Map name E4 (the name left of the enlarged map), E8's "Enlarged: left of
+the map name" bullet, E11 (the readout and the name on one line beside the map) and the parts of
+E7, the Acceptance Criteria and the Edge States that place either of them beside the enlarged map;
+FS-T3DWX G3's name and readout (the enlarged map itself does not move). E3, E8's normal, overlay
+and no-map bullets, E9, FS-T3DWX G4 (the overlay) and G5 (no map) are unchanged.
+
+**Facts (read 2026-11-14 on main 6328e797).** The enlarged map is 324 × 162 at (W − 334, 10): x
+746–1070, y 10–172 at width 1080; x 946–1270 at 1280. Its map mode icon is a 9 × 9 box at (map x +
+4, map bottom − 13), its hit 2 px wider each way (§Change: Map mode icon, D2, D5). The boss target
+frame is the widest thing at the top centre, x 351–729 at 1080 and 451–829 at 1280, from y 10
+(FS-48CTQ §E.14). `minimapNamePlace` (`ui/minimapName.ts`) and `positionReadoutPlace`
+(`ui/positionReadout.ts`) each keep one branch for the enlarged map, fed by `MINIMAP_NAME.beside`,
+`POSITION_READOUT.beside`, and the run scene's `enlarged` flag and name box.
+
+### Requirements
+
+F1. **Enlarged: the name inside the map's top-right, by the normal map's rule (E3).** Right-aligned,
+    its plate's top-right `MINIMAP.inset` (4) px in from the enlarged map's own top and right edges:
+    at 1080 the plate's right edge 1066, its top 14; at 1280 1266 and 14. Measured from the enlarged
+    map's rect, so the same rule places it in either size. **(owner)**
+F2. **Enlarged: the readout inside the map's bottom-right, by the normal map's rule (E8).**
+    Right-aligned, its plate's bottom-right `MINIMAP.inset` (4) px in from the enlarged map's own
+    bottom and right edges: at 1080 1066 and 168; at 1280 1266 and 168. It no longer depends on the
+    name: with or without a name it stands there. **(owner)**
+F3. **Clear of each other and of the icon.** With the widest floor name and the widest readout, at
+    1080 and 1280, both plates lie inside the enlarged map, neither meets the other, and neither
+    meets the map mode icon's hit in the map's bottom-left. **(derived here: the 162 px height
+    leaves more room between the two than the normal map's 108)**
+F4. **The give-way rule stands.** Each is still hidden while its plate overlaps a shown target
+    frame (a run) or the town's queue line or its Leave button (E7, and E11's give-way for the
+    readout), and shown again when that goes. Inside the enlarged map no target frame reaches them
+    (the boss frame ends at x 729 at 1080 and 829 at 1280, the map starts at 746 and 946), so while
+    a frame stands they now stay shown. **(derived here; the coordinator: "inside the map they
+    should rarely meet it")**
+F5. **Nothing else moves.** The normal map's name and readout (E3, E8), the overlay's (FS-T3DWX
+    G4), the no-map readout (G5), the floor line's rule (E9), the look of both (E2, E8), the map's
+    sizes and place, and the map mode icon and its hint are as they were. **(charter default)**
+F6. **What only placed them outside goes.** The name's `beside` (its middle under the enlarged
+    map's top), the readout's `beside` (its gap left of the name), the readout's enlarged branch and
+    its reading of the enlarged flag and of the name's plate are removed where nothing else uses
+    them. **(charter default)**
+F7. **Docs.** The design guideline's map section and `game-client/CONTEXT.md`'s **Map name** say
+    the name and the readout stand inside the map in normal and enlarged mode alike. No gallery
+    card (FS-1819Q R3). **(charter default)**
+
+### Acceptance Criteria
+
+- [ ] Enlarged, at 1080 and 1280, in a run, the town and a field: the name's plate top-right at
+      (map right − 4, map top + 4), 1066/1266 and 14, the same rule as the normal map's.
+- [ ] Enlarged, at 1080 and 1280, in a run: the readout's plate bottom-right at (map right − 4,
+      map bottom − 4), 1066/1266 and 168, with a name and without one; the same rule as the normal
+      map's.
+- [ ] The widest name and readout inside the enlarged map, clear of each other and of the map mode
+      icon's hit, at 1080 and 1280.
+- [ ] With the map enlarged at 1080, a shown boss or normal target frame leaves both shown; a cover
+      laid over either still hides it, and it is back once the cover goes.
+- [ ] Normal, overlay and no map: the name and the readout where they were (E3, E8; FS-T3DWX G4,
+      G5).
+- [ ] No `MINIMAP_NAME.beside`, `POSITION_READOUT.beside`, or enlarged branch in
+      `positionReadoutPlace` is left in `game-client/src`.
+- [ ] The guideline's map section and `CONTEXT.md`'s **Map name** match.
+- [ ] Typecheck, lint, the token fence and the full vitest suite pass.
+- [ ] **Owner's look (HITL):** with the map enlarged, in the run, the town and a field, at a
+      windowed and a fullscreen size, the name in the map's top-right and (in the run) the
+      coordinates in its bottom-right, as on the normal map; a boss or a hovered monster's frame
+      leaves them shown.
+
+### Edge States
+
+- **The name over the enlarged diamond:** as on the normal map (§Change: Map name, Edge State
+  "Normal mode on floor 1"), a long name may lie over the floor diamond's upper-right edge by a few
+  px. Accepted: the owner asked for the same place.
+- **The readout's text changes every frame:** right-aligned, so it grows to the left, toward the
+  map mode icon; its widest stays clear of the icon (F3).
+- **M pressed:** both jump with the map, to their new place at once, no tween; normal ↔ enlarged
+  keeps them in the same corners, only further from the map's left and bottom.
+- **Resize:** re-placed and re-rasterised with the corner (FS-ZAJMH R5), as before.
+- **A minimap with no name** (none today): the readout still stands in the bottom-right, since
+  its place no longer reads the name's.
+
+### Out of Scope
+
+The overlay and no-map places; the map's sizes, modes or look; the name's words; the readout's
+words; the target frame, the notices and the queue line; any server change.
