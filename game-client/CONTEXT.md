@@ -320,7 +320,7 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   ground plan, wall-piece sheets, roofs and the HUD's Indoor/Outdoor label on or off, ambient,
   perimeter wall and run dressing. The indoor blackout is no world theme's choice: every run takes it. A client constant, never on the wire, never a game rule. Always say *world* theme:
   bare "theme" in this client means the design-token theme (`src/utils/theme.ts`, `BARROW`,
-  `docs/theming_plan.md`), which every world theme draws its colours from.
+  `docs/design-guideline.md`), which every world theme draws its colours from.
 - **Field look**: how the client draws a field world, keyed by field id (`FieldLook`,
   `FIELD_LOOKS` in `src/render/world/fieldLook.ts`; FS-X2F2H, FS-3QHQZ). The field counterpart of
   a world theme: it picks the ground, the fixed daylight, the horizon, and what stands on the

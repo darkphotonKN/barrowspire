@@ -7,8 +7,7 @@
 > not here. This seeds the `/spec-audit` baseline for the frontend.
 
 Living spec for the web client. Stack & conventions: [`CLAUDE.md`](CLAUDE.md). Backend it talks
-to: `api-gateway` (REST) and `game-service` (WebSocket). Project refactor context:
-[`/docs/refactor_plan.md`](../docs/refactor_plan.md).
+to: `api-gateway` (REST) and `game-service` (WebSocket).
 
 Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT STARTED
 
@@ -17,8 +16,8 @@ Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT 
 - The client is a **Next.js 15 (App Router) + React 19 + Phaser 4** app; platform/account UI
   is React, the actual escape-run is Phaser. State is **Zustand**; networking is **native
   WebSocket + a REST `apiClient`**.
-- It implements the **current escape-run + platform** surface only. The MMO-refactor HUB world
-  and hub↔instance handoff are **not** present (⏳, see refactor plan).
+- It implements the **current escape-run + platform** surface plus the **hub** (see
+  [Hub](#hub) and FS-29KSH). Handoff to another server is **not** present yet (FS-K2HKP).
 - `socket.io-client` is a dependency but **unused** — real transport is native WebSocket. No
   socket.io-vs-gorilla mismatch exists.
 
@@ -331,7 +330,7 @@ All pages are `'use client'`; root layout wraps every page in `AuthGuard` → `H
 > REVIEW: client expects `exit_door_unlocked` and an `interact {success,message}` reply; the
 > game-service spec didn't surface those outbound messages — verify the server actually emits them.
 
-## Reference — refactor-plan intent
+## Reference — MMO-refactor intent
 
 - **HUB world client** — shared social/staging space UI; none exists (only the escape-run world).
 - **Hub ↔ instance handoff** — background the hub WS, connect to the instance WS, return on

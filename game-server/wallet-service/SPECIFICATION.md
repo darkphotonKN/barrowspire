@@ -7,7 +7,7 @@
 
 Living spec. Describes **behavior, entities, states, invariants, and contracts** — not
 code or file paths. Per-table detail lives in
-[`docs/schema/`](docs/schema/). Cross-service architecture context: [`/docs/refactor_plan.md`](../../docs/refactor_plan.md).
+[`docs/schema/`](docs/schema/).
 
 ## Purpose
 
