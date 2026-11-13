@@ -715,8 +715,10 @@ func TestCreateMonsterEntity_EliteHasMoreHealthAndDamage(t *testing.T) {
 	assert.Equal(t, "Dread Ghoul", monster.Name)
 }
 
-// The broadcast names every monster as the server authored it: the demon as the
-// boss, an elite with its prefix, the rest plain. FS-77AB6 §Requirements 32.
+// The broadcast names every monster as the server authored it: the champion as
+// the boss, an elite with its prefix, the rest plain. A blood demon the top
+// floor may also roll (FS-VHGE7 §A R7) is not counted, so no seed decides the
+// outcome. FS-77AB6 §Requirements 32.
 func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 	s := rosterOnRun(t, 9, delverAt{level: 1, x: 100, y: 100})
 	s.populateMonsters(testSpireHeight, true, nil)
@@ -732,6 +734,8 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 	bosses := 0
 	for _, m := range state.Monsters {
 		switch {
+		case components.MonsterArchetype(m.Archetype) == components.MonsterArchetypeBloodDemon:
+			assert.True(t, m.Boss, "a blood demon is a boss beside the champion")
 		case m.Boss:
 			// the top floor's champion, a tier-1 variant at a boss's level
 			bosses++
