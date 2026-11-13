@@ -1,6 +1,6 @@
 ---
 id: I-GV8WN-13
-status: open
+status: done
 implements: FS-GV8WN
 blocked_by: [I-GV8WN-12]
 labels: [blocked]
@@ -30,7 +30,7 @@ client reload.
 
 ## Acceptance Criteria
 
-- [ ] Nick's look passes, or each finding is written back as an FS amendment or a new issue.
+- [x] Nick's look passes (owner, 2026-11-13: 「看起來沒問題 並回main」), or each finding is written back as an FS amendment or a new issue.
 
 ## Blocked By
 

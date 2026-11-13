@@ -369,7 +369,7 @@ for tests only). Client slices are agent lane.
 - **Copy:** never "離開風險自負 / 可能拿不到". Once pending, delivery is guaranteed (R21).
 
 ## Change: The settlement record scrolls
-Status: work-order
+Status: shipped
 Date: 2026-11-13
 
 Owner, 2026-11-13: 「遊戲進塔後逃離的結算視窗 東西太多時會顯示 and 11 more 我想要變成捲軸可以看到全部」 (the
