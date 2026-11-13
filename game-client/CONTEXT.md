@@ -74,9 +74,10 @@ translation belongs to the surface that renders words.
   replaces one with another (`WORLD_SCENES`). Not the main menu or character creation.
 - **UI scene** — the one Phaser scene (`UIScene`) drawn over every world scene and under the
   disconnect notice, holding the interface the worlds share: in phase 1 the corner row, the ESC
-  menu with OPTIONS, and the interface sounds (FS-TQZ5J, ADR-0081). It outlives world switches and
-  sleeps outside the worlds. It and the world scenes talk only through the **UI bridge**, a typed
-  channel: the world reports its state, the UI scene sends requests.
+  menu with OPTIONS, the interface sounds and the town's NPC dialogue card (FS-TQZ5J, ADR-0081). It
+  outlives world switches and sleeps outside the worlds. It and the world scenes talk only through
+  the **UI bridge**, a typed channel: the world reports its state and shows its dialogue as plain
+  data, the UI scene sends requests (a dialogue row picked is its id).
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.

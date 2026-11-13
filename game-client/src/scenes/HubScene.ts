@@ -39,8 +39,6 @@ import { HubGear, gearAsCharacter } from "@/ui/HubGear";
 import { PurseReader } from "@/ui/purse";
 import { useMailboxStore } from "@/stores/mailboxStore";
 import { apiClient } from "@/utils/api";
-import { showDialogueCard } from "@/ui/npcDialogue";
-import type { MenuTones } from "@/ui/menuPanel";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -155,6 +153,7 @@ import {
   NO_UI,
   answering,
   reportWorld,
+  type DialogueSpeaker,
   type WorldBlockers,
   type WorldFacts,
   type WorldSide,
@@ -372,7 +371,7 @@ export interface DialogueChoice {
   act?: (scene: HubScene) => void;
   /** The dialogue stays up after the pick: a reply is being waited for. */
   stays?: boolean;
-  /** Whether it can be picked now, read live each time it is drawn or pressed; omitted means always. */
+  /** Whether it can be picked now, read each time the dialogue is shown or a choice picked; omitted means always. */
   enabled?: (pending: Pending) => boolean;
   /** Picking it turns the page: the same speaker goes on with this, instead of the box closing. */
   next?: () => Dialogue;
@@ -521,18 +520,21 @@ const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
 };
 
 /**
- * The hub's tokens for its dialogue card's rows, the shared menu chrome's: charcoal panel, brass
- * hairline, amber to press, arcane to go back, vellumDark while dimmed, vellum under the pointer. The
- * ESC menu wears the same, as the UI scene draws it (`MENU_LOOKS`, FS-TQZ5J R16).
+ * The dialogue the town has open (FS-TQZ5J A2 R29): who speaks, cut once as it opens, and what they
+ * say and offer. The UI scene draws it from the data the town shows of it; the choices' doings stay here.
  */
-const MENU_TONES: MenuTones = {
-  panel: BARROW_HEX.charcoal,
-  frame: BARROW_HEX.brass,
-  text: BARROW_HEX.vellum,
-  dim: BARROW_HEX.vellumDark,
-  actionable: BARROW_HEX.amber,
-  cancel: BARROW_HEX.arcane,
-};
+interface OpenDialogue {
+  /** Who was spoken to: a turned page cuts their bust again, as a fresh card always has. */
+  who: Speaker;
+  speaker: DialogueSpeaker;
+  dialogue: Dialogue;
+}
+
+/** Who speaks: their name, and the figure the player walked up to, if they are one. */
+interface Speaker {
+  name: string;
+  entityId?: NPCState["entity_id"];
+}
 
 /**
  * One player as the scene sees them.
@@ -632,19 +634,11 @@ export class HubScene extends Phaser.Scene {
    */
   private npcs = new Map<string, NPCView>();
   /**
-   * Whose dialogue is open, if any, what the keys do to it, and how to redraw its choices when
-   * what can be picked changes under it (a solo start sent, or refused).
+   * Whose dialogue is open, if any: the UI scene draws its card and hands back the choice picked
+   * (FS-TQZ5J A2 R29, R30); the town shows it again whenever what can be picked changes under it (a
+   * solo start sent, or refused).
    */
-  private dialogue?: Phaser.GameObjects.Container;
-  private dialogueChoices?: {
-    confirm: () => void;
-    dismiss: () => void;
-    /** The n-th actionable choice, as the number keys count them. */
-    pick: (index: number) => void;
-    retone: () => void;
-    /** The card back to its corner: the logical view changed (FS-ZAJMH R13). */
-    relayout: () => void;
-  };
+  private dialogue?: OpenDialogue;
   /** The open dialogue is the Spire door's panel, which walking out of the gate closes. */
   private doorOpen = false;
   /**
@@ -663,7 +657,7 @@ export class HubScene extends Phaser.Scene {
   onFieldGate: (destination: FieldDestination) => void = (destination) => this.enterField(destination);
   /** An enter_field has been sent and its reply has not come (FS-X2F2H §Requirements 11, 57). */
   private enteringField = false;
-  /** 1, 2, 3: one per actionable choice when a dialogue offers more than one. */
+  /** 1, 2, 3: the UI scene's menu's while it is open and its dialogue card's while one is shown; read and dropped here then. */
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
@@ -994,8 +988,10 @@ export class HubScene extends Phaser.Scene {
           letter: () => this.mailbox?.close(),
           party: () => this.partyPanel?.close(),
           gear: () => this.gear?.hide(),
-          dialogue: () => this.closeDialogue(),
+          dialogue: () => this.dismissDialogue(),
         },
+        // a row of the dialogue card, picked by the pointer or its key (FS-TQZ5J A2 R30)
+        pickDialogue: (id) => this.pickDialogue(id),
         leaveQueue: () => this.leaveQueue(),
         changeCharacter: () => this.changeCharacter(),
         // the OPTIONS Music row, applied to the town's music at once (FS-TQZ5J R19)
@@ -1107,7 +1103,6 @@ export class HubScene extends Phaser.Scene {
     this.mailbox?.relayout();
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
-    this.dialogueChoices?.relayout();
     if (this.queuePanel?.active) {
       this.queuePanel.setX(viewport.centerX);
       if (this.leaveButton?.visible) this.showLeaveButton();
@@ -1510,18 +1505,12 @@ export class HubScene extends Phaser.Scene {
       return;
     }
 
-    // While a dialogue is open the same key answers it, so a player never has to
-    // reach for the mouse to finish what the keyboard started. Its Esc is the UI scene's, which
-    // asks the town to close it (FS-TQZ5J R17).
+    // While a dialogue is open the same keys answer it, so a player never has to reach for the
+    // mouse to finish what the keyboard started: E, Enter and 1–3 are its card's, read by the UI
+    // scene, and its Esc the UI scene's step (FS-TQZ5J A2 R31, R17). The town's own are read and
+    // dropped, so a key is never acted on by both.
     if (this.dialogue) {
-      const talk = Phaser.Input.Keyboard.JustDown(this.interactKey);
-      const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
-      // every key is read, so a press is never left to answer the next frame
-      const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-
-      if (talk || confirm) this.dialogueChoices?.confirm();
-      else if (numbered >= 0) this.dialogueChoices?.pick(numbered);
-
+      this.dropDialogueKeys();
       return;
     }
 
@@ -3002,81 +2991,105 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Draws a dialogue card: who speaks (with their bust when they are a figure; the Spire's door
-   * is not), their line, and a row of choices. A choice with `next` turns the page: the same
-   * speaker goes on in a fresh card.
+   * Opens a dialogue: who speaks (with their bust when they are a figure; the Spire's door is not),
+   * their line, and a row of choices, shown to the UI scene as data (FS-TQZ5J A2 R29), which draws the
+   * card and hands back the choice picked (`pickDialogue`). A choice with `next` turns the page: the
+   * same speaker goes on in a fresh card.
    */
-  private showDialogue(
-    speaker: { name: string; entityId?: NPCState["entity_id"] },
-    { role, line, choices }: Dialogue,
-  ): void {
-    const enabled = (choice: DialogueChoice) =>
-      choice.enabled?.({
-        soloPending: this.soloPending,
-        enterPending: this.enterPending,
-        queuePending: this.queuePending,
-      }) ?? true;
-    const pick = (choice: DialogueChoice) => {
-      if (!enabled(choice)) return;
-      if (choice.next) {
-        this.closeDialogue();
-        this.showDialogue(speaker, choice.next());
-        return;
-      }
-      if (!choice.stays) this.closeDialogue();
-      choice.act?.(this);
-      // what was picked may have changed what can be picked
-      if (choice.stays) this.dialogueChoices?.retone();
-    };
-    const dismiss = () => this.closeDialogue();
-    const actionable = choices.filter((c) => c.register === "actionable");
-    const first = actionable[0];
-    const confirm = () => (first ? pick(first) : dismiss());
-    const pickNumbered = (index: number) => {
-      const choice = actionable[index];
-      if (choice) pick(choice);
-    };
-
-    // The key each choice answers to, said on its label: with one thing to do it is E (the
-    // key that opened the dialogue), with several each has its number so none is mouse-only;
-    // E and Enter still mean the first. Esc always declines.
-    const hint = (choice: DialogueChoice) => {
-      if (choice.register === "cancel") return "  [Esc]";
-      if (actionable.length === 1) return "  [E]";
-      return `  [${actionable.indexOf(choice) + 1}]`;
-    };
+  private showDialogue(speaker: Speaker, dialogue: Dialogue): void {
     // The bust is cut from whatever frame they are showing, so it is the same figure the
-    // player just walked up to, baked or placeholder.
+    // player just walked up to, baked or placeholder; read once, as the card opens.
     const body = (speaker.entityId ? this.npcs.get(speaker.entityId)?.sprite?.getByName("body") : undefined) as
       | Phaser.GameObjects.Sprite
       | null
       | undefined;
-    // Each choice is the shared menu row, stacked down the card: its hit area is a separate
-    // camera-fixed rectangle that goes down with the card (menuPanel.ts says why).
-    const card = showDialogueCard(this, {
-      name: speaker.name,
-      role,
-      line,
-      rows: choices.map((choice) => ({
-        id: choice.id,
-        label: `${choice.label}${hint(choice)}`,
-        colour: choice.register === "actionable" ? MENU_TONES.actionable : MENU_TONES.cancel,
-        onPick: () => pick(choice),
-        enabled: () => enabled(choice),
-      })),
-      portrait: body ? { texture: body.texture.key, frame: body.frame.name } : undefined,
-      tones: MENU_TONES,
-    });
-
-    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone, relayout: card.relayout };
-    this.dialogue = card.container;
+    this.dialogue = {
+      who: speaker,
+      speaker: {
+        name: speaker.name,
+        ...(dialogue.role ? { role: dialogue.role } : {}),
+        ...(body ? { portrait: { texture: body.texture.key, frame: body.frame.name } } : {}),
+      },
+      dialogue,
+    };
+    this.sendDialogue();
   }
 
+  /**
+   * The open dialogue to the UI scene, whole, as plain data (FS-TQZ5J A2 R29): sent as it opens and
+   * again whenever what can be picked changes under it, each choice's `enabled` read now.
+   */
+  private sendDialogue(): void {
+    const open = this.dialogue;
+    if (!open) return;
+    this.ui.showDialogue({
+      speaker: open.speaker,
+      text: open.dialogue.line,
+      options: open.dialogue.choices.map((choice) => ({
+        id: choice.id,
+        label: choice.label,
+        register: choice.register,
+        enabled: this.canPick(choice),
+      })),
+    });
+  }
+
+  /** Whether a choice can be picked now: its replies awaited, read live (FS-NSV3D, FS-BJNYC R21). */
+  private canPick(choice: DialogueChoice): boolean {
+    return (
+      choice.enabled?.({
+        soloPending: this.soloPending,
+        enterPending: this.enterPending,
+        queuePending: this.queuePending,
+      }) ?? true
+    );
+  }
+
+  /**
+   * The UI scene's word that a choice was picked, by the pointer or its key (FS-TQZ5J A2 R30), acted
+   * on as the pick always was: nothing while it cannot be picked; a page turned; or done, the card
+   * closing first unless it stays up for a reply, then shown again with what can be picked now. An id
+   * not on the dialogue open now is ignored. The keys that picked it are spent here too, so the town's
+   * own E, read after the UI scene's this frame, does not talk again.
+   */
+  private pickDialogue(id: string): void {
+    const open = this.dialogue;
+    const choice = open?.dialogue.choices.find((c) => c.id === id);
+    this.dropDialogueKeys();
+    if (!open || !choice || !this.canPick(choice)) return;
+    if (choice.next) {
+      this.closeDialogue();
+      this.showDialogue(open.who, choice.next());
+      return;
+    }
+    if (!choice.stays) this.closeDialogue();
+    choice.act?.(this);
+    // what was picked may have changed what can be picked
+    if (choice.stays) this.sendDialogue();
+  }
+
+  /**
+   * The UI scene's close of the dialogue: Esc's step (FS-TQZ5J R17), or E or Enter on a card with
+   * nothing to confirm (A2 R31). Its keys are spent with it, so the town's own E, read after the UI
+   * scene's this frame, does not talk again.
+   */
+  private dismissDialogue(): void {
+    this.dropDialogueKeys();
+    this.closeDialogue();
+  }
+
+  /** Takes the open dialogue down, its card with it (FS-TQZ5J A2 R29); nothing open, nothing sent. */
   private closeDialogue(): void {
-    this.dialogue?.destroy();
+    const open = this.dialogue;
     this.dialogue = undefined;
-    this.dialogueChoices = undefined;
     this.doorOpen = false;
+    if (open) this.ui.closeDialogue();
+  }
+
+  /** E, Enter and 1–3, its card's while a dialogue is open (FS-TQZ5J A2 R31): read and dropped, so none answers the town too. */
+  private dropDialogueKeys(): void {
+    if (this.interactKey) Phaser.Input.Keyboard.JustDown(this.interactKey);
+    this.dropMenuKeys();
   }
 
   /** Enter and 1–3, the UI scene's menu's while it is open (FS-TQZ5J R18): read and dropped, so none lingers. */
@@ -3204,7 +3217,7 @@ export class HubScene extends Phaser.Scene {
   private enterAnswered(): void {
     if (!this.enterPending) return;
     this.enterPending = false;
-    this.dialogueChoices?.retone();
+    this.sendDialogue();
   }
 
   /**

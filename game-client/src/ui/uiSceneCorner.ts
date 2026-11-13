@@ -10,11 +10,10 @@
  * filled its blocker, in the same scene and over the row, takes every icon's hover and press but
  * Menu's, whose plate it leaves to the icon (FS-3EBCA R18, `covers`).
  *
- * The row stands over everything the world draws, so where the world keeps the screen it holds what
- * the world's own pieces held when the row was the world's, read on each `sync` (the UI scene's every
- * frame, and at once after each press): while the town reports a dialogue open, every icon (its
- * answers' hit areas lie under the row, and no icon answers under a dialogue; the dialogue moves into
- * the UI scene in I-TQZ5J-7).
+ * Under the town's dialogue it holds nothing: the card stands in the same scene at the popup band
+ * (`uiSceneDialogue.ts`, FS-TQZ5J A2 R32), its rows' hit areas over the row, so they take their own
+ * presses by depth, as when both were the town's; what answers on the row under it is what the town
+ * refuses (R14).
  */
 
 import type { CornerIconSpec } from "./HudCorner";
@@ -23,7 +22,6 @@ import type { UiBridge, UiToggle, WorldReport } from "./uiBridge";
 
 /** The row as the UI scene keeps it. `HudCorner` is one. */
 export interface CornerRow {
-  hold(icons: readonly CornerIcon[]): void;
   relayout(): void;
   destroy(): void;
   /** Whether a screen point lies on an icon's plate, or on `icon`'s only. */
@@ -38,11 +36,8 @@ const TOGGLES: readonly UiToggle[] = ["inventory", "character", "party"];
 
 export class UiCornerRow {
   private row: CornerRow | null = null;
-  /** The world the standing row was built for, and the icons built. */
+  /** The world the standing row was built for. */
   private builtFor: WorldReport["world"] | null = null;
-  private built: CornerIcon[] = [];
-  /** The hold the row was last given, by its icons; none yet, so the first sync always gives one. */
-  private held: string | null = null;
 
   constructor(
     private readonly bridge: CornerBridge,
@@ -62,23 +57,6 @@ export class UiCornerRow {
     const icons = this.icons(report.world);
     this.row = this.build(icons);
     this.builtFor = report.world;
-    this.built = icons.map((spec) => spec.icon);
-    this.sync();
-  }
-
-  /** The row held where the world keeps the screen now, let go where it no longer does. */
-  sync(): void {
-    if (!this.row) return;
-    const held = this.heldNow();
-    const key = held.join();
-    if (key === this.held) return;
-    this.held = key;
-    this.row.hold(held);
-  }
-
-  /** Every icon under a dialogue; else none. */
-  private heldNow(): CornerIcon[] {
-    return this.bridge.world?.blockers().dialogue ? [...this.built] : [];
   }
 
   /** Whether a screen point lies on the standing row's plates, or on `icon`'s: the menu's blocker leaves Menu's (FS-3EBCA R18). */
@@ -99,8 +77,6 @@ export class UiCornerRow {
     this.row?.destroy();
     this.row = null;
     this.builtFor = null;
-    this.built = [];
-    this.held = null;
   }
 
   /**
@@ -118,12 +94,11 @@ export class UiCornerRow {
     return world === "hub" ? icons : [...icons, { icon: "mail", greyed: true }];
   }
 
-  /** A press: its answer inside the UI scene's act, unless refused; the hold read again at once. */
+  /** A press: its answer inside the UI scene's act, unless refused. */
   private send(icon: CornerIcon, answer: () => void): void {
     this.bridge.act(() => {
       if (!this.refused(icon)) answer();
     });
-    this.sync();
   }
 
   /**

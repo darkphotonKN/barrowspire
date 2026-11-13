@@ -1475,11 +1475,11 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   });
 
   it("should close the dialogue on ESC while one is open, the UI scene asking the town, and open no menu (FS-TQZ5J R17)", () => {
-    const { hub, keys, press, choice, talkTo } = hubOnStage();
+    const { hub, keys, answer, choice, talkTo } = hubOnStage();
     talkTo("storekeeper");
     const farewell = choice("farewell") as Made;
 
-    press(keys.esc);
+    answer(keys.esc);
 
     expect(farewell.destroyed).toBe(true);
     expect(hub.dialogue).toBeUndefined();
@@ -2329,7 +2329,7 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
 // and acts on the id handed back, as it acted on the choice; the card's keys are the UI scene's while
 // it is shown, the town's own E, Enter and 1–3 guarded by its dialogue, so no key answers twice.
 describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => void vi.restoreAllMocks());
 
   /** What the town last showed through the bridge, as the UI scene hears it. */
   function shownOn(bridge: import("@/ui/uiBridge").UiBridge) {
@@ -2437,13 +2437,16 @@ describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", ()
 
   it("should take its card down with no sound as the town leaves", () => {
     const { hub, ui, talkTo, choice } = hubOnStage();
+    const heard = hearWorld(hub, "hub");
     talkTo("storekeeper");
     const farewell = choice("farewell") as Made;
+    heard();
 
     hub.release("shutdown");
 
     expect(farewell.destroyed).toBe(true);
-    expect(ui().menu.isOpen()).toBe(false);
+    expect(ui().dialogue.isOpen()).toBe(false);
+    expect(heard()).toEqual([]);
   });
 });
 

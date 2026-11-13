@@ -3,7 +3,7 @@ id: I-TQZ5J-7
 status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-4]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J A2: the town's NPC dialogue card moves into the UI scene, as typed data the world hands it and an id it hands back"
 ---
 Implements FS-TQZ5J §Amendment A2 (R28–R32, R35)

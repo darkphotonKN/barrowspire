@@ -224,19 +224,17 @@ describe("the dialogue card's answers, requests to the town (FS-TQZ5J A2 R30)", 
     expect(town.asked).toEqual([{ kind: "pickDialogue", id: "dismiss" }]);
   });
 
-  it("should send each pick to the world reported now", () => {
+  it("should keep the card and send its picks on while its town reports a change", () => {
     const t = onBridge();
-    const first = aTown();
-    const later = aTown();
-    t.bridge.report(first.report);
+    const town = aTown();
+    t.bridge.report(town.report);
     t.slot.show(door());
-    // the same town reporting again (its create) keeps the card: a new report is a new world
     t.bridge.changed();
+    t.slot.sync();
 
     t.press("solo");
 
-    expect(first.asked).toEqual([{ kind: "pickDialogue", id: "solo" }]);
-    expect(later.asked).toEqual([]);
+    expect(town.asked).toEqual([{ kind: "pickDialogue", id: "solo" }]);
   });
 });
 

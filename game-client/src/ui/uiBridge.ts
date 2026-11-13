@@ -13,7 +13,8 @@
  * and the world hearing it change (R10), the corner row's and the ESC menu's requests the world
  * answers (R11), and the interface sounds the world's player actions and its minimap's step reach
  * through it (R12, R22). A pointer move the UI scene took from the world reaches the world through it
- * (A1 R27).
+ * (A1 R27). The town's NPC dialogue crosses it as plain data, shown and taken down by the town, the
+ * row picked handed back as its id (A2 R29, R30).
  */
 
 import type { WorldType } from "@/assets/types/client";
@@ -30,6 +31,33 @@ export type World = WorldType;
  * ESC menu's slot is the UI scene's own (R16). The interface sounds' rule reads both (FS-WDM0X S8).
  */
 export type WorldWindows = Readonly<Omit<WindowState, "menu">>;
+
+/** Who speaks on a dialogue card (A2 R29): the name, the role under it, the frame the bust is cut from. */
+export interface DialogueSpeaker {
+  readonly name: string;
+  /** A few words of who they are, under the name. Residents and the Spire's door have none. */
+  readonly role?: string;
+  /** The frame the figure the player walked up to shows: the game's textures are one manager. */
+  readonly portrait?: { readonly texture: string; readonly frame: string | number };
+}
+
+/**
+ * One answer on a dialogue card (A2 R29): its id, handed back when it is picked; its words, bare (the
+ * UI scene puts its key on them); its register, the row's colour and key; whether it can be picked now.
+ */
+export interface DialogueOption {
+  readonly id: string;
+  readonly label: string;
+  readonly register: "actionable" | "cancel";
+  readonly enabled: boolean;
+}
+
+/** World → UI: a dialogue the world shows, whole, as plain data (A2 R29). Sent again on any change. */
+export interface ShownDialogue {
+  readonly speaker: DialogueSpeaker;
+  readonly text: string;
+  readonly options: readonly DialogueOption[];
+}
 
 /** What keeps the screen in the world (R9): the town's NPC dialogue, open. */
 export interface WorldBlockers {
@@ -75,7 +103,8 @@ export type UiClose = "letter" | "party" | "gear" | "dialogue";
  * UI → world: what the UI scene asks of the world (R11). The corner row's `toggle` of a window; an
  * Esc step's `close`; the ESC menu's rows that only the world can do (the town's and the field's
  * `leaveQueue` and `changeCharacter`, the run's `leaveRun` and `fall`); and the OPTIONS Music row's
- * `musicLevel`, which the world playing music applies at once (R19). Plain data: nothing callable.
+ * `musicLevel`, which the world playing music applies at once (R19); a dialogue card's row picked, by its
+ * id (`pickDialogue`, A2 R30). Plain data: nothing callable.
  */
 export type UiRequest =
   | { readonly kind: "toggle"; readonly window: UiToggle }
@@ -84,7 +113,8 @@ export type UiRequest =
   | { readonly kind: "changeCharacter" }
   | { readonly kind: "leaveRun" }
   | { readonly kind: "fall" }
-  | { readonly kind: "musicLevel"; readonly level: number };
+  | { readonly kind: "musicLevel"; readonly level: number }
+  | { readonly kind: "pickDialogue"; readonly id: string };
 
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
@@ -125,6 +155,7 @@ export type WorldAnswers = Partial<Record<UiToggle, () => void>> & {
   readonly leaveRun?: () => void;
   readonly fall?: () => void;
   readonly musicLevel?: (level: number) => void;
+  readonly pickDialogue?: (id: string) => void;
 };
 
 /** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
@@ -137,6 +168,8 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
         return answers.close?.[request.window]?.();
       case "musicLevel":
         return answers.musicLevel?.(request.level);
+      case "pickDialogue":
+        return answers.pickDialogue?.(request.id);
       default:
         return answers[request.kind]?.();
     }
@@ -147,6 +180,11 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
 export interface UiState {
   /** The ESC menu's slot is filled: the menu, OPTIONS or the run's Fall confirm. */
   readonly menuOpen: boolean;
+}
+
+/** What the UI scene draws for the worlds, told as the world says it (A2 R29): its dialogue, or none. */
+export interface UiScreen {
+  dialogue?(shown: ShownDialogue | null): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -198,16 +236,29 @@ export interface UiBridge extends UiActWrapper {
   play(effect: UiEffect): void;
   /** The UI scene lends the game's one player, as it is created (R22). */
   lendSounds(sounds: UiSoundPlayer): void;
+  /** The world shows a dialogue, or shows it again changed (A2 R29): the UI scene draws it at once. */
+  showDialogue(shown: ShownDialogue): void;
+  /** The world takes its dialogue down (A2 R29). */
+  closeDialogue(): void;
+  /** Hears what the worlds say to the screen from now on (A2 R29). Returns the stop. */
+  onScreen(screen: UiScreen): () => void;
 }
 
 /**
- * What of the bridge a world scene reaches (R10, R12): its player actions and its minimap's step, the
- * UI's state its guards read, and its word that its report changed.
+ * What of the bridge a world scene reaches (R10, R12, A2 R29): its player actions and its minimap's
+ * step, the UI's state its guards read, its word that its report changed, and its dialogue.
  */
-export type WorldUi = Pick<UiBridge, "act" | "play" | "ui" | "changed">;
+export type WorldUi = Pick<UiBridge, "act" | "play" | "ui" | "changed" | "showDialogue" | "closeDialogue">;
 
-/** A world's UI in a game lent no bridge: each action runs as it is, nothing plays, no menu is open. */
-export const NO_UI: WorldUi = { act: (run) => run(), play: () => {}, ui: { menuOpen: false }, changed: () => {} };
+/** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
+export const NO_UI: WorldUi = {
+  act: (run) => run(),
+  play: () => {},
+  ui: { menuOpen: false },
+  changed: () => {},
+  showDialogue: () => {},
+  closeDialogue: () => {},
+};
 
 /** Told each world report, and none (null) as the world reported leaves. */
 export type WorldListener = (report: WorldReport | null) => void;
@@ -220,6 +271,7 @@ export class GameUiBridge implements UiBridge {
   private reported: WorldReport | null = null;
   private uiState: UiState = { menuOpen: false };
   private readonly listeners = new Set<WorldListener>();
+  private readonly screens = new Set<UiScreen>();
   private sounds: UiSoundPlayer | null = null;
 
   get world(): WorldReport | null {
@@ -273,6 +325,19 @@ export class GameUiBridge implements UiBridge {
   onWorld(listener: WorldListener): () => void {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
+  }
+
+  showDialogue(shown: ShownDialogue): void {
+    for (const screen of [...this.screens]) screen.dialogue?.(shown);
+  }
+
+  closeDialogue(): void {
+    for (const screen of [...this.screens]) screen.dialogue?.(null);
+  }
+
+  onScreen(screen: UiScreen): () => void {
+    this.screens.add(screen);
+    return () => void this.screens.delete(screen);
   }
 
   private tell(report: WorldReport | null): void {
