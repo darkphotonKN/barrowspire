@@ -625,3 +625,8 @@ chat's phase), the party panel's own lines, and the disconnect notice (its own s
 
 Sliced as I-TQZ5J-7 (the dialogue card) and I-TQZ5J-8 (the notices), each after I-TQZ5J-4, which
 first fills the popup band (2000) and settles Esc; the owner's check (I-TQZ5J-5) now waits on both.
+
+## Change: Menu, dialog and notice sounds → FS-WDM0X
+
+FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1) gives the UI scene's pieces their hover,
+press, dialog and notice sounds. It supersedes A2 R33's "it plays no sound" for the notices.

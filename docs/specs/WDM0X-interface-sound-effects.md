@@ -478,3 +478,264 @@ W4. **Replacing an effect means re-encoding its m4a.** Most players hear the m4a
 
 - Loading m4a alone, or dropping the ogg files.
 - A fallback on a decode failure (a change to Phaser's loader).
+
+## Change: Menu, dialog and notice sounds (pass 1)
+Status: work-order
+Date: 2026-11-14
+
+The owner supplied 16 more effects and their usage (charter 「核准」, 2026-11-14): a hover and a
+click for every pressable option, a back step, a toggle, a slider tick and an error for the menus,
+an open, a confirm, a heavy confirm and a cancel for the dialogs, and two notice chimes. Pass 1 wires
+every one whose place exists in the UI scene today, plus the main menu's delete confirm. The chat's
+and the party's wait for the phases that move them into the UI scene (FS-TQZ5J § Phases 3 and 7);
+they are recorded below as pass 2. Every decision is **[charter default]** unless marked *Derived*
+(a default applied to a case the charter did not name) or **[code]** (what the code forces). The
+charter's defaults that did not fit the code are listed under *Defaults that met the code*.
+
+Scoped and promoted in one run under the approved charter: no interview; the owner's usage notes
+were the scoping input. Supersedes, for what it names: S6 (refused presses, for presses on options
+only), S19's "a change plays nothing", this FS's Out of Scope lines on dialogues, slider changes,
+hover and click sounds and the main menu, and FS-TQZ5J A2 R33's "it plays no sound" (stub there).
+
+### Facts (verified 2026-11-14 on feat/client-ui-scene, c638a9fd)
+
+- **The files.** The owner's 16 new effects in `game-client/public/audio/sfx/`: mono 44.1 kHz Ogg
+  Vorbis, 0.05–1.3 s, 116 KB in all: `menu_hover` (0.08 s), `menu_click`, `menu_back`, `menu_tab`,
+  `menu_toggle_on`, `menu_toggle_off`, `menu_slider_tick` (0.05 s), `menu_error`,
+  `menu_dropdown_open`, `menu_dropdown_close`, `dialog_open`, `dialog_confirm`,
+  `dialog_confirm_heavy` (1.1 s), `dialog_cancel`, `notify` (1.0 s), `notify_important` (1.3 s).
+  S21's `afconvert` command wrote all 16 m4a copies within 3 ms of their ogg.
+- **Where the pieces live.** The ESC menu, OPTIONS and the run's Fall confirm are the UI scene's
+  menu slot (`ui/uiSceneMenu.ts`, drawn by `menuPanel.ts`, `optionsPanel.ts`); the corner row is
+  `ui/uiSceneCorner.ts` over `HudCorner`; the town's NPC dialogue card is `ui/uiSceneDialogue.ts`
+  over `npcDialogue.ts`, its options plain data from the town (`ShownDialogue`); the notices are
+  `ui/uiSceneNotices.ts`, plain data from the worlds (`Notice`). The town's envelope
+  (`MailboxEnvelope`) is still the town's, in the corner row's Mailbox slot. Every one of their
+  player presses already runs through the UI scene's `act` or the bridge's `act`.
+- **The main menu has no UI scene.** The UI scene launches on the first world entry and sleeps
+  outside the worlds (FS-TQZ5J R2–R4), so on a fresh load the main menu runs with no `UiSounds`
+  lent. The game's sound manager and audio cache are still the one game's.
+- **The delete confirm is the browser's.** The main menu's character card × asks with
+  `window.confirm("Delete character …?")`, which blocks the page until answered: OK, or Cancel
+  (and the browser's own Esc), nothing else.
+- **What the dialogue card offers.** The Spire's door: *Descend alone*, *Wait for company*,
+  *Enter as a party* (each stays up awaiting its reply, dimmed meanwhile), *Not yet*; queued, only
+  *I'll wait*. The Elder and the town folk: *Go on* (turns the page) and *Farewell*. The
+  storekeeper: *Farewell*. A resident: one actionable *Leave*, which only closes. The town opens a
+  card on E by a figure, on E in the Spire's gate and on stepping into it; it draws the door's card
+  again on a refusal and on a change of party standing, by closing and showing it.
+- **What the notices say.** No notice says "picked up". The worlds' notices are: the client's own
+  (a full bag, a locked or busy item, a full stash), the run's news (the switch thrown, the escape
+  door open, someone escaped, the server's `exit_door_unlocked`, an interact success's words), and
+  the server's refusals and errors (the queue's, the Spire's, the fields', a gear change, an equip,
+  an interact, a fall, a pile held for its killer).
+- **A new letter.** The envelope glows when the summary's newest letter is newer than the player
+  last saw (`mailboxStore.pulses`, FS-1GZGD R35): on a `mail_arrived` in the town, or on entering
+  the town with one waiting.
+
+### Requirements
+
+M1. **Sixteen more effects, loaded as the eleven are.** `UI_EFFECTS` names all 27. `PreloadScene`
+    queues every one at boot as `[m4a, ogg]` (W1), each m4a made by S21's command and committed
+    beside its ogg. The four pass-2 effects (`menu_tab`, `menu_dropdown_open`,
+    `menu_dropdown_close`, and none other) load now and play nowhere yet.
+M2. **One action, one sound.** Inside an action run through `act`, the first effect the action
+    asks for is its one sound, in place of the window rule's (S8); with none asked for, the rule's
+    plays, as before. Outside an action an effect plays at once. So a dialog pick plays its
+    `dialog_*` and never `menu_click` too, and *Not yet* closing the whole menu plays
+    `dialog_cancel`, not `settings_close` as well (S3's "at most one"). *Derived* (the charter's
+    "never double a sound", made the player's rule).
+M3. **Every play goes through the player.** Each effect plays through `UiSounds.play`: the kept
+    SFX level read at the play (S14–S16), nothing before the context runs and nothing queued (S12),
+    one sound per effect restarted on a repeat (S11), a missing file silent (S22). In the worlds
+    that is the UI scene's one player (FS-TQZ5J R22); the main menu makes its own on the same
+    game's sound manager (M14). **[code]**
+M4. **Hover has a 50 ms cooldown.** `menu_hover` does not play again within
+    `MENU_HOVER_COOLDOWN_MS` = 50 (tunable, a named export) of its last play, so a quick sweep
+    over the rows does not stack. Other effects have none.
+
+#### The mapping (pass 1)
+
+M5. **`menu_hover`**: the pointer comes onto a pressable option. Pressable means it would answer a
+    press now: a dimmed row, a dimmed arrow and the greyed Mailbox are not, so they play none.
+    - the ESC menu's rows and its × (town, field, run);
+    - OPTIONS: each slider's ◄ and ► while it can move, each step, the Fullscreen row, *Back*, the
+      × (town, field, run);
+    - the Fall confirm's rows and its × (run);
+    - the NPC dialogue card's rows (town);
+    - the corner row's Menu, Inventory, Character and Party (town, field, run), and the town's
+      envelope in its Mailbox slot (town).
+M6. **`menu_click`**: an ordinary option pressed: the ESC menu's *Options* (every world),
+    *Change character* (town, field) and *Leave the queue* (town, while queued); the dialogue
+    card's *Go on* (the Elder and the town folk). The menu's *Back* and the run's *Leave the
+    barrow* close the whole menu, so they keep `settings_close` (M7). Corner icon presses keep
+    their window's sound (S1).
+M7. **`menu_back`**: OPTIONS' *Back*, its × and Esc, each returning to the ESC menu (every
+    world). Closing the whole menu keeps `settings_close` (S5), by the Menu icon, the menu's
+    *Back*, × or Esc, or *Leave the barrow*.
+M8. **`menu_toggle_on` / `menu_toggle_off`**: the OPTIONS Fullscreen row pressed, by the way it
+    asks to go: from Off `menu_toggle_on`, from On `menu_toggle_off` (every world, where the frame
+    lends a fullscreen, FS-T3DWX R7). *Derived:* it plays on the press that asks, as the sound
+    answers the hand; the row's words still follow the state (FS-T3DWX R6).
+M9. **`menu_slider_tick`**: each press that moves the Music or Sound effects level: ◄, ►, a step
+    other than the level now, and ←/→ on the Music row (every world). One press plays one tick,
+    however far a step click moves it. It plays after the level is kept, so a Sound effects tick
+    is heard at the new level (level 0: silent). A step click on the level already set moves
+    nothing and plays nothing.
+M10. **`menu_error`**: a press on a dimmed or greyed option, or on an option that turns it away:
+    - a dimmed ESC menu or Fall confirm row, pressed or picked by its key: *Change character* while
+      it is asked (town, field), *Leave the barrow* while asked (run), *Fall* while asked (run);
+    - OPTIONS' ◄ at 0 and ► at 5, and ←/→ that cannot move the Music row (every world);
+    - a dimmed dialogue row (a door way awaiting its reply), pressed or picked by its key (town);
+    - the greyed Mailbox (field, run);
+    - a corner icon press that changes nothing: Party or Menu while the town's dialogue is open,
+      a window icon the world turns away (as the run's Party with a chest open), the Menu icon
+      once the run has ended with no window open (town, field, run as they arise);
+    - the town's envelope pressed while a dialogue holds the screen (town).
+
+    It replaces S6's "a refused press plays nothing" for these presses only. Hovers never play it,
+    and S6's refused hotkeys (I, B, C, T, M) stay silent: a key is not an option, and those keys
+    move to the UI scene in later phases. A number key with no row under it is no option either,
+    and plays nothing.
+M11. **`dialog_open`**: a confirm or a dialogue appears at the player's hand:
+    - the NPC dialogue card opened by the player: E by a figure, E in the Spire's gate, stepping
+      into the gate (town). The town says so (`play("dialog_open")` on the bridge), since only it
+      knows whose hand opened it; a card drawn again by the game (a refusal said by the door, a
+      party standing changed) and a page turned play nothing more. **[code]**
+    - the run's Fall confirm, opened by *Fall where you stand* (pointer or 1) (run);
+    - the main menu's delete confirm, played just before the browser asks (main menu).
+M12. **`dialog_confirm`**: an ordinary yes that sends the player on: the door's *Descend alone*,
+    *Wait for company* and *Enter as a party* (town). The town marks each option's sound in the
+    dialogue's data (M15).
+M13. **`dialog_cancel`** and **`dialog_confirm_heavy`**:
+    - `dialog_cancel`: a dialog cancelled or closed by the player: the card's *Farewell*, *Not
+      yet*, *I'll wait*, a resident's *Leave*, Esc on a card, and E or Enter on a card with nothing
+      to confirm (town); the Fall confirm's *Not yet*, its × and Esc (run); the delete confirm
+      answered Cancel (main menu).
+    - `dialog_confirm_heavy`: the irreversible: the Fall confirm's *Fall* (run); the delete
+      confirm answered OK (main menu).
+    - A card the game closes (the door's on stepping out of the gate or the queue's answer, a
+      world leaving) plays nothing (S4).
+M14. **The main menu wires its own.** `MainMenuScene` makes a `UiSounds` in `create` from its own
+     `sound` and the shared SFX store, with no windows, and its delete press plays `dialog_open`,
+     asks, then `dialog_confirm_heavy` or `dialog_cancel` by the answer. The ask itself is a
+     Phaser-free function taking the asking and the playing, so it is tested on its own. One
+     scene: nothing is duplicated into the UI scene. **[charter default; code]**
+M15. **A dialogue option says its sound.** `DialogueOption` gains an optional `sound`:
+     `"click" | "confirm" | "heavy" | "cancel"`, plain data like the rest (ADR-0081). Without one,
+     a `cancel` row is `"cancel"` and an actionable row `"click"`. The UI scene plays `menu_click`,
+     `dialog_confirm`, `dialog_confirm_heavy` or `dialog_cancel` for it as its pick is sent, by
+     the pointer or its key. The town marks the door's three ways `"confirm"` and a resident's
+     *Leave* `"cancel"` (it only closes). *Derived.*
+M16. **`notify`** and **`notify_important`**, as a notice is drawn:
+     - `notify_important`: a notice relaying the server's refusal or error: the queue's, the
+       Spire's and the fields' refusals said in passing, *Leave the queue*'s and *Change
+       character*'s errors (town, field); a gear change the server refused (town); a pile's
+       refusal (field); an equip refused, an interact refused or waiting ("The stair waits…",
+       "It will not open."), a fall refused (run).
+     - `notify`: every other notice: the client's own (a full bag on a pickup or an unequip, a
+       locked or busy item, a full stash) and the run's news (the switch thrown, the escape door
+       open, someone escaped, `exit_door_unlocked`, an interact success's words).
+     - `notify` also plays as the town's envelope glows for a newer letter (town).
+
+     `Notice` gains an optional `important` (plain data); the worlds' notice ports take it as a
+     second argument. A notice said while no world is reported is not drawn and plays nothing.
+     *Derived* from the charter's "server-sent warning notices" (see *Defaults that met the code*).
+
+### Pass 2 (recorded, not built)
+
+- **The chat (FS-TQZ5J phase 7):** `menu_tab` for the chat window's channel tabs;
+  `menu_dropdown_open` / `menu_dropdown_close` for the canvas channel picker (FS-J267Q) opening and
+  closing; `menu_hover` on its options; `menu_error` for invalid chat input.
+- **The party (FS-TQZ5J phase 3):** the party invite prompt appearing (`notify_important`, the
+  owner's "the party invite is PASS 2"); the ready check (its sounds to be mapped then); the party
+  panel's buttons and invite field.
+- **Later:** dismantle and discard (`dialog_confirm_heavy`, when they exist).
+
+### Defaults that met the code (reported to the owner)
+
+1. *"Gather the delve"* is no label in the code. The door's ways are *Descend alone*, *Wait for
+   company* (the queue) and *Enter as a party*; all three play `dialog_confirm` (M12).
+2. *"Fall now"* is labelled *Fall*. It plays `dialog_confirm_heavy` (M13).
+3. *Not yet* on the Fall confirm closes the whole menu, which S5 gave `settings_close`; the charter
+   names it `dialog_cancel`. It plays `dialog_cancel` only (M2), as do its × and Esc.
+4. *Leave the barrow* is an ESC menu row (`menu_click`) that closes the whole menu
+   (`settings_close`). It keeps `settings_close`, the charter's rule for closing the whole menu.
+5. No "pickup" notice exists: the pickup notices are refusals. A full bag (the client's) plays
+   `notify`; a pile held for its killer (the server's) plays `notify_important` by M16's rule.
+6. No server "system warning" exists as a screen notice. `notify_important` goes to the notices
+   that relay the server's refusals and errors (M16), the nearest reading of "server-sent warning
+   notices". The chat's server notices (`chat_notice`) are chat's, pass 2.
+7. The main menu's delete confirm is the browser's own `confirm()`, so its look and its × are the
+   browser's; Cancel and the browser's Esc both answer Cancel.
+8. The main menu has no UI scene, so it plays through a player of its own on the game's one sound
+   manager and the same SFX level (M14), not the UI scene's.
+9. The main menu's other confirm (entering as another character than the party's, FS-G4VMQ C11)
+   was not named; it plays nothing in pass 1.
+
+### Acceptance Criteria
+
+- [ ] `UI_EFFECTS` names 27 effects; `PreloadScene` queues each as
+      `[/audio/sfx/<name>.m4a, /audio/sfx/<name>.ogg]` under `sfx:<name>` and still reaches the
+      main menu; `public/audio/sfx/` holds the 16 new ogg and m4a files, each m4a AAC in `m4af`,
+      mono, 44.1 kHz, within 10 ms of its ogg.
+- [ ] Inside `act`, the first effect asked for plays in place of the rule's, once; with none
+      asked for the rule's plays; outside `act` an effect plays at once (table-driven).
+- [ ] `menu_hover` played twice within 50 ms plays once; again after 50 ms plays again; the
+      cooldown is a named export; other effects have none.
+- [ ] The ESC menu, OPTIONS and the Fall confirm, in each world: M5's hovers on enabled options
+      only; *Options*, *Change character*, *Leave the queue* play `menu_click`; OPTIONS' *Back*,
+      × and Esc play `menu_back`; the menu's *Back*, ×, Esc, the Menu icon and *Leave the barrow*
+      play `settings_close` only; *Fall where you stand* plays `dialog_open`; *Fall* plays
+      `dialog_confirm_heavy`; *Not yet*, its × and Esc play `dialog_cancel` only.
+- [ ] OPTIONS: each level move by ◄, ►, a step or ←/→ plays one `menu_slider_tick`, a Sound effects
+      tick at the new level; a step on the current level plays nothing; ◄ at 0, ► at 5 and ←/→ at
+      the end play `menu_error`; Fullscreen plays `menu_toggle_on` from Off and `menu_toggle_off`
+      from On.
+- [ ] A dimmed row pressed or picked by its key, in the menu, the Fall confirm or the dialogue
+      card, plays `menu_error` and sends nothing; a hover on it plays nothing.
+- [ ] The corner row: a hover on Menu, Inventory, Character or Party plays `menu_hover`; on the
+      greyed Mailbox nothing, its press `menu_error`; a press that changes no window plays
+      `menu_error`; a press that does keeps its window's one sound.
+- [ ] The dialogue card: its picks play `dialog_confirm` (the door's ways), `menu_click` (*Go
+      on*), `dialog_cancel` (*Farewell*, *Not yet*, *I'll wait*, a resident's *Leave*, Esc, E or
+      Enter with nothing to confirm), each once, by the pointer or its key; the town plays
+      `dialog_open` on E by a figure, E in the gate and stepping into it, and nothing on a card
+      drawn again or a page turned.
+- [ ] The town's envelope: hover `menu_hover`; a press under a dialogue `menu_error`; a newer
+      letter's glow `notify`.
+- [ ] A notice drawn plays `notify`, or `notify_important` when it carries `important`; each
+      M16 call site says it as listed; nothing plays for a notice with no world reported.
+- [ ] The main menu: the delete press plays `dialog_open` then `dialog_confirm_heavy` on OK or
+      `dialog_cancel` on Cancel, and deletes only on OK.
+- [ ] Nothing plays before the context runs, and nothing late (S12, unchanged).
+- [ ] No server, proto or gateway change. Full client vitest, `tsc --noEmit`, `npm run lint` and
+      `npm run lint:fence` pass.
+- [ ] The owner's listening check (HITL) passes, with the table of where each sound plays.
+
+### Edge States
+
+- **A quick sweep.** Rows passed over within 50 ms of the last hover play no hover; the next row
+  after the gap does.
+- **A hover just after a press.** The press's sound and a hover may overlap (different effects).
+- **Fullscreen refused.** A press held too long is refused by the browser (FS-T3DWX R6): its
+  `menu_toggle_on` has played, and the row stays Off.
+- **Sound effects at 0.** Every effect is silent, its ticks too; the slider still moves.
+- **A run notice under the menu.** It plays as it is drawn, whatever stands over it.
+- **Several notices at once.** Each plays; one of the same effect restarts the other (S11).
+- **The delete confirm's modal.** The browser's `confirm()` blocks the page: `dialog_open` is
+  started on the audio thread just before it, and the answer's sound after it. If a browser
+  holds the audio while its modal is up, `dialog_open` may be cut; the listening check listens.
+- **The main menu before the first gesture.** A delete press is a gesture, but its resume is
+  async (S12): its `dialog_open` may be silent on the very first press of the page.
+- **A door way awaiting its reply.** Its row is dimmed: a second press plays `menu_error`; the
+  reply that redraws the card plays nothing.
+
+### Out of Scope
+
+- Pass 2 (above): the chat's and the party's sounds.
+- Hover or error sounds on the map mode icon, the gear overlay, the party panel, the letter
+  panel, the minimap or any world piece not named in M5–M10.
+- Sounds on the world's own hotkeys refused by a guard (S6 stands for keys).
+- The main menu's other buttons and the switch confirm; character creation; the roster.
+- Re-mastering or trimming the owner's files; per-effect volumes.
