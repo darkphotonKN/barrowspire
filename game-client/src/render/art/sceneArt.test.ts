@@ -72,20 +72,24 @@ describe("the scene art table (FS-C4JWH §A)", () => {
     expect(fieldArt("toString")).toEqual(["wildlife"]);
   });
 
-  // A variant group the art lane has not baked yet (FS-C8VM7 §H) is answered by its stand-in
-  // (§G R44, held by the coverage below), so it is the one kind of group the manifest may lack.
-  it("should name only groups the shipped manifest has, or a variant group drawn by its stand-in until baked", () => {
+  it("should name only groups the shipped manifest has, every variant group among them (FS-C8VM7 §H)", () => {
     const groups = bakedGroups(manifest);
-    for (const group of SCENE_SCOPED_GROUPS)
-      if (!groups.has(group)) expect(VARIANT_GROUPS).toContain(group);
-    for (const group of ["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife"])
-      expect(groups).toContain(group);
+    for (const group of SCENE_SCOPED_GROUPS) expect(groups, group).toContain(group);
+    for (const group of VARIANT_GROUPS) expect(groups, group).toContain(group);
   });
 });
 
 describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
-  it("should hold the 17 resident pages and no scene-scoped one at boot", () => {
+  it("should hold the 19 resident pages and no scene-scoped one at boot", () => {
+    expect(RESIDENT_ART_PAGES).toHaveLength(19);
     expect(sorted(sceneAtlases(manifest, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
+  });
+
+  it("should keep the tome and altar's group resident, and no variant group (FS-3103M §I, ADR-0081)", () => {
+    const boot = sceneAtlases(manifest, RESIDENT_ART).map(atlasGroup);
+    expect(boot).toContain("summoning");
+    expect(SCENE_SCOPED_GROUPS.has("summoning")).toBe(false);
+    for (const group of VARIANT_GROUPS) expect(boot).not.toContain(group);
   });
 
   it.each([
@@ -341,10 +345,19 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
     });
 
     it("should report a variant with no stand-in whose sheet is not baked (FS-C8VM7 §G R44)", () => {
+      const unbaked = structuredClone(manifest);
+      delete unbaked.sheets.creature_ogre_base;
+      const noStandIn = VARIANT_ART.filter((entry) => entry.archetype !== "ogre");
+      expect(
+        outsideScene(unbaked, SCENE_ART.BarrowspireScene, entrySheets(unbaked, ["ogre", "ghast"], noStandIn)),
+      ).toEqual(["creature_ogre_base"]);
+    });
+
+    it("should report a baked variant with no stand-in, its group not one the run preloads (FS-C8VM7 §G R44)", () => {
       const noStandIn = VARIANT_ART.filter((entry) => entry.archetype !== "ogre");
       expect(
         outsideScene(manifest, SCENE_ART.BarrowspireScene, entrySheets(manifest, ["ogre", "ghast"], noStandIn)),
-      ).toEqual(manifest.sheets.creature_ogre_base ? [] : ["creature_ogre_base"]);
+      ).toEqual(["creature_ogre_base"]);
     });
 
     it("should report an archetype with a look that no scene meets", () => {
@@ -392,12 +405,12 @@ describe("the Spire variants' groups (FS-C8VM7 §G R41, R44; ADR-0081)", () => {
     expect(standIn("ashen_archer")).toEqual({ archetype: "bone_archer" });
   });
 
-  // Vacuous until the art lane bakes the variant sheets (FS-C8VM7 §H); from then on it holds each
-  // to its own group, never `creatures` or `boss` (ADR-0081 Consequences).
-  it("should find each baked variant sheet on its own group's pages only", () => {
+  // never `creatures` or `boss`, so a floor fetches and evicts each on its own (ADR-0081 Consequences)
+  it("should find each variant sheet baked, on its own group's pages only (FS-C8VM7 §H)", () => {
     for (const { group, archetype } of VARIANT_ART) {
       const sheet = manifest.sheets[monsterLook(archetype).sheet];
-      if (sheet) expect(new Set(sheetAtlases(sheet).map(atlasGroup))).toEqual(new Set([group]));
+      expect(sheet, archetype).toBeDefined();
+      expect(new Set(sheetAtlases(sheet).map(atlasGroup)), archetype).toEqual(new Set([group]));
     }
   });
 });

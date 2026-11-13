@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { shippedManifest } from "@/render/art/artLoader.standin";
 import { ArtLibrary } from "@/render/art/library";
+import { SCENE_ART, sceneAtlases } from "@/render/art/sceneArt";
 import type { ArtAnimation, ArtManifest } from "@/render/art/manifest";
 import { MARKER_BAR, MARKER_DEPTH } from "@/render/markers";
 import { CHIP_DRAIN_MS, CHIP_HOLD_MS } from "@/render/markers/healthBar";
@@ -13,6 +14,7 @@ import type { footprintHitArea } from "@/render/world/footprint";
 import type { MonsterArchetype, MonsterState } from "@/types/gameState";
 import {
   FALLBACK_LOOK,
+  MONSTER_LOOKS,
   PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
@@ -103,6 +105,17 @@ const baked = new ArtLibrary(
   ) as ArtManifest,
   quiet,
 );
+
+/**
+ * The run's art before any floor-scoped group is fetched: the shipped manifest, with only the pages
+ * the run preloads in (the resident ones, `creatures` and `boss`; FS-C8VM7 §G R41).
+ */
+const runArt = () =>
+  new ArtLibrary(
+    shippedManifest(),
+    quiet,
+    new Set(sceneAtlases(shippedManifest(), SCENE_ART.BarrowspireScene)),
+  );
 
 /** A stand-in for the scene: records every object it hands out. */
 function fakeStage(backing = { scale: 1 }) {
@@ -595,7 +608,7 @@ describe("size reads as threat tier (req 35)", () => {
     return (crown * monsterScale(look, baked)) / player;
   };
 
-  it.each([
+  it.each<[string, { min: number; max: number }]>([
     ["ghoul", SIZE_TIERS.fodder],
     ["zombie", SIZE_TIERS.fodder],
     ["ghost", SIZE_TIERS.fodder],
@@ -605,11 +618,40 @@ describe("size reads as threat tier (req 35)", () => {
     ["demon", SIZE_TIERS.boss],
     ["blood_demon", SIZE_TIERS.boss],
     ["daagon", SIZE_TIERS.boss],
+    // the tiered roster's variants, each off its own baked sheet (FS-C8VM7 §F R34)
+    ...(["ghast", "ravener", "ashen_archer", "wight_archer", "plague_thrall", "blightborn", "shade", "phantom", "banshee"].map(
+      (a): [string, { min: number; max: number }] => [a, SIZE_TIERS.fodder],
+    )),
+    ...(["goblin", "goblin_shield", "goblin_cutthroat", "goblin_cutthroat_shield", "goblin_reaver", "goblin_reaver_shield", "goblin_warchief", "goblin_warchief_shield"].map(
+      (a): [string, { min: number; max: number }] => [a, SIZE_TIERS.fodder],
+    )),
+    ...(["cave_troll", "blood_troll", "ogre", "ogre_mauler", "ogre_tyrant", "dark_warrior", "dark_reaper"].map(
+      (a): [string, { min: number; max: number }] => [a, SIZE_TIERS.brute],
+    )),
   ])("should stand a %s inside its tier's band", (archetype, tier) => {
     const ratio = heightOverPlayer(archetype);
     expect(ratio).toBeGreaterThanOrEqual(tier.min);
     expect(ratio).toBeLessThanOrEqual(tier.max);
   });
+
+  it.each(["ogre", "ogre_mauler", "ogre_tyrant"])("should stand an %s at the brute band's top, 1.5x, above the troll", (ogre) => {
+    expect(heightOverPlayer(ogre)).toBeCloseTo(1.5);
+    expect(heightOverPlayer(ogre)).toBeGreaterThan(heightOverPlayer("troll"));
+  });
+
+  // its baked crown is about 1.44x the players' (111 to their 77): the brute aim draws it at 1.4
+  it.each(["dark_warrior", "dark_reaper"])("should stand a %s at the brute aim, between the troll and the ogre", (warrior) => {
+    expect(heightOverPlayer(warrior)).toBeCloseTo(SIZE_TIERS.brute.aim);
+    expect(heightOverPlayer(warrior)).toBeLessThan(heightOverPlayer("ogre"));
+  });
+
+  it.each(["goblin", "goblin_shield", "goblin_cutthroat", "goblin_cutthroat_shield", "goblin_reaver", "goblin_reaver_shield", "goblin_warchief", "goblin_warchief_shield"])(
+    "should stand a %s at about 0.86x, smaller than the ghoul",
+    (goblin) => {
+      expect(heightOverPlayer(goblin)).toBeCloseTo(0.86);
+      expect(heightOverPlayer(goblin)).toBeLessThan(heightOverPlayer("ghoul"));
+    },
+  );
 
   /**
    * A quadruped is measured by body length, not height (guideline "Size is a threat tier"): its
@@ -2506,12 +2548,24 @@ describe("the tiered roster's looks (FS-C8VM7 §F R34)", () => {
     }
   });
 
-  it("should give a per-look aim only to the ogre family, inside the brute band", () => {
+  it("should give a per-look aim only to the ogre family, inside the brute band, and the goblin family, inside the fodder band", () => {
     const aimed = FAMILIES.flatMap(([, , archetypes]) => archetypes).filter((a) => monsterLook(a).aim !== undefined);
-    expect(aimed).toEqual(["ogre", "ogre_mauler", "ogre_tyrant"]);
-    for (const archetype of aimed) {
+    const [, , goblins] = FAMILIES.find(([family]) => family === "goblin")!;
+    expect(aimed).toEqual([...goblins, "ogre", "ogre_mauler", "ogre_tyrant"]);
+    for (const archetype of ["ogre", "ogre_mauler", "ogre_tyrant"]) {
       expect(monsterLook(archetype).aim).toBeGreaterThan(SIZE_TIERS.brute.aim);
       expect(monsterLook(archetype).aim).toBeLessThanOrEqual(SIZE_TIERS.brute.max);
+    }
+    for (const archetype of goblins) {
+      expect(monsterLook(archetype).aim).toBeLessThan(SIZE_TIERS.fodder.aim);
+      expect(monsterLook(archetype).aim).toBeGreaterThanOrEqual(SIZE_TIERS.fodder.min);
+    }
+  });
+
+  it("should find every look's sheet among the baked sheets", () => {
+    for (const [archetype, look] of Object.entries(MONSTER_LOOKS)) {
+      expect(baked.has(look.sheet), archetype).toBe(true);
+      if (look.elite) expect(baked.has(look.elite), archetype).toBe(true);
     }
   });
 
@@ -2521,10 +2575,11 @@ describe("the tiered roster's looks (FS-C8VM7 §F R34)", () => {
 });
 
 describe("a variant's stand-in until its art is in (FS-C8VM7 §G R44, ADR-0081 Decision 5)", () => {
-  it("should draw a goblin as the ghoul under the goblin's tint, at its own tier", () => {
+  it("should draw a goblin as the ghoul under the goblin's tint, at its own tier and aim", () => {
     expect(drawnLook("goblin_reaver", fixtureArt())).toEqual({
       sheet: "creature_ghoul_base",
       tier: "fodder",
+      aim: monsterLook("goblin_reaver").aim,
       tint: palette.goblinStandIn,
     });
     expect(drawnLook("goblin_reaver_shield", fixtureArt())).toEqual(drawnLook("goblin_reaver", fixtureArt()));
@@ -2560,20 +2615,22 @@ describe("a variant's stand-in until its art is in (FS-C8VM7 §G R44, ADR-0081 D
     ["phantom", "spire_wraith"],
     ["banshee", "spire_wraith"],
   ])("should draw a %s as its family's tier-1 look (%s) as baked: no tint", (archetype, family) => {
-    const look = drawnLook(archetype, baked);
+    const look = drawnLook(archetype, runArt());
     expect(look.sheet).toBe(monsterLook(family).sheet);
     expect(look.tier).toBe(monsterLook(archetype).tier);
     expect(look.tint).toBeUndefined();
   });
 
   it("should keep the elite wash on an untinted stand-in, and the stand-in's tint over it on a tinted one", () => {
-    expect(monsterTint(drawnLook("ghast", baked), { elite: true })).toBe(palette.eliteTint);
-    expect(monsterTint(drawnLook("goblin", baked), { elite: true })).toBe(palette.goblinStandIn);
+    const art = runArt();
+    expect(monsterTint(drawnLook("ghast", art), { elite: true })).toBe(palette.eliteTint);
+    expect(monsterTint(drawnLook("goblin", art), { elite: true })).toBe(palette.goblinStandIn);
   });
 
   it("should draw a variant from its first listing as its stand-in, never the placeholder, with no warning", () => {
     const warn = vi.fn();
-    const art = new ArtLibrary(shippedManifest(), { warn });
+    const manifest = shippedManifest();
+    const art = new ArtLibrary(manifest, { warn }, new Set(sceneAtlases(manifest, SCENE_ART.BarrowspireScene)));
     const { stage, sprites } = fakeStage();
     const roster = new MonsterRoster(stage, art);
     roster.sync([monster({ archetype: "goblin_cutthroat", name: "Goblin Cutthroat" })]);

@@ -92,6 +92,12 @@ const variant = (archetype: string, tier: SizeTier, aim?: number): MonsterLook =
 /** The ogre family reads bigger than a troll: the brute band's top (FS-C8VM7 §F R34). */
 const OGRE_AIM = SIZE_TIERS.brute.max;
 
+/**
+ * The goblin family reads smaller than the ghoul, near the fodder band's floor: a scale to the
+ * tier's aim would lift its shorter baked crown (68 to the ghoul's 72) to the ghoul's height.
+ */
+const GOBLIN_AIM = 0.86;
+
 /** Each archetype the client has a look for. */
 export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   ghoul: { sheet: "creature_ghoul_base", tier: "fodder" },
@@ -147,14 +153,14 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
   shade: variant("shade", "fodder"),
   phantom: variant("phantom", "fodder"),
   banshee: variant("banshee", "fodder"),
-  goblin: variant("goblin", "fodder"),
-  goblin_shield: variant("goblin_shield", "fodder"),
-  goblin_cutthroat: variant("goblin_cutthroat", "fodder"),
-  goblin_cutthroat_shield: variant("goblin_cutthroat_shield", "fodder"),
-  goblin_reaver: variant("goblin_reaver", "fodder"),
-  goblin_reaver_shield: variant("goblin_reaver_shield", "fodder"),
-  goblin_warchief: variant("goblin_warchief", "fodder"),
-  goblin_warchief_shield: variant("goblin_warchief_shield", "fodder"),
+  goblin: variant("goblin", "fodder", GOBLIN_AIM),
+  goblin_shield: variant("goblin_shield", "fodder", GOBLIN_AIM),
+  goblin_cutthroat: variant("goblin_cutthroat", "fodder", GOBLIN_AIM),
+  goblin_cutthroat_shield: variant("goblin_cutthroat_shield", "fodder", GOBLIN_AIM),
+  goblin_reaver: variant("goblin_reaver", "fodder", GOBLIN_AIM),
+  goblin_reaver_shield: variant("goblin_reaver_shield", "fodder", GOBLIN_AIM),
+  goblin_warchief: variant("goblin_warchief", "fodder", GOBLIN_AIM),
+  goblin_warchief_shield: variant("goblin_warchief_shield", "fodder", GOBLIN_AIM),
   ogre: variant("ogre", "brute", OGRE_AIM),
   ogre_mauler: variant("ogre_mauler", "brute", OGRE_AIM),
   ogre_tyrant: variant("ogre_tyrant", "brute", OGRE_AIM),

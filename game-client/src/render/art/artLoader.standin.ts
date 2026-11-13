@@ -12,33 +12,17 @@ export const shippedManifest = (): ArtManifest =>
 
 /**
  * The shipped manifest's resident pages (FS-C4JWH §A R3), written out rather than derived, so a
- * test that compares against them checks the table: the four class groups and the 14 small ones,
- * and the tiered roster's variant groups (FS-C8VM7 §H), resident by §A R3 only until the client's
- * table marks them floor-scoped (FS-C8VM7 §G R41, ADR-0081; I-C8VM7-7, I-C8VM7-8 take them out).
+ * test that compares against them checks the table: the four class groups, the 14 small ones and
+ * the tome and altar's `summoning` (FS-3103M §I). The tiered roster's variant groups are not here:
+ * each is floor-scoped and fetched on demand (FS-C8VM7 §G R41, ADR-0081).
  */
 export const RESIDENT_ART_PAGES = [
   "archer-0",
   "architecture-0",
-  "ashen_archer-0",
-  "banshee-0",
-  "blightborn-0",
-  "blood_troll-0",
   "building-0",
-  "cave_troll-0",
   "containers-0",
-  "dark_reaper-0",
-  "dark_warrior-0",
   "forest-0",
   "fx-0",
-  "ghast-0",
-  "goblin-0",
-  "goblin-1",
-  "goblin_cutthroat-0",
-  "goblin_cutthroat-1",
-  "goblin_reaver-0",
-  "goblin_reaver-1",
-  "goblin_warchief-0",
-  "goblin_warchief-1",
   "ground-0",
   "hall-0",
   "icons-0",
@@ -46,19 +30,11 @@ export const RESIDENT_ART_PAGES = [
   "knight-0",
   "mercenary-0",
   "nature-0",
-  "ogre-0",
-  "ogre_mauler-0",
-  "ogre_tyrant-0",
-  "phantom-0",
-  "plague_thrall-0",
   "props-0",
-  "ravener-0",
-  "shade-0",
   "spire-0",
   "summoning-0",
   "tower-0",
   "town-0",
-  "wight_archer-0",
   "wizard-0",
 ] as const;
 
