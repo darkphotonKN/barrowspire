@@ -3,7 +3,9 @@
  * field drive through `EquipmentHud`, fed here from REST, as the loadout screen it replaces was.
  * Each open loads the owned item instances and the loadout; loadout ids go in their slots, the
  * unworn `bag` instances (and any with no location, from an older gateway) into the bag and the
- * unworn `stash` instances into the stash, each in REST order (FS-VPD8Y R27–28). The bag shows
+ * unworn `stash` instances into the stash, each in REST order (FS-VPD8Y R27–28). While an open
+ * loads, what was last known worn, in the bag and in the stash stays on show under the loading
+ * line, which holds every press; the first open knows nothing and shows them empty. The bag shows
  * every item past 30 (R23); an unequip into a bag of 30 or more is not sent and the notice says
  * the bag is full, while a swap always goes (FS-VPD8Y R29). An equip or unequip is applied by the
  * overlay at once and sent as one `updateLoadout`; while it is in flight the overlay says it is
@@ -251,6 +253,11 @@ function refusalNotice(
   return GEAR_CHANGE_FAILED;
 }
 
+/** `items` without `item`, by its entity id. */
+function without(items: readonly ItemState[], item: ItemState): ItemState[] {
+  return items.filter((i) => i.entity_id !== item.entity_id);
+}
+
 export class HubGear {
   /** Bumped on each open, so a load that lands after a later open is dropped. */
   private loads = 0;
@@ -258,12 +265,12 @@ export class HubGear {
   private inFlight?: Promise<void>;
   private status?: string;
   /**
-   * The worn slots and the bag's and stash's sizes as the overlay draws them, for the cap
-   * pre-checks (FS-VPD8Y R29, R39).
+   * The worn slots, the bag and the stash as the overlay draws them: kept on show while the next
+   * open reloads, and read by the cap pre-checks (FS-VPD8Y R29, R39).
    */
   private worn: EquippedItems = nothingWorn();
-  private bagCount = 0;
-  private stashCount = 0;
+  private bag: ItemState[] = [];
+  private stash: ItemState[] = [];
 
   constructor(
     private readonly panel: HubGearPanel,
@@ -275,16 +282,18 @@ export class HubGear {
     // and never pre-checked (FS-VPD8Y R29)
     panel.onEquip = (item, slot) => {
       if (!this.change(slot, item.entity_id)) return;
-      if (!this.worn[slot]) this.bagCount--;
+      const displaced = this.worn[slot];
+      this.bag = without(this.bag, item);
+      if (displaced) this.bag.push(displaced);
       this.worn[slot] = item;
     };
     // a swap takes the worn item off, so it is locked too while that one is in a delve
     panel.mayEquip = (item, slot) => this.free(item, this.worn[slot]);
     panel.mayUnequip = (item) => this.free(item) && this.roomForOne();
-    panel.onUnequip = (_item, slot) => {
+    panel.onUnequip = (item, slot) => {
       if (!this.change(slot, null)) return;
       this.worn[slot] = null;
-      this.bagCount++;
+      this.bag.push(item);
     };
     panel.mayMove = (item, to) => this.mayMove(item, to);
     panel.onMove = (item, to) => {
@@ -293,9 +302,14 @@ export class HubGear {
         MOVE_REFUSALS,
       );
       if (!sent) return;
-      const into = to === "bag" ? 1 : -1;
-      this.bagCount += into;
-      this.stashCount -= into;
+      // to the end of the other side, as the overlay drew it (R41)
+      if (to === "bag") {
+        this.stash = without(this.stash, item);
+        this.bag = [...without(this.bag, item), item];
+      } else {
+        this.bag = without(this.bag, item);
+        this.stash = [...without(this.stash, item), item];
+      }
     };
   }
 
@@ -411,18 +425,18 @@ export class HubGear {
       if (!current()) return;
     }
     this.setStatus(GEAR_LOADING);
-    // what was last known worn stays on show while REST answers, so the slots and the character
-    // panel's "From gear" don't flash empty on every open; the loading line holds every press
-    // until the truth is in
+    // what was last known worn, in the bag and in the stash stays on show while REST answers, so
+    // the slots, "From gear", the bag and the stash don't flash empty on every open (the first
+    // open knows nothing yet); the loading line holds every press until the truth is in
     this.panel.updateEquipment(this.worn);
-    this.panel.updateInventory([]);
-    this.panel.updateStash([]);
+    this.panel.updateInventory(this.bag);
+    this.panel.updateStash(this.stash);
     try {
       const { equipped, bag, stash } = await loadHubGear(this.api);
       if (!current()) return;
       this.worn = { ...equipped };
-      this.bagCount = bag.length;
-      this.stashCount = stash.length;
+      this.bag = [...bag];
+      this.stash = [...stash];
       this.panel.updateEquipment(equipped);
       this.panel.updateInventory(bag);
       this.panel.updateStash(stash);
@@ -439,7 +453,7 @@ export class HubGear {
    * overlay leaves the item worn (FS-VPD8Y R29). The server's `BAG_FULL` stays the authority.
    */
   private roomForOne(): boolean {
-    if (!bagFull(this.bagCount)) return true;
+    if (!bagFull(this.bag.length)) return true;
     this.port.notice(BAG_FULL_NOTICE);
     return false;
   }
@@ -453,9 +467,9 @@ export class HubGear {
     if (!this.free(item)) return false;
     const refusal = !freeToMove(item)
       ? NOT_FREE_NOTICE
-      : to === "bag" && bagFull(this.bagCount)
+      : to === "bag" && bagFull(this.bag.length)
         ? BAG_FULL_NOTICE
-        : to === "stash" && stashFull(this.stashCount)
+        : to === "stash" && stashFull(this.stash.length)
           ? STASH_FULL_NOTICE
           : undefined;
     if (refusal) this.port.notice(refusal);
