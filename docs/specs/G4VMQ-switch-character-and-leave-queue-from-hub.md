@@ -444,3 +444,5 @@ C3. **Inside unchanged.** The rows, the copy line, the keys, the width, the heig
 ### Out of Scope
 
 - The NPC dialogue's card (already the carved panel), the letter panel, the chat window.
+
+## Change: Music on or off in the town's ESC menu → FS-28DDG
