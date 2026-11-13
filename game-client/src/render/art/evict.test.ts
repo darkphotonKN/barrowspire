@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { RESIDENT_ART_PAGES, artLoaderStandin, shippedManifest } from "./artLoader.standin";
+import { evictGroups } from "./evict";
 import { atlasTextureKey } from "./library";
 import { onDemandArt, preloadArt, registerArt, type ArtScene } from "./phaser";
 import { RESIDENT_ART, SCENE_ART, fieldArt, type SceneGroups } from "./sceneArt";
@@ -526,5 +527,42 @@ describe("the on-demand group is evicted as any scene-scoped one (FS-VHGE7 §F R
     enter(art, SCENE_ART.HubScene);
     enter(art, SCENE_ART.BarrowspireScene);
     for (const key of blood) expect(art.textures.exists(key)).toBe(false);
+  });
+});
+
+// FS-C8VM7 §G R43, ADR-0081 Decision 4: named groups evicted mid-scene, as ADR-0059 evicts.
+describe("evicting named groups mid-scene (FS-C8VM7 §G R43)", () => {
+  const runWithBlood = () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+    const library = registerArt(art.scene as unknown as ArtScene, SCENE_ART.BarrowspireScene, { warn: vi.fn() });
+    onDemandArt(art.scene as unknown as Phaser.Scene, library).fetch("blood_demon", vi.fn());
+    return art;
+  };
+  const blood = pages(...groupPages("blood_demon"));
+
+  it("should remove the named group's pages and every animation on them, animations first, and nothing else", () => {
+    const art = runWithBlood();
+    const order: string[] = [];
+    const removeAnim = art.anims.remove.bind(art.anims);
+    const removeTexture = art.textures.remove.bind(art.textures);
+    vi.spyOn(art.anims, "remove").mockImplementation((key: string) => (order.push("anim"), removeAnim(key)));
+    vi.spyOn(art.textures, "remove").mockImplementation((key: string) => (order.push("texture"), removeTexture(key)));
+
+    const evicted = evictGroups(art.scene, manifest, ["blood_demon"]);
+
+    expect(pages(...evicted).sort()).toEqual([...blood].sort());
+    for (const key of blood) expect(art.textures.exists(key)).toBe(false);
+    for (const key of sheetAnims("creature_blood_demon_base")) expect(art.anims.list.has(key)).toBe(false);
+    // each page's animations, then the page
+    expect(order[0]).toBe("anim");
+    expect(order.map((step) => step[0]).join("")).toMatch(/^(a*t)+$/);
+    for (const key of pages(...groupPages("creatures"), ...groupPages("boss"))) expect(art.textures.exists(key)).toBe(true);
+    expect(art.anims.list.has("creature_ghoul_base/idle/0")).toBe(true);
+  });
+
+  it("should leave a named group that is not a texture alone", () => {
+    const art = after(SCENE_ART.BarrowspireScene);
+    expect(evictGroups(art.scene, manifest, ["blood_demon", "ghast"])).toEqual([]);
+    expect(art.textures.removed).toEqual([]);
   });
 });

@@ -27,7 +27,7 @@ import {
 } from "./manifest";
 import { onSceneEnd } from "@/scenes/sceneEnd";
 import { palette } from "@/utils/canvasPalette";
-import { evictOutside } from "./evict";
+import { evictGroups, evictOutside } from "./evict";
 import { LOAD_PACE, paceLoad, type Curtain, type PaceClock } from "./loadPace";
 import { atlasGroup, sceneAtlases, type SceneGroups } from "./sceneArt";
 
@@ -362,65 +362,140 @@ export function registerArt(
 }
 
 /**
- * Fetches a running scene's on-demand groups (FS-VHGE7 §F, ADR-0071), one per scene start. The
- * first `fetch` of a group queues its pages not yet textures, once, on the scene's loader; no bar,
- * no fade, nothing held back. Only when the load is done and every page is a texture are its frames
- * and animations registered, `art` told, and then `landed` called (§F R47); a page that failed
- * leaves the group out with one warning, and it is not asked for again in this scene (R50).
+ * A running scene's on-demand art (FS-VHGE7 §F, ADR-0071), and a floor's (FS-C8VM7 §G, ADR-0081).
+ */
+export interface OnDemandArt {
+  /**
+   * Brings a group in, once a scene: its pages not yet textures queued on the scene's loader, no
+   * bar, no fade, nothing held back; `landed` only once every page is a texture and its frames,
+   * animations and the library have it (§F R47). A later ask while it downloads is dropped, so the
+   * first asker's `landed` answers it; one that failed is not asked for again (R50).
+   */
+  fetch(group: string, landed: () => void): void;
+  /**
+   * A new floor's groups (FS-C8VM7 §G R42): each fetched as {@link fetch} does, one that failed on
+   * an earlier floor asked for again (Edge States: a group that fails to download).
+   */
+  prefetch(groups: readonly string[], landed: (group: string) => void): void;
+  /**
+   * Groups a new floor's pool does not name (§G R43): a download is called off and lands nothing;
+   * a held group is evicted, animations first, and the library forgets it. Either may be asked for
+   * again. A group never asked for is left alone. Nothing drawn may still use one.
+   */
+  release(groups: readonly string[]): void;
+  /** The groups held, or downloading and still wanted. */
+  holding(): string[];
+}
+
+/** Where an asked-for group stands this scene. */
+interface Asked {
+  state: "flight" | "held" | "failed";
+  /** False once a download is called off: it lands nothing. */
+  wanted: boolean;
+  landed: () => void;
+}
+
+/**
+ * Fetches a running scene's on-demand groups ({@link OnDemandArt}), one per scene start. A page that
+ * failed leaves its group out with one warning.
  *
  * A stop while it downloads calls the pages off as a stop does a preload's (`callOff`): the loader
  * drops its listeners on the stop, and without this each page would still land in the next scene.
+ * A release mid-scene cannot abort a file the running load still counts, or the load would never
+ * complete for the groups beside it: its pages download, and are removed the moment they land.
  */
 export function onDemandArt(
   scene: Phaser.Scene,
   art: ArtLibrary,
   logger: ArtLogger = console,
   baseUrl = DEFAULT_ART_URL,
-): { fetch(group: string, landed: () => void): void } {
-  const asked = new Set<string>();
+): OnDemandArt {
+  const asked = new Map<string, Asked>();
+  const manifestOf = () => {
+    const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
+    return result.ok ? result.manifest : undefined; // registerArt reported it with the scene's logger
+  };
+
+  const ask = (group: string, landed: () => void) => {
+    const was = asked.get(group);
+    if (was) {
+      if (was.state === "flight" && !was.wanted) Object.assign(was, { wanted: true, landed });
+      return;
+    }
+    const entry: Asked = { state: "flight", wanted: true, landed };
+    asked.set(group, entry);
+    const manifest = manifestOf();
+    if (!manifest) return void (entry.state = "failed");
+    const pages = Object.keys(manifest.atlases).filter((atlas) => atlasGroup(atlas) === group);
+    const absent = () => pages.filter((atlas) => !scene.textures.exists(atlasTextureKey(atlas)));
+
+    const settle = () => {
+      if (!entry.wanted) {
+        // called off: whatever landed goes, and the group may be asked for afresh
+        evictGroups(scene, manifest, [group]);
+        asked.delete(group);
+        return;
+      }
+      const missing = absent();
+      if (pages.length === 0 || missing.length > 0) {
+        entry.state = "failed";
+        logger.warn(`art: on-demand group ${group} did not load; its stand-in stays`, {
+          group,
+          missing,
+        });
+        return;
+      }
+      registerFrames(scene, manifest, new Set(pages));
+      art.admit(pages);
+      entry.state = "held";
+      entry.landed();
+    };
+
+    const toFetch = absent();
+    if (toFetch.length === 0) return settle();
+
+    const files: LoaderFile[] = [];
+    const collect = (_k: string, _t: string, _l: unknown, file: LoaderFile) => void files.push(file);
+    scene.load.on("addfile", collect);
+    for (const atlas of toFetch)
+      scene.load.image(atlasTextureKey(atlas), `${baseUrl}${manifest.atlases[atlas].image}`);
+    scene.load.off("addfile", collect);
+
+    const cancelEnd = onSceneEnd(scene, (end) => {
+      if (end === "shutdown") files.forEach(callOff);
+    });
+    scene.load.once("complete", () => {
+      cancelEnd();
+      settle();
+    });
+    scene.load.start();
+  };
 
   return {
-    fetch(group, landed) {
-      if (asked.has(group)) return;
-      asked.add(group);
-      const result = validateManifest(scene.cache.json.get(MANIFEST_KEY));
-      if (!result.ok) return; // registerArt reported it with the scene's logger
-      const { manifest } = result;
-      const pages = Object.keys(manifest.atlases).filter((atlas) => atlasGroup(atlas) === group);
-      const absent = () => pages.filter((atlas) => !scene.textures.exists(atlasTextureKey(atlas)));
-
-      const settle = () => {
-        const missing = absent();
-        if (pages.length === 0 || missing.length > 0) {
-          logger.warn(`art: on-demand group ${group} did not load; its stand-in stays`, {
-            group,
-            missing,
-          });
-          return;
+    fetch: ask,
+    prefetch(groups, landed) {
+      for (const group of groups) {
+        if (asked.get(group)?.state === "failed") asked.delete(group);
+        ask(group, () => landed(group));
+      }
+    },
+    release(groups) {
+      const manifest = manifestOf();
+      for (const group of groups) {
+        const entry = asked.get(group);
+        if (!entry) continue;
+        if (entry.state === "flight") {
+          Object.assign(entry, { wanted: false, landed: () => undefined });
+          continue;
         }
-        registerFrames(scene, manifest, new Set(pages));
-        art.admit(pages);
-        landed();
-      };
-
-      const toFetch = absent();
-      if (toFetch.length === 0) return settle();
-
-      const files: LoaderFile[] = [];
-      const collect = (_k: string, _t: string, _l: unknown, file: LoaderFile) => void files.push(file);
-      scene.load.on("addfile", collect);
-      for (const atlas of toFetch)
-        scene.load.image(atlasTextureKey(atlas), `${baseUrl}${manifest.atlases[atlas].image}`);
-      scene.load.off("addfile", collect);
-
-      const cancelEnd = onSceneEnd(scene, (end) => {
-        if (end === "shutdown") files.forEach(callOff);
-      });
-      scene.load.once("complete", () => {
-        cancelEnd();
-        settle();
-      });
-      scene.load.start();
+        if (entry.state === "held" && manifest) art.forget(evictGroups(scene, manifest, [group]));
+        asked.delete(group);
+      }
+    },
+    holding() {
+      return [...asked]
+        .filter(([, entry]) => entry.state === "held" || (entry.state === "flight" && entry.wanted))
+        .map(([group]) => group);
     },
   };
 }

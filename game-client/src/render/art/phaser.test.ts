@@ -766,3 +766,142 @@ describe("onDemandArt (FS-VHGE7 §F)", () => {
     expect(art.queued).toEqual([...bloodPages, ...bloodPages]);
   });
 });
+
+// FS-C8VM7 §G R42-R43, ADR-0081 Decisions 3-4: a floor's variant groups, fetched as a list,
+// called off and evicted while the scene runs.
+describe("onDemandArt for a floor's pool (FS-C8VM7 §G R42-R43)", () => {
+  const withVariants = {
+    ...scoped,
+    atlases: {
+      ...scoped.atlases,
+      "ghast-0": page("ghast-0.png"),
+      "shade-0": page("shade-0.png"),
+      "ogre-0": page("ogre-0.png"),
+    },
+    sheets: {
+      ...scoped.sheets,
+      creature_ghast_base: looping("ghast-0"),
+      creature_shade_base: looping("shade-0"),
+      creature_ogre_base: looping("ogre-0"),
+    },
+  };
+  const held = ["props-0", "props-1", "creatures-0", "creatures-1", "boss-0", "boss-1"].map(atlasTextureKey);
+  const key = atlasTextureKey;
+
+  function running(opts: { textures?: string[]; failing?: string[] } = {}) {
+    const warn = vi.fn();
+    const art = artLoaderStandin({
+      manifest: withVariants,
+      cachedManifest: true,
+      textures: [...held, ...(opts.textures ?? [])],
+      failing: opts.failing,
+      hold: true,
+    });
+    const library = registerArt(art.scene as unknown as ArtScene, SCENE_ART.BarrowspireScene, { warn });
+    warn.mockClear();
+    const demand = onDemandArt(art.scene as unknown as Phaser.Scene, library, { warn });
+    return { art, library, demand, warn };
+  }
+
+  it("should queue each named group's pages, and say which group landed", () => {
+    const { art, library, demand } = running();
+    const landed = vi.fn();
+    demand.prefetch(["ghast", "ogre"], landed);
+    expect(art.queued).toEqual([key("ghast-0"), key("ogre-0")]);
+    art.finish();
+    expect(landed.mock.calls).toEqual([["ghast"], ["ogre"]]);
+    expect(library.has("creature_ghast_base")).toBe(true);
+    expect(demand.holding().sort()).toEqual(["ghast", "ogre"]);
+  });
+
+  it("should count a group in flight as held, and not ask for one held or in flight again", () => {
+    const { art, demand } = running();
+    demand.prefetch(["ghast"], vi.fn());
+    expect(demand.holding()).toEqual(["ghast"]);
+    demand.prefetch(["ghast"], vi.fn());
+    art.finish();
+    demand.prefetch(["ghast"], vi.fn());
+    expect(art.queued).toEqual([key("ghast-0")]);
+  });
+
+  it("should call off a released download: it lands nothing, and may be asked for again", () => {
+    const { art, library, demand } = running();
+    const landed = vi.fn();
+    demand.prefetch(["ghast", "shade"], landed);
+    demand.release(["shade"]);
+    expect(demand.holding()).toEqual(["ghast"]);
+
+    art.finish();
+
+    expect(landed.mock.calls).toEqual([["ghast"]]);
+    expect(art.textures.exists(key("shade-0"))).toBe(false);
+    expect(library.has("creature_shade_base")).toBe(false);
+    expect(art.anims.exists("creature_shade_base/idle/0")).toBe(false);
+
+    demand.prefetch(["shade"], landed);
+    expect(art.queued).toEqual([key("ghast-0"), key("shade-0"), key("shade-0")]);
+  });
+
+  it("should land a called-off download asked for again before it arrives", () => {
+    const { art, library, demand } = running();
+    demand.prefetch(["shade"], vi.fn());
+    demand.release(["shade"]);
+    const landed = vi.fn();
+    demand.fetch("shade", landed);
+    art.finish();
+    expect(landed).toHaveBeenCalledOnce();
+    expect(library.has("creature_shade_base")).toBe(true);
+  });
+
+  it("should evict a released held group, animations first, and forget it in the library", () => {
+    const { art, library, demand } = running();
+    demand.prefetch(["ghast", "shade"], vi.fn());
+    art.finish();
+    expect(art.anims.exists("creature_shade_base/idle/0")).toBe(true);
+
+    demand.release(["shade"]);
+
+    expect(art.textures.exists(key("shade-0"))).toBe(false);
+    expect(art.anims.exists("creature_shade_base/idle/0")).toBe(false);
+    expect(library.has("creature_shade_base")).toBe(false);
+    expect(library.has("creature_ghast_base")).toBe(true);
+    expect(demand.holding()).toEqual(["ghast"]);
+  });
+
+  it("should fetch an evicted group afresh, frames and animations registered again", () => {
+    const { art, library, demand } = running();
+    demand.prefetch(["shade"], vi.fn());
+    art.finish();
+    demand.release(["shade"]);
+
+    const landed = vi.fn();
+    demand.prefetch(["shade"], landed);
+    art.finish();
+
+    expect(landed).toHaveBeenCalledWith("shade");
+    expect(library.has("creature_shade_base")).toBe(true);
+    expect(art.anims.exists("creature_shade_base/idle/0")).toBe(true);
+  });
+
+  it("should keep a failed group's stand-in with one warning, and ask again only on a prefetch (Edge States)", () => {
+    const { art, demand, warn } = running({ failing: [key("ogre-0")] });
+    const landed = vi.fn();
+    demand.prefetch(["ogre"], landed);
+    art.finish();
+    expect(landed).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(demand.holding()).toEqual([]);
+
+    demand.fetch("ogre", vi.fn());
+    expect(art.queued).toEqual([key("ogre-0")]);
+
+    demand.prefetch(["ogre"], landed);
+    expect(art.queued).toEqual([key("ogre-0"), key("ogre-0")]);
+  });
+
+  it("should leave a group it never asked for alone on release", () => {
+    const { art, demand } = running({ textures: [key("ogre-0")] });
+    demand.release(["ogre", "nothing"]);
+    expect(art.textures.exists(key("ogre-0"))).toBe(true);
+  });
+});

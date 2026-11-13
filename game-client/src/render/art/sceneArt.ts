@@ -130,6 +130,24 @@ export const ON_DEMAND_ART: readonly OnDemandGroup[] = [
 export const onDemandFor = (archetype: string): OnDemandGroup | undefined =>
   ON_DEMAND_ART.find((entry) => entry.archetype === archetype);
 
+/**
+ * ADR-0081 Decisions 4, 6: the on-demand groups scoped to the floor, fetched with a floor whose pool
+ * names them and evicted with one that does not. Only the variants' groups: the blood demon's keeps
+ * its scene scope (ADR-0071).
+ */
+export const FLOOR_SCOPED_GROUPS: ReadonlySet<string> = new Set(VARIANT_ART.map((entry) => entry.group));
+
+/**
+ * The floor-scoped groups a floor map's `enemy_pool` names (FS-C8VM7 §G R40, R42), each once, in
+ * the pool's order: a tier-1 look is on `creatures`, and an archetype on no variant group names none.
+ */
+export function poolGroups(pool: readonly string[]): string[] {
+  const groups = pool
+    .map((archetype) => onDemandFor(archetype)?.group)
+    .filter((group): group is string => group !== undefined && FLOOR_SCOPED_GROUPS.has(group));
+  return [...new Set(groups)];
+}
+
 /** Every group the tables name: the scene-scoped groups (§A R2). */
 export const SCENE_SCOPED_GROUPS: ReadonlySet<string> = new Set([
   ...[

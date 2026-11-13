@@ -130,6 +130,7 @@ import {
 } from "@/render/iso";
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART } from "@/render/art/sceneArt";
+import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
@@ -944,6 +945,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private readonly deathDust = new DeathDust();
   /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
   private monsters?: MonsterRoster;
+  /** The variant art a floor's pool names, fetched and evicted with the floor (FS-C8VM7 §G, ADR-0081). */
+  private poolArt?: FloorPoolArt;
   /**
    * What a living monster under the pointer does (FS-77AB6 req 39): strike-mark, and a strike. A
    * strike sent names its monster the last-hit one (FS-48CTQ §C.6).
@@ -3229,13 +3232,15 @@ export class BarrowspireScene extends Phaser.Scene {
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
+    const onDemand = onDemandArt(this, this.art);
     this.monsters = new MonsterRoster(
       phaserMonsterStage(this),
       this.art,
       this.monsterTargeting,
       this.monsterEffects,
-      onDemandArt(this, this.art),
+      onDemand,
     );
+    this.poolArt = new FloorPoolArt(onDemand, (group) => this.monsters?.redress(group));
     // the party frames cut their busts from the class sheets just registered (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
     this.containerView = new ContainerView(
@@ -3858,6 +3863,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const arrived = this.arrival && this.lastFloor === undefined && state.floor !== undefined;
     if (state.floor !== undefined) this.lastFloor = state.floor;
     if (climb) this.leaveFloor();
+    // the floor's variant art: its pool's fetched, the last floor's evicted once its monsters are gone
+    this.seePoolArt(state);
     // the floor's band and seed, from its first broadcast: a reconnect builds it directly
     this.floorLook ??= floorLook(this.worldLook, state.floor);
     // the floor is built from its map alone; without one its entities apply and it waits, asking
@@ -3989,6 +3996,12 @@ export class BarrowspireScene extends Phaser.Scene {
     return sessionId === undefined || map.session_id === sessionId ? map : undefined;
   }
 
+  /** Where the run stands, for the floor's variant art (FS-C8VM7 §G R42-R43). */
+  private seePoolArt(state: ClientGameState | undefined): void {
+    const monsters = state?.monsters ?? [];
+    this.poolArt?.see(this.heldFloorMap(state?.session_id), state?.floor, monsters.map((m) => m.archetype));
+  }
+
   /** Builds the floor the moment its map comes, if its snapshot came first (FS-KE075 §H.41). */
   private subscribeFloorMap(): void {
     this.floorMapUnsubscribe?.();
@@ -4002,6 +4015,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * snapshot's entities, as a first snapshot would have built it, and a climb's veil lifts.
    */
   private onFloorMap(): void {
+    // a climb's map, before its floor's first snapshot: its pool's art starts at once (ADR-0081)
+    this.seePoolArt(this.lastGameState);
     const state = this.lastGameState;
     if (!state) return;
     const map = this.heldFloorMap(state.session_id);

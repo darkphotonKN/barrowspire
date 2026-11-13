@@ -39,14 +39,31 @@ export function evictOutside(
   manifest: ArtManifest,
   groups: SceneGroups,
 ): string[] {
-  const evicted = Object.keys(manifest.atlases).filter((atlas) => {
-    const group = atlasGroup(atlas);
-    return (
-      SCENE_SCOPED_GROUPS.has(group) &&
-      !groups.includes(group) &&
-      scene.textures.exists(atlasTextureKey(atlas))
-    );
-  });
+  return evictWhere(scene, manifest, (group) => SCENE_SCOPED_GROUPS.has(group) && !groups.includes(group));
+}
+
+/**
+ * Evicts every page of `groups` that is a texture, mid-scene, as {@link evictOutside} does: a floor
+ * whose pool does not name a variant's group (FS-C8VM7 §G R43, ADR-0081 Decision 4). Nothing drawn
+ * may still use one: the caller's to see to. Returns the atlases evicted.
+ */
+export function evictGroups(
+  scene: EvictingScene,
+  manifest: ArtManifest,
+  groups: readonly string[],
+): string[] {
+  return evictWhere(scene, manifest, (group) => groups.includes(group));
+}
+
+/** Evicts each page that is a texture and whose group `evicts`: its animations, then the page. */
+function evictWhere(
+  scene: EvictingScene,
+  manifest: ArtManifest,
+  evicts: (group: string) => boolean,
+): string[] {
+  const evicted = Object.keys(manifest.atlases).filter(
+    (atlas) => evicts(atlasGroup(atlas)) && scene.textures.exists(atlasTextureKey(atlas)),
+  );
   for (const atlas of evicted) {
     for (const key of animationsOn(manifest, atlas)) scene.anims.remove(key);
     scene.textures.remove(atlasTextureKey(atlas));

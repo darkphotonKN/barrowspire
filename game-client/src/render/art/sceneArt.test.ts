@@ -8,6 +8,7 @@ import { DEFAULT_RESIDENT_SHEET, FUNCTION_NPC_SHEETS, folkLook } from "./hubFolk
 import { RESIDENT_ART_PAGES, shippedManifest } from "./artLoader.standin";
 import { sheetAtlases, type ArtManifest } from "./manifest";
 import {
+  FLOOR_SCOPED_GROUPS,
   ON_DEMAND_ART,
   RESIDENT_ART,
   VARIANT_ART,
@@ -16,6 +17,7 @@ import {
   atlasGroup,
   fieldArt,
   onDemandFor,
+  poolGroups,
   sceneAtlases,
   type OnDemandGroup,
 } from "./sceneArt";
@@ -397,5 +399,27 @@ describe("the Spire variants' groups (FS-C8VM7 §G R41, R44; ADR-0081)", () => {
       const sheet = manifest.sheets[monsterLook(archetype).sheet];
       if (sheet) expect(new Set(sheetAtlases(sheet).map(atlasGroup))).toEqual(new Set([group]));
     }
+  });
+});
+
+describe("the floor-scoped groups and a floor's pool (FS-C8VM7 §G R40-R43, ADR-0081 Decisions 2, 6)", () => {
+  it("should scope exactly the variant groups to the floor, and never the blood demon's", () => {
+    expect(sorted(FLOOR_SCOPED_GROUPS)).toEqual(sorted(VARIANT_GROUPS));
+    expect(FLOOR_SCOPED_GROUPS.has("blood_demon")).toBe(false);
+    for (const group of FLOOR_SCOPED_GROUPS) expect(SCENE_SCOPED_GROUPS).toContain(group);
+  });
+
+  it("should name the groups of a pool's archetypes, a goblin variant's two looks as one, each once", () => {
+    expect(poolGroups(["ghoul", "ghast", "goblin", "goblin_shield", "goblin_reaver_shield", "ogre_tyrant"])).toEqual([
+      "ghast",
+      "goblin",
+      "goblin_reaver",
+      "ogre_tyrant",
+    ]);
+  });
+
+  it("should name no group for a tier-1 look, a boss or an archetype it does not know", () => {
+    expect(poolGroups(["ghoul", "troll", "bone_archer", "barrow_thrall", "spire_wraith"])).toEqual([]);
+    expect(poolGroups(["blood_demon", "daagon", "demon", "wyrm"])).toEqual([]);
   });
 });

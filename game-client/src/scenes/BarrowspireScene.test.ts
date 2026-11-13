@@ -106,6 +106,7 @@ const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
+const await_floorArt = await import("@/render/art/floorArt");
 const await_minimap = await import("@/ui/minimap");
 const await_minimapMode = await import("@/ui/minimapMode");
 const await_topRightColumn = await import("@/ui/topRightColumn");
@@ -1196,6 +1197,83 @@ function onStage() {
   const players = () => sprites().filter((m) => m.args.length > 0);
   return { ...scene, sent, monsters, players };
 }
+
+// FS-C8VM7 §G R42-R43 (I-C8VM7-8): the scene's seam only. What is fetched and evicted for a
+// pool is FloorPoolArt's (floorArt.test.ts); how, onDemandArt's (phaser.test.ts).
+describe("BarrowspireScene a floor's pool art (FS-C8VM7 §G R42-R43, ADR-0081)", () => {
+  const { FloorPoolArt } = await_floorArt;
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGameStore.setState({ floorMap: null });
+  });
+
+  function poolStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as MapRun & { poolArt?: unknown; monsters: InstanceType<typeof MonsterRoster> };
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    run.time = { delayedCall: vi.fn(), now: 0 };
+    const holding = new Set<string>();
+    const calls: string[] = [];
+    let monstersAtRelease = -1;
+    const art = {
+      prefetch: vi.fn((groups: readonly string[]) => {
+        calls.push(`prefetch ${groups.join(",")}`);
+        for (const group of groups) holding.add(group);
+      }),
+      release: vi.fn((groups: readonly string[]) => {
+        calls.push(`release ${groups.join(",")}`);
+        monstersAtRelease = run.monsters.size;
+        for (const group of groups) holding.delete(group);
+      }),
+      holding: () => [...holding],
+    };
+    run.poolArt = new FloorPoolArt(art, vi.fn());
+    run.subscribeFloorMap();
+    const pooled = (floor: number, enemy_pool?: string[]) =>
+      useGameStore.getState().receiveFloorMap({ ...mapOf(floorState(floor)), ...(enemy_pool ? { enemy_pool } : {}) });
+    return { run, handle, art, calls, holding, pooled, monstersAtRelease: () => monstersAtRelease };
+  }
+
+  it("should fetch a climb's pool as its map comes, and evict the last floor's groups once its monsters are gone", () => {
+    const { run, handle, calls, holding, pooled, monstersAtRelease } = poolStage();
+    pooled(1, ["ghoul", "shade"]);
+    handle(bare(floorState(1)));
+    expect(calls).toEqual(["prefetch shade"]);
+
+    // the climb's map, before the new floor's first snapshot: fetched at once, nothing evicted
+    pooled(2, ["ghast", "ogre"]);
+    expect(calls).toEqual(["prefetch shade", "prefetch ghast,ogre"]);
+    expect([...holding].sort()).toEqual(["ghast", "ogre", "shade"]);
+
+    handle(bare(floorState(2)));
+    expect(calls.at(-1)).toBe("release shade");
+    expect(monstersAtRelease()).toBe(0);
+    expect(run.monsters.size).toBeGreaterThan(0);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("should neither fetch nor evict for a map without enemy_pool", () => {
+    const { handle, art, pooled, run } = poolStage();
+    pooled(1);
+    handle(bare(floorState(1)));
+    pooled(2);
+    handle(bare(floorState(2)));
+    expect(art.prefetch).not.toHaveBeenCalled();
+    expect(art.release).not.toHaveBeenCalled();
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("should not refetch or evict for a re-sent map of the same floor (ADR-0060)", () => {
+    const { handle, calls, pooled, run } = poolStage();
+    pooled(2, ["ghast"]);
+    handle(bare(floorState(2)));
+    pooled(2, ["ghast"]);
+    handle(bare(floorState(2)));
+    expect(calls).toEqual(["prefetch ghast"]);
+    run.floorMapUnsubscribe?.();
+  });
+});
 
 describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
   afterEach(() => {

@@ -420,6 +420,12 @@ export interface FloorMap {
   cell_size?: number;
   regions?: FloorRegion[];
   walls: WallState[];
+  /**
+   * Every archetype the floor's pool can spawn, a goblin variant both its looks (FS-C8VM7 §G R40,
+   * ADR-0081 Decision 2): never a boss, so it says nothing of the floor's place in the run. Absent
+   * from an older server, and from a floor with no pool.
+   */
+  enemy_pool?: string[];
 }
 
 /** Whether a `floor_map` payload is one: a run's floor with a size and its walls. */

@@ -780,9 +780,10 @@ export class MonsterRoster {
   /**
    * The group's art is in: every monster drawn as a stand-in for it changes (§F R48), whichever
    * archetype asked. A group's later asks are dropped, so the first asker's callback answers them
-   * all (FS-M8CSE §H R42).
+   * all (FS-M8CSE §H R42); a floor's pool fetched ahead of its monsters answers here too (FS-C8VM7
+   * §G R42, R44).
    */
-  private redress(group: string): void {
+  redress(group: string): void {
     for (const view of this.views.values())
       if (onDemandFor(view.state.archetype)?.group === group) this.wearOwnLook(view);
   }
