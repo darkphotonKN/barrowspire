@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { palette } from "@/utils/canvasPalette";
+import { mix, palette } from "@/utils/canvasPalette";
+import { TINT_IDENTITY } from "@/utils/theme";
 import { HudCorner, PARTY_BUSTS, drawBust, type BustDress, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
 import { GLYPH_LINE_W, envelopeFlapPoint } from "./MailboxEnvelope";
@@ -28,8 +29,33 @@ interface FakeGraphics {
   /** Every drawing call with its arguments, since the last clear. */
   ops: { m: string; args: number[] }[];
   depth?: number;
+  /** Its scale and position, as `setScale` and `setPosition` left them. */
+  scale?: number;
+  x?: number;
+  y?: number;
   destroyed: boolean;
 }
+/** A render texture, as the knockout made it (FS-3EBCA § Change: … a bronze knockout rucksack). */
+interface FakeTexture {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth?: number;
+  scrollFactor?: number;
+  scale?: number;
+  tint?: number;
+  alpha?: number;
+  /** What was done to it, in order: each `draw` and `erase` with the graphics it took, and `render`. */
+  log: { m: "draw" | "erase" | "render"; g?: FakeGraphics }[];
+  destroyed: boolean;
+}
+/**
+ * What the stand-in can make: `none` is the plain stand-in (no `make`, no `add.renderTexture`),
+ * `ok` adds both, recording what they are given, and `throws` adds both with an
+ * `add.renderTexture` that throws.
+ */
+type TextureMode = "none" | "ok" | "throws";
 interface FakeText {
   words: string;
   x: number;
@@ -37,49 +63,81 @@ interface FakeText {
   destroyed: boolean;
 }
 
-function fakeScene() {
+function fakeScene(texture: TextureMode = "none") {
   const zones: FakeZone[] = [];
   const graphics: FakeGraphics[] = [];
+  /** The graphics made off the display list (`make.graphics`), and whether each was to be added. */
+  const made: FakeGraphics[] = [];
+  const madeAdded: (boolean | undefined)[] = [];
+  const textures: FakeTexture[] = [];
+  const attempts = { renderTexture: 0 };
   const texts: FakeText[] = [];
+  const recordOf = new Map<unknown, FakeGraphics>();
+  const newGraphics = (into: FakeGraphics[]) => {
+    const rec: FakeGraphics = { strokes: [], alphas: [], calls: [], ops: [], destroyed: false };
+    into.push(rec);
+    const self: Record<string, unknown> = {};
+    recordOf.set(self, rec);
+    for (const m of [
+      "setScrollFactor",
+      "fillStyle",
+      "fillRect",
+      "fillRoundedRect",
+      "strokeRoundedRect",
+      "strokeRect",
+      "lineBetween",
+      "fillCircle",
+      "strokeCircle",
+      "beginPath",
+      "arc",
+      "closePath",
+      "strokePath",
+      "fillPath",
+      "fillTriangle",
+      "fillGradientStyle",
+      "moveTo",
+      "lineTo",
+      "fillPoints",
+      "strokePoints",
+      "fillEllipse",
+      "strokeEllipse",
+      "setAlpha",
+    ])
+      self[m] = (...args: number[]) => (rec.calls.push(m), rec.ops.push({ m, args }), self);
+    self.clear = () => ((rec.strokes = []), (rec.alphas = []), (rec.calls = []), (rec.ops = []), self);
+    self.lineStyle = (w: number, colour: number, alpha: number) => (
+      rec.strokes.push(colour), rec.alphas.push(alpha), rec.ops.push({ m: "lineStyle", args: [w, colour, alpha] }), self
+    );
+    self.setDepth = (d: number) => ((rec.depth = d), self);
+    self.setScale = (sc: number) => ((rec.scale = sc), self);
+    self.setPosition = (x: number, y: number) => ((rec.x = x), (rec.y = y), self);
+    self.destroy = () => void (rec.destroyed = true);
+    return self;
+  };
+  const renderTexture = (x: number, y: number, width: number, height: number) => {
+    attempts.renderTexture++;
+    if (texture === "throws") throw new Error("stand-in: no framebuffer");
+    const t: FakeTexture = { x, y, width, height, log: [], destroyed: false };
+    textures.push(t);
+    const self: Record<string, unknown> = {
+      width,
+      height,
+      setScrollFactor: (sf: number) => ((t.scrollFactor = sf), self),
+      setDepth: (d: number) => ((t.depth = d), self),
+      setScale: (sc: number) => ((t.scale = sc), self),
+      setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
+      setTint: (c: number) => ((t.tint = c), self),
+      setAlpha: (a: number) => ((t.alpha = a), self),
+      draw: (e: unknown) => (t.log.push({ m: "draw", g: recordOf.get(e) }), self),
+      erase: (e: unknown) => (t.log.push({ m: "erase", g: recordOf.get(e) }), self),
+      render: () => (t.log.push({ m: "render" }), self),
+      destroy: () => void (t.destroyed = true),
+    };
+    return self;
+  };
   const add = {
-    graphics: () => {
-      const rec: FakeGraphics = { strokes: [], alphas: [], calls: [], ops: [], destroyed: false };
-      graphics.push(rec);
-      const self: Record<string, unknown> = {};
-      for (const m of [
-        "setScrollFactor",
-        "fillStyle",
-        "fillRect",
-        "fillRoundedRect",
-        "strokeRoundedRect",
-        "strokeRect",
-        "lineBetween",
-        "fillCircle",
-        "strokeCircle",
-        "beginPath",
-        "arc",
-        "closePath",
-        "strokePath",
-        "fillPath",
-        "fillTriangle",
-        "fillGradientStyle",
-        "moveTo",
-        "lineTo",
-        "fillPoints",
-        "strokePoints",
-        "fillEllipse",
-        "strokeEllipse",
-        "setAlpha",
-      ])
-        self[m] = (...args: number[]) => (rec.calls.push(m), rec.ops.push({ m, args }), self);
-      self.clear = () => ((rec.strokes = []), (rec.alphas = []), (rec.calls = []), (rec.ops = []), self);
-      self.lineStyle = (w: number, colour: number, alpha: number) => (
-        rec.strokes.push(colour), rec.alphas.push(alpha), rec.ops.push({ m: "lineStyle", args: [w, colour, alpha] }), self
-      );
-      self.setDepth = (d: number) => ((rec.depth = d), self);
-      self.destroy = () => void (rec.destroyed = true);
-      return self;
-    },
+    graphics: () => newGraphics(graphics),
+    ...(texture === "none" ? {} : { renderTexture }),
     zone: (x: number, y: number, width: number, height: number) => {
       const z: FakeZone = { x, y, width, height, handlers: {}, destroyed: false };
       zones.push(z);
@@ -108,13 +166,16 @@ function fakeScene() {
       return self;
     },
   };
-  const scene = { add } as unknown as Phaser.Scene;
+  const make = {
+    graphics: (_config: object, addToScene?: boolean) => (madeAdded.push(addToScene), newGraphics(made)),
+  };
+  const scene = (texture === "none" ? { add } : { add, make }) as unknown as Phaser.Scene;
   const liveTexts = () => texts.filter((t) => !t.destroyed);
-  return { scene, zones, graphics, liveTexts };
+  return { scene, zones, graphics, made, madeAdded, textures, attempts, liveTexts };
 }
 
-function setup(icons?: CornerIconSpec[]) {
-  const stage = fakeScene();
+function setup(icons?: CornerIconSpec[], texture: TextureMode = "none") {
+  const stage = fakeScene(texture);
   const press = { menu: vi.fn(), inventory: vi.fn(), character: vi.fn(), party: vi.fn() };
   const corner = new HudCorner(stage.scene, {
     icons: icons ?? [
@@ -199,15 +260,15 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
     expect(env.press.party).toHaveBeenCalledTimes(1);
   });
 
-  it("should draw the Inventory icon's backpack apart from the Character icon's bust (R3; § Change: The inventory icon is an inked backpack)", () => {
+  it("should draw the Inventory icon's rucksack apart from the Character icon's bust (R3; § Change: The inventory icon is a bronze knockout rucksack)", () => {
     const env = setup([{ icon: "inventory" }, { icon: "character" }]);
     const [bag, bust] = env.graphics;
     expect(bag.strokes).toContain(palette.interactable);
     expect(bag.calls).not.toEqual(bust.calls);
-    // a haversack: its parts are paths, its rope's ends lines, its ring and rivets small circles,
-    // none of them a head's
-    expect(bag.calls).toContain("lineBetween");
+    // on a stand-in that cannot make its texture, the rucksack in lines: its ring a small circle,
+    // never a head
     const circles = bag.ops.filter(({ m }) => m === "strokeCircle").map(({ args }) => args[2]);
+    expect(circles.length).toBeGreaterThan(0);
     expect(circles.every((r) => r < 3)).toBe(true);
   });
 
@@ -282,7 +343,7 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
     { icon: "mail", greyed: true },
   ];
 
-  it("should draw no plate and fill nothing under any icon, idle or under the pointer (R1, R3)", () => {
+  it("should draw no plate and fill nothing under any icon, idle or under the pointer, on a stand-in with no texture (R1, R3)", () => {
     const env = setup(row());
     for (const icon of ["menu", "inventory", "character", "party", "mail"] as const) {
       env.zoneAt(icon).handlers.pointerover();
@@ -292,6 +353,20 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
     for (const g of env.graphics) {
       expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
     }
+  });
+
+  // FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack: Inventory is R3's one
+  // exception, its silhouette filled in its own texture and nowhere on the row's graphics.
+  it("should fill nothing on any icon's graphics where Inventory is a knockout: its fills only in what it draws into its texture (R3)", () => {
+    const env = setup(row(), "ok");
+    for (const icon of ["menu", "inventory", "character", "party", "mail"] as const) {
+      env.zoneAt(icon).handlers.pointerover();
+      env.zoneAt(icon).handlers.pointerout();
+    }
+    for (const g of env.graphics) expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+    const fillers = env.made.filter((g) => g.calls.some((m) => FILLS.includes(m)));
+    expect(fillers).toHaveLength(1);
+    expect(env.textures[0].log).toContainEqual({ m: "draw", g: fillers[0] });
   });
 
   it("should stroke each graphics in its glyph's ink alone: no brass rule, no lit edge (R1, R2)", () => {
@@ -330,8 +405,8 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
   });
 });
 
-// FS-3EBCA § Change: The inventory icon is an inked backpack (the owner, 2026-11-13: 「道具藍幫我重做成一個背包的圖示」),
-// as his second tweak round made it a line glyph (「是不是要改成符號線條比較好」). I-3EBCA-12, I-3EBCA-13.
+// Helpers to read what a graphics lays down (first written for § Change: The inventory icon is an
+// inked backpack, I-3EBCA-12).
 interface Mark {
   kind: "fill" | "stroke";
   colour: number;
@@ -385,141 +460,398 @@ function boxOf(ms: Mark[]) {
   return { left, top, right, bottom, width: right - left, height: bottom - top };
 }
 
-describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack, as a line haversack)", () => {
+// FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack (the owner, 2026-11-13:
+// 「icon如果是實心 然後線條用穿透背景的方式呢」, 「背包我想改成那種比較圓的背包 目前有點太長」, 「背包兩側在加側袋」,
+// then 「古銅反白好了」). I-3EBCA-14.
+type P = { x: number; y: number };
+const spanOf = (ps: P[]) => {
+  const xs = ps.map((p) => p.x);
+  const ys = ps.map((p) => p.y);
+  const [left, right, top, bottom] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+  return { left, right, top, bottom, width: right - left, height: bottom - top };
+};
+const inventorySlot = () => {
+  const f = cornerIconFrame("inventory", viewport);
+  return { f, cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
+};
+const BRONZE = mix(palette.frame, palette.interactable, 0.5);
+const BRONZE_LIT = mix(palette.frame, palette.interactableBright, 0.5);
+const FULL_ROW = (): CornerIconSpec[] => [
+  { icon: "menu" },
+  { icon: "inventory" },
+  { icon: "character" },
+  { icon: "party" },
+  { icon: "mail", greyed: true },
+];
+
+/**
+ * What was drawn into a texture, in logical px on the screen, as Phaser would show it: the image
+ * centred on (t.x, t.y) at scale t.scale, each graphics at its own scale and position in it.
+ */
+function knockoutDrawing(t: FakeTexture) {
+  const solid = t.log.find((e) => e.m === "draw")!.g!;
+  const cut = t.log.find((e) => e.m === "erase")!.g!;
+  const shown = (g: FakeGraphics) => (p: P): P => ({
+    x: t.x + ((p.x * (g.scale ?? 1) + (g.x ?? 0)) - t.width / 2) * t.scale!,
+    y: t.y + ((p.y * (g.scale ?? 1) + (g.y ?? 0)) - t.height / 2) * t.scale!,
+  });
+  const fills = marks(solid)
+    .filter((k) => k.kind === "fill")
+    .map((k) => k.points.map(shown(solid)));
+  const cuts = linesOf(cut).map((l) => ({ closed: l.closed, points: l.points.map(shown(cut)) }));
+  const rings = cut.ops
+    .filter(({ m }) => m === "strokeCircle")
+    .map(({ args: [x, y, r] }) => ({ ...shown(cut)({ x, y }), r: r * (cut.scale ?? 1) * t.scale! }));
+  /** Each cut's line width in logical px. */
+  const widths = cut.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0] * (cut.scale ?? 1) * t.scale!);
+  // the silhouette's parts: the roll on top, a pocket at each side, the body the rest
+  const box = spanOf(fills.flat());
+  const spans = fills.map(spanOf);
+  const roll = spans.find((s) => s.top === box.top)!;
+  const pockets = spans.filter((s) => s !== roll && (s.left === box.left || s.right === box.right));
+  const bodies = spans.filter((s) => s !== roll && !pockets.includes(s));
+  return { solid, cut, fills, cuts, rings, widths, box, roll, pockets, bodies, body: bodies[0] };
+}
+
+describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack, R1–R8)", () => {
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 
-  const backpack = () => {
-    const env = setup([{ icon: "inventory" }]);
-    return { ...env, g: env.graphics[0] };
+  const knockout = (icons: CornerIconSpec[] = [{ icon: "inventory" }]) => {
+    const env = setup(icons, "ok");
+    const inventory = env.graphics[icons.findIndex((i) => i.icon === "inventory")];
+    return { ...env, inventory };
   };
-  /** Its paths, each as the points it runs through. */
-  const paths = (g: FakeGraphics) =>
-    marks(g)
-      .filter((k) => k.points.length > 2)
-      .map((k) => k.points);
-  const circles = (g: FakeGraphics) =>
-    g.ops.filter(({ m }) => m === "strokeCircle").map(({ args: [x, y, r] }) => ({ x, y, r }));
-  const span = (ps: { x: number; y: number }[]) => {
-    const xs = ps.map((p) => p.x);
-    const ys = ps.map((p) => p.y);
-    return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
-  };
-  /** A U: an open line whose two ends stand well above its lowest point. */
-  const us = (g: FakeGraphics) =>
-    paths(g)
-      .filter((ps) => {
-        const s = span(ps);
-        const ends = Math.max(ps[0].y, ps[ps.length - 1].y);
-        return s.right - s.left >= 10 && s.bottom - ends >= 5 && Math.abs(ps[0].y - ps[ps.length - 1].y) < 1;
-      })
-      .map(span);
 
-  it("should draw in the other glyphs' lines alone, GLYPH_LINE_W wide, and brighten them under the pointer as they do (round 2; FS-QHN87 R1, R9)", () => {
-    const { g, zoneAt } = backpack();
-    const widths = () => g.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0]);
-    expect(new Set(widths())).toEqual(new Set([GLYPH_LINE_W]));
-    const idle = g.ops.filter(({ m }) => m !== "lineStyle");
-    zoneAt("inventory").handlers.pointerover();
-    expect(new Set(g.strokes)).toEqual(new Set([palette.interactableBright]));
-    expect(new Set(g.alphas)).toEqual(new Set([1]));
-    // only the ink changes: every line where it was
-    expect(g.ops.filter(({ m }) => m !== "lineStyle")).toEqual(idle);
+  it.each([1, 1.5, 2])(
+    "should make one texture, for Inventory, at render scale %s: depth 1000, scroll factor 0, on the slot's centre, the slot × 2·renderScale, shown at 1/k (R6)",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const env = knockout(FULL_ROW());
+      const { f, cx, cy } = inventorySlot();
+      const k = 2 * renderScale;
+      expect(env.textures).toHaveLength(1);
+      const [t] = env.textures;
+      expect(t).toMatchObject({
+        x: cx,
+        y: cy,
+        width: Math.round(f.width * k),
+        height: Math.round(f.height * k),
+        depth: 1000,
+        scrollFactor: 0,
+      });
+      expect(t.scale).toBeCloseTo(1 / k, 12);
+      // the icon's own graphics draws nothing while the texture stands
+      expect(env.inventory.ops).toEqual([]);
+    },
+  );
+
+  it("should fill the silhouette white at 1, then erase its cuts, every one 1.6 logical px, then render it once, and destroy what it drew with (R3, R4, R6)", () => {
+    const env = knockout();
+    const [t] = env.textures;
+    expect(t.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
+    const { solid, cut, widths } = knockoutDrawing(t);
+    // the silhouette: fills alone, in TINT_IDENTITY at 1, no gradient, no line
+    expect(new Set(solid.calls)).toEqual(new Set(["fillStyle", "beginPath", "moveTo", "lineTo", "closePath", "fillPath"]));
+    for (const { args } of solid.ops.filter(({ m }) => m === "fillStyle")) expect(args).toEqual([TINT_IDENTITY, 1]);
+    // the cuts: strokes alone, in TINT_IDENTITY at 1, each one stroke or one path, never a lineBetween
+    expect(cut.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+    expect(cut.calls).not.toContain("lineBetween");
+    expect(new Set(cut.strokes)).toEqual(new Set([TINT_IDENTITY]));
+    expect(new Set(cut.alphas)).toEqual(new Set([1]));
+    expect(widths.length).toBeGreaterThan(0);
+    for (const w of widths) expect(w).toBeCloseTo(1.6, 9);
+    // drawn off the display list, and gone once the texture is rendered
+    expect(env.made).toEqual([solid, cut]);
+    expect(env.madeAdded).toEqual([false, false]);
+    expect(env.made.every((g) => g.destroyed)).toBe(true);
   });
 
-  it("should draw a rounded flap with a tooled line just inside its edge (round 2)", () => {
-    const { g } = backpack();
-    const [edge, tooled] = us(g).sort((a, b) => b.right - b.left - (a.right - a.left));
-    expect(edge).toBeDefined();
-    expect(tooled).toBeDefined();
-    // the tooled line inside the edge, a few px in, never touching it
-    expect(tooled.left).toBeGreaterThan(edge.left + 1.5);
-    expect(tooled.right).toBeLessThan(edge.right - 1.5);
-    expect(edge.bottom - tooled.bottom).toBeGreaterThan(1.5);
-    expect(edge.bottom - tooled.bottom).toBeLessThan(5);
+  it("should be a round rucksack, wider than tall: 36–42 by 28–34, centred on its slot within 1 px, inside it (R1, R2)", () => {
+    const env = knockout();
+    const { f, cx, cy } = inventorySlot();
+    const { box } = knockoutDrawing(env.textures[0]);
+    expect(box.width).toBeGreaterThanOrEqual(36);
+    expect(box.width).toBeLessThanOrEqual(42);
+    expect(box.height).toBeGreaterThanOrEqual(28);
+    expect(box.height).toBeLessThanOrEqual(34);
+    expect(box.width).toBeGreaterThan(box.height);
+    expect(Math.abs((box.left + box.right) / 2 - cx)).toBeLessThanOrEqual(1);
+    expect(Math.abs((box.top + box.bottom) / 2 - cy)).toBeLessThanOrEqual(1);
+    expect(box.left).toBeGreaterThanOrEqual(f.x);
+    expect(box.right).toBeLessThanOrEqual(f.x + f.width);
+    expect(box.top).toBeGreaterThanOrEqual(f.y);
+    expect(box.bottom).toBeLessThanOrEqual(f.y + f.height);
   });
 
-  it("should hang an iron hasp from the flap's point, shut on a ring, and set rivets in it (round 2)", () => {
-    const { g } = backpack();
-    const edge = us(g).sort((a, b) => b.right - b.left - (a.right - a.left))[0];
-    const point = (edge.left + edge.right) / 2;
-    const ring = circles(g).find(({ r }) => r >= 1.5 && r <= 2.5)!;
-    expect(ring).toBeDefined();
-    expect(ring.y - ring.r).toBeGreaterThan(edge.bottom);
-    expect(Math.abs(ring.x - point)).toBeLessThan(1.5);
-    // the hasp: a small line from the flap's point down to the ring
-    const hasp = paths(g).map(span).find((s) => s.top >= edge.bottom - 1 && s.bottom <= ring.y && s.right - s.left < 5);
-    expect(hasp).toBeDefined();
-    expect(circles(g).filter(({ r }) => r < 1.2).length).toBeGreaterThanOrEqual(2);
+  it("should lay a bedroll across the top, half to all of the body's width, over a body with a low pocket at each side (R1)", () => {
+    const env = knockout();
+    const { fills, box, roll, pockets, bodies, body } = knockoutDrawing(env.textures[0]);
+    expect(fills).toHaveLength(4);
+    expect(bodies).toHaveLength(1);
+    expect(roll.top).toBe(box.top);
+    expect(roll.width).toBeGreaterThanOrEqual(body.width / 2);
+    expect(roll.width).toBeLessThanOrEqual(body.width);
+    // the pockets: the silhouette's left and right, low on the body, no taller than a third of it
+    expect(pockets).toHaveLength(2);
+    expect(pockets.map((p) => p.left === box.left || p.right === box.right)).toEqual([true, true]);
+    expect(pockets.some((p) => p.left === box.left)).toBe(true);
+    expect(pockets.some((p) => p.right === box.right)).toBe(true);
+    for (const p of pockets) {
+      expect(p.top).toBeGreaterThan((body.top + body.bottom) / 2);
+      expect(p.height).toBeLessThanOrEqual(box.height / 3);
+      // standing out past the body's side
+      expect(p.left < body.left || p.right > body.right).toBe(true);
+    }
   });
 
-  it("should roll a blanket across the top, tied with rope whose short ends hang loose (round 2)", () => {
-    const { g } = backpack();
-    const all = span(paths(g).flat());
-    const roll = paths(g).map(span).find((s) => s.top === all.top && s.right - s.left > 15)!;
-    expect(roll).toBeDefined();
-    // a tie: a short line round the roll, from its top to its bottom
-    const ties = paths(g)
-      .map(span)
-      .filter((s) => s.right - s.left < 2 && Math.abs(s.top - roll.top) < 0.5 && Math.abs(s.bottom - roll.bottom) < 0.5);
+  it("should be mirror-symmetric, left for right, within 0.01 px (R1)", () => {
+    const env = knockout();
+    const { fills, box } = knockoutDrawing(env.textures[0]);
+    const mid = (box.left + box.right) / 2;
+    const points = fills.flat();
+    for (const p of points) {
+      expect(points.some((q) => Math.abs(q.x - (2 * mid - p.x)) < 0.01 && Math.abs(q.y - p.y) < 0.01)).toBe(true);
+    }
+  });
+
+  it("should cut the flap's edge across the body, two roll ties, the roll's closed end and its seam with the body (R4)", () => {
+    const env = knockout();
+    const { cuts, roll, body } = knockoutDrawing(env.textures[0]);
+    const open = cuts.filter((c) => !c.closed);
+    // the flap: a curve from one side of the body to the other, lowest in the middle
+    const flap = open.find((c) => {
+      const s = spanOf(c.points);
+      const [a, b] = [c.points[0], c.points[c.points.length - 1]];
+      return Math.abs(a.y - b.y) < 0.01 && s.width >= 0.8 * body.width && s.bottom - a.y > 3;
+    });
+    expect(flap).toBeDefined();
+    const lowest = flap!.points.reduce((a, b) => (b.y > a.y ? b : a));
+    expect(Math.abs(lowest.x - (body.left + body.right) / 2)).toBeLessThan(0.5);
+    // the ties: round the roll from its top to its bottom
+    const ties = open.filter((c) => {
+      const s = spanOf(c.points);
+      return s.width < 2 && Math.abs(s.top - roll.top) < 0.01 && Math.abs(s.bottom - roll.bottom) < 0.01;
+    });
     expect(ties).toHaveLength(2);
-    // a loose end: a short line hanging from a tie's foot
-    const ends = g.ops.filter(
-      ({ m, args }) =>
-        m === "lineBetween" && Math.abs(args[1] - roll.bottom) < 0.5 && args[3] > args[1] + 1.5 && args[3] < args[1] + 4,
-    );
-    expect(ends.length).toBeGreaterThanOrEqual(2);
+    // the rolled end: a closed oval at the roll's right, as tall as the roll
+    const end = cuts.find((c) => {
+      const s = spanOf(c.points);
+      return c.closed && s.left > (roll.left + roll.right) / 2 && Math.abs(s.height - roll.height) < 0.1;
+    });
+    expect(end).toBeDefined();
+    // the seam: level along the roll's foot, more than half its width
+    const seam = open.find((c) => c.points.every((p) => Math.abs(p.y - roll.bottom) < 0.01) && spanOf(c.points).width > roll.width / 2);
+    expect(seam).toBeDefined();
   });
 
-  it("should hang a small drawstring pouch at the side (round 2)", () => {
-    const { g } = backpack();
-    const edge = us(g).sort((a, b) => b.right - b.left - (a.right - a.left))[0];
-    const pouch = paths(g)
-      .map(span)
-      // beside the flap, below its top, no taller than a third of the pack
-      .find((s) => s.left > edge.right - 2 && s.top > edge.top + 4 && s.bottom - s.top > 4 && s.bottom - s.top < 9);
-    expect(pouch).toBeDefined();
-    // its drawstring: a short level line across its neck
-    const string = g.ops.find(
-      ({ m, args }) => m === "lineBetween" && args[1] === args[3] && Math.abs(args[1] - pouch!.top) < 0.5,
-    );
-    expect(string).toBeDefined();
+  it("should cut a hasp from the flap's lowest point, shut on a ring of radius 1.5–2.5 below it (R4)", () => {
+    const env = knockout();
+    const { cuts, rings, body } = knockoutDrawing(env.textures[0]);
+    const mid = (body.left + body.right) / 2;
+    const flap = cuts
+      .filter((c) => !c.closed)
+      .map((c) => spanOf(c.points))
+      .reduce((a, b) => (b.width > a.width ? b : a));
+    const ring = rings.find((r) => r.r >= 1.5 && r.r <= 2.5)!;
+    expect(ring).toBeDefined();
+    expect(ring.y - ring.r).toBeGreaterThan(flap.bottom);
+    expect(Math.abs(ring.x - mid)).toBeLessThan(0.5);
+    const hasp = cuts
+      .map((c) => spanOf(c.points))
+      .find((s) => s.width < 5 && s.top >= flap.bottom - 1.5 && s.top < flap.bottom && s.bottom <= ring.y && Math.abs((s.left + s.right) / 2 - mid) < 0.5);
+    expect(hasp).toBeDefined();
   });
 
-  it("should stand 32–36 px tall and at most 44 wide, in its slot, centred on it (R4)", () => {
-    const { g } = backpack();
-    const box = boxOf(marks(g));
-    expect(box.height).toBeGreaterThanOrEqual(32);
-    expect(box.height).toBeLessThanOrEqual(36);
-    expect(box.width).toBeLessThanOrEqual(44);
-    expect(box.left).toBeGreaterThanOrEqual(954);
-    expect(box.right).toBeLessThanOrEqual(954 + 54);
-    expect(box.top).toBeGreaterThanOrEqual(658);
-    expect(box.bottom).toBeLessThanOrEqual(658 + 46);
-    expect(Math.abs((box.left + box.right) / 2 - 981)).toBeLessThanOrEqual(1);
-    expect(Math.abs((box.top + box.bottom) / 2 - 681)).toBeLessThanOrEqual(1);
+  it("should cut each pocket's flap and its seam with the body (R4)", () => {
+    const env = knockout();
+    const { cuts, pockets } = knockoutDrawing(env.textures[0]);
+    for (const p of pockets) {
+      const within = cuts.filter((c) =>
+        c.points.every((q) => q.x >= p.left - 0.5 && q.x <= p.right + 0.5 && q.y >= p.top - 0.5 && q.y <= p.bottom + 0.5),
+      );
+      expect(within.length).toBeGreaterThanOrEqual(2);
+      // the flap across it, the seam the rest
+      expect(within.some((c) => spanOf(c.points).width >= 0.8 * p.width)).toBe(true);
+    }
   });
 
-  it("should move with its slot when the view widens (R4; FS-ZAJMH R13)", () => {
-    const { g, corner } = backpack();
+  it("should tint it bronze at 0.85, lifted toward the bright amber at 1 under the pointer, with no new texture and nothing drawn (R3, R5)", () => {
+    const env = knockout([{ icon: "inventory", press: vi.fn() }]);
+    const [t] = env.textures;
+    expect(t.tint).toBe(BRONZE);
+    expect(t.alpha).toBe(0.85);
+    env.zoneAt("inventory").handlers.pointerover();
+    expect(t.tint).toBe(BRONZE_LIT);
+    expect(t.alpha).toBe(1);
+    expect(env.liveTexts().map((x) => x.words)).toEqual(["Inventory (I)"]);
+    env.zoneAt("inventory").handlers.pointerout();
+    expect(t.tint).toBe(BRONZE);
+    expect(t.alpha).toBe(0.85);
+    expect(env.textures).toHaveLength(1);
+    expect(t.log).toHaveLength(3);
+    expect(env.made).toHaveLength(2);
+    expect(env.inventory.ops).toEqual([]);
+  });
+
+  it("should move to the slot's new centre on a relayout to 1280, with no new texture: a width change builds nothing (R2, R7)", () => {
+    const env = knockout();
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
-    corner.relayout();
-    const box = boxOf(marks(g));
-    expect(Math.abs((box.left + box.right) / 2 - 1181)).toBeLessThanOrEqual(1);
-    expect(Math.abs((box.top + box.bottom) / 2 - 681)).toBeLessThanOrEqual(1);
+    env.corner.relayout();
+    const { cx, cy } = inventorySlot();
+    expect(env.textures).toHaveLength(1);
+    expect(env.textures[0]).toMatchObject({ x: cx, y: cy, destroyed: false });
+    expect(env.made).toHaveLength(2);
   });
 
-  it("should keep the Inventory zone, hand cursor, press and label, and go with destroy (R7, R11)", () => {
-    const env = setup([{ icon: "inventory", press: vi.fn() }]);
-    const g = env.graphics[0];
-    const z = env.zoneAt("inventory");
-    expect(z).toMatchObject({ x: 954, y: 658, width: 54, height: 46, handCursor: true });
-    expect(env.corner.covers(955, 659, "inventory")).toBe(true);
-    z.handlers.pointerover();
-    expect(env.liveTexts().map((t) => t.words)).toEqual(["Inventory (I)"]);
-    env.corner.destroy();
-    expect(g.destroyed).toBe(true);
-    expect(env.liveTexts()).toHaveLength(0);
+  it("should build anew at k = 4 when the render scale goes from 1 to 2, destroying the old, and keep the pointer's tint (R7)", () => {
+    const env = knockout();
+    env.zoneAt("inventory").handlers.pointerover();
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const { f, cx, cy } = inventorySlot();
+    expect(env.textures).toHaveLength(2);
+    const [old, now] = env.textures;
+    expect(old.destroyed).toBe(true);
+    expect(now).toMatchObject({ x: cx, y: cy, width: Math.round(f.width * 4), height: Math.round(f.height * 4), depth: 1000 });
+    expect(now.scale).toBeCloseTo(1 / 4, 12);
+    expect(now.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
+    expect(now).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+    expect(env.made.every((g) => g.destroyed)).toBe(true);
+    expect(env.liveTexts().map((x) => x.words)).toEqual(["Inventory (I)"]);
+    // the drawing is the same in logical px
+    const was = knockoutDrawing(old);
+    const is = knockoutDrawing(now);
+    expect(is.box.width).toBeCloseTo(was.box.width, 9);
+    expect(is.box.height).toBeCloseTo(was.box.height, 9);
+    for (const w of is.widths) expect(w).toBeCloseTo(1.6, 9);
   });
+
+  it("should take the texture down with the row and stop watching the view: a later render-scale change builds nothing (R8)", () => {
+    const env = knockout();
+    env.corner.destroy();
+    expect(env.textures[0].destroyed).toBe(true);
+    expect(() => viewport.set({ width: 1080, height: 720, renderScale: 2 })).not.toThrow();
+    expect(env.textures).toHaveLength(1);
+    expect(env.attempts.renderTexture).toBe(1);
+  });
+});
+
+describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack, R9: the fallback in lines)", () => {
+  afterEach(() => {
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  const lines = (texture: "none" | "throws") => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = setup([{ icon: "inventory", press: vi.fn() }], texture);
+    return { ...env, g: env.graphics[0], warn };
+  };
+
+  it.each(["none", "throws"] as const)(
+    "should stroke the rucksack in the row's lines alone, GLYPH_LINE_W wide, amber at 0.85, bright at 1 under the pointer with every point kept (texture: %s)",
+    (texture) => {
+      const { g, zoneAt, textures } = lines(texture);
+      expect(textures).toEqual([]);
+      expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+      expect(new Set(g.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0]))).toEqual(new Set([GLYPH_LINE_W]));
+      expect(new Set(g.strokes)).toEqual(new Set([palette.interactable]));
+      expect(new Set(g.alphas)).toEqual(new Set([0.85]));
+      const idle = g.ops.filter(({ m }) => m !== "lineStyle");
+      zoneAt("inventory").handlers.pointerover();
+      expect(new Set(g.strokes)).toEqual(new Set([palette.interactableBright]));
+      expect(new Set(g.alphas)).toEqual(new Set([1]));
+      expect(g.ops.filter(({ m }) => m !== "lineStyle")).toEqual(idle);
+    },
+  );
+
+  it.each(["none", "throws"] as const)("should draw a bedroll on top, a flap, a ring and a pocket at each side (texture: %s)", (texture) => {
+    const { g } = lines(texture);
+    const { cx } = inventorySlot();
+    const all = linesOf(g);
+    const box = spanOf(all.flatMap((l) => l.points));
+    // the bedroll: a closed outline whose top is the drawing's top
+    expect(all.some((l) => l.closed && spanOf(l.points).top === box.top && spanOf(l.points).width > 15)).toBe(true);
+    // the flap: a wide curve, its two ends level and well above its lowest point
+    expect(
+      all.some((l) => {
+        const s = spanOf(l.points);
+        const [a, b] = [l.points[0], l.points[l.points.length - 1]];
+        return !l.closed && s.width > 20 && Math.abs(a.y - b.y) < 0.01 && s.bottom - a.y > 3;
+      }),
+    ).toBe(true);
+    const ring = g.ops.filter(({ m }) => m === "strokeCircle").map(({ args }) => args[2]);
+    expect(ring.some((r) => r >= 1.5 && r <= 2.5)).toBe(true);
+    // the pockets: lines standing out past the body at each side
+    expect(all.some((l) => spanOf(l.points).left < cx - 16)).toBe(true);
+    expect(all.some((l) => spanOf(l.points).right > cx + 16)).toBe(true);
+  });
+
+  it.each(["none", "throws"] as const)(
+    "should stand 36–44 by 28–36, its line's half width included, centred on its slot within 1 px, before and after a relayout to 1280 (texture: %s)",
+    (texture) => {
+      const { g, corner } = lines(texture);
+      for (const width of [1080, 1280]) {
+        viewport.set({ width, height: 720, renderScale: 1 });
+        corner.relayout();
+        const { cx, cy } = inventorySlot();
+        const box = boxOf(marks(g));
+        expect(box.width).toBeGreaterThanOrEqual(36);
+        expect(box.width).toBeLessThanOrEqual(44);
+        expect(box.height).toBeGreaterThanOrEqual(28);
+        expect(box.height).toBeLessThanOrEqual(36);
+        expect(Math.abs((box.left + box.right) / 2 - cx)).toBeLessThanOrEqual(1);
+        expect(Math.abs((box.top + box.bottom) / 2 - cy)).toBeLessThanOrEqual(1);
+      }
+    },
+  );
+
+  it("should try the texture once where making it throws, say so, and keep the lines on a later render-scale change", () => {
+    const { g, attempts, warn } = lines("throws");
+    expect(attempts.renderTexture).toBe(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(attempts.renderTexture).toBe(1);
+    expect(g.strokes.length).toBeGreaterThan(0);
+    expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+  });
+});
+
+describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack, R11, R12: the rest stays)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should draw Menu, Character, Party and the greyed Mailbox the same, op for op, with or without the knockout", () => {
+    const plain = setup(FULL_ROW(), "none");
+    const knocked = setup(FULL_ROW(), "ok");
+    for (const i of [0, 2, 3, 4]) {
+      expect(knocked.graphics[i].ops).toEqual(plain.graphics[i].ops);
+      expect(knocked.graphics[i].depth).toBe(1000);
+    }
+  });
+
+  it.each(["none", "ok", "throws"] as const)(
+    "should keep the Inventory zone, hand cursor, covers, press and label, and take everything down with destroy (texture: %s)",
+    (texture) => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const press = vi.fn();
+      const env = setup([{ icon: "inventory", press }], texture);
+      const f = cornerIconFrame("inventory", viewport);
+      const z = env.zoneAt("inventory");
+      expect(z).toMatchObject({ x: f.x, y: f.y, width: f.width, height: f.height, handCursor: true, depth: 1000 });
+      expect(env.corner.covers(f.x + 1, f.y + 1, "inventory")).toBe(true);
+      expect(env.corner.covers(f.x + f.width - 1, f.y + f.height - 1, "inventory")).toBe(true);
+      z.handlers.pointerdown();
+      expect(press).toHaveBeenCalledTimes(1);
+      z.handlers.pointerover();
+      expect(env.liveTexts().map((t) => t.words)).toEqual(["Inventory (I)"]);
+      env.corner.destroy();
+      expect(env.graphics.every((g) => g.destroyed)).toBe(true);
+      expect(env.zones.every((zz) => zz.destroyed)).toBe(true);
+      expect(env.textures.every((t) => t.destroyed)).toBe(true);
+      expect(env.liveTexts()).toHaveLength(0);
+    },
+  );
 });
 
 // FS-QHN87 (the owner, 2026-11-13: 「icon感覺有點空 不是指背包是所有icon」): richer glyphs in one sturdier
@@ -529,7 +861,7 @@ describe("HudCorner (FS-QHN87 R1: one line width)", () => {
     expect(GLYPH_LINE_W).toBe(2.25);
   });
 
-  it("should stroke every glyph of the row, the greyed Mailbox's included, at GLYPH_LINE_W alone, idle and hovered", () => {
+  it("should stroke every glyph of the row, the greyed Mailbox's and the Inventory's line fallback included, at GLYPH_LINE_W alone, idle and hovered", () => {
     const env = setup([
       { icon: "menu" },
       { icon: "inventory" },
@@ -628,10 +960,18 @@ describe("HudCorner (FS-QHN87 R2: no notches)", () => {
     for (const g of env.graphics) expect(notches(g)).toEqual([]);
   });
 
-  it("should draw no angled corner of the haversack as two lines meeting end to end (its other strokes are f779a9b0's, R9)", () => {
-    const env = setup([{ icon: "inventory" }]);
-    expect(notches(env.graphics[0], (l) => l.points.length === 2)).toEqual([]);
-  });
+  // FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack, R9: the rucksack in lines,
+  // where the scene cannot make its texture.
+  it.each(["none", "throws"] as const)(
+    "should draw no angled corner of the Inventory's line rucksack as two strokes meeting end to end (texture: %s)",
+    (texture) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const env = setup([{ icon: "inventory" }], texture);
+      expect(env.graphics[0].calls).not.toContain("lineBetween");
+      expect(notches(env.graphics[0])).toEqual([]);
+      warn.mockRestore();
+    },
+  );
 });
 
 describe("HudCorner (FS-QHN87 R3: a riveted gear)", () => {
