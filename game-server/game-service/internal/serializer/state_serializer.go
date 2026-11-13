@@ -523,8 +523,11 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 
 	// whether the altar is burned is the run's plan's, read once the whole
 	// world has been walked (FS-3103M §B R7)
-	if backendState.Altar != nil && plan != nil {
-		backendState.Altar.Burned = plan.Burned
+	if plan != nil {
+		if backendState.Altar != nil {
+			backendState.Altar.Burned = plan.Burned
+		}
+		backendState.TomeCarried = plan.Carried && !plan.Burned
 	}
 
 	return backendState, nil

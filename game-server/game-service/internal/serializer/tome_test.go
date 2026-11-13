@@ -120,3 +120,33 @@ func TestFormatStateToClientState_NoTomeKeysWithoutThemAndNoHeight(t *testing.T)
 		})
 	}
 }
+
+// tome_carried rides the broadcast while the party carries the tome unburned,
+// to every recipient. FS-3103M §E R14.
+func TestFormatStateToClientState_TomeCarriedWhileCarriedAndUnburned(t *testing.T) {
+	tests := []struct {
+		name            string
+		carried, burned bool
+		want            bool
+	}{
+		{"never taken", false, false, false},
+		{"carried", true, false, true},
+		{"burned", false, true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			plan := onTomeRunFloor(em, 2)
+			plan.Carried, plan.Burned = tt.carried, tt.burned
+			me := uuid.New()
+			addDelver(em, me, 0, 0, 100)
+
+			sent := tomeWire(t, em, types.WorldTypeRun, me)
+			if !tt.want {
+				assert.NotContains(t, sent, "tome_carried")
+				return
+			}
+			assert.Equal(t, true, sent["tome_carried"])
+		})
+	}
+}

@@ -1,11 +1,14 @@
 package game
 
 import (
+	"fmt"
 	"log/slog"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
 )
 
 /**
@@ -139,4 +142,73 @@ func CreateAltarEntity(em *ecs.EntityManager, x, y float64) *ecs.Entity {
 	entity.AddComponent(components.NewTransformComponent(x, y))
 	entity.AddComponent(components.NewInteractableComponent(commonconstants.DefaultInteractableRange))
 	return entity
+}
+
+// The interact replies' reasons on the tome and the altar, from which the
+// client writes its own lines. FS-3103M §D R13, §F R16.
+const (
+	// ReasonTomeTaken is the taker's reply on taking the tome
+	ReasonTomeTaken = "tome_taken"
+	// RefusalAltarWithoutTome is a reach for the altar without the tome
+	RefusalAltarWithoutTome = "altar_without_tome"
+)
+
+/**
+* takeTome takes the tome a delver reached for, on the tick: in interact range,
+* the tome entity is removed and the run's plan records that the party carries
+* it. It is run-level state, no bag slot, never extracted; the taker leaving or
+* dying changes nothing. Only the taker is told. A second reach in the same
+* tick finds no entity and is refused before it gets here.
+* FS-3103M §D R12-R13.
+**/
+func (s *Session) takeTome(playerID uuid.UUID, body *components.TransformComponent, tome *ecs.Entity) error {
+	if err := s.inReachOf(playerID, body, tome); err != nil {
+		return err
+	}
+	plan, ok := s.tomePlan()
+	if !ok {
+		return fmt.Errorf("take tome %s in a run with no tome plan", tome.ID)
+	}
+
+	s.EntityManager.RemoveEntity(tome.ID)
+	plan.Carried = true
+	slog.Info("Tome taken", "sessionID", s.ID, "playerID", playerID)
+
+	if err := s.sender.SendMessageToPlayer(playerID, types.Message{
+		Action:  string(commonconstants.ActionInteract),
+		Payload: map[string]interface{}{"success": true, "reason": ReasonTomeTaken},
+	}); err != nil {
+		slog.Debug("Could not tell the taker the tome is taken", "player_id", playerID, "error", err)
+	}
+	return nil
+}
+
+/**
+* reachAltar answers a delver's reach for the altar. Without the tome it is
+* refused with altar_without_tome and nothing changes; the refusal is play, so
+* the reach returns no error and the altar's hold is let go at once, as every
+* refused reach's is. FS-3103M §F R16.
+**/
+func (s *Session) reachAltar(playerID uuid.UUID, body *components.TransformComponent, altar *ecs.Entity) error {
+	if err := s.inReachOf(playerID, body, altar); err != nil {
+		return err
+	}
+	s.sendRefusalToPlayer(playerID, string(commonconstants.ActionInteract),
+		"a tome was burned here once", RefusalAltarWithoutTome, nil)
+	return nil
+}
+
+// inReachOf refuses a reach for target from beyond interact range, as every
+// interactable's is.
+func (s *Session) inReachOf(playerID uuid.UUID, body *components.TransformComponent, target *ecs.Entity) error {
+	tc, ok := target.GetComponent(ecs.ComponentTypeTransform)
+	if !ok {
+		return fmt.Errorf("interact target %s has no position", target.ID)
+	}
+	at := tc.(*components.TransformComponent)
+	if !s.calcWithinDistance(body.X, body.Y, at.X, at.Y) {
+		s.sendErrorToPlayer(playerID, string(commonconstants.ActionInteract), "too far away to interact")
+		return ErrOutOfRange
+	}
+	return nil
 }

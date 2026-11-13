@@ -1883,8 +1883,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	_, isItemEntity := targetEntity.GetComponent(ecs.ComponentTypeItem)
 	switchComp, isSwitch := targetEntity.GetComponent(ecs.ComponentTypeSwitch)
 	_, isEscapeDoor := targetEntity.GetComponent(ecs.ComponentTypeEscapeDoor)
+	// a tome run's tome and altar (FS-3103M §D, §F)
+	isTome := targetEntity.HasComponent(ecs.ComponentTypeTome)
+	isAltar := targetEntity.HasComponent(ecs.ComponentTypeAltar)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -1924,6 +1927,15 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 	if isStairs {
 		return s.climbStairs(playerID, playerTransform, targetEntity)
+	}
+
+	// --- the tome and the altar (FS-3103M §D, §F) ---
+
+	if isTome {
+		return s.takeTome(playerID, playerTransform, targetEntity)
+	}
+	if isAltar {
+		return s.reachAltar(playerID, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---

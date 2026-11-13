@@ -1,11 +1,14 @@
 package game
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/serializer"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -115,15 +118,55 @@ func TestSetTomePlan_SurvivesTheFloorChange(t *testing.T) {
 // altar stands on altarFloor, its first floor built for one delver.
 func tomeRun(t *testing.T, seed uint64, height, tomeFloor, altarFloor int) (*Session, uuid.UUID) {
 	t.Helper()
+	s, ids := tomeRunOf(t, seed, height, tomeFloor, altarFloor, 1)
+	return s, ids[0]
+}
+
+// tomeRunOf is tomeRun for a party of delvers, every reply to them recorded.
+func tomeRunOf(t *testing.T, seed uint64, height, tomeFloor, altarFloor, delvers int) (*Session, []uuid.UUID) {
+	t.Helper()
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, &countingItemsClient{}, RunBounds())
+	s.sender = &recordingSender{}
 	s.spawnRand = seededSpawns(seed)
 	s.InitialSystems()
 	currentFloor(t, s).Count = height
 	s.setTomePlan(tomeFloor, altarFloor)
-	id := uuid.New()
-	s.AddPlayer(id, types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
+	ids := make([]uuid.UUID, delvers)
+	for i := range ids {
+		ids[i] = uuid.New()
+		s.AddPlayer(ids[i], types.CharacterInPlay{Name: "Delver", Class: "warrior"}, "")
+	}
 	s.InitialMapObjects(nil)
-	return s, id
+	return s, ids
+}
+
+// standBy puts a delver well inside the interact range of target.
+func standBy(t *testing.T, s *Session, playerID uuid.UUID, target *ecs.Entity) {
+	t.Helper()
+	at := transformOf(t, target)
+	body := transformOf(t, delverEntity(t, s, playerID))
+	body.X, body.Y = at.X+constants.DefaultInteractableRange/2, at.Y
+}
+
+// standFar puts a delver well out of the interact range of target.
+func standFar(t *testing.T, s *Session, playerID uuid.UUID, target *ecs.Entity) {
+	t.Helper()
+	at := transformOf(t, target)
+	body := transformOf(t, delverEntity(t, s, playerID))
+	body.X, body.Y = at.X+constants.DefaultInteractableRange*4, at.Y
+}
+
+// repliesTo is every message the session sent playerID.
+func repliesTo(s *Session, playerID uuid.UUID) []types.Message {
+	return s.sender.(*recordingSender).to(playerID)
+}
+
+// planOf is the run's tome plan, which a tome run always has.
+func planOf(t *testing.T, s *Session) *components.TomePlanComponent {
+	t.Helper()
+	plan, ok := s.tomePlan()
+	require.True(t, ok, "a tome run has its plan")
+	return plan
 }
 
 // paddedAt is the ground a placed object of half-size (rw, rh) at e keeps.
@@ -215,4 +258,131 @@ func TestBuildFloor_TomeFloorFallbackPlacesNeitherAndWarns(t *testing.T) {
 		}
 	}
 	assert.True(t, warned, "a warning is logged: %s", log.String())
+}
+
+// Interact on the tome in range takes it: the tome is gone, the party carries
+// it, and the taker alone is told tome_taken. FS-3103M §D R12-R13.
+func TestHandleInteract_TakingTheTome(t *testing.T) {
+	s, ids := tomeRunOf(t, 1, 3, 1, 2, 2)
+	taker, other := ids[0], ids[1]
+	tome := onlyEntity(t, s, ecs.ComponentTypeTome)
+	standBy(t, s, taker, tome)
+	standBy(t, s, other, tome)
+	before := len(repliesTo(s, other))
+
+	require.NoError(t, s.handleInteract(taker, tome.ID))
+
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeTome), "the tome is taken off the floor")
+	assert.True(t, planOf(t, s).Carried, "the party carries it")
+	replies := repliesTo(s, taker)
+	require.NotEmpty(t, replies)
+	last := replies[len(replies)-1]
+	assert.Equal(t, string(constants.ActionInteract), last.Action)
+	payload := last.Payload
+	assert.Equal(t, true, payload["success"])
+	assert.Equal(t, ReasonTomeTaken, payload["reason"])
+	assert.Len(t, repliesTo(s, other), before, "only the taker is told")
+}
+
+// A reach for the tome from out of range is refused as any interactable's is,
+// and the tome stays. FS-3103M §D R12.
+func TestHandleInteract_TomeOutOfRangeIsRefused(t *testing.T) {
+	s, id := tomeRun(t, 1, 3, 1, 2)
+	tome := onlyEntity(t, s, ecs.ComponentTypeTome)
+	standFar(t, s, id, tome)
+
+	require.ErrorIs(t, s.handleInteract(id, tome.ID), ErrOutOfRange)
+
+	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeTome), 1, "the tome still lies there")
+	assert.False(t, planOf(t, s).Carried)
+}
+
+// Two delvers reaching for the tome in one tick: the first takes it, the
+// second finds no entity and is refused as a vanished target is.
+// FS-3103M §Edge States.
+func TestHandleInteract_TwoTakesInOneTick(t *testing.T) {
+	s, ids := tomeRunOf(t, 2, 3, 1, 2, 2)
+	tome := onlyEntity(t, s, ecs.ComponentTypeTome)
+	standBy(t, s, ids[0], tome)
+	standBy(t, s, ids[1], tome)
+
+	var first, second error
+	s.queueIntent(func() { first = s.handleInteract(ids[0], tome.ID) })
+	s.queueIntent(func() { second = s.handleInteract(ids[1], tome.ID) })
+	s.applyIntents()
+
+	require.NoError(t, first)
+	require.ErrorIs(t, second, ErrEntityNotFound)
+	assert.True(t, planOf(t, s).Carried)
+}
+
+// The tome is the party's, not the taker's: the taker dying or escaping leaves
+// it carried, on every later floor. FS-3103M §D R12.
+func TestTakeTome_StaysCarriedAfterTheTakerDiesOrEscapesAndOnLaterFloors(t *testing.T) {
+	tests := []struct {
+		name  string
+		leave func(t *testing.T, s *Session, taker uuid.UUID)
+	}{
+		{"the taker dies", func(t *testing.T, s *Session, taker uuid.UUID) {
+			hc, _ := delverEntity(t, s, taker).GetComponent(ecs.ComponentTypeHealth)
+			hc.(*components.HealthComponent).IsEliminated = true
+		}},
+		{"the taker escapes", func(_ *testing.T, s *Session, taker uuid.UUID) { s.handlePlayerEscape(taker) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, ids := tomeRunOf(t, 3, 4, 1, 3, 2)
+			tome := onlyEntity(t, s, ecs.ComponentTypeTome)
+			standBy(t, s, ids[0], tome)
+			require.NoError(t, s.handleInteract(ids[0], tome.ID))
+
+			tt.leave(t, s, ids[0])
+			require.NoError(t, s.regenerateFloor())
+
+			assert.True(t, planOf(t, s).Carried, "the party still carries it on floor 2")
+			state := runState(t, s, ids[1])
+			assert.True(t, state.TomeCarried, "tome_carried rides the broadcast")
+		})
+	}
+}
+
+// runState is the state recipient is sent from the session's world now.
+func runState(t *testing.T, s *Session, recipient uuid.UUID) *types.ClientGameState {
+	t.Helper()
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
+	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
+	require.NoError(t, err)
+	return stateSerializer.FormatStateToClientState(backendState, recipient)
+}
+
+// Before the take the broadcast carries no tome_carried. FS-3103M §E R14.
+func TestRunState_NoTomeCarriedBeforeTheTake(t *testing.T) {
+	s, id := tomeRun(t, 4, 3, 1, 2)
+	assert.False(t, runState(t, s, id).TomeCarried)
+}
+
+// A reach for the altar without the tome is refused with altar_without_tome,
+// changes nothing, and the altar can be reached again at once.
+// FS-3103M §F R16.
+func TestHandleInteract_AltarWithoutTheTomeIsRefused(t *testing.T) {
+	s, id := tomeRun(t, 5, 3, 1, 2)
+	require.NoError(t, s.regenerateFloor())
+	altar := onlyEntity(t, s, ecs.ComponentTypeAltar)
+	standBy(t, s, id, altar)
+	monsters := len(monstersIn(s))
+
+	for reach := range 2 {
+		require.NoError(t, s.handleInteract(id, altar.ID), "reach %d", reach+1)
+
+		replies := repliesTo(s, id)
+		require.NotEmpty(t, replies)
+		last := replies[len(replies)-1]
+		assert.Equal(t, string(constants.ActionInteract), last.Action)
+		assert.Equal(t, false, last.Payload["success"])
+		assert.Equal(t, RefusalAltarWithoutTome, last.Payload["reason"], "reach %d", reach+1)
+	}
+	plan := planOf(t, s)
+	assert.False(t, plan.Carried)
+	assert.False(t, plan.Burned)
+	assert.Len(t, monstersIn(s), monsters, "nothing is summoned")
 }
