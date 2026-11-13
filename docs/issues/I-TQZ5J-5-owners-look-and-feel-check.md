@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-5
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-2, I-TQZ5J-3, I-TQZ5J-4, I-TQZ5J-6, I-TQZ5J-7, I-TQZ5J-8]
 labels: [blocked]
@@ -48,3 +48,7 @@ I-TQZ5J-2, I-TQZ5J-3, I-TQZ5J-4, I-TQZ5J-6, I-TQZ5J-7, I-TQZ5J-8.
 ## Spec Reference
 
 FS-TQZ5J §Acceptance Criteria (the owner's check), §Requirements F (R23, R24), §User Stories 1–13.
+
+## Owner sign-off
+
+2026-11-14: the owner checked phase 1 in game (corner row, ESC menu, OPTIONS, Fall confirm, NPC dialogue, notices, interface sounds, the cross-scene pointer) and approved it: 「沒問題」.

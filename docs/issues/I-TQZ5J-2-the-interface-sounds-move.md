@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-2
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-1]
 labels: [ready-for-agent]
