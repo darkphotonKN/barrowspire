@@ -68,6 +68,11 @@ export interface PartyPanelDeps {
   blocked: () => boolean;
   /** Closes what gives way to the panel, just before it opens: the town's letter panel (§ Change C9). */
   opening?: () => void;
+  /**
+   * Runs the panel's own player inputs, T, the Party icon's toggle and the ×, as the scene runs its
+   * own (the interface sounds' wrapper, FS-WDM0X S9). None, and each runs as it is.
+   */
+  wrapper?: { act(run: () => void): void };
 }
 
 /** The panel as a scene hangs it: the app's party, the real socket and DOM field. */
@@ -75,6 +80,7 @@ export function mountPartyPanel(
   scene: Phaser.Scene,
   blocked: () => boolean,
   opening?: () => void,
+  wrapper?: { act(run: () => void): void },
 ): PartyPanel {
   return new PartyPanel(scene, {
     store: usePartyStore,
@@ -88,6 +94,7 @@ export function mountPartyPanel(
         : (document.activeElement as FocusedElement | null),
     blocked,
     opening,
+    wrapper,
   });
 }
 
@@ -202,7 +209,7 @@ export class PartyPanel {
    */
   toggle(): void {
     if (this.deps.blocked()) return;
-    this.flip();
+    this.ownInput(() => this.flip());
   }
 
   /** The view's size changed: the panel, its × and the invite field to their new place (§ Change C5). */
@@ -238,7 +245,13 @@ export class PartyPanel {
       })
     )
       return;
-    this.flip();
+    this.ownInput(() => this.flip());
+  }
+
+  /** One of the panel's own player inputs, through the scene's wrapper where it gave one (FS-WDM0X S9). */
+  private ownInput(run: () => void): void {
+    if (this.deps.wrapper) this.deps.wrapper.act(run);
+    else run();
   }
 
   /** Opens or shuts the panel; what gives way to it closes first (§ Change C9). */
@@ -320,7 +333,7 @@ export class PartyPanel {
       .setDepth(PARTY_PANEL_DEPTH)
       .setInteractive({ useHandCursor: true });
     this.texts.push(x);
-    x.on("pointerdown", () => this.close());
+    x.on("pointerdown", () => this.ownInput(() => this.close()));
     x.on("pointerover", () => lightClose(x, true));
     x.on("pointerout", () => lightClose(x, false));
   }

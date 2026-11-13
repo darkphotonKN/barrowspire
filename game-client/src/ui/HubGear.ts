@@ -304,6 +304,16 @@ export class HubGear {
     return this.panel.isVisible();
   }
 
+  /** Whether the inventory is open, in stash mode or not: the scene's window state (FS-WDM0X S8). */
+  isInventoryOpen(): boolean {
+    return this.panel.isInventoryOpen();
+  }
+
+  /** Whether the character panel is open: the scene's window state (FS-WDM0X S8). */
+  isCharacterOpen(): boolean {
+    return this.panel.isCharacterOpen();
+  }
+
   /** Whether a screen point lies over an open panel: a press there is the overlay's (R8). */
   covers(x: number, y: number): boolean {
     return this.panel.isVisible() && this.panel.covers(x, y);

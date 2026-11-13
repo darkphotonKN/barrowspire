@@ -130,6 +130,16 @@ export class EquipmentHud {
     return this.panel.isVisible();
   }
 
+  /** Whether the inventory is open: the scene's window state (FS-WDM0X S8). */
+  isInventoryOpen(): boolean {
+    return this.panel.isInventoryOpen();
+  }
+
+  /** Whether the character panel is open: the scene's window state (FS-WDM0X S8). */
+  isCharacterOpen(): boolean {
+    return this.panel.isCharacterOpen();
+  }
+
   /** Whether a screen point lies over the open overlay's panels: a press there is never an attack (FS-HRH2J R8). */
   covers(x: number, y: number): boolean {
     return this.panel.isVisible() && this.panel.covers(x, y);

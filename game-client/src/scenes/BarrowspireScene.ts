@@ -56,6 +56,8 @@ import {
 import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
+import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
+import { browserSfxStore } from "@/audio/sfxSetting";
 import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
@@ -698,6 +700,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * in every world outside the town. The ability card and the leave button stand above it.
    */
   private corner?: HudCorner;
+  /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
+  private sounds?: UiSounds;
   /**
    * The player's own class kit drawn (FS-MAMHR §G.32–§G.36, FS-JTNPR req 11), shared with the
    * field scene: the merc's cut, riposte, stance and parry flash, and the archer's aim line.
@@ -3200,11 +3204,12 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.arrival) this.arrivalCard.dark();
     // Connect via SocketManager
     this.connectToServer();
+    this.mountUiSounds();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
-    this.partyPanel = mountPartyPanel(this, () => this.refusesParty());
+    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.sounds);
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
@@ -3265,6 +3270,38 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The interface sounds (FS-WDM0X S23): the player on the game's sound, the level this browser
+   * kept, and the run's windows as the rule reads them. Each player input that can open or close a
+   * window runs through its wrapper (`act`), here and in the modules it is handed to (S9).
+   */
+  private mountUiSounds(): void {
+    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
+  }
+
+  /**
+   * Which of the run's windows are open now (FS-WDM0X S8): the menu's slot (the menu, OPTIONS or
+   * the Fall confirm), Party, Inventory, Character; a run has no letter panel.
+   */
+  private windowState(): WindowState {
+    return {
+      menu: !!this.menu,
+      letter: false,
+      party: this.partyPanel?.isOpen() ?? false,
+      inventory: this.equipment?.isInventoryOpen() ?? false,
+      character: this.equipment?.isCharacterOpen() ?? false,
+    };
+  }
+
+  /**
+   * A player's action, through the interface sounds' wrapper (FS-WDM0X S9): the one effect its
+   * change of window plays. Before create made the player, it runs as it is. Nothing the game does
+   * on its own comes through here (S4): the menu yielding, the run's end, a climb, the scene's end.
+   */
+  private act<T>(run: () => T): T {
+    return this.sounds ? this.sounds.act(run) : run();
+  }
+
+  /**
    * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
    * path, I or B, C, T; the Mailbox greyed, the mailbox being the town's (R9). The overlay's
    * panels stop above it, so it answers while they are open (R11).
@@ -3272,20 +3309,23 @@ export class BarrowspireScene extends Phaser.Scene {
   private mountCorner(): void {
     this.corner = new HudCorner(this, {
       icons: [
-        { icon: "menu", press: () => this.pressMenuIcon() },
+        { icon: "menu", press: () => this.act(() => this.pressMenuIcon()) },
         {
           icon: "inventory",
-          press: () => {
-            if (!this.menu) this.toggleInventory();
-          },
+          press: () =>
+            this.act(() => {
+              if (!this.menu) this.toggleInventory();
+            }),
         },
         {
           icon: "character",
-          press: () => {
-            if (!this.menu) this.toggleCharacter();
-          },
+          press: () =>
+            this.act(() => {
+              if (!this.menu) this.toggleCharacter();
+            }),
         },
-        { icon: "party", press: () => this.partyPanel?.toggle() },
+        // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
+        { icon: "party", press: () => this.act(() => this.partyPanel?.toggle()) },
         { icon: "mail", greyed: true },
       ],
     });
@@ -3391,7 +3431,14 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private composeEquipment(): EquipmentHud {
     // what the party panel covers is the party panel's (FS-R82NV § Change C8)
-    const overlay = new GearOverlay(this, this.art, WorldType.Run, (x, y) => this.partyPanel?.covers(x, y) ?? false);
+    // its panels' × run through the interface sounds' wrapper (FS-WDM0X S9)
+    const overlay = new GearOverlay(
+      this,
+      this.art,
+      WorldType.Run,
+      (x, y) => this.partyPanel?.covers(x, y) ?? false,
+      this.sounds,
+    );
     return new EquipmentHud(
       overlay,
       {
@@ -3453,17 +3500,21 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // I or B opens and closes the inventory (FS-HRH2J R4), C the character panel (§ Change C2);
-    // not while the menu is open (R6)
+    // not while the menu is open (R6); each through the interface sounds' wrapper (FS-WDM0X S9)
     for (const key of ["keydown-I", "keydown-B"]) {
-      this.input.keyboard?.on(key, () => {
-        if (this.menu) return;
-        this.toggleInventory();
-      });
+      this.input.keyboard?.on(key, () =>
+        this.act(() => {
+          if (this.menu) return;
+          this.toggleInventory();
+        }),
+      );
     }
-    this.input.keyboard?.on("keydown-C", () => {
-      if (this.menu) return;
-      this.toggleCharacter();
-    });
+    this.input.keyboard?.on("keydown-C", () =>
+      this.act(() => {
+        if (this.menu) return;
+        this.toggleCharacter();
+      }),
+    );
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {
@@ -3471,12 +3522,14 @@ export class BarrowspireScene extends Phaser.Scene {
       this.containerView.lootFirst();
     });
 
-    // Q 鍵關閉任何打開的彈窗
-    this.input.keyboard?.on("keydown-Q", () => {
-      if (this.menu) return;
-      if (this.equipment?.hide()) return;
-      this.containerView.close();
-    });
+    // Q 鍵關閉任何打開的彈窗 (the gear overlay's close through the interface sounds' wrapper, FS-WDM0X S9)
+    this.input.keyboard?.on("keydown-Q", () =>
+      this.act(() => {
+        if (this.menu) return;
+        if (this.equipment?.hide()) return;
+        this.containerView.close();
+      }),
+    );
 
     // H 鍵顯示/隱藏操作說明
     this.input.keyboard?.on("keydown-H", () => {
@@ -4150,6 +4203,8 @@ export class BarrowspireScene extends Phaser.Scene {
     rememberMinimapMode(this.minimapStore, this.minimapMode);
     minimap.setMode(this.minimapMode);
     this.placeTopRightColumn();
+    // only M and the icon step it, both the player's (FS-WDM0X S7)
+    this.sounds?.play("map_mode_switch");
   }
 
   /**
@@ -5563,7 +5618,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
     const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
     if (esc) {
-      this.pressEscape();
+      // the player's, through the interface sounds' wrapper (FS-WDM0X S9)
+      this.act(() => this.pressEscape());
       return;
     }
     if (this.runEnded || !this.menu) return;
@@ -5621,14 +5677,17 @@ export class BarrowspireScene extends Phaser.Scene {
     // closing the menu does not resume the hold (FS-JTNPR req 15)
     this.cancelAim();
     const state = this.menuState();
+    // every row the player's, through the interface sounds' wrapper (FS-WDM0X S9): Fall and Options
+    // keep the slot filled and play nothing, Leave the barrow closes it (S5)
     this.showMenuPanel(undefined, runMenuChoices(state), {
       actions: {
-        fall: () => this.openFallConfirm(),
-        leave: () => {
-          this.leaveTheBarrow();
-          this.closeMenu();
-        },
-        options: () => this.openOptions(),
+        fall: () => this.act(() => this.openFallConfirm()),
+        leave: () =>
+          this.act(() => {
+            this.leaveTheBarrow();
+            this.closeMenu();
+          }),
+        options: () => this.act(() => this.openOptions()),
       },
       enabled: { leave: () => !this.leavePending },
     });
@@ -5648,7 +5707,8 @@ export class BarrowspireScene extends Phaser.Scene {
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
-      back: () => this.openMenu(),
+      // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
+      back: () => this.act(() => this.openMenu()),
       music: storedMusicLevel(browserMusicStore),
       // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
       through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
@@ -5663,7 +5723,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private openFallConfirm(): void {
     const state = this.menuState();
     this.showMenuPanel(FALL_CONFIRM.line, FALL_CONFIRM.choices, {
-      actions: { "fall-now": () => this.fallWhereYouStand() },
+      actions: { "fall-now": () => this.act(() => this.fallWhereYouStand()) },
       enabled: { "fall-now": () => !this.fallPending },
     });
     this.menuFor = state;
@@ -5720,7 +5780,8 @@ export class BarrowspireScene extends Phaser.Scene {
       choices,
       actions: spec.actions,
       enabled: spec.enabled,
-      close: () => this.closeMenu(),
+      // Back, Not yet, Esc and the ×, the menu's and its Fall confirm's: the player's (FS-WDM0X S5, S9)
+      close: () => this.act(() => this.closeMenu()),
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,

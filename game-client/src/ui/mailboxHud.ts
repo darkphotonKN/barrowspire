@@ -22,6 +22,8 @@ export interface MailboxHudDeps {
   opening?: () => void;
   /** The character's level, where known: the enclosure tip tones a requirement above it. */
   level?: () => number | undefined;
+  /** Runs the envelope's press and the panel's ×, the player's own inputs (the interface sounds' wrapper, FS-WDM0X S9). */
+  wrapper?: { act(run: () => void): void };
 }
 
 /** The mailbox as the hub hangs it: the app's mailbox store, the scene's baked art. */
@@ -31,8 +33,9 @@ export function mountMailbox(
   blocked: () => boolean,
   level?: () => number | undefined,
   opening?: () => void,
+  wrapper?: { act(run: () => void): void },
 ): MailboxHud {
-  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level, opening });
+  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level, opening, wrapper });
 }
 
 export class MailboxHud {
@@ -47,11 +50,13 @@ export class MailboxHud {
       store: deps.store,
       blocked: deps.blocked,
       opening: deps.opening,
+      wrapper: deps.wrapper,
     });
     this.panel = new LetterPanel(scene, {
       store: deps.store,
       art: deps.art,
       level: deps.level,
+      wrapper: deps.wrapper,
     });
     void deps.store.getState().enterTown();
   }

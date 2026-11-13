@@ -31,6 +31,11 @@ export interface MailboxEnvelopeDeps {
    * stands alone (FS-1GZGD § Change C4; FS-3EBCA R15).
    */
   opening?: () => void;
+  /**
+   * Runs the envelope's press, the player's own input, as the town runs its own (the interface sounds' wrapper,
+   * FS-WDM0X S9). None, and it runs as it is.
+   */
+  wrapper?: { act(run: () => void): void };
 }
 
 const HUD_DEPTH = 1000;
@@ -131,7 +136,10 @@ export class MailboxEnvelope {
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
       .setInteractive({ useHandCursor: true });
-    this.zone.on("pointerdown", () => this.press());
+    this.zone.on("pointerdown", () => {
+      if (this.deps.wrapper) this.deps.wrapper.act(() => this.press());
+      else this.press();
+    });
     this.zone.on("pointerover", () => this.hover(true));
     this.zone.on("pointerout", () => this.hover(false));
 

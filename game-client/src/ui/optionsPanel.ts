@@ -1,8 +1,9 @@
 /**
  * The OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C3–C8, C13, C16): the one
  * settings page every world's ESC menu opens from its **Options** row. A camera-fixed box in the
- * windows' frame and title in the popup band, wider than the menu, a list of setting rows (v1:
- * **Music**, a stepped slider from 0 to 5) and **Back  [Esc]** at its foot. While it is open it owns
+ * windows' frame and title in the popup band, wider than the menu, a list of setting rows
+ * (**Music**, then **Sound effects** (FS-WDM0X S17), each a stepped slider from 0 to 5) and
+ * **Back  [Esc]** at its foot. While it is open it owns
  * the screen as the menu does: it stands in the scene's menu slot, under the menu's blocker.
  *
  * Each scene adds the row (through its menu rule), opens this with its tones, its Menu icon's
@@ -16,6 +17,7 @@ import type Phaser from "phaser";
 import { crispen, viewport } from "@/render/viewport";
 import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 import { MUSIC_TOP_LEVEL } from "@/audio/musicSetting";
+import { SFX_TOP_LEVEL, browserSfxStore, storedSfxLevel } from "@/audio/sfxSetting";
 import {
   MENU_DEPTH,
   MENU_PAD,
@@ -52,11 +54,14 @@ const ARROW_GAP = 10;
 const MARK_HIT_H = 28;
 const ARROW_HIT_W = 24;
 
-/** The level of the music, as the panel reads and sets it (C13): the hub's music, or the stored level alone. */
-export interface MusicLevelControl {
+/** A level, as the panel reads and sets it: the music's (C13) or the sound effects' (FS-WDM0X S19). */
+export interface LevelControl {
   level(): number;
   setLevel(level: number): void;
 }
+
+/** The music's level (C13): the hub's music, or the stored level alone. */
+export type MusicLevelControl = LevelControl;
 
 /** One setting row: its label on the left, a stepped slider from 0 to `steps` on the right (C4, C5). */
 export interface SettingRow {
@@ -90,6 +95,11 @@ interface OptionsLayoutSpec {
 
 export interface OptionsPanelSpec extends OptionsLayoutSpec {
   music: MusicLevelControl;
+  /**
+   * The sound effects' level (FS-WDM0X S19). The scenes pass none: the panel makes the stored-only
+   * control as it opens, since the effects have nothing to apply and read the level at each play.
+   */
+  effects?: LevelControl;
 }
 
 export interface OptionsPanel {
@@ -102,6 +112,7 @@ export interface OptionsPanel {
 
 /** The game's settings, in order (C4): a later one is one more entry here. */
 function settingRows(spec: OptionsPanelSpec): SettingRow[] {
+  const effects = spec.effects ?? storedSfxLevel(browserSfxStore);
   return [
     {
       id: "music",
@@ -109,6 +120,14 @@ function settingRows(spec: OptionsPanelSpec): SettingRow[] {
       steps: MUSIC_TOP_LEVEL,
       value: () => spec.music.level(),
       set: (level) => spec.music.setLevel(level),
+    },
+    // pointer only: ←/→ stay on the first row, Music (FS-WDM0X S18)
+    {
+      id: "effects",
+      label: "Sound effects",
+      steps: SFX_TOP_LEVEL,
+      value: () => effects.level(),
+      set: (level) => effects.setLevel(level),
     },
   ];
 }
