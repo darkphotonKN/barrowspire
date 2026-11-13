@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import { EventEmitter } from "eventemitter3";
 import {
   GameUiBridge,
+  answering,
   lendUiBridge,
   reportWorld,
   uiBridgeOf,
   type UiBridge,
+  type UiRequest,
   type World,
   type WorldReport,
 } from "./uiBridge";
@@ -32,11 +34,20 @@ function recording(): UiBridge & { heard: string[] } {
     act: (run) => run(),
     play: (effect) => void heard.push(`play ${effect}`),
     lendSounds: () => {},
+    request: (request) => void heard.push(`request ${request.kind}`),
+    onWorld: () => () => {},
   };
 }
 
 /** A world's windows, all shut. */
 const shut = () => ({ menu: false, letter: false, party: false, inventory: false, character: false });
+
+/** What a world hands the bridge beside its name (R9, R11): its windows, no dialogue, no answers. */
+const side = (windows: () => ReturnType<typeof shut> = shut) => ({
+  windows,
+  blockers: () => ({ dialogue: false }),
+  answer: () => {},
+});
 
 describe("the UI bridge lent through the game's registry (FS-TQZ5J R8)", () => {
   it("should hand a scene the bridge its game was lent", () => {
@@ -66,7 +77,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
 
-    reportWorld(scene, "field", shut);
+    reportWorld(scene, "field", side());
     expect(bridge.heard).toEqual(["report field"]);
 
     scene.events.emit("shutdown");
@@ -79,9 +90,9 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
 
-    reportWorld(scene, "run", shut);
+    reportWorld(scene, "run", side());
     scene.events.emit("shutdown");
-    reportWorld(scene, "run", shut);
+    reportWorld(scene, "run", side());
 
     expect(bridge.heard).toEqual(["report run", "left run", "report run"]);
   });
@@ -89,7 +100,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
   it("should tell nothing on the game's destroy: the UI scene goes with the game, and its manager is asked nothing (R4)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
-    reportWorld(scene, "hub", shut);
+    reportWorld(scene, "hub", side());
 
     scene.events.emit("destroy");
     scene.events.emit("shutdown");
@@ -102,7 +113,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const scene = worldScene(bridge);
     const windows = shut();
 
-    reportWorld(scene, "hub", () => windows);
+    reportWorld(scene, "hub", side(() => windows));
     windows.inventory = true;
 
     expect(bridge.world?.world).toBe("hub");
@@ -113,7 +124,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
 
-    const ui = reportWorld(scene, "field", shut);
+    const ui = reportWorld(scene, "field", side());
     ui.play("map_mode_switch");
 
     expect(ui.act(() => 3)).toBe(3);
@@ -121,7 +132,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
   });
 
   it("should hand a world in a game lent no bridge actions that run as they are, and a step that plays nothing", () => {
-    const ui = reportWorld(worldScene(null), "run", shut);
+    const ui = reportWorld(worldScene(null), "run", side());
 
     expect(ui.act(() => "ran")).toBe("ran");
     expect(() => ui.play("map_mode_switch")).not.toThrow();
@@ -130,7 +141,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
   it("should do nothing in a game lent no bridge", () => {
     const scene = worldScene(null);
 
-    expect(() => reportWorld(scene, "hub", shut)).not.toThrow();
+    expect(() => reportWorld(scene, "hub", side())).not.toThrow();
     expect(scene.events.listenerCount("shutdown")).toBe(0);
   });
 });
@@ -150,8 +161,8 @@ describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
     const heard: (WorldReport | null)[] = [];
     bridge.onWorld((report) => heard.push(report));
 
-    const hub = { world: "hub" as const, windows: shut };
-    const run = { world: "run" as const, windows: shut };
+    const hub = { world: "hub" as const, ...side() };
+    const run = { world: "run" as const, ...side() };
     bridge.report(hub);
     bridge.report(hub);
     bridge.left("hub");
@@ -162,8 +173,8 @@ describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
 
   it("should tell nothing of a left from a world no longer the one reported", () => {
     const bridge = new GameUiBridge();
-    bridge.report({ world: "hub", windows: shut });
-    bridge.report({ world: "field", windows: shut });
+    bridge.report({ world: "hub", ...side() });
+    bridge.report({ world: "field", ...side() });
     const heard: (WorldReport | null)[] = [];
     bridge.onWorld((report) => heard.push(report));
 
@@ -179,8 +190,65 @@ describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
     const stop = bridge.onWorld((report) => heard.push(report));
 
     stop();
-    bridge.report({ world: "hub", windows: shut });
+    bridge.report({ world: "hub", ...side() });
 
     expect(heard).toEqual([]);
+  });
+});
+
+// FS-TQZ5J R9, R11: the world's blockers in its report, and the UI scene's requests answered by the
+// world reported, synchronously; a request with no world, or one the world has no answer for, does
+// nothing. So far the corner row's (I-TQZ5J-3): toggle a window, and the Menu icon's press on the
+// world's own menu until the menu moves (I-TQZ5J-4).
+describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", () => {
+  it("should hand a request to the world reported, answered before it returns", () => {
+    const bridge = new GameUiBridge();
+    const answered: UiRequest[] = [];
+    bridge.report({ world: "field", ...side(), answer: (request) => void answered.push(request) });
+
+    bridge.request({ kind: "toggle", window: "inventory" });
+    bridge.request({ kind: "toggleMenu" });
+
+    expect(answered).toEqual([{ kind: "toggle", window: "inventory" }, { kind: "toggleMenu" }]);
+  });
+
+  it("should hand a request to no world once it has left, nor before one is reported", () => {
+    const bridge = new GameUiBridge();
+    expect(() => bridge.request({ kind: "toggleMenu" })).not.toThrow();
+    const answered: UiRequest[] = [];
+    bridge.report({ world: "hub", ...side(), answer: (request) => void answered.push(request) });
+    bridge.left("hub");
+
+    bridge.request({ kind: "toggle", window: "party" });
+
+    expect(answered).toEqual([]);
+  });
+
+  it("should hand the UI scene the world's blockers as they are when read (R9)", () => {
+    const bridge = new GameUiBridge();
+    const scene = { registry: registry(), events: new EventEmitter() };
+    lendUiBridge(scene.registry, bridge);
+    const blockers = { dialogue: false };
+
+    reportWorld(scene, "hub", { ...side(), blockers: () => blockers });
+    blockers.dialogue = true;
+
+    expect(bridge.world?.blockers()).toEqual({ dialogue: true });
+  });
+
+  it("should answer each request with the world's own answer for it, and ignore one it has none for (R11)", () => {
+    const done: string[] = [];
+    const answer = answering({
+      toggleMenu: () => void done.push("menu"),
+      inventory: () => void done.push("inventory"),
+      party: () => void done.push("party"),
+    });
+
+    answer({ kind: "toggle", window: "inventory" });
+    answer({ kind: "toggle", window: "character" });
+    answer({ kind: "toggle", window: "party" });
+    answer({ kind: "toggleMenu" });
+
+    expect(done).toEqual(["inventory", "party", "menu"]);
   });
 });

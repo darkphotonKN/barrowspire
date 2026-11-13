@@ -122,6 +122,7 @@ const { useGameStore } = await import("@/stores/gameStore");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
+const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
@@ -2274,14 +2275,16 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 116, viewport.height - 89]);
   });
 
-  it("should send no attack or cast for a press on the corner row (FS-3EBCA R10)", () => {
+  // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the run,
+  // and never reaches it, so the run's click path reads no rect of the row
+  it("should read no corner row in its click path: the row is the UI scene's (FS-TQZ5J R15)", () => {
     const { run, carded, sent, rightClick } = cardOnStage();
     run.handleGameStateUpdate(withMe(me()));
     carded.bindRunInput();
     (run as unknown as { corner: unknown }).corner = { covers: () => true };
     sent.mockClear();
     rightClick();
-    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(false);
+    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(true);
   });
 
   it("should never be up with the leave button", () => {
@@ -4537,7 +4540,8 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
         const [, spec] = open.mock.calls[0];
         expect(spec.tones.actionable).toBe(palette.interactable);
         expect(spec.tones.cancel).toBe(palette.safe);
-        expect(spec.through).toBeTypeOf("function");
+        // the Menu icon is the UI scene's, above the run: the blocker leaves it nothing (FS-TQZ5J R7)
+        expect(spec.through).toBeUndefined();
         expect(panelOpen()).toBe(true);
         expect(option("fall")).toBeUndefined();
         expect(run.menu).toBeDefined();
@@ -5096,7 +5100,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   // while the inventory is open). I-3EBCA-5.
   it("should open the inventory on the Inventory icon and the character panel on the Character icon, the row answering while the inventory is open (FS-3EBCA R7, R11)", () => {
     const { run, stage } = overlayOnStage();
-    (run as unknown as { mountCorner(): void }).mountCorner();
+    cornerRowOn(run, "run");
     const plate = (icon: "inventory" | "character" | "menu") => {
       const f = cornerIconFrame(icon, viewport);
       return stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5123,10 +5127,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   describe("the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
     function partyOverOverlay() {
       const env = overlayOnStage();
-      const run = env.run as unknown as Overlaid & { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
+      const run = env.run as unknown as Overlaid & { partyPanel?: unknown; refusesParty(): boolean };
       const party = partyPanelOn(() => run.refusesParty());
       run.partyPanel = party.panel;
-      run.mountCorner();
+      cornerRowOn(run, "run");
       const f = cornerIconFrame("party", viewport);
       const icon = () =>
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5199,14 +5203,13 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       runEnded: boolean;
       refusesParty(): boolean;
       mayChat(): boolean;
-      mountCorner(): void;
     };
     function runWindows() {
       const env = overlayOnStage();
       const run = env.run as unknown as Windowed;
       const party = partyPanelOn(() => run.refusesParty());
       run.partyPanel = party.panel;
-      run.mountCorner();
+      cornerRowOn(run, "run");
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
         const f = cornerIconFrame(icon, viewport);
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
@@ -5285,7 +5288,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(sent.mock.calls.length).toBe(before);
     });
 
-    it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+    it("should take the whole view with the menu's blocker: the Menu icon is the UI scene's, above it (R18; FS-TQZ5J R7)", () => {
       const { pressEsc, stage } = runWindows();
       pressEsc();
       const blocker = stage.made.find((m) => (m as { name?: string }).name === "menu-blocker" && !m.destroyed)!;
@@ -5296,9 +5299,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const takes = (x: number, y: number) => test!({}, x, y, blocker);
       const plate = cornerIconFrame("menu", viewport);
       const bag = cornerIconFrame("inventory", viewport);
-      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+      // the whole view, the Menu plate included: the icon is the UI scene's, drawn and pressed above
+      // the world, so the world's blocker leaves nothing to it (FS-TQZ5J R7, I-TQZ5J-3)
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(true);
       expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
-      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
       expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
 
@@ -5319,7 +5323,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       ui: { act(run: () => void): void };
       containerView: { isOpen: boolean };
       refusesParty(): boolean;
-      mountCorner(): void;
       endRun(): void;
       resetRun(end: "shutdown" | "destroy"): void;
     };
@@ -5335,7 +5338,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>));
       const party = partyPanelOn(() => run.refusesParty(), run.ui);
       run.partyPanel = party.panel;
-      run.mountCorner();
+      cornerRowOn(run, "run");
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
         const f = cornerIconFrame(icon, viewport);
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)?.handlers.pointerdown?.();
@@ -5651,13 +5654,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
       const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
       const at = (line: RegExp) => create.search(line);
-      const mount = at(/this\.ui = reportWorld\(this, "run", \(\) => this\.windows\(\)\);/);
+      const mount = at(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);/);
       expect(mount).toBeGreaterThan(-1);
       for (const later of [
         /this\.partyPanel = mountPartyPanel\(/,
         /this\.bindRunInput\(\);/,
         /this\.equipment = this\.composeEquipment\(\);/,
-        /this\.mountCorner\(\);/,
       ])
         expect(mount, String(later)).toBeLessThan(at(later));
       expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui\)/);
@@ -9129,15 +9131,13 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(cast).not.toHaveBeenCalled();
         });
 
-        // integration of FS-3EBCA R10 with D5: a press on the corner row is the row's alone
-        it("should leave a press on the corner row to the row: no step, no attack (FS-3EBCA R10; D5)", () => {
-          const { run, pointers, map, store } = mapped();
-          const cast = vi.spyOn((run as IconRun).combat, "cast");
+        // FS-3EBCA R10 with D5, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's,
+        // above the run, and never reaches it, so the run's pointer reads no rect of the row
+        it("should read no corner row on the icon's press: the row is the UI scene's (FS-TQZ5J R15; D5)", () => {
+          const { run, pointers, map } = mapped();
           (run as unknown as { corner?: unknown }).corner = { covers: () => true, destroy: vi.fn() };
           pointers.pointerdown(pointerAt(862, 109));
-          expect(map()!.mode).toBe("normal");
-          expect(store.writes).toEqual([]);
-          expect(cast).not.toHaveBeenCalled();
+          expect(map()!.mode).toBe("enlarged");
         });
 
         it("should leave a press 1 px outside its hit area to the game, the map's own ground included (D5)", () => {

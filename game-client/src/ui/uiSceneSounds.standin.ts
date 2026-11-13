@@ -1,5 +1,5 @@
-import { UI_EFFECTS, uiSoundKey, type UiSoundStage, type WindowState } from "@/audio/uiSounds";
-import { GameUiBridge, lendUiBridge, reportWorld, type World, type WorldUi } from "./uiBridge";
+import { UI_EFFECTS, uiSoundKey, type UiSoundStage } from "@/audio/uiSounds";
+import { GameUiBridge, lendUiBridge, reportWorld, type World, type WorldSide, type WorldUi } from "./uiBridge";
 import { mountInterfaceSounds } from "./uiSceneSounds";
 
 /**
@@ -26,17 +26,17 @@ export function heardInterfaceSounds() {
   return { bridge, sounds, heard };
 }
 
-/** A world scene as the interface sounds' tests reach it: its game's registry, its UI, its windows. */
+/** A world scene as the interface sounds' tests reach it: its game's registry, its UI, what it reports. */
 interface WorldUnderTest {
   registry?: { get(key: string): unknown; set(key: string, value: unknown): void };
   events: { once(event: string, fn: () => void): unknown; off(event: string, fn: () => void): unknown };
   ui: WorldUi;
-  windows(): WindowState;
+  worldSide(): WorldSide;
 }
 
 /**
  * Test-only: lends `scene`'s game a UI bridge with the interface sounds on it, and reports `world`
- * as the world's create does (`this.ui = reportWorld(this, world, () => this.windows())`, pinned
+ * as the world's create does (`this.ui = reportWorld(this, world, this.worldSide())`, pinned
  * from each world's source in its own test). Returns the effects heard since the last read.
  */
 export function hearWorld(scene: object, world: World): () => string[] {
@@ -45,6 +45,6 @@ export function hearWorld(scene: object, world: World): () => string[] {
   const held = new Map<string, unknown>();
   s.registry ??= { get: (key) => held.get(key), set: (key, value) => void held.set(key, value) };
   lendUiBridge(s.registry, bridge);
-  s.ui = reportWorld(s, world, () => s.windows());
+  s.ui = reportWorld(s, world, s.worldSide());
   return heard;
 }

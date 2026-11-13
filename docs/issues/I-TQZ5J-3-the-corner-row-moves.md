@@ -3,7 +3,7 @@ id: I-TQZ5J-3
 status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-1, I-TQZ5J-2]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J slice 3: the corner row moves into the UI scene"
 ---
 Implements FS-TQZ5J §Requirements C (R13–R15), §Requirements F (R23, R24)

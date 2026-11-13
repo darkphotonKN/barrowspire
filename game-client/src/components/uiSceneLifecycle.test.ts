@@ -19,6 +19,8 @@ const WORLD_OF: Record<string, World> = { HubScene: "hub", BarrowspireScene: "ru
 const reportOf = (world: World) => ({
   world,
   windows: () => ({ menu: false, letter: false, party: false, inventory: false, character: false }),
+  blockers: () => ({ dialogue: false }),
+  answer: () => {},
 });
 
 /**

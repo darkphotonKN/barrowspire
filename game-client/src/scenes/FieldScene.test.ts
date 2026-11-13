@@ -66,6 +66,7 @@ const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
+const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
@@ -1193,11 +1194,13 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect((field as unknown as { abilityHud: { place: unknown } }).abilityHud.place).toEqual(ABILITY_CARD_PLACE);
   });
 
-  it("should take a press on the corner row as the row's, never an attack (FS-3EBCA R10)", () => {
+  // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the
+  // field, and never reaches it, so the field's click path reads no rect of the row
+  it("should read no corner row in its click path: the row is the UI scene's (FS-TQZ5J R15)", () => {
     const { field } = kitOnStage({ lockedOut: false });
     const f = field as unknown as { corner: unknown; takesPointer(x: number, y: number, p: boolean): boolean };
     f.corner = { covers: (x: number, y: number) => x > 1000 && y > 650 };
-    expect(f.takesPointer(1030, 680, true)).toBe(true);
+    expect(f.takesPointer(1030, 680, true)).toBe(false);
   });
 
   it("should grey the card while the ability lockout runs", () => {
@@ -1673,15 +1676,12 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(takes(745, 163)).toBe(false);
   });
 
-  // integration of the map mode icon (D5, D6) with FS-3EBCA R10 and FS-G4VMQ § Change C4: a press on
-  // the corner row is the row's, and while the ESC menu is up the icon, M's, answers nothing
-  it("should leave a press on the corner row to the row, and step nothing on the icon while the ESC menu is up (FS-3EBCA R10; FS-G4VMQ § Change C4; D5, D6)", () => {
+  // integration of the map mode icon (D5, D6) with FS-G4VMQ § Change C4: while the ESC menu is up
+  // the icon, M's, answers nothing (the corner row is the UI scene's, FS-TQZ5J R15)
+  it("should step nothing on the icon while the ESC menu is up (FS-G4VMQ § Change C4; D5, D6)", () => {
     const { field, render, map, store } = forestWithMap();
     const takes = (x: number, y: number) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, true);
     render({ x: 2900, y: 1480 });
-    field.corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
-    expect(takes(862, 109)).toBe(true);
-    field.corner = undefined;
     field.menu = {};
     expect(takes(862, 109)).toBe(true);
     expect(map()!.mode).toBe("normal");
@@ -2386,7 +2386,7 @@ describe("FieldScene the party panel over the inventory and the character panel 
     equipment?: unknown;
     partyPanel?: unknown;
     refusesParty(): boolean;
-    mountCorner(): void;
+    worldSide(): unknown;
   };
 
   function partyInField() {
@@ -2404,10 +2404,15 @@ describe("FieldScene the party panel over the inventory and the character panel 
     };
     field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
     const gear = { inventory: false, character: false };
-    field.equipment = { isOpen: () => gear.inventory || gear.character };
+    // the field's windows, as its report reads them for the UI scene's row (FS-TQZ5J R9)
+    field.equipment = {
+      isOpen: () => gear.inventory || gear.character,
+      isInventoryOpen: () => gear.inventory,
+      isCharacterOpen: () => gear.character,
+    };
     const party = partyPanelOn(() => field.refusesParty());
     field.partyPanel = party.panel;
-    field.mountCorner();
+    cornerRowOn(field, "field");
     const f = hudCorner.cornerIconFrame("party", viewport);
     const pressIcon = () => zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
     return { field, gear, party, pressIcon };
@@ -2453,7 +2458,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     refusesParty(): boolean;
     pressMenuIcon(): void;
     mayChat(): boolean;
-    mountCorner(): void;
     bindHudKeys(): void;
   };
 
@@ -2487,6 +2491,8 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     const gear = { inventory: false, character: false };
     field.equipment = {
       isOpen: () => gear.inventory || gear.character,
+      isInventoryOpen: () => gear.inventory,
+      isCharacterOpen: () => gear.character,
       hide: () => {
         const was = gear.inventory || gear.character;
         gear.inventory = false;
@@ -2500,7 +2506,7 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     const party = partyPanelOn(() => field.refusesParty());
     field.partyPanel = party.panel;
     field.bindHudKeys();
-    field.mountCorner();
+    cornerRowOn(field, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = hudCorner.cornerIconFrame(icon, viewport);
       zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
@@ -2557,7 +2563,7 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     expect(field.menu).toBeDefined();
   });
 
-  it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+  it("should take the whole view with the menu's blocker: the Menu icon is the UI scene's, above it (R18; FS-TQZ5J R7)", () => {
     const { key, zones } = fieldWindows();
     key("ESC");
     const blocker = zones.filter((z) => z.name === "menu-blocker").at(-1)!;
@@ -2566,11 +2572,12 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
       | undefined;
     expect(test, "the blocker's own hit test").toBeTypeOf("function");
     const takes = (x: number, y: number) => test!({}, x, y, blocker);
-    const plate = hudCorner.cornerIconFrame("menu", viewport);
+      const plate = hudCorner.cornerIconFrame("menu", viewport);
     const bag = hudCorner.cornerIconFrame("inventory", viewport);
-    expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+    // the whole view, the Menu plate included: the icon is the UI scene's, drawn and pressed above
+    // the world, so the world's blocker leaves nothing to it (FS-TQZ5J R7, I-TQZ5J-3)
+    expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(true);
     expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
-    expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
     expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
   });
 
@@ -2612,7 +2619,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     partyPanel?: unknown;
     ui: { act(run: () => void): void };
     refusesParty(): boolean;
-    mountCorner(): void;
     bindHudKeys(): void;
   };
   type Made = { kind: string; args: unknown[]; name?: string; destroyed: boolean; children: Made[]; handlers: Record<string, () => void> };
@@ -2670,7 +2676,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const party = partyPanelOn(() => f.refusesParty(), f.ui);
     f.partyPanel = party.panel;
     f.bindHudKeys();
-    f.mountCorner();
+    cornerRowOn(f, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
       const at = hudCorner.cornerIconFrame(icon, viewport);
       made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === at.x && m.args[1] === at.y)?.handlers.pointerdown?.();
@@ -2871,9 +2877,9 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", \(\) => this\.windows\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "field", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
-    expect(at(/this\.ui = reportWorld\(this, "field", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
     expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui\)/);
     const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);

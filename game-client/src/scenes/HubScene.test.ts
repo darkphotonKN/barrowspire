@@ -103,6 +103,7 @@ const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
 const { createPartyStore } = await import("@/stores/partyStore");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
+const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -4298,11 +4299,12 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
       expect(menuOpen(stage.made)).toBe(false);
     });
 
-    it("should leave the Menu icon's plate through the panel's blocker (C8)", () => {
+    // the Menu icon is the UI scene's now, above the world: the town's blocker takes the whole view
+    // and the icon still answers over it (C7, C8; FS-TQZ5J R7, I-TQZ5J-3)
+    it("should take the whole view with the panel's blocker, the Menu icon's plate included (C8)", () => {
       browserStore(null);
       const { hub, keys, press, stage } = hubWithSound();
       hub.enterMusic();
-      (hub as unknown as { corner: unknown }).corner = { covers: (x: number) => x > 1000, destroy: vi.fn(), relayout: vi.fn() };
       press(keys.esc);
       press(keys.two);
 
@@ -4310,8 +4312,9 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
         interactiveArgs: unknown[];
       };
       const takes = blocker.interactiveArgs.find((a) => typeof a === "function") as (a: unknown, x: number, y: number) => boolean;
+      const plate = cornerIconFrame("menu", viewport);
       expect(takes({}, 10, 10)).toBe(true);
-      expect(takes({}, 1040, 10)).toBe(false);
+      expect(takes({}, plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(true);
     });
 
     it("should centre the open panel again when the view widens (C8, FS-ZAJMH R13)", () => {
@@ -5143,15 +5146,15 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(map()!.mode).toBe("normal");
     });
 
-    // integration of FS-3EBCA R10 with D5: a press or hover on the corner row is the row's alone
-    it("should leave a press on the corner row to the row, never stepping the mode (FS-3EBCA R10; D5)", () => {
-      const { hub, render, map, store, pointers } = townWithModes();
+    // FS-3EBCA R10 with D5, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's,
+    // above the town, and never reaches it, so the town's pointer reads no rect of the row
+    it("should read no corner row on the icon's press: the row is the UI scene's (FS-TQZ5J R15; D5)", () => {
+      const { hub, render, map, pointers } = townWithModes();
       (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
       render();
       (hub as Record<string, unknown>).corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
       pointers.pointerdown!(press(862, 109));
-      expect(map()!.mode).toBe("normal");
-      expect(store.writes).toEqual([]);
+      expect(map()!.mode).toBe("enlarged");
     });
 
     // integration of FS-R82NV § Change C8 with D5: the party panel is drawn over the overlay and
@@ -5315,13 +5318,13 @@ function partyPanelOn(refused: () => boolean, opening?: () => void, wrapper?: { 
 // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
 // inventory or the character panel open the party panel would not open). I-3EBCA-7.
 describe("HubScene the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
-  type Partied = { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
+  type Partied = { partyPanel?: unknown; refusesParty(): boolean };
   function partyInTown() {
     const env = hubOnStage();
     const hub = env.hub as unknown as typeof env.hub & Partied;
     const party = partyPanelOn(() => hub.refusesParty());
     hub.partyPanel = party.panel;
-    hub.mountCorner();
+    cornerRowOn(hub, "hub");
     const f = cornerIconFrame("party", viewport);
     const icon = () =>
       env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5382,7 +5385,6 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     pressMenuIcon(): void;
     openMenu(): void;
     mayChat(): boolean;
-    mountCorner(): void;
   };
   function town() {
     const env = hubOnStage();
@@ -5395,7 +5397,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       () => hub.closeLetter(),
     );
     hub.partyPanel = party.panel;
-    hub.mountCorner();
+    cornerRowOn(hub, "hub");
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = cornerIconFrame(icon, viewport);
       return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5552,7 +5554,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       expect(t.hub.menu).toBeDefined();
     });
 
-    it("should leave the Menu icon's plate alone to the icon under its blocker, and take a press beside it", () => {
+    it("should take the whole view with its blocker: the Menu icon is the UI scene's, above it (FS-TQZ5J R7)", () => {
       const t = menuUp();
       const blocker = t.stage.made.find((m) => m.name === "menu-blocker" && !m.destroyed)!;
       const args = (blocker as unknown as { interactiveArgs?: unknown[] }).interactiveArgs ?? [];
@@ -5563,9 +5565,10 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       const takes = (x: number, y: number) => test!({}, x, y, blocker);
       const plate = cornerIconFrame("menu", viewport);
       const bag = cornerIconFrame("inventory", viewport);
-      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
+      // the whole view, the Menu plate included: the icon is the UI scene's, drawn and pressed above
+      // the world, so the world's blocker leaves nothing to it (FS-TQZ5J R7, I-TQZ5J-3)
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(true);
       expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
-      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
       expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
 
@@ -5620,7 +5623,6 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     refusesLetter(): boolean;
     clearForLetter(): void;
     closeLetter(): void;
-    mountCorner(): void;
   };
   function town() {
     // the frames walk nowhere, and the rows that send send to no socket
@@ -5640,7 +5642,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     };
     const party = partyPanelOn(() => hub.refusesParty(), () => hub.closeLetter(), hub.ui);
     hub.partyPanel = party.panel;
-    hub.mountCorner();
+    cornerRowOn(hub, "hub");
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = cornerIconFrame(icon, viewport);
       return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5929,9 +5931,9 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "hub", \(\) => this\.windows\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "hub", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
-    expect(at(/this\.ui = reportWorld\(this, "hub", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
     expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui,\s*\);/);
     expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\);/);
     const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";

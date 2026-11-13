@@ -16,6 +16,8 @@ function town() {
       reads++;
       return { ...windows };
     },
+    blockers: () => ({ dialogue: false }),
+    answer: () => {},
   });
   return { bridge, sounds, heard, windows, reads: () => reads };
 }
