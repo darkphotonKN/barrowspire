@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { KeyValueStore } from "@/characters/roster";
+import { MUSIC_SETTING_KEY } from "@/audio/musicSetting";
+import { SFX_SETTING_KEY } from "@/audio/sfxSetting";
 import { BARROW_HEX } from "@/utils/theme";
 import { toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
@@ -142,13 +145,26 @@ function musicAt(level: number) {
   return { ...control, set };
 }
 
-function opened(level = 3, through?: (x: number, y: number) => boolean) {
+function opened(
+  level = 3,
+  through?: (x: number, y: number) => boolean,
+  row = "music",
+  effects: MusicLevelControl | null = musicAt(3),
+) {
   const stage = recordingStage();
   const music = musicAt(level);
   const back = vi.fn();
-  const panel = openOptionsPanel(stage.scene, { origin: ORIGIN, hit: HIT, tones: TONES, back, music, through });
-  const hit = (part: string) => stage.find(`options-music-${part}`)!;
-  const mark = (part: string) => stage.find(`options-music-${part}-mark`)!;
+  const panel = openOptionsPanel(stage.scene, {
+    origin: ORIGIN,
+    hit: HIT,
+    tones: TONES,
+    back,
+    music,
+    through,
+    ...(effects ? { effects } : {}),
+  });
+  const hit = (part: string) => stage.find(`options-${row}-${part}`)!;
+  const mark = (part: string) => stage.find(`options-${row}-${part}-mark`)!;
   /** The one colour a mark was last drawn in. */
   const tone = (part: string) => {
     const fills = mark(part).drawn.filter((d) => d.call === "fillStyle").map((d) => d.args[0]);
@@ -225,7 +241,8 @@ describe("openOptionsPanel (FS-28DDG § Change C3–C8, C16)", () => {
     expect(mark("down").drawn.some((d) => d.call === "fillTriangle")).toBe(true);
     expect(mark("up").drawn.some((d) => d.call === "fillTriangle")).toBe(true);
     const marks = made.filter((m) => m.kind === "graphics" && named(m).endsWith("-mark"));
-    expect(marks).toHaveLength(7);
+    // seven a row: ◄, five steps, ►; Music's and Sound effects'
+    expect(marks).toHaveLength(14);
     const tokens = new Set(Object.values(TONES));
     for (const m of marks) {
       for (const d of m.drawn) {
@@ -383,6 +400,151 @@ describe("openOptionsPanel (FS-28DDG § Change C3–C8, C16)", () => {
       const left = made.filter((m) => !m.destroyed && named(m).startsWith("options-"));
       expect(left).toEqual([]);
     });
+  });
+});
+
+describe("the Sound effects row (FS-WDM0X S17–S19)", () => {
+  afterEach(() => void vi.unstubAllGlobals());
+
+  /** The panel open with the effects' control at `level`, its marks and hits read off the effects row. */
+  const effectsAt = (level: number) => {
+    const effects = musicAt(level);
+    return { ...opened(3, undefined, "effects", effects), effects };
+  };
+
+  it("should show Music then Sound effects, one row apart, each with ◄, five steps and ►, Back below both", () => {
+    vi.mocked(drawPanelFrame).mockClear();
+    const { texts, find } = opened();
+    const label = (words: string) => texts().find((t) => t.args[2] === words)!;
+
+    expect(label("Sound effects").y - label("Music").y).toBe(OPTIONS_ROW);
+    expect(label("Sound effects").x).toBe(label("Music").x);
+    expect(find("options-back-label")!.y).toBeGreaterThan(label("Sound effects").y);
+    for (const row of ["music", "effects"])
+      for (const part of ["down", "step-1", "step-2", "step-3", "step-4", "step-5", "up"])
+        expect(find(`options-${row}-${part}`), `${row} ${part}`).toBeDefined();
+    expect(find("options-effects-up")!.x).toBe(find("options-music-up")!.x);
+  });
+
+  it("should be one row taller than the Music row alone, its layout unchanged", () => {
+    vi.mocked(drawPanelFrame).mockClear();
+    opened();
+    const both = vi.mocked(drawPanelFrame).mock.calls[0][2].height;
+    showOptionsPanel(recordingStage().scene, {
+      origin: ORIGIN,
+      hit: HIT,
+      tones: TONES,
+      back: vi.fn(),
+      rows: [{ id: "music", label: "Music", steps: 5, value: () => 3, set: vi.fn() }],
+    });
+    const one = vi.mocked(drawPanelFrame).mock.calls[1][2].height;
+
+    expect(both - one).toBe(OPTIONS_ROW);
+  });
+
+  it("should fill steps 1 to the effects' level", () => {
+    expect(effectsAt(0).steps()).toEqual([false, false, false, false, false]);
+    expect(effectsAt(2).steps()).toEqual([true, true, false, false, false]);
+    expect(effectsAt(5).steps()).toEqual([true, true, true, true, true]);
+  });
+
+  it("should lower and raise the effects' level by one on ◄ and ►, the arrow at its end dimmed and ignored", () => {
+    const p = effectsAt(1);
+    p.hit("up").handlers.pointerup();
+    expect(p.effects.set).toHaveBeenLastCalledWith(2);
+    p.hit("down").handlers.pointerup();
+    p.hit("down").handlers.pointerup();
+    expect(p.effects.set).toHaveBeenLastCalledWith(0);
+    expect(p.tone("down")).toBe(TONES.dim);
+    p.hit("down").handlers.pointerup();
+    expect(p.effects.set).toHaveBeenCalledTimes(3);
+
+    const top = effectsAt(5);
+    top.hit("up").handlers.pointerup();
+    expect(top.effects.set).not.toHaveBeenCalled();
+    expect(top.tone("up")).toBe(TONES.dim);
+  });
+
+  it.each([1, 2, 3, 4, 5])("should set the effects' level on a click of its step %i", (k) => {
+    const p = effectsAt(k === 3 ? 0 : 3);
+    p.hit(`step-${k}`).handlers.pointerup();
+    expect(p.effects.set).toHaveBeenLastCalledWith(k);
+    expect(p.steps()).toEqual([1, 2, 3, 4, 5].map((s) => s <= k));
+  });
+
+  it("should leave the Music row alone on its presses, and the Sound effects row alone on Music's", () => {
+    const p = effectsAt(2);
+    p.hit("up").handlers.pointerup();
+    expect(p.music.set).not.toHaveBeenCalled();
+
+    p.find("options-music-step-1")!.handlers.pointerup();
+    expect(p.music.set).toHaveBeenLastCalledWith(1);
+    expect(p.effects.set).toHaveBeenCalledTimes(1);
+  });
+
+  it("should send ←/→ to Music only (S18)", () => {
+    const p = effectsAt(2);
+    p.keys.nudge(1);
+    p.keys.nudge(-1);
+    p.keys.nudge(-1);
+
+    expect(p.music.set).toHaveBeenLastCalledWith(2);
+    expect(p.effects.set).not.toHaveBeenCalled();
+    expect(p.effects.level()).toBe(2);
+  });
+
+  it("should only set the level on a change: no Back, no other callback, nothing played (S19)", () => {
+    const p = effectsAt(2);
+    p.hit("step-4").handlers.pointerup();
+    p.hit("down").handlers.pointerup();
+
+    expect(p.effects.set.mock.calls).toEqual([[4], [3]]);
+    expect(p.back).not.toHaveBeenCalled();
+    expect(p.music.set).not.toHaveBeenCalled();
+  });
+
+  /** This browser's store, as `window.localStorage`, recording each write by key. */
+  const browserStore = (held: Record<string, string>) => {
+    const writes: [string, string][] = [];
+    const localStorage: KeyValueStore = {
+      getItem: (key) => held[key] ?? null,
+      setItem: (key, value) => {
+        writes.push([key, value]);
+        held[key] = value;
+      },
+      removeItem: (key) => void delete held[key],
+    };
+    vi.stubGlobal("window", { localStorage });
+    return writes;
+  };
+
+  it("should make its own control from barrowspire_sfx as it opens, where the scene passes none, and write each change there", () => {
+    const writes = browserStore({ [SFX_SETTING_KEY]: "1", [MUSIC_SETTING_KEY]: "4" });
+    const p = opened(3, undefined, "effects", null);
+
+    expect(p.steps()).toEqual([true, false, false, false, false]);
+    p.hit("step-4").handlers.pointerup();
+    p.hit("up").handlers.pointerup();
+
+    expect(writes).toEqual([
+      [SFX_SETTING_KEY, "4"],
+      [SFX_SETTING_KEY, "5"],
+    ]);
+    expect(opened(3, undefined, "effects", null).steps()).toEqual([true, true, true, true, true]);
+  });
+
+  it("should hold a change for this visit where the browser refuses it, and throw nothing", () => {
+    vi.stubGlobal("window", {
+      get localStorage(): KeyValueStore {
+        throw new Error("SecurityError");
+      },
+    });
+    const first = opened(3, undefined, "effects", null);
+    expect(first.steps()).toEqual([true, true, true, false, false]);
+
+    expect(() => first.hit("step-1").handlers.pointerup()).not.toThrow();
+
+    expect(opened(3, undefined, "effects", null).steps()).toEqual([true, false, false, false, false]);
   });
 });
 

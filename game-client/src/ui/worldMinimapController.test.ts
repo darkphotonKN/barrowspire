@@ -203,6 +203,51 @@ describe("WorldMinimapController (FS-P0HSP §F, §G)", () => {
   });
 });
 
+// FS-WDM0X S7: every step the player makes plays the mode switch; the controller says when it
+// stepped, and only cycle() steps it, so building it in the kept mode says nothing
+describe("WorldMinimapController's step, heard (FS-WDM0X S7)", () => {
+  function heard(held: string | null = null, owned = { now: false }) {
+    const { stage } = fakeStage();
+    const icon = iconStage();
+    const { reach } = modeStore(held);
+    const stepped = vi.fn();
+    const minimap = new WorldMinimapController({
+      stage,
+      world: TOWN,
+      store: reach,
+      button: new FullscreenButtonPlace(),
+      icon: { stage: icon.stage, blocked: () => owned.now },
+      stepped,
+    });
+    return { minimap, stepped, owned };
+  }
+
+  it("should say nothing as it is built in the kept mode, and once on each step, after the mode is set", () => {
+    const { minimap, stepped } = heard("overlay");
+    expect(stepped).not.toHaveBeenCalled();
+    stepped.mockImplementation(() => expect(minimap.map.mode).toBe("normal"));
+    minimap.cycle();
+    expect(stepped).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say so on a press on the map mode icon, and not on one refused or beside it", () => {
+    const { minimap, stepped, owned } = heard();
+    minimap.pointerDown(862, 109);
+    expect(stepped).toHaveBeenCalledTimes(1);
+    owned.now = true;
+    minimap.pointerDown(754, 163);
+    owned.now = false;
+    minimap.pointerDown(10, 10);
+    expect(stepped).toHaveBeenCalledTimes(1);
+  });
+
+  it("should step as before with no one to tell", () => {
+    const { minimap } = controller();
+    expect(() => minimap.cycle()).not.toThrow();
+    expect(minimap.map.mode).toBe("enlarged");
+  });
+});
+
 describe("bindMinimapKey (FS-P0HSP §F.33)", () => {
   function bound(keysOwned = false) {
     const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};

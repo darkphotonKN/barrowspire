@@ -1632,6 +1632,27 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     vi.restoreAllMocks();
   });
 
+  // FS-WDM0X S7: each step the player makes plays the mode switch; one refused, or the map built in
+  // the kept mode, plays nothing
+  it("should play map_mode_switch on each step by M and by the map mode icon, and nothing as the map is built or M is refused (FS-WDM0X S7)", () => {
+    const { field, render, pressM } = forestWithMap();
+    const heard = hearOn(field);
+    const takes = (x: number, y: number) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, true);
+    render({ x: 2900, y: 1480 });
+    expect(heard()).toEqual([]);
+    pressM();
+    expect(heard()).toEqual(["map_mode_switch"]);
+    takes(754, 163);
+    expect(heard()).toEqual(["map_mode_switch"]);
+    pressM({ repeat: true });
+    field.menu = {};
+    pressM();
+    field.menu = undefined;
+    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    pressM();
+    expect(heard()).toEqual([]);
+  });
+
   // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
   // 模式(M)"): a press on the icon is M's, never an attack
   it("should step the mode on a press on the map mode icon as M does, never an attack, and do nothing with one while chat is typing (FS-56CKV §Change: Map mode icon, D5, D6)", () => {
@@ -2321,7 +2342,7 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean) {
+function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): void }) {
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -2345,6 +2366,7 @@ function partyPanelOn(refused: () => boolean) {
     }),
     activeElement: () => null,
     blocked: refused,
+    wrapper,
   });
   return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
@@ -2558,5 +2580,310 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     expect(field.mayChat()).toBe(false);
     key("ESC");
     expect(field.menu).toBeUndefined();
+  });
+});
+
+const { UI_EFFECTS } = await import("@/audio/uiSounds");
+const { readFileSync } = await import("node:fs");
+
+/**
+ * The field's interface sounds on a recording stand-in for the game's sound: every effect cached,
+ * the context running, the level the default. Makes the field's player as create does, and returns
+ * the effects played since the last read, by name (FS-WDM0X S10).
+ */
+function hearOn(scene: Record<string, unknown>): () => string[] {
+  let played: string[] = [];
+  Object.assign(scene, {
+    cache: { audio: { exists: (key: string) => UI_EFFECTS.some((e) => key === `sfx:${e}`) } },
+    sound: {
+      locked: false,
+      context: { state: "running" },
+      get: () => null,
+      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
+    },
+  });
+  (scene as unknown as { mountUiSounds(): void }).mountUiSounds();
+  return () => {
+    const heard = played;
+    played = [];
+    return heard;
+  };
+}
+
+// FS-WDM0X § Acceptance Criteria "The field": as the town, for the Inventory, Character, Party, ESC
+// menu, OPTIONS and minimap rows, with Q closing the gear overlay as Esc does; no letter panel.
+describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
+  type Heard = FieldUnderTest & {
+    input: unknown;
+    menu?: unknown;
+    equipment?: unknown;
+    partyPanel?: unknown;
+    sounds?: { act(run: () => void): void };
+    refusesParty(): boolean;
+    mountCorner(): void;
+    bindHudKeys(): void;
+  };
+  type Made = { kind: string; args: unknown[]; name?: string; destroyed: boolean; children: Made[]; handlers: Record<string, () => void> };
+
+  function field() {
+    const env = fieldOnStage();
+    const f = env.field as Heard;
+    const made: Made[] = [];
+    const make = (kind: string, args: unknown[]): unknown => {
+      const m: Made = { kind, args, destroyed: false, children: [], handlers: {} };
+      if (kind === "container" && Array.isArray(args[2])) m.children.push(...(args[2] as Made[]));
+      made.push(m);
+      const kill = (o: Made) => {
+        if (o.destroyed) return;
+        o.destroyed = true;
+        o.children.forEach((c) => kill((c as unknown as { __m?: Made }).__m ?? c));
+        o.handlers.destroy?.();
+      };
+      const self: unknown = new Proxy(() => self, {
+        get: (_t, prop) => {
+          if (prop === "__m") return m;
+          if (prop === "then") return undefined;
+          if (prop === "on" || prop === "once") return (event: string, fn: () => void) => ((m.handlers[event] = fn), self);
+          if (prop === "setName") return (name: string) => ((m.name = name), self);
+          if (prop === "destroy") return () => kill(m);
+          return () => self;
+        },
+      });
+      return self;
+    };
+    f.add = new Proxy({}, { get: (_t, kind) => (...args: unknown[]) => make(String(kind), args) });
+    const keys = new Map<string, () => void>();
+    f.input = {
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+    };
+    const gear = { inventory: false, character: false };
+    f.equipment = {
+      isOpen: () => gear.inventory || gear.character,
+      isInventoryOpen: () => gear.inventory,
+      isCharacterOpen: () => gear.character,
+      hide: () => {
+        const was = gear.inventory || gear.character;
+        gear.inventory = false;
+        gear.character = false;
+        return was;
+      },
+      toggle: () => (gear.inventory = !gear.inventory),
+      toggleCharacter: () => (gear.character = !gear.character),
+      equipKey: () => false,
+      release: vi.fn(),
+    };
+    const heard = hearOn(f as unknown as Record<string, unknown>);
+    const party = partyPanelOn(() => f.refusesParty(), f.sounds);
+    f.partyPanel = party.panel;
+    f.bindHudKeys();
+    f.mountCorner();
+    const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
+      const at = hudCorner.cornerIconFrame(icon, viewport);
+      made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === at.x && m.args[1] === at.y)?.handlers.pointerdown?.();
+    };
+    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
+    // the overlay's ×, as GearOverlay runs it through the wrapper the field hands it (GearOverlay.test.ts)
+    const gearX = (side: "inventory" | "character") =>
+      f.sounds!.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
+    return { ...env, field: f, gear, party, heard, pressIcon, key, find, gearX };
+  }
+  type Field = ReturnType<typeof field>;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should play settings_open alone as the Menu icon opens the menu over the open inventory", () => {
+    const f = field();
+    f.key("I");
+    f.heard();
+    f.pressIcon("menu");
+    expect(f.heard()).toEqual(["settings_open"]);
+  });
+
+  it.each<[string, (f: Field) => void, string, string]>([
+    ["I", (f) => f.key("I"), "inventory_open", "inventory_close"],
+    ["B", (f) => f.key("B"), "inventory_open", "inventory_close"],
+    ["the Inventory icon", (f) => f.pressIcon("inventory"), "inventory_open", "inventory_close"],
+    ["C", (f) => f.key("C"), "character_open", "character_close"],
+    ["the Character icon", (f) => f.pressIcon("character"), "character_open", "character_close"],
+    ["T", (f) => f.party.pressT(), "party_open", "party_close"],
+    ["the Party icon", (f) => f.pressIcon("party"), "party_open", "party_close"],
+  ])("should open and close on %s, each with its own one sound", (_input, input, opened, closed) => {
+    const f = field();
+    input(f);
+    expect(f.heard()).toEqual([opened]);
+    input(f);
+    expect(f.heard()).toEqual([closed]);
+  });
+
+  it.each<["inventory" | "character", string, string]>([
+    ["inventory", "I", "inventory_close"],
+    ["character", "C", "character_close"],
+  ])("should play its close on the %s panel's ×, through the wrapper the field hands the overlay", (side, opening, closed) => {
+    const f = field();
+    f.key(opening);
+    f.heard();
+    f.gearX(side);
+    expect(f.heard()).toEqual([closed]);
+  });
+
+  it.each(["ESC", "Q"])("should close both gear panels with one inventory_close on %s", (k) => {
+    const f = field();
+    f.key("I");
+    f.key("C");
+    f.heard();
+    f.key(k);
+    expect(f.heard()).toEqual(["inventory_close"]);
+    expect(f.field.menu).toBeUndefined();
+  });
+
+  it("should close the party panel with party_close on Esc, then the overlay, then open the menu with settings_open", () => {
+    const f = field();
+    f.key("C");
+    f.party.pressT();
+    f.heard();
+    f.key("ESC");
+    expect(f.heard()).toEqual(["party_close"]);
+    f.key("ESC");
+    expect(f.heard()).toEqual(["character_close"]);
+    f.key("ESC");
+    expect(f.heard()).toEqual(["settings_open"]);
+  });
+
+  it("should play settings_open alone as the menu opens over every window, and settings_close as it closes", () => {
+    const f = field();
+    f.key("I");
+    f.key("C");
+    f.party.pressT();
+    f.heard();
+    f.pressIcon("menu");
+    expect(f.heard()).toEqual(["settings_open"]);
+    f.key("ESC");
+    expect(f.heard()).toEqual(["settings_close"]);
+  });
+
+  describe("the menu and OPTIONS, one settings space (S5)", () => {
+    function inOptions() {
+      const f = field();
+      f.key("ESC");
+      f.key("TWO");
+      expect(f.find("options-back")).toBeDefined();
+      return f;
+    }
+
+    it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+      const f = field();
+      f.key("ESC");
+      f.heard();
+      f.key("TWO");
+      expect(f.find("options-back")).toBeDefined();
+      expect(f.heard()).toEqual([]);
+    });
+
+    it.each<[string, (f: Field) => void]>([
+      ["Back", (f) => f.find("options-back")!.handlers.pointerup()],
+      ["Esc", (f) => f.key("ESC")],
+      ["the ×", (f) => f.find("options-close")!.handlers.pointerup()],
+    ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+      const f = inOptions();
+      f.heard();
+      input(f);
+      expect(f.find("menu-change")).toBeDefined();
+      expect(f.heard()).toEqual([]);
+    });
+
+    it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
+      const f = inOptions();
+      f.heard();
+      f.pressIcon("menu");
+      expect(f.field.menu).toBeUndefined();
+      expect(f.heard()).toEqual(["settings_close"]);
+    });
+
+    it.each<[string, (f: Field) => void]>([
+      ["Back", (f) => f.find("menu-back")!.handlers.pointerup()],
+      ["Esc", (f) => f.key("ESC")],
+      ["the ×", (f) => f.find("menu-close")!.handlers.pointerup()],
+    ])("should play settings_close as the menu's %s closes it", (_input, input) => {
+      const f = field();
+      f.key("ESC");
+      f.heard();
+      input(f);
+      expect(f.field.menu).toBeUndefined();
+      expect(f.heard()).toEqual(["settings_close"]);
+    });
+
+    it("should play nothing on Change character, which only sends", () => {
+      const f = field();
+      f.key("ESC");
+      f.heard();
+      f.key("ONE");
+      expect(f.send).toHaveBeenCalledWith(ActionType.LeaveHub, {});
+      expect(f.field.menu).toBeDefined();
+      expect(f.heard()).toEqual([]);
+    });
+  });
+
+  it.each<[string, (f: Field) => void]>([
+    ["I", (f) => f.key("I")],
+    ["C", (f) => f.key("C")],
+    ["Q", (f) => f.key("Q")],
+    ["T", (f) => f.party.pressT()],
+    ["the Party icon", (f) => f.pressIcon("party")],
+    ["the Inventory icon", (f) => f.pressIcon("inventory")],
+  ])("should play nothing on %s refused while the menu is open (S6)", (_press, refused) => {
+    const f = field();
+    f.key("ESC");
+    f.heard();
+    refused(f);
+    expect(f.heard()).toEqual([]);
+  });
+
+  it("should play nothing on the greyed envelope", () => {
+    const f = field();
+    f.pressIcon("mail");
+    expect(f.heard()).toEqual([]);
+  });
+
+  it.each<[string, (f: Field) => void]>([
+    ["the inventory, the character panel and the party panel", (f) => (f.key("I"), f.key("C"), f.party.pressT())],
+    ["the menu", (f) => f.key("ESC")],
+    ["OPTIONS", (f) => (f.key("ESC"), f.key("TWO"))],
+  ])("should play nothing as the field is left with %s open (S4)", (_open, open) => {
+    const f = field();
+    open(f);
+    f.heard();
+    f.field.release("shutdown");
+    expect(f.field.menu).toBeUndefined();
+    expect(f.heard()).toEqual([]);
+  });
+
+  it("should play nothing as a party panel carried open from the last world appears, and party_close as it is closed here", () => {
+    const f = field();
+    (f.party.panel as unknown as { deps: { store: { getState(): { togglePanel(): void } } } }).deps.store
+      .getState()
+      .togglePanel();
+    expect(f.party.panel.isOpen()).toBe(true);
+    expect(f.heard()).toEqual([]);
+    f.party.pressT();
+    expect(f.heard()).toEqual(["party_close"]);
+  });
+
+  // create() is pinned from the source here as in the town: the player made before the gear and
+  // the keys, and its wrapper handed to the overlay and the party panel
+  it("should make the player in create before the gear and the keys, and hand its wrapper to every module that hears its own input", () => {
+    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
+    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    const at = (line: RegExp) => create.search(line);
+    expect(at(/this\.mountUiSounds\(\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
+    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
+    expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
+    const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
   });
 });

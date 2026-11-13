@@ -159,6 +159,7 @@ function setup(
     blocked?: boolean;
     commands?: PartyPanelDeps["commands"];
     opening?: () => void;
+    wrapper?: PartyPanelDeps["wrapper"];
   } = {},
 ) {
   const scene = fakeScene();
@@ -188,6 +189,7 @@ function setup(
     activeElement: () => state.active,
     blocked: () => state.blocked,
     opening: opts.opening,
+    wrapper: opts.wrapper,
   };
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
@@ -646,6 +648,52 @@ describe("PartyPanel clears the letter panel as it opens (FS-R82NV § Change C9)
     env.pressT();
     expect(opening).toHaveBeenCalledTimes(2);
     expect(env.panel.isOpen()).toBe(false);
+  });
+});
+
+// FS-WDM0X S9: T and the × are the panel's own player inputs, so they run through the scene's
+// wrapper, which reads the windows before and after; toggle() does too, so the corner icon's press,
+// already in the scene's wrapper, joins it. close() is the scene's own Esc and runs as it is.
+describe("PartyPanel's own inputs through the scene's wrapper (FS-WDM0X S9)", () => {
+  function wrapped() {
+    const seen: string[] = [];
+    let open = (): boolean | undefined => undefined;
+    const wrapper = {
+      act: vi.fn((run: () => void) => {
+        seen.push(`before ${open()}`);
+        run();
+        seen.push(`after ${open()}`);
+      }),
+    };
+    const env = setup({ wrapper });
+    open = () => env.panel.isOpen();
+    return { ...env, seen, wrapper };
+  }
+
+  it("should run T, the Party icon's toggle and the × each through the wrapper, around the change", () => {
+    const env = wrapped();
+    env.pressT();
+    env.find("×")!.onPress?.();
+    env.panel.toggle();
+    env.pressT();
+    expect(env.seen).toEqual([
+      "before false",
+      "after true",
+      "before true",
+      "after false",
+      "before false",
+      "after true",
+      "before true",
+      "after false",
+    ]);
+  });
+
+  it("should run the scene's close() as it is, outside the wrapper", () => {
+    const env = wrapped();
+    env.store.getState().togglePanel();
+    env.panel.close();
+    expect(env.panel.isOpen()).toBe(false);
+    expect(env.wrapper.act).not.toHaveBeenCalled();
   });
 });
 

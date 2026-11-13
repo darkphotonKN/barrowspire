@@ -397,6 +397,9 @@ function fakeGear() {
       return was;
     }),
     isOpen: () => state.open || state.character,
+    /** Each panel apart, for the scene's window state (FS-WDM0X S8). */
+    isInventoryOpen: () => state.open,
+    isCharacterOpen: () => state.character,
     /** Opened at the stash chest (FS-VPD8Y R34): only from closed. */
     openStash: vi.fn(() => {
       if (state.open) return false;
@@ -3992,6 +3995,7 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
 
 const { MUSIC_KEY, MUSIC_URL, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/hubMusic");
 const { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } = await import("@/audio/musicSetting");
+const { UI_EFFECTS, uiSoundKey } = await import("@/audio/uiSounds");
 
 // The town's music is the hub's own load, beside its art, so the torch bar counts it and no other
 // scene pays for it (FS-28DDG R12, R13).
@@ -4346,6 +4350,22 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
     expect(sound.volumes.at(-1)).toBe(0);
     expect(sound.calls).toEqual(["play", "stop", "destroy"]);
     expect(audio.has(MUSIC_KEY)).toBe(false);
+  });
+
+  // the interface sounds are loaded once, by PreloadScene, and kept for the game's life (FS-WDM0X S20):
+  // the music frees only its own key as the hub is left
+  it("should leave every interface sound cached as the hub is left and its music freed", () => {
+    const { hub, audio, step, settings } = hubWithSound();
+    for (const effect of UI_EFFECTS) audio.add(uiSoundKey(effect));
+    hub.enterMusic();
+    step(2000);
+
+    settings.status = 8;
+    hub.release("shutdown");
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(audio.has(MUSIC_KEY)).toBe(false);
+    expect([...audio]).toEqual(UI_EFFECTS.map(uiSoundKey));
   });
 
   // create() runs no further than its camera on the stand-in (createUpToCamera, below), so its call
@@ -5049,6 +5069,31 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     expect(store.writes).toEqual([]);
   });
 
+  // FS-WDM0X S7: each step the player makes plays the mode switch; one refused, or the map built
+  // in the kept mode, plays nothing
+  describe("the mode switch's sound (FS-WDM0X S7)", () => {
+    it("should play map_mode_switch on each step by M and by the map mode icon, and nothing as the map is built", () => {
+      const { hub, render, pressM, pointers } = townWithModes("enlarged");
+      const heard = hearOn(hub as Record<string, unknown>);
+      (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
+      render();
+      expect(heard()).toEqual([]);
+      pressM();
+      expect(heard()).toEqual(["map_mode_switch"]);
+      pointers.pointerdown!({ x: 1043, y: 16, button: 0 });
+      expect(heard()).toEqual(["map_mode_switch"]);
+    });
+
+    it.each(GUARDS)("should play nothing on M refused with %s", (_what, arrange, event) => {
+      const { hub, pressM, render } = townWithModes();
+      const heard = hearOn(hub as Record<string, unknown>);
+      render();
+      arrange(hub as Record<string, unknown>);
+      pressM(event);
+      expect(heard()).toEqual([]);
+    });
+  });
+
   // FS-56CKV §Change: Map mode icon (owner 2026-11-12: "右上角地圖左下角多加小icon hover顯示可以切換大小或是
   // 模式(M)"): a press on the icon in the map's bottom-left does what M does
   describe("the map mode icon (FS-56CKV §Change: Map mode icon; I-56CKV-8)", () => {
@@ -5234,7 +5279,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean, opening?: () => void) {
+function partyPanelOn(refused: () => boolean, opening?: () => void, wrapper?: { act(run: () => void): void }) {
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -5259,6 +5304,7 @@ function partyPanelOn(refused: () => boolean, opening?: () => void) {
     activeElement: () => null,
     blocked: refused,
     opening,
+    wrapper,
   });
   return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
@@ -5542,5 +5588,365 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       t.press(t.keys.esc);
       expect(t.hub.menu).toBeUndefined();
     });
+  });
+});
+
+/** What the interface sounds' tests reach of the hub (FS-WDM0X). */
+interface Heard {
+  sounds?: { act(run: () => void): void };
+  mountUiSounds(): void;
+}
+
+/**
+ * The hub's interface sounds on a recording stand-in for the game's sound: every effect cached,
+ * the context running, the level the default. Makes the hub's player as create does, and returns
+ * the effects played since the last read, by name (FS-WDM0X S10).
+ */
+function hearOn(hub: Record<string, unknown>): () => string[] {
+  let played: string[] = [];
+  Object.assign(hub, {
+    cache: { audio: { exists: (key: string) => key.startsWith("sfx:"), remove: () => {} } },
+    sound: {
+      locked: false,
+      context: { state: "running" },
+      get: () => null,
+      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
+    },
+  });
+  (hub as unknown as Heard).mountUiSounds();
+  return () => {
+    const heard = played;
+    played = [];
+    return heard;
+  };
+}
+
+// FS-WDM0X § Acceptance Criteria "The town": each window the player opens or closes plays its one
+// sound, through the hub's one wrapper; what the game closes plays nothing.
+describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
+  type Windowed = Heard & {
+    partyPanel?: unknown;
+    mailbox?: unknown;
+    music?: unknown;
+    refusesParty(): boolean;
+    refusesLetter(): boolean;
+    clearForLetter(): void;
+    closeLetter(): void;
+    mountCorner(): void;
+  };
+  function town() {
+    // the frames walk nowhere, and the rows that send send to no socket
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const env = hubOnStage();
+    const hub = env.hub as unknown as typeof env.hub & Windowed;
+    const heard = hearOn(hub as unknown as Record<string, unknown>);
+    // OPTIONS opens only beside the town's music; its level is not under test here
+    hub.music = { level: () => 3, setLevel: () => {}, leave: vi.fn() };
+    const letter = { open: false };
+    hub.mailbox = {
+      isOpen: () => letter.open,
+      close: () => void (letter.open = false),
+      relayout: vi.fn(),
+      destroy: vi.fn(),
+      covers: () => false,
+    };
+    const party = partyPanelOn(() => hub.refusesParty(), () => hub.closeLetter(), hub.sounds);
+    hub.partyPanel = party.panel;
+    hub.mountCorner();
+    const plate = (icon: "menu" | "inventory" | "character" | "party") => {
+      const f = cornerIconFrame(icon, viewport);
+      return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
+    };
+    const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => plate(icon).handlers.pointerdown();
+    // The modules' own inputs as they run them, through the wrapper the town hands them (S9): the
+    // overlay's × (GearOverlay.test.ts), the envelope's press and the letter panel's ×
+    // (LetterPanel.test.ts). The party panel here is the real one, handed the town's wrapper.
+    const wrapper = hub.sounds!;
+    const gearX = (side: "inventory" | "character") =>
+      wrapper.act(() => void (side === "inventory" ? env.gear.toggle() : env.gear.toggleCharacter()));
+    const envelope = () =>
+      wrapper.act(() => {
+        if (letter.open) return void (letter.open = false);
+        if (hub.refusesLetter()) return;
+        hub.clearForLetter();
+        letter.open = true;
+      });
+    const letterX = () => wrapper.act(() => void (letter.open = false));
+    const find = (name: string) => env.stage.made.find((m) => m.name === name && !m.destroyed);
+    return { ...env, hub, heard, letter, party, pressIcon, gearX, envelope, letterX, find };
+  }
+  type Town = ReturnType<typeof town>;
+
+  afterEach(() => {
+    usePartyStore.setState({ panelOpen: false });
+    vi.restoreAllMocks();
+  });
+
+  it("should play settings_open alone as the Menu icon opens the menu over the open inventory", () => {
+    const t = town();
+    t.press(t.keys.i);
+    t.heard();
+
+    t.pressIcon("menu");
+
+    expect(t.heard()).toEqual(["settings_open"]);
+  });
+
+  it.each<[string, (t: Town) => void, string, string]>([
+    ["I", (t) => t.press(t.keys.i), "inventory_open", "inventory_close"],
+    ["B", (t) => t.press(t.keys.b), "inventory_open", "inventory_close"],
+    ["the Inventory icon", (t) => t.pressIcon("inventory"), "inventory_open", "inventory_close"],
+    ["C", (t) => t.press(t.keys.c), "character_open", "character_close"],
+    ["the Character icon", (t) => t.pressIcon("character"), "character_open", "character_close"],
+    ["T", (t) => t.party.pressT(), "party_open", "party_close"],
+    ["the Party icon", (t) => t.pressIcon("party"), "party_open", "party_close"],
+    ["the envelope", (t) => t.envelope(), "mailbox_open", "mailbox_close"],
+  ])("should open and close on %s, each with its own one sound", (_input, input, opened, closed) => {
+    const t = town();
+    input(t);
+    expect(t.heard()).toEqual([opened]);
+    input(t);
+    expect(t.heard()).toEqual([closed]);
+  });
+
+  it.each<[string, (t: Town) => void, (t: Town) => void, string]>([
+    ["the inventory's ×", (t) => t.press(t.keys.i), (t) => t.gearX("inventory"), "inventory_close"],
+    ["the character panel's ×", (t) => t.press(t.keys.c), (t) => t.gearX("character"), "character_close"],
+    ["the letter panel's ×", (t) => t.envelope(), (t) => t.letterX(), "mailbox_close"],
+  ])("should play its close on %s, through the wrapper the town hands its module", (_x, opening, x, closed) => {
+    const t = town();
+    opening(t);
+    t.heard();
+    x(t);
+    expect(t.heard()).toEqual([closed]);
+  });
+
+  describe("Esc", () => {
+    it.each<[string, (t: Town) => void, string]>([
+      ["the letter panel", (t) => t.envelope(), "mailbox_close"],
+      ["the party panel over the inventory", (t) => (t.press(t.keys.i), t.party.pressT()), "party_close"],
+      ["both gear panels", (t) => (t.press(t.keys.i), t.press(t.keys.c)), "inventory_close"],
+      ["the character panel alone", (t) => t.press(t.keys.c), "character_close"],
+      ["the stash view", (t) => t.gear.openStash(), "inventory_close"],
+    ])("should close %s with one sound, the top thing's", (_open, open, closed) => {
+      const t = town();
+      open(t);
+      t.heard();
+      t.press(t.keys.esc);
+      expect(t.heard()).toEqual([closed]);
+    });
+
+    it("should open the menu with settings_open over nothing, and close it with settings_close", () => {
+      const t = town();
+      t.press(t.keys.esc);
+      expect(t.heard()).toEqual(["settings_open"]);
+      t.press(t.keys.esc);
+      expect(t.heard()).toEqual(["settings_close"]);
+      expect(t.hub.menu).toBeUndefined();
+    });
+  });
+
+  it("should play settings_open alone as the Menu icon opens the menu over every window", () => {
+    const t = town();
+    t.press(t.keys.i);
+    t.press(t.keys.c);
+    t.party.pressT();
+    t.heard();
+    t.pressIcon("menu");
+    expect(t.heard()).toEqual(["settings_open"]);
+  });
+
+  it("should play mailbox_open alone as the envelope opens the letter panel over the gear and the party panel", () => {
+    const t = town();
+    t.press(t.keys.i);
+    t.press(t.keys.c);
+    t.party.pressT();
+    t.heard();
+    t.envelope();
+    expect(t.heard()).toEqual(["mailbox_open"]);
+  });
+
+  it.each<[string, (t: Town) => void, string]>([
+    ["I", (t) => t.press(t.keys.i), "inventory_open"],
+    ["the Character icon", (t) => t.pressIcon("character"), "character_open"],
+    ["T", (t) => t.party.pressT(), "party_open"],
+    ["the Party icon", (t) => t.pressIcon("party"), "party_open"],
+  ])("should play only its own open as %s opens a window over the letter panel", (_input, input, opened) => {
+    const t = town();
+    t.envelope();
+    t.heard();
+    input(t);
+    expect(t.heard()).toEqual([opened]);
+    expect(t.letter.open).toBe(false);
+  });
+
+  describe("the menu and OPTIONS, one settings space (S5)", () => {
+    /** The menu up, then OPTIONS in its slot, its open heard. */
+    function inOptions() {
+      const t = town();
+      t.press(t.keys.esc);
+      t.option("options")!.handlers.pointerup();
+      expect(t.find("options-back")).toBeDefined();
+      t.heard();
+      return t;
+    }
+
+    it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+      const t = town();
+      t.press(t.keys.esc);
+      t.heard();
+      t.option("options")!.handlers.pointerup();
+      expect(t.find("options-back")).toBeDefined();
+      expect(t.heard()).toEqual([]);
+    });
+
+    it.each<[string, (t: Town) => void]>([
+      ["Back", (t) => t.find("options-back")!.handlers.pointerup()],
+      ["Esc", (t) => t.press(t.keys.esc)],
+      ["the ×", (t) => t.find("options-close")!.handlers.pointerup()],
+    ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+      const t = inOptions();
+      input(t);
+      expect(t.option("change")).toBeDefined();
+      expect(t.heard()).toEqual([]);
+    });
+
+    it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
+      const t = inOptions();
+      t.pressIcon("menu");
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.heard()).toEqual(["settings_close"]);
+    });
+
+    it.each<[string, (t: Town) => void]>([
+      ["Back", (t) => t.option("back")!.handlers.pointerup()],
+      ["Esc", (t) => t.press(t.keys.esc)],
+      ["the ×", (t) => t.find("menu-close")!.handlers.pointerup()],
+      ["the Menu icon", (t) => t.pressIcon("menu")],
+    ])("should play settings_close as the menu's %s closes it", (_input, input) => {
+      const t = town();
+      t.press(t.keys.esc);
+      t.heard();
+      input(t);
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.heard()).toEqual(["settings_close"]);
+    });
+  });
+
+  describe("the queue's and the roster's rows, which only send (S4)", () => {
+    it("should play nothing on Change character, nor as the menu closes with the visit", () => {
+      vi.spyOn(socketManager, "off").mockImplementation(() => {});
+      vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+      const t = town();
+      const send = vi.mocked(socketManager.sendMessage);
+      t.press(t.keys.esc);
+      t.heard();
+      t.option("change")!.handlers.pointerup();
+      expect(send).toHaveBeenCalledWith(ActionType.LeaveHub, {});
+      expect(t.hub.menu).toBeDefined();
+      t.hub.release("shutdown");
+      expect(t.heard()).toEqual([]);
+    });
+
+    it("should play nothing on Leave the queue, nor as the server's answer closes the menu", () => {
+      const listeners = new Map<string, (payload: unknown) => void>();
+      vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+      vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+      const t = town();
+      t.hub.listenForQueue();
+      t.hub.queued = true;
+      t.press(t.keys.esc);
+      t.heard();
+      t.option("leave")!.handlers.pointerup();
+      expect(t.hub.menu).toBeDefined();
+      expect(t.heard()).toEqual([]);
+      listeners.get(ActionType.LeaveQueue)!({});
+      expect(t.hub.menu).toBeUndefined();
+      expect(t.heard()).toEqual([]);
+    });
+  });
+
+  it("should play inventory_open on the stash chest's E, and inventory_close as the stash view closes", () => {
+    const t = town();
+    const golden = HUB_TOWN_GOLDEN.buildings.find((b) => b.name === "Quartermaster's store")!;
+    t.hub.roofs = [{ house: { id: "store", x: golden.x, y: golden.y, width: golden.w, height: golden.h }, baked: false, parts: [] }];
+    t.hub.selfEntityID = "me";
+    t.hub.views = new Map([["me", { pos: { x: HUB_STASH_CHEST.at.x + 30, y: HUB_STASH_CHEST.at.y } }]]);
+    t.hub.npcs = new Map();
+    t.answer(t.keys.e);
+    expect(t.gear.stashOpen()).toBe(true);
+    expect(t.heard()).toEqual(["inventory_open"]);
+    // the bare view above is too bare to ease each frame
+    t.hub.views = new Map();
+    t.press(t.keys.i);
+    expect(t.heard()).toEqual(["inventory_close"]);
+  });
+
+  it.each<[string, (t: Town) => void, (t: Town) => void]>([
+    ["I with the menu open", (t) => t.press(t.keys.esc), (t) => t.press(t.keys.i)],
+    ["T with the menu open", (t) => t.press(t.keys.esc), (t) => t.party.pressT()],
+    ["the Party icon in a dialogue", (t) => void (t.hub.dialogue = {}), (t) => t.pressIcon("party")],
+    ["the Menu icon in a dialogue", (t) => void (t.hub.dialogue = {}), (t) => t.pressIcon("menu")],
+    ["the envelope with the menu open", (t) => t.press(t.keys.esc), (t) => t.envelope()],
+  ])("should play nothing on a refused press: %s (S6)", (_press, arrange, refused) => {
+    const t = town();
+    arrange(t);
+    t.heard();
+    refused(t);
+    expect(t.heard()).toEqual([]);
+  });
+
+  // the menu and the letter panel each stand alone (FS-3EBCA R15, R17), so each is left open on its own
+  it.each<[string, (t: Town) => void]>([
+    ["the inventory, the character panel and the party panel", (t) => (t.press(t.keys.i), t.press(t.keys.c), t.party.pressT())],
+    ["the stash view", (t) => t.gear.openStash()],
+    ["the letter panel", (t) => t.envelope()],
+    ["the menu", (t) => t.press(t.keys.esc)],
+    ["OPTIONS", (t) => (t.press(t.keys.esc), t.option("options")!.handlers.pointerup())],
+  ])("should play nothing as the town is left with %s open (S4)", (_open, open) => {
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const t = town();
+    open(t);
+    t.heard();
+
+    t.hub.release("shutdown");
+
+    expect(t.hub.menu).toBeUndefined();
+    expect(t.gear.isOpen()).toBe(false);
+    expect(t.heard()).toEqual([]);
+  });
+
+  it("should play nothing as a party panel carried open from the last world appears, and party_close as it is closed here", () => {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const env = hubOnStage();
+    const hub = env.hub as unknown as typeof env.hub & Windowed;
+    const heard = hearOn(hub as unknown as Record<string, unknown>);
+    const party = partyPanelOn(() => hub.refusesParty(), undefined, hub.sounds);
+    // the panel's state is the store's, which the last world left open
+    (party.panel as unknown as { deps: { store: { getState(): { togglePanel(): void } } } }).deps.store
+      .getState()
+      .togglePanel();
+    hub.partyPanel = party.panel;
+    hub.update(0, 16);
+    expect(party.panel.isOpen()).toBe(true);
+    expect(heard()).toEqual([]);
+    party.pressT();
+    expect(heard()).toEqual(["party_close"]);
+  });
+
+  // create() runs no further than its camera on the stand-in (createUpToCamera), so its wiring is
+  // pinned from the source: the player made before anything that hears a player, and handed on
+  it("should make the player in create before the gear and the keys, and hand its wrapper to every module that hears its own input", () => {
+    const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
+    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    const at = (line: RegExp) => create.search(line);
+    expect(at(/this\.mountUiSounds\(\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
+    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
+    expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds,\s*\);/);
+    expect(create).toMatch(/mountMailbox\([^;]*this\.sounds,\s*\);/);
+    const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
   });
 });
