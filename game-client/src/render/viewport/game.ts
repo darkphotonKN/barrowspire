@@ -141,10 +141,8 @@ export interface MountedGame extends ViewGame {
   events: { once(event: "boot", fn: () => void): unknown };
 }
 
-/** What of the game frame the mount reads and writes. An `HTMLElement` is one. */
-export interface MountFrame extends FrameElement {
-  readonly style: { setProperty(name: string, value: string): unknown };
-}
+/** What of the game frame the mount reads. An `HTMLElement` is one. */
+export type MountFrame = FrameElement;
 
 /** What the mount listens to; the page's own by default. */
 export interface MountDeps {
@@ -158,10 +156,9 @@ export interface MountDeps {
  * layer pinned to the canvas's corner (Phaser copies only the canvas's margins); the view re-fitted
  * to the frame's size and the screen's density on a settled resize (the window, the banner,
  * fullscreen) and on a density change (another monitor), Phaser then re-reading where the canvas
- * is for the pointer, since it can move inside the frame without changing size; and the canvas's
- * CSS px per logical unit published on the frame as `--game-scale`, for DOM laid over the canvas
- * in logical units (none now: the fullscreen button is gone, FS-T3DWX R1). The viewport is expected to hold the frame's first fit
- * already: the game was made at its size. Returns the unmount.
+ * is for the pointer, since it can move inside the frame without changing size. The viewport is
+ * expected to hold the frame's first fit already: the game was made at its size. Returns the
+ * unmount.
  */
 export function mountViewport(
   game: MountedGame,
@@ -188,16 +185,10 @@ export function mountViewport(
     );
     game.scale.updateBounds();
   };
-  const publishScale = () =>
-    frame.style.setProperty("--game-scale", String(vp.cssScale));
-
   const unfit = fitGame(game, vp);
   const unwatchFrame = watchFrame(frame, refit, deps.Observer);
   const unwatchDensity = watchDensity(win, refit);
-  publishScale();
-  const unpublish = vp.onChange(publishScale);
   return () => {
-    unpublish();
     unwatchDensity();
     unwatchFrame();
     unfit();

@@ -277,13 +277,16 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
       state.setColor(toCss(lit ? tones.text : tones.actionable));
       other.setColor(toCss(tones.dim));
     };
+    // exactly the row inside the panel's insets, the label's left edge to On's right edge (R5)
     const hit = scene.add
-      .rectangle(origin.x, origin.y + cy, box.width - 2 * OPTIONS_INSET + ARROW_HIT_W, MARK_HIT_H, tones.panel, 0)
+      .rectangle(origin.x, origin.y + cy, box.width - 2 * OPTIONS_INSET, MARK_HIT_H, tones.panel, 0)
       .setScrollFactor(0)
       .setDepth(MENU_DEPTH + 1)
       .setInteractive()
       .setName(name);
-    // on the release, as Phaser's ScaleManager asks: still inside the browser's mouse event (R5)
+    // On the release, as Phaser's ScaleManager asks (R5). A mouseup grants no user activation, but
+    // the mousedown that began the press did, and that transient activation is still live here, so
+    // the request is allowed. A press held past it is refused, and the row stays Off (R6).
     hit.on("pointerup", () => row.toggle());
     hit.on("pointerover", () => {
       lit = true;

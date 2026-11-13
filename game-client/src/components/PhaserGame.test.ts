@@ -67,7 +67,7 @@ describe("the game bridge (ADR-0057: rounding installed once, where the game is 
 
 // FS-T3DWX R12: the page that owns the game frame lends the frame's fullscreen to the game it builds
 describe("the game bridge lends the frame's fullscreen to its game (FS-T3DWX R12)", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => void vi.unstubAllGlobals());
 
   /** The page with `doc` for its document, the bridge mounted on a frame, its game built; the frame records its asks. */
   async function built(doc: object) {
