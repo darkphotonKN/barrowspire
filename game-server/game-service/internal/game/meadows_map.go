@@ -12,7 +12,7 @@ import (
 * entered from the hub's east road. FS-X2F2H §Requirements 51–53 (D18, D19).
 *
 * The entrance is on the west edge, the road back to the hub; a player arrives
-* just inside it, beyond its range. The boar is its one creature, levels 1–4,
+* just inside it, beyond its range. The boar is its one creature, levels 1–2,
 * at three quarters of the Spire's stats and a third of its drop chance.
 **/
 func GentleMeadows() FieldPlace {

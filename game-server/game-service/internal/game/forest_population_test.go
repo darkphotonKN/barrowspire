@@ -86,9 +86,9 @@ func TestFieldPlace_StandardElitesDefaultToRolled(t *testing.T) {
 	assert.Equal(t, FieldEliteRolled, GentleMeadows().StandardElites)
 
 	// draws: the creature, the level, the prefix; no elite roll on an always point
-	always := rollFieldSpawn(&drawQueue{floats: []float64{0}, ints: []int{2, 3}}, GentleMeadows(), FieldEliteAlways)
+	always := rollFieldSpawn(&drawQueue{floats: []float64{0}, ints: []int{1, 3}}, GentleMeadows(), FieldEliteAlways)
 	assert.True(t, always.Elite)
-	assert.Equal(t, MeadowsMinLevel+2, always.Level)
+	assert.Equal(t, MeadowsMinLevel+1, always.Level)
 	assert.Equal(t, FieldElitePrefixes[3%len(FieldElitePrefixes)]+" Boar", always.Name)
 }
 
@@ -144,8 +144,8 @@ func TestForlornForest_CarriesTheForestTuning(t *testing.T) {
 	}, place.Creatures)
 	assert.Equal(t, ForestMinLevel, place.MinLevel)
 	assert.Equal(t, ForestMaxLevel, place.MaxLevel)
-	assert.Equal(t, 4, ForestMinLevel)
-	assert.Equal(t, 9, ForestMaxLevel)
+	assert.Equal(t, 8, ForestMinLevel)
+	assert.Equal(t, 12, ForestMaxLevel)
 	assert.Equal(t, FieldStatFactor, place.StatFactor)
 	assert.Equal(t, ForestDropFactor, place.DropFactor)
 	assert.Equal(t, FieldRespawnDelay, place.RespawnDelay)
@@ -163,6 +163,7 @@ func TestForestSpawns_GhostShareAndEliteRule(t *testing.T) {
 	rng := seededSpawns(12)
 
 	ghosts, elites := 0, 0
+	levels := map[int]bool{}
 	const rolls = 24000
 	for range rolls {
 		m := rollFieldMonster(rng, place)
@@ -175,6 +176,7 @@ func TestForestSpawns_GhostShareAndEliteRule(t *testing.T) {
 		}
 		require.GreaterOrEqual(t, m.Level, place.MinLevel)
 		require.LessOrEqual(t, m.Level, place.MaxLevel)
+		levels[m.Level] = true
 		if m.Archetype == components.MonsterArchetypeGhost {
 			ghosts++
 		}
@@ -186,6 +188,7 @@ func TestForestSpawns_GhostShareAndEliteRule(t *testing.T) {
 	assert.InDelta(t, 1.0/12, float64(ghosts)/rolls, 0.01)
 	assert.InDelta(t, 1.0/12, ForestGhostShare, 1e-12)
 	assert.InDelta(t, eliteChance(1), float64(elites)/rolls, 0.01, "the trail's elite share is the Meadows'")
+	assert.Len(t, levels, place.MaxLevel-place.MinLevel+1, "every level in the band rolls")
 }
 
 // inAnyClearing is whether p stands inside any dead end's clearing.

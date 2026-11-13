@@ -178,14 +178,14 @@ const (
 
 	// the Gentle Meadows' level band, inclusive
 	MeadowsMinLevel = 1
-	MeadowsMaxLevel = 4
+	MeadowsMaxLevel = 2
 	// the Gentle Meadows' drop chance over the Spire's row (fieldDrops)
 	MeadowsDropFactor = 0.35
 
 	// the Forlorn Forest's level band, inclusive, and its drop chance over
 	// the Spire's (FS-X2F2H D15, D17)
-	ForestMinLevel   = 4
-	ForestMaxLevel   = 9
+	ForestMinLevel   = 8
+	ForestMaxLevel   = 12
 	ForestDropFactor = 0.5
 )
 

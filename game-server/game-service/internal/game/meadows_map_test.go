@@ -34,7 +34,7 @@ func insideObstacle(layout FieldLayout, x, y float64) bool {
 }
 
 // The place's data: about the hub's size, hanging off the hub's Meadows gate,
-// with the boar at levels 1–4 and the stated factors. R51, R53.
+// with the boar at levels 1–2 and the stated factors. R51, R53.
 func TestGentleMeadows_IsTheEasyFieldEastOfTheHub(t *testing.T) {
 	meadows := GentleMeadows()
 
@@ -48,7 +48,7 @@ func TestGentleMeadows_IsTheEasyFieldEastOfTheHub(t *testing.T) {
 
 	assert.Equal(t, []FieldCreature{{Archetype: "boar", Weight: 1}}, meadows.Creatures)
 	assert.Equal(t, 1, meadows.MinLevel)
-	assert.Equal(t, 4, meadows.MaxLevel)
+	assert.Equal(t, 2, meadows.MaxLevel)
 	assert.Equal(t, 0.75, meadows.StatFactor)
 	assert.Equal(t, 0.35, meadows.DropFactor)
 }
