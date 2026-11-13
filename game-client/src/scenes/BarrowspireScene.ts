@@ -3412,7 +3412,7 @@ export class BarrowspireScene extends Phaser.Scene {
       overlay,
       {
         send: (action, payload) => socketManager.sendMessage(action, payload),
-        notice: (text) => this.showNotification(text, toCss(NOTICE_BACKING.refused)),
+        notice: (text) => this.showNotification(text, NOTICE_BACKING.refused),
       },
       Date.now,
       new PurseReader(apiClient, overlay),
@@ -3732,7 +3732,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Listen for exit door unlocked message
     const doorUnlocked = (payload: { message: string }) => {
       console.log("Exit door unlocked!", payload);
-      this.showNotification(payload.message, toCss(palette.safe));
+      this.showNotification(payload.message, palette.safe);
     };
     socketManager.on("exit_door_unlocked", doorUnlocked);
 
@@ -3743,14 +3743,14 @@ export class BarrowspireScene extends Phaser.Scene {
       // a refused reach opens no coffer (FS-KE075 §J R60); the empty frame after a reply refuses nothing
       if (!payload.success && (payload.reason || payload.message)) this.chestRefused();
       const notice = interactNotice(payload);
-      if (notice) this.showNotification(notice.text, toCss(NOTICE_BACKING[notice.tone]));
+      if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 
     // A refused equip (FS-BDA7X req 32, 45): the server's words, as a refusal. The next state puts
     // the item back where the server holds it.
     socketManager.on("equip", (reply: EquipReply) => {
       const refusal = equipRefusal(reply);
-      if (refusal) this.showNotification(refusal, toCss(NOTICE_BACKING.refused));
+      if (refusal) this.showNotification(refusal, NOTICE_BACKING.refused);
     });
 
     // end_game: the run is over. No card (FS-GV8WN R24); interaction locks
@@ -5229,34 +5229,13 @@ export class BarrowspireScene extends Phaser.Scene {
     this.projectiles = new ProjectileFlights(this, this.art, this.fx, projectileFlightOf);
   }
 
-  private showNotification(message: string, color: string): void {
-    // Create notification text at top center of screen
-    const notification = this.add.text(
-      viewport.centerX,
-      100,
-      message,
-      {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "20px",
-        color: toCss(palette.hudText),
-        backgroundColor: color,
-        padding: { x: 20, y: 10 },
-      },
-    );
-    notification.setOrigin(0.5);
-    notification.setScrollFactor(0);
-    notification.setDepth(2000);
-
-    // Fade out and destroy after 3 seconds
-    this.tweens.add({
-      targets: notification,
-      alpha: 0,
-      duration: 2000,
-      delay: 1000,
-      onComplete: () => {
-        notification.destroy();
-      },
-    });
+  /**
+   * A notification said in passing, at the top centre on its tone's backing (a colour value), held a
+   * moment then faded. The UI scene draws it, over the interface, and takes it down as the run leaves
+   * (FS-TQZ5J A2 R33, R34).
+   */
+  private showNotification(message: string, backing: number): void {
+    this.ui.notice({ text: message, look: { world: "run", backing } });
   }
 
   /**
@@ -5590,7 +5569,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Fall comes back on the confirm (FS-TQZ5J R9)
     this.ui.changed();
     if (this.runEnded) return;
-    this.showNotification(info.message ?? "The barrow will not take you yet.", toCss(palette.hudPanel));
+    this.showNotification(info.message ?? "The barrow will not take you yet.", palette.hudPanel);
   }
 
   /**
@@ -5716,7 +5695,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ) {
         this.showNotification(
           "Exit door unlocked! Run to escape!",
-          toCss(palette.safe),
+          palette.safe,
         );
       }
       this.previousSwitchActivated = switchData.is_activated;
@@ -5724,7 +5703,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 檢查逃生門是否被打開
     if (escapeDoor.is_open === true && this.previousEscapeDoorOpened !== true) {
-      this.showNotification("Escape door opened!", toCss(palette.safe));
+      this.showNotification("Escape door opened!", palette.safe);
     }
     this.previousEscapeDoorOpened = escapeDoor.is_open;
   }
@@ -5739,7 +5718,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!this.escapedPlayers.has(state.current_player.id)) {
         this.showNotification(
           `${state.current_player.username} escaped successfully!`,
-          toCss(palette.frameBright), // 金色
+          palette.frameBright, // 金色
         );
         this.escapedPlayers.add(state.current_player.id);
       }
@@ -5751,7 +5730,7 @@ export class BarrowspireScene extends Phaser.Scene {
         if (!this.escapedPlayers.has(player.id)) {
           this.showNotification(
             `${player.username} escaped successfully!`,
-            toCss(palette.frameBright),
+            palette.frameBright,
           );
           this.escapedPlayers.add(player.id);
         }

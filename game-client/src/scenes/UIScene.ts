@@ -14,6 +14,7 @@ import { uiBridgeOf, type UiBridge } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
 import { UiDialogueSlot, handKeys } from "@/ui/uiSceneDialogue";
 import { UiMenuSlot } from "@/ui/uiSceneMenu";
+import { UiNoticeLayer, drawNotice } from "@/ui/uiSceneNotices";
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
@@ -41,8 +42,9 @@ interface MenuKeyObjects {
  *
  * The interface moves in piece by piece (FS-TQZ5J § Phases). It holds the game's interface sounds
  * (R22), the corner row, built for each world as it reports itself (R13), the one menu slot: the
- * ESC menu, OPTIONS and the run's Fall confirm, with Esc and the menu's keys (R16–R21), and the town's
- * NPC dialogue card, drawn from the data the town shows, with its keys (A2 R29–R32). Its pointer stands beside
+ * ESC menu, OPTIONS and the run's Fall confirm, with Esc and the menu's keys (R16–R21), the town's
+ * NPC dialogue card, drawn from the data the town shows, with its keys (A2 R29–R32), and the worlds'
+ * screen notices, on its own clock (A2 R33, R34). Its pointer stands beside
  * the worlds' as Amendment A1 says, for every piece it holds: a world's press stays the world's, a
  * press on a piece lets go of the game's text field, and every move reaches the world (R25–R27).
  *
@@ -156,10 +158,11 @@ export class UIScene extends Phaser.Scene {
   }
 
   /**
-   * The corner row (R13), the menu slot (R16) and the dialogue slot (A2 R29). The row of the world
-   * reported as this scene is created (the first world's, whose report launched it), and each later
-   * world's on its report; the slot yielding as each report is heard (R20); the town's card drawn as
-   * the town shows it, in the popup band over the row, and gone with its world (R32). All taken down
+   * The corner row (R13), the menu slot (R16), the dialogue slot (A2 R29) and the notices (A2 R33). The
+   * row of the world reported as this scene is created (the first world's, whose report launched it),
+   * and each later world's on its report; the slot yielding as each report is heard (R20); the town's
+   * card drawn as the town shows it, in the popup band over the row, and gone with its world (R32); each
+   * notice drawn as a world says it, at its depth, gone with its world (R34). All taken down
    * as a world leaves and with the game, when it stops hearing the worlds (R4). The row's knockouts
    * follow the render scale themselves; a new logical view stands the row in the new corner, the
    * slot's panel at the new centre and the card in its corner.
@@ -178,6 +181,7 @@ export class UIScene extends Phaser.Scene {
     });
     const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu());
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
+    const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
     this.menu = menu;
     this.corner = corner;
     this.dialogue = dialogue;
@@ -185,9 +189,13 @@ export class UIScene extends Phaser.Scene {
     const stop = bridge.onWorld((report) => {
       menu.sync();
       dialogue.sync();
+      notices.sync();
       corner.show(report);
     });
-    const stopScreen = bridge.onScreen({ dialogue: (shown) => dialogue.show(shown) });
+    const stopScreen = bridge.onScreen({
+      dialogue: (shown) => dialogue.show(shown),
+      notice: (notice) => notices.say(notice),
+    });
     relayoutOn(this, () => {
       corner.relayout();
       menu.relayout();
@@ -198,6 +206,7 @@ export class UIScene extends Phaser.Scene {
       stopScreen();
       menu.close();
       dialogue.close();
+      notices.clear();
       corner.destroy();
       this.menu = undefined;
       this.dialogue = undefined;

@@ -3,7 +3,7 @@ id: I-TQZ5J-8
 status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-4]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J A2: the screen notices move into the UI scene, as typed messages drawn with today's look and timing"
 ---
 Implements FS-TQZ5J §Amendment A2 (R28, R33–R35)

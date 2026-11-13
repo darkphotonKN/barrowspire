@@ -120,8 +120,6 @@ const FIELD_SIZE: Record<FieldId, { width: number; height: number }> = {
 const CAMERA_MARGIN = 120;
 const POSITION_LERP = 0.3;
 const NAME_GAP = 4;
-const NOTICE_Y = 72;
-const NOTICE_MS = 3200;
 /** The fallen state's depth, as it has always stood: the HUD's. */
 const FALLEN_DEPTH = 1000;
 /** The fallen line's size, as it has always been. */
@@ -1180,19 +1178,11 @@ export class FieldScene extends Phaser.Scene {
     this.views.set(player.entity_id, { sprite, name, pos, target: { ...pos }, facing: "se", anim, fallen });
   }
 
-  /** A line said in passing, in the neutral HUD register. */
+  /**
+   * A line said in passing, in the neutral HUD register. The UI scene draws it, over the interface,
+   * and takes it down as the field leaves (FS-TQZ5J A2 R33, R34).
+   */
   private notice(text: string): void {
-    const line = this.add
-      .text(viewport.centerX, NOTICE_Y, text, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
-        color: toCss(BARROW_HEX.vellum),
-        backgroundColor: toCss(BARROW_HEX.charcoal),
-        padding: { x: 12, y: 8 },
-      })
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(1000);
-    this.time.delayedCall(NOTICE_MS, () => line.destroy());
+    this.ui.notice({ text, look: { world: "field" } });
   }
 }

@@ -860,6 +860,9 @@ function sceneOnStage() {
   });
   const texts = () =>
     stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string } }));
+  // the UI scene up over the run, as the run's report brings it up: its notices drawn on the run's
+  // stage, on the run's clock and tweens (FS-TQZ5J A2 R33)
+  uiSceneOn(run, "run", { row: false });
   return { run, stage, lights, gates, painted, grounds, texts, cursor };
 }
 
@@ -1467,8 +1470,6 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
 
   function resolvedOnStage(me: ReturnType<typeof player>, allies = [player("ally", "Wenna", 160)]) {
     const stage = onStage();
-    // the UI scene up over the run, its notices drawn on the run's stage (FS-TQZ5J A2 R33)
-    uiSceneOn(stage.run, "run", { row: false });
     const run = stage.run as unknown as Spectating;
     const state = (...others: ReturnType<typeof player>[]) =>
       ({ ...partyState(me), other_players: others } as GameState);
@@ -1565,18 +1566,18 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     });
 
     it("should say it through the UI bridge as the run's notification on the gold backing, at y 100 and depth 2000 (FS-TQZ5J A2 R33)", () => {
-      const { stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      const { run, stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
       const told: unknown[] = [];
-      uiSceneOn(stage.run, "run", { row: false }).bridge.onScreen({ notice: (n) => void told.push(n) });
+      uiSceneOn(run, "run", { row: false }).bridge.onScreen({ notice: (n) => void told.push(n) });
 
-      (stage.run as unknown as { checkPlayerEscapedState(state: unknown): void }).checkPlayerEscapedState({
+      (run as unknown as { checkPlayerEscapedState(state: unknown): void }).checkPlayerEscapedState({
         current_player: { id: "late", username: "Mira", escape: true },
         other_players: [],
       });
 
       expect(told).toEqual([{ text: "Mira escaped successfully!", look: { world: "run", backing: palette.frameBright } }]);
-      const line = stage.stage.made.find((m) => m.kind === "text" && m.args[2] === "Aldric escaped successfully!") as Made;
-      expect([line.x, line.y, line.depth]).toEqual([viewport.centerX, 100, 2000]);
+      const line = stage.made.find((m) => m.kind === "text" && m.args[2] === "Aldric escaped successfully!")!;
+      expect([line.args[0], line.args[1], line.depth]).toEqual([viewport.centerX, 100, 2000]);
     });
 
     it("should say the player escaped successfully once", () => {
@@ -7048,7 +7049,7 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     const run = new BarrowspireScene() as unknown as {
       init(data?: object): void;
       connectToServer(): void;
-      showNotification(message: string, color: string): void;
+      showNotification(message: string, backing: number): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
     };
@@ -7123,7 +7124,7 @@ describe("BarrowspireScene the open bar (FS-MQYEX §D R21–R25; I-MQYEX-4)", ()
       events: Emitter;
       init(): void;
       toggleChest(id: string): void;
-      showNotification(message: string, color: string): void;
+      showNotification(message: string, backing: number): void;
       update(time: number, delta: number): void;
     };
     run.containerView = view;
@@ -7510,7 +7511,7 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
       events: Emitter;
       init(): void;
       toggleChest(id: string): void;
-      showNotification(message: string, color: string): void;
+      showNotification(message: string, backing: number): void;
     };
     run.containerView = view;
     run.time = { delayedCall: vi.fn(), now: 1000 };

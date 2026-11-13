@@ -628,6 +628,21 @@ describe("the town's notices through the UI bridge (FS-TQZ5J A2 R33, R34)", () =
     expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" } }]);
   });
 
+  it("should say HubGear's refusals through the bridge, and a past visit's gear nothing (port.notice)", () => {
+    const { hub, ui } = hubOnStage();
+    const told: unknown[] = [];
+    ui().bridge.onScreen({ notice: (n) => void told.push(n) });
+    const composeGear = (hub as unknown as { composeGear(): { port: { notice(text: string): void } } }).composeGear.bind(hub);
+    const past = composeGear();
+    const gear = composeGear();
+    hub.gear = gear;
+
+    gear.port.notice("Your bag is full.");
+    past.port.notice("Your bag is full.");
+
+    expect(told).toEqual([{ text: "Your bag is full.", look: { world: "hub" } }]);
+  });
+
   it("should take a notice said just before the town leaves down with it", () => {
     const { hub, stage, refuse } = queuedHubOnStage();
     refuse("find_game", "Walk to the Spire's door first.");

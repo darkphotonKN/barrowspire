@@ -39,6 +39,7 @@ import { HubGear, gearAsCharacter } from "@/ui/HubGear";
 import { PurseReader } from "@/ui/purse";
 import { useMailboxStore } from "@/stores/mailboxStore";
 import { apiClient } from "@/utils/api";
+import { hudLine } from "@/ui/uiSceneNotices";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -298,26 +299,8 @@ const NPC_TALK_RANGE = 80;
 
 /** Screen px between the queue panel and its Leave button. */
 const LEAVE_GAP = 8;
-/** A passing notice: where it sits (screen px from the top, under the progress bar) and for how long. */
-const NOTICE_Y = 72;
 /** The queue panel's top edge: centred at the top, above the notice band (moved off the chat window). */
 const QUEUE_Y = 20;
-const NOTICE_MS = 3200;
-
-/**
- * One line of HUD chrome on a charcoal ground: the queue panel, its Leave button and a passing
- * notice are all this shape, so they stand the same height side by side. The colour is the
- * channel (docs/design-guideline.md, Gameplay accent): vellum to read, amber to press.
- */
-function hudLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
-  return {
-    fontFamily: CANVAS_FONT.body,
-    fontSize: "14px",
-    color: toCss(colour),
-    backgroundColor: toCss(BARROW_HEX.charcoal),
-    padding: { x: 12, y: 8 },
-  };
-}
 
 /**
  * The queue panel's words: the HUD's type with no ground of its own, an outline in the darkest
@@ -2485,15 +2468,11 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * A line the hub says in passing, in the neutral HUD register: the player cannot act on it,
-   * and it goes on its own.
+   * and it goes on its own. The UI scene draws it, over the interface, and takes it down as the
+   * town leaves (FS-TQZ5J A2 R33, R34).
    */
   private notice(text: string): void {
-    const line = this.add
-      .text(viewport.centerX, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(1000);
-    this.time.delayedCall(NOTICE_MS, () => line.destroy());
+    this.ui.notice({ text, look: { world: "hub" } });
   }
 
   private showQueueProgressText(text: string): void {

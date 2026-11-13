@@ -14,7 +14,7 @@
  * answers (R11), and the interface sounds the world's player actions and its minimap's step reach
  * through it (R12, R22). A pointer move the UI scene took from the world reaches the world through it
  * (A1 R27). The town's NPC dialogue crosses it as plain data, shown and taken down by the town, the
- * row picked handed back as its id (A2 R29, R30).
+ * row picked handed back as its id (A2 R29, R30); so do the worlds' screen notices (A2 R33).
  */
 
 import type { WorldType } from "@/assets/types/client";
@@ -57,6 +57,21 @@ export interface ShownDialogue {
   readonly speaker: DialogueSpeaker;
   readonly text: string;
   readonly options: readonly DialogueOption[];
+}
+
+/**
+ * How a notice looks (A2 R33): the town's passing line, the field's, or the run's notification on its
+ * backing colour (a colour value: the tone the run said it in).
+ */
+export type NoticeLook =
+  | { readonly world: "hub" }
+  | { readonly world: "field" }
+  | { readonly world: "run"; readonly backing: number };
+
+/** World → UI: a passing notice, as plain data (A2 R33). */
+export interface Notice {
+  readonly text: string;
+  readonly look: NoticeLook;
 }
 
 /** What keeps the screen in the world (R9): the town's NPC dialogue, open. */
@@ -182,9 +197,10 @@ export interface UiState {
   readonly menuOpen: boolean;
 }
 
-/** What the UI scene draws for the worlds, told as the world says it (A2 R29): its dialogue, or none. */
+/** What the UI scene draws for the worlds, told as the world says it (A2 R29, R33): its dialogue, or none; a notice. */
 export interface UiScreen {
   dialogue?(shown: ShownDialogue | null): void;
+  notice?(notice: Notice): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -240,15 +256,18 @@ export interface UiBridge extends UiActWrapper {
   showDialogue(shown: ShownDialogue): void;
   /** The world takes its dialogue down (A2 R29). */
   closeDialogue(): void;
-  /** Hears what the worlds say to the screen from now on (A2 R29). Returns the stop. */
+  /** The world says a passing notice (A2 R33): the UI scene draws it at once. */
+  notice(notice: Notice): void;
+  /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
 }
 
 /**
- * What of the bridge a world scene reaches (R10, R12, A2 R29): its player actions and its minimap's
- * step, the UI's state its guards read, its word that its report changed, and its dialogue.
+ * What of the bridge a world scene reaches (R10, R12, A2 R29, R33): its player actions and its
+ * minimap's step, the UI's state its guards read, its word that its report changed, its dialogue and
+ * its notices.
  */
-export type WorldUi = Pick<UiBridge, "act" | "play" | "ui" | "changed" | "showDialogue" | "closeDialogue">;
+export type WorldUi = Pick<UiBridge, "act" | "play" | "ui" | "changed" | "showDialogue" | "closeDialogue" | "notice">;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
 export const NO_UI: WorldUi = {
@@ -258,6 +277,7 @@ export const NO_UI: WorldUi = {
   changed: () => {},
   showDialogue: () => {},
   closeDialogue: () => {},
+  notice: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -333,6 +353,10 @@ export class GameUiBridge implements UiBridge {
 
   closeDialogue(): void {
     for (const screen of [...this.screens]) screen.dialogue?.(null);
+  }
+
+  notice(notice: Notice): void {
+    for (const screen of [...this.screens]) screen.notice?.(notice);
   }
 
   onScreen(screen: UiScreen): () => void {
