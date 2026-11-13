@@ -433,6 +433,33 @@ describe("HubGear (FS-HRH2J §E R40–44)", () => {
     expect(ids(panel.inventory)).toEqual(["helm"]);
   });
 
+  it.each([
+    ["the inventory", (gear: HubGear) => gear.toggle()],
+    ["the character panel", (gear: HubGear) => gear.toggleCharacter()],
+  ])(
+    "should keep what was last worn on show while %s reloads, so From gear never flashes Nothing worn",
+    async (_panel, open) => {
+      const { gear, panel, api } = hubGearOnStage([instance("sword")], {
+        weaponId: "sword",
+      });
+      open(gear);
+      await settle();
+      open(gear);
+      expect(panel.equipped.weapon?.entity_id).toBe("sword");
+
+      // opened again: REST is asked anew (R41) and has not answered yet
+      const instances = deferred<{ result: { items: ItemInstance[] } }>();
+      api.getItemInstances.mockReturnValueOnce(instances.promise);
+      open(gear);
+
+      expect(panel.status).toBe(GEAR_LOADING);
+      expect(panel.equipped.weapon?.entity_id).toBe("sword");
+      instances.resolve({ result: { items: [instance("sword")] } });
+      await settle();
+      expect(panel.equipped.weapon?.entity_id).toBe("sword");
+    },
+  );
+
   it("should load again on every open (R41)", async () => {
     const { gear, api } = hubGearOnStage();
     gear.toggle();
