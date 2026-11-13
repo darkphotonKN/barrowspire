@@ -22,8 +22,7 @@ broker, and owns its database. Its current `Ledger` aggregate (per-member root w
 version) predates the domain design and is **retired by FS-F9R7Q** — an append-only record
 performs no read-modify-write, so optimistic concurrency has nothing to protect.
 
-Per-table detail lives in [`docs/schema/`](docs/schema/). Cross-service architecture context:
-[`/docs/refactor_plan.md`](../../docs/refactor_plan.md).
+Per-table detail lives in [`docs/schema/`](docs/schema/).
 
 ## Capabilities
 

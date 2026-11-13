@@ -7,8 +7,7 @@
 > `/spec-audit` runs are cheap deltas against it.
 
 Living spec. Describes **behavior, routing surface, middleware, and downstream contracts** —
-not code or file paths. Marked ✅ DONE vs ⏳ PLANNED. Cross-service architecture context:
-[`/docs/refactor_plan.md`](../../docs/refactor_plan.md).
+not code or file paths. Marked ✅ DONE vs ⏳ PLANNED.
 
 ## Assumptions (verify these first)
 

@@ -8,8 +8,7 @@
 > spec (backup retained outside the repo). Future `/spec-audit` runs delta against this.
 
 Living spec for the **instanced escape-run simulation**. Architecture & conventions live in
-[`CLAUDE.md`](CLAUDE.md); the whole-project refactor plan is
-[`/docs/refactor_plan.md`](../../docs/refactor_plan.md).
+[`CLAUDE.md`](CLAUDE.md).
 
 Legend: ✅ DONE (built & code-verified) · ⚠️ PARTIAL · ⏳ PLANNED / NOT STARTED
 
@@ -280,7 +279,11 @@ matchmaking); this service is the engine they feed. ✅
 
 ## Reference — MMO-RPG refactor intent
 
-See [`/docs/refactor_plan.md`](../../docs/refactor_plan.md) for sequencing.
+The plan this section was drawn from is retired. The capability lines above and their FSes own
+what is built and what comes next. The plan's two-connection hub handoff was replaced by
+[ADR-0015](../../docs/adr/0015-hub-and-runs-share-one-process-and-one-connection.md) and then
+FS-K2HKP; its gear-escrow saga by
+[ADR-0032](../../docs/adr/0032-run-gear-is-checked-out-synchronously-to-in-run-not-escrowed-by-a-saga.md).
 
 ### World & sim
 

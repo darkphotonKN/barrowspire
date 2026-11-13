@@ -9,8 +9,8 @@ this member's `SPECIFICATION.md`.
 **`hub` names two unrelated things in this service, and both keep their name.** This is a known
 ambiguity, deliberately tolerated, so it is written down rather than left to bite:
 
-- **HUB** — *a place.* The shared, long-lived world players gather in between runs, as
-  [`/docs/refactor_plan.md`](../../docs/refactor_plan.md) names it.
+- **HUB** — *a place.* The shared, long-lived world players gather in between runs (**Hub**
+  below).
 - **message hub** — *a component.* The central WebSocket dispatcher (`messageHub.Run`,
   `internal/gameserver/hub.go`) that routes each connection's messages to the right world.
 
@@ -31,15 +31,14 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
 - **World type** — which kind of world: `hub` or `run`. Two types, one client. Gains `field`
   with FS-X2F2H (the client calls this **world kind**, mirroring `world_type` on the wire).
 - **Hub** — the shared, long-lived world players occupy between runs. One per deployment,
-  server-authoritative, capped. Same thing the refactor plan calls the **HUB**; never call it a
-  lobby, a town, or a village in code.
+  server-authoritative, capped. Never call it a lobby, a town, or a village in code.
   - **Town** — the owner's word for the hub, and the lore's (the Elder's tale: "the town needs
     heroes now"). Same world, not a part of it. Fine in conversation, specs and player-facing
     copy ("town buildings", "out of town to the Forest"); code keeps **hub** (`hubBuildings`,
     `HubScene`). A spec that says "town" means the hub world, never a separate place.
 - **Run** — a short-lived world built for one match, resolved and torn down. The original
-  escape-run game loop. Also called an **instance** where allocation is the subject (ADR-0004,
-  the refactor plan); prefer **run** for the world and **instance** only for the allocation unit.
+  escape-run game loop. Also called an **instance** where allocation is the subject (ADR-0004);
+  prefer **run** for the world and **instance** only for the allocation unit.
   - Discussion in Chinese calls this 塔 ("the tower"). That is conversational shorthand only:
     it names no layer of the system, so it appears in neither code nor UI copy. **run** is the
     server's word and **delve** is the player's; 塔 is neither, and translating it into either

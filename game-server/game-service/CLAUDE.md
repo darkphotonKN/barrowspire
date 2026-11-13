@@ -1,44 +1,13 @@
-# CLAUDE.md — game-service (The Age of Barrowspire)
+# game-service
 
-## What This Service Is
+The authoritative game worlds. Each is a session with its own isolated ECS world: the hub (one
+per process, outlives every run), the fields (built at startup, never shut down) and the escape
+runs (short-lived). A WebSocket message hub coordinates them.
 
-The **instanced escape-run simulation**: authoritative, short-lived, **one isolated ECS
-world per instance**. A party is allocated an instance, the run resolves, results are
-reported, the instance is torn down. This is the original pure-extraction game loop —
-unchanged so far in the MMO refactor.
-
-> Refactor context lives in [`/docs/refactor_plan.md`](../../docs/refactor_plan.md).
-> This service's feature list (DONE vs PLANNED) is [`SPECIFICATION.md`](SPECIFICATION.md) —
-> **keep it current** as features land.
-
-## Architecture: coordination, NOT a domain model
-
-The core loop is **ECS + a message-hub pattern** coordinating WebSocket request/response.
-This is real-time **coordination**, not business logic.
-
-- **Do NOT apply DDD here** (no model/repository/service/handler layering for the game loop).
-- DDD belongs to the surrounding bounded contexts (profile, inventory, economy, progression,
-  matchmaking) — see the refactor plan. game-service is the engine they feed into.
-
-## ECS Conventions
-
-- **Components = pure data**, no methods.
-- **Systems = all behavior**, stateless processors over components.
-- Entities are IDs; the world is rebuilt per instance and discarded on teardown.
-- Fixed-timestep authoritative tick; clients predict, server reconciles.
-- Each instance keys its own ECS world by instance id — **no shared mutable state across
-  instances** (this is what later allows process/container-per-instance).
-
-## Message-Hub WebSocket Pattern
-
-- A **long-lived goroutine per connection** handles that client's WS request/response.
-- Messages are routed through the hub to the owning instance's world; broadcasts fan back
-  out to that instance's clients only.
-- Keep routing generic so the **matchmaking ↔ instance allocation contract** stays stable
-  even as allocation moves from multi-instance-in-one-process to per-process later.
-
-## Code Style
-
-Follow the root [`/CLAUDE.md`](../../CLAUDE.md) Go conventions: `slog` (not `log`),
-`fmt.Errorf("context: %w", err)`, `ctx` first, no `panic` for errors, inject dependencies
-via constructor.
+- This is real-time coordination, not a domain model. Don't apply the DDD layering the other
+  services use (model/repository/service/handler) to the game loop.
+- Components are data only; systems hold the behaviour.
+- No mutable state shared across worlds. Each world is keyed by its session id, so runs can
+  later move from many-per-process to one process per run.
+- Keep the message hub's routing generic, so the matchmaking ↔ run-allocation contract
+  survives that move.
