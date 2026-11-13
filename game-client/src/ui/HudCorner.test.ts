@@ -362,9 +362,9 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
 
 // FS-TQZ5J I-TQZ5J-3: the row stands in the UI scene, over what the world draws, so where the world
 // keeps the screen the row holds the icons it names, as the world's own pieces over the row held them
-// when the row was the world's: the world's open ESC menu holds every icon but Menu (its blocker under
-// the UI scene, FS-3EBCA R18: 「menu開啟時其他都不能按」, until the menu moves, I-TQZ5J-4), and the
-// town's dialogue every icon (its answers' hit areas lie under the row). A held icon takes no hover,
+// when the row was the world's: the town's dialogue every icon (its answers' hit areas lie under the
+// row, until the dialogue moves, I-TQZ5J-7); the ESC menu, the UI scene's own since I-TQZ5J-4, holds
+// them by its blocker in the same scene (FS-3EBCA R18). A held icon takes no hover,
 // label, brightening or press, and Phaser hands its pointer on to the world under it.
 describe("HudCorner held where the world keeps the screen (FS-3EBCA R18; FS-TQZ5J I-TQZ5J-3)", () => {
   const all = (): CornerIconSpec[] => [

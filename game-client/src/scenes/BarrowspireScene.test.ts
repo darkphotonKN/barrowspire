@@ -123,6 +123,36 @@ const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
+const { menuOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+
+/** A key as both scenes' key objects stand in for it here: pressed since the last frame, or not. */
+interface PressedKey {
+  justDown: boolean;
+}
+
+/**
+ * One frame of the UI scene over the run, before the run's own (FS-TQZ5J R21): Esc and the menu's
+ * keys read once each, as `UIScene.readKeys` reads its own key objects; the menu slot drawn on the
+ * run's stage (`uiSceneOn`). The test's fake keys stand in for the UI scene's.
+ */
+function uiFrame(run: object, keys: Partial<Record<"esc" | "enter" | "one" | "two" | "three" | "left" | "right", PressedKey>>): void {
+  const down = (k?: PressedKey) => {
+    const was = !!k?.justDown;
+    if (k) k.justDown = false;
+    return was;
+  };
+  const esc = down(keys.esc);
+  const enter = down(keys.enter);
+  const numbered = [keys.one, keys.two, keys.three].map(down).indexOf(true);
+  const left = down(keys.left);
+  const right = down(keys.right);
+  uiSceneOn(run, "run", { row: false }).frame({ esc, enter, numbered, nudge: left === right ? undefined : left ? -1 : 1 });
+}
+
+/** The UI scene's menu slot filled (or emptied) over the run (FS-TQZ5J R10), as every guard of the run's reads it. */
+function menuUpOver(run: object, open = true): void {
+  uiSceneOn(run, "run", { row: false }).bridge.reportUi({ menuOpen: open });
+}
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
@@ -4127,15 +4157,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   /** What the scene holds for the run's menu. */
   interface Menued {
     menu?: unknown;
-    menuChoices?: unknown;
     fallPending: boolean;
     leavePending: boolean;
     controlsPanel?: unknown;
-    dismissKey?: FakeKey;
-    confirmKey?: FakeKey;
-    choiceKeys: FakeKey[];
-    offerMenu(): void;
-    openMenu(): void;
     bindRunInput(): void;
     sendMovementIntent(vx: number, vy: number): void;
     canSendMove(): boolean;
@@ -4152,9 +4176,6 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const stage = onStage();
     const run = stage.run as unknown as Menued;
     const keys = { esc: key(), enter: key(), one: key(), two: key() };
-    run.dismissKey = keys.esc;
-    run.confirmKey = keys.enter;
-    run.choiceKeys = [keys.one, keys.two];
     const keyHandlers: Record<string, (...args: unknown[]) => void> = {};
     const pointerHandlers: Record<string, (...args: unknown[]) => void> = {};
     Object.assign(stage.run, {
@@ -4165,9 +4186,14 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       },
     });
     stage.run.handleGameStateUpdate(partyState(me));
+    /** One frame of the UI scene: the keys pressed since the last, the arrows the run's own cursors stand in for. */
+    const frame = () => {
+      const arrows = (run as unknown as { cursors?: Record<"left" | "right", FakeKey> }).cursors;
+      uiFrame(run, { ...keys, left: arrows?.left, right: arrows?.right });
+    };
     const press = (k: FakeKey) => {
       k.justDown = true;
-      run.offerMenu();
+      frame();
     };
     const option = (id: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === `menu-${id}` && !m.destroyed);
@@ -4177,7 +4203,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
     const hit = (name: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
-    return { ...stage, run, keys, keyHandlers, pointerHandlers, press, option, pick, labels, sentOf, hit };
+    return { ...stage, run, keys, keyHandlers, pointerHandlers, frame, press, option, pick, labels, sentOf, hit };
   }
 
   afterEach(() => {
@@ -4188,7 +4214,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press, option, labels } = menuOnStage();
     press(keys.esc);
 
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
     expect(option("fall")).toBeDefined();
     expect(option("back")).toBeDefined();
     expect(labels()).toContain("Fall where you stand  [1]");
@@ -4208,9 +4234,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     };
     press(keys.esc);
     expect(open).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     press(keys.esc);
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
   });
 
   it("should close the menu on a second ESC, and on Back, taking its hit areas with it", () => {
@@ -4218,12 +4244,12 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     press(keys.esc);
     const fall = option("fall");
     press(keys.esc);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(fall?.destroyed).toBe(true);
 
     press(keys.esc);
     pick("back");
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(option("fall")).toBeUndefined();
   });
 
@@ -4243,7 +4269,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press } = menuOnStage();
     run.endRun();
     press(keys.esc);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
   });
 
   // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"
@@ -4299,7 +4325,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     s.press(s.keys.esc);
     s.pick("fall");
     back(s);
-    expect(s.run.menu).toBeUndefined();
+    expect(menuOver(s.run)).toBeUndefined();
     expect(s.option("fall-now")).toBeUndefined();
     expect(s.sent).not.toHaveBeenCalled();
     expect(s.run.fallPending).toBe(false);
@@ -4334,7 +4360,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("leave");
     expect(sentOf(ActionType.LeaveRun)).toEqual([[ActionType.LeaveRun, {}]]);
     expect(run.leavePending).toBe(true);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     // the card's own button is pending too: one send between them
     expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
     hit("leave-the-barrow")?.handlers.pointerdown();
@@ -4440,7 +4466,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
     (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
 
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(option("fall-now")).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
@@ -4450,7 +4476,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press, option } = menuOnStage(player("me", "Aldric", 130, dead));
     press(keys.esc);
     (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
     expect(option("leave")).toBeDefined();
   });
 
@@ -4458,7 +4484,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press, option } = menuOnStage();
     press(keys.esc);
     run.endRun();
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(option("fall")).toBeUndefined();
   });
 
@@ -4486,10 +4512,11 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("fall-now");
     (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
+    // the run stops: its leaving takes the UI scene's menu down (FS-TQZ5J R20), its reset the rest
+    (run as unknown as { events: { emit(event: string): void } }).events.emit("shutdown");
     run.resetRun("shutdown");
 
-    expect(run.menu).toBeUndefined();
-    expect(run.menuChoices).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
   });
@@ -4540,11 +4567,11 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
         const [, spec] = open.mock.calls[0];
         expect(spec.tones.actionable).toBe(palette.interactable);
         expect(spec.tones.cancel).toBe(palette.safe);
-        // the Menu icon is the UI scene's, above the run: the blocker leaves it nothing (FS-TQZ5J R7)
-        expect(spec.through).toBeUndefined();
+        // the Menu icon's plate, in the UI scene with the panel, left to the icon (FS-3EBCA R18)
+        expect(spec.through).toBeTypeOf("function");
         expect(panelOpen()).toBe(true);
         expect(option("fall")).toBeUndefined();
-        expect(run.menu).toBeDefined();
+        expect(menuOver(run)).toBeDefined();
         expect(labels()).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
       },
     );
@@ -4583,7 +4610,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
     it("should store the level on → and ←, one a press, clamped, and on a click of a step or an arrow, playing nothing (C5, C6, C14)", () => {
       const { run, arrows, kept, find } = inThePanel();
-      const offer = () => (run as unknown as { offerMenu(): void }).offerMenu();
+      const offer = () => uiFrame(run, arrows);
 
       arrows.right.justDown = true;
       offer();
@@ -4611,7 +4638,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       music.step(MUSIC_FADE_IN_MS);
       s.press(s.keys.esc);
       s.press(s.keys.two);
-      const offer = () => (s.run as unknown as { offerMenu(): void }).offerMenu();
+      const offer = () => uiFrame(s.run, s.arrows);
 
       s.arrows.right.justDown = true;
       offer();
@@ -4628,22 +4655,22 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     });
 
     it("should open at the stored level, and at 0 for a browser that silenced the town (C15; Edge States: Old setting)", () => {
-      const { run, arrows, kept } = inThePanel("number", undefined, "off");
+      const { arrows, kept, frame } = inThePanel("number", undefined, "off");
       arrows.right.justDown = true;
-      (run as unknown as { offerMenu(): void }).offerMenu();
+      frame();
       expect(kept.get(MUSIC_KEY)).toBe("1");
     });
 
     it("should read a → pressed in play as walking, not as a level change once the panel opens (C6)", () => {
-      const { run, keys, press, pick, arrows, kept, panelOpen } = optionsOnStage();
+      const { keys, press, pick, arrows, kept, panelOpen, frame } = optionsOnStage();
       arrows.right.justDown = true;
       arrows.right.isDown = true;
-      (run as unknown as { offerMenu(): void }).offerMenu();
+      frame();
       press(keys.esc);
       // a click opens the panel between frames, so no key read of that frame takes the press
       pick("options");
       expect(panelOpen()).toBe(true);
-      (run as unknown as { offerMenu(): void }).offerMenu();
+      frame();
 
       expect(kept.get(MUSIC_KEY)).toBeUndefined();
     });
@@ -4674,15 +4701,16 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       find("options-close")!.handlers.pointerup();
       expect(panelOpen()).toBe(false);
       expect(option("fall")).toBeDefined();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
       const { run, panelOpen, option } = inThePanel();
 
-      (run as unknown as { pressMenuIcon(): void }).pressMenuIcon();
+      // the Menu icon's press, the UI scene's menu slot's (FS-TQZ5J R14, R16)
+      uiSceneOn(run, "run").menu.pressMenu();
 
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(panelOpen()).toBe(false);
       expect(option("fall")).toBeUndefined();
     });
@@ -4711,10 +4739,10 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
     it("should centre the open panel again when the view changes (C8, FS-ZAJMH R13)", () => {
       const { run } = inThePanel();
-      const panel = run.menu as Made;
+      const panel = menuOver(run) as unknown as Made;
       panel.last["setPosition"] = [];
-      Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
-      (run as unknown as { relayoutHud(): void }).relayoutHud();
+      // the UI scene's relayout, its menu slot's panel with it (FS-TQZ5J R6)
+      uiSceneOn(run, "run").menu.relayout();
       expect(panel.last["setPosition"]).toEqual([viewport.centerX, viewport.centerY]);
     });
 
@@ -4723,7 +4751,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
       (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
 
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(panelOpen()).toBe(false);
       expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
     });
@@ -4737,10 +4765,10 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     it("should take the panel down when end_game arrives, and open nothing on Esc after (C17)", () => {
       const { run, keys, press, panelOpen } = inThePanel();
       run.endRun();
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(panelOpen()).toBe(false);
       press(keys.esc);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
   });
 });
@@ -4754,10 +4782,6 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
 
   interface Drinking {
     menu?: unknown;
-    dismissKey?: FakeKey;
-    confirmKey?: FakeKey;
-    choiceKeys: FakeKey[];
-    offerMenu(): void;
     bindRunInput(): void;
     toggleControlsPanel(): void;
   }
@@ -4774,9 +4798,6 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     const stage = onStage();
     const run = stage.run as unknown as Drinking;
     const keys = { esc: key(), enter: key(), one: key(), two: key() };
-    run.dismissKey = keys.esc;
-    run.confirmKey = keys.enter;
-    run.choiceKeys = [keys.one, keys.two];
     const keyHandlers: Record<string, (event?: { repeat?: boolean }) => void> = {};
     Object.assign(stage.run, {
       input: {
@@ -4787,15 +4808,18 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     });
     stage.run.handleGameStateUpdate(partyState(me as ReturnType<typeof player>));
     run.bindRunInput();
-    /** One press of 1 as Phaser delivers it: the keydown event, then the frame's menu poll. */
+    /**
+     * One press of 1 as Phaser delivers it: the run's keydown event, as the DOM event comes, then the
+     * UI scene's frame reading its own key (FS-TQZ5J R21).
+     */
     const pressOne = (event: { repeat?: boolean } = {}) => {
       keys.one.justDown = true;
       keyHandlers["keydown-ONE"]?.(event);
-      run.offerMenu();
+      uiFrame(run, keys);
     };
     const press = (k: FakeKey) => {
       k.justDown = true;
-      run.offerMenu();
+      uiFrame(run, keys);
     };
     const drinks = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.DrinkPotion);
     const labels = () =>
@@ -4829,7 +4853,7 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
   it("should leave the menu shut when 1 drinks", () => {
     const { run, pressOne } = drinkOnStage();
     pressOne();
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
   });
 
   it("should let 1 pick the menu's row, and send no drink_potion, while the menu is open", () => {
@@ -4874,12 +4898,8 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     equipment?: InstanceType<typeof EquipmentHud>;
     menu?: unknown;
     controlsPanel?: unknown;
-    dismissKey?: { justDown: boolean; isDown: boolean };
-    confirmKey?: { justDown: boolean; isDown: boolean };
-    choiceKeys: { justDown: boolean; isDown: boolean }[];
     combat: { aiming: boolean };
     bindRunInput(): void;
-    offerMenu(): void;
     composeEquipment(): InstanceType<typeof EquipmentHud>;
     bagHasRoom(): boolean;
     lootChestItem(item: unknown): void;
@@ -4900,9 +4920,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
     const run = stage.run as unknown as Overlaid;
     const esc = { justDown: false, isDown: false };
-    run.dismissKey = esc;
-    run.confirmKey = { justDown: false, isDown: false };
-    run.choiceKeys = [];
     const keyHandlers: Record<string, () => void> = {};
     const removeKey = vi.fn();
     const input = Object.assign(new EventEmitter(), {
@@ -4925,9 +4942,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     run.bindRunInput();
     (stage.run as unknown as { time: { now: number } }).time.now = 1000;
     const key = (name: string) => keyHandlers[`keydown-${name}`]();
+    // Esc is the UI scene's (FS-TQZ5J R17)
     const pressEsc = () => {
       esc.justDown = true;
-      run.offerMenu();
+      uiFrame(run, { esc });
     };
     const pointer = (at: { x: number; y: number }, button: number) => ({
       ...at,
@@ -4984,9 +5002,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     key("I");
     pressEsc();
     expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     pressEsc();
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
   });
 
   it("should keep walking with the overlay open: nothing pauses (R7)", () => {
@@ -5073,7 +5091,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     key("C");
     pressEsc();
     expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     key("I");
     key("C");
     key("Q");
@@ -5119,7 +5137,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     // the Menu icon opens the menu at once, the inventory closing with it (FS-3EBCA R17)
     plate("menu").handlers.pointerdown();
     expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
   });
 
   // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
@@ -5160,7 +5178,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     it("should still refuse T while the ESC menu is open", () => {
       const { run, party, pressEsc } = partyOverOverlay();
       pressEsc();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
       party.pressT();
       expect(party.panel.isOpen()).toBe(false);
     });
@@ -5175,7 +5193,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(run.equipment?.isOpen()).toBe(true);
       pressEsc();
       expect(run.equipment?.isOpen()).toBe(false);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
 
     it("should keep a press on the party panel from the overlay under it: no equip for a bag item there", () => {
@@ -5226,9 +5244,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       pressEsc();
       expect(open()).toEqual({ gear: true, party: false });
       pressEsc();
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       pressEsc();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
@@ -5238,7 +5256,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       party.pressT();
       pressIcon("menu");
       expect(open()).toEqual(NONE);
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should only close every window on the Menu icon once the run has ended: there is no menu (R17)", () => {
@@ -5249,19 +5267,19 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       run.runEnded = true;
       pressIcon("menu");
       expect(open()).toEqual(NONE);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
 
     it("should answer no corner icon but Menu, no I, B, C or T while the menu is open (R18)", () => {
       const { run, key, party, pressEsc, pressIcon, open } = runWindows();
       pressEsc();
-      const menu = run.menu;
+      const menu = menuOver(run);
       for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
       key("I");
       key("B");
       key("C");
       party.pressT();
-      expect(run.menu).toBe(menu);
+      expect(menuOver(run)).toBe(menu);
       expect(open()).toEqual(NONE);
     });
 
@@ -5270,10 +5288,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const { run, pressEsc, pressIcon, open } = runWindows();
       pressEsc();
       pressIcon("menu");
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(open()).toEqual(NONE);
       pressIcon("menu");
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should close the Fall confirm on the Menu icon, as its × and Not yet do: the whole menu goes, nothing sent (R18)", () => {
@@ -5283,12 +5301,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(true);
       const before = sent.mock.calls.length;
       pressIcon("menu");
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(false);
       expect(sent.mock.calls.length).toBe(before);
     });
 
-    it("should take the whole view with the menu's blocker: the Menu icon is the UI scene's, above it (R18; FS-TQZ5J R7)", () => {
+    it("should take the whole view with the menu's blocker but the Menu icon's plate, the row and the menu one scene (R18; FS-TQZ5J R16)", () => {
       const { pressEsc, stage } = runWindows();
       pressEsc();
       const blocker = stage.made.find((m) => (m as { name?: string }).name === "menu-blocker" && !m.destroyed)!;
@@ -5299,9 +5317,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const takes = (x: number, y: number) => test!({}, x, y, blocker);
       const plate = cornerIconFrame("menu", viewport);
       const bag = cornerIconFrame("inventory", viewport);
-      // the whole view, the Menu plate included: the icon is the UI scene's, drawn and pressed above
-      // the world, so the world's blocker leaves nothing to it (FS-TQZ5J R7, I-TQZ5J-3)
-      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(true);
+      // the whole view but the Menu plate, which it leaves to the icon under it in the same scene, so
+      // a press there closes the menu (FS-3EBCA R18, as when both were the run's)
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
       expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
       expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
@@ -5351,7 +5369,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         env.press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
       };
       const open = () => ({
-        menu: run.menu !== undefined,
+        menu: menuOver(run) !== undefined,
         party: party.panel.isOpen(),
         gear: run.equipment?.isOpen() ?? false,
       });
@@ -5388,7 +5406,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(r.find("menu-not-yet")).toBeDefined();
       expect(r.heard()).toEqual([]);
       r.pick("menu-not-yet");
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
@@ -5399,7 +5417,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     ])("should play settings_close as %s closes the whole menu from the Fall confirm (S5)", (_input, input) => {
       const r = inFallConfirm();
       input(r);
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
@@ -5407,7 +5425,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const r = inFallConfirm();
       r.pick("menu-fall-now");
       expect(r.sentOf(ActionType.ForfeitRun)).toHaveLength(1);
-      expect(r.run.menu).toBeDefined();
+      expect(menuOver(r.run)).toBeDefined();
       expect(r.heard()).toEqual([]);
     });
 
@@ -5419,7 +5437,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       r.heard();
       r.pick("menu-leave");
       expect(r.sentOf(ActionType.LeaveRun)).toHaveLength(1);
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
@@ -5507,7 +5525,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       r.pressEsc();
       r.heard();
       input(r);
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
@@ -5535,7 +5553,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
         const r = inOptions();
         r.pressIcon("menu");
-        expect(r.run.menu).toBeUndefined();
+        expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual(["settings_close"]);
       });
     });
@@ -5580,10 +5598,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         ["the Fall confirm", inFallConfirm],
       ])("should play nothing as %s yields to the player's death", (_open, opened) => {
         const r = opened();
-        if (!r.run.menu) r.pressEsc();
+        if (!menuOver(r.run)) r.pressEsc();
         r.heard();
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
-        expect(r.run.menu).toBeUndefined();
+        expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual([]);
       });
 
@@ -5591,7 +5609,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         const r = inFallConfirm();
         r.pick("menu-fall-now");
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
-        expect(r.run.menu).toBeUndefined();
+        expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual([]);
       });
 
@@ -5600,7 +5618,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         r.pressEsc();
         r.heard();
         r.run.endRun();
-        expect(r.run.menu).toBeUndefined();
+        expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual([]);
       });
 
@@ -5625,8 +5643,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
           Object.assign((r.run as unknown as { input: { keyboard: object } }).input.keyboard, { removeCapture: vi.fn() });
           open(r);
           r.heard();
+          // a stop is the run leaving, which takes the UI scene's menu down (FS-TQZ5J R20); a destroy
+          // takes the UI scene down with the game, its slot emptied as it ends (UIScene's onSceneEnd)
+          (r.run as unknown as { events: { emit(event: string): void } }).events.emit(end);
+          if (end === "destroy") uiSceneOn(r.run, "run").menu.close();
           r.run.resetRun(end);
-          expect(r.run.menu).toBeUndefined();
+          expect(menuOver(r.run)).toBeUndefined();
           expect(r.heard()).toEqual([]);
         }
       });
@@ -5939,7 +5961,8 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
   const cancels: [string, (s: ReturnType<typeof aimOnStage>) => void][] = [
     ["the player dying", (s) => s.run.handleGameStateUpdate(partyState(as("archer", { current_health: 0 }) as ReturnType<typeof player>))],
     ["the party leaving the floor", (s) => s.run.leaveFloor()],
-    ["the ESC menu opening", (s) => s.run.openMenu()],
+    // the UI scene's menu opening, heard by the run (FS-TQZ5J R10)
+    ["the ESC menu opening", (s) => menuUpOver(s.run)],
     ["the run ending", (s) => s.run.endRun()],
     [
       "the equipment panel opening",
@@ -8948,10 +8971,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(store.writes).toEqual(modes);
         keys["keydown-M"]({ repeat: true });
         expect(map()!.mode).toBe("enlarged");
-        run.menu = {};
+        menuUpOver(run);
         keys["keydown-M"]();
         expect(map()!.mode).toBe("enlarged");
-        run.menu = undefined;
+        menuUpOver(run, false);
         run.chatWindow = { isTyping: () => true };
         keys["keydown-M"]();
         expect(map()!.mode).toBe("enlarged");
@@ -8973,9 +8996,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(map()!.mode).toBe("overlay");
         expect(heard()).toEqual(["map_mode_switch"]);
         keys["keydown-M"]({ repeat: true });
-        run.menu = {};
+        menuUpOver(run);
         keys["keydown-M"]();
-        run.menu = undefined;
+        menuUpOver(run, false);
         run.chatWindow = { isTyping: () => true };
         keys["keydown-M"]();
         run.chatWindow = undefined;
@@ -9041,6 +9064,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
             keyboard: {
               createCursorKeys: () => ({}),
               addKey: (code: number) => (added.push(code), key(code)),
+              addCapture: vi.fn(),
               on: (event: string) => heard.push(event),
             },
           },
@@ -9121,9 +9145,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         it("should do nothing with a press while the menu is open or chat is typing, M's guards (D6)", () => {
           const { run, pointers, map, store } = mapped();
           const cast = vi.spyOn((run as IconRun).combat, "cast");
-          run.menu = {};
+          menuUpOver(run);
           pointers.pointerdown(pointerAt(862, 109));
-          run.menu = undefined;
+          menuUpOver(run, false);
           run.chatWindow = { isTyping: () => true, covers: () => false } as MappedRun["chatWindow"];
           pointers.pointerdown(pointerAt(862, 109));
           expect(map()!.mode).toBe("normal");

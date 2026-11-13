@@ -20,7 +20,18 @@ vi.mock("phaser", () => {
   const phaser = {
     Scene,
     Plugins: { ScenePlugin },
-    Scenes: { Events: { READY: "ready", DESTROY: "destroy", SHUTDOWN: "shutdown" } },
+    Scenes: { Events: { READY: "ready", DESTROY: "destroy", SHUTDOWN: "shutdown", SLEEP: "sleep", WAKE: "wake" } },
+    Input: {
+      Keyboard: {
+        // Phaser's JustDown: true once per press, and reading it clears the press
+        JustDown: (key: { justDown: boolean }) => {
+          const pressed = key.justDown;
+          key.justDown = false;
+          return pressed;
+        },
+        KeyCodes: { ESC: 27, ENTER: 13, ONE: 49, TWO: 50, THREE: 51, LEFT: 37, RIGHT: 39 },
+      },
+    },
   };
   return { ...phaser, default: phaser };
 });
@@ -31,7 +42,7 @@ const { UI_SCENE } = await import("@/components/uiSceneLifecycle");
 const { ViewportFit } = await import("@/render/viewport/ViewportFit");
 const { fitGame, viewport } = await import("@/render/viewport");
 const { Viewport } = await import("@/render/viewport/viewport");
-const { GameUiBridge, lendUiBridge } = await import("@/ui/uiBridge");
+const { GameUiBridge, NO_FACTS, lendUiBridge } = await import("@/ui/uiBridge");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 
 /** A camera that records its size and zoom as the viewport fits it. */
@@ -138,11 +149,12 @@ describe("the UI scene's interface sounds (FS-TQZ5J R22, FS-WDM0X S10–S13)", (
   it("should make the game's one player as it is created, lent to its game's bridge: a world's action and its minimap's step play on it", () => {
     const { bridge, played } = created();
     let open = false;
-    const closed = { menu: false, letter: false, party: false, character: false };
+    const closed = { letter: false, party: false, character: false };
     bridge.report({
       world: "field",
       windows: () => ({ ...closed, inventory: open }),
       blockers: () => ({ dialogue: false }),
+      facts: () => NO_FACTS,
       answer: () => {},
     });
 
@@ -186,6 +198,24 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     },
   );
 
+  // FS-TQZ5J R16, R21 and § Acceptance Criteria: the ESC menu, OPTIONS and Esc are the UI scene's; no
+  // world builds them, binds Esc by event or by key, or settles a key's owner by stopping it
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
+    "should have %s construct no menu panel or OPTIONS panel and bind no Esc",
+    (file) => {
+      const code = source(file);
+      expect(code).not.toMatch(/showMenuPanel\(|openOptionsPanel\(|this\.menu\b|menuChoices|moveMenu/);
+      expect(code).not.toMatch(/keydown-ESC|KeyCodes\.ESC/);
+    },
+  );
+
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts", "./UIScene.ts", "../ui/uiSceneMenu.ts"])(
+    "should have %s stop no key event to settle who answers it (R21)",
+    (file) => {
+      expect(source(file)).not.toMatch(/stopPropagation|stopImmediatePropagation/);
+    },
+  );
+
   it("should have the UI scene import no other scene", () => {
     const imports = source("./UIScene.ts").match(/from "[^"]+"/g) ?? [];
     expect(imports.filter((from) => /Scene"$/.test(from))).toEqual([]);
@@ -194,7 +224,7 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
 
 // FS-TQZ5J §C R13–R15 (I-TQZ5J-3): the corner row is the UI scene's own, built as it is created from
 // the world reported then, rebuilt on each world's report, taken down as the world leaves, and held
-// each frame while the world reports its own ESC menu open (until the menu moves, I-TQZ5J-4).
+// each frame under the town's dialogue; the ESC menu, its own since I-TQZ5J-4, stands in the same scene.
 describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
   type Obj = Record<string, unknown>;
   interface Zone {
@@ -216,10 +246,18 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     const held = new Map<string, unknown>();
     const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
     lendUiBridge(registry, bridge);
-    const windows = { menu: false, letter: false, party: false, inventory: false, character: false };
+    const windows = { letter: false, party: false, inventory: false, character: false };
     const blockers = { dialogue: false };
+    const facts = { ...NO_FACTS };
+    const asked: string[] = [];
     const report = (w: "hub" | "field" | "run") =>
-      bridge.report({ world: w, windows: () => windows, blockers: () => blockers, answer: () => {} });
+      bridge.report({
+        world: w,
+        windows: () => windows,
+        blockers: () => blockers,
+        facts: () => facts,
+        answer: (request) => void asked.push(request.kind),
+      });
     if (world) report(world);
     const list: unknown[] = [];
     const zones: Zone[] = [];
@@ -271,10 +309,25 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     };
     const events = new EventEmitter();
     const sys = { settings: { status: 5 } };
+    // its keyboard: the keys it adds, each with whether it captured it, and the game's captures
+    const keys = new Map<number, { justDown: boolean; captured: boolean }>();
+    const captures = new Set<number>();
+    const keyboard = {
+      addKey: (code: number, capture = true) => {
+        const key = { justDown: false, captured: capture };
+        keys.set(code, key);
+        if (capture) captures.add(code);
+        return key;
+      },
+      addCapture: (code: number) => void captures.add(code),
+      removeCapture: (code: number) => void captures.delete(code),
+    };
     const scene = Object.assign(new UIScene(), {
       registry,
       events,
       sys,
+      input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
+      cameras: { cameras: [] },
       children: { list },
       add: new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : kind === "text" ? text : any) }),
       cache: { audio: { exists: () => false } },
@@ -286,7 +339,12 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       const f = cornerIconFrame(icon, viewport);
       return live().find((z) => z.x === f.x && z.y === f.y);
     };
-    return { scene, bridge, report, windows, blockers, events, sys, live, plate, labels };
+    /** A key pressed since the last frame, then the frame. */
+    const press = (code: number) => {
+      keys.get(code)!.justDown = true;
+      scene.update();
+    };
+    return { scene, bridge, report, windows, blockers, facts, asked, events, sys, live, plate, labels, keys, captures, press };
   }
 
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
@@ -315,16 +373,14 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     expect(live()).toEqual([]);
   });
 
-  it("should hold every icon but Menu on its update while the world reports its menu open, and let them go once shut", () => {
-    const { scene, windows, plate } = created("run");
-    windows.menu = true;
-    scene.update();
-    expect(plate("inventory")!.enabled).toBe(false);
-    expect(plate("menu")!.enabled).toBe(true);
+  it("should hold no icon while its own menu is open: the menu's blocker over the row takes them (FS-3EBCA R18)", () => {
+    const { bridge, plate } = created("run");
+    plate("menu")!.handlers.pointerdown();
+    expect(bridge.ui.menuOpen).toBe(true);
 
-    windows.menu = false;
-    scene.update();
     expect(plate("inventory")!.enabled).toBe(true);
+    plate("menu")!.handlers.pointerdown();
+    expect(bridge.ui.menuOpen).toBe(false);
   });
 
   it("should hold every icon, Menu too, on its update while the town reports a dialogue open (its answers lie under the row)", () => {
@@ -378,6 +434,80 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
     expect(labels.find((l) => !l.destroyed)!.resolution).toBe(2);
   });
+
+  // FS-TQZ5J §D R16–R21 (I-TQZ5J-4): the ESC menu, OPTIONS and the Fall confirm stand in the UI scene's
+  // one slot (uiSceneMenu.ts holds its rules); the scene reads Esc and the menu's keys from its own key
+  // objects once a frame in its update, never on a key event, and captures Esc only while awake.
+  describe("the UI scene's menu slot and keys (FS-TQZ5J R16–R21; I-TQZ5J-4)", () => {
+    const ESC = 27;
+    const ENTER = 13;
+    const ONE = 49;
+
+    it("should add Esc captured, and Enter, 1–3 and ←/→ uncaptured: the worlds that use those capture them (R21)", () => {
+      const { keys } = created("hub");
+
+      expect([...keys.entries()].map(([code, key]) => [code, key.captured])).toEqual([
+        [ESC, true],
+        [ENTER, false],
+        [49, false],
+        [50, false],
+        [51, false],
+        [37, false],
+        [39, false],
+      ]);
+    });
+
+    it("should hand Esc's capture back as it sleeps and take it again as it wakes", () => {
+      const { events, captures } = created("hub");
+
+      events.emit("sleep");
+      expect(captures.has(ESC)).toBe(false);
+      events.emit("wake");
+      expect(captures.has(ESC)).toBe(true);
+    });
+
+    it("should open the world's menu on an Esc read in its update, the slot reported filled (R10, R17)", () => {
+      const { bridge, press } = created("field");
+
+      press(ESC);
+
+      expect(bridge.ui.menuOpen).toBe(true);
+      press(ESC);
+      expect(bridge.ui.menuOpen).toBe(false);
+    });
+
+    it("should ask the world for a row on its key while the menu is open, and act on none while it is shut (R18)", () => {
+      const { asked, press } = created("hub");
+
+      press(ENTER);
+      press(ONE);
+      expect(asked).toEqual([]);
+
+      press(ESC);
+      press(ONE);
+      expect(asked).toEqual(["changeCharacter"]);
+    });
+
+    it("should yield its menu as the world reports the player's state changed (R20)", () => {
+      const { bridge, facts, press } = created("run");
+      press(ESC);
+
+      facts.resolved = true;
+      bridge.changed();
+
+      expect(bridge.ui.menuOpen).toBe(false);
+    });
+
+    it("should close its menu as the world leaves, with the row", () => {
+      const { bridge, press, plate } = created("hub");
+      press(ESC);
+
+      bridge.left("hub");
+
+      expect(bridge.ui.menuOpen).toBe(false);
+      expect(plate("menu")).toBeUndefined();
+    });
+  });
 });
 
 // FS-TQZ5J Amendment A1 (I-TQZ5J-6): the UI scene's pointer beside the worlds', wired to Phaser's own
@@ -393,8 +523,9 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     const heard: string[] = [];
     bridge.report({
       world: "run",
-      windows: () => ({ menu: false, letter: false, party: false, inventory: false, character: false }),
+      windows: () => ({ letter: false, party: false, inventory: false, character: false }),
       blockers: () => ({ dialogue: false }),
+      facts: () => NO_FACTS,
       answer: () => {},
       hearMove: (_pointer, onUi) => void heard.push(onUi ? "over the UI" : "off it"),
     });

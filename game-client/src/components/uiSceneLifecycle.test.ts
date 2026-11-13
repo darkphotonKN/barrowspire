@@ -3,7 +3,7 @@ import { DisconnectNotice } from "./disconnectNotice";
 import { UI_SCENE, driveUiScene } from "./uiSceneLifecycle";
 import { switchWorld } from "./worldRouting";
 import type { WorldEnteredPayload } from "@/assets/types/client";
-import { GameUiBridge, type World, type WorldListener } from "@/ui/uiBridge";
+import { GameUiBridge, NO_FACTS, type World, type WorldListener } from "@/ui/uiBridge";
 
 // Phaser 4.2.1's scene statuses (scene/const.js). A scene the game booted and never started is INIT.
 const INIT = 1;
@@ -18,8 +18,9 @@ const WORLD_OF: Record<string, World> = { HubScene: "hub", BarrowspireScene: "ru
 /** A world's report: which world, its windows all shut (FS-TQZ5J R9). */
 const reportOf = (world: World) => ({
   world,
-  windows: () => ({ menu: false, letter: false, party: false, inventory: false, character: false }),
+  windows: () => ({ letter: false, party: false, inventory: false, character: false }),
   blockers: () => ({ dialogue: false }),
+  facts: () => NO_FACTS,
   answer: () => {},
 });
 

@@ -104,6 +104,12 @@ const { PartyPanel } = await import("@/ui/PartyPanel");
 const { createPartyStore } = await import("@/stores/partyStore");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
+const { menuOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { reportWorld } = await import("@/ui/uiBridge");
+
+/** The UI scene's menu slot filled over the town (FS-TQZ5J R10), as every guard of the town's reads it. */
+const menuUpOver = (hub: object) => void uiSceneOn(hub, "hub", { row: false }).bridge.reportUi({ menuOpen: true });
+type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
 
 interface QueuePanelScene {
   queuePanel?: { active: boolean; setText(text: string): unknown };
@@ -428,7 +434,6 @@ interface MenuHub {
   menu?: Made;
   dialogue?: unknown;
   dialogueChoices?: { confirm(): void; dismiss(): void };
-  dismissKey?: FakeKey;
   interactKey?: FakeKey;
   confirmKey?: FakeKey;
   choiceKeys?: FakeKey[];
@@ -532,15 +537,19 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
   it.each([1, 2])(
     "should centre the queue panel, its Leave and the open ESC menu again when the view widens, at render scale %s (FS-ZAJMH R12, R13)",
     (renderScale) => {
-      const { hub, keys, press, option, reply } = queuedHubOnStage();
-      const relayout = () => (hub as unknown as { relayoutHud(): void }).relayoutHud();
+      const { hub, keys, ui, press, option, reply } = queuedHubOnStage();
+      // the town's HUD, and the UI scene's menu over it (FS-TQZ5J R6, R16)
+      const relayout = () => {
+        (hub as unknown as { relayoutHud(): void }).relayoutHud();
+        ui().menu.relayout();
+      };
       Object.assign(hub, { invitePrompt: undefined, readyCheck: undefined, mailbox: undefined });
       viewport.set({ width: 1080, height: 720, renderScale });
       reply("queue_status", { current: 1, total: 2 });
       press(keys.esc);
       const panel = hub.queuePanel as Made;
       const leave = hub.leaveButton as Made;
-      const menu = hub.menu as Made;
+      const menu = menuOver(hub) as unknown as Made;
       const hit = option("leave") as Made;
       expect([panel.x, menu.x]).toEqual([540, 540]);
       const leaveOffset = leave.x - panel.x;
@@ -566,7 +575,7 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
     press(keys.esc);
 
     expect(option("leave")).toBeDefined();
-    expect(hub.menu?.depth).toBe(2000);
+    expect(menuOver(hub)?.depth).toBe(2000);
   });
 
   it("should hide the button while joining the delve, and drop it with the queue when the join fails", () => {
@@ -659,7 +668,7 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
     expect(hub.leaveButton).toBeUndefined();
     expect(hub.queued).toBe(false);
     expect(hub.leavePending).toBe(false);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
 
     // the next menu is a fresh one with two choices
     press(keys.esc);
@@ -751,13 +760,33 @@ function hubOnStage() {
   hub.scene = { start: vi.fn() };
   hub.time = { delayedCall: vi.fn() };
   hub.input = { setDefaultCursor: vi.fn() };
-  hub.dismissKey = keys.esc;
   hub.interactKey = keys.e;
   hub.confirmKey = keys.enter;
   hub.cursors = { up: key(), down: key(), left: keys.left, right: keys.right };
   hub.wasd = { up: keys.w, down: key(), left: keys.a, right: keys.d };
+  /**
+   * The UI scene over the town (FS-TQZ5J R16, R17): its menu slot drawn on the town's stage, built on
+   * first use, as the UI scene comes up with the town's report.
+   */
+  const ui = () => uiSceneOn(hub, "hub", { row: false });
+  // the keys the UI scene reads too: each scene's keyboard hears every key (FS-TQZ5J § Spike (b))
+  const uiKeys: Partial<Record<UiKey, FakeKey>> = {
+    esc: keys.esc,
+    enter: keys.enter,
+    one: keys.one,
+    two: keys.two,
+    three: keys.three,
+    left: keys.left,
+    right: keys.right,
+  };
+  /** A key pressed since the last frame, then one frame: the UI scene's first, then the town's (Phaser steps the list from the top). */
   const press = (k: FakeKey) => {
     k.justDown = true;
+    const name = (Object.keys(uiKeys) as UiKey[]).find((n) => uiKeys[n] === k);
+    // Esc is the UI scene's alone: the town binds it no more (FS-TQZ5J R21)
+    if (k === keys.esc) k.justDown = false;
+    if (name) ui().key(name);
+    else ui().frame();
     hub.update(0, 16);
   };
   const option = (id: string) => stage.made.find((m) => m.name === `menu-${id}` && !m.destroyed);
@@ -781,8 +810,12 @@ function hubOnStage() {
     ]);
     answer(keys.e);
   };
-  /** A key read by the dialogue alone: the views above are too bare to ease each frame. */
+  /**
+   * A key read by the dialogue alone: the views above are too bare to ease each frame. Esc is the UI
+   * scene's, which asks the town to close the dialogue (FS-TQZ5J R17).
+   */
   const answer = (k: FakeKey) => {
+    if (k === keys.esc) return ui().key("esc");
     k.justDown = true;
     hub.offerConversation();
   };
@@ -793,7 +826,7 @@ function hubOnStage() {
     standAt(AWAY);
     standAt(SPIRE_GATE.position);
   };
-  return { hub, stage, keys, gear, press, option, choice, label, talkTo, answer, standAt, atTheDoor };
+  return { hub, stage, keys, gear, ui, press, option, choice, label, talkTo, answer, standAt, atTheDoor };
 }
 
 /** The hub's gates as the server sends them (FS-0XMCP §Requirements 2, 6). */
@@ -1427,36 +1460,37 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
 
     press(keys.esc);
 
-    expect(hub.menu).toBeDefined();
-    expect(hub.menu?.depth).toBe(2000);
+    expect(menuOver(hub)).toBeDefined();
+    expect(menuOver(hub)?.depth).toBe(2000);
     expect(option("change")).toBeDefined();
     expect(option("back")).toBeDefined();
   });
 
-  it("should leave ESC to the dialogue while one is open", () => {
+  it("should close the dialogue on ESC while one is open, the UI scene asking the town, and open no menu (FS-TQZ5J R17)", () => {
     const { hub, keys, press } = hubOnStage();
-    const dismiss = vi.fn();
-    hub.dialogue = {};
-    hub.dialogueChoices = { confirm: vi.fn(), dismiss };
+    const card = { destroy: vi.fn() };
+    hub.dialogue = card;
+    hub.dialogueChoices = { confirm: vi.fn(), dismiss: vi.fn() };
 
     press(keys.esc);
 
-    expect(dismiss).toHaveBeenCalledTimes(1);
-    expect(hub.menu).toBeUndefined();
+    expect(card.destroy).toHaveBeenCalledTimes(1);
+    expect(hub.dialogue).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
   });
 
   it("should close the menu on a second ESC, and on Back", () => {
     const { hub, keys, press, option } = hubOnStage();
 
     press(keys.esc);
-    const first = hub.menu;
+    const first = menuOver(hub);
     press(keys.esc);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
     expect(first?.destroyed).toBe(true);
 
     press(keys.esc);
     option("back")?.handlers.pointerup();
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
   });
 
   it("should send no move for WASD while the menu is open, and stop a stride it interrupts", () => {
@@ -1521,26 +1555,29 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
     expect(hub.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 
-  it("should forget the menu on release, so the next visit opens a fresh one", () => {
+  it("should have the menu go as the town stops, so the next visit opens a fresh one (FS-TQZ5J R20)", () => {
     const { hub, keys, press } = hubOnStage();
 
     press(keys.esc);
-    const first = hub.menu;
+    const first = menuOver(hub);
+    hub.events.emit("shutdown");
     hub.release("shutdown");
 
     expect(first?.destroyed).toBe(true);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
 
+    // the next visit's create reports the town again
+    (hub as unknown as { ui: unknown }).ui = reportWorld(hub as never, "hub", (hub as unknown as { worldSide(): never }).worldSide());
     press(keys.esc);
-    expect(hub.menu).toBeDefined();
-    expect(hub.menu).not.toBe(first);
+    expect(menuOver(hub)).toBeDefined();
+    expect(menuOver(hub)).not.toBe(first);
   });
 });
 
 // FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
 // icon's toggle under I's guards. I-3EBCA-1.
 describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
-  type Pressing = { pressEscape(): void; toggleGear(): void; toggleCharacter(): void; partyPanel?: unknown };
+  type Pressing = { toggleGear(): void; toggleCharacter(): void; partyPanel?: unknown };
   function withParty(open = true) {
     const env = hubOnStage();
     const state = { open };
@@ -1553,16 +1590,18 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
       },
       destroy: vi.fn(),
     };
-    return { ...env, party: state, pressing: env.hub as unknown as Pressing };
+    // one Esc step is the UI scene's (FS-TQZ5J R17)
+    const escape = () => env.ui().menu.escape();
+    return { ...env, party: state, pressing: env.hub as unknown as Pressing, escape };
   }
 
   it("should close an open party panel on ESC before it opens the menu", () => {
     const { hub, keys, press, party } = withParty();
     press(keys.esc);
     expect(party.open).toBe(false);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
     press(keys.esc);
-    expect(hub.menu).toBeDefined();
+    expect(menuOver(hub)).toBeDefined();
   });
 
   // the party panel is drawn over the gear overlay (FS-3EBCA R8; FS-R82NV § Change C2, C8)
@@ -1578,18 +1617,19 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
   });
 
   it("should open the menu on one ESC with nothing open, and close it on the next", () => {
-    const { hub, pressing } = withParty(false);
-    pressing.pressEscape();
-    expect(hub.menu).toBeDefined();
-    pressing.pressEscape();
-    expect(hub.menu).toBeUndefined();
+    const { hub, escape } = withParty(false);
+    escape();
+    expect(menuOver(hub)).toBeDefined();
+    escape();
+    expect(menuOver(hub)).toBeUndefined();
   });
 
-  it("should do nothing on ESC while a dialogue is open", () => {
-    const { hub, pressing } = withParty(false);
-    hub.dialogue = {};
-    pressing.pressEscape();
-    expect(hub.menu).toBeUndefined();
+  it("should open no menu on ESC while a dialogue is open: the dialogue goes first", () => {
+    const { hub, escape } = withParty(false);
+    hub.dialogue = { destroy: vi.fn() };
+    escape();
+    expect(menuOver(hub)).toBeUndefined();
+    expect(hub.dialogue).toBeUndefined();
   });
 
   it("should toggle the gear overlay on the Character icon, not while the menu or a dialogue is open", () => {
@@ -1815,7 +1855,7 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
     press(keys.esc);
 
     standAt(SPIRE_GATE.position);
-    expect(hub.menu).toBeDefined();
+    expect(menuOver(hub)).toBeDefined();
     expect(hub.dialogue).toBeUndefined();
 
     option("back")?.handlers.pointerup();
@@ -2114,7 +2154,7 @@ describe("HubScene walking into Gentle Meadows (FS-X2F2H §Requirements 9, 11, 5
     press(keys.esc);
 
     standAt(MEADOWS_GATE.position);
-    expect(hub.menu).toBeDefined();
+    expect(menuOver(hub)).toBeDefined();
     expect(send).not.toHaveBeenCalled();
 
     press(keys.esc);
@@ -2239,7 +2279,7 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
     expect(back.kind).toBe("rectangle");
     expect(back.scrollFactor).toBe(0);
     back.handlers.pointerup();
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
     expect(back.destroyed).toBe(true);
   });
 
@@ -2316,6 +2356,33 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
     expect(send).toHaveBeenCalledWith("leave_queue", {});
     send.mockRestore();
   });
+
+  // FS-TQZ5J R18, R21: while the UI scene's menu is open Enter and 1–3 are its; the town reads them
+  // and drops them, so a press made under the menu never answers a dialogue opened later
+  it("should leave no Enter or number pressed under the menu to answer the next dialogue", () => {
+    const { hub, keys, press, talkTo } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    press(keys.esc);
+    press(keys.three);
+    keys.enter.justDown = true;
+    keys.two.justDown = true;
+    hub.update(0, 16);
+    press(keys.esc);
+
+    talkTo("storyteller");
+
+    expect(hub.dialogue).toBeDefined();
+    expect(keys.enter.justDown).toBe(false);
+    expect(keys.two.justDown).toBe(false);
+    send.mockRestore();
+  });
+
+  it("should open no chat on Enter while the menu is open: Enter is its first row's (FS-TQZ5J R18; FS-WJGFJ R27)", () => {
+    const { hub, keys, press } = hubOnStage();
+    press(keys.esc);
+
+    expect((hub as unknown as { mayChat(): boolean }).mayChat()).toBe(false);
+  });
 });
 
 describe("camera on the player across visits (reported 2026-10-29)", () => {
@@ -2363,7 +2430,7 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     expect(gear.open).toBe(false);
 
     expect(hub.scene.start).not.toHaveBeenCalled();
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
   });
 
   it("should keep walking with WASD while the overlay is open (R7)", () => {
@@ -2383,10 +2450,10 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
 
     press(keys.esc);
     expect(gear.open).toBe(false);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
 
     press(keys.esc);
-    expect(hub.menu).toBeDefined();
+    expect(menuOver(hub)).toBeDefined();
   });
 
   it("should close a dialogue before the overlay on ESC (R5)", () => {
@@ -2402,7 +2469,7 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
 
     press(keys.esc);
     expect(gear.open).toBe(false);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
   });
 
   it("should do nothing on I or B while the ESC menu or a dialogue is open (R6)", () => {
@@ -2465,7 +2532,7 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     press(keys.i);
     press(keys.esc);
     expect(gear.isOpen()).toBe(false);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
   });
 
   it("should reach for the NPC beside the player on E while only the character panel is open (§ Change C7)", () => {
@@ -2588,7 +2655,7 @@ describe("HubScene the party popups under the letter panel (FS-1GZGD R40; FS-R82
     expect(covered()).toBe(true);
     gear.open = false;
     press(keys.esc);
-    expect(hub.menu).toBeDefined();
+    expect(menuOver(hub)).toBeDefined();
     expect(covered()).toBe(true);
   });
 });
@@ -2716,7 +2783,7 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
     // the views above are too bare to ease each frame
     hub.views = new Map();
     press(keys.esc);
-    expect(hub.menu).toBeUndefined();
+    expect(menuOver(hub)).toBeUndefined();
 
     talkTo("storekeeper");
     expect(hub.dialogue).toBeDefined();
@@ -4153,8 +4220,8 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
 
         expect(menuOpen(stage.made)).toBe(false);
         expect(panelOpen(stage.made)).toBe(true);
-        expect(hub.menu).toBeDefined();
-        expect((hub.menu as Made).kind).toBe("container");
+        expect(menuOver(hub)).toBeDefined();
+        expect((menuOver(hub) as unknown as Made).kind).toBe("container");
         const words = stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => m.args[2]);
         expect(words).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
       },
@@ -4277,7 +4344,7 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
       find("options-close")!.handlers.pointerup();
       expect(menuOpen(stage.made)).toBe(true);
       expect(panelOpen(stage.made)).toBe(false);
-      expect(hub.menu).toBeDefined();
+      expect(menuOver(hub)).toBeDefined();
     });
 
     it("should rebuild the menu from the state as Back reopens it (Edge States: Queue state changes while the panel is open)", () => {
@@ -4290,11 +4357,12 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
     });
 
     it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
-      const { hub, stage } = inThePanel();
+      const { hub, stage, ui } = inThePanel();
 
-      (hub as unknown as { pressMenuIcon(): void }).pressMenuIcon();
+      // the Menu icon's press, the UI scene's menu slot's (FS-TQZ5J R14, R16)
+      ui().menu.pressMenu();
 
-      expect(hub.menu).toBeUndefined();
+      expect(menuOver(hub)).toBeUndefined();
       expect(panelOpen(stage.made)).toBe(false);
       expect(menuOpen(stage.made)).toBe(false);
     });
@@ -4318,13 +4386,14 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
     });
 
     it("should centre the open panel again when the view widens (C8, FS-ZAJMH R13)", () => {
-      const { hub } = inThePanel();
+      const { hub, ui } = inThePanel();
       Object.assign(hub, { invitePrompt: undefined, readyCheck: undefined, mailbox: undefined });
       viewport.set({ width: 1280, height: 720, renderScale: 1 });
 
-      (hub as unknown as { relayoutHud(): void }).relayoutHud();
+      // the UI scene's relayout, its menu slot's panel with it (FS-TQZ5J R6)
+      ui().menu.relayout();
 
-      expect((hub.menu as Made).x).toBe(640);
+      expect((menuOver(hub) as unknown as Made).x).toBe(640);
       viewport.set({ width: 1080, height: 720, renderScale: 1 });
     });
 
@@ -5067,7 +5136,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
   const GUARDS: [string, Arrange, Partial<KeyboardEvent>][] = [
     ["a held key's repeat", () => {}, { repeat: true }],
     ["chat typing", (hub) => void (hub.chatWindow = { isTyping: () => true }), {}],
-    ["the menu panel up", (hub) => void (hub.menu = {}), {}],
+    ["the menu panel up", (hub) => menuUpOver(hub), {}],
     ["a dialogue card up", (hub) => void (hub.dialogue = {}), {}],
     ["the letter panel open", (hub) => void (hub.mailbox = { isOpen: () => true }), {}],
   ];
@@ -5274,7 +5343,7 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
   it("should follow the overlay from update, after the figures are eased", () => {
     const { hub } = townWithModes();
     const order: string[] = [];
-    for (const step of ["offerMenu", "offerGear", "sendMovementIntent", "easeTowardServerPositions", "offerConversation", "updateBuildings", "hideWhoIsElsewhere", "showStashChest", "carryTheTorch", "followMapOverlay"])
+    for (const step of ["offerGear", "sendMovementIntent", "easeTowardServerPositions", "offerConversation", "updateBuildings", "hideWhoIsElsewhere", "showStashChest", "carryTheTorch", "followMapOverlay"])
       hub[step] = () => void order.push(step);
     hub.update(0, 16);
     expect(order.indexOf("followMapOverlay")).toBeGreaterThan(order.indexOf("easeTowardServerPositions"));
@@ -5358,7 +5427,7 @@ describe("HubScene the party panel over the inventory and the character panel (F
 
   it.each([
     ["a dialogue", (hub: Record<string, unknown>) => void (hub.dialogue = {})],
-    ["the ESC menu", (hub: Record<string, unknown>) => void (hub.menu = {})],
+    ["the ESC menu", (hub: Record<string, unknown>) => menuUpOver(hub)],
     ["the letter panel", (hub: Record<string, unknown>) => void (hub.mailbox = { isOpen: () => true, close: vi.fn() })],
   ])("should still refuse T and the Party icon while %s owns the screen, the inventory open or not", (_owner, own) => {
     const { hub, gear, party, pressIcon } = partyInTown();
@@ -5382,8 +5451,6 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     refusesLetter(): boolean;
     clearForLetter(): void;
     closeLetter(): void;
-    pressMenuIcon(): void;
-    openMenu(): void;
     mayChat(): boolean;
   };
   function town() {
@@ -5445,7 +5512,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
 
     it.each([
       ["a dialogue", (hub: Record<string, unknown>) => void (hub.dialogue = {})],
-      ["the ESC menu", (hub: Record<string, unknown>) => void (hub.menu = {})],
+      ["the ESC menu", (hub: Record<string, unknown>) => menuUpOver(hub)],
     ])("should still refuse the envelope while %s owns the screen", (_owner, own) => {
       const t = town();
       own(t.hub as unknown as Record<string, unknown>);
@@ -5486,11 +5553,11 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       t.party.pressT();
       t.press(t.keys.esc);
       expect(t.shut()).toEqual({ ...NONE, inventory: true });
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       t.press(t.keys.esc);
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       t.press(t.keys.esc);
-      expect(t.hub.menu).toBeDefined();
+      expect(menuOver(t.hub)).toBeDefined();
     });
 
     it.each([
@@ -5506,15 +5573,15 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       open(t);
       t.pressIcon("menu");
       expect(t.shut()).toEqual(NONE);
-      expect(t.hub.menu).toBeDefined();
+      expect(menuOver(t.hub)).toBeDefined();
     });
 
-    it("should close every window whenever the menu opens", () => {
+    it("should close every window whenever the UI scene reports its menu open (FS-TQZ5J R10)", () => {
       const t = town();
       t.gear.toggle();
       t.party.pressT();
       t.letter.open = true;
-      t.hub.openMenu();
+      menuUpOver(t.hub);
       expect(t.shut()).toEqual(NONE);
     });
 
@@ -5523,7 +5590,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       t.gear.toggle();
       (t.hub as unknown as Record<string, unknown>).dialogue = {};
       t.pressIcon("menu");
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       expect(t.gear.open).toBe(true);
     });
   });
@@ -5532,15 +5599,15 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     function menuUp() {
       const t = town();
       t.press(t.keys.esc);
-      expect(t.hub.menu).toBeDefined();
+      expect(menuOver(t.hub)).toBeDefined();
       return t;
     }
 
     it("should answer no corner icon but Menu", () => {
       const t = menuUp();
-      const menu = t.hub.menu;
+      const menu = menuOver(t.hub);
       for (const icon of ["inventory", "character", "party"] as const) t.pressIcon(icon);
-      expect(t.hub.menu).toBe(menu);
+      expect(menuOver(t.hub)).toBe(menu);
       expect(t.shut()).toEqual(NONE);
     });
 
@@ -5548,13 +5615,13 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     it("should close on the Menu icon, as its × and Back do, and open again on the next press", () => {
       const t = menuUp();
       t.pressIcon("menu");
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       expect(t.shut()).toEqual(NONE);
       t.pressIcon("menu");
-      expect(t.hub.menu).toBeDefined();
+      expect(menuOver(t.hub)).toBeDefined();
     });
 
-    it("should take the whole view with its blocker: the Menu icon is the UI scene's, above it (FS-TQZ5J R7)", () => {
+    it("should take the whole view with its blocker but the Menu icon's plate, the row and the menu one scene (FS-3EBCA R18; FS-TQZ5J R16)", () => {
       const t = menuUp();
       const blocker = t.stage.made.find((m) => m.name === "menu-blocker" && !m.destroyed)!;
       const args = (blocker as unknown as { interactiveArgs?: unknown[] }).interactiveArgs ?? [];
@@ -5565,9 +5632,9 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       const takes = (x: number, y: number) => test!({}, x, y, blocker);
       const plate = cornerIconFrame("menu", viewport);
       const bag = cornerIconFrame("inventory", viewport);
-      // the whole view, the Menu plate included: the icon is the UI scene's, drawn and pressed above
-      // the world, so the world's blocker leaves nothing to it (FS-TQZ5J R7, I-TQZ5J-3)
-      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(true);
+      // the whole view but the Menu plate, which it leaves to the icon under it in the same scene, so
+      // a press there closes the menu (FS-3EBCA R18, as when both were the town's)
+      expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
       expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
       expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
@@ -5592,7 +5659,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     it("should still close on Esc", () => {
       const t = menuUp();
       t.press(t.keys.esc);
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
     });
   });
 });
@@ -5732,7 +5799,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       expect(t.heard()).toEqual(["settings_open"]);
       t.press(t.keys.esc);
       expect(t.heard()).toEqual(["settings_close"]);
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
     });
   });
 
@@ -5804,7 +5871,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
       const t = inOptions();
       t.pressIcon("menu");
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       expect(t.heard()).toEqual(["settings_close"]);
     });
 
@@ -5818,7 +5885,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       t.press(t.keys.esc);
       t.heard();
       input(t);
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       expect(t.heard()).toEqual(["settings_close"]);
     });
   });
@@ -5833,7 +5900,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       t.heard();
       t.option("change")!.handlers.pointerup();
       expect(send).toHaveBeenCalledWith(ActionType.LeaveHub, {});
-      expect(t.hub.menu).toBeDefined();
+      expect(menuOver(t.hub)).toBeDefined();
       t.hub.release("shutdown");
       expect(t.heard()).toEqual([]);
     });
@@ -5848,10 +5915,10 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       t.press(t.keys.esc);
       t.heard();
       t.option("leave")!.handlers.pointerup();
-      expect(t.hub.menu).toBeDefined();
+      expect(menuOver(t.hub)).toBeDefined();
       expect(t.heard()).toEqual([]);
       listeners.get(ActionType.LeaveQueue)!({});
-      expect(t.hub.menu).toBeUndefined();
+      expect(menuOver(t.hub)).toBeUndefined();
       expect(t.heard()).toEqual([]);
     });
   });
@@ -5900,9 +5967,11 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     open(t);
     t.heard();
 
+    // the town stops: its leaving takes the UI scene's menu down (FS-TQZ5J R20), its release its windows
+    (t.hub as unknown as { events: Emitter }).events.emit("shutdown");
     t.hub.release("shutdown");
 
-    expect(t.hub.menu).toBeUndefined();
+    expect(menuOver(t.hub)).toBeUndefined();
     expect(t.gear.isOpen()).toBe(false);
     expect(t.heard()).toEqual([]);
   });

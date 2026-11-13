@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { WindowState } from "@/audio/uiSounds";
 import type { CornerIconSpec } from "./HudCorner";
 import type { CornerIcon } from "./hudCornerLayout";
 import { UiCornerRow, type CornerRow } from "./uiSceneCorner";
-import { answering, type UiRequest, type World, type WorldReport } from "./uiBridge";
+import { NO_FACTS, answering, type UiRequest, type World, type WorldReport, type WorldWindows } from "./uiBridge";
 import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 
-// FS-TQZ5J §C R13–R15 (I-TQZ5J-3): the corner row is the UI scene's, built from the world's report
-// and rebuilt as the world changes; its presses are requests the world answers through the bridge,
-// inside the UI scene's act, so a press plays the rule once; the refusals read the report. Until the
-// ESC menu moves into the UI scene (I-TQZ5J-4) the world's open menu holds every icon but Menu.
+// FS-TQZ5J §C R13–R15 (I-TQZ5J-3, I-TQZ5J-4): the corner row is the UI scene's, built from the world's
+// report and rebuilt as the world changes; its window icons are requests the world answers through
+// the bridge, its Menu the UI scene's own menu slot's, each inside the UI scene's act, so a press
+// plays the rule once; the refusals read the report and the UI's state (the slot filled).
 
 /** What the row was built with, and what was done to it since. */
 interface BuiltRow {
@@ -21,17 +20,22 @@ interface BuiltRow {
 
 /** A world as it reports itself: its windows and its dialogue, as they are now; what it was asked. */
 function aWorld(world: World) {
-  const windows: WindowState = { menu: false, letter: false, party: false, inventory: false, character: false };
+  const windows: { -readonly [K in keyof WorldWindows]: boolean } = {
+    letter: false,
+    party: false,
+    inventory: false,
+    character: false,
+  };
   const state = { dialogue: false };
   const asked: UiRequest[] = [];
   const report: WorldReport = {
     world,
     windows: () => ({ ...windows }),
     blockers: () => ({ dialogue: state.dialogue }),
+    facts: () => NO_FACTS,
     answer: (request) => {
       asked.push(request);
       answering({
-        toggleMenu: () => void (windows.menu = !windows.menu),
         inventory: () => void (windows.inventory = !windows.inventory),
         character: () => void (windows.character = !windows.character),
         party: () => void (windows.party = !windows.party),
@@ -41,22 +45,36 @@ function aWorld(world: World) {
   return { report, windows, state, asked };
 }
 
-/** The UI scene's row on the game's bridge, with the UI scene's sounds lent, built on a recording row. */
+/**
+ * The UI scene's row on the game's bridge, with the UI scene's sounds lent, built on a recording row;
+ * its Menu handed to a stand-in for the UI scene's menu slot, which fills and empties the slot as the
+ * slot reports it (R10).
+ */
 function onBridge() {
   const { bridge, heard } = heardInterfaceSounds();
   const built: BuiltRow[] = [];
-  const row = new UiCornerRow(bridge, (icons): CornerRow => {
-    const b: BuiltRow = { icons, holds: [], relayouts: 0, destroyed: false };
-    built.push(b);
-    return {
-      hold: (held) => void b.holds.push([...held]),
-      relayout: () => void b.relayouts++,
-      destroy: () => void (b.destroyed = true),
-    };
-  });
+  const menuPresses: number[] = [];
+  const menu = () => {
+    menuPresses.push(1);
+    bridge.reportUi({ menuOpen: !bridge.ui.menuOpen });
+  };
+  const row = new UiCornerRow(
+    bridge,
+    (icons): CornerRow => {
+      const b: BuiltRow = { icons, holds: [], relayouts: 0, destroyed: false };
+      built.push(b);
+      return {
+        hold: (held) => void b.holds.push([...held]),
+        relayout: () => void b.relayouts++,
+        destroy: () => void (b.destroyed = true),
+        covers: (_x, _y, icon) => icon === "menu",
+      };
+    },
+    menu,
+  );
   const live = () => built.filter((b) => !b.destroyed);
   const press = (icon: CornerIcon) => live()[0].icons.find((spec) => spec.icon === icon)!.press?.();
-  return { bridge, heard, row, built, live, press };
+  return { bridge, heard, row, built, live, press, menuPresses };
 }
 
 const shape = (icons: CornerIconSpec[]) => icons.map(({ icon, greyed }) => (greyed ? `${icon} (greyed)` : icon));
@@ -132,8 +150,40 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
 });
 
 describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
+  it("should hand Menu to the UI scene's menu slot, asking the world nothing (R14, R16)", () => {
+    const { bridge, row, press, menuPresses } = onBridge();
+    const world = aWorld("field");
+    bridge.report(world.report);
+    row.show(bridge.world);
+
+    press("menu");
+
+    expect(menuPresses).toHaveLength(1);
+    expect(world.asked).toEqual([]);
+  });
+
+  it("should play the slot's own sound for Menu, inside the UI scene's act (R22; FS-WDM0X S3)", () => {
+    const { bridge, heard, row, press } = onBridge();
+    bridge.report(aWorld("hub").report);
+    row.show(bridge.world);
+
+    press("menu");
+    expect(heard()).toEqual(["settings_open"]);
+    press("menu");
+    expect(heard()).toEqual(["settings_close"]);
+  });
+
+  it("should say whether a point lies on Menu's plate, for the open menu's blocker (FS-3EBCA R18)", () => {
+    const { bridge, row } = onBridge();
+    expect(row.covers(1, 1, "menu")).toBe(false);
+    bridge.report(aWorld("run").report);
+    row.show(bridge.world);
+
+    expect(row.covers(1, 1, "menu")).toBe(true);
+    expect(row.covers(1, 1, "party")).toBe(false);
+  });
+
   it.each<[CornerIcon, UiRequest]>([
-    ["menu", { kind: "toggleMenu" }],
     ["inventory", { kind: "toggle", window: "inventory" }],
     ["character", { kind: "toggle", window: "character" }],
     ["party", { kind: "toggle", window: "party" }],
@@ -174,8 +224,8 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
     expect(again.asked).toEqual([{ kind: "toggle", window: "character" }]);
   });
 
-  it("should refuse Party while the world reports a dialogue open, and still send Inventory and Menu (R14)", () => {
-    const { bridge, row, press } = onBridge();
+  it("should refuse Party while the world reports a dialogue open, and still send Inventory and hand on Menu (R14)", () => {
+    const { bridge, row, press, menuPresses } = onBridge();
     const world = aWorld("hub");
     bridge.report(world.report);
     row.show(bridge.world);
@@ -185,66 +235,41 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
     press("inventory");
     press("menu");
 
-    expect(world.asked).toEqual([{ kind: "toggle", window: "inventory" }, { kind: "toggleMenu" }]);
+    expect(world.asked).toEqual([{ kind: "toggle", window: "inventory" }]);
+    expect(menuPresses).toHaveLength(1);
   });
 });
 
-// Where the world keeps the screen, the row holds what the world's own pieces held when the row was
-// the world's: the world's open menu (its blocker now under the UI scene, until I-TQZ5J-4) every icon
-// but Menu (FS-3EBCA R18: 「menu開啟時其他都不能按」); the town's dialogue, whose answers' hit areas lie
-// under the row, every icon.
-describe("the UI scene's corner row where the world keeps the screen (FS-3EBCA R18; FS-TQZ5J I-TQZ5J-3)", () => {
-  const BUT_MENU = ["inventory", "character", "party", "mail"];
-  it("should send nothing on Inventory, Character or Party while the world reports its menu open, and still send Menu", () => {
-    const { bridge, row, press } = onBridge();
+// While the UI scene's menu slot is filled, every window icon is refused and only Menu answers
+// (FS-3EBCA R18: 「menu開啟時其他都不能按」): the slot's blocker, in the same scene and over the row,
+// takes their hovers and presses, so the row holds nothing for it (slice 3's stopgap is gone). Where
+// the town keeps the screen with its dialogue, whose answers' hit areas lie under the row, the row
+// holds every icon until the dialogue moves into the UI scene (I-TQZ5J-7).
+describe("the UI scene's corner row where the UI's menu or the world keeps the screen (FS-3EBCA R18; FS-TQZ5J R14)", () => {
+  it("should send nothing on Inventory, Character or Party while the UI's menu slot is filled, and still hand on Menu", () => {
+    const { bridge, row, press, menuPresses } = onBridge();
     const world = aWorld("run");
     bridge.report(world.report);
     row.show(bridge.world);
-    world.windows.menu = true;
+    bridge.reportUi({ menuOpen: true });
 
     for (const icon of ["inventory", "character", "party"] as const) press(icon);
     press("menu");
 
-    expect(world.asked).toEqual([{ kind: "toggleMenu" }]);
+    expect(world.asked).toEqual([]);
+    expect(menuPresses).toHaveLength(1);
+    expect(bridge.ui.menuOpen).toBe(false);
   });
 
-  it("should hold the row on a sync while the world's menu is open, and let it go once it closes", () => {
-    const { bridge, row, live } = onBridge();
-    const world = aWorld("field");
-    bridge.report(world.report);
-    row.show(bridge.world);
-    const holds = () => live()[0].holds;
-    expect(holds()).toEqual([[]]);
-
-    world.windows.menu = true;
-    row.sync();
-    row.sync();
-    world.windows.menu = false;
-    row.sync();
-
-    expect(holds()).toEqual([[], BUT_MENU, []]);
-  });
-
-  it("should hold the row at once as the Menu icon opens the world's menu, and let it go as it closes it, with no frame between", () => {
+  it("should hold nothing while the menu slot is filled: its blocker over the row is the menu's own (FS-3EBCA R18)", () => {
     const { bridge, row, press, live } = onBridge();
     bridge.report(aWorld("hub").report);
     row.show(bridge.world);
 
     press("menu");
-    expect(live()[0].holds.at(-1)).toEqual(["inventory", "character", "party"]);
-    press("menu");
-    expect(live()[0].holds.at(-1)).toEqual([]);
-  });
+    row.sync();
 
-  it("should build the row held for a world that reports its menu open as it comes up", () => {
-    const { bridge, row, live } = onBridge();
-    const world = aWorld("field");
-    world.windows.menu = true;
-    bridge.report(world.report);
-
-    row.show(bridge.world);
-
-    expect(live()[0].holds).toEqual([BUT_MENU]);
+    expect(live()[0].holds).toEqual([[]]);
   });
 
   it("should hold every icon, Menu too, while the town reports a dialogue open, and let them go as it closes", () => {

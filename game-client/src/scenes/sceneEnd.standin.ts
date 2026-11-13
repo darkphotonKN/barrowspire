@@ -185,9 +185,10 @@ class KeyboardStandIn extends EventEmitter {
     >;
   }
 
-  addCapture(keyCode: number): this {
-    if (!this.manager!.captures.includes(keyCode))
-      this.manager!.captures.push(keyCode);
+  /** KeyboardPlugin.addCapture: one code or several, as Phaser's KeyboardManager takes them. */
+  addCapture(keyCode: number | number[]): this {
+    for (const code of [keyCode].flat())
+      if (!this.manager!.captures.includes(code)) this.manager!.captures.push(code);
     return this;
   }
 

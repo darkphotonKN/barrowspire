@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { WindowState } from "@/audio/uiSounds";
-import { GameUiBridge } from "./uiBridge";
+import { GameUiBridge, NO_FACTS, type WorldWindows } from "./uiBridge";
 import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 
-const CLOSED: WindowState = { menu: false, letter: false, party: false, inventory: false, character: false };
+const CLOSED: WorldWindows = { letter: false, party: false, inventory: false, character: false };
 
 /** The bridge with the UI scene's sounds lent, and a town reporting windows the test opens and closes. */
 function town() {
   const { bridge, sounds, heard } = heardInterfaceSounds();
-  const windows: WindowState = { ...CLOSED };
+  const windows: { -readonly [K in keyof WorldWindows]: boolean } = { ...CLOSED };
   let reads = 0;
   bridge.report({
     world: "hub",
@@ -17,6 +16,7 @@ function town() {
       return { ...windows };
     },
     blockers: () => ({ dialogue: false }),
+    facts: () => NO_FACTS,
     answer: () => {},
   });
   return { bridge, sounds, heard, windows, reads: () => reads };
@@ -53,7 +53,7 @@ describe("the interface sounds on the UI scene, heard through the UI bridge (FS-
     t.windows.inventory = true;
 
     t.sounds.act(() => {
-      t.windows.menu = true;
+      t.bridge.reportUi({ menuOpen: true });
       t.bridge.act(() => void (t.windows.inventory = false));
     });
 
@@ -82,11 +82,20 @@ describe("the interface sounds on the UI scene, heard through the UI bridge (FS-
 
   it("should play nothing as the menu gives way to OPTIONS and back: the slot stays filled (S5)", () => {
     const t = town();
-    t.windows.menu = true;
+    t.bridge.reportUi({ menuOpen: true });
 
-    t.bridge.act(() => void (t.windows.menu = true));
+    t.bridge.act(() => t.bridge.reportUi({ menuOpen: true }));
 
     expect(t.heard()).toEqual([]);
+  });
+
+  it("should read the menu's slot from the UI's own state, not the world's windows (FS-TQZ5J R10, R16, R22)", () => {
+    const t = town();
+
+    t.bridge.act(() => t.bridge.reportUi({ menuOpen: true }));
+    expect(t.heard()).toEqual(["settings_open"]);
+    t.bridge.act(() => t.bridge.reportUi({ menuOpen: false }));
+    expect(t.heard()).toEqual(["settings_close"]);
   });
 
   it("should hand back what the world's action returns", () => {
