@@ -610,3 +610,5 @@ C17. **The run's panel yields as the run's menu does.** A state that would take 
 - A per-account or server-side setting.
 - Rewriting the stored value on read (the migration takes effect on the next change).
 - Any change to `BarrowspireScene.ts` beyond its menu wiring, or to the run's Fall confirm.
+
+## Change: Sound effects row in the OPTIONS panel → FS-WDM0X

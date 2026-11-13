@@ -135,6 +135,8 @@ server state and sends intents. ✅
 
 - [ ] Music in the hub → FS-28DDG
 - [ ] Set the music's volume → FS-28DDG
+- [ ] Interface sound effects → FS-WDM0X
+- [ ] Set the sound effects' volume → FS-WDM0X
 
 ### HUD
 
