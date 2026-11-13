@@ -42,7 +42,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
     const { ui, cameras, down } = rules();
     down.now = true;
 
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
 
     expect(cameras.map((c) => c.inputEnabled)).toEqual([false]);
   });
@@ -51,7 +51,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
     const { ui, cameras, down } = rules();
     down.now = true;
 
-    ui.pressed(pointerAt(), PIECE);
+    ui.pressed(PIECE);
 
     expect(cameras.map((c) => c.inputEnabled)).toEqual([true]);
   });
@@ -59,7 +59,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should put them back as the release leaves no button down, over the row or off the canvas alike", () => {
     const { ui, cameras, down } = rules();
     down.now = true;
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
 
     down.now = false;
     ui.released();
@@ -70,9 +70,9 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should keep them out while another button is still down, and through a second press (it is the world's too)", () => {
     const { ui, cameras, down, letGoes } = rules();
     down.now = true;
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
 
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
     ui.released();
 
     expect(cameras.map((c) => c.inputEnabled)).toEqual([false]);
@@ -82,14 +82,14 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should put them back on the next move or frame with no button down, a release it never heard (asleep, held) included", () => {
     const { ui, cameras, down } = rules();
     down.now = true;
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
     down.now = false;
 
     ui.moved(pointerAt(), NOTHING);
     expect(cameras.map((c) => c.inputEnabled)).toEqual([true]);
 
     down.now = true;
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
     down.now = false;
     ui.frame();
     expect(cameras.map((c) => c.inputEnabled)).toEqual([true]);
@@ -98,7 +98,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should hand the world none of the press's moves itself: Phaser hands them on, the UI scene hitting nothing", () => {
     const { ui, down, heard } = rules();
     down.now = true;
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
 
     ui.moved(pointerAt(), NOTHING);
 
@@ -110,7 +110,7 @@ describe("a press on the UI scene lets go of the game's text field (FS-TQZ5J A1 
   it("should let go of it for a press on one of its pieces, once", () => {
     const { ui, letGoes } = rules();
 
-    ui.pressed(pointerAt(), PIECE);
+    ui.pressed(PIECE);
 
     expect(letGoes()).toBe(1);
   });
@@ -118,7 +118,7 @@ describe("a press on the UI scene lets go of the game's text field (FS-TQZ5J A1 
   it("should leave a press beside its pieces to the world, whose fields' owners let go as they always have", () => {
     const { ui, letGoes } = rules();
 
-    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(NOTHING);
 
     expect(letGoes()).toBe(0);
   });
@@ -158,7 +158,7 @@ describe("every move reaches the world (FS-TQZ5J A1 R27)", () => {
     ui.moved(pointer, NOTHING);
 
     pointer.event = { type: "mousedown" };
-    ui.pressed(pointer, PIECE);
+    ui.pressed(PIECE);
     ui.left(pointer);
 
     expect(heard).toEqual([]);

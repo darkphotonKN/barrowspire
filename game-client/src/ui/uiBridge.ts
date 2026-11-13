@@ -12,12 +12,14 @@
  * open windows and its dialogue, the UI's state, the corner row's requests the world answers, and the
  * interface sounds the world's player actions and its minimap's step reach through it (R12, R22).
  * The world's player state and menu facts (R9) and the ESC menu's requests (R11) come with the menu.
+ * A pointer move the UI scene took from the world reaches the world through it (A1 R27).
  */
 
 import type { WorldType } from "@/assets/types/client";
 import type { UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
+import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
 
 /** The world a world scene draws (FS-TQZ5J "Words"): the town, a field, a run, as the server names them. */
 export type World = WorldType;
@@ -56,10 +58,16 @@ export interface WorldReport {
   readonly blockers: () => WorldBlockers;
   /** Answers a request of the UI scene's at once, or ignores one it has no answer for (R11). */
   readonly answer: (request: UiRequest) => void;
+  /**
+   * Hears a pointer move the UI scene took (A1 R27), through its own input pass, over nothing of its
+   * own while the pointer is over a UI piece (`onUi`). `reportWorld` gives each world one; a report
+   * without one hears nothing.
+   */
+  readonly hearMove?: (pointer: ScenePointer, onUi: boolean) => void;
 }
 
-/** What a world hands with its name: everything of its report but the world (R9). */
-export type WorldSide = Omit<WorldReport, "world">;
+/** What a world hands with its name: everything of its report but the world and the moves `reportWorld` hears for it (R9). */
+export type WorldSide = Omit<WorldReport, "world" | "hearMove">;
 
 /** A world's answer to each request it has one for (R11). */
 export type WorldAnswers = Partial<Record<UiToggle | "toggleMenu", () => void>>;
@@ -97,6 +105,11 @@ export interface UiBridge extends UiActWrapper {
   onWorld(listener: WorldListener): () => void;
   /** The UI scene asks the world reported, which has answered when this returns; none reported, nothing (R11). */
   request(request: UiRequest): void;
+  /**
+   * A pointer move Phaser stopped at the UI scene, handed to the world reported, which has heard it
+   * when this returns; `onUi` while the pointer is over a UI piece. None reported, nothing (A1 R27).
+   */
+  moved(pointer: ScenePointer, onUi: boolean): void;
   /** The UI scene's report of its own state (R10). */
   reportUi(state: UiState): void;
   /** The UI's last state. What the world's guards read. */
@@ -160,6 +173,10 @@ export class GameUiBridge implements UiBridge {
     this.reported?.answer(request);
   }
 
+  moved(pointer: ScenePointer, onUi: boolean): void {
+    this.reported?.hearMove?.(pointer, onUi);
+  }
+
   act: UiAct = (run) => (this.sounds ? this.sounds.act(run) : run());
 
   play(effect: UiEffect): void {
@@ -192,22 +209,39 @@ export function uiBridgeOf(registry: Pick<GameRegistry, "get"> | undefined): UiB
   return (registry?.get(UI_BRIDGE_KEY) as UiBridge | undefined) ?? null;
 }
 
-/** A world scene, as far as it reports its world: its game's registry and its end. A `Phaser.Scene` is one. */
+/**
+ * A world scene, as far as it reports its world: its game's registry, its end, and the input and
+ * cameras a move the UI scene took runs through (A1 R27). A `Phaser.Scene` is one: its input's
+ * `update` is Phaser's own pass over a DOM event, private in 4.2.1's types (pinned by test).
+ */
 export interface ReportingScene extends EndingScene {
   registry?: Pick<GameRegistry, "get">;
+  input?: unknown;
+  cameras?: { readonly cameras: readonly InputCamera[] };
+}
+
+/** The scene's input as a move runs through it, where it has one. */
+function worldInput(scene: ReportingScene): WorldInput<ScenePointer> | null {
+  const input = scene.input as Partial<WorldInput<ScenePointer>> | null | undefined;
+  return typeof input?.update === "function" ? (input as WorldInput<ScenePointer>) : null;
 }
 
 /**
- * Reports `world` up, now, with its side (its windows, its blockers, its answers), and its leaving on
- * the scene's stop (R3, R9, R11). Called once per start, from create, before anything that hears a
- * player. On the game's destroy it tells nothing: the UI scene goes with the game, and the scene
- * manager going down is asked nothing (R4, `SceneEnd`). Returns what the world's player actions and
- * its minimap's step run through (R12): its game's bridge, or {@link NO_UI} where none was lent.
+ * Reports `world` up, now, with its side (its windows, its blockers, its answers) and its ear for a
+ * move the UI scene took (A1 R27), and its leaving on the scene's stop (R3, R9, R11). Called once per
+ * start, from create, before anything that hears a player. On the game's destroy it tells nothing:
+ * the UI scene goes with the game, and the scene manager going down is asked nothing (R4,
+ * `SceneEnd`). Returns what the world's player actions and its minimap's step run through (R12): its
+ * game's bridge, or {@link NO_UI} where none was lent.
  */
 export function reportWorld(scene: ReportingScene, world: World, side: WorldSide): WorldUi {
   const bridge = uiBridgeOf(scene.registry);
   if (!bridge) return NO_UI;
-  bridge.report({ world, ...side });
+  const input = worldInput(scene);
+  const hear = (pointer: ScenePointer, onUi: boolean) => {
+    if (input) hearMove(input, scene.cameras?.cameras ?? [], pointer, onUi);
+  };
+  bridge.report({ world, ...side, hearMove: hear });
   onSceneEnd(scene, (end) => {
     if (end === "shutdown") bridge.left(world);
   });

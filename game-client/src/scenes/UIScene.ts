@@ -1,11 +1,13 @@
 import * as Phaser from "phaser";
 import { UI_SCENE } from "@/components/uiSceneLifecycle";
 import { browserSfxStore } from "@/audio/sfxSetting";
+import { letGoOfGameField } from "@/components/gameFocus";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { relayoutOn } from "@/render/viewport";
 import { HudCorner } from "@/ui/HudCorner";
 import { uiBridgeOf, type UiBridge } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
+import { UiScenePointer } from "@/ui/uiScenePointer";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
 
@@ -18,7 +20,9 @@ import { onSceneEnd } from "./sceneEnd";
  * ViewportFit fits its camera and `fitGame` re-fits it, as every scene's (R6).
  *
  * The interface moves in piece by piece (FS-TQZ5J § Phases). It holds the game's interface sounds
- * (R22) and the corner row, built for each world as it reports itself (R13).
+ * (R22) and the corner row, built for each world as it reports itself (R13). Its pointer stands beside
+ * the worlds' as Amendment A1 says, for every piece it holds: a world's press stays the world's, a
+ * press on a piece lets go of the game's text field, and every move reaches the world (R25–R27).
  *
  * A RESUME is not always a return to play. Return to menu under the disconnect notice resumes this
  * scene only to sleep it, Phaser's sleep taking a running scene only (`driveUiScene`'s hide), so it
@@ -27,6 +31,7 @@ import { onSceneEnd } from "./sceneEnd";
  */
 export class UIScene extends Phaser.Scene {
   private corner?: UiCornerRow;
+  private pointer?: UiScenePointer<Phaser.Input.Pointer>;
 
   constructor() {
     super({ key: UI_SCENE });
@@ -43,11 +48,39 @@ export class UIScene extends Phaser.Scene {
     if (!bridge) return;
     mountInterfaceSounds(bridge, sceneUiSoundStage(this), browserSfxStore);
     this.mountCorner(bridge);
+    this.mountPointer(bridge);
   }
 
-  /** Each frame while it runs: the row held while the world reports its own ESC menu open (I-TQZ5J-3). */
+  /**
+   * Each frame while it runs: the row held while the world reports its own ESC menu open (I-TQZ5J-3),
+   * and a world's press whose release it never heard let go of (A1 R25).
+   */
   update(): void {
     this.corner?.sync();
+    this.pointer?.frame();
+  }
+
+  /**
+   * Its pointer beside the worlds' (A1 R25–R27), told its own scene-wide events as Phaser emits them
+   * here, before any world hears the event: the world reported is handed a move Phaser stopped here,
+   * and the game's text field is let go of inside the canvas's holder. Phaser drops a scene's input
+   * listeners as it shuts down.
+   */
+  private mountPointer(bridge: UiBridge): void {
+    const input = this.input;
+    if (!input) return;
+    const pointer = new UiScenePointer<Phaser.Input.Pointer>({
+      cameras: () => this.cameras.cameras,
+      anyDown: () => input.manager.pointers.some((p) => p.isDown),
+      world: bridge,
+      letGo: () => letGoOfGameField(this.game.canvas?.parentElement, document),
+    });
+    this.pointer = pointer;
+    input.on("pointerdown", (_p: Phaser.Input.Pointer, over: unknown[]) => pointer.pressed(over));
+    input.on("pointerup", () => pointer.released());
+    input.on("pointerupoutside", () => pointer.released());
+    input.on("pointermove", (p: Phaser.Input.Pointer, over: unknown[]) => pointer.moved(p, over));
+    input.on("pointerout", (p: Phaser.Input.Pointer) => pointer.left(p));
   }
 
   /**

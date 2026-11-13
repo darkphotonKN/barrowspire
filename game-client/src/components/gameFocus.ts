@@ -82,3 +82,15 @@ export function takeFocusOnPress(holder: PressHolder, doc: FocusDocument): () =>
   holder.addEventListener("pointerdown", onPress);
   return () => holder.removeEventListener("pointerdown", onPress);
 }
+
+/**
+ * A press the UI scene takes lets go of the game's own text field holding focus (the chat input, the
+ * party invite field: DOM fields inside the canvas's holder), as a press in the world does through
+ * their owners, whose scene-wide `pointerdown` a press on the UI scene never reaches (FS-TQZ5J A1
+ * R26, R7). A page control outside the game is `takeFocusOnPress`'s; with no holder, nothing.
+ */
+export function letGoOfGameField(holder: Pick<Node, "contains"> | null | undefined, doc: FocusDocument): void {
+  const focused = doc.activeElement;
+  if (!holder || withGame(doc) || !focused || !holder.contains(focused)) return;
+  if ("blur" in focused && typeof focused.blur === "function") focused.blur();
+}

@@ -421,7 +421,7 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     return { scene, input, cameras, pointer, field, heard };
   }
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => void vi.unstubAllGlobals());
 
   it("should take its cameras out of the hit test for a press begun in the world, and put them back as it ends (R25)", () => {
     const { input, cameras, pointer } = created();
