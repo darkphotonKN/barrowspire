@@ -1,6 +1,6 @@
 ---
 id: I-28DDG-8
-status: open
+status: done
 implements: FS-28DDG
 blocked_by: [I-28DDG-7]
 labels: [blocked]
@@ -60,3 +60,7 @@ FS-28DDG §Change: The tower's music on every floor of a run: the listening-chec
   Fades, ramps, the stored setting and the panel are unchanged. Recorded as a dated Tunes note
   under FS-28DDG § Change: The tower's music on every floor of a run. The rest of this check
   still awaits the owner's next listen.
+
+## Owner sign-off
+
+2026-11-14: the owner listened to his newest tower mix in game (ceiling 1.0) and approved it: 「沒問題可以合併回main跟push」.

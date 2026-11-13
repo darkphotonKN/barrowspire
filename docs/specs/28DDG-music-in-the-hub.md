@@ -640,7 +640,7 @@ stated them ("half the file's loudness", 0.5, the default's 0.3), and the criter
 ## Change: Fullscreen in the OPTIONS panel → FS-T3DWX
 
 ## Change: The tower's music on every floor of a run
-Status: work-order
+Status: shipped
 Date: 2026-11-14
 
 Asked by the owner on 2026-11-14: 「把塔的背景音套用到目前塔內所有樓層的地圖中」 (apply the tower's
