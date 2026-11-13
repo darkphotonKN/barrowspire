@@ -38,9 +38,10 @@ export function gateEdges(before: GateState | undefined, now: GateState | undefi
 
 /**
  * Where a field gate leads: every hub gate but the Spire's (FS-0XMCP §Requirements 21). A field's
- * own entrance gate (`hub`, the road home, FS-X2F2H §Requirements 3) leads to no field.
+ * own entrance gate (`hub`, the road home, FS-X2F2H §Requirements 3) leads to no field, nor does
+ * the endgame test run's, which starts a run (FS-BDRTJ §Change: Endgame test run, R21).
  */
-export type FieldDestination = Exclude<GateState["destination"], "spire" | "hub">;
+export type FieldDestination = Exclude<GateState["destination"], "spire" | "hub" | "dev_endgame_run">;
 
 /** What the screen calls each field, over its gate's signpost (CONTEXT.md, *Field world*). */
 export const FIELD_NAMES: Record<FieldDestination, string> = {
@@ -48,6 +49,17 @@ export const FIELD_NAMES: Record<FieldDestination, string> = {
   meadows: "Gentle Meadows",
   dev_test_room: "Dev Test Room",
 };
+
+/** The dev-only gates, which a production build ignores (FS-BDRTJ §Requirements 2, 3; R23). */
+export type DevDestination = Extract<GateState["destination"], "dev_test_room" | "dev_endgame_run">;
+
+/** The plain label each dev gate stands under (FS-BDRTJ §Requirements 5; R20). */
+export const DEV_GATE_LABELS: Record<DevDestination, string> = {
+  dev_test_room: FIELD_NAMES.dev_test_room,
+  dev_endgame_run: "Endgame Test Run",
+};
+
+const isDevGate = (gate: GateState): boolean => Object.hasOwn(DEV_GATE_LABELS, gate.destination);
 
 /**
  * The field id `enter_field` names for each field gate (FS-X2F2H §Requirements 2, 11; FS-3QHQZ).
@@ -61,20 +73,25 @@ export const FIELD_IDS: Partial<Record<FieldDestination, FieldId>> = {
 
 /**
  * The gates this build acts on, given its `NODE_ENV`: all of them, but a production build ignores
- * the dev test room's (FS-BDRTJ §Requirements 2, 3), since it can meet a server with the room on.
+ * the dev gates (FS-BDRTJ §Requirements 2, 3; R23), since it can meet a server with them on.
  */
 export function gatesInThisBuild(
   gates: readonly GateState[],
   nodeEnv: string | undefined,
 ): readonly GateState[] {
   if (nodeEnv !== "production") return gates;
-  return gates.filter((gate) => gate.destination !== "dev_test_room");
+  return gates.filter((gate) => !isDevGate(gate));
 }
 
-/** The field a gate leads to, or undefined for the Spire's gate, a road home, and no gate at all. */
+/**
+ * The field a gate leads to, or undefined for the Spire's gate, a road home, the endgame test
+ * run's gate, and no gate at all.
+ */
 export function fieldOf(gate: GateState | undefined): FieldDestination | undefined {
-  if (!gate || gate.destination === "spire" || gate.destination === "hub") return undefined;
-  return gate.destination;
+  if (!gate) return undefined;
+  const { destination } = gate;
+  if (destination === "spire" || destination === "hub" || destination === "dev_endgame_run") return undefined;
+  return destination;
 }
 
 /**

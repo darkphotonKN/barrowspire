@@ -97,6 +97,8 @@ export interface ActionMap {
   leave_hub: Record<string, never>;
   /** A player descending alone, without the queue (FS-NSV3D req 7): no payload. */
   start_solo: Record<string, never>;
+  /** A dev walking into the endgame test run's gate (FS-BDRTJ §Change: Endgame test run, R21): no payload. */
+  start_dev_endgame_run: Record<string, never>;
   /** A player in play choosing to fall where they stand (FS-9K8EZ req 7): no payload. */
   forfeit_run: Record<string, never>;
   /** A run whose floor's map never came asking for it again (FS-KE075 §F.33): no payload. */
@@ -156,6 +158,7 @@ export const ActionType = {
   LeaveQueue: "leave_queue",
   LeaveHub: "leave_hub",
   StartSolo: "start_solo",
+  StartDevEndgameRun: "start_dev_endgame_run",
   ForfeitRun: "forfeit_run",
   EnterField: "enter_field",
   LeaveField: "leave_field",

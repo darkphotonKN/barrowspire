@@ -272,8 +272,11 @@ export interface ProjectileState {
  */
 export interface GateState {
   entity_id: UUID;
-  /** `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). */
-  destination: "spire" | "forest" | "meadows" | "dev_test_room" | "hub";
+  /**
+   * `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). `dev_endgame_run`
+   * starts a run, not a field visit (FS-BDRTJ §Change: Endgame test run, R19).
+   */
+  destination: "spire" | "forest" | "meadows" | "dev_test_room" | "dev_endgame_run" | "hub";
   position: Position;
   /** World px from `position` within which a player is at the gate. */
   range: number;
