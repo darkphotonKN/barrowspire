@@ -411,7 +411,10 @@ export class HubGear {
       if (!current()) return;
     }
     this.setStatus(GEAR_LOADING);
-    this.panel.updateEquipment(nothingWorn());
+    // what was last known worn stays on show while REST answers, so the slots and the character
+    // panel's "From gear" don't flash empty on every open; the loading line holds every press
+    // until the truth is in
+    this.panel.updateEquipment(this.worn);
     this.panel.updateInventory([]);
     this.panel.updateStash([]);
     try {
