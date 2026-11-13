@@ -305,3 +305,308 @@ sound effects come with it.
 - Changing `gameAudio.ts`, the game config, the ESC menu's chrome (`showMenuPanel`), the field's or
   the run's ESC menu.
 - Any server, proto or gateway change.
+
+## Change: Music volume in an Options panel
+Status: work-order
+Date: 2026-11-13
+
+Asked by the owner on 2026-11-13, after the music was built on its branch: 「音樂的聲量可以在遊戲內調整嗎」
+(can the music's volume be adjusted in the game?), then 「好 幫我做音量調整」 (yes, make the volume
+control). Shaped by him the same day: 「音量放在控制選項裡 所以按了會切大比較大的面板 像一般遊戲一樣 可以再退回主選單這樣」
+(the volume goes in the options, so a press switches to a larger panel, like a typical game, and
+you can go back to the main menu), and 「每個地圖都可以 就是一個共用的模組」 (every map can do it: one
+shared module), and 「村莊背景音樂似乎本身就蠻大聲的 暫時設定成最大聲時只有原本的一半音量」 (the village track
+seems loud in itself; for now, the loudest setting should be only half the original volume). Each
+decision below is marked **[charter default]**, owner-approved 2026-11-13, with its reason; V1′,
+V2′, V3′ and V7″ are his redirections of the charter's first V1, V2, V3 and V7.
+
+The text above is not edited. This section replaces R8 (a fixed volume, "no volume setting in
+v1"), R15–R18 (the on/off row and its setting) and R19 (no music row in the field's or the run's
+menu), with their acceptance criteria. It lifts "A volume setting or slider" and "the field's or
+the run's ESC menu" out of Out of Scope. Every other requirement above stands, R1 (music only in
+the hub) included. It touches the town's and the field's ESC menu (FS-G4VMQ) and the run's
+(FS-9K8EZ), each of which carries a stub pointing here.
+
+**Facts (verified 2026-11-13 on feat/client-village-music e4856e10).**
+
+- `hubMusic.ts` ramps the sound's own volume on the game's `step` toward `MUSIC_VOLUME` (0.4).
+  Each ramp starts from the volume it last gave the sound, so a fade cut short turns round where
+  it stands.
+- `musicSetting.ts` keeps `"on"` | `"off"` in `localStorage["barrowspire_music"]`, with every
+  access guarded.
+- All three ESC menus are drawn by `showMenuPanel` (`ui/menuPanel.ts`). Their rows come from each
+  world's rule: `hubMenuChoices` (`scenes/hubMenu.ts`) for the town and the field, and
+  `runMenuChoices` (`ui/party.ts`) for the run.
+- Each scene keeps the open menu in its own `menu` / `menuChoices` slots. Every "the menu owns
+  the keys" guard reads `this.menu`: walking, I/B/C/E/F/Q, the chat input and the corner icons.
+- The town and the run read the menu's keys each frame (`offerMenu`, `JustDown`). The field
+  listens for `keydown-*` instead. All three bind the arrow keys for walking (`createCursorKeys`),
+  and walking reads them as released while `this.menu` is set.
+- On Esc with the menu open, the town and the field call `closeMenu()` and the run calls
+  `menuChoices.dismiss()`.
+- The windows' frame and title are `drawPanelFrame` and `drawPanelTitle` (`ui/panelFrame.ts`,
+  FS-3EBCA R20). `menuOption` explains why a row's hit area is a separate camera-fixed rectangle.
+- The canvas body face is EB Garamond, loaded through `next/font` with the `latin` subset. Its
+  `unicode-range` (U+0000–00FF, U+2000–206F, …) has none of U+25A0 ■, U+25A1 □, U+25BA ► or
+  U+25C4 ◄.
+
+### Requirements
+
+**A. The Options row**
+
+C1. **Every world's ESC menu gets an Options row.** The town's, the field's and the run's ESC
+    menus each offer **Options**, an amber actionable row, placed just before their *Back* row.
+    It has its number key by the menu's existing rule:
+    - Town: *Change character* [1], *Leave the queue* [2] while queued, *Options* [2] (or [3]
+      while queued), *Back*.
+    - Field: *Change character* [1], *Options* [2], *Back*.
+    - Run: *Fall where you stand* [1] (or *Leave the barrow* [1] once resolved), *Options* [2],
+      *Back*.
+
+    In the town it takes the music row's place, so it keeps that row's number key. The run's
+    Fall confirm gets no Options row. **[charter default V1′, V7″]** Reason: the owner's
+    request, a settings page like a typical game, from every map.
+C2. **One row, one rule.** The row is the shared module's own choice (C13). `hubMenuChoices`
+    always includes it, for the town and the field, and takes no music state any more.
+    `runMenuChoices` includes it for both of its states. Nothing else in either rule changes.
+
+**B. The OPTIONS panel**
+
+C3. **Options opens a larger panel in the menu's place.** A press on *Options* (a click, its
+    number key, or Enter when it is the first actionable row, which it never is) closes the ESC
+    menu and opens the **OPTIONS** panel. The panel sits at the camera's centre in the popup band
+    (`MENU_DEPTH`) and wears the windows' frame with its × (`drawPanelFrame`). Its centred title
+    is `OPTIONS` (`drawPanelTitle`, FS-3EBCA R20). It is wider than the menu: `OPTIONS_WIDTH`,
+    tunable, 480 px against the menu's 320. **[charter default V2′]** Reason: a settings page you
+    can back out of, as the owner described.
+C4. **It is laid out for more rows.** Under the title's band the panel stacks a list of setting
+    rows, each a label on the left and its control on the right, `OPTIONS_ROW` high (tunable).
+    *Back* sits at the foot, and the panel's height follows the number of rows. A later setting
+    (sound effects and so on) is one more entry in that list, with no change to the layout code.
+    v1 has one row, **Music**. **[charter default V2′]**
+C5. **The Music row is a stepped slider.** It shows the label **Music**, then a ◄ arrow, a bar
+    of five steps, and a ► arrow. The level is 0 to 5: steps 1 to *level* are filled and the rest
+    are empty, so level 0 shows an empty bar and level 5 a full one.
+    - A click on ◄ lowers the level by one and a click on ► raises it by one, clamped at 0 and 5.
+      An arrow at its end (◄ at 0, ► at 5) is dimmed and does not answer.
+    - A click on step *k* sets the level to *k* (1 to 5). Level 0 is reached with ◄ or ←.
+    - Each part brightens under the pointer, as a menu row does, and its hit area is a separate
+      camera-fixed rectangle, as `menuOption`'s is.
+
+    **[charter default V2′]**
+C6. **←/→ move the slider while the panel is open.** ← does what ◄ does and → what ► does,
+    clamped, one level per press. Holding a key does not repeat. In the town and the run they are
+    read with the menu's keys in `offerMenu`; in the field they are read through its key
+    listeners. A and D do not do this. Enter and the number keys do nothing while the panel is
+    open. **[charter default V2′]**
+C7. **Back, Esc and × return to that world's ESC menu.** The panel's foot row reads
+    **Back  [Esc]** in the cancel register. *Back*, Esc and the frame's × each close the panel and
+    reopen the ESC menu of the world it was opened from, rebuilt from the scene's state as it
+    opens. They never close everything. The corner row's Menu icon is the exception: as it closes
+    the menu (FS-3EBCA R18), it closes the panel and reopens nothing. **[charter default V2′]**
+    Reason: as C3. The Menu icon's rule is derived here from R18.
+C8. **While open it owns the keys and the screen, as the menu does.** The panel keeps the scene's
+    menu slot, so every guard that holds while the ESC menu is open holds for it:
+    - movement is not sent;
+    - I, B, C, E, F, Q, T and M, a press in the world, the chat input and the corner icons open
+      or do nothing (the Menu icon as C7 says);
+    - a blocker over the whole view under the panel takes every press and hover (FS-G4VMQ
+      § Change C4, FS-3EBCA R18).
+
+    The world runs on behind it. When the view's size changes the panel is centred again, as the
+    menu is (FS-ZAJMH R13).
+
+**C. The music level**
+
+C9. **Six levels, 0 to 5, with 0 as silence, capped at half the file's loudness.** The levels map
+    linearly onto the gain `MUSIC_MAX_GAIN × level / 5`, giving 0, 0.1, 0.2, 0.3, 0.4 and 0.5.
+    `MUSIC_MAX_GAIN` is one named constant (tunable, 0.5), **temporary**: the cap stands until
+    the track is remastered or the owner retunes it. The default is `MUSIC_DEFAULT_LEVEL`
+    (tunable, 3: gain 0.3). Both are named exports of the setting's module, with the gain per
+    level derived from them, not listed separately. They replace `MUSIC_VOLUME`, which was 0.4:
+    by default the town now plays at 0.3, a little quieter than R8's fixed volume. The music's
+    target volume is always the gain of its level, set on the music's own sound and never on the
+    sound manager's `volume` or `mute` (R8's rule). **[charter default V3′, owner override]**
+    Reason: the track is mastered loud.
+C10. **A change in the town applies at once, over a short ramp.** A change between two levels
+    above 0 ramps the volume from where it stands to the new gain over `MUSIC_LEVEL_RAMP_MS`
+    (tunable, 200 ms). The ramp runs on the same game-step clock as the fades (R3), never on a
+    scene's tweens or clock. A change during that ramp starts a new ramp from where the volume
+    stands. **[charter default V4]** Reason: no jump in loudness.
+C11. **A change during a fade-in retargets it.** While the music fades in (R2), a change to
+    another level above 0 neither restarts nor cuts the fade. The fade heads for the new gain from
+    the volume it has reached, over the time it has left. A fade-in still waiting for the context
+    to run (R10) only takes the new target. **[charter default V4]**
+C12. **Level 0 is "off".** A change to 0 (◄ or ← from 1) does exactly what *Silence the music*
+    did (R16, R18): the music fades out over `MUSIC_FADE_OUT_MS` from where it stands, then
+    stops.
+    - Entering the hub at level 0 starts nothing. The track is still loaded (R12), and leaving
+      frees it as usual (R13).
+    - A change from 0 to a level above it does what *Let the music play* did: the music starts,
+      or a fade-out in flight is turned round, and it fades in over `MUSIC_FADE_IN_MS` from where
+      it stands to the new gain.
+    - So a change to or from 0 takes R2's and R3's fade lengths, and C10's 200 ms ramp applies
+      only between audible levels.
+
+    Every hub entry (R2) reads the level and, above 0, fades in to its gain. A hub re-entered
+    during a fade-out (R4) takes the same sound back up to that gain. **[charter default V6]**
+    Reason: reuses the tested off path.
+C13. **One shared module, and every scene uses it.** The panel, its rows and its keys are one
+    module, `game-client/src/ui/optionsPanel.ts`. It exports the Options choice (C2) and a
+    function that opens the panel. Each scene passes it:
+    - its menu tones (`MenuTones`; the panel takes no colour of its own, ADR-0013);
+    - the origin, the hit size and the Menu icon's `through`;
+    - what *Back* does (reopen that scene's ESC menu);
+    - a **music level control**: read the level, set the level.
+
+    The level's storage and its migration live in `game-client/src/audio/musicSetting.ts`, and
+    so does a control that only reads and writes the stored level. In the town the control is
+    the hub's music (`HubMusic`), which stores the level and applies C10–C12. In the field and the
+    run it is the stored-only control. Each scene only adds the row (through its rule, C2), opens
+    the panel, and routes its keys. No scene draws a panel of its own. `ui/menuPanel.ts` changes
+    only if the panel reuses a piece of it that is not exported yet. **[charter default V7″]**
+    Reason: the owner asked for one shared module, available on every map.
+C14. **Field and run: the setting, not the sound.** No music plays outside the hub (R1). A change
+    made in a field or a run only stores the level, and the next hub entry reads it (C12).
+C15. **The level is remembered in this browser.** It is kept in `localStorage` under the same key,
+    `barrowspire_music`, as the digit `"0"` to `"5"`. It is written on every change and read on
+    every hub entry and every time the panel opens. The on/off row's stored values migrate on
+    read:
+    - `"off"` reads as 0;
+    - `"on"`, an absent key, any other value or a throwing read reads as `MUSIC_DEFAULT_LEVEL` (3).
+
+    Every read and write stays wrapped in `try`/`catch`. A throwing write is swallowed and the
+    change still applies for this visit. Per browser, never sent to the server (R17).
+    **[charter default V5]** Reason: existing players keep their choice.
+C16. **Copy and drawing follow the design guideline.** The copy is terse nouns in the lore
+    voice's register, in the canvas body face: **Options**, **OPTIONS**, **Music**, **Back  [Esc]**.
+    Colour comes from the scene's `MenuTones` only (the game palette, ADR-0025):
+    - the arrows and the filled steps take `actionable` (amber, a thing to act on), brightening to
+      `text` under the pointer;
+    - an empty step and a dimmed arrow take `dim`;
+    - *Back* takes `cancel`.
+
+    The arrows and the steps are drawn in code (filled triangles and rectangles on whole px), not
+    as the text glyphs ◄ ► ■ □. The canvas face has none of those glyphs (Facts), and the
+    guideline draws such marks in code from tokens. No emoji. **[charter default V8]** Reason:
+    lore voice, game palette, no emoji.
+
+**D. The run**
+
+C17. **The run's panel yields as the run's menu does.** A state that would take the run's menu
+    down (FS-9K8EZ req 6: newly dead or newly out) takes the panel down too, and so does the
+    run's end. Once the run has ended, Esc opens nothing (as now), and *Back* has no menu to
+    return to. **[charter default V7″]** Derived: the panel stands in the menu's slot (C8).
+
+### Acceptance Criteria
+
+**The Options row**
+
+- [ ] `hubMenuChoices({ queued })` returns `change`, [`leave`], `options`, `back`, the `options`
+      row reading **Options** in the actionable register. The field's menu is `change`,
+      `options`, `back`.
+- [ ] `runMenuChoices` returns `fall` or `leave`, then `options`, then `back`. `FALL_CONFIRM` is
+      unchanged.
+
+**The panel**
+
+- [ ] Pressing *Options* (a click or its number key) in the town, a field or the run closes the
+      ESC menu and opens the panel. The panel is titled `OPTIONS` by `drawPanelTitle`, framed by
+      `drawPanelFrame`, `OPTIONS_WIDTH` wide, at the camera's centre in the popup band, with one
+      setting row, **Music**, and **Back  [Esc]** at its foot.
+- [ ] The panel's rows come from a list. A test that adds a second row entry gets a taller panel
+      with both rows laid out, without changing the layout code.
+- [ ] The Music row shows ◄, five steps with *level* filled, and ►. A click on ◄ or ► changes the
+      level by one, clamped, and the arrow at its end is dimmed and ignored. A click on step *k*
+      sets level *k*.
+- [ ] With the panel open, → and ← change the level by one, clamped; A, D, Enter and the number
+      keys do nothing.
+- [ ] *Back*, Esc and the × close the panel and reopen that world's ESC menu, rebuilt from the
+      scene's state. The corner Menu icon closes the panel and opens nothing.
+- [ ] While the panel is open no `move` is sent, the guarded keys and icons do nothing, a press in
+      the world sends nothing, and the blocker takes every press and hover except the Menu icon's.
+- [ ] The panel is centred again when the view's size changes.
+- [ ] The town, the field and the run each open the same module's panel. None draws one of its
+      own.
+
+**The level**
+
+- [ ] `MUSIC_MAX_GAIN` = 0.5, `MUSIC_DEFAULT_LEVEL` = 3, `MUSIC_LEVEL_RAMP_MS` = 200,
+      `OPTIONS_WIDTH` and `OPTIONS_ROW` are named exports. The gains for levels 0–5 are 0, 0.1,
+      0.2, 0.3, 0.4 and 0.5, derived from `MUSIC_MAX_GAIN`, so a test that changes the cap changes
+      every level's gain. The default level plays at 0.3. The sound manager's `volume` and `mute`
+      are never written.
+- [ ] Entering the hub at level n > 0 fades in from silence to n's gain over 2000 ms
+      once the context runs, tested with a fake sound and a fake clock. At level 0 nothing plays.
+- [ ] In the town, a change between two levels above 0 ramps from where the volume stands to the
+      new gain over 200 ms on the game's step. A second change mid-ramp ramps from where it
+      stands.
+- [ ] A change to a level above 0 during a fade-in keeps the fade's remaining time and ends at
+      the new gain. During an unheard fade-in only the target changes.
+- [ ] A change to 0 fades out over 1000 ms and stops the sound. A change from 0 starts it (or
+      turns a fade-out round) and fades in over 2000 ms to the new gain. There is never a second
+      sound.
+- [ ] A change in a field or the run writes the level and plays nothing. The next hub entry fades
+      in to it.
+- [ ] `localStorage["barrowspire_music"]` is written as `"0"`–`"5"`. Reading `"0"`–`"5"` gives
+      that level, `"off"` gives 0, and `"on"`, absent, any other value or a throwing store gives
+      3. A throwing write is swallowed and the change still applies.
+
+**The run**
+
+- [ ] In the run, a state that closes the menu (newly resolved), or the run's end, closes the
+      panel.
+
+**Housekeeping**
+
+- [ ] The arrows and steps are drawn in code from `MenuTones`, with no ◄ ► ■ □ text glyph and no
+      emoji.
+- [ ] Nothing changes in `BarrowspireScene.ts` beyond its menu wiring (the row's action, opening
+      the panel, routing ←/→ and Esc to it, the yield). No server, proto or gateway file changes,
+      and `gameAudio.ts` and the game config are unchanged.
+- [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .` and `npm run lint`
+      pass.
+- [ ] The owner's listening and look check passes (the HITL slice).
+
+### Edge States
+
+- **Old setting.** A browser that pressed *Silence the music* opens the town silent, with an empty
+  bar. One that never pressed it, or pressed it twice, opens at level 3: gain 0.3, a little
+  quieter than the 0.4 it played at before (C9). The key is not rewritten until the level
+  changes.
+- **Downgrade.** A client from before this change reads every value except `"off"` as on, so a
+  stored `"0"` plays there. FS-28DDG has not reached main, so only the owner's browser can meet
+  this. Accepted.
+- **Changed in a field or a run, then back to town.** The town fades in to the new level, or
+  stays silent at 0. A tab in the town meanwhile keeps its own level until its next entry or
+  change (R17; no `storage` listener).
+- **Change during the fade-out of a change to 0.** → turns it round to a fade-in from where it
+  stands (C12). Never two sounds.
+- **Track failed to load** (R14). The slider still shows and changes the level, and the level is
+  kept. Nothing plays.
+- **Context suspended by a blur.** A ramp or fade keeps its own schedule on the game's step and
+  may finish unheard (*Window loses focus*). The new level holds when sound resumes.
+- **Panel closed mid-ramp.** The ramp runs on, and closing changes nothing.
+- **Leaving the hub with the panel open.** A `world_entered` or a hub handoff takes the panel down
+  with the menu slot, and the music fades out from where it stands (R3).
+- **Queue or pending state changes while the panel is open.** *Back* rebuilds the menu from the
+  state as it is then: *Leave the queue* appears or goes, and *Change character* stays dimmed
+  while a `leave_hub` is pending.
+- **Fallen in a field.** The panel opens and works as anywhere in the field.
+- **The run's end, or a death, with the panel open.** It closes (C17), and the card or result
+  that follows is never covered.
+- **Arrow keys and walking.** The arrows walk the player when nothing is open. While the panel is
+  open, walking reads them as released (C8), so a press only changes the level.
+- **Disconnect notice.** The notice over the town or a field covers the panel as it covers the
+  menu (FS-R6EYZ). *Return to menu* leaves the world and the panel goes with it.
+
+### Out of Scope
+
+- Rows other than Music: sound effects (there are none yet), a master volume, key bindings,
+  graphics settings.
+- Dragging the slider, a level number beside it, or hinting ←/→ on the panel.
+- Options in the main menu, the roster or character creation.
+- Music anywhere but the hub (R1 stands).
+- A per-account or server-side setting.
+- Rewriting the stored value on read (the migration takes effect on the next change).
+- Any change to `BarrowspireScene.ts` beyond its menu wiring, or to the run's Fall confirm.

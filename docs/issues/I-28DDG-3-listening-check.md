@@ -8,6 +8,10 @@ title: "FS-28DDG slice 3: the owner's listening check of the town music (HITL)"
 ---
 Implements FS-28DDG §Acceptance Criteria (whole FS)
 
+**Folded into I-28DDG-6 (2026-11-13).** Run that check instead. Its *Silence the music* item is
+superseded by FS-28DDG §Change: Music volume in an Options panel, and I-28DDG-6's pass closes
+this issue.
+
 **Lane: HITL (Nick).** Restart the client only. No server change.
 
 ## Files it expects to touch

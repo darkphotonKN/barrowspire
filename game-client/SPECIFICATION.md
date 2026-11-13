@@ -134,7 +134,7 @@ server state and sends intents. ✅
 ### Sound
 
 - [ ] Music in the hub → FS-28DDG
-- [ ] Turn the music on or off → FS-28DDG
+- [ ] Set the music's volume → FS-28DDG
 
 ### HUD
 
