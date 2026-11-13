@@ -314,8 +314,8 @@ export class UiMenuSlot {
 
   /**
    * Fall where you stand asks once (FS-9K8EZ req 3): the slot's rows become the confirm, nothing sent
-   * yet. Fall plays `dialog_confirm_heavy`; Not yet, and its × and Esc through it, close the whole
-   * menu with `dialog_cancel` alone (FS-WDM0X § Change M13, M2).
+   * yet. Fall plays `dialog_confirm_heavy` (FS-WDM0X § Change M13); Not yet, and its × and Esc through
+   * it, close the whole menu with the rule's `settings_close` (S5; owner listening check 2026-11-14).
    */
   private openFallConfirm(): void {
     const report = this.deps.bridge.world;
@@ -326,27 +326,20 @@ export class UiMenuSlot {
       choices: FALL_CONFIRM.choices,
       actions: { "fall-now": this.played(() => this.ask({ kind: "fall" }), "dialog_confirm_heavy") },
       enabled: { "fall-now": () => !(this.deps.bridge.world?.facts() ?? facts).fallPending },
-      // Not yet has no action of its own: it is the close, as the × and Esc are
-      closing: "dialog_cancel",
     });
   }
 
   /**
-   * A menu panel in the slot with the world's look; Back, Not yet, Esc and the × empty it (S5, S9),
-   * with `closing` as their sound where it names one (the Fall confirm's `dialog_cancel`), else the
-   * rule's `settings_close`.
+   * A menu panel in the slot with the world's look; Back, Not yet, Esc and the × empty it with the
+   * rule's `settings_close` (S5, S9).
    */
-  private show(
-    report: WorldReport,
-    spec: Pick<MenuPanelSpec<MenuChoice>, "line" | "choices" | "actions" | "enabled"> & { closing?: UiEffect },
-  ): void {
+  private show(report: WorldReport, spec: Pick<MenuPanelSpec<MenuChoice>, "line" | "choices" | "actions" | "enabled">): void {
     const look = MENU_LOOKS[report.world];
-    const { closing, ...panel } = spec;
     this.fill(
       report,
       this.deps.draw.menu({
-        ...panel,
-        close: this.played(() => this.close(), closing),
+        ...spec,
+        close: this.played(() => this.close()),
         origin: this.deps.centre(),
         hit: look.hit,
         tones: look.tones,

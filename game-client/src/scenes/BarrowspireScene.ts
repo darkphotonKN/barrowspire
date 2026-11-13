@@ -5232,11 +5232,10 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * A notification said in passing, at the top centre on its tone's backing (a colour value), held a
    * moment then faded. The UI scene draws it, over the interface, and takes it down as the run leaves
-   * (FS-TQZ5J A2 R33, R34). `important` where it relays the server turning down a move between
-   * worlds (a fall refused): it chimes `notify_important`, any other `notify` (FS-WDM0X § Change M16).
+   * (FS-TQZ5J A2 R33, R34).
    */
-  private showNotification(message: string, backing: number, important = false): void {
-    this.ui.notice({ text: message, look: { world: "run", backing }, ...(important ? { important } : {}) });
+  private showNotification(message: string, backing: number): void {
+    this.ui.notice({ text: message, look: { world: "run", backing } });
   }
 
   /**
@@ -5570,7 +5569,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Fall comes back on the confirm (FS-TQZ5J R9)
     this.ui.changed();
     if (this.runEnded) return;
-    this.showNotification(info.message ?? "The barrow will not take you yet.", palette.hudPanel, true);
+    this.showNotification(info.message ?? "The barrow will not take you yet.", palette.hudPanel);
   }
 
   /**

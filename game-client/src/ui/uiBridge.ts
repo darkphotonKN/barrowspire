@@ -77,14 +77,10 @@ export type NoticeLook =
   | { readonly world: "field" }
   | { readonly world: "run"; readonly backing: number };
 
-/**
- * World → UI: a passing notice, as plain data (A2 R33). `important` where it relays the server turning
- * down a move between worlds: it chimes `notify_important`, any other `notify` (FS-WDM0X § Change M16).
- */
+/** World → UI: a passing notice, as plain data (A2 R33). It plays no sound (FS-WDM0X § Change, owner listening check). */
 export interface Notice {
   readonly text: string;
   readonly look: NoticeLook;
-  readonly important?: boolean;
 }
 
 /** What keeps the screen in the world (R9): the town's NPC dialogue, open. */

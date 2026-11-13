@@ -6,10 +6,10 @@
  * over the interface, and hold with the UI scene under the disconnect notice (R5).
  *
  * Each notice is its own, several standing at once where they are said at once, each where it was
- * said (a new view moves none: it is gone in moments). A notice takes no input; as it is drawn it
- * chimes `notify`, or `notify_important` where it is marked important (FS-WDM0X § Change: Menu,
- * dialog and notice sounds, M16, which supersedes R33's "it plays no sound"). A world's notices go
- * as it leaves, as its shutdown took them down when they were its own (R34).
+ * said (a new view moves none: it is gone in moments). A notice is not the player's: it plays no
+ * sound and takes no input (FS-WDM0X § Change: Menu, dialog and notice sounds, owner listening check
+ * 2026-11-14, which takes back M16's chimes). A world's notices go as it leaves, as its shutdown took
+ * them down when they were its own (R34).
  */
 
 import type Phaser from "phaser";
@@ -119,11 +119,11 @@ export class UiNoticeLayer {
   private saidBy: WorldReport | null = null;
 
   constructor(
-    private readonly bridge: Pick<UiBridge, "world" | "play">,
+    private readonly bridge: Pick<UiBridge, "world">,
     private readonly draw: (notice: Notice, gone: () => void) => DrawnNotice,
   ) {}
 
-  /** A notice the world says: drawn at once, and chimed (M16); nothing while no world is reported, none to say it. */
+  /** A notice the world says: drawn at once; nothing while no world is reported, none to say it. */
   say(notice: Notice): void {
     const report = this.bridge.world;
     if (!report) return;
@@ -131,7 +131,6 @@ export class UiNoticeLayer {
     this.saidBy = report;
     const drawn: DrawnNotice = this.draw(notice, () => void this.standing.delete(drawn));
     this.standing.add(drawn);
-    this.bridge.play(notice.important ? "notify_important" : "notify");
   }
 
   /** The world's report heard again, or none as it leaves: its notices go with it (R34). */

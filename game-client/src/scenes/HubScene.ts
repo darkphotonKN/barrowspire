@@ -1149,7 +1149,7 @@ export class HubScene extends Phaser.Scene {
     socketManager.onError(ActionType.LeaveQueue, (info) => {
       if (!this.leavePending) return;
       this.leavePending = false;
-      this.notice(info.message ?? "Could not leave the queue, please try again.", true);
+      this.notice(info.message ?? "Could not leave the queue, please try again.");
     });
     // A solo start the server would not give: the choice comes back and the door says why in its
     // own panel, or in passing once the door has closed (FS-NSV3D §Requirements 5; FS-BJNYC R22).
@@ -1169,7 +1169,7 @@ export class HubScene extends Phaser.Scene {
         this.queueGone();
         return this.refused(words);
       }
-      if (!this.queuePending) return this.notice(words, true);
+      if (!this.queuePending) return this.notice(words);
       this.queuePending = false;
       this.refused(words);
     });
@@ -1190,7 +1190,7 @@ export class HubScene extends Phaser.Scene {
       this.leavingHub = false;
       // Change character comes back on the menu (FS-TQZ5J R9)
       this.ui.changed();
-      this.notice(info.message ?? "The hub will not let you go yet. Ask again.", true);
+      this.notice(info.message ?? "The hub will not let you go yet. Ask again.");
     });
     // A field that would not take the player (FS-X2F2H §Requirements 10, 60): they stay where
     // they stand, told why in the client's words, and the next step into the gate asks again.
@@ -1198,7 +1198,7 @@ export class HubScene extends Phaser.Scene {
     socketManager.onError(ActionType.EnterField, (info) => {
       if (!this.enteringField) return;
       this.enteringField = false;
-      this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason), true);
+      this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason));
     });
     // A party_enter is answered by the ready check opening (I-BJNYC-5 draws it), by the run's
     // world_entered switching the scene, or by a refusal: the choice comes back on any of them.
@@ -2363,7 +2363,7 @@ export class HubScene extends Phaser.Scene {
    */
   private refused(words: string): void {
     if (this.doorOpen) this.openDoor(words);
-    else this.notice(words, true);
+    else this.notice(words);
   }
 
   /** What a dialogue reads, as it stands now: the party is read afresh at each opening (FS-BJNYC R20). */
@@ -2488,11 +2488,10 @@ export class HubScene extends Phaser.Scene {
   /**
    * A line the hub says in passing, in the neutral HUD register: the player cannot act on it,
    * and it goes on its own. The UI scene draws it, over the interface, and takes it down as the
-   * town leaves (FS-TQZ5J A2 R33, R34). `important` where it relays the server turning down a move
-   * between worlds: it chimes `notify_important` (FS-WDM0X § Change M16).
+   * town leaves (FS-TQZ5J A2 R33, R34).
    */
-  private notice(text: string, important = false): void {
-    this.ui.notice({ text, look: { world: "hub" }, ...(important ? { important } : {}) });
+  private notice(text: string): void {
+    this.ui.notice({ text, look: { world: "hub" } });
   }
 
   private showQueueProgressText(text: string): void {
