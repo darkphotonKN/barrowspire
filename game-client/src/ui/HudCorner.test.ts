@@ -4,6 +4,7 @@ import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { HudCorner, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
+import { envelopeFlapPoint } from "./MailboxEnvelope";
 
 // FS-3EBCA §A R3–R5, §B R6–R11. I-3EBCA-1: the corner row as a scene draws it, on a recording
 // stand-in for the Phaser scene.
@@ -20,8 +21,12 @@ interface FakeZone {
 }
 interface FakeGraphics {
   strokes: number[];
-  /** Every drawing call after the plate, by name, since the last clear. */
+  /** Each line style's alpha, in step with `strokes`. */
+  alphas: number[];
+  /** Every drawing call, by name, since the last clear. */
   calls: string[];
+  /** Every drawing call with its arguments, since the last clear. */
+  ops: { m: string; args: number[] }[];
   depth?: number;
   destroyed: boolean;
 }
@@ -38,7 +43,7 @@ function fakeScene() {
   const texts: FakeText[] = [];
   const add = {
     graphics: () => {
-      const rec: FakeGraphics = { strokes: [], calls: [], destroyed: false };
+      const rec: FakeGraphics = { strokes: [], alphas: [], calls: [], ops: [], destroyed: false };
       graphics.push(rec);
       const self: Record<string, unknown> = {};
       for (const m of [
@@ -60,9 +65,11 @@ function fakeScene() {
         "fillGradientStyle",
         "setAlpha",
       ])
-        self[m] = () => (rec.calls.push(m), self);
-      self.clear = () => ((rec.strokes = []), (rec.calls = []), self);
-      self.lineStyle = (_w: number, colour: number) => (rec.strokes.push(colour), self);
+        self[m] = (...args: number[]) => (rec.calls.push(m), rec.ops.push({ m, args }), self);
+      self.clear = () => ((rec.strokes = []), (rec.alphas = []), (rec.calls = []), (rec.ops = []), self);
+      self.lineStyle = (_w: number, colour: number, alpha: number) => (
+        rec.strokes.push(colour), rec.alphas.push(alpha), self
+      );
       self.setDepth = (d: number) => ((rec.depth = d), self);
       self.destroy = () => void (rec.destroyed = true);
       return self;
@@ -249,5 +256,126 @@ describe("HudCorner (FS-3EBCA R9: the Mailbox greyed outside the town)", () => {
     const env = greyed();
     env.zoneAt("mail").handlers.pointerdown();
     expect(env.mailPress).not.toHaveBeenCalled();
+  });
+});
+
+// FS-J1672 (the owner, 2026-11-13: "把ui右下角的功能icon移除外匡"): the corner row's glyphs stand bare
+// over the world, with no plate under them and nothing filled. I-J1672-1.
+type Point = { x: number; y: number; centre: string };
+
+/** Every point a graphics strokes, sampled, tagged with the centre of the circle or arc it lies on. */
+function strokedPoints(g: FakeGraphics): Point[] {
+  const out: Point[] = [];
+  const onCircle = (x: number, y: number, r: number, start: number, sweep: number) => {
+    for (let i = 0; i <= 90; i++) {
+      const a = start + (sweep * i) / 90;
+      out.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, centre: `${x},${y}` });
+    }
+  };
+  let path: number[][] = [];
+  for (const { m, args } of g.ops) {
+    if (m === "beginPath") path = [];
+    else if (m === "arc") path.push(args);
+    else if (m === "strokePath") {
+      for (const [x, y, r, start, end, anticlockwise] of path) {
+        // the sweep as Phaser's renderer takes it (GraphicsWebGLRenderer, Commands.ARC)
+        let sweep = end - start;
+        if (anticlockwise) sweep = sweep < -2 * Math.PI ? -2 * Math.PI : sweep > 0 ? -2 * Math.PI + (sweep % (2 * Math.PI)) : sweep;
+        else sweep = sweep > 2 * Math.PI ? 2 * Math.PI : sweep < 0 ? 2 * Math.PI + (sweep % (2 * Math.PI)) : sweep;
+        onCircle(x, y, r, start, sweep);
+      }
+      path = [];
+    } else if (m === "strokeCircle") onCircle(args[0], args[1], args[2], 0, 2 * Math.PI);
+  }
+  return out;
+}
+
+const FILLS = ["fillStyle", "fillRect", "fillRoundedRect", "fillCircle", "fillPath", "fillTriangle", "fillGradientStyle"];
+
+describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  const row = (): CornerIconSpec[] => [
+    { icon: "menu" },
+    { icon: "inventory" },
+    { icon: "character" },
+    { icon: "party" },
+    { icon: "mail", greyed: true },
+  ];
+
+  it("should draw no plate and fill nothing under any icon, idle or under the pointer (R1, R3)", () => {
+    const env = setup(row());
+    for (const icon of ["menu", "inventory", "character", "party", "mail"] as const) {
+      env.zoneAt(icon).handlers.pointerover();
+      env.zoneAt(icon).handlers.pointerout();
+    }
+    env.zoneAt("party").handlers.pointerover();
+    for (const g of env.graphics) {
+      expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+    }
+  });
+
+  it("should stroke each graphics in its glyph's ink alone: no brass rule, no lit edge (R1, R2)", () => {
+    const env = setup(row());
+    const [menu, inventory, character, party, mail] = env.graphics;
+    for (const g of [menu, inventory, character, party]) {
+      expect(new Set(g.strokes)).toEqual(new Set([palette.interactable]));
+      expect(new Set(g.alphas)).toEqual(new Set([0.85]));
+    }
+    expect(new Set(mail.strokes)).toEqual(new Set([palette.hudFaint]));
+    expect(new Set(mail.alphas)).toEqual(new Set([0.6]));
+  });
+
+  it("should brighten a glyph to interactableBright at 1 under the pointer, and leave the greyed Mailbox as it was (R2)", () => {
+    const env = setup(row());
+    const [, , , party, mail] = env.graphics;
+    env.zoneAt("party").handlers.pointerover();
+    expect(new Set(party.strokes)).toEqual(new Set([palette.interactableBright]));
+    expect(new Set(party.alphas)).toEqual(new Set([1]));
+    const idleMail = [...mail.ops];
+    env.zoneAt("mail").handlers.pointerover();
+    expect(mail.ops).toEqual(idleMail);
+  });
+
+  it("should draw the greyed Mailbox with no seal, its flap lines meeting at the seal's old place (R7)", () => {
+    const env = setup([{ icon: "mail", greyed: true }]);
+    const [mail] = env.graphics;
+    const point = envelopeFlapPoint(cornerIconFrame("mail", viewport));
+    expect(mail.calls).not.toContain("fillCircle");
+    expect(mail.calls).not.toContain("strokeCircle");
+    const meeting = mail.ops.filter(
+      ({ m, args }) =>
+        m === "lineBetween" &&
+        ((args[2] === point.x && args[3] === point.y) || (args[0] === point.x && args[1] === point.y)),
+    );
+    expect(meeting).toHaveLength(2);
+  });
+
+  it("should leave the Party glyph's back bust undrawn where the front bust stands, and draw the rest of it (R3)", () => {
+    const env = setup([{ icon: "party" }]);
+    const [party] = env.graphics;
+    const f = cornerIconFrame("party", viewport);
+    const cx = f.x + f.width / 2;
+    const cy = f.y + f.height / 2;
+    // the front bust as drawParty stands it: scale 0.85 at (cx + 5, cy + 2); the back at 0.8, (cx - 6, cy - 2)
+    const front = { x: cx + 5, headY: cy + 2 - 6 * 0.85, headR: 5 * 0.85, shoulderY: cy + 2 + 12 * 0.85, shoulderR: 11 * 0.85 };
+    const back = { x: cx - 6, headY: cy - 2 - 6 * 0.8, headR: 5 * 0.8, shoulderY: cy - 2 + 12 * 0.8, shoulderR: 11 * 0.8 };
+    const frontOwn = new Set([`${front.x},${front.headY}`, `${front.x},${front.shoulderY}`]);
+    const inFront = ({ x, y }: Point) =>
+      Math.hypot(x - front.x, y - front.headY) < front.headR ||
+      (y <= front.shoulderY && Math.hypot(x - front.x, y - front.shoulderY) < front.shoulderR);
+    const points = strokedPoints(party);
+    const backPoints = points.filter((p) => !frontOwn.has(p.centre));
+
+    expect(backPoints.filter(inFront)).toEqual([]);
+    const near = (x: number, y: number) => backPoints.some((p) => Math.hypot(p.x - x, p.y - y) < 0.5);
+    // the back bust's head, whole, and its shoulders from their left end over their top
+    expect(near(back.x, back.headY - back.headR)).toBe(true);
+    expect(near(back.x - back.headR, back.headY)).toBe(true);
+    expect(near(back.x - back.shoulderR, back.shoulderY)).toBe(true);
+    expect(near(back.x, back.shoulderY - back.shoulderR)).toBe(true);
+    // the front bust, whole: its head and the top of its shoulders
+    expect(points.some((p) => p.centre === `${front.x},${front.headY}`)).toBe(true);
+    expect(points.some((p) => p.centre === `${front.x},${front.shoulderY}`)).toBe(true);
   });
 });

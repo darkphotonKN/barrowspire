@@ -79,6 +79,8 @@ function fakeScene() {
       "beginPath",
       "moveTo",
       "lineTo",
+      "arc",
+      "closePath",
       "strokePath",
     ])
       self[m] = () => self;
@@ -595,7 +597,7 @@ describe("LetterPanel: Take (R39, A5)", () => {
 });
 
 describe("MailboxEnvelope (R33, R35)", () => {
-  it("shows the seal's count while letters wait, and none when nothing does", () => {
+  it("shows the badge's count while letters wait, and none when nothing does", () => {
     const { scene, store, shown } = setup();
     new MailboxEnvelope(scene, { store, blocked: () => false });
     expect(shown()).toHaveLength(0);
