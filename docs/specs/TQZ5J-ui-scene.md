@@ -496,3 +496,132 @@ phase's `## Change:` inherits them without restating, and states only what it ad
 - The ESC menu and the dialogue (I-TQZ5J-4's scope, still the owner's to settle).
 - Keys: R21 stands as written.
 - Turning `globalTopOnly` off, or any other game-wide input switch.
+
+## Amendment A2 2026-11-14 (the dialogue card and the notices)
+
+**Why.** The owner widened phase 1 on 2026-11-14: 「對話匡也搬吧」 (move the dialogue box too), and
+the screen notices with it, so both draw over the interface. With the corner row in the UI scene
+(I-TQZ5J-3), the town's NPC dialogue card, still the town's at the popup band (`MENU_DEPTH` 2000),
+draws *under* the row (1000) where they meet: its lower rows run under Inventory, Character and
+Party (the harness's `corner/depth/after/hub-dialogue-*` shots). Slice 3 only holds the row while a
+dialogue is open; it does not put the card back on top. A notice left in a world would likewise stand
+under every UI piece it crosses. The owner approved the design the same day: the dialogue becomes
+typed data the world hands the UI scene, which draws it and hands back the id picked; the notices
+become typed messages. No function crosses the interface (ADR-0081). **[owner decision]**
+
+**What moves.** Phase 1 (§ Phases) now also moves into the UI scene, unchanged:
+
+- **The dialogue card**: `showDialogueCard` (`src/ui/npcDialogue.ts`) as the town draws it today
+  (`HubScene.showDialogue`) for the Spire's door, the Elder and the town folk, the storekeeper and
+  the residents. **[code]**
+- **The notices**: the town's passing line (`HubScene.notice`: top centre at y 72, depth 1000, gone
+  after 3.2 s), the field's (`FieldScene.notice`: its own backed line, y 72, depth 1000, 3.2 s), and
+  the run's notifications (`BarrowspireScene.showNotification`: y 100, depth 2000, a backing colour
+  per tone, held 1 s then faded over 2 s), with every path that raises one (the worlds' refusals and
+  server messages, `HubGear`'s, `EquipmentHud`'s and `fieldPiles`' `port.notice`). **[code]**
+
+Not moving: the town's queue line (`showQueueProgressText`), chat's notice lines (`useChatStore`,
+chat's phase), the party panel's own lines, and the disconnect notice (its own scene). **[code]**
+
+### Requirements (added)
+
+28. **Depths in the UI scene.** Each piece keeps the depth it has today, now inside the UI scene:
+    the corner row 1000; the windows 1100–1800 as later phases move them; the popup band 2000 (the
+    ESC menu, OPTIONS and the Fall confirm with their blocker at 1999, the dialogue card, the run's
+    notifications); tips 2200 and above. Pieces at one depth draw in the order they were added, a
+    later one over an earlier (Phaser 4.2.1's `DisplayList.depthSort` is a `StableSort` by depth),
+    as they did inside one world. The town's and the field's notice lines stand at 1000 today and
+    keep 1000: over the corner row by that order, under the menu as today. **[owner design; code]**
+29. **The dialogue is the world's data.** The town shows a dialogue with one typed call on the
+    interface, `showDialogue({ speaker, text, options })`, and takes it down with `closeDialogue`:
+    - `speaker`: the name; the role under it, if any; the portrait, if any, as a texture key and
+      frame (the frame the figure the player walked up to shows, read by the town as today; the
+      game's textures are one manager, so the UI scene cuts the same bust from it);
+    - `text`: the line;
+    - `options`: each `{ id, label, register, enabled }`. The owner's `{ id, label }` keeps the two
+      facts today's look reads: `register` (`actionable` | `cancel`, the row's colour and its key)
+      and `enabled` (false: the row is dimmed, neither lit nor pressable). Labels go bare; the UI
+      scene adds the key on each by today's rule (`[E]` for a lone actionable row, `[1]`–`[3]` for
+      several, `[Esc]` for the cancel row).
+    Plain data only: no callback, no live reader (`enabled` today is a function the card reads;
+    it becomes a value the world sends again). The world sends the card again whenever any part of
+    it changes (a reply now awaited, a page turned). A card with the same speaker, text and option
+    ids retones in place, as today's `retone`; any other replaces the one shown, as today's
+    close-then-show of a turned page. **[owner design; code]**
+30. **Its answers are requests.** A row pressed, or picked by its key, sends `pickDialogue` with its
+    option's id; a dimmed row sends nothing. The world acts on the id as it acts on the choice today
+    (does it, stays up awaiting a reply and sends the card again, turns the page, or closes), within
+    the call (R11). An id not on the card the world shows now is ignored. Esc sends `close: dialogue`
+    (R17), today's dismiss. **[owner design; code]**
+31. **Its keys.** While a dialogue is shown its keys are the UI scene's, as the menu's are (R18, R21):
+    E and Enter pick the first actionable row (with none, they close it), 1–3 an actionable row by
+    number, Esc closes it, exactly as `HubScene.showDialogue`'s `confirm`, `pick` and `dismiss` do
+    today. Shared by state: the town's own E, Enter and 1–3 handlers stay guarded by its dialogue
+    being open (the town knows: it asked for it), so a key is never acted on by both. No
+    `stopPropagation`. **[owner design; spike (b)]**
+32. **The card in the UI scene.** Drawn by the UI scene where and as today (bottom right, the popup
+    band, its rows' hit areas over it, its bust's mask), and laid out again on a new view. It stands
+    over the corner row again, as it did when both were the town's: slice 3's hold of every icon
+    under a dialogue (`UiCornerRow`'s `heldNow`) gives way to the card's rows taking their own
+    presses by depth, and what lights, labels and answers on the row under an open dialogue is what
+    it was at 74ecdf3c (the town still refusing Party, R14). The menu yields to it (R20). It closes,
+    with no sound, as its world leaves. Its ground stays non-interactive, so a press on it beside a
+    row reaches the world as today (R7, A1 R25). **[owner design; code]**
+33. **Notices are typed messages.** A world says a notice with one typed call on the interface,
+    `notice({ text, look })`: `look` is the town's line, the field's line, or the run's notification
+    with its backing colour (a colour value, data). The UI scene draws it with today's look, place,
+    depth and timing on its own clock (R28; the town's and the field's 3.2 s then gone, the run's 1 s
+    then a 2 s fade), each notice its own as today, several standing at once where today they do. A
+    notice is not the player's: it plays no sound and takes no input. **[owner design; code]**
+34. **A notice goes with its world.** As a world leaves, every notice it said is taken down, as the
+    world's shutdown destroys them today. Under the disconnect notice they hold with the UI scene
+    (R5), as they hold with the world today. **[code]**
+35. **The depth inversion, again (R24).** Moved into the UI scene, the card and the notices draw over
+    every piece still in a world. The slice moving each names which world pieces can meet it and
+    screenshots each case before and after: for the card, the gear overlay (1100), its tips (2200)
+    and flash (2300), the party panel (1110) and the letter panel (1800); for the notices at the top
+    centre, the letter panel, the gear overlay and its tips and flash, the party panel, the run's
+    controls panel (1200), resolved card (1500) and settlement record (1600). Today a world piece
+    above a notice's depth (a tip over a run notification, the gear overlay over a town line) draws
+    over it; after, the notice is on top. That is what the owner asked for (notices over the
+    interface); each case is still shown to the owner (I-TQZ5J-5). **[owner design; code]**
+
+### Acceptance Criteria (added)
+
+- [ ] Every acceptance criterion of the dialogue's owners still holds (FS-29KSH R24, FS-NSV3D,
+      FS-0XMCP's door, FS-B0H2D R27, FS-BJNYC R20–R22); their tests pass, moved with the code.
+- [ ] The town no longer calls `showDialogueCard`; no world scene draws a notice of its own.
+- [ ] The dialogue and the notices cross the interface as plain data: no function in either message
+      (by the types and the diff).
+- [ ] E, Enter, 1–3 and Esc on an open card do what they do today, never acted on by both the card
+      and the town, in the first world after a page load and after a world switch.
+- [ ] A notice said just before a world switch is gone in the next world; a dialogue open as the town
+      leaves closes with no sound.
+- [ ] Before/after screenshots (R23): the card (the door with its three ways, one dimmed while its
+      reply waits, the door's refusal line, a page of the Elder's telling, a resident), idle and each
+      row hovered, over the corner row; each notice look; at render scale 1, 1.5 and 2, windowed and
+      fullscreen. Pixel-equal against 74ecdf3c, or each difference named for I-TQZ5J-5.
+- [ ] The depth cases of R35 screenshotted and named.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+
+### Edge States (added)
+
+- **A page turned** (the Elder's Go on): the town sends the next card; it replaces the one shown.
+- **A reply awaited** (the door's three ways): the town sends the card again with that row
+  disabled; it retones in place, the pointer's hover as today's `retone` leaves it.
+- **The door's card closed by walking out of the gate**: the town's `closeDialogue`, no sound.
+- **A dialogue open as the town leaves** (a match found, a field's gate): closed as the town leaves.
+- **A notice said while the menu is open**: drawn at its depth; the run's (2000), said after the menu
+  opened, over it, as in one world today; the town's and the field's (1000) under it.
+- **A notice said in the frame its world leaves**: taken down with the world's leaving.
+- **Between I-TQZ5J-4 and these slices**: the card and the run's notifications are still the worlds'
+  and draw under the UI scene's menu (2000) where they meet; I-TQZ5J-4 names those cases.
+
+### Out of Scope (added)
+
+- Any change to the card's or the notices' look, words or timing; dialogue sounds (there are none).
+- The queue line, chat's lines, the party panel's lines, the disconnect notice.
+- A dialogue tree or memory (FS-29KSH's out of scope stands).
+
+Sliced as I-TQZ5J-7 (the dialogue card) and I-TQZ5J-8 (the notices), each after I-TQZ5J-4, which
+first fills the popup band (2000) and settles Esc; the owner's check (I-TQZ5J-5) now waits on both.
