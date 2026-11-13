@@ -1,6 +1,6 @@
 ---
 id: I-7TQN4-2
-status: open
+status: done
 implements: FS-7TQN4
 blocked_by: [I-7TQN4-1]
 labels: [blocked]
@@ -49,3 +49,7 @@ I-7TQN4-1.
 FS-7TQN4 §Requirements R21, §Acceptance Criteria "By eye", §Edge States (render scale 1 and 1.5, a
 sharp corner of a cut, the badge, the glow during a pulse, a light and a dark ground); charter N10;
 user stories 1–22.
+
+## Owner sign-off
+
+2026-11-13: the owner looked at the whole corner row in game (bronze knockouts with a drop shadow and a top-lit gradient) and approved it: 「icon看起來可以 之後有新的徽章都照著個設計方式 並回main」.

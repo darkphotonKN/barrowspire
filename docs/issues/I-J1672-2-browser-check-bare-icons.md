@@ -1,6 +1,6 @@
 ---
 id: I-J1672-2
-status: open
+status: done
 implements: FS-J1672
 blocked_by: [I-J1672-1]
 labels: [ready-for-agent]
@@ -35,3 +35,7 @@ I-J1672-1.
 ## Spec Reference
 
 FS-J1672 §Acceptance Criteria "By eye"; R6 (D4); user stories 1–10, 12.
+
+## Owner sign-off
+
+2026-11-13: the owner looked at the whole corner row in game (bronze knockouts with a drop shadow and a top-lit gradient) and approved it: 「icon看起來可以 之後有新的徽章都照著個設計方式 並回main」.

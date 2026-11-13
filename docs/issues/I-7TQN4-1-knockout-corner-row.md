@@ -1,6 +1,6 @@
 ---
 id: I-7TQN4-1
-status: open
+status: done
 implements: FS-7TQN4
 blocked_by: [I-3EBCA-14]
 labels: [ready-for-agent]
@@ -156,3 +156,7 @@ FS-7TQN4 §Requirements R1–R20, § What this changes in its owners, §Edge Sta
   envelope's draw order, the rebuild and the fallback; then the four's FS-J1672 and FS-QHN87 blocks
   on the fallback path.
 - GREEN: the renderer, then each icon's shapes, then the guideline and the screenshots.
+
+## Owner sign-off
+
+2026-11-13: the owner looked at the whole corner row in game (bronze knockouts with a drop shadow and a top-lit gradient) and approved it: 「icon看起來可以 之後有新的徽章都照著個設計方式 並回main」.

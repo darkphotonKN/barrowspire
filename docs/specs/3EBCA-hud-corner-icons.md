@@ -700,7 +700,7 @@ edited (write-once, `docs/specs/README.md`).
 ## Change: Richer corner glyphs → FS-QHN87
 
 ## Change: The inventory icon is a bronze knockout rucksack
-Status: work-order
+Status: shipped
 Date: 2026-11-13
 
 > Promoted `--from-thread` on 2026-11-13 from the approved charter's locked decisions K1–K7
