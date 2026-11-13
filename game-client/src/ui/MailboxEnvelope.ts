@@ -1,14 +1,17 @@
 /**
- * The mailbox's envelope at the bottom-right of the town HUD (FS-1GZGD R33, R35; D11, D12): a line
- * envelope with a small wax seal, drawn with Phaser graphics on a carved plate (no emoji, no
- * Heroicon, no baked art). The seal is lit with the number of letters waiting and dark when none
- * do; a newer letter than the player last saw makes the envelope glow a few times, then the seal
- * stays lit. Pressing it opens the letter panel, and pressing it again closes it; it stands in the
- * corner row's Mailbox slot and names itself "Mailbox" under the pointer (FS-1GZGD § Change).
+ * The mailbox's envelope at the bottom-right of the town HUD (FS-1GZGD R33, R35; D11): a bare line
+ * envelope, drawn with Phaser graphics straight over the world, with no plate under it and no seal
+ * on it (FS-J1672 R1, R7; no emoji, no Heroicon, no baked art). While letters wait, a small ember
+ * badge at its top-right corner carries their number, and none shows when nothing does (FS-J1672
+ * R8, R9); a newer letter than the player last saw makes the envelope glow a few times, then the
+ * badge simply stays (R10). Pressing it opens the letter panel, and pressing it again closes it; it
+ * stands in the corner row's Mailbox slot and names itself "Mailbox" under the pointer (FS-1GZGD
+ * § Change).
  *
  * Game palette (ADR-0025): the envelope's lines are amber because it can always be pressed; the
- * lit seal is ember wax; the pulse is the torch's glow. It reads the mailbox store and decides
- * nothing: what the seal shows and when it pulses is `@/mailbox/mailbox` and the store's.
+ * badge wears the lit seal's ember and rim; the pulse is the torch's glow. It reads the mailbox
+ * store and decides nothing: what the badge shows and when it pulses is `@/mailbox/mailbox` and the
+ * store's (`sealState`).
  */
 
 import type Phaser from "phaser";
@@ -16,7 +19,6 @@ import type { StoreApi } from "zustand";
 import { sealState } from "@/mailbox/mailbox";
 import type { MailboxState } from "@/stores/mailboxStore";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import { carvedPanel } from "./carvedPanel";
 import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
 import { CornerLabel } from "./cornerLabel";
@@ -37,10 +39,48 @@ const HUD_DEPTH = 1000;
 /** One glow up and down, and how many more follow it: three glows in all (D12, "a few times"). */
 const PULSE_MS = 420;
 const PULSE_REPEATS = 2;
-/** The highest count the seal prints; more reads as this. */
-const SEAL_MAX = 99;
+/** The highest count the badge prints; more reads as this. */
+const BADGE_MAX = 99;
+/** The count badge (FS-J1672 R9): 14 px tall, its count 4 px in from each side, never under 14 wide. */
+const BADGE_H = 14;
+const BADGE_PAD_X = 4;
+/** The badge's rim, inset in its ember as the lit seal's is in its wax. */
+const BADGE_RIM_INSET = 1.5;
 
-/** Draws a wax seal at (x, y): ember wax with a bright rim when lit, dark iron-rimmed wax when not. */
+/**
+ * Strokes a pill `w` × `h` centred on (x, y), its ends half circles: a circle when it is no wider
+ * than tall. Not `strokeRoundedRect`, which at a radius of half the height (and, when square, half
+ * the width) puts lines of no length in its path (Phaser 4.2.1 Graphics.strokeRoundedRect), and the
+ * WebGL renderer's DrawLine divides by a segment's length. Here every segment has length: each
+ * arc's start joins the last point by the pill's top, and closing the path draws its foot.
+ */
+function strokePill(
+  g: Pick<
+    Phaser.GameObjects.Graphics,
+    "strokeCircle" | "beginPath" | "arc" | "closePath" | "strokePath"
+  >,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const r = h / 2;
+  if (w <= h) {
+    g.strokeCircle(x, y, r);
+    return;
+  }
+  const reach = w / 2 - r;
+  g.beginPath();
+  g.arc(x - reach, y, r, Math.PI / 2, (Math.PI * 3) / 2);
+  g.arc(x + reach, y, r, -Math.PI / 2, Math.PI / 2);
+  g.closePath();
+  g.strokePath();
+}
+
+/**
+ * Draws a wax seal at (x, y): ember wax with a bright rim when lit, dark iron-rimmed wax when not.
+ * The letter list's unread dot; the envelope itself wears none (FS-J1672 R7, R11).
+ */
 export function drawWaxSeal(
   g: Pick<
     Phaser.GameObjects.Graphics,
@@ -67,19 +107,19 @@ export function drawWaxSeal(
   g.strokeCircle(x, y, r - 1);
 }
 
-/** The envelope inside its plate. */
+/** The envelope's lines inside the icon's 58 × 46 rect. */
 function envelopeRect(f: Rect): Rect {
   return { x: f.x + 11, y: f.y + 11, width: f.width - 22, height: f.height - 21 };
 }
 
-/** Where the seal sits on an envelope drawn in plate `f`: the flap's point. */
-export function envelopeSealAt(f: Rect): { x: number; y: number } {
+/** The flap's point on an envelope drawn in rect `f`: where its two lines meet. */
+export function envelopeFlapPoint(f: Rect): { x: number; y: number } {
   const e = envelopeRect(f);
   return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
 }
 
 /**
- * The envelope's lines in plate `f`, in `ink` (R33): its edge, the flap down to the seal and the
+ * The envelope's lines in rect `f`, in `ink` (R33): its edge, the flap down to its point and the
  * folds at the foot. The corner row draws the greyed Mailbox with it too (FS-3EBCA R9).
  */
 export function drawEnvelopeLines(
@@ -89,10 +129,10 @@ export function drawEnvelopeLines(
   alpha: number,
 ): void {
   const e = envelopeRect(f);
-  const point = envelopeSealAt(f);
+  const point = envelopeFlapPoint(f);
   g.lineStyle(1.5, ink, alpha);
   g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
-  // the flap, down to the seal
+  // the flap, down to its point
   g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
   g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
   // the folds at the foot
@@ -104,7 +144,7 @@ export class MailboxEnvelope {
   private frame: Rect;
   private readonly glow: Phaser.GameObjects.Graphics;
   private readonly body: Phaser.GameObjects.Graphics;
-  private readonly seal: Phaser.GameObjects.Graphics;
+  private readonly badge: Phaser.GameObjects.Graphics;
   private readonly zone: Phaser.GameObjects.Zone;
   private count?: Phaser.GameObjects.Text;
   private pulse?: Phaser.Tweens.Tween;
@@ -123,7 +163,7 @@ export class MailboxEnvelope {
     this.glow = hud(scene.add.graphics());
     this.glow.setAlpha(0);
     this.body = hud(scene.add.graphics());
-    this.seal = hud(scene.add.graphics());
+    this.badge = hud(scene.add.graphics());
     const { x, y, width, height } = this.frame;
     this.zone = scene.add
       .zone(x, y, width, height)
@@ -137,9 +177,9 @@ export class MailboxEnvelope {
 
     this.drawGlow();
     this.drawBody();
-    this.drawSeal();
+    this.drawBadge();
     this.unsubscribe = deps.store.subscribe((state, prev) => {
-      if (state.summary !== prev.summary) this.drawSeal();
+      if (state.summary !== prev.summary) this.drawBadge();
       if (state.pulses > prev.pulses) this.playPulse();
     });
   }
@@ -150,7 +190,7 @@ export class MailboxEnvelope {
     this.zone.setPosition(this.frame.x, this.frame.y);
     this.drawGlow();
     this.drawBody();
-    this.drawSeal();
+    this.drawBadge();
     if (this.hovered) this.label.show(this.frame, CORNER_LABEL.mail);
   }
 
@@ -161,7 +201,7 @@ export class MailboxEnvelope {
     this.pulse = undefined;
     this.glow.destroy();
     this.body.destroy();
-    this.seal.destroy();
+    this.badge.destroy();
     this.count?.destroy();
     this.count = undefined;
     this.zone.destroy();
@@ -187,11 +227,10 @@ export class MailboxEnvelope {
     else this.label.hide();
   }
 
-  /** The carved plate and the envelope's lines: amber, brighter under the pointer. */
+  /** The envelope's lines, bare over the world (FS-J1672 R1): amber, brighter under the pointer. */
   private drawBody(): void {
     const g = this.body.clear();
     const f = this.frame;
-    carvedPanel(g, f.x, f.y, f.width, f.height, { opacity: 0.85 });
     drawEnvelopeLines(
       g,
       f,
@@ -200,17 +239,19 @@ export class MailboxEnvelope {
     );
   }
 
-  /** The seal: lit with the waiting count, dark with none (R35). */
-  private drawSeal(): void {
+  /**
+   * The count badge (FS-J1672 R8, R9): while anything waits, an ember pill with a bright rim, as the
+   * letter list's lit seal wears, and the count on it, centred on the envelope's top-right corner,
+   * moved left only as far as keeps it inside the icon's rect; nothing when nothing waits.
+   */
+  private drawBadge(): void {
     const { lit, count } = sealState(this.deps.store.getState().summary);
-    const at = envelopeSealAt(this.frame);
-    const g = this.seal.clear();
-    drawWaxSeal(g, at.x, at.y, 8, lit);
+    const g = this.badge.clear();
     this.count?.destroy();
     this.count = undefined;
     if (!lit) return;
-    this.count = this.scene.add
-      .text(at.x, at.y, String(Math.min(count, SEAL_MAX)), {
+    const text = this.scene.add
+      .text(0, 0, String(Math.min(count, BADGE_MAX)), {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
         fontStyle: "bold",
@@ -219,9 +260,23 @@ export class MailboxEnvelope {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH);
+    const f = this.frame;
+    const e = envelopeRect(f);
+    const w = Math.max(BADGE_H, text.width + BADGE_PAD_X * 2);
+    const x = Math.min(e.x + e.width, f.x + f.width - w / 2);
+    const y = e.y;
+    const r = BADGE_H / 2;
+    g.fillStyle(palette.ember, 1);
+    g.fillRoundedRect(x - w / 2, y - r, w, BADGE_H, r);
+    g.lineStyle(1, palette.interactableBright, 0.85);
+    strokePill(g, x, y, w - BADGE_RIM_INSET * 2, BADGE_H - BADGE_RIM_INSET * 2);
+    this.count = text.setPosition(x, y);
   }
 
-  /** The torch's soft glow around the plate, faded in and out by the pulse. */
+  /**
+   * The torch's soft glow round the icon's rect, where its plate once stood, faded in and out by
+   * the pulse (FS-J1672 R10).
+   */
   private drawGlow(): void {
     const g = this.glow.clear();
     const f = this.frame;
@@ -237,7 +292,7 @@ export class MailboxEnvelope {
     }
   }
 
-  /** A few glows, then the seal simply stays lit (D12). A new pulse restarts the glows. */
+  /** A few glows, then the badge simply stays (D12; FS-J1672 R10). A new pulse restarts the glows. */
   private playPulse(): void {
     this.pulse?.stop();
     this.glow.setAlpha(0);

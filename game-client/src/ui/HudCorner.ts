@@ -5,19 +5,19 @@
  * (`MailboxEnvelope`, FS-1GZGD § Change), which this row leaves its slot to; elsewhere it is drawn
  * here, greyed (R9).
  *
- * Each plate is the envelope's: a carved plate at 0.85 with its glyph in 1.5 px lines, the
- * interactable amber, brighter under the pointer, where a small label names the icon and its key
- * (R3, R5). Drawn in code from palette tokens (ADR-0013). The row decides nothing: what a press
- * does is the scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
+ * Each icon is its bare glyph in 1.5 px lines over the world, with no plate under it and nothing
+ * filled (FS-J1672 R1–R3): the interactable amber, brighter under the pointer, where a small label
+ * names the icon and its key (R3, R5). Its 58 × 46 rect stays its press area (FS-J1672 R4). Drawn
+ * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
+ * scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
  * while they are open too (R11; FS-HRH2J § Change C12).
  */
 
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { carvedPanel } from "./carvedPanel";
 import { CornerLabel } from "./cornerLabel";
-import { drawEnvelopeLines, drawWaxSeal, envelopeSealAt } from "./MailboxEnvelope";
+import { drawEnvelopeLines } from "./MailboxEnvelope";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
@@ -27,8 +27,7 @@ import {
 } from "./hudCornerLayout";
 
 const HUD_DEPTH = 1000;
-/** The plate's opacity and the glyph's lines, the envelope's. */
-const PLATE_OPACITY = 0.85;
+/** The glyph's lines, the envelope's. */
 const LINE_W = 1.5;
 /** The greyed Mailbox's lines. */
 const GREYED_ALPHA = 0.6;
@@ -48,18 +47,10 @@ export interface HudCornerDeps {
   icons: CornerIconSpec[];
 }
 
+/** What a glyph draws with: lines only, never a fill (FS-J1672 R3). */
 type Ink = Pick<
   Phaser.GameObjects.Graphics,
-  | "lineStyle"
-  | "strokeCircle"
-  | "lineBetween"
-  | "beginPath"
-  | "arc"
-  | "strokePath"
-  | "closePath"
-  | "fillPath"
-  | "fillStyle"
-  | "fillCircle"
+  "lineStyle" | "strokeCircle" | "lineBetween" | "beginPath" | "arc" | "strokePath" | "closePath"
 >;
 
 interface DrawnIcon {
@@ -95,8 +86,9 @@ export class HudCorner {
   }
 
   /**
-   * Whether a screen point lies on a plate, or on that icon's plate alone when one is named: a
-   * press there is the row's, never the world's (R10); the open menu lets the Menu plate through (R18).
+   * Whether a screen point lies in an icon's rect, or in that icon's rect alone when one is named:
+   * a press there is the row's, never the world's (R10; FS-J1672 R4); the open menu lets the Menu
+   * icon through (R18).
    */
   covers(x: number, y: number, icon?: CornerIcon): boolean {
     return this.icons.some(
@@ -105,7 +97,7 @@ export class HudCorner {
     );
   }
 
-  /** The logical view changed: every plate back to the corner (FS-ZAJMH R12, R13). */
+  /** The logical view changed: every icon back to the corner (FS-ZAJMH R12, R13). */
   relayout(): void {
     for (const icon of this.icons) {
       icon.frame = cornerIconFrame(icon.spec.icon, viewport);
@@ -140,12 +132,10 @@ export class HudCorner {
   private draw(icon: DrawnIcon): void {
     const g = icon.graphics.clear();
     const f = icon.frame;
-    carvedPanel(g, f.x, f.y, f.width, f.height, { opacity: PLATE_OPACITY });
     if (icon.spec.greyed) {
-      // never amber: an amber thing the player cannot act on is a defect (R9)
+      // never amber: an amber thing the player cannot act on is a defect (R9); bare, with no seal
+      // and no count, since nothing of the mailbox is fetched outside the town (FS-J1672 R7, R8)
       drawEnvelopeLines(g, f, palette.hudFaint, GREYED_ALPHA);
-      const seal = envelopeSealAt(f);
-      drawWaxSeal(g, seal.x, seal.y, 8, false);
       return;
     }
     const ink = icon.hovered ? palette.interactableBright : palette.interactable;
@@ -199,9 +189,61 @@ export function drawBag(g: Ink, cx: number, cy: number, ink: number, alpha: numb
   g.lineBetween(cx - 3, top - 6, cx + 3, top - 6);
 }
 
+/** A bust's outline: its head's circle and the half circle of its shoulders. */
+interface BustShape {
+  cx: number;
+  headY: number;
+  headR: number;
+  shoulderY: number;
+  shoulderR: number;
+}
+
+function bustShape(cx: number, cy: number, s: number): BustShape {
+  return { cx, headY: cy - 6 * s, headR: 5 * s, shoulderY: cy + 12 * s, shoulderR: 11 * s };
+}
+
+/** Whether (x, y) lies on the bust's shape, its lines' width included: where it hides what is behind it. */
+function onBust(b: BustShape, x: number, y: number): boolean {
+  if (Math.hypot(x - b.cx, y - b.headY) <= b.headR + LINE_W) return true;
+  return y <= b.shoulderY && Math.hypot(x - b.cx, y - b.shoulderY) <= b.shoulderR + LINE_W;
+}
+
+/** How finely an outline is cut where a bust in front covers it: half a degree. */
+const COVER_STEPS_PER_TURN = 720;
+
 /**
- * A bust (R3): a head over the curve of the shoulders, `s` its scale. With `fill`, the shape is
- * first filled in that colour, so a bust drawn over another hides the lines behind it.
+ * The runs of the arc of (x, y, r), clockwise from `start` to `end`, that `front` leaves in view
+ * (FS-J1672 R3), as [from, to] angles.
+ */
+function uncoveredRuns(
+  x: number,
+  y: number,
+  r: number,
+  start: number,
+  end: number,
+  front: BustShape,
+): [number, number][] {
+  const steps = Math.max(1, Math.round(((end - start) / (2 * Math.PI)) * COVER_STEPS_PER_TURN));
+  const angle = (i: number) => start + ((end - start) * i) / steps;
+  const shown = (i: number) =>
+    i <= steps && !onBust(front, x + Math.cos(angle(i)) * r, y + Math.sin(angle(i)) * r);
+  const runs: [number, number][] = [];
+  let from: number | undefined;
+  // one step past the end, never shown, closes the last run
+  for (let i = 0; i <= steps + 1; i++) {
+    if (shown(i)) from ??= i;
+    else if (from !== undefined) {
+      if (i - 1 > from) runs.push([angle(from), angle(i - 1)]);
+      from = undefined;
+    }
+  }
+  return runs;
+}
+
+/**
+ * A bust (R3): a head over the curve of the shoulders, `s` its scale. With `front`, the bust
+ * standing in front of this one, this one's shoulders are left undrawn where that one covers them
+ * (FS-J1672 R3), its head standing clear: nothing is filled, so no dark patch is left on the world.
  */
 export function drawBust(
   g: Ink,
@@ -210,29 +252,30 @@ export function drawBust(
   s: number,
   ink: number,
   alpha: number,
-  fill?: number,
+  front?: { cx: number; cy: number; s: number },
 ): void {
-  const headY = cy - 6 * s;
-  const headR = 5 * s;
-  const shoulderY = cy + 12 * s;
-  const shoulderR = 11 * s;
-  if (fill !== undefined) {
-    g.fillStyle(fill, 1);
-    g.fillCircle(cx, headY, headR + LINE_W);
-    g.beginPath();
-    g.arc(cx, shoulderY, shoulderR + LINE_W, Math.PI, 0, false);
-    g.closePath();
-    g.fillPath();
-  }
+  const b = bustShape(cx, cy, s);
+  const cover = front && bustShape(front.cx, front.cy, front.s);
   g.lineStyle(LINE_W, ink, alpha);
-  g.strokeCircle(cx, headY, headR);
+  // the back head stands clear of the front bust, so only the shoulders are ever cut
+  g.strokeCircle(cx, b.headY, b.headR);
+
+  const shoulders = cover
+    ? uncoveredRuns(cx, b.shoulderY, b.shoulderR, Math.PI, 2 * Math.PI, cover)
+    : [[Math.PI, 0] as [number, number]];
+  for (const [from, to] of shoulders) strokeArc(g, cx, b.shoulderY, b.shoulderR, from, to);
+}
+
+/** One open arc, clockwise. */
+function strokeArc(g: Ink, x: number, y: number, r: number, from: number, to: number): void {
   g.beginPath();
-  g.arc(cx, shoulderY, shoulderR, Math.PI, 0, false);
+  g.arc(x, y, r, from, to, false);
   g.strokePath();
 }
 
-/** Two busts (R3): one stepped behind and above the other, the front one drawn over it. */
+/** Two busts (R3): one stepped behind and above the other, the front one standing over it. */
 export function drawParty(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
-  drawBust(g, cx - 6, cy - 2, 0.8, ink, alpha);
-  drawBust(g, cx + 5, cy + 2, 0.85, ink, alpha, palette.hudPanel);
+  const front = { cx: cx + 5, cy: cy + 2, s: 0.85 };
+  drawBust(g, cx - 6, cy - 2, 0.8, ink, alpha, front);
+  drawBust(g, front.cx, front.cy, front.s, ink, alpha);
 }
