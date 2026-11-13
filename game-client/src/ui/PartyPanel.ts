@@ -124,6 +124,12 @@ const within = (r: Rect, x: number, y: number) =>
  * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
  * inert when not (amber means interactable, never otherwise). The party frames' Travel button is
  * drawn by it too (FS-NCC9J R28), in the HUD band. Returns the label, for the caller to take down.
+ *
+ * The whole outlined button answers a press, not only its words: the label carries a hit area the
+ * size of the button. Phaser tests a press in the label's local frame with its display origin added
+ * back (InputManager.pointWithinHitArea, 4.2.1). The label stands at the button's centre, so there
+ * the button spans its display origin ± half the button; that is read when a press lands, so a
+ * label whose words change keeps the whole button.
  */
 export function drawHudButton(
   scene: Phaser.Scene,
@@ -147,7 +153,29 @@ export function drawHudButton(
     .setDepth(depth)
     .setOrigin(0.5, 0.5);
   if (!enabled) return t.setAlpha(GREYED_ALPHA);
-  return t.setInteractive({ useHandCursor: true }).on("pointerdown", press);
+  const hitArea = { width: r.width, height: r.height };
+  return t
+    .setInteractive({
+      hitArea,
+      hitAreaCallback: (
+        area: typeof hitArea,
+        x: number,
+        y: number,
+        label: Phaser.GameObjects.Text,
+      ) =>
+        within(
+          {
+            x: label.displayOriginX - area.width / 2,
+            y: label.displayOriginY - area.height / 2,
+            width: area.width,
+            height: area.height,
+          },
+          x,
+          y,
+        ),
+      useHandCursor: true,
+    })
+    .on("pointerdown", press);
 }
 
 /**
