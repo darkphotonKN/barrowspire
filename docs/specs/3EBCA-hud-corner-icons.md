@@ -1135,3 +1135,5 @@ For the whole row:
 - Any server, proto, gateway or contract change.
 
 ## Change: The whole corner row is knockout → FS-7TQN4
+
+## Change: The corner row is embossed → FS-S8Z2Y
