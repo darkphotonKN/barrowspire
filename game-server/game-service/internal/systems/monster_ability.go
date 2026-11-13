@@ -128,7 +128,10 @@ pounce runs a leap on by a tick: its wind-up, then, if the straight line to the
 aimed point is clear for its body, the leap there over its leap time,
 colliding with nothing, and the landing, its area centred where it stands. A
 line not clear as the wind-up ends calls it off, its cooldown spent; so it
-never leaves the floor's walkable cells. FS-C8VM7 §B R15.
+never leaves the floor's walkable cells. With no grid, as on a floor of
+buildings, there are no walkable cells to test the line against, and it is
+called off the same way, so it never leaps through a house wall.
+FS-C8VM7 §B R15.
 
 The leap moves the monster itself, the one place the AI does: the
 MovementSystem would collide it.
@@ -142,7 +145,7 @@ func (s *MonsterAISystem) pounce(deltaTime float64, entity *ecs.Entity, monster 
 		if pending.Remaining > leap {
 			return
 		}
-		if !s.clear(at.X, at.Y, pending.X, pending.Y, constants.PlayerRadius) {
+		if s.grid == nil || !s.grid.Clear(at.X, at.Y, pending.X, pending.Y, constants.PlayerRadius) {
 			*pending = components.PendingAbility{}
 			monster.Action = components.MonsterActionIdle
 			return

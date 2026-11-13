@@ -5,6 +5,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/navigation"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,8 +43,9 @@ func TestPounce_ClearLine_LeapsToTheAimedPointAndHitsThere(t *testing.T) {
 	em := ecs.NewEntityManager()
 	r := ravener(em, 500, 500)
 	target := sturdy(delver(em, 700, 500))
+	brawl := brawlOn(em, openFloor(12, 10))
 
-	brawl(em, 1)
+	brawl(1)
 	m := monster(r)
 	require.Equal(t, components.MonsterActionAbility, m.Action)
 	assert.Equal(t, 700.0, m.AbilityPending.X, "aimed where its target stood")
@@ -53,18 +55,40 @@ func TestPounce_ClearLine_LeapsToTheAimedPointAndHitsThere(t *testing.T) {
 	moveTo(t, target, 700, 640) // the target steps off the point
 	there := sturdy(delver(em, 700, 540))
 
-	brawl(em, ticks(0.5)-1)
+	brawl(ticks(0.5) - 1)
 	assert.Equal(t, components.MonsterActionAbility, m.Action, "the action stays `ability` through the leap")
 	assert.Greater(t, transformOf(t, r).X, 500.0, "it is in the air")
 	assert.Less(t, transformOf(t, r).X, 700.0)
 
-	brawl(em, ticks(0.3))
+	brawl(ticks(0.3))
 
 	assert.Equal(t, 700.0, transformOf(t, r).X, "it ends at the aimed point")
 	assert.Equal(t, 500.0, transformOf(t, r).Y)
 	assert.Equal(t, 100000, health(target), "the target who moved is missed")
 	assert.Equal(t, 100000-mitigated(10, 1.5), health(there))
 	assert.Zero(t, m.AbilityPending.Remaining)
+}
+
+// openFloor is a navigation grid of cols × rows cells, every one walkable.
+func openFloor(cols, rows int) *navigation.Grid {
+	walkable := make([]bool, cols*rows)
+	for i := range walkable {
+		walkable[i] = true
+	}
+	return navigation.NewGrid(cols, rows, navCell, walkable)
+}
+
+// brawlOn is brawl on a floor with the navigation grid given.
+func brawlOn(em *ecs.EntityManager, grid *navigation.Grid) func(n int) {
+	ai := NewMonsterAISystem(firstRoll, grid)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+	return func(n int) {
+		for range n {
+			entities := em.GetAllEntities()
+			ai.Update(tickSeconds, entities)
+			combat.Update(tickSeconds, entities, nil)
+		}
+	}
 }
 
 // A pounce whose line is not clear for its body as the wind-up ends is called
@@ -92,6 +116,26 @@ func TestPounce_BlockedLine_IsCalledOffWithTheCooldownSpent(t *testing.T) {
 
 	assert.Equal(t, 575.0, transformOf(t, r).X, "no leap")
 	assert.Equal(t, 150.0, transformOf(t, r).Y)
+	assert.Equal(t, 100000, health(d))
+	assert.Positive(t, monster(r).AbilityCooldown, "the cooldown is spent")
+	assert.Zero(t, monster(r).AbilityPending.Remaining)
+}
+
+// With no navigation grid, as on a fallback floor of buildings, a pounce has
+// no walkable cells to test its flight against, so it is called off as a
+// body-blocked one is: its cooldown spent, no leap, no hit, so it never flies
+// through a house wall. FS-C8VM7 §B R15.
+func TestPounce_NoGrid_IsCalledOffWithTheCooldownSpent(t *testing.T) {
+	em := ecs.NewEntityManager()
+	r := ravener(em, 500, 500)
+	d := sturdy(delver(em, 700, 500))
+
+	brawl(em, 1)
+	require.Equal(t, components.MonsterActionAbility, monster(r).Action, "the pounce is chosen")
+	brawl(em, ticks(0.8))
+
+	assert.Equal(t, 500.0, transformOf(t, r).X, "no leap")
+	assert.Equal(t, 500.0, transformOf(t, r).Y)
 	assert.Equal(t, 100000, health(d))
 	assert.Positive(t, monster(r).AbilityCooldown, "the cooldown is spent")
 	assert.Zero(t, monster(r).AbilityPending.Remaining)
