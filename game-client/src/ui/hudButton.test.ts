@@ -26,6 +26,7 @@ type HitConfig = {
 function stage(labelWidth: number, labelHeight = 18) {
   let config: HitConfig | undefined;
   let press: (() => void) | undefined;
+  let pressedDown = false;
   const label: Record<string, unknown> = {
     x: 0,
     y: 0,
@@ -45,7 +46,8 @@ function stage(labelWidth: number, labelHeight = 18) {
     setAlpha: () => label,
     setInteractive: (c: HitConfig) => ((config = c), label),
     on: (event: string, cb: () => void) => {
-      if (event === "pointerdown") press = cb;
+      if (event === "pointerup") press = cb;
+      if (event === "pointerdown") pressedDown = true;
       return label;
     },
   });
@@ -69,7 +71,14 @@ function stage(labelWidth: number, labelHeight = 18) {
     const localY = y - (label.y as number) + (label.displayOriginY as number);
     return config.hitAreaCallback(config.hitArea, localX, localY, label);
   };
-  return { scene, graphics, hits, pressed: () => press, config: () => config };
+  return {
+    scene,
+    graphics,
+    hits,
+    pressed: () => press,
+    actsOnPress: () => pressedDown,
+    config: () => config,
+  };
 }
 
 describe("drawHudButton: the whole outlined button answers a press, not only its words", () => {
@@ -113,6 +122,13 @@ describe("drawHudButton: the whole outlined button answers a press, not only its
     const s = stage(40);
     drawHudButton(s.scene, s.graphics, button, "Invite", true, () => undefined);
     expect(s.hits(x, y)).toBe(false);
+  });
+
+  it("should act on the release, never the press, so a press stays its panel's (FS-R82NV R28)", () => {
+    const s = stage(40);
+    drawHudButton(s.scene, s.graphics, button, "Invite", true, () => undefined);
+    expect(s.actsOnPress()).toBe(false);
+    expect(s.pressed()).toBeDefined();
   });
 
   it("should keep the hand cursor and run its press", () => {

@@ -77,7 +77,7 @@ function fakeScene() {
       setX: (nx: number) => ((t.x = nx), self),
       setInteractive: () => ((t.interactive = true), self),
       on: (ev: string, fn: () => void) => (
-        ev === "pointerdown" && (t.press = fn),
+        ev === "pointerup" && (t.press = fn),
         self
       ),
       setText: (c: string) => ((t.content = c), self),
