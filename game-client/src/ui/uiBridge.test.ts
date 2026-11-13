@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { EventEmitter } from "eventemitter3";
-import { lendUiBridge, reportWorld, uiBridgeOf, type UiBridge, type World } from "./uiBridge";
+import {
+  GameUiBridge,
+  lendUiBridge,
+  reportWorld,
+  uiBridgeOf,
+  type UiBridge,
+  type World,
+  type WorldReport,
+} from "./uiBridge";
 
 /** A game's registry: the per-game store a scene reads as `this.registry`. */
 function registry() {
@@ -89,5 +97,53 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
 
     expect(() => reportWorld(scene, "hub")).not.toThrow();
     expect(scene.events.listenerCount("shutdown")).toBe(0);
+  });
+});
+
+// The channel alone: it holds what the scenes said and tells whoever listens which world is up. What
+// the UI scene's life does with that is its own (uiSceneLifecycle.ts), so later slices grow only this.
+describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
+  it("should be made with nothing of the game's: no scene manager", () => {
+    const bridge = new GameUiBridge();
+
+    expect(bridge.world).toBeNull();
+    expect(bridge.ui).toEqual({ menuOpen: false });
+  });
+
+  it("should tell each listener every world reported, and none on its leaving (R9)", () => {
+    const bridge = new GameUiBridge();
+    const heard: (WorldReport | null)[] = [];
+    bridge.onWorld((report) => heard.push(report));
+
+    bridge.report({ world: "hub" });
+    bridge.report({ world: "hub" });
+    bridge.left("hub");
+    bridge.report({ world: "run" });
+
+    expect(heard).toEqual([{ world: "hub" }, { world: "hub" }, null, { world: "run" }]);
+  });
+
+  it("should tell nothing of a left from a world no longer the one reported", () => {
+    const bridge = new GameUiBridge();
+    bridge.report({ world: "hub" });
+    bridge.report({ world: "field" });
+    const heard: (WorldReport | null)[] = [];
+    bridge.onWorld((report) => heard.push(report));
+
+    bridge.left("hub");
+
+    expect(heard).toEqual([]);
+    expect(bridge.world).toEqual({ world: "field" });
+  });
+
+  it("should stop telling a listener once it lets go", () => {
+    const bridge = new GameUiBridge();
+    const heard: (WorldReport | null)[] = [];
+    const stop = bridge.onWorld((report) => heard.push(report));
+
+    stop();
+    bridge.report({ world: "hub" });
+
+    expect(heard).toEqual([]);
   });
 });

@@ -24,7 +24,14 @@ vi.mock("phaser", async () => {
       set: (key: string, value: unknown) => void this.held.set(key, value),
     };
     readonly events = { once: () => {}, off: () => {} };
-    readonly scene = { getScene: () => null };
+    /** The scenes the game's scene manager was asked for, by key. */
+    readonly asked: string[] = [];
+    readonly scene = {
+      getScene: (key: string) => {
+        this.asked.push(key);
+        return null;
+      },
+    };
     constructor(readonly config: unknown) {
       Game.made.push(this);
     }
@@ -170,5 +177,14 @@ describe("the game bridge's UI scene and UI bridge (FS-TQZ5J R1, R7, R8)", () =>
 
     expect(bridge).not.toBeNull();
     expect(bridge!.world).toBeNull();
+  });
+
+  it("should have the lent bridge's world reports drive this game's UI scene (R2, R3)", async () => {
+    const game = (await builtGame()) as unknown as { registry: { get(key: string): unknown }; asked: string[] };
+    const { uiBridgeOf } = await import("@/ui/uiBridge");
+
+    uiBridgeOf(game.registry)!.report({ world: "hub" });
+
+    expect(game.asked).toContain("UIScene");
   });
 });

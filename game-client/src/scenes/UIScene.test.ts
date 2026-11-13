@@ -91,7 +91,10 @@ describe("UIScene (FS-TQZ5J R1, R6)", () => {
     fitGame(
       {
         scale: { resize: () => undefined, setZoom: () => undefined },
-        scene: { getScenes: (isActive: boolean) => (isActive ? [] : [{ cameras: { main: cam } }]) },
+        scene: {
+          getScenes: (isActive: boolean) =>
+            isActive ? [] : [{ sys: { settings: { status: 7 } }, cameras: { main: cam } }],
+        },
       },
       view,
     );

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DisconnectNotice } from "./disconnectNotice";
-import { GameUiBridge, UI_SCENE } from "./uiSceneLifecycle";
+import { UI_SCENE, driveUiScene } from "./uiSceneLifecycle";
 import { switchWorld } from "./worldRouting";
 import type { WorldEnteredPayload } from "@/assets/types/client";
-import type { World } from "@/ui/uiBridge";
+import { GameUiBridge, type World } from "@/ui/uiBridge";
 
 // Phaser 4.2.1's scene statuses (scene/const.js). A scene the game booted and never started is INIT.
 const INIT = 1;
@@ -65,7 +65,8 @@ function game(statuses: Record<string, number> = {}, loading: string[] = []) {
       statuses[key] = RUNNING;
     },
   };
-  const bridge = new GameUiBridge(scenes);
+  const bridge = new GameUiBridge();
+  driveUiScene(bridge, scenes);
   /** The world's own `world_entered`, routed as the game bridge routes it. */
   const enter = (world_type: WorldEnteredPayload["world_type"]) =>
     switchWorld(scenes, { world_type } as WorldEnteredPayload, { isArrival: () => false });
@@ -165,7 +166,8 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
 
   it("should ask nothing of a game with no UI scene in its list", () => {
     const log: string[] = [];
-    const bridge = new GameUiBridge({
+    const bridge = new GameUiBridge();
+    driveUiScene(bridge, {
       getScene: () => null,
       start: (key: string) => void log.push(`start ${key}`),
       sleep: (key: string) => void log.push(`sleep ${key}`),
@@ -177,6 +179,29 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
     bridge.left("hub");
 
     expect(log).toEqual([]);
+  });
+});
+
+describe("the UI scene's life as a listener on the bridge's reports (FS-TQZ5J R2, R3)", () => {
+  it("should follow any source of world reports, and stop following once let go", () => {
+    const listeners: ((report: { world: World } | null) => void)[] = [];
+    const reports = {
+      onWorld(listener: (report: { world: World } | null) => void) {
+        listeners.push(listener);
+        return () => void listeners.splice(listeners.indexOf(listener), 1);
+      },
+    };
+    const g = game();
+    const stop = driveUiScene(reports, g.scenes);
+
+    for (const listener of [...listeners]) listener({ world: "hub" });
+    expect(g.ui()).toBe(RUNNING);
+    for (const listener of [...listeners]) listener(null);
+    expect(g.ui()).toBe(SLEEPING);
+
+    stop();
+
+    expect(listeners).toHaveLength(0);
   });
 });
 

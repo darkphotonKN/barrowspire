@@ -90,8 +90,8 @@ function fakeGame() {
     },
     scene: {
       getScenes: () => [
-        { cameras: { main: camera("hub") } },
-        { cameras: { main: undefined } },
+        { sys: { settings: { status: 5 } }, cameras: { main: camera("hub") } },
+        { sys: { settings: { status: 5 } }, cameras: { main: undefined } },
       ],
     },
   };
@@ -145,29 +145,43 @@ const label = (resolution: number) => {
   };
 };
 
-/** A game whose scenes hold text: two running (one in a container), one stopped. */
+// Phaser 4.2.1's scene statuses (scene/const.js), as the scene manager's getScenes reads them
+const RUNNING = 5;
+const PAUSED = 6;
+const SLEEPING = 7;
+const SHUTDOWN = 8;
+
+/**
+ * A game whose scenes hold text: two running (one in a container), one asleep and one paused (the
+ * UI scene outside the worlds and under the disconnect notice), one stopped. Its getScenes is
+ * Phaser's: active means RUNNING only.
+ */
 function gameWithText() {
   const hud = label(1);
   const panelLine = label(1);
   const menuTitle = label(1);
+  const asleep = label(1);
+  const held = label(1);
   const stale = label(1);
-  const scene = (running: boolean, list: object[]) => ({
-    running,
+  const scene = (status: number, list: object[]) => ({
+    sys: { settings: { status } },
     children: { list },
   });
   const scenes = [
-    scene(true, [hud, { list: [{ list: [panelLine] }] }]),
-    scene(true, [menuTitle]),
-    scene(false, [stale]),
+    scene(RUNNING, [hud, { list: [{ list: [panelLine] }] }]),
+    scene(RUNNING, [menuTitle]),
+    scene(SLEEPING, [asleep]),
+    scene(PAUSED, [held]),
+    scene(SHUTDOWN, [stale]),
   ];
   const game: ViewGame = {
     scale: { resize: () => undefined, setZoom: () => undefined },
     scene: {
       getScenes: (isActive: boolean) =>
-        scenes.filter((s) => !isActive || s.running),
+        scenes.filter((s) => !isActive || s.sys.settings.status === RUNNING),
     },
   };
-  return { game, hud, panelLine, menuTitle, stale };
+  return { game, hud, panelLine, menuTitle, asleep, held, stale };
 }
 
 describe("fitGame (FS-ZAJMH R5, R10, US9: text rasterised again when the render scale changes)", () => {
@@ -188,6 +202,15 @@ describe("fitGame (FS-ZAJMH R5, R10, US9: text rasterised again when the render 
     v.set({ width: 1280, height: 720, renderScale: 1.5, cssScale: 1.2 });
     expect(hud.setResolution).not.toHaveBeenCalled();
     expect(menuTitle.setResolution).not.toHaveBeenCalled();
+  });
+
+  it("should rasterise a sleeping or paused scene's text too, so it is crisp as it wakes or resumes (the UI scene, FS-TQZ5J R6)", () => {
+    const { game, asleep, held } = gameWithText();
+    const v = new Viewport();
+    fitGame(game, v);
+    v.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(asleep.setResolution).toHaveBeenCalledWith(2);
+    expect(held.setResolution).toHaveBeenCalledWith(2);
   });
 
   it("should pass over a stopped scene", () => {
