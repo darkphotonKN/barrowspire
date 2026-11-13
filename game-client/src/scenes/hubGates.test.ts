@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GateState } from "@/types/gameState";
 import {
+  DEV_GATE_LABELS,
   FIELD_IDS,
   FIELD_NAMES,
   fieldOf,
@@ -160,5 +161,39 @@ describe("signpostOf (FS-0XMCP §Requirements 18, 21)", () => {
 
   it("should fall back to the gate itself with no signpost to stand over", () => {
     expect(signpostOf(meadows, [])).toEqual(meadows.position);
+  });
+});
+
+describe("the endgame test run's gate (FS-BDRTJ §Change: Endgame test run, R20, R21, R23)", () => {
+  const room: GateState = {
+    entity_id: "dev-gate",
+    destination: "dev_test_room",
+    position: { x: 120, y: 900 },
+    range: 80,
+  };
+  const endgame: GateState = {
+    entity_id: "endgame-gate",
+    destination: "dev_endgame_run",
+    position: { x: 160, y: 720 },
+    range: 80,
+  };
+
+  it("should lead to no field: it starts a run, not an enter_field", () => {
+    expect(fieldOf(endgame)).toBeUndefined();
+  });
+
+  it.each(["development", "test", undefined])("should keep the gate under NODE_ENV %s", (env) => {
+    expect(gatesInThisBuild([spire, room, endgame], env)).toEqual([spire, room, endgame]);
+  });
+
+  it("should drop both dev gates, and only those, under production", () => {
+    expect(gatesInThisBuild([spire, room, endgame, forest], "production")).toEqual([spire, forest]);
+  });
+
+  it("should label each dev gate in plain words", () => {
+    expect(DEV_GATE_LABELS).toEqual({
+      dev_test_room: "Dev Test Room",
+      dev_endgame_run: "Endgame Test Run",
+    });
   });
 });

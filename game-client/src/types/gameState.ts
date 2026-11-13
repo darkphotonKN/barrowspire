@@ -257,6 +257,10 @@ export interface TrailState {
 
 export interface ProjectileState {
   entity_id: UUID;
+  /**
+   * What it is: `fireball`, `arrow`, `shadow_shot`, a Bone Archer's `bone_arrow` (a volley's too),
+   * a goblin's `thrown_dagger` and an ogre's `ogre_rock` (FS-C8VM7 §B R18), and any later kind.
+   */
   projectile_type: string;
   position: Position;
   velocity: { vx: number; vy: number };
@@ -268,8 +272,11 @@ export interface ProjectileState {
  */
 export interface GateState {
   entity_id: UUID;
-  /** `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). */
-  destination: "spire" | "forest" | "meadows" | "dev_test_room" | "hub";
+  /**
+   * `hub` is a field's entrance gate, the road back (FS-X2F2H §Requirements 3). `dev_endgame_run`
+   * starts a run, not a field visit (FS-BDRTJ §Change: Endgame test run, R19).
+   */
+  destination: "spire" | "forest" | "meadows" | "dev_test_room" | "dev_endgame_run" | "hub";
   position: Position;
   /** World px from `position` within which a player is at the gate. */
   range: number;
@@ -307,14 +314,69 @@ export type MonsterArchetype =
   | "zombie"
   | "ghost"
   // Gentle Meadows' one creature (FS-X2F2H R53): sent only in the Meadows field
-  | "boar";
+  | "boar"
+  // the Spire's tiered variants (FS-C8VM7 §A R3): sent only on run floors, by the floor's pool
+  | "ghast"
+  | "ravener"
+  | "ashen_archer"
+  | "wight_archer"
+  | "cave_troll"
+  | "blood_troll"
+  | "plague_thrall"
+  | "blightborn"
+  | "shade"
+  | "phantom"
+  | "banshee"
+  // a goblin variant spawns in one of two looks, blade or blade and shield (FS-C8VM7 §A R8)
+  | "goblin"
+  | "goblin_shield"
+  | "goblin_cutthroat"
+  | "goblin_cutthroat_shield"
+  | "goblin_reaver"
+  | "goblin_reaver_shield"
+  | "goblin_warchief"
+  | "goblin_warchief_shield"
+  | "ogre"
+  | "ogre_mauler"
+  | "ogre_tyrant"
+  | "dark_warrior"
+  | "dark_reaper";
 
 /**
  * What a monster is doing this tick. `attack` is the wind-up and the strike (a demon's slam).
  * `claw` is a demon's fire claw (FS-VHGE7 §B R24): no wind-up, reported for 0.4 s from the tick
  * it lands while the demon stands still.
  */
-export type MonsterAction = "idle" | "move" | "attack" | "claw" | "dead";
+export type MonsterAction = "idle" | "move" | "attack" | "claw" | "ability" | "dead";
+
+/** A monster ability's kind (FS-C8VM7 §B R11, R17). */
+export type MonsterAbilityKind =
+  | "pounce"
+  | "ground_slam"
+  | "burst"
+  | "wail"
+  | "cleave"
+  | "volley"
+  | "dagger"
+  | "rock";
+
+/**
+ * A monster's pending ability (FS-C8VM7 §B R17): sent while its area or cone is pending (its
+ * wind-up, a pounce's leap, a death burst's fuse), fixed where it will land. A shot ability sets
+ * only `kind` and `remaining`, its radius 0.
+ */
+export interface MonsterAbility {
+  kind: MonsterAbilityKind;
+  /** The area's centre, in world px. */
+  x: number;
+  y: number;
+  /** The area's radius, a cone's reach, in world px; 0 for a shot. */
+  radius: number;
+  /** A cone's full angle in degrees; 0 for a circle. */
+  arc: number;
+  /** Seconds until it lands. */
+  remaining: number;
+}
 
 /** One monster in a run's state broadcast (FS-77AB6 req 32). Absent or empty in the hub. */
 export interface MonsterState {
@@ -329,6 +391,8 @@ export interface MonsterState {
   /** The direction it faces: non-zero while it stands, winds up or lies dead. */
   facing: Position;
   action: MonsterAction;
+  /** Its ability's area or cone while one is pending, a dead Blightborn's burst included (FS-C8VM7 §B R17). */
+  ability?: MonsterAbility;
   current_health: number;
   max_health: number;
 }
@@ -394,6 +458,12 @@ export interface FloorMap {
   cell_size?: number;
   regions?: FloorRegion[];
   walls: WallState[];
+  /**
+   * Every archetype the floor's pool can spawn, a goblin variant both its looks (FS-C8VM7 §G R40,
+   * ADR-0081 Decision 2): never a boss, so it says nothing of the floor's place in the run. Absent
+   * from an older server, and from a floor with no pool.
+   */
+  enemy_pool?: string[];
 }
 
 /** Whether a `floor_map` payload is one: a run's floor with a size and its walls. */

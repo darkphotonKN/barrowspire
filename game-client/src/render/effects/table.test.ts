@@ -39,6 +39,9 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "demonClaw",
         // FS-B4SG9 §D R22: a hostile's bone arrow in flight
         "boneArrowTrail",
+        // FS-C8VM7 §F R38: a goblin's dagger and an ogre's rock in flight
+        "thrownDaggerTrail",
+        "ogreRockTrail",
         "hit",
         "deathDust",
         "escape",

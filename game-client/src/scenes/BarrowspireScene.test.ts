@@ -106,6 +106,7 @@ const { WORLD_THEMES, TOWER_BANDS } = await import("@/render/world/worldTheme");
 const { worldSeed } = await import("@/render/world/ground");
 const { BlackoutMask } = await import("@/render/world/blackoutMask");
 const await_targetFrame = await import("@/ui/targetFrame");
+const await_floorArt = await import("@/render/art/floorArt");
 const await_minimap = await import("@/ui/minimap");
 const await_minimapMode = await import("@/ui/minimapMode");
 const await_topRightColumn = await import("@/ui/topRightColumn");
@@ -901,15 +902,33 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
     shows("No stair climbs higher. Only the way out remains.", { ...floorState(2), stairs: [] });
   });
 
-  it("should let the new floor's switch and escape-door notices fire again", () => {
-    const { run, texts } = sceneOnStage();
-    const notices = () => texts().filter((t) => /unlocked|opened/i.test(String(t.content))).length;
+  // FS-XWHZP R16, R22, R23 (I-XWHZP-3): hope lines on a flip only; each floor's first broadcast is
+  // its baseline
+  it("should say the switch and the escape door as hope lines when they turn, never on a floor's first broadcast", () => {
+    const { run } = sceneOnStage();
+    const lore = run as unknown as { loreLines: { say(line: { text: string; tone: string }): void } };
+    const said = vi.spyOn(lore.loreLines, "say").mockImplementation(() => {});
+    const lines = () => said.mock.calls.map(([line]) => line);
+    const seal = { text: "The seal breaks. Somewhere, a door gives.", tone: "hope" };
+    const open = { text: "The way out stands open.", tone: "hope" };
+
     run.handleGameStateUpdate(floorState(1, { switchOn: true, doorOpen: true }));
-    expect(notices()).toBe(2);
+    expect(lines()).toEqual([]);
 
+    run.handleGameStateUpdate(floorState(2));
+    run.handleGameStateUpdate(floorState(2, { switchOn: true }));
+    expect(lines()).toEqual([seal]);
     run.handleGameStateUpdate(floorState(2, { switchOn: true, doorOpen: true }));
+    run.handleGameStateUpdate(floorState(2, { switchOn: true, doorOpen: true }));
+    expect(lines()).toEqual([seal, open]);
+  });
 
-    expect(notices()).toBe(4);
+  it("should raise no HUD notice for the switch or the door (FS-XWHZP R16)", () => {
+    const { run, texts } = sceneOnStage();
+    run.handleGameStateUpdate(floorState(1));
+    run.handleGameStateUpdate(floorState(1, { switchOn: true, doorOpen: true }));
+    expect(texts().filter((t) => /unlocked|opened/i.test(String(t.content)))).toHaveLength(0);
+    expect(texts().filter((t) => t.content === "The seal breaks. Somewhere, a door gives.")).toHaveLength(1);
   });
 
   it("should build a floor joined mid-run directly, with no transition", () => {
@@ -1196,6 +1215,83 @@ function onStage() {
   const players = () => sprites().filter((m) => m.args.length > 0);
   return { ...scene, sent, monsters, players };
 }
+
+// FS-C8VM7 §G R42-R43 (I-C8VM7-8): the scene's seam only. What is fetched and evicted for a
+// pool is FloorPoolArt's (floorArt.test.ts); how, onDemandArt's (phaser.test.ts).
+describe("BarrowspireScene a floor's pool art (FS-C8VM7 §G R42-R43, ADR-0081)", () => {
+  const { FloorPoolArt } = await_floorArt;
+  afterEach(() => {
+    vi.restoreAllMocks();
+    useGameStore.setState({ floorMap: null });
+  });
+
+  function poolStage() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const scene = sceneOnStage();
+    const run = scene.run as unknown as MapRun & { poolArt?: unknown; monsters: InstanceType<typeof MonsterRoster> };
+    const handle = (Object.getPrototypeOf(run) as FloorRun).handleGameStateUpdate.bind(run);
+    run.time = { delayedCall: vi.fn(), now: 0 };
+    const holding = new Set<string>();
+    const calls: string[] = [];
+    let monstersAtRelease = -1;
+    const art = {
+      prefetch: vi.fn((groups: readonly string[]) => {
+        calls.push(`prefetch ${groups.join(",")}`);
+        for (const group of groups) holding.add(group);
+      }),
+      release: vi.fn((groups: readonly string[]) => {
+        calls.push(`release ${groups.join(",")}`);
+        monstersAtRelease = run.monsters.size;
+        for (const group of groups) holding.delete(group);
+      }),
+      holding: () => [...holding],
+    };
+    run.poolArt = new FloorPoolArt(art, vi.fn());
+    run.subscribeFloorMap();
+    const pooled = (floor: number, enemy_pool?: string[]) =>
+      useGameStore.getState().receiveFloorMap({ ...mapOf(floorState(floor)), ...(enemy_pool ? { enemy_pool } : {}) });
+    return { run, handle, art, calls, holding, pooled, monstersAtRelease: () => monstersAtRelease };
+  }
+
+  it("should fetch a climb's pool as its map comes, and evict the last floor's groups once its monsters are gone", () => {
+    const { run, handle, calls, holding, pooled, monstersAtRelease } = poolStage();
+    pooled(1, ["ghoul", "shade"]);
+    handle(bare(floorState(1)));
+    expect(calls).toEqual(["prefetch shade"]);
+
+    // the climb's map, before the new floor's first snapshot: fetched at once, nothing evicted
+    pooled(2, ["ghast", "ogre"]);
+    expect(calls).toEqual(["prefetch shade", "prefetch ghast,ogre"]);
+    expect([...holding].sort()).toEqual(["ghast", "ogre", "shade"]);
+
+    handle(bare(floorState(2)));
+    expect(calls.at(-1)).toBe("release shade");
+    expect(monstersAtRelease()).toBe(0);
+    expect(run.monsters.size).toBeGreaterThan(0);
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("should neither fetch nor evict for a map without enemy_pool", () => {
+    const { handle, art, pooled, run } = poolStage();
+    pooled(1);
+    handle(bare(floorState(1)));
+    pooled(2);
+    handle(bare(floorState(2)));
+    expect(art.prefetch).not.toHaveBeenCalled();
+    expect(art.release).not.toHaveBeenCalled();
+    run.floorMapUnsubscribe?.();
+  });
+
+  it("should not refetch or evict for a re-sent map of the same floor (ADR-0060)", () => {
+    const { handle, calls, pooled, run } = poolStage();
+    pooled(2, ["ghast"]);
+    handle(bare(floorState(2)));
+    pooled(2, ["ghast"]);
+    handle(bare(floorState(2)));
+    expect(calls).toEqual(["prefetch ghast"]);
+    run.floorMapUnsubscribe?.();
+  });
+});
 
 describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
   afterEach(() => {
@@ -1546,11 +1642,12 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(watchButtons()).toHaveLength(0);
     });
 
-    it("should say the player escaped successfully once", () => {
+    // FS-XWHZP R16, R23, R24 (I-XWHZP-3): a hope line, once; a first broadcast says nothing
+    it("should walk the player out of the dark once, and not for an escape already on the first broadcast", () => {
       const { run, state, stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
       (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
-      const lines = stage.made.filter((m) => m.kind === "text" && /Aldric escaped successfully/.test(String(m.args[2])));
-      expect(lines).toHaveLength(1);
+      const lines = () => stage.made.filter((m) => m.kind === "text" && /out of the dark|escaped successfully/.test(String(m.args[2])));
+      expect(lines()).toHaveLength(0);
     });
 
     it("should forget the button on a restart, and the rebuilt run raises it again, not spectating", () => {
@@ -4481,10 +4578,13 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("fall-now");
     const before = option("fall-now")?.calls.length ?? 0;
 
+    const said = vi.spyOn((run as unknown as { loreLines: { say(line: object): void } }).loreLines, "say");
     run.fallRefused({ message: "You are not in a delve." });
 
     expect(run.fallPending).toBe(false);
     expect(labels()).toContain("You are not in a delve.");
+    // the barrow's refusal, as a lore line (FS-XWHZP R16)
+    expect(said).toHaveBeenCalledWith({ text: "You are not in a delve.", tone: "lore" });
     expect(option("fall-now")?.calls.slice(before)).not.toContain("destroy");
     pick("fall-now");
     expect(sentOf(ActionType.ForfeitRun)).toHaveLength(2);
@@ -7005,6 +7105,86 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
 // A floor-1 chest whose guards still stand is refused by the server: the coffer never opened (it
 // waits for the server), and the notice says only that it will not open (FS-KE075 §J R60).
+// FS-XWHZP R16, R19, R23, R24 (I-XWHZP-3): escapes and the server's one-shot as hope lines.
+describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (FS-XWHZP §E)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function speaking() {
+    const s = onStage();
+    const run = s.run as unknown as FloorRun & { loreLines: { say(line: { text: string; tone: string }): void } };
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    return { ...s, run, said, lines: () => said.mock.calls.map(([line]) => line) };
+  }
+
+  it("should walk each player out of the dark once, the player themself as you", () => {
+    const { run, lines, stage } = speaking();
+    run.handleGameStateUpdate(partyState());
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160, { escape: true })));
+    run.handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130, { escape: true }), player("ally", "Wenna", 160, { escape: true })),
+    );
+    run.handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130, { escape: true }), player("ally", "Wenna", 160, { escape: true })),
+    );
+
+    expect(lines()).toEqual([
+      { text: "Wenna walks out of the dark.", tone: "hope" },
+      { text: "You walk out of the dark.", tone: "hope" },
+    ]);
+    expect(stage.made.filter((m) => m.kind === "text" && /escaped successfully/.test(String(m.args[2])))).toHaveLength(0);
+  });
+
+  it("should replay no escape after a reconnect: the first broadcast is the baseline", () => {
+    const { run, lines } = speaking();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160, { escape: true })));
+    expect(lines()).toEqual([]);
+  });
+
+  it("should play the server's exit_door_unlocked as the switch's hope line, never its words", () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      showNotification(message: string, color: string): void;
+      loreLines: { say(line: object): void };
+    };
+    run.init({ sessionID: "run-a" });
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    run.connectToServer();
+
+    listeners.get("exit_door_unlocked")?.({ message: "Exit door unlocked! Run to escape!" });
+
+    expect(said).toHaveBeenCalledWith({ text: "The seal breaks. Somewhere, a door gives.", tone: "hope" });
+    expect(notified).not.toHaveBeenCalled();
+  });
+});
+
+// FS-XWHZP R15 (I-XWHZP-2): the lines belong to the floor they were said on.
+describe("BarrowspireScene lore lines on a floor change (FS-XWHZP R15)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should take the old floor's lore lines down when the party leaves it", () => {
+    const { run } = onStage();
+    const floor = run as unknown as { leaveFloor(): void; loreLines: { clear(): void } };
+    const cleared = vi.spyOn(floor.loreLines, "clear");
+
+    floor.leaveFloor();
+
+    expect(cleared).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -7024,29 +7204,63 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       showNotification(message: string, color: string): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
+      loreLines: { say(line: { text: string; tone: string }): void };
     };
     run.init({ sessionID: "run-a" });
     run.containerView = { entityId: null, close: vi.fn() };
     run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
     run.connectToServer();
-    return { run, notified, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+    return {
+      run,
+      notified,
+      said,
+      reply: (payload: unknown) => listeners.get("interact")?.(payload),
+      equip: (payload: unknown) => listeners.get("equip")?.(payload),
+    };
   }
 
-  it("should give up the reach and say it will not open", () => {
-    const { run, notified, reply } = connected();
+  // FS-XWHZP R16: the world's reply is a lore line, in the client's words, never a HUD notice
+  it("should give up the reach and say it will not open, as a lore line", () => {
+    const { run, notified, said, reply } = connected();
     reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
 
     expect(run.reaching).toBeUndefined();
-    expect(notified).toHaveBeenCalledTimes(1);
-    expect(notified.mock.calls[0][0]).toBe("It will not open.");
+    expect(said).toHaveBeenCalledTimes(1);
+    expect(said).toHaveBeenCalledWith({ text: "It will not open.", tone: "lore" });
+    expect(notified).not.toHaveBeenCalled();
   });
 
-  it("should give up the reach on a chest out of reach too", () => {
-    const { run, reply } = connected();
+  it("should give up the reach on a chest out of reach too, the server's words a lore line (FS-XWHZP R17)", () => {
+    const { run, said, notified, reply } = connected();
     reply({ success: false, message: "too far away to interact" });
 
     expect(run.reaching).toBeUndefined();
+    expect(said).toHaveBeenCalledWith({ text: "too far away to interact", tone: "lore" });
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should say the stair's wait and the tome's line as lore lines (FS-XWHZP R16)", () => {
+    const { said, notified, reply } = connected();
+    reply({ success: false, message: "the party has not gathered at the stairs", reason: "party_not_gathered", missing: 2 });
+    reply({ success: true, message: "", reason: "tome_taken" });
+    reply({ success: false, message: "burned", reason: "altar_burned" });
+
+    expect(said.mock.calls.map(([line]) => line)).toEqual([
+      { text: "The stair waits. 2 of your party are not yet with you.", tone: "lore" },
+      { text: "Wonder if I can burn it.", tone: "lore" },
+    ]);
+    expect(notified).not.toHaveBeenCalled();
+  });
+
+  it("should keep a refused equip a HUD notice: it is the interface's (FS-XWHZP R20)", () => {
+    const { said, notified, equip } = connected();
+    equip({ success: false, message: "You cannot wear that yet." });
+
+    expect(notified).toHaveBeenCalledTimes(1);
+    expect(notified.mock.calls[0][0]).toBe("You cannot wear that yet.");
+    expect(said).not.toHaveBeenCalled();
   });
 
   it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {

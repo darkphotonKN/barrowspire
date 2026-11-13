@@ -118,6 +118,7 @@ server state and sends intents. ✅
 - [x] Hub town props and dressing → FS-KYPQ9
 - [x] Skill and combat effects → FS-none
 - [x] Skill and combat effects in the world's art direction → FS-KYPQ9
+- [ ] Spire messages as lore lines → FS-XWHZP
 - [x] Custom cursors and entrance markers → FS-none
 - [x] Cursors and world indicators in the world's art direction → FS-KYPQ9
 - [x] Exterior run look → FS-2325V

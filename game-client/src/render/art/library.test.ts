@@ -231,3 +231,16 @@ describe("ArtLibrary.admit (FS-VHGE7 §F R47)", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+describe("ArtLibrary.forget (FS-C8VM7 §G R43)", () => {
+  it("should stop serving a sheet once its atlas is forgotten, and serve it again once re-admitted", () => {
+    const art = new ArtLibrary(manifest(), { warn: vi.fn() }, new Set(["props-0", "props-1"]));
+    expect(art.has("brazier")).toBe(true);
+
+    art.forget(["props-1"]);
+    expect(art.has("brazier")).toBe(false);
+
+    art.admit(["props-1"]);
+    expect(art.has("brazier")).toBe(true);
+  });
+});

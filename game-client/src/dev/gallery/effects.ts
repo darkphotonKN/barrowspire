@@ -22,7 +22,9 @@ import { EntranceMarker } from "@/render/effects/entrance";
 import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
 import { HitFeedback } from "@/render/effects/hit";
+import { LoreDust } from "@/render/effects/loreDust";
 import { addMist } from "@/render/effects/mist";
+import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
 import type {
@@ -35,10 +37,11 @@ import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
-import type { ItemState } from "@/types/gameState";
+import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
 import { itemShine } from "@/ui/itemShine";
+import { LoreLines, type LoreLine } from "@/ui/loreLine";
 import { placeCard } from "@/ui/placeCard";
 
 /** What a demo plays on: the gallery's one figure, on its floor, under the run's light. */
@@ -89,6 +92,38 @@ const FABLED_SAMPLE: ItemState = {
 const FABLED_ICON_SIDE = 64;
 const FABLED_ICON_OFFSET = { x: 90, y: -60 };
 
+/** A frame's step, in ms, for a demo that drives its own frames. */
+const FRAME_MS = 33;
+
+/**
+ * An ability's telegraph as a run draws it (FS-C8VM7 §F R36): its area at the figure's feet, the
+ * server's numbers for `windUpS`, filling as it winds; then the field goes and it lands in its
+ * impact. The demo drives the frames the roster would.
+ */
+function playTelegraph(
+  s: Stage,
+  ability: { kind: MonsterAbilityKind; radius: number; arc?: number; windUpS: number },
+): void {
+  const telegraphs = new AbilityTelegraphs(() => s.scene.add.graphics());
+  const facing = { x: s.aim.x - s.at.x, y: s.aim.y - s.at.y };
+  const { kind, radius, arc = 0, windUpS } = ability;
+  const listed = (remaining?: number) => [
+    {
+      entity_id: s.owner,
+      facing,
+      ...(remaining === undefined
+        ? {}
+        : { ability: { kind, x: s.at.x, y: s.at.y, radius, arc, remaining } }),
+    },
+  ];
+  telegraphs.sync(listed(windUpS));
+  const windMs = windUpS * 1000;
+  for (let t = FRAME_MS; t <= windMs + IMPACT_MS + FRAME_MS; t += FRAME_MS)
+    s.later(t, () => telegraphs.update(FRAME_MS));
+  s.later(windMs, () => telegraphs.sync(listed()));
+  s.later(windMs + IMPACT_MS + 2 * FRAME_MS, () => telegraphs.clear());
+}
+
 /**
  * The gallery's one arrival card, so a replay replaces the card still up as the game's next
  * arrival would (FS-PQ2TW R9), whichever leave either plays (§Change: Smoke R52). Drawn over the
@@ -114,6 +149,23 @@ function arrivalCardOn(s: Stage): ArrivalCard {
  */
 function playArrivalCard(s: Stage, leave: CardLeave): void {
   arrivalCardOn(s).play(placeCard({ world: "run", floor: 2, top: false }), { built: true }, leave);
+}
+
+/**
+ * The gallery's one lore line piece, so a replay queues behind the line still up as the game's
+ * next line would (FS-XWHZP §C, R26). Drawn over the gallery's own canvas, not the game's view.
+ */
+const loreLines = new WeakMap<Phaser.Scene, LoreLines>();
+
+function sayLore(s: Stage, line: LoreLine): void {
+  let lines = loreLines.get(s.scene);
+  if (!lines) {
+    const { width, height } = s.scene.scale;
+    const view = { width, height, centerX: width / 2, centerY: height / 2 };
+    lines = new LoreLines(s.scene, new LoreDust(s.scene, () => s.art), { view });
+    loreLines.set(s.scene, lines);
+  }
+  lines.say(line);
 }
 
 export const EFFECT_CARDS: EffectCard[] = [
@@ -234,6 +286,22 @@ export const EFFECT_CARDS: EffectCard[] = [
     name: "Hit tint",
     demo: (s) => new HitFeedback(s.scene).play(s.figure),
   },
+  // FS-XWHZP R26: a lore line in each tone, through the game's own piece
+  {
+    module: "loreDust",
+    name: "Lore line (lore)",
+    demo: (s) => sayLore(s, { text: "The stair waits for the whole party.", tone: "lore" }),
+  },
+  {
+    module: "loreDust",
+    name: "Lore line (dread)",
+    demo: (s) => sayLore(s, { text: "You hear a sound from hell", tone: "dread" }),
+  },
+  {
+    module: "loreDust",
+    name: "Lore line (hope)",
+    demo: (s) => sayLore(s, { text: "The seal breaks. Somewhere, a door gives.", tone: "hope" }),
+  },
   {
     module: "mist",
     name: "Forest mist",
@@ -241,6 +309,38 @@ export const EFFECT_CARDS: EffectCard[] = [
       const layer = addMist(s.scene, FOREST_LOOK.mist, 1);
       s.later(HOLD_MS, () => layer.destroy());
     },
+  },
+  // FS-C8VM7 §F R36, R39: each ability's telegraph and its impact, at the server's starting numbers
+  {
+    module: "monsterAbility",
+    name: "Pounce telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "pounce", radius: 60, windUpS: 0.8 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Ground slam telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "ground_slam", radius: 130, windUpS: 0.9 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Death burst telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "burst", radius: 110, windUpS: 0.8 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Wail telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "wail", radius: 180, windUpS: 0.7 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Cleave cone and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "cleave", radius: 110, arc: 120, windUpS: 0.8 }),
+  },
+  {
+    module: "ogreRock",
+    name: "Ogre rock (hostile)",
+    // the flight only: the throw is the ogre's attack clip (FS-C8VM7 §F R38)
+    demo: (s) => s.fly("ogre_rock"),
   },
   {
     module: "parry",
@@ -299,5 +399,11 @@ export const EFFECT_CARDS: EffectCard[] = [
       const smoke = new ChimneySmoke(s.fx, s.owner, s.at, CHIMNEY_LIFT);
       s.later(HOLD_MS, () => smoke.setVisible(false));
     },
+  },
+  {
+    module: "thrownDagger",
+    name: "Thrown dagger (hostile)",
+    // the flight only: the throw is the goblin's attack clip (FS-C8VM7 §F R38)
+    demo: (s) => s.fly("thrown_dagger"),
   },
 ];

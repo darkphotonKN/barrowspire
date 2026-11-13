@@ -12,6 +12,7 @@ export function phaserMonsterStage(scene: Phaser.Scene): MonsterStage {
     sprite: () => scene.add.sprite(0, 0, PLACEHOLDER_TEXTURE),
     text: (content, style) => scene.add.text(0, 0, content, style),
     graphics: () => scene.add.graphics(),
+    ground: () => scene.add.graphics(),
     renderScale: () => viewport.renderScale,
   };
 }
