@@ -36,3 +36,13 @@ export function scaled(g, s) {
 }
 
 export const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
+/** Lays a long object flat on the ground at a slight diagonal. */
+export const laid = (g, yaw = 0, s = 1) => {
+  g.rotation.set(-Math.PI / 2, 0, 0);
+  g.position.y = 0.04;
+  const w = new THREE.Group();
+  w.add(g);
+  w.rotation.y = yaw;
+  return scaled(w, s);
+};

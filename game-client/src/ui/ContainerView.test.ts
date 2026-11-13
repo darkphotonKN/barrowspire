@@ -53,47 +53,47 @@ describe("itemIcon", () => {
     [
       "an iron sword",
       item({ name: "Iron Sword", weapon_type: "sword", attack_power: 10 }),
-      "sword",
+      "sword_t1",
     ],
     [
       "an elven bow",
       item({ name: "Elven Bow", weapon_type: "bow", attack_power: 45 }),
-      "bow",
+      "bow_t1",
     ],
     [
       "a dagger",
       item({ name: "Grave Knife", weapon_type: "dagger", attack_power: 8 }),
-      "dagger",
+      "dagger_t1",
     ],
     [
       "a staff",
       item({ name: "Ash Staff", weapon_type: "staff", attack_power: 12 }),
-      "staff",
+      "staff_t1",
     ],
     [
       "a helm",
       item({ name: "Wooden Helm", armor_slot: "head", defense_rating: 15 }),
-      "helm",
+      "helm_t1",
     ],
     [
       "body armour",
       item({ name: "Leather Armor", armor_slot: "chest", defense_rating: 20 }),
-      "cuirass",
+      "cuirass_t1",
     ],
     [
       "gloves",
       item({ name: "Iron Gloves", armor_slot: "gloves", defense_rating: 6 }),
-      "gauntlets",
+      "gauntlets_t1",
     ],
     [
       "leggings",
       item({ name: "Chain Leggings", armor_slot: "legs", defense_rating: 30 }),
-      "greaves",
+      "greaves_t1",
     ],
     [
       "a ring slot",
       item({ name: "Band", armor_slot: "ring_1", defense_rating: 2 }),
-      "ring",
+      "ring_t1",
     ],
     [
       "a health potion",
@@ -117,17 +117,13 @@ describe("itemIcon", () => {
     ["a scroll by name", item({ name: "Attack buff scroll" }), "scroll"],
     ["coin by name", item({ name: "Grave-gold", quantity: 37 }), "coins"],
     ["a gem by name", item({ name: "Lich-glass Gem" }), "gem"],
-    ["a signet by name", item({ name: "Signet of the Spire" }), "ring"],
+    ["a signet by name", item({ name: "Signet of the Spire" }), "ring_t1"],
     ["a skull by name", item({ name: "Wight Skull" }), "skull"],
   ])("should map %s to its baked icon", (_label, it_, icon) => {
     expect(itemIcon(it_)).toBe(icon);
   });
 
   it.each([
-    [
-      "an axe (no axe icon is baked)",
-      item({ name: "Iron Axe", weapon_type: "axe", attack_power: 15 }),
-    ],
     [
       "a shield (no shield icon is baked)",
       item({ name: "Tower Shield", armor_slot: "shield", defense_rating: 50 }),
@@ -370,21 +366,21 @@ describe("itemAt", () => {
 describe("satchelIcon", () => {
   // The room's template ids match no catalogue row and its bands no catalogue name (FS-BDRTJ R11).
   it.each([
-    { name: "Blackiron Sword", item_type: "weapon", weapon_type: "sword", icon: "sword" },
-    { name: "Grave Seax", item_type: "weapon", weapon_type: "knife", icon: "dagger" },
-    { name: "Blackiron Mace", item_type: "weapon", weapon_type: "mace", icon: "generic" },
-    { name: "Partisan", item_type: "weapon", weapon_type: "spear", icon: "generic" },
-    { name: "Dane Axe", item_type: "weapon", weapon_type: "axe", icon: "generic" },
+    { name: "Blackiron Sword", item_type: "weapon", weapon_type: "sword", icon: "sword_t1" },
+    { name: "Grave Seax", item_type: "weapon", weapon_type: "knife", icon: "dagger_t1" },
+    { name: "Blackiron Mace", item_type: "weapon", weapon_type: "mace", icon: "mace_t1" },
+    { name: "Partisan", item_type: "weapon", weapon_type: "spear", icon: "spear_t1" },
+    { name: "Dane Axe", item_type: "weapon", weapon_type: "axe", icon: "axe_t1" },
     { name: "Blackiron Cestus", item_type: "weapon", weapon_type: "fist", icon: "generic" },
-    { name: "Scale Coif", item_type: "armor", armor_slot: "head", icon: "helm" },
-    { name: "Scale Tunic", item_type: "armor", armor_slot: "chest", icon: "cuirass" },
-    { name: "Scale Leggings", item_type: "armor", armor_slot: "legs", icon: "greaves" },
-    { name: "Scale Gauntlets", item_type: "armor", armor_slot: "gloves", icon: "gauntlets" },
-    { name: "Barrow-gold Band of Might", item_type: "ring", icon: "ring" },
-    { name: "Barrow-gold Band of Haste", item_type: "ring", icon: "ring" },
-    { name: "Barrow-gold Band of Wits", item_type: "ring", icon: "ring" },
-    { name: "Barrow-gold Band of Warding", item_type: "ring", icon: "ring" },
-    { name: "Lantern of the Drowned", item_type: "ring", icon: "ring" },
+    { name: "Scale Coif", item_type: "armor", armor_slot: "head", icon: "helm_t1" },
+    { name: "Scale Tunic", item_type: "armor", armor_slot: "chest", icon: "cuirass_t1" },
+    { name: "Scale Leggings", item_type: "armor", armor_slot: "legs", icon: "greaves_t1" },
+    { name: "Scale Gauntlets", item_type: "armor", armor_slot: "gloves", icon: "gauntlets_t1" },
+    { name: "Barrow-gold Band of Might", item_type: "ring", icon: "ring_t1" },
+    { name: "Barrow-gold Band of Haste", item_type: "ring", icon: "ring_t1" },
+    { name: "Barrow-gold Band of Wits", item_type: "ring", icon: "ring_t1" },
+    { name: "Barrow-gold Band of Warding", item_type: "ring", icon: "ring_t1" },
+    { name: "Lantern of the Drowned", item_type: "ring", icon: "ring_t1" },
   ])("should draw the dev test room's $name with the $icon icon", ({ icon, ...fields }) => {
     expect(satchelIcon(item(fields as Partial<ItemState> & { name: string }))).toBe(`icon_${icon}`);
   });
@@ -397,7 +393,7 @@ describe("satchelIcon", () => {
           affixes: [{ stat: "intelligence", tier: 0, value: 3 }],
         }),
       ),
-    ).toBe(iconSheet("ring"));
+    ).toBe(iconSheet("ring_t1"));
   });
 
   it("should draw any other item with its own icon", () => {
@@ -405,7 +401,7 @@ describe("satchelIcon", () => {
       satchelIcon(
         item({ name: "Iron Sword", weapon_type: "sword", attack_power: 10 }),
       ),
-    ).toBe(iconSheet("sword"));
+    ).toBe(iconSheet("sword_t1"));
     expect(
       satchelIcon(item({ name: "Health Potion", healing_amount: 50 })),
     ).toBe(iconSheet("potion_health"));
