@@ -12,7 +12,7 @@
  * pointer, where a small label names the icon and its key (R3, R5). The glyphs are drawn richer so
  * the row stops looking empty (FS-QHN87). The Inventory icon is the one exception: a bronze
  * knockout, a solid silhouette with its lines cut through to the world, in its own texture
- * (`KnockoutRucksack`; FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack), or
+ * (`Knockout`; FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack), or
  * the same rucksack in lines where the scene cannot make that texture.
  * Each icon's rect stays its press area (FS-J1672 R4). Drawn
  * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
@@ -25,7 +25,8 @@ import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { CornerLabel } from "./cornerLabel";
 import { GLYPH_LINE_W, drawEnvelopeLines } from "./MailboxEnvelope";
-import { KnockoutRucksack, drawRucksackLines } from "./knockoutRucksack";
+import { BRONZE, Knockout, bend, type Pt } from "./knockout";
+import { RUCKSACK, drawRucksackLines } from "./knockoutRucksack";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
@@ -83,12 +84,19 @@ export class HudCorner {
   private readonly icons: DrawnIcon[];
   private readonly label: CornerLabel;
   /** The Inventory icon, where the scene can draw it as a knockout. */
-  private readonly rucksack: KnockoutRucksack;
-  private readonly unwatch: () => void;
+  private readonly rucksack: Knockout;
 
   constructor(scene: Phaser.Scene, deps: HudCornerDeps) {
     this.label = new CornerLabel(scene);
-    this.rucksack = new KnockoutRucksack(scene, HUD_DEPTH);
+    // the rucksack's texture is drawn at the render scale, so a new one draws it again (R7)
+    this.rucksack = new Knockout({
+      scene,
+      depth: HUD_DEPTH,
+      picture: RUCKSACK,
+      ink: BRONZE,
+      name: "the Inventory rucksack",
+      lost: () => this.icons.filter((i) => i.spec.icon === "inventory").forEach((i) => this.draw(i)),
+    });
     this.icons = deps.icons.map((spec) => {
       const frame = cornerIconFrame(spec.icon, viewport);
       const graphics = scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
@@ -104,10 +112,6 @@ export class HudCorner {
       zone.on("pointerout", () => this.hover(drawn, false));
       this.draw(drawn);
       return drawn;
-    });
-    // the rucksack's texture is drawn at the render scale, so a new one draws it again (R7)
-    this.unwatch = viewport.onChange(() => {
-      for (const icon of this.icons) if (icon.spec.icon === "inventory") this.draw(icon);
     });
   }
 
@@ -135,7 +139,6 @@ export class HudCorner {
   }
 
   destroy(): void {
-    this.unwatch();
     this.rucksack.destroy();
     this.label.hide();
     for (const { graphics, zone } of this.icons) {
@@ -172,13 +175,11 @@ export class HudCorner {
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "inventory") {
-      if (!this.rucksack.show(f, icon.hovered, viewport.renderScale)) drawRucksackLines(g, cx, cy, ink, alpha);
+      if (!this.rucksack.show(f, icon.hovered)) drawRucksackLines(g, cx, cy, ink, alpha);
     } else if (icon.spec.icon === "character") drawCharacter(g, cx, cy + 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
 }
-
-type Pt = readonly [number, number];
 
 /** The gear (FS-QHN87 R3): its teeth's root and tip radii, and each tooth's half-width there. */
 const GEAR = { root: 11, tip: 15, rootHalf: 2.5, tipHalf: 1.5, teeth: 8 };
@@ -225,17 +226,6 @@ function strokeLine(g: Ink, points: readonly Pt[], closed = false): void {
   for (let i = 1; i < points.length; i++) g.lineTo(points[i][0], points[i][1]);
   if (closed) g.closePath();
   g.strokePath();
-}
-
-/** The quadratic from `a` through the pull of `c` to `b`, in `steps` points, `a` left out. */
-function bend(a: Pt, c: Pt, b: Pt, steps = 8): Pt[] {
-  const out: Pt[] = [];
-  for (let i = 1; i <= steps; i++) {
-    const t = i / steps;
-    const u = 1 - t;
-    out.push([u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]]);
-  }
-  return out;
 }
 
 // ── The bust (FS-3EBCA R3, as FS-QHN87's round 1 made it, the owner 2026-11-13: 「組隊跟角色雖然是斗篷
