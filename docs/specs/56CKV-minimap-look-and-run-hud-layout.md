@@ -952,3 +952,5 @@ E11. **Enlarged: the readout and the name on one line beside the button.** The r
 A name for the town other than "The Town" (FS-PQ2TW O1); new words for any place; the floor line's
 words; the minimap's look, sizes or modes; the target frame, notices and the queue line; any server
 change.
+
+## Change: Fullscreen in the OPTIONS panel → FS-T3DWX

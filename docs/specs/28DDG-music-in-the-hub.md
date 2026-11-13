@@ -636,3 +636,5 @@ stated them ("half the file's loudness", 0.5, the default's 0.3), and the criter
 | `MUSIC_MAX_GAIN` (level 5) | 0.5 | 0.3 |
 | gains for levels 0–5 | 0, 0.1, 0.2, 0.3, 0.4, 0.5 | 0, 0.06, 0.12, 0.18, 0.24, 0.3 |
 | the default level 3 plays at | 0.3 | 0.18 |
+
+## Change: Fullscreen in the OPTIONS panel → FS-T3DWX
