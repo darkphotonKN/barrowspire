@@ -843,3 +843,29 @@ W11. **The scenes only say entered, left, and pass the music.** BarrowspireScene
 - The loop marker, unless the listening check needs it.
 - The OPTIONS panel's UI, the ESC menus' rows, `gameAudio.ts`, the game config, PreloadScene.
 - Any server, proto or gateway change.
+
+### Tunes: the tower's ceiling at 1.0 (2026-11-14)
+
+A tune of W5's named value (`Tunes FS-28DDG`), from the owner's listening check (I-28DDG-8). He
+could not hear the tower track at the shared cap: trim 1.0 under `MUSIC_MAX_GAIN` 0.3 played it at
+0.18 by default, about 14 dB under the village's file (−27.3 vs −12.9 dBFS RMS). He chose:
+
+> 「塔預設上限是1 也就是100%」
+
+The tower's ceiling is 1, that is 100% of the file.
+
+W5's per-track constant is carried as each track's **ceiling** (`maxGain`, its level 5's gain)
+rather than a factor on the shared cap's gain; the two are the same number seen from either
+side (ceiling = `MUSIC_MAX_GAIN` × trim), so the rule reads gain = ceiling × level / 5. The trim
+is removed. The one shared Music level still drives both tracks, and the fades, ramps, stored
+setting and panel are unchanged. The village keeps 0.3, still temporary on C9's terms. With the
+tower's ceiling at 1.0 no level's gain passes 1, so the Edge States' unclamped-gain caveat does
+not arise. W5's "both 1.0" and the criteria under *The module* that state trims read with these
+values.
+
+| Value | Was | Now |
+|---|---|---|
+| tower ceiling (level 5) | 0.3 (trim 1.0 × 0.3) | 1.0 |
+| tower gains for levels 0–5 | 0, 0.06, 0.12, 0.18, 0.24, 0.3 | 0, 0.2, 0.4, 0.6, 0.8, 1.0 |
+| tower at the default level 3 | 0.18 | 0.6 |
+| village ceiling | 0.3 (trim 1.0 × 0.3) | 0.3 (`MUSIC_MAX_GAIN`), unchanged |

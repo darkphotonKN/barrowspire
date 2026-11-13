@@ -14,6 +14,7 @@ import type { WorldType } from "@/assets/types/client";
 import type { SceneEnd } from "@/scenes/sceneEnd";
 import {
   clampMusicLevel,
+  MUSIC_MAX_GAIN,
   musicGain,
   readMusicLevel,
   rememberMusicLevel,
@@ -26,26 +27,30 @@ export interface MusicTrack {
   key: string;
   /** Its URLs, in the order Phaser tries them: the first the device can play is loaded. */
   urls: string[];
-  /** Its own factor on the shared level's gain, so one constant balances a file's loudness (W5). */
-  trim: number;
+  /**
+   * Its own ceiling: the top level's gain, the share of the file's loudness its level 5 plays at,
+   * so one constant balances a file's loudness under the shared level (W5; Tunes FS-28DDG).
+   */
+  maxGain: number;
 }
 
-/** The town's: the owner's mp3 alone (R6). */
+/** The town's: the owner's mp3 alone (R6), under the shared, temporary cap of 0.3 (C9). */
 export const VILLAGE_TRACK: MusicTrack = {
   key: "music:village",
   urls: ["/audio/music/village.mp3"],
-  trim: 1,
+  maxGain: MUSIC_MAX_GAIN,
 };
 
 /**
  * The tower's, on every floor of a run: m4a first, then the owner's ogg, as the effects load
- * (W8; FS-WDM0X S21). Trim 1.0 until the owner's listening check sets it: the file is about 14 dB
- * quieter than the village's (§ Change Facts).
+ * (W8; FS-WDM0X S21). Its ceiling is the file's full loudness, 0.2 a level and 0.6 at the default:
+ * the file is about 14 dB quieter than the village's (§ Change Facts), and the owner could not hear
+ * it at the shared 0.3 (2026-11-14 listening check, I-28DDG-8; Tunes FS-28DDG).
  */
 export const TOWER_TRACK: MusicTrack = {
   key: "music:tower",
   urls: ["/audio/music/tower.m4a", "/audio/music/tower.ogg"],
-  trim: 1,
+  maxGain: 1,
 };
 
 /** Which track each world plays; a field plays none (W1). */
@@ -129,11 +134,11 @@ export class WorldMusic {
   private ramp?: Ramp;
   private stopStepping?: () => void;
 
-  /** `trim` is the track's own (W5); the level and its store are shared by every world. */
+  /** `maxGain` is the track's own ceiling (W5); the level and its store are shared by every world. */
   constructor(
     private readonly stage: MusicStage,
     private readonly store: MusicSettingStore,
-    private readonly trim: number = 1,
+    private readonly maxGain: number = MUSIC_MAX_GAIN,
   ) {}
 
   /** The level, as the Options panel's Music row reads it (C5). */
@@ -220,9 +225,9 @@ export class WorldMusic {
     this.rampTo("out", MUSIC_FADE_OUT_MS, true);
   }
 
-  /** The gain of the level as it stands, at the track's trim (C9, W5). */
+  /** The gain of the level as it stands, under the track's ceiling (C9, W5). */
   private target(): number {
-    return musicGain(this.current) * this.trim;
+    return musicGain(this.current, this.maxGain);
   }
 
   /** From the volume it has now, so a fade cut short is turned around where it stands (R4). */

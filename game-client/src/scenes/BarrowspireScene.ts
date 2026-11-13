@@ -3285,7 +3285,7 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private enterMusic(): void {
     const track = worldTrack("run");
-    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.trim);
+    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.maxGain);
     this.music.enter();
   }
 

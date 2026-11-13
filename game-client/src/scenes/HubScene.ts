@@ -1008,7 +1008,7 @@ export class HubScene extends Phaser.Scene {
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
   private enterMusic(): void {
     const track = worldTrack("hub");
-    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.trim);
+    this.music ??= new WorldMusic(sceneMusicStage(this, track), browserMusicStore, track.maxGain);
     this.music.enter();
   }
 

@@ -46,3 +46,17 @@ FS-28DDG §Change: The tower's music on every floor of a run: the listening-chec
 ## Files it expects to touch
 
 - This issue file (ticks, status). On a pass, `spec-update` flips the section to shipped. No code.
+
+## Findings
+
+- **2026-11-14, loudness (Nick, listening):** he could not hear the tower's music. Both tracks
+  played under the shared `MUSIC_MAX_GAIN` 0.3 at trim 1, so 0.18 at the default level, and the
+  tower file is about 14 dB quieter than the village's (−27.3 vs −12.9 dBFS RMS). Offered the
+  options, he chose: 「塔預設上限是1 也就是100%」 — the tower's ceiling is 1, that is 100% of the
+  file. Tuned (`Tunes FS-28DDG`): each world track now carries its own ceiling (`maxGain`) in
+  place of the trim, gain = `maxGain` × level / 5 under the one shared Music level. The tower's
+  is 1.0 (steps 0, 0.2, 0.4, 0.6, 0.8, 1.0; default level 3 plays at 0.6); the village's stays
+  `MUSIC_MAX_GAIN` 0.3, still temporary (steps and default 0.18 unchanged). The trim is gone.
+  Fades, ramps, the stored setting and the panel are unchanged. Recorded as a dated Tunes note
+  under FS-28DDG § Change: The tower's music on every floor of a run. The rest of this check
+  still awaits the owner's next listen.
