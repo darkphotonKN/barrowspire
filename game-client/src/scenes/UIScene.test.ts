@@ -379,3 +379,95 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     expect(labels.find((l) => !l.destroyed)!.resolution).toBe(2);
   });
 });
+
+// FS-TQZ5J Amendment A1 (I-TQZ5J-6): the UI scene's pointer beside the worlds', wired to Phaser's own
+// scene-wide events on its input. The rules are uiScenePointer.ts's; the harness proves them against
+// real Phaser 4.2.1.
+describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", () => {
+  /** The UI scene on its game, its input and cameras stand-ins, a world reported that hears moves. */
+  function created() {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const heard: string[] = [];
+    bridge.report({
+      world: "run",
+      windows: () => ({ menu: false, letter: false, party: false, inventory: false, character: false }),
+      blockers: () => ({ dialogue: false }),
+      answer: () => {},
+      hearMove: (_pointer, onUi) => void heard.push(onUi ? "over the UI" : "off it"),
+    });
+    const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    const pointer = { x: 900, y: 680, isDown: false, event: {} as object };
+    const input = Object.assign(new EventEmitter(), { manager: { pointers: [pointer] } });
+    const cameras = { cameras: [{ inputEnabled: true }] };
+    // the game's text field inside the frame, holding focus
+    const field = { blurred: false, blur: () => void (field.blurred = true) };
+    const holder = { contains: (el: unknown) => el === field };
+    const body = {};
+    vi.stubGlobal("document", { activeElement: field, body, documentElement: {} });
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      add: any,
+      input,
+      cameras,
+      game: { canvas: { parentElement: holder } },
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    return { scene, input, cameras, pointer, field, heard };
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("should take its cameras out of the hit test for a press begun in the world, and put them back as it ends (R25)", () => {
+    const { input, cameras, pointer } = created();
+
+    pointer.isDown = true;
+    input.emit("pointerdown", pointer, []);
+    expect(cameras.cameras[0].inputEnabled).toBe(false);
+
+    pointer.isDown = false;
+    input.emit("pointerup", pointer, []);
+    expect(cameras.cameras[0].inputEnabled).toBe(true);
+
+    pointer.isDown = true;
+    input.emit("pointerdown", pointer, []);
+    pointer.isDown = false;
+    input.emit("pointerupoutside", pointer);
+    expect(cameras.cameras[0].inputEnabled).toBe(true);
+  });
+
+  it("should put them back on a frame with no button down", () => {
+    const { scene, input, cameras, pointer } = created();
+    pointer.isDown = true;
+    input.emit("pointerdown", pointer, []);
+    pointer.isDown = false;
+
+    scene.update();
+
+    expect(cameras.cameras[0].inputEnabled).toBe(true);
+  });
+
+  it("should let go of the game's focused text field for a press on one of its pieces (R26)", () => {
+    const { input, pointer, field } = created();
+
+    input.emit("pointerdown", pointer, [{ name: "the Party icon" }]);
+
+    expect(field.blurred).toBe(true);
+  });
+
+  it("should hand the reported world a move over one of its pieces, and one leaving it (R27)", () => {
+    const { input, pointer, heard } = created();
+
+    input.emit("pointermove", pointer, [{ name: "the Party icon" }]);
+    pointer.event = {};
+    input.emit("pointermove", pointer, []);
+    input.emit("pointerout", pointer, [{ name: "the Party icon" }]);
+
+    expect(heard).toEqual(["over the UI", "off it"]);
+  });
+});

@@ -35,6 +35,7 @@ function recording(): UiBridge & { heard: string[] } {
     play: (effect) => void heard.push(`play ${effect}`),
     lendSounds: () => {},
     request: (request) => void heard.push(`request ${request.kind}`),
+    moved: (_pointer, onUi) => void heard.push(`moved ${onUi ? "over the UI" : "off it"}`),
     onWorld: () => () => {},
   };
 }
@@ -250,5 +251,60 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
     answer({ kind: "toggleMenu" });
 
     expect(done).toEqual(["inventory", "party", "menu"]);
+  });
+});
+
+// FS-TQZ5J Amendment A1 R27: a move the UI scene took still reaches the world reported, through the
+// world's own input pass (uiScenePointer.ts), over nothing of the world's while over a UI piece.
+describe("a move the UI scene took, heard by the world reported (FS-TQZ5J A1 R27)", () => {
+  /** A world scene as reportWorld reaches it: its registry, events, and its input's own pass and cameras. */
+  function worldScene(bridge: UiBridge) {
+    const scene = {
+      registry: registry(),
+      events: new EventEmitter(),
+      passes: [] as string[],
+      cameras: { cameras: [{ inputEnabled: true }] },
+      input: {
+        update(type: number, pointers: object[]) {
+          scene.passes.push(`pass ${type} x${pointers.length} cameras ${scene.cameras.cameras[0].inputEnabled}`);
+          return false;
+        },
+      },
+    };
+    lendUiBridge(scene.registry, bridge);
+    return scene;
+  }
+  const pointer = { x: 900, y: 680, event: {}, camera: null };
+
+  it("should run it through the reported world's own input pass, its cameras out over a UI piece", () => {
+    const bridge = new GameUiBridge();
+    const scene = worldScene(bridge);
+    reportWorld(scene, "run", side());
+
+    bridge.moved(pointer, true);
+    bridge.moved(pointer, false);
+
+    expect(scene.passes).toEqual(["pass 1 x1 cameras false", "pass 1 x1 cameras true"]);
+  });
+
+  it("should hand it to no world once it has left, nor before one is reported", () => {
+    const bridge = new GameUiBridge();
+    const scene = worldScene(bridge);
+
+    bridge.moved(pointer, true);
+    reportWorld(scene, "field", side());
+    scene.events.emit("shutdown");
+    bridge.moved(pointer, true);
+
+    expect(scene.passes).toEqual([]);
+  });
+
+  it("should hand it to a world that reported without an input (a stand-in) as nothing at all", () => {
+    const bridge = new GameUiBridge();
+    const scene = { registry: registry(), events: new EventEmitter() };
+    lendUiBridge(scene.registry, bridge);
+    reportWorld(scene, "hub", side());
+
+    expect(() => bridge.moved(pointer, true)).not.toThrow();
   });
 });

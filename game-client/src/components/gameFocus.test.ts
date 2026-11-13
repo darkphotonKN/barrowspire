@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { EventEmitter } from "eventemitter3";
 import { describe, expect, it } from "vitest";
-import { keepTab, takeFocusOnPress } from "./gameFocus";
+import { keepTab, letGoOfGameField, takeFocusOnPress } from "./gameFocus";
 
 // Tab on /game moved the browser's focus off the game onto the page's buttons: the header's links,
 // the user menu, the fullscreen button (reported 2026-11-12). Only the run captured Tab, and
@@ -236,5 +236,42 @@ describe("takeFocusOnPress: a press on the game gives the keyboard back to it (r
     pressOn(holder);
 
     expect(link.blurred).toBe(false);
+  });
+});
+
+// A press on the UI scene never reaches the world's scene-wide pointerdown (FS-TQZ5J R7), where the
+// chat input's and the party invite field's owners let go of them for a press off their own panel:
+// pressing Party left the chat focused (I-TQZ5J-3, the harness). The UI scene lets go of them itself.
+describe("letGoOfGameField: a press the UI scene takes lets go of the game's own text field (FS-TQZ5J A1 R26)", () => {
+  it("should let go of the chat input or the party invite field holding focus inside the game", () => {
+    const doc = pageWith();
+    const chatField = control(doc);
+    doc.activeElement = chatField;
+
+    letGoOfGameField(asHolder(holderOf([chatField])), asDoc(doc));
+
+    expect(chatField.blurred).toBe(true);
+    expect(doc.activeElement).toBe(doc.body);
+  });
+
+  it("should leave a page control alone: the frame's own press listener lets go of that (takeFocusOnPress)", () => {
+    const doc = pageWith();
+    const link = control(doc);
+    doc.activeElement = link;
+
+    letGoOfGameField(asHolder(holderOf([])), asDoc(doc));
+
+    expect(link.blurred).toBe(false);
+  });
+
+  it("should do nothing while the game has the keyboard, or with no holder (no canvas yet)", () => {
+    const doc = pageWith();
+    expect(() => letGoOfGameField(asHolder(holderOf([doc.body])), asDoc(doc))).not.toThrow();
+
+    const chatField = control(doc);
+    doc.activeElement = chatField;
+    letGoOfGameField(null, asDoc(doc));
+
+    expect(chatField.blurred).toBe(false);
   });
 });
