@@ -628,21 +628,20 @@ M15. **A dialogue option says its sound.** `DialogueOption` gains an optional `s
      the pointer or its key. The town marks the door's three ways `"confirm"` and a resident's
      *Leave* `"cancel"` (it only closes). *Derived.*
 M16. **`notify`** and **`notify_important`**, as a notice is drawn:
-     - `notify_important`: a notice relaying the server's refusal or error: the queue's, the
-       Spire's and the fields' refusals said in passing, *Leave the queue*'s and *Change
-       character*'s errors (town, field); a gear change the server refused (town); an equip
-       refused, an interact refused or waiting ("The stair waits…", "It will not open.", "too far
-       away"), a fall refused (run).
-     - `notify`: every other notice: the client's own (a full bag on a pickup or an unequip, a
-       locked or busy item, a full stash), the pickup refusals whoever says them (a pile held for
-       its killer, said by the client or the server, field and run: the charter's "pickup
-       notices"), and the run's news (the switch thrown, the escape door open, someone escaped,
-       `exit_door_unlocked`, an interact success's words).
+     - `notify_important`: a notice relaying the server turning down a move between worlds or out
+       of the session: the Spire's and the queue's refusals said in passing (*Descend alone*,
+       *Wait for company*, a match called off), *Leave the queue*'s error, a field gate refused
+       (town); *Change character*'s error (town, field); leaving the field refused ("You have
+       fallen…") (field); a fall refused (run).
+     - `notify`: every other notice: the item-level ones, whoever says them (a full bag on a
+       pickup or an unequip, a locked or busy item, a full stash, a gear change or an equip
+       refused, a pile held for its killer, an interact refused or waiting: "It will not open.",
+       "The stair waits…", "too far away"), and the run's news (the switch thrown, the escape door
+       open, someone escaped, `exit_door_unlocked`, an interact success's words).
      - `notify` also plays as the town's envelope glows for a newer letter (town).
 
-     `Notice` gains an optional `important` (plain data); the worlds' notice ports take it as a
-     second argument (`HubGear`'s). A notice said while no world is reported is not drawn and plays
-     nothing.
+     `Notice` gains an optional `important` (plain data), said by the world at each M16 call site.
+     A notice said while no world is reported is not drawn and plays nothing.
      *Derived* from the charter's "server-sent warning notices" (see *Defaults that met the code*).
 
 ### Pass 2 (recorded, not built)
@@ -666,9 +665,11 @@ M16. **`notify`** and **`notify_important`**, as a notice is drawn:
    (`settings_close`). It keeps `settings_close`, the charter's rule for closing the whole menu.
 5. No "pickup" notice exists: the pickup notices are refusals. A full bag and a pile held for its
    killer play `notify` whoever says them (M16), so the same words never chime two ways.
-6. No server "system warning" exists as a screen notice. `notify_important` goes to the notices
-   that relay the server's refusals and errors (M16), the nearest reading of "server-sent warning
-   notices". The chat's server notices (`chat_notice`) are chat's, pass 2.
+6. No server "system warning" exists as a screen notice. `notify_important` goes to the server's
+   refusals of a move between worlds or out of the session (M16), the nearest reading of
+   "server-sent warning notices": rare and weighty. The item-level refusals (an equip, an
+   interact, "too far away") come often and play `notify`. The chat's server notices
+   (`chat_notice`) are chat's, pass 2.
 7. The main menu's delete confirm is the browser's own `confirm()`, so its look and its × are the
    browser's; Cancel and the browser's Esc both answer Cancel.
 8. The main menu has no UI scene, so it plays through a player of its own on the game's one sound

@@ -52,12 +52,13 @@ effects level, never before the audio unlocks, and never two for one press (M2).
 | `dialog_confirm_heavy` | Fall confirm *Fall* | pressed, or 1 / Enter | R |
 | `dialog_confirm_heavy` | delete-character confirm | answered OK | MM |
 | `notify` | the town's envelope | glows for a letter newer than the player last saw (`mail_arrived`, or entering the town with one waiting) | T |
-| `notify` | notices, the client's own | a full bag (a pickup or an unequip), a locked or busy item, a full stash | T F R |
-| `notify` | notices, pickup refusals | a pile held for its killer (said by the client or the server) | F R |
+| `notify` | notices, item-level | a full bag (a pickup or an unequip), a locked or busy item, a full stash, a gear change refused | T |
+| `notify` | notices, item-level | a full bag, a pile held for its killer (said by the client or the server) | F |
+| `notify` | notices, item-level | a full bag, an equip refused, an interact refused or waiting ("It will not open.", "The stair waits…", "too far away to interact", a pile held for its killer) | R |
 | `notify` | notices, the run's news | the switch thrown ("Exit door unlocked!"), the escape door open, someone escaped, the server's `exit_door_unlocked`, an interact success's words | R |
-| `notify_important` | notices relaying the server's refusal or error | the Spire's/queue's refusals in passing, *Leave the queue*'s and *Change character*'s errors, a field gate refused, a gear change refused | T |
-| `notify_important` | notices relaying the server's refusal or error | *Change character*'s error, leaving the field refused ("You have fallen…") | F |
-| `notify_important` | notices relaying the server's refusal or error | an equip refused, an interact refused or waiting ("The stair waits…", "It will not open.", "too far away to interact"), a fall refused | R |
+| `notify_important` | notices: the server turning down a move between worlds | the Spire's and the queue's refusals in passing (*Descend alone*, *Wait for company*, a match called off), *Leave the queue*'s error, a field gate refused, *Change character*'s error | T |
+| `notify_important` | notices: the server turning down a move between worlds | *Change character*'s error, leaving the field refused ("You have fallen…") | F |
+| `notify_important` | notices: the server turning down a move between worlds | a fall refused | R |
 | `menu_tab` | none in pass 1 | (pass 2: the chat's channel tabs) | |
 | `menu_dropdown_open` | none in pass 1 | (pass 2: the chat's channel picker opens) | |
 | `menu_dropdown_close` | none in pass 1 | (pass 2: the chat's channel picker closes) | |
