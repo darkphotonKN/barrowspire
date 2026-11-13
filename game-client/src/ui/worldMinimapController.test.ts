@@ -429,28 +429,29 @@ describe("WorldMinimapController's map name (FS-56CKV §Change: Map name)", () =
   it.each([
     [1080, null, { x: 1066 - 74, y: 14 }],
     [1280, null, { x: 1266 - 74, y: 14 }],
-    [1080, "enlarged", { x: 740 - 74, y: 13 }],
-    [1280, "enlarged", { x: 940 - 74, y: 13 }],
+    [1080, "enlarged", { x: 1066 - 74, y: 14 }],
+    [1280, "enlarged", { x: 1266 - 74, y: 14 }],
     [1080, "overlay", { x: 1055 - 74, y: 7 }],
     [1280, "overlay", { x: 1255 - 74, y: 7 }],
-  ])("should stand it at width %i, kept mode %s: inside the map's top-right, left of the map enlarged, left of the icon in the overlay (E3–E5; FS-T3DWX G3, G4)", (width, held, at) => {
+  ])("should stand it at width %i, kept mode %s: inside the map's top-right, normal or enlarged, left of the icon in the overlay (E3, E5; §Change: The enlarged map keeps its labels inside, F1; FS-T3DWX G4)", (width, held, at) => {
     viewport.set({ width, height: 720, renderScale: 1 });
     // the stand-in text is 74 × 15
     const { text } = withName(held);
     expect(text()).toMatchObject({ ...at, visible: true });
   });
 
-  it("should move it with the mode on M (E3–E5)", () => {
+  it("should move it with the mode on M (E3, E5, F1)", () => {
     const { minimap, text } = withName();
     minimap.cycle();
-    expect(text()).toMatchObject({ x: 740 - 74, y: 13 });
+    expect(text()).toMatchObject({ x: 1066 - 74, y: 14 });
     minimap.cycle();
     expect(text()).toMatchObject({ x: 1055 - 74, y: 7 });
   });
 
   it("should give way where its plate meets what the scene hands it, and show again once that goes (E7)", () => {
     const { minimap, text } = withName("enlarged");
-    minimap.giveWay([{ x: 600, y: 20, width: 120, height: 17 }]);
+    // laid over the name inside the enlarged map's top-right (F4)
+    minimap.giveWay([{ x: 1000, y: 20, width: 120, height: 17 }]);
     expect(text()!.visible).toBe(false);
     minimap.giveWay([]);
     expect(text()!.visible).toBe(true);

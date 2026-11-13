@@ -978,7 +978,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private escapedCountText?: Phaser.GameObjects.Text;
   /** The dev position readout (FS-56CKV §C); none in a production build. */
   private positionReadout?: Phaser.GameObjects.Text;
-  /** Where the readout stands now, and what at the top centre it gives way to (FS-56CKV §Change: Map name, E11). */
+  /** Where the readout stands now, and what at the top centre it gives way to (FS-56CKV §Change: Map name, E7; F4). */
   private readoutPlace?: PositionReadoutPlace;
   private readoutCovers: readonly (Rect | null | undefined)[] = [];
   /**
@@ -4137,8 +4137,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * minimap at the top when one is shown, the floor indicator under it, the escaped count under
    * that; where no minimap is shown, or the floor indicator has no label or the map name already
    * names the floor (§Change: Map name, E9), the rest closes up. The dev readout goes with it: in
-   * the normal map's bottom-right, left of the enlarged map's name, under the column's last line
-   * in the overlay and with no map (§C.18; §Change: Map name, E8, E11). The minimap, normal or
+   * the map's bottom-right, normal or enlarged, under the column's last line in the overlay and with
+   * no map (§C.18; §Change: Map name, E8; §Change: The enlarged map keeps its labels inside, F2). The minimap, normal or
    * enlarged, stands in the very corner; with the overlay up the map mode icon takes the corner and
    * the column starts under its row, and with no minimap the column starts in the corner (FS-T3DWX
    * §Change: The top-right HUD fills the button's spot). The map mode icon goes with the map, or
@@ -4162,21 +4162,14 @@ export class BarrowspireScene extends Phaser.Scene {
     this.dungeon?.mapName?.place(column.name);
     floor?.setX(column.floor.x).setY(column.floor.y);
     this.escapedCountText?.setX(column.escaped.x).setY(column.escaped.y);
-    // in the normal map's bottom-right, left of the enlarged map's name, else under the column (E8, E11)
-    const readout = positionReadoutPlace(
-      {
-        minimap: column.minimap,
-        enlarged: minimap?.mode === "enlarged",
-        name: this.dungeon?.mapName?.box ?? null,
-        column: { right: column.escaped.x, bottom: column.bottom },
-      },
-    );
+    // in the map's bottom-right, normal or enlarged, else under the column (E8, F2)
+    const readout = positionReadoutPlace({ minimap: column.minimap, column: { right: column.escaped.x, bottom: column.bottom } });
     this.readoutPlace = readout;
     this.positionReadout?.setOrigin(readout.origin.x, readout.origin.y).setPosition(readout.x, readout.y);
     this.showReadout();
   }
 
-  /** The readout shown unless its plate meets what stands at the top centre now (§Change: Map name, E11). */
+  /** The readout shown unless its plate meets what stands at the top centre now (as the name's E7; F4). */
   private showReadout(): void {
     const text = this.positionReadout;
     if (!text || !this.readoutPlace) return;
@@ -5207,8 +5200,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     const covered = this.spectateHud !== undefined || this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
-    // the map name beside the enlarged map gives way to the frame where they meet (FS-56CKV §Change:
-    // Map name, E7), and the readout left of it too (E11)
+    // the map name and the readout give way to the frame where they meet (FS-56CKV §Change: Map
+    // name, E7); inside the map, normal or enlarged, it never reaches them today (F4)
     const covers = [this.targetFrame.shownRect()];
     this.dungeon?.mapName?.giveWay(covers);
     this.readoutCovers = covers;

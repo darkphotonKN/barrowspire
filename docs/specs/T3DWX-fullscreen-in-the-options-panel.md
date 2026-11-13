@@ -314,3 +314,5 @@ G7. **Docs.** The design guideline's map section and `CONTEXT.md` (*Map mode ico
 - Any size, colour or wording change in the corner.
 - The target frame, the notices, the queue line, the ability card and the gear overlay's own
   layout.
+
+## Change: The enlarged map keeps its labels inside → FS-56CKV

@@ -87,8 +87,8 @@ export class WorldMinimapController {
    * In the top-right corner, right-aligned on its x (§G.35): normal or enlarged in the very corner;
    * in overlay mode the corner holds the map mode icon and the name at its left (FS-T3DWX G2–G4).
    * Nothing stands under it (§G.36). The map mode icon in the map's bottom-left, or in the corner
-   * (§Change: Map mode icon, D2, D3); the map name in the normal map's top-right, or left of the
-   * enlarged map or of the icon (§Change: Map name, E3–E5).
+   * (§Change: Map mode icon, D2, D3); the map name in the map's top-right, normal or enlarged, or
+   * left of the icon (§Change: Map name, E3, E5; §Change: The enlarged map keeps its labels inside, F1).
    */
   place(): void {
     const corner = topRightCorner(viewport, cornerMinimap(this.map));

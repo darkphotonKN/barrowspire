@@ -11,6 +11,7 @@ import {
   readoutGivesWay,
   showsPositionReadout,
 } from "./positionReadout";
+import { TARGET_BOSS_FRAME, TARGET_FRAME, targetFrameRect } from "./targetFrame";
 import { topRightCorner } from "./topRightColumn";
 
 describe("showsPositionReadout", () => {
@@ -50,9 +51,11 @@ describe("showsPositionReadout", () => {
   });
 });
 
-// FS-56CKV §Change: Map name, E8 and E11 as amended 2026-11-12 (owner: "有小地圖時 x y座標不是要顯示在
-// 地圖框框內右下角嗎", then "2倍地圖時座標顯示在地區名稱左邊"): inside the normal map's bottom-right, left
-// of the name with the map enlarged, under the column in the overlay and with no map; on the name's plate
+// FS-56CKV §Change: Map name, E8 as amended 2026-11-12 (owner: "有小地圖時 x y座標不是要顯示在
+// 地圖框框內右下角嗎"): inside the map's bottom-right, under the column in the overlay and with no map; on
+// the name's plate. With the map enlarged it stands inside too, as on the normal map (§Change: The
+// enlarged map keeps its labels inside, F2; owner 2026-11-14: 「小地圖1.5倍時 區域名稱跟座標也要放在地圖內
+// 跟1倍時的位置一樣」)
 describe("the position readout's look (FS-56CKV §C; §Change: Map name, E8)", () => {
   it("should hold its look as named values: 10 px vellum at full ink on the map name's plate, over the minimap's depth", () => {
     expect(POSITION_READOUT).toMatchObject({
@@ -63,9 +66,11 @@ describe("the position readout's look (FS-56CKV §C; §Change: Map name, E8)", (
       padding: MINIMAP_NAME.padding,
       inset: MINIMAP.inset,
       gap: 4,
-      beside: MINIMAP.gap,
     });
     expect("alpha" in POSITION_READOUT).toBe(false);
+    // nothing places it beside the enlarged map's name any more (F6)
+    expect("beside" in POSITION_READOUT).toBe(false);
+    expect("beside" in MINIMAP_NAME).toBe(false);
     expect(POSITION_READOUT.depth).toBeGreaterThan(MINIMAP.depth);
   });
 
@@ -80,7 +85,7 @@ describe("the position readout's look (FS-56CKV §C; §Change: Map name, E8)", (
   });
 });
 
-describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8, E11)", () => {
+describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8; §Change: The enlarged map keeps its labels inside, F2, F3)", () => {
   const viewOf = (width: number) => ({ width, height: 720 });
   const NORMAL = { ...MINIMAP, mode: "normal" as const };
   const ENLARGED = { ...minimapPanel("enlarged"), mode: "enlarged" as const };
@@ -99,66 +104,51 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
     .map((words) => plateOf(words, MINIMAP_NAME.fontSize, MINIMAP_NAME.letterSpacing))
     .reduce((a, b) => (b.width > a.width ? b : a));
   const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-  /** The corner as the scene reads it: the column's head, its name's plate at `name`'s size, and the column's foot. */
-  const cornerOf = (width: number, minimap: Parameters<typeof topRightCorner>[1], name = NAME) => {
+  /** The corner as the scene reads it: the column's head, its name's plate at its widest, and the column's foot. */
+  const cornerOf = (width: number, minimap: Parameters<typeof topRightCorner>[1]) => {
     const corner = topRightCorner(viewOf(width), minimap);
-    const nameBox = corner.name && minimapNameBox(corner.name, name);
+    const nameBox = corner.name && minimapNameBox(corner.name, NAME);
     return {
       corner,
       nameBox,
-      readout: {
-        minimap: corner.minimap,
-        enlarged: minimap?.mode === "enlarged",
-        name: nameBox,
-        column: { right: corner.right, bottom: corner.below + 21 },
-      },
+      readout: { minimap: corner.minimap, column: { right: corner.right, bottom: corner.below + 21 } },
     };
   };
 
   it.each([
-    [1080, 1066],
-    [1280, 1266],
-  ])("should stand inside the normal map's bottom-right, 4 px in, right-aligned, at width %i (E8)", (width, right) => {
-    const { corner, readout } = cornerOf(width, NORMAL);
+    [NORMAL, 1080, 1066, 114],
+    [NORMAL, 1280, 1266, 114],
+    [ENLARGED, 1080, 1066, 168],
+    [ENLARGED, 1280, 1266, 168],
+  ])("should stand inside the map's bottom-right, 4 px in from that map's own edges, right-aligned (%o at width %i; E8, F2)", (minimap, width, right, bottom) => {
+    const { corner, readout } = cornerOf(width, minimap);
     const at = positionReadoutPlace(readout);
-    expect(at).toEqual({ x: right, y: 114, origin: { x: 1, y: 1 } });
+    expect(at).toEqual({ x: right, y: bottom, origin: { x: 1, y: 1 } });
     expect(at.x).toBe(corner.minimap!.x + corner.minimap!.width - 4);
     expect(at.y).toBe(corner.minimap!.y + corner.minimap!.height - 4);
   });
 
-  it.each([1080, 1280])("should keep its widest plate inside the normal map, clear of the map mode icon and the name, at width %i (E8)", (width) => {
-    const { corner, nameBox, readout } = cornerOf(width, NORMAL);
+  it.each([
+    [NORMAL, 1080],
+    [NORMAL, 1280],
+    [ENLARGED, 1080],
+    [ENLARGED, 1280],
+  ])("should keep its widest plate inside the map, clear of the map mode icon and the widest name (%o at width %i; E8, F3)", (minimap, width) => {
+    const { corner, nameBox, readout } = cornerOf(width, minimap);
     const box = positionReadoutBox(positionReadoutPlace(readout), READOUT);
     const map = corner.minimap!;
     expect(box.x).toBeGreaterThan(map.x);
     expect(box.y).toBeGreaterThan(map.y);
+    expect(box.x + box.width).toBeLessThan(map.x + map.width);
+    expect(box.y + box.height).toBeLessThan(map.y + map.height);
     expect(overlaps(box, corner.modeIcon!.hit)).toBe(false);
     expect(overlaps(box, nameBox!)).toBe(false);
   });
 
-  it.each([1080, 1280])("should stand 6 px left of the name's plate with the map enlarged, on the name's middle, at width %i (E11; FS-T3DWX G3)", (width) => {
-    const { nameBox, readout } = cornerOf(width, ENLARGED, { width: 80, height: 17 });
-    const at = positionReadoutPlace(readout);
-    expect(nameBox!.x + nameBox!.width).toBe(width === 1080 ? 740 : 940);
-    expect(at).toEqual({ x: nameBox!.x - 6, y: 20, origin: { x: 1, y: 0.5 } });
-    expect(at.x).toBe(width === 1080 ? 740 - 80 - 6 : 940 - 80 - 6);
-  });
-
-  it.each([
-    [1080, 746],
-    [1280, 946],
-  ])("should stand 6 px left of the enlarged map where the floor has no name, at width %i (E11; FS-T3DWX G3)", (width, mapLeft) => {
+  it.each([1080, 1280])("should meet neither target frame inside the enlarged map at width %i, so it stays shown while one stands (F4)", (width) => {
     const { readout } = cornerOf(width, ENLARGED);
-    expect(positionReadoutPlace({ ...readout, name: null })).toEqual({ x: mapLeft - 6, y: 20, origin: { x: 1, y: 0.5 } });
-  });
-
-  it.each([1080, 1280])("should keep the pair on the view, on one line, clear of each other, the map and the icon, with the widest name and readout enlarged, at width %i (E11)", (width) => {
-    const { corner, nameBox, readout } = cornerOf(width, ENLARGED);
     const box = positionReadoutBox(positionReadoutPlace(readout), READOUT);
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBe(nameBox!.x - 6);
-    expect(Math.abs(box.y + box.height / 2 - (nameBox!.y + nameBox!.height / 2))).toBeLessThanOrEqual(1);
-    for (const other of [nameBox!, corner.minimap!, corner.modeIcon!.hit]) expect(overlaps(box, other)).toBe(false);
+    expect(readoutGivesWay(box, [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)])).toBe(false);
   });
 
   it.each([
@@ -172,7 +162,7 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
   });
 
   it("should stand on whole logical px", () => {
-    const at = positionReadoutPlace({ minimap: null, enlarged: false, name: null, column: { right: 1069.6, bottom: 91.6 } });
+    const at = positionReadoutPlace({ minimap: null, column: { right: 1069.6, bottom: 91.6 } });
     expect([at.x, at.y]).toEqual([1070, 96]);
   });
 
@@ -183,7 +173,7 @@ describe("the position readout's place (FS-56CKV §C.18; §Change: Map name, E8,
     expect(positionReadoutBox({ x: 1070, y: 69, origin: { x: 1, y: 0 } }, size)).toEqual({ x: 980, y: 69, width: 90, height: 19 });
   });
 
-  it("should give way to what its box meets, and to nothing else (E11, as the name's E7)", () => {
+  it("should give way to what its box meets, and to nothing else (as the name's E7; F4)", () => {
     const box = { x: 538, y: 10, width: 90, height: 19 };
     expect(readoutGivesWay(box, [null, undefined])).toBe(false);
     expect(readoutGivesWay(box, [{ x: 351, y: 10, width: 378, height: 54 }])).toBe(true);

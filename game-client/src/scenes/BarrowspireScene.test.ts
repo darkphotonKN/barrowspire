@@ -6677,11 +6677,10 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
       for (const panel of panels) {
         const c = topRightColumn({ view, minimap: panel, floorHeight: LINE.height, escapedHeight: LINE.height });
         const line = (p: { x: number; y: number }) => ({ x: p.x - LINE.width, y: p.y, ...LINE });
-        // in the map, beside the enlarged map's name (its widest), or under the column (FS-56CKV §Change: Map name, E8, E11)
+        // in the map, normal or enlarged, or under the column (FS-56CKV §Change: Map name, E8; §Change: The
+        // enlarged map keeps its labels inside, F2)
         const name = c.name && minimapNameBox(c.name, NAME);
-        const at = positionReadoutPlace(
-          { minimap: c.minimap, enlarged: panel?.mode === "enlarged", name, column: { right: corner.x, bottom: c.bottom } },
-        );
+        const at = positionReadoutPlace({ minimap: c.minimap, column: { right: corner.x, bottom: c.bottom } });
         const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
         const icons = [...(c.modeIcon ? [c.modeIcon.hit] : []), ...(name ? [name] : [])];
         const others = [...frames, ...(c.minimap ? [c.minimap] : []), ...icons, line(c.floor), line(c.escaped), readout];
@@ -9488,8 +9487,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(shown).not.toHaveBeenCalled();
       });
 
-      // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字", then
-      // "兩倍地圖時地圖名稱顯示在全螢幕icon的左邊"): the floor's name with its minimap
+      // FS-56CKV §Change: Map name (owner 2026-11-12: "小地圖右上角顯示目前地圖的名字"): the floor's name
+      // with its minimap; inside the enlarged map too (§Change: The enlarged map keeps its labels
+      // inside, owner 2026-11-14: 「小地圖1.5倍時 區域名稱跟座標也要放在地圖內跟1倍時的位置一樣」)
       describe("the map name (FS-56CKV §Change: Map name; I-56CKV-9)", () => {
         type NameRun = MappedRun & { updateTargetFrame(deltaMs: number): void; targetFrame?: unknown };
         type Name = { words: string; shown: boolean };
@@ -9515,11 +9515,11 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         it.each([
           [1080, "normal", [1066 - 80, 14]],
           [1280, "normal", [1266 - 80, 14]],
-          [1080, "enlarged", [740 - 80, 12]],
-          [1280, "enlarged", [940 - 80, 12]],
+          [1080, "enlarged", [1066 - 80, 14]],
+          [1280, "enlarged", [1266 - 80, 14]],
           [1080, "overlay", [1055 - 80, 6]],
           [1280, "overlay", [1255 - 80, 6]],
-        ])("should stand it at width %i in the %s mode: inside the map's top-right, left of the enlarged map, left of the icon in the corner (E3–E5; FS-T3DWX G3, G4)", (width, mode, at) => {
+        ])("should stand it at width %i in the %s mode: inside the map's top-right, normal or enlarged, left of the icon in the corner (E3, E5, F1; FS-T3DWX G4)", (width, mode, at) => {
           const { run, stage, view, pressTo } = mapped();
           measured(run, textOf(stage.made, "The First Floor"));
           view(width);
@@ -9572,13 +9572,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect((run.floorText as Made).shown).toBe(false);
         });
 
-        it("should hide it while a target frame its plate meets is shown beside the enlarged map at 1080, and show it once the frame goes (E7)", () => {
+        it("should keep it shown inside the enlarged map at 1080 while the boss frame stands, and hide it only while a frame meets it (E7, F4)", () => {
           const { run, stage, pressTo } = mapped();
           measured(run, textOf(stage.made, "The First Floor"));
           pressTo("enlarged");
           const frame = { rect: null as object | null, update: vi.fn(), relayout: vi.fn(), texts: () => [], shownRect: () => frame.rect };
           (run as NameRun).targetFrame = frame;
+          // the boss frame at 1080, x 351–729: short of the map, which starts at x 746
           frame.rect = { x: 351, y: 10, width: 378, height: 54 };
+          (run as NameRun).updateTargetFrame(16);
+          expect(nameOf(run)?.shown).toBe(true);
+          // the rule stands: a frame laid over the name (x 986–1066, y 14–31) hides it
+          frame.rect = { x: 1000, y: 10, width: 50, height: 54 };
           (run as NameRun).updateTargetFrame(16);
           expect(nameOf(run)?.shown).toBe(false);
           frame.rect = null;
@@ -9607,10 +9612,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
          */
         const underColumn = (right: number, lines = 2, top = 10) => ({ at: [right, top + lines * 21 + (lines - 1) * 4 + 4], origin: [1, 0] });
         // FS-56CKV §Change: Map name, E8 as amended 2026-11-12 (owner: "有小地圖時 x y座標不是要顯示在
-        // 地圖框框內右下角嗎"): inside the normal map's bottom-right, 4 px in
-        const inMap = (right: number) => ({ at: [right - 4, 10 + 108 - 4], origin: [1, 1] });
-        // E11 (owner: "2倍地圖時座標顯示在地區名稱左邊"): 6 px left of the name's plate, on its middle
-        const leftOfName = (nameRight: number) => ({ at: [nameRight - 80 - 6, 20], origin: [1, 0.5] });
+        // 地圖框框內右下角嗎"): inside the map's bottom-right, 4 px in; the enlarged map's too, 162 tall
+        // (§Change: The enlarged map keeps its labels inside, F2)
+        const inMap = (right: number, height = 108) => ({ at: [right - 4, 10 + height - 4], origin: [1, 1] });
 
         afterEach(() => {
           vi.unstubAllEnvs();
@@ -9676,26 +9680,30 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           expect(readoutAt(run)).toEqual(inMap(1070));
         });
 
-        it.each([
-          [1080, 740],
-          [1280, 940],
-        ])("should stand it left of the map name with the map enlarged, 6 px off, on the name's middle, at width %i (E11; FS-T3DWX G3)", (width, nameRight) => {
+        it.each([1080, 1280])("should stand it inside the enlarged map's bottom-right, 4 px in, as on the normal map, at width %i (F2)", (width) => {
           const { run, stage, view, pressTo } = mapped();
           measured(run, stage);
           view(width);
           pressTo("enlarged");
-          expect(readoutAt(run)).toEqual(leftOfName(nameRight));
+          expect(readoutAt(run)).toEqual(inMap(width - 10, 162));
+          expect(inMap(width - 10, 162).at).toEqual([width - 14, 168]);
           expect((run.positionReadout as Made).args[3]).toMatchObject({ fontSize: "10px" });
+          pressTo("normal");
+          expect(readoutAt(run)).toEqual(inMap(width - 10));
         });
 
-        it("should hide it while a target frame its plate meets is shown beside the enlarged map at 1080, and show it once the frame goes (E11)", () => {
+        it("should keep it shown inside the enlarged map at 1080 while the boss frame stands, and hide it only while a frame meets it (F4)", () => {
           const { run, stage, pressTo } = mapped();
           measured(run, stage);
           pressTo("enlarged");
           const frame = { rect: null as object | null, update: vi.fn(), relayout: vi.fn(), texts: () => [], shownRect: () => frame.rect };
           (run as ReadoutRun).targetFrame = frame;
-          // over the readout (x 564–654) but short of the name (x 660–740)
-          frame.rect = { x: 500, y: 10, width: 100, height: 54 };
+          frame.rect = { x: 351, y: 10, width: 378, height: 54 };
+          (run as ReadoutRun).updateTargetFrame(16);
+          // never hidden (the stand-in reads undefined until setVisible is called)
+          expect((run.positionReadout as Made).last.setVisible?.[0]).not.toBe(false);
+          // the rule stands: over the readout (x 976–1066, y 149–168) but short of the name (y 14–31)
+          frame.rect = { x: 1000, y: 140, width: 50, height: 20 };
           (run as ReadoutRun).updateTargetFrame(16);
           expect((run.positionReadout as Made).shown).toBe(false);
           expect((run.dungeon as { mapName?: { shown: boolean } }).mapName?.shown).toBe(true);
