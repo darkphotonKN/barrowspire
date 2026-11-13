@@ -526,6 +526,24 @@ describe("the blood demon's frame (FS-VHGE7 §C R28)", () => {
   });
 });
 
+// FS-C8VM7 §F R35: a champion, a variant sent with `boss: true`, wears the boss plate and frame,
+// named by the server, as every boss is.
+describe("a champion's frame (FS-C8VM7 §F R35)", () => {
+  const champion = demon({
+    entity_id: "champion",
+    archetype: "ghast",
+    name: "Gorvak the Ghast",
+    level: 12,
+  });
+
+  it("should draw it in the boss frame, named by its server plate", () => {
+    const parts = shownFrame(champion, 540);
+    expect(parts.live().map((t) => t.content)).toEqual(["Gorvak the Ghast · Lv 12"]);
+    expect(drawnBar(parts).panel.w).toBe(TARGET_BOSS_FRAME.width);
+    expect(drawnBar(parts).panel.h).toBe(TARGET_BOSS_FRAME.height);
+  });
+});
+
 describe("the frame's layout at 1080 and 1280 (FS-48CTQ §E.14)", () => {
   /**
    * What the frame must clear, from FS-48CTQ "Facts" and §E.14: the notices from y ≈ 78, and the

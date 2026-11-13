@@ -62,7 +62,7 @@ export interface OnDemandGroup {
    * What that archetype draws until the group is in: another archetype's sheet, on a group its
    * scenes hold, under a multiply `tint`.
    */
-  standIn: { archetype: MonsterArchetype; tint: number };
+  standIn: { archetype: MonsterArchetype; tint?: number };
 }
 
 /** The blood demon's group and what its archetypes draw until it is in. */
@@ -70,6 +70,48 @@ const BLOOD_DEMON_ART = {
   group: "blood_demon",
   standIn: { archetype: "demon", tint: palette.bloodDemonStandIn },
 } as const;
+
+/**
+ * A Spire variant's group and stand-in (FS-C8VM7 §G R41, R44; ADR-0081 Decisions 1, 5): the group
+ * is named by its variant id, and both of a goblin variant's looks are on it; until it is in, the
+ * look draws `family`, a tier-1 look on `creatures`, under `tint` where one is named (the old
+ * families' steps recolour their tier-1 look, so theirs is drawn as baked).
+ */
+const variantArt = (
+  group: string,
+  archetypes: readonly MonsterArchetype[],
+  family: MonsterArchetype,
+  tint?: number,
+): OnDemandGroup[] =>
+  archetypes.map((archetype) => ({
+    group,
+    archetype,
+    standIn: tint === undefined ? { archetype: family } : { archetype: family, tint },
+  }));
+
+/** One variant per group, named by its own id, drawn as `family` meanwhile. */
+const ownGroups = (variants: readonly MonsterArchetype[], family: MonsterArchetype, tint?: number) =>
+  variants.flatMap((v) => variantArt(v, [v], family, tint));
+
+/** A goblin variant's group holds its blade look and its blade-and-shield look (§A R8). */
+const goblinGroups = (variants: readonly ("goblin" | "goblin_cutthroat" | "goblin_reaver" | "goblin_warchief")[]) =>
+  variants.flatMap((v) => variantArt(v, [v, `${v}_shield`], "ghoul", palette.goblinStandIn));
+
+/**
+ * FS-C8VM7 §G R41: every Spire variant beyond the five tier-1 looks, each its own on-demand group
+ * (ADR-0081 Decision 1), with its stand-in (R44: the goblin and the dark warrior as the ghoul, the
+ * ogre as the troll, each tinted).
+ */
+export const VARIANT_ART: readonly OnDemandGroup[] = [
+  ...ownGroups(["ghast", "ravener"], "ghoul"),
+  ...ownGroups(["ashen_archer", "wight_archer"], "bone_archer"),
+  ...ownGroups(["cave_troll", "blood_troll"], "troll"),
+  ...ownGroups(["plague_thrall", "blightborn"], "barrow_thrall"),
+  ...ownGroups(["shade", "phantom", "banshee"], "spire_wraith"),
+  ...goblinGroups(["goblin", "goblin_cutthroat", "goblin_reaver", "goblin_warchief"]),
+  ...ownGroups(["ogre", "ogre_mauler", "ogre_tyrant"], "troll", palette.ogreStandIn),
+  ...ownGroups(["dark_warrior", "dark_reaper"], "ghoul", palette.darkWarriorStandIn),
+];
 
 /**
  * ADR-0071 Decision 2: the groups fetched on demand. A group here is scene-scoped, so boot skips
@@ -80,6 +122,8 @@ export const ON_DEMAND_ART: readonly OnDemandGroup[] = [
   { ...BLOOD_DEMON_ART, archetype: "blood_demon" },
   // ADR-0071 Decision 6, a table change: Daa'gon is drawn from the same sheet (FS-M8CSE §H R41)
   { ...BLOOD_DEMON_ART, archetype: "daagon" },
+  // ADR-0081: the Spire's variants, by the same table (ADR-0071 Decision 6)
+  ...VARIANT_ART,
 ];
 
 /** The on-demand group an archetype's art is on, if any. */

@@ -311,6 +311,15 @@ export const palette = {
    * as a different boss at a glance.
    */
   bloodDemonStandIn: mix(BARROW_HEX.oxblood, BARROW_HEX.oxbloodText, 0.7),
+  /**
+   * FS-C8VM7 §G R44: the new families' stand-ins until their own art lands, a multiply wash over
+   * a tier-1 sheet on `creatures`. The goblin is the ghoul turned moss green; the ogre the troll
+   * in a heavier, earthen hide; the dark warrior the ghoul gone grim and dark in the umbra. Each
+   * lifted toward vellum enough to shade the body rather than black it out.
+   */
+  goblinStandIn: tint(BARROW_HEX.arcane, 0.35),
+  ogreStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.4), 0.4),
+  darkWarriorStandIn: tint(BARROW_HEX.umbra, 0.3),
 
   // -- The satchel (container view, FS-2325V §D). Tanned leather sits between
   //    barrow brown and brass; the flap is the darker, oilier hide; vellum

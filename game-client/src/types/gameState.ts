@@ -307,7 +307,33 @@ export type MonsterArchetype =
   | "zombie"
   | "ghost"
   // Gentle Meadows' one creature (FS-X2F2H R53): sent only in the Meadows field
-  | "boar";
+  | "boar"
+  // the Spire's tiered variants (FS-C8VM7 §A R3): sent only on run floors, by the floor's pool
+  | "ghast"
+  | "ravener"
+  | "ashen_archer"
+  | "wight_archer"
+  | "cave_troll"
+  | "blood_troll"
+  | "plague_thrall"
+  | "blightborn"
+  | "shade"
+  | "phantom"
+  | "banshee"
+  // a goblin variant spawns in one of two looks, blade or blade and shield (FS-C8VM7 §A R8)
+  | "goblin"
+  | "goblin_shield"
+  | "goblin_cutthroat"
+  | "goblin_cutthroat_shield"
+  | "goblin_reaver"
+  | "goblin_reaver_shield"
+  | "goblin_warchief"
+  | "goblin_warchief_shield"
+  | "ogre"
+  | "ogre_mauler"
+  | "ogre_tyrant"
+  | "dark_warrior"
+  | "dark_reaper";
 
 /**
  * What a monster is doing this tick. `attack` is the wind-up and the strike (a demon's slam).
