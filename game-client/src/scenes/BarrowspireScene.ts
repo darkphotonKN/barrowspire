@@ -69,6 +69,7 @@ import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { reportWorld } from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
@@ -3211,6 +3212,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // an arrival is dark before anything of the floor is made: the world's fade-in opens on the
     // dark, and the card comes with the first broadcast's floor (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.dark();
+    // the UI scene comes up over this world, and sleeps when it stops (FS-TQZ5J R3, R9)
+    reportWorld(this, "run");
     // Connect via SocketManager
     this.connectToServer();
     this.mountUiSounds();

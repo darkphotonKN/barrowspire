@@ -153,6 +153,7 @@ import {
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { reportWorld } from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 
 /**
@@ -868,6 +869,8 @@ export class HubScene extends Phaser.Scene {
     // an arrival is dark before anything of the town is made: the world's fade-in opens on the
     // dark, and the town's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "hub" }), { built: false });
+    // the UI scene comes up over this world, and sleeps when it stops (FS-TQZ5J R3, R9)
+    reportWorld(this, "hub");
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);

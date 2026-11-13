@@ -11,6 +11,7 @@ import { BootScene } from "@/scenes/BootScene";
 import { HubScene } from "@/scenes/HubScene";
 import { FieldScene } from "@/scenes/FieldScene";
 import { DisconnectNoticeScene } from "@/scenes/DisconnectNoticeScene";
+import { UIScene } from "@/scenes/UIScene";
 import { watchConnectionLoss } from "./disconnectNotice";
 import { switchWorld } from "./worldRouting";
 import { arrivals } from "./arrival";
@@ -23,6 +24,8 @@ import { keepTab, takeFocusOnPress } from "./gameFocus";
 import { frameFullscreen } from "./frameFullscreen";
 import { keyboardLockOf } from "./fullscreen";
 import { lendFullscreen } from "@/ui/gameFullscreen";
+import { lendUiBridge } from "@/ui/uiBridge";
+import { GameUiBridge } from "./uiSceneLifecycle";
 import GameFrame from "./GameFrame";
 import { installCrispText } from "@/render/crispText";
 import {
@@ -109,6 +112,9 @@ export default function PhaserGame() {
         HubScene,
         BarrowspireScene,
         FieldScene,
+        // over every world, so drawn over them and handed a press first, and under the notice
+        // (FS-TQZ5J R1, R7): the interface the worlds share
+        UIScene,
         // last, so drawn over every world: the disconnect notice (FS-R6EYZ R11)
         DisconnectNoticeScene,
       ],
@@ -122,6 +128,10 @@ export default function PhaserGame() {
     // the frame's fullscreen, lent to this game for the OPTIONS panel's Fullscreen row; none where
     // the browser has none to offer (FS-T3DWX R7, R12)
     lendFullscreen(game.registry, frameFullscreen(frame, document, keyboardLockOf(navigator)));
+
+    // the one channel between the world scenes and the UI scene, lent the same way; the worlds'
+    // reports through it launch, sleep and wake the UI scene (FS-TQZ5J R2, R3, R8)
+    lendUiBridge(game.registry, new GameUiBridge(game.scene));
 
     // the DOM layer pinned to the canvas, and a re-fit on a resize of the frame (the window, the
     // banner, fullscreen) or a density change (another monitor), no reload (R10, R11, R16)

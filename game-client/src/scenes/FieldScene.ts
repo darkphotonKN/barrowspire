@@ -70,6 +70,7 @@ import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import { reportWorld } from "@/ui/uiBridge";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -313,6 +314,8 @@ export class FieldScene extends Phaser.Scene {
     // an arrival is dark before anything of the field is made: the world's fade-in opens on the
     // dark, and the field's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "field", field: this.field }), { built: false });
+    // the UI scene comes up over this world, and sleeps when it stops (FS-TQZ5J R3, R9)
+    reportWorld(this, "field");
     this.look = fieldLook(this.field);
     this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
     const { width, height } = this.size;
