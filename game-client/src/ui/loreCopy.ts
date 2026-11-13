@@ -93,6 +93,18 @@ export function turnedOn(previous: boolean | undefined, incoming: boolean): bool
   return previous === false && incoming;
 }
 
+/**
+ * Whether the burn is heard (FS-3103M R26 as amended by A1): this state's altar is burned and the
+ * previous state's was not. No previous altar (a connect, a reconnect, a new floor) is the
+ * baseline, and a state with no altar hears nothing.
+ */
+export function burnHeard(
+  previous: { burned: boolean } | undefined,
+  incoming: { burned: boolean } | undefined,
+): boolean {
+  return turnedOn(previous?.burned, incoming?.burned === true);
+}
+
 /** A player as the escape check reads them off a broadcast. */
 export interface EscapingPlayer {
   id: string;

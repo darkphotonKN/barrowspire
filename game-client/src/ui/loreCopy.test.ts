@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { lootRefusalCopy } from "@/scenes/fieldRefusals";
 import { CONTAINER_GUARDED } from "./floor";
-import { loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "./loreCopy";
+import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "./loreCopy";
 
 // the field's refusal words, real unless a test takes them away
 vi.mock("@/scenes/fieldRefusals", async (actual) => {
@@ -145,6 +145,24 @@ describe("turnedOn (FS-XWHZP R22, R23)", () => {
     expect(turnedOn(true, true)).toBe(false);
     expect(turnedOn(false, false)).toBe(false);
     expect(turnedOn(true, false)).toBe(false);
+  });
+});
+
+describe("burnHeard (FS-3103M R26 as amended by A1)", () => {
+  it("should hear the burn on the altar's unburned-to-burned flip", () => {
+    expect(burnHeard({ burned: false }, { burned: true })).toBe(true);
+  });
+
+  it("should take a first state as the baseline: a connect, a reconnect, a new floor", () => {
+    expect(burnHeard(undefined, { burned: true })).toBe(false);
+    expect(burnHeard(undefined, { burned: false })).toBe(false);
+  });
+
+  it("should hear nothing while the altar stays as it was, or with no altar on this state", () => {
+    expect(burnHeard({ burned: true }, { burned: true })).toBe(false);
+    expect(burnHeard({ burned: false }, { burned: false })).toBe(false);
+    expect(burnHeard({ burned: false }, undefined)).toBe(false);
+    expect(burnHeard(undefined, undefined)).toBe(false);
   });
 });
 

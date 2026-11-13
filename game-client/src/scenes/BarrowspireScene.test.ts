@@ -569,12 +569,12 @@ function recordingStage() {
             target.handlers[event] = fn;
             return proxy;
           };
-        // a sprite's frame is the texture it was last set to
+        // a sprite's frame is the texture it was last set to, and the atlas frame with it
         if (prop === "setTexture")
-          return (key: string) => {
+          return (key: string, frame?: unknown) => {
             target.calls.push("setTexture");
             target.texture = key;
-            target.last["setTexture"] = [key];
+            target.last["setTexture"] = frame === undefined ? [key] : [key, frame];
             return proxy;
           };
         // shown until hidden, as Phaser's are: `visible` and `shown` read what setVisible last set
@@ -10418,5 +10418,248 @@ describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's mu
 
     expect(() => run.enterMusic()).not.toThrow();
     expect(add).not.toHaveBeenCalled();
+  });
+});
+
+// FS-3103M §I R24-R28 as amended by A1 (I-3103M-7): the tome, the altar and the burn.
+describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () => {
+  const manifest = JSON.parse(readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"));
+  const { worldToScreen } = await_iso;
+  interface FakeKey {
+    justDown: boolean;
+    isDown: boolean;
+  }
+  interface Summoned {
+    menu?: unknown;
+    dismissKey?: FakeKey;
+    confirmKey?: FakeKey;
+    choiceKeys: FakeKey[];
+    offerMenu(): void;
+    bindRunInput(): void;
+    showNotification(message: string, color: string): void;
+    loreLines: { say(line: { text: string; tone: string }): void };
+    leaveFloor(): void;
+  }
+
+  /** This client's player at (130, 300); the tome and the altar beside them unless placed. */
+  const tome = (x = 140, y = 300) => ({ entity_id: "tome-1", position: at(x, y) });
+  const altar = (burned = false, x = 130, y = 340) => ({ entity_id: "altar-1", position: at(x, y), burned });
+  const withTome = (fields: Partial<GameState> = {}): GameState => ({ ...partyState(), ...fields }) as GameState;
+
+  function summoningOnStage(baked = true) {
+    const stage = onStage();
+    const run = stage.run as unknown as FloorRun & Summoned;
+    if (baked) (run as unknown as { art: unknown }).art = new ArtLibrary(manifest, { warn: () => {} });
+    const esc: FakeKey = { justDown: false, isDown: false };
+    run.dismissKey = esc;
+    run.confirmKey = { justDown: false, isDown: false };
+    run.choiceKeys = [{ justDown: false, isDown: false }, { justDown: false, isDown: false }];
+    const keyHandlers: Record<string, () => void> = {};
+    Object.assign(run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+        on: vi.fn(),
+      },
+    });
+    run.bindRunInput();
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const option = (id: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === `menu-${id}` && !m.destroyed);
+    const labels = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    const interacts = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+    return {
+      ...stage,
+      run,
+      said,
+      notified,
+      option,
+      labels,
+      interacts,
+      pressE: () => keyHandlers["keydown-E"](),
+      pressEsc: () => {
+        esc.justDown = true;
+        run.offerMenu();
+      },
+      pick: (id: string) => option(id)?.handlers.pointerup(),
+    };
+  }
+
+  /** Sprites drawn from a sheet: their frame names start with it. */
+  const drawnFrom = (made: Made[], sheet: string) =>
+    made.filter((m) => m.kind === "sprite" && String(m.args[3] ?? "").startsWith(`${sheet}/`));
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe("drawing (R27)", () => {
+    it("should draw the tome and the altar at their positions from their sheets, the altar dormant", () => {
+      const { run, stage } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ tome: tome(400, 500), altar: altar(false, 700, 600) }));
+      const [book] = drawnFrom(stage.made, "tome");
+      const [stone] = drawnFrom(stage.made, "altar");
+      const s = worldToScreen(400, 500);
+      expect(book.args.slice(0, 2)).toEqual([s.x, s.y]);
+      expect(String(book.args[3])).toMatch(/^tome\/default\//);
+      const a = worldToScreen(700, 600);
+      expect(stone.args.slice(0, 2)).toEqual([a.x, a.y]);
+      expect(String(stone.args[3])).toMatch(/^altar\/dormant\//);
+    });
+
+    it("should turn the altar to its burned frame when it burns, and take the tome away once taken", () => {
+      const { run, stage } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ tome: tome(), altar: altar() }));
+      run.handleGameStateUpdate(withTome({ altar: altar(true), tome_carried: false }));
+      const [book] = drawnFrom(stage.made, "tome");
+      const [stone] = drawnFrom(stage.made, "altar");
+      expect(book.destroyed).toBe(true);
+      expect(stone.destroyed).toBe(false);
+      expect(String(stone.last.setTexture?.[1])).toMatch(/^altar\/burned\//);
+    });
+
+    it("should draw neither on a floor without them, and take both down on a climb", () => {
+      const { run, stage } = summoningOnStage();
+      run.handleGameStateUpdate(partyState());
+      expect(drawnFrom(stage.made, "tome")).toHaveLength(0);
+      expect(drawnFrom(stage.made, "altar")).toHaveLength(0);
+      run.handleGameStateUpdate(withTome({ tome: tome(), altar: altar() }));
+      run.handleGameStateUpdate({ ...floorState(2), current_player: player("me", "Aldric", 630) } as GameState);
+      expect([...drawnFrom(stage.made, "tome"), ...drawnFrom(stage.made, "altar")].every((m) => m.destroyed)).toBe(true);
+    });
+  });
+
+  describe("E at the tome and the altar (R25, R27)", () => {
+    it("should take a listed tome with E: one interact for it", () => {
+      const { run, pressE, interacts } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ tome: tome() }));
+      pressE();
+      expect(interacts()).toEqual([[ActionType.Interact, { entity_id: "tome-1" }]]);
+    });
+
+    it("should send the interact at once at an unburned altar without the tome", () => {
+      const { run, pressE, interacts } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar() }));
+      pressE();
+      expect(interacts()).toEqual([[ActionType.Interact, { entity_id: "altar-1" }]]);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should ask Burn tome? at an unburned altar while the tome is carried, sending nothing", () => {
+      const { run, pressE, interacts, labels, option } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
+      pressE();
+      expect(run.menu).toBeDefined();
+      expect(labels()).toContain("Burn tome?");
+      expect(labels()).toContain("Burn  [1]");
+      expect(labels()).toContain("Not yet  [Esc]");
+      expect(option("burn")).toBeDefined();
+      expect(interacts()).toEqual([]);
+    });
+
+    it("should send one interact for the altar on Burn, and take the confirm down", () => {
+      const { run, pressE, pick, interacts } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
+      pressE();
+      pick("burn");
+      pick("burn");
+      expect(interacts()).toEqual([[ActionType.Interact, { entity_id: "altar-1" }]]);
+      expect(run.menu).toBeUndefined();
+    });
+
+    it("should send nothing on Not yet, nor on Esc", () => {
+      const notYet = summoningOnStage();
+      notYet.run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
+      notYet.pressE();
+      notYet.pick("not-yet");
+      expect(notYet.run.menu).toBeUndefined();
+      expect(notYet.interacts()).toEqual([]);
+
+      const esc = summoningOnStage();
+      esc.run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
+      esc.pressE();
+      esc.pressEsc();
+      expect(esc.run.menu).toBeUndefined();
+      expect(esc.interacts()).toEqual([]);
+    });
+
+    it("should not reach a burned altar with E", () => {
+      const { run, pressE, interacts } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar(true) }));
+      pressE();
+      expect(interacts()).toEqual([]);
+      expect(run.menu).toBeUndefined();
+    });
+  });
+
+  describe("the burn heard (R26 as amended by A1)", () => {
+    const HELL = { text: "You hear a sound from hell", tone: "dread" };
+
+    it("should play the hell line as a dread lore line on the altar's unburned-to-burned flip, never a HUD notice", () => {
+      const { run, said, notified } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar() }));
+      run.handleGameStateUpdate(withTome({ altar: altar(true) }));
+      run.handleGameStateUpdate(withTome({ altar: altar(true) }));
+      expect(said.mock.calls.map(([line]) => line)).toEqual([HELL]);
+      expect(notified).not.toHaveBeenCalled();
+    });
+
+    it("should take a first state as the baseline: nothing on a reconnect after the burn", () => {
+      const { run, said } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar(true) }));
+      expect(said).not.toHaveBeenCalled();
+    });
+
+    it("should take a new floor's first state as the baseline", () => {
+      const { run, said } = summoningOnStage();
+      run.handleGameStateUpdate(withTome({ altar: altar() }));
+      run.leaveFloor();
+      run.handleGameStateUpdate(withTome({ altar: altar(true) }));
+      expect(said).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("the tome and altar replies (R24 as amended by A1, R28)", () => {
+    function replying() {
+      const listeners = new Map<string, (payload: unknown) => void>();
+      vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+      vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+      vi.spyOn(socketManager, "off").mockImplementation(() => {});
+      vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+      vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+      vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+      const run = new BarrowspireScene() as unknown as Summoned & {
+        init(data?: object): void;
+        connectToServer(): void;
+        reaching?: string;
+      };
+      run.init({ sessionID: "run-a" });
+      run.reaching = "chest-1";
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+      run.connectToServer();
+      return { run, notified, said, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+    }
+
+    it("should play tome_taken and altar_without_tome as lore lines, never HUD notices", () => {
+      const { said, notified, reply } = replying();
+      reply({ success: true, reason: "tome_taken" });
+      reply({ success: false, message: "a tome was burned here once", reason: "altar_without_tome" });
+      expect(said.mock.calls.map(([line]) => line)).toEqual([
+        { text: "Wonder if I can burn it.", tone: "lore" },
+        { text: "A tome was burned here once, they say, to insult a demon.", tone: "lore" },
+      ]);
+      expect(notified).not.toHaveBeenCalled();
+    });
+
+    it("should say nothing for altar_burned, and let a refusal give up a coffer reach as any refusal does", () => {
+      const { run, said, notified, reply } = replying();
+      reply({ success: false, message: "the altar is burned", reason: "altar_burned" });
+      expect(said).not.toHaveBeenCalled();
+      expect(notified).not.toHaveBeenCalled();
+      expect(run.reaching).toBeUndefined();
+    });
   });
 });

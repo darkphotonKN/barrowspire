@@ -42,9 +42,10 @@ import {
 } from "@/ui/floor";
 import { placeCard } from "@/ui/placeCard";
 import { LoreLines } from "@/ui/loreLine";
-import { loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
+import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
 import { LoreDust } from "@/render/effects/loreDust";
 import {
+  BURN_CONFIRM,
   FALL_CONFIRM,
   nextWatched,
   resolved,
@@ -226,6 +227,7 @@ import {
   type WorldThemeLook,
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
+import { SummoningSet, type SummoningLook, type SummoningTarget } from "@/render/world/altar";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
 import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
@@ -795,6 +797,16 @@ export class BarrowspireScene extends Phaser.Scene {
   });
 
   /**
+   * The Tome of Filth and the Altar of Consecration, from state (FS-3103M §I R27): baked props on
+   * the resident `summoning` group, the altar's frame following `burned`.
+   */
+  private summoning = new SummoningSet<Phaser.GameObjects.Sprite>({
+    add: (look, at) => this.addSummoning(look, at),
+    show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
+    stand: (sprite, at) => standAt(sprite, at),
+  });
+
+  /**
    * Burning trails, from state (FS-4R9M9 req 56, 61): a ground bed and an additive glow each,
    * named for the trail they burn for.
    */
@@ -991,6 +1003,8 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private previousEscapeDoorOpened?: boolean;
   private previousSwitchActivated?: boolean;
+  /** This floor's altar on the previous broadcast: what the burn is heard against (FS-3103M R26). */
+  private previousAltar?: { burned: boolean };
   /** The players whose escape has been said this run; none before the first broadcast (R23, R24). */
   private escapedPlayers?: Set<string>;
   private escapedCountText?: Phaser.GameObjects.Text;
@@ -1116,6 +1130,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.escapeDoors.clear();
     this.switches.clear();
     this.stairs.forget();
+    this.summoning.forget();
     this.trails.forget();
     this.walls.clear();
     this.serverDoors.clear();
@@ -1227,6 +1242,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.sessionID = undefined;
     this.previousEscapeDoorOpened = undefined;
     this.previousSwitchActivated = undefined;
+    this.previousAltar = undefined;
     this.escapedPlayers = undefined;
   }
 
@@ -3043,6 +3059,18 @@ export class BarrowspireScene extends Phaser.Scene {
     if (container.items?.length > 0) this.containerView.setItems(container.items);
   }
 
+  /**
+   * E at the tome or the altar (FS-3103M §I R25): the altar asks first while the party carries the
+   * tome; otherwise the interact goes at once, and the server answers (R13, R16).
+   */
+  private reachSummoning(target: SummoningTarget): void {
+    if (target.kind === "altar" && this.lastGameState?.tome_carried === true) {
+      this.openBurnConfirm(target.entityId);
+      return;
+    }
+    socketManager.sendMessage(ActionType.Interact, { entity_id: target.entityId });
+  }
+
   /** The server refused the reach (guarded, or out of reach): no coffer will open for it. */
   private chestRefused(): void {
     this.reaching = undefined;
@@ -3530,6 +3558,12 @@ export class BarrowspireScene extends Phaser.Scene {
         socketManager.sendMessage(ActionType.Interact, { entity_id: nearbyStairs });
         return;
       }
+      // the tome to take, or the altar to burn it at (FS-3103M §I R25, R27)
+      const summoned = this.player && this.playerPos ? this.summoning.nearby(this.playerPos) : null;
+      if (summoned) {
+        this.reachSummoning(summoned);
+        return;
+      }
       // 檢查寶箱
       const nearbyChest = this.getNearbyChest();
       if (nearbyChest) {
@@ -3964,6 +3998,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // Stairs up: the broadcast is the whole truth, empty on the top floor (FS-F6F88 req 27)
     this.stairs.sync(state.stairs ?? []);
+    // the tome while it lies here, the altar on its floor (FS-3103M §I R27)
+    this.summoning.sync(state);
     this.updateFloorIndicator(state);
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
@@ -3982,6 +4018,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // 檢測狀態變化並顯示通知（避免重複）
     this.checkEscapeDoorStateChanges(state);
     this.checkPlayerEscapedState(state);
+    this.checkBurnHeard(state);
 
     this.yieldMenu(state);
     // out of the delve, a hold ends the moment the client sees it (FS-JTNPR req 15)
@@ -4498,6 +4535,7 @@ export class BarrowspireScene extends Phaser.Scene {
       drawn.clear();
     }
     this.stairs.clear();
+    this.summoning.clear();
     // the old floor's projectiles land nowhere: no impact, body, trail or light (FS-KYPQ9 §B.9)
     this.projectiles?.clear();
     this.trails.clear();
@@ -4512,6 +4550,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.previousEscapeDoorOpened = undefined;
     this.previousSwitchActivated = undefined;
+    this.previousAltar = undefined;
   }
 
   /**
@@ -4814,6 +4853,15 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The tome or the altar (FS-3103M §I R27): its baked frame at the server position, sorted by its
+   * footprint as props are. No pool of its own: the tome is hidden, and comes and goes with the
+   * interest cut.
+   */
+  private addSummoning(look: SummoningLook, at: Point): Phaser.GameObjects.Sprite {
+    return addProp(this, this.art, look.sheet, at, { animation: look.frame }).sprite;
+  }
+
+  /**
    * Strews the floor's run dressing once (FS-8RBQY §C.4–§C.5), kept out of everything its
    * broadcast puts on the floor. Never interactive, never in physics; a brazier's flame joins the
    * floor's fixed lights. Nothing for a theme without dressing or without its art.
@@ -5092,6 +5140,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.escapeDoors.values(),
       ...this.switches.values(),
       ...this.stairs.placed(),
+      ...this.summoning.placed(),
       ...this.dressingAt,
     ])
       yield { parts: [sprite], at: pos };
@@ -5163,6 +5212,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.escapeDoors.values(),
       ...this.switches.values(),
       ...this.stairs.placed(),
+      ...this.summoning.placed(),
       ...this.dressingAt,
     ];
     for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
@@ -5775,6 +5825,27 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * "Burn tome?" on the Fall confirm's panel (FS-3103M R25), over no window: Burn sends the one
+   * interact for the altar and takes the confirm down; Not yet, Esc and the × send nothing.
+   */
+  private openBurnConfirm(altarId: string): void {
+    this.closeWindows();
+    this.cancelAim();
+    const state = this.menuState();
+    this.showMenuPanel(BURN_CONFIRM.line, BURN_CONFIRM.choices, {
+      actions: {
+        burn: () =>
+          this.act(() => {
+            socketManager.sendMessage(ActionType.Interact, { entity_id: altarId });
+            this.closeMenu();
+          }),
+      },
+      enabled: {},
+    });
+    this.menuFor = state;
+  }
+
+  /**
    * Fall (req 3, 4): one `forfeit_run`, then nothing until the server answers. The answer is the
    * next state with this player at 0 health, seen through FS-QPDKN's card as any death, or a
    * refusal that hands Fall back. The confirm stays up, Fall dimmed, until either.
@@ -5961,6 +6032,16 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The burn heard by everyone on the floor (FS-3103M R26 as amended by A1): the hell line, a dread
+   * lore line, when the altar turns burned against this floor's previous broadcast; the first is
+   * the baseline.
+   */
+  private checkBurnHeard(state: ClientGameState): void {
+    if (burnHeard(this.previousAltar, state.altar)) this.loreLines.say(loreForEvent({ kind: "burn_heard" }));
+    this.previousAltar = state.altar ? { burned: state.altar.burned } : undefined;
+  }
+
+  /**
    * Each player walking out of the dark, said once a run as a hope line, the player themself as
    * "you" (FS-XWHZP R16, R24); those already out on the first broadcast are never said (R23).
    */
@@ -5986,6 +6067,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the next broadcast is a baseline again (FS-XWHZP R23)
     this.previousEscapeDoorOpened = undefined;
     this.previousSwitchActivated = undefined;
+    this.previousAltar = undefined;
     this.escapedPlayers = undefined;
   }
 

@@ -234,6 +234,22 @@ export interface StairsState {
   position: Position;
 }
 
+/**
+ * The Tome of Filth while it lies on the party's floor (FS-3103M §E R14): cut per recipient by
+ * distance on a dungeon floor, as a container is.
+ */
+export interface TomeState {
+  entity_id: UUID;
+  position: Position;
+}
+
+/** The Altar of Consecration on its floor, sent whole; `burned` once the tome was burned there (R14). */
+export interface AltarState {
+  entity_id: UUID;
+  position: Position;
+  burned: boolean;
+}
+
 // Wall state
 export interface WallState {
   house_id?: UUID;
@@ -426,6 +442,12 @@ export interface ClientGameState {
   stairs?: StairsState[];
   /** Live burning trails, a full snapshot each tick; absent when none, always absent in the hub (FS-4R9M9 R56). */
   trails?: TrailState[];
+  /** A tome run's tome while it lies on this floor; absent otherwise (FS-3103M §E R14). */
+  tome?: TomeState;
+  /** The altar on its floor; absent on every other floor, and in the hub and a field (R14). */
+  altar?: AltarState;
+  /** Set while the party carries the tome and has not burned it; absent otherwise (R14). */
+  tome_carried?: boolean;
   escaped_count: number; // Number of players who have escaped
 }
 
