@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
-import { mix, palette, toCss } from "@/utils/canvasPalette";
+import { mix, palette, shade, toCss } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
 import { envelopeFrame } from "./letterPanelLayout";
 import { GLYPH_LINE_W, MailboxEnvelope, drawEnvelopeLines, envelopeFlapPoint } from "./MailboxEnvelope";
@@ -47,9 +47,24 @@ interface FakeTexture {
   depth?: number;
   scrollFactor?: number;
   scale?: number;
+  /** The top-left corner's tint, and all four corners' as `setTint` left them (one sets all four). */
   tint?: number;
+  tints?: number[];
   alpha?: number;
   log: { m: "draw" | "erase" | "render"; g?: FakeGraphics }[];
+  destroyed: boolean;
+}
+/** An image made with `add.image`: the envelope's shadow, on its texture's own texture (FS-S8Z2Y R1). */
+interface FakeImage {
+  x: number;
+  y: number;
+  of?: FakeTexture;
+  depth?: number;
+  scrollFactor?: number;
+  scale?: number;
+  tints?: number[];
+  tintMode?: number;
+  alpha?: number;
   destroyed: boolean;
 }
 
@@ -64,6 +79,8 @@ function fakeScene(charW = CHAR_W, texture: TextureMode = "none") {
   const graphics: FakeGraphics[] = [];
   const made: FakeGraphics[] = [];
   const textures: FakeTexture[] = [];
+  const images: FakeImage[] = [];
+  const textureOf = new Map<unknown, FakeTexture>();
   const attempts = { renderTexture: 0 };
   const recordOf = new Map<unknown, FakeGraphics>();
   /** The scene's display list, in drawing order: what `add` made, as Phaser's DisplayList keeps it. */
@@ -120,14 +137,17 @@ function fakeScene(charW = CHAR_W, texture: TextureMode = "none") {
     if (texture === "throws") throw new Error("stand-in: no framebuffer");
     const t: FakeTexture = { x, y, width, height, log: [], destroyed: false };
     textures.push(t);
+    const own = {};
+    textureOf.set(own, t);
     const self: Record<string, unknown> = {
       width,
       height,
+      texture: own,
       setScrollFactor: (sf: number) => ((t.scrollFactor = sf), self),
       setDepth: (d: number) => ((t.depth = d), self),
       setScale: (sc: number) => ((t.scale = sc), self),
       setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
-      setTint: (c: number) => ((t.tint = c), self),
+      setTint: (...c: number[]) => ((t.tint = c[0]), (t.tints = c.length === 1 ? [c[0], c[0], c[0], c[0]] : c), self),
       setAlpha: (a: number) => ((t.alpha = a), self),
       draw: (e: unknown) => (t.log.push({ m: "draw", g: recordOf.get(e) }), self),
       erase: (e: unknown) => (t.log.push({ m: "erase", g: recordOf.get(e) }), self),
@@ -136,12 +156,27 @@ function fakeScene(charW = CHAR_W, texture: TextureMode = "none") {
     };
     return onList(self, t);
   };
+  const image = (x: number, y: number, of: unknown) => {
+    const i: FakeImage = { x, y, of: textureOf.get(of), destroyed: false };
+    images.push(i);
+    const self: Record<string, unknown> = {
+      setScrollFactor: (sf: number) => ((i.scrollFactor = sf), self),
+      setDepth: (d: number) => ((i.depth = d), self),
+      setScale: (sc: number) => ((i.scale = sc), self),
+      setPosition: (nx: number, ny: number) => ((i.x = nx), (i.y = ny), self),
+      setTint: (...c: number[]) => ((i.tints = c.length === 1 ? [c[0], c[0], c[0], c[0]] : c), self),
+      setTintMode: (v: number) => ((i.tintMode = v), self),
+      setAlpha: (a: number) => ((i.alpha = a), self),
+      destroy: () => void ((i.destroyed = true), offList(self)),
+    };
+    return onList(self, i);
+  };
   const add = {
     graphics: () => {
       const self = newGraphics(graphics);
       return onList(self, recordOf.get(self));
     },
-    ...(texture === "none" ? {} : { renderTexture }),
+    ...(texture === "none" ? {} : { renderTexture, image }),
     text: (x: number, y: number, words: string, style?: FakeText["style"]) => {
       const t: FakeText = { words, x, y, style, width: words.length * charW, destroyed: false };
       texts.push(t);
@@ -187,7 +222,7 @@ function fakeScene(charW = CHAR_W, texture: TextureMode = "none") {
   } as unknown as Phaser.Scene;
   /** The drawing order of display-list objects, by their records. */
   const order = () => list.map((o) => objectOf.get(o));
-  return { scene, graphics, made, textures, attempts, texts, zones, tweens, order };
+  return { scene, graphics, made, textures, images, attempts, texts, zones, tweens, order };
 }
 
 function setup(charW?: number, texture: TextureMode = "none") {
@@ -571,6 +606,29 @@ describe("MailboxEnvelope (FS-QHN87 round 1: back to the plain envelope, in the 
 const BRONZE = mix(palette.frame, palette.interactable, 0.5);
 const BRONZE_LIT = mix(palette.frame, palette.interactableBright, 0.5);
 
+const rgbOf = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+/** The colour an image's corner tints give at the screen height y: Phaser runs them across the quad. */
+function tintAt(t: FakeTexture, y: number): number[] {
+  const h = t.height * t.scale!;
+  const u = (y - (t.y - h / 2)) / h;
+  const [top, foot] = [rgbOf(t.tints![0]), rgbOf(t.tints![2])];
+  return top.map((c, i) => c + u * (foot[i] - c));
+}
+/**
+ * FS-S8Z2Y R4: the corner tints, the top two equal and the foot two equal, give `base` lifted 25%
+ * toward the bright amber at the envelope's top and shaded 20% at its foot, within 1 per channel.
+ */
+function expectLit(t: FakeTexture, base: number) {
+  const [tl, tr, bl, br] = t.tints!;
+  expect(tr).toBe(tl);
+  expect(br).toBe(bl);
+  const ys = knockoutOf(t).fills.flat().map((p) => p.y);
+  const within = (got: number[], want: number) =>
+    got.forEach((c, i) => expect(Math.abs(c - rgbOf(want)[i])).toBeLessThanOrEqual(1));
+  within(tintAt(t, Math.min(...ys)), mix(base, palette.interactableBright, 0.25));
+  within(tintAt(t, Math.max(...ys)), shade(base, 0.2));
+}
+
 /** What the knockout holds, in logical px on the screen: its fills and its cut lines. */
 function knockoutOf(t: FakeTexture) {
   const solid = t.log.find((e) => e.m === "draw")!.g!;
@@ -660,15 +718,18 @@ describe("MailboxEnvelope (FS-7TQN4 R7, R12: a solid letter in its own texture)"
     },
   );
 
-  it("should tint it bronze at 0.85, lifted at 1 under the pointer, back on leaving, building nothing (R10)", () => {
+  it("should tint it bronze at 0.85, lifted at 1 under the pointer, back on leaving, building nothing (R10; lit from above, FS-S8Z2Y R4, R5)", () => {
     const env = setup(undefined, "ok");
     const [t] = env.textures;
-    expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    expectLit(t, BRONZE);
+    expect(t.alpha).toBe(0.85);
     env.zones[0].handlers.pointerover();
-    expect(t).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+    expectLit(t, BRONZE_LIT);
+    expect(t.alpha).toBe(1);
     expect(env.live().map((x) => x.words)).toEqual(["Mailbox"]);
     env.zones[0].handlers.pointerout();
-    expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    expectLit(t, BRONZE);
+    expect(t.alpha).toBe(0.85);
     expect(env.textures).toHaveLength(1);
     expect(env.made).toHaveLength(2);
     expect(t.log).toHaveLength(3);
@@ -732,7 +793,8 @@ describe("MailboxEnvelope (FS-7TQN4 R11, R13, R14: relayout, a new render scale,
     expect(env.textures).toHaveLength(2);
     const [old, now] = env.textures;
     expect(old.destroyed).toBe(true);
-    expect(now).toMatchObject({ width: Math.round(f.width * 4), height: Math.round(f.height * 4), tint: BRONZE_LIT, alpha: 1 });
+    expect(now).toMatchObject({ width: Math.round(f.width * 4), height: Math.round(f.height * 4), alpha: 1 });
+    expectLit(now, BRONZE_LIT);
     expect(now.scale).toBeCloseTo(1 / 4, 12);
     viewport.set({ width: 1280, height: 720, renderScale: 2 });
     expect(env.textures).toHaveLength(2);
@@ -780,5 +842,87 @@ describe("MailboxEnvelope (FS-7TQN4 R15, R16: the fallback)", () => {
     expect(env.store.getState().panelOpen).toBe(true);
     env.zones[0].handlers.pointerdown();
     expect(env.store.getState().panelOpen).toBe(false);
+  });
+});
+
+// FS-S8Z2Y (the owner, 2026-11-13: 「icon可以加一點浮凸的陰影或漸層嗎」, 「加上浮凸漸層」): the town envelope
+// on its drop shadow, lit from above, the badge over both and the glow under both. I-S8Z2Y-1.
+
+describe("MailboxEnvelope (FS-S8Z2Y R1–R3, R8: the shadow, between the glow and the envelope)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  /** glow, shadow, envelope, badge, count: the shadow just under the live image. */
+  const stacked = (env: ReturnType<typeof setup>) => {
+    const order = env.order();
+    const image = env.textures.find((t) => !t.destroyed)!;
+    const shadow = env.images.find((i) => !i.destroyed)!;
+    expect(shadow.of).toBe(image);
+    expect(order.indexOf(shadow)).toBe(order.indexOf(image) - 1);
+    expect(order.indexOf(shadow)).toBeGreaterThan(order.indexOf(env.glow()));
+    expect(order.indexOf(image)).toBeLessThan(order.indexOf(env.badgeGraphics() ?? env.graphics[2]));
+    for (const t of env.live()) expect(order.indexOf(shadow)).toBeLessThan(order.indexOf(t));
+  };
+
+  it.each([1, 1.5, 2])(
+    "should lay its own texture under it at render scale %s: palette.ink in FILL at 0.5, 1 px right and down, at 1/k, depth 1000, scroll factor 0",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const env = setup(undefined, "ok");
+      env.waiting(3);
+      const f = envelopeFrame(viewport);
+      expect(env.images).toHaveLength(1);
+      const [shadow] = env.images;
+      expect(shadow).toMatchObject({
+        x: f.x + f.width / 2 + 1,
+        y: f.y + f.height / 2 + 1,
+        depth: 1000,
+        scrollFactor: 0,
+        tintMode: 1,
+        alpha: 0.5,
+      });
+      expect(shadow.tints).toEqual([palette.ink, palette.ink, palette.ink, palette.ink]);
+      expect(shadow.scale).toBeCloseTo(1 / (2 * renderScale), 12);
+      stacked(env);
+    },
+  );
+
+  it("should stand glow, shadow, envelope, badge and count in that order after the count goes 0 → 3", () => {
+    const env = setup(undefined, "ok");
+    env.waiting(0);
+    stacked(env);
+    env.waiting(3);
+    stacked(env);
+  });
+
+  it("should stand them so after a rebuild at a new render scale, the old shadow destroyed, with no scene relayout", () => {
+    const env = setup(undefined, "ok");
+    env.waiting(3);
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.images).toHaveLength(2);
+    expect(env.images[0].destroyed).toBe(true);
+    stacked(env);
+  });
+
+  it("should leave the shadow be on hover, move it on a relayout, and take it down on destroy", () => {
+    const env = setup(undefined, "ok");
+    const [shadow] = env.images;
+    const was = { ...shadow, tints: [...shadow.tints!] };
+    env.zones[0].handlers.pointerover();
+    env.zones[0].handlers.pointerout();
+    expect(shadow).toEqual(was);
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.envelope.relayout();
+    const f = envelopeFrame(viewport);
+    expect(shadow).toMatchObject({ x: f.x + f.width / 2 + 1, y: f.y + f.height / 2 + 1 });
+    env.envelope.destroy();
+    expect(shadow.destroyed).toBe(true);
+    expect(env.images).toHaveLength(1);
+  });
+
+  it.each(["none", "throws"] as const)("should lay no shadow under the line envelope (texture: %s)", (texture) => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = setup(undefined, texture);
+    expect(env.images).toEqual([]);
+    vi.restoreAllMocks();
   });
 });

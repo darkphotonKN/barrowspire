@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { mix, palette } from "@/utils/canvasPalette";
+import { mix, palette, shade } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
 import { HudCorner, PARTY_BUSTS, drawBust, type BustDress, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
@@ -44,10 +44,26 @@ interface FakeTexture {
   depth?: number;
   scrollFactor?: number;
   scale?: number;
+  /** The top-left corner's tint, and all four corners' as `setTint` left them (one sets all four). */
   tint?: number;
+  tints?: number[];
   alpha?: number;
   /** What was done to it, in order: each `draw` and `erase` with the graphics it took, and `render`. */
   log: { m: "draw" | "erase" | "render"; g?: FakeGraphics }[];
+  destroyed: boolean;
+}
+/** An image made with `add.image`: a knockout's shadow, on its texture's own texture (FS-S8Z2Y R1). */
+interface FakeImage {
+  x: number;
+  y: number;
+  /** The render texture whose texture it shows. */
+  of?: FakeTexture;
+  depth?: number;
+  scrollFactor?: number;
+  scale?: number;
+  tints?: number[];
+  tintMode?: number;
+  alpha?: number;
   destroyed: boolean;
 }
 /**
@@ -70,9 +86,16 @@ function fakeScene(texture: TextureMode = "none") {
   const made: FakeGraphics[] = [];
   const madeAdded: (boolean | undefined)[] = [];
   const textures: FakeTexture[] = [];
+  const images: FakeImage[] = [];
   const attempts = { renderTexture: 0 };
   const texts: FakeText[] = [];
   const recordOf = new Map<unknown, FakeGraphics>();
+  /** The textures and images in drawing order, as Phaser's display list keeps them. */
+  const list: unknown[] = [];
+  const objectOf = new Map<unknown, unknown>();
+  const onList = <T>(self: T, rec: unknown) => (list.push(self), objectOf.set(self, rec), self);
+  const offList = (self: unknown) => list.includes(self) && list.splice(list.indexOf(self), 1);
+  const textureOf = new Map<unknown, FakeTexture>();
   const newGraphics = (into: FakeGraphics[]) => {
     const rec: FakeGraphics = { strokes: [], alphas: [], calls: [], ops: [], destroyed: false };
     into.push(rec);
@@ -119,25 +142,52 @@ function fakeScene(texture: TextureMode = "none") {
     if (texture === "throws") throw new Error("stand-in: no framebuffer");
     const t: FakeTexture = { x, y, width, height, log: [], destroyed: false };
     textures.push(t);
+    const own = {};
+    textureOf.set(own, t);
     const self: Record<string, unknown> = {
       width,
       height,
+      texture: own,
       setScrollFactor: (sf: number) => ((t.scrollFactor = sf), self),
       setDepth: (d: number) => ((t.depth = d), self),
       setScale: (sc: number) => ((t.scale = sc), self),
       setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
-      setTint: (c: number) => ((t.tint = c), self),
+      setTint: (...c: number[]) => ((t.tint = c[0]), (t.tints = c.length === 1 ? [c[0], c[0], c[0], c[0]] : c), self),
       setAlpha: (a: number) => ((t.alpha = a), self),
       draw: (e: unknown) => (t.log.push({ m: "draw", g: recordOf.get(e) }), self),
       erase: (e: unknown) => (t.log.push({ m: "erase", g: recordOf.get(e) }), self),
       render: () => (t.log.push({ m: "render" }), self),
-      destroy: () => void (t.destroyed = true),
+      destroy: () => void ((t.destroyed = true), offList(self)),
     };
-    return self;
+    return onList(self, t);
+  };
+  const image = (x: number, y: number, of: unknown) => {
+    const i: FakeImage = { x, y, of: textureOf.get(of), destroyed: false };
+    images.push(i);
+    const self: Record<string, unknown> = {
+      setScrollFactor: (sf: number) => ((i.scrollFactor = sf), self),
+      setDepth: (d: number) => ((i.depth = d), self),
+      setScale: (sc: number) => ((i.scale = sc), self),
+      setPosition: (nx: number, ny: number) => ((i.x = nx), (i.y = ny), self),
+      setTint: (...c: number[]) => ((i.tints = c.length === 1 ? [c[0], c[0], c[0], c[0]] : c), self),
+      setTintMode: (v: number) => ((i.tintMode = v), self),
+      setAlpha: (a: number) => ((i.alpha = a), self),
+      destroy: () => void ((i.destroyed = true), offList(self)),
+    };
+    return onList(self, i);
+  };
+  // Phaser's List.moveBelow (src/utils/array/MoveBelow.js): child1 to just under child2, if above it
+  const children = {
+    list,
+    moveBelow: (child1: unknown, child2: unknown) => {
+      const [at, base] = [list.indexOf(child1), list.indexOf(child2)];
+      if (at < 0 || base < 0) throw new Error("Supplied items must be elements of the same array");
+      if (at > base) list.splice(base, 0, ...list.splice(at, 1));
+    },
   };
   const add = {
     graphics: () => newGraphics(graphics),
-    ...(texture === "none" ? {} : { renderTexture }),
+    ...(texture === "none" ? {} : { renderTexture, image }),
     zone: (x: number, y: number, width: number, height: number) => {
       const z: FakeZone = { x, y, width, height, handlers: {}, destroyed: false };
       zones.push(z);
@@ -169,9 +219,11 @@ function fakeScene(texture: TextureMode = "none") {
   const make = {
     graphics: (_config: object, addToScene?: boolean) => (madeAdded.push(addToScene), newGraphics(made)),
   };
-  const scene = (texture === "none" ? { add } : { add, make }) as unknown as Phaser.Scene;
+  const scene = (texture === "none" ? { add } : { add, make, children }) as unknown as Phaser.Scene;
   const liveTexts = () => texts.filter((t) => !t.destroyed);
-  return { scene, zones, graphics, made, madeAdded, textures, attempts, liveTexts };
+  /** The display list's records, in drawing order. */
+  const order = () => list.map((o) => objectOf.get(o));
+  return { scene, zones, graphics, made, madeAdded, textures, images, attempts, liveTexts, order };
 }
 
 function setup(icons?: CornerIconSpec[], texture: TextureMode = "none") {
@@ -478,6 +530,29 @@ const inventorySlot = () => {
 };
 const BRONZE = mix(palette.frame, palette.interactable, 0.5);
 const BRONZE_LIT = mix(palette.frame, palette.interactableBright, 0.5);
+
+const rgbOf = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff];
+/** The colour an image's corner tints give at the screen height y: Phaser runs them across the quad. */
+function tintAt(t: FakeTexture, y: number): number[] {
+  const h = t.height * t.scale!;
+  const u = (y - (t.y - h / 2)) / h;
+  const [top, foot] = [rgbOf(t.tints![0]), rgbOf(t.tints![2])];
+  return top.map((c, i) => c + u * (foot[i] - c));
+}
+/**
+ * FS-S8Z2Y R4: the corner tints, the top two equal and the foot two equal, give `base` lifted 25%
+ * toward the bright amber at the silhouette's top and shaded 20% at its foot, within 1 per channel.
+ */
+function expectLit(t: FakeTexture, base: number) {
+  const [tl, tr, bl, br] = t.tints!;
+  expect(tr).toBe(tl);
+  expect(br).toBe(bl);
+  const { box } = drawingOf(t);
+  const within = (got: number[], want: number) =>
+    got.forEach((c, i) => expect(Math.abs(c - rgbOf(want)[i])).toBeLessThanOrEqual(1));
+  within(tintAt(t, box.top), mix(base, palette.interactableBright, 0.25));
+  within(tintAt(t, box.bottom), shade(base, 0.2));
+}
 const FULL_ROW = (): CornerIconSpec[] => [
   { icon: "menu" },
   { icon: "inventory" },
@@ -680,14 +755,15 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout
   it("should tint it bronze at 0.85, lifted toward the bright amber at 1 under the pointer, with no new texture and nothing drawn (R3, R5)", () => {
     const env = knockout([{ icon: "inventory", press: vi.fn() }]);
     const [t] = env.textures;
-    expect(t.tint).toBe(BRONZE);
+    // lit from above (FS-S8Z2Y R4, R5)
+    expectLit(t, BRONZE);
     expect(t.alpha).toBe(0.85);
     env.zoneAt("inventory").handlers.pointerover();
-    expect(t.tint).toBe(BRONZE_LIT);
+    expectLit(t, BRONZE_LIT);
     expect(t.alpha).toBe(1);
     expect(env.liveTexts().map((x) => x.words)).toEqual(["Inventory (I)"]);
     env.zoneAt("inventory").handlers.pointerout();
-    expect(t.tint).toBe(BRONZE);
+    expectLit(t, BRONZE);
     expect(t.alpha).toBe(0.85);
     expect(env.textures).toHaveLength(1);
     expect(t.log).toHaveLength(3);
@@ -716,7 +792,8 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout
     expect(now).toMatchObject({ x: cx, y: cy, width: Math.round(f.width * 4), height: Math.round(f.height * 4), depth: 1000 });
     expect(now.scale).toBeCloseTo(1 / 4, 12);
     expect(now.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
-    expect(now).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+    expect(now.alpha).toBe(1);
+    expectLit(now, BRONZE_LIT);
     expect(env.made.every((g) => g.destroyed)).toBe(true);
     expect(env.liveTexts().map((x) => x.words)).toEqual(["Inventory (I)"]);
     // the drawing is the same in logical px
@@ -1697,11 +1774,15 @@ describe("HudCorner (FS-7TQN4 R9, R10: bronze, lifted under the pointer; the gre
     const env = setup(FULL_ROW(), "ok");
     for (const icon of ["menu", "inventory", "character", "party"] as const) {
       const t = textureOn(env, icon);
-      expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+      // lit from above (FS-S8Z2Y R4, R5)
+      expectLit(t, BRONZE);
+      expect(t.alpha).toBe(0.85);
       env.zoneAt(icon).handlers.pointerover();
-      expect(t).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+      expectLit(t, BRONZE_LIT);
+      expect(t.alpha).toBe(1);
       env.zoneAt(icon).handlers.pointerout();
-      expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+      expectLit(t, BRONZE);
+      expect(t.alpha).toBe(0.85);
     }
     expect(env.textures).toHaveLength(5);
     expect(env.made).toHaveLength(10);
@@ -1747,8 +1828,10 @@ describe("HudCorner (FS-7TQN4 R11, R13, R14: relayout, a new render scale, destr
       expect(t.scale).toBeCloseTo(1 / 4, 12);
       expect(t.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
     }
-    expect(textureOn(env, "party")).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
-    expect(textureOn(env, "menu")).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    expect(textureOn(env, "party").alpha).toBe(1);
+    expectLit(textureOn(env, "party"), BRONZE_LIT);
+    expect(textureOn(env, "menu").alpha).toBe(0.85);
+    expectLit(textureOn(env, "menu"), BRONZE);
     viewport.set({ width: 1280, height: 720, renderScale: 2 });
     expect(env.textures).toHaveLength(10);
   });
@@ -1809,4 +1892,115 @@ describe("HudCorner (FS-7TQN4 R15, R18: the fallback, and the rest stays)", () =
       expect(env.graphics.every((g) => g.destroyed)).toBe(true);
     },
   );
+});
+
+// FS-S8Z2Y (the owner, 2026-11-13: 「icon可以加一點浮凸的陰影或漸層嗎」, 「加上浮凸漸層」): every knockout of
+// the row on a drop shadow, its bronze lit from above; the greyed Mailbox flat. I-S8Z2Y-1.
+
+const SHADOW_OF = (env: ReturnType<typeof setup>, t: FakeTexture) => {
+  const on = env.images.filter((i) => i.of === t);
+  expect(on).toHaveLength(1);
+  return on[0];
+};
+
+describe("HudCorner (FS-S8Z2Y R1–R3: a drop shadow under every knockout)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it.each([1, 1.5, 2])(
+    "should lay a shadow under each of a town row's four and a field row's five at render scale %s: its own texture in palette.ink, FILL, alpha 0.5, 1 px right and down, at 1/k, just under it",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const k = 2 * renderScale;
+      expect(setup(TOWN_ROW(), "ok").images).toHaveLength(4);
+      const env = setup(FULL_ROW(), "ok");
+      expect(env.images).toHaveLength(5);
+      expect(env.textures).toHaveLength(5);
+      for (const icon of ICONS) {
+        const { cx, cy } = slotOf(icon);
+        const t = textureOn(env, icon);
+        const shadow = SHADOW_OF(env, t);
+        expect(shadow).toMatchObject({ x: cx + 1, y: cy + 1, depth: 1000, scrollFactor: 0, tintMode: 1, alpha: 0.5 });
+        expect(shadow.tints).toEqual([palette.ink, palette.ink, palette.ink, palette.ink]);
+        expect(shadow.scale).toBeCloseTo(1 / k, 12);
+        const order = env.order();
+        expect(order.indexOf(shadow)).toBe(order.indexOf(t) - 1);
+      }
+    },
+  );
+
+  it("should leave every shadow as it was on hover and leave, making nothing", () => {
+    const env = setup(FULL_ROW(), "ok");
+    const was = env.images.map((i) => ({ ...i, tints: [...i.tints!] }));
+    for (const icon of ICONS) {
+      env.zoneAt(icon).handlers.pointerover();
+      env.zoneAt(icon).handlers.pointerout();
+    }
+    env.zoneAt("party").handlers.pointerover();
+    expect(env.images).toEqual(was);
+  });
+
+  it("should move each shadow with its slot on a relayout to 1280, making none", () => {
+    const env = setup(FULL_ROW(), "ok");
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.corner.relayout();
+    expect(env.images).toHaveLength(5);
+    for (const icon of ICONS) {
+      const { cx, cy } = slotOf(icon);
+      expect(SHADOW_OF(env, textureOn(env, icon))).toMatchObject({ x: cx + 1, y: cy + 1, destroyed: false });
+    }
+  });
+
+  it("should make a new shadow on each new texture when the render scale goes 1 → 2, destroying the old, and take them all down on destroy", () => {
+    const env = setup(FULL_ROW(), "ok");
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.images).toHaveLength(10);
+    expect(env.images.slice(0, 5).every((i) => i.destroyed)).toBe(true);
+    for (const icon of ICONS) expect(SHADOW_OF(env, textureOn(env, icon)).scale).toBeCloseTo(1 / 4, 12);
+    env.corner.destroy();
+    expect(env.images.every((i) => i.destroyed)).toBe(true);
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    expect(env.images).toHaveLength(10);
+  });
+
+  it.each(["none", "throws"] as const)("should make no shadow and no gradient for the line glyphs (texture: %s)", (texture) => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = setup(FULL_ROW(), texture);
+    expect(env.images).toEqual([]);
+    for (const g of env.graphics) expect(g.ops.length).toBeGreaterThan(0);
+    vi.restoreAllMocks();
+  });
+});
+
+describe("HudCorner (FS-S8Z2Y R4–R6: lit from above; the greyed Mailbox flat)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it.each([1, 1.5, 2])(
+    "should light Menu, Inventory, Character and Party from above at render scale %s: from the bronze at 0.85, from the lifted bronze at 1 under the pointer",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const env = setup(FULL_ROW(), "ok");
+      for (const icon of ["menu", "inventory", "character", "party"] as const) {
+        const t = textureOn(env, icon);
+        expectLit(t, BRONZE);
+        expect(t.alpha).toBe(0.85);
+        env.zoneAt(icon).handlers.pointerover();
+        expectLit(t, BRONZE_LIT);
+        expect(t.alpha).toBe(1);
+        env.zoneAt(icon).handlers.pointerout();
+      }
+      for (const t of env.textures) expect(t.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
+    },
+  );
+
+  it("should keep the greyed Mailbox one flat faint grey at 0.6 on all four corners, hovered or not, on its shadow", () => {
+    const env = setup(FULL_ROW(), "ok");
+    const t = textureOn(env, "mail");
+    const flat = [palette.hudFaint, palette.hudFaint, palette.hudFaint, palette.hudFaint];
+    expect(t.tints).toEqual(flat);
+    expect(t.alpha).toBe(0.6);
+    env.zoneAt("mail").handlers.pointerover();
+    expect(t.tints).toEqual(flat);
+    expect(t.alpha).toBe(0.6);
+    expect(SHADOW_OF(env, t)).toMatchObject({ alpha: 0.5, tintMode: 1 });
+  });
 });
