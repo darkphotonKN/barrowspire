@@ -568,6 +568,61 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     expect(states("chest")).toEqual(["closed", "open"]);
   });
 
+  describe("the Tome of Filth and the Altar of Consecration (FS-3103M §H R23)", () => {
+    type PropSheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      source: string;
+      licence: string;
+    };
+    const prop = (name: string): PropSheet => baked.sheets[name];
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    it("bakes the tome as one still frame, and the altar's dormant and burned states framed together", () => {
+      expect(prop("tome").directions).toBe(1);
+      expect(Object.keys(prop("tome").animations)).toEqual(["default"]);
+      expect(prop("tome").animations.default.frames[0]).toHaveLength(1);
+      expect(Object.keys(prop("altar").animations)).toEqual(["dormant", "burned"]);
+      for (const a of Object.values(prop("altar").animations)) expect(a.frames[0]).toHaveLength(1);
+    });
+
+    it("packs both on a resident atlas of their own, so no committed atlas reflows", () => {
+      for (const name of ["tome", "altar"]) expect(atlasGroup(prop(name).atlas), name).toBe("summoning");
+      expect(
+        Object.entries(baked.sheets as Record<string, PropSheet>)
+          .filter(([, s]) => atlasGroup(s.atlas) === "summoning")
+          .map(([n]) => n)
+          .sort(),
+      ).toEqual(["altar", "tome"]);
+    });
+
+    it("draws both smaller than a chest: narrower, and standing lower over the anchor", () => {
+      const chest = prop("chest");
+      const standing = (s: PropSheet) => s.anchor.y * s.frameHeight;
+      for (const name of ["tome", "altar"]) {
+        expect(prop(name).frameWidth, name).toBeLessThan(chest.frameWidth);
+        expect(standing(prop(name)), name).toBeLessThan(standing(chest));
+      }
+      expect(standing(prop("tome"))).toBeLessThan(standing(prop("altar")));
+    });
+
+    it("is modelled in code, under the project's licence", () => {
+      for (const name of ["tome", "altar"]) {
+        expect(prop(name).source).toBe(`procedural: tools/bake/page/models/interactables.js#${name}`);
+        expect(prop(name).licence).toBe(baked.sheets.brazier.licence);
+      }
+    });
+
+    it("draws every colour from BARROW: no colour literal in models/interactables.js (ADR-0013)", () => {
+      const model = readFileSync(join(__dirname, "../../../tools/bake/page/models/interactables.js"), "utf8");
+      expect(model).not.toMatch(/#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/);
+    });
+  });
+
   it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
     const ground = Object.keys(baked.sheets).filter((n) =>
       n.startsWith("ground_"),

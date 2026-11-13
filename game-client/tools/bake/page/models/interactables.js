@@ -318,3 +318,114 @@ export function sack(state) {
   g.add(thong(S, [[r * 0.6, h * 0.86, r * 0.6], [r * 1.1, h * 0.5, r * 0.95], [r * 1.35, 0.012, r * 0.9], [r * 1.7, 0.012, r * 0.55], [r * 1.9, 0.012, r * 0.75]]));
   return scaled(g, 1.5);
 }
+
+// --- the Tome of Filth and the Altar of Consecration (FS-3103M §H R23) -----------------------
+//
+// Two very minor props, small on the floor: smaller than a chest on screen. Colours from BARROW
+// only (ADR-0013): grime and filth from the barrow's browns and its bog green, old vellum for the
+// pages, ash and scorch from its greys and blacks. No emissive: the burned altar is spent, cold.
+
+// a cover gone the colour of what it was kept in, and the filth crusted over it
+const TOME_COVER = mix(mix("barrowDeep", "arcaneDeep", 0.3), "pitch", 0.2);
+const FILTH = mix(mix("arcaneDeep", "barrowBrown", 0.45), "pitch", 0.35);
+const PAGES = mix("vellumDark", "barrowBrown", 0.3);
+// the altar's stone, a pale consecrated limestone gone grey with the barrow's damp
+const ALTAR_STONE = mix(mix("vellumDark", "slateLight", 0.5), "slate", 0.2);
+const SCORCH = mix("pitch", "charcoal", 0.5);
+const ASH = mix(mix("slateLight", "vellumDark", 0.3), "charcoal", 0.25);
+const WAX = mix("vellum", "vellumDark", 0.4);
+
+let RITES = null;
+function riteMaterials() {
+  if (RITES) return RITES;
+  const blotch = (base, over, s, k = 0.7) =>
+    pixelTexture(128, 128, (x, y) => mix(shade(base, 0.72 + 0.45 * fbm(x / 10, y / 10, s)), over, k * smoothstep(0.5, 0.78, fbm(x / 18, y / 18, s + 3))));
+  RITES = {
+    cover: textured(blotch(TOME_COVER, FILTH, 71), { bump: 0.8, rough: 0.8 }),
+    pages: textured(
+      pixelTexture(64, 64, (x, y) => shade(PAGES, (y % 3 < 1 ? 0.78 : 1) * (0.8 + 0.3 * fbm(x / 8, y / 8, 73)))),
+      { bump: 0.4, rough: 0.95 },
+    ),
+    stone: textured(
+      pixelTexture(128, 128, (x, y) =>
+        shade(ALTAR_STONE, (0.68 + 0.4 * fbm(x / 16, y / 16, 75)) * (0.92 + 0.16 * fbm(x / 4, y / 4, 76)) * (Math.abs(vnoise(x / 14, y / 14, 77) - 0.5) < 0.02 ? 0.6 : 1)),
+      ),
+      { bump: 0.7, rough: 0.95 },
+    ),
+    scorched: textured(blotch(SCORCH, mix("charcoal", "slate", 0.3), 79, 0.5), { bump: 0.5, rough: 1 }),
+    ash: textured(
+      pixelTexture(64, 64, (x, y) => shade(ASH, 0.7 + 0.45 * fbm(x / 5, y / 5, 81))),
+      { bump: 0.9, rough: 1 },
+    ),
+    wax: plain(WAX, { rough: 0.6 }),
+    dark: plain(mix("pitch", "charcoal", 0.3), { rough: 1 }),
+  };
+  return RITES;
+}
+
+/**
+ * The Tome of Filth (R23): a small, thick, grimy book lying shut on the floor, a little askew, its
+ * leather cover crusted with filth, a tarnished clasp across its fore-edge, its pages swollen.
+ */
+export function tome() {
+  const M = materials();
+  const T = riteMaterials();
+  const g = new THREE.Group();
+  const w = 0.36;
+  const d = 0.46;
+  const h = 0.11;
+  // the boards and spine, the swollen block of pages between them
+  g.add(part(new THREE.BoxGeometry(w, 0.022, d), T.cover, { y: 0.011 }));
+  g.add(part(new THREE.BoxGeometry(w, 0.022, d), T.cover, { y: h - 0.011 }));
+  g.add(part(new THREE.CylinderGeometry(h / 2, h / 2, d, 10, 1, false, Math.PI, Math.PI), T.cover, { x: -w / 2, y: h / 2, rx: Math.PI / 2 }));
+  g.add(part(new THREE.BoxGeometry(w - 0.03, h - 0.04, d - 0.03), T.pages, { x: 0.012, y: h / 2 }));
+  // the clasp: a strap over the fore-edge, a tarnished boss on the cover
+  g.add(part(new THREE.BoxGeometry(0.06, h + 0.006, 0.05), M.leather, { x: w / 2 - 0.02, y: h / 2 }));
+  g.add(part(new THREE.CylinderGeometry(0.026, 0.026, 0.012, 10), M.iron, { x: w / 2 - 0.06, y: h + 0.006 }));
+  // a lump of filth on the cover
+  g.add(part(new THREE.SphereGeometry(0.06, 10, 6), T.cover, { x: -0.04, y: h, z: 0.08, sy: 0.25 }));
+  g.rotation.y = 0.5;
+  return scaled(g, 1.3);
+}
+
+/**
+ * The Altar of Consecration (R23): a low block of pale stone on a plinth under an overhanging
+ * slab, a sunken panel cut in its face, a shallow basin in the slab between two candle stubs.
+ * `dormant`: clean, cold, the candles whole. `burned`: the slab scorched black round a heap of
+ * ash in the basin, soot streaked down its face, the candles melted to stubs.
+ */
+export function altar(state) {
+  const T = riteMaterials();
+  const burned = state === "burned";
+  const g = new THREE.Group();
+  const W = 0.78;
+  const D = 0.5;
+  g.add(part(new THREE.BoxGeometry(W + 0.1, 0.08, D + 0.1), T.stone, { y: 0.04 }));
+  g.add(part(new THREE.BoxGeometry(W, 0.3, D), T.stone, { y: 0.23 }));
+  // the slab, and the basin sunk in it
+  const top = 0.38 + 0.035;
+  g.add(part(new THREE.BoxGeometry(W + 0.12, 0.07, D + 0.1), burned ? T.scorched : T.stone, { y: 0.38 + 0.035 }));
+  g.add(part(new THREE.CylinderGeometry(0.15, 0.12, 0.02, 20), T.dark, { y: top + 0.026 }));
+  g.add(part(new THREE.TorusGeometry(0.155, 0.02, 6, 24), burned ? T.scorched : T.stone, { y: top + 0.04, rx: Math.PI / 2 }));
+  // the sunken panel on its face, a cut cross of consecration within it
+  g.add(part(new THREE.BoxGeometry(W * 0.6, 0.18, 0.02), T.dark, { y: 0.23, z: D / 2 - 0.004 }));
+  g.add(part(new THREE.BoxGeometry(0.04, 0.14, 0.024), burned ? T.scorched : T.stone, { y: 0.23, z: D / 2 }));
+  g.add(part(new THREE.BoxGeometry(0.12, 0.035, 0.024), burned ? T.scorched : T.stone, { y: 0.26, z: D / 2 }));
+  // the candle stubs at the slab's two front corners
+  for (const sx of [-1, 1]) {
+    const hgt = burned ? 0.035 : 0.11;
+    g.add(part(new THREE.CylinderGeometry(0.028, 0.034, hgt, 10), T.wax, { x: sx * (W / 2 - 0.02), y: top + 0.035 + hgt / 2, z: D / 2 - 0.04 }));
+    if (burned) g.add(part(new THREE.CylinderGeometry(0.06, 0.07, 0.01, 12), T.wax, { x: sx * (W / 2 - 0.02), y: top + 0.04, z: D / 2 - 0.04 }));
+    else g.add(part(new THREE.CylinderGeometry(0.003, 0.003, 0.02, 4), T.dark, { x: sx * (W / 2 - 0.02), y: top + 0.035 + hgt + 0.01, z: D / 2 - 0.04 }));
+  }
+  if (burned) {
+    // ash heaped in the basin, a charred scrap of the tome's board in it
+    g.add(part(new THREE.SphereGeometry(0.16, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), T.ash, { y: top + 0.03, sy: 0.55 }));
+    g.add(part(new THREE.BoxGeometry(0.12, 0.012, 0.09), T.dark, { x: 0.03, y: top + 0.075, z: 0.02, ry: 0.6, rz: 0.3 }));
+    // soot run down the face from the slab, and ash spilled on the plinth
+    for (const [x, len] of [[-0.22, 0.22], [0.05, 0.3], [0.26, 0.16]])
+      g.add(part(new THREE.BoxGeometry(0.07, len, 0.006), T.scorched, { x, y: 0.38 - len / 2, z: D / 2 + 0.004 }));
+    g.add(part(new THREE.SphereGeometry(0.08, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), T.ash, { x: 0.3, y: 0.08, z: D / 2 + 0.02, sy: 0.3 }));
+  }
+  return scaled(g, 1.0);
+}

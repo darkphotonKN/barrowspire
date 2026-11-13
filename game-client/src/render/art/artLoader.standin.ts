@@ -55,6 +55,7 @@ export const RESIDENT_ART_PAGES = [
   "ravener-0",
   "shade-0",
   "spire-0",
+  "summoning-0",
   "tower-0",
   "town-0",
   "wight_archer-0",

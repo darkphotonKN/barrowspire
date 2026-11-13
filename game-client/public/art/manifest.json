@@ -333,6 +333,12 @@
       "height": 744,
       "sha256": "33faf7c562eb281f06aa0e944eb41a92fb85e48b375460ada19a0a44da69a91c"
     },
+    "summoning-0": {
+      "image": "summoning-0.png",
+      "width": 196,
+      "height": 60,
+      "sha256": "2c634793a3e41edc56dd2a4a715e2e993bd5ac1afc7099e08a78f35f3489b9df"
+    },
     "tower-0": {
       "image": "tower-0.png",
       "width": 1980,
@@ -371,6 +377,44 @@
     }
   },
   "sheets": {
+    "altar": {
+      "atlas": "summoning-0",
+      "frameWidth": 70,
+      "frameHeight": 54,
+      "anchor": {
+        "x": 0.42857142857142855,
+        "y": 0.6666666666666666
+      },
+      "directions": 1,
+      "animations": {
+        "dormant": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 2
+              }
+            ]
+          ]
+        },
+        "burned": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 74,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#altar",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "anvil": {
       "atlas": "interior-0",
       "frameWidth": 79,
@@ -63790,6 +63834,32 @@
         }
       },
       "source": "procedural: tools/bake/page/models/nature.js#toadstools",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "tome": {
+      "atlas": "summoning-0",
+      "frameWidth": 46,
+      "frameHeight": 34,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5882352941176471
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 146,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/interactables.js#tome",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "tower_cap": {
