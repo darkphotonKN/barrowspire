@@ -367,3 +367,117 @@ for tests only). Client slices are agent lane.
   送回run裏面是不是怪怪的". Under lite, holding the player bought nothing.
 - **Crash = rollback:** Nick: "多一瓶水感覺可以當回朔".
 - **Copy:** never "離開風險自負 / 可能拿不到". Once pending, delivery is guaranteed (R21).
+
+## Change: The settlement record scrolls
+Status: shipped
+Date: 2026-11-13
+
+Owner, 2026-11-13: 「遊戲進塔後逃離的結算視窗 東西太多時會顯示 and 11 more 我想要變成捲軸可以看到全部」 (the
+record shown after escaping the tower prints "and 11 more" when there is too much; make it a
+scroll so everything can be seen). Charter approved by the owner 2026-11-13; D1–D8 below are its
+charter defaults, each with its reason. R21's record keeps everything else it says: its copy,
+marks, colours, anchor, Close and the R23 hold are unchanged. R19's `settlement` payload is
+unchanged. Where this section and R21 or the code's "two columns of four, then and n more"
+disagree, this section wins.
+
+### Requirements
+
+S1. **Every row is listed.** The record has no row cap: `RECORD_ROWS_SHOWN`, the view's
+    `carriedMore` / `lostMore` and the "and n more" line are gone. CARRIED HOME lists every carried
+    item and LOST every lost one (unsafe ahead of consumed, as now), each with its mark.
+    **(charter default D2: the owner wants to see everything)**
+S2. **Still two columns, filled column-major.** A section of n rows puts max(4, ⌈n/2⌉) rows in its
+    first column and the rest in its second, top to bottom; a column is as tall as the rows it holds.
+    A section of up to 8 rows is laid out exactly as today: the same rows at the same places
+    (4 per column, a column of n < 4 rows n rows tall). 9 rows are 5 + 4, 11 are 6 + 5. Names keep
+    their cut (18 characters beside a mark, 30 alone); "Nothing came home" stays; an empty LOST is
+    still left out. **(charter default D3: records of ≤ 8 rows look exactly as today)**
+S3. **One scroll area holds both sections.** The CARRIED HOME and LOST headings and their rows
+    sit in one scroll area, in that order, with today's spacing (heading 20 px, rows 20 px, 8 px
+    after each section). The title band, the status line, the earned and delve lines and CLOSE stay
+    where they are, fixed, outside it: scrolling never moves them. **(charter default D1: one wheel
+    target, the button always reachable)**
+S4. **The scroll area is never taller than today's tallest body.** Its height is the content's,
+    at most 216 px: two sections of 4 rows, each with its heading (2 × (20 + 4 × 20 + 8)). It is
+    shorter still if the panel would otherwise rise above `TOP_MARGIN` (8 px) with its bottom on its
+    anchor: the whole panel stays between `TOP_MARGIN` and the anchor, the area never less than one
+    row (20 px). Content that fits is drawn whole and does not scroll. The panel is never taller
+    than today's tallest (414 px, against 454 with both "and n more" lines).
+    **(charter default D4: never taller than today, fits small screens)**
+S5. **What is outside the area is clipped.** A row or heading scrolled out of the area is not drawn
+    outside it, in whole or in part. The area's Texts share one mask, through `maskInView`
+    (ADR-0057 §Masks: one area masking many objects shares one mask): they sit in one Layer,
+    camera-fixed, masked once, as the chat window's lines are (`ChatWindow.ts` `shapeMask`), drawn
+    above the panel's frame. Not the record's Container: `maskInView` does not correct a
+    camera-fixed Container, which would slide with the world (`render/viewport/mask.ts`). The mask's
+    area is drawn by `fillMaskArea` on the backing px grid of the render scale now, and redrawn in
+    place for a new render scale (the scene relayouts the record only on a logical size change), as
+    the letter panel's body clip is; that watch ends when the record closes or its scene ends (the
+    scene drops the record on teardown without closing it). The rows keep the resolution they are
+    rasterised at (FS-1GZGD § Change C6). **(charter default D5: the letter panel's `maskInView`
+    clipping; the Layer and the render-scale watch derived here)**
+S6. **The wheel over the panel scrolls it, and only it.** While the record is open and the pointer
+    is over the panel (its blocker or its Close button), each wheel event moves the area's content
+    by 24 px (`Math.sign(dy) × 24`, as `LetterPanel`'s `BODY_STEP`): down shows later rows. The
+    offset is clamped to [0, content − area]. Every wheel event over the panel is the panel's alone,
+    whether it moves anything or not (a fitting record, an end reached, a sideways wheel): nothing
+    under it answers, not the chat window's lines nor the gear overlay's grids. The record's own hit
+    areas take the `wheel` and call `event.stopPropagation()`, which in Phaser 4.2.1 keeps the
+    scene's `wheel` from being emitted (`InputPlugin#processWheelEvent`), so no scene wiring is
+    needed. **(charter default D5: copies the letter panel's pattern; the stop derived here)**
+S7. **A thin brass thumb shows where the area stands**, drawn only while the content overflows:
+    4 px wide, in the panel's right padding beside the area (clear of the marks, which end at
+    `RECORD_W − PAD`), as tall as the area's share in view (at least 16 px), placed down the
+    area's height by the share scrolled, in brass (`palette.frame`), with no track. It moves with
+    every scroll. It takes no press and no drag. **(charter default D6: shows there is more; drag
+    is out of v1)**
+S8. **The offset across updates.** A `settlement` that changes only the status (pending →
+    confirmed, R20) changes only the status line: the offset is kept. One whose content differs
+    (a new body) is drawn from the top. A relayout (FS-ZAJMH R13) draws the open record at its new
+    anchor with its offset kept, clamped to the new area. A record the player closes and opens again
+    (Close, the Settlement button) opens at the top. **(charter default D7; the reopen case filled
+    here: a reopen is a fresh look, as a new body is)**
+
+### Acceptance Criteria
+
+- [ ] A settlement with 11 carried and 3 lost items draws all 14 names and their marks, and no "and n more" text.
+- [ ] `RECORD_ROWS_SHOWN`, `carriedMore` and `lostMore` no longer exist; the view's `carried` and `lost` hold every row.
+- [ ] A record whose sections hold up to 8 rows each draws every text at the same place and the panel at the same size as before this change.
+- [ ] A section of 9 rows lays 5 in its first column and 4 in its second; 11 lay 6 and 5; each column top to bottom.
+- [ ] The scroll area is at most 216 px tall; the panel stays between 8 px from the top and its anchor, at most 414 px tall.
+- [ ] A record that fits draws no thumb, and a wheel over it moves nothing.
+- [ ] A record that overflows: one wheel notch down over the panel moves the rows and headings up 24 px; the title, status, earned and delve lines and CLOSE do not move; the offset stops at 0 and at the content's end.
+- [ ] A wheel over the panel, on its blocker or on Close, stops the event, so the scene's `wheel` listeners (chat window, gear overlay) do not run; a wheel off the panel is not stopped.
+- [ ] The area's texts are in one Layer masked once through `maskInView`, its shape filled by `fillMaskArea` over the area's screen rect; a new render scale redraws that shape in place without a new mask; the watch ends on close and on scene end.
+- [ ] The thumb is drawn only on overflow, brass, in the right padding, its length and place following the offset; it has no hit area.
+- [ ] A confirmed copy of the open record keeps its offset; a settlement with new content opens at the top; a relayout keeps the offset, clamped; closing and reopening opens at the top.
+- [ ] By eye (owner, browser): a long record scrolls smoothly under the wheel, rows are cut cleanly at the area's edges at render scale 1, 1.5 and 2, the text is as crisp as before, and the chat window behind it does not scroll.
+
+### Edge States
+
+- **Nothing carried, nothing lost:** "Nothing came home" alone, the LOST section left out; fits,
+  no thumb.
+- **Exactly at the cap of today's body (4 + 4 rows):** fits exactly; no thumb, no scroll.
+- **One section long, the other empty or short:** the long one sets the content height; the area
+  scrolls through both sections as one.
+- **A trackpad's many small wheel events:** each is a 24 px step, as in the letter panel. Accepted.
+- **A wheel while the panel is closed:** the record has no hit areas then (R21's build on open),
+  so the wheel goes to what is under the pointer, as today.
+- **A wheel over a row scrolled out of view:** the pointer is over the panel's blocker, not the
+  hidden row (rows take no input), so it scrolls the panel.
+- **The confirmed copy lands while scrolled:** status line only; the offset stays (S8).
+- **A view that becomes smaller while scrolled:** relayout keeps the offset, clamped to the new
+  area (S4, S8).
+- **Leaving the tower with the record open:** as R22/R23; the mask, its Layer and its watch go with
+  the record or the scene.
+- **The canvas renderer:** `maskInView`'s canvas fallback clips the Layer by the same shape (a Layer
+  carries Phaser's Mask component), as the chat window's lines are.
+
+### Out of Scope
+
+- Keyboard scrolling, touch drag, a bottom fade mask (charter default D8).
+- Dragging the thumb or pressing its track.
+- Any server change, and any change to the WS `settlement` payload (R19).
+- Refactoring `LetterPanel` or sharing its scroll code; the record only follows its pattern.
+- Rewording any thin line; `Toggleable settlement record while in the run → FS-GV8WN` still holds.
+- Grouping, sorting or summarising the rows beyond today's unsafe-before-consumed order.
