@@ -386,3 +386,179 @@ func TestHandleInteract_AltarWithoutTheTomeIsRefused(t *testing.T) {
 	assert.False(t, plan.Burned)
 	assert.Len(t, monstersIn(s), monsters, "nothing is summoned")
 }
+
+// burnRun is a tome run of height 4 whose party took the tome on floor 1 and
+// now stands on floor 2, the altar's, the taker far from the altar.
+func burnRun(t *testing.T, seed uint64) (*Session, []uuid.UUID, *ecs.Entity) {
+	t.Helper()
+	s, ids := tomeRunOf(t, seed, 4, 1, 2, 2)
+	tome := onlyEntity(t, s, ecs.ComponentTypeTome)
+	standBy(t, s, ids[0], tome)
+	require.NoError(t, s.handleInteract(ids[0], tome.ID))
+	require.NoError(t, s.regenerateFloor())
+	altar := onlyEntity(t, s, ecs.ComponentTypeAltar)
+	standFar(t, s, ids[0], altar)
+	return s, ids, altar
+}
+
+// demonsIn is every monster of archetype demon on the floor, by entity id.
+func demonsIn(s *Session) map[uuid.UUID]*ecs.Entity {
+	demons := map[uuid.UUID]*ecs.Entity{}
+	for _, m := range monstersIn(s) {
+		if monsterOf(m).Archetype == components.MonsterArchetypeDemon {
+			demons[m.ID] = m
+		}
+	}
+	return demons
+}
+
+// summoned is the one demon on the floor that was not in before.
+func summoned(t *testing.T, s *Session, before map[uuid.UUID]*ecs.Entity) *ecs.Entity {
+	t.Helper()
+	var fresh []*ecs.Entity
+	for id, m := range demonsIn(s) {
+		if _, was := before[id]; !was {
+			fresh = append(fresh, m)
+		}
+	}
+	require.Len(t, fresh, 1, "exactly one demon is summoned")
+	return fresh[0]
+}
+
+// Interact on the altar while the party carries the tome burns it: the plan
+// reads burned and no longer carried, and one demon boss at the demon's level
+// stands in the altar's room, clear of every delver's body; the burner gets
+// no reply. A delver other than the taker can burn it. FS-3103M §F R17-R18.
+func TestHandleInteract_BurningTheTomeSummonsVorsk(t *testing.T) {
+	for seed := uint64(1); seed <= 6; seed++ {
+		s, ids, altar := burnRun(t, seed)
+		burner := ids[1]
+		standBy(t, s, burner, altar)
+		before := demonsIn(s)
+		replies := len(repliesTo(s, burner))
+
+		require.NoError(t, s.handleInteract(burner, altar.ID), "seed %d", seed)
+
+		plan := planOf(t, s)
+		assert.True(t, plan.Burned, "seed %d", seed)
+		assert.False(t, plan.Carried, "seed %d", seed)
+		state := runState(t, s, burner)
+		require.NotNil(t, state.Altar, "seed %d", seed)
+		assert.True(t, state.Altar.Burned, "seed %d", seed)
+		assert.False(t, state.TomeCarried, "seed %d", seed)
+		assert.Len(t, repliesTo(s, burner), replies, "seed %d: the broadcast says it, not a reply", seed)
+
+		vorsk := summoned(t, s, before)
+		m := monsterOf(vorsk)
+		assert.True(t, m.Boss, "seed %d", seed)
+		assert.False(t, m.Elite, "seed %d", seed)
+		assert.Equal(t, demonLevel(1, 2), m.Level, "seed %d: the demon's level for a level-1 party on floor 2", seed)
+
+		at, altarAt := transformOf(t, vorsk), transformOf(t, altar)
+		assert.Equal(t, s.dungeon.roomAt(altarAt.X, altarAt.Y), s.dungeon.roomAt(at.X, at.Y), "seed %d: in the altar's room", seed)
+		r := constants.PlayerRadius
+		assert.True(t, s.dungeon.stands(centredArea(at.X, at.Y, r, r), s.dungeon.regionAt(at.X, at.Y), offDoorways), "seed %d: off doorways, clear of walls", seed)
+		for _, id := range ids {
+			body := transformOf(t, delverEntity(t, s, id))
+			assert.False(t, overlaps(centredArea(at.X, at.Y, r, r), centredArea(body.X, body.Y, r, r)), "seed %d: on a delver", seed)
+		}
+		altarArea := centredArea(altarAt.X, altarAt.Y, constants.ContainerWidthRadius, constants.ContainerHeightRadius)
+		assert.False(t, overlaps(centredArea(at.X, at.Y, r, r), altarArea), "seed %d: on the altar", seed)
+	}
+}
+
+// Two delvers burning in one tick: the first burns and summons, the second is
+// refused altar_burned; one Vorsk. FS-3103M §F R19.
+func TestHandleInteract_TwoBurnsInOneTickSummonOneVorsk(t *testing.T) {
+	s, ids, altar := burnRun(t, 2)
+	standBy(t, s, ids[0], altar)
+	standBy(t, s, ids[1], altar)
+	before := demonsIn(s)
+
+	var first, second error
+	s.queueIntent(func() { first = s.handleInteract(ids[0], altar.ID) })
+	s.queueIntent(func() { second = s.handleInteract(ids[1], altar.ID) })
+	s.applyIntents()
+
+	require.NoError(t, first)
+	require.NoError(t, second)
+	summoned(t, s, before)
+	replies := repliesTo(s, ids[1])
+	require.NotEmpty(t, replies)
+	assert.Equal(t, RefusalAltarBurned, replies[len(replies)-1].Payload["reason"])
+}
+
+// fillRegion stands a ghoul on every cell centre of region, so no point of it
+// lies MonsterSpacing clear of them all and no body fits anywhere on it.
+func fillRegion(s *Session, region int) {
+	d := s.dungeon
+	cell := d.layout.CellSize
+	for _, r := range d.regionCells(region) {
+		for cy := r.Y; cy < r.Y+r.H; cy++ {
+			for cx := r.X; cx < r.X+r.W; cx++ {
+				CreateMonsterEntity(s.EntityManager, MonsterConfig{
+					Archetype: components.MonsterArchetypeGhoul, Level: 1,
+					X: (float64(cx) + 0.5) * cell, Y: (float64(cy) + 0.5) * cell,
+				})
+			}
+		}
+	}
+}
+
+// An altar room with no free spot puts Vorsk in another room, as a guaranteed
+// boss is placed; a floor with none anywhere logs an error, and the altar
+// stays burned. FS-3103M §F R18, §Edge States.
+func TestHandleInteract_BurnWithNoRoomBesideTheAltar(t *testing.T) {
+	t.Run("the altar's room is full", func(t *testing.T) {
+		s, ids, altar := burnRun(t, 3)
+		standBy(t, s, ids[1], altar)
+		at := transformOf(t, altar)
+		altarRoom := s.dungeon.roomAt(at.X, at.Y)
+		fillRegion(s, s.dungeon.roomRegion(altarRoom))
+		before := demonsIn(s)
+
+		require.NoError(t, s.handleInteract(ids[1], altar.ID))
+
+		vorsk := transformOf(t, summoned(t, s, before))
+		room := s.dungeon.roomAt(vorsk.X, vorsk.Y)
+		assert.NotEqual(t, -1, room, "in a room")
+		assert.NotEqual(t, altarRoom, room, "not in the full room")
+		assert.NotEqual(t, s.dungeon.layout.Roles.Start, room)
+	})
+	t.Run("the whole floor is full", func(t *testing.T) {
+		log := capturedLog(t)
+		s, ids, altar := burnRun(t, 4)
+		standBy(t, s, ids[1], altar)
+		for region := 1; region <= len(s.dungeon.layout.Regions); region++ {
+			fillRegion(s, region)
+		}
+		before := demonsIn(s)
+
+		require.NoError(t, s.handleInteract(ids[1], altar.ID))
+
+		assert.Len(t, demonsIn(s), len(before), "no Vorsk")
+		assert.True(t, planOf(t, s).Burned, "the altar stays burned")
+		assert.Contains(t, log.String(), `"level":"ERROR","msg":"Vorsk not summoned`)
+	})
+}
+
+// A blood demon already on the floor is left as it is: Vorsk comes beside it.
+// FS-3103M §F R20.
+func TestHandleInteract_BurnLeavesABloodDemonBeIt(t *testing.T) {
+	s, ids, altar := burnRun(t, 5)
+	standBy(t, s, ids[1], altar)
+	blood := CreateMonsterEntity(s.EntityManager, MonsterConfig{
+		Archetype: components.MonsterArchetypeBloodDemon, Level: 4, Boss: true, X: 100, Y: 100,
+	})
+	before := demonsIn(s)
+	monsters := len(monstersIn(s))
+
+	require.NoError(t, s.handleInteract(ids[1], altar.ID))
+
+	summoned(t, s, before)
+	still, ok := s.EntityManager.GetEntity(blood.ID)
+	require.True(t, ok, "the blood demon stands")
+	assert.Equal(t, components.MonsterArchetypeBloodDemon, monsterOf(still).Archetype)
+	assert.Equal(t, 4, monsterOf(still).Level)
+	assert.Len(t, monstersIn(s), monsters+1, "Vorsk comes on top of the floor's monsters")
+}
