@@ -157,18 +157,21 @@ export class Knockout {
       Math.round(f.height * k),
     );
     const pens: Phaser.GameObjects.Graphics[] = [];
-    // drawn at k, about the texture's own middle (it may have rounded its size up to even)
+    // about the texture's own middle (it may have rounded its size up to even)
     const pen = () => {
-      const g = scene.make.graphics({}, false).setScale(k).setPosition(image.width / 2, image.height / 2);
+      const g = scene.make.graphics({}, false).setPosition(image.width / 2, image.height / 2);
       pens.push(g);
       return g;
     };
     try {
       image.setScrollFactor(0).setDepth(depth).setScale(1 / k);
-      const solid = pen();
+      // the fills at k: the scale changes nothing a fill draws
+      const solid = pen().setScale(k);
       fillSilhouette(solid, picture);
+      // the cuts in texel coordinates, unscaled: the renderer joins a path's corners only when its
+      // own lineStyle width is over 2, before any scale (Phaser 4.2.1 StrokePath), and 1.6·k is
       const cuts = pen();
-      eraseCuts(cuts, picture);
+      eraseCuts(cuts, picture, k);
       image.draw(solid).erase(cuts).render();
     } catch (err) {
       image.destroy();
@@ -182,11 +185,11 @@ export class Knockout {
   }
 }
 
-/** Traces the line through `ps` as one path, closed when `closed`. */
-function trace(g: Phaser.GameObjects.Graphics, ps: readonly Pt[], closed: boolean): void {
+/** Traces the line through `ps`, each point times `k`, as one path, closed when `closed`. */
+function trace(g: Phaser.GameObjects.Graphics, ps: readonly Pt[], closed: boolean, k = 1): void {
   g.beginPath();
-  g.moveTo(ps[0][0], ps[0][1]);
-  for (const [x, y] of ps.slice(1)) g.lineTo(x, y);
+  g.moveTo(ps[0][0] * k, ps[0][1] * k);
+  for (const [x, y] of ps.slice(1)) g.lineTo(x * k, y * k);
   if (closed) g.closePath();
 }
 
@@ -199,18 +202,21 @@ function fillSilhouette(g: Phaser.GameObjects.Graphics, picture: KnockoutPicture
   }
 }
 
-/** The cuts, each one stroke or one path, `CUT_W` wide, and the holes, each a disc. */
-function eraseCuts(g: Phaser.GameObjects.Graphics, picture: KnockoutPicture): void {
-  g.lineStyle(CUT_W, TINT_IDENTITY, 1);
+/**
+ * The cuts, each one stroke or one path, `CUT_W` wide, and the holes, each a disc, every point,
+ * radius and width times `k` (FS-7TQN4 R2).
+ */
+function eraseCuts(g: Phaser.GameObjects.Graphics, picture: KnockoutPicture, k: number): void {
+  g.lineStyle(CUT_W * k, TINT_IDENTITY, 1);
   for (const cut of picture.cuts) {
-    if ("ring" in cut) g.strokeCircle(cut.ring.x, cut.ring.y, cut.ring.r);
+    if ("ring" in cut) g.strokeCircle(cut.ring.x * k, cut.ring.y * k, cut.ring.r * k);
     else {
-      trace(g, cut.path, !!cut.closed);
+      trace(g, cut.path, !!cut.closed, k);
       g.strokePath();
     }
   }
   if (picture.holes?.length) {
     g.fillStyle(TINT_IDENTITY, 1);
-    for (const { x, y, r } of picture.holes) g.fillCircle(x, y, r);
+    for (const { x, y, r } of picture.holes) g.fillCircle(x * k, y * k, r * k);
   }
 }

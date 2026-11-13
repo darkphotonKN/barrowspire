@@ -167,9 +167,10 @@ protocol words are in [`game-service/CONTEXT.md`](../game-server/game-service/CO
   (never in a delve or a field). The screen and the code say mailbox and letter; never "mail",
   "inbox" or "email" (the account's email is a different thing on the web pages). Maps to
   notification-service's Mailbox and `/api/mail/*`.
-- **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a line envelope drawn
-  in Phaser, bare (no plate, no seal; FS-J1672), the **corner row**'s Mail icon, carrying the
-  **count badge**. Not an emoji and not a Heroicon (the HUD is canvas). Its hover label reads
+- **Envelope** — the mailbox's HUD icon at the bottom-right of the town: a **knockout** envelope
+  drawn in Phaser (its flap and foot folds cut; FS-7TQN4), or its **line glyph** where the scene
+  cannot make the texture, bare (no plate, no seal; FS-J1672), the **corner row**'s Mail icon,
+  carrying the **count badge** over it. Not an emoji and not a Heroicon (the HUD is canvas). Its hover label reads
   "Mailbox" (FS-1GZGD § Change, 2026-11-12); outside the town the row shows it greyed,
   "Mailbox · town only".
 - **Count badge** (on the envelope; FS-J1672) — the indicator: a small ember badge with the
@@ -521,8 +522,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Corner row** (FS-3EBCA): the row of drawn panel icons in the bottom-right corner of every
   world, from the right **Menu** (a gear: one Esc press), **Inventory** (a bag: the inventory),
   **Character** (a bust: the character panel), **Party** (the party panel) and the **Mailbox**
-  icon (the envelope; greyed outside the town). Each names itself and its key under the pointer.
-  Not the party frames, not the minimap's column.
+  icon (the envelope; greyed outside the town). Each is a **knockout** and names itself and its
+  key under the pointer. Not the party frames, not the minimap's column.
+- **Knockout** (FS-7TQN4; `Knockout` in `src/ui/knockout.ts`) — how a corner-row icon is drawn: one
+  solid silhouette filled in its own texture, its inner lines (**cuts**, 1.6 px) and **holes**
+  erased so the world shows through, tinted bronze (the greyed Mailbox `hudFaint`). The picture is
+  the silhouette plus its cuts; the colour is only the tint. Not an outline, not a mask, and
+  nothing to do with a player being downed.
+- **Line glyph** (FS-QHN87) — a corner-row icon drawn in strokes only, 2.25 px, nothing filled:
+  what each icon falls back to where the scene cannot make its knockout's texture. Never the
+  normal look.
 - **Inventory** (panel; FS-HRH2J § Change: Character and inventory apart): the gear overlay's right
   panel, titled INVENTORY: the ten gear slots, the **bag** under them and the purse line, opened
   on its own by `I` or `B` or the corner row's Inventory icon. The screen's name for that panel

@@ -1296,9 +1296,12 @@ const toLine = (p: P, ps: P[], closed = false) => {
 };
 /** The least distance between two outlines, closed. */
 const apart = (a: P[], b: P[]) => Math.min(...a.map((p) => toLine(p, b, true)), ...b.map((p) => toLine(p, a, true)));
-/** Whether the segments a–b and c–d cross. */
+/** Whether the segments a–b and c–d cross; one ending on the other is not crossing it. */
 const crosses = (a: P, b: P, c: P, d: P) => {
-  const side = (p: P, q: P, r: P) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+  const side = (p: P, q: P, r: P) => {
+    const z = (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    return Math.abs(z) < 1e-9 ? 0 : Math.sign(z);
+  };
   return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
 };
 const linesCross = (a: P[], b: P[]) =>
@@ -1627,20 +1630,17 @@ describe("HudCorner (FS-7TQN4 R6: Party, three solid busts)", () => {
     }
   });
 
-  it("should cut the front bust's two seams and its gorget's edge, and no baldric", () => {
-    const { d, one, lay, busts, cx } = party();
+  // The gorget's arc (R6) is left out: with it, the front bust's two seams and the arc read as a face
+  // at render scale 1 (I-7TQN4-1's screenshots); detail cut before mush.
+  it("should cut the front bust's two seams, and no gorget and no baldric", () => {
+    const { d, one, lay, busts } = party();
     const [front] = busts;
     const within = d.cuts.filter((c) => c.points.every((p) => inside(front.mass!, p.x, p.y)));
+    expect(within).toHaveLength(2);
     for (const seam of one.seams) {
       const want = lay(seam.points, front.at);
       expect(within.some((c) => c.points.length === want.length && c.points.every((p, i) => near(p, want[i], 1e-6)))).toBe(true);
     }
-    // the gorget: an arc of radius 6.2 × s round the shoulders' old centre, 12 × s below the bust's centre
-    const o = { x: cx + front.at.dx, y: slotOf("party").cy + front.at.dy + 12 * front.at.s };
-    const gorget = within.filter((c) => c.points.every((p) => Math.abs(Math.hypot(p.x - o.x, p.y - o.y) - 6.2 * front.at.s) < 1e-6));
-    expect(gorget).toHaveLength(1);
-    const g = spanOf(gorget[0].points);
-    expect((g.left + g.right) / 2).toBeCloseTo(o.x, 6);
     // no strap: nothing reaches the front bust's foot
     const foot = spanOf(front.mass!).bottom;
     expect(d.cuts.filter((c) => c.points.some((p) => Math.abs(p.y - foot) < 0.5))).toEqual([]);

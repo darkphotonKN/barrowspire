@@ -66,8 +66,8 @@ const FLAP = up([
 /** The flap's lowest point: the quadratic's middle. */
 const FLAP_LOW = (FLAP_TOP + 15) / 2;
 /**
- * The hasp: a small U hanging from the flap's lowest point, its two foot corners rounded so its
- * 1.6 px cut, which the renderer never joins (only lines over 2 px are), leaves no wedge there (R4).
+ * The hasp: a small U hanging from the flap's lowest point, its two foot corners rounded (R4). Its
+ * cut, like every cut, is drawn in texel coordinates, so the renderer joins its corners (FS-7TQN4 R2).
  */
 const HASP = up([
   [-1.6, FLAP_LOW - 1],

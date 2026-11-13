@@ -6,14 +6,14 @@
  * In the town the Mailbox is the mailbox's own envelope (`MailboxEnvelope`, FS-1GZGD § Change),
  * which this row leaves its slot to; elsewhere it is drawn here, greyed (R9).
  *
- * Each icon is its bare glyph over the world, with no plate under it and nothing filled (FS-J1672
- * R1–R3), in the envelope's one line width, `GLYPH_LINE_W` (FS-QHN87 R1), every angled corner a
- * vertex inside one path so the renderer joins it (R2): the interactable amber, brighter under the
- * pointer, where a small label names the icon and its key (R3, R5). The glyphs are drawn richer so
- * the row stops looking empty (FS-QHN87). The Inventory icon is the one exception: a bronze
- * knockout, a solid silhouette with its lines cut through to the world, in its own texture
- * (`Knockout`; FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack), or
- * the same rucksack in lines where the scene cannot make that texture.
+ * Each icon is a **knockout** (FS-7TQN4; FS-3EBCA § Change: The inventory icon is a bronze
+ * knockout rucksack): one solid silhouette in bronze, its inner lines cut through to the world,
+ * drawn by the shared knockout renderer (`Knockout`) in its own texture, bare over the world with
+ * no plate under it (FS-J1672 R1), lifted toward the bright amber under the pointer, where a small
+ * label names the icon and its key (R3, R5); the greyed Mailbox is the same in the faint grey.
+ * Where the scene cannot make that texture, each icon is drawn as its line glyph instead: in the
+ * envelope's one line width, `GLYPH_LINE_W` (FS-QHN87 R1), every angled corner a vertex inside one
+ * path so the renderer joins it (R2), nothing filled (FS-J1672 R3).
  * Each icon's rect stays its press area (FS-J1672 R4). Drawn
  * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
  * scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
@@ -24,8 +24,8 @@ import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { CornerLabel } from "./cornerLabel";
-import { GLYPH_LINE_W, drawEnvelopeLines } from "./MailboxEnvelope";
-import { BRONZE, Knockout, bend, type Pt } from "./knockout";
+import { GLYPH_LINE_W, drawEnvelopeLines, envelopeKnockout } from "./MailboxEnvelope";
+import { BRONZE, CUT_W, Knockout, bend, oval, type KnockoutCut, type KnockoutInk, type KnockoutPicture, type Pt } from "./knockout";
 import { RUCKSACK, drawRucksackLines } from "./knockoutRucksack";
 import {
   CORNER_LABEL,
@@ -40,6 +40,11 @@ const HUD_DEPTH = 1000;
 const LINE_W = GLYPH_LINE_W;
 /** The greyed Mailbox's lines. */
 const GREYED_ALPHA = 0.6;
+/** The greyed Mailbox's knockout: the faint grey, never brightening under the pointer (FS-7TQN4 R9). */
+const GREYED: KnockoutInk = {
+  idle: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+  hover: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+};
 
 const labelOf = (spec: CornerIconSpec) =>
   spec.greyed && spec.icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[spec.icon];
@@ -57,8 +62,8 @@ export interface HudCornerDeps {
 }
 
 /**
- * What a glyph draws with: lines only, never a fill (FS-J1672 R3). The knockout rucksack's fill is
- * its own, in its own texture.
+ * What a line glyph draws with: lines only, never a fill (FS-J1672 R3; FS-7TQN4 R16). A knockout's
+ * fills are the shared renderer's own, in its own texture.
  */
 type Ink = Pick<
   Phaser.GameObjects.Graphics,
@@ -77,26 +82,26 @@ interface DrawnIcon {
   frame: Rect;
   graphics: Phaser.GameObjects.Graphics;
   zone: Phaser.GameObjects.Zone;
+  /** The icon as a knockout, where the scene can draw one (FS-7TQN4 R1). */
+  knockout: Knockout;
   hovered: boolean;
+}
+
+/** What each icon is as a knockout, about its slot's centre (FS-7TQN4 R3–R7). */
+function pictureOf(spec: CornerIconSpec, frame: Rect): KnockoutPicture {
+  if (spec.greyed || spec.icon === "mail") return envelopeKnockout(frame);
+  if (spec.icon === "menu") return GEAR_KNOCKOUT;
+  if (spec.icon === "inventory") return RUCKSACK;
+  if (spec.icon === "character") return CHARACTER_KNOCKOUT;
+  return PARTY_KNOCKOUT;
 }
 
 export class HudCorner {
   private readonly icons: DrawnIcon[];
   private readonly label: CornerLabel;
-  /** The Inventory icon, where the scene can draw it as a knockout. */
-  private readonly rucksack: Knockout;
 
   constructor(scene: Phaser.Scene, deps: HudCornerDeps) {
     this.label = new CornerLabel(scene);
-    // the rucksack's texture is drawn at the render scale, so a new one draws it again (R7)
-    this.rucksack = new Knockout({
-      scene,
-      depth: HUD_DEPTH,
-      picture: RUCKSACK,
-      ink: BRONZE,
-      name: "the Inventory rucksack",
-      lost: () => this.icons.filter((i) => i.spec.icon === "inventory").forEach((i) => this.draw(i)),
-    });
     this.icons = deps.icons.map((spec) => {
       const frame = cornerIconFrame(spec.icon, viewport);
       const graphics = scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
@@ -106,7 +111,17 @@ export class HudCorner {
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
         .setInteractive({ useHandCursor: !spec.greyed });
-      const drawn: DrawnIcon = { spec, frame, graphics, zone, hovered: false };
+      // its texture is drawn at the render scale, and drawn again at a new one (FS-7TQN4 R13); where
+      // that fails, the icon goes back to its lines
+      const knockout = new Knockout({
+        scene,
+        depth: HUD_DEPTH,
+        picture: pictureOf(spec, frame),
+        ink: spec.greyed ? GREYED : BRONZE,
+        name: `the ${spec.icon} icon`,
+        lost: () => this.draw(drawn),
+      });
+      const drawn: DrawnIcon = { spec, frame, graphics, zone, knockout, hovered: false };
       zone.on("pointerdown", () => this.press(drawn));
       zone.on("pointerover", () => this.hover(drawn, true));
       zone.on("pointerout", () => this.hover(drawn, false));
@@ -139,9 +154,9 @@ export class HudCorner {
   }
 
   destroy(): void {
-    this.rucksack.destroy();
     this.label.hide();
-    for (const { graphics, zone } of this.icons) {
+    for (const { graphics, zone, knockout } of this.icons) {
+      knockout.destroy();
       graphics.destroy();
       zone.destroy();
     }
@@ -163,6 +178,8 @@ export class HudCorner {
   private draw(icon: DrawnIcon): void {
     const g = icon.graphics.clear();
     const f = icon.frame;
+    // a knockout where the scene can draw one; today's line glyph where it cannot (FS-7TQN4 R15)
+    if (icon.knockout.show(f, icon.hovered)) return;
     if (icon.spec.greyed) {
       // never amber: an amber thing the player cannot act on is a defect (R9); bare, with no seal
       // and no count, since nothing of the mailbox is fetched outside the town (FS-J1672 R7, R8)
@@ -174,9 +191,8 @@ export class HudCorner {
     const cx = f.x + f.width / 2;
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
-    else if (icon.spec.icon === "inventory") {
-      if (!this.rucksack.show(f, icon.hovered)) drawRucksackLines(g, cx, cy, ink, alpha);
-    } else if (icon.spec.icon === "character") drawCharacter(g, cx, cy + 1, ink, alpha);
+    else if (icon.spec.icon === "inventory") drawRucksackLines(g, cx, cy, ink, alpha);
+    else if (icon.spec.icon === "character") drawCharacter(g, cx, cy + 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
 }
@@ -198,6 +214,18 @@ const GEAR_RIM_STEPS = 4;
  */
 export function drawGear(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
   const at = (a: number, r: number): Pt => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+  g.lineStyle(LINE_W, ink, alpha);
+  strokeLine(g, gearOutline(cx, cy), true);
+  g.strokeCircle(cx, cy, GEAR_RING);
+  for (let i = 0; i < GEAR_RIVETS; i++) {
+    const [x, y] = at(((i + 0.5) * 2 * Math.PI) / GEAR_RIVETS, GEAR_RING);
+    g.strokeCircle(x, y, GEAR_RIVET_R);
+  }
+}
+
+/** The gear's teeth and the rim between them, one closed outline about (cx, cy). */
+function gearOutline(cx: number, cy: number): Pt[] {
+  const at = (a: number, r: number): Pt => [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
   const pitch = (2 * Math.PI) / GEAR.teeth;
   const root = Math.asin(GEAR.rootHalf / GEAR.root);
   const tip = Math.asin(GEAR.tipHalf / GEAR.tip);
@@ -210,13 +238,7 @@ export function drawGear(g: Ink, cx: number, cy: number, ink: number, alpha: num
       outline.push(at(a + root + ((pitch - 2 * root) * k) / GEAR_RIM_STEPS, GEAR.root));
     }
   }
-  g.lineStyle(LINE_W, ink, alpha);
-  strokeLine(g, outline, true);
-  g.strokeCircle(cx, cy, GEAR_RING);
-  for (let i = 0; i < GEAR_RIVETS; i++) {
-    const [x, y] = at(((i + 0.5) * 2 * Math.PI) / GEAR_RIVETS, GEAR_RING);
-    g.strokeCircle(x, y, GEAR_RIVET_R);
-  }
+  return outline;
 }
 
 /** Strokes a line through `points` as one path, closed back to its first when `closed`. */
@@ -474,3 +496,195 @@ export function drawParty(g: Ink, cx: number, cy: number, ink: number, alpha: nu
   }
   drawBust(g, front.cx, front.cy, front.s, ink, alpha);
 }
+
+// ── The knockouts (FS-7TQN4, the owner 2026-11-13: 「其他icon不是也要反白嗎」): each icon a solid
+//    silhouette with its lines cut, for the shared knockout renderer. In local px about the slot's
+//    centre, x to the right and y down. The line glyphs above stay as the fallback (R15).
+
+/**
+ * Menu (R3): today's gear outline, solid; a hole at its centre, a ring cut round it and four rivet
+ * holes between the ring and the teeth, each with bronze to spare round it at render scale 1.
+ */
+const GEAR_HOLE_R = 2.75;
+const GEAR_RING_CUT = 5.2;
+const GEAR_RIVET_OUT = 8.5;
+const GEAR_RIVET_HOLE = 1.3;
+const GEAR_KNOCKOUT: KnockoutPicture = {
+  silhouette: [gearOutline(0, 0)],
+  cuts: [{ ring: { x: 0, y: 0, r: GEAR_RING_CUT } }],
+  holes: [
+    { x: 0, y: 0, r: GEAR_HOLE_R },
+    ...[1, 3, 5, 7].map((i) => ({
+      x: Math.cos((i * Math.PI) / 4) * GEAR_RIVET_OUT,
+      y: Math.sin((i * Math.PI) / 4) * GEAR_RIVET_OUT,
+      r: GEAR_RIVET_HOLE,
+    })),
+  ],
+};
+
+/**
+ * The solid bust (R4, R5; the owner: 「目前反白前的肩胛有點怪在調整一下」), at scale 1 about the bust's
+ * centre: a head disc over a shoulder mass whose upper outline is one smooth convex curve: up each
+ * arm, over a rounded shoulder cap, and across the shoulders under the neck on a long, low arc
+ * that meets each cap without a corner. The caps are the plates; each carries one seam.
+ */
+const BUST = {
+  /** The mass's half-width (its arms) and its foot, the old shoulders' foot. */
+  half: 12,
+  foot: SHOULDERS.y,
+  /** The shoulders' top under the neck, and the radius of the long arc across them. */
+  top: 0.8,
+  across: 30,
+  /** Each shoulder cap's radius: the plate's rounding. */
+  cap: 7,
+  /** How far inside the cap's edge its seam runs, and where it stops short of the neck. */
+  seamIn: 3,
+  seamEnd: 5.4,
+};
+/** The long arc's centre, and each cap's (the left; the right is its mirror), tangent to it. */
+const ACROSS_O: Pt = [0, BUST.top + BUST.across];
+const CAP_O: Pt = [
+  -(BUST.half - BUST.cap),
+  ACROSS_O[1] - Math.sqrt((BUST.across - BUST.cap) ** 2 - (BUST.half - BUST.cap) ** 2),
+];
+/** Where the left cap meets the long arc, as an angle about each. */
+const CAP_MEETS = Math.atan2(CAP_O[1] - ACROSS_O[1], CAP_O[0] - ACROSS_O[0]) + 2 * Math.PI;
+const mirror = (ps: readonly Pt[]): Pt[] => ps.map(([x, y]) => [-x, y] as Pt);
+const arcAbout = (o: Pt, r: number, from: number, to: number, steps: number): Pt[] => oval(o[0], o[1], r, r, from, to, steps);
+/** The mass's left half, from the arm's foot up over the cap to the top under the neck. */
+const MASS_LEFT: Pt[] = [
+  [-BUST.half, BUST.foot],
+  [-BUST.half, (BUST.foot + CAP_O[1]) / 2],
+  ...arcAbout(CAP_O, BUST.cap, Math.PI, CAP_MEETS, 12),
+  ...arcAbout(ACROSS_O, BUST.across, CAP_MEETS, 1.5 * Math.PI, 8).slice(1),
+];
+/** The shoulder mass: the left half, then its mirror back down the right arm. */
+const MASS: Pt[] = [...MASS_LEFT, ...mirror(MASS_LEFT.slice(0, -1)).reverse()];
+const HEAD_DISC: Pt[] = oval(0, HEAD.y, HEAD.r, HEAD.r, -Math.PI / 2, 1.5 * Math.PI, 48).slice(0, -1);
+/**
+ * The left cap's seam, `seamIn` inside its edge: from the arm up round the cap and in along the
+ * long arc, stopping short of the neck at `seamEnd` out, so the plate reads laid over the shoulder.
+ */
+const SEAM_LEFT: Pt[] = (() => {
+  const inner = BUST.across - BUST.seamIn;
+  const stop = Math.PI * 1.5 - Math.asin(BUST.seamEnd / inner);
+  return [
+    [-BUST.half + BUST.seamIn, BUST.foot - 2.5],
+    ...arcAbout(CAP_O, BUST.cap - BUST.seamIn, Math.PI, CAP_MEETS, 8),
+    ...arcAbout(ACROSS_O, inner, CAP_MEETS, stop, 4).slice(1),
+  ];
+})();
+const SEAMS: Pt[][] = [SEAM_LEFT, mirror(SEAM_LEFT).reverse()];
+/** Where the baldric starts: on the left shoulder's top, inside the seam's end, toward the neck. */
+const BALDRIC_FROM: Pt = [-3.5, ACROSS_O[1] - Math.sqrt(BUST.across ** 2 - 3.5 ** 2)];
+const BALDRIC_TO: Pt = [7, BUST.foot];
+/**
+ * The baldric's buckle, a frame across the strap 0.7 of the way down, and the strap cut either
+ * side of it: meeting it end to side, so no cut crosses another (R4).
+ */
+const BALDRIC = (() => {
+  const [[x0, y0], [x1, y1]] = [BALDRIC_FROM, BALDRIC_TO];
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  const along: Pt = [(x1 - x0) / len, (y1 - y0) / len];
+  const across: Pt = [-along[1], along[0]];
+  const mid: Pt = [x0 + (x1 - x0) * BUCKLE.at, y0 + (y1 - y0) * BUCKLE.at];
+  const off = (a: number, c: number): Pt => [
+    mid[0] + (along[0] * a * BUCKLE.long) / 2 + (across[0] * c * BUCKLE.wide) / 2,
+    mid[1] + (along[1] * a * BUCKLE.long) / 2 + (across[1] * c * BUCKLE.wide) / 2,
+  ];
+  return {
+    buckle: [off(-1, -1), off(1, -1), off(1, 1), off(-1, 1)],
+    strap: [
+      [BALDRIC_FROM, off(-1, 0)],
+      [off(1, 0), BALDRIC_TO],
+    ],
+  };
+})();
+
+/** A solid bust's parts laid at (dx, dy), scale s. */
+function solidBust(dx: number, dy: number, s: number) {
+  const place = (ps: readonly Pt[]) => ps.map(([x, y]) => [dx + x * s, dy + y * s] as Pt);
+  return { head: place(HEAD_DISC), mass: place(MASS), seams: SEAMS.map(place), place };
+}
+
+/** Character (R4, R5): one solid bust, 1 px below the slot's centre, its seams, baldric and buckle. */
+const CHARACTER_KNOCKOUT: KnockoutPicture = (() => {
+  const b = solidBust(0, 1, 1);
+  return {
+    silhouette: [b.head, b.mass],
+    cuts: [
+      ...b.seams.map((path) => ({ path })),
+      ...BALDRIC.strap.map((path) => ({ path: b.place(path) })),
+      { path: b.place(BALDRIC.buckle), closed: true },
+    ],
+  };
+})();
+
+/** How finely the Party's gap follows the front bust's outline. */
+const GAP_STEP = 0.25;
+
+/** The outline `ps`, closed, moved out from its inside by `by`, in points no more than `GAP_STEP` apart. */
+function outward(ps: readonly Pt[], by: number): Pt[] {
+  const n = ps.length;
+  const moved = ps.map((p, i) => {
+    const [a, b] = [ps[(i + n - 1) % n], ps[(i + 1) % n]];
+    // each edge's outward normal (the outline runs clockwise on the screen, y down), and their mitre
+    const normal = (u: Pt, v: Pt): Pt => {
+      const l = Math.hypot(v[0] - u[0], v[1] - u[1]);
+      return [(v[1] - u[1]) / l, -(v[0] - u[0]) / l];
+    };
+    const [na, nb] = [normal(a, p), normal(p, b)];
+    const m: Pt = [na[0] + nb[0], na[1] + nb[1]];
+    const k = by / (1 + na[0] * nb[0] + na[1] * nb[1]);
+    return [p[0] + m[0] * k, p[1] + m[1] * k] as Pt;
+  });
+  const out: Pt[] = [];
+  moved.forEach((p, i) => {
+    const q = moved[(i + 1) % n];
+    const steps = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / GAP_STEP));
+    for (let k = 0; k < steps; k++) out.push([p[0] + ((q[0] - p[0]) * k) / steps, p[1] + ((q[1] - p[1]) * k) / steps]);
+  });
+  return out;
+}
+
+/**
+ * The runs of the closed line `ps` that lie over `shapes`, each one point longer at either end so
+ * the cut reaches the shape's edge; read from a point off them, so a run across the line's first
+ * point stays one path.
+ */
+function overRuns(ps: readonly Pt[], shapes: readonly (readonly Pt[])[]): Pt[][] {
+  const over = ps.map(([x, y]) => shapes.some((s) => within(s, x, y)));
+  const from = over.indexOf(false);
+  if (from < 0) return [[...ps, ps[0]]];
+  const order = [...ps.keys()].map((i) => (from + i) % ps.length);
+  const out: Pt[][] = [];
+  let run: number[] = [];
+  for (const i of [...order, from]) {
+    if (over[i]) run.push(i);
+    else if (run.length) {
+      const before = (run[0] + ps.length - 1) % ps.length;
+      out.push([before, ...run, i].map((j) => ps[j]));
+      run = [];
+    }
+  }
+  return out;
+}
+
+/**
+ * Party (R6): three solid busts in today's places, one fill; the front one's seams cut, and a gap
+ * cut along its outline, just outside it, wherever it lies over a bust behind, so the front bust
+ * reads whole and each behind it as its own shape. Its gorget's arc is left out: with the two
+ * seams it read as a face at render scale 1.
+ */
+const PARTY_KNOCKOUT: KnockoutPicture = (() => {
+  const front = solidBust(PARTY_BUSTS.front.dx, PARTY_BUSTS.front.dy, PARTY_BUSTS.front.s);
+  const back = PARTY_BUSTS.back.map(({ dx, dy, s }) => solidBust(dx, dy, s));
+  const behind = back.flatMap((b) => [b.head, b.mass]);
+  const gaps: KnockoutCut[] = [front.head, front.mass].flatMap((outline) =>
+    overRuns(outward(outline, CUT_W / 2), behind).map((path) => ({ path })),
+  );
+  return {
+    silhouette: [...behind, front.head, front.mass],
+    cuts: [...gaps, ...front.seams.map((path) => ({ path }))],
+  };
+})();

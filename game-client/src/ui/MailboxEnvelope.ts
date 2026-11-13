@@ -23,6 +23,7 @@ import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
 import { CornerLabel } from "./cornerLabel";
 import { CORNER_LABEL } from "./hudCornerLayout";
+import { BRONZE, Knockout, oval, type KnockoutPicture, type Pt } from "./knockout";
 
 export interface MailboxEnvelopeDeps {
   store: StoreApi<MailboxState>;
@@ -162,11 +163,45 @@ export function drawEnvelopeLines(
   g.lineBetween(e.x + e.width - 1, e.y + e.height - 1, e.x + e.width * 0.64, e.y + e.height * 0.5);
 }
 
+/**
+ * The envelope as a knockout (FS-7TQN4 R7), about the centre of the rect `f` it stands in: one
+ * solid rounded rect in the envelope's rect, radius 2, its flap cut as one path down to its point
+ * and up again, and its two foot folds cut, as its lines run. The corner row's greyed Mailbox is
+ * the same (R9).
+ */
+export function envelopeKnockout(f: Rect): KnockoutPicture {
+  const e = envelopeRect(f);
+  const point = envelopeFlapPoint(f);
+  const [cx, cy] = [f.x + f.width / 2, f.y + f.height / 2];
+  const local = (x: number, y: number): Pt => [x - cx, y - cy];
+  const r = 2;
+  const corner = (x: number, y: number, from: number) =>
+    oval(x - cx, y - cy, r, r, from, from + Math.PI / 2, 6);
+  const [l, t, rt, b] = [e.x, e.y, e.x + e.width, e.y + e.height];
+  return {
+    silhouette: [
+      [
+        ...corner(l + r, t + r, Math.PI),
+        ...corner(rt - r, t + r, 1.5 * Math.PI),
+        ...corner(rt - r, b - r, 0),
+        ...corner(l + r, b - r, Math.PI / 2),
+      ],
+    ],
+    cuts: [
+      { path: [local(l + 1, t + 1), local(point.x, point.y), local(rt - 1, t + 1)] },
+      { path: [local(l + 1, b - 1), local(l + e.width * 0.36, t + e.height * 0.5)] },
+      { path: [local(rt - 1, b - 1), local(l + e.width * 0.64, t + e.height * 0.5)] },
+    ],
+  };
+}
+
 export class MailboxEnvelope {
   private frame: Rect;
   private readonly glow: Phaser.GameObjects.Graphics;
   private readonly body: Phaser.GameObjects.Graphics;
   private readonly badge: Phaser.GameObjects.Graphics;
+  /** The envelope as a knockout, where the scene can draw one (FS-7TQN4 R7, R12). */
+  private readonly knockout: Knockout;
   private readonly zone: Phaser.GameObjects.Zone;
   private count?: Phaser.GameObjects.Text;
   private pulse?: Phaser.Tweens.Tween;
@@ -186,6 +221,17 @@ export class MailboxEnvelope {
     this.glow.setAlpha(0);
     this.body = hud(scene.add.graphics());
     this.badge = hud(scene.add.graphics());
+    // drawn at the render scale and again at a new one, which the scene's relayout does not
+    // report (FS-7TQN4 R13); each image it makes goes under the badge, so over the glow (R8)
+    this.knockout = new Knockout({
+      scene,
+      depth: HUD_DEPTH,
+      picture: envelopeKnockout(this.frame),
+      ink: BRONZE,
+      name: "the envelope",
+      built: (image) => scene.children.moveBelow(image as Phaser.GameObjects.GameObject, this.badge),
+      lost: () => this.drawBody(),
+    });
     const { x, y, width, height } = this.frame;
     this.zone = scene.add
       .zone(x, y, width, height)
@@ -222,6 +268,7 @@ export class MailboxEnvelope {
     this.pulse?.stop();
     this.pulse = undefined;
     this.glow.destroy();
+    this.knockout.destroy();
     this.body.destroy();
     this.badge.destroy();
     this.count?.destroy();
@@ -249,10 +296,15 @@ export class MailboxEnvelope {
     else this.label.hide();
   }
 
-  /** The envelope's lines, bare over the world (FS-J1672 R1): amber, brighter under the pointer. */
+  /**
+   * The envelope, bare over the world (FS-J1672 R1): a bronze knockout, lifted under the pointer
+   * (FS-7TQN4 R7, R10); its lines, amber and brighter under the pointer, where the scene cannot
+   * draw the knockout (R15).
+   */
   private drawBody(): void {
     const g = this.body.clear();
     const f = this.frame;
+    if (this.knockout.show(f, this.hovered)) return;
     drawEnvelopeLines(
       g,
       f,
