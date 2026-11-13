@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { HudCorner, type CornerIconSpec } from "./HudCorner";
+import { HudCorner, drawHooded, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
-import { envelopeFlapPoint } from "./MailboxEnvelope";
+import { GLYPH_LINE_W, envelopeFlapPoint } from "./MailboxEnvelope";
 
 // FS-3EBCA §A R3–R5, §B R6–R11. I-3EBCA-1: the corner row as a scene draws it, on a recording
 // stand-in for the Phaser scene.
@@ -269,35 +269,6 @@ describe("HudCorner (FS-3EBCA R9: the Mailbox greyed outside the town)", () => {
 
 // FS-J1672 (the owner, 2026-11-13: "把ui右下角的功能icon移除外匡"): the corner row's glyphs stand bare
 // over the world, with no plate under them and nothing filled. I-J1672-1.
-type Point = { x: number; y: number; centre: string };
-
-/** Every point a graphics strokes, sampled, tagged with the centre of the circle or arc it lies on. */
-function strokedPoints(g: FakeGraphics): Point[] {
-  const out: Point[] = [];
-  const onCircle = (x: number, y: number, r: number, start: number, sweep: number) => {
-    for (let i = 0; i <= 90; i++) {
-      const a = start + (sweep * i) / 90;
-      out.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r, centre: `${x},${y}` });
-    }
-  };
-  let path: number[][] = [];
-  for (const { m, args } of g.ops) {
-    if (m === "beginPath") path = [];
-    else if (m === "arc") path.push(args);
-    else if (m === "strokePath") {
-      for (const [x, y, r, start, end, anticlockwise] of path) {
-        // the sweep as Phaser's renderer takes it (GraphicsWebGLRenderer, Commands.ARC)
-        let sweep = end - start;
-        if (anticlockwise) sweep = sweep < -2 * Math.PI ? -2 * Math.PI : sweep > 0 ? -2 * Math.PI + (sweep % (2 * Math.PI)) : sweep;
-        else sweep = sweep > 2 * Math.PI ? 2 * Math.PI : sweep < 0 ? 2 * Math.PI + (sweep % (2 * Math.PI)) : sweep;
-        onCircle(x, y, r, start, sweep);
-      }
-      path = [];
-    } else if (m === "strokeCircle") onCircle(args[0], args[1], args[2], 0, 2 * Math.PI);
-  }
-  return out;
-}
-
 const FILLS = ["fillStyle", "fillRect", "fillRoundedRect", "fillCircle", "fillPath", "fillTriangle", "fillGradientStyle"];
 
 describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
@@ -345,46 +316,17 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
     expect(mail.ops).toEqual(idleMail);
   });
 
-  it("should draw the greyed Mailbox with no seal, its flap lines meeting at the seal's old place (R7)", () => {
+  it("should draw the greyed Mailbox with no seal, its flap lines meeting at the seal's old place as one path (R7; FS-QHN87 R6, R8)", () => {
     const env = setup([{ icon: "mail", greyed: true }]);
     const [mail] = env.graphics;
     const point = envelopeFlapPoint(cornerIconFrame("mail", viewport));
     expect(mail.calls).not.toContain("fillCircle");
     expect(mail.calls).not.toContain("strokeCircle");
-    const meeting = mail.ops.filter(
-      ({ m, args }) =>
-        m === "lineBetween" &&
-        ((args[2] === point.x && args[3] === point.y) || (args[0] === point.x && args[1] === point.y)),
-    );
-    expect(meeting).toHaveLength(2);
-  });
-
-  it("should leave the Party glyph's back bust undrawn where the front bust stands, and draw the rest of it (R3)", () => {
-    const env = setup([{ icon: "party" }]);
-    const [party] = env.graphics;
-    const f = cornerIconFrame("party", viewport);
-    const cx = f.x + f.width / 2;
-    const cy = f.y + f.height / 2;
-    // the front bust as drawParty stands it: scale 0.85 at (cx + 5, cy + 2); the back at 0.8, (cx - 6, cy - 2)
-    const front = { x: cx + 5, headY: cy + 2 - 6 * 0.85, headR: 5 * 0.85, shoulderY: cy + 2 + 12 * 0.85, shoulderR: 11 * 0.85 };
-    const back = { x: cx - 6, headY: cy - 2 - 6 * 0.8, headR: 5 * 0.8, shoulderY: cy - 2 + 12 * 0.8, shoulderR: 11 * 0.8 };
-    const frontOwn = new Set([`${front.x},${front.headY}`, `${front.x},${front.shoulderY}`]);
-    const inFront = ({ x, y }: Point) =>
-      Math.hypot(x - front.x, y - front.headY) < front.headR ||
-      (y <= front.shoulderY && Math.hypot(x - front.x, y - front.shoulderY) < front.shoulderR);
-    const points = strokedPoints(party);
-    const backPoints = points.filter((p) => !frontOwn.has(p.centre));
-
-    expect(backPoints.filter(inFront)).toEqual([]);
-    const near = (x: number, y: number) => backPoints.some((p) => Math.hypot(p.x - x, p.y - y) < 0.5);
-    // the back bust's head, whole, and its shoulders from their left end over their top
-    expect(near(back.x, back.headY - back.headR)).toBe(true);
-    expect(near(back.x - back.headR, back.headY)).toBe(true);
-    expect(near(back.x - back.shoulderR, back.shoulderY)).toBe(true);
-    expect(near(back.x, back.shoulderY - back.shoulderR)).toBe(true);
-    // the front bust, whole: its head and the top of its shoulders
-    expect(points.some((p) => p.centre === `${front.x},${front.headY}`)).toBe(true);
-    expect(points.some((p) => p.centre === `${front.x},${front.shoulderY}`)).toBe(true);
+    const at = (p: { x: number; y: number }) => p.x === point.x && p.y === point.y;
+    const strokes = marks(mail).filter((k) => k.kind === "stroke");
+    // the flap: one path, down to the point and up again, its point a vertex inside it
+    expect(strokes.filter(({ points: ps }) => ps.length === 3 && at(ps[1]))).toHaveLength(1);
+    expect(strokes.filter(({ points: ps }) => at(ps[0]) || at(ps[ps.length - 1]))).toEqual([]);
   });
 });
 
@@ -472,10 +414,10 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack
       })
       .map(span);
 
-  it("should draw in the other glyphs' 1.5 px lines alone, and brighten them under the pointer as they do (round 2)", () => {
+  it("should draw in the other glyphs' lines alone, GLYPH_LINE_W wide, and brighten them under the pointer as they do (round 2; FS-QHN87 R1, R9)", () => {
     const { g, zoneAt } = backpack();
     const widths = () => g.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0]);
-    expect(new Set(widths())).toEqual(new Set([1.5]));
+    expect(new Set(widths())).toEqual(new Set([GLYPH_LINE_W]));
     const idle = g.ops.filter(({ m }) => m !== "lineStyle");
     zoneAt("inventory").handlers.pointerover();
     expect(new Set(g.strokes)).toEqual(new Set([palette.interactableBright]));
@@ -577,5 +519,318 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is an inked backpack
     env.corner.destroy();
     expect(g.destroyed).toBe(true);
     expect(env.liveTexts()).toHaveLength(0);
+  });
+});
+
+// FS-QHN87 (the owner, 2026-11-13: 「icon感覺有點空 不是指背包是所有icon」): richer glyphs in one sturdier
+// line. I-QHN87-1.
+describe("HudCorner (FS-QHN87 R1: one line width)", () => {
+  it("should name the width once, 2.25, over the renderer's 2 px join threshold", () => {
+    expect(GLYPH_LINE_W).toBe(2.25);
+  });
+
+  it("should stroke every glyph of the row, the greyed Mailbox's included, at GLYPH_LINE_W alone, idle and hovered", () => {
+    const env = setup([
+      { icon: "menu" },
+      { icon: "inventory" },
+      { icon: "character" },
+      { icon: "party" },
+      { icon: "mail", greyed: true },
+    ]);
+    const widths = () =>
+      env.graphics.map((g) => new Set(g.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0])));
+    for (const w of widths()) expect(w).toEqual(new Set([GLYPH_LINE_W]));
+    for (const icon of ["menu", "inventory", "character", "party", "mail"] as const) env.zoneAt(icon).handlers.pointerover();
+    for (const w of widths()) expect(w).toEqual(new Set([GLYPH_LINE_W]));
+  });
+});
+
+/** A stroke's polyline, as `marks` reads it, and whether its path was closed. */
+interface Line {
+  points: { x: number; y: number }[];
+  closed: boolean;
+}
+
+/** Every stroked polyline of a graphics: each path (closed or not) and each line; circles apart. */
+function linesOf(g: FakeGraphics): Line[] {
+  const out: Line[] = [];
+  let path: { x: number; y: number }[] = [];
+  let closed = false;
+  for (const { m, args } of g.ops) {
+    if (m === "beginPath") (path = []), (closed = false);
+    else if (m === "moveTo" || m === "lineTo") path.push({ x: args[0], y: args[1] });
+    else if (m === "arc") {
+      const [x, y, r, start, end] = args;
+      for (let i = 0; i <= 32; i++) {
+        const a = start + ((end - start) * i) / 32;
+        path.push({ x: x + Math.cos(a) * r, y: y + Math.sin(a) * r });
+      }
+    } else if (m === "closePath") (closed = true), path.push(path[0]);
+    else if (m === "strokePath") out.push({ points: path, closed }), (path = []);
+    else if (m === "lineBetween") out.push({ points: [{ x: args[0], y: args[1] }, { x: args[2], y: args[3] }], closed: false });
+  }
+  return out;
+}
+
+/** Whether (x, y) lies inside the polygon `ps`. */
+function inside(ps: { x: number; y: number }[], x: number, y: number): boolean {
+  let hit = false;
+  for (let i = 0, j = ps.length - 1; i < ps.length; j = i++) {
+    const [a, b] = [ps[i], ps[j]];
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+  }
+  return hit;
+}
+
+/** Today's (f779a9b0) bust box, half its 1.5 px line included, for a bust of scale s at (cx, cy). */
+const bustBox = (cx: number, cy: number, s: number) => ({
+  left: cx - 11 * s - 0.75,
+  right: cx + 11 * s + 0.75,
+  top: cy - 11 * s - 0.75,
+  bottom: cy + 12 * s + 0.75,
+});
+const centreOf = (b: { left: number; right: number; top: number; bottom: number }) => ({
+  x: (b.left + b.right) / 2,
+  y: (b.top + b.bottom) / 2,
+});
+
+describe("HudCorner (FS-QHN87 R2: no notches)", () => {
+  // Phaser 4.2.1 joins a path's segments when its line is over 2 px, never two separate strokes:
+  // an angled corner made of two strokes meeting end to end shows a notch.
+  const angle = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.atan2(b.y - a.y, b.x - a.x);
+  /** At each open end of a stroke: the point, and the direction the stroke leaves it in. */
+  const endsOf = (l: Line) => {
+    const ps = l.points;
+    if (l.closed || ps.length < 2) return [];
+    return [
+      { at: ps[0], dir: angle(ps[0], ps[1]) },
+      { at: ps[ps.length - 1], dir: angle(ps[ps.length - 1], ps[ps.length - 2]) },
+    ];
+  };
+  /** Pairs of open stroke ends meeting at one point at an angle: no straight run through it. */
+  const notches = (g: FakeGraphics, only = (_l: Line) => true) => {
+    const ends = linesOf(g).filter(only).flatMap((l, i) => endsOf(l).map((e) => ({ ...e, i })));
+    const out: string[] = [];
+    for (let a = 0; a < ends.length; a++) {
+      for (let b = a + 1; b < ends.length; b++) {
+        const [p, q] = [ends[a], ends[b]];
+        if (Math.hypot(p.at.x - q.at.x, p.at.y - q.at.y) > 0.05) continue;
+        // two ends running on straight through the point leave in opposite directions
+        const turn = Math.abs(((p.dir - q.dir + 3 * Math.PI) % (2 * Math.PI)) - Math.PI);
+        if (turn > (15 * Math.PI) / 180) out.push(`${p.i}/${q.i} at ${p.at.x.toFixed(2)},${p.at.y.toFixed(2)}`);
+      }
+    }
+    return out;
+  };
+
+  it("should draw no angled corner of Menu, Character, Party or either Mailbox as two strokes meeting end to end", () => {
+    const env = setup([{ icon: "menu" }, { icon: "character" }, { icon: "party" }, { icon: "mail", greyed: true }]);
+    for (const g of env.graphics) expect(notches(g)).toEqual([]);
+  });
+
+  it("should draw no angled corner of the haversack as two lines meeting end to end (its other strokes are f779a9b0's, R9)", () => {
+    const env = setup([{ icon: "inventory" }]);
+    expect(notches(env.graphics[0], (l) => l.points.length === 2)).toEqual([]);
+  });
+});
+
+describe("HudCorner (FS-QHN87 R3: a riveted gear)", () => {
+  const gear = () => {
+    const env = setup([{ icon: "menu" }]);
+    const f = cornerIconFrame("menu", viewport);
+    return { g: env.graphics[0], cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
+  };
+
+  it("should draw eight bevelled teeth and the rim between them as one closed outline", () => {
+    const { g, cx, cy } = gear();
+    const outlines = linesOf(g).filter((l) => l.closed);
+    expect(outlines).toHaveLength(1);
+    const ps = outlines[0].points.slice(0, -1);
+    const r = (p: { x: number; y: number }) => Math.hypot(p.x - cx, p.y - cy);
+    const tip = Math.max(...ps.map(r));
+    const root = Math.min(...ps.map(r));
+    expect(tip - root).toBeGreaterThan(2.5);
+    // the teeth: runs of the outline at its tip radius, two corners each, wider at the root
+    const isTip = (p: { x: number; y: number }) => r(p) > tip - 0.01;
+    const start = ps.findIndex((p) => !isTip(p));
+    const round = [...ps.slice(start), ...ps.slice(0, start)];
+    const teeth: number[][] = [];
+    round.forEach((p, i) => {
+      if (!isTip(p)) return;
+      if (i > 0 && isTip(round[i - 1])) teeth[teeth.length - 1].push(i);
+      else teeth.push([i]);
+    });
+    expect(teeth).toHaveLength(8);
+    for (const t of teeth) {
+      expect(t).toHaveLength(2);
+      const [a, b] = [round[t[0]], round[t[1]]];
+      const [ra, rb] = [round[t[0] - 1], round[(t[1] + 1) % round.length]];
+      const width = Math.hypot(a.x - b.x, a.y - b.y);
+      const rootWidth = Math.hypot(ra.x - rb.x, ra.y - rb.y);
+      expect(width).toBeGreaterThan(0.5);
+      expect(width).toBeLessThan(rootWidth);
+      // the flanks come down to the rim
+      expect(r(ra)).toBeLessThan(tip - 2.5);
+      expect(r(rb)).toBeLessThan(tip - 2.5);
+    }
+  });
+
+  it("should set an inner ring at the hub, a little larger than today's, with 4–6 rivets evenly spaced, centred on its line", () => {
+    const { g, cx, cy } = gear();
+    const circles = g.ops.filter(({ m }) => m === "strokeCircle").map(({ args: [x, y, r] }) => ({ x, y, r }));
+    const rings = circles.filter((c) => Math.abs(c.x - cx) < 1e-9 && Math.abs(c.y - cy) < 1e-9 && c.r > 3.5 && c.r < 8);
+    expect(rings).toHaveLength(1);
+    const [ring] = rings;
+    const rivets = circles.filter((c) => c !== ring);
+    expect(rivets.length).toBeGreaterThanOrEqual(4);
+    expect(rivets.length).toBeLessThanOrEqual(6);
+    for (const v of rivets) {
+      expect(v.r).toBeLessThan(2);
+      expect(Math.hypot(v.x - cx, v.y - cy)).toBeCloseTo(ring.r, 9);
+    }
+    const angles = rivets.map((v) => Math.atan2(v.y - cy, v.x - cx)).sort((a, b) => a - b);
+    const gaps = angles.map((a, i) => ((i + 1 < angles.length ? angles[i + 1] : angles[0] + 2 * Math.PI) - a));
+    for (const gap of gaps) expect(gap).toBeCloseTo((2 * Math.PI) / rivets.length, 9);
+  });
+});
+
+/** The figure's outline: the one closed path its graphics strokes, the largest if more. */
+const outlineOf = (ls: Line[]) =>
+  ls.filter((l) => l.closed).sort((a, b) => b.points.length - a.points.length)[0];
+
+describe("HudCorner (FS-QHN87 R4: Character, a hooded figure)", () => {
+  const figure = () => {
+    const env = setup([{ icon: "character" }]);
+    const f = cornerIconFrame("character", viewport);
+    return { g: env.graphics[0], cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
+  };
+
+  it("should draw no circle for a head or a face", () => {
+    const { g } = figure();
+    expect(g.calls).not.toContain("strokeCircle");
+  });
+
+  it("should peak the hood at the top: its outline comes to a point there", () => {
+    const { g } = figure();
+    const ps = outlineOf(linesOf(g)).points.slice(0, -1);
+    const top = ps.reduce((i, p, k) => (p.y < ps[i].y ? k : i), 0);
+    const [prev, at, next] = [ps[(top - 1 + ps.length) % ps.length], ps[top], ps[(top + 1) % ps.length]];
+    const turn = Math.abs(Math.atan2(prev.y - at.y, prev.x - at.x) - Math.atan2(next.y - at.y, next.x - at.x));
+    const inner = Math.min(turn, 2 * Math.PI - turn);
+    // a point, not a round crown: the two sides meet at under 150°
+    expect((inner * 180) / Math.PI).toBeLessThan(150);
+  });
+
+  it("should open the hood in a deep inner curve, with at most two short strokes inside it and nothing else", () => {
+    const { g } = figure();
+    const lines = linesOf(g);
+    const outline = outlineOf(lines);
+    const height = (l: Line) => Math.max(...l.points.map((p) => p.y)) - Math.min(...l.points.map((p) => p.y));
+    // the opening: under the hood's top, at least 6 px deep
+    const top = Math.min(...outline.points.map((p) => p.y));
+    const opening = lines.find(
+      (l) => l !== outline && Math.min(...l.points.map((p) => p.y)) > top + 2 && height(l) >= 6 && l.points.length > 4,
+    )!;
+    expect(opening).toBeDefined();
+    const shape = opening.points;
+    const within = lines.filter((l) => l !== opening && l !== outline && l.points.every((p) => inside(shape, p.x, p.y)));
+    expect(within.length).toBeLessThanOrEqual(2);
+    for (const l of within) {
+      const len = l.points.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - l.points[i].x, p.y - l.points[i].y), 0);
+      expect(len).toBeLessThanOrEqual(5);
+    }
+  });
+
+  it("should hang a cloak to a curved hem, with one or two folds in it", () => {
+    const { g } = figure();
+    const lines = linesOf(g);
+    const outline = outlineOf(lines);
+    const ps = outline.points;
+    const bottom = Math.max(...ps.map((p) => p.y));
+    const left = Math.min(...ps.map((p) => p.x));
+    const right = Math.max(...ps.map((p) => p.x));
+    // the hem is a curve: lowest in the middle, higher at its sides
+    const atSides = ps.filter((p) => p.x < left + 1 || p.x > right - 1).map((p) => p.y);
+    expect(bottom - Math.max(...atSides)).toBeGreaterThan(1);
+    // folds: open strokes in the cloak's lower half
+    const mid = (Math.min(...ps.map((p) => p.y)) + bottom) / 2;
+    const folds = lines.filter((l) => l !== outline && !l.closed && l.points.every((p) => p.y > mid - 2));
+    expect(folds.length).toBeGreaterThanOrEqual(1);
+    expect(folds.length).toBeLessThanOrEqual(2);
+  });
+
+  it("should keep today's bust's place and size: within 3 px each way, centred within 1 px", () => {
+    const { g, cx, cy } = figure();
+    const box = boxOf(marks(g));
+    const was = bustBox(cx, cy + 1, 1);
+    expect(Math.abs(box.width - (was.right - was.left))).toBeLessThanOrEqual(3);
+    expect(Math.abs(box.height - (was.bottom - was.top))).toBeLessThanOrEqual(3);
+    expect(Math.abs(centreOf(box).x - centreOf(was).x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(centreOf(box).y - centreOf(was).y)).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("HudCorner (FS-QHN87 R5: Party, two hooded figures)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  const party = () => {
+    const env = setup([{ icon: "party" }]);
+    const f = cornerIconFrame("party", viewport);
+    return { g: env.graphics[0], corner: env.corner, cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
+  };
+  /** One figure drawn alone, through the Character icon's own drawing, at (x, y) and scale s. */
+  const alone = (x: number, y: number, s: number) => {
+    const rec = fakeScene();
+    const g = rec.scene.add.graphics() as unknown as Parameters<typeof drawHooded>[0];
+    drawHooded(g, x, y, s, palette.interactable, 0.85);
+    return rec.graphics[0];
+  };
+
+  it("should draw the front figure whole, at scale 0.85 on (cx + 5, cy + 2)", () => {
+    const { g, cx, cy } = party();
+    const front = alone(cx + 5, cy + 2, 0.85).ops;
+    expect(g.ops.slice(g.ops.length - front.length)).toEqual(front);
+  });
+
+  it("should leave the back figure, scale 0.8 on (cx − 6, cy − 2), undrawn where the front one covers it, and draw the rest", () => {
+    const { g, cx, cy } = party();
+    const front = alone(cx + 5, cy + 2, 0.85);
+    const back = alone(cx - 6, cy - 2, 0.8);
+    const frontShape = outlineOf(linesOf(front)).points;
+    const drawnBack = linesOf({ ...g, ops: g.ops.slice(0, g.ops.length - front.ops.length) });
+    const backPoints = drawnBack.flatMap((l) => l.points);
+    expect(backPoints.length).toBeGreaterThan(0);
+    expect(backPoints.filter((p) => inside(frontShape, p.x, p.y))).toEqual([]);
+    // what the front leaves clear of the back's outline, by more than a line or two, is drawn
+    const clear = (p: { x: number; y: number }) =>
+      !inside(frontShape, p.x, p.y) && frontShape.every((q) => Math.hypot(p.x - q.x, p.y - q.y) > 2 * GLYPH_LINE_W);
+    const wanted = outlineOf(linesOf(back)).points.filter(clear);
+    expect(wanted.length).toBeGreaterThan(10);
+    for (const p of wanted) expect(backPoints.some((q) => Math.hypot(p.x - q.x, p.y - q.y) < 0.5)).toBe(true);
+    // nothing filled
+    expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+  });
+
+  it("should keep today's Party glyph's place and size: within 3 px each way, centred within 1 px", () => {
+    const { g, cx, cy } = party();
+    const box = boxOf(marks(g));
+    const back = bustBox(cx - 6, cy - 2, 0.8);
+    const front = bustBox(cx + 5, cy + 2, 0.85);
+    // today's back bust's shoulders end at its foot, above the front one's
+    const was = { left: back.left, right: front.right, top: Math.min(back.top, front.top), bottom: front.bottom };
+    expect(Math.abs(box.width - (was.right - was.left))).toBeLessThanOrEqual(3);
+    expect(Math.abs(box.height - (was.bottom - was.top))).toBeLessThanOrEqual(3);
+    expect(Math.abs(centreOf(box).x - centreOf(was).x)).toBeLessThanOrEqual(1);
+    expect(Math.abs(centreOf(box).y - centreOf(was).y)).toBeLessThanOrEqual(1);
+  });
+
+  it("should move both figures with the corner when the view widens (FS-ZAJMH R13)", () => {
+    const { g, corner } = party();
+    const before = boxOf(marks(g));
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    corner.relayout();
+    const after = boxOf(marks(g));
+    expect(after.left - before.left).toBeCloseTo(200, 9);
+    expect(after.top - before.top).toBeCloseTo(0, 9);
   });
 });
