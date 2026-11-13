@@ -1,9 +1,9 @@
 ---
 id: I-WDM0X-6
-status: open
+status: in-progress
 implements: FS-WDM0X
 blocked_by: [I-WDM0X-5]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-WDM0X § Change: Menu, dialog and notice sounds, slice 2: the NPC dialogue card, the town's envelope, the notices and the main menu's delete confirm (game-client)"
 ---
 Implements FS-WDM0X §Change: Menu, dialog and notice sounds (pass 1)

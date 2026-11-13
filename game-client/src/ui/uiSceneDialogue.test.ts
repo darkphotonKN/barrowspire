@@ -11,6 +11,7 @@ import {
   type WorldReport,
 } from "./uiBridge";
 import { UiDialogueSlot } from "./uiSceneDialogue";
+import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 
 // FS-TQZ5J Amendment A2 R29–R32 (I-TQZ5J-7): the town's NPC dialogue card is the UI scene's, drawn
 // from the plain data the town hands over (speaker, text, options with their register and whether
@@ -341,5 +342,143 @@ describe("the town's answers to the card, by id (FS-TQZ5J A2 R30)", () => {
     answering({})({ kind: "pickDialogue", id: "solo" });
 
     expect(picked).toEqual(["solo"]);
+  });
+});
+
+describe("the dialogue card's sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10, M12, M13, M15)", () => {
+  /** The slot on a bridge with the UI scene's sounds lent, the town reported and `shown` on the card. */
+  function heardCard(shown: ShownDialogue) {
+    const { bridge, heard } = heardInterfaceSounds();
+    const drawn: DialogueCardSpec[] = [];
+    const slot = new UiDialogueSlot(bridge, (spec) => {
+      drawn.push(spec);
+      return { container: { destroy: () => {} }, retone: () => {}, relayout: () => {} };
+    });
+    const town = aTown();
+    bridge.report(town.report);
+    slot.show(shown);
+    heard();
+    const spec = () => drawn[drawn.length - 1];
+    /** A press on a drawn row, as its hit area answers it: picked while it can be, else told refused (menuOption). */
+    const press = (id: string) => {
+      const row = spec().rows.find((r) => r.id === id)!;
+      if (row.enabled?.() ?? true) row.onPick();
+      else spec().feedback?.refused();
+    };
+    const key = (pressed: Partial<{ confirm: boolean; numbered: number }>) =>
+      slot.keys({ confirm: false, numbered: -1, ...pressed });
+    return { bridge, heard, slot, town, spec, press, key };
+  }
+
+  const confirming = (waiting?: string): ShownDialogue => ({
+    speaker: { name: "The Spire's door" },
+    text: "The Spire's door stands open.",
+    options: [
+      option("solo", "Descend alone", { enabled: waiting !== "solo", sound: "confirm" }),
+      option("queue", "Wait for company", { enabled: waiting !== "queue", sound: "confirm" }),
+      option("enter", "Enter as a party", { enabled: waiting !== "enter", sound: "confirm" }),
+      option("dismiss", "Not yet", { register: "cancel" }),
+    ],
+  });
+
+  it("should play dialog_confirm once for a door way picked by the pointer, by its number or by E, and no menu_click beside it", () => {
+    const t = heardCard(confirming());
+
+    t.press("solo");
+    t.key({ numbered: 1 });
+    t.key({ confirm: true });
+
+    expect(t.heard()).toEqual(["dialog_confirm", "dialog_confirm", "dialog_confirm"]);
+    expect(t.town.asked.map((r) => (r.kind === "pickDialogue" ? r.id : r.kind))).toEqual(["solo", "queue", "solo"]);
+  });
+
+  it("should play menu_click for an actionable row that names no sound: the Elder's Go on", () => {
+    const t = heardCard({
+      speaker: { name: "Elder" },
+      text: "One grey morning…",
+      options: [option("on", "Go on"), option("farewell", "Farewell", { register: "cancel" })],
+    });
+
+    t.press("on");
+
+    expect(t.heard()).toEqual(["menu_click"]);
+  });
+
+  it("should play dialog_cancel for the cancel row, and for an actionable row marked cancel: a resident's Leave", () => {
+    const t = heardCard({
+      speaker: { name: "Resident" },
+      text: "Quiet season.",
+      options: [option("leave", "Leave", { sound: "cancel" })],
+    });
+    t.press("leave");
+    expect(t.heard()).toEqual(["dialog_cancel"]);
+
+    const door = heardCard(confirming());
+    door.press("dismiss");
+    expect(door.heard()).toEqual(["dialog_cancel"]);
+  });
+
+  it("should play dialog_confirm_heavy for a row marked heavy", () => {
+    const t = heardCard({
+      speaker: { name: "Warden" },
+      text: "Burn it?",
+      options: [option("burn", "Burn it", { sound: "heavy" }), option("keep", "Keep it", { register: "cancel" })],
+    });
+
+    t.press("burn");
+
+    expect(t.heard()).toEqual(["dialog_confirm_heavy"]);
+  });
+
+  it("should play menu_error for a dimmed row, by the pointer or its key, and send nothing", () => {
+    const t = heardCard(confirming("solo"));
+
+    t.press("solo");
+    t.key({ numbered: 0 });
+    t.key({ confirm: true });
+
+    expect(t.heard()).toEqual(["menu_error", "menu_error", "menu_error"]);
+    expect(t.town.asked).toEqual([]);
+  });
+
+  it("should play nothing for a number past the actionable rows", () => {
+    const t = heardCard(confirming());
+
+    t.key({ numbered: 2 });
+    t.key({ numbered: 3 });
+
+    expect(t.heard()).toEqual(["dialog_confirm"]);
+  });
+
+  it("should play dialog_cancel as E or Enter closes a card with nothing to confirm", () => {
+    const t = heardCard({
+      speaker: { name: "Keeper" },
+      text: "The stores are bare.",
+      options: [option("farewell", "Farewell", { register: "cancel" })],
+    });
+
+    t.key({ confirm: true });
+
+    expect(t.heard()).toEqual(["dialog_cancel"]);
+    expect(t.town.asked).toEqual([{ kind: "close", window: "dialogue" }]);
+  });
+
+  it("should hand the card a feedback that plays menu_hover and menu_error", () => {
+    const t = heardCard(confirming());
+
+    t.spec().feedback!.hovered();
+    t.spec().feedback!.refused();
+
+    expect(t.heard()).toEqual(["menu_hover", "menu_error"]);
+  });
+
+  it("should play nothing as the town shows the card again, retoned or replaced, or takes it down: its opening is the town's to say", () => {
+    const t = heardCard(confirming());
+
+    t.slot.show(confirming("solo"));
+    t.slot.show({ ...confirming(), text: "The way is shut for now." });
+    t.slot.show(null);
+
+    expect(t.heard()).toEqual([]);
   });
 });

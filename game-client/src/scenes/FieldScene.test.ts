@@ -262,7 +262,7 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     refuse("fallen");
     (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
 
-    expect(told).toEqual([{ text: "You have fallen. You will rise at the road home.", look: { world: "field" } }]);
+    expect(told).toEqual([{ text: "You have fallen. You will rise at the road home.", look: { world: "field" }, important: true }]);
     expect(ui.bridge.world).toBeNull();
   });
 

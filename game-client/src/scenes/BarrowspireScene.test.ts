@@ -7095,6 +7095,16 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     expect(run.reaching).toBeUndefined();
   });
 
+  it("should say an interact's refusal and its good news as ordinary notices: item-level (FS-WDM0X § Change M16)", () => {
+    const { notified, reply } = connected();
+
+    reply({ success: false, message: "its guards still stand", reason: "container_guarded" });
+    reply({ success: false, message: "that loot is reserved for its killer", reason: "loot_reserved" });
+    reply({ success: true, message: "The lever gives." });
+
+    expect(notified.mock.calls.map((call) => call[2] ?? false)).toEqual([false, false, false]);
+  });
+
   it("should keep the reach, and an open coffer, through the empty frame that follows a reply", () => {
     const { run, reply } = connected();
     reply({ success: false, message: "" });
@@ -10249,5 +10259,37 @@ describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's mu
 
     expect(() => run.enterMusic()).not.toThrow();
     expect(add).not.toHaveBeenCalled();
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds, M16 (I-WDM0X-6): the run's notification carries
+// whether it relays the server's refusal, as plain data the UI scene chimes by.
+describe("BarrowspireScene notices, ordinary or important (FS-WDM0X § Change M16)", () => {
+  afterEach(() => void vi.restoreAllMocks());
+
+  it("should say a notification as important only where it is told so", () => {
+    const { run } = onStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
+    const told: unknown[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ notice: (n) => void told.push(n) });
+    const say = (run as unknown as { showNotification(message: string, backing: number, important?: boolean): void }).showNotification.bind(run);
+
+    say("Escape door opened!", palette.safe);
+    say("You are not in a delve.", palette.hudPanel, true);
+
+    expect(told).toEqual([
+      { text: "Escape door opened!", look: { world: "run", backing: palette.safe } },
+      { text: "You are not in a delve.", look: { world: "run", backing: palette.hudPanel }, important: true },
+    ]);
+  });
+
+  it("should say a fall refused as important", () => {
+    const { run } = onStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
+    const notified = vi.spyOn(run as unknown as { showNotification(...args: unknown[]): void }, "showNotification").mockImplementation(() => {});
+
+    (run as unknown as { fallRefused(info: { message?: string }): void }).fallRefused({ message: "You are not in a delve." });
+
+    expect(notified.mock.calls.map((call) => call[2])).toEqual([true]);
   });
 });

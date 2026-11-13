@@ -747,3 +747,18 @@ describe("the menu slot's sounds (FS-WDM0X § Change: Menu, dialog and notice so
     expect(t.heard()).toEqual(["menu_slider_tick", "menu_toggle_on", "menu_toggle_off"]);
   });
 });
+
+describe("Esc on the town's dialogue (FS-WDM0X § Change: Menu, dialog and notice sounds, M13)", () => {
+  it("should play dialog_cancel as Esc dismisses the town's dialogue, and nothing else", () => {
+    const t = onBridge();
+    const town = aWorld("hub");
+    t.bridge.report(town.report);
+    town.state.dialogue = true;
+    t.heard();
+
+    t.esc();
+
+    expect(town.asked).toEqual([{ kind: "close", window: "dialogue" }]);
+    expect(t.heard()).toEqual(["dialog_cancel"]);
+  });
+});

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Only the heroes sidebar's own hit test is under test: a Phaser stand-in with what it reaches for.
@@ -412,5 +413,22 @@ describe("MainMenuScene roster: the party's character and the switch (FS-NCC9J C
     expect(menu.switchConfirm).toBeUndefined();
     expect(refusals).toEqual(["You cannot change character during a delve."]);
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds, M14 (I-WDM0X-6): the main menu has no UI scene,
+// so it makes its own player on the game's sound manager and asks the delete through it. Pinned from
+// the source, as the scene's create is not stood up here.
+describe("MainMenuScene's delete confirm sounds (FS-WDM0X § Change M14)", () => {
+  const source = readFileSync(new URL("./MainMenuScene.ts", import.meta.url), "utf8");
+
+  it("should make its own player in create, on its own sound and the shared SFX level, with no windows", () => {
+    const create = source.slice(source.indexOf("  create(): void {"));
+    expect(create).toMatch(/this\.sounds = new UiSounds\(sceneUiSoundStage\(this\), browserSfxStore, \(\) => NO_WINDOWS\)/);
+  });
+
+  it("should ask the delete through confirmDeletion with the browser's confirm and its player, deleting only on OK", () => {
+    expect(source).toMatch(/if \(confirmDeletion\(char\.name, \{ ask: \(text\) => confirm\(text\), play: \(effect\) => this\.sounds\?\.play\(effect\) \}\)\)/);
+    expect(source).not.toMatch(/if \(confirm\(`Delete character/);
   });
 });

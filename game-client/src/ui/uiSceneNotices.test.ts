@@ -4,6 +4,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { GameUiBridge, NO_FACTS, type Notice, type WorldReport } from "./uiBridge";
 import { UiNoticeLayer, drawNotice, type NoticeStage } from "./uiSceneNotices";
+import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 
 // FS-TQZ5J Amendment A2 R28, R33, R34 (I-TQZ5J-8): the worlds' screen notices are the UI scene's, said
 // through the bridge as plain data (its words and its look) and drawn with today's look, place, depth
@@ -258,5 +259,52 @@ describe("the UI scene's notices, said by the world reported (FS-TQZ5J A2 R33, R
     t.layer.clear();
 
     expect(t.timers.filter((x) => x.removed)).toEqual([]);
+  });
+});
+
+describe("a notice's chime (FS-WDM0X § Change: Menu, dialog and notice sounds, M16)", () => {
+  const aWorld = (world: "hub" | "field" | "run"): WorldReport => ({
+    world,
+    windows: () => ({ letter: false, party: false, inventory: false, character: false }),
+    blockers: () => ({ dialogue: false }),
+    facts: () => NO_FACTS,
+    answer: () => {},
+  });
+
+  function heardLayer() {
+    const { bridge, heard } = heardInterfaceSounds();
+    const s = aStage();
+    const layer = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(s.stage, notice, gone));
+    bridge.onScreen({ notice: (notice) => layer.say(notice) });
+    bridge.onWorld(() => layer.sync());
+    return { bridge, heard, layer, ...s };
+  }
+
+  it("should play notify as an ordinary notice is drawn, in each world's look", () => {
+    const t = heardLayer();
+    t.bridge.report(aWorld("run"));
+
+    t.bridge.notice(town("Your bag is full."));
+    t.bridge.notice(field("Your bag is full."));
+    t.bridge.notice(run("Escape door opened!", palette.safe));
+
+    expect(t.heard()).toEqual(["notify", "notify", "notify"]);
+  });
+
+  it("should play notify_important as a notice marked important is drawn", () => {
+    const t = heardLayer();
+    t.bridge.report(aWorld("hub"));
+
+    t.bridge.notice({ ...town("The way is shut for now."), important: true });
+
+    expect(t.heard()).toEqual(["notify_important"]);
+  });
+
+  it("should play nothing for a notice said while no world is reported: none is drawn", () => {
+    const t = heardLayer();
+
+    t.bridge.notice({ ...town("Too late."), important: true });
+
+    expect(t.heard()).toEqual([]);
   });
 });

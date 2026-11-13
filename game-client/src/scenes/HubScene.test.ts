@@ -625,7 +625,7 @@ describe("the town's notices through the UI bridge (FS-TQZ5J A2 R33, R34)", () =
 
     refuse("leave_queue", "Could not leave the queue, please try again.");
 
-    expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" } }]);
+    expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" }, important: true }]);
   });
 
   it("should say HubGear's refusals through the bridge, and a past visit's gear nothing (port.notice)", () => {
@@ -6203,5 +6203,85 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\);/);
     const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (I-WDM0X-6): the town says when the player opened
+// a dialogue (dialog_open), marks the door's ways as confirms and a resident's Leave as a cancel, and
+// says which of its notices relay the server's refusal (notify_important).
+describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M11, M12, M15, M16)", () => {
+  afterEach(() => void vi.restoreAllMocks());
+
+  it("should play dialog_open as E opens a figure's card, and menu_click alone as its Go on turns the page", () => {
+    const { hub, talkTo, choice } = hubOnStage();
+    const heard = hearWorld(hub, "hub");
+
+    talkTo("storyteller");
+    expect(heard()).toEqual(["dialog_open"]);
+
+    choice("on")!.handlers.pointerup();
+    expect(choice("farewell")).toBeDefined();
+    expect(heard()).toEqual(["menu_click"]);
+  });
+
+  it("should play dialog_open as the player steps into the Spire's gate, dialog_cancel on Esc, and dialog_open again on E there", () => {
+    const { hub, atTheDoor, answer, keys } = hubOnStage();
+    const heard = hearWorld(hub, "hub");
+
+    atTheDoor();
+    expect(heard()).toEqual(["dialog_open"]);
+    answer(keys.esc);
+    expect(hub.dialogue).toBeUndefined();
+    expect(heard()).toEqual(["dialog_cancel"]);
+    answer(keys.e);
+    expect(hub.dialogue).toBeDefined();
+    expect(heard()).toEqual(["dialog_open"]);
+  });
+
+  it("should play dialog_confirm for each of the door's ways, and nothing as the server's refusal draws the door again", () => {
+    const { hub, atTheDoor, choice, refuse } = queuedHubOnStage();
+    const heard = hearWorld(hub, "hub");
+    atTheDoor();
+    heard();
+
+    choice("solo")!.handlers.pointerup();
+    expect(heard()).toEqual(["dialog_confirm"]);
+    refuse("start_solo", "Leave the queue first.");
+    expect(hub.dialogue).toBeDefined();
+    expect(heard()).toEqual([]);
+    choice("queue")!.handlers.pointerup();
+    choice("enter")!.handlers.pointerup();
+    expect(heard()).toEqual(["dialog_confirm", "dialog_confirm"]);
+  });
+
+  it("should play dialog_cancel for a resident's Leave and the storekeeper's Farewell", () => {
+    const resident = hubOnStage();
+    const heardResident = hearWorld(resident.hub, "hub");
+    resident.talkTo("villager");
+    heardResident();
+    resident.choice("leave")!.handlers.pointerup();
+    expect(heardResident()).toEqual(["dialog_cancel"]);
+
+    const keeper = hubOnStage();
+    const heardKeeper = hearWorld(keeper.hub, "hub");
+    keeper.talkTo("storekeeper");
+    heardKeeper();
+    keeper.choice("farewell")!.handlers.pointerup();
+    expect(heardKeeper()).toEqual(["dialog_cancel"]);
+  });
+
+  it("should say the server turning down a move between worlds as important, and an item-level notice as ordinary", () => {
+    const { hub, ui, refuse } = queuedHubOnStage();
+    const told: unknown[] = [];
+    ui().bridge.onScreen({ notice: (n) => void told.push(n) });
+
+    refuse("find_game", "Walk to the Spire's door first.");
+    hub.enteringField = true;
+    refuse("enter_field", "The field is closed.", "unknown");
+    const gear = (hub as unknown as { composeGear(): { port: { notice(text: string): void } } }).composeGear();
+    hub.gear = gear;
+    gear.port.notice("Your bag is full.");
+
+    expect(told.map((n) => (n as { important?: boolean }).important ?? false)).toEqual([true, true, false]);
   });
 });
