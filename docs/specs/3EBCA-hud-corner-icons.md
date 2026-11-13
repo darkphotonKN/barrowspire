@@ -363,3 +363,336 @@ letter panel. The menu is the world's ESC menu (in a run its Fall confirm too). 
   settled 2026-11-12 (Summary).
 
 ## Change: Bare corner icons → FS-J1672
+
+## Change: The inventory icon is an inked backpack
+Status: work-order
+Date: 2026-11-13
+
+> Promoted `--from-thread` on 2026-11-13 from the approved charter (owner, 2026-11-13). Each
+> requirement marked **(charter default)** is one of its locked decisions D1–D7, with its reason;
+> **(spec)** fills an acceptance-level gap the charter left, and is this section's own. Recorded
+> without adversarial review: no `challenge-me` pass (client art, cheap to redo, judged by eye).
+> Code citations are against `d819a33a` (FS-J1672 built, not yet on main). Builds on FS-J1672.
+
+### Summary
+
+The Inventory icon in the corner row stops being a thin line bag and becomes a small inked
+illustration of an adventurer's backpack, in the manner of a dark-fantasy game's hand-inked art: a
+heavy ink outline, flat fills of muted leather and old brass, and fine ink hatching for its shade,
+stitching and scratches. It shows a flap, two straps closed by brass buckles, a side pouch, a rolled
+bedroll tied on top, and a shoulder strap. A thin amber line along its silhouette says it can be
+pressed, brighter under the pointer, as the other icons' amber lines do. It is drawn in code from
+palette tokens. The other four icons, and where the Inventory icon is, what pressing it does, its
+key and its label, stay as they are.
+
+The owner, 2026-11-13: 「道具藍幫我重做成一個背包的圖示 可以圖示複雜有質感一點」 (redo the inventory's icon as a
+backpack; it may be more complex, with more texture). A baked, realistic backpack was tried first
+on another branch (`feat/client-backpack-icon-baked`, abandoned and never merged; its section and
+its issues I-3EBCA-10 and I-3EBCA-11 are not on this ledger, and this section's issues start at
+I-3EBCA-12 so the ids never collide). Seeing it, he said 「感覺風格不太對 可能還是要複雜的圖示 不要寫實風格」
+(the style feels wrong; it should still be a complex icon, but not realistic) and 「黑暗奇幻風格」
+(dark fantasy style).
+
+**Why a change on this FS.** This FS owns the Inventory icon (R3), and only that capability
+changes, so its thin line ("Panel shortcut icons on the HUD") is untouched. FS-J1672 is a change FS
+with no capability of its own; this section narrows its R3 for this one icon, below, without a stub
+there.
+
+**On the guideline.** The charter gave D1's reason as "per the guideline's 'hand-drawn, inked'". The
+design guideline has no such words: its medium is pre-rendered 3D, and its target is Ultima Online,
+"realistic, gritty" (§ Art Technique). The corner icons were never part of that medium. They are HUD
+chrome drawn in code (R3; § UI Chrome). D1's style therefore rests on the owner's own words above and
+on the guideline's identity line, "Dark fantasy, not bright high-fantasy". R12 records the exception
+in the guideline's Corner row paragraph, so the next icon does not copy it by accident.
+
+### Bounds
+
+Issues under this section may change `game-client/src/ui/HudCorner.ts`,
+`game-client/src/ui/HudCorner.test.ts`, and the **Corner row** paragraph of
+`game-client/docs/design-guideline.md`. A screenshot harness for R13 is throwaway. It lives under a
+git-ignored path (`game-client/tmp/`, ignored by the root `.gitignore`'s `tmp/`) or outside the
+worktree, and it is never committed.
+
+They may **not** change `hudCornerLayout.ts` (rects, labels), `cornerLabel.ts`,
+`MailboxEnvelope.ts`, `carvedPanel.ts`, `canvasPalette.ts` or `theme.ts` (so no new token), the Menu,
+Character, Party or Mailbox glyphs, any scene, anything under `public/art` or `tools/bake`, the server,
+or the existing text of this FS or of FS-J1672. A slice that finds one of these unavoidable stops and
+escalates.
+
+### Facts this section rests on
+
+Verified 2026-11-13 on `d819a33a`. Paths are under `game-client/`.
+
+- **Today's Inventory icon** (`src/ui/HudCorner.ts` `drawBag`, used nowhere else) is a bare line
+  bag: a half-circle pouch of radius 11, a V flap, a gathered neck and a cord, 1.5 px, in
+  `palette.interactable` at 0.85 and `palette.interactableBright` at 1 under the pointer. It is drawn
+  on the slot's centre, `(f.x + 29, f.y + 23)`, into the icon's own graphics at depth 1000, which
+  `draw` clears and redraws on hover, on leave and on `relayout`. The slot is (940, 658, 58, 46) at
+  1080 × 720 and 200 px further right at 1280 (`cornerIconFrame`).
+- **The glyphs draw through `Ink`**, a `Pick` of Graphics with stroke methods only (`lineStyle`,
+  `strokeCircle`, `lineBetween`, `beginPath`, `arc`, `strokePath`, `closePath`), which is how
+  FS-J1672 R3 ("no fill") is held in the types.
+- **The tests** (`src/ui/HudCorner.test.ts`, block "FS-J1672 R1–R3, R7: bare glyphs") assert, for
+  every graphics in the row, no call in `FILLS` (`fillStyle`, `fillRect`, `fillRoundedRect`,
+  `fillCircle`, `fillPath`, `fillTriangle`, `fillGradientStyle`), and that Menu, Inventory, Character
+  and Party are each stroked in `interactable` alone at 0.85. The fake graphics record `fillStyle`,
+  `fillPath`, `arc`, `lineBetween` and the rest, but not `moveTo`, `lineTo`, `fillPoints`,
+  `strokePoints`, `fillEllipse` or `strokeEllipse`.
+- **Phaser 4.2.1 Graphics** (`node_modules/phaser/types/phaser.d.ts`) offers `fillStyle(color,
+  alpha)`, `lineStyle(width, color, alpha)`, `beginPath`, `moveTo`, `lineTo`, `arc`, `closePath`,
+  `fillPath`, `strokePath`, `fillPoints`, `strokePoints`, `fillEllipse`, `strokeEllipse`,
+  `fillTriangle` and `fillRoundedRect`.
+- **How WebGL strokes a path** (`node_modules/phaser/src/renderer/webgl/renderNodes/StrokePath.js`):
+  each segment is its own quad, and adjacent segments get a connecting quad **only when the line
+  width is over 2**. The width is the Graphics' own, before the camera's zoom. At 2 px or less a
+  path's corners are not joined, and can show notches at render scale 2. Points closer together
+  than `pathDetailThreshold` screen px are skipped (default 1; this game does not set
+  `render.pathDetailThreshold`).
+- **Render scale** (`src/render/viewport/camera.ts`) is the camera's zoom. A HUD object at logical
+  (x, y) draws at backing (rs·x, rs·y), so a vector icon is drawn from the same commands at twice
+  the backing px at render scale 2.
+- **Colours.** The game palette has no backpack token. It does have leather, brass and cloth
+  tones: `palette.floor` (barrow brown), `palette.ground` (barrow deep), `palette.frame` and
+  `frameBright` (brass), `palette.hudLabel` (vellum dark), `palette.ink` (charcoal, "outlines and
+  the deepest shadow"), and the satchel's own leather family (`satchelFlap`, `satchelLip`,
+  `satchelStrap`, mixed from barrow brown and brass). `shade`, `tint` and `mix` from
+  `@/utils/canvasPalette` are already applied to palette tokens at call sites in `src/ui`
+  (`LetterPanel.ts`, `carvedPanel.ts`, `satchel.ts`), and the lint fence passes them, since no
+  literal is written.
+- **The guideline** says darks are "never pure black" (§ Palette rules), and HUD amber is reserved
+  for what the player can act on (§ Gameplay accent).
+
+### Requirements
+
+#### The picture
+
+1. **What it shows.** An adventurer's backpack, seen from the front and turned a little so one side
+   shows. It has a tall, rounded leather body. A flap covers its top third, with a curved lower edge.
+   Two straps run down over the flap onto the body, each closed by a brass buckle: a small
+   rectangular frame with its tongue. A side pouch sits on the visible side, with its own small flap.
+   A rolled bedroll lies across the top, a little wider than the body, its rolled ends showing, tied
+   by two cords whose loose ends hang. A shoulder strap curves from the top down behind the
+   visible side. Rows of short stitches run along the flap's edge and the pouch's seams, and three to
+   five short wear scratches mark the body and the flap. **(charter default, D2: the owner wants
+   「複雜」)**
+2. **Its style.** Every part is outlined in ink, and the whole silhouette in a heavier ink line:
+   - the silhouette's outline is **2.5 px** (over 2 px, so the renderer joins its corners), in
+     `palette.ink` at 1;
+   - lines between parts (the flap's edge, the straps, the pouch, the bedroll's turns) are 1 to
+     1.5 px ink;
+   - every part is one flat fill, with no gradient, no `fillGradientStyle`, and no stack of
+     translucent fills standing in for one;
+   - shade is fine ink hatching: parallel strokes 1 px or finer, ink at 0.6 alpha or less, on the
+     side turned away, under the flap and under the bedroll;
+   - stitching and scratches are fine ink lines, too;
+   - nothing imitates real light: no specular spot, no glow, no soft shadow.
+
+   "Black" here is `palette.ink`, because the guideline's darks are never pure black. **(charter
+   default, D1: the owner's 「黑暗奇幻風格」 and 「不要寫實風格」. The guideline phrase the charter
+   cited for D1 is not in the guideline, Summary. The line widths and the hatching's alpha are
+   derived here: the join rule in § Facts, and hatching that reads as shade and not as a second
+   outline)**
+3. **Its tones.** The body is a muted leather brown. The flap, the straps and the shoulder strap
+   are a darker leather. The buckles are old brass (`palette.frame`). The bedroll is an undyed cloth,
+   a muted vellum-dark. The cords are darker than the bedroll. Each tone is a `palette` token, or
+   `mix`, `shade` or `tint` of palette tokens (the helpers in `@/utils/canvasPalette`). Each is named
+   once, in one table of the backpack's tones at the top of `HudCorner.ts`. There is no hex literal
+   and no new token. A starting point, to be tuned by eye in the owner's rounds (R14): body
+   `mix(palette.floor, palette.frame, 0.35)`, the satchel's leather; darker leather
+   `mix(palette.ground, palette.frame, 0.3)`; cloth `shade(palette.hudLabel, 0.3)`. None of them is
+   `interactable` or `interactableBright`. **(charter default, D1, D6. The single table and the
+   starting tones are derived here: `canvasPalette.ts` is outside the bounds, and call-site
+   derivation from tokens already has precedent, § Facts)**
+4. **Its size and place.** The drawn silhouette, the amber edge (R6) included, is 32 to 36 px tall
+   and no more than 44 px wide. Its bounding box is centred on the slot's centre, `(f.x + 29, f.y +
+   23)`, within 1 px: (969, 681) at 1080 × 720, and (1169, 681) at 1280. It lies wholly inside the
+   58 × 46 slot. It moves with the slot on every `relayout` (FS-ZAJMH R12, R13). **(charter default,
+   D4: similar weight to the other icons; the width cap and the 1 px tolerance derived here, to
+   keep it clear of the 8 px gaps)**
+5. **The one filled icon.** The Inventory icon is the only corner icon that fills shapes. Menu,
+   Character, Party and the Mailbox stay line-only, exactly as FS-J1672 R2 and R3 say. Every fill
+   lies inside the backpack's own ink outline: no plate, no ground, and no shadow is laid on the
+   world (FS-J1672 R1). **(charter default, D5: the illustration needs fills)**
+
+#### Pressable
+
+6. **The amber edge.** A 1 px amber line runs along the outer side of the silhouette's ink outline,
+   all the way round. It is `palette.interactable` at 0.85 when idle and
+   `palette.interactableBright` at 1 under the pointer, the alphas the other glyphs use. It is the
+   only part of the icon that changes under the pointer: the fills, the ink, the hatching and the
+   brass are drawn the same either way. Nothing else of the backpack is amber. **(charter default,
+   D3: amber means "pressable" in the game. That only the edge changes, and its alphas, are derived
+   here, so the hover reads the way it does on the other four icons)**
+7. **Its label and zone are unchanged.** "Inventory (I)" shows above the slot under the pointer and
+   goes when it leaves (R5). The 58 × 46 zone, the hand cursor and `covers` are unchanged, and a
+   press anywhere in the slot is still the icon's (FS-J1672 R4). **(charter bounds)**
+
+#### Drawn in code
+
+8. **Graphics, nothing else.** The backpack is drawn with Phaser Graphics commands into the icon's
+   existing graphics object, at depth 1000, fixed to the screen. There is no image, texture, render
+   texture, `generateTexture`, bake, or file under `public/art`. It is cleared and redrawn wherever
+   the icon is redrawn today (hover, leave, `relayout`), so it is drawn from the same commands at
+   render scale 1 and 2. **(charter default, D6: crisp at render scale 2)**
+9. **Tokens only.** Every colour the row draws is a `palette` token or derived from tokens (R3).
+   The lint fence passes (ADR-0013, ADR-0025). **(charter default, D6)**
+10. **Everything else stays.** The other four icons' glyphs, strokes, colours and alphas; the greyed
+    Mailbox; every rect, zone, cursor, press, guard, key and label (FS-3EBCA R1, R2, R5–R19). The
+    row's constructor and `HudCornerDeps` keep their shape. **(charter bounds)**
+11. **Taken down with the row.** Nothing new is created beyond the icon's existing graphics, so
+    `destroy` takes the backpack down with it. **(spec)**
+
+#### The record
+
+12. **The guideline says so.** The design guideline's **Corner row** paragraph is rewritten to
+    what the row now is:
+    - from the right: Menu (a gear), Inventory (an inked backpack), Character (a bust), Party (two
+      busts) and Mailbox (the envelope);
+    - bare over the world, with no plate (FS-J1672), on 58 × 46 press areas, 8 px apart, 16 px in
+      from the corner;
+    - the line glyphs are 1.5 px interactable amber, brighter under the pointer, and a greyed icon
+      is `hudFaint` and never brightens;
+    - a 12 px vellum label names the icon and its key;
+    - **the Inventory icon is the one filled exception**: an inked illustration, with a heavy ink
+      outline, flat muted leather and old brass, and ink hatching, but no gradient and no realistic
+      light, whose pressable cue is a thin amber edge;
+    - everything is drawn in code from tokens, with no baked art;
+    - the ability card stands directly above the row.
+
+    It cites FS-3EBCA § Change: The inventory icon is an inked backpack, and its "Added by" note is
+    kept. **(charter default, D5, D6, and the charter's bounds. Bringing the paragraph's other facts
+    up to date in the same edit is derived here: it still names four plated icons, which FS-HRH2J §
+    Change and FS-J1672 made false)**
+
+#### The check
+
+13. **Screenshots for the owner.** The agent slice renders the corner row with this icon and saves
+    eight PNGs:
+    - **idle** and **under the pointer** (the amber edge bright, the label up);
+    - at **render scale 1** and **render scale 2**;
+    - over a **light ground** (a daylit field's tone) and a **dark ground** (the town's dusk, e.g.
+      `palette.ground`).
+
+    Each shows the whole row, so the backpack is judged beside the four line glyphs, at backing
+    resolution with no resampling. The slice also saves one enlargement per render scale, of the
+    Inventory slot alone, scaled up with nearest-neighbour. The slice lists the files' absolute
+    paths in its issue. The harness is throwaway (§ Bounds). **(charter default, D7: art is judged
+    by eye; the eight shots are the charter's; the enlargement is derived here, since a 34 px icon is
+    hard to judge at 1:1)**
+14. **At most two rounds.** After the screenshots the owner may ask for shape or tone tweaks, in at
+    most two rounds. Each round changes only this section's files and re-shoots R13's set. A third
+    request is a new change. **(charter default, D7)**
+
+### What this changes in its owners
+
+Where an owner's text below and this section disagree, this section wins. The owners' text is not
+edited (write-once, `docs/specs/README.md`).
+
+- **FS-3EBCA R3**: "a line glyph 1.5 px wide" and "**Inventory** is a bag: a rounded pouch under a
+  gathered neck tied with a cord, a flap across its top". The Inventory icon is the inked backpack
+  instead (R1–R6). "Drawn in code from palette tokens; no baked art, no emoji, no texture file"
+  still holds.
+- **FS-3EBCA's acceptance criterion** "Each live icon is drawn … its glyph in `interactable`,
+  brightening to `interactableBright` under the pointer", as FS-J1672 reworded it: for Inventory
+  that holds of its amber edge (R6). Its fills, ink and brass are not amber and do not change
+  under the pointer.
+- **FS-J1672 R2** ("Glyphs unchanged") and **R3** ("No fill behind a glyph"), and their criteria:
+  these hold for Menu, Character, Party and the Mailbox. The Inventory icon fills shapes, but only
+  inside its own outline (R5).
+- **FS-J1672 R6** ("No outline or halo … for legibility"): its meaning is unchanged. The ink outline
+  is the illustration's own line, and the amber edge is the pressable cue, not a dark halo. Nothing
+  is drawn round any other icon, and nothing beyond the 1 px amber edge round this one.
+- **The guideline's Corner row paragraph**: rewritten (R12).
+
+### User Stories
+
+1. As a player, I want the Inventory icon to look like a backpack, so that I can tell at a glance
+   where my gear and bag are.
+2. As a player, I want it drawn like a dark-fantasy illustration, inked and hatched rather than
+   photographic, so that it fits a grim, hand-made world.
+3. As a player, I want to see its flap, buckled straps, side pouch and tied bedroll, so that the
+   icon rewards a closer look.
+4. As a player, I want it about the size of the other icons, so that the row keeps its rhythm.
+5. As a player, I want a thin amber edge on it, so that I know it is pressable, like every amber
+   thing in the game.
+6. As a player, I want that edge to brighten under the pointer, so that it answers my hand as the
+   other icons do.
+7. As a player, I want the label "Inventory (I)" as before, so that I still learn the key.
+8. As a player, I want pressing it, I and B to do what they did, so that nothing I learned
+   changes.
+9. As a player, I want a press anywhere in its old square to count, so that the new drawing never
+   makes it harder to hit.
+10. As a player on a high-density screen, I want it sharp, so that its detail is really there.
+11. As a player on a plain screen, I want its silhouette, flap and buckles still to read, so that
+    it works at render scale 1 too.
+12. As a player in a daylit field and in the dark town, I want it legible over either ground, so
+    that the icon never sinks into the world.
+13. As a player, I want the other four icons unchanged, so that only the icon the owner asked for
+    changes.
+14. As a player who resizes the window, I want the backpack to stay in its slot, so that it never
+    drifts from where I press.
+15. As the owner, I want screenshots idle and hovered, at both render scales, over light and dark
+    ground, so that I can judge the art by eye without setting up a run.
+16. As the owner, I want up to two rounds of tweaks, so that the shape and tones end up right.
+17. As a maintainer, I want the guideline to name this icon as the one filled, inked exception, so
+    that the next icon is not drawn this way by imitation.
+
+### Acceptance Criteria
+
+- [ ] On the recording graphics, the Inventory icon's ops include fills in at least four distinct
+      colours (body leather, darker leather, brass, cloth), none of them `interactable` or
+      `interactableBright`, and no `fillGradientStyle`. Every fill colour, and every stroke colour
+      but the amber edge's, is `palette.ink` or one named in the backpack's tone table in
+      `HudCorner.ts`.
+- [ ] Its outline is stroked in `palette.ink` with a line width over 2. Hatching strokes are
+      `palette.ink` at alpha 0.6 or less and width 1 or less; stitching and scratches are
+      `palette.ink`, width 1 or less.
+- [ ] Idle, its strokes include `interactable` at 0.85 and no `interactableBright`. Under the
+      pointer they include `interactableBright` at 1 and no `interactable`. Every other op (fills,
+      ink, hatching) is identical idle and hovered.
+- [ ] The bounding box of everything it draws is 32–36 px tall, no more than 44 px wide, inside
+      (940, 658, 58, 46), and centred within 1 px of (969, 681) at 1080 × 720. At 1280 it is centred
+      on (1169, 681). It follows a `relayout`.
+- [ ] Menu, Character, Party and the greyed Mailbox still fill nothing, and are stroked as before
+      (the FS-J1672 block's assertions, now over those four).
+- [ ] The Inventory zone, hand cursor, `covers`, press and "Inventory (I)" label are unchanged.
+      `destroy` takes its graphics down.
+- [ ] No image, texture or render texture is created by the row. No file under `public/art` or
+      `tools/bake` changes.
+- [ ] The guideline's Corner row paragraph reads as R12, and cites this section.
+- [ ] The eight screenshots and two enlargements of R13 exist, and their absolute paths are listed
+      in the agent slice's issue.
+- [ ] No raw colour literal. `npx vitest run --maxWorkers=4 --minWorkers=1`,
+      `npx tsc --noEmit -p .` and `npm run lint` pass in `game-client`.
+
+**By eye (the owner, from the screenshots):**
+
+- [ ] It reads as a dark-fantasy inked backpack, not a realistic one. Its flap, buckles, straps,
+      side pouch, bedroll and shoulder strap read at render scale 2, and its silhouette, flap and
+      buckles at 1.
+- [ ] It sits with the four line glyphs in weight, and its amber edge reads as "pressable" and
+      brightens under the pointer, over the light ground and over the dark ground.
+- [ ] Tweak rounds: at most two (R14). The owner approves the icon.
+
+### Edge States
+
+- **Render scale 1:** fine hatching and stitches may merge into the fills. The silhouette, the flap
+  and the buckles must still read. The owner judges this from the screenshots.
+- **A light ground** (a daylit field): the ink outline carries the silhouette.
+  **A dark ground** (the town, a run): the amber edge, the brass and the cloth carry it.
+- **Hovered during a resize:** the backpack, its bright edge and the label all move with the corner.
+- **The ESC menu open:** Inventory takes no hover (FS-3EBCA R18), so it stays idle-drawn.
+- **The inventory open:** the icon is drawn as always. There is no "open" state.
+- **Never greyed:** Inventory has no greyed form. Only the Mailbox does, and it is unchanged.
+
+### Out of Scope
+
+- Restyling Menu, Character, Party or the Mailbox to match the backpack.
+- A new palette token, or any change to `canvasPalette.ts` or `theme.ts`.
+- Any baked art, image, texture or bake change, and the abandoned baked-backpack branch.
+- An "open" or pressed state, animation, or a hover glow beyond the amber edge.
+- Rects, zones, keys, labels, the row's order, and any scene's wiring.
+- `game-client/CONTEXT.md`: its **Corner row** entry ("Inventory (a bag)") stays true of a
+  backpack.
+- The guideline's art-direction sections beyond the Corner row paragraph.
+- Any server, proto, gateway or contract change.
