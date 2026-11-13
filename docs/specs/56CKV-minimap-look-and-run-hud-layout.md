@@ -956,7 +956,7 @@ change.
 ## Change: Fullscreen in the OPTIONS panel → FS-T3DWX
 
 ## Change: The enlarged map keeps its labels inside
-Status: work-order
+Status: shipped
 Date: 2026-11-14
 
 Owner request (Nick, 2026-11-14): 「小地圖1.5倍時 區域名稱跟座標也要放在地圖內跟1倍時的位置一樣」 (with

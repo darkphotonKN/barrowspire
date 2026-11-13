@@ -1,6 +1,6 @@
 ---
 id: I-56CKV-11
-status: open
+status: done
 implements: FS-56CKV
 blocked_by: [I-56CKV-10]
 labels: [blocked]
@@ -26,3 +26,7 @@ I-56CKV-10
 ## Spec Reference
 
 FS-56CKV §Change: The enlarged map keeps its labels inside, Acceptance Criteria (Owner's look).
+
+## Owner sign-off
+
+2026-11-14: the owner looked at the enlarged map in game and approved it: 「小地圖調整沒問題」.
