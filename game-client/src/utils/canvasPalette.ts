@@ -321,6 +321,14 @@ export const palette = {
   ogreStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.4), 0.4),
   darkWarriorStandIn: tint(BARROW_HEX.umbra, 0.3),
 
+  // -- A monster ability's telegraph and impact (FS-C8VM7 §F R36): the hostile channel, drawn
+  //    above the light-map. The edge in the HP bar's lifted oxblood, so the ring reads on a dark
+  //    floor; the fill the same family, deeper, kept thin; the impact the ember of a hostile's
+  //    strike (guideline "Enemy design language"). Never amber, never arcane green.
+  abilityTelegraph: BARROW_HEX.oxbloodText,
+  abilityTelegraphFill: mix(BARROW_HEX.oxblood, BARROW_HEX.oxbloodText, 0.5),
+  abilityImpact: BARROW_HEX.ember,
+
   // -- The satchel (container view, FS-2325V §D). Tanned leather sits between
   //    barrow brown and brass; the flap is the darker, oilier hide; vellum
   //    thread for the stitching, bright brass for rivets and the buckle.

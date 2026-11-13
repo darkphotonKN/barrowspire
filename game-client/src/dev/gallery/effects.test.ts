@@ -55,6 +55,21 @@ describe("effect cards", () => {
     expect(EFFECT_CARDS.find((c) => c.module === "boneArrow")?.demo).not.toBeNull();
   });
 
+  it("should card each ability telegraph with its impact, and the dagger and rock flights (FS-C8VM7 §F R39)", () => {
+    const names = (module: string) => EFFECT_CARDS.filter((c) => c.module === module).map((c) => c.name);
+    expect(names("monsterAbility")).toEqual([
+      "Pounce telegraph and impact (hostile)",
+      "Ground slam telegraph and impact (hostile)",
+      "Death burst telegraph and impact (hostile)",
+      "Wail telegraph and impact (hostile)",
+      "Cleave cone and impact (hostile)",
+    ]);
+    expect(names("thrownDagger")).toHaveLength(1);
+    expect(names("ogreRock")).toHaveLength(1);
+    for (const owner of ["monsterAbility", "thrownDagger", "ogreRock"])
+      for (const card of EFFECT_CARDS.filter((c) => c.module === owner)) expect(card.demo).toBeTypeOf("function");
+  });
+
   it("should give every card that can't be played a reason", () => {
     const unexplained = EFFECT_CARDS.filter(
       (c) => c.demo === null && !c.reason.trim(),

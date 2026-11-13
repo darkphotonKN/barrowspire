@@ -23,6 +23,7 @@ import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
 import { HitFeedback } from "@/render/effects/hit";
 import { addMist } from "@/render/effects/mist";
+import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
 import type {
@@ -35,7 +36,7 @@ import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
-import type { ItemState } from "@/types/gameState";
+import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
 import { itemShine } from "@/ui/itemShine";
@@ -88,6 +89,38 @@ const FABLED_SAMPLE: ItemState = {
 };
 const FABLED_ICON_SIDE = 64;
 const FABLED_ICON_OFFSET = { x: 90, y: -60 };
+
+/** A frame's step, in ms, for a demo that drives its own frames. */
+const FRAME_MS = 33;
+
+/**
+ * An ability's telegraph as a run draws it (FS-C8VM7 §F R36): its area at the figure's feet, the
+ * server's numbers for `windUpS`, filling as it winds; then the field goes and it lands in its
+ * impact. The demo drives the frames the roster would.
+ */
+function playTelegraph(
+  s: Stage,
+  ability: { kind: MonsterAbilityKind; radius: number; arc?: number; windUpS: number },
+): void {
+  const telegraphs = new AbilityTelegraphs(() => s.scene.add.graphics());
+  const facing = { x: s.aim.x - s.at.x, y: s.aim.y - s.at.y };
+  const { kind, radius, arc = 0, windUpS } = ability;
+  const listed = (remaining?: number) => [
+    {
+      entity_id: s.owner,
+      facing,
+      ...(remaining === undefined
+        ? {}
+        : { ability: { kind, x: s.at.x, y: s.at.y, radius, arc, remaining } }),
+    },
+  ];
+  telegraphs.sync(listed(windUpS));
+  const windMs = windUpS * 1000;
+  for (let t = FRAME_MS; t <= windMs + IMPACT_MS + FRAME_MS; t += FRAME_MS)
+    s.later(t, () => telegraphs.update(FRAME_MS));
+  s.later(windMs, () => telegraphs.sync(listed()));
+  s.later(windMs + IMPACT_MS + 2 * FRAME_MS, () => telegraphs.clear());
+}
 
 /**
  * The gallery's one arrival card, so a replay replaces the card still up as the game's next
@@ -242,6 +275,38 @@ export const EFFECT_CARDS: EffectCard[] = [
       s.later(HOLD_MS, () => layer.destroy());
     },
   },
+  // FS-C8VM7 §F R36, R39: each ability's telegraph and its impact, at the server's starting numbers
+  {
+    module: "monsterAbility",
+    name: "Pounce telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "pounce", radius: 60, windUpS: 0.8 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Ground slam telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "ground_slam", radius: 130, windUpS: 0.9 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Death burst telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "burst", radius: 110, windUpS: 0.8 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Wail telegraph and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "wail", radius: 180, windUpS: 0.7 }),
+  },
+  {
+    module: "monsterAbility",
+    name: "Cleave cone and impact (hostile)",
+    demo: (s) => playTelegraph(s, { kind: "cleave", radius: 110, arc: 120, windUpS: 0.8 }),
+  },
+  {
+    module: "ogreRock",
+    name: "Ogre rock (hostile)",
+    // the flight only: the throw is the ogre's attack clip (FS-C8VM7 §F R38)
+    demo: (s) => s.fly("ogre_rock"),
+  },
   {
     module: "parry",
     name: "Parry stance and flash",
@@ -299,5 +364,11 @@ export const EFFECT_CARDS: EffectCard[] = [
       const smoke = new ChimneySmoke(s.fx, s.owner, s.at, CHIMNEY_LIFT);
       s.later(HOLD_MS, () => smoke.setVisible(false));
     },
+  },
+  {
+    module: "thrownDagger",
+    name: "Thrown dagger (hostile)",
+    // the flight only: the throw is the goblin's attack clip (FS-C8VM7 §F R38)
+    demo: (s) => s.fly("thrown_dagger"),
   },
 ];

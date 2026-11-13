@@ -2661,3 +2661,73 @@ describe("a champion (FS-C8VM7 §F R35)", () => {
     expect(footprintRadius(drawnLook("ghast", baked, true))).toBe(footprintRadius(monsterLook("demon")));
   });
 });
+
+describe("a monster's ability pose (FS-C8VM7 §F R37)", () => {
+  it("should play the attack clip for action ability, in the facing the server sends", () => {
+    const choice = monsterClip({ action: "ability", facing: { x: -1, y: 0 } }, "se");
+    expect(choice.animation).toBe("attack");
+    expect(choice.facing).toBe("w");
+  });
+
+  it("should play the wind-up once, however many ticks report it", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ action: "ability" })]);
+    roster.update(FRAME);
+    const played = sprites[0].anims.currentAnim?.key;
+    expect(played).toMatch(/^creature_troll_base\/attack\//);
+    roster.sync([monster({ action: "ability" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toBe(played);
+  });
+});
+
+describe("a monster's ability on the ground (FS-C8VM7 §F R36)", () => {
+  /** The fake stage, with ground marks that record their outlines. */
+  const groundStage = () => {
+    const base = fakeStage();
+    const marks: { strokes: number; destroyed: boolean }[] = [];
+    const stage: MonsterStage = {
+      ...base.stage,
+      ground: () => {
+        const mark = { strokes: 0, destroyed: false };
+        marks.push(mark);
+        return {
+          clear: () => {},
+          fillStyle: () => {},
+          fillPoints: () => {},
+          lineStyle: () => {},
+          strokePoints: () => void (mark.strokes += 1),
+          setDepth: () => {},
+          destroy: () => void (mark.destroyed = true),
+        };
+      },
+    };
+    return { stage, marks };
+  };
+  const slam = { kind: "ground_slam" as const, x: 400, y: 300, radius: 130, arc: 0, remaining: 0.9 };
+
+  it("should draw a listed monster's pending ability, and take it down when the monster goes", () => {
+    const { stage, marks } = groundStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ action: "ability", ability: slam })]);
+    roster.update(FRAME);
+    expect(marks).toHaveLength(1);
+    expect(marks[0].strokes).toBeGreaterThan(1);
+    roster.clear();
+    expect(marks.every((m) => m.destroyed)).toBe(true);
+  });
+
+  it("should draw a corpse's burst", () => {
+    const { stage, marks } = groundStage();
+    new MonsterRoster(stage, fixtureArt()).sync([
+      monster({ action: "dead", current_health: 0, ability: { ...slam, kind: "burst", radius: 110 } }),
+    ]);
+    expect(marks).toHaveLength(1);
+  });
+
+  it("should draw nothing on a stage without ground marks", () => {
+    const { stage } = fakeStage();
+    expect(() => new MonsterRoster(stage, fixtureArt()).sync([monster({ ability: slam })])).not.toThrow();
+  });
+});

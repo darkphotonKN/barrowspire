@@ -39,6 +39,7 @@ import {
 import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/footprint";
 import type { MarkerMode } from "./markerMode";
 import { onDemandFor } from "@/render/art/sceneArt";
+import { AbilityTelegraphs, type GroundBrush } from "@/render/effects/monsterAbility";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
@@ -296,12 +297,17 @@ export function bodyColumn(
 
 // ── Clips and nameplate ───────────────────────────────────────────────────
 
-/** The clip each server action plays (req 34; a demon's fire claw, FS-VHGE7 §D R31). */
+/**
+ * The clip each server action plays (req 34; a demon's fire claw, FS-VHGE7 §D R31). An ability's
+ * wind-up, and a pounce's leap, is the attack clip (FS-C8VM7 §F R37): its effect, not the body,
+ * tells the ability apart, and the leap is the sprite following the server's position.
+ */
 export const ACTION_CLIPS: Record<MonsterAction, CharacterAnimation> = {
   idle: "idle",
   move: "walk",
   attack: "attack",
   claw: "claw",
+  ability: "attack",
   dead: "death",
 };
 
@@ -512,6 +518,8 @@ export interface MonsterStage {
   graphics(): MonsterBar;
   /** Backing px per logical unit (`viewport.renderScale`), so a bar's edges fall on whole px; 1 if absent. */
   renderScale?(): number;
+  /** A ground mark for an ability's telegraph or impact (FS-C8VM7 §F R36); none drawn if absent. */
+  ground?(): GroundBrush;
 }
 
 /**
@@ -569,6 +577,8 @@ export class MonsterRoster {
   private hovered?: string;
   /** Plates over every head, or none for the target frame (FS-48CTQ §A.1, §B.3). */
   private mode: MarkerMode = "overhead";
+  /** Each pending ability's area on the ground, a corpse's burst included (FS-C8VM7 §F R36). */
+  private readonly abilities?: AbilityTelegraphs;
 
   constructor(
     private readonly stage: MonsterStage,
@@ -576,7 +586,10 @@ export class MonsterRoster {
     private readonly targeting?: MonsterTargeting,
     private readonly effects?: MonsterEffects,
     private readonly artFetch?: MonsterArtFetch,
-  ) {}
+  ) {
+    const ground = stage.ground?.bind(stage);
+    if (ground) this.abilities = new AbilityTelegraphs(ground);
+  }
 
   /** How many monsters (corpses included) are on the canvas. */
   get size(): number {
@@ -590,6 +603,7 @@ export class MonsterRoster {
    */
   clear(): void {
     this.hovered = undefined;
+    this.abilities?.clear();
     this.sync([]);
   }
 
@@ -638,6 +652,7 @@ export class MonsterRoster {
       }
 
     for (const { archetype } of monsters) this.fetchArtOf(archetype);
+    this.abilities?.sync(monsters);
 
     for (const monster of monsters) {
       const view = this.views.get(monster.entity_id);
@@ -661,6 +676,7 @@ export class MonsterRoster {
 
   /** One frame: ease each monster toward the server, play its clip, seat its markers. */
   update(deltaMs: number): void {
+    this.abilities?.update(deltaMs);
     for (const view of this.views.values()) {
       const { pos, state } = view;
       const before = { x: pos.x, y: pos.y };
