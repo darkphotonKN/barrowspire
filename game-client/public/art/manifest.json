@@ -19,7 +19,7 @@
       "image": "archer-0.png",
       "width": 2532,
       "height": 4060,
-      "sha256": "94102e1cfd95db3b3743187dedfa0c9021702a09790b2a3a43a186fed35a3f78"
+      "sha256": "88d1cbeac6b6e125fcd6514374d636e6ba63fd873dc615356cb4ff660707f20d"
     },
     "architecture-0": {
       "image": "architecture-0.png",
@@ -127,7 +127,7 @@
       "image": "folk-0.png",
       "width": 2036,
       "height": 2840,
-      "sha256": "5be5c90cc2b4b40b0038e20981ac7e740855d4913c086999a4d7e46bbc0b1022"
+      "sha256": "296880ba25b8c5da234e1af2ee11db2ec460f84c9fd4fed905288056918c7630"
     },
     "forest-0": {
       "image": "forest-0.png",
@@ -169,13 +169,13 @@
       "image": "knight-0.png",
       "width": 3716,
       "height": 3056,
-      "sha256": "433bd679eb22de00df35da70fb931d1deec1cfd5199dc7ec1930355c29732356"
+      "sha256": "aafee8f4d6eb8e9642aed0369c3ee60e8ea8bb3e4cb79e3e4457b03ffbc0c126"
     },
     "mercenary-0": {
       "image": "mercenary-0.png",
       "width": 3428,
       "height": 3280,
-      "sha256": "e6af0c4fe9332b4fb5928e4ec03c3be56fa06ef052d79033f4a06139d8d587f2"
+      "sha256": "ef9d2e78332b3bfa673e766c2249eca08b9e552eea232003697d33cb2f2fb670"
     },
     "nature-0": {
       "image": "nature-0.png",
@@ -223,7 +223,7 @@
       "image": "wizard-0.png",
       "width": 2056,
       "height": 4000,
-      "sha256": "3f3084ea91ea0e3c21dd46e850dd4dae6f65205399bfc2e5bb051c959de7eadd"
+      "sha256": "9782390a6b9ef66c21fbe9a05904fa9342b8fad02debdd4981605c30dd506e5f"
     }
   },
   "sheets": {
