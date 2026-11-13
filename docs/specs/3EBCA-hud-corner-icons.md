@@ -696,3 +696,5 @@ edited (write-once, `docs/specs/README.md`).
   backpack.
 - The guideline's art-direction sections beyond the Corner row paragraph.
 - Any server, proto, gateway or contract change.
+
+## Change: Richer corner glyphs → FS-QHN87
