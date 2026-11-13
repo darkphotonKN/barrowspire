@@ -820,6 +820,22 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   knockout by [FS-7TQN4](../../docs/specs/7TQN4-knockout-corner-row.md), 2026-11-13; embossed, a
   drop shadow and a top-lit gradient, by [FS-S8Z2Y](../../docs/specs/S8Z2Y-embossed-corner-row.md),
   2026-11-13.)*
+- **HUD icons.** Every new icon or badge drawn on the canvas as a HUD control is a bronze knockout
+  like the corner row's, drawn by the one shared renderer (`src/ui/knockout.ts`); no icon gets a
+  drawing pipeline of its own, and one in the old line style is wrong
+  ([ADR-0080](../../docs/adr/0080-canvas-hud-icons-are-embossed-bronze-knockouts-from-one-shared-renderer.md)).
+  It is designed as a solid silhouette with its inner lines cut through to the world (about 1.6 px,
+  in texel coordinates), not as a line drawing: the detail lives in the silhouette and the cuts. It
+  takes the row's bronze at 0.85, its drop shadow and top-lit gradient, the same knockout flat in
+  `hudFaint` at 0.6 (shadow, no gradient, never brightening) when the player cannot act on it, and a
+  2.25 px line glyph with no emboss where the texture cannot be made, so a slot is never empty. A new
+  icon supplies only its silhouette, its cuts and that glyph. It has to survive render scale 1, where
+  a feature under about 3 px becomes a speck, a cut under about 1.5 px vanishes and two cuts close
+  together read as a face: check it in screenshots at render scale 1, 1.5 and 2 before it ships.
+  Item icons (baked art), the web UI's Heroicons, the count badge's numerals and the minimap's marks
+  are not HUD icons. *(Added by
+  [ADR-0080](../../docs/adr/0080-canvas-hud-icons-are-embossed-bronze-knockouts-from-one-shared-renderer.md),
+  2026-11-14.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich
