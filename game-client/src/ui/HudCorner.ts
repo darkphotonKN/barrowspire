@@ -18,6 +18,9 @@
  * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
  * scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
  * while they are open too (R11; FS-HRH2J § Change C12).
+ *
+ * It stands in the UI scene, over every world (FS-TQZ5J R13, `uiSceneCorner.ts`), so Phaser hands it
+ * its own presses before the world hears them (R7).
  */
 
 import type Phaser from "phaser";
@@ -103,6 +106,8 @@ function pictureOf(spec: CornerIconSpec, frame: Rect): KnockoutPicture {
 export class HudCorner {
   private readonly icons: DrawnIcon[];
   private readonly label: CornerLabel;
+  /** The icons held now: no hover, label or press, their pointer handed on. */
+  private held: ReadonlySet<CornerIcon> = new Set();
 
   constructor(scene: Phaser.Scene, deps: HudCornerDeps) {
     this.label = new CornerLabel(scene);
@@ -146,6 +151,33 @@ export class HudCorner {
     );
   }
 
+  /**
+   * Holds the icons named and lets the rest go (FS-TQZ5J I-TQZ5J-3). The row stands in the UI scene,
+   * over everything the world draws, so where the world keeps the screen it holds what the world's
+   * own pieces held when the row was the world's: the world's open ESC menu every icon but Menu (its
+   * blocker under the UI scene, FS-3EBCA R18: 「menu開啟時其他都不能按」, until the menu moves,
+   * I-TQZ5J-4), the town's dialogue every icon (its answers lie under the row). A held icon takes no
+   * hover, label or press, and Phaser hands its pointer on to the scene under it; a lit one goes out,
+   * its hand cursor given back.
+   */
+  hold(icons: readonly CornerIcon[]): void {
+    const held = new Set(icons);
+    const was = this.held;
+    this.held = held;
+    for (const icon of this.icons) {
+      const now = held.has(icon.spec.icon);
+      if (now === was.has(icon.spec.icon)) continue;
+      if (!now) {
+        // an object already interactive is only enabled again, its hand cursor kept (InputPlugin.enable)
+        icon.zone.setInteractive();
+        continue;
+      }
+      const lit = icon.hovered;
+      this.hover(icon, false);
+      icon.zone.disableInteractive(lit);
+    }
+  }
+
   /** The logical view changed: every icon back to the corner (FS-ZAJMH R12, R13). */
   relayout(): void {
     for (const icon of this.icons) {
@@ -167,12 +199,17 @@ export class HudCorner {
   }
 
   private press(icon: DrawnIcon): void {
-    if (icon.spec.greyed) return;
+    if (icon.spec.greyed || this.holds(icon)) return;
     icon.spec.press?.();
   }
 
+  /** Whether the hold keeps `icon` from the pointer. */
+  private holds(icon: DrawnIcon): boolean {
+    return this.held.has(icon.spec.icon);
+  }
+
   private hover(icon: DrawnIcon, on: boolean): void {
-    if (icon.hovered === on) return;
+    if (icon.hovered === on || (on && this.holds(icon))) return;
     icon.hovered = on;
     this.draw(icon);
     if (on) this.label.show(icon.frame, labelOf(icon.spec));

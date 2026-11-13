@@ -67,7 +67,7 @@ import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { NO_UI, reportWorld, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
+import { NO_UI, answering, reportWorld, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
@@ -80,7 +80,6 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
-import { HudCorner } from "@/ui/HudCorner";
 import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -695,11 +694,6 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
-   * The corner row (FS-3EBCA): Menu (one Esc), Inventory (I), Character (C), Party (T) and the Mailbox greyed, as
-   * in every world outside the town. The ability card and the leave button stand above it.
-   */
-  private corner?: HudCorner;
-  /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
    * game's, from create on, before anything that hears a player; until then, and in a game lent no
@@ -1178,8 +1172,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.abilityHud = undefined;
-    this.corner?.destroy();
-    this.corner = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
@@ -3217,7 +3209,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.arrival) this.arrivalCard.dark();
     // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
     // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
-    this.ui = reportWorld(this, "run", () => this.windows());
+    this.ui = reportWorld(this, "run", this.worldSide());
     // Connect via SocketManager
     this.connectToServer();
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
@@ -3276,8 +3268,6 @@ export class BarrowspireScene extends Phaser.Scene {
     // torch-lit barrow atmosphere — pure decoration, no game state
     this.createAtmosphere();
 
-    this.mountCorner();
-
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
@@ -3309,33 +3299,27 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
-   * path, I or B, C, T; the Mailbox greyed, the mailbox being the town's (R9). The overlay's
-   * panels stop above it, so it answers while they are open (R11).
+   * What the run reports with its name (FS-TQZ5J R9, R11): its windows as they are when read, no
+   * dialogue, and its answers to the UI scene's requests. The corner row's presses come as these
+   * (R14; FS-3EBCA R6–R8): Menu the menu's path, Inventory and Character I's and C's but not while the
+   * menu is open, Party T's under its own refusals. The overlay's panels stop above the row, so it
+   * answers while they are open (FS-3EBCA R11).
    */
-  private mountCorner(): void {
-    this.corner = new HudCorner(this, {
-      icons: [
-        { icon: "menu", press: () => this.ui.act(() => this.pressMenuIcon()) },
-        {
-          icon: "inventory",
-          press: () =>
-            this.ui.act(() => {
-              if (!this.menu) this.toggleInventory();
-            }),
+  private worldSide(): WorldSide {
+    return {
+      windows: () => this.windows(),
+      blockers: () => ({ dialogue: false }),
+      answer: answering({
+        toggleMenu: () => this.pressMenuIcon(),
+        inventory: () => {
+          if (!this.menu) this.toggleInventory();
         },
-        {
-          icon: "character",
-          press: () =>
-            this.ui.act(() => {
-              if (!this.menu) this.toggleCharacter();
-            }),
+        character: () => {
+          if (!this.menu) this.toggleCharacter();
         },
-        // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
-        { icon: "party", press: () => this.ui.act(() => this.partyPanel?.toggle()) },
-        { icon: "mail", greyed: true },
-      ],
-    });
+        party: () => this.partyPanel?.toggle(),
+      }),
+    };
   }
 
   /**
@@ -3396,7 +3380,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     this.abilityHud?.relayout();
-    this.corner?.relayout();
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
     this.invitePrompt?.relayout();
@@ -3647,8 +3630,9 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Whether a press at (x, y), logical units, is a HUD panel's or the corner row's: no attack, no
-   * cast, no hold, and nothing under it takes it, the map mode icon included.
+   * Whether a press at (x, y), logical units, is a HUD panel's: no attack, no cast, no hold, and
+   * nothing under it takes it, the map mode icon included. One on the corner row never reaches the
+   * run: the row is the UI scene's, above it (FS-TQZ5J R7, R15).
    */
   private panelTakes(x: number, y: number): boolean {
     // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
@@ -3658,8 +3642,6 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.chatWindow?.covers(x, y)) return true;
     // and one on the open party panel is the panel's (FS-R82NV R28)
     if (this.partyPanel?.covers(x, y)) return true;
-    // and one on the corner row is the row's (FS-3EBCA R10): never the map mode icon's either
-    if (this.corner?.covers(x, y)) return true;
     // and one on an invite prompt is the prompt's (FS-NCC9J R24)
     return this.invitePrompt?.covers(x, y) ?? false;
   }
@@ -5713,8 +5695,6 @@ export class BarrowspireScene extends Phaser.Scene {
       music: this.music ?? storedMusicLevel(browserMusicStore),
       // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
       fullscreen: lentFullscreen(this.registry),
-      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
-      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menuChoices = keys;
     this.menu = container;
@@ -5788,8 +5768,6 @@ export class BarrowspireScene extends Phaser.Scene {
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
-      // the Menu icon answers under the open menu and its Fall confirm: it closes them (FS-3EBCA R18)
-      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menuChoices = keys;
     this.menu = container;

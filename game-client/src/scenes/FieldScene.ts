@@ -52,7 +52,6 @@ import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
-import { HudCorner } from "@/ui/HudCorner";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
 import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
 import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
@@ -68,7 +67,7 @@ import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { NO_UI, reportWorld, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
+import { NO_UI, answering, reportWorld, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -268,8 +267,6 @@ export class FieldScene extends Phaser.Scene {
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   private abilityHud?: AbilityHud;
-  /** The corner row (FS-3EBCA): Menu, Inventory, Character, Party and the Mailbox greyed; the card above it. */
-  private corner?: HudCorner;
   /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
@@ -319,7 +316,7 @@ export class FieldScene extends Phaser.Scene {
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "field", field: this.field }), { built: false });
     // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
     // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
-    this.ui = reportWorld(this, "field", () => this.windows());
+    this.ui = reportWorld(this, "field", this.worldSide());
     this.look = fieldLook(this.field);
     this.size = FIELD_SIZE[this.field] ?? FIELD_SIZE.gentle_meadows;
     const { width, height } = this.size;
@@ -375,12 +372,30 @@ export class FieldScene extends Phaser.Scene {
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
-    this.mountCorner();
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
     // a stop, or the game's destroy mid-field (the page unmounts), which skips SHUTDOWN
     onSceneEnd(this, (end) => this.release(end));
+  }
+
+  /**
+   * What the field reports with its name (FS-TQZ5J R9, R11): its windows as they are when read, no
+   * dialogue, and its answers to the UI scene's requests. The corner row's presses come as these
+   * (R14): Menu the menu's path, Inventory and Character I's and C's, Party T's, each under its own
+   * refusals.
+   */
+  private worldSide(): WorldSide {
+    return {
+      windows: () => this.windows(),
+      blockers: () => ({ dialogue: false }),
+      answer: answering({
+        toggleMenu: () => this.pressMenuIcon(),
+        inventory: () => this.toggleGear(),
+        character: () => this.toggleCharacter(),
+        party: () => this.partyPanel?.toggle(),
+      }),
+    };
   }
 
   /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the menu's slot, Party, Inventory, Character; a field has no letter panel. */
@@ -392,23 +407,6 @@ export class FieldScene extends Phaser.Scene {
       inventory: this.equipment?.isInventoryOpen() ?? false,
       character: this.equipment?.isCharacterOpen() ?? false,
     };
-  }
-
-  /**
-   * The corner row: the Menu icon opens the menu (R6), the others each the key's own path; the
-   * Mailbox greyed, it is the town's (FS-3EBCA).
-   */
-  private mountCorner(): void {
-    this.corner = new HudCorner(this, {
-      icons: [
-        { icon: "menu", press: () => this.ui.act(() => this.pressMenuIcon()) },
-        { icon: "inventory", press: () => this.ui.act(() => this.toggleGear()) },
-        { icon: "character", press: () => this.ui.act(() => this.toggleCharacter()) },
-        // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
-        { icon: "party", press: () => this.ui.act(() => this.partyPanel?.toggle()) },
-        { icon: "mail", greyed: true },
-      ],
-    });
   }
 
   /**
@@ -450,7 +448,6 @@ export class FieldScene extends Phaser.Scene {
     this.arrivalCard.relayout();
     this.minimap?.place();
     this.abilityHud?.relayout();
-    this.corner?.relayout();
     this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
@@ -650,8 +647,6 @@ export class FieldScene extends Phaser.Scene {
       origin: { x: viewport.centerX, y: viewport.centerY },
       hit: MENU_CHOICE_HIT,
       tones: MENU_TONES,
-      // the Menu icon answers under the open menu: it closes it (FS-3EBCA R18)
-      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menu = container;
     this.menuChoices = keys;
@@ -678,8 +673,6 @@ export class FieldScene extends Phaser.Scene {
       music: storedMusicLevel(browserMusicStore),
       // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
       fullscreen: lentFullscreen(this.registry),
-      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
-      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
     });
     this.menu = container;
     this.menuChoices = keys;
@@ -762,13 +755,11 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * Whether a press at (x, y), logical units, is the corner row's or a HUD panel's: the overlay's,
-   * the chat window's, the party panel's or a prompt's. Neither the world nor the map mode icon
-   * answers it.
+   * Whether a press at (x, y), logical units, is a HUD panel's: the overlay's, the chat window's,
+   * the party panel's or a prompt's. Neither the world nor the map mode icon answers it. One on the
+   * corner row never reaches the field: the row is the UI scene's, above it (FS-TQZ5J R7, R15).
    */
   private panelTakes(x: number, y: number): boolean {
-    // a press on the corner row is the row's (FS-3EBCA R10)
-    if (this.corner?.covers(x, y)) return true;
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     if (this.chatWindow?.covers(x, y)) return true;
@@ -818,8 +809,6 @@ export class FieldScene extends Phaser.Scene {
     this.charting = undefined;
     this.mapField = { walls: [], gates: [] };
     this.abilityHud = undefined;
-    this.corner?.destroy();
-    this.corner = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
     this.selfLevel = undefined;

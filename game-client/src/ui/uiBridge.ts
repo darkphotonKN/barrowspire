@@ -9,9 +9,9 @@
  * (`src/components/uiSceneLifecycle.ts`).
  *
  * Each slice of FS-TQZ5J adds to it what it consumes: so far which world is up and its leaving, its
- * open windows, the UI's state, and the interface sounds the world's player actions and its
- * minimap's step reach through it (R12, R22). The world's player state, menu facts and blockers (R9)
- * and the UI's requests (R11) come with the corner row and the ESC menu.
+ * open windows and its dialogue, the UI's state, the corner row's requests the world answers, and the
+ * interface sounds the world's player actions and its minimap's step reach through it (R12, R22).
+ * The world's player state and menu facts (R9) and the ESC menu's requests (R11) come with the menu.
  */
 
 import type { WorldType } from "@/assets/types/client";
@@ -29,6 +29,21 @@ export type World = WorldType;
  */
 export type WorldWindows = Readonly<WindowState>;
 
+/** What keeps the screen in the world (R9): the town's NPC dialogue, open. */
+export interface WorldBlockers {
+  readonly dialogue: boolean;
+}
+
+/** A world window the corner row's icons toggle (R11, R14). */
+export type UiToggle = "inventory" | "character" | "party";
+
+/**
+ * UI → world: what the UI scene asks of the world (R11). So far the corner row's: `toggle` one of its
+ * windows, and `toggleMenu`, the Menu icon's press on the world's own ESC menu, this slice's alone
+ * until the menu moves into the UI scene (I-TQZ5J-4).
+ */
+export type UiRequest = { readonly kind: "toggle"; readonly window: UiToggle } | { readonly kind: "toggleMenu" };
+
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
   readonly world: World;
@@ -37,6 +52,21 @@ export interface WorldReport {
    * module's own ×, a server message), and they are read only around a player action (R12).
    */
   readonly windows: () => WorldWindows;
+  /** What keeps its screen now, read as its windows are. */
+  readonly blockers: () => WorldBlockers;
+  /** Answers a request of the UI scene's at once, or ignores one it has no answer for (R11). */
+  readonly answer: (request: UiRequest) => void;
+}
+
+/** What a world hands with its name: everything of its report but the world (R9). */
+export type WorldSide = Omit<WorldReport, "world">;
+
+/** A world's answer to each request it has one for (R11). */
+export type WorldAnswers = Partial<Record<UiToggle | "toggleMenu", () => void>>;
+
+/** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
+export function answering(answers: WorldAnswers): (request: UiRequest) => void {
+  return (request) => answers[request.kind === "toggle" ? request.window : request.kind]?.();
 }
 
 /** UI → world: the UI's state (R10). */
@@ -63,6 +93,10 @@ export interface UiBridge extends UiActWrapper {
   left(world: World): void;
   /** The world's last report; none outside the worlds. What the UI scene reads. */
   readonly world: WorldReport | null;
+  /** Hears each world report from now on, and none (null) as a world leaves. Returns the stop. */
+  onWorld(listener: WorldListener): () => void;
+  /** The UI scene asks the world reported, which has answered when this returns; none reported, nothing (R11). */
+  request(request: UiRequest): void;
   /** The UI scene's report of its own state (R10). */
   reportUi(state: UiState): void;
   /** The UI's last state. What the world's guards read. */
@@ -122,6 +156,10 @@ export class GameUiBridge implements UiBridge {
     this.uiState = state;
   }
 
+  request(request: UiRequest): void {
+    this.reported?.answer(request);
+  }
+
   act: UiAct = (run) => (this.sounds ? this.sounds.act(run) : run());
 
   play(effect: UiEffect): void {
@@ -132,7 +170,6 @@ export class GameUiBridge implements UiBridge {
     this.sounds = sounds;
   }
 
-  /** Hears each world report from now on, and none as a world leaves. Returns the stop. */
   onWorld(listener: WorldListener): () => void {
     this.listeners.add(listener);
     return () => void this.listeners.delete(listener);
@@ -161,20 +198,16 @@ export interface ReportingScene extends EndingScene {
 }
 
 /**
- * Reports `world` up, now, with its windows, and its leaving on the scene's stop (R3, R9). Called
- * once per start, from create, before anything that hears a player. On the game's destroy it tells
- * nothing: the UI scene goes with the game, and the scene manager going down is asked nothing (R4,
- * `SceneEnd`). Returns what the world's player actions and its minimap's step run through (R12):
- * its game's bridge, or {@link NO_UI} where none was lent.
+ * Reports `world` up, now, with its side (its windows, its blockers, its answers), and its leaving on
+ * the scene's stop (R3, R9, R11). Called once per start, from create, before anything that hears a
+ * player. On the game's destroy it tells nothing: the UI scene goes with the game, and the scene
+ * manager going down is asked nothing (R4, `SceneEnd`). Returns what the world's player actions and
+ * its minimap's step run through (R12): its game's bridge, or {@link NO_UI} where none was lent.
  */
-export function reportWorld(
-  scene: ReportingScene,
-  world: World,
-  windows: () => WorldWindows,
-): WorldUi {
+export function reportWorld(scene: ReportingScene, world: World, side: WorldSide): WorldUi {
   const bridge = uiBridgeOf(scene.registry);
   if (!bridge) return NO_UI;
-  bridge.report({ world, windows });
+  bridge.report({ world, ...side });
   onSceneEnd(scene, (end) => {
     if (end === "shutdown") bridge.left(world);
   });
