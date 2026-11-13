@@ -387,3 +387,100 @@ every case; the requirements above are corrected in place, with the struck text 
 | 24 | Gate, walls and chests are occupied areas; spawn points are not, keeping the Meadows' occupied set unchanged, since nothing is placed in a field after its build today (R13) | [implementation] (2026-10-30 amendment) |
 | 25 | Slice I-3QHQZ-8 added after the original slicing: field chests drawn and opened on the client (R19, R20) | [implementation] (found by I-3QHQZ-7; 2026-10-30 amendment) |
 | R | Rejected: chained zones (later); fixed-per-deploy or daily seed | [user] |
+
+## Change: Elites on the Forest's trail
+Status: work-order
+Date: 2026-11-14
+
+From the FS-C8VM7 scoping session (2026-11-14), written `--from-thread`: the owner approved the
+session's decisions and its defaults up front, so no interview was held. The owner wants the
+Forest at a fixed band of 8–12 (a separate `Tunes FS-X2F2H`, not this change) "with a chance for
+elite too", the zone's creatures unchanged. It lands here because Requirement 17's "standard
+spawn points are never elite" is this FS's rule; FS-X2F2H's field-wide elite roll (its
+Requirement 28) is reused, not changed.
+
+Decided (owner, 2026-11-14):
+
+- **L1.** The Forest's trail spawn points stop being never-elite: each spawn and each respawn
+  rolls elite.
+- **L2.** The clearings keep their rule (Requirement 15): the main trail's dead end always holds
+  an elite; a side dead end holds a chest or an elite.
+- **L3.** The Meadows keep their rolled elites unchanged; the Meadows are meant to stay easy.
+- **L4.** No new creature: zombie and ghost stay the Forest's roster, at the same shares.
+
+Defaults (approved up front, each overridable):
+
+- **D1. The trail's elite chance is the Meadows' rule:** the Spire's floor-1 chance, read live
+  from `eliteChance(1)` at roll time (FS-X2F2H Requirement 28), 3 % today. **(charter default)**
+- **D2. A trail elite is named like a clearing elite**, from the Forest's `ElitePrefixes`
+  (the barrow prefixes), and takes the same elite multipliers on top of the field factor.
+  **(charter default)**
+- **D3. No cap on trail elites alive at once.** At 18–24 points and 3 %, about one trail point
+  in 33 holds an elite at any time; a cap is not worth its rule yet. **(charter default)**
+
+### Requirements
+
+31. **Trail points roll elite.** At each spawn and each respawn, a standard (trail) spawn point
+    of the Forest rolls its elite exactly as a Meadows point does (FS-X2F2H Requirement 28): an
+    elite with the Spire's floor-1 elite chance, read from the live `eliteChance(1)` at roll time
+    (D1). This replaces Requirement 17's "standard spawn points are never elite" for the Forest;
+    the rest of Requirement 17 (the ghost share, the elite multipliers, the prefix, the level)
+    stands.
+32. **One roll path.** The Forest's place states its standard points' elite rule as the rolled
+    one, the rule the Meadows already use; no Forest-only chance, constant or roll is added.
+    A retune of `eliteChance` (FS-77AB6, or FS-C8VM7's per-floor curve) moves the Forest's
+    trail chance and the Meadows' together.
+33. **A trail elite is an elite like any other** (D2). Its name is an `ElitePrefixes` prefix and
+    the creature's name ("Hollow Zombie", "Dread Ghost"); its stats take the Spire's elite
+    multipliers on top of the field stat factor (FS-X2F2H Requirement 29); its kill XP and drops
+    follow the existing elite rules (FS-BDA7X, FS-X2F2H Requirement 31). Its archetype is still
+    drawn ghost 1 in 12, otherwise zombie, and its level from the Forest band, whatever that band
+    is tuned to.
+34. **The clearings are unchanged** (L2). The main trail's dead end always holds an elite spawn
+    point; each other dead end holds a chest or an elite spawn point as Requirement 15 seeds it;
+    an elite spawn point is always elite.
+35. **The Meadows are unchanged** (L3). Their points keep the same rolled rule, and their rolls
+    draw exactly as before.
+36. **No wire, client or data change.** An elite zombie or ghost already reaches the client from
+    the clearings, with `elite` and its name in the state broadcast, and is already drawn. No
+    message, field, endpoint, RPC or migration; `internal/matchmaker`, `internal/match_queue` and
+    their wiring are untouched.
+
+### Acceptance Criteria
+
+Server (`make test` in `game-server/game-service`):
+
+- [ ] The Forest's place states the rolled elite rule for its standard spawn points, the same rule as the Meadows'.
+- [ ] Over many seeded rolls of a Forest trail point, the elite share is `eliteChance(1)` within tolerance; every elite carries an `ElitePrefixes` prefix and every non-elite has no name.
+- [ ] Over the same rolls, ghosts are still 1/12 of spawns within tolerance and every level is inside the Forest band.
+- [ ] A trail elite's stats are the field-factored sheet at its level with the elite multipliers on top, the same as a clearing elite's of that archetype and level.
+- [ ] A built Forest refilled many times holds, on its trail points, both elites and non-elites; every clearing elite point still holds an elite each time it refills.
+- [ ] The main trail's dead end still holds an elite spawn point and the chest/elite assignment for a fixed seed is unchanged.
+- [ ] The Meadows' rolls are unchanged: same rule, same elite share.
+- [ ] No message, endpoint, RPC or migration is added; `internal/matchmaker` and `internal/match_queue` are untouched; no game-client file changes.
+
+Live check (the owner's, one browser): walking the Forest's trail over a few respawns, an
+elite zombie or ghost turns up now and then away from the clearings, drawn with its elite look
+and prefixed name.
+
+### Edge States
+
+- **Two trail elites at once, or a trail elite beside a clearing elite.** Allowed (D3); each
+  point rolls on its own.
+- **A trail elite dies.** Its point respawns after the field's delay and rolls afresh: the next
+  monster there is usually not elite.
+- **A trail elite chases a player into a clearing.** Nothing special: it is a monster like any
+  other, and leashes as its sheet says.
+- **`eliteChance(1)` retuned to 0.** The trail rolls no elites; the clearings still hold theirs.
+- **A pod booted before this change.** Its Forest keeps the never rule until the pod restarts;
+  the next boot builds the new rule. Nothing persists.
+- **A ghost elite.** Faster and frailer than a zombie elite, as its sheet makes it; drawn with
+  the elite look the clearing ghosts already have.
+
+### Out of Scope
+
+- **The Forest's level band** (4–9 to 8–12) and the Meadows' (1–4 to 1–2): `Tunes FS-X2F2H`.
+- A Forest-only elite chance, a cap on elites alive at once, or a different prefix list.
+- New Forest creatures (L4); FS-C8VM7's variants stay out of the fields.
+- The Meadows' elites (L3), and every other field-wide rule (FS-X2F2H).
+- Any client change.

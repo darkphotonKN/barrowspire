@@ -717,3 +717,5 @@ themselves (this FS only avoids adding to them).
 ## Change: Walls on the cell boundary → FS-XK2B6
 
 ## Change: Wall shadow layer → FS-V8FT3
+
+## Change: Tiered enemy roster and floor pools → FS-C8VM7

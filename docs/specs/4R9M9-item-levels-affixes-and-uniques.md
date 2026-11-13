@@ -559,3 +559,5 @@ resource. All changes are additive response fields plus a widened documented val
 - **CONTEXT.md entries** for the new terms — routed to `domain-model`.
 
 ## Change: Spire height and the climb → FS-M8CSE
+
+## Change: Vorsk summoned by tome and altar → FS-3103M

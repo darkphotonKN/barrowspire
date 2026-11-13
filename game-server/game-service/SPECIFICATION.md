@@ -110,6 +110,11 @@ matchmaking); this service is the engine they feed. ✅
 - [ ] Monsters path around walls → FS-KE075
 - [ ] Monsters that shoot from range → FS-B4SG9
 - [x] Loot drops from slain monsters → FS-4R9M9
+- [ ] Monster families with level-tiered variants → FS-C8VM7
+- [ ] Monster special abilities → FS-C8VM7
+- [ ] Spire floor enemy pools by level tier → FS-C8VM7
+- [ ] Champion bosses → FS-C8VM7
+- [ ] Summoned demon boss → FS-3103M
 
 ### Progression
 

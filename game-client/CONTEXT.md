@@ -280,6 +280,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   scene-scoped group (ADR-0071, FS-VHGE7).
 - **Stand-in**: what a monster on an on-demand group draws until the group is in: a sheet its scene
   already holds, under a palette tint. A look, never the placeholder (ADR-0071).
+- **Variant group** (FS-C8VM7, ADR-0081; locked, not built): the on-demand group of one Spire
+  **variant** (named by its variant id; a goblin variant's two looks share it). Unlike the blood
+  demon's, it is **floor-scoped**: fetched when a new floor's map names it in `enemy_pool`, and
+  evicted by the next floor map that does not. A variant's stand-in is its **family**'s tier-1 look
+  on `creatures`. *Avoid*: "the `fodder` group" for it: `fodder` is the Forlorn Forest's dead's
+  atlas group, unrelated to the **fodder** monster role.
 - **Eviction**: removing a scene-scoped group's pages from the texture manager (and so the GPU),
   with every animation registered on them, once the next scene's preload completes. Only ever of
   art; "unload" is not used for it (ADR-0059).
@@ -602,6 +608,38 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   (FS-T3DWX). The top-right HUD stands in the corner the button used to keep.
 - **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
 
+## Enemy terms (FS-C8VM7, FS-3103M; locked, not built)
+
+What the client draws of the Spire's roster and its bosses. The server owns the rules
+([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "The Spire's roster" and
+"Bosses"); these are the words for what the screen shows.
+
+- **Size tier**: how big a look is drawn against a player (`SIZE_TIERS`: fodder, brute, boss). Not
+  the server's **level tier** (a monster-level bucket that unlocks variants); say "size tier" or
+  "level tier", never a bare "tier".
+- **Family**: the variants that share one body; the client uses it for the stand-in (the family's
+  tier-1 look) and for size (a family's size tier). The goblin's stand-in is the ghoul, the ogre's
+  the troll, the dark warrior's the ghoul.
+- **Variant**: a named Spire monster on its own sheet (`creature_<archetype>_base`), a recoloured
+  step of its family or a new rig's. Keyed, like every look, by `archetype`.
+- **Floor pool**: the variants a Spire floor spawns, named by the floor map's `enemy_pool`; the
+  client uses it only to fetch and evict variant groups. It never names a boss.
+- **Champion look**: a `boss: true` monster whose look is not boss size: drawn from its variant's
+  sheet at the boss size tier, with the boss plate and its server-authored "<Name> the <Epithet>".
+  *Avoid*: "elite" for it (an elite is a washed, prefixed standard monster).
+- **Monster ability effect**: what the client draws for a monster ability: a **telegraph** (the
+  area or cone on the ground, from the state's `ability` object, filling toward its landing) and
+  an **impact** when it lands, plus the `thrown_dagger` and `ogre_rock` flights. The body plays its
+  `attack` clip for `action: "ability"`. Always "monster ability" where the player's class
+  **ability** (the ability card) could be meant.
+- **Vorsk**: the green demon's screen name (FS-3103M); its archetype and sheet stay `demon`.
+  "Green Demon" is the old name.
+- **Tome of Filth** and **Altar of Consecration**: the two small props of a tome run (FS-3103M):
+  the tome hidden on a lower floor (`tome`), the altar on a higher one (`altar`, `burned`). The
+  party carrying the tome is `tome_carried`, not a bag item.
+- **Summon**: burning the tome at the altar after the client's "Burn tome?" confirm, which brings
+  Vorsk. The screen's lines for it are the client's own copy.
+
 ## Dev gallery terms (FS-1819Q)
 
 - **Tracked family**: a kind of visual piece the dev gallery must show in full. Listed once in
@@ -624,6 +662,9 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 | the party | — | `party_update`, `party_id` | "party" |
 | travel to the leader | — | `world_handoff` (to a hub) | "Travel to the party leader's village" |
 | a letter, Take | `/api/mail/*`, `claim`, `claimState` | `mail_arrived` | "mailbox", "claim a letter's enclosures" |
+| a champion, "<Name> the <Epithet>" | — | `monsters[]` with `boss: true` and a variant `archetype` | "champion bosses" |
+| Vorsk | — | `archetype` `demon` | "summoned demon boss" |
+| burning the tome | — | `tome`, `altar`, `tome_carried` | "tome and altar summoning" |
 
 ## Voice rules that ride on the vocabulary
 
