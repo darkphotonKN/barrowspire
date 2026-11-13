@@ -4615,6 +4615,29 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       expect((run as unknown as { sound?: { add?: unknown } }).sound?.add).toBeUndefined();
     });
 
+    it("should drive the run's playing music from the panel: → ramps it at once, and 0 fades it out (FS-28DDG § Change: The tower's music on every floor of a run, W6)", () => {
+      const s = optionsOnStage();
+      const music = withTowerSound(s.run);
+      (s.run as unknown as Musical).enterMusic();
+      music.step(MUSIC_FADE_IN_MS);
+      s.press(s.keys.esc);
+      s.press(s.keys.two);
+      const offer = () => (s.run as unknown as { offerMenu(): void }).offerMenu();
+
+      s.arrows.right.justDown = true;
+      offer();
+      music.step(MUSIC_LEVEL_RAMP_MS);
+      expect(music.sound.volumes.at(-1)).toBeCloseTo(musicGain(4) * TOWER_TRACK.trim, 12);
+      expect(s.kept.get(MUSIC_KEY)).toBe("4");
+
+      s.find("options-music-step-1")!.handlers.pointerup();
+      s.find("options-music-down")!.handlers.pointerup();
+      music.step(MUSIC_FADE_OUT_MS + 16);
+      expect(music.sound.volumes.at(-1)).toBe(0);
+      expect(music.sound.calls).toEqual(["play", "stop"]);
+      expect(music.add).toHaveBeenCalledOnce();
+    });
+
     it("should open at the stored level, and at 0 for a browser that silenced the town (C15; Edge States: Old setting)", () => {
       const { run, arrows, kept } = inThePanel("number", undefined, "off");
       arrows.right.justDown = true;
@@ -9944,5 +9967,201 @@ describe("BarrowspireScene arrival card (FS-PQ2TW §A–§C; I-PQ2TW-3)", () => 
     expect(run.arrivalCard.parts.length).toBeGreaterThan(0);
     expect(run.walls.size).toBe(4);
     expect((run as unknown as { player?: unknown }).player).toBeDefined();
+  });
+});
+
+const { TOWER_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
+const { MUSIC_DEFAULT_LEVEL, musicGain } = await import("@/audio/musicSetting");
+
+/**
+ * The run's game as its music reaches it (FS-28DDG § Change: The tower's music on every floor of a
+ * run): the tower track in the audio cache, a sound recording its volumes, plays, stops and destroy,
+ * the game's step (which goes on past the scene's stop), and the scene's status.
+ */
+function withTowerSound(run: object) {
+  const audio = new Set([TOWER_TRACK.key]);
+  const sound = {
+    volumes: [] as number[],
+    calls: [] as string[],
+    set volume(value: number) {
+      sound.volumes.push(value);
+    },
+    play: () => (sound.calls.push("play"), true),
+    stop: () => (sound.calls.push("stop"), true),
+    destroy: () => void sound.calls.push("destroy"),
+  };
+  const add = vi.fn((_key: string, _config: unknown) => sound);
+  const events = new EventEmitter();
+  const settings = { status: 5 };
+  Object.assign(run, {
+    cache: {
+      audio: {
+        exists: (key: string) => audio.has(key),
+        remove: (key: string) => void audio.delete(key),
+      },
+    },
+    sound: { add, locked: false, context: { state: "running" } },
+    game: { events },
+    sys: { settings },
+  });
+  /** The game steps on, in 16 ms frames. */
+  const step = (ms: number) => {
+    for (let t = 0; t < ms; t += 16) events.emit("step", t, 16);
+  };
+  return { audio, sound, add, step, settings, events };
+}
+
+/** The run's music, as the scene's wiring reaches it. */
+interface Musical {
+  enterMusic(): void;
+  resetRun(end: "shutdown" | "destroy"): void;
+  leaveFloor(): void;
+  endRun(): void;
+  handleGameStateUpdate(state: unknown): void;
+  input: unknown;
+}
+
+// The tower's music: loaded by the run, entered at its create, played on every floor and through a
+// death, the run's end and the record, and let go at the run's end (FS-28DDG § Change: The tower's
+// music on every floor of a run, W2–W4, W7, W9).
+describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's music on every floor of a run)", () => {
+  /** The default level's gain at the tower's trim: what the run plays at with no setting kept. */
+  const FULL = musicGain(MUSIC_DEFAULT_LEVEL) * TOWER_TRACK.trim;
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The run on stage, its music entered and faded in. */
+  function playing() {
+    const s = onStage();
+    const run = s.run as unknown as Musical;
+    const music = withTowerSound(run);
+    run.handleGameStateUpdate(partyState());
+    run.enterMusic();
+    music.step(MUSIC_FADE_IN_MS);
+    return { ...s, run, ...music };
+  }
+
+  it("should queue the tower track, m4a first, beside the creatures and the boss (W8, W9)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+
+    run.preload();
+
+    expect(art.queuedAudio).toEqual([{ key: TOWER_TRACK.key, url: ["/audio/music/tower.m4a", "/audio/music/tower.ogg"] }]);
+  });
+
+  it("should skip the download while the tower track is still cached (W9)", () => {
+    const art = artLoaderStandin({
+      manifest: shippedManifest(),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+      audio: [TOWER_TRACK.key],
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+
+    run.preload();
+
+    expect(art.queuedAudio).toEqual([]);
+  });
+
+  it("should add the tower track looping at silence on entering the run and fade it in over 2000 ms (W2, W4)", () => {
+    const { add, sound } = playing();
+
+    expect(add).toHaveBeenCalledOnce();
+    expect(add).toHaveBeenCalledWith(TOWER_TRACK.key, { loop: true, volume: 0 });
+    expect(sound.calls).toEqual(["play"]);
+    expect(sound.volumes.at(-1)).toBeCloseTo(FULL, 12);
+  });
+
+  it("should play on through every floor: a climb neither stops, restarts nor dips it (W3)", () => {
+    const { run, sound, step } = playing();
+    const heard = sound.volumes.length;
+
+    run.leaveFloor();
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.calls).toEqual(["play"]);
+    expect(sound.volumes.length).toBe(heard);
+  });
+
+  it("should play on through a death and the run's end (W7)", () => {
+    const { run, sound, step } = playing();
+    const heard = sound.volumes.length;
+
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, { current_health: 0 })));
+    (run as unknown as { input: { keyboard: unknown } }).input = { keyboard: { enabled: true } };
+    run.endRun();
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.calls).toEqual(["play"]);
+    expect(sound.volumes.length).toBe(heard);
+  });
+
+  it("should fall away over 1000 ms on the game's step once the run stops, then be stopped and freed (W4, W9)", () => {
+    const { run, sound, step, settings, audio } = playing();
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    run.input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
+
+    run.resetRun("shutdown");
+    settings.status = 8;
+    step(MUSIC_FADE_OUT_MS / 2);
+    expect(sound.volumes.at(-1)).toBeCloseTo(FULL / 2, 1);
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.volumes.at(-1)).toBe(0);
+    expect(sound.calls).toEqual(["play", "stop", "destroy"]);
+    expect(audio.has(TOWER_TRACK.key)).toBe(false);
+  });
+
+  it("should take the same sound back up when the run starts again during the fall, with no second sound (Edge States: Reconnect mid-run)", () => {
+    const { run, sound, step, add } = playing();
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    run.input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
+
+    run.resetRun("shutdown");
+    step(MUSIC_FADE_OUT_MS / 2);
+    run.enterMusic();
+    step(MUSIC_FADE_IN_MS);
+
+    expect(add).toHaveBeenCalledOnce();
+    expect(sound.calls).toEqual(["play"]);
+    expect(sound.volumes.at(-1)).toBeCloseTo(FULL, 12);
+  });
+
+  it("should ask nothing of the sound when the game is destroyed (R21)", () => {
+    const { run, sound, step, events } = playing();
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "offError").mockImplementation(() => {});
+    const calls = [...sound.calls];
+
+    run.resetRun("destroy");
+    step(MUSIC_FADE_OUT_MS);
+
+    expect(sound.calls).toEqual(calls);
+    expect(events.listenerCount("step")).toBe(0);
+  });
+
+  it("should play nothing, and throw nothing, when the tower track failed to load (R14)", () => {
+    const s = onStage();
+    const run = s.run as unknown as Musical;
+    const { audio, add } = withTowerSound(run);
+    audio.clear();
+
+    expect(() => run.enterMusic()).not.toThrow();
+    expect(add).not.toHaveBeenCalled();
   });
 });

@@ -3997,7 +3997,9 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
   });
 });
 
-const { MUSIC_KEY, MUSIC_URL, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/hubMusic");
+const { VILLAGE_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
+/** The town's track's key (FS-28DDG § Change: The tower's music on every floor of a run, W1). */
+const MUSIC_KEY = VILLAGE_TRACK.key;
 const { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } = await import("@/audio/musicSetting");
 const { UI_EFFECTS, uiSoundKey } = await import("@/audio/uiSounds");
 
@@ -4017,7 +4019,7 @@ describe("HubScene music loading (FS-28DDG R12–R14)", () => {
 
     hub.preload();
 
-    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: MUSIC_URL }]);
+    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: ["/audio/music/village.mp3"] }]);
     expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
   });
 

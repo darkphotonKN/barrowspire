@@ -1,15 +1,19 @@
 import { EventEmitter } from "eventemitter3";
 import { describe, expect, it } from "vitest";
 import {
-  HubMusic,
-  MUSIC_URL,
+  WorldMusic,
   sceneMusicStage,
+  worldTrack,
   MUSIC_FADE_IN_MS,
   MUSIC_FADE_OUT_MS,
-  MUSIC_KEY,
   MUSIC_LEVEL_RAMP_MS,
-} from "./hubMusic";
+  TOWER_TRACK,
+  VILLAGE_TRACK,
+} from "./worldMusic";
 import { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } from "./musicSetting";
+
+/** The village track's key, which most of these tests play (FS-28DDG; § Change W1). */
+const MUSIC_KEY = VILLAGE_TRACK.key;
 
 /** One sound as the module plays it, recording every volume written and each play and stop. */
 class FakeSound {
@@ -63,7 +67,7 @@ function fakeStage(opts: { cached?: boolean; audible?: boolean } = {}) {
       stage.isCached = false;
     },
     audible: () => stage.canHear,
-    hubBusy: () => stage.busy,
+    worldBusy: () => stage.busy,
     onStep: (tick: (delta: number) => void) => {
       steps.add(tick);
       return () => void steps.delete(tick);
@@ -105,7 +109,7 @@ function settingStore(held: string | null) {
   return store;
 }
 
-describe("hubMusic tunables (FS-28DDG R2, R3; § Change C10)", () => {
+describe("worldMusic tunables (FS-28DDG R2, R3; § Change C10)", () => {
   it("should name the fade lengths and the level ramp", () => {
     expect(MUSIC_FADE_IN_MS).toBe(2000);
     expect(MUSIC_FADE_OUT_MS).toBe(1000);
@@ -114,10 +118,10 @@ describe("hubMusic tunables (FS-28DDG R2, R3; § Change C10)", () => {
   });
 });
 
-describe("HubMusic entering the hub (FS-28DDG R2, R10)", () => {
+describe("WorldMusic entering the hub (FS-28DDG R2, R10)", () => {
   it("should add one sound at volume 0 and ramp it to the default level's gain over 2000 ms", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
 
     music.enter();
     const [sound] = stage.sounds;
@@ -133,10 +137,10 @@ describe("HubMusic entering the hub (FS-28DDG R2, R10)", () => {
   });
 });
 
-describe("HubMusic under a suspended context (FS-28DDG R10, Edge States: Locked context)", () => {
+describe("WorldMusic under a suspended context (FS-28DDG R10, Edge States: Locked context)", () => {
   it("should start the sound at once but hold it silent, and begin the fade-in when the context first runs", () => {
     const stage = fakeStage({ audible: false });
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
 
     music.enter();
     const [sound] = stage.sounds;
@@ -153,10 +157,10 @@ describe("HubMusic under a suspended context (FS-28DDG R10, Edge States: Locked 
   });
 });
 
-describe("HubMusic leaving the hub (FS-28DDG R3, R13)", () => {
+describe("WorldMusic leaving the hub (FS-28DDG R3, R13)", () => {
   it("should ramp from the current volume to 0 over 1000 ms, then stop the sound and free it", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
@@ -176,7 +180,7 @@ describe("HubMusic leaving the hub (FS-28DDG R3, R13)", () => {
 
   it("should fall from wherever the fade-in had reached, over the whole 1000 ms", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS / 2);
     const [sound] = stage.sounds;
@@ -190,10 +194,10 @@ describe("HubMusic leaving the hub (FS-28DDG R3, R13)", () => {
   });
 });
 
-describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restart, Freed while loading again)", () => {
+describe("WorldMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restart, Freed while loading again)", () => {
   it("should take the fading sound back up from its current volume, with no second sound and no restart", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
@@ -215,7 +219,7 @@ describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restar
 
   it("should keep the stopped sound while the hub loads again, and play it from the top on entry", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
@@ -237,7 +241,7 @@ describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restar
 
   it("should add a new sound from the top once the old one was freed and the track loaded again", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     music.leave("shutdown");
@@ -254,10 +258,10 @@ describe("HubMusic entering again (FS-28DDG R4, R5, R13; Edge States: Hub restar
   });
 });
 
-describe("HubMusic without the track (FS-28DDG R14)", () => {
+describe("WorldMusic without the track (FS-28DDG R14)", () => {
   it("should add no sound for a key not in the audio cache, and leave quietly", () => {
     const stage = fakeStage({ cached: false });
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
 
     expect(() => {
       music.enter();
@@ -271,10 +275,10 @@ describe("HubMusic without the track (FS-28DDG R14)", () => {
   });
 });
 
-describe("HubMusic left twice (FS-28DDG Edge States: Two leaves in a row)", () => {
+describe("WorldMusic left twice (FS-28DDG Edge States: Two leaves in a row)", () => {
   it("should not restart a fade-out already running", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
@@ -290,7 +294,7 @@ describe("HubMusic left twice (FS-28DDG Edge States: Two leaves in a row)", () =
 
   it("should do nothing once the music has stopped and been freed", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     music.leave("shutdown");
     stage.advance(MUSIC_FADE_OUT_MS);
@@ -304,7 +308,7 @@ describe("HubMusic left twice (FS-28DDG Edge States: Two leaves in a row)", () =
   });
 });
 
-describe("HubMusic when the game is destroyed (FS-28DDG R21; Edge States: Leaving /game)", () => {
+describe("WorldMusic when the game is destroyed (FS-28DDG R21; Edge States: Leaving /game)", () => {
   it.each([
     { when: "mid fade-in", before: MUSIC_FADE_IN_MS / 2, leftFirst: false },
     { when: "playing", before: MUSIC_FADE_IN_MS, leftFirst: false },
@@ -313,7 +317,7 @@ describe("HubMusic when the game is destroyed (FS-28DDG R21; Edge States: Leavin
     "should ask the sound and the cache nothing $when, and let go of the sound",
     ({ before, leftFirst }) => {
       const stage = fakeStage();
-      const music = new HubMusic(stage, ON);
+      const music = new WorldMusic(stage, ON);
       music.enter();
       stage.advance(before);
       if (leftFirst) {
@@ -340,9 +344,9 @@ describe("HubMusic when the game is destroyed (FS-28DDG R21; Edge States: Leavin
  * manager and events, and the scene's status (`scene/const.js`: INIT 1 … SLEEPING 7, SHUTDOWN 8).
  */
 function fakeScene(
-  opts: { context?: { state: string }; locked?: boolean } = {},
+  opts: { context?: { state: string }; locked?: boolean; key?: string } = {},
 ) {
-  const audio = new Map<string, unknown>([[MUSIC_KEY, {}]]);
+  const audio = new Map<string, unknown>([[opts.key ?? MUSIC_KEY, {}]]);
   const added: { key: string; config: unknown }[] = [];
   const managerWrites: string[] = [];
   const manager = {
@@ -375,15 +379,15 @@ function fakeScene(
 }
 
 describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
-  it("should load the mp3 alone from the public audio folder", () => {
-    expect(MUSIC_URL).toBe("/audio/music/village.mp3");
+  it("should load the village mp3 alone from the public audio folder (R6)", () => {
+    expect(VILLAGE_TRACK.urls).toEqual(["/audio/music/village.mp3"]);
   });
 
   it("should add the track looping at silence, never touching the manager's volume or mute", () => {
     const { scene, added, managerWrites } = fakeScene({
       context: { state: "running" },
     });
-    const stage = sceneMusicStage(scene);
+    const stage = sceneMusicStage(scene, VILLAGE_TRACK);
 
     stage.add();
 
@@ -395,7 +399,7 @@ describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
 
   it("should read the track's key in the audio cache, and remove it", () => {
     const { scene, audio } = fakeScene();
-    const stage = sceneMusicStage(scene);
+    const stage = sceneMusicStage(scene, VILLAGE_TRACK);
 
     expect(stage.cached()).toBe(true);
     stage.uncache();
@@ -416,7 +420,7 @@ describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
     ({ context, locked, audible }) => {
       const { scene } = fakeScene({ context, locked });
 
-      expect(sceneMusicStage(scene).audible()).toBe(audible);
+      expect(sceneMusicStage(scene, VILLAGE_TRACK).audible()).toBe(audible);
     },
   );
 
@@ -427,12 +431,12 @@ describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
     { status: 8, busy: false },
     { status: 9, busy: false },
   ])(
-    "should call the hub busy at scene status $status: $busy",
+    "should call the world busy at scene status $status: $busy",
     ({ status, busy }) => {
       const { scene } = fakeScene();
       scene.sys.settings.status = status;
 
-      expect(sceneMusicStage(scene).hubBusy()).toBe(busy);
+      expect(sceneMusicStage(scene, VILLAGE_TRACK).worldBusy()).toBe(busy);
     },
   );
 
@@ -440,7 +444,7 @@ describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
     const { scene, events } = fakeScene();
     const deltas: number[] = [];
 
-    const stop = sceneMusicStage(scene).onStep((delta) => deltas.push(delta));
+    const stop = sceneMusicStage(scene, VILLAGE_TRACK).onStep((delta) => deltas.push(delta));
     events.emit("step", 1000, 16);
     stop();
     events.emit("step", 1016, 16);
@@ -450,11 +454,11 @@ describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
   });
 });
 
-describe("HubMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12, C15)", () => {
+describe("WorldMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12, C15)", () => {
   it.each(["off", "0"])("should read the level on entering and start nothing while it is 0 (stored %s)", (held) => {
     const stage = fakeStage();
     const store = settingStore(held);
-    const music = new HubMusic(stage, () => store);
+    const music = new WorldMusic(stage, () => store);
 
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
@@ -466,7 +470,7 @@ describe("HubMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12
 
   it("should still free the loaded track once the hub is left (R13)", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, () => settingStore("0"));
+    const music = new WorldMusic(stage, () => settingStore("0"));
     music.enter();
 
     music.leave("shutdown");
@@ -480,7 +484,7 @@ describe("HubMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12
   it("should read it again on each entry, a change from another tab included (Edge States: Changed in a field or a run)", () => {
     const stage = fakeStage();
     const store = settingStore(null);
-    const music = new HubMusic(stage, () => store);
+    const music = new WorldMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     const [sound] = stage.sounds;
@@ -500,7 +504,7 @@ describe("HubMusic at level 0, the on/off row's off (FS-28DDG R18; § Change C12
   });
 });
 
-describe("HubMusic entering at a stored level (FS-28DDG § Change C9, C12)", () => {
+describe("WorldMusic entering at a stored level (FS-28DDG § Change C9, C12)", () => {
   it.each([
     { held: "1", gain: musicGain(1) },
     { held: "4", gain: musicGain(4) },
@@ -508,7 +512,7 @@ describe("HubMusic entering at a stored level (FS-28DDG § Change C9, C12)", () 
     { held: "on", gain: musicGain(3) },
   ])("should fade in from silence to $gain over 2000 ms at stored $held", ({ held, gain }) => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, () => settingStore(held));
+    const music = new WorldMusic(stage, () => settingStore(held));
 
     music.enter();
     const [sound] = stage.sounds;
@@ -522,13 +526,13 @@ describe("HubMusic entering at a stored level (FS-28DDG § Change C9, C12)", () 
   });
 });
 
-describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Change C10–C12, C15)", () => {
+describe("WorldMusic.setLevel, from the Options panel's Music row (FS-28DDG § Change C10–C12, C15)", () => {
   /** The music playing at the default level, its fade-in done, in a running hub. */
   function playing(held: string | null = null) {
     const stage = fakeStage();
     stage.busy = true;
     const store = settingStore(held);
-    const music = new HubMusic(stage, () => store);
+    const music = new WorldMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
     return { stage, store, music, sound: stage.sounds[0] };
@@ -566,7 +570,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
   it("should retarget a fade-in: from the volume it reached to the new gain, over the time it has left", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS / 2);
     const [sound] = stage.sounds;
@@ -584,7 +588,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
   it("should give a fade-in retargeted near its end at least the level ramp's 200 ms, so no jump in loudness (C10)", () => {
     const stage = fakeStage();
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS - 10);
     const [sound] = stage.sounds;
@@ -603,7 +607,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
 
   it("should only change the target of a fade-in not yet heard (R10)", () => {
     const stage = fakeStage({ audible: false });
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(500);
     const [sound] = stage.sounds;
@@ -657,7 +661,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     const stage = fakeStage();
     stage.busy = true;
     const store = settingStore("off");
-    const music = new HubMusic(stage, () => store);
+    const music = new WorldMusic(stage, () => store);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS);
 
@@ -673,7 +677,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
   it("should turn a fade-in around where it stands on a change to 0", () => {
     const stage = fakeStage();
     stage.busy = true;
-    const music = new HubMusic(stage, ON);
+    const music = new WorldMusic(stage, ON);
     music.enter();
     stage.advance(MUSIC_FADE_IN_MS / 2);
     const [sound] = stage.sounds;
@@ -739,7 +743,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
   it("should still apply the change when the store refuses the write (C15)", () => {
     const stage = fakeStage();
     stage.busy = true;
-    const music = new HubMusic(stage, () => {
+    const music = new WorldMusic(stage, () => {
       throw new Error("SecurityError");
     });
     music.enter();
@@ -758,7 +762,7 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
   it("should keep and store the level with no track, and play nothing (Edge States: Track failed to load)", () => {
     const stage = fakeStage({ cached: false });
     const store = settingStore(null);
-    const music = new HubMusic(stage, () => store);
+    const music = new WorldMusic(stage, () => store);
     music.enter();
 
     music.setLevel(5);
@@ -770,5 +774,82 @@ describe("HubMusic.setLevel, from the Options panel's Music row (FS-28DDG § Cha
     expect(store.writes).toEqual(["5", "0", "2"]);
     expect(stage.sounds).toHaveLength(0);
     expect(stage.stepping()).toBe(0);
+  });
+});
+
+describe("worldMusic tracks, one per world (FS-28DDG § Change: The tower's music on every floor of a run, W1, W5, W8)", () => {
+  it("should play the village track in the hub, the tower track in the run, and nothing in a field", () => {
+    expect(worldTrack("hub")).toBe(VILLAGE_TRACK);
+    expect(worldTrack("run")).toBe(TOWER_TRACK);
+    expect(worldTrack("field")).toBeUndefined();
+  });
+
+  it("should load the tower track m4a first, then the owner's ogg, under its own key", () => {
+    expect(TOWER_TRACK.urls).toEqual(["/audio/music/tower.m4a", "/audio/music/tower.ogg"]);
+    expect(TOWER_TRACK.key).not.toBe(VILLAGE_TRACK.key);
+  });
+
+  it("should give both tracks a named trim of 1.0", () => {
+    expect(VILLAGE_TRACK.trim).toBe(1);
+    expect(TOWER_TRACK.trim).toBe(1);
+  });
+});
+
+describe("WorldMusic with a track's trim (FS-28DDG § Change: The tower's music on every floor of a run, W5)", () => {
+  it("should fade in to the level's gain times the trim", () => {
+    const stage = fakeStage();
+    const music = new WorldMusic(stage, ON, 2);
+
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS);
+
+    expect(close(stage.sounds[0].volume, FULL * 2)).toBe(true);
+  });
+
+  it("should ramp a level change to the new level's gain times the trim", () => {
+    const stage = fakeStage();
+    const store = settingStore(null);
+    const music = new WorldMusic(stage, () => store, 0.5);
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS);
+
+    music.setLevel(5);
+    stage.advance(MUSIC_LEVEL_RAMP_MS);
+
+    expect(close(stage.sounds[0].volume, musicGain(5) * 0.5)).toBe(true);
+  });
+
+  it("should play at the level's gain alone without a trim", () => {
+    const stage = fakeStage();
+    const music = new WorldMusic(stage, ON);
+
+    music.enter();
+    stage.advance(MUSIC_FADE_IN_MS);
+
+    expect(stage.sounds[0].volume).toBe(FULL);
+  });
+});
+
+describe("sceneMusicStage for the tower track (FS-28DDG § Change: The tower's music on every floor of a run, W2, W9)", () => {
+  it("should add, find and free the given track's key, never the village's", () => {
+    const { scene, audio, added } = fakeScene({ key: TOWER_TRACK.key, context: { state: "running" } });
+    const stage = sceneMusicStage(scene, TOWER_TRACK);
+
+    expect(stage.cached()).toBe(true);
+    stage.add();
+    stage.uncache();
+
+    expect(added).toEqual([{ key: TOWER_TRACK.key, config: { loop: true, volume: 0 } }]);
+    expect(audio.has(TOWER_TRACK.key)).toBe(false);
+  });
+
+  it("should keep the track while its own world's scene runs or loads again", () => {
+    const { scene } = fakeScene({ key: TOWER_TRACK.key });
+    const stage = sceneMusicStage(scene, TOWER_TRACK);
+
+    scene.sys.settings.status = 3;
+    expect(stage.worldBusy()).toBe(true);
+    scene.sys.settings.status = 8;
+    expect(stage.worldBusy()).toBe(false);
   });
 });
