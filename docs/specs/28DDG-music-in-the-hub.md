@@ -612,3 +612,27 @@ C17. **The run's panel yields as the run's menu does.** A state that would take 
 - Any change to `BarrowspireScene.ts` beyond its menu wiring, or to the run's Fall confirm.
 
 ## Change: Sound effects row in the OPTIONS panel → FS-WDM0X
+
+## Change: The music's cap tuned to 0.3
+Status: shipped
+Date: 2026-11-13
+
+A tune of § Change C9's values only (`Tunes FS-28DDG`; C9 names `MUSIC_MAX_GAIN` as tunable and
+temporary). At the listening check (I-28DDG-6) the owner said:
+
+> 「感覺音量還是太大 滿格設定成0.3」
+
+It still sounds too loud; set the full bar to 0.3.
+
+`MUSIC_MAX_GAIN` goes from 0.5 to 0.3 and stays **temporary**, on the same terms as C9: it
+stands until the track is remastered or the owner retunes it. The rule is unchanged, gain =
+`MUSIC_MAX_GAIN` × level / 5, and `MUSIC_DEFAULT_LEVEL` stays 3. Levels, ramps, fades, the
+stored setting, its migration and the panel are unchanged. These values replace C9's where it
+stated them ("half the file's loudness", 0.5, the default's 0.3), and the criterion under
+*The level* that lists them follows. Built in 200918df (`game-client/src/audio/musicSetting.ts`).
+
+| Value | Was | Now |
+|---|---|---|
+| `MUSIC_MAX_GAIN` (level 5) | 0.5 | 0.3 |
+| gains for levels 0–5 | 0, 0.1, 0.2, 0.3, 0.4, 0.5 | 0, 0.06, 0.12, 0.18, 0.24, 0.3 |
+| the default level 3 plays at | 0.3 | 0.18 |

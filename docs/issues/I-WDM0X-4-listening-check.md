@@ -1,6 +1,6 @@
 ---
 id: I-WDM0X-4
-status: open
+status: done
 implements: FS-WDM0X
 blocked_by: [I-WDM0X-2, I-WDM0X-3]
 labels: [blocked]
@@ -50,3 +50,7 @@ I-WDM0X-2, I-WDM0X-3
 ## Spec Reference
 
 FS-WDM0X §Acceptance Criteria, Housekeeping (the owner's listening check); Edge States.
+
+## Owner sign-off
+
+2026-11-13: the owner listened in game (music at the 0.3 cap, the OPTIONS panel, the interface effects incl. his replacement inventory sounds) and asked to merge: 「修好後並回main」.

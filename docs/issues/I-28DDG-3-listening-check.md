@@ -1,6 +1,6 @@
 ---
 id: I-28DDG-3
-status: open
+status: done
 implements: FS-28DDG
 blocked_by: [I-28DDG-1, I-28DDG-2]
 labels: [blocked]
@@ -51,3 +51,7 @@ I-28DDG-1, I-28DDG-2
 ## Spec Reference
 
 FS-28DDG whole; story 25.
+
+## Owner sign-off
+
+2026-11-13: the owner listened in game (music at the 0.3 cap, the OPTIONS panel, the interface effects incl. his replacement inventory sounds) and asked to merge: 「修好後並回main」.

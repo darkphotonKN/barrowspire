@@ -23,8 +23,8 @@ slice on, because the panel makes its own control (S19).
   - a stored-only level control;
   - the browser store.
 - **`audio/uiSounds.ts`**:
-  - **The 11 effects:** their keys (`sfx:<name>`) and URLs (`[/audio/sfx/<name>.ogg,
-    /audio/sfx/<name>.m4a]`), and a `preloadUiSounds(scene)` that queues them.
+  - **The 11 effects:** their keys (`sfx:<name>`) and URLs (`[/audio/sfx/<name>.m4a,
+    /audio/sfx/<name>.ogg]`), and a `preloadUiSounds(scene)` that queues them.
   - **The S8 rule:** a pure function of before/after window state (ESC menu slot, letter, party,
     inventory, character) that returns at most one effect. The order is menu, letter, party,
     inventory, character: opens first, then closes.
@@ -68,7 +68,7 @@ slice on, because the panel makes its own control (S19).
 - [ ] OPTIONS shows Music then Sound effects. The Sound effects row's ◄/►/steps work as Music's
       do and write `barrowspire_sfx`. ←/→ move Music only. A change plays nothing. The existing
       OPTIONS tests stay green, updated only for the taller panel.
-- [ ] `PreloadScene` queues the 11 effects as `[ogg, m4a]` and still starts the main menu.
+- [ ] `PreloadScene` queues the 11 effects as `[m4a, ogg]` and still starts the main menu.
 - [ ] The 22 files are in `public/audio/sfx/`, the m4a ones checked with `afinfo`.
 - [ ] `gameAudio.ts`, `hubMusic.ts` and `musicSetting.ts` unchanged.
 - [ ] `npx vitest run --maxWorkers=4 --minWorkers=1`, `npx tsc --noEmit -p .`, `npm run lint` pass.

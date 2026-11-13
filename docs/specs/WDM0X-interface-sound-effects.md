@@ -423,3 +423,58 @@ S23. **One module.** The effects' keys and URLs, the S8 rule, the wrapper (S9) a
 - Re-encoding or remastering the owner's ogg files. Only the m4a copies are generated.
 - A per-account or server-side setting.
 - Any change to `gameAudio.ts`, `hubMusic.ts`, the music's behaviour, or the server.
+
+## Change: Effects load as [m4a, ogg]
+Status: shipped
+Date: 2026-11-13
+
+S21, the first criterion under *Loading* and the Edge State *Safari and Ogg* load each effect as
+`[ogg, m4a]`. The integrator set the order to `[m4a, ogg]` before the listening check, taking up
+the remedy that Edge State named, because the fallback it relied on does not exist:
+
+- Phaser 4.2.1's `AudioFile.getAudioURL` takes the first URL whose type `canPlayType` accepts and
+  never falls back on a decode failure (Facts).
+- Safari's `decodeAudioData` on Ogg Vorbis is unreliable, so under `[ogg, m4a]` a Safari that
+  says it plays Ogg could decode nothing and stay silent (S22).
+
+The owner was told of the trade-off below on 2026-11-13 and asked for the work to be fixed and
+merged to main (「修好後並回main」).
+
+### Requirements
+
+W1. **m4a first.** Each effect loads as `[/audio/sfx/<name>.m4a, /audio/sfx/<name>.ogg]` under
+    its own key (`uiSoundUrls`). This replaces S21's order. S21's files, its `afconvert` command
+    and S22 are unchanged.
+W2. **Who hears which file.** Chrome, Safari and most Firefox builds say they play `audio/x-m4a`,
+    so they play the AAC transcode, not the owner's ogg originals. A Firefox without AAC falls
+    back to the ogg. The ogg files stay committed as the sources and that fallback.
+W3. **The owner's new inventory sounds.** The owner replaced `inventory_open` and
+    `inventory_close` (95565e70). Both oggs are the owner's new files, and both m4a copies were
+    re-encoded from them with S21's command. Keys, triggers and every other effect are unchanged.
+W4. **Replacing an effect means re-encoding its m4a.** Most players hear the m4a (W2), so a new
+    or edited `<name>.ogg` is not heard until `<name>.m4a` is re-encoded from it with S21's
+    command and committed beside it. This is the only re-encoding the Out of Scope line about
+    "the owner's ogg files" allows: the oggs themselves are still never re-encoded.
+
+### Acceptance Criteria
+
+- [x] `PreloadScene` queues all 11 effects, each as
+      `[/audio/sfx/<name>.m4a, /audio/sfx/<name>.ogg]` under its own key, and still goes on to the
+      main menu. This replaces the first criterion under *Loading*.
+- [x] `inventory_open.ogg` and `inventory_close.ogg` are the owner's replacements, and their m4a
+      copies meet the second criterion under *Loading* (AAC, `m4af`, mono, 44.1 kHz, within 10 ms
+      of the ogg's duration).
+
+### Edge States
+
+- **Safari and Ogg.** Replaced: Safari takes the m4a, so an ogg it cannot decode is never
+  fetched. The HITL check still listens in Safari.
+- **A Firefox without AAC.** It plays the ogg. If that ogg fails to decode, the effect is silent
+  (S22).
+- **An ogg changed without its m4a.** Players on the m4a hear the old sound; only a Firefox
+  without AAC hears the new one (W4).
+
+### Out of Scope
+
+- Loading m4a alone, or dropping the ogg files.
+- A fallback on a decode failure (a change to Phaser's loader).

@@ -1,6 +1,6 @@
 ---
 id: I-28DDG-6
-status: open
+status: done
 implements: FS-28DDG
 blocked_by: [I-28DDG-4, I-28DDG-5]
 labels: [blocked]
@@ -81,3 +81,7 @@ FS-28DDG whole (story 25) and §Change: Music volume in an Options panel (its HI
   the default level 3 plays at 0.18. Levels, ramps, fades, migration and UI are unchanged.
   FS-28DDG's stated cap (0.5, "half the file's loudness", default 0.3) is now stale and needs a
   `write-a-spec` Tunes amendment; this file's "New" check line above still states the old values.
+
+## Owner sign-off
+
+2026-11-13: the owner listened in game (music at the 0.3 cap, the OPTIONS panel, the interface effects incl. his replacement inventory sounds) and asked to merge: 「修好後並回main」.
