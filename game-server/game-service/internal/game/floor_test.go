@@ -400,8 +400,11 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	}
 	assert.Equal(t, wantStairs, stairs, "stairs")
 
+	// a tome run (FS-3103M, 2% of runs) also lays its tome or altar on the floor
+	tomeAndAltar := len(entityIDsWith(s, ecs.ComponentTypeTome)) + len(entityIDsWith(s, ecs.ComponentTypeAltar))
+
 	total := len(s.EntityManager.GetAllEntities())
-	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs
+	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar
 	assert.Equal(t, len(keep)+floorKinds, total, "nothing else is in the world")
 }
 
