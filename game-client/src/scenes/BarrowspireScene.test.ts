@@ -902,15 +902,33 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
     shows("No stair climbs higher. Only the way out remains.", { ...floorState(2), stairs: [] });
   });
 
-  it("should let the new floor's switch and escape-door notices fire again", () => {
-    const { run, texts } = sceneOnStage();
-    const notices = () => texts().filter((t) => /unlocked|opened/i.test(String(t.content))).length;
+  // FS-XWHZP R16, R22, R23 (I-XWHZP-3): hope lines on a flip only; each floor's first broadcast is
+  // its baseline
+  it("should say the switch and the escape door as hope lines when they turn, never on a floor's first broadcast", () => {
+    const { run } = sceneOnStage();
+    const lore = run as unknown as { loreLines: { say(line: { text: string; tone: string }): void } };
+    const said = vi.spyOn(lore.loreLines, "say").mockImplementation(() => {});
+    const lines = () => said.mock.calls.map(([line]) => line);
+    const seal = { text: "The seal breaks. Somewhere, a door gives.", tone: "hope" };
+    const open = { text: "The way out stands open.", tone: "hope" };
+
     run.handleGameStateUpdate(floorState(1, { switchOn: true, doorOpen: true }));
-    expect(notices()).toBe(2);
+    expect(lines()).toEqual([]);
 
+    run.handleGameStateUpdate(floorState(2));
+    run.handleGameStateUpdate(floorState(2, { switchOn: true }));
+    expect(lines()).toEqual([seal]);
     run.handleGameStateUpdate(floorState(2, { switchOn: true, doorOpen: true }));
+    run.handleGameStateUpdate(floorState(2, { switchOn: true, doorOpen: true }));
+    expect(lines()).toEqual([seal, open]);
+  });
 
-    expect(notices()).toBe(4);
+  it("should raise no HUD notice for the switch or the door (FS-XWHZP R16)", () => {
+    const { run, texts } = sceneOnStage();
+    run.handleGameStateUpdate(floorState(1));
+    run.handleGameStateUpdate(floorState(1, { switchOn: true, doorOpen: true }));
+    expect(texts().filter((t) => /unlocked|opened/i.test(String(t.content)))).toHaveLength(0);
+    expect(texts().filter((t) => t.content === "The seal breaks. Somewhere, a door gives.")).toHaveLength(1);
   });
 
   it("should build a floor joined mid-run directly, with no transition", () => {
@@ -1624,11 +1642,12 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(watchButtons()).toHaveLength(0);
     });
 
-    it("should say the player escaped successfully once", () => {
+    // FS-XWHZP R16, R23, R24 (I-XWHZP-3): a hope line, once; a first broadcast says nothing
+    it("should walk the player out of the dark once, and not for an escape already on the first broadcast", () => {
       const { run, state, stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
       (run as unknown as FloorRun).handleGameStateUpdate(state(player("ally", "Wenna", 160)));
-      const lines = stage.made.filter((m) => m.kind === "text" && /Aldric escaped successfully/.test(String(m.args[2])));
-      expect(lines).toHaveLength(1);
+      const lines = () => stage.made.filter((m) => m.kind === "text" && /out of the dark|escaped successfully/.test(String(m.args[2])));
+      expect(lines()).toHaveLength(0);
     });
 
     it("should forget the button on a restart, and the rebuilt run raises it again, not spectating", () => {
@@ -7086,6 +7105,69 @@ describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
 
 // A floor-1 chest whose guards still stand is refused by the server: the coffer never opened (it
 // waits for the server), and the notice says only that it will not open (FS-KE075 §J R60).
+// FS-XWHZP R16, R19, R23, R24 (I-XWHZP-3): escapes and the server's one-shot as hope lines.
+describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (FS-XWHZP §E)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function speaking() {
+    const s = onStage();
+    const run = s.run as unknown as FloorRun & { loreLines: { say(line: { text: string; tone: string }): void } };
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    return { ...s, run, said, lines: () => said.mock.calls.map(([line]) => line) };
+  }
+
+  it("should walk each player out of the dark once, the player themself as you", () => {
+    const { run, lines, stage } = speaking();
+    run.handleGameStateUpdate(partyState());
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160, { escape: true })));
+    run.handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130, { escape: true }), player("ally", "Wenna", 160, { escape: true })),
+    );
+    run.handleGameStateUpdate(
+      partyState(player("me", "Aldric", 130, { escape: true }), player("ally", "Wenna", 160, { escape: true })),
+    );
+
+    expect(lines()).toEqual([
+      { text: "Wenna walks out of the dark.", tone: "hope" },
+      { text: "You walk out of the dark.", tone: "hope" },
+    ]);
+    expect(stage.made.filter((m) => m.kind === "text" && /escaped successfully/.test(String(m.args[2])))).toHaveLength(0);
+  });
+
+  it("should replay no escape after a reconnect: the first broadcast is the baseline", () => {
+    const { run, lines } = speaking();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160, { escape: true })));
+    expect(lines()).toEqual([]);
+  });
+
+  it("should play the server's exit_door_unlocked as the switch's hope line, never its words", () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      showNotification(message: string, color: string): void;
+      loreLines: { say(line: object): void };
+    };
+    run.init({ sessionID: "run-a" });
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    run.connectToServer();
+
+    listeners.get("exit_door_unlocked")?.({ message: "Exit door unlocked! Run to escape!" });
+
+    expect(said).toHaveBeenCalledWith({ text: "The seal breaks. Somewhere, a door gives.", tone: "hope" });
+    expect(notified).not.toHaveBeenCalled();
+  });
+});
+
 // FS-XWHZP R15 (I-XWHZP-2): the lines belong to the floor they were said on.
 describe("BarrowspireScene lore lines on a floor change (FS-XWHZP R15)", () => {
   afterEach(() => {

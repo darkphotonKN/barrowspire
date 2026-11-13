@@ -42,7 +42,7 @@ import {
 } from "@/ui/floor";
 import { placeCard } from "@/ui/placeCard";
 import { LoreLines } from "@/ui/loreLine";
-import { loreForFall, loreForReply } from "@/ui/loreCopy";
+import { loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
 import { LoreDust } from "@/render/effects/loreDust";
 import {
   FALL_CONFIRM,
@@ -985,9 +985,14 @@ export class BarrowspireScene extends Phaser.Scene {
   private lastGameState?: ClientGameState;
 
   // 狀態追蹤：避免重複通知（每秒 33 幀會重複收到相同狀態）
-  private previousEscapeDoorOpened: boolean | null = null;
-  private previousSwitchActivated: boolean | null = null;
-  private escapedPlayers: Set<string> = new Set();
+  /**
+   * The escape door's and the switch's flags on the previous broadcast of this floor; none before
+   * its first, which is the baseline (FS-XWHZP R22, R23).
+   */
+  private previousEscapeDoorOpened?: boolean;
+  private previousSwitchActivated?: boolean;
+  /** The players whose escape has been said this run; none before the first broadcast (R23, R24). */
+  private escapedPlayers?: Set<string>;
   private escapedCountText?: Phaser.GameObjects.Text;
   /** The dev position readout (FS-56CKV §C); none in a production build. */
   private positionReadout?: Phaser.GameObjects.Text;
@@ -1220,9 +1225,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.combat.reset();
     this.lastGameState = undefined;
     this.sessionID = undefined;
-    this.previousEscapeDoorOpened = null;
-    this.previousSwitchActivated = null;
-    this.escapedPlayers.clear();
+    this.previousEscapeDoorOpened = undefined;
+    this.previousSwitchActivated = undefined;
+    this.escapedPlayers = undefined;
   }
 
   /**
@@ -3794,11 +3799,9 @@ export class BarrowspireScene extends Phaser.Scene {
     );
     this.subscribeFloorMap();
 
-    // Listen for exit door unlocked message
-    const doorUnlocked = (payload: { message: string }) => {
-      console.log("Exit door unlocked!", payload);
-      this.showNotification(payload.message, toCss(palette.safe));
-    };
+    // The exit door unlocked: the switch's own line, in the client's words (FS-XWHZP R16, R19);
+    // the switch's broadcast flip says the same, and the lines show it once (R14)
+    const doorUnlocked = () => this.loreLines.say(loreForEvent({ kind: "exit_door_unlocked" }));
     socketManager.on("exit_door_unlocked", doorUnlocked);
 
     // Listen for interact responses (success/error messages)
@@ -4436,8 +4439,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * Tears down everything built for the floor the party has left (FS-F6F88 req 33): walls, roofs,
    * the perimeter wall, house floors and flagstone, entrance markers, occluders, wall lights, and every entity drawn
    * from the old floor's state. The maps are emptied as well as their objects destroyed, because a
-   * cleared entity id may come back on the new floor and must be built fresh there. The one-shot
-   * notice memory goes too, so the new floor's switch and escape door announce themselves.
+   * cleared entity id may come back on the new floor and must be built fresh there. The switch's
+   * and escape door's memory goes too: the new floor's first broadcast is their baseline (FS-XWHZP R23).
    */
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
@@ -4507,8 +4510,8 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.containerView?.entityId) this.containerView.close();
     this.reaching = undefined;
 
-    this.previousEscapeDoorOpened = null;
-    this.previousSwitchActivated = null;
+    this.previousEscapeDoorOpened = undefined;
+    this.previousSwitchActivated = undefined;
   }
 
   /**
@@ -5938,65 +5941,36 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * 檢測逃生門和開關的狀態變化，並顯示對應通知
-   * 避免重複通知：只在狀態真正改變時才顯示
+   * The switch thrown and the escape door opened, as hope lines (FS-XWHZP R16, R22, R23): each on
+   * its flag turning on against this floor's previous broadcast; the first is the baseline.
    */
   private checkEscapeDoorStateChanges(state: ClientGameState): void {
-    // 檢查是否有逃生門資料
     const escapeDoor = state.escape_doors?.[0];
     if (!escapeDoor) return;
 
-    // 檢查開關是否被激活 → 逃生門解鎖
     const switchData = state.switches?.[0];
     if (switchData) {
-      // 開關剛被激活（從 false/null 變成 true）
-      if (
-        switchData.is_activated === true &&
-        this.previousSwitchActivated !== true
-      ) {
-        this.showNotification(
-          "Exit door unlocked! Run to escape!",
-          toCss(palette.safe),
-        );
-      }
-      this.previousSwitchActivated = switchData.is_activated;
+      const thrown = switchData.is_activated === true;
+      if (turnedOn(this.previousSwitchActivated, thrown)) this.loreLines.say(loreForEvent({ kind: "switch_thrown" }));
+      this.previousSwitchActivated = thrown;
     }
 
-    // 檢查逃生門是否被打開
-    if (escapeDoor.is_open === true && this.previousEscapeDoorOpened !== true) {
-      this.showNotification("Escape door opened!", toCss(palette.safe));
-    }
-    this.previousEscapeDoorOpened = escapeDoor.is_open;
+    const open = escapeDoor.is_open === true;
+    if (turnedOn(this.previousEscapeDoorOpened, open)) this.loreLines.say(loreForEvent({ kind: "door_opened" }));
+    this.previousEscapeDoorOpened = open;
   }
 
   /**
-   * 檢測玩家是否逃脫成功
-   * 後端會設置 player.escape = true
+   * Each player walking out of the dark, said once a run as a hope line, the player themself as
+   * "you" (FS-XWHZP R16, R24); those already out on the first broadcast are never said (R23).
    */
   private checkPlayerEscapedState(state: ClientGameState): void {
-    // 檢查當前玩家
-    if (state.current_player?.escape === true && state.current_player.id) {
-      if (!this.escapedPlayers.has(state.current_player.id)) {
-        this.showNotification(
-          `${state.current_player.username} escaped successfully!`,
-          toCss(palette.frameBright), // 金色
-        );
-        this.escapedPlayers.add(state.current_player.id);
-      }
-    }
-
-    // 檢查其他玩家
-    state.other_players?.forEach((player) => {
-      if (player.escape === true && player.id) {
-        if (!this.escapedPlayers.has(player.id)) {
-          this.showNotification(
-            `${player.username} escaped successfully!`,
-            toCss(palette.frameBright),
-          );
-          this.escapedPlayers.add(player.id);
-        }
-      }
-    });
+    const me = state.current_player;
+    const players = [...(me ? [me] : []), ...(state.other_players ?? [])];
+    const { said, escaped } = newlyEscaped(this.escapedPlayers, players);
+    this.escapedPlayers = said;
+    for (const { id, name } of escaped)
+      this.loreLines.say(loreForEvent({ kind: "escaped", name, self: id === me?.id }));
   }
 
   destroy(): void {
@@ -6009,10 +5983,10 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // 重置狀態追蹤
-    this.previousEscapeDoorOpened = null;
-    this.previousSwitchActivated = null;
-    this.escapedPlayers.clear();
+    // the next broadcast is a baseline again (FS-XWHZP R23)
+    this.previousEscapeDoorOpened = undefined;
+    this.previousSwitchActivated = undefined;
+    this.escapedPlayers = undefined;
   }
 
   /**

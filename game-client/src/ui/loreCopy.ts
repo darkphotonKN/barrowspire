@@ -79,3 +79,39 @@ export function loreForEvent(event: LoreEvent): LoreLine {
       return { text: "You hear a sound from hell", tone: "dread" };
   }
 }
+
+/**
+ * Whether a broadcast flag turned on (R22): false on the previous broadcast, true on this one.
+ * With no previous broadcast (`undefined`: after a connect, a reconnect, a restart, on a new
+ * floor) this one is the baseline and says nothing (R23). The switch's `is_activated`, the escape
+ * door's `is_open`, the altar's `burned`.
+ */
+export function turnedOn(previous: boolean | undefined, incoming: boolean): boolean {
+  return previous === false && incoming;
+}
+
+/** A player as the escape check reads them off a broadcast. */
+export interface EscapingPlayer {
+  id: string;
+  username: string;
+  escape?: boolean;
+}
+
+/**
+ * The players who have escaped since the last broadcast, each said once a run (R24), and every
+ * player said so far. With nothing said yet (`undefined`: the first broadcast) every player
+ * already out is seeded as said and none is named (R23).
+ */
+export function newlyEscaped(
+  said: ReadonlySet<string> | undefined,
+  players: readonly EscapingPlayer[],
+): { said: Set<string>; escaped: { id: string; name: string }[] } {
+  const next = new Set(said);
+  const escaped: { id: string; name: string }[] = [];
+  for (const p of players) {
+    if (!p.id || p.escape !== true || next.has(p.id)) continue;
+    next.add(p.id);
+    if (said) escaped.push({ id: p.id, name: p.username });
+  }
+  return { said: next, escaped };
+}

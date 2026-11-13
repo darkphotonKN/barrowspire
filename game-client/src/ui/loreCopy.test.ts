@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lootRefusalCopy } from "@/scenes/fieldRefusals";
-import { loreForEvent, loreForFall, loreForReply } from "./loreCopy";
+import { loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "./loreCopy";
 
 // FS-XWHZP §D R16-R18, §F R25. I-XWHZP-2: what the world says inside the Spire, keyed on the event
 // or the reply's reason, in the client's own words.
@@ -113,5 +113,48 @@ describe("loreForEvent (FS-XWHZP R16)", () => {
 
   it("should hear the burn from hell in dread (FS-3103M R26, as amended)", () => {
     expect(loreForEvent({ kind: "burn_heard" })).toEqual({ text: "You hear a sound from hell", tone: "dread" });
+  });
+});
+
+// FS-XWHZP §E R22-R24. I-XWHZP-3: broadcast lines fire on a transition only; the first broadcast
+// is the baseline.
+
+describe("turnedOn (FS-XWHZP R22, R23)", () => {
+  it("should see a flag turn on between two broadcasts", () => {
+    expect(turnedOn(false, true)).toBe(true);
+  });
+
+  it("should take the first broadcast as the baseline, whatever it says", () => {
+    expect(turnedOn(undefined, true)).toBe(false);
+    expect(turnedOn(undefined, false)).toBe(false);
+  });
+
+  it("should see nothing while a flag stays, or when it turns off", () => {
+    expect(turnedOn(true, true)).toBe(false);
+    expect(turnedOn(false, false)).toBe(false);
+    expect(turnedOn(true, false)).toBe(false);
+  });
+});
+
+describe("newlyEscaped (FS-XWHZP R23, R24)", () => {
+  const out = (id: string, username: string, escape = true) => ({ id, username, escape });
+
+  it("should seed every player already out on the first broadcast, and name none", () => {
+    const seen = newlyEscaped(undefined, [out("me", "Aldric"), out("ally", "Wenna", false)]);
+    expect(seen.escaped).toEqual([]);
+    expect([...seen.said]).toEqual(["me"]);
+  });
+
+  it("should name each player who has escaped since, once", () => {
+    const first = newlyEscaped(undefined, [out("me", "Aldric", false), out("ally", "Wenna", false)]);
+    const second = newlyEscaped(first.said, [out("me", "Aldric", false), out("ally", "Wenna")]);
+    expect(second.escaped).toEqual([{ id: "ally", name: "Wenna" }]);
+    const third = newlyEscaped(second.said, [out("me", "Aldric"), out("ally", "Wenna")]);
+    expect(third.escaped).toEqual([{ id: "me", name: "Aldric" }]);
+  });
+
+  it("should pass over a player with no id", () => {
+    const first = newlyEscaped(undefined, []);
+    expect(newlyEscaped(first.said, [out("", "Nobody")]).escaped).toEqual([]);
   });
 });
