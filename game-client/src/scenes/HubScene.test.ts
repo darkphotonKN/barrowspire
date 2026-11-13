@@ -433,7 +433,6 @@ interface MenuHub {
   events: Emitter;
   menu?: Made;
   dialogue?: unknown;
-  dialogueChoices?: { confirm(): void; dismiss(): void };
   interactKey?: FakeKey;
   confirmKey?: FakeKey;
   choiceKeys?: FakeKey[];
@@ -778,11 +777,16 @@ function hubOnStage() {
     three: keys.three,
     left: keys.left,
     right: keys.right,
+    e: keys.e,
   };
+  // the UI scene comes up with the town's report, before anything there hears a player (FS-TQZ5J R2)
+  ui();
+  /** The UI scene's name for a key the test presses, if it reads that key. */
+  const uiKeyOf = (k: FakeKey) => (Object.keys(uiKeys) as UiKey[]).find((n) => uiKeys[n] === k);
   /** A key pressed since the last frame, then one frame: the UI scene's first, then the town's (Phaser steps the list from the top). */
   const press = (k: FakeKey) => {
     k.justDown = true;
-    const name = (Object.keys(uiKeys) as UiKey[]).find((n) => uiKeys[n] === k);
+    const name = uiKeyOf(k);
     // Esc is the UI scene's alone: the town binds it no more (FS-TQZ5J R21)
     if (k === keys.esc) k.justDown = false;
     if (name) ui().key(name);
@@ -811,12 +815,16 @@ function hubOnStage() {
     answer(keys.e);
   };
   /**
-   * A key read by the dialogue alone: the views above are too bare to ease each frame. Esc is the UI
-   * scene's, which asks the town to close the dialogue (FS-TQZ5J R17).
+   * A key read by the dialogue alone: the views above are too bare to ease each frame. The UI scene's
+   * frame first, which answers a shown card's E, Enter and 1–3 (FS-TQZ5J A2 R31) and Esc's step (R17),
+   * then the town's talk, its own keys guarded by its dialogue being open.
    */
   const answer = (k: FakeKey) => {
     if (k === keys.esc) return ui().key("esc");
     k.justDown = true;
+    const name = uiKeyOf(k);
+    if (name) ui().key(name);
+    else ui().frame();
     hub.offerConversation();
   };
   /** Where the server says the player stands, as each hub state reports it. */
@@ -1467,14 +1475,13 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   });
 
   it("should close the dialogue on ESC while one is open, the UI scene asking the town, and open no menu (FS-TQZ5J R17)", () => {
-    const { hub, keys, press } = hubOnStage();
-    const card = { destroy: vi.fn() };
-    hub.dialogue = card;
-    hub.dialogueChoices = { confirm: vi.fn(), dismiss: vi.fn() };
+    const { hub, keys, press, choice, talkTo } = hubOnStage();
+    talkTo("storekeeper");
+    const farewell = choice("farewell") as Made;
 
     press(keys.esc);
 
-    expect(card.destroy).toHaveBeenCalledTimes(1);
+    expect(farewell.destroyed).toBe(true);
     expect(hub.dialogue).toBeUndefined();
     expect(menuOver(hub)).toBeUndefined();
   });
@@ -2259,7 +2266,9 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
     const queue = choice("queue") as Made & { kind: string; scrollFactor?: number };
     expect(queue.kind).toBe("rectangle");
     expect(queue.scrollFactor).toBe(0);
-    const dialogue = hub.dialogue as Made;
+    expect(hub.dialogue).toBeDefined();
+    // the card, the UI scene's at the popup band (FS-TQZ5J A2 R32)
+    const dialogue = stage.made.find((m) => m.kind === "container" && m.depth === 2000 && !m.destroyed) as Made;
     expect(dialogue.children.map((c) => c.name)).not.toContain("choice-queue");
     expect(stage.made.filter((m) => m.name === "choice-queue" && !m.destroyed)).toHaveLength(1);
 
@@ -2313,6 +2322,128 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
     expect(labels).toContain("Leave  [E]");
     answer(keys.e);
     expect(hub.dialogue).toBeUndefined();
+  });
+});
+
+// FS-TQZ5J Amendment A2 R29–R31 (I-TQZ5J-7): the town hands its dialogue to the UI scene as plain data
+// and acts on the id handed back, as it acted on the choice; the card's keys are the UI scene's while
+// it is shown, the town's own E, Enter and 1–3 guarded by its dialogue, so no key answers twice.
+describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** What the town last showed through the bridge, as the UI scene hears it. */
+  function shownOn(bridge: import("@/ui/uiBridge").UiBridge) {
+    const shown: (import("@/ui/uiBridge").ShownDialogue | null)[] = [];
+    bridge.onScreen({ dialogue: (d) => void shown.push(d) });
+    return shown;
+  }
+
+  it("should show the door as data: its speaker, line and options with their register and whether they can be picked, nothing callable", () => {
+    const { ui, atTheDoor } = hubOnStage();
+    const shown = shownOn(ui().bridge);
+
+    atTheDoor();
+
+    expect(shown).toEqual([
+      {
+        speaker: { name: "The Spire's door" },
+        text: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
+        options: [
+          { id: "solo", label: "Descend alone", register: "actionable", enabled: true },
+          { id: "queue", label: "Wait for company", register: "actionable", enabled: true },
+          { id: "enter", label: "Enter as a party", register: "actionable", enabled: true },
+          { id: "dismiss", label: "Not yet", register: "cancel", enabled: true },
+        ],
+      },
+    ]);
+    expect(JSON.parse(JSON.stringify(shown))).toEqual(shown);
+  });
+
+  it("should answer pickDialogue as the pick did: a staying choice sent once and shown again dimmed", () => {
+    const { ui, atTheDoor, hub } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    atTheDoor();
+    const shown = shownOn(ui().bridge);
+
+    ui().bridge.request({ kind: "pickDialogue", id: "queue" });
+
+    expect(send).toHaveBeenCalledWith(ActionType.Find_Game, expect.anything());
+    expect(hub.dialogue).toBeDefined();
+    expect(shown.at(-1)?.options.map((o) => o.enabled)).toEqual([true, false, true, true]);
+  });
+
+  it("should turn the Elder's page on Go on, and close on Farewell", () => {
+    const { ui, talkTo, hub } = hubOnStage();
+    talkTo("storyteller");
+    const shown = shownOn(ui().bridge);
+
+    ui().bridge.request({ kind: "pickDialogue", id: "on" });
+    expect(shown.at(-1)?.text).toBe(ELDER_TALE[1]);
+    ui().bridge.request({ kind: "pickDialogue", id: "farewell" });
+
+    expect(shown.at(-1)).toBeNull();
+    expect(hub.dialogue).toBeUndefined();
+  });
+
+  it("should ignore an id not on the card it shows now, and a dimmed one", () => {
+    const { ui, atTheDoor, hub } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    atTheDoor();
+    ui().bridge.request({ kind: "pickDialogue", id: "solo" });
+    send.mockClear();
+
+    ui().bridge.request({ kind: "pickDialogue", id: "on" });
+    ui().bridge.request({ kind: "pickDialogue", id: "solo" });
+
+    expect(send).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeDefined();
+  });
+
+  it("should send Wait for company once on 2, the card's key, the town's own handler acting on nothing", () => {
+    const { atTheDoor, keys, press } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    atTheDoor();
+    send.mockClear();
+
+    press(keys.two);
+
+    expect(send.mock.calls.filter((c) => c[0] === ActionType.Find_Game)).toHaveLength(1);
+    expect(send.mock.calls.filter((c) => c[0] === ActionType.StartSolo || c[0] === ActionType.PartyEnter)).toEqual([]);
+  });
+
+  it("should not talk again on the E that closed a resident's card", () => {
+    const { hub, keys, answer, talkTo, ui } = hubOnStage();
+    talkTo("villager");
+    const shown = shownOn(ui().bridge);
+
+    answer(keys.e);
+
+    expect(hub.dialogue).toBeUndefined();
+    expect(shown).toEqual([null]);
+  });
+
+  it("should read and drop the town's own E, Enter and numbers while its card is shown", () => {
+    const { hub, keys, atTheDoor } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    atTheDoor();
+    send.mockClear();
+
+    for (const k of [keys.e, keys.enter, keys.one, keys.two, keys.three]) k.justDown = true;
+    hub.offerConversation();
+
+    expect(send).not.toHaveBeenCalled();
+    for (const k of [keys.e, keys.enter, keys.one, keys.two, keys.three]) expect(k.justDown).toBe(false);
+  });
+
+  it("should take its card down with no sound as the town leaves", () => {
+    const { hub, ui, talkTo, choice } = hubOnStage();
+    talkTo("storekeeper");
+    const farewell = choice("farewell") as Made;
+
+    hub.release("shutdown");
+
+    expect(farewell.destroyed).toBe(true);
+    expect(ui().menu.isOpen()).toBe(false);
   });
 });
 

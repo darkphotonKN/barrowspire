@@ -4,10 +4,12 @@ import { viewport } from "@/render/viewport";
 import { lentFullscreen } from "./gameFullscreen";
 import { HudCorner } from "./HudCorner";
 import { showMenuPanel, type MenuStage } from "./menuPanel";
+import { showDialogueCard } from "./npcDialogue";
 import { openOptionsPanel } from "./optionsPanel";
 import { GameUiBridge, lendUiBridge, reportWorld, uiBridgeOf, type UiBridge, type World, type WorldSide, type WorldUi } from "./uiBridge";
 import { UiCornerRow } from "./uiSceneCorner";
-import { UiMenuSlot, type MenuKeysPressed, type SlotPanel } from "./uiSceneMenu";
+import { UiDialogueSlot, handKeys, type UiKeysPressed } from "./uiSceneDialogue";
+import { UiMenuSlot, type SlotPanel } from "./uiSceneMenu";
 
 /** A world scene as the UI scene's tests reach it: its game's registry, its end, its UI and what it reports. */
 interface WorldUnderTest {
@@ -18,17 +20,19 @@ interface WorldUnderTest {
 }
 
 /** The UI scene's keys a test presses, by name. */
-export type UiKey = "esc" | "enter" | "one" | "two" | "three" | "left" | "right";
+export type UiKey = "esc" | "enter" | "one" | "two" | "three" | "left" | "right" | "e";
 
 /** The UI scene's side of a world under test, built on the world's own stage. */
 export interface UiSceneOnStage {
   bridge: UiBridge;
   menu: UiMenuSlot;
+  /** The town's dialogue card's slot (FS-TQZ5J A2 R29–R32). */
+  dialogue: UiDialogueSlot;
   row?: UiCornerRow;
   /** The panel standing in the menu slot, as the stage made it, while the slot is filled. */
   panel(): Phaser.GameObjects.Container | undefined;
   /** One frame of the UI scene, before the world's update (Phaser steps the list from the top). */
-  frame(pressed?: Partial<MenuKeysPressed>): void;
+  frame(pressed?: Partial<UiKeysPressed>): void;
   /** A frame with this key pressed since the last. */
   key(name: UiKey): void;
 }
@@ -52,8 +56,9 @@ export function menuOver(scene: object): Record<string, unknown> | undefined {
 }
 
 /** The keys pressed, as the UI scene hands them to its slot, for one named key. */
-function pressedFor(name: UiKey): Partial<MenuKeysPressed> {
+function pressedFor(name: UiKey): Partial<UiKeysPressed> {
   if (name === "esc") return { esc: true };
+  if (name === "e") return { e: true };
   if (name === "enter") return { enter: true };
   if (name === "left") return { nudge: -1 };
   if (name === "right") return { nudge: 1 };
@@ -62,9 +67,10 @@ function pressedFor(name: UiKey): Partial<MenuKeysPressed> {
 
 /**
  * Test-only: the UI scene's interface for `scene`'s world, built as the UI scene builds it (FS-TQZ5J
- * R13, R16), on `scene`'s own stage so a test finds the menu's rows and the row's plates where it
- * found the world's own: the menu slot drawn with the shared chrome, and (unless `row: false`) the
- * corner row, its Menu the slot's. Where the world's game was lent no bridge yet, lends one (with no
+ * R13, R16, A2 R29), on `scene`'s own stage so a test finds the menu's rows, the dialogue card's rows and
+ * the row's plates where it found the world's own: the menu slot drawn with the shared chrome, the
+ * dialogue card the world shows through the bridge, and (unless `row: false`) the corner row, its Menu
+ * the slot's. Where the world's game was lent no bridge yet, lends one (with no
  * sounds; `hearWorld` lends one with them); where the world has not reported, reports it as its
  * create does (`this.ui = reportWorld(this, world, this.worldSide())`, pinned in UIScene.test.ts).
  * The slot yields and the row is rebuilt on each report, as the UI scene's listener does. One side per
@@ -99,14 +105,16 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     musicLevel: () => storedMusicLevel(browserMusicStore),
     fullscreen: () => lentFullscreen(s.registry),
   });
-  const frame = (pressed: Partial<MenuKeysPressed> = {}) => {
-    menu.keys({ esc: false, enter: false, numbered: -1, ...pressed });
+  const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
+  bridge.onScreen({ dialogue: (shown) => dialogue.show(shown) });
+  const frame = (pressed: Partial<UiKeysPressed> = {}) => {
+    handKeys({ esc: false, enter: false, e: false, numbered: -1, ...pressed }, dialogue, menu);
     menu.sync();
-    side.row?.sync();
   };
   const side: UiSceneOnStage = {
     bridge,
     menu,
+    dialogue,
     row: options.row === false ? undefined : cornerRow(scene, bridge, menu),
     panel: () => (menu.isOpen() ? (standing?.container as Phaser.GameObjects.Container | undefined) : undefined),
     frame,
@@ -114,6 +122,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
   };
   bridge.onWorld((report) => {
     menu.sync();
+    dialogue.sync();
     side.row?.show(report);
   });
   sides.set(scene, side);

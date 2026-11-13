@@ -29,7 +29,7 @@ vi.mock("phaser", () => {
           key.justDown = false;
           return pressed;
         },
-        KeyCodes: { ESC: 27, ENTER: 13, ONE: 49, TWO: 50, THREE: 51, LEFT: 37, RIGHT: 39 },
+        KeyCodes: { ESC: 27, ENTER: 13, ONE: 49, TWO: 50, THREE: 51, LEFT: 37, RIGHT: 39, E: 69 },
       },
     },
   };
@@ -209,12 +209,17 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     },
   );
 
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts", "./UIScene.ts", "../ui/uiSceneMenu.ts"])(
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts", "./UIScene.ts", "../ui/uiSceneMenu.ts", "../ui/uiSceneDialogue.ts"])(
     "should have %s stop no key event to settle who answers it (R21)",
     (file) => {
       expect(source(file)).not.toMatch(/stopPropagation|stopImmediatePropagation/);
     },
   );
+
+  // FS-TQZ5J A2 § Acceptance Criteria (I-TQZ5J-7): the town no longer draws its dialogue card
+  it("should have the town draw no dialogue card of its own: it shows its dialogue through the bridge", () => {
+    expect(source("./HubScene.ts")).not.toMatch(/showDialogueCard|npcDialogue/);
+  });
 
   it("should have the UI scene import no other scene", () => {
     const imports = source("./UIScene.ts").match(/from "[^"]+"/g) ?? [];
@@ -256,7 +261,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
         windows: () => windows,
         blockers: () => blockers,
         facts: () => facts,
-        answer: (request) => void asked.push(request.kind),
+        answer: (request) => void asked.push(request.kind === "pickDialogue" ? `pickDialogue ${request.id}` : request.kind),
       });
     if (world) report(world);
     const list: unknown[] = [];
@@ -383,12 +388,12 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     expect(bridge.ui.menuOpen).toBe(false);
   });
 
-  it("should hold every icon, Menu too, on its update while the town reports a dialogue open (its answers lie under the row)", () => {
+  it("should hold no icon on its update while the town reports a dialogue open: the card over the row takes its rows by depth (A2 R32)", () => {
     const { scene, blockers, live } = created("hub");
     blockers.dialogue = true;
     scene.update();
 
-    expect(live().every((z) => !z.enabled)).toBe(true);
+    expect(live().every((z) => z.enabled)).toBe(true);
   });
 
   it("should stop hearing the worlds with the game: a report after its destroy builds nothing (R4)", () => {
@@ -443,7 +448,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     const ENTER = 13;
     const ONE = 49;
 
-    it("should add Esc captured, and Enter, 1–3 and ←/→ uncaptured: the worlds that use those capture them (R21)", () => {
+    it("should add Esc captured, and Enter, 1–3, ←/→ and E uncaptured: the worlds that use those capture them (R21, A2 R31)", () => {
       const { keys } = created("hub");
 
       expect([...keys.entries()].map(([code, key]) => [code, key.captured])).toEqual([
@@ -454,6 +459,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
         [51, false],
         [37, false],
         [39, false],
+        [69, false],
       ]);
     });
 
@@ -506,6 +512,72 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
       expect(bridge.ui.menuOpen).toBe(false);
       expect(plate("menu")).toBeUndefined();
+    });
+  });
+
+  // FS-TQZ5J Amendment A2 R29–R32 (I-TQZ5J-7): the town's NPC dialogue card is the UI scene's, drawn
+  // from the data the town shows through the bridge (uiSceneDialogue.ts holds its rules); E, Enter and
+  // 1–3 on a shown card are read here once a frame, as the menu's keys are; Esc's step dismisses it.
+  describe("the UI scene's dialogue card and its keys (FS-TQZ5J A2 R29–R32; I-TQZ5J-7)", () => {
+    const ENTER = 13;
+    const TWO = 50;
+    const E = 69;
+    const ESC = 27;
+    const door = {
+      speaker: { name: "The Spire's door" },
+      text: "The Spire's door stands open.",
+      options: [
+        { id: "solo", label: "Descend alone", register: "actionable" as const, enabled: true },
+        { id: "queue", label: "Wait for company", register: "actionable" as const, enabled: true },
+        { id: "dismiss", label: "Not yet", register: "cancel" as const, enabled: true },
+      ],
+    };
+
+    it("should pick the shown card's first row on E or Enter read in its update, and its second on 2 (A2 R31)", () => {
+      const { bridge, blockers, asked, press } = created("hub");
+      bridge.showDialogue(door);
+      blockers.dialogue = true;
+
+      press(E);
+      press(ENTER);
+      press(TWO);
+
+      expect(asked).toEqual(["pickDialogue solo", "pickDialogue solo", "pickDialogue queue"]);
+    });
+
+    it("should act on E, Enter or a number with no card shown not at all", () => {
+      const { asked, press } = created("hub");
+
+      press(E);
+      press(ENTER);
+      press(TWO);
+
+      expect(asked).toEqual([]);
+    });
+
+    it("should ask the town to close its card on Esc, and open no menu (R17)", () => {
+      const { bridge, blockers, asked, press } = created("hub");
+      bridge.showDialogue(door);
+      blockers.dialogue = true;
+
+      press(ESC);
+
+      expect(asked).toEqual(["close"]);
+      expect(bridge.ui.menuOpen).toBe(false);
+    });
+
+    it("should take the card down as the town closes it, and as the town leaves: its keys then answer nothing", () => {
+      const { bridge, report, asked, press } = created("hub");
+      bridge.showDialogue(door);
+      bridge.closeDialogue();
+      press(E);
+      bridge.showDialogue(door);
+      bridge.left("hub");
+      report("hub");
+
+      press(E);
+
+      expect(asked).toEqual([]);
     });
   });
 });

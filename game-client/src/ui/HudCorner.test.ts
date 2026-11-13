@@ -17,10 +17,6 @@ interface FakeZone {
   height: number;
   depth?: number;
   handCursor?: boolean;
-  /** Whether Phaser would hand it the pointer: off after `disableInteractive`, on again after `setInteractive`. */
-  enabled?: boolean;
-  /** Whether its last `disableInteractive` asked for the cursor back. */
-  cursorReset?: boolean;
   handlers: Record<string, () => void>;
   destroyed: boolean;
 }
@@ -199,12 +195,7 @@ function fakeScene(texture: TextureMode = "none") {
         setOrigin: () => self,
         setScrollFactor: () => self,
         setDepth: (d: number) => ((z.depth = d), self),
-        // Phaser's setInteractive on an object already interactive only enables it again, its config kept
-        // (Phaser 4.2.1 InputPlugin.enable)
-        setInteractive: (o?: { useHandCursor?: boolean }) => (
-          z.enabled === undefined && (z.handCursor = !!o?.useHandCursor), (z.enabled = true), self
-        ),
-        disableInteractive: (resetCursor?: boolean) => ((z.enabled = false), (z.cursorReset = !!resetCursor), self),
+        setInteractive: (o?: { useHandCursor?: boolean }) => ((z.handCursor = !!o?.useHandCursor), self),
         setPosition: (nx: number, ny: number) => ((z.x = nx), (z.y = ny), self),
         on: (event: string, fn: () => void) => ((z.handlers[event] = fn), self),
         destroy: () => void (z.destroyed = true),
@@ -357,104 +348,6 @@ describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {
     expect(env.zones.every((z) => z.destroyed)).toBe(true);
     expect(env.graphics.every((g) => g.destroyed)).toBe(true);
     expect(env.liveTexts()).toHaveLength(0);
-  });
-});
-
-// FS-TQZ5J I-TQZ5J-3: the row stands in the UI scene, over what the world draws, so where the world
-// keeps the screen the row holds the icons it names, as the world's own pieces over the row held them
-// when the row was the world's: the town's dialogue every icon (its answers' hit areas lie under the
-// row, until the dialogue moves, I-TQZ5J-7); the ESC menu, the UI scene's own since I-TQZ5J-4, holds
-// them by its blocker in the same scene (FS-3EBCA R18). A held icon takes no hover,
-// label, brightening or press, and Phaser hands its pointer on to the world under it.
-describe("HudCorner held where the world keeps the screen (FS-3EBCA R18; FS-TQZ5J I-TQZ5J-3)", () => {
-  const all = (): CornerIconSpec[] => [
-    { icon: "menu", press: vi.fn() },
-    { icon: "inventory", press: vi.fn() },
-    { icon: "character", press: vi.fn() },
-    { icon: "party", press: vi.fn() },
-    { icon: "mail", greyed: true },
-  ];
-  const BUT_MENU = ["inventory", "character", "party", "mail"] as const;
-  const EVERY = ["menu", ...BUT_MENU] as const;
-
-  it("should hand Phaser's pointer on from each held icon, and take it back once let go", () => {
-    const env = setup(all());
-    env.corner.hold(BUT_MENU);
-    for (const icon of BUT_MENU) expect(env.zoneAt(icon).enabled).toBe(false);
-    expect(env.zoneAt("menu").enabled).toBe(true);
-
-    env.corner.hold([]);
-    for (const icon of EVERY) expect(env.zoneAt(icon).enabled).toBe(true);
-    // the hand comes back with the plate: its config is kept
-    expect(env.zoneAt("inventory").handCursor).toBe(true);
-    expect(env.zoneAt("mail").handCursor).toBe(false);
-  });
-
-  it("should neither light, label nor press a held icon, and still light, label and press one not held", () => {
-    const icons = all();
-    const env = setup(icons);
-    env.corner.hold(BUT_MENU);
-    const strokes = () => env.graphics.flatMap((g) => g.strokes);
-
-    env.zoneAt("inventory").handlers.pointerover();
-    env.zoneAt("inventory").handlers.pointerdown();
-    expect(strokes()).not.toContain(palette.interactableBright);
-    expect(env.liveTexts()).toHaveLength(0);
-    expect(icons[1].press).not.toHaveBeenCalled();
-
-    env.zoneAt("menu").handlers.pointerover();
-    env.zoneAt("menu").handlers.pointerdown();
-    expect(strokes()).toContain(palette.interactableBright);
-    expect(env.liveTexts().map((t) => t.words)).toEqual(["Menu (Esc)"]);
-    expect(icons[0].press).toHaveBeenCalledTimes(1);
-  });
-
-  it("should hold Menu too when it is named: no hover, no label, no press, its pointer handed on", () => {
-    const icons = all();
-    const env = setup(icons);
-    env.corner.hold(EVERY);
-
-    env.zoneAt("menu").handlers.pointerover();
-    env.zoneAt("menu").handlers.pointerdown();
-
-    expect(env.zoneAt("menu").enabled).toBe(false);
-    expect(env.liveTexts()).toHaveLength(0);
-    expect(icons[0].press).not.toHaveBeenCalled();
-  });
-
-  it("should move the hold from one set to another: Menu let go as the rest stay held", () => {
-    const env = setup(all());
-    env.corner.hold(EVERY);
-    env.corner.hold(BUT_MENU);
-
-    expect(env.zoneAt("menu").enabled).toBe(true);
-    expect(env.zoneAt("party").enabled).toBe(false);
-  });
-
-  it("should put out a lit icon and take its label down as the hold comes, the cursor given back for it alone", () => {
-    const env = setup(all());
-    env.zoneAt("party").handlers.pointerover();
-    expect(env.liveTexts().map((t) => t.words)).toEqual(["Party (T)"]);
-
-    env.corner.hold(BUT_MENU);
-
-    expect(env.liveTexts()).toHaveLength(0);
-    expect(env.graphics.flatMap((g) => g.strokes)).not.toContain(palette.interactableBright);
-    expect(env.zoneAt("party").cursorReset).toBe(true);
-    expect(env.zoneAt("inventory").cursorReset).toBe(false);
-  });
-
-  it("should answer a held icon again once let go", () => {
-    const icons = all();
-    const env = setup(icons);
-    env.corner.hold(BUT_MENU);
-    env.corner.hold([]);
-
-    env.zoneAt("character").handlers.pointerover();
-    env.zoneAt("character").handlers.pointerdown();
-
-    expect(env.liveTexts().map((t) => t.words)).toEqual(["Character (C)"]);
-    expect(icons[2].press).toHaveBeenCalledTimes(1);
   });
 });
 

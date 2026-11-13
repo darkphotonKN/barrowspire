@@ -40,6 +40,9 @@ function recording(): UiBridge & { heard: string[] } {
     request: (request) => void heard.push(`request ${request.kind}`),
     moved: (_pointer, onUi) => void heard.push(`moved ${onUi ? "over the UI" : "off it"}`),
     onWorld: () => () => {},
+    showDialogue: (dialogue) => void heard.push(`showDialogue ${dialogue.text}`),
+    closeDialogue: () => void heard.push("closeDialogue"),
+    onScreen: () => () => {},
   };
 }
 
@@ -331,6 +334,55 @@ describe("the UI's state and the world's changes (FS-TQZ5J R9, R10)", () => {
     expect(ui.ui.menuOpen).toBe(true);
     expect(NO_UI.ui.menuOpen).toBe(false);
     expect(() => NO_UI.changed()).not.toThrow();
+  });
+});
+
+// FS-TQZ5J Amendment A2 R29, R30 (I-TQZ5J-7): the town hands the UI scene its dialogue as plain data,
+// and takes it down, through the bridge; the UI scene hears it at once.
+describe("the dialogue the world shows, told to the UI scene (FS-TQZ5J A2 R29)", () => {
+  const card = {
+    speaker: { name: "The Spire's door" },
+    text: "The Spire's door stands open.",
+    options: [{ id: "dismiss", label: "Not yet", register: "cancel" as const, enabled: true }],
+  };
+
+  it("should tell each screen listener a dialogue shown and its close, at once, until it lets go", () => {
+    const bridge = new GameUiBridge();
+    const told: (string | null)[] = [];
+    const stop = bridge.onScreen({ dialogue: (d) => void told.push(d?.text ?? null) });
+
+    bridge.showDialogue(card);
+    bridge.closeDialogue();
+    stop();
+    bridge.showDialogue(card);
+
+    expect(told).toEqual(["The Spire's door stands open.", null]);
+  });
+
+  it("should hand a world its bridge to show a dialogue through, and a world lent none a show that draws nothing", () => {
+    const bridge = new GameUiBridge();
+    const told: (string | null)[] = [];
+    bridge.onScreen({ dialogue: (d) => void told.push(d?.text ?? null) });
+    const scene = { registry: registry(), events: new EventEmitter() };
+    lendUiBridge(scene.registry, bridge);
+
+    reportWorld(scene, "hub", side()).showDialogue(card);
+
+    expect(told).toEqual(["The Spire's door stands open."]);
+    expect(() => (NO_UI.showDialogue(card), NO_UI.closeDialogue())).not.toThrow();
+  });
+
+  it("should carry only data: no function in the dialogue or its pick (ADR-0081)", () => {
+    const bridge = new GameUiBridge();
+    const shown: unknown[] = [];
+    bridge.onScreen({ dialogue: (d) => void shown.push(d) });
+    const picked: UiRequest[] = [];
+    bridge.report({ world: "hub", ...side(), answer: (r) => void picked.push(r) });
+
+    bridge.showDialogue(card);
+    bridge.request({ kind: "pickDialogue", id: "dismiss" });
+
+    expect(JSON.parse(JSON.stringify([shown, picked]))).toEqual([shown, picked]);
   });
 });
 

@@ -13,7 +13,6 @@ import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 /** What the row was built with, and what was done to it since. */
 interface BuiltRow {
   icons: CornerIconSpec[];
-  holds: string[][];
   relayouts: number;
   destroyed: boolean;
 }
@@ -61,10 +60,9 @@ function onBridge() {
   const row = new UiCornerRow(
     bridge,
     (icons): CornerRow => {
-      const b: BuiltRow = { icons, holds: [], relayouts: 0, destroyed: false };
+      const b: BuiltRow = { icons, relayouts: 0, destroyed: false };
       built.push(b);
       return {
-        hold: (held) => void b.holds.push([...held]),
         relayout: () => void b.relayouts++,
         destroy: () => void (b.destroyed = true),
         covers: (_x, _y, icon) => icon === "menu",
@@ -242,10 +240,10 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
 
 // While the UI scene's menu slot is filled, every window icon is refused and only Menu answers
 // (FS-3EBCA R18: 「menu開啟時其他都不能按」): the slot's blocker, in the same scene and over the row,
-// takes their hovers and presses, so the row holds nothing for it (slice 3's stopgap is gone). Where
-// the town keeps the screen with its dialogue, whose answers' hit areas lie under the row, the row
-// holds every icon until the dialogue moves into the UI scene (I-TQZ5J-7).
-describe("the UI scene's corner row where the UI's menu or the world keeps the screen (FS-3EBCA R18; FS-TQZ5J R14)", () => {
+// takes their hovers and presses. Under the town's dialogue the card, in the same scene since
+// I-TQZ5J-7, stands over the row at the popup band and takes its rows' presses by depth, so the row
+// holds nothing for it either (FS-TQZ5J A2 R32): what answers under it is what the town refuses (R14).
+describe("the UI scene's corner row where the UI's menu or the world keeps the screen (FS-3EBCA R18; FS-TQZ5J R14, A2 R32)", () => {
   it("should send nothing on Inventory, Character or Party while the UI's menu slot is filled, and still hand on Menu", () => {
     const { bridge, row, press, menuPresses } = onBridge();
     const world = aWorld("run");
@@ -261,34 +259,23 @@ describe("the UI scene's corner row where the UI's menu or the world keeps the s
     expect(bridge.ui.menuOpen).toBe(false);
   });
 
-  it("should hold nothing while the menu slot is filled: its blocker over the row is the menu's own (FS-3EBCA R18)", () => {
-    const { bridge, row, press, live } = onBridge();
-    bridge.report(aWorld("hub").report);
-    row.show(bridge.world);
-
-    press("menu");
-    row.sync();
-
-    expect(live()[0].holds).toEqual([[]]);
-  });
-
-  it("should hold every icon, Menu too, while the town reports a dialogue open, and let them go as it closes", () => {
-    const { bridge, row, live } = onBridge();
+  it("should hold no icon under the town's dialogue: Inventory and Character sent, Party refused, Menu handed on (A2 R32)", () => {
+    const { bridge, row, press, menuPresses } = onBridge();
     const world = aWorld("hub");
     bridge.report(world.report);
     row.show(bridge.world);
-
     world.state.dialogue = true;
-    row.sync();
-    world.state.dialogue = false;
-    row.sync();
 
-    expect(live()[0].holds).toEqual([[], ["menu", "inventory", "character", "party"], []]);
-  });
+    press("inventory");
+    press("character");
+    press("party");
+    press("menu");
 
-  it("should sync nothing with no row standing", () => {
-    const { row } = onBridge();
-
-    expect(() => row.sync()).not.toThrow();
+    expect(world.asked).toEqual([
+      { kind: "toggle", window: "inventory" },
+      { kind: "toggle", window: "character" },
+    ]);
+    expect(menuPresses).toHaveLength(1);
+    expect("sync" in row).toBe(false);
   });
 });
