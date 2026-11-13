@@ -115,9 +115,15 @@ export function drawWaxSeal(
  */
 export const GLYPH_LINE_W = 2.25;
 
-/** The envelope's lines inside the icon's 58 × 46 rect. */
+/** The envelope's lines: 36 × 25, centred across the icon's rect, 11 px down from its top. */
+const ENVELOPE_LINES = { width: 36, height: 25, top: 11 };
 function envelopeRect(f: Rect): Rect {
-  return { x: f.x + 11, y: f.y + 11, width: f.width - 22, height: f.height - 21 };
+  return {
+    x: f.x + (f.width - ENVELOPE_LINES.width) / 2,
+    y: f.y + ENVELOPE_LINES.top,
+    width: ENVELOPE_LINES.width,
+    height: ENVELOPE_LINES.height,
+  };
 }
 
 /** The flap's point on an envelope drawn in rect `f`: where its two lines meet. */

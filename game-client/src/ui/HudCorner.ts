@@ -1,7 +1,8 @@
 /**
  * The corner row (FS-3EBCA): the panel icons in the bottom-right corner of every world, from the
  * right Menu (a riveted gear: one Esc press), Inventory (a haversack: the inventory), Character (a
- * bust with pauldrons: the character panel), Party (two such busts: the party panel) and the Mailbox.
+ * strapped bust with pauldrons: the character panel), Party (three busts: the party panel) and the
+ * Mailbox.
  * In the town the Mailbox is the mailbox's own envelope (`MailboxEnvelope`, FS-1GZGD § Change),
  * which this row leaves its slot to; elsewhere it is drawn here, greyed (R9).
  *
@@ -155,7 +156,7 @@ export class HudCorner {
     const cy = f.y + f.height / 2;
     if (icon.spec.icon === "menu") drawGear(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "inventory") drawBackpack(g, cx, cy, ink, alpha);
-    else if (icon.spec.icon === "character") drawBust(g, cx, cy + 1, 1, ink, alpha);
+    else if (icon.spec.icon === "character") drawCharacter(g, cx, cy + 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
   }
 }
@@ -460,14 +461,54 @@ const PAULDRONS: Pt[][] = [
 const COLLAR_R = 6.2;
 const COLLAR: Pt[] = Array.from({ length: 17 }, (_, i) => polar(deg(222) + (deg(96) * i) / 16, COLLAR_R));
 
+/**
+ * The Character's detail (FS-QHN87 round 2, the owner 2026-11-13: 「角色畫一個上半身頭像 加一點細節」): a
+ * baldric slung from the left shoulder down across the chest to the right of the foot, a small
+ * buckle on it, and a rivet on each pauldron. It takes the collar's place.
+ */
+const STRAP: [Pt, Pt] = [polar(PAULDRON.neck, SHOULDERS.r), [7, SHOULDERS.y]];
+/** The buckle: this far down the strap, this long along it and this wide across it. */
+const BUCKLE = { at: 0.7, long: 5, wide: 4.4 };
+const BUCKLE_SHAPE: Pt[] = (() => {
+  const [[x0, y0], [x1, y1]] = STRAP;
+  const len = Math.hypot(x1 - x0, y1 - y0);
+  const along: Pt = [(x1 - x0) / len, (y1 - y0) / len];
+  const across: Pt = [-along[1], along[0]];
+  const mid: Pt = [x0 + (x1 - x0) * BUCKLE.at, y0 + (y1 - y0) * BUCKLE.at];
+  return [
+    [-1, -1],
+    [1, -1],
+    [1, 1],
+    [-1, 1],
+  ].map(([a, c]) => [
+    mid[0] + (along[0] * a * BUCKLE.long) / 2 + (across[0] * c * BUCKLE.wide) / 2,
+    mid[1] + (along[1] * a * BUCKLE.long) / 2 + (across[1] * c * BUCKLE.wide) / 2,
+  ] as Pt);
+})();
+/** A rivet on each pauldron: at its middle, a little inside the shoulders' curve. */
+const RIVETS_AT = [(PAULDRON.arm + PAULDRON.neck) / 2, mirrored((PAULDRON.arm + PAULDRON.neck) / 2)].map((a) =>
+  polar(a, SHOULDERS.r - 1.2),
+);
+const BUST_RIVET_R = 0.6;
+
+/** What a bust wears: its collar (on by default), and the Character's strap, buckle and rivets. */
+export interface BustDress {
+  collar?: boolean;
+  strap?: boolean;
+}
+
 /** A bust laid at (cx, cy), scale s: its head, and its lines in screen px. */
-function bustAt(cx: number, cy: number, s: number) {
+function bustAt(cx: number, cy: number, s: number, dress: BustDress = {}) {
   const place = (ps: readonly Pt[]) => ps.map(([x, y]) => [cx + x * s, cy + y * s] as Pt);
+  const strap = dress.strap ? place(STRAP) : undefined;
   return {
     head: { x: cx, y: cy + HEAD.y * s, r: HEAD.r * s },
     shoulders: { x: cx, y: cy + SHOULDERS.y * s, r: SHOULDERS.r * s },
-    lines: [place(SHOULDER_LINE), place(COLLAR)],
+    lines: [place(SHOULDER_LINE), ...(dress.collar === false ? [] : [place(COLLAR)])],
     pauldrons: PAULDRONS.map(place),
+    strap,
+    buckle: strap && place(BUCKLE_SHAPE),
+    rivets: dress.strap ? place(RIVETS_AT) : [],
   };
 }
 
@@ -538,9 +579,17 @@ function onBust(b: ReturnType<typeof bustAt>, x: number, y: number): boolean {
   return b.pauldrons.some((plate) => covers(plate, x, y));
 }
 
+/** Where a bust stands, and at what scale. */
+interface BustPlace {
+  cx: number;
+  cy: number;
+  s: number;
+}
+
 /**
- * A bust (FS-3EBCA R3; FS-QHN87 round 1), `s` its scale: a head over the curve of the shoulders, a
- * rounded pauldron over each shoulder and a collar at the neck; no face. With `front`, the bust
+ * A bust (FS-3EBCA R3; FS-QHN87 rounds 1 and 2), `s` its scale: a head over the curve of the
+ * shoulders, a rounded pauldron over each shoulder and a collar at the neck, and, dressed with a
+ * strap, a baldric with its buckle and a rivet on each pauldron; no face. With `front`, the bust
  * standing in front of this one, this one's lines are left undrawn where that one covers them, its
  * line's width included (FS-J1672 R3): nothing is filled, so no dark patch is left on the world.
  */
@@ -551,27 +600,58 @@ export function drawBust(
   s: number,
   ink: number,
   alpha: number,
-  front?: { cx: number; cy: number; s: number },
+  dress: BustDress = {},
+  front?: BustPlace,
 ): void {
-  const b = bustAt(cx, cy, s);
+  const b = bustAt(cx, cy, s, dress);
   const cover = front && bustAt(front.cx, front.cy, front.s);
+  const strap = b.strap;
   const hidden = (p: Pt) => (cover ? onBust(cover, p[0], p[1]) : false);
   g.lineStyle(LINE_W, ink, alpha);
   const head = Array.from({ length: 73 }, (_, i): Pt => {
     const a = (i / 72) * 2 * Math.PI;
     return [b.head.x + Math.cos(a) * b.head.r, b.head.y + Math.sin(a) * b.head.r];
   });
-  // the head is a circle while nothing covers it, as the Party's back one stands clear
+  // the head is a circle while nothing covers it
   if (head.some(hidden)) for (const run of uncovered(head.slice(0, -1), true, hidden)) strokeLine(g, run.points, run.closed);
   else g.strokeCircle(b.head.x, b.head.y, b.head.r);
   for (const line of b.lines) {
     for (const run of uncovered(line, false, hidden)) strokeLine(g, run.points, run.closed);
   }
+  // the strap over the chest, its buckle on it
+  if (strap && b.buckle) {
+    g.lineBetween(strap[0][0], strap[0][1], strap[1][0], strap[1][1]);
+    strokeLine(g, b.buckle, true);
+  }
+  for (const [x, y] of b.rivets) g.strokeCircle(x, y, BUST_RIVET_R * s);
 }
 
-/** Two busts (FS-QHN87 round 1): one stepped behind and above the other, the front one over it. */
+/** The Character (FS-QHN87 round 2): one bust, strapped. */
+export function drawCharacter(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
+  // the strap takes the collar's place: crossing it, it left only specks of it at render scale 1
+  drawBust(g, cx, cy, 1, ink, alpha, { strap: true, collar: false });
+}
+
+/**
+ * Where Party's three busts stand round the icon's middle (FS-QHN87 round 2, the owner 2026-11-13:
+ * 「組隊畫三個上半身頭像」): one in front in the middle, two behind it at the left and right, higher and
+ * smaller, partly hidden by it.
+ */
+export const PARTY_BUSTS = {
+  front: { dx: 0, dy: 1.6, s: 0.8 },
+  back: [
+    { dx: -10, dy: -2.6, s: 0.66 },
+    { dx: 10, dy: -2.6, s: 0.66 },
+  ],
+};
+
+/** Three busts (FS-QHN87 round 2): the front one whole, the two behind it cut where it covers them. */
 export function drawParty(g: Ink, cx: number, cy: number, ink: number, alpha: number): void {
-  const front = { cx: cx + 5, cy: cy + 2, s: 0.85 };
-  drawBust(g, cx - 6, cy - 2, 0.8, ink, alpha, front);
+  const at = ({ dx, dy, s }: { dx: number; dy: number; s: number }): BustPlace => ({ cx: cx + dx, cy: cy + dy, s });
+  const front = at(PARTY_BUSTS.front);
+  for (const back of PARTY_BUSTS.back) {
+    const b = at(back);
+    drawBust(g, b.cx, b.cy, b.s, ink, alpha, { collar: false }, front);
+  }
   drawBust(g, front.cx, front.cy, front.s, ink, alpha);
 }

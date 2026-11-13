@@ -323,7 +323,7 @@ describe("MailboxEnvelope (FS-J1672 R8, R9: the count badge)", () => {
     const [ground] = env.badge();
     expect(env.badge()).toHaveLength(1);
     expect(ground.fill).toEqual([palette.ember, 1]);
-    expect(centreOf(ground.args)).toEqual({ x: 789, y: 669 });
+    expect(centreOf(ground.args)).toEqual({ x: 831, y: 669 });
     // 14 px tall, its ends fully round; as wide as its count plus 4 px a side, never under 14
     const [, , w, h, radius] = ground.args;
     expect(h).toBe(14);
@@ -332,20 +332,20 @@ describe("MailboxEnvelope (FS-J1672 R8, R9: the count badge)", () => {
     const rim = env.rim();
     expect(rim.lines).toEqual(new Set([JSON.stringify([1, palette.interactableBright, 0.85])]));
     const rimCentre = centreOf(rim.box);
-    expect(rimCentre.x).toBeCloseTo(789, 9);
+    expect(rimCentre.x).toBeCloseTo(831, 9);
     expect(rimCentre.y).toBeCloseTo(669, 9);
 
     const [count] = env.live();
-    expect(count).toMatchObject({ words: "3", x: 789, y: 669, origin: 0.5 });
+    expect(count).toMatchObject({ words: "3", x: 831, y: 669, origin: 0.5 });
     expect(count.style).toMatchObject({ fontSize: "11px", fontStyle: "bold", color: toCss(palette.hudText) });
   });
 
-  it("should stand the badge at (989, 669) when the view is 1280 wide", () => {
+  it("should stand the badge at (1031, 669) when the view is 1280 wide", () => {
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
     const env = setup();
     env.waiting(3);
-    expect(centreOf(env.badge()[0].args)).toEqual({ x: 989, y: 669 });
-    expect(env.live()[0]).toMatchObject({ x: 989, y: 669 });
+    expect(centreOf(env.badge()[0].args)).toEqual({ x: 1031, y: 669 });
+    expect(env.live()[0]).toMatchObject({ x: 1031, y: 669 });
   });
 
   it("should follow the view to 1280 on a relayout", () => {
@@ -353,8 +353,8 @@ describe("MailboxEnvelope (FS-J1672 R8, R9: the count badge)", () => {
     env.waiting(3);
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
     env.envelope.relayout();
-    expect(env.badge().map((s) => centreOf(s.args))).toEqual([{ x: 989, y: 669 }]);
-    expect(env.live().map((t) => [t.words, t.x, t.y])).toEqual([["3", 989, 669]]);
+    expect(env.badge().map((s) => centreOf(s.args))).toEqual([{ x: 1031, y: 669 }]);
+    expect(env.live().map((t) => [t.words, t.x, t.y])).toEqual([["3", 1031, 669]]);
   });
 
   it("should read 99 for more, and move left just far enough to keep the badge, rim included, in the rect", () => {
@@ -367,13 +367,13 @@ describe("MailboxEnvelope (FS-J1672 R8, R9: the count badge)", () => {
     const parts = [...env.badge().map((s) => s.args), [rx - 0.5, ry - 0.5, rw + 1, rh + 1]];
     const right = Math.max(...parts.map(([x, , w]) => x + w));
     for (const [x, y, w, h] of parts) {
-      expect(x).toBeGreaterThanOrEqual(742);
+      expect(x).toBeGreaterThanOrEqual(786);
       expect(y).toBeGreaterThanOrEqual(658);
-      expect(x + w).toBeLessThanOrEqual(742 + 58);
+      expect(x + w).toBeLessThanOrEqual(786 + 54);
       expect(y + h).toBeLessThanOrEqual(658 + 46);
     }
     // just far enough: its right edge on the rect's
-    expect(right).toBe(742 + 58);
+    expect(right).toBe(786 + 54);
     expect(count.x).toBe(centreOf(env.badge()[0].args).x);
   });
 
@@ -419,7 +419,7 @@ describe("MailboxEnvelope (FS-J1672 R9: the badge's rim strokes no line of no le
   it("should draw a one-digit rim as a circle of half the rim's height", () => {
     const env = setup(6);
     env.waiting(3);
-    expect(env.rim().ops.map((s) => [s.m, ...s.args])).toEqual([["strokeCircle", 789, 669, 5.5]]);
+    expect(env.rim().ops.map((s) => [s.m, ...s.args])).toEqual([["strokeCircle", 831, 669, 5.5]]);
   });
 });
 
@@ -433,7 +433,7 @@ describe("MailboxEnvelope (FS-J1672 R10: the pulse stays)", () => {
     expect(tween).toMatchObject({ yoyo: true, repeat: 2 });
     // the glow is drawn round the former plate's rect: its tightest ring one px outside it
     const rings = env.glow().ops.filter((o) => o.m === "fillRoundedRect").map((o) => o.args);
-    expect(rings).toContainEqual([741, 657, 60, 48, 7]);
+    expect(rings).toContainEqual([785, 657, 56, 48, 7]);
     (tween.onComplete as () => void)();
     expect(env.glow().alpha).toBe(0);
     expect(env.badge()).toHaveLength(1);
@@ -462,7 +462,7 @@ describe("MailboxEnvelope (FS-QHN87 round 1: back to the plain envelope, in the 
   it("should draw only its edge, the flap down to its point as one path, and the two folds at its foot", () => {
     const env = setup();
     const f = envelopeFrame(viewport);
-    const e = { x: f.x + 11, y: f.y + 11, w: f.width - 22, h: f.height - 21 };
+    const e = { x: f.x + (f.width - 36) / 2, y: f.y + 11, w: 36, h: 25 };
     const point = envelopeFlapPoint(f);
     const body = env.drawn().find((g) => g.ops.some((o) => o.m === "lineStyle" && o.args[0] === GLYPH_LINE_W))!;
     expect(body.ops).toEqual([

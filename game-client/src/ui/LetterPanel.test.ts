@@ -665,8 +665,8 @@ describe("MailboxEnvelope (FS-1GZGD § Change C1–C3)", () => {
     const { scene, store, zones } = setup();
     new MailboxEnvelope(scene, { store, blocked: () => false });
     const plate = zones.find((z) => z.handlers.pointerdown)!;
-    expect(plate.rect).toEqual({ x: 742, y: 658, w: 58, h: 46 });
-    expect(envelopeFrame({ width: 1280, height: 720 })).toEqual({ x: 942, y: 658, width: 58, height: 46 });
+    expect(plate.rect).toEqual({ x: 786, y: 658, w: 54, h: 46 });
+    expect(envelopeFrame({ width: 1280, height: 720 })).toEqual({ x: 986, y: 658, width: 54, height: 46 });
   });
 
   it("names itself \"Mailbox\" under the pointer, and lets the label go on leaving (C3)", () => {

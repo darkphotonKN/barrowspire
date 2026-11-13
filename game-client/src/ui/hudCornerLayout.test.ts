@@ -14,16 +14,16 @@ import {
 describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward)", () => {
   // the row of five, the owner's decision of 2026-11-12 (FS-3EBCA R1, R2). I-3EBCA-5.
   it.each([
-    ["menu", 1006],
-    ["inventory", 940],
-    ["character", 874],
-    ["party", 808],
-    ["mail", 742],
-  ] as const)("should put %s at x %i, y 658, 58 x 46, in a 1080 x 720 view", (icon, x) => {
+    ["menu", 1010],
+    ["inventory", 954],
+    ["character", 898],
+    ["party", 842],
+    ["mail", 786],
+  ] as const)("should put %s at x %i, y 658, 54 x 46, in a 1080 x 720 view, 56 px from the next (FS-QHN87 round 2)", (icon, x) => {
     expect(cornerIconFrame(icon, { width: 1080, height: 720 })).toEqual({
       x,
       y: 658,
-      width: 58,
+      width: 54,
       height: 46,
     });
   });
@@ -35,7 +35,7 @@ describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward
       );
   });
 
-  it("should leave 70 px from the bottom for what stands above the row (R13)", () => {
+  it("should leave 70 px from the bottom for what stands above the row, as before the row drew closer (R13)", () => {
     expect(CORNER_ROW_CLEARANCE).toBe(70);
     const top = cornerIconFrame("menu", { width: 1080, height: 720 }).y;
     expect(720 - CORNER_ROW_CLEARANCE).toBe(top - 8);
@@ -57,9 +57,9 @@ describe("corner labels (FS-3EBCA R5)", () => {
   it("should centre a label 6 px over its icon, kept 8 px inside the right edge", () => {
     const view = { width: 1080, height: 720 };
     const party = cornerIconFrame("party", view);
-    expect(cornerLabelAt(party, 60, view)).toEqual({ x: party.x + 29, bottom: 652 });
+    expect(cornerLabelAt(party, 60, view)).toEqual({ x: party.x + 27, bottom: 652 });
     const menu = cornerIconFrame("menu", view);
-    // centred it would end at 1035 + 50 = 1085, past the edge
+    // centred it would end at 1037 + 50 = 1087, past the edge
     expect(cornerLabelAt(menu, 100, view)).toEqual({ x: 1080 - 8 - 50, bottom: 652 });
   });
 });
