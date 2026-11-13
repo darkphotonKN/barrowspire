@@ -1,6 +1,6 @@
 # FS-28DDG: Music in the hub
 
-> Status: work-order · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Sound" → "Music in the hub", "Turn the music on or off" → this FS · Owners carrying a stub: [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) (R3, the town's ESC menu gains a row) · Related ADRs: [ADR-0059](../adr/0059-scene-scoped-atlas-groups-are-evicted-with-their-animations-once-the-next-scene-has-loaded.md) (scene-scoped loading; its scope is atlas groups, followed here in spirit only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the ESC menu is canvas chrome on the game palette) · Builds on: `game-client/src/components/gameAudio.ts` (one page-wide `AudioContext` handed to every game; merged f5c2827f; its contract is unchanged here), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) R15, R36 (one place switches scenes), [FS-C4JWH](C4JWH-scene-scoped-art-loading.md) (a world's own `preload()` and torch bar) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (no new terms; the screen says **town**, code says **hub**) · Charter: approved by the owner 2026-11-13; every decision below is **[charter default]** with its reason, D2's mp3-only by owner override (「那只給mp3可以嗎」 → yes)
+> Status: shipped · SPECIFICATION.md: `game-client/SPECIFICATION.md` "### Sound" → "Music in the hub", "Turn the music on or off" → this FS · Owners carrying a stub: [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) (R3, the town's ESC menu gains a row) · Related ADRs: [ADR-0059](../adr/0059-scene-scoped-atlas-groups-are-evicted-with-their-animations-once-the-next-scene-has-loaded.md) (scene-scoped loading; its scope is atlas groups, followed here in spirit only), [ADR-0025](../adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md) (the ESC menu is canvas chrome on the game palette) · Builds on: `game-client/src/components/gameAudio.ts` (one page-wide `AudioContext` handed to every game; merged f5c2827f; its contract is unchanged here), [FS-29KSH](29KSH-hub-world-and-delve-entry.md) R15, R36 (one place switches scenes), [FS-C4JWH](C4JWH-scene-scoped-art-loading.md) (a world's own `preload()` and torch bar) · Surface: game-client only · Vocabulary: [`game-client/CONTEXT.md`](../../game-client/CONTEXT.md) (no new terms; the screen says **town**, code says **hub**) · Charter: approved by the owner 2026-11-13; every decision below is **[charter default]** with its reason, D2's mp3-only by owner override (「那只給mp3可以嗎」 → yes)
 
 ## Summary
 
@@ -307,7 +307,7 @@ sound effects come with it.
 - Any server, proto or gateway change.
 
 ## Change: Music volume in an Options panel
-Status: work-order
+Status: shipped
 Date: 2026-11-13
 
 Asked by the owner on 2026-11-13, after the music was built on its branch: 「音樂的聲量可以在遊戲內調整嗎」
