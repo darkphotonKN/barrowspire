@@ -30,8 +30,13 @@ function recording(): UiBridge & { heard: string[] } {
     left: (world: World) => void heard.push(`left ${world}`),
     reportUi: () => {},
     act: (run) => run(),
+    play: (effect) => void heard.push(`play ${effect}`),
+    lendSounds: () => {},
   };
 }
+
+/** A world's windows, all shut. */
+const shut = () => ({ menu: false, letter: false, party: false, inventory: false, character: false });
 
 describe("the UI bridge lent through the game's registry (FS-TQZ5J R8)", () => {
   it("should hand a scene the bridge its game was lent", () => {
@@ -61,7 +66,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
 
-    reportWorld(scene, "field");
+    reportWorld(scene, "field", shut);
     expect(bridge.heard).toEqual(["report field"]);
 
     scene.events.emit("shutdown");
@@ -74,9 +79,9 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
 
-    reportWorld(scene, "run");
+    reportWorld(scene, "run", shut);
     scene.events.emit("shutdown");
-    reportWorld(scene, "run");
+    reportWorld(scene, "run", shut);
 
     expect(bridge.heard).toEqual(["report run", "left run", "report run"]);
   });
@@ -84,7 +89,7 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
   it("should tell nothing on the game's destroy: the UI scene goes with the game, and its manager is asked nothing (R4)", () => {
     const bridge = recording();
     const scene = worldScene(bridge);
-    reportWorld(scene, "hub");
+    reportWorld(scene, "hub", shut);
 
     scene.events.emit("destroy");
     scene.events.emit("shutdown");
@@ -92,10 +97,40 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     expect(bridge.heard).toEqual(["report hub"]);
   });
 
+  it("should report the world's windows as they are when read, not as they were at create (R9, R12)", () => {
+    const bridge = new GameUiBridge();
+    const scene = worldScene(bridge);
+    const windows = shut();
+
+    reportWorld(scene, "hub", () => windows);
+    windows.inventory = true;
+
+    expect(bridge.world?.world).toBe("hub");
+    expect(bridge.world?.windows().inventory).toBe(true);
+  });
+
+  it("should hand the world its game's bridge, for its player actions and its minimap's step (R12)", () => {
+    const bridge = recording();
+    const scene = worldScene(bridge);
+
+    const ui = reportWorld(scene, "field", shut);
+    ui.play("map_mode_switch");
+
+    expect(ui.act(() => 3)).toBe(3);
+    expect(bridge.heard).toEqual(["report field", "play map_mode_switch"]);
+  });
+
+  it("should hand a world in a game lent no bridge actions that run as they are, and a step that plays nothing", () => {
+    const ui = reportWorld(worldScene(null), "run", shut);
+
+    expect(ui.act(() => "ran")).toBe("ran");
+    expect(() => ui.play("map_mode_switch")).not.toThrow();
+  });
+
   it("should do nothing in a game lent no bridge", () => {
     const scene = worldScene(null);
 
-    expect(() => reportWorld(scene, "hub")).not.toThrow();
+    expect(() => reportWorld(scene, "hub", shut)).not.toThrow();
     expect(scene.events.listenerCount("shutdown")).toBe(0);
   });
 });
@@ -115,25 +150,27 @@ describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
     const heard: (WorldReport | null)[] = [];
     bridge.onWorld((report) => heard.push(report));
 
-    bridge.report({ world: "hub" });
-    bridge.report({ world: "hub" });
+    const hub = { world: "hub" as const, windows: shut };
+    const run = { world: "run" as const, windows: shut };
+    bridge.report(hub);
+    bridge.report(hub);
     bridge.left("hub");
-    bridge.report({ world: "run" });
+    bridge.report(run);
 
-    expect(heard).toEqual([{ world: "hub" }, { world: "hub" }, null, { world: "run" }]);
+    expect(heard).toEqual([hub, hub, null, run]);
   });
 
   it("should tell nothing of a left from a world no longer the one reported", () => {
     const bridge = new GameUiBridge();
-    bridge.report({ world: "hub" });
-    bridge.report({ world: "field" });
+    bridge.report({ world: "hub", windows: shut });
+    bridge.report({ world: "field", windows: shut });
     const heard: (WorldReport | null)[] = [];
     bridge.onWorld((report) => heard.push(report));
 
     bridge.left("hub");
 
     expect(heard).toEqual([]);
-    expect(bridge.world).toEqual({ world: "field" });
+    expect(bridge.world?.world).toBe("field");
   });
 
   it("should stop telling a listener once it lets go", () => {
@@ -142,7 +179,7 @@ describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
     const stop = bridge.onWorld((report) => heard.push(report));
 
     stop();
-    bridge.report({ world: "hub" });
+    bridge.report({ world: "hub", windows: shut });
 
     expect(heard).toEqual([]);
   });

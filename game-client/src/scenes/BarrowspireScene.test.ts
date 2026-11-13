@@ -1159,31 +1159,16 @@ function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): 
   return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
 
-const { UI_EFFECTS } = await import("@/audio/uiSounds");
+const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 
 /**
- * The run's interface sounds on a recording stand-in for the game's sound: every effect cached,
- * the context running, the level the default (no `window`, so nothing kept is read or written).
- * Makes the run's player as create does, and returns the effects played since the last read, by
- * name (FS-WDM0X S10).
+ * The run's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
+ * UI scene's player on a recording stand-in for the game's sound (every effect cached, the context
+ * running, the level the default), and the world reported as create reports it. Returns the effects
+ * played since the last read, by name (FS-WDM0X S10).
  */
 function hearOn(scene: Record<string, unknown>): () => string[] {
-  let played: string[] = [];
-  Object.assign(scene, {
-    cache: { audio: { exists: (key: string) => UI_EFFECTS.some((e) => key === `sfx:${e}`) } },
-    sound: {
-      locked: false,
-      context: { state: "running" },
-      get: () => null,
-      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
-    },
-  });
-  (scene as unknown as { mountUiSounds(): void }).mountUiSounds();
-  return () => {
-    const heard = played;
-    played = [];
-    return heard;
-  };
+  return hearWorld(scene, "run");
 }
 
 function onStage() {
@@ -5331,7 +5316,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     type Heard = Overlaid & {
       partyPanel?: unknown;
       runEnded: boolean;
-      sounds?: { act(run: () => void): void };
+      ui: { act(run: () => void): void };
       containerView: { isOpen: boolean };
       refusesParty(): boolean;
       mountCorner(): void;
@@ -5348,7 +5333,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       // the overlay again, as create composes it once the player is made: its × through the wrapper
       run.equipment = run.composeEquipment();
       run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>));
-      const party = partyPanelOn(() => run.refusesParty(), run.sounds);
+      const party = partyPanelOn(() => run.refusesParty(), run.ui);
       run.partyPanel = party.panel;
       run.mountCorner();
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
@@ -5666,7 +5651,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
       const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
       const at = (line: RegExp) => create.search(line);
-      const mount = at(/this\.mountUiSounds\(\);/);
+      const mount = at(/this\.ui = reportWorld\(this, "run", \(\) => this\.windows\(\)\);/);
       expect(mount).toBeGreaterThan(-1);
       for (const later of [
         /this\.partyPanel = mountPartyPanel\(/,
@@ -5675,9 +5660,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         /this\.mountCorner\(\);/,
       ])
         expect(mount, String(later)).toBeLessThan(at(later));
-      expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
+      expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui\)/);
       const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-      expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
+      expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
     });
   });
 

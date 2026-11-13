@@ -3,7 +3,7 @@ import { DisconnectNotice } from "./disconnectNotice";
 import { UI_SCENE, driveUiScene } from "./uiSceneLifecycle";
 import { switchWorld } from "./worldRouting";
 import type { WorldEnteredPayload } from "@/assets/types/client";
-import { GameUiBridge, type World } from "@/ui/uiBridge";
+import { GameUiBridge, type World, type WorldListener } from "@/ui/uiBridge";
 
 // Phaser 4.2.1's scene statuses (scene/const.js). A scene the game booted and never started is INIT.
 const INIT = 1;
@@ -14,6 +14,12 @@ const SLEEPING = 7;
 const SHUTDOWN = 8;
 
 const WORLD_OF: Record<string, World> = { HubScene: "hub", BarrowspireScene: "run", FieldScene: "field" };
+
+/** A world's report: which world, its windows all shut (FS-TQZ5J R9). */
+const reportOf = (world: World) => ({
+  world,
+  windows: () => ({ menu: false, letter: false, party: false, inventory: false, character: false }),
+});
 
 /**
  * A game's scene manager over statuses, with Phaser 4.2.1's rules where the UI scene's life rests on
@@ -37,7 +43,7 @@ function game(statuses: Record<string, number> = {}, loading: string[] = []) {
         return;
       }
       statuses[key] = RUNNING;
-      if (WORLD_OF[key]) bridge.report({ world: WORLD_OF[key] });
+      if (WORLD_OF[key]) bridge.report(reportOf(WORLD_OF[key]));
     },
     stop(key: string) {
       if (status(key) === SHUTDOWN) return;
@@ -74,7 +80,7 @@ function game(statuses: Record<string, number> = {}, loading: string[] = []) {
   const loaded = (key: string) => {
     loading.splice(loading.indexOf(key), 1);
     statuses[key] = RUNNING;
-    bridge.report({ world: WORLD_OF[key] });
+    bridge.report(reportOf(WORLD_OF[key]));
   };
   const ui = () => status(UI_SCENE);
   const uiLog = () => log.filter((line) => line.endsWith(UI_SCENE));
@@ -90,7 +96,7 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
 
     expect(g.uiLog()).toEqual([`start ${UI_SCENE}`]);
     expect(g.ui()).toBe(RUNNING);
-    expect(g.bridge.world).toEqual({ world: "hub" });
+    expect(g.bridge.world?.world).toBe("hub");
   });
 
   it("should never restart or stop it on a switch town → run → town → field (R2)", () => {
@@ -103,7 +109,7 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
 
     expect(g.uiLog().filter((line) => !/^(sleep|wake) /.test(line))).toEqual([`start ${UI_SCENE}`]);
     expect(g.ui()).toBe(RUNNING);
-    expect(g.bridge.world).toEqual({ world: "field" });
+    expect(g.bridge.world?.world).toBe("field");
   });
 
   it("should leave it standing when the same world is restarted (a reconnect mid-run): a left, then an entered", () => {
@@ -150,18 +156,18 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
     g.loaded("BarrowspireScene");
 
     expect(g.ui()).toBe(RUNNING);
-    expect(g.bridge.world).toEqual({ world: "run" });
+    expect(g.bridge.world?.world).toBe("run");
   });
 
   it("should take no left from a world no longer the one reported", () => {
     const g = game({ MainMenuScene: RUNNING });
     g.enter("hub");
-    g.bridge.report({ world: "field" });
+    g.bridge.report(reportOf("field"));
 
     g.bridge.left("hub");
 
     expect(g.ui()).toBe(RUNNING);
-    expect(g.bridge.world).toEqual({ world: "field" });
+    expect(g.bridge.world?.world).toBe("field");
   });
 
   it("should ask nothing of a game with no UI scene in its list", () => {
@@ -175,7 +181,7 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
       resume: (key: string) => void log.push(`resume ${key}`),
     });
 
-    bridge.report({ world: "hub" });
+    bridge.report(reportOf("hub"));
     bridge.left("hub");
 
     expect(log).toEqual([]);
@@ -184,9 +190,9 @@ describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, 
 
 describe("the UI scene's life as a listener on the bridge's reports (FS-TQZ5J R2, R3)", () => {
   it("should follow any source of world reports, and stop following once let go", () => {
-    const listeners: ((report: { world: World } | null) => void)[] = [];
+    const listeners: WorldListener[] = [];
     const reports = {
-      onWorld(listener: (report: { world: World } | null) => void) {
+      onWorld(listener: WorldListener) {
         listeners.push(listener);
         return () => void listeners.splice(listeners.indexOf(listener), 1);
       },
@@ -194,7 +200,7 @@ describe("the UI scene's life as a listener on the bridge's reports (FS-TQZ5J R2
     const g = game();
     const stop = driveUiScene(reports, g.scenes);
 
-    for (const listener of [...listeners]) listener({ world: "hub" });
+    for (const listener of [...listeners]) listener(reportOf("hub"));
     expect(g.ui()).toBe(RUNNING);
     for (const listener of [...listeners]) listener(null);
     expect(g.ui()).toBe(SLEEPING);
@@ -257,9 +263,9 @@ describe("the UI bridge's typed channel (FS-TQZ5J R9–R12)", () => {
     const g = game();
     expect(g.bridge.world).toBeNull();
 
-    g.bridge.report({ world: "run" });
+    g.bridge.report(reportOf("run"));
 
-    expect(g.bridge.world).toEqual({ world: "run" });
+    expect(g.bridge.world?.world).toBe("run");
   });
 
   it("should carry the UI's state to the worlds: its menu shut until the UI reports it open (R10)", () => {

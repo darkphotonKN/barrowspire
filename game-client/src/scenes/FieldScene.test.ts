@@ -2589,31 +2589,17 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
   });
 });
 
-const { UI_EFFECTS } = await import("@/audio/uiSounds");
+const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 const { readFileSync } = await import("node:fs");
 
 /**
- * The field's interface sounds on a recording stand-in for the game's sound: every effect cached,
- * the context running, the level the default. Makes the field's player as create does, and returns
- * the effects played since the last read, by name (FS-WDM0X S10).
+ * The field's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
+ * UI scene's player on a recording stand-in for the game's sound (every effect cached, the context
+ * running, the level the default), and the world reported as create reports it. Returns the effects
+ * played since the last read, by name (FS-WDM0X S10).
  */
 function hearOn(scene: Record<string, unknown>): () => string[] {
-  let played: string[] = [];
-  Object.assign(scene, {
-    cache: { audio: { exists: (key: string) => UI_EFFECTS.some((e) => key === `sfx:${e}`) } },
-    sound: {
-      locked: false,
-      context: { state: "running" },
-      get: () => null,
-      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
-    },
-  });
-  (scene as unknown as { mountUiSounds(): void }).mountUiSounds();
-  return () => {
-    const heard = played;
-    played = [];
-    return heard;
-  };
+  return hearWorld(scene, "field");
 }
 
 // FS-WDM0X § Acceptance Criteria "The field": as the town, for the Inventory, Character, Party, ESC
@@ -2624,7 +2610,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     menu?: unknown;
     equipment?: unknown;
     partyPanel?: unknown;
-    sounds?: { act(run: () => void): void };
+    ui: { act(run: () => void): void };
     refusesParty(): boolean;
     mountCorner(): void;
     bindHudKeys(): void;
@@ -2681,7 +2667,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       release: vi.fn(),
     };
     const heard = hearOn(f as unknown as Record<string, unknown>);
-    const party = partyPanelOn(() => f.refusesParty(), f.sounds);
+    const party = partyPanelOn(() => f.refusesParty(), f.ui);
     f.partyPanel = party.panel;
     f.bindHudKeys();
     f.mountCorner();
@@ -2693,7 +2679,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
     // the overlay's ×, as GearOverlay runs it through the wrapper the field hands it (GearOverlay.test.ts)
     const gearX = (side: "inventory" | "character") =>
-      f.sounds!.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
+      f.ui.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
     return { ...env, field: f, gear, party, heard, pressIcon, key, find, gearX };
   }
   type Field = ReturnType<typeof field>;
@@ -2885,11 +2871,11 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.mountUiSounds\(\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
-    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-    expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
+    expect(at(/this\.ui = reportWorld\(this, "field", \(\) => this\.windows\(\)\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.ui = reportWorld\(this, "field", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "field", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
+    expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui\)/);
     const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
+    expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
   });
 });

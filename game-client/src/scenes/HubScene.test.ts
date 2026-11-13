@@ -4001,6 +4001,7 @@ const { VILLAGE_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS 
 /** The town's track's key (FS-28DDG § Change: The tower's music on every floor of a run, W1). */
 const MUSIC_KEY = VILLAGE_TRACK.key;
 const { MUSIC_DEFAULT_LEVEL, MUSIC_SETTING_KEY, musicGain } = await import("@/audio/musicSetting");
+const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 const { UI_EFFECTS, uiSoundKey } = await import("@/audio/uiSounds");
 
 // The town's music is the hub's own load, beside its art, so the torch bar counts it and no other
@@ -5595,32 +5596,17 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
 
 /** What the interface sounds' tests reach of the hub (FS-WDM0X). */
 interface Heard {
-  sounds?: { act(run: () => void): void };
-  mountUiSounds(): void;
+  ui: { act(run: () => void): void };
 }
 
 /**
- * The hub's interface sounds on a recording stand-in for the game's sound: every effect cached,
- * the context running, the level the default. Makes the hub's player as create does, and returns
- * the effects played since the last read, by name (FS-WDM0X S10).
+ * The town's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
+ * UI scene's player on a recording stand-in for the game's sound (every effect cached, the context
+ * running, the level the default), and the world reported as create reports it. Returns the effects
+ * played since the last read, by name (FS-WDM0X S10).
  */
 function hearOn(hub: Record<string, unknown>): () => string[] {
-  let played: string[] = [];
-  Object.assign(hub, {
-    cache: { audio: { exists: (key: string) => key.startsWith("sfx:"), remove: () => {} } },
-    sound: {
-      locked: false,
-      context: { state: "running" },
-      get: () => null,
-      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
-    },
-  });
-  (hub as unknown as Heard).mountUiSounds();
-  return () => {
-    const heard = played;
-    played = [];
-    return heard;
-  };
+  return hearWorld(hub, "hub");
 }
 
 // FS-WDM0X § Acceptance Criteria "The town": each window the player opens or closes plays its one
@@ -5652,7 +5638,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       destroy: vi.fn(),
       covers: () => false,
     };
-    const party = partyPanelOn(() => hub.refusesParty(), () => hub.closeLetter(), hub.sounds);
+    const party = partyPanelOn(() => hub.refusesParty(), () => hub.closeLetter(), hub.ui);
     hub.partyPanel = party.panel;
     hub.mountCorner();
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
@@ -5663,7 +5649,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     // The modules' own inputs as they run them, through the wrapper the town hands them (S9): the
     // overlay's × (GearOverlay.test.ts), the envelope's press and the letter panel's ×
     // (LetterPanel.test.ts). The party panel here is the real one, handed the town's wrapper.
-    const wrapper = hub.sounds!;
+    const wrapper = hub.ui;
     const gearX = (side: "inventory" | "character") =>
       wrapper.act(() => void (side === "inventory" ? env.gear.toggle() : env.gear.toggleCharacter()));
     const envelope = () =>
@@ -5924,7 +5910,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const env = hubOnStage();
     const hub = env.hub as unknown as typeof env.hub & Windowed;
     const heard = hearOn(hub as unknown as Record<string, unknown>);
-    const party = partyPanelOn(() => hub.refusesParty(), undefined, hub.sounds);
+    const party = partyPanelOn(() => hub.refusesParty(), undefined, hub.ui);
     // the panel's state is the store's, which the last world left open
     (party.panel as unknown as { deps: { store: { getState(): { togglePanel(): void } } } }).deps.store
       .getState()
@@ -5943,12 +5929,12 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.mountUiSounds\(\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
-    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
-    expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds,\s*\);/);
-    expect(create).toMatch(/mountMailbox\([^;]*this\.sounds,\s*\);/);
+    expect(at(/this\.ui = reportWorld\(this, "hub", \(\) => this\.windows\(\)\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.ui = reportWorld\(this, "hub", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "hub", \(\) => this\.windows\(\)\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
+    expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui,\s*\);/);
+    expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\);/);
     const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
+    expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
   });
 });
