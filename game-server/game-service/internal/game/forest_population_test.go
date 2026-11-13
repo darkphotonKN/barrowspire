@@ -54,8 +54,8 @@ func TestForestSheets_StartingValues(t *testing.T) {
 }
 
 // A spawn point's elite rule decides its elites: a rolled point at the Spire's
-// floor-1 chance (the Meadows, unchanged), a never point never, an always
-// point every time, with a name from the place's prefixes. R17.
+// floor-1 chance (the Meadows, unchanged), an always point every time, with a
+// name from the place's prefixes. R17.
 func TestRollFieldSpawn_EliteRule(t *testing.T) {
 	place := GentleMeadows()
 	place.ElitePrefixes = ElitePrefixes
@@ -75,7 +75,6 @@ func TestRollFieldSpawn_EliteRule(t *testing.T) {
 		return elites
 	}
 
-	assert.Zero(t, count(FieldEliteNever), "a never point is never elite")
 	assert.Equal(t, rolls, count(FieldEliteAlways), "an always point is always elite")
 	assert.InDelta(t, eliteChance(1), float64(count(FieldEliteRolled))/rolls, 0.01)
 }
@@ -93,16 +92,17 @@ func TestFieldPlace_StandardElitesDefaultToRolled(t *testing.T) {
 }
 
 // A field built with elite spawn points holds an elite on each, every time it
-// refills; its standard points follow the place's rule. R17.
+// refills; its standard points follow the place's rule, here a rolled chance
+// whose roll always misses. R17.
 func TestFieldPopulation_ElitePointsAlwaysHoldAnElite(t *testing.T) {
 	place := GentleMeadows()
-	place.StandardElites = FieldEliteNever
 	layout := FieldLayout{
 		SpawnPoints:      []FieldPoint{{X: 600, Y: 420}, {X: 1000, Y: 320}},
 		EliteSpawnPoints: []FieldPoint{{X: 1460, Y: 110}},
 	}
 
 	field := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, FieldBounds(place))
+	field.spawnRand = fixedRand{f: 0.999} // above every elite chance
 	field.InitialFieldMapObjects(place, layout)
 
 	require.Len(t, field.fieldPopulation.spawns, 3)

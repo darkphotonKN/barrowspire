@@ -199,14 +199,10 @@ func rollFieldSpawn(rng populationRand, place FieldPlace, rule FieldElite) Monst
 // fieldElite is whether a point's roll comes elite under its rule. Only a
 // rolled point draws.
 func fieldElite(rng populationRand, rule FieldElite) bool {
-	switch rule {
-	case FieldEliteNever:
-		return false
-	case FieldEliteAlways:
+	if rule == FieldEliteAlways {
 		return true
-	default:
-		return rng.Float64() < eliteChance(1)
 	}
+	return rng.Float64() < eliteChance(1)
 }
 
 // pickCreature draws one archetype from a creature table by weight; a row with

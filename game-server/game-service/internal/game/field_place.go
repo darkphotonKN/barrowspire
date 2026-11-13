@@ -57,8 +57,6 @@ const (
 	// trail points (FS-3QHQZ §Change: Elites on the Forest's trail). The
 	// zero value.
 	FieldEliteRolled FieldElite = iota
-	// FieldEliteNever is never elite. No place uses it today.
-	FieldEliteNever
 	// FieldEliteAlways is always elite: the Forest's elite clearings.
 	FieldEliteAlways
 )
