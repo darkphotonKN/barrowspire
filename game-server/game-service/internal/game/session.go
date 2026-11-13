@@ -62,6 +62,9 @@ type Session struct {
 	fieldPopulation *fieldPopulation
 	// the dev test room's chests and enemies; nil in every other world (FS-BDRTJ)
 	devTestRoom *devTestRoomState
+	// the endgame test run's fixed plan; nil in every other world. Set at
+	// build, read-only after (FS-BDRTJ §Change: Endgame test run)
+	endgame *endgamePlan
 	// a field channel's chest restock delay, its place's, cached as it is built
 	// so the tick reads one number rather than the place; 0 never restocks.
 	// Guarded by mu. FS-3QHQZ §Requirements 19.
@@ -3189,10 +3192,17 @@ func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
 }
 
 func (s *Session) InitialSystems() {
+	// the endgame test run's height and first floor are its plan's, in place
+	// of the roll (FS-BDRTJ §Change: Endgame test run, R25)
+	if s.endgame != nil {
+		CreateMatchProgressEntity(s.EntityManager, s.endgame.FirstFloor, s.endgame.Height)
+		return
+	}
+
 	// creates and setsup match progress entity within the entity manager; the
 	// run's height is rolled here, once, and never leaves the server
 	height := rollSpireHeight(s.spawnRand)
-	CreateMatchProgressEntity(s.EntityManager, height)
+	CreateMatchProgressEntity(s.EntityManager, firstFloor, height)
 
 	// a tome run's plan is rolled with its height (FS-3103M §B R5)
 	if tomeFloor, altarFloor, ok := rollTomePlan(s.spawnRand, height, TomeRunChance); ok {
@@ -3247,7 +3257,8 @@ func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 	// out until the floor stands (every later floor is built by the loop itself)
 	s.buildMu.Lock()
 	defer s.buildMu.Unlock()
-	s.buildFloor(firstFloor, expected)
+	// the endgame test run begins on its plan's floor (FS-BDRTJ R25)
+	s.buildFloor(s.startFloor(), expected)
 }
 
 /**

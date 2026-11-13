@@ -149,6 +149,11 @@ type SessionManager interface {
 	GetQueueStatusChan(ctx context.Context) chan matchmaker.QueueStatus
 	GetHandoffChan(ctx context.Context) chan matchmaker.MatchStart
 	AtSpireGate(playerID uuid.UUID) bool
+	// the endgame test run (FS-BDRTJ §Change: Endgame test run): known only
+	// with the dev test room on, entered at its own gate
+	EndgameRunOn() bool
+	AtEndgameRunGate(playerID uuid.UUID) bool
+	CreateEndgameRun(player *types.Player) *game.Session
 	InTown(playerID uuid.UUID) bool
 	GetConnFromPlayer(playerID uuid.UUID) (*websocket.Conn, bool)
 	CheckLoadout(ctx context.Context, player *types.Player) error
@@ -204,6 +209,10 @@ const partyEntersTogether = "Your party enters together."
 // at the Spire's door: the Spire is entered there, not from across the hub.
 // FS-0XMCP §Requirements 12.
 const awayFromSpireGate = "Walk to the Spire's door first."
+
+// awayFromGate refuses start_dev_endgame_run from anyone not at its gate.
+// FS-BDRTJ §Change: Endgame test run, R22.
+const awayFromGate = "Walk to the gate first."
 
 // leaveRunRefusal is what a refused leave_run says, by why the run would not
 // let the member go. FS-QPDKN §Requirements 14.
@@ -438,6 +447,106 @@ func (h *messageHub) enterField(ctx context.Context, clientPackage types.ClientP
 
 	if err := h.sender.SendMessageToConn(clientPackage.Conn, worldEnteredMessage(field)); err != nil {
 		slog.Warn("Could not tell a player they are in the field", "error", err)
+	}
+}
+
+// runDoor is a way into a run of one from the hub: where it stands, what a
+// member away from it is told, and how its run is built.
+type runDoor struct {
+	at    func(playerID uuid.UUID) bool
+	away  string
+	build func(player *types.Player) *game.Session
+}
+
+// spireDoor is start_solo's: the Spire's door and an ordinary run.
+// FS-NSV3D §Requirements 8; FS-0XMCP §Requirements 12.
+func (h *messageHub) spireDoor() runDoor {
+	return runDoor{
+		at:   h.sessionManager.AtSpireGate,
+		away: awayFromSpireGate,
+		build: func(player *types.Player) *game.Session {
+			return h.sessionManager.CreateGameSession(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}})
+		},
+	}
+}
+
+// endgameRunDoor is start_dev_endgame_run's: its dev gate and the endgame test
+// run. FS-BDRTJ §Change: Endgame test run, R22.
+func (h *messageHub) endgameRunDoor() runDoor {
+	return runDoor{
+		at:    h.sessionManager.AtEndgameRunGate,
+		away:  awayFromGate,
+		build: h.sessionManager.CreateEndgameRun,
+	}
+}
+
+/**
+* startRunOfOne runs start_solo's guards, in its order, for a run of one
+* through door: no character, already in a run (resumed), in a party, away
+* from the door, unreadable gear (read off the loop), queued (read through the
+* queue, never written). Then the run is built and the member told
+* world_entered. FS-NSV3D §Requirements 8–12; FS-BDRTJ R22.
+**/
+func (h *messageHub) startRunOfOne(ctx context.Context, clientPackage types.ClientPackage, door runDoor) {
+	action := clientPackage.Message.Action
+	player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
+	if !exists {
+		slog.Debug("Run of one asked for from a connection with no player", "action", action)
+		return
+	}
+
+	if player.Character.ID == uuid.Nil {
+		slog.Warn("Refusing a run of one: no character in play", "action", action, "player_id", player.ID)
+		h.refuse(clientPackage.Conn, action, startSoloNoCharacter)
+		return
+	}
+
+	// already delving: the run they are in is the answer
+	if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
+		return
+	}
+
+	// a party member, a party of one included, is refused: a party enters
+	// by party_enter, two or more strong (a lone leader leaves first);
+	// find_game's place, on the party cache. FS-BJNYC §Requirements 2.
+	if h.party.inParty(player.ID) {
+		slog.Debug("Refusing a run of one: in a party", "action", action, "player_id", player.ID)
+		h.refuse(clientPackage.Conn, action, partyEntersTogether)
+		return
+	}
+
+	// FS-0XMCP §Requirements 12
+	if !door.at(player.ID) {
+		slog.Debug("Refusing a run of one: not at its gate", "action", action, "player_id", player.ID)
+		h.refuse(clientPackage.Conn, action, door.away)
+		return
+	}
+
+	// gear is read off the loop; the message comes back checked
+	if !clientPackage.LoadoutChecked {
+		go h.checkGear(ctx, player, clientPackage)
+		return
+	}
+
+	// a queued member's character belongs to the queue entry until they
+	// leave it (FS-K2HKP R7a); an unreadable queue is not a queue they
+	// are in, as enter_hub already treats it
+	queueCtx, cancel := context.WithTimeout(ctx, queueReadTimeout)
+	queued, err := h.sessionManager.IsQueued(queueCtx, player.ID)
+	cancel()
+	if err != nil {
+		slog.Warn("Could not read queue entry for a run of one, treating as not queued",
+			"action", action, "player_id", player.ID, "error", err)
+	}
+	if queued {
+		h.refuse(clientPackage.Conn, action, startSoloQueued)
+		return
+	}
+
+	session := door.build(player)
+	slog.Info("Run of one started", "action", action, "session_id", session.ID, "player_id", player.ID)
+	if err := h.sendWorldEntry(clientPackage.Conn, session); err != nil {
+		slog.Warn("Could not tell the delver their run started", "action", action, "player_id", player.ID, "error", err)
 	}
 }
 
@@ -678,67 +787,17 @@ func (h *messageHub) Run(ctx context.Context) {
 			// The guards are find_game's, and a member already in a run is
 			// resumed as find_game resumes them. FS-NSV3D §Requirements 8–12.
 			case constants.ActionStartSolo:
-				player, exists := h.sessionManager.GetPlayerFromConn(clientPackage.Conn)
-				if !exists {
-					slog.Debug("start_solo from a connection with no player")
+				h.startRunOfOne(ctx, clientPackage, h.spireDoor())
+
+			// The endgame test run: start_solo's guards at its own dev gate, on
+			// its fixed plan; unknown unless the dev test room is on.
+			// FS-BDRTJ §Change: Endgame test run, R18, R22, R23.
+			case constants.ActionStartDevEndgameRun:
+				if !h.sessionManager.EndgameRunOn() {
+					h.refuse(clientPackage.Conn, clientPackage.Message.Action, "Unknown action")
 					continue
 				}
-
-				if player.Character.ID == uuid.Nil {
-					slog.Warn("Refusing start_solo: no character in play", "player_id", player.ID)
-					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloNoCharacter)
-					continue
-				}
-
-				// already delving: the run they are in is the answer
-				if err := h.handlePlayerExistingGame(player, clientPackage); err == nil {
-					continue
-				}
-
-				// a party member, a party of one included, is refused: a party enters
-				// by party_enter, two or more strong (a lone leader leaves first);
-				// find_game's place, on the party cache. FS-BJNYC §Requirements 2.
-				if h.party.inParty(player.ID) {
-					slog.Debug("Refusing start_solo: in a party", "player_id", player.ID)
-					h.refuse(clientPackage.Conn, clientPackage.Message.Action, partyEntersTogether)
-					continue
-				}
-
-				// FS-0XMCP §Requirements 12
-				if !h.sessionManager.AtSpireGate(player.ID) {
-					slog.Debug("Refusing start_solo: not at the Spire gate", "player_id", player.ID)
-					h.refuse(clientPackage.Conn, clientPackage.Message.Action, awayFromSpireGate)
-					continue
-				}
-
-				// gear is read off the loop; the message comes back checked
-				if !clientPackage.LoadoutChecked {
-					go h.checkGear(ctx, player, clientPackage)
-					continue
-				}
-
-				// a queued member's character belongs to the queue entry until they
-				// leave it (FS-K2HKP R7a); an unreadable queue is not a queue they
-				// are in, as enter_hub already treats it
-				queueCtx, cancel := context.WithTimeout(ctx, queueReadTimeout)
-				queued, err := h.sessionManager.IsQueued(queueCtx, player.ID)
-				cancel()
-				if err != nil {
-					slog.Warn("Could not read queue entry on start_solo, treating as not queued",
-						"player_id", player.ID, "error", err)
-				}
-				if queued {
-					h.refuse(clientPackage.Conn, clientPackage.Message.Action, startSoloQueued)
-					continue
-				}
-
-				session := h.sessionManager.CreateGameSession(&types.ResolvedMatchedPlayers{
-					LocalPlayers: []*types.Player{player},
-				})
-				slog.Info("Solo run started", "session_id", session.ID, "player_id", player.ID)
-				if err := h.sendWorldEntry(clientPackage.Conn, session); err != nil {
-					slog.Warn("Could not tell the delver their solo run started", "player_id", player.ID, "error", err)
-				}
+				h.startRunOfOne(ctx, clientPackage, h.endgameRunDoor())
 
 			// A dead delver leaving the run for the hub before it ends; the run
 			// keeps their body for its settlement. FS-QPDKN §Requirements 13, 14.
