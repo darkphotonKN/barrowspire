@@ -2249,7 +2249,8 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The map name gives way to the queue line and its Leave button at the top centre where they
-   * meet, as it stands beside the enlarged map's button (FS-56CKV §Change: Map name, E7).
+   * meet (FS-56CKV §Change: Map name, E7); inside the map, normal or enlarged, they leave it
+   * shown today (§Change: The enlarged map keeps its labels inside, F4).
    */
   private keepMapNameClear(): void {
     const shown = (line?: Phaser.GameObjects.Text) => (line?.active && line.visible ? line.getBounds() : null);

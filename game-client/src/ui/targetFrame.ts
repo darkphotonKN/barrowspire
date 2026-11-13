@@ -202,7 +202,7 @@ export class TargetFrame {
 
   /**
    * Its box while it is drawn, fading in or out, or null (FS-56CKV §Change: Map name, E7): what
-   * the map name beside the enlarged map gives way to.
+   * the map name and the dev readout give way to where they meet it.
    */
   shownRect(): FrameRect | null {
     if (this.alpha <= 0 || !this.shown) return null;

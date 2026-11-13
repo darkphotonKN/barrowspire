@@ -621,8 +621,8 @@ describe("the frame's damage chip (FS-48CTQ §F.22)", () => {
   });
 });
 
-// FS-56CKV §Change: Map name, E7: the map name beside the enlarged map's button gives way to the
-// frame where they meet, so the frame says where it stands while it is shown
+// FS-56CKV §Change: Map name, E7: the map name and the dev readout give way to the frame where
+// they meet, so the frame says where it stands while it is shown
 describe("the frame's shown box (FS-56CKV §Change: Map name, E7)", () => {
   it("should have none before it names a monster", () => {
     const { stage } = fakeStage();

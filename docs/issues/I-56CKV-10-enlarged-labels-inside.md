@@ -1,6 +1,6 @@
 ---
 id: I-56CKV-10
-status: open
+status: done
 implements: FS-56CKV
 blocked_by: []
 labels: [ready-for-agent]
@@ -29,9 +29,9 @@ placed them outside the map go (F6). The guideline and `CONTEXT.md` follow (F7).
 
 ## Acceptance Criteria
 
-- [ ] Every acceptance criterion of the § Change but the owner's look, each named by a test or by
+- [x] Every acceptance criterion of the § Change but the owner's look, each named by a test or by
       the diff.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

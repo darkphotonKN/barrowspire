@@ -450,9 +450,10 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   bottom-left corner (in the very top-right corner while the map overlay is up) that does what M
   does: a press steps the minimap to its next mode. Hovered, it says "Map mode (M)".
 - **Map name** (FS-56CKV §Change: Map name): the name of the place the minimap shows, the same
-  words its arrival card titles it with (the town, a field, a floor of the Spire), in small text on
-  the minimap's top-right, or left of the enlarged map, or left of the map mode icon while the
-  overlay is up. Never a second list of names.
+  words its arrival card titles it with (the town, a field, a floor of the Spire), in small text
+  inside the minimap's top-right, normal or enlarged (FS-56CKV §Change: The enlarged map keeps its
+  labels inside), or left of the map mode icon while the overlay is up. Never a second list of
+  names.
 - **Map mark** (FS-56CKV, FS-P0HSP): a small amber glyph on the minimap for something the player
   can walk to and act on: in a run the switch, escape door and stairs; in the town the tower (the
   Spire gate), a teleport mark (a gate to another area), the stash chest and a bag (the

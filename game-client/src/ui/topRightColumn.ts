@@ -92,7 +92,8 @@ export function topRightCorner(view: ViewSize, minimap: CornerMinimap | null): T
   return {
     minimap: map,
     modeIcon,
-    // in the normal map's top-right, left of the enlarged map, left of the icon in the overlay (§Change: Map name)
+    // in the map's top-right, normal or enlarged, left of the icon in the overlay (§Change: Map name;
+    // §Change: The enlarged map keeps its labels inside)
     name: minimapNamePlace(map, minimap?.mode, modeIcon),
     below: map ? map.y + map.height + MINIMAP.gap : Math.round(column.y),
     right: corner.x,
