@@ -42,6 +42,7 @@ function recording(): UiBridge & { heard: string[] } {
     onWorld: () => () => {},
     showDialogue: (dialogue) => void heard.push(`showDialogue ${dialogue.text}`),
     closeDialogue: () => void heard.push("closeDialogue"),
+    notice: (notice) => void heard.push(`notice ${notice.text}`),
     onScreen: () => () => {},
   };
 }
@@ -383,6 +384,39 @@ describe("the dialogue the world shows, told to the UI scene (FS-TQZ5J A2 R29)",
     bridge.request({ kind: "pickDialogue", id: "dismiss" });
 
     expect(JSON.parse(JSON.stringify([shown, picked]))).toEqual([shown, picked]);
+  });
+});
+
+// FS-TQZ5J Amendment A2 R33 (I-TQZ5J-8): a world says its screen notices through the bridge as plain
+// data, its words and its look; the UI scene hears each at once.
+describe("the notices the world says, told to the UI scene (FS-TQZ5J A2 R33)", () => {
+  it("should tell each screen listener a notice said, at once, as plain data", () => {
+    const bridge = new GameUiBridge();
+    const told: unknown[] = [];
+    bridge.onScreen({ notice: (n) => void told.push(n) });
+    bridge.onScreen({ dialogue: () => {} });
+
+    bridge.notice({ text: "Your bag is full.", look: { world: "field" } });
+    bridge.notice({ text: "Escape door opened!", look: { world: "run", backing: 0x3a7d44 } });
+
+    expect(told).toEqual([
+      { text: "Your bag is full.", look: { world: "field" } },
+      { text: "Escape door opened!", look: { world: "run", backing: 0x3a7d44 } },
+    ]);
+    expect(JSON.parse(JSON.stringify(told))).toEqual(told);
+  });
+
+  it("should hand a world its bridge to say a notice through, and a world lent none a notice that draws nothing", () => {
+    const bridge = new GameUiBridge();
+    const told: string[] = [];
+    bridge.onScreen({ notice: (n) => void told.push(n.text) });
+    const scene = { registry: registry(), events: new EventEmitter() };
+    lendUiBridge(scene.registry, bridge);
+
+    reportWorld(scene, "hub", side()).notice({ text: "A line.", look: { world: "hub" } });
+
+    expect(told).toEqual(["A line."]);
+    expect(() => NO_UI.notice({ text: "A line.", look: { world: "hub" } })).not.toThrow();
   });
 });
 

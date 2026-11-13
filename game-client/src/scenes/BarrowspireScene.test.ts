@@ -1467,6 +1467,8 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
 
   function resolvedOnStage(me: ReturnType<typeof player>, allies = [player("ally", "Wenna", 160)]) {
     const stage = onStage();
+    // the UI scene up over the run, its notices drawn on the run's stage (FS-TQZ5J A2 R33)
+    uiSceneOn(stage.run, "run", { row: false });
     const run = stage.run as unknown as Spectating;
     const state = (...others: ReturnType<typeof player>[]) =>
       ({ ...partyState(me), other_players: others } as GameState);
@@ -1560,6 +1562,21 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
         player("ally", "Wenna", 160, dead),
       ]);
       expect(watchButtons()).toHaveLength(0);
+    });
+
+    it("should say it through the UI bridge as the run's notification on the gold backing, at y 100 and depth 2000 (FS-TQZ5J A2 R33)", () => {
+      const { stage } = resolvedOnStage(player("me", "Aldric", 130, escaped));
+      const told: unknown[] = [];
+      uiSceneOn(stage.run, "run", { row: false }).bridge.onScreen({ notice: (n) => void told.push(n) });
+
+      (stage.run as unknown as { checkPlayerEscapedState(state: unknown): void }).checkPlayerEscapedState({
+        current_player: { id: "late", username: "Mira", escape: true },
+        other_players: [],
+      });
+
+      expect(told).toEqual([{ text: "Mira escaped successfully!", look: { world: "run", backing: palette.frameBright } }]);
+      const line = stage.stage.made.find((m) => m.kind === "text" && m.args[2] === "Aldric escaped successfully!") as Made;
+      expect([line.x, line.y, line.depth]).toEqual([viewport.centerX, 100, 2000]);
     });
 
     it("should say the player escaped successfully once", () => {

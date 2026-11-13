@@ -216,6 +216,13 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     },
   );
 
+  // FS-TQZ5J A2 § Acceptance Criteria (I-TQZ5J-8): no world scene draws a notice of its own; each says it
+  // through the bridge (the run's tone a backing colour, data)
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])("should have %s draw no notice of its own", (file) => {
+    expect(source(file)).not.toMatch(/NOTICE_Y|NOTICE_MS|const notification = this\.add|this\.time\.delayedCall\(NOTICE/);
+    expect(source(file)).toMatch(/this\.ui\.notice\(/);
+  });
+
   // FS-TQZ5J A2 § Acceptance Criteria (I-TQZ5J-7): the town no longer draws its dialogue card
   it("should have the town draw no dialogue card of its own: it shows its dialogue through the bridge", () => {
     expect(source("./HubScene.ts")).not.toMatch(/showDialogueCard|npcDialogue/);
@@ -314,6 +321,8 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     };
     const events = new EventEmitter();
     const sys = { settings: { status: 5 } };
+    const timers: { ms: number; fn: () => void }[] = [];
+    const tweens: object[] = [];
     // its keyboard: the keys it adds, each with whether it captured it, and the game's captures
     const keys = new Map<number, { justDown: boolean; captured: boolean }>();
     const captures = new Set<number>();
@@ -335,6 +344,9 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       cameras: { cameras: [] },
       children: { list },
       add: new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : kind === "text" ? text : any) }),
+      // its own clock and tweens, which its notices keep time on (A2 R33)
+      time: { delayedCall: (ms: number, fn: () => void) => (timers.push({ ms, fn }), { remove: () => {} }) },
+      tweens: { add: (config: object) => (tweens.push(config), { remove: () => {} }) },
       cache: { audio: { exists: () => false } },
       sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
     });
@@ -349,7 +361,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       keys.get(code)!.justDown = true;
       scene.update();
     };
-    return { scene, bridge, report, windows, blockers, facts, asked, events, sys, live, plate, labels, keys, captures, press };
+    return { scene, bridge, report, windows, blockers, facts, asked, events, sys, live, plate, labels, keys, captures, press, timers, tweens };
   }
 
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
@@ -578,6 +590,45 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       press(E);
 
       expect(asked).toEqual([]);
+    });
+  });
+
+  // FS-TQZ5J Amendment A2 R33, R34 (I-TQZ5J-8): the worlds' screen notices are the UI scene's, drawn as
+  // each world says them through the bridge (uiSceneNotices.ts holds their look and timing), on its own
+  // clock, and taken down as the world that said them leaves.
+  describe("the UI scene's notices (FS-TQZ5J A2 R33, R34; I-TQZ5J-8)", () => {
+    const shown = (labels: { words: string; destroyed: boolean }[]) => labels.filter((l) => !l.destroyed).map((l) => l.words);
+
+    it("should draw a notice the world says, timed on its own clock and tweens", () => {
+      const { bridge, labels, timers, tweens } = created("hub");
+
+      bridge.notice({ text: "A line.", look: { world: "hub" } });
+      bridge.notice({ text: "Escape door opened!", look: { world: "run", backing: 0x3a7d44 } });
+
+      expect(shown(labels)).toEqual(["A line.", "Escape door opened!"]);
+      expect(timers.map((t) => t.ms)).toEqual([3200]);
+      expect(tweens).toHaveLength(1);
+      timers[0].fn();
+      expect(shown(labels)).toEqual(["Escape door opened!"]);
+    });
+
+    it("should take a world's notices down as it leaves: none is standing in the next world", () => {
+      const { bridge, report, labels } = created("hub");
+      bridge.notice({ text: "A line.", look: { world: "hub" } });
+
+      bridge.left("hub");
+      report("field");
+
+      expect(shown(labels)).toEqual([]);
+    });
+
+    it("should stop hearing the worlds' notices with the game (R4)", () => {
+      const { bridge, events, labels } = created("hub");
+      events.emit("destroy");
+
+      bridge.notice({ text: "A line.", look: { world: "hub" } });
+
+      expect(shown(labels)).toEqual([]);
     });
   });
 });

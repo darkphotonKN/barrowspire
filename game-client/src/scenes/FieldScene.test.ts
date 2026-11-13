@@ -184,6 +184,8 @@ function fieldOnStage() {
       message: "x",
       reason,
     });
+  // the UI scene up over the field, its notices drawn on the field's stage (FS-TQZ5J A2 R33)
+  uiSceneOn(field, "field", { row: false });
   return { field, texts, send, standAt, refuse, reply };
 }
 
@@ -247,6 +249,21 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     standAt(ROAD_HOME.position);
 
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say a refusal through the UI bridge in the field's look, gone as the field leaves (FS-TQZ5J A2 R33, R34)", () => {
+    const { field, standAt, refuse } = fieldOnStage();
+    const told: unknown[] = [];
+    const ui = uiSceneOn(field, "field", { row: false });
+    ui.bridge.onScreen({ notice: (n) => void told.push(n) });
+    standAt(ARRIVAL);
+    standAt(ROAD_HOME.position);
+
+    refuse("fallen");
+    (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
+
+    expect(told).toEqual([{ text: "You have fallen. You will rise at the road home.", look: { world: "field" } }]);
+    expect(ui.bridge.world).toBeNull();
   });
 
   it("should say why in its own words on a refusal, and let the next step in ask again", () => {

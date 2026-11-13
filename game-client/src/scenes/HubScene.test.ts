@@ -610,6 +610,36 @@ describe("HubScene queue flag and Leave button (FS-G4VMQ §Requirements 11, 15, 
   });
 });
 
+// FS-TQZ5J Amendment A2 R33, R34 (I-TQZ5J-8): the town's passing notice is said through the UI bridge
+// as plain data and drawn by the UI scene with today's look, place, depth and timing; it goes with the
+// town as the town leaves.
+describe("the town's notices through the UI bridge (FS-TQZ5J A2 R33, R34)", () => {
+  afterEach(() => void vi.restoreAllMocks());
+
+  it("should say a refusal through the bridge as plain data in the town's look", () => {
+    const { ui, refuse, reply, button } = queuedHubOnStage();
+    const told: unknown[] = [];
+    ui().bridge.onScreen({ notice: (n) => void told.push(n) });
+    reply("queue_status", { current: 1, total: 2 });
+    button()?.handlers.pointerup(AT_LEAVE);
+
+    refuse("leave_queue", "Could not leave the queue, please try again.");
+
+    expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" } }]);
+  });
+
+  it("should take a notice said just before the town leaves down with it", () => {
+    const { hub, stage, refuse } = queuedHubOnStage();
+    refuse("find_game", "Walk to the Spire's door first.");
+    const line = stage.made.find((m) => m.kind === "text" && m.args[2] === "Walk to the Spire's door first.") as Made;
+    expect(line.destroyed).toBe(false);
+
+    hub.events.emit("shutdown");
+
+    expect(line.destroyed).toBe(true);
+  });
+});
+
 describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

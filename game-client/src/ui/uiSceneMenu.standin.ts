@@ -10,6 +10,7 @@ import { GameUiBridge, lendUiBridge, reportWorld, uiBridgeOf, type UiBridge, typ
 import { UiCornerRow } from "./uiSceneCorner";
 import { UiDialogueSlot, handKeys, type UiKeysPressed } from "./uiSceneDialogue";
 import { UiMenuSlot, type SlotPanel } from "./uiSceneMenu";
+import { UiNoticeLayer, drawNotice, type NoticeStage } from "./uiSceneNotices";
 
 /** A world scene as the UI scene's tests reach it: its game's registry, its end, its UI and what it reports. */
 interface WorldUnderTest {
@@ -28,6 +29,8 @@ export interface UiSceneOnStage {
   menu: UiMenuSlot;
   /** The town's dialogue card's slot (FS-TQZ5J A2 R29–R32). */
   dialogue: UiDialogueSlot;
+  /** The worlds' screen notices (FS-TQZ5J A2 R33, R34). */
+  notices: UiNoticeLayer;
   row?: UiCornerRow;
   /** The panel standing in the menu slot, as the stage made it, while the slot is filled. */
   panel(): Phaser.GameObjects.Container | undefined;
@@ -67,10 +70,11 @@ function pressedFor(name: UiKey): Partial<UiKeysPressed> {
 
 /**
  * Test-only: the UI scene's interface for `scene`'s world, built as the UI scene builds it (FS-TQZ5J
- * R13, R16, A2 R29), on `scene`'s own stage so a test finds the menu's rows, the dialogue card's rows and
- * the row's plates where it found the world's own: the menu slot drawn with the shared chrome, the
- * dialogue card the world shows through the bridge, and (unless `row: false`) the corner row, its Menu
- * the slot's. Where the world's game was lent no bridge yet, lends one (with no
+ * R13, R16, A2 R29, R33), on `scene`'s own stage so a test finds the menu's rows, the dialogue card's
+ * rows, the notices and the row's plates where it found the world's own: the menu slot drawn with the
+ * shared chrome, the dialogue card the world shows and the notices it says through the bridge (on the
+ * world's own clock and tweens, as the UI scene's are its own), and (unless `row: false`) the corner
+ * row, its Menu the slot's. Where the world's game was lent no bridge yet, lends one (with no
  * sounds; `hearWorld` lends one with them); where the world has not reported, reports it as its
  * create does (`this.ui = reportWorld(this, world, this.worldSide())`, pinned in UIScene.test.ts).
  * The slot yields and the row is rebuilt on each report, as the UI scene's listener does. One side per
@@ -106,7 +110,8 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     fullscreen: () => lentFullscreen(s.registry),
   });
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
-  bridge.onScreen({ dialogue: (shown) => dialogue.show(shown) });
+  const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));
+  bridge.onScreen({ dialogue: (shown) => dialogue.show(shown), notice: (notice) => notices.say(notice) });
   const frame = (pressed: Partial<UiKeysPressed> = {}) => {
     handKeys({ esc: false, enter: false, e: false, numbered: -1, ...pressed }, dialogue, menu);
     menu.sync();
@@ -115,6 +120,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     bridge,
     menu,
     dialogue,
+    notices,
     row: options.row === false ? undefined : cornerRow(scene, bridge, menu),
     panel: () => (menu.isOpen() ? (standing?.container as Phaser.GameObjects.Container | undefined) : undefined),
     frame,
@@ -123,6 +129,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
   bridge.onWorld((report) => {
     menu.sync();
     dialogue.sync();
+    notices.sync();
     side.row?.show(report);
   });
   sides.set(scene, side);
