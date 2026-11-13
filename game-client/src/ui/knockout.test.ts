@@ -205,6 +205,28 @@ describe("Knockout (FS-7TQN4 R1, R12: one texture per render scale)", () => {
     }
   });
 
+  it.each([1, 1.5, 2])(
+    "should cut in texel coordinates at render scale %s: on an unscaled graphics, every point and radius times k, at lineStyle(1.6·k), over the 2 px the renderer joins above",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const k = 2 * renderScale;
+      const env = stage();
+      const knockout = new Knockout({ scene: env.scene, depth: 1000, picture: PICTURE, ink: INK });
+      knockout.show(SLOT, false);
+      const [t] = env.textures;
+      const cut = t.log[1].g!;
+      expect(cut.scale ?? 1).toBe(1);
+      expect(cut).toMatchObject({ x: t.width / 2, y: t.height / 2 });
+      const widths = cut.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0]);
+      expect(widths).toEqual([CUT_W * k]);
+      expect(widths[0]).toBeGreaterThan(2);
+      expect(cut.ops.find(({ m }) => m === "moveTo")!.args).toEqual([-6 * k, -6 * k]);
+      expect(cut.ops.find(({ m }) => m === "strokeCircle")!.args).toEqual([0, 0, 3 * k]);
+      expect(cut.ops.find(({ m }) => m === "fillCircle")!.args).toEqual([7 * k, 7 * k, 1.2 * k]);
+      knockout.destroy();
+    },
+  );
+
   it("should tint idle and hovered, with no new texture and nothing drawn on hover and leave", () => {
     const env = stage();
     const knockout = new Knockout({ scene: env.scene, depth: 1000, picture: PICTURE, ink: INK });

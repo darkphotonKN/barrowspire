@@ -355,18 +355,20 @@ describe("HudCorner (FS-J1672 R1–R3, R7: bare glyphs)", () => {
     }
   });
 
-  // FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack: Inventory is R3's one
-  // exception, its silhouette filled in its own texture and nowhere on the row's graphics.
-  it("should fill nothing on any icon's graphics where Inventory is a knockout: its fills only in what it draws into its texture (R3)", () => {
+  // FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack, then FS-7TQN4 R1, R12 (the
+  // whole row is knockout): each icon's silhouette is filled in its own texture and nowhere on the
+  // row's graphics.
+  it("should fill nothing on any icon's graphics where the row is knockout: each icon's fills only in what it draws into its own texture (R3; FS-7TQN4 R12)", () => {
     const env = setup(row(), "ok");
     for (const icon of ["menu", "inventory", "character", "party", "mail"] as const) {
       env.zoneAt(icon).handlers.pointerover();
       env.zoneAt(icon).handlers.pointerout();
     }
     for (const g of env.graphics) expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
-    const fillers = env.made.filter((g) => g.calls.some((m) => FILLS.includes(m)));
-    expect(fillers).toHaveLength(1);
-    expect(env.textures[0].log).toContainEqual({ m: "draw", g: fillers[0] });
+    const solids = env.textures.map((t) => t.log.find((e) => e.m === "draw")!.g!);
+    expect(env.textures).toHaveLength(5);
+    for (const g of solids) expect(g.calls.some((m) => FILLS.includes(m))).toBe(true);
+    expect(new Set(solids).size).toBe(5);
   });
 
   it("should stroke each graphics in its glyph's ink alone: no brass rule, no lit edge (R1, R2)", () => {
@@ -523,14 +525,14 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout
   };
 
   it.each([1, 1.5, 2])(
-    "should make one texture, for Inventory, at render scale %s: depth 1000, scroll factor 0, on the slot's centre, the slot × 2·renderScale, shown at 1/k (R6)",
+    "should make Inventory's texture, one of the field row's five (FS-7TQN4 R12), at render scale %s: depth 1000, scroll factor 0, on the slot's centre, the slot × 2·renderScale, shown at 1/k (R6)",
     (renderScale) => {
       viewport.set({ width: 1080, height: 720, renderScale });
       const env = knockout(FULL_ROW());
       const { f, cx, cy } = inventorySlot();
       const k = 2 * renderScale;
-      expect(env.textures).toHaveLength(1);
-      const [t] = env.textures;
+      expect(env.textures).toHaveLength(5);
+      const t = env.textures.find((x) => x.x === cx && x.y === cy)!;
       expect(t).toMatchObject({
         x: cx,
         y: cy,
@@ -821,12 +823,16 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout
     vi.restoreAllMocks();
   });
 
-  it("should draw Menu, Character, Party and the greyed Mailbox the same, op for op, with or without the knockout", () => {
+  // FS-7TQN4 (the whole row is knockout) replaces R11 here: the four are knockouts too where the
+  // scene can make their textures, and today's line glyphs where it cannot (R15).
+  it("should draw Menu, Character, Party and the greyed Mailbox the same, op for op, where no texture can be made or making one throws (FS-7TQN4 R15)", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const plain = setup(FULL_ROW(), "none");
-    const knocked = setup(FULL_ROW(), "ok");
+    const thrown = setup(FULL_ROW(), "throws");
     for (const i of [0, 2, 3, 4]) {
-      expect(knocked.graphics[i].ops).toEqual(plain.graphics[i].ops);
-      expect(knocked.graphics[i].depth).toBe(1000);
+      expect(thrown.graphics[i].ops).toEqual(plain.graphics[i].ops);
+      expect(thrown.graphics[i].ops.length).toBeGreaterThan(0);
+      expect(thrown.graphics[i].depth).toBe(1000);
     }
   });
 
@@ -1246,4 +1252,561 @@ describe("HudCorner (FS-QHN87 round 2: Party, three busts)", () => {
     expect(after.left - before.left).toBeCloseTo(200, 9);
     expect(after.top - before.top).toBeCloseTo(0, 9);
   });
+});
+
+// FS-7TQN4 (the owner, 2026-11-13, after the bronze knockout rucksack: 「其他icon不是也要反白嗎」 and
+// 「目前反白前的肩胛有點怪在調整一下」): the whole corner row is knockout. I-7TQN4-1.
+
+type Circ = { x: number; y: number; r: number };
+
+/**
+ * What a knockout texture holds, in logical px on the screen: its filled shapes, its cut lines,
+ * rings and holes, and how its cut graphics was set up.
+ */
+function drawingOf(t: FakeTexture) {
+  const solid = t.log.find((e) => e.m === "draw")!.g!;
+  const cut = t.log.find((e) => e.m === "erase")!.g!;
+  const shown = (g: FakeGraphics) => (p: P): P => ({
+    x: t.x + ((p.x * (g.scale ?? 1) + (g.x ?? 0)) - t.width / 2) * t.scale!,
+    y: t.y + ((p.y * (g.scale ?? 1) + (g.y ?? 0)) - t.height / 2) * t.scale!,
+  });
+  const len = (g: FakeGraphics) => (v: number) => v * (g.scale ?? 1) * t.scale!;
+  const circles = (m: string): Circ[] =>
+    cut.ops.filter((o) => o.m === m).map(({ args: [x, y, r] }) => ({ ...shown(cut)({ x, y }), r: len(cut)(r) }));
+  const fills = marks(solid)
+    .filter((k) => k.kind === "fill")
+    .map((k) => k.points.map(shown(solid)));
+  const cuts = linesOf(cut).map((l) => ({ closed: l.closed, points: l.points.map(shown(cut)) }));
+  return { solid, cut, fills, cuts, rings: circles("strokeCircle"), holes: circles("fillCircle"), box: spanOf(fills.flat()) };
+}
+
+const near = (a: P, b: P, within = 1e-6) => Math.hypot(a.x - b.x, a.y - b.y) <= within;
+/** How far p stands from the segment a–b. */
+const toSeg = (p: P, a: P, b: P) => {
+  const [dx, dy] = [b.x - a.x, b.y - a.y];
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+  return Math.hypot(p.x - a.x - dx * t, p.y - a.y - dy * t);
+};
+/** How far p stands from the polyline ps (closed back to its first point when `closed`). */
+const toLine = (p: P, ps: P[], closed = false) => {
+  let best = Infinity;
+  const n = closed ? ps.length : ps.length - 1;
+  for (let i = 0; i < n; i++) best = Math.min(best, toSeg(p, ps[i], ps[(i + 1) % ps.length]));
+  return best;
+};
+/** The least distance between two outlines, closed. */
+const apart = (a: P[], b: P[]) => Math.min(...a.map((p) => toLine(p, b, true)), ...b.map((p) => toLine(p, a, true)));
+/** Whether the segments a–b and c–d cross. */
+const crosses = (a: P, b: P, c: P, d: P) => {
+  const side = (p: P, q: P, r: P) => Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+  return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
+};
+const linesCross = (a: P[], b: P[]) =>
+  a.slice(1).some((p, i) => b.slice(1).some((q, j) => crosses(a[i], p, b[j], q)));
+/** Whether a shape is a disc: every point the same distance from its middle. */
+const discOf = (ps: P[]): Circ | undefined => {
+  const s = spanOf(ps);
+  const c = { x: (s.left + s.right) / 2, y: (s.top + s.bottom) / 2 };
+  const rs = ps.map((p) => Math.hypot(p.x - c.x, p.y - c.y));
+  return Math.max(...rs) - Math.min(...rs) < 0.01 ? { ...c, r: rs[0] } : undefined;
+};
+const slotOf = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
+  const f = cornerIconFrame(icon, viewport);
+  return { f, cx: f.x + f.width / 2, cy: f.y + f.height / 2 };
+};
+const TOWN_ROW = (): CornerIconSpec[] => [
+  { icon: "menu", press: vi.fn() },
+  { icon: "inventory", press: vi.fn() },
+  { icon: "character", press: vi.fn() },
+  { icon: "party", press: vi.fn() },
+];
+/** The live texture standing on an icon's slot. */
+const textureOn = (env: ReturnType<typeof setup>, icon: "menu" | "inventory" | "character" | "party" | "mail") => {
+  const { cx, cy } = slotOf(icon);
+  const on = env.textures.filter((t) => !t.destroyed && t.x === cx && t.y === cy);
+  expect(on).toHaveLength(1);
+  return on[0];
+};
+const ICONS = ["menu", "inventory", "character", "party", "mail"] as const;
+
+describe("HudCorner (FS-7TQN4 R1, R2, R12: every icon in its own texture)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it.each([1, 1.5, 2])(
+    "should make four textures for a town row and five for a field row at render scale %s, each on its slot's centre, depth 1000, scroll factor 0, the slot × k, at 1/k, the icons' graphics drawing nothing",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const k = 2 * renderScale;
+      expect(setup(TOWN_ROW(), "ok").textures).toHaveLength(4);
+      const env = setup(FULL_ROW(), "ok");
+      expect(env.textures).toHaveLength(5);
+      for (const icon of ICONS) {
+        const { f } = slotOf(icon);
+        const t = textureOn(env, icon);
+        expect(t).toMatchObject({ width: Math.round(f.width * k), height: Math.round(f.height * k), depth: 1000, scrollFactor: 0 });
+        expect(t.scale).toBeCloseTo(1 / k, 12);
+      }
+      for (const g of env.graphics) expect(g.ops).toEqual([]);
+    },
+  );
+
+  it.each([1, 1.5, 2])(
+    "should fill each white at 1, then erase strokes and filled discs only, every cut on an unscaled graphics at lineStyle(1.6·k), then render, at render scale %s (the rucksack's included)",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const k = 2 * renderScale;
+      const env = setup(FULL_ROW(), "ok");
+      for (const t of env.textures) {
+        expect(t.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
+        const { solid, cut } = drawingOf(t);
+        expect(new Set(solid.calls)).toEqual(new Set(["fillStyle", "beginPath", "moveTo", "lineTo", "closePath", "fillPath"]));
+        for (const { args } of solid.ops.filter(({ m }) => m === "fillStyle")) expect(args).toEqual([TINT_IDENTITY, 1]);
+        // the cuts: strokes, and filled discs for holes, white at 1
+        const allowed = ["lineStyle", "fillStyle", "beginPath", "moveTo", "lineTo", "closePath", "strokePath", "strokeCircle", "fillCircle"];
+        for (const m of cut.calls) expect(allowed).toContain(m);
+        for (const { m, args } of cut.ops.filter(({ m }) => m === "fillStyle" || m === "lineStyle")) {
+          expect(m === "fillStyle" ? args : args.slice(1)).toEqual([TINT_IDENTITY, 1]);
+        }
+        // in texel coordinates: unscaled, so the renderer joins every corner (over 2 px)
+        expect(cut.scale ?? 1).toBe(1);
+        const widths = cut.ops.filter(({ m }) => m === "lineStyle").map(({ args }) => args[0]);
+        expect(widths.length).toBeGreaterThan(0);
+        for (const w of widths) {
+          expect(w).toBeCloseTo(1.6 * k, 9);
+          expect(w).toBeGreaterThan(2);
+        }
+      }
+      expect(env.made).toHaveLength(10);
+      expect(env.made.every((g) => g.destroyed)).toBe(true);
+      expect(env.madeAdded.every((a) => a === false)).toBe(true);
+    },
+  );
+
+  it("should lay each silhouette inside its slot, centred where today's glyph is within 1 px (R11)", () => {
+    const env = setup(FULL_ROW(), "ok");
+    for (const icon of ["menu", "party"] as const) {
+      const { f, cx, cy } = slotOf(icon);
+      const { box } = drawingOf(textureOn(env, icon));
+      expect(Math.abs((box.left + box.right) / 2 - cx)).toBeLessThanOrEqual(1);
+      expect(Math.abs((box.top + box.bottom) / 2 - cy)).toBeLessThanOrEqual(1);
+      expect(box.left).toBeGreaterThanOrEqual(f.x);
+      expect(box.right).toBeLessThanOrEqual(f.x + f.width);
+      expect(box.top).toBeGreaterThanOrEqual(f.y);
+      expect(box.bottom).toBeLessThanOrEqual(f.y + f.height);
+    }
+  });
+});
+
+describe("HudCorner (FS-7TQN4 R3: Menu, a riveted solid gear)", () => {
+  const gear = () => {
+    const { cx, cy } = slotOf("menu");
+    const plain = setup([{ icon: "menu" }]).graphics[0];
+    return { cx, cy, plain, d: drawingOf(setup([{ icon: "menu" }], "ok").textures[0]) };
+  };
+
+  it("should fill today's gear outline, and nothing else", () => {
+    const { plain, d } = gear();
+    expect(d.fills).toHaveLength(1);
+    const outline = linesOf(plain).filter((l) => l.closed)[0].points.slice(0, -1);
+    expect(d.fills[0]).toHaveLength(outline.length);
+    d.fills[0].forEach((p, i) => expect(near(p, outline[i], 1e-9)).toBe(true));
+  });
+
+  it("should cut a centre hole of radius 2–3.5, a ring round it at least 1.5 px clear, and four rivet holes at 45°, 135°, 225° and 315°, each at least 1 px clear of the ring and of the root circle", () => {
+    const { cx, cy, d } = gear();
+    expect(d.cuts).toEqual([]);
+    expect(d.rings).toHaveLength(1);
+    const [ring] = d.rings;
+    expect(near(ring, { x: cx, y: cy }, 1e-9)).toBe(true);
+    const centre = d.holes.filter((h) => near(h, { x: cx, y: cy }, 1e-9));
+    expect(centre).toHaveLength(1);
+    const [hole] = centre;
+    expect(hole.r).toBeGreaterThanOrEqual(2);
+    expect(hole.r).toBeLessThanOrEqual(3.5);
+    expect(ring.r - 0.8 - hole.r).toBeGreaterThanOrEqual(1.5);
+    const rivets = d.holes.filter((h) => h !== hole);
+    expect(rivets).toHaveLength(4);
+    const angles = rivets.map((v) => ((Math.atan2(v.y - cy, v.x - cx) * 180) / Math.PI + 360) % 360).sort((a, b) => a - b);
+    [45, 135, 225, 315].forEach((a, i) => expect(angles[i]).toBeCloseTo(a, 9));
+    for (const v of rivets) {
+      const out = Math.hypot(v.x - cx, v.y - cy);
+      expect(v.r).toBeGreaterThanOrEqual(0.9);
+      expect(v.r).toBeLessThanOrEqual(1.4);
+      expect(out - v.r - (ring.r + 0.8)).toBeGreaterThanOrEqual(1);
+      expect(11 - (out + v.r)).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+/** The Character's knockout, its parts named. */
+function character() {
+  const { cx, cy } = slotOf("character");
+  const d = drawingOf(setup([{ icon: "character" }], "ok").textures[0]);
+  const head = d.fills.find((f) => discOf(f))!;
+  const mass = d.fills.find((f) => f !== head)!;
+  const ms = spanOf(mass);
+  // the mass's upper outline: from the foot of its left side round over the top to the foot of its right
+  const foot = ms.bottom;
+  const onFoot = (p: P) => Math.abs(p.y - foot) < 1e-6;
+  const start = mass.findIndex((p, i) => onFoot(p) && !onFoot(mass[(i + 1) % mass.length]));
+  let upper = [...mass.slice(start), ...mass.slice(0, start)];
+  upper = upper.slice(0, upper.findIndex((p, i) => i > 0 && onFoot(p)) + 1);
+  if (upper[0].x > upper[upper.length - 1].x) upper.reverse();
+  const inMass = (p: P) => inside(mass, p.x, p.y);
+  const seams = d.cuts.filter((c) => !c.closed && c.points.every((p) => inMass(p) && toLine(p, mass, true) >= 2 && toLine(p, mass, true) <= 4));
+  const buckles = d.cuts.filter((c) => c.closed);
+  const straps = d.cuts.filter((c) => !seams.includes(c) && !buckles.includes(c));
+  return { cx, cy: cy + 1, d, head, mass, ms, upper, seams, buckles, straps };
+}
+
+describe("HudCorner (FS-7TQN4 R4, R5: Character, a solid bust with its pauldrons drawn again)", () => {
+  it("should fill a head disc and a shoulder mass, at least 1.6 px apart, and nothing else: no rivet, no collar", () => {
+    const c = character();
+    expect(c.d.fills).toHaveLength(2);
+    expect(discOf(c.head)).toBeDefined();
+    expect(Math.abs(discOf(c.head)!.x - c.cx)).toBeLessThan(1e-6);
+    expect(apart(c.head, c.mass)).toBeGreaterThanOrEqual(1.6);
+    expect(c.d.holes).toEqual([]);
+    expect(c.d.rings).toEqual([]);
+    expect(c.d.cuts).toHaveLength(c.seams.length + c.buckles.length + c.straps.length);
+  });
+
+  it("should run the mass's upper outline as one smooth convex curve: turning one way at every vertex, by at most 20°, mirror-symmetric within 0.01 px", () => {
+    const { upper, mass, cx } = character();
+    expect(upper.length).toBeGreaterThan(20);
+    const turns = upper.slice(1, -1).map((p, i) => {
+      const [a, b] = [upper[i], upper[i + 2]];
+      const t = Math.atan2(b.y - p.y, b.x - p.x) - Math.atan2(p.y - a.y, p.x - a.x);
+      return (((t + 3 * Math.PI) % (2 * Math.PI)) - Math.PI) * (180 / Math.PI);
+    });
+    const sign = Math.sign(turns.find((t) => Math.abs(t) > 1e-9)!);
+    for (const t of turns) {
+      expect(t * sign).toBeGreaterThanOrEqual(-1e-9);
+      expect(Math.abs(t)).toBeLessThanOrEqual(20);
+    }
+    for (const p of mass) expect(mass.some((q) => near(q, { x: 2 * cx - p.x, y: p.y }, 0.01))).toBe(true);
+  });
+
+  it("should flow each cap straight down into the arm: the silhouette's sides upright to the foot", () => {
+    const { upper, ms } = character();
+    for (const end of [upper.slice(0, 3), upper.slice(-3)]) for (const p of end) expect(Math.abs(Math.abs(p.x - (ms.left + ms.right) / 2) - ms.width / 2)).toBeLessThan(0.05);
+  });
+
+  it("should cut one plate seam per cap, 2–4 px inside the mass's edge, from the arm side up and in, ending outside the head's edge, mirrored", () => {
+    const { seams, head, cx } = character();
+    expect(seams).toHaveLength(2);
+    const r = discOf(head)!.r;
+    const [left, right] = seams.slice().sort((a, b) => spanOf(a.points).left - spanOf(b.points).left);
+    expect(spanOf(left.points).right).toBeLessThan(cx);
+    expect(spanOf(right.points).left).toBeGreaterThan(cx);
+    for (const s of [left, right]) {
+      const ends = [s.points[0], s.points[s.points.length - 1]].sort((a, b) => Math.abs(a.x - cx) - Math.abs(b.x - cx));
+      const [inner, outer] = ends;
+      expect(Math.abs(inner.x - cx)).toBeGreaterThan(r);
+      expect(outer.y).toBeGreaterThan(inner.y);
+    }
+    for (const p of left.points) expect(right.points.some((q) => near(q, { x: 2 * cx - p.x, y: p.y }, 0.01))).toBe(true);
+  });
+
+  it("should cut a baldric from inside the left seam's inner end down across the chest to the foot right of the middle, broken only by its buckle, crossing no other cut", () => {
+    const { straps, seams, buckles, ms, cx, mass } = character();
+    expect(straps.length).toBeGreaterThanOrEqual(1);
+    const pts = straps.flatMap((s) => s.points).sort((a, b) => a.y - b.y);
+    const [from, to] = [pts[0], pts[pts.length - 1]];
+    // one straight strap: every piece on the line from its top to its foot
+    for (const p of pts) expect(toSeg(p, from, to)).toBeLessThan(0.01);
+    const leftSeam = seams.slice().sort((a, b) => spanOf(a.points).left - spanOf(b.points).left)[0];
+    const innerEnd = leftSeam.points.reduce((a, b) => (Math.abs(b.x - cx) < Math.abs(a.x - cx) ? b : a));
+    expect(from.x).toBeGreaterThan(innerEnd.x);
+    expect(from.x).toBeLessThan(cx);
+    expect(inside(mass, from.x, from.y) || toLine(from, mass, true) < 0.01).toBe(true);
+    expect(to.y).toBeGreaterThanOrEqual(ms.bottom - 1e-6);
+    expect(to.x).toBeGreaterThan(cx + 3);
+    for (const s of straps) {
+      for (const seam of seams) {
+        expect(linesCross(s.points, seam.points)).toBe(false);
+        expect(Math.min(...s.points.map((p) => toLine(p, seam.points)))).toBeGreaterThanOrEqual(CUT_W_LOGICAL);
+      }
+      for (const b of buckles) {
+        expect(linesCross(s.points, b.points)).toBe(false);
+        // no piece runs inside the buckle
+        for (let i = 1; i < s.points.length; i++) {
+          const mid = { x: (s.points[i - 1].x + s.points[i].x) / 2, y: (s.points[i - 1].y + s.points[i].y) / 2 };
+          expect(inside(b.points, mid.x, mid.y)).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("should cut a closed four-sided buckle about 5 × 4.4 on the strap's line, about 0.7 of the way down, its long side along it", () => {
+    const { straps, buckles } = character();
+    expect(buckles).toHaveLength(1);
+    const corners = buckles[0].points.slice(0, -1);
+    expect(corners).toHaveLength(4);
+    const pts = straps.flatMap((s) => s.points).sort((a, b) => a.y - b.y);
+    const [from, to] = [pts[0], pts[pts.length - 1]];
+    const mid = { x: corners.reduce((s, p) => s + p.x, 0) / 4, y: corners.reduce((s, p) => s + p.y, 0) / 4 };
+    expect(toSeg(mid, from, to)).toBeLessThan(0.01);
+    const along = Math.hypot(mid.x - from.x, mid.y - from.y) / Math.hypot(to.x - from.x, to.y - from.y);
+    expect(along).toBeGreaterThanOrEqual(0.6);
+    expect(along).toBeLessThanOrEqual(0.8);
+    const sides = corners.map((p, i) => Math.hypot(p.x - corners[(i + 1) % 4].x, p.y - corners[(i + 1) % 4].y));
+    const [long, wide] = [Math.max(...sides), Math.min(...sides)];
+    expect(long).toBeGreaterThanOrEqual(4.5);
+    expect(long).toBeLessThanOrEqual(5.5);
+    expect(wide).toBeGreaterThanOrEqual(4);
+    expect(wide).toBeLessThanOrEqual(4.8);
+    // the long side runs along the strap
+    const i = sides.indexOf(long);
+    const [a, b] = [corners[i], corners[(i + 1) % 4]];
+    const cos = Math.abs((b.x - a.x) * (to.x - from.x) + (b.y - a.y) * (to.y - from.y)) / (long * Math.hypot(to.x - from.x, to.y - from.y));
+    expect(cos).toBeGreaterThan(0.99);
+  });
+
+  it("should keep the fallback bust's box within 3 px each way and its centre within 1 px", () => {
+    const { d } = character();
+    const was = boxOf(marks(setup([{ icon: "character" }]).graphics[0]));
+    expect(Math.abs(d.box.width - was.width)).toBeLessThanOrEqual(3);
+    expect(Math.abs(d.box.height - was.height)).toBeLessThanOrEqual(3);
+    expect(Math.abs((d.box.left + d.box.right) / 2 - (was.left + was.right) / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs((d.box.top + d.box.bottom) / 2 - (was.top + was.bottom) / 2)).toBeLessThanOrEqual(1);
+  });
+});
+
+/** A cut's width in logical px (FS-7TQN4 R2). */
+const CUT_W_LOGICAL = 1.6;
+
+describe("HudCorner (FS-7TQN4 R6: Party, three solid busts)", () => {
+  const party = () => {
+    const { cx, cy } = slotOf("party");
+    const d = drawingOf(setup([{ icon: "party" }], "ok").textures[0]);
+    const one = character();
+    // a Character part laid at a Party bust's place and scale
+    const lay = (ps: P[], at: { dx: number; dy: number; s: number }) =>
+      ps.map((p) => ({ x: cx + at.dx + (p.x - one.cx) * at.s, y: cy + at.dy + (p.y - one.cy) * at.s }));
+    const same = (a: P[], b: P[]) => a.length === b.length && a.every((p, i) => near(p, b[i], 1e-6));
+    const busts = [PARTY_BUSTS.front, ...PARTY_BUSTS.back].map((at) => ({
+      at,
+      head: d.fills.find((f) => same(f, lay(one.head, at))),
+      mass: d.fills.find((f) => same(f, lay(one.mass, at))),
+    }));
+    return { cx, cy, d, one, lay, busts };
+  };
+
+  it("should fill three heads and three shoulder masses, the Character's own, at PARTY_BUSTS' places and scales, each head clear of its mass by 1.6 × its scale", () => {
+    const { d, busts } = party();
+    expect(d.fills).toHaveLength(6);
+    for (const b of busts) {
+      expect(b.head).toBeDefined();
+      expect(b.mass).toBeDefined();
+      expect(apart(b.head!, b.mass!)).toBeGreaterThanOrEqual(1.6 * b.at.s - 1e-9);
+    }
+  });
+
+  it("should cut a gap along the front bust's outline wherever it lies over a bust behind, outside the front bust, so its whole outline reads", () => {
+    const { d, busts } = party();
+    const [front, ...back] = busts;
+    const behind = back.flatMap((b) => [b.head!, b.mass!]);
+    const outFront = (p: P) => !inside(front.head!, p.x, p.y) && !inside(front.mass!, p.x, p.y);
+    const gaps = d.cuts.filter((c) => c.points.every(outFront));
+    expect(gaps.length).toBeGreaterThan(0);
+    for (const g of gaps) {
+      for (const p of g.points) {
+        const fromFront = Math.min(toLine(p, front.head!, true), toLine(p, front.mass!, true));
+        expect(fromFront).toBeGreaterThan(CUT_W_LOGICAL / 2 - 0.05);
+        expect(fromFront).toBeLessThan(CUT_W_LOGICAL / 2 + 0.05);
+      }
+    }
+    // every point of the front outline over a bust behind lies on the gap's inner edge
+    for (const outline of [front.head!, front.mass!]) {
+      for (const p of outline) {
+        if (!behind.some((s) => inside(s, p.x, p.y) && toLine(p, s, true) > 0.3)) continue;
+        const toGap = Math.min(...gaps.map((g) => toLine(p, g.points)));
+        expect(toGap).toBeLessThan(CUT_W_LOGICAL / 2 + 0.1);
+      }
+    }
+  });
+
+  it("should cut the front bust's two seams and its gorget's edge, and no baldric", () => {
+    const { d, one, lay, busts, cx } = party();
+    const [front] = busts;
+    const within = d.cuts.filter((c) => c.points.every((p) => inside(front.mass!, p.x, p.y)));
+    for (const seam of one.seams) {
+      const want = lay(seam.points, front.at);
+      expect(within.some((c) => c.points.length === want.length && c.points.every((p, i) => near(p, want[i], 1e-6)))).toBe(true);
+    }
+    // the gorget: an arc of radius 6.2 × s round the shoulders' old centre, 12 × s below the bust's centre
+    const o = { x: cx + front.at.dx, y: slotOf("party").cy + front.at.dy + 12 * front.at.s };
+    const gorget = within.filter((c) => c.points.every((p) => Math.abs(Math.hypot(p.x - o.x, p.y - o.y) - 6.2 * front.at.s) < 1e-6));
+    expect(gorget).toHaveLength(1);
+    const g = spanOf(gorget[0].points);
+    expect((g.left + g.right) / 2).toBeCloseTo(o.x, 6);
+    // no strap: nothing reaches the front bust's foot
+    const foot = spanOf(front.mass!).bottom;
+    expect(d.cuts.filter((c) => c.points.some((p) => Math.abs(p.y - foot) < 0.5))).toEqual([]);
+    expect(d.holes).toEqual([]);
+  });
+
+  it("should be mirror-symmetric within 0.01 px, fills and cuts", () => {
+    const { d, cx } = party();
+    const fills = d.fills.flat();
+    for (const p of fills) expect(fills.some((q) => near(q, { x: 2 * cx - p.x, y: p.y }, 0.01))).toBe(true);
+    const cuts = d.cuts.flatMap((c) => c.points);
+    for (const p of cuts) expect(cuts.some((q) => near(q, { x: 2 * cx - p.x, y: p.y }, 0.01))).toBe(true);
+  });
+});
+
+describe("HudCorner (FS-7TQN4 R7, R9: the greyed Mailbox, the knockout envelope in the faint grey)", () => {
+  it("should fill one rounded rect equal to the envelope's rect, radius 2, and cut only the flap through its point and the two foot folds", () => {
+    const { f } = slotOf("mail");
+    const d = drawingOf(setup([{ icon: "mail", greyed: true }], "ok").textures[0]);
+    const e = { x: f.x + (f.width - 36) / 2, y: f.y + 11, w: 36, h: 25 };
+    expect(d.fills).toHaveLength(1);
+    const box = spanOf(d.fills[0]);
+    for (const [a, b] of [
+      [box.left, e.x],
+      [box.top, e.y],
+      [box.width, e.w],
+      [box.height, e.h],
+    ])
+      expect(a).toBeCloseTo(b, 9);
+    // rounded by 2 at each corner: no point nearer a corner than the radius allows
+    for (const [x, y] of [
+      [e.x, e.y],
+      [e.x + e.w, e.y],
+      [e.x + e.w, e.y + e.h],
+      [e.x, e.y + e.h],
+    ]) {
+      const nearest = Math.min(...d.fills[0].map((p) => Math.hypot(p.x - x, p.y - y)));
+      expect(nearest).toBeCloseTo(2 * Math.SQRT2 - 2, 2);
+    }
+    expect(d.rings).toEqual([]);
+    expect(d.holes).toEqual([]);
+    expect(d.cuts).toHaveLength(3);
+    const point = envelopeFlapPoint(f);
+    const flaps = d.cuts.filter((c) => c.points.length === 3 && near(c.points[1], point, 1));
+    expect(flaps).toHaveLength(1);
+    const folds = d.cuts.filter((c) => c !== flaps[0]);
+    expect(folds.map((c) => c.points.length)).toEqual([2, 2]);
+    for (const fold of folds) expect(Math.max(...fold.points.map((p) => p.y))).toBeCloseTo(e.y + e.h - 1, 9);
+  });
+});
+
+describe("HudCorner (FS-7TQN4 R9, R10: bronze, lifted under the pointer; the greyed Mailbox never)", () => {
+  it("should tint Menu, Inventory, Character and Party bronze at 0.85, lifted at 1 under the pointer, and back on leaving, building nothing", () => {
+    const env = setup(FULL_ROW(), "ok");
+    for (const icon of ["menu", "inventory", "character", "party"] as const) {
+      const t = textureOn(env, icon);
+      expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+      env.zoneAt(icon).handlers.pointerover();
+      expect(t).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+      env.zoneAt(icon).handlers.pointerout();
+      expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    }
+    expect(env.textures).toHaveLength(5);
+    expect(env.made).toHaveLength(10);
+    for (const t of env.textures) expect(t.log).toHaveLength(3);
+    for (const g of env.graphics) expect(g.ops).toEqual([]);
+  });
+
+  it("should tint the greyed Mailbox hudFaint at 0.6, hovered or not, and name it \"Mailbox · town only\"", () => {
+    const env = setup(FULL_ROW(), "ok");
+    const t = textureOn(env, "mail");
+    expect(t).toMatchObject({ tint: palette.hudFaint, alpha: 0.6 });
+    env.zoneAt("mail").handlers.pointerover();
+    expect(t).toMatchObject({ tint: palette.hudFaint, alpha: 0.6 });
+    expect(env.liveTexts().map((x) => x.words)).toEqual(["Mailbox · town only"]);
+    env.zoneAt("mail").handlers.pointerout();
+    expect(t).toMatchObject({ tint: palette.hudFaint, alpha: 0.6 });
+    expect(env.textures).toHaveLength(5);
+  });
+});
+
+describe("HudCorner (FS-7TQN4 R11, R13, R14: relayout, a new render scale, destroy)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should move every image to its slot's new centre on a relayout to 1280, building nothing", () => {
+    const env = setup(FULL_ROW(), "ok");
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.corner.relayout();
+    expect(env.textures).toHaveLength(5);
+    for (const icon of ICONS) textureOn(env, icon);
+    expect(env.made).toHaveLength(10);
+  });
+
+  it("should build each knockout anew at k = 4 when the render scale goes 1 → 2, destroying each old one, and build nothing on a width change alone", () => {
+    const env = setup(FULL_ROW(), "ok");
+    env.zoneAt("party").handlers.pointerover();
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.textures).toHaveLength(10);
+    expect(env.textures.slice(0, 5).every((t) => t.destroyed)).toBe(true);
+    for (const icon of ICONS) {
+      const { f } = slotOf(icon);
+      const t = textureOn(env, icon);
+      expect(t).toMatchObject({ width: Math.round(f.width * 4), height: Math.round(f.height * 4) });
+      expect(t.scale).toBeCloseTo(1 / 4, 12);
+      expect(t.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
+    }
+    expect(textureOn(env, "party")).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+    expect(textureOn(env, "menu")).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    viewport.set({ width: 1280, height: 720, renderScale: 2 });
+    expect(env.textures).toHaveLength(10);
+  });
+
+  it("should destroy every image and stop watching on destroy: a later render-scale change makes nothing and throws nothing", () => {
+    const env = setup(FULL_ROW(), "ok");
+    env.corner.destroy();
+    expect(env.textures.every((t) => t.destroyed)).toBe(true);
+    expect(() => viewport.set({ width: 1080, height: 720, renderScale: 2 })).not.toThrow();
+    expect(env.attempts.renderTexture).toBe(5);
+  });
+});
+
+describe("HudCorner (FS-7TQN4 R15, R18: the fallback, and the rest stays)", () => {
+  afterEach(() => {
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  it.each(["none", "throws"] as const)("should draw every icon in today's lines, no slot empty (texture: %s)", (texture) => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = setup(FULL_ROW(), texture);
+    expect(env.textures).toEqual([]);
+    for (const g of env.graphics) {
+      expect(g.ops.length).toBeGreaterThan(0);
+      expect(g.calls.filter((m) => FILLS.includes(m))).toEqual([]);
+    }
+    // today's Character and Party keep their old pauldrons, rivets and collar
+    expect(env.graphics[2].calls).toContain("lineBetween");
+  });
+
+  it("should try once where making a texture throws, and keep the lines on a later render-scale change", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = setup(FULL_ROW(), "throws");
+    const before = env.graphics.map((g) => [...g.ops]);
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.graphics.map((g) => g.ops)).toEqual(before);
+    expect(env.attempts.renderTexture).toBe(5);
+  });
+
+  it.each(["none", "ok", "throws"] as const)(
+    "should keep every zone, hand cursor, covers, press and label, and take everything down with destroy (texture: %s)",
+    (texture) => {
+      vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const env = setup(TOWN_ROW(), texture);
+      const words = { menu: "Menu (Esc)", inventory: "Inventory (I)", character: "Character (C)", party: "Party (T)" };
+      for (const icon of ["menu", "inventory", "character", "party"] as const) {
+        const { f } = slotOf(icon);
+        const z = env.zoneAt(icon);
+        expect(z).toMatchObject({ x: f.x, y: f.y, width: 54, height: 46, handCursor: true, depth: 1000 });
+        expect(env.corner.covers(f.x + 1, f.y + 1, icon)).toBe(true);
+        z.handlers.pointerover();
+        expect(env.liveTexts().map((t) => t.words)).toEqual([words[icon]]);
+        z.handlers.pointerout();
+      }
+      env.corner.destroy();
+      expect(env.textures.every((t) => t.destroyed)).toBe(true);
+      expect(env.graphics.every((g) => g.destroyed)).toBe(true);
+    },
+  );
 });

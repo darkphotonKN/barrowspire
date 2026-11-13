@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { createMailboxStore, type MailboxApi } from "@/stores/mailboxStore";
-import { palette, toCss } from "@/utils/canvasPalette";
+import { mix, palette, toCss } from "@/utils/canvasPalette";
+import { TINT_IDENTITY } from "@/utils/theme";
 import { envelopeFrame } from "./letterPanelLayout";
 import { GLYPH_LINE_W, MailboxEnvelope, drawEnvelopeLines, envelopeFlapPoint } from "./MailboxEnvelope";
 
@@ -19,6 +20,9 @@ interface FakeGraphics {
   /** The fill colour, line width and line colour each op was drawn with. */
   styled: { m: string; args: number[]; fill?: [number, number]; line?: [number, number, number] }[];
   alpha: number;
+  scale?: number;
+  x?: number;
+  y?: number;
   destroyed: boolean;
 }
 interface FakeText {
@@ -34,49 +38,110 @@ interface FakeText {
 /** A character's width in the fake text: wide enough that "99" must move left to stay in the rect. */
 const CHAR_W = 8;
 
-function fakeScene(charW = CHAR_W) {
+/** A render texture, as the knockout made it (FS-7TQN4 R12). */
+interface FakeTexture {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth?: number;
+  scrollFactor?: number;
+  scale?: number;
+  tint?: number;
+  alpha?: number;
+  log: { m: "draw" | "erase" | "render"; g?: FakeGraphics }[];
+  destroyed: boolean;
+}
+
+/**
+ * What the stand-in can make: `none` is the plain stand-in (no `make`, no `add.renderTexture`),
+ * `ok` adds both, recording what they are given, and `throws` adds both with an
+ * `add.renderTexture` that throws (FS-7TQN4 R15).
+ */
+type TextureMode = "none" | "ok" | "throws";
+
+function fakeScene(charW = CHAR_W, texture: TextureMode = "none") {
   const graphics: FakeGraphics[] = [];
+  const made: FakeGraphics[] = [];
+  const textures: FakeTexture[] = [];
+  const attempts = { renderTexture: 0 };
+  const recordOf = new Map<unknown, FakeGraphics>();
+  /** The scene's display list, in drawing order: what `add` made, as Phaser's DisplayList keeps it. */
+  const list: unknown[] = [];
+  /** Each display-list object's record, to read the order by. */
+  const objectOf = new Map<unknown, unknown>();
   const texts: FakeText[] = [];
   const zones: { x: number; y: number; handlers: Record<string, () => void> }[] = [];
   const tweens: Record<string, unknown>[] = [];
+  const onList = (self: unknown, rec: unknown) => (list.push(self), objectOf.set(self, rec), self);
+  const offList = (self: unknown) => list.includes(self) && list.splice(list.indexOf(self), 1);
+  const newGraphics = (into: FakeGraphics[]) => {
+    const rec: FakeGraphics = { ops: [], styled: [], alpha: 1, destroyed: false };
+    into.push(rec);
+    let fill: [number, number] | undefined;
+    let line: [number, number, number] | undefined;
+    const self: Record<string, unknown> = {};
+    for (const m of [
+      "fillRect",
+      "fillRoundedRect",
+      "strokeRoundedRect",
+      "strokeRect",
+      "lineBetween",
+      "fillCircle",
+      "strokeCircle",
+      "beginPath",
+      "moveTo",
+      "lineTo",
+      "arc",
+      "closePath",
+      "strokePath",
+      "fillPath",
+      "fillTriangle",
+    ])
+      self[m] = (...args: number[]) => (
+        rec.ops.push({ m, args }), rec.styled.push({ m, args, fill, line }), self
+      );
+    self.fillStyle = (c: number, a = 1) => ((fill = [c, a]), rec.ops.push({ m: "fillStyle", args: [c, a] }), self);
+    self.lineStyle = (w: number, c: number, a = 1) => (
+      (line = [w, c, a]), rec.ops.push({ m: "lineStyle", args: [w, c, a] }), self
+    );
+    self.clear = () => ((rec.ops = []), (rec.styled = []), self);
+    self.setScrollFactor = () => self;
+    self.setDepth = () => self;
+    self.setAlpha = (a: number) => ((rec.alpha = a), self);
+    self.setScale = (sc: number) => ((rec.scale = sc), self);
+    self.setPosition = (x: number, y: number) => ((rec.x = x), (rec.y = y), self);
+    self.destroy = () => void ((rec.destroyed = true), offList(self));
+    recordOf.set(self, rec);
+    return self;
+  };
+  const renderTexture = (x: number, y: number, width: number, height: number) => {
+    attempts.renderTexture++;
+    if (texture === "throws") throw new Error("stand-in: no framebuffer");
+    const t: FakeTexture = { x, y, width, height, log: [], destroyed: false };
+    textures.push(t);
+    const self: Record<string, unknown> = {
+      width,
+      height,
+      setScrollFactor: (sf: number) => ((t.scrollFactor = sf), self),
+      setDepth: (d: number) => ((t.depth = d), self),
+      setScale: (sc: number) => ((t.scale = sc), self),
+      setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
+      setTint: (c: number) => ((t.tint = c), self),
+      setAlpha: (a: number) => ((t.alpha = a), self),
+      draw: (e: unknown) => (t.log.push({ m: "draw", g: recordOf.get(e) }), self),
+      erase: (e: unknown) => (t.log.push({ m: "erase", g: recordOf.get(e) }), self),
+      render: () => (t.log.push({ m: "render" }), self),
+      destroy: () => void ((t.destroyed = true), offList(self)),
+    };
+    return onList(self, t);
+  };
   const add = {
     graphics: () => {
-      const rec: FakeGraphics = { ops: [], styled: [], alpha: 1, destroyed: false };
-      graphics.push(rec);
-      let fill: [number, number] | undefined;
-      let line: [number, number, number] | undefined;
-      const self: Record<string, unknown> = {};
-      for (const m of [
-        "fillRect",
-        "fillRoundedRect",
-        "strokeRoundedRect",
-        "strokeRect",
-        "lineBetween",
-        "fillCircle",
-        "strokeCircle",
-        "beginPath",
-        "moveTo",
-        "lineTo",
-        "arc",
-        "closePath",
-        "strokePath",
-        "fillPath",
-        "fillTriangle",
-      ])
-        self[m] = (...args: number[]) => (
-          rec.ops.push({ m, args }), rec.styled.push({ m, args, fill, line }), self
-        );
-      self.fillStyle = (c: number, a = 1) => ((fill = [c, a]), rec.ops.push({ m: "fillStyle", args: [c, a] }), self);
-      self.lineStyle = (w: number, c: number, a = 1) => (
-        (line = [w, c, a]), rec.ops.push({ m: "lineStyle", args: [w, c, a] }), self
-      );
-      self.clear = () => ((rec.ops = []), (rec.styled = []), self);
-      self.setScrollFactor = () => self;
-      self.setDepth = () => self;
-      self.setAlpha = (a: number) => ((rec.alpha = a), self);
-      self.destroy = () => void (rec.destroyed = true);
-      return self;
+      const self = newGraphics(graphics);
+      return onList(self, recordOf.get(self));
     },
+    ...(texture === "none" ? {} : { renderTexture }),
     text: (x: number, y: number, words: string, style?: FakeText["style"]) => {
       const t: FakeText = { words, x, y, style, width: words.length * charW, destroyed: false };
       texts.push(t);
@@ -86,9 +151,9 @@ function fakeScene(charW = CHAR_W) {
         setScrollFactor: () => self,
         setDepth: () => self,
         setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
-        destroy: () => void (t.destroyed = true),
+        destroy: () => void ((t.destroyed = true), offList(self)),
       };
-      return self;
+      return onList(self, t);
     },
     zone: (x: number, y: number) => {
       const z = { x, y, handlers: {} as Record<string, () => void> };
@@ -105,14 +170,27 @@ function fakeScene(charW = CHAR_W) {
       return self;
     },
   };
+  // Phaser's List.moveBelow (src/utils/array/MoveBelow.js): child1 to just under child2, if above it
+  const children = {
+    list,
+    moveBelow: (child1: unknown, child2: unknown) => {
+      const [at, base] = [list.indexOf(child1), list.indexOf(child2)];
+      if (at < 0 || base < 0) throw new Error("Supplied items must be elements of the same array");
+      if (at > base) list.splice(base, 0, ...list.splice(at, 1));
+    },
+  };
+  const make = { graphics: () => newGraphics(made) };
   const scene = {
     add,
+    ...(texture === "none" ? {} : { make, children }),
     tweens: { add: (config: Record<string, unknown>) => (tweens.push(config), { stop: () => undefined }) },
   } as unknown as Phaser.Scene;
-  return { scene, graphics, texts, zones, tweens };
+  /** The drawing order of display-list objects, by their records. */
+  const order = () => list.map((o) => objectOf.get(o));
+  return { scene, graphics, made, textures, attempts, texts, zones, tweens, order };
 }
 
-function setup(charW?: number) {
+function setup(charW?: number, texture: TextureMode = "none") {
   const api = {
     summary: vi.fn(async () => ({ unreadCount: 0, unclaimedCount: 0, waitingCount: 0 })),
     letters: vi.fn(async () => []),
@@ -120,7 +198,7 @@ function setup(charW?: number) {
     claim: vi.fn(async (letterId: string) => ({ letterId, claimState: "claimed" as const, itemIds: [], gold: 0 })),
   } satisfies MailboxApi;
   const store = createMailboxStore({ api, storage: () => null, memberId: () => "me" });
-  const stage = fakeScene(charW);
+  const stage = fakeScene(charW, texture);
   const envelope = new MailboxEnvelope(stage.scene, { store, blocked: () => false });
   const waiting = (waitingCount: number) =>
     store.setState({ summary: { unreadCount: waitingCount, unclaimedCount: 0, waitingCount } });
@@ -484,5 +562,223 @@ describe("MailboxEnvelope (FS-QHN87 round 1: back to the plain envelope, in the 
     drawEnvelopeLines(g as never, envelopeFrame(viewport), palette.interactable, 0.85);
     const allowed = ["lineStyle", "strokeRoundedRect", "strokeRect", "lineBetween", "beginPath", "moveTo", "lineTo", "arc", "closePath", "strokePath"];
     for (const m of called) expect(allowed).toContain(m);
+  });
+});
+
+// FS-7TQN4 R7, R8, R10, R12–R16 (the owner, 2026-11-13: 「其他icon不是也要反白嗎」): the town envelope is
+// a bronze knockout, the count badge over it and the glow under it. I-7TQN4-1.
+
+const BRONZE = mix(palette.frame, palette.interactable, 0.5);
+const BRONZE_LIT = mix(palette.frame, palette.interactableBright, 0.5);
+
+/** What the knockout holds, in logical px on the screen: its fills and its cut lines. */
+function knockoutOf(t: FakeTexture) {
+  const solid = t.log.find((e) => e.m === "draw")!.g!;
+  const cut = t.log.find((e) => e.m === "erase")!.g!;
+  const shown = (g: FakeGraphics) => (p: Pt): Pt => ({
+    x: t.x + (p.x * (g.scale ?? 1) + (g.x ?? 0) - t.width / 2) * t.scale!,
+    y: t.y + (p.y * (g.scale ?? 1) + (g.y ?? 0) - t.height / 2) * t.scale!,
+  });
+  const fills: Pt[][] = [];
+  let path: Pt[] = [];
+  for (const { m, args } of solid.ops) {
+    if (m === "beginPath") path = [];
+    else if (m === "moveTo" || m === "lineTo") path.push(shown(solid)({ x: args[0], y: args[1] }));
+    else if (m === "fillPath") fills.push(path);
+  }
+  const cuts = strokesOf(cut.ops).map((k) => ({ ...k, pts: k.pts.map(shown(cut)) }));
+  return { solid, cut, fills, cuts };
+}
+
+describe("MailboxEnvelope (FS-7TQN4 R7, R12: a solid letter in its own texture)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it.each([1, 1.5, 2])(
+    "should make one texture at render scale %s on the envelope's slot: depth 1000, scroll factor 0, the slot × k, at 1/k, its body drawing nothing",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const k = 2 * renderScale;
+      const env = setup(undefined, "ok");
+      env.waiting(3);
+      const f = envelopeFrame(viewport);
+      expect(env.textures).toHaveLength(1);
+      const [t] = env.textures;
+      expect(t).toMatchObject({
+        x: f.x + f.width / 2,
+        y: f.y + f.height / 2,
+        width: Math.round(f.width * k),
+        height: Math.round(f.height * k),
+        depth: 1000,
+        scrollFactor: 0,
+      });
+      expect(t.scale).toBeCloseTo(1 / k, 12);
+      // no lines left on any graphics: only the glow's fills and the badge
+      for (const g of env.drawn()) expect(g.ops.filter((o) => o.m === "lineStyle" && o.args[0] === GLYPH_LINE_W)).toEqual([]);
+      expect(env.drawn().filter((g) => g.ops.length > 0)).toEqual([env.badgeGraphics()]);
+    },
+  );
+
+  it.each([1, 2])(
+    "should fill one rounded rect equal to the envelope's rect, radius 2, white at 1, then erase only the flap through its point and the two folds, each on an unscaled graphics at lineStyle(1.6·k), at render scale %s",
+    (renderScale) => {
+      viewport.set({ width: 1080, height: 720, renderScale });
+      const k = 2 * renderScale;
+      const env = setup(undefined, "ok");
+      const [t] = env.textures;
+      expect(t.log.map(({ m }) => m)).toEqual(["draw", "erase", "render"]);
+      const { solid, cut, fills, cuts } = knockoutOf(t);
+      for (const o of solid.ops.filter((x) => x.m === "fillStyle")) expect(o.args).toEqual([TINT_IDENTITY, 1]);
+      const f = envelopeFrame(viewport);
+      const e = { x: f.x + (f.width - 36) / 2, y: f.y + 11, w: 36, h: 25 };
+      expect(fills).toHaveLength(1);
+      const xs = fills[0].map((p) => p.x);
+      const ys = fills[0].map((p) => p.y);
+      expect(Math.min(...xs)).toBeCloseTo(e.x, 9);
+      expect(Math.max(...xs)).toBeCloseTo(e.x + e.w, 9);
+      expect(Math.min(...ys)).toBeCloseTo(e.y, 9);
+      expect(Math.max(...ys)).toBeCloseTo(e.y + e.h, 9);
+      const corner = Math.min(...fills[0].map((p) => Math.hypot(p.x - e.x, p.y - e.y)));
+      expect(corner).toBeCloseTo(2 * Math.SQRT2 - 2, 2);
+      // the cuts: strokes alone, white at 1, unscaled at 1.6·k
+      expect(cut.ops.map((o) => o.m).filter((m) => m.startsWith("fill") || m === "lineBetween")).toEqual([]);
+      expect(cut.scale ?? 1).toBe(1);
+      for (const o of cut.ops.filter((x) => x.m === "lineStyle")) {
+        expect(o.args[0]).toBeCloseTo(1.6 * k, 9);
+        expect(o.args.slice(1)).toEqual([TINT_IDENTITY, 1]);
+      }
+      expect(cuts).toHaveLength(3);
+      const point = envelopeFlapPoint(f);
+      const flaps = cuts.filter((c) => c.pts.length === 3 && near(c.pts[1], point, 1));
+      expect(flaps).toHaveLength(1);
+      expect(near(flaps[0].pts[0], { x: e.x + 1, y: e.y + 1 }, 1e-6)).toBe(true);
+      expect(near(flaps[0].pts[2], { x: e.x + e.w - 1, y: e.y + 1 }, 1e-6)).toBe(true);
+      const folds = cuts.filter((c) => c !== flaps[0]);
+      expect(folds.map((c) => c.pts.length)).toEqual([2, 2]);
+      expect(near(folds[0].pts[0], { x: e.x + 1, y: e.y + e.h - 1 }, 1e-6)).toBe(true);
+      expect(near(folds[1].pts[0], { x: e.x + e.w - 1, y: e.y + e.h - 1 }, 1e-6)).toBe(true);
+      expect(env.made.every((g) => g.destroyed)).toBe(true);
+    },
+  );
+
+  it("should tint it bronze at 0.85, lifted at 1 under the pointer, back on leaving, building nothing (R10)", () => {
+    const env = setup(undefined, "ok");
+    const [t] = env.textures;
+    expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    env.zones[0].handlers.pointerover();
+    expect(t).toMatchObject({ tint: BRONZE_LIT, alpha: 1 });
+    expect(env.live().map((x) => x.words)).toEqual(["Mailbox"]);
+    env.zones[0].handlers.pointerout();
+    expect(t).toMatchObject({ tint: BRONZE, alpha: 0.85 });
+    expect(env.textures).toHaveLength(1);
+    expect(env.made).toHaveLength(2);
+    expect(t.log).toHaveLength(3);
+  });
+});
+
+describe("MailboxEnvelope (FS-7TQN4 R8: the badge over the knockout, the glow under it)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  /** Whether the live image stands over the glow and under the badge's graphics and its count. */
+  const ordered = (env: ReturnType<typeof setup>) => {
+    const order = env.order();
+    const image = env.textures.find((t) => !t.destroyed)!;
+    const at = order.indexOf(image);
+    expect(at).toBeGreaterThan(order.indexOf(env.glow()));
+    expect(at).toBeLessThan(order.indexOf(env.badgeGraphics() ?? env.graphics[2]));
+    for (const t of env.live()) expect(at).toBeLessThan(order.indexOf(t));
+  };
+
+  it("should stand the image between the glow and the badge after building, with letters waiting", () => {
+    const env = setup(undefined, "ok");
+    env.waiting(3);
+    ordered(env);
+  });
+
+  it("should stand it there after the count goes from 0 to 3", () => {
+    const env = setup(undefined, "ok");
+    env.waiting(0);
+    ordered(env);
+    env.waiting(3);
+    expect(env.live().map((t) => t.words)).toEqual(["3"]);
+    ordered(env);
+  });
+
+  it("should stand it there after a rebuild at a new render scale, with no scene relayout", () => {
+    const env = setup(undefined, "ok");
+    env.waiting(3);
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.textures).toHaveLength(2);
+    ordered(env);
+  });
+});
+
+describe("MailboxEnvelope (FS-7TQN4 R11, R13, R14: relayout, a new render scale, destroy)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+
+  it("should move the image to the slot's new centre on a relayout to 1280, building nothing", () => {
+    const env = setup(undefined, "ok");
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    env.envelope.relayout();
+    const f = envelopeFrame(viewport);
+    expect(env.textures).toHaveLength(1);
+    expect(env.textures[0]).toMatchObject({ x: f.x + f.width / 2, y: f.y + f.height / 2, destroyed: false });
+  });
+
+  it("should build anew at k = 4 when the render scale goes 1 → 2, with no relayout, destroying the old and keeping the pointer's tint; a width change alone builds nothing", () => {
+    const env = setup(undefined, "ok");
+    env.zones[0].handlers.pointerover();
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    const f = envelopeFrame(viewport);
+    expect(env.textures).toHaveLength(2);
+    const [old, now] = env.textures;
+    expect(old.destroyed).toBe(true);
+    expect(now).toMatchObject({ width: Math.round(f.width * 4), height: Math.round(f.height * 4), tint: BRONZE_LIT, alpha: 1 });
+    expect(now.scale).toBeCloseTo(1 / 4, 12);
+    viewport.set({ width: 1280, height: 720, renderScale: 2 });
+    expect(env.textures).toHaveLength(2);
+  });
+
+  it("should destroy its image and stop watching on destroy: a later render-scale change makes nothing and throws nothing", () => {
+    const env = setup(undefined, "ok");
+    env.envelope.destroy();
+    expect(env.textures[0].destroyed).toBe(true);
+    expect(() => viewport.set({ width: 1080, height: 720, renderScale: 2 })).not.toThrow();
+    expect(env.attempts.renderTexture).toBe(1);
+  });
+});
+
+describe("MailboxEnvelope (FS-7TQN4 R15, R16: the fallback)", () => {
+  afterEach(() => {
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  it("should draw today's lines where making the texture throws, op for op as with no texture, and keep them on a later render-scale change", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const plain = setup();
+    const thrown = setup(undefined, "throws");
+    expect(thrown.textures).toEqual([]);
+    const body = (env: ReturnType<typeof setup>) => env.graphics[1];
+    expect(body(thrown).ops.length).toBeGreaterThan(0);
+    expect(body(thrown).ops).toEqual(body(plain).ops);
+    thrown.zones[0].handlers.pointerover();
+    plain.zones[0].handlers.pointerover();
+    expect(body(thrown).ops).toEqual(body(plain).ops);
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(thrown.attempts.renderTexture).toBe(1);
+    expect(body(thrown).ops).toEqual(body(plain).ops);
+  });
+
+  it.each(["none", "ok", "throws"] as const)("should keep the zone, the label and the press toggle (texture: %s)", (texture) => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = setup(undefined, texture);
+    const f = envelopeFrame(viewport);
+    expect(env.zones[0]).toMatchObject({ x: f.x, y: f.y });
+    env.zones[0].handlers.pointerover();
+    expect(env.live().map((t) => t.words)).toEqual(["Mailbox"]);
+    env.zones[0].handlers.pointerdown();
+    expect(env.store.getState().panelOpen).toBe(true);
+    env.zones[0].handlers.pointerdown();
+    expect(env.store.getState().panelOpen).toBe(false);
   });
 });
