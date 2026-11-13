@@ -46,6 +46,9 @@ type monsterVariant struct {
 	// ShieldLook is its blade + shield look's archetype, empty for a variant
 	// with one look (FS-C8VM7 §A R8)
 	ShieldLook components.MonsterArchetype
+	// Ability is its monster ability, both looks' (FS-C8VM7 §B R11); zero for
+	// none. It is the variant's own: the step rule never carries it up.
+	Ability components.MonsterAbility
 }
 
 // rosterEntry is where an archetype stands on the roster: its family, its
@@ -106,7 +109,7 @@ func init() {
 
 /**
 * addVariantSheets builds each step's sheet from the one below by the step rule
-* (stepUp), then gives each shield look its blade look's sheet with
+* (stepUp) and gives each step its variant's ability, then gives each shield look its blade look's sheet with
 * GoblinShieldDefense more defence, and the blade look's experience and drop
 * rows (FS-C8VM7 §A R5, R8; §E R32-R33).
 **/
@@ -116,8 +119,10 @@ func addVariantSheets(family monsterFamily) {
 	for step, v := range family.Variants {
 		if step > 0 {
 			below = stepUp(base, below, step, v.Name)
-			monsterSheets[v.Archetype] = below
 		}
+		// set after the step rule, which would carry step 0's up the family
+		below.Ability = v.Ability
+		monsterSheets[v.Archetype] = below
 		if v.ShieldLook == "" {
 			continue
 		}

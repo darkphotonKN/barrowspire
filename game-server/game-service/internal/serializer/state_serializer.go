@@ -787,6 +787,7 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 		Boss:      monster.Boss,
 		Facing:    types.Position{X: monster.FacingX, Y: monster.FacingY},
 		Action:    string(monster.Action),
+		Ability:   pendingAbilityState(monster),
 	}
 
 	if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
@@ -803,6 +804,23 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 		}
 	}
 
+	return state
+}
+
+// pendingAbilityState is a monster's ability while it winds one up, nil while
+// it does not: an area's or cone's centre, radius and angle, or for a shot its
+// kind and time left only. FS-C8VM7 §B R17.
+func pendingAbilityState(monster *components.MonsterComponent) *types.MonsterAbilityState {
+	pending := monster.AbilityPending
+	if pending.Remaining <= 0 {
+		return nil
+	}
+	ability := monster.Ability
+	state := &types.MonsterAbilityState{Kind: string(ability.Kind), Remaining: pending.Remaining}
+	if ability.Shape != components.AbilityShots {
+		state.X, state.Y = pending.X, pending.Y
+		state.Radius, state.Arc = ability.Radius, ability.Arc
+	}
 	return state
 }
 

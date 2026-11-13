@@ -182,53 +182,55 @@ const (
 )
 
 // spireRoster is R3's table: each family's role and its variants, step 0
-// first, with their unlock tiers. A step past 0 is its family's step 0 under
+// first, with their unlock tiers and their monster abilities (FS-C8VM7 §B
+// R11: in an old family only its tier-6 variant has one, in a new family
+// every variant). A step past 0 is its family's step 0 under
 // the step rule; only step 0 has a sheet of its own in monsterSheets.
 var spireRoster = []monsterFamily{
 	{Name: "Ghoul", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeGhoul, Name: "Ghoul", Unlock: 1},
 		{Archetype: components.MonsterArchetypeGhast, Name: "Ghast", Unlock: 3},
-		{Archetype: components.MonsterArchetypeRavener, Name: "Ravener", Unlock: 6},
+		{Archetype: components.MonsterArchetypeRavener, Name: "Ravener", Unlock: 6, Ability: pounceAbility},
 	}},
 	{Name: "Skeleton", Role: roleRanged, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeBoneArcher, Name: "Bone Archer", Unlock: 1},
 		{Archetype: components.MonsterArchetypeAshenArcher, Name: "Ashen Archer", Unlock: 4},
-		{Archetype: components.MonsterArchetypeWightArcher, Name: "Wight Archer", Unlock: 6},
+		{Archetype: components.MonsterArchetypeWightArcher, Name: "Wight Archer", Unlock: 6, Ability: volleyAbility},
 	}},
 	{Name: "Troll", Role: roleBrute, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeTroll, Name: "Troll", Unlock: 1},
 		{Archetype: components.MonsterArchetypeCaveTroll, Name: "Cave Troll", Unlock: 3},
-		{Archetype: components.MonsterArchetypeBloodTroll, Name: "Blood Troll", Unlock: 6},
+		{Archetype: components.MonsterArchetypeBloodTroll, Name: "Blood Troll", Unlock: 6, Ability: groundSlamAbility},
 	}},
 	{Name: "Thrall", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeBarrowThrall, Name: "Barrow Thrall", Unlock: 1},
 		{Archetype: components.MonsterArchetypePlagueThrall, Name: "Plague Thrall", Unlock: 4},
-		{Archetype: components.MonsterArchetypeBlightborn, Name: "Blightborn", Unlock: 6},
+		{Archetype: components.MonsterArchetypeBlightborn, Name: "Blightborn", Unlock: 6, Ability: deathBurstAbility},
 	}},
 	{Name: "Ghost", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeSpireWraith, Name: "Spire Wraith", Unlock: 1},
 		{Archetype: components.MonsterArchetypeShade, Name: "Shade", Unlock: 2},
 		{Archetype: components.MonsterArchetypePhantom, Name: "Phantom", Unlock: 4},
-		{Archetype: components.MonsterArchetypeBanshee, Name: "Banshee", Unlock: 6},
+		{Archetype: components.MonsterArchetypeBanshee, Name: "Banshee", Unlock: 6, Ability: wailAbility},
 	}},
 	{Name: "Goblin", Role: roleFodder, Variants: []monsterVariant{
 		{Archetype: components.MonsterArchetypeGoblin, Name: "Goblin", Unlock: 2,
-			ShieldLook: components.MonsterArchetypeGoblinShield},
+			ShieldLook: components.MonsterArchetypeGoblinShield, Ability: thrownDaggerAbility},
 		{Archetype: components.MonsterArchetypeGoblinCutthroat, Name: "Goblin Cutthroat", Unlock: 3,
-			ShieldLook: components.MonsterArchetypeGoblinCutthroatShield},
+			ShieldLook: components.MonsterArchetypeGoblinCutthroatShield, Ability: thrownDaggerAbility},
 		{Archetype: components.MonsterArchetypeGoblinReaver, Name: "Goblin Reaver", Unlock: 5,
-			ShieldLook: components.MonsterArchetypeGoblinReaverShield},
+			ShieldLook: components.MonsterArchetypeGoblinReaverShield, Ability: thrownDaggerAbility},
 		{Archetype: components.MonsterArchetypeGoblinWarchief, Name: "Goblin Warchief", Unlock: 6,
-			ShieldLook: components.MonsterArchetypeGoblinWarchiefShield},
+			ShieldLook: components.MonsterArchetypeGoblinWarchiefShield, Ability: thrownDaggerAbility},
 	}},
 	{Name: "Ogre", Role: roleBrute, Variants: []monsterVariant{
-		{Archetype: components.MonsterArchetypeOgre, Name: "Ogre", Unlock: 4},
-		{Archetype: components.MonsterArchetypeOgreMauler, Name: "Ogre Mauler", Unlock: 5},
-		{Archetype: components.MonsterArchetypeOgreTyrant, Name: "Ogre Tyrant", Unlock: 6},
+		{Archetype: components.MonsterArchetypeOgre, Name: "Ogre", Unlock: 4, Ability: rockThrowAbility},
+		{Archetype: components.MonsterArchetypeOgreMauler, Name: "Ogre Mauler", Unlock: 5, Ability: rockThrowAbility},
+		{Archetype: components.MonsterArchetypeOgreTyrant, Name: "Ogre Tyrant", Unlock: 6, Ability: rockThrowAbility},
 	}},
 	{Name: "Dark Warrior", Role: roleBrute, PoolWeight: DarkWarriorPoolWeight, Capped: true, Variants: []monsterVariant{
-		{Archetype: components.MonsterArchetypeDarkWarrior, Name: "Dark Warrior", Unlock: 6},
-		{Archetype: components.MonsterArchetypeDarkReaper, Name: "Dark Reaper", Unlock: 6},
+		{Archetype: components.MonsterArchetypeDarkWarrior, Name: "Dark Warrior", Unlock: 6, Ability: cleaveAbility},
+		{Archetype: components.MonsterArchetypeDarkReaper, Name: "Dark Reaper", Unlock: 6, Ability: cleaveAbility},
 	}},
 }
 
@@ -398,6 +400,10 @@ type monsterSheet struct {
 	// Shot is the projectile it looses; zero for an archetype that strikes in
 	// melee. With one, AttackRange is its shooting range.
 	Shot monsterShot
+	// Ability is its monster ability; zero for an archetype with none. A
+	// roster archetype's is its variant's (spireRoster), never its sheet
+	// literal's (FS-C8VM7 §B R10).
+	Ability components.MonsterAbility
 }
 
 // The demons' two moves: the slam, their wind-up strike doubled and rationed,
@@ -449,6 +455,59 @@ var boneArrowShot = monsterShot{
 	Radius:         8,
 	MaxFlight:      850,
 }
+
+// The monster abilities: one special move each, on the archetypes the roster
+// gives it to. FS-C8VM7 §B R11. Starting values.
+var (
+	// the Wight Archer's: three of its arrows fanned, within its shooting
+	// range and over its shot's draw (the Bone Archer's sheet, stepped up)
+	volleyAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityVolley, Shape: components.AbilityShots,
+		MaxRange: 320, WindUp: 0.6, Cooldown: 5, Multiplier: 1.0,
+		ProjectileType: boneArrowShot.ProjectileType, ShotSpeed: boneArrowShot.Speed,
+		ShotRadius: boneArrowShot.Radius, ShotMaxFlight: boneArrowShot.MaxFlight,
+		Shots: 3, Fan: 12,
+	}
+	// the Ravener's: a leap on the point its target stood on, then a small
+	// circle where it lands
+	pounceAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityPounce, Shape: components.AbilityLeap,
+		MinRange: 120, MaxRange: 300, WindUp: 0.5, Cooldown: 6, Multiplier: 1.5,
+		Radius: 60, LeapTime: 0.3,
+	}
+	// the Blightborn's: once, on its corpse, a fuse after its death
+	deathBurstAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityBurst, Shape: components.AbilityDeathBurst,
+		WindUp: 0.8, Multiplier: 2.0, Radius: 110,
+	}
+	// the Blood Troll's: a wide circle round itself, slow to wind
+	groundSlamAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityGroundSlam, Shape: components.AbilityAreaAroundSelf,
+		MaxRange: 90, WindUp: 0.9, Cooldown: 7, Multiplier: 1.5, Radius: 130,
+	}
+	// the Banshee's: the widest circle, the lightest hit
+	wailAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityWail, Shape: components.AbilityAreaAroundSelf,
+		MaxRange: 200, WindUp: 0.7, Cooldown: 8, Multiplier: 1.2, Radius: 180,
+	}
+	// every goblin's: its reach past melee
+	thrownDaggerAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityDagger, Shape: components.AbilityShots,
+		MinRange: 90, MaxRange: 260, WindUp: 0.4, Cooldown: 5, Multiplier: 1.0,
+		ProjectileType: "thrown_dagger", ShotSpeed: 480, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
+	}
+	// every ogre's: slow, large and long-wound, easy to dodge but painful
+	rockThrowAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityRock, Shape: components.AbilityShots,
+		MinRange: 140, MaxRange: 380, WindUp: 1.0, Cooldown: 7, Multiplier: 1.5,
+		ProjectileType: "ogre_rock", ShotSpeed: 240, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
+	}
+	// every dark warrior's: a wide cone in front
+	cleaveAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityCleave, Shape: components.AbilityCone,
+		MaxRange: 110, WindUp: 0.8, Cooldown: 6, Multiplier: 1.6, Radius: 110, Arc: 120,
+	}
+)
 
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	components.MonsterArchetypeGhoul: {
