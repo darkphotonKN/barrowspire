@@ -776,13 +776,43 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   The party's dots as in a run; no monsters, no other players, no labels, no roads.
   *(Added by [FS-P0HSP](../../docs/specs/P0HSP-town-and-field-minimap.md), 2026-11-12.)*
 - **Corner row.** The panel icons in the bottom-right corner of every world (`src/ui/HudCorner.ts`):
-  from the right Menu (a gear), Character (a bust), Party (two busts) and Mailbox (the envelope), each
-  a 58 × 46 carved plate at the envelope's 0.85, 8 px apart, 16 px in from the corner. Their lines
-  are the interactable amber, brighter under the pointer; a greyed icon (Mail outside the town)
-  is `hudFaint` and never brightens, since an amber thing the player cannot act on is a defect.
-  Under the pointer a 12 px vellum label on the HUD panel names the icon and its key. Drawn in
-  code from tokens, no baked art. The ability card stands directly above the row.
-  *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-12.)*
+  from the right Menu, Inventory, Character, Party and Mailbox. They stand bare over the world, with
+  no plate under them ([FS-J1672](../../docs/specs/J1672-bare-corner-icons.md)), each on a 54 × 46
+  press area, 2 px apart (56 px from one icon's middle to the next), 16 px in from the corner. All
+  five are **knockouts** (`src/ui/knockout.ts`, one renderer for all five): a solid silhouette in
+  bronze (brass and amber mixed half and half, `mix(frame, interactable, 0.5)`), its inner lines cut
+  1.6 px so the world shows through them, at alpha 0.85 idle, lifted toward the bright amber and
+  opaque under the pointer, drawn into a texture at twice the render scale so the cuts stay smooth;
+  a greyed icon (Mail outside the town) is the same knockout in `hudFaint` at 0.6 and never
+  brightens, since an amber thing the player cannot act on is a defect. Each knockout stands
+  **embossed**, raised off the world: under it lies its own silhouette as a drop shadow, in the
+  charcoal `ink` at half alpha, 1 px down and right, and its bronze is lit from above, lifted 25%
+  toward the bright amber at the silhouette's top and shaded 20% at its foot (laid as the image's
+  corner tints, so nothing more is drawn and the cuts stay clear); under the pointer the whole
+  gradient lifts and the shadow stays put. The greyed Mailbox has the shadow but stays one flat
+  grey. Menu is a solid gear with a centre hole, a ring cut round it and four rivet holes. Inventory
+  is the round, squat rucksack (`src/ui/knockoutRucksack.ts`): a bedroll tied on top, a wide rounded
+  flap shut by a hasp on a ring, and a low side pocket with its own flap on each side. Character is
+  a solid head over solid shoulders, a gap at the neck, smooth rounded shoulder caps each with one
+  plate seam, and a baldric and buckle cut across the chest. Party is three such busts, one in front
+  in the middle and two behind it at the left and right, higher and smaller, a gap cut where the
+  front one overlaps the two behind. Mailbox is a solid envelope with its flap and foot folds cut,
+  the count badge over it. Where a scene cannot make the texture, each is drawn as its 2.25 px line
+  glyph (`GLYPH_LINE_W`, over the renderer's 2 px join threshold, every angled corner a vertex
+  inside one path) of the interactable amber, brighter under the pointer, with nothing filled and no
+  emboss. Under the pointer a 12 px vellum label on the HUD panel names the icon and its key.
+  Everything is drawn in code from tokens, with no baked art. The ability card stands directly above
+  the row, 8 px over it. *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md),
+  2026-11-12; rewritten by [FS-3EBCA § Change: The inventory icon is an inked
+  backpack](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-13, and by its owner's tweak rounds
+  the same day; glyphs drawn richer by [FS-QHN87](../../docs/specs/QHN87-richer-corner-glyphs.md),
+  2026-11-13, as its owner's two tweak rounds left them: busts with pauldrons, not hooded figures,
+  three of them for Party, the plain envelope, and the row drawn closer; Inventory made a bronze
+  knockout rucksack by [FS-3EBCA § Change: The inventory icon is a bronze knockout
+  rucksack](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-13; the whole row made bronze
+  knockout by [FS-7TQN4](../../docs/specs/7TQN4-knockout-corner-row.md), 2026-11-13; embossed, a
+  drop shadow and a top-lit gradient, by [FS-S8Z2Y](../../docs/specs/S8Z2Y-embossed-corner-row.md),
+  2026-11-13.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

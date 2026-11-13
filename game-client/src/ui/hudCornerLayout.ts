@@ -30,19 +30,24 @@ export const CORNER_ICONS: readonly CornerIcon[] = [
   "mail",
 ];
 
-/** A plate: the envelope's size (R2). */
-export const CORNER_ICON_W = 58;
+/**
+ * A plate: the icon's press area (R2), 54 wide since FS-QHN87's round 2 drew the row closer (the
+ * owner, 2026-11-13: 「icon距離可以稍微靠近一些」): 56 px from one icon's middle to the next.
+ */
+export const CORNER_ICON_W = 54;
 export const CORNER_ICON_H = 46;
-/** Between two plates. */
-export const CORNER_ICON_GAP = 8;
+/** Between two plates: the plates still never overlap. */
+export const CORNER_ICON_GAP = 2;
 /** The row's distance from the view's right and bottom edges: the envelope's margin. */
 export const CORNER_MARGIN = 16;
+/** The gap between the row and what stands above it, the plates' gap before they drew closer. */
+const CORNER_ROW_HEADROOM = 8;
 /**
  * How far up from the view's bottom what stands above the row ends (R13, R14): the row's margin,
- * its height and the gap the row keeps between plates.
+ * its height and the gap it keeps above it.
  */
 export const CORNER_ROW_CLEARANCE =
-  CORNER_MARGIN + CORNER_ICON_H + CORNER_ICON_GAP;
+  CORNER_MARGIN + CORNER_ICON_H + CORNER_ROW_HEADROOM;
 
 /**
  * The ability card's place outside the town (R13; owner, "村莊以外會顯示右鍵的技能 就放在icon上方的位置"):

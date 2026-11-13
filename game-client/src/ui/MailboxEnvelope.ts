@@ -1,14 +1,17 @@
 /**
- * The mailbox's envelope at the bottom-right of the town HUD (FS-1GZGD R33, R35; D11, D12): a line
- * envelope with a small wax seal, drawn with Phaser graphics on a carved plate (no emoji, no
- * Heroicon, no baked art). The seal is lit with the number of letters waiting and dark when none
- * do; a newer letter than the player last saw makes the envelope glow a few times, then the seal
- * stays lit. Pressing it opens the letter panel, and pressing it again closes it; it stands in the
- * corner row's Mailbox slot and names itself "Mailbox" under the pointer (FS-1GZGD § Change).
+ * The mailbox's envelope at the bottom-right of the town HUD (FS-1GZGD R33, R35; D11): a bare line
+ * envelope, drawn with Phaser graphics straight over the world, with no plate under it and no seal
+ * on it (FS-J1672 R1, R7; no emoji, no Heroicon, no baked art). While letters wait, a small ember
+ * badge at its top-right corner carries their number, and none shows when nothing does (FS-J1672
+ * R8, R9); a newer letter than the player last saw makes the envelope glow a few times, then the
+ * badge simply stays (R10). Pressing it opens the letter panel, and pressing it again closes it; it
+ * stands in the corner row's Mailbox slot and names itself "Mailbox" under the pointer (FS-1GZGD
+ * § Change).
  *
  * Game palette (ADR-0025): the envelope's lines are amber because it can always be pressed; the
- * lit seal is ember wax; the pulse is the torch's glow. It reads the mailbox store and decides
- * nothing: what the seal shows and when it pulses is `@/mailbox/mailbox` and the store's.
+ * badge wears the lit seal's ember and rim; the pulse is the torch's glow. It reads the mailbox
+ * store and decides nothing: what the badge shows and when it pulses is `@/mailbox/mailbox` and the
+ * store's (`sealState`).
  */
 
 import type Phaser from "phaser";
@@ -17,11 +20,11 @@ import { sealState } from "@/mailbox/mailbox";
 import type { MailboxState } from "@/stores/mailboxStore";
 import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import { carvedPanel } from "./carvedPanel";
 import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
 import { CornerLabel } from "./cornerLabel";
 import { CORNER_LABEL } from "./hudCornerLayout";
+import { BRONZE, Knockout, oval, type KnockoutPicture, type Pt } from "./knockout";
 
 export interface MailboxEnvelopeDeps {
   store: StoreApi<MailboxState>;
@@ -43,10 +46,48 @@ const HUD_DEPTH = 1000;
 /** One glow up and down, and how many more follow it: three glows in all (D12, "a few times"). */
 const PULSE_MS = 420;
 const PULSE_REPEATS = 2;
-/** The highest count the seal prints; more reads as this. */
-const SEAL_MAX = 99;
+/** The highest count the badge prints; more reads as this. */
+const BADGE_MAX = 99;
+/** The count badge (FS-J1672 R9): 14 px tall, its count 4 px in from each side, never under 14 wide. */
+const BADGE_H = 14;
+const BADGE_PAD_X = 4;
+/** The badge's rim, inset in its ember as the lit seal's is in its wax. */
+const BADGE_RIM_INSET = 1.5;
 
-/** Draws a wax seal at (x, y): ember wax with a bright rim when lit, dark iron-rimmed wax when not. */
+/**
+ * Strokes a pill `w` × `h` centred on (x, y), its ends half circles: a circle when it is no wider
+ * than tall. Not `strokeRoundedRect`, which at a radius of half the height (and, when square, half
+ * the width) puts lines of no length in its path (Phaser 4.2.1 Graphics.strokeRoundedRect), and the
+ * WebGL renderer's DrawLine divides by a segment's length. Here every segment has length: each
+ * arc's start joins the last point by the pill's top, and closing the path draws its foot.
+ */
+function strokePill(
+  g: Pick<
+    Phaser.GameObjects.Graphics,
+    "strokeCircle" | "beginPath" | "arc" | "closePath" | "strokePath"
+  >,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): void {
+  const r = h / 2;
+  if (w <= h) {
+    g.strokeCircle(x, y, r);
+    return;
+  }
+  const reach = w / 2 - r;
+  g.beginPath();
+  g.arc(x - reach, y, r, Math.PI / 2, (Math.PI * 3) / 2);
+  g.arc(x + reach, y, r, -Math.PI / 2, Math.PI / 2);
+  g.closePath();
+  g.strokePath();
+}
+
+/**
+ * Draws a wax seal at (x, y): ember wax with a bright rim when lit, dark iron-rimmed wax when not.
+ * The letter list's unread dot; the envelope itself wears none (FS-J1672 R7, R11).
+ */
 export function drawWaxSeal(
   g: Pick<
     Phaser.GameObjects.Graphics,
@@ -73,44 +114,100 @@ export function drawWaxSeal(
   g.strokeCircle(x, y, r - 1);
 }
 
-/** The envelope inside its plate. */
+/**
+ * The one line width of every corner-row glyph, the envelope's lines and the greyed Mailbox's
+ * included (FS-QHN87 R1): over the WebGL renderer's 2 px join threshold, so a path's corners are
+ * joined (Phaser 4.2.1 StrokePath). Named here, not in `HudCorner`, which imports the envelope's
+ * lines: the other way round would be a cycle.
+ */
+export const GLYPH_LINE_W = 2.25;
+
+/** The envelope's lines: 36 × 25, centred across the icon's rect, 11 px down from its top. */
+const ENVELOPE_LINES = { width: 36, height: 25, top: 11 };
 function envelopeRect(f: Rect): Rect {
-  return { x: f.x + 11, y: f.y + 11, width: f.width - 22, height: f.height - 21 };
+  return {
+    x: f.x + (f.width - ENVELOPE_LINES.width) / 2,
+    y: f.y + ENVELOPE_LINES.top,
+    width: ENVELOPE_LINES.width,
+    height: ENVELOPE_LINES.height,
+  };
 }
 
-/** Where the seal sits on an envelope drawn in plate `f`: the flap's point. */
-export function envelopeSealAt(f: Rect): { x: number; y: number } {
+/** The flap's point on an envelope drawn in rect `f`: where its two lines meet. */
+export function envelopeFlapPoint(f: Rect): { x: number; y: number } {
   const e = envelopeRect(f);
   return { x: e.x + e.width / 2, y: e.y + e.height * 0.58 };
 }
 
 /**
- * The envelope's lines in plate `f`, in `ink` (R33): its edge, the flap down to the seal and the
- * folds at the foot. The corner row draws the greyed Mailbox with it too (FS-3EBCA R9).
+ * The envelope's lines in rect `f`, in `ink` (R33): its edge, the flap down to its point and the
+ * folds at the foot, as before FS-QHN87 (the owner's round 1, 2026-11-13: 「信箱有點怪 還是回到上一版好了」),
+ * in the row's one width. The flap is one path through its point, so the renderer joins it there
+ * (FS-QHN87 R2). The corner row draws the greyed Mailbox with it too (FS-3EBCA R9).
  */
 export function drawEnvelopeLines(
-  g: Pick<Phaser.GameObjects.Graphics, "lineStyle" | "strokeRoundedRect" | "lineBetween">,
+  g: Pick<
+    Phaser.GameObjects.Graphics,
+    "lineStyle" | "strokeRoundedRect" | "lineBetween" | "beginPath" | "moveTo" | "lineTo" | "strokePath"
+  >,
   f: Rect,
   ink: number,
   alpha: number,
 ): void {
   const e = envelopeRect(f);
-  const point = envelopeSealAt(f);
-  g.lineStyle(1.5, ink, alpha);
+  const point = envelopeFlapPoint(f);
+  g.lineStyle(GLYPH_LINE_W, ink, alpha);
   g.strokeRoundedRect(e.x, e.y, e.width, e.height, 2);
-  // the flap, down to the seal
-  g.lineBetween(e.x + 1, e.y + 1, point.x, point.y);
-  g.lineBetween(point.x, point.y, e.x + e.width - 1, e.y + 1);
+  // the flap, down to its point and up again
+  g.beginPath();
+  g.moveTo(e.x + 1, e.y + 1);
+  g.lineTo(point.x, point.y);
+  g.lineTo(e.x + e.width - 1, e.y + 1);
+  g.strokePath();
   // the folds at the foot
   g.lineBetween(e.x + 1, e.y + e.height - 1, e.x + e.width * 0.36, e.y + e.height * 0.5);
   g.lineBetween(e.x + e.width - 1, e.y + e.height - 1, e.x + e.width * 0.64, e.y + e.height * 0.5);
+}
+
+/**
+ * The envelope as a knockout (FS-7TQN4 R7), about the centre of the rect `f` it stands in: one
+ * solid rounded rect in the envelope's rect, radius 2, its flap cut as one path down to its point
+ * and up again, and its two foot folds cut, as its lines run. The corner row's greyed Mailbox is
+ * the same (R9).
+ */
+export function envelopeKnockout(f: Rect): KnockoutPicture {
+  const e = envelopeRect(f);
+  const point = envelopeFlapPoint(f);
+  const [cx, cy] = [f.x + f.width / 2, f.y + f.height / 2];
+  const local = (x: number, y: number): Pt => [x - cx, y - cy];
+  const r = 2;
+  const corner = (x: number, y: number, from: number) =>
+    oval(x - cx, y - cy, r, r, from, from + Math.PI / 2, 6);
+  const [l, t, rt, b] = [e.x, e.y, e.x + e.width, e.y + e.height];
+  return {
+    silhouette: [
+      [
+        ...corner(l + r, t + r, Math.PI),
+        ...corner(rt - r, t + r, 1.5 * Math.PI),
+        ...corner(rt - r, b - r, 0),
+        ...corner(l + r, b - r, Math.PI / 2),
+      ],
+    ],
+    cuts: [
+      { path: [local(l + 1, t + 1), local(point.x, point.y), local(rt - 1, t + 1)] },
+      { path: [local(l + 1, b - 1), local(l + e.width * 0.36, t + e.height * 0.5)] },
+      { path: [local(rt - 1, b - 1), local(l + e.width * 0.64, t + e.height * 0.5)] },
+    ],
+  };
 }
 
 export class MailboxEnvelope {
   private frame: Rect;
   private readonly glow: Phaser.GameObjects.Graphics;
   private readonly body: Phaser.GameObjects.Graphics;
-  private readonly seal: Phaser.GameObjects.Graphics;
+  private readonly badge: Phaser.GameObjects.Graphics;
+  /** The envelope as a knockout, where the scene can draw one (FS-7TQN4 R7, R12). */
+  private readonly knockout: Knockout;
   private readonly zone: Phaser.GameObjects.Zone;
   private count?: Phaser.GameObjects.Text;
   private pulse?: Phaser.Tweens.Tween;
@@ -129,7 +226,18 @@ export class MailboxEnvelope {
     this.glow = hud(scene.add.graphics());
     this.glow.setAlpha(0);
     this.body = hud(scene.add.graphics());
-    this.seal = hud(scene.add.graphics());
+    this.badge = hud(scene.add.graphics());
+    // drawn at the render scale and again at a new one, which the scene's relayout does not
+    // report (FS-7TQN4 R13); each image it makes goes under the badge, so over the glow (R8)
+    this.knockout = new Knockout({
+      scene,
+      depth: HUD_DEPTH,
+      picture: envelopeKnockout(this.frame),
+      ink: BRONZE,
+      name: "the envelope",
+      built: (image) => scene.children.moveBelow(image as Phaser.GameObjects.GameObject, this.badge),
+      lost: () => this.drawBody(),
+    });
     const { x, y, width, height } = this.frame;
     this.zone = scene.add
       .zone(x, y, width, height)
@@ -143,9 +251,9 @@ export class MailboxEnvelope {
 
     this.drawGlow();
     this.drawBody();
-    this.drawSeal();
+    this.drawBadge();
     this.unsubscribe = deps.store.subscribe((state, prev) => {
-      if (state.summary !== prev.summary) this.drawSeal();
+      if (state.summary !== prev.summary) this.drawBadge();
       if (state.pulses > prev.pulses) this.playPulse();
     });
   }
@@ -156,7 +264,7 @@ export class MailboxEnvelope {
     this.zone.setPosition(this.frame.x, this.frame.y);
     this.drawGlow();
     this.drawBody();
-    this.drawSeal();
+    this.drawBadge();
     if (this.hovered) this.label.show(this.frame, CORNER_LABEL.mail);
   }
 
@@ -166,8 +274,9 @@ export class MailboxEnvelope {
     this.pulse?.stop();
     this.pulse = undefined;
     this.glow.destroy();
+    this.knockout.destroy();
     this.body.destroy();
-    this.seal.destroy();
+    this.badge.destroy();
     this.count?.destroy();
     this.count = undefined;
     this.zone.destroy();
@@ -193,11 +302,15 @@ export class MailboxEnvelope {
     else this.label.hide();
   }
 
-  /** The carved plate and the envelope's lines: amber, brighter under the pointer. */
+  /**
+   * The envelope, bare over the world (FS-J1672 R1): a bronze knockout, lifted under the pointer
+   * (FS-7TQN4 R7, R10); its lines, amber and brighter under the pointer, where the scene cannot
+   * draw the knockout (R15).
+   */
   private drawBody(): void {
     const g = this.body.clear();
     const f = this.frame;
-    carvedPanel(g, f.x, f.y, f.width, f.height, { opacity: 0.85 });
+    if (this.knockout.show(f, this.hovered)) return;
     drawEnvelopeLines(
       g,
       f,
@@ -206,17 +319,19 @@ export class MailboxEnvelope {
     );
   }
 
-  /** The seal: lit with the waiting count, dark with none (R35). */
-  private drawSeal(): void {
+  /**
+   * The count badge (FS-J1672 R8, R9): while anything waits, an ember pill with a bright rim, as the
+   * letter list's lit seal wears, and the count on it, centred on the envelope's top-right corner,
+   * moved left only as far as keeps it inside the icon's rect; nothing when nothing waits.
+   */
+  private drawBadge(): void {
     const { lit, count } = sealState(this.deps.store.getState().summary);
-    const at = envelopeSealAt(this.frame);
-    const g = this.seal.clear();
-    drawWaxSeal(g, at.x, at.y, 8, lit);
+    const g = this.badge.clear();
     this.count?.destroy();
     this.count = undefined;
     if (!lit) return;
-    this.count = this.scene.add
-      .text(at.x, at.y, String(Math.min(count, SEAL_MAX)), {
+    const text = this.scene.add
+      .text(0, 0, String(Math.min(count, BADGE_MAX)), {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
         fontStyle: "bold",
@@ -225,9 +340,23 @@ export class MailboxEnvelope {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH);
+    const f = this.frame;
+    const e = envelopeRect(f);
+    const w = Math.max(BADGE_H, text.width + BADGE_PAD_X * 2);
+    const x = Math.min(e.x + e.width, f.x + f.width - w / 2);
+    const y = e.y;
+    const r = BADGE_H / 2;
+    g.fillStyle(palette.ember, 1);
+    g.fillRoundedRect(x - w / 2, y - r, w, BADGE_H, r);
+    g.lineStyle(1, palette.interactableBright, 0.85);
+    strokePill(g, x, y, w - BADGE_RIM_INSET * 2, BADGE_H - BADGE_RIM_INSET * 2);
+    this.count = text.setPosition(x, y);
   }
 
-  /** The torch's soft glow around the plate, faded in and out by the pulse. */
+  /**
+   * The torch's soft glow round the icon's rect, where its plate once stood, faded in and out by
+   * the pulse (FS-J1672 R10).
+   */
   private drawGlow(): void {
     const g = this.glow.clear();
     const f = this.frame;
@@ -243,7 +372,7 @@ export class MailboxEnvelope {
     }
   }
 
-  /** A few glows, then the seal simply stays lit (D12). A new pulse restarts the glows. */
+  /** A few glows, then the badge simply stays (D12; FS-J1672 R10). A new pulse restarts the glows. */
   private playPulse(): void {
     this.pulse?.stop();
     this.glow.setAlpha(0);
