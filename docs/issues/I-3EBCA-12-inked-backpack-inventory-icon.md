@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-12
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: []
 labels: [ready-for-agent]
@@ -116,3 +116,7 @@ FS-3EBCA R3 and FS-J1672 R2, R3 for this one icon.
 
   Meanwhile the FS-J1672 block, narrowed to the other four, still passes.
 - GREEN: the backpack drawer and its tone table. Then the screenshots and the guideline edit.
+
+## Superseded
+
+2026-11-13: built and looked at, then superseded by FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack (I-3EBCA-14/15).

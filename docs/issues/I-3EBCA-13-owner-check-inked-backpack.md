@@ -1,6 +1,6 @@
 ---
 id: I-3EBCA-13
-status: open
+status: done
 implements: FS-3EBCA
 blocked_by: [I-3EBCA-12]
 labels: [blocked]
@@ -40,3 +40,7 @@ I-3EBCA-12.
 FS-3EBCA §Change: The inventory icon is an inked backpack: R13, R14, Acceptance Criteria "By eye",
 Edge States "Render scale 1" and "A light ground / A dark ground"; D7; user stories 2, 3, 11, 12, 15
 and 16.
+
+## Superseded
+
+2026-11-13: built and looked at, then superseded by FS-3EBCA § Change: The inventory icon is a bronze knockout rucksack (I-3EBCA-14/15).
