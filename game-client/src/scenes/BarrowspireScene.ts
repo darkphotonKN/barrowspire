@@ -43,20 +43,14 @@ import {
 } from "@/ui/floor";
 import { placeCard } from "@/ui/placeCard";
 import {
-  FALL_CONFIRM,
   nextWatched,
   resolved,
   resolvedView,
-  runMenuChoices,
   watchable,
   type ResolvedKind,
   type ResolvedView,
-  type RunMenuChoice,
 } from "@/ui/party";
-import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
-import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
-import { lentFullscreen } from "@/ui/gameFullscreen";
-import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
+import { browserMusicStore } from "@/audio/musicSetting";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
@@ -67,7 +61,7 @@ import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { NO_UI, answering, reportWorld, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
+import { NO_FACTS, NO_UI, answering, reportWorld, type WorldFacts, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
@@ -79,7 +73,6 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
-import { escapeStep } from "@/ui/escapeOrder";
 import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -374,21 +367,16 @@ const NOTICE_BACKING: Record<NoticeTone, number> = {
 };
 
 /**
- * The run's ESC menu (FS-9K8EZ req 1): the shared menu chrome, camera-fixed in the popup band
- * over the dead player's card (1500), which it never hides for long
- * (req 6). The pressable area of a menu choice, in screen px around its label, and the run's
- * tokens for the chrome: amber to press, arcane to go back, the HUD's label tone while dimmed.
+ * The keys the run's own ESC menu captured, Enter and 1 and 2 (FS-9K8EZ req 1): the menu and its keys
+ * are the UI scene's now (FS-TQZ5J R17, R18), which captures only Esc; the run keeps these captured,
+ * so the page's default for them is as it was while the run stands.
  */
-const MENU_CHOICE_HIT = { width: 220, height: 34 };
-const MENU_TONES: MenuTones = {
-  panel: palette.ink,
-  frame: palette.frame,
-  text: palette.hudText,
-  dim: palette.hudLabel,
-  actionable: palette.interactable,
-  cancel: palette.safe,
+const menuKeyCaptures = (): number[] => {
+  const codes = Phaser.Input.Keyboard.KeyCodes;
+  return [codes.ENTER, codes.ONE, codes.TWO];
 };
-/** What the player's state was when the menu was built: its rows are right for this and no other. */
+
+/** The player's state as the menu reads it (FS-9K8EZ req 2): its rows are right for this and no other. */
 interface MenuState {
   resolved: boolean;
 }
@@ -642,25 +630,12 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The server's one-shots, held from init until create is done (FS-C4JWH Edge States). */
   private held?: HeldMessages;
   private oneShots?: OneShotHandlers;
-  /**
-   * The ESC menu, or its confirm, while open (FS-9K8EZ req 1–6), or the OPTIONS panel opened from it
-   * in its place (FS-28DDG § Change: Music volume in an Options panel, C8). It owns the keyboard and pointer.
-   */
-  private menu?: Phaser.GameObjects.Container;
-  /** The open menu's choices by key: the n-th actionable one, the first on Enter, back on Esc; the panel's ←/→. */
-  private menuChoices?: MenuSlotKeys;
-  /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
-  private moveMenu?: (origin: { x: number; y: number }) => void;
-  /** The state the open menu's rows were built for; a state that differs takes it down (req 6). */
-  private menuFor?: MenuState;
   /** A `forfeit_run` is on its way and unanswered: Fall is dimmed until a reply or the death (req 3). */
   private fallPending = false;
   /** Whether the last frame sent a stride, so the menu that interrupts it can stop it once (req 5). */
   private striding = false;
-  /** The menu's keys (req 1), polled each frame as the hub's are: ESC, Enter, and one per row. */
-  private dismissKey?: Phaser.Input.Keyboard.Key;
-  private confirmKey?: Phaser.Input.Keyboard.Key;
-  private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
+  /** The menu's keys the run keeps captured while it stands, handed back on its stop (`menuKeyCaptures`). */
+  private menuKeysCaptured: number[] = [];
   private readonly watchSpec: ButtonSpec = {
     name: "watch-the-delve",
     label: "WATCH THE DELVE",
@@ -1147,18 +1122,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resolvedKind = undefined;
     this.leaveButton = undefined;
     this.leavePending = false;
-    // the menu went down with the scene's objects; its keys are rebound by the next create
-    this.menu = undefined;
-    this.menuChoices = undefined;
-    this.menuFor = undefined;
     this.fallPending = false;
     this.striding = false;
     // on a stop the keyboard is handed back, by the keys still held here; either way the next
     // run's create binds its keys afresh
     if (end === "shutdown") this.handBackKeyboard();
-    this.dismissKey = undefined;
-    this.confirmKey = undefined;
-    this.choiceKeys = [];
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
@@ -1225,10 +1193,9 @@ export class BarrowspireScene extends Phaser.Scene {
       ...Object.values(this.cursors ?? {}),
       ...Object.values(this.wasd ?? {}),
       this.tabKey,
-      this.dismissKey,
-      this.confirmKey,
-      ...this.choiceKeys,
+      ...this.menuKeysCaptured.map((keyCode) => ({ keyCode })),
     ]);
+    this.menuKeysCaptured = [];
   }
 
   /** The run's keys, polled each frame or answered on press. Each captures its key (`SceneEnd`). */
@@ -1248,14 +1215,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, false);
     this.tabKey.on("down", () => this.cycleWatched());
 
-    // The run's ESC menu (FS-9K8EZ req 1): ESC opens and closes it, a number picks a row, Enter
-    // the first. Polled each frame in update, as the hub's are. Nothing here leaves the run: the
-    // server keeps the body in the world whoever is looking at it (FS-QPDKN req 13).
-    this.dismissKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.confirmKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
-    this.choiceKeys = [Phaser.Input.Keyboard.KeyCodes.ONE, Phaser.Input.Keyboard.KeyCodes.TWO].map(
-      (code) => this.input.keyboard!.addKey(code),
-    );
+    // The run's ESC menu is the UI scene's, Esc and its keys with it (FS-TQZ5J R17, R18): the run
+    // binds none of them. Enter, 1 and 2, which the run's menu keys captured, stay captured while the
+    // run stands, so the page's default for them is as it was.
+    this.menuKeysCaptured = menuKeyCaptures();
+    this.input.keyboard!.addCapture(this.menuKeysCaptured);
   }
 
   private toggleControlsPanel(): void {
@@ -1341,9 +1305,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private endRun(): void {
     if (this.runEnded) return;
     this.runEnded = true;
-    // the run's end carries the last word; the menu never covers it (FS-9K8EZ req 6)
+    // the run's end carries the last word; the menu never covers it (FS-9K8EZ req 6): the UI
+    // scene's yields as it hears the end
     this.takeDownResolvedView();
-    this.closeMenu();
+    this.ui.changed();
     // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15)
     this.cancelAim();
     // a half-typed line goes, and the input hands the keyboard back before it is switched off
@@ -2176,7 +2141,7 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!this.player || !me || this.runEnded) return false;
     if (resolved(this.lastGameState?.current_player)) return false;
     // the pointer is the menu's while it is open (FS-9K8EZ req 5)
-    if (this.menu) return false;
+    if (this.menuOpen) return false;
 
     // an archer's right button is the Shadow Shot hold, never a strike (FS-JTNPR req 8, 16)
     return this.combat.strike(me, entityId, them, this.ownClass(), this.input.activePointer?.button);
@@ -3285,12 +3250,11 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Which of the run's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the menu's slot (the menu, OPTIONS or
-   * the Fall confirm), Party, Inventory, Character; a run has no letter panel.
+   * Which of the run's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9;
+   * FS-WDM0X S8): Party, Inventory, Character; a run has no letter panel.
    */
   private windows(): WorldWindows {
     return {
-      menu: !!this.menu,
       letter: false,
       party: this.partyPanel?.isOpen() ?? false,
       inventory: this.equipment?.isInventoryOpen() ?? false,
@@ -3309,17 +3273,49 @@ export class BarrowspireScene extends Phaser.Scene {
     return {
       windows: () => this.windows(),
       blockers: () => ({ dialogue: false }),
+      facts: () => this.facts(),
+      // the menu opens over no window (FS-3EBCA R17), and closing it does not resume a hold (FS-JTNPR req 15)
+      heardUi: (ui) => {
+        if (!ui.menuOpen) return;
+        this.closeWindows();
+        this.cancelAim();
+      },
       answer: answering({
-        toggleMenu: () => this.pressMenuIcon(),
         inventory: () => {
-          if (!this.menu) this.toggleInventory();
+          if (!this.menuOpen) this.toggleInventory();
         },
         character: () => {
-          if (!this.menu) this.toggleCharacter();
+          if (!this.menuOpen) this.toggleCharacter();
         },
         party: () => this.partyPanel?.toggle(),
+        // one Esc step each, and the Menu icon's after the run's end (FS-TQZ5J R17; FS-3EBCA R6)
+        close: { party: () => this.partyPanel?.close(), gear: () => this.equipment?.hide() },
+        // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
+        leaveRun: () => this.leaveTheBarrow(),
+        fall: () => this.fallWhereYouStand(),
+        // the OPTIONS Music row, applied to the tower's music at once (§ Change: The tower's music, W6)
+        musicLevel: (level) => this.music?.setLevel(level),
       }),
     };
+  }
+
+  /**
+   * What the run's ESC menu reads (FS-TQZ5J R9, R16; FS-9K8EZ req 2–6): the player's state, the
+   * run's end, and a Leave or a Fall unanswered.
+   */
+  private facts(): WorldFacts {
+    return {
+      ...NO_FACTS,
+      resolved: this.menuState().resolved,
+      ended: this.runEnded,
+      leavePending: this.leavePending,
+      fallPending: this.fallPending,
+    };
+  }
+
+  /** Whether the UI scene's menu slot is filled (FS-TQZ5J R10): the menu, OPTIONS or the Fall confirm, which own the keys and the pointer. */
+  private get menuOpen(): boolean {
+    return this.ui.ui.menuOpen;
   }
 
   /**
@@ -3328,7 +3324,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * party panel opens over them (FS-R82NV § Change C8).
    */
   private refusesParty(): boolean {
-    return !!this.menu || this.runEnded || !!this.containerView?.isOpen;
+    return this.menuOpen || this.runEnded || !!this.containerView?.isOpen;
   }
 
   /**
@@ -3336,29 +3332,13 @@ export class BarrowspireScene extends Phaser.Scene {
    * run's end, the gear overlay or an open chest owns the keys.
    */
   private mayChat(): boolean {
-    return !this.menu && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen;
+    return !this.menuOpen && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen;
   }
 
   /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
   private closeWindows(): void {
     this.partyPanel?.close();
     this.equipment?.hide();
-  }
-
-  /**
-   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
-   * it opens. With the menu open it does what its × and Esc do (owner 2026-11-12: "menu無法再按一次icon關閉"):
-   * the menu closes, and from the Fall confirm the whole of it goes, as Not yet does, nothing sent.
-   * After the run's end there is no menu: it only closes the windows.
-   */
-  private pressMenuIcon(): void {
-    // from the OPTIONS panel too: it closes, and the menu it came from does not reopen (FS-28DDG § Change C7)
-    if (this.menu) {
-      this.closeMenu();
-      return;
-    }
-    this.closeWindows();
-    if (!this.runEnded) this.openMenu();
   }
 
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
@@ -3378,7 +3358,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.spectateHud?.watching.setX(viewport.centerX);
     this.spectateHud?.hint.setX(viewport.centerX);
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
-    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     this.abilityHud?.relayout();
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
@@ -3452,7 +3431,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private bindRunInput(): void {
     // E 鍵互動（門、寶箱、開關、逃脫門）
     this.input.keyboard?.on("keydown-E", () => {
-      if (this.menu) return;
+      if (this.menuOpen) return;
       // When the equipment panel is open, E equips/unequips the hovered item.
       if (this.equipment?.equipKey()) return;
 
@@ -3494,28 +3473,28 @@ export class BarrowspireScene extends Phaser.Scene {
     for (const key of ["keydown-I", "keydown-B"]) {
       this.input.keyboard?.on(key, () =>
         this.ui.act(() => {
-          if (this.menu) return;
+          if (this.menuOpen) return;
           this.toggleInventory();
         }),
       );
     }
     this.input.keyboard?.on("keydown-C", () =>
       this.ui.act(() => {
-        if (this.menu) return;
+        if (this.menuOpen) return;
         this.toggleCharacter();
       }),
     );
 
     // F 鍵從寶箱取得道具
     this.input.keyboard?.on("keydown-F", () => {
-      if (this.menu) return;
+      if (this.menuOpen) return;
       this.containerView.lootFirst();
     });
 
     // Q 鍵關閉任何打開的彈窗 (the gear overlay's close through the interface sounds' wrapper, FS-WDM0X S9)
     this.input.keyboard?.on("keydown-Q", () =>
       this.ui.act(() => {
-        if (this.menu) return;
+        if (this.menuOpen) return;
         if (this.equipment?.hide()) return;
         this.containerView.close();
       }),
@@ -3523,7 +3502,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // H 鍵顯示/隱藏操作說明
     this.input.keyboard?.on("keydown-H", () => {
-      if (this.menu) return;
+      if (this.menuOpen) return;
       this.toggleControlsPanel();
     });
 
@@ -3532,14 +3511,14 @@ export class BarrowspireScene extends Phaser.Scene {
     // of it to hand back (`handBackKeyboard`). While chat has focus the field stops every key
     // before Phaser's window listener and the keyboard is off; the check stands in case either moves.
     this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
-      if (this.menu || event?.repeat || this.chatWindow?.isTyping()) return;
+      if (this.menuOpen || event?.repeat || this.chatWindow?.isTyping()) return;
       this.cycleMinimap();
     });
 
     // 1 drinks a health potion (FS-P9G8R R27, R28). An event, never a JustDown poll: the menu polls
     // the same key each frame for its rows, and a second poll would steal its press.
     this.input.keyboard?.on(`keydown-${RUN_ACTIONS.drinkPotion.key}`, (event?: KeyboardEvent) => {
-      if (this.menu || event?.repeat) return;
+      if (this.menuOpen || event?.repeat) return;
       this.drinkPotion();
     });
 
@@ -3558,7 +3537,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // 技能攻擊控制 (Left-Click Primary Attack // Right-Click Class Ability, priced by the server)
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       // the menu's hit areas take their own clicks; nothing else answers one (FS-9K8EZ req 5)
-      if (this.menu) return;
+      if (this.menuOpen) return;
       // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
       if (this.combat.aiming) return;
       // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
@@ -3603,7 +3582,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // 放開移動鍵時停止
     this.input.keyboard?.on("keyup", (event: KeyboardEvent) => {
       // the stride was stopped as the menu opened, or a hold began; the keys are theirs until they end
-      if (this.menu || this.combat.aiming) return;
+      if (this.menuOpen || this.combat.aiming) return;
       const movementKeys = [
         "KeyW",
         "KeyA",
@@ -4116,7 +4095,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const iconStage: ModeIconStage = { graphics: () => this.add.graphics(), text: (words, style) => this.add.text(0, 0, words, style) };
     dungeon.modeIcon = new MinimapModeIcon(iconStage, {
       press: () => this.cycleMinimap(),
-      blocked: () => !!this.menu || !!this.chatWindow?.isTyping(),
+      blocked: () => this.menuOpen || !!this.chatWindow?.isTyping(),
     });
     // the floor's name on it, the floor card's title (FS-56CKV §Change: Map name, E1)
     if (this.builtFloor !== undefined) {
@@ -5333,7 +5312,7 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private canSendMove(): boolean {
     return (
-      !this.menu &&
+      !this.menuOpen &&
       !this.runEnded &&
       !resolved(this.lastGameState?.current_player) &&
       this.watchedPlayerId === undefined
@@ -5574,7 +5553,7 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private sendMovementIntent(vx: number, vy: number): void {
     // an archer drawing a Shadow Shot stands still the same way (FS-JTNPR req 9)
-    if (this.menu || this.combat.aiming || this.runEnded) {
+    if (this.menuOpen || this.combat.aiming || this.runEnded) {
       if (this.striding) socketManager.sendMessage(ActionType.Move, { vx: 0, vy: 0 });
       this.striding = false;
       return;
@@ -5582,58 +5561,6 @@ export class BarrowspireScene extends Phaser.Scene {
     const moving = (vx !== 0 || vy !== 0) && this.canSendMove();
     if (moving) socketManager.sendMessage(ActionType.Move, { vx, vy });
     this.striding = moving;
-  }
-
-  /**
-   * ESC and the menu's keys, read once a frame (FS-9K8EZ req 1). Closed, ESC opens the menu;
-   * open, ESC goes back, Enter is the first row and a number is that row. Every key is read each
-   * frame, so a press never lingers to answer the next one. Once the run has ended there is
-   * nothing to open (edge state "Menu").
-   */
-  private offerMenu(): void {
-    // ←/→ are read every frame too, so a press made walking does not wait to move the panel's slider
-    const nudge = this.arrowPressed();
-    if (!this.dismissKey) return;
-    const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
-    const confirm = this.confirmKey !== undefined && Phaser.Input.Keyboard.JustDown(this.confirmKey);
-    const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-    if (esc) {
-      // the player's, through the interface sounds' wrapper (FS-WDM0X S9)
-      this.ui.act(() => this.pressEscape());
-      return;
-    }
-    if (this.runEnded || !this.menu) return;
-    if (confirm) this.menuChoices?.confirm();
-    else if (numbered >= 0) this.menuChoices?.pick(numbered);
-    else if (nudge) this.menuChoices?.nudge?.(nudge);
-  }
-
-  /** ← or → pressed since the last frame, as -1 or 1, both read; the OPTIONS panel's slider (FS-28DDG § Change C6). */
-  private arrowPressed(): -1 | 1 | undefined {
-    if (!this.cursors) return undefined;
-    const left = Phaser.Input.Keyboard.JustDown(this.cursors.left);
-    const right = Phaser.Input.Keyboard.JustDown(this.cursors.right);
-    if (left === right) return undefined;
-    return left ? -1 : 1;
-  }
-
-  /**
-   * One ESC press (FS-R82NV § Change C2; FS-HRH2J R5): one press closes one thing, the open menu,
-   * then the party panel, drawn over the overlay (§ Change C8), then the gear and bag overlay
-   * (`escapeStep`); with nothing open the menu opens. Once the run has ended there is no menu to
-   * open or close.
-   */
-  private pressEscape(): void {
-    const step = escapeStep({
-      menu: !!this.menu,
-      gear: this.equipment?.isOpen() ?? false,
-      party: this.partyPanel?.isOpen() ?? false,
-    });
-    if (step === "gear") this.equipment?.hide();
-    else if (step === "party") this.partyPanel?.close();
-    else if (this.runEnded) return;
-    else if (step === "close-menu") this.menuChoices?.dismiss();
-    else this.openMenu();
   }
 
   /**
@@ -5647,72 +5574,6 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The run's ESC menu (FS-9K8EZ req 2): built from the player's state as it opens, so what it
-   * offers is runMenuChoices' rule, not the chrome's. Leave the barrow is the card's own path
-   * (FS-QPDKN req 13), so the two entry points share one send and one pending flag.
-   */
-  private openMenu(): void {
-    // every window closes as it opens (FS-3EBCA R17)
-    this.closeWindows();
-    // closing the menu does not resume the hold (FS-JTNPR req 15)
-    this.cancelAim();
-    const state = this.menuState();
-    // every row the player's, through the interface sounds' wrapper (FS-WDM0X S9): Fall and Options
-    // keep the slot filled and play nothing, Leave the barrow closes it (S5)
-    this.showMenuPanel(undefined, runMenuChoices(state), {
-      actions: {
-        fall: () => this.ui.act(() => this.openFallConfirm()),
-        leave: () =>
-          this.ui.act(() => {
-            this.leaveTheBarrow();
-            this.closeMenu();
-          }),
-        options: () => this.ui.act(() => this.openOptions()),
-      },
-      enabled: { leave: () => !this.leavePending },
-    });
-    this.menuFor = state;
-  }
-
-  /**
-   * The OPTIONS panel (FS-28DDG § Change: Music volume in an Options panel, C3, C7, C8, C13, C14,
-   * C17), in the menu's slot so every guard on the open menu holds for it, and built for the state
-   * the menu was, so it yields as the menu does. Its Music row sets the tower's music, which applies
-   * and keeps the level (§ Change: The tower's music on every floor of a run, W6). Back, Esc and its
-   * × reopen the run's menu, rebuilt as it opens.
-   */
-  private openOptions(): void {
-    const state = this.menuState();
-    this.closeMenu();
-    const { container, keys, moveTo } = openOptionsPanel(this, {
-      origin: { x: viewport.centerX, y: viewport.centerY },
-      hit: MENU_CHOICE_HIT,
-      tones: MENU_TONES,
-      // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
-      back: () => this.ui.act(() => this.openMenu()),
-      // the run's playing music, which applies the level at once; before create made it, the level
-      // alone (FS-28DDG § Change: The tower's music on every floor of a run, W6)
-      music: this.music ?? storedMusicLevel(browserMusicStore),
-      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
-      fullscreen: lentFullscreen(this.registry),
-    });
-    this.menuChoices = keys;
-    this.menu = container;
-    this.moveMenu = moveTo;
-    this.menuFor = state;
-  }
-
-  /** Fall where you stand asks once (req 3): the menu's rows become the confirm, nothing sent yet. */
-  private openFallConfirm(): void {
-    const state = this.menuState();
-    this.showMenuPanel(FALL_CONFIRM.line, FALL_CONFIRM.choices, {
-      actions: { "fall-now": () => this.ui.act(() => this.fallWhereYouStand()) },
-      enabled: { "fall-now": () => !this.fallPending },
-    });
-    this.menuFor = state;
-  }
-
-  /**
    * Fall (req 3, 4): one `forfeit_run`, then nothing until the server answers. The answer is the
    * next state with this player at 0 health, seen through FS-QPDKN's card as any death, or a
    * refusal that hands Fall back. The confirm stays up, Fall dimmed, until either.
@@ -5720,14 +5581,14 @@ export class BarrowspireScene extends Phaser.Scene {
   private fallWhereYouStand(): void {
     if (this.fallPending || this.menuState().resolved) return;
     this.fallPending = true;
-    this.menuChoices?.retone();
     socketManager.sendMessage(ActionType.ForfeitRun, {});
   }
 
   /** The server refused the `forfeit_run` (req 4): Fall again, and the reason in passing. */
   private fallRefused(info: { message?: string }): void {
     this.fallPending = false;
-    this.menuChoices?.retone();
+    // Fall comes back on the confirm (FS-TQZ5J R9)
+    this.ui.changed();
     if (this.runEnded) return;
     this.showNotification(info.message ?? "The barrow will not take you yet.", toCss(palette.hudPanel));
   }
@@ -5735,52 +5596,12 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The menu yields to what the server says (req 6): a state in which the player's rows would
    * be wrong (newly dead, newly out) takes the menu and its confirm down, so the card that
-   * follows is never covered. A death seen is a `forfeit_run` answered.
+   * follows is never covered; the UI scene's menu hears the state at once (FS-TQZ5J R9, R20). A
+   * death seen is a `forfeit_run` answered.
    */
   private yieldMenu(state: ClientGameState): void {
-    const now = this.menuState(state);
-    if (now.resolved) this.fallPending = false;
-    if (!this.menu || !this.menuFor) return;
-    if (now.resolved !== this.menuFor.resolved) this.closeMenu();
-  }
-
-  /**
-   * The menu's panel (req 1): the shared chrome at the camera's centre, built from the run's
-   * tokens, with an optional line over the rows and one row per choice. Any row without an
-   * action of its own closes the menu; a dimmed row neither brightens nor answers (req 8).
-   */
-  private showMenuPanel(
-    line: string | undefined,
-    choices: RunMenuChoice[],
-    spec: {
-      actions: Partial<Record<RunMenuChoice["id"], () => void>>;
-      enabled: Partial<Record<RunMenuChoice["id"], () => boolean>>;
-    },
-  ): void {
-    this.closeMenu();
-    const { container, keys, moveTo } = showMenuPanel(this, {
-      line,
-      choices,
-      actions: spec.actions,
-      enabled: spec.enabled,
-      // Back, Not yet, Esc and the ×, the menu's and its Fall confirm's: the player's (FS-WDM0X S5, S9)
-      close: () => this.ui.act(() => this.closeMenu()),
-      origin: { x: viewport.centerX, y: viewport.centerY },
-      hit: MENU_CHOICE_HIT,
-      tones: MENU_TONES,
-    });
-    this.menuChoices = keys;
-    this.menu = container;
-    this.moveMenu = moveTo;
-  }
-
-  /** The menu or its confirm goes down, hit areas with it; nothing is sent (req 1, 3). */
-  private closeMenu(): void {
-    this.menu?.destroy();
-    this.menu = undefined;
-    this.menuChoices = undefined;
-    this.moveMenu = undefined;
-    this.menuFor = undefined;
+    if (this.menuState(state).resolved) this.fallPending = false;
+    this.ui.changed();
   }
 
   /**
@@ -5970,9 +5791,6 @@ export class BarrowspireScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
-    // the menu's keys, read before anything else is: it opens over every state (FS-9K8EZ req 1, 2)
-    this.offerMenu();
-
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms
@@ -6002,7 +5820,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     // the keys are the menu's while it is open (FS-9K8EZ req 5), and read as released while an
     // archer draws a Shadow Shot (FS-JTNPR req 9)
-    if (this.menu || this.combat.aiming) {
+    if (this.menuOpen || this.combat.aiming) {
       vx = 0;
       vy = 0;
     }

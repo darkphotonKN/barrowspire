@@ -9,10 +9,11 @@
  * (`src/components/uiSceneLifecycle.ts`).
  *
  * Each slice of FS-TQZ5J adds to it what it consumes: so far which world is up and its leaving, its
- * open windows and its dialogue, the UI's state, the corner row's requests the world answers, and the
- * interface sounds the world's player actions and its minimap's step reach through it (R12, R22).
- * The world's player state and menu facts (R9) and the ESC menu's requests (R11) come with the menu.
- * A pointer move the UI scene took from the world reaches the world through it (A1 R27).
+ * open windows, its dialogue, its player state and the facts its menu rows read (R9), the UI's state
+ * and the world hearing it change (R10), the corner row's and the ESC menu's requests the world
+ * answers (R11), and the interface sounds the world's player actions and its minimap's step reach
+ * through it (R12, R22). A pointer move the UI scene took from the world reaches the world through it
+ * (A1 R27).
  */
 
 import type { WorldType } from "@/assets/types/client";
@@ -25,26 +26,65 @@ import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "
 export type World = WorldType;
 
 /**
- * Which of the world's own windows are open (R9): the letter panel, Party, Inventory, Character, and
- * the ESC menu's slot, the world's until the menu moves into the UI scene (I-TQZ5J-4). The interface
- * sounds' rule reads it (FS-WDM0X S8).
+ * Which of the world's own windows are open (R9): the letter panel, Party, Inventory, Character. The
+ * ESC menu's slot is the UI scene's own (R16). The interface sounds' rule reads both (FS-WDM0X S8).
  */
-export type WorldWindows = Readonly<WindowState>;
+export type WorldWindows = Readonly<Omit<WindowState, "menu">>;
 
 /** What keeps the screen in the world (R9): the town's NPC dialogue, open. */
 export interface WorldBlockers {
   readonly dialogue: boolean;
 }
 
+/**
+ * What the world's ESC menu rows read (R9, R16): the player's state and the menu facts, each false
+ * where the world has no such thing (a field is never queued; only the run resolves, ends or falls).
+ */
+export interface WorldFacts {
+  /** Out of the delve, dead or escaped (the run's `menuState`): the run's rows are `runMenuChoices`' for it. */
+  readonly resolved: boolean;
+  /** In the town's queue: the town's menu offers Leave the queue (`hubMenuChoices`). */
+  readonly queued: boolean;
+  /** A Change character sent and unanswered: its row is dimmed. */
+  readonly leaving: boolean;
+  /** The run has ended: no menu opens, and the keys are the run's end's (its keyboard is off). */
+  readonly ended: boolean;
+  /** A Leave the barrow sent and unanswered: its row is dimmed. */
+  readonly leavePending: boolean;
+  /** A Fall sent and unanswered: the Fall confirm's Fall is dimmed. */
+  readonly fallPending: boolean;
+}
+
+/** A world's facts where it has none of them. */
+export const NO_FACTS: WorldFacts = {
+  resolved: false,
+  queued: false,
+  leaving: false,
+  ended: false,
+  leavePending: false,
+  fallPending: false,
+};
+
 /** A world window the corner row's icons toggle (R11, R14). */
 export type UiToggle = "inventory" | "character" | "party";
 
+/** What one Esc step closes in the world (R11, R17): the letter panel, Party, the gear overlay, the dialogue. */
+export type UiClose = "letter" | "party" | "gear" | "dialogue";
+
 /**
- * UI → world: what the UI scene asks of the world (R11). So far the corner row's: `toggle` one of its
- * windows, and `toggleMenu`, the Menu icon's press on the world's own ESC menu, this slice's alone
- * until the menu moves into the UI scene (I-TQZ5J-4).
+ * UI → world: what the UI scene asks of the world (R11). The corner row's `toggle` of a window; an
+ * Esc step's `close`; the ESC menu's rows that only the world can do (the town's and the field's
+ * `leaveQueue` and `changeCharacter`, the run's `leaveRun` and `fall`); and the OPTIONS Music row's
+ * `musicLevel`, which the world playing music applies at once (R19). Plain data: nothing callable.
  */
-export type UiRequest = { readonly kind: "toggle"; readonly window: UiToggle } | { readonly kind: "toggleMenu" };
+export type UiRequest =
+  | { readonly kind: "toggle"; readonly window: UiToggle }
+  | { readonly kind: "close"; readonly window: UiClose }
+  | { readonly kind: "leaveQueue" }
+  | { readonly kind: "changeCharacter" }
+  | { readonly kind: "leaveRun" }
+  | { readonly kind: "fall" }
+  | { readonly kind: "musicLevel"; readonly level: number };
 
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
@@ -56,6 +96,14 @@ export interface WorldReport {
   readonly windows: () => WorldWindows;
   /** What keeps its screen now, read as its windows are. */
   readonly blockers: () => WorldBlockers;
+  /** What its ESC menu's rows read now (R9, R16), read as its windows are. */
+  readonly facts: () => WorldFacts;
+  /**
+   * Hears the UI's state change (R10): as the menu opens the world closes its windows (FS-3EBCA R17)
+   * and ends an aim (FS-JTNPR req 15); its stride stops on its next frame, its guards reading the
+   * state (FS-G4VMQ R5). Heard inside the act that changed it, so the sounds hear it too (R22).
+   */
+  readonly heardUi?: (ui: UiState) => void;
   /** Answers a request of the UI scene's at once, or ignores one it has no answer for (R11). */
   readonly answer: (request: UiRequest) => void;
   /**
@@ -69,12 +117,30 @@ export interface WorldReport {
 /** What a world hands with its name: everything of its report but the world and the moves `reportWorld` hears for it (R9). */
 export type WorldSide = Omit<WorldReport, "world" | "hearMove">;
 
-/** A world's answer to each request it has one for (R11). */
-export type WorldAnswers = Partial<Record<UiToggle | "toggleMenu", () => void>>;
+/** A world's answer to each request it has one for (R11): a toggle by its window, a close by what it closes. */
+export type WorldAnswers = Partial<Record<UiToggle, () => void>> & {
+  readonly close?: Partial<Record<UiClose, () => void>>;
+  readonly leaveQueue?: () => void;
+  readonly changeCharacter?: () => void;
+  readonly leaveRun?: () => void;
+  readonly fall?: () => void;
+  readonly musicLevel?: (level: number) => void;
+};
 
 /** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
 export function answering(answers: WorldAnswers): (request: UiRequest) => void {
-  return (request) => answers[request.kind === "toggle" ? request.window : request.kind]?.();
+  return (request) => {
+    switch (request.kind) {
+      case "toggle":
+        return answers[request.window]?.();
+      case "close":
+        return answers.close?.[request.window]?.();
+      case "musicLevel":
+        return answers.musicLevel?.(request.level);
+      default:
+        return answers[request.kind]?.();
+    }
+  };
 }
 
 /** UI → world: the UI's state (R10). */
@@ -110,8 +176,16 @@ export interface UiBridge extends UiActWrapper {
    * when this returns; `onUi` while the pointer is over a UI piece. None reported, nothing (A1 R27).
    */
   moved(pointer: ScenePointer, onUi: boolean): void;
-  /** The UI scene's report of its own state (R10). */
+  /**
+   * The UI scene's report of its own state (R10): a change is heard by the world reported at once
+   * (`heardUi`).
+   */
   reportUi(state: UiState): void;
+  /**
+   * The world reported changed a part of its report (R9): its listeners hear it again at once, so the
+   * UI scene reads the new facts in the same call (its menu yields, its rows retone).
+   */
+  changed(): void;
   /** The UI's last state. What the world's guards read. */
   readonly ui: UiState;
   /**
@@ -126,11 +200,14 @@ export interface UiBridge extends UiActWrapper {
   lendSounds(sounds: UiSoundPlayer): void;
 }
 
-/** What of the bridge a world scene's player actions and its minimap's step reach (R12). */
-export type WorldUi = Pick<UiBridge, "act" | "play">;
+/**
+ * What of the bridge a world scene reaches (R10, R12): its player actions and its minimap's step, the
+ * UI's state its guards read, and its word that its report changed.
+ */
+export type WorldUi = Pick<UiBridge, "act" | "play" | "ui" | "changed">;
 
-/** A world's UI in a game lent no bridge: each action runs as it is, and nothing plays. */
-export const NO_UI: WorldUi = { act: (run) => run(), play: () => {} };
+/** A world's UI in a game lent no bridge: each action runs as it is, nothing plays, no menu is open. */
+export const NO_UI: WorldUi = { act: (run) => run(), play: () => {}, ui: { menuOpen: false }, changed: () => {} };
 
 /** Told each world report, and none (null) as the world reported leaves. */
 export type WorldListener = (report: WorldReport | null) => void;
@@ -166,7 +243,13 @@ export class GameUiBridge implements UiBridge {
   }
 
   reportUi(state: UiState): void {
+    if (state.menuOpen === this.uiState.menuOpen) return;
     this.uiState = state;
+    this.reported?.heardUi?.(state);
+  }
+
+  changed(): void {
+    if (this.reported) this.tell(this.reported);
   }
 
   request(request: UiRequest): void {

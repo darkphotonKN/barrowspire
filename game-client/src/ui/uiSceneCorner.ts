@@ -6,27 +6,32 @@
  * (R14). Phaser-free: the UI scene hands it the row's builder (`HudCorner` on itself), so the wiring
  * is tested on its own.
  *
+ * Menu is the UI scene's own menu slot's (R16): its press is handed to the slot. While the slot is
+ * filled its blocker, in the same scene and over the row, takes every icon's hover and press but
+ * Menu's, whose plate it leaves to the icon (FS-3EBCA R18, `covers`).
+ *
  * The row stands over everything the world draws, so where the world keeps the screen it holds what
  * the world's own pieces held when the row was the world's, read on each `sync` (the UI scene's every
- * frame, and at once after each press): while the world reports its ESC menu open, every icon but
- * Menu (FS-3EBCA R18; its blocker under the UI scene until the menu moves, I-TQZ5J-4); while the town
- * reports a dialogue open, every icon (its answers' hit areas lie under the row, and no icon answers
- * under a dialogue).
+ * frame, and at once after each press): while the town reports a dialogue open, every icon (its
+ * answers' hit areas lie under the row, and no icon answers under a dialogue; the dialogue moves into
+ * the UI scene in I-TQZ5J-7).
  */
 
 import type { CornerIconSpec } from "./HudCorner";
 import type { CornerIcon } from "./hudCornerLayout";
-import type { UiBridge, UiRequest, UiToggle, WorldReport } from "./uiBridge";
+import type { UiBridge, UiToggle, WorldReport } from "./uiBridge";
 
 /** The row as the UI scene keeps it. `HudCorner` is one. */
 export interface CornerRow {
   hold(icons: readonly CornerIcon[]): void;
   relayout(): void;
   destroy(): void;
+  /** Whether a screen point lies on an icon's plate, or on `icon`'s only. */
+  covers(x: number, y: number, icon?: CornerIcon): boolean;
 }
 
 /** What of the bridge the row reads and asks through. */
-export type CornerBridge = Pick<UiBridge, "world" | "act" | "request">;
+export type CornerBridge = Pick<UiBridge, "world" | "ui" | "act" | "request">;
 
 /** The icons that toggle a world window (R14), in the row's order after Menu. */
 const TOGGLES: readonly UiToggle[] = ["inventory", "character", "party"];
@@ -42,6 +47,8 @@ export class UiCornerRow {
   constructor(
     private readonly bridge: CornerBridge,
     private readonly build: (icons: CornerIconSpec[]) => CornerRow,
+    /** The Menu icon's press: the UI scene's menu slot's (R14, R16). */
+    private readonly menu: () => void,
   ) {}
 
   /**
@@ -69,12 +76,14 @@ export class UiCornerRow {
     this.row.hold(held);
   }
 
-  /** Every icon under a dialogue; every icon but Menu under the world's ESC menu; else none. */
+  /** Every icon under a dialogue; else none. */
   private heldNow(): CornerIcon[] {
-    const report = this.bridge.world;
-    if (report?.blockers().dialogue) return [...this.built];
-    if (report?.windows().menu) return this.built.filter((icon) => icon !== "menu");
-    return [];
+    return this.bridge.world?.blockers().dialogue ? [...this.built] : [];
+  }
+
+  /** Whether a screen point lies on the standing row's plates, or on `icon`'s: the menu's blocker leaves Menu's (FS-3EBCA R18). */
+  covers(x: number, y: number, icon?: CornerIcon): boolean {
+    return this.row?.covers(x, y, icon) ?? false;
   }
 
   /** The logical view changed: the row back to the corner (FS-ZAJMH R13). */
@@ -100,32 +109,32 @@ export class UiCornerRow {
    */
   private icons(world: WorldReport["world"]): CornerIconSpec[] {
     const icons: CornerIconSpec[] = [
-      { icon: "menu", press: () => this.send("menu", { kind: "toggleMenu" }) },
+      { icon: "menu", press: () => this.send("menu", this.menu) },
       ...TOGGLES.map((window) => ({
         icon: window,
-        press: () => this.send(window, { kind: "toggle", window }),
+        press: () => this.send(window, () => this.bridge.request({ kind: "toggle", window })),
       })),
     ];
     return world === "hub" ? icons : [...icons, { icon: "mail", greyed: true }];
   }
 
-  /** A press: the request inside the UI scene's act, unless refused; the hold read again at once. */
-  private send(icon: CornerIcon, request: UiRequest): void {
+  /** A press: its answer inside the UI scene's act, unless refused; the hold read again at once. */
+  private send(icon: CornerIcon, answer: () => void): void {
     this.bridge.act(() => {
-      if (!this.refused(icon)) this.bridge.request(request);
+      if (!this.refused(icon)) answer();
     });
     this.sync();
   }
 
   /**
-   * Whether the world reported refuses `icon`'s press now (R14; FS-3EBCA R6–R8, R18): every icon but
-   * Menu while its ESC menu is open, and Party while a dialogue is. Menu is the world's to refuse.
+   * Whether `icon`'s press is refused now (R14; FS-3EBCA R6–R8, R18): every icon but Menu while the
+   * menu slot is filled, and Party while the town's dialogue is open. Menu is the slot's to refuse.
    */
   private refused(icon: CornerIcon): boolean {
     const report = this.bridge.world;
     if (!report) return true;
     if (icon === "menu") return false;
-    if (report.windows().menu) return true;
+    if (this.bridge.ui.menuOpen) return true;
     return icon === "party" && report.blockers().dialogue;
   }
 }

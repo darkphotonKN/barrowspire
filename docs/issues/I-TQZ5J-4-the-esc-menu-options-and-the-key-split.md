@@ -3,7 +3,7 @@ id: I-TQZ5J-4
 status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-1, I-TQZ5J-3]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J slice 4: the ESC menu, OPTIONS and the Fall confirm move into the UI scene, with the key split"
 ---
 Implements FS-TQZ5J §Requirements D (R16–R21), R10, R11, §Requirements F (R23, R24)

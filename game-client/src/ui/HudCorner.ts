@@ -154,9 +154,9 @@ export class HudCorner {
   /**
    * Holds the icons named and lets the rest go (FS-TQZ5J I-TQZ5J-3). The row stands in the UI scene,
    * over everything the world draws, so where the world keeps the screen it holds what the world's
-   * own pieces held when the row was the world's: the world's open ESC menu every icon but Menu (its
-   * blocker under the UI scene, FS-3EBCA R18: 「menu開啟時其他都不能按」, until the menu moves,
-   * I-TQZ5J-4), the town's dialogue every icon (its answers lie under the row). A held icon takes no
+   * own pieces held when the row was the world's: the town's dialogue every icon (its answers lie
+   * under the row, until the dialogue moves, I-TQZ5J-7). The ESC menu holds nothing here: its
+   * blocker stands over the row in the same scene (FS-3EBCA R18). A held icon takes no
    * hover, label or press, and Phaser hands its pointer on to the scene under it; a lit one goes out,
    * its hand cursor given back.
    */

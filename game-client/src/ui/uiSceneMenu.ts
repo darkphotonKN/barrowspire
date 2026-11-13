@@ -1,0 +1,348 @@
+/**
+ * The UI scene's one menu slot (FS-TQZ5J §D R16–R21): the ESC menu, the OPTIONS panel opened from it
+ * in its place, and the run's Fall confirm, built from the world's report (its world, its facts) and
+ * drawn with the shared chrome (`showMenuPanel`, `openOptionsPanel`) as each world drew them. What a
+ * row needs of the world is a request the world answers (R11); what the slot is, the menu's
+ * open state, the UI's reported state (R10), which every world guard reads.
+ *
+ * Esc is the UI scene's (R17): one press is one step, the town's dialogue on top, then
+ * `escapeStep`'s order over the world's windows and this slot. While the slot is filled Enter, 1–3
+ * and ←/→ are its (R18). The keys are handed in once a frame, read by the UI scene from its own key
+ * objects in its update, never on a key event, so who acts on a key never rests on the order the
+ * scenes' keyboards hear it (R21; § Spike findings (b)).
+ *
+ * Phaser-free: the UI scene hands it the drawing (`MenuDraw`), so the wiring is tested on its own.
+ */
+
+import { hubMenuChoices } from "@/scenes/hubMenu";
+import { palette } from "@/utils/canvasPalette";
+import { BARROW_HEX } from "@/utils/theme";
+import { escapeStep } from "./escapeOrder";
+import type { HitSize, MenuChoice, MenuPanelSpec, MenuTones } from "./menuPanel";
+import type { FullscreenControl, MenuSlotKeys, MusicLevelControl, OptionsPanelSpec } from "./optionsPanel";
+import { FALL_CONFIRM, runMenuChoices } from "./party";
+import type { UiBridge, UiRequest, World, WorldFacts, WorldReport } from "./uiBridge";
+
+/** A panel standing in the slot, as `showMenuPanel` and `openOptionsPanel` return it. */
+export interface SlotPanel {
+  container: { destroy(): void };
+  keys: MenuSlotKeys;
+  moveTo(origin: { x: number; y: number }): void;
+}
+
+/** How the UI scene draws the slot's panels: the shared chrome on itself. */
+export interface MenuDraw {
+  menu(spec: MenuPanelSpec<MenuChoice>): SlotPanel;
+  options(spec: OptionsPanelSpec): SlotPanel;
+}
+
+/** What of the bridge the slot reads, asks and reports through. */
+export type MenuBridge = Pick<UiBridge, "world" | "ui" | "act" | "request" | "reportUi">;
+
+export interface MenuSlotDeps {
+  bridge: MenuBridge;
+  draw: MenuDraw;
+  /** The Menu icon's plate, which the open menu's blocker leaves to the icon (FS-3EBCA R18). */
+  through: (x: number, y: number) => boolean;
+  /** Where the panels stand: the view's centre now (FS-ZAJMH R13). */
+  centre: () => { x: number; y: number };
+  /** The stored music level, read as OPTIONS opens (R19; FS-28DDG § Change C13, C15). */
+  musicLevel: () => MusicLevelControl;
+  /** The game frame's fullscreen its page lent (FS-T3DWX R12), or none. */
+  fullscreen: () => FullscreenControl | null;
+}
+
+/** A menu's look in a world: its tokens and its rows' pressable area (ADR-0013). */
+export interface MenuLook {
+  tones: MenuTones;
+  hit: HitSize;
+}
+
+/** The town's look, which a field's menu wears too (FS-G4VMQ § Change C2): Bone & Soot. */
+const TOWN_LOOK: MenuLook = {
+  tones: {
+    panel: BARROW_HEX.charcoal,
+    frame: BARROW_HEX.brass,
+    text: BARROW_HEX.vellum,
+    dim: BARROW_HEX.vellumDark,
+    actionable: BARROW_HEX.amber,
+    cancel: BARROW_HEX.arcane,
+  },
+  hit: { width: 160, height: 34 },
+};
+
+/** Each world's menu look, as each world drew its own (FS-G4VMQ, FS-9K8EZ req 1). */
+export const MENU_LOOKS: Readonly<Record<World, MenuLook>> = {
+  hub: TOWN_LOOK,
+  field: TOWN_LOOK,
+  // the run's: amber to press, safe to go back, the HUD's label tone while dimmed
+  run: {
+    tones: {
+      panel: palette.ink,
+      frame: palette.frame,
+      text: palette.hudText,
+      dim: palette.hudLabel,
+      actionable: palette.interactable,
+      cancel: palette.safe,
+    },
+    hit: { width: 220, height: 34 },
+  },
+};
+
+/** The keys the UI scene read this frame: each pressed since the last, a number by its index. */
+export interface MenuKeysPressed {
+  esc: boolean;
+  enter: boolean;
+  /** 1–3 as 0–2; -1 for none. */
+  numbered: number;
+  /** ← (-1) or → (+1), or none. */
+  nudge?: -1 | 1;
+}
+
+/** The slot filled: what stands in it, the world it was built for, and what its rows were toned for. */
+interface Filled {
+  panel: SlotPanel;
+  world: World;
+  /** The player's state the rows were built for: a state that differs takes them down (R20). */
+  resolved: boolean;
+  /** The town's queue the rows offered a way out of: gone, they come down with it (R20). */
+  queued: boolean;
+  /** The facts the rows' dimming was last drawn for. */
+  toned: string;
+}
+
+/** What a filled slot's dimming reads, as one key: a change redraws the rows' tones. */
+const toneKey = (facts: WorldFacts) => `${facts.leaving}|${facts.leavePending}|${facts.fallPending}`;
+
+export class UiMenuSlot {
+  private filled: Filled | null = null;
+
+  constructor(private readonly deps: MenuSlotDeps) {}
+
+  /** Whether the slot is filled: the menu, OPTIONS or the Fall confirm (R10). */
+  isOpen(): boolean {
+    return this.filled !== null;
+  }
+
+  /**
+   * The keys pressed this frame (R17, R18, R21): Esc's step through the UI scene's act; with the slot
+   * filled, Enter its first row, a number that row, ←/→ the OPTIONS slider. Nothing once the run has
+   * ended: its end turns the run's keyboard off, and the menu's keys were the run's.
+   */
+  keys(pressed: MenuKeysPressed): void {
+    const report = this.deps.bridge.world;
+    if (!report || report.facts().ended) return;
+    if (pressed.esc) {
+      this.deps.bridge.act(() => this.escape());
+      return;
+    }
+    const keys = this.filled?.panel.keys;
+    if (!keys) return;
+    if (pressed.enter) keys.confirm();
+    else if (pressed.numbered >= 0) keys.pick(pressed.numbered);
+    else if (pressed.nudge) keys.nudge?.(pressed.nudge);
+  }
+
+  /**
+   * One Esc press (R17; FS-R82NV § Change C2, FS-HRH2J R5, FS-1GZGD R40): an open dialogue is
+   * dismissed first, then `escapeStep`'s order: the letter panel, this slot (its Back; OPTIONS's
+   * reopens the menu), the party panel, the gear overlay; with nothing open the menu opens.
+   */
+  escape(): void {
+    const report = this.deps.bridge.world;
+    if (!report) return;
+    if (report.blockers().dialogue) return this.ask({ kind: "close", window: "dialogue" });
+    const open = report.windows();
+    const step = escapeStep({
+      letter: open.letter,
+      menu: this.isOpen(),
+      gear: open.inventory || open.character,
+      party: open.party,
+    });
+    if (step === "letter") this.ask({ kind: "close", window: "letter" });
+    else if (step === "close-menu") this.filled?.panel.keys.dismiss();
+    else if (step === "party") this.ask({ kind: "close", window: "party" });
+    else if (step === "gear") this.ask({ kind: "close", window: "gear" });
+    else if (!report.facts().ended) this.openMenu();
+  }
+
+  /**
+   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): with the slot filled it empties it, from
+   * OPTIONS and the Fall confirm too, nothing reopened or sent (owner 2026-11-12: "menu無法再按一次icon關閉");
+   * otherwise the menu at once, every window closing as it opens. Nothing while the town's dialogue
+   * is open; after the run's end there is no menu, and the icon only closes the windows.
+   */
+  pressMenu(): void {
+    if (this.filled) return this.close();
+    const report = this.deps.bridge.world;
+    if (!report || report.blockers().dialogue) return;
+    if (report.facts().ended) {
+      this.ask({ kind: "close", window: "party" });
+      this.ask({ kind: "close", window: "gear" });
+      return;
+    }
+    this.openMenu();
+  }
+
+  /**
+   * The world's report heard again, or none as it leaves (R9, R20): the slot yields, with no sound,
+   * when its world leaves or changes, a dialogue opens, the run ends, or the player's rows would now
+   * be wrong (FS-9K8EZ req 6; FS-28DDG § Change C17), or the town's queue they offered a way out of is
+   * gone (FS-G4VMQ R13); otherwise its rows retone where what dims them changed.
+   */
+  sync(): void {
+    const filled = this.filled;
+    if (!filled) return;
+    const report = this.deps.bridge.world;
+    if (!report || report.world !== filled.world) return this.close();
+    const facts = report.facts();
+    if (report.blockers().dialogue || facts.ended || facts.resolved !== filled.resolved) return this.close();
+    if (filled.queued && !facts.queued) return this.close();
+    const toned = toneKey(facts);
+    if (toned === filled.toned) return;
+    filled.toned = toned;
+    filled.panel.keys.retone();
+  }
+
+  /** The logical view changed: what stands in the slot back to the centre (FS-ZAJMH R13). */
+  relayout(): void {
+    this.filled?.panel.moveTo(this.deps.centre());
+  }
+
+  /** Empties the slot, as Back, the ×, the Menu icon and a yield do; the UI's state reported (R10). */
+  close(): void {
+    const filled = this.filled;
+    if (!filled) return;
+    this.filled = null;
+    filled.panel.container.destroy();
+    this.deps.bridge.reportUi({ menuOpen: false });
+  }
+
+  /**
+   * The world's ESC menu, from its report as it opens (R16): the town's and a field's rows by
+   * `hubMenuChoices` (a field is never queued), the run's by `runMenuChoices`; Change character dimmed
+   * while `leaving`, Leave the barrow while `leavePending`. Every row and the × the player's, through
+   * the UI scene's act (FS-WDM0X S9).
+   */
+  private openMenu(): void {
+    const report = this.deps.bridge.world;
+    if (!report) return;
+    const facts = report.facts();
+    const live = () => this.deps.bridge.world?.facts() ?? facts;
+    if (report.world === "run") {
+      this.show(report, {
+        choices: runMenuChoices(facts),
+        actions: {
+          // Fall and Options keep the slot filled and play nothing; Leave the barrow closes it (S5)
+          fall: this.played(() => this.openFallConfirm()),
+          leave: this.played(() => {
+            this.ask({ kind: "leaveRun" });
+            this.close();
+          }),
+          options: this.played(() => this.openOptions()),
+        },
+        enabled: { leave: () => !live().leavePending },
+      });
+      return;
+    }
+    this.show(report, {
+      choices: hubMenuChoices({ queued: facts.queued }),
+      actions: {
+        change: this.played(() => this.ask({ kind: "changeCharacter" })),
+        leave: this.played(() => this.ask({ kind: "leaveQueue" })),
+        options: this.played(() => this.openOptions()),
+        back: this.played(() => this.close()),
+      },
+      // dimmed while the server is asked, so a second press has nothing to land on
+      enabled: { change: () => !live().leaving },
+    });
+  }
+
+  /**
+   * The OPTIONS panel in the slot (R19; FS-28DDG § Change C3–C8, C13, C17): Music the stored level,
+   * each change also asked of the world, which applies it to the music it plays; Sound effects as the
+   * panel keeps them; Fullscreen the frame's. Back, Esc and its × reopen the world's menu, rebuilt as
+   * it is then; the slot stays filled, so it plays nothing (FS-WDM0X S5).
+   */
+  private openOptions(): void {
+    const report = this.deps.bridge.world;
+    if (!report) return;
+    const look = MENU_LOOKS[report.world];
+    const stored = this.deps.musicLevel();
+    const music: MusicLevelControl = {
+      level: () => stored.level(),
+      setLevel: (level) => {
+        stored.setLevel(level);
+        this.deps.bridge.request({ kind: "musicLevel", level: stored.level() });
+      },
+    };
+    this.fill(
+      report,
+      this.deps.draw.options({
+        origin: this.deps.centre(),
+        hit: look.hit,
+        tones: look.tones,
+        back: this.played(() => this.openMenu()),
+        music,
+        fullscreen: this.deps.fullscreen(),
+        through: this.deps.through,
+      }),
+    );
+  }
+
+  /** Fall where you stand asks once (FS-9K8EZ req 3): the slot's rows become the confirm, nothing sent yet. */
+  private openFallConfirm(): void {
+    const report = this.deps.bridge.world;
+    if (!report) return;
+    const facts = report.facts();
+    this.show(report, {
+      line: FALL_CONFIRM.line,
+      choices: FALL_CONFIRM.choices,
+      actions: { "fall-now": this.played(() => this.ask({ kind: "fall" })) },
+      enabled: { "fall-now": () => !(this.deps.bridge.world?.facts() ?? facts).fallPending },
+    });
+  }
+
+  /** A menu panel in the slot with the world's look; Back, Not yet, Esc and the × empty it (S5, S9). */
+  private show(
+    report: WorldReport,
+    spec: Pick<MenuPanelSpec<MenuChoice>, "line" | "choices" | "actions" | "enabled">,
+  ): void {
+    const look = MENU_LOOKS[report.world];
+    this.fill(
+      report,
+      this.deps.draw.menu({
+        ...spec,
+        close: this.played(() => this.close()),
+        origin: this.deps.centre(),
+        hit: look.hit,
+        tones: look.tones,
+        through: this.deps.through,
+      }),
+    );
+  }
+
+  /**
+   * `panel` stands in the slot. Into an empty slot, the UI's state is reported, so the world closes
+   * its windows and ends an aim in the same call, before the next frame draws (R10); a swap (menu ↔
+   * OPTIONS ↔ the Fall confirm) takes the old panel down and reports nothing: the slot stays filled.
+   */
+  private fill(report: WorldReport, panel: SlotPanel): void {
+    const facts = report.facts();
+    const was = this.filled;
+    this.filled = { panel, world: report.world, resolved: facts.resolved, queued: facts.queued, toned: toneKey(facts) };
+    if (was) was.panel.container.destroy();
+    else this.deps.bridge.reportUi({ menuOpen: true });
+  }
+
+  /** A request of the world, which has answered when it returns (R11); the rows read its facts again. */
+  private ask(request: UiRequest): void {
+    this.deps.bridge.request(request);
+    this.sync();
+  }
+
+  /** A player's press, run through the UI scene's act: the interface sounds' rule once (R22). */
+  private played(run: () => void): () => void {
+    return () => this.deps.bridge.act(run);
+  }
+}

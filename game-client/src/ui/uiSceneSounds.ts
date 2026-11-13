@@ -7,22 +7,23 @@
 
 import { UiSounds, type UiSoundStage, type WindowState } from "@/audio/uiSounds";
 import type { SfxSettingStore } from "@/audio/sfxSetting";
-import type { UiBridge } from "./uiBridge";
+import type { UiBridge, WorldWindows } from "./uiBridge";
 
-/** Every window shut: what the rule reads while no world is reported. */
-const NONE_OPEN: WindowState = { menu: false, letter: false, party: false, inventory: false, character: false };
+/** Every world window shut: what the rule reads while no world is reported. */
+const NONE_OPEN: WorldWindows = { letter: false, party: false, inventory: false, character: false };
 
 /**
- * Makes the game's one player and lends it to `bridge` (R22). Its window state is the reported
- * world's windows, the ESC menu's slot among them until the menu moves into the UI scene
- * (I-TQZ5J-4); with no world reported, every window is shut.
+ * Makes the game's one player and lends it to `bridge` (R22). Its window state is the UI scene's own
+ * menu slot (the UI's reported state, R10) and the reported world's windows; with no world reported,
+ * every world window is shut.
  */
 export function mountInterfaceSounds(
-  bridge: Pick<UiBridge, "world" | "lendSounds">,
+  bridge: Pick<UiBridge, "world" | "ui" | "lendSounds">,
   stage: UiSoundStage,
   store: SfxSettingStore,
 ): UiSounds {
-  const sounds = new UiSounds(stage, store, () => bridge.world?.windows() ?? NONE_OPEN);
+  const windows = (): WindowState => ({ ...(bridge.world?.windows() ?? NONE_OPEN), menu: bridge.ui.menuOpen });
+  const sounds = new UiSounds(stage, store, windows);
   bridge.lendSounds(sounds);
   return sounds;
 }

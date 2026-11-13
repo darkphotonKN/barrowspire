@@ -51,13 +51,7 @@ import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
-import { escapeStep } from "@/ui/escapeOrder";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
-import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
-import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
-import { lentFullscreen } from "@/ui/gameFullscreen";
-import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
-import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
@@ -67,7 +61,7 @@ import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { NO_UI, answering, reportWorld, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
+import { NO_FACTS, NO_UI, answering, reportWorld, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -132,17 +126,6 @@ const NOTICE_MS = 3200;
 const FALLEN_DEPTH = 1000;
 /** The fallen line's size, as it has always been. */
 const FALLEN_LINE_PX = 18;
-/** The ESC menu's pressable rows and tokens: the town's (FS-G4VMQ § Change C2). */
-const MENU_CHOICE_HIT = { width: 160, height: 34 };
-const MENU_TONES: MenuTones = {
-  panel: BARROW_HEX.charcoal,
-  frame: BARROW_HEX.brass,
-  text: BARROW_HEX.vellum,
-  dim: BARROW_HEX.vellumDark,
-  actionable: BARROW_HEX.amber,
-  cancel: BARROW_HEX.arcane,
-};
-
 /** What the entrance gate is called on the ground, for a player to walk to. */
 const ROAD_HOME = "The road home";
 /** The baked signpost the road home's name hangs over, as at the hub's field gates. */
@@ -212,14 +195,6 @@ export class FieldScene extends Phaser.Scene {
   private leavingField = false;
   /** The field's monsters and the player's fight with them (§Requirements 56). */
   private fight?: FieldCombat;
-  /**
-   * The ESC menu while it is open (FS-G4VMQ § Change: The ESC menu in a field world): the town's,
-   * Change character, Options and Back; or the OPTIONS panel opened from it in its place (FS-28DDG
-   * § Change: Music volume in an Options panel, C8). It owns the keys and presses while up.
-   */
-  private menu?: Phaser.GameObjects.Container;
-  private menuChoices?: MenuSlotKeys;
-  private moveMenu?: (origin: { x: number; y: number }) => void;
   /** A leave_hub has been sent from the menu and not answered yet (FS-G4VMQ R25). */
   private leavingHub = false;
   /** The player's own fall and its 3-2-1 (§Requirements 58). */
@@ -389,19 +364,31 @@ export class FieldScene extends Phaser.Scene {
     return {
       windows: () => this.windows(),
       blockers: () => ({ dialogue: false }),
+      // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
+      facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
+      // the menu opens over no window (FS-3EBCA R17)
+      heardUi: (ui) => {
+        if (ui.menuOpen) this.closeWindows();
+      },
       answer: answering({
-        toggleMenu: () => this.pressMenuIcon(),
         inventory: () => this.toggleGear(),
         character: () => this.toggleCharacter(),
         party: () => this.partyPanel?.toggle(),
+        // one Esc step each (FS-TQZ5J R17)
+        close: { party: () => this.partyPanel?.close(), gear: () => this.equipment?.hide() },
+        changeCharacter: () => this.changeCharacter(),
       }),
     };
   }
 
-  /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the menu's slot, Party, Inventory, Character; a field has no letter panel. */
+  /** Whether the UI scene's menu slot is filled (FS-TQZ5J R10): every guard that read the field's own menu reads this. */
+  private get menuOpen(): boolean {
+    return this.ui.ui.menuOpen;
+  }
+
+  /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): Party, Inventory, Character; a field has no letter panel. */
   private windows(): WorldWindows {
     return {
-      menu: !!this.menu,
       letter: false,
       party: this.partyPanel?.isOpen() ?? false,
       inventory: this.equipment?.isInventoryOpen() ?? false,
@@ -415,27 +402,18 @@ export class FieldScene extends Phaser.Scene {
    * (FS-R82NV § Change C8).
    */
   private refusesParty(): boolean {
-    return !!this.menu;
+    return this.menuOpen;
   }
 
   /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the gear overlay is up. */
   private mayChat(): boolean {
-    return !this.menu && !this.equipment?.isOpen();
+    return !this.menuOpen && !this.equipment?.isOpen();
   }
 
   /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
   private closeWindows(): void {
     this.partyPanel?.close();
     this.equipment?.hide();
-  }
-
-  /**
-   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
-   * it opens; with the menu open it closes it, as its × and Back do (owner 2026-11-12: "menu無法再按一次icon關閉").
-   */
-  private pressMenuIcon(): void {
-    if (this.menu) this.closeMenu();
-    else this.openMenu();
   }
 
   /**
@@ -448,7 +426,6 @@ export class FieldScene extends Phaser.Scene {
     this.arrivalCard.relayout();
     this.minimap?.place();
     this.abilityHud?.relayout();
-    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
     this.partyPanel?.relayout();
     this.satchel?.relayout();
@@ -471,7 +448,8 @@ export class FieldScene extends Phaser.Scene {
     socketManager.onError(ActionType.LeaveHub, (info) => {
       if (!this.leavingHub) return;
       this.leavingHub = false;
-      this.menuChoices?.retone();
+      // Change character comes back on the menu (FS-TQZ5J R9)
+      this.ui.changed();
       this.notice(info.message ?? "The field will not let you go yet. Ask again.");
     });
     socketManager.onError(ActionType.LeaveField, (info) => {
@@ -597,93 +575,14 @@ export class FieldScene extends Phaser.Scene {
    * menu owns the keys (FS-G4VMQ R5). Opening it ends a Shadow Shot hold (FS-JTNPR req 15).
    */
   private toggleGear(): void {
-    if (this.menu) return;
+    if (this.menuOpen) return;
     if (this.equipment?.toggle()) this.fight?.cancelAim();
   }
 
   /** C or the corner row's Character icon: the character panel, under I's rule (FS-HRH2J § Change C2, C5). */
   private toggleCharacter(): void {
-    if (this.menu) return;
+    if (this.menuOpen) return;
     if (this.equipment?.toggleCharacter()) this.fight?.cancelAim();
-  }
-
-  /**
-   * One Esc press (FS-R82NV § Change C2): one press closes one thing, the party panel, drawn over
-   * the gear overlay (§ Change C8), then the overlay (`escapeStep`).
-   */
-  private pressEscape(): void {
-    const step = escapeStep({
-      menu: !!this.menu,
-      gear: this.equipment?.isOpen() ?? false,
-      party: this.partyPanel?.isOpen() ?? false,
-    });
-    if (step === "gear") this.equipment?.hide();
-    else if (step === "party") this.partyPanel?.close();
-    // the menu's Esc is its Back, and the OPTIONS panel's reopens the menu (FS-28DDG § Change C7)
-    else if (step === "close-menu") this.menuChoices?.dismiss();
-    else this.openMenu();
-  }
-
-  /**
-   * The town's ESC menu, in the field (FS-G4VMQ § Change C2): Change character, Options and Back,
-   * by `hubMenuChoices`' rule (a field player is never queued, FS-X2F2H R20), centred in the popup
-   * band. The world runs on behind it. Every window closes as it opens (FS-3EBCA R17).
-   */
-  private openMenu(): void {
-    this.closeWindows();
-    // only the rows the field offers: no queue to leave (FS-X2F2H R20)
-    // every row and the × the player's, through the interface sounds' wrapper (FS-WDM0X S9)
-    const actions: Partial<Record<HubMenuChoice["id"], () => void>> = {
-      change: () => this.ui.act(() => this.changeCharacter()),
-      options: () => this.ui.act(() => this.openOptions()),
-      back: () => this.ui.act(() => this.closeMenu()),
-    };
-    const { container, keys, moveTo } = showMenuPanel(this, {
-      choices: hubMenuChoices({ queued: false }),
-      actions,
-      // dimmed while the server is asked, so a second press has nothing to land on
-      enabled: { change: () => !this.leavingHub },
-      close: () => this.ui.act(() => this.closeMenu()),
-      origin: { x: viewport.centerX, y: viewport.centerY },
-      hit: MENU_CHOICE_HIT,
-      tones: MENU_TONES,
-    });
-    this.menu = container;
-    this.menuChoices = keys;
-    this.moveMenu = moveTo;
-  }
-
-  /**
-   * The OPTIONS panel, in the menu's slot so every guard on the open menu holds for it (FS-28DDG
-   * § Change C3, C7, C8). No music plays in a field, so its Music row only keeps the level, read
-   * as the panel opens, for the next hub entry (C14). Back, Esc and its × reopen the field's menu.
-   */
-  private openOptions(): void {
-    this.closeMenu();
-    const { container, keys, moveTo } = openOptionsPanel(this, {
-      origin: { x: viewport.centerX, y: viewport.centerY },
-      hit: MENU_CHOICE_HIT,
-      tones: MENU_TONES,
-      // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
-      back: () =>
-        this.ui.act(() => {
-          this.closeMenu();
-          this.openMenu();
-        }),
-      music: storedMusicLevel(browserMusicStore),
-      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
-      fullscreen: lentFullscreen(this.registry),
-    });
-    this.menu = container;
-    this.menuChoices = keys;
-    this.moveMenu = moveTo;
-  }
-
-  private closeMenu(): void {
-    this.menu?.destroy();
-    this.menu = undefined;
-    this.menuChoices = undefined;
-    this.moveMenu = undefined;
   }
 
   /**
@@ -693,18 +592,18 @@ export class FieldScene extends Phaser.Scene {
   private changeCharacter(): void {
     if (this.leavingHub) return;
     this.leavingHub = true;
-    this.menuChoices?.retone();
     socketManager.sendMessage(ActionType.LeaveHub, {});
   }
 
   /**
-   * The run's keys for the satchel and the equip HUD: I or B opens and closes the overlay, Q and
-   * ESC close it (FS-HRH2J R4; a field has no ESC menu); E over the open overlay equips or
-   * unequips, as in the run, else reaches for a pile or chest; F takes the satchel's first item.
+   * The run's keys for the satchel and the equip HUD: I or B opens and closes the overlay, Q closes
+   * it (FS-HRH2J R4); E over the open overlay equips or unequips, as in the run, else reaches for a
+   * pile or chest; F takes the satchel's first item. Esc and the ESC menu's keys are the UI scene's
+   * (FS-TQZ5J R17, R18): the field binds none of them.
    */
   private bindHudKeys(): void {
     this.input.keyboard?.on("keydown-E", () => {
-      if (this.menu) return;
+      if (this.menuOpen) return;
       if (this.equipment?.equipKey()) return;
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
@@ -713,21 +612,12 @@ export class FieldScene extends Phaser.Scene {
     this.input.keyboard?.on("keydown-C", () => this.ui.act(() => this.toggleCharacter()));
     this.input.keyboard?.on("keydown-Q", () =>
       this.ui.act(() => {
-        if (!this.menu) this.equipment?.hide();
+        if (!this.menuOpen) this.equipment?.hide();
       }),
     );
-    this.input.keyboard?.on("keydown-ESC", () => this.ui.act(() => this.pressEscape()));
     this.input.keyboard?.on("keydown-F", () => {
-      if (!this.menu) this.satchel?.lootFirst();
+      if (!this.menuOpen) this.satchel?.lootFirst();
     });
-    // the open menu's keys, the town's: Enter is the first choice, a number that choice; ← and →
-    // move the OPTIONS panel's slider, one level a press (FS-28DDG § Change C6)
-    this.input.keyboard?.on("keydown-ENTER", () => this.menuChoices?.confirm());
-    this.input.keyboard?.on("keydown-LEFT", () => this.menuChoices?.nudge?.(-1));
-    this.input.keyboard?.on("keydown-RIGHT", () => this.menuChoices?.nudge?.(1));
-    ["ONE", "TWO", "THREE"].forEach((name, i) =>
-      this.input.keyboard?.on(`keydown-${name}`, () => this.menuChoices?.pick(i)),
-    );
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
@@ -747,7 +637,7 @@ export class FieldScene extends Phaser.Scene {
   private takesPointer(x: number, y: number, primary: boolean): boolean {
     // the open menu's rows take their own presses; nothing in the world answers one (FS-G4VMQ R5),
     // nor the map mode icon, whose guards the menu is one of
-    if (this.menu) return true;
+    if (this.menuOpen) return true;
     if (this.panelTakes(x, y)) return true;
     // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
     if (this.minimap?.pointerDown(x, y, primary)) return true;
@@ -784,7 +674,6 @@ export class FieldScene extends Phaser.Scene {
     socketManager.off(ActionType.Interact);
     socketManager.off("world_left");
     socketManager.offError(ActionType.LeaveHub);
-    this.closeMenu();
     this.leavingHub = false;
     this.piles?.release();
     this.piles = undefined;
@@ -891,7 +780,7 @@ export class FieldScene extends Phaser.Scene {
     const down = this.cursors.down.isDown || this.wasd.down.isDown;
     // the keys read released while an archer draws a Shadow Shot (FS-JTNPR req 9), and while the
     // ESC menu owns them (FS-G4VMQ R5): a stride it interrupts stops
-    const aiming = this.fight?.aiming === true || !!this.menu;
+    const aiming = this.fight?.aiming === true || this.menuOpen;
     const vx = aiming ? 0 : (right ? 1 : 0) - (left ? 1 : 0);
     const vy = aiming ? 0 : (down ? 1 : 0) - (up ? 1 : 0);
     if (vx === this.lastSent?.vx && vy === this.lastSent?.vy) return;
@@ -1010,7 +899,7 @@ export class FieldScene extends Phaser.Scene {
 
   /** M's guards in a field, the key's and the map mode icon's (FS-P0HSP §F.33): chat typing, or the ESC menu owning the keys. */
   private minimapKeysOwned(): boolean {
-    return !!this.chatWindow?.isTyping() || !!this.menu;
+    return !!this.chatWindow?.isTyping() || this.menuOpen;
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */

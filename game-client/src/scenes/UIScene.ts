@@ -1,15 +1,29 @@
 import * as Phaser from "phaser";
 import { UI_SCENE } from "@/components/uiSceneLifecycle";
+import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { letGoOfGameField } from "@/components/gameFocus";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
-import { relayoutOn } from "@/render/viewport";
+import { relayoutOn, viewport } from "@/render/viewport";
+import { lentFullscreen } from "@/ui/gameFullscreen";
 import { HudCorner } from "@/ui/HudCorner";
+import { showMenuPanel } from "@/ui/menuPanel";
+import { openOptionsPanel } from "@/ui/optionsPanel";
 import { uiBridgeOf, type UiBridge } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
+import { UiMenuSlot } from "@/ui/uiSceneMenu";
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
+
+/** The UI scene's keys (R17, R18): Esc, its own outright; Enter, 1–3 and ←/→, the menu's while it is open. */
+interface MenuKeyObjects {
+  esc: Phaser.Input.Keyboard.Key;
+  enter: Phaser.Input.Keyboard.Key;
+  numbers: Phaser.Input.Keyboard.Key[];
+  left: Phaser.Input.Keyboard.Key;
+  right: Phaser.Input.Keyboard.Key;
+}
 
 /**
  * The UI scene (FS-TQZ5J §A, ADR-0081): the one scene drawn over every world scene and under the
@@ -20,7 +34,8 @@ import { onSceneEnd } from "./sceneEnd";
  * ViewportFit fits its camera and `fitGame` re-fits it, as every scene's (R6).
  *
  * The interface moves in piece by piece (FS-TQZ5J § Phases). It holds the game's interface sounds
- * (R22) and the corner row, built for each world as it reports itself (R13). Its pointer stands beside
+ * (R22), the corner row, built for each world as it reports itself (R13), and the one menu slot: the
+ * ESC menu, OPTIONS and the run's Fall confirm, with Esc and the menu's keys (R16–R21). Its pointer stands beside
  * the worlds' as Amendment A1 says, for every piece it holds: a world's press stays the world's, a
  * press on a piece lets go of the game's text field, and every move reaches the world (R25–R27).
  *
@@ -31,6 +46,8 @@ import { onSceneEnd } from "./sceneEnd";
  */
 export class UIScene extends Phaser.Scene {
   private corner?: UiCornerRow;
+  private menu?: UiMenuSlot;
+  private keys?: MenuKeyObjects;
   private pointer?: UiScenePointer<Phaser.Input.Pointer>;
 
   constructor() {
@@ -47,17 +64,62 @@ export class UIScene extends Phaser.Scene {
     const bridge = uiBridgeOf(this.registry);
     if (!bridge) return;
     mountInterfaceSounds(bridge, sceneUiSoundStage(this), browserSfxStore);
-    this.mountCorner(bridge);
+    this.mountInterface(bridge);
+    this.mountKeys();
     this.mountPointer(bridge);
   }
 
   /**
-   * Each frame while it runs: the row held while the world reports its own ESC menu open (I-TQZ5J-3),
-   * and a world's press whose release it never heard let go of (A1 R25).
+   * Each frame while it runs, before the world's own update (Phaser steps the scene list from the
+   * top): the keys pressed since the last frame, read here and nowhere else (R21); the row held under
+   * the town's dialogue and the menu yielding to the world's report (R20); and a world's press whose
+   * release it never heard let go of (A1 R25).
    */
   update(): void {
+    this.readKeys();
+    this.menu?.sync();
     this.corner?.sync();
     this.pointer?.frame();
+  }
+
+  /**
+   * The keys this frame (R17, R18, R21), each read every frame so a press never waits to answer a
+   * later one: Esc's step, and with the slot filled Enter, 1–3 and ←/→. Read once a frame in update,
+   * never on a key event: Phaser hands a key event to the scenes' keyboards in the order they
+   * started, which a world switch turns round (§ Spike findings (b)), while it steps the scenes'
+   * updates in the scene list's order, the same in every session.
+   */
+  private readKeys(): void {
+    const keys = this.keys;
+    if (!keys) return;
+    const down = Phaser.Input.Keyboard.JustDown;
+    const esc = down(keys.esc);
+    const enter = down(keys.enter);
+    const numbered = keys.numbers.map((key) => down(key)).indexOf(true);
+    const left = down(keys.left);
+    const right = down(keys.right);
+    this.menu?.keys({ esc, enter, numbered, nudge: left === right ? undefined : left ? -1 : 1 });
+  }
+
+  /**
+   * The menu's keys on this scene's keyboard (R21). Esc is captured while the scene is awake, as the
+   * worlds that bound it captured it, and handed back as it sleeps (main menu, character creation)
+   * and taken again as it wakes; the shared keys are not captured here: the worlds that use them
+   * capture them as before. Phaser drops a scene's keys as it is destroyed with the game.
+   */
+  private mountKeys(): void {
+    const keyboard = this.input?.keyboard;
+    if (!keyboard) return;
+    const codes = Phaser.Input.Keyboard.KeyCodes;
+    this.keys = {
+      esc: keyboard.addKey(codes.ESC),
+      enter: keyboard.addKey(codes.ENTER, false),
+      numbers: [codes.ONE, codes.TWO, codes.THREE].map((code) => keyboard.addKey(code, false)),
+      left: keyboard.addKey(codes.LEFT, false),
+      right: keyboard.addKey(codes.RIGHT, false),
+    };
+    this.events.on(Phaser.Scenes.Events.SLEEP, () => keyboard.removeCapture(codes.ESC));
+    this.events.on(Phaser.Scenes.Events.WAKE, () => keyboard.addCapture(codes.ESC));
   }
 
   /**
@@ -84,20 +146,41 @@ export class UIScene extends Phaser.Scene {
   }
 
   /**
-   * The corner row (R13): the row of the world reported as this scene is created (the first world's,
-   * whose report launched it), and each later world's on its report; taken down as a world leaves and
-   * with the game, when it stops hearing the worlds (R4). Its knockouts follow the render scale
-   * themselves; a new logical view stands it in the new corner.
+   * The corner row (R13) and the menu slot (R16). The row of the world reported as this scene is
+   * created (the first world's, whose report launched it), and each later world's on its report; the
+   * slot yielding as each report is heard (R20). Both taken down as a world leaves and with the game,
+   * when it stops hearing the worlds (R4). The row's knockouts follow the render scale themselves; a
+   * new logical view stands the row in the new corner and the slot's panel at the new centre.
    */
-  private mountCorner(bridge: UiBridge): void {
-    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }));
+  private mountInterface(bridge: UiBridge): void {
+    const menu = new UiMenuSlot({
+      bridge,
+      draw: {
+        menu: (spec) => showMenuPanel(this, spec),
+        options: (spec) => openOptionsPanel(this, spec),
+      },
+      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
+      centre: () => ({ x: viewport.centerX, y: viewport.centerY }),
+      musicLevel: () => storedMusicLevel(browserMusicStore),
+      fullscreen: () => lentFullscreen(this.registry),
+    });
+    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu());
+    this.menu = menu;
     this.corner = corner;
     corner.show(bridge.world);
-    const stop = bridge.onWorld((report) => corner.show(report));
-    relayoutOn(this, () => corner.relayout());
+    const stop = bridge.onWorld((report) => {
+      menu.sync();
+      corner.show(report);
+    });
+    relayoutOn(this, () => {
+      corner.relayout();
+      menu.relayout();
+    });
     onSceneEnd(this, () => {
       stop();
+      menu.close();
       corner.destroy();
+      this.menu = undefined;
       this.corner = undefined;
     });
   }
