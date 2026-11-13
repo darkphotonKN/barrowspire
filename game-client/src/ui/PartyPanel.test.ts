@@ -18,7 +18,11 @@ import { MENU_DEPTH } from "./menuPanel";
 // 2026-11-12: "menu跟道具欄跟角色欄的ui調整成跟party一樣外框"). I-3EBCA-6.
 vi.mock("./panelFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("./panelFrame")>();
-  return { ...real, drawPanelFrame: vi.fn(real.drawPanelFrame), drawPanelTitle: vi.fn(real.drawPanelTitle) };
+  return {
+    ...real,
+    drawPanelFrame: vi.fn(real.drawPanelFrame),
+    drawPanelTitle: vi.fn(real.drawPanelTitle),
+  };
 });
 import type { PartyInviteFieldHandle } from "./partyInviteField";
 import {
@@ -38,6 +42,8 @@ interface FakeText {
   destroyed: boolean;
   interactive: boolean;
   onPress?: () => void;
+  /** The release a button or the × acts on (FS-R82NV R28: the press stays the panel's). */
+  onRelease?: () => void;
   onOver?: () => void;
   colour?: string;
   at?: { x: number; y: number };
@@ -85,6 +91,7 @@ function fakeScene() {
       setInteractive: () => ((t.interactive = true), self),
       on: (event: string, cb: () => void) => {
         if (event === "pointerdown") t.onPress = cb;
+        if (event === "pointerup") t.onRelease = cb;
         if (event === "pointerover") t.onOver = cb;
         return self;
       },
@@ -286,8 +293,8 @@ describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
     env.pressT();
     // one pair of buttons, on Wren's row only
     expect(env.live().filter((t) => t.content === "Kick")).toHaveLength(1);
-    env.find("Kick")!.onPress?.();
-    env.find("Transfer")!.onPress?.();
+    env.find("Kick")!.onRelease?.();
+    env.find("Transfer")!.onRelease?.();
     expect(env.commands.kick).toHaveBeenCalledWith(ALLY);
     expect(env.commands.transfer).toHaveBeenCalledWith(ALLY);
   });
@@ -299,10 +306,10 @@ describe("PartyPanel (FS-R82NV R29, R30: contents)", () => {
     const kick = env.find("Kick")!;
     expect(kick.interactive).toBe(false);
     expect(kick.alpha).toBeLessThan(1);
-    kick.onPress?.();
+    kick.onRelease?.();
     expect(env.commands.kick).not.toHaveBeenCalled();
     // leave is any member's
-    env.find("Leave party")!.onPress?.();
+    env.find("Leave party")!.onRelease?.();
     expect(env.commands.leave).toHaveBeenCalled();
   });
 
@@ -325,7 +332,7 @@ describe("PartyPanel (FS-R82NV R30: Create party)", () => {
     env.pressT();
     const create = env.find("Create party")!;
     expect(create.interactive).toBe(true);
-    create.onPress?.();
+    create.onRelease?.();
     expect(env.commands.create).toHaveBeenCalledTimes(1);
   });
 
@@ -334,7 +341,7 @@ describe("PartyPanel (FS-R82NV R30: Create party)", () => {
     env.pressT();
     const create = env.find("Create party")!;
     expect(create.interactive).toBe(true);
-    create.onPress?.();
+    create.onRelease?.();
     expect(env.commands.create).toHaveBeenCalledTimes(1);
   });
 
@@ -344,7 +351,7 @@ describe("PartyPanel (FS-R82NV R30: Create party)", () => {
     const create = env.find("Create party")!;
     expect(create.interactive).toBe(false);
     expect(create.alpha).toBeLessThan(1);
-    create.onPress?.();
+    create.onRelease?.();
     expect(env.commands.create).not.toHaveBeenCalled();
   });
 
@@ -392,7 +399,7 @@ describe("PartyPanel (FS-R82NV R29: the Invite button)", () => {
     button.env.field.value = "  Wren ";
     const invite = button.env.find("Invite")!;
     expect(invite.interactive).toBe(true);
-    invite.onPress?.();
+    invite.onRelease?.();
 
     expect(button.sent).toEqual([["party_invite", { name: "Wren" }]]);
     expect(button.sent).toEqual(enter.sent);
@@ -403,7 +410,7 @@ describe("PartyPanel (FS-R82NV R29: the Invite button)", () => {
     const { sent, env } = withSocket();
     env.pressT();
     env.field.value = "   ";
-    env.find("Invite")!.onPress?.();
+    env.find("Invite")!.onRelease?.();
     expect(sent).toEqual([]);
   });
 
@@ -413,7 +420,7 @@ describe("PartyPanel (FS-R82NV R29: the Invite button)", () => {
     env.field.value = "Wren";
     const invite = env.find("Invite")!;
     expect(invite.interactive).toBe(true);
-    invite.onPress?.();
+    invite.onRelease?.();
     expect(sent).toEqual([["party_invite", { name: "Wren" }]]);
   });
 
@@ -423,7 +430,7 @@ describe("PartyPanel (FS-R82NV R29: the Invite button)", () => {
     env.field.value = "Wren";
     const invite = env.find("Invite")!;
     expect(invite.interactive).toBe(false);
-    invite.onPress?.();
+    invite.onRelease?.();
     expect(sent).toEqual([]);
   });
 });
@@ -520,13 +527,31 @@ describe("PartyPanel at a render scale (FS-ZAJMH R15: Phaser's pointer.x/y are b
 
 // FS-R82NV § Change: The party panel closes on its × and stands nearer the middle. I-R82NV-13.
 describe("PartyPanel (FS-R82NV § Change C1: the × closes it)", () => {
-  it("should draw an amber × at the panel's top right, and close the panel on a press", () => {
+  // the owner, 2026-11-14: 「party的關閉x按鈕會觸發攻擊 沒擋好按鈕」. A press on the × closed the panel
+  // before the run's own press handler asked covers(), so the press fell through to an attack. The
+  // × and the panel's buttons act on the release, as the invite prompt's do: on the press the panel
+  // is still open and still claims it (R28).
+  it("should do nothing on a press of the × or a button, leaving the panel open and claiming the press", () => {
+    const env = setup();
+    env.pressT();
+    const x = env.find("×")!;
+    const create = env.find("Create party")!;
+    expect(x.onPress).toBeUndefined();
+    expect(create.onPress).toBeUndefined();
+    expect(env.panel.isOpen()).toBe(true);
+    expect(env.panel.covers(x.at!.x, x.at!.y)).toBe(true);
+  });
+
+  it("should draw an amber × at the panel's top right, and close the panel on a release", () => {
     const env = setup();
     env.pressT();
     const x = env.find("×")!;
     expect(x.interactive).toBe(true);
-    expect(x.at).toEqual({ x: partyPanelLeft(1080) + 300 - 12 - 12, y: partyPanelTop(720) + 12 + 12 });
-    x.onPress?.();
+    expect(x.at).toEqual({
+      x: partyPanelLeft(1080) + 300 - 12 - 12,
+      y: partyPanelTop(720) + 12 + 12,
+    });
+    x.onRelease?.();
     expect(env.panel.isOpen()).toBe(false);
     expect(env.find("×")).toBeUndefined();
   });
@@ -569,12 +594,18 @@ describe("PartyPanel (FS-R82NV § Change C3–C5: centred, following the view)",
   it("should move the open panel and its invite field when the view widens", () => {
     const env = setup();
     env.pressT();
-    expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(true);
+    expect(
+      env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5),
+    ).toBe(true);
     const fieldAt = env.field.at!.x;
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
     env.panel.relayout();
-    expect(env.panel.covers(partyPanelLeft(1280) + 5, partyPanelTop(720) + 5)).toBe(true);
-    expect(env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5)).toBe(false);
+    expect(
+      env.panel.covers(partyPanelLeft(1280) + 5, partyPanelTop(720) + 5),
+    ).toBe(true);
+    expect(
+      env.panel.covers(partyPanelLeft(1080) + 5, partyPanelTop(720) + 5),
+    ).toBe(false);
     expect(env.field.at!.x).toBe(fieldAt + 100);
     expect(env.find("×")!.at!.x).toBe(partyPanelLeft(1280) + 300 - 24);
   });
@@ -673,7 +704,7 @@ describe("PartyPanel's own inputs through the scene's wrapper (FS-WDM0X S9)", ()
   it("should run T, the Party icon's toggle and the × each through the wrapper, around the change", () => {
     const env = wrapped();
     env.pressT();
-    env.find("×")!.onPress?.();
+    env.find("×")!.onRelease?.();
     env.panel.toggle();
     env.pressT();
     expect(env.seen).toEqual([
@@ -707,7 +738,11 @@ describe("PartyPanel's title, shared (FS-3EBCA R20, R22)", () => {
     env.store.getState().apply(update(ME));
     env.pressT();
     const [, panel, words] = title.mock.calls.at(-1)!;
-    expect(panel).toMatchObject({ x: partyPanelLeft(1080), y: partyPanelTop(720), width: PARTY_PANEL_W });
+    expect(panel).toMatchObject({
+      x: partyPanelLeft(1080),
+      y: partyPanelTop(720),
+      width: PARTY_PANEL_W,
+    });
     expect(words).toBe("Party (2/4)");
     expect(env.find("PARTY (2/4)")).toBeDefined();
   });
