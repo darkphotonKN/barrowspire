@@ -10,6 +10,11 @@ import { UI_SCENE } from "@/components/uiSceneLifecycle";
  * ViewportFit fits its camera and `fitGame` re-fits it, as every scene's (R6).
  *
  * It stands empty until the interface moves in, piece by piece (FS-TQZ5J § Phases).
+ *
+ * A RESUME is not always a return to play. Return to menu under the disconnect notice resumes this
+ * scene only to sleep it, Phaser's sleep taking a running scene only (`driveUiScene`'s hide), so it
+ * hears RESUME then SLEEP back to back with no world up. A RESUME listener must not take it for the
+ * world coming back: WAKE, with the next world's report, is that.
  */
 export class UIScene extends Phaser.Scene {
   constructor() {

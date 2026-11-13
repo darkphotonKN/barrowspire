@@ -1,5 +1,6 @@
 import type { WorldEnteredPayload, WorldType } from "@/assets/types/client";
-import { RUNNING, inFlight, type SceneStatusReader } from "./bootGate";
+import { RUNNING } from "@/scenes/sceneStatus";
+import { inFlight, type SceneStatusReader } from "./bootGate";
 
 /**
  * Which scene draws each kind of world (FS-29KSH §Requirements 15). A field never routes to the

@@ -24,8 +24,8 @@ import { keepTab, takeFocusOnPress } from "./gameFocus";
 import { frameFullscreen } from "./frameFullscreen";
 import { keyboardLockOf } from "./fullscreen";
 import { lendFullscreen } from "@/ui/gameFullscreen";
-import { lendUiBridge } from "@/ui/uiBridge";
-import { GameUiBridge } from "./uiSceneLifecycle";
+import { GameUiBridge, lendUiBridge } from "@/ui/uiBridge";
+import { driveUiScene } from "./uiSceneLifecycle";
 import GameFrame from "./GameFrame";
 import { installCrispText } from "@/render/crispText";
 import {
@@ -130,8 +130,11 @@ export default function PhaserGame() {
     lendFullscreen(game.registry, frameFullscreen(frame, document, keyboardLockOf(navigator)));
 
     // the one channel between the world scenes and the UI scene, lent the same way; the worlds'
-    // reports through it launch, sleep and wake the UI scene (FS-TQZ5J R2, R3, R8)
-    lendUiBridge(game.registry, new GameUiBridge(game.scene));
+    // reports through it launch, sleep and wake the UI scene, for the game's life (FS-TQZ5J R2, R3,
+    // R8): both go with the game
+    const uiBridge = new GameUiBridge();
+    driveUiScene(uiBridge, game.scene);
+    lendUiBridge(game.registry, uiBridge);
 
     // the DOM layer pinned to the canvas, and a re-fit on a resize of the frame (the window, the
     // banner, fullscreen) or a density change (another monitor), no reload (R10, R11, R16)

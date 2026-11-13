@@ -4,9 +4,9 @@
  * what only the world can do. No scene imports another scene or calls its methods: each reaches the
  * bridge its game was lent, through {@link uiBridgeOf}, as it reaches the frame's fullscreen.
  *
- * One per game, made and lent by the game bridge (`PhaserGame`), let go with the game. The game's
- * bridge, and the UI scene's life the worlds' reports drive through it, are
- * `src/components/uiSceneLifecycle.ts`.
+ * One per game ({@link GameUiBridge}), made and lent by the game bridge (`PhaserGame`), let go with
+ * the game. It is the channel only: the UI scene's life listens to its world reports
+ * (`src/components/uiSceneLifecycle.ts`).
  *
  * Each slice of FS-TQZ5J adds to it what it consumes: this one carries which world is up and its
  * leaving, the UI's state and `act`. The world's player state, menu facts, blockers and open windows
@@ -48,6 +48,58 @@ export interface UiBridge extends UiActWrapper {
   reportUi(state: UiState): void;
   /** The UI's last state. What the world's guards read. */
   readonly ui: UiState;
+}
+
+/** Told each world report, and none (null) as the world reported leaves. */
+export type WorldListener = (report: WorldReport | null) => void;
+
+/**
+ * The game's UI bridge (R8): what the scenes said, held for the other side to read, and each world
+ * report told to whoever listens (the UI scene's life). It knows nothing of the game's scenes.
+ */
+export class GameUiBridge implements UiBridge {
+  private reported: WorldReport | null = null;
+  private uiState: UiState = { menuOpen: false };
+  private readonly listeners = new Set<WorldListener>();
+
+  get world(): WorldReport | null {
+    return this.reported;
+  }
+
+  get ui(): UiState {
+    return this.uiState;
+  }
+
+  report(report: WorldReport): void {
+    this.reported = report;
+    this.tell(report);
+  }
+
+  /** A left from a world no longer the one reported changes nothing, and tells nothing. */
+  left(world: World): void {
+    if (this.reported?.world !== world) return;
+    this.reported = null;
+    this.tell(null);
+  }
+
+  reportUi(state: UiState): void {
+    this.uiState = state;
+  }
+
+  /** The action as it is: the interface sounds that play around it come with I-TQZ5J-2 (R12, R22). */
+  act(run: () => void): void {
+    run();
+  }
+
+  /** Hears each world report from now on, and none as a world leaves. Returns the stop. */
+  onWorld(listener: WorldListener): () => void {
+    this.listeners.add(listener);
+    return () => void this.listeners.delete(listener);
+  }
+
+  private tell(report: WorldReport | null): void {
+    for (const listener of [...this.listeners]) listener(report);
+  }
 }
 
 const UI_BRIDGE_KEY = "uiBridge";
