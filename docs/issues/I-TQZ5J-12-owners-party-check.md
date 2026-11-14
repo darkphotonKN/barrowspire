@@ -74,3 +74,10 @@ R46's depth cases (before/after pairs under `/private/tmp/claude-501/-Users-nick
 | town and run: the frames and the gear overlay's character panel (1100) | differs: **the frames now draw over the character panel's top left** (`hub-dpr1-windowed-leader-under-gear-character.png`, `run-dpr1-windowed-…`, both fullscreen) |
 | town: the frames and the letter panel (1800) | differs at 1×, windowed only (2700 px at the frames' right edge): the frames over the letter panel's left edge (`hub-dpr1-windowed-leader-under-letter.png`); equal fullscreen |
 | two invite prompts and the controls panel, the resolved card, the gear overlay (field, run) | equal: they do not meet |
+
+## Owner answers (2026-11-14)
+
+- The invite plays one sound only, notify_important, with no dialog_open as well: 「1只播一個」.
+- Greyed party buttons take their press for menu_error, so a greyed Travel no longer attacks: 「2 ok」.
+
+The look-and-feel and listening check itself is still open.
