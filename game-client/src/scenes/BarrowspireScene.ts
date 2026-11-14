@@ -5156,9 +5156,12 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The escaped player's view while a teammate is still in play (req 3, amended 2026-11-02): no
    * card, a Watch the delve button in the bottom-centre row, in the HUD band. The camera stays on
-   * their own (hidden) body until it is pressed (req 4).
+   * their own (hidden) body until it is pressed (req 4). As it is first offered, the moved windows
+   * step aside, silently, so their grounds take no press meant for WATCH or LEAVE, as at the end's
+   * popup (FS-TQZ5J § Change: Phase 3, R58); the party panel and `dialog_open` wait for the end itself.
    */
   private offerWatch(): void {
+    if (this.resolvedKind !== "escaped") this.ui.endPopped();
     this.resolvedKind = "escaped";
     this.canWatch = true;
     this.syncRow();

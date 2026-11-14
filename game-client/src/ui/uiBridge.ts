@@ -381,7 +381,10 @@ export interface UiBridge extends UiActWrapper {
   container(message: ContainerMessage): void;
   /** The run hands its settlement record, or none (R52, R57). */
   record(shown: ShownRecord | null): void;
-  /** The run's end appeared (R58): the moved windows step aside, silently. */
+  /**
+   * The run's end appeared, or an escaped player's WATCH and LEAVE were first offered with a teammate
+   * still in play (R58): the moved windows step aside, silently.
+   */
   endPopped(): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
