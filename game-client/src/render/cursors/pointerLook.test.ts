@@ -275,32 +275,58 @@ describe("a scene's pointer look (FS-KYPQ9 § Change: The pressed hand, P7)", ()
   });
 });
 
-// P10: the canvas's default cursor has one writer, the look; and P7: each scene the player sees
-// asks it for the hand. Pinned on the source, as boneHand.test.ts pins the hover rule.
-describe("the look is the canvas cursor's one writer (FS-KYPQ9 § Change: The pressed hand, P7, P10)", () => {
+// P10: the canvas's default cursor has one writer, the pointer look; and P7: each scene the player
+// sees asks it for the hand. Pinned on the source, as boneHand.test.ts pins the hover rule. The
+// whole of src/, the React shell's Phaser code (components/PhaserGame.tsx, app/) included: a write
+// there would fight the pointer look as surely as a scene's. Only the canvas's cursor is a write:
+// a DOM component's CSS `cursor` (a JSX style, a class, a field's `style.cursor`) is its own.
+describe("the pointer look is the canvas cursor's one writer (FS-KYPQ9 § Change: The pressed hand, P7, P10)", () => {
   const SRC = path.resolve(__dirname, "../..");
-  const OUTSIDE_THE_CANVAS = ["app", "components", "api"].map((dir) => path.join(SRC, dir));
+  const WRITER = path.join(SRC, "render/cursors/pointerLook.ts");
   const sources = (dir: string): string[] =>
-    OUTSIDE_THE_CANVAS.includes(dir)
-      ? []
-      : readdirSync(dir).flatMap((name) => {
-          const file = path.join(dir, name);
-          if (statSync(file).isDirectory()) return sources(file);
-          return /\.tsx?$/.test(name) && !/\.(test|standin)\.tsx?$/.test(name) ? [file] : [];
-        });
+    readdirSync(dir).flatMap((name) => {
+      const file = path.join(dir, name);
+      if (statSync(file).isDirectory()) return sources(file);
+      return /\.tsx?$/.test(name) && !/\.(test|standin)\.tsx?$/.test(name) ? [file] : [];
+    });
   const read = (file: string) => readFileSync(path.join(SRC, file), "utf8");
+  /** Each way to set the canvas's default cursor: the input's call, its field, the canvas's style. */
+  const WRITES = [/\.setDefaultCursor\(/, /\bdefaultCursor\s*=(?!=)/, /\bcanvas\.style\.cursor\s*=(?!=)/];
+  const writes = (code: string) => WRITES.some((write) => write.test(code));
 
-  it("should have no scene set the default cursor itself", () => {
-    const own = path.join(SRC, "render/cursors");
+  it.each([
+    ["the input's call", "this.input.setDefaultCursor(hand);"],
+    ["the input manager's field", "game.input.defaultCursor = hand;"],
+    ["the canvas's style", "game.canvas.style.cursor = hand;"],
+  ])("should take %s for a write", (_, code) => {
+    expect(writes(code)).toBe(true);
+  });
+
+  it.each([
+    ["a JSX style", '<div style={{ cursor: "pointer" }} />'],
+    ["a class", '<tr className="bazaar-row cursor-pointer" />'],
+    ["a DOM field's style", 'field.style.cursor = enabled ? "text" : "not-allowed";'],
+    ["a read of the default", "if (manager.defaultCursor === hand) return;"],
+  ])("should not take %s for a write", (_, code) => {
+    expect(writes(code)).toBe(false);
+  });
+
+  it("should have nothing but the pointer look set the canvas's default cursor", () => {
     const offenders = sources(SRC)
-      .filter((file) => !file.startsWith(own))
-      .filter((file) => /\.setDefaultCursor\(/.test(readFileSync(file, "utf8")))
+      .filter((file) => file !== WRITER)
+      .filter((file) => writes(readFileSync(file, "utf8")))
       .map((file) => path.relative(SRC, file));
     expect(offenders).toEqual([]);
   });
 
+  it("should reach the React shell's Phaser code", () => {
+    const reached = sources(SRC).map((file) => path.relative(SRC, file));
+    expect(reached).toContain("components/PhaserGame.tsx");
+    expect(reached.some((file) => file.startsWith("app/"))).toBe(true);
+  });
+
   it.each(["scenes/MainMenuScene.ts", "scenes/CharacterCreationScene.ts", "scenes/HubScene.ts"])(
-    "should have %s ask the look for the hand with its art",
+    "should have %s ask the pointer look for the hand with its art",
     (file) => {
       expect(read(file)).toMatch(/ensurePointerLook\(this, this\.art\)\?\.base\("hand"\)/);
     },
