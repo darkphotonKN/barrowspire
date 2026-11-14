@@ -4012,11 +4012,33 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!focus) return;
     const state = this.lastGameState;
     const me = state?.current_player;
-    const [self] = partyPositions({ current_player: me && { ...me, position: this.playerPos ?? me.position } });
-    const allies = partyPositions({
-      other_players: state?.other_players?.map((m) => ({ ...m, position: this.otherPlayersPos.get(m.id) ?? m.position })),
-    });
-    minimap.follow({ x: focus.x, y: focus.y }, { self, allies });
+    minimap.follow(
+      { x: focus.x, y: focus.y },
+      this.partyDots(
+        me && { ...me, position: this.playerPos ?? me.position },
+        state?.other_players?.map((m) => ({ ...m, position: this.otherPlayersPos.get(m.id) ?? m.position })),
+      ),
+    );
+  }
+
+  /**
+   * The party's living, in-play dots, the self's apart: this client's player, or, while they watch a teammate,
+   * the watched teammate, as that teammate's own minimap draws them (the owner, 2026-11-14), the rest allies.
+   */
+  private partyDots<M extends { id: string; position: Point; current_health?: number; escape?: boolean }>(
+    me: M | null | undefined,
+    others: readonly M[] | null | undefined,
+  ): { self?: Point; allies: Point[] } {
+    const id = this.watchedPlayerId;
+    const watched = id === undefined ? undefined : others?.find((m) => m.id === id);
+    if (!watched) {
+      const [self] = partyPositions({ current_player: me });
+      return { self, allies: partyPositions({ other_players: others }) };
+    }
+    // the player among the watched teammate's allies, as that teammate is told them, while still in play
+    const [self] = partyPositions({ current_player: watched });
+    const rest = [...(me ? [me] : []), ...(others ?? []).filter((m) => m !== watched)];
+    return { self, allies: partyPositions({ other_players: rest }) };
   }
 
   /**
@@ -4035,8 +4057,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
     ];
     minimap.show((id) => dungeon.seen.state(id), fixtures);
-    const [self] = partyPositions({ current_player: state.current_player });
-    minimap.party({ self, allies: partyPositions({ other_players: state.other_players }) });
+    minimap.party(this.partyDots(state.current_player, state.other_players));
   }
 
   /**
@@ -4761,19 +4782,37 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Where the inside test is taken (FS-9PN7X §A.2): the player's drawn position, or none before the
-   * player is drawn, once they have escaped, while they lie dead, or while they watch a teammate
-   * (edge state: player gone). With none, no building is the player's: the blackout is off and
-   * only the hide rule's indoors half applies. The watched teammate is not followed indoors.
+   * The teammate a resolved player watches, drawn: their sprite and drawn position. The view is theirs while
+   * one is (the owner, 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」, 2026-11-14; FS-QPDKN § Change: The party
+   * death flow and the spectate switcher): their room, their torch, their occluders' fade. None before WATCH,
+   * or before their figure is drawn.
    */
-  private eye(): Point | undefined {
-    return this.present() ? this.playerPos : undefined;
+  private watchedFigure(): { sprite: Phaser.Physics.Arcade.Sprite; at: Point } | undefined {
+    const id = this.watchedPlayerId;
+    if (id === undefined) return undefined;
+    const sprite = this.otherPlayers.get(id);
+    const at = this.otherPlayersPos.get(id);
+    return sprite && at ? { sprite, at } : undefined;
   }
 
-  /** The player to silhouette behind a room (§E.2: the player only), while they stand in the world. */
+  /**
+   * Where the inside test is taken (FS-9PN7X §A.2): the player's drawn position; while they watch a
+   * teammate, the watched teammate's, into their room as out of it (the owner, 2026-11-14). None before
+   * the player is drawn, or once they have escaped or while they lie dead and watch nobody (edge state:
+   * player gone). With none, no building is the player's: the blackout is off and only the hide rule's
+   * indoors half applies.
+   */
+  private eye(): Point | undefined {
+    return this.present() ? this.playerPos : this.watchedFigure()?.at;
+  }
+
+  /**
+   * Who to silhouette behind a room (§E.2: the player only): the player while they stand in the world,
+   * the watched teammate while they watch one, as that teammate's own view does.
+   */
   private figure(): Figure | undefined {
-    const self = this.player;
-    if (!self || !this.present()) return undefined;
+    const self = this.present() ? this.player : this.watchedFigure()?.sprite;
+    if (!self) return undefined;
     return { body: self, bounds: self.getBounds(), depth: self.depth };
   }
 
@@ -5606,11 +5645,16 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Restamp the light-map and ease the occluders, once per frame. The player's
    * torch rides on the player's drawn position; once they have escaped or died
-   * there is no light to carry, and the pool fades out.
+   * there is no light to carry, and the pool fades out. While they watch a
+   * teammate the torch and the occluders' fade ride on the watched teammate's
+   * drawn position instead, as their own view does (the owner, 2026-11-14), and
+   * jump to the next on a switch, with no fade between.
    */
   private updateLighting(time: number, delta: number): void {
-    const self = this.player?.visible ? this.player : undefined;
-    this.lightMap?.carry(self ? { x: self.x, y: self.y } : null);
+    const watched = this.watchedFigure();
+    const self = this.watchedPlayerId !== undefined ? watched?.sprite : this.player?.visible ? this.player : undefined;
+    const at = watched ? { x: watched.at.x, y: watched.at.y } : self ? { x: self.x, y: self.y } : null;
+    this.lightMap?.carry(at);
     this.showNearChunks();
     this.lightMap?.update(time);
     this.occluders.update(self ? { bounds: self.getBounds(), depth: self.depth } : null, delta);

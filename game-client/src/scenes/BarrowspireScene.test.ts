@@ -3410,19 +3410,37 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     expect(run.view?.building).toBeUndefined();
   });
 
-  // edge state "player gone": a spectator has no building, so no blackout, and the indoors half
-  // of the hide rule alone: what stands in a room hides, the halls show. The watched teammate's
-  // room is not followed (review round 1, I-9PN7X-3)
-  it("should take no room while spectating: no blackout, the watched teammate in a room hidden, the halls shown", () => {
+  // the owner, 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」 (2026-11-14; FS-QPDKN § Change: The party death flow and
+  // the spectate switcher): a spectator sees through the watched teammate's eyes, their room and all. It overrules
+  // the old "player gone" rule that took no room while spectating (review round 1, I-9PN7X-3).
+  it("should follow the watched teammate into their room: their building, them shown, the halls' monster hidden", () => {
     const { run, stage } = spire();
     run.handleGameStateUpdate(peopled([IN_HALL], IN_ROOM));
+    Object.assign(run, { player: drawnPlayer(IN_HALL), playerPos: { ...IN_HALL }, watchedPlayerId: "ally" });
+    run.checkBuildingStatus();
+    expect(run.view?.building?.id).toBe("h1");
+    expect(run.currentBuilding).toBe(run.buildings[0]);
+    expect(run.otherPlayers.get("ally")!.shown).not.toBe(false);
+    const [inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inHall.shown).toBe(false);
+  });
+
+  it("should take the watched teammate's halls, not the room the player's own body lies in", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(peopled([IN_ROOM], IN_HALL));
     Object.assign(run, { player: drawnPlayer(IN_ROOM), playerPos: { ...IN_ROOM }, watchedPlayerId: "ally" });
     run.checkBuildingStatus();
-    expect(run.currentBuilding).toBeUndefined();
     expect(run.view?.building).toBeUndefined();
-    expect(run.otherPlayers.get("ally")!.shown).toBe(false);
-    const [inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
-    expect(inHall.shown).toBe(true);
+    const [inRoom] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inRoom.shown).toBe(false);
+  });
+
+  it("should take no room before WATCH: a dead player watching nobody has no building (edge state: player gone)", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate({ ...peopled([], IN_HALL), current_player: player("me", "Aldric", 130, { current_health: 0 }) } as GameState);
+    Object.assign(run, { player: drawnPlayer(IN_ROOM), playerPos: { ...IN_ROOM } });
+    run.checkBuildingStatus();
+    expect(run.view?.building).toBeUndefined();
   });
 
   it("should clear the blackout on a climb and raise it around the new floor's room (§D.8)", () => {
@@ -5197,6 +5215,46 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       const greyed = paints.filter((g) => JSON.stringify(g.last["fillStyle"]) === JSON.stringify([palette.hudFaint, 0.45]));
       expect(greyed).toHaveLength(2);
       for (const g of greyed) expect(g.calls).not.toContain("strokeRoundedRect");
+    });
+
+    // the owner, 「觀看時沒有燈光很暗 但被觀看的玩家本身是有燈光的」 and 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」
+    // (2026-11-14): the torch and the occluders' fade ride on the watched teammate, and jump on a switch
+    describe("through the watched teammate's eyes", () => {
+      const lit = (env: ReturnType<typeof dyingOnStage>) => {
+        const run = env.run as unknown as {
+          lightMap?: unknown;
+          occluders: { update(figure: unknown, delta: number): void };
+          otherPlayersPos: Map<string, { x: number; y: number }>;
+          otherPlayers: Map<string, unknown>;
+          updateLighting(time: number, delta: number): void;
+        };
+        const carry = vi.fn();
+        run.lightMap = { carry, update: vi.fn() };
+        const fade = vi.spyOn(run.occluders, "update").mockImplementation(() => {});
+        return { run, carry, fade };
+      };
+
+      it("should carry the torch and fade the occluders at the watched teammate's drawn position, and jump to the next on ►", () => {
+        const env = watching(ally(), brom());
+        const { run, carry, fade } = lit(env);
+        run.updateLighting(0, 16);
+        expect(carry).toHaveBeenLastCalledWith(run.otherPlayersPos.get("ally"));
+        const figure = fade.mock.calls.at(-1)![0] as { bounds: unknown; depth: unknown } | null;
+        expect(figure).not.toBeNull();
+        env.release("watch-next");
+        run.updateLighting(16, 16);
+        expect(carry).toHaveBeenLastCalledWith(run.otherPlayersPos.get("brom"));
+        expect(carry).not.toHaveBeenCalledWith(null);
+      });
+
+      it("should let the torch fade before WATCH, with nobody watched", () => {
+        const env = dyingOnStage();
+        env.die(ally());
+        const { run, carry } = lit(env);
+        (run as unknown as { player?: { visible: boolean } }).player = { visible: false } as never;
+        run.updateLighting(0, 16);
+        expect(carry).toHaveBeenLastCalledWith(null);
+      });
     });
 
     it("should keep no cursor of their own on the arrows: the bone hand stays", () => {
@@ -10418,9 +10476,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           // the drawn positions, never the broadcast's; the dead have no dot
           const drawn = { self: { x: 2570, y: 3090 }, allies: [{ x: 3990, y: 1205 }] };
           expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 }, drawn);
+          // watching, the dots as the watched teammate's own minimap draws them (the owner, 2026-11-14)
           r.watchedPlayerId = "a";
           r.followMapOverlay();
-          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, drawn);
+          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, { self: { x: 3990, y: 1205 }, allies: [{ x: 2570, y: 3090 }] });
         });
 
         it("should stand it each frame after the figures moved, playing or watching, without redrawing its map", () => {
@@ -10675,6 +10734,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(map()!.mode).toBe("normal");
         expect(dots).toHaveBeenLastCalledWith({ self: undefined, allies: [placedAt.stairs] });
         expect(map()!.content.regions.map((r) => r.id)).toContain(regionAt(grid, placedAt.stairs));
+      });
+
+      // the owner, 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」 (2026-11-14): the regions are the party's already; the
+      // dots as the watched teammate's own minimap draws them, theirs the self's and the rest allies
+      it("should draw the watched teammate's dot as the self's while watching, the other living as allies", () => {
+        const { run, frame, dots } = mapped();
+        Object.assign(run, { watchedPlayerId: "a" });
+        frame({
+          current_player: { ...player("me", "Aldric", 0, { current_health: 0 }), position: at(2560, 3080) } as Party["current_player"],
+          other_players: [ally("a", placedAt.stairs), ally("b", placedAt.door)] as GameState["other_players"],
+        });
+        expect(dots).toHaveBeenLastCalledWith({ self: placedAt.stairs, allies: [placedAt.door] });
       });
 
       it("should redraw its map only when a region's state changes, as a member walks across the floor", () => {
