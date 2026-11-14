@@ -28,7 +28,7 @@ import {
 import { BARROW_HEX } from "@/utils/theme";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
+import { letterPanelState, type LetterPanelState } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { hudLine } from "@/ui/uiSceneNotices";
 import { progressOf } from "@/ui/progress";
@@ -676,10 +676,11 @@ export class HubScene extends Phaser.Scene {
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   /**
-   * The mailbox's envelope, bottom-right, and its letter panel (FS-1GZGD R33, R40): only the town
-   * has one. While the panel is open it owns the keys, as the ESC menu does.
+   * The letter panel's open state (FS-1GZGD R40): only the town has one. While the panel is open it
+   * owns the keys, as the ESC menu does. The envelope and the panel are the UI scene's; their open state
+   * is the mailbox store's, read here (FS-TQZ5J § Change: Batch 4: the mailbox, R101, R103).
    */
-  private mailbox?: MailboxHud;
+  private mailbox?: LetterPanelState;
   /**
    * The town's minimap at the top of the top-right column (FS-P0HSP): built with the first state
    * that carries the town's walls, from the stage create wires; gone with the visit.
@@ -693,8 +694,6 @@ export class HubScene extends Phaser.Scene {
   private modeIconStage?: ModeIconStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
-  private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -871,30 +870,21 @@ export class HubScene extends Phaser.Scene {
     this.listenForQueue();
     // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town.
     // The letter panel is opened by a press, so it keeps a half-typed line as any press elsewhere
-    // does, and the wheel and presses under it are its own (FS-1GZGD R40)
+    // does; the wheel and presses on it are the UI scene's, which reach no world (FS-1GZGD R40;
+    // FS-TQZ5J § Change: Batch 4, R106)
     this.chatWindow = mountChatWindow(
       this,
       () => this.mayChat(),
       {
         keepsDraft: () => !!this.mailbox?.isOpen(),
-        coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
       },
     );
     // T and the party panel, the invite prompts and the ready check are the UI scene's: it asks the
     // town to close its letter panel as the panel opens, and reads the town's refusal and its popups'
     // covers in its report (FS-TQZ5J § Change: Phase 2: the party, R36, R38, R39)
-    // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
-    // envelope opens nothing while a dialogue or the menu is up, and closes the other windows as it
-    // opens the letter panel (FS-1GZGD § Change C4)
-    this.mailbox = mountMailbox(
-      this,
-      this.art,
-      () => this.refusesLetter(),
-      () => this.characterLevel,
-      () => this.clearForLetter(),
-      this.ui,
-      (effect) => this.ui.play(effect),
-    );
+    // the mailbox's envelope and letter panel are the UI scene's, built as the town is reported; the
+    // town reads the letter panel's open state from the mailbox store (FS-TQZ5J § Change: Batch 4, R101, R103)
+    this.mailbox = letterPanelState();
 
     // the town's minimap, built with the first state that carries the walls (FS-P0HSP §A.1); as
     // the overlay, held against the screen from the main camera's frames (FS-1SEF0 §C.19)
@@ -992,25 +982,6 @@ export class HubScene extends Phaser.Scene {
     this.music.enter();
   }
 
-  /**
-   * Whether the envelope is refused now (FS-1GZGD § Change C1): a dialogue or the menu owns the
-   * screen. The windows do not: they close as the letter panel opens (`clearForLetter`).
-   */
-  private refusesLetter(): boolean {
-    return !!this.dialogue || this.menuOpen;
-  }
-
-  /**
-   * The letter panel is full-screen, so it stands alone (FS-3EBCA R15, R19): the inventory and the
-   * character panel (the stash with them) and the party panel close as it opens. Both are the UI
-   * scene's: the town tells the gear overlay to close (FS-TQZ5J § Change: Phase 3, R52) and shuts the
-   * party panel in the party store, as its own close does (§ Change: Phase 2: the party, R39).
-   */
-  private clearForLetter(): void {
-    this.ui.gear({ kind: "close" });
-    usePartyStore.getState().closePanel();
-  }
-
   /** A window opening closes the letter panel first (FS-3EBCA R16). */
   private closeLetter(): void {
     if (this.mailbox?.isOpen()) this.mailbox.close();
@@ -1045,7 +1016,6 @@ export class HubScene extends Phaser.Scene {
   private relayoutHud(): void {
     this.arrivalCard.relayout();
     this.minimap?.place();
-    this.mailbox?.relayout();
     if (this.queuePanel?.active) {
       this.queuePanel.setX(viewport.centerX);
       if (this.leaveButton?.visible) this.showLeaveButton();
@@ -1228,8 +1198,8 @@ export class HubScene extends Phaser.Scene {
     this.minimap = undefined;
     this.minimapStage = undefined;
     this.modeIconStage = undefined;
-    // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
-    this.mailbox?.destroy();
+    // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States): the
+    // UI scene's mailbox goes as the town leaves (FS-TQZ5J § Change: Batch 4, R110)
     this.mailbox = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
@@ -2062,7 +2032,6 @@ export class HubScene extends Phaser.Scene {
       // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30): the UI scene's (§ Change: Phase 3, R52)
       this.ui.gear({ kind: "seen", character: state.current_player });
       this.ui.gear({ kind: "level", level: state.current_player.level });
-      this.characterLevel = state.current_player.level;
 
       const progress = progressOf(state.current_player);
       if (progress) {

@@ -6186,7 +6186,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(source).not.toMatch(/composeGear|new GearOverlay/);
     // the mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101, R106): the town builds none and
     // tests no letter panel's rect; it reads the letter panel's open state from the mailbox store
-    expect(source).not.toMatch(/mountMailbox|MailboxHud|MailboxEnvelope|LetterPanel|coveredAt/);
+    expect(source).not.toMatch(/\bmountMailbox\b|\bMailboxHud\b|\bMailboxEnvelope\b|\bLetterPanel\b|coveredAt/);
     expect(create).toMatch(/this\.mailbox = letterPanelState\(\);/);
   });
 });

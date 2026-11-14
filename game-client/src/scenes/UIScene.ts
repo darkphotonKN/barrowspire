@@ -34,6 +34,8 @@ import { ControlsBadge } from "@/ui/ControlsBadge";
 import { UiControlsBadge } from "@/ui/uiSceneControlsBadge";
 import { recordAnchor } from "@/ui/resolvedRow";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
+import { UiMailboxSlot } from "@/ui/uiSceneMailbox";
+import { mountMailbox } from "@/ui/mailboxHud";
 import { onSceneEnd } from "./sceneEnd";
 
 /**
@@ -133,6 +135,7 @@ export class UIScene extends Phaser.Scene {
       character: () => this.gear?.isCharacterOpen() ?? false,
     });
     this.mountInterface(bridge);
+    this.mountMailboxSlot(bridge);
     this.mountKeys();
     this.mountPointer(bridge);
   }
@@ -414,6 +417,33 @@ export class UIScene extends Phaser.Scene {
       this.dialogue = undefined;
       this.corner = undefined;
       this.party = undefined;
+    });
+  }
+
+  /**
+   * The town's mailbox (FS-TQZ5J § Change: Batch 4: the mailbox, R101–R110): its envelope and letter
+   * panel, built on this scene for the town as it is reported and taken down as it leaves and with the
+   * game, after the corner row, so the envelope draws over the row's Mailbox slot it stands in. Its
+   * opening closes this scene's gear overlay and party panel, its tips read the gear's last level, its
+   * art is the resident art (R102, R104). Its open state is the mailbox store's, which the town reports
+   * (R103).
+   */
+  private mountMailboxSlot(bridge: UiBridge): void {
+    const mailbox = new UiMailboxSlot(
+      bridge,
+      {
+        gear: { close: () => this.gear?.close() },
+        party: { close: () => this.party?.close() },
+        level: () => this.gear?.level(),
+      },
+      (wiring) => mountMailbox(this, () => this.residentArt(), wiring),
+    );
+    mailbox.show(bridge.world);
+    const stop = bridge.onWorld((report) => mailbox.show(report));
+    relayoutOn(this, () => mailbox.relayout());
+    onSceneEnd(this, () => {
+      stop();
+      mailbox.destroy();
     });
   }
 
