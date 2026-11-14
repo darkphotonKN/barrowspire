@@ -194,6 +194,32 @@ vi.mock("@/ui/gearPieces", () => ({
   },
 }));
 
+// The mailbox itself is LetterPanel.test's and MailboxEnvelope.test's: here a recording stand-in for what
+// the UI scene builds for the town (FS-TQZ5J § Change: Batch 4: the mailbox, R101), the scene it is built
+// on and its wiring kept.
+const mailboxMounts = vi.hoisted(
+  () =>
+    [] as {
+      scene: unknown;
+      wiring: {
+        blocked(): boolean;
+        opening(): void;
+        level(): number | undefined;
+        wrapper: { act(run: () => void): void };
+        play(effect: string): void;
+      };
+      relayouts: number;
+      destroyed: boolean;
+    }[],
+);
+vi.mock("@/ui/mailboxHud", () => ({
+  mountMailbox: (scene: unknown, _art: unknown, wiring: (typeof mailboxMounts)[number]["wiring"]) => {
+    const made = { scene, wiring, relayouts: 0, destroyed: false };
+    mailboxMounts.push(made);
+    return { relayout: () => void made.relayouts++, destroy: () => void (made.destroyed = true) };
+  },
+}));
+
 const Phaser = await import("phaser");
 const { UIScene } = await import("./UIScene");
 const { UI_SCENE } = await import("@/components/uiSceneLifecycle");
@@ -1509,5 +1535,95 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16�
     expect(viaQ.controls().isOpen()).toBe(false);
     expect(viaQ.gear().inventory).toBe(true);
     expect(viaQ.played).toEqual(["inventory_open", "dialog_open", "dialog_cancel"]);
+  });
+});
+
+// FS-TQZ5J § Change: Batch 4: the mailbox (I-TQZ5J-40): the town's envelope and letter panel are the UI
+// scene's, built on it as the town is reported and taken down as it leaves and with the game (R101,
+// R110); the envelope's opening closes the UI scene's own gear overlay and party panel (R104); the letter
+// panel's tips read the gear's last level (R102)
+describe("the UI scene's mailbox (FS-TQZ5J § Change: Batch 4, R101–R104, R110)", () => {
+  function created() {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const events = new EventEmitter();
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events,
+      add: any,
+      input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
+      cameras: { cameras: [] },
+      game: {},
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    const blockers = { dialogue: false };
+    const report = (world: "hub" | "field" | "run") =>
+      bridge.report({
+        world,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ ...blockers }),
+        facts: () => NO_FACTS,
+        answer: () => {},
+      });
+    return { bridge, scene, events, report, blockers };
+  }
+  const since = (n: number) => mailboxMounts.slice(n);
+
+  it("should build the town's mailbox on itself as the town is reported, keep it while the town stands, and build none in a field or the run", () => {
+    const { bridge, scene, report } = created();
+    const before = mailboxMounts.length;
+    report("hub");
+    bridge.changed();
+    expect(since(before)).toHaveLength(1);
+    expect(since(before)[0].scene).toBe(scene);
+    bridge.left("hub");
+    expect(since(before)[0].destroyed).toBe(true);
+    report("field");
+    bridge.left("field");
+    report("run");
+    expect(since(before)).toHaveLength(1);
+  });
+
+  it("should take the mailbox down with the game", () => {
+    const { events, report } = created();
+    report("hub");
+    const made = mailboxMounts.at(-1)!;
+    events.emit("destroy");
+    expect(made.destroyed).toBe(true);
+  });
+
+  it("should refuse the envelope under the town's dialogue, and close its own gear overlay and party panel as it opens", () => {
+    const { report, blockers } = created();
+    report("hub");
+    const { wiring } = mailboxMounts.at(-1)!;
+    expect(wiring.blocked()).toBe(false);
+    blockers.dialogue = true;
+    expect(wiring.blocked()).toBe(true);
+    blockers.dialogue = false;
+    const gear = gearMounts.at(-1)!;
+    const panel = partyMounts.at(-1)!;
+    gear.inventory = gear.character = true;
+    panel.open = true;
+    wiring.opening();
+    expect([gear.inventory, gear.character, panel.open]).toEqual([false, false, false]);
+  });
+
+  it("should hand the letter panel the level the world last handed the gear", () => {
+    const { bridge, report } = created();
+    report("hub");
+    const { wiring } = mailboxMounts.at(-1)!;
+    bridge.gear({ kind: "level", level: 9 });
+    expect(wiring.level()).toBe(9);
   });
 });

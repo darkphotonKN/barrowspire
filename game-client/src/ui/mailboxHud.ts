@@ -2,8 +2,10 @@
  * The mailbox as the town hangs it (FS-1GZGD R33, R34, R40, R44; D11): the envelope at the
  * bottom-right and the letter panel over the town. Mounting it is entering the town, which
  * fetches the summary; taking it down is leaving the town, which closes the panel and drops any
- * `mail_arrived` until the next entry. Only the hub mounts it: a delve or a field never shows the
- * mailbox, and a letter sent meanwhile is found at the next town entry.
+ * `mail_arrived` until the next entry. Only the town has one: a delve or a field never shows the
+ * mailbox, and a letter sent meanwhile is found at the next town entry. The UI scene builds it for
+ * the town (FS-TQZ5J § Change: Batch 4: the mailbox, R101); the town reads its open state from the
+ * store (`letterPanelState`, R103).
  */
 
 import type Phaser from "phaser";
@@ -13,6 +15,7 @@ import { useMailboxStore, type MailboxState } from "@/stores/mailboxStore";
 import type { UiActWrapper, UiEffect } from "@/audio/uiSounds";
 import { LetterPanel } from "./LetterPanel";
 import { MailboxEnvelope } from "./MailboxEnvelope";
+import type { MailboxWiring } from "./uiSceneMailbox";
 
 export interface MailboxHudDeps {
   store: StoreApi<MailboxState>;
@@ -29,17 +32,28 @@ export interface MailboxHudDeps {
   play?: (effect: UiEffect) => void;
 }
 
-/** The mailbox as the hub hangs it: the app's mailbox store, the scene's baked art. */
-export function mountMailbox(
-  scene: Phaser.Scene,
-  art: ArtLibrary,
-  blocked: () => boolean,
-  level?: () => number | undefined,
-  opening?: () => void,
-  wrapper?: UiActWrapper,
-  play?: (effect: UiEffect) => void,
-): MailboxHud {
-  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level, opening, wrapper, play });
+/**
+ * The mailbox as the UI scene hangs it for the town (FS-TQZ5J § Change: Batch 4, R101, R102): the app's
+ * mailbox store, the art `library` hands (the UI scene's resident art, read as it is built), its wiring
+ * whole.
+ */
+export function mountMailbox(scene: Phaser.Scene, library: () => ArtLibrary, wiring: MailboxWiring): MailboxHud {
+  return new MailboxHud(scene, { store: useMailboxStore, art: library(), ...wiring });
+}
+
+/** The letter panel as the town reads it (FS-TQZ5J § Change: Batch 4, R103): open or not, and its close. */
+export interface LetterPanelState {
+  /** While the panel is open it owns the keys: WASD does not walk, and Esc closes it (FS-1GZGD R40). */
+  isOpen(): boolean;
+  close(): void;
+}
+
+/** The letter panel's open state in the mailbox store, `panelOpen`, which the UI scene's panel shows. */
+export function letterPanelState(store: StoreApi<MailboxState> = useMailboxStore): LetterPanelState {
+  return {
+    isOpen: () => store.getState().panelOpen,
+    close: () => store.getState().closePanel(),
+  };
 }
 
 export class MailboxHud {

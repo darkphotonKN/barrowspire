@@ -1356,3 +1356,221 @@ Appended after the phase 3 review; the text above is not edited. Each behaviour 
   x 406 before the fix, 50266 from x 409 after).
 
 ## Change: The run's controls badge and the controls panel's rules → FS-84N1G
+
+## Change: Batch 4: the mailbox
+Status: work-order
+Date: 2026-11-14
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-14), with the
+integrator's defaults and decisions; no interview, no `challenge-me` pass. What the code forces (read
+on feat/client-ui-scene, ca2c0e77) is marked **[code]**; the charter's scope and rules **[charter]**;
+the integrator's decisions of 2026-11-14 **[integrator]**; a default applied to a case the charter did
+not name, *Derived*. A1's pointer rules (R25–R27), A2's depth rule (R28), phase 2's ground (R40) and
+phase 3's grounds (R59) and frames rule (R62, R63) are inherited, not restated. Numbered from R101 so
+a batch running beside this one, numbering from R67, cannot meet these numbers. **[integrator]**
+
+**What it moves.** The town's mailbox: its envelope, with the count badge, the glow and its `notify` on
+a newer letter, and the letter panel with its item tip. The charter also named the minimap and the
+arrival card for this batch. Both stay in the world: see the note below. **[charter; integrator]**
+
+**The owner's rules.** No look change, no parity shots: the owner, 2026-11-14,
+「剩下這些拉出來後檢查沒出錯就好了 不用比對 我測的時候再看就好」 (pull the rest out, check nothing errs,
+no comparing; he looks when he tests). The checks are the full client vitest, `tsc --noEmit`,
+`npm run lint` and `npm run lint:fence`; the look is the owner's check. The party frames are the lowest
+UI (「任何ui都優先隊友列表」): the letter panel draws over them and takes the presses there. Every
+hover keeps the bone hand (FS-KYPQ9 § Change). **[owner]**
+
+**Lane.** game-client only. No server, proto, gateway or manifest change. No behaviour or look change
+but the depth named in R108. **[charter]**
+
+### Note 2026-11-14 (batch 4): the minimap, the run's top-right column and the arrival card stay in the world
+
+Appended to the classification of the note "which interface goes where" (ADR-0083); that note is not
+edited, and neither is ADR-0083: this applies its rules as written, as the phase 3 note on the
+controls panel did. The batch's first read of the code found four reasons the three pieces cannot
+move and still look as they do, and the integrator decided on 2026-11-14 to keep them in the world
+**[integrator]**:
+
+1. **The minimap's overlay mode is drawn at a world position and follows world objects** (ADR-0083
+   2.1). `Minimap.setMode` keeps one set of layers for every mode and only turns their scroll factor
+   (1 in the overlay) and depth (920 in the overlay, 1000 in a panel). In the overlay they stand in the
+   world, held against the world's main camera every frame (`frames: afterFrameSetUp(this.cameras.main,
+   …)`) and moved onto the drawn figures every frame (`follow`), at 920: over the fog, the dust and the
+   vignette (902, 905), under the aim line (940), the name plates and health bars (950, 951) and the
+   open bar (951). In the UI scene it would need the world's camera scroll and figures across the
+   bridge every frame, which ADR-0083's Consequences rule out ("no per-frame world positions cross the
+   bridge"), and it would draw over the aim line, the plates and the bars. **[code]**
+2. **The run's top-right column is one layout.** `BarrowspireScene.placeTopRightColumn` stands the
+   minimap, its mode icon, the map name, the floor indicator, the escaped count and the dev position
+   readout together, closing up where there is no minimap or the name already names the floor; and the
+   map name and the readout give way to the target frame (`updateTargetFrame`). Moving part of it would
+   carry the column's layout across the bridge both ways. **[code]**
+3. **The target frame belongs to that column.** It hides while the arrival card is up and the map name
+   gives way to it, in one block (`updateTargetFrame`); it stays with the column, so the give-way stays
+   inside the run. **[code; integrator]**
+4. **The arrival card's dark covers the whole view.** It stands at 960 over the world and under the HUD
+   (1000) "so the HUD and notices stay readable through it" (`arrivalCard.ts`). Depth does not cross
+   scenes, so in the UI scene the dark would cover every world HUD piece still in a world (the floor
+   indicator, the escaped count, the town's queue line and Leave, WATCH THE DELVE and LEAVE THE BARROW,
+   FallenCountdown), and ADR-0083 D5 offers only moving each of them or the world avoiding an overlap a
+   full-view dark always has. In the world it stays under the world's HUD and under every UI-scene
+   piece, as today. **[code]**
+
+The table now reads:
+
+| Class | Piece | Code | Depth | Worlds |
+|---|---|---|---|---|
+| **Batch 4** | the mailbox: the envelope and the letter panel | `MailboxEnvelope`, `LetterPanel` (`MailboxHud`) | 1000; 1800, tip 2200 | town |
+| **Stays in the world** | the minimap, its map mode icon, its map name and the dev position readout, every mode | `minimap`, `minimapModeIcon`, `minimapName`, `positionReadout`, `WorldMinimapController` | 1000 (overlay 920); 1001–1002 | all |
+| | the run's top-right column: the floor indicator, the escaped count | the run's `floorText`, `escapedCountText` | 1000 | run |
+| | the target frame | `targetFrame` | 1000 | run |
+| | the arrival card | `arrivalCard` | 960–961 | all |
+
+M stays each world's (R21's "M with the minimap" now means it stays where the minimap is), and the
+minimap's `map_mode_switch` stays as it is (the world's `play`, FS-WDM0X S7).
+
+### Facts (verified 2026-11-14 on feat/client-ui-scene, ca2c0e77)
+
+- **Who builds it.** The town's create mounts `MailboxHud` (`mountMailbox`): the envelope
+  (`MailboxEnvelope`, its zone, knockout, glow and badge at 1000, in the corner row's Mailbox slot,
+  `envelopeFrame`) and the letter panel (`LetterPanel`, 840 × 500 centred, at 1800, its tip at 2200).
+  Mounting it is entering the town (`enterTown`: the summary fetched); the town's release destroys it
+  (`leaveTown`: the panel closes, `mail_arrived` fetches nothing until the next entry). Only the town
+  mounts it. **[code]**
+- **What it reads.** The mailbox store (`useMailboxStore`, app state: the summary, the letters, the
+  open letter, `panelOpen`, the Take in flight) and the REST calls it makes through it; the town's art
+  library (item icons, resident art); the character's level (`characterLevel`, the value the town also
+  hands the gear as `gear: level`); the envelope's refusal (`refusesLetter`: the town's dialogue or the
+  menu slot); its opening (`clearForLetter`: the gear overlay closes, `gear: close`, and the party panel
+  shuts in the party store); the town's `ui` as its wrapper and `play`. **[code]**
+- **What the town reads of it.** `panelOpen` (through `mailbox.isOpen()`): `windows().letter`, the
+  `close: letter` answer, the menu opening closing it (`heardUi`), WASD, E to talk, M, the chat's focus
+  and `keepsDraft`, the popups' blocker. Its rect (`covers`): the chat window's `coveredAt`, which
+  drops a press or wheel over the open panel. Nothing else tests it. **[code]**
+- **Its presses.** The envelope's zone answers on `pointerdown` inside the wrapper; the panel stands
+  an interactive zone over its whole rect at 1800 (a ground already), its ×, rows, slots and Take
+  over it; it hears the wheel, moves and releases on its scene's input (the list's and the body's
+  scroll, the body's thumb). No key of its own: Esc is the UI scene's letter step (R17). **[code]**
+- **Where it meets the UI scene's pieces today.** The party frames (999, now in the UI scene) draw over
+  the letter panel's left edge at 1× windowed (phase 2 As built). The letter panel's opening closes the
+  gear overlay and the party panel; theirs close it; the menu's opening closes it; the invite prompts
+  and the ready check hide under it (`blockers().popups`); the dialogue card cannot open over it (E is
+  refused); the town's notice line (y 57–87) and the corner row (from y 666) stand clear of it (y
+  110–610 at 720). The envelope meets only the corner row's slot it stands in, the menu's blocker over
+  it and the dialogue card's rows over it, all in the UI scene's order already. **[code]**
+
+### Requirements (added)
+
+101. **What moves.** Into the UI scene, unchanged: the town's mailbox, `MailboxHud` whole: the envelope
+     with its count badge, glow, `notify` and label, and the letter panel with its ×, list, letter,
+     scroll, Enclosed row, Take and item tip. The UI scene builds it as it hears the town reported and
+     takes it down as the town leaves, as the town's create mounted it and its release destroyed it:
+     building it is entering the town (`enterTown`), taking it down leaving it (`leaveTown`). A report
+     of the town standing keeps it; a field or the run builds none. No world scene builds
+     `MailboxHud`, `MailboxEnvelope` or `LetterPanel`. **[charter; code]**
+102. **What the UI scene reads directly.** The mailbox store and its REST calls go from the pieces, as
+     before: they read only app state, so by ADR-0082 Decision 3 they are the pieces' own. The pieces'
+     art is the UI scene's resident art library (the item icons are resident; the gear overlay draws its
+     icons from it already). The letter panel's tips read the level the world last handed the gear
+     (`gear: level`), the value the town kept for it. *Derived* (ADR-0082 D3; R37's and R51's
+     precedent).
+103. **Its open state stays where it lives.** The letter panel's open state is the mailbox store's
+     `panelOpen`, app state, as today. The town keeps reporting it as `windows().letter` and answering
+     `close: letter` by closing it in the store, so every path that reads or closes the letter panel
+     through the bridge stands unchanged: Esc's letter step (`escapeStep`: controls, letter, menu,
+     party, gear), the gear overlay's and the party panel's opening asking `close: letter` (R48, R55),
+     the menu opening closing it (`heardUi`, FS-3EBCA R17), the interface sounds' rule (R22), the
+     controls panel's close rule (FS-84N1G R16) and the corner row's screen. The town's own guards read
+     the store as they read the module (WASD, E to talk, M, the chat's focus and draft, the popups'
+     blocker). No bridge type changes. *Derived* (the bridge's shape unchanged: one world has a letter
+     panel, and its open state was never a scene's field).
+104. **The envelope's refusal and opening.** The envelope opens nothing while the town's
+     `blockers().dialogue` holds or the menu slot is filled, as the town's `refusesLetter`; its press
+     while refused plays `menu_error` as today. As it opens the panel it first closes the UI scene's gear
+     overlay (inventory, character panel, stash) and its party panel, inside the envelope's act, as the
+     town's `clearForLetter` did (`gear: close`, the party store's close), so `mailbox_open` plays alone
+     (FS-WDM0X S3). **[code]**
+105. **The corner row's Mailbox slot.** Unchanged (R13): in the town the row builds four icons and the
+     envelope stands in the Mailbox slot, now in the same scene, built after the row at the same depth;
+     outside the town the row's greyed Mailbox, "Mailbox · town only", its press `menu_error`. **[code]**
+106. **Its presses are the UI scene's.** The envelope's zone and the open panel's ground (its zone over
+     the whole panel) take every press, wheel and move on their rects (R7): no world handler hears them,
+     so the town's chat drops its `coveredAt` for the letter panel (a press or wheel there never reaches
+     it), and a press on the panel lets go of the chat's field by A1 R26, as the chat's covered press
+     blurred it. The panel's scene-wide wheel, move and release listeners are the UI scene's. Answers
+     stay on the events they answer on today. No cursor of its own (FS-KYPQ9 § Change). **[code]**
+107. **Its keys.** Unchanged: Esc's letter step is the UI scene's (R17); the letter panel binds none; the
+     town's keys the open panel owns stay refused by the town's own guards (R103). **[code]**
+108. **Depths, inside the UI scene (A2 R28; ADR-0083 D4).** The envelope at 1000 with the corner row; the
+     letter panel at 1800, over the frames (999), the corner row, the invite prompts, the ready check,
+     the gear overlay (1100–1103), the party panel (1110) and the controls panel (1200), under the popup
+     band (2000), its tip at 2200. The one change a player can see (R24): **the letter panel draws over
+     the party frames** where they meet (its left edge at 1× windowed), and its ground takes every
+     press, hover and wheel there: no Travel, no frame lit. Phase 2's inversion is undone, by the
+     owner's rule. Every other order stays: the letter panel stays over the town's world HUD (the
+     queue line and Leave, the level bar, the chat window), and nothing of the UI scene's that drew over
+     it today can be open with it (R104, R103). **[owner rule; code]**
+109. **Sounds, unchanged (FS-WDM0X).** `mailbox_open` and `mailbox_close` on the envelope, the panel's ×
+     and Esc, through the UI scene's act; `menu_hover` as the pointer comes onto the envelope, `menu_error`
+     for a refused press, `notify` as it glows for a newer letter (O1). What the game closes plays nothing
+     (S4): the panel closed by the town leaving, by the menu opening (inside the menu's act, its own
+     sound), by another window opening (that window's sound alone, S3). **[code]**
+110. **Leaving the town.** As the town leaves (a match found, a field's gate, Change character, the
+     game's end), the mailbox is taken down with it: the panel closes, silently, and `mail_arrived`
+     fetches nothing until the next entry. Back into the town, it is built anew and fetches the summary.
+     **[code]**
+
+### Acceptance Criteria (added)
+
+- [x] No world scene imports or builds `MailboxHud`, `MailboxEnvelope` or `LetterPanel` (`mountMailbox`),
+      or tests the letter panel's rect (the chat's `coveredAt`).
+- [x] The UI scene builds the mailbox for the town only, as the town is reported, on its own scene and
+      resident art, and takes it down as the town leaves and with the game; a field and the run build
+      none; a report of the town standing keeps it.
+- [x] The envelope is refused under the town's dialogue and the menu slot; its opening closes the gear
+      overlay and the party panel first, `mailbox_open` alone.
+- [x] The town's `windows().letter`, its `close: letter` answer and its guards read the mailbox store;
+      Esc's order (controls, letter, menu, party, gear, then the menu) and every window's give-way rule
+      (FS-3EBCA R15–R18) stand.
+- [x] The letter panel's tips read the level the world last handed the gear.
+- [x] Every mailbox sound plays as FS-WDM0X says, once per player action, none for what the game closes.
+- [x] Every acceptance criterion of FS-1GZGD's envelope and letter panel, FS-J1672 and FS-3EBCA's Mailbox
+      slot still holds; their tests pass, moved with the code where they tested the town.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's look-and-feel check of the mailbox and R108's case passes.
+
+### Edge States (added)
+
+- **The letter panel open as the town leaves**: closed with the town, silently (R110).
+- **A newer letter arriving while the menu is open**: the envelope glows and plays `notify` as today; the
+  menu's blocker stays over it.
+- **A world press passing over the letter panel** (a chat scrollbar drag begun in the town): the town's to
+  its end (R25); the panel hits nothing while it is down.
+- **A press on the panel with the chat typing**: the chat's field lets go (A1 R26), its draft kept
+  (`keepsDraft`), as the covered press did.
+- **The level before the town's first state**: the level the world last handed the gear, which can be the
+  run's or a field's of the same character, where the town's own field kept the last town's. The same
+  character's level either way.
+- **A world still loading its art**: the mailbox comes with the town's report at `create`, before the
+  town mounted it further down its create; the summary's fetch starts that much earlier.
+
+### Out of Scope (added)
+
+- The minimap, its modes and M, the map name and the readout, the run's top-right column, the target
+  frame, the arrival card (the note above: they stay in the world).
+- Any change to the mailbox's look, words, sounds or rules but R108's depth; the mailbox store, the
+  mail REST calls, the server.
+
+### As built (2026-11-14)
+
+Appended after the slice; the text above is not edited. Built in I-TQZ5J-40; the owner's check is
+I-TQZ5J-41.
+
+- **Where it lives.** `uiSceneMailbox.ts` (`UiMailboxSlot`, `mailboxWiring`: when the mailbox stands and
+  what it reads of the UI scene), the UI scene's `mountMailboxSlot` (its own block, beside
+  `mountInterface`), `mountMailbox(scene, library, wiring)` in `mailboxHud.ts`, which also holds
+  `letterPanelState`, the town's reader of the store's `panelOpen` (the town's `mailbox` field, so its
+  guards read as they did). The bridge's types are unchanged. The town's `refusesLetter`,
+  `clearForLetter` and `characterLevel` went with the mailbox; its chat window lost `coveredAt`.
+- **R108, not shot** (the owner's no-parity rule). The letter panel now draws over the
+  party frames where they meet and its ground takes the presses there; nothing else meets in a new order.

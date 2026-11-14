@@ -14,6 +14,7 @@ import { UiNoticeLayer, drawNotice, type NoticeStage } from "./uiSceneNotices";
 import { UiPartySlot, partyPanelWiring, type PartyPanelPiece, type PartyPanelWiring } from "./uiSceneParty";
 import { UiGearSlot, type GearKey, type GearPiece, type GearPieces, type GearWiring } from "./uiSceneGear";
 import { NO_WINDOWS, UiControlsSlot } from "./uiSceneRecord";
+import { UiMailboxSlot, type MailboxWiring } from "./uiSceneMailbox";
 
 /** A world scene as the UI scene's tests reach it: its game's registry, its end, its UI and what it reports. */
 interface WorldUnderTest {
@@ -43,6 +44,8 @@ export interface UiSceneOnStage {
   gear: UiGearSlot;
   /** The run's controls panel's slot (§ Change: Phase 3, R50, R56), its panel drawing nothing: H is `toggle`. */
   controls: UiControlsSlot;
+  /** The town's mailbox's slot (FS-TQZ5J § Change: Batch 4, R101), drawing nothing: its wiring is `mailboxOver`'s. */
+  mailbox: UiMailboxSlot;
   /** A field's or the run's gear key, heard on its key event as the UI scene hears it there (R56). */
   gearKey(key: GearKey): void;
   row?: UiCornerRow;
@@ -64,6 +67,9 @@ const partyMakers = new WeakMap<object, (wiring: PartyPanelWiring) => PartyPanel
 
 /** The gear pieces each world under test was handed (`gearOver`), made again for each world's slot. */
 const gearMakers = new WeakMap<object, (world: World, wiring: GearWiring) => GearPieces>();
+
+/** The wiring the town's mailbox was last built with over each world under test (`mailboxOver`). */
+const mailboxWirings = new WeakMap<object, MailboxWiring>();
 
 /** No gear: what the slot stands while a test has handed it none, never open. */
 const NO_GEAR: GearPiece = {
@@ -172,6 +178,11 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     () => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }),
     () => NO_WINDOWS,
   );
+  // as the UI scene's: the town's mailbox, its opening closing the gear and the party panel (Batch 4, R104)
+  const mailbox = new UiMailboxSlot(bridge, { gear, party, level: () => gear.level() }, (wiring) => {
+    mailboxWirings.set(scene, wiring);
+    return { relayout: () => {}, destroy: () => {} };
+  });
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
   const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));
   // as the UI scene's: the run's end clears the gear, the container view and the controls panel (R58)
@@ -202,6 +213,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     party,
     gear,
     controls,
+    mailbox,
     gearKey: (key) => {
       if (bridge.world?.world !== "hub") gear.key(key);
     },
@@ -218,9 +230,11 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     gear.show(report);
     party.show(report);
     controls.world(report);
+    mailbox.show(report);
   });
   gear.show(bridge.world);
   party.show(bridge.world);
+  mailbox.show(bridge.world);
   sides.set(scene, side);
   return side;
 }
@@ -262,6 +276,18 @@ export function gearOver<T extends GearPieces>(scene: object, world: World, make
   side.gear.show(null);
   side.gear.show(side.bridge.world);
   return made!;
+}
+
+/**
+ * Test-only: the wiring the UI scene gives the town's mailbox over `scene`'s town (FS-TQZ5J § Change:
+ * Batch 4, R104): the envelope's refusal (the town's dialogue, the menu slot) and its opening (the UI
+ * scene's gear overlay and party panel closed). Builds the UI scene's side over the town where none
+ * stands yet.
+ */
+export function mailboxOver(scene: object): MailboxWiring {
+  const side = uiSceneOn(scene, "hub", { row: false });
+  side.mailbox.show(side.bridge.world);
+  return mailboxWirings.get(scene)!;
 }
 
 /** The corner row on `scene`'s stage, its Menu the slot's, its Party the party slot's, its Inventory and Character the gear slot's. */
