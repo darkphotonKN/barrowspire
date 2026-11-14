@@ -120,7 +120,9 @@ const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOv
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
-const { chatWiring } = await import("@/ui/uiSceneChat");
+const { UiChatSlot, chatWiring } = await import("@/ui/uiSceneChat");
+const { ChatWindow } = await import("@/ui/ChatWindow");
+const { createChatStore } = await import("@/stores/chatStore");
 /** Whether the UI scene's chat may take the keys over the run (FS-TQZ5J § Change: Batch 6, R126). */
 const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: false }).bridge).mayOpen();
 /** The player typing in the UI scene's chat over the run, or not (FS-TQZ5J § Change: Batch 6, R127). */
@@ -11012,5 +11014,93 @@ describe("BarrowspireScene the party frames' state ticks (FS-TQZ5J § Change: Ph
       return { current_player, other_players };
     };
     expect(seen.map(players)).toEqual([first, next].map(players));
+  });
+});
+
+// FS-TQZ5J § Change: Batch 6, R128 (batch 6 review, LOW): the run's end while the player types, end to end
+// through the real pieces: the UI scene's real ChatWindow and its real ChatInput, the real bridge and its
+// typing guard, the run's real endRun. Only the drawing and the DOM field are stand-ins.
+describe("BarrowspireScene's end while the player types in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R128)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A scene keyboard that writes each switch into `order`, as `<name> on` or `<name> off`. */
+  function keyboardOf(name: string, order: string[]) {
+    let on = true;
+    // an accessor on the emitter itself: Object.assign would copy the getter's value, not the setter
+    const keys = Object.assign(new EventEmitter(), { resetKeys: () => {}, removeCapture: () => {} });
+    Object.defineProperty(keys, "enabled", {
+      get: () => on,
+      set: (value: boolean) => {
+        on = value;
+        order.push(`${name} ${value ? "on" : "off"}`);
+      },
+    });
+    return keys as typeof keys & { enabled: boolean };
+  }
+
+  it("should cancel the line, hand both keyboards back, and only then turn the run's off: ChatWindow → ChatInput → endRun", () => {
+    const { run } = onStage();
+    const order: string[] = [];
+    const runKeys = keyboardOf("run", order);
+    Object.assign(run, { input: { keyboard: runKeys } });
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    // the UI scene, as the window draws on it: any drawing call answered, its own keyboard
+    const any: unknown = new Proxy(() => any, {
+      get: (_t, prop) => (prop === "then" ? undefined : prop === Symbol.toPrimitive ? () => 0 : any),
+      apply: () => any,
+    });
+    const uiKeys = keyboardOf("ui", order);
+    const uiScene = {
+      add: any,
+      make: any,
+      events: new EventEmitter(),
+      scale: new EventEmitter(),
+      cameras: { main: { originX: 0, originY: 0 } },
+      input: Object.assign(new EventEmitter(), { keyboard: uiKeys }),
+    } as unknown as ConstructorParameters<typeof ChatWindow>[0];
+    // the DOM field: its focus and blur told to the input, as the browser's are
+    const field = { value: "", channel: "area" as const, focused: false };
+    const slot = new UiChatSlot(bridge, (wiring) =>
+      new ChatWindow(uiScene, createChatStore(), 10, 700, {
+        input: {
+          mayOpen: wiring.mayOpen,
+          keepsDraft: wiring.keepsDraft,
+          send: () => {},
+          makeField: (_scene, _rect, events) => ({
+            get value() {
+              return field.value;
+            },
+            set value(v: string) {
+              field.value = v;
+            },
+            channel: field.channel,
+            focus: () => ((field.focused = true), events.focused()),
+            blur: () => ((field.focused = false), events.blurred()),
+            moveTo: () => {},
+            show: () => {},
+            hide: () => {},
+            destroy: () => {},
+          }),
+        },
+        typing: wiring.typing,
+        play: wiring.play,
+      }),
+    );
+    slot.show(bridge.world);
+    bridge.onWorld((report) => slot.show(report));
+
+    // Enter on the UI scene's keyboard opens the input; the player types half a line
+    uiKeys.emit("keydown-ENTER");
+    field.value = "half a line";
+    expect(bridge.ui.typing).toBe(true);
+    expect(order).toEqual(["ui off", "run off"]);
+
+    (run as unknown as { endRun(): void }).endRun();
+
+    expect(order).toEqual(["ui off", "run off", "ui on", "run on", "run off"]);
+    expect([field.focused, field.value, bridge.ui.typing]).toEqual([false, "", false]);
+    expect([uiKeys.enabled, runKeys.enabled]).toEqual([true, false]);
   });
 });
