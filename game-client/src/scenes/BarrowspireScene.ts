@@ -48,7 +48,7 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { healthPotionCount, potionCell } from "@/ui/potions";
+import { healthPotionCount, runOwnHud, type OwnHud } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
@@ -76,7 +76,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { RUN_BUTTON_H } from "@/ui/hudCornerLayout";
 import { abilityCard } from "@/ui/abilityCard";
-import { hudBars, teammateHealthFill } from "@/ui/resources";
+import { teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import {
   POSITION_READOUT,
@@ -580,6 +580,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * resets.
    */
   private fell = false;
+  /** The own bars and potion cell as the first state out of the delve drew them, held for the run (R168). */
+  private heldHud?: OwnHud;
   /**
    * The bottom-centre row as drawn: which buttons, by name, the buttons themselves, and its Leave
    * when it holds one, so a pending leave dims it as it dims the dead player's.
@@ -1110,6 +1112,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.canWatch = false;
     this.canLeave = false;
     this.fell = false;
+    this.heldHud = undefined;
     this.row = { names: "", buttons: [], span: null };
     this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
@@ -5084,15 +5087,20 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * This player's Health and class resource bars (FS-8AY7S req 20–25) and the potion cell beside
-   * them (FS-P9G8R R24): up while they are in the delve, down once they are out of it, and never
-   * before their first state.
+   * them (FS-P9G8R R24): up while they are in the delve, held as they were once they are out of it
+   * (FS-QPDKN § Change: The party death flow and the spectate switcher, R168), and never before their
+   * first state.
    */
   private showResourceBars(state: ClientGameState): void {
+    // out of the delve they stay, held as the state that showed it drew them (FS-QPDKN § Change: The party
+    // death flow and the spectate switcher, R168): the player's own, whoever they watch
+    const own = runOwnHud(state, this.heldHud);
+    if (!this.heldHud && state.current_player && resolved(state.current_player)) this.heldHud = own;
     // the UI scene's, under the level bar (FS-TQZ5J § Change: Batch 5, R68, R69)
-    this.ui.hud({ world: "run", kind: "bars", bars: hudBars(state) });
+    this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
     // the potion cell is up exactly when the bars are (FS-P9G8R R24): the UI scene draws it right of
     // them (FS-TQZ5J § Change: Batch 5, R68)
-    this.ui.hud({ world: "run", kind: "potion", cell: potionCell(state) });
+    this.ui.hud({ world: "run", kind: "potion", cell: own.cell });
   }
 
   /**

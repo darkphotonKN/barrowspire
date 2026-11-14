@@ -2240,16 +2240,80 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     expect(labels()).toEqual(["Health:"]);
   });
 
-  it.each([
-    ["dies", { current_health: 0 }],
-    ["escapes", { escape: true }],
-  ])("should take the bars down when the player %s, and keep them down", (_, fields) => {
-    const { run, labels } = barsOnStage();
-    run.handleGameStateUpdate(withMe(me()));
-    run.handleGameStateUpdate(withMe(me(fields)));
-    expect(labels()).toEqual([]);
-    run.handleGameStateUpdate(withMe(me(fields)));
-    expect(labels()).toEqual([]);
+  // the owner, 2026-11-14: 「左上角的個人血量魔量不用隱藏 就顯示死亡時的狀態就好了」 (FS-QPDKN § Change: The party
+  // death flow and the spectate switcher, R168): the bars stay up, frozen at the state that showed the player out
+  describe("out of the delve, frozen (FS-QPDKN § Change: The party death flow and the spectate switcher, R168; I-QPDKN-14)", () => {
+    type HudMessage = import("@/ui/uiSceneHud").HudMessage;
+    type Bar = { channel: string; fill: number };
+    function heardHud(run: object) {
+      const told: HudMessage[] = [];
+      uiSceneOn(run, "run", { row: false }).bridge.onScreen({ hud: (m) => void told.push(m) });
+      const last = <K extends HudMessage["kind"]>(kind: K) =>
+        told.filter((m): m is Extract<HudMessage, { kind: K }> => m.kind === kind).at(-1);
+      const bars = () => ((last("bars") as { bars?: Bar[] } | undefined)?.bars ?? []).map((b) => [b.channel, b.fill]);
+      const cell = () => (last("potion") as { cell?: unknown } | undefined)?.cell;
+      return { bars, cell };
+    }
+    const potion = { item_id: "p1", entity_id: "ep1", name: "Lesser Heal Potion", quantity: 1, item_type: "consumable", healing_amount: 25 };
+    const carrying = (n: number) => ({ consumable_1: n > 0 ? potion : null, consumable_2: n > 1 ? potion : null, consumable_3: null });
+
+    it.each([
+      ["dies", { current_health: 0 }, [["health", 0], ["mana", 0.25]]],
+      ["escapes", { escape: true, current_health: 70 }, [["health", 0.7], ["mana", 0.25]]],
+    ] as const)("should keep the bars up when the player %s, as that state drew them", (_, fields, want) => {
+      const { run, labels } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me(fields)));
+      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(hud.bars()).toEqual(want);
+      // later states, whatever they say, change nothing
+      run.handleGameStateUpdate(withMe(me({ ...fields, resource: { ...mana, current: 120 } })));
+      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(hud.bars()).toEqual(want);
+    });
+
+    it("should keep them frozen through a state that drops the escaped player's own", () => {
+      const { run, labels } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me({ escape: true })));
+      run.handleGameStateUpdate({ ...floorState(1), current_player: null, other_players: [player("ally", "Wenna", 160)] } as GameState);
+      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(hud.bars()).toEqual([["health", 1], ["mana", 0.25]]);
+    });
+
+    it("should keep the player's own while they watch a teammate", () => {
+      const { run, stage } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+      stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve" && !m.destroyed)?.handlers.pointerdown();
+      expect((run as unknown as { watchedPlayerId?: string }).watchedPlayerId).toBe("ally");
+      run.handleGameStateUpdate(withMe(me({ current_health: 0 }), { ...player("ally", "Wenna", 160), current_health: 40 }));
+      expect(hud.bars()).toEqual([["health", 0], ["mana", 0.25]]);
+    });
+
+    it("should keep the potion cell beside them, frozen with its count", () => {
+      const { run } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe({ ...me(), equipment: carrying(2) } as never));
+      run.handleGameStateUpdate(withMe({ ...me({ current_health: 0 }), equipment: carrying(2) } as never));
+      const atDeath = hud.cell();
+      expect(atDeath).toMatchObject({ count: 2 });
+      run.handleGameStateUpdate(withMe({ ...me({ current_health: 0 }), equipment: carrying(0) } as never));
+      expect(hud.cell()).toEqual(atDeath);
+    });
+
+    it("should build them afresh, unfrozen, after a restart", () => {
+      const { run } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+      (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
+      run.handleGameStateUpdate(withMe(me({ current_health: 50 })));
+      expect(hud.bars()).toEqual([["health", 0.5], ["mana", 0.25]]);
+    });
   });
 
   it("should draw no bar over the player's own head, health or resource", () => {

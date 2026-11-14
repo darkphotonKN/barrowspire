@@ -1,6 +1,6 @@
 ---
 id: I-QPDKN-14
-status: open
+status: done
 implements: FS-QPDKN
 blocked_by: []
 labels: [ready-for-agent]
@@ -19,10 +19,10 @@ the scene stops. The level bar, the ability card, the controls badge and a field
 
 ## Acceptance Criteria
 
-- [ ] A death: Health at 0 and the resource as it was stay up, frozen, with the potion cell.
-- [ ] An escape: frozen the same way; a state without the player's own keeps them.
-- [ ] Watching a teammate changes nothing of them; the ability card stays down; a field's bars as today.
-- [ ] vitest, tsc, lint and the fence pass.
+- [x] A death: Health at 0 and the resource as it was stay up, frozen, with the potion cell.
+- [x] An escape: frozen the same way; a state without the player's own keeps them.
+- [x] Watching a teammate changes nothing of them; the ability card stays down; a field's bars as today.
+- [x] vitest, tsc, lint and the fence pass.
 
 ## Blocked By
 

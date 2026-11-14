@@ -6,7 +6,8 @@
 
 import type { ClientGameState, EquipmentState } from "@/types/gameState";
 import { RUN_ACTIONS } from "@/scenes/runActions";
-import { hudBars } from "./resources";
+import { resolved } from "./party";
+import { barsOf, hudBars, type HudBar } from "./resources";
 
 /** The cell's width, and its gap from the resource bars it stands right of (R24). */
 export const POTION_CELL_W = 72;
@@ -48,10 +49,38 @@ export function potionCell(
   state: Pick<ClientGameState, "world_type" | "current_player">,
 ): PotionCellView | null {
   if (hudBars(state).length === 0) return null;
-  const count = healthPotionCount(state.current_player?.equipment);
+  return cellOf(state.current_player?.equipment);
+}
+
+function cellOf(equipment: EquipmentState | null | undefined): PotionCellView {
+  const count = healthPotionCount(equipment);
   return {
     count,
     keyLabel: `[${RUN_ACTIONS.drinkPotion.label}]`,
     dimmed: count === 0,
   };
+}
+
+/** The run's own bars and the potion cell beside them, as the HUD draws them. */
+export interface OwnHud {
+  bars: HudBar[];
+  cell: PotionCellView | null;
+}
+
+/**
+ * The run's own bars and potion cell for `state`, and what to hold from now on (FS-QPDKN § Change: The party
+ * death flow and the spectate switcher, R168; the owner, 「左上角的個人血量魔量不用隱藏 就顯示死亡時的狀態就好了」):
+ * in the delve, as `hudBars` and `potionCell` say; from the first state that shows the player out of it, dead
+ * or escaped, the bars and the cell as that state drew them, held unchanged whatever later states say (one
+ * that drops the player's own included). The cell stands with the bars, as R24 has it.
+ */
+export function runOwnHud(
+  state: Pick<ClientGameState, "world_type" | "current_player">,
+  held: OwnHud | undefined,
+): OwnHud {
+  if (held) return held;
+  const me = state.current_player;
+  if (state.world_type === "hub" || !me || !resolved(me)) return { bars: hudBars(state), cell: potionCell(state) };
+  const bars = barsOf(me);
+  return { bars, cell: bars.length === 0 ? null : cellOf(me.equipment) };
 }
