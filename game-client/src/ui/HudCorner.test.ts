@@ -298,6 +298,15 @@ describe("HudCorner (FS-3EBCA R5: hover labels)", () => {
     env.zoneAt(icon).handlers.pointerout();
     expect(env.liveTexts().find((t) => t.words === words)).toBeUndefined();
   });
+
+  // FS-TQZ5J § Change: Batch 6, R139: one over the HUD band, so an ability card rebuilt down → up (its
+  // objects new at 1000) never draws over it; still under every window (1100+)
+  it("should stand the label at 1001, over the HUD band and under the windows", () => {
+    const env = setup();
+    env.zoneAt("menu").handlers.pointerover();
+    const label = env.liveTexts().find((t) => t.words === "Menu (Esc)");
+    expect(label!.depth).toBe(1001);
+  });
 });
 
 describe("HudCorner (FS-3EBCA R6–R8, R11: presses)", () => {

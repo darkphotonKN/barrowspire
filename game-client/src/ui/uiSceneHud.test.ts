@@ -59,13 +59,16 @@ function onHud() {
   return { bridge, slot, built, report, leave, standing };
 }
 
-const CARD: HudMessage = { kind: "ability", card: { name: "Dash", line: "A burst of speed.", greyed: false } };
-const CELL: HudMessage = { kind: "potion", cell: { count: 2, keyLabel: "[1]", dimmed: false } };
-const BARS: HudMessage = { kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] };
-const PROGRESS: HudMessage = {
+type HudData = HudMessage extends infer M ? (M extends HudMessage ? Omit<M, "world"> : never) : never;
+const CARD: HudData = { kind: "ability", card: { name: "Dash", line: "A burst of speed.", greyed: false } };
+const CELL: HudData = { kind: "potion", cell: { count: 2, keyLabel: "[1]", dimmed: false } };
+const BARS: HudData = { kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] };
+const PROGRESS: HudData = {
   kind: "progress",
   progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 },
 };
+/** A HUD message as `world` sends it (FS-TQZ5J § Change: Batch 6, R137). */
+const from = (world: World, data: HudData) => ({ ...data, world }) as HudMessage;
 const POTION_AT = { x: RESOURCE_HUD_AT.run.x + RESOURCE_HUD_W + POTION_CELL_GAP, y: RESOURCE_HUD_AT.run.y };
 
 describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () => {
@@ -92,8 +95,8 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     const { slot, built, report } = onHud();
     report(world);
     expect(built).toEqual([]);
-    slot.hear(message);
-    slot.hear(message);
+    slot.hear(from(world, message));
+    slot.hear(from(world, message));
     expect(built).toHaveLength(1);
     expect(built[0]).toMatchObject({ kind: message.kind, at });
     expect(built[0].shown).toHaveLength(2);
@@ -102,8 +105,8 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
   it("should hand the card none as it comes down, the piece kept", () => {
     const { slot, built, report } = onHud();
     report("run");
-    slot.hear(CARD);
-    slot.hear({ kind: "ability", card: null });
+    slot.hear(from("run", CARD));
+    slot.hear({ world: "run", kind: "ability", card: null });
     expect(built).toHaveLength(1);
     expect(built[0].shown.at(-1)).toBeNull();
     expect(built[0].destroyed).toBe(false);
@@ -118,31 +121,45 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
   ] as const)("should draw nothing in a %s for a piece it has no place for (R69)", (world, message) => {
     const { slot, built, report } = onHud();
     report(world);
-    slot.hear(message);
+    slot.hear(from(world, message));
     expect(built).toEqual([]);
   });
 
   it("should draw nothing with no world reported", () => {
     const { slot, built } = onHud();
-    slot.hear(CARD);
-    slot.hear(PROGRESS);
+    slot.hear(from("run", CARD));
+    slot.hear(from("hub", PROGRESS));
     expect(built).toEqual([]);
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R137: a message names the world it came from; one from a world whose
+  // pieces no longer stand (sent late, after its leave) draws nothing on the next world's
+  it("should draw nothing for a late message from a world that has left", () => {
+    const { slot, built, report, leave } = onHud();
+    report("run");
+    leave("run");
+    report("hub");
+    slot.hear(from("run", PROGRESS));
+    slot.hear(from("run", CARD));
+    expect(built).toEqual([]);
+    slot.hear(from("hub", PROGRESS));
+    expect(built).toHaveLength(1);
   });
 
   it("should take every piece down as its world leaves, and build anew for the next (R67)", () => {
     const { slot, built, report, leave, standing } = onHud();
     report("run");
-    slot.hear(CARD);
-    slot.hear(CELL);
-    slot.hear(BARS);
-    slot.hear(PROGRESS);
+    slot.hear(from("run", CARD));
+    slot.hear(from("run", CELL));
+    slot.hear(from("run", BARS));
+    slot.hear(from("run", PROGRESS));
     expect(standing()).toHaveLength(4);
     leave("run");
     expect(standing()).toEqual([]);
-    slot.hear(PROGRESS);
+    slot.hear(from("run", PROGRESS));
     expect(built).toHaveLength(4);
     report("run");
-    slot.hear(PROGRESS);
+    slot.hear(from("run", PROGRESS));
     expect(standing()).toHaveLength(1);
     expect(built).toHaveLength(5);
   });
@@ -150,7 +167,7 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
   it("should take the old world's pieces down on another world's report, with no leave between", () => {
     const { slot, report, standing } = onHud();
     report("hub");
-    slot.hear(PROGRESS);
+    slot.hear(from("hub", PROGRESS));
     report("run");
     expect(standing()).toEqual([]);
   });
@@ -158,7 +175,7 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
   it("should keep its pieces when the same world reports again (a changed report)", () => {
     const { slot, bridge, report, standing } = onHud();
     const run = report("run");
-    slot.hear(CARD);
+    slot.hear(from("run", CARD));
     bridge.changed();
     slot.world(run);
     expect(standing()).toHaveLength(1);
@@ -167,8 +184,8 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
   it("should send each standing piece back to its anchor on a new view, and take them all down with the scene", () => {
     const { slot, built, report, standing } = onHud();
     report("run");
-    slot.hear(CARD);
-    slot.hear(BARS);
+    slot.hear(from("run", CARD));
+    slot.hear(from("run", BARS));
     slot.relayout();
     expect(built.map((b) => b.relayouts)).toEqual([1, 1]);
     slot.destroy();
@@ -181,11 +198,24 @@ describe("the UI bridge's HUD (FS-TQZ5J § Change: Batch 5, R68)", () => {
     const bridge = new GameUiBridge();
     const told: HudMessage[] = [];
     const stop = bridge.onScreen({ hud: (message) => void told.push(message) });
-    bridge.hud(CARD);
+    bridge.hud(from("run", CARD));
     stop();
-    bridge.hud(BARS);
-    expect(told).toEqual([CARD]);
+    bridge.hud(from("run", BARS));
+    expect(told).toEqual([from("run", CARD)]);
     expect(JSON.parse(JSON.stringify(told))).toEqual(told);
+  });
+});
+
+describe("the HUD slot's wiring, shared (FS-TQZ5J § Change: Batch 6, R138)", () => {
+  it("should keep no test-only accessor of its pieces: what is built is the builder's to read", () => {
+    expect("piece" in UiHudSlot.prototype).toBe(false);
+  });
+
+  it("should leave the bridge's wiring to hearHud, the one mountHud and the stand-in both use", () => {
+    const standin = readFileSync(join(__dirname, "uiSceneHud.standin.ts"), "utf8");
+    expect(standin).toMatch(/\bhearHud\(/);
+    expect(standin).not.toMatch(/onScreen\(/);
+    expect(standin).not.toMatch(/onWorld\(/);
   });
 });
 

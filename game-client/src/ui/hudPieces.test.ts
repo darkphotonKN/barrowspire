@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { ArtLibrary } from "@/render/art/library";
 import { viewport } from "@/render/viewport";
-import { mountHud } from "./hudPieces";
+import { hudPieces, mountHud } from "./hudPieces";
+import type { HudBuild, HudKind } from "./uiSceneHud";
 import { GameUiBridge, NO_FACTS, type World } from "./uiBridge";
 
 // FS-TQZ5J § Change: Batch 5, R67, R68, R73: the UI scene's HUD, mounted over its game's bridge, draws
@@ -67,50 +68,74 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
     viewport.set({ width: 1080, height: 720, renderScale: 1 });
     const { scene, bridge, report, live } = onScene();
     report("run");
-    mountHud(scene, bridge, art);
-    bridge.hud({ kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
-    bridge.hud({ kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
+    mountHud(scene, bridge, hudPieces(scene, art));
+    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
+    bridge.hud({ world: "run", kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
     expect(live("Dash")).toBe(true);
     expect(live("Level 2")).toBe(true);
   });
 
   it("should take them down as the run leaves, and draw nothing it hands after", () => {
     const { scene, bridge, report, live } = onScene();
-    mountHud(scene, bridge, art);
+    mountHud(scene, bridge, hudPieces(scene, art));
     report("run");
-    bridge.hud({ kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
+    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
     bridge.left("run");
     expect(live("Dash")).toBe(false);
-    bridge.hud({ kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
+    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
     expect(live("Dash")).toBe(false);
   });
 
   it("should take a level-up cue still fading down with the town, and raise none for the next world's first state", () => {
     const { scene, bridge, report, live, tweens } = onScene();
-    mountHud(scene, bridge, art);
+    mountHud(scene, bridge, hudPieces(scene, art));
     report("hub");
-    bridge.hud({ kind: "progress", progress: { level: 2, experience: 220, level_floor: 100, next_level_at: 230 } });
-    bridge.hud({ kind: "progress", progress: { level: 3, experience: 240, level_floor: 230, next_level_at: 390 } });
+    bridge.hud({ world: "hub", kind: "progress", progress: { level: 2, experience: 220, level_floor: 100, next_level_at: 230 } });
+    bridge.hud({ world: "hub", kind: "progress", progress: { level: 3, experience: 240, level_floor: 230, next_level_at: 390 } });
     expect(live("Risen to level 3")).toBe(true);
     bridge.left("hub");
     expect(live("Risen to level 3")).toBe(false);
     expect(tweens.killTweensOf).toHaveBeenCalled();
     report("run");
-    bridge.hud({ kind: "progress", progress: { level: 4, experience: 400, level_floor: 390, next_level_at: 600 } });
+    bridge.hud({ world: "run", kind: "progress", progress: { level: 4, experience: 400, level_floor: 390, next_level_at: 600 } });
     expect(live("Risen to level 4")).toBe(false);
     expect(live("Level 4")).toBe(true);
   });
 
   it("should take every piece down, and hear nothing more, with the scene", () => {
     const { scene, bridge, report, standing, events } = onScene();
-    mountHud(scene, bridge, art);
+    mountHud(scene, bridge, hudPieces(scene, art));
     report("run");
-    bridge.hud({ kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
-    bridge.hud({ kind: "potion", cell: { count: 1, keyLabel: "[1]", dimmed: false } });
+    bridge.hud({ world: "run", kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
+    bridge.hud({ world: "run", kind: "potion", cell: { count: 1, keyLabel: "[1]", dimmed: false } });
     expect(standing().length).toBeGreaterThan(0);
     events.emit("shutdown");
     expect(standing()).toEqual([]);
-    bridge.hud({ kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
+    bridge.hud({ world: "run", kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
     expect(standing()).toEqual([]);
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R138: the relayout and the end through mountHud's own wiring
+  it("should send each standing piece back to its anchor on a new logical view, and stop with the scene", () => {
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    const { scene, bridge, report, events } = onScene();
+    const relaid: HudKind[] = [];
+    const destroyed: HudKind[] = [];
+    const piece = (kind: HudKind) => () => ({
+      show: () => {},
+      relayout: () => void relaid.push(kind),
+      destroy: () => void destroyed.push(kind),
+    });
+    const build: HudBuild = { ability: piece("ability"), potion: piece("potion"), bars: piece("bars"), progress: piece("progress") };
+    mountHud(scene, bridge, build);
+    report("run");
+    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
+    bridge.hud({ world: "run", kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    expect(relaid).toEqual(["ability", "bars"]);
+    events.emit("shutdown");
+    expect(destroyed).toEqual(["ability", "bars"]);
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+    expect(relaid).toEqual(["ability", "bars"]);
   });
 });
