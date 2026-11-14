@@ -48,9 +48,7 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
@@ -311,20 +309,9 @@ interface WorldButton {
 const BUTTON_W = 200;
 const BUTTON_H = 38;
 const BUTTON_GAP = 16;
-/**
- * Where the level and experience bar sit (FS-BDA7X req 42): top-left, at the top of the stack
- * since the dev position readout left it (FS-56CKV §D.20), and clear of the notice band (100–150)
- * across the middle of the screen (`PROGRESS_HUD_AT`, which the resource bars and the party
- * frames stand under).
- */
-const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
-const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
-/**
- * Where the Health and class resource bars sit (FS-8AY7S req 20): top-left, under the progress bar
- * on its left edge (`RESOURCE_HUD_AT`), with the party frames under them.
- */
-const RESOURCE_HUD_X = RESOURCE_HUD_AT.run.x;
-const RESOURCE_HUD_Y = RESOURCE_HUD_AT.run.y;
+// The level bar, the Health and class resource bars and the potion cell stand top-left, the party frames
+// under them (`PROGRESS_HUD_AT`, `RESOURCE_HUD_AT`): the UI scene's HUD slot stands them (FS-TQZ5J
+// § Change: Batch 5, R69, `HUD_PLACES`).
 /**
  * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
  * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
@@ -655,10 +642,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private abilityUp = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
-  /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
-  private progressHud?: ProgressHud;
-  /** The Health and class resource bars, top-left (FS-8AY7S req 20). */
-  private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   /**
@@ -1124,8 +1107,6 @@ export class BarrowspireScene extends Phaser.Scene {
     // § Change: The pressed hand, and the hand on the menus, P7)
     if (end === "shutdown") findPointerLook(this)?.base("hand");
     this.tabKey = undefined;
-    this.progressHud = undefined;
-    this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
@@ -5058,8 +5039,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.characterLevel = progress?.level;
     this.ui.gear({ kind: "level", level: this.characterLevel });
     if (!progress) return;
-    this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
-    this.progressHud.show(progress);
+    // the UI scene's, at the top of the run's top-left stack (FS-TQZ5J § Change: Batch 5, R68, R69)
+    this.ui.hud({ kind: "progress", progress });
   }
 
   /**
@@ -5068,8 +5049,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * before their first state.
    */
   private showResourceBars(state: ClientGameState): void {
-    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, RESOURCE_HUD_Y);
-    this.resourceHud.show(hudBars(state));
+    // the UI scene's, under the level bar (FS-TQZ5J § Change: Batch 5, R68, R69)
+    this.ui.hud({ kind: "bars", bars: hudBars(state) });
     // the potion cell is up exactly when the bars are (FS-P9G8R R24): the UI scene draws it right of
     // them (FS-TQZ5J § Change: Batch 5, R68)
     this.ui.hud({ kind: "potion", cell: potionCell(state) });

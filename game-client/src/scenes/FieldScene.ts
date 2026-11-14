@@ -43,7 +43,6 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
-import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -213,8 +212,6 @@ export class FieldScene extends Phaser.Scene {
    * satchel the UI scene's, reached through the bridge (FS-TQZ5J § Change: Phase 3, R52, R53).
    */
   private piles?: FieldPiles;
-  /** The Health and class resource bars, and the ability card: the run's own (FS-8AY7S req 20, 29). */
-  private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   /**
@@ -581,7 +578,6 @@ export class FieldScene extends Phaser.Scene {
     this.leavingHub = false;
     this.piles?.release();
     this.piles = undefined;
-    this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
@@ -806,8 +802,8 @@ export class FieldScene extends Phaser.Scene {
    * no leave button to share the card's corner.
    */
   private showClassHud(state: ClientGameState): void {
-    this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_AT.field.x, RESOURCE_HUD_AT.field.y);
-    this.resourceHud.show(hudBars(state));
+    // the UI scene's, in the field's corner (FS-TQZ5J § Change: Batch 5, R68, R69)
+    this.ui.hud({ kind: "bars", bars: hudBars(state) });
     this.showAbilityCard();
   }
 

@@ -2538,6 +2538,12 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
     (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
+    // the restart, as the UI scene hears it: the run leaves and reports again, and the UI scene's level
+    // bar is a new one (FS-TQZ5J § Change: Batch 5, R67)
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const report = bridge.world!;
+    bridge.left("run");
+    bridge.report(report);
     run.handleGameStateUpdate(withMe(me(4, 400, 390, 600)));
     expect(cues()).toHaveLength(0);
   });
