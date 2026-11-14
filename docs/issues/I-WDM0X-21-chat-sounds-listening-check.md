@@ -3,7 +3,7 @@ id: I-WDM0X-21
 status: open
 implements: FS-WDM0X
 blocked_by: [I-WDM0X-20]
-labels: [ready-for-agent]
+labels: []
 title: "FS-WDM0X pass 2 (chat): the owner's listening check of the chat sounds (HITL)"
 ---
 Implements FS-WDM0X §Pass 2: the chat (the owner's listening check)

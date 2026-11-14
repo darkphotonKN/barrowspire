@@ -3,7 +3,7 @@ id: I-TQZ5J-32
 status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-30, I-TQZ5J-31]
-labels: [ready-for-agent]
+labels: []
 title: "FS-TQZ5J batch 5, slice 3: the owner's look check of the moved HUD pieces (HITL)"
 ---
 Implements FS-TQZ5J §Change: Batch 5: the ability card, the potion cell and the HUD bars (the owner's check)

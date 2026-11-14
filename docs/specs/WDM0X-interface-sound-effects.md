@@ -1021,3 +1021,23 @@ C5. **`menu_error`**: Enter on a whisper draft the client refuses to send: a nam
 - **A quick sweep over the tabs.** The cooldown (M4) keeps the hovers from stacking.
 - **The window folded.** No tabs, no lines, no list: the picker still opens and shuts its list.
 - **Sound effects at 0.** Every chat sound is silent (S16).
+
+### Amendment 2026-11-14 (FS-TQZ5J § Change: Batch 6): the chat's sounds in the UI scene
+
+Appended; nothing above is edited. FS-TQZ5J § Change: Batch 6 moves the chat window into the UI scene
+(R125); its sounds stand as built, through the UI scene's player (R134), with two corrections from the
+review of pass 2 (the chat):
+
+- **C4's cover, restated.** "None while a UI piece stands over the window there (`overUi`) or the
+  town's letter panel does (`coveredAt`)" reads, from batch 6: none while the top-most thing under the
+  pointer is a UI piece other than the window (FS-TQZ5J R130). `overUi` and `coveredAt` are gone; the
+  letter panel is one such piece, as are the gear overlay, the party panel, the controls panel, the
+  record, the menu, the dialogue card and the notices.
+- **One sound per press (C1, C3).** A tab pressed while the picker's list is open plays `menu_tab`
+  alone; the list shuts silently with it (FS-TQZ5J R135). C3's "a press anywhere outside the list"
+  is a press that is not a tab's.
+- **No hover under the run's row.** The run's bottom-centre row no longer meets the window (FS-TQZ5J
+  R123), so no chat hover can play with the pointer on WATCH, LEAVE or SETTLEMENT (R136).
+
+The owner's listening check stays I-WDM0X-21, and the batch's I-TQZ5J-55 carries the table of where each
+chat sound plays.

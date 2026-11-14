@@ -667,3 +667,20 @@ inbound action.
   for instance). The settling key is the one signal. *(Added 2026-11-03, charter addendum.)*
 
 ## Change: Panel shortcut icons on the HUD → FS-3EBCA
+
+## Amendment 2026-11-14 (FS-TQZ5J § Change: Batch 6): the row's words and place
+
+Appended; nothing above is edited. The owner, 2026-11-14: 「文字改成WATCH LEAVE SETTLEMENT」 and
+「文字可以小一點」, with layout B. Specified in FS-TQZ5J § Change: Batch 6, R120–R124; recorded here
+because it changes R2's, R3's and R10's buttons.
+
+- **The words.** *Watch the delve* reads **WATCH** and *Leave the barrow* **LEAVE**, on the dead
+  delver's card (R2), on the escaped delver's bottom-centre button (R3 as amended), and on the dead
+  spectator's corner button (R10). SETTLEMENT (FS-GV8WN R21) is unchanged in word. What each does is
+  unchanged.
+- **The type and size.** 13 px bold, letter-spaced 1 px; each button as wide as its word plus 24 px a
+  side (WATCH 104, LEAVE 94, SETTLEMENT 144), 38 high.
+- **The row's place.** Still 200 px above the bottom margin (R3's amendment), its buttons 8 apart in the
+  order watch, leave, settlement. Centred across, unless centring would bring it within 12 px of the open
+  chat window at the bottom left; then it starts 12 px right of the window (x 442). The card keeps its
+  place, its buttons centred on it 8 apart; the corner button keeps its corner.

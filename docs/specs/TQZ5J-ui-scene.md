@@ -1786,3 +1786,249 @@ screenshots (the owner's rule).
 - **No look or depth change** (R72): nothing at 1000 in the UI scene meets the pieces in a new order.
 - **Chat** held twice (the two notes above); its sounds are built where it stands (FS-WDM0X § Pass 2:
   the chat, I-WDM0X-20).
+
+## Change: Batch 6: the end row and the chat
+Status: work-order
+Date: 2026-11-14
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-14), with the
+integrator's defaults; no interview, no `challenge-me` pass. What the code forces (read on
+feat/client-ui-scene, d918dd7e) is marked **[code]**; the owner's words **[owner]**; the charter's
+scope and the integrator's rules **[integrator]**; a default applied to a case neither named,
+*Derived*. A1's pointer rules (R25–R27), A2's depth rule (R28), the grounds (R40, R59), the overlay's
+hit tests (R60), the depths (R62, the frames lowest at 999) and batch 4's R106 are inherited, not
+restated. The classification is ADR-0083's. Numbered from R120.
+
+**What it does.** The final UI-scene batch. (1) The run's bottom-centre row is re-laid off the chat
+window: shorter words, smaller type, buttons as wide as their words, and the row moved right of the
+open window where centring would meet it, so the row stays in the world (ADR-0083 2.3) and meets no UI
+piece. (2) That settles batch 5's second overlap, so chat moves into the UI scene (the seam batch 5
+recorded). (3) The review leftovers of batches 4 and 5. **[integrator]**
+
+**The owner's words (2026-11-14).** 「文字改成WATCH LEAVE SETTLEMENT」 (make the words WATCH, LEAVE,
+SETTLEMENT); 「文字可以小一點」 (the words can be a little smaller); layout B: the row keeps its height
+(y 466–504 at 720 tall), centred unless centring would meet the open chat window (x 10–430, y 468–704,
+the same at every width), and then its left edge stands 12 right of the window (442). The resolved card
+and the settlement record keep their places. **[owner]**
+
+**The owner's process.** No screenshots or parity shots (the owner's rule, 2026-11-14). The checks are
+the full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence`; the look and the sounds
+are the owner's check (I-TQZ5J-55). **[owner]**
+
+**Lane.** game-client only. No server, proto, gateway or manifest change. **[integrator]**
+
+### Facts (verified 2026-11-14 on feat/client-ui-scene, d918dd7e)
+
+- **The row.** `BarrowspireScene.syncRow` builds the row's buttons (`resolvedRow`: watch, leave,
+  settlement, in that order) with `hudButton` at `rowSlotX(i, n, viewport.centerX, BUTTON_W 200,
+  BUTTON_GAP 16)` and `resolvedRowY` (centre y 485 at 720), at 1000 with their hit areas at 1001. Each
+  button is `worldButton`: a 200 × 38 amber face with a 6 px corner, its label EB Garamond bold 14 px,
+  letter-spaced 3. The labels are `WATCH THE DELVE`, `LEAVE THE BARROW` and `SETTLEMENT`. The same
+  `watchSpec` and `leaveSpec` stand on the dead player's resolved card (`cardButton`, the same
+  200-wide spread about the card's centre) and the leave spec in the dead spectator's corner
+  (`placeLeaveInCorner`, at `LEAVE_BUTTON_PLACE`, the centre of a 200 × 38 box whose right edge is the
+  corner margin). **[code]**
+- **The chat.** Each world builds its own `ChatWindow` (`mountChatWindow(this, mayChat)`) with its
+  scene's keyboard and input, its own `mayChat` (the town: no dialogue, menu, gear panel or letter
+  panel; a field: no menu or gear panel; the run: no menu, gear panel, run's end or open container),
+  the town's `keepsDraft` (the letter panel open), and its sounds through the game's bridge
+  (`uiBridgeOf(scene.registry)?.play`, `overUi`). The field and the run report its top edge as
+  `layout().chatTop`, the floor of the invite stack; the town reports none. The worlds' M guards and
+  the run's map mode icon read `chatWindow.isTyping()`; a field's and the run's `panelTakes` read
+  `chatWindow.covers`. The window's `coveredAt` option has no caller since batch 4, and nothing calls
+  `MailboxHud.covers` or `LetterPanel.covers` but `MailboxHud` itself. **[code]**
+- **The typing guard.** `ChatInput.focused` resets the window's scene's keyboard and turns it off while
+  the player types, and puts it back as it was on the blur. The DOM field swallows the keys it takes,
+  but a held stride key's keyup goes with them, which is why the reset matters. **[code]**
+- **Phaser's hit lists.** With the input's `topOnly` (the default, kept), a scene's `pointerdown`,
+  `pointermove`, `pointerup` and `wheel` are emitted on the scene whatever was hit, with
+  `currentlyOver` cut to the one top-most interactive object (`InputPlugin.processOverOutEvents`,
+  `hitTestPointer`, `sortGameObjects`, Phaser 4.2.1), and a game object's own handler runs before the
+  scene's (a tab's `pointerdown` before the window's `onPress`). **[code]**
+- **The review leftovers.** `uiSceneHud.standin.ts` copies `mountHud`'s listeners; `UiHudSlot.piece` is
+  read only by that stand-in; `mountHud`'s `relayoutOn` is tested only through the slot; `HudMessage`
+  carries no world, so a message sent late by a world that has left reaches the next world's pieces;
+  an ability card brought back up after a down rebuilds its objects on top of the 1000 band, over the
+  corner row's hover label (both 1000, the label made on each hover). `MailboxWiring` (the slot's) and
+  `MailboxHudDeps` (the piece's) restate the same fields, and `mailboxHud.ts` imports from
+  `uiSceneMailbox.ts`; `letterPanelState`, a reader of the mailbox store, lives in `mailboxHud.ts`. A
+  tab press with the picker's list open plays `menu_tab` (the tab's handler) and then
+  `menu_dropdown_close` (`pressPicker` → `closePicker(true)`). **[code]**
+
+### Requirements (added)
+
+**The end row** (FS-QPDKN § Amendment 2026-11-14, batch 6, records the same for that FS)
+
+120. **The words.** The row's buttons and the resolved card's read **WATCH**, **LEAVE** and
+     **SETTLEMENT**, replacing WATCH THE DELVE and LEAVE THE BARROW. The dead spectator's corner button
+     is the same leave and reads **LEAVE** too, for one word per action. Their hit areas keep their
+     names (`watch-the-delve`, `leave-the-barrow`, `settlement`). **[owner; Derived for the corner]**
+121. **The type.** EB Garamond bold **13 px**, letter-spaced **1 px** (0.077 em), in the ink it was.
+     The design guideline's type scale puts an uppercase label at 13–14 px with 0.05–0.1 em spacing, its
+     smallest step (captions) at 12 px; 13 px is one step under today's 14, inside the label step, at
+     render scale 1. **[owner; Derived]**
+122. **The width.** Each button is as wide as its label as Phaser measures it (`Text.width`) plus
+     24 px each side (the guideline's button padding, ~1.5 rem); the height stays 38, the corner 6.
+     Measured with the game's EB Garamond in Chrome as Phaser measures letter-spaced text (each glyph,
+     plus the spacing between, rounded up): WATCH 56 → **104**, LEAVE 46 → **94**, SETTLEMENT 96 →
+     **144**. One rule for every one of these buttons: the row, the card and the corner. **[owner;
+     Derived]**
+123. **The row's place (layout B).** Its buttons stand left to right in `resolvedRow`'s order, **8**
+     apart, on the row's line (`resolvedRowY`, unchanged). The row is centred on the view, unless its
+     centred left edge would stand closer than 12 to the open chat window's right edge
+     (`CHAT_WINDOW_X + CHAT_WINDOW_W`, 430, the same at every width); then its left edge is that edge
+     plus 12 (**442**). Whole px. At every logical width from 1080 to 1280, with one, two or three
+     buttons, the row meets neither the open window nor the open picker's list. **[owner]**
+     - At 1080: WATCH alone 488–592, LEAVE 493–587, SETTLEMENT 468–612; WATCH + LEAVE 442–648,
+       LEAVE + SETTLEMENT 442–688, WATCH + SETTLEMENT 442–698; all three 442–800.
+     - At 1280: WATCH 588–692, LEAVE 593–687, SETTLEMENT 568–712; WATCH + LEAVE 537–743,
+       LEAVE + SETTLEMENT 517–763, WATCH + SETTLEMENT 512–768; all three 461–819.
+124. **The card and the corner keep their places.** The card's two buttons stand on the card's line as
+     before, centred on the card, 8 apart (the row's gap: one spacing for the buttons). The corner LEAVE
+     keeps its right edge on the corner margin and its centre y; it is 94 wide where it was 200. The
+     settlement record keeps its anchor over the row's line (`recordAnchor`, unchanged). The row stays
+     in the world at 1000 (ADR-0083 2.3): after this it meets no UI piece. **[owner; Derived]**
+
+**Chat into the UI scene**
+
+125. **What moves.** Into the UI scene, unchanged: the chat window whole (`ChatWindow`: the tabs, the
+     canvas channel picker and its list, the lines with their scrollbar and wheel, the fold button, the
+     DOM input row, Enter to chat, the typing guard, whispers by a name and by `@`, party lines, the join
+     and leave lines). The UI scene builds it as each world is reported and takes it down as that world
+     leaves, as the world's create built it and its release destroyed it (a draft goes with the world, as
+     today). Its slot is its own file (`uiSceneChat.ts`, `UiChatSlot`), like the other slots; the window
+     on the UI scene is `chatPiece.ts`. No world scene imports `ChatWindow` or `mountChatWindow`. Its
+     lines, fold, filter and sent lines stay the chat store's, so they outlive every switch as before.
+     Its commands go from the piece (a line sent on the socket; ADR-0082). **[integrator; code]**
+126. **Who owns Enter and Esc (FS-WJGFJ R27).** The window may take the keys while no world is
+     missing, the menu slot is empty, no gear panel is open (inventory, character) and the world does not
+     turn it away. The world says so in its blockers: `blockers().chat`, the world's part of its old
+     `mayChat`: the town's dialogue or its letter panel; the run's end or an open container; nothing in a
+     field. The draft is kept while the world's letter panel holds the keys (`windows().letter`,
+     `keepsDraft`, FS-1GZGD R40). Each world's old rule holds, word for word. **[code]**
+127. **Typing, reported.** The UI's state gains `typing`, reported by the window as its input opens and
+     closes. While it is true the world reported has its keyboard reset and off (a held key let go), and
+     after it, the keyboard as it was; a world that leaves while the player types has its keyboard put
+     back as it leaves (`reportWorld`, once for every world). The UI scene's own keyboard is the window's
+     and goes off while typing (its `ChatInput`), so no UI key answers either (Esc, E, I, B, C, Q, F, H,
+     T, 1–3). Every world guard that read the window reads `ui.typing` (M; the run's map mode icon).
+     Enter is heard on the UI scene's keyboard. **[integrator; code]**
+128. **The world's change, heard at once.** As the world reported changes its report (`changed`), the
+     window re-reads who owns the keys before the call returns, so the run's end cancels a half-typed
+     line, hands both keyboards back, and only then turns the run's keyboard off, the order `endRun`
+     kept by hand (`cancelInput` before `enabled = false`). **[code]**
+129. **Its ground.** An interactive ground over the panel, and one over the open list wherever it
+     reaches, made before the window's own objects so its tabs, fold button and picker stand on it. A
+     press, a release, a move and the wheel on them are the UI scene's (R7): no world handler hears
+     them, so a press on the window is never an attack, a cast or a hold, the world's `panelTakes` goes,
+     and a world piece under the window gets its out as the pointer comes onto the window (R27). No cursor
+     of its own (FS-KYPQ9 § Change: Every hover keeps the bone hand). **[integrator; code]**
+130. **The covered rule (R106).** The window acts on a scene-wide press, move, release and wheel only
+     when Phaser's top-most hit there (`currentlyOver[0]`) is nothing or one of the window's own objects
+     (its grounds, tabs, fold button, picker words and list rows). Every UI piece drawn above it is
+     therefore its cover with no list to keep: the letter panel, the gear overlay and its stash, the party
+     panel, the controls panel, the settlement record, the menu, the dialogue card, the notices. Under a
+     cover it grabs no scrollbar, names nobody, scrolls nothing, lights and plays no hover, and opens
+     or shuts no list; a press there lets go of a focused field (A1 R26). The settlement record keeps the
+     wheel over the window (FS-GV8WN S6), by its top-most hit and by its own `stopPropagation`. The dead
+     `coveredAt` option, `overUi` option, `MailboxHud.covers` and `LetterPanel.covers` go.
+     **[integrator; code]**
+131. **Its field's focus (A1 R26).** A press on the window or its open list keeps the window's field
+     focused (`keepsField`, as the party panel's); a press on any other UI piece lets it go; a press in the
+     world lets it go with the draft kept, as before. **[code]**
+132. **The invite stack's floor.** The invite prompts stack above the UI scene's own window's top edge in
+     a field and the run, and above none in the town, as each world reported before. The bridge's
+     `layout()` and `WorldLayout` go (they carried only `chatTop`). **[code]**
+133. **Depths.** 1000–1002 in the UI scene, as in the worlds: over the frames (999) and the world, under
+     every window (1100–1800), the popup band and the tips; level with the corner row, the invite prompts
+     and the HUD pieces, which it does not meet. The one change a player can see: what the world draws
+     under the window (a creature, a pile) no longer lights or shows a tip under it, the window's ground
+     taking the pointer there (R129). **[code]**
+
+**Chat sounds (FS-WDM0X § Pass 2: the chat, as built; its § Amendment 2026-11-14 records these)**
+
+134. **As built, through the UI scene's player.** C1–C5 stand. The window plays through the UI scene's
+     bridge (`play`). C4's "under a UI piece" is the covered rule (R130). **[code]**
+135. **One sound per press (MED1).** A tab pressed while the picker's list is open plays `menu_tab` alone;
+     the list shuts silently with it. The list's shut is two calls, the game's silent `closePicker()` and
+     the player's `dismissPicker()` (`menu_dropdown_close`), in place of a flag. **[integrator]**
+136. **No hover under the end row (MED2).** No chat hover plays with the pointer on the run's row: the
+     row never meets the window or its list (R123), pinned at every width. **[integrator]**
+
+**The review leftovers**
+
+137. **The HUD's messages name their world.** `HudMessage` carries the world that sent it; the HUD slot
+     draws it only while that world's pieces stand, so a late message from a world that has left draws
+     nothing on the next world's. **[integrator]**
+138. **One wiring for the HUD.** `mountHud` takes the pieces' builder and shares its bridge wiring with
+     the test stand-in (`hearHud`), which reads what was built from its own builder; `UiHudSlot.piece`
+     goes. `mountHud`'s relayout and end are tested through the real wiring (a new logical view sends each
+     standing piece back to its anchor; the scene's end takes them down). **[integrator]**
+139. **The corner row's label over the card.** The corner row's hover label (and the envelope's) stands
+     at 1001, one over the HUD band, so an ability card rebuilt down → up never draws over it; still under
+     every window. **[integrator]**
+140. **The mailbox's types.** `MailboxWiring` is derived from `MailboxHudDeps` in `mailboxHud.ts`, and the
+     slot imports it from there; `mailboxHud.ts` imports nothing of the slot. `letterPanelState` moves
+     beside the store (`stores/letterPanelState.ts`). **[integrator]**
+
+### Acceptance Criteria (added)
+
+- [ ] The row, the card and the corner read WATCH, LEAVE, SETTLEMENT in 13 px bold, letter-spaced 1, each
+      button its label's width plus 24 a side (R120–R122).
+- [ ] The row stands as R123 says at 1080 and 1280 for every set of buttons, and meets neither the open
+      window nor the open list at any logical width from 1080 to 1280 with one, two or three buttons.
+- [ ] The card's buttons are centred on the card 8 apart; the corner LEAVE keeps its right edge; the
+      record its anchor (R124).
+- [ ] No world scene imports `ChatWindow` or `mountChatWindow`; the UI scene builds the window per world
+      and takes it down as the world leaves (R125).
+- [ ] The window takes the keys exactly when each world's old rule let it, keeps the draft under the
+      letter panel, reports `typing`, and the world's keyboard is off while it is true and back after,
+      the run's end included (R126–R128).
+- [ ] A press, a move and the wheel on the window reach no world; on a UI piece over it, the window does
+      nothing; the record keeps the wheel; `coveredAt`, `overUi`, `MailboxHud.covers` and
+      `LetterPanel.covers` are gone (R129, R130).
+- [ ] A press on the window keeps its field; the invites stack above its top in a field and the run
+      (R131, R132).
+- [ ] A tab press with the list open plays `menu_tab` alone; no chat hover under the row (R135, R136).
+- [ ] The HUD's messages name their world; `mountHud`'s relayout tested through its wiring; the stand-in
+      shares it; `UiHudSlot.piece` gone; the corner label over a rebuilt card (R137–R139).
+- [ ] `MailboxWiring` derived from `MailboxHudDeps`, no import from the slot module; `letterPanelState`
+      beside the store (R140).
+- [ ] Every acceptance criterion of FS-WJGFJ, FS-J267Q, FS-KCQ06, FS-XGW7H, FS-5SH4G, FS-1GZGD R40 and
+      FS-WDM0X § Pass 2: the chat still holds; their tests pass, moved with the code where they tested a
+      world.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's look and listening check (I-TQZ5J-55).
+
+### Edge States (added)
+
+- **A world switch while typing.** The window goes with the old world (the draft dropped, as today), both
+  keyboards back; the new world's window is built shut.
+- **The run's end while typing.** R128: cancelled, keyboards back, then the run's keyboard off.
+- **A late `typing: false` heard by the next world** (the old window let go after the next world's report):
+  the next world's keyboard is left as it is; only a world that turned its keyboard off turns it on.
+- **The letter panel opened while typing.** The input lets go, the draft kept (R126), as before.
+- **The record standing over the window.** Its wheel and presses are its own (R130).
+- **A press on the window during a world's press** (the world's scrollbar drag let go elsewhere): the
+  world's press is the world's to its end (R25); the UI scene's cameras stand aside, so the window
+  hears it as a press on nothing.
+- **The dead spectator's corner LEAVE.** Its own corner, above the corner row, as before; only its word,
+  type and width change.
+- **A view under 1080 or over 1280 wide.** The rule holds: the row's left edge never under 442.
+
+### Out of Scope (added)
+
+- Moving the run's end row, the resolved card or the controls panel into the UI scene.
+- Any change to the chat's look, words, rules or sounds but R133's ground and R135.
+- The server.
+
+### Note 2026-11-14 (batch 6): the records
+
+Appended with this section's work order; nothing above is edited. The note "which interface goes where"
+lists chat under **Later**: chat is **moved (batch 6)**, and the run's row (WATCH THE DELVE and LEAVE THE
+BARROW there) now reads WATCH, LEAVE and SETTLEMENT and still stays in the world (2.3), meeting no UI
+piece. Batch 5's "chat, held" notes are answered here: chat is **moved (batch 6)**, its seam as those
+notes recorded, the row's overlap settled by R123. Batch 4's R106 is built as R130. FS-WDM0X § Pass 2:
+the chat, C4's `overUi` and `coveredAt` read as the covered rule (FS-WDM0X § Amendment 2026-11-14).
+I-TQZ5J-32 and I-WDM0X-21 are the owner's checks (HITL): their `ready-for-agent` labels were wrong and
+are taken off.
