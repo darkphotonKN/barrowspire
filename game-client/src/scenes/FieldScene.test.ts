@@ -1088,7 +1088,8 @@ describe("FieldScene ending (game destroy on leaving /game)", () => {
     const { field, systems } = createdField();
     const page = lookGame();
     page.look().base("strike");
-    Object.assign(field, { game: page.game });
+    // the fight lets go of the game's focus events as the field stops
+    Object.assign(field, { game: { ...page.game, events: new EventEmitter() } });
 
     systems.shutdown();
 

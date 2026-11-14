@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import type { ArtManifest } from "@/render/art/manifest";
 import type { CursorSource } from "./cursors";
 import { bakedCursors, scenePointerLook } from "./pointerLook";
 import { STAND_IN_CURSORS, lookGame, pointerEvent } from "./pointerLook.standin";
@@ -30,7 +31,7 @@ describe("the pointer look (FS-KYPQ9 § Change: The pressed hand, P4–P6)", () 
   it.each([
     ["right", RIGHT],
     ["middle", MIDDLE],
-  ])("should keep the plain hand under a %s press: the Shadow Shot's aim, the parry (P4)", (_, button) => {
+  ] as const)("should keep the plain hand under a %s press: the Shadow Shot's aim, the parry (P4)", (_, button) => {
     const page = lookGame();
     page.look().base("hand");
 
@@ -221,6 +222,30 @@ describe("a scene's pointer look (FS-KYPQ9 § Change: The pressed hand, P7)", ()
 
     const look = page.look();
     expect(scenePointerLook({ game: page.game, textures })).toBe(look);
+  });
+
+  it("should make the game's look from a scene with the art, its cursors cropped from that art", () => {
+    vi.stubGlobal("window", new EventTarget());
+    vi.stubGlobal("document", new EventTarget());
+    try {
+      const page = lookGame();
+      const baked: ArtManifest = JSON.parse(
+        readFileSync(path.join(__dirname, "../../../public/art/manifest.json"), "utf8"),
+      );
+      const scene = { game: page.game, textures: { getBase64: (_key: string, frame?: string | number) => `data:${frame}` } };
+
+      const look = scenePointerLook(scene, { sheet: (name) => baked.sheets[name] });
+      look?.base("hand");
+      expect(page.now()).toBe("url(data:cursor_hand/default/0/0) 6 1, default");
+      window.dispatchEvent(pointerEvent("pointerup", LEFT, 0));
+      page.press();
+      expect(page.now()).toBe("url(data:cursor_hand_pressed/default/0/0) 6 1, default");
+      window.dispatchEvent(pointerEvent("pointerup", LEFT, 0));
+      expect(page.now()).toBe("url(data:cursor_hand/default/0/0) 6 1, default");
+      expect(scenePointerLook({ game: page.game, textures })).toBe(look);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("should give a scene with no game no look (a stand-in)", () => {
