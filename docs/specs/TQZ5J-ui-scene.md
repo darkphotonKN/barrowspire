@@ -2120,3 +2120,31 @@ re-expressed on it. No moved piece went back into a world scene. The text above 
 - **Everything else** (enemy tiers, Vorsk, Forest elites, field bands, the dev endgame run's gate, pprof
   and the other server changes, docs) came in as main has it; the town's endgame gate reads the UI scene's
   menu slot (`menuOpen`).
+
+### Note 2026-11-15: the lore lines move to the UI scene, at the owner's word
+
+The owner, 2026-11-14: 「蓋在面板上方」 (the lore lines draw over the panels, as they did on main). This
+overrides the merge note's "FS-XWHZP, lore lines" entry, which kept them the run's: once the panels are UI
+scene pieces, a run-drawn line draws under every one of them whatever its depth, so the line comes to
+overlap UI pieces and leaves ADR-0086 Decision 2.3 for 1.3. The text above is not edited.
+
+- **The bridge.** The run says each line as typed data, `lore({ world: "run", kind: "say", line: { text,
+  tone } })`, and its floor change's `lore({ world: "run", kind: "clear" })` (ADR-0084: nothing callable
+  crosses). The slot (`uiSceneLore.ts`, `UiLoreSlot`, `hearLore`, `mountLore`) hears it as the HUD slot
+  hears `hud`. Every call site moved: the switch thrown, the exit door unlocked, the door opened, the
+  escapes, the burn heard, the interact replies and the refused fall; `leaveFloor` sends the clear.
+- **The UI scene owns the lines.** One `LoreLines` on the UI scene, its dust (`LoreDust`) cut from the
+  resident art (`fx_dust` is resident), keeps the queue, the timing, the dust and the relayout, unchanged:
+  one at a time, the rest queued; fade in, hold, fade out; the three tones; 30% from the top, centred, a
+  640 wrap; no input. A line from a world not reported (one that has left, heard late) draws nothing, and
+  the lines and their queue go as the world leaves or another world is reported.
+- **The depth.** 1990 in the UI scene, as before: over the gear overlay (1100–1103), the party panel
+  (1110), the controls panel (1200), the settlement record (1600–1601) and the letter panel (1800); under
+  the menu's blocker (1999), the menu, the NPC dialogue card and the run's notices (2000), OPTIONS (2001),
+  the item tips (2200) and the gear overlay's flash (2300).
+- **The tremor.** A dread line's tremor still shakes the run's camera, the world: as the line starts on the
+  UI scene (not when the run says it, so a queued dread line trembles when it shows, as before), the UI
+  scene asks with the typed request `tremor` (`durationMs`, `intensity`), and the run answers with its own
+  camera's shake (`LoreLines`' `tremor` option). The UI scene's camera never shakes, so the words and their
+  dust, now on it, hold still while the world trembles under them; reduced motion still asks for none.
+
