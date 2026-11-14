@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-15
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-14]
 labels: [ready-for-agent]
@@ -21,13 +21,13 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 
 ## Acceptance Criteria
 
-- [ ] The run builds no `SettlementRecord` or controls panel and binds no H.
-- [ ] The record's first open, copies, SETTLEMENT toggle, held town and Close as today (FS-GV8WN R19–R25,
+- [x] The run builds no `SettlementRecord` or controls panel and binds no H.
+- [x] The record's first open, copies, SETTLEMENT toggle, held town and Close as today (FS-GV8WN R19–R25,
       §Change: The settlement record scrolls; FS-WDM0X § Pass 2b E1–E5).
-- [ ] H opens and closes the controls panel as today, the ability's name the class's; a press on it is
+- [x] H opens and closes the controls panel as today, the ability's name the class's; a press on it is
       the panel's (R61).
-- [ ] Every record and controls test that read the run still passes, moved with the code.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Every record and controls test that read the run still passes, moved with the code.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

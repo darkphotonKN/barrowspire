@@ -73,12 +73,15 @@ translation belongs to the surface that renders words.
   `HubScene` (the town), `FieldScene` (a field), `BarrowspireScene` (a run). A world switch
   replaces one with another (`WORLD_SCENES`). Not the main menu or character creation.
 - **UI scene** — the one Phaser scene (`UIScene`) drawn over every world scene and under the
-  disconnect notice, holding the interface the worlds share: in phase 1 the corner row, the ESC
-  menu with OPTIONS, the interface sounds, the town's NPC dialogue card and the worlds' screen
-  notices (FS-TQZ5J, ADR-0081). It outlives world switches and sleeps outside the worlds. It and the
-  world scenes talk only through the **UI bridge**, a typed channel: the world reports its state,
-  shows its dialogue and says its notices as plain data, the UI scene sends requests (a dialogue row
-  picked is its id).
+  disconnect notice, holding the interface the worlds share: the corner row, the ESC menu with
+  OPTIONS, the interface sounds, the town's NPC dialogue card and the worlds' screen notices (phase
+  1), the party pieces (phase 2), the gear overlay, the container view, the settlement record and the
+  run's controls panel (phase 3) (FS-TQZ5J, ADR-0081, ADR-0083). It outlives world switches and sleeps
+  outside the worlds. It and the world scenes talk only through the **UI bridge**, a typed channel:
+  the world reports its state, shows its dialogue, says its notices and hands its gear, container and
+  record data as plain data; the UI scene reports its own state and sends requests (a dialogue row
+  picked is its id, an equip is the item's id). Each window it holds stands a **ground**: an
+  interactive rect that draws nothing, so a press on the window stops at the UI scene.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.

@@ -25,7 +25,6 @@ import {
   DoorState,
   ProjectileState,
 } from "@/types/gameState";
-import { ABILITY_COPY } from "@/ui/abilityCopy";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { lootMessage } from "@/ui/ContainerView";
 import {
@@ -49,7 +48,6 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
@@ -94,10 +92,9 @@ import {
   type PositionReadoutPlace,
 } from "@/ui/positionReadout";
 import { ResultHold } from "@/components/resultHold";
-import { SettlementRecord } from "@/ui/SettlementRecord";
-import { settlementRecord } from "@/ui/settlement";
+import { settlementRecord, type RecordView } from "@/ui/settlement";
 import { recordHoldsTown } from "@/ui/recordHold";
-import { resolvedRow, rowSlotX, type RowButton } from "@/ui/resolvedRow";
+import { resolvedRow, resolvedRowY, rowSlotX, type RowButton } from "@/ui/resolvedRow";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -289,21 +286,15 @@ const SPECTATE_HUD_Y = 10;
  * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, above the corner row
  * (`LEAVE_BUTTON_PLACE`, FS-3EBCA R14), in the HUD band (1000) with the counters, and away from the
  * watched player at the centre and the HUD along the top edge. Its margin is the bottom-centre
- * row's.
+ * row's (`resolvedRowY`).
  */
 const LEAVE_BUTTON_DEPTH = 1000;
-const LEAVE_BUTTON_MARGIN = 16;
 /**
  * The resolved player's bottom-centre row, Watch the delve and Settlement (FS-QPDKN req 3, amended
  * 2026-11-02; FS-GV8WN R21): in the same HUD band and on the same bottom margin as the dead
  * spectator's corner button.
  */
 const RESOLVED_ROW_DEPTH = LEAVE_BUTTON_DEPTH;
-const RESOLVED_ROW_MARGIN = LEAVE_BUTTON_MARGIN;
-/** How far the row stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
-const RESOLVED_ROW_LIFT = 200;
-/** The settlement record's bottom edge stands this far over the row's buttons. */
-const RECORD_ROW_GAP = 12;
 /** A button over the world: what it says, the name its hit area answers to, what a press does. */
 interface ButtonSpec {
   name: string;
@@ -571,9 +562,6 @@ export class BarrowspireScene extends Phaser.Scene {
     right: Phaser.Input.Keyboard.Key;
   };
 
-  // In-game controls panel
-  private controlsPanel?: Phaser.GameObjects.Container;
-
   /**
    * `end_game` has arrived: the run is over, and nothing in it answers any more. No card goes up
    * (FS-GV8WN R24); the settlement record, if open, holds the return to the town (R23).
@@ -585,10 +573,11 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   readonly resultHold = new ResultHold();
   /**
-   * The settlement record (FS-GV8WN R21): made by the first `settlement`, opened by it, then
-   * closed and reopened by the player until the scene stops (R22).
+   * The settlement record (FS-GV8WN R21): its content from the first `settlement` on, opened by it,
+   * then closed and reopened by the player until the scene stops (R22). The UI scene draws it from
+   * this, handed through the bridge (FS-TQZ5J § Change: Phase 3, R52, R57).
    */
-  private settlementRecord?: SettlementRecord;
+  private record?: { view: RecordView; open: boolean };
   /** The resolved player's card (FS-QPDKN req 1): up until Watch is pressed or `end_game`. */
   private resolvedCard?: Phaser.GameObjects.Container;
   /** What the card shows, to build it again at the centre when the logical view changes. */
@@ -658,7 +647,7 @@ export class BarrowspireScene extends Phaser.Scene {
     label: "SETTLEMENT",
     onPress: () => this.toggleRecord(),
     // the record brought back is a popup at the player's hand; taken down, an ordinary press (E3)
-    sound: () => (this.settlementRecord?.isOpen() ? "menu_click" : "dialog_open"),
+    sound: () => (this.record?.open ? "menu_click" : "dialog_open"),
   };
   /**
    * Whether this run's end has popped up (FS-WDM0X § Pass 2b E1; FS-TQZ5J § Change: Phase 2, R47):
@@ -1115,13 +1104,12 @@ export class BarrowspireScene extends Phaser.Scene {
     this.monsters = undefined;
     this.wallTop = WALL_HEIGHT;
 
-    this.controlsPanel = undefined;
     this.runEnded = false;
     // a hub held behind the record must not switch the next run away (FS-GV8WN R23), and the
     // record is this run's alone: entering any other world clears it (R22). Its objects went
     // down with the scene's.
     this.resultHold.clear();
-    this.settlementRecord = undefined;
+    this.record = undefined;
     this.resolvedCard = undefined;
     this.endPopped = false;
     this.canWatch = false;
@@ -1225,81 +1213,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.keyboard!.addCapture(this.menuKeysCaptured);
   }
 
-  private toggleControlsPanel(): void {
-    if (this.controlsPanel) {
-      this.controlsPanel.destroy();
-      this.controlsPanel = undefined;
-      return;
-    }
-
-    const controls = [
-      ["WASD", "Move"],
-      ["E", "Interact"],
-      ["F", "Take Item"],
-      ["I / B", "Inventory"],
-      ["C", "Character"],
-      ["T", "Party"],
-      ["ENTER", "Chat"],
-      ["Q", "Close Panel"],
-      ["LEFT CLICK", "Attack"],
-      // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
-      ["RIGHT CLICK", ABILITY_COPY[this.ownClass()]?.name ?? "Class ability"],
-      [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
-      ["H", "Toggle Controls"],
-      ["ESC", "Menu"],
-    ];
-
-    const panelW = 260;
-    // the title, a 20 px row per control, and the hint under them, so a row added never runs
-    // into the hint
-    const panelH = 44 + controls.length * 20 + 32;
-    const x = viewport.width / 2;
-    const y = viewport.height / 2;
-
-    const children: Phaser.GameObjects.GameObject[] = [];
-
-    const bg = this.add.graphics();
-    bg.fillStyle(palette.ink, 0.92);
-    bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
-    bg.lineStyle(1, palette.frame, 0.5);
-    bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
-    children.push(bg);
-
-    // the windows' one title (FS-3EBCA R20, R22)
-    children.push(drawPanelTitle(this, { x: -panelW / 2, y: -panelH / 2, width: panelW }, "CONTROLS"));
-
-
-    let curY = -panelH / 2 + 44;
-    for (const [key, action] of controls) {
-      const keyText = this.add.text(-panelW / 2 + 20, curY, key, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "11px",
-        color: toCss(palette.frameBright),
-        letterSpacing: 2,
-      });
-      const actionText = this.add.text(panelW / 2 - 20, curY, action, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "11px",
-        color: toCss(palette.hudLabel),
-      });
-      actionText.setOrigin(1, 0);
-      children.push(keyText, actionText);
-      curY += 20;
-    }
-
-    const hint = this.add.text(0, panelH / 2 - 16, "H to close", {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "10px",
-      color: toCss(palette.hudFaint),
-    });
-    hint.setOrigin(0.5);
-    children.push(hint);
-
-    this.controlsPanel = this.add.container(x, y, children);
-    this.controlsPanel.setDepth(1200);
-    this.controlsPanel.setScrollFactor(0);
-  }
-
   /**
    * `end_game`: the run is over. No card goes up (FS-GV8WN R24): the resolved view comes down,
    * the menu and an aim with it, and the keys are locked. The hub `world_entered` that comes with
@@ -1330,22 +1243,14 @@ export class BarrowspireScene extends Phaser.Scene {
   private showSettlement(payload: SettlementPayload): void {
     // a late confirmation of an earlier run, landing in this one, is not its record (R20)
     if (!this.ownSettlement(payload)) return;
-    const first = !this.settlementRecord;
-    this.settlementRecord ??= new SettlementRecord(
-      this,
-      this.recordAnchor(),
-      () => {
-        // before the close, which may let a held town in (FS-WDM0X § Pass 2b E5)
-        this.ui.play("menu_click");
-        this.closeRecord();
-      },
-      () => this.ui.play("menu_hover"),
-    );
-    this.settlementRecord.set(settlementRecord(payload));
+    // the UI scene draws it; its Close plays menu_click, then asks the run to close it (FS-WDM0X
+    // § Pass 2b E4, E5; FS-TQZ5J § Change: Phase 3, R57)
+    const first = !this.record;
+    this.record = { view: settlementRecord(payload), open: this.record?.open ?? false };
     if (first) {
       this.openRecord();
       this.endPopsUp();
-    }
+    } else this.sendRecord();
     this.syncRow();
   }
 
@@ -1373,15 +1278,16 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** The record up, and the return to the town held behind it unless a Leave is on its way (R23). */
   private openRecord(): void {
-    if (!this.settlementRecord) return;
-    this.settlementRecord.open();
+    if (!this.record) return;
+    this.record.open = true;
+    this.sendRecord();
     this.holdBehindRecord();
   }
 
   /** Holds the return to the town behind the record when {@link recordHoldsTown} says so (R23). */
   private holdBehindRecord(): void {
     const state = {
-      recordOpen: this.settlementRecord?.isOpen() ?? false,
+      recordOpen: this.record?.open ?? false,
       leavePending: this.leavePending,
     };
     if (recordHoldsTown(state)) this.resultHold.raise();
@@ -1389,24 +1295,25 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /** The record down, and a hub held behind it applied (R23). Client-only: nothing is sent. */
   private closeRecord(): void {
-    this.settlementRecord?.close();
+    if (this.record) this.record.open = false;
+    this.sendRecord();
     this.resultHold.release();
   }
 
   /** The Settlement button: the record up if it is down, down if it is up (R21). */
   private toggleRecord(): void {
-    if (this.settlementRecord?.isOpen()) this.closeRecord();
+    if (this.record?.open) this.closeRecord();
     else this.openRecord();
   }
 
-  /** The record's place: centred across, standing just over the bottom-centre row. */
-  private recordAnchor(): { x: number; bottom: number } {
-    return { x: viewport.centerX, bottom: this.rowY() - BUTTON_H / 2 - RECORD_ROW_GAP };
+  /** The record as it stands, to the UI scene, which draws it (FS-TQZ5J § Change: Phase 3, R52, R57). */
+  private sendRecord(): void {
+    this.ui.record(this.record ? { ...this.record } : null);
   }
 
-  /** The bottom-centre row's line: the buttons' centre y. */
+  /** The bottom-centre row's line: the buttons' centre y, by the rule the UI scene's record keeps over. */
   private rowY(): number {
-    return viewport.height - RESOLVED_ROW_MARGIN - RESOLVED_ROW_LIFT - BUTTON_H / 2;
+    return resolvedRowY(viewport);
   }
 
   /**
@@ -1421,7 +1328,7 @@ export class BarrowspireScene extends Phaser.Scene {
       : resolvedRow({
           canWatch: this.canWatch,
           canLeave: this.canLeave,
-          hasRecord: this.settlementRecord?.hasContent() ?? false,
+          hasRecord: this.record !== undefined,
         });
     const key = names.join(",");
     if (key === this.row.names) return;
@@ -3282,6 +3189,8 @@ export class BarrowspireScene extends Phaser.Scene {
           this.ui.gear({ kind: "taken", item });
         },
         // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
+        // the record's Close, its sound played by the UI scene first (§ Change: Phase 3, R57)
+        close: { record: () => this.closeRecord() },
         leaveRun: () => this.leaveTheBarrow(),
         fall: () => this.fallWhereYouStand(),
         // the OPTIONS Music row, applied to the tower's music at once (§ Change: The tower's music, W6)
@@ -3344,9 +3253,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.placeTopRightColumn();
     this.spectateHud?.watching.setX(viewport.centerX);
     this.spectateHud?.hint.setX(viewport.centerX);
-    this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.abilityHud?.relayout();
-    this.settlementRecord?.relayout(this.recordAnchor());
     this.arrivalCard.relayout();
     this.targetFrame?.relayout();
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
@@ -3357,7 +3264,6 @@ export class BarrowspireScene extends Phaser.Scene {
       this.positionReadout,
       this.spectateHud?.watching,
       this.spectateHud?.hint,
-      this.controlsPanel,
     ]);
     // the bottom-centre row, built again about the new centre
     this.row.names = "";
@@ -3421,13 +3327,7 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // I, B, C, F and Q are the UI scene's, with the gear overlay and the satchel they open, take from
-    // and close (FS-TQZ5J § Change: Phase 3, R56)
-
-    // H 鍵顯示/隱藏操作說明
-    this.input.keyboard?.on("keydown-H", () => {
-      if (this.menuOpen) return;
-      this.toggleControlsPanel();
-    });
+    // and close; H too, with the controls panel (FS-TQZ5J § Change: Phase 3, R56)
 
     // M steps the minimap through its modes (FS-1SEF0 §A.2; FS-SRA9J §E.19's key). An event, never
     // an added key: nothing is captured, so the letter types in any field and a stop has nothing

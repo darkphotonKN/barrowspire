@@ -26,6 +26,13 @@ import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPieces } fr
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { UiGearSlot, type GearKey } from "@/ui/uiSceneGear";
 import { mountGearPieces } from "@/ui/gearPieces";
+import { UiControlsSlot, UiRecordSlot, type ControlsPiece } from "@/ui/uiSceneRecord";
+import { SettlementRecord } from "@/ui/SettlementRecord";
+import { CONTROLS_PANEL_DEPTH, controlRows, controlsPanelRect, drawControlsPanel } from "@/ui/controlsPanel";
+import { recordAnchor } from "@/ui/resolvedRow";
+import { uiGround } from "@/ui/uiGround";
+import { crispen } from "@/render/viewport";
+import { useGameStore } from "@/stores/gameStore";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
 
@@ -83,6 +90,8 @@ export class UIScene extends Phaser.Scene {
   private party?: UiPartySlot;
   /** The gear overlay and the container view (FS-TQZ5J § Change: Phase 3, R50). */
   private gear?: UiGearSlot;
+  /** The run's controls panel (FS-TQZ5J § Change: Phase 3, R50, R56). */
+  private controls?: UiControlsSlot;
   /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
   private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
@@ -186,6 +195,8 @@ export class UIScene extends Phaser.Scene {
       keyboard.on(event, () => {
         if (this.bridge()?.world?.world !== "hub") this.gear?.key(key);
       });
+    // the run's H, on its key event as the run heard it (R56)
+    keyboard.on("keydown-H", () => this.controls?.toggle());
     // the town captured I, B and C while it stood, as its `addKey` did; let go as it leaves (R56)
     const town = [codes.I, codes.B, codes.C];
     let captured = false;
@@ -277,6 +288,15 @@ export class UIScene extends Phaser.Scene {
       isCharacterOpen: () => gear.isCharacterOpen(),
       toggle: (window) => gear.toggle(window),
     });
+    // the run's settlement record, drawn from its data at its anchor (§ Change: Phase 3, R57), and its
+    // controls panel, the UI scene's own (R56)
+    const record = new UiRecordSlot(
+      bridge,
+      (anchor, onClose, onHovered) => new SettlementRecord(this, anchor, onClose, onHovered),
+      () => recordAnchor(viewport),
+    );
+    const controls = new UiControlsSlot(bridge, () => this.controlsPiece());
+    this.controls = controls;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
     this.menu = menu;
@@ -295,6 +315,8 @@ export class UIScene extends Phaser.Scene {
       corner.show(report);
       gear.show(report);
       party.show(report);
+      record.world(report);
+      controls.world(report);
     });
     const stopScreen = bridge.onScreen({
       dialogue: (shown) => dialogue.show(shown),
@@ -302,7 +324,11 @@ export class UIScene extends Phaser.Scene {
       partySeen: (state) => party.seen(state),
       gear: (message) => gear.hear(message),
       container: (message) => gear.hearContainer(message),
-      endPopped: () => gear.endPopped(),
+      record: (shown) => record.show(shown, bridge.world?.world ?? null),
+      endPopped: () => {
+        gear.endPopped();
+        controls.close();
+      },
     });
     relayoutOn(this, () => {
       corner.relayout();
@@ -310,6 +336,8 @@ export class UIScene extends Phaser.Scene {
       dialogue.relayout();
       party.relayout();
       gear.relayout();
+      record.relayout();
+      controls.relayout();
     });
     onSceneEnd(this, () => {
       stop();
@@ -320,7 +348,10 @@ export class UIScene extends Phaser.Scene {
       corner.destroy();
       party.destroy();
       gear.destroy();
+      record.destroy();
+      controls.destroy();
       this.gear = undefined;
+      this.controls = undefined;
       this.menu = undefined;
       this.dialogue = undefined;
       this.corner = undefined;
@@ -347,6 +378,32 @@ export class UIScene extends Phaser.Scene {
     const art = { resolve: (sheet: string, query?: FrameQuery) => this.residentArt().resolve(sheet, query) };
     const frames = mountPartyFrames(this, art, play);
     return { panel, rest: [...popups, frames] };
+  }
+
+  /**
+   * The run's controls panel, drawn as the run drew it at the view's centre, the active character's
+   * ability named, with a ground over its rect at its depth (§ Change: Phase 3, R59, R61); back to the
+   * centre on a new view, its text rasterised again.
+   */
+  private controlsPiece(): ControlsPiece {
+    const className = (useGameStore.getState().getActiveCharacter()?.className || "warrior").toLowerCase();
+    const centre = () => ({ x: viewport.centerX, y: viewport.centerY });
+    const panel = drawControlsPanel(this, centre(), className);
+    const rows = controlRows(className).length;
+    const ground = uiGround(this, CONTROLS_PANEL_DEPTH);
+    let hit = ground(controlsPanelRect(centre(), rows));
+    return {
+      relayout: () => {
+        panel.setPosition(viewport.centerX, viewport.centerY);
+        crispen([panel]);
+        hit.destroy();
+        hit = ground(controlsPanelRect(centre(), rows));
+      },
+      destroy: () => {
+        panel.destroy();
+        hit.destroy();
+      },
+    };
   }
 
   /**

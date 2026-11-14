@@ -41,3 +41,26 @@ export function rowSlotX(
 ): number {
   return centreX + (index - (count - 1) / 2) * (buttonW + gap);
 }
+
+/** The row's bottom margin: the dead spectator's corner button's (`LEAVE_BUTTON_MARGIN`). */
+const ROW_MARGIN = 16;
+/** How far the row stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
+const ROW_LIFT = 200;
+/** The row's buttons' height, the run's `BUTTON_H`. */
+const ROW_BUTTON_H = 38;
+/** The settlement record's bottom edge stands this far over the row's buttons. */
+const RECORD_ROW_GAP = 12;
+
+/** The row's line on the view: its buttons' centre y. */
+export function resolvedRowY(view: { height: number }): number {
+  return view.height - ROW_MARGIN - ROW_LIFT - ROW_BUTTON_H / 2;
+}
+
+/**
+ * The settlement record's place: centred across, its bottom just over the row's buttons (FS-GV8WN
+ * R21), so the SETTLEMENT button that toggles it stays reachable. One rule for the run's row and the UI
+ * scene's record (FS-TQZ5J § Change: Phase 3, R57).
+ */
+export function recordAnchor(view: { centerX: number; height: number }): { x: number; bottom: number } {
+  return { x: view.centerX, bottom: resolvedRowY(view) - ROW_BUTTON_H / 2 - RECORD_ROW_GAP };
+}

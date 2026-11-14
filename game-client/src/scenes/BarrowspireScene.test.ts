@@ -25,11 +25,6 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
   },
 }));
 
-// The shared title drawing, watched: the run's windows title themselves through it (FS-3EBCA R20).
-vi.mock("@/ui/panelFrame", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/ui/panelFrame")>();
-  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
-});
 
 // The shared OPTIONS panel, watched: the run opens it and draws none of its own (FS-28DDG § Change C13).
 vi.mock("@/ui/optionsPanel", async (importOriginal) => {
@@ -125,6 +120,25 @@ const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
 const { NO_UI, worldContainer } = await import("@/ui/uiBridge");
+const { UiRecordSlot } = await import("@/ui/uiSceneRecord");
+const { SettlementRecord } = await import("@/ui/SettlementRecord");
+const { recordAnchor } = await import("@/ui/resolvedRow");
+
+/**
+ * The UI scene's settlement record over the run (FS-TQZ5J § Change: Phase 3, R57), as the UI scene builds
+ * it: drawn from what the run hands through the bridge, a real SettlementRecord at its anchor, on the
+ * run's own stage so a test finds its words and its Close where it found the run's; Close plays
+ * menu_click, then asks the run to close it.
+ */
+function recordOverRun(run: object): void {
+  const { bridge } = uiSceneOn(run, "run", { row: false });
+  const slot = new UiRecordSlot(
+    bridge,
+    (anchor, onClose, onHovered) => new SettlementRecord(run as never, anchor, onClose, onHovered),
+    () => recordAnchor(viewport),
+  );
+  bridge.onScreen({ record: (shown) => slot.show(shown, "run") });
+}
 
 /** A key as both scenes' key objects stand in for it here: pressed since the last frame, or not. */
 interface PressedKey {
@@ -867,8 +881,9 @@ function sceneOnStage() {
   const texts = () =>
     stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string } }));
   // the UI scene up over the run, as the run's report brings it up: its notices drawn on the run's
-  // stage, on the run's clock and tweens (FS-TQZ5J A2 R33)
+  // stage, on the run's clock and tweens (FS-TQZ5J A2 R33), and its settlement record (§ Change: Phase 3, R57)
   uiSceneOn(run, "run", { row: false });
+  recordOverRun(run);
   return { run, stage, lights, gates, painted, grounds, texts, cursor };
 }
 
@@ -3820,7 +3835,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   /** What the scene holds for a settled player's record and the run's end. */
   interface Settling {
     resultHold: import("@/components/resultHold").ResultHold;
-    settlementRecord?: unknown;
+    record?: unknown;
     showSettlement(payload: SettlementPayload): void;
     endRun(): void;
     leaveRefused(): void;
@@ -3859,9 +3874,28 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     const { run } = settlingOnStage();
     (run as unknown as { sessionID?: string }).sessionID = "run-2";
     run.showSettlement(settlement({ run_id: "run-1" }));
-    expect(run.settlementRecord).toBeUndefined();
+    expect(run.record).toBeUndefined();
     run.showSettlement(settlement({ run_id: "run-2" }));
-    expect(run.settlementRecord).toBeDefined();
+    expect(run.record).toBeDefined();
+  });
+
+  // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-15, R52, R57): the UI scene draws the record; the run hands it
+  // its view and open state through the bridge, and answers its Close
+  it("should hand the UI scene its record as data, up on the first and down on its Close's request", () => {
+    const { run } = settlingOnStage();
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const told: { view: { status: { text: string } }; open: boolean }[] = [];
+    bridge.onScreen({ record: (shown) => void (shown && told.push(shown as never)) });
+
+    run.showSettlement(settlement());
+    run.showSettlement(settlement({ status: "confirmed" }));
+    bridge.request({ kind: "close", window: "record" });
+
+    expect(told.map((t) => [t.view.status.text, t.open])).toEqual([
+      ["Settling…", true],
+      ["Settled", true],
+      ["Settled", false],
+    ]);
   });
 
   it("should open the record at once on settlement, with what was carried, lost and earned", () => {
@@ -4114,7 +4148,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     run.resultHold.release();
     expect(apply).not.toHaveBeenCalled();
     expect(run.resultHold.hold(hub, vi.fn())).toBe(false);
-    expect(run.settlementRecord).toBeUndefined();
+    expect(run.record).toBeUndefined();
   });
 });
 
@@ -4514,11 +4548,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     menu?: unknown;
     fallPending: boolean;
     leavePending: boolean;
-    controlsPanel?: unknown;
     bindRunInput(): void;
     sendMovementIntent(vx: number, vy: number): void;
     canSendMove(): boolean;
-    toggleControlsPanel(): void;
     fallRefused(info: { message?: string }): void;
     endRun(): void;
     resetRun(end: "shutdown" | "destroy"): void;
@@ -4632,20 +4664,6 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(menuOver(run)).toBeUndefined();
   });
 
-  // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"
-  // (FS-3EBCA R20, R22). I-3EBCA-9.
-  it("should title the controls panel CONTROLS with the shared title drawing, across its top", async () => {
-    const { drawPanelTitle } = await import("@/ui/panelFrame");
-    const title = vi.mocked(drawPanelTitle);
-    title.mockClear();
-    const { run } = menuOnStage();
-    run.toggleControlsPanel();
-    expect(title).toHaveBeenCalledTimes(1);
-    const [, panel, words] = title.mock.calls[0];
-    expect(words).toBe("CONTROLS");
-    expect(panel.width).toBe(260);
-    expect(panel.x).toBe(-130);
-  });
 
   // FS-3EBCA R23 (owner 2026-11-12: "menu目前沒標題也加上"): the run's menu reads MENU.
   it("should title the run's menu and its Fall confirm MENU", () => {
@@ -4656,12 +4674,6 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(labels().filter((l) => l === "MENU")).toHaveLength(1);
   });
 
-  it("should list ESC as the menu in the controls panel", () => {
-    const { run, labels } = menuOnStage();
-    run.toggleControlsPanel();
-    expect(labels()).toContain("ESC");
-    expect(labels()).toContain("Menu");
-  });
 
   it("should swap the rows for the confirm on Fall where you stand, and send nothing until Fall", () => {
     const { keys, press, option, labels, sent } = menuOnStage();
@@ -4780,24 +4792,19 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(sentOf(ActionType.Move)).toHaveLength(0);
   });
 
-  // I, B, C, Q and F are the UI scene's since the gear and the satchel moved, refused there under its
-  // menu (FS-TQZ5J § Change: Phase 3, R56; uiSceneGear.test.ts): the run binds none of them
-  it("should drop E and H while the menu is open, and answer them again once it closes; bind no I, Q or F", () => {
+  // I, B, C, Q, F and H are the UI scene's since the gear, the satchel and the controls panel moved,
+  // refused there under its menu (FS-TQZ5J § Change: Phase 3, R56; uiSceneGear.test.ts,
+  // uiSceneRecord.test.ts): the run binds none of them
+  it("should drop E while the menu is open; bind no I, B, C, Q, F or H", () => {
     const s = menuOnStage();
     s.run.bindRunInput();
     const containerView = (s.run as unknown as { containerView: { close: ReturnType<typeof vi.fn> } }).containerView;
     s.press(s.keys.esc);
 
-    s.keyHandlers["keydown-H"]();
     s.keyHandlers["keydown-E"]();
-    expect(["keydown-I", "keydown-B", "keydown-C", "keydown-Q", "keydown-F"].filter((k) => k in s.keyHandlers)).toEqual([]);
-    expect(s.run.controlsPanel).toBeUndefined();
+    expect(["keydown-I", "keydown-B", "keydown-C", "keydown-Q", "keydown-F", "keydown-H"].filter((k) => k in s.keyHandlers)).toEqual([]);
     expect(containerView.close).not.toHaveBeenCalled();
     expect(s.sent).not.toHaveBeenCalled();
-
-    s.pick("back");
-    s.keyHandlers["keydown-H"]();
-    expect(s.run.controlsPanel).toBeDefined();
   });
 
   it("should drop pointer attacks and skills while the menu is open", () => {
@@ -5083,11 +5090,11 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       ]);
     });
 
-    it("should drop E and H while the panel is open (I, Q and F the UI scene's, FS-TQZ5J § Change: Phase 3, R56)", () => {
+    it("should drop E while the panel is open (I, Q, F and H the UI scene's, FS-TQZ5J § Change: Phase 3, R56)", () => {
       const s = inThePanel();
       s.run.bindRunInput();
-      for (const k of ["keydown-H", "keydown-E"]) s.keyHandlers[k]();
-      expect(s.run.controlsPanel).toBeUndefined();
+      s.keyHandlers["keydown-E"]();
+      expect("keydown-H" in s.keyHandlers).toBe(false);
       expect(s.sent).not.toHaveBeenCalled();
     });
 
@@ -5137,7 +5144,6 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
   interface Drinking {
     menu?: unknown;
     bindRunInput(): void;
-    toggleControlsPanel(): void;
   }
 
   const potion = { item_id: "p1", entity_id: "pe1", name: "Lesser Heal Potion", quantity: 1, item_type: "consumable", healing_amount: 25 };
@@ -5239,22 +5245,14 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     expect(drinks()).toHaveLength(0);
   });
 
-  it("should list the drink in the controls panel, its key read from the mapping", () => {
-    const { run, labels } = drinkOnStage();
-    run.toggleControlsPanel();
-    expect(labels()).toContain(RUN_ACTIONS.drinkPotion.label);
-    expect(labels()).toContain("Drink potion");
-  });
 });
 
 describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20–22)", () => {
   interface Overlaid {
     menu?: unknown;
-    controlsPanel?: unknown;
     combat: { aiming: boolean };
     containerView: ReturnType<typeof worldContainer>;
     bindRunInput(): void;
-    toggleControlsPanel(): void;
     handleGameStateUpdate(state: GameState): void;
     sendMovementIntent(vx: number, vy: number): void;
   }
@@ -5454,16 +5452,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
   });
 
-  it("should list I / B for the inventory and C for the character panel in the controls help (R11; § Change C15)", () => {
-    const { run, shown } = overlayOnStage();
-    run.toggleControlsPanel();
-    expect(shown("I / B")).toBe(true);
-    expect(shown("Inventory")).toBe(true);
-    expect(shown("C")).toBe(true);
-    expect(shown("Character")).toBe(true);
-    expect(shown("Gear and bag")).toBe(false);
-    expect(shown("I")).toBe(false);
-  });
 
   // FS-HRH2J § Change: Character and inventory apart (C1–C4, C14). I-3EBCA-4.
   it("should open the inventory alone on I and the character panel alone on C (§ Change C1, C2, C14)", () => {
