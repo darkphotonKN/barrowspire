@@ -1055,3 +1055,5 @@ F7. **Docs.** The design guideline's map section and `game-client/CONTEXT.md`'s 
 
 The overlay and no-map places; the map's sizes, modes or look; the name's words; the readout's
 words; the target frame, the notices and the queue line; any server change.
+
+## Change: The XP bar along the bottom → FS-77DVN

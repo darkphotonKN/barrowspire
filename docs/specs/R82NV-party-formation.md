@@ -427,3 +427,5 @@ C9. **It closes the letter panel as it opens, and the letter panel and the menu 
 - Dragging or remembering the panel's place.
 - Moving the invite prompts or the ready check themselves.
 - Any change to what the panel holds or to the party protocol.
+
+## Change: The XP bar along the bottom → FS-77DVN

@@ -359,3 +359,5 @@ changes.
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
 
 ## Change: Panel shortcut icons on the HUD → FS-3EBCA
+
+## Change: The XP bar along the bottom → FS-77DVN
