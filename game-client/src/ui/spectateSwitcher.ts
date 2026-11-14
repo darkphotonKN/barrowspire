@@ -54,6 +54,9 @@ export class SpectateSwitcher {
   private readonly at: Rect;
 
   constructor(scene: Phaser.Scene, spec: SwitcherSpec) {
+    // made before the words: at one depth Phaser renders in the order made (DisplayList.depthSort is a stable
+    // sort), so a backing made after them covered them
+    const g = scene.add.graphics().setScrollFactor(0).setDepth(SWITCHER_DEPTH);
     const label = scene.add
       .text(0, 0, watchingWords(spec.name), {
         fontFamily: CANVAS_FONT.body,
@@ -64,7 +67,6 @@ export class SpectateSwitcher {
       .setScrollFactor(0);
     const r = spec.place(label.width);
     this.at = r;
-    const g = scene.add.graphics().setScrollFactor(0).setDepth(SWITCHER_DEPTH);
     g.fillStyle(palette.hudPanel, 1);
     g.fillRoundedRect(r.x, r.y, r.width, r.height, BACKING_RADIUS);
     // the words over the backing, made after it at the same depth

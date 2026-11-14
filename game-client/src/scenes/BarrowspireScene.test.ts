@@ -5146,6 +5146,23 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       expect(env.run.watchedPlayerId).toBe("brom");
     });
 
+    it("should draw the watched name over everything else the switcher draws (the owner, 「箭頭中間沒看到觀看者的名字」)", () => {
+      const env = watching(ally(), brom());
+      const from = env.stage.made.length;
+      env.release("watch-next");
+      const drawn = env.stage.made.slice(from).filter((m) => !m.destroyed);
+      // the order Phaser renders them in: DisplayList.depthSort, a stable sort by depth, ties in the order made
+      const order = drawn
+        .map((m, i) => ({ m, i, depth: (m as { depth?: number }).depth ?? 0 }))
+        .sort((a, b) => a.depth - b.depth || a.i - b.i)
+        .map(({ m }) => m);
+      const name = order.findIndex((m) => m.kind === "text" && String(m.args[2]) === "Watching Brom");
+      expect(name).toBeGreaterThanOrEqual(0);
+      const paints = order.flatMap((m, i) => (m.kind === "graphics" ? [i] : []));
+      expect(paints.length).toBeGreaterThan(0);
+      for (const at of paints) expect(at).toBeLessThan(name);
+    });
+
     it("should keep no cursor of their own on the arrows: the bone hand stays", () => {
       const env = watching(ally(), brom());
       for (const name of ["watch-next", "watch-previous"])
