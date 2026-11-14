@@ -14,6 +14,10 @@ over every world is already how the disconnect notice works).
 Amended by: [ADR-0082](0082-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
 — Decision 2 ("socket messages stay the world's": world-play messages do; a moved piece's own
 commands, reading only app state, go from the piece)
+Amended by: [ADR-0083](0083-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md)
+— Decision 5 (what moves: each piece decided by ADR-0083's rules, some of the run's pieces staying
+in the world) and the "Depth inversion" consequence (a world piece meeting a UI piece is moved into
+the UI scene or the world avoids the overlap)
 
 ## Context
 
