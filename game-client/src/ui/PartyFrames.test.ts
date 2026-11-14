@@ -8,7 +8,7 @@ import {
 } from "@/stores/partyStore";
 import type { FrameQuery } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
-import { PartyFrames, type PartyFramesDeps } from "./PartyFrames";
+import { PARTY_FRAMES_DEPTH, PartyFrames, type PartyFramesDeps } from "./PartyFrames";
 import {
   PARTY_FRAMES_PLACEMENT,
   partyFramesFrame,
@@ -33,14 +33,16 @@ interface FakeText {
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  /** Every depth anything was set at (FS-TQZ5J § Change: Phase 3, R62). */
+  const depths: number[] = [];
   const allGraphics: { fills: number[]; destroyed: boolean }[] = [];
   const graphics = () => {
     const g = { fills: [] as number[], destroyed: false };
     allGraphics.push(g);
     const self: Record<string, unknown> = {};
+    self.setDepth = (d: number) => (depths.push(d), self);
     for (const m of [
       "setScrollFactor",
-      "setDepth",
       "lineStyle",
       "fillRect",
       "strokeRect",
@@ -72,7 +74,7 @@ function fakeScene() {
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
-      setDepth: () => self,
+      setDepth: (d: number) => (depths.push(d), self),
       setOrigin: () => self,
       setAlpha: () => self,
       setX: (nx: number) => ((t.x = nx), self),
@@ -135,6 +137,7 @@ function fakeScene() {
     texts.find((t) => !t.destroyed && t.content === content);
   return {
     scene,
+    depths,
     live,
     colourOf,
     liveFills,
@@ -224,6 +227,18 @@ function setup(world: WorldType = "hub", clock = { now: 0 }) {
     deps,
   };
 }
+
+// FS-TQZ5J § Change: Phase 3 (I-TQZ5J-16, R62): the frames are the lowest UI (the owner's
+// 「任何ui都優先隊友列表」): under the corner row, the prompts and the notice line (1000) and every window.
+describe("PartyFrames' depth, the lowest of the UI scene (FS-TQZ5J § Change: Phase 3, R62)", () => {
+  it("draws every part of every frame, Travel's included, at 999, under the HUD's 1000", () => {
+    const { store, depths } = setup();
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren", "archer", "field")]));
+    expect(depths.length).toBeGreaterThan(0);
+    expect(new Set(depths)).toEqual(new Set([PARTY_FRAMES_DEPTH]));
+    expect(PARTY_FRAMES_DEPTH).toBe(999);
+  });
+});
 
 describe("PartyFrames", () => {
   it("draws nothing with no party", () => {
