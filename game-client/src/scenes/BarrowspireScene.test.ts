@@ -157,7 +157,7 @@ function menuUpOver(run: object, open = true): void {
 const { BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
-const { createPartyStore } = await import("@/stores/partyStore");
+const { createPartyStore, usePartyStore } = await import("@/stores/partyStore");
 const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
@@ -1165,7 +1165,11 @@ function partyState(
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): void }) {
+function partyPanelOn(
+  refused: () => boolean,
+  wrapper?: { act(run: () => void): void },
+  store: ConstructorParameters<typeof PartyPanel>[1]["store"] = createPartyStore({ selfId: () => "me" }),
+) {
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -1174,7 +1178,7 @@ function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): 
     events: new EventEmitter(),
   } as unknown as ConstructorParameters<typeof PartyPanel>[0];
   const panel = new PartyPanel(scene, {
-    store: createPartyStore({ selfId: () => "me" }),
+    store,
     world: () => null,
     selfId: () => "me",
     commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
@@ -4334,6 +4338,91 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
       press("leave-the-barrow");
       expect(heard()).toEqual(["menu_error"]);
       expect(sent.mock.calls.filter(([a]) => a === ActionType.LeaveRun)).toHaveLength(1);
+    });
+  });
+
+  // the owner, 2026-11-14 (「Auto-close the party panel when the card appears」): the panel draws over the
+  // end's pieces now, so the end's first popup shuts it, silently (FS-WDM0X S4)
+  describe("the run's end closes the party panel (FS-TQZ5J § Change: Phase 2, Amendment B1, R47)", () => {
+    /** The run's end on stage with the UI scene's party panel over it, on the app's party store, open. */
+    function endWithPanel() {
+      const env = endOnStage();
+      const party = partyPanelOver(env.run, "run", (w) => partyPanelOn(w.blocked, w.wrapper, usePartyStore));
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      env.heard();
+      return { ...env, party };
+    }
+
+    afterEach(() => usePartyStore.setState({ panelOpen: false }));
+
+    it.each([
+      ["a solo death", dead, "died"],
+      ["a solo escape", escaped, "escaped"],
+    ] as const)("should close it as the record opens on %s, with the end's dialog_open alone", (_case, fields, outcome) => {
+      const { run, heard, tick, party } = endWithPanel();
+      tick(me(fields));
+      run.showSettlement(settlement({ outcome }));
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should close it as the card appears for a death with a teammate in play, the record after it closing nothing", () => {
+      const { run, heard, tick, party } = endWithPanel();
+      tick(me({}), ally());
+      tick(me(dead), ally());
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+
+      // reopened between the card and the record: the end popped up once
+      party.pressT();
+      expect(heard()).toEqual(["party_open"]);
+      run.showSettlement(settlement());
+      expect(party.panel.isOpen()).toBe(true);
+      expect(heard()).toEqual([]);
+    });
+
+    it("should close it as the record comes first for a death with a teammate in play", () => {
+      const { run, heard, tick, party } = endWithPanel();
+      tick(me({}), ally());
+      run.showSettlement(settlement());
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should let T reopen it while the run goes on, a copy, a resize and SETTLEMENT leaving it open", () => {
+      const { run, heard, tick, party, press, resize } = endWithPanel();
+      tick(me(escaped), ally());
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      heard();
+
+      run.showSettlement(settlement({ outcome: "escaped", status: "confirmed" }));
+      resize();
+      press("close-the-record");
+      press("settlement");
+      expect(party.panel.isOpen()).toBe(true);
+      expect(heard()).toEqual(["menu_click", "dialog_open"]);
+    });
+
+    it("should refuse T after the run ends, as before", () => {
+      const { run, tick, party } = endWithPanel();
+      tick(me(dead));
+      run.showSettlement(settlement());
+      run.endRun();
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(false);
+    });
+
+    it("should change nothing as the end pops up with the panel shut", () => {
+      const { run, heard, tick, party } = endWithPanel();
+      party.pressT();
+      heard();
+      tick(me(dead));
+      run.showSettlement(settlement());
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
     });
   });
 });
