@@ -148,7 +148,7 @@ export class UIScene extends Phaser.Scene {
     this.menu?.sync();
     // another window opened since the last frame closes the run's controls panel, before this frame
     // draws, outside any action, so only the opened window's sound plays (FS-84N1G R16)
-    this.controls?.sync(this.openWindows());
+    this.controls?.sync();
     this.pointer?.frame();
   }
 
@@ -343,7 +343,7 @@ export class UIScene extends Phaser.Scene {
       (anchor, onClose, onHovered) => new SettlementRecord(this, anchor, onClose, onHovered),
       () => recordAnchor(viewport),
     );
-    const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose));
+    const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose), () => this.openWindows());
     this.controls = controls;
     this.record = record;
     // the controls badge over the run's ability card, toggling the panel as H does (FS-84N1G R4, R8)

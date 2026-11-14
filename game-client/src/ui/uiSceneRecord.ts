@@ -118,17 +118,34 @@ export interface ControlsPiece {
 /** Builds the controls panel, its × handed in (FS-84N1G R14). */
 export type ControlsBuilder = (onClose: () => void) => ControlsPiece;
 
-/** The UI's windows other than the controls panel, each open or not, by name (FS-84N1G R16). */
-export type OpenWindows = Readonly<Record<string, boolean>>;
+/** The UI's windows other than the controls panel (FS-84N1G R16): a window left out of `OpenWindows` fails to compile. */
+export type UiWindow = "menu" | "inventory" | "character" | "stash" | "container" | "party" | "record" | "letter";
+
+/** Each of the UI's windows other than the controls panel, open or not (FS-84N1G R16). */
+export type OpenWindows = Readonly<Record<UiWindow, boolean>>;
+
+/** Every window shut. */
+export const NO_WINDOWS: OpenWindows = {
+  menu: false,
+  inventory: false,
+  character: false,
+  stash: false,
+  container: false,
+  party: false,
+  record: false,
+  letter: false,
+};
 
 export class UiControlsSlot {
   private panel: ControlsPiece | null = null;
-  /** The windows as last handed (`sync`). */
-  private seen: OpenWindows = {};
+  /** The windows as last read: at the last `sync`, or as the panel opened. None read yet, none was open. */
+  private seen: OpenWindows = NO_WINDOWS;
 
   constructor(
     private readonly bridge: Pick<UiBridge, "world" | "ui" | "act" | "play">,
     private readonly build: ControlsBuilder,
+    /** Which windows are open now, the UI scene's to say. */
+    private readonly windows: () => OpenWindows,
   ) {}
 
   /** Heard each world report, and none as the world leaves: it stands in the run alone, and goes with it. */
@@ -179,12 +196,14 @@ export class UiControlsSlot {
   }
 
   /**
-   * Which windows are open now, handed once a frame by the UI scene (FS-84N1G R16): one shut at the last
-   * hand and open now closes the panel, silently, so only its own opening sounds. A window open as the
-   * panel opened does not close it.
+   * Once a frame, from the UI scene's update (FS-84N1G R16): a window shut at the last read and open now
+   * closes the panel, silently, so only its own opening sounds. A window open as the panel opened does
+   * not close it: the panel reads them as it opens, so one the world opened in its own update, which
+   * the UI scene (stepped first) sees a frame late, is not taken for one opened after an H.
    */
-  sync(open: OpenWindows): void {
-    const opened = Object.keys(open).some((window) => open[window] && !this.seen[window]);
+  sync(): void {
+    const open = this.windows();
+    const opened = (Object.keys(open) as UiWindow[]).some((window) => open[window] && !this.seen[window]);
     this.seen = open;
     if (opened) this.close();
   }
@@ -210,6 +229,7 @@ export class UiControlsSlot {
   }
 
   private open(): void {
+    this.seen = this.windows();
     this.panel ??= this.build(() => this.dismiss());
   }
 }

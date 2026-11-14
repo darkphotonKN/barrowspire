@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { recordAnchor, resolvedRowY } from "./resolvedRow";
 import { GameUiBridge, NO_FACTS, type UiRequest, type World, type WorldFacts, type WorldReport } from "./uiBridge";
-import { UiControlsSlot, UiRecordSlot, type ControlsPiece, type OpenWindows, type RecordPiece } from "./uiSceneRecord";
+import { UiControlsSlot, UiRecordSlot, NO_WINDOWS, type ControlsPiece, type OpenWindows, type RecordPiece } from "./uiSceneRecord";
 import type { RecordView } from "./settlement";
 
 // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-15): the run's settlement record is drawn by the UI scene from the
@@ -20,18 +20,6 @@ function aWorld(world: World) {
   };
   return { report, facts, asked };
 }
-
-/** Every window the slot hears of, shut. */
-const SHUT: OpenWindows = {
-  menu: false,
-  inventory: false,
-  character: false,
-  stash: false,
-  container: false,
-  party: false,
-  record: false,
-  letter: false,
-};
 
 const view = (status: string) => ({ status: { text: status, tone: "neutral" } }) as unknown as RecordView;
 
@@ -152,7 +140,7 @@ describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3,
         panels.push(p);
         return { relayout: () => void p.relayouts++, destroy: () => void (p.destroyed = true), rect: () => ({ x: 410, y: 192, width: 260, height: 336 }) };
       },
-      () => SHUT,
+      () => NO_WINDOWS,
     );
     const w = aWorld(world);
     bridge.report(w.report);
@@ -249,7 +237,7 @@ describe("the controls panel's close rules (FS-84N1G R16, R18)", () => {
     const played: string[] = [];
     bridge.lendSounds({ act: (run) => run(), play: (effect) => void played.push(effect) });
     // the windows as the UI scene reads them, each time the slot asks
-    const windows: { now: OpenWindows } = { now: SHUT };
+    const windows: { now: OpenWindows } = { now: NO_WINDOWS };
     const slot = new UiControlsSlot(
       bridge,
       (): ControlsPiece => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }),
@@ -258,7 +246,7 @@ describe("the controls panel's close rules (FS-84N1G R16, R18)", () => {
     const w = aWorld("run");
     bridge.report(w.report);
     slot.world(w.report);
-    const open = (...names: (keyof OpenWindows)[]) => (windows.now = { ...SHUT, ...Object.fromEntries(names.map((n) => [n, true])) });
+    const open = (...names: (keyof OpenWindows)[]) => (windows.now = { ...NO_WINDOWS, ...Object.fromEntries(names.map((n) => [n, true])) });
     return { bridge, slot, played, w, open };
   }
 

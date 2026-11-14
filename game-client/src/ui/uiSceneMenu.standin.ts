@@ -13,7 +13,7 @@ import { UiMenuSlot, type SlotPanel } from "./uiSceneMenu";
 import { UiNoticeLayer, drawNotice, type NoticeStage } from "./uiSceneNotices";
 import { UiPartySlot, partyPanelWiring, type PartyPanelPiece, type PartyPanelWiring } from "./uiSceneParty";
 import { UiGearSlot, type GearKey, type GearPiece, type GearPieces, type GearWiring } from "./uiSceneGear";
-import { UiControlsSlot } from "./uiSceneRecord";
+import { NO_WINDOWS, UiControlsSlot } from "./uiSceneRecord";
 
 /** A world scene as the UI scene's tests reach it: its game's registry, its end, its UI and what it reports. */
 interface WorldUnderTest {
@@ -167,7 +167,11 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     panel: partyMakers.get(scene)?.(partyPanelWiring(bridge)) ?? NO_PANEL,
   }));
   const gear = new UiGearSlot(bridge, (w, wiring) => gearMakers.get(scene)?.(w, wiring) ?? { gear: NO_GEAR });
-  const controls = new UiControlsSlot(bridge, () => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }));
+  const controls = new UiControlsSlot(
+    bridge,
+    () => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }),
+    () => NO_WINDOWS,
+  );
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
   const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));
   // as the UI scene's: the run's end clears the gear, the container view and the controls panel (R58)
