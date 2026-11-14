@@ -88,17 +88,18 @@ export interface PartyPanelDeps {
 }
 
 /**
- * What the world and the UI scene wire the panel with (FS-TQZ5J § Change: Phase 2: the party, R38,
- * R39): its refusal, what gives way as it opens, its own inputs' wrapper, its buttons' sounds. The
- * UI scene's `partyPanelWiring` is one.
+ * The slice of `PartyPanelDeps` the UI scene wires (FS-TQZ5J § Change: Phase 2: the party, R38,
+ * R39): its refusal, what gives way as it opens, its own inputs' wrapper, its buttons' sounds, each
+ * as optional as the panel takes it. The UI scene's own type for them, `PartyPanelWiring` in
+ * `uiSceneParty`, has all four and fits here; its `partyPanelWiring` builds one.
  */
-export type PartyPanelWiring = Pick<PartyPanelDeps, "blocked" | "opening" | "wrapper" | "play">;
+export type PartyPanelWiringDeps = Pick<PartyPanelDeps, "blocked" | "opening" | "wrapper" | "play">;
 
 /**
  * The panel as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party,
  * the real socket and DOM field, its ground under its buttons, wired by `wiring`.
  */
-export function mountPartyPanel(scene: Phaser.Scene, wiring: PartyPanelWiring): PartyPanel {
+export function mountPartyPanel(scene: Phaser.Scene, wiring: PartyPanelWiringDeps): PartyPanel {
   const { blocked, opening, wrapper, play } = wiring;
   return new PartyPanel(scene, {
     store: usePartyStore,
