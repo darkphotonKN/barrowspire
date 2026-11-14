@@ -1413,6 +1413,18 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     expect(played).toEqual([]);
   });
 
+  // FS-84N1G R4, R8: the controls badge stands as the run says its ability card is up, and goes at the end
+  it("should stand the controls badge while the run's ability card is up, and take it down as the run ends", () => {
+    const { scene } = created();
+    const bridge = (scene as unknown as { bridge(): { abilityCard(up: boolean): void; changed(): void } }).bridge();
+    const badge = () => (scene as unknown as { badge: { isUp(): boolean } }).badge;
+    expect(badge().isUp()).toBe(false);
+    bridge.abilityCard(true);
+    expect(badge().isUp()).toBe(true);
+    bridge.abilityCard(false);
+    expect(badge().isUp()).toBe(false);
+  });
+
   it("should leave it open over the inventory it opened over", () => {
     const { scene, keyboard, controls } = created();
     keyboard.emit("keydown-I");

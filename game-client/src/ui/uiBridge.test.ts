@@ -50,6 +50,7 @@ function recording(): UiBridge & { heard: string[] } {
     record: (shown) => void heard.push(`record ${shown ? "shown" : "none"}`),
     endPopped: () => void heard.push("endPopped"),
     runBegun: () => void heard.push("runBegun"),
+    abilityCard: () => void heard.push("abilityCard"),
     onScreen: () => () => {},
   };
 }
@@ -631,6 +632,18 @@ describe("the gear's, the container's and the record's data, told to the UI scen
     ui.runBegun();
     expect(told).toEqual(["runBegun"]);
     expect(() => NO_UI.runBegun()).not.toThrow();
+  });
+
+  // FS-84N1G R4: the run's ability card up or not, plain data, for the controls badge
+  it("should tell each screen listener whether the run's ability card is up, and a world lent no bridge nothing", () => {
+    const bridge = new GameUiBridge();
+    const told: boolean[] = [];
+    bridge.onScreen({ abilityCard: (up) => void told.push(up) });
+    const ui = reportWorld({ registry: registryWith(bridge), events: new EventEmitter() }, "run", side());
+    ui.abilityCard(true);
+    ui.abilityCard(false);
+    expect(told).toEqual([true, false]);
+    expect(() => NO_UI.abilityCard(true)).not.toThrow();
   });
 
   it("should hand a world lent no bridge calls that draw nothing", () => {

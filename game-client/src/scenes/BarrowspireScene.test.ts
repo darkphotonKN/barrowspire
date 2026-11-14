@@ -2388,6 +2388,28 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(true);
   });
 
+  // FS-84N1G R4: the run tells the UI scene whether its card is up, for the controls badge, on each change
+  it("should tell the UI scene its card is up, and down at a death, once each change", () => {
+    const { run } = cardOnStage();
+    const told: boolean[] = [];
+    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityCard: (up: boolean) => void told.push(up) };
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    expect(told).toEqual([true, false]);
+  });
+
+  it("should tell the next start's card afresh after a restart", () => {
+    const { run, carded } = cardOnStage();
+    const told: boolean[] = [];
+    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityCard: (up: boolean) => void told.push(up) };
+    run.handleGameStateUpdate(withMe(me()));
+    carded.resetRun("shutdown");
+    run.handleGameStateUpdate(withMe(me()));
+    expect(told).toEqual([true, true]);
+  });
+
   it("should never be up with the leave button", () => {
     const { run, carded, text } = cardOnStage();
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
