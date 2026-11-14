@@ -164,6 +164,7 @@ function setup(
     world?: WorldType;
     active?: FocusedElement | null;
     blocked?: boolean;
+    covered?: boolean;
     commands?: PartyPanelDeps["commands"];
     opening?: () => void;
     wrapper?: PartyPanelDeps["wrapper"];
@@ -178,6 +179,7 @@ function setup(
     world: (opts.world ?? "hub") as WorldType,
     active: opts.active ?? null,
     blocked: opts.blocked ?? false,
+    covered: opts.covered ?? false,
   };
   const commands = opts.commands ?? {
     create: vi.fn(),
@@ -197,6 +199,7 @@ function setup(
     },
     activeElement: () => state.active,
     blocked: () => state.blocked,
+    covered: () => state.covered,
     opening: opts.opening,
     wrapper: opts.wrapper,
     ground: opts.ground,
@@ -487,6 +490,35 @@ describe("PartyPanel (FS-R82NV R29: the invite field)", () => {
     env.state.blocked = true;
     env.frame();
     expect(env.field.shown).toBe(false);
+  });
+
+  // the integrator's call on phase 3's review (FS-TQZ5J § Change: Phase 3): the DOM field draws above the
+  // canvas, so it hides while a UI piece drawn over the panel covers it (the run's controls panel), the
+  // DOM field's hide blurring it, and shows again uncovered, its typed text kept and focus not taken
+  it("should hide the field while a piece over the panel covers it, and show it again uncovered, its text kept", () => {
+    const env = setup({ world: "run" });
+    env.pressT();
+    env.frame();
+    env.handle.value = "Osr";
+    expect(env.field.shown).toBe(true);
+
+    env.state.covered = true;
+    env.frame();
+    expect(env.field.shown).toBe(false);
+    expect(env.panel.isOpen()).toBe(true);
+
+    env.state.covered = false;
+    env.frame();
+    expect(env.field.shown).toBe(true);
+    expect(env.handle.value).toBe("Osr");
+  });
+
+  it("should take T as before while the field is covered", () => {
+    const env = setup({ covered: true });
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(true);
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(false);
   });
 
   it("should take its own field down on destroy and stop hearing T", () => {

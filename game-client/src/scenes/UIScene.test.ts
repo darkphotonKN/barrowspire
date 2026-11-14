@@ -48,6 +48,7 @@ const partyMounts = vi.hoisted(
       destroyed: boolean;
       keeps: boolean;
       play?: (effect: string) => void;
+      covered?: () => boolean;
     }[],
 );
 vi.mock("@/ui/PartyPanel", () => ({
@@ -58,14 +59,16 @@ vi.mock("@/ui/PartyPanel", () => ({
       opening,
       wrapper,
       play,
+      covered,
     }: {
       blocked: () => boolean;
       opening?: () => void;
       wrapper?: { act(run: () => void): void };
       play?: (effect: string) => void;
+      covered?: () => boolean;
     },
   ) => {
-    const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false, play };
+    const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false, play, covered };
     partyMounts.push(panel);
     return {
       isOpen: () => panel.open,
@@ -1191,10 +1194,20 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
     lendUiBridge(registry, bridge);
     const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    // its keyboard, for the run's H (§ Change: Phase 3, R56)
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
     const scene = Object.assign(new UIScene(), {
       registry,
       events: new EventEmitter(),
       add: any,
+      input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
+      cameras: { cameras: [] },
+      game: {},
       cache: { audio: { exists: () => false } },
       sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
     });
@@ -1209,7 +1222,7 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
         layout: () => ({ chatTop }),
         answer: () => {},
       });
-    return { bridge, report, blockers };
+    return { bridge, report, blockers, keyboard };
   }
   const since = (n: number) => popupMounts.slice(n);
 
@@ -1278,6 +1291,21 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     frameMounts.at(-1)!.play?.("menu_hover");
 
     expect(heard).toEqual(["menu_click", "notify_important", "dialog_open", "menu_hover"]);
+  });
+
+  // the integrator's call on phase 3's review: the invite field is a DOM element above the canvas, so with
+  // the run's controls panel (1200) open over the party panel (1110) its placeholder showed through; the
+  // panel hears that its field is covered while the controls panel is open, and uncovered as it closes
+  it("should tell the party panel its invite field is covered while the run's controls panel is open, and not after", () => {
+    const { report, keyboard } = created();
+    report("run");
+    const panel = partyMounts.at(-1)!;
+
+    expect(panel.covered?.()).toBe(false);
+    keyboard.emit("keydown-H");
+    expect(panel.covered?.()).toBe(true);
+    keyboard.emit("keydown-H");
+    expect(panel.covered?.()).toBe(false);
   });
 
   it("should refuse the panel as the world's report or the menu says", () => {
