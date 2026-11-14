@@ -33,7 +33,8 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { maskedBust, type MaskedBust, type Portrait } from "./bustPortrait";
 import { socketManager } from "@/utils/class/SocketManager";
 import { partyCommands } from "./partyCommands";
-import { drawHudButton, drawLeaderMark } from "./PartyPanel";
+import { drawHudButton, drawLeaderMark, hudButtonSounds } from "./PartyPanel";
+import type { UiEffect } from "@/audio/uiSounds";
 import {
   PARTY_FRAMES_PLACEMENT,
   PARTY_LEADER_MARK_W,
@@ -68,6 +69,11 @@ export interface PartyFramesDeps {
   ) => MaskedBust | undefined;
   /** Sends `party_travel` (R28): pressed on the leader's frame. */
   travel: () => void;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P5–P7): Travel's hover, press and
+   * greyed press. None, and Travel plays nothing; greyed, it takes no press.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /**
@@ -77,6 +83,7 @@ export interface PartyFramesDeps {
 export function mountPartyFrames(
   scene: Phaser.Scene,
   art: Pick<ArtLibrary, "resolve">,
+  play?: (effect: UiEffect) => void,
 ): PartyFrames {
   return new PartyFrames(scene, {
     store: usePartyStore,
@@ -84,6 +91,7 @@ export function mountPartyFrames(
     world: () => useGameStore.getState().worldType,
     art,
     travel: partyCommands(socketManager).travel,
+    play,
   });
 }
 
@@ -329,6 +337,8 @@ export class PartyFrames {
         TRAVEL_LABEL,
         this.travel === "live",
         () => this.deps.travel(),
+        HUD_DEPTH,
+        this.deps.play ? hudButtonSounds(this.deps.play) : {},
       ),
     );
   }

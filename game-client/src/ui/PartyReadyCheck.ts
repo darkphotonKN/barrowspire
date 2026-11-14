@@ -17,6 +17,7 @@
  */
 
 import type Phaser from "phaser";
+import type { UiEffect } from "@/audio/uiSounds";
 import type { StoreApi } from "zustand";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -56,6 +57,11 @@ export interface PartyReadyCheckDeps {
    * Phase 2: the party, R40). None, and its ground takes no input.
    */
   ground?: GroundMaker;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P2–P4): the check opening, Accept,
+   * Decline. None, and the popup plays nothing.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /**
@@ -65,6 +71,7 @@ export interface PartyReadyCheckDeps {
 export function mountPartyReadyCheck(
   scene: Phaser.Scene,
   hidden: () => boolean,
+  play?: (effect: UiEffect) => void,
 ): PartyReadyCheck {
   return new PartyReadyCheck(scene, {
     store: usePartyStore,
@@ -72,6 +79,7 @@ export function mountPartyReadyCheck(
     selfId: () => useAuthStore.getState().memberInfo?.id,
     hidden,
     ground: uiGround(scene, POPUP_DEPTH),
+    play,
   });
 }
 
@@ -110,6 +118,9 @@ export class PartyReadyCheck {
     private readonly deps: PartyReadyCheckDeps,
   ) {
     this.unsubscribe = deps.store.subscribe((state, prev) => {
+      // a check opening is a dialog appearing, shown now or waiting (FS-WDM0X § Change pass 2 (party), P2)
+      if (state.readyCheck && state.readyCheck.check_id !== prev.readyCheck?.check_id)
+        deps.play?.("dialog_open");
       if (
         state.readyCheck !== prev.readyCheck ||
         state.panelOpen !== prev.panelOpen
@@ -155,6 +166,8 @@ export class PartyReadyCheck {
   }
 
   private answer(check: OpenReadyCheck, accept: boolean): void {
+    // ready sends the player on, not ready cancels (FS-WDM0X § Change pass 2 (party), P3, P4)
+    this.deps.play?.(accept ? "dialog_confirm" : "dialog_cancel");
     this.deps.commands.ready(check.check_id, accept);
     this.deps.store.getState().answerReadyCheck(check.check_id, accept);
   }

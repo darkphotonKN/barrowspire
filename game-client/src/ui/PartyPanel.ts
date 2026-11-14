@@ -18,7 +18,7 @@ import type { StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
 import { useAuthStore } from "@/stores/authStore";
 import { useGameStore } from "@/stores/gameStore";
-import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
+import { PASS_THROUGH, type UiActWrapper, type UiEffect } from "@/audio/uiSounds";
 import {
   partyActions,
   usePartyStore,
@@ -80,6 +80,11 @@ export interface PartyPanelDeps {
    * Phase 2: the party, R40). None, and the panel's ground takes no input.
    */
   ground?: GroundMaker;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P5–P7): its buttons' hover, press
+   * and greyed press. None, and its buttons play nothing; a greyed one takes no press.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /**
@@ -91,6 +96,7 @@ export function mountPartyPanel(
   blocked: () => boolean,
   opening?: () => void,
   wrapper?: UiActWrapper,
+  play?: (effect: UiEffect) => void,
 ): PartyPanel {
   return new PartyPanel(scene, {
     store: usePartyStore,
@@ -106,6 +112,7 @@ export function mountPartyPanel(
     opening,
     wrapper,
     ground: uiGround(scene, PARTY_PANEL_DEPTH),
+    play,
   });
 }
 
@@ -131,8 +138,28 @@ const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
 /**
+ * What a party button tells of the player's hand (FS-WDM0X § Change pass 2 (party), P5–P7): the
+ * pointer coming onto a live one, its press, a press on a greyed one.
+ */
+export interface HudButtonFeedback {
+  hovered?(): void;
+  pressed?(): void;
+  refused?(): void;
+}
+
+/** A party button's feedback on an interface sound player: `menu_hover`, `menu_click`, `menu_error` (P5–P7). */
+export function hudButtonSounds(play: (effect: UiEffect) => void): HudButtonFeedback {
+  return {
+    hovered: () => play("menu_hover"),
+    pressed: () => play("menu_click"),
+    refused: () => play("menu_error"),
+  };
+}
+
+/**
  * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
- * inert when not (amber means interactable, never otherwise). The party frames' Travel button is
+ * inert when not (amber means interactable, never otherwise). Given a `refused`, a greyed one takes
+ * its press for that and nothing else, with no hand cursor (FS-WDM0X § Change pass 2 (party), P7). The party frames' Travel button is
  * drawn by it too (FS-NCC9J R28), in the HUD band. Returns the label, for the caller to take down.
  *
  * The whole outlined button answers a press, not only its words: the label carries a hit area the
@@ -149,6 +176,7 @@ export function drawHudButton(
   enabled: boolean,
   press: () => void,
   depth = HUD_DEPTH,
+  feedback: HudButtonFeedback = {},
 ): Phaser.GameObjects.Text {
   g.lineStyle(1, palette.frame, enabled ? 0.8 : 0.3);
   g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
@@ -162,33 +190,40 @@ export function drawHudButton(
     .setScrollFactor(0)
     .setDepth(depth)
     .setOrigin(0.5, 0.5);
-  if (!enabled) return t.setAlpha(GREYED_ALPHA);
   const hitArea = { width: r.width, height: r.height };
+  const hitAreaCallback = (
+    area: typeof hitArea,
+    x: number,
+    y: number,
+    label: Phaser.GameObjects.Text,
+  ) =>
+    within(
+      {
+        x: label.displayOriginX - area.width / 2,
+        y: label.displayOriginY - area.height / 2,
+        width: area.width,
+        height: area.height,
+      },
+      x,
+      y,
+    );
+  if (!enabled) {
+    t.setAlpha(GREYED_ALPHA);
+    const { refused } = feedback;
+    if (!refused) return t;
+    // greyed, it still takes its press, to say no (FS-WDM0X § Change pass 2 (party), P7)
+    return t.setInteractive({ hitArea, hitAreaCallback }).on("pointerup", () => refused());
+  }
   return (
     t
-      .setInteractive({
-        hitArea,
-        hitAreaCallback: (
-          area: typeof hitArea,
-          x: number,
-          y: number,
-          label: Phaser.GameObjects.Text,
-        ) =>
-          within(
-            {
-              x: label.displayOriginX - area.width / 2,
-              y: label.displayOriginY - area.height / 2,
-              width: area.width,
-              height: area.height,
-            },
-            x,
-            y,
-          ),
-        useHandCursor: true,
-      })
+      .setInteractive({ hitArea, hitAreaCallback, useHandCursor: true })
+      .on("pointerover", () => feedback.hovered?.())
       // on the release, as the invite prompt does: on the press its panel is still open and still
       // claims it, so the world under it never takes it for an attack (FS-R82NV R28)
-      .on("pointerup", press)
+      .on("pointerup", () => {
+        feedback.pressed?.();
+        press();
+      })
   );
 }
 
@@ -371,8 +406,18 @@ export class PartyPanel {
     enabled: boolean,
     press: () => void,
   ): void {
+    const { play } = this.deps;
     this.texts.push(
-      drawHudButton(this.scene, g, r, label, enabled, press, PARTY_PANEL_DEPTH),
+      drawHudButton(
+        this.scene,
+        g,
+        r,
+        label,
+        enabled,
+        press,
+        PARTY_PANEL_DEPTH,
+        play ? hudButtonSounds(play) : {},
+      ),
     );
   }
 

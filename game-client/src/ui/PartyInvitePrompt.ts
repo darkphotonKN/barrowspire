@@ -16,6 +16,7 @@
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
+import type { UiEffect } from "@/audio/uiSounds";
 import { useGameStore } from "@/stores/gameStore";
 import {
   usePartyStore,
@@ -56,6 +57,11 @@ export interface PartyInvitePromptDeps {
    * § Change: Phase 2: the party, R40). None, and a prompt's ground takes no input.
    */
   ground?: GroundMaker;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P1, P3, P4, P7): an invite received,
+   * Accept, Decline, the greyed Accept pressed. None, and the prompt plays nothing.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /**
@@ -67,6 +73,7 @@ export function mountPartyInvitePrompt(
   scene: Phaser.Scene,
   hidden: () => boolean,
   floor: () => number | undefined = () => undefined,
+  play?: (effect: UiEffect) => void,
 ): PartyInvitePrompt {
   return new PartyInvitePrompt(scene, {
     store: usePartyStore,
@@ -75,6 +82,7 @@ export function mountPartyInvitePrompt(
     world: () => useGameStore.getState().worldType,
     floor,
     ground: uiGround(scene, PROMPT_DEPTH),
+    play,
   });
 }
 
@@ -111,6 +119,10 @@ export class PartyInvitePrompt {
     private readonly deps: PartyInvitePromptDeps,
   ) {
     this.unsubscribe = deps.store.subscribe((state, prev) => {
+      // each invite received chimes once, shown now or waiting (FS-WDM0X § Change pass 2 (party), P1)
+      for (const invite of state.invites)
+        if (!prev.invites.some((i) => i.invite_id === invite.invite_id))
+          deps.play?.("notify_important");
       if (state.invites !== prev.invites || state.panelOpen !== prev.panelOpen)
         this.render(true);
     });
@@ -164,6 +176,8 @@ export class PartyInvitePrompt {
   }
 
   private answer(invite: PendingInvite, accept: boolean): void {
+    // the yes sends the player on, the no cancels (FS-WDM0X § Change pass 2 (party), P3, P4)
+    this.deps.play?.(accept ? "dialog_confirm" : "dialog_cancel");
     if (accept) this.deps.commands.accept(invite.invite_id);
     else this.deps.commands.decline(invite.invite_id);
     this.deps.store.getState().dismissInvite(invite.invite_id);
@@ -223,6 +237,9 @@ export class PartyInvitePrompt {
     ).setOrigin(0.5, 0.5);
     if (!live) {
       t.setAlpha(GREYED_ALPHA);
+      // greyed, it takes its press only to say no (FS-WDM0X § Change pass 2 (party), P7)
+      const play = this.deps.play;
+      if (play) t.setInteractive().on("pointerup", () => play("menu_error"));
       return;
     }
     // on the release, not the press (asked 2026-11-02): answering on the press closed the prompt
