@@ -58,7 +58,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap, type LightSource } from "@/render/lighting";
-import { cursorCss, cursorSource } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 // the effects module has no barrel: its runtime and smoke are imported by path
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { ChimneySmoke } from "@/render/effects/smoke";
@@ -834,11 +834,10 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
     this.art = registerArt(this, SCENE_ART.HubScene);
     this.occluders = new Occluders();
-    // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
-    // `default` without its sheet. Nothing hostile here, so no strike-mark.
-    this.input.setDefaultCursor(
-      cursorCss("cursor_hand", "default", cursorSource(this.art, this.textures)),
-    );
+    // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3), pressed under a held left
+    // button (§ Change: The pressed hand); the browser's `default` without its sheet. Nothing
+    // hostile here, so no strike-mark.
+    ensurePointerLook(this, this.art)?.base("hand");
 
     // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1), running on past
     // the edge at the gates and fading into the dark there (FS-0XMCP R18).
@@ -1267,8 +1266,8 @@ export class HubScene extends Phaser.Scene {
 
   /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
   private handBackInput(): void {
-    // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's
-    this.input.setDefaultCursor("");
+    // the hand stays: the menus the hub hands over wear it too (FS-KYPQ9 § Change: The pressed
+    // hand, and the hand on the menus, P7)
     releaseCaptures(this.input.keyboard, [
       ...Object.values(this.cursors ?? {}),
       ...Object.values(this.wasd ?? {}),

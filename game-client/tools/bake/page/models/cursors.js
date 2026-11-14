@@ -1,7 +1,8 @@
-// The two baked cursors (FS-KYPQ9 §H.2), authored in code (ADR-0021). They replace the
+// The baked cursors (FS-KYPQ9 §H.2), authored in code (ADR-0021). They replace the
 // canvas-drawn pixel-art hand and strike-mark: 32×32, smooth (linearly filtered, supersampled),
 // lit from the world's key light (screen-left, above), so the pointer is made of the same bone,
-// iron and brass as the world.
+// iron and brass as the world. The hand has a second pose, pressed, for a held left button
+// (§ Change: The pressed hand, and the hand on the menus).
 //
 // Each cursor is a stack of shapes, each a signed distance field with a bevel. Per sample the
 // topmost shape under it gives the material and a normal from its bevel, lit with a lambert
@@ -117,12 +118,16 @@ const boneOf = (seed) => (x, y, n, l) => {
   return mix(base, shade("vellum", 1.12), glint(n, 10) * 0.3);
 };
 
+/** The drop shadow under a cursor: its offset in px, how far it reaches, and its strength. */
+const DROP_SHADOW = { dx: 1.2, dy: 1.6, reach: 0.9, alpha: 0.4, floor: 0.05 };
+
 /**
  * Renders a stack of shapes (later ones on top) with a dark rim and a drop shadow, both from
  * `rim`. `groove(x, y, shape)` darkens plate seams (0 none .. 1 full); `overlap` px of dark seam
- * runs inside a shape's edge wherever it lies over a shape beneath it.
+ * runs inside a shape's edge wherever it lies over a shape beneath it; `shadow` is the drop shadow
+ * (default {@link DROP_SHADOW}).
  */
-function cursor(shapes, { rim, groove = () => 0, edge = null, overlap = 0 }) {
+function cursor(shapes, { rim, groove = () => 0, edge = null, overlap = 0, shadow: drop = DROP_SHADOW }) {
   const union = (x, y) => shapes.reduce((d, s) => Math.min(d, s.sdf(x, y)), Infinity);
   const shadow = shade(rim, 0.6);
   return raster(CURSOR_SIZE, CURSOR_SIZE, (x, y) => {
@@ -142,8 +147,8 @@ function cursor(shapes, { rim, groove = () => 0, edge = null, overlap = 0 }) {
     const d = union(x, y);
     if (d < 0.9) return [...rim, 0.95];
     // the drop shadow falls screen-right and down, away from the key light
-    const ds = union(x - 1.2, y - 1.6);
-    if (ds < 0.9) return [...shadow, 0.4 * clamp(1 - ds / 0.9, 0, 1) + 0.05];
+    const ds = union(x - drop.dx, y - drop.dy);
+    if (ds < drop.reach) return [...shadow, drop.alpha * clamp(1 - ds / drop.reach, 0, 1) + drop.floor];
     return null;
   });
 }
@@ -162,25 +167,70 @@ function cursor(shapes, { rim, groove = () => 0, edge = null, overlap = 0 }) {
  *
  * Drawn upright in a local frame (fingertip at the origin, the hand below it), then turned
  * onto the cursor; the light is applied after the turn, so it still falls from screen-left.
+ * Drawn in a pose ({@link HAND_POSE}, {@link HAND_PRESSED_POSE}); the shapes are the same in both.
  */
 export const HAND_HOTSPOT = [6, 1];
 const HAND_LEAN = (20 * Math.PI) / 180;
-export function boneHand() {
+
+/**
+ * The hand at rest: its index straight, tip to knuckle (`index`: each phalanx's local start and
+ * end y and its radius at each, a gap between them), the hand behind it where it is drawn
+ * (`pull` 0), under the usual drop shadow.
+ */
+const HAND_POSE = {
+  index: [
+    [0.9, 3.5, 0.95, 1.1],
+    [4.8, 7.5, 1.05, 1.25],
+    [8.8, 11.6, 1.2, 1.4],
+  ],
+  pull: 0,
+  shadow: DROP_SHADOW,
+};
+
+/**
+ * The hand under a held left button (§ Change: The pressed hand, P1, the owner's 「Ａ」): the index
+ * bends its tip down into the ground, so seen from above its three phalanges foreshorten, the
+ * distal one most, its pad end-on and wider; the tip stays pinned to the hotspot, so the rest of
+ * the hand draws in `pull` px toward it; nearer the ground, the drop shadow halves its offset and
+ * darkens.
+ */
+const HAND_PRESSED_POSE = {
+  index: [
+    [0.9, 2.0, 1.3, 1.3],
+    [3.1, 5.4, 1.1, 1.3],
+    [6.6, 9.8, 1.25, 1.4],
+  ],
+  pull: 1.8,
+  shadow: { dx: 0.6, dy: 0.8, reach: 0.75, alpha: 0.55, floor: 0.08 },
+};
+
+export const boneHand = () => boneHandIn(HAND_POSE);
+export const boneHandPressed = () => boneHandIn(HAND_PRESSED_POSE);
+
+function boneHandIn({ index: phalanges, pull, shadow }) {
   const [hx, hy] = HAND_HOTSPOT;
   const c = Math.cos(HAND_LEAN);
   const sn = Math.sin(HAND_LEAN);
   /** Cursor px → the upright local frame. */
   const local = (x, y) => [c * (x - hx) - sn * (y - hy), sn * (x - hx) + c * (y - hy)];
   const turned = (sdf) => (x, y) => sdf(...local(x, y));
+  /** Turned, and drawn in `pull` px toward the fingertip: the hand behind the index. */
+  const pulled = pull
+    ? (sdf) => (x, y) => {
+        const [lx, ly] = local(x, y);
+        return sdf(lx, ly + pull);
+      }
+    : turned;
   let seed = 100;
-  const bone = (sdf, bevel) => shapeOf(turned(sdf), bevel, boneOf(seed++));
+  const boneAt = (place) => (sdf, bevel) => shapeOf(place(sdf), bevel, boneOf(seed++));
+  const bone = boneAt(pulled);
   const iron = (x, y, n, l) => {
     const rust = clamp((fbm(x * 0.6, y * 0.6, 61, 3) - 0.45) * 2.6, 0, 1);
     const col = metal(shade("slate", 1.0), shade("slateLight", 2.0), 14)(x, y, n, l);
     return mix(col, shade(mix("barrowBrown", "ember", 0.4), 0.35 + 0.55 * l), rust * 0.8);
   };
 
-  const shackle = turned(polygon([[-0.4, 21.1], [7.6, 21.0], [8.0, 27.8], [-0.8, 27.9]], 0.5));
+  const shackle = pulled(polygon([[-0.4, 21.1], [7.6, 21.0], [8.0, 27.8], [-0.8, 27.9]], 0.5));
   const carpals = bone(polygon([[0.6, 18.6], [6.6, 18.6], [6.2, 21.0], [1.0, 21.0]], 0.7), 1.0);
   const metacarpals = [
     [0.1, 12.8, 1.6, 19.0, 0.85],
@@ -201,12 +251,9 @@ export function boneHand() {
     bone(cone(0.4, 18.4, -2.4, 15.2, 1.05, 0.95), 1.0),
     bone(cone(-2.9, 14.2, -3.7, 11.4, 0.95, 0.8), 1.0),
   ];
-  // the index, tip to knuckle, a gap between each phalanx
-  const index = [
-    [0.9, 3.5, 0.95, 1.1],
-    [4.8, 7.5, 1.05, 1.25],
-    [8.8, 11.6, 1.2, 1.4],
-  ].map(([ay, by, ra, rb]) => bone(cone(0, ay, 0, by, ra, rb), 1.2));
+  // the index, tip to knuckle, its tip on the hotspot in every pose
+  const tipBone = boneAt(turned);
+  const index = phalanges.map(([ay, by, ra, rb]) => tipBone(cone(0, ay, 0, by, ra, rb), 1.2));
   const shapes = [
     shapeOf(shackle, 1.0, iron),
     carpals,
@@ -214,12 +261,12 @@ export function boneHand() {
     ...curled,
     ...thumb,
     ...index,
-    shapeOf(turned(circle(3.6, 24.4, 0.8)), 0.8, metal(shade("slate", 0.9), shade("slateLight", 1.8), 12)),
+    shapeOf(pulled(circle(3.6, 24.4, 0.8)), 0.8, metal(shade("slate", 0.9), shade("slateLight", 1.8), 12)),
   ];
   // the shackle's hammered bands, in the local frame
   const groove = (x, y, s) => {
     if (s.sdf !== shackle) return 0;
-    const [, ly] = local(x, y);
+    const ly = local(x, y)[1] + pull;
     const k = (ly - 21.1) / 1.7;
     return ly > 22.1 && ly < 26.8 ? 0.6 * (1 - clamp(Math.abs(k - Math.round(k)) / 0.2, 0, 1)) : 0;
   };
@@ -228,6 +275,7 @@ export function boneHand() {
     groove,
     overlap: 0.75,
     edge: { color: shade("vellum", 1.05), amount: 0.25, width: 0.8 },
+    shadow,
   });
 }
 
@@ -250,8 +298,10 @@ export function strikeMark() {
   return cursor(shapes, { rim: shade("slate", 0.3) });
 }
 
-/** Both cursors, as the catalogue reads them: sheet, authoring function, hotspot, builder. */
+/** The cursors, as the catalogue reads them: sheet, authoring function, hotspot, builder. */
 export const CURSORS = [
   { name: "cursor_hand", fn: "boneHand", hotspot: HAND_HOTSPOT, build: boneHand },
+  // the same click point pressed (§ Change: The pressed hand, P2)
+  { name: "cursor_hand_pressed", fn: "boneHandPressed", hotspot: HAND_HOTSPOT, build: boneHandPressed },
   { name: "cursor_strike", fn: "strikeMark", hotspot: STRIKE_HOTSPOT, build: strikeMark },
 ];

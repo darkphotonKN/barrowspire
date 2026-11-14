@@ -640,6 +640,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     ];
     const CURSORS: [string, string][] = [
       ["cursor_hand", "boneHand"],
+      // the hand under a left press (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P1)
+      ["cursor_hand_pressed", "boneHandPressed"],
       ["cursor_strike", "strikeMark"],
     ];
 
@@ -688,6 +690,10 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       const { anchor } = sheet("cursor_hand");
       expect(anchor.x).toBeLessThan(0.35);
       expect(anchor.y).toBeLessThan(0.15);
+    });
+
+    it("clicks the pressed hand on the hand's own point (§ Change: The pressed hand, P2)", () => {
+      expect(sheet("cursor_hand_pressed").anchor).toEqual(sheet("cursor_hand").anchor);
     });
 
     it("puts the strike-mark's hotspot at its centre", () => {

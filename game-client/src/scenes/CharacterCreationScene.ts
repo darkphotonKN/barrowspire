@@ -4,6 +4,7 @@ import { CLASS_LORE, ClassKey, type ClassStats } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";
 import { creationRefusal } from "@/characters/entry";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { ensurePointerLook } from "@/render/cursors";
 import type { ArtLibrary } from "@/render/art/library";
 import { MenuFigure } from "@/render/art/menuFigure";
 import { SCENE_ART } from "@/render/art/sceneArt";
@@ -91,6 +92,9 @@ export class CharacterCreationScene extends Phaser.Scene {
     centreStage(this.cameras.main);
     sharpenText(this);
     this.art = registerArt(this, SCENE_ART.CharacterCreationScene);
+    // the bone hand, pressed under a held left button, as in the worlds: the pointer is the game's
+    // on the Bone & Soot menus too (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+    ensurePointerLook(this, this.art)?.base("hand");
     const width = STAGE_WIDTH;
 
     // Soot with drifting dust and bone glints, under a vignette (Bone & Soot menu chrome).

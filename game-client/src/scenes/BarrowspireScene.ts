@@ -128,7 +128,7 @@ import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
-import { cursorCss, cursorSource } from "@/render/cursors";
+import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
@@ -925,8 +925,7 @@ export class BarrowspireScene extends Phaser.Scene {
     strike: (monster) => {
       if (this.strike(monster.entity_id, monster.position)) this.lastHit.aimed(monster, this.time.now);
     },
-    hover: (monster) =>
-      this.input.setDefaultCursor(monster ? this.crosshairCursorCSS : this.defaultCursorCSS),
+    hover: (monster) => this.pointerLook?.base(monster ? "strike" : "hand"),
   };
   /** What a monster's actions play on the world (FS-VHGE7 §D R32–33): a demon's fire claw. */
   private readonly monsterEffects: MonsterEffects = {
@@ -1126,6 +1125,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // on a stop the keyboard is handed back, by the keys still held here; either way the next
     // run's create binds its keys afresh
     if (end === "shutdown") this.handBackKeyboard();
+    // a monster's strike-mark is the run's; the hand stays, for the menus wear it too (FS-KYPQ9
+    // § Change: The pressed hand, and the hand on the menus, P7)
+    if (end === "shutdown") findPointerLook(this)?.base("hand");
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
@@ -3067,19 +3069,17 @@ export class BarrowspireScene extends Phaser.Scene {
     followWith(this.cameras.main, this.player);
   }
 
-  private defaultCursorCSS = "";
-  private crosshairCursorCSS = "";
+  /** The game's one pointer (FS-KYPQ9 § Change: The pressed hand). */
+  private pointerLook?: PointerLook;
 
   /**
-   * The baked cursors (FS-KYPQ9 §H.2): the bone hand by default, the strike-mark over a rival.
-   * Each hotspot is its manifest anchor scaled with the image, so the click point is unchanged;
-   * with no manifest or sheet the browser's `default`/`crosshair` applies, as before.
+   * The baked cursors (FS-KYPQ9 §H.2): the bone hand by default, pressed under a held left button,
+   * the strike-mark over a rival. Each hotspot is its manifest anchor scaled with the image, so the
+   * click point is unchanged; with no manifest or sheet the browser's `default`/`crosshair` applies.
    */
   private setupCustomCursor(): void {
-    const source = cursorSource(this.art, this.textures);
-    this.defaultCursorCSS = cursorCss("cursor_hand", "default", source);
-    this.crosshairCursorCSS = cursorCss("cursor_strike", "crosshair", source);
-    this.input.setDefaultCursor(this.defaultCursorCSS);
+    this.pointerLook = ensurePointerLook(this, this.art);
+    this.pointerLook?.base("hand");
   }
 
   create(): void {

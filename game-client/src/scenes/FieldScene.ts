@@ -87,6 +87,7 @@ import { WorldMinimapController, bindMinimapKey } from "@/ui/worldMinimapControl
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
+import { findPointerLook } from "@/render/cursors";
 
 /**
  * A field world (FS-X2F2H §H): the ground, the player and the others in this pod's channel, the
@@ -618,8 +619,9 @@ export class FieldScene extends Phaser.Scene {
 
   /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
   private handBackInput(): void {
-    // the fight's hand or strike-mark is the field's: the next world sets its own
-    this.input.setDefaultCursor("");
+    // the fight's strike-mark is the field's; the hand stays, for the menus wear it too
+    // (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+    findPointerLook(this)?.base("hand");
     releaseCaptures(this.input.keyboard, [
       ...Object.values(this.cursors ?? {}),
       ...Object.values(this.wasd ?? {}),

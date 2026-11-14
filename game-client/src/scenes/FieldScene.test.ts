@@ -145,6 +145,7 @@ const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
 const { createPartyStore } = await import("@/stores/partyStore");
@@ -1141,13 +1142,18 @@ describe("FieldScene ending (game destroy on leaving /game)", () => {
     expect(offError).toHaveBeenCalledWith(ActionType.LeaveField);
   });
 
-  it("should hand the cursor back to the page on a stop", () => {
-    const { systems } = createdField();
-    systems.input.manager!.defaultCursor = "url(hand) 0 0, default";
+  // the menus wear the bone hand too: a stop leaves the hand, the fight's strike-mark with it
+  // (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+  it("should leave the bone hand, not the strike-mark nor the browser's cursor, on a stop", () => {
+    const { field, systems } = createdField();
+    const page = lookGame();
+    page.look().base("strike");
+    // the fight lets go of the game's focus events as the field stops
+    Object.assign(field, { game: { ...page.game, events: new EventEmitter() } });
 
     systems.shutdown();
 
-    expect(systems.input.manager?.defaultCursor).toBe("");
+    expect(page.now()).toBe("hand");
   });
 
   // Phaser's stop destroys the field's keys and keeps their captures, the game's (sceneEnd.ts).

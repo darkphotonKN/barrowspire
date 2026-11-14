@@ -18,7 +18,7 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
-import { cursorCss, cursorSource } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
 import { viewport } from "@/render/viewport";
 
@@ -198,10 +198,10 @@ export function fieldCombatOnScene(
 ): FieldCombat {
   const fx = new EffectsRuntime(scene, art, lightMap);
   const kit = new ClassKitFx(scene);
-  const source = cursorSource(art, scene.textures);
-  const hand = cursorCss("cursor_hand", "default", source);
-  const strikeMark = cursorCss("cursor_strike", "crosshair", source);
-  scene.input.setDefaultCursor(hand);
+  // the game's one pointer: the hand, pressed under a held left button, the strike-mark over a
+  // monster (FS-KYPQ9 §H.2, § Change: The pressed hand)
+  const pointer = ensurePointerLook(scene, art);
+  pointer?.base("hand");
 
   // the world point under the cursor now, wherever the camera has moved since it last moved
   const cursorWorld = (): Point => {
@@ -257,7 +257,7 @@ export function fieldCombatOnScene(
     kit,
     projectiles: new ProjectileFlights(scene, art, fx, projectileFlightOf),
     hits: new HitFeedback(scene),
-    cursor: (over) => scene.input.setDefaultCursor(over ? strikeMark : hand),
+    cursor: (over) => pointer?.base(over ? "strike" : "hand"),
     bodyOf: hooks.bodyOf,
     button: () => scene.input.activePointer?.button,
     clearEffects: () => {

@@ -614,6 +614,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   goes fullscreen, from the OPTIONS panel's **Fullscreen** row; nothing stands over the canvas
   (FS-T3DWX). The top-right HUD stands in the corner the button used to keep.
 - **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
+- **Pointer look** (FS-KYPQ9 § Change: The pressed hand): the game's one writer of the canvas's
+  cursor (`PointerLook`, `src/render/cursors/pointerLook.ts`), one per game on its registry. It
+  shows the base the scenes set (`PointerBase`: the bone hand, the strike-mark over a monster, or
+  the browser's cursor), the hand pressed while the left button is held. A scene with the art
+  makes it (`ensurePointerLook`), one without only finds it (`findPointerLook`). Not a **look**
+  (a shimmer's three colours), and its base is not a shimmer's base. *Avoid*: "the look" alone.
 
 ## Dev gallery terms (FS-1819Q)
 
