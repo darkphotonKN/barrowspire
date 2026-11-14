@@ -1449,6 +1449,20 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     expect(played).toEqual(["dialog_open"]);
   });
 
+  // the review of FS-84N1G: this frame's sync before its keys, so Esc never steps a panel the sync closes
+  it("should hand Esc to the menu the Menu icon opened between frames, the panel closed silently first", () => {
+    const { scene, bridge, keyboard, played, controls, esc } = created();
+    keyboard.emit("keydown-H");
+    scene.update();
+    // the Menu icon's release, between frames
+    (scene as unknown as { menu: { pressMenu(): void } }).menu.pressMenu();
+    expect(bridge.ui.menuOpen).toBe(true);
+    esc();
+    expect(controls().isOpen()).toBe(false);
+    expect(played).not.toContain("dialog_cancel");
+    expect(bridge.ui.menuOpen).toBe(false);
+  });
+
   it("should close it first on Esc and on Q, with dialog_cancel, the inventory under it left open", () => {
     const viaEsc = created();
     viaEsc.keyboard.emit("keydown-I");
