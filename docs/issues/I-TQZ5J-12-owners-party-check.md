@@ -27,6 +27,18 @@ In the town, a field and the run, windowed and fullscreen, at render scale 1 and
 - [ ] The party sounds (FS-WDM0X pass 2): an invite chimes `notify_important`; the ready check
       `dialog_open`; Accept `dialog_confirm`, Decline `dialog_cancel`; the panel's buttons and Travel
       hover and click; a greyed one `menu_error`; the panel's open and close unchanged.
+- [ ] Wheel over the party panel above the bag doesn't scroll it (added 2026-11-14, FS-TQZ5J
+      § Change: Phase 2, R40).
+- [ ] The run's end closes the party panel (FS-TQZ5J § Change: Phase 2, Amendment B1, R47; added
+      2026-11-14): with the panel open, a solo death, an escape and a death with a teammate in play
+      each close it as the record or "The barrow keeps you" first appears, with the end's
+      `dialog_open` and no `party_close`; T or the Party icon reopens it while you watch or wait
+      (refused after the run ends); reopened, it can cover WATCH/LEAVE again, and T, Esc or × closes it.
+- [ ] Transitional until phase 3 (FS-TQZ5J Amendment B1, Edge States; added 2026-11-14): the frames
+      drawn over the character / stash panel's top-left let the pointer through. A hover there lights
+      and tips the hidden cell or stat under a frame, the wheel scrolls under it, and a right-press
+      can move a stash item you cannot see. Accepted for now; phase 3 puts the gear overlay back over
+      the frames. Look, and say if it must not wait.
 
 ## Blocked By
 

@@ -829,3 +829,81 @@ party's sounds in I-WDM0X-8 (FS-WDM0X § Pass 2: the party).
   equal. The frames over the character panel is the one inversion a player will notice: phase 3
   (the gear overlay into the UI scene, 1100 over the frames' 1000) puts it back. Each goes to the
   owner's check (I-TQZ5J-12).
+
+### Amendment B1 2026-11-14 (after the phase 2 review)
+
+Appended after the review of phase 2 (ecb92ba9..09ff93e0) and FS-WDM0X § Pass 2b; the text above,
+the As built paragraph included, is not edited. What the owner decided is **[owner]**; a review
+finding settled by the integrator, *Derived*.
+
+**R37 and ADR-0081.** R37 sends the party's commands from the pieces, which stood against ADR-0081
+Decision 2's "socket messages stay the world's". [ADR-0082](../adr/0082-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
+amends that clause: world-play messages stay the world's; a command a moved piece owns, reading only
+app state (the party now, chat later), goes from that piece. R37 stands as written.
+
+#### Requirements (added)
+
+47. **The run's end closes the party panel.** When the run ends for this player, meaning the first
+    of the settlement record and the resolved card "The barrow keeps you" to appear in the run (the
+    moment FS-WDM0X § Pass 2b E1 chimes `dialog_open`: a death or an escape, solo or in a party),
+    the UI scene's party panel, if open, closes by itself. The reason: the panel now draws over the
+    end's pieces, which stay the run's (R46), and with four members its ground swallows the top of
+    WATCH THE DELVE and LEAVE THE BARROW and takes their presses (R40). **[owner, 2026-11-14:
+    「Auto-close the party panel when the card appears」]**
+    - **Silent.** FS-WDM0X **S4, "What the game closes plays nothing"**, whose first silent case is
+      the run's end: no `party_close`, so the moment plays the end's `dialog_open` alone (E1, one
+      end one sound). **[owner]**
+    - **How.** The run shuts it in the party store, as the town shuts it for its letter panel
+      (R39), outside any player action, so the interface sounds' window rule hears no close. No
+      request kind is added: the panel's open state is app state (R37, ADR-0082). *Derived.*
+    - **Once.** Only the end's first appearance closes it. The record rebuilt on a copy or a resize,
+      the card redrawn on a resize, and the record brought back by SETTLEMENT (E2, E3) close
+      nothing. A reconnect is a new start of the run (E2): its end appears anew and closes the
+      panel again. *Derived.*
+    - **Reopening.** The player reopens it with T or the Party icon under R38's rule, unchanged:
+      while the run has not ended (a dead player watching the delve, an escaped one waiting); the
+      run's `end_game`, an open chest or the menu refuse it, as today. **[owner]**
+48. **The panel opening asks every world to close its letter panel.** The panel's `opening` sends
+    `close: letter` to whatever world is reported; a world without one ignores it, by R11's rule (a
+    request with no answer is ignored). The UI scene no longer names the town for it. The ready
+    check's town-only rule (FS-BJNYC R4, R36) stands. *Derived* (review LOW).
+49. **The gear overlay yields on a move only.** R41's `under` becomes `yields()`: whether a UI piece
+    holds the pointer now (the bridge's `overUi`), read only as the pointer moves. A press and the
+    wheel over a UI piece never reach a world (R7, R40), so the overlay's press and wheel stop
+    reading it; what they did with it could not happen. *Derived* (review LOW).
+
+#### Acceptance Criteria (added)
+
+- [ ] The first of the record and the card to appear in a run (a solo death, a solo escape, a death
+      with a teammate in play, card or record first) closes an open party panel and plays
+      `dialog_open` alone, no `party_close`; a closed panel stays closed and nothing more plays.
+- [ ] A later copy, a resize, and SETTLEMENT bringing the record back leave the panel as it is.
+- [ ] T and the Party icon reopen it after the end popped up while the run has not ended; after
+      `end_game` they are refused as before.
+- [ ] The panel opening requests `close: letter` in every world; the town closes its letter panel,
+      a field and the run answer nothing.
+- [ ] The gear overlay's hover and tip yield under a UI piece on a move; its press and wheel read no
+      yield.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass; the party
+      parity set and the earlier sets stay pixel-equal.
+
+#### Edge States (added)
+
+- **A reopened panel can cover the end's buttons again.** Reopened over the card or the record, it
+  stands over them as before R47, its ground taking the presses on the covered part. The player
+  opened it; T, Esc or its × closes it. Nothing moves or reshapes the panel for the end. Named, not
+  redesigned. **[owner: "keep it simple"]**
+- **The panel opened between the card and a late record.** Opened after the card closed it, it is
+  not closed again by the record that comes later: the end popped up once (R47, E1).
+- **This supersedes, for the end's first popup only,** § Edge States (added)'s "The panel open as
+  the run ends. As today: … the panel is closed by whatever closed it." The run's end still refuses
+  T (R38).
+- **Transitional, until phase 3: the frames over the gear overlay let the pointer through.** The
+  frames (1000, now in the UI scene) draw over the character / stash panel's top-left corner (R46,
+  As built), but their ground stays open (R40: a press on a frame reaches the world). So a press, a
+  hover or the wheel there reaches the stash cells or the stats hidden under a frame: a hover lights
+  and tips a cell the player cannot see, and a right-press there can move a hidden stash item.
+  Accepted as transitional **[owner-level decision, 2026-11-14]**: phase 3 moves the gear overlay
+  into the UI scene (1100 over the frames' 1000), which puts the frames under it again, and nothing
+  of this branch merges to main before then. No code change. It is on the owner's check
+  (I-TQZ5J-12).
