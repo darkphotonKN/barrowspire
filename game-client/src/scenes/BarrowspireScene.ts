@@ -9,6 +9,7 @@ import { socketManager } from "@/utils/class/SocketManager";
 import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
 import { useGameStore } from "@/stores/gameStore";
+import { usePartyStore } from "@/stores/partyStore";
 import { FloorMapWait } from "./floorMapWait";
 import {
   ClientGameState,
@@ -654,10 +655,11 @@ export class BarrowspireScene extends Phaser.Scene {
     sound: () => (this.settlementRecord?.isOpen() ? "menu_click" : "dialog_open"),
   };
   /**
-   * Whether this run's end has popped up with its `dialog_open` (FS-WDM0X § Pass 2b E1): the first
-   * of the resolved card and the settlement record to appear chimes, the other nothing more.
+   * Whether this run's end has popped up (FS-WDM0X § Pass 2b E1; FS-TQZ5J § Change: Phase 2, R47):
+   * the first of the resolved card and the settlement record to appear chimes and shuts the party
+   * panel, the other nothing more.
    */
-  private endChimed = false;
+  private endPopped = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
   /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
@@ -1115,7 +1117,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resultHold.clear();
     this.settlementRecord = undefined;
     this.resolvedCard = undefined;
-    this.endChimed = false;
+    this.endPopped = false;
     this.canWatch = false;
     this.canLeave = false;
     this.row = { names: "", buttons: [] };
@@ -1338,19 +1340,23 @@ export class BarrowspireScene extends Phaser.Scene {
     this.settlementRecord.set(settlementRecord(payload));
     if (first) {
       this.openRecord();
-      this.chimeEnd();
+      this.endPopsUp();
     }
     this.syncRow();
   }
 
   /**
-   * The run's end popped up (FS-WDM0X § Pass 2b E1, E2): `dialog_open` on the UI scene's one player,
-   * once a run, for whichever of the resolved card and the record came first. A redraw never asks.
+   * The run's end popped up, once a run, for whichever of the resolved card and the record came
+   * first; a redraw never asks. `dialog_open` on the UI scene's one player (FS-WDM0X § Pass 2b E1,
+   * E2), and the party panel, drawn over the end's pieces, shut (FS-TQZ5J § Change: Phase 2, R47):
+   * in the party store, as the town shuts it for its letter panel (R39), outside any player action,
+   * so it plays no close (FS-WDM0X S4). T and the Party icon reopen it while the run goes on.
    */
-  private chimeEnd(): void {
-    if (this.endChimed) return;
-    this.endChimed = true;
+  private endPopsUp(): void {
+    if (this.endPopped) return;
+    this.endPopped = true;
     this.ui.play("dialog_open");
+    usePartyStore.getState().closePanel();
   }
 
   /** Whether a settlement is this run's record: one for another run is a late confirmation (R20). */
@@ -5334,7 +5340,7 @@ export class BarrowspireScene extends Phaser.Scene {
     else if (view.kind === "escaped") this.offerWatch();
     else if (!this.resolvedCard) {
       this.showResolvedCard(view);
-      this.chimeEnd();
+      this.endPopsUp();
     }
   }
 
