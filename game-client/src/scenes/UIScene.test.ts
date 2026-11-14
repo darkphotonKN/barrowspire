@@ -436,6 +436,21 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     expect(code).toMatch(/gear\.show\(report\)/);
   });
 
+  // § Change: Phase 3 (I-TQZ5J-15): the settlement record and the controls panel are the UI scene's; the
+  // run hands its record as data and binds no H
+  it("should have the run build no settlement record or controls panel and bind no H", () => {
+    const code = source("./BarrowspireScene.ts");
+    expect(code).not.toMatch(/new SettlementRecord|controlsPanel|keydown-H/);
+    expect(code).toMatch(/this\.ui\.record\(/);
+  });
+
+  it("should have the UI scene draw the record and the controls panel (§ Change: Phase 3, R57)", () => {
+    const code = source("./UIScene.ts");
+    expect(code).toMatch(/new UiRecordSlot\(/);
+    expect(code).toMatch(/new UiControlsSlot\(/);
+    expect(code).toMatch(/"keydown-H"/);
+  });
+
   it("should have the UI scene import no other scene", () => {
     const imports = source("./UIScene.ts").match(/from "[^"]+"/g) ?? [];
     expect(imports.filter((from) => /Scene"$/.test(from))).toEqual([]);
