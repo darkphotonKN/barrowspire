@@ -2857,6 +2857,17 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
     expect(hub.dialogue).toBeUndefined();
   });
 
+  // the review of phase 3 (LOW-1): one E at the chest acts once. Phaser steps the scene list from the
+  // top (SceneManager.update loops it in reverse) and the UI scene stands after the town in it
+  // (PhaserGame.test pins the order), so the UI scene reads the E first, the inventory still shut,
+  // and takes it for no equip; the town's own E then opens the stash, and no later frame reads it
+  it("should act once on one E at the chest: the stash opens, and no equip is taken from it in that frame or the next", () => {
+    const { gear, ui } = pressAtTheChest({ x: CHEST_AT.x + 30, y: CHEST_AT.y }, null);
+    ui().frame();
+    expect(gear.openStash).toHaveBeenCalledTimes(1);
+    expect(gear.equipKey.mock.results.map((r) => r.value)).toEqual([false]);
+  });
+
   it("should open the stash on E just inside the store's west wall (FS-B0H2D R14)", () => {
     const me = { x: STORE.x + 20 + 12, y: CHEST_AT.y };
     const { gear } = pressAtTheChest(me, null);
