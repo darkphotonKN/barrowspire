@@ -4339,6 +4339,24 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
       expect(heard()).toEqual(["menu_error"]);
       expect(sent.mock.calls.filter(([a]) => a === ActionType.LeaveRun)).toHaveLength(1);
     });
+
+    // the owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (FS-KYPQ9 § Change: Every hover keeps the bone
+    // hand). No cursor of its own, so none is left behind over a Leave dimmed under the pointer.
+    it.each([
+      ["the card's", dead],
+      ["the row's", escaped],
+    ] as const)("should keep the bone hand over %s LEAVE THE BARROW, live, dimmed and handed back", (_case, fields) => {
+      const { run, tick, press, hit } = endOnStage();
+      tick(me(fields), ally());
+      const leave = hit("leave-the-barrow") as unknown as Made & { input: { cursor: unknown } };
+      Object.assign(leave, { input: { cursor: false } });
+      expect(JSON.stringify(leave.last["setInteractive"] ?? [])).not.toMatch(/useHandCursor|cursor/);
+
+      press("leave-the-barrow");
+      expect(leave.input.cursor).toBe(false);
+      run.leaveRefused();
+      expect(leave.input.cursor).toBe(false);
+    });
   });
 
   // the owner, 2026-11-14 (「Auto-close the party panel when the card appears」): the panel draws over the

@@ -247,7 +247,8 @@ function setup(icons?: CornerIconSpec[], texture: TextureMode = "none") {
 describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 
-  it("should give each icon a pressable plate at its rect, in the HUD band, with a hand cursor", () => {
+  // the owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+  it("should give each icon a pressable plate at its rect, in the HUD band, under the bone hand", () => {
     const env = setup();
     for (const icon of ["menu", "inventory", "character", "party"] as const) {
       const z = env.zoneAt(icon);
@@ -255,7 +256,7 @@ describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
       expect(z.width).toBe(54);
       expect(z.height).toBe(46);
       expect(z.depth).toBe(1000);
-      expect(z.handCursor).toBe(true);
+      expect(z.handCursor).toBe(false);
     }
     expect(env.graphics.every((g) => g.depth === 1000)).toBe(true);
   });
@@ -914,14 +915,14 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout
   });
 
   it.each(["none", "ok", "throws"] as const)(
-    "should keep the Inventory zone, hand cursor, covers, press and label, and take everything down with destroy (texture: %s)",
+    "should keep the Inventory zone, the bone hand over it, covers, press and label, and take everything down with destroy (texture: %s)",
     (texture) => {
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const press = vi.fn();
       const env = setup([{ icon: "inventory", press }], texture);
       const f = cornerIconFrame("inventory", viewport);
       const z = env.zoneAt("inventory");
-      expect(z).toMatchObject({ x: f.x, y: f.y, width: f.width, height: f.height, handCursor: true, depth: 1000 });
+      expect(z).toMatchObject({ x: f.x, y: f.y, width: f.width, height: f.height, handCursor: false, depth: 1000 });
       expect(env.corner.covers(f.x + 1, f.y + 1, "inventory")).toBe(true);
       expect(env.corner.covers(f.x + f.width - 1, f.y + f.height - 1, "inventory")).toBe(true);
       z.handlers.pointerdown();
@@ -1873,7 +1874,7 @@ describe("HudCorner (FS-7TQN4 R15, R18: the fallback, and the rest stays)", () =
   });
 
   it.each(["none", "ok", "throws"] as const)(
-    "should keep every zone, hand cursor, covers, press and label, and take everything down with destroy (texture: %s)",
+    "should keep every zone, the bone hand over it, covers, press and label, and take everything down with destroy (texture: %s)",
     (texture) => {
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const env = setup(TOWN_ROW(), texture);
@@ -1881,7 +1882,7 @@ describe("HudCorner (FS-7TQN4 R15, R18: the fallback, and the rest stays)", () =
       for (const icon of ["menu", "inventory", "character", "party"] as const) {
         const { f } = slotOf(icon);
         const z = env.zoneAt(icon);
-        expect(z).toMatchObject({ x: f.x, y: f.y, width: 54, height: 46, handCursor: true, depth: 1000 });
+        expect(z).toMatchObject({ x: f.x, y: f.y, width: 54, height: 46, handCursor: false, depth: 1000 });
         expect(env.corner.covers(f.x + 1, f.y + 1, icon)).toBe(true);
         z.handlers.pointerover();
         expect(env.liveTexts().map((t) => t.words)).toEqual([words[icon]]);

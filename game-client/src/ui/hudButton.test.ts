@@ -16,6 +16,7 @@ type HitConfig = {
     gameObject: unknown,
   ) => boolean;
   useHandCursor?: boolean;
+  cursor?: string | boolean;
 };
 
 /**
@@ -134,11 +135,13 @@ describe("drawHudButton: the whole outlined button answers a press, not only its
     expect(s.pressed()).toBeDefined();
   });
 
-  it("should keep the hand cursor and run its press", () => {
+  // the owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+  it("should keep the bone hand, no cursor of its own, and run its press", () => {
     const s = stage(40);
     const press = vi.fn();
     drawHudButton(s.scene, s.graphics, { rect: button, label: "Create party", enabled: true, press });
-    expect(s.config()?.useHandCursor).toBe(true);
+    expect(s.config()?.useHandCursor).toBeFalsy();
+    expect(s.config()?.cursor).toBeFalsy();
     s.pressed()?.();
     expect(press).toHaveBeenCalledTimes(1);
   });

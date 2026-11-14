@@ -1706,7 +1706,9 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
     expect(scale.listenerCount("resize")).toBe(0);
   });
 
-  it("should draw an × at each open panel's top right, amber with a hand cursor, brighter under the pointer (C4)", () => {
+  // the bone hand over it, no cursor of its own: the owner, 2026-11-14, 「所有hover鼠標都要維持骨手」
+  // (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+  it("should draw an × at each open panel's top right, amber under the bone hand, brighter under the pointer (C4)", () => {
     const { overlay, texts, zones, move, left, right, closeOf } = apartOnStage();
     overlay.show();
     overlay.toggleCharacter();
@@ -1716,7 +1718,7 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
       const box = panelClose(panel);
       expect(box).toEqual({ x: panel.x + panel.w - 12 - 24, y: panel.y + 12, w: 24, h: 24 });
       expect(crosses().some((t) => t.x === box.x + 12 && t.y === box.y + 12 && t.size === 22)).toBe(true);
-      expect(zones.some((z) => !z.destroyed && z.hand && z.x === box.x && z.y === box.y)).toBe(true);
+      expect(zones.some((z) => !z.destroyed && z.hand === false && z.x === box.x && z.y === box.y)).toBe(true);
     }
     expect(crosses().every((t) => t.color === toCss(palette.interactable))).toBe(true);
 
