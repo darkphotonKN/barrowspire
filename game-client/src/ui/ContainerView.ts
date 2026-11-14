@@ -448,6 +448,8 @@ export class ContainerView {
   open(entityId: string, kind: ContainerKind): void {
     this.reset();
     this.openFor = entityId;
+    // its ground takes presses again, as the view pops in (FS-TQZ5J § Change: Phase 3, R59)
+    this.ground.setInteractive();
     this.face = containerFace(kind);
     const lifts = this.lifts;
     this.place();
@@ -475,10 +477,16 @@ export class ContainerView {
     });
   }
 
-  /** Reverses the open: the satchel's flap drops, and the view fades (§D.1). */
+  /**
+   * Reverses the open: the satchel's flap drops, and the view fades (§D.1). Its ground takes no press
+   * from the moment it starts to close, though the root stays visible through the fade, so a press
+   * there goes where it did before the view moved into the UI scene: the world's (FS-TQZ5J § Change:
+   * Phase 3, R59).
+   */
   close(): void {
     if (!this.isOpen) return;
     this.openFor = undefined;
+    this.ground.disableInteractive();
     this.contents.clear();
     this.unhover();
     this.scene.tweens.killTweensOf([this.root, this.flap]);
