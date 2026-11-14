@@ -12,7 +12,7 @@
  * `act` (S9; FS-TQZ5J R12).
  */
 
-import type { GameplayEffect } from "./gameplaySounds";
+import { gameplaySoundKey, type GameplayEffect } from "./gameplaySounds";
 import { readSfxLevel, sfxGain, type SfxSettingStore } from "./sfxSetting";
 
 /**
@@ -64,6 +64,15 @@ export function uiSoundKey(effect: UiEffect): string {
  * 2026-11-14, FS-WDM0X S2 amended). Both are keyed `sfx:<name>` in the game's audio cache.
  */
 export type ActionEffect = UiEffect | GameplayEffect;
+
+function isUiEffect(effect: ActionEffect): effect is UiEffect {
+  return (UI_EFFECTS as readonly ActionEffect[]).includes(effect);
+}
+
+/** An action's effect's key in the game's audio cache: an interface effect's, else a gameplay effect's. */
+function actionSoundKey(effect: ActionEffect): string {
+  return isUiEffect(effect) ? uiSoundKey(effect) : gameplaySoundKey(effect);
+}
 
 /**
  * An effect's URLs, m4a first (S21, order set by the integrator 2026-11-13): Phaser 4.2.1 takes
@@ -234,7 +243,7 @@ export class UiSounds {
     const hover = effect === "menu_hover";
     const now = hover ? this.now() : 0;
     if (hover && now - this.hoveredAt < MENU_HOVER_COOLDOWN_MS) return;
-    if (playSfx(this.stage, this.store, `sfx:${effect}`) && hover) this.hoveredAt = now;
+    if (playSfx(this.stage, this.store, actionSoundKey(effect)) && hover) this.hoveredAt = now;
   }
 }
 

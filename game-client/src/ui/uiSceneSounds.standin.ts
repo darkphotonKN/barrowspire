@@ -1,4 +1,4 @@
-import { GAMEPLAY_EFFECTS } from "@/audio/gameplaySounds";
+import { GAMEPLAY_EFFECTS, gameplaySoundKey } from "@/audio/gameplaySounds";
 import { UI_EFFECTS, uiSoundKey, type UiSoundStage } from "@/audio/uiSounds";
 import { GameUiBridge, lendUiBridge, reportWorld, uiBridgeOf, type UiBridge, type World, type WorldSide, type WorldUi } from "./uiBridge";
 import { mountInterfaceSounds, type UiWindows } from "./uiSceneSounds";
@@ -17,7 +17,7 @@ export function heardInterfaceSounds(onto?: UiBridge, own: Partial<UiWindows> = 
   let played: string[] = [];
   const stage: UiSoundStage = {
     // the game's cache holds the gameplay effects too (FS-AND39 R12): one an action asks for plays here
-    cached: (key) => UI_EFFECTS.some((effect) => key === uiSoundKey(effect)) || GAMEPLAY_EFFECTS.some((effect) => key === `sfx:${effect}`),
+    cached: (key) => UI_EFFECTS.some((effect) => key === uiSoundKey(effect)) || GAMEPLAY_EFFECTS.some((effect) => key === gameplaySoundKey(effect)),
     get: () => null,
     add: (key) => ({ play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
     audible: () => true,
