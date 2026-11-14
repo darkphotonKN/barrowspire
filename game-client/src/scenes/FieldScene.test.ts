@@ -3018,4 +3018,10 @@ describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Pha
     expect(side.blockers().party ?? false).toBe(false);
     expect(side.blockers().chat ?? false).toBe(false);
   });
+
+  // batch 6 review (LOW): the world says, in its report, that its invites stack above the chat window
+  it("should report its invites stacked above the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R132)", () => {
+    const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
+    expect(field.worldSide().invitesAboveChat).toBe(true);
+  });
 });

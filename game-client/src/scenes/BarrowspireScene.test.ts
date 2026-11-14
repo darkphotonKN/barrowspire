@@ -10986,6 +10986,12 @@ describe("BarrowspireScene what the party pieces read of it (FS-TQZ5J § Change:
     run.runEnded = true;
     expect(side.blockers()).toMatchObject({ party: true, popups: true, chat: true });
   });
+
+  // batch 6 review (LOW): the world says, in its report, that its invites stack above the chat window
+  it("should report its invites stacked above the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R132)", () => {
+    const run = new BarrowspireScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
+    expect(run.worldSide().invitesAboveChat).toBe(true);
+  });
 });
 
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-11): the party frames are the UI scene's; the run hands

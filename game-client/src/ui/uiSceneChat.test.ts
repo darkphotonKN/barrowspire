@@ -222,20 +222,20 @@ describe("the run's end while the player types (FS-TQZ5J § Change: Batch 6, R12
   });
 });
 
-describe("the invite stack's floor (FS-TQZ5J § Change: Batch 6, R132)", () => {
-  it.each([
-    ["field", 468],
-    ["run", 468],
-    ["hub", undefined],
-  ] as const)("should be the window's top edge in a %s: %s", (world, floor) => {
+describe("the window's top edge (FS-TQZ5J § Change: Batch 6, R132)", () => {
+  it.each(["field", "run", "hub"] as const)("should be the standing window's top edge in the %s: the invites' floor is the world's to report", (world) => {
     const { slot, report } = onSlot();
     report(aWorld(world));
-    expect(slot.floor()).toBe(floor);
+    expect(slot.topEdge()).toBe(468);
   });
 
   it("should be none with no window standing", () => {
     const { slot } = onSlot();
-    expect(slot.floor()).toBeUndefined();
+    expect(slot.topEdge()).toBeUndefined();
+  });
+
+  it("should name no world in the slot: each world reports its floor (OCP)", () => {
+    expect(readFileSync(join(__dirname, "uiSceneChat.ts"), "utf8")).not.toMatch(/FLOOR_WORLDS|"field"|"run"/);
   });
 });
 

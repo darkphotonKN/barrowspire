@@ -1323,6 +1323,7 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     });
     scene.create();
     const blockers = { dialogue: false, party: false, popups: false };
+    // a field and the run report their invites stacked above the chat window, the town none (R132)
     const report = (world: "hub" | "field" | "run") =>
       bridge.report({
         world,
@@ -1330,6 +1331,7 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
         blockers: () => ({ ...blockers }),
         facts: () => NO_FACTS,
         answer: () => {},
+        invitesAboveChat: world !== "hub",
       });
     return { bridge, report, blockers, keyboard };
   }

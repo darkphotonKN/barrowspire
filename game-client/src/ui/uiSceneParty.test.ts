@@ -183,15 +183,26 @@ describe("the invite prompt's and the ready check's wiring (FS-TQZ5J § Change: 
     expect(wiring.hidden()).toBe(true);
   });
 
-  it("should stack the invites above the UI scene's chat window's top, as its floor reads it (§ Change: Batch 6, R132)", () => {
+  it("should stack the invites above the UI scene's chat window's top where the world reports it so (§ Change: Batch 6, R132)", () => {
     const bridge = new GameUiBridge();
     let chatTop: number | undefined = 520;
     const wiring = partyPromptWiring(bridge, () => chatTop);
-    bridge.report(aWorld("field").report);
+    bridge.report({ ...aWorld("field").report, invitesAboveChat: true });
 
     expect(wiring.floor()).toBe(520);
     chatTop = undefined;
     expect(wiring.floor()).toBeUndefined();
+  });
+
+  it("should stack them above nothing where the world reports no such floor, whatever its name (§ Change: Batch 6, R132)", () => {
+    const bridge = new GameUiBridge();
+    const wiring = partyPromptWiring(bridge, () => 520);
+    bridge.report(aWorld("hub").report);
+    expect(wiring.floor()).toBeUndefined();
+    bridge.report(aWorld("run").report);
+    expect(wiring.floor()).toBeUndefined();
+    bridge.report({ ...aWorld("hub").report, invitesAboveChat: true });
+    expect(wiring.floor()).toBe(520);
   });
 });
 

@@ -6293,6 +6293,13 @@ describe("HubScene the letter panel's open state, from the mailbox store (FS-TQZ
     side.answer({ kind: "close", window: "letter" });
     expect(useMailboxStore.getState().panelOpen).toBe(false);
   });
+
+  // batch 6 review (LOW): the town's invites stack above nothing, as it reported no floor before
+  it("should report no invites stacked above the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R132)", () => {
+    const { hub } = hubOnStage();
+    const town = hub as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
+    expect(town.worldSide().invitesAboveChat ?? false).toBe(false);
+  });
 });
 
 describe("HubScene's level bar, the UI scene's (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
