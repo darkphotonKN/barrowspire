@@ -5,7 +5,7 @@ import {
   CORNER_LABEL_GREYED_MAIL,
   ABILITY_CARD_PLACE,
   CORNER_ROW_CLEARANCE,
-  LEAVE_BUTTON_PLACE,
+  leaveButtonPlace,
   cornerIconFrame,
   cornerLabelAt,
   CONTROLS_BADGE_LABEL,
@@ -77,7 +77,9 @@ describe("what stands above the row outside the town (FS-3EBCA R13, R14)", () =>
   });
 
   it("should centre the dead spectator's leave button at (width - 116, 631), clear of the row", () => {
-    expect(anchorAt(LEAVE_BUTTON_PLACE, view)).toEqual({ x: 964, y: 631 });
+    expect(anchorAt(leaveButtonPlace(200), view)).toEqual({ x: 964, y: 631 });
+    // as wide as its label, its right edge stays on the margin (FS-TQZ5J § Change: Batch 6, R124)
+    expect(anchorAt(leaveButtonPlace(94), view)).toEqual({ x: 964 + 53, y: 631 });
     expect(631 + 38 / 2).toBeLessThanOrEqual(row.y - 8);
   });
 });

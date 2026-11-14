@@ -1531,7 +1531,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     stage.run.handleGameStateUpdate(state(...allies));
     const live = (test: (content: string) => boolean) =>
       stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
-    const watchButtons = () => live((t) => /watch the delve/i.test(t));
+    const watchButtons = () => live((t) => t === "WATCH");
     const cardTitles = () => live((t) => /barrow keeps you|out of the barrow/i.test(t));
     const watching = () => live((t) => /^Watching /.test(t)).map((m) => m.args[2]);
     const hints = () => live((t) => /Tab: next player/i.test(t));
@@ -1572,8 +1572,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(watchButtons()).toHaveLength(1);
       const [x, y, w, h] = watchHit(stage)!.args as number[];
       // the recording camera is 800 x 600: the first of two about the centre (Leave beside it,
-      // FS-GV8WN R25), lifted 200 px off the bottom edge's margin (asked 2026-11-02, Nick)
-      expect(x).toBe(400 - (w + 16) / 2);
+      // FS-GV8WN R25), lifted 200 px off the bottom edge's margin (asked 2026-11-02, Nick); at this narrow
+      // view the row starts 12 right of the open chat window (FS-TQZ5J § Change: Batch 6, R123)
+      expect(x - w / 2).toBe(442);
       expect(y + h / 2).toBe(600 - 16 - 200);
       expect(w).toBeGreaterThan(0);
     });
@@ -1896,8 +1897,9 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     stage.run.handleGameStateUpdate(partyState(me));
     const live = (test: (content: string) => boolean) =>
       stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
-    const leaveLabels = () => live((t) => /leave the barrow/i.test(t));
-    const watchLabels = () => live((t) => /watch the delve/i.test(t));
+    // the owner's words (FS-TQZ5J § Change: Batch 6, R120)
+    const leaveLabels = () => live((t) => t === "LEAVE");
+    const watchLabels = () => live((t) => t === "WATCH");
     const hit = (name: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
     const press = (name: string) => hit(name)?.handlers.pointerdown();
@@ -2031,21 +2033,21 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     const { press, leaveLabels, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
     press("watch-the-delve");
     expect(leaveLabels()).toHaveLength(1);
-    // the recording camera is 800 x 600: alone in the row, on the row's line
-    const [x, y, , h] = hit("leave-the-barrow")!.args as number[];
-    expect(x).toBe(400);
+    // the recording camera is 800 x 600: alone in the row, on the row's line, 12 right of the open chat
+    // window at this narrow view (FS-TQZ5J § Change: Batch 6, R123)
+    const [x, y, w, h] = hit("leave-the-barrow")!.args as number[];
+    expect(x - w / 2).toBe(442);
     expect(y + h / 2).toBe(600 - 16 - 200);
   });
 
   // FS-GV8WN R25: the escaped player's Leave, beside Watch in the bottom-centre row
   describe("an escaped player's Leave (FS-GV8WN R25)", () => {
-    it("should stand beside Watch the delve, the two spread about the centre on one line", () => {
+    it("should stand beside Watch the delve, the two 8 apart on one line", () => {
       const { hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
       const watch = hit("watch-the-delve")!.args as number[];
       const leave = hit("leave-the-barrow")!.args as number[];
-      expect(watch[0]).toBeLessThan(400);
-      expect(leave[0]).toBeGreaterThan(400);
-      expect(watch[0] + leave[0]).toBe(800);
+      // left to right, 8 apart (FS-TQZ5J § Change: Batch 6, R123)
+      expect(leave[0] - leave[2] / 2).toBe(watch[0] + watch[2] / 2 + 8);
       expect(leave[1]).toBe(watch[1]);
     });
 
@@ -2103,7 +2105,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       );
       expect(watchLabels()).toHaveLength(0);
       expect(leaveLabels()).toHaveLength(1);
-      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(400);
+      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(442 + 94 / 2);
     });
 
     it("should keep Leave once the broadcast no longer sends an escaped player's own state", () => {
@@ -2130,7 +2132,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       const before = stage.made.length;
       (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
       const drawn = stage.made.slice(before);
-      expect(drawn.some((m) => m.kind === "text" && /leave the barrow/i.test(String(m.args[2])))).toBe(false);
+      expect(drawn.some((m) => m.kind === "text" && String(m.args[2]) === "LEAVE")).toBe(false);
     });
 
     it("should give a player still in the delve no Leave", () => {
@@ -2459,8 +2461,9 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
     // Watch the delve: the card goes down and the button takes its corner (FS-QPDKN req 7, 10)
     (run as unknown as { startWatching(): void }).startWatching();
-    const labels = live().filter((m) => m.args[2] === "LEAVE THE BARROW");
-    expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 116, viewport.height - 89]);
+    const labels = live().filter((m) => m.args[2] === "LEAVE");
+    // as wide as its label, its right edge on the corner margin (FS-TQZ5J § Change: Batch 6, R124)
+    expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 16 - 94 / 2, viewport.height - 89]);
   });
 
   // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the run,
@@ -4078,31 +4081,28 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     const watch = hit("watch-the-delve")!.args as number[];
     const leave = hit("leave-the-barrow")!.args as number[];
     const record = hit("settlement")!.args as number[];
-    // the recording camera is 800 x 600: three buttons about the centre, on the Watch button's line
-    expect(watch[0]).toBeLessThan(400);
-    expect(leave[0]).toBe(400);
-    expect(record[0]).toBeGreaterThan(400);
-    expect(watch[0] + record[0]).toBe(800);
+    // the recording camera is 800 x 600: three buttons left to right 8 apart from 442, the open chat
+    // window's clearance at this narrow view, on the Watch button's line (FS-TQZ5J § Change: Batch 6, R123)
+    expect([watch, leave, record].map(([x, , w]) => x - w / 2)).toEqual([442, 554, 656]);
     expect([leave[1], record[1]]).toEqual([watch[1], watch[1]]);
     expect(record[1] + record[3] / 2).toBe(600 - 16 - 200);
   });
 
-  it("should keep Leave and the Settlement button, centred as a pair, once Watch is pressed", () => {
+  it("should keep Leave and the Settlement button as a pair, once Watch is pressed", () => {
     const { run, hit, press } = settlingOnStage();
     run.showSettlement(settlement());
     press("close-the-record");
     press("watch-the-delve");
     expect(hit("watch-the-delve")).toBeUndefined();
-    const leave = (hit("leave-the-barrow")!.args as number[])[0];
-    const record = (hit("settlement")!.args as number[])[0];
-    expect(leave).toBeLessThan(400);
-    expect(leave + record).toBe(800);
+    const [leave, , leaveW] = hit("leave-the-barrow")!.args as number[];
+    const [record, , recordW] = hit("settlement")!.args as number[];
+    expect([leave - leaveW / 2, record - recordW / 2]).toEqual([442, 544]);
   });
 
   it("should give a dead player the Settlement button too, the card's Watch and Leave kept", () => {
     const { run, hit, shown } = settlingOnStage(player("me", "Aldric", 130, dead));
     run.showSettlement(settlement({ outcome: "died" }));
-    expect((hit("settlement")!.args as number[])[0]).toBe(400);
+    expect((hit("settlement")!.args as number[])[0]).toBe(442 + 144 / 2);
     expect(hit("watch-the-delve")).toBeDefined();
     expect(hit("leave-the-barrow")).toBeDefined();
     expect(shown()).toContain("FALLEN IN THE BARROW");

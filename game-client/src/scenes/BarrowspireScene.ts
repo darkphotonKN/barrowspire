@@ -75,7 +75,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  * create, which sends them.
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
-import { LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
+import { leaveButtonPlace } from "@/ui/hudCornerLayout";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
@@ -90,7 +90,7 @@ import {
 import { ResultHold } from "@/components/resultHold";
 import { settlementRecord, type RecordView } from "@/ui/settlement";
 import { recordHoldsTown } from "@/ui/recordHold";
-import { resolvedRow, resolvedRowY, rowSlotX, type RowButton } from "@/ui/resolvedRow";
+import { ROW_BUTTON_H, buttonWidth, centredLefts, resolvedRow, resolvedRowY, rowLefts, type RowButton } from "@/ui/resolvedRow";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -280,7 +280,7 @@ const RESOLVED_CARD_DEPTH = 1500;
 const SPECTATE_HUD_Y = 10;
 /**
  * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, above the corner row
- * (`LEAVE_BUTTON_PLACE`, FS-3EBCA R14), in the HUD band (1000) with the counters, and away from the
+ * (`leaveButtonPlace`, FS-3EBCA R14), in the HUD band (1000) with the counters, and away from the
  * watched player at the centre and the HUD along the top edge. Its margin is the bottom-centre
  * row's (`resolvedRowY`).
  */
@@ -306,9 +306,12 @@ interface WorldButton {
   setEnabled(on: boolean): void;
   destroy(): void;
 }
-const BUTTON_W = 200;
-const BUTTON_H = 38;
-const BUTTON_GAP = 16;
+const BUTTON_H = ROW_BUTTON_H;
+/**
+ * Every run button's label (FS-TQZ5J § Change: Batch 6, R121): EB Garamond bold 13 px, letter-spaced 1, the
+ * design guideline's label step; each button as wide as its label plus its padding (`buttonWidth`, R122).
+ */
+const BUTTON_LABEL = { fontSize: "13px", fontStyle: "bold", letterSpacing: 1 } as const;
 // The level bar, the Health and class resource bars and the potion cell stand top-left, the party frames
 // under them (`PROGRESS_HUD_AT`, `RESOURCE_HUD_AT`): the UI scene's HUD slot stands them (FS-TQZ5J
 // § Change: Batch 5, R69, `HUD_PLACES`).
@@ -617,12 +620,13 @@ export class BarrowspireScene extends Phaser.Scene {
   private menuKeysCaptured: number[] = [];
   private readonly watchSpec: ButtonSpec = {
     name: "watch-the-delve",
-    label: "WATCH THE DELVE",
+    // the owner's words (FS-TQZ5J § Change: Batch 6, R120)
+    label: "WATCH",
     onPress: () => this.startWatching(),
   };
   private readonly leaveSpec: ButtonSpec = {
     name: "leave-the-barrow",
-    label: "LEAVE THE BARROW",
+    label: "LEAVE",
     onPress: () => this.leaveTheBarrow(),
   };
   private readonly settlementSpec: ButtonSpec = {
@@ -1295,8 +1299,9 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The bottom-centre row (FS-QPDKN req 3, amended; FS-GV8WN R21, R25): Watch the delve for an
    * escaped player who can, Leave the barrow for an escaped player, and Settlement once a record
-   * has come, spread about the centre. Redrawn only when the buttons it holds change; none once
-   * the run has ended. A Leave drawn while a leave is pending comes up dimmed.
+   * has come: WATCH, LEAVE, SETTLEMENT, left to right off the open chat window (FS-TQZ5J § Change:
+   * Batch 6, R123). Redrawn only when the buttons it holds change; none once the run has ended. A
+   * Leave drawn while a leave is pending comes up dimmed.
    */
   private syncRow(): void {
     const names: RowButton[] = this.runEnded
@@ -1315,12 +1320,11 @@ export class BarrowspireScene extends Phaser.Scene {
       settlement: this.settlementSpec,
     };
     const y = this.rowY();
+    // left to right, each its label's width, off the open chat window (FS-TQZ5J § Change: Batch 6, R123)
+    const widths = names.map((name) => this.buttonWidth(specs[name]));
+    const lefts = rowLefts(widths, viewport);
     const buttons = names.map((name, i) =>
-      this.hudButton(
-        specs[name],
-        { x: rowSlotX(i, names.length, viewport.centerX, BUTTON_W, BUTTON_GAP), y },
-        RESOLVED_ROW_DEPTH,
-      ),
+      this.hudButton(specs[name], { x: lefts[i] + widths[i] / 2, y }, RESOLVED_ROW_DEPTH, widths[i]),
     );
     const leaveAt = names.indexOf("leave");
     this.row = { names: key, buttons, leave: leaveAt < 0 ? undefined : buttons[leaveAt] };
@@ -5195,7 +5199,10 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // one row of buttons, centred: Watch and Leave (req 2)
     const buttons: ButtonSpec[] = [this.watchSpec, this.leaveSpec];
-    const made = buttons.map((button, i) => this.cardButton(button, i, buttons.length));
+    // centred on the card, the row's gap apart (FS-TQZ5J § Change: Batch 6, R124)
+    const widths = buttons.map((button) => this.buttonWidth(button));
+    const lefts = centredLefts(widths, 0);
+    const made = buttons.map((button, i) => this.cardButton(button, lefts[i] + widths[i] / 2, widths[i]));
 
     this.resolvedKind = card.kind;
     this.resolvedCardView = card;
@@ -5213,16 +5220,23 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * A card button: its face and label for the card's container, and its hit area for the scene.
-   * Buttons sit in one row, `index` of `count`, under the card's copy.
+   * Buttons sit in one row under the card's copy, this one centred `x` across from the card's centre.
    */
-  private cardButton(
-    button: ButtonSpec,
-    index: number,
-    count: number,
-  ): WorldButton {
-    const x = (index - (count - 1) / 2) * (BUTTON_W + BUTTON_GAP);
+  private cardButton(button: ButtonSpec, x: number, width: number): WorldButton {
     const y = 50;
-    return this.worldButton(button, { x, y }, { x: viewport.centerX, y: viewport.centerY }, RESOLVED_CARD_DEPTH + 1);
+    return this.worldButton(button, { x, y }, { x: viewport.centerX, y: viewport.centerY }, RESOLVED_CARD_DEPTH + 1, width);
+  }
+
+  /** A button's width: its label's as drawn, plus its padding each side (FS-TQZ5J § Change: Batch 6, R122). */
+  private buttonWidth(button: ButtonSpec): number {
+    const probe = this.add.text(0, 0, button.label, this.buttonLabelStyle());
+    const width = buttonWidth(probe.width);
+    probe.destroy();
+    return width;
+  }
+
+  private buttonLabelStyle(): Phaser.Types.GameObjects.Text.TextStyle {
+    return { fontFamily: CANVAS_FONT.body, color: toCss(palette.ink), ...BUTTON_LABEL };
   }
 
   /**
@@ -5235,27 +5249,20 @@ export class BarrowspireScene extends Phaser.Scene {
     at: { x: number; y: number },
     origin: { x: number; y: number },
     hitDepth: number,
+    width: number,
   ): WorldButton {
     const face = this.add.graphics();
     let enabled = true;
     const paint = (fill: number) => {
       face.clear();
       face.fillStyle(fill, 1);
-      face.fillRoundedRect(at.x - BUTTON_W / 2, at.y - BUTTON_H / 2, BUTTON_W, BUTTON_H, 6);
+      face.fillRoundedRect(at.x - width / 2, at.y - BUTTON_H / 2, width, BUTTON_H, 6);
     };
     const rest = () => paint(enabled ? palette.interactable : palette.hudLabel);
     rest();
-    const label = this.add
-      .text(at.x, at.y, button.label, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "14px",
-        color: toCss(palette.ink),
-        fontStyle: "bold",
-        letterSpacing: 3,
-      })
-      .setOrigin(0.5);
+    const label = this.add.text(at.x, at.y, button.label, this.buttonLabelStyle()).setOrigin(0.5);
     const hit = this.add
-      .rectangle(origin.x + at.x, origin.y + at.y, BUTTON_W, BUTTON_H, palette.inkDeep, 0)
+      .rectangle(origin.x + at.x, origin.y + at.y, width, BUTTON_H, palette.inkDeep, 0)
       .setInteractive()
       .setScrollFactor(0)
       .setDepth(hitDepth)
@@ -5406,16 +5413,17 @@ export class BarrowspireScene extends Phaser.Scene {
   private placeLeaveInCorner(): void {
     if (this.resolvedKind !== "dead" || this.leaveButton) return;
     // above the corner row, as the card it stands in for (FS-3EBCA R14)
-    const at = anchorAt(LEAVE_BUTTON_PLACE);
-    this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH);
+    const width = this.buttonWidth(this.leaveSpec);
+    const at = anchorAt(leaveButtonPlace(width));
+    this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH, width);
     this.leaveButton.setEnabled(!this.leavePending);
     // the corner is the button's now (FS-8AY7S req 32)
     this.showAbilityCard();
   }
 
   /** A button fixed to the screen at `at`, in a HUD depth band: its hit area just over its face. */
-  private hudButton(button: ButtonSpec, at: { x: number; y: number }, depth: number): WorldButton {
-    const made = this.worldButton(button, at, { x: 0, y: 0 }, depth + 1);
+  private hudButton(button: ButtonSpec, at: { x: number; y: number }, depth: number, width: number): WorldButton {
+    const made = this.worldButton(button, at, { x: 0, y: 0 }, depth + 1, width);
     made.parts.forEach((part) => part.setScrollFactor(0).setDepth(depth));
     return made;
   }

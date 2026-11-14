@@ -61,7 +61,7 @@ const ROWS: RowButton[][] = [
 /** The row's buttons as x spans, at a logical width (720 tall). */
 const spans = (names: RowButton[], width: number) => {
   const widths = names.map((n) => W[n]);
-  const lefts = rowLefts(widths, { width, height: 720 });
+  const lefts = rowLefts(widths, { width });
   return lefts.map((left, i) => [left, left + widths[i]]);
 };
 
@@ -118,7 +118,7 @@ describe("rowLefts (FS-TQZ5J § Change: Batch 6, R123: layout B)", () => {
 
   it("should lay the buttons left to right 8 apart", () => {
     // 100 + 8 + 50 + 8 + 70 = 236, centred on 640
-    expect(rowLefts([100, 50, 70], { width: 1280, height: 720 })).toEqual([522, 630, 688]);
+    expect(rowLefts([100, 50, 70], { width: 1280 })).toEqual([522, 630, 688]);
   });
 });
 
