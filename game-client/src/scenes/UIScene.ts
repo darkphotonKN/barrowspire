@@ -24,6 +24,8 @@ import { UiMenuSlot } from "@/ui/uiSceneMenu";
 import { UiNoticeLayer, drawNotice } from "@/ui/uiSceneNotices";
 import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPieces } from "@/ui/uiSceneParty";
 import { UiScenePointer } from "@/ui/uiScenePointer";
+import { UiGearSlot, type GearKey } from "@/ui/uiSceneGear";
+import { mountGearPieces } from "@/ui/gearPieces";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
 
@@ -38,7 +40,19 @@ interface MenuKeyObjects {
   numbers: Phaser.Input.Keyboard.Key[];
   left: Phaser.Input.Keyboard.Key;
   right: Phaser.Input.Keyboard.Key;
+  /** The gear's I, B and C, read once a frame for the town, which polled them (§ Change: Phase 3, R56). */
+  gear: { i: Phaser.Input.Keyboard.Key; b: Phaser.Input.Keyboard.Key; c: Phaser.Input.Keyboard.Key };
 }
+
+/** The keys a field and the run heard on key events, by the gear key each is (§ Change: Phase 3, R56). */
+const EVENT_GEAR_KEYS: readonly (readonly [string, GearKey])[] = [
+  ["keydown-I", "inventory"],
+  ["keydown-B", "inventory"],
+  ["keydown-C", "character"],
+  ["keydown-Q", "close"],
+  ["keydown-E", "equip"],
+  ["keydown-F", "take"],
+];
 
 /**
  * The UI scene (FS-TQZ5J §A, ADR-0081): the one scene drawn over every world scene and under the
@@ -67,6 +81,8 @@ export class UIScene extends Phaser.Scene {
   private menu?: UiMenuSlot;
   private dialogue?: UiDialogueSlot;
   private party?: UiPartySlot;
+  /** The gear overlay and the container view (FS-TQZ5J § Change: Phase 3, R50). */
+  private gear?: UiGearSlot;
   /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
   private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
@@ -85,7 +101,11 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     const bridge = uiBridgeOf(this.registry);
     if (!bridge) return;
-    mountInterfaceSounds(bridge, sceneUiSoundStage(this), browserSfxStore, undefined, () => this.party?.isOpen() ?? false);
+    mountInterfaceSounds(bridge, sceneUiSoundStage(this), browserSfxStore, undefined, {
+      party: () => this.party?.isOpen() ?? false,
+      inventory: () => this.gear?.isInventoryOpen() ?? false,
+      character: () => this.gear?.isCharacterOpen() ?? false,
+    });
     this.mountInterface(bridge);
     this.mountKeys();
     this.mountPointer(bridge);
@@ -121,7 +141,22 @@ export class UIScene extends Phaser.Scene {
     const numbered = keys.numbers.map((key) => down(key)).indexOf(true);
     const left = down(keys.left);
     const right = down(keys.right);
+    // the town's I, B and C, read every frame in every world so a press made elsewhere never answers
+    // in the town later (§ Change: Phase 3, R56)
+    const inventory = [down(keys.gear.i), down(keys.gear.b)].includes(true);
+    const character = down(keys.gear.c);
+    const carded = this.dialogue?.isOpen() ?? false;
     handKeys({ esc, e, enter, numbered, nudge: left === right ? undefined : left ? -1 : 1 }, this.dialogue, this.menu);
+    if (this.bridge()?.world?.world !== "hub") return;
+    // the town polled its gear keys once a frame, and gave E to the open inventory after a shown card
+    if (inventory) this.gear?.key("inventory");
+    if (character) this.gear?.key("character");
+    if (e && !carded) this.gear?.key("equip");
+  }
+
+  /** The game's UI bridge, as create found it. */
+  private bridge(): UiBridge | null {
+    return uiBridgeOf(this.registry);
   }
 
   /**
@@ -142,9 +177,31 @@ export class UIScene extends Phaser.Scene {
       left: keyboard.addKey(codes.LEFT, false),
       right: keyboard.addKey(codes.RIGHT, false),
       e: keyboard.addKey(codes.E, false),
+      gear: { i: keyboard.addKey(codes.I, false), b: keyboard.addKey(codes.B, false), c: keyboard.addKey(codes.C, false) },
     };
     this.events.on(Phaser.Scenes.Events.SLEEP, () => keyboard.removeCapture(codes.ESC));
     this.events.on(Phaser.Scenes.Events.WAKE, () => keyboard.addCapture(codes.ESC));
+    // a field's and the run's gear keys, on key events as they heard them, uncaptured (R56)
+    for (const [event, key] of EVENT_GEAR_KEYS)
+      keyboard.on(event, () => {
+        if (this.bridge()?.world?.world !== "hub") this.gear?.key(key);
+      });
+    // the town captured I, B and C while it stood, as its `addKey` did; let go as it leaves (R56)
+    const town = [codes.I, codes.B, codes.C];
+    let captured = false;
+    const bridge = this.bridge();
+    const stop = bridge?.onWorld((report) => {
+      const want = report?.world === "hub";
+      if (want === captured) return;
+      captured = want;
+      if (want) keyboard.addCapture(town);
+      else keyboard.removeCapture(town);
+    });
+    if (bridge?.world?.world === "hub") {
+      captured = true;
+      keyboard.addCapture(town);
+    }
+    onSceneEnd(this, () => stop?.());
   }
 
   /**
@@ -176,6 +233,15 @@ export class UIScene extends Phaser.Scene {
     input.on("pointerup", () => pointer.released());
     input.on("pointerupoutside", () => pointer.released());
     input.on("pointermove", (p: Phaser.Input.Pointer, over: unknown[]) => pointer.moved(p, over));
+    // the container view hit-tests by hand, on its own ground only (§ Change: Phase 3, R60)
+    input.on("pointermove", (p: Phaser.Input.Pointer, over: unknown[]) => {
+      const at = viewport.toLogical(p);
+      this.gear?.pointerMove(at.x, at.y, over);
+    });
+    input.on("pointerdown", (p: Phaser.Input.Pointer, over: unknown[]) => {
+      const at = viewport.toLogical(p);
+      this.gear?.pointerDown(at.x, at.y, p.button === 0, over);
+    });
     input.on("pointerout", (p: Phaser.Input.Pointer) => pointer.left(p));
   }
 
@@ -201,34 +267,49 @@ export class UIScene extends Phaser.Scene {
       musicLevel: () => storedMusicLevel(browserMusicStore),
       fullscreen: () => lentFullscreen(this.registry),
       party: { isOpen: () => party.isOpen(), close: () => party.close() },
+      gear: { isOpen: () => gear.isOpen(), close: () => void gear.close() },
     });
     const party = new UiPartySlot((world) => this.partyPieces(bridge, world));
-    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu(), party);
+    // the gear overlay and its source, and the container view, for each world (§ Change: Phase 3, R50)
+    const gear = new UiGearSlot(bridge, (world, wiring) => mountGearPieces(this, () => this.residentArt(), world, wiring));
+    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu(), party, {
+      isInventoryOpen: () => gear.isInventoryOpen(),
+      isCharacterOpen: () => gear.isCharacterOpen(),
+      toggle: (window) => gear.toggle(window),
+    });
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
     this.menu = menu;
     this.corner = corner;
     this.dialogue = dialogue;
     this.party = party;
+    this.gear = gear;
     corner.show(bridge.world);
+    // the container view's root first, so the gear overlay's objects, made at each open, draw over it
+    gear.show(bridge.world);
     party.show(bridge.world);
     const stop = bridge.onWorld((report) => {
       menu.sync();
       dialogue.sync();
       notices.sync();
       corner.show(report);
+      gear.show(report);
       party.show(report);
     });
     const stopScreen = bridge.onScreen({
       dialogue: (shown) => dialogue.show(shown),
       notice: (notice) => notices.say(notice),
       partySeen: (state) => party.seen(state),
+      gear: (message) => gear.hear(message),
+      container: (message) => gear.hearContainer(message),
+      endPopped: () => gear.endPopped(),
     });
     relayoutOn(this, () => {
       corner.relayout();
       menu.relayout();
       dialogue.relayout();
       party.relayout();
+      gear.relayout();
     });
     onSceneEnd(this, () => {
       stop();
@@ -238,6 +319,8 @@ export class UIScene extends Phaser.Scene {
       notices.clear();
       corner.destroy();
       party.destroy();
+      gear.destroy();
+      this.gear = undefined;
       this.menu = undefined;
       this.dialogue = undefined;
       this.corner = undefined;

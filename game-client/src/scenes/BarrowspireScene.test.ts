@@ -119,12 +119,12 @@ type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
-const { EquipmentHud } = await import("@/ui/EquipmentHud");
+const { mountGearPieces } = await import("@/ui/gearPieces");
 const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
-const { NO_UI } = await import("@/ui/uiBridge");
+const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { NO_UI, worldContainer } = await import("@/ui/uiBridge");
 
 /** A key as both scenes' key objects stand in for it here: pressed since the last frame, or not. */
 interface PressedKey {
@@ -550,6 +550,9 @@ interface Made {
  * A stand-in for the slice of Phaser the state path draws with: every object it makes is recorded
  * by kind and answers any call, and destroying a container destroys what it holds, as Phaser does.
  */
+/** Each recorded object's proxy, the object the scene holds: what Phaser lists under the pointer. */
+const heldAs = new WeakMap<object, unknown>();
+
 function recordingStage() {
   const made: Made[] = [];
   const make = (kind: string, args: unknown[] = []): unknown => {
@@ -646,6 +649,8 @@ function recordingStage() {
         };
       },
     });
+    // the object as the scene holds it, as Phaser lists one under the pointer
+    heldAs.set(self, proxy);
     made.push(self);
     return proxy;
   };
@@ -2207,7 +2212,6 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       },
     });
     // a click off the satchel: it takes none
-    Object.assign((stage.run as unknown as { containerView: object }).containerView, { pointerDown: vi.fn(() => false) });
     const live = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
     const text = (content: string) => live().find((m) => m.args[2] === content);
     const shown = () => carded.abilityHud?.shown ?? null;
@@ -4485,19 +4489,6 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     expect(run.lastGameState).toBeUndefined();
   });
 
-  it("should release the equip HUD on reset, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
-    const scene = new BarrowspireScene();
-    const run = scene as unknown as { resetRun(end: "shutdown" | "destroy"): void; equipment?: { release(): void } };
-    scene.init();
-    const release = vi.fn();
-    run.equipment = { release };
-
-    run.resetRun("shutdown");
-
-    expect(release).toHaveBeenCalledTimes(1);
-    expect(run.equipment).toBeUndefined();
-  });
-
   it("should accept everything when started without a session, and forget the session on reset", () => {
     const scene = new BarrowspireScene();
     const run = scene as unknown as Filtered;
@@ -4789,21 +4780,19 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(sentOf(ActionType.Move)).toHaveLength(0);
   });
 
-  it("should drop E, F, I, Q and H while the menu is open, and answer them again once it closes", () => {
+  // I, B, C, Q and F are the UI scene's since the gear and the satchel moved, refused there under its
+  // menu (FS-TQZ5J § Change: Phase 3, R56; uiSceneGear.test.ts): the run binds none of them
+  it("should drop E and H while the menu is open, and answer them again once it closes; bind no I, Q or F", () => {
     const s = menuOnStage();
     s.run.bindRunInput();
-    const containerView = (s.run as unknown as { containerView: { close: ReturnType<typeof vi.fn>; lootFirst: ReturnType<typeof vi.fn> } }).containerView;
-    containerView.lootFirst = vi.fn();
+    const containerView = (s.run as unknown as { containerView: { close: ReturnType<typeof vi.fn> } }).containerView;
     s.press(s.keys.esc);
 
     s.keyHandlers["keydown-H"]();
-    s.keyHandlers["keydown-Q"]();
-    s.keyHandlers["keydown-F"]();
     s.keyHandlers["keydown-E"]();
-    s.keyHandlers["keydown-I"]();
+    expect(["keydown-I", "keydown-B", "keydown-C", "keydown-Q", "keydown-F"].filter((k) => k in s.keyHandlers)).toEqual([]);
     expect(s.run.controlsPanel).toBeUndefined();
     expect(containerView.close).not.toHaveBeenCalled();
-    expect(containerView.lootFirst).not.toHaveBeenCalled();
     expect(s.sent).not.toHaveBeenCalled();
 
     s.pick("back");
@@ -4814,15 +4803,12 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   it("should drop pointer attacks and skills while the menu is open", () => {
     const s = menuOnStage();
     s.run.bindRunInput();
-    const pointerDown = vi.fn(() => false);
-    Object.assign((s.run as unknown as { containerView: object }).containerView, { pointerDown });
     s.press(s.keys.esc);
 
     s.pointerHandlers.pointerdown({ x: 10, y: 10, button: 0, worldX: 130, worldY: 300, leftButtonDown: () => true, rightButtonDown: () => false });
     s.monsters()[0].handlers.pointerdown();
 
     expect(s.sent).not.toHaveBeenCalled();
-    expect(pointerDown).not.toHaveBeenCalled();
   });
 
   it("should take the menu and its confirm down when the next state shows the player dead, and show the dead card", () => {
@@ -5097,10 +5083,10 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       ]);
     });
 
-    it("should drop E, F, I, Q and H while the panel is open", () => {
+    it("should drop E and H while the panel is open (I, Q and F the UI scene's, FS-TQZ5J § Change: Phase 3, R56)", () => {
       const s = inThePanel();
       s.run.bindRunInput();
-      for (const k of ["keydown-H", "keydown-Q", "keydown-F", "keydown-E", "keydown-I"]) s.keyHandlers[k]();
+      for (const k of ["keydown-H", "keydown-E"]) s.keyHandlers[k]();
       expect(s.run.controlsPanel).toBeUndefined();
       expect(s.sent).not.toHaveBeenCalled();
     });
@@ -5263,14 +5249,11 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
 
 describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20–22)", () => {
   interface Overlaid {
-    equipment?: InstanceType<typeof EquipmentHud>;
     menu?: unknown;
     controlsPanel?: unknown;
     combat: { aiming: boolean };
+    containerView: ReturnType<typeof worldContainer>;
     bindRunInput(): void;
-    composeEquipment(): InstanceType<typeof EquipmentHud>;
-    bagHasRoom(): boolean;
-    lootChestItem(item: unknown): void;
     toggleControlsPanel(): void;
     handleGameStateUpdate(state: GameState): void;
     sendMovementIntent(vx: number, vy: number): void;
@@ -5283,33 +5266,67 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   const OVER_PANEL = { x: layout.right.x + layout.right.w / 2, y: 300 };
   const IN_BAND = { x: layout.band.x + layout.band.w / 2, y: 300 };
 
+  /** The run's keys the UI scene hears since the gear and the satchel moved (FS-TQZ5J § Change: Phase 3, R56). */
+  const GEAR_KEYS: Record<string, "inventory" | "character" | "close" | "take"> = {
+    I: "inventory",
+    B: "inventory",
+    C: "character",
+    Q: "close",
+    F: "take",
+  };
+
+  /**
+   * The run on stage with the UI scene over it, as the UI scene builds its gear for the run (FS-TQZ5J
+   * § Change: Phase 3, R50): the real overlay, `EquipmentHud` and container view on a stand-in UI scene
+   * of their own input, drawing on the run's recording stage, fed the run's state through the bridge;
+   * the run's satchel the bridge's (`worldContainer`). A press goes to the UI scene first: on one of its
+   * grounds (the overlay's panels, their ×) it is the UI scene's, Phaser stopping it there (R7, R59);
+   * anywhere else the run hears it too. Every move reaches both (A1 R27).
+   */
   function overlayOnStage(cls = "warrior", inventory: unknown[] = [sword]) {
     const stage = onStage();
     vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
-    const run = stage.run as unknown as Overlaid;
+    const run = stage.run as unknown as Overlaid & { ui: import("@/ui/uiBridge").WorldUi };
     const esc = { justDown: false, isDown: false };
     const keyHandlers: Record<string, () => void> = {};
     const removeKey = vi.fn();
     const input = Object.assign(new EventEmitter(), {
       setDefaultCursor: vi.fn(),
-      keyboard: {
-        on: (event: string, fn: () => void) => (keyHandlers[event] = fn),
-        // the overlay's Shift, while open (FS-NV54P R4); closing must not remove it
-        addKey: () => ({ isDown: false }),
-        removeKey,
-      },
+      keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
       activePointer: { button: 0, positionToCamera: () => ({ x: 400, y: 300 }) },
     });
-    Object.assign(stage.run, { input, game: { events: new EventEmitter() } });
-    Object.assign((stage.run as unknown as { containerView: object }).containerView, {
-      pointerDown: vi.fn(() => false),
-      pointerMove: vi.fn(),
+    Object.assign(stage.run, { input, game: { events: new EventEmitter() }, containerView: worldContainer(() => run.ui) });
+    const sceneParts = stage.run as unknown as Record<string, unknown>;
+    const uiInput = Object.assign(new EventEmitter(), {
+      // the overlay's Shift, while open (FS-NV54P R4); closing must not remove it
+      keyboard: { addKey: () => ({ isDown: false }), removeKey },
     });
-    run.equipment = run.composeEquipment();
+    const uiScene = {
+      add: stage.stage.add,
+      make: sceneParts.make,
+      // the satchel's, the coffer's and the heap's faces baked already, as the UI scene's are at its first world
+      textures: { ...(sceneParts.textures as object), exists: () => true },
+      time: sceneParts.time,
+      tweens: sceneParts.tweens,
+      cameras: sceneParts.cameras,
+      input: uiInput,
+      scale: new EventEmitter(),
+      events: new EventEmitter(),
+    };
+    gearOver(run, "run", (w, wiring) => mountGearPieces(uiScene as never, () => sceneParts.art as never, w, wiring));
     run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), class: cls, inventory } as ReturnType<typeof player>));
     run.bindRunInput();
     (stage.run as unknown as { time: { now: number } }).time.now = 1000;
-    const key = (name: string) => keyHandlers[`keydown-${name}`]();
+    const ui = () => uiSceneOn(run, "run", { row: false });
+    /** A key both scenes' keyboards hear: the run's own (E, H) and the UI scene's (I, B, C, Q, F, and E for an open inventory). */
+    const key = (name: string) => {
+      if (name === "E") ui().gearKey("equip");
+      const gear = GEAR_KEYS[name];
+      if (gear) ui().gearKey(gear);
+      else keyHandlers[`keydown-${name}`]?.();
+    };
+    /** Whether either gear panel is open: the UI scene's gear (R55). */
+    const gearOpen = () => ui().gear.isOpen();
     // Esc is the UI scene's (FS-TQZ5J R17)
     const pressEsc = () => {
       esc.justDown = true;
@@ -5323,14 +5340,32 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       leftButtonDown: () => button === 0,
       rightButtonDown: () => button === 2,
     });
+    /** What Phaser lists under the pointer in the UI scene, top first: a live ground or × of a window. */
+    const uiOver = (at: { x: number; y: number }) => {
+      const hit = stage.stage.made.filter((m) => {
+        const z = m as Made & { depth?: number };
+        if (z.kind !== "zone" || z.destroyed || !z.calls.includes("setInteractive") || (z.depth ?? 0) < 1100) return false;
+        const [x, y, w, h] = z.args as number[];
+        return at.x >= x && at.x <= x + w && at.y >= y && at.y <= y + h;
+      }) as (Made & { depth?: number })[];
+      const top = hit.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0)).at(-1);
+      return top ? [heldAs.get(top)] : [];
+    };
+    const move = (at: { x: number; y: number }, over: unknown[] = uiOver(at)) => {
+      uiInput.emit("pointermove", pointer(at, 0), over);
+      input.emit("pointermove", pointer(at, 0));
+    };
     const press = (at: { x: number; y: number }, button: number) => {
       input.activePointer.button = button;
-      input.emit("pointermove", pointer(at, button));
-      input.emit("pointerdown", pointer(at, button));
+      const over = uiOver(at);
+      move(at, over);
+      uiInput.emit("pointerdown", pointer(at, button), over);
+      // a press on a UI piece never reaches the run (FS-TQZ5J R7)
+      if (over.length === 0) input.emit("pointerdown", pointer(at, button));
     };
     const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
     const shown = (content: string) => stage.texts().some((t) => t.content === content);
-    return { ...stage, run, key, pressEsc, press, sentOf, shown, removeKey };
+    return { ...stage, run, ui, key, gearOpen, pressEsc, move, press, sentOf, shown, removeKey };
   }
 
   afterEach(() => {
@@ -5352,16 +5387,16 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   it("should toggle the overlay on I and on B, and close it on Q (R4)", () => {
     const { run, key, removeKey } = overlayOnStage();
     key("I");
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     key("B");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     key("B");
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     key("I");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     key("B");
     key("Q");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(removeKey).not.toHaveBeenCalled();
   });
 
@@ -5369,7 +5404,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     const { run, key, pressEsc } = overlayOnStage();
     key("I");
     pressEsc();
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(menuOver(run)).toBeUndefined();
     pressEsc();
     expect(menuOver(run)).toBeDefined();
@@ -5387,7 +5422,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     pressEsc();
     key("I");
     key("B");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should send no cast for a left or right press over a panel, and cast for one in the clear band (R8)", () => {
@@ -5440,17 +5475,17 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     expect(shown("WARRIOR")).toBe(true);
     // I closes the inventory alone: the character panel stays over the run
     key("I");
-    expect(run.equipment?.isOpen()).toBe(true);
-    expect(run.equipment?.equipKey()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isInventoryOpen()).toBe(false);
     key("C");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should ignore C while the ESC menu is open (§ Change C2)", () => {
     const { run, key, pressEsc } = overlayOnStage();
     pressEsc();
     key("C");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should close both panels on one ESC, the menu left closed, and on Q (§ Change C3)", () => {
@@ -5458,12 +5493,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     key("I");
     key("C");
     pressEsc();
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(menuOver(run)).toBeUndefined();
     key("I");
     key("C");
     key("Q");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should close the inventory alone on its ×, sending no attack for the press (§ Change C4)", () => {
@@ -5474,11 +5509,11 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     const stageSends = () => sent.mock.calls.length;
     const before = stageSends();
     press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     expect(stageSends()).toEqual(before);
     const left = panelClose(layout.left);
     press({ x: left.x + left.w / 2, y: left.y + left.h / 2 }, 0);
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(stageSends()).toEqual(before);
   });
 
@@ -5492,19 +5527,19 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       return stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
     };
     plate("inventory").handlers.pointerdown();
-    expect(run.equipment?.equipKey()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isInventoryOpen()).toBe(true);
     // the inventory is open over the run: the row still answers
     plate("character").handlers.pointerdown();
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     plate("inventory").handlers.pointerdown();
-    expect(run.equipment?.equipKey()).toBe(false);
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isInventoryOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     plate("character").handlers.pointerdown();
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     plate("inventory").handlers.pointerdown();
     // the Menu icon opens the menu at once, the inventory closing with it (FS-3EBCA R17)
     plate("menu").handlers.pointerdown();
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(menuOver(run)).toBeDefined();
   });
 
@@ -5529,7 +5564,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     ] as const)("should open and close the party panel on T and on the Party icon with %s open", (_open, keys) => {
       const { run, key, party, pressIcon } = partyOverOverlay();
       keys.forEach(key);
-      expect(run.equipment?.isOpen()).toBe(true);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
       party.pressT();
       expect(party.panel.isOpen()).toBe(true);
       party.pressT();
@@ -5539,7 +5574,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       pressIcon();
       expect(party.panel.isOpen()).toBe(false);
       // the overlay stays as it was
-      expect(run.equipment?.isOpen()).toBe(true);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     });
 
     it("should still refuse T while the ESC menu is open", () => {
@@ -5557,28 +5592,23 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       party.pressT();
       pressEsc();
       expect(party.panel.isOpen()).toBe(false);
-      expect(run.equipment?.isOpen()).toBe(true);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
       pressEsc();
-      expect(run.equipment?.isOpen()).toBe(false);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
       expect(menuOver(run)).toBeUndefined();
     });
 
-    // the party panel is the UI scene's: a press on it never reaches the run (FS-TQZ5J § Change: Phase 2:
-    // the party, R40), and a move over it reaches the run with the bridge saying so, the overlay giving
-    // way to it as to any UI piece (R41, R49): its point stands off its panels, so nothing under it tips
-    it("should keep the overlay under a UI piece from tipping there on a move", () => {
+    // the party panel and the overlay are both the UI scene's: a piece over the overlay is the top
+    // object under the pointer, and the overlay gives way to it on a move (FS-TQZ5J § Change: Phase 3,
+    // R60): its point stands off its panels, so nothing under it tips
+    it("should keep the overlay under another UI piece from tipping there on a move", () => {
       const env = overlayOnStage();
-      const run = env.run as unknown as Overlaid & { ui: object };
-      const covered = { on: true };
-      run.ui = new Proxy(run.ui, { get: (t, p) => (p === "overUi" ? covered.on : Reflect.get(t, p)) });
       env.key("I");
       const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
       const at = { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 };
-      const move = () => (env.run as unknown as { input: { emit(event: string, pointer: object): void } }).input.emit("pointermove", { ...at, button: 0 });
-      move();
+      env.move(at, [{ name: "party-panel-ground" }]);
       expect(env.shown("Iron Sword")).toBe(false);
-      covered.on = false;
-      move();
+      env.move(at);
       expect(env.shown("Iron Sword")).toBe(true);
     });
   });
@@ -5600,7 +5630,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         const f = cornerIconFrame(icon, viewport);
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
       };
-      const open = () => ({ gear: run.equipment?.isOpen() ?? false, party: party.panel.isOpen() });
+      const open = () => ({ gear: uiSceneOn(run, "run").gear.isOpen(), party: party.panel.isOpen() });
       return { ...env, run, party, pressIcon, open };
     }
     const NONE = { gear: false, party: false };
@@ -5706,7 +5736,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     type Heard = Overlaid & {
       runEnded: boolean;
       ui: { act(run: () => void): void };
-      containerView: { isOpen: boolean };
       endRun(): void;
       resetRun(end: "shutdown" | "destroy"): void;
     };
@@ -5717,8 +5746,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const env = overlayOnStage();
       const run = env.run as unknown as Heard;
       const heard = hearOn(env.run as unknown as Record<string, unknown>);
-      // the overlay again, as create composes it once the player is made: its × through the wrapper
-      run.equipment = run.composeEquipment();
+      // the UI scene's player lent to its bridge as it is created, the overlay's × through its act (R22)
       run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>));
       const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
       cornerRowOn(run, "run");
@@ -5736,7 +5764,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const open = () => ({
         menu: menuOver(run) !== undefined,
         party: party.panel.isOpen(),
-        gear: run.equipment?.isOpen() ?? false,
+        gear: uiSceneOn(run, "run").gear.isOpen(),
       });
       heard();
       return { ...env, run, heard, party, pressIcon, find, pick, closeX, open };
@@ -5836,7 +5864,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       r.key(opening);
       r.heard();
       r.closeX(side);
-      expect(r.run.equipment?.isOpen()).toBe(false);
+      expect(uiSceneOn(r.run, "run").gear.isOpen()).toBe(false);
       expect(r.heard()).toEqual([closed]);
     });
 
@@ -5959,7 +5987,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
 
     it("should play nothing on T refused while a chest is open, and menu_error on the Party icon the run turns away (S6; § Change M10)", () => {
       const r = heardRun();
-      r.run.containerView.isOpen = true;
+      // the run opens its coffer through the bridge; the UI scene's view reports it open (R52, R53)
+      r.run.containerView.open("chest-1", "chest");
+      r.heard();
       r.party.pressT();
       expect(r.heard()).toEqual([]);
       r.pressIcon("party");
@@ -6055,30 +6085,33 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     });
 
     // create() can't run on the stand-ins, so its order is pinned from the source, as in the town
-    // and the field: the player made before the keys, the gear and the corner, and its wrapper handed
-    // to every module that hears its own input (the party panel is the UI scene's since phase 2)
-    it("should make the player in create before anything that hears a player, and hand its wrapper to the overlay", () => {
+    // and the field: the player made before the keys; the gear overlay, the party panel and the corner
+    // are the UI scene's, which hands the overlay its act (FS-TQZ5J § Change: Phase 3, R50)
+    it("should make the player in create before anything that hears a player, and compose no gear of its own", () => {
       const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
       const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
       const at = (line: RegExp) => create.search(line);
       const mount = at(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);/);
       expect(mount).toBeGreaterThan(-1);
-      for (const later of [
-        /this\.bindRunInput\(\);/,
-        /this\.equipment = this\.composeEquipment\(\);/,
-      ])
-        expect(mount, String(later)).toBeLessThan(at(later));
-      const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-      expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
+      expect(mount).toBeLessThan(at(/this\.bindRunInput\(\);/));
+      expect(source).not.toMatch(/composeEquipment|new GearOverlay|new ContainerView/);
     });
   });
 
+  // the take and the bag's pre-check stay in the UI scene, the run sending the loot asked of it
+  // (FS-TQZ5J § Change: Phase 3, R54): F takes the open coffer's first item
   it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
-    const { run, shown } = overlayOnStage("warrior", bag(29));
-    expect(run.bagHasRoom()).toBe(true);
-    run.lootChestItem({ entity_id: "coin", name: "coin" });
+    const { run, key, shown, sentOf } = overlayOnStage("warrior", bag(29));
+    run.containerView.open("chest-1", "chest");
+    run.containerView.setItems([
+      { entity_id: "coin", name: "coin" },
+      { entity_id: "gem", name: "gem" },
+    ] as never);
+    key("F");
+    expect(sentOf(ActionType.Interact)).toEqual([[ActionType.Interact, { entity_id: "coin" }]]);
     expect(shown(BAG_FULL_NOTICE)).toBe(false);
-    expect(run.bagHasRoom()).toBe(false);
+    key("F");
+    expect(sentOf(ActionType.Interact)).toHaveLength(1);
     expect(shown(BAG_FULL_NOTICE)).toBe(true);
   });
 });
@@ -6091,15 +6124,12 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     abilityHud?: { shown: { name: string; greyed: boolean } | null };
     /** The class kit as drawn, shared with the field scene. */
     kit: { aimLine?: { drawn: boolean } };
-    equipment?: unknown;
     menu?: unknown;
     bindRunInput(): void;
     resetRun(end: "shutdown" | "destroy"): void;
     leaveFloor(): void;
     openMenu(): void;
     endRun(): void;
-    toggleInventory(): void;
-    toggleCharacter(): void;
     aimFrame(): void;
     sendMovementIntent(vx: number, vy: number): void;
     handleGameStateUpdate(state: GameState): void;
@@ -6129,7 +6159,6 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
         activePointer: { button: 0, positionToCamera: () => ({ ...cursor }) },
       },
     });
-    Object.assign((stage.run as unknown as { containerView: object }).containerView, { pointerDown: vi.fn(() => false) });
     run.handleGameStateUpdate(partyState(as(cls) as ReturnType<typeof player>));
     run.bindRunInput();
     run.time.now = 1000;
@@ -6347,19 +6376,11 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     // the UI scene's menu opening, heard by the run (FS-TQZ5J R10)
     ["the ESC menu opening", (s) => menuUpOver(s.run)],
     ["the run ending", (s) => s.run.endRun()],
-    [
-      "the equipment panel opening",
-      (s) => {
-        s.run.equipment = { toggle: vi.fn(() => true), isOpen: () => true };
-        s.run.toggleInventory();
-      },
-    ],
+    // the UI scene's gear panel opening, heard by the run in the UI's state (FS-TQZ5J § Change: Phase 3, R53)
+    ["the equipment panel opening", (s) => uiSceneOn(s.run, "run", { row: false }).bridge.reportUi({ inventory: true })],
     [
       "the character panel opening (FS-HRH2J § Change C5)",
-      (s) => {
-        s.run.equipment = { toggleCharacter: vi.fn(() => true), isOpen: () => true };
-        s.run.toggleCharacter();
-      },
+      (s) => uiSceneOn(s.run, "run", { row: false }).bridge.reportUi({ character: true }),
     ],
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
     ["the window losing focus", (s) => s.game.events.emit("blur")],
@@ -7872,7 +7893,6 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
     view.close.mockImplementation(() => void (view.entityId = null));
     const run = scene.run as unknown as FloorRun & {
       containerView: typeof view;
-      equipment?: unknown;
       events: Emitter;
       init(): void;
       toggleChest(id: string): void;
@@ -8036,24 +8056,17 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
     expect(view.close).toHaveBeenCalledTimes(1);
   });
 
+  // the gear overlay is the UI scene's: the run tells it no close for a hit (FS-TQZ5J § Change: Phase 3, R52)
   it("should leave the gear and bag overlay as it is", () => {
     const { run, view } = onStage();
-    const overlay = {
-      sync: vi.fn(),
-      updateCharacter: vi.fn(),
-      setCharacterLevel: vi.fn(),
-      isOpen: () => true,
-      hide: vi.fn(),
-      release: vi.fn(),
-    };
-    run.equipment = overlay;
+    const told: string[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ gear: (message) => void told.push(message.kind) });
     run.handleGameStateUpdate(state(100));
     run.toggleChest("c1");
     run.handleGameStateUpdate(state(90));
 
     expect(view.isOpen).toBe(false);
-    expect(overlay.hide).not.toHaveBeenCalled();
-    expect(overlay.release).not.toHaveBeenCalled();
+    expect(told).not.toContain("close");
   });
 
   // The server cancels the timed open the hit landed on; the client only follows `timed_open`
@@ -9197,12 +9210,6 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
             keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) },
             on: (event: string, fn: (pointer?: object) => void) => (pointers[event] = fn),
           },
-        });
-        // the satchel shut: it takes no press and lights nothing (the scene's pointer listeners reach it)
-        Object.assign((run as unknown as { containerView: object }).containerView, {
-          relayout: vi.fn(),
-          pointerDown: vi.fn(() => false),
-          pointerMove: vi.fn(),
         });
         run.createUI();
         run.bindRunInput();

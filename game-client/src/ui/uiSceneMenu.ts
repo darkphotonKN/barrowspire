@@ -56,6 +56,11 @@ export interface MenuSlotDeps {
    * over it and the Menu icon after the run's end shut it. None, and there is none to shut.
    */
   party?: { isOpen(): boolean; close(): void };
+  /**
+   * The UI scene's gear overlay (§ Change: Phase 3, R55): Esc's gear step, the menu opening over it and
+   * the Menu icon after the run's end shut it. None, and there is none to shut.
+   */
+  gear?: { isOpen(): boolean; close(): void };
 }
 
 /** A menu's look in a world: its tokens and its rows' pressable area (ADR-0013). */
@@ -166,7 +171,8 @@ export class UiMenuSlot {
   /**
    * One Esc press (R17; FS-R82NV § Change C2, FS-HRH2J R5, FS-1GZGD R40): an open dialogue is
    * dismissed first, then `escapeStep`'s order: the letter panel, this slot (its Back; OPTIONS's
-   * reopens the menu), the party panel, the gear overlay; with nothing open the menu opens.
+   * reopens the menu), the party panel, the gear overlay (the UI scene's own, § Change: Phase 3, R55);
+   * with nothing open the menu opens.
    */
   escape(): void {
     const report = this.deps.bridge.world;
@@ -180,13 +186,13 @@ export class UiMenuSlot {
     const step = escapeStep({
       letter: open.letter,
       menu: this.isOpen(),
-      gear: open.inventory || open.character,
+      gear: this.deps.gear?.isOpen() ?? false,
       party: this.deps.party?.isOpen() ?? false,
     });
     if (step === "letter") this.ask({ kind: "close", window: "letter" });
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
     else if (step === "party") this.closeParty();
-    else if (step === "gear") this.ask({ kind: "close", window: "gear" });
+    else if (step === "gear") this.closeGear();
     else if (!report.facts().ended) this.openMenu();
   }
 
@@ -202,7 +208,7 @@ export class UiMenuSlot {
     if (!report || report.blockers().dialogue) return;
     if (report.facts().ended) {
       this.closeParty();
-      this.ask({ kind: "close", window: "gear" });
+      this.closeGear();
       return;
     }
     this.openMenu();
@@ -368,15 +374,22 @@ export class UiMenuSlot {
       was.panel.container.destroy();
       return;
     }
-    // the menu opens over no window (FS-3EBCA R17): the UI scene's party panel shuts here, the
-    // world's windows as the world hears the UI's state
+    // the menu opens over no window (FS-3EBCA R17): the UI scene's party panel and gear overlay shut
+    // here, the world's windows as the world hears the UI's state
     this.deps.party?.close();
+    this.deps.gear?.close();
     this.deps.bridge.reportUi({ menuOpen: true });
   }
 
   /** The UI scene's party panel shut (§ Change: Phase 2: the party, R39); the rows read the world again. */
   private closeParty(): void {
     this.deps.party?.close();
+    this.sync();
+  }
+
+  /** The UI scene's gear overlay shut (§ Change: Phase 3, R55); the rows read the world again. */
+  private closeGear(): void {
+    this.deps.gear?.close();
     this.sync();
   }
 

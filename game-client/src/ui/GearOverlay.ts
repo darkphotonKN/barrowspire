@@ -17,7 +17,10 @@
  * everything is drawn (`gearOverlayLayout`), hover and the item tip, and equip / unequip by
  * hover + right-click or hover + E (R16–17), applied to its own copy at once. Left-click does
  * nothing and nothing drags (R18). Pointer input is hit-tested by hand in screen space, as the
- * equip panel and the satchel do.
+ * equip panel and the satchel do, on the UI scene's scene-wide events: it stands an interactive
+ * ground under each open panel, so Phaser stops a press there at the UI scene, and acts on a move, a
+ * press or the wheel only when no other UI piece is the top object under the pointer (FS-TQZ5J
+ * § Change: Phase 3, R59, R60).
  *
  * It is told the world it is drawn in, for the item's standing (FS-18Z5F §H): in a run an unsafe
  * find wears an oxblood inner edge and its tip a warning; in the hub an item still in a delve is
@@ -98,8 +101,12 @@ import {
 import { viewport } from "@/render/viewport";
 import { PURSE_UNKNOWN, type PurseShelf, type PurseView } from "./purse";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
+import { uiGround } from "./uiGround";
 
-/** Above the HUD (1000) and the satchel (1000), below the item tip and passing notices (2000+). */
+/**
+ * Above the HUD (1000), the party frames (999) and the container view (1100, made before it), below
+ * the party panel (1110), the item tip and passing notices (2000+): FS-TQZ5J § Change: Phase 3, R62.
+ */
 export const GEAR_OVERLAY_DEPTH = 1100;
 const TIP_DEPTH = 2200;
 const FLASH_DEPTH = 2300;
@@ -235,6 +242,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
   private frame?: Phaser.GameObjects.Container;
   /** Each open panel's ×, rebuilt with the frame. */
   private closes: CloseMark[] = [];
+  /** Each open panel's ground, rebuilt with the frame (FS-TQZ5J § Change: Phase 3, R59). */
+  private grounds: { destroy(): void }[] = [];
   /** The slots, cells, icons and count, rebuilt as what is carried or worn changes. */
   private content?: Phaser.GameObjects.Container;
   /** The stats panel's rows, rebuilt as the sheet they show changes. */
@@ -264,18 +273,13 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   /**
    * `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37).
-   * `yields` says whether a UI piece holds the pointer now (the UI bridge's `overUi`): a move the UI
-   * scene took over one of its pieces, the party panel drawn over the overlay among them, which the
-   * overlay gives way to, nothing there lighting or tipping (FS-R82NV § Change C8; FS-TQZ5J § Change:
-   * Phase 2, R41, R49). Read on a move only: a press and the wheel over a UI piece never reach the
-   * world (FS-TQZ5J R7, R40). `wrapper` runs the overlay's own player input, the panels' ×, as the
-   * scene runs its own (the interface sounds' wrapper, FS-WDM0X S9); none, and the input runs as it is.
+   * `wrapper` runs the overlay's own player input, the panels' ×, as the scene runs its own (the
+   * interface sounds' wrapper, FS-WDM0X S9); none, and the input runs as it is.
    */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly world?: WorldType,
-    private readonly yields: () => boolean = () => false,
     private readonly wrapper: UiActWrapper = PASS_THROUGH,
   ) {}
 
@@ -505,6 +509,14 @@ export class GearOverlay implements HudPanel, PurseShelf {
     if (this.leftShown()) open("left", this.stash ? "STASH" : "CHARACTER");
     // the panel, its key and its corner icon name one thing (§ Change C14)
     if (this.inventoryOpen) open("right", "INVENTORY");
+    // each open panel's ground, under its ×: a press, a wheel or a move there is the UI scene's, so
+    // nothing of the world's or of the UI scene's under it answers (FS-TQZ5J § Change: Phase 3, R59)
+    const ground = uiGround(this.scene, GEAR_OVERLAY_DEPTH);
+    const opened: Side[] = [...(this.leftShown() ? (["left"] as const) : []), ...(this.inventoryOpen ? (["right"] as const) : [])];
+    this.grounds = opened.map((side) => {
+      const r = layout[side];
+      return ground({ x: r.x, y: r.y, width: r.w, height: r.h });
+    });
     parts.push(...this.closes.map((c) => c.glyph));
     this.frame = this.scene.add.container(0, 0, parts);
     this.frame.setDepth(GEAR_OVERLAY_DEPTH).setScrollFactor(0);
@@ -655,6 +667,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.frame?.destroy();
     for (const c of this.closes) c.zone.destroy();
     this.closes = [];
+    for (const g of this.grounds) g.destroy();
+    this.grounds = [];
     this.content = undefined;
     this.hoverRing = undefined;
     this.frame = undefined;
@@ -1086,21 +1100,42 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   // ── Input ────────────────────────────────────────────────────────────────
 
+  /** Whether `object`, as Phaser lists one under the pointer, is the overlay's own: a ground or a ×. */
+  private owns(object: unknown): boolean {
+    return this.grounds.includes(object as never) || this.closes.some((c) => c.zone === object);
+  }
+
+  /**
+   * Whether another UI piece is the top object under the pointer (Phaser's `over`, top only): the party
+   * panel or the controls panel drawn over the overlay, the dialogue card's rows, the menu's blocker,
+   * which take the move (FS-TQZ5J § Change: Phase 3, R60). With nothing of the UI scene's there (a press
+   * the world began, A1 R25) the move is the overlay's, by its coordinates, as before.
+   */
+  private underOther(over: readonly unknown[] | undefined): boolean {
+    return !!over?.length && !this.owns(over[0]);
+  }
+
+  /** Whether the top object under the pointer is the overlay's own: a press or the wheel there is its (R60). */
+  private onTop(over: readonly unknown[] | undefined): boolean {
+    return !!over?.length && this.owns(over[0]);
+  }
+
   /**
    * The pointer in logical units (Phaser's `pointer.x/y` are backing px, FS-ZAJMH R15): off every
-   * panel while a UI piece holds it, so nothing there hovers, lights or answers E (`yields`).
+   * panel while another UI piece is over it, so nothing there hovers, lights or answers E.
    */
-  private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    this.pointer = this.yields() ? { x: -1, y: -1 } : viewport.toLogical(pointer);
+  private onPointerMove(pointer: Phaser.Input.Pointer, over?: readonly unknown[]): void {
+    this.pointer = this.underOther(over) ? { x: -1, y: -1 } : viewport.toLogical(pointer);
     this.updateHover();
   }
 
   /**
    * A left-press on a panel's × closes that panel (§ Change C4). A right-press over an item wears
    * or takes it off (R16–17), or in stash mode moves it (FS-VPD8Y R38); a left-press on an item
-   * does nothing (R18).
+   * does nothing (R18). Only a press on the overlay's own: one under another piece is that piece's.
    */
-  private onPointerDown(pointer: Phaser.Input.Pointer): void {
+  private onPointerDown(pointer: Phaser.Input.Pointer, over?: readonly unknown[]): void {
+    if (!this.onTop(over)) return;
     this.pointer = viewport.toLogical(pointer);
     this.updateHover();
     if (pointer.button === 0) {
@@ -1117,10 +1152,12 @@ export class GearOverlay implements HudPanel, PurseShelf {
    */
   private onWheel(
     pointer: Phaser.Input.Pointer,
-    _over: unknown,
+    over: readonly unknown[] | undefined,
     _dx: number,
     dy: number,
   ): void {
+    // the wheel over another piece drawn over the overlay is that piece's (R60)
+    if (!this.onTop(over)) return;
     const step = Math.sign(dy);
     const at = viewport.toLogical(pointer);
     const scrolls = (g: ItemGrid | undefined): g is ItemGrid =>

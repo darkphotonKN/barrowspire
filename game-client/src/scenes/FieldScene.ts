@@ -1,8 +1,8 @@
 import * as Phaser from "phaser";
-import { ActionType, WorldType, type FieldId } from "@/assets/types/client";
+import { ActionType, type FieldId } from "@/assets/types/client";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { socketManager } from "@/utils/class/SocketManager";
-import type { ClientGameState, GateState, ItemState, PlayerState, Position, PublicPlayerState, WallState } from "@/types/gameState";
+import type { ClientGameState, GateState, PlayerState, Position, PublicPlayerState, WallState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import { ensureCharacterTextures, placeholderTexture } from "@/utils/characterTextures";
 import {
@@ -43,11 +43,6 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
-import { ContainerView } from "@/ui/ContainerView";
-import { GearOverlay } from "@/ui/GearOverlay";
-import { EquipmentHud } from "@/ui/EquipmentHud";
-import { PurseReader } from "@/ui/purse";
-import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
@@ -58,7 +53,17 @@ import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { NO_FACTS, NO_UI, answering, reportWorld, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
+import {
+  NO_FACTS,
+  NO_UI,
+  answering,
+  gearOpened,
+  reportWorld,
+  worldContainer,
+  type WorldSide,
+  type WorldUi,
+  type WorldWindows,
+} from "@/ui/uiBridge";
 import {
   COUNTDOWN_SECONDS_PX,
   countdownSecondsText,
@@ -92,8 +97,10 @@ import { placeCard } from "@/ui/placeCard";
  * and the fight with them are the run scene's own pieces, composed in `fieldCombat`; drop piles
  * and the satchel they are taken through, in `fieldPiles`, a pile held for someone else's kill
  * drawn faint and not offered (§Requirements 56, 59). The equip HUD is the run's own
- * (`EquipmentHud` on the gear and bag overlay, FS-HRH2J), on the run's keys: I or B opens it,
- * E over it equips, and a full bag refuses pickups and unequips with the field's notice.
+ * (on the gear and bag overlay, FS-HRH2J), on the run's keys: I or B opens it,
+ * E over it equips, and a full bag refuses pickups and unequips with the field's notice. The overlay,
+ * the satchel and their keys are the UI scene's: the field hands them its state and answers their
+ * equips and takes (FS-TQZ5J § Change: Phase 3, R50–R56).
  * The class kit is the run's too (FS-8AY7S, FS-JTNPR, FS-MAMHR): the Health and class resource
  * bars top-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
  * released while it is drawn) and the Mercenary's cut, riposte and parry, all through `fieldCombat`.
@@ -202,11 +209,11 @@ export class FieldScene extends Phaser.Scene {
     line: Phaser.GameObjects.Text;
     seconds: Phaser.GameObjects.Text;
   };
-  /** The field's drop piles and the run's satchel they are taken through (§Requirements 56, 59). */
+  /**
+   * The field's drop piles and the run's satchel they are taken through (§Requirements 56, 59): the
+   * satchel the UI scene's, reached through the bridge (FS-TQZ5J § Change: Phase 3, R52, R53).
+   */
   private piles?: FieldPiles;
-  private satchel?: ContainerView;
-  /** The run's equip HUD, what the player carries and wears (§Requirements 56). */
-  private equipment?: EquipmentHud;
   /** The Health and class resource bars, and the ability card: the run's own (FS-8AY7S req 20, 29). */
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
@@ -241,9 +248,8 @@ export class FieldScene extends Phaser.Scene {
   private ui: WorldUi = NO_UI;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
-  /** The player's server-reported position and level, for reaching a pile and the satchel's marks. */
+  /** The player's server-reported position, for reaching a pile. */
   private selfAt?: Point;
-  private selfLevel?: number;
   private unsubscribeState?: () => void;
   /**
    * The field's arrival card (FS-PQ2TW R37): the shared piece's, told once the field's first state
@@ -312,7 +318,6 @@ export class FieldScene extends Phaser.Scene {
       lockout: () => this.showAbilityCard(),
     });
     this.createPiles();
-    this.equipment = this.composeEquipment();
     this.bindHudKeys();
     this.bindMinimapKey();
     // the field's minimap, built with its first state (FS-P0HSP §A.1); as the overlay, held
@@ -355,16 +360,20 @@ export class FieldScene extends Phaser.Scene {
       layout: () => ({ chatTop: this.chatWindow?.topEdge() }),
       // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
       facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
-      // the menu opens over no window (FS-3EBCA R17)
-      heardUi: (ui) => {
-        if (ui.menuOpen) this.closeWindows();
+      // a gear panel opening ends a Shadow Shot hold (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53);
+      // the menu opens over no window, the gear overlay and the party panel the UI scene's (FS-3EBCA R17)
+      heardUi: (ui, was) => {
+        if (gearOpened(ui, was)) this.fight?.cancelAim();
       },
       answer: answering({
-        inventory: () => this.toggleGear(),
-        character: () => this.toggleCharacter(),
-        // one Esc step each (FS-TQZ5J R17); the party panel is the UI scene's own (§ Change: Phase 2, R39)
-        close: { gear: () => this.equipment?.hide() },
         changeCharacter: () => this.changeCharacter(),
+        // the gear overlay's wear and take off, sent as the run sends them (§ Change: Phase 3, R54)
+        equip: (item) => socketManager.sendMessage(ActionType.Equip, { item_entity_id: item }),
+        unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
+        // a take from the satchel: sent by the piles, and held in the bag while pending
+        take: (item) => {
+          if (this.piles?.loot(item)) this.ui.gear({ kind: "taken", item });
+        },
       }),
     };
   }
@@ -374,23 +383,18 @@ export class FieldScene extends Phaser.Scene {
     return this.ui.ui.menuOpen;
   }
 
-  /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): Inventory, Character; a field has no letter panel. */
+  /**
+   * Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9;
+   * FS-WDM0X S8): a field has no letter panel; Inventory and Character are the UI scene's (§ Change:
+   * Phase 3, R55).
+   */
   private windows(): WorldWindows {
-    return {
-      letter: false,
-      inventory: this.equipment?.isInventoryOpen() ?? false,
-      character: this.equipment?.isCharacterOpen() ?? false,
-    };
+    return { letter: false };
   }
 
-  /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the gear overlay is up. */
+  /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the UI scene's gear overlay is up. */
   private mayChat(): boolean {
-    return !this.menuOpen && !this.equipment?.isOpen();
-  }
-
-  /** The menu opens over no window (FS-3EBCA R17): the overlay goes; the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2, R39). */
-  private closeWindows(): void {
-    this.equipment?.hide();
+    return !this.menuOpen && !this.ui.ui.inventory && !this.ui.ui.character;
   }
 
   /**
@@ -403,7 +407,6 @@ export class FieldScene extends Phaser.Scene {
     this.arrivalCard.relayout();
     this.minimap?.place();
     this.abilityHud?.relayout();
-    this.satchel?.relayout();
     if (this.fallenView) {
       this.showFallen();
       this.drainFallen(this.time.now);
@@ -467,12 +470,9 @@ export class FieldScene extends Phaser.Scene {
       g.generateTexture(SACK.placeholder[frame], SACK.width, SACK.height);
       g.destroy();
     }
-    const satchel = new ContainerView(this, this.art, {
-      onLoot: (item) => this.lootFromSatchel(item),
-      characterLevel: () => this.selfLevel,
-      mayTake: () => this.bagHasRoom(),
-    });
-    this.satchel = satchel;
+    // the run's satchel, the UI scene's: its take pre-checked by its gear's bag, sent here as `take`
+    // (FS-TQZ5J § Change: Phase 3, R52–R54)
+    const satchel = worldContainer(() => this.ui);
     this.piles = new FieldPiles(
       {
         place: (at) => {
@@ -514,53 +514,6 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * The run's gear and bag overlay over the live field (FS-HRH2J), its sends the run's, its
-   * full-bag refusals in the field's notice (R22). A field marks no unsafe finds (FS-18Z5F R37).
-   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
-   */
-  private composeEquipment(): EquipmentHud {
-    // a move over the UI scene's pieces (the party panel, drawn over it) is theirs (FS-R82NV § Change
-    // C8; FS-TQZ5J § Change: Phase 2: the party, R41); its panels' × run through the interface
-    // sounds' wrapper (FS-WDM0X S9)
-    const overlay = new GearOverlay(
-      this,
-      this.art,
-      WorldType.Field,
-      () => this.ui.overUi,
-      this.ui,
-    );
-    return new EquipmentHud(
-      overlay,
-      {
-        send: (action, payload) => socketManager.sendMessage(action, payload),
-        notice: (text) => this.notice(text),
-      },
-      Date.now,
-      new PurseReader(apiClient, overlay),
-    );
-  }
-
-  /** Whether the bag can take one more pickup from a pile or chest (FS-HRH2J R21); the notice says when not. */
-  private bagHasRoom(): boolean {
-    return this.equipment?.roomForOne() ?? true;
-  }
-
-  /**
-   * I, B or the corner row's icon (FS-HRH2J R4; FS-3EBCA R7): the inventory, not while the ESC
-   * menu owns the keys (FS-G4VMQ R5). Opening it ends a Shadow Shot hold (FS-JTNPR req 15).
-   */
-  private toggleGear(): void {
-    if (this.menuOpen) return;
-    if (this.equipment?.toggle()) this.fight?.cancelAim();
-  }
-
-  /** C or the corner row's Character icon: the character panel, under I's rule (FS-HRH2J § Change C2, C5). */
-  private toggleCharacter(): void {
-    if (this.menuOpen) return;
-    if (this.equipment?.toggleCharacter()) this.fight?.cancelAim();
-  }
-
-  /**
    * Out of the field for the roster (FS-G4VMQ § Change C3, R25): one leave_hub, which the server
    * takes from a field (FS-X2F2H R18), and nothing more until it is answered.
    */
@@ -571,32 +524,19 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * The run's keys for the satchel and the equip HUD: I or B opens and closes the overlay, Q closes
-   * it (FS-HRH2J R4); E over the open overlay equips or unequips, as in the run, else reaches for a
-   * pile or chest; F takes the satchel's first item. Esc and the ESC menu's keys are the UI scene's
-   * (FS-TQZ5J R17, R18): the field binds none of them.
+   * The field's E: reaching for a pile or chest, unless the UI scene's open inventory holds it (its
+   * E equips or unequips there). I, B, C, Q and F are the UI scene's, with the overlay and the satchel
+   * (FS-TQZ5J § Change: Phase 3, R56), as Esc and the ESC menu's keys are (R17, R18): the field binds
+   * none of them.
    */
   private bindHudKeys(): void {
     this.input.keyboard?.on("keydown-E", () => {
-      if (this.menuOpen) return;
-      if (this.equipment?.equipKey()) return;
+      if (this.menuOpen || this.ui.ui.inventory) return;
       if (this.selfAt && !this.fallen.isDown()) this.piles?.interact(this.selfAt);
     });
-    // the keys that open or close a window, each through the interface sounds' wrapper (FS-WDM0X S9)
-    for (const key of ["keydown-I", "keydown-B"]) this.input.keyboard?.on(key, () => this.ui.act(() => this.toggleGear()));
-    this.input.keyboard?.on("keydown-C", () => this.ui.act(() => this.toggleCharacter()));
-    this.input.keyboard?.on("keydown-Q", () =>
-      this.ui.act(() => {
-        if (!this.menuOpen) this.equipment?.hide();
-      }),
-    );
-    this.input.keyboard?.on("keydown-F", () => {
-      if (!this.menuOpen) this.satchel?.lootFirst();
-    });
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
+      // the map is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
-      this.satchel?.pointerMove(at.x, at.y);
       // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
       // §Change: Map mode icon, D7; FS-TQZ5J § Change: Phase 2: the party, R41)
       if (this.ui.overUi || this.panelTakes(at.x, at.y)) this.minimap?.pointerOut();
@@ -606,9 +546,10 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * A press over the overlay's panels is the overlay's, and a click on the open satchel a loot:
-   * neither is an attack, a cast or a Shadow Shot hold. A press in the overlay's clear middle
-   * band attacks as with it closed (FS-HRH2J R8).
+   * A press on the chat window is the window's, and one on the map mode icon M's: neither is an attack,
+   * a cast or a Shadow Shot hold. A press over the overlay's panels or the open satchel is the UI
+   * scene's and never reaches the field (FS-TQZ5J § Change: Phase 3, R59); one in the overlay's clear
+   * middle band attacks as with it closed (FS-HRH2J R8).
    */
   private takesPointer(x: number, y: number, primary: boolean): boolean {
     // the open menu's rows take their own presses; nothing in the world answers one (FS-G4VMQ R5),
@@ -616,25 +557,18 @@ export class FieldScene extends Phaser.Scene {
     if (this.menuOpen) return true;
     if (this.panelTakes(x, y)) return true;
     // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
-    if (this.minimap?.pointerDown(x, y, primary)) return true;
-    return this.satchel?.pointerDown(x, y, primary) ?? false;
+    return this.minimap?.pointerDown(x, y, primary) ?? false;
   }
 
   /**
-   * Whether a press at (x, y), logical units, is a HUD panel's: the overlay's or the chat window's.
-   * Neither the world nor the map mode icon answers it. One on the UI scene's pieces (the corner row,
-   * the party panel, an invite prompt) never reaches the field: they are above it (FS-TQZ5J R7, R15;
-   * § Change: Phase 2: the party, R40).
+   * Whether a press at (x, y), logical units, is a HUD panel's: the chat window's. Neither the world nor
+   * the map mode icon answers it. One on the UI scene's pieces (the corner row, the party panel, an
+   * invite prompt, the gear overlay, the satchel) never reaches the field: they are above it (FS-TQZ5J
+   * R7, R15; § Change: Phase 2: the party, R40; § Change: Phase 3, R59).
    */
   private panelTakes(x: number, y: number): boolean {
-    if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     return this.chatWindow?.covers(x, y) ?? false;
-  }
-
-  /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
-  private lootFromSatchel(item: ItemState): void {
-    if (this.piles?.loot(item)) this.equipment?.taken(item);
   }
 
   /**
@@ -650,9 +584,6 @@ export class FieldScene extends Phaser.Scene {
     this.leavingHub = false;
     this.piles?.release();
     this.piles = undefined;
-    this.satchel = undefined;
-    this.equipment?.release();
-    this.equipment = undefined;
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
@@ -667,7 +598,6 @@ export class FieldScene extends Phaser.Scene {
     this.abilityHud = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
-    this.selfLevel = undefined;
     this.views.clear();
     this.selfEntityID = null;
     this.followedSprite = undefined;
@@ -792,13 +722,10 @@ export class FieldScene extends Phaser.Scene {
     // the field's piles, each as faint as its reservation for me says (§Requirements 59)
     const me = state.current_player;
     this.selfAt = me ? { x: me.position.x, y: me.position.y } : undefined;
-    this.selfLevel = me?.level;
-    if (me) {
-      this.equipment?.sync(me);
-      // the overlay's stats panel, from this state (FS-HRH2J R24, R30)
-      this.equipment?.updateCharacter(me);
-    }
-    this.equipment?.setCharacterLevel(me?.level);
+    // the overlay's bag, slots and stats panel, from this state (FS-HRH2J R24, R30): the UI scene's
+    // (FS-TQZ5J § Change: Phase 3, R52)
+    if (me) this.ui.gear({ kind: "seen", carried: me, character: me });
+    this.ui.gear({ kind: "level", level: me?.level });
     this.piles?.sync(state.containers ?? [], me?.id);
     if (this.selfAt) this.piles?.follow(this.selfAt);
 

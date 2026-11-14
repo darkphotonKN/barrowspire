@@ -1,6 +1,6 @@
 import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
-import { ActionType, WorldType } from "@/assets/types/client";
+import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
 import { isLeader, usePartyStore, type PartyNoticePayload, type PartyUpdatePayload } from "@/stores/partyStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -30,11 +30,6 @@ import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
-import { GearOverlay } from "@/ui/GearOverlay";
-import { HubGear, gearAsCharacter } from "@/ui/HubGear";
-import { PurseReader } from "@/ui/purse";
-import { useMailboxStore } from "@/stores/mailboxStore";
-import { apiClient } from "@/utils/api";
 import { hudLine } from "@/ui/uiSceneNotices";
 import { progressOf } from "@/ui/progress";
 import {
@@ -648,12 +643,6 @@ export class HubScene extends Phaser.Scene {
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
-  /** I and B: either opens or closes the inventory (FS-HRH2J R4; § Change C2). */
-  private gearKeys: Phaser.Input.Keyboard.Key[] = [];
-  /** C: the character panel (FS-HRH2J § Change C2). */
-  private characterKey?: Phaser.Input.Keyboard.Key;
-  /** The gear, bag and stats overlay, fed from REST (FS-HRH2J §E); one per visit. */
-  private gear?: HubGear;
   /** Shown while queued, wherever the player walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
@@ -704,8 +693,6 @@ export class HubScene extends Phaser.Scene {
   private modeIconStage?: ModeIconStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
-  private unsubscribeGoldTaken?: () => void;
   /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
   private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
@@ -869,7 +856,6 @@ export class HubScene extends Phaser.Scene {
     this.bindInput();
     this.bindMinimapKey();
     this.bindMinimapPointer();
-    this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
     // light-map with the player's torch, then the vignette and dust above it.
@@ -910,7 +896,6 @@ export class HubScene extends Phaser.Scene {
       this.ui,
       (effect) => this.ui.play(effect),
     );
-    this.watchGoldTakes();
 
     // the town's minimap, built with the first state that carries the walls (FS-P0HSP §A.1); as
     // the overlay, held against the screen from the main camera's frames (FS-1SEF0 §C.19)
@@ -944,18 +929,17 @@ export class HubScene extends Phaser.Scene {
       windows: () => this.windows(),
       blockers: () => this.blockers(),
       facts: () => this.facts(),
-      // the menu opens over no window (FS-3EBCA R17)
-      heardUi: (ui) => {
-        if (ui.menuOpen) this.closeWindows();
+      // the menu opens over no window (FS-3EBCA R17): the letter panel goes; the gear overlay and the
+      // party panel are the UI scene's, shut as its menu opens
+      heardUi: (ui, was) => {
+        if (ui.menuOpen && !was.menuOpen) this.closeLetter();
       },
       answer: answering({
-        inventory: () => this.toggleGear(),
-        character: () => this.toggleCharacter(),
-        // one Esc step each (FS-TQZ5J R17): the dialogue's Esc is its dismiss; the party panel is
-        // the UI scene's own (§ Change: Phase 2: the party, R39)
+        // one Esc step each (FS-TQZ5J R17): the dialogue's Esc is its dismiss; the party panel and the
+        // gear overlay are the UI scene's own (§ Change: Phase 2, R39; § Change: Phase 3, R55), and a
+        // panel of theirs opening asks the letter panel to close (FS-3EBCA R16)
         close: {
           letter: () => this.mailbox?.close(),
-          gear: () => this.gear?.hide(),
           dialogue: () => this.dismissDialogue(),
         },
         // a row of the dialogue card, picked by the pointer or its key (FS-TQZ5J A2 R30)
@@ -983,19 +967,24 @@ export class HubScene extends Phaser.Scene {
    * party panel's refusal, its dialogue (FS-R82NV R28; FS-3EBCA R8): the menu is the UI scene's own, and
    * neither the inventory nor the character panel refuses it (it opens over them, § Change C8), nor
    * the letter panel (it closes as the panel opens, § Change C9); and what hides the invite prompts
-   * and the ready check, `coversPopups` (§ Change: Phase 2: the party, R38).
+   * and the ready check, `coversPopups` (§ Change: Phase 2: the party, R38); the town's part of the gear
+   * overlay's refusal, its dialogue: the menu is the UI scene's own (§ Change: Phase 3, R55).
    */
   private blockers(): WorldBlockers {
-    return { dialogue: !!this.dialogue, party: !!this.dialogue, popups: this.coversPopups() };
+    return { dialogue: !!this.dialogue, party: !!this.dialogue, popups: this.coversPopups(), gear: !!this.dialogue };
   }
 
-  /** Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the letter panel, Inventory, Character. */
+  /**
+   * Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9;
+   * FS-WDM0X S8): the letter panel. Inventory and Character are the UI scene's (§ Change: Phase 3, R55).
+   */
   private windows(): WorldWindows {
-    return {
-      letter: this.mailbox?.isOpen() ?? false,
-      inventory: this.gear?.isInventoryOpen() ?? false,
-      character: this.gear?.isCharacterOpen() ?? false,
-    };
+    return { letter: this.mailbox?.isOpen() ?? false };
+  }
+
+  /** Whether the UI scene's gear overlay is open now, either panel (§ Change: Phase 3, R53). */
+  private get gearOpen(): boolean {
+    return !!(this.ui.ui.inventory || this.ui.ui.character);
   }
 
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
@@ -1014,12 +1003,12 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The letter panel is full-screen, so it stands alone (FS-3EBCA R15, R19): the inventory and the
-   * character panel (the stash with them) and the party panel close as it opens. The party panel is
-   * the UI scene's: the town shuts it in the party store, as its own close does (FS-TQZ5J § Change:
-   * Phase 2: the party, R39).
+   * character panel (the stash with them) and the party panel close as it opens. Both are the UI
+   * scene's: the town tells the gear overlay to close (FS-TQZ5J § Change: Phase 3, R52) and shuts the
+   * party panel in the party store, as its own close does (§ Change: Phase 2: the party, R39).
    */
   private clearForLetter(): void {
-    this.gear?.hide();
+    this.ui.gear({ kind: "close" });
     usePartyStore.getState().closePanel();
   }
 
@@ -1029,20 +1018,11 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The menu opens over no window (FS-3EBCA R17): the letter panel and the overlay go; the party panel
-   * is the UI scene's, shut as its menu opens (FS-TQZ5J § Change: Phase 2: the party, R39).
-   */
-  private closeWindows(): void {
-    this.closeLetter();
-    this.gear?.hide();
-  }
-
-  /**
    * Whether the chat input may take focus (FS-WJGFJ R27): not while a dialogue, the menu (FS-3EBCA
    * R18), the gear overlay or the letter panel is up.
    */
   private mayChat(): boolean {
-    return !this.dialogue && !this.menuOpen && !this.gear?.isOpen() && !this.mailbox?.isOpen();
+    return !this.dialogue && !this.menuOpen && !this.gearOpen && !this.mailbox?.isOpen();
   }
 
   /** What the server sent while the hub loaded, to the listeners create has made, in order. */
@@ -1233,9 +1213,6 @@ export class HubScene extends Phaser.Scene {
     this.views.clear();
     this.npcs.clear();
     this.closeDialogue();
-    // the overlay goes with the visit; a change still in flight finishes unheard
-    this.gear?.hide();
-    this.gear = undefined;
     // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
     this.fx?.clearAll();
     this.fx = undefined;
@@ -1255,8 +1232,6 @@ export class HubScene extends Phaser.Scene {
     // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
     this.mailbox?.destroy();
     this.mailbox = undefined;
-    this.unsubscribeGoldTaken?.();
-    this.unsubscribeGoldTaken = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
@@ -1299,15 +1274,11 @@ export class HubScene extends Phaser.Scene {
       ...Object.values(this.wasd ?? {}),
       this.interactKey,
       this.confirmKey,
-      ...this.gearKeys,
-      this.characterKey,
       ...this.choiceKeys,
     ]);
   }
 
   update(time: number, delta: number): void {
-    // who owns the keyboard is settled before the keys are read for walking
-    this.offerGear();
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
     this.followMapOverlay();
@@ -1323,7 +1294,7 @@ export class HubScene extends Phaser.Scene {
   private showStashChest(): void {
     const chest = this.stashChest;
     if (!chest) return;
-    const frame = chestFrame(this.gear?.stashOpen() ?? false);
+    const frame = chestFrame(this.ui.ui.stash ?? false);
     if (frame === chest.frame) return;
     chest.frame = frame;
     showState(chest.sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
@@ -1472,8 +1443,9 @@ export class HubScene extends Phaser.Scene {
 
     if (!Phaser.Input.Keyboard.JustDown(this.interactKey)) return;
 
-    // E over the open overlay wears or takes off what is hovered, and talks to no one (FS-HRH2J R10)
-    if (this.gear?.equipKey()) return;
+    // E over the open overlay wears or takes off what is hovered, and talks to no one (FS-HRH2J R10):
+    // the UI scene's, while its inventory is open (FS-TQZ5J § Change: Phase 3, R56)
+    if (this.ui.ui.inventory) return;
 
     // E inside the gate reopens a panel dismissed there
     if (this.atGate?.destination === "spire") {
@@ -1493,7 +1465,7 @@ export class HubScene extends Phaser.Scene {
     ];
     const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
     // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2)
-    if (nearest === "stash") this.ui.act(() => this.gear?.openStash());
+    if (nearest === "stash") this.ui.act(() => this.ui.gear({ kind: "openStash" }));
     else if (nearest) this.openDialogue(nearest);
   }
 
@@ -2040,10 +2012,6 @@ export class HubScene extends Phaser.Scene {
     this.cursors = keyboard.createCursorKeys();
     this.interactKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.confirmKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
-    this.gearKeys = [Phaser.Input.Keyboard.KeyCodes.I, Phaser.Input.Keyboard.KeyCodes.B].map((code) =>
-      keyboard.addKey(code),
-    );
-    this.characterKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
     this.choiceKeys = [
       Phaser.Input.Keyboard.KeyCodes.ONE,
       Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -2092,9 +2060,9 @@ export class HubScene extends Phaser.Scene {
       this.placePlayer(state.current_player, true);
       present.add(state.current_player.entity_id);
 
-      // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30)
-      this.gear?.updateCharacter(state.current_player);
-      this.gear?.setCharacterLevel(state.current_player.level);
+      // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30): the UI scene's (§ Change: Phase 3, R52)
+      this.ui.gear({ kind: "seen", character: state.current_player });
+      this.ui.gear({ kind: "level", level: state.current_player.level });
       this.characterLevel = state.current_player.level;
 
       const progress = progressOf(state.current_player);
@@ -2185,16 +2153,15 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The map mode icon's pointer (FS-56CKV §Change: Map mode icon, D5–D7): lit under it, a press on
-   * it M's. A press or hover over the open gear overlay is the overlay's; the letter panel open is one
-   * of M's guards already. A press on the UI scene's pieces (the corner row, the party panel) never
-   * reaches the town, and a move over one gives way to it (FS-TQZ5J R7, § Change: Phase 2: the party,
-   * R40, R41).
+   * it M's. The letter panel open is one of M's guards already. A press on the UI scene's pieces (the
+   * corner row, the party panel, the gear overlay) never reaches the town, and a move over one gives way
+   * to it (FS-TQZ5J R7, § Change: Phase 2: the party, R40, R41; § Change: Phase 3, R59).
    */
   private bindMinimapPointer(): void {
     bindMinimapPointer(
       this.input,
       () => this.minimap,
-      (x, y) => this.ui.overUi || !!this.gear?.covers(x, y),
+      () => this.ui.overUi,
     );
   }
 
@@ -2392,9 +2359,8 @@ export class HubScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(1000)
       .setInteractive();
-    button.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-      if (!this.overGear(pointer)) this.leaveQueue();
-    });
+    // a press under the gear overlay is its ground's, and never reaches the town (FS-TQZ5J § Change: Phase 3, R59)
+    button.on("pointerup", () => this.leaveQueue());
     // the hand stays; brightening to vellum is the hover cue, as on a dialogue option
     button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
     button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
@@ -2408,18 +2374,7 @@ export class HubScene extends Phaser.Scene {
    * which reads it in the town's report (FS-TQZ5J § Change: Phase 2: the party, R38).
    */
   private coversPopups(): boolean {
-    return this.menuOpen || !!this.gear?.isOpen() || !!this.mailbox?.isOpen();
-  }
-
-  /**
-   * Whether a press lies over the open gear overlay's panels (FS-HRH2J R8): it is the overlay's,
-   * and no hub object under the panel (the queue's Leave, depth 1000 under the overlay's 1100)
-   * takes it. The run and the field world apply the same rule to their presses.
-   */
-  private overGear(pointer: Phaser.Input.Pointer): boolean {
-    // the overlay is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
-    const at = viewport.toLogical(pointer);
-    return this.gear?.covers(at.x, at.y) ?? false;
+    return this.menuOpen || this.gearOpen || !!this.mailbox?.isOpen();
   }
 
   /** The queue is behind the player: no entry, nothing pending, no way out to offer. */
@@ -3064,80 +3019,6 @@ export class HubScene extends Phaser.Scene {
   private dropMenuKeys(): void {
     if (this.confirmKey) Phaser.Input.Keyboard.JustDown(this.confirmKey);
     this.choiceKeys.forEach((k) => Phaser.Input.Keyboard.JustDown(k));
-  }
-
-  /**
-   * I or B opens or closes the inventory over the live hub (FS-HRH2J R4, R40), and C the character
-   * panel (§ Change: Character and inventory apart, C2). While the menu or a dialogue is open they
-   * own the keyboard (R6): the press is read and dropped, so it does not open a panel the moment
-   * they close. An open letter panel closes as either opens (FS-3EBCA R16).
-   */
-  private offerGear(): void {
-    const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (pressed) this.ui.act(() => this.toggleGear());
-    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.ui.act(() => this.toggleCharacter());
-  }
-
-  /** Whether the menu or a dialogue owns the keys: no panel opens or closes. */
-  private gearRefused(): boolean {
-    return this.menuOpen || !!this.dialogue;
-  }
-
-  /** I, B or the corner row's icon (FS-3EBCA R7, R16): the inventory, under the same owners. */
-  private toggleGear(): void {
-    if (this.gearRefused()) return;
-    this.closeLetter();
-    this.gear?.toggle();
-  }
-
-  /** C or the corner row's Character icon (FS-HRH2J § Change C2): the character panel, under I's owners. */
-  private toggleCharacter(): void {
-    if (this.gearRefused()) return;
-    this.closeLetter();
-    this.gear?.toggleCharacter();
-  }
-
-  /**
-   * A Take that carried gold: the purse line reads the wallet again, open or closed (FS-7TGZ3 R9).
-   * Let go of on release, so a later visit hears each Take once.
-   */
-  private watchGoldTakes(): void {
-    this.unsubscribeGoldTaken = useMailboxStore.subscribe((state, prev) => {
-      if (state.goldTaken !== prev.goldTaken) this.gear?.refreshPurse();
-    });
-  }
-
-  /**
-   * The run's gear and bag overlay, fed from the REST loadout (FS-HRH2J §E R41–43); a refused
-   * change in the hub's passing notice. A change answered after this visit ended says nothing.
-   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8). Its reads and writes are
-   * the active character's, read from the store at each call (FS-50MTX R37).
-   */
-  private composeGear(): HubGear {
-    // a move over the UI scene's pieces (the party panel, drawn over it) is theirs (FS-R82NV § Change
-    // C8; FS-TQZ5J § Change: Phase 2: the party, R41); its panels' × run through the interface
-    // sounds' wrapper (FS-WDM0X S9)
-    const overlay = new GearOverlay(
-      this,
-      this.art,
-      WorldType.Hub,
-      () => this.ui.overUi,
-      this.ui,
-    );
-    const gear: HubGear = new HubGear(
-      overlay,
-      gearAsCharacter(
-        apiClient,
-        () => useGameStore.getState().getActiveCharacter()?.id ?? null,
-      ),
-      {
-        notice: (text) => {
-          if (this.gear === gear) this.notice(text);
-        },
-      },
-      new PurseReader(apiClient, overlay),
-    );
-    return gear;
   }
 
   /**

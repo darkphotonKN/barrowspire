@@ -35,11 +35,12 @@ import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "
 export type World = WorldType;
 
 /**
- * Which of the world's own windows are open (R9): the letter panel, Inventory, Character. The ESC
- * menu's slot and the party panel are the UI scene's own (R16; § Change: Phase 2: the party, R39).
- * The interface sounds' rule reads them all (FS-WDM0X S8).
+ * Which of the world's own windows are open (R9): the town's letter panel. The ESC menu's slot, the
+ * party panel and the gear overlay's Inventory and Character are the UI scene's own (R16; § Change:
+ * Phase 2: the party, R39; § Change: Phase 3, R55). The interface sounds' rule reads them all
+ * (FS-WDM0X S8).
  */
-export type WorldWindows = Readonly<Omit<WindowState, "menu" | "party">>;
+export type WorldWindows = Readonly<Omit<WindowState, "menu" | "party" | "inventory" | "character">>;
 
 /** Who speaks on a dialogue card (A2 R29): the name, the role under it, the frame the bust is cut from. */
 export interface DialogueSpeaker {
@@ -150,24 +151,20 @@ export const NO_FACTS: WorldFacts = {
   fallPending: false,
 };
 
-/** A world window the corner row's icons toggle (R11, R14); Party is the UI scene's own (§ Change: Phase 2, R39). */
-export type UiToggle = "inventory" | "character";
-
 /**
- * What the UI scene asks the world to close (R11, R17): the letter panel, the gear overlay, the dialogue;
- * the run's settlement record, its Close (§ Change: Phase 3, R57).
+ * What the UI scene asks the world to close (R11, R17): the letter panel, the dialogue; the run's
+ * settlement record, its Close (§ Change: Phase 3, R57). The party panel and the gear overlay are the
+ * UI scene's own (§ Change: Phase 2, R39; § Change: Phase 3, R55).
  */
-export type UiClose = "letter" | "gear" | "dialogue" | "record";
+export type UiClose = "letter" | "dialogue" | "record";
 
 /**
- * UI → world: what the UI scene asks of the world (R11). The corner row's `toggle` of a window; an
- * Esc step's `close`; the ESC menu's rows that only the world can do (the town's and the field's
+ * UI → world: what the UI scene asks of the world (R11). An Esc step's `close`; the ESC menu's rows that only the world can do (the town's and the field's
  * `leaveQueue` and `changeCharacter`, the run's `leaveRun` and `fall`); and the OPTIONS Music row's
  * `musicLevel`, which the world playing music applies at once (R19); a dialogue card's row picked, by its
  * id (`pickDialogue`, A2 R30). Plain data: nothing callable.
  */
 export type UiRequest =
-  | { readonly kind: "toggle"; readonly window: UiToggle }
   | { readonly kind: "close"; readonly window: UiClose }
   | { readonly kind: "leaveQueue" }
   | { readonly kind: "changeCharacter" }
@@ -214,8 +211,8 @@ export interface WorldReport {
 /** What a world hands with its name: everything of its report but the world and the moves `reportWorld` hears for it (R9). */
 export type WorldSide = Omit<WorldReport, "world" | "hearMove">;
 
-/** A world's answer to each request it has one for (R11): a toggle by its window, a close by what it closes. */
-export type WorldAnswers = Partial<Record<UiToggle, () => void>> & {
+/** A world's answer to each request it has one for (R11): a close by what it closes. */
+export type WorldAnswers = {
   readonly close?: Partial<Record<UiClose, () => void>>;
   readonly leaveQueue?: () => void;
   readonly changeCharacter?: () => void;
@@ -232,8 +229,6 @@ export type WorldAnswers = Partial<Record<UiToggle, () => void>> & {
 export function answering(answers: WorldAnswers): (request: UiRequest) => void {
   return (request) => {
     switch (request.kind) {
-      case "toggle":
-        return answers[request.window]?.();
       case "close":
         return answers.close?.[request.window]?.();
       case "musicLevel":
@@ -602,4 +597,43 @@ export function reportWorld(scene: ReportingScene, world: World, side: WorldSide
     if (end === "shutdown") bridge.left(world);
   });
   return bridge;
+}
+
+/**
+ * The container view as a world reaches it (FS-TQZ5J § Change: Phase 3, R52, R53): what it was open for
+ * read from the UI's state, its open, items and close told through the bridge. A field's `FieldPiles`
+ * takes it as its satchel; the run drives it as it drove the view. `ui` is read at each call, as a world
+ * reports itself in its create.
+ */
+export interface WorldContainer {
+  readonly isOpen: boolean;
+  readonly entityId: string | undefined;
+  open(entityId: string, kind: ContainerKind): void;
+  close(): void;
+  /** Closed at once, nothing animated: the world is ending. */
+  closeNow(): void;
+  setItems(items: readonly ItemState[]): void;
+}
+
+export function worldContainer(ui: () => Pick<WorldUi, "ui" | "container">): WorldContainer {
+  return {
+    get isOpen() {
+      return ui().ui.container !== undefined;
+    },
+    get entityId() {
+      return ui().ui.container;
+    },
+    open: (entityId, kind) => ui().container({ kind: "open", entityId, container: kind }),
+    close: () => ui().container({ kind: "close" }),
+    closeNow: () => ui().container({ kind: "close", now: true }),
+    setItems: (items) => ui().container({ kind: "items", items }),
+  };
+}
+
+/**
+ * Whether a gear panel opened between two of the UI's states (§ Change: Phase 3, R53): the world ends
+ * a Shadow Shot hold as the inventory or the character panel opens (FS-JTNPR req 15).
+ */
+export function gearOpened(ui: UiState, was: UiState): boolean {
+  return (!!ui.inventory && !was.inventory) || (!!ui.character && !was.character);
 }

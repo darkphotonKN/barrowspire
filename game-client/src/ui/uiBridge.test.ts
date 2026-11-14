@@ -54,7 +54,7 @@ function recording(): UiBridge & { heard: string[] } {
 }
 
 /** A world's windows, all shut. */
-const shut = () => ({ letter: false, inventory: false, character: false });
+const shut = () => ({ letter: false });
 
 /** What a world hands the bridge beside its name (R9, R11): its windows, no dialogue, no facts, no answers. */
 const side = (windows: () => ReturnType<typeof shut> = shut) => ({
@@ -129,10 +129,10 @@ describe("a world scene reporting its world (FS-TQZ5J R3, R4, R9)", () => {
     const windows = shut();
 
     reportWorld(scene, "hub", side(() => windows));
-    windows.inventory = true;
+    windows.letter = true;
 
     expect(bridge.world?.world).toBe("hub");
-    expect(bridge.world?.windows().inventory).toBe(true);
+    expect(bridge.world?.windows().letter).toBe(true);
   });
 
   it("should hand the world its game's bridge, for its player actions and its minimap's step (R12)", () => {
@@ -213,17 +213,17 @@ describe("the game's UI bridge, the channel (FS-TQZ5J R8–R12)", () => {
 
 // FS-TQZ5J R9, R11: the world's blockers and facts in its report, and the UI scene's requests answered
 // by the world reported, synchronously; a request with no world, or one the world has no answer for,
-// does nothing. The corner row's toggles (I-TQZ5J-3), and the ESC menu's and Esc's (I-TQZ5J-4).
+// does nothing. The ESC menu's and Esc's (I-TQZ5J-4), the gear's (§ Change: Phase 3, I-TQZ5J-14).
 describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", () => {
   it("should hand a request to the world reported, answered before it returns", () => {
     const bridge = new GameUiBridge();
     const answered: UiRequest[] = [];
     bridge.report({ world: "field", ...side(), answer: (request) => void answered.push(request) });
 
-    bridge.request({ kind: "toggle", window: "inventory" });
+    bridge.request({ kind: "close", window: "letter" });
     bridge.request({ kind: "fall" });
 
-    expect(answered).toEqual([{ kind: "toggle", window: "inventory" }, { kind: "fall" }]);
+    expect(answered).toEqual([{ kind: "close", window: "letter" }, { kind: "fall" }]);
   });
 
   it("should hand a request to no world once it has left, nor before one is reported", () => {
@@ -233,7 +233,7 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
     bridge.report({ world: "hub", ...side(), answer: (request) => void answered.push(request) });
     bridge.left("hub");
 
-    bridge.request({ kind: "toggle", window: "character" });
+    bridge.request({ kind: "equip", item: "sword-1" });
 
     expect(answered).toEqual([]);
   });
@@ -253,17 +253,14 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
   it("should answer each request with the world's own answer for it, and ignore one it has none for (R11)", () => {
     const done: string[] = [];
     const answer = answering({
-      inventory: () => void done.push("inventory"),
       close: { letter: () => void done.push("close letter"), dialogue: () => void done.push("close dialogue") },
       leaveQueue: () => void done.push("leave the queue"),
       changeCharacter: () => void done.push("change character"),
       musicLevel: (level) => void done.push(`music ${level}`),
     });
 
-    answer({ kind: "toggle", window: "inventory" });
-    answer({ kind: "toggle", window: "character" });
     answer({ kind: "close", window: "letter" });
-    answer({ kind: "close", window: "gear" });
+    answer({ kind: "close", window: "record" });
     answer({ kind: "close", window: "dialogue" });
     answer({ kind: "leaveQueue" });
     answer({ kind: "changeCharacter" });
@@ -272,7 +269,6 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
     answer({ kind: "musicLevel", level: 4 });
 
     expect(done).toEqual([
-      "inventory",
       "close letter",
       "close dialogue",
       "leave the queue",

@@ -29,7 +29,7 @@ vi.mock("phaser", () => {
           key.justDown = false;
           return pressed;
         },
-        KeyCodes: { ESC: 27, ENTER: 13, ONE: 49, TWO: 50, THREE: 51, LEFT: 37, RIGHT: 39, E: 69 },
+        KeyCodes: { ESC: 27, ENTER: 13, ONE: 49, TWO: 50, THREE: 51, LEFT: 37, RIGHT: 39, E: 69, I: 73, B: 66, C: 67 },
       },
     },
   };
@@ -123,6 +123,70 @@ vi.mock("@/ui/PartyFrames", () => ({
     const made = { shown: [] as unknown[], destroyed: false, play };
     frameMounts.push(made);
     return { show: (state: unknown) => void made.shown.push(state), destroy: () => void (made.destroyed = true) };
+  },
+}));
+
+// The gear overlay, its source and the container view themselves are their own tests': here a recording
+// stand-in for what the UI scene builds for each world (FS-TQZ5J § Change: Phase 3, R50), its wiring kept.
+const gearMounts = vi.hoisted(
+  () =>
+    [] as {
+      world: string;
+      wiring: { wrapper: { act(run: () => void): void }; take(item: unknown): void };
+      inventory: boolean;
+      character: boolean;
+      released: boolean;
+      log: string[];
+      container?: { open?: string; destroyed: boolean; ground: object; log: string[] };
+    }[],
+);
+vi.mock("@/ui/gearPieces", () => ({
+  mountGearPieces: (_scene: unknown, _art: unknown, world: string, wiring: (typeof gearMounts)[number]["wiring"]) => {
+    const made: (typeof gearMounts)[number] = { world, wiring, inventory: false, character: false, released: false, log: [] };
+    gearMounts.push(made);
+    const gear = {
+      isInventoryOpen: () => made.inventory,
+      isCharacterOpen: () => made.character,
+      stashOpen: () => false,
+      toggle: () => (made.inventory = !made.inventory),
+      toggleCharacter: () => (made.character = !made.character),
+      hide: () => {
+        const was = made.inventory || made.character;
+        made.inventory = made.character = false;
+        return was;
+      },
+      equipKey: () => (made.inventory ? (made.log.push("E"), true) : false),
+      openStash: () => false,
+      seen: () => void made.log.push("seen"),
+      setCharacterLevel: () => {},
+      taken: () => {},
+      roomForOne: () => true,
+      release: () => void (made.released = true),
+    };
+    if (world === "hub") return { gear };
+    const box = { open: undefined as string | undefined, destroyed: false, ground: {}, log: [] as string[] };
+    made.container = box;
+    return {
+      gear,
+      container: {
+        get isOpen() {
+          return box.open !== undefined;
+        },
+        get entityId() {
+          return box.open;
+        },
+        open: (id: string) => void (box.open = id),
+        close: () => void (box.open = undefined),
+        closeNow: () => void (box.open = undefined),
+        setItems: () => {},
+        lootFirst: () => void box.log.push("F"),
+        pointerMove: (x: number, y: number) => void box.log.push(`move ${x},${y}`),
+        pointerDown: (x: number, y: number) => (box.log.push(`down ${x},${y}`), true),
+        owns: (o: unknown) => o === box.ground,
+        relayout: () => {},
+        destroy: () => void (box.destroyed = true),
+      },
+    };
   },
 }));
 
@@ -239,10 +303,9 @@ describe("the UI scene's interface sounds (FS-TQZ5J R22, FS-WDM0X S10–S13)", (
   it("should make the game's one player as it is created, lent to its game's bridge: a world's action and its minimap's step play on it", () => {
     const { bridge, played } = created();
     let open = false;
-    const closed = { letter: false, character: false };
     bridge.report({
-      world: "field",
-      windows: () => ({ ...closed, inventory: open }),
+      world: "hub",
+      windows: () => ({ letter: open }),
       blockers: () => ({ dialogue: false }),
       facts: () => NO_FACTS,
       answer: () => {},
@@ -251,7 +314,7 @@ describe("the UI scene's interface sounds (FS-TQZ5J R22, FS-WDM0X S10–S13)", (
     bridge.act(() => void (open = true));
     bridge.play("map_mode_switch");
 
-    expect(played).toEqual(["sfx:inventory_open", "sfx:map_mode_switch"]);
+    expect(played).toEqual(["sfx:mailbox_open", "sfx:map_mode_switch"]);
   });
 });
 
@@ -355,6 +418,24 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     expect(code).toMatch(/party\.show\(report\)/);
   });
 
+  // § Change: Phase 3 (I-TQZ5J-14): the gear overlay, its source and the container view are the UI
+  // scene's; no world builds them, binds their keys or tests their rects in a click or hover path
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
+    "should have %s build no gear overlay, gear source or container view, and bind none of their keys",
+    (file) => {
+      const code = source(file);
+      expect(code).not.toMatch(/GearOverlay|new HubGear|HubGear\b|EquipmentHud|new ContainerView|ContainerContents|PurseReader/);
+      expect(code).not.toMatch(/keydown-[IBCQF]"|KeyCodes\.[IBCQF]\b/);
+      expect(code).not.toMatch(/this\.gear\b|this\.equipment\b|\.covers\(x, y\) \?\? false;\n.*equipment/);
+    },
+  );
+
+  it("should have the UI scene build the gear and the container view for each world it hears reported (§ Change: Phase 3, R50)", () => {
+    const code = source("./UIScene.ts");
+    expect(code).toMatch(/new UiGearSlot\(/);
+    expect(code).toMatch(/gear\.show\(report\)/);
+  });
+
   it("should have the UI scene import no other scene", () => {
     const imports = source("./UIScene.ts").match(/from "[^"]+"/g) ?? [];
     expect(imports.filter((from) => /Scene"$/.test(from))).toEqual([]);
@@ -385,7 +466,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     const held = new Map<string, unknown>();
     const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
     lendUiBridge(registry, bridge);
-    const windows = { letter: false, inventory: false, character: false };
+    const windows = { letter: false };
     const blockers = { dialogue: false };
     const facts = { ...NO_FACTS };
     const asked: string[] = [];
@@ -453,16 +534,16 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     // its keyboard: the keys it adds, each with whether it captured it, and the game's captures
     const keys = new Map<number, { justDown: boolean; captured: boolean }>();
     const captures = new Set<number>();
-    const keyboard = {
+    const keyboard = Object.assign(new EventEmitter(), {
       addKey: (code: number, capture = true) => {
         const key = { justDown: false, captured: capture };
         keys.set(code, key);
         if (capture) captures.add(code);
         return key;
       },
-      addCapture: (code: number) => void captures.add(code),
-      removeCapture: (code: number) => void captures.delete(code),
-    };
+      addCapture: (codes: number | number[]) => [codes].flat().forEach((code) => captures.add(code)),
+      removeCapture: (codes: number | number[]) => [codes].flat().forEach((code) => captures.delete(code)),
+    });
     const scene = Object.assign(new UIScene(), {
       registry,
       events,
@@ -488,7 +569,26 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       keys.get(code)!.justDown = true;
       scene.update();
     };
-    return { scene, bridge, report, windows, blockers, facts, asked, events, sys, live, plate, labels, keys, captures, press, timers, tweens };
+    return {
+      scene,
+      bridge,
+      report,
+      windows,
+      blockers,
+      facts,
+      asked,
+      events,
+      sys,
+      live,
+      plate,
+      labels,
+      keys,
+      keyboard,
+      captures,
+      press,
+      timers,
+      tweens,
+    };
   }
 
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
@@ -599,6 +699,9 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
         [37, false],
         [39, false],
         [69, false],
+        [73, false],
+        [66, false],
+        [67, false],
       ]);
     });
 
@@ -757,6 +860,136 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
       expect(shown(labels)).toEqual([]);
     });
+  });
+});
+
+// FS-TQZ5J § Change: Phase 3 (I-TQZ5J-14): the gear overlay and the container view on the UI scene, built
+// for each world and fed through the bridge (uiSceneGear.ts holds the wiring, gearPieces.ts the building):
+// here what the UI scene hands them, its keys and its pointer.
+describe("the UI scene's gear and container view (FS-TQZ5J § Change: Phase 3, R50–R56, R60)", () => {
+  const I = 73;
+  const C = 67;
+
+  /** The UI scene on its game, a world reported; its keyboard's events emitted as Phaser's would be. */
+  function created(world: "hub" | "field" | "run") {
+    gearMounts.length = 0;
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const asked: string[] = [];
+    const report = (w: "hub" | "field" | "run") =>
+      bridge.report({
+        world: w,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ dialogue: false }),
+        facts: () => NO_FACTS,
+        answer: (request) => void asked.push(request.kind),
+      });
+    report(world);
+    const any = (): unknown => {
+      const self: unknown = new Proxy(() => self, { get: (_t, prop) => (prop === "then" ? undefined : () => self) });
+      return self;
+    };
+    const keys = new Map<number, { justDown: boolean }>();
+    const captures = new Set<number>();
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: (code: number) => {
+        const key = { justDown: false };
+        keys.set(code, key);
+        return key;
+      },
+      addCapture: (codes: number | number[]) => [codes].flat().forEach((c) => captures.add(c)),
+      removeCapture: (codes: number | number[]) => [codes].flat().forEach((c) => captures.delete(c)),
+    });
+    const input = Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } });
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      sys: { settings: { status: 5 } },
+      game: {},
+      input,
+      cameras: { cameras: [] },
+      children: { list: [] },
+      add: new Proxy({}, { get: () => any }),
+      time: { delayedCall: () => ({ remove: () => {} }) },
+      tweens: { add: () => ({ remove: () => {} }) },
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    const poll = (code: number) => {
+      keys.get(code)!.justDown = true;
+      scene.update();
+    };
+    return { scene, bridge, report, asked, keyboard, captures, input, poll };
+  }
+
+  it("should build the gear in each world reported and the container view outside the town, letting each go as it leaves", () => {
+    const { bridge, report } = created("hub");
+    expect(gearMounts.map((m) => [m.world, !!m.container])).toEqual([["hub", false]]);
+    bridge.left("hub");
+    report("run");
+    expect(gearMounts.map((m) => [m.world, !!m.container])).toEqual([
+      ["hub", false],
+      ["run", true],
+    ]);
+    expect(gearMounts[0].released).toBe(true);
+  });
+
+  it("should toggle the town's inventory on an I read in its update, and a field's on an I key event", () => {
+    const town = created("hub");
+    town.keyboard.emit("keydown-I");
+    expect(gearMounts[0].inventory).toBe(false);
+    town.poll(I);
+    expect(gearMounts[0].inventory).toBe(true);
+    expect(town.bridge.ui.inventory).toBe(true);
+
+    const field = created("field");
+    field.poll(I);
+    expect(gearMounts[0].inventory).toBe(false);
+    field.keyboard.emit("keydown-I");
+    field.keyboard.emit("keydown-C");
+    expect([gearMounts[0].inventory, gearMounts[0].character]).toEqual([true, true]);
+    field.keyboard.emit("keydown-F");
+    expect(gearMounts[0].container?.log).toEqual(["F"]);
+  });
+
+  it("should capture I, B and C while the town is reported, as its keys did, and let them go as it leaves", () => {
+    const { bridge, report, captures } = created("hub");
+    expect([73, 66, 67].every((c) => captures.has(c))).toBe(true);
+    bridge.left("hub");
+    report("field");
+    expect([73, 66, 67].some((c) => captures.has(c))).toBe(false);
+    void C;
+  });
+
+  it("should hand the gear its data and the container view its own, from the world through the bridge (R52)", () => {
+    const { bridge } = created("run");
+    bridge.gear({ kind: "seen", carried: {}, character: {} as never });
+    bridge.container({ kind: "open", entityId: "chest-1", container: "chest" });
+    expect(gearMounts[0].log).toEqual(["seen"]);
+    expect(bridge.ui.container).toBe("chest-1");
+    bridge.endPopped();
+    expect(bridge.ui.container).toBeUndefined();
+  });
+
+  it("should hand the container view a press on its own ground, logical units, and not one under another piece (R60)", () => {
+    const { bridge, input } = created("field");
+    // the press lets go of no text field: none is focused (A1 R26)
+    vi.stubGlobal("document", { activeElement: null, documentElement: {} });
+    bridge.container({ kind: "open", entityId: "pile-1", container: "drop_pile" });
+    const box = gearMounts[0].container!;
+    input.emit("pointerdown", { x: 30, y: 40, button: 0 }, [box.ground]);
+    input.emit("pointerdown", { x: 31, y: 41, button: 0 }, [{}]);
+    vi.unstubAllGlobals();
+    expect(box.log).toEqual(["down 30,40"]);
+  });
+
+  it("should ask the world for a take the container view made (R54)", () => {
+    const { asked } = created("run");
+    gearMounts[0].wiring.take({ entity_id: "ring-1" });
+    expect(asked).toEqual(["take"]);
   });
 });
 

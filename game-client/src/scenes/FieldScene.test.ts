@@ -67,8 +67,11 @@ const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { equipmentPiece } = await import("@/ui/uiSceneGear");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
+type GearKey = import("@/ui/uiSceneGear").GearKey;
+type GearWiring = import("@/ui/uiSceneGear").GearWiring;
 
 /** The UI scene's keys, by the field's key event names (FS-TQZ5J R17, R18): Esc and the menu's. */
 const UI_KEYS: Record<string, UiKey> = {
@@ -82,13 +85,56 @@ const UI_KEYS: Record<string, UiKey> = {
 };
 
 /**
- * A key pressed over the field: the UI scene acts on it on its frame, before the world (FS-TQZ5J R21),
- * its menu slot drawn on the field's stage; the field's own handler for it runs too, where it binds one.
+ * The gear's and the satchel's keys, by the field's key event names: the UI scene's since phase 3,
+ * heard on their key events as the field heard them (FS-TQZ5J § Change: Phase 3, R56).
+ */
+const GEAR_KEYS: Record<string, GearKey> = { I: "inventory", B: "inventory", C: "character", Q: "close", E: "equip", F: "take" };
+
+/**
+ * A key pressed over the field: the UI scene acts on it on its frame or its key event, before the world
+ * (FS-TQZ5J R21), its menu slot drawn on the field's stage; the field's own handler for it runs too,
+ * where it binds one (only E, shared by state: § Change: Phase 3, R56).
  */
 function keyOver(field: object, keys: Map<string, () => void>, name: string): void {
   const ui = UI_KEYS[name];
   if (ui) uiSceneOn(field, "field", { row: false }).key(ui);
+  const gear = GEAR_KEYS[name];
+  if (gear) uiSceneOn(field, "field", { row: false }).gearKey(gear);
   keys.get(`keydown-${name}`)?.();
+}
+
+/**
+ * The UI scene's gear over the field (FS-TQZ5J § Change: Phase 3, R50), on plain state the test reads:
+ * its panels open or shut as the UI scene opens and shuts them. Returns the wiring the UI scene gave it
+ * (its × runs through `wrapper`, as GearOverlay's does).
+ */
+function plainGearOver(field: object, gear: { inventory: boolean; character: boolean }): () => GearWiring {
+  let wired: GearWiring | undefined;
+  gearOver(field, "field", (_w, wiring) => {
+    wired = wiring;
+    return {
+      gear: {
+        isInventoryOpen: () => gear.inventory,
+        isCharacterOpen: () => gear.character,
+        stashOpen: () => false,
+        toggle: () => (gear.inventory = !gear.inventory),
+        toggleCharacter: () => (gear.character = !gear.character),
+        hide: () => {
+          const was = gear.inventory || gear.character;
+          gear.inventory = gear.character = false;
+          return was;
+        },
+        equipKey: () => false,
+        openStash: () => false,
+        seen: () => {},
+        setCharacterLevel: () => {},
+        taken: () => {},
+        roomForOne: () => true,
+        release: () => {},
+      },
+    };
+  });
+  return () => wired!;
 }
 
 /** The UI scene's menu slot filled (or emptied) over the field (FS-TQZ5J R10), as every guard of the field's reads it. */
@@ -747,14 +793,12 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
   type Hud = FieldUnderTest & {
     input: unknown;
-    equipment?: InstanceType<typeof EquipmentHud>;
+    equipment?: unknown;
     piles?: unknown;
     menu?: unknown;
+    events: InstanceType<typeof EventEmitter>;
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
-    lootFromSatchel(item: unknown): void;
-    bagHasRoom(): boolean;
-    satchel?: unknown;
   };
 
   /** The field with the run's HUD on a recording panel, its keys bound to a fake keyboard. */
@@ -789,10 +833,40 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       setCharacterLevel: vi.fn(),
       updateCharacter: vi.fn(),
     };
+    // the run's HUD, the UI scene's over the field (FS-TQZ5J § Change: Phase 3, R50): its sends asked
+    // of the field as `equip` and `unequip`, its notices in the field's look; the satchel stands too
     const notices: string[] = [];
-    field.equipment = new EquipmentHud(panel as never, {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-      notice: (text) => notices.push(text),
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ notice: (n) => void notices.push(n.text) });
+    let hud!: InstanceType<typeof EquipmentHud>;
+    let wiring!: GearWiring;
+    const satchel = { open: undefined as string | undefined };
+    gearOver(field, "field", (_w, wired) => {
+      wiring = wired;
+      hud = new EquipmentHud(panel as never, {
+        send: (action, payload) => wired.send(action === ActionType.Equip ? "equip" : "unequip", payload.item_entity_id),
+        notice: wired.notice,
+      });
+      return {
+        gear: equipmentPiece(hud),
+        container: {
+          get isOpen() {
+            return satchel.open !== undefined;
+          },
+          get entityId() {
+            return satchel.open;
+          },
+          open: (id: string) => void (satchel.open = id),
+          close: () => void (satchel.open = undefined),
+          closeNow: () => void (satchel.open = undefined),
+          setItems: () => {},
+          lootFirst: () => {},
+          pointerMove: () => {},
+          pointerDown: () => true,
+          owns: () => false,
+          relayout: () => {},
+          destroy: () => {},
+        },
+      };
     });
     const piles = {
       sync: vi.fn(),
@@ -812,7 +886,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.bindHudKeys();
     const press = (key: string) => keyOver(field, keys, key);
     const hover = (over: "inventory" | "head") => (hovered = over);
-    return { ...stage, field, panel, piles, press, hover, notices };
+    /** A take the satchel made (its icon or F): the UI scene asks the field, which sends it through the piles. */
+    const take = (item: unknown) => wiring.take(item as never);
+    return { ...stage, field, panel, piles, press, hover, notices, hud: () => hud, take, satchel };
   }
 
   it("should open the run's equipment panel on I with what the field's state says I carry and wear", () => {
@@ -863,29 +939,27 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
   });
 
-  it("should close the panel on Q, and take a click over its panels, not in the clear band, as no attack (FS-HRH2J R8)", () => {
+  // a press over the overlay's panels is its ground's in the UI scene and never reaches the field
+  // (FS-TQZ5J § Change: Phase 3, R59): the field reads no rect of the overlay's
+  it("should close the panel on Q, and test no rect of the overlay's in its click path (FS-HRH2J R8; FS-TQZ5J § Change: Phase 3, R59)", () => {
     const { field, panel, press } = hudOnStage();
-    expect(field.takesPointer(600, 10, true)).toBe(false);
-
     press("I");
-    expect(field.takesPointer(600, 10, true)).toBe(true);
-    expect(field.takesPointer(600, 10, false)).toBe(true);
+    expect(field.takesPointer(600, 10, true)).toBe(false);
     expect(field.takesPointer(300, 10, true)).toBe(false);
 
     press("Q");
     expect(panel.hide).toHaveBeenCalledTimes(1);
-    expect(field.takesPointer(600, 10, true)).toBe(false);
   });
 
   it("should toggle the overlay on I and on B, and close it on ESC (FS-HRH2J R4)", () => {
-    const { field, press } = hudOnStage();
+    const { hud, press } = hudOnStage();
     press("B");
-    expect(field.equipment?.isOpen()).toBe(true);
+    expect(hud().isOpen()).toBe(true);
     press("I");
-    expect(field.equipment?.isOpen()).toBe(false);
+    expect(hud().isOpen()).toBe(false);
     press("I");
     press("ESC");
-    expect(field.equipment?.isOpen()).toBe(false);
+    expect(hud().isOpen()).toBe(false);
   });
 
   // FS-HRH2J § Change: Character and inventory apart (C2, C3, C5, C7). I-3EBCA-4.
@@ -916,11 +990,11 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   });
 
   it("should close both panels on one ESC and on Q (§ Change C3)", () => {
-    const { field, panel, press } = hudOnStage();
+    const { field, hud, panel, press } = hudOnStage();
     press("C");
     press("I");
     press("ESC");
-    expect(field.equipment?.isOpen()).toBe(false);
+    expect(hud().isOpen()).toBe(false);
     expect(menuOver(field)).toBeUndefined();
     press("C");
     press("I");
@@ -937,15 +1011,15 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
   });
 
-  it("should still loot through the open satchel when the press is not over the overlay", () => {
-    const { field } = hudOnStage();
-    field.satchel = { pointerDown: vi.fn(() => true) };
-    field.equipment?.toggle();
-    expect(field.takesPointer(300, 10, true)).toBe(true);
+  // the satchel's ground is the UI scene's: a click there never reaches the field (FS-TQZ5J § Change: Phase 3, R59)
+  it("should read no satchel in its click path: the open satchel's press is the UI scene's", () => {
+    const { field, satchel } = hudOnStage();
+    satchel.open = "pile-1";
+    expect(field.takesPointer(300, 10, true)).toBe(false);
   });
 
   it("should refuse a pile take and an unequip into a full bag with the field's notice (FS-HRH2J R20–22)", () => {
-    const { field, panel, send, notices } = hudOnStage();
+    const { field, hud, panel, send, notices } = hudOnStage();
     const full = Array.from({ length: 30 }, (_, i) => ({
       entity_id: `i${i}`,
       name: `i${i}`,
@@ -955,14 +1029,15 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       current_player: { ...carrying.current_player, inventory: full },
     });
 
-    expect(field.bagHasRoom()).toBe(false);
+    // the satchel's take is pre-checked by the HUD's bag, as the field's was (`mayTake` → `roomForOne`)
+    expect(hud().roomForOne()).toBe(false);
     expect(panel.mayUnequip?.()).toBe(false);
     expect(notices).toEqual(["Your bag is full.", "Your bag is full."]);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("should count a pending take, so two quick takes at 29 allow one (FS-HRH2J edge state: Pending pickups)", () => {
-    const { field } = hudOnStage();
+    const { field, hud, take } = hudOnStage();
     const almost = Array.from({ length: 29 }, (_, i) => ({
       entity_id: `i${i}`,
       name: `i${i}`,
@@ -972,53 +1047,46 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       current_player: { ...carrying.current_player, inventory: almost },
     });
 
-    expect(field.bagHasRoom()).toBe(true);
-    field.lootFromSatchel({ entity_id: "coin" });
-    expect(field.bagHasRoom()).toBe(false);
+    expect(hud().roomForOne()).toBe(true);
+    take({ entity_id: "coin" });
+    expect(hud().roomForOne()).toBe(false);
   });
 
   it("should hold an item taken from a pile in the inventory while its loot is pending, as the run does", () => {
-    const { field, piles } = hudOnStage();
+    const { field, hud, piles, take } = hudOnStage();
     field.renderState({
       ...carrying,
       current_player: { ...carrying.current_player, inventory: [] },
     });
 
-    field.lootFromSatchel({ entity_id: "coin" });
+    take({ entity_id: "coin" });
 
     expect(piles.loot).toHaveBeenCalledWith({ entity_id: "coin" });
-    expect(field.equipment?.inventory.map((i) => i.entity_id)).toEqual([
-      "coin",
-    ]);
+    expect(hud().inventory.map((i) => i.entity_id)).toEqual(["coin"]);
   });
 
   it("should hold nothing when the pile is someone else's and the loot is not sent", () => {
-    const { field, piles } = hudOnStage();
+    const { hud, piles, take } = hudOnStage();
     piles.loot.mockReturnValue(false);
 
-    field.lootFromSatchel({ entity_id: "coin" });
+    take({ entity_id: "coin" });
 
-    expect(field.equipment?.inventory).toEqual([]);
+    expect(hud().inventory).toEqual([]);
   });
 
-  it("should let the HUD go on release, so the next visit starts empty", () => {
-    const { field } = hudOnStage();
+  // the HUD is the UI scene's, built for the field and let go as it leaves (FS-TQZ5J § Change: Phase 3, R50)
+  it("should have the UI scene let the HUD go as the field leaves, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
+    const { field, hud, press } = hudOnStage();
+    const release = vi.spyOn(hud(), "release");
+    press("I");
 
-    field.release("shutdown");
-
-    expect(field.equipment).toBeUndefined();
-  });
-
-  it("should release the HUD on release, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
-    const { field } = hudOnStage();
-    const release = vi.spyOn(field.equipment!, "release");
-
-    field.release("shutdown");
+    field.events.emit("shutdown");
 
     expect(release).toHaveBeenCalledTimes(1);
+    expect(uiSceneOn(field, "field", { row: false }).gear.isOpen()).toBe(false);
   });
 
-  it("should compose the run's equip HUD and bind its keys when the field is created", () => {
+  it("should bind only E of the gear's keys when the field is created: I, B, C, Q and F are the UI scene's", () => {
     // the keys the keyboard is asked to answer; the rest of the input answers anything
     const keys = new Map<string, () => void>();
     const keyboard = {
@@ -1033,17 +1101,9 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.init({ field: "gentle_meadows" });
     field.create({ field: "gentle_meadows" });
 
-    expect(field.equipment).toBeInstanceOf(EquipmentHud);
-    expect([...keys.keys()]).toEqual(
-      expect.arrayContaining([
-        "keydown-I",
-        "keydown-B",
-        "keydown-C",
-        "keydown-E",
-        "keydown-Q",
-        "keydown-F",
-      ]),
-    );
+    expect(field.equipment).toBeUndefined();
+    expect(keys.has("keydown-E")).toBe(true);
+    for (const gearKey of ["I", "B", "C", "Q", "F"]) expect(keys.has(`keydown-${gearKey}`)).toBe(false);
     // Esc and the ESC menu's keys are the UI scene's: the field binds none of them (FS-TQZ5J R17, R18,
     // R21); its Enter is chat's alone, guarded by the menu (ChatWindow, FS-WJGFJ R27)
     for (const uiKey of ["ESC", "ONE", "TWO", "THREE", "LEFT", "RIGHT"]) expect(keys.has(`keydown-${uiKey}`)).toBe(false);
@@ -1264,9 +1324,9 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
 
   it("should keep walking with the gear overlay open (FS-HRH2J R7)", () => {
     const { field, send } = kitOnStage({ aiming: false });
-    Object.assign(field, {
-      equipment: { isOpen: () => true, covers: () => true },
-    });
+    // the UI scene's inventory open (FS-TQZ5J § Change: Phase 3, R53), which ends any hold
+    Object.assign((field as unknown as { fight: object }).fight, { cancelAim: vi.fn() });
+    uiSceneOn(field, "field", { row: false }).bridge.reportUi({ inventory: true });
 
     field.update(16, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
@@ -2002,19 +2062,12 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
       on: () => undefined,
     };
-    let gear = true;
+    const gearState = { inventory: false, character: false };
     let party = true;
-    field.equipment = {
-      isOpen: () => gear,
-      isInventoryOpen: () => gear,
-      isCharacterOpen: () => false,
-      hide: () => {
-        const was = gear;
-        gear = false;
-        return was;
-      },
-    };
     field.bindHudKeys();
+    // the gear overlay is the UI scene's (FS-TQZ5J § Change: Phase 3, R55), open from the start
+    plainGearOver(field, gearState);
+    gearState.inventory = true;
     // the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R39)
     partyPanelOver(field, "field", () => ({
       isOpen: () => party,
@@ -2028,7 +2081,7 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
       keepsField: () => false,
       destroy: vi.fn(),
     }));
-    return { esc: () => keyOver(field, keys, "ESC"), open: () => ({ gear, party }) };
+    return { esc: () => keyOver(field, keys, "ESC"), open: () => ({ gear: gearState.inventory, party }) };
   }
 
   it("should close the party panel first, drawn over the gear overlay, then the overlay", () => {
@@ -2079,16 +2132,23 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
       setDefaultCursor: vi.fn(),
     };
     const state = { gear: false, party: false };
-    field.equipment = {
-      isOpen: () => state.gear,
-      isInventoryOpen: () => state.gear,
-      isCharacterOpen: () => false,
-      hide: () => ((state.gear = false), true),
-      toggle: () => void (state.gear = !state.gear),
-      toggleCharacter: () => void (state.gear = !state.gear),
-      equipKey: () => false,
-    };
     field.bindHudKeys();
+    // the gear overlay is the UI scene's (FS-TQZ5J § Change: Phase 3, R55), its inventory `state.gear`
+    const gear = {
+      get inventory() {
+        return state.gear;
+      },
+      set inventory(open: boolean) {
+        state.gear = open;
+      },
+      get character() {
+        return state.gear;
+      },
+      set character(open: boolean) {
+        state.gear = open;
+      },
+    };
+    plainGearOver(field, gear);
     partyPanelOver(field, "field", () => ({
       isOpen: () => state.party,
       close: () => ((state.party = false), true),
@@ -2460,13 +2520,8 @@ describe("FieldScene the party panel over the inventory and the character panel 
     };
     field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
     const gear = { inventory: false, character: false };
-    // the field's windows, as its report reads them for the UI scene's row (FS-TQZ5J R9), closed as the menu opens (R10)
-    field.equipment = {
-      isOpen: () => gear.inventory || gear.character,
-      isInventoryOpen: () => gear.inventory,
-      isCharacterOpen: () => gear.character,
-      hide: () => void Object.assign(gear, { inventory: false, character: false }),
-    };
+    // the gear overlay, the UI scene's (FS-TQZ5J § Change: Phase 3, R55), closed as the menu opens (R10)
+    plainGearOver(field, gear);
     const party = partyPanelOver(field, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
     cornerRowOn(field, "field");
     const f = hudCorner.cornerIconFrame("party", viewport);
@@ -2542,21 +2597,9 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
       setDefaultCursor: vi.fn(),
     };
     const gear = { inventory: false, character: false };
-    field.equipment = {
-      isOpen: () => gear.inventory || gear.character,
-      isInventoryOpen: () => gear.inventory,
-      isCharacterOpen: () => gear.character,
-      hide: () => {
-        const was = gear.inventory || gear.character;
-        gear.inventory = false;
-        gear.character = false;
-        return was;
-      },
-      toggle: () => (gear.inventory = !gear.inventory),
-      toggleCharacter: () => (gear.character = !gear.character),
-      equipKey: () => false,
-    };
     field.bindHudKeys();
+    // the gear overlay, the UI scene's (FS-TQZ5J § Change: Phase 3, R55)
+    plainGearOver(field, gear);
     const party = partyPanelOver(field, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
     cornerRowOn(field, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
@@ -2707,23 +2750,10 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       setDefaultCursor: vi.fn(),
     };
     const gear = { inventory: false, character: false };
-    f.equipment = {
-      isOpen: () => gear.inventory || gear.character,
-      isInventoryOpen: () => gear.inventory,
-      isCharacterOpen: () => gear.character,
-      hide: () => {
-        const was = gear.inventory || gear.character;
-        gear.inventory = false;
-        gear.character = false;
-        return was;
-      },
-      toggle: () => (gear.inventory = !gear.inventory),
-      toggleCharacter: () => (gear.character = !gear.character),
-      equipKey: () => false,
-      release: vi.fn(),
-    };
     const heard = hearOn(f as unknown as Record<string, unknown>);
     f.bindHudKeys();
+    // the gear overlay, the UI scene's (FS-TQZ5J § Change: Phase 3, R55)
+    const wiring = plainGearOver(f, gear);
     const party = partyPanelOver(f, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
     cornerRowOn(f, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
@@ -2732,9 +2762,9 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     };
     const key = (name: string) => keyOver(f, keys, name);
     const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
-    // the overlay's ×, as GearOverlay runs it through the wrapper the field hands it (GearOverlay.test.ts)
+    // the overlay's ×, as GearOverlay runs it through the wrapper the UI scene hands it (GearOverlay.test.ts)
     const gearX = (side: "inventory" | "character") =>
-      f.ui.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
+      wiring().wrapper.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
     return { ...env, field: f, gear, party, heard, pressIcon, key, find, gearX };
   }
   type Field = ReturnType<typeof field>;
@@ -2933,15 +2963,15 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
 
   // create() is pinned from the source here as in the town: the player made before the gear and
   // the keys, and its wrapper handed to the overlay (the party panel is the UI scene's since phase 2)
-  it("should make the player in create before the gear and the keys, and hand its wrapper to every module that hears its own input", () => {
+  // the gear overlay, its wrapper and its keys are the UI scene's (FS-TQZ5J § Change: Phase 3, R50, R56):
+  // the field reports itself before it binds the key it still hears (E) or makes its piles
+  it("should report itself in create before its keys and its piles", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
     expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.createPiles\(\);/));
     expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-    const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
   });
 });
 

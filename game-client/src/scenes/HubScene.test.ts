@@ -91,7 +91,6 @@ const { palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { BARROW_HEX } = await import("@/utils/theme");
 const { usePartyStore } = await import("@/stores/partyStore");
 const { useAuthStore } = await import("@/stores/authStore");
-const { useMailboxStore } = await import("@/stores/mailboxStore");
 const { MARKER_DEPTH } = await import("@/render/markers");
 const { HUB_STASH_CHEST, STASH_NAME } = await import("@/render/world/hubStash");
 const { HUB_TOWN_GOLDEN } = await import("@/render/world/hubTownGolden");
@@ -103,7 +102,8 @@ const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { hubGearPiece } = await import("@/ui/uiSceneGear");
 const { NO_UI } = await import("@/ui/uiBridge");
 const { reportWorld } = await import("@/ui/uiBridge");
 
@@ -377,10 +377,16 @@ const key = (): FakeKey => ({ isDown: false, justDown: false });
 /** Where a press on the queue's Leave lands, as Phaser hands its pointer to the handler. */
 const AT_LEAVE = { x: 200, y: 556 };
 
-/** The hub's gear overlay as the scene drives it (FS-HRH2J §E): open or not, and what it was handed. */
+/**
+ * The town's gear as the UI scene drives it (FS-HRH2J §E; FS-TQZ5J § Change: Phase 3, R50): open or not,
+ * and what it was handed. A test that sets `open` by hand reports the change through `report`, which
+ * `hubOnStage` points at the UI bridge, as the overlay's own × reports through the UI scene's act.
+ */
 function fakeGear() {
   const state = { open: false, stash: false, character: false };
-  return {
+  const fake = {
+    /** Told each change a test makes by hand. */
+    report: () => {},
     /** The character panel (FS-HRH2J § Change C1). */
     get character() {
       return state.character;
@@ -395,6 +401,8 @@ function fakeGear() {
     },
     set open(open: boolean) {
       state.open = open;
+      if (!open) state.stash = false;
+      fake.report();
     },
     toggle: vi.fn(() => {
       state.open = !state.open;
@@ -425,7 +433,21 @@ function fakeGear() {
     equipKey: vi.fn(() => state.open),
     updateCharacter: vi.fn(),
     setCharacterLevel: vi.fn(),
+    release: vi.fn(),
   };
+  return fake;
+}
+
+/**
+ * Hands `gear` to the UI scene's gear slot over `hub`'s town (FS-TQZ5J § Change: Phase 3, R50), its hand
+ * changes reported to the bridge as the slot reports its own.
+ */
+function gearOnTown(hub: object, gear: ReturnType<typeof fakeGear>) {
+  const side = uiSceneOn(hub, "hub", { row: false });
+  gear.report = () =>
+    side.bridge.reportUi({ inventory: gear.isInventoryOpen(), character: gear.isCharacterOpen(), stash: gear.stashOpen() });
+  gearOver(hub, "hub", () => ({ gear: hubGearPiece(gear as never) }));
+  return side.gear;
 }
 
 /** The hub as the keyboard and the queue reach it. */
@@ -628,21 +650,6 @@ describe("the town's notices through the UI bridge (FS-TQZ5J A2 R33, R34)", () =
     expect(told).toEqual([{ text: "Could not leave the queue, please try again.", look: { world: "hub" } }]);
   });
 
-  it("should say HubGear's refusals through the bridge, and a past visit's gear nothing (port.notice)", () => {
-    const { hub, ui } = hubOnStage();
-    const told: unknown[] = [];
-    ui().bridge.onScreen({ notice: (n) => void told.push(n) });
-    const composeGear = (hub as unknown as { composeGear(): { port: { notice(text: string): void } } }).composeGear.bind(hub);
-    const past = composeGear();
-    const gear = composeGear();
-    hub.gear = gear;
-
-    gear.port.notice("Your bag is full.");
-    past.port.notice("Your bag is full.");
-
-    expect(told).toEqual([{ text: "Your bag is full.", look: { world: "hub" } }]);
-  });
-
   it("should take a notice said just before the town leaves down with it", () => {
     const { hub, stage, refuse } = queuedHubOnStage();
     refuse("find_game", "Walk to the Spire's door first.");
@@ -676,23 +683,17 @@ describe("HubScene leaveQueue (FS-G4VMQ §Requirements 12–14, 17, 19)", () => 
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("should not leave from a press on Leave through the open gear overlay's panel (FS-HRH2J R8)", () => {
-    const { hub, gear, reply, button, send } = queuedHubOnStage();
+  // a press on Leave under the open gear overlay's panel is the UI scene's: the overlay's ground takes it
+  // and the town never hears it (FS-HRH2J R8; FS-TQZ5J § Change: Phase 3, R59), so the town tests no rect
+  it("should leave on any press Leave hears, testing no gear overlay's rect: one under the panel never reaches it", () => {
+    const { gear, reply, button, send } = queuedHubOnStage();
     reply("queue_status", { current: 1, total: 2 });
     const leave = button() as Made;
     gear.open = true;
-    // Leave moved to the top centre (2026-10-31); this overlay's panel is over it there
-    gear.covers.mockImplementation((x: number) => gear.isOpen() && x >= leave.x);
 
     leave.handlers.pointerup({ x: leave.x, y: leave.y });
 
-    expect(gear.covers).toHaveBeenCalledWith(leave.x, leave.y);
-    expect(send).not.toHaveBeenCalled();
-    expect(hub.leavePending).toBe(false);
-
-    // closed, the same press leaves
-    gear.open = false;
-    leave.handlers.pointerup({ x: leave.x, y: leave.y });
+    expect(gear.covers).not.toHaveBeenCalled();
     expect(send).toHaveBeenCalledWith(ActionType.LeaveQueue, {});
   });
 
@@ -796,9 +797,6 @@ function hubOnStage() {
   };
   const gear = fakeGear();
   hub.add = stage.add;
-  hub.gear = gear;
-  hub.gearKeys = [keys.i, keys.b];
-  hub.characterKey = keys.c;
   hub.choiceKeys = [keys.one, keys.two, keys.three];
   hub.cameras = { main: { width: 800, height: 600, startFollow: vi.fn() } };
   hub.scene = { start: vi.fn() };
@@ -823,9 +821,14 @@ function hubOnStage() {
     left: keys.left,
     right: keys.right,
     e: keys.e,
+    // the town's gear keys, the UI scene's with the gear (FS-TQZ5J § Change: Phase 3, R56)
+    i: keys.i,
+    b: keys.b,
+    c: keys.c,
   };
   // the UI scene comes up with the town's report, before anything there hears a player (FS-TQZ5J R2)
   ui();
+  gearOnTown(hub, gear);
   /** The UI scene's name for a key the test presses, if it reads that key. */
   const uiKeyOf = (k: FakeKey) => (Object.keys(uiKeys) as UiKey[]).find((n) => uiKeys[n] === k);
   /** A key pressed since the last frame, then one frame: the UI scene's first, then the town's (Phaser steps the list from the top). */
@@ -1629,7 +1632,6 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
 // FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
 // icon's toggle under I's guards. I-3EBCA-1.
 describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
-  type Pressing = { toggleGear(): void; toggleCharacter(): void };
   function withParty(open = true) {
     const env = hubOnStage();
     const state = { open };
@@ -1648,7 +1650,12 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     }));
     // one Esc step is the UI scene's (FS-TQZ5J R17)
     const escape = () => env.ui().menu.escape();
-    return { ...env, party: state, pressing: env.hub as unknown as Pressing, escape };
+    // the corner row's Inventory and Character are the UI scene's gear slot's (FS-TQZ5J § Change: Phase 3, R55)
+    const pressing = {
+      toggleGear: () => env.ui().gear.toggle("inventory"),
+      toggleCharacter: () => env.ui().gear.toggle("character"),
+    };
+    return { ...env, party: state, pressing, escape };
   }
 
   it("should close an open party panel on ESC before it opens the menu", () => {
@@ -1688,7 +1695,8 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     expect(hub.dialogue).toBeUndefined();
   });
 
-  it("should toggle the gear overlay on the Character icon, not while the menu or a dialogue is open", () => {
+  // the town's part of the gear's refusal is its dialogue, `blockers().gear` (FS-TQZ5J § Change: Phase 3, R55)
+  it("should toggle the UI scene's gear overlay on the Inventory icon, not while the town's dialogue is open", () => {
     const { hub, gear, pressing } = withParty(false);
     pressing.toggleGear();
     expect(gear.isOpen()).toBe(true);
@@ -1699,7 +1707,7 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
     expect(gear.isOpen()).toBe(false);
   });
 
-  it("should toggle the character panel as C does, not while the menu or a dialogue is open (FS-HRH2J § Change C2)", () => {
+  it("should toggle the UI scene's character panel as C does, not while the town's dialogue is open (FS-HRH2J § Change C2)", () => {
     const { hub, gear, pressing } = withParty(false);
     pressing.toggleCharacter();
     expect(gear.character).toBe(true);
@@ -2777,50 +2785,6 @@ describe("HubScene the gear and bag overlay (FS-HRH2J §A R4–7, R10; §E R40)"
     expect(gear.setCharacterLevel).toHaveBeenCalledWith(3);
   });
 
-  it("should forget the overlay on release, so the next visit composes a fresh one", () => {
-    const { hub } = hubOnStage();
-    hub.release("shutdown");
-    expect(hub.gear).toBeUndefined();
-  });
-});
-
-describe("HubScene reads the purse after a gold Take (FS-7TGZ3 R9)", () => {
-  /** A gold Take, as the mailbox store records one. */
-  const goldTake = () => useMailboxStore.setState({ goldTaken: useMailboxStore.getState().goldTaken + 1 });
-  const withPurse = (hub: Record<string, unknown>) => {
-    const refreshPurse = vi.fn();
-    hub.gear = { ...fakeGear(), refreshPurse };
-    return refreshPurse;
-  };
-
-  it("should read once per gold Take, and nothing for a mailbox change that is not one", () => {
-    const { hub } = hubOnStage();
-    const refreshPurse = withPurse(hub);
-    (hub.watchGoldTakes as () => void)();
-
-    goldTake();
-    expect(refreshPurse).toHaveBeenCalledTimes(1);
-    useMailboxStore.setState({ pulses: useMailboxStore.getState().pulses + 1 });
-    expect(refreshPurse).toHaveBeenCalledTimes(1);
-    hub.release("shutdown");
-  });
-
-  it("should stop listening on release, and a second visit's one Take reads exactly once", () => {
-    const { hub } = hubOnStage();
-    withPurse(hub);
-    (hub.watchGoldTakes as () => void)();
-    hub.release("shutdown");
-
-    // a later visit's overlay, before that visit listens: the first visit's watch must be gone
-    const second = withPurse(hub);
-    goldTake();
-    expect(second).not.toHaveBeenCalled();
-
-    (hub.watchGoldTakes as () => void)();
-    goldTake();
-    expect(second).toHaveBeenCalledTimes(1);
-    hub.release("shutdown");
-  });
 });
 
 describe("HubScene the party popups under the letter panel (FS-1GZGD R40; FS-R82NV R32, FS-BJNYC R23)", () => {
@@ -3410,19 +3374,20 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       expect(name.visible).toBe(true);
     });
 
+    // the stash view is the UI scene's; the town reads it in the UI's state (FS-TQZ5J § Change: Phase 3, R53)
     it("should stand it open while this player's stash is open, and closed again after (R32)", () => {
       const { hub } = town(BAKED);
       const scene = hub as unknown as {
-        gear: ReturnType<typeof fakeGear>;
         stashChest: { frame: string };
         showStashChest(): void;
       };
+      const ui = uiSceneOn(hub, "hub", { row: false });
       scene.showStashChest();
       expect(scene.stashChest.frame).toBe("closed");
-      scene.gear.openStash();
+      ui.gear.hear({ kind: "openStash" });
       scene.showStashChest();
       expect(scene.stashChest.frame).toBe("open");
-      scene.gear.hide();
+      ui.gear.close();
       scene.showStashChest();
       expect(scene.stashChest.frame).toBe("closed");
     });
@@ -5390,16 +5355,15 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       expect(store.writes).toEqual([]);
     });
 
-    it("should leave a press under the open gear overlay to it, and one off the icon to the town (D5)", () => {
+    // a press under the open gear overlay is its ground's, in the UI scene, and never reaches the town
+    // (FS-TQZ5J § Change: Phase 3, R59): the town's pointer reads no rect of it
+    it("should leave a press off the icon to the town, reading no gear overlay's rect (D5; FS-TQZ5J § Change: Phase 3, R59)", () => {
       const { hub, render, map, pointers } = townWithModes();
       (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
       render();
-      hub.gear = { covers: () => true, isOpen: () => true };
-      pointers.pointerdown!(press(862, 109));
-      expect(map()!.mode).toBe("normal");
-      hub.gear = undefined;
       pointers.pointerdown!(press(855, 109));
       expect(map()!.mode).toBe("normal");
+      expect(readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8")).not.toMatch(/gear\??\.covers\(/);
     });
 
     // FS-3EBCA R10 with D5, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's,
@@ -5764,13 +5728,15 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
 
     // the party panel is the UI scene's, shut by its menu slot as it fills (FS-TQZ5J § Change: Phase 2:
     // the party, R39; uiSceneMenu.test.ts): the town closes its own windows
-    it("should close every window of its own whenever the UI scene reports its menu open (FS-TQZ5J R10)", () => {
+    // the gear overlay and the party panel are the UI scene's, shut by its menu slot as it fills
+    // (uiSceneMenu.test); the town closes only its own letter panel on the UI's report
+    it("should close its own letter panel whenever the UI scene reports its menu open, leaving the UI scene's windows to it (FS-TQZ5J R10; § Change: Phase 3, R55)", () => {
       const t = town();
       t.gear.toggle();
       t.party.pressT();
       t.letter.open = true;
       menuUpOver(t.hub);
-      expect(t.shut()).toEqual({ ...NONE, party: true });
+      expect(t.shut()).toEqual({ ...NONE, party: true, inventory: true });
     });
 
     it("should do nothing on the Menu icon while a dialogue is open", () => {
@@ -6198,16 +6164,15 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
 
   // create() runs no further than its camera on the stand-in (createUpToCamera), so its wiring is
   // pinned from the source: the player made before anything that hears a player, and handed on
-  it("should make the player in create before the gear and the keys, and hand its wrapper to every module that hears its own input", () => {
+  // the gear overlay is the UI scene's (FS-TQZ5J § Change: Phase 3, R50): the town composes none
+  it("should make the player in create before the keys, and hand its wrapper to every module that hears its own input", () => {
     const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
-    expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
     expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\(effect\) => this\.ui\.play\(effect\),\s*\);/);
-    const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
+    expect(source).not.toMatch(/composeGear|new GearOverlay/);
   });
 });
 
@@ -6283,9 +6248,8 @@ describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog 
     refuse("find_game", "Walk to the Spire's door first.");
     hub.enteringField = true;
     refuse("enter_field", "The field is closed.", "unknown");
-    const gear = (hub as unknown as { composeGear(): { port: { notice(text: string): void } } }).composeGear();
-    hub.gear = gear;
-    gear.port.notice("Your bag is full.");
+    // a gear notice is the UI scene's own, said in the town's look (FS-TQZ5J § Change: Phase 3, R50)
+    ui().bridge.notice({ text: "Your bag is full.", look: { world: "hub" } });
 
     expect(told.map((n) => Object.keys(n as object))).toEqual([
       ["text", "look"],

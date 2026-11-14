@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-14
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-13]
 labels: [ready-for-agent]
@@ -38,19 +38,19 @@ take stays inside one scene (the charter's rule).
 
 ## Acceptance Criteria
 
-- [ ] No world builds `GearOverlay`, `HubGear` or `EquipmentHud`, binds I, B, C or Q for it, or tests
+- [x] No world builds `GearOverlay`, `HubGear` or `EquipmentHud`, binds I, B, C or Q for it, or tests
       its rect.
-- [ ] I, B, C, Q, E, the corner icons and the stash chest's E behave as today in each world, refusals
+- [x] I, B, C, Q, E, the corner icons and the stash chest's E behave as today in each world, refusals
       included; opening a panel ends a Shadow Shot hold in a field and the run.
-- [ ] HubGear's no-flash reload, its loading line, its refusals and the purse line and tip as today.
-- [ ] A press, hover or wheel on an open panel reaches no world handler; one in the clear band still
+- [x] HubGear's no-flash reload, its loading line, its refusals and the purse line and tip as today.
+- [x] A press, hover or wheel on an open panel reaches no world handler; one in the clear band still
       attacks; a piece over the overlay (the party panel) takes the hover, the press and the wheel.
-- [ ] inventory_open/close and character_open/close once per action; none for a game-made close.
-- [ ] The container view opens, fills, closes (walking away, a hit, a floor change, E again, Q, the
+- [x] inventory_open/close and character_open/close once per action; none for a game-made close.
+- [x] The container view opens, fills, closes (walking away, a hit, a floor change, E again, Q, the
       world leaving) and takes (click, F) as today; the full bag refused before a send; a press on its
       panel reaches no world handler; the gear overlay draws over it where they meet.
-- [ ] Every gear and container test that read a world scene still passes, moved with the code.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Every gear and container test that read a world scene still passes, moved with the code.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

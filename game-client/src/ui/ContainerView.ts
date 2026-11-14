@@ -283,10 +283,12 @@ function scatter(key: string): [number, number] {
 // ── The view ──────────────────────────────────────────────────────────────
 
 /**
- * Screen-space UI: above the light-map (135) and the atmosphere (902–905), with the HUD, and
- * below tooltips and popups (2000).
+ * A window of the UI scene (FS-TQZ5J § Change: Phase 3, R62): in the windows' band (1100–1800), over
+ * the HUD (1000) and the party frames (999), under the gear overlay (1100, whose objects are made at
+ * each of its opens, after the view's, and Phaser draws equal depths in the order added), the party
+ * panel (1110), tooltips and popups (2000).
  */
-export const CONTAINER_VIEW_DEPTH = 1000;
+export const CONTAINER_VIEW_DEPTH = 1100;
 
 /** Where a new icon goes in the root: over the body and the glow layer, under the glints and flap. */
 const ICON_INDEX = 2;
@@ -295,6 +297,9 @@ const CENTRE_DROP = 16;
 /** The view stands at the screen's centre, a little low (FS-ZAJMH R12). */
 const VIEW_PLACE: Placement = { anchor: "centre", dx: 0, dy: CENTRE_DROP };
 const FLAP_OPEN = -0.42;
+/** The view's band, panel-local: from the lifted flap's top to under the hint (`onPanel`, the ground). */
+const PANEL_TOP = FLAP_HINGE_Y + FLAP_H * FLAP_OPEN;
+const PANEL_BOTTOM = BODY_H / 2 + 24;
 const STAGGER_MS = 55;
 /** When the first icon starts to drop, measured from open: while the flap is still rising. */
 const ICONS_AFTER_MS = 420;
@@ -322,8 +327,10 @@ interface Icon {
 /**
  * The container view's panel, in whichever face the open container wears. The scene says when a
  * container opens (and its kind) and closes, and hands it the contents; the view owns everything drawn, the hover, and the click. Pointer input is
- * hit-tested by hand in screen space, as the item rows were (Phaser's per-object input is
- * unreliable on scrollFactor-0 containers in this scene).
+ * hit-tested by hand in screen space, as the item rows were. On the UI scene it stands an interactive
+ * ground over its panel, a child of its root, so Phaser stops a press there at the UI scene and the
+ * ground pops, moves and hides with the view; the UI scene hands it a press only on that ground
+ * (`owns`, FS-TQZ5J § Change: Phase 3, R59, R60).
  */
 export class ContainerView {
   private readonly root: Phaser.GameObjects.Container;
@@ -334,6 +341,8 @@ export class ContainerView {
   private readonly glints: Phaser.GameObjects.Container;
   private readonly flap: Phaser.GameObjects.Image;
   private readonly status: Phaser.GameObjects.Text;
+  /** Over its panel (`onPanel`'s band), drawing nothing: a press there is the UI scene's (R59). */
+  private readonly ground: Phaser.GameObjects.Zone;
   /** The hovered item's tip, built for that item and destroyed when the hover ends. */
   private tip?: ItemTip;
   private readonly now: () => number;
@@ -379,6 +388,11 @@ export class ContainerView {
       .setOrigin(0.5, 0)
       .setShadow(0, 1, rgba(palette.inkDeep, 0.9), 2);
 
+    // last in the root, after what is drawn: it renders nothing, and only its hit test counts
+    this.ground = scene.add
+      .zone(-BODY_W / 2, PANEL_TOP, BODY_W, PANEL_BOTTOM - PANEL_TOP)
+      .setOrigin(0, 0)
+      .setInteractive();
     this.root = scene.add.container(0, 0, [
       this.body,
       this.glows,
@@ -386,6 +400,7 @@ export class ContainerView {
       this.flap,
       this.status,
       hint,
+      this.ground,
     ]);
     this.root
       .setDepth(CONTAINER_VIEW_DEPTH)
@@ -395,6 +410,18 @@ export class ContainerView {
 
   get isOpen(): boolean {
     return this.openFor !== undefined;
+  }
+
+  /** Whether `object`, as Phaser lists one under the pointer, is the view's own ground (R60). */
+  owns(object: unknown): boolean {
+    return object !== undefined && object === this.ground;
+  }
+
+  /** Its world has left (R50): its tweens stopped, everything it drew let go. */
+  destroy(): void {
+    this.openFor = undefined;
+    this.reset();
+    this.root.destroy();
   }
 
   /** The container the view is open for, if it is open. */
@@ -726,9 +753,5 @@ export class ContainerView {
  * flap covers. Every face claims the same band, so hit-testing is the satchel's untouched (D8).
  */
 function onPanel(x: number, y: number): boolean {
-  return (
-    Math.abs(x) <= BODY_W / 2 &&
-    y >= FLAP_HINGE_Y + FLAP_H * FLAP_OPEN &&
-    y <= BODY_H / 2 + 24
-  );
+  return Math.abs(x) <= BODY_W / 2 && y >= PANEL_TOP && y <= PANEL_BOTTOM;
 }

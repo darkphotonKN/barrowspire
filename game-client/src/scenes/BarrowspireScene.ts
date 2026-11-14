@@ -4,7 +4,7 @@
  */
 
 import * as Phaser from "phaser";
-import { ActionType, WorldType, type SettlementPayload } from "@/assets/types/client";
+import { ActionType, type SettlementPayload } from "@/assets/types/client";
 import { socketManager } from "@/utils/class/SocketManager";
 import { drawPlayerLegs, drawMercenary } from "@/utils/characterTextures";
 import { createAtmosphere as buildAtmosphere } from "@/utils/atmosphere";
@@ -18,7 +18,6 @@ import {
   TimedOpenState,
   type ContainerKind,
   placedKind,
-  ItemState,
   EscapeDoorState,
   SwitchState,
   WallState,
@@ -28,11 +27,7 @@ import {
 } from "@/types/gameState";
 import { ABILITY_COPY } from "@/ui/abilityCopy";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
-import { GearOverlay } from "@/ui/GearOverlay";
-import { EquipmentHud } from "@/ui/EquipmentHud";
-import { PurseReader } from "@/ui/purse";
-import { apiClient } from "@/utils/api";
-import { ContainerContents, ContainerView, lootMessage } from "@/ui/ContainerView";
+import { lootMessage } from "@/ui/ContainerView";
 import {
   climbed,
   floorLabel,
@@ -63,7 +58,18 @@ import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
-import { NO_FACTS, NO_UI, answering, reportWorld, type WorldFacts, type WorldSide, type WorldUi, type WorldWindows } from "@/ui/uiBridge";
+import {
+  NO_FACTS,
+  NO_UI,
+  answering,
+  gearOpened,
+  reportWorld,
+  worldContainer,
+  type WorldFacts,
+  type WorldSide,
+  type WorldUi,
+  type WorldWindows,
+} from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
@@ -814,8 +820,12 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The placeholder floor drawn under each house when there is no baked ground to paint it on. */
   private houseFloors: Phaser.GameObjects.GameObject[] = [];
 
-  // 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D)
-  private containerView!: ContainerView;
+  /**
+   * 寶箱跳窗: the satchel a coffer opens into (FS-2325V §D), the UI scene's, reached through the bridge:
+   * what it is open for read from the UI's state, its open, items and close told (FS-TQZ5J § Change:
+   * Phase 3, R52, R53).
+   */
+  private readonly containerView = worldContainer(() => this.ui);
   /**
    * The shut container the player reached for, until the server answers: its coffer opens on the
    * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
@@ -833,9 +843,6 @@ export class BarrowspireScene extends Phaser.Scene {
    * the bar only shows what the server counts, and never opens anything.
    */
   private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
-
-  // 道具欄 + 裝備面板: the equip HUD, shared with the field scene (FS-X2F2H §Requirements 56)
-  private equipment?: EquipmentHud;
 
   /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
   private readonly combat = new PlayerCombat(
@@ -953,7 +960,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private occluders = new Occluders();
   /** How far above the floor a house's walls reach on screen, for the blackout's hole. */
   private wallTop = WALL_HEIGHT;
-  private readonly PENDING_DURATION = 1000; // 1 秒內不比對剛拿的物品
   private lastGameState?: ClientGameState;
 
   // 狀態追蹤：避免重複通知（每秒 33 幀會重複收到相同狀態）
@@ -1147,8 +1153,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.game?.events.off(Phaser.Core.Events.BLUR, this.cancelAim, this);
     this.game?.events.off(Phaser.Core.Events.HIDDEN, this.cancelAim, this);
     this.characterLevel = undefined;
-    this.equipment?.release();
-    this.equipment = undefined;
     this.escapedCountText = undefined;
     this.floorText = undefined;
     this.positionReadout = undefined;
@@ -1357,6 +1361,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.endPopped = true;
     this.ui.play("dialog_open");
     usePartyStore.getState().closePanel();
+    // the moved windows step aside too, silently, so their grounds take no press meant for the end's
+    // buttons (FS-TQZ5J § Change: Phase 3, R58)
+    this.ui.endPopped();
   }
 
   /** Whether a settlement is this run's record: one for another run is a late confirmation (R20). */
@@ -3056,31 +3063,6 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
-  // === 道具欄功能 ===
-
-  /**
-   * I or B opens and closes the inventory (FS-HRH2J R4); opening it ends a Shadow Shot hold
-   * (FS-JTNPR req 15).
-   */
-  private toggleInventory(): void {
-    if (this.equipment?.toggle()) this.cancelAim();
-  }
-
-  /** C opens and closes the character panel; opening it ends a hold too (FS-HRH2J § Change C2, C5). */
-  private toggleCharacter(): void {
-    if (this.equipment?.toggleCharacter()) this.cancelAim();
-  }
-
-  /**
-   * An item taken from the open satchel (icon click or F): the view has already hidden it and
-   * marked its loot pending; tell the server, and hold it in the inventory optimistically.
-   */
-  private lootChestItem(item: ItemState): void {
-    const { action, payload } = lootMessage(item);
-    socketManager.sendMessage(action, payload);
-    this.equipment?.taken(item);
-  }
-
   private getNearbyChest(): { entityId: string } | null {
     const me = this.playerPos;
     if (!this.player || !me) return null;
@@ -3223,16 +3205,6 @@ export class BarrowspireScene extends Phaser.Scene {
       this.monsterEffects,
       onDemandArt(this, this.art),
     );
-    this.containerView = new ContainerView(
-      this,
-      this.art,
-      {
-        onLoot: (item) => this.lootChestItem(item),
-        characterLevel: () => this.characterLevel,
-        mayTake: () => this.bagHasRoom(),
-      },
-      new ContainerContents(this.PENDING_DURATION),
-    );
 
     // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
     // run always was; otherwise the map, when it comes
@@ -3246,8 +3218,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.bindKeys();
 
     this.bindRunInput();
-
-    this.equipment = this.composeEquipment();
 
     // 顯示座標 UI
     this.createUI();
@@ -3273,14 +3243,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Which of the run's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9;
-   * FS-WDM0X S8): Inventory, Character; a run has no letter panel.
+   * FS-WDM0X S8): a run has no letter panel; Inventory and Character are the UI scene's (§ Change:
+   * Phase 3, R55).
    */
   private windows(): WorldWindows {
-    return {
-      letter: false,
-      inventory: this.equipment?.isInventoryOpen() ?? false,
-      character: this.equipment?.isCharacterOpen() ?? false,
-    };
+    return { letter: false };
   }
 
   /**
@@ -3297,22 +3264,23 @@ export class BarrowspireScene extends Phaser.Scene {
       // the invite stack stays clear of the chat window (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2, R38)
       layout: () => ({ chatTop: this.chatWindow?.topEdge() }),
       facts: () => this.facts(),
-      // the menu opens over no window (FS-3EBCA R17), and closing it does not resume a hold (FS-JTNPR req 15)
-      heardUi: (ui) => {
-        if (!ui.menuOpen) return;
-        this.closeWindows();
-        this.cancelAim();
+      // the menu opens over no window (FS-3EBCA R17), the gear overlay and the party panel the UI
+      // scene's, shut as it opens; it, and a gear panel opening, end a hold, and closing it does not
+      // resume one (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53)
+      heardUi: (ui, was) => {
+        if ((ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.cancelAim();
       },
       answer: answering({
-        inventory: () => {
-          if (!this.menuOpen) this.toggleInventory();
+        // the gear overlay's wear and take off, sent as the run has always sent them (§ Change: Phase 3, R54)
+        equip: (item) => socketManager.sendMessage(ActionType.Equip, { item_entity_id: item }),
+        unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
+        // a take from the open satchel: the view has hidden it and marked its loot pending; tell the
+        // server, and hold it in the bag optimistically
+        take: (item) => {
+          const { action, payload } = lootMessage(item);
+          socketManager.sendMessage(action, payload);
+          this.ui.gear({ kind: "taken", item });
         },
-        character: () => {
-          if (!this.menuOpen) this.toggleCharacter();
-        },
-        // one Esc step each, and the Menu icon's after the run's end (FS-TQZ5J R17; FS-3EBCA R6); the
-        // party panel is the UI scene's own (§ Change: Phase 2: the party, R39)
-        close: { gear: () => this.equipment?.hide() },
         // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
         leaveRun: () => this.leaveTheBarrow(),
         fall: () => this.fallWhereYouStand(),
@@ -3353,15 +3321,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18), the
-   * run's end, the gear overlay or an open chest owns the keys.
+   * run's end, the UI scene's gear overlay or an open chest owns the keys.
    */
   private mayChat(): boolean {
-    return !this.menuOpen && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen;
-  }
-
-  /** The menu opens over no window (FS-3EBCA R17): the overlay goes; the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2, R39). */
-  private closeWindows(): void {
-    this.equipment?.hide();
+    const gear = this.ui.ui.inventory || this.ui.ui.character;
+    return !this.menuOpen && !this.runEnded && !gear && !this.containerView.isOpen;
   }
 
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
@@ -3382,7 +3346,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.spectateHud?.hint.setX(viewport.centerX);
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.abilityHud?.relayout();
-    this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
     this.arrivalCard.relayout();
     this.targetFrame?.relayout();
@@ -3414,47 +3377,15 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The gear and bag overlay over the live run (FS-HRH2J), its equip / unequip sends applied at
-   * once, and its full-bag refusals in the run's refused notice (R22). A run marks unsafe finds
-   * (FS-18Z5F R36). Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
-   */
-  private composeEquipment(): EquipmentHud {
-    // a move over the UI scene's pieces (the party panel, drawn over it) is theirs (FS-R82NV § Change
-    // C8; FS-TQZ5J § Change: Phase 2: the party, R41); its panels' × run through the interface
-    // sounds' wrapper (FS-WDM0X S9)
-    const overlay = new GearOverlay(
-      this,
-      this.art,
-      WorldType.Run,
-      () => this.ui.overUi,
-      this.ui,
-    );
-    return new EquipmentHud(
-      overlay,
-      {
-        send: (action, payload) => socketManager.sendMessage(action, payload),
-        notice: (text) => this.showNotification(text, NOTICE_BACKING.refused),
-      },
-      Date.now,
-      new PurseReader(apiClient, overlay),
-    );
-  }
-
-  /** Whether the bag can take one more pickup (FS-HRH2J R21); when it cannot, the notice says so. */
-  private bagHasRoom(): boolean {
-    return this.equipment?.roomForOne() ?? true;
-  }
-
-  /**
    * The run's keys and pointer, bound once per create. Every binding checks the menu first: while
    * it is open the keyboard and the pointer are its (FS-9K8EZ req 5), and closing it resumes them.
    */
   private bindRunInput(): void {
     // E 鍵互動（門、寶箱、開關、逃脫門）
     this.input.keyboard?.on("keydown-E", () => {
-      if (this.menuOpen) return;
-      // When the equipment panel is open, E equips/unequips the hovered item.
-      if (this.equipment?.equipKey()) return;
+      // When the UI scene's inventory is open, E is its: it equips or unequips the hovered item
+      // (FS-TQZ5J § Change: Phase 3, R56)
+      if (this.menuOpen || this.ui.ui.inventory) return;
 
       // 檢查後端門
       const nearbyDoor = this.getNearbyDoor();
@@ -3489,37 +3420,8 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
 
-    // I or B opens and closes the inventory (FS-HRH2J R4), C the character panel (§ Change C2);
-    // not while the menu is open (R6); each through the interface sounds' wrapper (FS-WDM0X S9)
-    for (const key of ["keydown-I", "keydown-B"]) {
-      this.input.keyboard?.on(key, () =>
-        this.ui.act(() => {
-          if (this.menuOpen) return;
-          this.toggleInventory();
-        }),
-      );
-    }
-    this.input.keyboard?.on("keydown-C", () =>
-      this.ui.act(() => {
-        if (this.menuOpen) return;
-        this.toggleCharacter();
-      }),
-    );
-
-    // F 鍵從寶箱取得道具
-    this.input.keyboard?.on("keydown-F", () => {
-      if (this.menuOpen) return;
-      this.containerView.lootFirst();
-    });
-
-    // Q 鍵關閉任何打開的彈窗 (the gear overlay's close through the interface sounds' wrapper, FS-WDM0X S9)
-    this.input.keyboard?.on("keydown-Q", () =>
-      this.ui.act(() => {
-        if (this.menuOpen) return;
-        if (this.equipment?.hide()) return;
-        this.containerView.close();
-      }),
-    );
+    // I, B, C, F and Q are the UI scene's, with the gear overlay and the satchel they open, take from
+    // and close (FS-TQZ5J § Change: Phase 3, R56)
 
     // H 鍵顯示/隱藏操作說明
     this.input.keyboard?.on("keydown-H", () => {
@@ -3543,10 +3445,8 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drinkPotion();
     });
 
-    // Scene-level pointer tracking for satchel hover (bypasses broken Phaser scrollFactor input)
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
-      this.containerView.pointerMove(at.x, at.y);
       // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
       // §Change: Map mode icon, D7; FS-TQZ5J § Change: Phase 2: the party, R41)
       if (this.ui.overUi || this.panelTakes(at.x, at.y)) this.dungeon?.modeIcon?.pointerOut();
@@ -3565,10 +3465,10 @@ export class BarrowspireScene extends Phaser.Scene {
       // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
       if (this.panelTakes(at.x, at.y)) return;
-      // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
+      // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6);
+      // one on the open satchel is the UI scene's, a loot, and never reaches the run (FS-2325V §D.2;
+      // FS-TQZ5J § Change: Phase 3, R59)
       if (this.dungeon?.modeIcon?.pointerDown(at.x, at.y, pointer.button === 0)) return;
-      // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
-      if (this.containerView.pointerDown(at.x, at.y, pointer.button === 0)) return;
       if (!this.player || !this.playerPos) return;
       // out of the delve: the server refuses it anyway (FS-77AB6 req 17)
       if (resolved(this.lastGameState?.current_player)) return;
@@ -3637,9 +3537,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * 2: the party, R40).
    */
   private panelTakes(x: number, y: number): boolean {
-    // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
-    // clear middle band answers as with the overlay closed (FS-HRH2J R8)
-    if (this.equipment?.covers(x, y)) return true;
+    // a press over the gear overlay's panels is the UI scene's: no attack, no cast, no hold; one in the
+    // clear middle band answers as with the overlay closed (FS-HRH2J R8; FS-TQZ5J § Change: Phase 3, R59)
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     return this.chatWindow?.covers(x, y) ?? false;
   }
@@ -3851,10 +3750,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
       this.showProgress(state.current_player);
 
-      // 同步玩家背包與裝備
-      this.equipment?.sync(state.current_player);
-      // the overlay's stats panel, from this state (FS-HRH2J R24, R30)
-      this.equipment?.updateCharacter(state.current_player);
+      // 同步玩家背包與裝備, and the overlay's stats panel, from this state (FS-HRH2J R24, R30): the UI
+      // scene's (FS-TQZ5J § Change: Phase 3, R52)
+      this.ui.gear({ kind: "seen", carried: state.current_player, character: state.current_player });
 
       // 本身受傷變紅閃爍提示
       const health = healthIn(state.current_player);
@@ -5266,7 +5164,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private showProgress(player: PlayerState): void {
     const progress = progressOf(player);
     this.characterLevel = progress?.level;
-    this.equipment?.setCharacterLevel(this.characterLevel);
+    this.ui.gear({ kind: "level", level: this.characterLevel });
     if (!progress) return;
     this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
     this.progressHud.show(progress);

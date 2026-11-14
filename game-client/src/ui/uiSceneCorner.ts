@@ -6,8 +6,9 @@
  * (R14). Phaser-free: the UI scene hands it the row's builder (`HudCorner` on itself), so the wiring
  * is tested on its own.
  *
- * Party is the UI scene's own party panel (§ Change: Phase 2: the party, R39): its press toggles it
- * there, inside the same act, under the same refusals.
+ * Party is the UI scene's own party panel (§ Change: Phase 2: the party, R39), and Inventory and
+ * Character its own gear overlay (§ Change: Phase 3, R55): a press toggles it there, inside the same
+ * act, under the same refusals.
  *
  * Menu is the UI scene's own menu slot's (R16): its press is handed to the slot. While the slot is
  * filled its blocker, in the same scene and over the row, takes every icon's hover and press but
@@ -21,7 +22,7 @@
 
 import type { CornerIconSpec } from "./HudCorner";
 import type { CornerIcon } from "./hudCornerLayout";
-import type { UiBridge, UiToggle, WorldReport } from "./uiBridge";
+import type { UiBridge, WorldReport } from "./uiBridge";
 
 /** The party panel as the row's Party icon reaches it: the UI scene's own (§ Change: Phase 2: the party, R39). */
 export interface CornerParty {
@@ -31,6 +32,17 @@ export interface CornerParty {
 
 /** No party panel: a row whose Party icon changes nothing. */
 const NO_PARTY: CornerParty = { isOpen: () => false, toggle: () => {} };
+
+/** The gear overlay as the row's Inventory and Character icons reach it: the UI scene's own (§ Change: Phase 3, R55). */
+export interface CornerGear {
+  isInventoryOpen(): boolean;
+  isCharacterOpen(): boolean;
+  /** Under the gear's own refusals: the menu slot and the world's `blockers().gear`. */
+  toggle(window: "inventory" | "character"): void;
+}
+
+/** No gear overlay: a row whose Inventory and Character change nothing. */
+const NO_GEAR: CornerGear = { isInventoryOpen: () => false, isCharacterOpen: () => false, toggle: () => {} };
 
 /** The row as the UI scene keeps it. `HudCorner` is one. */
 export interface CornerRow {
@@ -43,8 +55,8 @@ export interface CornerRow {
 /** What of the bridge the row reads, asks and plays through. */
 export type CornerBridge = Pick<UiBridge, "world" | "ui" | "act" | "play" | "request">;
 
-/** The icons that toggle a world window (R14), in the row's order after Menu; Party follows them. */
-const TOGGLES: readonly UiToggle[] = ["inventory", "character"];
+/** The icons that toggle the gear overlay's panels (R14), in the row's order after Menu; Party follows them. */
+const TOGGLES = ["inventory", "character"] as const;
 
 export class UiCornerRow {
   private row: CornerRow | null = null;
@@ -58,6 +70,8 @@ export class UiCornerRow {
     private readonly menu: () => void,
     /** The Party icon's panel: the UI scene's party slot (§ Change: Phase 2: the party, R39). */
     private readonly party: CornerParty = NO_PARTY,
+    /** The Inventory and Character icons' overlay: the UI scene's gear slot (§ Change: Phase 3, R55). */
+    private readonly gear: CornerGear = NO_GEAR,
   ) {}
 
   /**
@@ -104,7 +118,7 @@ export class UiCornerRow {
       { icon: "menu", press: () => this.send("menu", this.menu), hovered },
       ...TOGGLES.map((window) => ({
         icon: window,
-        press: () => this.send(window, () => this.bridge.request({ kind: "toggle", window })),
+        press: () => this.send(window, () => this.gear.toggle(window)),
         hovered,
       })),
       { icon: "party", press: () => this.send("party", () => this.party.toggle()), hovered },
@@ -127,10 +141,16 @@ export class UiCornerRow {
     });
   }
 
-  /** What a press can change, as one key: the world's windows, the UI's party panel and menu slot. */
+  /** What a press can change, as one key: the world's letter panel, the UI's party panel, gear overlay and menu slot. */
   private screen(): string {
     const windows = this.bridge.world?.windows();
-    return JSON.stringify([windows?.letter, this.party.isOpen(), windows?.inventory, windows?.character, this.bridge.ui.menuOpen]);
+    return JSON.stringify([
+      windows?.letter,
+      this.party.isOpen(),
+      this.gear.isInventoryOpen(),
+      this.gear.isCharacterOpen(),
+      this.bridge.ui.menuOpen,
+    ]);
   }
 
   /**

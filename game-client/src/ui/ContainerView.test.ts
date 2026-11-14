@@ -563,7 +563,7 @@ describe("ContainerView faces (FS-1D6BX §Requirements 15, 16, D8, D9)", () => {
     expect([x, w]).toEqual([-180, 360]);
     expect(y).toBeCloseTo(-215.84);
     expect(h).toBeCloseTo(401.84);
-    const root = rec.calls.find((c) => c.name === "container");
+    const root = rec.calls.find((c) => c.name === "container" && Array.isArray(c.args[2]));
     const children = root?.args[2] as unknown[];
     expect(rec.calls.some((c) => c.name === "setInteractive")).toBe(true);
     expect(view.owns(children.at(-1))).toBe(true);

@@ -2,21 +2,31 @@ import { describe, expect, it } from "vitest";
 import { GameUiBridge, NO_FACTS, type WorldWindows } from "./uiBridge";
 import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 
-const CLOSED: WorldWindows = { letter: false, inventory: false, character: false };
+const CLOSED: WorldWindows = { letter: false };
 
 /**
  * The bridge with the UI scene's sounds lent, and a town reporting windows the test opens and closes;
- * `windows.party` is the UI scene's own party panel (§ Change: Phase 2: the party, R39).
+ * `windows.party`, `windows.inventory` and `windows.character` are the UI scene's own party panel and
+ * gear overlay (§ Change: Phase 2: the party, R39; § Change: Phase 3, R55).
  */
 function town() {
-  const windows: { -readonly [K in keyof WorldWindows]: boolean } & { party: boolean } = { ...CLOSED, party: false };
-  const { bridge, sounds, heard } = heardInterfaceSounds(undefined, () => windows.party);
+  const windows: { -readonly [K in keyof WorldWindows]: boolean } & { party: boolean; inventory: boolean; character: boolean } = {
+    ...CLOSED,
+    party: false,
+    inventory: false,
+    character: false,
+  };
+  const { bridge, sounds, heard } = heardInterfaceSounds(undefined, {
+    party: () => windows.party,
+    inventory: () => windows.inventory,
+    character: () => windows.character,
+  });
   let reads = 0;
   bridge.report({
     world: "hub",
     windows: () => {
       reads++;
-      return { ...windows };
+      return { letter: windows.letter };
     },
     blockers: () => ({ dialogue: false }),
     facts: () => NO_FACTS,
@@ -115,12 +125,12 @@ describe("the interface sounds on the UI scene, heard through the UI bridge (FS-
     expect(t.heard()).toEqual(["map_mode_switch"]);
   });
 
-  it("should read every window shut while no world is reported", () => {
+  it("should read every world window shut while no world is reported", () => {
     const t = town();
-    t.windows.inventory = true;
+    t.windows.letter = true;
     t.bridge.left("hub");
 
-    t.bridge.act(() => void (t.windows.inventory = false));
+    t.bridge.act(() => void (t.windows.letter = false));
 
     expect(t.heard()).toEqual([]);
   });
