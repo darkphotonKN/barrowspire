@@ -10,11 +10,13 @@ import { HudCorner } from "@/ui/HudCorner";
 import { showMenuPanel } from "@/ui/menuPanel";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { openOptionsPanel } from "@/ui/optionsPanel";
-import { uiBridgeOf, type UiBridge } from "@/ui/uiBridge";
+import { mountPartyPanel } from "@/ui/PartyPanel";
+import { uiBridgeOf, type UiBridge, type World } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
 import { UiDialogueSlot, handKeys } from "@/ui/uiSceneDialogue";
 import { UiMenuSlot } from "@/ui/uiSceneMenu";
 import { UiNoticeLayer, drawNotice } from "@/ui/uiSceneNotices";
+import { UiPartySlot, partyPanelWiring, type PartyPieces } from "@/ui/uiSceneParty";
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
@@ -43,8 +45,9 @@ interface MenuKeyObjects {
  * The interface moves in piece by piece (FS-TQZ5J § Phases). It holds the game's interface sounds
  * (R22), the corner row, built for each world as it reports itself (R13), the one menu slot: the
  * ESC menu, OPTIONS and the run's Fall confirm, with Esc and the menu's keys (R16–R21), the town's
- * NPC dialogue card, drawn from the data the town shows, with its keys (A2 R29–R32), and the worlds'
- * screen notices, on its own clock (A2 R33, R34). Its pointer stands beside
+ * NPC dialogue card, drawn from the data the town shows, with its keys (A2 R29–R32), the worlds'
+ * screen notices, on its own clock (A2 R33, R34), and the party pieces, built for each world (§ Change:
+ * Phase 2: the party, R36). Its pointer stands beside
  * the worlds' as Amendment A1 says, for every piece it holds: a world's press stays the world's, a
  * press on a piece lets go of the game's text field, and every move reaches the world (R25–R27).
  *
@@ -57,6 +60,7 @@ export class UIScene extends Phaser.Scene {
   private corner?: UiCornerRow;
   private menu?: UiMenuSlot;
   private dialogue?: UiDialogueSlot;
+  private party?: UiPartySlot;
   private keys?: MenuKeyObjects;
   private pointer?: UiScenePointer<Phaser.Input.Pointer>;
 
@@ -73,7 +77,7 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     const bridge = uiBridgeOf(this.registry);
     if (!bridge) return;
-    mountInterfaceSounds(bridge, sceneUiSoundStage(this), browserSfxStore);
+    mountInterfaceSounds(bridge, sceneUiSoundStage(this), browserSfxStore, undefined, () => this.party?.isOpen() ?? false);
     this.mountInterface(bridge);
     this.mountKeys();
     this.mountPointer(bridge);
@@ -143,14 +147,23 @@ export class UIScene extends Phaser.Scene {
   private mountPointer(bridge: UiBridge): void {
     const input = this.input;
     if (!input) return;
+    /** Where the press being heard landed, logical units (FS-ZAJMH R15). */
+    let pressedAt = { x: -1, y: -1 };
     const pointer = new UiScenePointer<Phaser.Input.Pointer>({
       cameras: () => this.cameras.cameras,
       anyDown: () => input.manager.pointers.some((p) => p.isDown),
       world: bridge,
-      letGo: () => letGoOfGameField(this.game.canvas?.parentElement, document),
+      // a press on the party panel keeps its invite field (§ Change: Phase 2: the party, R42)
+      letGo: () => {
+        if (this.party?.keepsField(pressedAt.x, pressedAt.y)) return;
+        letGoOfGameField(this.game.canvas?.parentElement, document);
+      },
     });
     this.pointer = pointer;
-    input.on("pointerdown", (_p: Phaser.Input.Pointer, over: unknown[]) => pointer.pressed(over));
+    input.on("pointerdown", (p: Phaser.Input.Pointer, over: unknown[]) => {
+      pressedAt = viewport.toLogical(p);
+      pointer.pressed(over);
+    });
     input.on("pointerup", () => pointer.released());
     input.on("pointerupoutside", () => pointer.released());
     input.on("pointermove", (p: Phaser.Input.Pointer, over: unknown[]) => pointer.moved(p, over));
@@ -178,19 +191,24 @@ export class UIScene extends Phaser.Scene {
       centre: () => ({ x: viewport.centerX, y: viewport.centerY }),
       musicLevel: () => storedMusicLevel(browserMusicStore),
       fullscreen: () => lentFullscreen(this.registry),
+      party: { isOpen: () => party.isOpen(), close: () => party.close() },
     });
-    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu());
+    const party = new UiPartySlot((world) => this.partyPieces(bridge, world));
+    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu(), party);
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
     this.menu = menu;
     this.corner = corner;
     this.dialogue = dialogue;
+    this.party = party;
     corner.show(bridge.world);
+    party.show(bridge.world);
     const stop = bridge.onWorld((report) => {
       menu.sync();
       dialogue.sync();
       notices.sync();
       corner.show(report);
+      party.show(report);
     });
     const stopScreen = bridge.onScreen({
       dialogue: (shown) => dialogue.show(shown),
@@ -200,6 +218,7 @@ export class UIScene extends Phaser.Scene {
       corner.relayout();
       menu.relayout();
       dialogue.relayout();
+      party.relayout();
     });
     onSceneEnd(this, () => {
       stop();
@@ -208,9 +227,21 @@ export class UIScene extends Phaser.Scene {
       dialogue.close();
       notices.clear();
       corner.destroy();
+      party.destroy();
       this.menu = undefined;
       this.dialogue = undefined;
       this.corner = undefined;
+      this.party = undefined;
     });
+  }
+
+  /**
+   * The party pieces for `world`, on this scene (FS-TQZ5J § Change: Phase 2: the party, R36): the party
+   * panel, refused by the world's report and the menu slot, its opening closing the town's letter
+   * panel, its own inputs through the interface sounds (R38, R39).
+   */
+  private partyPieces(bridge: UiBridge, world: World): PartyPieces {
+    const wiring = partyPanelWiring(bridge, world);
+    return { panel: mountPartyPanel(this, wiring.blocked, wiring.opening, wiring.wrapper) };
   }
 }

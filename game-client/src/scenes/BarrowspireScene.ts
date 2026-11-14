@@ -72,7 +72,6 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  * create, which sends them.
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
-import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -661,7 +660,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private chatWindow?: ChatWindow;
   /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
   private potionHud?: PotionHud;
-  private partyPanel?: PartyPanel;
   /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre, Accept greyed while delving (FS-NCC9J R24). */
@@ -1133,8 +1131,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.potionHud = undefined;
-    this.partyPanel?.destroy();
-    this.partyPanel = undefined;
     this.invitePrompt?.destroy();
     this.invitePrompt = undefined;
     this.partyFrames?.destroy();
@@ -3180,8 +3176,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
-    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
-    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.ui);
+    // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
     // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
 
@@ -3251,12 +3246,11 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Which of the run's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9;
-   * FS-WDM0X S8): Party, Inventory, Character; a run has no letter panel.
+   * FS-WDM0X S8): Inventory, Character; a run has no letter panel.
    */
   private windows(): WorldWindows {
     return {
       letter: false,
-      party: this.partyPanel?.isOpen() ?? false,
       inventory: this.equipment?.isInventoryOpen() ?? false,
       character: this.equipment?.isCharacterOpen() ?? false,
     };
@@ -3272,7 +3266,7 @@ export class BarrowspireScene extends Phaser.Scene {
   private worldSide(): WorldSide {
     return {
       windows: () => this.windows(),
-      blockers: () => ({ dialogue: false }),
+      blockers: () => ({ dialogue: false, party: this.refusesParty() }),
       facts: () => this.facts(),
       // the menu opens over no window (FS-3EBCA R17), and closing it does not resume a hold (FS-JTNPR req 15)
       heardUi: (ui) => {
@@ -3287,9 +3281,9 @@ export class BarrowspireScene extends Phaser.Scene {
         character: () => {
           if (!this.menuOpen) this.toggleCharacter();
         },
-        party: () => this.partyPanel?.toggle(),
-        // one Esc step each, and the Menu icon's after the run's end (FS-TQZ5J R17; FS-3EBCA R6)
-        close: { party: () => this.partyPanel?.close(), gear: () => this.equipment?.hide() },
+        // one Esc step each, and the Menu icon's after the run's end (FS-TQZ5J R17; FS-3EBCA R6); the
+        // party panel is the UI scene's own (§ Change: Phase 2: the party, R39)
+        close: { gear: () => this.equipment?.hide() },
         // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
         leaveRun: () => this.leaveTheBarrow(),
         fall: () => this.fallWhereYouStand(),
@@ -3319,12 +3313,13 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): the menu, the run's
-   * end or an open container owns the screen. The inventory and the character panel do not: the
-   * party panel opens over them (FS-R82NV § Change C8).
+   * The run's part of T's and the Party icon's refusal (FS-R82NV R28; FS-3EBCA R8), as its report's
+   * blocker: the run's end or an open container owns the screen. The menu is the UI scene's own; the
+   * inventory and the character panel do not refuse it, the party panel opening over them (FS-R82NV
+   * § Change C8; FS-TQZ5J § Change: Phase 2: the party, R38).
    */
   private refusesParty(): boolean {
-    return this.menuOpen || this.runEnded || !!this.containerView?.isOpen;
+    return this.runEnded || !!this.containerView?.isOpen;
   }
 
   /**
@@ -3335,9 +3330,8 @@ export class BarrowspireScene extends Phaser.Scene {
     return !this.menuOpen && !this.runEnded && !this.equipment?.isOpen() && !this.containerView?.isOpen;
   }
 
-  /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
+  /** The menu opens over no window (FS-3EBCA R17): the overlay goes; the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2, R39). */
   private closeWindows(): void {
-    this.partyPanel?.close();
     this.equipment?.hide();
   }
 
@@ -3349,7 +3343,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The logical view changed (FS-ZAJMH R13): every widget that keeps to the right or the centre
    * goes back to its anchor, the open ones included, their state untouched. The bars, the level
-   * bar, the chat window and the party frames and panel keep to the left and the bottom, which a
+   * bar, the chat window and the party frames keep to the left and the bottom, which a
    * width change does not move; the gear overlay follows Phaser's resize itself; a passing notice
    * is gone in moments and stays where it was said.
    */
@@ -3359,8 +3353,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.spectateHud?.hint.setX(viewport.centerX);
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.abilityHud?.relayout();
-    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
-    this.partyPanel?.relayout();
     this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
@@ -3399,13 +3391,14 @@ export class BarrowspireScene extends Phaser.Scene {
    * (FS-18Z5F R36). Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
-    // its panels' × run through the interface sounds' wrapper (FS-WDM0X S9)
+    // a move over the UI scene's pieces (the party panel, drawn over it) is theirs (FS-R82NV § Change
+    // C8; FS-TQZ5J § Change: Phase 2: the party, R41); its panels' × run through the interface
+    // sounds' wrapper (FS-WDM0X S9)
     const overlay = new GearOverlay(
       this,
       this.art,
       WorldType.Run,
-      (x, y) => this.partyPanel?.covers(x, y) ?? false,
+      () => this.ui.overUi,
       this.ui,
     );
     return new EquipmentHud(
@@ -3526,8 +3519,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
       this.containerView.pointerMove(at.x, at.y);
-      // the map mode icon lit under the pointer, unless a panel lies over it (FS-56CKV §Change: Map mode icon, D7)
-      if (this.panelTakes(at.x, at.y)) this.dungeon?.modeIcon?.pointerOut();
+      // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
+      // §Change: Map mode icon, D7; FS-TQZ5J § Change: Phase 2: the party, R41)
+      if (this.ui.overUi || this.panelTakes(at.x, at.y)) this.dungeon?.modeIcon?.pointerOut();
       else this.dungeon?.modeIcon?.pointerMove(at.x, at.y);
     });
     this.input.on("gameout", () => this.dungeon?.modeIcon?.pointerOut());
@@ -3610,8 +3604,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Whether a press at (x, y), logical units, is a HUD panel's: no attack, no cast, no hold, and
-   * nothing under it takes it, the map mode icon included. One on the corner row never reaches the
-   * run: the row is the UI scene's, above it (FS-TQZ5J R7, R15).
+   * nothing under it takes it, the map mode icon included. One on the UI scene's pieces (the corner
+   * row, the party panel) never reaches the run: they are above it (FS-TQZ5J R7, R15; § Change: Phase
+   * 2: the party, R40).
    */
   private panelTakes(x: number, y: number): boolean {
     // a press over the overlay's panels is the overlay's: no attack, no cast, no hold; one in the
@@ -3619,8 +3614,6 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     if (this.chatWindow?.covers(x, y)) return true;
-    // and one on the open party panel is the panel's (FS-R82NV R28)
-    if (this.partyPanel?.covers(x, y)) return true;
     // and one on an invite prompt is the prompt's (FS-NCC9J R24)
     return this.invitePrompt?.covers(x, y) ?? false;
   }

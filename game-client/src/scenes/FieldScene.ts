@@ -50,7 +50,6 @@ import { PurseReader } from "@/ui/purse";
 import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
@@ -214,7 +213,6 @@ export class FieldScene extends Phaser.Scene {
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
-  private partyPanel?: PartyPanel;
   /** The teammates' frames at the top-left corner (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre: an invite reaches a field too (FS-NCC9J R24). */
@@ -339,8 +337,7 @@ export class FieldScene extends Phaser.Scene {
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
-    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change C8)
-    this.partyPanel = mountPartyPanel(this, () => this.refusesParty(), undefined, this.ui);
+    // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
     // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
     this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
@@ -371,9 +368,8 @@ export class FieldScene extends Phaser.Scene {
       answer: answering({
         inventory: () => this.toggleGear(),
         character: () => this.toggleCharacter(),
-        party: () => this.partyPanel?.toggle(),
-        // one Esc step each (FS-TQZ5J R17)
-        close: { party: () => this.partyPanel?.close(), gear: () => this.equipment?.hide() },
+        // one Esc step each (FS-TQZ5J R17); the party panel is the UI scene's own (§ Change: Phase 2, R39)
+        close: { gear: () => this.equipment?.hide() },
         changeCharacter: () => this.changeCharacter(),
       }),
     };
@@ -384,23 +380,13 @@ export class FieldScene extends Phaser.Scene {
     return this.ui.ui.menuOpen;
   }
 
-  /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): Party, Inventory, Character; a field has no letter panel. */
+  /** Which of the field's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): Inventory, Character; a field has no letter panel. */
   private windows(): WorldWindows {
     return {
       letter: false,
-      party: this.partyPanel?.isOpen() ?? false,
       inventory: this.equipment?.isInventoryOpen() ?? false,
       character: this.equipment?.isCharacterOpen() ?? false,
     };
-  }
-
-  /**
-   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): the menu owns the
-   * screen. The inventory and the character panel do not: the party panel opens over them
-   * (FS-R82NV § Change C8).
-   */
-  private refusesParty(): boolean {
-    return this.menuOpen;
   }
 
   /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the gear overlay is up. */
@@ -408,9 +394,8 @@ export class FieldScene extends Phaser.Scene {
     return !this.menuOpen && !this.equipment?.isOpen();
   }
 
-  /** The menu opens over no window (FS-3EBCA R17): the party panel and the overlay go. */
+  /** The menu opens over no window (FS-3EBCA R17): the overlay goes; the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2, R39). */
   private closeWindows(): void {
-    this.partyPanel?.close();
     this.equipment?.hide();
   }
 
@@ -424,8 +409,6 @@ export class FieldScene extends Phaser.Scene {
     this.arrivalCard.relayout();
     this.minimap?.place();
     this.abilityHud?.relayout();
-    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
-    this.partyPanel?.relayout();
     this.satchel?.relayout();
     this.invitePrompt?.relayout();
     if (this.fallenView) {
@@ -543,13 +526,14 @@ export class FieldScene extends Phaser.Scene {
    * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8).
    */
   private composeEquipment(): EquipmentHud {
-    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
-    // its panels' × run through the interface sounds' wrapper (FS-WDM0X S9)
+    // a move over the UI scene's pieces (the party panel, drawn over it) is theirs (FS-R82NV § Change
+    // C8; FS-TQZ5J § Change: Phase 2: the party, R41); its panels' × run through the interface
+    // sounds' wrapper (FS-WDM0X S9)
     const overlay = new GearOverlay(
       this,
       this.art,
       WorldType.Field,
-      (x, y) => this.partyPanel?.covers(x, y) ?? false,
+      () => this.ui.overUi,
       this.ui,
     );
     return new EquipmentHud(
@@ -620,8 +604,9 @@ export class FieldScene extends Phaser.Scene {
       // the satchel is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
       this.satchel?.pointerMove(at.x, at.y);
-      // the map mode icon lit under the pointer, unless a panel lies over it (FS-56CKV §Change: Map mode icon, D7)
-      if (this.panelTakes(at.x, at.y)) this.minimap?.pointerOut();
+      // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
+      // §Change: Map mode icon, D7; FS-TQZ5J § Change: Phase 2: the party, R41)
+      if (this.ui.overUi || this.panelTakes(at.x, at.y)) this.minimap?.pointerOut();
       else this.minimap?.pointerMove(at.x, at.y);
     });
     this.input.on("gameout", () => this.minimap?.pointerOut());
@@ -643,16 +628,15 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * Whether a press at (x, y), logical units, is a HUD panel's: the overlay's, the chat window's,
-   * the party panel's or a prompt's. Neither the world nor the map mode icon answers it. One on the
-   * corner row never reaches the field: the row is the UI scene's, above it (FS-TQZ5J R7, R15).
+   * Whether a press at (x, y), logical units, is a HUD panel's: the overlay's, the chat window's or a
+   * prompt's. Neither the world nor the map mode icon answers it. One on the UI scene's pieces (the
+   * corner row, the party panel) never reaches the field: they are above it (FS-TQZ5J R7, R15;
+   * § Change: Phase 2: the party, R40).
    */
   private panelTakes(x: number, y: number): boolean {
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
     if (this.chatWindow?.covers(x, y)) return true;
-    // and one on the open party panel is the panel's (FS-R82NV R28)
-    if (this.partyPanel?.covers(x, y)) return true;
     // and one on an invite prompt is the prompt's (FS-NCC9J R24)
     return this.invitePrompt?.covers(x, y) ?? false;
   }
@@ -681,8 +665,6 @@ export class FieldScene extends Phaser.Scene {
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.partyPanel?.destroy();
-    this.partyPanel = undefined;
     this.invitePrompt?.destroy();
     this.invitePrompt = undefined;
     this.partyFrames?.destroy();

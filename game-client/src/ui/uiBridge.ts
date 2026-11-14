@@ -27,10 +27,11 @@ import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "
 export type World = WorldType;
 
 /**
- * Which of the world's own windows are open (R9): the letter panel, Party, Inventory, Character. The
- * ESC menu's slot is the UI scene's own (R16). The interface sounds' rule reads both (FS-WDM0X S8).
+ * Which of the world's own windows are open (R9): the letter panel, Inventory, Character. The ESC
+ * menu's slot and the party panel are the UI scene's own (R16; § Change: Phase 2: the party, R39).
+ * The interface sounds' rule reads them all (FS-WDM0X S8).
  */
-export type WorldWindows = Readonly<Omit<WindowState, "menu">>;
+export type WorldWindows = Readonly<Omit<WindowState, "menu" | "party">>;
 
 /** Who speaks on a dialogue card (A2 R29): the name, the role under it, the frame the bust is cut from. */
 export interface DialogueSpeaker {
@@ -83,9 +84,17 @@ export interface Notice {
   readonly look: NoticeLook;
 }
 
-/** What keeps the screen in the world (R9): the town's NPC dialogue, open. */
+/**
+ * What keeps the screen in the world (R9): the town's NPC dialogue, open; and the world's part of the
+ * party pieces' rules (§ Change: Phase 2: the party, R38), each false where a report leaves it out.
+ */
 export interface WorldBlockers {
   readonly dialogue: boolean;
+  /**
+   * The world turns T and the Party icon away now: the town's dialogue, the run's end or an open
+   * chest. The UI scene refuses the party panel while this is true or its menu slot is filled.
+   */
+  readonly party?: boolean;
 }
 
 /**
@@ -117,11 +126,11 @@ export const NO_FACTS: WorldFacts = {
   fallPending: false,
 };
 
-/** A world window the corner row's icons toggle (R11, R14). */
-export type UiToggle = "inventory" | "character" | "party";
+/** A world window the corner row's icons toggle (R11, R14); Party is the UI scene's own (§ Change: Phase 2, R39). */
+export type UiToggle = "inventory" | "character";
 
-/** What one Esc step closes in the world (R11, R17): the letter panel, Party, the gear overlay, the dialogue. */
-export type UiClose = "letter" | "party" | "gear" | "dialogue";
+/** What one Esc step closes in the world (R11, R17): the letter panel, the gear overlay, the dialogue. */
+export type UiClose = "letter" | "gear" | "dialogue";
 
 /**
  * UI → world: what the UI scene asks of the world (R11). The corner row's `toggle` of a window; an
@@ -252,6 +261,12 @@ export interface UiBridge extends UiActWrapper {
   /** The UI's last state. What the world's guards read. */
   readonly ui: UiState;
   /**
+   * True while the world hears a move the UI scene took over one of its pieces (A1 R27), and only
+   * then: a world piece that hovers by coordinates gives way to the UI scene there (§ Change: Phase 2:
+   * the party, R41).
+   */
+  readonly overUi: boolean;
+  /**
    * A world's player action, run through the UI scene's interface sounds: the world's windows read
    * before and after, once, and the rule's one effect played; one inside another joins it (R12,
    * R22). Before the UI scene lends its sounds it runs as it is.
@@ -276,13 +291,17 @@ export interface UiBridge extends UiActWrapper {
  * minimap's step, the UI's state its guards read, its word that its report changed, its dialogue and
  * its notices.
  */
-export type WorldUi = Pick<UiBridge, "act" | "play" | "ui" | "changed" | "showDialogue" | "closeDialogue" | "notice">;
+export type WorldUi = Pick<
+  UiBridge,
+  "act" | "play" | "ui" | "overUi" | "changed" | "showDialogue" | "closeDialogue" | "notice"
+>;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
 export const NO_UI: WorldUi = {
   act: (run) => run(),
   play: () => {},
   ui: { menuOpen: false },
+  overUi: false,
   changed: () => {},
   showDialogue: () => {},
   closeDialogue: () => {},
@@ -302,6 +321,7 @@ export class GameUiBridge implements UiBridge {
   private readonly listeners = new Set<WorldListener>();
   private readonly screens = new Set<UiScreen>();
   private sounds: UiSoundPlayer | null = null;
+  private movingOverUi = false;
 
   get world(): WorldReport | null {
     return this.reported;
@@ -309,6 +329,10 @@ export class GameUiBridge implements UiBridge {
 
   get ui(): UiState {
     return this.uiState;
+  }
+
+  get overUi(): boolean {
+    return this.movingOverUi;
   }
 
   report(report: WorldReport): void {
@@ -338,7 +362,13 @@ export class GameUiBridge implements UiBridge {
   }
 
   moved(pointer: ScenePointer, onUi: boolean): void {
-    this.reported?.hearMove?.(pointer, onUi);
+    const was = this.movingOverUi;
+    this.movingOverUi = onUi;
+    try {
+      this.reported?.hearMove?.(pointer, onUi);
+    } finally {
+      this.movingOverUi = was;
+    }
   }
 
   act: UiAct = (run) => (this.sounds ? this.sounds.act(run) : run());

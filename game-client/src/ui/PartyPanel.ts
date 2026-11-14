@@ -30,6 +30,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { partyCommands, type PartyCommands } from "./partyCommands";
+import { uiGround, type GroundMaker } from "./uiGround";
 import {
   domPartyInviteField,
   type PartyInviteFieldFactory,
@@ -74,9 +75,17 @@ export interface PartyPanelDeps {
    * own (the interface sounds' wrapper, FS-WDM0X S9). None, and each runs as it is.
    */
   wrapper?: UiActWrapper;
+  /**
+   * The open panel's ground, under its buttons, so a press on it is the UI scene's (FS-TQZ5J § Change:
+   * Phase 2: the party, R40). None, and the panel's ground takes no input.
+   */
+  ground?: GroundMaker;
 }
 
-/** The panel as a scene hangs it: the app's party, the real socket and DOM field. */
+/**
+ * The panel as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party,
+ * the real socket and DOM field, its ground under its buttons.
+ */
 export function mountPartyPanel(
   scene: Phaser.Scene,
   blocked: () => boolean,
@@ -96,6 +105,7 @@ export function mountPartyPanel(
     blocked,
     opening,
     wrapper,
+    ground: uiGround(scene, PARTY_PANEL_DEPTH),
   });
 }
 
@@ -203,6 +213,7 @@ export function drawLeaderMark(
 
 export class PartyPanel {
   private graphics?: Phaser.GameObjects.Graphics;
+  private ground?: { destroy(): void };
   private texts: Phaser.GameObjects.Text[] = [];
   private field?: PartyInviteFieldHandle;
   private frame?: PartyPanelFrame;
@@ -253,6 +264,14 @@ export class PartyPanel {
   /** Whether a screen point lies on the open panel: a click there is the panel's, not the world's. */
   covers(x: number, y: number): boolean {
     return this.isOpen() && !!this.frame && within(this.frame.panel, x, y);
+  }
+
+  /**
+   * Whether a press at a screen point keeps the invite field's focus (FS-TQZ5J § Change: Phase 2: the
+   * party, R42): on the open panel, with the field holding it. A press anywhere else lets it go.
+   */
+  keepsField(x: number, y: number): boolean {
+    return this.covers(x, y) && (this.field?.focused?.() ?? false);
   }
 
   /** Which drawn row holds the leader, or -1: for tests of the leader mark. */
@@ -325,6 +344,8 @@ export class PartyPanel {
     this.texts = [];
     this.graphics?.destroy();
     this.graphics = undefined;
+    this.ground?.destroy();
+    this.ground = undefined;
   }
 
   private text(
@@ -395,6 +416,8 @@ export class PartyPanel {
       .setDepth(PARTY_PANEL_DEPTH);
     this.graphics = g;
     const { panel } = frame;
+    // under everything that answers on it: a press on its ground is the panel's (TQZ5J R40)
+    this.ground = this.deps.ground?.(panel);
     this.drawFrame(g, panel);
     // the windows' one title, centred and in capitals (FS-3EBCA R20, R22)
     this.texts.push(

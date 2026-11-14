@@ -51,6 +51,11 @@ export interface MenuSlotDeps {
   musicLevel: () => MusicLevelControl;
   /** The game frame's fullscreen its page lent (FS-T3DWX R12), or none. */
   fullscreen: () => FullscreenControl | null;
+  /**
+   * The UI scene's party panel (§ Change: Phase 2: the party, R39): Esc's party step, the menu opening
+   * over it and the Menu icon after the run's end shut it. None, and there is none to shut.
+   */
+  party?: { isOpen(): boolean; close(): void };
 }
 
 /** A menu's look in a world: its tokens and its rows' pressable area (ADR-0013). */
@@ -176,11 +181,11 @@ export class UiMenuSlot {
       letter: open.letter,
       menu: this.isOpen(),
       gear: open.inventory || open.character,
-      party: open.party,
+      party: this.deps.party?.isOpen() ?? false,
     });
     if (step === "letter") this.ask({ kind: "close", window: "letter" });
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
-    else if (step === "party") this.ask({ kind: "close", window: "party" });
+    else if (step === "party") this.closeParty();
     else if (step === "gear") this.ask({ kind: "close", window: "gear" });
     else if (!report.facts().ended) this.openMenu();
   }
@@ -196,7 +201,7 @@ export class UiMenuSlot {
     const report = this.deps.bridge.world;
     if (!report || report.blockers().dialogue) return;
     if (report.facts().ended) {
-      this.ask({ kind: "close", window: "party" });
+      this.closeParty();
       this.ask({ kind: "close", window: "gear" });
       return;
     }
@@ -350,7 +355,8 @@ export class UiMenuSlot {
   }
 
   /**
-   * `panel` stands in the slot. Into an empty slot, the UI's state is reported, so the world closes
+   * `panel` stands in the slot. Into an empty slot, the party panel shuts and the UI's state is
+   * reported, so the world closes
    * its windows and ends an aim in the same call, before the next frame draws (R10); a swap (menu ↔
    * OPTIONS ↔ the Fall confirm) takes the old panel down and reports nothing: the slot stays filled.
    */
@@ -358,8 +364,20 @@ export class UiMenuSlot {
     const facts = report.facts();
     const was = this.filled;
     this.filled = { panel, world: report.world, resolved: facts.resolved, queued: facts.queued, toned: toneKey(facts) };
-    if (was) was.panel.container.destroy();
-    else this.deps.bridge.reportUi({ menuOpen: true });
+    if (was) {
+      was.panel.container.destroy();
+      return;
+    }
+    // the menu opens over no window (FS-3EBCA R17): the UI scene's party panel shuts here, the
+    // world's windows as the world hears the UI's state
+    this.deps.party?.close();
+    this.deps.bridge.reportUi({ menuOpen: true });
+  }
+
+  /** The UI scene's party panel shut (§ Change: Phase 2: the party, R39); the rows read the world again. */
+  private closeParty(): void {
+    this.deps.party?.close();
+    this.sync();
   }
 
   /** A request of the world, which has answered when it returns (R11); the rows read its facts again. */

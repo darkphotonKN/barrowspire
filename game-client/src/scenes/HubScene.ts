@@ -28,7 +28,6 @@ import {
 import { BARROW_HEX } from "@/utils/theme";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
@@ -690,7 +689,6 @@ export class HubScene extends Phaser.Scene {
   private progressHud?: ProgressHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
-  private partyPanel?: PartyPanel;
   /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
@@ -906,14 +904,8 @@ export class HubScene extends Phaser.Scene {
         coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
       },
     );
-    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change
-    // C8), and closing the letter panel as it opens (§ Change C9)
-    this.partyPanel = mountPartyPanel(
-      this,
-      () => this.refusesParty(),
-      () => this.closeLetter(),
-      this.ui,
-    );
+    // T and the party panel are the UI scene's: it asks the town to close its letter panel as the
+    // panel opens, and reads the town's refusal in its report (FS-TQZ5J § Change: Phase 2, R38, R39)
     // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
     // (FS-R82NV R32, R33)
     this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
@@ -974,11 +966,10 @@ export class HubScene extends Phaser.Scene {
       answer: answering({
         inventory: () => this.toggleGear(),
         character: () => this.toggleCharacter(),
-        party: () => this.partyPanel?.toggle(),
-        // one Esc step each (FS-TQZ5J R17): the dialogue's Esc is its dismiss
+        // one Esc step each (FS-TQZ5J R17): the dialogue's Esc is its dismiss; the party panel is
+        // the UI scene's own (§ Change: Phase 2: the party, R39)
         close: {
           letter: () => this.mailbox?.close(),
-          party: () => this.partyPanel?.close(),
           gear: () => this.gear?.hide(),
           dialogue: () => this.dismissDialogue(),
         },
@@ -1002,16 +993,20 @@ export class HubScene extends Phaser.Scene {
     return this.ui.ui.menuOpen;
   }
 
-  /** What keeps the town's screen now (FS-TQZ5J R9): its NPC dialogue, open. */
+  /**
+   * What keeps the town's screen now (FS-TQZ5J R9): its NPC dialogue, open; and the town's part of the
+   * party panel's refusal, its dialogue (FS-R82NV R28; FS-3EBCA R8): the menu is the UI scene's own, and
+   * neither the inventory nor the character panel refuses it (it opens over them, § Change C8), nor
+   * the letter panel (it closes as the panel opens, § Change C9) (§ Change: Phase 2: the party, R38).
+   */
   private blockers(): WorldBlockers {
-    return { dialogue: !!this.dialogue };
+    return { dialogue: !!this.dialogue, party: !!this.dialogue };
   }
 
-  /** Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the letter panel, Party, Inventory, Character. */
+  /** Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the letter panel, Inventory, Character. */
   private windows(): WorldWindows {
     return {
       letter: this.mailbox?.isOpen() ?? false,
-      party: this.partyPanel?.isOpen() ?? false,
       inventory: this.gear?.isInventoryOpen() ?? false,
       character: this.gear?.isCharacterOpen() ?? false,
     };
@@ -1024,15 +1019,6 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): a dialogue or the
-   * menu owns the screen. The inventory and the character panel do not: the party panel opens over
-   * them (FS-R82NV § Change C8); nor the letter panel, which closes as it opens (§ Change C9).
-   */
-  private refusesParty(): boolean {
-    return !!this.dialogue || this.menuOpen;
-  }
-
-  /**
    * Whether the envelope is refused now (FS-1GZGD § Change C1): a dialogue or the menu owns the
    * screen. The windows do not: they close as the letter panel opens (`clearForLetter`).
    */
@@ -1042,11 +1028,13 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The letter panel is full-screen, so it stands alone (FS-3EBCA R15, R19): the inventory and the
-   * character panel (the stash with them) and the party panel close as it opens.
+   * character panel (the stash with them) and the party panel close as it opens. The party panel is
+   * the UI scene's: the town shuts it in the party store, as its own close does (FS-TQZ5J § Change:
+   * Phase 2: the party, R39).
    */
   private clearForLetter(): void {
     this.gear?.hide();
-    this.partyPanel?.close();
+    usePartyStore.getState().closePanel();
   }
 
   /** A window opening closes the letter panel first (FS-3EBCA R16). */
@@ -1054,10 +1042,12 @@ export class HubScene extends Phaser.Scene {
     if (this.mailbox?.isOpen()) this.mailbox.close();
   }
 
-  /** The menu opens over no window (FS-3EBCA R17): the letter panel, the party panel and the overlay go. */
+  /**
+   * The menu opens over no window (FS-3EBCA R17): the letter panel and the overlay go; the party panel
+   * is the UI scene's, shut as its menu opens (FS-TQZ5J § Change: Phase 2: the party, R39).
+   */
   private closeWindows(): void {
     this.closeLetter();
-    this.partyPanel?.close();
     this.gear?.hide();
   }
 
@@ -1093,8 +1083,6 @@ export class HubScene extends Phaser.Scene {
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
     this.mailbox?.relayout();
-    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
-    this.partyPanel?.relayout();
     if (this.queuePanel?.active) {
       this.queuePanel.setX(viewport.centerX);
       if (this.leaveButton?.visible) this.showLeaveButton();
@@ -1276,8 +1264,6 @@ export class HubScene extends Phaser.Scene {
     this.progressHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.partyPanel?.destroy();
-    this.partyPanel = undefined;
     this.invitePrompt?.destroy();
     this.invitePrompt = undefined;
     this.readyCheck?.destroy();
@@ -2219,16 +2205,16 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The map mode icon's pointer (FS-56CKV §Change: Map mode icon, D5–D7): lit under it, a press on
-   * it M's. A press or hover over the open gear overlay is the overlay's, and one on the open party
-   * panel, drawn over it, the panel's (FS-R82NV § Change C8); the letter panel open is one of M's
-   * guards already. One on the corner row never reaches the town: the row is the UI scene's, above it
-   * (FS-TQZ5J R7, R15).
+   * it M's. A press or hover over the open gear overlay is the overlay's; the letter panel open is one
+   * of M's guards already. A press on the UI scene's pieces (the corner row, the party panel) never
+   * reaches the town, and a move over one gives way to it (FS-TQZ5J R7, § Change: Phase 2: the party,
+   * R40, R41).
    */
   private bindMinimapPointer(): void {
     bindMinimapPointer(
       this.input,
       () => this.minimap,
-      (x, y) => !!this.partyPanel?.covers(x, y) || !!this.gear?.covers(x, y),
+      (x, y) => this.ui.overUi || !!this.gear?.covers(x, y),
     );
   }
 
@@ -3147,13 +3133,14 @@ export class HubScene extends Phaser.Scene {
    * the active character's, read from the store at each call (FS-50MTX R37).
    */
   private composeGear(): HubGear {
-    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
-    // its panels' × run through the interface sounds' wrapper (FS-WDM0X S9)
+    // a move over the UI scene's pieces (the party panel, drawn over it) is theirs (FS-R82NV § Change
+    // C8; FS-TQZ5J § Change: Phase 2: the party, R41); its panels' × run through the interface
+    // sounds' wrapper (FS-WDM0X S9)
     const overlay = new GearOverlay(
       this,
       this.art,
       WorldType.Hub,
-      (x, y) => this.partyPanel?.covers(x, y) ?? false,
+      () => this.ui.overUi,
       this.ui,
     );
     const gear: HubGear = new HubGear(

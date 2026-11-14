@@ -22,6 +22,8 @@ export interface PartyInviteFieldHandle {
   show(): void;
   hide(): void;
   blur(): void;
+  /** Whether it holds the keyboard's focus now (FS-TQZ5J § Change: Phase 2: the party, R42). */
+  focused?(): boolean;
   destroy(): void;
 }
 
@@ -123,6 +125,7 @@ export const domPartyInviteField: PartyInviteFieldFactory = (
       shell.style.display = "none";
     },
     blur: () => field.blur(),
+    focused: () => document.activeElement === field,
     destroy: () => dom.destroy(),
   };
 };
