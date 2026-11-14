@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { GameUiBridge, NO_FACTS, type World, type WorldBlockers, type WorldReport } from "./uiBridge";
 import { UiMailboxSlot, type MailboxPiece, type MailboxWiring } from "./uiSceneMailbox";
@@ -150,5 +152,23 @@ describe("the mailbox's wiring on the UI scene (FS-TQZ5J § Change: Batch 4, R10
     built[0].wiring.wrapper.act(() => void (ran = true));
     built[0].wiring.play("menu_hover");
     expect([ran, acts, played]).toEqual([true, ["act"], ["menu_hover"]]);
+  });
+});
+
+// FS-TQZ5J § Change: Batch 6, R140: one wiring type, the piece's; the piece module knows nothing of the slot
+describe("the mailbox's types (FS-TQZ5J § Change: Batch 6, R140)", () => {
+  const source = (file: string) => readFileSync(join(__dirname, file), "utf8");
+
+  it("should import nothing of the slot module in the mailbox's own", () => {
+    expect(source("mailboxHud.ts")).not.toMatch(/from "\.\/uiSceneMailbox"/);
+  });
+
+  it("should derive the slot's wiring from the mailbox's deps, not restate it", () => {
+    expect(source("mailboxHud.ts")).toMatch(/export type MailboxWiring = /);
+    expect(source("uiSceneMailbox.ts")).not.toMatch(/export interface MailboxWiring/);
+  });
+
+  it("should keep the letter panel's reader beside the store, not in the mailbox's module", () => {
+    expect(source("mailboxHud.ts")).not.toMatch(/letterPanelState/);
   });
 });
