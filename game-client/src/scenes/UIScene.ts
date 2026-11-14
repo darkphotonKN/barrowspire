@@ -93,7 +93,8 @@ export class UIScene extends Phaser.Scene {
 
   /**
    * Each frame while it runs, before the world's own update (Phaser steps the scene list from the
-   * top): the keys pressed since the last frame, read here and nowhere else (R21); the menu yielding
+   * top): the menu's and the dialogue card's keys pressed since the last frame, read here (R21; T, the
+   * party panel's own, is heard on its key event, § Change: Phase 2: the party, R43); the menu yielding
    * to the world's report (R20); and a world's press whose release it never heard let go of (A1 R25).
    */
   update(): void {
