@@ -5,7 +5,8 @@
  * buttons, so the Settlement button that toggles it stays reachable). One amber button, Close.
  *
  * The scene owns when it opens and what closing means (the held return to the town, R23):
- * this widget only draws, and reports a press of Close to `onClose`. Built on open and taken
+ * this widget only draws, and reports a press of Close to `onClose` and the pointer coming onto it
+ * to `onCloseHovered` (its sounds are the scene's, FS-WDM0X § Pass 2b E4, E5). Built on open and taken
  * down on close, so a closed record holds no hit areas.
  *
  * Every row is listed (FS-GV8WN §Change: The settlement record scrolls): the CARRIED HOME and
@@ -112,6 +113,8 @@ export class SettlementRecord {
     private readonly scene: Stage,
     private anchor: { x: number; bottom: number },
     private readonly onClose: () => void,
+    /** The pointer came onto Close: the scene's sound for it (FS-WDM0X § Pass 2b E4). */
+    private readonly onCloseHovered: () => void = () => {},
   ) {}
 
   /**
@@ -294,7 +297,10 @@ export class SettlementRecord {
       .setScrollFactor(0)
       .setDepth(RECORD_DEPTH + 1)
       .setName("close-the-record");
-    closeHit.on("pointerover", () => paint(palette.interactableBright));
+    closeHit.on("pointerover", () => {
+      paint(palette.interactableBright);
+      this.onCloseHovered();
+    });
     closeHit.on("pointerout", () => paint(palette.interactable));
     closeHit.on("pointerdown", () => this.onClose());
     // a wheel over the panel is the panel's alone, moving or not: stopped here, the scene's own

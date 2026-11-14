@@ -5876,7 +5876,8 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         r.heard();
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
         expect(menuOver(r.run)).toBeUndefined();
-        expect(r.heard()).toEqual([]);
+        // the yield plays no close; what plays is the resolved card popping up (FS-WDM0X § Pass 2b E1)
+        expect(r.heard()).toEqual(["dialog_open"]);
       });
 
       it("should play nothing as the Fall confirm yields to the death its Fall asked for", () => {
@@ -5885,7 +5886,8 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         r.heard();
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
         expect(menuOver(r.run)).toBeUndefined();
-        expect(r.heard()).toEqual([]);
+        // Fall's dialog_confirm_heavy was its press's; the card that follows chimes (§ Pass 2b E1, E7)
+        expect(r.heard()).toEqual(["dialog_open"]);
       });
 
       it("should play nothing as the run's end closes the menu", () => {

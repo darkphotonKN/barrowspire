@@ -51,6 +51,7 @@ import {
   type ResolvedView,
 } from "@/ui/party";
 import { browserMusicStore } from "@/audio/musicSetting";
+import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { drawPanelTitle } from "@/ui/panelFrame";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
@@ -301,6 +302,8 @@ interface ButtonSpec {
   name: string;
   label: string;
   onPress: () => void;
+  /** Its press's one sound, read as it is pressed; `menu_click` without one (FS-WDM0X § Pass 2b E3, E5). */
+  sound?: () => UiEffect;
 }
 /** A button as drawn: its face and label, its hit area, and how it is dimmed or taken down. */
 interface WorldButton {
@@ -647,7 +650,14 @@ export class BarrowspireScene extends Phaser.Scene {
     name: "settlement",
     label: "SETTLEMENT",
     onPress: () => this.toggleRecord(),
+    // the record brought back is a popup at the player's hand; taken down, an ordinary press (E3)
+    sound: () => (this.settlementRecord?.isOpen() ? "menu_click" : "dialog_open"),
   };
+  /**
+   * Whether this run's end has popped up with its `dialog_open` (FS-WDM0X § Pass 2b E1): the first
+   * of the resolved card and the settlement record to appear chimes, the other nothing more.
+   */
+  private endChimed = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
   /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
@@ -1105,6 +1115,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resultHold.clear();
     this.settlementRecord = undefined;
     this.resolvedCard = undefined;
+    this.endChimed = false;
     this.canWatch = false;
     this.canLeave = false;
     this.row = { names: "", buttons: [] };
@@ -1314,10 +1325,32 @@ export class BarrowspireScene extends Phaser.Scene {
     // a late confirmation of an earlier run, landing in this one, is not its record (R20)
     if (!this.ownSettlement(payload)) return;
     const first = !this.settlementRecord;
-    this.settlementRecord ??= new SettlementRecord(this, this.recordAnchor(), () => this.closeRecord());
+    this.settlementRecord ??= new SettlementRecord(
+      this,
+      this.recordAnchor(),
+      () => {
+        // before the close, which may let a held town in (FS-WDM0X § Pass 2b E5)
+        this.ui.play("menu_click");
+        this.closeRecord();
+      },
+      () => this.ui.play("menu_hover"),
+    );
     this.settlementRecord.set(settlementRecord(payload));
-    if (first) this.openRecord();
+    if (first) {
+      this.openRecord();
+      this.chimeEnd();
+    }
     this.syncRow();
+  }
+
+  /**
+   * The run's end popped up (FS-WDM0X § Pass 2b E1, E2): `dialog_open` on the UI scene's one player,
+   * once a run, for whichever of the resolved card and the record came first. A redraw never asks.
+   */
+  private chimeEnd(): void {
+    if (this.endChimed) return;
+    this.endChimed = true;
+    this.ui.play("dialog_open");
   }
 
   /** Whether a settlement is this run's record: one for another run is a late confirmation (R20). */
@@ -5299,7 +5332,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // in play again (a reconnect's first state), or nobody left to watch: the end is coming
     if (!view) this.takeDownCard();
     else if (view.kind === "escaped") this.offerWatch();
-    else if (!this.resolvedCard) this.showResolvedCard(view);
+    else if (!this.resolvedCard) {
+      this.showResolvedCard(view);
+      this.chimeEnd();
+    }
   }
 
   /** The dead player's card, or the escaped player's Watch button: whichever is up goes down. */
@@ -5437,16 +5473,26 @@ export class BarrowspireScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(hitDepth)
       .setName(button.name);
-    hit.on("pointerover", () => enabled && paint(palette.interactableBright));
+    // the menus' sounds, on the UI scene's one player (FS-WDM0X § Pass 2b E4–E6)
+    hit.on("pointerover", () => {
+      if (!enabled) return;
+      paint(palette.interactableBright);
+      this.ui.play("menu_hover");
+    });
     hit.on("pointerout", rest);
-    hit.on("pointerdown", () => enabled && button.onPress());
+    hit.on("pointerdown", () => {
+      if (!enabled) return this.ui.play("menu_error");
+      // before the press acts, which may let a held town in and stop this scene (E5)
+      this.ui.play(button.sound?.() ?? "menu_click");
+      button.onPress();
+    });
     return {
       parts: [face, label],
       hit,
       setEnabled: (on: boolean) => {
         enabled = on;
-        if (on) hit.setInteractive({ useHandCursor: true });
-        else hit.disableInteractive();
+        // dimmed, it still takes its press, to say no, with no hand cursor (E6, as the party's P7)
+        if (hit.input) hit.input.cursor = on ? "pointer" : false;
         rest();
       },
       destroy: () => {
