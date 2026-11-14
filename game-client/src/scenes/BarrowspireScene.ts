@@ -901,6 +901,9 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private readonly monsterTargeting: MonsterTargeting = {
     strike: (monster) => {
+      // a monster under the chat window, pressed during a held world press, is not struck: the UI scene
+      // claimed the press (FS-TQZ5J § Change: Batch 6, R129)
+      if (this.ui.pressClaimed(this.input?.activePointer)) return;
       if (this.strike(monster.entity_id, monster.position)) this.lastHit.aimed(monster, this.time.now);
     },
     hover: (monster) => this.pointerLook?.base(monster ? "strike" : "hand"),
@@ -3329,10 +3332,12 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.menuOpen) return;
       // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
       if (this.combat.aiming) return;
+      // a press on the chat window, the corner row or a window is the UI scene's and never reaches the run
+      // (FS-TQZ5J R7, R15; § Change: Phase 3, R59; § Change: Batch 6, R129); one on the chat window during
+      // a held world press, which Phaser hands on to the run, the UI scene claims (R129)
+      if (this.ui.pressClaimed(pointer)) return;
       // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
-      // a press on the chat window, the corner row or a window is the UI scene's and never reaches the run
-      // (FS-TQZ5J R7, R15; § Change: Phase 3, R59; § Change: Batch 6, R129)
       // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6);
       // one on the open satchel is the UI scene's, a loot, and never reaches the run (FS-2325V §D.2;
       // FS-TQZ5J § Change: Phase 3, R59)

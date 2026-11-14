@@ -307,6 +307,8 @@ export class FieldScene extends Phaser.Scene {
       bodyOf: (entityID) =>
         this.views.get(entityID)?.sprite.getByName("body") as Phaser.GameObjects.Sprite | undefined,
       takesPointer: (x, y, primary) => this.takesPointer(x, y, primary),
+      // a press on the UI scene's chat window during a held world press (FS-TQZ5J § Change: Batch 6, R129)
+      pressClaimed: (pointer) => this.ui.pressClaimed(pointer),
       lockout: () => this.showAbilityCard(),
     });
     this.createPiles();

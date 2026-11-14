@@ -345,6 +345,18 @@ export interface UiBridge extends UiActWrapper {
    */
   moved(pointer: ScenePointer, onUi: boolean): void;
   /**
+   * The UI scene claims a press its cameras stood aside for (A1 R25): one on a piece that is up, by its
+   * place, while a world's press is down, which Phaser hands on to the world (§ Change: Batch 6, R129).
+   * Kept by its DOM event, which the world reads in the same pass.
+   */
+  claimPress(pointer: ScenePointer): void;
+  /**
+   * Whether the UI scene claimed this press (R129): a world handler refuses it, so a press on the chat
+   * window is never an attack, a cast or a hold, a world press held or not. Only the event claimed: the
+   * next press is the world's again.
+   */
+  pressClaimed(pointer: ScenePointer | undefined): boolean;
+  /**
    * The UI scene's report of a part of its own state (R10; § Change: Phase 3, R53), merged into the
    * rest: a change is heard by the world reported at once (`heardUi`), with what it was.
    */
@@ -416,6 +428,7 @@ export type WorldUi = Pick<
   | "play"
   | "ui"
   | "overUi"
+  | "pressClaimed"
   | "changed"
   | "showDialogue"
   | "closeDialogue"
@@ -435,6 +448,7 @@ export const NO_UI: WorldUi = {
   play: () => {},
   ui: { menuOpen: false },
   overUi: false,
+  pressClaimed: () => false,
   changed: () => {},
   showDialogue: () => {},
   closeDialogue: () => {},
@@ -462,6 +476,8 @@ export class GameUiBridge implements UiBridge {
   private readonly screens = new Set<UiScreen>();
   private sounds: UiSoundPlayer | null = null;
   private movingOverUi = false;
+  /** The DOM event of the press the UI scene last claimed (R129); none, none claimed. */
+  private claimed: unknown = null;
 
   get world(): WorldReport | null {
     return this.reported;
@@ -511,6 +527,15 @@ export class GameUiBridge implements UiBridge {
     } finally {
       this.movingOverUi = was;
     }
+  }
+
+  claimPress(pointer: ScenePointer): void {
+    this.claimed = pointer.event ?? null;
+  }
+
+  pressClaimed(pointer: ScenePointer | undefined): boolean {
+    const event = pointer?.event;
+    return event !== undefined && event !== null && event === this.claimed;
   }
 
   act: UiAct = (run) => (this.sounds ? this.sounds.act(run) : run());

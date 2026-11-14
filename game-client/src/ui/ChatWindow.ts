@@ -264,16 +264,27 @@ export class ChatWindow {
   }
 
   /**
-   * Whether a screen point lies on the window, its open list included: a press there keeps its field
-   * focused (FS-TQZ5J § Change: Batch 6, R131; A1 R26, as the party panel's).
+   * Whether a screen point lies on the window by its place, its open list included (FS-TQZ5J § Change:
+   * Batch 6, R129): what the UI scene claims a press by while a world's press holds its cameras aside.
    */
-  keepsField(x: number, y: number): boolean {
+  holds(x: number, y: number): boolean {
     if (within(this.frame.panel, x, y)) return true;
     // the open list is the window's too, wherever it reaches (FS-J267Q R4)
     return (
       (this.input?.pickerOpen() ?? false) &&
       within(chatPickerList(this.frame).box, x, y)
     );
+  }
+
+  /**
+   * Whether a press keeps the window's field focused (FS-TQZ5J § Change: Batch 6, R131; A1 R26, as the party
+   * panel's): the press is its own, Phaser's top-most hit one of its objects (R130), it lies on the window,
+   * and its field holds focus. A UI piece drawn over the window there takes the press, and the field lets go.
+   */
+  keepsField(x: number, y: number, over: Over): boolean {
+    const top = over?.[0];
+    const own = typeof top === "object" && top !== null && this.mine.has(top);
+    return own && this.holds(x, y) && this.isTyping();
   }
 
   /** Whether the player is typing in the input right now. */
@@ -486,7 +497,7 @@ export class ChatWindow {
     if (this.pressPicker(at)) return;
     if (this.grabScrollbar(at)) return;
     this.pressedName = this.nameAt(at.x, at.y);
-    if (!this.input?.isOpen() || this.keepsField(at.x, at.y)) return;
+    if (!this.input?.isOpen() || this.holds(at.x, at.y)) return;
     this.field?.blur();
   }
 

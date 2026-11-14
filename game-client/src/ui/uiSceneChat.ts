@@ -17,8 +17,13 @@ import type { UiBridge, World, WorldReport } from "./uiBridge";
 
 /** The chat window as the UI scene keeps it. `ChatWindow` is one. */
 export interface ChatPiece {
-  /** Whether a press at this logical point keeps the window's field focused: one on its panel or open list (R131). */
-  keepsField(x: number, y: number): boolean;
+  /** Whether a logical point lies on the window by its place, its open list included (R129). */
+  holds(x: number, y: number): boolean;
+  /**
+   * Whether a press keeps the window's field focused (R131): its own (Phaser's top-most hit, `over[0]`,
+   * one of its objects), on its panel or open list, with its field focused.
+   */
+  keepsField(x: number, y: number, over: readonly unknown[]): boolean;
   /** The screen y of the panel's top edge as it now sits. */
   topEdge(): number;
   /** Re-reads who owns the keys now, between frames: the world changed its report (R128). */
@@ -90,9 +95,14 @@ export class UiChatSlot {
     if (world !== null) this.piece = this.build(chatWiring(this.bridge));
   }
 
-  /** Whether a press at this logical point keeps the window's field (A1 R26; R131). */
-  keepsField(x: number, y: number): boolean {
-    return this.piece?.keepsField(x, y) ?? false;
+  /** Whether a logical point lies on the standing window (R129): a press there during a world's press is claimed. */
+  holds(x: number, y: number): boolean {
+    return this.piece?.holds(x, y) ?? false;
+  }
+
+  /** Whether a press keeps the window's field (A1 R26; R131). */
+  keepsField(x: number, y: number, over: readonly unknown[]): boolean {
+    return this.piece?.keepsField(x, y, over) ?? false;
   }
 
   /** The invite stack's floor: the window's top edge in a field and the run, none in the town (R132). */

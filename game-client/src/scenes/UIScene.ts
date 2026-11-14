@@ -283,24 +283,32 @@ export class UIScene extends Phaser.Scene {
   private mountPointer(bridge: UiBridge): void {
     const input = this.input;
     if (!input) return;
-    /** Where the press being heard landed, logical units (FS-ZAJMH R15). */
+    /** Where the press being heard landed, logical units (FS-ZAJMH R15), and what Phaser listed under it. */
     let pressedAt = { x: -1, y: -1 };
+    let pressedOver: readonly unknown[] = [];
     const pointer = new UiScenePointer<Phaser.Input.Pointer>({
       cameras: () => this.cameras.cameras,
       anyDown: () => input.manager.pointers.some((p) => p.isDown),
       world: bridge,
+      // a press on the chat window during a world's press is claimed, the world refusing it: never an
+      // attack, a cast or a hold (§ Change: Batch 6, R129)
+      holds: (p) => {
+        const at = viewport.toLogical(p);
+        return this.chat?.holds(at.x, at.y) ?? false;
+      },
       // a press on the party panel keeps its invite field (§ Change: Phase 2: the party, R42), and one on
       // the chat window its own (§ Change: Batch 6, R131)
       letGo: () => {
         if (this.party?.keepsField(pressedAt.x, pressedAt.y)) return;
-        if (this.chat?.keepsField(pressedAt.x, pressedAt.y)) return;
+        if (this.chat?.keepsField(pressedAt.x, pressedAt.y, pressedOver)) return;
         letGoOfGameField(this.game.canvas?.parentElement, document);
       },
     });
     this.pointer = pointer;
     input.on("pointerdown", (p: Phaser.Input.Pointer, over: unknown[]) => {
       pressedAt = viewport.toLogical(p);
-      pointer.pressed(over);
+      pressedOver = over;
+      pointer.pressed(p, over);
     });
     input.on("pointerup", () => pointer.released());
     input.on("pointerupoutside", () => pointer.released());

@@ -68,8 +68,17 @@ export interface UiScenePointerDeps<P> {
   cameras(): readonly InputCamera[];
   /** Whether any pointer is down now: Phaser's own state, its release heard on window. */
   anyDown(): boolean;
-  /** The world reported, handed a move the UI scene took (R27). The UI bridge is one. */
-  world: { moved(pointer: P, onUi: boolean): void };
+  /**
+   * The world reported, handed a move the UI scene took (R27) and told of a press the UI scene claims
+   * while its cameras stand aside (§ Change: Batch 6, R129). The UI bridge is one.
+   */
+  world: { moved(pointer: P, onUi: boolean): void; claimPress(pointer: P): void };
+  /**
+   * Whether a piece that is up lies under the pointer by its place: read only while a world's press is
+   * down and the cameras stand aside, so nothing of the UI scene's is hit (R25). The chat window is
+   * one: a press on it is never an attack, a cast or a hold (§ Change: Batch 6, R129).
+   */
+  holds(pointer: P): boolean;
   /** Lets go of the game's focused text field (R26). */
   letGo(): void;
 }
@@ -92,11 +101,16 @@ export class UiScenePointer<P extends ScenePointer> {
   /**
    * A press: on one of its pieces, the UI scene's, and the game's text field lets go (R26), after the
    * piece answered (Phaser emits the scene's `pointerdown` after its objects'); on nothing of its own,
-   * the world's, and the UI scene stands aside until no pointer is down (R25).
+   * the world's, and the UI scene stands aside until no pointer is down (R25). A second press during a
+   * world's press, on a piece that {@link UiScenePointerDeps.holds} it, is claimed: Phaser hands it on
+   * to the world (the UI scene hit nothing), which refuses it (§ Change: Batch 6, R129).
    */
-  pressed(over: readonly unknown[]): void {
+  pressed(pointer: P, over: readonly unknown[]): void {
     this.leaving = null;
-    if (this.worldPress) return;
+    if (this.worldPress) {
+      if (this.deps.holds(pointer)) this.deps.world.claimPress(pointer);
+      return;
+    }
     if (over.length > 0) {
       this.deps.letGo();
       return;

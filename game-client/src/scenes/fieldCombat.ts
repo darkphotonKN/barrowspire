@@ -54,6 +54,8 @@ export interface FieldCombatParts {
   bodyOf(entityId: string): Tintable | undefined;
   /** The pointer button now pressed: an archer's right button is the Shadow Shot hold, never a strike. */
   button?(): number | undefined;
+  /** Whether the UI scene claimed the press now heard: a monster under the chat window is not struck (FS-TQZ5J § Change: Batch 6, R129). */
+  claimed?(): boolean;
   /** Lets go of everything the effects runtime still plays. */
   clearEffects?(): void;
 }
@@ -166,7 +168,7 @@ export class FieldCombat {
 
   /** A click on a living monster: a strike, unless the player has fallen. */
   private strike(entityId: string, them: Point): void {
-    if (!this.self || this.self.fallen) return;
+    if (!this.self || this.self.fallen || this.parts.claimed?.()) return;
     this.combat.strike(this.self.at, entityId, them, this.self.className, this.parts.button?.());
   }
 }
@@ -192,6 +194,11 @@ export function fieldCombatOnScene(
     bodyOf(entityId: string): Tintable | undefined;
     /** Whether a click at this screen point is the open satchel's (a loot) or the gear overlay's, never an attack. */
     takesPointer?(x: number, y: number, primary: boolean): boolean;
+    /**
+     * Whether the UI scene claimed this press (FS-TQZ5J § Change: Batch 6, R129): one on the chat window
+     * during a held world press, which Phaser hands on to the field. Never an attack, a cast or a hold.
+     */
+    pressClaimed?(pointer: Phaser.Input.Pointer | undefined): boolean;
     /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
     lockout?(): void;
   },
@@ -260,6 +267,7 @@ export function fieldCombatOnScene(
     cursor: (over) => pointer?.base(over ? "strike" : "hand"),
     bodyOf: hooks.bodyOf,
     button: () => scene.input.activePointer?.button,
+    claimed: () => hooks.pressClaimed?.(scene.input.activePointer) ?? false,
     clearEffects: () => {
       charge?.end();
       charge = undefined;
@@ -285,6 +293,8 @@ export function fieldCombatOnScene(
   const onPointer = (pointer: Phaser.Input.Pointer) => {
     // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
     if (combat.aiming) return;
+    // a press the UI scene claimed is the chat window's (FS-TQZ5J § Change: Batch 6, R129)
+    if (hooks.pressClaimed?.(pointer)) return;
     // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
     // in logical units, as the HUD is laid out; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
     const at = viewport.toLogical(pointer);
