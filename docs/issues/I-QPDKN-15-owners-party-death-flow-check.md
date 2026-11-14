@@ -70,3 +70,9 @@ party of two or three, in the tower.
 | ◄ or ► hover / release (live) | `menu_hover` / `menu_click` |
 | ◄ or ► press (greyed, one teammate) | `menu_error`, no hover |
 | Tab | nothing |
+
+## Amendment 2026-11-14: the name alone
+
+The owner, 「觀看時中間名字不用顯示watching了」: the switcher reads `◄ <name> ►`, the watched teammate's name with
+no "Watching". Check it with the switcher's look: the name alone between the arrows, in the bright brass,
+still clear of the open chat window.

@@ -146,7 +146,7 @@ export function switcherWidth(labelWidth: number): number {
 }
 
 /**
- * Where the switcher "◄ Watching <name> ►" stands (R159): `SWITCHER_GAP` over the spectate row, centred on
+ * Where the switcher "◄ <name> ►" stands (R159): `SWITCHER_GAP` over the spectate row, centred on
  * the row (on the view with no row), its left edge never under 442, 12 right of the open chat window (R123's
  * rule). Whole px.
  */

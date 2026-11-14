@@ -1,5 +1,5 @@
 /**
- * The spectate switcher, "◄ Watching <name> ►" (FS-QPDKN § Change: The party death flow and the spectate
+ * The spectate switcher, "◄ <name> ►" (FS-QPDKN § Change: The party death flow and the spectate
  * switcher, R159–R162; the owner, 「切換箭頭就放在上方一些」): over the spectate row, in the run's world (ADR-0083
  * 2.3), in the HUD band.
  *
@@ -27,11 +27,6 @@ const ARROW_MARK_H = 12;
 /** A greyed arrow's mark, as faint as a greyed HUD button's words (`drawHudButton`). */
 const GREYED_ALPHA = 0.45;
 
-/** The words the switcher shows for the watched teammate. */
-export function watchingWords(name: string): string {
-  return `Watching ${name}`;
-}
-
 export interface SwitcherSpec {
   /** The watched teammate's name over their head. */
   name: string;
@@ -55,7 +50,8 @@ export class SpectateSwitcher {
 
   constructor(scene: Phaser.Scene, spec: SwitcherSpec) {
     const label = scene.add
-      .text(0, 0, watchingWords(spec.name), {
+      // the watched teammate's name alone, no "Watching" (the owner, 「觀看時中間名字不用顯示watching了」, 2026-11-14)
+      .text(0, 0, spec.name, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "14px",
         color: toCss(palette.watchedName),

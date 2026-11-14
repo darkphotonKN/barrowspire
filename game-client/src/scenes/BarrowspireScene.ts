@@ -616,7 +616,7 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private arrival = false;
   /**
-   * "◄ Watching <name> ►", whose eyes and how to switch (req 9; FS-QPDKN § Change: The party death flow and
+   * "◄ <name> ►", whose eyes and how to switch (req 9; FS-QPDKN § Change: The party death flow and
    * the spectate switcher, R159–R163); up while spectating, over the spectate row. With the key it was drawn
    * for, so it is drawn again only when what it shows or where it stands changes.
    */
@@ -5655,7 +5655,7 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The switcher, "◄ Watching <name> ►" (req 9; FS-QPDKN § Change: The party death flow and the spectate
+   * The switcher, "◄ <name> ►" (req 9; FS-QPDKN § Change: The party death flow and the spectate
    * switcher, R159–R163), over the spectate row, off the open chat window; its arrows live only with more than
    * one teammate in play. Drawn again only when its name, its arrows or its place change.
    */

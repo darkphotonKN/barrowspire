@@ -176,6 +176,16 @@ function uiFrame(run: object, keys: Partial<Record<"esc" | "enter" | "one" | "tw
   uiSceneOn(run, "run", { row: false }).frame({ esc, enter, numbered, nudge: left === right ? undefined : left ? -1 : 1 });
 }
 
+/**
+ * Whether a drawn text is the spectate switcher's words (FS-QPDKN § Change: The party death flow and the spectate
+ * switcher, R159): the watched name alone since the owner's 「觀看時中間名字不用顯示watching了」 (2026-11-14), so
+ * told from a name plate by its look, 14 px in watchedName, and its depth, one over the switcher's.
+ */
+function isSwitcherWords(m: { args: unknown[]; depth?: number }): boolean {
+  const style = m.args[3] as { fontSize?: string; color?: string } | undefined;
+  return style?.fontSize === "14px" && style.color === toCss(palette.watchedName) && m.depth === 1001;
+}
+
 /** The UI scene's menu slot filled (or emptied) over the run (FS-TQZ5J R10), as every guard of the run's reads it. */
 function menuUpOver(run: object, open = true): void {
   uiSceneOn(run, "run", { row: false }).bridge.reportUi({ menuOpen: open });
@@ -1871,7 +1881,11 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
     const watchButtons = () => live((t) => t === "WATCH");
     const cardTitles = () => live((t) => /barrow keeps you|out of the barrow/i.test(t));
-    const watching = () => live((t) => /^Watching /.test(t)).map((m) => m.args[2]);
+    // the switcher's words: the watched name alone (the owner, 2026-11-14), in watchedName over its arrows
+    const watching = () =>
+      stage.stage.made
+        .filter((m) => m.kind === "text" && !m.destroyed && isSwitcherWords(m))
+        .map((m) => m.args[2]);
     const hints = () => live((t) => /Tab: next player/i.test(t));
     const pressWatch = () => {
       const hit = stage.stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve");
@@ -1938,12 +1952,12 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       pressWatch();
       expect(run.watchedPlayerId).toBe("ally");
       expect(followed()).toBe(run.otherPlayers.get("ally"));
-      expect(watching()).toEqual(["Watching Wenna"]);
+      expect(watching()).toEqual(["Wenna"]);
       expect(hints()).toHaveLength(0);
       expect(watchButtons()).toHaveLength(0);
       expect(watchHit(stage)).toBeUndefined();
       run.cycleWatched(1);
-      expect(watching()).toEqual(["Watching Brom"]);
+      expect(watching()).toEqual(["Brom"]);
     });
 
     it("should do nothing on Tab while the button is still up", () => {
@@ -2023,7 +2037,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     pressWatch();
     expect(run.watchedPlayerId).toBe("ally");
     expect(followed()).toBe(run.otherPlayers.get("ally"));
-    expect(watching()).toEqual(["Watching Wenna"]);
+    expect(watching()).toEqual(["Wenna"]);
     expect(hints()).toHaveLength(0);
     expect(watchButtons()).toHaveLength(0);
   });
@@ -2033,7 +2047,8 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
   it("should letter the switcher's name in the watched name's bright brass with no backing, never amber", () => {
     const { stage, pressWatch, watching } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    const name = stage.made.find((m) => m.kind === "text" && !m.destroyed && watching().includes(String(m.args[2])))!;
+    expect(watching()).toEqual(["Wenna"]);
+    const name = stage.made.find((m) => m.kind === "text" && !m.destroyed && isSwitcherWords(m))!;
     const style = name.args[3] as { color?: string; backgroundColor?: string };
     expect(style.color).toBe(toCss(palette.watchedName));
     expect(style.color).not.toBe(toCss(palette.interactable));
@@ -2050,7 +2065,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       player("brom", "Brom", 200),
     ]);
     pressWatch();
-    expect(watching()).toEqual(["Watching Wenna"]);
+    expect(watching()).toEqual(["Wenna"]);
     const seen: (string | undefined)[] = [run.watchedPlayerId];
     for (let i = 0; i < 3; i++) {
       run.cycleWatched(1);
@@ -2059,7 +2074,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(followed()).not.toBe(own());
     }
     expect(seen).toEqual(["ally", "brom", "ally", "brom"]);
-    expect(watching()).toEqual(["Watching Brom"]);
+    expect(watching()).toEqual(["Brom"]);
   });
 
   it("should keep watching the one teammate in play on Tab", () => {
@@ -2067,7 +2082,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     pressWatch();
     run.cycleWatched(1);
     expect(run.watchedPlayerId).toBe("ally");
-    expect(watching()).toEqual(["Watching Wenna"]);
+    expect(watching()).toEqual(["Wenna"]);
   });
 
   it("should move on to another teammate in play when the watched player resolves", () => {
@@ -2082,7 +2097,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     );
     expect(run.watchedPlayerId).toBe("brom");
     expect(followed()).toBe(run.otherPlayers.get("brom"));
-    expect(watching()).toEqual(["Watching Brom"]);
+    expect(watching()).toEqual(["Brom"]);
   });
 
   // Phaser's startFollow snaps the camera onto its target every time it is called, so calling
@@ -5434,7 +5449,8 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
     };
     const switcherAt = (env: ReturnType<typeof dyingOnStage>) =>
       (env.run as unknown as { switcher?: { piece: { rect(): { x: number; y: number; width: number; height: number } } } }).switcher?.piece.rect();
-    const names = (env: ReturnType<typeof dyingOnStage>) => env.shown().filter((t) => /^Watching /.test(t));
+    const names = (env: ReturnType<typeof dyingOnStage>) =>
+      env.stage.made.filter((m) => m.kind === "text" && !m.destroyed && isSwitcherWords(m)).map((m) => String(m.args[2]));
 
     it("should walk the whole flow: death, the record alone, CLOSE, the card without SETTLEMENT, WATCH, the row and the switcher", () => {
       const env = dyingOnStage();
@@ -5453,7 +5469,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       expect([leave.x, settle.x]).toEqual([442, 442 + 94 + 8]);
       expect([leave.y + leave.height, settle.y + settle.height]).toEqual([600 - 70, 600 - 70]);
       // the switcher 8 over them, naming the watched teammate; nothing at the top centre
-      expect(names(env)).toEqual(["Watching Wenna"]);
+      expect(names(env)).toEqual(["Wenna"]);
       const sw = switcherAt(env)!;
       expect(sw.y + sw.height).toBe(leave.y - 8);
       expect(env.shown().some((t) => /Tab: next/i.test(t))).toBe(false);
@@ -5479,7 +5495,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       env.press("settlement");
       expect(env.card()).toBe(false);
       expect(env.heard()).toEqual(["dialog_open", "menu_click"]);
-      expect(names(env)).toEqual(["Watching Wenna"]);
+      expect(names(env)).toEqual(["Wenna"]);
       expect(switcherAt(env)).toEqual(before);
       expect(env.hit("leave-the-barrow")).toBeDefined();
     });
@@ -5490,7 +5506,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       expect(seen()).toBe("ally");
       env.release("watch-next");
       expect(seen()).toBe("brom");
-      expect(names(env)).toEqual(["Watching Brom"]);
+      expect(names(env)).toEqual(["Brom"]);
       env.run.cycleWatched(1);
       expect(seen()).toBe("cora");
       env.release("watch-next");
@@ -5540,7 +5556,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
         .map((m, i) => ({ m, i, depth: (m as { depth?: number }).depth ?? 0 }))
         .sort((a, b) => a.depth - b.depth || a.i - b.i)
         .map(({ m }) => m);
-      const name = order.findIndex((m) => m.kind === "text" && String(m.args[2]) === "Watching Brom");
+      const name = order.findIndex((m) => m.kind === "text" && String(m.args[2]) === "Brom" && isSwitcherWords(m));
       expect(name).toBeGreaterThanOrEqual(0);
       const paints = order.flatMap((m, i) => (m.kind === "graphics" ? [i] : []));
       expect(paints.length).toBeGreaterThan(0);
@@ -5552,7 +5568,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       const from = env.stage.made.length;
       env.release("watch-next");
       const drawn = env.stage.made.slice(from).filter((m) => !m.destroyed);
-      const name = drawn.find((m) => m.kind === "text" && String(m.args[2]) === "Watching Brom")!;
+      const name = drawn.find((m) => m.kind === "text" && String(m.args[2]) === "Brom" && isSwitcherWords(m))!;
       expect((name.args[3] as { color: string }).color).toBe(toCss(palette.watchedName));
       const paints = drawn.filter((m) => m.kind === "graphics");
       expect(paints).toHaveLength(2);
@@ -5630,8 +5646,9 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
     });
 
     it.each([
-      [1080, { leave: [442, 612], settle: [544, 612], switcher: [478, 576, 174] }],
-      [1280, { leave: [517, 612], settle: [619, 612], switcher: [553, 576, 174] }],
+      // the name alone, "Wenna" 35 wide on the stand-in, + 76 (the owner, 「觀看時中間名字不用顯示watching了」, 2026-11-14)
+      [1080, { leave: [442, 612], settle: [544, 612], switcher: [510, 576, 111] }],
+      [1280, { leave: [517, 612], settle: [619, 612], switcher: [585, 576, 111] }],
     ] as const)("should stand the row and the switcher at logical width %i as pinned, clear of the chat (R158, R159, R167)", (width, at) => {
       const env = watching();
       viewport.set({ width, height: 720, renderScale: 1 });

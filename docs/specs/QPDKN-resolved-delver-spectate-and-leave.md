@@ -939,3 +939,8 @@ Appended after the slices; the text above is not edited. Built in I-QPDKN-12 (th
   floor's monsters and containers per recipient (`interestCentres`, 1600 px): a spectator is sent those near
   every body in play, a superset of the watched teammate's own, and the extra ones stand 1600 px or more from
   the watched figure, out of view, so nothing on screen differs and no server change is needed.
+
+- **2026-11-14, the name alone.** The owner, 「觀看時中間名字不用顯示watching了」: the switcher shows only the
+  watched teammate's name between its arrows, `◄ <name> ►`, with no "Watching" (`SpectateSwitcher` letters
+  `spec.name`; `watchingWords` went). Its width stays the name's width + 76 (`switcherWidth`), centred on the
+  row, its left edge never under 442; nothing else moved. The text above is not edited.
