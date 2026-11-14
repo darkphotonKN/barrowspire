@@ -102,10 +102,12 @@ const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { gearOver, mailboxOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
 const { hubGearPiece } = await import("@/ui/uiSceneGear");
 const { NO_UI } = await import("@/ui/uiBridge");
 const { reportWorld } = await import("@/ui/uiBridge");
+const { letterPanelState } = await import("@/ui/mailboxHud");
+const { useMailboxStore } = await import("@/stores/mailboxStore");
 
 /** The UI scene's menu slot filled over the town (FS-TQZ5J R10), as every guard of the town's reads it. */
 const menuUpOver = (hub: object) => void uiSceneOn(hub, "hub", { row: false }).bridge.reportUi({ menuOpen: true });
@@ -5615,8 +5617,6 @@ describe("HubScene the party panel over the inventory and the character panel (F
 describe("HubScene the windows give way to the letter panel and the menu (FS-3EBCA R15–R18)", () => {
   type Windowed = {
     mailbox?: unknown;
-    refusesLetter(): boolean;
-    clearForLetter(): void;
     closeLetter(): void;
     mayChat(): boolean;
   };
@@ -5625,9 +5625,11 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     const hub = env.hub as unknown as typeof env.hub & Windowed;
     const letter = { open: false };
     const close = vi.fn(() => void (letter.open = false));
-    hub.mailbox = { isOpen: () => letter.open, close, relayout: vi.fn(), destroy: vi.fn(), covers: () => false };
+    hub.mailbox = { isOpen: () => letter.open, close };
     const party = partyPanelOver(hub, "hub", (w) => partyPanelOn(w.blocked, w.opening, w.wrapper));
     cornerRowOn(hub, "hub");
+    // the envelope's refusal and opening are the UI scene's mailbox's (FS-TQZ5J § Change: Batch 4, R104)
+    const mail = mailboxOver(hub);
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = cornerIconFrame(icon, viewport);
       return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5641,7 +5643,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       party: party.panel.isOpen(),
       letter: letter.open,
     });
-    return { ...env, hub, letter, party, pressIcon, shut };
+    return { ...env, hub, letter, party, mail, pressIcon, shut };
   }
   const NONE = { inventory: false, character: false, stash: false, party: false, letter: false };
 
@@ -5668,8 +5670,8 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     ])("should not refuse the envelope with %s open, and close it first", (_open, open) => {
       const t = town();
       open(t);
-      expect(t.hub.refusesLetter()).toBe(false);
-      t.hub.clearForLetter();
+      expect(t.mail.blocked()).toBe(false);
+      t.mail.opening();
       expect(t.shut()).toEqual(NONE);
     });
 
@@ -5679,7 +5681,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     ])("should still refuse the envelope while %s owns the screen", (_owner, own) => {
       const t = town();
       own(t.hub as unknown as Record<string, unknown>);
-      expect(t.hub.refusesLetter()).toBe(true);
+      expect(t.mail.blocked()).toBe(true);
     });
   });
 
@@ -5813,7 +5815,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       t.press(t.keys.c);
       t.party.pressT();
       expect(t.shut()).toEqual(NONE);
-      expect(t.hub.refusesLetter()).toBe(true);
+      expect(t.mail.blocked()).toBe(true);
     });
 
     it("should give the chat input no focus", () => {
@@ -5852,8 +5854,6 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
   type Windowed = Heard & {
     mailbox?: unknown;
     music?: unknown;
-    refusesLetter(): boolean;
-    clearForLetter(): void;
     closeLetter(): void;
   };
   function town() {
@@ -5868,12 +5868,11 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     hub.mailbox = {
       isOpen: () => letter.open,
       close: () => void (letter.open = false),
-      relayout: vi.fn(),
-      destroy: vi.fn(),
-      covers: () => false,
     };
     const party = partyPanelOver(hub, "hub", (w) => partyPanelOn(w.blocked, w.opening, w.wrapper));
     cornerRowOn(hub, "hub");
+    // the envelope's refusal and opening, the UI scene's mailbox's (FS-TQZ5J § Change: Batch 4, R104)
+    const mail = mailboxOver(hub);
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = cornerIconFrame(icon, viewport);
       return env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5888,8 +5887,8 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const envelope = () =>
       wrapper.act(() => {
         if (letter.open) return void (letter.open = false);
-        if (hub.refusesLetter()) return;
-        hub.clearForLetter();
+        if (mail.blocked()) return;
+        mail.opening();
         letter.open = true;
       });
     const letterX = () => wrapper.act(() => void (letter.open = false));
@@ -6184,8 +6183,11 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const at = (line: RegExp) => create.search(line);
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
-    expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\(effect\) => this\.ui\.play\(effect\),\s*\);/);
     expect(source).not.toMatch(/composeGear|new GearOverlay/);
+    // the mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101, R106): the town builds none and
+    // tests no letter panel's rect; it reads the letter panel's open state from the mailbox store
+    expect(source).not.toMatch(/mountMailbox|MailboxHud|MailboxEnvelope|LetterPanel|coveredAt/);
+    expect(create).toMatch(/this\.mailbox = letterPanelState\(\);/);
   });
 });
 
@@ -6269,5 +6271,23 @@ describe("the town's dialog and notice sounds (FS-WDM0X § Change: Menu, dialog 
       ["text", "look"],
       ["text", "look"],
     ]);
+  });
+});
+
+// FS-TQZ5J § Change: Batch 4: the mailbox (I-TQZ5J-40, R103): the letter panel is the UI scene's, its open
+// state the mailbox store's as before; the town reports it and answers its close by the store
+describe("HubScene the letter panel's open state, from the mailbox store (FS-TQZ5J § Change: Batch 4, R103)", () => {
+  afterEach(() => useMailboxStore.setState({ panelOpen: false }));
+
+  it("should report the store's letter panel in its windows, and close it there on close: letter", () => {
+    const { hub } = hubOnStage();
+    const town = hub as unknown as { mailbox?: unknown; worldSide(): import("@/ui/uiBridge").WorldSide };
+    town.mailbox = letterPanelState();
+    const side = town.worldSide();
+    expect(side.windows().letter).toBe(false);
+    useMailboxStore.setState({ panelOpen: true });
+    expect(side.windows().letter).toBe(true);
+    side.answer({ kind: "close", window: "letter" });
+    expect(useMailboxStore.getState().panelOpen).toBe(false);
   });
 });
