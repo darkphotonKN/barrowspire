@@ -10,6 +10,7 @@
  */
 
 import { CHAT_WINDOW_W, CHAT_WINDOW_X } from "./chatWindowLayout";
+import { RUN_BUTTON_H } from "./hudCornerLayout";
 
 export type RowButton = "watch" | "leave" | "settlement";
 
@@ -79,14 +80,12 @@ function leftsFrom(widths: readonly number[], left: number, gap: number): number
 const ROW_MARGIN = 16;
 /** How far the row stands above that bottom margin (asked 2026-11-02, Nick: about 200 px). */
 const ROW_LIFT = 200;
-/** The row's buttons' height, every run button's. */
-export const ROW_BUTTON_H = 38;
 /** The settlement record's bottom edge stands this far over the row's buttons. */
 const RECORD_ROW_GAP = 12;
 
 /** The row's line on the view: its buttons' centre y. */
 export function resolvedRowY(view: { height: number }): number {
-  return view.height - ROW_MARGIN - ROW_LIFT - ROW_BUTTON_H / 2;
+  return view.height - ROW_MARGIN - ROW_LIFT - RUN_BUTTON_H / 2;
 }
 
 /**
@@ -95,5 +94,5 @@ export function resolvedRowY(view: { height: number }): number {
  * scene's record (FS-TQZ5J § Change: Phase 3, R57).
  */
 export function recordAnchor(view: { centerX: number; height: number }): { x: number; bottom: number } {
-  return { x: view.centerX, bottom: resolvedRowY(view) - ROW_BUTTON_H / 2 - RECORD_ROW_GAP };
+  return { x: view.centerX, bottom: resolvedRowY(view) - RUN_BUTTON_H / 2 - RECORD_ROW_GAP };
 }

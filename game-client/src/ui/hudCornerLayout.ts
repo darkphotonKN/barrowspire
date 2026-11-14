@@ -79,8 +79,11 @@ export function controlsBadgeFrame(view: CornerView): Rect {
 /** The controls badge's name and key under the pointer, as the corner row names its icons (FS-84N1G R7). */
 export const CONTROLS_BADGE_LABEL = "Controls (H)";
 
-/** The run's dead-spectator LEAVE button's height (FS-QPDKN req 10), every run button's. */
-const LEAVE_BUTTON_H = 38;
+/**
+ * Every run button's height (FS-QPDKN req 10): the end row's WATCH, LEAVE and SETTLEMENT, the card's two and
+ * the dead spectator's corner LEAVE (FS-TQZ5J § Change: Batch 6, R122, R124). The one constant.
+ */
+export const RUN_BUTTON_H = 38;
 /**
  * Its centre, above the row the same way (R14), its right edge on the corner margin: it is as wide as its
  * label (FS-TQZ5J § Change: Batch 6, R122, R124), so its centre is placed from its width.
@@ -89,7 +92,7 @@ export function leaveButtonPlace(width: number): Placement {
   return {
     anchor: "bottom-right",
     dx: -CORNER_MARGIN - width / 2,
-    dy: -CORNER_ROW_CLEARANCE - LEAVE_BUTTON_H / 2,
+    dy: -CORNER_ROW_CLEARANCE - RUN_BUTTON_H / 2,
   };
 }
 

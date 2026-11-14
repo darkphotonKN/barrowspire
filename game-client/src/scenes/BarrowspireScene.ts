@@ -74,7 +74,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  * create, which sends them.
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
-import { leaveButtonPlace } from "@/ui/hudCornerLayout";
+import { RUN_BUTTON_H, leaveButtonPlace } from "@/ui/hudCornerLayout";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
@@ -89,7 +89,7 @@ import {
 import { ResultHold } from "@/components/resultHold";
 import { settlementRecord, type RecordView } from "@/ui/settlement";
 import { recordHoldsTown } from "@/ui/recordHold";
-import { ROW_BUTTON_H, buttonWidth, centredLefts, resolvedRow, resolvedRowY, rowLefts, type RowButton } from "@/ui/resolvedRow";
+import { buttonWidth, centredLefts, resolvedRow, resolvedRowY, rowLefts, type RowButton } from "@/ui/resolvedRow";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -305,7 +305,7 @@ interface WorldButton {
   setEnabled(on: boolean): void;
   destroy(): void;
 }
-const BUTTON_H = ROW_BUTTON_H;
+const BUTTON_H = RUN_BUTTON_H;
 /**
  * Every run button's label (FS-TQZ5J § Change: Batch 6, R121): EB Garamond bold 13 px, letter-spaced 1, the
  * design guideline's label step; each button as wide as its label plus its padding (`buttonWidth`, R122).

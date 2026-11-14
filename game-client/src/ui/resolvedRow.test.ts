@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_W, CHAT_WINDOW_X, chatPickerList, chatWindowFrame } from "./chatWindowLayout";
+import { RUN_BUTTON_H } from "./hudCornerLayout";
 import { rectsMeet } from "./partyPanelLayout";
 import {
-  ROW_BUTTON_H,
   buttonWidth,
   centredLefts,
   resolvedRow,
@@ -106,7 +106,7 @@ describe("rowLefts (FS-TQZ5J § Change: Batch 6, R123: layout B)", () => {
     for (let width = 1080; width <= 1280; width++) {
       for (const names of ROWS) {
         for (const [left, right] of spans(names, width)) {
-          const button = { x: left, y: y - ROW_BUTTON_H / 2, width: right - left, height: ROW_BUTTON_H };
+          const button = { x: left, y: y - RUN_BUTTON_H / 2, width: right - left, height: RUN_BUTTON_H };
           for (const piece of chat) expect(rectsMeet(button, piece), `${names} at ${width}`).toBe(false);
           // 12 clear of the window's right edge, whole px
           expect(left).toBeGreaterThanOrEqual(CHAT_WINDOW_X + CHAT_WINDOW_W + 12);
