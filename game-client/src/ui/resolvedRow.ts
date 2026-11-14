@@ -24,10 +24,18 @@ export interface RowState {
   canLeave: boolean;
   /** A `settlement` has arrived in this run (FS-GV8WN R21). */
   hasRecord: boolean;
+  /**
+   * This player fell in the run: their record first, then their card, so no row until they watch (FS-QPDKN
+   * § Change: The party death flow and the spectate switcher, R151, R154).
+   */
+  fell: boolean;
+  /** This player watches a teammate (FS-QPDKN req 7). */
+  watching: boolean;
 }
 
 /** The buttons the row holds, left to right. */
 export function resolvedRow(state: RowState): RowButton[] {
+  if (state.fell && !state.watching) return [];
   const row: RowButton[] = [];
   if (state.canWatch) row.push("watch");
   if (state.canLeave) row.push("leave");

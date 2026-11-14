@@ -64,7 +64,9 @@ describe("the run's settlement record on the UI scene (FS-TQZ5J § Change: Phase
     expect(records[0].log).toEqual(["set Settling…", "open", "set Settled.", "open", "set Settled.", "close"]);
   });
 
-  it("should play menu_click on Close, then ask the run to close it; menu_hover as the pointer comes onto Close (FS-WDM0X § Pass 2b E4, E5)", () => {
+  // the run plays the close's one sound, since only it knows what the close brings: menu_click, or the dead
+  // player's card with dialog_open (FS-QPDKN § Change: The party death flow and the spectate switcher, R153)
+  it("should ask the run to close it on Close, playing nothing itself; menu_hover as the pointer comes onto Close (FS-WDM0X § Pass 2b E4)", () => {
     const { slot, records, played, run } = onRecord();
     slot.show({ view: view("Settled."), open: true }, "run");
 
@@ -73,7 +75,7 @@ describe("the run's settlement record on the UI scene (FS-TQZ5J § Change: Phase
     expect(run.asked).toEqual([]);
     records[0].onClose();
 
-    expect(played).toEqual(["menu_hover", "menu_click"]);
+    expect(played).toEqual(["menu_hover"]);
     expect(run.asked).toEqual([{ kind: "close", window: "record" }]);
   });
 

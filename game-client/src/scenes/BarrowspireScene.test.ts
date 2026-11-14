@@ -4106,10 +4106,12 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect([leave - leaveW / 2, record - recordW / 2]).toEqual([442, 544]);
   });
 
-  it("should give a dead player the Settlement button too, the card's Watch and Leave kept", () => {
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R154: no SETTLEMENT by the dead
+  // player's card; it comes with the spectate controls (R158)
+  it("should give a dead player no Settlement button while the card's Watch and Leave stand", () => {
     const { run, hit, shown } = settlingOnStage(player("me", "Aldric", 130, dead));
     run.showSettlement(settlement({ outcome: "died" }));
-    expect((hit("settlement")!.args as number[])[0]).toBe(442 + 144 / 2);
+    expect(hit("settlement")).toBeUndefined();
     expect(hit("watch-the-delve")).toBeDefined();
     expect(hit("leave-the-barrow")).toBeDefined();
     expect(shown()).toContain("FALLEN IN THE BARROW");
@@ -4398,8 +4400,10 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
       expect(heard()).toEqual([]);
     });
 
-    it("should chime once for a death with a teammate in play, the record first and the card after it", () => {
-      const { run, heard, tick } = endOnStage();
+    // FS-QPDKN § Change: The party death flow and the spectate switcher, R151–R153: the card waits for the
+    // record's CLOSE, which is heard as the card's dialog_open
+    it("should chime once for a death with a teammate in play, the record first, and the card's dialog_open on its CLOSE", () => {
+      const { run, heard, tick, press, shown } = endOnStage();
       tick(me({}), ally());
       heard();
       run.showSettlement(settlement());
@@ -4408,6 +4412,10 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
       tick(me(dead), ally());
       tick(me(dead), ally());
       expect(heard()).toEqual([]);
+      expect(shown().some((t) => /barrow keeps you/i.test(t))).toBe(false);
+      press("close-the-record");
+      expect(shown().some((t) => /barrow keeps you/i.test(t))).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
     });
 
     it("should chime nothing for a settlement naming another run", () => {
@@ -4788,6 +4796,172 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
   });
 });
 
+
+// The owner, 2026-11-14: a player who dies while a teammate is still in play sees only the settlement record;
+// its CLOSE brings the card with WATCH and LEAVE, and no SETTLEMENT stands while it is up (FS-QPDKN § Change:
+// The party death flow and the spectate switcher, R150–R156; I-QPDKN-12)
+describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party death flow and the spectate switcher)", () => {
+  type SettlementPayload = import("@/assets/types/client").SettlementPayload;
+  const settlement = (fields: Partial<SettlementPayload> = {}): SettlementPayload => ({
+    outcome: "died",
+    carried: [{ item_id: "i1", entity_id: "e1", name: "Iron Blade", quantity: 1, found: true }],
+    lost: [],
+    experience_gained: 40,
+    level_before: 2,
+    level_after: 2,
+    kills: 3,
+    seconds_in_run: 80,
+    status: "pending",
+    ...fields,
+  });
+
+  interface Dying {
+    showSettlement(payload: SettlementPayload): void;
+    endRun(): void;
+    relayoutHud(): void;
+    resultHold: import("@/components/resultHold").ResultHold;
+    watchedPlayerId?: string;
+    cycleWatched(): void;
+    containerView: object;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+  const me = (fields: { escape?: boolean; current_health?: number } = {}) => player("me", "Aldric", 130, fields);
+  const ally = (fields: { escape?: boolean; current_health?: number } = {}) => player("ally", "Wenna", 160, fields);
+
+  function dyingOnStage() {
+    const stage = onStage();
+    Object.assign(stage.run, { scene: { start: vi.fn() } });
+    const run = stage.run as unknown as Dying;
+    Object.assign(run.containerView, { relayout: vi.fn() });
+    const heard = hearOn(stage.run as unknown as Record<string, unknown>);
+    const tick = (mine: ReturnType<typeof player>, ...others: ReturnType<typeof player>[]) =>
+      stage.run.handleGameStateUpdate({ ...partyState(mine), other_players: others } as GameState);
+    const hit = (name: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+    const press = (name: string) => hit(name)!.handlers.pointerdown();
+    const release = (name: string) => hit(name)!.handlers.pointerup();
+    const over = (name: string) => hit(name)!.handlers.pointerover();
+    const shown = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    const card = () => shown().some((t) => /barrow keeps you/i.test(t));
+    const record = () => shown().includes("FALLEN IN THE BARROW") || shown().includes("ESCAPED THE BARROW");
+    /** The death as the server sends it: the record on the tick, the state that shows it after (FS-GV8WN R19). */
+    const die = (...others: ReturnType<typeof player>[]) => {
+      tick(me(), ...others);
+      heard();
+      run.showSettlement(settlement());
+      tick(me(dead), ...others);
+    };
+    return { ...stage, run, heard, tick, hit, press, release, over, shown, card, record, die };
+  }
+
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  describe("the record first, its CLOSE brings the card (R151–R156; I-QPDKN-12)", () => {
+    it("should show the record alone on the death: one dialog_open, no card and no button", () => {
+      const { die, heard, card, record, hit } = dyingOnStage();
+      die(ally());
+      expect(record()).toBe(true);
+      expect(card()).toBe(false);
+      for (const name of ["watch-the-delve", "leave-the-barrow", "settlement"]) expect(hit(name)).toBeUndefined();
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should bring the card with WATCH and LEAVE on CLOSE, heard as dialog_open alone, and no SETTLEMENT by it", () => {
+      const { die, heard, press, card, record, hit, tick } = dyingOnStage();
+      die(ally());
+      heard();
+      press("close-the-record");
+      expect(record()).toBe(false);
+      expect(card()).toBe(true);
+      expect(hit("watch-the-delve")).toBeDefined();
+      expect(hit("leave-the-barrow")).toBeDefined();
+      expect(hit("settlement")).toBeUndefined();
+      expect(heard()).toEqual(["dialog_open"]);
+      // the ticks after it change nothing and play nothing
+      tick(me(dead), ally());
+      expect(card()).toBe(true);
+      expect(hit("settlement")).toBeUndefined();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should leave the barrow from the card's LEAVE, as today", () => {
+      const { die, press, sent, heard } = dyingOnStage();
+      die(ally());
+      press("close-the-record");
+      heard();
+      press("leave-the-barrow");
+      expect(sent).toHaveBeenCalledWith(ActionType.LeaveRun, {});
+      expect(heard()).toEqual(["menu_click"]);
+    });
+
+    it("should put the card up at once, chiming the end, when the death shows before any record", () => {
+      const { tick, heard, card, run, press, shown } = dyingOnStage();
+      tick(me(), ally());
+      heard();
+      tick(me(dead), ally());
+      expect(card()).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+      // the late record opens over it, silently; its close brings nothing more
+      run.showSettlement(settlement());
+      expect(shown()).toContain("FALLEN IN THE BARROW");
+      expect(heard()).toEqual([]);
+      press("close-the-record");
+      expect(heard()).toEqual(["menu_click"]);
+      expect(card()).toBe(true);
+    });
+
+    it("should bring no card on CLOSE once nobody is left in play, nor once the run has ended", () => {
+      const lonely = dyingOnStage();
+      lonely.die(ally());
+      lonely.tick(me(dead), ally(escaped));
+      lonely.heard();
+      lonely.press("close-the-record");
+      expect(lonely.card()).toBe(false);
+      expect(lonely.heard()).toEqual(["menu_click"]);
+
+      const ended = dyingOnStage();
+      ended.die(ally());
+      ended.run.endRun();
+      ended.heard();
+      ended.press("close-the-record");
+      expect(ended.card()).toBe(false);
+      expect(ended.heard()).toEqual(["menu_click"]);
+    });
+
+    it.each([
+      ["a solo death", dead, "died"],
+      ["a solo escape", escaped, "escaped"],
+    ] as const)("should keep %s as today: the record alone, its CLOSE menu_click and no card", (_case, fields, outcome) => {
+      const { tick, run, heard, press, card, record } = dyingOnStage();
+      tick(me());
+      heard();
+      run.showSettlement(settlement({ outcome }));
+      tick(me(fields));
+      expect(record()).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+      press("close-the-record");
+      expect(card()).toBe(false);
+      expect(heard()).toEqual(["menu_click"]);
+    });
+
+    it("should keep the escaped player's offer as today: WATCH, LEAVE and SETTLEMENT 200 above the bottom margin", () => {
+      const { tick, run, hit, press } = dyingOnStage();
+      tick(me(), ally());
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      tick(me(escaped), ally());
+      press("close-the-record");
+      const rects = ["watch-the-delve", "leave-the-barrow", "settlement"].map((n) => hit(n)!.args as number[]);
+      expect(rects.map(([x, , w]) => x - w / 2)).toEqual([442, 554, 656]);
+      for (const [, y, , h] of rects) expect(y + h / 2).toBe(600 - 16 - 200);
+    });
+  });
+});
 
 describe("no way out of a run on ESC (reported 2026-10-29)", () => {
   // ESC used to start MainMenuScene from inside a run. The server keeps the body in the

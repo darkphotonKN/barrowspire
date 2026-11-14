@@ -1,6 +1,6 @@
 ---
 id: I-QPDKN-12
-status: open
+status: done
 implements: FS-QPDKN
 blocked_by: []
 labels: [ready-for-agent]
@@ -20,12 +20,12 @@ close and keeps the hover). A death seen before any record keeps today's card at
 
 ## Acceptance Criteria
 
-- [ ] death → record only (one `dialog_open`, no card, no row) → CLOSE → the card with WATCH and LEAVE, no
+- [x] death → record only (one `dialog_open`, no card, no row) → CLOSE → the card with WATCH and LEAVE, no
       SETTLEMENT, CLOSE heard as `dialog_open` alone.
-- [ ] The card's LEAVE sends `leave_run`; every other record close plays `menu_click`.
-- [ ] A death shown before any record: the card at once, as today.
-- [ ] Solo death and solo escape as today; the record slot's Close requests the close and plays nothing itself.
-- [ ] vitest, tsc, lint and the fence pass.
+- [x] The card's LEAVE sends `leave_run`; every other record close plays `menu_click`.
+- [x] A death shown before any record: the card at once, as today.
+- [x] Solo death and solo escape as today; the record slot's Close requests the close and plays nothing itself.
+- [x] vitest, tsc, lint and the fence pass.
 
 ## Blocked By
 

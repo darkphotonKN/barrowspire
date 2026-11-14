@@ -4,9 +4,10 @@
  *
  * The record is drawn from the run's data (`record`: its view and whether it is up), where and as the
  * run drew it, its bottom on the anchor over the bottom-centre row. The run keeps what it means: its
- * content, its open state, the held town and the SETTLEMENT button (FS-GV8WN R19–R25). Its Close plays
- * `menu_click`, then asks the run to close it, which may let a held town in (FS-WDM0X § Pass 2b E5); its
- * hover plays `menu_hover` (E4).
+ * content, its open state, the held town and the SETTLEMENT button (FS-GV8WN R19–R25). Its Close asks the
+ * run to close it, and the run plays the close's one sound, since only the run knows what the close brings
+ * (`menu_click`, or the dead player's card with `dialog_open`: FS-QPDKN § Change: The party death flow and the
+ * spectate switcher, R153); its hover plays `menu_hover` (FS-WDM0X § Pass 2b E4).
  *
  * The controls panel is the UI scene's own in the run: H opens and closes it, refused while the menu
  * slot is filled and once the run has ended (its keyboard was off); the run's end appearing closes it,
@@ -62,11 +63,9 @@ export class UiRecordSlot {
     if (!this.record) {
       this.record = this.build(
         this.anchor(),
-        () => {
-          // before the close, which may let a held town in (FS-WDM0X § Pass 2b E5)
-          this.bridge.play("menu_click");
-          this.bridge.request({ kind: "close", window: "record" });
-        },
+        // the run plays its sound, then closes it (FS-QPDKN § Change: The party death flow and the spectate
+        // switcher, R153)
+        () => this.bridge.request({ kind: "close", window: "record" }),
         () => this.bridge.play("menu_hover"),
       );
       this.builtFor = world;

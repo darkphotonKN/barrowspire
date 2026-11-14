@@ -576,6 +576,12 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private canLeave = false;
   /**
+   * This player has fallen in this run, seen in a state or told by their record (FS-QPDKN § Change: The party
+   * death flow and the spectate switcher, R151): their row stands only while they watch. Sticky until the run
+   * resets.
+   */
+  private fell = false;
+  /**
    * The bottom-centre row as drawn: which buttons, by name, the buttons themselves, and its Leave
    * when it holds one, so a pending leave dims it as it dims the dead player's.
    */
@@ -1095,6 +1101,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.abilityUp = false;
     this.canWatch = false;
     this.canLeave = false;
+    this.fell = false;
     this.row = { names: "", buttons: [] };
     this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
@@ -1224,6 +1231,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // the UI scene draws it; its Close plays menu_click, then asks the run to close it (FS-WDM0X
     // § Pass 2b E4, E5; FS-TQZ5J § Change: Phase 3, R57)
     const first = !this.record;
+    // a death's record says so before the state does: the dead player's row waits for them to watch (FS-QPDKN
+    // § Change: The party death flow and the spectate switcher, R151)
+    if (payload.outcome === "died") this.fell = true;
     this.record = { view: settlementRecord(payload), open: this.record?.open ?? false };
     if (first) {
       this.openRecord();
@@ -1271,10 +1281,38 @@ export class BarrowspireScene extends Phaser.Scene {
     if (recordHoldsTown(state)) this.resultHold.raise();
   }
 
-  /** The record down, and a hub held behind it applied (R23). Client-only: nothing is sent. */
+  /**
+   * The record's Close pressed (FS-QPDKN § Change: The party death flow and the spectate switcher, R152,
+   * R153): one sound, before the close acts, which may let a held town in and stop this scene (FS-WDM0X
+   * § Pass 2b E5). A close that brings the dead player's card is heard as the card's `dialog_open` alone,
+   * in place of `menu_click` (FS-WDM0X S3, as E3).
+   */
+  private recordClosePressed(): void {
+    this.ui.play(this.closeBringsCard() ? "dialog_open" : "menu_click");
+    this.closeRecord();
+  }
+
+  /** Whether the record's close would put the dead player's card up now (R152). */
+  private closeBringsCard(): boolean {
+    const state = this.lastGameState;
+    return (
+      !this.runEnded &&
+      this.watchedPlayerId === undefined &&
+      !this.resolvedCard &&
+      state !== undefined &&
+      resolvedView(state)?.kind === "dead"
+    );
+  }
+
+  /**
+   * The record down, the dead player's card up behind it if it is due (FS-QPDKN § Change: The party death
+   * flow and the spectate switcher, R152), and a hub held behind it applied (R23). Client-only: nothing is
+   * sent.
+   */
   private closeRecord(): void {
     if (this.record) this.record.open = false;
     this.sendRecord();
+    if (this.lastGameState) this.syncResolvedView(this.lastGameState);
     this.resultHold.release();
   }
 
@@ -1308,6 +1346,8 @@ export class BarrowspireScene extends Phaser.Scene {
           canWatch: this.canWatch,
           canLeave: this.canLeave,
           hasRecord: this.record !== undefined,
+          fell: this.fell,
+          watching: this.watchedPlayerId !== undefined,
         });
     const key = names.join(",");
     if (key === this.row.names) return;
@@ -3171,8 +3211,9 @@ export class BarrowspireScene extends Phaser.Scene {
           this.ui.gear({ kind: "taken", item });
         },
         // Leave the barrow is the card's own path (FS-QPDKN req 13): one send, one pending flag
-        // the record's Close, its sound played by the UI scene first (§ Change: Phase 3, R57)
-        close: { record: () => this.closeRecord() },
+        // the record's Close: its one sound played here, then the close (FS-QPDKN § Change: The party
+        // death flow and the spectate switcher, R153)
+        close: { record: () => this.recordClosePressed() },
         leaveRun: () => this.leaveTheBarrow(),
         fall: () => this.fallWhereYouStand(),
         // the OPTIONS Music row, applied to the tower's music at once (§ Change: The tower's music, W6)
@@ -5093,6 +5134,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // an escaped player may leave the run, whether they watch or not (FS-GV8WN R25); once seen
     // escaped they stay so, even when the broadcast stops sending their own state
     if (state.current_player?.escape === true) this.canLeave = true;
+    if (resolved(state.current_player) && state.current_player?.escape !== true) this.fell = true;
     this.syncRow();
     if (this.watchedPlayerId !== undefined) {
       this.followWatched(state);
@@ -5102,7 +5144,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // in play again (a reconnect's first state), or nobody left to watch: the end is coming
     if (!view) this.takeDownCard();
     else if (view.kind === "escaped") this.offerWatch();
-    else if (!this.resolvedCard) {
+    // the record first: the card stands only while the record is not up, so its first close brings it
+    // (FS-QPDKN § Change: The party death flow and the spectate switcher, R151, R152); with no record yet,
+    // at once (R155)
+    else if (!this.resolvedCard && !this.record?.open) {
       this.showResolvedCard(view);
       this.endPopsUp();
     }

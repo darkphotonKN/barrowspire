@@ -36,7 +36,17 @@ describe("resolvedRow", () => {
       ["watch", "leave", "settlement"],
     ],
   ] as const)("should give %o the buttons %o, in that order", (state, row) => {
-    expect(resolvedRow(state)).toEqual(row);
+    expect(resolvedRow({ ...state, fell: false, watching: false })).toEqual(row);
+  });
+
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R151, R154: a fallen player's record
+  // comes first, then their card; no row until they watch
+  it.each([
+    [{ hasRecord: false, watching: false }, []],
+    [{ hasRecord: true, watching: false }, []],
+    [{ hasRecord: true, watching: true }, ["settlement"]],
+  ] as const)("should give a fallen player %o the buttons %o", (state, row) => {
+    expect(resolvedRow({ canWatch: false, canLeave: false, fell: true, ...state })).toEqual(row);
   });
 });
 
