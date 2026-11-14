@@ -57,13 +57,13 @@ export function lookGame() {
   return {
     game,
     page,
-    /** Every CSS the look set, in order. */
+    /** Every CSS the pointer look set, in order. */
     shown,
     /** What the canvas shows now. */
     now: () => shown[shown.length - 1],
-    /** The game's look, made here as a scene with the art makes it. */
+    /** The game's pointer look, made here as a scene with the art makes it. */
     look: (cursors: PointerCursors = STAND_IN_CURSORS) => pointerLookOf(game, () => cursors, page),
-    /** The game's look, asked with this `cursors`, made only by the first ask. */
+    /** The game's pointer look, asked with this `cursors`, made only by the first ask. */
     pointerLookOf: (cursors: () => PointerCursors) => pointerLookOf(game, cursors, page),
     /** The left button goes down on the canvas. */
     press: () => game.canvas.dispatchEvent(pointerEvent("pointerdown", LEFT, LEFT_HELD)),

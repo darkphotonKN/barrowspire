@@ -26,12 +26,12 @@ export interface PointerCursors {
   strike: string;
 }
 
-/** Where the look writes: Phaser's InputManager is one. */
+/** Where the pointer look writes: Phaser's InputManager is one. */
 export interface CursorSink {
   setDefaultCursor(css: string): void;
 }
 
-/** The slices of a Phaser game the look reads. `Phaser.Game` is one. */
+/** The slices of a Phaser game the pointer look reads. `Phaser.Game` is one. */
 export interface LookGame {
   registry: { get(key: string): unknown; set(key: string, value: unknown): unknown };
   canvas: EventTarget;
@@ -58,7 +58,7 @@ const POINTER_LOOK_KEY = "pointerLook";
 const POINTER_LOOK_BRAND = Symbol.for("barrowspire.pointerLook");
 
 /**
- * The baked cursors as the look shows them: the hand, the pressed hand and the strike-mark, each
+ * The baked cursors as the pointer look shows them: the hand, the pressed hand and the strike-mark, each
  * cropped once. Without the pressed sheet a press shows the plain hand; without the others, the
  * browser's `default` and `crosshair` (P9).
  */
@@ -130,10 +130,10 @@ export class PointerLook {
 type Buttons = Event & { button?: number; buttons?: number };
 
 /**
- * Watches the left button for `look`: a press on the canvas, the release anywhere on the page.
- * With another button held, the left's press and release come as moves (Pointer Events' chorded
- * buttons), so a move that changed the left presses, and one with the left no longer held lets go.
- * A cancel, a lost window or a hidden tab lets go too. Returns the unwatch.
+ * Watches the left button for the pointer look `look`: a press on the canvas, the release anywhere
+ * on the page. With another button held, the left's press and release come as moves (Pointer
+ * Events' chorded buttons), so a move that changed the left presses, and one with the left no
+ * longer held lets go. A cancel, a lost window or a hidden tab lets go too. Returns the unwatch.
  */
 function watchLeft(look: PointerLook, canvas: EventTarget, page: LookPage): () => void {
   const held = (e: Buttons) => ((e.buttons ?? 0) & LEFT_HELD) !== 0;
@@ -171,8 +171,8 @@ function lentPointerLook(registry: LookGame["registry"]): PointerLook | undefine
 }
 
 /**
- * The game's look, made by the first ask with `cursors` and kept on its registry; every later ask
- * gets the same look and `cursors` is not called again. It watches the page until the game is
+ * The game's pointer look, made by the first ask with `cursors` and kept on its registry; every
+ * later ask gets the same pointer look and `cursors` is not called again. It watches the page until the game is
  * destroyed.
  */
 export function pointerLookOf(game: LookGame, cursors: () => PointerCursors, page: LookPage): PointerLook {

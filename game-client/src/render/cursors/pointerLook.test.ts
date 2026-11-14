@@ -200,7 +200,7 @@ describe("one pointer look per game (FS-KYPQ9 § Change: The pressed hand, P6, P
   });
 });
 
-describe("the baked cursors as the look shows them (FS-KYPQ9 § Change: The pressed hand, P2, P9)", () => {
+describe("the baked cursors as the pointer look shows them (FS-KYPQ9 § Change: The pressed hand, P2, P9)", () => {
   const SHEETS = ["cursor_hand", "cursor_hand_pressed", "cursor_strike"];
   /** A source holding `sheets`, each image its name. */
   const sourceOf = (sheets: string[]): CursorSource => ({
@@ -244,7 +244,7 @@ describe("a scene's pointer look (FS-KYPQ9 § Change: The pressed hand, P7)", ()
     expect(findPointerLook({ game: page.game })).toBe(look);
   });
 
-  it("should make the game's look from a scene with the art, its cursors cropped from that art", () => {
+  it("should make the game's pointer look from a scene with the art, its cursors cropped from that art", () => {
     vi.stubGlobal("window", new EventTarget());
     vi.stubGlobal("document", new EventTarget());
     try {
