@@ -126,8 +126,8 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     fullscreen: () => lentFullscreen(s.registry),
     party: { isOpen: () => party.isOpen(), close: () => party.close() },
   });
-  const party = new UiPartySlot((w) => ({
-    panel: partyMakers.get(scene)?.(partyPanelWiring(bridge, w)) ?? NO_PANEL,
+  const party = new UiPartySlot(() => ({
+    panel: partyMakers.get(scene)?.(partyPanelWiring(bridge)) ?? NO_PANEL,
   }));
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
   const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));

@@ -9,7 +9,8 @@
  * `blockers().party`, beside the UI scene's own menu slot; the popups' hiding, `blockers().popups`; the
  * invite stack's floor, `layout().chatTop`; each state tick the world showed, `partySeen`, for the
  * frames. Its opening closes the town's letter panel
- * by a request (R39); its own inputs run through the UI scene's act (R22).
+ * by a request, asked of whatever world is reported (R39, R48); its own inputs run through the UI
+ * scene's act (R22).
  */
 
 import type { UiActWrapper } from "@/audio/uiSounds";
@@ -48,8 +49,8 @@ export interface PartyPieces {
 export interface PartyPanelWiring {
   /** Refused while the menu slot is filled, the world turns it away, or no world is reported. */
   blocked: () => boolean;
-  /** The town's letter panel gives way as it opens (FS-R82NV § Change C9); none elsewhere. */
-  opening?: () => void;
+  /** The town's letter panel gives way as it opens (FS-R82NV § Change C9), asked of any world (R48). */
+  opening: () => void;
   /** The UI scene's act, its own inputs' sounds (FS-WDM0X S9). */
   wrapper: UiActWrapper;
 }
@@ -76,14 +77,18 @@ export function partyPromptWiring(bridge: Pick<UiBridge, "world">): PartyPromptW
 /** What of the bridge the panel's wiring reads, asks and plays through. */
 export type PartyBridge = Pick<UiBridge, "world" | "ui" | "request" | "act">;
 
-/** The party panel's wiring in `world` (R38, R39). */
-export function partyPanelWiring(bridge: PartyBridge, world: World): PartyPanelWiring {
+/**
+ * The party panel's wiring in any world (R38, R39). Its opening asks the world reported to close its
+ * letter panel, naming no world: one without a letter panel ignores the request (R11; § Change: Phase 2,
+ * Amendment B1, R48).
+ */
+export function partyPanelWiring(bridge: PartyBridge): PartyPanelWiring {
   return {
     blocked: () => {
       const report = bridge.world;
       return !report || bridge.ui.menuOpen || !!report.blockers().party;
     },
-    opening: world === "hub" ? () => bridge.request({ kind: "close", window: "letter" }) : undefined,
+    opening: () => bridge.request({ kind: "close", window: "letter" }),
     wrapper: { act: (run) => bridge.act(run) },
   };
 }

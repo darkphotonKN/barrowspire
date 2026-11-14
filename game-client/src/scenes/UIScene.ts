@@ -254,7 +254,7 @@ export class UIScene extends Phaser.Scene {
    * ticks, their busts cut from the resident art (R37, R38).
    */
   private partyPieces(bridge: UiBridge, world: World): PartyPieces {
-    const wiring = partyPanelWiring(bridge, world);
+    const wiring = partyPanelWiring(bridge);
     const prompts = partyPromptWiring(bridge);
     // the party's sounds on the game's one player (FS-WDM0X § Change pass 2 (party))
     const play = (effect: UiEffect) => bridge.play(effect);

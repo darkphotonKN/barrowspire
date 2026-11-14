@@ -121,7 +121,7 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
   it.each(["hub", "field", "run"] as const)("should refuse it in the %s while the UI's menu slot is filled", (world) => {
     const bridge = new GameUiBridge();
     bridge.report(aWorld(world).report);
-    const wiring = partyPanelWiring(bridge, world);
+    const wiring = partyPanelWiring(bridge);
 
     expect(wiring.blocked()).toBe(false);
     bridge.reportUi({ menuOpen: true });
@@ -132,7 +132,7 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
     const bridge = new GameUiBridge();
     const run = aWorld("run");
     bridge.report(run.report);
-    const wiring = partyPanelWiring(bridge, "run");
+    const wiring = partyPanelWiring(bridge);
 
     run.blockers.party = true;
     expect(wiring.blocked()).toBe(true);
@@ -142,7 +142,7 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
 
   it("should refuse it with no world reported", () => {
     const bridge = new GameUiBridge();
-    expect(partyPanelWiring(bridge, "hub").blocked()).toBe(true);
+    expect(partyPanelWiring(bridge).blocked()).toBe(true);
   });
 
   // FS-R82NV § Change C9; FS-TQZ5J § Change: Phase 2, Amendment B1, R48: the UI scene names no world for
@@ -152,7 +152,7 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
     const reported = aWorld(world);
     bridge.report(reported.report);
 
-    partyPanelWiring(bridge, world).opening?.();
+    partyPanelWiring(bridge).opening();
 
     expect(reported.asked).toEqual([{ kind: "close", window: "letter" }]);
   });
@@ -162,7 +162,7 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
     const bridge = new GameUiBridge();
     bridge.lendSounds({ act: (run) => (acted.push("act"), run()), play: () => {} });
 
-    partyPanelWiring(bridge, "field").wrapper.act(() => void acted.push("ran"));
+    partyPanelWiring(bridge).wrapper.act(() => void acted.push("ran"));
 
     expect(acted).toEqual(["act", "ran"]);
   });
