@@ -19,15 +19,15 @@ import {
   type PartyFrameRow,
   type PartyMemberFrameRow,
 } from "./partyFramesLayout";
-import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
+import { readyCheckFrame } from "./partyReadyCheckLayout";
 import {
+  HUD_COLUMN_W,
   RESOURCE_HUD_AT,
-  RESOURCE_HUD_W,
   resourceHudHeight,
 } from "./ResourceHud";
 
 // FS-R82NV §Requirements R34, R35. I-R82NV-9: the party frames' pure half; I-R82NV-12: every
-// member, the player first with their own bars, as wide as the level/XP frame.
+// member, the player first with their own bars, as wide as the left column (FS-77DVN §E.19).
 
 const ME = "me";
 const member = (
@@ -519,17 +519,18 @@ describe("partyFramesFrame", () => {
     }
   });
 
-  // 1080x720, the fullest party (cap 4, the player's row among them), in each world that mounts
-  // the frames; the XP bars stand where the scenes place them (`PROGRESS_HUD_AT`)
-  const W = 1080;
+  // the fullest party (cap 4, the player's row among them), in each world that mounts the frames,
+  // at the view's two ends; with the XP bar gone to the bottom middle (FS-77DVN §A), nothing of it
+  // stands in the top-left column
   const H = 720;
   const MARGIN = 16;
   // chat sits on the canvas bottom margin in every world
   const chatBottom = H - MARGIN;
+  const chatPanel = () => chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel;
   /** The resource bars at their tallest (Health and a class resource). */
   const barsAt = (at: { x: number; y: number }): Rect => ({
     ...at,
-    width: RESOURCE_HUD_W,
+    width: HUD_COLUMN_W,
     height: resourceHudHeight(2),
   });
   /** The run's potion cell, glued right of the bars and top-aligned with them. */
@@ -542,9 +543,10 @@ describe("partyFramesFrame", () => {
     };
   };
 
-  // FS-56CKV §D.20 supersedes FS-R82NV R34's "run y 160" in part: the run's stack moved up 28 px
+  // FS-77DVN §E.17 supersedes FS-56CKV §D.20's run top 132 (and FS-R82NV R34's "run y 160") in
+  // part: the run's bars rise to (10, 16), so its frames stand where a field's do (§E.21)
   it.each([
-    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 132 },
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run, top: 92 },
     { world: "field" as const, bars: RESOURCE_HUD_AT.field, top: 92 },
   ])(
     "in the $world, the frames stand 24 px below the bars at their tallest",
@@ -556,67 +558,66 @@ describe("partyFramesFrame", () => {
     },
   );
 
-  // FS-56CKV §D.20 supersedes FS-8AY7S R20's "x 10, y 84" in part: the run's XP bar at the top
-  // as the hub's (y 16, its x still 10), the bars under it at y 56; §D.22: the hub and the field
-  // unchanged
-  it("stands the run's XP bar at (10, 16), as high as the hub's, and the hub's at (16, 16) (FS-56CKV §D.20, §D.22)", () => {
-    expect(PROGRESS_HUD_AT.run).toEqual({ x: 10, y: 16 });
-    expect(PROGRESS_HUD_AT.run.y).toBe(PROGRESS_HUD_AT.hub.y);
-    expect(PROGRESS_HUD_AT.hub).toEqual({ x: 16, y: 16 });
-    expect(PARTY_FRAMES_PLACEMENT.hub).toEqual({ x: 16, top: 56 });
+  it("stands a run's frames where a field's stand, at {10, 92} (FS-77DVN §E.17, §E.21)", () => {
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 92 });
+    expect(PARTY_FRAMES_PLACEMENT.field).toEqual({ x: 10, top: 92 });
   });
 
-  it("stands the run's bars under the XP bar on one left edge, and the field's in the corner", () => {
-    const xp = PROGRESS_HUD_AT.run;
-    expect(RESOURCE_HUD_AT.run).toEqual({ x: xp.x, y: 56 });
-    expect(RESOURCE_HUD_AT.run.y).toBeGreaterThanOrEqual(xp.y + PROGRESS_HUD_H);
-    expect(RESOURCE_HUD_W).toBe(PROGRESS_HUD_W);
-    expect(RESOURCE_HUD_AT.field).toEqual({ x: 10, y: 16 });
+  // FS-77DVN §E.18 supersedes FS-56CKV §D.22's hub frames at y 56, under the XP bar
+  it("stands the hub's frames in its corner, at (16, 16), where it has no resource bars (FS-77DVN §E.18)", () => {
+    expect(PARTY_FRAMES_PLACEMENT.hub).toEqual({ x: 16, top: 16 });
   });
 
-  it("keeps the hub's frames under its XP bar, where it has no resource bars", () => {
-    const xp = PROGRESS_HUD_AT.hub;
-    expect(PARTY_FRAMES_PLACEMENT.hub).toEqual({
-      x: xp.x,
-      top: xp.y + PROGRESS_HUD_H + 6,
-    });
+  it("keeps the frames one 180 px column with the resource bars (FS-77DVN §E.19)", () => {
+    expect(HUD_COLUMN_W).toBe(180);
+    for (const world of ["hub", "run", "field"] as const) {
+      const { x, top } = PARTY_FRAMES_PLACEMENT[world];
+      for (const { row } of partyFramesFrame(4, x, top))
+        expect(row.width).toBe(HUD_COLUMN_W);
+    }
   });
 
-  it("opens the T panel clear right of the run's potion cell, even in the narrowest view (FS-R82NV § Change C3)", () => {
-    const cell = potionCell();
-    expect(PARTY_PANEL_LEFT).toBeGreaterThan(cell.x + cell.width + 12);
-  });
-
-  it("keeps the most prompts clear of the bars and the potion cell, open panel or not", () => {
-    for (const panelOpen of [false, true])
-      for (const note of [false, true])
-        for (const prompt of invitePromptFrames(4, {
-          canvasWidth: W,
-          panelOpen,
-          note,
-          floor: chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel.y,
-        })) {
-          expect(overlaps(prompt.panel, potionCell())).toBe(false);
-          expect(overlaps(prompt.panel, barsAt(RESOURCE_HUD_AT.field))).toBe(
-            false,
-          );
-        }
-  });
-
-  it.each([
-    // the run: resource bars under the XP bar, the frames under them
-    {
-      world: "run" as const,
-      xpBar: PROGRESS_HUD_AT.run,
-      bars: RESOURCE_HUD_AT.run,
+  it.each([1080, 1280])(
+    "opens the T panel clear right of the run's potion cell at logical width %i (FS-R82NV § Change C3)",
+    (W) => {
+      const cell = potionCell();
+      expect(partyPanelLeft(W)).toBeGreaterThan(cell.x + cell.width + 12);
     },
-    // the hub: no resource bars, the frames under the XP bar
-    { world: "hub" as const, xpBar: PROGRESS_HUD_AT.hub, bars: null },
-    // a field: no XP bar, the bars in the corner and the frames under them
-    { world: "field" as const, xpBar: null, bars: RESOURCE_HUD_AT.field },
-  ])(
-    "in the $world, four rows clear the XP bar, the resource bars, the chat window, the T panel and the prompts",
-    ({ world, xpBar, bars }) => {
+  );
+
+  it.each([1080, 1280])(
+    "keeps the most prompts clear of the bars and the potion cell, open panel or not, at logical width %i",
+    (W) => {
+      for (const panelOpen of [false, true])
+        for (const note of [false, true])
+          for (const prompt of invitePromptFrames(4, {
+            canvasWidth: W,
+            panelOpen,
+            note,
+            floor: chatPanel().y,
+          })) {
+            expect(overlaps(prompt.panel, potionCell())).toBe(false);
+            expect(overlaps(prompt.panel, barsAt(RESOURCE_HUD_AT.run))).toBe(
+              false,
+            );
+            expect(overlaps(prompt.panel, barsAt(RESOURCE_HUD_AT.field))).toBe(
+              false,
+            );
+          }
+    },
+  );
+
+  const worlds = [
+    // the run: the bars in the corner, the potion cell beside them, the frames under them
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run, potion: true },
+    // the hub: no resource bars, the frames in the corner
+    { world: "hub" as const, bars: null, potion: false },
+    // a field: the bars in the corner and the frames under them
+    { world: "field" as const, bars: RESOURCE_HUD_AT.field, potion: false },
+  ];
+  it.each([1080, 1280].flatMap((W) => worlds.map((w) => ({ ...w, W }))))(
+    "in the $world at logical width $W, four rows clear the resource bars, the potion cell, the chat window, the T panel, the prompts and the ready check",
+    ({ world, bars, potion, W }) => {
       const { x, top } = PARTY_FRAMES_PLACEMENT[world];
       // the fullest party at the largest cap (PARTY_SIZE max 4): two members, two open invites
       const fullest = partyFrameRows(
@@ -639,31 +640,37 @@ describe("partyFramesFrame", () => {
       const frames = union(
         partyFramesFrame(fullest.length, x, top).map((f) => f.row),
       );
-      // one column with the level/XP frame: exactly its outer width (a field keeps the same)
-      expect(frames.width).toBe(PROGRESS_HUD_W);
+      // one column with the resource bars: exactly the column's width (the hub keeps the same)
+      expect(frames.width).toBe(HUD_COLUMN_W);
       expect(frames.x).toBeGreaterThanOrEqual(0);
-      if (xpBar) {
-        const bar = { ...xpBar, width: PROGRESS_HUD_W, height: PROGRESS_HUD_H };
-        expect(overlaps(frames, bar)).toBe(false);
-        // below it, on its left edge
-        expect(frames.y).toBeGreaterThanOrEqual(bar.y + bar.height);
-        expect(frames.x).toBe(bar.x);
+      expect(frames.y).toBeGreaterThanOrEqual(MARGIN);
+      if (bars) {
+        const at = barsAt(bars);
+        expect(overlaps(frames, at)).toBe(false);
+        // below them, on their left edge
+        expect(frames.y).toBeGreaterThanOrEqual(at.y + at.height);
+        expect(frames.x).toBe(at.x);
       }
-      if (bars) expect(overlaps(frames, barsAt(bars))).toBe(false);
-      expect(
-        overlaps(frames, chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel),
-      ).toBe(false);
+      if (potion) expect(overlaps(frames, potionCell())).toBe(false);
+      expect(overlaps(frames, chatPanel())).toBe(false);
       // the T panel stands right of the frames (R28)
-      expect(frames.x + frames.width).toBeLessThan(PARTY_PANEL_LEFT);
-      for (const panelOpen of [false, true])
+      expect(frames.x + frames.width).toBeLessThan(partyPanelLeft(W));
+      for (const panelOpen of [false, true]) {
         for (const note of [false, true])
           for (const prompt of invitePromptFrames(4, {
             canvasWidth: W,
             panelOpen,
             note,
-            floor: chatWindowFrame(CHAT_WINDOW_X, chatBottom).panel.y,
+            floor: chatPanel().y,
           }))
             expect(overlaps(frames, prompt.panel)).toBe(false);
+        expect(
+          overlaps(
+            frames,
+            readyCheckFrame(4, { canvasWidth: W, panelOpen }).panel,
+          ),
+        ).toBe(false);
+      }
       expect(frames.y + frames.height).toBeLessThan(H);
     },
   );

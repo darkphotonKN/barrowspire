@@ -1,15 +1,15 @@
 /**
- * The party frames (FS-R82NV R34, R35; FS-NCC9J R25–R27; FS-CH21F R8–R12): on the left edge under
- * the level/XP bar and as wide as it, one frame per member while the player is in a party, the
- * player's own first, then the others in join order, then one skeleton row per open invite. Each
- * member frame is a medallion bust cut from the member's class sheet, their name (the leader's
- * crown first), and a bar slot: health and resource in the HUD's own bar style at half height,
- * always for the player (from their own state) and, in every world the hub included, for a
- * teammate when this world's state carries their health. "Lv N" follows the player's own name
- * (from their own state) and such a teammate's; any other teammate shows name and bust alone, no
- * word, no level. An away teammate's frame is greyed. A skeleton row is the invitee's name with a
- * grey pulse where the bust and bars go, no countdown. A resource the state does not carry yet is
- * an empty bar.
+ * The party frames (FS-R82NV R34, R35; FS-NCC9J R25–R27; FS-CH21F R8–R12): in the left-edge column,
+ * under the resource bars (in the hub's corner, which has none) and as wide as them, one frame per
+ * member while the player is in a party, the player's own first, then the others in join order,
+ * then one skeleton row per open invite. Each member frame is a medallion bust cut from the
+ * member's class sheet, their name (the leader's crown first), and a bar slot: health and resource
+ * in the HUD's own bar style at half height, always for the player (from their own state) and, in
+ * every world the hub included, for a teammate when this world's state carries their health. "Lv N"
+ * follows the player's own name (from their own state) and such a teammate's; any other teammate
+ * shows name and bust alone, no word, no level. An away teammate's frame is greyed. A skeleton row
+ * is the invitee's name with a grey pulse where the bust and bars go, no countdown. A resource the
+ * state does not carry yet is an empty bar.
  *
  * It redraws from the party store on every `party_update` and from each state tick the scene
  * hands it (`show`); it asks the server for nothing. Once a frame it lets the store say the

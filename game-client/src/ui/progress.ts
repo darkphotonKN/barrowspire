@@ -38,11 +38,18 @@ export function atCap(p: Pick<Progress, "next_level_at">): boolean {
   return p.next_level_at === undefined;
 }
 
-/** "Level 7", or "Level 20 · Cap" where the bar is full for good. */
-export function levelLabel(
-  p: Pick<Progress, "level" | "next_level_at">,
-): string {
-  return atCap(p) ? `Level ${p.level} · Cap` : `Level ${p.level}`;
+/**
+ * The words at the HUD bar's two ends (FS-77DVN §B.8, §B.9): this level at the left, the next at
+ * the right, or "Cap" there where the bar is full for good.
+ */
+export function xpBarEnds(p: Pick<Progress, "level" | "next_level_at">): {
+  left: string;
+  right: string;
+} {
+  return {
+    left: String(p.level),
+    right: atCap(p) ? "Cap" : String(p.level + 1),
+  };
 }
 
 /**

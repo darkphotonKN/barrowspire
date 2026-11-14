@@ -115,6 +115,7 @@ const await_topRightColumn = await import("@/ui/topRightColumn");
 const await_positionReadout = await import("@/ui/positionReadout");
 const await_minimapName = await import("@/ui/minimapName");
 const await_progressHud = await import("@/ui/ProgressHud");
+const { ProgressHud: ProgressHudClass } = await_progressHud;
 const await_resourceHud = await import("@/ui/ResourceHud");
 const await_potions = await import("@/ui/potions");
 const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
@@ -831,7 +832,7 @@ function sceneOnStage() {
     containerView: { entityId: null, isOpen: false, open: vi.fn(), close: vi.fn(), setItems: vi.fn() },
   });
   const texts = () =>
-    stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string } }));
+    stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string; fontSize?: string; stroke?: string } }));
   return { run, stage, lights, gates, painted, grounds, texts, cursor };
 }
 
@@ -2362,7 +2363,7 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     return { ...scene, cam, labels, label };
   }
 
-  it("should show Health: and Mana: at the top left in a run, under the XP bar, in the body serif", () => {
+  it("should show Health: and Mana: at the very top left in a run, in the body serif", () => {
     const { run, cam, labels, label } = barsOnStage();
     run.handleGameStateUpdate(withMe(me()));
     expect(labels()).toEqual(["Health:", "Mana:"]);
@@ -2667,22 +2668,71 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     const cues = () =>
       scene.texts().filter((t) => /^Risen to level/.test(String(t.content)));
     const shown = (content: string) => scene.texts().some((t) => t.content === content);
-    return { ...scene, cues, shown };
+    /** The bar's own end numeral reading `content`: 12 px, stroked in the marker stroke (§B.8). */
+    const numeral = (content: string) =>
+      scene
+        .texts()
+        .find(
+          (t) =>
+            t.content === content &&
+            t.style.fontSize === "12px" &&
+            t.style.stroke === toCss(palette.markerStroke),
+        );
+    return { ...scene, cues, shown, numeral };
   }
 
-  it("should show the player's level and experience on the HUD in the body serif", () => {
-    const { run, texts, shown } = onStage();
+  it("should show the player's level and the next at the bar's ends, in the body serif, with no count (FS-77DVN §B.8, §B.10)", () => {
+    const { run, shown, numeral } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
-    expect(shown("Level 2")).toBe(true);
-    expect(shown("50 / 130")).toBe(true);
-    const label = texts().find((t) => t.content === "Level 2");
-    expect(label?.style.fontFamily).toBe(CANVAS_FONT.body);
+    expect(numeral("2")).toBeDefined();
+    expect(numeral("3")).toBeDefined();
+    expect(shown("50 / 130")).toBe(false);
+    expect(shown("Level 2")).toBe(false);
+    expect(numeral("2")?.style.fontFamily).toBe(CANVAS_FONT.body);
   });
 
-  it("should mark the cap when the server sends no next level", () => {
-    const { run, shown } = onStage();
+  it("should mark the cap at the right end when the server sends no next level (FS-77DVN §B.9)", () => {
+    const { run, numeral } = onStage();
     run.handleGameStateUpdate(withMe(me(20, 40000, 38530)));
-    expect(shown("Level 20 · Cap")).toBe(true);
+    expect(numeral("20")).toBeDefined();
+    expect(numeral("Cap")).toBeDefined();
+  });
+
+  it.each([
+    ["dead", { current_health: 0 }],
+    ["escaped", { escape: true }],
+  ])("should keep the player's own bar while %s (FS-77DVN §C.14)", (_case, change) => {
+    const show = vi.spyOn(ProgressHudClass.prototype, "show");
+    const { run } = onStage();
+    run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
+    run.handleGameStateUpdate(withMe({ ...me(2, 160, 100, 230), ...change }));
+    expect(show).toHaveBeenCalledTimes(2);
+    expect(show).toHaveBeenLastCalledWith({ level: 2, experience: 160, level_floor: 100, next_level_at: 230 });
+    show.mockRestore();
+  });
+
+  it("should keep the player's own bar, never the watched player's, while spectating (FS-77DVN §C.14)", () => {
+    const show = vi.spyOn(ProgressHudClass.prototype, "show");
+    const { run } = onStage();
+    const ally = { ...me(9, 5000, 4000, 6000), id: "ally", entity_id: "e_ally", username: "Wenna" };
+    (run as unknown as { watchedPlayerId?: string }).watchedPlayerId = "ally";
+    run.handleGameStateUpdate({
+      ...withMe({ ...me(2, 150, 100, 230), current_health: 0 }),
+      other_players: [ally],
+    } as GameState);
+    expect(show).toHaveBeenLastCalledWith({ level: 2, experience: 150, level_floor: 100, next_level_at: 230 });
+    show.mockRestore();
+  });
+
+  it("should place the bar again when the view changes (FS-77DVN §A.4)", () => {
+    const relayout = vi.spyOn(ProgressHudClass.prototype, "relayout").mockImplementation(() => {});
+    const { run } = onStage();
+    run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
+    // the stage's container view is a bare stand-in; it has its own relayout suite
+    Object.assign(run, { containerView: undefined });
+    (run as unknown as { relayoutHud(): void }).relayoutHud();
+    expect(relayout).toHaveBeenCalledTimes(1);
+    relayout.mockRestore();
   });
 
   it("should show the level-up cue once when the level rises, and not again while it holds", () => {
@@ -6976,16 +7026,16 @@ describe("the run's minimap in the top-right column (FS-SRA9J §E.20, §E.21; FS
   );
 });
 
-// FS-56CKV §D.20 (superseding FS-8AY7S R20's y 84 and FS-R82NV R34's run y 160 in part): with
-// the dev readout gone from the top left (§C), the run's top-left stack moves up into its place,
-// the XP bar at (10, 16); nothing at the top of a run may stand over it.
-describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
+// FS-77DVN §E.17, §E.20 (superseding FS-56CKV §D.20's XP bar at (10, 16), bars at (10, 56) and
+// frames from 132 in part): with the XP bar gone to the bottom middle (§A), the run's top left
+// closes up as a field's, the bars at (10, 16) and the frames from y 92; nothing at the top of a
+// run may stand over it.
+describe("the run's top-left stack, closed up (FS-77DVN §E)", () => {
   const { TARGET_FRAME, TARGET_BOSS_FRAME, targetFrameRect } = await_targetFrame;
   const { topRightColumn } = await_topRightColumn;
   const { positionReadoutPlace } = await_positionReadout;
   const { minimapNameBox } = await_minimapName;
-  const { PROGRESS_HUD_AT, PROGRESS_HUD_W, PROGRESS_HUD_H } = await_progressHud;
-  const { RESOURCE_HUD_W, resourceHudHeight } = await_resourceHud;
+  const { HUD_COLUMN_W, resourceHudHeight } = await_resourceHud;
   const { POTION_CELL_GAP, POTION_CELL_W } = await_potions;
   const { PARTY_FRAMES_PLACEMENT, partyFramesFrame } = await_partyFramesLayout;
   type Box = { x: number; y: number; width: number; height: number };
@@ -6998,27 +7048,36 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
   const overlaps = (a: Box, b: Box) =>
     a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-  /** The stack: the XP bar, the bars at their tallest, the potion cell beside them, four frames. */
+  /**
+   * The spectate HUD at its widest (`showSpectateHud`): "Watching <a long name>" at 14 px and the
+   * "Tab: next player" hint 30 px under it, centred from y 10, generously.
+   */
+  const spectateHud = (width: number): Box => ({ x: width / 2 - 150, y: 10, width: 300, height: 56 });
+
+  /** The stack: the bars at their tallest, the potion cell beside them, four frames under them. */
   function stack(): Box[] {
-    const xp = { ...PROGRESS_HUD_AT.run, width: PROGRESS_HUD_W, height: PROGRESS_HUD_H };
-    const bars = { ...RESOURCE_HUD_AT.run, width: RESOURCE_HUD_W, height: resourceHudHeight(2) };
+    const bars = { ...RESOURCE_HUD_AT.run, width: HUD_COLUMN_W, height: resourceHudHeight(2) };
     const potion = { ...bars, x: bars.x + bars.width + POTION_CELL_GAP, width: POTION_CELL_W };
     const { x, top } = PARTY_FRAMES_PLACEMENT.run;
-    return [xp, bars, potion, ...partyFramesFrame(4, x, top).map((f) => f.row)];
+    return [bars, potion, ...partyFramesFrame(4, x, top).map((f) => f.row)];
   }
 
-  it("should stand the XP bar at (10, 16), the bars at (10, 56) and the frames from y 132", () => {
-    expect(PROGRESS_HUD_AT.run).toEqual({ x: 10, y: 16 });
-    expect(RESOURCE_HUD_AT.run).toEqual({ x: 10, y: 56 });
-    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 132 });
+  it("should stand the bars at (10, 16), as a field's, and the frames from y 92", () => {
+    expect(RESOURCE_HUD_AT.run).toEqual({ x: 10, y: 16 });
+    expect(PARTY_FRAMES_PLACEMENT.run).toEqual({ x: 10, top: 92 });
   });
 
   it.each([1080, 1280])(
-    "should keep the stack inside the canvas and clear of either target frame, the top-right column and the dev readout at logical width %i",
+    "should keep the stack inside the canvas and clear of either target frame, the spectate HUD, the top-right column and the dev readout at logical width %i",
     (width) => {
       const view = { width, height: 720 };
       const corner = anchorAt(TOP_RIGHT_EDGE, view);
-      const frames = [targetFrameRect(width / 2, TARGET_FRAME), targetFrameRect(width / 2, TARGET_BOSS_FRAME)];
+      // the top centre: either target frame and the spectate HUD
+      const centred = [
+        targetFrameRect(width / 2, TARGET_FRAME),
+        targetFrameRect(width / 2, TARGET_BOSS_FRAME),
+        spectateHud(width),
+      ];
       const parts = stack();
       // the minimap normal, enlarged (FS-1SEF0 §B), or none in the corner (no regions, the overlay)
       const panels = [
@@ -7036,7 +7095,7 @@ describe("the run's top-left stack, moved up (FS-56CKV §D)", () => {
         const at = positionReadoutPlace({ minimap: c.minimap, column: { right: corner.x, bottom: c.bottom } });
         const readout = { x: at.x - at.origin.x * READOUT.width, y: at.y - at.origin.y * READOUT.height, ...READOUT };
         const icons = [...(c.modeIcon ? [c.modeIcon.hit] : []), ...(name ? [name] : [])];
-        const others = [...frames, ...(c.minimap ? [c.minimap] : []), ...icons, line(c.floor), line(c.escaped), readout];
+        const others = [...centred, ...(c.minimap ? [c.minimap] : []), ...icons, line(c.floor), line(c.escaped), readout];
         for (const part of parts) for (const other of others) expect(overlaps(part, other)).toBe(false);
       }
       for (const part of parts) {
@@ -7231,7 +7290,7 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
 
   // §E.14: at the view's two ends, clear of the notice band, the top-right column (the escaped
   // count, the floor indicator and FS-SRA9J's 216 px minimap) and the top-left
-  // progress bar
+  // column (180 wide from x 10)
   it.each([1080, 1280])("should stand clear of the rest of the top HUD at logical width %i", (width) => {
     const view = { width, height: 720 };
     const r = targetFrameRect(width / 2);

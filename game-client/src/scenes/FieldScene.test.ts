@@ -118,6 +118,8 @@ function fieldOnStage() {
       texts.push(content);
       return any;
     },
+    // the XP bar's (FS-77DVN §C.13)
+    graphics: () => any,
   };
   field.cameras = { main: { width: 800, startFollow: vi.fn() } };
   field.time = { delayedCall: vi.fn() };
@@ -2953,5 +2955,82 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/gearChanged: \(\) => this\.gameplaySounds\?\.play\("item_swap"\)/);
+  });
+});
+
+const { ProgressHud } = await import("@/ui/ProgressHud");
+
+// FS-77DVN §C.13, §C.14, §A.4 (I-77DVN-1): a field shows the player's own XP bar, as the hub does.
+describe("FieldScene the XP bar along the bottom (FS-77DVN §C.13, §C.14, §A.4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const levelled = (player: Record<string, unknown> = {}) => ({
+    world_type: "field",
+    current_player: {
+      entity_id: "me",
+      position: ARRIVAL,
+      current_health: 100,
+      level: 5,
+      experience: 450,
+      level_floor: 400,
+      next_level_at: 600,
+      ...player,
+    },
+    other_players: [{ entity_id: "them", position: ARRIVAL, level: 9, experience: 1, level_floor: 0, next_level_at: 9 }],
+    walls: [],
+    gates: [ROAD_HOME],
+  });
+
+  it("should mount the bar from current_player, the player's own progress", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { field } = fieldOnStage();
+
+    field.renderState(levelled());
+
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledWith({ level: 5, experience: 450, level_floor: 400, next_level_at: 600 });
+  });
+
+  it("should draw no bar for a state that carries no level", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { field } = fieldOnStage();
+
+    field.renderState(levelled({ level: undefined }));
+
+    expect(show).not.toHaveBeenCalled();
+    expect((field as unknown as { progressHud?: unknown }).progressHud).toBeUndefined();
+  });
+
+  it("should keep the bar up while the player has fallen", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { field } = fieldOnStage();
+    Object.assign(field, { showFallen: vi.fn(), drainFallen: vi.fn() });
+
+    field.renderState(levelled());
+    field.renderState(levelled({ current_health: 0 }));
+
+    expect(show).toHaveBeenCalledTimes(2);
+  });
+
+  it("should place the bar again when the view changes", () => {
+    const relayout = vi.spyOn(ProgressHud.prototype, "relayout");
+    const { field } = fieldOnStage();
+    field.renderState(levelled());
+
+    (field as unknown as { relayoutHud(): void }).relayoutHud();
+
+    expect(relayout).toHaveBeenCalledTimes(1);
+  });
+
+  it("should let the bar go with the field", () => {
+    const { field } = fieldOnStage();
+    field.renderState(levelled());
+    expect((field as unknown as { progressHud?: unknown }).progressHud).toBeDefined();
+
+    field.release("shutdown");
+
+    expect((field as unknown as { progressHud?: unknown }).progressHud).toBeUndefined();
   });
 });

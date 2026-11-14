@@ -28,7 +28,7 @@ import {
   type FieldDestination,
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
-import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
+import { ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
@@ -298,7 +298,7 @@ const NPC_TALK_RANGE = 80;
 
 /** Screen px between the queue panel and its Leave button. */
 const LEAVE_GAP = 8;
-/** A passing notice: where it sits (screen px from the top, under the progress bar) and for how long. */
+/** A passing notice: where it sits (screen px from the top, centred) and for how long. */
 const NOTICE_Y = 72;
 /** The queue panel's top edge: centred at the top, above the notice band (moved off the chat window). */
 const QUEUE_Y = 20;
@@ -719,7 +719,7 @@ export class HubScene extends Phaser.Scene {
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   private partyPanel?: PartyPanel;
-  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
+  /** The teammates' frames in the top-left corner (FS-R82NV R34, FS-77DVN §E.18). */
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
   private invitePrompt?: PartyInvitePrompt;
@@ -1104,12 +1104,14 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
-   * its anchor, open panels included, their state untouched. The level bar, the chat window and
-   * the party frames keep to the left, which a width change does not move; the gear
-   * overlay follows Phaser's resize itself.
+   * its anchor, open panels included, their state untouched. The chat window and the party frames
+   * keep to the left, which a width change does not move; the gear overlay follows Phaser's
+   * resize itself.
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
+    // the XP bar keeps to the bottom middle (FS-77DVN §A.4)
+    this.progressHud?.relayout();
     this.minimap?.place();
     this.invitePrompt?.relayout();
     this.readyCheck?.relayout();
@@ -2180,11 +2182,7 @@ export class HubScene extends Phaser.Scene {
 
       const progress = progressOf(state.current_player);
       if (progress) {
-        this.progressHud ??= new ProgressHud(
-          this,
-          PROGRESS_HUD_AT.hub.x,
-          PROGRESS_HUD_AT.hub.y,
-        );
+        this.progressHud ??= new ProgressHud(this);
         this.progressHud.show(progress);
       }
 

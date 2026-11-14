@@ -65,9 +65,9 @@ import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds"
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds, containerOpenEffect } from "@/audio/gameplaySounds";
 import { drawPanelTitle } from "@/ui/panelFrame";
-import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
+import { ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
+import { HUD_COLUMN_W, RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { PotionHud } from "@/ui/PotionHud";
 import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
@@ -290,8 +290,8 @@ const PLAYER_FOOTPRINT_RADIUS = 20;
  */
 const RESOLVED_CARD_DEPTH = 1500;
 /**
- * Screen y of the spectate HUD (req 9): top centre, between the top-left stack (the XP bar from
- * y 16) and the top-right column (the minimap, the floor indicator, the escaped count, in that
+ * Screen y of the spectate HUD (req 9): top centre, between the top-left stack (the resource bars
+ * from y 16, FS-77DVN §E.17) and the top-right column (the minimap, the floor indicator, the escaped count, in that
  * order, FS-56CKV §B); the dev position readout left the top edge for the minimap's corner (§C).
  */
 const SPECTATE_HUD_Y = 10;
@@ -331,21 +331,13 @@ const BUTTON_W = 200;
 const BUTTON_H = 38;
 const BUTTON_GAP = 16;
 /**
- * Where the level and experience bar sit (FS-BDA7X req 42): top-left, at the top of the stack
- * since the dev position readout left it (FS-56CKV §D.20), and clear of the notice band (100–150)
- * across the middle of the screen (`PROGRESS_HUD_AT`, which the resource bars and the party
- * frames stand under).
- */
-const PROGRESS_HUD_X = PROGRESS_HUD_AT.run.x;
-const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
-/**
- * Where the Health and class resource bars sit (FS-8AY7S req 20): top-left, under the progress bar
- * on its left edge (`RESOURCE_HUD_AT`), with the party frames under them.
+ * Where the Health and class resource bars sit (FS-8AY7S req 20): the very top left, a field's
+ * place (`RESOURCE_HUD_AT`, FS-77DVN §E.17), with the party frames under them.
  */
 const RESOURCE_HUD_X = RESOURCE_HUD_AT.run.x;
 const RESOURCE_HUD_Y = RESOURCE_HUD_AT.run.y;
 /** The potion cell (FS-P9G8R R24): just right of the resource bars, top-aligned with them. */
-const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
+const POTION_HUD_X = RESOURCE_HUD_X + HUD_COLUMN_W + POTION_CELL_GAP;
 /**
  * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
  * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
@@ -695,7 +687,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
   private potionHud?: PotionHud;
   private partyPanel?: PartyPanel;
-  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
+  /** The teammates' frames on the left edge, under the resource bars (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
   /** Invites waiting on an answer, top centre, Accept greyed while delving (FS-NCC9J R24). */
   private invitePrompt?: PartyInvitePrompt;
@@ -3464,13 +3456,15 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The logical view changed (FS-ZAJMH R13): every widget that keeps to the right or the centre
-   * goes back to its anchor, the open ones included, their state untouched. The bars, the level
-   * bar, the chat window and the party frames and panel keep to the left and the bottom, which a
-   * width change does not move; the gear overlay follows Phaser's resize itself; a passing notice
+   * goes back to its anchor, the open ones included, their state untouched. The bars, the chat
+   * window and the party frames and panel keep to the left and the bottom, which a width change
+   * does not move; the gear overlay follows Phaser's resize itself; a passing notice
    * is gone in moments and stays where it was said.
    */
   private relayoutHud(): void {
     this.placeTopRightColumn();
+    // the XP bar keeps to the bottom middle (FS-77DVN §A.4)
+    this.progressHud?.relayout();
     this.spectateHud?.watching.setX(viewport.centerX);
     this.spectateHud?.hint.setX(viewport.centerX);
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
@@ -5425,7 +5419,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.characterLevel = progress?.level;
     this.equipment?.setCharacterLevel(this.characterLevel);
     if (!progress) return;
-    this.progressHud ??= new ProgressHud(this, PROGRESS_HUD_X, PROGRESS_HUD_Y);
+    // along the bottom middle, dead, spectating or escaped alike (FS-77DVN §A, §C.14)
+    this.progressHud ??= new ProgressHud(this);
     this.progressHud.show(progress);
   }
 
