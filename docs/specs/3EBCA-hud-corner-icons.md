@@ -1139,3 +1139,5 @@ For the whole row:
 ## Change: The corner row is embossed → FS-S8Z2Y
 
 ## Change: The run's controls badge and the controls panel's rules → FS-84N1G
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

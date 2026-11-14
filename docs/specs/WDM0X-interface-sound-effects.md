@@ -1041,3 +1041,5 @@ review of pass 2 (the chat):
 
 The owner's listening check stays I-WDM0X-21, and the batch's I-TQZ5J-55 carries the table of where each
 chat sound plays.
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

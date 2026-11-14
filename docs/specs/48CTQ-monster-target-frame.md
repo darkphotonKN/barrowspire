@@ -337,3 +337,5 @@ players; a target lock key or click-to-select; damage numbers; new art; changing
 the strike-mark cursor; a pixel-exact (alpha) hit test on monsters; party members' bars (FS-CH21F),
 which keep their look; the target frame panel's own rim; floating damage numbers; a bar for a monster
 hovered at full health on floor 1 (the frame names it).
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

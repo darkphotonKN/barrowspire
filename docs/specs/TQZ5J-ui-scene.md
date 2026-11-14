@@ -2080,3 +2080,5 @@ chat's one sound per press); the owner's check is I-TQZ5J-55. No screenshots (th
   on the window with the field focused. `SceneKeyboard` and `typingGuard` live in `worldKeyboard.ts`. Each
   world reports `invitesAboveChat` (a field and the run), read by `partyPromptWiring`; `UiChatSlot.floor()`
   became `topEdge()`. `RUN_BUTTON_H` in `hudCornerLayout.ts` is every run button's height.
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

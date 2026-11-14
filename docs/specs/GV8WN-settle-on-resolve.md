@@ -481,3 +481,5 @@ S8. **The offset across updates.** A `settlement` that changes only the status (
 - Refactoring `LetterPanel` or sharing its scroll code; the record only follows its pattern.
 - Rewording any thin line; `Toggleable settlement record while in the run → FS-GV8WN` still holds.
 - Grouping, sorting or summarising the rows beyond today's unsafe-before-consumed order.
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

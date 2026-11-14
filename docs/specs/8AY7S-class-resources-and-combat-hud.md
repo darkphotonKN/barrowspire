@@ -359,3 +359,5 @@ changes.
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
 
 ## Change: Panel shortcut icons on the HUD → FS-3EBCA
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

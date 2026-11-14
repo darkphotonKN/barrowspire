@@ -684,3 +684,203 @@ because it changes R2's, R3's and R10's buttons.
   order watch, leave, settlement. Centred across, unless centring would bring it within 12 px of the open
   chat window at the bottom left; then it starts 12 px right of the window (x 442). The card keeps its
   place, its buttons centred on it 8 apart; the corner button keeps its corner.
+
+## Change: The party death flow and the spectate switcher
+Status: work-order
+Date: 2026-11-14
+
+Scoped and promoted in one run under the owner's approved change (2026-11-14), with the integrator's
+defaults; no interview. The owner's words **[owner]**; what the code forces (read on feat/client-ui-scene,
+a0482fe6) **[code]**; a default applied to a case nobody named, *Derived*. Numbered from R150. Nothing
+above is edited; this section changes R1, R2, R8–R10 and the § Amendment 2026-11-14's corner button, and
+touches FS-GV8WN R21, FS-TQZ5J R47 and R57, FS-WDM0X § Pass 2b, FS-48CTQ §E.15, FS-3EBCA R14, FS-8AY7S
+R24 and FS-P9G8R R24 (each carries a pointer stub).
+
+**The owner's words.** For a player who dies while a teammate is still in play: only the settlement record
+pops up; its CLOSE brings the card with WATCH and LEAVE; 「settlement在跳出watch leave跳窗時不要出現」 (no
+SETTLEMENT while the WATCH/LEAVE card is up); WATCH starts spectating with SETTLEMENT and LEAVE side by side
+at the bottom centre, 「settlement跟leave低一點」 (lower than today's row), the corner LEAVE folded into it;
+「切換箭頭就放在上方一些」 (the switching arrows a little above them): ◄ Watching <name> ►; 「畫面正上方好像
+已經有相關資訊 那就把上面的資訊刪除」 (delete the top-centre spectate text). Later the same day:
+「左上角的個人血量魔量不用隱藏 就顯示死亡時的狀態就好了」 (the player's own Health and mana at the top left
+need not hide; show them as they were at death). Solo death and escape unchanged.
+
+**The owner's process.** No screenshots or parity shots. The checks are the full client vitest, `tsc
+--noEmit`, `npm run lint` and `npm run lint:fence`; the look and the sounds are the owner's check (HITL).
+
+**Lane.** game-client only. No server, proto, gateway or manifest change.
+
+### Facts (verified 2026-11-14 on feat/client-ui-scene, a0482fe6)
+
+- **The order a death arrives in.** game-service settles a fallen member inside the tick's `step`
+  (`recordEliminations` → `settleDeath` → `handOff`, which sends `settlement`) and broadcasts the state after
+  it (`manageGameLoop`: `step`, then `broadcastFullState`). So the record normally arrives just before the
+  first state that shows the death. A member whose snapshot fails is settled at the run's end and gets no
+  record (FS-GV8WN Edge States). **[code]**
+- **Today, a death with a teammate in play.** The `settlement` opens the record (`showSettlement` →
+  `openRecord`, `endPopsUp`: one `dialog_open`, the party panel and the moved windows shut silently, R47,
+  R58), and the next state puts up the card "The barrow keeps you" (`syncResolvedView` →
+  `showResolvedCard`) under it, with SETTLEMENT alone in the bottom-centre row (`resolvedRow`). WATCH takes
+  the card down, puts LEAVE in the bottom-right corner (`placeLeaveInCorner`, `leaveButtonPlace`, above the
+  corner row) and the spectate HUD at the top centre (`showSpectateHud`: "Watching <name>" at
+  `SPECTATE_HUD_Y` 10 and "Tab: next player" 30 under it). **[code]**
+- **The record's Close.** The UI scene's `UiRecordSlot` plays `menu_click`, then requests `close: record`,
+  which the run answers with `closeRecord` (FS-TQZ5J R57). **[code]**
+- **The target frame.** `updateTargetFrame` hides it while the spectate HUD stands (`covered =
+  this.spectateHud !== undefined || this.arrivalCard.up`, FS-48CTQ §E.15). **[code]**
+- **The own bars.** `hudBars` returns none once the player is out of the delve (FS-8AY7S R24), and
+  `potionCell` stands exactly when the bars do (FS-P9G8R R24); the run sends both each state
+  (`showResourceBars`). The level bar (`showProgress`) is sent on every state with the player's own
+  progress and never hides on resolving. The ability card is down while resolved (`abilityCard`). **[code]**
+- **The shared pieces.** `drawHudButton` (`PartyPanel.ts`): a 1 px brass-outlined HUD button, live or greyed,
+  its sounds by `hudButtonSounds` (`menu_hover` on the pointer coming over, `menu_click` on the release,
+  `menu_error` on a greyed one's release), no cursor of its own. The options slider's arrows are triangles
+  drawn in code (8 × 12), since the canvas body face has no ◄ or ►. **[code]**
+- **The corner row** at 720 tall: its plates y 658–704, from x W − 294 to W − 16; its hover label's bottom
+  at y 652 (12 px text, 3 px padding: about y 631–652). The open chat window: x 10–430, y 468–704 at every
+  width. **[code]**
+
+### Requirements
+
+**Who.** **150.** This change is the dead player's with a teammate still in play (`resolvedView` dead). A
+solo death, a solo escape, the last of a party to resolve and the escaped player's offer before WATCH (R3 as
+amended: WATCH, LEAVE, SETTLEMENT 200 above the bottom margin) are unchanged. **[owner]**
+
+**The record first.**
+
+151. **The record alone.** The death's `settlement` opens the record as today, with the end's one
+     `dialog_open` (FS-WDM0X E1) and the silent closes (FS-TQZ5J R47, R58). While it is up and the card has
+     not yet stood, no card and no bottom-centre button stand: the dead player's row is empty until they
+     watch (R156). **[owner]**
+152. **CLOSE brings the card.** The card stands for the dead player with a teammate in play, not watching,
+     whenever the record is not up: so the record's first close puts it up, with WATCH and LEAVE, as today's
+     card. Once WATCH is pressed the card never comes again (spectating, R12's end rules unchanged); a close
+     once the run has ended brings nothing (the held town comes in, FS-GV8WN R23). **[owner]**
+153. **CLOSE's one sound.** The close that brings the card plays `dialog_open` alone, in place of
+     `menu_click`: one press closes the record and opens the card, and FS-WDM0X S3 has the new window's open
+     sound play alone, as E3 (SETTLEMENT bringing the record back) and M11 (Fall opening its confirm) do.
+     Every other close of the record plays `menu_click` (E5). The R47/R58 closes are not repeated (the end
+     popped up once). *Derived* (the owner asked for the choice to be named).
+     - **Who plays it.** The run, which alone knows what the close brings: the record slot's Close requests
+       `close: record` and plays nothing; the run's answer plays `dialog_open` or `menu_click`, then acts,
+       so a close that lets a held town in is still heard as it leaves (E5). The slot keeps the hover
+       (`menu_hover`, E4). No function crosses the bridge (ADR-0081); FS-TQZ5J R57's "Close plays
+       `menu_click`, then sends `close: record`" reads "Close sends `close: record`; the run plays its
+       sound". *Derived* (an alternative, a sound named in the record's data, would go stale as teammates
+       resolve between the send and the press).
+154. **No SETTLEMENT while the card is up** (nor before it, R151): the card's two buttons are the only way
+     on. **[owner]**
+155. **No record, the card at once.** A dead player whose death shows before any record (a record that
+     never comes, or comes late) gets the card at once, chiming the end as today (E1). A record arriving
+     later opens over it as today and plays nothing (E1's edge "the card first, the record late"); its close
+     brings nothing more (the card stands). *Derived* (fallback, so no dead player is left without a way
+     on).
+156. **The card's LEAVE** leaves, as today (R13, R14). **[owner]**
+
+**The spectate controls.**
+
+157. **WATCH** takes the card down and starts spectating (R7). The spectate controls stand while this player
+     watches, dead or escaped: the row and the switcher below. **[owner; Derived for the escaped]**
+158. **The row.** LEAVE, then SETTLEMENT once a record has come, left to right 8 apart, each its label's
+     width plus 24 a side, 38 high (FS-TQZ5J R120–R122), their bottom **70** above the view's bottom (at 720
+     tall: y 612–650, the line y 631). Centred across unless centring would bring it within 12 of the open
+     chat window's right edge; then its left edge is 442 (FS-TQZ5J R123's rule). In the HUD band (1000, hit
+     areas 1001), in the world (ADR-0083 2.3). **[owner]** It meets neither the corner row's plates (y 658
+     and down) nor their hover labels: at 1080 its right edge is 688 and the leftmost label's left edge
+     about 750; at 1280, 763 and about 950. The default 70 clears both, so no lower y was needed.
+     - **The corner LEAVE folds in.** The dead spectator's LEAVE is the row's; the bottom-right corner
+       button and `leaveButtonPlace` go. **[owner]**
+     - **The escaped spectator** has the same row (their LEAVE and SETTLEMENT, FS-GV8WN R25), moved down
+       with it as they watch: one place for every spectator's controls. *Derived* (the top text goes for every
+       spectator, so the switcher stands for every spectator, over this row).
+159. **The switcher.** "◄ Watching <name> ►", 8 above the row (at 720 tall: y 576–604), 28 high, centred on
+     the row's centre (the view's centre with no row), never left of 442 (the chat rule). Its look is neutral
+     HUD out of the shared pieces: one `hudPanel` backing across it, the words "Watching <name>" in vellum
+     (`hudText`) 14 px EB Garamond, 10 px padding each side; each arrow a 28 × 28 `drawHudButton` (the 1 px
+     brass outline, live or greyed) with the options slider's 8 × 12 triangle drawn in code, amber
+     (`interactable`) while live and `hudFaint` greyed. Its width is the words' plus 76. **[owner; Derived
+     for the measures]**
+160. **Switching.** ► watches the next teammate in play and ◄ the previous one, in R8's stable order, round
+     at either end. Tab still goes to the next. The player's own body is never in the cycle. **[owner]**
+161. **Its sounds.** A live arrow plays `menu_hover` as the pointer comes onto it and `menu_click` on the
+     press's release, once, as it switches (FS-WDM0X E4, E5; the party's buttons, P5, P6). No cursor of its
+     own: the bone hand stays (FS-KYPQ9 § Change: Every hover keeps the bone hand). Tab plays nothing (§
+     Pass 2b Out of Scope: the spectate HUD's Tab). **[owner]**
+162. **Greyed with one.** With one teammate in play the arrows are greyed: no hover sound, and a press plays
+     `menu_error` and changes nothing (E6, P7). They come live as soon as two are in play again. **[owner]**
+163. **The top text goes.** "Watching <name>" and "Tab: next player" at the top centre are no longer drawn;
+     `SPECTATE_HUD_Y` goes. The switcher says whose eyes (R9's "who"); its arrows are the visible control
+     (R9's hint). **[owner]**
+164. **The target frame while spectating** follows its own rules: with nothing at the top centre, it is no
+     longer hidden while the player watches (FS-48CTQ §E.15); only the floor veil and the arrival card still
+     cover it (§E.16). An intended look change for the owner. **[owner]**
+165. **The record while spectating.** SETTLEMENT opens it (`dialog_open`, E3); its CLOSE or SETTLEMENT
+     closes it (`menu_click`) and the player is spectating as before: the card does not come again, and the
+     row and the switcher stand as they stood. The record keeps its anchor (FS-TQZ5J R124): its bottom 12
+     over the 200-lift line, clear above the switcher. **[owner]**
+166. **A new logical view** puts the row and the switcher back in their places at once; nothing plays
+     (E2). **[Derived]**
+167. **Never over UI pieces.** The record stays the UI scene's; the card, the row and the switcher stay the
+     world's (ADR-0083 2.3) and meet no UI piece: at every logical width from 1080 to 1280 neither the row
+     nor the switcher meets the open chat window or its open picker list, nor the corner row or its hover
+     label. **[owner]**
+
+**The own bars.**
+
+168. **They stay, frozen, out of the delve.** In a run, the player's own Health and class resource bars no
+     longer hide once the player is out of the delve. The first state that shows them dead or escaped
+     fixes them as that state draws them (Health at 0 on a death; the resource as it was), and they stand so,
+     unchanged by later states and by watching a teammate (they are always the player's own), until the run
+     scene stops; a state that drops the player's own (an escaped player's) keeps them. **[owner]**
+     - **The potion cell** stands beside them by the same rule today (FS-P9G8R R24: up exactly when the bars
+       are), so it stays too, frozen with its count. The drink key still sends nothing once out of the
+       delve. *Derived* (the owner's "same rule" test).
+     - **The level bar** never hid on resolving: unchanged. **[code]**
+     - **An escape** hides the bars by the same rule as a death (FS-8AY7S R24), so the bars stay there too,
+       frozen at the escape. *Derived* (the owner's "same rule" test).
+     - **Unchanged:** the ability card and the controls badge (down while resolved), and a field's bars (down
+       while the player lies fallen). **[owner]**
+
+### Acceptance Criteria
+
+- [ ] A death with a teammate in play: the record alone (one `dialog_open`, no card, no row); its CLOSE
+      brings the card with WATCH and LEAVE and plays `dialog_open` alone; no SETTLEMENT while the card is up.
+- [ ] The card's LEAVE sends `leave_run` as today.
+- [ ] WATCH: the card down; LEAVE and SETTLEMENT side by side at the bottom centre, their bottom 70 above
+      the view's bottom; the switcher 8 above them naming the watched teammate; no corner LEAVE.
+- [ ] SETTLEMENT while spectating opens the record (`dialog_open`); closing it plays `menu_click`, brings no
+      card, and leaves the row and the switcher as they were.
+- [ ] ► next, ◄ previous, round; Tab next; live arrows `menu_hover` and `menu_click` on the release; with
+      one teammate in play both greyed, a press `menu_error` and no change; no cursor of their own.
+- [ ] No "Watching" or "Tab: next player" text at the top centre; the target frame is not hidden while
+      spectating.
+- [ ] The row and the switcher meet neither the open chat window nor its open list, nor the corner row or
+      its hover label, at every logical width from 1080 to 1280; their rects pinned at 1080 and 1280.
+- [ ] A death shown before any record: the card at once, one `dialog_open`, as today.
+- [ ] Solo death, solo escape and the escaped player's offer before WATCH: as today.
+- [ ] The own Health and resource bars and the potion cell stay up, frozen at the death or the escape;
+      watching a teammate leaves them the player's own; the ability card stays down; a field's bars as today.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's look and listening check (HITL).
+
+### Edge States
+
+- **The teammate resolves while the record is up.** Nobody is left: the run ends on the next tick, and
+  the close brings no card (R152); the close plays `menu_click`.
+- **The party panel or a gear window opened over the record, then CLOSE.** The card comes up under it; the
+  end popped up once, so nothing shuts it again (FS-TQZ5J R47's edge "a reopened panel can cover the end's
+  buttons again").
+- **The watched teammate resolves.** The camera moves on (R11) and the switcher names the next; with one
+  left the arrows grey.
+- **A Leave pending.** The row's LEAVE dims and a press plays `menu_error` (E6), as the corner's did.
+- **The run ends while spectating.** `end_game` takes the row and the switcher down, plays nothing; the
+  record, if open, holds the town (FS-GV8WN R23).
+- **A very long name.** The switcher grows with it, centred on the row, its left edge never under 442; a
+  name long enough to reach the view's right edge is not cut. Named, not designed.
+- **A view under 1080 or over 1280 wide.** The rule holds: neither left edge goes under 442.
+
+### Out of Scope
+
+- Moving the card, the row or the switcher into the UI scene; the card's own look and words.
+- The escaped player's offer before WATCH; the record's look, anchor and scroll.
+- Any server, proto or gateway change.
