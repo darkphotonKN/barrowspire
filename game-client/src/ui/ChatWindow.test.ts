@@ -43,6 +43,22 @@ interface FakeText {
   mask?: FakeMask;
   /** The holder (a Phaser Layer) the text was moved into, if any. */
   holder?: FakeHolder;
+  /** The object the window holds, as Phaser lists it under the pointer (`currentlyOver`). */
+  obj?: object;
+}
+
+/** A ground the window stands on the UI scene (a Phaser Zone): its rect, depth and input. */
+interface FakeZone {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  depth?: number;
+  scroll?: number;
+  interactive: boolean;
+  handCursor: boolean;
+  destroyed: boolean;
+  obj: object;
 }
 
 interface FakeMask {
@@ -91,6 +107,24 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
     resetKeys: () => undefined,
   });
   const input = Object.assign(new EventEmitter(), { keyboard: keys });
+  const zones: FakeZone[] = [];
+  const zone = (x: number, y: number, width: number, height: number) => {
+    const self: Record<string, unknown> = {};
+    const z: FakeZone = { x, y, width, height, interactive: false, handCursor: false, destroyed: false, obj: self };
+    zones.push(z);
+    Object.assign(self, {
+      setOrigin: () => self,
+      setScrollFactor: (sf: number) => ((z.scroll = sf), self),
+      setDepth: (d: number) => ((z.depth = d), self),
+      setInteractive: (config?: { useHandCursor?: boolean }) => (
+        (z.interactive = true), (z.handCursor = !!config?.useHandCursor), self
+      ),
+      setPosition: (nx: number, ny: number) => ((z.x = nx), (z.y = ny), self),
+      setSize: (w: number, h: number) => ((z.width = w), (z.height = h), self),
+      destroy: () => void (z.destroyed = true),
+    });
+    return self;
+  };
 
   const graphics = (masks = false) => {
     const g = {
@@ -190,6 +224,7 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
       },
     };
     textOf.set(self, t);
+    t.obj = self;
     return self;
   };
   // a Phaser Layer: no transform and no size, so its filters focus the camera's context
@@ -224,7 +259,7 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
   const events = new EventEmitter();
   const scene = {
     events,
-    add: { graphics: () => graphics(), text, layer },
+    add: { graphics: () => graphics(), text, layer, zone },
     make: { graphics: () => graphics(true) },
     cameras: { main: { originX: 0, originY: 0 } },
     input,
@@ -238,14 +273,16 @@ function fakeScene(heightOf: (content: string) => number = () => 18) {
     const m = chatWindowFrame(X, bottom).messages;
     return shown().filter((t) => t.y >= m.y && t.y < m.y + m.height);
   };
-  const wheel = (x: number, y: number, dy: number) =>
-    input.emit("wheel", { x, y }, [], 0, dy);
+  /** A wheel over (x, y), with what Phaser lists top-most there (`currentlyOver`): nothing, by default. */
+  const wheel = (x: number, y: number, dy: number, over: object[] = []) =>
+    input.emit("wheel", { x, y }, over, 0, dy);
   const press = (key: string) => keys.emit(`keydown-${key}`);
   return {
     scene,
     shown,
     messageTexts,
     panels,
+    zones,
     maskRecords,
     holders,
     masksLaid: () => masksLaid,
@@ -809,9 +846,9 @@ describe("ChatWindow covers (R31)", () => {
     const { window } = rig();
     const panel = chatWindowFrame(X, BOTTOM).panel;
 
-    expect(window.covers(panel.x + 5, panel.y + 5)).toBe(true);
-    expect(window.covers(panel.x + panel.width + 5, panel.y + 5)).toBe(false);
-    expect(window.covers(panel.x + 5, panel.y - 5)).toBe(false);
+    expect(window.keepsField(panel.x + 5, panel.y + 5)).toBe(true);
+    expect(window.keepsField(panel.x + panel.width + 5, panel.y + 5)).toBe(false);
+    expect(window.keepsField(panel.x + 5, panel.y - 5)).toBe(false);
   });
 });
 
@@ -843,7 +880,7 @@ describe("ChatWindow folding", () => {
     button.onPress?.();
 
     expect(s.store.getState().folded).toBe(false);
-    expect(s.window.covers(corner.x + 2, corner.y + 2)).toBe(true);
+    expect(s.window.keepsField(corner.x + 2, corner.y + 2)).toBe(true);
 
     button.onRelease!();
     expect(s.store.getState().folded).toBe(true);
@@ -859,10 +896,10 @@ describe("ChatWindow folding", () => {
     expect(s.messageTexts()).toHaveLength(0);
     expect(s.shown().some((t) => t.content === "Area")).toBe(false);
     expect(
-      s.window.covers(X + 5, chatWindowFrame(X, BOTTOM).messages.y + 5),
+      s.window.keepsField(X + 5, chatWindowFrame(X, BOTTOM).messages.y + 5),
     ).toBe(false);
     expect(
-      s.window.covers(X + 5, chatWindowFrame(X, BOTTOM, true).input.y + 5),
+      s.window.keepsField(X + 5, chatWindowFrame(X, BOTTOM, true).input.y + 5),
     ).toBe(true);
 
     clickFold(s);
@@ -1018,9 +1055,9 @@ describe("ChatWindow canvas channel picker (FS-J267Q, I-J267Q-1)", () => {
 
   it("should say the picker and the open list are its own, so the scene neither moves nor attacks there", () => {
     const s = inputRig();
-    expect(s.window.covers(mid(picker).x, mid(picker).y)).toBe(true);
+    expect(s.window.keepsField(mid(picker).x, mid(picker).y)).toBe(true);
     click(s, mid(picker));
-    expect(s.window.covers(mid(list.box).x, mid(list.box).y)).toBe(true);
+    expect(s.window.keepsField(mid(list.box).x, mid(list.box).y)).toBe(true);
   });
 
   it("should highlight the open row under the pointer", () => {
@@ -1279,40 +1316,46 @@ describe("ChatWindow opacity", () => {
 
 // ── The scrollbar (asked 2026-10-31) ────────────────────────────────────────────────────────
 
-describe("ChatWindow under a panel drawn over it (the letter panel, FS-1GZGD R40)", () => {
+// FS-TQZ5J § Change: Batch 6, R130 (batch 4's R106): the window acts on a scene-wide event only with
+// nothing or one of its own objects top-most under the pointer; any other UI piece drawn above it is its cover
+describe("ChatWindow under a UI piece drawn over it (FS-TQZ5J § Change: Batch 6, R130)", () => {
   const frame = chatWindowFrame(X, BOTTOM);
   const track = chatScrollTrack(frame);
   const overMessages = { x: frame.messages.x + 20, y: frame.messages.y + 20 };
+  /** Another UI piece's object, as Phaser lists it top-most (the letter panel's ground, the record's). */
+  const OTHER = {};
 
   function covered() {
     const store = createChatStore();
     const s = fakeScene();
-    let over = true;
-    new ChatWindow(s.scene, store, X, BOTTOM, { coveredAt: () => over });
+    new ChatWindow(s.scene, store, X, BOTTOM);
     for (let i = 1; i <= 20; i++) store.getState().receive(stamped(`l${i}`));
     const contents = () =>
       s.messageTexts().map((t) => t.content.replace(/^Wren: /, ""));
-    return { ...s, contents, uncover: () => (over = false) };
+    const ground = () => s.zones.find((z) => !z.destroyed)!.obj;
+    return { ...s, contents, ground };
   }
 
-  it("should not scroll the lines on a wheel under the panel", () => {
+  it("should not scroll the lines on a wheel under another piece, and scroll on its own ground or on nothing", () => {
     const s = covered();
     const before = s.contents();
-    s.wheel(overMessages.x, overMessages.y, -100);
+    s.wheel(overMessages.x, overMessages.y, -100, [OTHER]);
     expect(s.contents()).toEqual(before);
 
-    s.uncover();
+    s.wheel(overMessages.x, overMessages.y, -100, [s.ground()]);
+    const once = s.contents();
+    expect(once).not.toEqual(before);
     s.wheel(overMessages.x, overMessages.y, -100);
-    expect(s.contents()).not.toEqual(before);
+    expect(s.contents()).not.toEqual(once);
   });
 
-  it("should not grab the scrollbar on a press under the panel", () => {
+  it("should not grab the scrollbar on a press under another piece", () => {
     const s = covered();
     const before = s.contents();
     const midX = track.x + track.width / 2;
-    s.input.emit("pointerdown", { x: midX, y: track.y + 1 });
-    s.input.emit("pointermove", { x: midX, y: track.y + 1 });
-    s.input.emit("pointerup", { x: midX, y: track.y + 1 });
+    s.input.emit("pointerdown", { x: midX, y: track.y + 1 }, [OTHER]);
+    s.input.emit("pointermove", { x: midX, y: track.y + 1 }, [OTHER]);
+    s.input.emit("pointerup", { x: midX, y: track.y + 1 }, [OTHER]);
     expect(s.contents()).toEqual(before);
   });
 });
@@ -1911,19 +1954,17 @@ describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
 
   function heard(open?: ReadonlySet<import("@/stores/chatStore").ChatChannel>) {
     const played: string[] = [];
-    let overUi = false;
-    let covered = false;
+    /** What Phaser lists top-most under the pointer: nothing, or another UI piece over the window. */
+    let over: object[] = [];
     const s = inputRig(undefined, undefined, undefined, open, {
       play: (effect) => void played.push(effect),
-      overUi: () => overUi,
-      coveredAt: () => covered,
     });
     /** A point inside a tab's segment, by its label as drawn. */
     const tabAt = (label: string) => {
       const t = toggleOf(s, label);
       return { x: t.x + 3, y: t.y + 8 };
     };
-    const move = (at: { x: number; y: number }) => s.input.emit("pointermove", at);
+    const move = (at: { x: number; y: number }) => s.input.emit("pointermove", at, over);
     const click = (at: { x: number; y: number }) => {
       s.input.emit("pointerdown", at);
       s.input.emit("pointerup", at);
@@ -1934,8 +1975,7 @@ describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
       tabAt,
       move,
       click,
-      over: (on: boolean) => void (overUi = on),
-      cover: (on: boolean) => void (covered = on),
+      cover: (on: boolean) => void (over = on ? [{}] : []),
     };
   }
 
@@ -2011,14 +2051,15 @@ describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
     expect(s.played).toEqual(["menu_hover", "menu_hover"]);
   });
 
-  it("should play no hover under a UI piece or the letter panel drawn over the window (C4)", () => {
+  it("should play no hover under a UI piece drawn over the window, the letter panel among them (C4; FS-TQZ5J R130)", () => {
     const s = heard();
-    s.over(true);
-    s.move(s.tabAt("Area"));
-    s.over(false);
     s.cover(true);
+    s.move(s.tabAt("Area"));
     s.move(s.tabAt("World"));
     expect(s.played).toEqual([]);
+    s.cover(false);
+    s.move(s.tabAt("World"));
+    expect(s.played).toEqual(["menu_hover"]);
   });
 
   it("should play nothing over the picker, the fold button or the lines (C4)", () => {
@@ -2040,3 +2081,95 @@ describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
     expect(s.sent).toEqual([]);
   });
 });
+
+// FS-TQZ5J § Change: Batch 6, R127, R129–R131: the window on the UI scene stands on grounds of its own, is
+// its own top-most hit even through a redraw, keeps its field for a press on itself, and reports typing
+describe("ChatWindow on the UI scene (FS-TQZ5J § Change: Batch 6, R127, R129–R131)", () => {
+  const frame = chatWindowFrame(X, BOTTOM);
+  const folded = chatWindowFrame(X, BOTTOM, true);
+  const live = (s: ReturnType<typeof fakeScene>) => s.zones.filter((z) => !z.destroyed);
+  const rectOf = (z: FakeZone) => ({ x: z.x, y: z.y, width: z.width, height: z.height });
+
+  it("should stand an interactive ground over its panel at 1000, under the bone hand, made before its own objects", () => {
+    const s = inputRig();
+    const [ground] = live(s);
+    expect(rectOf(ground)).toEqual(frame.panel);
+    expect([ground.depth, ground.scroll, ground.interactive, ground.handCursor]).toEqual([1000, 0, true, false]);
+    // made first, so its tabs, fold button and picker, drawn after at the same depth, stand over it
+    expect(s.zones.indexOf(ground)).toBe(0);
+  });
+
+  it("should move its ground with the panel as it folds and unfolds", () => {
+    const s = inputRig();
+    s.store.getState().toggleFolded();
+    expect(rectOf(live(s)[0])).toEqual(folded.panel);
+    s.store.getState().toggleFolded();
+    expect(rectOf(live(s)[0])).toEqual(frame.panel);
+  });
+
+  it("should stand a ground over the open list wherever it reaches, and take it down as the list shuts", () => {
+    const s = inputRig();
+    s.store.getState().toggleFolded();
+    const picker = chatPickerRect(folded);
+    const at = { x: picker.x + 4, y: picker.y + 4 };
+    s.input.emit("pointerdown", at);
+    s.input.emit("pointerup", at);
+    const list = chatPickerList(folded).box;
+    expect(live(s).map(rectOf)).toContainEqual(list);
+    s.input.emit("pointerdown", at);
+    s.input.emit("pointerup", at);
+    expect(live(s).map(rectOf)).not.toContainEqual(list);
+  });
+
+  it("should take its grounds down with it", () => {
+    const s = inputRig();
+    s.window.destroy();
+    expect(live(s)).toEqual([]);
+  });
+
+  it("should keep typing for a press on its own tab, the tab drawn again by that press (its own, redrawn)", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    const tab = toggleOf(s, "World");
+    const at = { x: tab.x + 3, y: tab.y + 8 };
+    tab.onPress!();
+    // Phaser hands the scene's pointerdown the tab it hit, destroyed by now: still the window's own
+    s.input.emit("pointerdown", at, [tab.obj]);
+    expect(s.field().focused).toBe(true);
+  });
+
+  it("should let go of its field for a press whose top-most hit is another UI piece (A1 R26)", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    s.input.emit("pointerdown", { x: frame.messages.x + 20, y: frame.messages.y + 20 }, [{}]);
+    expect(s.field().focused).toBe(false);
+  });
+
+  it("should keep its field for a press on its panel or its open list, and for none beside them (R131)", () => {
+    const s = inputRig();
+    expect(s.window.keepsField(frame.panel.x + 5, frame.panel.y + 5)).toBe(true);
+    expect(s.window.keepsField(frame.panel.x + frame.panel.width + 5, frame.panel.y + 5)).toBe(false);
+  });
+
+  it("should report the player typing as its input opens and closes, and as it goes while typing (R127)", () => {
+    const typing: boolean[] = [];
+    const s = inputRig(undefined, undefined, undefined, undefined, { typing: (on) => void typing.push(on) });
+    s.press("ENTER");
+    s.field().events!.keyDown("Escape", false, false);
+    s.press("ENTER");
+    s.window.destroy();
+    expect(typing).toEqual([true, false, true, false]);
+  });
+
+  it("should re-read who owns the keys when asked, between frames (R128)", () => {
+    let may = true;
+    const s = inputRig(() => may);
+    s.press("ENTER");
+    s.field().value = "half a line";
+    may = false;
+    s.window.sync();
+    expect(s.field().focused).toBe(false);
+    expect(s.field().value).toBe("");
+  });
+});
+

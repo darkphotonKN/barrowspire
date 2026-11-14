@@ -674,3 +674,60 @@ describe("the gear's, the container's and the record's requests (FS-TQZ5J § Cha
     expect(bridge.world?.blockers().gear ?? false).toBe(false);
   });
 });
+
+// FS-TQZ5J § Change: Batch 6, R127: while the player types in the UI scene's chat, the world reported has
+// its keyboard reset and off, and after it as it was; one that leaves while the player types has it back
+describe("the world's keyboard while the player types (FS-TQZ5J § Change: Batch 6, R127)", () => {
+  function typingWorld(enabled = true) {
+    const bridge = new GameUiBridge();
+    const store = registry();
+    lendUiBridge(store, bridge);
+    const keyboard = { enabled, resets: 0, resetKeys: () => void keyboard.resets++ };
+    const heard: boolean[] = [];
+    const scene = { registry: store, events: new EventEmitter(), input: { keyboard } };
+    reportWorld(scene, "field", { ...side(), heardUi: (ui) => void heard.push(!!ui.typing) });
+    return { bridge, keyboard, scene, heard };
+  }
+
+  it("should reset the world's keyboard and turn it off while typing, then hand it back", () => {
+    const { bridge, keyboard, heard } = typingWorld();
+    bridge.reportUi({ typing: true });
+    expect([keyboard.enabled, keyboard.resets]).toEqual([false, 1]);
+    bridge.reportUi({ typing: false });
+    expect(keyboard.enabled).toBe(true);
+    // the world's own ear hears the change too
+    expect(heard).toEqual([true, false]);
+  });
+
+  it("should hand back the keyboard as it was, off staying off", () => {
+    const { bridge, keyboard } = typingWorld(false);
+    bridge.reportUi({ typing: true });
+    bridge.reportUi({ typing: false });
+    expect(keyboard.enabled).toBe(false);
+  });
+
+  it("should turn on no keyboard it did not turn off: a late typing: false heard by the next world", () => {
+    const { bridge } = typingWorld();
+    bridge.reportUi({ typing: true });
+    // the next world comes up while the old window still says the player types, its keyboard off of its own
+    const store = registry();
+    lendUiBridge(store, bridge);
+    const next = { enabled: false, resetKeys: () => {} };
+    reportWorld({ registry: store, events: new EventEmitter(), input: { keyboard: next } }, "run", side());
+    bridge.reportUi({ typing: false });
+    expect(next.enabled).toBe(false);
+  });
+
+  it("should hand the keyboard back as the world leaves while the player types", () => {
+    const { bridge, keyboard, scene } = typingWorld();
+    bridge.reportUi({ typing: true });
+    scene.events.emit("shutdown");
+    expect(keyboard.enabled).toBe(true);
+  });
+
+  it("should tell the world a typing change, a part of the UI's state", () => {
+    const { bridge } = typingWorld();
+    bridge.reportUi({ typing: true });
+    expect(bridge.ui.typing).toBe(true);
+  });
+});

@@ -220,6 +220,37 @@ vi.mock("@/ui/mailboxHud", () => ({
   },
 }));
 
+// The chat window itself is ChatWindow.test's: here a recording stand-in for what the UI scene builds for
+// each world (FS-TQZ5J § Change: Batch 6, R125), the scene it is built on and its wiring kept.
+const chatMounts = vi.hoisted(
+  () =>
+    [] as {
+      scene: unknown;
+      wiring: {
+        mayOpen(): boolean;
+        keepsDraft(): boolean;
+        typing(on: boolean): void;
+        play(effect: string): void;
+      };
+      keeps: boolean;
+      top: number;
+      synced: number;
+      destroyed: boolean;
+    }[],
+);
+vi.mock("@/ui/chatPiece", () => ({
+  mountChat: (scene: unknown, wiring: (typeof chatMounts)[number]["wiring"]) => {
+    const made = { scene, wiring, keeps: false, top: 468, synced: 0, destroyed: false };
+    chatMounts.push(made);
+    return {
+      keepsField: () => made.keeps,
+      topEdge: () => made.top,
+      sync: () => void made.synced++,
+      destroy: () => void (made.destroyed = true),
+    };
+  },
+}));
+
 const Phaser = await import("phaser");
 const { UIScene } = await import("./UIScene");
 const { UI_SCENE } = await import("@/components/uiSceneLifecycle");
@@ -1191,6 +1222,19 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     expect(field.blurred).toBe(true);
   });
 
+  // FS-TQZ5J § Change: Batch 6, R131: the chat window keeps its own field by its own rule, as the party panel
+  it("should keep the game's text field for a press the chat window says keeps it (§ Change: Batch 6, R131)", () => {
+    const { input, pointer, field } = created();
+    const chat = chatMounts.at(-1)!;
+
+    chat.keeps = true;
+    input.emit("pointerdown", pointer, [{ name: "the chat window's ground" }]);
+    expect(field.blurred).toBe(false);
+    chat.keeps = false;
+    input.emit("pointerdown", pointer, [{ name: "the Party icon" }]);
+    expect(field.blurred).toBe(true);
+  });
+
   it("should let go of the game's focused text field for a press on one of its pieces (R26)", () => {
     const { input, pointer, field } = created();
 
@@ -1240,13 +1284,12 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     });
     scene.create();
     const blockers = { dialogue: false, party: false, popups: false };
-    const report = (world: "hub" | "field" | "run", chatTop?: number) =>
+    const report = (world: "hub" | "field" | "run") =>
       bridge.report({
         world,
         windows: () => ({ letter: false, inventory: false, character: false }),
         blockers: () => ({ ...blockers }),
         facts: () => NO_FACTS,
-        layout: () => ({ chatTop }),
         answer: () => {},
       });
     return { bridge, report, blockers, keyboard };
@@ -1274,16 +1317,25 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     ]);
   });
 
-  it("should hide the popups as the world's report says, and stack the invites above the chat top it reports", () => {
+  it("should hide the popups as the world's report says, and stack the invites above its own chat window's top (§ Change: Batch 6, R132)", () => {
     const { report, blockers } = created();
     const popups = popupMounts.length;
-    report("run", 540);
+    report("run");
     const [prompt] = since(popups);
 
     expect(prompt.hidden()).toBe(false);
     blockers.popups = true;
     expect(prompt.hidden()).toBe(true);
+    chatMounts.at(-1)!.top = 540;
     expect(prompt.floor?.()).toBe(540);
+  });
+
+  it("should stack the town's invites above nothing, as the town reported none (§ Change: Batch 6, R132)", () => {
+    const { report } = created();
+    const popups = popupMounts.length;
+    report("hub");
+    const [prompt] = since(popups);
+    expect(prompt.floor?.()).toBeUndefined();
   });
 
   it("should build the frames for each world, show them the world's state ticks, and take them down as it leaves", () => {
@@ -1627,3 +1679,85 @@ describe("the UI scene's mailbox (FS-TQZ5J § Change: Batch 4, R101–R104, R110
     expect(wiring.level()).toBe(9);
   });
 });
+
+// FS-TQZ5J § Change: Batch 6, R125, R126, R128: the UI scene builds the chat window for each world reported,
+// on itself, and takes it down as the world leaves; its wiring reads the world's report and the UI's state
+describe("the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R125–R128)", () => {
+  function created() {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const events = new EventEmitter();
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events,
+      add: any,
+      input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
+      cameras: { cameras: [] },
+      game: {},
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    const blockers: { dialogue: boolean; chat?: boolean } = { dialogue: false };
+    const report = (world: "hub" | "field" | "run") =>
+      bridge.report({
+        world,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ ...blockers }),
+        facts: () => NO_FACTS,
+        answer: () => {},
+      });
+    return { bridge, scene, events, report, blockers };
+  }
+  const since = (n: number) => chatMounts.slice(n);
+
+  it("should build the window on itself for each world reported, and take it down as each leaves", () => {
+    const { bridge, scene, report } = created();
+    const before = chatMounts.length;
+    report("hub");
+    bridge.left("hub");
+    report("field");
+    bridge.left("field");
+    report("run");
+    expect(since(before).map((c) => c.destroyed)).toEqual([true, true, false]);
+    expect(since(before)[0].scene).toBe(scene);
+  });
+
+  it("should re-read who owns the keys as the world changes its report (R128)", () => {
+    const { bridge, report } = created();
+    report("run");
+    const chat = chatMounts.at(-1)!;
+    bridge.changed();
+    expect(chat.synced).toBe(1);
+  });
+
+  it("should give the window the keys by the UI's state and the world's chat blocker (R126)", () => {
+    const { bridge, report, blockers } = created();
+    report("run");
+    const { mayOpen } = chatMounts.at(-1)!.wiring;
+    expect(mayOpen()).toBe(true);
+    blockers.chat = true;
+    expect(mayOpen()).toBe(false);
+    blockers.chat = false;
+    bridge.reportUi({ menuOpen: true });
+    expect(mayOpen()).toBe(false);
+  });
+
+  it("should take the window down with the game", () => {
+    const { events, report } = created();
+    report("field");
+    const chat = chatMounts.at(-1)!;
+    events.emit("destroy");
+    expect(chat.destroyed).toBe(true);
+  });
+});
+
