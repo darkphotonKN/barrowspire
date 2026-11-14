@@ -389,7 +389,8 @@ export class UIScene extends Phaser.Scene {
     const prompts = partyPromptWiring(bridge);
     // the party's sounds on the game's one player (FS-WDM0X § Change pass 2 (party))
     const { play } = wiring;
-    const panel = mountPartyPanel(this, wiring);
+    // the run's controls panel, drawn over the party panel (R62), covers its DOM invite field
+    const panel = mountPartyPanel(this, { ...wiring, covered: () => this.controls?.isOpen() ?? false });
     const prompt = mountPartyInvitePrompt(this, prompts.hidden, prompts.floor, play);
     const popups = world === "hub" ? [prompt, mountPartyReadyCheck(this, prompts.hidden, play)] : [prompt];
     const art = { resolve: (sheet: string, query?: FrameQuery) => this.residentArt().resolve(sheet, query) };

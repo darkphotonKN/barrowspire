@@ -68,6 +68,13 @@ export interface PartyPanelDeps {
    * panel, which closes as the panel opens (`opening`).
    */
   blocked: () => boolean;
+  /**
+   * Whether a UI piece drawn over the open panel covers its invite field: the run's controls panel
+   * (FS-TQZ5J § Change: Phase 3). The field is a DOM element above the canvas, so it hides meanwhile
+   * (its hide blurs it) and shows again uncovered, its text kept, taking no focus back. The panel and
+   * T are not refused by it. None, never covered.
+   */
+  covered?: () => boolean;
   /** Closes what gives way to the panel, just before it opens: the town's letter panel (§ Change C9). */
   opening?: () => void;
   /**
@@ -91,16 +98,17 @@ export interface PartyPanelDeps {
  * The slice of `PartyPanelDeps` the UI scene wires (FS-TQZ5J § Change: Phase 2: the party, R38,
  * R39): its refusal, what gives way as it opens, its own inputs' wrapper, its buttons' sounds, each
  * as optional as the panel takes it. The UI scene's own type for them, `PartyPanelWiring` in
- * `uiSceneParty`, has all four and fits here; its `partyPanelWiring` builds one.
+ * `uiSceneParty`, has all four and fits here; its `partyPanelWiring` builds one. The UI scene adds
+ * whether its controls panel covers the field (§ Change: Phase 3).
  */
-export type PartyPanelWiringDeps = Pick<PartyPanelDeps, "blocked" | "opening" | "wrapper" | "play">;
+export type PartyPanelWiringDeps = Pick<PartyPanelDeps, "blocked" | "covered" | "opening" | "wrapper" | "play">;
 
 /**
  * The panel as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party,
  * the real socket and DOM field, its ground under its buttons, wired by `wiring`.
  */
 export function mountPartyPanel(scene: Phaser.Scene, wiring: PartyPanelWiringDeps): PartyPanel {
-  const { blocked, opening, wrapper, play } = wiring;
+  const { blocked, covered, opening, wrapper, play } = wiring;
   return new PartyPanel(scene, {
     store: usePartyStore,
     world: () => useGameStore.getState().worldType,
@@ -112,6 +120,7 @@ export function mountPartyPanel(scene: Phaser.Scene, wiring: PartyPanelWiringDep
         ? null
         : (document.activeElement as FocusedElement | null),
     blocked,
+    covered,
     opening,
     wrapper,
     ground: uiGround(scene, PARTY_PANEL_DEPTH),
@@ -369,9 +378,9 @@ export class PartyPanel {
   }
 
   /**
-   * Once a frame: the DOM field shows only while the panel is open and nothing else owns the keys
-   * (a browser element draws above every overlay), and a world switch under a live panel redraws
-   * its greying.
+   * Once a frame: the DOM field shows only while the panel is open, nothing else owns the keys and no
+   * UI piece drawn over the panel covers it (a browser element draws above every overlay), and a
+   * world switch under a live panel redraws its greying.
    */
   private watch(): void {
     const world = this.deps.world();
@@ -380,7 +389,7 @@ export class PartyPanel {
       this.draw();
     }
     if (!this.field) return;
-    if (this.isOpen() && !this.deps.blocked()) this.field.show();
+    if (this.isOpen() && !this.deps.blocked() && !this.deps.covered?.()) this.field.show();
     else this.field.hide();
   }
 
