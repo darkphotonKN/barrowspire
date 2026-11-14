@@ -61,6 +61,11 @@ export interface MenuSlotDeps {
    * the Menu icon after the run's end shut it. None, and there is none to shut.
    */
   gear?: { isOpen(): boolean; close(): void };
+  /**
+   * The UI scene's controls panel (FS-84N1G R17): Esc's first step, closed as the player's close (its
+   * `dialog_cancel`). None, and there is none to close.
+   */
+  controls?: { isOpen(): boolean; dismiss(): void };
 }
 
 /** A menu's look in a world: its tokens and its rows' pressable area (ADR-0013). */
@@ -170,7 +175,7 @@ export class UiMenuSlot {
 
   /**
    * One Esc press (R17; FS-R82NV § Change C2, FS-HRH2J R5, FS-1GZGD R40): an open dialogue is
-   * dismissed first, then `escapeStep`'s order: the letter panel, this slot (its Back; OPTIONS's
+   * dismissed first, then `escapeStep`'s order: the run's controls panel (FS-84N1G R17), the letter panel, this slot (its Back; OPTIONS's
    * reopens the menu), the party panel, the gear overlay (the UI scene's own, § Change: Phase 3, R55);
    * with nothing open the menu opens.
    */
@@ -184,12 +189,14 @@ export class UiMenuSlot {
     }
     const open = report.windows();
     const step = escapeStep({
+      controls: this.deps.controls?.isOpen() ?? false,
       letter: open.letter,
       menu: this.isOpen(),
       gear: this.deps.gear?.isOpen() ?? false,
       party: this.deps.party?.isOpen() ?? false,
     });
-    if (step === "letter") this.ask({ kind: "close", window: "letter" });
+    if (step === "controls") this.deps.controls?.dismiss();
+    else if (step === "letter") this.ask({ kind: "close", window: "letter" });
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
     else if (step === "party") this.closeParty();
     else if (step === "gear") this.closeGear();

@@ -26,7 +26,7 @@ import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPieces } fr
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { UiGearSlot, type GearKey } from "@/ui/uiSceneGear";
 import { mountGearPieces } from "@/ui/gearPieces";
-import { UiControlsSlot, UiRecordSlot } from "@/ui/uiSceneRecord";
+import { UiControlsSlot, UiRecordSlot, type OpenWindows } from "@/ui/uiSceneRecord";
 import { SettlementRecord } from "@/ui/SettlementRecord";
 import { mountControlsPiece } from "@/ui/controlsPiece";
 import { recordAnchor } from "@/ui/resolvedRow";
@@ -102,6 +102,8 @@ export class UIScene extends Phaser.Scene {
   private gear?: UiGearSlot;
   /** The run's controls panel (FS-TQZ5J § Change: Phase 3, R50, R56). */
   private controls?: UiControlsSlot;
+  /** The run's settlement record (FS-TQZ5J § Change: Phase 3, R57). */
+  private record?: UiRecordSlot;
   /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
   private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
@@ -139,7 +141,26 @@ export class UIScene extends Phaser.Scene {
   update(): void {
     this.readKeys();
     this.menu?.sync();
+    // another window opened since the last frame closes the run's controls panel, before this frame
+    // draws, outside any action, so only the opened window's sound plays (FS-84N1G R16)
+    this.controls?.sync(this.openWindows());
     this.pointer?.frame();
+  }
+
+  /** Every window but the controls panel, open or not (FS-84N1G R16): the UI's own and the world's letter panel. */
+  private openWindows(): OpenWindows {
+    const bridge = this.bridge();
+    const ui = bridge?.ui;
+    return {
+      menu: !!ui?.menuOpen,
+      inventory: !!ui?.inventory,
+      character: !!ui?.character,
+      stash: !!ui?.stash,
+      container: ui?.container !== undefined,
+      party: this.party?.isOpen() ?? false,
+      record: this.record?.isOpen() ?? false,
+      letter: bridge?.world?.windows().letter ?? false,
+    };
   }
 
   /**
@@ -203,7 +224,10 @@ export class UIScene extends Phaser.Scene {
     // a field's and the run's gear keys, on key events as they heard them, uncaptured (R56)
     for (const [event, key] of EVENT_GEAR_KEYS)
       keyboard.on(event, () => {
-        if (this.bridge()?.world?.world !== "hub") this.gear?.key(key);
+        if (this.bridge()?.world?.world === "hub") return;
+        // Q closes the run's open controls panel first, and nothing else (FS-84N1G R18)
+        if (key === "close" && this.controls?.closeKey()) return;
+        this.gear?.key(key);
       });
     // the run's H, on its key event as the run heard it (R56)
     keyboard.on("keydown-H", () => this.controls?.toggle());
@@ -296,6 +320,8 @@ export class UIScene extends Phaser.Scene {
       fullscreen: () => lentFullscreen(this.registry),
       party: { isOpen: () => party.isOpen(), close: () => party.close() },
       gear: { isOpen: () => gear.isOpen(), close: () => void gear.close() },
+      // Esc's first step (FS-84N1G R17)
+      controls: { isOpen: () => this.controls?.isOpen() ?? false, dismiss: () => this.controls?.dismiss() },
     });
     const party = new UiPartySlot((world) => this.partyPieces(bridge, world));
     // the gear overlay and its source, and the container view, for each world (§ Change: Phase 3, R50)
@@ -314,6 +340,7 @@ export class UIScene extends Phaser.Scene {
     );
     const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose));
     this.controls = controls;
+    this.record = record;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
     this.menu = menu;
@@ -369,6 +396,7 @@ export class UIScene extends Phaser.Scene {
       controls.destroy();
       this.gear = undefined;
       this.controls = undefined;
+      this.record = undefined;
       this.menu = undefined;
       this.dialogue = undefined;
       this.corner = undefined;

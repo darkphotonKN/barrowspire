@@ -10,7 +10,9 @@
  *
  * The controls panel is the UI scene's own in the run: H opens and closes it, refused while the menu
  * slot is filled and once the run has ended (its keyboard was off); the run's end appearing closes it,
- * silently (R58). Both are taken down as the run leaves.
+ * silently (R58). Both are taken down as the run leaves. Its open plays `dialog_open` and the player's
+ * close `dialog_cancel`; any other window opening closes it silently; Q and Esc close it first
+ * (FS-84N1G R11, R16–R18).
  *
  * Phaser-free: the UI scene hands each its builder, so the wiring is tested on its own.
  */
@@ -34,6 +36,8 @@ export class UiRecordSlot {
   private record: RecordPiece | null = null;
   /** The world the standing record was drawn for. */
   private builtFor: World | null = null;
+  /** Whether the run last said its record is up. */
+  private up = false;
 
   constructor(
     private readonly bridge: Pick<UiBridge, "play" | "request">,
@@ -67,8 +71,14 @@ export class UiRecordSlot {
       this.builtFor = world;
     }
     this.record.set(shown.view);
+    this.up = shown.open;
     if (shown.open) this.record.open();
     else this.record.close();
+  }
+
+  /** Whether the record stands up now (FS-84N1G R16). */
+  isOpen(): boolean {
+    return this.record !== null && this.up;
   }
 
   /** The logical view changed: the record at its new place, its content and state untouched (FS-ZAJMH R13). */
@@ -84,6 +94,7 @@ export class UiRecordSlot {
     this.record?.close();
     this.record = null;
     this.builtFor = null;
+    this.up = false;
   }
 }
 
@@ -97,8 +108,13 @@ export interface ControlsPiece {
 /** Builds the controls panel, its × handed in (FS-84N1G R14). */
 export type ControlsBuilder = (onClose: () => void) => ControlsPiece;
 
+/** The UI's windows other than the controls panel, each open or not, by name (FS-84N1G R16). */
+export type OpenWindows = Readonly<Record<string, boolean>>;
+
 export class UiControlsSlot {
   private panel: ControlsPiece | null = null;
+  /** The windows as last handed (`sync`). */
+  private seen: OpenWindows = {};
 
   constructor(
     private readonly bridge: Pick<UiBridge, "world" | "ui" | "act" | "play">,
@@ -135,6 +151,27 @@ export class UiControlsSlot {
       this.bridge.play("dialog_cancel");
       this.close();
     });
+  }
+
+  /**
+   * Q (FS-84N1G R18): while it is open, Q closes it as the player's close and nothing else; whether it
+   * took Q. Refused, as every gear key is, under the menu slot and after the run's end.
+   */
+  closeKey(): boolean {
+    if (!this.panel || !this.mayOpen()) return false;
+    this.dismiss();
+    return true;
+  }
+
+  /**
+   * Which windows are open now, handed once a frame by the UI scene (FS-84N1G R16): one shut at the last
+   * hand and open now closes the panel, silently, so only its own opening sounds. A window open as the
+   * panel opened does not close it.
+   */
+  sync(open: OpenWindows): void {
+    const opened = Object.keys(open).some((window) => open[window] && !this.seen[window]);
+    this.seen = open;
+    if (opened) this.close();
   }
 
   /** Closed by the game, silently (FS-WDM0X S4): the run's end appeared (R58), or the run left. */
