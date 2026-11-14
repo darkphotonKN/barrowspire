@@ -6,7 +6,9 @@ import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, shade, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { ChatWindow, type ChatWindowOptions } from "./ChatWindow";
+import { buttonWidth, resolvedRowY, rowLefts } from "./resolvedRow";
 import {
+  CHAT_WINDOW_MARGIN,
   CHAT_FOLD_W,
   CHAT_FOLD_OPEN,
   CHAT_FOLD_SHUT,
@@ -2190,6 +2192,30 @@ describe("ChatWindow on the UI scene (FS-TQZ5J § Change: Batch 6, R127, R129–
     s.window.sync();
     expect(s.field().focused).toBe(false);
     expect(s.field().value).toBe("");
+  });
+});
+
+// FS-TQZ5J § Change: Batch 6, R136 (MED2): the run's end row no longer meets the window, so the pointer on
+// any of its buttons, at any width the row is laid at, lights no tab and plays no chat hover
+describe("ChatWindow beside the run's end row (FS-TQZ5J § Change: Batch 6, R136)", () => {
+  it("should play no hover with the pointer anywhere on WATCH, LEAVE or SETTLEMENT, open list or not", () => {
+    const store = createChatStore();
+    const s = fakeScene();
+    const played: string[] = [];
+    const bottom = 720 - CHAT_WINDOW_MARGIN;
+    new ChatWindow(s.scene, store, X, bottom, { play: (effect) => void played.push(effect) });
+    const widths = [56, 46, 96].map(buttonWidth);
+    const y = resolvedRowY({ height: 720 });
+    for (const width of [1080, 1180, 1280]) {
+      for (const set of [[0], [1], [2], [0, 1], [1, 2], [0, 2], [0, 1, 2]]) {
+        const ws = set.map((i) => widths[i]);
+        rowLefts(ws, { width }).forEach((left, i) => {
+          for (const x of [left, left + ws[i] / 2, left + ws[i]])
+            for (const dy of [-19, 0, 19]) s.input.emit("pointermove", { x, y: y + dy }, []);
+        });
+      }
+    }
+    expect(played).toEqual([]);
   });
 });
 
