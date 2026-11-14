@@ -26,7 +26,6 @@ import {
   type FieldDestination,
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
-import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { letterPanelState, type LetterPanelState } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
@@ -668,11 +667,6 @@ export class HubScene extends Phaser.Scene {
   private queuePending = false;
   /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
   private leavingHub = false;
-  /**
-   * The player's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
-   * at the bottom. Made with the first state that carries a level.
-   */
-  private progressHud?: ProgressHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   /**
@@ -1191,7 +1185,6 @@ export class HubScene extends Phaser.Scene {
     this.scenery = undefined;
     this.lightMap = undefined;
     this.groundLayer = undefined;
-    this.progressHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.minimap?.destroy();
@@ -2033,15 +2026,10 @@ export class HubScene extends Phaser.Scene {
       this.ui.gear({ kind: "seen", character: state.current_player });
       this.ui.gear({ kind: "level", level: state.current_player.level });
 
+      // the level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel at the bottom:
+      // the UI scene's, from the first state that carries a level (FS-TQZ5J § Change: Batch 5, R68)
       const progress = progressOf(state.current_player);
-      if (progress) {
-        this.progressHud ??= new ProgressHud(
-          this,
-          PROGRESS_HUD_AT.hub.x,
-          PROGRESS_HUD_AT.hub.y,
-        );
-        this.progressHud.show(progress);
-      }
+      if (progress) this.ui.hud({ kind: "progress", progress });
 
       this.selfEntityID = state.current_player.entity_id;
       const self = this.views.get(this.selfEntityID);

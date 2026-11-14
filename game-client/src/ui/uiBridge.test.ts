@@ -50,6 +50,7 @@ function recording(): UiBridge & { heard: string[] } {
     record: (shown) => void heard.push(`record ${shown ? "shown" : "none"}`),
     endPopped: () => void heard.push("endPopped"),
     abilityCard: () => void heard.push("abilityCard"),
+    hud: (message) => void heard.push(`hud ${message.kind}`),
     onScreen: () => () => {},
   };
 }

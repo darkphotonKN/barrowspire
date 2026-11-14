@@ -24,6 +24,8 @@ import {
 } from "@/stores/chatStore";
 import { useAuthStore } from "@/stores/authStore";
 import { socketManager } from "@/utils/class/SocketManager";
+import type { UiEffect } from "@/audio/uiSounds";
+import { uiBridgeOf } from "./uiBridge";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { ChatInput, type ChatSend } from "./chatInput";
@@ -85,6 +87,13 @@ export interface ChatWindowOptions {
    * and presses there are that panel's, so the window neither scrolls nor grabs under it.
    */
   coveredAt?: (x: number, y: number) => boolean;
+  /**
+   * Plays an interface sound on the game's one player (FS-WDM0X § Pass 2: the chat, C1–C5): a tab
+   * pressed, the picker's list opened or shut, a hover, a draft refused. None, nothing plays.
+   */
+  play?: (effect: UiEffect) => void;
+  /** Whether a UI piece holds the pointer now (the bridge's `overUi`): no hover under it (C4). */
+  overUi?: () => boolean;
 }
 
 /** What a scene gives the window so the player can type: who owns the keys, and how a line leaves. */
@@ -124,6 +133,10 @@ export function mountChatWindow(
       },
       selfId: () => useAuthStore.getState().memberInfo?.id,
       coveredAt: over.coveredAt,
+      // the UI scene's one player, through the scene's game's bridge, read at each sound
+      // (FS-WDM0X § Pass 2: the chat; M3)
+      play: (effect) => uiBridgeOf(scene.registry)?.play(effect),
+      overUi: () => uiBridgeOf(scene.registry)?.overUi ?? false,
     },
   );
 }
@@ -246,6 +259,10 @@ export class ChatWindow {
   private input?: ChatInput;
   private readonly selfId: () => string | undefined;
   private readonly coveredAt: (x: number, y: number) => boolean;
+  private readonly play: (effect: UiEffect) => void;
+  private readonly overUi: () => boolean;
+  /** The tab or the list's row the pointer is on, by where it is: a hover plays once on entering one (C4). */
+  private hovered: string | null = null;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
   constructor(
@@ -257,6 +274,8 @@ export class ChatWindow {
   ) {
     this.selfId = options.selfId ?? (() => undefined);
     this.coveredAt = options.coveredAt ?? (() => false);
+    this.play = options.play ?? (() => {});
+    this.overUi = options.overUi ?? (() => false);
     this.frame = this.frameNow();
     this.drawAll();
     this.unsubscribe = store.subscribe((state, prev) =>
@@ -405,6 +424,7 @@ export class ChatWindow {
       keepsDraft: typing.keepsDraft,
       send: typing.send,
       open: typing.open,
+      play: (effect) => this.play(effect),
       changed: () => this.inputChanged(),
       recall: {
         lines: () => this.store.getState().sent,
@@ -529,6 +549,28 @@ export class ChatWindow {
     if (this.grabbed !== null) this.scrollTo(at.y);
     const row = this.listRowAt(at.x, at.y);
     if (row) this.input?.hover(row);
+    this.hoverAt(at, row);
+  }
+
+  /**
+   * `menu_hover` as the pointer comes onto a tab or a row of the open list it can pick (FS-WDM0X § Pass
+   * 2: the chat, C4), judged by where it is, so one drawn again under a still pointer plays nothing more;
+   * none while a UI piece or a panel drawn over the window holds the pointer there.
+   */
+  private hoverAt(at: { x: number; y: number }, row: ChatChannel | null): void {
+    const covered = this.overUi() || this.coveredAt(at.x, at.y);
+    const pickable = row !== null && (this.input?.canPick(row) ?? false);
+    const target = covered ? null : pickable ? `row ${row}` : this.tabAt(at.x, at.y);
+    if (target !== null && target !== this.hovered) this.play("menu_hover");
+    this.hovered = target;
+  }
+
+  /** The tab under a logical point, if the tabs are drawn. */
+  private tabAt(x: number, y: number): string | null {
+    const row = this.frame.filterRow;
+    if (row.height === 0) return null;
+    const segment = chatTabSegments(row, (label) => this.labelWidth(label)).find((s) => within(s, x, y));
+    return segment ? `tab ${segment.channel}` : null;
   }
 
   /**
@@ -567,7 +609,8 @@ export class ChatWindow {
     }
     if (!input.pickerOpen()) return false;
     if (within(chatPickerList(this.frame).box, at.x, at.y)) return true;
-    input.closePicker();
+    // the player's press outside it shuts it (FS-WDM0X § Pass 2: the chat, C3)
+    input.closePicker(true);
     return false;
   }
 
@@ -786,9 +829,11 @@ export class ChatWindow {
         .setDepth(HUD_DEPTH)
         .setAlpha(shown[segment.channel] ? 1 : TAB_OFF_ALPHA)
         .setInteractive()
-        .on("pointerdown", () =>
-          this.store.getState().toggleChannel(segment.channel),
-        );
+        .on("pointerdown", () => {
+          // each press toggles the channel's lines, so each plays (FS-WDM0X § Pass 2: the chat, C1)
+          this.play("menu_tab");
+          this.store.getState().toggleChannel(segment.channel);
+        });
       // the padding widens the hit area to the whole segment; the label still sits where it did
       tab.setPosition(segment.x, y - 3);
       this.tabTexts.push(tab);

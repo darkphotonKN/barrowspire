@@ -120,6 +120,7 @@ const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOv
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { NO_UI, worldContainer } = await import("@/ui/uiBridge");
 const { UiRecordSlot } = await import("@/ui/uiSceneRecord");
 const { SettlementRecord } = await import("@/ui/SettlementRecord");
@@ -903,6 +904,9 @@ function sceneOnStage() {
   // stage, on the run's clock and tweens (FS-TQZ5J A2 R33), and its settlement record (§ Change: Phase 3, R57)
   uiSceneOn(run, "run", { row: false });
   recordOverRun(run);
+  // and its HUD: the bars, the potion cell, the level bar and the ability card, drawn on the run's stage
+  // from what the run hands through the bridge (FS-TQZ5J § Change: Batch 5, R67, R68)
+  hudOver(run, "run");
   return { run, stage, lights, gates, painted, grounds, texts, cursor };
 }
 
@@ -2227,7 +2231,6 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     ({ ...floorState(1), current_player: self, other_players: [player("ally", "Wenna", 160)] }) as GameState;
 
   interface Carded {
-    abilityHud?: { shown: { name: string; greyed: boolean } | null };
     leaveButton?: unknown;
     bindRunInput(): void;
     resetRun(end: "shutdown" | "destroy"): void;
@@ -2248,7 +2251,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     // a click off the satchel: it takes none
     const live = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
     const text = (content: string) => live().find((m) => m.args[2] === content);
-    const shown = () => carded.abilityHud?.shown ?? null;
+    const shown = () => abilityShownOver(carded);
     const rightClick = () =>
       pointerHandlers.pointerdown({
         x: 10,
@@ -2301,6 +2304,8 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       // the harness's view is 800 wide; 200 more, as from 1080 to 1280
       viewport.set({ width: 1000, height: 600, renderScale });
       hud.relayoutHud();
+      // the card is the UI scene's, back in its corner on the UI scene's own relayout (FS-TQZ5J § Change: Batch 5, R73)
+      hudOver(run, "run").relayout();
       expect(name.last.setPosition[0]).toBe(nameX + 200);
       expect(escaped.last.setX).toEqual([1000 - 10]);
       // moved, so rasterised again at the render scale of now (R5)
@@ -2364,7 +2369,31 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
   it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
     const { run, carded } = cardOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    expect((carded.abilityHud as unknown as { place: unknown }).place).toEqual(ABILITY_CARD_PLACE);
+    expect(abilityPlaceOver(carded)).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should hand the card to the UI scene, then tell the badge it is up, and build none (FS-TQZ5J § Change: Batch 5, R68, R70)", () => {
+    const { run, carded } = cardOnStage();
+    const told: string[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({
+      hud: (message) => void (message.kind === "ability" && told.push(`card ${message.card?.name ?? "none"}`)),
+      abilityCard: (up) => void told.push(`badge ${up}`),
+    });
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    expect(told).toEqual(["card Dash", "badge true", "card none", "badge false"]);
+    expect((carded as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
+  });
+
+  it("should hand the potion cell to the UI scene beside the bars, and build none (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    const { run, carded } = cardOnStage();
+    const cells: unknown[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({
+      hud: (message) => void (message.kind === "potion" && cells.push(message.cell)),
+    });
+    run.handleGameStateUpdate(withMe(me()));
+    expect(cells.at(-1)).toEqual({ count: 0, keyLabel: "[1]", dimmed: true });
+    expect((carded as unknown as Record<string, unknown>).potionHud).toBeUndefined();
   });
 
   it("should stand the dead spectator's leave button above the corner row (FS-3EBCA R14)", () => {
@@ -2480,6 +2509,17 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     expect(shown("Level 20 · Cap")).toBe(true);
   });
 
+  it("should hand its progress and its bars to the UI scene through the bridge, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    const { run } = onStage();
+    const told: { kind: string }[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
+    expect(told).toContainEqual({ kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
+    expect(told).toContainEqual({ kind: "bars", bars: [expect.objectContaining({ label: "Health:" })] });
+    const fields = run as unknown as Record<string, unknown>;
+    expect([fields.progressHud, fields.resourceHud]).toEqual([undefined, undefined]);
+  });
+
   it("should show the level-up cue once when the level rises, and not again while it holds", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 220, 100, 230)));
@@ -2498,6 +2538,12 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
     (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
+    // the restart, as the UI scene hears it: the run leaves and reports again, and the UI scene's level
+    // bar is a new one (FS-TQZ5J § Change: Batch 5, R67)
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const report = bridge.world!;
+    bridge.left("run");
+    bridge.report(report);
     run.handleGameStateUpdate(withMe(me(4, 400, 390, 600)));
     expect(cues()).toHaveLength(0);
   });
@@ -6303,7 +6349,6 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     time: { now: number; delayedCall: ReturnType<typeof vi.fn> };
     fx?: unknown;
     playerAnim?: { attack(...args: unknown[]): void; holdAim(aim: unknown): void };
-    abilityHud?: { shown: { name: string; greyed: boolean } | null };
     /** The class kit as drawn, shared with the field scene. */
     kit: { aimLine?: { drawn: boolean } };
     menu?: unknown;
@@ -6455,13 +6500,13 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
   it("should grey the ability card from a fired shot until the 1.2 s cooldown is over, and not for a hold", () => {
     const s = aimOnStage();
     s.press();
-    expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+    expect(abilityShownOver(s.run)?.greyed).toBe(false);
     s.release(1300);
-    expect(s.run.abilityHud?.shown?.greyed).toBe(true);
+    expect(abilityShownOver(s.run)?.greyed).toBe(true);
     const cooldown = s.delayed().find(([ms]) => ms === 1200);
     expect(cooldown).toBeDefined();
     cooldown![1]();
-    expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+    expect(abilityShownOver(s.run)?.greyed).toBe(false);
   });
 
   it("should allow a hold to begin during the left-click's own lockout", () => {
@@ -6641,9 +6686,9 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       withStamina(s, 89);
       s.press();
       s.release(1300);
-      expect(s.run.abilityHud?.shown?.greyed).toBe(true);
+      expect(abilityShownOver(s.run)?.greyed).toBe(true);
       withStamina(s, 90);
-      expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+      expect(abilityShownOver(s.run)?.greyed).toBe(false);
       s.press();
       s.release(1600);
       expect(s.casts()).toHaveLength(1);
@@ -6672,7 +6717,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       for (let current = 0; current <= 100; current++) {
         withStamina(s, current);
         s.run.aimFrame();
-        expect(lineReady(draw)).toBe(s.run.abilityHud?.shown?.greyed === false);
+        expect(lineReady(draw)).toBe(abilityShownOver(s.run)?.greyed === false);
       }
     });
   });
@@ -6824,9 +6869,9 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
     it("should grey the Parry card while parry_lockout is above 0, and light it at 0", () => {
       const s = parryOnStage({ parry_lockout: 0.98333 });
-      expect(s.run.abilityHud?.shown).toMatchObject({ name: "Parry", greyed: true });
+      expect(abilityShownOver(s.run)).toMatchObject({ name: "Parry", greyed: true });
       s.run.handleGameStateUpdate(partyState(merc({ parry_lockout: 0 })));
-      expect(s.run.abilityHud?.shown).toMatchObject({ name: "Parry", greyed: false });
+      expect(abilityShownOver(s.run)).toMatchObject({ name: "Parry", greyed: false });
     });
   });
 

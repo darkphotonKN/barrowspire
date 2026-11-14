@@ -6291,3 +6291,19 @@ describe("HubScene the letter panel's open state, from the mailbox store (FS-TQZ
     expect(useMailboxStore.getState().panelOpen).toBe(false);
   });
 });
+
+describe("HubScene's level bar, the UI scene's (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+  it("should hand the player's progress through the bridge on each state, as plain data, and build no bar of its own", () => {
+    const { hub } = hubOnStage();
+    Object.assign(hub, { placePlayer: vi.fn(), renderStructures: vi.fn(), drawScenery: vi.fn(), renderNPCs: vi.fn() });
+    hub.views = new Map();
+    const told: unknown[] = [];
+    uiSceneOn(hub, "hub", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    const me = { entity_id: "me", position: AWAY, level: 2, experience: 150, level_floor: 100, next_level_at: 230 };
+    hub.renderState({ world_type: "hub", current_player: me, other_players: [], walls: [], gates: HUB_GATES });
+    expect(told).toEqual([
+      { kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } },
+    ]);
+    expect(hub.progressHud).toBeUndefined();
+  });
+});

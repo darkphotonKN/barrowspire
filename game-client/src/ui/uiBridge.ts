@@ -29,6 +29,7 @@ import type { CarriedState } from "./EquipmentHud";
 import type { CharacterSource } from "./characterSheet";
 import type { SeenState } from "./partyFramesLayout";
 import type { RecordView } from "./settlement";
+import type { HudMessage } from "./uiSceneHud";
 import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
 
 /** The world a world scene draws (FS-TQZ5J "Words"): the town, a field, a run, as the server names them. */
@@ -308,6 +309,8 @@ export interface UiScreen {
   record?(shown: ShownRecord | null): void;
   endPopped?(): void;
   abilityCard?(up: boolean): void;
+  /** A HUD piece's data the world hands (§ Change: Batch 5, R68). */
+  hud?(message: HudMessage): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -391,6 +394,11 @@ export interface UiBridge extends UiActWrapper {
   abilityCard(up: boolean): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
+  /**
+   * The world hands a HUD piece its data (§ Change: Batch 5, R68): the ability card, the potion cell, the
+   * bars, the level bar. The UI scene has drawn it when this returns.
+   */
+  hud(message: HudMessage): void;
 }
 
 /**
@@ -414,6 +422,7 @@ export type WorldUi = Pick<
   | "record"
   | "endPopped"
   | "abilityCard"
+  | "hud"
 >;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
@@ -432,6 +441,7 @@ export const NO_UI: WorldUi = {
   record: () => {},
   endPopped: () => {},
   abilityCard: () => {},
+  hud: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -548,6 +558,10 @@ export class GameUiBridge implements UiBridge {
 
   abilityCard(up: boolean): void {
     for (const screen of [...this.screens]) screen.abilityCard?.(up);
+  }
+
+  hud(message: HudMessage): void {
+    for (const screen of [...this.screens]) screen.hud?.(message);
   }
 
   onScreen(screen: UiScreen): () => void {

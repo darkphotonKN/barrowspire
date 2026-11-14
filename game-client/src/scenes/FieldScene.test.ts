@@ -68,6 +68,7 @@ const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { abilityPlaceOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { equipmentPiece } = await import("@/ui/uiSceneGear");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
 type GearKey = import("@/ui/uiSceneGear").GearKey;
@@ -233,6 +234,8 @@ function fieldOnStage() {
     });
   // the UI scene up over the field, its notices drawn on the field's stage (FS-TQZ5J A2 R33)
   uiSceneOn(field, "field", { row: false });
+  // and its HUD, the bars and the ability card, drawn on the field's stage (FS-TQZ5J § Change: Batch 5, R67)
+  hudOver(field, "field");
   return { field, texts, send, standAt, refuse, reply };
 }
 
@@ -696,7 +699,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     "should stand the fallen panel and its bar at the centre of a wider view, at render scale %s (FS-ZAJMH R12, R13)",
     (renderScale) => {
       const { field, liveText, barFills } = fallenOnStage();
-      Object.assign(field, { satchel: undefined, invitePrompt: undefined, abilityHud: undefined });
+      Object.assign(field, { satchel: undefined, invitePrompt: undefined });
       viewport.set({ width: 1080, height: 720, renderScale });
       field.time.now = 1000;
       field.renderState(stateAt(0, { x: 900, y: 420 }));
@@ -1304,7 +1307,22 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     const { field } = kitOnStage({ lockedOut: false });
     field.renderState(archerState);
     const { ABILITY_CARD_PLACE } = hudCorner;
-    expect((field as unknown as { abilityHud: { place: unknown } }).abilityHud.place).toEqual(ABILITY_CARD_PLACE);
+    expect(abilityPlaceOver(field)).toEqual(ABILITY_CARD_PLACE);
+  });
+
+  it("should hand its bars and its ability card to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false });
+    const told: unknown[] = [];
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    field.renderState(archerState);
+    expect(told).toContainEqual({ kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    expect(told).toContainEqual({ kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
+    expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
+    // the UI scene's card, drawn from it
+    expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));
+    expect((field as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
   });
 
   // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the

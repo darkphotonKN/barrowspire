@@ -5,7 +5,7 @@ import type Phaser from "phaser";
 import { createChatStore, type ChatLinePayload } from "@/stores/chatStore";
 import { palette, shade, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
-import { ChatWindow } from "./ChatWindow";
+import { ChatWindow, type ChatWindowOptions } from "./ChatWindow";
 import {
   CHAT_FOLD_W,
   CHAT_FOLD_OPEN,
@@ -600,12 +600,14 @@ function inputRig(
   selfId?: () => string | undefined,
   heightOf?: (content: string) => number,
   open?: ReadonlySet<import("@/stores/chatStore").ChatChannel>,
+  extra: Partial<ChatWindowOptions> = {},
 ) {
   const store = createChatStore();
   const s = fakeScene(heightOf);
   const fields: FakeField[] = [];
   const sent: unknown[] = [];
   const window = new ChatWindow(s.scene, store, X, BOTTOM, {
+    ...extra,
     selfId,
     input: {
       mayOpen,
@@ -1892,5 +1894,149 @@ describe("ChatWindow clicking a name (FS-KCQ06 C15)", () => {
     click(s, x, y);
 
     expect(s.field().value).toBe("");
+  });
+});
+
+// ── The chat's sounds (FS-WDM0X § Pass 2: the chat, C1–C5) ─────────────────────────────────
+
+describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
+  const frame = chatWindowFrame(X, BOTTOM);
+  const picker = chatPickerRect(frame);
+  const list = chatPickerList(frame);
+  const mid = (r: { x: number; y: number; width: number; height: number }) => ({
+    x: r.x + r.width / 2,
+    y: r.y + r.height / 2,
+  });
+  const rowAt = (channel: string) => mid(list.rows.find((r) => r.channel === channel)!);
+
+  function heard(open?: ReadonlySet<import("@/stores/chatStore").ChatChannel>) {
+    const played: string[] = [];
+    let overUi = false;
+    let covered = false;
+    const s = inputRig(undefined, undefined, undefined, open, {
+      play: (effect) => void played.push(effect),
+      overUi: () => overUi,
+      coveredAt: () => covered,
+    });
+    /** A point inside a tab's segment, by its label as drawn. */
+    const tabAt = (label: string) => {
+      const t = toggleOf(s, label);
+      return { x: t.x + 3, y: t.y + 8 };
+    };
+    const move = (at: { x: number; y: number }) => s.input.emit("pointermove", at);
+    const click = (at: { x: number; y: number }) => {
+      s.input.emit("pointerdown", at);
+      s.input.emit("pointerup", at);
+    };
+    return {
+      ...s,
+      played,
+      tabAt,
+      move,
+      click,
+      over: (on: boolean) => void (overUi = on),
+      cover: (on: boolean) => void (covered = on),
+    };
+  }
+
+  it("should play menu_tab once for each tab press, in every channel (C1)", () => {
+    const s = heard();
+    toggleOf(s, "Area").onPress!();
+    toggleOf(s, "World").onPress!();
+    toggleOf(s, "Area").onPress!();
+    expect(s.played).toEqual(["menu_tab", "menu_tab", "menu_tab"]);
+  });
+
+  it("should play menu_dropdown_open as the picker is pressed shut, menu_dropdown_close as it is pressed open (C2, C3)", () => {
+    const s = heard();
+    s.click(mid(picker));
+    s.click(mid(picker));
+    expect(s.played).toEqual(["menu_dropdown_open", "menu_dropdown_close"]);
+  });
+
+  it("should play menu_dropdown_close once for a press outside the open list, in the world or on the panel (C3)", () => {
+    const world = heard();
+    world.click(mid(picker));
+    world.played.length = 0;
+    world.click({ x: 900, y: 100 });
+    expect(world.played).toEqual(["menu_dropdown_close"]);
+
+    const panel = heard();
+    panel.click(mid(picker));
+    panel.played.length = 0;
+    panel.click({ x: frame.messages.x + frame.messages.width - 20, y: frame.messages.y + 4 });
+    expect(panel.played).toEqual(["menu_dropdown_close"]);
+  });
+
+  it("should play menu_dropdown_close once as a row is picked on the release, nothing more (C3)", () => {
+    const s = heard();
+    s.click(mid(picker));
+    s.played.length = 0;
+    s.input.emit("pointerup", rowAt("world"));
+    expect(s.field().channel).toBe("world");
+    expect(s.played).toEqual(["menu_dropdown_close"]);
+  });
+
+  it("should shut the list silently as the view changes size (C3: the game's)", () => {
+    const s = heard();
+    s.click(mid(picker));
+    s.played.length = 0;
+    viewport.set({ width: viewport.width + 200, height: viewport.height, renderScale: viewport.renderScale });
+    viewport.set({ width: viewport.width - 200, height: viewport.height, renderScale: viewport.renderScale });
+    expect(s.played).toEqual([]);
+  });
+
+  it("should play menu_hover once as the pointer comes onto a tab, and again only after leaving it (C4)", () => {
+    const s = heard();
+    const area = s.tabAt("Area");
+    s.move(area);
+    s.move({ x: area.x + 1, y: area.y });
+    // the tab drawn again under a still pointer: nothing more
+    toggleOf(s, "Area").onPress!();
+    s.move(area);
+    s.move(s.tabAt("World"));
+    s.move({ x: 900, y: 100 });
+    s.move(area);
+    expect(s.played).toEqual(["menu_hover", "menu_tab", "menu_hover", "menu_hover"]);
+  });
+
+  it("should play menu_hover once per row of the open list it can pick, none for a closed one (C4)", () => {
+    const s = heard(new Set(["area", "party", "whisper"]));
+    s.click(mid(picker));
+    s.played.length = 0;
+    s.move(rowAt("area"));
+    s.move(rowAt("area"));
+    s.move(rowAt("world"));
+    s.move(rowAt("party"));
+    expect(s.played).toEqual(["menu_hover", "menu_hover"]);
+  });
+
+  it("should play no hover under a UI piece or the letter panel drawn over the window (C4)", () => {
+    const s = heard();
+    s.over(true);
+    s.move(s.tabAt("Area"));
+    s.over(false);
+    s.cover(true);
+    s.move(s.tabAt("World"));
+    expect(s.played).toEqual([]);
+  });
+
+  it("should play nothing over the picker, the fold button or the lines (C4)", () => {
+    const s = heard();
+    s.move(mid(picker));
+    s.move(mid(chatFoldButton(frame)));
+    s.move(mid(frame.messages));
+    expect(s.played).toEqual([]);
+  });
+
+  it("should play menu_error for Enter on a whisper with a name and no message, sending nothing (C5)", () => {
+    const s = heard();
+    s.press("ENTER");
+    const f = s.field();
+    f.value = "@Wenna";
+    f.channel = "whisper";
+    f.events!.keyDown("Enter", false, false);
+    expect(s.played).toEqual(["menu_error"]);
+    expect(s.sent).toEqual([]);
   });
 });

@@ -60,6 +60,12 @@ export class PotionHud {
       .setColor(toCss(view.dimmed ? palette.hudFaint : palette.hudLabel));
   }
 
+  /** Taken down for good: its world left the UI scene (FS-TQZ5J § Change: Batch 5, R67). */
+  destroy(): void {
+    this.takeDown();
+    this.shown = null;
+  }
+
   /** The panel, icon and text, made once while the cell is up; only their content changes. */
   private build(): void {
     const { top } = this;

@@ -8,6 +8,7 @@
  * off, so nothing else hears them.
  */
 
+import type { UiEffect } from "@/audio/uiSounds";
 import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
 
 /**
@@ -123,6 +124,11 @@ export interface ChatInputDeps {
   open?: ReadonlySet<ChatChannel>;
   /** The lines this player sent, oldest first, and where a newly sent one is kept. */
   recall?: ChatRecall;
+  /**
+   * Plays an interface sound (FS-WDM0X § Pass 2: the chat): the picker's list opened or shut by the
+   * player (C2, C3), a draft refused (C5). None, nothing plays.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /** The sent lines the arrow keys walk through, as a terminal's history (asked 2026-10-31). */
@@ -175,6 +181,8 @@ export class ChatInput {
     );
     field.value = CHAT_PREFIX[channel] + body;
     field.channel = channel;
+    // a row picked from the open list shuts it, the pick's one sound (FS-WDM0X § Pass 2: the chat, C3)
+    if (this.listOpen) this.deps.play?.("menu_dropdown_close");
     this.listOpen = false;
     this.deps.changed?.();
   }
@@ -202,6 +210,7 @@ export class ChatInput {
     if (!this.open && !this.requestOpen()) return;
     this.listOpen = !this.listOpen;
     this.highlight = this.deps.field.channel;
+    this.deps.play?.(this.listOpen ? "menu_dropdown_open" : "menu_dropdown_close");
     this.deps.changed?.();
   }
 
@@ -213,10 +222,15 @@ export class ChatInput {
     this.deps.changed?.();
   }
 
-  /** Shuts the list, the input left as it is: a press outside it, the view resized (FS-J267Q R4, R6). */
-  closePicker(): void {
+  /**
+   * Shuts the list, the input left as it is: a press outside it, the view resized (FS-J267Q R4, R6).
+   * `byPlayer` (a press outside it, Esc in it) plays `menu_dropdown_close`; the game's shuts, and the
+   * field's keys shutting it as typing, play nothing (FS-WDM0X § Pass 2: the chat, C3).
+   */
+  closePicker(byPlayer = false): void {
     if (!this.listOpen) return;
     this.listOpen = false;
+    if (byPlayer) this.deps.play?.("menu_dropdown_close");
     this.deps.changed?.();
   }
 
@@ -314,7 +328,8 @@ export class ChatInput {
         const whisper = whisperOf(
           field.value.slice(CHAT_PREFIX.whisper.length),
         );
-        if (!whisper) return;
+        // the one refusal of chat input (FS-WDM0X § Pass 2: the chat, C5)
+        if (!whisper) return this.deps.play?.("menu_error");
         this.deps.send({
           channel,
           target: whisper.target,
@@ -356,7 +371,7 @@ export class ChatInput {
       return true;
     }
     if (key === "Escape") {
-      this.closePicker();
+      this.closePicker(true);
       return true;
     }
     return false;
