@@ -13,6 +13,7 @@ import { UiMenuSlot, type SlotPanel } from "./uiSceneMenu";
 import { UiNoticeLayer, drawNotice, type NoticeStage } from "./uiSceneNotices";
 import { UiPartySlot, partyPanelWiring, type PartyPanelPiece, type PartyPanelWiring } from "./uiSceneParty";
 import { UiGearSlot, type GearKey, type GearPiece, type GearPieces, type GearWiring } from "./uiSceneGear";
+import { UiControlsSlot } from "./uiSceneRecord";
 
 /** A world scene as the UI scene's tests reach it: its game's registry, its end, its UI and what it reports. */
 interface WorldUnderTest {
@@ -40,6 +41,8 @@ export interface UiSceneOnStage {
   party: UiPartySlot;
   /** The UI scene's gear slot (FS-TQZ5J § Change: Phase 3, R50), its pieces a test's (`gearOver`). */
   gear: UiGearSlot;
+  /** The run's controls panel's slot (§ Change: Phase 3, R50, R56), its panel drawing nothing: H is `toggle`. */
+  controls: UiControlsSlot;
   /** A field's or the run's gear key, heard on its key event as the UI scene hears it there (R56). */
   gearKey(key: GearKey): void;
   row?: UiCornerRow;
@@ -164,14 +167,19 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     panel: partyMakers.get(scene)?.(partyPanelWiring(bridge)) ?? NO_PANEL,
   }));
   const gear = new UiGearSlot(bridge, (w, wiring) => gearMakers.get(scene)?.(w, wiring) ?? { gear: NO_GEAR });
+  const controls = new UiControlsSlot(bridge, () => ({ relayout: () => {}, destroy: () => {} }));
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
   const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));
+  // as the UI scene's: the run's end clears the gear, the container view and the controls panel (R58)
   bridge.onScreen({
     dialogue: (shown) => dialogue.show(shown),
     notice: (notice) => notices.say(notice),
     gear: (message) => gear.hear(message),
     container: (message) => gear.hearContainer(message),
-    endPopped: () => gear.endPopped(),
+    endPopped: () => {
+      gear.endPopped();
+      controls.close();
+    },
   });
   // as the UI scene's update: its keys, then the town's gear keys and its E after a shown card (R56)
   const frame = (pressed: Pressed = {}) => {
@@ -189,6 +197,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     notices,
     party,
     gear,
+    controls,
     gearKey: (key) => {
       if (bridge.world?.world !== "hub") gear.key(key);
     },
@@ -204,6 +213,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     side.row?.show(report);
     gear.show(report);
     party.show(report);
+    controls.world(report);
   });
   gear.show(bridge.world);
   party.show(bridge.world);

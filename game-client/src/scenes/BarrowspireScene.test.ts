@@ -4499,6 +4499,118 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
       expect(party.panel.isOpen()).toBe(false);
       expect(heard()).toEqual(["dialog_open"]);
     });
+
+    // § Change: Phase 3, R58 (the review of phase 3, MED-3): the run asks the UI scene to clear its moved
+    // windows as the end pops up, so their grounds take no press meant for the end's buttons; silently
+    // (FS-WDM0X S4), once
+    describe("and the moved windows with it (FS-TQZ5J § Change: Phase 3, R58)", () => {
+      /** The run's end on stage with the UI scene's gear overlay, container view and controls panel open over it. */
+      function endWithWindows() {
+        const env = endWithPanel();
+        const open = { inventory: false, character: false, container: undefined as string | undefined };
+        gearOver(env.run, "run", () => ({
+          gear: {
+            isInventoryOpen: () => open.inventory,
+            isCharacterOpen: () => open.character,
+            stashOpen: () => false,
+            toggle: () => (open.inventory = !open.inventory),
+            toggleCharacter: () => (open.character = !open.character),
+            hide: () => {
+              const was = open.inventory || open.character;
+              open.inventory = open.character = false;
+              return was;
+            },
+            equipKey: () => false,
+            openStash: () => false,
+            seen: () => {},
+            setCharacterLevel: () => {},
+            taken: () => {},
+            roomForOne: () => true,
+            release: () => {},
+          },
+          container: {
+            get isOpen() {
+              return open.container !== undefined;
+            },
+            get entityId() {
+              return open.container;
+            },
+            open: (id: string) => void (open.container = id),
+            close: () => void (open.container = undefined),
+            closeNow: () => void (open.container = undefined),
+            setItems: () => {},
+            lootFirst: () => {},
+            pointerMove: () => {},
+            pointerDown: () => false,
+            owns: () => false,
+            relayout: () => {},
+            destroy: () => {},
+          },
+        }));
+        const side = uiSceneOn(env.run, "run", { row: false });
+        /** The gear's two panels, the container view and the controls panel, opened as the player opens them. */
+        const reopen = () => {
+          side.gearKey("inventory");
+          side.gearKey("character");
+          side.bridge.container({ kind: "open", entityId: "chest-1", container: "chest" });
+          side.controls.toggle();
+        };
+        const standing = () => ({
+          inventory: side.gear.isInventoryOpen(),
+          character: side.gear.isCharacterOpen(),
+          container: side.bridge.ui.container,
+          controls: side.controls.isOpen(),
+        });
+        const ALL_OPEN = { inventory: true, character: true, container: "chest-1", controls: true };
+        const NONE_OPEN = { inventory: false, character: false, container: undefined, controls: false };
+        return { ...env, reopen, standing, ALL_OPEN, NONE_OPEN };
+      }
+
+      it.each([
+        ["a solo death", dead, "died"],
+        ["a solo escape", escaped, "escaped"],
+      ] as const)("should close them as the record opens on %s, with the end's dialog_open alone", (_case, fields, outcome) => {
+        const { run, heard, tick, reopen, standing, ALL_OPEN, NONE_OPEN } = endWithWindows();
+        tick(me(fields));
+        reopen();
+        expect(standing()).toEqual(ALL_OPEN);
+        heard();
+        run.showSettlement(settlement({ outcome }));
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(heard()).toEqual(["dialog_open"]);
+      });
+
+      it("should close them as the card appears for a death with a teammate in play, the record after it closing nothing", () => {
+        const { run, heard, tick, reopen, standing, ALL_OPEN, NONE_OPEN } = endWithWindows();
+        tick(me({}), ally());
+        reopen();
+        heard();
+        tick(me(dead), ally());
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(heard()).toEqual(["dialog_open"]);
+
+        // reopened between the card and the record: the end popped up once
+        reopen();
+        heard();
+        run.showSettlement(settlement());
+        tick(me(dead), ally());
+        expect(standing()).toEqual(ALL_OPEN);
+        expect(heard()).toEqual([]);
+      });
+
+      it("should leave them reopened through a copy, a tick and a resize after the end", () => {
+        const { run, heard, tick, reopen, standing, ALL_OPEN, resize } = endWithWindows();
+        tick(me(escaped));
+        run.showSettlement(settlement({ outcome: "escaped" }));
+        reopen();
+        heard();
+        run.showSettlement(settlement({ outcome: "escaped", status: "confirmed" }));
+        tick(me(escaped));
+        resize();
+        expect(standing()).toEqual(ALL_OPEN);
+        expect(heard()).toEqual([]);
+      });
+    });
   });
 });
 
