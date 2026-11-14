@@ -172,6 +172,20 @@ describe("one pointer look per game (FS-KYPQ9 § Change: The pressed hand, P6, P
     expect(page.shown).toEqual(["hand", "hand pressed"]);
   });
 
+  // Fast Refresh swaps the module, its class with it, and the game lives on with the old one's
+  // pointer look on its registry: the new module's ask reuses it rather than watch the page twice
+  it("should give an ask from a hot-swapped module the game's pointer look, not a second one", async () => {
+    const page = lookGame();
+    const look = page.look();
+    vi.resetModules();
+    const swapped = await import("./pointerLook");
+    const cursors = vi.fn(() => STAND_IN_CURSORS);
+
+    expect(swapped.pointerLookOf(page.game, cursors, page.page)).toBe(look);
+    expect(cursors).not.toHaveBeenCalled();
+    expect(page.listeners()).toEqual({ added: ONE_SET, removed: 0 });
+  });
+
   it("should take every listener off and write nothing more once the game is destroyed", () => {
     const page = lookGame();
     const look = page.look();
