@@ -404,6 +404,13 @@ today.
   inside test decides; no state survives from before.
 - **Player not yet spawned or gone** (death, extraction, scene shutdown): no building is the
   player's; the blackout is off and every building shows its exterior. The silhouette is hidden.
+  *(Amended 2026-11-14, the owner: 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」, by [FS-QPDKN § Change: The
+  party death flow and the spectate switcher](QPDKN-resolved-delver-spectate-and-leave.md).)* A dead or escaped
+  player who watches a teammate takes the watched teammate's building by the same inside test, at that
+  teammate's drawn position, into a room as out of it: the blackout, the hide rule, the room and hall lights and
+  the silhouette (the watched teammate's) are as that teammate's own view has them. The old "the watched teammate
+  is not followed indoors" (review round 1, I-9PN7X-3) is overruled. Before WATCH, and watching nobody, the line
+  above stands.
 - **Floor change in the Spire:** the blackout clears at `leaveFloor` and the new floor starts
   with the player outside every room until the inside test says otherwise.
 - **Tall back-wall dressing** (sconces, banners) poking above `WALL_HEIGHT` inside: kept clear by

@@ -46,6 +46,16 @@ party of two or three, in the tower.
 - [ ] **Unchanged:** a solo death and a solo escape (the record alone, its CLOSE `menu_click`, the town held
       behind it); the last of a party to resolve.
 - [ ] Resize the window while watching (or toggle fullscreen): the row and the switcher go back to their places.
+- [ ] **The switcher, restyled 2026-11-14** (supersedes the switcher's look above): no dark strip; the name
+      "Watching <name>" shows between the arrows in bright brass (yellow-gold, not amber); each arrow is only an
+      amber triangle, no square outline or fill, brightening under the pointer (`menu_hover`), `menu_click` on the
+      release; greyed with one teammate in play, faint, `menu_error` on a press. The press area is as big as the
+      old framed arrow; the bone hand stays. Same place: y 576–604 at 720 tall, right of the open chat.
+- [ ] **Watching sees as the watched teammate does (2026-11-14):** the view round them is lit by their torch
+      (not dark); walls and roofs in front of them fade as they did for you; when they walk into a room you go
+      in with them (the room's blackout, its lights, the halls hidden), and out again with them. ◄ / ► / Tab
+      moves the light and the room to the next teammate at once, no flash. The minimap shows them as the
+      bright self dot. Before WATCH (the card up) the view stays as before: your light fades, no room.
 
 ## Sounds (where each plays)
 

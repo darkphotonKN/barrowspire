@@ -916,3 +916,26 @@ Appended after the slices; the text above is not edited. Built in I-QPDKN-12 (th
   CLOSE; no SETTLEMENT by the card; the spectate row lower and the corner LEAVE gone; the switcher; no text at
   the top centre and the target frame up while spectating; the escaped spectator's LEAVE and SETTLEMENT moved
   down with the row; the own bars and potion cell standing frozen at the top left after a death or an escape.
+- **2026-11-14, the owner's check of the switcher** (「箭頭中間沒看到觀看者的名字 樣式可以不用加底色 直接顯示黃色名字
+  箭頭也不用匡跟底色」): the name never showed because the `hudPanel` backing's Graphics was made after the words
+  at the same depth 1000, and Phaser renders ties in the order made (`DisplayList.depthSort` is a stable sort),
+  so the opaque strip covered them. Restyled bare: no backing; the words "Watching <name>" 14 px in the new
+  `palette.watchedName` (the HUD's bright brass, `brassBright`: the gold nearest the owner's yellow that is not
+  amber, since the name is read, not acted on) at depth 1001; each arrow only its 8 × 12 triangle, no outline or
+  fill, in `interactable` amber, `interactableBright` under the pointer, `hudFaint` at 0.45 when greyed, its own
+  Graphics at 1000, its press on an invisible zone 28 × 28 (the framed arrow's) at 1001 named `watch-previous` /
+  `watch-next`, no cursor. Sounds, Tab, the layout (y 576–604, words plus 76 wide, never left of 442) unchanged;
+  `drawHudButton` is no longer used here.
+- **2026-11-14, the owner's light check** (「觀看時沒有燈光很暗 但被觀看的玩家本身是有燈光的」, widened to
+  「觀看時應該會跟被觀看的人一模壹樣的視野狀態」): while a teammate is watched (`watchedFigure()`: their sprite
+  and drawn position) the view is theirs. `updateLighting` carries the torch at their drawn position and eases
+  the occluders round their figure; a switch moves the pool at once, with no fade out and in. `eye()` and
+  `figure()` take theirs, so the inside test, the blackout, the hide rule, the room and hall lights (FS-9PN7X
+  §D.6) and the silhouette follow them indoors; FS-9PN7X's "player gone" edge state is amended to match. The
+  minimap's dots (`partyDots`): the watched teammate is the self's dot, the rest, the player among them while in
+  play, allies. Before WATCH, and with nobody watched, the old fade and no room. Already the same without a
+  change: the fog's exploration and its monster and pile rule are the party's (`partyPositions`, every living
+  member), and the near chunks follow the camera, which follows the watched teammate. The server cuts a dungeon
+  floor's monsters and containers per recipient (`interestCentres`, 1600 px): a spectator is sent those near
+  every body in play, a superset of the watched teammate's own, and the extra ones stand 1600 px or more from
+  the watched figure, out of view, so nothing on screen differs and no server change is needed.
