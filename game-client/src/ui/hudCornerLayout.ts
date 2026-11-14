@@ -6,7 +6,6 @@
  */
 
 import { anchorAt, type Placement } from "@/render/viewport";
-import { ABILITY_CARD_H } from "./AbilityHud";
 
 export interface Rect {
   x: number;
@@ -60,6 +59,12 @@ export const ABILITY_CARD_PLACE: Placement = {
   dx: -CORNER_MARGIN,
   dy: -CORNER_ROW_CLEARANCE,
 };
+
+/**
+ * The run's ability card's height (`AbilityHud`: its padding, its name row and its line's two rows), which
+ * the controls badge stands over (FS-84N1G R3).
+ */
+export const ABILITY_CARD_H = 72;
 
 /**
  * The run's controls badge (FS-84N1G R3; the owner, 「幫我做一個徽章 放在 技能上方區塊」): a plate the corner
