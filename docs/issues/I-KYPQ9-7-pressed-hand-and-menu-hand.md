@@ -1,6 +1,6 @@
 ---
 id: I-KYPQ9-7
-status: open
+status: done
 implements: FS-KYPQ9
 blocked_by: []
 labels: [ready-for-agent]
@@ -27,10 +27,10 @@ plain hand without the new sheet (P9), but the slice is not done until the sheet
   scene diffs small (the branch merges into feat/client-ui-scene).
 
 ## Acceptance Criteria
-- [ ] Every criterion of FS-KYPQ9 §Change: The pressed hand, and the hand on the menus, but the
+- [x] Every criterion of FS-KYPQ9 §Change: The pressed hand, and the hand on the menus, but the
       manual check.
-- [ ] Every hover keeps the bone hand (`boneHand.test.ts`) still holds.
-- [ ] `npm test`, `npx tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Every hover keeps the bone hand (`boneHand.test.ts`) still holds.
+- [x] `npm test`, `npx tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 None

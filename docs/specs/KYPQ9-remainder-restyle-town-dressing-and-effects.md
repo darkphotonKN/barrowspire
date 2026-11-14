@@ -639,19 +639,19 @@ P10. **One writer.** The canvas's default cursor is set in one place, the game's
     scene sets it on its own. Each cursor's CSS (a cropped data URL) is made once per game.
 
 ### Acceptance criteria
-- [ ] The manifest has `cursor_hand_pressed`, 32×32 on the `fx` atlas, `authored:
+- [x] The manifest has `cursor_hand_pressed`, 32×32 on the `fx` atlas, `authored:
       tools/bake/page/models/cursors.js#boneHandPressed`, its anchor equal to `cursor_hand`'s
       (`manifest.test.ts`).
-- [ ] After the re-bake, every sheet but `cursor_hand_pressed` crops to the same pixels as before
+- [x] After the re-bake, every sheet but `cursor_hand_pressed` crops to the same pixels as before
       it, and every atlas but `fx-0` is byte-equal; `npm run bake -- --check` reports no changes.
-- [ ] The pointer look shows the hand, the pressed hand on a left press, and the hand again on the
+- [x] The pointer look shows the hand, the pressed hand on a left press, and the hand again on the
       left's release; no right or middle press presses it; the strike-mark shows unchanged under a
       press; leaving or coming onto a monster mid-press follows P5; a blur or a hidden tab lets go
       (`pointerLook.test.ts`).
-- [ ] The look is one per game: a second ask returns the same look and adds no listener, its CSS is
+- [x] The look is one per game: a second ask returns the same look and adds no listener, its CSS is
       cropped once, and the game's destroy takes its listeners off (`pointerLook.test.ts`).
-- [ ] Missing sheets fall back as P9 says (`pointerLook.test.ts`).
-- [ ] No scene calls `setDefaultCursor` itself; the town, field, run, main menu, character creation
+- [x] Missing sheets fall back as P9 says (`pointerLook.test.ts`).
+- [x] No scene calls `setDefaultCursor` itself; the town, field, run, main menu, character creation
       and the disconnect notice ask the look for the hand; the town and the field leave the hand,
       not the browser's cursor, on a stop (`pointerLook.test.ts`, `HubScene.test.ts`,
       `FieldScene.test.ts`, `BarrowspireScene.test.ts`, `DisconnectNoticeScene.test.ts`).
