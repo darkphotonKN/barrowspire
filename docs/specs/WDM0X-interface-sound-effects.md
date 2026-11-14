@@ -957,3 +957,5 @@ E7. **What stays.** The ESC menu's *Leave the barrow* keeps `settings_close` (M7
 - A sound for the death itself, the escape door, or `end_game`; any notice's sound (O1).
 - The arrival card, the controls panel (H) and the spectate HUD's Tab.
 - Moving the card, the row or the record into the UI scene (FS-TQZ5J phase 6).
+
+## Change: The run's controls badge and the controls panel's rules → FS-84N1G

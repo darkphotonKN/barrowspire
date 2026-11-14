@@ -1354,3 +1354,5 @@ Appended after the phase 3 review; the text above is not edited. Each behaviour 
   exactly as before. One named case moved, as meant: the gear set's controls panel over the party
   panel (run) no longer shows the invite field's placeholder (1×: 50288 differing px in a box from
   x 406 before the fix, 50266 from x 409 after).
+
+## Change: The run's controls badge and the controls panel's rules → FS-84N1G

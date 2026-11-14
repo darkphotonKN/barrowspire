@@ -1137,3 +1137,5 @@ For the whole row:
 ## Change: The whole corner row is knockout → FS-7TQN4
 
 ## Change: The corner row is embossed → FS-S8Z2Y
+
+## Change: The run's controls badge and the controls panel's rules → FS-84N1G
