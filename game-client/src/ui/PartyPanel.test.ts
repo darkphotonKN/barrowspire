@@ -168,6 +168,7 @@ function setup(
     opening?: () => void;
     wrapper?: PartyPanelDeps["wrapper"];
     ground?: PartyPanelDeps["ground"];
+    play?: PartyPanelDeps["play"];
   } = {},
 ) {
   const scene = fakeScene();
@@ -199,6 +200,7 @@ function setup(
     opening: opts.opening,
     wrapper: opts.wrapper,
     ground: opts.ground,
+    play: opts.play,
   };
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
@@ -806,5 +808,65 @@ describe("PartyPanel on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R4
     focused = true;
     expect(env.panel.keepsField(at.x, at.y)).toBe(true);
     expect(env.panel.keepsField(5, 5)).toBe(false);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): the
+// panel's buttons hover and click, a greyed one says no; its open and close keep party_open and
+// party_close by the window rule (P5–P8)
+describe("PartyPanel's sounds (FS-WDM0X § Pass 2: the party, P5–P8)", () => {
+  function heardPanel(world: WorldType = "hub") {
+    const heard: string[] = [];
+    const env = setup({ world, play: (effect) => void heard.push(effect) });
+    return { ...env, heard };
+  }
+
+  it("should play menu_hover on a live button and menu_click as it answers, once each, beside its command", () => {
+    const env = heardPanel();
+    env.pressT();
+    const create = env.find("Create party")!;
+
+    create.onOver?.();
+    create.onRelease?.();
+
+    expect(env.heard).toEqual(["menu_hover", "menu_click"]);
+    expect(env.commands.create).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["Transfer", "Kick", "Leave party", "Invite"])("should hover and click %s for the leader", (label) => {
+    const env = heardPanel();
+    env.store.getState().apply(update());
+    env.pressT();
+    env.field.value = "Mira";
+
+    env.find(label)!.onOver?.();
+    env.find(label)!.onRelease?.();
+
+    expect(env.heard).toEqual(["menu_hover", "menu_click"]);
+  });
+
+  it("should take a greyed button's press for menu_error alone, and send nothing (a run's Invite)", () => {
+    const env = heardPanel("run");
+    env.store.getState().apply(update());
+    env.pressT();
+    env.field.value = "Mira";
+    const invite = env.find("Invite")!;
+
+    expect(invite.interactive).toBe(true);
+    invite.onOver?.();
+    invite.onRelease?.();
+
+    expect(env.heard).toEqual(["menu_error"]);
+    expect(env.commands.invite).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing of its own on T or its ×: their sounds are the window rule's (P8)", () => {
+    const env = heardPanel();
+    env.pressT();
+    const x = env.find("×")!;
+    x.onOver?.();
+    x.onRelease?.();
+
+    expect(env.heard).toEqual([]);
   });
 });

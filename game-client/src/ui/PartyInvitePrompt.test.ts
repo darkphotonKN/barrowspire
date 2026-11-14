@@ -154,7 +154,7 @@ const joined = (): PartyUpdatePayload => ({
 });
 
 function setup(
-  opts: { hidden?: boolean; world?: WorldType | null; floor?: number } = {},
+  opts: { hidden?: boolean; world?: WorldType | null; floor?: number; heard?: string[] } = {},
 ) {
   const env = fakeScene();
   const clock = { now: 0 };
@@ -171,6 +171,7 @@ function setup(
     hidden: () => state.hidden,
     world: () => state.world,
     floor: () => state.floor,
+    play: opts.heard ? (effect) => void opts.heard!.push(effect) : undefined,
   });
   const frame = () => env.events.emit("postupdate");
   return { ...env, clock, store, state, commands, prompt, frame };
@@ -512,5 +513,75 @@ describe("PartyInvitePrompt on the UI scene (FS-TQZ5J § Change: Phase 2: the pa
     env.state.hidden = false;
     env.frame();
     expect(env.live()).toHaveLength(1);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): an invite
+// received chimes notify_important, once, shown or hidden; Accept dialog_confirm, Decline
+// dialog_cancel; a greyed Accept menu_error (P1, P3, P4, P7)
+describe("PartyInvitePrompt's sounds (FS-WDM0X § Pass 2: the party, P1, P3, P4, P7)", () => {
+  it("should chime notify_important once for each invite received, hidden or shown, and nothing for the prompt appearing", () => {
+    const heard: string[] = [];
+    const env = setup({ heard, hidden: true });
+
+    env.store.getState().receiveInvite(invite("a"));
+    env.store.getState().receiveInvite(invite("a"));
+    env.state.hidden = false;
+    env.frame();
+    env.store.getState().receiveInvite(invite("b", "Mira"));
+
+    expect(heard).toEqual(["notify_important", "notify_important"]);
+  });
+
+  it("should play nothing for an invite already waiting as it mounts, nor for one run out, answered or forgotten", () => {
+    const heard: string[] = [];
+    const store = createPartyStore({ selfId: () => ME, now: () => 0 });
+    store.getState().receiveInvite(invite("a"));
+    const env = fakeScene();
+    new PartyInvitePrompt(env.scene, {
+      store,
+      commands: { accept: vi.fn(), decline: vi.fn() },
+      hidden: () => false,
+      world: () => "hub",
+      floor: () => undefined,
+      play: (effect) => void heard.push(effect),
+    });
+    store.getState().receiveInvite(invite("b"));
+    heard.length = 0;
+
+    store.getState().dismissInvite("a");
+    store.getState().forgetInvites();
+
+    expect(heard).toEqual([]);
+  });
+
+  it("should play dialog_confirm on Accept and dialog_cancel on Decline, once each, beside the answer", () => {
+    const heard: string[] = [];
+    const env = setup({ heard });
+    env.store.getState().receiveInvite(invite("a"));
+    env.store.getState().receiveInvite(invite("b", "Mira"));
+    heard.length = 0;
+
+    click(env.all("Decline")[1]);
+    click(env.find("Accept")!);
+
+    expect(heard).toEqual(["dialog_cancel", "dialog_confirm"]);
+    expect(env.commands.decline).toHaveBeenCalledWith("b");
+    expect(env.commands.accept).toHaveBeenCalledWith("a");
+  });
+
+  it("should take the greyed Accept's press in a run for menu_error alone, sending nothing", () => {
+    const heard: string[] = [];
+    const env = setup({ heard, world: "run" });
+    env.store.getState().receiveInvite(invite("a"));
+    heard.length = 0;
+    const accept = env.find("Accept")!;
+
+    expect(accept.interactive).toBe(true);
+    click(accept);
+
+    expect(heard).toEqual(["menu_error"]);
+    expect(env.commands.accept).not.toHaveBeenCalled();
+    expect(env.prompt.shown()).toBe(1);
   });
 });

@@ -132,7 +132,7 @@ const check = (
   ...extra,
 });
 
-function setup(self = WREN, opts: { hidden?: boolean } = {}) {
+function setup(self = WREN, opts: { hidden?: boolean; heard?: string[] } = {}) {
   const env = fakeScene();
   const clock = { now: 0 };
   const said: string[] = [];
@@ -148,6 +148,7 @@ function setup(self = WREN, opts: { hidden?: boolean } = {}) {
     commands,
     selfId: () => self,
     hidden: () => state.hidden,
+    play: opts.heard ? (effect) => void opts.heard!.push(effect) : undefined,
   });
   const frame = () => env.events.emit("postupdate");
   const receive = (extra: Partial<PartyReadyCheckPayload> = {}) =>
@@ -431,5 +432,47 @@ describe("PartyReadyCheck on the UI scene (FS-TQZ5J § Change: Phase 2: the part
     store.getState().receiveReadyCheck(check({ outcome: "cancelled" }));
 
     expect(live()).toEqual([]);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): the check
+// opening is dialog_open, for every member and the leader, shown or hidden; Accept dialog_confirm,
+// Decline dialog_cancel (P2–P4)
+describe("PartyReadyCheck's sounds (FS-WDM0X § Pass 2: the party, P2–P4)", () => {
+  it.each([WREN, LEADER])("should play dialog_open once as a check opens for %s, and nothing as it is redrawn or let go", (self) => {
+    const heard: string[] = [];
+    const env = setup(self, { heard, hidden: true });
+
+    env.receive();
+    env.receive({ members: [{ player_id: LEADER, name: "Aldric", state: "accepted" }, { player_id: WREN, name: "Wren", state: "accepted" }] });
+    env.receive({ outcome: "cancelled" });
+
+    expect(heard).toEqual(["dialog_open"]);
+  });
+
+  it("should play dialog_open again for a check of another id", () => {
+    const heard: string[] = [];
+    const env = setup(WREN, { heard });
+    env.receive();
+    env.receive({ check_id: "chk-2" });
+    expect(heard).toEqual(["dialog_open", "dialog_open"]);
+  });
+
+  it("should play dialog_confirm on Accept and dialog_cancel on Decline, beside the answer", () => {
+    const yes: string[] = [];
+    const accepting = setup(WREN, { heard: yes });
+    accepting.receive();
+    yes.length = 0;
+    accepting.find("Accept")!.onPress?.();
+    expect(yes).toEqual(["dialog_confirm"]);
+    expect(accepting.commands.ready).toHaveBeenCalledWith("chk-1", true);
+
+    const no: string[] = [];
+    const declining = setup(WREN, { heard: no });
+    declining.receive();
+    no.length = 0;
+    declining.find("Decline")!.onPress?.();
+    expect(no).toEqual(["dialog_cancel"]);
+    expect(declining.commands.ready).toHaveBeenCalledWith("chk-1", false);
   });
 });

@@ -47,11 +47,18 @@ const partyMounts = vi.hoisted(
       open: boolean;
       destroyed: boolean;
       keeps: boolean;
+      play?: (effect: string) => void;
     }[],
 );
 vi.mock("@/ui/PartyPanel", () => ({
-  mountPartyPanel: (_scene: unknown, blocked: () => boolean, opening?: () => void, wrapper?: { act(run: () => void): void }) => {
-    const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false };
+  mountPartyPanel: (
+    _scene: unknown,
+    blocked: () => boolean,
+    opening?: () => void,
+    wrapper?: { act(run: () => void): void },
+    play?: (effect: string) => void,
+  ) => {
+    const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false, play };
     partyMounts.push(panel);
     return {
       isOpen: () => panel.open,
@@ -73,28 +80,40 @@ vi.mock("@/ui/PartyPanel", () => ({
 // The invite prompt and the ready check themselves are their own tests': here recording stand-ins for
 // what the UI scene mounts for each world (§ Change: Phase 2: the party, R36), their wiring kept.
 const popupMounts = vi.hoisted(
-  () => [] as { kind: "prompt" | "ready"; hidden: () => boolean; floor?: () => number | undefined; destroyed: boolean }[],
+  () =>
+    [] as {
+      kind: "prompt" | "ready";
+      hidden: () => boolean;
+      floor?: () => number | undefined;
+      destroyed: boolean;
+      play?: (effect: string) => void;
+    }[],
 );
 vi.mock("@/ui/PartyInvitePrompt", () => ({
-  mountPartyInvitePrompt: (_scene: unknown, hidden: () => boolean, floor?: () => number | undefined) => {
-    const made = { kind: "prompt" as const, hidden, floor, destroyed: false };
+  mountPartyInvitePrompt: (
+    _scene: unknown,
+    hidden: () => boolean,
+    floor?: () => number | undefined,
+    play?: (effect: string) => void,
+  ) => {
+    const made = { kind: "prompt" as const, hidden, floor, destroyed: false, play };
     popupMounts.push(made);
     return { relayout: () => {}, destroy: () => void (made.destroyed = true) };
   },
 }));
 vi.mock("@/ui/PartyReadyCheck", () => ({
-  mountPartyReadyCheck: (_scene: unknown, hidden: () => boolean) => {
-    const made = { kind: "ready" as const, hidden, destroyed: false };
+  mountPartyReadyCheck: (_scene: unknown, hidden: () => boolean, play?: (effect: string) => void) => {
+    const made = { kind: "ready" as const, hidden, destroyed: false, play };
     popupMounts.push(made);
     return { relayout: () => {}, destroy: () => void (made.destroyed = true) };
   },
 }));
 
 // The party frames themselves are PartyFrames.test's: here a recording stand-in, the ticks it was shown kept.
-const frameMounts = vi.hoisted(() => [] as { shown: unknown[]; destroyed: boolean }[]);
+const frameMounts = vi.hoisted(() => [] as { shown: unknown[]; destroyed: boolean; play?: (effect: string) => void }[]);
 vi.mock("@/ui/PartyFrames", () => ({
-  mountPartyFrames: () => {
-    const made = { shown: [] as unknown[], destroyed: false };
+  mountPartyFrames: (_scene: unknown, _art: unknown, play?: (effect: string) => void) => {
+    const made = { shown: [] as unknown[], destroyed: false, play };
     frameMounts.push(made);
     return { show: (state: unknown) => void made.shown.push(state), destroy: () => void (made.destroyed = true) };
   },
@@ -923,6 +942,21 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
       [0, false],
     ]);
     expect(made[0].shown[0]).toBe(tick);
+  });
+
+  // FS-WDM0X § Pass 2: the party (I-WDM0X-8): every party piece plays on the game's one player
+  it("should hand every party piece the UI scene's player for its sounds", () => {
+    const { bridge, report } = created();
+    const heard: string[] = [];
+    bridge.lendSounds({ act: (run) => run(), play: (effect) => void heard.push(effect) });
+    const popups = popupMounts.length;
+    report("hub");
+
+    partyMounts.at(-1)!.play?.("menu_click");
+    for (const m of popupMounts.slice(popups)) m.play?.(m.kind === "prompt" ? "notify_important" : "dialog_open");
+    frameMounts.at(-1)!.play?.("menu_hover");
+
+    expect(heard).toEqual(["menu_click", "notify_important", "dialog_open", "menu_hover"]);
   });
 
   it("should refuse the panel as the world's report or the menu says", () => {

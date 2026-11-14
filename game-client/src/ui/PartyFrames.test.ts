@@ -28,6 +28,7 @@ interface FakeText {
   destroyed: boolean;
   interactive: boolean;
   press?: () => void;
+  over?: () => void;
 }
 
 function fakeScene() {
@@ -78,6 +79,7 @@ function fakeScene() {
       setInteractive: () => ((t.interactive = true), self),
       on: (ev: string, fn: () => void) => (
         ev === "pointerup" && (t.press = fn),
+        ev === "pointerover" && (t.over = fn),
         self
       ),
       setText: (c: string) => ((t.content = c), self),
@@ -800,5 +802,47 @@ describe("PartyFrames: same-world teammates' vitals and level (FS-CH21F)", () =>
     const level = liveText("Lv 12")!;
     expect(level.x).toBeGreaterThan(name.x + width(name));
     expect(level.x).toBeLessThan(name.x + width(name) + 12);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): Travel
+// hovers and clicks live, says no greyed (P5–P7)
+describe("PartyFrames' Travel sounds (FS-WDM0X § Pass 2: the party, P5–P7)", () => {
+  const LEADER = "wren";
+  const atPods = update(
+    [
+      { ...member(LEADER, "Wren"), pod_id: "pod-a" },
+      { ...member(ME, "Marl"), pod_id: "pod-b" },
+    ],
+    LEADER,
+  );
+
+  it("should play menu_hover and menu_click on the live Travel, beside its travel", () => {
+    const env = setup("hub");
+    const heard: string[] = [];
+    env.deps.play = (effect) => void heard.push(effect);
+    env.store.getState().apply(atPods);
+    const travel = env.liveText("Travel")!;
+
+    travel.over?.();
+    travel.press?.();
+
+    expect(heard).toEqual(["menu_hover", "menu_click"]);
+    expect(env.deps.travel).toHaveBeenCalledTimes(1);
+  });
+
+  it("should take the greyed Travel's press in a field for menu_error alone, travelling nowhere", () => {
+    const env = setup("field");
+    const heard: string[] = [];
+    env.deps.play = (effect) => void heard.push(effect);
+    env.store.getState().apply(atPods);
+    const travel = env.liveText("Travel")!;
+
+    expect(travel.interactive).toBe(true);
+    travel.over?.();
+    travel.press?.();
+
+    expect(heard).toEqual(["menu_error"]);
+    expect(env.deps.travel).not.toHaveBeenCalled();
   });
 });
