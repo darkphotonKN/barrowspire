@@ -1,12 +1,13 @@
 /**
- * The party on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R36–R43): the party panel, built
- * for each world reported and taken down as it leaves, as each world's create mounted it and its
- * release destroyed it. Its open state lives in the party store, so it carries across a switch.
+ * The party on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R36–R43): the party panel, the
+ * invite prompt and (in the town) the ready check, built for each world reported and taken down as it
+ * leaves, as each world's create mounted them and its release destroyed them. Its open state lives in the party store, so it carries across a switch.
  * Phaser-free: the UI scene hands it the builder (`mountPartyPanel` on itself), so the wiring is tested
  * on its own.
  *
- * What the panel reads of the world is the world's report (R38): the world's part of its refusal,
- * `blockers().party`, beside the UI scene's own menu slot. Its opening closes the town's letter panel
+ * What they read of the world is the world's report (R38): the world's part of the panel's refusal,
+ * `blockers().party`, beside the UI scene's own menu slot; the popups' hiding, `blockers().popups`; the
+ * invite stack's floor, `layout().chatTop`. Its opening closes the town's letter panel
  * by a request (R39); its own inputs run through the UI scene's act (R22).
  */
 
@@ -26,9 +27,17 @@ export interface PartyPanelPiece {
   destroy(): void;
 }
 
-/** The party pieces built for one world. */
+/** Any other party piece as the UI scene keeps it: the invite prompt, the ready check. */
+export interface PartyPiece {
+  /** The logical view changed: back to its anchor. */
+  relayout?(): void;
+  destroy(): void;
+}
+
+/** The party pieces built for one world: the panel, and the rest (R36). */
 export interface PartyPieces {
   panel: PartyPanelPiece;
+  rest?: readonly PartyPiece[];
 }
 
 /** What the party panel is built with in a world (R38, R39): its refusal, its opening, its wrapper. */
@@ -39,6 +48,25 @@ export interface PartyPanelWiring {
   opening?: () => void;
   /** The UI scene's act, its own inputs' sounds (FS-WDM0X S9). */
   wrapper: UiActWrapper;
+}
+
+/** What the invite prompt and the ready check are built with in a world (R38): when they hide, where they stop. */
+export interface PartyPromptWiring {
+  /** Hidden while the world says so (`blockers().popups`), or no world is reported. */
+  hidden: () => boolean;
+  /** The screen y the invite stack stays above (`layout().chatTop`), where the world has one. */
+  floor: () => number | undefined;
+}
+
+/** The invite prompt's and the ready check's wiring (R38). */
+export function partyPromptWiring(bridge: Pick<UiBridge, "world">): PartyPromptWiring {
+  return {
+    hidden: () => {
+      const report = bridge.world;
+      return !report || !!report.blockers().popups;
+    },
+    floor: () => bridge.world?.layout?.().chatTop,
+  };
 }
 
 /** What of the bridge the panel's wiring reads, asks and plays through. */
@@ -98,6 +126,7 @@ export class UiPartySlot {
   /** The logical view changed: the pieces back to their anchors (FS-ZAJMH R13). */
   relayout(): void {
     this.pieces?.panel.relayout();
+    this.pieces?.rest?.forEach((piece) => piece.relayout?.());
   }
 
   destroy(): void {
@@ -106,6 +135,7 @@ export class UiPartySlot {
 
   private takeDown(): void {
     this.pieces?.panel.destroy();
+    this.pieces?.rest?.forEach((piece) => piece.destroy());
     this.pieces = null;
     this.builtFor = null;
   }

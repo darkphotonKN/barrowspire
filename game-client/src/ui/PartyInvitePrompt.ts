@@ -40,6 +40,7 @@ import {
 } from "./partyInvitePromptLayout";
 import type { Rect } from "./partyPanelLayout";
 import { viewport } from "@/render/viewport";
+import { uiGround, type GroundMaker } from "./uiGround";
 
 export interface PartyInvitePromptDeps {
   store: StoreApi<PartyState>;
@@ -50,11 +51,17 @@ export interface PartyInvitePromptDeps {
   world: () => WorldType | null;
   /** The screen y the stack stays above (the chat window's top edge), when the scene has one. */
   floor: () => number | undefined;
+  /**
+   * Each shown prompt's ground, under its buttons, so a press on it is the UI scene's (FS-TQZ5J
+   * § Change: Phase 2: the party, R40). None, and a prompt's ground takes no input.
+   */
+  ground?: GroundMaker;
 }
 
 /**
- * The prompt as a scene hangs it: the app's party store, the real socket, the world from the game
- * store, and the scene's own rule for when an overlay covers it and where its chat window starts.
+ * The prompt as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party
+ * store, the real socket, the world from the game store, the world's own rule for when an overlay
+ * covers it and where its chat window starts, and a ground under each prompt.
  */
 export function mountPartyInvitePrompt(
   scene: Phaser.Scene,
@@ -67,6 +74,7 @@ export function mountPartyInvitePrompt(
     hidden,
     world: () => useGameStore.getState().worldType,
     floor,
+    ground: uiGround(scene, PROMPT_DEPTH),
   });
 }
 
@@ -91,6 +99,7 @@ export class PartyInvitePrompt {
   /** The countdown bars' own layer, redrawn every frame (FS-B3NDZ R4): one per shown prompt. */
   private barLayer?: Phaser.GameObjects.Graphics;
   private bars: { invite: PendingInvite; rect: Rect }[] = [];
+  private grounds: { destroy(): void }[] = [];
   private texts: Phaser.GameObjects.Text[] = [];
   private frames: InvitePromptFrame[] = [];
   /** What the last draw showed: hidden or not, and each shown prompt's id and seconds. */
@@ -168,6 +177,8 @@ export class PartyInvitePrompt {
     this.barLayer?.destroy();
     this.barLayer = undefined;
     this.bars = [];
+    this.grounds.forEach((g) => g.destroy());
+    this.grounds = [];
   }
 
   private text(
@@ -262,6 +273,9 @@ export class PartyInvitePrompt {
     this.bars = frames.map((f, i) => ({ invite: seen[i].invite, rect: f.bar }));
     frames.forEach((f, i) => {
       const { invite, seconds } = seen[i];
+      // under its buttons: a press on the prompt's ground is the prompt's (TQZ5J R40)
+      const ground = this.deps.ground?.(f.panel);
+      if (ground) this.grounds.push(ground);
       carvedPanel(g, f.panel.x, f.panel.y, f.panel.width, f.panel.height);
       this.text(
         f.text.x,

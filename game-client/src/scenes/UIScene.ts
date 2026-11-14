@@ -11,12 +11,14 @@ import { showMenuPanel } from "@/ui/menuPanel";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { openOptionsPanel } from "@/ui/optionsPanel";
 import { mountPartyPanel } from "@/ui/PartyPanel";
+import { mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
+import { mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
 import { uiBridgeOf, type UiBridge, type World } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
 import { UiDialogueSlot, handKeys } from "@/ui/uiSceneDialogue";
 import { UiMenuSlot } from "@/ui/uiSceneMenu";
 import { UiNoticeLayer, drawNotice } from "@/ui/uiSceneNotices";
-import { UiPartySlot, partyPanelWiring, type PartyPieces } from "@/ui/uiSceneParty";
+import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPieces } from "@/ui/uiSceneParty";
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
@@ -238,10 +240,16 @@ export class UIScene extends Phaser.Scene {
   /**
    * The party pieces for `world`, on this scene (FS-TQZ5J § Change: Phase 2: the party, R36): the party
    * panel, refused by the world's report and the menu slot, its opening closing the town's letter
-   * panel, its own inputs through the interface sounds (R38, R39).
+   * panel, its own inputs through the interface sounds (R38, R39); the invite prompt in every world and
+   * the ready check in the town (it only happens there, FS-BJNYC R4), hidden as the world says, the
+   * invites stacked above its chat window.
    */
   private partyPieces(bridge: UiBridge, world: World): PartyPieces {
     const wiring = partyPanelWiring(bridge, world);
-    return { panel: mountPartyPanel(this, wiring.blocked, wiring.opening, wiring.wrapper) };
+    const prompts = partyPromptWiring(bridge);
+    const panel = mountPartyPanel(this, wiring.blocked, wiring.opening, wiring.wrapper);
+    const prompt = mountPartyInvitePrompt(this, prompts.hidden, prompts.floor);
+    const rest = world === "hub" ? [prompt, mountPartyReadyCheck(this, prompts.hidden)] : [prompt];
+    return { panel, rest };
   }
 }

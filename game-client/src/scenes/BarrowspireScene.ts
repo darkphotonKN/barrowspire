@@ -74,7 +74,6 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
-import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -662,8 +661,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private potionHud?: PotionHud;
   /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
-  /** Invites waiting on an answer, top centre, Accept greyed while delving (FS-NCC9J R24). */
-  private invitePrompt?: PartyInvitePrompt;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -1131,8 +1128,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.potionHud = undefined;
-    this.invitePrompt?.destroy();
-    this.invitePrompt = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.abilityHud = undefined;
@@ -3177,8 +3172,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
-    // party invites, hidden only once the run has ended, stacked clear of the chat window (FS-NCC9J R24)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => this.runEnded, () => this.chatWindow?.topEdge());
+    // party invites are the UI scene's: hidden only once the run has ended, stacked clear of the chat
+    // window the run reports (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38)
 
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
@@ -3266,7 +3261,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private worldSide(): WorldSide {
     return {
       windows: () => this.windows(),
-      blockers: () => ({ dialogue: false, party: this.refusesParty() }),
+      blockers: () => ({ dialogue: false, party: this.refusesParty(), popups: this.runEnded }),
+      // the invite stack stays clear of the chat window (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2, R38)
+      layout: () => ({ chatTop: this.chatWindow?.topEdge() }),
       facts: () => this.facts(),
       // the menu opens over no window (FS-3EBCA R17), and closing it does not resume a hold (FS-JTNPR req 15)
       heardUi: (ui) => {
@@ -3353,7 +3350,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.spectateHud?.hint.setX(viewport.centerX);
     this.controlsPanel?.setPosition(viewport.centerX, viewport.centerY);
     this.abilityHud?.relayout();
-    this.invitePrompt?.relayout();
     this.containerView?.relayout();
     this.settlementRecord?.relayout(this.recordAnchor());
     this.arrivalCard.relayout();
@@ -3605,7 +3601,7 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * Whether a press at (x, y), logical units, is a HUD panel's: no attack, no cast, no hold, and
    * nothing under it takes it, the map mode icon included. One on the UI scene's pieces (the corner
-   * row, the party panel) never reaches the run: they are above it (FS-TQZ5J R7, R15; § Change: Phase
+   * row, the party panel, an invite prompt) never reaches the run: they are above it (FS-TQZ5J R7, R15; § Change: Phase
    * 2: the party, R40).
    */
   private panelTakes(x: number, y: number): boolean {
@@ -3613,9 +3609,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // clear middle band answers as with the overlay closed (FS-HRH2J R8)
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-    if (this.chatWindow?.covers(x, y)) return true;
-    // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-    return this.invitePrompt?.covers(x, y) ?? false;
+    return this.chatWindow?.covers(x, y) ?? false;
   }
 
   /** The class this player's clicks answer for, lower-cased; a warrior when none is chosen. */

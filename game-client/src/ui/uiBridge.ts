@@ -95,6 +95,17 @@ export interface WorldBlockers {
    * chest. The UI scene refuses the party panel while this is true or its menu slot is filled.
    */
   readonly party?: boolean;
+  /**
+   * The world hides the invite prompts and the ready check now: its rule whole (the town: the menu,
+   * the gear overlay or the letter panel; the run: its end).
+   */
+  readonly popups?: boolean;
+}
+
+/** Where the world's own HUD stands, as the UI scene's pieces keep clear of it (§ Change: Phase 2: the party, R38). */
+export interface WorldLayout {
+  /** The screen y the invite stack stays above: the chat window's top edge, where the world has one. */
+  readonly chatTop?: number;
 }
 
 /**
@@ -161,6 +172,8 @@ export interface WorldReport {
   readonly blockers: () => WorldBlockers;
   /** What its ESC menu's rows read now (R9, R16), read as its windows are. */
   readonly facts: () => WorldFacts;
+  /** Where its own HUD stands now, read as its windows are; none, nothing to keep clear of. */
+  readonly layout?: () => WorldLayout;
   /**
    * Hears the UI's state change (R10): as the menu opens the world closes its windows (FS-3EBCA R17)
    * and ends an aim (FS-JTNPR req 15); its stride stops on its next frame, its guards reading the

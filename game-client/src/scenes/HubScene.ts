@@ -29,8 +29,6 @@ import { BARROW_HEX } from "@/utils/theme";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
-import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
-import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
 import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
@@ -691,10 +689,6 @@ export class HubScene extends Phaser.Scene {
   private chatWindow?: ChatWindow;
   /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
-  /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
-  private invitePrompt?: PartyInvitePrompt;
-  /** The party's ready check, top centre (FS-BJNYC R23): it only happens in the town. */
-  private readyCheck?: PartyReadyCheck;
   /**
    * The mailbox's envelope, bottom-right, and its letter panel (FS-1GZGD R33, R40): only the town
    * has one. While the panel is open it owns the keys, as the ESC menu does.
@@ -904,13 +898,9 @@ export class HubScene extends Phaser.Scene {
         coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
       },
     );
-    // T and the party panel are the UI scene's: it asks the town to close its letter panel as the
-    // panel opens, and reads the town's refusal in its report (FS-TQZ5J § Change: Phase 2, R38, R39)
-    // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
-    // (FS-R82NV R32, R33)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
-    // the ready check, under the same covers; it closes no dialogue or shop (FS-BJNYC R23)
-    this.readyCheck = mountPartyReadyCheck(this, () => this.coversPopups());
+    // T and the party panel, the invite prompts and the ready check are the UI scene's: it asks the
+    // town to close its letter panel as the panel opens, and reads the town's refusal and its popups'
+    // covers in its report (FS-TQZ5J § Change: Phase 2: the party, R36, R38, R39)
     // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
     // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
@@ -997,10 +987,11 @@ export class HubScene extends Phaser.Scene {
    * What keeps the town's screen now (FS-TQZ5J R9): its NPC dialogue, open; and the town's part of the
    * party panel's refusal, its dialogue (FS-R82NV R28; FS-3EBCA R8): the menu is the UI scene's own, and
    * neither the inventory nor the character panel refuses it (it opens over them, § Change C8), nor
-   * the letter panel (it closes as the panel opens, § Change C9) (§ Change: Phase 2: the party, R38).
+   * the letter panel (it closes as the panel opens, § Change C9); and what hides the invite prompts
+   * and the ready check, `coversPopups` (§ Change: Phase 2: the party, R38).
    */
   private blockers(): WorldBlockers {
-    return { dialogue: !!this.dialogue, party: !!this.dialogue };
+    return { dialogue: !!this.dialogue, party: !!this.dialogue, popups: this.coversPopups() };
   }
 
   /** Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9; FS-WDM0X S8): the letter panel, Inventory, Character. */
@@ -1080,8 +1071,6 @@ export class HubScene extends Phaser.Scene {
   private relayoutHud(): void {
     this.arrivalCard.relayout();
     this.minimap?.place();
-    this.invitePrompt?.relayout();
-    this.readyCheck?.relayout();
     this.mailbox?.relayout();
     if (this.queuePanel?.active) {
       this.queuePanel.setX(viewport.centerX);
@@ -1264,10 +1253,6 @@ export class HubScene extends Phaser.Scene {
     this.progressHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.invitePrompt?.destroy();
-    this.invitePrompt = undefined;
-    this.readyCheck?.destroy();
-    this.readyCheck = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     this.minimap?.destroy();
@@ -2424,7 +2409,8 @@ export class HubScene extends Phaser.Scene {
   /**
    * Whether an overlay covers the town's party popups (the invite prompt and the ready check): the
    * menu, the gear overlay or the letter panel, each drawn over them. The popups hide under it and
-   * their countdowns run on (FS-R82NV R32, FS-BJNYC R23, FS-1GZGD R40).
+   * their countdowns run on (FS-R82NV R32, FS-BJNYC R23, FS-1GZGD R40). The popups are the UI scene's,
+   * which reads it in the town's report (FS-TQZ5J § Change: Phase 2: the party, R38).
    */
   private coversPopups(): boolean {
     return this.menuOpen || !!this.gear?.isOpen() || !!this.mailbox?.isOpen();

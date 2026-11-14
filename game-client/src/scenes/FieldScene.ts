@@ -52,7 +52,6 @@ import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
 import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
-import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -215,8 +214,6 @@ export class FieldScene extends Phaser.Scene {
   private chatWindow?: ChatWindow;
   /** The teammates' frames at the top-left corner (FS-R82NV R34). */
   private partyFrames?: PartyFrames;
-  /** Invites waiting on an answer, top centre: an invite reaches a field too (FS-NCC9J R24). */
-  private invitePrompt?: PartyInvitePrompt;
   /**
    * The field's minimap at the top of the top-right column (FS-P0HSP): built with the field's
    * first state, from the stage create wires; gone with the visit.
@@ -338,8 +335,8 @@ export class FieldScene extends Phaser.Scene {
     this.listen();
     this.chatWindow = mountChatWindow(this, () => this.mayChat());
     // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
-    // party invites, never hidden in a field, stacked clear of the chat window (FS-NCC9J R24)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => false, () => this.chatWindow?.topEdge());
+    // party invites are the UI scene's: never hidden in a field, stacked clear of the chat window
+    // the field reports (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38)
     // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
     this.partyFrames = mountPartyFrames(this, this.art);
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
@@ -359,6 +356,8 @@ export class FieldScene extends Phaser.Scene {
     return {
       windows: () => this.windows(),
       blockers: () => ({ dialogue: false }),
+      // the invite stack stays clear of the chat window (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2, R38)
+      layout: () => ({ chatTop: this.chatWindow?.topEdge() }),
       // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
       facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
       // the menu opens over no window (FS-3EBCA R17)
@@ -410,7 +409,6 @@ export class FieldScene extends Phaser.Scene {
     this.minimap?.place();
     this.abilityHud?.relayout();
     this.satchel?.relayout();
-    this.invitePrompt?.relayout();
     if (this.fallenView) {
       this.showFallen();
       this.drainFallen(this.time.now);
@@ -628,17 +626,15 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * Whether a press at (x, y), logical units, is a HUD panel's: the overlay's, the chat window's or a
-   * prompt's. Neither the world nor the map mode icon answers it. One on the UI scene's pieces (the
-   * corner row, the party panel) never reaches the field: they are above it (FS-TQZ5J R7, R15;
+   * Whether a press at (x, y), logical units, is a HUD panel's: the overlay's or the chat window's.
+   * Neither the world nor the map mode icon answers it. One on the UI scene's pieces (the corner row,
+   * the party panel, an invite prompt) never reaches the field: they are above it (FS-TQZ5J R7, R15;
    * § Change: Phase 2: the party, R40).
    */
   private panelTakes(x: number, y: number): boolean {
     if (this.equipment?.covers(x, y)) return true;
     // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-    if (this.chatWindow?.covers(x, y)) return true;
-    // and one on an invite prompt is the prompt's (FS-NCC9J R24)
-    return this.invitePrompt?.covers(x, y) ?? false;
+    return this.chatWindow?.covers(x, y) ?? false;
   }
 
   /** An item taken from the satchel: sent by the piles, and held in the inventory while pending. */
@@ -665,8 +661,6 @@ export class FieldScene extends Phaser.Scene {
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.invitePrompt?.destroy();
-    this.invitePrompt = undefined;
     this.partyFrames?.destroy();
     this.partyFrames = undefined;
     // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
