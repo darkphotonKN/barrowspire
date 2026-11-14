@@ -820,9 +820,10 @@ function sceneOnStage() {
   run.cameras = {
     main: { width: 800, height: 600, centerX: 400, centerY: 300, startFollow: vi.fn() },
   };
+  // the game's pointer look, whose base the run sets (FS-KYPQ9 § Change: The pressed hand, P5)
   const cursor = vi.fn();
-  run.input = { setDefaultCursor: cursor };
-  Object.assign(run, { defaultCursorCSS: "hand", crosshairCursorCSS: "strike-mark" });
+  run.input = {};
+  Object.assign(run, { pointerLook: { base: cursor } });
   run.art = ArtLibrary.empty(logger);
   run.monsters = new MonsterRoster(
     {
@@ -1251,7 +1252,7 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     const { run, monsters, cursor } = onStage();
     run.handleGameStateUpdate(partyState());
     monsters()[0].handlers.pointerover();
-    expect(cursor).toHaveBeenLastCalledWith("strike-mark");
+    expect(cursor).toHaveBeenLastCalledWith("strike");
     monsters()[0].handlers.pointerout();
     expect(cursor).toHaveBeenLastCalledWith("hand");
   });
@@ -1273,7 +1274,7 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     ally.handlers.pointerover?.();
     ally.handlers.pointerdown?.();
     expect(sent).not.toHaveBeenCalled();
-    expect(cursor).not.toHaveBeenCalledWith("strike-mark");
+    expect(cursor).not.toHaveBeenCalledWith("strike");
   });
 
   it("should letter another player's name in the ally channel, never the hostile one", () => {
@@ -9065,11 +9066,11 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         const [room, hidden] = run.monsters.standing().map((m) => m.parts[0] as unknown as Made);
         hidden.handlers.pointerover();
         hidden.handlers.pointerdown();
-        expect(cursor).not.toHaveBeenCalledWith("strike-mark");
+        expect(cursor).not.toHaveBeenCalledWith("strike");
         expect(sent).not.toHaveBeenCalledWith(ActionType.Attack, expect.anything());
         // the pointer rests on the room's monster while the player walks off and it goes dark
         room.handlers.pointerover();
-        expect(cursor).toHaveBeenLastCalledWith("strike-mark");
+        expect(cursor).toHaveBeenLastCalledWith("strike");
         frame({ monsters: [beast("room", inRoomAt), beast("far", far)] }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
         expect(cursor).toHaveBeenLastCalledWith("hand");
         expect(run.monsters.hoveredId).toBeUndefined();

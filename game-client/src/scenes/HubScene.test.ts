@@ -4054,13 +4054,15 @@ describe("HubScene ending (game destroy on leaving /game)", () => {
     expect(off).toHaveBeenCalledWith("world_left");
   });
 
-  it("should still hand the cursor back to the page on a stop", () => {
+  // the menus wear the bone hand too, so the town leaves it behind (FS-KYPQ9 § Change: The pressed
+  // hand, and the hand on the menus, P7)
+  it("should leave the bone hand, not the browser's cursor, on a stop", () => {
     const { systems } = hubToEnd();
-    systems.input.manager!.defaultCursor = "pointer";
+    systems.input.manager!.defaultCursor = "url(hand) 6 1, default";
 
     systems.shutdown();
 
-    expect(systems.input.manager?.defaultCursor).toBe("");
+    expect(systems.input.manager?.defaultCursor).toBe("url(hand) 6 1, default");
   });
 
   // Phaser's stop destroys the hub's keys and keeps their captures, the game's: E, I, B, 3 and the
