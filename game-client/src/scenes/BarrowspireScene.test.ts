@@ -586,6 +586,10 @@ interface Made {
 /** Each recorded object's proxy, the object the scene holds: what Phaser lists under the pointer. */
 const heldAs = new WeakMap<object, unknown>();
 
+/** The run's button labels as the game's EB Garamond measures them, 13 px bold, letter-spaced 1 (R122). */
+const LABEL_WIDTHS: Record<string, number> = { WATCH: 56, LEAVE: 46, SETTLEMENT: 96 };
+const measuredWidth = (words: string) => LABEL_WIDTHS[words] ?? words.length * 7;
+
 function recordingStage() {
   const made: Made[] = [];
   const make = (kind: string, args: unknown[] = []): unknown => {
@@ -619,6 +623,9 @@ function recordingStage() {
             return proxy;
           };
         if (prop === "getBounds") return () => ({ x: 0, y: 0, width: 10, height: 10 });
+        // a text measures as Phaser measures it: the run's button labels as the game's EB Garamond does
+        // at 13 px bold, letter-spaced 1 (FS-TQZ5J § Change: Batch 6, R122), any other words 7 px a character
+        if (prop === "width" && target.kind === "text") return measuredWidth(String(target.args[2]));
         // a text's content is what it shows now, not only what it was made with
         if (prop === "setText")
           return (content: unknown) => {
@@ -1902,6 +1909,57 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R120–R124: WATCH, LEAVE, SETTLEMENT in 13 px bold letter-spaced 1, each
+  // button its label's width plus 24 a side; the row from 442 at this 800-wide view (layout B), the card's
+  // two centred on it 8 apart, the corner LEAVE's right edge on the corner margin
+  describe("the run's buttons, re-laid off the chat (FS-TQZ5J § Change: Batch 6, R120–R124)", () => {
+    const labelled = (stage: ReturnType<typeof leavingOnStage>, words: string) =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && m.args[2] === words);
+    const box = (stage: ReturnType<typeof leavingOnStage>, name: string) => {
+      const [x, y, width, height] = stage.hit(name)!.args as number[];
+      return { left: x - width / 2, x, y, width, height };
+    };
+
+    it("should word the escaped player's row WATCH and LEAVE in 13 px bold, letter-spaced 1 (R120, R121)", () => {
+      const out = leavingOnStage(player("me", "Aldric", 130, escaped));
+      for (const words of ["WATCH", "LEAVE"]) {
+        const [label] = labelled(out, words);
+        expect(label, words).toBeDefined();
+        expect(label.args[3]).toMatchObject({ fontSize: "13px", fontStyle: "bold", letterSpacing: 1 });
+      }
+      expect(labelled(out, "WATCH THE DELVE")).toHaveLength(0);
+      expect(labelled(out, "LEAVE THE BARROW")).toHaveLength(0);
+    });
+
+    it("should make each button its label's width plus 24 a side, and stand the row from 442 at this view (R122, R123)", () => {
+      const out = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const watch = box(out, "watch-the-delve");
+      const leave = box(out, "leave-the-barrow");
+      expect([watch.width, leave.width]).toEqual([104, 94]);
+      expect([watch.left, leave.left]).toEqual([442, 554]);
+      expect([watch.height, leave.height]).toEqual([38, 38]);
+    });
+
+    it("should centre the dead player's card buttons on the card, 8 apart, worded WATCH and LEAVE (R120, R124)", () => {
+      const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
+      const watch = box(fallen, "watch-the-delve");
+      const leave = box(fallen, "leave-the-barrow");
+      expect([watch.width, leave.width]).toEqual([104, 94]);
+      expect([watch.left, leave.left]).toEqual([400 - 103, 400 + 9]);
+      expect(labelled(fallen, "WATCH")).toHaveLength(1);
+      expect(labelled(fallen, "LEAVE")).toHaveLength(1);
+    });
+
+    it("should word the dead spectator's corner LEAVE and keep its right edge on the corner margin (R120, R124)", () => {
+      const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
+      fallen.press("watch-the-delve");
+      const leave = box(fallen, "leave-the-barrow");
+      expect(leave.width).toBe(94);
+      expect(leave.left + leave.width).toBe(800 - 16);
+      expect(labelled(fallen, "LEAVE")).toHaveLength(1);
+    });
   });
 
   it("should give the dead player and the escaped player Leave the barrow beside Watch the delve", () => {
