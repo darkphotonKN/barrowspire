@@ -1,17 +1,19 @@
 /**
  * The party on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R36–R43): the party panel, the
- * invite prompt and (in the town) the ready check, built for each world reported and taken down as it
+ * invite prompt, (in the town) the ready check and the party frames, built for each world reported and taken down as it
  * leaves, as each world's create mounted them and its release destroyed them. Its open state lives in the party store, so it carries across a switch.
  * Phaser-free: the UI scene hands it the builder (`mountPartyPanel` on itself), so the wiring is tested
  * on its own.
  *
  * What they read of the world is the world's report (R38): the world's part of the panel's refusal,
  * `blockers().party`, beside the UI scene's own menu slot; the popups' hiding, `blockers().popups`; the
- * invite stack's floor, `layout().chatTop`. Its opening closes the town's letter panel
+ * invite stack's floor, `layout().chatTop`; each state tick the world showed, `partySeen`, for the
+ * frames. Its opening closes the town's letter panel
  * by a request (R39); its own inputs run through the UI scene's act (R22).
  */
 
 import type { UiActWrapper } from "@/audio/uiSounds";
+import type { SeenState } from "./partyFramesLayout";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
 
 /** The party panel as the UI scene keeps it. `PartyPanel` is one. */
@@ -27,10 +29,12 @@ export interface PartyPanelPiece {
   destroy(): void;
 }
 
-/** Any other party piece as the UI scene keeps it: the invite prompt, the ready check. */
+/** Any other party piece as the UI scene keeps it: the invite prompt, the ready check, the frames. */
 export interface PartyPiece {
   /** The logical view changed: back to its anchor. */
   relayout?(): void;
+  /** A state tick the world showed (R38): the frames' bars and levels. */
+  show?(state: SeenState): void;
   destroy(): void;
 }
 
@@ -121,6 +125,11 @@ export class UiPartySlot {
   /** Whether a UI press at a screen point keeps the invite field's focus (R42). */
   keepsField(x: number, y: number): boolean {
     return this.pieces?.panel.keepsField(x, y) ?? false;
+  }
+
+  /** A state tick the world reported showing (R38), to the pieces that read it: the frames. */
+  seen(state: SeenState): void {
+    this.pieces?.rest?.forEach((piece) => piece.show?.(state));
   }
 
   /** The logical view changed: the pieces back to their anchors (FS-ZAJMH R13). */

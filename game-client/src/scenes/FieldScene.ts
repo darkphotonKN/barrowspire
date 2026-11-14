@@ -51,7 +51,6 @@ import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
-import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
@@ -212,8 +211,6 @@ export class FieldScene extends Phaser.Scene {
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
-  /** The teammates' frames at the top-left corner (FS-R82NV R34). */
-  private partyFrames?: PartyFrames;
   /**
    * The field's minimap at the top of the top-right column (FS-P0HSP): built with the field's
    * first state, from the stage create wires; gone with the visit.
@@ -337,8 +334,6 @@ export class FieldScene extends Phaser.Scene {
     // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
     // party invites are the UI scene's: never hidden in a field, stacked clear of the chat window
     // the field reports (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38)
-    // the teammates' frames: bars for those this field's state shows, a word for the rest (FS-R82NV R34)
-    this.partyFrames = mountPartyFrames(this, this.art);
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
@@ -661,8 +656,6 @@ export class FieldScene extends Phaser.Scene {
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.partyFrames?.destroy();
-    this.partyFrames = undefined;
     // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
     this.charting?.saveLast();
     this.minimap?.destroy();
@@ -811,7 +804,9 @@ export class FieldScene extends Phaser.Scene {
 
     this.lastState = state;
     this.showClassHud(state);
-    this.partyFrames?.show(state);
+    // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
+    // FS-TQZ5J § Change: Phase 2: the party, R38)
+    this.ui.partySeen(state);
     this.showFieldMap(state);
     // the field is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
     this.arrivalCard.built();

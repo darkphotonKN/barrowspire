@@ -73,7 +73,6 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
-import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
@@ -659,8 +658,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private chatWindow?: ChatWindow;
   /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
   private potionHud?: PotionHud;
-  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
-  private partyFrames?: PartyFrames;
   /** The class ability card, bottom right (FS-8AY7S req 29–32). */
   private abilityHud?: AbilityHud;
   /**
@@ -1128,8 +1125,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.potionHud = undefined;
-    this.partyFrames?.destroy();
-    this.partyFrames = undefined;
     this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
@@ -3189,8 +3184,6 @@ export class BarrowspireScene extends Phaser.Scene {
       this.monsterEffects,
       onDemandArt(this, this.art),
     );
-    // the party frames cut their busts from the class sheets just registered (FS-R82NV R34)
-    this.partyFrames = mountPartyFrames(this, this.art);
     this.containerView = new ContainerView(
       this,
       this.art,
@@ -3905,7 +3898,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.syncResolvedView(state);
     this.showResourceBars(state);
     this.showAbilityCard();
-    this.partyFrames?.show(state);
+    // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
+    // FS-TQZ5J § Change: Phase 2: the party, R38)
+    this.ui.partySeen(state);
 
     // Update escaped count HUD
     if (this.escapedCountText) {

@@ -13,6 +13,10 @@ import { openOptionsPanel } from "@/ui/optionsPanel";
 import { mountPartyPanel } from "@/ui/PartyPanel";
 import { mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
+import { mountPartyFrames } from "@/ui/PartyFrames";
+import { registerArt } from "@/render/art/phaser";
+import { RESIDENT_ART } from "@/render/art/sceneArt";
+import type { ArtLibrary } from "@/render/art/library";
 import { uiBridgeOf, type UiBridge, type World } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
 import { UiDialogueSlot, handKeys } from "@/ui/uiSceneDialogue";
@@ -63,6 +67,8 @@ export class UIScene extends Phaser.Scene {
   private menu?: UiMenuSlot;
   private dialogue?: UiDialogueSlot;
   private party?: UiPartySlot;
+  /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
+  private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
   private pointer?: UiScenePointer<Phaser.Input.Pointer>;
 
@@ -215,6 +221,7 @@ export class UIScene extends Phaser.Scene {
     const stopScreen = bridge.onScreen({
       dialogue: (shown) => dialogue.show(shown),
       notice: (notice) => notices.say(notice),
+      partySeen: (state) => party.seen(state),
     });
     relayoutOn(this, () => {
       corner.relayout();
@@ -242,14 +249,26 @@ export class UIScene extends Phaser.Scene {
    * panel, refused by the world's report and the menu slot, its opening closing the town's letter
    * panel, its own inputs through the interface sounds (R38, R39); the invite prompt in every world and
    * the ready check in the town (it only happens there, FS-BJNYC R4), hidden as the world says, the
-   * invites stacked above its chat window.
+   * invites stacked above its chat window; the party frames in every world, fed the world's state
+   * ticks, their busts cut from the resident art (R37, R38).
    */
   private partyPieces(bridge: UiBridge, world: World): PartyPieces {
     const wiring = partyPanelWiring(bridge, world);
     const prompts = partyPromptWiring(bridge);
     const panel = mountPartyPanel(this, wiring.blocked, wiring.opening, wiring.wrapper);
     const prompt = mountPartyInvitePrompt(this, prompts.hidden, prompts.floor);
-    const rest = world === "hub" ? [prompt, mountPartyReadyCheck(this, prompts.hidden)] : [prompt];
-    return { panel, rest };
+    const popups = world === "hub" ? [prompt, mountPartyReadyCheck(this, prompts.hidden)] : [prompt];
+    const frames = mountPartyFrames(this, { resolve: (sheet, query) => this.residentArt().resolve(sheet, query) });
+    return { panel, rest: [...popups, frames] };
+  }
+
+  /**
+   * The class sheets the frames' busts are cut from: resident art, loaded at boot (FS-C4JWH), so the
+   * UI scene's own library over it resolves the frames a world's would; the game's textures are one
+   * manager (§ Change: Phase 2: the party, R37).
+   */
+  private residentArt(): ArtLibrary {
+    this.art ??= registerArt(this, RESIDENT_ART);
+    return this.art;
   }
 }

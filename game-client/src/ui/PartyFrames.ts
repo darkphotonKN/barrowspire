@@ -70,10 +70,13 @@ export interface PartyFramesDeps {
   travel: () => void;
 }
 
-/** The frames as a scene hangs them: the app's party, this player, the scene's art. */
+/**
+ * The frames as the UI scene hangs them (FS-TQZ5J § Change: Phase 2: the party, R36, R37): the app's
+ * party, this player, the art the class sheets resolve on.
+ */
 export function mountPartyFrames(
   scene: Phaser.Scene,
-  art: ArtLibrary,
+  art: Pick<ArtLibrary, "resolve">,
 ): PartyFrames {
   return new PartyFrames(scene, {
     store: usePartyStore,

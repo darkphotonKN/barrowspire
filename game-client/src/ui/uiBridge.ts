@@ -21,6 +21,7 @@ import type { WorldType } from "@/assets/types/client";
 import type { UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
+import type { SeenState } from "./partyFramesLayout";
 import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
 
 /** The world a world scene draws (FS-TQZ5J "Words"): the town, a field, a run, as the server names them. */
@@ -228,10 +229,14 @@ export interface UiState {
   readonly menuOpen: boolean;
 }
 
-/** What the UI scene draws for the worlds, told as the world says it (A2 R29, R33): its dialogue, or none; a notice. */
+/**
+ * What the UI scene draws for the worlds, told as the world says it (A2 R29, R33): its dialogue, or
+ * none; a notice; each state tick the party frames read (§ Change: Phase 2: the party, R38).
+ */
 export interface UiScreen {
   dialogue?(shown: ShownDialogue | null): void;
   notice?(notice: Notice): void;
+  partySeen?(state: SeenState): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -295,6 +300,11 @@ export interface UiBridge extends UiActWrapper {
   closeDialogue(): void;
   /** The world says a passing notice (A2 R33): the UI scene draws it at once. */
   notice(notice: Notice): void;
+  /**
+   * The world hands a state tick it showed (§ Change: Phase 2: the party, R38), as plain data: the
+   * party frames' bars and levels follow it at once.
+   */
+  partySeen(state: SeenState): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
 }
@@ -306,7 +316,7 @@ export interface UiBridge extends UiActWrapper {
  */
 export type WorldUi = Pick<
   UiBridge,
-  "act" | "play" | "ui" | "overUi" | "changed" | "showDialogue" | "closeDialogue" | "notice"
+  "act" | "play" | "ui" | "overUi" | "changed" | "showDialogue" | "closeDialogue" | "notice" | "partySeen"
 >;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
@@ -319,6 +329,7 @@ export const NO_UI: WorldUi = {
   showDialogue: () => {},
   closeDialogue: () => {},
   notice: () => {},
+  partySeen: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -409,6 +420,10 @@ export class GameUiBridge implements UiBridge {
 
   notice(notice: Notice): void {
     for (const screen of [...this.screens]) screen.notice?.(notice);
+  }
+
+  partySeen(state: SeenState): void {
+    for (const screen of [...this.screens]) screen.partySeen?.(state);
   }
 
   onScreen(screen: UiScreen): () => void {

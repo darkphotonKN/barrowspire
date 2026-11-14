@@ -28,7 +28,6 @@ import {
 import { BARROW_HEX } from "@/utils/theme";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
 import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { GearOverlay } from "@/ui/GearOverlay";
@@ -687,8 +686,6 @@ export class HubScene extends Phaser.Scene {
   private progressHud?: ProgressHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
-  /** The teammates' frames on the left edge, under the XP bar (FS-R82NV R34). */
-  private partyFrames?: PartyFrames;
   /**
    * The mailbox's envelope, bottom-right, and its letter panel (FS-1GZGD R33, R40): only the town
    * has one. While the panel is open it owns the keys, as the ESC menu does.
@@ -901,8 +898,6 @@ export class HubScene extends Phaser.Scene {
     // T and the party panel, the invite prompts and the ready check are the UI scene's: it asks the
     // town to close its letter panel as the panel opens, and reads the town's refusal and its popups'
     // covers in its report (FS-TQZ5J § Change: Phase 2: the party, R36, R38, R39)
-    // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
-    this.partyFrames = mountPartyFrames(this, this.art);
     // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
     // envelope opens nothing while a dialogue or the menu is up, and closes the other windows as it
     // opens the letter panel (FS-1GZGD § Change C4)
@@ -1253,8 +1248,6 @@ export class HubScene extends Phaser.Scene {
     this.progressHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.partyFrames?.destroy();
-    this.partyFrames = undefined;
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
@@ -2131,7 +2124,9 @@ export class HubScene extends Phaser.Scene {
       this.placePlayer(other, false);
       present.add(other.entity_id);
     }
-    this.partyFrames?.show(state);
+    // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
+    // FS-TQZ5J § Change: Phase 2: the party, R38)
+    this.ui.partySeen(state);
     this.showTownMap(state, gates);
 
     // anyone who left the hub since the last tick
