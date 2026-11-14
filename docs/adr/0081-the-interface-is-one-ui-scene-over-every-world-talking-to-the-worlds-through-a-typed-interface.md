@@ -11,6 +11,9 @@ Specified by: [FS-TQZ5J](../specs/TQZ5J-ui-scene.md) (phase 1, and each later ph
 Builds on: [ADR-0057](0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md)
 (Phaser 4, the render scale), [FS-R6EYZ](../specs/R6EYZ-disconnect-notice.md) R11 (a scene drawn
 over every world is already how the disconnect notice works).
+Amended by: [ADR-0082](0082-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
+— Decision 2 ("socket messages stay the world's": world-play messages do; a moved piece's own
+commands, reading only app state, go from the piece)
 
 ## Context
 
