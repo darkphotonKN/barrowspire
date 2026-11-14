@@ -5,11 +5,12 @@ import {
   CORNER_LABEL_GREYED_MAIL,
   ABILITY_CARD_PLACE,
   CORNER_ROW_CLEARANCE,
-  LEAVE_BUTTON_PLACE,
   CORNER_ICONS,
   cornerIconFrame,
   cornerLabelAt,
   cornerRowLeft,
+  CONTROLS_BADGE_LABEL,
+  controlsBadgeFrame,
 } from "./hudCornerLayout";
 
 // FS-3EBCA §A R1, R2, R5; §C R13. I-3EBCA-1: the corner row's geometry and words, without a canvas.
@@ -90,9 +91,21 @@ describe("what stands above the row outside the town (FS-3EBCA R13, R14)", () =>
     expect(anchorAt(ABILITY_CARD_PLACE, view).y).toBe(row.y - 8);
     expect(anchorAt(ABILITY_CARD_PLACE, { width: 1280, height: 720 })).toEqual({ x: 1264, y: 650 });
   });
+});
 
-  it("should centre the dead spectator's leave button at (width - 116, 631), clear of the row", () => {
-    expect(anchorAt(LEAVE_BUTTON_PLACE, view)).toEqual({ x: 964, y: 631 });
-    expect(631 + 38 / 2).toBeLessThanOrEqual(row.y - 8);
+// FS-84N1G R3, R7 (the owner: 「幫我做一個徽章 放在 技能上方區塊」): the controls badge, a plate the corner
+// icons' size, right-aligned with the ability card, the row's gap above it
+describe("the controls badge's place and words (FS-84N1G R3, R7)", () => {
+  it("should stand a 54 × 46 plate right-aligned with the ability card, 8 px above its top", () => {
+    const view = { width: 1080, height: 720 };
+    const card = anchorAt(ABILITY_CARD_PLACE, view);
+    const plate = controlsBadgeFrame(view);
+    expect(plate).toEqual({ x: 1064 - 54, y: 650 - 72 - 8 - 46, width: 54, height: 46 });
+    expect(plate.x + plate.width).toBe(card.x);
+    expect(controlsBadgeFrame({ width: 1920, height: 1080 })).toEqual({ x: 1904 - 54, y: 1010 - 72 - 8 - 46, width: 54, height: 46 });
+  });
+
+  it("should name itself and its key as the corner row does", () => {
+    expect(CONTROLS_BADGE_LABEL).toBe("Controls (H)");
   });
 });

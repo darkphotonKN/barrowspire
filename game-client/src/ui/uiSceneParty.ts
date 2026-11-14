@@ -1,0 +1,166 @@
+/**
+ * The party on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R36–R43): the party panel, the
+ * invite prompt, (in the town) the ready check and the party frames, built for each world reported and taken down as it
+ * leaves, as each world's create mounted them and its release destroyed them. Its open state lives in the party store, so it carries across a switch.
+ * Phaser-free: the UI scene hands it the builder (`mountPartyPanel` on itself), so the wiring is tested
+ * on its own.
+ *
+ * What they read of the world is the world's report (R38): the world's part of the panel's refusal,
+ * `blockers().party`, beside the UI scene's own menu slot; the popups' hiding, `blockers().popups`; the
+ * invite stack's floor, the UI scene's chat window's top where the world reports `invitesAboveChat`; each state tick the world showed, `partySeen`, for the
+ * frames. Its opening closes the town's letter panel
+ * by a request, asked of whatever world is reported (R39, R48); its own inputs run through the UI
+ * scene's act (R22).
+ */
+
+import type { UiActWrapper, UiEffect } from "@/audio/uiSounds";
+import type { SeenState } from "./partyFramesLayout";
+import type { UiBridge, World, WorldReport } from "./uiBridge";
+
+/** The party panel as the UI scene keeps it. `PartyPanel` is one. */
+export interface PartyPanelPiece {
+  isOpen(): boolean;
+  /** Shuts it: whether there was one to shut. */
+  close(): boolean;
+  /** The Party icon's toggle, under the panel's own refusal. */
+  toggle(): void;
+  relayout(): void;
+  /** Whether a press at a screen point keeps the invite field's focus: on the panel, with it focused (R42). */
+  keepsField(x: number, y: number): boolean;
+  destroy(): void;
+}
+
+/** Any other party piece as the UI scene keeps it: the invite prompt, the ready check, the frames. */
+export interface PartyPiece {
+  /** The logical view changed: back to its anchor. */
+  relayout?(): void;
+  /** A state tick the world showed (R38): the frames' bars and levels. */
+  show?(state: SeenState): void;
+  destroy(): void;
+}
+
+/** The party pieces built for one world: the panel, and the rest (R36). */
+export interface PartyPieces {
+  panel: PartyPanelPiece;
+  rest?: readonly PartyPiece[];
+}
+
+/**
+ * What the party panel is built with in a world (R38, R39): its refusal, its opening, its wrapper, its
+ * buttons' sounds. `mountPartyPanel` takes it whole.
+ */
+export interface PartyPanelWiring {
+  /** Refused while the menu slot is filled, the world turns it away, or no world is reported. */
+  blocked: () => boolean;
+  /** The town's letter panel gives way as it opens (FS-R82NV § Change C9), asked of any world (R48). */
+  opening: () => void;
+  /** The UI scene's act, its own inputs' sounds (FS-WDM0X S9). */
+  wrapper: UiActWrapper;
+  /** The game's one player, its buttons' hover, press and greyed press (FS-WDM0X § Change pass 2 (party), P5–P7). */
+  play: (effect: UiEffect) => void;
+}
+
+/** What the invite prompt and the ready check are built with in a world (R38): when they hide, where they stop. */
+export interface PartyPromptWiring {
+  /** Hidden while the world says so (`blockers().popups`), or no world is reported. */
+  hidden: () => boolean;
+  /** The screen y the invite stack stays above: the UI scene's chat window's top, where the world reports one. */
+  floor: () => number | undefined;
+}
+
+/**
+ * The invite prompt's and the ready check's wiring (R38): hidden by the world's report, stacked above the
+ * UI scene's own chat window's top edge as `chatTop` reads it where the world reports `invitesAboveChat`
+ * (§ Change: Batch 6, R132), above nothing elsewhere.
+ */
+export function partyPromptWiring(bridge: Pick<UiBridge, "world">, chatTop: () => number | undefined): PartyPromptWiring {
+  return {
+    hidden: () => {
+      const report = bridge.world;
+      return !report || !!report.blockers().popups;
+    },
+    floor: () => (bridge.world?.invitesAboveChat ? chatTop() : undefined),
+  };
+}
+
+/** What of the bridge the panel's wiring reads, asks and plays through. */
+export type PartyBridge = Pick<UiBridge, "world" | "ui" | "request" | "act" | "play">;
+
+/**
+ * The party panel's wiring in any world (R38, R39). Its opening asks the world reported to close its
+ * letter panel, naming no world: one without a letter panel ignores the request (R11; § Change: Phase 2,
+ * Amendment B1, R48).
+ */
+export function partyPanelWiring(bridge: PartyBridge): PartyPanelWiring {
+  return {
+    blocked: () => {
+      const report = bridge.world;
+      return !report || bridge.ui.menuOpen || !!report.blockers().party;
+    },
+    opening: () => bridge.request({ kind: "close", window: "letter" }),
+    wrapper: { act: (run) => bridge.act(run) },
+    play: (effect) => bridge.play(effect),
+  };
+}
+
+export class UiPartySlot {
+  private pieces: PartyPieces | null = null;
+  /** The world the standing pieces were built for. */
+  private builtFor: World | null = null;
+
+  constructor(private readonly build: (world: World) => PartyPieces) {}
+
+  /**
+   * Heard each world report, and none as the world leaves (R36): pieces for the world reported, built
+   * anew after a leave or for another world; a report of the world they stand for keeps them.
+   */
+  show(report: WorldReport | null): void {
+    if (report && this.pieces && this.builtFor === report.world) return;
+    this.takeDown();
+    if (!report) return;
+    this.pieces = this.build(report.world);
+    this.builtFor = report.world;
+  }
+
+  /** Whether the party panel is open (R39); none built, it is not. */
+  isOpen(): boolean {
+    return this.pieces?.panel.isOpen() ?? false;
+  }
+
+  /** Shuts the party panel: Esc's step, the menu opening, the Menu icon after the run's end (R39). */
+  close(): void {
+    this.pieces?.panel.close();
+  }
+
+  /** The corner row's Party icon (R39; FS-3EBCA R8). */
+  toggle(): void {
+    this.pieces?.panel.toggle();
+  }
+
+  /** Whether a UI press at a screen point keeps the invite field's focus (R42). */
+  keepsField(x: number, y: number): boolean {
+    return this.pieces?.panel.keepsField(x, y) ?? false;
+  }
+
+  /** A state tick the world reported showing (R38), to the pieces that read it: the frames. */
+  seen(state: SeenState): void {
+    this.pieces?.rest?.forEach((piece) => piece.show?.(state));
+  }
+
+  /** The logical view changed: the pieces back to their anchors (FS-ZAJMH R13). */
+  relayout(): void {
+    this.pieces?.panel.relayout();
+    this.pieces?.rest?.forEach((piece) => piece.relayout?.());
+  }
+
+  destroy(): void {
+    this.takeDown();
+  }
+
+  private takeDown(): void {
+    this.pieces?.panel.destroy();
+    this.pieces?.rest?.forEach((piece) => piece.destroy());
+    this.pieces = null;
+    this.builtFor = null;
+  }
+}

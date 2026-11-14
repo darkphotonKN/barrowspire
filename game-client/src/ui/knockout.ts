@@ -41,6 +41,18 @@ export function oval(cx: number, cy: number, rx: number, ry: number, from: numbe
   });
 }
 
+/** What {@link stroke} draws with: a Phaser `Graphics` is one. */
+export type StrokePen = Pick<Phaser.GameObjects.Graphics, "beginPath" | "moveTo" | "lineTo" | "closePath" | "strokePath">;
+
+/** Strokes the line through `ps`, moved by (ox, oy), as one path, closed when `closed`: a fallback's lines. */
+export function stroke(g: StrokePen, ps: readonly Pt[], ox: number, oy: number, closed = false): void {
+  g.beginPath();
+  g.moveTo(ox + ps[0][0], oy + ps[0][1]);
+  for (const [x, y] of ps.slice(1)) g.lineTo(ox + x, oy + y);
+  if (closed) g.closePath();
+  g.strokePath();
+}
+
 /** A circle, in local px about the slot's centre. */
 export interface Circle {
   x: number;
@@ -76,6 +88,18 @@ export interface KnockoutInk {
 export const BRONZE: KnockoutInk = {
   idle: { tint: mix(palette.frame, palette.interactable, 0.5), alpha: 0.85 },
   hover: { tint: mix(palette.frame, palette.interactableBright, 0.5), alpha: 1 },
+};
+
+/**
+ * The greyed knockout (ADR-0080 "Unavailable"): flat in the faint grey at 0.6, never brightening under
+ * the pointer (FS-7TQN4 R9), on the drop shadow with no gradient (FS-S8Z2Y R6). The greyed Mailbox wears
+ * it; one place, so no icon copies it.
+ */
+export const GREYED_ALPHA = 0.6;
+export const GREYED: KnockoutInk = {
+  idle: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+  hover: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+  flat: true,
 };
 
 /** The cut lines' width, in logical px (FS-7TQN4 R2). */

@@ -71,6 +71,8 @@ export class ProgressHud {
   private frame: XpBarFrame;
   private shownLevel?: number;
   private progress?: Progress;
+  /** The level-up cues still fading, taken down with the bar (FS-TQZ5J § Change: Batch 5, R67). */
+  private readonly cues = new Set<Phaser.GameObjects.Text>();
   /** What the piece last drew, so the ~30 states a second that change nothing redraw nothing. */
   private drawn?: string;
 
@@ -133,6 +135,21 @@ export class ProgressHud {
     }
   }
 
+  /**
+   * Taken down for good, a cue still fading with it: its world left the UI scene, as the world's
+   * shutdown once took them (FS-TQZ5J § Change: Batch 5, R67).
+   */
+  destroy(): void {
+    for (const cue of this.cues) {
+      this.scene.tweens?.killTweensOf(cue);
+      cue.destroy();
+    }
+    this.cues.clear();
+    this.graphics.destroy();
+    this.left.destroy();
+    this.right.destroy();
+  }
+
   /** A bare end numeral: stroked so it reads over a lit ground with no panel behind it. */
   private numeral(at: { x: number; y: number }): Phaser.GameObjects.Text {
     return this.scene.add
@@ -160,13 +177,17 @@ export class ProgressHud {
       .setOrigin(0.5, 1)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH);
+    this.cues.add(cue);
     this.scene.tweens.add({
       targets: cue,
       alpha: 0,
       y: bottom - CUE_RISE,
       delay: CUE_HOLD_MS,
       duration: CUE_FADE_MS,
-      onComplete: () => cue.destroy(),
+      onComplete: () => {
+        this.cues.delete(cue);
+        cue.destroy();
+      },
     });
   }
 }

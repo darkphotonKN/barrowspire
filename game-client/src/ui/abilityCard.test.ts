@@ -29,7 +29,7 @@ function me(fields: Partial<PlayerState> = {}): PlayerState {
 type CardState = Pick<ClientGameState, "world_type" | "current_player">;
 const run = (fields: Partial<PlayerState> = {}): CardState =>
   ({ world_type: "run", current_player: me(fields) }) as CardState;
-const clear = { lockedOut: false, leaveUp: false };
+const clear = { lockedOut: false };
 
 describe("abilityCopy (FS-8AY7S req 30)", () => {
   it.each([
@@ -129,10 +129,6 @@ describe("abilityCard (FS-8AY7S req 29–32)", () => {
     ["escaped", { escape: true }],
   ])("should show no card once the player is %s", (_, fields) => {
     expect(abilityCard(run(fields), clear)).toBeNull();
-  });
-
-  it("should give the corner to the leave button whenever it is up", () => {
-    expect(abilityCard(run(), { ...clear, leaveUp: true })).toBeNull();
   });
 });
 

@@ -1,11 +1,9 @@
+import { INIT, RUNNING } from "@/scenes/sceneStatus";
+
 /** The scene manager's read the gate needs: a scene's lifecycle status by key. */
 export interface SceneStatusReader {
   getScene(key: string): { sys: { settings: { status: number } } } | null;
 }
-
-// Phaser.Scenes status constants: a scene between these is starting or running
-const INIT = 1;
-export const RUNNING = 5;
 
 /**
  * Whether the scene is starting or running: INIT through RUNNING, LOADING included. Not

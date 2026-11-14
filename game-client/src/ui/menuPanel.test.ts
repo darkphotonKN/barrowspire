@@ -477,3 +477,87 @@ describe("showMenuPanel", () => {
     });
   });
 });
+
+describe("the chrome's feedback for the interface sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10)", () => {
+  const choices: MenuChoice[] = [
+    { id: "fall", label: "Fall where you stand", register: "actionable" },
+    { id: "leave", label: "Leave the barrow", register: "actionable" },
+    { id: "back", label: "Back  [Esc]", register: "cancel" },
+  ];
+
+  /** A menu whose Leave the barrow is dimmed, telling a recording feedback what the player did. */
+  function shown() {
+    const stage = recordingStage();
+    const heard: string[] = [];
+    const feedback = { hovered: () => void heard.push("hovered"), refused: () => void heard.push("refused") };
+    const leave = vi.fn();
+    const panel = showMenuPanel(stage.scene, {
+      choices,
+      actions: { fall: vi.fn(), leave },
+      enabled: { leave: () => false },
+      close: vi.fn(),
+      origin: ORIGIN,
+      hit: HIT,
+      tones: TONES,
+      feedback,
+    });
+    return { ...stage, ...panel, heard, leave };
+  }
+
+  it("should say a hover on a row that can be pressed, and on the frame's ×, and none on a dimmed row", () => {
+    const p = shown();
+
+    p.find("menu-fall")!.handlers.pointerover();
+    p.find("menu-back")!.handlers.pointerover();
+    p.find("menu-close")!.handlers.pointerover();
+    p.find("menu-leave")!.handlers.pointerover();
+
+    expect(p.heard).toEqual(["hovered", "hovered", "hovered"]);
+  });
+
+  it("should say a press on a dimmed row refused, by the pointer and by its number, and press nothing", () => {
+    const p = shown();
+
+    p.find("menu-leave")!.handlers.pointerup();
+    p.keys.pick(1);
+
+    expect(p.heard).toEqual(["refused", "refused"]);
+    expect(p.leave).not.toHaveBeenCalled();
+  });
+
+  it("should say nothing for a press that answers, nor for a number with no row", () => {
+    const p = shown();
+
+    p.find("menu-fall")!.handlers.pointerup();
+    p.keys.pick(2);
+
+    expect(p.heard).toEqual([]);
+  });
+
+  it("should tell a row's feedback alone, drawn by menuOption: a hover while it can be pressed, a refusal while dimmed", () => {
+    const stage = recordingStage();
+    const heard: string[] = [];
+    let can = true;
+    menuOption(stage.scene, {
+      x: 0,
+      y: 0,
+      label: "Descend",
+      colour: TONES.actionable,
+      onPick: vi.fn(),
+      name: "choice-solo",
+      origin: ORIGIN,
+      enabled: () => can,
+      hit: HIT,
+      tones: TONES,
+      feedback: { hovered: () => void heard.push("hovered"), refused: () => void heard.push("refused") },
+    });
+    const hit = stage.find("choice-solo")!;
+
+    hit.handlers.pointerover();
+    can = false;
+    hit.handlers.pointerover();
+    hit.handlers.pointerup();
+
+    expect(heard).toEqual(["hovered", "refused"]);
+  });
+});

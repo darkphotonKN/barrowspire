@@ -3,13 +3,24 @@ import {
   LOGICAL_HEIGHT,
   LOGICAL_MAX_WIDTH,
   LOGICAL_MIN_WIDTH,
+  anchorAt,
 } from "@/render/viewport";
 import {
   CHAT_WINDOW_MARGIN,
   CHAT_WINDOW_X,
+  chatPickerList,
   chatWindowFrame,
 } from "./chatWindowLayout";
-import { cornerRowLeft } from "./hudCornerLayout";
+import {
+  ABILITY_CARD_H,
+  ABILITY_CARD_PLACE,
+  CORNER_ICONS,
+  controlsBadgeFrame,
+  cornerIconFrame,
+  cornerLabelAt,
+  cornerRowLeft,
+} from "./hudCornerLayout";
+import { rectsMeet } from "./partyPanelLayout";
 import {
   XP_BAR_CLEARANCE,
   XP_BAR_H,
@@ -131,6 +142,39 @@ describe("xpBarFrame: the bar, the studs and the numerals (FS-77DVN §B)", () =>
     for (const width of [1080, 1181, 1280]) {
       const { piece, bar } = xpBarFrame(view(width));
       expect(bar.x - piece.x).toBe(piece.x + piece.width - (bar.x + bar.width));
+    }
+  });
+});
+
+// The owner, 2026-11-14 (「經驗條在底部 如果會重疊 就把其他往上移動一些」): the XP bar keeps its place and
+// whatever would meet it moves up. Merged onto the UI scene (FS-TQZ5J § Change: Merge with main,
+// 2026-11-14), nothing at the bottom meets it at any logical width, so nothing moved; this pins it. The
+// run's end row and the spectate row and switcher are swept in `resolvedRow.test.ts`.
+describe("xpBarFrame against the other bottom pieces (FS-77DVN §A; the owner, 2026-11-14)", () => {
+  /** A hover label as wide as the corner's widest and more, 12 px words with 3 px padding (cornerLabel.ts). */
+  const LABEL_W = 160;
+  const LABEL_H = 22;
+  /** The run's ability card (`AbilityHud`): 280 wide, its bottom-right corner at its place. */
+  const CARD_W = 280;
+
+  it("should meet neither the chat window open or folded nor its picker list, the corner row or its labels, the ability card nor the controls badge, at every width", () => {
+    const bottom = LOGICAL_HEIGHT - CHAT_WINDOW_MARGIN;
+    const open = chatWindowFrame(CHAT_WINDOW_X, bottom);
+    const folded = chatWindowFrame(CHAT_WINDOW_X, bottom, true);
+    const chat = [open.panel, chatPickerList(open).box, folded.panel, chatPickerList(folded).box];
+    for (let width = LOGICAL_MIN_WIDTH; width <= LOGICAL_MAX_WIDTH; width++) {
+      const v = view(width);
+      const { piece } = xpBarFrame(v);
+      const plates = CORNER_ICONS.map((icon) => cornerIconFrame(icon, v));
+      const labels = plates.map((plate) => {
+        const at = cornerLabelAt(plate, LABEL_W, v);
+        return { x: at.x - LABEL_W / 2, y: at.bottom - LABEL_H, width: LABEL_W, height: LABEL_H };
+      });
+      const corner = anchorAt(ABILITY_CARD_PLACE, v);
+      const card = { x: corner.x - CARD_W, y: corner.y - ABILITY_CARD_H, width: CARD_W, height: ABILITY_CARD_H };
+      for (const other of [...chat, ...plates, ...labels, card, controlsBadgeFrame(v)]) {
+        expect(rectsMeet(piece, other), `at ${width}`).toBe(false);
+      }
     }
   });
 });

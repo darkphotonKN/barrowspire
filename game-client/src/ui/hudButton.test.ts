@@ -16,6 +16,7 @@ type HitConfig = {
     gameObject: unknown,
   ) => boolean;
   useHandCursor?: boolean;
+  cursor?: string | boolean;
 };
 
 /**
@@ -26,6 +27,7 @@ type HitConfig = {
 function stage(labelWidth: number, labelHeight = 18) {
   let config: HitConfig | undefined;
   let press: (() => void) | undefined;
+  let over: (() => void) | undefined;
   let pressedDown = false;
   const label: Record<string, unknown> = {
     x: 0,
@@ -47,6 +49,7 @@ function stage(labelWidth: number, labelHeight = 18) {
     setInteractive: (c: HitConfig) => ((config = c), label),
     on: (event: string, cb: () => void) => {
       if (event === "pointerup") press = cb;
+      if (event === "pointerover") over = cb;
       if (event === "pointerdown") pressedDown = true;
       return label;
     },
@@ -76,6 +79,7 @@ function stage(labelWidth: number, labelHeight = 18) {
     graphics,
     hits,
     pressed: () => press,
+    hovered: () => over,
     actsOnPress: () => pressedDown,
     config: () => config,
   };
@@ -109,7 +113,7 @@ describe("drawHudButton: the whole outlined button answers a press, not only its
   ])("should take a press at %s", (_where, x, y) => {
     // a short label ("Invite", ~40 px) well inside a 120 px button
     const s = stage(40);
-    drawHudButton(s.scene, s.graphics, button, "Invite", true, () => undefined);
+    drawHudButton(s.scene, s.graphics, { rect: button, label: "Invite", enabled: true, press: () => undefined });
     expect(s.hits(x, y)).toBe(true);
   });
 
@@ -120,37 +124,83 @@ describe("drawHudButton: the whole outlined button answers a press, not only its
     ["below the button", button.x + 10, button.y + button.height + 2],
   ])("should not take a press %s", (_where, x, y) => {
     const s = stage(40);
-    drawHudButton(s.scene, s.graphics, button, "Invite", true, () => undefined);
+    drawHudButton(s.scene, s.graphics, { rect: button, label: "Invite", enabled: true, press: () => undefined });
     expect(s.hits(x, y)).toBe(false);
   });
 
   it("should act on the release, never the press, so a press stays its panel's (FS-R82NV R28)", () => {
     const s = stage(40);
-    drawHudButton(s.scene, s.graphics, button, "Invite", true, () => undefined);
+    drawHudButton(s.scene, s.graphics, { rect: button, label: "Invite", enabled: true, press: () => undefined });
     expect(s.actsOnPress()).toBe(false);
     expect(s.pressed()).toBeDefined();
   });
 
-  it("should keep the hand cursor and run its press", () => {
+  // the owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+  it("should keep the bone hand, no cursor of its own, and run its press", () => {
     const s = stage(40);
     const press = vi.fn();
-    drawHudButton(s.scene, s.graphics, button, "Create party", true, press);
-    expect(s.config()?.useHandCursor).toBe(true);
+    drawHudButton(s.scene, s.graphics, { rect: button, label: "Create party", enabled: true, press });
+    expect(s.config()?.useHandCursor).toBeFalsy();
+    expect(s.config()?.cursor).toBeFalsy();
     s.pressed()?.();
     expect(press).toHaveBeenCalledTimes(1);
   });
 
   it("should leave a greyed button inert", () => {
     const s = stage(40);
-    drawHudButton(
-      s.scene,
-      s.graphics,
-      button,
-      "Invite",
-      false,
-      () => undefined,
-    );
+    drawHudButton(s.scene, s.graphics, { rect: button, label: "Invite", enabled: false, press: () => undefined });
     expect(s.config()).toBeUndefined();
     expect(s.hits(button.x + 60, button.y + 14)).toBe(false);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): a party
+// button tells the player's hand, P5–P7
+describe("drawHudButton's sounds (FS-WDM0X § Pass 2: the party, P5–P7)", () => {
+  const button = { x: 400, y: 300, width: 120, height: 28 };
+
+  it("should say a hover on a live button, and its press just before it answers", () => {
+    const s = stage(40);
+    const heard: string[] = [];
+    drawHudButton(s.scene, s.graphics, {
+      rect: button,
+      label: "Kick",
+      enabled: true,
+      press: () => heard.push("kick"),
+      depth: 1110,
+      feedback: {
+        hovered: () => heard.push("hover"),
+        pressed: () => heard.push("click"),
+        refused: () => heard.push("error"),
+      },
+    });
+
+    s.hovered()?.();
+    s.pressed()?.();
+
+    expect(heard).toEqual(["hover", "click", "kick"]);
+  });
+
+  it("should take a greyed button's press only to say no, with no hand cursor and no hover", () => {
+    const s = stage(40);
+    const heard: string[] = [];
+    drawHudButton(s.scene, s.graphics, {
+      rect: button,
+      label: "Invite",
+      enabled: false,
+      press: () => heard.push("invite"),
+      depth: 1110,
+      feedback: {
+        hovered: () => heard.push("hover"),
+        refused: () => heard.push("error"),
+      },
+    });
+
+    expect(s.config()?.useHandCursor).toBeFalsy();
+    expect(s.hits(button.x + 60, button.y + 14)).toBe(true);
+    expect(s.hovered()).toBeUndefined();
+    s.pressed()?.();
+
+    expect(heard).toEqual(["error"]);
   });
 });

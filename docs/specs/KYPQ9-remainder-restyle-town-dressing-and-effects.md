@@ -537,3 +537,159 @@ All commands run from `game-client/` with Node 22 on the path:
 ## Change: Arrival card → FS-PQ2TW
 
 ## Change: Spire messages as lore lines → FS-XWHZP
+
+## Change: Every hover keeps the bone hand
+Status: shipped
+Date: 2026-11-14
+
+The owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (every hover keeps the bone hand). It came out of
+a code review of FS-WDM0X § Pass 2b: LEAVE THE BARROW dimmed under the pointer left the browser's
+`pointer` hand over the run, because Phaser 4.2.1 puts the default back on an out only for an
+object that still has a cursor (`InputManager.resetCursor`), and the dimmed button had just
+dropped its own. The rule takes the per-object cursor away instead of mending each dim.
+
+This is a cursor rule, so it lives here, in §H's ledger. It supersedes every "a hand cursor" or
+"no hand cursor" in the canvas specs written before it (FS-3EBCA, FS-7TQN4, FS-J1672, FS-QHN87,
+FS-G4VMQ, FS-HRH2J, FS-R82NV, FS-R6EYZ, FS-WDM0X § Pass 2b E6 and § Change pass 2 (party) P7). Their
+text stays as written; the cursor they name is now the world's default.
+
+R1. No interactive object in the game canvas has a cursor of its own: no `useHandCursor`, no
+    `cursor` in `setInteractive`'s config, no `input.cursor` set. That holds for live, dimmed and
+    greyed objects alike, in every scene (town, field, run, the UI scene, the main menu,
+    character creation, game over, the disconnect notice).
+R2. The cursor over the canvas is the world's default alone: the bone hand (`cursor_hand`, §H.2,
+    §H.3), installed by the town, the field and the run at create. Phaser changes the canvas's
+    cursor on an over or an out only for an object that has one (`InputManager.setCursor`,
+    `resetCursor`), so with none the default stays. The UI scene sets none and shows the world's.
+R3. The hover cue stays what each piece already draws: its brightening, its sound. Hit areas,
+    presses and what is interactive are unchanged; only the cursor goes.
+R4. Kept as they were, since they are not a per-object hover cursor: the strike-mark over a
+    living monster in the run and the field (§H.2, a default-cursor swap); the main menu, which
+    has no bone hand and keeps the browser's arrow (the town hands the menus back the browser's
+    on its stop); the party invite field's DOM `text`/`not-allowed` cursor, a DOM input over the
+    canvas. DOM pages outside the canvas are untouched.
+
+### Acceptance criteria
+- [x] `src/render/cursors/boneHand.test.ts` finds no `useHandCursor`, `cursor:` in a
+      `setInteractive` config or `input.cursor =` in the canvas code (all of `src` but `app`,
+      `components`, `api` and tests), and pins Phaser 4.2.1's over and out to that rule.
+- [x] LEAVE THE BARROW, the card's and the row's, sets no cursor live, dimmed or handed back after a
+      refusal (`BarrowspireScene.test.ts`, "should keep the bone hand over …").
+- [x] The HUD and party buttons, the corner row and the gear overlay's × ask for no cursor.
+- [ ] Manual check: over every button in town, field and run, live or greyed, the pointer stays
+      the bone hand; pressing a live LEAVE THE BARROW leaves the bone hand, not the browser's hand.
+
+## Change: The pressed hand, and the hand on the menus
+Status: work-order
+Date: 2026-11-14
+
+The owner, 2026-11-14, choosing from three drafted presses (A press, B dip, C grip): 「Ａ」, the
+index finger presses down; 「左鍵」, on the left button only; 「2好」, the menus wear the bone hand
+too; 「怪物的游標部分先不處理」, the strike-mark is left as it is. A browser spike in the owner's
+browser came back 「會動」: a CSS cursor set on `pointerdown` shows on a still click and stays
+while the button is held, so the press is a CSS cursor swap, as the strike-mark is.
+
+This is a cursor change, so it lives in §H's ledger, after *Every hover keeps the bone hand*. It
+supersedes that section's R4 on one point only: the main menu no longer keeps the browser's
+arrow, and the town no longer hands the menus the browser's cursor on its stop. Its R1–R3 stand:
+no object has a cursor of its own; the press changes the world's default and nothing else.
+
+**The palette seam (ADR-0025).** The menus wear the site's Bone & Soot; the bone hand is baked
+from the game palette (`BARROW`, §H.2). ADR-0025 asks each surface over the seam to say which
+palette it belongs to: the pointer is the game's, on every scene of the canvas, menus included.
+The owner approved the bone hand on the Bone & Soot menus on 2026-11-14 (「2好」). DOM pages
+outside the canvas keep their own cursors.
+
+### Requirements
+
+P1. **The pressed hand, baked.** A third cursor sheet, `cursor_hand_pressed`, is authored in code
+    beside `cursor_hand` in `tools/bake/page/models/cursors.js` (ADR-0021) from the same shapes,
+    not a copy of them: the index finger bends its tip down into the ground, so seen from above
+    its three phalanges foreshorten, the distal one most, and its tip pad shows wider, end-on;
+    with the tip pinned to the hotspot the rest of the hand draws in about 1.8 px toward it; the
+    hand is nearer the ground, so the drop shadow halves its offset to (0.6, 0.8) px and darkens
+    to 0.55. Same 32×32 frame, same `BARROW` colours, same rim and light.
+P2. **The same click point.** `cursor_hand_pressed`'s hotspot is the hand's, (6, 1), so its
+    manifest anchor equals `cursor_hand`'s. A press never moves the point that clicks.
+P3. **The bake stays put elsewhere.** The re-bake adds the one sheet to the resident `fx-0` atlas.
+    Every other sheet's pixels are unchanged (`cursor_hand` and `cursor_strike` included), and
+    every other atlas keeps its bytes.
+P4. **Left button only.** While the left button is held down on the game canvas the bone hand
+    shows pressed; on its release it shows plain again. The right button (the Shadow Shot's aim,
+    the Mercenary's parry) and the middle button never press it.
+P5. **The strike-mark is left as it is.** Over a living monster (§H.2), a press shows the
+    strike-mark unchanged; there is no pressed strike-mark. If the pointer leaves the monster
+    while the button is held, the pressed hand shows, and the plain hand on the release; if it
+    comes onto a monster while held, the strike-mark shows.
+P6. **One pointer for the game.** The press is watched once per game, not per scene, on the
+    page's own pointer events: the press on the canvas, the release anywhere on the page. So it
+    holds across a scene that starts or stops under a held button (a menu button that starts its
+    scene on the press, a world that stops before the release) and over the UI scene's pieces,
+    and a release outside the canvas or the window still lets go. Losing the window (`blur`) or
+    the tab (`visibilitychange`) lets go too. It ends with the game.
+P7. **The menus wear the hand.** The main menu, character creation and the disconnect notice
+    show the bone hand, plain and pressed, as the town, the field and the run do. The town and
+    the field leave the hand behind on their stop (the field's strike-mark, if the pointer was on
+    a monster, becomes the hand), instead of handing back the browser's cursor. GameOverScene is
+    not registered in the game, so it is not touched.
+P8. **Before the art.** Boot and Preload show the browser's arrow: the hand's atlas (`fx-0`,
+    resident) is loading. The main menu is the first scene with the hand.
+P9. **Without the art.** No manifest or no `cursor_hand` sheet: the browser's `default`, as
+    today, pressed or not. No `cursor_hand_pressed` sheet: the plain hand shows on a press too.
+    No `cursor_strike`: the browser's `crosshair`, as today.
+P10. **One writer.** The canvas's default cursor is set in one place, the game's pointer look; no
+    scene sets it on its own. Each cursor's CSS (a cropped data URL) is made once per game.
+
+### Acceptance criteria
+- [x] The manifest has `cursor_hand_pressed`, 32×32 on the `fx` atlas, `authored:
+      tools/bake/page/models/cursors.js#boneHandPressed`, its anchor equal to `cursor_hand`'s
+      (`manifest.test.ts`).
+- [x] After the re-bake, every sheet but `cursor_hand_pressed` crops to the same pixels as before
+      it, and every atlas but `fx-0` is byte-equal; `npm run bake -- --check` reports no changes.
+- [x] The pointer look shows the hand, the pressed hand on a left press, and the hand again on the
+      left's release; no right or middle press presses it; the strike-mark shows unchanged under a
+      press; leaving or coming onto a monster mid-press follows P5; a blur or a hidden tab lets go
+      (`pointerLook.test.ts`).
+- [x] The look is one per game: a second ask returns the same look and adds no listener, its CSS is
+      cropped once, and the game's destroy takes its listeners off (`pointerLook.test.ts`).
+- [x] Missing sheets fall back as P9 says (`pointerLook.test.ts`).
+- [x] No scene calls `setDefaultCursor` itself; the town, field, run, main menu, character creation
+      and the disconnect notice ask the look for the hand; the town and the field leave the hand,
+      not the browser's cursor, on a stop (`pointerLook.test.ts`, `HubScene.test.ts`,
+      `FieldScene.test.ts`, `BarrowspireScene.test.ts`, `DisconnectNoticeScene.test.ts`).
+- [ ] Manual check: a held left click shows the pressed hand in the main menu, character creation,
+      the town, the field and the run, and over the UI scene's buttons; a still click shows it; a
+      right-button hold (Shadow Shot, parry) keeps the plain hand; over a monster a press keeps the
+      strike-mark; a press on a menu button that changes scene stays pressed until the release.
+
+### Edge states
+- **Left and right held together:** the hand is pressed while the left is down, whichever went
+  down first, and plain once the left is up, even with the right still held.
+- **A release off the canvas, off the window, or with the tab hidden:** let go on the page's
+  release, or on the blur or the hidden tab, whichever comes first. Never stuck pressed.
+- **A press on the DOM layer** (the chat or the party invite field): not the canvas, so no press;
+  the field keeps its own DOM cursor.
+- **A scene starts on the press** (a menu button): the new scene's look is the same look, still
+  pressed, and lets go on the release.
+- **The game is destroyed mid-press** (leaving /game): the look's listeners go with it; nothing
+  writes to the dead canvas.
+- **A touch:** a touch is a left press, so the hand shows pressed while the finger is down; a
+  touch screen draws no cursor, so nothing shows.
+
+### Out of scope
+- A pressed strike-mark, or any change to `cursor_strike` (「怪物的游標部分先不處理」).
+- An animated press, a sound on the press, or a press cue on any object.
+- The cursor on the DOM pages outside the canvas.
+- GameOverScene, which is not registered.
+- The browser's arrow during Boot and Preload.
+
+### As built (2026-11-14)
+
+- **Review fixes (2026-11-14, review of b1ddcbb5..46f046bf).** The text above is not edited; in it,
+  "the look" is the **pointer look** (game-client `CONTEXT.md`), not a shimmer's look. The lifecycle
+  tests count the listeners (one set across two asks, all taken off on the destroy); the run's stop
+  sets the base back to the hand, as the field's does; `scenePointerLook(scene, art?)` is split into
+  `ensurePointerLook(scene, art)` and `findPointerLook(scene)`; the registry check is a
+  registered-symbol brand, so a Fast Refresh swap reuses the game's pointer look; the one-writer
+  guard reads all of `src/` (components/ and app/ included) and also rejects `defaultCursor =` and
+  `canvas.style.cursor =` writes outside `pointerLook.ts`.

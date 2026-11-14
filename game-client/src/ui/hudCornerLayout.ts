@@ -5,7 +5,7 @@
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
-import type { Placement } from "@/render/viewport";
+import { anchorAt, type Placement } from "@/render/viewport";
 
 export interface Rect {
   x: number;
@@ -60,14 +60,32 @@ export const ABILITY_CARD_PLACE: Placement = {
   dy: -CORNER_ROW_CLEARANCE,
 };
 
-/** The run's dead-spectator Leave the barrow button, 200 × 38 (FS-QPDKN req 10). */
-const LEAVE_BUTTON = { width: 200, height: 38 };
-/** Its centre, above the row the same way (R14). */
-export const LEAVE_BUTTON_PLACE: Placement = {
-  anchor: "bottom-right",
-  dx: -CORNER_MARGIN - LEAVE_BUTTON.width / 2,
-  dy: -CORNER_ROW_CLEARANCE - LEAVE_BUTTON.height / 2,
-};
+/**
+ * The run's ability card's height (`AbilityHud`: its padding, its name row and its line's two rows), which
+ * the controls badge stands over (FS-84N1G R3).
+ */
+export const ABILITY_CARD_H = 72;
+
+/**
+ * The run's controls badge (FS-84N1G R3; the owner, 「幫我做一個徽章 放在 技能上方區塊」): a plate the corner
+ * icons' size, its right edge on the ability card's, the row's gap above the card's top.
+ */
+export function controlsBadgeFrame(view: CornerView): Rect {
+  const card = anchorAt(ABILITY_CARD_PLACE, view);
+  const bottom = card.y - ABILITY_CARD_H - CORNER_ROW_HEADROOM;
+  return { x: card.x - CORNER_ICON_W, y: bottom - CORNER_ICON_H, width: CORNER_ICON_W, height: CORNER_ICON_H };
+}
+
+/** The controls badge's name and key under the pointer, as the corner row names its icons (FS-84N1G R7). */
+export const CONTROLS_BADGE_LABEL = "Controls (H)";
+
+/**
+ * Every run button's height: the end row's WATCH, LEAVE and SETTLEMENT, the card's two and the spectate row's
+ * (FS-TQZ5J § Change: Batch 6, R122, R124). The dead spectator's corner LEAVE, once placed here above the
+ * row (R14), folded into the spectate row (FS-QPDKN § Change: The party death flow and the spectate
+ * switcher, R158). The one constant.
+ */
+export const RUN_BUTTON_H = 38;
 
 /** Each icon's name and key under the pointer (R5); the Mailbox has no key. */
 export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {

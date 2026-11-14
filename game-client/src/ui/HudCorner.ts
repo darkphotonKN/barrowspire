@@ -18,6 +18,9 @@
  * in code from palette tokens (ADR-0013). The row decides nothing: what a press does is the
  * scene's, handed in per icon. The gear overlay's panels stop above it, so it answers
  * while they are open too (R11; FS-HRH2J § Change C12).
+ *
+ * It stands in the UI scene, over every world (FS-TQZ5J R13, `uiSceneCorner.ts`), so Phaser hands it
+ * its own presses before the world hears them (R7).
  */
 
 import type Phaser from "phaser";
@@ -25,7 +28,7 @@ import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { CornerLabel } from "./cornerLabel";
 import { GLYPH_LINE_W, drawEnvelopeLines, envelopeKnockout } from "./MailboxEnvelope";
-import { BRONZE, CUT_W, Knockout, bend, oval, type KnockoutCut, type KnockoutInk, type KnockoutPicture, type Pt } from "./knockout";
+import { BRONZE, CUT_W, GREYED, GREYED_ALPHA, Knockout, bend, oval, type KnockoutCut, type KnockoutPicture, type Pt } from "./knockout";
 import { RUCKSACK, drawRucksackLines } from "./knockoutRucksack";
 import {
   CORNER_LABEL,
@@ -38,17 +41,6 @@ import {
 const HUD_DEPTH = 1000;
 /** Every glyph's line, the envelope's (FS-QHN87 R1); the cover margins follow it. */
 const LINE_W = GLYPH_LINE_W;
-/** The greyed Mailbox's lines. */
-const GREYED_ALPHA = 0.6;
-/**
- * The greyed Mailbox's knockout: the faint grey, never brightening under the pointer (FS-7TQN4 R9),
- * and flat, not lit from above, on the row's drop shadow (FS-S8Z2Y R6).
- */
-const GREYED: KnockoutInk = {
-  idle: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
-  hover: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
-  flat: true,
-};
 
 const labelOf = (spec: CornerIconSpec) =>
   spec.greyed && spec.icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[spec.icon];
@@ -59,6 +51,10 @@ export interface CornerIconSpec {
   press?: () => void;
   /** Shown but not pressable (the Mailbox outside the town, R9): faint, no hand, no press. */
   greyed?: boolean;
+  /** Told as the pointer comes onto a pressable icon (FS-WDM0X § Change M5); never for a greyed one. */
+  hovered?: () => void;
+  /** Told for a press on a greyed icon, which answers nothing else (FS-WDM0X § Change M10). */
+  refused?: () => void;
 }
 
 export interface HudCornerDeps {
@@ -114,7 +110,7 @@ export class HudCorner {
         .setOrigin(0)
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
-        .setInteractive({ useHandCursor: !spec.greyed });
+        .setInteractive();
       // its texture is drawn at the render scale, and drawn again at a new one (FS-7TQN4 R13); where
       // that fails, the icon goes back to its lines
       const knockout = new Knockout({
@@ -167,7 +163,7 @@ export class HudCorner {
   }
 
   private press(icon: DrawnIcon): void {
-    if (icon.spec.greyed) return;
+    if (icon.spec.greyed) return icon.spec.refused?.();
     icon.spec.press?.();
   }
 
@@ -177,6 +173,7 @@ export class HudCorner {
     this.draw(icon);
     if (on) this.label.show(icon.frame, labelOf(icon.spec));
     else this.label.hide();
+    if (on && !icon.spec.greyed) icon.spec.hovered?.();
   }
 
   private draw(icon: DrawnIcon): void {

@@ -9,29 +9,23 @@
  * and the fold button at its right. Folded, the window is that input row alone. It sits at the
  * HUD's depth, under overlays and popups (R17). Its tabs, the fold button and the names in its
  * lines take a click (a name starts a whisper, FS-KCQ06 C15), and only the wheel over its lines is
- * read; a scene asks `covers` so a click on the panel is never an attack in the world behind it
- * (R31).
+ * read.
+ *
+ * It is the UI scene's (FS-TQZ5J § Change: Batch 6, R125): it stands on grounds of its own over its
+ * panel and its open list, so a press, a move or the wheel on it never reaches the world (R129), and it
+ * acts on the UI scene's scene-wide events only with nothing, or one of its own objects, top-most under
+ * the pointer, so every UI piece drawn above it is its cover (R130).
  */
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { ChatChannel } from "@/stores/chatStore";
-import { ActionType } from "@/assets/types/client";
-import {
-  useChatStore,
-  visibleChatLines,
-  type ChatState,
-} from "@/stores/chatStore";
-import { useAuthStore } from "@/stores/authStore";
-import { socketManager } from "@/utils/class/SocketManager";
+import { visibleChatLines, type ChatState } from "@/stores/chatStore";
+import type { UiEffect } from "@/audio/uiSounds";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { carvedPanel } from "./carvedPanel";
 import { ChatInput, type ChatSend } from "./chatInput";
-import {
-  domChatInputField,
-  type ChatInputFieldFactory,
-  type ChatInputFieldHandle,
-} from "./chatInputField";
+import type { ChatInputFieldFactory, ChatInputFieldHandle } from "./chatInputField";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_DIVIDER_INSET_FOOT,
@@ -44,8 +38,6 @@ import {
   CHAT_PICKER_ARROW,
   CHAT_ROW_TEXT_PAD,
   CHAT_VISIBLE_LINES,
-  CHAT_WINDOW_MARGIN,
-  CHAT_WINDOW_X,
   CHAT_SCROLL_GRAB,
   CHAT_SCROLL_W,
   CHAT_TAB_PAD,
@@ -81,11 +73,16 @@ export interface ChatWindowOptions {
   /** This player's id: a whisper they sent is their echo, `To Name` (FS-KCQ06 R14). */
   selfId?: () => string | undefined;
   /**
-   * Whether a panel drawn over the window lies at a screen point (the letter panel): the wheel
-   * and presses there are that panel's, so the window neither scrolls nor grabs under it.
+   * Plays an interface sound on the game's one player (FS-WDM0X § Pass 2: the chat, C1–C5): a tab
+   * pressed, the picker's list opened or shut, a hover, a draft refused. None, nothing plays.
    */
-  coveredAt?: (x: number, y: number) => boolean;
+  play?: (effect: UiEffect) => void;
+  /** Told as the player begins and stops typing (FS-TQZ5J § Change: Batch 6, R127): the UI's state. */
+  typing?: (on: boolean) => void;
 }
+
+/** What Phaser lists under the pointer for a scene-wide event (`currentlyOver`, top-most first). */
+type Over = readonly unknown[] | undefined;
 
 /** What a scene gives the window so the player can type: who owns the keys, and how a line leaves. */
 export interface ChatWindowInput {
@@ -98,34 +95,6 @@ export interface ChatWindowInput {
   makeField: ChatInputFieldFactory;
   /** The channels that may be picked; the server's open ones unless a test says otherwise. */
   open?: ReadonlySet<ChatChannel>;
-}
-
-/**
- * The window as a scene hangs it: the app's chat store, the bottom-left corner above the canvas
- * bottom, the real DOM input row, and the scene's own rule for who owns Enter and Esc (R27).
- */
-export function mountChatWindow(
-  scene: Phaser.Scene,
-  mayOpen: () => boolean,
-  over: Pick<ChatWindowOptions, "coveredAt"> &
-    Pick<ChatWindowInput, "keepsDraft"> = {},
-): ChatWindow {
-  return new ChatWindow(
-    scene,
-    useChatStore,
-    CHAT_WINDOW_X,
-    viewport.height - CHAT_WINDOW_MARGIN,
-    {
-      input: {
-        mayOpen,
-        keepsDraft: over.keepsDraft,
-        send: (line) => socketManager.sendMessage(ActionType.Chat, line),
-        makeField: domChatInputField,
-      },
-      selfId: () => useAuthStore.getState().memberInfo?.id,
-      coveredAt: over.coveredAt,
-    },
-  );
 }
 
 const HUD_DEPTH = 1000;
@@ -245,7 +214,24 @@ export class ChatWindow {
   private field?: ChatInputFieldHandle;
   private input?: ChatInput;
   private readonly selfId: () => string | undefined;
-  private readonly coveredAt: (x: number, y: number) => boolean;
+  private readonly play: (effect: UiEffect) => void;
+  private readonly typing: (on: boolean) => void;
+  /** Whether the player was last reported typing (R127). */
+  private reportedTyping = false;
+  /**
+   * Its ground over the panel (R129): made first, so every object of its own drawn after at its depth
+   * stands over it; moved with the panel as it folds.
+   */
+  private readonly ground: Phaser.GameObjects.Zone;
+  /** Its ground over the open list, wherever the list reaches; none while the list is shut. */
+  private listGround?: Phaser.GameObjects.Zone;
+  /**
+   * Every interactive object it ever made, its grounds included: what Phaser lists top-most is its own
+   * even once drawn again (a tab destroyed by its own press is still the one Phaser hands the scene).
+   */
+  private readonly mine = new WeakSet<object>();
+  /** The tab or the list's row the pointer is on, by where it is: a hover plays once on entering one (C4). */
+  private hovered: string | null = null;
 
   /** `x` is the panel's left edge; `bottom` the screen y of its bottom edge. */
   constructor(
@@ -256,8 +242,10 @@ export class ChatWindow {
     options: ChatWindowOptions = {},
   ) {
     this.selfId = options.selfId ?? (() => undefined);
-    this.coveredAt = options.coveredAt ?? (() => false);
+    this.play = options.play ?? (() => {});
+    this.typing = options.typing ?? (() => {});
     this.frame = this.frameNow();
+    this.ground = this.makeGround(this.frame.panel, HUD_DEPTH);
     this.drawAll();
     this.unsubscribe = store.subscribe((state, prev) =>
       this.onStore(state, prev),
@@ -275,8 +263,11 @@ export class ChatWindow {
     this.drawInputRow();
   }
 
-  /** Whether a screen point lies on the window: a scene's click there is the window's, not the world's (R31). */
-  covers(x: number, y: number): boolean {
+  /**
+   * Whether a screen point lies on the window by its place, its open list included (FS-TQZ5J § Change:
+   * Batch 6, R129): what the UI scene claims a press by while a world's press holds its cameras aside.
+   */
+  holds(x: number, y: number): boolean {
     if (within(this.frame.panel, x, y)) return true;
     // the open list is the window's too, wherever it reaches (FS-J267Q R4)
     return (
@@ -285,14 +276,25 @@ export class ChatWindow {
     );
   }
 
+  /**
+   * Whether a press keeps the window's field focused (FS-TQZ5J § Change: Batch 6, R131; A1 R26, as the party
+   * panel's): the press is its own, Phaser's top-most hit one of its objects (R130), it lies on the window,
+   * and its field holds focus. A UI piece drawn over the window there takes the press, and the field lets go.
+   */
+  keepsField(x: number, y: number, over: Over): boolean {
+    const top = over?.[0];
+    const own = typeof top === "object" && top !== null && this.mine.has(top);
+    return own && this.holds(x, y) && this.isTyping();
+  }
+
   /** Whether the player is typing in the input right now. */
   isTyping(): boolean {
     return this.input?.isOpen() ?? false;
   }
 
-  /** The scene takes the keys back (the end-of-run overlay): close the input and drop the draft (R27). */
-  cancelInput(): void {
-    this.input?.cancel();
+  /** Re-reads who owns the keys now, between frames: the world changed its report (FS-TQZ5J § Change: Batch 6, R128). */
+  sync(): void {
+    this.watchKeys();
   }
 
   /** The screen y of the panel's top edge as it now sits: what the invite prompts stack down to (FS-NCC9J R24). */
@@ -322,6 +324,9 @@ export class ChatWindow {
     this.clearLines();
     this.clearTabs();
     this.foldText?.destroy();
+    this.ground.destroy();
+    this.listGround?.destroy();
+    this.listGround = undefined;
     this.panel?.destroy();
     this.scrollbar?.destroy();
     this.scrollbar = undefined;
@@ -341,6 +346,8 @@ export class ChatWindow {
 
   private relayout(): void {
     this.frame = this.frameNow();
+    const { panel } = this.frame;
+    this.ground.setPosition(panel.x, panel.y).setSize(panel.width, panel.height);
     this.drawAll();
     this.field?.moveTo(this.fieldRect());
     this.drawInputRow();
@@ -405,6 +412,7 @@ export class ChatWindow {
       keepsDraft: typing.keepsDraft,
       send: typing.send,
       open: typing.open,
+      play: (effect) => this.play(effect),
       changed: () => this.inputChanged(),
       recall: {
         lines: () => this.store.getState().sent,
@@ -426,9 +434,14 @@ export class ChatWindow {
 
   /** The input opened, closed or its draft changed: the panel redraws only when its opacity flips. */
   private inputChanged(): void {
+    // told even as the window goes, so the world's keyboard is handed back (FS-TQZ5J § Change: Batch 6, R127)
+    const typing = this.isTyping();
+    if (typing !== this.reportedTyping) {
+      this.reportedTyping = typing;
+      this.typing(typing);
+    }
     if (this.destroyed) return;
     this.drawPicker();
-    const typing = this.isTyping();
     if (typing !== this.drawnTyping) {
       this.drawnTyping = typing;
       // typing in a folded window unfolds it, so the player sees what they answer (asked 2026-10-31)
@@ -471,20 +484,50 @@ export class ChatWindow {
    * player plays on at once; one on the panel, a tab or the fold button, keeps them typing. The
    * browser will not move focus itself, since Phaser prevents a canvas mousedown's default.
    */
-  private onPress(pointer: { x: number; y: number }): void {
+  private onPress(pointer: { x: number; y: number }, over?: Over): void {
     this.pressedName = null;
     // Phaser's pointer.x/y are backing px; the window is laid out in logical units (FS-ZAJMH R15)
     const at = viewport.toLogical(pointer);
-    // a press on a panel drawn over the window is that panel's: nothing here is grabbed or named
-    if (this.coveredAt(at.x, at.y)) {
+    // a press on a UI piece drawn over the window is that piece's: nothing here is grabbed or named
+    // (FS-TQZ5J § Change: Batch 6, R130), and the field lets go (A1 R26)
+    if (!this.freeUnder(over)) {
       if (this.input?.isOpen()) this.field?.blur();
       return;
     }
     if (this.pressPicker(at)) return;
     if (this.grabScrollbar(at)) return;
     this.pressedName = this.nameAt(at.x, at.y);
-    if (!this.input?.isOpen() || this.covers(at.x, at.y)) return;
+    if (!this.input?.isOpen() || this.holds(at.x, at.y)) return;
     this.field?.blur();
+  }
+
+  /**
+   * Whether the window may act on a scene-wide event: Phaser lists nothing top-most under the pointer, or
+   * one of the window's own objects (FS-TQZ5J § Change: Batch 6, R130). Anything else there is a UI piece
+   * drawn above it: the letter panel, the gear overlay, the party panel, the controls panel, the record,
+   * the menu, the dialogue card, a notice.
+   */
+  private freeUnder(over: Over): boolean {
+    const top = over?.[0];
+    return top === undefined || (typeof top === "object" && top !== null && this.mine.has(top));
+  }
+
+  /** An interactive object of its own: what its own presses land on (R130). */
+  private own<T extends object>(object: T): T {
+    this.mine.add(object);
+    return object;
+  }
+
+  /** A ground of its own at `rect`, drawing nothing, under the bone hand (R129; uiGround's make). */
+  private makeGround(rect: Rect, depth: number): Phaser.GameObjects.Zone {
+    return this.own(
+      this.scene.add
+        .zone(rect.x, rect.y, rect.width, rect.height)
+        .setOrigin(0, 0)
+        .setScrollFactor(0)
+        .setDepth(depth)
+        .setInteractive(),
+    );
   }
 
   /**
@@ -523,12 +566,37 @@ export class ChatWindow {
     return true;
   }
 
-  /** While the thumb is held, the view follows the pointer up and down, wherever it wanders. */
-  private onDrag(pointer: { x: number; y: number }): void {
+  /**
+   * While the thumb is held, the view follows the pointer up and down, wherever it wanders; a row of the
+   * open list and a tab light only with nothing over the window there (R130).
+   */
+  private onDrag(pointer: { x: number; y: number }, over?: Over): void {
     const at = viewport.toLogical(pointer);
     if (this.grabbed !== null) this.scrollTo(at.y);
-    const row = this.listRowAt(at.x, at.y);
+    const free = this.freeUnder(over);
+    const row = free ? this.listRowAt(at.x, at.y) : null;
     if (row) this.input?.hover(row);
+    this.hoverAt(at, row, free);
+  }
+
+  /**
+   * `menu_hover` as the pointer comes onto a tab or a row of the open list it can pick (FS-WDM0X § Pass
+   * 2: the chat, C4), judged by where it is, so one drawn again under a still pointer plays nothing more;
+   * none while a UI piece drawn over the window is top-most there (`free` false, FS-TQZ5J R130).
+   */
+  private hoverAt(at: { x: number; y: number }, row: ChatChannel | null, free: boolean): void {
+    const pickable = row !== null && (this.input?.canPick(row) ?? false);
+    const target = !free ? null : pickable ? `row ${row}` : this.tabAt(at.x, at.y);
+    if (target !== null && target !== this.hovered) this.play("menu_hover");
+    this.hovered = target;
+  }
+
+  /** The tab under a logical point, if the tabs are drawn. */
+  private tabAt(x: number, y: number): string | null {
+    const row = this.frame.filterRow;
+    if (row.height === 0) return null;
+    const segment = chatTabSegments(row, (label) => this.labelWidth(label)).find((s) => within(s, x, y));
+    return segment ? `tab ${segment.channel}` : null;
   }
 
   /**
@@ -536,10 +604,12 @@ export class ChatWindow {
    * C15). On the release, not the press, as the fold button: the scene's attack handler has asked
    * whether the press was the window's before anything here moves (R31).
    */
-  private onRelease(pointer: { x: number; y: number }): void {
+  private onRelease(pointer: { x: number; y: number }, over?: Over): void {
     this.grabbed = null;
     const pressed = this.pressedName;
     this.pressedName = null;
+    // a release on a UI piece drawn over the window picks no row and names nobody (R130)
+    if (!this.freeUnder(over)) return;
     const at = viewport.toLogical(pointer);
     // a release on a row picks it, as a native drop-down does: a press on the picker and a drag
     // down the list picks too (FS-J267Q R4); a closed channel's row does nothing
@@ -567,7 +637,10 @@ export class ChatWindow {
     }
     if (!input.pickerOpen()) return false;
     if (within(chatPickerList(this.frame).box, at.x, at.y)) return true;
-    input.closePicker();
+    // the player's press outside it shuts it (FS-WDM0X § Pass 2: the chat, C3); one on a tab plays the
+    // tab's sound alone, the list shut silently with it: one press, one sound (FS-TQZ5J § Change: Batch 6, R135)
+    if (this.tabAt(at.x, at.y) !== null) input.closePicker();
+    else input.dismissPicker();
     return false;
   }
 
@@ -611,15 +684,17 @@ export class ChatWindow {
 
   private onWheel(
     pointer: { x: number; y: number },
-    _over: unknown,
+    over: Over,
     _dx: number,
     dy: number,
   ): void {
     const at = viewport.toLogical(pointer);
+    // a wheel on a UI piece drawn over the window is that piece's: the settlement record keeps it over
+    // the lines (FS-GV8WN S6; FS-TQZ5J § Change: Batch 6, R130)
     if (
       this.store.getState().folded ||
       !within(this.frame.messages, at.x, at.y) ||
-      this.coveredAt(at.x, at.y)
+      !this.freeUnder(over)
     )
       return;
     const next = scrolledOffset(
@@ -785,13 +860,15 @@ export class ChatWindow {
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
         .setAlpha(shown[segment.channel] ? 1 : TAB_OFF_ALPHA)
-        .setInteractive({ useHandCursor: true })
-        .on("pointerdown", () =>
-          this.store.getState().toggleChannel(segment.channel),
-        );
+        .setInteractive()
+        .on("pointerdown", () => {
+          // each press toggles the channel's lines, so each plays (FS-WDM0X § Pass 2: the chat, C1)
+          this.play("menu_tab");
+          this.store.getState().toggleChannel(segment.channel);
+        });
       // the padding widens the hit area to the whole segment; the label still sits where it did
       tab.setPosition(segment.x, y - 3);
-      this.tabTexts.push(tab);
+      this.tabTexts.push(this.own(tab));
     }
   }
 
@@ -870,6 +947,7 @@ export class ChatWindow {
     this.pickerDrawn = state;
     this.clearPicker();
     this.listPanel?.clear();
+    this.groundList(open && !!input && !!field && this.rowShown);
     if (!input || !field || !this.rowShown) return;
 
     const picker = chatPickerRect(this.frame);
@@ -887,8 +965,9 @@ export class ChatWindow {
       )
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      // the whole picker is the hit area; the window hit-tests it itself, this only shows the hand
-      .setInteractive({ useHandCursor: true });
+      // the whole picker is the hit area; the window hit-tests it itself. It once showed the hand
+      // here; it stays interactive as it was, under the bone hand (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+      .setInteractive();
     const arrowWidth = this.wordsSize(CHAT_PICKER_ARROW).width;
     const arrow = this.scene.add
       .text(
@@ -899,9 +978,21 @@ export class ChatWindow {
       )
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true });
-    this.pickerTexts.push(label, arrow);
+      .setInteractive();
+    this.pickerTexts.push(this.own(label), this.own(arrow));
     if (open) this.drawList(input);
+  }
+
+  /** The open list's ground over its box, wherever it reaches; none while it is shut (R129). */
+  private groundList(open: boolean): void {
+    if (!open) {
+      this.listGround?.destroy();
+      this.listGround = undefined;
+      return;
+    }
+    const { box } = chatPickerList(this.frame);
+    if (this.listGround) this.listGround.setPosition(box.x, box.y).setSize(box.width, box.height);
+    else this.listGround = this.makeGround(box, LIST_DEPTH);
   }
 
   /** The open list: near-black ground, a fine brass frame, a row per shown channel in its colour. */
@@ -945,8 +1036,8 @@ export class ChatWindow {
         .setScrollFactor(0)
         .setDepth(LIST_DEPTH + 1)
         .setAlpha(pickable ? 1 : ROW_CLOSED_ALPHA);
-      if (pickable) t.setInteractive({ useHandCursor: true });
-      this.pickerTexts.push(t);
+      if (pickable) t.setInteractive();
+      this.pickerTexts.push(this.own(t));
     }
   }
 
@@ -977,10 +1068,11 @@ export class ChatWindow {
       )
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       // on the release, not the press (asked 2026-11-02): folding on the press shrank the window
       // before the scene's attack handler asked whether that press was the window's (R31)
       .on("pointerup", () => this.store.getState().toggleFolded());
+    this.own(this.foldText);
   }
 
   private clearTabs(): void {

@@ -5,7 +5,8 @@
  * buttons, so the Settlement button that toggles it stays reachable). One amber button, Close.
  *
  * The scene owns when it opens and what closing means (the held return to the town, R23):
- * this widget only draws, and reports a press of Close to `onClose`. Built on open and taken
+ * this widget only draws, and reports a press of Close to `onClose` and the pointer coming onto it
+ * to `onCloseHovered` (its sounds are the scene's, FS-WDM0X § Pass 2b E4, E5). Built on open and taken
  * down on close, so a closed record holds no hit areas.
  *
  * Every row is listed (FS-GV8WN §Change: The settlement record scrolls): the CARRIED HOME and
@@ -25,6 +26,7 @@ import { fillMaskArea, maskInView, viewport } from "@/render/viewport";
 import { onSceneEnd } from "@/scenes/sceneEnd";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { drawPanelTitle } from "./panelFrame";
+import type { Rect } from "./partyPanelLayout";
 import type { RecordRow, RecordTone, RecordView } from "./settlement";
 
 /** Over the resolved player's card (1500), under the passing notices (2000). */
@@ -100,6 +102,8 @@ export class SettlementRecord {
   private panel?: Phaser.GameObjects.Container;
   private statusText?: Text;
   private hits: Phaser.GameObjects.Rectangle[] = [];
+  /** Where the open record stands, logical units; none while it is down. */
+  private drawnRect: Rect | null = null;
   /** The view the open panel was built for, but for its status. */
   private drawnBody?: string;
   private area?: ScrollArea;
@@ -112,6 +116,8 @@ export class SettlementRecord {
     private readonly scene: Stage,
     private anchor: { x: number; bottom: number },
     private readonly onClose: () => void,
+    /** The pointer came onto Close: the scene's sound for it (FS-WDM0X § Pass 2b E4). */
+    private readonly onCloseHovered: () => void = () => {},
   ) {}
 
   /**
@@ -160,6 +166,7 @@ export class SettlementRecord {
     this.statusText = undefined;
     this.hits.forEach((hit) => hit.destroy());
     this.hits = [];
+    this.drawnRect = null;
     // the Layer (and its texts) before the shape that masks it
     this.area?.layer.destroy();
     this.area?.shape.destroy();
@@ -171,6 +178,11 @@ export class SettlementRecord {
 
   isOpen(): boolean {
     return this.panel !== undefined;
+  }
+
+  /** Where it stands while open, logical units; none while down (FS-84N1G R20: what it covers). */
+  rect(): Rect | null {
+    return this.drawnRect;
   }
 
   hasContent(): boolean {
@@ -198,6 +210,7 @@ export class SettlementRecord {
     const height = FIXED_H + areaHeight;
     const left = this.anchor.x - RECORD_W / 2;
     const top = Math.max(TOP_MARGIN, this.anchor.bottom - height);
+    this.drawnRect = { x: this.anchor.x - RECORD_W / 2, y: top, width: RECORD_W, height };
 
     // the windows' one title, in capitals, no longer the blackletter (FS-3EBCA R20, R22)
     parts.push(
@@ -290,11 +303,14 @@ export class SettlementRecord {
         palette.inkDeep,
         0,
       )
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .setScrollFactor(0)
       .setDepth(RECORD_DEPTH + 1)
       .setName("close-the-record");
-    closeHit.on("pointerover", () => paint(palette.interactableBright));
+    closeHit.on("pointerover", () => {
+      paint(palette.interactableBright);
+      this.onCloseHovered();
+    });
     closeHit.on("pointerout", () => paint(palette.interactable));
     closeHit.on("pointerdown", () => this.onClose());
     // a wheel over the panel is the panel's alone, moving or not: stopped here, the scene's own

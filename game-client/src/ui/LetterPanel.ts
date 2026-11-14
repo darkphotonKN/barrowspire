@@ -182,11 +182,6 @@ export class LetterPanel {
     this.draw();
   }
 
-  /** Whether a screen point lies on the open panel: a wheel or a press there is the panel's alone. */
-  covers(x: number, y: number): boolean {
-    return this.frame !== undefined && within(this.frame.panel, x, y);
-  }
-
   private clear(): void {
     this.hideTip();
     for (const o of this.objects) o.destroy();
@@ -264,7 +259,7 @@ export class LetterPanel {
     // amber, brighter under the pointer
     const { glyph } = drawPanelFrame(this.scene, g, panel);
     const x = this.keep(glyph.setScrollFactor(0).setDepth(PANEL_DEPTH))
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     x.on("pointerdown", () => {
       (this.deps.wrapper ?? PASS_THROUGH).act(() => this.deps.store.getState().closePanel());
     });
@@ -366,7 +361,7 @@ export class LetterPanel {
           row.glyph === "lit",
         );
       this.zone(r)
-        .setInteractive({ useHandCursor: true })
+        .setInteractive()
         .on(
           "pointerdown",
           () => void this.deps.store.getState().select(row.id),
@@ -464,7 +459,7 @@ export class LetterPanel {
         width: track.width + BODY_SCROLL_GRAB * 2,
         height: track.height,
       })
-        .setInteractive({ useHandCursor: true })
+        .setInteractive()
         .on("pointerdown", (pointer: { x: number; y: number }) =>
           this.grabBar(viewport.toLogical(pointer).y),
         );
@@ -613,7 +608,7 @@ export class LetterPanel {
       label.setAlpha(INERT_ALPHA);
       return;
     }
-    label.setInteractive({ useHandCursor: true }).on("pointerdown", press);
+    label.setInteractive().on("pointerdown", press);
     label.on("pointerover", () =>
       label.setColor(toCss(palette.interactableBright)),
     );

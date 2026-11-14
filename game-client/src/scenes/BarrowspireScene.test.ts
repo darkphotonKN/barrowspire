@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { WorldUi } from "@/ui/uiBridge";
 import { resetHeldForTests } from "@/audio/sfxSetting";
 
 // node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
@@ -25,11 +26,6 @@ vi.mock("@/render/viewport", async (importOriginal) => ({
   },
 }));
 
-// The shared title drawing, watched: the run's windows title themselves through it (FS-3EBCA R20).
-vi.mock("@/ui/panelFrame", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/ui/panelFrame")>();
-  return { ...real, drawPanelTitle: vi.fn(real.drawPanelTitle) };
-});
 
 // The shared OPTIONS panel, watched: the run opens it and draws none of its own (FS-28DDG § Change C13).
 vi.mock("@/ui/optionsPanel", async (importOriginal) => {
@@ -87,6 +83,7 @@ const { ProjectileFlights } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
@@ -109,7 +106,6 @@ const await_targetFrame = await import("@/ui/targetFrame");
 const await_floorArt = await import("@/render/art/floorArt");
 const await_minimap = await import("@/ui/minimap");
 const await_minimapMode = await import("@/ui/minimapMode");
-const { ContainerView } = await import("@/ui/ContainerView");
 const { GAMEPLAY_EFFECTS } = await import("@/audio/gameplaySounds");
 const await_topRightColumn = await import("@/ui/topRightColumn");
 const await_positionReadout = await import("@/ui/positionReadout");
@@ -123,13 +119,100 @@ type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
-const { EquipmentHud } = await import("@/ui/EquipmentHud");
+const { mountGearPieces } = await import("@/ui/gearPieces");
 const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
-const { BAG_FULL_NOTICE } = await import("@/ui/bag");
+const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
+const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { UiChatSlot, chatWiring } = await import("@/ui/uiSceneChat");
+const { ChatWindow } = await import("@/ui/ChatWindow");
+const { createChatStore } = await import("@/stores/chatStore");
+/** Whether the UI scene's chat may take the keys over the run (FS-TQZ5J § Change: Batch 6, R126). */
+const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: false }).bridge).mayOpen();
+/** The player typing in the UI scene's chat over the run, or not (FS-TQZ5J § Change: Batch 6, R127). */
+const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
+const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
+const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
+
+/**
+ * The lore lines the run says through the UI bridge (FS-XWHZP; FS-TQZ5J § Change: Merge with main, the
+ * owner's 2026-11-14 call): each line said handed to `said`, each floor-change clear to `cleared`. A run
+ * lent no bridge says them to a copy of `NO_UI`, so the shared one is never spied on.
+ */
+function loreOf(run: object) {
+  const scene = run as { ui: WorldUi };
+  if (scene.ui === NO_UI) scene.ui = { ...NO_UI };
+  const said = vi.fn((_line: { text: string; tone: string }) => {});
+  const cleared = vi.fn();
+  vi.spyOn(scene.ui, "lore").mockImplementation((message) => {
+    expect(message.world).toBe("run");
+    if (message.kind === "say") said(message.line);
+    else cleared();
+  });
+  return { said, cleared };
+}
+const { UiRecordSlot } = await import("@/ui/uiSceneRecord");
+const { SettlementRecord } = await import("@/ui/SettlementRecord");
+const { recordAnchor } = await import("@/ui/resolvedRow");
+
+/**
+ * The UI scene's settlement record over the run (FS-TQZ5J § Change: Phase 3, R57), as the UI scene builds
+ * it: drawn from what the run hands through the bridge, a real SettlementRecord at its anchor, on the
+ * run's own stage so a test finds its words and its Close where it found the run's; Close plays
+ * menu_click, then asks the run to close it.
+ */
+function recordOverRun(run: object): void {
+  const { bridge } = uiSceneOn(run, "run", { row: false });
+  const slot = new UiRecordSlot(
+    bridge,
+    (anchor, onClose, onHovered) => new SettlementRecord(run as never, anchor, onClose, onHovered),
+    () => recordAnchor(viewport),
+  );
+  bridge.onScreen({ record: (shown) => slot.show(shown, "run") });
+}
+
+/** A key as both scenes' key objects stand in for it here: pressed since the last frame, or not. */
+interface PressedKey {
+  justDown: boolean;
+}
+
+/**
+ * One frame of the UI scene over the run, before the run's own (FS-TQZ5J R21): Esc and the menu's
+ * keys read once each, as `UIScene.readKeys` reads its own key objects; the menu slot drawn on the
+ * run's stage (`uiSceneOn`). The test's fake keys stand in for the UI scene's.
+ */
+function uiFrame(run: object, keys: Partial<Record<"esc" | "enter" | "one" | "two" | "three" | "left" | "right", PressedKey>>): void {
+  const down = (k?: PressedKey) => {
+    const was = !!k?.justDown;
+    if (k) k.justDown = false;
+    return was;
+  };
+  const esc = down(keys.esc);
+  const enter = down(keys.enter);
+  const numbered = [keys.one, keys.two, keys.three].map(down).indexOf(true);
+  const left = down(keys.left);
+  const right = down(keys.right);
+  uiSceneOn(run, "run", { row: false }).frame({ esc, enter, numbered, nudge: left === right ? undefined : left ? -1 : 1 });
+}
+
+/**
+ * Whether a drawn text is the spectate switcher's words (FS-QPDKN § Change: The party death flow and the spectate
+ * switcher, R159): the watched name alone since the owner's 「觀看時中間名字不用顯示watching了」 (2026-11-14), so
+ * told from a name plate by its look, 14 px in watchedName, and its depth, one over the switcher's.
+ */
+function isSwitcherWords(m: { args: unknown[]; depth?: number }): boolean {
+  const style = m.args[3] as { fontSize?: string; color?: string } | undefined;
+  return style?.fontSize === "14px" && style.color === toCss(palette.watchedName) && m.depth === 1001;
+}
+
+/** The UI scene's menu slot filled (or emptied) over the run (FS-TQZ5J R10), as every guard of the run's reads it. */
+function menuUpOver(run: object, open = true): void {
+  uiSceneOn(run, "run", { row: false }).bridge.reportUi({ menuOpen: open });
+}
+const { BAG_CAPACITY, BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
-const { createPartyStore } = await import("@/stores/partyStore");
+const { createPartyStore, usePartyStore } = await import("@/stores/partyStore");
 const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
@@ -305,6 +388,23 @@ describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
     systems.shutdown();
 
     expect(systems.input.keyboard.enabled).toBe(true);
+  });
+
+  // the menus wear the bone hand too: a stop leaves the hand, not a monster's strike-mark, as the
+  // field's does (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+  it("should leave the bone hand, not the strike-mark, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    const page = lookGame();
+    page.look().base("strike");
+    // the run lets go of the game's focus events as it stops
+    Object.assign(scene, { game: { ...page.game, events: new EventEmitter() } });
+    scene.init();
+
+    systems.shutdown();
+
+    expect(page.now()).toBe("hand");
   });
 
   // Phaser's stop destroys the run's keys before the run's own handler (KeyboardPlugin.shutdown →
@@ -522,6 +622,13 @@ interface Made {
  * A stand-in for the slice of Phaser the state path draws with: every object it makes is recorded
  * by kind and answers any call, and destroying a container destroys what it holds, as Phaser does.
  */
+/** Each recorded object's proxy, the object the scene holds: what Phaser lists under the pointer. */
+const heldAs = new WeakMap<object, unknown>();
+
+/** The run's button labels as the game's EB Garamond measures them, 13 px bold, letter-spaced 1 (R122). */
+const LABEL_WIDTHS: Record<string, number> = { WATCH: 56, LEAVE: 46, SETTLEMENT: 96 };
+const measuredWidth = (words: string) => LABEL_WIDTHS[words] ?? words.length * 7;
+
 function recordingStage() {
   const made: Made[] = [];
   const make = (kind: string, args: unknown[] = []): unknown => {
@@ -555,6 +662,9 @@ function recordingStage() {
             return proxy;
           };
         if (prop === "getBounds") return () => ({ x: 0, y: 0, width: 10, height: 10 });
+        // a text measures as Phaser measures it: the run's button labels as the game's EB Garamond does
+        // at 13 px bold, letter-spaced 1 (FS-TQZ5J § Change: Batch 6, R122), any other words 7 px a character
+        if (prop === "width" && target.kind === "text") return measuredWidth(String(target.args[2]));
         // a text's content is what it shows now, not only what it was made with
         if (prop === "setText")
           return (content: unknown) => {
@@ -618,6 +728,8 @@ function recordingStage() {
         };
       },
     });
+    // the object as the scene holds it, as Phaser lists one under the pointer
+    heldAs.set(self, proxy);
     made.push(self);
     return proxy;
   };
@@ -792,9 +904,10 @@ function sceneOnStage() {
   run.cameras = {
     main: { width: 800, height: 600, centerX: 400, centerY: 300, startFollow: vi.fn() },
   };
+  // the game's pointer look, whose base the run sets (FS-KYPQ9 § Change: The pressed hand, P5)
   const cursor = vi.fn();
-  run.input = { setDefaultCursor: cursor };
-  Object.assign(run, { defaultCursorCSS: "hand", crosshairCursorCSS: "strike-mark" });
+  run.input = {};
+  Object.assign(run, { pointerLook: { base: cursor } });
   run.art = ArtLibrary.empty(logger);
   run.monsters = new MonsterRoster(
     {
@@ -833,6 +946,13 @@ function sceneOnStage() {
   });
   const texts = () =>
     stage.made.filter((m) => m.kind === "text").map((m) => ({ content: m.args[2], style: m.args[3] as { fontFamily?: string; fontSize?: string; stroke?: string } }));
+  // the UI scene up over the run, as the run's report brings it up: its notices drawn on the run's
+  // stage, on the run's clock and tweens (FS-TQZ5J A2 R33), and its settlement record (§ Change: Phase 3, R57)
+  uiSceneOn(run, "run", { row: false });
+  recordOverRun(run);
+  // and its HUD: the bars, the potion cell, the level bar and the ability card, drawn on the run's stage
+  // from what the run hands through the bridge (FS-TQZ5J § Change: Batch 5, R67, R68)
+  hudOver(run, "run");
   return { run, stage, lights, gates, painted, grounds, texts, cursor };
 }
 
@@ -909,8 +1029,7 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
   // its baseline
   it("should say the switch and the escape door as hope lines when they turn, never on a floor's first broadcast", () => {
     const { run } = sceneOnStage();
-    const lore = run as unknown as { loreLines: { say(line: { text: string; tone: string }): void } };
-    const said = vi.spyOn(lore.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     const lines = () => said.mock.calls.map(([line]) => line);
     const seal = { text: "The seal breaks. Somewhere, a door gives.", tone: "hope" };
     const open = { text: "The way out stands open.", tone: "hope" };
@@ -928,10 +1047,12 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
 
   it("should raise no HUD notice for the switch or the door (FS-XWHZP R16)", () => {
     const { run, texts } = sceneOnStage();
+    const { said } = loreOf(run);
     run.handleGameStateUpdate(floorState(1));
     run.handleGameStateUpdate(floorState(1, { switchOn: true, doorOpen: true }));
     expect(texts().filter((t) => /unlocked|opened/i.test(String(t.content)))).toHaveLength(0);
-    expect(texts().filter((t) => t.content === "The seal breaks. Somewhere, a door gives.")).toHaveLength(1);
+    // the seal's lore line, said to the UI scene, which draws it (FS-TQZ5J § Change: Merge with main, 2026-11-14)
+    expect(said.mock.calls.filter(([line]) => line.text === "The seal breaks. Somewhere, a door gives.")).toHaveLength(1);
   });
 
   it("should build a floor joined mid-run directly, with no transition", () => {
@@ -1152,7 +1273,11 @@ function partyState(
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): void }) {
+function partyPanelOn(
+  refused: () => boolean,
+  wrapper?: { act(run: () => void): void },
+  store: ConstructorParameters<typeof PartyPanel>[1]["store"] = createPartyStore({ selfId: () => "me" }),
+) {
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -1161,7 +1286,7 @@ function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): 
     events: new EventEmitter(),
   } as unknown as ConstructorParameters<typeof PartyPanel>[0];
   const panel = new PartyPanel(scene, {
-    store: createPartyStore({ selfId: () => "me" }),
+    store,
     world: () => null,
     selfId: () => "me",
     commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
@@ -1181,31 +1306,16 @@ function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): 
   return { panel, pressT: () => keyboard.emit("keydown-T") };
 }
 
-const { UI_EFFECTS } = await import("@/audio/uiSounds");
+const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 
 /**
- * The run's interface sounds on a recording stand-in for the game's sound: every effect cached
- * (the interface effects, unless `effects` says which), the context running, the level the default
- * (no `window`, so nothing kept is read or written). Makes the run's player as create does, and
- * returns the effects played since the last read, by name (FS-WDM0X S10).
+ * The run's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
+ * UI scene's player on a recording stand-in for the game's sound (every effect cached, the context
+ * running, the level the default), and the world reported as create reports it. Returns the effects
+ * played since the last read, by name (FS-WDM0X S10).
  */
-function hearOn(scene: Record<string, unknown>, effects: readonly string[] = UI_EFFECTS): () => string[] {
-  let played: string[] = [];
-  Object.assign(scene, {
-    cache: { audio: { exists: (key: string) => effects.some((e) => key === `sfx:${e}`) } },
-    sound: {
-      locked: false,
-      context: { state: "running" },
-      get: () => null,
-      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
-    },
-  });
-  (scene as unknown as { mountUiSounds(): void }).mountUiSounds();
-  return () => {
-    const heard = played;
-    played = [];
-    return heard;
-  };
+function hearOn(scene: Record<string, unknown>): () => string[] {
+  return hearWorld(scene, "run");
 }
 
 function onStage() {
@@ -1326,7 +1436,7 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     const { run, monsters, cursor } = onStage();
     run.handleGameStateUpdate(partyState());
     monsters()[0].handlers.pointerover();
-    expect(cursor).toHaveBeenLastCalledWith("strike-mark");
+    expect(cursor).toHaveBeenLastCalledWith("strike");
     monsters()[0].handlers.pointerout();
     expect(cursor).toHaveBeenLastCalledWith("hand");
   });
@@ -1348,7 +1458,7 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     ally.handlers.pointerover?.();
     ally.handlers.pointerdown?.();
     expect(sent).not.toHaveBeenCalled();
-    expect(cursor).not.toHaveBeenCalledWith("strike-mark");
+    expect(cursor).not.toHaveBeenCalledWith("strike");
   });
 
   it("should letter another player's name in the ally channel, never the hostile one", () => {
@@ -1367,21 +1477,31 @@ describe("BarrowspireScene gameplay player (FS-AND39 R13, R16)", () => {
     vi.restoreAllMocks();
   });
 
-  it("should make the run's gameplay player on the run's own sound, beside the interface effects'", () => {
+  // the interface effects are the UI scene's (FS-TQZ5J R22); the gameplay player stays the run's own
+  // (merge with main, 2026-11-14)
+  it("should make the run's gameplay player on the run's own sound", () => {
     const { run } = sceneOnStage();
-    const heard = hearOn(run as unknown as Record<string, unknown>, [...UI_EFFECTS, ...GAMEPLAY_EFFECTS]);
+    const played: string[] = [];
+    Object.assign(run, {
+      cache: { audio: { exists: (key: string) => GAMEPLAY_EFFECTS.some((e) => key === `sfx:${e}`) } },
+      sound: {
+        locked: false,
+        context: { state: "running" },
+        get: () => null,
+        add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
+      },
+    });
     const scene = run as unknown as { mountGameplaySounds(): void; monsterEffects: { hit(m: unknown): void } };
     scene.mountGameplaySounds();
     scene.monsterEffects.hit(monster("m1", 100));
-    expect(heard()).toEqual(["hit_monster"]);
+    expect(played).toEqual(["hit_monster"]);
   });
 
-  // create() can't run on the stand-ins, so its call is pinned from the source, as the interface
-  // effects' is
-  it("should make the gameplay player in create, beside the interface effects'", () => {
+  // create() can't run on the stand-ins, so its call is pinned from the source
+  it("should make the gameplay player in create, after the run is reported", () => {
     const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(create).toMatch(/this\.mountUiSounds\(\);\n\s*this\.mountGameplaySounds\(\);/);
+    expect(create).toMatch(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);[\s\S]*this\.mountGameplaySounds\(\);/);
   });
 });
 
@@ -1453,9 +1573,10 @@ describe("BarrowspireScene coffer and pickup sounds (FS-AND39 R5, R7)", () => {
   };
 
   /**
-   * The run on stage with a real coffer view on a Phaser stand-in, on the hooks `create` hands it
-   * (the bag's room and the clock aside), and its gameplay sounds a recording stand-in for the one
-   * `create` makes.
+   * The run on stage with the UI scene's gear over it (FS-TQZ5J § Change: Phase 3, R50): the real
+   * `mountGearPieces`, its coffer view a real `ContainerView` on a Phaser stand-in, the run's coffer the
+   * bridge's (`worldContainer`). The UI scene's gameplay player (its coffer opens) and the run's own (a
+   * take sent) record into one list, as both play on the game's one sound (merge with main, 2026-11-14).
    */
   function hearingRun(room = true) {
     const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
@@ -1467,20 +1588,25 @@ describe("BarrowspireScene coffer and pickup sounds (FS-AND39 R5, R7)", () => {
       apply: () => stub,
     });
     const scene = run as unknown as FloorRun & {
-      containerView: InstanceType<typeof ContainerView>;
+      ui: import("@/ui/uiBridge").WorldUi;
       gameplaySounds: { play: typeof play };
       toggleChest(id: string): void;
       chestRefused(): void;
-      cofferOptions(): ConstructorParameters<typeof ContainerView>[2];
     };
     scene.gameplaySounds = { play };
-    scene.containerView = new ContainerView(stub as never, stub as never, {
-      ...scene.cofferOptions(),
-      mayTake: () => room,
-      now: () => 0,
+    Object.assign(scene, { containerView: worldContainer(() => scene.ui) });
+    let view!: { lootFirst(): void; setItems(items: unknown[]): void };
+    gearOver(run, "run", (w, wiring) => {
+      const pieces = mountGearPieces(stub as never, () => stub as never, w, { ...wiring, sounds: { play } });
+      view = pieces.container as never;
+      return pieces;
     });
     run.time = { delayedCall: vi.fn(), now: 1000 };
-    return { run: scene, play, sent };
+    // without room, a full bag: the coffer view's take is pre-checked by the gear's bag (FS-HRH2J R21)
+    const full = Array.from({ length: BAG_CAPACITY }, (_, i) => ({ entity_id: `bag-${i}`, name: "Stone" }));
+    const carried = (state: GameState): GameState =>
+      room ? state : ({ ...state, current_player: { ...state.current_player, inventory: full } } as GameState);
+    return { run: scene, play, sent, view: () => view, carried };
   }
 
   it.each([
@@ -1554,26 +1680,26 @@ describe("BarrowspireScene coffer and pickup sounds (FS-AND39 R5, R7)", () => {
   });
 
   it("should play item_pickup as a take from the open coffer is sent, by F or a click", () => {
-    const { run, play, sent } = hearingRun();
+    const { run, play, sent, view } = hearingRun();
     run.handleGameStateUpdate(floor("chest", true));
     run.toggleChest("c1");
     play.mockClear();
 
-    run.containerView.lootFirst();
+    view().lootFirst();
     expect(play.mock.calls).toEqual([["item_pickup"]]);
     expect(sent).toHaveBeenLastCalledWith(ActionType.Interact, { entity_id: "i1" });
   });
 
   it("should play nothing for a take a full bag refuses, or with nothing left to take", () => {
-    const { run, play, sent } = hearingRun(false);
-    run.handleGameStateUpdate(floor("chest", true));
+    const { run, play, sent, view, carried } = hearingRun(false);
+    run.handleGameStateUpdate(carried(floor("chest", true)));
     run.toggleChest("c1");
     play.mockClear();
     sent.mockClear();
 
-    run.containerView.lootFirst();
-    run.containerView.setItems([]);
-    run.containerView.lootFirst();
+    view().lootFirst();
+    view().setItems([]);
+    view().lootFirst();
     expect(play).not.toHaveBeenCalled();
     expect(sent).not.toHaveBeenCalled();
   });
@@ -1755,9 +1881,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     otherPlayers: Map<string, unknown>;
     watchedPlayerId?: string;
     resolvedCard?: unknown;
-    spectateHud?: unknown;
+    switcher?: unknown;
     tabKey?: unknown;
-    cycleWatched(): void;
+    cycleWatched(step: 1 | -1): void;
     canSendMove(): boolean;
     resetRun(end: "shutdown" | "destroy"): void;
   }
@@ -1773,9 +1899,13 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     stage.run.handleGameStateUpdate(state(...allies));
     const live = (test: (content: string) => boolean) =>
       stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
-    const watchButtons = () => live((t) => /watch the delve/i.test(t));
+    const watchButtons = () => live((t) => t === "WATCH");
     const cardTitles = () => live((t) => /barrow keeps you|out of the barrow/i.test(t));
-    const watching = () => live((t) => /^Watching /.test(t)).map((m) => m.args[2]);
+    // the switcher's words: the watched name alone (the owner, 2026-11-14), in watchedName over its arrows
+    const watching = () =>
+      stage.stage.made
+        .filter((m) => m.kind === "text" && !m.destroyed && isSwitcherWords(m))
+        .map((m) => m.args[2]);
     const hints = () => live((t) => /Tab: next player/i.test(t));
     const pressWatch = () => {
       const hit = stage.stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve");
@@ -1814,8 +1944,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(watchButtons()).toHaveLength(1);
       const [x, y, w, h] = watchHit(stage)!.args as number[];
       // the recording camera is 800 x 600: the first of two about the centre (Leave beside it,
-      // FS-GV8WN R25), lifted 200 px off the bottom edge's margin (asked 2026-11-02, Nick)
-      expect(x).toBe(400 - (w + 16) / 2);
+      // FS-GV8WN R25), lifted 200 px off the bottom edge's margin (asked 2026-11-02, Nick); at this narrow
+      // view the row starts 12 right of the open chat window (FS-TQZ5J § Change: Batch 6, R123)
+      expect(x - w / 2).toBe(442);
       expect(y + h / 2).toBe(600 - 16 - 200);
       expect(w).toBeGreaterThan(0);
     });
@@ -1831,7 +1962,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(face?.last.setScrollFactor).toEqual([0]);
     });
 
-    it("should follow a teammate in play once pressed, name them at the top, and take the button down", () => {
+    // FS-QPDKN § Change: The party death flow and the spectate switcher, R159, R163: the switcher names them
+    // over the spectate row; nothing at the top
+    it("should follow a teammate in play once pressed, name them in the switcher, and take the button down", () => {
       const { run, pressWatch, followed, watching, hints, watchButtons, stage } = resolvedOnStage(
         player("me", "Aldric", 130, escaped),
         [player("ally", "Wenna", 160), player("brom", "Brom", 200)],
@@ -1839,17 +1972,17 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       pressWatch();
       expect(run.watchedPlayerId).toBe("ally");
       expect(followed()).toBe(run.otherPlayers.get("ally"));
-      expect(watching()).toEqual(["Watching Wenna"]);
-      expect(hints()).toHaveLength(1);
+      expect(watching()).toEqual(["Wenna"]);
+      expect(hints()).toHaveLength(0);
       expect(watchButtons()).toHaveLength(0);
       expect(watchHit(stage)).toBeUndefined();
-      run.cycleWatched();
-      expect(watching()).toEqual(["Watching Brom"]);
+      run.cycleWatched(1);
+      expect(watching()).toEqual(["Brom"]);
     });
 
     it("should do nothing on Tab while the button is still up", () => {
       const { run, followed, own, watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped));
-      run.cycleWatched();
+      run.cycleWatched(1);
       expect(run.watchedPlayerId).toBeUndefined();
       expect(followed()).toBe(own());
       expect(watchButtons()).toHaveLength(1);
@@ -1878,7 +2011,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       run.resetRun("shutdown");
       expect((run as unknown as { watchButton?: unknown }).watchButton).toBeUndefined();
       expect(run.watchedPlayerId).toBeUndefined();
-      expect(run.spectateHud).toBeUndefined();
+      expect(run.switcher).toBeUndefined();
 
       // Phaser destroyed the old button with the scene; the next state draws a fresh one
       before.destroyed = true;
@@ -1912,34 +2045,38 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
 
   it("should do nothing on Tab while the card is still up", () => {
     const { run, followed, own } = resolvedOnStage(player("me", "Aldric", 130, dead));
-    run.cycleWatched();
+    run.cycleWatched(1);
     expect(followed()).toBe(own());
     expect(run.watchedPlayerId).toBeUndefined();
   });
 
-  it("should follow a teammate in play once Watch is pressed, and say whose eyes, with the Tab hint", () => {
+  it("should follow a teammate in play once Watch is pressed, and say whose eyes in the switcher, no Tab hint (R163)", () => {
     const { run, pressWatch, followed, watching, hints, watchButtons } = resolvedOnStage(
       player("me", "Aldric", 130, dead),
     );
     pressWatch();
     expect(run.watchedPlayerId).toBe("ally");
     expect(followed()).toBe(run.otherPlayers.get("ally"));
-    expect(watching()).toEqual(["Watching Wenna"]);
-    expect(hints()).toHaveLength(1);
+    expect(watching()).toEqual(["Wenna"]);
+    expect(hints()).toHaveLength(0);
     expect(watchButtons()).toHaveLength(0);
   });
 
-  it("should letter the spectate HUD in vellum on the HUD panel, never amber", () => {
-    const { stage, pressWatch, watching, hints } = resolvedOnStage(player("me", "Aldric", 130, dead));
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R159, as the owner restyled it on 2026-11-14
+  // (「樣式可以不用加底色 直接顯示黃色名字」): the name in bright brass with no backing, never amber
+  it("should letter the switcher's name in the watched name's bright brass with no backing, never amber", () => {
+    const { stage, pressWatch, watching } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    const made = (test: (t: string) => boolean) =>
-      stage.made.find((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])))!;
-    for (const text of [made((t) => watching().includes(t)), hints()[0]]) {
-      const style = text.args[3] as { color?: string; backgroundColor?: string };
-      expect(style.color).toBe(toCss(palette.hudText));
-      expect(style.backgroundColor).toBe(toCss(palette.hudPanel));
-      expect(style.color).not.toBe(toCss(palette.interactable));
-    }
+    expect(watching()).toEqual(["Wenna"]);
+    const name = stage.made.find((m) => m.kind === "text" && !m.destroyed && isSwitcherWords(m))!;
+    const style = name.args[3] as { color?: string; backgroundColor?: string };
+    expect(style.color).toBe(toCss(palette.watchedName));
+    expect(style.color).not.toBe(toCss(palette.interactable));
+    expect(style.backgroundColor).toBeUndefined();
+    const backing = stage.made.find(
+      (m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillRoundedRect") && m.calls.includes("fillTriangle"),
+    );
+    expect(backing).toBeUndefined();
   });
 
   it("should cycle the watched player on Tab, never through the player's own body", () => {
@@ -1948,24 +2085,24 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       player("brom", "Brom", 200),
     ]);
     pressWatch();
-    expect(watching()).toEqual(["Watching Wenna"]);
+    expect(watching()).toEqual(["Wenna"]);
     const seen: (string | undefined)[] = [run.watchedPlayerId];
     for (let i = 0; i < 3; i++) {
-      run.cycleWatched();
+      run.cycleWatched(1);
       seen.push(run.watchedPlayerId);
       expect(followed()).toBe(run.otherPlayers.get(run.watchedPlayerId!));
       expect(followed()).not.toBe(own());
     }
     expect(seen).toEqual(["ally", "brom", "ally", "brom"]);
-    expect(watching()).toEqual(["Watching Brom"]);
+    expect(watching()).toEqual(["Brom"]);
   });
 
-  it("should keep the hint with only one teammate in play, and Tab keeps watching them", () => {
-    const { run, pressWatch, hints } = resolvedOnStage(player("me", "Aldric", 130, dead));
+  it("should keep watching the one teammate in play on Tab", () => {
+    const { run, pressWatch, watching } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    run.cycleWatched();
+    run.cycleWatched(1);
     expect(run.watchedPlayerId).toBe("ally");
-    expect(hints()).toHaveLength(1);
+    expect(watching()).toEqual(["Wenna"]);
   });
 
   it("should move on to another teammate in play when the watched player resolves", () => {
@@ -1980,7 +2117,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     );
     expect(run.watchedPlayerId).toBe("brom");
     expect(followed()).toBe(run.otherPlayers.get("brom"));
-    expect(watching()).toEqual(["Watching Brom"]);
+    expect(watching()).toEqual(["Brom"]);
   });
 
   // Phaser's startFollow snaps the camera onto its target every time it is called, so calling
@@ -2058,7 +2195,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(run.tabKey).toBeUndefined();
     expect(run.watchedPlayerId).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
-    expect(run.spectateHud).toBeUndefined();
+    expect(run.switcher).toBeUndefined();
   });
 });
 
@@ -2124,17 +2261,74 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     stage.run.handleGameStateUpdate(partyState(me));
     const live = (test: (content: string) => boolean) =>
       stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])));
-    const leaveLabels = () => live((t) => /leave the barrow/i.test(t));
-    const watchLabels = () => live((t) => /watch the delve/i.test(t));
+    // the owner's words (FS-TQZ5J § Change: Batch 6, R120)
+    const leaveLabels = () => live((t) => t === "LEAVE");
+    const watchLabels = () => live((t) => t === "WATCH");
     const hit = (name: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
     const press = (name: string) => hit(name)?.handlers.pointerdown();
     const leavesSent = () => stage.sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun);
-    return { ...stage, run, leaveLabels, watchLabels, hit, press, leavesSent };
+    // the UI scene's one player, by which a dimmed Leave says no (FS-WDM0X § Pass 2b E6)
+    const heard = hearOn(stage.run as unknown as Record<string, unknown>);
+    return { ...stage, run, leaveLabels, watchLabels, hit, press, leavesSent, heard };
   }
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R120–R124: WATCH, LEAVE, SETTLEMENT in 13 px bold letter-spaced 1, each
+  // button its label's width plus 24 a side; the row from 442 at this 800-wide view (layout B), the card's
+  // two centred on it 8 apart, the corner LEAVE's right edge on the corner margin
+  describe("the run's buttons, re-laid off the chat (FS-TQZ5J § Change: Batch 6, R120–R124)", () => {
+    const labelled = (stage: ReturnType<typeof leavingOnStage>, words: string) =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && m.args[2] === words);
+    const box = (stage: ReturnType<typeof leavingOnStage>, name: string) => {
+      const [x, y, width, height] = stage.hit(name)!.args as number[];
+      return { left: x - width / 2, x, y, width, height };
+    };
+
+    it("should word the escaped player's row WATCH and LEAVE in 13 px bold, letter-spaced 1 (R120, R121)", () => {
+      const out = leavingOnStage(player("me", "Aldric", 130, escaped));
+      for (const words of ["WATCH", "LEAVE"]) {
+        const [label] = labelled(out, words);
+        expect(label, words).toBeDefined();
+        expect(label.args[3]).toMatchObject({ fontSize: "13px", fontStyle: "bold", letterSpacing: 1 });
+      }
+      expect(labelled(out, "WATCH THE DELVE")).toHaveLength(0);
+      expect(labelled(out, "LEAVE THE BARROW")).toHaveLength(0);
+    });
+
+    it("should make each button its label's width plus 24 a side, and stand the row from 442 at this view (R122, R123)", () => {
+      const out = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const watch = box(out, "watch-the-delve");
+      const leave = box(out, "leave-the-barrow");
+      expect([watch.width, leave.width]).toEqual([104, 94]);
+      expect([watch.left, leave.left]).toEqual([442, 554]);
+      expect([watch.height, leave.height]).toEqual([38, 38]);
+    });
+
+    it("should centre the dead player's card buttons on the card, 8 apart, worded WATCH and LEAVE (R120, R124)", () => {
+      const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
+      const watch = box(fallen, "watch-the-delve");
+      const leave = box(fallen, "leave-the-barrow");
+      expect([watch.width, leave.width]).toEqual([104, 94]);
+      expect([watch.left, leave.left]).toEqual([400 - 103, 400 + 9]);
+      expect(labelled(fallen, "WATCH")).toHaveLength(1);
+      expect(labelled(fallen, "LEAVE")).toHaveLength(1);
+    });
+
+    // FS-QPDKN § Change: The party death flow and the spectate switcher, R158: the corner LEAVE folds into the
+    // spectate row, its bottom 70 above the view's bottom, from 442 at this 800-wide view
+    it("should stand the dead spectator's LEAVE in the spectate row, not in the corner (R158)", () => {
+      const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
+      fallen.press("watch-the-delve");
+      const leave = box(fallen, "leave-the-barrow");
+      expect(leave.width).toBe(94);
+      expect(leave.left).toBe(442);
+      expect(leave.y + leave.height / 2).toBe(600 - 70);
+      expect(labelled(fallen, "LEAVE")).toHaveLength(1);
+    });
   });
 
   it("should give the dead player and the escaped player Leave the barrow beside Watch the delve", () => {
@@ -2149,26 +2343,29 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
   });
 
   it("should send leave_run once, with no payload, and nothing on a second press before the answer", () => {
-    const { press, leavesSent, hit } = leavingOnStage(player("me", "Aldric", 130, dead));
+    const { press, leavesSent, heard } = leavingOnStage(player("me", "Aldric", 130, dead));
+    heard();
     press("leave-the-barrow");
     press("leave-the-barrow");
 
     expect(leavesSent()).toEqual([[ActionType.LeaveRun, {}]]);
-    expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+    // dimmed, it takes the second press only to say no (FS-WDM0X § Pass 2b E6)
+    expect(heard()).toEqual(["menu_click", "menu_error"]);
   });
 
   it("should hand the button back when the server refuses, with the card up", () => {
-    const { run, press, leavesSent, hit, leaveLabels } = leavingOnStage(player("me", "Aldric", 130, dead));
+    const { run, press, leavesSent, leaveLabels, heard } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("leave-the-barrow");
-    const before = hit("leave-the-barrow")?.calls.length ?? 0;
 
     run.leaveRefused();
 
     expect(run.leavePending).toBe(false);
     expect(leaveLabels()).toHaveLength(1);
-    expect(hit("leave-the-barrow")?.calls.slice(before)).toContain("setInteractive");
+    heard();
     press("leave-the-barrow");
     expect(leavesSent()).toHaveLength(2);
+    // live again: an ordinary press (FS-WDM0X § Pass 2b E5)
+    expect(heard()).toEqual(["menu_click"]);
   });
 
   it("should ignore a refusal once the run has ended: it ended first", () => {
@@ -2182,57 +2379,57 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     expect(leaveLabels()).toHaveLength(0);
   });
 
-  it("should keep the dead spectator's button in the bottom-right corner, clear of the spectate HUD", () => {
+  it("should keep the dead spectator's LEAVE in the spectate row at the bottom, under the watched player", () => {
     const { run, press, hit, leaveLabels, leavesSent } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("watch-the-delve");
 
     expect(leaveLabels()).toHaveLength(1);
-    const corner = hit("leave-the-barrow")!;
-    const [x, y, w, h] = corner.args as number[];
-    // the recording camera is 800 x 600; the HUD runs along the top edge, the watched player sits at the centre
-    expect(x - w / 2).toBeGreaterThan(400 + 100);
+    const [, y, , h] = hit("leave-the-barrow")!.args as number[];
+    // the recording camera is 800 x 600; the watched player sits at the centre
     expect(y - h / 2).toBeGreaterThan(300 + 100);
-    expect(x + w / 2).toBeLessThanOrEqual(800);
-    expect(y + h / 2).toBeLessThanOrEqual(600);
+    expect(y + h / 2).toBe(600 - 70);
     press("leave-the-barrow");
     expect(leavesSent()).toHaveLength(1);
     expect(run.leavePending).toBe(true);
   });
 
-  it("should keep the escaped spectator's Leave in the bottom-centre row, centred, not in the corner", () => {
+  it("should stand the escaped spectator's Leave in the spectate row, as every spectator's (R158)", () => {
     const { press, leaveLabels, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
     press("watch-the-delve");
     expect(leaveLabels()).toHaveLength(1);
-    // the recording camera is 800 x 600: alone in the row, on the row's line
-    const [x, y, , h] = hit("leave-the-barrow")!.args as number[];
-    expect(x).toBe(400);
-    expect(y + h / 2).toBe(600 - 16 - 200);
+    // the recording camera is 800 x 600: alone in the row, 12 right of the open chat window at this narrow
+    // view (FS-TQZ5J § Change: Batch 6, R123), its bottom 70 above the view's (FS-QPDKN § Change: The party
+    // death flow and the spectate switcher, R158)
+    const [x, y, w, h] = hit("leave-the-barrow")!.args as number[];
+    expect(x - w / 2).toBe(442);
+    expect(y + h / 2).toBe(600 - 70);
   });
 
   // FS-GV8WN R25: the escaped player's Leave, beside Watch in the bottom-centre row
   describe("an escaped player's Leave (FS-GV8WN R25)", () => {
-    it("should stand beside Watch the delve, the two spread about the centre on one line", () => {
+    it("should stand beside Watch the delve, the two 8 apart on one line", () => {
       const { hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
       const watch = hit("watch-the-delve")!.args as number[];
       const leave = hit("leave-the-barrow")!.args as number[];
-      expect(watch[0]).toBeLessThan(400);
-      expect(leave[0]).toBeGreaterThan(400);
-      expect(watch[0] + leave[0]).toBe(800);
+      // left to right, 8 apart (FS-TQZ5J § Change: Batch 6, R123)
+      expect(leave[0] - leave[2] / 2).toBe(watch[0] + watch[2] / 2 + 8);
       expect(leave[1]).toBe(watch[1]);
     });
 
     it("should send leave_run once, as the dead player's does, and dim until the answer", () => {
-      const { run, press, leavesSent, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const { run, press, leavesSent, heard } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      heard();
       press("leave-the-barrow");
       press("leave-the-barrow");
 
       expect(leavesSent()).toEqual([[ActionType.LeaveRun, {}]]);
       expect(run.leavePending).toBe(true);
-      expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+      // dimmed, it takes the second press only to say no (FS-WDM0X § Pass 2b E6)
+      expect(heard()).toEqual(["menu_click", "menu_error"]);
     });
 
     it("should come back dimmed when the row is redrawn while the leave is pending", () => {
-      const { run, press, hit, leavesSent } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const { run, press, hit, leavesSent, heard } = leavingOnStage(player("me", "Aldric", 130, escaped));
       press("leave-the-barrow");
       const first = hit("leave-the-barrow");
       // the last teammate falls: Watch goes, and the row is drawn again around Leave alone
@@ -2241,26 +2438,29 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       );
       const redrawn = hit("leave-the-barrow")!;
       expect(redrawn).not.toBe(first);
-      expect(redrawn.calls).toContain("disableInteractive");
+      heard();
       press("leave-the-barrow");
       expect(leavesSent()).toHaveLength(1);
+      // drawn dimmed: the press says no (FS-WDM0X § Pass 2b E6)
+      expect(heard()).toEqual(["menu_error"]);
     });
 
     it("should hand the button back on a refusal and keep the player in the run", () => {
-      const { run, press, leavesSent, hit, leaveLabels, watchLabels } = leavingOnStage(
+      const { run, press, leavesSent, leaveLabels, watchLabels, heard } = leavingOnStage(
         player("me", "Aldric", 130, escaped),
       );
       press("leave-the-barrow");
-      const before = hit("leave-the-barrow")?.calls.length ?? 0;
 
       run.leaveRefused();
 
       expect(run.leavePending).toBe(false);
-      expect(hit("leave-the-barrow")?.calls.slice(before)).toContain("setInteractive");
       expect(leaveLabels()).toHaveLength(1);
       expect(watchLabels()).toHaveLength(1);
+      heard();
       press("leave-the-barrow");
       expect(leavesSent()).toHaveLength(2);
+      // live again: an ordinary press (FS-WDM0X § Pass 2b E5)
+      expect(heard()).toEqual(["menu_click"]);
     });
 
     it("should show Leave without Watch once no teammate is left in play", () => {
@@ -2270,7 +2470,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       );
       expect(watchLabels()).toHaveLength(0);
       expect(leaveLabels()).toHaveLength(1);
-      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(400);
+      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(442 + 94 / 2);
     });
 
     it("should keep Leave once the broadcast no longer sends an escaped player's own state", () => {
@@ -2297,7 +2497,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       const before = stage.made.length;
       (run as unknown as FloorRun).handleGameStateUpdate(partyState(null));
       const drawn = stage.made.slice(before);
-      expect(drawn.some((m) => m.kind === "text" && /leave the barrow/i.test(String(m.args[2])))).toBe(false);
+      expect(drawn.some((m) => m.kind === "text" && String(m.args[2]) === "LEAVE")).toBe(false);
     });
 
     it("should give a player still in the delve no Leave", () => {
@@ -2392,16 +2592,80 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     expect(labels()).toEqual(["Health:"]);
   });
 
-  it.each([
-    ["dies", { current_health: 0 }],
-    ["escapes", { escape: true }],
-  ])("should take the bars down when the player %s, and keep them down", (_, fields) => {
-    const { run, labels } = barsOnStage();
-    run.handleGameStateUpdate(withMe(me()));
-    run.handleGameStateUpdate(withMe(me(fields)));
-    expect(labels()).toEqual([]);
-    run.handleGameStateUpdate(withMe(me(fields)));
-    expect(labels()).toEqual([]);
+  // the owner, 2026-11-14: 「左上角的個人血量魔量不用隱藏 就顯示死亡時的狀態就好了」 (FS-QPDKN § Change: The party
+  // death flow and the spectate switcher, R168): the bars stay up, frozen at the state that showed the player out
+  describe("out of the delve, frozen (FS-QPDKN § Change: The party death flow and the spectate switcher, R168; I-QPDKN-14)", () => {
+    type HudMessage = import("@/ui/uiSceneHud").HudMessage;
+    type Bar = { channel: string; fill: number };
+    function heardHud(run: object) {
+      const told: HudMessage[] = [];
+      uiSceneOn(run, "run", { row: false }).bridge.onScreen({ hud: (m) => void told.push(m) });
+      const last = <K extends HudMessage["kind"]>(kind: K) =>
+        told.filter((m): m is Extract<HudMessage, { kind: K }> => m.kind === kind).at(-1);
+      const bars = () => ((last("bars") as { bars?: Bar[] } | undefined)?.bars ?? []).map((b) => [b.channel, b.fill]);
+      const cell = () => (last("potion") as { cell?: unknown } | undefined)?.cell;
+      return { bars, cell };
+    }
+    const potion = { item_id: "p1", entity_id: "ep1", name: "Lesser Heal Potion", quantity: 1, item_type: "consumable", healing_amount: 25 };
+    const carrying = (n: number) => ({ consumable_1: n > 0 ? potion : null, consumable_2: n > 1 ? potion : null, consumable_3: null });
+
+    it.each([
+      ["dies", { current_health: 0 }, [["health", 0], ["mana", 0.25]]],
+      ["escapes", { escape: true, current_health: 70 }, [["health", 0.7], ["mana", 0.25]]],
+    ] as const)("should keep the bars up when the player %s, as that state drew them", (_, fields, want) => {
+      const { run, labels } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me(fields)));
+      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(hud.bars()).toEqual(want);
+      // later states, whatever they say, change nothing
+      run.handleGameStateUpdate(withMe(me({ ...fields, resource: { ...mana, current: 120 } })));
+      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(hud.bars()).toEqual(want);
+    });
+
+    it("should keep them frozen through a state that drops the escaped player's own", () => {
+      const { run, labels } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me({ escape: true })));
+      run.handleGameStateUpdate({ ...floorState(1), current_player: null, other_players: [player("ally", "Wenna", 160)] } as GameState);
+      expect(labels()).toEqual(["Health:", "Mana:"]);
+      expect(hud.bars()).toEqual([["health", 1], ["mana", 0.25]]);
+    });
+
+    it("should keep the player's own while they watch a teammate", () => {
+      const { run, stage } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+      stage.made.find((m) => (m as { name?: string }).name === "watch-the-delve" && !m.destroyed)?.handlers.pointerdown();
+      expect((run as unknown as { watchedPlayerId?: string }).watchedPlayerId).toBe("ally");
+      run.handleGameStateUpdate(withMe(me({ current_health: 0 }), { ...player("ally", "Wenna", 160), current_health: 40 }));
+      expect(hud.bars()).toEqual([["health", 0], ["mana", 0.25]]);
+    });
+
+    it("should keep the potion cell beside them, frozen with its count", () => {
+      const { run } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe({ ...me(), equipment: carrying(2) } as never));
+      run.handleGameStateUpdate(withMe({ ...me({ current_health: 0 }), equipment: carrying(2) } as never));
+      const atDeath = hud.cell();
+      expect(atDeath).toMatchObject({ count: 2 });
+      run.handleGameStateUpdate(withMe({ ...me({ current_health: 0 }), equipment: carrying(0) } as never));
+      expect(hud.cell()).toEqual(atDeath);
+    });
+
+    it("should build them afresh, unfrozen, after a restart", () => {
+      const { run } = barsOnStage();
+      const hud = heardHud(run);
+      run.handleGameStateUpdate(withMe(me()));
+      run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+      (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
+      run.handleGameStateUpdate(withMe(me({ current_health: 50 })));
+      expect(hud.bars()).toEqual([["health", 0.5], ["mana", 0.25]]);
+    });
   });
 
   it("should draw no bar over the player's own head, health or resource", () => {
@@ -2456,7 +2720,6 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     ({ ...floorState(1), current_player: self, other_players: [player("ally", "Wenna", 160)] }) as GameState;
 
   interface Carded {
-    abilityHud?: { shown: { name: string; greyed: boolean } | null };
     leaveButton?: unknown;
     bindRunInput(): void;
     resetRun(end: "shutdown" | "destroy"): void;
@@ -2475,10 +2738,9 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       },
     });
     // a click off the satchel: it takes none
-    Object.assign((stage.run as unknown as { containerView: object }).containerView, { pointerDown: vi.fn(() => false) });
     const live = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
     const text = (content: string) => live().find((m) => m.args[2] === content);
-    const shown = () => carded.abilityHud?.shown ?? null;
+    const shown = () => abilityShownOver(carded);
     const rightClick = () =>
       pointerHandlers.pointerdown({
         x: 10,
@@ -2531,6 +2793,8 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       // the harness's view is 800 wide; 200 more, as from 1080 to 1280
       viewport.set({ width: 1000, height: 600, renderScale });
       hud.relayoutHud();
+      // the card is the UI scene's, back in its corner on the UI scene's own relayout (FS-TQZ5J § Change: Batch 5, R73)
+      hudOver(run, "run").relayout();
       expect(name.last.setPosition[0]).toBe(nameX + 200);
       expect(escaped.last.setX).toEqual([1000 - 10]);
       // moved, so rasterised again at the render scale of now (R5)
@@ -2594,26 +2858,76 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
   it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
     const { run, carded } = cardOnStage();
     run.handleGameStateUpdate(withMe(me()));
-    expect((carded.abilityHud as unknown as { place: unknown }).place).toEqual(ABILITY_CARD_PLACE);
+    expect(abilityPlaceOver(carded)).toEqual(ABILITY_CARD_PLACE);
   });
 
-  it("should stand the dead spectator's leave button above the corner row (FS-3EBCA R14)", () => {
+  it("should hand the card to the UI scene, then tell the badge it is up, and build none (FS-TQZ5J § Change: Batch 5, R68, R70)", () => {
+    const { run, carded } = cardOnStage();
+    const told: string[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({
+      hud: (message) => void (message.kind === "ability" && told.push(`card ${message.card?.name ?? "none"}`)),
+      abilityCard: (up) => void told.push(`badge ${up}`),
+    });
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    expect(told).toEqual(["card Dash", "badge true", "card none", "badge false"]);
+    expect((carded as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
+  });
+
+  it("should hand the potion cell to the UI scene beside the bars, and build none (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    const { run, carded } = cardOnStage();
+    const cells: unknown[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({
+      hud: (message) => void (message.kind === "potion" && cells.push(message.cell)),
+    });
+    run.handleGameStateUpdate(withMe(me()));
+    expect(cells.at(-1)).toEqual({ count: 0, keyLabel: "[1]", dimmed: true });
+    expect((carded as unknown as Record<string, unknown>).potionHud).toBeUndefined();
+  });
+
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R158: the dead spectator's LEAVE is the
+  // spectate row's; nothing takes the ability card's corner, and the card stays down out of the delve
+  it("should give the dead spectator no corner LEAVE, the card down", () => {
     const { run, live } = cardOnStage();
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
-    // Watch the delve: the card goes down and the button takes its corner (FS-QPDKN req 7, 10)
     (run as unknown as { startWatching(): void }).startWatching();
-    const labels = live().filter((m) => m.args[2] === "LEAVE THE BARROW");
-    expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 116, viewport.height - 89]);
+    const labels = live().filter((m) => m.args[2] === "LEAVE");
+    expect(labels).toHaveLength(1);
+    expect(labels[0].args[0]).toBeLessThan(viewport.width - 16 - 94 / 2);
   });
 
-  it("should send no attack or cast for a press on the corner row (FS-3EBCA R10)", () => {
+  // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the run,
+  // and never reaches it, so the run's click path reads no rect of the row
+  it("should read no corner row in its click path: the row is the UI scene's (FS-TQZ5J R15)", () => {
     const { run, carded, sent, rightClick } = cardOnStage();
     run.handleGameStateUpdate(withMe(me()));
     carded.bindRunInput();
     (run as unknown as { corner: unknown }).corner = { covers: () => true };
     sent.mockClear();
     rightClick();
-    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(false);
+    expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(true);
+  });
+
+  // FS-84N1G R4: the run tells the UI scene whether its card is up, for the controls badge, on each change
+  it("should tell the UI scene its card is up, and down at a death, once each change", () => {
+    const { run } = cardOnStage();
+    const told: boolean[] = [];
+    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityCard: (up: boolean) => void told.push(up) };
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me()));
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
+    expect(told).toEqual([true, false]);
+  });
+
+  it("should tell the next start's card afresh after a restart", () => {
+    const { run, carded } = cardOnStage();
+    const told: boolean[] = [];
+    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityCard: (up: boolean) => void told.push(up) };
+    run.handleGameStateUpdate(withMe(me()));
+    carded.resetRun("shutdown");
+    run.handleGameStateUpdate(withMe(me()));
+    expect(told).toEqual([true, true]);
   });
 
   it("should never be up with the leave button", () => {
@@ -2724,15 +3038,26 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     show.mockRestore();
   });
 
+  // the bar is the UI scene's: its HUD slot places it again on a new view (FS-TQZ5J § Change: Batch 5;
+  // merge with main, 2026-11-14), and the run's own relayout leaves it be
   it("should place the bar again when the view changes (FS-77DVN §A.4)", () => {
     const relayout = vi.spyOn(ProgressHudClass.prototype, "relayout").mockImplementation(() => {});
     const { run } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
-    // the stage's container view is a bare stand-in; it has its own relayout suite
-    Object.assign(run, { containerView: undefined });
-    (run as unknown as { relayoutHud(): void }).relayoutHud();
+    hudOver(run, "run").relayout();
     expect(relayout).toHaveBeenCalledTimes(1);
     relayout.mockRestore();
+  });
+
+  it("should hand its progress and its bars to the UI scene through the bridge, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    const { run } = onStage();
+    const told: { kind: string }[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
+    expect(told).toContainEqual({ world: "run", kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
+    expect(told).toContainEqual({ world: "run", kind: "bars", bars: [expect.objectContaining({ label: "Health:" })] });
+    const fields = run as unknown as Record<string, unknown>;
+    expect([fields.progressHud, fields.resourceHud]).toEqual([undefined, undefined]);
   });
 
   it("should show the level-up cue once when the level rises, and not again while it holds", () => {
@@ -2753,6 +3078,12 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
     (run as unknown as { resetRun(end: "shutdown" | "destroy"): void }).resetRun("shutdown");
+    // the restart, as the UI scene hears it: the run leaves and reports again, and the UI scene's level
+    // bar is a new one (FS-TQZ5J § Change: Batch 5, R67)
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const report = bridge.world!;
+    bridge.left("run");
+    bridge.report(report);
     run.handleGameStateUpdate(withMe(me(4, 400, 390, 600)));
     expect(cues()).toHaveLength(0);
   });
@@ -3480,19 +3811,37 @@ describe("BarrowspireScene Spire rooms: the blackout, the hide rule and room lig
     expect(run.view?.building).toBeUndefined();
   });
 
-  // edge state "player gone": a spectator has no building, so no blackout, and the indoors half
-  // of the hide rule alone: what stands in a room hides, the halls show. The watched teammate's
-  // room is not followed (review round 1, I-9PN7X-3)
-  it("should take no room while spectating: no blackout, the watched teammate in a room hidden, the halls shown", () => {
+  // the owner, 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」 (2026-11-14; FS-QPDKN § Change: The party death flow and
+  // the spectate switcher): a spectator sees through the watched teammate's eyes, their room and all. It overrules
+  // the old "player gone" rule that took no room while spectating (review round 1, I-9PN7X-3).
+  it("should follow the watched teammate into their room: their building, them shown, the halls' monster hidden", () => {
     const { run, stage } = spire();
     run.handleGameStateUpdate(peopled([IN_HALL], IN_ROOM));
+    Object.assign(run, { player: drawnPlayer(IN_HALL), playerPos: { ...IN_HALL }, watchedPlayerId: "ally" });
+    run.checkBuildingStatus();
+    expect(run.view?.building?.id).toBe("h1");
+    expect(run.currentBuilding).toBe(run.buildings[0]);
+    expect(run.otherPlayers.get("ally")!.shown).not.toBe(false);
+    const [inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inHall.shown).toBe(false);
+  });
+
+  it("should take the watched teammate's halls, not the room the player's own body lies in", () => {
+    const { run, stage } = spire();
+    run.handleGameStateUpdate(peopled([IN_ROOM], IN_HALL));
     Object.assign(run, { player: drawnPlayer(IN_ROOM), playerPos: { ...IN_ROOM }, watchedPlayerId: "ally" });
     run.checkBuildingStatus();
-    expect(run.currentBuilding).toBeUndefined();
     expect(run.view?.building).toBeUndefined();
-    expect(run.otherPlayers.get("ally")!.shown).toBe(false);
-    const [inHall] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
-    expect(inHall.shown).toBe(true);
+    const [inRoom] = stage.made.filter((m) => m.kind === "sprite" && m.args.length === 0);
+    expect(inRoom.shown).toBe(false);
+  });
+
+  it("should take no room before WATCH: a dead player watching nobody has no building (edge state: player gone)", () => {
+    const { run } = spire();
+    run.handleGameStateUpdate({ ...peopled([], IN_HALL), current_player: player("me", "Aldric", 130, { current_health: 0 }) } as GameState);
+    Object.assign(run, { player: drawnPlayer(IN_ROOM), playerPos: { ...IN_ROOM } });
+    run.checkBuildingStatus();
+    expect(run.view?.building).toBeUndefined();
   });
 
   it("should clear the blackout on a climb and raise it around the new floor's room (§D.8)", () => {
@@ -4131,7 +4480,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   /** What the scene holds for a settled player's record and the run's end. */
   interface Settling {
     resultHold: import("@/components/resultHold").ResultHold;
-    settlementRecord?: unknown;
+    record?: unknown;
     showSettlement(payload: SettlementPayload): void;
     endRun(): void;
     leaveRefused(): void;
@@ -4170,9 +4519,28 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     const { run } = settlingOnStage();
     (run as unknown as { sessionID?: string }).sessionID = "run-2";
     run.showSettlement(settlement({ run_id: "run-1" }));
-    expect(run.settlementRecord).toBeUndefined();
+    expect(run.record).toBeUndefined();
     run.showSettlement(settlement({ run_id: "run-2" }));
-    expect(run.settlementRecord).toBeDefined();
+    expect(run.record).toBeDefined();
+  });
+
+  // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-15, R52, R57): the UI scene draws the record; the run hands it
+  // its view and open state through the bridge, and answers its Close
+  it("should hand the UI scene its record as data, up on the first and down on its Close's request", () => {
+    const { run } = settlingOnStage();
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const told: { view: { status: { text: string } }; open: boolean }[] = [];
+    bridge.onScreen({ record: (shown) => void (shown && told.push(shown as never)) });
+
+    run.showSettlement(settlement());
+    run.showSettlement(settlement({ status: "confirmed" }));
+    bridge.request({ kind: "close", window: "record" });
+
+    expect(told.map((t) => [t.view.status.text, t.open])).toEqual([
+      ["Settling…", true],
+      ["Settled", true],
+      ["Settled", false],
+    ]);
   });
 
   it("should open the record at once on settlement, with what was carried, lost and earned", () => {
@@ -4210,31 +4578,30 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     const watch = hit("watch-the-delve")!.args as number[];
     const leave = hit("leave-the-barrow")!.args as number[];
     const record = hit("settlement")!.args as number[];
-    // the recording camera is 800 x 600: three buttons about the centre, on the Watch button's line
-    expect(watch[0]).toBeLessThan(400);
-    expect(leave[0]).toBe(400);
-    expect(record[0]).toBeGreaterThan(400);
-    expect(watch[0] + record[0]).toBe(800);
+    // the recording camera is 800 x 600: three buttons left to right 8 apart from 442, the open chat
+    // window's clearance at this narrow view, on the Watch button's line (FS-TQZ5J § Change: Batch 6, R123)
+    expect([watch, leave, record].map(([x, , w]) => x - w / 2)).toEqual([442, 554, 656]);
     expect([leave[1], record[1]]).toEqual([watch[1], watch[1]]);
     expect(record[1] + record[3] / 2).toBe(600 - 16 - 200);
   });
 
-  it("should keep Leave and the Settlement button, centred as a pair, once Watch is pressed", () => {
+  it("should keep Leave and the Settlement button as a pair, once Watch is pressed", () => {
     const { run, hit, press } = settlingOnStage();
     run.showSettlement(settlement());
     press("close-the-record");
     press("watch-the-delve");
     expect(hit("watch-the-delve")).toBeUndefined();
-    const leave = (hit("leave-the-barrow")!.args as number[])[0];
-    const record = (hit("settlement")!.args as number[])[0];
-    expect(leave).toBeLessThan(400);
-    expect(leave + record).toBe(800);
+    const [leave, , leaveW] = hit("leave-the-barrow")!.args as number[];
+    const [record, , recordW] = hit("settlement")!.args as number[];
+    expect([leave - leaveW / 2, record - recordW / 2]).toEqual([442, 544]);
   });
 
-  it("should give a dead player the Settlement button too, the card's Watch and Leave kept", () => {
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R154: no SETTLEMENT by the dead
+  // player's card; it comes with the spectate controls (R158)
+  it("should give a dead player no Settlement button while the card's Watch and Leave stand", () => {
     const { run, hit, shown } = settlingOnStage(player("me", "Aldric", 130, dead));
     run.showSettlement(settlement({ outcome: "died" }));
-    expect((hit("settlement")!.args as number[])[0]).toBe(400);
+    expect(hit("settlement")).toBeUndefined();
     expect(hit("watch-the-delve")).toBeDefined();
     expect(hit("leave-the-barrow")).toBeDefined();
     expect(shown()).toContain("FALLEN IN THE BARROW");
@@ -4425,10 +4792,923 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     run.resultHold.release();
     expect(apply).not.toHaveBeenCalled();
     expect(run.resultHold.hold(hub, vi.fn())).toBe(false);
-    expect(run.settlementRecord).toBeUndefined();
+    expect(run.record).toBeUndefined();
   });
 });
 
+// The run's end pops up with the ESC menu's popup sound, and its buttons sound as the menus' do
+// (FS-WDM0X § Change: Menu, dialog and notice sounds, § Pass 2b: the run's end, E1–E7; I-WDM0X-9)
+describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)", () => {
+  type SettlementPayload = import("@/assets/types/client").SettlementPayload;
+  const settlement = (fields: Partial<SettlementPayload> = {}): SettlementPayload => ({
+    outcome: "died",
+    carried: [{ item_id: "i1", entity_id: "e1", name: "Iron Blade", quantity: 1, found: true }],
+    lost: [],
+    experience_gained: 40,
+    level_before: 2,
+    level_after: 2,
+    kills: 3,
+    seconds_in_run: 80,
+    status: "pending",
+    ...fields,
+  });
+
+  /** What the scene holds for the run's end. */
+  interface Ending {
+    sessionID?: string;
+    showSettlement(payload: SettlementPayload): void;
+    endRun(): void;
+    leaveRefused(): void;
+    relayoutHud(): void;
+    containerView: object;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+  const me = (fields: { escape?: boolean; current_health?: number }) => player("me", "Aldric", 130, fields);
+  const ally = (fields: { escape?: boolean; current_health?: number } = {}) => player("ally", "Wenna", 160, fields);
+
+  function endOnStage() {
+    const stage = onStage();
+    Object.assign(stage.run, { scene: { start: vi.fn() } });
+    const run = stage.run as unknown as Ending;
+    // the satchel's own re-layout is ContainerView's test
+    Object.assign(run.containerView, { relayout: vi.fn() });
+    const heard = hearOn(stage.run as unknown as Record<string, unknown>);
+    /** A tick with this player as `mine` and the rest of the party as `others`. */
+    const tick = (mine: ReturnType<typeof player>, ...others: ReturnType<typeof player>[]) =>
+      stage.run.handleGameStateUpdate({ ...partyState(mine), other_players: others } as GameState);
+    const hit = (name: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+    const press = (name: string) => hit(name)!.handlers.pointerdown();
+    const over = (name: string) => hit(name)!.handlers.pointerover();
+    const shown = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    /** A resize: the HUD laid out again at a new width, and back. */
+    const resize = () => {
+      viewport.set({ width: 1000, height: 600, renderScale: 1 });
+      run.relayoutHud();
+      viewport.set({ width: 800, height: 600, renderScale: 1 });
+      run.relayoutHud();
+    };
+    return { ...stage, run, heard, tick, hit, press, over, shown, resize };
+  }
+
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  describe("dialog_open as the end pops up (E1, E2)", () => {
+    it.each([
+      ["a solo death", dead, "died"],
+      ["a solo escape", escaped, "escaped"],
+    ] as const)("should chime once as the record opens on %s, and not on its copy, a tick or a resize", (_case, fields, outcome) => {
+      const { run, heard, tick, resize } = endOnStage();
+      tick(me(fields));
+      heard();
+      run.showSettlement(settlement({ outcome }));
+      expect(heard()).toEqual(["dialog_open"]);
+
+      run.showSettlement(settlement({ outcome, status: "confirmed" }));
+      tick(me(fields));
+      resize();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime once for a death with a teammate in play, the card first and the record after it", () => {
+      const { run, heard, tick, resize, shown } = endOnStage();
+      tick(me({}), ally());
+      heard();
+      tick(me(dead), ally());
+      expect(shown().some((t) => /barrow keeps you/i.test(t))).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+
+      run.showSettlement(settlement());
+      tick(me(dead), ally());
+      resize();
+      expect(heard()).toEqual([]);
+    });
+
+    // FS-QPDKN § Change: The party death flow and the spectate switcher, R151–R153: the card waits for the
+    // record's CLOSE, which is heard as the card's dialog_open
+    it("should chime once for a death with a teammate in play, the record first, and the card's dialog_open on its CLOSE", () => {
+      const { run, heard, tick, press, shown } = endOnStage();
+      tick(me({}), ally());
+      heard();
+      run.showSettlement(settlement());
+      expect(heard()).toEqual(["dialog_open"]);
+
+      tick(me(dead), ally());
+      tick(me(dead), ally());
+      expect(heard()).toEqual([]);
+      expect(shown().some((t) => /barrow keeps you/i.test(t))).toBe(false);
+      press("close-the-record");
+      expect(shown().some((t) => /barrow keeps you/i.test(t))).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should chime nothing for a settlement naming another run", () => {
+      const { run, heard, tick } = endOnStage();
+      tick(me(dead));
+      run.sessionID = "run-2";
+      heard();
+      run.showSettlement(settlement({ run_id: "run-1" }));
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime nothing as the run ends under the record", () => {
+      const { run, heard, tick } = endOnStage();
+      tick(me(dead), ally());
+      run.showSettlement(settlement());
+      heard();
+      run.endRun();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime once for a settlement held while the run loaded, as create hands it over", () => {
+      const listeners = new Map<string, (payload: unknown) => void>();
+      vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+      vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+      vi.spyOn(socketManager, "off").mockImplementation(() => {});
+      vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+      vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+      vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+      const { run, heard } = endOnStage();
+      const loading = run as unknown as { init(data?: object): void; connectToServer(): void; openHeldMessages(): void };
+      loading.init({ sessionID: "run-a" });
+      listeners.get("settlement")?.(settlement({ run_id: "run-a" }));
+      heard();
+
+      loading.connectToServer();
+      loading.openHeldMessages();
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+  });
+
+  describe("SETTLEMENT brings the record back (E3)", () => {
+    it("should play dialog_open bringing the record back and menu_click taking it down", () => {
+      const { run, heard, tick, press, shown } = endOnStage();
+      tick(me(escaped));
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      press("close-the-record");
+      heard();
+
+      press("settlement");
+      expect(shown()).toContain("Iron Blade");
+      expect(heard()).toEqual(["dialog_open"]);
+      press("settlement");
+      expect(shown()).not.toContain("Iron Blade");
+      expect(heard()).toEqual(["menu_click"]);
+    });
+  });
+
+  describe("the end's buttons (E4–E6)", () => {
+    it.each([
+      ["the card's WATCH THE DELVE", dead, "watch-the-delve"],
+      ["the card's LEAVE THE BARROW", dead, "leave-the-barrow"],
+      ["the row's WATCH THE DELVE", escaped, "watch-the-delve"],
+      ["the row's LEAVE THE BARROW", escaped, "leave-the-barrow"],
+      ["the row's SETTLEMENT", escaped, "settlement"],
+      ["the record's CLOSE", escaped, "close-the-record"],
+    ] as const)("should play menu_hover as the pointer comes onto %s", (_case, fields, name) => {
+      const { run, heard, tick, over } = endOnStage();
+      tick(me(fields), ally());
+      run.showSettlement(settlement({ outcome: fields === dead ? "died" : "escaped" }));
+      heard();
+      over(name);
+      expect(heard()).toEqual(["menu_hover"]);
+    });
+
+    it.each([
+      ["the card's WATCH THE DELVE", dead, "watch-the-delve", ActionType.LeaveRun, 0],
+      ["the card's LEAVE THE BARROW", dead, "leave-the-barrow", ActionType.LeaveRun, 1],
+      ["the row's WATCH THE DELVE", escaped, "watch-the-delve", ActionType.LeaveRun, 0],
+      ["the row's LEAVE THE BARROW", escaped, "leave-the-barrow", ActionType.LeaveRun, 1],
+    ] as const)("should play menu_click once on a press of %s, beside what it does", (_case, fields, name, action, sends) => {
+      const { heard, tick, press, sent } = endOnStage();
+      tick(me(fields), ally());
+      heard();
+      press(name);
+      expect(heard()).toEqual(["menu_click"]);
+      expect(sent.mock.calls.filter(([a]) => a === action)).toHaveLength(sends);
+    });
+
+    it("should play menu_click on the record's CLOSE, the record taken down", () => {
+      const { run, heard, tick, press, shown } = endOnStage();
+      tick(me(escaped));
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      heard();
+      press("close-the-record");
+      expect(shown()).not.toContain("Iron Blade");
+      expect(heard()).toEqual(["menu_click"]);
+    });
+
+    it("should give the dead watcher's corner LEAVE THE BARROW its hover and its click", () => {
+      const { heard, tick, press, over } = endOnStage();
+      tick(me(dead), ally());
+      press("watch-the-delve");
+      heard();
+      over("leave-the-barrow");
+      press("leave-the-barrow");
+      expect(heard()).toEqual(["menu_hover", "menu_click"]);
+    });
+
+    it.each([
+      ["the card's", dead],
+      ["the row's", escaped],
+    ] as const)("should give %s dimmed LEAVE THE BARROW no hover, and menu_error alone for its press", (_case, fields) => {
+      const { heard, tick, press, over, sent } = endOnStage();
+      tick(me(fields), ally());
+      press("leave-the-barrow");
+      heard();
+      over("leave-the-barrow");
+      press("leave-the-barrow");
+      expect(heard()).toEqual(["menu_error"]);
+      expect(sent.mock.calls.filter(([a]) => a === ActionType.LeaveRun)).toHaveLength(1);
+    });
+
+    // the owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (FS-KYPQ9 § Change: Every hover keeps the bone
+    // hand). No cursor of its own, so none is left behind over a Leave dimmed under the pointer.
+    it.each([
+      ["the card's", dead],
+      ["the row's", escaped],
+    ] as const)("should keep the bone hand over %s LEAVE THE BARROW, live, dimmed and handed back", (_case, fields) => {
+      const { run, tick, press, hit } = endOnStage();
+      tick(me(fields), ally());
+      const leave = hit("leave-the-barrow") as unknown as Made & { input: { cursor: unknown } };
+      Object.assign(leave, { input: { cursor: false } });
+      expect(JSON.stringify(leave.last["setInteractive"] ?? [])).not.toMatch(/useHandCursor|cursor/);
+
+      press("leave-the-barrow");
+      expect(leave.input.cursor).toBe(false);
+      run.leaveRefused();
+      expect(leave.input.cursor).toBe(false);
+    });
+  });
+
+  // the owner, 2026-11-14 (「Auto-close the party panel when the card appears」): the panel draws over the
+  // end's pieces now, so the end's first popup shuts it, silently (FS-WDM0X S4)
+  describe("the run's end closes the party panel (FS-TQZ5J § Change: Phase 2, Amendment B1, R47)", () => {
+    /** The run's end on stage with the UI scene's party panel over it, on the app's party store, open. */
+    function endWithPanel() {
+      const env = endOnStage();
+      const party = partyPanelOver(env.run, "run", (w) => partyPanelOn(w.blocked, w.wrapper, usePartyStore));
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      env.heard();
+      return { ...env, party };
+    }
+
+    afterEach(() => usePartyStore.setState({ panelOpen: false }));
+
+    it.each([
+      ["a solo death", dead, "died"],
+      ["a solo escape", escaped, "escaped"],
+    ] as const)("should close it as the record opens on %s, with the end's dialog_open alone", (_case, fields, outcome) => {
+      const { run, heard, tick, party } = endWithPanel();
+      tick(me(fields));
+      run.showSettlement(settlement({ outcome }));
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should close it as the card appears for a death with a teammate in play, the record after it closing nothing", () => {
+      const { run, heard, tick, party } = endWithPanel();
+      tick(me({}), ally());
+      tick(me(dead), ally());
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+
+      // reopened between the card and the record: the end popped up once
+      party.pressT();
+      expect(heard()).toEqual(["party_open"]);
+      run.showSettlement(settlement());
+      expect(party.panel.isOpen()).toBe(true);
+      expect(heard()).toEqual([]);
+    });
+
+    it("should close it as the record comes first for a death with a teammate in play", () => {
+      const { run, heard, tick, party } = endWithPanel();
+      tick(me({}), ally());
+      run.showSettlement(settlement());
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should let T reopen it while the run goes on, a copy, a resize and SETTLEMENT leaving it open", () => {
+      const { run, heard, tick, party, press, resize } = endWithPanel();
+      tick(me(escaped), ally());
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      heard();
+
+      run.showSettlement(settlement({ outcome: "escaped", status: "confirmed" }));
+      resize();
+      press("close-the-record");
+      press("settlement");
+      expect(party.panel.isOpen()).toBe(true);
+      expect(heard()).toEqual(["menu_click", "dialog_open"]);
+    });
+
+    it("should refuse T after the run ends, as before", () => {
+      const { run, tick, party } = endWithPanel();
+      tick(me(dead));
+      run.showSettlement(settlement());
+      run.endRun();
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(false);
+    });
+
+    it("should change nothing as the end pops up with the panel shut", () => {
+      const { run, heard, tick, party } = endWithPanel();
+      party.pressT();
+      heard();
+      tick(me(dead));
+      run.showSettlement(settlement());
+      expect(party.panel.isOpen()).toBe(false);
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    // § Change: Phase 3, R58 (the review of phase 3, MED-3): the run asks the UI scene to clear its moved
+    // windows as the end pops up, so their grounds take no press meant for the end's buttons; silently
+    // (FS-WDM0X S4), once
+    describe("and the moved windows with it (FS-TQZ5J § Change: Phase 3, R58)", () => {
+      /** The run's end on stage with the UI scene's gear overlay, container view and controls panel open over it. */
+      function endWithWindows() {
+        const env = endWithPanel();
+        const open = { inventory: false, character: false, container: undefined as string | undefined };
+        gearOver(env.run, "run", () => ({
+          gear: {
+            isInventoryOpen: () => open.inventory,
+            isCharacterOpen: () => open.character,
+            stashOpen: () => false,
+            toggle: () => (open.inventory = !open.inventory),
+            toggleCharacter: () => (open.character = !open.character),
+            hide: () => {
+              const was = open.inventory || open.character;
+              open.inventory = open.character = false;
+              return was;
+            },
+            equipKey: () => false,
+            openStash: () => false,
+            seen: () => {},
+            setCharacterLevel: () => {},
+            taken: () => {},
+            roomForOne: () => true,
+            release: () => {},
+          },
+          container: {
+            get isOpen() {
+              return open.container !== undefined;
+            },
+            get entityId() {
+              return open.container;
+            },
+            open: (id: string) => void (open.container = id),
+            close: () => void (open.container = undefined),
+            closeNow: () => void (open.container = undefined),
+            setItems: () => {},
+            lootFirst: () => {},
+            pointerMove: () => {},
+            pointerDown: () => false,
+            owns: () => false,
+            relayout: () => {},
+            destroy: () => {},
+          },
+        }));
+        const side = uiSceneOn(env.run, "run", { row: false });
+        /** The gear's two panels, the container view and the controls panel, opened as the player opens them. */
+        const reopen = () => {
+          side.gearKey("inventory");
+          side.gearKey("character");
+          side.bridge.container({ kind: "open", entityId: "chest-1", container: "chest" });
+          side.controls.toggle();
+        };
+        const standing = () => ({
+          inventory: side.gear.isInventoryOpen(),
+          character: side.gear.isCharacterOpen(),
+          container: side.bridge.ui.container,
+          controls: side.controls.isOpen(),
+        });
+        const ALL_OPEN = { inventory: true, character: true, container: "chest-1", controls: true };
+        const NONE_OPEN = { inventory: false, character: false, container: undefined, controls: false };
+        return { ...env, reopen, standing, ALL_OPEN, NONE_OPEN };
+      }
+
+      it.each([
+        ["a solo death", dead, "died"],
+        ["a solo escape", escaped, "escaped"],
+      ] as const)("should close them as the record opens on %s, with the end's dialog_open alone", (_case, fields, outcome) => {
+        const { run, heard, tick, reopen, standing, ALL_OPEN, NONE_OPEN } = endWithWindows();
+        tick(me(fields));
+        reopen();
+        expect(standing()).toEqual(ALL_OPEN);
+        heard();
+        run.showSettlement(settlement({ outcome }));
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(heard()).toEqual(["dialog_open"]);
+      });
+
+      it("should close them as the card appears for a death with a teammate in play, the record after it closing nothing", () => {
+        const { run, heard, tick, reopen, standing, ALL_OPEN, NONE_OPEN } = endWithWindows();
+        tick(me({}), ally());
+        reopen();
+        heard();
+        tick(me(dead), ally());
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(heard()).toEqual(["dialog_open"]);
+
+        // reopened between the card and the record: the end popped up once
+        reopen();
+        heard();
+        run.showSettlement(settlement());
+        tick(me(dead), ally());
+        expect(standing()).toEqual(ALL_OPEN);
+        expect(heard()).toEqual([]);
+      });
+
+      // the review of phase 3 (MED-2): an escaped player whose teammate is still in play is offered
+      // WATCH THE DELVE and LEAVE THE BARROW in the row with no card and no record yet: the windows open
+      // at the door step aside then too, playing nothing; dialog_open waits for the end. FS-84N1G R21 (the
+      // integrator): the party panel closes there too, silently, as R47 closes it at the end
+      it("should close them and the party panel as an escape with a teammate in play offers WATCH and LEAVE, silently", () => {
+        const { tick, heard, reopen, standing, party, NONE_OPEN } = endWithWindows();
+        tick(me({}), ally());
+        reopen();
+        heard();
+        tick(me(escaped), ally());
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(party.panel.isOpen()).toBe(false);
+        expect(heard()).toEqual([]);
+      });
+
+      it("should let T reopen the party panel at the door, the ticks after it leaving it open", () => {
+        const { tick, party } = endWithWindows();
+        tick(me({}), ally());
+        tick(me(escaped), ally());
+        party.pressT();
+        tick(me(escaped), ally());
+        expect(party.panel.isOpen()).toBe(true);
+      });
+
+      it("should close them once at the door, each tick after it closing nothing; the record then pops the end up once", () => {
+        const { run, tick, heard, reopen, standing, party, ALL_OPEN, NONE_OPEN } = endWithWindows();
+        tick(me({}), ally());
+        tick(me(escaped), ally());
+        reopen();
+        heard();
+        tick(me(escaped), ally());
+        tick(me(escaped), ally());
+        expect(standing()).toEqual(ALL_OPEN);
+        expect(heard()).toEqual([]);
+
+        run.showSettlement(settlement({ outcome: "escaped" }));
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(party.panel.isOpen()).toBe(false);
+        expect(heard()).toEqual(["dialog_open"]);
+      });
+
+      it("should leave them reopened through a copy, a tick and a resize after the end", () => {
+        const { run, heard, tick, reopen, standing, ALL_OPEN, resize } = endWithWindows();
+        tick(me(escaped));
+        run.showSettlement(settlement({ outcome: "escaped" }));
+        reopen();
+        heard();
+        run.showSettlement(settlement({ outcome: "escaped", status: "confirmed" }));
+        tick(me(escaped));
+        resize();
+        expect(standing()).toEqual(ALL_OPEN);
+        expect(heard()).toEqual([]);
+      });
+    });
+  });
+});
+
+
+// The owner, 2026-11-14: a player who dies while a teammate is still in play sees only the settlement record;
+// its CLOSE brings the card with WATCH and LEAVE, and no SETTLEMENT stands while it is up (FS-QPDKN § Change:
+// The party death flow and the spectate switcher, R150–R156; I-QPDKN-12)
+describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party death flow and the spectate switcher)", () => {
+  type SettlementPayload = import("@/assets/types/client").SettlementPayload;
+  const settlement = (fields: Partial<SettlementPayload> = {}): SettlementPayload => ({
+    outcome: "died",
+    carried: [{ item_id: "i1", entity_id: "e1", name: "Iron Blade", quantity: 1, found: true }],
+    lost: [],
+    experience_gained: 40,
+    level_before: 2,
+    level_after: 2,
+    kills: 3,
+    seconds_in_run: 80,
+    status: "pending",
+    ...fields,
+  });
+
+  interface Dying {
+    showSettlement(payload: SettlementPayload): void;
+    endRun(): void;
+    relayoutHud(): void;
+    resultHold: import("@/components/resultHold").ResultHold;
+    watchedPlayerId?: string;
+    cycleWatched(step: 1 | -1): void;
+    containerView: object;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+  const me = (fields: { escape?: boolean; current_health?: number } = {}) => player("me", "Aldric", 130, fields);
+  const ally = (fields: { escape?: boolean; current_health?: number } = {}) => player("ally", "Wenna", 160, fields);
+  const brom = (fields: { escape?: boolean; current_health?: number } = {}) => player("brom", "Brom", 200, fields);
+
+  function dyingOnStage() {
+    const stage = onStage();
+    Object.assign(stage.run, { scene: { start: vi.fn() } });
+    const run = stage.run as unknown as Dying;
+    Object.assign(run.containerView, { relayout: vi.fn() });
+    const heard = hearOn(stage.run as unknown as Record<string, unknown>);
+    const tick = (mine: ReturnType<typeof player>, ...others: ReturnType<typeof player>[]) =>
+      stage.run.handleGameStateUpdate({ ...partyState(mine), other_players: others } as GameState);
+    const hit = (name: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+    const press = (name: string) => hit(name)!.handlers.pointerdown();
+    const release = (name: string) => hit(name)!.handlers.pointerup();
+    const over = (name: string) => hit(name)!.handlers.pointerover();
+    const shown = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    const card = () => shown().some((t) => /barrow keeps you/i.test(t));
+    const record = () => shown().includes("FALLEN IN THE BARROW") || shown().includes("ESCAPED THE BARROW");
+    /** The death as the server sends it: the record on the tick, the state that shows it after (FS-GV8WN R19). */
+    const die = (...others: ReturnType<typeof player>[]) => {
+      tick(me(), ...others);
+      heard();
+      run.showSettlement(settlement());
+      tick(me(dead), ...others);
+    };
+    return { ...stage, run, heard, tick, hit, press, release, over, shown, card, record, die };
+  }
+
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  describe("the record first, its CLOSE brings the card (R151–R156; I-QPDKN-12)", () => {
+    it("should show the record alone on the death: one dialog_open, no card and no button", () => {
+      const { die, heard, card, record, hit } = dyingOnStage();
+      die(ally());
+      expect(record()).toBe(true);
+      expect(card()).toBe(false);
+      for (const name of ["watch-the-delve", "leave-the-barrow", "settlement"]) expect(hit(name)).toBeUndefined();
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+
+    it("should bring the card with WATCH and LEAVE on CLOSE, heard as dialog_open alone, and no SETTLEMENT by it", () => {
+      const { die, heard, press, card, record, hit, tick } = dyingOnStage();
+      die(ally());
+      heard();
+      press("close-the-record");
+      expect(record()).toBe(false);
+      expect(card()).toBe(true);
+      expect(hit("watch-the-delve")).toBeDefined();
+      expect(hit("leave-the-barrow")).toBeDefined();
+      expect(hit("settlement")).toBeUndefined();
+      expect(heard()).toEqual(["dialog_open"]);
+      // the ticks after it change nothing and play nothing
+      tick(me(dead), ally());
+      expect(card()).toBe(true);
+      expect(hit("settlement")).toBeUndefined();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should leave the barrow from the card's LEAVE, as today", () => {
+      const { die, press, sent, heard } = dyingOnStage();
+      die(ally());
+      press("close-the-record");
+      heard();
+      press("leave-the-barrow");
+      expect(sent).toHaveBeenCalledWith(ActionType.LeaveRun, {});
+      expect(heard()).toEqual(["menu_click"]);
+    });
+
+    it("should put the card up at once, chiming the end, when the death shows before any record", () => {
+      const { tick, heard, card, run, press, shown } = dyingOnStage();
+      tick(me(), ally());
+      heard();
+      tick(me(dead), ally());
+      expect(card()).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+      // the late record opens over it, silently; its close brings nothing more
+      run.showSettlement(settlement());
+      expect(shown()).toContain("FALLEN IN THE BARROW");
+      expect(heard()).toEqual([]);
+      press("close-the-record");
+      expect(heard()).toEqual(["menu_click"]);
+      expect(card()).toBe(true);
+    });
+
+    it("should bring no card on CLOSE once nobody is left in play, nor once the run has ended", () => {
+      const lonely = dyingOnStage();
+      lonely.die(ally());
+      lonely.tick(me(dead), ally(escaped));
+      lonely.heard();
+      lonely.press("close-the-record");
+      expect(lonely.card()).toBe(false);
+      expect(lonely.heard()).toEqual(["menu_click"]);
+
+      const ended = dyingOnStage();
+      ended.die(ally());
+      ended.run.endRun();
+      ended.heard();
+      ended.press("close-the-record");
+      expect(ended.card()).toBe(false);
+      expect(ended.heard()).toEqual(["menu_click"]);
+    });
+
+    it.each([
+      ["a solo death", dead, "died"],
+      ["a solo escape", escaped, "escaped"],
+    ] as const)("should keep %s as today: the record alone, its CLOSE menu_click and no card", (_case, fields, outcome) => {
+      const { tick, run, heard, press, card, record } = dyingOnStage();
+      tick(me());
+      heard();
+      run.showSettlement(settlement({ outcome }));
+      tick(me(fields));
+      expect(record()).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+      press("close-the-record");
+      expect(card()).toBe(false);
+      expect(heard()).toEqual(["menu_click"]);
+    });
+
+    it("should keep the escaped player's offer as today: WATCH, LEAVE and SETTLEMENT 200 above the bottom margin", () => {
+      const { tick, run, hit, press } = dyingOnStage();
+      tick(me(), ally());
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      tick(me(escaped), ally());
+      press("close-the-record");
+      const rects = ["watch-the-delve", "leave-the-barrow", "settlement"].map((n) => hit(n)!.args as number[]);
+      expect(rects.map(([x, , w]) => x - w / 2)).toEqual([442, 554, 656]);
+      for (const [, y, , h] of rects) expect(y + h / 2).toBe(600 - 16 - 200);
+    });
+  });
+
+  describe("the spectate controls (R157–R167; I-QPDKN-13)", () => {
+    /** The death, its record closed, the card's WATCH pressed: spectating `first` of `others`. */
+    function watching(...others: ReturnType<typeof player>[]) {
+      const env = dyingOnStage();
+      const party = others.length ? others : [ally()];
+      env.die(...party);
+      env.press("close-the-record");
+      env.press("watch-the-delve");
+      return { ...env, party };
+    }
+    const rect = (env: ReturnType<typeof dyingOnStage>, name: string) => {
+      const [x, y, width, height] = env.hit(name)!.args as number[];
+      return { x: x - width / 2, y: y - height / 2, width, height };
+    };
+    const switcherAt = (env: ReturnType<typeof dyingOnStage>) =>
+      (env.run as unknown as { switcher?: { piece: { rect(): { x: number; y: number; width: number; height: number } } } }).switcher?.piece.rect();
+    const names = (env: ReturnType<typeof dyingOnStage>) =>
+      env.stage.made.filter((m) => m.kind === "text" && !m.destroyed && isSwitcherWords(m)).map((m) => String(m.args[2]));
+
+    it("should walk the whole flow: death, the record alone, CLOSE, the card without SETTLEMENT, WATCH, the row and the switcher", () => {
+      const env = dyingOnStage();
+      env.die(ally());
+      expect([env.record(), env.card(), env.hit("settlement")]).toEqual([true, false, undefined]);
+      env.press("close-the-record");
+      expect([env.record(), env.card(), env.hit("settlement")]).toEqual([false, true, undefined]);
+      env.heard();
+      env.press("watch-the-delve");
+      expect(env.heard()).toEqual(["menu_click"]);
+      expect(env.card()).toBe(false);
+      expect(env.run.watchedPlayerId).toBe("ally");
+      // LEAVE then SETTLEMENT, side by side, their bottom 70 above the view's (800 x 600 here)
+      const leave = rect(env, "leave-the-barrow");
+      const settle = rect(env, "settlement");
+      expect([leave.x, settle.x]).toEqual([442, 442 + 94 + 8]);
+      expect([leave.y + leave.height, settle.y + settle.height]).toEqual([600 - 70, 600 - 70]);
+      // the switcher 8 over them, naming the watched teammate; nothing at the top centre
+      expect(names(env)).toEqual(["Wenna"]);
+      const sw = switcherAt(env)!;
+      expect(sw.y + sw.height).toBe(leave.y - 8);
+      expect(env.shown().some((t) => /Tab: next/i.test(t))).toBe(false);
+      expect(env.hit("watch-previous")).toBeDefined();
+      expect(env.hit("watch-next")).toBeDefined();
+      // one LEAVE only: the corner button is gone
+      expect(env.stage.made.filter((m) => !m.destroyed && (m as { name?: string }).name === "leave-the-barrow")).toHaveLength(1);
+    });
+
+    it("should reopen the record from SETTLEMENT and, closed, return to spectating with no card", () => {
+      const env = watching();
+      const before = switcherAt(env);
+      env.heard();
+      env.press("settlement");
+      expect(env.record()).toBe(true);
+      expect(env.heard()).toEqual(["dialog_open"]);
+      env.press("close-the-record");
+      expect(env.heard()).toEqual(["menu_click"]);
+      expect([env.record(), env.card()]).toEqual([false, false]);
+      expect(env.run.watchedPlayerId).toBe("ally");
+      // SETTLEMENT's own close too
+      env.press("settlement");
+      env.press("settlement");
+      expect(env.card()).toBe(false);
+      expect(env.heard()).toEqual(["dialog_open", "menu_click"]);
+      expect(names(env)).toEqual(["Wenna"]);
+      expect(switcherAt(env)).toEqual(before);
+      expect(env.hit("leave-the-barrow")).toBeDefined();
+    });
+
+    it("should go to the next teammate on ► and Tab, the previous on ◄, round at either end", () => {
+      const env = watching(ally(), brom(), player("cora", "Cora", 240));
+      const seen = () => env.run.watchedPlayerId;
+      expect(seen()).toBe("ally");
+      env.release("watch-next");
+      expect(seen()).toBe("brom");
+      expect(names(env)).toEqual(["Brom"]);
+      env.run.cycleWatched(1);
+      expect(seen()).toBe("cora");
+      env.release("watch-next");
+      expect(seen()).toBe("ally");
+      env.release("watch-previous");
+      expect(seen()).toBe("cora");
+      env.release("watch-previous");
+      expect(seen()).toBe("brom");
+    });
+
+    it("should play menu_hover on a live arrow and menu_click on its release, once each; Tab plays nothing", () => {
+      const env = watching(ally(), brom());
+      env.heard();
+      env.over("watch-next");
+      env.release("watch-next");
+      env.over("watch-previous");
+      env.release("watch-previous");
+      expect(env.heard()).toEqual(["menu_hover", "menu_click", "menu_hover", "menu_click"]);
+      env.run.cycleWatched(1);
+      expect(env.heard()).toEqual([]);
+    });
+
+    it("should grey both arrows with one teammate in play: no hover, menu_error on a press, nothing changes", () => {
+      const env = watching(ally(), brom(dead));
+      env.heard();
+      for (const name of ["watch-next", "watch-previous"]) {
+        env.hit(name)!.handlers.pointerover?.();
+        env.release(name);
+      }
+      expect(env.heard()).toEqual(["menu_error", "menu_error"]);
+      expect(env.run.watchedPlayerId).toBe("ally");
+      // live again once two are in play
+      env.tick(me(dead), ally(), brom());
+      env.heard();
+      env.release("watch-next");
+      expect(env.heard()).toEqual(["menu_click"]);
+      expect(env.run.watchedPlayerId).toBe("brom");
+    });
+
+    it("should draw the watched name over everything else the switcher draws (the owner, 「箭頭中間沒看到觀看者的名字」)", () => {
+      const env = watching(ally(), brom());
+      const from = env.stage.made.length;
+      env.release("watch-next");
+      const drawn = env.stage.made.slice(from).filter((m) => !m.destroyed);
+      // the order Phaser renders them in: DisplayList.depthSort, a stable sort by depth, ties in the order made
+      const order = drawn
+        .map((m, i) => ({ m, i, depth: (m as { depth?: number }).depth ?? 0 }))
+        .sort((a, b) => a.depth - b.depth || a.i - b.i)
+        .map(({ m }) => m);
+      const name = order.findIndex((m) => m.kind === "text" && String(m.args[2]) === "Brom" && isSwitcherWords(m));
+      expect(name).toBeGreaterThanOrEqual(0);
+      const paints = order.flatMap((m, i) => (m.kind === "graphics" ? [i] : []));
+      expect(paints.length).toBeGreaterThan(0);
+      for (const at of paints) expect(at).toBeLessThan(name);
+    });
+
+    it("should draw it bare: the name in watchedName, the arrows amber triangles with no backing or outline, bright under the pointer (the owner, 2026-11-14)", () => {
+      const env = watching(ally(), brom());
+      const from = env.stage.made.length;
+      env.release("watch-next");
+      const drawn = env.stage.made.slice(from).filter((m) => !m.destroyed);
+      const name = drawn.find((m) => m.kind === "text" && String(m.args[2]) === "Brom" && isSwitcherWords(m))!;
+      expect((name.args[3] as { color: string }).color).toBe(toCss(palette.watchedName));
+      const paints = drawn.filter((m) => m.kind === "graphics");
+      expect(paints).toHaveLength(2);
+      for (const g of paints) {
+        expect(g.calls).not.toContain("fillRoundedRect");
+        expect(g.calls).not.toContain("strokeRoundedRect");
+        expect(g.calls).not.toContain("fillRect");
+        expect(g.calls).toContain("fillTriangle");
+        expect(g.last["fillStyle"]).toEqual([palette.interactable, 1]);
+      }
+      // each press area the framed arrow's size: 28 by the switcher's 28
+      for (const n of ["watch-previous", "watch-next"]) {
+        const zone = env.hit(n)!;
+        expect(zone.kind).toBe("zone");
+        expect(zone.args.slice(2)).toEqual([28, 28]);
+      }
+      env.over("watch-next");
+      expect(paints.map((g) => g.last["fillStyle"])).toContainEqual([palette.interactableBright, 1]);
+      env.hit("watch-next")!.handlers.pointerout();
+      for (const g of paints) expect(g.last["fillStyle"]).toEqual([palette.interactable, 1]);
+    });
+
+    it("should draw greyed arrows faint, with no outline", () => {
+      const env = watching(ally(), brom(dead));
+      const paints = env.stage.made.filter((m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillTriangle") && m.depth === 1000);
+      const greyed = paints.filter((g) => JSON.stringify(g.last["fillStyle"]) === JSON.stringify([palette.hudFaint, 0.45]));
+      expect(greyed).toHaveLength(2);
+      for (const g of greyed) expect(g.calls).not.toContain("strokeRoundedRect");
+    });
+
+    // the owner, 「觀看時沒有燈光很暗 但被觀看的玩家本身是有燈光的」 and 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」
+    // (2026-11-14): the torch and the occluders' fade ride on the watched teammate, and jump on a switch
+    describe("through the watched teammate's eyes", () => {
+      const lit = (env: ReturnType<typeof dyingOnStage>) => {
+        const run = env.run as unknown as {
+          lightMap?: unknown;
+          occluders: { update(figure: unknown, delta: number): void };
+          otherPlayersPos: Map<string, { x: number; y: number }>;
+          otherPlayers: Map<string, unknown>;
+          updateLighting(time: number, delta: number): void;
+        };
+        const carry = vi.fn();
+        run.lightMap = { carry, update: vi.fn() };
+        const fade = vi.spyOn(run.occluders, "update").mockImplementation(() => {});
+        return { run, carry, fade };
+      };
+
+      it("should carry the torch and fade the occluders at the watched teammate's drawn position, and jump to the next on ►", () => {
+        const env = watching(ally(), brom());
+        const { run, carry, fade } = lit(env);
+        // the drawn position is the world position's iso projection, never the world position itself:
+        // the torch rides on the figure as drawn, as the player's own does (`self.x`, `self.y`)
+        const drawnAt = (id: string, x: number, y: number) =>
+          Object.assign(run.otherPlayers.get(id) as { x: number; y: number }, { x, y });
+        drawnAt("ally", 412, 233);
+        drawnAt("brom", 655, 301);
+        run.updateLighting(0, 16);
+        expect(carry).toHaveBeenLastCalledWith({ x: 412, y: 233 });
+        expect(carry).not.toHaveBeenCalledWith(run.otherPlayersPos.get("ally"));
+        const figure = fade.mock.calls.at(-1)![0] as { bounds: unknown; depth: unknown } | null;
+        expect(figure).not.toBeNull();
+        env.release("watch-next");
+        drawnAt("brom", 655, 301);
+        run.updateLighting(16, 16);
+        expect(carry).toHaveBeenLastCalledWith({ x: 655, y: 301 });
+        expect(carry).not.toHaveBeenCalledWith(null);
+      });
+
+      it("should let the torch fade before WATCH, with nobody watched", () => {
+        const env = dyingOnStage();
+        env.die(ally());
+        const { run, carry } = lit(env);
+        (run as unknown as { player?: { visible: boolean } }).player = { visible: false } as never;
+        run.updateLighting(0, 16);
+        expect(carry).toHaveBeenLastCalledWith(null);
+      });
+    });
+
+    it("should keep no cursor of their own on the arrows: the bone hand stays", () => {
+      const env = watching(ally(), brom());
+      for (const name of ["watch-next", "watch-previous"])
+        expect(JSON.stringify(env.hit(name)!.last["setInteractive"] ?? [])).not.toMatch(/useHandCursor|cursor/);
+    });
+
+    it.each([
+      // the name alone, "Wenna" 35 wide on the stand-in, + 76 (the owner, 「觀看時中間名字不用顯示watching了」, 2026-11-14)
+      [1080, { leave: [442, 612], settle: [544, 612], switcher: [510, 576, 111] }],
+      [1280, { leave: [517, 612], settle: [619, 612], switcher: [585, 576, 111] }],
+    ] as const)("should stand the row and the switcher at logical width %i as pinned, clear of the chat (R158, R159, R167)", (width, at) => {
+      const env = watching();
+      viewport.set({ width, height: 720, renderScale: 1 });
+      env.run.relayoutHud();
+      const leave = rect(env, "leave-the-barrow");
+      const settle = rect(env, "settlement");
+      const sw = switcherAt(env)!;
+      expect([leave.x, leave.y, leave.width, leave.height]).toEqual([...at.leave, 94, 38]);
+      expect([settle.x, settle.y, settle.width, settle.height]).toEqual([...at.settle, 144, 38]);
+      expect([sw.x, sw.y, sw.width, sw.height]).toEqual([...at.switcher, 28]);
+      for (const r of [leave, settle, sw]) expect(r.x).toBeGreaterThanOrEqual(442);
+    });
+
+    it("should take the row and the switcher down at the run's end, playing nothing", () => {
+      const env = watching(ally(), brom());
+      env.heard();
+      env.run.endRun();
+      expect(names(env)).toEqual([]);
+      for (const name of ["leave-the-barrow", "settlement", "watch-next", "watch-previous"]) expect(env.hit(name)).toBeUndefined();
+      expect(env.heard()).toEqual([]);
+    });
+
+    it("should dim the row's LEAVE while a leave is pending, menu_error on a second press", () => {
+      const env = watching();
+      env.press("leave-the-barrow");
+      env.heard();
+      env.press("leave-the-barrow");
+      expect(env.heard()).toEqual(["menu_error"]);
+      expect(env.sent.mock.calls.filter(([a]) => a === ActionType.LeaveRun)).toHaveLength(1);
+    });
+  });
+});
 
 describe("no way out of a run on ESC (reported 2026-10-29)", () => {
   // ESC used to start MainMenuScene from inside a run. The server keeps the body in the
@@ -4469,19 +5749,6 @@ describe("state from another world is not drawn (reported 2026-10-29)", () => {
     expect(run.lastGameState).toBeUndefined();
   });
 
-  it("should release the equip HUD on reset, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
-    const scene = new BarrowspireScene();
-    const run = scene as unknown as { resetRun(end: "shutdown" | "destroy"): void; equipment?: { release(): void } };
-    scene.init();
-    const release = vi.fn();
-    run.equipment = { release };
-
-    run.resetRun("shutdown");
-
-    expect(release).toHaveBeenCalledTimes(1);
-    expect(run.equipment).toBeUndefined();
-  });
-
   it("should accept everything when started without a session, and forget the session on reset", () => {
     const scene = new BarrowspireScene();
     const run = scene as unknown as Filtered;
@@ -4505,19 +5772,11 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   /** What the scene holds for the run's menu. */
   interface Menued {
     menu?: unknown;
-    menuChoices?: unknown;
     fallPending: boolean;
     leavePending: boolean;
-    controlsPanel?: unknown;
-    dismissKey?: FakeKey;
-    confirmKey?: FakeKey;
-    choiceKeys: FakeKey[];
-    offerMenu(): void;
-    openMenu(): void;
     bindRunInput(): void;
     sendMovementIntent(vx: number, vy: number): void;
     canSendMove(): boolean;
-    toggleControlsPanel(): void;
     fallRefused(info: { message?: string }): void;
     endRun(): void;
     resetRun(end: "shutdown" | "destroy"): void;
@@ -4530,9 +5789,6 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const stage = onStage();
     const run = stage.run as unknown as Menued;
     const keys = { esc: key(), enter: key(), one: key(), two: key() };
-    run.dismissKey = keys.esc;
-    run.confirmKey = keys.enter;
-    run.choiceKeys = [keys.one, keys.two];
     const keyHandlers: Record<string, (...args: unknown[]) => void> = {};
     const pointerHandlers: Record<string, (...args: unknown[]) => void> = {};
     Object.assign(stage.run, {
@@ -4543,9 +5799,14 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       },
     });
     stage.run.handleGameStateUpdate(partyState(me));
+    /** One frame of the UI scene: the keys pressed since the last, the arrows the run's own cursors stand in for. */
+    const frame = () => {
+      const arrows = (run as unknown as { cursors?: Record<"left" | "right", FakeKey> }).cursors;
+      uiFrame(run, { ...keys, left: arrows?.left, right: arrows?.right });
+    };
     const press = (k: FakeKey) => {
       k.justDown = true;
-      run.offerMenu();
+      frame();
     };
     const option = (id: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === `menu-${id}` && !m.destroyed);
@@ -4555,7 +5816,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
     const hit = (name: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
-    return { ...stage, run, keys, keyHandlers, pointerHandlers, press, option, pick, labels, sentOf, hit };
+    return { ...stage, run, keys, keyHandlers, pointerHandlers, frame, press, option, pick, labels, sentOf, hit };
   }
 
   afterEach(() => {
@@ -4566,7 +5827,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press, option, labels } = menuOnStage();
     press(keys.esc);
 
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
     expect(option("fall")).toBeDefined();
     expect(option("back")).toBeDefined();
     expect(labels()).toContain("Fall where you stand  [1]");
@@ -4576,19 +5837,24 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   it("should close an open party panel on ESC before it opens the menu (FS-R82NV § Change C2)", () => {
     const { run, keys, press } = menuOnStage();
     let open = true;
-    (run as unknown as { partyPanel: unknown }).partyPanel = {
+    // the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R39)
+    partyPanelOver(run, "run", () => ({
       isOpen: () => open,
       close: () => {
         const was = open;
         open = false;
         return was;
       },
-    };
+      toggle: vi.fn(),
+      relayout: vi.fn(),
+      keepsField: () => false,
+      destroy: vi.fn(),
+    }));
     press(keys.esc);
     expect(open).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     press(keys.esc);
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
   });
 
   it("should close the menu on a second ESC, and on Back, taking its hit areas with it", () => {
@@ -4596,12 +5862,12 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     press(keys.esc);
     const fall = option("fall");
     press(keys.esc);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(fall?.destroyed).toBe(true);
 
     press(keys.esc);
     pick("back");
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(option("fall")).toBeUndefined();
   });
 
@@ -4621,23 +5887,9 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press } = menuOnStage();
     run.endRun();
     press(keys.esc);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
   });
 
-  // The owner, 2026-11-12: "每個ui視窗的標題都不同位置 都統一放在中間的樣式好了 大小顏色也一樣", "全大寫也統一"
-  // (FS-3EBCA R20, R22). I-3EBCA-9.
-  it("should title the controls panel CONTROLS with the shared title drawing, across its top", async () => {
-    const { drawPanelTitle } = await import("@/ui/panelFrame");
-    const title = vi.mocked(drawPanelTitle);
-    title.mockClear();
-    const { run } = menuOnStage();
-    run.toggleControlsPanel();
-    expect(title).toHaveBeenCalledTimes(1);
-    const [, panel, words] = title.mock.calls[0];
-    expect(words).toBe("CONTROLS");
-    expect(panel.width).toBe(260);
-    expect(panel.x).toBe(-130);
-  });
 
   // FS-3EBCA R23 (owner 2026-11-12: "menu目前沒標題也加上"): the run's menu reads MENU.
   it("should title the run's menu and its Fall confirm MENU", () => {
@@ -4648,12 +5900,6 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(labels().filter((l) => l === "MENU")).toHaveLength(1);
   });
 
-  it("should list ESC as the menu in the controls panel", () => {
-    const { run, labels } = menuOnStage();
-    run.toggleControlsPanel();
-    expect(labels()).toContain("ESC");
-    expect(labels()).toContain("Menu");
-  });
 
   it("should swap the rows for the confirm on Fall where you stand, and send nothing until Fall", () => {
     const { keys, press, option, labels, sent } = menuOnStage();
@@ -4677,7 +5923,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     s.press(s.keys.esc);
     s.pick("fall");
     back(s);
-    expect(s.run.menu).toBeUndefined();
+    expect(menuOver(s.run)).toBeUndefined();
     expect(s.option("fall-now")).toBeUndefined();
     expect(s.sent).not.toHaveBeenCalled();
     expect(s.run.fallPending).toBe(false);
@@ -4712,9 +5958,8 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("leave");
     expect(sentOf(ActionType.LeaveRun)).toEqual([[ActionType.LeaveRun, {}]]);
     expect(run.leavePending).toBe(true);
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     // the card's own button is pending too: one send between them
-    expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
     hit("leave-the-barrow")?.handlers.pointerdown();
     press(keys.esc);
     pick("leave");
@@ -4773,40 +6018,30 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(sentOf(ActionType.Move)).toHaveLength(0);
   });
 
-  it("should drop E, F, I, Q and H while the menu is open, and answer them again once it closes", () => {
+  // I, B, C, Q, F and H are the UI scene's since the gear, the satchel and the controls panel moved,
+  // refused there under its menu (FS-TQZ5J § Change: Phase 3, R56; uiSceneGear.test.ts,
+  // uiSceneRecord.test.ts): the run binds none of them
+  it("should drop E while the menu is open; bind no I, B, C, Q, F or H", () => {
     const s = menuOnStage();
     s.run.bindRunInput();
-    const containerView = (s.run as unknown as { containerView: { close: ReturnType<typeof vi.fn>; lootFirst: ReturnType<typeof vi.fn> } }).containerView;
-    containerView.lootFirst = vi.fn();
+    const containerView = (s.run as unknown as { containerView: { close: ReturnType<typeof vi.fn> } }).containerView;
     s.press(s.keys.esc);
 
-    s.keyHandlers["keydown-H"]();
-    s.keyHandlers["keydown-Q"]();
-    s.keyHandlers["keydown-F"]();
     s.keyHandlers["keydown-E"]();
-    s.keyHandlers["keydown-I"]();
-    expect(s.run.controlsPanel).toBeUndefined();
+    expect(["keydown-I", "keydown-B", "keydown-C", "keydown-Q", "keydown-F", "keydown-H"].filter((k) => k in s.keyHandlers)).toEqual([]);
     expect(containerView.close).not.toHaveBeenCalled();
-    expect(containerView.lootFirst).not.toHaveBeenCalled();
     expect(s.sent).not.toHaveBeenCalled();
-
-    s.pick("back");
-    s.keyHandlers["keydown-H"]();
-    expect(s.run.controlsPanel).toBeDefined();
   });
 
   it("should drop pointer attacks and skills while the menu is open", () => {
     const s = menuOnStage();
     s.run.bindRunInput();
-    const pointerDown = vi.fn(() => false);
-    Object.assign((s.run as unknown as { containerView: object }).containerView, { pointerDown });
     s.press(s.keys.esc);
 
     s.pointerHandlers.pointerdown({ x: 10, y: 10, button: 0, worldX: 130, worldY: 300, leftButtonDown: () => true, rightButtonDown: () => false });
     s.monsters()[0].handlers.pointerdown();
 
     expect(s.sent).not.toHaveBeenCalled();
-    expect(pointerDown).not.toHaveBeenCalled();
   });
 
   it("should take the menu and its confirm down when the next state shows the player dead, and show the dead card", () => {
@@ -4818,7 +6053,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
     (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
 
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(option("fall-now")).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
@@ -4828,7 +6063,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press, option } = menuOnStage(player("me", "Aldric", 130, dead));
     press(keys.esc);
     (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
     expect(option("leave")).toBeDefined();
   });
 
@@ -4836,23 +6071,22 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     const { run, keys, press, option } = menuOnStage();
     press(keys.esc);
     run.endRun();
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(option("fall")).toBeUndefined();
   });
 
   it("should hand Fall back on a refusal and say why in passing", () => {
-    const { run, keys, press, pick, sentOf, option, labels } = menuOnStage();
+    const { run, keys, press, pick, sentOf, option } = menuOnStage();
     press(keys.esc);
     pick("fall");
     pick("fall-now");
     const before = option("fall-now")?.calls.length ?? 0;
 
-    const said = vi.spyOn((run as unknown as { loreLines: { say(line: object): void } }).loreLines, "say");
+    const said = loreOf(run).said;
     run.fallRefused({ message: "You are not in a delve." });
 
     expect(run.fallPending).toBe(false);
-    expect(labels()).toContain("You are not in a delve.");
-    // the barrow's refusal, as a lore line (FS-XWHZP R16)
+    // the barrow's refusal, as a lore line, which the UI scene draws (FS-XWHZP R16)
     expect(said).toHaveBeenCalledWith({ text: "You are not in a delve.", tone: "lore" });
     expect(option("fall-now")?.calls.slice(before)).not.toContain("destroy");
     pick("fall-now");
@@ -4867,10 +6101,11 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("fall-now");
     (run as unknown as { input: unknown }).input = { keyboard: { enabled: true, removeCapture: vi.fn() } };
 
+    // the run stops: its leaving takes the UI scene's menu down (FS-TQZ5J R20), its reset the rest
+    (run as unknown as { events: { emit(event: string): void } }).events.emit("shutdown");
     run.resetRun("shutdown");
 
-    expect(run.menu).toBeUndefined();
-    expect(run.menuChoices).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
     expect(run.fallPending).toBe(false);
     expect(offError).toHaveBeenCalledWith("forfeit_run");
   });
@@ -4921,10 +6156,11 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
         const [, spec] = open.mock.calls[0];
         expect(spec.tones.actionable).toBe(palette.interactable);
         expect(spec.tones.cancel).toBe(palette.safe);
+        // the Menu icon's plate, in the UI scene with the panel, left to the icon (FS-3EBCA R18)
         expect(spec.through).toBeTypeOf("function");
         expect(panelOpen()).toBe(true);
         expect(option("fall")).toBeUndefined();
-        expect(run.menu).toBeDefined();
+        expect(menuOver(run)).toBeDefined();
         expect(labels()).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
       },
     );
@@ -4963,7 +6199,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
     it("should store the level on → and ←, one a press, clamped, and on a click of a step or an arrow, playing nothing (C5, C6, C14)", () => {
       const { run, arrows, kept, find } = inThePanel();
-      const offer = () => (run as unknown as { offerMenu(): void }).offerMenu();
+      const offer = () => uiFrame(run, arrows);
 
       arrows.right.justDown = true;
       offer();
@@ -4991,7 +6227,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       music.step(MUSIC_FADE_IN_MS);
       s.press(s.keys.esc);
       s.press(s.keys.two);
-      const offer = () => (s.run as unknown as { offerMenu(): void }).offerMenu();
+      const offer = () => uiFrame(s.run, s.arrows);
 
       s.arrows.right.justDown = true;
       offer();
@@ -5008,22 +6244,22 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     });
 
     it("should open at the stored level, and at 0 for a browser that silenced the town (C15; Edge States: Old setting)", () => {
-      const { run, arrows, kept } = inThePanel("number", undefined, "off");
+      const { arrows, kept, frame } = inThePanel("number", undefined, "off");
       arrows.right.justDown = true;
-      (run as unknown as { offerMenu(): void }).offerMenu();
+      frame();
       expect(kept.get(MUSIC_KEY)).toBe("1");
     });
 
     it("should read a → pressed in play as walking, not as a level change once the panel opens (C6)", () => {
-      const { run, keys, press, pick, arrows, kept, panelOpen } = optionsOnStage();
+      const { keys, press, pick, arrows, kept, panelOpen, frame } = optionsOnStage();
       arrows.right.justDown = true;
       arrows.right.isDown = true;
-      (run as unknown as { offerMenu(): void }).offerMenu();
+      frame();
       press(keys.esc);
       // a click opens the panel between frames, so no key read of that frame takes the press
       pick("options");
       expect(panelOpen()).toBe(true);
-      (run as unknown as { offerMenu(): void }).offerMenu();
+      frame();
 
       expect(kept.get(MUSIC_KEY)).toBeUndefined();
     });
@@ -5054,15 +6290,16 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       find("options-close")!.handlers.pointerup();
       expect(panelOpen()).toBe(false);
       expect(option("fall")).toBeDefined();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
       const { run, panelOpen, option } = inThePanel();
 
-      (run as unknown as { pressMenuIcon(): void }).pressMenuIcon();
+      // the Menu icon's press, the UI scene's menu slot's (FS-TQZ5J R14, R16)
+      uiSceneOn(run, "run").menu.pressMenu();
 
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(panelOpen()).toBe(false);
       expect(option("fall")).toBeUndefined();
     });
@@ -5081,20 +6318,20 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
       ]);
     });
 
-    it("should drop E, F, I, Q and H while the panel is open", () => {
+    it("should drop E while the panel is open (I, Q, F and H the UI scene's, FS-TQZ5J § Change: Phase 3, R56)", () => {
       const s = inThePanel();
       s.run.bindRunInput();
-      for (const k of ["keydown-H", "keydown-Q", "keydown-F", "keydown-E", "keydown-I"]) s.keyHandlers[k]();
-      expect(s.run.controlsPanel).toBeUndefined();
+      s.keyHandlers["keydown-E"]();
+      expect("keydown-H" in s.keyHandlers).toBe(false);
       expect(s.sent).not.toHaveBeenCalled();
     });
 
     it("should centre the open panel again when the view changes (C8, FS-ZAJMH R13)", () => {
       const { run } = inThePanel();
-      const panel = run.menu as Made;
+      const panel = menuOver(run) as unknown as Made;
       panel.last["setPosition"] = [];
-      Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
-      (run as unknown as { relayoutHud(): void }).relayoutHud();
+      // the UI scene's relayout, its menu slot's panel with it (FS-TQZ5J R6)
+      uiSceneOn(run, "run").menu.relayout();
       expect(panel.last["setPosition"]).toEqual([viewport.centerX, viewport.centerY]);
     });
 
@@ -5103,7 +6340,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
 
       (run as unknown as FloorRun).handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
 
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(panelOpen()).toBe(false);
       expect(labels().some((l) => /barrow keeps you/i.test(l))).toBe(true);
     });
@@ -5117,10 +6354,10 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     it("should take the panel down when end_game arrives, and open nothing on Esc after (C17)", () => {
       const { run, keys, press, panelOpen } = inThePanel();
       run.endRun();
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(panelOpen()).toBe(false);
       press(keys.esc);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
   });
 });
@@ -5134,12 +6371,7 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
 
   interface Drinking {
     menu?: unknown;
-    dismissKey?: FakeKey;
-    confirmKey?: FakeKey;
-    choiceKeys: FakeKey[];
-    offerMenu(): void;
     bindRunInput(): void;
-    toggleControlsPanel(): void;
   }
 
   const potion = { item_id: "p1", entity_id: "pe1", name: "Lesser Heal Potion", quantity: 1, item_type: "consumable", healing_amount: 25 };
@@ -5154,9 +6386,6 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     const stage = onStage();
     const run = stage.run as unknown as Drinking;
     const keys = { esc: key(), enter: key(), one: key(), two: key() };
-    run.dismissKey = keys.esc;
-    run.confirmKey = keys.enter;
-    run.choiceKeys = [keys.one, keys.two];
     const keyHandlers: Record<string, (event?: { repeat?: boolean }) => void> = {};
     Object.assign(stage.run, {
       input: {
@@ -5167,15 +6396,18 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     });
     stage.run.handleGameStateUpdate(partyState(me as ReturnType<typeof player>));
     run.bindRunInput();
-    /** One press of 1 as Phaser delivers it: the keydown event, then the frame's menu poll. */
+    /**
+     * One press of 1 as Phaser delivers it: the run's keydown event, as the DOM event comes, then the
+     * UI scene's frame reading its own key (FS-TQZ5J R21).
+     */
     const pressOne = (event: { repeat?: boolean } = {}) => {
       keys.one.justDown = true;
       keyHandlers["keydown-ONE"]?.(event);
-      run.offerMenu();
+      uiFrame(run, keys);
     };
     const press = (k: FakeKey) => {
       k.justDown = true;
-      run.offerMenu();
+      uiFrame(run, keys);
     };
     const drinks = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.DrinkPotion);
     const labels = () =>
@@ -5209,7 +6441,7 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
   it("should leave the menu shut when 1 drinks", () => {
     const { run, pressOne } = drinkOnStage();
     pressOne();
-    expect(run.menu).toBeUndefined();
+    expect(menuOver(run)).toBeUndefined();
   });
 
   it("should let 1 pick the menu's row, and send no drink_potion, while the menu is open", () => {
@@ -5241,29 +6473,14 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     expect(drinks()).toHaveLength(0);
   });
 
-  it("should list the drink in the controls panel, its key read from the mapping", () => {
-    const { run, labels } = drinkOnStage();
-    run.toggleControlsPanel();
-    expect(labels()).toContain(RUN_ACTIONS.drinkPotion.label);
-    expect(labels()).toContain("Drink potion");
-  });
 });
 
 describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20–22)", () => {
   interface Overlaid {
-    equipment?: InstanceType<typeof EquipmentHud>;
     menu?: unknown;
-    controlsPanel?: unknown;
-    dismissKey?: { justDown: boolean; isDown: boolean };
-    confirmKey?: { justDown: boolean; isDown: boolean };
-    choiceKeys: { justDown: boolean; isDown: boolean }[];
     combat: { aiming: boolean };
+    containerView: ReturnType<typeof worldContainer>;
     bindRunInput(): void;
-    offerMenu(): void;
-    composeEquipment(): InstanceType<typeof EquipmentHud>;
-    bagHasRoom(): boolean;
-    lootChestItem(item: unknown): void;
-    toggleControlsPanel(): void;
     handleGameStateUpdate(state: GameState): void;
     sendMovementIntent(vx: number, vy: number): void;
   }
@@ -5275,39 +6492,71 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   const OVER_PANEL = { x: layout.right.x + layout.right.w / 2, y: 300 };
   const IN_BAND = { x: layout.band.x + layout.band.w / 2, y: 300 };
 
+  /** The run's keys the UI scene hears since the gear and the satchel moved (FS-TQZ5J § Change: Phase 3, R56). */
+  const GEAR_KEYS: Record<string, "inventory" | "character" | "close" | "take"> = {
+    I: "inventory",
+    B: "inventory",
+    C: "character",
+    Q: "close",
+    F: "take",
+  };
+
+  /**
+   * The run on stage with the UI scene over it, as the UI scene builds its gear for the run (FS-TQZ5J
+   * § Change: Phase 3, R50): the real overlay, `EquipmentHud` and container view on a stand-in UI scene
+   * of their own input, drawing on the run's recording stage, fed the run's state through the bridge;
+   * the run's satchel the bridge's (`worldContainer`). A press goes to the UI scene first: on one of its
+   * grounds (the overlay's panels, their ×) it is the UI scene's, Phaser stopping it there (R7, R59);
+   * anywhere else the run hears it too. Every move reaches both (A1 R27).
+   */
   function overlayOnStage(cls = "warrior", inventory: unknown[] = [sword]) {
     const stage = onStage();
     vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
-    const run = stage.run as unknown as Overlaid;
+    const run = stage.run as unknown as Overlaid & { ui: import("@/ui/uiBridge").WorldUi };
     const esc = { justDown: false, isDown: false };
-    run.dismissKey = esc;
-    run.confirmKey = { justDown: false, isDown: false };
-    run.choiceKeys = [];
     const keyHandlers: Record<string, () => void> = {};
     const removeKey = vi.fn();
     const input = Object.assign(new EventEmitter(), {
       setDefaultCursor: vi.fn(),
-      keyboard: {
-        on: (event: string, fn: () => void) => (keyHandlers[event] = fn),
-        // the overlay's Shift, while open (FS-NV54P R4); closing must not remove it
-        addKey: () => ({ isDown: false }),
-        removeKey,
-      },
+      keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
       activePointer: { button: 0, positionToCamera: () => ({ x: 400, y: 300 }) },
     });
-    Object.assign(stage.run, { input, game: { events: new EventEmitter() } });
-    Object.assign((stage.run as unknown as { containerView: object }).containerView, {
-      pointerDown: vi.fn(() => false),
-      pointerMove: vi.fn(),
+    Object.assign(stage.run, { input, game: { events: new EventEmitter() }, containerView: worldContainer(() => run.ui) });
+    const sceneParts = stage.run as unknown as Record<string, unknown>;
+    const uiInput = Object.assign(new EventEmitter(), {
+      // the overlay's Shift, while open (FS-NV54P R4); closing must not remove it
+      keyboard: { addKey: () => ({ isDown: false }), removeKey },
     });
-    run.equipment = run.composeEquipment();
+    const uiScene = {
+      add: stage.stage.add,
+      make: sceneParts.make,
+      // the satchel's, the coffer's and the heap's faces baked already, as the UI scene's are at its first world
+      textures: { ...(sceneParts.textures as object), exists: () => true },
+      time: sceneParts.time,
+      tweens: sceneParts.tweens,
+      cameras: sceneParts.cameras,
+      input: uiInput,
+      scale: new EventEmitter(),
+      events: new EventEmitter(),
+    };
+    gearOver(run, "run", (w, wiring) => mountGearPieces(uiScene as never, () => sceneParts.art as never, w, wiring));
     run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), class: cls, inventory } as ReturnType<typeof player>));
     run.bindRunInput();
     (stage.run as unknown as { time: { now: number } }).time.now = 1000;
-    const key = (name: string) => keyHandlers[`keydown-${name}`]();
+    const ui = () => uiSceneOn(run, "run", { row: false });
+    /** A key both scenes' keyboards hear: the run's own (E, H) and the UI scene's (I, B, C, Q, F, and E for an open inventory). */
+    const key = (name: string) => {
+      if (name === "E") ui().gearKey("equip");
+      const gear = GEAR_KEYS[name];
+      if (gear) ui().gearKey(gear);
+      else keyHandlers[`keydown-${name}`]?.();
+    };
+    /** Whether either gear panel is open: the UI scene's gear (R55). */
+    const gearOpen = () => ui().gear.isOpen();
+    // Esc is the UI scene's (FS-TQZ5J R17)
     const pressEsc = () => {
       esc.justDown = true;
-      run.offerMenu();
+      uiFrame(run, { esc });
     };
     const pointer = (at: { x: number; y: number }, button: number) => ({
       ...at,
@@ -5317,14 +6566,32 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       leftButtonDown: () => button === 0,
       rightButtonDown: () => button === 2,
     });
+    /** What Phaser lists under the pointer in the UI scene, top first: a live ground or × of a window. */
+    const uiOver = (at: { x: number; y: number }) => {
+      const hit = stage.stage.made.filter((m) => {
+        const z = m as Made & { depth?: number };
+        if (z.kind !== "zone" || z.destroyed || !z.calls.includes("setInteractive") || (z.depth ?? 0) < 1100) return false;
+        const [x, y, w, h] = z.args as number[];
+        return at.x >= x && at.x <= x + w && at.y >= y && at.y <= y + h;
+      }) as (Made & { depth?: number })[];
+      const top = hit.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0)).at(-1);
+      return top ? [heldAs.get(top)] : [];
+    };
+    const move = (at: { x: number; y: number }, over: unknown[] = uiOver(at)) => {
+      uiInput.emit("pointermove", pointer(at, 0), over);
+      input.emit("pointermove", pointer(at, 0));
+    };
     const press = (at: { x: number; y: number }, button: number) => {
       input.activePointer.button = button;
-      input.emit("pointermove", pointer(at, button));
-      input.emit("pointerdown", pointer(at, button));
+      const over = uiOver(at);
+      move(at, over);
+      uiInput.emit("pointerdown", pointer(at, button), over);
+      // a press on a UI piece never reaches the run (FS-TQZ5J R7)
+      if (over.length === 0) input.emit("pointerdown", pointer(at, button));
     };
     const sentOf = (action: string) => stage.sent.mock.calls.filter(([a]) => a === action);
     const shown = (content: string) => stage.texts().some((t) => t.content === content);
-    return { ...stage, run, key, pressEsc, press, sentOf, shown, removeKey };
+    return { ...stage, run, ui, key, gearOpen, pressEsc, move, press, sentOf, shown, removeKey };
   }
 
   afterEach(() => {
@@ -5346,16 +6613,16 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   it("should toggle the overlay on I and on B, and close it on Q (R4)", () => {
     const { run, key, removeKey } = overlayOnStage();
     key("I");
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     key("B");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     key("B");
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     key("I");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     key("B");
     key("Q");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(removeKey).not.toHaveBeenCalled();
   });
 
@@ -5363,10 +6630,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     const { run, key, pressEsc } = overlayOnStage();
     key("I");
     pressEsc();
-    expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
+    expect(menuOver(run)).toBeUndefined();
     pressEsc();
-    expect(run.menu).toBeDefined();
+    expect(menuOver(run)).toBeDefined();
   });
 
   it("should keep walking with the overlay open: nothing pauses (R7)", () => {
@@ -5381,7 +6648,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     pressEsc();
     key("I");
     key("B");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should send no cast for a left or right press over a panel, and cast for one in the clear band (R8)", () => {
@@ -5413,27 +6680,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     expect(sentOf(ActionType.CastSkill)).toHaveLength(0);
   });
 
-  it("should play item_swap once as an equip is sent (FS-AND39 R7)", () => {
-    const { run, key, press, sentOf } = overlayOnStage();
-    const play = vi.fn();
-    Object.assign(run, { gameplaySounds: { play } });
-    key("I");
-    const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
-    press({ x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 }, 2);
-    expect(sentOf(ActionType.Equip)).toHaveLength(1);
-    expect(play.mock.calls).toEqual([["item_swap"]]);
-  });
-
-  it("should list I / B for the inventory and C for the character panel in the controls help (R11; § Change C15)", () => {
-    const { run, shown } = overlayOnStage();
-    run.toggleControlsPanel();
-    expect(shown("I / B")).toBe(true);
-    expect(shown("Inventory")).toBe(true);
-    expect(shown("C")).toBe(true);
-    expect(shown("Character")).toBe(true);
-    expect(shown("Gear and bag")).toBe(false);
-    expect(shown("I")).toBe(false);
-  });
 
   // FS-HRH2J § Change: Character and inventory apart (C1–C4, C14). I-3EBCA-4.
   it("should open the inventory alone on I and the character panel alone on C (§ Change C1, C2, C14)", () => {
@@ -5445,17 +6691,17 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     expect(shown("WARRIOR")).toBe(true);
     // I closes the inventory alone: the character panel stays over the run
     key("I");
-    expect(run.equipment?.isOpen()).toBe(true);
-    expect(run.equipment?.equipKey()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isInventoryOpen()).toBe(false);
     key("C");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should ignore C while the ESC menu is open (§ Change C2)", () => {
     const { run, key, pressEsc } = overlayOnStage();
     pressEsc();
     key("C");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should close both panels on one ESC, the menu left closed, and on Q (§ Change C3)", () => {
@@ -5463,12 +6709,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     key("I");
     key("C");
     pressEsc();
-    expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeUndefined();
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
+    expect(menuOver(run)).toBeUndefined();
     key("I");
     key("C");
     key("Q");
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
   });
 
   it("should close the inventory alone on its ×, sending no attack for the press (§ Change C4)", () => {
@@ -5479,11 +6725,11 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     const stageSends = () => sent.mock.calls.length;
     const before = stageSends();
     press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     expect(stageSends()).toEqual(before);
     const left = panelClose(layout.left);
     press({ x: left.x + left.w / 2, y: left.y + left.h / 2 }, 0);
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     expect(stageSends()).toEqual(before);
   });
 
@@ -5491,26 +6737,26 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   // while the inventory is open). I-3EBCA-5.
   it("should open the inventory on the Inventory icon and the character panel on the Character icon, the row answering while the inventory is open (FS-3EBCA R7, R11)", () => {
     const { run, stage } = overlayOnStage();
-    (run as unknown as { mountCorner(): void }).mountCorner();
+    cornerRowOn(run, "run");
     const plate = (icon: "inventory" | "character" | "menu") => {
       const f = cornerIconFrame(icon, viewport);
       return stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
     };
     plate("inventory").handlers.pointerdown();
-    expect(run.equipment?.equipKey()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isInventoryOpen()).toBe(true);
     // the inventory is open over the run: the row still answers
     plate("character").handlers.pointerdown();
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     plate("inventory").handlers.pointerdown();
-    expect(run.equipment?.equipKey()).toBe(false);
-    expect(run.equipment?.isOpen()).toBe(true);
+    expect(uiSceneOn(run, "run").gear.isInventoryOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     plate("character").handlers.pointerdown();
-    expect(run.equipment?.isOpen()).toBe(false);
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
     plate("inventory").handlers.pointerdown();
     // the Menu icon opens the menu at once, the inventory closing with it (FS-3EBCA R17)
     plate("menu").handlers.pointerdown();
-    expect(run.equipment?.isOpen()).toBe(false);
-    expect(run.menu).toBeDefined();
+    expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
+    expect(menuOver(run)).toBeDefined();
   });
 
   // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
@@ -5518,10 +6764,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   describe("the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
     function partyOverOverlay() {
       const env = overlayOnStage();
-      const run = env.run as unknown as Overlaid & { partyPanel?: unknown; refusesParty(): boolean; mountCorner(): void };
-      const party = partyPanelOn(() => run.refusesParty());
-      run.partyPanel = party.panel;
-      run.mountCorner();
+      const run = env.run as unknown as Overlaid;
+      const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
+      cornerRowOn(run, "run");
       const f = cornerIconFrame("party", viewport);
       const icon = () =>
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!;
@@ -5535,7 +6780,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     ] as const)("should open and close the party panel on T and on the Party icon with %s open", (_open, keys) => {
       const { run, key, party, pressIcon } = partyOverOverlay();
       keys.forEach(key);
-      expect(run.equipment?.isOpen()).toBe(true);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
       party.pressT();
       expect(party.panel.isOpen()).toBe(true);
       party.pressT();
@@ -5545,13 +6790,13 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       pressIcon();
       expect(party.panel.isOpen()).toBe(false);
       // the overlay stays as it was
-      expect(run.equipment?.isOpen()).toBe(true);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
     });
 
     it("should still refuse T while the ESC menu is open", () => {
       const { run, party, pressEsc } = partyOverOverlay();
       pressEsc();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
       party.pressT();
       expect(party.panel.isOpen()).toBe(false);
     });
@@ -5563,25 +6808,24 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       party.pressT();
       pressEsc();
       expect(party.panel.isOpen()).toBe(false);
-      expect(run.equipment?.isOpen()).toBe(true);
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(true);
       pressEsc();
-      expect(run.equipment?.isOpen()).toBe(false);
-      expect(run.menu).toBeUndefined();
+      expect(uiSceneOn(run, "run").gear.isOpen()).toBe(false);
+      expect(menuOver(run)).toBeUndefined();
     });
 
-    it("should keep a press on the party panel from the overlay under it: no equip for a bag item there", () => {
+    // the party panel and the overlay are both the UI scene's: a piece over the overlay is the top
+    // object under the pointer, and the overlay gives way to it on a move (FS-TQZ5J § Change: Phase 3,
+    // R60): its point stands off its panels, so nothing under it tips
+    it("should keep the overlay under another UI piece from tipping there on a move", () => {
       const env = overlayOnStage();
-      const run = env.run as unknown as Overlaid & { partyPanel?: unknown };
-      const covered = { on: true };
-      run.partyPanel = { covers: () => covered.on, isOpen: () => true };
       env.key("I");
       const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
       const at = { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 };
-      env.press(at, 2);
-      expect(env.sentOf(ActionType.Equip)).toHaveLength(0);
-      covered.on = false;
-      env.press(at, 2);
-      expect(env.sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+      env.move(at, [{ name: "party-panel-ground" }]);
+      expect(env.shown("Iron Sword")).toBe(false);
+      env.move(at);
+      expect(env.shown("Iron Sword")).toBe(true);
     });
   });
 
@@ -5590,23 +6834,18 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   // R18; FS-G4VMQ § Change C4.
   describe("the windows give way to the menu (FS-3EBCA R17, R18)", () => {
     type Windowed = Overlaid & {
-      partyPanel?: unknown;
       runEnded: boolean;
-      refusesParty(): boolean;
-      mayChat(): boolean;
-      mountCorner(): void;
     };
     function runWindows() {
       const env = overlayOnStage();
       const run = env.run as unknown as Windowed;
-      const party = partyPanelOn(() => run.refusesParty());
-      run.partyPanel = party.panel;
-      run.mountCorner();
+      const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
+      cornerRowOn(run, "run");
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
         const f = cornerIconFrame(icon, viewport);
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
       };
-      const open = () => ({ gear: run.equipment?.isOpen() ?? false, party: party.panel.isOpen() });
+      const open = () => ({ gear: uiSceneOn(run, "run").gear.isOpen(), party: party.panel.isOpen() });
       return { ...env, run, party, pressIcon, open };
     }
     const NONE = { gear: false, party: false };
@@ -5618,9 +6857,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       pressEsc();
       expect(open()).toEqual({ gear: true, party: false });
       pressEsc();
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       pressEsc();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
@@ -5630,7 +6869,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       party.pressT();
       pressIcon("menu");
       expect(open()).toEqual(NONE);
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should only close every window on the Menu icon once the run has ended: there is no menu (R17)", () => {
@@ -5641,19 +6880,19 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       run.runEnded = true;
       pressIcon("menu");
       expect(open()).toEqual(NONE);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
 
     it("should answer no corner icon but Menu, no I, B, C or T while the menu is open (R18)", () => {
       const { run, key, party, pressEsc, pressIcon, open } = runWindows();
       pressEsc();
-      const menu = run.menu;
+      const menu = menuOver(run);
       for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
       key("I");
       key("B");
       key("C");
       party.pressT();
-      expect(run.menu).toBe(menu);
+      expect(menuOver(run)).toBe(menu);
       expect(open()).toEqual(NONE);
     });
 
@@ -5662,10 +6901,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const { run, pressEsc, pressIcon, open } = runWindows();
       pressEsc();
       pressIcon("menu");
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(open()).toEqual(NONE);
       pressIcon("menu");
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
     });
 
     it("should close the Fall confirm on the Menu icon, as its × and Not yet do: the whole menu goes, nothing sent (R18)", () => {
@@ -5675,12 +6914,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(true);
       const before = sent.mock.calls.length;
       pressIcon("menu");
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
       expect(stage.made.some((m) => (m as { name?: string }).name === "menu-fall-now" && !m.destroyed)).toBe(false);
       expect(sent.mock.calls.length).toBe(before);
     });
 
-    it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+    it("should take the whole view with the menu's blocker but the Menu icon's plate, the row and the menu one scene (R18; FS-TQZ5J R16)", () => {
       const { pressEsc, stage } = runWindows();
       pressEsc();
       const blocker = stage.made.find((m) => (m as { name?: string }).name === "menu-blocker" && !m.destroyed)!;
@@ -5691,17 +6930,18 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const takes = (x: number, y: number) => test!({}, x, y, blocker);
       const plate = cornerIconFrame("menu", viewport);
       const bag = cornerIconFrame("inventory", viewport);
+      // the whole view but the Menu plate, which it leaves to the icon under it in the same scene, so
+      // a press there closes the menu (FS-3EBCA R18, as when both were the run's)
       expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
       expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
-      expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
       expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
     });
 
     it("should give the chat input no focus while the menu is open (R18)", () => {
       const { run, pressEsc } = runWindows();
-      expect(run.mayChat()).toBe(true);
+      expect(chatMayOpen(run)).toBe(true);
       pressEsc();
-      expect(run.mayChat()).toBe(false);
+      expect(chatMayOpen(run)).toBe(false);
     });
   });
 
@@ -5709,12 +6949,8 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   // the menu (S5), and every window the game closes on its own silent (S4). I-WDM0X-3.
   describe("interface sounds (FS-WDM0X S1–S9; I-WDM0X-3)", () => {
     type Heard = Overlaid & {
-      partyPanel?: unknown;
       runEnded: boolean;
-      sounds?: { act(run: () => void): void };
-      containerView: { isOpen: boolean };
-      refusesParty(): boolean;
-      mountCorner(): void;
+      ui: { act(run: () => void): void };
       endRun(): void;
       resetRun(end: "shutdown" | "destroy"): void;
     };
@@ -5725,12 +6961,10 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       const env = overlayOnStage();
       const run = env.run as unknown as Heard;
       const heard = hearOn(env.run as unknown as Record<string, unknown>);
-      // the overlay again, as create composes it once the player is made: its × through the wrapper
-      run.equipment = run.composeEquipment();
+      // the UI scene's player lent to its bridge as it is created, the overlay's × through its act (R22)
       run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>));
-      const party = partyPanelOn(() => run.refusesParty(), run.sounds);
-      run.partyPanel = party.panel;
-      run.mountCorner();
+      const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
+      cornerRowOn(run, "run");
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
         const f = cornerIconFrame(icon, viewport);
         env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)?.handlers.pointerdown?.();
@@ -5743,9 +6977,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         env.press({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, 0);
       };
       const open = () => ({
-        menu: run.menu !== undefined,
+        menu: menuOver(run) !== undefined,
         party: party.panel.isOpen(),
-        gear: run.equipment?.isOpen() ?? false,
+        gear: uiSceneOn(run, "run").gear.isOpen(),
       });
       heard();
       return { ...env, run, heard, party, pressIcon, find, pick, closeX, open };
@@ -5772,35 +7006,41 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       return r;
     }
 
-    it("should play nothing as the Fall confirm opens from the menu, and settings_close on its Not yet (S5)", () => {
+    it("should play dialog_open as the Fall confirm opens from the menu, and settings_close alone on its Not yet (§ Change M11; owner listening check)", () => {
       const r = heardRun();
       r.pressEsc();
       expect(r.heard()).toEqual(["settings_open"]);
       r.pick("menu-fall");
       expect(r.find("menu-not-yet")).toBeDefined();
-      expect(r.heard()).toEqual([]);
+      expect(r.heard()).toEqual(["dialog_open"]);
       r.pick("menu-not-yet");
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
     it.each<[string, (r: Run) => void]>([
       ["Esc", (r) => r.pressEsc()],
       ["the ×", (r) => r.pick("menu-close")],
-      ["the Menu icon", (r) => r.pressIcon("menu")],
-    ])("should play settings_close as %s closes the whole menu from the Fall confirm (S5)", (_input, input) => {
+    ])("should play settings_close alone as %s closes the whole menu from the Fall confirm (S5; owner listening check)", (_input, input) => {
       const r = inFallConfirm();
       input(r);
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
-    it("should play nothing on the Fall confirm's Fall, which sends and leaves the confirm up", () => {
+    it("should play settings_close as the Menu icon closes the whole menu from the Fall confirm (S5)", () => {
+      const r = inFallConfirm();
+      r.pressIcon("menu");
+      expect(menuOver(r.run)).toBeUndefined();
+      expect(r.heard()).toEqual(["settings_close"]);
+    });
+
+    it("should play dialog_confirm_heavy on the Fall confirm's Fall, which sends and leaves the confirm up (§ Change M13)", () => {
       const r = inFallConfirm();
       r.pick("menu-fall-now");
       expect(r.sentOf(ActionType.ForfeitRun)).toHaveLength(1);
-      expect(r.run.menu).toBeDefined();
-      expect(r.heard()).toEqual([]);
+      expect(menuOver(r.run)).toBeDefined();
+      expect(r.heard()).toEqual(["dialog_confirm_heavy"]);
     });
 
     it("should play settings_close on Leave the barrow, which closes the menu in the same press", () => {
@@ -5811,7 +7051,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       r.heard();
       r.pick("menu-leave");
       expect(r.sentOf(ActionType.LeaveRun)).toHaveLength(1);
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
@@ -5839,7 +7079,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       r.key(opening);
       r.heard();
       r.closeX(side);
-      expect(r.run.equipment?.isOpen()).toBe(false);
+      expect(uiSceneOn(r.run, "run").gear.isOpen()).toBe(false);
       expect(r.heard()).toEqual([closed]);
     });
 
@@ -5899,35 +7139,35 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       r.pressEsc();
       r.heard();
       input(r);
-      expect(r.run.menu).toBeUndefined();
+      expect(menuOver(r.run)).toBeUndefined();
       expect(r.heard()).toEqual(["settings_close"]);
     });
 
     describe("the menu and OPTIONS, one settings space (S5)", () => {
-      it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+      it("should play menu_click alone as Options opens OPTIONS in the menu's place (§ Change M6)", () => {
         const r = heardRun();
         r.pressEsc();
         r.heard();
         r.pick("menu-options");
         expect(r.find("options-back")).toBeDefined();
-        expect(r.heard()).toEqual([]);
+        expect(r.heard()).toEqual(["menu_click"]);
       });
 
       it.each<[string, (r: Run) => void]>([
         ["Back", (r) => r.pick("options-back")],
         ["Esc", (r) => r.pressEsc()],
         ["the ×", (r) => r.pick("options-close")],
-      ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+      ])("should play menu_back alone as OPTIONS' %s goes back to the menu (§ Change M7)", (_input, input) => {
         const r = inOptions();
         input(r);
         expect(r.find("menu-fall")).toBeDefined();
-        expect(r.heard()).toEqual([]);
+        expect(r.heard()).toEqual(["menu_back"]);
       });
 
       it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
         const r = inOptions();
         r.pressIcon("menu");
-        expect(r.run.menu).toBeUndefined();
+        expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual(["settings_close"]);
       });
     });
@@ -5938,9 +7178,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       ["C", (r) => r.key("C")],
       ["Q", (r) => r.key("Q")],
       ["T", (r) => r.party.pressT()],
-      ["the Inventory icon", (r) => r.pressIcon("inventory")],
-      ["the Character icon", (r) => r.pressIcon("character")],
-      ["the Party icon", (r) => r.pressIcon("party")],
     ])("should play nothing on %s refused while the menu is open (S6)", (_press, refused) => {
       const r = heardRun();
       r.pressEsc();
@@ -5950,19 +7187,35 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(r.heard()).toEqual([]);
     });
 
-    it("should play nothing on T or the Party icon refused while a chest is open (S6)", () => {
+    it.each<[string, (r: Run) => void]>([
+      ["the Inventory icon", (r) => r.pressIcon("inventory")],
+      ["the Character icon", (r) => r.pressIcon("character")],
+      ["the Party icon", (r) => r.pressIcon("party")],
+    ])("should play menu_error on %s refused while the menu is open (§ Change M10)", (_press, refused) => {
       const r = heardRun();
-      r.run.containerView.isOpen = true;
-      r.party.pressT();
-      r.pressIcon("party");
-      expect(r.party.panel.isOpen()).toBe(false);
-      expect(r.heard()).toEqual([]);
+      r.pressEsc();
+      r.heard();
+      refused(r);
+      expect(r.open()).toEqual({ menu: true, party: false, gear: false });
+      expect(r.heard()).toEqual(["menu_error"]);
     });
 
-    it("should play nothing on the greyed envelope", () => {
+    it("should play nothing on T refused while a chest is open, and menu_error on the Party icon the run turns away (S6; § Change M10)", () => {
+      const r = heardRun();
+      // the run opens its coffer through the bridge; the UI scene's view reports it open (R52, R53)
+      r.run.containerView.open("chest-1", "chest");
+      r.heard();
+      r.party.pressT();
+      expect(r.heard()).toEqual([]);
+      r.pressIcon("party");
+      expect(r.party.panel.isOpen()).toBe(false);
+      expect(r.heard()).toEqual(["menu_error"]);
+    });
+
+    it("should play menu_error on the greyed envelope (§ Change M10)", () => {
       const r = heardRun();
       r.pressIcon("mail");
-      expect(r.heard()).toEqual([]);
+      expect(r.heard()).toEqual(["menu_error"]);
     });
 
     describe("what the game closes on its own plays nothing (S4)", () => {
@@ -5972,19 +7225,22 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         ["the Fall confirm", inFallConfirm],
       ])("should play nothing as %s yields to the player's death", (_open, opened) => {
         const r = opened();
-        if (!r.run.menu) r.pressEsc();
+        if (!menuOver(r.run)) r.pressEsc();
         r.heard();
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
-        expect(r.run.menu).toBeUndefined();
-        expect(r.heard()).toEqual([]);
+        expect(menuOver(r.run)).toBeUndefined();
+        // the yield plays no close; what plays is the resolved card popping up (FS-WDM0X § Pass 2b E1)
+        expect(r.heard()).toEqual(["dialog_open"]);
       });
 
       it("should play nothing as the Fall confirm yields to the death its Fall asked for", () => {
         const r = inFallConfirm();
         r.pick("menu-fall-now");
+        r.heard();
         r.run.handleGameStateUpdate(partyState(player("me", "Aldric", 130, dead)));
-        expect(r.run.menu).toBeUndefined();
-        expect(r.heard()).toEqual([]);
+        expect(menuOver(r.run)).toBeUndefined();
+        // Fall's dialog_confirm_heavy was its press's; the card that follows chimes (§ Pass 2b E1, E7)
+        expect(r.heard()).toEqual(["dialog_open"]);
       });
 
       it("should play nothing as the run's end closes the menu", () => {
@@ -5992,7 +7248,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         r.pressEsc();
         r.heard();
         r.run.endRun();
-        expect(r.run.menu).toBeUndefined();
+        expect(menuOver(r.run)).toBeUndefined();
         expect(r.heard()).toEqual([]);
       });
 
@@ -6017,8 +7273,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
           Object.assign((r.run as unknown as { input: { keyboard: object } }).input.keyboard, { removeCapture: vi.fn() });
           open(r);
           r.heard();
+          // a stop is the run leaving, which takes the UI scene's menu down (FS-TQZ5J R20); a destroy
+          // takes the UI scene down with the game, its slot emptied as it ends (UIScene's onSceneEnd)
+          (r.run as unknown as { events: { emit(event: string): void } }).events.emit(end);
+          if (end === "destroy") uiSceneOn(r.run, "run").menu.close();
           r.run.resetRun(end);
-          expect(r.run.menu).toBeUndefined();
+          expect(menuOver(r.run)).toBeUndefined();
           expect(r.heard()).toEqual([]);
         }
       });
@@ -6040,33 +7300,33 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     });
 
     // create() can't run on the stand-ins, so its order is pinned from the source, as in the town
-    // and the field: the player made before the party panel, the keys, the gear and the corner, and
-    // its wrapper handed to every module that hears its own input
-    it("should make the player in create before anything that hears a player, and hand its wrapper to the overlay and the party panel", () => {
+    // and the field: the player made before the keys; the gear overlay, the party panel and the corner
+    // are the UI scene's, which hands the overlay its act (FS-TQZ5J § Change: Phase 3, R50)
+    it("should make the player in create before anything that hears a player, and compose no gear of its own", () => {
       const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
       const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
       const at = (line: RegExp) => create.search(line);
-      const mount = at(/this\.mountUiSounds\(\);/);
+      const mount = at(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);/);
       expect(mount).toBeGreaterThan(-1);
-      for (const later of [
-        /this\.partyPanel = mountPartyPanel\(/,
-        /this\.bindRunInput\(\);/,
-        /this\.equipment = this\.composeEquipment\(\);/,
-        /this\.mountCorner\(\);/,
-      ])
-        expect(mount, String(later)).toBeLessThan(at(later));
-      expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
-      const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-      expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
+      expect(mount).toBeLessThan(at(/this\.bindRunInput\(\);/));
+      expect(source).not.toMatch(/composeEquipment|new GearOverlay|new ContainerView/);
     });
   });
 
+  // the take and the bag's pre-check stay in the UI scene, the run sending the loot asked of it
+  // (FS-TQZ5J § Change: Phase 3, R54): F takes the open coffer's first item
   it("should refuse a pickup into a full bag with the refused notice, pending takes counted (R21, R22)", () => {
-    const { run, shown } = overlayOnStage("warrior", bag(29));
-    expect(run.bagHasRoom()).toBe(true);
-    run.lootChestItem({ entity_id: "coin", name: "coin" });
+    const { run, key, shown, sentOf } = overlayOnStage("warrior", bag(29));
+    run.containerView.open("chest-1", "chest");
+    run.containerView.setItems([
+      { entity_id: "coin", name: "coin" },
+      { entity_id: "gem", name: "gem" },
+    ] as never);
+    key("F");
+    expect(sentOf(ActionType.Interact)).toEqual([[ActionType.Interact, { entity_id: "coin" }]]);
     expect(shown(BAG_FULL_NOTICE)).toBe(false);
-    expect(run.bagHasRoom()).toBe(false);
+    key("F");
+    expect(sentOf(ActionType.Interact)).toHaveLength(1);
     expect(shown(BAG_FULL_NOTICE)).toBe(true);
   });
 });
@@ -6076,18 +7336,14 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     time: { now: number; delayedCall: ReturnType<typeof vi.fn> };
     fx?: unknown;
     playerAnim?: { attack(...args: unknown[]): void; holdAim(aim: unknown): void };
-    abilityHud?: { shown: { name: string; greyed: boolean } | null };
     /** The class kit as drawn, shared with the field scene. */
     kit: { aimLine?: { drawn: boolean } };
-    equipment?: unknown;
     menu?: unknown;
     bindRunInput(): void;
     resetRun(end: "shutdown" | "destroy"): void;
     leaveFloor(): void;
     openMenu(): void;
     endRun(): void;
-    toggleInventory(): void;
-    toggleCharacter(): void;
     aimFrame(): void;
     sendMovementIntent(vx: number, vy: number): void;
     handleGameStateUpdate(state: GameState): void;
@@ -6117,7 +7373,6 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
         activePointer: { button: 0, positionToCamera: () => ({ ...cursor }) },
       },
     });
-    Object.assign((stage.run as unknown as { containerView: object }).containerView, { pointerDown: vi.fn(() => false) });
     run.handleGameStateUpdate(partyState(as(cls) as ReturnType<typeof player>));
     run.bindRunInput();
     run.time.now = 1000;
@@ -6169,6 +7424,50 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     s.press();
     expect(s.sent).not.toHaveBeenCalled();
     expect(s.lineUp()).toBe(true);
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R129 (batch 6 review, LOW): left held on a monster, a right press over the
+  // UI scene's chat window reaches the run (the UI scene's cameras stand aside, A1 R25); the UI scene claims
+  // it, and the run refuses it: no attack, no cast, no hold, and no strike on a monster under the window
+  describe("a press the UI scene claimed: the chat window's, during a held world press (FS-TQZ5J § Change: Batch 6, R129)", () => {
+    function claimedOnStage(cls: string) {
+      const s = aimOnStage(cls);
+      const bridge = new GameUiBridge();
+      (s.run as unknown as { ui: unknown }).ui = bridge;
+      const active = (s.run as unknown as { input: { activePointer: { button: number; event?: object } } }).input.activePointer;
+      /** Right pressed with left held, over the chat window: its DOM event claimed by the UI scene, or not. */
+      const rightOverChat = (claimed: boolean) => {
+        const pointer = { x: 10, y: 10, button: 2, worldX: 400, worldY: 300, leftButtonDown: () => true, rightButtonDown: () => true, event: {} };
+        active.button = 2;
+        active.event = pointer.event;
+        if (claimed) bridge.claimPress(pointer);
+        s.pointerHandlers.pointerdown(pointer);
+      };
+      return { ...s, bridge, active, rightOverChat };
+    }
+
+    it.each(["archer", "mage", "warrior"])("should send nothing and start no hold for the %s's claimed press", (cls) => {
+      const s = claimedOnStage(cls);
+      s.rightOverChat(true);
+      expect(s.sent).not.toHaveBeenCalled();
+      expect(s.lineUp()).toBe(false);
+
+      s.rightOverChat(false);
+      expect(s.sent).toHaveBeenCalled();
+    });
+
+    it("should strike no monster under the window on a claimed press", () => {
+      const s = claimedOnStage("warrior");
+      // Phaser hands the monster its pointerdown before the run's, on the same active pointer
+      s.active.event = {};
+      s.bridge.claimPress(s.active as never);
+      s.onMonster(0);
+      expect(s.sent).not.toHaveBeenCalled();
+
+      s.active.event = {};
+      s.onMonster(0);
+      expect(s.sent).toHaveBeenCalled();
+    });
   });
 
   it.each([
@@ -6232,13 +7531,13 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
   it("should grey the ability card from a fired shot until the 1.2 s cooldown is over, and not for a hold", () => {
     const s = aimOnStage();
     s.press();
-    expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+    expect(abilityShownOver(s.run)?.greyed).toBe(false);
     s.release(1300);
-    expect(s.run.abilityHud?.shown?.greyed).toBe(true);
+    expect(abilityShownOver(s.run)?.greyed).toBe(true);
     const cooldown = s.delayed().find(([ms]) => ms === 1200);
     expect(cooldown).toBeDefined();
     cooldown![1]();
-    expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+    expect(abilityShownOver(s.run)?.greyed).toBe(false);
   });
 
   it("should allow a hold to begin during the left-click's own lockout", () => {
@@ -6332,21 +7631,14 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
   const cancels: [string, (s: ReturnType<typeof aimOnStage>) => void][] = [
     ["the player dying", (s) => s.run.handleGameStateUpdate(partyState(as("archer", { current_health: 0 }) as ReturnType<typeof player>))],
     ["the party leaving the floor", (s) => s.run.leaveFloor()],
-    ["the ESC menu opening", (s) => s.run.openMenu()],
+    // the UI scene's menu opening, heard by the run (FS-TQZ5J R10)
+    ["the ESC menu opening", (s) => menuUpOver(s.run)],
     ["the run ending", (s) => s.run.endRun()],
-    [
-      "the equipment panel opening",
-      (s) => {
-        s.run.equipment = { toggle: vi.fn(() => true), isOpen: () => true };
-        s.run.toggleInventory();
-      },
-    ],
+    // the UI scene's gear panel opening, heard by the run in the UI's state (FS-TQZ5J § Change: Phase 3, R53)
+    ["the equipment panel opening", (s) => uiSceneOn(s.run, "run", { row: false }).bridge.reportUi({ inventory: true })],
     [
       "the character panel opening (FS-HRH2J § Change C5)",
-      (s) => {
-        s.run.equipment = { toggleCharacter: vi.fn(() => true), isOpen: () => true };
-        s.run.toggleCharacter();
-      },
+      (s) => uiSceneOn(s.run, "run", { row: false }).bridge.reportUi({ character: true }),
     ],
     ["the right button released outside the canvas", (s) => s.pointerHandlers.pointerupoutside({ button: 2 })],
     ["the window losing focus", (s) => s.game.events.emit("blur")],
@@ -6425,9 +7717,9 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       withStamina(s, 89);
       s.press();
       s.release(1300);
-      expect(s.run.abilityHud?.shown?.greyed).toBe(true);
+      expect(abilityShownOver(s.run)?.greyed).toBe(true);
       withStamina(s, 90);
-      expect(s.run.abilityHud?.shown?.greyed).toBe(false);
+      expect(abilityShownOver(s.run)?.greyed).toBe(false);
       s.press();
       s.release(1600);
       expect(s.casts()).toHaveLength(1);
@@ -6456,7 +7748,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       for (let current = 0; current <= 100; current++) {
         withStamina(s, current);
         s.run.aimFrame();
-        expect(lineReady(draw)).toBe(s.run.abilityHud?.shown?.greyed === false);
+        expect(lineReady(draw)).toBe(abilityShownOver(s.run)?.greyed === false);
       }
     });
   });
@@ -6608,9 +7900,9 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
 
     it("should grey the Parry card while parry_lockout is above 0, and light it at 0", () => {
       const s = parryOnStage({ parry_lockout: 0.98333 });
-      expect(s.run.abilityHud?.shown).toMatchObject({ name: "Parry", greyed: true });
+      expect(abilityShownOver(s.run)).toMatchObject({ name: "Parry", greyed: true });
       s.run.handleGameStateUpdate(partyState(merc({ parry_lockout: 0 })));
-      expect(s.run.abilityHud?.shown).toMatchObject({ name: "Parry", greyed: false });
+      expect(abilityShownOver(s.run)).toMatchObject({ name: "Parry", greyed: false });
     });
   });
 
@@ -7117,7 +8409,7 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     relayoutHud(): void;
     resetRun(end: "shutdown" | "destroy"): void;
     targetFrame?: { texts(): Made[] };
-    spectateHud?: unknown;
+    watchedPlayerId?: string;
     /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
     arrivalCard: { parts: unknown[] };
     events: Emitter;
@@ -7256,16 +8548,24 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     expect(named()).toBeNull();
   });
 
-  it.each([
-    ["the spectate HUD", (run: FrameRun) => (run.spectateHud = {})],
-    ["the floor-change veil", (run: FrameRun) => (run.arrivalCard.parts = [{}])],
-  ])("should hide while %s holds the top centre", (_, cover) => {
+  it("should hide while the floor-change veil holds the top centre", () => {
     const { run, monsters, named, tick } = framed();
     monsters()[0].handlers.pointerover();
     tick(120);
-    cover(run);
+    run.arrivalCard.parts = [{}];
     tick(16);
     expect(named()).toBeNull();
+  });
+
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R164: nothing holds the top centre while
+  // spectating, so the frame follows its own rules
+  it("should stay up while the player spectates", () => {
+    const { run, monsters, named, tick } = framed();
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    Object.assign(run, { watchedPlayerId: "ally", switcher: { piece: { destroy() {} }, key: "" } });
+    tick(16);
+    expect(named()).not.toBeNull();
   });
 
   it("should re-anchor at the new centre on a resize", () => {
@@ -7402,8 +8702,8 @@ describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (F
 
   function speaking() {
     const s = onStage();
-    const run = s.run as unknown as FloorRun & { loreLines: { say(line: { text: string; tone: string }): void } };
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const run = s.run as unknown as FloorRun;
+    const said = loreOf(run).said;
     return { ...s, run, said, lines: () => said.mock.calls.map(([line]) => line) };
   }
 
@@ -7443,11 +8743,10 @@ describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (F
       init(data?: object): void;
       connectToServer(): void;
       showNotification(message: string, color: string): void;
-      loreLines: { say(line: object): void };
     };
     run.init({ sessionID: "run-a" });
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     run.connectToServer();
 
     listeners.get("exit_door_unlocked")?.({ message: "Exit door unlocked! Run to escape!" });
@@ -7465,12 +8764,31 @@ describe("BarrowspireScene lore lines on a floor change (FS-XWHZP R15)", () => {
 
   it("should take the old floor's lore lines down when the party leaves it", () => {
     const { run } = onStage();
-    const floor = run as unknown as { leaveFloor(): void; loreLines: { clear(): void } };
-    const cleared = vi.spyOn(floor.loreLines, "clear");
+    const floor = run as unknown as { leaveFloor(): void };
+    const cleared = loreOf(floor).cleared;
 
     floor.leaveFloor();
 
     expect(cleared).toHaveBeenCalledTimes(1);
+  });
+
+  // FS-TQZ5J § Change: Merge with main, the owner's 2026-11-14 call: the lines are the UI scene's, told
+  // through the bridge as plain data; the dread line's tremor still shakes the run's camera, at the UI
+  // scene's request as the line starts (FS-XWHZP R10)
+  it("should tell the UI scene's lines through the bridge, and tremble its own camera when a dread line asks", () => {
+    const { run } = onStage();
+    const shake = vi.fn();
+    const cameras = run.cameras as unknown as { main: Record<string, unknown> };
+    cameras.main = { ...cameras.main, shake };
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const told: unknown[] = [];
+    bridge.onScreen({ lore: (message) => void told.push(message) });
+
+    (run as unknown as { leaveFloor(): void }).leaveFloor();
+    bridge.request({ kind: "tremor", durationMs: 220, intensity: 0.002 });
+
+    expect(told).toEqual([{ world: "run", kind: "clear" }]);
+    expect(shake).toHaveBeenCalledWith(220, 0.002);
   });
 });
 
@@ -7490,16 +8808,15 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
     const run = new BarrowspireScene() as unknown as {
       init(data?: object): void;
       connectToServer(): void;
-      showNotification(message: string, color: string): void;
+      showNotification(message: string, backing: number): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
-      loreLines: { say(line: { text: string; tone: string }): void };
     };
     run.init({ sessionID: "run-a" });
     run.containerView = { entityId: null, close: vi.fn() };
     run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     run.connectToServer();
     return {
       run,
@@ -7599,7 +8916,7 @@ describe("BarrowspireScene the open bar (FS-MQYEX §D R21–R25; I-MQYEX-4)", ()
       events: Emitter;
       init(): void;
       toggleChest(id: string): void;
-      showNotification(message: string, color: string): void;
+      showNotification(message: string, backing: number): void;
       update(time: number, delta: number): void;
     };
     run.containerView = view;
@@ -7982,11 +9299,10 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
     view.close.mockImplementation(() => void (view.entityId = null));
     const run = scene.run as unknown as FloorRun & {
       containerView: typeof view;
-      equipment?: unknown;
       events: Emitter;
       init(): void;
       toggleChest(id: string): void;
-      showNotification(message: string, color: string): void;
+      showNotification(message: string, backing: number): void;
     };
     run.containerView = view;
     run.time = { delayedCall: vi.fn(), now: 1000 };
@@ -8146,24 +9462,17 @@ describe("BarrowspireScene a hit closes the container view (FS-1D6BX §Change: T
     expect(view.close).toHaveBeenCalledTimes(1);
   });
 
+  // the gear overlay is the UI scene's: the run tells it no close for a hit (FS-TQZ5J § Change: Phase 3, R52)
   it("should leave the gear and bag overlay as it is", () => {
     const { run, view } = onStage();
-    const overlay = {
-      sync: vi.fn(),
-      updateCharacter: vi.fn(),
-      setCharacterLevel: vi.fn(),
-      isOpen: () => true,
-      hide: vi.fn(),
-      release: vi.fn(),
-    };
-    run.equipment = overlay;
+    const told: string[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ gear: (message) => void told.push(message.kind) });
     run.handleGameStateUpdate(state(100));
     run.toggleChest("c1");
     run.handleGameStateUpdate(state(90));
 
     expect(view.isOpen).toBe(false);
-    expect(overlay.hide).not.toHaveBeenCalled();
-    expect(overlay.release).not.toHaveBeenCalled();
+    expect(told).not.toContain("close");
   });
 
   // The server cancels the timed open the hit landed on; the client only follows `timed_open`
@@ -9175,11 +10484,11 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         const [room, hidden] = run.monsters.standing().map((m) => m.parts[0] as unknown as Made);
         hidden.handlers.pointerover();
         hidden.handlers.pointerdown();
-        expect(cursor).not.toHaveBeenCalledWith("strike-mark");
+        expect(cursor).not.toHaveBeenCalledWith("strike");
         expect(sent).not.toHaveBeenCalledWith(ActionType.Attack, expect.anything());
         // the pointer rests on the room's monster while the player walks off and it goes dark
         room.handlers.pointerover();
-        expect(cursor).toHaveBeenLastCalledWith("strike-mark");
+        expect(cursor).toHaveBeenLastCalledWith("strike");
         frame({ monsters: [beast("room", inRoomAt), beast("far", far)] }, { current_player: { ...player("me", "Aldric", 0), position: placedAt.stairs } as Party["current_player"] });
         expect(cursor).toHaveBeenLastCalledWith("hand");
         expect(run.monsters.hoveredId).toBeUndefined();
@@ -9247,7 +10556,6 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         escapedCountText?: object;
         positionReadout?: object;
         menu?: unknown;
-        chatWindow?: { isTyping(): boolean };
         minimapMode: string;
         createUI(): void;
         relayoutHud(): void;
@@ -9304,15 +10612,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           minimapStore: store.read,
           input: {
             setDefaultCursor: vi.fn(),
-            keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) },
+            // as Phaser's: the UI scene's chat turns it off while typing (FS-TQZ5J § Change: Batch 6, R127)
+            keyboard: { enabled: true, resetKeys: () => {}, on: (event: string, fn: Key) => (keys[event] = fn) },
             on: (event: string, fn: (pointer?: object) => void) => (pointers[event] = fn),
           },
-        });
-        // the satchel shut: it takes no press and lights nothing (the scene's pointer listeners reach it)
-        Object.assign((run as unknown as { containerView: object }).containerView, {
-          relayout: vi.fn(),
-          pointerDown: vi.fn(() => false),
-          pointerMove: vi.fn(),
         });
         run.createUI();
         run.bindRunInput();
@@ -9464,14 +10767,14 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(store.writes).toEqual(modes);
         keys["keydown-M"]({ repeat: true });
         expect(map()!.mode).toBe("enlarged");
-        run.menu = {};
+        menuUpOver(run);
         keys["keydown-M"]();
         expect(map()!.mode).toBe("enlarged");
-        run.menu = undefined;
-        run.chatWindow = { isTyping: () => true };
+        menuUpOver(run, false);
+        typeInChat(run);
         keys["keydown-M"]();
         expect(map()!.mode).toBe("enlarged");
-        run.chatWindow = undefined;
+        typeInChat(run, false);
         expect(store.writes).toHaveLength(4);
       });
 
@@ -9489,12 +10792,12 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(map()!.mode).toBe("overlay");
         expect(heard()).toEqual(["map_mode_switch"]);
         keys["keydown-M"]({ repeat: true });
-        run.menu = {};
+        menuUpOver(run);
         keys["keydown-M"]();
-        run.menu = undefined;
-        run.chatWindow = { isTyping: () => true };
+        menuUpOver(run, false);
+        typeInChat(run);
         keys["keydown-M"]();
-        run.chatWindow = undefined;
+        typeInChat(run, false);
         expect(heard()).toEqual([]);
         // a floor of buildings: no minimap to step
         useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
@@ -9557,6 +10860,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
             keyboard: {
               createCursorKeys: () => ({}),
               addKey: (code: number) => (added.push(code), key(code)),
+              addCapture: vi.fn(),
               on: (event: string) => heard.push(event),
             },
           },
@@ -9637,25 +10941,23 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         it("should do nothing with a press while the menu is open or chat is typing, M's guards (D6)", () => {
           const { run, pointers, map, store } = mapped();
           const cast = vi.spyOn((run as IconRun).combat, "cast");
-          run.menu = {};
+          menuUpOver(run);
           pointers.pointerdown(pointerAt(862, 109));
-          run.menu = undefined;
-          run.chatWindow = { isTyping: () => true, covers: () => false } as MappedRun["chatWindow"];
+          menuUpOver(run, false);
+          typeInChat(run);
           pointers.pointerdown(pointerAt(862, 109));
           expect(map()!.mode).toBe("normal");
           expect(store.writes).toEqual([]);
           expect(cast).not.toHaveBeenCalled();
         });
 
-        // integration of FS-3EBCA R10 with D5: a press on the corner row is the row's alone
-        it("should leave a press on the corner row to the row: no step, no attack (FS-3EBCA R10; D5)", () => {
-          const { run, pointers, map, store } = mapped();
-          const cast = vi.spyOn((run as IconRun).combat, "cast");
+        // FS-3EBCA R10 with D5, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's,
+        // above the run, and never reaches it, so the run's pointer reads no rect of the row
+        it("should read no corner row on the icon's press: the row is the UI scene's (FS-TQZ5J R15; D5)", () => {
+          const { run, pointers, map } = mapped();
           (run as unknown as { corner?: unknown }).corner = { covers: () => true, destroy: vi.fn() };
           pointers.pointerdown(pointerAt(862, 109));
-          expect(map()!.mode).toBe("normal");
-          expect(store.writes).toEqual([]);
-          expect(cast).not.toHaveBeenCalled();
+          expect(map()!.mode).toBe("enlarged");
         });
 
         it("should leave a press 1 px outside its hit area to the game, the map's own ground included (D5)", () => {
@@ -9727,9 +11029,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           // the drawn positions, never the broadcast's; the dead have no dot
           const drawn = { self: { x: 2570, y: 3090 }, allies: [{ x: 3990, y: 1205 }] };
           expect(follow).toHaveBeenLastCalledWith({ x: 2570, y: 3090 }, drawn);
+          // watching, the dots as the watched teammate's own minimap draws them (the owner, 2026-11-14)
           r.watchedPlayerId = "a";
           r.followMapOverlay();
-          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, drawn);
+          expect(follow).toHaveBeenLastCalledWith({ x: 3990, y: 1205 }, { self: { x: 3990, y: 1205 }, allies: [{ x: 2570, y: 3090 }] });
         });
 
         it("should stand it each frame after the figures moved, playing or watching, without redrawing its map", () => {
@@ -9984,6 +11287,18 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         expect(map()!.mode).toBe("normal");
         expect(dots).toHaveBeenLastCalledWith({ self: undefined, allies: [placedAt.stairs] });
         expect(map()!.content.regions.map((r) => r.id)).toContain(regionAt(grid, placedAt.stairs));
+      });
+
+      // the owner, 「觀看時應該會跟被觀看的人一模壹樣的視野狀態」 (2026-11-14): the regions are the party's already; the
+      // dots as the watched teammate's own minimap draws them, theirs the self's and the rest allies
+      it("should draw the watched teammate's dot as the self's while watching, the other living as allies", () => {
+        const { run, frame, dots } = mapped();
+        Object.assign(run, { watchedPlayerId: "a" });
+        frame({
+          current_player: { ...player("me", "Aldric", 0, { current_health: 0 }), position: at(2560, 3080) } as Party["current_player"],
+          other_players: [ally("a", placedAt.stairs), ally("b", placedAt.door)] as GameState["other_players"],
+        });
+        expect(dots).toHaveBeenLastCalledWith({ self: placedAt.stairs, allies: [placedAt.door] });
       });
 
       it("should redraw its map only when a region's state changes, as a member walks across the floor", () => {
@@ -10710,23 +12025,171 @@ describe("BarrowspireScene the tower's music (FS-28DDG § Change: The tower's mu
   });
 });
 
+// FS-WDM0X § Change: Menu, dialog and notice sounds, owner listening check 2026-11-14: the run's
+// notification is its words and its look, nothing marked important, so none chimes; a fall refused too.
+describe("BarrowspireScene notices carry no importance (FS-WDM0X § Change, owner listening check)", () => {
+  afterEach(() => void vi.restoreAllMocks());
+
+  // a refused fall is a lore line since FS-XWHZP (merge with main, 2026-11-14): no notice at all
+  it("should say the run's news as words and look, nothing marked important", () => {
+    const { run } = onStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130)));
+    const told: unknown[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ notice: (n) => void told.push(n) });
+    const say = (run as unknown as { showNotification(message: string, backing: number): void }).showNotification.bind(run);
+
+    say("Escape door opened!", palette.safe);
+
+    expect(told).toEqual([{ text: "Escape door opened!", look: { world: "run", backing: palette.safe } }]);
+    expect(told.map((n) => Object.keys(n as object))).toEqual([["text", "look"]]);
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9, I-TQZ5J-10): the party pieces are the UI scene's; the
+// run reports what they read of it: the panel turned away at its end or with a chest open, the popups
+// hidden at its end, the invites stacked above its chat window (FS-R82NV R28; FS-NCC9J R24; R38)
+describe("BarrowspireScene what the party pieces read of it (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should turn the panel and the chat away at the run's end or with a container open, and hide the popups at its end", () => {
+    const run = new BarrowspireScene() as unknown as {
+      worldSide(): import("@/ui/uiBridge").WorldSide;
+      runEnded: boolean;
+      containerView?: { isOpen: boolean };
+    };
+    run.containerView = { isOpen: false };
+    const side = run.worldSide();
+
+    // the UI scene's chat is turned away by the run's end and an open chest (FS-TQZ5J § Change: Batch 6, R126)
+    expect(side.blockers()).toMatchObject({ party: false, popups: false, chat: false });
+    run.containerView.isOpen = true;
+    expect(side.blockers()).toMatchObject({ party: true, popups: false, chat: true });
+    run.containerView.isOpen = false;
+    run.runEnded = true;
+    expect(side.blockers()).toMatchObject({ party: true, popups: true, chat: true });
+  });
+
+  // batch 6 review (LOW): the world says, in its report, that its invites stack above the chat window
+  it("should report its invites stacked above the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R132)", () => {
+    const run = new BarrowspireScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
+    expect(run.worldSide().invitesAboveChat).toBe(true);
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-11): the party frames are the UI scene's; the run hands
+// each state of its own world it shows to the bridge, as plain data (FS-R82NV R34, R35; R38)
+describe("BarrowspireScene the party frames' state ticks (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should hand the bridge each state it shows, its players as the frames read them", () => {
+    const { run } = onStage();
+    const seen: unknown[] = [];
+    (run as unknown as { ui: object }).ui = { ...NO_UI, partySeen: (state: unknown) => void seen.push(state) };
+    const first = partyState();
+    const next = partyState(player("me", "Aldric", 130, { current_health: 25 }));
+
+    run.handleGameStateUpdate(first);
+    run.handleGameStateUpdate(next);
+
+    const players = (s: unknown) => {
+      const { current_player, other_players } = s as GameState;
+      return { current_player, other_players };
+    };
+    expect(seen.map(players)).toEqual([first, next].map(players));
+  });
+});
+
+// FS-TQZ5J § Change: Batch 6, R128 (batch 6 review, LOW): the run's end while the player types, end to end
+// through the real pieces: the UI scene's real ChatWindow and its real ChatInput, the real bridge and its
+// typing guard, the run's real endRun. Only the drawing and the DOM field are stand-ins.
+describe("BarrowspireScene's end while the player types in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R128)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A scene keyboard that writes each switch into `order`, as `<name> on` or `<name> off`. */
+  function keyboardOf(name: string, order: string[]) {
+    let on = true;
+    // an accessor on the emitter itself: Object.assign would copy the getter's value, not the setter
+    const keys = Object.assign(new EventEmitter(), { resetKeys: () => {}, removeCapture: () => {} });
+    Object.defineProperty(keys, "enabled", {
+      get: () => on,
+      set: (value: boolean) => {
+        on = value;
+        order.push(`${name} ${value ? "on" : "off"}`);
+      },
+    });
+    return keys as typeof keys & { enabled: boolean };
+  }
+
+  it("should cancel the line, hand both keyboards back, and only then turn the run's off: ChatWindow → ChatInput → endRun", () => {
+    const { run } = onStage();
+    const order: string[] = [];
+    const runKeys = keyboardOf("run", order);
+    Object.assign(run, { input: { keyboard: runKeys } });
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    // the UI scene, as the window draws on it: any drawing call answered, its own keyboard
+    const any: unknown = new Proxy(() => any, {
+      get: (_t, prop) => (prop === "then" ? undefined : prop === Symbol.toPrimitive ? () => 0 : any),
+      apply: () => any,
+    });
+    const uiKeys = keyboardOf("ui", order);
+    const uiScene = {
+      add: any,
+      make: any,
+      events: new EventEmitter(),
+      scale: new EventEmitter(),
+      cameras: { main: { originX: 0, originY: 0 } },
+      input: Object.assign(new EventEmitter(), { keyboard: uiKeys }),
+    } as unknown as ConstructorParameters<typeof ChatWindow>[0];
+    // the DOM field: its focus and blur told to the input, as the browser's are
+    const field = { value: "", channel: "area" as const, focused: false };
+    const slot = new UiChatSlot(bridge, (wiring) =>
+      new ChatWindow(uiScene, createChatStore(), 10, 700, {
+        input: {
+          mayOpen: wiring.mayOpen,
+          keepsDraft: wiring.keepsDraft,
+          send: () => {},
+          makeField: (_scene, _rect, events) => ({
+            get value() {
+              return field.value;
+            },
+            set value(v: string) {
+              field.value = v;
+            },
+            channel: field.channel,
+            focus: () => ((field.focused = true), events.focused()),
+            blur: () => ((field.focused = false), events.blurred()),
+            moveTo: () => {},
+            show: () => {},
+            hide: () => {},
+            destroy: () => {},
+          }),
+        },
+        typing: wiring.typing,
+        play: wiring.play,
+      }),
+    );
+    slot.show(bridge.world);
+    bridge.onWorld((report) => slot.show(report));
+
+    // Enter on the UI scene's keyboard opens the input; the player types half a line
+    uiKeys.emit("keydown-ENTER");
+    field.value = "half a line";
+    expect(bridge.ui.typing).toBe(true);
+    expect(order).toEqual(["ui off", "run off"]);
+
+    (run as unknown as { endRun(): void }).endRun();
+
+    expect(order).toEqual(["ui off", "run off", "ui on", "run on", "run off"]);
+    expect([field.focused, field.value, bridge.ui.typing]).toEqual([false, "", false]);
+    expect([uiKeys.enabled, runKeys.enabled]).toEqual([true, false]);
+  });
+});
+
 // FS-3103M §I R24-R28 as amended by A1 (I-3103M-7): the tome, the altar and the burn.
 describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () => {
   const manifest = JSON.parse(readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"));
   const { worldToScreen } = await_iso;
-  interface FakeKey {
-    justDown: boolean;
-    isDown: boolean;
-  }
   interface Summoned {
-    menu?: unknown;
-    dismissKey?: FakeKey;
-    confirmKey?: FakeKey;
-    choiceKeys: FakeKey[];
-    offerMenu(): void;
     bindRunInput(): void;
     showNotification(message: string, color: string): void;
-    loreLines: { say(line: { text: string; tone: string }): void };
     leaveFloor(): void;
   }
 
@@ -10739,10 +12202,8 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
     const stage = onStage();
     const run = stage.run as unknown as FloorRun & Summoned;
     if (baked) (run as unknown as { art: unknown }).art = new ArtLibrary(manifest, { warn: () => {} });
-    const esc: FakeKey = { justDown: false, isDown: false };
-    run.dismissKey = esc;
-    run.confirmKey = { justDown: false, isDown: false };
-    run.choiceKeys = [{ justDown: false, isDown: false }, { justDown: false, isDown: false }];
+    // the menu slot is the UI scene's, drawn on the run's stage (FS-TQZ5J §D; merge with main, 2026-11-14)
+    uiSceneOn(run, "run", { row: false });
     const keyHandlers: Record<string, () => void> = {};
     Object.assign(run, {
       input: {
@@ -10752,7 +12213,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       },
     });
     run.bindRunInput();
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
     const option = (id: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === `menu-${id}` && !m.destroyed);
@@ -10768,10 +12229,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       labels,
       interacts,
       pressE: () => keyHandlers["keydown-E"](),
-      pressEsc: () => {
-        esc.justDown = true;
-        run.offerMenu();
-      },
+      pressEsc: () => uiFrame(run, { esc: { justDown: true } }),
       pick: (id: string) => option(id)?.handlers.pointerup(),
     };
   }
@@ -10833,14 +12291,14 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       run.handleGameStateUpdate(withTome({ altar: altar() }));
       pressE();
       expect(interacts()).toEqual([[ActionType.Interact, { entity_id: "altar-1" }]]);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
 
     it("should ask Burn tome? at an unburned altar while the tome is carried, sending nothing", () => {
       const { run, pressE, interacts, labels, option } = summoningOnStage();
       run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
       pressE();
-      expect(run.menu).toBeDefined();
+      expect(menuOver(run)).toBeDefined();
       expect(labels()).toContain("Burn tome?");
       expect(labels()).toContain("Burn  [1]");
       expect(labels()).toContain("Not yet  [Esc]");
@@ -10855,7 +12313,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       pick("burn");
       pick("burn");
       expect(interacts()).toEqual([[ActionType.Interact, { entity_id: "altar-1" }]]);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
 
     it("should send nothing on Not yet, nor on Esc", () => {
@@ -10863,14 +12321,14 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       notYet.run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
       notYet.pressE();
       notYet.pick("not-yet");
-      expect(notYet.run.menu).toBeUndefined();
+      expect(menuOver(notYet.run)).toBeUndefined();
       expect(notYet.interacts()).toEqual([]);
 
       const esc = summoningOnStage();
       esc.run.handleGameStateUpdate(withTome({ altar: altar(), tome_carried: true }));
       esc.pressE();
       esc.pressEsc();
-      expect(esc.run.menu).toBeUndefined();
+      expect(menuOver(esc.run)).toBeUndefined();
       expect(esc.interacts()).toEqual([]);
     });
 
@@ -10879,7 +12337,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       run.handleGameStateUpdate(withTome({ altar: altar(true) }));
       pressE();
       expect(interacts()).toEqual([]);
-      expect(run.menu).toBeUndefined();
+      expect(menuOver(run)).toBeUndefined();
     });
   });
 
@@ -10927,7 +12385,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       run.init({ sessionID: "run-a" });
       run.reaching = "chest-1";
       const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
-      const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+      const said = loreOf(run).said;
       run.connectToServer();
       return { run, notified, said, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
     }

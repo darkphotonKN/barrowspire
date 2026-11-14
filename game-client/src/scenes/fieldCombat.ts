@@ -18,7 +18,7 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
-import { cursorCss, cursorSource } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
 import { viewport } from "@/render/viewport";
 import type { GameplaySoundPlayer } from "@/audio/gameplaySounds";
@@ -55,6 +55,8 @@ export interface FieldCombatParts {
   bodyOf(entityId: string): Tintable | undefined;
   /** The pointer button now pressed: an archer's right button is the Shadow Shot hold, never a strike. */
   button?(): number | undefined;
+  /** Whether the UI scene claimed the press now heard: a monster under the chat window is not struck (FS-TQZ5J § Change: Batch 6, R129). */
+  claimed?(): boolean;
   /** Lets go of everything the effects runtime still plays. */
   clearEffects?(): void;
   /** The scene's gameplay sound effects: the player's own wound plays on them (FS-AND39 R3). */
@@ -173,7 +175,7 @@ export class FieldCombat {
 
   /** A click on a living monster: a strike, unless the player has fallen. */
   private strike(entityId: string, them: Point): void {
-    if (!this.self || this.self.fallen) return;
+    if (!this.self || this.self.fallen || this.parts.claimed?.()) return;
     this.combat.strike(this.self.at, entityId, them, this.self.className, this.parts.button?.());
   }
 }
@@ -199,6 +201,11 @@ export function fieldCombatOnScene(
     bodyOf(entityId: string): Tintable | undefined;
     /** Whether a click at this screen point is the open satchel's (a loot) or the gear overlay's, never an attack. */
     takesPointer?(x: number, y: number, primary: boolean): boolean;
+    /**
+     * Whether the UI scene claimed this press (FS-TQZ5J § Change: Batch 6, R129): one on the chat window
+     * during a held world press, which Phaser hands on to the field. Never an attack, a cast or a hold.
+     */
+    pressClaimed?(pointer: Phaser.Input.Pointer | undefined): boolean;
     /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
     lockout?(): void;
     /** The scene's gameplay sound effects: hits, the player's wound and abilities (FS-AND39 R2–R4). */
@@ -207,10 +214,10 @@ export function fieldCombatOnScene(
 ): FieldCombat {
   const fx = new EffectsRuntime(scene, art, lightMap);
   const kit = new ClassKitFx(scene);
-  const source = cursorSource(art, scene.textures);
-  const hand = cursorCss("cursor_hand", "default", source);
-  const strikeMark = cursorCss("cursor_strike", "crosshair", source);
-  scene.input.setDefaultCursor(hand);
+  // the game's one pointer: the hand, pressed under a held left button, the strike-mark over a
+  // monster (FS-KYPQ9 §H.2, § Change: The pressed hand)
+  const pointer = ensurePointerLook(scene, art);
+  pointer?.base("hand");
 
   // the world point under the cursor now, wherever the camera has moved since it last moved
   const cursorWorld = (): Point => {
@@ -269,9 +276,10 @@ export function fieldCombatOnScene(
     kit,
     projectiles: new ProjectileFlights(scene, art, fx, projectileFlightOf),
     hits: new HitFeedback(scene),
-    cursor: (over) => scene.input.setDefaultCursor(over ? strikeMark : hand),
+    cursor: (over) => pointer?.base(over ? "strike" : "hand"),
     bodyOf: hooks.bodyOf,
     button: () => scene.input.activePointer?.button,
+    claimed: () => hooks.pressClaimed?.(scene.input.activePointer) ?? false,
     clearEffects: () => {
       charge?.end();
       charge = undefined;
@@ -298,6 +306,8 @@ export function fieldCombatOnScene(
   const onPointer = (pointer: Phaser.Input.Pointer) => {
     // an archer drawing a Shadow Shot answers no other click (FS-JTNPR req 16)
     if (combat.aiming) return;
+    // a press the UI scene claimed is the chat window's (FS-TQZ5J § Change: Batch 6, R129)
+    if (hooks.pressClaimed?.(pointer)) return;
     // a click on the open satchel is a loot, never an attack (FS-2325V §D.2)
     // in logical units, as the HUD is laid out; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
     const at = viewport.toLogical(pointer);

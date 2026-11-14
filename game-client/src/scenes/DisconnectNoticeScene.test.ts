@@ -23,6 +23,7 @@ const { DisconnectNoticeScene } = await import("./DisconnectNoticeScene");
 const { DISCONNECT_NOTICE } = await import("@/ui/disconnectNoticeLayout");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { drawPanelFrame, drawPanelTitle } = await import("@/ui/panelFrame");
 const { disconnectNoticeFrame } = await import("@/ui/disconnectNoticeLayout");
 
@@ -38,7 +39,7 @@ interface Piece {
 }
 
 /** The notice scene with a stand-in factory that keeps every piece it made. */
-function noticeScene(domDisplay = "block") {
+function noticeScene(domDisplay = "block", game: object = {}) {
   const pieces: Piece[] = [];
   const piece = (kind: string, text?: string) => {
     const p: Piece = { kind, text, handlers: {}, interactive: false, destroyed: false };
@@ -76,7 +77,7 @@ function noticeScene(domDisplay = "block") {
       text: (_x: number, _y: number, text: string) => piece("text", text),
       zone: () => piece("zone"),
     },
-    game: { domContainer },
+    game: { domContainer, ...game },
   });
   const notice = { holdWorlds: vi.fn(), returnToMenu: vi.fn() };
   scene.init({ notice });
@@ -111,6 +112,17 @@ describe("DisconnectNoticeScene (FS-R6EYZ R8–R13)", () => {
     expect(drawPanelFrame).toHaveBeenCalledWith(scene, expect.anything(), panel, { close: false });
     expect(drawPanelTitle).toHaveBeenCalledTimes(1);
     expect(drawPanelTitle).toHaveBeenCalledWith(scene, panel, DISCONNECT_NOTICE.title);
+  });
+
+  // the notice over a world shows the bone hand, not the strike-mark the world left under it
+  // (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+  it("should show the bone hand as it comes up", () => {
+    const page = lookGame();
+    page.look().base("strike");
+
+    noticeScene("block", page.game);
+
+    expect(page.now()).toBe("hand");
   });
 
   it("should hold the world still as it comes up and on every frame after (R10)", () => {

@@ -4,6 +4,7 @@ import { CLASS_LORE, ClassKey, type ClassStats } from "@/data/classLore";
 import { useGameStore } from "@/stores/gameStore";
 import { creationRefusal } from "@/characters/entry";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { ensurePointerLook } from "@/render/cursors";
 import type { ArtLibrary } from "@/render/art/library";
 import { MenuFigure } from "@/render/art/menuFigure";
 import { SCENE_ART } from "@/render/art/sceneArt";
@@ -91,6 +92,9 @@ export class CharacterCreationScene extends Phaser.Scene {
     centreStage(this.cameras.main);
     sharpenText(this);
     this.art = registerArt(this, SCENE_ART.CharacterCreationScene);
+    // the bone hand, pressed under a held left button, as in the worlds: the pointer is the game's
+    // on the Bone & Soot menus too (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+    ensurePointerLook(this, this.art)?.base("hand");
     const width = STAGE_WIDTH;
 
     // Soot with drifting dust and bone glints, under a vignette (Bone & Soot menu chrome).
@@ -175,7 +179,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       });
 
       const hitArea = this.add.rectangle(btnW / 2, btnH / 2, btnW, btnH, ui.well, 0);
-      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.setInteractive();
 
       container.add([titleText, subText, hitArea]);
 
@@ -408,7 +412,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     // Make Box Clickable for Prompt Input
     const hitArea = this.add
       .rectangle(boxX + boxW / 2, boxY + boxH / 2, boxW, boxH, ui.well, 0)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
 
     hitArea.on("pointerdown", () => {
       const input = prompt("Enter your Hero Name:", this.characterName);
@@ -429,7 +433,7 @@ export class CharacterCreationScene extends Phaser.Scene {
         letterSpacing: 2,
       })
       .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     diceText.on("pointerover", () => diceText.setColor(toCss(ui.torch)));
     diceText.on("pointerout", () => diceText.setColor(toCss(ui.accent)));
 
@@ -487,7 +491,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     const hit = this.add
       .rectangle(x + w / 2, y + h / 2, w, h, ui.well, 0)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     hit.on("pointerdown", onPress);
     hit.on("pointerover", () => draw("hover"));
     hit.on("pointerout", () => draw("idle"));

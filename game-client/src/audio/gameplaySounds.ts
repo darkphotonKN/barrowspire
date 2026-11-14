@@ -97,5 +97,7 @@ export class GameplaySounds implements GameplaySoundPlayer {
   ) {}
 
   /** Plays `effect` once, now, or not at all, by the interface effects' rules ({@link playSfx}). Safe to hand on unbound. */
-  play = (effect: GameplayEffect): void => playSfx(this.stage, this.store, gameplaySoundKey(effect));
+  play = (effect: GameplayEffect): void => {
+    playSfx(this.stage, this.store, gameplaySoundKey(effect));
+  };
 }

@@ -16,6 +16,7 @@
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
+import type { UiEffect } from "@/audio/uiSounds";
 import { useGameStore } from "@/stores/gameStore";
 import {
   usePartyStore,
@@ -40,6 +41,7 @@ import {
 } from "./partyInvitePromptLayout";
 import type { Rect } from "./partyPanelLayout";
 import { viewport } from "@/render/viewport";
+import { uiGround, type GroundMaker } from "./uiGround";
 
 export interface PartyInvitePromptDeps {
   store: StoreApi<PartyState>;
@@ -50,16 +52,28 @@ export interface PartyInvitePromptDeps {
   world: () => WorldType | null;
   /** The screen y the stack stays above (the chat window's top edge), when the scene has one. */
   floor: () => number | undefined;
+  /**
+   * Each shown prompt's ground, under its buttons, so a press on it is the UI scene's (FS-TQZ5J
+   * § Change: Phase 2: the party, R40). None, and a prompt's ground takes no input.
+   */
+  ground?: GroundMaker;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P1, P3, P4, P7): an invite received,
+   * Accept, Decline, the greyed Accept pressed. None, and the prompt plays nothing.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /**
- * The prompt as a scene hangs it: the app's party store, the real socket, the world from the game
- * store, and the scene's own rule for when an overlay covers it and where its chat window starts.
+ * The prompt as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party
+ * store, the real socket, the world from the game store, the world's own rule for when an overlay
+ * covers it and where its chat window starts, and a ground under each prompt.
  */
 export function mountPartyInvitePrompt(
   scene: Phaser.Scene,
   hidden: () => boolean,
   floor: () => number | undefined = () => undefined,
+  play?: (effect: UiEffect) => void,
 ): PartyInvitePrompt {
   return new PartyInvitePrompt(scene, {
     store: usePartyStore,
@@ -67,6 +81,8 @@ export function mountPartyInvitePrompt(
     hidden,
     world: () => useGameStore.getState().worldType,
     floor,
+    ground: uiGround(scene, PROMPT_DEPTH),
+    play,
   });
 }
 
@@ -91,6 +107,7 @@ export class PartyInvitePrompt {
   /** The countdown bars' own layer, redrawn every frame (FS-B3NDZ R4): one per shown prompt. */
   private barLayer?: Phaser.GameObjects.Graphics;
   private bars: { invite: PendingInvite; rect: Rect }[] = [];
+  private grounds: { destroy(): void }[] = [];
   private texts: Phaser.GameObjects.Text[] = [];
   private frames: InvitePromptFrame[] = [];
   /** What the last draw showed: hidden or not, and each shown prompt's id and seconds. */
@@ -102,6 +119,10 @@ export class PartyInvitePrompt {
     private readonly deps: PartyInvitePromptDeps,
   ) {
     this.unsubscribe = deps.store.subscribe((state, prev) => {
+      // each invite received chimes once, shown now or waiting (FS-WDM0X § Change pass 2 (party), P1)
+      for (const invite of state.invites)
+        if (!prev.invites.some((i) => i.invite_id === invite.invite_id))
+          deps.play?.("notify_important");
       if (state.invites !== prev.invites || state.panelOpen !== prev.panelOpen)
         this.render(true);
     });
@@ -155,6 +176,8 @@ export class PartyInvitePrompt {
   }
 
   private answer(invite: PendingInvite, accept: boolean): void {
+    // the yes sends the player on, the no cancels (FS-WDM0X § Change pass 2 (party), P3, P4)
+    this.deps.play?.(accept ? "dialog_confirm" : "dialog_cancel");
     if (accept) this.deps.commands.accept(invite.invite_id);
     else this.deps.commands.decline(invite.invite_id);
     this.deps.store.getState().dismissInvite(invite.invite_id);
@@ -168,6 +191,8 @@ export class PartyInvitePrompt {
     this.barLayer?.destroy();
     this.barLayer = undefined;
     this.bars = [];
+    this.grounds.forEach((g) => g.destroy());
+    this.grounds = [];
   }
 
   private text(
@@ -212,11 +237,14 @@ export class PartyInvitePrompt {
     ).setOrigin(0.5, 0.5);
     if (!live) {
       t.setAlpha(GREYED_ALPHA);
+      // greyed, it takes its press only to say no (FS-WDM0X § Change pass 2 (party), P7)
+      const play = this.deps.play;
+      if (play) t.setInteractive().on("pointerup", () => play("menu_error"));
       return;
     }
     // on the release, not the press (asked 2026-11-02): answering on the press closed the prompt
     // before a fighting scene's attack handler asked whether that press was the prompt's (R24)
-    t.setInteractive({ useHandCursor: true }).on("pointerup", press);
+    t.setInteractive().on("pointerup", press);
   }
 
   /**
@@ -262,6 +290,9 @@ export class PartyInvitePrompt {
     this.bars = frames.map((f, i) => ({ invite: seen[i].invite, rect: f.bar }));
     frames.forEach((f, i) => {
       const { invite, seconds } = seen[i];
+      // under its buttons: a press on the prompt's ground is the prompt's (TQZ5J R40)
+      const ground = this.deps.ground?.(f.panel);
+      if (ground) this.grounds.push(ground);
       carvedPanel(g, f.panel.x, f.panel.y, f.panel.width, f.panel.height);
       this.text(
         f.text.x,

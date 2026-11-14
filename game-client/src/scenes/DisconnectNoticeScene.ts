@@ -1,5 +1,6 @@
 import * as Phaser from "phaser";
 import { NOTICE_SCENE, hideDomLayer, type DomLayer } from "@/components/disconnectNotice";
+import { findPointerLook } from "@/render/cursors";
 import { relayoutOn, viewport } from "@/render/viewport";
 import {
   DISCONNECT_NOTICE,
@@ -49,6 +50,9 @@ export class DisconnectNoticeScene extends Phaser.Scene {
 
   create(): void {
     this.notice?.holdWorlds();
+    // the bone hand over the notice, not a strike-mark the held world left under the pointer
+    // (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+    findPointerLook(this)?.base("hand");
     this.giveBackDom = hideDomLayer(
       this.game.domContainer as DomLayer | null | undefined,
       document,
@@ -115,7 +119,7 @@ export class DisconnectNoticeScene extends Phaser.Scene {
       .zone(r.x, r.y, r.width, r.height)
       .setOrigin(0, 0)
       .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .on("pointerover", () => stroke(palette.frameBright))
       .on("pointerout", () => stroke(palette.frame))
       .on("pointerdown", () => this.press());

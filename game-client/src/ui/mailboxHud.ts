@@ -2,15 +2,17 @@
  * The mailbox as the town hangs it (FS-1GZGD R33, R34, R40, R44; D11): the envelope at the
  * bottom-right and the letter panel over the town. Mounting it is entering the town, which
  * fetches the summary; taking it down is leaving the town, which closes the panel and drops any
- * `mail_arrived` until the next entry. Only the hub mounts it: a delve or a field never shows the
- * mailbox, and a letter sent meanwhile is found at the next town entry.
+ * `mail_arrived` until the next entry. Only the town has one: a delve or a field never shows the
+ * mailbox, and a letter sent meanwhile is found at the next town entry. The UI scene builds it for
+ * the town (FS-TQZ5J § Change: Batch 4: the mailbox, R101); the town reads its open state from the
+ * store (`stores/letterPanelState`, R103).
  */
 
 import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import type { ArtLibrary } from "@/render/art/library";
 import { useMailboxStore, type MailboxState } from "@/stores/mailboxStore";
-import type { UiActWrapper } from "@/audio/uiSounds";
+import type { UiActWrapper, UiEffect } from "@/audio/uiSounds";
 import { LetterPanel } from "./LetterPanel";
 import { MailboxEnvelope } from "./MailboxEnvelope";
 
@@ -25,18 +27,23 @@ export interface MailboxHudDeps {
   level?: () => number | undefined;
   /** Runs the envelope's press and the panel's ×, the player's own inputs (the interface sounds' wrapper, FS-WDM0X S9). */
   wrapper?: UiActWrapper;
+  /** Plays the envelope's hover, refusal and new-letter sounds (FS-WDM0X § Change: Menu, dialog and notice sounds). */
+  play?: (effect: UiEffect) => void;
 }
 
-/** The mailbox as the hub hangs it: the app's mailbox store, the scene's baked art. */
-export function mountMailbox(
-  scene: Phaser.Scene,
-  art: ArtLibrary,
-  blocked: () => boolean,
-  level?: () => number | undefined,
-  opening?: () => void,
-  wrapper?: UiActWrapper,
-): MailboxHud {
-  return new MailboxHud(scene, { store: useMailboxStore, art, blocked, level, opening, wrapper });
+/**
+ * What the UI scene builds the mailbox with in the town (FS-TQZ5J § Change: Batch 4, R102, R104, R109): its
+ * deps but the store and the art, which `mountMailbox` supplies, every one given (§ Change: Batch 6, R140).
+ */
+export type MailboxWiring = Required<Omit<MailboxHudDeps, "store" | "art">>;
+
+/**
+ * The mailbox as the UI scene hangs it for the town (FS-TQZ5J § Change: Batch 4, R101, R102): the app's
+ * mailbox store, the art `library` hands (the UI scene's resident art, read as it is built), its wiring
+ * whole.
+ */
+export function mountMailbox(scene: Phaser.Scene, library: () => ArtLibrary, wiring: MailboxWiring): MailboxHud {
+  return new MailboxHud(scene, { store: useMailboxStore, art: library(), ...wiring });
 }
 
 export class MailboxHud {
@@ -52,6 +59,7 @@ export class MailboxHud {
       blocked: deps.blocked,
       opening: deps.opening,
       wrapper: deps.wrapper,
+      play: deps.play,
     });
     this.panel = new LetterPanel(scene, {
       store: deps.store,
@@ -75,11 +83,6 @@ export class MailboxHud {
   relayout(): void {
     this.envelope.relayout();
     this.panel.relayout();
-  }
-
-  /** Whether a screen point lies under the open panel: what is drawn there takes no wheel or press. */
-  covers(x: number, y: number): boolean {
-    return this.panel.covers(x, y);
   }
 
   /** Leaving the town: the panel closes with it, and `mail_arrived` fetches nothing until the next entry. */

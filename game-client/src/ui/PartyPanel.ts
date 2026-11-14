@@ -18,7 +18,7 @@ import type { StoreApi } from "zustand";
 import type { WorldType } from "@/assets/types/client";
 import { useAuthStore } from "@/stores/authStore";
 import { useGameStore } from "@/stores/gameStore";
-import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
+import { PASS_THROUGH, type UiActWrapper, type UiEffect } from "@/audio/uiSounds";
 import {
   partyActions,
   usePartyStore,
@@ -30,6 +30,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
 import { drawPanelFrame, drawPanelTitle, lightClose } from "./panelFrame";
 import { partyCommands, type PartyCommands } from "./partyCommands";
+import { uiGround, type GroundMaker } from "./uiGround";
 import {
   domPartyInviteField,
   type PartyInviteFieldFactory,
@@ -67,6 +68,14 @@ export interface PartyPanelDeps {
    * panel, which closes as the panel opens (`opening`).
    */
   blocked: () => boolean;
+  /**
+   * Whether a UI piece drawn over the open panel covers its invite field, handed the field's rect
+   * (logical units): the run's controls panel or the settlement record where it meets it (FS-TQZ5J §
+   * Change: Phase 3; FS-84N1G R20). The field is a DOM element above the canvas, so it hides meanwhile
+   * (its hide blurs it) and shows again uncovered, its text kept, taking no focus back. The panel and
+   * T are not refused by it. None, never covered.
+   */
+  covered?: (field: Rect) => boolean;
   /** Closes what gives way to the panel, just before it opens: the town's letter panel (§ Change C9). */
   opening?: () => void;
   /**
@@ -74,15 +83,33 @@ export interface PartyPanelDeps {
    * own (the interface sounds' wrapper, FS-WDM0X S9). None, and each runs as it is.
    */
   wrapper?: UiActWrapper;
+  /**
+   * The open panel's ground, under its buttons, so a press on it is the UI scene's (FS-TQZ5J § Change:
+   * Phase 2: the party, R40). None, and the panel's ground takes no input.
+   */
+  ground?: GroundMaker;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P5–P7): its buttons' hover, press
+   * and greyed press. None, and its buttons play nothing; a greyed one takes no press.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
-/** The panel as a scene hangs it: the app's party, the real socket and DOM field. */
-export function mountPartyPanel(
-  scene: Phaser.Scene,
-  blocked: () => boolean,
-  opening?: () => void,
-  wrapper?: UiActWrapper,
-): PartyPanel {
+/**
+ * The slice of `PartyPanelDeps` the UI scene wires (FS-TQZ5J § Change: Phase 2: the party, R38,
+ * R39): its refusal, what gives way as it opens, its own inputs' wrapper, its buttons' sounds, each
+ * as optional as the panel takes it. The UI scene's own type for them, `PartyPanelWiring` in
+ * `uiSceneParty`, has all four and fits here; its `partyPanelWiring` builds one. The UI scene adds
+ * whether its controls panel covers the field (§ Change: Phase 3).
+ */
+export type PartyPanelWiringDeps = Pick<PartyPanelDeps, "blocked" | "covered" | "opening" | "wrapper" | "play">;
+
+/**
+ * The panel as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party,
+ * the real socket and DOM field, its ground under its buttons, wired by `wiring`.
+ */
+export function mountPartyPanel(scene: Phaser.Scene, wiring: PartyPanelWiringDeps): PartyPanel {
+  const { blocked, covered, opening, wrapper, play } = wiring;
   return new PartyPanel(scene, {
     store: usePartyStore,
     world: () => useGameStore.getState().worldType,
@@ -94,8 +121,11 @@ export function mountPartyPanel(
         ? null
         : (document.activeElement as FocusedElement | null),
     blocked,
+    covered,
     opening,
     wrapper,
+    ground: uiGround(scene, PARTY_PANEL_DEPTH),
+    play,
   });
 }
 
@@ -121,8 +151,44 @@ const within = (r: Rect, x: number, y: number) =>
   x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 
 /**
+ * What a party button tells of the player's hand (FS-WDM0X § Change pass 2 (party), P5–P7): the
+ * pointer coming onto a live one, its press, a press on a greyed one.
+ */
+export interface HudButtonFeedback {
+  hovered?(): void;
+  pressed?(): void;
+  refused?(): void;
+}
+
+/** A party button's feedback on an interface sound player: `menu_hover`, `menu_click`, `menu_error` (P5–P7). */
+export function hudButtonSounds(play: (effect: UiEffect) => void): HudButtonFeedback {
+  return {
+    hovered: () => play("menu_hover"),
+    pressed: () => play("menu_click"),
+    refused: () => play("menu_error"),
+  };
+}
+
+/** One HUD button as {@link drawHudButton} draws it. */
+export interface HudButton {
+  /** Where it stands, logical units. */
+  readonly rect: Rect;
+  readonly label: string;
+  /** Whether the viewer may press it now: amber and live, or faint and inert. */
+  readonly enabled: boolean;
+  /** What its press does, live. */
+  readonly press: () => void;
+  /** Its label's depth; the HUD's (1000) without one. */
+  readonly depth?: number;
+  /** What it tells of the player's hand: its sounds (P5–P7). None, and it tells nothing. */
+  readonly feedback?: HudButtonFeedback;
+}
+
+/**
  * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
- * inert when not (amber means interactable, never otherwise). The party frames' Travel button is
+ * inert when not (amber means interactable, never otherwise). Given a `refused`, a greyed one takes
+ * its press for that and nothing else (FS-WDM0X § Change pass 2 (party), P7); live or greyed, it has
+ * no cursor of its own, the bone hand stays (FS-KYPQ9 § Change: Every hover keeps the bone hand). The party frames' Travel button is
  * drawn by it too (FS-NCC9J R28), in the HUD band. Returns the label, for the caller to take down.
  *
  * The whole outlined button answers a press, not only its words: the label carries a hit area the
@@ -134,12 +200,9 @@ const within = (r: Rect, x: number, y: number) =>
 export function drawHudButton(
   scene: Phaser.Scene,
   g: Phaser.GameObjects.Graphics,
-  r: Rect,
-  label: string,
-  enabled: boolean,
-  press: () => void,
-  depth = HUD_DEPTH,
+  button: HudButton,
 ): Phaser.GameObjects.Text {
+  const { rect: r, label, enabled, press, depth = HUD_DEPTH, feedback = {} } = button;
   g.lineStyle(1, palette.frame, enabled ? 0.8 : 0.3);
   g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
   const t = scene.add
@@ -152,33 +215,40 @@ export function drawHudButton(
     .setScrollFactor(0)
     .setDepth(depth)
     .setOrigin(0.5, 0.5);
-  if (!enabled) return t.setAlpha(GREYED_ALPHA);
   const hitArea = { width: r.width, height: r.height };
+  const hitAreaCallback = (
+    area: typeof hitArea,
+    x: number,
+    y: number,
+    label: Phaser.GameObjects.Text,
+  ) =>
+    within(
+      {
+        x: label.displayOriginX - area.width / 2,
+        y: label.displayOriginY - area.height / 2,
+        width: area.width,
+        height: area.height,
+      },
+      x,
+      y,
+    );
+  if (!enabled) {
+    t.setAlpha(GREYED_ALPHA);
+    const { refused } = feedback;
+    if (!refused) return t;
+    // greyed, it still takes its press, to say no (FS-WDM0X § Change pass 2 (party), P7)
+    return t.setInteractive({ hitArea, hitAreaCallback }).on("pointerup", () => refused());
+  }
   return (
     t
-      .setInteractive({
-        hitArea,
-        hitAreaCallback: (
-          area: typeof hitArea,
-          x: number,
-          y: number,
-          label: Phaser.GameObjects.Text,
-        ) =>
-          within(
-            {
-              x: label.displayOriginX - area.width / 2,
-              y: label.displayOriginY - area.height / 2,
-              width: area.width,
-              height: area.height,
-            },
-            x,
-            y,
-          ),
-        useHandCursor: true,
-      })
+      .setInteractive({ hitArea, hitAreaCallback })
+      .on("pointerover", () => feedback.hovered?.())
       // on the release, as the invite prompt does: on the press its panel is still open and still
       // claims it, so the world under it never takes it for an attack (FS-R82NV R28)
-      .on("pointerup", press)
+      .on("pointerup", () => {
+        feedback.pressed?.();
+        press();
+      })
   );
 }
 
@@ -203,6 +273,7 @@ export function drawLeaderMark(
 
 export class PartyPanel {
   private graphics?: Phaser.GameObjects.Graphics;
+  private ground?: { destroy(): void };
   private texts: Phaser.GameObjects.Text[] = [];
   private field?: PartyInviteFieldHandle;
   private frame?: PartyPanelFrame;
@@ -255,6 +326,14 @@ export class PartyPanel {
     return this.isOpen() && !!this.frame && within(this.frame.panel, x, y);
   }
 
+  /**
+   * Whether a press at a screen point keeps the invite field's focus (FS-TQZ5J § Change: Phase 2: the
+   * party, R42): on the open panel, with the field holding it. A press anywhere else lets it go.
+   */
+  keepsField(x: number, y: number): boolean {
+    return this.covers(x, y) && (this.field?.focused?.() ?? false);
+  }
+
   /** Which drawn row holds the leader, or -1: for tests of the leader mark. */
   leaderRow(): number {
     return this.actions?.members.findIndex((m) => m.leader) ?? -1;
@@ -300,9 +379,9 @@ export class PartyPanel {
   }
 
   /**
-   * Once a frame: the DOM field shows only while the panel is open and nothing else owns the keys
-   * (a browser element draws above every overlay), and a world switch under a live panel redraws
-   * its greying.
+   * Once a frame: the DOM field shows only while the panel is open, nothing else owns the keys and no
+   * UI piece drawn over the panel covers it (a browser element draws above every overlay), and a
+   * world switch under a live panel redraws its greying.
    */
   private watch(): void {
     const world = this.deps.world();
@@ -311,7 +390,8 @@ export class PartyPanel {
       this.draw();
     }
     if (!this.field) return;
-    if (this.isOpen() && !this.deps.blocked()) this.field.show();
+    const covered = !!this.frame && !!this.deps.covered?.(this.frame.inviteField);
+    if (this.isOpen() && !this.deps.blocked() && !covered) this.field.show();
     else this.field.hide();
   }
 
@@ -325,6 +405,8 @@ export class PartyPanel {
     this.texts = [];
     this.graphics?.destroy();
     this.graphics = undefined;
+    this.ground?.destroy();
+    this.ground = undefined;
   }
 
   private text(
@@ -350,8 +432,16 @@ export class PartyPanel {
     enabled: boolean,
     press: () => void,
   ): void {
+    const { play } = this.deps;
     this.texts.push(
-      drawHudButton(this.scene, g, r, label, enabled, press, PARTY_PANEL_DEPTH),
+      drawHudButton(this.scene, g, {
+        rect: r,
+        label,
+        enabled,
+        press,
+        depth: PARTY_PANEL_DEPTH,
+        feedback: play ? hudButtonSounds(play) : {},
+      }),
     );
   }
 
@@ -363,7 +453,7 @@ export class PartyPanel {
     const { glyph: x } = drawPanelFrame(this.scene, g, panel);
     x.setScrollFactor(0)
       .setDepth(PARTY_PANEL_DEPTH)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     this.texts.push(x);
     // closed on the release: on the press the panel is still open, so the run and the field read
     // the press as the panel's and attack nothing (FS-R82NV R28; owner 2026-11-14)
@@ -395,6 +485,8 @@ export class PartyPanel {
       .setDepth(PARTY_PANEL_DEPTH);
     this.graphics = g;
     const { panel } = frame;
+    // under everything that answers on it: a press on its ground is the panel's (TQZ5J R40)
+    this.ground = this.deps.ground?.(panel);
     this.drawFrame(g, panel);
     // the windows' one title, centred and in capitals (FS-3EBCA R20, R22)
     this.texts.push(

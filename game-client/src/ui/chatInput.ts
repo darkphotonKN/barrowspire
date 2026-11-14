@@ -8,7 +8,9 @@
  * off, so nothing else hears them.
  */
 
+import type { UiEffect } from "@/audio/uiSounds";
 import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
+import type { SceneKeyboard } from "./worldKeyboard";
 
 /**
  * Each channel's prefix, PoE style (FS-WJGFJ Amendment 2026-10-31): typed at the start of a line
@@ -72,11 +74,6 @@ export interface ChatInputField {
   blur(): void;
 }
 
-/** The part of a scene's keyboard plugin the input switches off while the player types. */
-export interface SceneKeyboard {
-  enabled: boolean;
-  resetKeys(): void;
-}
 
 /**
  * What a sent line carries: the picked channel and the text without its prefix; a whisper also
@@ -123,6 +120,11 @@ export interface ChatInputDeps {
   open?: ReadonlySet<ChatChannel>;
   /** The lines this player sent, oldest first, and where a newly sent one is kept. */
   recall?: ChatRecall;
+  /**
+   * Plays an interface sound (FS-WDM0X § Pass 2: the chat): the picker's list opened or shut by the
+   * player (C2, C3), a draft refused (C5). None, nothing plays.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 /** The sent lines the arrow keys walk through, as a terminal's history (asked 2026-10-31). */
@@ -175,6 +177,8 @@ export class ChatInput {
     );
     field.value = CHAT_PREFIX[channel] + body;
     field.channel = channel;
+    // a row picked from the open list shuts it, the pick's one sound (FS-WDM0X § Pass 2: the chat, C3)
+    if (this.listOpen) this.deps.play?.("menu_dropdown_close");
     this.listOpen = false;
     this.deps.changed?.();
   }
@@ -202,6 +206,7 @@ export class ChatInput {
     if (!this.open && !this.requestOpen()) return;
     this.listOpen = !this.listOpen;
     this.highlight = this.deps.field.channel;
+    this.deps.play?.(this.listOpen ? "menu_dropdown_open" : "menu_dropdown_close");
     this.deps.changed?.();
   }
 
@@ -213,11 +218,22 @@ export class ChatInput {
     this.deps.changed?.();
   }
 
-  /** Shuts the list, the input left as it is: a press outside it, the view resized (FS-J267Q R4, R6). */
+  /**
+   * Shuts the list silently, the input left as it is: the game's shuts (the view resized, FS-J267Q R6),
+   * the field's keys shutting it as typing, and a press whose own sound is another's (a tab's, FS-TQZ5J
+   * § Change: Batch 6, R135) play nothing (FS-WDM0X § Pass 2: the chat, C3).
+   */
   closePicker(): void {
     if (!this.listOpen) return;
     this.listOpen = false;
     this.deps.changed?.();
+  }
+
+  /** The player shuts the list (a press outside it, Esc in it): `menu_dropdown_close`, once (C3). */
+  dismissPicker(): void {
+    if (!this.listOpen) return;
+    this.closePicker();
+    this.deps.play?.("menu_dropdown_close");
   }
 
   /**
@@ -314,7 +330,8 @@ export class ChatInput {
         const whisper = whisperOf(
           field.value.slice(CHAT_PREFIX.whisper.length),
         );
-        if (!whisper) return;
+        // the one refusal of chat input (FS-WDM0X § Pass 2: the chat, C5)
+        if (!whisper) return this.deps.play?.("menu_error");
         this.deps.send({
           channel,
           target: whisper.target,
@@ -356,7 +373,7 @@ export class ChatInput {
       return true;
     }
     if (key === "Escape") {
-      this.closePicker();
+      this.dismissPicker();
       return true;
     }
     return false;

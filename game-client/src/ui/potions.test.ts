@@ -6,7 +6,7 @@ import type {
   PlayerState,
 } from "@/types/gameState";
 import { RUN_ACTIONS } from "@/scenes/runActions";
-import { healthPotionCount, potionCell } from "./potions";
+import { healthPotionCount, potionCell, runOwnHud } from "./potions";
 
 const item = (fields: Partial<ItemState>): ItemState =>
   ({
@@ -152,5 +152,39 @@ describe("potionCell (FS-P9G8R R23–R26)", () => {
     ["once the player is dead", run(player({ current_health: 0 }))],
   ])("should be down %s, as the resource bars are", (_, state) => {
     expect(potionCell(state)).toBeNull();
+  });
+});
+
+// FS-QPDKN § Change: The party death flow and the spectate switcher, R168 (the owner, 「左上角的個人血量魔量不用隱藏
+// 就顯示死亡時的狀態就好了」): out of the delve the run's own bars and the cell beside them are held as they were
+describe("runOwnHud (FS-QPDKN § Change: The party death flow and the spectate switcher, R168)", () => {
+  const carrying = equipment({ consumable_1: health, consumable_2: health });
+  const fills = (hud: ReturnType<typeof runOwnHud>) => hud.bars.map((b) => [b.channel, b.fill]);
+
+  it("should be hudBars and potionCell while the player is in the delve", () => {
+    const state = run(player({ equipment: carrying }));
+    const hud = runOwnHud(state, undefined);
+    expect(fills(hud)).toEqual([["health", 0.5]]);
+    expect(hud.cell).toEqual(potionCell(state));
+  });
+
+  it.each([
+    ["dead", { current_health: 0 }, 0],
+    ["escaped", { escape: true }, 0.5],
+  ] as const)("should draw a %s player's bars and cell as that state has them", (_, fields, fill) => {
+    const hud = runOwnHud(run(player({ ...fields, equipment: carrying })), undefined);
+    expect(fills(hud)).toEqual([["health", fill]]);
+    expect(hud.cell).toMatchObject({ count: 2, dimmed: false });
+  });
+
+  it("should give back what is held, whatever the state says", () => {
+    const held = runOwnHud(run(player({ current_health: 0, equipment: carrying })), undefined);
+    expect(runOwnHud(run(player({ current_health: 120 })), held)).toBe(held);
+    expect(runOwnHud(run(null), held)).toBe(held);
+  });
+
+  it("should draw nothing in the hub, nor before the first state", () => {
+    expect(runOwnHud(run(player({ current_health: 0 }), "hub"), undefined)).toEqual({ bars: [], cell: null });
+    expect(runOwnHud(run(null), undefined)).toEqual({ bars: [], cell: null });
   });
 });

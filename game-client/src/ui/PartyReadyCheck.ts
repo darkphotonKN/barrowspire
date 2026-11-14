@@ -17,6 +17,7 @@
  */
 
 import type Phaser from "phaser";
+import type { UiEffect } from "@/audio/uiSounds";
 import type { StoreApi } from "zustand";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -42,6 +43,7 @@ import {
   readyCheckView,
 } from "./partyReadyCheckLayout";
 import { viewport } from "@/render/viewport";
+import { uiGround, type GroundMaker } from "./uiGround";
 
 export interface PartyReadyCheckDeps {
   store: StoreApi<PartyState>;
@@ -50,18 +52,34 @@ export interface PartyReadyCheckDeps {
   selfId: () => string | undefined;
   /** Whether an overlay owns the screen now: the popup hides under it. */
   hidden: () => boolean;
+  /**
+   * The popup's ground, under its buttons, so a press on it is the UI scene's (FS-TQZ5J § Change:
+   * Phase 2: the party, R40). None, and its ground takes no input.
+   */
+  ground?: GroundMaker;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P2–P4): the check opening, Accept,
+   * Decline. None, and the popup plays nothing.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
-/** The popup as the hub hangs it: the app's party store, the real socket, the signed-in player. */
+/**
+ * The popup as the UI scene hangs it in the town (FS-TQZ5J § Change: Phase 2: the party, R36): the
+ * app's party store, the real socket, the signed-in player, a ground under it.
+ */
 export function mountPartyReadyCheck(
   scene: Phaser.Scene,
   hidden: () => boolean,
+  play?: (effect: UiEffect) => void,
 ): PartyReadyCheck {
   return new PartyReadyCheck(scene, {
     store: usePartyStore,
     commands: partyCommands(socketManager),
     selfId: () => useAuthStore.getState().memberInfo?.id,
     hidden,
+    ground: uiGround(scene, POPUP_DEPTH),
+    play,
   });
 }
 
@@ -90,6 +108,7 @@ export class PartyReadyCheck {
   /** The countdown bar's own layer, redrawn every frame (FS-B3NDZ R4), and where it lies. */
   private bar?: { graphics: Phaser.GameObjects.Graphics; rect: Rect };
   private texts: Phaser.GameObjects.Text[] = [];
+  private ground?: { destroy(): void };
   /** What the last draw showed: hidden or not, and the check's id and seconds. */
   private drawn = "";
   private readonly unsubscribe: () => void;
@@ -99,6 +118,9 @@ export class PartyReadyCheck {
     private readonly deps: PartyReadyCheckDeps,
   ) {
     this.unsubscribe = deps.store.subscribe((state, prev) => {
+      // a check opening is a dialog appearing, shown now or waiting (FS-WDM0X § Change pass 2 (party), P2)
+      if (state.readyCheck && state.readyCheck.check_id !== prev.readyCheck?.check_id)
+        deps.play?.("dialog_open");
       if (
         state.readyCheck !== prev.readyCheck ||
         state.panelOpen !== prev.panelOpen
@@ -144,6 +166,8 @@ export class PartyReadyCheck {
   }
 
   private answer(check: OpenReadyCheck, accept: boolean): void {
+    // ready sends the player on, not ready cancels (FS-WDM0X § Change pass 2 (party), P3, P4)
+    this.deps.play?.(accept ? "dialog_confirm" : "dialog_cancel");
     this.deps.commands.ready(check.check_id, accept);
     this.deps.store.getState().answerReadyCheck(check.check_id, accept);
   }
@@ -155,6 +179,8 @@ export class PartyReadyCheck {
     this.graphics = undefined;
     this.bar?.graphics.destroy();
     this.bar = undefined;
+    this.ground?.destroy();
+    this.ground = undefined;
   }
 
   private text(
@@ -188,7 +214,7 @@ export class PartyReadyCheck {
     g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
     this.text(r.x + r.width / 2, r.y + r.height / 2, label, colour, SMALL_PX)
       .setOrigin(0.5, 0.5)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .on("pointerdown", press);
   }
 
@@ -240,6 +266,8 @@ export class PartyReadyCheck {
       .setScrollFactor(0)
       .setDepth(POPUP_DEPTH);
     this.graphics = g;
+    // under its buttons: a press on the popup's ground is the popup's (TQZ5J R40)
+    this.ground = this.deps.ground?.(f.panel);
     carvedPanel(g, f.panel.x, f.panel.y, f.panel.width, f.panel.height);
     this.bar = {
       graphics: this.scene.add

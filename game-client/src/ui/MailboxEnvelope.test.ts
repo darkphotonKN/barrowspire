@@ -926,3 +926,52 @@ describe("MailboxEnvelope (FS-S8Z2Y R1–R3, R8: the shadow, between the glow an
     vi.restoreAllMocks();
   });
 });
+
+describe("MailboxEnvelope's sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10, M16)", () => {
+  /** The envelope with a recording play, refused while `blocked` says so. */
+  function heardEnvelope() {
+    const api = {
+      summary: vi.fn(async () => ({ unreadCount: 0, unclaimedCount: 0, waitingCount: 0 })),
+      letters: vi.fn(async () => []),
+      markRead: vi.fn(async () => undefined),
+      claim: vi.fn(async (letterId: string) => ({ letterId, claimState: "claimed" as const, itemIds: [], gold: 0 })),
+    } satisfies MailboxApi;
+    const store = createMailboxStore({ api, storage: () => null, memberId: () => "me" });
+    const stage = fakeScene();
+    const heard: string[] = [];
+    const state = { blocked: false };
+    new MailboxEnvelope(stage.scene, { store, blocked: () => state.blocked, play: (effect) => void heard.push(effect) });
+    return { store, zone: stage.zones[0], heard, state };
+  }
+
+  it("should play menu_hover as the pointer comes onto it", () => {
+    const t = heardEnvelope();
+
+    t.zone.handlers.pointerover();
+    t.zone.handlers.pointerout();
+    t.zone.handlers.pointerover();
+
+    expect(t.heard).toEqual(["menu_hover", "menu_hover"]);
+  });
+
+  it("should play menu_error for a press while a dialogue holds the screen, and nothing of its own for a press that opens", () => {
+    const t = heardEnvelope();
+    t.state.blocked = true;
+    t.zone.handlers.pointerdown();
+    expect(t.store.getState().panelOpen).toBe(false);
+    expect(t.heard).toEqual(["menu_error"]);
+
+    t.state.blocked = false;
+    t.zone.handlers.pointerdown();
+    expect(t.store.getState().panelOpen).toBe(true);
+    expect(t.heard).toEqual(["menu_error"]);
+  });
+
+  it("should play notify as it glows for a newer letter", () => {
+    const t = heardEnvelope();
+
+    t.store.setState({ pulses: 1 });
+
+    expect(t.heard).toEqual(["notify"]);
+  });
+});

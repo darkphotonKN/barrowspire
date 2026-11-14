@@ -352,3 +352,5 @@ string`, field 5), canonical UUIDs of consumed item instances, empty when none.
 - The matchmaker / `match_queue` (user-owned), the marketplace, the api-gateway and its
   `openapi.yaml`.
 - Any `SPECIFICATION.md` / `CONTEXT.md` edit (the thin lines and the *Consumed item* term exist).
+
+## Change: The party death flow and the spectate switcher → FS-QPDKN

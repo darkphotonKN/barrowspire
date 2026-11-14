@@ -76,6 +76,7 @@ interface FakeText {
   words: string;
   x: number;
   y: number;
+  depth?: number;
   destroyed: boolean;
 }
 
@@ -209,7 +210,7 @@ function fakeScene(texture: TextureMode = "none") {
         width: words.length * 6,
         setOrigin: () => self,
         setScrollFactor: () => self,
-        setDepth: () => self,
+        setDepth: (d: number) => ((t.depth = d), self),
         setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
         destroy: () => void (t.destroyed = true),
       };
@@ -247,7 +248,8 @@ function setup(icons?: CornerIconSpec[], texture: TextureMode = "none") {
 describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 
-  it("should give each icon a pressable plate at its rect, in the HUD band, with a hand cursor", () => {
+  // the owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+  it("should give each icon a pressable plate at its rect, in the HUD band, under the bone hand", () => {
     const env = setup();
     for (const icon of ["menu", "inventory", "character", "party"] as const) {
       const z = env.zoneAt(icon);
@@ -255,7 +257,7 @@ describe("HudCorner (FS-3EBCA R2–R4: the plates)", () => {
       expect(z.width).toBe(54);
       expect(z.height).toBe(46);
       expect(z.depth).toBe(1000);
-      expect(z.handCursor).toBe(true);
+      expect(z.handCursor).toBe(false);
     }
     expect(env.graphics.every((g) => g.depth === 1000)).toBe(true);
   });
@@ -296,6 +298,15 @@ describe("HudCorner (FS-3EBCA R5: hover labels)", () => {
     expect(label!.y).toBe(658 - 6);
     env.zoneAt(icon).handlers.pointerout();
     expect(env.liveTexts().find((t) => t.words === words)).toBeUndefined();
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R139: one over the HUD band, so an ability card rebuilt down → up (its
+  // objects new at 1000) never draws over it; still under every window (1100+)
+  it("should stand the label at 1001, over the HUD band and under the windows", () => {
+    const env = setup();
+    env.zoneAt("menu").handlers.pointerover();
+    const label = env.liveTexts().find((t) => t.words === "Menu (Esc)");
+    expect(label!.depth).toBe(1001);
   });
 });
 
@@ -914,14 +925,14 @@ describe("HudCorner (FS-3EBCA § Change: The inventory icon is a bronze knockout
   });
 
   it.each(["none", "ok", "throws"] as const)(
-    "should keep the Inventory zone, hand cursor, covers, press and label, and take everything down with destroy (texture: %s)",
+    "should keep the Inventory zone, the bone hand over it, covers, press and label, and take everything down with destroy (texture: %s)",
     (texture) => {
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const press = vi.fn();
       const env = setup([{ icon: "inventory", press }], texture);
       const f = cornerIconFrame("inventory", viewport);
       const z = env.zoneAt("inventory");
-      expect(z).toMatchObject({ x: f.x, y: f.y, width: f.width, height: f.height, handCursor: true, depth: 1000 });
+      expect(z).toMatchObject({ x: f.x, y: f.y, width: f.width, height: f.height, handCursor: false, depth: 1000 });
       expect(env.corner.covers(f.x + 1, f.y + 1, "inventory")).toBe(true);
       expect(env.corner.covers(f.x + f.width - 1, f.y + f.height - 1, "inventory")).toBe(true);
       z.handlers.pointerdown();
@@ -1873,7 +1884,7 @@ describe("HudCorner (FS-7TQN4 R15, R18: the fallback, and the rest stays)", () =
   });
 
   it.each(["none", "ok", "throws"] as const)(
-    "should keep every zone, hand cursor, covers, press and label, and take everything down with destroy (texture: %s)",
+    "should keep every zone, the bone hand over it, covers, press and label, and take everything down with destroy (texture: %s)",
     (texture) => {
       vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const env = setup(TOWN_ROW(), texture);
@@ -1881,7 +1892,7 @@ describe("HudCorner (FS-7TQN4 R15, R18: the fallback, and the rest stays)", () =
       for (const icon of ["menu", "inventory", "character", "party"] as const) {
         const { f } = slotOf(icon);
         const z = env.zoneAt(icon);
-        expect(z).toMatchObject({ x: f.x, y: f.y, width: 54, height: 46, handCursor: true, depth: 1000 });
+        expect(z).toMatchObject({ x: f.x, y: f.y, width: 54, height: 46, handCursor: false, depth: 1000 });
         expect(env.corner.covers(f.x + 1, f.y + 1, icon)).toBe(true);
         z.handlers.pointerover();
         expect(env.liveTexts().map((t) => t.words)).toEqual([words[icon]]);
@@ -2002,5 +2013,44 @@ describe("HudCorner (FS-S8Z2Y R4–R6: lit from above; the greyed Mailbox flat)"
     expect(t.tints).toEqual(flat);
     expect(t.alpha).toBe(0.6);
     expect(SHADOW_OF(env, t)).toMatchObject({ alpha: 0.5, tintMode: 1 });
+  });
+});
+
+describe("HudCorner's hover and refusal for the interface sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10)", () => {
+  it("should tell an icon's hovered as the pointer comes onto it, once until it leaves", () => {
+    const hovered = vi.fn();
+    const env = setup([{ icon: "party", press: vi.fn(), hovered }]);
+
+    env.zoneAt("party").handlers.pointerover();
+    env.zoneAt("party").handlers.pointerover();
+    env.zoneAt("party").handlers.pointerout();
+    env.zoneAt("party").handlers.pointerover();
+
+    expect(hovered).toHaveBeenCalledTimes(2);
+  });
+
+  it("should tell the greyed Mailbox's refused on a press, and never its hovered", () => {
+    const hovered = vi.fn();
+    const refused = vi.fn();
+    const press = vi.fn();
+    const env = setup([{ icon: "mail", greyed: true, press, hovered, refused }]);
+
+    env.zoneAt("mail").handlers.pointerover();
+    env.zoneAt("mail").handlers.pointerdown();
+
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(hovered).not.toHaveBeenCalled();
+    expect(press).not.toHaveBeenCalled();
+  });
+
+  it("should tell no refused for a press on an icon that answers", () => {
+    const refused = vi.fn();
+    const press = vi.fn();
+    const env = setup([{ icon: "menu", press, refused }]);
+
+    env.zoneAt("menu").handlers.pointerdown();
+
+    expect(press).toHaveBeenCalledTimes(1);
+    expect(refused).not.toHaveBeenCalled();
   });
 });

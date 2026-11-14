@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { BARROW_HEX } from "@/utils/theme";
 import { showDialogueCard } from "./npcDialogue";
@@ -11,6 +11,8 @@ interface Made {
   y: number;
   name?: string;
   height: number;
+  /** The handlers it was given, by event. */
+  handlers: Record<string, () => void>;
 }
 
 /** Every object is recorded and answers any call; positions are kept as Phaser keeps them. */
@@ -22,6 +24,7 @@ function recordingStage() {
       x: typeof args[0] === "number" ? args[0] : 0,
       y: typeof args[1] === "number" ? args[1] : 0,
       height: 18,
+      handlers: {},
     };
     const proxy: unknown = new Proxy(self, {
       get(target, prop) {
@@ -35,6 +38,8 @@ function recordingStage() {
           );
         if (prop === "setName")
           return (n: string) => ((target.name = n), proxy);
+        if (prop === "on" || prop === "once")
+          return (event: string, fn: () => void) => ((target.handlers[event] = fn), proxy);
         return () => proxy;
       },
     });
@@ -89,5 +94,32 @@ describe("showDialogueCard at another logical width (FS-ZAJMH R12, R13)", () => 
     card.relayout();
     expect([container.x, container.y]).toEqual([200, 0]);
     expect(hit()).toMatchObject({ x: hitAt1080.x + 200, y: hitAt1080.y });
+  });
+});
+
+describe("the card's rows tell the interface sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M10)", () => {
+  it("should tell a hover on a row that can be picked, and a press on a dimmed one refused", () => {
+    const { scene, made } = recordingStage();
+    const feedback = { hovered: vi.fn(), refused: vi.fn() };
+    const onPick = vi.fn();
+    showDialogueCard(scene, {
+      name: "The Spire's door",
+      line: "The Spire's door stands open.",
+      rows: [
+        { id: "solo", label: "Descend alone  [1]", colour: BARROW_HEX.amber, onPick, enabled: () => false },
+        { id: "queue", label: "Wait for company  [2]", colour: BARROW_HEX.amber, onPick },
+      ],
+      tones,
+      feedback,
+    });
+    const hit = (id: string) => made.find((m) => m.name === `choice-${id}`)!;
+
+    hit("queue").handlers.pointerover();
+    hit("solo").handlers.pointerover();
+    hit("solo").handlers.pointerup();
+
+    expect(feedback.hovered).toHaveBeenCalledTimes(1);
+    expect(feedback.refused).toHaveBeenCalledTimes(1);
+    expect(onPick).not.toHaveBeenCalled();
   });
 });

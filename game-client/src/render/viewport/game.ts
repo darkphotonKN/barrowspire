@@ -5,6 +5,7 @@
  */
 
 import { fitCamera, type ViewCamera } from "./camera";
+import { standing } from "@/scenes/sceneStatus";
 import { crispen } from "./crispen";
 import {
   backingSize,
@@ -21,6 +22,7 @@ export interface ViewGame {
   };
   scene: {
     getScenes(isActive: boolean): {
+      sys: { settings: { status: number } };
       cameras?: { main?: ViewCamera };
       /** The scene's display list: its top-level objects, containers among them. */
       children?: { list: readonly object[] };
@@ -31,9 +33,11 @@ export interface ViewGame {
 /**
  * Keeps `game` drawn at the viewport's render scale: on each change the backing store is resized,
  * shown at the view's CSS size (zoom cssScale/rs), and every started scene's camera re-fitted.
- * When the render scale itself changed (fullscreen, another monitor), the text of every running
- * scene is rasterised again at it (R5, US9): text that no re-layout moves would otherwise stay at
- * the old scale and read soft. Returns the unbinding.
+ * When the render scale itself changed (fullscreen, another monitor), the text of every scene
+ * started and not stopped is rasterised again at it (R5, US9): text that no re-layout moves would
+ * otherwise stay at the old scale and read soft. A sleeping or paused scene's text included (the UI
+ * scene outside the worlds and under the disconnect notice, FS-TQZ5J R6), or it would wake soft.
+ * Returns the unbinding.
  */
 export function fitGame(
   game: ViewGame,
@@ -51,9 +55,10 @@ export function fitGame(
     }
     if (view.renderScale === renderScale) return;
     renderScale = view.renderScale;
-    // a stopped scene's display list is emptied; only a running one holds text to redo
-    for (const scene of game.scene.getScenes(true))
-      crispen(scene.children?.list ?? [], renderScale);
+    // not getScenes(true): Phaser counts RUNNING only as active, and a sleeping or paused scene
+    // keeps its text; a stopped one's display list is emptied
+    for (const scene of game.scene.getScenes(false))
+      if (standing(scene.sys.settings.status)) crispen(scene.children?.list ?? [], renderScale);
   });
 }
 

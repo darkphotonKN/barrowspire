@@ -159,6 +159,12 @@ export const palette = {
   frame: BARROW_HEX.brass,
   frameBright: BARROW_HEX.brassBright,
   /**
+   * The watched teammate's name in the spectate switcher (FS-QPDKN § Change: The party death flow and the
+   * spectate switcher; the owner, 「直接顯示黃色名字」, 2026-11-14): the HUD's bright brass, the gold nearest the
+   * owner's yellow that is not amber, since a name is read, not acted on (amber is the switcher's arrows').
+   */
+  watchedName: BARROW_HEX.brassBright,
+  /**
    * A lore line's three tones (FS-XWHZP §B R8): the world speaking in parchment, dread in the
    * lifted oxblood, hope in a lantern gold (never amber: a line is nothing to act on). Its dust
    * fades to `loreFade`; a dread line's embers go from `loreEmber` to `loreEmberDeep`; its shadow

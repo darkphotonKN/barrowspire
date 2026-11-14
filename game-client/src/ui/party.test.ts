@@ -163,6 +163,17 @@ describe("nextWatched (FS-QPDKN req 7, 8, 11)", () => {
   it("should pick nobody with no one in play", () => {
     expect(nextWatched([], "tam")).toBeUndefined();
   });
+
+  // the switcher's ◄ (FS-QPDKN § Change: The party death flow and the spectate switcher, R160)
+  it.each([
+    ["the one before the current", "wenna", "tam"],
+    ["round to the last before the first", "tam", "brom"],
+    ["the first with no current", undefined, "tam"],
+    ["the first once the current has resolved", "cora", "tam"],
+  ])("should pick %s, stepping back", (_, current, want) => {
+    const three = [...two, { id: "brom", username: "Brom" }];
+    expect(nextWatched(three, current, -1)).toBe(want);
+  });
 });
 
 describe("runMenuChoices (FS-9K8EZ req 2)", () => {

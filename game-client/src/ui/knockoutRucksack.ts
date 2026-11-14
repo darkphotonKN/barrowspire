@@ -13,7 +13,7 @@
 
 import type Phaser from "phaser";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
-import { bend, oval, type KnockoutPicture, type Pt } from "./knockout";
+import { bend, oval, stroke, type KnockoutPicture, type Pt } from "./knockout";
 
 /** What the line rucksack draws with: lines only, never a fill (FS-J1672 R3). */
 type Pen = Pick<
@@ -164,15 +164,6 @@ const POCKET_LINES = POCKETS.flatMap(({ shape, flap }) => [
 const POCKET_SEAMS = POCKETS.flatMap(({ shape }) =>
   ringRuns(shape, ([x, y]) => !(inside(BODY, x, y) && fromOutline(BODY, x, y) > 0.3)),
 );
-
-/** Strokes the line through `ps`, moved by (ox, oy), as one path, closed when `closed`. */
-function stroke(g: Pen, ps: readonly Pt[], ox: number, oy: number, closed = false): void {
-  g.beginPath();
-  g.moveTo(ox + ps[0][0], oy + ps[0][1]);
-  for (const [x, y] of ps.slice(1)) g.lineTo(ox + x, oy + y);
-  if (closed) g.closePath();
-  g.strokePath();
-}
 
 /**
  * The fallback (R9): the round rucksack in the row's lines, `GLYPH_LINE_W` wide, centred on

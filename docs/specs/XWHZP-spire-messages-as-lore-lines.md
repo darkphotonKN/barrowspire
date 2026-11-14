@@ -271,3 +271,12 @@ The charter defaults, for the owner to revise:
 6. R17: every in-run interact reply counts as the world's, so "too far away to interact" is a lore
    line in the server's words until it has a reason.
 7. Out of Scope: no sound in v1.
+
+## Notes
+
+- **2026-11-15:** the lore lines are drawn by the UI scene, said by the run through the UI bridge as
+  plain data, at the owner's word (2026-11-14, 「蓋在面板上方」: over the panels, as on main); the depth
+  (1990), the queue, the timing, the tones, the place and the floor-change clear are unchanged, and a
+  dread line's tremor shakes the run's camera at the UI scene's request. See FS-TQZ5J, "Note 2026-11-15:
+  the lore lines move to the UI scene".
+

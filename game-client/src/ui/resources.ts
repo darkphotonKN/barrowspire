@@ -78,7 +78,15 @@ export function hudBars(
 ): HudBar[] {
   const me = state.current_player;
   if (state.world_type === "hub" || !me || resolved(me)) return [];
+  return barsOf(me);
+}
 
+/**
+ * The player's own bars as `me` stands, in or out of the delve: Health once the server has sent it, the
+ * resource when it is on the wire. `hudBars` draws them in the delve; the run holds them as they were out of
+ * it (FS-QPDKN § Change: The party death flow and the spectate switcher, R168).
+ */
+export function barsOf(me: PlayerState): HudBar[] {
   const bars: HudBar[] = [];
   if (me.current_health !== undefined && me.max_health !== undefined)
     bars.push({

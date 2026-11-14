@@ -1,6 +1,6 @@
 /**
  * The baked cursors as CSS (FS-KYPQ9 §H.2): a manifest cursor sheet in, a CSS `cursor` value
- * out, for `scene.input.setDefaultCursor`.
+ * out, for the game's pointer look (`pointerLook.ts`), which sets it as the canvas's default.
  *
  * The hotspot is the sheet's manifest anchor, scaled to the size of the image the cursor shows,
  * so the click point stays on the hand's fingertip and the strike-mark's centre whatever

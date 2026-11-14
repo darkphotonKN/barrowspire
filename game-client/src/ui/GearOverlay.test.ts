@@ -197,16 +197,22 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     h: number;
     hand: boolean;
     destroyed: boolean;
+    interactive: boolean;
+    depth?: number;
+    /** The zone itself, as Phaser hands it in a pointer event's `over` list. */
+    obj: Record<string, unknown>;
   }[] = [];
   const zone = (x: number, y: number, w: number, h: number) => {
-    const z = { x, y, w, h, hand: false, destroyed: false };
+    const z = { x, y, w, h, hand: false, destroyed: false, interactive: false } as (typeof zones)[number];
     zones.push(z);
     const self: Record<string, unknown> = chain({
       setInteractive: (opts?: { useHandCursor?: boolean }) => (
-        (z.hand = opts?.useHandCursor ?? false), self
+        (z.interactive = true), (z.hand = opts?.useHandCursor ?? false), self
       ),
+      setDepth: (d: number) => ((z.depth = d), self),
       destroy: () => void (z.destroyed = true),
     });
+    z.obj = self;
     return self;
   };
   // as Phaser's, a container's destroy destroys what it holds
@@ -258,12 +264,22 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     y: y * renderScale,
     button,
   });
-  const move = (x: number, y: number) =>
-    input.emit("pointermove", pointer(x, y));
-  const press = (x: number, y: number, button: number) =>
-    input.emit("pointerdown", pointer(x, y, button));
-  const wheel = (x: number, y: number, dy: number) =>
-    input.emit("wheel", pointer(x, y), [], 0, dy);
+  /**
+   * What Phaser lists under the pointer at (x, y), top first (`topOnly`): the last-made live
+   * interactive zone over it, as the UI scene's input hands its scene-wide events (FS-TQZ5J § Change:
+   * Phase 3, R60). `over` given, that instead.
+   */
+  const under = (x: number, y: number) => {
+    const hit = zones.filter((z) => z.interactive && !z.destroyed && x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h);
+    const top = [...hit].sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0)).at(-1);
+    return top ? [top.obj] : [];
+  };
+  const move = (x: number, y: number, over: unknown[] = under(x, y)) =>
+    input.emit("pointermove", pointer(x, y), over);
+  const press = (x: number, y: number, button: number, over: unknown[] = under(x, y)) =>
+    input.emit("pointerdown", pointer(x, y, button), over);
+  const wheel = (x: number, y: number, dy: number, over: unknown[] = under(x, y)) =>
+    input.emit("wheel", pointer(x, y), over, 0, dy);
   /** One game step: the scene's update, after the keyboard has handed its keys their events. */
   const frame = () => events.emit("update");
   /** Shift pressed or released, then a frame. */
@@ -304,10 +320,9 @@ function overlayOnStage(
   gear: EquippedItems = worn(),
   world?: WorldType,
   renderScale = 1,
-  under?: (x: number, y: number) => boolean,
 ) {
   const s = recordingScene(1080, 720, renderScale);
-  const overlay = new GearOverlay(s.scene, s.art, world, under);
+  const overlay = new GearOverlay(s.scene, s.art, world);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
   overlay.onEquip = onEquip;
@@ -1706,7 +1721,9 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
     expect(scale.listenerCount("resize")).toBe(0);
   });
 
-  it("should draw an × at each open panel's top right, amber with a hand cursor, brighter under the pointer (C4)", () => {
+  // the bone hand over it, no cursor of its own: the owner, 2026-11-14, 「所有hover鼠標都要維持骨手」
+  // (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+  it("should draw an × at each open panel's top right, amber under the bone hand, brighter under the pointer (C4)", () => {
     const { overlay, texts, zones, move, left, right, closeOf } = apartOnStage();
     overlay.show();
     overlay.toggleCharacter();
@@ -1716,7 +1733,7 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
       const box = panelClose(panel);
       expect(box).toEqual({ x: panel.x + panel.w - 12 - 24, y: panel.y + 12, w: 24, h: 24 });
       expect(crosses().some((t) => t.x === box.x + 12 && t.y === box.y + 12 && t.size === 22)).toBe(true);
-      expect(zones.some((z) => !z.destroyed && z.hand && z.x === box.x && z.y === box.y)).toBe(true);
+      expect(zones.some((z) => !z.destroyed && z.hand === false && z.x === box.x && z.y === box.y)).toBe(true);
     }
     expect(crosses().every((t) => t.color === toCss(palette.interactable))).toBe(true);
 
@@ -1828,7 +1845,7 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
         seen.push(`after ${panels()}`);
       }),
     };
-    overlay = new GearOverlay(s.scene, s.art, undefined, undefined, wrapper);
+    overlay = new GearOverlay(s.scene, s.art, undefined, wrapper);
     const { left, right } = overlayLayout(s.camera.width, s.camera.height);
     const closeOf = (panel: typeof left) => {
       const r = panelClose(panel);
@@ -1899,47 +1916,62 @@ describe("GearOverlay's titles, shared (FS-3EBCA R20, R22)", () => {
 });
 
 // FS-3EBCA R8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍"): the party panel opens over the open
-// inventory and character panel, and what lies under it is the party panel's, not the overlay's.
-describe("GearOverlay under the party panel (FS-3EBCA R8; FS-R82NV § Change C8)", () => {
-  /** A press, a hover or the wheel at a point the party panel covers. */
-  function shadowedOnStage(bag: ItemState[], shadowed: (x: number, y: number) => boolean) {
-    return overlayOnStage(bag, worn(), "field", 1, shadowed);
-  }
+// inventory and character panel. Both are the UI scene's now (FS-TQZ5J § Change: Phase 3, R59, R60): the
+// overlay stands a ground under each open panel, and acts on a move, a press or the wheel only when no
+// other UI piece is the top object under the pointer (Phaser's `over`).
+describe("GearOverlay's grounds and its own top object (FS-3EBCA R8; FS-TQZ5J § Change: Phase 3, R59, R60)", () => {
+  /** Another UI piece's object, as Phaser lists one over the overlay. */
+  const other = { name: "party-panel-ground" };
 
-  it("should not wear a bag item under the party panel on a right-press, nor show its tip", () => {
-    const shade = { on: true };
-    const env = shadowedOnStage([axe], () => shade.on);
-    env.move(...env.cell(0));
-    expect(env.shown()).not.toContain("axe");
-    env.press(...env.cell(0), 2);
-    expect(env.onEquip).not.toHaveBeenCalled();
-    // and with the party panel shut the same press wears it
-    shade.on = false;
-    env.move(...env.cell(0));
-    expect(env.shown()).toContain("axe");
-    env.press(...env.cell(0), 2);
-    expect(env.onEquip).toHaveBeenCalledTimes(1);
+  it("should stand an interactive ground at 1100 over each open panel, none over the clear band, no hand cursor", () => {
+    const env = overlayOnStage([axe]);
+    env.overlay.toggleCharacter();
+    const layout = overlayLayout(1080, 720);
+    const grounds = env.zones.filter((z) => !z.destroyed && z.interactive && z.depth === 1100);
+    expect(grounds.map((z) => [z.x, z.y, z.w, z.h]).sort()).toEqual(
+      [
+        [layout.left.x, layout.left.y, layout.left.w, layout.left.h],
+        [layout.right.x, layout.right.y, layout.right.w, layout.right.h],
+      ].sort(),
+    );
+    expect(grounds.every((z) => !z.hand)).toBe(true);
+
+    env.overlay.toggleCharacter();
+    expect(env.zones.filter((z) => !z.destroyed && z.depth === 1100)).toHaveLength(1);
+    env.overlay.hide();
+    expect(env.zones.filter((z) => !z.destroyed && z.depth === 1100)).toEqual([]);
   });
 
-  it("should not take E for the item under the party panel", () => {
-    const env = shadowedOnStage([axe], () => true);
+  it("should neither light nor tip a bag item on a move while another UI piece is over it", () => {
+    const env = overlayOnStage([axe], worn(), "field");
+    env.move(...env.cell(0), [other]);
+    expect(env.shown()).not.toContain("axe");
+    // over its own ground the same move tips it, and over nothing of the UI scene's (a world press) too
     env.move(...env.cell(0));
+    expect(env.shown()).toContain("axe");
+    env.move(...env.cell(0), [other]);
+    env.move(...env.cell(0), []);
+    expect(env.shown()).toContain("axe");
+  });
+
+  it("should not take E for the item under another UI piece the pointer moved onto", () => {
+    const env = overlayOnStage([axe], worn(), "field");
+    env.move(...env.cell(0), [other]);
     env.overlay.handleEquipKey();
     expect(env.onEquip).not.toHaveBeenCalled();
   });
 
-  it("should leave the inventory open on a left-press at its × under the party panel", () => {
-    const right = overlayLayout(1080, 720).right;
-    const box = panelClose(right);
-    const env = shadowedOnStage([], () => true);
-    env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
-    expect(env.overlay.isInventoryOpen()).toBe(true);
-  });
+  it("should act on a press only on its own: a right-press on its ground wears the item, one under another piece nothing", () => {
+    const env = overlayOnStage([axe], worn(), "field");
+    env.press(...env.cell(0), 2, [other]);
+    env.press(...env.cell(0), 2, []);
+    expect(env.onEquip).not.toHaveBeenCalled();
+    env.press(...env.cell(0), 2);
+    expect(env.onEquip).toHaveBeenCalledTimes(1);
 
-  it("should answer a point the party panel does not cover as before", () => {
-    const right = overlayLayout(1080, 720).right;
-    const box = panelClose(right);
-    const env = shadowedOnStage([], (x) => x < right.x);
+    const box = panelClose(overlayLayout(1080, 720).right);
+    env.press(box.x + box.w / 2, box.y + box.h / 2, 0, [other]);
+    expect(env.overlay.isInventoryOpen()).toBe(true);
     env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
     expect(env.overlay.isInventoryOpen()).toBe(false);
   });

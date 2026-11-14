@@ -26,6 +26,14 @@ import type { WorldType } from "@/assets/types/client";
 import type { ArtLibrary } from "@/render/art/library";
 import { prefersReducedMotion } from "@/render/effects/mist";
 import { HUD_DEPTH } from "@/render/markers/markers";
+
+/**
+ * The frames' depth: the lowest of the UI scene, one under the HUD's 1000 (the corner row, the invite
+ * prompts, the ready check, the notice line), so every piece and every window (1100–1800) draws over
+ * them and takes the presses, hovers and wheel there (the owner's 「任何ui都優先隊友列表」; FS-TQZ5J
+ * § Change: Phase 3, R62, R63; ADR-0086 D4).
+ */
+export const PARTY_FRAMES_DEPTH = HUD_DEPTH - 1;
 import { useAuthStore } from "@/stores/authStore";
 import { useGameStore } from "@/stores/gameStore";
 import { usePartyStore, type PartyState } from "@/stores/partyStore";
@@ -33,7 +41,8 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { maskedBust, type MaskedBust, type Portrait } from "./bustPortrait";
 import { socketManager } from "@/utils/class/SocketManager";
 import { partyCommands } from "./partyCommands";
-import { drawHudButton, drawLeaderMark } from "./PartyPanel";
+import { drawHudButton, drawLeaderMark, hudButtonSounds } from "./PartyPanel";
+import type { UiEffect } from "@/audio/uiSounds";
 import {
   PARTY_FRAMES_PLACEMENT,
   PARTY_LEADER_MARK_W,
@@ -68,12 +77,21 @@ export interface PartyFramesDeps {
   ) => MaskedBust | undefined;
   /** Sends `party_travel` (R28): pressed on the leader's frame. */
   travel: () => void;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change pass 2 (party), P5–P7): Travel's hover, press and
+   * greyed press. None, and Travel plays nothing; greyed, it takes no press.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
-/** The frames as a scene hangs them: the app's party, this player, the scene's art. */
+/**
+ * The frames as the UI scene hangs them (FS-TQZ5J § Change: Phase 2: the party, R36, R37): the app's
+ * party, this player, the art the class sheets resolve on.
+ */
 export function mountPartyFrames(
   scene: Phaser.Scene,
-  art: ArtLibrary,
+  art: Pick<ArtLibrary, "resolve">,
+  play?: (effect: UiEffect) => void,
 ): PartyFrames {
   return new PartyFrames(scene, {
     store: usePartyStore,
@@ -81,6 +99,7 @@ export function mountPartyFrames(
     world: () => useGameStore.getState().worldType,
     art,
     travel: partyCommands(socketManager).travel,
+    play,
   });
 }
 
@@ -220,11 +239,11 @@ export class PartyFrames {
         color: toCss(colour),
       })
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH);
+      .setDepth(PARTY_FRAMES_DEPTH);
   }
 
   private hud(): Phaser.GameObjects.Graphics {
-    return this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
+    return this.scene.add.graphics().setScrollFactor(0).setDepth(PARTY_FRAMES_DEPTH);
   }
 
   /**
@@ -259,7 +278,7 @@ export class PartyFrames {
       if (!cut) return;
       cut.image
         .setScrollFactor(0)
-        .setDepth(HUD_DEPTH)
+        .setDepth(PARTY_FRAMES_DEPTH)
         .setAlpha(row.away ? AWAY_ALPHA : 1);
       this.busts.push(cut);
     });
@@ -319,14 +338,14 @@ export class PartyFrames {
     const at = this.leaderRow();
     if (this.travel === "hidden" || at < 0) return;
     this.names.push(
-      drawHudButton(
-        this.scene,
-        g,
-        partyTravelButtonRect(this.rects[at]),
-        TRAVEL_LABEL,
-        this.travel === "live",
-        () => this.deps.travel(),
-      ),
+      drawHudButton(this.scene, g, {
+        rect: partyTravelButtonRect(this.rects[at]),
+        label: TRAVEL_LABEL,
+        enabled: this.travel === "live",
+        press: () => this.deps.travel(),
+        depth: PARTY_FRAMES_DEPTH,
+        feedback: this.deps.play ? hudButtonSounds(this.deps.play) : {},
+      }),
     );
   }
 

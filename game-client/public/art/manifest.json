@@ -179,9 +179,9 @@
     },
     "fx-0": {
       "image": "fx-0.png",
-      "width": 692,
+      "width": 728,
       "height": 128,
-      "sha256": "3dfa21e330a02855570f68f353e552400f8a8907ba7bb7df802d33e9c8c46131"
+      "sha256": "91ea4f9e73b9d6917b4f1f56b1b07508dfbbcc2d3719045415543378b9cce9ab"
     },
     "ghast-0": {
       "image": "ghast-0.png",
@@ -57898,6 +57898,32 @@
       "source": "authored: tools/bake/page/models/cursors.js#boneHand",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
+    "cursor_hand_pressed": {
+      "atlas": "fx-0",
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "anchor": {
+        "x": 0.1875,
+        "y": 0.03125
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 334,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "authored: tools/bake/page/models/cursors.js#boneHandPressed",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
     "cursor_strike": {
       "atlas": "fx-0",
       "frameWidth": 32,
@@ -57914,7 +57940,7 @@
           "frames": [
             [
               {
-                "x": 334,
+                "x": 368,
                 "y": 2
               }
             ]
@@ -61127,7 +61153,7 @@
           "frames": [
             [
               {
-                "x": 602,
+                "x": 636,
                 "y": 2
               }
             ]
@@ -61153,15 +61179,15 @@
           "frames": [
             [
               {
-                "x": 534,
+                "x": 568,
                 "y": 2
               },
               {
-                "x": 552,
+                "x": 586,
                 "y": 2
               },
               {
-                "x": 570,
+                "x": 604,
                 "y": 2
               }
             ]
@@ -61187,15 +61213,15 @@
           "frames": [
             [
               {
-                "x": 660,
+                "x": 694,
                 "y": 2
               },
               {
-                "x": 670,
+                "x": 704,
                 "y": 2
               },
               {
-                "x": 680,
+                "x": 714,
                 "y": 2
               }
             ]
@@ -61247,7 +61273,7 @@
           "frames": [
             [
               {
-                "x": 504,
+                "x": 538,
                 "y": 2
               }
             ]
@@ -61273,7 +61299,7 @@
           "frames": [
             [
               {
-                "x": 368,
+                "x": 402,
                 "y": 2
               }
             ]
@@ -61325,7 +61351,7 @@
           "frames": [
             [
               {
-                "x": 588,
+                "x": 622,
                 "y": 2
               }
             ]
@@ -61429,15 +61455,15 @@
           "frames": [
             [
               {
-                "x": 402,
-                "y": 2
-              },
-              {
                 "x": 436,
                 "y": 2
               },
               {
                 "x": 470,
+                "y": 2
+              },
+              {
+                "x": 504,
                 "y": 2
               }
             ]

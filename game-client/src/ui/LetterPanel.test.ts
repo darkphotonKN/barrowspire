@@ -342,17 +342,6 @@ describe("LetterPanel (R36, R37, R40)", () => {
     expect(x.color).toBe(toCss(palette.interactable));
   });
 
-  it("covers its own panel while open, and nothing while closed", () => {
-    const { scene, store } = setup();
-    const panel = new LetterPanel(scene, { store, art, now: () => NOW });
-    expect(panel.covers(540, 360)).toBe(false);
-    open(store, []);
-    expect(panel.covers(540, 360)).toBe(true);
-    expect(panel.covers(2, 2)).toBe(false);
-    store.getState().closePanel();
-    expect(panel.covers(540, 360)).toBe(false);
-  });
-
   it("lists each letter with its title and time, and shows the open one's sender, dates and body", () => {
     const { scene, store, shown } = setup();
     new LetterPanel(scene, { store, art, now: () => NOW });
@@ -824,14 +813,6 @@ describe("MailboxHud: the mailbox as the town hangs it (R33, R34, R44)", () => {
     expect(api.summary).toHaveBeenCalledTimes(1);
   });
 
-  it("covers the screen under the open panel, so nothing under it takes a wheel or a press", async () => {
-    const { scene, store } = setup();
-    const hud = new MailboxHud(scene, { store, art, blocked: () => false });
-    expect(hud.covers(540, 360)).toBe(false);
-    await store.getState().openPanel();
-    expect(hud.covers(540, 360)).toBe(true);
-  });
-
   it("owns the keys while the panel is open, and closes it with the town", async () => {
     const { scene, store, live } = setup();
     const hud = new MailboxHud(scene, { store, art, blocked: () => false });
@@ -857,15 +838,16 @@ describe("the mailbox at another logical width or render scale (FS-ZAJMH R12, R1
     const plate = zones.find((z) => z.handlers.pointerdown)!;
     expect(plate.rect.x).toBe(envelopeFrame({ width: 1080, height: 720 }).x);
     await store.getState().openPanel();
-    expect(hud.covers(1000, 360)).toBe(false);
+    // the open panel's ground, its zone over the whole panel (FS-TQZ5J § Change: Batch 4, R106)
+    const ground = () => zones.find((z) => !z.destroyed && z.rect.w === 840)!;
+    expect(ground().rect.x).toBe(120);
 
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
     hud.relayout();
     const wide = envelopeFrame({ width: 1280, height: 720 });
     expect(plate.rect).toMatchObject({ x: wide.x, y: wide.y });
     // the panel, 840 wide, now spans 220–1060
-    expect(hud.covers(1000, 360)).toBe(true);
-    expect(hud.covers(200, 360)).toBe(false);
+    expect(ground().rect.x).toBe(220);
   });
 
   it("puts the envelope at its logical corner at render scale 2, not at the backing store's", () => {

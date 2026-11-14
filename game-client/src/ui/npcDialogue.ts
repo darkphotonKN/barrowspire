@@ -15,7 +15,7 @@ import { CANVAS_FONT, toCss } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 import { maskedBust, type Portrait } from "./bustPortrait";
 import { carvedPanel } from "./carvedPanel";
-import { MENU_DEPTH, menuOption, type MenuOption, type MenuTones } from "./menuPanel";
+import { MENU_DEPTH, menuOption, type MenuFeedback, type MenuOption, type MenuTones } from "./menuPanel";
 
 /** One answer: its label already carries its key, e.g. "Descend alone  [1]". */
 export interface DialogueCardRow {
@@ -36,6 +36,8 @@ export interface DialogueCardSpec {
   /** The frame to cut the medallion bust from: whatever the speaker is showing. */
   portrait?: Portrait;
   tones: Pick<MenuTones, "panel" | "text" | "dim">;
+  /** Told a hover on a row that can be picked, and a press on a dimmed one (FS-WDM0X § Change M5, M10). */
+  feedback?: MenuFeedback;
 }
 
 /** The scene slice the card draws with; the portrait needs the textures and an unlisted mask. */
@@ -144,6 +146,7 @@ export function showDialogueCard(scene: CardStage, spec: DialogueCardSpec): Dial
       enabled: row.enabled,
       hit: { width: WIDTH - 12, height: ROW_H },
       tones: spec.tones,
+      feedback: spec.feedback,
     }),
   );
   parts.push(...options);

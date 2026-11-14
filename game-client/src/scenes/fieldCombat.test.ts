@@ -71,6 +71,8 @@ function fieldOnStage() {
   const art = ArtLibrary.empty({ warn: () => {} });
   const clock = { now: 0 };
   const button = { pressed: 0 as number | undefined };
+  /** Whether the UI scene claimed the press now heard (FS-TQZ5J § Change: Batch 6, R129). */
+  const claim = { now: false };
   const kit = { sync: vi.fn(), forget: vi.fn() };
   const sounds = { play: vi.fn() };
   const look = {
@@ -105,6 +107,7 @@ function fieldOnStage() {
     look,
     kit,
     button: () => button.pressed,
+    claimed: () => claim.now,
     projectiles,
     hits,
     cursor,
@@ -116,7 +119,7 @@ function fieldOnStage() {
     monsters = [boar("b1", 1000), boar("b2", 1100, "dead")],
     others: ReturnType<typeof me>[] = [],
   ) => combat.sync({ current_player: player as never, other_players: others as never, monsters: monsters as never, projectiles: [] });
-  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, kit, look, sounds };
+  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, claim, kit, look, sounds };
 }
 
 describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
@@ -203,6 +206,48 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
     state(me(990));
     sprites[2].handlers.pointerdown();
     expect(sendMessage).toHaveBeenCalledTimes(2);
+  });
+});
+
+// FS-TQZ5J § Change: Batch 6, R129 (batch 6 review, LOW): a press on the UI scene's chat window during a held
+// world press reaches the field; the UI scene claims it, and a monster under the window is not struck
+describe("FieldCombat under a press the UI scene claimed (FS-TQZ5J § Change: Batch 6, R129)", () => {
+  it("should strike nothing on a claimed press, and strike on the next", () => {
+    const { state, sprites, sendMessage, claim } = fieldOnStage();
+    state(me(1000 - STRIKE_RANGE + 10));
+    claim.now = true;
+    sprites[0].handlers.pointerdown();
+    expect(sendMessage).not.toHaveBeenCalled();
+
+    claim.now = false;
+    sprites[0].handlers.pointerdown();
+    expect(sendMessage).toHaveBeenCalled();
+  });
+
+  it("should cast nothing on the field's own press the UI scene claimed, asking the hook with that press", () => {
+    const handlers: Record<string, (pointer: unknown) => void> = {};
+    const activePointer = { button: 2 };
+    const overrides: Record<string | symbol, unknown> = {
+      input: { on: (event: string, fn: (pointer: unknown) => void) => void (handlers[event] = fn), off: () => {}, activePointer, setDefaultCursor: () => {} },
+    };
+    const scene = new Proxy(anything() as object, {
+      get: (target, prop) => (prop in overrides ? overrides[prop] : Reflect.get(target, prop)),
+    }) as never;
+    const asked: unknown[] = [];
+    const takesPointer = vi.fn(() => false);
+    fieldCombatOnScene(scene, ArtLibrary.empty({ warn: () => {} }), anything(), {
+      selfAnim: () => undefined,
+      selfAt: () => undefined,
+      bodyOf: () => undefined,
+      takesPointer,
+      pressClaimed: (pointer) => (asked.push(pointer), true),
+    });
+    const press = { x: 10, y: 10, button: 2, worldX: 0, worldY: 0, leftButtonDown: () => true, rightButtonDown: () => true };
+
+    handlers.pointerdown(press);
+
+    expect(asked).toEqual([press]);
+    expect(takesPointer).not.toHaveBeenCalled();
   });
 });
 

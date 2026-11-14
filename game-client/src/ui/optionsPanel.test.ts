@@ -805,3 +805,98 @@ describe("the Fullscreen row (FS-T3DWX)", () => {
     expect(p.made.filter((m) => !m.destroyed && named(m).startsWith("options-"))).toEqual([]);
   });
 });
+
+describe("OPTIONS' feedback for the interface sounds (FS-WDM0X § Change: Menu, dialog and notice sounds, M5, M8–M10)", () => {
+  /** The panel open, Music at `music` and Sound effects at `effects`, telling a recording feedback what the player did. */
+  function heardOn(music = 3, effects = 2, fullscreen: boolean | null = null) {
+    const stage = recordingStage();
+    const heard: string[] = [];
+    const musicControl = musicAt(music);
+    const effectsControl = musicAt(effects);
+    const screen = fullscreen === null ? null : fullscreenAt(fullscreen);
+    const back = vi.fn();
+    const panel = openOptionsPanel(stage.scene, {
+      origin: ORIGIN,
+      hit: HIT,
+      tones: TONES,
+      back,
+      music: musicControl,
+      effects: effectsControl,
+      fullscreen: screen?.control ?? null,
+      feedback: {
+        hovered: () => void heard.push("hovered"),
+        refused: () => void heard.push("refused"),
+        stepped: () => void heard.push(`stepped@${effectsControl.level()}`),
+        toggled: (on) => void heard.push(on ? "toggled on" : "toggled off"),
+      },
+    });
+    const hit = (name: string) => stage.find(name)!;
+    return { ...stage, ...panel, heard, music: musicControl, effects: effectsControl, screen, back, hit };
+  }
+
+  it("should say one step for each press that moves a level: ◄, ►, a step, ←/→", () => {
+    const p = heardOn(3, 2);
+
+    p.hit("options-music-down").handlers.pointerup();
+    p.hit("options-music-step-5").handlers.pointerup();
+    p.keys.nudge(-1);
+    p.hit("options-effects-up").handlers.pointerup();
+
+    expect(p.music.set.mock.calls).toEqual([[2], [5], [4]]);
+    expect(p.heard).toEqual(["stepped@2", "stepped@2", "stepped@2", "stepped@3"]);
+  });
+
+  it("should say the step after the level is kept, so a Sound effects step is heard at the new level", () => {
+    const p = heardOn(3, 2);
+
+    p.hit("options-effects-step-5").handlers.pointerup();
+
+    expect(p.heard).toEqual(["stepped@5"]);
+  });
+
+  it("should say nothing for a click on the step already set", () => {
+    const p = heardOn(3, 2);
+
+    p.hit("options-music-step-3").handlers.pointerup();
+
+    expect(p.heard).toEqual([]);
+    expect(p.music.set).not.toHaveBeenCalled();
+  });
+
+  it("should say refused for the dimmed arrow at an end, and for ←/→ that cannot move Music", () => {
+    const p = heardOn(0, 5);
+
+    p.hit("options-music-down").handlers.pointerup();
+    p.hit("options-effects-up").handlers.pointerup();
+    p.keys.nudge(-1);
+
+    expect(p.heard).toEqual(["refused", "refused", "refused"]);
+    expect(p.music.set).not.toHaveBeenCalled();
+    expect(p.effects.set).not.toHaveBeenCalled();
+  });
+
+  it("should say a hover on an arrow that can move, each step, Back and the ×, and none on a dimmed arrow", () => {
+    const p = heardOn(0, 3);
+
+    p.hit("options-music-down").handlers.pointerover();
+    p.hit("options-music-up").handlers.pointerover();
+    p.hit("options-music-step-2").handlers.pointerover();
+    p.hit("options-back").handlers.pointerover();
+    p.hit("options-close").handlers.pointerover();
+
+    expect(p.heard).toEqual(["hovered", "hovered", "hovered", "hovered"]);
+  });
+
+  it.each([
+    [false, "toggled on"],
+    [true, "toggled off"],
+  ] as const)("should say the Fullscreen row's way on its press, from %s: %s, and a hover on it", (on, said) => {
+    const p = heardOn(3, 2, on);
+
+    p.hit("options-fullscreen").handlers.pointerover();
+    p.hit("options-fullscreen").handlers.pointerup();
+
+    expect(p.heard).toEqual(["hovered", said]);
+    expect(p.screen!.control.toggle).toHaveBeenCalledTimes(1);
+  });
+});

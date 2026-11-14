@@ -69,6 +69,19 @@ translation belongs to the surface that renders words.
   world (town, field or run): "Disconnected", one line and **Return to menu**, the world dimmed
   and still behind it (FS-R6EYZ). One at a time; it stays through scene changes until pressed.
   The main menu it returns to reconnects.
+- **World scene** — one of the three Phaser scenes that draw a world the player stands in:
+  `HubScene` (the town), `FieldScene` (a field), `BarrowspireScene` (a run). A world switch
+  replaces one with another (`WORLD_SCENES`). Not the main menu or character creation.
+- **UI scene** — the one Phaser scene (`UIScene`) drawn over every world scene and under the
+  disconnect notice, holding the interface the worlds share: the corner row, the ESC menu with
+  OPTIONS, the interface sounds, the town's NPC dialogue card and the worlds' screen notices (phase
+  1), the party pieces (phase 2), the gear overlay, the container view, the settlement record and the
+  run's controls panel (phase 3) (FS-TQZ5J, ADR-0084, ADR-0086). It outlives world switches and sleeps
+  outside the worlds. It and the world scenes talk only through the **UI bridge**, a typed channel:
+  the world reports its state, shows its dialogue, says its notices and hands its gear, container and
+  record data as plain data; the UI scene reports its own state and sends requests (a dialogue row
+  picked is its id, an equip is the item's id). Each window it holds stands a **ground**: an
+  interactive rect that draws nothing, so a press on the window stops at the UI scene.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
   store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
   (rendering terms below); "town building" is the place, "house" the drawing.
@@ -531,6 +544,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   **Character** (a bust: the character panel), **Party** (the party panel) and the **Mailbox**
   icon (the envelope; greyed outside the town). Each is a **knockout** and names itself and its
   key under the pointer. Not the party frames, not the minimap's column.
+- **Controls panel** (FS-TQZ5J § Change: Phase 3; FS-84N1G) — the run's list of keys and what they
+  do, opened and closed by `H` or the **controls badge**; never by itself (FS-84N1G Amendment A1). One of
+  the windows: it wears their frame and ×, and steps aside when another window opens.
+- **Controls badge** (FS-84N1G) — the run's book above the ability card, a **knockout** like the
+  corner row's icons, naming itself "Controls (H)" under the pointer; a press opens or closes the
+  **controls panel**. Up only while the ability card is. Not the envelope's **count badge**.
 - **Knockout** (FS-7TQN4; `Knockout` in `src/ui/knockout.ts`) — how a corner-row icon is drawn: one
   solid silhouette filled in its own texture, its inner lines (**cuts**, 1.6 px) and **holes**
   erased so the world shows through, tinted bronze (the greyed Mailbox `hudFaint`). The picture is
@@ -607,6 +626,12 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   goes fullscreen, from the OPTIONS panel's **Fullscreen** row; nothing stands over the canvas
   (FS-T3DWX). The top-right HUD stands in the corner the button used to keep.
 - **Windowed** / **fullscreen**: the game frame's two states on the `/game` page.
+- **Pointer look** (FS-KYPQ9 § Change: The pressed hand): the game's one writer of the canvas's
+  cursor (`PointerLook`, `src/render/cursors/pointerLook.ts`), one per game on its registry. It
+  shows the base the scenes set (`PointerBase`: the bone hand, the strike-mark over a monster, or
+  the browser's cursor), the hand pressed while the left button is held. A scene with the art
+  makes it (`ensurePointerLook`), one without only finds it (`findPointerLook`). Not a **look**
+  (a shimmer's three colours), and its base is not a shimmer's base. *Avoid*: "the look" alone.
 
 ## Enemy terms (FS-C8VM7, FS-3103M; locked, not built)
 

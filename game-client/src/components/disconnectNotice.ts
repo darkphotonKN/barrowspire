@@ -5,7 +5,9 @@
  * drawn by `DisconnectNoticeScene`; the words and the layout are `src/ui/disconnectNoticeLayout.ts`.
  */
 
-import { RUNNING, inFlight, type SceneStatusReader } from "./bootGate";
+import { PAUSED, RUNNING, START } from "@/scenes/sceneStatus";
+import { inFlight, type SceneStatusReader } from "./bootGate";
+import { UI_SCENE } from "./uiSceneLifecycle";
 import { WORLD_SCENES } from "./worldRouting";
 
 /** The notice's own scene: last in the game's scene list, so drawn over every other (R11). */
@@ -16,10 +18,8 @@ export const PLAYING_SCENES = ["HubScene", "FieldScene", "BarrowspireScene"] as 
 
 const MENU_SCENE = "MainMenuScene";
 
-// Phaser 4.2.1's scene statuses (scene/const.js). A scene the game booted and never started sits at
-// INIT, so "starting" is START on, never INIT.
-const START = 2;
-const PAUSED = 6;
+/** What the notice holds still: every world scene, and the UI scene over them (FS-TQZ5J R5). */
+const HELD_SCENES = [...WORLD_SCENES, UI_SCENE];
 
 /** The scene manager's slice the notice drives. Phaser's `SceneManager` is one. */
 export interface NoticeScenes extends SceneStatusReader {
@@ -36,7 +36,10 @@ export interface LostConnections {
 const statusOf = (scenes: SceneStatusReader, key: string): number | undefined =>
   scenes.getScene(key)?.sys.settings.status;
 
-/** Starting or running: START through RUNNING, its art still loading included. */
+/**
+ * Starting or running: START through RUNNING, its art still loading included. Not INIT: a scene the
+ * game booted and never started sits there.
+ */
 const playing = (scenes: SceneStatusReader, key: string): boolean => {
   const status = statusOf(scenes, key);
   return status !== undefined && status >= START && status <= RUNNING;
@@ -59,11 +62,12 @@ export class DisconnectNotice {
   }
 
   /**
-   * Pauses every world scene running under the notice, one that came up since included (R10): a
-   * paused scene hears no keys, clicks or wheel and does not update, and is still drawn.
+   * Pauses every world scene running under the notice, one that came up since included (R10), and
+   * the UI scene with them, or Esc would open its menu under the notice (FS-TQZ5J R5): a paused
+   * scene hears no keys, clicks or wheel and does not update, and is still drawn.
    */
   holdWorlds(): void {
-    for (const key of WORLD_SCENES)
+    for (const key of HELD_SCENES)
       if (statusOf(this.scenes, key) === RUNNING) this.scenes.pause(key);
   }
 

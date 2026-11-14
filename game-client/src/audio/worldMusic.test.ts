@@ -382,8 +382,8 @@ function fakeScene(
 }
 
 describe("sceneMusicStage (FS-28DDG R6–R8, R10, R13)", () => {
-  it("should load the village mp3 alone from the public audio folder (R6)", () => {
-    expect(VILLAGE_TRACK.urls).toEqual(["/audio/music/village.mp3"]);
+  it("should load the village m4a first, then the owner's ogg, from the public audio folder (R6, as amended 2026-11-14)", () => {
+    expect(VILLAGE_TRACK.urls).toEqual(["/audio/music/village.m4a", "/audio/music/village.ogg"]);
   });
 
   it("should add the track looping at silence, never touching the manager's volume or mute", () => {

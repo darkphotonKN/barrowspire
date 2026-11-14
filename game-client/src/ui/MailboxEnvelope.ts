@@ -18,7 +18,7 @@ import type Phaser from "phaser";
 import type { StoreApi } from "zustand";
 import { sealState } from "@/mailbox/mailbox";
 import type { MailboxState } from "@/stores/mailboxStore";
-import { PASS_THROUGH, type UiActWrapper } from "@/audio/uiSounds";
+import { PASS_THROUGH, type UiActWrapper, type UiEffect } from "@/audio/uiSounds";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { viewport } from "@/render/viewport";
 import { envelopeFrame, type Rect } from "./letterPanelLayout";
@@ -40,6 +40,12 @@ export interface MailboxEnvelopeDeps {
    * FS-WDM0X S9). None, and it runs as it is.
    */
   wrapper?: UiActWrapper;
+  /**
+   * Plays an interface sound (FS-WDM0X § Change: Menu, dialog and notice sounds): `menu_hover` as the
+   * pointer comes onto it, `menu_error` for a press refused, `notify` as it glows for a newer letter.
+   * None, and it plays nothing.
+   */
+  play?: (effect: UiEffect) => void;
 }
 
 const HUD_DEPTH = 1000;
@@ -244,7 +250,7 @@ export class MailboxEnvelope {
       .setOrigin(0)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     this.zone.on("pointerdown", () => (this.deps.wrapper ?? PASS_THROUGH).act(() => this.press()));
     this.zone.on("pointerover", () => this.hover(true));
     this.zone.on("pointerout", () => this.hover(false));
@@ -254,7 +260,11 @@ export class MailboxEnvelope {
     this.drawBadge();
     this.unsubscribe = deps.store.subscribe((state, prev) => {
       if (state.summary !== prev.summary) this.drawBadge();
-      if (state.pulses > prev.pulses) this.playPulse();
+      if (state.pulses > prev.pulses) {
+        this.playPulse();
+        // a new letter arrived (§ Change M16)
+        this.deps.play?.("notify");
+      }
     });
   }
 
@@ -289,7 +299,8 @@ export class MailboxEnvelope {
   private press(): void {
     const mailbox = this.deps.store.getState();
     if (mailbox.panelOpen) return mailbox.closePanel();
-    if (this.deps.blocked()) return;
+    // refused while a dialogue holds the screen (§ Change M10)
+    if (this.deps.blocked()) return this.deps.play?.("menu_error");
     this.deps.opening?.();
     void mailbox.openPanel();
   }
@@ -300,6 +311,7 @@ export class MailboxEnvelope {
     this.drawBody();
     if (on) this.label.show(this.frame, CORNER_LABEL.mail);
     else this.label.hide();
+    if (on) this.deps.play?.("menu_hover");
   }
 
   /**

@@ -110,6 +110,12 @@ export class ResourceHud {
     });
   }
 
+  /** Taken down for good: its world left the UI scene (FS-TQZ5J § Change: Batch 5, R67). */
+  destroy(): void {
+    this.takeDown();
+    this.drawn = undefined;
+  }
+
   /** One label per row: new ones made at their row, spare ones dropped. */
   private fitLabels(rows: number, top: number): void {
     while (this.labels.length > rows) this.labels.pop()?.destroy();

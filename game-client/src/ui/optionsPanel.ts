@@ -28,6 +28,7 @@ import {
   menuBlocker,
   menuOption,
   type HitSize,
+  type MenuFeedback,
   type MenuKeys,
   type MenuStage,
   type MenuTones,
@@ -104,6 +105,16 @@ export interface ToggleRow {
 /** A row of the panel's list. */
 export type OptionsRow = SettingRow | ToggleRow;
 
+/**
+ * What the panel tells of the player's hand, for the interface sounds (FS-WDM0X § Change: Menu,
+ * dialog and notice sounds, M5, M8–M10): the menu's hover and refusal, a level moved (told after it
+ * is kept), and the Fullscreen row pressed, with the way it asks to go.
+ */
+export interface OptionsFeedback extends MenuFeedback {
+  stepped(): void;
+  toggled(on: boolean): void;
+}
+
 /** The panel's keys, in the menu slot's shape: Esc is Back, Enter and the numbers do nothing, ←/→ nudge (C6, C7). */
 export interface OptionsKeys extends MenuKeys {
   /** ← (-1) or → (+1): the first row's level by one, clamped. */
@@ -123,6 +134,8 @@ interface OptionsLayoutSpec {
   back: () => void;
   /** The Menu icon's plate, left to the icon by the blocker (FS-3EBCA R18). */
   through?: (x: number, y: number) => boolean;
+  /** Told what the player's hand did (FS-WDM0X § Change M5, M8–M10); omitted, nothing is told. */
+  feedback?: OptionsFeedback;
 }
 
 export interface OptionsPanelSpec extends OptionsLayoutSpec {
@@ -198,7 +211,7 @@ interface Mark {
  * Back at the foot, the height following the rows. `openOptionsPanel` gives it the game's settings.
  */
 export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { rows: OptionsRow[] }): OptionsPanel {
-  const { rows, origin, tones, back } = spec;
+  const { rows, origin, tones, back, feedback } = spec;
   const height = PANEL_TITLE_BAND + rows.length * OPTIONS_ROW + MENU_ROW + MENU_PAD;
   const top = -Math.round(height / 2);
   const below = top + PANEL_TITLE_BAND;
@@ -212,11 +225,14 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
   const hits: Phaser.GameObjects.Rectangle[] = [];
   /** What the panel listens to while open, let go as it closes. */
   const stops: (() => void)[] = [];
-  const change = (row: SettingRow, value: number) => {
+  /** A level moved, kept, the bar redrawn, then told (so a Sound effects step is heard at the new level); whether it moved. */
+  const change = (row: SettingRow, value: number): boolean => {
     const next = Math.min(row.steps, Math.max(0, value));
-    if (next === row.value()) return;
+    if (next === row.value()) return false;
     row.set(next);
     marks.forEach((mark) => mark.draw());
+    feedback?.stepped();
+    return true;
   };
 
   /** One mark of a row's slider: drawn in `paint`'s colour, pressable while `enabled`, at (cx, cy) in the box. */
@@ -243,10 +259,12 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
       .setName(name);
     hit.on("pointerup", () => {
       if (enabled()) press();
+      else feedback?.refused();
     });
     hit.on("pointerover", () => {
       lit = true;
       draw();
+      if (enabled()) feedback?.hovered();
     });
     hit.on("pointerout", () => {
       lit = false;
@@ -287,10 +305,15 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
     // On the release, as Phaser's ScaleManager asks (R5). A mouseup grants no user activation, but
     // the mousedown that began the press did, and that transient activation is still live here, so
     // the request is allowed. A press held past it is refused, and the row stays Off (R6).
-    hit.on("pointerup", () => row.toggle());
+    hit.on("pointerup", () => {
+      // the way it asks to go, on the press that asks (FS-WDM0X § Change M8)
+      feedback?.toggled(!row.on());
+      row.toggle();
+    });
     hit.on("pointerover", () => {
       lit = true;
       draw();
+      feedback?.hovered();
     });
     hit.on("pointerout", () => {
       lit = false;
@@ -379,11 +402,13 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
     origin,
     hit: spec.hit,
     tones,
+    feedback,
   });
 
+  // ←/→ that cannot move the first row is a press its dimmed arrow would refuse (FS-WDM0X § Change M10)
   const nudge = (by: -1 | 1) => {
     const row = rows[0];
-    if (row && !isToggle(row)) change(row, row.value() + by);
+    if (row && !isToggle(row) && !change(row, row.value() + by)) feedback?.refused();
   };
   const keys: OptionsKeys = {
     // Enter and the numbers answer no row here (C6)
@@ -398,7 +423,14 @@ export function showOptionsPanel(scene: MenuStage, spec: OptionsLayoutSpec & { r
     .container(origin.x, origin.y, [...parts, backRow])
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH);
-  const closeHit = frameCloseHit(scene, { frame, origin, tones, name: "options-close", onPress: back });
+  const closeHit = frameCloseHit(scene, {
+    frame,
+    origin,
+    tones,
+    name: "options-close",
+    onPress: back,
+    hovered: feedback?.hovered,
+  });
   const blocker = menuBlocker(scene, { through: spec.through, name: "options-blocker" });
   container.once("destroy", () => {
     stops.forEach((stop) => stop());

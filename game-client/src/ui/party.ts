@@ -85,16 +85,20 @@ export function watchable(state: {
 
 /**
  * Who to watch next: the one after `current` in the list, round to the first; the first when
- * there is no current or the current has resolved (FS-QPDKN req 7, 8, 11). Nobody when the list
- * is empty: the run is ending.
+ * there is no current or the current has resolved (FS-QPDKN req 7, 8, 11). With `step` -1, the one
+ * before it, round to the last (the switcher's ◄, FS-QPDKN § Change: The party death flow and the
+ * spectate switcher, R160); still the first with no current. Nobody when the list is empty: the run
+ * is ending.
  */
 export function nextWatched(
   list: Watchable[],
   current?: string,
+  step: 1 | -1 = 1,
 ): string | undefined {
   if (list.length === 0) return undefined;
   const at = list.findIndex((w) => w.id === current);
-  return list[(at + 1) % list.length].id;
+  if (at < 0) return list[0].id;
+  return list[(at + step + list.length) % list.length].id;
 }
 
 /** One line of the run's ESC menu, or of the confirm that replaces its rows (FS-9K8EZ req 2, 3). */

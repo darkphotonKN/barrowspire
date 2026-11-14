@@ -8,7 +8,7 @@ import {
 } from "@/stores/partyStore";
 import type { FrameQuery } from "@/render/art/library";
 import { palette, toCss } from "@/utils/canvasPalette";
-import { PartyFrames, type PartyFramesDeps } from "./PartyFrames";
+import { PARTY_FRAMES_DEPTH, PartyFrames, type PartyFramesDeps } from "./PartyFrames";
 import {
   PARTY_FRAMES_PLACEMENT,
   partyFramesFrame,
@@ -28,18 +28,21 @@ interface FakeText {
   destroyed: boolean;
   interactive: boolean;
   press?: () => void;
+  over?: () => void;
 }
 
 function fakeScene() {
   const texts: FakeText[] = [];
+  /** Every depth anything was set at (FS-TQZ5J § Change: Phase 3, R62). */
+  const depths: number[] = [];
   const allGraphics: { fills: number[]; destroyed: boolean }[] = [];
   const graphics = () => {
     const g = { fills: [] as number[], destroyed: false };
     allGraphics.push(g);
     const self: Record<string, unknown> = {};
+    self.setDepth = (d: number) => (depths.push(d), self);
     for (const m of [
       "setScrollFactor",
-      "setDepth",
       "lineStyle",
       "fillRect",
       "strokeRect",
@@ -71,13 +74,14 @@ function fakeScene() {
     texts.push(t);
     const self: Record<string, unknown> = {
       setScrollFactor: () => self,
-      setDepth: () => self,
+      setDepth: (d: number) => (depths.push(d), self),
       setOrigin: () => self,
       setAlpha: () => self,
       setX: (nx: number) => ((t.x = nx), self),
       setInteractive: () => ((t.interactive = true), self),
       on: (ev: string, fn: () => void) => (
         ev === "pointerup" && (t.press = fn),
+        ev === "pointerover" && (t.over = fn),
         self
       ),
       setText: (c: string) => ((t.content = c), self),
@@ -133,6 +137,7 @@ function fakeScene() {
     texts.find((t) => !t.destroyed && t.content === content);
   return {
     scene,
+    depths,
     live,
     colourOf,
     liveFills,
@@ -222,6 +227,18 @@ function setup(world: WorldType = "hub", clock = { now: 0 }) {
     deps,
   };
 }
+
+// FS-TQZ5J § Change: Phase 3 (I-TQZ5J-16, R62): the frames are the lowest UI (the owner's
+// 「任何ui都優先隊友列表」): under the corner row, the prompts and the notice line (1000) and every window.
+describe("PartyFrames' depth, the lowest of the UI scene (FS-TQZ5J § Change: Phase 3, R62)", () => {
+  it("draws every part of every frame, Travel's included, at 999, under the HUD's 1000", () => {
+    const { store, depths } = setup();
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren", "archer", "field")]));
+    expect(depths.length).toBeGreaterThan(0);
+    expect(new Set(depths)).toEqual(new Set([PARTY_FRAMES_DEPTH]));
+    expect(PARTY_FRAMES_DEPTH).toBe(999);
+  });
+});
 
 describe("PartyFrames", () => {
   it("draws nothing with no party", () => {
@@ -800,5 +817,47 @@ describe("PartyFrames: same-world teammates' vitals and level (FS-CH21F)", () =>
     const level = liveText("Lv 12")!;
     expect(level.x).toBeGreaterThan(name.x + width(name));
     expect(level.x).toBeLessThan(name.x + width(name) + 12);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): Travel
+// hovers and clicks live, says no greyed (P5–P7)
+describe("PartyFrames' Travel sounds (FS-WDM0X § Pass 2: the party, P5–P7)", () => {
+  const LEADER = "wren";
+  const atPods = update(
+    [
+      { ...member(LEADER, "Wren"), pod_id: "pod-a" },
+      { ...member(ME, "Marl"), pod_id: "pod-b" },
+    ],
+    LEADER,
+  );
+
+  it("should play menu_hover and menu_click on the live Travel, beside its travel", () => {
+    const env = setup("hub");
+    const heard: string[] = [];
+    env.deps.play = (effect) => void heard.push(effect);
+    env.store.getState().apply(atPods);
+    const travel = env.liveText("Travel")!;
+
+    travel.over?.();
+    travel.press?.();
+
+    expect(heard).toEqual(["menu_hover", "menu_click"]);
+    expect(env.deps.travel).toHaveBeenCalledTimes(1);
+  });
+
+  it("should take the greyed Travel's press in a field for menu_error alone, travelling nowhere", () => {
+    const env = setup("field");
+    const heard: string[] = [];
+    env.deps.play = (effect) => void heard.push(effect);
+    env.store.getState().apply(atPods);
+    const travel = env.liveText("Travel")!;
+
+    expect(travel.interactive).toBe(true);
+    travel.over?.();
+    travel.press?.();
+
+    expect(heard).toEqual(["menu_error"]);
+    expect(env.deps.travel).not.toHaveBeenCalled();
   });
 });

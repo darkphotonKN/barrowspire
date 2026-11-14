@@ -13,6 +13,7 @@ import type Phaser from "phaser";
 import { anchorAt, crispen, type Placement } from "@/render/viewport";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { AbilityCardView } from "./abilityCard";
+import { ABILITY_CARD_H } from "./hudCornerLayout";
 
 const CARD_W = 280;
 const HUD_DEPTH = 1000;
@@ -24,10 +25,10 @@ const GLYPH_BUTTON_H = 10;
 const GLYPH_RADIUS = 7;
 const GLYPH_GAP = 12;
 const NAME_H = 20;
-/** The line wraps to at most two rows of this height. */
-const LINE_ROW_H = 16;
+/** The line wraps to at most two rows of 16 px. */
 const LINE_ROWS = 2;
-const CARD_H = PAD * 2 + NAME_H + LINE_ROW_H * LINE_ROWS;
+/** PAD * 2 + NAME_H + LINE_ROWS of 16: the layout's, which the controls badge stands over (`hudCornerLayout.ts`). */
+const CARD_H = ABILITY_CARD_H;
 const TEXT_W = CARD_W - PAD * 2 - GLYPH_W - GLYPH_GAP;
 
 export class AbilityHud {
@@ -56,6 +57,12 @@ export class AbilityHud {
   /** The logical view changed: the card goes back to its corner (FS-ZAJMH R13). */
   relayout(): void {
     if (this.shown) this.draw(this.shown);
+  }
+
+  /** Taken down for good: its world left the UI scene (FS-TQZ5J § Change: Batch 5, R67). */
+  destroy(): void {
+    this.takeDown();
+    this.shown = null;
   }
 
   private draw(view: AbilityCardView): void {

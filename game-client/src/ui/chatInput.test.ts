@@ -8,8 +8,8 @@ import {
   clampChatText,
   whisperOf,
   type ChatInputField,
-  type SceneKeyboard,
 } from "./chatInput";
+import type { SceneKeyboard } from "./worldKeyboard";
 
 // FS-WJGFJ §Requirements C26–C28. I-WJGFJ-4: the chat input's rules, on stand-ins for the
 // text field and the scene's keyboard. The DOM field itself is a thin adapter over these.
@@ -1117,5 +1117,113 @@ describe("ChatInput picker keys (FS-J267Q R5)", () => {
     input.keyDown("Tab", false);
     expect(input.pickerOpen()).toBe(false);
     expect(field.channel).toBe("world");
+  });
+});
+
+// FS-WDM0X § Pass 2: the chat, C2, C3, C5: the picker's list opening and shutting by the player, and the
+// one refusal of chat input, played through the input's `play`; what the game shuts plays nothing
+describe("ChatInput sounds (FS-WDM0X § Pass 2: the chat)", () => {
+  function heard(open: ChatChannel[] = ["area", "world", "party", "whisper"], mayOpen = () => true) {
+    const played: string[] = [];
+    const field = fakeField();
+    const send = vi.fn();
+    const input = new ChatInput({
+      field,
+      keyboard: () => ({ enabled: true, resetKeys: vi.fn() }),
+      mayOpen,
+      send,
+      open: new Set(open),
+      play: (effect) => void played.push(effect),
+    });
+    const typing = () => {
+      input.requestOpen();
+      input.focused();
+    };
+    return { input, field, send, played, typing };
+  }
+
+  it("should play menu_dropdown_open as the picker opens its list, and menu_dropdown_close as it shuts it (C2, C3)", () => {
+    const { input, played } = heard();
+    input.togglePicker();
+    expect(input.pickerOpen()).toBe(true);
+    input.togglePicker();
+    expect(played).toEqual(["menu_dropdown_open", "menu_dropdown_close"]);
+  });
+
+  it("should play nothing for a picker press refused while something else owns the keys", () => {
+    const { input, played } = heard(undefined, () => false);
+    input.togglePicker();
+    expect(input.pickerOpen()).toBe(false);
+    expect(played).toEqual([]);
+  });
+
+  it.each([
+    ["Esc in the list", (s: ReturnType<typeof heard>) => s.input.keyDown("Escape", false)],
+    ["Enter in the list, picking its row", (s: ReturnType<typeof heard>) => s.input.keyDown("Enter", false)],
+    ["a row picked", (s: ReturnType<typeof heard>) => s.input.pick("world")],
+    // the player's shut is its own call (FS-TQZ5J § Change: Batch 6, R135)
+    ["a press outside it", (s: ReturnType<typeof heard>) => s.input.dismissPicker()],
+  ])("should play menu_dropdown_close once for %s (C3)", (_, shut) => {
+    const s = heard();
+    s.typing();
+    s.input.togglePicker();
+    s.played.length = 0;
+    shut(s);
+    expect(s.input.pickerOpen()).toBe(false);
+    expect(s.played).toEqual(["menu_dropdown_close"]);
+  });
+
+  it.each([
+    ["Tab", (s: ReturnType<typeof heard>) => s.input.keyDown("Tab", false)],
+    ["a typed character", (s: ReturnType<typeof heard>) => ((s.field.value = "h"), s.input.typed(false))],
+    ["the game shutting it (a resize)", (s: ReturnType<typeof heard>) => s.input.closePicker()],
+    ["the keys taken", (s: ReturnType<typeof heard>) => s.input.cancel()],
+    ["the field let go", (s: ReturnType<typeof heard>) => s.input.blurred()],
+  ])("should shut the list silently for %s (C3)", (_, shut) => {
+    const s = heard();
+    s.typing();
+    s.input.togglePicker();
+    s.played.length = 0;
+    shut(s);
+    expect(s.input.pickerOpen()).toBe(false);
+    expect(s.played).toEqual([]);
+  });
+
+  it("should play nothing for a pick with the list shut, nor for a closed channel's row", () => {
+    const s = heard(["area"]);
+    s.typing();
+    s.input.pick("area");
+    s.input.togglePicker();
+    s.played.length = 0;
+    s.input.pick("world");
+    expect(s.input.pickerOpen()).toBe(true);
+    expect(s.played).toEqual([]);
+  });
+
+  it.each([["@Wenna"], ["@Wenna   "], ["@ hello"]])(
+    "should play menu_error on Enter refused for the whisper draft %j, send nothing and keep it (C5)",
+    (draft) => {
+      const s = heard();
+      s.typing();
+      s.field.value = draft;
+      s.field.channel = "whisper";
+      s.input.keyDown("Enter", false);
+      expect(s.played).toEqual(["menu_error"]);
+      expect(s.send).not.toHaveBeenCalled();
+      expect(s.field.value).toBe(draft);
+    },
+  );
+
+  it("should play nothing on Enter that sends, nor on Enter on nothing", () => {
+    const s = heard();
+    s.typing();
+    s.field.value = "@Wenna hi";
+    s.field.channel = "whisper";
+    s.input.keyDown("Enter", false);
+    s.field.value = "";
+    s.field.channel = "area";
+    s.input.keyDown("Enter", false);
+    expect(s.send).toHaveBeenCalledTimes(1);
+    expect(s.played).toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 import * as Phaser from "phaser";
 import { createAtmosphere } from "@/utils/atmosphere";
-import { ActionType, WorldType } from "@/assets/types/client";
+import { ActionType } from "@/assets/types/client";
 import { useGameStore } from "@/stores/gameStore";
 import { isLeader, usePartyStore, type PartyNoticePayload, type PartyUpdatePayload } from "@/stores/partyStore";
 import { useAuthStore } from "@/stores/authStore";
@@ -28,24 +28,9 @@ import {
   type FieldDestination,
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
-import { ProgressHud } from "@/ui/ProgressHud";
-import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
-import { escapeStep } from "@/ui/escapeOrder";
-import { hubMenuChoices, type HubMenuChoice } from "./hubMenu";
-import { HudCorner } from "@/ui/HudCorner";
-import { PartyFrames, mountPartyFrames } from "@/ui/PartyFrames";
-import { PartyInvitePrompt, mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
-import { PartyReadyCheck, mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
-import { MailboxHud, mountMailbox } from "@/ui/mailboxHud";
+import { letterPanelState, type LetterPanelState } from "@/stores/letterPanelState";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
-import { GearOverlay } from "@/ui/GearOverlay";
-import { HubGear, gearAsCharacter } from "@/ui/HubGear";
-import { PurseReader } from "@/ui/purse";
-import { useMailboxStore } from "@/stores/mailboxStore";
-import { apiClient } from "@/utils/api";
-import { showDialogueCard } from "@/ui/npcDialogue";
-import { showMenuPanel, type MenuTones } from "@/ui/menuPanel";
+import { hudLine } from "@/ui/uiSceneNotices";
 import { progressOf } from "@/ui/progress";
 import {
   ensureCharacterTextures,
@@ -73,7 +58,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap, type LightSource } from "@/render/lighting";
-import { cursorCss, cursorSource } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 // the effects module has no barrel: its runtime and smoke are imported by path
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { ChimneySmoke } from "@/render/effects/smoke";
@@ -155,6 +140,19 @@ import {
 } from "@/render/world/hubStash";
 import { nearestInReach } from "./hubReach";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
+import {
+  NO_FACTS,
+  NO_UI,
+  answering,
+  reportWorld,
+  type DialogueSound,
+  type DialogueSpeaker,
+  type WorldBlockers,
+  type WorldFacts,
+  type WorldSide,
+  type WorldUi,
+  type WorldWindows,
+} from "@/ui/uiBridge";
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 
 /**
@@ -182,11 +180,6 @@ import { minimapPlaceName } from "@/ui/minimapName";
 import { placeCard } from "@/ui/placeCard";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { browserMusicStore } from "@/audio/musicSetting";
-import { UiSounds, sceneUiSoundStage, type WindowState } from "@/audio/uiSounds";
-import { browserSfxStore } from "@/audio/sfxSetting";
-import { GameplaySounds } from "@/audio/gameplaySounds";
-import { openOptionsPanel, type MenuSlotKeys } from "@/ui/optionsPanel";
-import { lentFullscreen } from "@/ui/gameFullscreen";
 
 /** Moves a world position a step toward its target. */
 function easeToward(pos: Point, target: Point): void {
@@ -298,26 +291,8 @@ const NPC_TALK_RANGE = 80;
 
 /** Screen px between the queue panel and its Leave button. */
 const LEAVE_GAP = 8;
-/** A passing notice: where it sits (screen px from the top, centred) and for how long. */
-const NOTICE_Y = 72;
 /** The queue panel's top edge: centred at the top, above the notice band (moved off the chat window). */
 const QUEUE_Y = 20;
-const NOTICE_MS = 3200;
-
-/**
- * One line of HUD chrome on a charcoal ground: the queue panel, its Leave button and a passing
- * notice are all this shape, so they stand the same height side by side. The colour is the
- * channel (docs/design-guideline.md, Gameplay accent): vellum to read, amber to press.
- */
-function hudLine(colour: number): Phaser.Types.GameObjects.Text.TextStyle {
-  return {
-    fontFamily: CANVAS_FONT.body,
-    fontSize: "14px",
-    color: toCss(colour),
-    backgroundColor: toCss(BARROW_HEX.charcoal),
-    padding: { x: 12, y: 8 },
-  };
-}
 
 /**
  * The queue panel's words: the HUD's type with no ground of its own, an outline in the darkest
@@ -371,10 +346,12 @@ export interface DialogueChoice {
   act?: (scene: HubScene) => void;
   /** The dialogue stays up after the pick: a reply is being waited for. */
   stays?: boolean;
-  /** Whether it can be picked now, read live each time it is drawn or pressed; omitted means always. */
+  /** Whether it can be picked now, read each time the dialogue is shown or a choice picked; omitted means always. */
   enabled?: (pending: Pending) => boolean;
   /** Picking it turns the page: the same speaker goes on with this, instead of the box closing. */
   next?: () => Dialogue;
+  /** How it sounds as it is picked, where not its register's (FS-WDM0X § Change: Menu, dialog and notice sounds, M15). */
+  sound?: DialogueSound;
 }
 
 /** What an NPC says and offers: a line and its choices, any number of them. */
@@ -418,6 +395,8 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
     act: (scene) => scene.enterAsParty(),
     stays: true,
     enabled: ({ enterPending }) => !enterPending,
+    // a yes that sends the player on (FS-WDM0X § Change M12)
+    sound: "confirm",
   };
   const ways: DialogueChoice[] = [
     {
@@ -427,6 +406,7 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
       act: (scene) => scene.startSolo(),
       stays: true,
       enabled: ({ soloPending }) => !soloPending,
+      sound: "confirm",
     },
     {
       id: "queue",
@@ -435,6 +415,7 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
       act: (scene) => scene.joinQueue(),
       stays: true,
       enabled: ({ queuePending }) => !queuePending,
+      sound: "confirm",
     },
   ];
   const dismiss: DialogueChoice = { id: "dismiss", label: "Not yet", register: "cancel" };
@@ -465,7 +446,8 @@ function residentLine(npc: NPCState): Dialogue {
   const sum = [...npc.entity_id].reduce((total, c) => total + c.charCodeAt(0), 0);
   return {
     line: RESIDENT_LINES[sum % RESIDENT_LINES.length],
-    choices: [{ id: "leave", label: "Leave", register: "actionable" }],
+    // it only closes the box, so it sounds as a cancel (FS-WDM0X § Change M15)
+    choices: [{ id: "leave", label: "Leave", register: "actionable", sound: "cancel" }],
   };
 }
 
@@ -519,20 +501,22 @@ const NPC_DIALOGUE: Record<string, (state: HubState) => Dialogue> = {
   }),
 };
 
-/** The pressable area of a dialogue or menu choice, in screen px around its label. */
-const CHOICE_HIT = { width: 160, height: 34 };
 /**
- * The hub's tokens for the shared menu chrome: charcoal panel, brass hairline, amber to press,
- * arcane to go back, vellumDark while dimmed, vellum under the pointer.
+ * The dialogue the town has open (FS-TQZ5J A2 R29): who speaks, cut once as it opens, and what they
+ * say and offer. The UI scene draws it from the data the town shows of it; the choices' doings stay here.
  */
-const MENU_TONES: MenuTones = {
-  panel: BARROW_HEX.charcoal,
-  frame: BARROW_HEX.brass,
-  text: BARROW_HEX.vellum,
-  dim: BARROW_HEX.vellumDark,
-  actionable: BARROW_HEX.amber,
-  cancel: BARROW_HEX.arcane,
-};
+interface OpenDialogue {
+  /** Who was spoken to: a turned page cuts their bust again, as a fresh card always has. */
+  who: Speaker;
+  speaker: DialogueSpeaker;
+  dialogue: Dialogue;
+}
+
+/** Who speaks: their name, and the figure the player walked up to, if they are one. */
+interface Speaker {
+  name: string;
+  entityId?: NPCState["entity_id"];
+}
 
 /**
  * One player as the scene sees them.
@@ -632,19 +616,11 @@ export class HubScene extends Phaser.Scene {
    */
   private npcs = new Map<string, NPCView>();
   /**
-   * Whose dialogue is open, if any, what the keys do to it, and how to redraw its choices when
-   * what can be picked changes under it (a solo start sent, or refused).
+   * Whose dialogue is open, if any: the UI scene draws its card and hands back the choice picked
+   * (FS-TQZ5J A2 R29, R30); the town shows it again whenever what can be picked changes under it (a
+   * solo start sent, or refused).
    */
-  private dialogue?: Phaser.GameObjects.Container;
-  private dialogueChoices?: {
-    confirm: () => void;
-    dismiss: () => void;
-    /** The n-th actionable choice, as the number keys count them. */
-    pick: (index: number) => void;
-    retone: () => void;
-    /** The card back to its corner: the logical view changed (FS-ZAJMH R13). */
-    relayout: () => void;
-  };
+  private dialogue?: OpenDialogue;
   /** The open dialogue is the Spire door's panel, which walking out of the gate closes. */
   private doorOpen = false;
   /**
@@ -666,26 +642,10 @@ export class HubScene extends Phaser.Scene {
   private enteringField = false;
   /** A start_dev_endgame_run has been sent and its reply has not come (FS-BDRTJ R21). */
   private endgamePending = false;
-  /** 1, 2, 3: one per actionable choice when a dialogue offers more than one. */
+  /** 1, 2, 3: the UI scene's menu's while it is open and its dialogue card's while one is shown; read and dropped here then. */
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
-  private dismissKey?: Phaser.Input.Keyboard.Key;
   private interactKey?: Phaser.Input.Keyboard.Key;
-  /** I and B: either opens or closes the inventory (FS-HRH2J R4; § Change C2). */
-  private gearKeys: Phaser.Input.Keyboard.Key[] = [];
-  /** C: the character panel (FS-HRH2J § Change C2). */
-  private characterKey?: Phaser.Input.Keyboard.Key;
-  /** The gear, bag and stats overlay, fed from REST (FS-HRH2J §E); one per visit. */
-  private gear?: HubGear;
-  /**
-   * The ESC menu while it is open (FS-G4VMQ §Requirements 1–5), or the OPTIONS panel opened from it
-   * in its place (FS-28DDG § Change: Music volume in an Options panel, C8). It owns the keyboard.
-   */
-  private menu?: Phaser.GameObjects.Container;
-  /** The open menu's choices by key: the n-th actionable one, and the first on Enter; the panel's ←/→. */
-  private menuChoices?: MenuSlotKeys;
-  /** The open menu, its hit areas with it, to a new centre: the logical view changed (FS-ZAJMH R13). */
-  private moveMenu?: (origin: { x: number; y: number }) => void;
   /** Shown while queued, wherever the player walks. */
   private queuePanel?: Phaser.GameObjects.Text;
   /** Beside the panel while queued: the way out of the queue (FS-G4VMQ §Requirements 15). */
@@ -712,24 +672,11 @@ export class HubScene extends Phaser.Scene {
   /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
   private leavingHub = false;
   /**
-   * The player's level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel
-   * at the bottom. Made with the first state that carries a level.
+   * The letter panel's open state (FS-1GZGD R40): only the town has one. While the panel is open it
+   * owns the keys, as the ESC menu does. The envelope and the panel are the UI scene's; their open state
+   * is the mailbox store's, read here (FS-TQZ5J § Change: Batch 4: the mailbox, R101, R103).
    */
-  private progressHud?: ProgressHud;
-  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
-  private chatWindow?: ChatWindow;
-  private partyPanel?: PartyPanel;
-  /** The teammates' frames in the top-left corner (FS-R82NV R34, FS-77DVN §E.18). */
-  private partyFrames?: PartyFrames;
-  /** Invites waiting on an answer, top centre (FS-R82NV R32): only the hub receives them (R33). */
-  private invitePrompt?: PartyInvitePrompt;
-  /** The party's ready check, top centre (FS-BJNYC R23): it only happens in the town. */
-  private readyCheck?: PartyReadyCheck;
-  /**
-   * The mailbox's envelope, bottom-right, and its letter panel (FS-1GZGD R33, R40): only the town
-   * has one. While the panel is open it owns the keys, as the ESC menu does.
-   */
-  private mailbox?: MailboxHud;
+  private mailbox?: LetterPanelState;
   /**
    * The town's minimap at the top of the top-right column (FS-P0HSP): built with the first state
    * that carries the town's walls, from the stage create wires; gone with the visit.
@@ -743,15 +690,6 @@ export class HubScene extends Phaser.Scene {
   private modeIconStage?: ModeIconStage;
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  /**
-   * The corner row (FS-3EBCA): Menu, Character and Party, the Mailbox's slot left to the
-   * envelope. Each press is the key's own path: one Esc, I, T.
-   */
-  private corner?: HudCorner;
-  /** Lets go of the mailbox's gold Takes, which read the purse again (FS-7TGZ3 R9). */
-  private unsubscribeGoldTaken?: () => void;
-  /** The character's level from the hub's state: the letter panel's item tip tones by it (FS-BDA7X R45). */
-  private characterLevel?: number;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
@@ -835,10 +773,13 @@ export class HubScene extends Phaser.Scene {
    * which is this game's, across its stops, as the fade-out outlives the stop (R3).
    */
   private music?: WorldMusic;
-  /** The interface sounds' player and wrapper (FS-WDM0X S23), made in create before anything that hears a player. */
-  private sounds?: UiSounds;
-  /** The gameplay sound effects' player (FS-AND39 R16), made in `create` beside the interface effects', for the modules that play. */
-  private gameplaySounds?: GameplaySounds;
+  /**
+   * What the player's actions that can open or close a window, and the minimap's step, run through:
+   * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
+   * game's, from create on, before anything that hears a player; until then, and in a game lent no
+   * bridge, each action runs as it is. Nothing the game does on its own comes through here (S4).
+   */
+  private ui: WorldUi = NO_UI;
   /** Cancels the music's end listener of a start that has not reached create; create's own takes over. */
   private cancelLoadingEnd?: () => void;
 
@@ -876,6 +817,9 @@ export class HubScene extends Phaser.Scene {
     // an arrival is dark before anything of the town is made: the world's fade-in opens on the
     // dark, and the town's name, known now, comes after its dark hold (FS-PQ2TW R11, R13)
     if (this.arrival) this.arrivalCard.play(placeCard({ world: "hub" }), { built: false });
+    // the UI scene comes up over this world, and sleeps when it stops; the player's actions reach
+    // its interface sounds from here on (FS-TQZ5J R3, R9, R12)
+    this.ui = reportWorld(this, "hub", this.worldSide());
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
     const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
@@ -885,11 +829,10 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
     this.art = registerArt(this, SCENE_ART.HubScene);
     this.occluders = new Occluders();
-    // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3); the browser's
-    // `default` without its sheet. Nothing hostile here, so no strike-mark.
-    this.input.setDefaultCursor(
-      cursorCss("cursor_hand", "default", cursorSource(this.art, this.textures)),
-    );
+    // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3), pressed under a held left
+    // button (§ Change: The pressed hand); the browser's `default` without its sheet. Nothing
+    // hostile here, so no strike-mark.
+    ensurePointerLook(this, this.art)?.base("hand");
 
     // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1), running on past
     // the edge at the gates and fading into the dark there (FS-0XMCP R18).
@@ -904,12 +847,9 @@ export class HubScene extends Phaser.Scene {
         })
       : undefined;
     if (!this.groundLayer) this.drawGround();
-    this.mountUiSounds();
-    this.mountGameplaySounds();
     this.bindInput();
     this.bindMinimapKey();
     this.bindMinimapPointer();
-    this.gear = this.composeGear();
 
     // Lit like a run, in warm dusk rather than barrow dark (FS-2325V §C.8): the
     // light-map with the player's torch, then the vignette and dust above it.
@@ -924,45 +864,15 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
-    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town.
-    // The letter panel is opened by a press, so it keeps a half-typed line as any press elsewhere
-    // does, and the wheel and presses under it are its own (FS-1GZGD R40)
-    this.chatWindow = mountChatWindow(
-      this,
-      () => this.mayChat(),
-      {
-        keepsDraft: () => !!this.mailbox?.isOpen(),
-        coveredAt: (x, y) => this.mailbox?.covers(x, y) ?? false,
-      },
-    );
-    // T: the party panel, opening over the inventory and the character panel (FS-R82NV R28, § Change
-    // C8), and closing the letter panel as it opens (§ Change C9)
-    this.partyPanel = mountPartyPanel(
-      this,
-      () => this.refusesParty(),
-      () => this.closeLetter(),
-      this.sounds,
-    );
-    // party invites, hidden while the menu, the gear overlay or the letter panel covers the town
-    // (FS-R82NV R32, R33)
-    this.invitePrompt = mountPartyInvitePrompt(this, () => this.coversPopups());
-    // the ready check, under the same covers; it closes no dialogue or shop (FS-BJNYC R23)
-    this.readyCheck = mountPartyReadyCheck(this, () => this.coversPopups());
-    // the teammates' frames: in the village every frame says where its member stands (FS-R82NV R34)
-    this.partyFrames = mountPartyFrames(this, this.art);
-    // the mailbox: mounting it is entering the town, which fetches its summary (FS-1GZGD R34); the
-    // envelope opens nothing while a dialogue or the menu is up, and closes the other windows as it
-    // opens the letter panel (FS-1GZGD § Change C4)
-    this.mailbox = mountMailbox(
-      this,
-      this.art,
-      () => this.refusesLetter(),
-      () => this.characterLevel,
-      () => this.clearForLetter(),
-      this.sounds,
-    );
-    this.watchGoldTakes();
-    this.mountCorner();
+    // the chat window is the UI scene's, built as the town is reported: it reads the town's part of who
+    // owns Enter and Esc in its blockers, and keeps a half-typed line while the letter panel, opened by a
+    // press, holds the keys (FS-1GZGD R40; FS-TQZ5J § Change: Batch 6, R125, R126)
+    // T and the party panel, the invite prompts and the ready check are the UI scene's: it asks the
+    // town to close its letter panel as the panel opens, and reads the town's refusal and its popups'
+    // covers in its report (FS-TQZ5J § Change: Phase 2: the party, R36, R38, R39)
+    // the mailbox's envelope and letter panel are the UI scene's, built as the town is reported; the
+    // town reads the letter panel's open state from the mailbox store (FS-TQZ5J § Change: Batch 4, R101, R103)
+    this.mailbox = letterPanelState();
 
     // the town's minimap, built with the first state that carries the walls (FS-P0HSP §A.1); as
     // the overlay, held against the screen from the main camera's frames (FS-1SEF0 §C.19)
@@ -986,40 +896,79 @@ export class HubScene extends Phaser.Scene {
   }
 
   /**
-   * The interface sounds (FS-WDM0X S23): the player on the game's sound, the level this browser
-   * kept, and the town's windows as the rule reads them. Each player input that can open or close a
-   * window runs through its wrapper (`act`), here and in the modules it is handed to (S9).
+   * What the town reports with its name (FS-TQZ5J R9, R11): its windows and its dialogue as they are
+   * when read, and its answers to the UI scene's requests. The corner row's presses come as these
+   * (R14): Menu the menu's path, Inventory and Character I's and C's, Party T's, each under its own
+   * refusals; the Mailbox's slot is the town's envelope.
    */
-  private mountUiSounds(): void {
-    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => this.windowState());
+  private worldSide(): WorldSide {
+    return {
+      windows: () => this.windows(),
+      blockers: () => this.blockers(),
+      facts: () => this.facts(),
+      // the menu opens over no window (FS-3EBCA R17): the letter panel goes; the gear overlay and the
+      // party panel are the UI scene's, shut as its menu opens
+      heardUi: (ui, was) => {
+        if (ui.menuOpen && !was.menuOpen) this.closeLetter();
+      },
+      answer: answering({
+        // one Esc step each (FS-TQZ5J R17): the dialogue's Esc is its dismiss; the party panel and the
+        // gear overlay are the UI scene's own (§ Change: Phase 2, R39; § Change: Phase 3, R55), and a
+        // panel of theirs opening asks the letter panel to close (FS-3EBCA R16)
+        close: {
+          letter: () => this.mailbox?.close(),
+          dialogue: () => this.dismissDialogue(),
+        },
+        // a row of the dialogue card, picked by the pointer or its key (FS-TQZ5J A2 R30)
+        pickDialogue: (id) => this.pickDialogue(id),
+        leaveQueue: () => this.leaveQueue(),
+        changeCharacter: () => this.changeCharacter(),
+        // the OPTIONS Music row, applied to the town's music at once (FS-TQZ5J R19)
+        musicLevel: (level) => this.music?.setLevel(level),
+      }),
+    };
+  }
+
+  /** What the town's ESC menu reads (FS-TQZ5J R9, R16): the queue it offers a way out of, and a Change character unanswered. */
+  private facts(): WorldFacts {
+    return { ...NO_FACTS, queued: this.queued, leaving: this.leavingHub };
+  }
+
+  /** Whether the UI scene's menu slot is filled (FS-TQZ5J R10): the ESC menu, OPTIONS; every guard that read the town's own menu reads this. */
+  private get menuOpen(): boolean {
+    return this.ui.ui.menuOpen;
   }
 
   /**
-   * The gameplay effects' player (FS-AND39 R13, R16), beside the interface effects': on the same
-   * stage and the same kept level, for the modules that play.
+   * What keeps the town's screen now (FS-TQZ5J R9): its NPC dialogue, open; and the town's part of the
+   * party panel's refusal, its dialogue (FS-R82NV R28; FS-3EBCA R8): the menu is the UI scene's own, and
+   * neither the inventory nor the character panel refuses it (it opens over them, § Change C8), nor
+   * the letter panel (it closes as the panel opens, § Change C9); and what hides the invite prompts
+   * and the ready check, `coversPopups` (§ Change: Phase 2: the party, R38); the town's part of the gear
+   * overlay's refusal, its dialogue: the menu is the UI scene's own (§ Change: Phase 3, R55).
    */
-  private mountGameplaySounds(): void {
-    this.gameplaySounds = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
-  }
-
-  /** Which of the town's windows are open now (FS-WDM0X S8): the menu's slot, the letter panel, Party, Inventory, Character. */
-  private windowState(): WindowState {
-    return {
-      menu: !!this.menu,
-      letter: this.mailbox?.isOpen() ?? false,
-      party: this.partyPanel?.isOpen() ?? false,
-      inventory: this.gear?.isInventoryOpen() ?? false,
-      character: this.gear?.isCharacterOpen() ?? false,
+  private blockers(): WorldBlockers {    return {
+      dialogue: !!this.dialogue,
+      party: !!this.dialogue,
+      popups: this.coversPopups(),
+      gear: !!this.dialogue,
+      // the town's part of who owns Enter and Esc: a dialogue or the letter panel (FS-WJGFJ R27; FS-TQZ5J
+      // § Change: Batch 6, R126); the menu and the gear overlay are the UI scene's own
+      chat: !!this.dialogue || !!this.mailbox?.isOpen(),
     };
   }
 
   /**
-   * A player's action, through the interface sounds' wrapper (FS-WDM0X S9): the one effect its
-   * change of window plays. Before create made the player, it runs as it is. Nothing the game does
-   * on its own comes through here (S4).
+   * Which of the town's windows are open now, as its report to the UI bridge reads them (FS-TQZ5J R9;
+   * FS-WDM0X S8): the letter panel. Inventory and Character are the UI scene's (§ Change: Phase 3, R55).
    */
-  private act<T>(run: () => T): T {
-    return this.sounds ? this.sounds.act(run) : run();
+  private windows(): WorldWindows {
+    return { letter: this.mailbox?.isOpen() ?? false };
+  }
+
+  /** Whether the UI scene's gear overlay is open now, either panel (§ Change: Phase 3, R53). */
+  private get gearOpen(): boolean {
+    return !!(this.ui.ui.inventory || this.ui.ui.character);
   }
 
   /** The town's music rises as the hub is entered; release() tells it the hub was left (FS-28DDG R2). */
@@ -1028,66 +977,9 @@ export class HubScene extends Phaser.Scene {
     this.music.enter();
   }
 
-  /**
-   * The corner row (FS-3EBCA): the Menu icon opens the menu (R6), the others each the key's own
-   * path, I or B, C, T; the mailbox's envelope stands beside it, mounted with the mailbox.
-   */
-  private mountCorner(): void {
-    this.corner = new HudCorner(this, {
-      icons: [
-        { icon: "menu", press: () => this.act(() => this.pressMenuIcon()) },
-        { icon: "inventory", press: () => this.act(() => this.toggleGear()) },
-        { icon: "character", press: () => this.act(() => this.toggleCharacter()) },
-        // the panel's toggle runs through the wrapper too, and joins this press (FS-WDM0X S9)
-        { icon: "party", press: () => this.act(() => this.partyPanel?.toggle()) },
-      ],
-    });
-  }
-
-  /**
-   * Whether T and the Party icon are refused now (FS-R82NV R28; FS-3EBCA R8): a dialogue or the
-   * menu owns the screen. The inventory and the character panel do not: the party panel opens over
-   * them (FS-R82NV § Change C8); nor the letter panel, which closes as it opens (§ Change C9).
-   */
-  private refusesParty(): boolean {
-    return !!this.dialogue || !!this.menu;
-  }
-
-  /**
-   * Whether the envelope is refused now (FS-1GZGD § Change C1): a dialogue or the menu owns the
-   * screen. The windows do not: they close as the letter panel opens (`clearForLetter`).
-   */
-  private refusesLetter(): boolean {
-    return !!this.dialogue || !!this.menu;
-  }
-
-  /**
-   * The letter panel is full-screen, so it stands alone (FS-3EBCA R15, R19): the inventory and the
-   * character panel (the stash with them) and the party panel close as it opens.
-   */
-  private clearForLetter(): void {
-    this.gear?.hide();
-    this.partyPanel?.close();
-  }
-
   /** A window opening closes the letter panel first (FS-3EBCA R16). */
   private closeLetter(): void {
     if (this.mailbox?.isOpen()) this.mailbox.close();
-  }
-
-  /** The menu opens over no window (FS-3EBCA R17): the letter panel, the party panel and the overlay go. */
-  private closeWindows(): void {
-    this.closeLetter();
-    this.partyPanel?.close();
-    this.gear?.hide();
-  }
-
-  /**
-   * Whether the chat input may take focus (FS-WJGFJ R27): not while a dialogue, the menu (FS-3EBCA
-   * R18), the gear overlay or the letter panel is up.
-   */
-  private mayChat(): boolean {
-    return !this.dialogue && !this.menu && !this.gear?.isOpen() && !this.mailbox?.isOpen();
   }
 
   /** What the server sent while the hub loaded, to the listeners create has made, in order. */
@@ -1110,17 +1002,7 @@ export class HubScene extends Phaser.Scene {
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
-    // the XP bar keeps to the bottom middle (FS-77DVN §A.4)
-    this.progressHud?.relayout();
     this.minimap?.place();
-    this.invitePrompt?.relayout();
-    this.readyCheck?.relayout();
-    this.mailbox?.relayout();
-    this.corner?.relayout();
-    // the party panel stands centred, so a width change moves it (FS-R82NV § Change C5)
-    this.partyPanel?.relayout();
-    this.dialogueChoices?.relayout();
-    this.moveMenu?.({ x: viewport.centerX, y: viewport.centerY });
     if (this.queuePanel?.active) {
       this.queuePanel.setX(viewport.centerX);
       if (this.leaveButton?.visible) this.showLeaveButton();
@@ -1214,7 +1096,8 @@ export class HubScene extends Phaser.Scene {
     socketManager.onError(ActionType.LeaveHub, (info) => {
       if (!this.leavingHub) return;
       this.leavingHub = false;
-      this.menuChoices?.retone();
+      // Change character comes back on the menu (FS-TQZ5J R9)
+      this.ui.changed();
       this.notice(info.message ?? "The hub will not let you go yet. Ask again.");
     });
     // A field that would not take the player (FS-X2F2H §Requirements 10, 60): they stay where
@@ -1295,10 +1178,6 @@ export class HubScene extends Phaser.Scene {
     this.views.clear();
     this.npcs.clear();
     this.closeDialogue();
-    this.closeMenu();
-    // the overlay goes with the visit; a change still in flight finishes unheard
-    this.gear?.hide();
-    this.gear = undefined;
     // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
     this.fx?.clearAll();
     this.fx = undefined;
@@ -1308,28 +1187,13 @@ export class HubScene extends Phaser.Scene {
     this.scenery = undefined;
     this.lightMap = undefined;
     this.groundLayer = undefined;
-    this.progressHud = undefined;
-    this.chatWindow?.destroy();
-    this.chatWindow = undefined;
-    this.partyPanel?.destroy();
-    this.partyPanel = undefined;
-    this.invitePrompt?.destroy();
-    this.invitePrompt = undefined;
-    this.readyCheck?.destroy();
-    this.readyCheck = undefined;
-    this.partyFrames?.destroy();
-    this.partyFrames = undefined;
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
     this.modeIconStage = undefined;
-    // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States)
-    this.mailbox?.destroy();
+    // leaving the town closes the panel and stops mail_arrived fetching (FS-1GZGD Edge States): the
+    // UI scene's mailbox goes as the town leaves (FS-TQZ5J § Change: Batch 4, R110)
     this.mailbox = undefined;
-    this.corner?.destroy();
-    this.corner = undefined;
-    this.unsubscribeGoldTaken?.();
-    this.unsubscribeGoldTaken = undefined;
     this.queuePanel = undefined;
     this.leaveButton = undefined;
     this.queued = false;
@@ -1366,24 +1230,18 @@ export class HubScene extends Phaser.Scene {
 
   /** What the visit left on the game's input, which Phaser keeps across stops (`SceneEnd`). */
   private handBackInput(): void {
-    // the hand is the hub's and the run's; the menus the hub hands over to keep the browser's
-    this.input.setDefaultCursor("");
+    // the hand stays: the menus the hub hands over wear it too (FS-KYPQ9 § Change: The pressed
+    // hand, and the hand on the menus, P7)
     releaseCaptures(this.input.keyboard, [
       ...Object.values(this.cursors ?? {}),
       ...Object.values(this.wasd ?? {}),
       this.interactKey,
       this.confirmKey,
-      this.dismissKey,
-      ...this.gearKeys,
-      this.characterKey,
       ...this.choiceKeys,
     ]);
   }
 
   update(time: number, delta: number): void {
-    // who owns the keyboard is settled before the keys are read for walking
-    this.offerMenu();
-    this.offerGear();
     this.sendMovementIntent();
     this.easeTowardServerPositions(time, delta);
     this.followMapOverlay();
@@ -1399,7 +1257,7 @@ export class HubScene extends Phaser.Scene {
   private showStashChest(): void {
     const chest = this.stashChest;
     if (!chest) return;
-    const frame = chestFrame(this.gear?.stashOpen() ?? false);
+    const frame = chestFrame(this.ui.ui.stash ?? false);
     if (frame === chest.frame) return;
     chest.frame = frame;
     showState(chest.sprite, this.art, CHEST.sheet, frame, CHEST.placeholder[frame]);
@@ -1528,36 +1386,33 @@ export class HubScene extends Phaser.Scene {
 
     // The menu owns the keyboard while it is open (FS-G4VMQ §Requirements 5), and so does the
     // letter panel (FS-1GZGD R40): a press to talk is read and dropped, so it does not open a
-    // dialogue the moment either closes.
-    if (this.menu || this.mailbox?.isOpen()) {
+    // dialogue the moment either closes. Enter and 1–3 are the UI scene's menu's while it is open
+    // (FS-TQZ5J R18): read and dropped here too, so a press made under the menu never answers a
+    // dialogue opened later.
+    if (this.menuOpen || this.mailbox?.isOpen()) {
       Phaser.Input.Keyboard.JustDown(this.interactKey);
+      if (this.menuOpen) this.dropMenuKeys();
       return;
     }
 
-    // While a dialogue is open the same key answers it, so a player never has to
-    // reach for the mouse to finish what the keyboard started.
+    // While a dialogue is open the same keys answer it, so a player never has to reach for the
+    // mouse to finish what the keyboard started: E, Enter and 1–3 are its card's, read by the UI
+    // scene, and its Esc the UI scene's step (FS-TQZ5J A2 R31, R17). The town's own are read and
+    // dropped, so a key is never acted on by both.
     if (this.dialogue) {
-      const talk = Phaser.Input.Keyboard.JustDown(this.interactKey);
-      const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
-      const dismiss = this.dismissKey && Phaser.Input.Keyboard.JustDown(this.dismissKey);
-      // every key is read, so a press is never left to answer the next frame
-      const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-
-      if (talk || confirm) this.dialogueChoices?.confirm();
-      else if (dismiss) this.dialogueChoices?.dismiss();
-      else if (numbered >= 0) this.dialogueChoices?.pick(numbered);
-
+      this.dropDialogueKeys();
       return;
     }
 
     if (!Phaser.Input.Keyboard.JustDown(this.interactKey)) return;
 
-    // E over the open overlay wears or takes off what is hovered, and talks to no one (FS-HRH2J R10)
-    if (this.gear?.equipKey()) return;
+    // E over the open overlay wears or takes off what is hovered, and talks to no one (FS-HRH2J R10):
+    // the UI scene's, while its inventory is open (FS-TQZ5J § Change: Phase 3, R56)
+    if (this.ui.ui.inventory) return;
 
     // E inside the gate reopens a panel dismissed there
     if (this.atGate?.destination === "spire") {
-      this.openDoor();
+      this.greetAtDoor();
       return;
     }
 
@@ -1572,11 +1427,10 @@ export class HubScene extends Phaser.Scene {
       ...(this.inStashStore(self.pos) ? [{ at: HUB_STASH_CHEST.at, who: "stash" as const }] : []),
     ];
     const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
-    // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2); the
-    // chest's lid in the world plays beside it, only as it opens (FS-AND39 R6)
-    if (nearest === "stash") {
-      if (this.act(() => this.gear?.openStash())) this.gameplaySounds?.play("stash_open");
-    } else if (nearest) this.openDialogue(nearest);
+    // one press, one sound: the UI scene's gear plays the chest's lid, `stash_open`, as the press's sound in
+    // place of the window rule's inventory_open (FS-WDM0X S2 as amended 2026-11-14; FS-AND39 R6)
+    if (nearest === "stash") this.ui.act(() => this.ui.gear({ kind: "openStash" }));
+    else if (nearest) this.openDialogue(nearest);
   }
 
   /**
@@ -2122,11 +1976,6 @@ export class HubScene extends Phaser.Scene {
     this.cursors = keyboard.createCursorKeys();
     this.interactKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     this.confirmKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
-    this.dismissKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.gearKeys = [Phaser.Input.Keyboard.KeyCodes.I, Phaser.Input.Keyboard.KeyCodes.B].map((code) =>
-      keyboard.addKey(code),
-    );
-    this.characterKey = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
     this.choiceKeys = [
       Phaser.Input.Keyboard.KeyCodes.ONE,
       Phaser.Input.Keyboard.KeyCodes.TWO,
@@ -2149,7 +1998,7 @@ export class HubScene extends Phaser.Scene {
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
 
-    const owned = !!this.menu || !!this.mailbox?.isOpen();
+    const owned = this.menuOpen || !!this.mailbox?.isOpen();
     const held = (k: Phaser.Input.Keyboard.Key) => !owned && k.isDown;
     const left = held(this.cursors.left) || held(this.wasd.left);
     const right = held(this.cursors.right) || held(this.wasd.right);
@@ -2175,16 +2024,14 @@ export class HubScene extends Phaser.Scene {
       this.placePlayer(state.current_player, true);
       present.add(state.current_player.entity_id);
 
-      // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30)
-      this.gear?.updateCharacter(state.current_player);
-      this.gear?.setCharacterLevel(state.current_player.level);
-      this.characterLevel = state.current_player.level;
+      // the overlay's stats panel, from the hub's own state (FS-HRH2J R24, R30): the UI scene's (§ Change: Phase 3, R52)
+      this.ui.gear({ kind: "seen", character: state.current_player });
+      this.ui.gear({ kind: "level", level: state.current_player.level });
 
+      // the level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel at the bottom:
+      // the UI scene's, from the first state that carries a level (FS-TQZ5J § Change: Batch 5, R68)
       const progress = progressOf(state.current_player);
-      if (progress) {
-        this.progressHud ??= new ProgressHud(this);
-        this.progressHud.show(progress);
-      }
+      if (progress) this.ui.hud({ world: "hub", kind: "progress", progress });
 
       this.selfEntityID = state.current_player.entity_id;
       const self = this.views.get(this.selfEntityID);
@@ -2203,7 +2050,9 @@ export class HubScene extends Phaser.Scene {
       this.placePlayer(other, false);
       present.add(other.entity_id);
     }
-    this.partyFrames?.show(state);
+    // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
+    // FS-TQZ5J § Change: Phase 2: the party, R38)
+    this.ui.partySeen(state);
     this.showTownMap(state, gates);
 
     // anyone who left the hub since the last tick
@@ -2239,7 +2088,7 @@ export class HubScene extends Phaser.Scene {
         // the town's name on it, as its arrival card titles it (FS-56CKV §Change: Map name, E1)
         name: minimapPlaceName({ world: "hub" }),
         // only M and the icon step it, both the player's (FS-WDM0X S7)
-        stepped: () => this.sounds?.play("map_mode_switch"),
+        stepped: () => this.ui.play("map_mode_switch"),
       });
     }
     if (walls.length > 0) this.minimap.show(this.townPlan.of({ walls, gates, npcs: state.npcs ?? [] }));
@@ -2257,20 +2106,21 @@ export class HubScene extends Phaser.Scene {
 
   /** M's guards in the town (FS-P0HSP §F.33): chat typing, or the menu, a dialogue card or the letter panel owning the keys. */
   private minimapKeysOwned(): boolean {
-    return !!this.chatWindow?.isTyping() || !!this.menu || !!this.dialogue || !!this.mailbox?.isOpen();
+    // the player typing in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R127)
+    return !!this.ui.ui.typing || this.menuOpen || !!this.dialogue || !!this.mailbox?.isOpen();
   }
 
   /**
    * The map mode icon's pointer (FS-56CKV §Change: Map mode icon, D5–D7): lit under it, a press on
-   * it M's. A press or hover over the open gear overlay is the overlay's, one on the corner row
-   * the row's (FS-3EBCA R10), and one on the open party panel, drawn over both, the panel's
-   * (FS-R82NV § Change C8); the letter panel open is one of M's guards already.
+   * it M's. The letter panel open is one of M's guards already. A press on the UI scene's pieces (the
+   * corner row, the party panel, the gear overlay) never reaches the town, and a move over one gives way
+   * to it (FS-TQZ5J R7, § Change: Phase 2: the party, R40, R41; § Change: Phase 3, R59).
    */
   private bindMinimapPointer(): void {
     bindMinimapPointer(
       this.input,
       () => this.minimap,
-      (x, y) => !!this.partyPanel?.covers(x, y) || !!this.gear?.covers(x, y) || !!this.corner?.covers(x, y),
+      () => this.ui.overUi,
     );
   }
 
@@ -2312,7 +2162,7 @@ export class HubScene extends Phaser.Scene {
     if (left?.destination === "spire" && this.doorOpen) this.closeDialogue();
     if (fieldOf(left)) this.dropFieldSign();
 
-    if (entered?.destination === "spire" && !this.menu && !this.dialogue) this.openDoor();
+    if (entered?.destination === "spire" && !this.menuOpen && !this.dialogue) this.greetAtDoor();
     const field = fieldOf(entered);
     if (entered && field) {
       // the dev test room's gate has its own label, and signpostOf would pick the Forest's post
@@ -2348,7 +2198,7 @@ export class HubScene extends Phaser.Scene {
    * menu or a dialogue is up, as a field gate's walk-in is not; that step is spent.
    */
   private startDevEndgameRun(): void {
-    if (this.menu || this.dialogue || this.endgamePending) return;
+    if (this.menuOpen || this.dialogue || this.endgamePending) return;
     this.endgamePending = true;
     socketManager.sendMessage(ActionType.StartDevEndgameRun, {});
   }
@@ -2391,7 +2241,7 @@ export class HubScene extends Phaser.Scene {
    */
   private enterField(destination: FieldDestination): void {
     const field = FIELD_IDS[destination];
-    if (!field || this.menu || this.dialogue || this.enteringField) return;
+    if (!field || this.menuOpen || this.dialogue || this.enteringField) return;
     this.enteringField = true;
     socketManager.sendMessage(ActionType.EnterField, { field });
   }
@@ -2404,6 +2254,16 @@ export class HubScene extends Phaser.Scene {
     this.closeDialogue();
     this.showDialogue({ name: SPIRE_DOOR }, delveChoices(this.hubState(), refusal));
     this.doorOpen = true;
+  }
+
+  /**
+   * The door's panel opened at the player's hand (E in the gate, or stepping into it), with
+   * `dialog_open`; the game's own redraws of it (a refusal, a party standing changed) open it with
+   * no sound (FS-WDM0X § Change M11).
+   */
+  private greetAtDoor(): void {
+    this.openDoor();
+    this.ui.play("dialog_open");
   }
 
   /**
@@ -2475,9 +2335,8 @@ export class HubScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(1000)
       .setInteractive();
-    button.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-      if (!this.overGear(pointer)) this.leaveQueue();
-    });
+    // a press under the gear overlay is its ground's, and never reaches the town (FS-TQZ5J § Change: Phase 3, R59)
+    button.on("pointerup", () => this.leaveQueue());
     // the hand stays; brightening to vellum is the hover cue, as on a dialogue option
     button.on("pointerover", () => button.setColor(toCss(BARROW_HEX.vellum)));
     button.on("pointerout", () => button.setColor(toCss(BARROW_HEX.amber)));
@@ -2487,21 +2346,11 @@ export class HubScene extends Phaser.Scene {
   /**
    * Whether an overlay covers the town's party popups (the invite prompt and the ready check): the
    * menu, the gear overlay or the letter panel, each drawn over them. The popups hide under it and
-   * their countdowns run on (FS-R82NV R32, FS-BJNYC R23, FS-1GZGD R40).
+   * their countdowns run on (FS-R82NV R32, FS-BJNYC R23, FS-1GZGD R40). The popups are the UI scene's,
+   * which reads it in the town's report (FS-TQZ5J § Change: Phase 2: the party, R38).
    */
   private coversPopups(): boolean {
-    return !!this.menu || !!this.gear?.isOpen() || !!this.mailbox?.isOpen();
-  }
-
-  /**
-   * Whether a press lies over the open gear overlay's panels (FS-HRH2J R8): it is the overlay's,
-   * and no hub object under the panel (the queue's Leave, depth 1000 under the overlay's 1100)
-   * takes it. The run and the field world apply the same rule to their presses.
-   */
-  private overGear(pointer: Phaser.Input.Pointer): boolean {
-    // the overlay is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
-    const at = viewport.toLogical(pointer);
-    return this.gear?.covers(at.x, at.y) ?? false;
+    return this.menuOpen || this.gearOpen || !!this.mailbox?.isOpen();
   }
 
   /** The queue is behind the player: no entry, nothing pending, no way out to offer. */
@@ -2520,7 +2369,8 @@ export class HubScene extends Phaser.Scene {
     this.leftQueue();
     this.queuePanel?.destroy();
     this.queuePanel = undefined;
-    this.closeMenu();
+    // the menu's way out of the queue comes down with it (FS-TQZ5J R20)
+    this.ui.changed();
   }
 
   /**
@@ -2535,15 +2385,11 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * A line the hub says in passing, in the neutral HUD register: the player cannot act on it,
-   * and it goes on its own.
+   * and it goes on its own. The UI scene draws it, over the interface, and takes it down as the
+   * town leaves (FS-TQZ5J A2 R33, R34).
    */
   private notice(text: string): void {
-    const line = this.add
-      .text(viewport.centerX, NOTICE_Y, text, hudLine(BARROW_HEX.vellum))
-      .setOrigin(0.5)
-      .setScrollFactor(0)
-      .setDepth(1000);
-    this.time.delayedCall(NOTICE_MS, () => line.destroy());
+    this.ui.notice({ text, look: { world: "hub" } });
   }
 
   private showQueueProgressText(text: string): void {
@@ -3038,288 +2884,117 @@ export class HubScene extends Phaser.Scene {
       NPC_DIALOGUE[npc.function]?.(this.hubState()) ??
       (lines ? telling(lines) : residentLine(npc));
     this.showDialogue({ name: npc.name, entityId: npc.entity_id }, dialogue);
+    // the player's E opened it (FS-WDM0X § Change M11)
+    this.ui.play("dialog_open");
   }
 
   /**
-   * Draws a dialogue card: who speaks (with their bust when they are a figure; the Spire's door
-   * is not), their line, and a row of choices. A choice with `next` turns the page: the same
-   * speaker goes on in a fresh card.
+   * Opens a dialogue: who speaks (with their bust when they are a figure; the Spire's door is not),
+   * their line, and a row of choices, shown to the UI scene as data (FS-TQZ5J A2 R29), which draws the
+   * card and hands back the choice picked (`pickDialogue`). A choice with `next` turns the page: the
+   * same speaker goes on in a fresh card.
    */
-  private showDialogue(
-    speaker: { name: string; entityId?: NPCState["entity_id"] },
-    { role, line, choices }: Dialogue,
-  ): void {
-    const enabled = (choice: DialogueChoice) =>
-      choice.enabled?.({
-        soloPending: this.soloPending,
-        enterPending: this.enterPending,
-        queuePending: this.queuePending,
-      }) ?? true;
-    const pick = (choice: DialogueChoice) => {
-      if (!enabled(choice)) return;
-      if (choice.next) {
-        this.closeDialogue();
-        this.showDialogue(speaker, choice.next());
-        return;
-      }
-      if (!choice.stays) this.closeDialogue();
-      choice.act?.(this);
-      // what was picked may have changed what can be picked
-      if (choice.stays) this.dialogueChoices?.retone();
-    };
-    const dismiss = () => this.closeDialogue();
-    const actionable = choices.filter((c) => c.register === "actionable");
-    const first = actionable[0];
-    const confirm = () => (first ? pick(first) : dismiss());
-    const pickNumbered = (index: number) => {
-      const choice = actionable[index];
-      if (choice) pick(choice);
-    };
-
-    // The key each choice answers to, said on its label: with one thing to do it is E (the
-    // key that opened the dialogue), with several each has its number so none is mouse-only;
-    // E and Enter still mean the first. Esc always declines.
-    const hint = (choice: DialogueChoice) => {
-      if (choice.register === "cancel") return "  [Esc]";
-      if (actionable.length === 1) return "  [E]";
-      return `  [${actionable.indexOf(choice) + 1}]`;
-    };
+  private showDialogue(speaker: Speaker, dialogue: Dialogue): void {
     // The bust is cut from whatever frame they are showing, so it is the same figure the
-    // player just walked up to, baked or placeholder.
+    // player just walked up to, baked or placeholder; read once, as the card opens.
     const body = (speaker.entityId ? this.npcs.get(speaker.entityId)?.sprite?.getByName("body") : undefined) as
       | Phaser.GameObjects.Sprite
       | null
       | undefined;
-    // Each choice is the shared menu row, stacked down the card: its hit area is a separate
-    // camera-fixed rectangle that goes down with the card (menuPanel.ts says why).
-    const card = showDialogueCard(this, {
-      name: speaker.name,
-      role,
-      line,
-      rows: choices.map((choice) => ({
-        id: choice.id,
-        label: `${choice.label}${hint(choice)}`,
-        colour: choice.register === "actionable" ? MENU_TONES.actionable : MENU_TONES.cancel,
-        onPick: () => pick(choice),
-        enabled: () => enabled(choice),
-      })),
-      portrait: body ? { texture: body.texture.key, frame: body.frame.name } : undefined,
-      tones: MENU_TONES,
-    });
-
-    this.dialogueChoices = { confirm, dismiss, pick: pickNumbered, retone: card.retone, relayout: card.relayout };
-    this.dialogue = card.container;
-  }
-
-  private closeDialogue(): void {
-    this.dialogue?.destroy();
-    this.dialogue = undefined;
-    this.dialogueChoices = undefined;
-    this.doorOpen = false;
+    this.dialogue = {
+      who: speaker,
+      speaker: {
+        name: speaker.name,
+        ...(dialogue.role ? { role: dialogue.role } : {}),
+        ...(body ? { portrait: { texture: body.texture.key, frame: body.frame.name } } : {}),
+      },
+      dialogue,
+    };
+    this.sendDialogue();
   }
 
   /**
-   * ESC, read once a frame on the one ESC key the hub binds (FS-G4VMQ §Requirements 1, 2, 20).
-   * While a dialogue is open the key is the dialogue's, read in offerConversation, so this does
-   * not touch it. Otherwise one press is `pressEscape`'s; with the menu open Enter is its first
-   * choice and a number that choice.
+   * The open dialogue to the UI scene, whole, as plain data (FS-TQZ5J A2 R29): sent as it opens and
+   * again whenever what can be picked changes under it, each choice's `enabled` read now.
    */
-  private offerMenu(): void {
-    // ←/→ are read every frame, so a press made walking does not wait to move the panel's slider
-    const nudge = this.arrowPressed();
-    if (this.dialogue || !this.dismissKey) return;
-    const esc = Phaser.Input.Keyboard.JustDown(this.dismissKey);
-    if (esc || this.mailbox?.isOpen() || !this.menu) {
-      if (esc) this.act(() => this.pressEscape());
+  private sendDialogue(): void {
+    const open = this.dialogue;
+    if (!open) return;
+    this.ui.showDialogue({
+      speaker: open.speaker,
+      text: open.dialogue.line,
+      options: open.dialogue.choices.map((choice) => ({
+        id: choice.id,
+        label: choice.label,
+        register: choice.register,
+        enabled: this.canPick(choice),
+        ...(choice.sound ? { sound: choice.sound } : {}),
+      })),
+    });
+  }
+
+  /** Whether a choice can be picked now: its replies awaited, read live (FS-NSV3D, FS-BJNYC R21). */
+  private canPick(choice: DialogueChoice): boolean {
+    return (
+      choice.enabled?.({
+        soloPending: this.soloPending,
+        enterPending: this.enterPending,
+        queuePending: this.queuePending,
+      }) ?? true
+    );
+  }
+
+  /**
+   * The UI scene's word that a choice was picked, by the pointer or its key (FS-TQZ5J A2 R30), acted
+   * on as the pick always was: nothing while it cannot be picked; a page turned; or done, the card
+   * closing first unless it stays up for a reply, then shown again with what can be picked now. An id
+   * not on the dialogue open now is ignored. The keys that picked it are spent here too, so the town's
+   * own E, read after the UI scene's this frame, does not talk again.
+   */
+  private pickDialogue(id: string): void {
+    const open = this.dialogue;
+    const choice = open?.dialogue.choices.find((c) => c.id === id);
+    this.dropDialogueKeys();
+    if (!open || !choice || !this.canPick(choice)) return;
+    if (choice.next) {
+      this.closeDialogue();
+      this.showDialogue(open.who, choice.next());
       return;
     }
-
-    // open: Enter is the first choice, a number is that choice. Every key is read each frame, so
-    // a press never lingers to answer the next one.
-    const confirm = this.confirmKey && Phaser.Input.Keyboard.JustDown(this.confirmKey);
-    const numbered = this.choiceKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).indexOf(true);
-    if (confirm) this.menuChoices?.confirm();
-    else if (numbered >= 0) this.menuChoices?.pick(numbered);
-    else if (nudge) this.menuChoices?.nudge?.(nudge);
-  }
-
-  /** ← or → pressed since the last frame, as -1 or 1, both read; the OPTIONS panel's slider (FS-28DDG § Change C6). */
-  private arrowPressed(): -1 | 1 | undefined {
-    if (!this.cursors) return undefined;
-    const left = Phaser.Input.Keyboard.JustDown(this.cursors.left);
-    const right = Phaser.Input.Keyboard.JustDown(this.cursors.right);
-    if (left === right) return undefined;
-    return left ? -1 : 1;
+    if (!choice.stays) this.closeDialogue();
+    choice.act?.(this);
+    // what was picked may have changed what can be picked
+    if (choice.stays) this.sendDialogue();
   }
 
   /**
-   * One Esc press (FS-R82NV § Change C2; FS-HRH2J R5; FS-1GZGD R40): the one thing on top closes,
-   * the letter panel, the menu, the party panel, then the gear overlay; with nothing open the menu
-   * opens (`escapeStep`). A dialogue keeps its own Esc.
+   * The UI scene's close of the dialogue: Esc's step (FS-TQZ5J R17), or E or Enter on a card with
+   * nothing to confirm (A2 R31). Its keys are spent with it, so the town's own E, read after the UI
+   * scene's this frame, does not talk again.
    */
-  private pressEscape(): void {
-    if (this.dialogue) return;
-    const step = escapeStep({
-      letter: this.mailbox?.isOpen() ?? false,
-      menu: !!this.menu,
-      gear: this.gear?.isOpen() ?? false,
-      party: this.partyPanel?.isOpen() ?? false,
-    });
-    if (step === "letter") this.mailbox?.close();
-    // the menu's Esc is its Back, and the OPTIONS panel's reopens the menu (FS-28DDG § Change C7)
-    else if (step === "close-menu") this.menuChoices?.dismiss();
-    else if (step === "gear") this.gear?.hide();
-    else if (step === "party") this.partyPanel?.close();
-    else this.openMenu();
+  private dismissDialogue(): void {
+    this.dropDialogueKeys();
+    this.closeDialogue();
   }
 
-  /**
-   * The corner row's Menu icon (FS-3EBCA R6, R17, R18): the menu at once, every window closing as
-   * it opens; with the menu open it closes it, as its × and Back do (owner 2026-11-12: "menu無法再按一次icon關閉").
-   * Nothing while a dialogue keeps Esc.
-   */
-  private pressMenuIcon(): void {
-    if (this.dialogue) return;
-    if (this.menu) this.closeMenu();
-    else this.openMenu();
+  /** Takes the open dialogue down, its card with it (FS-TQZ5J A2 R29); nothing open, nothing sent. */
+  private closeDialogue(): void {
+    const open = this.dialogue;
+    this.dialogue = undefined;
+    this.doorOpen = false;
+    if (open) this.ui.closeDialogue();
   }
 
-  /**
-   * I or B opens or closes the inventory over the live hub (FS-HRH2J R4, R40), and C the character
-   * panel (§ Change: Character and inventory apart, C2). While the menu or a dialogue is open they
-   * own the keyboard (R6): the press is read and dropped, so it does not open a panel the moment
-   * they close. An open letter panel closes as either opens (FS-3EBCA R16).
-   */
-  private offerGear(): void {
-    const pressed = this.gearKeys.map((k) => Phaser.Input.Keyboard.JustDown(k)).includes(true);
-    if (pressed) this.act(() => this.toggleGear());
-    if (this.characterKey && Phaser.Input.Keyboard.JustDown(this.characterKey)) this.act(() => this.toggleCharacter());
+  /** E, Enter and 1–3, its card's while a dialogue is open (FS-TQZ5J A2 R31): read and dropped, so none answers the town too. */
+  private dropDialogueKeys(): void {
+    if (this.interactKey) Phaser.Input.Keyboard.JustDown(this.interactKey);
+    this.dropMenuKeys();
   }
 
-  /** Whether the menu or a dialogue owns the keys: no panel opens or closes. */
-  private gearRefused(): boolean {
-    return !!this.menu || !!this.dialogue;
-  }
-
-  /** I, B or the corner row's icon (FS-3EBCA R7, R16): the inventory, under the same owners. */
-  private toggleGear(): void {
-    if (this.gearRefused()) return;
-    this.closeLetter();
-    this.gear?.toggle();
-  }
-
-  /** C or the corner row's Character icon (FS-HRH2J § Change C2): the character panel, under I's owners. */
-  private toggleCharacter(): void {
-    if (this.gearRefused()) return;
-    this.closeLetter();
-    this.gear?.toggleCharacter();
-  }
-
-  /**
-   * A Take that carried gold: the purse line reads the wallet again, open or closed (FS-7TGZ3 R9).
-   * Let go of on release, so a later visit hears each Take once.
-   */
-  private watchGoldTakes(): void {
-    this.unsubscribeGoldTaken = useMailboxStore.subscribe((state, prev) => {
-      if (state.goldTaken !== prev.goldTaken) this.gear?.refreshPurse();
-    });
-  }
-
-  /**
-   * The run's gear and bag overlay, fed from the REST loadout (FS-HRH2J §E R41–43); a refused
-   * change in the hub's passing notice. A change answered after this visit ended says nothing.
-   * Each open reads the purse line's gold from the wallet (FS-7TGZ3 R8). Its reads and writes are
-   * the active character's, read from the store at each call (FS-50MTX R37).
-   */
-  private composeGear(): HubGear {
-    // what the party panel covers is the party panel's (FS-R82NV § Change C8)
-    // its panels' × run through the interface sounds' wrapper (FS-WDM0X S9)
-    const overlay = new GearOverlay(
-      this,
-      this.art,
-      WorldType.Hub,
-      (x, y) => this.partyPanel?.covers(x, y) ?? false,
-      this.sounds,
-    );
-    const gear: HubGear = new HubGear(
-      overlay,
-      gearAsCharacter(
-        apiClient,
-        () => useGameStore.getState().getActiveCharacter()?.id ?? null,
-      ),
-      {
-        notice: (text) => {
-          if (this.gear === gear) this.notice(text);
-        },
-        gearChanged: () => this.gameplaySounds?.play("item_swap"),
-      },
-      new PurseReader(apiClient, overlay),
-    );
-    return gear;
-  }
-
-  /**
-   * The hub's ESC menu: a way to the main menu, a way back (FS-G4VMQ §Requirements 3, 4). Built
-   * from the scene's state as it opens, so what it offers is hubMenuChoices' rule, not the
-   * chrome's. Camera-fixed in the popup band with the dialogue; the world runs on behind it.
-   * Every window closes as it opens (FS-3EBCA R17). Its Options row opens the OPTIONS panel in its
-   * place (FS-28DDG § Change: Music volume in an Options panel, C3).
-   */
-  private openMenu(): void {
-    this.closeWindows();
-    // every row and the × the player's, through the interface sounds' wrapper (FS-WDM0X S9)
-    const actions: Record<HubMenuChoice["id"], () => void> = {
-      change: () => this.act(() => this.changeCharacter()),
-      leave: () => this.act(() => this.leaveQueue()),
-      options: () => this.act(() => this.openOptions()),
-      back: () => this.act(() => this.closeMenu()),
-    };
-    const { container, keys, moveTo } = showMenuPanel(this, {
-      choices: hubMenuChoices({ queued: this.queued }),
-      actions,
-      // dimmed while the server is asked, so a second press has nothing to land on
-      enabled: { change: () => !this.leavingHub },
-      close: () => this.act(() => this.closeMenu()),
-      origin: { x: viewport.centerX, y: viewport.centerY },
-      hit: CHOICE_HIT,
-      tones: MENU_TONES,
-      // the Menu icon answers under the open menu: it closes it (FS-3EBCA R18)
-      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
-    });
-    this.menuChoices = keys;
-    this.menu = container;
-    this.moveMenu = moveTo;
-  }
-
-  /**
-   * The OPTIONS panel, in the menu's slot so every guard on the open menu holds for it (FS-28DDG
-   * § Change C3, C7, C8, C13). Its Music row sets the town's music, which applies and keeps the
-   * level; Back, Esc and its × reopen the ESC menu, rebuilt from the state as it is then.
-   */
-  private openOptions(): void {
-    // create's enterMusic sets the music before any menu can open; without it the panel stays shut
-    const music = this.music;
-    if (!music) return;
-    this.closeMenu();
-    const { container, keys, moveTo } = openOptionsPanel(this, {
-      origin: { x: viewport.centerX, y: viewport.centerY },
-      hit: CHOICE_HIT,
-      tones: MENU_TONES,
-      // Back, Esc and the ×: the slot stays filled, so it plays nothing (FS-WDM0X S5)
-      back: () =>
-        this.act(() => {
-          this.closeMenu();
-          this.openMenu();
-        }),
-      music,
-      // the Fullscreen row, where the page lent this game the frame's fullscreen (FS-T3DWX R11, R12)
-      fullscreen: lentFullscreen(this.registry),
-      // the Menu icon answers under the open panel: it closes it and opens nothing (C7, FS-3EBCA R18)
-      through: (x, y) => this.corner?.covers(x, y, "menu") ?? false,
-    });
-    this.menuChoices = keys;
-    this.menu = container;
-    this.moveMenu = moveTo;
+  /** Enter and 1–3, the UI scene's menu's while it is open (FS-TQZ5J R18): read and dropped, so none lingers. */
+  private dropMenuKeys(): void {
+    if (this.confirmKey) Phaser.Input.Keyboard.JustDown(this.confirmKey);
+    this.choiceKeys.forEach((k) => Phaser.Input.Keyboard.JustDown(k));
   }
 
   /**
@@ -3333,13 +3008,6 @@ export class HubScene extends Phaser.Scene {
     this.followedSprite = sprite;
   }
 
-  private closeMenu(): void {
-    this.menu?.destroy();
-    this.menu = undefined;
-    this.menuChoices = undefined;
-    this.moveMenu = undefined;
-  }
-
   /**
    * Out of the hub for the main menu, whose roster and DELVE re-enter it as whoever is picked
    * (FS-G4VMQ §Requirements 6–9, 25). One leave_hub, and nothing more until the server has
@@ -3348,7 +3016,6 @@ export class HubScene extends Phaser.Scene {
   private changeCharacter(): void {
     if (this.leavingHub) return;
     this.leavingHub = true;
-    this.menuChoices?.retone();
     socketManager.sendMessage(ActionType.LeaveHub, {});
   }
 
@@ -3376,7 +3043,7 @@ export class HubScene extends Phaser.Scene {
   private enterAnswered(): void {
     if (!this.enterPending) return;
     this.enterPending = false;
-    this.dialogueChoices?.retone();
+    this.sendDialogue();
   }
 
   /**

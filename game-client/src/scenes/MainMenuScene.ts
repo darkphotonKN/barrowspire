@@ -17,6 +17,10 @@ import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
 import { preloadArt, registerArt } from "@/render/art/phaser";
+import { ensurePointerLook } from "@/render/cursors";
+import { browserSfxStore } from "@/audio/sfxSetting";
+import { NO_WINDOWS, UiSounds, sceneUiSoundStage } from "@/audio/uiSounds";
+import { confirmDeletion } from "./deleteConfirm";
 import type { ArtLibrary } from "@/render/art/library";
 import { MenuFigure } from "@/render/art/menuFigure";
 import { SCENE_ART } from "@/render/art/sceneArt";
@@ -98,6 +102,8 @@ const SWITCH_CONFIRM = { width: 360, height: 150, button: { width: 130, height: 
 
 export class MainMenuScene extends Phaser.Scene {
   private unsubscribeConnectionStatus?: () => void;
+  /** The delete confirm's player, made in create (FS-WDM0X § Change M14). */
+  private sounds?: UiSounds;
   private buttonBg?: Phaser.GameObjects.Graphics;
   private startButtonText?: Phaser.GameObjects.Text;
   private connectionStatusText?: Phaser.GameObjects.Text;
@@ -165,10 +171,16 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   create(): void {
+    // the main menu has no UI scene: its own player on the game's one sound manager, at the same SFX
+    // level, for the delete confirm (FS-WDM0X § Change: Menu, dialog and notice sounds, M14)
+    this.sounds = new UiSounds(sceneUiSoundStage(this), browserSfxStore, () => NO_WINDOWS);
     // laid out on the 1080-wide stage, centred in whatever width the view has (FS-ZAJMH R11)
     centreStage(this.cameras.main);
     sharpenText(this);
     this.art = registerArt(this, SCENE_ART.MainMenuScene);
+    // the bone hand, pressed under a held left button, as in the worlds: the pointer is the game's
+    // on the Bone & Soot menus too (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+    ensurePointerLook(this, this.art)?.base("hand");
     const width = STAGE_WIDTH;
     const height = LOGICAL_HEIGHT;
 
@@ -481,7 +493,7 @@ export class MainMenuScene extends Phaser.Scene {
       });
 
       const hitArea = this.add.rectangle(centerX, y + cardH / 2, cardW, cardH, ui.well, 0);
-      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.setInteractive();
 
       // Delete mark: a plain serif cross, not an emoji.
       const deleteText = this.add.text(panelX + panelW - 28, y + 24, "\u00d7", {
@@ -641,7 +653,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     const createBtnHit = this.add
       .rectangle(createBtnX, createBtnY, createBtnW, createBtnH, ui.well, 0)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
 
     createBtnHit.on("pointerdown", () => {
       this.scene.start("CharacterCreationScene");
@@ -776,7 +788,7 @@ export class MainMenuScene extends Phaser.Scene {
       emptyText.setOrigin(0.5);
 
       const hit = this.add.rectangle(0, 0, 140, 80, ui.well, 0);
-      hit.setInteractive({ useHandCursor: true });
+      hit.setInteractive();
       hit.on("pointerdown", () => {
         this.scene.start("CharacterCreationScene");
       });
@@ -849,12 +861,12 @@ export class MainMenuScene extends Phaser.Scene {
 
       if (card.deleteBtn && card.deleteHit) {
         card.deleteBtn.setVisible(true);
-        card.deleteHit.setInteractive({ useHandCursor: true }).setVisible(true);
+        card.deleteHit.setInteractive().setVisible(true);
 
         card.deleteHit.off("pointerdown");
         card.deleteHit.on("pointerdown", (e: Phaser.Input.Pointer) => {
           e.event.stopPropagation();
-          if (confirm(`Delete character "${char.name}"?`)) {
+          if (confirmDeletion(char.name, { ask: (text) => confirm(text), play: (effect) => this.sounds?.play(effect) })) {
             // Deleted on the server (FS-BDA7X req 39); the card goes once it is gone there.
             useGameStore
               .getState()
@@ -986,7 +998,7 @@ export class MainMenuScene extends Phaser.Scene {
       draw("idle");
       const hit = this.add
         .rectangle(b.x, y, button.width, button.height, ui.well, 0)
-        .setInteractive({ useHandCursor: true });
+        .setInteractive();
       hit.on("pointerover", () => draw("hover"));
       hit.on("pointerout", () => draw("idle"));
       hit.on("pointerup", b.act);
@@ -1057,7 +1069,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.press = view.press;
 
     if (this.startButtonText && this.connectionStatusText) {
-      if (view.press) hitArea.setInteractive({ useHandCursor: true });
+      if (view.press) hitArea.setInteractive();
       else hitArea.disableInteractive();
       this.startButtonText.setText(view.label);
       this.connectionStatusText.setText(view.line);
@@ -1166,7 +1178,7 @@ export class MainMenuScene extends Phaser.Scene {
       color: toCss(buttonTextColor("cancel", "idle")),
     });
     cancelBtn.setOrigin(0.5);
-    cancelBtn.setInteractive({ useHandCursor: true });
+    cancelBtn.setInteractive();
 
     cancelBtn.on("pointerdown", () => {
       // leave_queue alone cancels (FS-K2HKP §Requirements 30)

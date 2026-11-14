@@ -406,3 +406,19 @@ R16. **Two modules, the scenes only call.** *Derived* from the charter's bounds.
 - Sourced, downloaded or owner-supplied audio files for these effects.
 - Any change to FS-WDM0X's or FS-28DDG's behaviour, `gameAudio.ts`, the server or the contract.
 - A gallery family or a link from `/dev/gallery` to the sound board.
+
+## Amendment: on the UI scene (2026-11-14)
+
+Merged with feat/client-ui-scene (FS-TQZ5J § Change: Merge with main, 2026-11-14). The text above is not
+edited.
+
+- **R6 superseded.** The owner, 2026-11-14: 「按倉庫就顯示倉庫的聲音」. The town's stash chest E plays
+  `stash_open` alone, in place of `inventory_open` (FS-WDM0X S2 as amended the same day). One press, one
+  sound.
+- **Where each effect plays from.** The world scenes keep their own `GameplaySounds` for the world's
+  answers: the run's and the field's monster hits, the player's own wound and the four casts, and a take
+  as the world sends its loot (R7: in the field only once `FieldPiles.loot` sends it). The coffer opens
+  (R5) and the gear moves (R7, `item_swap`) are the UI scene's, where the container view and the gear
+  overlay now live: the UI scene makes one `GameplaySounds` of its own on the same stage and level and
+  hands it to each world's gear and container view (`GearWiring.sounds`, `gearPieces.ts`). The town makes
+  no gameplay player: it has nothing of its own to play.

@@ -164,9 +164,12 @@ function setup(
     world?: WorldType;
     active?: FocusedElement | null;
     blocked?: boolean;
+    covered?: boolean;
     commands?: PartyPanelDeps["commands"];
     opening?: () => void;
     wrapper?: PartyPanelDeps["wrapper"];
+    ground?: PartyPanelDeps["ground"];
+    play?: PartyPanelDeps["play"];
   } = {},
 ) {
   const scene = fakeScene();
@@ -176,6 +179,9 @@ function setup(
     world: (opts.world ?? "hub") as WorldType,
     active: opts.active ?? null,
     blocked: opts.blocked ?? false,
+    covered: opts.covered ?? false,
+    /** The rects `covered` was handed. */
+    askedWith: [] as { x: number; y: number; width: number; height: number }[],
   };
   const commands = opts.commands ?? {
     create: vi.fn(),
@@ -195,8 +201,11 @@ function setup(
     },
     activeElement: () => state.active,
     blocked: () => state.blocked,
+    covered: (field: { x: number; y: number; width: number; height: number }) => (state.askedWith.push(field), state.covered),
     opening: opts.opening,
     wrapper: opts.wrapper,
+    ground: opts.ground,
+    play: opts.play,
   };
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
@@ -485,6 +494,46 @@ describe("PartyPanel (FS-R82NV R29: the invite field)", () => {
     expect(env.field.shown).toBe(false);
   });
 
+  // the integrator's call on phase 3's review (FS-TQZ5J § Change: Phase 3): the DOM field draws above the
+  // canvas, so it hides while a UI piece drawn over the panel covers it (the run's controls panel), the
+  // DOM field's hide blurring it, and shows again uncovered, its typed text kept and focus not taken
+  it("should hide the field while a piece over the panel covers it, and show it again uncovered, its text kept", () => {
+    const env = setup({ world: "run" });
+    env.pressT();
+    env.frame();
+    env.handle.value = "Osr";
+    expect(env.field.shown).toBe(true);
+
+    env.state.covered = true;
+    env.frame();
+    expect(env.field.shown).toBe(false);
+    expect(env.panel.isOpen()).toBe(true);
+
+    env.state.covered = false;
+    env.frame();
+    expect(env.field.shown).toBe(true);
+    expect(env.handle.value).toBe("Osr");
+  });
+
+  // FS-84N1G R20: the UI scene judges the cover by the field's own rect
+  it("should hand its cover the invite field's rect, in logical units", () => {
+    const env = setup({ world: "run" });
+    env.pressT();
+    env.frame();
+    const field = env.state.askedWith.at(-1)!;
+    expect(field).toBeDefined();
+    expect(field.width).toBeGreaterThan(0);
+    expect(field.height).toBeGreaterThan(0);
+  });
+
+  it("should take T as before while the field is covered", () => {
+    const env = setup({ covered: true });
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(true);
+    env.pressT();
+    expect(env.panel.isOpen()).toBe(false);
+  });
+
   it("should take its own field down on destroy and stop hearing T", () => {
     const env = setup();
     env.panel.destroy();
@@ -745,5 +794,124 @@ describe("PartyPanel's title, shared (FS-3EBCA R20, R22)", () => {
     });
     expect(words).toBe("Party (2/4)");
     expect(env.find("PARTY (2/4)")).toBeDefined();
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9): on the UI scene the open panel stands a ground
+// under its buttons, so a press on it is the UI scene's (R40), and a press on it keeps the invite
+// field's focus by the panel's own rule (R42).
+describe("PartyPanel on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R40, R42)", () => {
+  /** The grounds the panel stood, each with its rect, and whether it was taken down. */
+  function grounded() {
+    const grounds: { rect: { x: number; y: number; width: number; height: number }; destroyed: boolean }[] = [];
+    const env = setup({
+      ground: (rect) => {
+        const g = { rect, destroyed: false };
+        grounds.push(g);
+        return { destroy: () => void (g.destroyed = true) };
+      },
+    });
+    return { ...env, grounds, live: () => grounds.filter((g) => !g.destroyed) };
+  }
+
+  it("should stand one ground over the open panel, before its × and buttons, and none while it is shut", () => {
+    const env = grounded();
+    expect(env.live()).toEqual([]);
+
+    env.pressT();
+
+    expect(env.live()).toHaveLength(1);
+    const { rect } = env.live()[0];
+    expect(rect.x).toBe(partyPanelLeft(1080));
+    expect(rect.y).toBe(partyPanelTop(720));
+    expect(rect.width).toBe(PARTY_PANEL_W);
+    expect(env.panel.covers(rect.x + 1, rect.y + rect.height - 1)).toBe(true);
+    env.pressT();
+    expect(env.live()).toEqual([]);
+  });
+
+  it("should stand its ground anew on each draw, never two at once", () => {
+    const env = grounded();
+    env.pressT();
+    env.store.getState().apply(update());
+
+    expect(env.grounds.length).toBeGreaterThan(1);
+    expect(env.live()).toHaveLength(1);
+    env.panel.destroy();
+    expect(env.live()).toEqual([]);
+  });
+
+  it("should keep the invite field for a press on the open panel only while the field holds focus", () => {
+    const env = setup();
+    let focused = false;
+    env.handle.focused = () => focused;
+    const at = { x: partyPanelLeft(1080) + 20, y: partyPanelTop(720) + 20 };
+
+    expect(env.panel.keepsField(at.x, at.y)).toBe(false);
+    env.pressT();
+    expect(env.panel.keepsField(at.x, at.y)).toBe(false);
+    focused = true;
+    expect(env.panel.keepsField(at.x, at.y)).toBe(true);
+    expect(env.panel.keepsField(5, 5)).toBe(false);
+  });
+});
+
+// FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (I-WDM0X-8): the
+// panel's buttons hover and click, a greyed one says no; its open and close keep party_open and
+// party_close by the window rule (P5–P8)
+describe("PartyPanel's sounds (FS-WDM0X § Pass 2: the party, P5–P8)", () => {
+  function heardPanel(world: WorldType = "hub") {
+    const heard: string[] = [];
+    const env = setup({ world, play: (effect) => void heard.push(effect) });
+    return { ...env, heard };
+  }
+
+  it("should play menu_hover on a live button and menu_click as it answers, once each, beside its command", () => {
+    const env = heardPanel();
+    env.pressT();
+    const create = env.find("Create party")!;
+
+    create.onOver?.();
+    create.onRelease?.();
+
+    expect(env.heard).toEqual(["menu_hover", "menu_click"]);
+    expect(env.commands.create).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["Transfer", "Kick", "Leave party", "Invite"])("should hover and click %s for the leader", (label) => {
+    const env = heardPanel();
+    env.store.getState().apply(update());
+    env.pressT();
+    env.field.value = "Mira";
+
+    env.find(label)!.onOver?.();
+    env.find(label)!.onRelease?.();
+
+    expect(env.heard).toEqual(["menu_hover", "menu_click"]);
+  });
+
+  it("should take a greyed button's press for menu_error alone, and send nothing (a run's Invite)", () => {
+    const env = heardPanel("run");
+    env.store.getState().apply(update());
+    env.pressT();
+    env.field.value = "Mira";
+    const invite = env.find("Invite")!;
+
+    expect(invite.interactive).toBe(true);
+    invite.onOver?.();
+    invite.onRelease?.();
+
+    expect(env.heard).toEqual(["menu_error"]);
+    expect(env.commands.invite).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing of its own on T or its ×: their sounds are the window rule's (P8)", () => {
+    const env = heardPanel();
+    env.pressT();
+    const x = env.find("×")!;
+    x.onOver?.();
+    x.onRelease?.();
+
+    expect(env.heard).toEqual([]);
   });
 });

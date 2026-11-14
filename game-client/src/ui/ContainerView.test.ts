@@ -548,6 +548,52 @@ describe("ContainerView faces (FS-1D6BX §Requirements 15, 16, D8, D9)", () => {
     expect(calls.some((c) => c.name === "setVisible" && c.args[0] === false)).toBe(true);
   });
 
+  // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-14, R59): in the UI scene the view stands an interactive ground
+  // over its panel, a child of its root, so it pops, moves and hides with it; Phaser stops a press there.
+  it("should stand an interactive ground over its panel in its root, and own only that", () => {
+    const rec = recordingScene();
+    const view = new ContainerView(rec.scene, rec.art, { onLoot: vi.fn() });
+    const zone = rec.calls.find((c) => c.name === "zone");
+    // the band `onPanel` claims: the body's width, from the lifted flap's top to under the hint
+    const [x, y, w, h] = zone?.args as number[];
+    expect([x, w]).toEqual([-180, 360]);
+    expect(y).toBeCloseTo(-215.84);
+    expect(h).toBeCloseTo(401.84);
+    const root = rec.calls.find((c) => c.name === "container" && Array.isArray(c.args[2]));
+    const children = root?.args[2] as unknown[];
+    expect(rec.calls.some((c) => c.name === "setInteractive")).toBe(true);
+    expect(view.owns(children.at(-1))).toBe(true);
+    expect(view.owns(children[0])).toBe(false);
+    expect(view.owns(undefined)).toBe(false);
+  });
+
+  // the review of phase 3 (LOW-2): the root stays visible through the close's fade, so its ground would
+  // take a press there for some 320 ms; it stops taking presses the moment the view starts to close, so
+  // a press then goes where it did before (an attack), and takes them again as it next opens
+  it.each(kinds)("should stop its ground taking presses as a %s's view starts to close, and take them again on the next open", (kind) => {
+    const { view, calls } = opened(kind);
+    expect(calls.some((c) => c.name === "disableInteractive")).toBe(false);
+    calls.length = 0;
+
+    view.close();
+    expect(calls.some((c) => c.name === "disableInteractive")).toBe(true);
+
+    calls.length = 0;
+    view.open("c2", kind);
+    expect(calls.some((c) => c.name === "setInteractive")).toBe(true);
+  });
+
+  it("should let go of everything it drew on destroy, its tweens first", () => {
+    const rec = recordingScene();
+    const view = new ContainerView(rec.scene, rec.art, { onLoot: vi.fn() });
+    view.open("c1", "chest");
+    rec.calls.length = 0;
+    view.destroy();
+    expect(rec.calls.map((c) => c.name)).toContain("killTweensOf");
+    expect(rec.calls.at(-1)?.name).toBe("destroy");
+    expect(view.isOpen).toBe(false);
+  });
+
   it.each(kinds)("should say Rummaging... until a %s's contents arrive, then (Picked clean) when empty", (kind) => {
     const { view, said } = opened(kind);
     expect(said().at(-1)).toBe("Rummaging...");

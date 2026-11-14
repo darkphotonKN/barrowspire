@@ -36,7 +36,13 @@ export const LORE_LINE = {
   fontPx: 22,
   letterSpacing: 1,
   wrapPx: 640,
-  /** Over the HUD (1000) and the arrival card (960, 961), under the HUD notices (2000). */
+  /**
+   * Over the HUD (1000) and the arrival card (960, 961), under the HUD notices (2000). On the UI scene
+   * (FS-TQZ5J § Change: Merge with main, the owner's 2026-11-14 call): over its every panel too, the
+   * gear overlay's (1100–1103), the party panel (1110), the controls panel (1200), the settlement record
+   * (1600, 1601) and the letter panel (1800); under the menu, the dialogue card and the run's notices
+   * (2000) and the item tips (2200).
+   */
   depth: 1990,
   fadeInMs: 900,
   holdMs: 2600,
@@ -63,6 +69,14 @@ export const LORE_TONES: Record<LoreTone, { color: number; dust: LoreTint; ember
   },
   hope: { color: palette.loreHope, dust: { from: palette.loreHope, to: palette.loreFade } },
 };
+
+/**
+ * The dread line's tremor on `camera` (R10): the one camera shake FS-KYPQ9 §B.5 allows, made here and
+ * nowhere else. The run's answer to the UI scene's `tremor` request shakes its camera through it.
+ */
+export function tremble(camera: Pick<Phaser.Cameras.Scene2D.Camera, "shake">, durationMs: number, intensity: number): void {
+  camera.shake(durationMs, intensity);
+}
 
 const same = (a: LoreLine, b: LoreLine) => a.text === b.text && a.tone === b.tone;
 
@@ -114,6 +128,11 @@ export interface LoreLinesOptions {
   view?: CardView;
   /** Whether the player asked for less motion: no tremor (R7). The dust asks for itself. */
   reducedMotion?: () => boolean;
+  /**
+   * The dread line's tremor (R10), for a host whose camera is not the one to shake: the UI scene asks
+   * the world's (FS-TQZ5J § Change: Merge with main, 2026-11-14). Its own camera's shake, unless given.
+   */
+  tremor?: (durationMs: number, intensity: number) => void;
 }
 
 type Timer = { remove(dispatchCallback?: boolean): unknown };
@@ -134,6 +153,7 @@ export class LoreLines {
   private cancelSceneEnd?: () => void;
   private readonly view: CardView;
   private readonly reducedMotion: () => boolean;
+  private readonly tremor: (durationMs: number, intensity: number) => void;
 
   constructor(
     private readonly scene: LoreLineScene,
@@ -142,6 +162,7 @@ export class LoreLines {
   ) {
     this.view = options.view ?? viewport;
     this.reducedMotion = options.reducedMotion ?? (() => prefersReducedMotion());
+    this.tremor = options.tremor ?? ((durationMs, intensity) => tremble(scene.cameras.main, durationMs, intensity));
   }
 
   /** The line showing now, if any. */
@@ -217,7 +238,7 @@ export class LoreLines {
     const area = boxOf(text, x, y);
     this.dust.start(area, tone.dust, L.depth);
     if (tone.embers) this.dust.burst(area, tone.embers, L.depth);
-    if (tone.tremor && !this.reducedMotion()) scene.cameras.main.shake(L.tremor.durationMs, L.tremor.intensity);
+    if (tone.tremor && !this.reducedMotion()) this.tremor(L.tremor.durationMs, L.tremor.intensity);
 
     const fade = scene.time.delayedCall(L.fadeInMs + L.holdMs, () => {
       this.dust.stop();

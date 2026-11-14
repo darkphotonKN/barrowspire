@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetHeldForTests } from "@/audio/sfxSetting";
-import type { ContainerViewOptions } from "@/ui/ContainerView";
 
 // node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
 afterEach(() => resetHeldForTests());
@@ -67,10 +66,92 @@ const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
+const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
+const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { chatWiring } = await import("@/ui/uiSceneChat");
+/** Whether the UI scene's chat may take the keys over the field (FS-TQZ5J § Change: Batch 6, R126). */
+const chatMayOpen = (field: object) => chatWiring(uiSceneOn(field, "field", { row: false }).bridge).mayOpen();
+/** The player typing in the UI scene's chat over the field, or not (FS-TQZ5J § Change: Batch 6, R127). */
+const typeInChat = (field: object, on = true) => uiSceneOn(field, "field", { row: false }).bridge.reportUi({ typing: on });
+const { abilityPlaceOver, hudOver } = await import("@/ui/uiSceneHud.standin");
+const { equipmentPiece } = await import("@/ui/uiSceneGear");
+type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
+type GearKey = import("@/ui/uiSceneGear").GearKey;
+type GearWiring = import("@/ui/uiSceneGear").GearWiring;
+
+/** The UI scene's keys, by the field's key event names (FS-TQZ5J R17, R18): Esc and the menu's. */
+const UI_KEYS: Record<string, UiKey> = {
+  ESC: "esc",
+  ENTER: "enter",
+  ONE: "one",
+  TWO: "two",
+  THREE: "three",
+  LEFT: "left",
+  RIGHT: "right",
+};
+
+/**
+ * The gear's and the satchel's keys, by the field's key event names: the UI scene's since phase 3,
+ * heard on their key events as the field heard them (FS-TQZ5J § Change: Phase 3, R56).
+ */
+const GEAR_KEYS: Record<string, GearKey> = { I: "inventory", B: "inventory", C: "character", Q: "close", E: "equip", F: "take" };
+
+/**
+ * A key pressed over the field: the UI scene acts on it on its frame or its key event, before the world
+ * (FS-TQZ5J R21), its menu slot drawn on the field's stage; the field's own handler for it runs too,
+ * where it binds one (only E, shared by state: § Change: Phase 3, R56).
+ */
+function keyOver(field: object, keys: Map<string, () => void>, name: string): void {
+  const ui = UI_KEYS[name];
+  if (ui) uiSceneOn(field, "field", { row: false }).key(ui);
+  const gear = GEAR_KEYS[name];
+  if (gear) uiSceneOn(field, "field", { row: false }).gearKey(gear);
+  keys.get(`keydown-${name}`)?.();
+}
+
+/**
+ * The UI scene's gear over the field (FS-TQZ5J § Change: Phase 3, R50), on plain state the test reads:
+ * its panels open or shut as the UI scene opens and shuts them. Returns the wiring the UI scene gave it
+ * (its × runs through `wrapper`, as GearOverlay's does).
+ */
+function plainGearOver(field: object, gear: { inventory: boolean; character: boolean }): () => GearWiring {
+  let wired: GearWiring | undefined;
+  gearOver(field, "field", (_w, wiring) => {
+    wired = wiring;
+    return {
+      gear: {
+        isInventoryOpen: () => gear.inventory,
+        isCharacterOpen: () => gear.character,
+        stashOpen: () => false,
+        toggle: () => (gear.inventory = !gear.inventory),
+        toggleCharacter: () => (gear.character = !gear.character),
+        hide: () => {
+          const was = gear.inventory || gear.character;
+          gear.inventory = gear.character = false;
+          return was;
+        },
+        equipKey: () => false,
+        openStash: () => false,
+        seen: () => {},
+        setCharacterLevel: () => {},
+        taken: () => {},
+        roomForOne: () => true,
+        release: () => {},
+      },
+    };
+  });
+  return () => wired!;
+}
+
+/** The UI scene's menu slot filled (or emptied) over the field (FS-TQZ5J R10), as every guard of the field's reads it. */
+function menuUpOver(field: object, open = true): void {
+  uiSceneOn(field, "field", { row: false }).bridge.reportUi({ menuOpen: open });
+}
 const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
 const { createPartyStore } = await import("@/stores/partyStore");
@@ -159,6 +240,10 @@ function fieldOnStage() {
       message: "x",
       reason,
     });
+  // the UI scene up over the field, its notices drawn on the field's stage (FS-TQZ5J A2 R33)
+  uiSceneOn(field, "field", { row: false });
+  // and its HUD, the bars and the ability card, drawn on the field's stage (FS-TQZ5J § Change: Batch 5, R67)
+  hudOver(field, "field");
   return { field, texts, send, standAt, refuse, reply };
 }
 
@@ -222,6 +307,21 @@ describe("FieldScene the road home (FS-X2F2H §Requirements 14, 57, 60)", () => 
     standAt(ROAD_HOME.position);
 
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say a refusal through the UI bridge in the field's look, gone as the field leaves (FS-TQZ5J A2 R33, R34)", () => {
+    const { field, standAt, refuse } = fieldOnStage();
+    const told: unknown[] = [];
+    const ui = uiSceneOn(field, "field", { row: false });
+    ui.bridge.onScreen({ notice: (n) => void told.push(n) });
+    standAt(ARRIVAL);
+    standAt(ROAD_HOME.position);
+
+    refuse("fallen");
+    (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
+
+    expect(told).toEqual([{ text: "You have fallen. You will rise at the road home.", look: { world: "field" } }]);
+    expect(ui.bridge.world).toBeNull();
   });
 
   it("should say why in its own words on a refusal, and let the next step in ask again", () => {
@@ -607,7 +707,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     "should stand the fallen panel and its bar at the centre of a wider view, at render scale %s (FS-ZAJMH R12, R13)",
     (renderScale) => {
       const { field, liveText, barFills } = fallenOnStage();
-      Object.assign(field, { satchel: undefined, invitePrompt: undefined, abilityHud: undefined });
+      Object.assign(field, { satchel: undefined, invitePrompt: undefined });
       viewport.set({ width: 1080, height: 720, renderScale });
       field.time.now = 1000;
       field.renderState(stateAt(0, { x: 900, y: 420 }));
@@ -705,14 +805,12 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
 
   type Hud = FieldUnderTest & {
     input: unknown;
-    equipment?: InstanceType<typeof EquipmentHud>;
+    equipment?: unknown;
     piles?: unknown;
     menu?: unknown;
+    events: InstanceType<typeof EventEmitter>;
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
-    lootFromSatchel(item: unknown): void;
-    bagHasRoom(): boolean;
-    satchel?: unknown;
   };
 
   /** The field with the run's HUD on a recording panel, its keys bound to a fake keyboard. */
@@ -747,10 +845,40 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       setCharacterLevel: vi.fn(),
       updateCharacter: vi.fn(),
     };
+    // the run's HUD, the UI scene's over the field (FS-TQZ5J § Change: Phase 3, R50): its sends asked
+    // of the field as `equip` and `unequip`, its notices in the field's look; the satchel stands too
     const notices: string[] = [];
-    field.equipment = new EquipmentHud(panel as never, {
-      send: (action, payload) => socketManager.sendMessage(action, payload),
-      notice: (text) => notices.push(text),
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ notice: (n) => void notices.push(n.text) });
+    let hud!: InstanceType<typeof EquipmentHud>;
+    let wiring!: GearWiring;
+    const satchel = { open: undefined as string | undefined };
+    gearOver(field, "field", (_w, wired) => {
+      wiring = wired;
+      hud = new EquipmentHud(panel as never, {
+        send: (action, payload) => wired.send(action === ActionType.Equip ? "equip" : "unequip", payload.item_entity_id),
+        notice: wired.notice,
+      });
+      return {
+        gear: equipmentPiece(hud),
+        container: {
+          get isOpen() {
+            return satchel.open !== undefined;
+          },
+          get entityId() {
+            return satchel.open;
+          },
+          open: (id: string) => void (satchel.open = id),
+          close: () => void (satchel.open = undefined),
+          closeNow: () => void (satchel.open = undefined),
+          setItems: () => {},
+          lootFirst: () => {},
+          pointerMove: () => {},
+          pointerDown: () => true,
+          owns: () => false,
+          relayout: () => {},
+          destroy: () => {},
+        },
+      };
     });
     const piles = {
       sync: vi.fn(),
@@ -768,9 +896,11 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       setDefaultCursor: vi.fn(),
     };
     field.bindHudKeys();
-    const press = (key: string) => keys.get(`keydown-${key}`)?.();
+    const press = (key: string) => keyOver(field, keys, key);
     const hover = (over: "inventory" | "head") => (hovered = over);
-    return { ...stage, field, panel, piles, press, hover, notices };
+    /** A take the satchel made (its icon or F): the UI scene asks the field, which sends it through the piles. */
+    const take = (item: unknown) => wiring.take(item as never);
+    return { ...stage, field, panel, piles, press, hover, notices, hud: () => hud, take, satchel };
   }
 
   it("should open the run's equipment panel on I with what the field's state says I carry and wear", () => {
@@ -821,29 +951,27 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
   });
 
-  it("should close the panel on Q, and take a click over its panels, not in the clear band, as no attack (FS-HRH2J R8)", () => {
+  // a press over the overlay's panels is its ground's in the UI scene and never reaches the field
+  // (FS-TQZ5J § Change: Phase 3, R59): the field reads no rect of the overlay's
+  it("should close the panel on Q, and test no rect of the overlay's in its click path (FS-HRH2J R8; FS-TQZ5J § Change: Phase 3, R59)", () => {
     const { field, panel, press } = hudOnStage();
-    expect(field.takesPointer(600, 10, true)).toBe(false);
-
     press("I");
-    expect(field.takesPointer(600, 10, true)).toBe(true);
-    expect(field.takesPointer(600, 10, false)).toBe(true);
+    expect(field.takesPointer(600, 10, true)).toBe(false);
     expect(field.takesPointer(300, 10, true)).toBe(false);
 
     press("Q");
     expect(panel.hide).toHaveBeenCalledTimes(1);
-    expect(field.takesPointer(600, 10, true)).toBe(false);
   });
 
   it("should toggle the overlay on I and on B, and close it on ESC (FS-HRH2J R4)", () => {
-    const { field, press } = hudOnStage();
+    const { hud, press } = hudOnStage();
     press("B");
-    expect(field.equipment?.isOpen()).toBe(true);
+    expect(hud().isOpen()).toBe(true);
     press("I");
-    expect(field.equipment?.isOpen()).toBe(false);
+    expect(hud().isOpen()).toBe(false);
     press("I");
     press("ESC");
-    expect(field.equipment?.isOpen()).toBe(false);
+    expect(hud().isOpen()).toBe(false);
   });
 
   // FS-HRH2J § Change: Character and inventory apart (C2, C3, C5, C7). I-3EBCA-4.
@@ -874,12 +1002,12 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
   });
 
   it("should close both panels on one ESC and on Q (§ Change C3)", () => {
-    const { field, panel, press } = hudOnStage();
+    const { field, hud, panel, press } = hudOnStage();
     press("C");
     press("I");
     press("ESC");
-    expect(field.equipment?.isOpen()).toBe(false);
-    expect(field.menu).toBeUndefined();
+    expect(hud().isOpen()).toBe(false);
+    expect(menuOver(field)).toBeUndefined();
     press("C");
     press("I");
     press("Q");
@@ -895,15 +1023,15 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     expect(piles.interact).toHaveBeenCalledWith(ARRIVAL);
   });
 
-  it("should still loot through the open satchel when the press is not over the overlay", () => {
-    const { field } = hudOnStage();
-    field.satchel = { pointerDown: vi.fn(() => true) };
-    field.equipment?.toggle();
-    expect(field.takesPointer(300, 10, true)).toBe(true);
+  // the satchel's ground is the UI scene's: a click there never reaches the field (FS-TQZ5J § Change: Phase 3, R59)
+  it("should read no satchel in its click path: the open satchel's press is the UI scene's", () => {
+    const { field, satchel } = hudOnStage();
+    satchel.open = "pile-1";
+    expect(field.takesPointer(300, 10, true)).toBe(false);
   });
 
   it("should refuse a pile take and an unequip into a full bag with the field's notice (FS-HRH2J R20–22)", () => {
-    const { field, panel, send, notices } = hudOnStage();
+    const { field, hud, panel, send, notices } = hudOnStage();
     const full = Array.from({ length: 30 }, (_, i) => ({
       entity_id: `i${i}`,
       name: `i${i}`,
@@ -913,14 +1041,15 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       current_player: { ...carrying.current_player, inventory: full },
     });
 
-    expect(field.bagHasRoom()).toBe(false);
+    // the satchel's take is pre-checked by the HUD's bag, as the field's was (`mayTake` → `roomForOne`)
+    expect(hud().roomForOne()).toBe(false);
     expect(panel.mayUnequip?.()).toBe(false);
     expect(notices).toEqual(["Your bag is full.", "Your bag is full."]);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("should count a pending take, so two quick takes at 29 allow one (FS-HRH2J edge state: Pending pickups)", () => {
-    const { field } = hudOnStage();
+    const { field, hud, take } = hudOnStage();
     const almost = Array.from({ length: 29 }, (_, i) => ({
       entity_id: `i${i}`,
       name: `i${i}`,
@@ -930,93 +1059,80 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
       current_player: { ...carrying.current_player, inventory: almost },
     });
 
-    expect(field.bagHasRoom()).toBe(true);
-    field.lootFromSatchel({ entity_id: "coin" });
-    expect(field.bagHasRoom()).toBe(false);
+    expect(hud().roomForOne()).toBe(true);
+    take({ entity_id: "coin" });
+    expect(hud().roomForOne()).toBe(false);
   });
 
   it("should hold an item taken from a pile in the inventory while its loot is pending, as the run does", () => {
-    const { field, piles } = hudOnStage();
+    const { field, hud, piles, take } = hudOnStage();
     field.renderState({
       ...carrying,
       current_player: { ...carrying.current_player, inventory: [] },
     });
 
-    field.lootFromSatchel({ entity_id: "coin" });
+    take({ entity_id: "coin" });
 
     expect(piles.loot).toHaveBeenCalledWith({ entity_id: "coin" });
-    expect(field.equipment?.inventory.map((i) => i.entity_id)).toEqual([
-      "coin",
-    ]);
+    expect(hud().inventory.map((i) => i.entity_id)).toEqual(["coin"]);
   });
 
   it("should hold nothing when the pile is someone else's and the loot is not sent", () => {
-    const { field, piles } = hudOnStage();
+    const { hud, piles, take } = hudOnStage();
     piles.loot.mockReturnValue(false);
 
-    field.lootFromSatchel({ entity_id: "coin" });
+    take({ entity_id: "coin" });
 
-    expect(field.equipment?.inventory).toEqual([]);
+    expect(hud().inventory).toEqual([]);
   });
 
+  // FS-AND39 R7, re-expressed on the UI scene (FS-TQZ5J § Change: Merge with main, 2026-11-14): the take
+  // comes from the UI scene's container view as `take`; the field sends it and sounds it
   it("should play item_pickup as a loot is sent, and nothing for a reserved pile's refusal (FS-AND39 R7)", () => {
-    const { field, piles } = hudOnStage();
+    const { field, piles, take } = hudOnStage();
     const play = vi.fn();
     Object.assign(field, { gameplaySounds: { play } });
 
-    field.lootFromSatchel({ entity_id: "coin" });
+    take({ entity_id: "coin" });
     expect(play.mock.calls).toEqual([["item_pickup"]]);
 
     piles.loot.mockReturnValue(false);
-    field.lootFromSatchel({ entity_id: "gem" });
+    take({ entity_id: "gem" });
     expect(play).toHaveBeenCalledTimes(1);
   });
 
-  it("should make the field's gameplay player on the field's own sound, beside the interface effects' (FS-AND39 R13, R16)", () => {
-    const { field } = hudOnStage();
-    const heard = hearOn(field as unknown as Record<string, unknown>, [...UI_EFFECTS, ...GAMEPLAY_EFFECTS]);
+  it("should make the field's gameplay player on the field's own sound (FS-AND39 R13, R16)", () => {
+    const { field, take } = hudOnStage();
+    const played: string[] = [];
+    Object.assign(field, {
+      cache: { audio: { exists: (key: string) => GAMEPLAY_EFFECTS.some((e) => key === `sfx:${e}`) } },
+      sound: {
+        locked: false,
+        context: { state: "running" },
+        get: () => null,
+        add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
+      },
+    });
     (field as unknown as { mountGameplaySounds(): void }).mountGameplaySounds();
 
-    field.lootFromSatchel({ entity_id: "coin" });
+    take({ entity_id: "coin" });
 
-    expect(heard()).toEqual(["item_pickup"]);
+    expect(played).toEqual(["item_pickup"]);
   });
 
-  // FieldPiles.test.ts plays the opens through a coffer view of its own; this is the hook the
-  // field's satchel is made with
-  it.each([
-    ["chest", "chest_open"],
-    ["sack", "loot_open"],
-    ["drop_pile", "loot_open"],
-  ] as const)("should play a %s's open, %s, through the hooks the field's satchel is made with (FS-AND39 R5)", (kind, effect) => {
-    const { field } = hudOnStage();
-    const play = vi.fn();
-    Object.assign(field, { gameplaySounds: { play } });
-    const options = (field as unknown as { satchelOptions(): ContainerViewOptions }).satchelOptions();
+  // the HUD is the UI scene's, built for the field and let go as it leaves (FS-TQZ5J § Change: Phase 3, R50)
+  it("should have the UI scene let the HUD go as the field leaves, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
+    const { field, hud, press } = hudOnStage();
+    const release = vi.spyOn(hud(), "release");
+    press("I");
 
-    options.onOpen?.(kind);
-
-    expect(play.mock.calls).toEqual([[effect]]);
-  });
-
-  it("should let the HUD go on release, so the next visit starts empty", () => {
-    const { field } = hudOnStage();
-
-    field.release("shutdown");
-
-    expect(field.equipment).toBeUndefined();
-  });
-
-  it("should release the HUD on release, so a purse read in flight draws nothing (FS-7TGZ3)", () => {
-    const { field } = hudOnStage();
-    const release = vi.spyOn(field.equipment!, "release");
-
-    field.release("shutdown");
+    field.events.emit("shutdown");
 
     expect(release).toHaveBeenCalledTimes(1);
+    expect(uiSceneOn(field, "field", { row: false }).gear.isOpen()).toBe(false);
   });
 
-  it("should compose the run's equip HUD and bind its keys when the field is created", () => {
+  it("should bind only E of the gear's keys when the field is created: I, B, C, Q and F are the UI scene's", () => {
     // the keys the keyboard is asked to answer; the rest of the input answers anything
     const keys = new Map<string, () => void>();
     const keyboard = {
@@ -1031,18 +1147,12 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     field.init({ field: "gentle_meadows" });
     field.create({ field: "gentle_meadows" });
 
-    expect(field.equipment).toBeInstanceOf(EquipmentHud);
-    expect([...keys.keys()]).toEqual(
-      expect.arrayContaining([
-        "keydown-I",
-        "keydown-B",
-        "keydown-C",
-        "keydown-E",
-        "keydown-Q",
-        "keydown-ESC",
-        "keydown-F",
-      ]),
-    );
+    expect(field.equipment).toBeUndefined();
+    expect(keys.has("keydown-E")).toBe(true);
+    for (const gearKey of ["I", "B", "C", "Q", "F"]) expect(keys.has(`keydown-${gearKey}`)).toBe(false);
+    // Esc and the ESC menu's keys are the UI scene's: the field binds none of them (FS-TQZ5J R17, R18,
+    // R21); its Enter is chat's alone, guarded by the menu (ChatWindow, FS-WJGFJ R27)
+    for (const uiKey of ["ESC", "ONE", "TWO", "THREE", "LEFT", "RIGHT"]) expect(keys.has(`keydown-${uiKey}`)).toBe(false);
   });
 });
 
@@ -1077,13 +1187,18 @@ describe("FieldScene ending (game destroy on leaving /game)", () => {
     expect(offError).toHaveBeenCalledWith(ActionType.LeaveField);
   });
 
-  it("should hand the cursor back to the page on a stop", () => {
-    const { systems } = createdField();
-    systems.input.manager!.defaultCursor = "url(hand) 0 0, default";
+  // the menus wear the bone hand too: a stop leaves the hand, the fight's strike-mark with it
+  // (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+  it("should leave the bone hand, not the strike-mark nor the browser's cursor, on a stop", () => {
+    const { field, systems } = createdField();
+    const page = lookGame();
+    page.look().base("strike");
+    // the fight lets go of the game's focus events as the field stops
+    Object.assign(field, { game: { ...page.game, events: new EventEmitter() } });
 
     systems.shutdown();
 
-    expect(systems.input.manager?.defaultCursor).toBe("");
+    expect(page.now()).toBe("hand");
   });
 
   // Phaser's stop destroys the field's keys and keeps their captures, the game's (sceneEnd.ts).
@@ -1234,14 +1349,31 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     const { field } = kitOnStage({ lockedOut: false });
     field.renderState(archerState);
     const { ABILITY_CARD_PLACE } = hudCorner;
-    expect((field as unknown as { abilityHud: { place: unknown } }).abilityHud.place).toEqual(ABILITY_CARD_PLACE);
+    expect(abilityPlaceOver(field)).toEqual(ABILITY_CARD_PLACE);
   });
 
-  it("should take a press on the corner row as the row's, never an attack (FS-3EBCA R10)", () => {
+  it("should hand its bars and its ability card to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false });
+    const told: unknown[] = [];
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    field.renderState(archerState);
+    expect(told).toContainEqual({ world: "field", kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    expect(told).toContainEqual({ world: "field", kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
+    expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
+    // the UI scene's card, drawn from it
+    expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));
+    expect((field as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
+  });
+
+  // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the
+  // field, and never reaches it, so the field's click path reads no rect of the row
+  it("should read no corner row in its click path: the row is the UI scene's (FS-TQZ5J R15)", () => {
     const { field } = kitOnStage({ lockedOut: false });
     const f = field as unknown as { corner: unknown; takesPointer(x: number, y: number, p: boolean): boolean };
     f.corner = { covers: (x: number, y: number) => x > 1000 && y > 650 };
-    expect(f.takesPointer(1030, 680, true)).toBe(true);
+    expect(f.takesPointer(1030, 680, true)).toBe(false);
   });
 
   it("should grey the card while the ability lockout runs", () => {
@@ -1258,9 +1390,9 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
 
   it("should keep walking with the gear overlay open (FS-HRH2J R7)", () => {
     const { field, send } = kitOnStage({ aiming: false });
-    Object.assign(field, {
-      equipment: { isOpen: () => true, covers: () => true },
-    });
+    // the UI scene's inventory open (FS-TQZ5J § Change: Phase 3, R53), which ends any hold
+    Object.assign((field as unknown as { fight: object }).fight, { cancelAim: vi.fn() });
+    uiSceneOn(field, "field", { row: false }).bridge.reportUi({ inventory: true });
 
     field.update(16, 16);
     expect(send).toHaveBeenCalledWith(ActionType.Move, { vx: 1, vy: 0 });
@@ -1643,7 +1775,11 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     const store = { held: null as string | null, writes: [] as string[] };
     field.minimapStore = () => ({ getItem: () => store.held, setItem: (_k: string, v: string) => void store.writes.push(v), removeItem: () => {} });
     const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
-    field.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    // its keyboard as Phaser's: the UI scene's chat turns it off while typing (FS-TQZ5J § Change: Batch 6, R127)
+    field.input = {
+      setDefaultCursor: vi.fn(),
+      keyboard: { enabled: true, resetKeys: () => {}, on: (name: string, fn: () => void) => void (keys[name] = fn) },
+    };
     (field as unknown as { bindMinimapKey(): void }).bindMinimapKey();
     const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
     const render = (position: { x: number; y: number }, others: unknown[] = []) =>
@@ -1689,10 +1825,10 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     takes(754, 163);
     expect(heard()).toEqual(["map_mode_switch"]);
     pressM({ repeat: true });
-    field.menu = {};
+    menuUpOver(field);
     pressM();
-    field.menu = undefined;
-    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    menuUpOver(field, false);
+    typeInChat(field);
     pressM();
     expect(heard()).toEqual([]);
   });
@@ -1709,7 +1845,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     // a right press on it is its too: no class ability at the corner, and no step
     expect(takes(754, 163, false)).toBe(true);
     expect(map()!.mode).toBe("enlarged");
-    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    typeInChat(field);
     expect(takes(754, 163)).toBe(true);
     expect(map()!.mode).toBe("enlarged");
     expect(store.writes).toEqual(["enlarged"]);
@@ -1717,20 +1853,17 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(takes(745, 163)).toBe(false);
   });
 
-  // integration of the map mode icon (D5, D6) with FS-3EBCA R10 and FS-G4VMQ § Change C4: a press on
-  // the corner row is the row's, and while the ESC menu is up the icon, M's, answers nothing
-  it("should leave a press on the corner row to the row, and step nothing on the icon while the ESC menu is up (FS-3EBCA R10; FS-G4VMQ § Change C4; D5, D6)", () => {
+  // integration of the map mode icon (D5, D6) with FS-G4VMQ § Change C4: while the ESC menu is up
+  // the icon, M's, answers nothing (the corner row is the UI scene's, FS-TQZ5J R15)
+  it("should step nothing on the icon while the ESC menu is up (FS-G4VMQ § Change C4; D5, D6)", () => {
     const { field, render, map, store } = forestWithMap();
     const takes = (x: number, y: number) => (field as unknown as { takesPointer(x: number, y: number, primary: boolean): boolean }).takesPointer(x, y, true);
     render({ x: 2900, y: 1480 });
-    field.corner = { covers: () => true, destroy: vi.fn(), relayout: vi.fn() };
-    expect(takes(862, 109)).toBe(true);
-    field.corner = undefined;
-    field.menu = {};
+    menuUpOver(field);
     expect(takes(862, 109)).toBe(true);
     expect(map()!.mode).toBe("normal");
     expect(store.writes).toEqual([]);
-    field.menu = undefined;
+    menuUpOver(field, false);
     expect(takes(862, 109)).toBe(true);
     expect(map()!.mode).toBe("enlarged");
   });
@@ -1832,10 +1965,10 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(store.writes).toEqual([]);
     render({ x: 600, y: 600 });
     pressM({ repeat: true });
-    field.chatWindow = { isTyping: () => true };
+    typeInChat(field);
     pressM();
     expect(store.writes).toEqual([]);
-    field.chatWindow = undefined;
+    typeInChat(field, false);
     pressM();
     pressM();
     pressM();
@@ -1848,11 +1981,11 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
   it("should not step M while the field's ESC menu is open (§F.33; FS-G4VMQ § Change C4)", () => {
     const { field, render, map, pressM, store } = forestWithMap();
     render({ x: 600, y: 600 });
-    field.menu = {};
+    menuUpOver(field);
     pressM();
     expect(store.writes).toEqual([]);
     expect(map()!.mode).toBe("normal");
-    field.menu = undefined;
+    menuUpOver(field, false);
     pressM();
     expect(store.writes).toEqual(["enlarged"]);
   });
@@ -1993,33 +2126,32 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
     const field = new FieldScene() as unknown as {
       input: unknown;
       equipment?: unknown;
-      partyPanel?: unknown;
       bindHudKeys(): void;
     };
     field.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
       on: () => undefined,
     };
-    let gear = true;
+    const gearState = { inventory: false, character: false };
     let party = true;
-    field.equipment = {
-      isOpen: () => gear,
-      hide: () => {
-        const was = gear;
-        gear = false;
-        return was;
-      },
-    };
-    field.partyPanel = {
+    field.bindHudKeys();
+    // the gear overlay is the UI scene's (FS-TQZ5J § Change: Phase 3, R55), open from the start
+    plainGearOver(field, gearState);
+    gearState.inventory = true;
+    // the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R39)
+    partyPanelOver(field, "field", () => ({
       isOpen: () => party,
       close: () => {
         const was = party;
         party = false;
         return was;
       },
-    };
-    field.bindHudKeys();
-    return { esc: () => keys.get("keydown-ESC")!(), open: () => ({ gear, party }) };
+      toggle: vi.fn(),
+      relayout: vi.fn(),
+      keepsField: () => false,
+      destroy: vi.fn(),
+    }));
+    return { esc: () => keyOver(field, keys, "ESC"), open: () => ({ gear: gearState.inventory, party }) };
   }
 
   it("should close the party panel first, drawn over the gear overlay, then the overlay", () => {
@@ -2037,7 +2169,6 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
   type Menued = FieldUnderTest & {
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
     input: unknown;
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
@@ -2071,21 +2202,32 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
       setDefaultCursor: vi.fn(),
     };
     const state = { gear: false, party: false };
-    field.equipment = {
-      isOpen: () => state.gear,
-      hide: () => ((state.gear = false), true),
-      toggle: () => void (state.gear = !state.gear),
-      toggleCharacter: () => void (state.gear = !state.gear),
-      equipKey: () => false,
+    field.bindHudKeys();
+    // the gear overlay is the UI scene's (FS-TQZ5J § Change: Phase 3, R55), its inventory `state.gear`
+    const gear = {
+      get inventory() {
+        return state.gear;
+      },
+      set inventory(open: boolean) {
+        state.gear = open;
+      },
+      get character() {
+        return state.gear;
+      },
+      set character(open: boolean) {
+        state.gear = open;
+      },
     };
-    field.partyPanel = {
+    plainGearOver(field, gear);
+    partyPanelOver(field, "field", () => ({
       isOpen: () => state.party,
       close: () => ((state.party = false), true),
+      toggle: vi.fn(),
       relayout: vi.fn(),
+      keepsField: () => false,
       destroy: vi.fn(),
-    };
-    field.bindHudKeys();
-    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    }));
+    const key = (name: string) => keyOver(field, keys, name);
     return { ...env, field, labels, key, state, picks };
   }
 
@@ -2096,11 +2238,11 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
   it("should open the town's menu on ESC with nothing open, and close it on a second ESC (C1, C2)", () => {
     const { field, labels, key } = menuedField();
     key("ESC");
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
     expect(labels).toContain("Change character  [1]");
     expect(labels).toContain("Back  [Esc]");
     key("ESC");
-    expect(field.menu).toBeUndefined();
+    expect(menuOver(field)).toBeUndefined();
   });
 
   // the party panel is drawn over the gear overlay, so it goes first (FS-R82NV § Change C2, C8)
@@ -2111,12 +2253,12 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
     key("ESC");
     expect(state.party).toBe(false);
     expect(state.gear).toBe(true);
-    expect(field.menu).toBeUndefined();
+    expect(menuOver(field)).toBeUndefined();
     key("ESC");
     expect(state.gear).toBe(false);
-    expect(field.menu).toBeUndefined();
+    expect(menuOver(field)).toBeUndefined();
     key("ESC");
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
   });
 
   it("should leave for the roster on Change character: one leave_hub, then MainMenuScene on world_left (C3)", () => {
@@ -2158,10 +2300,8 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
   type Optioned = FieldUnderTest & {
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
     input: unknown;
     bindHudKeys(): void;
-    pressMenuIcon(): void;
     sendMovementIntent(): void;
     moveMenu?: (origin: { x: number; y: number }) => void;
     cursors?: unknown;
@@ -2224,14 +2364,15 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     const state = { gear: false };
     field.equipment = {
       isOpen: () => state.gear,
+      isInventoryOpen: () => state.gear,
+      isCharacterOpen: () => false,
       hide: () => ((state.gear = false), true),
       toggle: () => void (state.gear = !state.gear),
       toggleCharacter: () => void (state.gear = !state.gear),
       equipKey: () => false,
     };
-    field.partyPanel = { isOpen: () => false, close: () => false, relayout: vi.fn(), destroy: vi.fn() };
     field.bindHudKeys();
-    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const key = (name: string) => keyOver(field, keys, name);
     const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
     const words = () => made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => m.args[2]);
     const panelOpen = () => !!find("options-music-up");
@@ -2259,7 +2400,7 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
 
     expect(menuOpen()).toBe(false);
     expect(panelOpen()).toBe(true);
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
     expect(words()).toEqual(expect.arrayContaining(["OPTIONS", "Music", "Back  [Esc]"]));
   });
 
@@ -2348,15 +2489,15 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     key("TWO");
     find("options-close")!.handlers.pointerup();
     expect(menuOpen()).toBe(true);
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
   });
 
   it("should close the panel and open nothing on the corner's Menu icon (C7)", () => {
     const { field, key, panelOpen, menuOpen } = optionedField();
     key("ESC");
     key("TWO");
-    field.pressMenuIcon();
-    expect(field.menu).toBeUndefined();
+    uiSceneOn(field, "field").menu.pressMenu();
+    expect(menuOver(field)).toBeUndefined();
     expect(panelOpen()).toBe(false);
     expect(menuOpen()).toBe(false);
   });
@@ -2383,8 +2524,11 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     key("ESC");
     key("TWO");
     const before = find("options-music-up")!.x;
-    field.moveMenu?.({ x: 1000, y: 360 });
+    // the UI scene's relayout, its menu slot's panel with it (FS-TQZ5J R6)
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    uiSceneOn(field, "field").menu.relayout();
     expect(find("options-music-up")!.x).not.toBe(before);
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
   });
 });
 
@@ -2428,9 +2572,7 @@ describe("FieldScene the party panel over the inventory and the character panel 
     add: unknown;
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
-    refusesParty(): boolean;
-    mountCorner(): void;
+    worldSide(): unknown;
   };
 
   function partyInField() {
@@ -2448,10 +2590,10 @@ describe("FieldScene the party panel over the inventory and the character panel 
     };
     field.add = new Proxy({}, { get: (_t, kind) => (kind === "zone" ? zone : () => any) });
     const gear = { inventory: false, character: false };
-    field.equipment = { isOpen: () => gear.inventory || gear.character };
-    const party = partyPanelOn(() => field.refusesParty());
-    field.partyPanel = party.panel;
-    field.mountCorner();
+    // the gear overlay, the UI scene's (FS-TQZ5J § Change: Phase 3, R55), closed as the menu opens (R10)
+    plainGearOver(field, gear);
+    const party = partyPanelOver(field, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
+    cornerRowOn(field, "field");
     const f = hudCorner.cornerIconFrame("party", viewport);
     const pressIcon = () => zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
     return { field, gear, party, pressIcon };
@@ -2477,7 +2619,7 @@ describe("FieldScene the party panel over the inventory and the character panel 
   it("should still refuse T and the Party icon while the ESC menu is open", () => {
     const { field, gear, party, pressIcon } = partyInField();
     gear.inventory = true;
-    field.menu = {};
+    menuUpOver(field);
     party.pressT();
     pressIcon();
     expect(party.panel.isOpen()).toBe(false);
@@ -2493,11 +2635,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     input: unknown;
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
-    refusesParty(): boolean;
-    pressMenuIcon(): void;
-    mayChat(): boolean;
-    mountCorner(): void;
     bindHudKeys(): void;
   };
 
@@ -2529,27 +2666,16 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
       setDefaultCursor: vi.fn(),
     };
     const gear = { inventory: false, character: false };
-    field.equipment = {
-      isOpen: () => gear.inventory || gear.character,
-      hide: () => {
-        const was = gear.inventory || gear.character;
-        gear.inventory = false;
-        gear.character = false;
-        return was;
-      },
-      toggle: () => (gear.inventory = !gear.inventory),
-      toggleCharacter: () => (gear.character = !gear.character),
-      equipKey: () => false,
-    };
-    const party = partyPanelOn(() => field.refusesParty());
-    field.partyPanel = party.panel;
     field.bindHudKeys();
-    field.mountCorner();
+    // the gear overlay, the UI scene's (FS-TQZ5J § Change: Phase 3, R55)
+    plainGearOver(field, gear);
+    const party = partyPanelOver(field, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
+    cornerRowOn(field, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = hudCorner.cornerIconFrame(icon, viewport);
       zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
     };
-    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const key = (name: string) => keyOver(field, keys, name);
     const open = () => ({ ...gear, party: party.panel.isOpen() });
     return { ...env, field, gear, party, pressIcon, key, open, zones };
   }
@@ -2566,9 +2692,9 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     key("ESC");
     expect(open()).toEqual({ ...NONE, inventory: true });
     key("ESC");
-    expect(field.menu).toBeUndefined();
+    expect(menuOver(field)).toBeUndefined();
     key("ESC");
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
   });
 
   it("should open the menu at once on the Menu icon, closing every window (R17)", () => {
@@ -2578,15 +2704,15 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     party.pressT();
     pressIcon("menu");
     expect(open()).toEqual(NONE);
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
   });
 
   it("should answer no corner icon but Menu while the menu is open (R18)", () => {
     const { field, pressIcon, key, open } = fieldWindows();
     key("ESC");
-    const menu = field.menu;
+    const menu = menuOver(field);
     for (const icon of ["inventory", "character", "party"] as const) pressIcon(icon);
-    expect(field.menu).toBe(menu);
+    expect(menuOver(field)).toBe(menu);
     expect(open()).toEqual(NONE);
   });
 
@@ -2595,13 +2721,13 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     const { field, pressIcon, key, open } = fieldWindows();
     key("ESC");
     pressIcon("menu");
-    expect(field.menu).toBeUndefined();
+    expect(menuOver(field)).toBeUndefined();
     expect(open()).toEqual(NONE);
     pressIcon("menu");
-    expect(field.menu).toBeDefined();
+    expect(menuOver(field)).toBeDefined();
   });
 
-  it("should leave the Menu icon's plate alone to the icon under the menu's blocker, and take a press beside it (R18)", () => {
+  it("should take the whole view with the menu's blocker but the Menu icon's plate, the row and the menu one scene (R18; FS-TQZ5J R16)", () => {
     const { key, zones } = fieldWindows();
     key("ESC");
     const blocker = zones.filter((z) => z.name === "menu-blocker").at(-1)!;
@@ -2610,54 +2736,41 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
       | undefined;
     expect(test, "the blocker's own hit test").toBeTypeOf("function");
     const takes = (x: number, y: number) => test!({}, x, y, blocker);
-    const plate = hudCorner.cornerIconFrame("menu", viewport);
+      const plate = hudCorner.cornerIconFrame("menu", viewport);
     const bag = hudCorner.cornerIconFrame("inventory", viewport);
+    // the whole view but the Menu plate, which it leaves to the icon under it in the same scene, so a
+    // press there closes the menu (FS-3EBCA R18, as when both were the field's)
     expect(takes(plate.x + plate.width / 2, plate.y + plate.height / 2)).toBe(false);
     expect(takes(plate.x - 4, plate.y + plate.height / 2)).toBe(true);
-    expect(takes(plate.x + plate.width / 2, plate.y - 2)).toBe(true);
     expect(takes(bag.x + bag.width / 2, bag.y + bag.height / 2)).toBe(true);
   });
 
   it("should answer no I, B, C or T while the menu is open, and give the chat input no focus (R18)", () => {
     const { field, party, key, open } = fieldWindows();
-    expect(field.mayChat()).toBe(true);
+    expect(chatMayOpen(field)).toBe(true);
     key("ESC");
     key("I");
     key("B");
     key("C");
     party.pressT();
     expect(open()).toEqual(NONE);
-    expect(field.mayChat()).toBe(false);
+    expect(chatMayOpen(field)).toBe(false);
     key("ESC");
-    expect(field.menu).toBeUndefined();
+    expect(menuOver(field)).toBeUndefined();
   });
 });
 
-const { UI_EFFECTS } = await import("@/audio/uiSounds");
+const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 const { readFileSync } = await import("node:fs");
 
 /**
- * The field's interface sounds on a recording stand-in for the game's sound: every effect cached
- * (the interface effects, unless `effects` says which), the context running, the level the default. Makes the field's player as create does, and returns
- * the effects played since the last read, by name (FS-WDM0X S10).
+ * The field's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
+ * UI scene's player on a recording stand-in for the game's sound (every effect cached, the context
+ * running, the level the default), and the world reported as create reports it. Returns the effects
+ * played since the last read, by name (FS-WDM0X S10).
  */
-function hearOn(scene: Record<string, unknown>, effects: readonly string[] = UI_EFFECTS): () => string[] {
-  let played: string[] = [];
-  Object.assign(scene, {
-    cache: { audio: { exists: (key: string) => effects.some((e) => key === `sfx:${e}`) } },
-    sound: {
-      locked: false,
-      context: { state: "running" },
-      get: () => null,
-      add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
-    },
-  });
-  (scene as unknown as { mountUiSounds(): void }).mountUiSounds();
-  return () => {
-    const heard = played;
-    played = [];
-    return heard;
-  };
+function hearOn(scene: Record<string, unknown>): () => string[] {
+  return hearWorld(scene, "field");
 }
 
 // FS-WDM0X § Acceptance Criteria "The field": as the town, for the Inventory, Character, Party, ESC
@@ -2667,10 +2780,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     input: unknown;
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
-    sounds?: { act(run: () => void): void };
-    refusesParty(): boolean;
-    mountCorner(): void;
+    ui: { act(run: () => void): void };
     bindHudKeys(): void;
   };
   type Made = { kind: string; args: unknown[]; name?: string; destroyed: boolean; children: Made[]; handlers: Record<string, () => void> };
@@ -2709,35 +2819,21 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       setDefaultCursor: vi.fn(),
     };
     const gear = { inventory: false, character: false };
-    f.equipment = {
-      isOpen: () => gear.inventory || gear.character,
-      isInventoryOpen: () => gear.inventory,
-      isCharacterOpen: () => gear.character,
-      hide: () => {
-        const was = gear.inventory || gear.character;
-        gear.inventory = false;
-        gear.character = false;
-        return was;
-      },
-      toggle: () => (gear.inventory = !gear.inventory),
-      toggleCharacter: () => (gear.character = !gear.character),
-      equipKey: () => false,
-      release: vi.fn(),
-    };
     const heard = hearOn(f as unknown as Record<string, unknown>);
-    const party = partyPanelOn(() => f.refusesParty(), f.sounds);
-    f.partyPanel = party.panel;
     f.bindHudKeys();
-    f.mountCorner();
+    // the gear overlay, the UI scene's (FS-TQZ5J § Change: Phase 3, R55)
+    const wiring = plainGearOver(f, gear);
+    const party = partyPanelOver(f, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
+    cornerRowOn(f, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
       const at = hudCorner.cornerIconFrame(icon, viewport);
       made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === at.x && m.args[1] === at.y)?.handlers.pointerdown?.();
     };
-    const key = (name: string) => keys.get(`keydown-${name}`)!();
+    const key = (name: string) => keyOver(f, keys, name);
     const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
-    // the overlay's ×, as GearOverlay runs it through the wrapper the field hands it (GearOverlay.test.ts)
+    // the overlay's ×, as GearOverlay runs it through the wrapper the UI scene hands it (GearOverlay.test.ts)
     const gearX = (side: "inventory" | "character") =>
-      f.sounds!.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
+      wiring().wrapper.act(() => void (side === "inventory" ? (gear.inventory = false) : (gear.character = false)));
     return { ...env, field: f, gear, party, heard, pressIcon, key, find, gearX };
   }
   type Field = ReturnType<typeof field>;
@@ -2788,7 +2884,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     f.heard();
     f.key(k);
     expect(f.heard()).toEqual(["inventory_close"]);
-    expect(f.field.menu).toBeUndefined();
+    expect(menuOver(f.field)).toBeUndefined();
   });
 
   it("should close the party panel with party_close on Esc, then the overlay, then open the menu with settings_open", () => {
@@ -2825,32 +2921,32 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       return f;
     }
 
-    it("should play nothing as Options opens OPTIONS in the menu's place", () => {
+    it("should play menu_click alone as Options opens OPTIONS in the menu's place (§ Change M6)", () => {
       const f = field();
       f.key("ESC");
       f.heard();
       f.key("TWO");
       expect(f.find("options-back")).toBeDefined();
-      expect(f.heard()).toEqual([]);
+      expect(f.heard()).toEqual(["menu_click"]);
     });
 
     it.each<[string, (f: Field) => void]>([
       ["Back", (f) => f.find("options-back")!.handlers.pointerup()],
       ["Esc", (f) => f.key("ESC")],
       ["the ×", (f) => f.find("options-close")!.handlers.pointerup()],
-    ])("should play nothing as OPTIONS' %s goes back to the menu", (_input, input) => {
+    ])("should play menu_back alone as OPTIONS' %s goes back to the menu (§ Change M7)", (_input, input) => {
       const f = inOptions();
       f.heard();
       input(f);
       expect(f.find("menu-change")).toBeDefined();
-      expect(f.heard()).toEqual([]);
+      expect(f.heard()).toEqual(["menu_back"]);
     });
 
     it("should play settings_close as the Menu icon closes the whole menu from OPTIONS", () => {
       const f = inOptions();
       f.heard();
       f.pressIcon("menu");
-      expect(f.field.menu).toBeUndefined();
+      expect(menuOver(f.field)).toBeUndefined();
       expect(f.heard()).toEqual(["settings_close"]);
     });
 
@@ -2863,18 +2959,18 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       f.key("ESC");
       f.heard();
       input(f);
-      expect(f.field.menu).toBeUndefined();
+      expect(menuOver(f.field)).toBeUndefined();
       expect(f.heard()).toEqual(["settings_close"]);
     });
 
-    it("should play nothing on Change character, which only sends", () => {
+    it("should play menu_click on Change character, which only sends (§ Change M6)", () => {
       const f = field();
       f.key("ESC");
       f.heard();
       f.key("ONE");
       expect(f.send).toHaveBeenCalledWith(ActionType.LeaveHub, {});
-      expect(f.field.menu).toBeDefined();
-      expect(f.heard()).toEqual([]);
+      expect(menuOver(f.field)).toBeDefined();
+      expect(f.heard()).toEqual(["menu_click"]);
     });
   });
 
@@ -2883,8 +2979,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     ["C", (f) => f.key("C")],
     ["Q", (f) => f.key("Q")],
     ["T", (f) => f.party.pressT()],
-    ["the Party icon", (f) => f.pressIcon("party")],
-    ["the Inventory icon", (f) => f.pressIcon("inventory")],
   ])("should play nothing on %s refused while the menu is open (S6)", (_press, refused) => {
     const f = field();
     f.key("ESC");
@@ -2893,10 +2987,21 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(f.heard()).toEqual([]);
   });
 
-  it("should play nothing on the greyed envelope", () => {
+  it.each<[string, (f: Field) => void]>([
+    ["the Party icon", (f) => f.pressIcon("party")],
+    ["the Inventory icon", (f) => f.pressIcon("inventory")],
+  ])("should play menu_error on %s refused while the menu is open (§ Change M10)", (_press, refused) => {
+    const f = field();
+    f.key("ESC");
+    f.heard();
+    refused(f);
+    expect(f.heard()).toEqual(["menu_error"]);
+  });
+
+  it("should play menu_error on the greyed envelope (§ Change M10)", () => {
     const f = field();
     f.pressIcon("mail");
-    expect(f.heard()).toEqual([]);
+    expect(f.heard()).toEqual(["menu_error"]);
   });
 
   it.each<[string, (f: Field) => void]>([
@@ -2907,8 +3012,10 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const f = field();
     open(f);
     f.heard();
+    // the field stops: its leaving takes the UI scene's menu down (FS-TQZ5J R20), its release the rest
+    (f.field as unknown as { events: { emit(event: string): void } }).events.emit("shutdown");
     f.field.release("shutdown");
-    expect(f.field.menu).toBeUndefined();
+    expect(menuOver(f.field)).toBeUndefined();
     expect(f.heard()).toEqual([]);
   });
 
@@ -2924,17 +3031,35 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
   });
 
   // create() is pinned from the source here as in the town: the player made before the gear and
-  // the keys, and its wrapper handed to the overlay and the party panel
-  it("should make the player in create before the gear and the keys, and hand its wrapper to every module that hears its own input", () => {
+  // the keys, and its wrapper handed to the overlay (the party panel is the UI scene's since phase 2)
+  // the gear overlay, its wrapper and its keys are the UI scene's (FS-TQZ5J § Change: Phase 3, R50, R56):
+  // the field reports itself before it binds the key it still hears (E) or makes its piles
+  it("should report itself in create before its keys and its piles", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.mountUiSounds\(\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
-    expect(at(/this\.mountUiSounds\(\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-    expect(create).toMatch(/mountPartyPanel\([^;]*this\.sounds\)/);
-    const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.createPiles\(\);/));
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompts are the UI scene's; the field
+// reports what they read of it: never hidden, stacked above its chat window (FS-NCC9J R24; R38)
+describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should never hide them, nor turn the UI scene's chat away (FS-TQZ5J § Change: Batch 6, R126, R132)", () => {
+    const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
+    const side = field.worldSide();
+
+    expect(side.blockers().popups ?? false).toBe(false);
+    expect(side.blockers().party ?? false).toBe(false);
+    expect(side.blockers().chat ?? false).toBe(false);
+  });
+
+  // batch 6 review (LOW): the world says, in its report, that its invites stack above the chat window
+  it("should report its invites stacked above the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R132)", () => {
+    const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
+    expect(field.worldSide().invitesAboveChat).toBe(true);
   });
 
   // the fight takes the player as a value, so it must be made first
@@ -2942,19 +3067,17 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     const at = (line: RegExp) => create.search(line);
-    expect(create).toMatch(/this\.mountUiSounds\(\);\n\s*this\.mountGameplaySounds\(\);/);
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.mountGameplaySounds\(\);/));
     expect(at(/this\.mountGameplaySounds\(\);/)).toBeLessThan(at(/this\.fight = fieldCombatOnScene\(/));
     const fight = create.match(/this\.fight = fieldCombatOnScene\(([\s\S]*?)\n {4}\}\);/)?.[1] ?? "";
     expect(fight).toMatch(/\n\s*sounds: this\.gameplaySounds,?(\n|$)/);
   });
 
-  // the overlay is a real one only on a full stage; the run's scene test plays it through a
-  // right-click, and the field composes its HUD the same way
-
-  it("should play item_swap as the equipment HUD says a change was sent (FS-AND39 R7)", () => {
+  // the gear is the UI scene's, which plays item_swap as it sends a change (`gearPieces.test.ts`); the
+  // field plays none of it (FS-AND39 R7; FS-TQZ5J § Change: Merge with main, 2026-11-14)
+  it("should play no item_swap of its own: the UI scene's gear sounds its changes (FS-AND39 R7)", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(compose).toMatch(/gearChanged: \(\) => this\.gameplaySounds\?\.play\("item_swap"\)/);
+    expect(source).not.toMatch(/item_swap/);
   });
 });
 
@@ -3000,7 +3123,6 @@ describe("FieldScene the XP bar along the bottom (FS-77DVN §C.13, §C.14, §A.4
     field.renderState(levelled({ level: undefined }));
 
     expect(show).not.toHaveBeenCalled();
-    expect((field as unknown as { progressHud?: unknown }).progressHud).toBeUndefined();
   });
 
   it("should keep the bar up while the player has fallen", () => {
@@ -3014,23 +3136,26 @@ describe("FieldScene the XP bar along the bottom (FS-77DVN §C.13, §C.14, §A.4
     expect(show).toHaveBeenCalledTimes(2);
   });
 
+  // the bar is the UI scene's (FS-TQZ5J § Change: Batch 5; merge with main, 2026-11-14): its HUD slot
+  // places it again on a new view, and takes it down as the field leaves
   it("should place the bar again when the view changes", () => {
     const relayout = vi.spyOn(ProgressHud.prototype, "relayout");
     const { field } = fieldOnStage();
     field.renderState(levelled());
 
-    (field as unknown as { relayoutHud(): void }).relayoutHud();
+    hudOver(field, "field").relayout();
 
     expect(relayout).toHaveBeenCalledTimes(1);
   });
 
-  it("should let the bar go with the field", () => {
+  it("should let the bar go with the field, and keep none of its own", () => {
+    const destroy = vi.spyOn(ProgressHud.prototype, "destroy");
     const { field } = fieldOnStage();
     field.renderState(levelled());
-    expect((field as unknown as { progressHud?: unknown }).progressHud).toBeDefined();
-
-    field.release("shutdown");
-
     expect((field as unknown as { progressHud?: unknown }).progressHud).toBeUndefined();
+
+    (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
+
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 });
