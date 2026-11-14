@@ -139,16 +139,18 @@ export class UIScene extends Phaser.Scene {
 
   /**
    * Each frame while it runs, before the world's own update (Phaser steps the scene list from the
-   * top): the menu's and the dialogue card's keys pressed since the last frame, read here (R21; T, the
-   * party panel's own, is heard on its key event, § Change: Phase 2: the party, R43); the menu yielding
-   * to the world's report (R20); and a world's press whose release it never heard let go of (A1 R25).
+   * top): the run's controls panel closed by a window opened since the last frame (FS-84N1G R16); the
+   * menu's and the dialogue card's keys pressed since the last frame, read here (R21; T, the party
+   * panel's own, is heard on its key event, § Change: Phase 2: the party, R43); the menu yielding to
+   * the world's report (R20); and a world's press whose release it never heard let go of (A1 R25).
    */
   update(): void {
+    // another window opened since the last frame closes the run's controls panel, before this frame
+    // draws, outside any action, so only the opened window's sound plays (FS-84N1G R16); before the
+    // keys, so Esc never steps a panel this frame closes (R17)
+    this.controls?.sync();
     this.readKeys();
     this.menu?.sync();
-    // another window opened since the last frame closes the run's controls panel, before this frame
-    // draws, outside any action, so only the opened window's sound plays (FS-84N1G R16)
-    this.controls?.sync();
     this.pointer?.frame();
   }
 
