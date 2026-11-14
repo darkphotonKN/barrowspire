@@ -80,21 +80,12 @@ export function controlsBadgeFrame(view: CornerView): Rect {
 export const CONTROLS_BADGE_LABEL = "Controls (H)";
 
 /**
- * Every run button's height (FS-QPDKN req 10): the end row's WATCH, LEAVE and SETTLEMENT, the card's two and
- * the dead spectator's corner LEAVE (FS-TQZ5J § Change: Batch 6, R122, R124). The one constant.
+ * Every run button's height: the end row's WATCH, LEAVE and SETTLEMENT, the card's two and the spectate row's
+ * (FS-TQZ5J § Change: Batch 6, R122, R124). The dead spectator's corner LEAVE, once placed here above the
+ * row (R14), folded into the spectate row (FS-QPDKN § Change: The party death flow and the spectate
+ * switcher, R158). The one constant.
  */
 export const RUN_BUTTON_H = 38;
-/**
- * Its centre, above the row the same way (R14), its right edge on the corner margin: it is as wide as its
- * label (FS-TQZ5J § Change: Batch 6, R122, R124), so its centre is placed from its width.
- */
-export function leaveButtonPlace(width: number): Placement {
-  return {
-    anchor: "bottom-right",
-    dx: -CORNER_MARGIN - width / 2,
-    dy: -CORNER_ROW_CLEARANCE - RUN_BUTTON_H / 2,
-  };
-}
 
 /** Each icon's name and key under the pointer (R5); the Mailbox has no key. */
 export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {

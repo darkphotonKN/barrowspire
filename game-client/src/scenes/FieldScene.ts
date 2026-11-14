@@ -795,7 +795,7 @@ export class FieldScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastState;
     if (!state) return;
-    this.ui.hud({ world: "field", kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }) });
+    this.ui.hud({ world: "field", kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false }) });
   }
 
   /** This client's player as drawn, once the field has reported them. */

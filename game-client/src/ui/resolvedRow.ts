@@ -10,7 +10,7 @@
  */
 
 import { CHAT_WINDOW_W, CHAT_WINDOW_X } from "./chatWindowLayout";
-import { RUN_BUTTON_H } from "./hudCornerLayout";
+import { RUN_BUTTON_H, type Rect } from "./hudCornerLayout";
 
 export type RowButton = "watch" | "leave" | "settlement";
 
@@ -38,7 +38,9 @@ export function resolvedRow(state: RowState): RowButton[] {
   if (state.fell && !state.watching) return [];
   const row: RowButton[] = [];
   if (state.canWatch) row.push("watch");
-  if (state.canLeave) row.push("leave");
+  // a fallen spectator's LEAVE is the row's: the corner button folds in (FS-QPDKN § Change: The party death
+  // flow and the spectate switcher, R158)
+  if (state.canLeave || state.fell) row.push("leave");
   if (state.hasRecord) row.push("settlement");
   return row;
 }
@@ -103,4 +105,55 @@ export function resolvedRowY(view: { height: number }): number {
  */
 export function recordAnchor(view: { centerX: number; height: number }): { x: number; bottom: number } {
   return { x: view.centerX, bottom: resolvedRowY(view) - RUN_BUTTON_H / 2 - RECORD_ROW_GAP };
+}
+
+/**
+ * How far the spectate row's bottom stands above the view's bottom (FS-QPDKN § Change: The party death flow
+ * and the spectate switcher, R158; the owner, 「settlement跟leave低一點」): lower than the resolved row, clear
+ * above the corner row's hover labels' line and the chat window's sides. At 720 tall its buttons span y 612–650.
+ */
+export const SPECTATE_ROW_BOTTOM = 70;
+
+/** The spectate row's line: its buttons' centre y (R158). */
+export function spectateRowY(view: { height: number }): number {
+  return view.height - SPECTATE_ROW_BOTTOM - RUN_BUTTON_H / 2;
+}
+
+/** The left and right edges of a row of buttons laid out by {@link rowLefts}, or none for no buttons. */
+export interface RowSpan {
+  left: number;
+  right: number;
+}
+
+/** The span of buttons `widths` wide standing from `lefts`; none for an empty row. */
+export function rowSpan(lefts: readonly number[], widths: readonly number[]): RowSpan | null {
+  if (lefts.length === 0) return null;
+  const last = lefts.length - 1;
+  return { left: lefts[0], right: lefts[last] + widths[last] };
+}
+
+/** The switcher's height, and each arrow's square box (R159). */
+export const SWITCHER_H = 28;
+export const SWITCHER_ARROW_W = 28;
+/** The switcher's words' padding each side, between them and the arrows (R159). */
+export const SWITCHER_PAD = 10;
+/** How far the switcher stands above the spectate row (the owner, 「切換箭頭就放在上方一些」; R159). */
+export const SWITCHER_GAP = 8;
+
+/** The switcher's width: its two arrows and its words `labelWidth` wide with their padding (R159). */
+export function switcherWidth(labelWidth: number): number {
+  return 2 * SWITCHER_ARROW_W + Math.ceil(labelWidth) + 2 * SWITCHER_PAD;
+}
+
+/**
+ * Where the switcher "◄ Watching <name> ►" stands (R159): `SWITCHER_GAP` over the spectate row, centred on
+ * the row (on the view with no row), its left edge never under 442, 12 right of the open chat window (R123's
+ * rule). Whole px.
+ */
+export function switcherRect(labelWidth: number, row: RowSpan | null, view: { width: number; height: number }): Rect {
+  const width = switcherWidth(labelWidth);
+  const centre = row ? (row.left + row.right) / 2 : view.width / 2;
+  const x = Math.max(Math.round(centre - width / 2), ROW_MIN_LEFT);
+  const bottom = spectateRowY(view) - RUN_BUTTON_H / 2 - SWITCHER_GAP;
+  return { x, y: bottom - SWITCHER_H, width, height: SWITCHER_H };
 }

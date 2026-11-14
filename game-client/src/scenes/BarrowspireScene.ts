@@ -74,7 +74,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  * create, which sends them.
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
-import { RUN_BUTTON_H, leaveButtonPlace } from "@/ui/hudCornerLayout";
+import { RUN_BUTTON_H } from "@/ui/hudCornerLayout";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
@@ -89,7 +89,19 @@ import {
 import { ResultHold } from "@/components/resultHold";
 import { settlementRecord, type RecordView } from "@/ui/settlement";
 import { recordHoldsTown } from "@/ui/recordHold";
-import { buttonWidth, centredLefts, resolvedRow, resolvedRowY, rowLefts, type RowButton } from "@/ui/resolvedRow";
+import {
+  buttonWidth,
+  centredLefts,
+  resolvedRow,
+  resolvedRowY,
+  rowLefts,
+  rowSpan,
+  spectateRowY,
+  switcherRect,
+  type RowButton,
+  type RowSpan,
+} from "@/ui/resolvedRow";
+import { SpectateSwitcher } from "@/ui/spectateSwitcher";
 import { GameStateLogger } from "@/utils/gameStateLogger";
 import {
   CANVAS_FONT,
@@ -272,24 +284,11 @@ const PLAYER_FOOTPRINT_RADIUS = 20;
  */
 const RESOLVED_CARD_DEPTH = 1500;
 /**
- * Screen y of the spectate HUD (req 9): top centre, between the top-left stack (the XP bar from
- * y 16) and the top-right column (the minimap, the floor indicator, the escaped count, in that
- * order, FS-56CKV §B); the dev position readout left the top edge for the minimap's corner (§C).
+ * The resolved player's bottom-centre row, WATCH, LEAVE and SETTLEMENT (FS-QPDKN req 3, amended 2026-11-02;
+ * FS-GV8WN R21), and the spectate row under the switcher (FS-QPDKN § Change: The party death flow and the
+ * spectate switcher, R158): in the HUD band (1000), their hit areas one over it.
  */
-const SPECTATE_HUD_Y = 10;
-/**
- * The dead spectator's leave button (FS-QPDKN req 10): bottom-right, above the corner row
- * (`leaveButtonPlace`, FS-3EBCA R14), in the HUD band (1000) with the counters, and away from the
- * watched player at the centre and the HUD along the top edge. Its margin is the bottom-centre
- * row's (`resolvedRowY`).
- */
-const LEAVE_BUTTON_DEPTH = 1000;
-/**
- * The resolved player's bottom-centre row, Watch the delve and Settlement (FS-QPDKN req 3, amended
- * 2026-11-02; FS-GV8WN R21): in the same HUD band and on the same bottom margin as the dead
- * spectator's corner button.
- */
-const RESOLVED_ROW_DEPTH = LEAVE_BUTTON_DEPTH;
+const RESOLVED_ROW_DEPTH = 1000;
 /** A button over the world: what it says, the name its hit area answers to, what a press does. */
 interface ButtonSpec {
   name: string;
@@ -585,7 +584,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * The bottom-centre row as drawn: which buttons, by name, the buttons themselves, and its Leave
    * when it holds one, so a pending leave dims it as it dims the dead player's.
    */
-  private row: { names: string; buttons: WorldButton[]; leave?: WorldButton } = { names: "", buttons: [] };
+  private row: { names: string; buttons: WorldButton[]; leave?: WorldButton; span: RowSpan | null } = {
+    names: "",
+    buttons: [],
+    span: null,
+  };
   /** The teammate this resolved player watches through (req 7); set only while spectating. */
   private watchedPlayerId?: string;
   /** The sprite the camera was last latched onto while spectating, so it is latched once. */
@@ -603,13 +606,18 @@ export class BarrowspireScene extends Phaser.Scene {
    * is not a world switch (ADR-0015): the run detects it itself.
    */
   private arrival = false;
-  /** Whose eyes, and how to switch (req 9); up while spectating. */
-  private spectateHud?: { watching: Phaser.GameObjects.Text; hint: Phaser.GameObjects.Text };
+  /**
+   * "◄ Watching <name> ►", whose eyes and how to switch (req 9; FS-QPDKN § Change: The party death flow and
+   * the spectate switcher, R159–R163); up while spectating, over the spectate row. With the key it was drawn
+   * for, so it is drawn again only when what it shows or where it stands changes.
+   */
+  private switcher?: { piece: SpectateSwitcher; key: string };
   /** How this player is out of the delve, while the card or the spectate view is up (req 2, 10). */
   private resolvedKind?: ResolvedKind;
   /**
-   * The dead player's way out (req 2, 13): on the card, or in its corner while they spectate. The
-   * escaped player's is the row's (`row.leave`).
+   * The dead player's way out on their card (req 2, 13). Every other LEAVE is the row's (`row.leave`): the
+   * escaped player's, and the spectator's (FS-QPDKN § Change: The party death flow and the spectate
+   * switcher, R158).
    */
   private leaveButton?: WorldButton;
   /** A `leave_run` is on its way and unanswered: further presses send nothing (req 13). */
@@ -1102,10 +1110,10 @@ export class BarrowspireScene extends Phaser.Scene {
     this.canWatch = false;
     this.canLeave = false;
     this.fell = false;
-    this.row = { names: "", buttons: [] };
+    this.row = { names: "", buttons: [], span: null };
     this.watchedPlayerId = undefined;
     this.followedSprite = undefined;
-    this.spectateHud = undefined;
+    this.switcher = undefined;
     this.resolvedKind = undefined;
     this.leaveButton = undefined;
     this.leavePending = false;
@@ -1189,7 +1197,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // spectating. Not captured: the game frame keeps Tab from moving focus while nothing on the
     // page holds it (keepTab, src/components/gameFocus.ts), so on a focused page control it moves on.
     this.tabKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.TAB, false);
-    this.tabKey.on("down", () => this.cycleWatched());
+    this.tabKey.on("down", () => this.cycleWatched(1));
 
     // The run's ESC menu is the UI scene's, Esc and its keys with it (FS-TQZ5J R17, R18): the run
     // binds none of them. Enter, 1 and 2, which the run's menu keys captured, stay captured while the
@@ -1340,6 +1348,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * Leave drawn while a leave is pending comes up dimmed.
    */
   private syncRow(): void {
+    const watching = this.watchedPlayerId !== undefined;
     const names: RowButton[] = this.runEnded
       ? []
       : resolvedRow({
@@ -1347,9 +1356,11 @@ export class BarrowspireScene extends Phaser.Scene {
           canLeave: this.canLeave,
           hasRecord: this.record !== undefined,
           fell: this.fell,
-          watching: this.watchedPlayerId !== undefined,
+          watching,
         });
-    const key = names.join(",");
+    // the spectate row stands lower, under the switcher (FS-QPDKN § Change: The party death flow and the
+    // spectate switcher, R158)
+    const key = `${names.join(",")}|${watching ? "spectating" : "resolved"}`;
     if (key === this.row.names) return;
     this.row.buttons.forEach((button) => button.destroy());
     const specs: Record<RowButton, ButtonSpec> = {
@@ -1357,7 +1368,7 @@ export class BarrowspireScene extends Phaser.Scene {
       leave: this.leaveSpec,
       settlement: this.settlementSpec,
     };
-    const y = this.rowY();
+    const y = watching ? spectateRowY(viewport) : this.rowY();
     // left to right, each its label's width, off the open chat window (FS-TQZ5J § Change: Batch 6, R123)
     const widths = names.map((name) => this.buttonWidth(specs[name]));
     const lefts = rowLefts(widths, viewport);
@@ -1365,7 +1376,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.hudButton(specs[name], { x: lefts[i] + widths[i] / 2, y }, RESOLVED_ROW_DEPTH, widths[i]),
     );
     const leaveAt = names.indexOf("leave");
-    this.row = { names: key, buttons, leave: leaveAt < 0 ? undefined : buttons[leaveAt] };
+    this.row = { names: key, buttons, leave: leaveAt < 0 ? undefined : buttons[leaveAt], span: rowSpan(lefts, widths) };
     this.row.leave?.setEnabled(!this.leavePending);
   }
 
@@ -3265,8 +3276,6 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private relayoutHud(): void {
     this.placeTopRightColumn();
-    this.spectateHud?.watching.setX(viewport.centerX);
-    this.spectateHud?.hint.setX(viewport.centerX);
     this.arrivalCard.relayout();
     this.targetFrame?.relayout();
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
@@ -3275,8 +3284,6 @@ export class BarrowspireScene extends Phaser.Scene {
       this.escapedCountText,
       this.floorText,
       this.positionReadout,
-      this.spectateHud?.watching,
-      this.spectateHud?.hint,
     ]);
     // the bottom-centre row, built again about the new centre
     this.row.names = "";
@@ -3287,12 +3294,10 @@ export class BarrowspireScene extends Phaser.Scene {
       this.resolvedCard = undefined;
       this.leaveButton = undefined;
       this.showResolvedCard(view);
-    } else if (this.leaveButton) {
-      // the dead spectator's corner button
-      this.leaveButton.destroy();
-      this.leaveButton = undefined;
-      this.placeLeaveInCorner();
     }
+    // the switcher over the row's new place (FS-QPDKN § Change: The party death flow and the spectate
+    // switcher, R166)
+    if (this.watchedPlayerId !== undefined && this.lastGameState) this.followWatched(this.lastGameState);
   }
 
   /**
@@ -4976,8 +4981,9 @@ export class BarrowspireScene extends Phaser.Scene {
   /**
    * The target frame, once a frame (FS-48CTQ §C.5): the hovered monster, else an engaged boss
    * (§D.10, read against the run's players, this client's among them), else the last-hit one, of
-   * those shown and living; nothing on an `overhead` floor. Hidden while the spectate HUD or the
-   * floor veil holds the top centre (§E.15–16). Run after the frame's hide rule, which says what
+   * those shown and living; nothing on an `overhead` floor. Hidden while the floor veil holds the top
+   * centre (§E.16); no longer while spectating (FS-QPDKN § Change: The party death flow and the spectate
+   * switcher, R164). Run after the frame's hide rule, which says what
    * is shown.
    */
   private updateTargetFrame(deltaMs: number): void {
@@ -4994,7 +5000,9 @@ export class BarrowspireScene extends Phaser.Scene {
         lastHit: this.lastHit.current(this.time.now),
       });
     }
-    const covered = this.spectateHud !== undefined || this.arrivalCard.up;
+    // nothing holds the top centre while spectating any more: the switcher stands over the bottom row
+    // (FS-QPDKN § Change: The party death flow and the spectate switcher, R164)
+    const covered = this.arrivalCard.up;
     this.targetFrame.update(deltaMs, target, covered);
     // the map name and the readout give way to the frame where they meet (FS-56CKV §Change: Map
     // name, E7); inside the map, normal or enlarged, it never reaches them today (F4)
@@ -5089,18 +5097,14 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * This player's ability card (FS-8AY7S req 29–32), redrawn on every state and as the lockout
-   * starts and ends: up while they are in the delve, grey while the ability cannot fire, down
-   * whenever the dead spectator's leave button holds the bottom-right corner.
+   * starts and ends: up while they are in the delve, grey while the ability cannot fire.
    */
   private showAbilityCard(): void {
     const state = this.lastGameState;
     if (!state) return;
     // the UI scene draws it just above the corner row, right-aligned with it (FS-3EBCA R13; FS-TQZ5J
     // § Change: Batch 5, R68)
-    const card = abilityCard(state, {
-      lockedOut: this.combat.lockedOut,
-      leaveUp: this.leaveButton !== undefined,
-    });
+    const card = abilityCard(state, { lockedOut: this.combat.lockedOut });
     this.ui.hud({ world: "run", kind: "ability", card });
     // the controls badge stands over the card while it is up (FS-84N1G R4): told on each change
     if ((card !== null) === this.abilityUp) return;
@@ -5183,14 +5187,13 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * The card, the spectate HUD and the corner leave button go down together: `end_game`
+   * The card, the switcher and the card's leave button go down together, the row by `syncRow`: `end_game`
    * (req 6, 12) carries the last word.
    */
   private takeDownResolvedView(): void {
     this.takeDownCard();
-    this.spectateHud?.watching.destroy();
-    this.spectateHud?.hint.destroy();
-    this.spectateHud = undefined;
+    this.switcher?.piece.destroy();
+    this.switcher = undefined;
     this.leaveButton?.destroy();
     this.leaveButton = undefined;
     this.resolvedKind = undefined;
@@ -5437,21 +5440,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui.changed();
   }
 
-  /**
-   * The dead spectator's leave button (req 10): its own corner of the screen, in the HUD band,
-   * clear of the watched player at the centre and the HUD along the top. The escaped have none.
-   */
-  private placeLeaveInCorner(): void {
-    if (this.resolvedKind !== "dead" || this.leaveButton) return;
-    // above the corner row, as the card it stands in for (FS-3EBCA R14)
-    const width = this.buttonWidth(this.leaveSpec);
-    const at = anchorAt(leaveButtonPlace(width));
-    this.leaveButton = this.hudButton(this.leaveSpec, at, LEAVE_BUTTON_DEPTH, width);
-    this.leaveButton.setEnabled(!this.leavePending);
-    // the corner is the button's now (FS-8AY7S req 32)
-    this.showAbilityCard();
-  }
-
   /** A button fixed to the screen at `at`, in a HUD depth band: its hit area just over its face. */
   private hudButton(button: ButtonSpec, at: { x: number; y: number }, depth: number, width: number): WorldButton {
     const made = this.worldButton(button, at, { x: 0, y: 0 }, depth + 1, width);
@@ -5468,15 +5456,20 @@ export class BarrowspireScene extends Phaser.Scene {
     const first = nextWatched(watchable(this.lastGameState));
     if (first === undefined) return;
     this.takeDownCard();
-    this.placeLeaveInCorner();
     this.watchedPlayerId = first;
+    // the spectate controls: the row lower down, LEAVE in it, and the switcher over it (FS-QPDKN § Change:
+    // The party death flow and the spectate switcher, R157–R159)
+    this.syncRow();
     this.followWatched(this.lastGameState);
   }
 
-  /** Tab (req 8): the next teammate still in play, round to the first. Nothing while the card is up. */
-  private cycleWatched(): void {
+  /**
+   * Tab and ► (req 8), ◄ with `step` -1 (FS-QPDKN § Change: The party death flow and the spectate switcher,
+   * R160): the next or the previous teammate still in play, round. Nothing while the card is up.
+   */
+  private cycleWatched(step: 1 | -1): void {
     if (this.watchedPlayerId === undefined || !this.lastGameState) return;
-    const next = nextWatched(watchable(this.lastGameState), this.watchedPlayerId);
+    const next = nextWatched(watchable(this.lastGameState), this.watchedPlayerId, step);
     if (next === undefined) return;
     this.watchedPlayerId = next;
     this.followWatched(this.lastGameState);
@@ -5500,35 +5493,28 @@ export class BarrowspireScene extends Phaser.Scene {
       followWith(this.cameras.main, sprite);
       this.followedSprite = sprite;
     }
-    this.showSpectateHud(watched.username);
+    this.showSwitcher(watched.username, inPlay.length > 1);
   }
 
-  /** "Watching <name>" and the Tab hint, neutral HUD: vellum on the HUD panel, no amber (req 9). */
-  private showSpectateHud(name: string): void {
-    const watching = `Watching ${name}`;
-    if (this.spectateHud) {
-      this.spectateHud.watching.setText(watching);
-      return;
-    }
-    const style = {
-      fontFamily: CANVAS_FONT.body,
-      fontSize: "14px",
-      color: toCss(palette.hudText),
-      backgroundColor: toCss(palette.hudPanel),
-      padding: { x: 10, y: 5 },
-    };
-    const x = viewport.centerX;
-    const watchingText = this.add
-      .text(x, SPECTATE_HUD_Y, watching, style)
-      .setOrigin(0.5, 0)
-      .setScrollFactor(0)
-      .setDepth(1000);
-    const hint = this.add
-      .text(x, SPECTATE_HUD_Y + 30, "Tab: next player", { ...style, fontSize: "12px" })
-      .setOrigin(0.5, 0)
-      .setScrollFactor(0)
-      .setDepth(1000);
-    this.spectateHud = { watching: watchingText, hint };
+  /**
+   * The switcher, "◄ Watching <name> ►" (req 9; FS-QPDKN § Change: The party death flow and the spectate
+   * switcher, R159–R163), over the spectate row, off the open chat window; its arrows live only with more than
+   * one teammate in play. Drawn again only when its name, its arrows or its place change.
+   */
+  private showSwitcher(name: string, canSwitch: boolean): void {
+    const key = [name, canSwitch, this.row.names, viewport.width, viewport.height].join("|");
+    if (this.switcher?.key === key) return;
+    this.switcher?.piece.destroy();
+    const span = this.row.span;
+    const piece = new SpectateSwitcher(this, {
+      name,
+      canSwitch,
+      place: (labelWidth) => switcherRect(labelWidth, span, viewport),
+      previous: () => this.cycleWatched(-1),
+      next: () => this.cycleWatched(1),
+      play: (effect) => this.ui.play(effect),
+    });
+    this.switcher = { piece, key };
   }
 
   /**

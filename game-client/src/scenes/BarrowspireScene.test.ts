@@ -1520,9 +1520,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     otherPlayers: Map<string, unknown>;
     watchedPlayerId?: string;
     resolvedCard?: unknown;
-    spectateHud?: unknown;
+    switcher?: unknown;
     tabKey?: unknown;
-    cycleWatched(): void;
+    cycleWatched(step: 1 | -1): void;
     canSendMove(): boolean;
     resetRun(end: "shutdown" | "destroy"): void;
   }
@@ -1597,7 +1597,9 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(face?.last.setScrollFactor).toEqual([0]);
     });
 
-    it("should follow a teammate in play once pressed, name them at the top, and take the button down", () => {
+    // FS-QPDKN § Change: The party death flow and the spectate switcher, R159, R163: the switcher names them
+    // over the spectate row; nothing at the top
+    it("should follow a teammate in play once pressed, name them in the switcher, and take the button down", () => {
       const { run, pressWatch, followed, watching, hints, watchButtons, stage } = resolvedOnStage(
         player("me", "Aldric", 130, escaped),
         [player("ally", "Wenna", 160), player("brom", "Brom", 200)],
@@ -1606,16 +1608,16 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       expect(run.watchedPlayerId).toBe("ally");
       expect(followed()).toBe(run.otherPlayers.get("ally"));
       expect(watching()).toEqual(["Watching Wenna"]);
-      expect(hints()).toHaveLength(1);
+      expect(hints()).toHaveLength(0);
       expect(watchButtons()).toHaveLength(0);
       expect(watchHit(stage)).toBeUndefined();
-      run.cycleWatched();
+      run.cycleWatched(1);
       expect(watching()).toEqual(["Watching Brom"]);
     });
 
     it("should do nothing on Tab while the button is still up", () => {
       const { run, followed, own, watchButtons } = resolvedOnStage(player("me", "Aldric", 130, escaped));
-      run.cycleWatched();
+      run.cycleWatched(1);
       expect(run.watchedPlayerId).toBeUndefined();
       expect(followed()).toBe(own());
       expect(watchButtons()).toHaveLength(1);
@@ -1658,7 +1660,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       run.resetRun("shutdown");
       expect((run as unknown as { watchButton?: unknown }).watchButton).toBeUndefined();
       expect(run.watchedPlayerId).toBeUndefined();
-      expect(run.spectateHud).toBeUndefined();
+      expect(run.switcher).toBeUndefined();
 
       // Phaser destroyed the old button with the scene; the next state draws a fresh one
       before.destroyed = true;
@@ -1692,12 +1694,12 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
 
   it("should do nothing on Tab while the card is still up", () => {
     const { run, followed, own } = resolvedOnStage(player("me", "Aldric", 130, dead));
-    run.cycleWatched();
+    run.cycleWatched(1);
     expect(followed()).toBe(own());
     expect(run.watchedPlayerId).toBeUndefined();
   });
 
-  it("should follow a teammate in play once Watch is pressed, and say whose eyes, with the Tab hint", () => {
+  it("should follow a teammate in play once Watch is pressed, and say whose eyes in the switcher, no Tab hint (R163)", () => {
     const { run, pressWatch, followed, watching, hints, watchButtons } = resolvedOnStage(
       player("me", "Aldric", 130, dead),
     );
@@ -1705,21 +1707,24 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(run.watchedPlayerId).toBe("ally");
     expect(followed()).toBe(run.otherPlayers.get("ally"));
     expect(watching()).toEqual(["Watching Wenna"]);
-    expect(hints()).toHaveLength(1);
+    expect(hints()).toHaveLength(0);
     expect(watchButtons()).toHaveLength(0);
   });
 
-  it("should letter the spectate HUD in vellum on the HUD panel, never amber", () => {
-    const { stage, pressWatch, watching, hints } = resolvedOnStage(player("me", "Aldric", 130, dead));
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R159: neutral HUD, vellum words on the
+  // HUD panel's backing, never amber
+  it("should letter the switcher's name in vellum on the HUD panel, never amber", () => {
+    const { stage, pressWatch, watching } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    const made = (test: (t: string) => boolean) =>
-      stage.made.find((m) => m.kind === "text" && !m.destroyed && test(String(m.args[2])))!;
-    for (const text of [made((t) => watching().includes(t)), hints()[0]]) {
-      const style = text.args[3] as { color?: string; backgroundColor?: string };
-      expect(style.color).toBe(toCss(palette.hudText));
-      expect(style.backgroundColor).toBe(toCss(palette.hudPanel));
-      expect(style.color).not.toBe(toCss(palette.interactable));
-    }
+    const name = stage.made.find((m) => m.kind === "text" && !m.destroyed && watching().includes(String(m.args[2])))!;
+    const style = name.args[3] as { color?: string };
+    expect(style.color).toBe(toCss(palette.hudText));
+    expect(style.color).not.toBe(toCss(palette.interactable));
+    const backing = stage.made.find(
+      (m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillRoundedRect") && m.calls.includes("fillTriangle"),
+    )!;
+    expect(backing.calls).toContain("fillStyle");
+    expect(backing.calls.indexOf("fillRoundedRect")).toBeLessThan(backing.calls.indexOf("fillTriangle"));
   });
 
   it("should cycle the watched player on Tab, never through the player's own body", () => {
@@ -1731,7 +1736,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(watching()).toEqual(["Watching Wenna"]);
     const seen: (string | undefined)[] = [run.watchedPlayerId];
     for (let i = 0; i < 3; i++) {
-      run.cycleWatched();
+      run.cycleWatched(1);
       seen.push(run.watchedPlayerId);
       expect(followed()).toBe(run.otherPlayers.get(run.watchedPlayerId!));
       expect(followed()).not.toBe(own());
@@ -1740,12 +1745,12 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(watching()).toEqual(["Watching Brom"]);
   });
 
-  it("should keep the hint with only one teammate in play, and Tab keeps watching them", () => {
-    const { run, pressWatch, hints } = resolvedOnStage(player("me", "Aldric", 130, dead));
+  it("should keep watching the one teammate in play on Tab", () => {
+    const { run, pressWatch, watching } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
-    run.cycleWatched();
+    run.cycleWatched(1);
     expect(run.watchedPlayerId).toBe("ally");
-    expect(hints()).toHaveLength(1);
+    expect(watching()).toEqual(["Watching Wenna"]);
   });
 
   it("should move on to another teammate in play when the watched player resolves", () => {
@@ -1838,7 +1843,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(run.tabKey).toBeUndefined();
     expect(run.watchedPlayerId).toBeUndefined();
     expect(run.resolvedCard).toBeUndefined();
-    expect(run.spectateHud).toBeUndefined();
+    expect(run.switcher).toBeUndefined();
   });
 });
 
@@ -1961,12 +1966,15 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       expect(labelled(fallen, "LEAVE")).toHaveLength(1);
     });
 
-    it("should word the dead spectator's corner LEAVE and keep its right edge on the corner margin (R120, R124)", () => {
+    // FS-QPDKN § Change: The party death flow and the spectate switcher, R158: the corner LEAVE folds into the
+    // spectate row, its bottom 70 above the view's bottom, from 442 at this 800-wide view
+    it("should stand the dead spectator's LEAVE in the spectate row, not in the corner (R158)", () => {
       const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
       fallen.press("watch-the-delve");
       const leave = box(fallen, "leave-the-barrow");
       expect(leave.width).toBe(94);
-      expect(leave.left + leave.width).toBe(800 - 16);
+      expect(leave.left).toBe(442);
+      expect(leave.y + leave.height / 2).toBe(600 - 70);
       expect(labelled(fallen, "LEAVE")).toHaveLength(1);
     });
   });
@@ -2019,32 +2027,30 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     expect(leaveLabels()).toHaveLength(0);
   });
 
-  it("should keep the dead spectator's button in the bottom-right corner, clear of the spectate HUD", () => {
+  it("should keep the dead spectator's LEAVE in the spectate row at the bottom, under the watched player", () => {
     const { run, press, hit, leaveLabels, leavesSent } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("watch-the-delve");
 
     expect(leaveLabels()).toHaveLength(1);
-    const corner = hit("leave-the-barrow")!;
-    const [x, y, w, h] = corner.args as number[];
-    // the recording camera is 800 x 600; the HUD runs along the top edge, the watched player sits at the centre
-    expect(x - w / 2).toBeGreaterThan(400 + 100);
+    const [, y, , h] = hit("leave-the-barrow")!.args as number[];
+    // the recording camera is 800 x 600; the watched player sits at the centre
     expect(y - h / 2).toBeGreaterThan(300 + 100);
-    expect(x + w / 2).toBeLessThanOrEqual(800);
-    expect(y + h / 2).toBeLessThanOrEqual(600);
+    expect(y + h / 2).toBe(600 - 70);
     press("leave-the-barrow");
     expect(leavesSent()).toHaveLength(1);
     expect(run.leavePending).toBe(true);
   });
 
-  it("should keep the escaped spectator's Leave in the bottom-centre row, centred, not in the corner", () => {
+  it("should stand the escaped spectator's Leave in the spectate row, as every spectator's (R158)", () => {
     const { press, leaveLabels, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
     press("watch-the-delve");
     expect(leaveLabels()).toHaveLength(1);
-    // the recording camera is 800 x 600: alone in the row, on the row's line, 12 right of the open chat
-    // window at this narrow view (FS-TQZ5J § Change: Batch 6, R123)
+    // the recording camera is 800 x 600: alone in the row, 12 right of the open chat window at this narrow
+    // view (FS-TQZ5J § Change: Batch 6, R123), its bottom 70 above the view's (FS-QPDKN § Change: The party
+    // death flow and the spectate switcher, R158)
     const [x, y, w, h] = hit("leave-the-barrow")!.args as number[];
     expect(x - w / 2).toBe(442);
-    expect(y + h / 2).toBe(600 - 16 - 200);
+    expect(y + h / 2).toBe(600 - 70);
   });
 
   // FS-GV8WN R25: the escaped player's Leave, beside Watch in the bottom-centre row
@@ -2463,14 +2469,15 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     expect((carded as unknown as Record<string, unknown>).potionHud).toBeUndefined();
   });
 
-  it("should stand the dead spectator's leave button above the corner row (FS-3EBCA R14)", () => {
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R158: the dead spectator's LEAVE is the
+  // spectate row's; nothing takes the ability card's corner, and the card stays down out of the delve
+  it("should give the dead spectator no corner LEAVE, the card down", () => {
     const { run, live } = cardOnStage();
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
-    // Watch the delve: the card goes down and the button takes its corner (FS-QPDKN req 7, 10)
     (run as unknown as { startWatching(): void }).startWatching();
     const labels = live().filter((m) => m.args[2] === "LEAVE");
-    // as wide as its label, its right edge on the corner margin (FS-TQZ5J § Change: Batch 6, R124)
-    expect(labels.map((m) => m.args.slice(0, 2))).toContainEqual([viewport.width - 16 - 94 / 2, viewport.height - 89]);
+    expect(labels).toHaveLength(1);
+    expect(labels[0].args[0]).toBeLessThan(viewport.width - 16 - 94 / 2);
   });
 
   // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the run,
@@ -4821,7 +4828,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
     relayoutHud(): void;
     resultHold: import("@/components/resultHold").ResultHold;
     watchedPlayerId?: string;
-    cycleWatched(): void;
+    cycleWatched(step: 1 | -1): void;
     containerView: object;
   }
 
@@ -4829,6 +4836,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
   const escaped = { escape: true };
   const me = (fields: { escape?: boolean; current_health?: number } = {}) => player("me", "Aldric", 130, fields);
   const ally = (fields: { escape?: boolean; current_health?: number } = {}) => player("ally", "Wenna", 160, fields);
+  const brom = (fields: { escape?: boolean; current_health?: number } = {}) => player("brom", "Brom", 200, fields);
 
   function dyingOnStage() {
     const stage = onStage();
@@ -4959,6 +4967,159 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       const rects = ["watch-the-delve", "leave-the-barrow", "settlement"].map((n) => hit(n)!.args as number[]);
       expect(rects.map(([x, , w]) => x - w / 2)).toEqual([442, 554, 656]);
       for (const [, y, , h] of rects) expect(y + h / 2).toBe(600 - 16 - 200);
+    });
+  });
+
+  describe("the spectate controls (R157–R167; I-QPDKN-13)", () => {
+    /** The death, its record closed, the card's WATCH pressed: spectating `first` of `others`. */
+    function watching(...others: ReturnType<typeof player>[]) {
+      const env = dyingOnStage();
+      const party = others.length ? others : [ally()];
+      env.die(...party);
+      env.press("close-the-record");
+      env.press("watch-the-delve");
+      return { ...env, party };
+    }
+    const rect = (env: ReturnType<typeof dyingOnStage>, name: string) => {
+      const [x, y, width, height] = env.hit(name)!.args as number[];
+      return { x: x - width / 2, y: y - height / 2, width, height };
+    };
+    const switcherAt = (env: ReturnType<typeof dyingOnStage>) =>
+      (env.run as unknown as { switcher?: { piece: { rect(): { x: number; y: number; width: number; height: number } } } }).switcher?.piece.rect();
+    const names = (env: ReturnType<typeof dyingOnStage>) => env.shown().filter((t) => /^Watching /.test(t));
+
+    it("should walk the whole flow: death, the record alone, CLOSE, the card without SETTLEMENT, WATCH, the row and the switcher", () => {
+      const env = dyingOnStage();
+      env.die(ally());
+      expect([env.record(), env.card(), env.hit("settlement")]).toEqual([true, false, undefined]);
+      env.press("close-the-record");
+      expect([env.record(), env.card(), env.hit("settlement")]).toEqual([false, true, undefined]);
+      env.heard();
+      env.press("watch-the-delve");
+      expect(env.heard()).toEqual(["menu_click"]);
+      expect(env.card()).toBe(false);
+      expect(env.run.watchedPlayerId).toBe("ally");
+      // LEAVE then SETTLEMENT, side by side, their bottom 70 above the view's (800 x 600 here)
+      const leave = rect(env, "leave-the-barrow");
+      const settle = rect(env, "settlement");
+      expect([leave.x, settle.x]).toEqual([442, 442 + 94 + 8]);
+      expect([leave.y + leave.height, settle.y + settle.height]).toEqual([600 - 70, 600 - 70]);
+      // the switcher 8 over them, naming the watched teammate; nothing at the top centre
+      expect(names(env)).toEqual(["Watching Wenna"]);
+      const sw = switcherAt(env)!;
+      expect(sw.y + sw.height).toBe(leave.y - 8);
+      expect(env.shown().some((t) => /Tab: next/i.test(t))).toBe(false);
+      expect(env.hit("watch-previous")).toBeDefined();
+      expect(env.hit("watch-next")).toBeDefined();
+      // one LEAVE only: the corner button is gone
+      expect(env.stage.made.filter((m) => !m.destroyed && (m as { name?: string }).name === "leave-the-barrow")).toHaveLength(1);
+    });
+
+    it("should reopen the record from SETTLEMENT and, closed, return to spectating with no card", () => {
+      const env = watching();
+      const before = switcherAt(env);
+      env.heard();
+      env.press("settlement");
+      expect(env.record()).toBe(true);
+      expect(env.heard()).toEqual(["dialog_open"]);
+      env.press("close-the-record");
+      expect(env.heard()).toEqual(["menu_click"]);
+      expect([env.record(), env.card()]).toEqual([false, false]);
+      expect(env.run.watchedPlayerId).toBe("ally");
+      // SETTLEMENT's own close too
+      env.press("settlement");
+      env.press("settlement");
+      expect(env.card()).toBe(false);
+      expect(env.heard()).toEqual(["dialog_open", "menu_click"]);
+      expect(names(env)).toEqual(["Watching Wenna"]);
+      expect(switcherAt(env)).toEqual(before);
+      expect(env.hit("leave-the-barrow")).toBeDefined();
+    });
+
+    it("should go to the next teammate on ► and Tab, the previous on ◄, round at either end", () => {
+      const env = watching(ally(), brom(), player("cora", "Cora", 240));
+      const seen = () => env.run.watchedPlayerId;
+      expect(seen()).toBe("ally");
+      env.release("watch-next");
+      expect(seen()).toBe("brom");
+      expect(names(env)).toEqual(["Watching Brom"]);
+      env.run.cycleWatched(1);
+      expect(seen()).toBe("cora");
+      env.release("watch-next");
+      expect(seen()).toBe("ally");
+      env.release("watch-previous");
+      expect(seen()).toBe("cora");
+      env.release("watch-previous");
+      expect(seen()).toBe("brom");
+    });
+
+    it("should play menu_hover on a live arrow and menu_click on its release, once each; Tab plays nothing", () => {
+      const env = watching(ally(), brom());
+      env.heard();
+      env.over("watch-next");
+      env.release("watch-next");
+      env.over("watch-previous");
+      env.release("watch-previous");
+      expect(env.heard()).toEqual(["menu_hover", "menu_click", "menu_hover", "menu_click"]);
+      env.run.cycleWatched(1);
+      expect(env.heard()).toEqual([]);
+    });
+
+    it("should grey both arrows with one teammate in play: no hover, menu_error on a press, nothing changes", () => {
+      const env = watching(ally(), brom(dead));
+      env.heard();
+      for (const name of ["watch-next", "watch-previous"]) {
+        env.hit(name)!.handlers.pointerover?.();
+        env.release(name);
+      }
+      expect(env.heard()).toEqual(["menu_error", "menu_error"]);
+      expect(env.run.watchedPlayerId).toBe("ally");
+      // live again once two are in play
+      env.tick(me(dead), ally(), brom());
+      env.heard();
+      env.release("watch-next");
+      expect(env.heard()).toEqual(["menu_click"]);
+      expect(env.run.watchedPlayerId).toBe("brom");
+    });
+
+    it("should keep no cursor of their own on the arrows: the bone hand stays", () => {
+      const env = watching(ally(), brom());
+      for (const name of ["watch-next", "watch-previous"])
+        expect(JSON.stringify(env.hit(name)!.last["setInteractive"] ?? [])).not.toMatch(/useHandCursor|cursor/);
+    });
+
+    it.each([
+      [1080, { leave: [442, 612], settle: [544, 612], switcher: [478, 576, 174] }],
+      [1280, { leave: [517, 612], settle: [619, 612], switcher: [553, 576, 174] }],
+    ] as const)("should stand the row and the switcher at logical width %i as pinned, clear of the chat (R158, R159, R167)", (width, at) => {
+      const env = watching();
+      viewport.set({ width, height: 720, renderScale: 1 });
+      env.run.relayoutHud();
+      const leave = rect(env, "leave-the-barrow");
+      const settle = rect(env, "settlement");
+      const sw = switcherAt(env)!;
+      expect([leave.x, leave.y, leave.width, leave.height]).toEqual([...at.leave, 94, 38]);
+      expect([settle.x, settle.y, settle.width, settle.height]).toEqual([...at.settle, 144, 38]);
+      expect([sw.x, sw.y, sw.width, sw.height]).toEqual([...at.switcher, 28]);
+      for (const r of [leave, settle, sw]) expect(r.x).toBeGreaterThanOrEqual(442);
+    });
+
+    it("should take the row and the switcher down at the run's end, playing nothing", () => {
+      const env = watching(ally(), brom());
+      env.heard();
+      env.run.endRun();
+      expect(names(env)).toEqual([]);
+      for (const name of ["leave-the-barrow", "settlement", "watch-next", "watch-previous"]) expect(env.hit(name)).toBeUndefined();
+      expect(env.heard()).toEqual([]);
+    });
+
+    it("should dim the row's LEAVE while a leave is pending, menu_error on a second press", () => {
+      const env = watching();
+      env.press("leave-the-barrow");
+      env.heard();
+      env.press("leave-the-barrow");
+      expect(env.heard()).toEqual(["menu_error"]);
+      expect(env.sent.mock.calls.filter(([a]) => a === ActionType.LeaveRun)).toHaveLength(1);
     });
   });
 });
@@ -7651,7 +7812,7 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     relayoutHud(): void;
     resetRun(end: "shutdown" | "destroy"): void;
     targetFrame?: { texts(): Made[] };
-    spectateHud?: unknown;
+    watchedPlayerId?: string;
     /** The shared arrival card (FS-PQ2TW R37): the dark first, then the card, while one is up. */
     arrivalCard: { parts: unknown[] };
     events: Emitter;
@@ -7790,16 +7951,24 @@ describe("BarrowspireScene target frame on floor 1 (FS-48CTQ §A–§C, §E; I-4
     expect(named()).toBeNull();
   });
 
-  it.each([
-    ["the spectate HUD", (run: FrameRun) => (run.spectateHud = {})],
-    ["the floor-change veil", (run: FrameRun) => (run.arrivalCard.parts = [{}])],
-  ])("should hide while %s holds the top centre", (_, cover) => {
+  it("should hide while the floor-change veil holds the top centre", () => {
     const { run, monsters, named, tick } = framed();
     monsters()[0].handlers.pointerover();
     tick(120);
-    cover(run);
+    run.arrivalCard.parts = [{}];
     tick(16);
     expect(named()).toBeNull();
+  });
+
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R164: nothing holds the top centre while
+  // spectating, so the frame follows its own rules
+  it("should stay up while the player spectates", () => {
+    const { run, monsters, named, tick } = framed();
+    monsters()[0].handlers.pointerover();
+    tick(120);
+    Object.assign(run, { watchedPlayerId: "ally", switcher: { piece: { destroy() {} }, key: "" } });
+    tick(16);
+    expect(named()).not.toBeNull();
   });
 
   it("should re-anchor at the new centre on a resize", () => {

@@ -19,8 +19,6 @@ export interface AbilityCardView extends AbilityCopy {
 export interface AbilityCardContext {
   /** The client's own cast lockout after a right-click is running (req 31). */
   lockedOut: boolean;
-  /** The dead spectator's leave button holds the bottom-right corner (req 32). */
-  leaveUp: boolean;
 }
 
 /** The class's row, or null for a class with none (req 30). */
@@ -53,16 +51,16 @@ export function parryRefused(
 
 /**
  * The card to draw, or none (req 29–32): none in the hub, none before the player's first state,
- * none once they are out of the delve (so never while they spectate), none while the leave
- * button holds the corner, and none for a class with no row.
+ * none once they are out of the delve (so never while they spectate), and none for a class with no row.
  */
 export function abilityCard(
   state: Pick<ClientGameState, "world_type" | "current_player">,
   ctx: AbilityCardContext,
 ): AbilityCardView | null {
   const me = state.current_player;
-  if (state.world_type === "hub" || !me || resolved(me) || ctx.leaveUp)
-    return null;
+  // the dead spectator's corner LEAVE that once took the corner (req 32) is the spectate row's now
+  // (FS-QPDKN § Change: The party death flow and the spectate switcher, R158); out of the delve it is down
+  if (state.world_type === "hub" || !me || resolved(me)) return null;
   const copy = abilityCopy(me.class);
   if (!copy) return null;
   return {

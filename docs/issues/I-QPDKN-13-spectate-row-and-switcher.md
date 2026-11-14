@@ -1,6 +1,6 @@
 ---
 id: I-QPDKN-13
-status: open
+status: done
 implements: FS-QPDKN
 blocked_by: [I-QPDKN-12]
 labels: [ready-for-agent]
@@ -22,12 +22,12 @@ SETTLEMENT reopens the record and its close returns to spectating, no card.
 
 ## Acceptance Criteria
 
-- [ ] WATCH → row + switcher; next, previous, Tab, greyed with one; their sounds.
-- [ ] Reopening the record and closing it returns to spectating with no card.
-- [ ] No top text; the target frame follows its own rules while spectating.
-- [ ] The row and the switcher meet neither the open chat nor its list, nor the corner row or its label, at
+- [x] WATCH → row + switcher; next, previous, Tab, greyed with one; their sounds.
+- [x] Reopening the record and closing it returns to spectating with no card.
+- [x] No top text; the target frame follows its own rules while spectating.
+- [x] The row and the switcher meet neither the open chat nor its list, nor the corner row or its label, at
       every logical width 1080–1280; rects pinned at 1080 and 1280.
-- [ ] vitest, tsc, lint and the fence pass.
+- [x] vitest, tsc, lint and the fence pass.
 
 ## Blocked By
 
