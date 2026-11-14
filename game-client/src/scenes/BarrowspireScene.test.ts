@@ -1848,7 +1848,9 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
     const press = (name: string) => hit(name)?.handlers.pointerdown();
     const leavesSent = () => stage.sent.mock.calls.filter(([action]) => action === ActionType.LeaveRun);
-    return { ...stage, run, leaveLabels, watchLabels, hit, press, leavesSent };
+    // the UI scene's one player, by which a dimmed Leave says no (FS-WDM0X § Pass 2b E6)
+    const heard = hearOn(stage.run as unknown as Record<string, unknown>);
+    return { ...stage, run, leaveLabels, watchLabels, hit, press, leavesSent, heard };
   }
 
   afterEach(() => {
@@ -1867,26 +1869,29 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
   });
 
   it("should send leave_run once, with no payload, and nothing on a second press before the answer", () => {
-    const { press, leavesSent, hit } = leavingOnStage(player("me", "Aldric", 130, dead));
+    const { press, leavesSent, heard } = leavingOnStage(player("me", "Aldric", 130, dead));
+    heard();
     press("leave-the-barrow");
     press("leave-the-barrow");
 
     expect(leavesSent()).toEqual([[ActionType.LeaveRun, {}]]);
-    expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+    // dimmed, it takes the second press only to say no (FS-WDM0X § Pass 2b E6)
+    expect(heard()).toEqual(["menu_click", "menu_error"]);
   });
 
   it("should hand the button back when the server refuses, with the card up", () => {
-    const { run, press, leavesSent, hit, leaveLabels } = leavingOnStage(player("me", "Aldric", 130, dead));
+    const { run, press, leavesSent, leaveLabels, heard } = leavingOnStage(player("me", "Aldric", 130, dead));
     press("leave-the-barrow");
-    const before = hit("leave-the-barrow")?.calls.length ?? 0;
 
     run.leaveRefused();
 
     expect(run.leavePending).toBe(false);
     expect(leaveLabels()).toHaveLength(1);
-    expect(hit("leave-the-barrow")?.calls.slice(before)).toContain("setInteractive");
+    heard();
     press("leave-the-barrow");
     expect(leavesSent()).toHaveLength(2);
+    // live again: an ordinary press (FS-WDM0X § Pass 2b E5)
+    expect(heard()).toEqual(["menu_click"]);
   });
 
   it("should ignore a refusal once the run has ended: it ended first", () => {
@@ -1940,17 +1945,19 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     });
 
     it("should send leave_run once, as the dead player's does, and dim until the answer", () => {
-      const { run, press, leavesSent, hit } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const { run, press, leavesSent, heard } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      heard();
       press("leave-the-barrow");
       press("leave-the-barrow");
 
       expect(leavesSent()).toEqual([[ActionType.LeaveRun, {}]]);
       expect(run.leavePending).toBe(true);
-      expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
+      // dimmed, it takes the second press only to say no (FS-WDM0X § Pass 2b E6)
+      expect(heard()).toEqual(["menu_click", "menu_error"]);
     });
 
     it("should come back dimmed when the row is redrawn while the leave is pending", () => {
-      const { run, press, hit, leavesSent } = leavingOnStage(player("me", "Aldric", 130, escaped));
+      const { run, press, hit, leavesSent, heard } = leavingOnStage(player("me", "Aldric", 130, escaped));
       press("leave-the-barrow");
       const first = hit("leave-the-barrow");
       // the last teammate falls: Watch goes, and the row is drawn again around Leave alone
@@ -1959,26 +1966,29 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       );
       const redrawn = hit("leave-the-barrow")!;
       expect(redrawn).not.toBe(first);
-      expect(redrawn.calls).toContain("disableInteractive");
+      heard();
       press("leave-the-barrow");
       expect(leavesSent()).toHaveLength(1);
+      // drawn dimmed: the press says no (FS-WDM0X § Pass 2b E6)
+      expect(heard()).toEqual(["menu_error"]);
     });
 
     it("should hand the button back on a refusal and keep the player in the run", () => {
-      const { run, press, leavesSent, hit, leaveLabels, watchLabels } = leavingOnStage(
+      const { run, press, leavesSent, leaveLabels, watchLabels, heard } = leavingOnStage(
         player("me", "Aldric", 130, escaped),
       );
       press("leave-the-barrow");
-      const before = hit("leave-the-barrow")?.calls.length ?? 0;
 
       run.leaveRefused();
 
       expect(run.leavePending).toBe(false);
-      expect(hit("leave-the-barrow")?.calls.slice(before)).toContain("setInteractive");
       expect(leaveLabels()).toHaveLength(1);
       expect(watchLabels()).toHaveLength(1);
+      heard();
       press("leave-the-barrow");
       expect(leavesSent()).toHaveLength(2);
+      // live again: an ordinary press (FS-WDM0X § Pass 2b E5)
+      expect(heard()).toEqual(["menu_click"]);
     });
 
     it("should show Leave without Watch once no teammate is left in play", () => {
@@ -4100,6 +4110,234 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
   });
 });
 
+// The run's end pops up with the ESC menu's popup sound, and its buttons sound as the menus' do
+// (FS-WDM0X § Change: Menu, dialog and notice sounds, § Pass 2b: the run's end, E1–E7; I-WDM0X-9)
+describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)", () => {
+  type SettlementPayload = import("@/assets/types/client").SettlementPayload;
+  const settlement = (fields: Partial<SettlementPayload> = {}): SettlementPayload => ({
+    outcome: "died",
+    carried: [{ item_id: "i1", entity_id: "e1", name: "Iron Blade", quantity: 1, found: true }],
+    lost: [],
+    experience_gained: 40,
+    level_before: 2,
+    level_after: 2,
+    kills: 3,
+    seconds_in_run: 80,
+    status: "pending",
+    ...fields,
+  });
+
+  /** What the scene holds for the run's end. */
+  interface Ending {
+    sessionID?: string;
+    showSettlement(payload: SettlementPayload): void;
+    endRun(): void;
+    leaveRefused(): void;
+    relayoutHud(): void;
+    containerView: object;
+  }
+
+  const dead = { current_health: 0 };
+  const escaped = { escape: true };
+  const me = (fields: { escape?: boolean; current_health?: number }) => player("me", "Aldric", 130, fields);
+  const ally = (fields: { escape?: boolean; current_health?: number } = {}) => player("ally", "Wenna", 160, fields);
+
+  function endOnStage() {
+    const stage = onStage();
+    Object.assign(stage.run, { scene: { start: vi.fn() } });
+    const run = stage.run as unknown as Ending;
+    // the satchel's own re-layout is ContainerView's test
+    Object.assign(run.containerView, { relayout: vi.fn() });
+    const heard = hearOn(stage.run as unknown as Record<string, unknown>);
+    /** A tick with this player as `mine` and the rest of the party as `others`. */
+    const tick = (mine: ReturnType<typeof player>, ...others: ReturnType<typeof player>[]) =>
+      stage.run.handleGameStateUpdate({ ...partyState(mine), other_players: others } as GameState);
+    const hit = (name: string) =>
+      stage.stage.made.find((m) => (m as { name?: string }).name === name && !m.destroyed);
+    const press = (name: string) => hit(name)!.handlers.pointerdown();
+    const over = (name: string) => hit(name)!.handlers.pointerover();
+    const shown = () =>
+      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed).map((m) => String(m.args[2]));
+    /** A resize: the HUD laid out again at a new width, and back. */
+    const resize = () => {
+      viewport.set({ width: 1000, height: 600, renderScale: 1 });
+      run.relayoutHud();
+      viewport.set({ width: 800, height: 600, renderScale: 1 });
+      run.relayoutHud();
+    };
+    return { ...stage, run, heard, tick, hit, press, over, shown, resize };
+  }
+
+  afterEach(() => {
+    viewport.set({ width: 800, height: 600, renderScale: 1 });
+    vi.restoreAllMocks();
+  });
+
+  describe("dialog_open as the end pops up (E1, E2)", () => {
+    it.each([
+      ["a solo death", dead, "died"],
+      ["a solo escape", escaped, "escaped"],
+    ] as const)("should chime once as the record opens on %s, and not on its copy, a tick or a resize", (_case, fields, outcome) => {
+      const { run, heard, tick, resize } = endOnStage();
+      tick(me(fields));
+      heard();
+      run.showSettlement(settlement({ outcome }));
+      expect(heard()).toEqual(["dialog_open"]);
+
+      run.showSettlement(settlement({ outcome, status: "confirmed" }));
+      tick(me(fields));
+      resize();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime once for a death with a teammate in play, the card first and the record after it", () => {
+      const { run, heard, tick, resize, shown } = endOnStage();
+      tick(me({}), ally());
+      heard();
+      tick(me(dead), ally());
+      expect(shown().some((t) => /barrow keeps you/i.test(t))).toBe(true);
+      expect(heard()).toEqual(["dialog_open"]);
+
+      run.showSettlement(settlement());
+      tick(me(dead), ally());
+      resize();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime once for a death with a teammate in play, the record first and the card after it", () => {
+      const { run, heard, tick } = endOnStage();
+      tick(me({}), ally());
+      heard();
+      run.showSettlement(settlement());
+      expect(heard()).toEqual(["dialog_open"]);
+
+      tick(me(dead), ally());
+      tick(me(dead), ally());
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime nothing for a settlement naming another run", () => {
+      const { run, heard, tick } = endOnStage();
+      tick(me(dead));
+      run.sessionID = "run-2";
+      heard();
+      run.showSettlement(settlement({ run_id: "run-1" }));
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime nothing as the run ends under the record", () => {
+      const { run, heard, tick } = endOnStage();
+      tick(me(dead), ally());
+      run.showSettlement(settlement());
+      heard();
+      run.endRun();
+      expect(heard()).toEqual([]);
+    });
+
+    it("should chime once for a settlement held while the run loaded, as create hands it over", () => {
+      const listeners = new Map<string, (payload: unknown) => void>();
+      vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+      vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+      vi.spyOn(socketManager, "off").mockImplementation(() => {});
+      vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+      vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+      vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+      const { run, heard } = endOnStage();
+      const loading = run as unknown as { init(data?: object): void; connectToServer(): void; openHeldMessages(): void };
+      loading.init({ sessionID: "run-a" });
+      listeners.get("settlement")?.(settlement({ run_id: "run-a" }));
+      heard();
+
+      loading.connectToServer();
+      loading.openHeldMessages();
+      expect(heard()).toEqual(["dialog_open"]);
+    });
+  });
+
+  describe("SETTLEMENT brings the record back (E3)", () => {
+    it("should play dialog_open bringing the record back and menu_click taking it down", () => {
+      const { run, heard, tick, press, shown } = endOnStage();
+      tick(me(escaped));
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      press("close-the-record");
+      heard();
+
+      press("settlement");
+      expect(shown()).toContain("Iron Blade");
+      expect(heard()).toEqual(["dialog_open"]);
+      press("settlement");
+      expect(shown()).not.toContain("Iron Blade");
+      expect(heard()).toEqual(["menu_click"]);
+    });
+  });
+
+  describe("the end's buttons (E4–E6)", () => {
+    it.each([
+      ["the card's WATCH THE DELVE", dead, "watch-the-delve"],
+      ["the card's LEAVE THE BARROW", dead, "leave-the-barrow"],
+      ["the row's WATCH THE DELVE", escaped, "watch-the-delve"],
+      ["the row's LEAVE THE BARROW", escaped, "leave-the-barrow"],
+      ["the row's SETTLEMENT", escaped, "settlement"],
+      ["the record's CLOSE", escaped, "close-the-record"],
+    ] as const)("should play menu_hover as the pointer comes onto %s", (_case, fields, name) => {
+      const { run, heard, tick, over } = endOnStage();
+      tick(me(fields), ally());
+      run.showSettlement(settlement({ outcome: fields === dead ? "died" : "escaped" }));
+      heard();
+      over(name);
+      expect(heard()).toEqual(["menu_hover"]);
+    });
+
+    it.each([
+      ["the card's WATCH THE DELVE", dead, "watch-the-delve", ActionType.LeaveRun, 0],
+      ["the card's LEAVE THE BARROW", dead, "leave-the-barrow", ActionType.LeaveRun, 1],
+      ["the row's WATCH THE DELVE", escaped, "watch-the-delve", ActionType.LeaveRun, 0],
+      ["the row's LEAVE THE BARROW", escaped, "leave-the-barrow", ActionType.LeaveRun, 1],
+    ] as const)("should play menu_click once on a press of %s, beside what it does", (_case, fields, name, action, sends) => {
+      const { heard, tick, press, sent } = endOnStage();
+      tick(me(fields), ally());
+      heard();
+      press(name);
+      expect(heard()).toEqual(["menu_click"]);
+      expect(sent.mock.calls.filter(([a]) => a === action)).toHaveLength(sends);
+    });
+
+    it("should play menu_click on the record's CLOSE, the record taken down", () => {
+      const { run, heard, tick, press, shown } = endOnStage();
+      tick(me(escaped));
+      run.showSettlement(settlement({ outcome: "escaped" }));
+      heard();
+      press("close-the-record");
+      expect(shown()).not.toContain("Iron Blade");
+      expect(heard()).toEqual(["menu_click"]);
+    });
+
+    it("should give the dead watcher's corner LEAVE THE BARROW its hover and its click", () => {
+      const { heard, tick, press, over } = endOnStage();
+      tick(me(dead), ally());
+      press("watch-the-delve");
+      heard();
+      over("leave-the-barrow");
+      press("leave-the-barrow");
+      expect(heard()).toEqual(["menu_hover", "menu_click"]);
+    });
+
+    it.each([
+      ["the card's", dead],
+      ["the row's", escaped],
+    ] as const)("should give %s dimmed LEAVE THE BARROW no hover, and menu_error alone for its press", (_case, fields) => {
+      const { heard, tick, press, over, sent } = endOnStage();
+      tick(me(fields), ally());
+      press("leave-the-barrow");
+      heard();
+      over("leave-the-barrow");
+      press("leave-the-barrow");
+      expect(heard()).toEqual(["menu_error"]);
+      expect(sent.mock.calls.filter(([a]) => a === ActionType.LeaveRun)).toHaveLength(1);
+    });
+  });
+});
+
 
 describe("no way out of a run on ESC (reported 2026-10-29)", () => {
   // ESC used to start MainMenuScene from inside a run. The server keeps the body in the
@@ -4386,7 +4624,6 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     expect(run.leavePending).toBe(true);
     expect(menuOver(run)).toBeUndefined();
     // the card's own button is pending too: one send between them
-    expect(hit("leave-the-barrow")?.calls).toContain("disableInteractive");
     hit("leave-the-barrow")?.handlers.pointerdown();
     press(keys.esc);
     pick("leave");
