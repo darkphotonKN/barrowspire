@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -28,6 +27,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	_ "net/http/pprof"
 )
 
 var (
@@ -90,12 +90,6 @@ func main() {
 			slog.Error("close database", "error", err)
 		}
 	}()
-
-	// --- pprof ---
-
-	// TODO: remove after benchmark passes
-	runtime.SetMutexProfileFraction(5)
-	runtime.SetBlockProfileRate(1)
 
 	// --- logger ---
 	commonhelpers.SetupLogger(environment)

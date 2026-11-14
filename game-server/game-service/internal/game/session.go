@@ -536,8 +536,6 @@ func (s *Session) manageClientMessages() {
 				})
 
 			case constants.ActionInteract:
-				slog.Debug("Action from client was interact")
-
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
@@ -579,7 +577,6 @@ func (s *Session) manageClientMessages() {
 				})
 
 			case constants.ActionAttack:
-				slog.Debug("Action from client was attack")
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
