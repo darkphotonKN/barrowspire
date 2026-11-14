@@ -281,3 +281,66 @@ plays `dialog_open`, closing it `dialog_cancel`; what the game opens or closes p
 - Changing the panel's rows, its wording or its size; a scroll.
 - The final book: the owner picks from the previews made in parallel; the swap is one function.
 - Any server change.
+
+## As built (2026-11-14)
+
+Appended after the slices; the text above is not edited. Built in I-84N1G-1 (the frame, the × and
+H's sounds), I-84N1G-2 (the close rules), I-84N1G-4 (the badge) and I-84N1G-5 (the field and the door);
+the owner's check is I-84N1G-6. I-84N1G-3 (the auto-show) was built and then reverted: see Amendment
+A1 below.
+
+- **The book (R6).** The owner picked variant D of the previews (「Ｄ」) during the run: a closed book
+  from the front, its spine and a title band cut, the page block under the cover's foot (a cut that
+  curls at the fore-edge) and a swallowtail ribbon hanging from the pages. It is `BOOK` (a
+  `KnockoutPicture`) with its 2.25 px line glyph `drawBookLines` in `knockoutBook.ts`, beside
+  `knockoutRucksack.ts`, in place of R6's `bookPicture` placeholder; swapping the book is that file
+  alone. Drawn by the shared `Knockout` at `controlsBadgeFrame`, it matches the approved previews pixel
+  for pixel at render scale 1, 1.5 and 2, idle, hovered and greyed (the badge itself, idle, too). The
+  greyed ink (`GREYED`, `GREYED_ALPHA`) moved from `HudCorner.ts` to `knockout.ts`, shared, not copied;
+  the badge has no greyed state.
+- **Where it lives.** `ControlsBadge.ts` (the piece), `uiSceneControlsBadge.ts` (`UiControlsBadge`, when it
+  stands and what its press does), `controlsBadgeFrame` and `CONTROLS_BADGE_LABEL` in `hudCornerLayout.ts`
+  (`ABILITY_CARD_H` exported from `AbilityHud.ts`); the bridge's `abilityCard(up)`; the run's
+  `showAbilityCard`, which tells it on each change.
+- **The panel.** `drawControlsPanel` wears `drawPanelFrame`; `controlsPiece.ts` stands the ground and then
+  the ×'s hit over it at 1200, again on a new view. `UiControlsSlot` plays `dialog_open` and
+  `dialog_cancel` (`toggle`, `dismiss`), takes Q first (`closeKey`), and
+  closes silently on `sync`, which the UI scene's update hands every other window's open state (the
+  menu slot, the gear's inventory, character and stash, the container view, the party panel, the record
+  as the run last showed it, the world's letter panel). `escapeStep` gains a first `controls` step.
+- **R20, as built.** `PartyPanelDeps.covered(field)` is handed the invite field's rect; the UI scene
+  answers by `rectsMeet` (`partyPanelLayout.ts`) against the open controls panel's and the open record's
+  rects (`SettlementRecord.rect()`, kept as it is built).
+
+## Amendment A1 2026-11-14 (no auto-show)
+
+Appended; the text above is not edited. The owner, 2026-11-14, on the auto-show: 「誰說要自動打開」 (who
+said it should open by itself?). The integrator had read 「操作說明面板 進入塔的時候會出現」 as asking for the
+panel to open on entering the tower; the owner did not ask for that. **The controls panel never opens by
+itself.** It opens only by H or the controls badge.
+
+- **Withdrawn:** §A whole (R1, R2); R12's "the auto-show (R2)"; the first two Acceptance Criteria (the run
+  sends `runBegun()`; the UI scene opens the panel on it); User Stories 1–4 and 12; the Edge States "H
+  pressed while the floor's card is still up", "A window opened before the card has gone", "The menu open as
+  the card goes", "Death, escape or the end before the card goes", "A refresh into a run with blocked tab
+  storage" and "The floor's map never comes"; the Summary's "now opens by itself the first time the player
+  sees the run's first floor"; the Look line's "the panel opening by itself".
+- **Reverted, not rewritten:** I-84N1G-3's commits (70434161, the red tests; 88b60e2a, the build) by
+  `git revert`. The bridge's `runBegun()` went with them: nothing else used it. The badge's
+  `abilityCard(up)`, built beside it later, stays.
+- **What stands:** everything else here: the book-D badge, the panel's frame and ×, `dialog_open` and
+  `dialog_cancel`, the close rules, Esc and Q, the invite field under any covering window, the party panel
+  closed at the door. R12 still holds for the game's closes.
+- **Parity (R22):** the new shots drop the panel opened by the run's beginning.
+
+## Amendment A2 2026-11-14 (no parity shots)
+
+Appended; the text above is not edited. The owner changed the process the same day:
+「剩下這些拉出來後檢查沒出錯就好了 不用比對 我測的時候再看就好」 (pull the rest out, check nothing errs, no
+comparing: he looks when he tests). **R22 and its acceptance criterion are withdrawn**: no before/after
+screenshot runs. The checks are the full client vitest, `tsc --noEmit`, `npm run lint` and
+`npm run lint:fence`; the look is the owner's check (I-84N1G-6). The named look and depth changes stand
+as R3–R9, R13–R16 and R20 say: the badge at 1000 above the ability card, the panel's carved frame and
+×, the panel stepping aside under any window that opens, the invite field showing again where no window
+meets it. The book's own match to the approved preview D (render scale 1, 1.5, 2) was shot before this,
+pixel-equal.

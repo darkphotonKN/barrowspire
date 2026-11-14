@@ -2,19 +2,17 @@
 id: I-84N1G-6
 status: open
 implements: FS-84N1G
-blocked_by: [I-84N1G-2, I-84N1G-3, I-84N1G-4, I-84N1G-5]
+blocked_by: [I-84N1G-2, I-84N1G-4, I-84N1G-5]
 labels: [ready-for-agent]
-title: "FS-84N1G slice 6: parity shots, and the owner's look, listening and book check (HITL)"
+title: "FS-84N1G slice 6: the owner's look and listening check (HITL)"
 ---
-Implements FS-84N1G §Requirements G (R22), §Acceptance Criteria (the owner's check)
+Implements FS-84N1G §Acceptance Criteria (the owner's check)
 
-**Lane: HITL (Nick)** for the check; the shots are the agent's.
+**Lane: HITL (Nick).** No parity shots (FS-84N1G Amendment A2).
 
 ## What to Check
 
-- [ ] Enter a run: the controls panel opens by itself once the floor's card has gone, silently; not on
-      the next floor, not after a refresh or reconnect into the run.
-- [ ] The book above the ability card: its look (pick the final book from the previews), its label
+- [ ] The book above the ability card: its look (book D, the owner's pick), its label
       "Controls (H)", `menu_hover`, a press opening (`dialog_open`) and closing (`dialog_cancel`) the
       panel; gone at death, escape and the end.
 - [ ] The panel's frame and ×; H, the ×, Q and Esc close it with `dialog_cancel`.
@@ -29,4 +27,4 @@ Every FS-84N1G slice.
 
 ## Spec Reference
 
-FS-84N1G R22, Acceptance Criteria.
+FS-84N1G Acceptance Criteria; Amendments A1, A2.

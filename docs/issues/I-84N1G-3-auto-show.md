@@ -1,6 +1,6 @@
 ---
 id: I-84N1G-3
-status: open
+status: done
 implements: FS-84N1G
 blocked_by: [I-84N1G-1]
 labels: [ready-for-agent]
@@ -35,3 +35,9 @@ FS-84N1G R1, R2, R12; Edge States.
 
 - RED: the controls slot's `runBegun` opens it silently; the run's update sends `runBegun` once after the card.
 - GREEN: the bridge call, the run's due flag, the slot's open.
+
+## Withdrawn (2026-11-14)
+
+The owner: 「誰說要自動打開」. Built (70434161, 88b60e2a) and reverted by `git revert`; the panel never opens
+by itself (FS-84N1G Amendment A1). Status `done` records the slice closed, not shipped.
+

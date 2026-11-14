@@ -539,9 +539,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   icon (the envelope; greyed outside the town). Each is a **knockout** and names itself and its
   key under the pointer. Not the party frames, not the minimap's column.
 - **Controls panel** (FS-TQZ5J § Change: Phase 3; FS-84N1G) — the run's list of keys and what they
-  do, opened and closed by `H` or the **controls badge**, and once by itself as the player first sees
-  a run's first floor. One of the windows: it wears their frame and ×, and steps aside when another
-  window opens.
+  do, opened and closed by `H` or the **controls badge**; never by itself (FS-84N1G Amendment A1). One of
+  the windows: it wears their frame and ×, and steps aside when another window opens.
 - **Controls badge** (FS-84N1G) — the run's book above the ability card, a **knockout** like the
   corner row's icons, naming itself "Controls (H)" under the pointer; a press opens or closes the
   **controls panel**. Up only while the ability card is. Not the envelope's **count badge**.
