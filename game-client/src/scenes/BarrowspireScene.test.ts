@@ -4598,6 +4598,37 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
         expect(heard()).toEqual([]);
       });
 
+      // the review of phase 3 (MED-2): an escaped player whose teammate is still in play is offered
+      // WATCH THE DELVE and LEAVE THE BARROW in the row with no card and no record yet: the windows open
+      // at the door step aside then too, playing nothing; the party panel and dialog_open wait for the end
+      it("should close them as an escape with a teammate in play offers WATCH and LEAVE, silently, the party panel left", () => {
+        const { tick, heard, reopen, standing, party, NONE_OPEN } = endWithWindows();
+        tick(me({}), ally());
+        reopen();
+        heard();
+        tick(me(escaped), ally());
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(party.panel.isOpen()).toBe(true);
+        expect(heard()).toEqual([]);
+      });
+
+      it("should close them once at the door, each tick after it closing nothing; the record then pops the end up once", () => {
+        const { run, tick, heard, reopen, standing, party, ALL_OPEN, NONE_OPEN } = endWithWindows();
+        tick(me({}), ally());
+        tick(me(escaped), ally());
+        reopen();
+        heard();
+        tick(me(escaped), ally());
+        tick(me(escaped), ally());
+        expect(standing()).toEqual(ALL_OPEN);
+        expect(heard()).toEqual([]);
+
+        run.showSettlement(settlement({ outcome: "escaped" }));
+        expect(standing()).toEqual(NONE_OPEN);
+        expect(party.panel.isOpen()).toBe(false);
+        expect(heard()).toEqual(["dialog_open"]);
+      });
+
       it("should leave them reopened through a copy, a tick and a resize after the end", () => {
         const { run, heard, tick, reopen, standing, ALL_OPEN, resize } = endWithWindows();
         tick(me(escaped));
