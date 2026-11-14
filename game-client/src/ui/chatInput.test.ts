@@ -1161,7 +1161,8 @@ describe("ChatInput sounds (FS-WDM0X § Pass 2: the chat)", () => {
     ["Esc in the list", (s: ReturnType<typeof heard>) => s.input.keyDown("Escape", false)],
     ["Enter in the list, picking its row", (s: ReturnType<typeof heard>) => s.input.keyDown("Enter", false)],
     ["a row picked", (s: ReturnType<typeof heard>) => s.input.pick("world")],
-    ["a press outside it", (s: ReturnType<typeof heard>) => s.input.closePicker(true)],
+    // the player's shut is its own call (FS-TQZ5J § Change: Batch 6, R135)
+    ["a press outside it", (s: ReturnType<typeof heard>) => s.input.dismissPicker()],
   ])("should play menu_dropdown_close once for %s (C3)", (_, shut) => {
     const s = heard();
     s.typing();

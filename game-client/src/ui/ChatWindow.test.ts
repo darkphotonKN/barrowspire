@@ -2010,6 +2010,24 @@ describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
     expect(panel.played).toEqual(["menu_dropdown_close"]);
   });
 
+  // FS-TQZ5J § Change: Batch 6, R135 (MED1): one press, one sound: the tab's wins, the list shuts silently
+  it("should play menu_tab alone for a tab press with the list open, and shut the list (C1, C3)", () => {
+    const s = heard();
+    s.click(mid(picker));
+    expect(s.field().channel).toBe("area");
+    s.played.length = 0;
+    const tab = toggleOf(s, "World");
+    const at = { x: tab.x + 3, y: tab.y + 8 };
+    // Phaser runs the tab's own pointerdown first, then the scene's, with the tab top-most
+    tab.onPress!();
+    s.input.emit("pointerdown", at, [tab.obj]);
+    s.input.emit("pointerup", at, [tab.obj]);
+    expect(s.played).toEqual(["menu_tab"]);
+    // shut: a row's place picks nothing now
+    s.input.emit("pointerup", rowAt("world"));
+    expect(s.field().channel).toBe("area");
+  });
+
   it("should play menu_dropdown_close once as a row is picked on the release, nothing more (C3)", () => {
     const s = heard();
     s.click(mid(picker));
