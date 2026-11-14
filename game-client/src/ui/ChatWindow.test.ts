@@ -2035,7 +2035,7 @@ describe("ChatWindow sounds (FS-WDM0X § Pass 2: the chat)", () => {
     const f = s.field();
     f.value = "@Wenna";
     f.channel = "whisper";
-    f.events.keyDown("Enter", false, false);
+    f.events!.keyDown("Enter", false, false);
     expect(s.played).toEqual(["menu_error"]);
     expect(s.sent).toEqual([]);
   });
