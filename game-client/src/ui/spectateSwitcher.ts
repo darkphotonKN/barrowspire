@@ -73,9 +73,11 @@ export class SpectateSwitcher {
 
     const feedback = hudButtonSounds(spec.play);
     const arrow = (name: string, box: Rect, press: () => void, pointsRight: boolean) => {
+      // its words a space: the mark is drawn below, and a blank label still carries the whole button's hit
+      // area (drawHudButton) on a Text Phaser renders, so it is an input candidate (willRender)
       const hit = drawHudButton(scene, g, {
         rect: box,
-        label: "",
+        label: " ",
         enabled: spec.canSwitch,
         press,
         depth: SWITCHER_DEPTH + 1,
