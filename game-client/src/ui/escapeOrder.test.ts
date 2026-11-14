@@ -16,6 +16,8 @@ describe("escapeStep (FS-R82NV § Change C2: one press closes one thing)", () =>
     ["the party panel", { ...none, party: true }, "party"],
     ["the open menu, over the party panel and the gear overlay", { ...none, menu: true, gear: true, party: true }, "close-menu"],
     ["nothing open: the menu opens", none, "open-menu"],
+    // FS-84N1G R17 (the owner: 「esc也可以關」): the run's controls panel first, before the whole order
+    ["the controls panel, before every other step", { letter: true, menu: true, gear: true, party: true, controls: true }, "controls"],
   ] as const)("should close %s", (_case, open, step) => {
     expect(escapeStep(open)).toBe(step);
   });

@@ -204,3 +204,49 @@ describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3,
     expect(slot.isOpen()).toBe(false);
   });
 });
+
+// FS-84N1G R16 (the owner: 「這個面板開啟其他面板時也要關閉」): another window opening closes the open panel,
+// silently; R18: Q closes it first
+describe("the controls panel's close rules (FS-84N1G R16, R18)", () => {
+  function onControls() {
+    const bridge = new GameUiBridge();
+    const played: string[] = [];
+    bridge.lendSounds({ act: (run) => run(), play: (effect) => void played.push(effect) });
+    const slot = new UiControlsSlot(bridge, (): ControlsPiece => ({ relayout: () => {}, destroy: () => {} }));
+    const w = aWorld("run");
+    bridge.report(w.report);
+    slot.world(w.report);
+    return { bridge, slot, played, w };
+  }
+  const shut = { inventory: false, party: false, record: false };
+
+  it.each(["inventory", "party", "record"] as const)("should close, silently, as the %s opens", (window) => {
+    const { slot, played } = onControls();
+    slot.sync(shut);
+    slot.toggle();
+    slot.sync(shut);
+    expect(slot.isOpen()).toBe(true);
+    slot.sync({ ...shut, [window]: true });
+    expect(slot.isOpen()).toBe(false);
+    expect(played).toEqual(["dialog_open"]);
+  });
+
+  it("should stay open over a window already open as it opened, and close as another opens", () => {
+    const { slot } = onControls();
+    slot.sync({ ...shut, inventory: true });
+    slot.toggle();
+    slot.sync({ ...shut, inventory: true });
+    expect(slot.isOpen()).toBe(true);
+    slot.sync({ ...shut, inventory: true, party: true });
+    expect(slot.isOpen()).toBe(false);
+  });
+
+  it("should take Q while open, closing with dialog_cancel, and leave Q to the gear while shut", () => {
+    const { slot, played } = onControls();
+    expect(slot.closeKey()).toBe(false);
+    slot.toggle();
+    expect(slot.closeKey()).toBe(true);
+    expect(slot.isOpen()).toBe(false);
+    expect(played).toEqual(["dialog_open", "dialog_cancel"]);
+  });
+});

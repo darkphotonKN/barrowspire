@@ -1321,3 +1321,112 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     expect(panel.blocked()).toBe(true);
   });
 });
+
+// FS-84N1G R16–R18 (I-84N1G-2): on the UI scene, another window opening closes the run's controls panel by
+// the next update, with only its own sound; Esc and Q close the controls panel first
+describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16–R18)", () => {
+  function created() {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    const keys = new Map<number, { justDown: boolean }>();
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: (code: number) => {
+        const key = { justDown: false };
+        keys.set(code, key);
+        return key;
+      },
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const played: string[] = [];
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      add: any,
+      input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
+      cameras: { cameras: [] },
+      game: {},
+      cache: { audio: { exists: (key: string) => key.startsWith("sfx:") } },
+      sound: {
+        locked: false,
+        context: { state: "running" },
+        get: () => null,
+        add: (key: string) => ({ play: () => (played.push(key.replace("sfx:", "")), true) }),
+      },
+    });
+    scene.create();
+    bridge.report({
+      world: "run",
+      windows: () => ({ letter: false }),
+      blockers: () => ({ dialogue: false }),
+      facts: () => NO_FACTS,
+      answer: () => {},
+    });
+    const controls = () => (scene as unknown as { controls: { isOpen(): boolean } }).controls;
+    const esc = () => {
+      keys.get(Phaser.Input.Keyboard.KeyCodes.ESC)!.justDown = true;
+      scene.update();
+    };
+    return { scene, keyboard, played, controls, esc, gear: () => gearMounts.at(-1)!, panel: () => partyMounts.at(-1)! };
+  }
+
+  it("should close the open controls panel by the next update as the inventory opens, with inventory_open alone", () => {
+    const { scene, keyboard, played, controls } = created();
+    keyboard.emit("keydown-H");
+    scene.update();
+    keyboard.emit("keydown-I");
+    scene.update();
+    expect(controls().isOpen()).toBe(false);
+    expect(played).toEqual(["dialog_open", "inventory_open"]);
+  });
+
+  it("should close it as the party panel or the menu opens", () => {
+    const party = created();
+    party.keyboard.emit("keydown-H");
+    party.scene.update();
+    party.panel().open = true;
+    party.scene.update();
+    expect(party.controls().isOpen()).toBe(false);
+
+    const menu = created();
+    menu.keyboard.emit("keydown-H");
+    menu.scene.update();
+    expect(menu.controls().isOpen()).toBe(true);
+    menu.esc();
+    expect(menu.controls().isOpen()).toBe(false);
+    menu.esc();
+    menu.scene.update();
+    expect(menu.played.slice(-1)).toEqual(["settings_open"]);
+  });
+
+  it("should leave it open over the inventory it opened over", () => {
+    const { scene, keyboard, controls } = created();
+    keyboard.emit("keydown-I");
+    scene.update();
+    keyboard.emit("keydown-H");
+    scene.update();
+    expect(controls().isOpen()).toBe(true);
+  });
+
+  it("should close it first on Esc and on Q, with dialog_cancel, the inventory under it left open", () => {
+    const viaEsc = created();
+    viaEsc.keyboard.emit("keydown-I");
+    viaEsc.keyboard.emit("keydown-H");
+    viaEsc.esc();
+    expect(viaEsc.controls().isOpen()).toBe(false);
+    expect(viaEsc.gear().inventory).toBe(true);
+    expect(viaEsc.played).toEqual(["inventory_open", "dialog_open", "dialog_cancel"]);
+
+    const viaQ = created();
+    viaQ.keyboard.emit("keydown-I");
+    viaQ.keyboard.emit("keydown-H");
+    viaQ.keyboard.emit("keydown-Q");
+    expect(viaQ.controls().isOpen()).toBe(false);
+    expect(viaQ.gear().inventory).toBe(true);
+    expect(viaQ.played).toEqual(["inventory_open", "dialog_open", "dialog_cancel"]);
+  });
+});
