@@ -180,6 +180,8 @@ function setup(
     active: opts.active ?? null,
     blocked: opts.blocked ?? false,
     covered: opts.covered ?? false,
+    /** The rects `covered` was handed. */
+    askedWith: [] as { x: number; y: number; width: number; height: number }[],
   };
   const commands = opts.commands ?? {
     create: vi.fn(),
@@ -199,7 +201,7 @@ function setup(
     },
     activeElement: () => state.active,
     blocked: () => state.blocked,
-    covered: () => state.covered,
+    covered: (field: { x: number; y: number; width: number; height: number }) => (state.askedWith.push(field), state.covered),
     opening: opts.opening,
     wrapper: opts.wrapper,
     ground: opts.ground,
@@ -511,6 +513,17 @@ describe("PartyPanel (FS-R82NV R29: the invite field)", () => {
     env.frame();
     expect(env.field.shown).toBe(true);
     expect(env.handle.value).toBe("Osr");
+  });
+
+  // FS-84N1G R20: the UI scene judges the cover by the field's own rect
+  it("should hand its cover the invite field's rect, in logical units", () => {
+    const env = setup({ world: "run" });
+    env.pressT();
+    env.frame();
+    const field = env.state.askedWith.at(-1)!;
+    expect(field).toBeDefined();
+    expect(field.width).toBeGreaterThan(0);
+    expect(field.height).toBeGreaterThan(0);
   });
 
   it("should take T as before while the field is covered", () => {

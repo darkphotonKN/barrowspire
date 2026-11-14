@@ -40,6 +40,7 @@ function onRecord() {
         open: () => void r.log.push("open"),
         close: () => void r.log.push("close"),
         relayout: (a) => void r.log.push(`relayout ${a.x},${a.bottom}`),
+        rect: () => ({ x: 280, y: 100, width: 520, height: 300 }),
       };
     },
     () => anchor,
@@ -89,6 +90,17 @@ describe("the run's settlement record on the UI scene (FS-TQZ5J § Change: Phase
     expect(records[1].log.at(-1)).toBe("close");
   });
 
+  // FS-84N1G R20: where the record stands while it is up, for the party panel's invite field
+  it("should give its rect while it is up, and none while it is down or gone", () => {
+    const { bridge, slot } = onRecord();
+    expect(slot.rect()).toBeNull();
+    bridge.lendSounds({ act: (run) => run(), play: () => {} });
+    slot.show({ view: view("Pending"), open: true }, "run");
+    expect(slot.rect()).toEqual({ x: 280, y: 100, width: 520, height: 300 });
+    slot.show({ view: view("Pending"), open: false }, "run");
+    expect(slot.rect()).toBeNull();
+  });
+
   it("should place the record by the run's own rule: centred across, just over the bottom-centre row", () => {
     const at = recordAnchor({ centerX: 540, height: 720 });
     expect(at).toEqual({ x: 540, bottom: resolvedRowY({ height: 720 }) - 19 - 12 });
@@ -124,7 +136,7 @@ describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3,
     const slot = new UiControlsSlot(bridge, (close): ControlsPiece => {
       const p = { relayouts: 0, destroyed: false, close };
       panels.push(p);
-      return { relayout: () => void p.relayouts++, destroy: () => void (p.destroyed = true) };
+      return { relayout: () => void p.relayouts++, destroy: () => void (p.destroyed = true), rect: () => ({ x: 410, y: 192, width: 260, height: 336 }) };
     });
     const w = aWorld(world);
     bridge.report(w.report);
@@ -176,6 +188,14 @@ describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3,
     slot.toggle();
     slot.world(null);
     expect(played).toEqual(["dialog_open", "dialog_open"]);
+  });
+
+  // FS-84N1G R20: where the open panel stands, for the party panel's invite field
+  it("should give its rect while open, and none while shut", () => {
+    const { slot } = onControls();
+    expect(slot.rect()).toBeNull();
+    slot.toggle();
+    expect(slot.rect()).toEqual({ x: 410, y: 192, width: 260, height: 336 });
   });
 
   it("should refuse H outside the run, under the menu and after the run's end", () => {

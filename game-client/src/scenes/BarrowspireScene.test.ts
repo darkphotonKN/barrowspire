@@ -4622,16 +4622,26 @@ describe("BarrowspireScene the run's end sounds (FS-WDM0X § Pass 2b, I-WDM0X-9)
 
       // the review of phase 3 (MED-2): an escaped player whose teammate is still in play is offered
       // WATCH THE DELVE and LEAVE THE BARROW in the row with no card and no record yet: the windows open
-      // at the door step aside then too, playing nothing; the party panel and dialog_open wait for the end
-      it("should close them as an escape with a teammate in play offers WATCH and LEAVE, silently, the party panel left", () => {
+      // at the door step aside then too, playing nothing; dialog_open waits for the end. FS-84N1G R21 (the
+      // integrator): the party panel closes there too, silently, as R47 closes it at the end
+      it("should close them and the party panel as an escape with a teammate in play offers WATCH and LEAVE, silently", () => {
         const { tick, heard, reopen, standing, party, NONE_OPEN } = endWithWindows();
         tick(me({}), ally());
         reopen();
         heard();
         tick(me(escaped), ally());
         expect(standing()).toEqual(NONE_OPEN);
-        expect(party.panel.isOpen()).toBe(true);
+        expect(party.panel.isOpen()).toBe(false);
         expect(heard()).toEqual([]);
+      });
+
+      it("should let T reopen the party panel at the door, the ticks after it leaving it open", () => {
+        const { tick, party } = endWithWindows();
+        tick(me({}), ally());
+        tick(me(escaped), ally());
+        party.pressT();
+        tick(me(escaped), ally());
+        expect(party.panel.isOpen()).toBe(true);
       });
 
       it("should close them once at the door, each tick after it closing nothing; the record then pops the end up once", () => {

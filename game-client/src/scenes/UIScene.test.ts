@@ -48,7 +48,7 @@ const partyMounts = vi.hoisted(
       destroyed: boolean;
       keeps: boolean;
       play?: (effect: string) => void;
-      covered?: () => boolean;
+      covered?: (field: { x: number; y: number; width: number; height: number }) => boolean;
     }[],
 );
 vi.mock("@/ui/PartyPanel", () => ({
@@ -65,7 +65,7 @@ vi.mock("@/ui/PartyPanel", () => ({
       opening?: () => void;
       wrapper?: { act(run: () => void): void };
       play?: (effect: string) => void;
-      covered?: () => boolean;
+      covered?: (field: { x: number; y: number; width: number; height: number }) => boolean;
     },
   ) => {
     const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false, play, covered };
@@ -1301,11 +1301,22 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     report("run");
     const panel = partyMounts.at(-1)!;
 
-    expect(panel.covered?.()).toBe(false);
+    // a field where the controls panel stands, at the view's centre (FS-84N1G R20: by the rects)
+    const under = { x: viewport.centerX - 10, y: viewport.centerY - 10, width: 20, height: 20 };
+    expect(panel.covered?.(under)).toBe(false);
     keyboard.emit("keydown-H");
-    expect(panel.covered?.()).toBe(true);
+    expect(panel.covered?.(under)).toBe(true);
     keyboard.emit("keydown-H");
-    expect(panel.covered?.()).toBe(false);
+    expect(panel.covered?.(under)).toBe(false);
+  });
+
+  // FS-84N1G R20: a window over the party panel covers the field only where their rects meet
+  it("should leave the field uncovered by an open controls panel that does not meet it", () => {
+    const { report, keyboard } = created();
+    report("run");
+    const panel = partyMounts.at(-1)!;
+    keyboard.emit("keydown-H");
+    expect(panel.covered?.({ x: 0, y: 0, width: 40, height: 20 })).toBe(false);
   });
 
   it("should refuse the panel as the world's report or the menu says", () => {
