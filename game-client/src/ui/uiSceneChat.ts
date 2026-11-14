@@ -7,7 +7,7 @@
  * What it reads of the UI scene and the world is its wiring: who owns Enter and Esc (the menu slot, the gear
  * panels, the world's `blockers().chat`), whether the draft is kept (the world's letter panel), the player's
  * typing reported in the UI's state, the UI scene's one player for its sounds. Its top edge is the invite
- * stack's floor in a field and the run, where those worlds reported it (R132).
+ * stack's floor where the world reports one (`invitesAboveChat`, R132): read by the party's wiring, not here.
  *
  * Phaser-free: the UI scene hands it the builder (`mountChat` on itself), so the wiring is tested on its own.
  */
@@ -46,9 +46,6 @@ export interface ChatWiring {
 
 /** What of the bridge the window reads, reports and plays through. */
 export type ChatBridge = Pick<UiBridge, "world" | "ui" | "reportUi" | "play">;
-
-/** The worlds whose invite stack stood above their chat window: the town reported no floor (R132). */
-const FLOOR_WORLDS: ReadonlySet<World> = new Set<World>(["field", "run"]);
 
 /**
  * The window's wiring (R126, R127): the keys while a world is reported, the menu slot empty, no gear panel
@@ -105,10 +102,9 @@ export class UiChatSlot {
     return this.piece?.keepsField(x, y, over) ?? false;
   }
 
-  /** The invite stack's floor: the window's top edge in a field and the run, none in the town (R132). */
-  floor(): number | undefined {
-    if (!this.piece || this.builtFor === null || !FLOOR_WORLDS.has(this.builtFor)) return undefined;
-    return this.piece.topEdge();
+  /** The standing window's top edge, none with none standing: the invite stack's floor where the world reports one (R132). */
+  topEdge(): number | undefined {
+    return this.piece?.topEdge();
   }
 
   /** The game's end: the world is left with it. */

@@ -496,8 +496,8 @@ export class UIScene extends Phaser.Scene {
    */
   private partyPieces(bridge: UiBridge, world: World): PartyPieces {
     const wiring = partyPanelWiring(bridge);
-    // the invites stack above this scene's own chat window, in a field and the run (§ Change: Batch 6, R132)
-    const prompts = partyPromptWiring(bridge, () => this.chat?.floor());
+    // the invites stack above this scene's own chat window where the world reports so (§ Change: Batch 6, R132)
+    const prompts = partyPromptWiring(bridge, () => this.chat?.topEdge());
     // the party's sounds on the game's one player (FS-WDM0X § Change pass 2 (party))
     const { play } = wiring;
     // a window drawn over the party panel covers its DOM invite field where they meet: the run's controls

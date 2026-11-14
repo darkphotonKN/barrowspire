@@ -201,6 +201,11 @@ export interface WorldReport {
   /** Answers a request of the UI scene's at once, or ignores one it has no answer for (R11). */
   readonly answer: (request: UiRequest) => void;
   /**
+   * The invite stack stands above the UI scene's chat window in this world (FS-NCC9J R24; § Change: Batch 6,
+   * R132): a field and the run say so, the town leaves it out, as each reported its floor before the chat moved.
+   */
+  readonly invitesAboveChat?: boolean;
+  /**
    * Hears a pointer move the UI scene took (A1 R27), through its own input pass, over nothing of its
    * own while the pointer is over a UI piece (`onUi`). `reportWorld` gives each world one; a report
    * without one hears nothing.

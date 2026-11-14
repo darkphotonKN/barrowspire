@@ -3151,6 +3151,8 @@ export class BarrowspireScene extends Phaser.Scene {
         chat: this.runEnded || this.containerView.isOpen,
       }),
       facts: () => this.facts(),
+      // its invites stack above the UI scene's chat window (FS-NCC9J R24; FS-TQZ5J § Change: Batch 6, R132)
+      invitesAboveChat: true,
       // the menu opens over no window (FS-3EBCA R17), the gear overlay and the party panel the UI
       // scene's, shut as it opens; it, and a gear panel opening, end a hold, and closing it does not
       // resume one (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53)

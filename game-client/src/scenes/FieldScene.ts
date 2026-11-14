@@ -350,6 +350,8 @@ export class FieldScene extends Phaser.Scene {
     return {
       windows: () => this.windows(),
       blockers: () => ({ dialogue: false }),
+      // its invites stack above the UI scene's chat window (FS-NCC9J R24; FS-TQZ5J § Change: Batch 6, R132)
+      invitesAboveChat: true,
       // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
       facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
       // a gear panel opening ends a Shadow Shot hold (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53);

@@ -7,7 +7,7 @@
  *
  * What they read of the world is the world's report (R38): the world's part of the panel's refusal,
  * `blockers().party`, beside the UI scene's own menu slot; the popups' hiding, `blockers().popups`; the
- * invite stack's floor, the UI scene's chat window's top; each state tick the world showed, `partySeen`, for the
+ * invite stack's floor, the UI scene's chat window's top where the world reports `invitesAboveChat`; each state tick the world showed, `partySeen`, for the
  * frames. Its opening closes the town's letter panel
  * by a request, asked of whatever world is reported (R39, R48); its own inputs run through the UI
  * scene's act (R22).
@@ -64,21 +64,22 @@ export interface PartyPanelWiring {
 export interface PartyPromptWiring {
   /** Hidden while the world says so (`blockers().popups`), or no world is reported. */
   hidden: () => boolean;
-  /** The screen y the invite stack stays above: the UI scene's chat window's top, where the world had one. */
+  /** The screen y the invite stack stays above: the UI scene's chat window's top, where the world reports one. */
   floor: () => number | undefined;
 }
 
 /**
  * The invite prompt's and the ready check's wiring (R38): hidden by the world's report, stacked above the
- * UI scene's own chat window's top edge as `floor` reads it (§ Change: Batch 6, R132).
+ * UI scene's own chat window's top edge as `chatTop` reads it where the world reports `invitesAboveChat`
+ * (§ Change: Batch 6, R132), above nothing elsewhere.
  */
-export function partyPromptWiring(bridge: Pick<UiBridge, "world">, floor: () => number | undefined): PartyPromptWiring {
+export function partyPromptWiring(bridge: Pick<UiBridge, "world">, chatTop: () => number | undefined): PartyPromptWiring {
   return {
     hidden: () => {
       const report = bridge.world;
       return !report || !!report.blockers().popups;
     },
-    floor,
+    floor: () => (bridge.world?.invitesAboveChat ? chatTop() : undefined),
   };
 }
 
