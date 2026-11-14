@@ -1356,3 +1356,163 @@ Appended after the phase 3 review; the text above is not edited. Each behaviour 
   x 406 before the fix, 50266 from x 409 after).
 
 ## Change: The run's controls badge and the controls panel's rules → FS-84N1G
+
+## Change: Batch 5: the ability card, the potion cell and the HUD bars
+Status: work-order
+Date: 2026-11-14
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-14), with the
+integrator's defaults; no interview, no `challenge-me` pass. What the code forces (read on
+feat/client-ui-batch5, cut from feat/client-ui-scene at ca2c0e77) is marked **[code]**; the charter's
+scope and rules **[charter]**; the integrator's word **[integrator]**; a default applied to a case the
+charter did not name, *Derived*. A1's pointer rules (R25–R27), A2's depth rule (R28), the grounds
+(R40, R59), the overlay's hit tests (R60) and the depths (R62, the frames lowest at 999) are inherited,
+not restated. The classification is ADR-0083's.
+
+**What it moves.** The ability card (`AbilityHud`, a field and the run), the potion cell (`PotionHud`,
+the run), the Health and class resource bars (`ResourceHud`, a field and the run) and the level and
+experience bar with its level-up cue (`ProgressHud`, the town and the run). Each is fixed to the screen
+and shared by more than one world (ADR-0083 1.1, 1.2). **[charter]**
+
+**The owner's process (2026-11-14):** 「剩下這些拉出來後檢查沒出錯就好了 不用比對 我測的時候再看就好」 (pull
+the rest out, check nothing errs, no comparing: he looks when he tests). No before/after screenshots
+(R23 does not apply to this batch); the checks are the full client vitest, `tsc --noEmit`,
+`npm run lint` and `npm run lint:fence`, and the look is the owner's check. **[owner]**
+
+**Lane.** game-client only. No server, proto, gateway or manifest change. No behaviour or look change.
+**[charter]**
+
+**Not in this batch.**
+
+- **The target frame stays in the world.** **[integrator, 2026-11-14]** The batch-4 run found it laced
+  into the run's top-right cluster: the map name and the dev readout give way to its rect
+  (`updateTargetFrame` → `mapName.giveWay`, `readoutCovers`), and it hides under the arrival card.
+  That cluster (the minimap, its mode icon, the map name, the readout, the floor line, the escaped
+  count, the target frame) and the arrival card's full-view dark stay in the world, recorded by
+  batch 4 as a note on ADR-0083's table.
+- **Chat is held.** **[code]** See the note "Chat, held" below: moved alone, the chat window would
+  draw over the town's letter panel and take its presses, and the letter panel is batch 4's to move.
+- **Chat's sounds** are built where the chat window stands today (FS-WDM0X § Pass 2: the chat).
+
+### Facts (verified 2026-11-14 on feat/client-ui-batch5, ca2c0e77)
+
+- **Who draws what.** A field's `showClassHud`: a `ResourceHud` at `RESOURCE_HUD_AT.field` (10, 16)
+  from `hudBars(state)`, and `showAbilityCard`: an `AbilityHud` at `ABILITY_CARD_PLACE` from
+  `abilityCard(state, { lockedOut, leaveUp: false })`, on each state and as the lockout starts and
+  ends. The run's `showResourceBars`: a `ResourceHud` at `RESOURCE_HUD_AT.run` (10, 56) and a
+  `PotionHud` right of it (`RESOURCE_HUD_AT.run.x + RESOURCE_HUD_W + POTION_CELL_GAP`, the bars' top)
+  from `potionCell(state)`; `showAbilityCard`, with `leaveUp` the dead spectator's leave button; and
+  `showProgress`: a `ProgressHud` at `PROGRESS_HUD_AT.run` (10, 16) from `progressOf(player)`. The
+  town's `renderState`: a `ProgressHud` at `PROGRESS_HUD_AT.hub` (16, 16). Each is made on the first
+  state that shows it and goes with its world's display list at the world's shutdown. **[code]**
+- **What they are handed.** Plain data already: `AbilityCardView | null`, `PotionCellView | null`,
+  `HudBar[]`, `Progress`. Each piece compares what it is handed with what it last drew and redraws only
+  on a change; the progress bar keeps the last level it showed, so a new bar (a new start, a reconnect)
+  takes its first state as the baseline and raises no cue for it (FS-BDA7X req 43). **[code]**
+- **What reads them.** The run's card up or down is told to the controls badge (`abilityCard(up)`,
+  FS-84N1G R4), which stands 8 px above the card. Nothing else reads a piece. **[code]**
+- **Input and look.** None takes input: a press on one reaches the world (an attack in a field or the
+  run). All at the HUD's depth, 1000, with no cursor of their own. On a new logical view the card goes
+  back to its corner (`relayoutHud`); the rest keep to the top left. **[code]**
+- **Where they meet.** The run's top-left stack (the XP bar, the bars, the potion cell, four frames)
+  is pinned clear of either target frame, the top-right column, the dev readout and the map name
+  (`BarrowspireScene.test.ts`, "the run's top-left stack, moved up"): none meets the cluster. The
+  arrival card's dark (960, the world's) stands under all of them, before and after. The gear overlay's
+  side panels (1100) and the party panel (1110) draw over the bars and the card, before and after. The
+  corner row's label (1000, made on each hover) stands over the card's foot, before and after. The
+  invite prompts (centred, from y 92) and the notices (top centre, y 57–150) meet none of them.
+  **[code]**
+
+### Requirements (added)
+
+67. **What moves.** Into the UI scene, unchanged: the ability card, the potion cell, the resource
+    bars and the level bar with its cue. The UI scene builds each for the world it hears reported, on
+    the first message that shows it, where and as that world built it, and takes them all down as the
+    world leaves (a level-up cue still fading included, as the world's shutdown took it). A switch, a
+    restart or a reconnect builds them anew, so the level bar takes the new world's first state as its
+    baseline (FS-BDA7X req 43). No world scene builds `AbilityHud`, `PotionHud`, `ResourceHud` or
+    `ProgressHud`. **[charter; code]**
+68. **World → UI, as plain data (ADR-0083 D3).** The bridge gains `hud(message)`: `ability` with the
+    card's view or none; `potion` with the cell's view or none; `bars` with the bars; `progress` with
+    the progress. Each is sent where the world called its piece's `show` today, so every piece's own
+    rule (a redraw only on a change, the cue on a rise, none for a fresh bar's first state) holds. The
+    world keeps computing them from what only it knows (its state, the lockout, the leave button). No
+    function crosses. **[code]**
+69. **Where, by the world reported.** The bars at `RESOURCE_HUD_AT.field` in a field and
+    `RESOURCE_HUD_AT.run` in the run; the potion cell right of the run's bars; the level bar at
+    `PROGRESS_HUD_AT.hub` in the town and `PROGRESS_HUD_AT.run` in the run; the card at
+    `ABILITY_CARD_PLACE` in a field and the run. A message with no place in the world reported (none
+    reported, a potion cell in a field) draws nothing. *Derived.*
+70. **The badge keeps its card (FS-84N1G R3, R4).** The run hands the card, then tells `abilityCard(up)`
+    on a change, as today, so the controls badge stands 8 px above the card exactly while the card is
+    up. A field's card tells nothing: no badge outside the run. **[code]**
+71. **No input of their own.** No ground: a press, a hover and the wheel over one of them reach the
+    world as today (an attack, a monster lit), A1's rules unchanged. No cursor of its own: the bone hand
+    (FS-KYPQ9 § Change). **[code]**
+72. **Depths (A2 R28, R62).** At 1000 in the UI scene, as today: over the frames (999), under every
+    window (1100–1800), the popup band and the tips. No new order: the 1000s that could meet them (the
+    corner row's label over the card's foot) are made after them, as before. No depth change to name.
+    **[code]**
+73. **The view.** The card goes back to its corner on the UI scene's relayout; their text crisps with
+    the UI scene's at a new render scale, as every running scene's (R6). The potion icon is cut from
+    the UI scene's resident art (the item icons are resident, FS-C4JWH). **[code]**
+
+### Acceptance Criteria (added)
+
+- [ ] No world scene imports or builds `AbilityHud`, `PotionHud`, `ResourceHud` or `ProgressHud`.
+- [ ] The town, a field and the run hand their bars, card, cell and progress through `hud(...)` as plain
+      data, when they showed them before (by test and the types).
+- [ ] The UI scene draws each at its world's place, takes them down as the world leaves, and builds
+      them anew for the next world; a level-up cue raises once per rise and never on a new world's first
+      state.
+- [ ] The card greys and comes down exactly as before in a field and the run (the lockout, the parry,
+      a death, an escape, the leave button), and the badge stands over it exactly while it is up.
+- [ ] A press on any of them still reaches the world; they ask for no cursor (`boneHand.test.ts`).
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's look check, when he tests (no screenshots, the owner's rule above).
+
+### Edge States (added)
+
+- **A world switch while a level-up cue fades.** The cue goes with the world, as the world's shutdown
+  took it.
+- **A reconnect into the same run.** The run leaves and is reported again: a new level bar, its first
+  state a baseline, no cue.
+- **A message with no world reported** (the world's shutdown has been heard): nothing drawn.
+- **A world still loading its art.** It hands nothing until its first state, as it drew nothing.
+- **The UI scene asleep** (the main menu): no world hands anything.
+
+### Out of Scope (added)
+
+- The target frame and the run's top-right cluster (the integrator's decision above), the arrival
+  card; the minimap and the mailbox (batch 4).
+- Chat (held, below); its sounds are FS-WDM0X § Pass 2: the chat.
+- Any change to what the moved pieces look like, say or do. The server.
+
+### Note 2026-11-14 (batch 5): chat, held
+
+Appended with this section's work order; nothing above is edited. The charter's batch 5 named chat
+(`ChatWindow`, its tabs, the canvas picker, the lines and their scrollbar and wheel, the DOM input,
+Enter, the typing guards, whisper and party, the join and leave lines). The code stopped it, by the
+brief's own rule ("if the scope collides with batch 4's pieces, stop and report"):
+
+- **It meets the letter panel.** The open window is 420 × 236 at the bottom left (x 10–430, y 468–704
+  at 1080 × 720); the town's letter panel is 840 × 500 at the centre (x 120–960, y 110–610), drawn over
+  it at 1800, and today the window yields to it by hand (`coveredAt`: no wheel, press or name under it;
+  `keepsDraft`: the draft kept as the letter panel takes the keys, FS-1GZGD R40). Moved alone into the
+  UI scene (1000, always over the world), the window would draw over the letter panel's lower left,
+  across its list, and its ground (R40, R59, owed it by the overlay rule) would take the letter list's
+  presses there. That is a look and a press change ADR-0083 D5 settles only by moving the letter panel
+  too, which is batch 4's mailbox. **[code]**
+- **So chat moves after the mailbox**, as § Phases ordered it (the mailbox before chat), in a later
+  batch on top of both merges. The seam found, for that run: the window's `mayOpen` from the UI's state
+  (the menu, the gear's panels, a shown dialogue card) and a world blocker (the town's letter panel, the
+  run's end or an open chest); `keepsDraft` and `coveredAt` from the UI scene's letter slot
+  (`isOpen`, `covers`); the chat's typing reported in the UI's state, so every world's key guards read
+  it and the world's keyboard is reset and off while the player types (a held stride key would
+  otherwise stay down: the DOM field swallows its keyup); a ground over the panel and the open list;
+  its scene-wide press, move, release and wheel acted on only with its own piece or nothing on top
+  (R60's rule), so the settlement record keeps the wheel over it (FS-GV8WN S6: the record's
+  `stopPropagation` keeps the UI scene's `wheel` from the chat once both stand there); the field's
+  focus kept for a press on the window (A1 R26, as the party panel's `keepsField`); `layout().chatTop`
+  read from the UI scene's own window; the run's `endRun` order (the input cancelled before the run's
+  keyboard goes off). **[code]**

@@ -959,3 +959,65 @@ E7. **What stays.** The ESC menu's *Leave the barrow* keeps `settings_close` (M7
 - Moving the card, the row or the record into the UI scene (FS-TQZ5J phase 6).
 
 ## Change: The run's controls badge and the controls panel's rules → FS-84N1G
+
+### Pass 2: the chat (2026-11-14)
+
+Appended under the owner's approved charter (2026-11-14), the chat's half of *Pass 2 (recorded, not
+built)*. Pass 1, its listening-check overrides, pass 2 (party) and pass 2b stand; this adds the chat's
+sounds and edits nothing above. Every play goes through the UI scene's one player (M3), one sound per
+player action (M2), the hover's cooldown (M4) kept, and what the game changes plays nothing (S4).
+**[charter]** unless marked *Derived* or **[code]**.
+
+**Where the chat stands.** FS-TQZ5J § Change: Batch 5 holds the chat window in the worlds (it meets the
+town's letter panel, batch 4's to move). Its sounds do not wait for it: a world reaches the UI scene's
+one player through the bridge's `play`, as the minimap's step (S7) and the town's dialogue card
+(M11) do. The window asks its game's bridge itself (`mountChatWindow`), so no world scene wires it, and
+when the window moves into the UI scene the same calls reach the same player. *Derived.*
+
+#### The mapping (pass 2, the chat)
+
+C1. **`menu_tab`**: a channel tab pressed. Each press toggles that channel's lines in the window
+    (`toggleChannel`), so every tab press changes the channels shown and plays once. **[code]**
+C2. **`menu_dropdown_open`**: the canvas channel picker (FS-J267Q) pressed with its list shut,
+    opening it. The input opening with it is the same press: one sound.
+C3. **`menu_dropdown_close`**: the player shuts the open list: the picker pressed with the list open;
+    a press anywhere outside the list (the window's panel or the world); Esc in the list; a row picked,
+    by the pointer's release or Enter in the list (one sound, the close). *Derived:*
+    - silent, as typing: Tab and a typed character, which shut the list as the field's keys (pass 2
+      party P6's rule: typing is not an option);
+    - silent, the game's (S4): the logical view resizing (FS-J267Q R6), the keys taken from the input
+      (the menu, the gear overlay, the run's end), and the field let go by a press on a UI piece (that
+      press plays the piece's own sound, if any: one press, one sound).
+C4. **`menu_hover`**: the pointer comes onto a filter tab, or onto a row of the open list it can pick.
+    Once per tab or row entered, judged by where the pointer is, so a tab or a row drawn again under a
+    still pointer plays nothing more. None while a UI piece stands over the window there (`overUi`) or
+    the town's letter panel does (`coveredAt`). The arrows moving the list's highlight play none (a key
+    is no hover). The picker itself, the fold button and a name in the lines play none: no sound is
+    named for them (O1's rule). *Derived.*
+C5. **`menu_error`**: Enter on a whisper draft the client refuses to send: a name with no message, or
+    no name after the `@` (FS-KCQ06 R12: "a name with no message is not sent; the draft stays"). Once
+    per Enter, the draft kept. This is the one refusal of chat input in the code. **[code]** Not
+    refusals, so silent: Enter on nothing (it closes the input); the line cut to 200 code points as it
+    is typed (`clampChatText`, a cut). A closed channel's row would be refused, but none is shown: every
+    channel the window offers (`CHAT_SHOWN_CHANNELS`) is open today (`CHAT_OPEN_CHANNELS`).
+
+#### Acceptance Criteria (pass 2, the chat)
+
+- [ ] A tab press plays `menu_tab` once, in the town, a field and the run.
+- [ ] The picker pressed with its list shut plays `menu_dropdown_open`; with it open, `menu_dropdown_close`;
+      a press outside the open list, Esc in it and a row picked (pointer or Enter) play
+      `menu_dropdown_close` once; Tab, typing, a resize and the keys taken play nothing.
+- [ ] The pointer onto a tab or a pickable row plays `menu_hover` once per one entered; a redraw under a
+      still pointer, the arrows, a covered tab and the fold button play nothing.
+- [ ] Enter on `@Name` with no message, or `@ ` with no name, plays `menu_error` and sends nothing; Enter
+      on nothing plays nothing.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's listening check (HITL), with the table of where each plays.
+
+#### Edge States (pass 2, the chat)
+
+- **A press on the picker refused** (the keys owned by the menu or a window): the input does not
+  open, the list does not open, nothing plays.
+- **A quick sweep over the tabs.** The cooldown (M4) keeps the hovers from stacking.
+- **The window folded.** No tabs, no lines, no list: the picker still opens and shuts its list.
+- **Sound effects at 0.** Every chat sound is silent (S16).
