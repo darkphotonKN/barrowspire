@@ -1382,7 +1382,7 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
       keys.get(Phaser.Input.Keyboard.KeyCodes.ESC)!.justDown = true;
       scene.update();
     };
-    return { scene, keyboard, played, controls, esc, gear: () => gearMounts.at(-1)!, panel: () => partyMounts.at(-1)! };
+    return { scene, bridge, keyboard, played, controls, esc, gear: () => gearMounts.at(-1)!, panel: () => partyMounts.at(-1)! };
   }
 
   it("should close the open controls panel by the next update as the inventory opens, with inventory_open alone", () => {
@@ -1433,6 +1433,20 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     keyboard.emit("keydown-H");
     scene.update();
     expect(controls().isOpen()).toBe(true);
+  });
+
+  // the review of FS-84N1G: Phaser steps the scene list from the top, so the UI scene's update runs before
+  // the world's, and a window the world opens in its own update is first seen on the next frame
+  it("should keep the panel H opened over the container view the world opened in its update the frame before", () => {
+    const { scene, bridge, keyboard, played, controls } = created();
+    scene.update();
+    // the world's update, after the UI scene's: E opens the container view
+    bridge.container({ kind: "open", entityId: "chest-1", container: "chest" });
+    // the next frame: H on its key event, then the UI scene's update
+    keyboard.emit("keydown-H");
+    scene.update();
+    expect(controls().isOpen()).toBe(true);
+    expect(played).toEqual(["dialog_open"]);
   });
 
   it("should close it first on Esc and on Q, with dialog_cancel, the inventory under it left open", () => {

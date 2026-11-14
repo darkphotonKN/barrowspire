@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { recordAnchor, resolvedRowY } from "./resolvedRow";
 import { GameUiBridge, NO_FACTS, type UiRequest, type World, type WorldFacts, type WorldReport } from "./uiBridge";
-import { UiControlsSlot, UiRecordSlot, type ControlsPiece, type RecordPiece } from "./uiSceneRecord";
+import { UiControlsSlot, UiRecordSlot, type ControlsPiece, type OpenWindows, type RecordPiece } from "./uiSceneRecord";
 import type { RecordView } from "./settlement";
 
 // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-15): the run's settlement record is drawn by the UI scene from the
@@ -20,6 +20,18 @@ function aWorld(world: World) {
   };
   return { report, facts, asked };
 }
+
+/** Every window the slot hears of, shut. */
+const SHUT: OpenWindows = {
+  menu: false,
+  inventory: false,
+  character: false,
+  stash: false,
+  container: false,
+  party: false,
+  record: false,
+  letter: false,
+};
 
 const view = (status: string) => ({ status: { text: status, tone: "neutral" } }) as unknown as RecordView;
 
@@ -133,11 +145,15 @@ describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3,
       },
     });
     const panels: { relayouts: number; destroyed: boolean; close: () => void }[] = [];
-    const slot = new UiControlsSlot(bridge, (close): ControlsPiece => {
-      const p = { relayouts: 0, destroyed: false, close };
-      panels.push(p);
-      return { relayout: () => void p.relayouts++, destroy: () => void (p.destroyed = true), rect: () => ({ x: 410, y: 192, width: 260, height: 336 }) };
-    });
+    const slot = new UiControlsSlot(
+      bridge,
+      (close): ControlsPiece => {
+        const p = { relayouts: 0, destroyed: false, close };
+        panels.push(p);
+        return { relayout: () => void p.relayouts++, destroy: () => void (p.destroyed = true), rect: () => ({ x: 410, y: 192, width: 260, height: 336 }) };
+      },
+      () => SHUT,
+    );
     const w = aWorld(world);
     bridge.report(w.report);
     slot.world(w.report);
@@ -232,33 +248,54 @@ describe("the controls panel's close rules (FS-84N1G R16, R18)", () => {
     const bridge = new GameUiBridge();
     const played: string[] = [];
     bridge.lendSounds({ act: (run) => run(), play: (effect) => void played.push(effect) });
-    const slot = new UiControlsSlot(bridge, (): ControlsPiece => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }));
+    // the windows as the UI scene reads them, each time the slot asks
+    const windows: { now: OpenWindows } = { now: SHUT };
+    const slot = new UiControlsSlot(
+      bridge,
+      (): ControlsPiece => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }),
+      () => windows.now,
+    );
     const w = aWorld("run");
     bridge.report(w.report);
     slot.world(w.report);
-    return { bridge, slot, played, w };
+    const open = (...names: (keyof OpenWindows)[]) => (windows.now = { ...SHUT, ...Object.fromEntries(names.map((n) => [n, true])) });
+    return { bridge, slot, played, w, open };
   }
-  const shut = { inventory: false, party: false, record: false };
 
-  it.each(["inventory", "party", "record"] as const)("should close, silently, as the %s opens", (window) => {
-    const { slot, played } = onControls();
-    slot.sync(shut);
+  it.each(["inventory", "party", "record", "container", "menu", "letter"] as const)("should close, silently, as the %s opens", (window) => {
+    const { slot, played, open } = onControls();
+    slot.sync();
     slot.toggle();
-    slot.sync(shut);
+    slot.sync();
     expect(slot.isOpen()).toBe(true);
-    slot.sync({ ...shut, [window]: true });
+    open(window);
+    slot.sync();
     expect(slot.isOpen()).toBe(false);
     expect(played).toEqual(["dialog_open"]);
   });
 
   it("should stay open over a window already open as it opened, and close as another opens", () => {
-    const { slot } = onControls();
-    slot.sync({ ...shut, inventory: true });
+    const { slot, open } = onControls();
+    open("inventory");
+    slot.sync();
     slot.toggle();
-    slot.sync({ ...shut, inventory: true });
+    slot.sync();
     expect(slot.isOpen()).toBe(true);
-    slot.sync({ ...shut, inventory: true, party: true });
+    open("inventory", "party");
+    slot.sync();
     expect(slot.isOpen()).toBe(false);
+  });
+
+  // the review of FS-84N1G: the UI scene updates before the world (Phaser steps the scene list from the
+  // top), so a window the world opened in its own update is first seen at the next sync, after an H
+  // heard on that frame's key event; a window open as H opens the panel must not close it
+  it("should stay open over a window opened since the last sync but before H, as it opened over it", () => {
+    const { slot, open } = onControls();
+    slot.sync();
+    open("container");
+    slot.toggle();
+    slot.sync();
+    expect(slot.isOpen()).toBe(true);
   });
 
   it("should take Q while open, closing with dialog_cancel, and leave Q to the gear while shut", () => {
