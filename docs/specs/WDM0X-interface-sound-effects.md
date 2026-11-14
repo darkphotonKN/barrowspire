@@ -851,3 +851,109 @@ P8. **The panel's open and close keep their sounds.** T, the Party icon, the pan
 - **The leader's own check.** The leader pressed *Enter as a party* (`dialog_confirm`, M12); the check
   opening on the server's word plays `dialog_open` after it.
 - **Sound effects at 0.** Every party sound is silent (S16).
+
+### Pass 2b: the run's end (2026-11-14)
+
+Appended at the owner's request (2026-11-14: 「塔內死掉時沒有跳窗聲音」, the death in the tower pops up
+with no sound). Asked which sound: 「跟esc選單離開時跳出時按一樣聲音」, the sound of the ESC menu's
+leave confirm popping up, which is the Fall confirm opening: `dialog_open` (M11). Asked whether the
+popup's buttons get sounds: "Yes, add them", `menu_hover` on a hover and `menu_click` on a press.
+Pass 1's text, its listening-check overrides and pass 2 (party) stand; this adds the run's end and
+edits nothing above. Every decision is **[owner]** unless marked *Derived*.
+
+#### Facts (verified 2026-11-14 on feat/client-ui-scene, 543da9f0)
+
+- **What pops up.** No run piece reads "Few return whole" (that is the Spire's door line in the
+  town). As a player dies or escapes, two pieces can appear:
+  - the **settlement record** (`ui/SettlementRecord.ts`): FALLEN IN THE BARROW, ESCAPED THE BARROW,
+    or OUT OF THE DELVE for an outcome the client does not know, opened at once by the first
+    `settlement` of this run, which the server sends the moment the player resolves, solo or in a
+    party (FS-GV8WN R19–R21). One button, CLOSE.
+  - the **resolved card** "The barrow keeps you" (`BarrowspireScene.showResolvedCard`), for a dead
+    player while a teammate is still in the delve (FS-QPDKN req 1, 2), under the record (1500 under
+    1600), with WATCH THE DELVE and LEAVE THE BARROW. The escaped get no card, only the
+    bottom-centre row (FS-QPDKN req 3, amended).
+- **How they appear.** The card: on the first state showing the player dead with a teammate in play
+  (`syncResolvedView`), and again on a resize (`relayoutHud` destroys and draws it). The record: on
+  the first `settlement` of the run, a settlement held while the run loaded included (handed over at
+  the end of create); on SETTLEMENT pressed while it is down; rebuilt on a later copy (`set`) and on
+  a resize (`relayout`). A reconnect restarts the scene, which builds everything again.
+- **What plays today at a death or an escape: nothing.** The ESC menu yielding to the death plays
+  nothing (S4), the notices are silent (O1), and no run piece plays as the player resolves. A death
+  by *Fall* follows that press's `dialog_confirm_heavy` (M13) by the server's round trip.
+- **The buttons.** WATCH THE DELVE and LEAVE THE BARROW on the card; LEAVE THE BARROW in its corner
+  while the dead player watches; WATCH THE DELVE, LEAVE THE BARROW and SETTLEMENT in the bottom-centre
+  row; CLOSE on the record. All but CLOSE are the run's `worldButton`. LEAVE THE BARROW dims while a
+  `leave_run` is unanswered and takes no press then (`disableInteractive`); no other is ever greyed.
+  None plays a sound.
+- **Where they live.** All are world pieces of the run, and stay so (ADR-0081; the settlement record
+  is FS-TQZ5J phase 6). A world plays an effect by `this.ui.play` on the game's UI bridge, which is
+  the UI scene's one player (M3, FS-TQZ5J R22), as the town's `dialog_open` (M11) and the minimap's
+  step (S7) do.
+
+#### The mapping (pass 2b, the run's end)
+
+E1. **`dialog_open`: the run's end pops up.** The first of the resolved card and the settlement
+    record to appear in a run plays `dialog_open` once; the other, appearing with it or later, plays
+    nothing more: one end, one sound (M2's rule). So a solo death, the last of a party to fall and
+    an escape each chime with the record; a death with a teammate still in play chimes once for the
+    card and the record together, whichever came first. *Derived* (the owner's "never double a
+    sound").
+E2. **A redraw plays nothing.** The card drawn again on a resize, the record rebuilt on a later copy
+    or a resize, and the bottom-centre row rebuilt play nothing. A reconnect is a new start of the
+    run: what it shows of the end appears anew and chimes once (E1). *Derived.*
+E3. **SETTLEMENT brings the record back with `dialog_open`.** A press of SETTLEMENT while the record
+    is down plays `dialog_open` alone, in place of `menu_click`, as *Fall where you stand* opening
+    the Fall confirm does (M11); a press while it is up takes it down and plays `menu_click`.
+    *Derived* (the choice named for the owner: the record appearing again at his hand is a popup).
+E4. **`menu_hover`**: the pointer comes onto a live button of the run's end: WATCH THE DELVE and
+    LEAVE THE BARROW (on the card, in the corner, in the row), SETTLEMENT, and the record's CLOSE.
+    A dimmed LEAVE THE BARROW plays none (M5). The 50 ms cooldown holds (M4).
+E5. **`menu_click`**: a press of a live one (E4's), once, as the press acts: WATCH THE DELVE, LEAVE
+    THE BARROW, CLOSE, and SETTLEMENT taking the record down (E3). It plays before the press acts,
+    so a CLOSE or a LEAVE that lets a held town in (FS-GV8WN R23) is heard as it leaves.
+E6. **`menu_error`**: a press on LEAVE THE BARROW dimmed while its `leave_run` is unanswered. The
+    dimmed button takes the press for that alone: nothing is sent, and it shows no hand cursor, as
+    the party's greyed buttons (P7). *Derived.*
+E7. **What stays.** The ESC menu's *Leave the barrow* keeps `settings_close` (M7); *Fall* keeps
+    `dialog_confirm_heavy` (M13), and the end's `dialog_open` follows it as the death arrives (as the
+    leader's own ready check, pass 2 Edge States). No key plays anything new. The pieces' looks,
+    places and depths, the record's scroll (FS-GV8WN § Change: The settlement record scrolls) and
+    what each button does are unchanged; they stay world pieces, and no second player is made.
+
+#### Acceptance Criteria (pass 2b, the run's end)
+
+- [ ] A solo death and an escape: the record's first opening plays `dialog_open` once; a later copy
+      (pending → confirmed), a resize and a state tick play nothing more.
+- [ ] A death with a teammate in play: the card and the record together play `dialog_open` once,
+      whichever of the state and the `settlement` comes first; the card redrawn on a resize plays
+      nothing.
+- [ ] A settlement held while the run loaded plays `dialog_open` once as create hands it over; a
+      settlement naming another run plays nothing.
+- [ ] SETTLEMENT pressed with the record down plays `dialog_open` alone; pressed with it up,
+      `menu_click`.
+- [ ] Each live button (WATCH THE DELVE and LEAVE THE BARROW on the card, in the corner and in the row,
+      SETTLEMENT, CLOSE): a hover `menu_hover`, a press `menu_click`, once, beside what it does today.
+- [ ] LEAVE THE BARROW dimmed: no hover; a press plays `menu_error` and sends nothing; handed back on
+      a refusal, it plays `menu_click` and sends again.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's listening check (HITL): a solo death, a party death and an escape in the tower, and
+      the buttons.
+
+#### Edge States (pass 2b, the run's end)
+
+- **The card first, the record late.** If the `settlement` comes well after the card, the record
+  plays nothing (E1): the end chimed already.
+- **Watch pressed, then SETTLEMENT.** The card is gone; the record comes back with `dialog_open`
+  (E3), and the corner LEAVE keeps its sounds (E4–E6).
+- **The run ends under the record.** `end_game` takes the card and the row down and plays nothing;
+  the record stays, and its CLOSE plays `menu_click` as the held town comes in.
+- **Sound effects at 0.** Every sound of the end is silent (S16); the record still opens.
+- **The UI scene not yet lent.** Before create reports the run nothing plays, and nothing is played
+  late (S12).
+
+#### Out of Scope (pass 2b)
+
+- A sound for the death itself, the escape door, or `end_game`; any notice's sound (O1).
+- The arrival card, the controls panel (H) and the spectate HUD's Tab.
+- Moving the card, the row or the record into the UI scene (FS-TQZ5J phase 6).
