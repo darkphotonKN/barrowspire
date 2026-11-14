@@ -2304,6 +2304,8 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       // the harness's view is 800 wide; 200 more, as from 1080 to 1280
       viewport.set({ width: 1000, height: 600, renderScale });
       hud.relayoutHud();
+      // the card is the UI scene's, back in its corner on the UI scene's own relayout (FS-TQZ5J § Change: Batch 5, R73)
+      hudOver(run, "run").relayout();
       expect(name.last.setPosition[0]).toBe(nameX + 200);
       expect(escaped.last.setX).toEqual([1000 - 10]);
       // moved, so rasterised again at the render scale of now (R5)

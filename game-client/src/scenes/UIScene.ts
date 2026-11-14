@@ -34,6 +34,7 @@ import { ControlsBadge } from "@/ui/ControlsBadge";
 import { UiControlsBadge } from "@/ui/uiSceneControlsBadge";
 import { recordAnchor } from "@/ui/resolvedRow";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
+import { mountHud } from "@/ui/hudPieces";
 import { onSceneEnd } from "./sceneEnd";
 
 /**
@@ -133,6 +134,8 @@ export class UIScene extends Phaser.Scene {
       character: () => this.gear?.isCharacterOpen() ?? false,
     });
     this.mountInterface(bridge);
+    // the ability card, the potion cell and the bars, drawn from what each world hands (§ Change: Batch 5, R67)
+    mountHud(this, bridge, () => this.residentArt());
     this.mountKeys();
     this.mountPointer(bridge);
   }

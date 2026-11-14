@@ -68,7 +68,7 @@ const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
-const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
+const { abilityPlaceOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { equipmentPiece } = await import("@/ui/uiSceneGear");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
 type GearKey = import("@/ui/uiSceneGear").GearKey;
@@ -1311,12 +1311,15 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
   });
 
   it("should hand its ability card to the UI scene through the bridge, as plain data, and build none (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
     const { field } = kitOnStage({ lockedOut: false });
-    const told: string[] = [];
-    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message.kind) });
+    const told: unknown[] = [];
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
     field.renderState(archerState);
-    expect(told).toContain("ability");
-    expect(abilityShownOver(field)).toMatchObject({ name: "Shadow Shot", greyed: false });
+    expect(told).toContainEqual({ kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    // the UI scene's card, drawn from it
+    expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));
     expect((field as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
   });
 

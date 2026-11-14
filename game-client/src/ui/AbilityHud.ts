@@ -60,6 +60,12 @@ export class AbilityHud {
     if (this.shown) this.draw(this.shown);
   }
 
+  /** Taken down for good: its world left the UI scene (FS-TQZ5J § Change: Batch 5, R67). */
+  destroy(): void {
+    this.takeDown();
+    this.shown = null;
+  }
+
   private draw(view: AbilityCardView): void {
     const corner = anchorAt(this.place);
     const left = corner.x - CARD_W;

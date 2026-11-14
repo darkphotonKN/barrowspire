@@ -50,9 +50,8 @@ import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
 import { PROGRESS_HUD_AT, ProgressHud } from "@/ui/ProgressHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { RESOURCE_HUD_AT, RESOURCE_HUD_W, ResourceHud } from "@/ui/ResourceHud";
-import { PotionHud } from "@/ui/PotionHud";
-import { POTION_CELL_GAP, healthPotionCount, potionCell } from "@/ui/potions";
+import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
+import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
@@ -78,8 +77,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  * create, which sends them.
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
-import { ABILITY_CARD_PLACE, LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
-import { AbilityHud } from "@/ui/AbilityHud";
+import { LEAVE_BUTTON_PLACE } from "@/ui/hudCornerLayout";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars, teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
@@ -327,8 +325,6 @@ const PROGRESS_HUD_Y = PROGRESS_HUD_AT.run.y;
  */
 const RESOURCE_HUD_X = RESOURCE_HUD_AT.run.x;
 const RESOURCE_HUD_Y = RESOURCE_HUD_AT.run.y;
-/** The potion cell (FS-P9G8R R24): just right of the resource bars, top-aligned with them. */
-const POTION_HUD_X = RESOURCE_HUD_X + RESOURCE_HUD_W + POTION_CELL_GAP;
 /**
  * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
  * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
@@ -665,10 +661,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private resourceHud?: ResourceHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
-  /** The health potions carried and the drink key, beside the bars (FS-P9G8R R24). */
-  private potionHud?: PotionHud;
-  /** The class ability card, bottom right (FS-8AY7S req 29–32). */
-  private abilityHud?: AbilityHud;
   /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
@@ -1136,8 +1128,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resourceHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
-    this.potionHud = undefined;
-    this.abilityHud = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
@@ -3256,7 +3246,6 @@ export class BarrowspireScene extends Phaser.Scene {
     this.placeTopRightColumn();
     this.spectateHud?.watching.setX(viewport.centerX);
     this.spectateHud?.hint.setX(viewport.centerX);
-    this.abilityHud?.relayout();
     this.arrivalCard.relayout();
     this.targetFrame?.relayout();
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
@@ -5081,9 +5070,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private showResourceBars(state: ClientGameState): void {
     this.resourceHud ??= new ResourceHud(this, RESOURCE_HUD_X, RESOURCE_HUD_Y);
     this.resourceHud.show(hudBars(state));
-    // the potion cell is up exactly when the bars are (FS-P9G8R R24)
-    this.potionHud ??= new PotionHud(this, this.art, POTION_HUD_X, RESOURCE_HUD_Y);
-    this.potionHud.show(potionCell(state));
+    // the potion cell is up exactly when the bars are (FS-P9G8R R24): the UI scene draws it right of
+    // them (FS-TQZ5J § Change: Batch 5, R68)
+    this.ui.hud({ kind: "potion", cell: potionCell(state) });
   }
 
   /**
@@ -5094,13 +5083,13 @@ export class BarrowspireScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastGameState;
     if (!state) return;
-    // just above the corner row, right-aligned with it (FS-3EBCA R13)
-    this.abilityHud ??= new AbilityHud(this, ABILITY_CARD_PLACE);
+    // the UI scene draws it just above the corner row, right-aligned with it (FS-3EBCA R13; FS-TQZ5J
+    // § Change: Batch 5, R68)
     const card = abilityCard(state, {
       lockedOut: this.combat.lockedOut,
       leaveUp: this.leaveButton !== undefined,
     });
-    this.abilityHud.show(card);
+    this.ui.hud({ kind: "ability", card });
     // the controls badge stands over the card while it is up (FS-84N1G R4): told on each change
     if ((card !== null) === this.abilityUp) return;
     this.abilityUp = card !== null;

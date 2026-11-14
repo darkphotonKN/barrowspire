@@ -45,8 +45,6 @@ import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { ABILITY_CARD_PLACE } from "@/ui/hudCornerLayout";
-import { AbilityHud } from "@/ui/AbilityHud";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
@@ -239,7 +237,6 @@ export class FieldScene extends Phaser.Scene {
   private mapField: { walls: readonly WallState[]; gates: readonly GateState[] } = { walls: [], gates: [] };
   /** Where this browser keeps the minimap's mode, the run's key (FS-1SEF0 §A.4; FS-P0HSP §F.32). */
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
-  private abilityHud?: AbilityHud;
   /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
@@ -407,7 +404,6 @@ export class FieldScene extends Phaser.Scene {
   private relayoutHud(): void {
     this.arrivalCard.relayout();
     this.minimap?.place();
-    this.abilityHud?.relayout();
     if (this.fallenView) {
       this.showFallen();
       this.drainFallen(this.time.now);
@@ -596,7 +592,6 @@ export class FieldScene extends Phaser.Scene {
     this.modeIconStage = undefined;
     this.charting = undefined;
     this.mapField = { walls: [], gates: [] };
-    this.abilityHud = undefined;
     this.lastState = undefined;
     this.selfAt = undefined;
     this.views.clear();
@@ -816,13 +811,14 @@ export class FieldScene extends Phaser.Scene {
     this.showAbilityCard();
   }
 
-  /** The ability card, redrawn on every state and as the lockout starts and ends (req 31). */
+  /**
+   * The ability card, redrawn on every state and as the lockout starts and ends (req 31): handed to the
+   * UI scene, which draws it above the corner row (FS-3EBCA R13; FS-TQZ5J § Change: Batch 5, R68).
+   */
   private showAbilityCard(): void {
     const state = this.lastState;
     if (!state) return;
-    // just above the corner row, right-aligned with it (FS-3EBCA R13)
-    this.abilityHud ??= new AbilityHud(this, ABILITY_CARD_PLACE);
-    this.abilityHud.show(abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }));
+    this.ui.hud({ kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }) });
   }
 
   /** This client's player as drawn, once the field has reported them. */
