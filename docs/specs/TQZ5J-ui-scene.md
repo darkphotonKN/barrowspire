@@ -1973,31 +1973,31 @@ are the owner's check (I-TQZ5J-55). **[owner]**
 
 ### Acceptance Criteria (added)
 
-- [ ] The row, the card and the corner read WATCH, LEAVE, SETTLEMENT in 13 px bold, letter-spaced 1, each
+- [x] The row, the card and the corner read WATCH, LEAVE, SETTLEMENT in 13 px bold, letter-spaced 1, each
       button its label's width plus 24 a side (R120–R122).
-- [ ] The row stands as R123 says at 1080 and 1280 for every set of buttons, and meets neither the open
+- [x] The row stands as R123 says at 1080 and 1280 for every set of buttons, and meets neither the open
       window nor the open list at any logical width from 1080 to 1280 with one, two or three buttons.
-- [ ] The card's buttons are centred on the card 8 apart; the corner LEAVE keeps its right edge; the
+- [x] The card's buttons are centred on the card 8 apart; the corner LEAVE keeps its right edge; the
       record its anchor (R124).
-- [ ] No world scene imports `ChatWindow` or `mountChatWindow`; the UI scene builds the window per world
+- [x] No world scene imports `ChatWindow` or `mountChatWindow`; the UI scene builds the window per world
       and takes it down as the world leaves (R125).
-- [ ] The window takes the keys exactly when each world's old rule let it, keeps the draft under the
+- [x] The window takes the keys exactly when each world's old rule let it, keeps the draft under the
       letter panel, reports `typing`, and the world's keyboard is off while it is true and back after,
       the run's end included (R126–R128).
-- [ ] A press, a move and the wheel on the window reach no world; on a UI piece over it, the window does
+- [x] A press, a move and the wheel on the window reach no world; on a UI piece over it, the window does
       nothing; the record keeps the wheel; `coveredAt`, `overUi`, `MailboxHud.covers` and
       `LetterPanel.covers` are gone (R129, R130).
-- [ ] A press on the window keeps its field; the invites stack above its top in a field and the run
+- [x] A press on the window keeps its field; the invites stack above its top in a field and the run
       (R131, R132).
-- [ ] A tab press with the list open plays `menu_tab` alone; no chat hover under the row (R135, R136).
-- [ ] The HUD's messages name their world; `mountHud`'s relayout tested through its wiring; the stand-in
+- [x] A tab press with the list open plays `menu_tab` alone; no chat hover under the row (R135, R136).
+- [x] The HUD's messages name their world; `mountHud`'s relayout tested through its wiring; the stand-in
       shares it; `UiHudSlot.piece` gone; the corner label over a rebuilt card (R137–R139).
-- [ ] `MailboxWiring` derived from `MailboxHudDeps`, no import from the slot module; `letterPanelState`
+- [x] `MailboxWiring` derived from `MailboxHudDeps`, no import from the slot module; `letterPanelState`
       beside the store (R140).
-- [ ] Every acceptance criterion of FS-WJGFJ, FS-J267Q, FS-KCQ06, FS-XGW7H, FS-5SH4G, FS-1GZGD R40 and
+- [x] Every acceptance criterion of FS-WJGFJ, FS-J267Q, FS-KCQ06, FS-XGW7H, FS-5SH4G, FS-1GZGD R40 and
       FS-WDM0X § Pass 2: the chat still holds; their tests pass, moved with the code where they tested a
       world.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's look and listening check (I-TQZ5J-55).
 
 ### Edge States (added)
@@ -2032,3 +2032,38 @@ notes recorded, the row's overlap settled by R123. Batch 4's R106 is built as R1
 the chat, C4's `overUi` and `coveredAt` read as the covered rule (FS-WDM0X § Amendment 2026-11-14).
 I-TQZ5J-32 and I-WDM0X-21 are the owner's checks (HITL): their `ready-for-agent` labels were wrong and
 are taken off.
+
+### As built (batch 6, 2026-11-14)
+
+Appended after the slices; the text above is not edited. Built in I-TQZ5J-50 (the row), I-TQZ5J-51 (the
+HUD's leftovers), I-TQZ5J-52 (the mailbox's), I-TQZ5J-53 (chat into the UI scene) and I-TQZ5J-54 (the
+chat's one sound per press); the owner's check is I-TQZ5J-55. No screenshots (the owner's rule).
+
+- **The row.** `resolvedRow.ts`: `buttonWidth`, `rowLefts` (layout B), `centredLefts` (the card), `ROW_GAP`
+  8, `ROW_BUTTON_PAD` 24, `ROW_BUTTON_H` 38; `rowSlotX` went. `hudCornerLayout.ts`: `leaveButtonPlace(width)`
+  in place of `LEAVE_BUTTON_PLACE`. The run measures each label as drawn (`buttonWidth`, a probe text in
+  `BUTTON_LABEL`: 13 px bold, letter-spaced 1) and sizes its face and hit area to it. The pinned numbers
+  are R123's; the sweep over 1080–1280 with every set of buttons is in `resolvedRow.test.ts`, and the
+  hover pin (R136) in `ChatWindow.test.ts`. The run's tests stand in an 800-wide view, so there the row
+  starts at 442 for every set.
+- **Chat.** `uiSceneChat.ts` (`UiChatSlot`, `chatWiring`, `ChatPiece`, `ChatWiring`), `chatPiece.ts`
+  (`mountChat`: the store, the DOM field, the socket, the self id), the UI scene's `mountChatSlot`. The
+  bridge: `UiState.typing`, `WorldBlockers.chat`, `reportWorld`'s `typingGuard`; `WorldLayout` and
+  `layout()` went. `ChatWindow`: its grounds (`makeGround`, the panel's made first, the list's at 1001),
+  `freeUnder(currentlyOver)` and `mine` (a `WeakSet` of every interactive object it made, so a tab
+  destroyed by its own press is still its own), `keepsField` (was `covers`), `sync()` (was
+  `cancelInput`), `typing`. `partyPromptWiring(bridge, floor)`; `UIScene.letGo` asks the chat too. The
+  worlds: no `ChatWindow`, `mayChat`, `panelTakes`, `layout`; their M guards and the run's map mode icon
+  read `ui.typing`; the town's and the run's `blockers().chat`.
+- **The leftovers.** `HudMessage` carries `world`; `hearHud` is the one wiring of `mountHud` and the
+  stand-in; `mountHud(scene, bridge, build)`; `UiHudSlot.piece` went; `cornerLabel.ts` at 1001.
+  `MailboxWiring` is `Required<Omit<MailboxHudDeps, "store" | "art">>` in `mailboxHud.ts`;
+  `stores/letterPanelState.ts`. `ChatInput.closePicker()` and `dismissPicker()`.
+- **Two git-ignored harnesses** (`game-client/tmp/end-row/entry.ts`, `tmp/ui-scene-corner/party-after.ts`)
+  kept compiling under `tsc --noEmit`: the first keeps its own copies of `rowSlotX` and the 200-wide leave
+  place for its "today" layout, the second drops `layout()`.
+- **Looks a player can see** (the owner's check): the row's, the card's and the corner's words, type and
+  widths (R120–R124); the row's place; the corner label at 1001 (seen only where a rebuilt card met it);
+  under the chat window nothing of the world lights or tips any more (R133). Nothing else is drawn in a
+  new order: no world piece drew over the window before but the row, which no longer meets it.
+

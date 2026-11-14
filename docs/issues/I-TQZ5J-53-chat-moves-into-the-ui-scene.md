@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-53
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-50, I-TQZ5J-52]
 labels: [ready-for-agent]
@@ -18,12 +18,12 @@ worlds lose their windows, `panelTakes`, `layout()`; `coveredAt`, `overUi`, `Mai
 
 ## Acceptance Criteria
 
-- [ ] No world imports `ChatWindow`; the slot builds it per world and takes it down as it leaves (R125).
-- [ ] `mayOpen`/`keepsDraft` as each world's old rule (R126); `typing` reported; world keyboard off and
+- [x] No world imports `ChatWindow`; the slot builds it per world and takes it down as it leaves (R125).
+- [x] `mayOpen`/`keepsDraft` as each world's old rule (R126); `typing` reported; world keyboard off and
       back, the run's end order (R127, R128).
-- [ ] Grounds; the covered rule for press, move, release, wheel and hover; the record's wheel (R129, R130).
-- [ ] `keepsField`; the invite floor (R131, R132).
-- [ ] The chat's own tests pass as moved; full vitest, tsc, lint, lint:fence.
+- [x] Grounds; the covered rule for press, move, release, wheel and hover; the record's wheel (R129, R130).
+- [x] `keepsField`; the invite floor (R131, R132).
+- [x] The chat's own tests pass as moved; full vitest, tsc, lint, lint:fence.
 
 ## Blocked By
 

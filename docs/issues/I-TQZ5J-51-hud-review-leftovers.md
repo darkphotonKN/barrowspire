@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-51
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: []
 labels: [ready-for-agent]
@@ -16,10 +16,10 @@ builder and shares `hearHud` with the stand-in, which reads what it built from i
 
 ## Acceptance Criteria
 
-- [ ] A late message from a world that has left draws nothing (R137).
-- [ ] `mountHud`'s relayout and end through its real wiring (R138); the stand-in shares the wiring.
-- [ ] The corner label stands over a card rebuilt down → up (R139).
-- [ ] Full vitest, tsc, lint, lint:fence.
+- [x] A late message from a world that has left draws nothing (R137).
+- [x] `mountHud`'s relayout and end through its real wiring (R138); the stand-in shares the wiring.
+- [x] The corner label stands over a card rebuilt down → up (R139).
+- [x] Full vitest, tsc, lint, lint:fence.
 
 ## Blocked By
 

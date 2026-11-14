@@ -1,9 +1,9 @@
 ---
 id: I-TQZ5J-54
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-53]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J batch 6, slice 5: the chat's sounds in the UI scene: one per press (MED1), two shut calls"
 ---
 Implements FS-TQZ5J §Change: Batch 6: the end row and the chat (R135; FS-WDM0X § Amendment 2026-11-14)
@@ -15,9 +15,9 @@ A tab press with the list open plays `menu_tab` alone; `ChatInput.closePicker(by
 
 ## Acceptance Criteria
 
-- [ ] A tab press with the list open: `["menu_tab"]`, the list shut (R135).
-- [ ] Every other C1–C5 test holds.
-- [ ] Full vitest, tsc, lint, lint:fence.
+- [x] A tab press with the list open: `["menu_tab"]`, the list shut (R135).
+- [x] Every other C1–C5 test holds.
+- [x] Full vitest, tsc, lint, lint:fence.
 
 ## Blocked By
 

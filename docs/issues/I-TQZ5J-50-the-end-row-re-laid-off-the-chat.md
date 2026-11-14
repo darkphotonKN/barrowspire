@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-50
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: []
 labels: [ready-for-agent]
@@ -18,12 +18,12 @@ card 8 apart; the corner LEAVE keeps its right edge.
 
 ## Acceptance Criteria
 
-- [ ] The labels, type and widths (R120–R122), one button rule for row, card and corner.
-- [ ] The row's placements at 1080 and 1280 for every set of buttons (R123), whole px.
-- [ ] A test: at every logical width 1080–1280, with 1, 2 or 3 buttons, the row meets neither the open
+- [x] The labels, type and widths (R120–R122), one button rule for row, card and corner.
+- [x] The row's placements at 1080 and 1280 for every set of buttons (R123), whole px.
+- [x] A test: at every logical width 1080–1280, with 1, 2 or 3 buttons, the row meets neither the open
       chat window nor its open list (R123, R136).
-- [ ] The card and the corner keep their places; `recordAnchor` unchanged (R124).
-- [ ] Full vitest, tsc, lint, lint:fence.
+- [x] The card and the corner keep their places; `recordAnchor` unchanged (R124).
+- [x] Full vitest, tsc, lint, lint:fence.
 
 ## Blocked By
 

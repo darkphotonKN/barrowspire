@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-52
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: []
 labels: [ready-for-agent]
@@ -16,9 +16,9 @@ Implements FS-TQZ5J §Change: Batch 6: the end row and the chat (R140)
 
 ## Acceptance Criteria
 
-- [ ] No import of `uiSceneMailbox` in `mailboxHud.ts` (pinned by test); the wiring type derived.
-- [ ] `letterPanelState` beside the store; the town reads it from there.
-- [ ] Full vitest, tsc, lint, lint:fence.
+- [x] No import of `uiSceneMailbox` in `mailboxHud.ts` (pinned by test); the wiring type derived.
+- [x] `letterPanelState` beside the store; the town reads it from there.
+- [x] Full vitest, tsc, lint, lint:fence.
 
 ## Blocked By
 
