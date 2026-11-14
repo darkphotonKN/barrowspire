@@ -13,6 +13,11 @@ export interface Rect {
   height: number;
 }
 
+/** Whether two rects share any area: edges that only touch do not meet (FS-84N1G R20). */
+export function rectsMeet(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+}
+
 /** What a focused element is, as far as the T rule cares. */
 export interface FocusedElement {
   tagName: string;

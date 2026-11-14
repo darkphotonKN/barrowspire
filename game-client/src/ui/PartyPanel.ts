@@ -69,12 +69,13 @@ export interface PartyPanelDeps {
    */
   blocked: () => boolean;
   /**
-   * Whether a UI piece drawn over the open panel covers its invite field: the run's controls panel
-   * (FS-TQZ5J § Change: Phase 3). The field is a DOM element above the canvas, so it hides meanwhile
+   * Whether a UI piece drawn over the open panel covers its invite field, handed the field's rect
+   * (logical units): the run's controls panel or the settlement record where it meets it (FS-TQZ5J §
+   * Change: Phase 3; FS-84N1G R20). The field is a DOM element above the canvas, so it hides meanwhile
    * (its hide blurs it) and shows again uncovered, its text kept, taking no focus back. The panel and
    * T are not refused by it. None, never covered.
    */
-  covered?: () => boolean;
+  covered?: (field: Rect) => boolean;
   /** Closes what gives way to the panel, just before it opens: the town's letter panel (§ Change C9). */
   opening?: () => void;
   /**
@@ -389,7 +390,8 @@ export class PartyPanel {
       this.draw();
     }
     if (!this.field) return;
-    if (this.isOpen() && !this.deps.blocked() && !this.deps.covered?.()) this.field.show();
+    const covered = !!this.frame && !!this.deps.covered?.(this.frame.inviteField);
+    if (this.isOpen() && !this.deps.blocked() && !covered) this.field.show();
     else this.field.hide();
   }
 

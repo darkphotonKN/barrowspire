@@ -5172,10 +5172,14 @@ export class BarrowspireScene extends Phaser.Scene {
    * card, a Watch the delve button in the bottom-centre row, in the HUD band. The camera stays on
    * their own (hidden) body until it is pressed (req 4). As it is first offered, the moved windows
    * step aside, silently, so their grounds take no press meant for WATCH or LEAVE, as at the end's
-   * popup (FS-TQZ5J § Change: Phase 3, R58); the party panel and `dialog_open` wait for the end itself.
+   * popup (FS-TQZ5J § Change: Phase 3, R58), and the party panel, shut in the party store as R47 shuts it
+   * at the end, outside any player action, so silently (FS-84N1G R21); `dialog_open` waits for the end.
    */
   private offerWatch(): void {
-    if (this.resolvedKind !== "escaped") this.ui.endPopped();
+    if (this.resolvedKind !== "escaped") {
+      usePartyStore.getState().closePanel();
+      this.ui.endPopped();
+    }
     this.resolvedKind = "escaped";
     this.canWatch = true;
     this.syncRow();

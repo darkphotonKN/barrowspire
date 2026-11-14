@@ -167,7 +167,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     panel: partyMakers.get(scene)?.(partyPanelWiring(bridge)) ?? NO_PANEL,
   }));
   const gear = new UiGearSlot(bridge, (w, wiring) => gearMakers.get(scene)?.(w, wiring) ?? { gear: NO_GEAR });
-  const controls = new UiControlsSlot(bridge, () => ({ relayout: () => {}, destroy: () => {} }));
+  const controls = new UiControlsSlot(bridge, () => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }));
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
   const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));
   // as the UI scene's: the run's end clears the gear, the container view and the controls panel (R58)

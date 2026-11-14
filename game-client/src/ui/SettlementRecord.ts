@@ -101,6 +101,8 @@ export class SettlementRecord {
   private panel?: Phaser.GameObjects.Container;
   private statusText?: Text;
   private hits: Phaser.GameObjects.Rectangle[] = [];
+  /** Where the open record stands, logical units; none while it is down. */
+  private drawnRect: { x: number; y: number; width: number; height: number } | null = null;
   /** The view the open panel was built for, but for its status. */
   private drawnBody?: string;
   private area?: ScrollArea;
@@ -163,6 +165,7 @@ export class SettlementRecord {
     this.statusText = undefined;
     this.hits.forEach((hit) => hit.destroy());
     this.hits = [];
+    this.drawnRect = null;
     // the Layer (and its texts) before the shape that masks it
     this.area?.layer.destroy();
     this.area?.shape.destroy();
@@ -174,6 +177,11 @@ export class SettlementRecord {
 
   isOpen(): boolean {
     return this.panel !== undefined;
+  }
+
+  /** Where it stands while open, logical units; none while down (FS-84N1G R20: what it covers). */
+  rect(): { x: number; y: number; width: number; height: number } | null {
+    return this.drawnRect;
   }
 
   hasContent(): boolean {
@@ -201,6 +209,7 @@ export class SettlementRecord {
     const height = FIXED_H + areaHeight;
     const left = this.anchor.x - RECORD_W / 2;
     const top = Math.max(TOP_MARGIN, this.anchor.bottom - height);
+    this.drawnRect = { x: this.anchor.x - RECORD_W / 2, y: top, width: RECORD_W, height };
 
     // the windows' one title, in capitals, no longer the blackletter (FS-3EBCA R20, R22)
     parts.push(

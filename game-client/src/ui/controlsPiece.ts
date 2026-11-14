@@ -53,6 +53,7 @@ export function mountControlsPiece(scene: Phaser.Scene, onClose: () => void): Co
       takeDown();
       stood = stand();
     },
+    rect: () => controlsPanelRect(centre(), rows),
     destroy: () => {
       container.destroy();
       takeDown();

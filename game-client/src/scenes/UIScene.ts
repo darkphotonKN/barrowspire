@@ -11,6 +11,7 @@ import { showMenuPanel } from "@/ui/menuPanel";
 import { showDialogueCard } from "@/ui/npcDialogue";
 import { openOptionsPanel } from "@/ui/optionsPanel";
 import { mountPartyPanel } from "@/ui/PartyPanel";
+import { rectsMeet, type Rect } from "@/ui/partyPanelLayout";
 import { mountPartyInvitePrompt } from "@/ui/PartyInvitePrompt";
 import { mountPartyReadyCheck } from "@/ui/PartyReadyCheck";
 import { mountPartyFrames } from "@/ui/PartyFrames";
@@ -431,8 +432,10 @@ export class UIScene extends Phaser.Scene {
     const prompts = partyPromptWiring(bridge);
     // the party's sounds on the game's one player (FS-WDM0X § Change pass 2 (party))
     const { play } = wiring;
-    // the run's controls panel, drawn over the party panel (R62), covers its DOM invite field
-    const panel = mountPartyPanel(this, { ...wiring, covered: () => this.controls?.isOpen() ?? false });
+    // a window drawn over the party panel covers its DOM invite field where they meet: the run's controls
+    // panel (1200) and the settlement record (1600) (R62; FS-84N1G R20)
+    const covered = (field: Rect) => [this.controls?.rect(), this.record?.rect()].some((over) => !!over && rectsMeet(over, field));
+    const panel = mountPartyPanel(this, { ...wiring, covered });
     const prompt = mountPartyInvitePrompt(this, prompts.hidden, prompts.floor, play);
     const popups = world === "hub" ? [prompt, mountPartyReadyCheck(this, prompts.hidden, play)] : [prompt];
     const art = { resolve: (sheet: string, query?: FrameQuery) => this.residentArt().resolve(sheet, query) };

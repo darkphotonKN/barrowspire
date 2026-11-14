@@ -19,6 +19,7 @@
 
 import type { ShownRecord, UiBridge, World, WorldReport } from "./uiBridge";
 import type { RecordView } from "./settlement";
+import type { Rect } from "./partyPanelLayout";
 
 /** The record as the UI scene keeps it. `SettlementRecord` is one. */
 export interface RecordPiece {
@@ -27,6 +28,8 @@ export interface RecordPiece {
   /** Down, its hit areas with it. */
   close(): void;
   relayout(anchor: { x: number; bottom: number }): void;
+  /** Where it stands while open; none while down. */
+  rect(): Rect | null;
 }
 
 /** Builds the record at `anchor`, its Close and its Close's hover handed in. */
@@ -81,6 +84,11 @@ export class UiRecordSlot {
     return this.record !== null && this.up;
   }
 
+  /** Where the record stands while it is up; none while it is down or gone (FS-84N1G R20). */
+  rect(): Rect | null {
+    return this.isOpen() ? (this.record?.rect() ?? null) : null;
+  }
+
   /** The logical view changed: the record at its new place, its content and state untouched (FS-ZAJMH R13). */
   relayout(): void {
     this.record?.relayout(this.anchor());
@@ -102,6 +110,8 @@ export class UiRecordSlot {
 export interface ControlsPiece {
   /** The logical view changed: back to the centre, rasterised again. */
   relayout(): void;
+  /** Where it stands now. */
+  rect(): Rect;
   destroy(): void;
 }
 
@@ -128,6 +138,11 @@ export class UiControlsSlot {
 
   isOpen(): boolean {
     return this.panel !== null;
+  }
+
+  /** Where the open panel stands; none while shut (FS-84N1G R20). */
+  rect(): Rect | null {
+    return this.panel?.rect() ?? null;
   }
 
   /**

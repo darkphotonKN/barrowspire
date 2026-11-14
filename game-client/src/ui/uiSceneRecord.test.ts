@@ -232,7 +232,7 @@ describe("the controls panel's close rules (FS-84N1G R16, R18)", () => {
     const bridge = new GameUiBridge();
     const played: string[] = [];
     bridge.lendSounds({ act: (run) => run(), play: (effect) => void played.push(effect) });
-    const slot = new UiControlsSlot(bridge, (): ControlsPiece => ({ relayout: () => {}, destroy: () => {} }));
+    const slot = new UiControlsSlot(bridge, (): ControlsPiece => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }));
     const w = aWorld("run");
     bridge.report(w.report);
     slot.world(w.report);
@@ -278,7 +278,7 @@ describe("the controls panel opening as the run begins (FS-84N1G R2)", () => {
     const bridge = new GameUiBridge();
     const played: string[] = [];
     bridge.lendSounds({ act: (run) => run(), play: (effect) => void played.push(effect) });
-    const slot = new UiControlsSlot(bridge, (): ControlsPiece => ({ relayout: () => {}, destroy: () => {} }));
+    const slot = new UiControlsSlot(bridge, (): ControlsPiece => ({ relayout: () => {}, destroy: () => {}, rect: () => ({ x: 0, y: 0, width: 0, height: 0 }) }));
     const w = aWorld("run");
     bridge.report(w.report);
     slot.world(w.report);
