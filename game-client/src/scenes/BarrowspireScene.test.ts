@@ -10470,6 +10470,55 @@ describe("BarrowspireScene arrival card (FS-PQ2TW §A–§C; I-PQ2TW-3)", () => 
     expect(titles()).toEqual(["The First Floor"]);
   });
 
+  // FS-84N1G R1 (the owner: 「操作說明面板 進入塔的時候會出現」): the run's one fact that it began, sent once a
+  // start, on an arrival whose first floor is floor 1, once the floor's card has gone
+  describe("the run begun (FS-84N1G R1)", () => {
+    type Begun = ArrivingRun & { ui: object; sayRunBegun(): void };
+    function telling(arrival: boolean) {
+      const started = startedAs(arrival);
+      const run = started.run as unknown as Begun;
+      const told: string[] = [];
+      run.ui = { ...NO_UI, runBegun: () => void told.push("runBegun") };
+      const cardGone = () => (started.run.arrivalCard.parts = []);
+      return { run, told, cardGone };
+    }
+
+    it("should say it once the arrival's card has gone, and once only", () => {
+      const { run, told, cardGone } = telling(true);
+      run.handleGameStateUpdate(floorState(1));
+      run.sayRunBegun();
+      expect(told).toEqual([]);
+      cardGone();
+      run.sayRunBegun();
+      run.handleGameStateUpdate(floorState(1));
+      run.sayRunBegun();
+      expect(told).toEqual(["runBegun"]);
+    });
+
+    it("should not say it on a return to floor 1, an arrival on a later floor, or a climb", () => {
+      const back = telling(false);
+      back.run.handleGameStateUpdate(floorState(1));
+      back.cardGone();
+      back.run.sayRunBegun();
+      expect(back.told).toEqual([]);
+
+      const later = telling(true);
+      later.run.handleGameStateUpdate(floorState(2));
+      later.cardGone();
+      later.run.sayRunBegun();
+      expect(later.told).toEqual([]);
+
+      const climb = telling(true);
+      climb.run.handleGameStateUpdate(floorState(1));
+      climb.cardGone();
+      climb.run.sayRunBegun();
+      climb.run.handleGameStateUpdate(floorState(2));
+      climb.cardGone();
+      climb.run.sayRunBegun();
+      expect(climb.told).toEqual(["runBegun"]);
+    });
+  });
+
   it("should give an arrival that lands above floor 1 that floor's climb card (R22)", () => {
     const { run, words } = startedAs(true);
 

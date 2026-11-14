@@ -1403,6 +1403,16 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     expect(menu.played.slice(-1)).toEqual(["settings_open"]);
   });
 
+  // FS-84N1G R2: the run began, told through the bridge: the panel opens, silently
+  it("should open the controls panel as the run says it began, with no sound", () => {
+    const { scene, played, controls } = created();
+    const bridge = (scene as unknown as { bridge(): { runBegun(): void } }).bridge();
+    bridge.runBegun();
+    scene.update();
+    expect(controls().isOpen()).toBe(true);
+    expect(played).toEqual([]);
+  });
+
   it("should leave it open over the inventory it opened over", () => {
     const { scene, keyboard, controls } = created();
     keyboard.emit("keydown-I");

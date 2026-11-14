@@ -49,6 +49,7 @@ function recording(): UiBridge & { heard: string[] } {
     container: (message) => void heard.push(`container ${message.kind}`),
     record: (shown) => void heard.push(`record ${shown ? "shown" : "none"}`),
     endPopped: () => void heard.push("endPopped"),
+    runBegun: () => void heard.push("runBegun"),
     onScreen: () => () => {},
   };
 }
@@ -618,6 +619,18 @@ describe("the gear's, the container's and the record's data, told to the UI scen
       ["record", null],
       ["endPopped"],
     ]);
+  });
+
+  // FS-84N1G R1: the run's one fact that it began, plain, no data
+  it("should tell each screen listener the run began, and a world lent no bridge nothing", () => {
+    const bridge = new GameUiBridge();
+    const told: string[] = [];
+    bridge.onScreen({ runBegun: () => void told.push("runBegun") });
+    bridge.onScreen({ notice: () => {} });
+    const ui = reportWorld({ registry: registryWith(bridge), events: new EventEmitter() }, "run", side());
+    ui.runBegun();
+    expect(told).toEqual(["runBegun"]);
+    expect(() => NO_UI.runBegun()).not.toThrow();
   });
 
   it("should hand a world lent no bridge calls that draw nothing", () => {
