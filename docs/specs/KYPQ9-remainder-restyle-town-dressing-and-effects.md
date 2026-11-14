@@ -680,3 +680,14 @@ P10. **One writer.** The canvas's default cursor is set in one place, the game's
 - The cursor on the DOM pages outside the canvas.
 - GameOverScene, which is not registered.
 - The browser's arrow during Boot and Preload.
+
+### As built (2026-11-14)
+
+- **Review fixes (2026-11-14, review of b1ddcbb5..46f046bf).** The text above is not edited; in it,
+  "the look" is the **pointer look** (game-client `CONTEXT.md`), not a shimmer's look. The lifecycle
+  tests count the listeners (one set across two asks, all taken off on the destroy); the run's stop
+  sets the base back to the hand, as the field's does; `scenePointerLook(scene, art?)` is split into
+  `ensurePointerLook(scene, art)` and `findPointerLook(scene)`; the registry check is a
+  registered-symbol brand, so a Fast Refresh swap reuses the game's pointer look; the one-writer
+  guard reads all of `src/` (components/ and app/ included) and also rejects `defaultCursor =` and
+  `canvas.style.cursor =` writes outside `pointerLook.ts`.
