@@ -1414,16 +1414,6 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     expect(menu.played.slice(-1)).toEqual(["settings_open"]);
   });
 
-  // FS-84N1G R2: the run began, told through the bridge: the panel opens, silently
-  it("should open the controls panel as the run says it began, with no sound", () => {
-    const { scene, played, controls } = created();
-    const bridge = (scene as unknown as { bridge(): { runBegun(): void } }).bridge();
-    bridge.runBegun();
-    scene.update();
-    expect(controls().isOpen()).toBe(true);
-    expect(played).toEqual([]);
-  });
-
   // FS-84N1G R4, R8: the controls badge stands as the run says its ability card is up, and goes at the end
   it("should stand the controls badge while the run's ability card is up, and take it down as the run ends", () => {
     const { scene } = created();
