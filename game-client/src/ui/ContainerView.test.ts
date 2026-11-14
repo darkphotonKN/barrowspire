@@ -571,6 +571,22 @@ describe("ContainerView faces (FS-1D6BX §Requirements 15, 16, D8, D9)", () => {
     expect(view.owns(undefined)).toBe(false);
   });
 
+  // the review of phase 3 (LOW-2): the root stays visible through the close's fade, so its ground would
+  // take a press there for some 320 ms; it stops taking presses the moment the view starts to close, so
+  // a press then goes where it did before (an attack), and takes them again as it next opens
+  it.each(kinds)("should stop its ground taking presses as a %s's view starts to close, and take them again on the next open", (kind) => {
+    const { view, calls } = opened(kind);
+    expect(calls.some((c) => c.name === "disableInteractive")).toBe(false);
+    calls.length = 0;
+
+    view.close();
+    expect(calls.some((c) => c.name === "disableInteractive")).toBe(true);
+
+    calls.length = 0;
+    view.open("c2", kind);
+    expect(calls.some((c) => c.name === "setInteractive")).toBe(true);
+  });
+
   it("should let go of everything it drew on destroy, its tweens first", () => {
     const rec = recordingScene();
     const view = new ContainerView(rec.scene, rec.art, { onLoot: vi.fn() });
