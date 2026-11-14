@@ -30,6 +30,7 @@ import type { CharacterSource } from "./characterSheet";
 import type { SeenState } from "./partyFramesLayout";
 import type { RecordView } from "./settlement";
 import type { HudMessage } from "./uiSceneHud";
+import type { LoreMessage } from "./uiSceneLore";
 import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
 import { typingGuard, type SceneKeyboard } from "./worldKeyboard";
 
@@ -179,7 +180,12 @@ export type UiRequest =
   /** The container view took an item: the world sends its loot, and says `gear: taken` if it did (R54). */
   | { readonly kind: "take"; readonly item: ItemState }
   /** The run's Burn tome? confirm said Burn: the world sends the one interact for the altar (FS-3103M R25). */
-  | { readonly kind: "burn"; readonly altar: string };
+  | { readonly kind: "burn"; readonly altar: string }
+  /**
+   * A dread lore line started on the UI scene: the world's camera trembles, as it did when the run drew
+   * the line (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14).
+   */
+  | { readonly kind: "tremor"; readonly durationMs: number; readonly intensity: number };
 
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
@@ -231,6 +237,7 @@ export type WorldAnswers = {
   readonly unequip?: (item: string) => void;
   readonly take?: (item: ItemState) => void;
   readonly burn?: (altar: string) => void;
+  readonly tremor?: (durationMs: number, intensity: number) => void;
 };
 
 /** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
@@ -250,6 +257,8 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
         return answers.take?.(request.item);
       case "burn":
         return answers.burn?.(request.altar);
+      case "tremor":
+        return answers.tremor?.(request.durationMs, request.intensity);
       default:
         return answers[request.kind]?.();
     }
@@ -327,6 +336,8 @@ export interface UiScreen {
   hud?(message: HudMessage): void;
   /** The run's E at the altar with the tome carried: the menu slot asks Burn tome? (FS-3103M R25). */
   confirmBurn?(altar: string): void;
+  /** A lore line the run says, or its floor change's clear (FS-XWHZP; § Change: Merge with main, 2026-11-14). */
+  lore?(message: LoreMessage): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -437,6 +448,11 @@ export interface UiBridge extends UiActWrapper {
    * asks Burn tome? for the altar, by its entity id, and has when this returns.
    */
   confirmBurn(altar: string): void;
+  /**
+   * The run says a lore line, or clears them on a floor change (FS-XWHZP; FS-TQZ5J § Change: Merge with
+   * main, the owner's 2026-11-14 call): the UI scene's lines have it when this returns.
+   */
+  lore(message: LoreMessage): void;
 }
 
 /**
@@ -462,6 +478,7 @@ export type WorldUi = Pick<
   | "abilityCard"
   | "hud"
   | "confirmBurn"
+  | "lore"
 > & {
   /** An interface effect a world's input plays (FS-WDM0X S7); its gameplay effects are its own player's. */
   play(effect: UiEffect): void;
@@ -486,6 +503,7 @@ export const NO_UI: WorldUi = {
   abilityCard: () => {},
   hud: () => {},
   confirmBurn: () => {},
+  lore: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -621,6 +639,10 @@ export class GameUiBridge implements UiBridge {
 
   confirmBurn(altar: string): void {
     for (const screen of [...this.screens]) screen.confirmBurn?.(altar);
+  }
+
+  lore(message: LoreMessage): void {
+    for (const screen of [...this.screens]) screen.lore?.(message);
   }
 
   onScreen(screen: UiScreen): () => void {

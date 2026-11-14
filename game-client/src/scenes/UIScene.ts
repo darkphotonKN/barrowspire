@@ -40,6 +40,9 @@ import { mountMailbox } from "@/ui/mailboxHud";
 import { hudPieces, mountHud } from "@/ui/hudPieces";
 import { UiChatSlot } from "@/ui/uiSceneChat";
 import { mountChat } from "@/ui/chatPiece";
+import { LoreLines } from "@/ui/loreLine";
+import { mountLore } from "@/ui/uiSceneLore";
+import { LoreDust } from "@/render/effects/loreDust";
 import { onSceneEnd } from "./sceneEnd";
 
 /**
@@ -145,6 +148,7 @@ export class UIScene extends Phaser.Scene {
     this.mountChatSlot(bridge);
     // the ability card, the potion cell and the bars, drawn from what each world hands (§ Change: Batch 5, R67)
     mountHud(this, bridge, hudPieces(this, () => this.residentArt()));
+    this.mountLoreSlot(bridge);
     this.mountKeys();
     this.mountPointer(bridge);
   }
@@ -494,6 +498,20 @@ export class UIScene extends Phaser.Scene {
       chat.destroy();
       this.chat = undefined;
     });
+  }
+
+  /**
+   * The run's lore lines (FS-XWHZP; FS-TQZ5J § Change: Merge with main, the owner's 2026-11-14 call
+   * 「蓋在面板上方」): drawn here from what the run says, at their own depth (1990), so over every panel
+   * this scene holds and under its menu, dialogue and notices (2000) and its tips (2200). The queue, the
+   * timing, the dust (cut from the resident art) and the relayout are this scene's; a dread line's tremor
+   * is the world's camera's, asked for through the bridge, as the run's camera shook before (R10).
+   */
+  private mountLoreSlot(bridge: UiBridge): void {
+    const lines = new LoreLines(this, new LoreDust(this, () => this.residentArt()), {
+      tremor: (durationMs, intensity) => bridge.request({ kind: "tremor", durationMs, intensity }),
+    });
+    mountLore(this, bridge, lines);
   }
 
   /**

@@ -91,6 +91,7 @@ describe("the UI scene's lore slot (FS-XWHZP; FS-TQZ5J § Change: Merge with mai
   it("should stand the line at its place in a new view, and stop hearing the bridge on its stop", () => {
     const { bridge, slot, report, heard, stop } = onLore();
     report("run");
+    heard.length = 0;
     slot.relayout();
     expect(heard).toEqual(["relayout"]);
 

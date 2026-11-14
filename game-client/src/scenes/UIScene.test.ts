@@ -1906,7 +1906,8 @@ describe("the UI scene's lore lines (FS-XWHZP; FS-TQZ5J § Change: Merge with ma
     ({ world: "run", kind: "say", line: { text, tone } }) as const;
 
   it("should draw a line the run says on the UI scene, over every panel and under the menu and the notices", async () => {
-    const { PARTY_PANEL_DEPTH } = await import("@/ui/PartyPanel");
+    // the party panel is a stand-in here: its depth is the real module's
+    const { PARTY_PANEL_DEPTH } = await vi.importActual<typeof import("@/ui/PartyPanel")>("@/ui/PartyPanel");
     const { GEAR_OVERLAY_DEPTH } = await import("@/ui/GearOverlay");
     const { CONTROLS_PANEL_DEPTH } = await import("@/ui/controlsPanel");
     const { RECORD_DEPTH } = await import("@/ui/SettlementRecord");

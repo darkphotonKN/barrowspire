@@ -36,9 +36,8 @@ import {
   type NoticeTone,
 } from "@/ui/floor";
 import { placeCard } from "@/ui/placeCard";
-import { LoreLines } from "@/ui/loreLine";
+import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
-import { LoreDust } from "@/render/effects/loreDust";
 import {
   nextWatched,
   resolved,
@@ -1012,12 +1011,6 @@ export class BarrowspireScene extends Phaser.Scene {
    * ash (FS-PQ2TW §Change: Ash R53). It lets its own card go at a scene end.
    */
   private readonly arrivalCard = new ArrivalCard(this, cardLeaves(this, () => this.art));
-  /**
-   * The world speaking inside the Spire (FS-XWHZP): every Spire world message is a lore line,
-   * written by `loreCopy.ts`; interface messages stay HUD notices (R20). It lets its own lines go
-   * at a scene end; a floor change takes them down (R15).
-   */
-  private readonly loreLines = new LoreLines(this, new LoreDust(this, () => this.art));
 
   constructor() {
     super({ key: "BarrowspireScene" });
@@ -3289,6 +3282,9 @@ export class BarrowspireScene extends Phaser.Scene {
         unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
         // Burn tome?'s Burn: the one interact for the altar (FS-3103M R25)
         burn: (altar) => socketManager.sendMessage(ActionType.Interact, { entity_id: altar }),
+        // a dread lore line started on the UI scene: this camera trembles, as it did under the run's own
+        // lines (FS-XWHZP R10; FS-TQZ5J § Change: Merge with main, 2026-11-14)
+        tremor: (durationMs, intensity) => tremble(this.cameras.main, durationMs, intensity),
         // a take from the open satchel: the view has hidden it and marked its loot pending; tell the
         // server, and hold it in the bag optimistically; it sounds as it is sent (FS-AND39 R7); a full
         // bag's take never reaches here
@@ -3351,10 +3347,19 @@ export class BarrowspireScene extends Phaser.Scene {
    * and the level bar is the UI scene's (FS-77DVN §A.4); the gear overlay follows Phaser's resize itself; a passing notice
    * is gone in moments and stays where it was said.
    */
+  /**
+   * The world speaking inside the Spire (FS-XWHZP): every Spire world message is a lore line, written by
+   * `loreCopy.ts`; interface messages stay HUD notices (R20). Said through the UI bridge as plain data and
+   * drawn by the UI scene over its panels (FS-TQZ5J § Change: Merge with main, the owner's 2026-11-14
+   * call); they go as this world leaves, and a floor change takes them down (R15).
+   */
+  private sayLore(line: LoreLine): void {
+    this.ui.lore({ world: "run", kind: "say", line });
+  }
+
   private relayoutHud(): void {
     this.placeTopRightColumn();
     this.arrivalCard.relayout();
-    this.loreLines.relayout();
     this.targetFrame?.relayout();
     // the text moved above, rasterised at the render scale of now (FS-ZAJMH R5)
     crispen([
@@ -3641,7 +3646,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // The exit door unlocked: the switch's own line, in the client's words (FS-XWHZP R16, R19);
     // the switch's broadcast flip says the same, and the lines show it once (R14)
-    const doorUnlocked = () => this.loreLines.say(loreForEvent({ kind: "exit_door_unlocked" }));
+    const doorUnlocked = () => this.sayLore(loreForEvent({ kind: "exit_door_unlocked" }));
     socketManager.on("exit_door_unlocked", doorUnlocked);
 
     // Listen for interact responses (success/error messages)
@@ -3652,7 +3657,7 @@ export class BarrowspireScene extends Phaser.Scene {
       if (!payload.success && (payload.reason || payload.message)) this.chestRefused();
       // the world's reply as a lore line, in the client's words where it has a reason (FS-XWHZP R16-R18)
       const line = loreForReply(payload);
-      if (line) this.loreLines.say(line);
+      if (line) this.sayLore(line);
     });
 
     // A refused equip (FS-BDA7X req 32, 45): the server's words, as a refusal. The next state puts
@@ -4315,7 +4320,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
     // the old floor's lore lines go with it; the floor card speaks for the new one (FS-XWHZP R15)
-    this.loreLines.clear();
+    this.ui.lore({ world: "run", kind: "clear" });
     // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights
     // with it (§H.45)
     this.builtFloor = undefined;
@@ -5584,7 +5589,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // Fall comes back on the confirm (FS-TQZ5J R9)
     this.ui.changed();
     if (this.runEnded) return;
-    this.loreLines.say(loreForFall(info.message));
+    this.sayLore(loreForFall(info.message));
   }
 
   /**
@@ -5686,12 +5691,12 @@ export class BarrowspireScene extends Phaser.Scene {
     const switchData = state.switches?.[0];
     if (switchData) {
       const thrown = switchData.is_activated === true;
-      if (turnedOn(this.previousSwitchActivated, thrown)) this.loreLines.say(loreForEvent({ kind: "switch_thrown" }));
+      if (turnedOn(this.previousSwitchActivated, thrown)) this.sayLore(loreForEvent({ kind: "switch_thrown" }));
       this.previousSwitchActivated = thrown;
     }
 
     const open = escapeDoor.is_open === true;
-    if (turnedOn(this.previousEscapeDoorOpened, open)) this.loreLines.say(loreForEvent({ kind: "door_opened" }));
+    if (turnedOn(this.previousEscapeDoorOpened, open)) this.sayLore(loreForEvent({ kind: "door_opened" }));
     this.previousEscapeDoorOpened = open;
   }
 
@@ -5701,7 +5706,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * the baseline.
    */
   private checkBurnHeard(state: ClientGameState): void {
-    if (burnHeard(this.previousAltar, state.altar)) this.loreLines.say(loreForEvent({ kind: "burn_heard" }));
+    if (burnHeard(this.previousAltar, state.altar)) this.sayLore(loreForEvent({ kind: "burn_heard" }));
     this.previousAltar = state.altar ? { burned: state.altar.burned } : undefined;
   }
 
@@ -5715,7 +5720,7 @@ export class BarrowspireScene extends Phaser.Scene {
     const { said, escaped } = newlyEscaped(this.escapedPlayers, players);
     this.escapedPlayers = said;
     for (const { id, name } of escaped)
-      this.loreLines.say(loreForEvent({ kind: "escaped", name, self: id === me?.id }));
+      this.sayLore(loreForEvent({ kind: "escaped", name, self: id === me?.id }));
   }
 
   destroy(): void {

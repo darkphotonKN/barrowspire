@@ -1047,10 +1047,12 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
 
   it("should raise no HUD notice for the switch or the door (FS-XWHZP R16)", () => {
     const { run, texts } = sceneOnStage();
+    const { said } = loreOf(run);
     run.handleGameStateUpdate(floorState(1));
     run.handleGameStateUpdate(floorState(1, { switchOn: true, doorOpen: true }));
     expect(texts().filter((t) => /unlocked|opened/i.test(String(t.content)))).toHaveLength(0);
-    expect(texts().filter((t) => t.content === "The seal breaks. Somewhere, a door gives.")).toHaveLength(1);
+    // the seal's lore line, said to the UI scene, which draws it (FS-TQZ5J § Change: Merge with main, 2026-11-14)
+    expect(said.mock.calls.filter(([line]) => line.text === "The seal breaks. Somewhere, a door gives.")).toHaveLength(1);
   });
 
   it("should build a floor joined mid-run directly, with no transition", () => {
@@ -6074,7 +6076,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   });
 
   it("should hand Fall back on a refusal and say why in passing", () => {
-    const { run, keys, press, pick, sentOf, option, labels } = menuOnStage();
+    const { run, keys, press, pick, sentOf, option } = menuOnStage();
     press(keys.esc);
     pick("fall");
     pick("fall-now");
@@ -6084,8 +6086,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     run.fallRefused({ message: "You are not in a delve." });
 
     expect(run.fallPending).toBe(false);
-    expect(labels()).toContain("You are not in a delve.");
-    // the barrow's refusal, as a lore line (FS-XWHZP R16)
+    // the barrow's refusal, as a lore line, which the UI scene draws (FS-XWHZP R16)
     expect(said).toHaveBeenCalledWith({ text: "You are not in a delve.", tone: "lore" });
     expect(option("fall-now")?.calls.slice(before)).not.toContain("destroy");
     pick("fall-now");
