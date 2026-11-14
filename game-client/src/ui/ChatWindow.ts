@@ -626,8 +626,10 @@ export class ChatWindow {
     }
     if (!input.pickerOpen()) return false;
     if (within(chatPickerList(this.frame).box, at.x, at.y)) return true;
-    // the player's press outside it shuts it (FS-WDM0X § Pass 2: the chat, C3)
-    input.closePicker(true);
+    // the player's press outside it shuts it (FS-WDM0X § Pass 2: the chat, C3); one on a tab plays the
+    // tab's sound alone, the list shut silently with it: one press, one sound (FS-TQZ5J § Change: Batch 6, R135)
+    if (this.tabAt(at.x, at.y) !== null) input.closePicker();
+    else input.dismissPicker();
     return false;
   }
 

@@ -223,15 +223,21 @@ export class ChatInput {
   }
 
   /**
-   * Shuts the list, the input left as it is: a press outside it, the view resized (FS-J267Q R4, R6).
-   * `byPlayer` (a press outside it, Esc in it) plays `menu_dropdown_close`; the game's shuts, and the
-   * field's keys shutting it as typing, play nothing (FS-WDM0X § Pass 2: the chat, C3).
+   * Shuts the list silently, the input left as it is: the game's shuts (the view resized, FS-J267Q R6),
+   * the field's keys shutting it as typing, and a press whose own sound is another's (a tab's, FS-TQZ5J
+   * § Change: Batch 6, R135) play nothing (FS-WDM0X § Pass 2: the chat, C3).
    */
-  closePicker(byPlayer = false): void {
+  closePicker(): void {
     if (!this.listOpen) return;
     this.listOpen = false;
-    if (byPlayer) this.deps.play?.("menu_dropdown_close");
     this.deps.changed?.();
+  }
+
+  /** The player shuts the list (a press outside it, Esc in it): `menu_dropdown_close`, once (C3). */
+  dismissPicker(): void {
+    if (!this.listOpen) return;
+    this.closePicker();
+    this.deps.play?.("menu_dropdown_close");
   }
 
   /**
@@ -371,7 +377,7 @@ export class ChatInput {
       return true;
     }
     if (key === "Escape") {
-      this.closePicker(true);
+      this.dismissPicker();
       return true;
     }
     return false;
