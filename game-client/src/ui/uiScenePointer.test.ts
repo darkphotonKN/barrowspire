@@ -23,14 +23,21 @@ function rules() {
   const cameras: InputCamera[] = [{ inputEnabled: true }];
   const down = { now: false };
   const heard: string[] = [];
+  /** What lies on a piece that is up by its place: the chat window's rect (§ Change: Batch 6, R129). */
+  const held = { at: (_pointer: object) => false };
+  const claimed: object[] = [];
   let letGo = 0;
-  const ui = new UiScenePointer({
+  const ui = new UiScenePointer<ReturnType<typeof pointerAt>>({
     cameras: () => cameras,
     anyDown: () => down.now,
-    world: { moved: (_pointer, onUi) => void heard.push(onUi ? "move over the UI" : "move off the UI") },
+    world: {
+      moved: (_pointer, onUi) => void heard.push(onUi ? "move over the UI" : "move off the UI"),
+      claimPress: (pointer) => void claimed.push(pointer),
+    },
+    holds: (pointer) => held.at(pointer),
     letGo: () => void letGo++,
   });
-  return { ui, cameras, down, heard, letGoes: () => letGo };
+  return { ui, cameras, down, heard, held, claimed, letGoes: () => letGo };
 }
 
 /** Something of the UI scene's under the pointer, as Phaser lists it. */
@@ -42,7 +49,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
     const { ui, cameras, down } = rules();
     down.now = true;
 
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
 
     expect(cameras.map((c) => c.inputEnabled)).toEqual([false]);
   });
@@ -51,7 +58,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
     const { ui, cameras, down } = rules();
     down.now = true;
 
-    ui.pressed(PIECE);
+    ui.pressed(pointerAt(), PIECE);
 
     expect(cameras.map((c) => c.inputEnabled)).toEqual([true]);
   });
@@ -59,7 +66,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should put them back as the release leaves no button down, over the row or off the canvas alike", () => {
     const { ui, cameras, down } = rules();
     down.now = true;
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
 
     down.now = false;
     ui.released();
@@ -70,9 +77,9 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should keep them out while another button is still down, and through a second press (it is the world's too)", () => {
     const { ui, cameras, down, letGoes } = rules();
     down.now = true;
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
 
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
     ui.released();
 
     expect(cameras.map((c) => c.inputEnabled)).toEqual([false]);
@@ -82,14 +89,14 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should put them back on the next move or frame with no button down, a release it never heard (asleep, held) included", () => {
     const { ui, cameras, down } = rules();
     down.now = true;
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
     down.now = false;
 
     ui.moved(pointerAt(), NOTHING);
     expect(cameras.map((c) => c.inputEnabled)).toEqual([true]);
 
     down.now = true;
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
     down.now = false;
     ui.frame();
     expect(cameras.map((c) => c.inputEnabled)).toEqual([true]);
@@ -98,7 +105,7 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   it("should hand the world none of the press's moves itself: Phaser hands them on, the UI scene hitting nothing", () => {
     const { ui, down, heard } = rules();
     down.now = true;
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
 
     ui.moved(pointerAt(), NOTHING);
 
@@ -106,11 +113,47 @@ describe("a press begun in the world stays the world's to its end (FS-TQZ5J A1 R
   });
 });
 
+// FS-TQZ5J § Change: Batch 6, R129 (review LOW): with left held on a monster, the UI scene's cameras stand
+// aside (R25), so a right press over the chat window hits nothing of the UI scene's and Phaser hands it to
+// the world. The UI scene claims it by the window's place, and the world refuses a claimed press.
+describe("a press on a piece that is up during a world's press is claimed (FS-TQZ5J § Change: Batch 6, R129)", () => {
+  it("should claim a second press over the chat window while left is held in the world, the cameras still aside", () => {
+    const { ui, cameras, down, held, claimed, letGoes } = rules();
+    const chat = pointerAt({ type: "mousedown", button: 2 });
+    held.at = (pointer) => pointer === chat;
+    down.now = true;
+    ui.pressed(pointerAt({ type: "mousedown", button: 0 }), NOTHING);
+
+    ui.pressed(chat, NOTHING);
+
+    expect(claimed).toEqual([chat]);
+    expect(cameras.map((c) => c.inputEnabled)).toEqual([false]);
+    expect(letGoes()).toBe(0);
+  });
+
+  it("should claim no second press beside every piece, nor the press that began the world's", () => {
+    const { ui, down, held, claimed } = rules();
+    held.at = () => false;
+    down.now = true;
+    ui.pressed(pointerAt(), NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
+    expect(claimed).toEqual([]);
+  });
+
+  it("should ask nothing of a piece's place with no world press down: a press on the window hits its ground (R7)", () => {
+    const { ui, held, claimed } = rules();
+    held.at = () => true;
+    ui.pressed(pointerAt(), PIECE);
+    ui.pressed(pointerAt(), NOTHING);
+    expect(claimed).toEqual([]);
+  });
+});
+
 describe("a press on the UI scene lets go of the game's text field (FS-TQZ5J A1 R26)", () => {
   it("should let go of it for a press on one of its pieces, once", () => {
     const { ui, letGoes } = rules();
 
-    ui.pressed(PIECE);
+    ui.pressed(pointerAt(), PIECE);
 
     expect(letGoes()).toBe(1);
   });
@@ -118,7 +161,7 @@ describe("a press on the UI scene lets go of the game's text field (FS-TQZ5J A1 
   it("should leave a press beside its pieces to the world, whose fields' owners let go as they always have", () => {
     const { ui, letGoes } = rules();
 
-    ui.pressed(NOTHING);
+    ui.pressed(pointerAt(), NOTHING);
 
     expect(letGoes()).toBe(0);
   });
@@ -158,7 +201,7 @@ describe("every move reaches the world (FS-TQZ5J A1 R27)", () => {
     ui.moved(pointer, NOTHING);
 
     pointer.event = { type: "mousedown" };
-    ui.pressed(PIECE);
+    ui.pressed(pointer, PIECE);
     ui.left(pointer);
 
     expect(heard).toEqual([]);

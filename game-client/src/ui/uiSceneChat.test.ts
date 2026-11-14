@@ -53,6 +53,7 @@ function onSlot() {
       destroyed: false,
       top: 468,
       keeps: false,
+      holds: () => chat.keeps,
       keepsField: () => chat.keeps,
       topEdge: () => chat.top,
       sync: () => void chat.synced++,
@@ -81,7 +82,8 @@ describe("the UI scene's chat slot (FS-TQZ5J § Change: Batch 6, R125)", () => {
     leave(world);
     expect(standing()).toEqual([]);
     expect(built).toHaveLength(1);
-    expect(slot.keepsField(20, 600)).toBe(false);
+    expect(slot.keepsField(20, 600, [])).toBe(false);
+    expect(slot.holds(20, 600)).toBe(false);
   });
 
   it("should keep the window on a changed report of its world, re-reading who owns the keys at once (R128)", () => {
@@ -114,7 +116,8 @@ describe("the UI scene's chat slot (FS-TQZ5J § Change: Batch 6, R125)", () => {
     const { slot, built, report } = onSlot();
     report(aWorld("field"));
     built[0].keeps = true;
-    expect(slot.keepsField(20, 600)).toBe(true);
+    expect(slot.keepsField(20, 600, [{}])).toBe(true);
+    expect(slot.holds(20, 600)).toBe(true);
   });
 });
 
@@ -189,6 +192,7 @@ describe("the run's end while the player types (FS-TQZ5J § Change: Batch 6, R12
     // the window as ChatWindow is: re-reading who owns the keys, and saying the player stopped typing
     let typing = false;
     const slot = new UiChatSlot(bridge, (wiring) => ({
+      holds: () => false,
       keepsField: () => false,
       topEdge: () => 468,
       sync: () => {

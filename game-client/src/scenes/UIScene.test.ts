@@ -233,6 +233,8 @@ const chatMounts = vi.hoisted(
         play(effect: string): void;
       };
       keeps: boolean;
+      /** Whether a press lies on the window by its place (R129). */
+      holds: boolean;
       top: number;
       synced: number;
       destroyed: boolean;
@@ -240,9 +242,10 @@ const chatMounts = vi.hoisted(
 );
 vi.mock("@/ui/chatPiece", () => ({
   mountChat: (scene: unknown, wiring: (typeof chatMounts)[number]["wiring"]) => {
-    const made = { scene, wiring, keeps: false, top: 468, synced: 0, destroyed: false };
+    const made = { scene, wiring, keeps: false, holds: false, top: 468, synced: 0, destroyed: false };
     chatMounts.push(made);
     return {
+      holds: () => made.holds,
       keepsField: () => made.keeps,
       topEdge: () => made.top,
       sync: () => void made.synced++,
@@ -1174,7 +1177,7 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
       sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
     });
     scene.create();
-    return { scene, input, cameras, pointer, field, heard };
+    return { scene, bridge, input, cameras, pointer, field, heard };
   }
 
   afterEach(() => void vi.unstubAllGlobals());
@@ -1233,6 +1236,42 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     chat.keeps = false;
     input.emit("pointerdown", pointer, [{ name: "the Party icon" }]);
     expect(field.blurred).toBe(true);
+  });
+
+  // batch 6 review (LOW): with left held on a monster the UI scene's cameras stand aside (R25), so a right
+  // press over the chat window hits nothing here and Phaser hands it to the world; the UI scene claims it,
+  // and the world refuses a claimed press: never an attack, a cast or a hold
+  it("should claim a right press over the chat window while left is held in the world (§ Change: Batch 6, R129)", () => {
+    const { bridge, input, cameras, pointer, field } = created();
+    const chat = chatMounts.at(-1)!;
+    // left held on a monster: the world's press, the cameras aside
+    pointer.isDown = true;
+    pointer.event = { type: "mousedown", button: 0 };
+    input.emit("pointerdown", pointer, []);
+    expect(cameras.cameras[0].inputEnabled).toBe(false);
+    expect(bridge.pressClaimed(pointer)).toBe(false);
+
+    // right over the chat window: nothing of the UI scene's hit, the window there by its place
+    chat.holds = true;
+    pointer.event = { type: "mousedown", button: 2 };
+    input.emit("pointerdown", pointer, []);
+    expect(bridge.pressClaimed(pointer)).toBe(true);
+    expect(cameras.cameras[0].inputEnabled).toBe(false);
+    expect(field.blurred).toBe(false);
+
+    // the next press beside the window is the world's again
+    chat.holds = false;
+    pointer.event = { type: "mousedown", button: 2 };
+    input.emit("pointerdown", pointer, []);
+    expect(bridge.pressClaimed(pointer)).toBe(false);
+  });
+
+  it("should claim no press over the chat window with no world press down: its ground takes it (R7)", () => {
+    const { bridge, input, pointer } = created();
+    chatMounts.at(-1)!.holds = true;
+    pointer.isDown = true;
+    input.emit("pointerdown", pointer, [{ name: "the chat window's ground" }]);
+    expect(bridge.pressClaimed(pointer)).toBe(false);
   });
 
   it("should let go of the game's focused text field for a press on one of its pieces (R26)", () => {

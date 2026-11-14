@@ -850,9 +850,9 @@ describe("ChatWindow covers (R31)", () => {
     const { window } = rig();
     const panel = chatWindowFrame(X, BOTTOM).panel;
 
-    expect(window.keepsField(panel.x + 5, panel.y + 5)).toBe(true);
-    expect(window.keepsField(panel.x + panel.width + 5, panel.y + 5)).toBe(false);
-    expect(window.keepsField(panel.x + 5, panel.y - 5)).toBe(false);
+    expect(window.holds(panel.x + 5, panel.y + 5)).toBe(true);
+    expect(window.holds(panel.x + panel.width + 5, panel.y + 5)).toBe(false);
+    expect(window.holds(panel.x + 5, panel.y - 5)).toBe(false);
   });
 });
 
@@ -884,7 +884,7 @@ describe("ChatWindow folding", () => {
     button.onPress?.();
 
     expect(s.store.getState().folded).toBe(false);
-    expect(s.window.keepsField(corner.x + 2, corner.y + 2)).toBe(true);
+    expect(s.window.holds(corner.x + 2, corner.y + 2)).toBe(true);
 
     button.onRelease!();
     expect(s.store.getState().folded).toBe(true);
@@ -900,10 +900,10 @@ describe("ChatWindow folding", () => {
     expect(s.messageTexts()).toHaveLength(0);
     expect(s.shown().some((t) => t.content === "Area")).toBe(false);
     expect(
-      s.window.keepsField(X + 5, chatWindowFrame(X, BOTTOM).messages.y + 5),
+      s.window.holds(X + 5, chatWindowFrame(X, BOTTOM).messages.y + 5),
     ).toBe(false);
     expect(
-      s.window.keepsField(X + 5, chatWindowFrame(X, BOTTOM, true).input.y + 5),
+      s.window.holds(X + 5, chatWindowFrame(X, BOTTOM, true).input.y + 5),
     ).toBe(true);
 
     clickFold(s);
@@ -1059,9 +1059,9 @@ describe("ChatWindow canvas channel picker (FS-J267Q, I-J267Q-1)", () => {
 
   it("should say the picker and the open list are its own, so the scene neither moves nor attacks there", () => {
     const s = inputRig();
-    expect(s.window.keepsField(mid(picker).x, mid(picker).y)).toBe(true);
+    expect(s.window.holds(mid(picker).x, mid(picker).y)).toBe(true);
     click(s, mid(picker));
-    expect(s.window.keepsField(mid(list.box).x, mid(list.box).y)).toBe(true);
+    expect(s.window.holds(mid(list.box).x, mid(list.box).y)).toBe(true);
   });
 
   it("should highlight the open row under the pointer", () => {
@@ -2167,10 +2167,37 @@ describe("ChatWindow on the UI scene (FS-TQZ5J § Change: Batch 6, R127, R129–
     expect(s.field().focused).toBe(false);
   });
 
-  it("should keep its field for a press on its panel or its open list, and for none beside them (R131)", () => {
+  it("should hold its panel and its open list by their place, and nothing beside them (R129)", () => {
     const s = inputRig();
-    expect(s.window.keepsField(frame.panel.x + 5, frame.panel.y + 5)).toBe(true);
-    expect(s.window.keepsField(frame.panel.x + frame.panel.width + 5, frame.panel.y + 5)).toBe(false);
+    expect(s.window.holds(frame.panel.x + 5, frame.panel.y + 5)).toBe(true);
+    expect(s.window.holds(frame.panel.x + frame.panel.width + 5, frame.panel.y + 5)).toBe(false);
+  });
+
+  // batch 6 review (LOW): keepsField was its place alone; it is the press's own and the field's focus too,
+  // as the party panel's (R130, R131)
+  it("should keep its field for its own press on the panel while typing, and for none beside it (R131)", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    const [ground] = live(s);
+    const on = { x: frame.panel.x + 5, y: frame.panel.y + 5 };
+    expect(s.window.keepsField(on.x, on.y, [ground.obj])).toBe(true);
+    expect(s.window.keepsField(frame.panel.x + frame.panel.width + 5, on.y, [ground.obj])).toBe(false);
+  });
+
+  it("should keep no field for a press on the window's rect whose top-most hit is the letter panel or the record (R130)", () => {
+    const s = inputRig();
+    s.press("ENTER");
+    /** The letter panel's ground, drawn over the window's rect, as Phaser lists it top-most. */
+    const letterPanel = {};
+    const on = { x: frame.panel.x + 5, y: frame.panel.y + 5 };
+    expect(s.window.keepsField(on.x, on.y, [letterPanel, live(s)[0].obj])).toBe(false);
+    expect(s.window.keepsField(on.x, on.y, [])).toBe(false);
+  });
+
+  it("should keep no field it has not focused: a press on its own panel with the player not typing (R131)", () => {
+    const s = inputRig();
+    const [ground] = live(s);
+    expect(s.window.keepsField(frame.panel.x + 5, frame.panel.y + 5, [ground.obj])).toBe(false);
   });
 
   it("should report the player typing as its input opens and closes, and as it goes while typing (R127)", () => {

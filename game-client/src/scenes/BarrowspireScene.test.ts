@@ -126,7 +126,7 @@ const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: fal
 /** The player typing in the UI scene's chat over the run, or not (FS-TQZ5J § Change: Batch 6, R127). */
 const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
 const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
-const { NO_UI, worldContainer } = await import("@/ui/uiBridge");
+const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
 const { UiRecordSlot } = await import("@/ui/uiSceneRecord");
 const { SettlementRecord } = await import("@/ui/SettlementRecord");
 const { recordAnchor } = await import("@/ui/resolvedRow");
@@ -6499,6 +6499,50 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     s.press();
     expect(s.sent).not.toHaveBeenCalled();
     expect(s.lineUp()).toBe(true);
+  });
+
+  // FS-TQZ5J § Change: Batch 6, R129 (batch 6 review, LOW): left held on a monster, a right press over the
+  // UI scene's chat window reaches the run (the UI scene's cameras stand aside, A1 R25); the UI scene claims
+  // it, and the run refuses it: no attack, no cast, no hold, and no strike on a monster under the window
+  describe("a press the UI scene claimed: the chat window's, during a held world press (FS-TQZ5J § Change: Batch 6, R129)", () => {
+    function claimedOnStage(cls: string) {
+      const s = aimOnStage(cls);
+      const bridge = new GameUiBridge();
+      (s.run as unknown as { ui: unknown }).ui = bridge;
+      const active = (s.run as unknown as { input: { activePointer: { button: number; event?: object } } }).input.activePointer;
+      /** Right pressed with left held, over the chat window: its DOM event claimed by the UI scene, or not. */
+      const rightOverChat = (claimed: boolean) => {
+        const pointer = { x: 10, y: 10, button: 2, worldX: 400, worldY: 300, leftButtonDown: () => true, rightButtonDown: () => true, event: {} };
+        active.button = 2;
+        active.event = pointer.event;
+        if (claimed) bridge.claimPress(pointer);
+        s.pointerHandlers.pointerdown(pointer);
+      };
+      return { ...s, bridge, active, rightOverChat };
+    }
+
+    it.each(["archer", "mage", "warrior"])("should send nothing and start no hold for the %s's claimed press", (cls) => {
+      const s = claimedOnStage(cls);
+      s.rightOverChat(true);
+      expect(s.sent).not.toHaveBeenCalled();
+      expect(s.lineUp()).toBe(false);
+
+      s.rightOverChat(false);
+      expect(s.sent).toHaveBeenCalled();
+    });
+
+    it("should strike no monster under the window on a claimed press", () => {
+      const s = claimedOnStage("warrior");
+      // Phaser hands the monster its pointerdown before the run's, on the same active pointer
+      s.active.event = {};
+      s.bridge.claimPress(s.active as never);
+      s.onMonster(0);
+      expect(s.sent).not.toHaveBeenCalled();
+
+      s.active.event = {};
+      s.onMonster(0);
+      expect(s.sent).toHaveBeenCalled();
+    });
   });
 
   it.each([
