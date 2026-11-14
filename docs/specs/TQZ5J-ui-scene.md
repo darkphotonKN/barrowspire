@@ -1300,3 +1300,57 @@ I-TQZ5J-17.
   over the canvas, so with the controls panel open over the party panel its placeholder shows through
   the controls panel near its left edge. The controls panel's ground still takes the press there. Not
   avoided here: hiding the field or closing the party panel for the controls panel would be a new rule.
+
+### Review fixes (2026-11-14)
+
+Appended after the phase 3 review; the text above is not edited. Each behaviour change went red first.
+
+- **R56: held keys repeat again in a field and the run (MED-1).** As built, the UI scene made Keys for
+  E, I, B and C at its create, to poll the town's. Phaser 4.2.1 emits no `keydown-X` for a held key's
+  auto-repeat while the scene holds a Key for that code (`KeyboardPlugin.update`: `repeat = key.isDown`,
+  the event only `if (!key || !repeat)`), so in a field and the run a held E over the open inventory no
+  longer equipped or took off on each repeat, and a held I or B no longer repeated. The town's four
+  Keys now stand only while the town is reported: made on its report, removed as it leaves, I, B and C
+  captured meanwhile as before. A field's and the run's keys are heard on their events, repeat
+  included, as before phase 3; the town still acts once a press. A stand-in keyboard that drops a held
+  key's repeats as Phaser does tests it.
+- **R58 at the door (MED-2).** An escaped player whose teammate is still in play is offered WATCH THE
+  DELVE and LEAVE THE BARROW in the row with no card and no record yet, so R58's moment had not come
+  and a window open at the door (the character panel, the controls panel) kept its ground over those
+  buttons. As WATCH and LEAVE are first offered (`offerWatch`, the first time a run), the run asks the
+  same `endPopped()`: the gear overlay, the container view and the controls panel close, silently,
+  once; the ticks after it close nothing. The party panel and `dialog_open` stay the end's (R47, E1):
+  the record or the card still plays its one `dialog_open` and shuts the party panel once, and clears
+  whatever was reopened in between, as R58 says of the end's first appearance.
+- **R58's world-side test (MED-3).** The run's R47 block in `BarrowspireScene.test.ts` now asks R58 of
+  the run through the UI scene's stand-in (which gains its controls slot, cleared by `endPopped` as the
+  UI scene's is): each end, the door, once, and no close sound (no `inventory_close`,
+  `character_close`). Removing `endPopsUp`'s `this.ui.endPopped()` turns three of its cases red.
+- **The stash chest's E (LOW-1): verified, the code unchanged.** The review read the town's update as
+  stepping before the UI scene's. Phaser 4.2.1's `SceneManager.update` steps the scene list in
+  reverse, the UI scene stands after the town in it (`PhaserGame.test.ts` pins the order), and a key
+  event reaches every scene's Keys as the browser sends it (`KeyboardManager` emits `MANAGER_PROCESS`
+  on the DOM event). So the UI scene reads the chest's E first, with the inventory shut (`equipKey`
+  takes nothing), then the town's E opens the stash, and no later frame reads it: one E acts once. A
+  test in `HubScene.test.ts` pins it.
+- **The container view's close (LOW-2).** Its ground takes no press from the moment the view starts to
+  close (`disableInteractive`: Phaser's hit test skips a disabled input), though its root stays
+  visible through the fade (up to 320 ms on the satchel), so a press there is the world's again, an
+  attack, as before the move; the next open enables it again. R59 otherwise unchanged.
+- **Where it lives (LOW-3).** The controls panel's builder is `controlsPiece.ts`
+  (`mountControlsPiece`), beside `controlsPanel.ts`, as `gearPieces.ts` holds the gear's; the same
+  calls in the same order.
+- **The invite field under the controls panel (the integrator's call).** In place of "Seen, not built"
+  in As built: while the run's controls panel is open, the party panel's DOM invite field hides (its
+  hide blurs it), and it shows again as the controls panel closes, its typed text kept and no focus
+  taken back. R42 holds: a hidden field holds no focus, so a press on the panel lets go of nothing.
+  The panel, T and the Party icon are not refused by it (`PartyPanelDeps.covered`, beside `blocked`).
+  Only the controls panel is named, as the integrator asked. The record (1600) also draws over the
+  party panel, which T or the Party icon can reopen under it until `end_game` (R47); the field would
+  show through the record where they meet (not shot here). Left as it is, named for the owner's check
+  (I-TQZ5J-17).
+- **Parity, rerun after the fixes.** In the harness, the branch against b1ddcbb5 (gear) and ecb92ba9
+  (party): gear 222 of 222 pixel-equal, party 186 of 186; each set's depth cases equal or differing
+  exactly as before. One named case moved, as meant: the gear set's controls panel over the party
+  panel (run) no longer shows the invite field's placeholder (1×: 50288 differing px in a box from
+  x 406 before the fix, 50266 from x 409 after).

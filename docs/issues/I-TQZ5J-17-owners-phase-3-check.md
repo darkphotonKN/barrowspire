@@ -34,9 +34,19 @@ In the town, a field and the run, windowed and fullscreen, at render scale 1 and
       resolved card where reopened. Accept or ask.
 - [ ] Phase 2's transitional state is gone: over a frame under the character or stash panel, nothing
       hidden lights, scrolls or moves.
-- [ ] The party panel's invite field (a DOM element, always over the canvas) shows through the
-      controls panel when it is open over the party panel (FS-TQZ5J § Change: Phase 3, As built). Accept
-      or ask.
+- [ ] The party panel's invite field (a DOM element, always over the canvas) hides while the controls
+      panel is open over the party panel, and comes back as H closes it, what was typed still there and
+      the field not focused again (FS-TQZ5J § Change: Phase 3, Review fixes). Accept or ask. Not
+      covered: the party panel reopened under the settlement record before the run ends; the field
+      may still show through the record where they meet. Accept or ask.
+- [ ] In a field and the run, a held E over the open inventory wears or takes off on each repeat, and a
+      held I, B or C repeats, as before phase 3; in the town each still acts once a press (Review
+      fixes, R56).
+- [ ] An escaped player whose teammate is still in play: the gear overlay, the container view and the
+      controls panel open at the door close as WATCH THE DELVE and LEAVE THE BARROW appear, silently,
+      and the party panel stays open until the end (Review fixes, R58). Accept or ask.
+- [ ] A press on the container view's panel just after it closes (during its fade) attacks, as before
+      phase 3 (Review fixes).
 - [ ] The sounds below, unchanged.
 
 ## Where each moved sound plays after phase 3
