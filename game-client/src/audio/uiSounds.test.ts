@@ -432,6 +432,20 @@ describe("one action, one sound (FS-WDM0X § Change: Menu, dialog and notice sou
     expect(p.played()).toEqual(["sfx:dialog_cancel"]);
   });
 
+  // the owner, 2026-11-14 (「按倉庫就顯示倉庫的聲音」; FS-WDM0X S2 as amended): the stash chest's E asks for the
+  // chest's lid, a gameplay effect, and it is the press's one sound
+  it("should play a gameplay effect an action asks for in place of the rule's window sound", () => {
+    const p = player();
+    p.cached.add("sfx:stash_open");
+
+    p.sounds.act(() => {
+      p.windows.inventory = true;
+      p.sounds.play("stash_open");
+    });
+
+    expect(p.played()).toEqual(["sfx:stash_open"]);
+  });
+
   it("should play the rule's effect where the action asked for none", () => {
     const p = player();
 

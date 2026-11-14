@@ -360,4 +360,6 @@ changes.
 
 ## Change: Panel shortcut icons on the HUD → FS-3EBCA
 
+## Change: The XP bar along the bottom → FS-77DVN
+
 ## Change: The party death flow and the spectate switcher → FS-QPDKN

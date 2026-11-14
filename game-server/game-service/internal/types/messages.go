@@ -108,6 +108,13 @@ type ClientGameState struct {
 	// Gates are the hub's; a run has none and omits the key. FS-0XMCP
 	// §Requirements 6.
 	Gates []*GateState `json:"gates,omitempty"`
+	// Tome is a tome run's tome while it lies on the current floor, cut by
+	// distance as containers are; Altar is the altar on its floor, sent whole;
+	// TomeCarried is set while the party carries the tome unburned. All are
+	// absent anywhere else. FS-3103M §E R14.
+	Tome        *TomeState  `json:"tome,omitempty"`
+	Altar       *AltarState `json:"altar,omitempty"`
+	TomeCarried bool        `json:"tome_carried,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -175,6 +182,10 @@ type BackendGameState struct {
 	Monsters     []*MonsterState
 	Trails       []*TrailState
 	Gates        []*GateState
+	// Tome, Altar and TomeCarried are a tome run's (FS-3103M §E R14)
+	Tome        *TomeState
+	Altar       *AltarState
+	TomeCarried bool
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

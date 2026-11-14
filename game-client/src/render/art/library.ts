@@ -116,6 +116,16 @@ export class ArtLibrary {
       this.loadedAtlases = new Set([...this.loadedAtlases, ...atlases]);
   }
 
+  /**
+   * Atlases evicted while the scene runs: a floor-scoped group a new floor's pool does not name
+   * (FS-C8VM7 §G R43). Their sheets are not served again until they are admitted again.
+   */
+  forget(atlases: Iterable<string>): void {
+    if (!this.loadedAtlases) return;
+    const gone = new Set(atlases);
+    this.loadedAtlases = new Set([...this.loadedAtlases].filter((atlas) => !gone.has(atlas)));
+  }
+
   light(name: string): ArtLight | undefined {
     return this.sheet(name)?.light;
   }

@@ -14,8 +14,7 @@ import type { AbilityCardView } from "./abilityCard";
 import { ABILITY_CARD_PLACE } from "./hudCornerLayout";
 import { POTION_CELL_GAP, type PotionCellView } from "./potions";
 import type { Progress } from "./progress";
-import { PROGRESS_HUD_AT } from "./ProgressHud";
-import { RESOURCE_HUD_AT, RESOURCE_HUD_W } from "./ResourceHud";
+import { HUD_COLUMN_W, RESOURCE_HUD_AT } from "./ResourceHud";
 import type { HudBar } from "./resources";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
 
@@ -53,28 +52,31 @@ export interface HudBuild {
   ability(place: Placement): HudPiece<AbilityCardView | null>;
   potion(at: HudPoint): HudPiece<PotionCellView | null>;
   bars(at: HudPoint): HudPiece<HudBar[]>;
-  progress(at: HudPoint): HudPiece<Progress>;
+  /** The level bar places itself, along the bottom middle of every world (FS-77DVN §A, `xpBarLayout`). */
+  progress(): HudPiece<Progress>;
 }
 
 interface HudPlaces {
   readonly ability?: Placement;
   readonly potion?: HudPoint;
   readonly bars?: HudPoint;
-  readonly progress?: HudPoint;
+  /** The level bar stands in this world: where, its own layout says (FS-77DVN §A). */
+  readonly progress?: true;
 }
 
 /**
- * Where each world stood each piece (R69): the town its level bar; a field its bars in its corner and
- * the card above the corner row; the run its level bar, its bars under it, the potion cell right of them
- * and the card. A piece with no place in a world is never drawn there.
+ * Where each world stands each piece (R69; FS-77DVN): the level bar in every world, along the bottom
+ * middle by its own layout (§A, §C.13); a field's bars in its corner and the card above the corner row;
+ * the run's bars in the very top left, as a field's (§E.17), the potion cell right of them and the card.
+ * A piece with no place in a world is never drawn there.
  */
 export const HUD_PLACES: Readonly<Record<World, HudPlaces>> = {
-  hub: { progress: PROGRESS_HUD_AT.hub },
-  field: { bars: RESOURCE_HUD_AT.field, ability: ABILITY_CARD_PLACE },
+  hub: { progress: true },
+  field: { progress: true, bars: RESOURCE_HUD_AT.field, ability: ABILITY_CARD_PLACE },
   run: {
-    progress: PROGRESS_HUD_AT.run,
+    progress: true,
     bars: RESOURCE_HUD_AT.run,
-    potion: { x: RESOURCE_HUD_AT.run.x + RESOURCE_HUD_W + POTION_CELL_GAP, y: RESOURCE_HUD_AT.run.y },
+    potion: { x: RESOURCE_HUD_AT.run.x + HUD_COLUMN_W + POTION_CELL_GAP, y: RESOURCE_HUD_AT.run.y },
     ability: ABILITY_CARD_PLACE,
   },
 };
@@ -141,7 +143,7 @@ export class UiHudSlot {
         if (places.bars) (pieces.bars ??= this.build.bars(places.bars)).show(message.bars);
         return;
       case "progress":
-        if (places.progress) (pieces.progress ??= this.build.progress(places.progress)).show(message.progress);
+        if (places.progress) (pieces.progress ??= this.build.progress()).show(message.progress);
         return;
     }
   }

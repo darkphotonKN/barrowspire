@@ -639,6 +639,15 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   **bone heap**, the items lying on top. Only the satchel animates; the coffer and the bone heap
   pop in. Every face keeps the satchel's footprint and item slots. Item icons are baked, with a
   generic fallback.
+- **Gear icons step up by item level.** Every weapon type, armour slot and ring is baked in four
+  tiers, picked by the item's level and never rolled: **1-9** plain iron, leather and wood, the
+  simplest form of the piece; **10-19** kept steel, brushed and use-scratched, with brass fittings
+  and waxed oxblood leather; **20-24** blackened steel with gilt trim, and the piece grows a part
+  (cheek plates, pauldrons, a spike); **25 and up** polished masterwork in gold with a garnet set
+  in it. Each tier changes the silhouette as well as the finish, so the step reads at 1x. Real,
+  worn materials, never toy-bright; no tier glows, because a glow behind an icon is the rarity's.
+  Potions and the other plain items keep one look. (`tools/bake/page/models/gear.js`,
+  `gearTier` in `src/render/art/itemIcons.ts`.)
 - **Item marks in the gear and bag overlay.** A held item's rarity shows as its **rarity edge**,
   a thin bar down the left side of its bag cell or worn slot. A Runed or Fabled item adds the
   **still glow**, a soft additive `fx_glow` in its rarity colour behind the icon (Fabled stronger,
@@ -665,6 +674,18 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   heavier than Runed. The halo falls outside the tip and never changes its size or layout. A
   rarity colour is **never a fill**. *(Added by
   [FS-QE2QW](../../docs/specs/QE2QW-item-rarity-emphasis.md), 2026-11-08.)*
+- **Experience bar.** The player's own level and experience bar (`src/ui/ProgressHud.ts`, placed
+  by `src/ui/xpBarLayout.ts`) runs along the bottom middle of the canvas, centred on it, between
+  the chat window and the corner row and 16 px clear of each, its foot on their 16 px margin; it
+  shrinks with a narrow view and is never hidden. It has **no panel**: a 5 px bright-brass bar
+  (`palette.xpFill`) on its charcoal track (`palette.xpTrack`) in a brass rim, drawn by
+  `drawXpBar`; a brass stud at each end, the chat window's corner stud (`palette.frame` r 2, a
+  `palette.frameBright` highlight); and bare 12 px body-serif numerals in vellum (`hudText`) with
+  a 2 px dark stroke (`markerStroke`), this level at the left and the next at the right, or "Cap"
+  at the cap, each in a fixed slot so the bar never changes length with the level. No count on
+  the HUD (the character sheet keeps it). Shown in the town, every field and every run, alive or
+  dead; never on the menus. The level-up cue rises from just above its centre.
+  *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right

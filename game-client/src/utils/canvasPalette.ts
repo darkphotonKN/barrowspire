@@ -165,6 +165,19 @@ export const palette = {
    */
   watchedName: BARROW_HEX.brassBright,
   /**
+   * A lore line's three tones (FS-XWHZP §B R8): the world speaking in parchment, dread in the
+   * lifted oxblood, hope in a lantern gold (never amber: a line is nothing to act on). Its dust
+   * fades to `loreFade`; a dread line's embers go from `loreEmber` to `loreEmberDeep`; its shadow
+   * is `loreShadow`.
+   */
+  loreText: BARROW_HEX.vellum,
+  loreDread: BARROW_HEX.oxbloodText,
+  loreHope: BARROW_HEX.brassBright,
+  loreFade: BARROW_HEX.vellumDark,
+  loreEmber: BARROW_HEX.ember,
+  loreEmberDeep: BARROW_HEX.oxblood,
+  loreShadow: BARROW_HEX.pitch,
+  /**
    * The experience bar and the level-up cue (FS-BDA7X req 42, 43): progress is neither an
    * interactable, a friend nor a harm, so it takes the HUD's bright brass, never amber.
    */
@@ -317,6 +330,23 @@ export const palette = {
    * as a different boss at a glance.
    */
   bloodDemonStandIn: mix(BARROW_HEX.oxblood, BARROW_HEX.oxbloodText, 0.7),
+  /**
+   * FS-C8VM7 §G R44: the new families' stand-ins until their own art lands, a multiply wash over
+   * a tier-1 sheet on `creatures`. The goblin is the ghoul turned moss green; the ogre the troll
+   * in a heavier, earthen hide; the dark warrior the ghoul gone grim and dark in the umbra. Each
+   * lifted toward vellum enough to shade the body rather than black it out.
+   */
+  goblinStandIn: tint(BARROW_HEX.arcane, 0.35),
+  ogreStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.4), 0.4),
+  darkWarriorStandIn: tint(BARROW_HEX.umbra, 0.3),
+
+  // -- A monster ability's telegraph and impact (FS-C8VM7 §F R36): the hostile channel, drawn
+  //    above the light-map. The edge in the HP bar's lifted oxblood, so the ring reads on a dark
+  //    floor; the fill the same family, deeper, kept thin; the impact the ember of a hostile's
+  //    strike (guideline "Enemy design language"). Never amber, never arcane green.
+  abilityTelegraph: BARROW_HEX.oxbloodText,
+  abilityTelegraphFill: mix(BARROW_HEX.oxblood, BARROW_HEX.oxbloodText, 0.5),
+  abilityImpact: BARROW_HEX.ember,
 
   // -- The satchel (container view, FS-2325V §D). Tanned leather sits between
   //    barrow brown and brass; the flap is the darker, oilier hide; vellum

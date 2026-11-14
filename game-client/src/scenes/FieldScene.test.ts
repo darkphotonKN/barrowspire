@@ -158,6 +158,7 @@ const { createPartyStore } = await import("@/stores/partyStore");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
+const { GAMEPLAY_EFFECTS } = await import("@/audio/gameplaySounds");
 
 /** The road home as the Meadows' state carries it. */
 const ROAD_HOME = {
@@ -198,6 +199,8 @@ function fieldOnStage() {
       texts.push(content);
       return any;
     },
+    // the XP bar's (FS-77DVN §C.13)
+    graphics: () => any,
   };
   field.cameras = { main: { width: 800, startFollow: vi.fn() } };
   field.time = { delayedCall: vi.fn() };
@@ -1081,6 +1084,40 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     take({ entity_id: "coin" });
 
     expect(hud().inventory).toEqual([]);
+  });
+
+  // FS-AND39 R7, re-expressed on the UI scene (FS-TQZ5J § Change: Merge with main, 2026-11-14): the take
+  // comes from the UI scene's container view as `take`; the field sends it and sounds it
+  it("should play item_pickup as a loot is sent, and nothing for a reserved pile's refusal (FS-AND39 R7)", () => {
+    const { field, piles, take } = hudOnStage();
+    const play = vi.fn();
+    Object.assign(field, { gameplaySounds: { play } });
+
+    take({ entity_id: "coin" });
+    expect(play.mock.calls).toEqual([["item_pickup"]]);
+
+    piles.loot.mockReturnValue(false);
+    take({ entity_id: "gem" });
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it("should make the field's gameplay player on the field's own sound (FS-AND39 R13, R16)", () => {
+    const { field, take } = hudOnStage();
+    const played: string[] = [];
+    Object.assign(field, {
+      cache: { audio: { exists: (key: string) => GAMEPLAY_EFFECTS.some((e) => key === `sfx:${e}`) } },
+      sound: {
+        locked: false,
+        context: { state: "running" },
+        get: () => null,
+        add: (key: string) => ({ volume: 1, play: () => (played.push(key.replace(/^sfx:/, "")), true) }),
+      },
+    });
+    (field as unknown as { mountGameplaySounds(): void }).mountGameplaySounds();
+
+    take({ entity_id: "coin" });
+
+    expect(played).toEqual(["item_pickup"]);
   });
 
   // the HUD is the UI scene's, built for the field and let go as it leaves (FS-TQZ5J § Change: Phase 3, R50)
@@ -3023,5 +3060,102 @@ describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Pha
   it("should report its invites stacked above the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R132)", () => {
     const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
     expect(field.worldSide().invitesAboveChat).toBe(true);
+  });
+
+  // the fight takes the player as a value, so it must be made first
+  it("should make the gameplay player in create beside the interface effects', and hand it to the fight (FS-AND39 R3, R4, R16)", () => {
+    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
+    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
+    const at = (line: RegExp) => create.search(line);
+    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.mountGameplaySounds\(\);/));
+    expect(at(/this\.mountGameplaySounds\(\);/)).toBeLessThan(at(/this\.fight = fieldCombatOnScene\(/));
+    const fight = create.match(/this\.fight = fieldCombatOnScene\(([\s\S]*?)\n {4}\}\);/)?.[1] ?? "";
+    expect(fight).toMatch(/\n\s*sounds: this\.gameplaySounds,?(\n|$)/);
+  });
+
+  // the gear is the UI scene's, which plays item_swap as it sends a change (`gearPieces.test.ts`); the
+  // field plays none of it (FS-AND39 R7; FS-TQZ5J § Change: Merge with main, 2026-11-14)
+  it("should play no item_swap of its own: the UI scene's gear sounds its changes (FS-AND39 R7)", () => {
+    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/item_swap/);
+  });
+});
+
+const { ProgressHud } = await import("@/ui/ProgressHud");
+
+// FS-77DVN §C.13, §C.14, §A.4 (I-77DVN-1): a field shows the player's own XP bar, as the hub does.
+describe("FieldScene the XP bar along the bottom (FS-77DVN §C.13, §C.14, §A.4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const levelled = (player: Record<string, unknown> = {}) => ({
+    world_type: "field",
+    current_player: {
+      entity_id: "me",
+      position: ARRIVAL,
+      current_health: 100,
+      level: 5,
+      experience: 450,
+      level_floor: 400,
+      next_level_at: 600,
+      ...player,
+    },
+    other_players: [{ entity_id: "them", position: ARRIVAL, level: 9, experience: 1, level_floor: 0, next_level_at: 9 }],
+    walls: [],
+    gates: [ROAD_HOME],
+  });
+
+  it("should mount the bar from current_player, the player's own progress", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { field } = fieldOnStage();
+
+    field.renderState(levelled());
+
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(show).toHaveBeenCalledWith({ level: 5, experience: 450, level_floor: 400, next_level_at: 600 });
+  });
+
+  it("should draw no bar for a state that carries no level", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { field } = fieldOnStage();
+
+    field.renderState(levelled({ level: undefined }));
+
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("should keep the bar up while the player has fallen", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { field } = fieldOnStage();
+    Object.assign(field, { showFallen: vi.fn(), drainFallen: vi.fn() });
+
+    field.renderState(levelled());
+    field.renderState(levelled({ current_health: 0 }));
+
+    expect(show).toHaveBeenCalledTimes(2);
+  });
+
+  // the bar is the UI scene's (FS-TQZ5J § Change: Batch 5; merge with main, 2026-11-14): its HUD slot
+  // places it again on a new view, and takes it down as the field leaves
+  it("should place the bar again when the view changes", () => {
+    const relayout = vi.spyOn(ProgressHud.prototype, "relayout");
+    const { field } = fieldOnStage();
+    field.renderState(levelled());
+
+    hudOver(field, "field").relayout();
+
+    expect(relayout).toHaveBeenCalledTimes(1);
+  });
+
+  it("should let the bar go with the field, and keep none of its own", () => {
+    const destroy = vi.spyOn(ProgressHud.prototype, "destroy");
+    const { field } = fieldOnStage();
+    field.renderState(levelled());
+    expect((field as unknown as { progressHud?: unknown }).progressHud).toBeUndefined();
+
+    (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
+
+    expect(destroy).toHaveBeenCalledTimes(1);
   });
 });

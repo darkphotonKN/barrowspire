@@ -536,6 +536,8 @@ All commands run from `game-client/` with Node 22 on the path:
 
 ## Change: Arrival card → FS-PQ2TW
 
+## Change: Spire messages as lore lines → FS-XWHZP
+
 ## Change: Every hover keeps the bone hand
 Status: shipped
 Date: 2026-11-14

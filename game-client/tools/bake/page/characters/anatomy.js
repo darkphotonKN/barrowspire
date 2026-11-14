@@ -380,8 +380,8 @@ function headSurface(rig, jaw = 1) {
 
 /**
  * A plain human head (FS-67QQY): cranium and jaw as one seamless surface, the upper face pressed
- * flat, and a nose. `o.jaw` scales the jaw's width; `o.nose: false` drops the nose. The painted
- * face and the brows go over it with `face`.
+ * flat, a nose and ears. `o.jaw` scales the jaw's width; `o.nose: false` drops the nose and
+ * `o.ears: false` the ears. The painted face and the brows go over it with `face`.
  */
 export function head(rig, mat, o = {}) {
   const [, hy, hz] = J(rig, "head");
@@ -393,6 +393,12 @@ export function head(rig, mat, o = {}) {
     // today's cone, 0.004 H lower, riding the face plane (R5)
     const nose = new THREE.ConeGeometry(0.009 * H, 0.024 * H, 6);
     attach(rig, "head", nose, mat, [0, hy + 0.042, hz + 0.058 + 0.006 + 0.17 * 0.004], { rx: 1.35 });
+  }
+  if (o.ears !== false) {
+    // a flat lobe each side, level with the eyes to the nose's base, its back edge turned out
+    const x = 0.92 * rig.p.headR;
+    for (const [, sx] of sides)
+      attach(rig, "head", ellipsoid(0.007 * H, 0.017 * H, 0.012 * H, 10), mat, [sx * x, hy + 0.047, hz - 0.004], { ry: -sx * 0.35, rx: -0.15 });
   }
 }
 

@@ -2,8 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ABILITY_CARD_PLACE } from "./hudCornerLayout";
-import { PROGRESS_HUD_AT } from "./ProgressHud";
-import { RESOURCE_HUD_AT, RESOURCE_HUD_W } from "./ResourceHud";
+import { HUD_COLUMN_W, RESOURCE_HUD_AT } from "./ResourceHud";
 import { POTION_CELL_GAP } from "./potions";
 import { GameUiBridge, NO_FACTS, type World, type WorldReport } from "./uiBridge";
 import { HUD_PLACES, UiHudSlot, type HudBuild, type HudKind, type HudMessage } from "./uiSceneHud";
@@ -23,7 +22,7 @@ interface Built {
 function onHud() {
   const bridge = new GameUiBridge();
   const built: Built[] = [];
-  const piece = (kind: HudKind) => (at: unknown) => {
+  const piece = (kind: HudKind) => (at?: unknown) => {
     const b: Built = { kind, at, shown: [], relayouts: 0, destroyed: false };
     built.push(b);
     return {
@@ -69,14 +68,17 @@ const PROGRESS: HudData = {
 };
 /** A HUD message as `world` sends it (FS-TQZ5J § Change: Batch 6, R137). */
 const from = (world: World, data: HudData) => ({ ...data, world }) as HudMessage;
-const POTION_AT = { x: RESOURCE_HUD_AT.run.x + RESOURCE_HUD_W + POTION_CELL_GAP, y: RESOURCE_HUD_AT.run.y };
+const POTION_AT = { x: RESOURCE_HUD_AT.run.x + HUD_COLUMN_W + POTION_CELL_GAP, y: RESOURCE_HUD_AT.run.y };
 
 describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () => {
-  it("should stand each piece where its world stood it (R69)", () => {
-    expect(HUD_PLACES.hub).toEqual({ progress: PROGRESS_HUD_AT.hub });
-    expect(HUD_PLACES.field).toEqual({ bars: RESOURCE_HUD_AT.field, ability: ABILITY_CARD_PLACE });
+  // FS-77DVN §A, §C.13, §E.17: the level bar in every world, placing itself along the bottom middle;
+  // the run's bars in the very top left, as a field's
+  it("should stand each piece where its world stands it (R69; FS-77DVN)", () => {
+    expect(HUD_PLACES.hub).toEqual({ progress: true });
+    expect(HUD_PLACES.field).toEqual({ progress: true, bars: RESOURCE_HUD_AT.field, ability: ABILITY_CARD_PLACE });
+    expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
     expect(HUD_PLACES.run).toEqual({
-      progress: PROGRESS_HUD_AT.run,
+      progress: true,
       bars: RESOURCE_HUD_AT.run,
       potion: POTION_AT,
       ability: ABILITY_CARD_PLACE,
@@ -89,8 +91,9 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     ["run", CELL, POTION_AT],
     ["field", BARS, RESOURCE_HUD_AT.field],
     ["run", BARS, RESOURCE_HUD_AT.run],
-    ["hub", PROGRESS, PROGRESS_HUD_AT.hub],
-    ["run", PROGRESS, PROGRESS_HUD_AT.run],
+    ["hub", PROGRESS, undefined],
+    ["field", PROGRESS, undefined],
+    ["run", PROGRESS, undefined],
   ] as const)("should build the piece in a %s at its place on the first message, and hand it each one after", (world, message, at) => {
     const { slot, built, report } = onHud();
     report(world);
@@ -117,7 +120,6 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     ["hub", CELL],
     ["hub", BARS],
     ["field", CELL],
-    ["field", PROGRESS],
   ] as const)("should draw nothing in a %s for a piece it has no place for (R69)", (world, message) => {
     const { slot, built, report } = onHud();
     report(world);

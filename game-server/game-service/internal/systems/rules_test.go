@@ -19,7 +19,7 @@ func runWorld(t *testing.T, n int) (*ecs.EntityManager, []*ecs.Entity) {
 	t.Helper()
 
 	em := ecs.NewEntityManager()
-	game.CreateMatchProgressEntity(em, 3)
+	game.CreateMatchProgressEntity(em, 1, 3)
 
 	party := make([]*ecs.Entity, 0, n)
 	for i := 0; i < n; i++ {

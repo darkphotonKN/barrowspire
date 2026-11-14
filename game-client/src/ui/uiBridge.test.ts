@@ -53,6 +53,7 @@ function recording(): UiBridge & { heard: string[] } {
     endPopped: () => void heard.push("endPopped"),
     abilityCard: () => void heard.push("abilityCard"),
     hud: (message) => void heard.push(`hud ${message.kind}`),
+    confirmBurn: (altar) => void heard.push(`confirmBurn ${altar}`),
     onScreen: () => () => {},
   };
 }

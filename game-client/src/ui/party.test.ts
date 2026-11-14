@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  BURN_CONFIRM,
   FALL_CONFIRM,
   nextWatched,
   resolved,
@@ -219,5 +220,15 @@ describe("FALL_CONFIRM (FS-9K8EZ req 3)", () => {
     ]);
     expect(FALL_CONFIRM.choices[0].label).toBe("Fall");
     expect(FALL_CONFIRM.choices[1].label).toBe("Not yet  [Esc]");
+  });
+});
+
+describe("BURN_CONFIRM (FS-3103M R25)", () => {
+  it("should ask Burn tome?, with Burn to press and Not yet to go back, as the Fall confirm does", () => {
+    expect(BURN_CONFIRM.line).toBe("Burn tome?");
+    expect(BURN_CONFIRM.choices).toEqual([
+      { id: "burn", label: "Burn", register: "actionable" },
+      FALL_CONFIRM.choices[1],
+    ]);
   });
 });

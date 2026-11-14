@@ -72,7 +72,9 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
     bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
     bridge.hud({ world: "run", kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
     expect(live("Dash")).toBe(true);
-    expect(live("Level 2")).toBe(true);
+    // the bar's end numerals, this level and the next (FS-77DVN §B.8)
+    expect(live("2")).toBe(true);
+    expect(live("3")).toBe(true);
   });
 
   it("should take them down as the run leaves, and draw nothing it hands after", () => {
@@ -99,7 +101,7 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
     report("run");
     bridge.hud({ world: "run", kind: "progress", progress: { level: 4, experience: 400, level_floor: 390, next_level_at: 600 } });
     expect(live("Risen to level 4")).toBe(false);
-    expect(live("Level 4")).toBe(true);
+    expect(live("4")).toBe(true);
   });
 
   it("should take every piece down, and hear nothing more, with the scene", () => {

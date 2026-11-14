@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_W, CHAT_WINDOW_X, chatPickerList, chatWindowFrame } from "./chatWindowLayout";
 import { CORNER_ICONS, RUN_BUTTON_H, cornerIconFrame, cornerLabelAt } from "./hudCornerLayout";
 import { rectsMeet } from "./partyPanelLayout";
+import { xpBarFrame } from "./xpBarLayout";
 import {
   buttonWidth,
   centredLefts,
@@ -113,7 +114,7 @@ describe("rowLefts (FS-TQZ5J § Change: Batch 6, R123: layout B)", () => {
     expect(spans([...names], 1280)).toEqual(at);
   });
 
-  it("should never meet the open chat window or its open list, at any logical width from 1080 to 1280 (R123, R136)", () => {
+  it("should never meet the open chat window or its open list, nor the XP bar, at any logical width from 1080 to 1280 (R123, R136; FS-77DVN)", () => {
     const bottom = 720 - CHAT_WINDOW_MARGIN;
     const open = chatWindowFrame(CHAT_WINDOW_X, bottom);
     const folded = chatWindowFrame(CHAT_WINDOW_X, bottom, true);
@@ -121,9 +122,11 @@ describe("rowLefts (FS-TQZ5J § Change: Batch 6, R123: layout B)", () => {
     const y = resolvedRowY({ height: 720 });
     for (let width = 1080; width <= 1280; width++) {
       for (const names of ROWS) {
+        // and the XP bar along the bottom middle (FS-77DVN §A; merge with main, 2026-11-14)
+        const xp = xpBarFrame({ width, height: 720 }).piece;
         for (const [left, right] of spans(names, width)) {
           const button = { x: left, y: y - RUN_BUTTON_H / 2, width: right - left, height: RUN_BUTTON_H };
-          for (const piece of chat) expect(rectsMeet(button, piece), `${names} at ${width}`).toBe(false);
+          for (const piece of [...chat, xp]) expect(rectsMeet(button, piece), `${names} at ${width}`).toBe(false);
           // 12 clear of the window's right edge, whole px
           expect(left).toBeGreaterThanOrEqual(CHAT_WINDOW_X + CHAT_WINDOW_W + 12);
           expect(Number.isInteger(left)).toBe(true);
@@ -178,7 +181,7 @@ describe("the spectate row and the switcher (FS-QPDKN § Change: The party death
     expect(switcherWidth(99.2)).toBe(28 * 2 + 100 + 20);
   });
 
-  it("should meet neither the open chat window nor its list, nor the corner row or its labels, at every width 1080–1280", () => {
+  it("should meet neither the open chat window nor its list, nor the corner row or its labels, nor the XP bar, at every width 1080–1280", () => {
     const bottom = 720 - CHAT_WINDOW_MARGIN;
     const open = chatWindowFrame(CHAT_WINDOW_X, bottom);
     const folded = chatWindowFrame(CHAT_WINDOW_X, bottom, true);
@@ -195,7 +198,8 @@ describe("the spectate row and the switcher (FS-QPDKN § Change: The party death
         const at = cornerLabelAt(plate, LABEL_W, v);
         return { x: at.x - LABEL_W / 2, y: at.bottom - LABEL_H, width: LABEL_W, height: LABEL_H };
       });
-      const others = [...chat, ...plates, ...labels];
+      // and the XP bar along the bottom middle (FS-77DVN §A; merge with main, 2026-11-14)
+      const others = [...chat, ...plates, ...labels, xpBarFrame(v).piece];
       for (const names of SPECTATE_ROWS) {
         const r = row(names, width);
         const buttons = r.lefts.map((left, i) => ({ x: left, y, width: r.widths[i], height: RUN_BUTTON_H }));

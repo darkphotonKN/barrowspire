@@ -267,6 +267,20 @@ describe("the gear's open state is the UI scene's (FS-TQZ5J § Change: Phase 3, 
     expect(bridge.ui).toMatchObject({ inventory: false, stash: false });
   });
 
+  // the owner, 2026-11-14 (「按倉庫就顯示倉庫的聲音」; FS-WDM0X S2 as amended): the chest's lid is the E's one
+  // sound, asked of the UI scene's player inside the town's act; a refused open asks for nothing
+  it("should ask for stash_open as the stash opens on the town's word, and nothing as it refuses", () => {
+    const { bridge, slot, enter, gears } = onSlot();
+    const played: string[] = [];
+    bridge.lendSounds({ act: (run) => run(), play: (effect) => void played.push(effect) });
+    enter("hub");
+    slot.hear({ kind: "openStash" });
+    expect(played).toEqual(["stash_open"]);
+    expect(gears[0].stash).toBe(true);
+    slot.hear({ kind: "openStash" });
+    expect(played).toEqual(["stash_open"]);
+  });
+
   it("should report a close the overlay made on its own (its ×), through the wrapper it was handed", () => {
     const { bridge, gears, wirings, enter } = onSlot();
     enter("run");

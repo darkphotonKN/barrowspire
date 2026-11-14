@@ -1,7 +1,8 @@
 /**
  * "No silly animations", scanned in source (FS-KYPQ9 §B.3, §B.5, §B.6): no Bounce, Elastic or
- * Back easing, no camera shake and no radial explode, in the effects module or in either scene's
- * effect call sites. The table rules live in `table.test.ts`; this catches what a scene writes
+ * Back easing and no radial explode in the effects module or in either scene's effect call sites,
+ * and no camera shake anywhere in src but the lore line's dread tremor, the one named exception
+ * (FS-XWHZP R10). The table rules live in `table.test.ts`; this catches what a scene writes
  * around the table.
  */
 
@@ -82,12 +83,27 @@ describe("source scan (FS-KYPQ9 §B.3, §B.5, §B.6)", () => {
       expect(hits(file, BANNED_EASING)).toEqual([]);
     });
 
-    it("should shake no camera", () => {
-      expect(hits(file, SHAKE)).toEqual([]);
-    });
-
     it("should explode no emitter", () => {
       expect(hits(file, EXPLODE)).toEqual([]);
     });
+  });
+});
+
+describe("camera shake, scanned across src (FS-KYPQ9 §B.5, FS-XWHZP R10)", () => {
+  const sources = sourcesIn(SRC);
+  /** The lore line's dread tremor: the one camera shake §B.5 allows. */
+  const TREMOR = join(SRC, "ui", "loreLine.ts");
+
+  it("should scan every source file, the scenes and the lore line among them", () => {
+    expect(sources).toContain(join(SRC, "scenes", "HubScene.ts"));
+    expect(sources).toContain(TREMOR);
+  });
+
+  it("should shake no camera outside the lore line", () => {
+    expect(sources.filter((f) => f !== TREMOR).flatMap((f) => hits(f, SHAKE))).toEqual([]);
+  });
+
+  it("should shake the camera once in the lore line, for the dread tremor", () => {
+    expect(hits(TREMOR, SHAKE)).toHaveLength(1);
   });
 });

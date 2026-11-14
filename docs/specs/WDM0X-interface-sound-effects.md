@@ -1043,3 +1043,18 @@ The owner's listening check stays I-WDM0X-21, and the batch's I-TQZ5J-55 carries
 chat sound plays.
 
 ## Change: The party death flow and the spectate switcher → FS-QPDKN
+
+## Amendment: S2, the stash chest's E plays the chest's lid (2026-11-14)
+
+The owner, 2026-11-14, on merging FS-AND39 into the UI scene: 「按倉庫就顯示倉庫的聲音」 (pressing the stash
+plays the stash's sound). S2's *Derived* line for the stash chest is superseded: the town's E at the stash
+chest plays FS-AND39's `stash_open` alone, as the press's one sound (S3, § Change M2), in place of the window
+rule's `inventory_open`. Its text above is not edited.
+
+- The UI scene's gear slot asks for `stash_open` inside the town's act as `openStash` opens the view
+  (`UiGearSlot.hear`), so the first effect asked wins and the rule's `inventory_open` does not play. A
+  gameplay effect may be an action's one sound (`ActionEffect` in `audio/uiSounds.ts`).
+- An E the stash refuses plays nothing. Closing the stash view still plays `inventory_close`, by any of the
+  inventory's paths.
+- The inventory opened any other way (I, B, the corner row's icon) still plays `inventory_open`.
+- FS-AND39 R6 ("`stash_open` plays alongside `inventory_open`") is superseded with it.

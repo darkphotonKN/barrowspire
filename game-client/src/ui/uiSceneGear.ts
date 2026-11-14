@@ -17,6 +17,7 @@
  * the wiring is tested on its own.
  */
 
+import type { GameplaySoundPlayer } from "@/audio/gameplaySounds";
 import type { UiActWrapper } from "@/audio/uiSounds";
 import type { ContainerKind, ItemState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
@@ -89,7 +90,15 @@ export interface GearWiring {
   take: (item: ItemState) => void;
   /** The level the world last handed, for the view's "Requires level N". */
   level: () => number | undefined;
+  /**
+   * The gameplay effects these pieces' own player actions play (FS-AND39 R5, R7), on the UI scene's
+   * gameplay player: a coffer's open, a gear move. A take's sound is the world's, as it sends the loot.
+   */
+  sounds: GameplaySoundPlayer;
 }
+
+/** A gameplay player that plays nothing: a slot built with none. */
+const SILENT: GameplaySoundPlayer = { play: () => {} };
 
 /** The keys moved with the gear and the container view (R56): I/B, C, Q, E, F. */
 export type GearKey = "inventory" | "character" | "close" | "equip" | "take";
@@ -103,7 +112,7 @@ export const GEAR_NOTICE_LOOK: Readonly<Record<World, NoticeLook>> = {
 };
 
 /** What of the bridge the slot reads, asks, reports and says through. */
-export type GearBridge = Pick<UiBridge, "world" | "ui" | "request" | "act" | "reportUi" | "notice">;
+export type GearBridge = Pick<UiBridge, "world" | "ui" | "request" | "act" | "play" | "reportUi" | "notice">;
 
 export class UiGearSlot {
   private pieces: GearPieces | null = null;
@@ -117,6 +126,8 @@ export class UiGearSlot {
   constructor(
     private readonly bridge: GearBridge,
     private readonly build: (world: World, wiring: GearWiring) => GearPieces,
+    /** The UI scene's gameplay effects player, handed to each world's pieces (FS-AND39 R5, R7). */
+    private readonly sounds: GameplaySoundPlayer = SILENT,
   ) {}
 
   /**
@@ -138,6 +149,7 @@ export class UiGearSlot {
       send: (kind, item) => this.bridge.request({ kind, item }),
       take: (item) => this.bridge.request({ kind: "take", item }),
       level: () => this.lastLevel,
+      sounds: this.sounds,
     });
     this.builtFor = world;
     this.report();
@@ -222,7 +234,9 @@ export class UiGearSlot {
       case "taken":
         return gear.taken(message.item);
       case "openStash":
-        gear.openStash();
+        // the chest's lid is the press's one sound, in place of the window rule's inventory_open: the
+        // owner, 2026-11-14, 「按倉庫就顯示倉庫的聲音」 (FS-WDM0X S2 as amended; FS-AND39 R6 superseded)
+        if (gear.openStash()) this.bridge.play("stash_open");
         return this.report();
       case "close":
         gear.hide();

@@ -431,3 +431,5 @@ Left to the owner. None blocks a slice: each slice leaves the behaviour named he
 4. **Who runs the bake?** `npm run bake` needs Node, the repo's `playwright-core`, and an
    installed Google Chrome (or a Playwright Chromium, or `BAKE_BROWSER=<path>`) that it launches
    headless on SwiftShader against a local server; then a human reads the contact sheets.
+
+## Change: Tiered enemy roster and floor pools → FS-C8VM7

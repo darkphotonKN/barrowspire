@@ -22,7 +22,7 @@
 
 import type { WorldType } from "@/assets/types/client";
 import type { ContainerKind, ItemState } from "@/types/gameState";
-import type { UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
+import type { ActionEffect, UiAct, UiActWrapper, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
 import type { CarriedState } from "./EquipmentHud";
@@ -177,7 +177,9 @@ export type UiRequest =
   /** The gear overlay wore or took off an item: the run's Equip or Unequip, by its entity id (§ Change: Phase 3, R54). */
   | { readonly kind: "equip" | "unequip"; readonly item: string }
   /** The container view took an item: the world sends its loot, and says `gear: taken` if it did (R54). */
-  | { readonly kind: "take"; readonly item: ItemState };
+  | { readonly kind: "take"; readonly item: ItemState }
+  /** The run's Burn tome? confirm said Burn: the world sends the one interact for the altar (FS-3103M R25). */
+  | { readonly kind: "burn"; readonly altar: string };
 
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
@@ -228,6 +230,7 @@ export type WorldAnswers = {
   readonly equip?: (item: string) => void;
   readonly unequip?: (item: string) => void;
   readonly take?: (item: ItemState) => void;
+  readonly burn?: (altar: string) => void;
 };
 
 /** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
@@ -245,6 +248,8 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
         return answers[request.kind]?.(request.item);
       case "take":
         return answers.take?.(request.item);
+      case "burn":
+        return answers.burn?.(request.altar);
       default:
         return answers[request.kind]?.();
     }
@@ -320,12 +325,14 @@ export interface UiScreen {
   abilityCard?(up: boolean): void;
   /** A HUD piece's data the world hands (§ Change: Batch 5, R68). */
   hud?(message: HudMessage): void;
+  /** The run's E at the altar with the tome carried: the menu slot asks Burn tome? (FS-3103M R25). */
+  confirmBurn?(altar: string): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
 export interface UiSoundPlayer {
   act: UiAct;
-  play(effect: UiEffect): void;
+  play(effect: ActionEffect): void;
 }
 
 /**
@@ -385,8 +392,12 @@ export interface UiBridge extends UiActWrapper {
    * R22). Before the UI scene lends its sounds it runs as it is.
    */
   act: UiAct;
-  /** An effect the world's own input plays: its minimap's mode step (FS-WDM0X S7). */
-  play(effect: UiEffect): void;
+  /**
+   * An effect a player's input plays: the world's minimap's mode step (FS-WDM0X S7), a UI piece's press;
+   * inside an act, the action's one sound. A gameplay effect only where it is the action's one sound
+   * (the town's stash chest E's `stash_open`, FS-WDM0X S2 as amended 2026-11-14).
+   */
+  play(effect: ActionEffect): void;
   /** The UI scene lends the game's one player, as it is created (R22). */
   lendSounds(sounds: UiSoundPlayer): void;
   /** The world shows a dialogue, or shows it again changed (A2 R29): the UI scene draws it at once. */
@@ -420,6 +431,11 @@ export interface UiBridge extends UiActWrapper {
    * bars, the level bar. The UI scene has drawn it when this returns.
    */
   hud(message: HudMessage): void;
+  /**
+   * The run's E at the altar while the party carries the tome (FS-3103M R25): the UI scene's menu slot
+   * asks Burn tome? for the altar, by its entity id, and has when this returns.
+   */
+  confirmBurn(altar: string): void;
 }
 
 /**
@@ -445,6 +461,7 @@ export type WorldUi = Pick<
   | "endPopped"
   | "abilityCard"
   | "hud"
+  | "confirmBurn"
 >;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
@@ -465,6 +482,7 @@ export const NO_UI: WorldUi = {
   endPopped: () => {},
   abilityCard: () => {},
   hud: () => {},
+  confirmBurn: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -545,7 +563,7 @@ export class GameUiBridge implements UiBridge {
 
   act: UiAct = (run) => (this.sounds ? this.sounds.act(run) : run());
 
-  play(effect: UiEffect): void {
+  play(effect: ActionEffect): void {
     this.sounds?.play(effect);
   }
 
@@ -596,6 +614,10 @@ export class GameUiBridge implements UiBridge {
 
   hud(message: HudMessage): void {
     for (const screen of [...this.screens]) screen.hud?.(message);
+  }
+
+  confirmBurn(altar: string): void {
+    for (const screen of [...this.screens]) screen.confirmBurn?.(altar);
   }
 
   onScreen(screen: UiScreen): () => void {

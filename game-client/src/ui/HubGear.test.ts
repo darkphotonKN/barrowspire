@@ -405,10 +405,11 @@ function hubGearOnStage(
   const panel = fakePanel();
   const api = fakeApi(instances, loadout);
   const notice = vi.fn();
+  const gearChanged = vi.fn();
   // a refused load or change is logged; the test reads what the player sees
   vi.spyOn(console, "error").mockImplementation(() => {});
-  const gear = new HubGear(panel, api, { notice });
-  return { panel, api, notice, gear };
+  const gear = new HubGear(panel, api, { notice, gearChanged });
+  return { panel, api, notice, gearChanged, gear };
 }
 
 describe("HubGear (FS-HRH2J §E R40–44)", () => {
@@ -1497,5 +1498,136 @@ describe("HubGear, the character panel apart (FS-HRH2J § Change C1, C7–C10)",
     expect(open()).toEqual([true, false]);
     gear.hide();
     expect(open()).toEqual([false, false]);
+  });
+});
+
+// FS-AND39 R7: item_swap plays as each change the player makes is sent, one per change; a change
+// HubGear drops before sending, or one the overlay never hands on, plays nothing
+describe("HubGear gear change sound (FS-AND39 R7)", () => {
+  async function opened(
+    instances: ItemInstance[],
+    loadout: Record<string, string> = {},
+    stash = false,
+  ) {
+    const stage = hubGearOnStage(instances, loadout);
+    if (stash) stage.gear.openStash();
+    else stage.gear.toggle();
+    await settle();
+    return stage;
+  }
+
+  it("should say a change was made as an equip is sent", async () => {
+    const { panel, api, gearChanged } = await opened([instance("sword")]);
+
+    expect(equip(panel, panel.inventory[0], "weapon")).toBe(true);
+
+    expect(api.updateLoadout).toHaveBeenCalledTimes(1);
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say it once for a swap, though the worn item goes back to the bag", async () => {
+    const { panel, gearChanged } = await opened(
+      [instance("old"), instance("sword")],
+      { weaponId: "old" },
+    );
+
+    equip(panel, panel.inventory[0], "weapon");
+
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say a change was made as an unequip is sent", async () => {
+    const { panel, gearChanged } = await opened([instance("helm")], {
+      headId: "helm",
+    });
+
+    expect(unequip(panel, "head")).toBe(true);
+
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<[string, ItemLocation, ItemInstance]>([
+    ["bag to stash", "stash", instance("b1", { location: "bag" })],
+    ["stash to bag", "bag", instance("s1", { location: "stash" })],
+  ])(
+    "should say a change was made as a move from %s is sent",
+    async (_way, to, moved) => {
+      const { panel, api, gearChanged } = await opened([moved], {}, true);
+      const item = to === "stash" ? panel.inventory[0] : panel.stash[0];
+
+      expect(moveItem(panel, item, to)).toBe(true);
+
+      expect(api.moveItemInstance).toHaveBeenCalledTimes(1);
+      expect(gearChanged).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("should say nothing for a change dropped while one is in flight", async () => {
+    const { panel, api, gearChanged } = await opened([
+      instance("a"),
+      instance("b"),
+    ]);
+    api.updateLoadout.mockReturnValueOnce(
+      deferred<{ result: object }>().promise,
+    );
+
+    panel.onEquip?.(panel.inventory[0], "weapon");
+    panel.onEquip?.(panel.inventory[1], "head");
+
+    expect(api.updateLoadout).toHaveBeenCalledTimes(1);
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say nothing for a move dropped while one is in flight", async () => {
+    const { panel, api, gearChanged } = await opened(
+      [instance("b1", { location: "bag" }), instance("b2", { location: "bag" })],
+      {},
+      true,
+    );
+    api.moveItemInstance.mockReturnValueOnce(
+      deferred<{ result: object }>().promise,
+    );
+
+    panel.onMove?.(panel.inventory[0], "stash");
+    panel.onMove?.(panel.inventory[1], "stash");
+
+    expect(api.moveItemInstance).toHaveBeenCalledTimes(1);
+    expect(gearChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say nothing for a change made while a status line shows", async () => {
+    const { gear, panel, api, gearChanged } = hubGearOnStage([instance("a")]);
+    api.getItemInstances.mockReturnValueOnce(
+      deferred<{ result: { items: ItemInstance[] } }>().promise,
+    );
+    gear.toggle();
+    expect(panel.status).toBe(GEAR_LOADING);
+
+    panel.onUnequip?.({ entity_id: "a", name: "a" } as ItemState, "weapon");
+
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(gearChanged).not.toHaveBeenCalled();
+  });
+
+  it("should say nothing for an unequip refused for room", async () => {
+    const { panel, api, gearChanged } = await opened(
+      [...bagOf(30), instance("helm", { location: "bag" })],
+      { headId: "helm" },
+    );
+
+    expect(unequip(panel, "head")).toBe(false);
+
+    expect(api.updateLoadout).not.toHaveBeenCalled();
+    expect(gearChanged).not.toHaveBeenCalled();
+  });
+
+  it("should say nothing more when the server refuses a change after it was sent", async () => {
+    const { panel, api, gearChanged } = await opened([instance("sword")]);
+    api.updateLoadout.mockRejectedValueOnce(new Error("refused"));
+
+    panel.onEquip?.(panel.inventory[0], "weapon");
+    await settle();
+
+    expect(gearChanged).toHaveBeenCalledTimes(1);
   });
 });

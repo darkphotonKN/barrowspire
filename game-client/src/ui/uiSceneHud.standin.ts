@@ -11,9 +11,9 @@ const slots = new WeakMap<object, { slot: UiHudSlot; built: Partial<Record<HudKi
 /** `build`, each piece it makes kept by its kind while it stands, for a test to read. */
 function recording(build: HudBuild, built: Partial<Record<HudKind, unknown>>): HudBuild {
   const keep =
-    <A, P extends { destroy(): void }>(kind: HudKind, make: (at: A) => P) =>
-    (at: A) => {
-      const piece = make(at);
+    <Args extends unknown[], P extends { destroy(): void }>(kind: HudKind, make: (...args: Args) => P) =>
+    (...args: Args) => {
+      const piece = make(...args);
       built[kind] = piece;
       const destroy = piece.destroy.bind(piece);
       piece.destroy = () => {

@@ -4,9 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 // own reads going from the pieces (R51; ADR-0082 D3). The pieces themselves are their own tests': here
 // recording stand-ins for what is built, with what.
 const built = vi.hoisted(() => ({
-  hub: [] as { refreshes: number; released: number }[],
-  hud: [] as { port: { send(action: string, payload: { item_entity_id: string }): void; notice(t: string): void }; room: boolean }[],
-  views: [] as { options: { onLoot(item: unknown): void; mayTake?(): boolean; characterLevel?(): number | undefined } }[],
+  hub: [] as { refreshes: number; released: number; port?: { gearChanged?(): void } }[],
+  hud: [] as {
+    port: { send(action: string, payload: { item_entity_id: string }): void; notice(t: string): void; gearChanged?(): void };
+    room: boolean;
+  }[],
+  views: [] as {
+    options: { onLoot(item: unknown): void; mayTake?(): boolean; characterLevel?(): number | undefined; onOpen?(kind: string): void };
+  }[],
 }));
 vi.mock("./GearOverlay", () => ({ GearOverlay: class {} }));
 vi.mock("./purse", () => ({ PurseReader: class {} }));
@@ -14,8 +19,9 @@ vi.mock("@/utils/api", () => ({ apiClient: {} }));
 vi.mock("./HubGear", () => ({
   gearAsCharacter: () => ({}),
   HubGear: class {
-    made = { refreshes: 0, released: 0 };
-    constructor() {
+    made: (typeof built.hub)[number];
+    constructor(_overlay: unknown, _source: unknown, port: { gearChanged?(): void }) {
+      this.made = { refreshes: 0, released: 0, port };
       built.hub.push(this.made);
     }
     refreshPurse() {
@@ -58,6 +64,7 @@ const wiring = () => ({
   send: vi.fn(),
   take: vi.fn(),
   level: () => 7,
+  sounds: { play: vi.fn() },
 });
 const art = () => ({}) as never;
 const goldTake = () => useMailboxStore.setState({ goldTaken: useMailboxStore.getState().goldTaken + 1 });
@@ -121,5 +128,42 @@ describe("a field's and the run's gear and container view on the UI scene (FS-TQ
     options.onLoot({ entity_id: "ring-1" });
     expect(w.take).toHaveBeenCalledWith({ entity_id: "ring-1" });
     expect(options.characterLevel?.()).toBe(7);
+  });
+});
+
+// FS-AND39 R5, R7, re-expressed on the UI scene (FS-TQZ5J § Change: Merge with main, 2026-11-14): the coffer
+// view and the gear live here, so their opens and moves sound on the UI scene's gameplay player
+describe("the gameplay sounds of the gear and the container view on the UI scene (FS-AND39 R5, R7)", () => {
+  it("should play item_swap once for each change the town's gear sent", () => {
+    const w = wiring();
+    mountGearPieces({} as never, art, "hub", w);
+    built.hub.at(-1)!.port?.gearChanged?.();
+    expect(w.sounds.play.mock.calls).toEqual([["item_swap"]]);
+  });
+
+  it.each(["field", "run"] as const)("should play item_swap once for each wear and take off in the %s", (world) => {
+    const w = wiring();
+    mountGearPieces({} as never, art, world, w);
+    built.hud.at(-1)!.port.gearChanged?.();
+    built.hud.at(-1)!.port.gearChanged?.();
+    expect(w.sounds.play.mock.calls).toEqual([["item_swap"], ["item_swap"]]);
+  });
+
+  it.each([
+    ["chest", "chest_open"],
+    ["sack", "loot_open"],
+    ["drop_pile", "loot_open"],
+  ] as const)("should play a %s's open, %s, as the container view opens", (kind, effect) => {
+    const w = wiring();
+    mountGearPieces({} as never, art, "run", w);
+    built.views.at(-1)!.options.onOpen?.(kind);
+    expect(w.sounds.play.mock.calls).toEqual([[effect]]);
+  });
+
+  it("should play nothing for a take: the world sounds the take it sends", () => {
+    const w = wiring();
+    mountGearPieces({} as never, art, "field", w);
+    built.views.at(-1)!.options.onLoot({ entity_id: "ring-1" });
+    expect(w.sounds.play).not.toHaveBeenCalled();
   });
 });

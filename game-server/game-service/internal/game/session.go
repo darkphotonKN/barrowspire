@@ -62,6 +62,9 @@ type Session struct {
 	fieldPopulation *fieldPopulation
 	// the dev test room's chests and enemies; nil in every other world (FS-BDRTJ)
 	devTestRoom *devTestRoomState
+	// the endgame test run's fixed plan; nil in every other world. Set at
+	// build, read-only after (FS-BDRTJ §Change: Endgame test run)
+	endgame *endgamePlan
 	// a field channel's chest restock delay, its place's, cached as it is built
 	// so the tick reads one number rather than the place; 0 never restocks.
 	// Guarded by mu. FS-3QHQZ §Requirements 19.
@@ -187,6 +190,10 @@ type Session struct {
 	// buildings and in every other world. Set by each floor build under mu and
 	// never written in place; the seat reads it under mu (FS-KE075 §B).
 	dungeon *dungeonFloor
+	// floorPool is the current run floor's pool, the variants its standard
+	// monsters come from (FS-C8VM7 §C R19). Set by each floor's population
+	// under mu; the floor map reads it under mu (§G R40).
+	floorPool floorPool
 	// generateDungeon builds a dungeon floor's layout from its parameters and
 	// seed: levelgen.GenerateDungeon, injected so a test can make it fail
 	// (FS-KE075 §B R17).
@@ -529,8 +536,6 @@ func (s *Session) manageClientMessages() {
 				})
 
 			case constants.ActionInteract:
-				slog.Debug("Action from client was interact")
-
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
@@ -572,7 +577,6 @@ func (s *Session) manageClientMessages() {
 				})
 
 			case constants.ActionAttack:
-				slog.Debug("Action from client was attack")
 				parsedPayload, err := msg.Message.ParsePayload()
 
 				if err != nil {
@@ -1883,8 +1887,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	_, isItemEntity := targetEntity.GetComponent(ecs.ComponentTypeItem)
 	switchComp, isSwitch := targetEntity.GetComponent(ecs.ComponentTypeSwitch)
 	_, isEscapeDoor := targetEntity.GetComponent(ecs.ComponentTypeEscapeDoor)
+	// a tome run's tome and altar (FS-3103M §D, §F)
+	isTome := targetEntity.HasComponent(ecs.ComponentTypeTome)
+	isAltar := targetEntity.HasComponent(ecs.ComponentTypeAltar)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -1924,6 +1931,15 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 
 	if isStairs {
 		return s.climbStairs(playerID, playerTransform, targetEntity)
+	}
+
+	// --- the tome and the altar (FS-3103M §D, §F) ---
+
+	if isTome {
+		return s.takeTome(playerID, playerTransform, targetEntity)
+	}
+	if isAltar {
+		return s.reachAltar(playerID, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---
@@ -3173,9 +3189,23 @@ func consumedItemIDsOf(delver *ecs.Entity) []uuid.UUID {
 }
 
 func (s *Session) InitialSystems() {
+	// the endgame test run's height, first floor and tome plan are its plan's,
+	// in place of the rolls (FS-BDRTJ §Change: Endgame test run, R25, R29)
+	if s.endgame != nil {
+		CreateMatchProgressEntity(s.EntityManager, s.endgame.FirstFloor, s.endgame.Height)
+		s.setTomePlan(s.endgame.TomeFloor, s.endgame.AltarFloor)
+		return
+	}
+
 	// creates and setsup match progress entity within the entity manager; the
 	// run's height is rolled here, once, and never leaves the server
-	CreateMatchProgressEntity(s.EntityManager, rollSpireHeight(s.spawnRand))
+	height := rollSpireHeight(s.spawnRand)
+	CreateMatchProgressEntity(s.EntityManager, firstFloor, height)
+
+	// a tome run's plan is rolled with its height (FS-3103M §B R5)
+	if tomeFloor, altarFloor, ok := rollTomePlan(s.spawnRand, height, TomeRunChance); ok {
+		s.setTomePlan(tomeFloor, altarFloor)
+	}
 }
 
 type PlaceArea struct {
@@ -3225,7 +3255,8 @@ func (s *Session) InitialMapObjects(expected []types.CharacterInPlay) {
 	// out until the floor stands (every later floor is built by the loop itself)
 	s.buildMu.Lock()
 	defer s.buildMu.Unlock()
-	s.buildFloor(firstFloor, expected)
+	// the endgame test run begins on its plan's floor (FS-BDRTJ R25)
+	s.buildFloor(s.startFloor(), expected)
 }
 
 /**
@@ -3261,6 +3292,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 	if dungeon != nil {
 		s.layDungeon(depth, dungeon, fixtures)
 	} else {
+		s.warnTomeRunFallback(depth)
 		s.layBuildings(depth)
 	}
 

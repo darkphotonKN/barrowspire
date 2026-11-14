@@ -16,6 +16,7 @@ import {
 } from "@/types/gameState";
 import { fieldRefusalCopy, spireRefusalCopy } from "./fieldRefusals";
 import {
+  DEV_GATE_LABELS,
   FIELD_IDS,
   FIELD_NAMES,
   fieldOf,
@@ -23,6 +24,7 @@ import {
   gateEdges,
   gatesInThisBuild,
   signpostOf,
+  type DevDestination,
   type FieldDestination,
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
@@ -628,7 +630,8 @@ export class HubScene extends Phaser.Scene {
   private atGate?: GateState;
   /** The name of the field gate the player stands in, over its signpost (FS-0XMCP §Requirements 21). */
   private fieldSign?: Phaser.GameObjects.Text;
-  private devGateLabel?: Phaser.GameObjects.Text;
+  /** Each dev gate's plain label, while the state has that gate (FS-BDRTJ R5, R20). */
+  private devGateLabels = new Map<DevDestination, Phaser.GameObjects.Text>();
   /**
    * The field-gate seam (FS-0XMCP §Requirements 21): called once each time the player steps into
    * a field gate, with the field it leads to; never while lingering, never for the Spire's gate.
@@ -637,6 +640,8 @@ export class HubScene extends Phaser.Scene {
   onFieldGate: (destination: FieldDestination) => void = (destination) => this.enterField(destination);
   /** An enter_field has been sent and its reply has not come (FS-X2F2H §Requirements 11, 57). */
   private enteringField = false;
+  /** A start_dev_endgame_run has been sent and its reply has not come (FS-BDRTJ R21). */
+  private endgamePending = false;
   /** 1, 2, 3: the UI scene's menu's while it is open and its dialogue card's while one is shown; read and dropped here then. */
   private choiceKeys: Phaser.Input.Keyboard.Key[] = [];
   private confirmKey?: Phaser.Input.Keyboard.Key;
@@ -942,8 +947,7 @@ export class HubScene extends Phaser.Scene {
    * and the ready check, `coversPopups` (§ Change: Phase 2: the party, R38); the town's part of the gear
    * overlay's refusal, its dialogue: the menu is the UI scene's own (§ Change: Phase 3, R55).
    */
-  private blockers(): WorldBlockers {
-    return {
+  private blockers(): WorldBlockers {    return {
       dialogue: !!this.dialogue,
       party: !!this.dialogue,
       popups: this.coversPopups(),
@@ -992,9 +996,9 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * The logical view changed (FS-ZAJMH R13): what keeps to the right or the centre goes back to
-   * its anchor, open panels included, their state untouched. The level bar, the chat window and
-   * the party frames keep to the left, which a width change does not move; the gear
-   * overlay follows Phaser's resize itself.
+   * its anchor, open panels included, their state untouched. The chat window and the party frames
+   * keep to the left, which a width change does not move; the gear overlay follows Phaser's
+   * resize itself.
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
@@ -1104,6 +1108,14 @@ export class HubScene extends Phaser.Scene {
       this.enteringField = false;
       this.notice(fieldRefusalCopy(ActionType.EnterField, info.reason));
     });
+    // The endgame test run refused in start_solo's words (FS-BDRTJ R21, R22): said in passing, as a
+    // refused field entry is, and the next step into the gate asks again. Success needs no
+    // listener: world_entered switches the scene, as it does for start_solo.
+    socketManager.onError(ActionType.StartDevEndgameRun, (info) => {
+      if (!this.endgamePending) return;
+      this.endgamePending = false;
+      this.notice(spireRefusalCopy(info.reason, info.message, "The way is shut for now. Ask again."));
+    });
     // A party_enter is answered by the ready check opening (I-BJNYC-5 draws it), by the run's
     // world_entered switching the scene, or by a refusal: the choice comes back on any of them.
     // A refusal is also said by the open door in its own words (FS-BJNYC R21, R22); the chat's line
@@ -1146,6 +1158,7 @@ export class HubScene extends Phaser.Scene {
       socketManager.off("world_left");
       socketManager.offError(ActionType.LeaveHub);
       socketManager.offError(ActionType.EnterField);
+      socketManager.offError(ActionType.StartDevEndgameRun);
     };
   }
 
@@ -1191,13 +1204,14 @@ export class HubScene extends Phaser.Scene {
     // the next visit steps into whatever gate it starts in
     this.atGate = undefined;
     this.dropFieldSign();
-    this.dropDevGateLabel();
+    this.dropDevGateLabels();
     this.leavePending = false;
     this.soloPending = false;
     this.enterPending = false;
     this.queuePending = false;
     this.leavingHub = false;
     this.enteringField = false;
+    this.endgamePending = false;
     this.roofs = [];
     // the display list destroyed its buildings and Graphics; the next visit makes its own
     this.view?.destroy();
@@ -1413,7 +1427,8 @@ export class HubScene extends Phaser.Scene {
       ...(this.inStashStore(self.pos) ? [{ at: HUB_STASH_CHEST.at, who: "stash" as const }] : []),
     ];
     const nearest = nearestInReach(self.pos, reachable, NPC_TALK_RANGE);
-    // the stash view is the inventory's, so the chest's E plays its open (FS-WDM0X S2)
+    // one press, one sound: the UI scene's gear plays the chest's lid, `stash_open`, as the press's sound in
+    // place of the window rule's inventory_open (FS-WDM0X S2 as amended 2026-11-14; FS-AND39 R6)
     if (nearest === "stash") this.ui.act(() => this.ui.gear({ kind: "openStash" }));
     else if (nearest) this.openDialogue(nearest);
   }
@@ -2024,7 +2039,7 @@ export class HubScene extends Phaser.Scene {
 
       this.followGates(state.current_player.position, gates);
     }
-    this.labelDevGate(gates);
+    this.labelDevGates(gates);
 
     this.renderStructures(state.walls ?? []);
     // Scenery waits for the buildings so it can refuse to stand inside one.
@@ -2136,6 +2151,8 @@ export class HubScene extends Phaser.Scene {
    * A field gate (FS-0XMCP §Requirements 21) names its field over its signpost while the player
    * stands in it and raises {@link onFieldGate} once on stepping in, and that is all: no dialogue
    * and no message, so the movement clamp keeps the player at the edge.
+   *
+   * The endgame test run's gate (FS-BDRTJ R21) is no field gate: stepping in starts the run.
    */
   private followGates(pos: Position, gates: readonly GateState[]): void {
     const now = gateAt(pos, gates);
@@ -2152,23 +2169,38 @@ export class HubScene extends Phaser.Scene {
       if (field !== "dev_test_room") this.showFieldSign(entered, field);
       this.onFieldGate(field);
     }
+    if (entered?.destination === "dev_endgame_run") this.startDevEndgameRun();
   }
 
-  /** The dev test room's plain label, at its gate for as long as the state has one (FS-BDRTJ R5). */
-  private labelDevGate(gates: readonly GateState[]): void {
-    const gate = gates.find((g) => g.destination === "dev_test_room");
-    if (!gate) {
-      this.dropDevGateLabel();
-      return;
+  /** Each dev gate's plain label, at its gate for as long as the state has it (FS-BDRTJ R5, R20). */
+  private labelDevGates(gates: readonly GateState[]): void {
+    for (const [destination, words] of Object.entries(DEV_GATE_LABELS) as [DevDestination, string][]) {
+      const gate = gates.find((g) => g.destination === destination);
+      if (!gate) {
+        this.devGateLabels.get(destination)?.destroy();
+        this.devGateLabels.delete(destination);
+        continue;
+      }
+      if (this.devGateLabels.has(destination)) continue;
+      const foot = worldToScreen(gate.position.x, gate.position.y);
+      this.devGateLabels.set(destination, this.gateName(foot.x, foot.y, words));
     }
-    if (this.devGateLabel) return;
-    const foot = worldToScreen(gate.position.x, gate.position.y);
-    this.devGateLabel = this.gateName(foot.x, foot.y, FIELD_NAMES.dev_test_room);
   }
 
-  private dropDevGateLabel(): void {
-    this.devGateLabel?.destroy();
-    this.devGateLabel = undefined;
+  private dropDevGateLabels(): void {
+    for (const label of this.devGateLabels.values()) label.destroy();
+    this.devGateLabels.clear();
+  }
+
+  /**
+   * Into the endgame test run (FS-BDRTJ R21): one start_dev_endgame_run, and nothing more until
+   * the server has answered it, by world_entered or a refusal, as start_solo is. Not while the Esc
+   * menu or a dialogue is up, as a field gate's walk-in is not; that step is spent.
+   */
+  private startDevEndgameRun(): void {
+    if (this.menuOpen || this.dialogue || this.endgamePending) return;
+    this.endgamePending = true;
+    socketManager.sendMessage(ActionType.StartDevEndgameRun, {});
   }
 
   private gateName(x: number, y: number, words: string): Phaser.GameObjects.Text {

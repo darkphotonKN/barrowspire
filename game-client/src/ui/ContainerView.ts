@@ -316,6 +316,12 @@ export interface ContainerViewOptions {
    * nothing is sent; the caller says why. Absent, every take is allowed.
    */
   mayTake?: () => boolean;
+  /**
+   * The view opened for a container, with its kind (FS-AND39 R5): once per open, never when the
+   * container it is already open for is shown again. Every open is the player's own, so its sound
+   * goes here.
+   */
+  onOpen?(kind: ContainerKind): void;
 }
 
 interface Icon {
@@ -446,6 +452,7 @@ export class ContainerView {
    * bone heap open nothing, and their icons are simply there.
    */
   open(entityId: string, kind: ContainerKind): void {
+    const shownAgain = this.openFor === entityId;
     this.reset();
     this.openFor = entityId;
     // its ground takes presses again, as the view pops in (FS-TQZ5J § Change: Phase 3, R59)
@@ -458,6 +465,7 @@ export class ContainerView {
     this.flap.setVisible(lifts).setScale(1).clearTint();
     this.iconsFrom = this.scene.time.now + (lifts ? ICONS_AFTER_MS : 0);
     this.showStatus();
+    if (!shownAgain) this.options.onOpen?.(kind);
 
     this.scene.tweens.add({
       targets: this.root,

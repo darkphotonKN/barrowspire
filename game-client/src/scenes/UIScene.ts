@@ -1,6 +1,7 @@
 import * as Phaser from "phaser";
 import { UI_SCENE } from "@/components/uiSceneLifecycle";
 import { browserMusicStore, storedMusicLevel } from "@/audio/musicSetting";
+import { GameplaySounds } from "@/audio/gameplaySounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { letGoOfGameField } from "@/components/gameFocus";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
@@ -353,7 +354,14 @@ export class UIScene extends Phaser.Scene {
     });
     const party = new UiPartySlot((world) => this.partyPieces(bridge, world));
     // the gear overlay and its source, and the container view, for each world (§ Change: Phase 3, R50)
-    const gear = new UiGearSlot(bridge, (world, wiring) => mountGearPieces(this, () => this.residentArt(), world, wiring));
+    // their coffer opens and gear moves sound on the UI scene's gameplay player, as the pieces live here
+    // (FS-AND39 R5, R7; FS-TQZ5J § Change: Merge with main, 2026-11-14)
+    const gameplay = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
+    const gear = new UiGearSlot(
+      bridge,
+      (world, wiring) => mountGearPieces(this, () => this.residentArt(), world, wiring),
+      gameplay,
+    );
     const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu(), party, {
       isInventoryOpen: () => gear.isInventoryOpen(),
       isCharacterOpen: () => gear.isCharacterOpen(),
@@ -406,6 +414,8 @@ export class UIScene extends Phaser.Scene {
         controls.close();
       },
       abilityCard: (up) => this.badge?.abilityCard(up),
+      // the run's Burn tome? in the menu slot (FS-3103M R25; FS-TQZ5J § Change: Merge with main, 2026-11-14)
+      confirmBurn: (altar) => menu.confirmBurn(altar),
     });
     relayoutOn(this, () => {
       corner.relayout();

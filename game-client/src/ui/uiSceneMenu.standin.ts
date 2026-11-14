@@ -195,6 +195,7 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
       gear.endPopped();
       controls.close();
     },
+    confirmBurn: (altar) => menu.confirmBurn(altar),
   });
   // as the UI scene's update: its keys, then the town's gear keys and its E after a shown card (R56)
   const frame = (pressed: Pressed = {}) => {

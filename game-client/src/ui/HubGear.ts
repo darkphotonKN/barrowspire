@@ -119,9 +119,13 @@ export type HubGearPanel = HudPanel & {
   onMove?: (item: ItemState, to: ItemLocation) => void;
 };
 
-/** The hub's passing notice. */
+/**
+ * The hub's passing notice, and word of each change the player made, once as it is sent: the hub
+ * plays `item_swap` (FS-AND39 R7).
+ */
 export interface HubGearPort {
   notice(text: string): void;
+  gearChanged?(): void;
 }
 
 /** Plain words, since the player acts on them (game-client/CONTEXT.md, no lore in errors). */
@@ -501,8 +505,9 @@ export class HubGear {
 
   /**
    * One change at a time, equip, unequip or move (FS-HRH2J R42, FS-VPD8Y R41): the overlay has
-   * already drawn it; whether it was sent. A refusal says so by its code and loads the truth
-   * again (R43, FS-VPD8Y R42).
+   * already drawn it; whether it was sent. A sent change is the player's to hear, once (FS-AND39
+   * R7); one dropped here is not. A refusal says so by its code and loads the truth again (R43,
+   * FS-VPD8Y R42).
    */
   private send(
     request: () => Promise<unknown>,
@@ -523,6 +528,7 @@ export class HubGear {
         if (this.panel.isVisible()) void this.load();
       },
     );
+    this.port.gearChanged?.();
     return true;
   }
 }

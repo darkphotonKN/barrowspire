@@ -10,6 +10,7 @@
 
 import type Phaser from "phaser";
 import { ActionType } from "@/assets/types/client";
+import { containerOpenEffect } from "@/audio/gameplaySounds";
 import type { ArtLibrary } from "@/render/art/library";
 import { useGameStore } from "@/stores/gameStore";
 import { useMailboxStore } from "@/stores/mailboxStore";
@@ -31,7 +32,8 @@ export function mountGearPieces(scene: Phaser.Scene, library: () => ArtLibrary, 
     const hub = new HubGear(
       overlay,
       gearAsCharacter(apiClient, () => useGameStore.getState().getActiveCharacter()?.id ?? null),
-      { notice: wiring.notice },
+      // a sent change sounds once (FS-AND39 R7); one `send` drops does not
+      { notice: wiring.notice, gearChanged: () => wiring.sounds.play("item_swap") },
       purse,
     );
     // a Take that carried gold reads the purse again, open or closed (FS-7TGZ3 R9)
@@ -45,6 +47,8 @@ export function mountGearPieces(scene: Phaser.Scene, library: () => ArtLibrary, 
     {
       send: (action, payload) => wiring.send(action === ActionType.Equip ? "equip" : "unequip", payload.item_entity_id),
       notice: wiring.notice,
+      // each wear and take off as it is asked of the world (FS-AND39 R7)
+      gearChanged: () => wiring.sounds.play("item_swap"),
     },
     Date.now,
     purse,
@@ -53,7 +57,13 @@ export function mountGearPieces(scene: Phaser.Scene, library: () => ArtLibrary, 
   const container = new ContainerView(
     scene,
     art,
-    { onLoot: (item) => wiring.take(item), characterLevel: wiring.level, mayTake: () => hud.roomForOne() },
+    {
+      onLoot: (item) => wiring.take(item),
+      characterLevel: wiring.level,
+      mayTake: () => hud.roomForOne(),
+      // the player's own open, once per open: a chest's lid, a sack's or a pile's rustle (FS-AND39 R5)
+      onOpen: (kind) => wiring.sounds.play(containerOpenEffect(kind)),
+    },
     new ContainerContents(LOOT_PENDING_MS),
   );
   return { gear: equipmentPiece(hud), container };

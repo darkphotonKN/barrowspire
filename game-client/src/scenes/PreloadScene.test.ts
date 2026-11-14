@@ -13,6 +13,7 @@ const { PreloadScene } = await import("./PreloadScene");
 const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("@/render/art/artLoader.standin");
 const { atlasTextureKey } = await import("@/render/art/library");
 const { UI_EFFECTS } = await import("@/audio/uiSounds");
+const { GAMEPLAY_EFFECTS } = await import("@/audio/gameplaySounds");
 
 /** The same dust every run: a small LCG in place of Math.random. */
 function steadyRandom() {
@@ -23,12 +24,32 @@ function steadyRandom() {
   });
 }
 
-/** The boot scene on a stand-in stage, its load held until `finish`. */
-function bootScreen() {
+/** A Web Audio context, as far as the gameplay effects' install reaches it. */
+function webAudio(sampleRate = 48000) {
+  return {
+    sampleRate,
+    createBuffer: (_channels: number, length: number) => {
+      const data = new Float32Array(length);
+      return { getChannelData: () => data };
+    },
+  };
+}
+
+/**
+ * The boot scene on a stand-in stage, its load held until `finish`; its sound manager has `context`
+ * (Web Audio) or none (HTML5 audio), and what is added to its audio cache by hand is kept in `added`.
+ */
+function bootScreen(context?: ReturnType<typeof webAudio>) {
   const art = artLoaderStandin({ manifest: shippedManifest() });
-  const scene = Object.assign(new PreloadScene(), art.scene, { scene: { start: vi.fn() } });
+  const added = new Map<string, unknown>();
+  const audio = { ...art.scene.cache.audio, add: (key: string, data: unknown) => added.set(key, data) };
+  const scene = Object.assign(new PreloadScene(), art.scene, {
+    scene: { start: vi.fn() },
+    sound: { context },
+    cache: { ...art.scene.cache, audio },
+  });
   art.boot(scene, undefined, { hold: true });
-  return { art, scene };
+  return { art, scene, added };
 }
 
 /** What is on the stage: each object's kind, how it was added, every call on it, and whether it is gone. */
@@ -77,6 +98,28 @@ describe("PreloadScene's boot screen (FS-C4JWH §D R18: unchanged)", () => {
     art.finish();
 
     expect(UI_EFFECTS.every((name) => art.audio.has(`sfx:${name}`))).toBe(true);
+    expect(scene.scene.start).toHaveBeenCalledWith("MainMenuScene");
+  });
+});
+
+describe("PreloadScene's gameplay effects (FS-AND39 R12)", () => {
+  it("should install the 11 gameplay effects on a Web Audio stage before the main menu starts (FS-AND39 R12)", () => {
+    const { art, scene, added } = bootScreen(webAudio());
+    scene.scene.start.mockImplementation(() => expect(added.size).toBe(11));
+
+    art.finish();
+
+    expect([...added.keys()]).toEqual(GAMEPLAY_EFFECTS.map((name) => `sfx:${name}`));
+    expect(scene.scene.start).toHaveBeenCalledWith("MainMenuScene");
+    expect(UI_EFFECTS.every((name) => art.audio.has(`sfx:${name}`))).toBe(true);
+  });
+
+  it("should install nothing without Web Audio, and still go on to the main menu (FS-AND39 R12)", () => {
+    const { art, scene, added } = bootScreen(undefined);
+
+    art.finish();
+
+    expect(added.size).toBe(0);
     expect(scene.scene.start).toHaveBeenCalledWith("MainMenuScene");
   });
 });

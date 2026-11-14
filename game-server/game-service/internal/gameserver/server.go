@@ -47,6 +47,9 @@ type Server struct {
 
 	// the hub world. One per process, built at startup, outlives every run.
 	hubSessionID uuid.UUID
+	// whether start_dev_endgame_run is known here: on with the dev test room,
+	// set once at construction (FS-BDRTJ §Change: Endgame test run, R18)
+	endgameRun bool
 
 	// this pod's channel of each field, by field, built at startup beside the
 	// hub and never shut down (FS-X2F2H §Requirements 4, 5)
@@ -191,6 +194,7 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 		itemsClient:     itemsClient,
 		characters:      characters,
 		partyMembership: newPartyMembership(),
+		endgameRun:      boot.devTestRoom,
 	}
 	if boot.partyStore != nil {
 		server.leaders = boot.partyStore
@@ -254,6 +258,8 @@ func NewServer(ctx context.Context, authClient grpcauth.AuthClient, queueService
 	hub := server.createHubSession()
 	if boot.devTestRoom {
 		hub.AddDevTestRoomGate()
+		// FS-BDRTJ §Change: Endgame test run, R18-R19: behind the room's guard
+		hub.AddEndgameRunGate()
 	}
 	server.createFieldSessions(fields)
 
@@ -959,6 +965,23 @@ func (s *Server) AtSpireGate(playerID uuid.UUID) bool {
 	return hub.AtGate(playerID, components.GateDestinationSpire)
 }
 
+// EndgameRunOn reports whether this pod knows the endgame test run: only with
+// the dev test room on, the same boot option (FS-BDRTJ R18, R23).
+func (s *Server) EndgameRunOn() bool {
+	return s.endgameRun
+}
+
+// AtEndgameRunGate reports whether the player stands at the endgame test run's
+// gate in the hub, as AtSpireGate measures the Spire's (FS-BDRTJ R22).
+func (s *Server) AtEndgameRunGate(playerID uuid.UUID) bool {
+	hub, exists := s.HubSession()
+	if !exists {
+		return false
+	}
+
+	return hub.AtGate(playerID, components.GateDestinationDevEndgameRun)
+}
+
 /**
 * CheckLoadout reads the member's worn gear from items-service, as their own
 * token, and reports errNoLoadout when it cannot be read. It blocks on the
@@ -1259,12 +1282,29 @@ func (s *Server) GetPlayerFromConn(conn *websocket.Conn) (*types.Player, bool) {
 * allows the creation of a new game session.
 **/
 func (s *Server) CreateGameSession(players *types.ResolvedMatchedPlayers) *game.Session {
+	return s.createRun(players, game.NewSession)
+}
+
+// CreateEndgameRun builds the endgame test run for one player, as
+// CreateGameSession builds a solo run, on the run's fixed plan. It settles as
+// any run does (FS-BDRTJ §Change: Endgame test run, R25, R31, R32).
+func (s *Server) CreateEndgameRun(player *types.Player) *game.Session {
+	return s.createRun(&types.ResolvedMatchedPlayers{LocalPlayers: []*types.Player{player}}, game.NewEndgameRun)
+}
+
+// newRunWorld builds a run world; game.NewSession, or game.NewEndgameRun for
+// the endgame test run.
+type newRunWorld func(game.SessionCloser, *messaging.MessageSender, game.StateSerializer, *ecs.EntityManager, game.EventEmitter, grpcitems.ItemsClient, game.WorldBounds) *game.Session
+
+// createRun builds, seats and registers a run from the players, the world
+// made by newWorld.
+func (s *Server) createRun(players *types.ResolvedMatchedPlayers, newWorld newRunWorld) *game.Session {
 	// create entity manager first so it can be shared
 	entityManager := ecs.NewEntityManager()
 	stateSerializer := s.newStateSerializer(entityManager)
 
 	// create session with message sender
-	newGameSession := game.NewSession(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
+	newGameSession := newWorld(s, messaging.NewMessageSender(s), stateSerializer, entityManager, s.eventEmitter, s.itemsClient, game.RunBounds())
 
 	newGameSession.InitialSystems()
 

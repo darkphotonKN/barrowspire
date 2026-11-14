@@ -1,21 +1,32 @@
 import { describe, expect, it } from "vitest";
 import type Phaser from "phaser";
-import { RESOURCE_HUD_AT, ResourceHud, resourceHudHeight } from "./ResourceHud";
+import {
+  HUD_COLUMN_W,
+  RESOURCE_HUD_AT,
+  ResourceHud,
+  resourceHudHeight,
+} from "./ResourceHud";
 import type { HudBar } from "./resources";
 
 // The panel hangs from a fixed top edge and grows down, so whatever stands under it keeps its place.
 
-// The run's place: FS-56CKV §D.20 supersedes FS-8AY7S R20's "x 10, y 84" in part (now y 56).
-const TOP = 56;
+// The run's place: FS-77DVN §E.17 supersedes FS-56CKV §D.20's y 56 (and FS-8AY7S R20's "x 10,
+// y 84") in part: with the XP bar gone to the bottom, the run's bars rise to a field's place.
 const X = 10;
+const TOP = 16;
 
-describe("ResourceHud's place in a run (FS-56CKV §D.20)", () => {
-  it("should stand the run's bars at the top left, at (10, 56), under the XP bar at y 16", () => {
+describe("ResourceHud's place (FS-77DVN §E.17, §E.21)", () => {
+  it("should stand the run's bars at the very top left, at (10, 16), as a field's", () => {
     expect(RESOURCE_HUD_AT.run).toEqual({ x: X, y: TOP });
+    expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
   });
 
-  it("should keep a field's bars in its corner, at (10, 16) (§D.22)", () => {
+  it("should keep a field's bars in its corner, at (10, 16)", () => {
     expect(RESOURCE_HUD_AT.field).toEqual({ x: 10, y: 16 });
+  });
+
+  it("should keep the bars one 180 px column with the party frames (§E.19)", () => {
+    expect(HUD_COLUMN_W).toBe(180);
   });
 });
 

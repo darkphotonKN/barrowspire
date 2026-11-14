@@ -12,7 +12,9 @@ export const shippedManifest = (): ArtManifest =>
 
 /**
  * The shipped manifest's resident pages (FS-C4JWH §A R3), written out rather than derived, so a
- * test that compares against them checks the table: the four class groups and the 14 small ones.
+ * test that compares against them checks the table: the four class groups, the 14 small ones and
+ * the tome and altar's `summoning` (FS-3103M §I). The tiered roster's variant groups are not here:
+ * each is floor-scoped and fetched on demand (FS-C8VM7 §G R41, ADR-0081).
  */
 export const RESIDENT_ART_PAGES = [
   "archer-0",
@@ -30,6 +32,7 @@ export const RESIDENT_ART_PAGES = [
   "nature-0",
   "props-0",
   "spire-0",
+  "summoning-0",
   "tower-0",
   "town-0",
   "wizard-0",

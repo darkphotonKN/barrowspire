@@ -828,3 +828,53 @@ describe("Esc on the town's dialogue (FS-WDM0X § Change: Menu, dialog and notic
     expect(t.heard()).toEqual(["dialog_cancel"]);
   });
 });
+
+// FS-3103M R25, re-expressed on the UI scene (FS-TQZ5J § Change: Merge with main, 2026-11-14): the run's E at
+// the altar with the tome carried fills the slot with Burn tome?, sounding as the Fall confirm does
+describe("the run's Burn tome? in the slot (FS-3103M R25)", () => {
+  it("should ask Burn tome? with dialog_open, send the burn with dialog_confirm_heavy, and close", () => {
+    const t = onBridge();
+    const run = aWorld("run");
+    t.bridge.report(run.report);
+
+    t.slot.confirmBurn("altar-1");
+    expect(t.heard()).toEqual(["dialog_open"]);
+    expect(t.shown()?.menu?.line).toBe("Burn tome?");
+    expect(t.rows()).toEqual(["burn", "not-yet"]);
+
+    t.row("burn");
+    expect(t.heard()).toEqual(["dialog_confirm_heavy"]);
+    expect(run.asked).toEqual([{ kind: "burn", altar: "altar-1" }]);
+    expect(t.slot.isOpen()).toBe(false);
+  });
+
+  it("should send nothing on Not yet or Esc, closing with the rule's settings_close", () => {
+    const t = onBridge();
+    const run = aWorld("run");
+    t.bridge.report(run.report);
+
+    t.slot.confirmBurn("altar-1");
+    t.heard();
+    t.row("not-yet");
+    expect(t.heard()).toEqual(["settings_close"]);
+    t.slot.confirmBurn("altar-1");
+    t.heard();
+    t.esc();
+    expect(t.heard()).toEqual(["settings_close"]);
+    expect(run.asked).toEqual([]);
+  });
+
+  it("should ask nothing with the slot already filled, or outside the run", () => {
+    const t = onBridge();
+    const run = aWorld("run");
+    t.bridge.report(run.report);
+    t.esc();
+    t.slot.confirmBurn("altar-1");
+    expect(t.rows()).toEqual(["fall", "options", "back"]);
+
+    const town = onBridge();
+    town.bridge.report(aWorld("hub").report);
+    town.slot.confirmBurn("altar-1");
+    expect(town.slot.isOpen()).toBe(false);
+  });
+});

@@ -304,10 +304,10 @@ describe("letterDetail (R36, R37, S8)", () => {
     const [blades, ring] = detail.enclosed;
     expect(blades).toMatchObject({
       kind: "item",
-      icon: "sword",
+      icon: "sword_t2",
       quantity: "x3",
     });
-    expect(ring).toMatchObject({ kind: "item", icon: "ring", quantity: "" });
+    expect(ring).toMatchObject({ kind: "item", icon: "ring_t4", quantity: "" });
   });
 
   it("builds the item tip from the snapshot, a copied unique's affixes and effect included", () => {

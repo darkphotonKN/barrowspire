@@ -19,11 +19,11 @@ const (
 	MonsterCountMin = 8
 	MonsterCountMax = 14
 
-	// each standard monster is a troll with probability
-	// base + perFloor × (floor − 1), capped
-	TrollShareBase     = 0.25
-	TrollSharePerFloor = 0.10
-	TrollShareCap      = 0.60
+	// each standard monster is a brute of the floor's pool with probability
+	// base + perFloor × (floor − 1), capped (FS-C8VM7 §C R21, R25)
+	BruteShareBase     = 0.25
+	BruteSharePerFloor = 0.10
+	BruteShareCap      = 0.60
 
 	// monster level = party level + step × (floor − 1) ± spread, at least 1
 	MonsterLevelPerFloor = 1
@@ -41,52 +41,39 @@ const (
 	MonsterPlacementAttempts = 200
 )
 
-// spireNonTrollMix is what a rolled Spire monster is when it is not a troll, as
-// shares of those rolls, the same on every floor. Hall packs are not rolled and
-// stay a troll and ghouls, one of them a Bone Archer. FS-M8CSE §D R18; in a
-// dungeon's ordinary room a ghoul roll can turn (BoneArcherRoomShare,
-// FS-B4SG9 §B).
-var spireNonTrollMix = []struct {
-	Archetype components.MonsterArchetype
-	Share     float64
-}{
-	{components.MonsterArchetypeGhoul, 0.70},
-	{components.MonsterArchetypeBarrowThrall, 0.20},
-	{components.MonsterArchetypeSpireWraith, 0.10},
-}
-
 // A dungeon floor's population, by room and role (FS-KE075 §C R18–20, ADR-0061
 // Decision 7). It replaces MonsterCountMin/Max on a dungeon floor only; the
 // mix, levels, elite chance and demon above stay the floor's own.
 const (
 	// the floor's monsters besides a demon, held to [min, max] by topping up
 	// ordinary rooms and trimming ordinary rooms, then corridors
-	DungeonMonstersMin = 45
-	DungeonMonstersMax = 70
+	DungeonMonstersMin = 30
+	DungeonMonstersMax = 45
 
 	// a hall is a room at least this many cells wide and tall (width × height,
 	// as the generator draws rooms: up to 10 × 8)
 	HallMinWidth  = 8
 	HallMinHeight = 6
-	// a hall that is not the start or a treasure room holds one pack: a troll
-	// and a uniform [min, max] ghouls, each within the radius of the troll, in px
-	HallPackGhoulsMin = 2
-	HallPackGhoulsMax = 4
+	// a hall that is not the start or a treasure room holds one pack: a brute
+	// of the floor pool and a uniform [min, max] of the pool's fodder, each
+	// within the radius of the brute, in px
+	HallPackFodderMin = 1
+	HallPackFodderMax = 3
 	HallPackRadius    = 160.0
-	// troll spots a hall pack tries before it settles for the one that fitted
-	// the most of its ghouls
-	HallPackTrollTries = 20
+	// brute spots a hall pack tries before it settles for the one that fitted
+	// the most of its fodder
+	HallPackBruteTries = 20
 
 	// every other room but the start holds a uniform [min, max] rolled monsters;
 	// a top-up never takes a room past RoomMonstersTopUpMax
 	RoomMonstersMin      = 0
-	RoomMonstersMax      = 3
-	RoomMonstersTopUpMax = 4
+	RoomMonstersMax      = 2
+	RoomMonstersTopUpMax = 3
 
 	// the corridors hold a uniform [min, max] rolled monsters in all, at most one
 	// per corridor segment
-	CorridorMonstersMin = 4
-	CorridorMonstersMax = 8
+	CorridorMonstersMin = 3
+	CorridorMonstersMax = 5
 
 	// a treasure room is guarded by one elite, or with this chance by a pack of
 	// a uniform [min, max] elites; every guard is elite, its archetype rolled
@@ -150,6 +137,104 @@ func rollSpireHeight(rng populationRand) int {
 	return spireHeightOdds[len(spireHeightOdds)-1].Height
 }
 
+// The Tome of Filth and the Altar of Consecration. FS-3103M §B R5.
+const (
+	// the chance a run has a tome, rolled once with its height; 1 forces a
+	// tome into every run in a local build
+	TomeRunChance = 0.02
+)
+
+/*
+	The tiered roster: eight families of variants, each variant unlocked at a
+	tier of monster level. FS-C8VM7 §A R1-R9. The types and the functions that
+	read it are in monster_roster.go.
+*/
+
+// Level tiers and the step rule.
+const (
+	// a level tier is this many monster levels, level tier 1 being levels 1-5;
+	// the last level tier is open-ended
+	LevelTierSpan = 5
+	MaxLevelTier  = 6
+
+	// step k of a family at level 1 is step 0's HP, damage, defence and magic
+	// resistance times these growths to the k (defence at least the step
+	// below's + 1), and its move speed plus k × the gain, in px/s (R5)
+	VariantStepHPGrowth         = 1.2
+	VariantStepDamageGrowth     = 1.15
+	VariantStepMitigationGrowth = 1.25
+	VariantStepSpeedGain        = 8.0
+
+	// each goblin spawned of a variant takes its blade + shield look at this
+	// share, with this much more defence than the blade look (R8)
+	GoblinShieldShare   = 0.5
+	GoblinShieldDefense = 3
+)
+
+// The floor pool. FS-C8VM7 §C R19-R24.
+const (
+	// the variants a Spire floor draws from everything its tier unlocks
+	FloorPoolSize = 5
+	// a dark warrior variant weighs this in a pool draw; every other weighs 1
+	DarkWarriorPoolWeight = 2
+	// a floor holds at most min(cap, ⌊its monsters / per⌋) dark warriors
+	DarkWarriorPer    = 12
+	DarkWarriorCapMax = 4
+)
+
+// spireRoster is R3's table: each family's role and its variants, step 0
+// first, with their unlock tiers and their monster abilities (FS-C8VM7 §B
+// R11: in an old family only its tier-6 variant has one, in a new family
+// every variant). A step past 0 is its family's step 0 under
+// the step rule; only step 0 has a sheet of its own in monsterSheets.
+var spireRoster = []monsterFamily{
+	{Name: "Ghoul", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeGhoul, Name: "Ghoul", Unlock: 1},
+		{Archetype: components.MonsterArchetypeGhast, Name: "Ghast", Unlock: 3},
+		{Archetype: components.MonsterArchetypeRavener, Name: "Ravener", Unlock: 6, Ability: pounceAbility},
+	}},
+	{Name: "Skeleton", Role: roleRanged, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeBoneArcher, Name: "Bone Archer", Unlock: 1},
+		{Archetype: components.MonsterArchetypeAshenArcher, Name: "Ashen Archer", Unlock: 4},
+		{Archetype: components.MonsterArchetypeWightArcher, Name: "Wight Archer", Unlock: 6, Ability: volleyAbility},
+	}},
+	{Name: "Troll", Role: roleBrute, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeTroll, Name: "Troll", Unlock: 1},
+		{Archetype: components.MonsterArchetypeCaveTroll, Name: "Cave Troll", Unlock: 3},
+		{Archetype: components.MonsterArchetypeBloodTroll, Name: "Blood Troll", Unlock: 6, Ability: groundSlamAbility},
+	}},
+	{Name: "Thrall", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeBarrowThrall, Name: "Barrow Thrall", Unlock: 1},
+		{Archetype: components.MonsterArchetypePlagueThrall, Name: "Plague Thrall", Unlock: 4},
+		{Archetype: components.MonsterArchetypeBlightborn, Name: "Blightborn", Unlock: 6, Ability: deathBurstAbility},
+	}},
+	{Name: "Ghost", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeSpireWraith, Name: "Spire Wraith", Unlock: 1},
+		{Archetype: components.MonsterArchetypeShade, Name: "Shade", Unlock: 2},
+		{Archetype: components.MonsterArchetypePhantom, Name: "Phantom", Unlock: 4},
+		{Archetype: components.MonsterArchetypeBanshee, Name: "Banshee", Unlock: 6, Ability: wailAbility},
+	}},
+	{Name: "Goblin", Role: roleFodder, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeGoblin, Name: "Goblin", Unlock: 2,
+			ShieldLook: components.MonsterArchetypeGoblinShield, Ability: thrownDaggerAbility},
+		{Archetype: components.MonsterArchetypeGoblinCutthroat, Name: "Goblin Cutthroat", Unlock: 3,
+			ShieldLook: components.MonsterArchetypeGoblinCutthroatShield, Ability: thrownDaggerAbility},
+		{Archetype: components.MonsterArchetypeGoblinReaver, Name: "Goblin Reaver", Unlock: 5,
+			ShieldLook: components.MonsterArchetypeGoblinReaverShield, Ability: thrownDaggerAbility},
+		{Archetype: components.MonsterArchetypeGoblinWarchief, Name: "Goblin Warchief", Unlock: 6,
+			ShieldLook: components.MonsterArchetypeGoblinWarchiefShield, Ability: thrownDaggerAbility},
+	}},
+	{Name: "Ogre", Role: roleBrute, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeOgre, Name: "Ogre", Unlock: 4, Ability: rockThrowAbility},
+		{Archetype: components.MonsterArchetypeOgreMauler, Name: "Ogre Mauler", Unlock: 5, Ability: rockThrowAbility},
+		{Archetype: components.MonsterArchetypeOgreTyrant, Name: "Ogre Tyrant", Unlock: 6, Ability: rockThrowAbility},
+	}},
+	{Name: "Dark Warrior", Role: roleBrute, PoolWeight: DarkWarriorPoolWeight, Capped: true, Variants: []monsterVariant{
+		{Archetype: components.MonsterArchetypeDarkWarrior, Name: "Dark Warrior", Unlock: 6, Ability: cleaveAbility},
+		{Archetype: components.MonsterArchetypeDarkReaper, Name: "Dark Reaper", Unlock: 6, Ability: cleaveAbility},
+	}},
+}
+
 /*
 	Field tuning: the field worlds' numbers, beside the Spire's they derive from.
 	FS-X2F2H §Requirements 26–29, 36–37 (D14–D16, D24, D26). Every number is a
@@ -171,14 +256,14 @@ const (
 
 	// the Gentle Meadows' level band, inclusive
 	MeadowsMinLevel = 1
-	MeadowsMaxLevel = 4
+	MeadowsMaxLevel = 2
 	// the Gentle Meadows' drop chance over the Spire's row (fieldDrops)
 	MeadowsDropFactor = 0.35
 
 	// the Forlorn Forest's level band, inclusive, and its drop chance over
 	// the Spire's (FS-X2F2H D15, D17)
-	ForestMinLevel   = 4
-	ForestMaxLevel   = 9
+	ForestMinLevel   = 8
+	ForestMaxLevel   = 12
 	ForestDropFactor = 0.5
 )
 
@@ -234,11 +319,9 @@ const (
 // from, as in "Scarred Boar", in place of the barrow ElitePrefixes.
 var FieldElitePrefixes = []string{"Old", "Scarred", "Great"}
 
-// The demon boss. FS-77AB6 §Requirements 21, 24.
+// The demon boss, Vorsk: no floor rolls it (FS-3103M §A R2). FS-77AB6
+// §Requirements 21, 24.
 const (
-	// chance of a demon on a floor that is not the top one; the top floor
-	// always has exactly one
-	DemonChance = 0.01
 	// demon level = party level + floor offset + bonus, with no spread
 	DemonLevelBonus = 2
 	// random positions sampled for the demon; it takes the valid one farthest
@@ -258,6 +341,28 @@ const (
 	MasterSpireHeight = 10
 	// Daa'gon's level = party level + floor offset + bonus, with no spread
 	DaagonLevelBonus = 5
+)
+
+// Champions: the boss of a height 3-9 run's top floor, a variant the floor's
+// pool left out. FS-C8VM7 §D R26-R29. Its level is the demon's (demonLevel),
+// its HP and damage the Demon sheet's at that level.
+const (
+	// a champion's defence and magic resistance over its variant's at its level
+	ChampionMitigationMultiplier = 1.5
+)
+
+// ChampionNames and ChampionEpithets are the authored lists a champion's name,
+// "<Name> the <Epithet>", is drawn from: clear of every elite prefix, Vorsk and
+// Daa'gon (FS-C8VM7 §D R29, R4).
+var (
+	ChampionNames = []string{
+		"Morgrath", "Skarn", "Ulveth", "Hesk", "Druun", "Caelith",
+		"Bellakar", "Ashka", "Thule", "Grend", "Myrrow", "Saelk",
+	}
+	ChampionEpithets = []string{
+		"Unburied", "Gnawer", "Ash-born", "Last Warden", "Rot-king", "Bone-crowned",
+		"Patient", "Grieving", "Lantern-eater", "Twice-slain", "Pale", "Unforgiven",
+	}
 )
 
 // BloodDemonChanceByFloor is the chance of a blood demon on each run floor,
@@ -296,6 +401,10 @@ type monsterSheet struct {
 	// Shot is the projectile it looses; zero for an archetype that strikes in
 	// melee. With one, AttackRange is its shooting range.
 	Shot monsterShot
+	// Ability is its monster ability; zero for an archetype with none. A
+	// roster archetype's is its variant's (spireRoster), never its sheet
+	// literal's (FS-C8VM7 §B R10).
+	Ability components.MonsterAbility
 }
 
 // The demons' two moves: the slam, their wind-up strike doubled and rationed,
@@ -348,6 +457,59 @@ var boneArrowShot = monsterShot{
 	MaxFlight:      850,
 }
 
+// The monster abilities: one special move each, on the archetypes the roster
+// gives it to. FS-C8VM7 §B R11. Starting values.
+var (
+	// the Wight Archer's: three of its arrows fanned, within its shooting
+	// range and over its shot's draw (the Bone Archer's sheet, stepped up)
+	volleyAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityVolley, Shape: components.AbilityShots,
+		MaxRange: 320, WindUp: 0.6, Cooldown: 5, Multiplier: 1.0,
+		ProjectileType: boneArrowShot.ProjectileType, ShotSpeed: boneArrowShot.Speed,
+		ShotRadius: boneArrowShot.Radius, ShotMaxFlight: boneArrowShot.MaxFlight,
+		Shots: 3, Fan: 12,
+	}
+	// the Ravener's: a leap on the point its target stood on, then a small
+	// circle where it lands
+	pounceAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityPounce, Shape: components.AbilityLeap,
+		MinRange: 120, MaxRange: 300, WindUp: 0.5, Cooldown: 6, Multiplier: 1.5,
+		Radius: 60, LeapTime: 0.3,
+	}
+	// the Blightborn's: once, on its corpse, a fuse after its death
+	deathBurstAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityBurst, Shape: components.AbilityDeathBurst,
+		WindUp: 0.8, Multiplier: 2.0, Radius: 110,
+	}
+	// the Blood Troll's: a wide circle round itself, slow to wind
+	groundSlamAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityGroundSlam, Shape: components.AbilityAreaAroundSelf,
+		MaxRange: 90, WindUp: 0.9, Cooldown: 7, Multiplier: 1.5, Radius: 130,
+	}
+	// the Banshee's: the widest circle, the lightest hit
+	wailAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityWail, Shape: components.AbilityAreaAroundSelf,
+		MaxRange: 200, WindUp: 0.7, Cooldown: 8, Multiplier: 1.2, Radius: 180,
+	}
+	// every goblin's: its reach past melee
+	thrownDaggerAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityDagger, Shape: components.AbilityShots,
+		MinRange: 90, MaxRange: 260, WindUp: 0.4, Cooldown: 5, Multiplier: 1.0,
+		ProjectileType: "thrown_dagger", ShotSpeed: 480, ShotRadius: 8, ShotMaxFlight: 520, Shots: 1,
+	}
+	// every ogre's: slow, large and long-wound, easy to dodge but painful
+	rockThrowAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityRock, Shape: components.AbilityShots,
+		MinRange: 140, MaxRange: 380, WindUp: 1.0, Cooldown: 7, Multiplier: 1.5,
+		ProjectileType: "ogre_rock", ShotSpeed: 240, ShotRadius: 18, ShotMaxFlight: 420, Shots: 1,
+	}
+	// every dark warrior's: a wide cone in front
+	cleaveAbility = components.MonsterAbility{
+		Kind: components.MonsterAbilityCleave, Shape: components.AbilityCone,
+		MaxRange: 110, WindUp: 0.8, Cooldown: 6, Multiplier: 1.6, Radius: 110, Arc: 120,
+	}
+)
+
 var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 	components.MonsterArchetypeGhoul: {
 		Name: "Ghoul", HP: 40, Damage: 6,
@@ -372,7 +534,7 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		AggroRadius: 220, LeashRadius: 480,
 	},
 	components.MonsterArchetypeDemon: {
-		Name: "Demon", HP: 1200, Damage: 28,
+		Name: "Vorsk", HP: 1200, Damage: 28,
 		AttackInterval: 1.6, WindUp: 0.8, AttackRange: 75, MoveSpeed: 120,
 		Defense: 15, MagicResistance: 15,
 		AggroRadius: 320, LeashRadius: 700,
@@ -433,6 +595,29 @@ var monsterSheets = map[components.MonsterArchetype]monsterSheet{
 		Defense: 0, MagicResistance: 8,
 		AggroRadius: 300, LeashRadius: 560,
 	},
+	// the new families' step 0s (FS-C8VM7 §A R6-R7); their later steps, and
+	// every old family's, are built by the step rule (spireRoster). The goblin:
+	// the ghoul's reach, quicker and keener, frail with a medium hit
+	components.MonsterArchetypeGoblin: {
+		Name: "Goblin", HP: 32, Damage: 8,
+		AttackInterval: 1.0, WindUp: 0.3, AttackRange: 45, MoveSpeed: 160,
+		Defense: 1, MagicResistance: 0,
+		AggroRadius: 280, LeashRadius: 540,
+	},
+	// the ogre: slower and harder-hitting than the troll
+	components.MonsterArchetypeOgre: {
+		Name: "Ogre", HP: 200, Damage: 24,
+		AttackInterval: 2.4, WindUp: 0.9, AttackRange: 70, MoveSpeed: 75,
+		Defense: 12, MagicResistance: 4,
+		AggroRadius: 220, LeashRadius: 480,
+	},
+	// the dark warrior: a disciplined greatsword, the demons' rhythm
+	components.MonsterArchetypeDarkWarrior: {
+		Name: "Dark Warrior", HP: 260, Damage: 30,
+		AttackInterval: 1.6, WindUp: 0.6, AttackRange: 70, MoveSpeed: 120,
+		Defense: 16, MagicResistance: 10,
+		AggroRadius: 320, LeashRadius: 600,
+	},
 }
 
 // killExperienceBase is what killing a level-1 monster of an archetype is worth,
@@ -452,6 +637,29 @@ var killExperienceBase = map[components.MonsterArchetype]int{
 	components.MonsterArchetypeSpireWraith:  20,
 	// FS-B4SG9 §A R3: the ghoul's
 	components.MonsterArchetypeBoneArcher: 10,
+	// FS-C8VM7 §E R33: step 0's base × the variant's HP over step 0's; the
+	// new families' step 0s by the same rule against the family they drop as.
+	// A goblin's shield look takes its blade look's row (spireRoster)
+	components.MonsterArchetypeGhast:           12,
+	components.MonsterArchetypeRavener:         15,
+	components.MonsterArchetypeAshenArcher:     12,
+	components.MonsterArchetypeWightArcher:     14,
+	components.MonsterArchetypeCaveTroll:       30,
+	components.MonsterArchetypeBloodTroll:      36,
+	components.MonsterArchetypePlagueThrall:    18,
+	components.MonsterArchetypeBlightborn:      22,
+	components.MonsterArchetypeShade:           24,
+	components.MonsterArchetypePhantom:         29,
+	components.MonsterArchetypeBanshee:         35,
+	components.MonsterArchetypeGoblin:          8,
+	components.MonsterArchetypeGoblinCutthroat: 10,
+	components.MonsterArchetypeGoblinReaver:    12,
+	components.MonsterArchetypeGoblinWarchief:  14,
+	components.MonsterArchetypeOgre:            36,
+	components.MonsterArchetypeOgreMauler:      43,
+	components.MonsterArchetypeOgreTyrant:      51,
+	components.MonsterArchetypeDarkWarrior:     46,
+	components.MonsterArchetypeDarkReaper:      56,
 }
 
 // Kill experience scaling. FS-BDA7X §Requirements 10.
@@ -509,9 +717,10 @@ func eliteChance(floor int) float64 {
 	return math.Min(EliteChanceBase+EliteChancePerFloor*float64(floor-1), EliteChanceCap)
 }
 
-// trollShare is the chance a standard monster on this floor is a troll.
-func trollShare(floor int) float64 {
-	return math.Min(TrollShareBase+TrollSharePerFloor*float64(floor-1), TrollShareCap)
+// bruteShare is the chance a standard monster on this floor is a brute of its
+// pool (FS-C8VM7 §C R21).
+func bruteShare(floor int) float64 {
+	return math.Min(BruteShareBase+BruteSharePerFloor*float64(floor-1), BruteShareCap)
 }
 
 // demonLevel is the demon's level: the party's, plus the floor's offset, plus

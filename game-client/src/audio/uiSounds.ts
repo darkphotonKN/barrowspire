@@ -12,6 +12,7 @@
  * `act` (S9; FS-TQZ5J R12).
  */
 
+import type { GameplayEffect } from "./gameplaySounds";
 import { readSfxLevel, sfxGain, type SfxSettingStore } from "./sfxSetting";
 
 /**
@@ -55,6 +56,14 @@ export type UiEffect = (typeof UI_EFFECTS)[number];
 export function uiSoundKey(effect: UiEffect): string {
   return `sfx:${effect}`;
 }
+
+/**
+ * What a player action can ask to be its one sound (§ Change M2): an interface effect, or a gameplay
+ * effect the action's own world answer is (FS-AND39), so one press is one sound across both: the town's
+ * stash chest E plays `stash_open` in place of the window rule's `inventory_open` (the owner,
+ * 2026-11-14, FS-WDM0X S2 amended). Both are keyed `sfx:<name>` in the game's audio cache.
+ */
+export type ActionEffect = UiEffect | GameplayEffect;
 
 /**
  * An effect's URLs, m4a first (S21, order set by the integrator 2026-11-13): Phaser 4.2.1 takes
@@ -123,6 +132,23 @@ export interface UiSoundStage {
   audible(): boolean;
 }
 
+/**
+ * Plays the effect cached under `key` once, now, or not at all (S10–S13), the rules every sound
+ * effect plays by, the interface's and the gameplay's (FS-AND39 R13): only at a kept level above 0,
+ * read at this play (S16), with the context running and the effect cached (S12, S22). One sound per
+ * effect per game, restarted from the top on a repeat (S11). Nothing queues, and nothing but the
+ * sound's volume is set, handed to its play: never its pitch, rate or detune, never the manager's
+ * volume or mute (S10, S13). Says whether it sounded.
+ */
+export function playSfx(stage: UiSoundStage, store: SfxSettingStore, key: string): boolean {
+  const level = readSfxLevel(store);
+  if (level <= 0 || !stage.audible() || !stage.cached(key)) return false;
+  const sound = stage.get(key) ?? stage.add(key);
+  // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
+  sound.play({ volume: sfxGain(level) });
+  return true;
+}
+
 /** The wrapper's shape, for a module that hears its own input (S9). */
 export type UiAct = <T>(run: () => T) => T;
 
@@ -151,7 +177,7 @@ export class UiSounds {
   /** How deep in `act` the scene is: an inner call joins the outer one. */
   private depth = 0;
   /** The first effect the action under way asked for: its one sound, in place of the rule's (§ Change M2). */
-  private asked: UiEffect | null = null;
+  private asked: ActionEffect | null = null;
   /** When `menu_hover` last sounded, on `now`'s clock. */
   private hoveredAt = -Infinity;
 
@@ -172,7 +198,7 @@ export class UiSounds {
    * and nothing but the sound's volume is set, handed to its play: never its pitch, rate or detune,
    * never the manager's volume or mute (S10, S13).
    */
-  play = (effect: UiEffect): void => {
+  play = (effect: ActionEffect): void => {
     if (this.depth > 0) {
       this.asked ??= effect;
       return;
@@ -190,7 +216,7 @@ export class UiSounds {
     const before = this.windows();
     this.depth++;
     let result;
-    let asked: UiEffect | null;
+    let asked: ActionEffect | null;
     try {
       result = run();
     } finally {
@@ -203,19 +229,12 @@ export class UiSounds {
     return result;
   };
 
-  /** Sounds `effect` now, where it can be heard (S11–S16, M4). */
-  private sound(effect: UiEffect): void {
-    const level = readSfxLevel(this.store);
-    const key = uiSoundKey(effect);
-    if (level <= 0 || !this.stage.audible() || !this.stage.cached(key)) return;
-    if (effect === "menu_hover") {
-      const now = this.now();
-      if (now - this.hoveredAt < MENU_HOVER_COOLDOWN_MS) return;
-      this.hoveredAt = now;
-    }
-    const sound = this.stage.get(key) ?? this.stage.add(key);
-    // the gain in the play's own config: Phaser merges it into the sound's and applies it in one step
-    sound.play({ volume: sfxGain(level) });
+  /** Sounds `effect` now, where it can be heard, by {@link playSfx}'s rules (S11–S16), a hover not within the cooldown of the last that sounded (M4). */
+  private sound(effect: ActionEffect): void {
+    const hover = effect === "menu_hover";
+    const now = hover ? this.now() : 0;
+    if (hover && now - this.hoveredAt < MENU_HOVER_COOLDOWN_MS) return;
+    if (playSfx(this.stage, this.store, `sfx:${effect}`) && hover) this.hoveredAt = now;
   }
 }
 

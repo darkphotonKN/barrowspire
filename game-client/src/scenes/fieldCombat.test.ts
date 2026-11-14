@@ -74,6 +74,7 @@ function fieldOnStage() {
   /** Whether the UI scene claimed the press now heard (FS-TQZ5J § Change: Batch 6, R129). */
   const claim = { now: false };
   const kit = { sync: vi.fn(), forget: vi.fn() };
+  const sounds = { play: vi.fn() };
   const look = {
     slash: vi.fn(),
     dash: vi.fn(),
@@ -111,10 +112,14 @@ function fieldOnStage() {
     hits,
     cursor,
     bodyOf: (id) => (id === "e_me" ? (body as never) : undefined),
+    sounds,
   });
-  const state = (player: ReturnType<typeof me> | null, monsters = [boar("b1", 1000), boar("b2", 1100, "dead")]) =>
-    combat.sync({ current_player: player as never, other_players: [], monsters: monsters as never, projectiles: [] });
-  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, claim, kit, look };
+  const state = (
+    player: ReturnType<typeof me> | null,
+    monsters = [boar("b1", 1000), boar("b2", 1100, "dead")],
+    others: ReturnType<typeof me>[] = [],
+  ) => combat.sync({ current_player: player as never, other_players: others as never, monsters: monsters as never, projectiles: [] });
+  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, claim, kit, look, sounds };
 }
 
 describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
@@ -243,6 +248,46 @@ describe("FieldCombat under a press the UI scene claimed (FS-TQZ5J § Change: Ba
 
     expect(asked).toEqual([press]);
     expect(takesPointer).not.toHaveBeenCalled();
+  });
+});
+
+describe("FieldCombat the player's own wound (FS-AND39 R3)", () => {
+  const teammate = (current_health: number) => ({ ...me(300, current_health), id: "ally", entity_id: "e_ally" });
+
+  it("should play hit_player once on a drop in the player's own health", () => {
+    const { state, sounds } = fieldOnStage();
+    state(me(200, 100));
+    state(me(200, 92));
+    expect(sounds.play.mock.calls).toEqual([["hit_player"]]);
+  });
+
+  it("should play nothing on the first state, which has nothing to compare", () => {
+    const { state, sounds } = fieldOnStage();
+    state(me(200, 40));
+    expect(sounds.play).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing on a rise: a potion or a respawn", () => {
+    const { state, sounds } = fieldOnStage();
+    state(me(200, 0));
+    state(me(200, 100));
+    state(me(200, 100));
+    expect(sounds.play).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing for a teammate's drop", () => {
+    const { state, sounds } = fieldOnStage();
+    state(me(200, 100), [], [teammate(100)]);
+    state(me(200, 100), [], [teammate(60)]);
+    expect(sounds.play).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing on the first state after a release: a new visit compares nothing", () => {
+    const { combat, state, sounds } = fieldOnStage();
+    state(me(200, 100));
+    combat.release();
+    state(me(200, 50));
+    expect(sounds.play).not.toHaveBeenCalled();
   });
 });
 
@@ -379,5 +424,60 @@ describe("fieldCombatOnScene: a demon's fire claw in a field (FS-VHGE7 §D R32�
         .map(atlasTextureKey),
     );
     expect(images.length).toBeGreaterThan(0);
+  });
+});
+
+describe("fieldCombatOnScene: what the field sounds (FS-AND39 R2, R4)", () => {
+  function soundingField() {
+    const sounds = { play: vi.fn() };
+    const fight = fieldCombatOnScene(anything(), ArtLibrary.empty({ warn: () => {} }), anything(), {
+      selfAnim: () => undefined,
+      selfAt: () => undefined,
+      bodyOf: () => undefined,
+      sounds,
+    });
+    return { fight, sounds };
+  }
+
+  it("should play hit_monster when a shown monster's health drops, and nothing on first sight", () => {
+    const { fight, sounds } = soundingField();
+    const state = (health: number) =>
+      fight.sync({
+        current_player: null,
+        other_players: [],
+        monsters: [{ ...boar("b1", 1000), current_health: health }] as never,
+        projectiles: [],
+      });
+    state(20);
+    expect(sounds.play).not.toHaveBeenCalled();
+    state(12);
+    expect(sounds.play.mock.calls).toEqual([["hit_monster"]]);
+  });
+
+  it.each([
+    ["warrior", "dash"],
+    ["mage", "triple_fireball"],
+    ["mercenary", "parry"],
+  ])("should play a %s's right-click ability as %s", (cls, effect) => {
+    const { fight, sounds } = soundingField();
+    fight.sync({ current_player: me(200, 100, cls) as never, other_players: [], monsters: [], projectiles: [] });
+    fight.cast("special", { x: 400, y: 500 });
+    expect(sounds.play.mock.calls).toEqual([[effect]]);
+  });
+
+  // the fired release's report is PlayerCombat's (playerCombat.test.ts); here, the draw is silent
+  it("should play nothing on an archer's press, which only begins the draw", () => {
+    const { fight, sounds } = soundingField();
+    const stamina = { resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25 } };
+    fight.sync({ current_player: me(200, 100, "archer", stamina) as never, other_players: [], monsters: [], projectiles: [] });
+    fight.cast("special", { x: 400, y: 500 });
+    expect(sounds.play).not.toHaveBeenCalled();
+  });
+
+  it("should play nothing for a mage's primary fireball", () => {
+    const { fight, sounds } = soundingField();
+    fight.sync({ current_player: me(200, 100, "mage") as never, other_players: [], monsters: [], projectiles: [] });
+    fight.cast("primary", { x: 400, y: 500 });
+    expect(sounds.play).not.toHaveBeenCalled();
   });
 });

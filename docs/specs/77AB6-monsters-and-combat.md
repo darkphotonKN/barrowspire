@@ -524,3 +524,7 @@ directly (ADR-0004), which is outside the generated OpenAPI surface.
 ## Change: Spire height and the climb → FS-M8CSE
 
 ## Change: Ranged monsters and the Bone Archer → FS-B4SG9
+
+## Change: Tiered enemy roster and floor pools → FS-C8VM7
+
+## Change: Vorsk summoned by tome and altar → FS-3103M

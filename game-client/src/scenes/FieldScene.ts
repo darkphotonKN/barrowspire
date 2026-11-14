@@ -43,6 +43,10 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
+import { progressOf } from "@/ui/progress";
+import { sceneUiSoundStage } from "@/audio/uiSounds";
+import { browserSfxStore } from "@/audio/sfxSetting";
+import { GameplaySounds } from "@/audio/gameplaySounds";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
@@ -238,6 +242,8 @@ export class FieldScene extends Phaser.Scene {
    * bridge, each action runs as it is. Nothing the game does on its own comes through here (S4).
    */
   private ui: WorldUi = NO_UI;
+  /** The gameplay sound effects' player (FS-AND39 R16), made in `create`, for the world's own plays: the fight's hits and casts, a take. */
+  private gameplaySounds?: GameplaySounds;
   /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
   private lastState?: ClientGameState;
   /** The player's server-reported position, for reaching a pile. */
@@ -293,6 +299,7 @@ export class FieldScene extends Phaser.Scene {
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
+    this.mountGameplaySounds();
     this.bindInput();
 
     // the field's daylight, no torch-lit dark; the vignette and dust stay, as in every world
@@ -310,6 +317,7 @@ export class FieldScene extends Phaser.Scene {
       // a press on the UI scene's chat window during a held world press (FS-TQZ5J § Change: Batch 6, R129)
       pressClaimed: (pointer) => this.ui.pressClaimed(pointer),
       lockout: () => this.showAbilityCard(),
+      sounds: this.gameplaySounds,
     });
     this.createPiles();
     this.bindHudKeys();
@@ -346,6 +354,15 @@ export class FieldScene extends Phaser.Scene {
    * (R14): Menu the menu's path, Inventory and Character I's and C's, Party T's, each under its own
    * refusals.
    */
+  /**
+   * The gameplay effects' player (FS-AND39 R13, R16): on the interface effects' stage and the same kept
+   * level, for the world's own plays. The coffer opens and the gear moves are the UI scene's, which
+   * plays them (FS-TQZ5J § Change: Merge with main, 2026-11-14).
+   */
+  private mountGameplaySounds(): void {
+    this.gameplaySounds = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
+  }
+
   private worldSide(): WorldSide {
     return {
       windows: () => this.windows(),
@@ -365,8 +382,11 @@ export class FieldScene extends Phaser.Scene {
         equip: (item) => socketManager.sendMessage(ActionType.Equip, { item_entity_id: item }),
         unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
         // a take from the satchel: sent by the piles, and held in the bag while pending
+        // it sounds only once sent: a reserved pile's refusal is its words alone (FS-AND39 R7)
         take: (item) => {
-          if (this.piles?.loot(item)) this.ui.gear({ kind: "taken", item });
+          if (!this.piles?.loot(item)) return;
+          this.gameplaySounds?.play("item_pickup");
+          this.ui.gear({ kind: "taken", item });
         },
       }),
     };
@@ -671,6 +691,10 @@ export class FieldScene extends Phaser.Scene {
       if (self) this.keepCameraOn(self.sprite);
       this.followEntrance(state.current_player.position, state.gates ?? []);
       this.followFall(state.current_player);
+      // the player's own bar, fallen or not: experience is kept either way (FS-77DVN §C.13, §C.14)
+      // the UI scene's level bar, along the bottom middle (FS-77DVN §A; FS-TQZ5J § Change: Batch 5, R68)
+      const progress = progressOf(state.current_player);
+      if (progress) this.ui.hud({ world: "field", kind: "progress", progress });
     }
 
     this.drawGround(state.gates ?? [], state.walls ?? []);

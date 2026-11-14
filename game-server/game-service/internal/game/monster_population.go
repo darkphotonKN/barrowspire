@@ -24,12 +24,13 @@ type populationRand interface {
 * roster stands on it, so the party's level and every delver's position are
 * known.
 *
-* Everything is rolled fresh: count, mix, levels, elites, the demon and
-* placement. A monster that finds no valid spot is skipped and logged, never
+* Everything is rolled fresh: the floor's pool (FS-C8VM7 §C), count, mix,
+* levels, elites, the demon and placement. A monster that finds no valid spot is skipped and logged, never
 * overlapped or forced.
 *
-* The demon comes on top of the standard count (§Requirements 24): always on the
-* top floor, otherwise on its rare roll.
+* No floor rolls the demon, Vorsk (FS-3103M §A R2). The top floor's boss comes
+* on top of the standard count (§Requirements 24) where the demon stood: a
+* champion, a variant the floor's pool left out (FS-C8VM7 §D R26-R27).
 *
 * The blood demon comes after the demon, on its own roll at the floor's odds,
 * never guaranteed, never in the demon's dungeon room (FS-VHGE7 §A R5–10).
@@ -58,11 +59,17 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 	// FS-K2HKP R18: a run whose whole party is still connecting is not empty
 	if len(roster) == 0 && len(expected) == 0 {
 		slog.Debug("Floor left unpopulated: no delvers placed", "sessionID", s.ID, "floor", floor)
+		// an empty floor has no pool; the last floor's is not its
+		s.setFloorPool(floorPool{})
 		return
 	}
 
 	// FS-K2HKP R18: levelled to the whole matched party, the expected included
 	level := max(partyLevel(roster), expectedPartyLevel(expected))
+	// the endgame test run levels to its plan, whoever delves (FS-BDRTJ R27)
+	if s.endgame != nil {
+		level = s.endgame.partyLevel(floor)
+	}
 	area := spawnArea{
 		width:   s.mapWidth,
 		height:  s.mapHeight,
@@ -70,15 +77,19 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		// FS-K2HKP R18: the spots kept for arrivals are kept clear too
 		delvers: append(inPlayPositions(roster), s.arrivalSlotPositions()...),
 	}
+	// FS-C8VM7 §C R19: the floor's standard monsters come only from its pool
+	pool := s.floorPoolFor(level, floor)
+	s.setFloorPool(pool)
+
 	// a dungeon floor's monsters are distributed by room and role, its demon
 	// in the farthest room (FS-KE075 §C R18–20)
 	if s.dungeon != nil {
-		s.populateDungeon(s.dungeon, &area, level, floor)
+		s.populateDungeon(s.dungeon, &area, pool, level, floor)
 		demonRoom := -1
-		if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
+		if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 			demonRoom, _ = s.placeDungeonDemon(s.dungeon, &area, demon, floor, demonOddsOf(topFloor))
 		}
-		if isMasterSpireTop(floor, topFloor) {
+		if s.barsBloodDemon(floor, topFloor) {
 			return
 		}
 		// FS-VHGE7 §A R8, R10: after the demon, never in its room
@@ -88,7 +99,10 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		return
 	}
 
-	for _, monster := range rollMonsters(s.spawnRand, level, floor) {
+	monsters := rollMonsters(s.spawnRand, pool, level, floor)
+	pool.capDarkWarriors(s.spawnRand, configsOf(monsters))
+	s.endgame.settle(s.spawnRand, pool, floor, configsOf(monsters))
+	for _, monster := range monsters {
 		x, y, ok := area.place(s.spawnRand)
 		if !ok {
 			slog.Warn("Monster skipped: no valid spawn point",
@@ -105,10 +119,10 @@ func (s *Session) populateMonsters(floor int, topFloor bool, expected []types.Ch
 		area.placed = append(area.placed, point{x, y})
 	}
 
-	if demon, rolled := rollDemon(s.spawnRand, level, floor, topFloor); rolled {
+	if demon, rolled := rollDemon(s.spawnRand, pool, level, floor, topFloor); rolled {
 		s.placeDemon(&area, demon, floor, topFloor)
 	}
-	if isMasterSpireTop(floor, topFloor) {
+	if s.barsBloodDemon(floor, topFloor) {
 		return
 	}
 	// FS-VHGE7 §A R8–9: after the demon, so its draws come first; never
@@ -154,10 +168,11 @@ func (s *Session) placeDemon(area *spawnArea, demon MonsterConfig, floor int, gu
 	area.placed = append(area.placed, point{x, y})
 }
 
-// rollDemon decides whether this floor has its demon: always on the top floor,
-// otherwise on its rare chance. There is never more than one. A Master Spire's
+// rollDemon decides this floor's boss in the demon's place: on the top floor
+// always, a champion (FS-C8VM7 §D R26); below the top, none, for no floor
+// rolls Vorsk (FS-3103M §A R2). There is never more than one. A Master Spire's
 // top floor has Daa'gon in its place (FS-M8CSE §E R24).
-func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (MonsterConfig, bool) {
+func rollDemon(rng populationRand, pool floorPool, partyLevel, floor int, topFloor bool) (MonsterConfig, bool) {
 	if isMasterSpireTop(floor, topFloor) {
 		return MonsterConfig{
 			Archetype: components.MonsterArchetypeDaagon,
@@ -165,16 +180,17 @@ func rollDemon(rng populationRand, partyLevel, floor int, topFloor bool) (Monste
 			Boss:      true,
 		}, true
 	}
-
-	if !topFloor && rng.Float64() >= DemonChance {
-		return MonsterConfig{}, false
+	if topFloor {
+		return rollChampion(rng, pool, partyLevel, floor), true
 	}
+	return MonsterConfig{}, false
+}
 
-	return MonsterConfig{
-		Archetype: components.MonsterArchetypeDemon,
-		Level:     demonLevel(partyLevel, floor),
-		Boss:      true,
-	}, true
+// barsBloodDemon is whether this floor rolls no blood demon: a Master Spire's
+// top, Daa'gon's alone (FS-M8CSE §E R24), and every floor of the endgame test
+// run (FS-BDRTJ R25).
+func (s *Session) barsBloodDemon(floor int, topFloor bool) bool {
+	return isMasterSpireTop(floor, topFloor) || s.endgame != nil
 }
 
 // isMasterSpireTop is whether this floor is the top of a Master Spire. Only the
@@ -198,41 +214,61 @@ func rollBloodDemon(rng populationRand, partyLevel, floor int) (MonsterConfig, b
 	}, true
 }
 
+/**
+* floorPoolFor is the pool a floor's standard monsters come from: drawn at the
+* tier of its base level (FS-C8VM7 §C R19-R20). The one place a floor comes by
+* its pool, so the endgame test run's plan stands in for the draw (FS-BDRTJ
+* R26).
+**/
+func (s *Session) floorPoolFor(partyLevel, floor int) floorPool {
+	if s.endgame != nil {
+		return s.endgame.pool(floor)
+	}
+	return drawFloorPool(s.spawnRand, tierOf(floorBaseLevel(partyLevel, floor)))
+}
+
+// setFloorPool makes pool the current floor's, for its floor map.
+func (s *Session) setFloorPool(pool floorPool) {
+	s.mu.Lock()
+	s.floorPool = pool
+	s.mu.Unlock()
+}
+
 // rollMonsters decides a floor's standard monsters: how many, which archetype
 // each is, its level, and whether it is an elite. Where they stand is decided
 // afterwards.
-func rollMonsters(rng populationRand, partyLevel, floor int) []MonsterConfig {
+func rollMonsters(rng populationRand, pool floorPool, partyLevel, floor int) []MonsterConfig {
 	count := MonsterCountMin + rng.IntN(MonsterCountMax-MonsterCountMin+1)
 
 	monsters := make([]MonsterConfig, 0, count)
 	for range count {
-		monsters = append(monsters, rollMonster(rng, partyLevel, floor))
+		monsters = append(monsters, rollMonster(rng, pool, partyLevel, floor))
 	}
 
 	return monsters
 }
 
-// rollMonster is one standard monster: its archetype (rollArchetype), then its
-// level and elite roll (rollAs).
-func rollMonster(rng populationRand, partyLevel, floor int) MonsterConfig {
-	return rollAs(rng, rollArchetype(rng, floor), partyLevel, floor, eliteChance(floor))
+// rollMonster is one standard monster: its variant from the floor's pool and
+// its look (rollArchetype), then its level and elite roll (rollAs).
+func rollMonster(rng populationRand, pool floorPool, partyLevel, floor int) MonsterConfig {
+	return rollAs(rng, rollArchetype(rng, pool, floor), partyLevel, floor, eliteChance(floor))
 }
 
-// rollArchetype is a troll at the floor's troll share, otherwise a draw from the
-// Spire's non-troll mix. Only a Spire population reaches it: a field rolls its
-// own place's creatures.
-func rollArchetype(rng populationRand, floor int) components.MonsterArchetype {
-	if rng.Float64() < trollShare(floor) {
-		return components.MonsterArchetypeTroll
-	}
+// rollArchetype is a rolled monster's variant from the floor's pool, a brute
+// at the floor's brute share, else a fodder, then its look (FS-C8VM7 §C R21,
+// §A R8). Only a Spire population reaches it: a field rolls its own place's
+// creatures.
+func rollArchetype(rng populationRand, pool floorPool, floor int) components.MonsterArchetype {
+	return pool.rolled(rng, floor).rollLook(rng)
+}
 
-	draw := rng.Float64()
-	for _, row := range spireNonTrollMix {
-		if draw -= row.Share; draw < 0 {
-			return row.Archetype
-		}
+// configsOf points at each of monsters, for a pass that changes them in place.
+func configsOf(monsters []MonsterConfig) []*MonsterConfig {
+	out := make([]*MonsterConfig, len(monsters))
+	for i := range monsters {
+		out[i] = &monsters[i]
 	}
-	return spireNonTrollMix[len(spireNonTrollMix)-1].Archetype
+	return out
 }
 
 // rollAs is a monster of archetype at its level's spread, promoted to an elite
@@ -314,7 +350,8 @@ func inPlayPositions(roster []*ecs.Entity) []point {
 /**
 * mapKeepOut is every area of the floor a monster's body may not overlap: each
 * building's whole footprint (its walls, door and the floor they enclose), every
-* door, container, switch, escape door and the stairs. A wall of no building, a
+* door, container, switch, escape door, the stairs, and a tome run's tome and
+* altar (FS-3103M §C R8). A wall of no building, a
 * dungeon floor's shell, is kept out by its own rect: grouped under the nil
 * house, a dungeon's walls would cover its whole floor.
 **/
@@ -354,10 +391,13 @@ func mapKeepOut(entities []*ecs.Entity) []PlaceArea {
 			continue
 		}
 
-		// containers, switches and escape doors stand centred on their position
+		// containers, switches, escape doors, the tome and the altar stand
+		// centred on their position, a container's size
 		if entity.HasComponent(ecs.ComponentTypeContainer) ||
 			entity.HasComponent(ecs.ComponentTypeSwitch) ||
-			entity.HasComponent(ecs.ComponentTypeEscapeDoor) {
+			entity.HasComponent(ecs.ComponentTypeEscapeDoor) ||
+			entity.HasComponent(ecs.ComponentTypeTome) ||
+			entity.HasComponent(ecs.ComponentTypeAltar) {
 			keepOut = append(keepOut, PlaceArea{
 				X: at.X - constants.ContainerWidthRadius,
 				Y: at.Y - constants.ContainerHeightRadius,

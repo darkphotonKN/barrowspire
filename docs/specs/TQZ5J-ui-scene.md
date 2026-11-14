@@ -2082,3 +2082,41 @@ chat's one sound per press); the owner's check is I-TQZ5J-55. No screenshots (th
   became `topEdge()`. `RUN_BUTTON_H` in `hudCornerLayout.ts` is every run button's height.
 
 ## Change: The party death flow and the spectate switcher → FS-QPDKN
+
+## Merge with main, 2026-11-14
+
+`main` (d713329d, 62 commits past the branch's base) merged into feat/client-ui-scene under the owner's rule
+for its conflicts (2026-11-14, 「功能維持模組化後的ui」): the modular UI wins, and main's features are
+re-expressed on it. No moved piece went back into a world scene. The text above is not edited.
+
+- **FS-77DVN, the XP bar along the bottom.** The level bar is the UI scene's HUD slot's piece, as Batch 5
+  made it, now drawn as FS-77DVN draws it: `ProgressHud` places itself by `xpBarLayout` (the bottom middle,
+  between the chat window and the corner row), keeps its `destroy` and its fading cues (R67), and is
+  relaid out by the slot. `HUD_PLACES` stands it in every world, the field included (`progress: true`;
+  `HudBuild.progress()` takes no place); the field now hands its progress (`hud`, `kind: "progress"`). The
+  top left closes up: the run's bars and potion cell stand at the field's place (`RESOURCE_HUD_AT`,
+  `HUD_COLUMN_W`), the party frames under them, the town's frames in its corner (`PARTY_FRAMES_PLACEMENT`).
+  The owner, 2026-11-14: 「經驗條在底部 如果會重疊 就把其他往上移動一些」 (the bar stays at the bottom; what
+  would meet it moves up). Swept at every logical width 1080–1280, 720 tall, nothing at the bottom meets
+  it (the bar spans y 688–704, x 446 to at most 834): the end row (y 466–504), the spectate row (612–650)
+  and the switcher (576–604), the chat window open and folded and its picker list (x 10–430), the corner
+  row and its hover labels, the ability card and the controls badge. So nothing moved
+  (`xpBarLayout.test.ts`, `resolvedRow.test.ts`).
+- **FS-AND39, gameplay sound effects.** `UiSounds` keeps its act, its first-asked sound and its hover
+  cooldown, now over main's shared `playSfx` (which says whether it sounded, for the cooldown). Each world
+  keeps its own `GameplaySounds` for the world's answers (hits, the own wound, the casts, a take sent); the
+  UI scene makes one for the pieces it holds (the coffer opens, `item_swap`), handed through
+  `GearWiring.sounds`. The stash chest's E plays `stash_open` alone through the UI scene's act (FS-WDM0X S2
+  as amended 2026-11-14): an action may ask for a gameplay effect as its one sound (`ActionEffect`). No
+  other press plays an interface sound and a gameplay sound together. The town makes no gameplay player.
+- **FS-3103M, Burn tome?** The run's E at the altar with the tome carried asks the UI scene's menu slot
+  (`UiBridge.confirmBurn`, `UiMenuSlot.confirmBurn`), on the Fall confirm's panel; its Burn comes back as the
+  request `burn`, which the run answers with the one interact. It sounds as the Fall confirm does:
+  `dialog_open` as it opens, `dialog_confirm_heavy` for Burn, the rule's `settings_close` for Not yet, Esc
+  and the × (FS-WDM0X § Change M13's mapping, applied to the new confirm; for the owner's listening check).
+- **FS-XWHZP, lore lines.** The lore line stays the run's own (ADR-0083 Decision 2.3: one world, a world
+  effect's tremor, the arrival card's family, which stayed): main's `LoreLines` as it is. A refused fall is
+  a lore line now, so it raises no notice.
+- **Everything else** (enemy tiers, Vorsk, Forest elites, field bands, the dev endgame run's gate, pprof
+  and the other server changes, docs) came in as main has it; the town's endgame gate reads the UI scene's
+  menu slot (`menuOpen`).

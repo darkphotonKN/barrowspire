@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { shippedManifest } from "@/render/art/artLoader.standin";
 import { ArtLibrary } from "@/render/art/library";
+import { SCENE_ART, sceneAtlases } from "@/render/art/sceneArt";
 import type { ArtAnimation, ArtManifest } from "@/render/art/manifest";
 import { MARKER_BAR, MARKER_DEPTH } from "@/render/markers";
 import { CHIP_DRAIN_MS, CHIP_HOLD_MS } from "@/render/markers/healthBar";
@@ -12,6 +14,7 @@ import type { footprintHitArea } from "@/render/world/footprint";
 import type { MonsterArchetype, MonsterState } from "@/types/gameState";
 import {
   FALLBACK_LOOK,
+  MONSTER_LOOKS,
   PLAYER_REFERENCE_SHEET,
   MonsterRoster,
   SIZE_TIERS,
@@ -20,6 +23,7 @@ import {
   OVERHEAD_BAR,
   bodyColumn,
   drawnLook,
+  footprintRadius,
   monsterLook,
   elitePlate,
   monsterClip,
@@ -101,6 +105,17 @@ const baked = new ArtLibrary(
   ) as ArtManifest,
   quiet,
 );
+
+/**
+ * The run's art before any floor-scoped group is fetched: the shipped manifest, with only the pages
+ * the run preloads in (the resident ones, `creatures` and `boss`; FS-C8VM7 §G R41).
+ */
+const runArt = () =>
+  new ArtLibrary(
+    shippedManifest(),
+    quiet,
+    new Set(sceneAtlases(shippedManifest(), SCENE_ART.BarrowspireScene)),
+  );
 
 /** A stand-in for the scene: records every object it hands out. */
 function fakeStage(backing = { scale: 1 }) {
@@ -593,7 +608,7 @@ describe("size reads as threat tier (req 35)", () => {
     return (crown * monsterScale(look, baked)) / player;
   };
 
-  it.each([
+  it.each<[string, { min: number; max: number }]>([
     ["ghoul", SIZE_TIERS.fodder],
     ["zombie", SIZE_TIERS.fodder],
     ["ghost", SIZE_TIERS.fodder],
@@ -603,11 +618,40 @@ describe("size reads as threat tier (req 35)", () => {
     ["demon", SIZE_TIERS.boss],
     ["blood_demon", SIZE_TIERS.boss],
     ["daagon", SIZE_TIERS.boss],
+    // the tiered roster's variants, each off its own baked sheet (FS-C8VM7 §F R34)
+    ...(["ghast", "ravener", "ashen_archer", "wight_archer", "plague_thrall", "blightborn", "shade", "phantom", "banshee"].map(
+      (a): [string, { min: number; max: number }] => [a, SIZE_TIERS.fodder],
+    )),
+    ...(["goblin", "goblin_shield", "goblin_cutthroat", "goblin_cutthroat_shield", "goblin_reaver", "goblin_reaver_shield", "goblin_warchief", "goblin_warchief_shield"].map(
+      (a): [string, { min: number; max: number }] => [a, SIZE_TIERS.fodder],
+    )),
+    ...(["cave_troll", "blood_troll", "ogre", "ogre_mauler", "ogre_tyrant", "dark_warrior", "dark_reaper"].map(
+      (a): [string, { min: number; max: number }] => [a, SIZE_TIERS.brute],
+    )),
   ])("should stand a %s inside its tier's band", (archetype, tier) => {
     const ratio = heightOverPlayer(archetype);
     expect(ratio).toBeGreaterThanOrEqual(tier.min);
     expect(ratio).toBeLessThanOrEqual(tier.max);
   });
+
+  it.each(["ogre", "ogre_mauler", "ogre_tyrant"])("should stand an %s at the brute band's top, 1.5x, above the troll", (ogre) => {
+    expect(heightOverPlayer(ogre)).toBeCloseTo(1.5);
+    expect(heightOverPlayer(ogre)).toBeGreaterThan(heightOverPlayer("troll"));
+  });
+
+  // its baked crown is about 1.44x the players' (111 to their 77): the brute aim draws it at 1.4
+  it.each(["dark_warrior", "dark_reaper"])("should stand a %s at the brute aim, between the troll and the ogre", (warrior) => {
+    expect(heightOverPlayer(warrior)).toBeCloseTo(SIZE_TIERS.brute.aim);
+    expect(heightOverPlayer(warrior)).toBeLessThan(heightOverPlayer("ogre"));
+  });
+
+  it.each(["goblin", "goblin_shield", "goblin_cutthroat", "goblin_cutthroat_shield", "goblin_reaver", "goblin_reaver_shield", "goblin_warchief", "goblin_warchief_shield"])(
+    "should stand a %s at about 0.86x, smaller than the ghoul",
+    (goblin) => {
+      expect(heightOverPlayer(goblin)).toBeCloseTo(0.86);
+      expect(heightOverPlayer(goblin)).toBeLessThan(heightOverPlayer("ghoul"));
+    },
+  );
 
   /**
    * A quadruped is measured by body length, not height (guideline "Size is a threat tier"): its
@@ -2346,6 +2390,7 @@ describe("the fire claw (FS-VHGE7 §D)", () => {
     const played: { id: string; at: { x: number; y: number } }[] = [];
     const effects: MonsterEffects = {
       claw: (m, at) => played.push({ id: m.entity_id, at: { ...at } }),
+      hit: () => {},
     };
     const roster = new MonsterRoster(stage, art, undefined, effects);
     return { roster, sprites, played };
@@ -2472,5 +2517,340 @@ describe("the fire claw (FS-VHGE7 §D)", () => {
     expect(sprites[0].anims.currentAnim?.key).toBe(
       "creature_demon_base/attack/4",
     );
+  });
+});
+
+// FS-AND39 R2 (I-AND39-3): a shown monster's health drop is a hit the scene sounds, from any
+// source. One first seen, one back in the broadcast, and one hidden play nothing. Two struck in
+// one state are each reported; the player's restart (R13) makes them one sound.
+describe("the hit a scene sounds (FS-AND39 R2)", () => {
+  function hitStage() {
+    const { stage } = fakeStage();
+    const struck: string[] = [];
+    const effects: MonsterEffects = {
+      claw: () => {},
+      hit: (m) => struck.push(m.entity_id),
+    };
+    const roster = new MonsterRoster(stage, fixtureArt(), undefined, effects);
+    return { roster, struck };
+  }
+
+  it("should report a shown monster whose health drops, the killing blow too", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.sync([monster({ current_health: 0, action: "dead" })]);
+    expect(struck).toEqual(["m1", "m1"]);
+  });
+
+  it("should report nothing on first sight, or on health that holds or rises", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 50 })]);
+    roster.sync([monster({ current_health: 50 })]);
+    roster.sync([monster({ current_health: 60 })]);
+    expect(struck).toEqual([]);
+  });
+
+  it("should report nothing for a monster that comes back into the broadcast hurt", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.sync([]);
+    roster.sync([monster({ current_health: 40 })]);
+    expect(struck).toEqual([]);
+  });
+
+  it("should report nothing for a hit taken while hidden, nor when it is shown again", () => {
+    const { roster, struck } = hitStage();
+    roster.sync([monster({ current_health: 120 })]);
+    roster.update(FRAME);
+    roster.hideWhere(() => true);
+    roster.sync([monster({ current_health: 90 })]);
+    roster.hideWhere(() => false);
+    roster.sync([monster({ current_health: 90 })]);
+    expect(struck).toEqual([]);
+  });
+
+  it("should report each of two monsters struck in one state", () => {
+    const { roster, struck } = hitStage();
+    const two = (a: number, b: number) => [
+      monster({ entity_id: "a", current_health: a }),
+      monster({ entity_id: "b", current_health: b, position: { x: 500, y: 300 } }),
+    ];
+    roster.sync(two(120, 120));
+    roster.update(FRAME);
+    roster.sync(two(100, 80));
+    expect(struck).toEqual(["a", "b"]);
+  });
+});
+
+describe("the tiered roster's looks (FS-C8VM7 §F R34)", () => {
+  it("should stand the ogre family at the top of the brute band, by a per-look aim", () => {
+    const look = monsterLook("ogre_mauler");
+    expect(look).toEqual({ sheet: "creature_ogre_mauler_base", tier: "brute", aim: SIZE_TIERS.brute.max });
+    const art = { sheet: (name: string) => (name === look.sheet ? { crown: 100 } : { crown: 80 }) };
+    expect(monsterScale(look, art)).toBeCloseTo((1.5 * 80) / 100);
+    expect(monsterScale(look, { sheet: () => undefined })).toBe(1.5);
+  });
+
+  /** FS-C8VM7 §A R3 and R8, by family, with the family's size tier (§F R34). */
+  const FAMILIES: [string, "fodder" | "brute", string[]][] = [
+    ["ghoul", "fodder", ["ghoul", "ghast", "ravener"]],
+    ["skeleton", "fodder", ["bone_archer", "ashen_archer", "wight_archer"]],
+    ["troll", "brute", ["troll", "cave_troll", "blood_troll"]],
+    ["thrall", "fodder", ["barrow_thrall", "plague_thrall", "blightborn"]],
+    ["ghost", "fodder", ["spire_wraith", "shade", "phantom", "banshee"]],
+    ["goblin", "fodder", ["goblin", "goblin_shield", "goblin_cutthroat", "goblin_cutthroat_shield", "goblin_reaver", "goblin_reaver_shield", "goblin_warchief", "goblin_warchief_shield"]],
+    ["ogre", "brute", ["ogre", "ogre_mauler", "ogre_tyrant"]],
+    ["dark warrior", "brute", ["dark_warrior", "dark_reaper"]],
+  ];
+
+  it.each(FAMILIES)("should draw every %s variant from its own sheet at the family's tier", (_family, tier, archetypes) => {
+    for (const archetype of archetypes) {
+      const look = monsterLook(archetype);
+      expect(look.sheet).toBe(`creature_${archetype}_base`);
+      expect(look.tier).toBe(tier);
+    }
+  });
+
+  it("should give a per-look aim only to the ogre family, inside the brute band, and the goblin family, inside the fodder band", () => {
+    const aimed = FAMILIES.flatMap(([, , archetypes]) => archetypes).filter((a) => monsterLook(a).aim !== undefined);
+    const [, , goblins] = FAMILIES.find(([family]) => family === "goblin")!;
+    expect(aimed).toEqual([...goblins, "ogre", "ogre_mauler", "ogre_tyrant"]);
+    for (const archetype of ["ogre", "ogre_mauler", "ogre_tyrant"]) {
+      expect(monsterLook(archetype).aim).toBeGreaterThan(SIZE_TIERS.brute.aim);
+      expect(monsterLook(archetype).aim).toBeLessThanOrEqual(SIZE_TIERS.brute.max);
+    }
+    for (const archetype of goblins) {
+      expect(monsterLook(archetype).aim).toBeLessThan(SIZE_TIERS.fodder.aim);
+      expect(monsterLook(archetype).aim).toBeGreaterThanOrEqual(SIZE_TIERS.fodder.min);
+    }
+  });
+
+  it("should find every look's sheet among the baked sheets", () => {
+    for (const [archetype, look] of Object.entries(MONSTER_LOOKS)) {
+      expect(baked.has(look.sheet), archetype).toBe(true);
+      if (look.elite) expect(baked.has(look.elite), archetype).toBe(true);
+    }
+  });
+
+  it("should still draw an archetype it does not know as the troll", () => {
+    expect(monsterLook("goblin_king")).toBe(FALLBACK_LOOK);
+  });
+});
+
+describe("a variant's stand-in until its art is in (FS-C8VM7 §G R44, ADR-0081 Decision 5)", () => {
+  it("should draw a goblin as the ghoul under the goblin's tint, at its own tier and aim", () => {
+    expect(drawnLook("goblin_reaver", fixtureArt())).toEqual({
+      sheet: "creature_ghoul_base",
+      tier: "fodder",
+      aim: monsterLook("goblin_reaver").aim,
+      tint: palette.goblinStandIn,
+    });
+    expect(drawnLook("goblin_reaver_shield", fixtureArt())).toEqual(drawnLook("goblin_reaver", fixtureArt()));
+  });
+
+  it("should draw an ogre as the troll under the ogre's tint, at the ogre's aim", () => {
+    expect(drawnLook("ogre_tyrant", fixtureArt())).toEqual({
+      sheet: "creature_troll_base",
+      tier: "brute",
+      aim: SIZE_TIERS.brute.max,
+      tint: palette.ogreStandIn,
+    });
+  });
+
+  it("should draw a dark warrior as the ghoul under the dark warrior's tint, at brute tier", () => {
+    expect(drawnLook("dark_reaper", fixtureArt())).toEqual({
+      sheet: "creature_ghoul_base",
+      tier: "brute",
+      tint: palette.darkWarriorStandIn,
+    });
+  });
+
+  it.each([
+    ["ghast", "ghoul"],
+    ["ravener", "ghoul"],
+    ["ashen_archer", "bone_archer"],
+    ["wight_archer", "bone_archer"],
+    ["cave_troll", "troll"],
+    ["blood_troll", "troll"],
+    ["plague_thrall", "barrow_thrall"],
+    ["blightborn", "barrow_thrall"],
+    ["shade", "spire_wraith"],
+    ["phantom", "spire_wraith"],
+    ["banshee", "spire_wraith"],
+  ])("should draw a %s as its family's tier-1 look (%s) as baked: no tint", (archetype, family) => {
+    const look = drawnLook(archetype, runArt());
+    expect(look.sheet).toBe(monsterLook(family).sheet);
+    expect(look.tier).toBe(monsterLook(archetype).tier);
+    expect(look.tint).toBeUndefined();
+  });
+
+  it("should keep the elite wash on an untinted stand-in, and the stand-in's tint over it on a tinted one", () => {
+    const art = runArt();
+    expect(monsterTint(drawnLook("ghast", art), { elite: true })).toBe(palette.eliteTint);
+    expect(monsterTint(drawnLook("goblin", art), { elite: true })).toBe(palette.goblinStandIn);
+  });
+
+  it("should draw a variant from its first listing as its stand-in, never the placeholder, with no warning", () => {
+    const warn = vi.fn();
+    const manifest = shippedManifest();
+    const art = new ArtLibrary(manifest, { warn }, new Set(sceneAtlases(manifest, SCENE_ART.BarrowspireScene)));
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, art);
+    roster.sync([monster({ archetype: "goblin_cutthroat", name: "Goblin Cutthroat" })]);
+    roster.update(FRAME);
+    expect(sprites[0].texture).not.toBe("art:placeholder");
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_ghoul_base\/idle\//);
+    expect(sprites[0].tint).toBe(palette.goblinStandIn);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("should give each new family's stand-in its own tint, none of them the elite wash", () => {
+    const tints = [palette.goblinStandIn, palette.ogreStandIn, palette.darkWarriorStandIn];
+    expect(new Set([...tints, palette.eliteTint, palette.bloodDemonStandIn]).size).toBe(5);
+  });
+});
+
+describe("a champion (FS-C8VM7 §F R35)", () => {
+  const ghast = (fields: Partial<MonsterState> = {}) =>
+    monster({ archetype: "ghast", name: "Gorvak the Ghast", boss: true, level: 12, ...fields });
+
+  it("should draw a boss whose look is not boss tier at the boss tier's aim", () => {
+    expect(drawnLook("ghast", fixtureArt(), true)).toEqual({ sheet: "creature_ghoul_base", tier: "boss" });
+    expect(drawnLook("ogre", fixtureArt(), true)).toEqual({
+      sheet: "creature_troll_base",
+      tier: "boss",
+      tint: palette.ogreStandIn,
+    });
+    expect(drawnLook("demon", fixtureArt(), true)).toEqual(monsterLook("demon"));
+    expect(drawnLook("ghast", fixtureArt(), false).tier).toBe("fodder");
+  });
+
+  it("should draw its own sheet at the boss tier once that sheet is in", () => {
+    const art = { has: (name: string) => name === "creature_ghast_base" };
+    expect(drawnLook("ghast", art, true)).toEqual({ sheet: "creature_ghast_base", tier: "boss" });
+  });
+
+  it("should scale the sprite to the boss aim, and letter its server name and level", () => {
+    const { stage, sprites, texts } = fakeStage();
+    const roster = new MonsterRoster(stage, baked);
+    roster.sync([ghast()]);
+    roster.update(FRAME);
+    const look = drawnLook("ghast", baked, true);
+    expect(sprites[0].scaleY).toBeCloseTo(monsterScale(look, baked));
+    const player = baked.sheet(PLAYER_REFERENCE_SHEET)!.crown!;
+    const crown = baked.sheet(look.sheet)!.crown!;
+    expect((crown * sprites[0].scaleY) / player).toBeCloseTo(SIZE_TIERS.boss.aim);
+    expect(texts[0].content).toBe("Gorvak the Ghast · Lv 12");
+  });
+
+  it("should keep a champion at the boss aim when its own art lands and it is re-dressed", () => {
+    const atlas = (image: string) => ({ image, width: 1024, height: 1024, sha256: "a".repeat(64) });
+    const art = new ArtLibrary(
+      {
+        version: 1,
+        tile: { width: 64, height: 32 },
+        facings: ["e", "se", "s", "sw", "w", "nw", "n", "ne"],
+        atlases: { "characters-1": atlas("c.png"), "creatures-1": atlas("k.png"), "ghast-0": atlas("g.png") },
+        sheets: {
+          char_knight_base: creatureSheet("characters-1", 80),
+          creature_ghoul_base: creatureSheet("creatures-1", 72),
+          creature_ghast_base: creatureSheet("ghast-0", 76),
+        },
+      },
+      quiet,
+      new Set(["characters-1", "creatures-1"]),
+    );
+    let land = () => {};
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, art, undefined, undefined, {
+      fetch: (_group, landed) => void (land = landed),
+    });
+    roster.sync([ghast()]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_ghoul_base\//);
+    expect(sprites[0].scaleY).toBeCloseTo((SIZE_TIERS.boss.aim * 80) / 72);
+
+    art.admit(["ghast-0"]);
+    land();
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toMatch(/^creature_ghast_base\//);
+    expect(sprites[0].scaleY).toBeCloseTo((SIZE_TIERS.boss.aim * 80) / 76);
+  });
+
+  it("should stand a champion on a boss's footprint", () => {
+    expect(footprintRadius(drawnLook("ghast", baked, true))).toBe(footprintRadius(monsterLook("demon")));
+  });
+});
+
+describe("a monster's ability pose (FS-C8VM7 §F R37)", () => {
+  it("should play the attack clip for action ability, in the facing the server sends", () => {
+    const choice = monsterClip({ action: "ability", facing: { x: -1, y: 0 } }, "se");
+    expect(choice.animation).toBe("attack");
+    expect(choice.facing).toBe("w");
+  });
+
+  it("should play the wind-up once, however many ticks report it", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ action: "ability" })]);
+    roster.update(FRAME);
+    const played = sprites[0].anims.currentAnim?.key;
+    expect(played).toMatch(/^creature_troll_base\/attack\//);
+    roster.sync([monster({ action: "ability" })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toBe(played);
+  });
+});
+
+describe("a monster's ability on the ground (FS-C8VM7 §F R36)", () => {
+  /** The fake stage, with ground marks that record their outlines. */
+  const groundStage = () => {
+    const base = fakeStage();
+    const marks: { strokes: number; destroyed: boolean }[] = [];
+    const stage: MonsterStage = {
+      ...base.stage,
+      ground: () => {
+        const mark = { strokes: 0, destroyed: false };
+        marks.push(mark);
+        return {
+          clear: () => {},
+          fillStyle: () => {},
+          fillPoints: () => {},
+          lineStyle: () => {},
+          strokePoints: () => void (mark.strokes += 1),
+          setDepth: () => {},
+          destroy: () => void (mark.destroyed = true),
+        };
+      },
+    };
+    return { stage, marks };
+  };
+  const slam = { kind: "ground_slam" as const, x: 400, y: 300, radius: 130, arc: 0, remaining: 0.9 };
+
+  it("should draw a listed monster's pending ability, and take it down when the monster goes", () => {
+    const { stage, marks } = groundStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ action: "ability", ability: slam })]);
+    roster.update(FRAME);
+    expect(marks).toHaveLength(1);
+    expect(marks[0].strokes).toBeGreaterThan(1);
+    roster.clear();
+    expect(marks.every((m) => m.destroyed)).toBe(true);
+  });
+
+  it("should draw a corpse's burst", () => {
+    const { stage, marks } = groundStage();
+    new MonsterRoster(stage, fixtureArt()).sync([
+      monster({ action: "dead", current_health: 0, ability: { ...slam, kind: "burst", radius: 110 } }),
+    ]);
+    expect(marks).toHaveLength(1);
+  });
+
+  it("should draw nothing on a stage without ground marks", () => {
+    const { stage } = fakeStage();
+    expect(() => new MonsterRoster(stage, fixtureArt()).sync([monster({ ability: slam })])).not.toThrow();
   });
 });

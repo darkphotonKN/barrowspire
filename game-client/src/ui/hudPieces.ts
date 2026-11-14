@@ -22,7 +22,7 @@ export function hudPieces(scene: Phaser.Scene, art: () => ArtLibrary): HudBuild 
     ability: (place) => new AbilityHud(scene, place),
     potion: (at) => new PotionHud(scene, art(), at.x, at.y),
     bars: (at) => new ResourceHud(scene, at.x, at.y),
-    progress: (at) => new ProgressHud(scene, at.x, at.y),
+    progress: () => new ProgressHud(scene),
   };
 }
 

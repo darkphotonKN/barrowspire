@@ -21,7 +21,7 @@ import { escapeStep } from "./escapeOrder";
 import type { HitSize, MenuChoice, MenuPanelSpec, MenuTones } from "./menuPanel";
 import type { FullscreenControl, MenuSlotKeys, MusicLevelControl, OptionsFeedback, OptionsPanelSpec } from "./optionsPanel";
 import type { UiEffect } from "@/audio/uiSounds";
-import { FALL_CONFIRM, runMenuChoices } from "./party";
+import { BURN_CONFIRM, FALL_CONFIRM, runMenuChoices } from "./party";
 import type { UiBridge, UiRequest, World, WorldFacts, WorldReport } from "./uiBridge";
 
 /** A panel standing in the slot, as `showMenuPanel` and `openOptionsPanel` return it. */
@@ -219,6 +219,33 @@ export class UiMenuSlot {
       return;
     }
     this.openMenu();
+  }
+
+  /**
+   * The run's E at the altar with the tome carried (FS-3103M R25): "Burn tome?" on the Fall confirm's
+   * panel, over no window, as the player's own action through the UI scene's act. It opens as the Fall
+   * confirm does, with `dialog_open`; Burn asks the world for the one interact and empties the slot with
+   * `dialog_confirm_heavy`; Not yet, Esc and the × send nothing and empty it with the rule's
+   * `settings_close` (FS-WDM0X § Change M13, as the Fall confirm). Nothing with the slot already filled,
+   * the run ended or another world reported.
+   */
+  confirmBurn(altar: string): void {
+    const report = this.deps.bridge.world;
+    if (!report || report.world !== "run" || this.filled || report.facts().ended) return;
+    this.deps.bridge.act(() => {
+      this.deps.bridge.play("dialog_open");
+      this.show(report, {
+        line: BURN_CONFIRM.line,
+        choices: BURN_CONFIRM.choices,
+        actions: {
+          burn: this.played(() => {
+            this.ask({ kind: "burn", altar });
+            this.close();
+          }, "dialog_confirm_heavy"),
+        },
+        enabled: {},
+      });
+    });
   }
 
   /**

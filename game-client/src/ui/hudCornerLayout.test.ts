@@ -5,8 +5,10 @@ import {
   CORNER_LABEL_GREYED_MAIL,
   ABILITY_CARD_PLACE,
   CORNER_ROW_CLEARANCE,
+  CORNER_ICONS,
   cornerIconFrame,
   cornerLabelAt,
+  cornerRowLeft,
   CONTROLS_BADGE_LABEL,
   controlsBadgeFrame,
 } from "./hudCornerLayout";
@@ -40,6 +42,21 @@ describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward
     expect(CORNER_ROW_CLEARANCE).toBe(70);
     const top = cornerIconFrame("menu", { width: 1080, height: 720 }).y;
     expect(720 - CORNER_ROW_CLEARANCE).toBe(top - 8);
+  });
+});
+
+// FS-77DVN §A.2: what stands left of the row keeps clear of its leftmost plate, whichever icon
+// that is
+describe("cornerRowLeft (FS-3EBCA R1, R2; FS-77DVN §A.2)", () => {
+  it.each([1080, 1181, 1280])("should be the leftmost plate's left edge at %i", (width) => {
+    const view = { width, height: 720 };
+    const plates = CORNER_ICONS.map((icon) => cornerIconFrame(icon, view).x);
+    expect(cornerRowLeft(view)).toBe(Math.min(...plates));
+  });
+
+  it("should stand at 786 in a 1080-wide view and 986 in a 1280-wide one", () => {
+    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(786);
+    expect(cornerRowLeft({ width: 1280, height: 720 })).toBe(986);
   });
 });
 

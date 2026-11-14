@@ -60,10 +60,14 @@ export interface PurseRefresh {
   forget(): void;
 }
 
-/** Messages to the server (the run's equip and unequip), and the world's passing notice. */
+/**
+ * Messages to the server (the run's equip and unequip), the world's passing notice, and word of
+ * each change the player made, once as it is sent: the world plays `item_swap` (FS-AND39 R7).
+ */
 export interface HudPort {
   send(action: typeof ActionType.Equip | typeof ActionType.Unequip, payload: EquipPayload): void;
   notice(text: string): void;
+  gearChanged?(): void;
 }
 
 /** What one state says the player carries and wears; either may be absent. */
@@ -102,6 +106,7 @@ export class EquipmentHud {
     // out goes to the end of the bag (R16)
     panel.onEquip = (item, slot) => {
       port.send(ActionType.Equip, { item_entity_id: item.entity_id });
+      port.gearChanged?.();
       const displaced = this.worn[slot];
       this.worn[slot] = item;
       this.carried = this.carried.filter((i) => i.entity_id !== item.entity_id);
@@ -110,6 +115,7 @@ export class EquipmentHud {
     panel.mayUnequip = () => this.roomForOne();
     panel.onUnequip = (item, slot) => {
       port.send(ActionType.Unequip, { item_entity_id: item.entity_id });
+      port.gearChanged?.();
       this.worn[slot] = null;
       this.carried.push(item);
     };

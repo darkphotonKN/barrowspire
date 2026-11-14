@@ -40,13 +40,13 @@ func (s *Session) publishFloorMap(depth int) {
 		return
 	}
 	s.mu.RLock()
-	width, height, dungeon := s.mapWidth, s.mapHeight, s.dungeon
+	width, height, dungeon, pool := s.mapWidth, s.mapHeight, s.dungeon, s.floorPool
 	s.mu.RUnlock()
 
 	walls := wallStatesOf(s.EntityManager.GetAllEntities())
 	message := floorMapMessage(s.ID, depth, width, height, walls)
 	if dungeon != nil {
-		message = dungeonFloorMapMessage(s.ID, depth, dungeon, walls)
+		message = dungeonFloorMapMessage(s.ID, depth, dungeon, walls, pool)
 	}
 	s.floorMap.Store(&message)
 }
@@ -87,8 +87,10 @@ func floorMapMessage(sessionID uuid.UUID, depth int, width, height float64, wall
 
 // dungeonFloorMapMessage is the floor_map for a dungeon floor: its size, cell
 // size and regions all from the one layout the floor was built from, and its
-// shell walls with no house id.
-func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, walls []*types.WallState) types.Message {
+// shell walls with no house id. Its enemy_pool is every archetype the floor's
+// pool can spawn, never a boss, so it says nothing of the top floor
+// (FS-C8VM7 §G R40).
+func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, walls []*types.WallState, pool floorPool) types.Message {
 	shell := make([]shellWall, len(walls))
 	for i, wall := range walls {
 		shell[i] = shellWall{EntityID: wall.EntityID, Position: wall.Position, Width: wall.Width, Height: wall.Height}
@@ -103,6 +105,7 @@ func dungeonFloorMapMessage(sessionID uuid.UUID, depth int, d *dungeonFloor, wal
 			"cell_size":  d.layout.CellSize,
 			"regions":    d.layout.Regions,
 			"walls":      shell,
+			"enemy_pool": pool.archetypes(),
 		},
 	}
 }

@@ -1,6 +1,7 @@
 # ADR-0060 — A run floor's static layout is sent once as a floor map; snapshots drop walls and, on dungeon floors, are cut per recipient by distance
 
 Status: accepted
+Amended by: ADR-0081 — Decision 1 (a dungeon floor's `floor_map` also carries the optional `enemy_pool` list, never a boss).
 Date: 2026-11-06
 Scope: `game-service` run worlds and `game-client`'s run scene: the WebSocket messages between
 them. Not the hub or field worlds, not the HTTP contract.

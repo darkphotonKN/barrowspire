@@ -5,31 +5,30 @@
  *
  * Neutral HUD, as `ProgressHud`: vellum labels in the body serif (the blackletter bound) on the
  * HUD panel, a brass frame, each bar on a dark track in a brass rim. Parry charges are pips. It
- * sits at the HUD's depth and grows down from its top edge, on the left-edge column the level/XP
- * bar and the party frames share.
+ * sits at the HUD's depth and grows down from its top edge, on the left-edge column it shares with
+ * the party frames.
  */
 
 import type Phaser from "phaser";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import { PROGRESS_HUD_AT, PROGRESS_HUD_H, PROGRESS_HUD_W } from "./ProgressHud";
 import type { HudBar, HudChannel } from "./resources";
 
-/** One column with the level/XP bar and the party frames, so it clears the T panel. */
-export const RESOURCE_HUD_W = PROGRESS_HUD_W;
-/** The gap kept under the run's XP bar. */
-const UNDER_XP_BAR = 6;
 /**
- * Where each scene stands the panel, its top-left corner: under the XP bar in a run, in the corner
- * of a field, which has none. A hub has no bars.
+ * The HUD's left-edge column (FS-77DVN §E.19): the resource bars and the party frames stand in it,
+ * one width, so the left edge reads as one column and ends left of the T panel.
+ */
+export const HUD_COLUMN_W = 180;
+/** The very top left of a run or a field: nothing stands over the bars there (FS-77DVN §E.17). */
+const TOP_LEFT = { x: 10, y: 16 } as const;
+/**
+ * Where each scene stands the panel, its top-left corner: in the corner of a run and of a field
+ * alike. A hub has no bars.
  */
 export const RESOURCE_HUD_AT: Readonly<
   Record<"run" | "field", { x: number; y: number }>
 > = {
-  run: {
-    x: PROGRESS_HUD_AT.run.x,
-    y: PROGRESS_HUD_AT.run.y + PROGRESS_HUD_H + UNDER_XP_BAR,
-  },
-  field: { x: 10, y: 16 },
+  run: { ...TOP_LEFT },
+  field: { ...TOP_LEFT },
 };
 const HUD_DEPTH = 1000;
 const PAD = 10;
@@ -84,9 +83,9 @@ export class ResourceHud {
       .setDepth(HUD_DEPTH));
     g.clear();
     g.fillStyle(palette.hudPanel, 0.85);
-    g.fillRect(this.x, top, RESOURCE_HUD_W, resourceHudHeight(bars.length));
+    g.fillRect(this.x, top, HUD_COLUMN_W, resourceHudHeight(bars.length));
     g.lineStyle(1, palette.frame, 0.35);
-    g.strokeRect(this.x, top, RESOURCE_HUD_W, resourceHudHeight(bars.length));
+    g.strokeRect(this.x, top, HUD_COLUMN_W, resourceHudHeight(bars.length));
 
     this.fitLabels(bars.length, top);
     bars.forEach((bar, i) => {
@@ -95,7 +94,7 @@ export class ResourceHud {
         .setText(bar.label ?? "")
         .setPosition(this.x + PAD, rowY + 1);
       const barX = this.x + PAD + LABEL_W;
-      const barW = RESOURCE_HUD_W - PAD * 2 - LABEL_W;
+      const barW = HUD_COLUMN_W - PAD * 2 - LABEL_W;
       const barY = rowY + Math.round((ROW_H - BAR_H) / 2);
       if (bar.pips) drawHudPips(g, barX, barY, barW, BAR_H, bar.pips);
       else
