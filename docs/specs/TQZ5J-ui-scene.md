@@ -1522,21 +1522,21 @@ minimap's `map_mode_switch` stays as it is (the world's `play`, FS-WDM0X S7).
 
 ### Acceptance Criteria (added)
 
-- [ ] No world scene imports or builds `MailboxHud`, `MailboxEnvelope` or `LetterPanel` (`mountMailbox`),
+- [x] No world scene imports or builds `MailboxHud`, `MailboxEnvelope` or `LetterPanel` (`mountMailbox`),
       or tests the letter panel's rect (the chat's `coveredAt`).
-- [ ] The UI scene builds the mailbox for the town only, as the town is reported, on its own scene and
+- [x] The UI scene builds the mailbox for the town only, as the town is reported, on its own scene and
       resident art, and takes it down as the town leaves and with the game; a field and the run build
       none; a report of the town standing keeps it.
-- [ ] The envelope is refused under the town's dialogue and the menu slot; its opening closes the gear
+- [x] The envelope is refused under the town's dialogue and the menu slot; its opening closes the gear
       overlay and the party panel first, `mailbox_open` alone.
-- [ ] The town's `windows().letter`, its `close: letter` answer and its guards read the mailbox store;
+- [x] The town's `windows().letter`, its `close: letter` answer and its guards read the mailbox store;
       Esc's order (controls, letter, menu, party, gear, then the menu) and every window's give-way rule
       (FS-3EBCA R15–R18) stand.
-- [ ] The letter panel's tips read the level the world last handed the gear.
-- [ ] Every mailbox sound plays as FS-WDM0X says, once per player action, none for what the game closes.
-- [ ] Every acceptance criterion of FS-1GZGD's envelope and letter panel, FS-J1672 and FS-3EBCA's Mailbox
+- [x] The letter panel's tips read the level the world last handed the gear.
+- [x] Every mailbox sound plays as FS-WDM0X says, once per player action, none for what the game closes.
+- [x] Every acceptance criterion of FS-1GZGD's envelope and letter panel, FS-J1672 and FS-3EBCA's Mailbox
       slot still holds; their tests pass, moved with the code where they tested the town.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's look-and-feel check of the mailbox and R108's case passes.
 
 ### Edge States (added)
@@ -1560,3 +1560,17 @@ minimap's `map_mode_switch` stays as it is (the world's `play`, FS-WDM0X S7).
   frame, the arrival card (the note above: they stay in the world).
 - Any change to the mailbox's look, words, sounds or rules but R108's depth; the mailbox store, the
   mail REST calls, the server.
+
+### As built (2026-11-14)
+
+Appended after the slice; the text above is not edited. Built in I-TQZ5J-40; the owner's check is
+I-TQZ5J-41.
+
+- **Where it lives.** `uiSceneMailbox.ts` (`UiMailboxSlot`, `mailboxWiring`: when the mailbox stands and
+  what it reads of the UI scene), the UI scene's `mountMailboxSlot` (its own block, beside
+  `mountInterface`), `mountMailbox(scene, library, wiring)` in `mailboxHud.ts`, which also holds
+  `letterPanelState`, the town's reader of the store's `panelOpen` (the town's `mailbox` field, so its
+  guards read as they did). The bridge's types are unchanged. The town's `refusesLetter`,
+  `clearForLetter` and `characterLevel` went with the mailbox; its chat window lost `coveredAt`.
+- **R108, not shot** (the owner's no-parity rule). The letter panel now draws over the
+  party frames where they meet and its ground takes the presses there; nothing else meets in a new order.

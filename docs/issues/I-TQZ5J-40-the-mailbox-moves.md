@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-40
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: []
 labels: [ready-for-agent]
@@ -23,15 +23,15 @@ Implements FS-TQZ5J §Change: Batch 4: the mailbox (R101–R110)
 
 ## Acceptance Criteria
 
-- [ ] No world scene imports or builds `MailboxHud` (`mountMailbox`), `MailboxEnvelope` or `LetterPanel`,
+- [x] No world scene imports or builds `MailboxHud` (`mountMailbox`), `MailboxEnvelope` or `LetterPanel`,
       or tests the letter panel's rect.
-- [ ] The UI scene builds the mailbox for the town only, on itself, and takes it down as the town leaves
+- [x] The UI scene builds the mailbox for the town only, on itself, and takes it down as the town leaves
       and with the game; a town report standing keeps it.
-- [ ] The envelope's refusal (dialogue, menu) and opening (gear and party panel closed first,
+- [x] The envelope's refusal (dialogue, menu) and opening (gear and party panel closed first,
       `mailbox_open` alone) as before.
-- [ ] Esc's order and every give-way rule (FS-3EBCA R15–R18) stand; the town's tests of them pass,
+- [x] Esc's order and every give-way rule (FS-3EBCA R15–R18) stand; the town's tests of them pass,
       moved onto the UI scene's mailbox wiring where they read the town's.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 
