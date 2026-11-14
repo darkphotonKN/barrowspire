@@ -307,7 +307,6 @@ export interface UiScreen {
   container?(message: ContainerMessage): void;
   record?(shown: ShownRecord | null): void;
   endPopped?(): void;
-  runBegun?(): void;
   abilityCard?(up: boolean): void;
 }
 
@@ -388,11 +387,6 @@ export interface UiBridge extends UiActWrapper {
    * still in play (R58): the moved windows step aside, silently.
    */
   endPopped(): void;
-  /**
-   * The player has arrived in the run on its first floor, and it is in view: once a start, never on a
-   * return or a climb (FS-84N1G R1). The UI scene opens the controls panel, silently (R2).
-   */
-  runBegun(): void;
   /** The run's ability card came up or went (FS-84N1G R4): the controls badge stands over it while it is up. */
   abilityCard(up: boolean): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
@@ -419,7 +413,6 @@ export type WorldUi = Pick<
   | "container"
   | "record"
   | "endPopped"
-  | "runBegun"
   | "abilityCard"
 >;
 
@@ -438,7 +431,6 @@ export const NO_UI: WorldUi = {
   container: () => {},
   record: () => {},
   endPopped: () => {},
-  runBegun: () => {},
   abilityCard: () => {},
 };
 
@@ -552,10 +544,6 @@ export class GameUiBridge implements UiBridge {
 
   endPopped(): void {
     for (const screen of [...this.screens]) screen.endPopped?.();
-  }
-
-  runBegun(): void {
-    for (const screen of [...this.screens]) screen.runBegun?.();
   }
 
   abilityCard(up: boolean): void {

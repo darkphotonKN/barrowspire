@@ -159,14 +159,6 @@ export class UiControlsSlot {
     });
   }
 
-  /**
-   * The run began (FS-84N1G R1, R2): it opens as H would, but silently, the game having opened it (FS-WDM0X
-   * S4); refused under the menu slot and after the run's end, and not tried again; already open, it stays.
-   */
-  runBegun(): void {
-    if (this.mayOpen()) this.open();
-  }
-
   /** The player closed it (its ×, FS-84N1G R14): `dialog_cancel`, inside the UI scene's act. */
   dismiss(): void {
     if (!this.panel) return;
