@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { GameUiBridge, NO_FACTS, type WorldWindows } from "./uiBridge";
 import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 
-const CLOSED: WorldWindows = { letter: false, party: false, inventory: false, character: false };
+const CLOSED: WorldWindows = { letter: false, inventory: false, character: false };
 
-/** The bridge with the UI scene's sounds lent, and a town reporting windows the test opens and closes. */
+/**
+ * The bridge with the UI scene's sounds lent, and a town reporting windows the test opens and closes;
+ * `windows.party` is the UI scene's own party panel (§ Change: Phase 2: the party, R39).
+ */
 function town() {
-  const { bridge, sounds, heard } = heardInterfaceSounds();
-  const windows: { -readonly [K in keyof WorldWindows]: boolean } = { ...CLOSED };
+  const windows: { -readonly [K in keyof WorldWindows]: boolean } & { party: boolean } = { ...CLOSED, party: false };
+  const { bridge, sounds, heard } = heardInterfaceSounds(undefined, () => windows.party);
   let reads = 0;
   bridge.report({
     world: "hub",

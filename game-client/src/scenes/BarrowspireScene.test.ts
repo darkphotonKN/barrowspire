@@ -123,7 +123,7 @@ const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOverlayLayout");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { menuOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
 
 /** A key as both scenes' key objects stand in for it here: pressed since the last frame, or not. */
 interface PressedKey {
@@ -4242,14 +4242,19 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
   it("should close an open party panel on ESC before it opens the menu (FS-R82NV § Change C2)", () => {
     const { run, keys, press } = menuOnStage();
     let open = true;
-    (run as unknown as { partyPanel: unknown }).partyPanel = {
+    // the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R39)
+    partyPanelOver(run, "run", () => ({
       isOpen: () => open,
       close: () => {
         const was = open;
         open = false;
         return was;
       },
-    };
+      toggle: vi.fn(),
+      relayout: vi.fn(),
+      keepsField: () => false,
+      destroy: vi.fn(),
+    }));
     press(keys.esc);
     expect(open).toBe(false);
     expect(menuOver(run)).toBeUndefined();
@@ -5163,9 +5168,8 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   describe("the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
     function partyOverOverlay() {
       const env = overlayOnStage();
-      const run = env.run as unknown as Overlaid & { partyPanel?: unknown; refusesParty(): boolean };
-      const party = partyPanelOn(() => run.refusesParty());
-      run.partyPanel = party.panel;
+      const run = env.run as unknown as Overlaid;
+      const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
       cornerRowOn(run, "run");
       const f = cornerIconFrame("party", viewport);
       const icon = () =>
@@ -5214,11 +5218,14 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(menuOver(run)).toBeUndefined();
     });
 
-    it("should keep a press on the party panel from the overlay under it: no equip for a bag item there", () => {
+    // the party panel is the UI scene's: a press on it never reaches the run (FS-TQZ5J § Change: Phase 2:
+    // the party, R40), and the overlay gives way to it as to any UI piece the bridge says the pointer is
+    // over (R41): its point stands off its panels there, so nothing under it answers
+    it("should keep the overlay under a UI piece from answering there: no equip for a bag item under it", () => {
       const env = overlayOnStage();
-      const run = env.run as unknown as Overlaid & { partyPanel?: unknown };
+      const run = env.run as unknown as Overlaid & { ui: object };
       const covered = { on: true };
-      run.partyPanel = { covers: () => covered.on, isOpen: () => true };
+      run.ui = new Proxy(run.ui, { get: (t, p) => (p === "overUi" ? covered.on : Reflect.get(t, p)) });
       env.key("I");
       const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
       const at = { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 };
@@ -5235,16 +5242,13 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   // R18; FS-G4VMQ § Change C4.
   describe("the windows give way to the menu (FS-3EBCA R17, R18)", () => {
     type Windowed = Overlaid & {
-      partyPanel?: unknown;
       runEnded: boolean;
-      refusesParty(): boolean;
       mayChat(): boolean;
     };
     function runWindows() {
       const env = overlayOnStage();
       const run = env.run as unknown as Windowed;
-      const party = partyPanelOn(() => run.refusesParty());
-      run.partyPanel = party.panel;
+      const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
       cornerRowOn(run, "run");
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
         const f = cornerIconFrame(icon, viewport);
@@ -5354,11 +5358,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   // the menu (S5), and every window the game closes on its own silent (S4). I-WDM0X-3.
   describe("interface sounds (FS-WDM0X S1–S9; I-WDM0X-3)", () => {
     type Heard = Overlaid & {
-      partyPanel?: unknown;
       runEnded: boolean;
       ui: { act(run: () => void): void };
       containerView: { isOpen: boolean };
-      refusesParty(): boolean;
       endRun(): void;
       resetRun(end: "shutdown" | "destroy"): void;
     };
@@ -5372,8 +5374,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       // the overlay again, as create composes it once the player is made: its × through the wrapper
       run.equipment = run.composeEquipment();
       run.handleGameStateUpdate(partyState({ ...player("me", "Aldric", 130), inventory: [sword] } as ReturnType<typeof player>));
-      const party = partyPanelOn(() => run.refusesParty(), run.ui);
-      run.partyPanel = party.panel;
+      const party = partyPanelOver(run, "run", (w) => partyPanelOn(w.blocked, w.wrapper));
       cornerRowOn(run, "run");
       const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
         const f = cornerIconFrame(icon, viewport);
@@ -5706,21 +5707,19 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     });
 
     // create() can't run on the stand-ins, so its order is pinned from the source, as in the town
-    // and the field: the player made before the party panel, the keys, the gear and the corner, and
-    // its wrapper handed to every module that hears its own input
-    it("should make the player in create before anything that hears a player, and hand its wrapper to the overlay and the party panel", () => {
+    // and the field: the player made before the keys, the gear and the corner, and its wrapper handed
+    // to every module that hears its own input (the party panel is the UI scene's since phase 2)
+    it("should make the player in create before anything that hears a player, and hand its wrapper to the overlay", () => {
       const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
       const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
       const at = (line: RegExp) => create.search(line);
       const mount = at(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);/);
       expect(mount).toBeGreaterThan(-1);
       for (const later of [
-        /this\.partyPanel = mountPartyPanel\(/,
         /this\.bindRunInput\(\);/,
         /this\.equipment = this\.composeEquipment\(\);/,
       ])
         expect(mount, String(later)).toBeLessThan(at(later));
-      expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui\)/);
       const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
       expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
     });

@@ -167,6 +167,7 @@ function setup(
     commands?: PartyPanelDeps["commands"];
     opening?: () => void;
     wrapper?: PartyPanelDeps["wrapper"];
+    ground?: PartyPanelDeps["ground"];
   } = {},
 ) {
   const scene = fakeScene();
@@ -197,6 +198,7 @@ function setup(
     blocked: () => state.blocked,
     opening: opts.opening,
     wrapper: opts.wrapper,
+    ground: opts.ground,
   };
   const panel = new PartyPanel(scene.scene, deps);
   const pressT = () => scene.keyboard.emit("keydown-T");
@@ -745,5 +747,64 @@ describe("PartyPanel's title, shared (FS-3EBCA R20, R22)", () => {
     });
     expect(words).toBe("Party (2/4)");
     expect(env.find("PARTY (2/4)")).toBeDefined();
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9): on the UI scene the open panel stands a ground
+// under its buttons, so a press on it is the UI scene's (R40), and a press on it keeps the invite
+// field's focus by the panel's own rule (R42).
+describe("PartyPanel on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R40, R42)", () => {
+  /** The grounds the panel stood, each with its rect, and whether it was taken down. */
+  function grounded() {
+    const grounds: { rect: { x: number; y: number; width: number; height: number }; destroyed: boolean }[] = [];
+    const env = setup({
+      ground: (rect) => {
+        const g = { rect, destroyed: false };
+        grounds.push(g);
+        return { destroy: () => void (g.destroyed = true) };
+      },
+    });
+    return { ...env, grounds, live: () => grounds.filter((g) => !g.destroyed) };
+  }
+
+  it("should stand one ground over the open panel, before its × and buttons, and none while it is shut", () => {
+    const env = grounded();
+    expect(env.live()).toEqual([]);
+
+    env.pressT();
+
+    expect(env.live()).toHaveLength(1);
+    const { rect } = env.live()[0];
+    expect(rect.x).toBe(partyPanelLeft(1080));
+    expect(rect.y).toBe(partyPanelTop(720));
+    expect(rect.width).toBe(PARTY_PANEL_W);
+    expect(env.panel.covers(rect.x + 1, rect.y + rect.height - 1)).toBe(true);
+    env.pressT();
+    expect(env.live()).toEqual([]);
+  });
+
+  it("should stand its ground anew on each draw, never two at once", () => {
+    const env = grounded();
+    env.pressT();
+    env.store.getState().apply(update());
+
+    expect(env.grounds.length).toBeGreaterThan(1);
+    expect(env.live()).toHaveLength(1);
+    env.panel.destroy();
+    expect(env.live()).toEqual([]);
+  });
+
+  it("should keep the invite field for a press on the open panel only while the field holds focus", () => {
+    const env = setup();
+    let focused = false;
+    env.handle.focused = () => focused;
+    const at = { x: partyPanelLeft(1080) + 20, y: partyPanelTop(720) + 20 };
+
+    expect(env.panel.keepsField(at.x, at.y)).toBe(false);
+    env.pressT();
+    expect(env.panel.keepsField(at.x, at.y)).toBe(false);
+    focused = true;
+    expect(env.panel.keepsField(at.x, at.y)).toBe(true);
+    expect(env.panel.keepsField(5, 5)).toBe(false);
   });
 });

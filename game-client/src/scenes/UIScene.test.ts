@@ -36,6 +36,40 @@ vi.mock("phaser", () => {
   return { ...phaser, default: phaser };
 });
 
+// The party panel itself is PartyPanel.test's: here a recording stand-in for what the UI scene mounts
+// for each world (FS-TQZ5J § Change: Phase 2: the party, R36), its refusal, opening and wrapper kept.
+const partyMounts = vi.hoisted(
+  () =>
+    [] as {
+      blocked: () => boolean;
+      opening?: () => void;
+      wrapper?: { act(run: () => void): void };
+      open: boolean;
+      destroyed: boolean;
+      keeps: boolean;
+    }[],
+);
+vi.mock("@/ui/PartyPanel", () => ({
+  mountPartyPanel: (_scene: unknown, blocked: () => boolean, opening?: () => void, wrapper?: { act(run: () => void): void }) => {
+    const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false };
+    partyMounts.push(panel);
+    return {
+      isOpen: () => panel.open,
+      close: () => {
+        const was = panel.open;
+        panel.open = false;
+        return was;
+      },
+      toggle: () => {
+        if (!panel.blocked()) panel.open = !panel.open;
+      },
+      relayout: () => {},
+      keepsField: () => panel.keeps,
+      destroy: () => void (panel.destroyed = true),
+    };
+  },
+}));
+
 const Phaser = await import("phaser");
 const { UIScene } = await import("./UIScene");
 const { UI_SCENE } = await import("@/components/uiSceneLifecycle");
@@ -149,7 +183,7 @@ describe("the UI scene's interface sounds (FS-TQZ5J R22, FS-WDM0X S10–S13)", (
   it("should make the game's one player as it is created, lent to its game's bridge: a world's action and its minimap's step play on it", () => {
     const { bridge, played } = created();
     let open = false;
-    const closed = { letter: false, party: false, character: false };
+    const closed = { letter: false, character: false };
     bridge.report({
       world: "field",
       windows: () => ({ ...closed, inventory: open }),
@@ -228,6 +262,24 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     expect(source("./HubScene.ts")).not.toMatch(/showDialogueCard|npcDialogue/);
   });
 
+  // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9): the party panel and T are the UI scene's; no world
+  // mounts the panel, binds T or tests the panel's rect in a click or hover path
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
+    "should have %s mount no party panel, bind no T and test no party panel's rect",
+    (file) => {
+      const code = source(file);
+      expect(code).not.toMatch(/PartyPanel|mountPartyPanel|this\.partyPanel\b/);
+      expect(code).not.toMatch(/keydown-T\b|KeyCodes\.T\b/);
+    },
+  );
+
+  it("should have the UI scene build the party panel for each world it hears reported (§ Change: Phase 2: the party, R36)", () => {
+    const code = source("./UIScene.ts");
+    expect(code).toMatch(/new UiPartySlot\(/);
+    expect(code).toMatch(/mountPartyPanel\(this,/);
+    expect(code).toMatch(/party\.show\(report\)/);
+  });
+
   it("should have the UI scene import no other scene", () => {
     const imports = source("./UIScene.ts").match(/from "[^"]+"/g) ?? [];
     expect(imports.filter((from) => /Scene"$/.test(from))).toEqual([]);
@@ -258,7 +310,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     const held = new Map<string, unknown>();
     const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
     lendUiBridge(registry, bridge);
-    const windows = { letter: false, party: false, inventory: false, character: false };
+    const windows = { letter: false, inventory: false, character: false };
     const blockers = { dialogue: false };
     const facts = { ...NO_FACTS };
     const asked: string[] = [];
@@ -646,7 +698,7 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     const heard: string[] = [];
     bridge.report({
       world: "run",
-      windows: () => ({ letter: false, party: false, inventory: false, character: false }),
+      windows: () => ({ letter: false, inventory: false, character: false }),
       blockers: () => ({ dialogue: false }),
       facts: () => NO_FACTS,
       answer: () => {},
@@ -704,6 +756,20 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     scene.update();
 
     expect(cameras.cameras[0].inputEnabled).toBe(true);
+  });
+
+  // FS-TQZ5J § Change: Phase 2: the party, R42: the party panel keeps its own field by its own rule
+  it("should keep the game's text field for a press the party panel says keeps it, and let it go for any other (R42)", () => {
+    const { input, pointer, field } = created();
+    const panel = partyMounts.at(-1)!;
+
+    panel.keeps = true;
+    input.emit("pointerdown", pointer, [{ name: "the party panel's ground" }]);
+    expect(field.blurred).toBe(false);
+    panel.keeps = false;
+    input.emit("pointerdown", pointer, [{ name: "the Party icon" }]);
+
+    expect(field.blurred).toBe(true);
   });
 
   it("should let go of the game's focused text field for a press on one of its pieces (R26)", () => {

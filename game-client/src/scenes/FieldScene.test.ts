@@ -67,7 +67,7 @@ const { ResourceHud } = await import("@/ui/ResourceHud");
 const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { menuOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
 
 /** The UI scene's keys, by the field's key event names (FS-TQZ5J R17, R18): Esc and the menu's. */
@@ -1996,7 +1996,6 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
     const field = new FieldScene() as unknown as {
       input: unknown;
       equipment?: unknown;
-      partyPanel?: unknown;
       bindHudKeys(): void;
     };
     field.input = {
@@ -2015,15 +2014,20 @@ describe("FieldScene ESC (FS-R82NV § Change C2)", () => {
         return was;
       },
     };
-    field.partyPanel = {
+    field.bindHudKeys();
+    // the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R39)
+    partyPanelOver(field, "field", () => ({
       isOpen: () => party,
       close: () => {
         const was = party;
         party = false;
         return was;
       },
-    };
-    field.bindHudKeys();
+      toggle: vi.fn(),
+      relayout: vi.fn(),
+      keepsField: () => false,
+      destroy: vi.fn(),
+    }));
     return { esc: () => keyOver(field, keys, "ESC"), open: () => ({ gear, party }) };
   }
 
@@ -2042,7 +2046,6 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
   type Menued = FieldUnderTest & {
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
     input: unknown;
     bindHudKeys(): void;
     takesPointer(x: number, y: number, primary: boolean): boolean;
@@ -2085,13 +2088,15 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
       toggleCharacter: () => void (state.gear = !state.gear),
       equipKey: () => false,
     };
-    field.partyPanel = {
+    field.bindHudKeys();
+    partyPanelOver(field, "field", () => ({
       isOpen: () => state.party,
       close: () => ((state.party = false), true),
+      toggle: vi.fn(),
       relayout: vi.fn(),
+      keepsField: () => false,
       destroy: vi.fn(),
-    };
-    field.bindHudKeys();
+    }));
     const key = (name: string) => keyOver(field, keys, name);
     return { ...env, field, labels, key, state, picks };
   }
@@ -2165,7 +2170,6 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
   type Optioned = FieldUnderTest & {
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
     input: unknown;
     bindHudKeys(): void;
     sendMovementIntent(): void;
@@ -2237,7 +2241,6 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
       toggleCharacter: () => void (state.gear = !state.gear),
       equipKey: () => false,
     };
-    field.partyPanel = { isOpen: () => false, close: () => false, relayout: vi.fn(), destroy: vi.fn() };
     field.bindHudKeys();
     const key = (name: string) => keyOver(field, keys, name);
     const find = (name: string) => made.find((m) => m.name === name && !m.destroyed);
@@ -2439,8 +2442,6 @@ describe("FieldScene the party panel over the inventory and the character panel 
     add: unknown;
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
-    refusesParty(): boolean;
     worldSide(): unknown;
   };
 
@@ -2466,8 +2467,7 @@ describe("FieldScene the party panel over the inventory and the character panel 
       isCharacterOpen: () => gear.character,
       hide: () => void Object.assign(gear, { inventory: false, character: false }),
     };
-    const party = partyPanelOn(() => field.refusesParty());
-    field.partyPanel = party.panel;
+    const party = partyPanelOver(field, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
     cornerRowOn(field, "field");
     const f = hudCorner.cornerIconFrame("party", viewport);
     const pressIcon = () => zones.find((z) => z.args[0] === f.x && z.args[1] === f.y)!.handlers.pointerdown();
@@ -2510,8 +2510,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     input: unknown;
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
-    refusesParty(): boolean;
     mayChat(): boolean;
     bindHudKeys(): void;
   };
@@ -2558,9 +2556,8 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
       toggleCharacter: () => (gear.character = !gear.character),
       equipKey: () => false,
     };
-    const party = partyPanelOn(() => field.refusesParty());
-    field.partyPanel = party.panel;
     field.bindHudKeys();
+    const party = partyPanelOver(field, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
     cornerRowOn(field, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = hudCorner.cornerIconFrame(icon, viewport);
@@ -2671,9 +2668,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     input: unknown;
     menu?: unknown;
     equipment?: unknown;
-    partyPanel?: unknown;
     ui: { act(run: () => void): void };
-    refusesParty(): boolean;
     bindHudKeys(): void;
   };
   type Made = { kind: string; args: unknown[]; name?: string; destroyed: boolean; children: Made[]; handlers: Record<string, () => void> };
@@ -2728,9 +2723,8 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       release: vi.fn(),
     };
     const heard = hearOn(f as unknown as Record<string, unknown>);
-    const party = partyPanelOn(() => f.refusesParty(), f.ui);
-    f.partyPanel = party.panel;
     f.bindHudKeys();
+    const party = partyPanelOver(f, "field", (w) => partyPanelOn(w.blocked, w.wrapper));
     cornerRowOn(f, "field");
     const pressIcon = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
       const at = hudCorner.cornerIconFrame(icon, viewport);
@@ -2938,7 +2932,7 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
   });
 
   // create() is pinned from the source here as in the town: the player made before the gear and
-  // the keys, and its wrapper handed to the overlay and the party panel
+  // the keys, and its wrapper handed to the overlay (the party panel is the UI scene's since phase 2)
   it("should make the player in create before the gear and the keys, and hand its wrapper to every module that hears its own input", () => {
     const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
     const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
@@ -2946,7 +2940,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
     expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.equipment = this\.composeEquipment\(\);/));
     expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-    expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui\)/);
     const compose = source.match(/\n {2}private composeEquipment\(\): EquipmentHud \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
   });

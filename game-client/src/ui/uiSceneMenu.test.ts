@@ -14,7 +14,6 @@ import { heardInterfaceSounds } from "./uiSceneSounds.standin";
 function aWorld(world: World, start: Partial<WorldFacts> = {}) {
   const windows: { -readonly [K in keyof WorldWindows]: boolean } = {
     letter: false,
-    party: false,
     inventory: false,
     character: false,
   };
@@ -30,7 +29,7 @@ function aWorld(world: World, start: Partial<WorldFacts> = {}) {
     // the menu opens over no window (FS-3EBCA R17), as each world answers it
     heardUi: (ui) => {
       heardUi.push(ui.menuOpen);
-      if (ui.menuOpen) Object.assign(windows, { letter: false, party: false, inventory: false, character: false });
+      if (ui.menuOpen) Object.assign(windows, { letter: false, inventory: false, character: false });
     },
     answer: (request) => {
       asked.push(request);
@@ -38,7 +37,6 @@ function aWorld(world: World, start: Partial<WorldFacts> = {}) {
         inventory: () => void (windows.inventory = !windows.inventory),
         close: {
           letter: () => void (windows.letter = false),
-          party: () => void (windows.party = false),
           gear: () => void (windows.inventory = windows.character = false),
           dialogue: () => void (state.dialogue = false),
         },
@@ -79,7 +77,16 @@ function menuKeys(spec: MenuPanelSpec<MenuChoice>, drawn: Drawn): SlotPanel["key
 
 /** The UI scene's slot on the game's bridge, the UI scene's sounds lent, drawing on a recording chrome. */
 function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
-  const { bridge, heard } = heardInterfaceSounds();
+  // the UI scene's own party panel (§ Change: Phase 2: the party, R39), open or shut, its closes counted
+  const party = { open: false, closes: 0 };
+  const panel = {
+    isOpen: () => party.open,
+    close: () => {
+      party.closes++;
+      party.open = false;
+    },
+  };
+  const { bridge, heard } = heardInterfaceSounds(undefined, () => party.open);
   const drawn: Drawn[] = [];
   const stored = { level: 3 };
   const slot = new UiMenuSlot({
@@ -113,6 +120,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
       setLevel: (level) => void (stored.level = Math.min(5, Math.max(0, level))),
     }),
     fullscreen: () => fullscreen,
+    party: panel,
   });
   const live = () => drawn.filter((d) => !d.destroyed);
   const shown = () => live()[0];
@@ -125,7 +133,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     const action = (spec.actions as Record<string, (() => void) | undefined>)[id] ?? spec.close;
     action();
   };
-  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored };
+  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party };
 }
 
 describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)", () => {
@@ -143,7 +151,6 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
 
   it.each<[string, (w: ReturnType<typeof aWorld>) => void, UiRequest]>([
     ["the letter panel", (w) => (w.windows.letter = true), { kind: "close", window: "letter" }],
-    ["the party panel", (w) => (w.windows.party = true), { kind: "close", window: "party" }],
     ["the inventory", (w) => (w.windows.inventory = true), { kind: "close", window: "gear" }],
     ["the character panel", (w) => (w.windows.character = true), { kind: "close", window: "gear" }],
   ])("should ask the world to close %s before it opens the menu", (_what, open, request) => {
@@ -159,24 +166,57 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
     expect(t.slot.isOpen()).toBe(true);
   });
 
+  it("should shut the UI scene's own party panel before it opens the menu, asking the world nothing (§ Change: Phase 2: the party, R39)", () => {
+    const t = onBridge();
+    const town = aWorld("hub");
+    t.bridge.report(town.report);
+    t.party.open = true;
+
+    t.esc();
+    expect(t.party.open).toBe(false);
+    expect(town.asked).toEqual([]);
+    expect(t.slot.isOpen()).toBe(false);
+    t.esc();
+    expect(t.slot.isOpen()).toBe(true);
+  });
+
   it("should close the letter panel before the party panel, the party panel before the gear (escapeStep)", () => {
     const t = onBridge();
     const town = aWorld("hub");
     t.bridge.report(town.report);
-    Object.assign(town.windows, { letter: true, party: true, inventory: true });
+    Object.assign(town.windows, { letter: true, inventory: true });
+    t.party.open = true;
+    const closed: string[] = [];
     (town.report as { answer: WorldReport["answer"] }).answer = (request) => {
       town.asked.push(request);
       if (request.kind === "close" && request.window === "letter") town.windows.letter = false;
-      if (request.kind === "close" && request.window === "party") town.windows.party = false;
       if (request.kind === "close" && request.window === "gear") town.windows.inventory = false;
+      if (request.kind === "close") closed.push(request.window);
     };
     t.bridge.report(town.report);
 
     t.esc();
+    expect(closed).toEqual(["letter"]);
+    expect(t.party.open).toBe(true);
     t.esc();
+    expect(t.party.open).toBe(false);
+    expect(closed).toEqual(["letter"]);
     t.esc();
 
-    expect(town.asked.map((r) => (r.kind === "close" ? r.window : r.kind))).toEqual(["letter", "party", "gear"]);
+    expect(closed).toEqual(["letter", "gear"]);
+    expect(t.slot.isOpen()).toBe(false);
+  });
+
+  it("should shut the party panel as the menu opens over it, with only the menu's sound (FS-3EBCA R17; FS-WDM0X S3)", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("field").report);
+    t.party.open = true;
+
+    t.bridge.act(() => t.slot.pressMenu());
+
+    expect(t.slot.isOpen()).toBe(true);
+    expect(t.party.open).toBe(false);
+    expect(t.heard()).toEqual(["settings_open"]);
   });
 
   it("should open the town's menu with Leave the queue while queued, and without it otherwise (FS-G4VMQ R3)", () => {
@@ -226,11 +266,12 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
     const t = onBridge();
     const run = aWorld("run", { ended: true });
     t.bridge.report(run.report);
-    run.windows.party = true;
+    t.party.open = true;
 
     t.esc();
 
     expect(run.asked).toEqual([]);
+    expect(t.party.open).toBe(true);
     expect(t.slot.isOpen()).toBe(false);
   });
 
@@ -526,12 +567,12 @@ describe("the slot's state, the UI's (FS-TQZ5J R10)", () => {
     const run = aWorld("run", { ended: true });
     t.bridge.report(run.report);
 
+    t.party.open = true;
+
     t.slot.pressMenu();
 
-    expect(run.asked).toEqual([
-      { kind: "close", window: "party" },
-      { kind: "close", window: "gear" },
-    ]);
+    expect(t.party.open).toBe(false);
+    expect(run.asked).toEqual([{ kind: "close", window: "gear" }]);
     expect(t.slot.isOpen()).toBe(false);
   });
 });

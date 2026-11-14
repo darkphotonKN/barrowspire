@@ -101,10 +101,10 @@ const walls_ = await import("@/render/world/walls");
 const { sceneSystems } = await import("./sceneEnd.standin");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
-const { createPartyStore } = await import("@/stores/partyStore");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
-const { menuOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { NO_UI } = await import("@/ui/uiBridge");
 const { reportWorld } = await import("@/ui/uiBridge");
 
 /** The UI scene's menu slot filled over the town (FS-TQZ5J R10), as every guard of the town's reads it. */
@@ -1629,19 +1629,23 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
 // FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
 // icon's toggle under I's guards. I-3EBCA-1.
 describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
-  type Pressing = { toggleGear(): void; toggleCharacter(): void; partyPanel?: unknown };
+  type Pressing = { toggleGear(): void; toggleCharacter(): void };
   function withParty(open = true) {
     const env = hubOnStage();
     const state = { open };
-    (env.hub as unknown as Pressing).partyPanel = {
+    // the party panel is the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R39)
+    partyPanelOver(env.hub, "hub", () => ({
       isOpen: () => state.open,
       close: () => {
         const was = state.open;
         state.open = false;
         return was;
       },
+      toggle: vi.fn(),
+      relayout: vi.fn(),
+      keepsField: () => false,
       destroy: vi.fn(),
-    };
+    }));
     // one Esc step is the UI scene's (FS-TQZ5J R17)
     const escape = () => env.ui().menu.escape();
     return { ...env, party: state, pressing: env.hub as unknown as Pressing, escape };
@@ -5406,12 +5410,14 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     });
 
     // integration of FS-R82NV § Change C8 with D5: the party panel is drawn over the overlay and
-    // the row, so a press or hover on it is the panel's alone
-    it("should leave a press on the open party panel to the panel, never stepping the mode (FS-R82NV § Change C8; D5)", () => {
+    // the row, so a press or hover on it is the panel's alone. It is the UI scene's: a press on it
+    // never reaches the town, and a move over it reaches it with the bridge saying so (FS-TQZ5J
+    // § Change: Phase 2: the party, R40, R41)
+    it("should give way to a UI piece the pointer is over, never stepping the mode (FS-R82NV § Change C8; FS-TQZ5J § Change: Phase 2, R41; D5)", () => {
       const { hub, render, map, store, pointers } = townWithModes();
       (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
       render();
-      (hub as Record<string, unknown>).partyPanel = { covers: () => true, isOpen: () => true };
+      (hub as Record<string, unknown>).ui = { ...NO_UI, overUi: true };
       pointers.pointerdown!(press(862, 109));
       expect(map()!.mode).toBe("normal");
       expect(store.writes).toEqual([]);
@@ -5530,10 +5536,12 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
 });
 
 /**
- * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
- * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
+ * A real party panel on a bare stand-in scene, refused by `refused`: the UI scene's rule for T and the
+ * Party icon (FS-R82NV R28; FS-3EBCA R8; FS-TQZ5J § Change: Phase 2: the party, R38). Its invite field
+ * is a silent stand-in; its store the app's, which the town shuts as its letter panel opens (R39).
  */
 function partyPanelOn(refused: () => boolean, opening?: () => void, wrapper?: { act(run: () => void): void }) {
+  usePartyStore.setState({ party: null, panelOpen: false });
   const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
   const keyboard = new EventEmitter();
   const scene = {
@@ -5542,7 +5550,7 @@ function partyPanelOn(refused: () => boolean, opening?: () => void, wrapper?: { 
     events: new EventEmitter(),
   } as unknown as ConstructorParameters<typeof PartyPanel>[0];
   const panel = new PartyPanel(scene, {
-    store: createPartyStore({ selfId: () => "me" }),
+    store: usePartyStore,
     world: () => null,
     selfId: () => "me",
     commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
@@ -5566,12 +5574,11 @@ function partyPanelOn(refused: () => boolean, opening?: () => void, wrapper?: { 
 // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
 // inventory or the character panel open the party panel would not open). I-3EBCA-7.
 describe("HubScene the party panel over the inventory and the character panel (FS-3EBCA R8)", () => {
-  type Partied = { partyPanel?: unknown; refusesParty(): boolean };
   function partyInTown() {
     const env = hubOnStage();
-    const hub = env.hub as unknown as typeof env.hub & Partied;
-    const party = partyPanelOn(() => hub.refusesParty());
-    hub.partyPanel = party.panel;
+    const hub = env.hub;
+    // the party panel is the UI scene's, wired as it wires it (FS-TQZ5J § Change: Phase 2: the party, R38, R39)
+    const party = partyPanelOver(hub, "hub", (w) => partyPanelOn(w.blocked, w.opening, w.wrapper));
     cornerRowOn(hub, "hub");
     const f = cornerIconFrame("party", viewport);
     const icon = () =>
@@ -5624,9 +5631,7 @@ describe("HubScene the party panel over the inventory and the character panel (F
 // § Change C9; FS-HRH2J § Change C2, C11; FS-G4VMQ § Change C4.
 describe("HubScene the windows give way to the letter panel and the menu (FS-3EBCA R15–R18)", () => {
   type Windowed = {
-    partyPanel?: unknown;
     mailbox?: unknown;
-    refusesParty(): boolean;
     refusesLetter(): boolean;
     clearForLetter(): void;
     closeLetter(): void;
@@ -5638,11 +5643,7 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     const letter = { open: false };
     const close = vi.fn(() => void (letter.open = false));
     hub.mailbox = { isOpen: () => letter.open, close, relayout: vi.fn(), destroy: vi.fn(), covers: () => false };
-    const party = partyPanelOn(
-      () => hub.refusesParty(),
-      () => hub.closeLetter(),
-    );
-    hub.partyPanel = party.panel;
+    const party = partyPanelOver(hub, "hub", (w) => partyPanelOn(w.blocked, w.opening, w.wrapper));
     cornerRowOn(hub, "hub");
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = cornerIconFrame(icon, viewport);
@@ -5755,13 +5756,15 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
       expect(menuOver(t.hub)).toBeDefined();
     });
 
-    it("should close every window whenever the UI scene reports its menu open (FS-TQZ5J R10)", () => {
+    // the party panel is the UI scene's, shut by its menu slot as it fills (FS-TQZ5J § Change: Phase 2:
+    // the party, R39; uiSceneMenu.test.ts): the town closes its own windows
+    it("should close every window of its own whenever the UI scene reports its menu open (FS-TQZ5J R10)", () => {
       const t = town();
       t.gear.toggle();
       t.party.pressT();
       t.letter.open = true;
       menuUpOver(t.hub);
-      expect(t.shut()).toEqual(NONE);
+      expect(t.shut()).toEqual({ ...NONE, party: true });
     });
 
     it("should do nothing on the Menu icon while a dialogue is open", () => {
@@ -5862,10 +5865,8 @@ function hearOn(hub: Record<string, unknown>): () => string[] {
 // sound, through the hub's one wrapper; what the game closes plays nothing.
 describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
   type Windowed = Heard & {
-    partyPanel?: unknown;
     mailbox?: unknown;
     music?: unknown;
-    refusesParty(): boolean;
     refusesLetter(): boolean;
     clearForLetter(): void;
     closeLetter(): void;
@@ -5886,8 +5887,7 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       destroy: vi.fn(),
       covers: () => false,
     };
-    const party = partyPanelOn(() => hub.refusesParty(), () => hub.closeLetter(), hub.ui);
-    hub.partyPanel = party.panel;
+    const party = partyPanelOver(hub, "hub", (w) => partyPanelOn(w.blocked, w.opening, w.wrapper));
     cornerRowOn(hub, "hub");
     const plate = (icon: "menu" | "inventory" | "character" | "party") => {
       const f = cornerIconFrame(icon, viewport);
@@ -6177,12 +6177,12 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     const env = hubOnStage();
     const hub = env.hub as unknown as typeof env.hub & Windowed;
     const heard = hearOn(hub as unknown as Record<string, unknown>);
-    const party = partyPanelOn(() => hub.refusesParty(), undefined, hub.ui);
     // the panel's state is the store's, which the last world left open
-    (party.panel as unknown as { deps: { store: { getState(): { togglePanel(): void } } } }).deps.store
-      .getState()
-      .togglePanel();
-    hub.partyPanel = party.panel;
+    const party = partyPanelOver(hub, "hub", (w) => {
+      const made = partyPanelOn(w.blocked, w.opening, w.wrapper);
+      usePartyStore.getState().togglePanel();
+      return made;
+    });
     hub.update(0, 16);
     expect(party.panel.isOpen()).toBe(true);
     expect(heard()).toEqual([]);
@@ -6199,7 +6199,6 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
     expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.gear = this\.composeGear\(\);/));
-    expect(create).toMatch(/mountPartyPanel\([^;]*this\.ui,\s*\);/);
     expect(create).toMatch(/mountMailbox\([^;]*this\.ui,\s*\(effect\) => this\.ui\.play\(effect\),\s*\);/);
     const compose = source.match(/\n {2}private composeGear\(\): HubGear \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);

@@ -1,6 +1,7 @@
 import { UI_EFFECTS, uiSoundKey, type UiSoundStage } from "@/audio/uiSounds";
 import { GameUiBridge, lendUiBridge, reportWorld, uiBridgeOf, type UiBridge, type World, type WorldSide, type WorldUi } from "./uiBridge";
 import { mountInterfaceSounds } from "./uiSceneSounds";
+import { uiSceneFor } from "./uiSceneMenu.standin";
 
 /**
  * Test-only: the game's UI bridge with the UI scene's interface sounds lent to it, as the UI scene's
@@ -8,9 +9,10 @@ import { mountInterfaceSounds } from "./uiSceneSounds";
  * effect cached, the context running, the level the default (no store, so nothing kept is read), and
  * a clock that moves a second at each read, so no two hovers fall in the cooldown (§ Change M4).
  * `heard` returns the effects played since the last read, by name (FS-WDM0X S10). On `onto`, a bridge
- * already lent, where given.
+ * already lent, where given; `party`, the UI scene's party panel's open state, where given (FS-TQZ5J
+ * § Change: Phase 2: the party, R39).
  */
-export function heardInterfaceSounds(onto?: UiBridge) {
+export function heardInterfaceSounds(onto?: UiBridge, party?: () => boolean) {
   let played: string[] = [];
   const stage: UiSoundStage = {
     cached: (key) => UI_EFFECTS.some((effect) => key === uiSoundKey(effect)),
@@ -20,7 +22,7 @@ export function heardInterfaceSounds(onto?: UiBridge) {
   };
   const bridge = onto ?? new GameUiBridge();
   let clock = 0;
-  const sounds = mountInterfaceSounds(bridge, stage, () => null, () => (clock += 1000));
+  const sounds = mountInterfaceSounds(bridge, stage, () => null, () => (clock += 1000), party);
   const heard = () => {
     const out = played;
     played = [];
@@ -49,7 +51,8 @@ export function hearWorld(scene: object, world: World): () => string[] {
   const held = new Map<string, unknown>();
   s.registry ??= { get: (key) => held.get(key), set: (key, value) => void held.set(key, value) };
   const lent = uiBridgeOf(s.registry);
-  const { bridge, heard } = heardInterfaceSounds(lent ?? undefined);
+  // the UI scene's party panel, wherever its side over the world stands now or later (`partyPanelOver`)
+  const { bridge, heard } = heardInterfaceSounds(lent ?? undefined, () => uiSceneFor(scene)?.party.isOpen() ?? false);
   if (!lent) lendUiBridge(s.registry, bridge);
   if (s.ui !== bridge || bridge.world?.world !== world) s.ui = reportWorld(s, world, s.worldSide());
   return heard;

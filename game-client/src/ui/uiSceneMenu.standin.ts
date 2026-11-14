@@ -11,6 +11,7 @@ import { UiCornerRow } from "./uiSceneCorner";
 import { UiDialogueSlot, handKeys, type UiKeysPressed } from "./uiSceneDialogue";
 import { UiMenuSlot, type SlotPanel } from "./uiSceneMenu";
 import { UiNoticeLayer, drawNotice, type NoticeStage } from "./uiSceneNotices";
+import { UiPartySlot, partyPanelWiring, type PartyPanelPiece, type PartyPanelWiring } from "./uiSceneParty";
 
 /** A world scene as the UI scene's tests reach it: its game's registry, its end, its UI and what it reports. */
 interface WorldUnderTest {
@@ -31,6 +32,8 @@ export interface UiSceneOnStage {
   dialogue: UiDialogueSlot;
   /** The worlds' screen notices (FS-TQZ5J A2 R33, R34). */
   notices: UiNoticeLayer;
+  /** The UI scene's party slot (FS-TQZ5J § Change: Phase 2: the party, R36), its panel a test's (`partyPanelOver`). */
+  party: UiPartySlot;
   row?: UiCornerRow;
   /** The panel standing in the menu slot, as the stage made it, while the slot is filled. */
   panel(): Phaser.GameObjects.Container | undefined;
@@ -44,6 +47,19 @@ const NUMBERS: readonly UiKey[] = ["one", "two", "three"];
 
 /** The UI scene's side built over each world under test: one per world scene, as one UI scene per game. */
 const sides = new WeakMap<object, UiSceneOnStage>();
+
+/** The party panel each world under test was handed (`partyPanelOver`), made again for each world's slot. */
+const partyMakers = new WeakMap<object, (wiring: PartyPanelWiring) => PartyPanelPiece>();
+
+/** No party panel: what the slot stands while a test has handed it none. */
+const NO_PANEL: PartyPanelPiece = {
+  isOpen: () => false,
+  close: () => false,
+  toggle: () => {},
+  relayout: () => {},
+  keepsField: () => false,
+  destroy: () => {},
+};
 
 /** The UI scene's side already built over `scene`, if any. */
 export function uiSceneFor(scene: object): UiSceneOnStage | undefined {
@@ -83,7 +99,7 @@ function pressedFor(name: UiKey): Partial<UiKeysPressed> {
 export function uiSceneOn(scene: object, world: World, options: { row?: boolean } = {}): UiSceneOnStage {
   const built = sides.get(scene);
   if (built) {
-    if (options.row !== false && !built.row) built.row = cornerRow(scene, built.bridge, built.menu);
+    if (options.row !== false && !built.row) built.row = cornerRow(scene, built.bridge, built.menu, built.party);
     return built;
   }
   const s = scene as WorldUnderTest;
@@ -108,7 +124,11 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     centre: () => ({ x: viewport.centerX, y: viewport.centerY }),
     musicLevel: () => storedMusicLevel(browserMusicStore),
     fullscreen: () => lentFullscreen(s.registry),
+    party: { isOpen: () => party.isOpen(), close: () => party.close() },
   });
+  const party = new UiPartySlot((w) => ({
+    panel: partyMakers.get(scene)?.(partyPanelWiring(bridge, w)) ?? NO_PANEL,
+  }));
   const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(stage, spec));
   const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(scene as NoticeStage, notice, gone));
   bridge.onScreen({ dialogue: (shown) => dialogue.show(shown), notice: (notice) => notices.say(notice) });
@@ -121,7 +141,8 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     menu,
     dialogue,
     notices,
-    row: options.row === false ? undefined : cornerRow(scene, bridge, menu),
+    party,
+    row: options.row === false ? undefined : cornerRow(scene, bridge, menu, party),
     panel: () => (menu.isOpen() ? (standing?.container as Phaser.GameObjects.Container | undefined) : undefined),
     frame,
     key: (name) => frame(pressedFor(name)),
@@ -131,14 +152,39 @@ export function uiSceneOn(scene: object, world: World, options: { row?: boolean 
     dialogue.sync();
     notices.sync();
     side.row?.show(report);
+    party.show(report);
   });
+  party.show(bridge.world);
   sides.set(scene, side);
   return side;
 }
 
-/** The corner row on `scene`'s stage, its Menu the slot's, built for the world reported. */
-function cornerRow(scene: object, bridge: UiBridge, menu: UiMenuSlot): UiCornerRow {
-  const row = new UiCornerRow(bridge, (icons) => new HudCorner(scene as Phaser.Scene, { icons }), () => menu.pressMenu());
+/**
+ * Test-only: the UI scene's party panel over `scene`'s world (FS-TQZ5J § Change: Phase 2: the party,
+ * R36–R39), made by `make` with the wiring the UI scene gives it there: its refusal (the world's report
+ * and the menu slot), its opening (the town's letter panel), the UI scene's act. Builds the UI scene's
+ * side over the world where none stands yet, and the panel for the world reported now; a later world's
+ * report makes it again. Returns what `make` made.
+ */
+export function partyPanelOver<T extends PartyPanelPiece | { panel: PartyPanelPiece }>(
+  scene: object,
+  world: World,
+  make: (wiring: PartyPanelWiring) => T,
+): T {
+  let made: T | undefined;
+  partyMakers.set(scene, (wiring) => {
+    made = make(wiring);
+    return "panel" in made ? made.panel : made;
+  });
+  const side = uiSceneOn(scene, world, { row: false });
+  side.party.show(null);
+  side.party.show(side.bridge.world);
+  return made!;
+}
+
+/** The corner row on `scene`'s stage, its Menu the slot's, its Party the party slot's, built for the world reported. */
+function cornerRow(scene: object, bridge: UiBridge, menu: UiMenuSlot, party: UiPartySlot): UiCornerRow {
+  const row = new UiCornerRow(bridge, (icons) => new HudCorner(scene as Phaser.Scene, { icons }), () => menu.pressMenu(), party);
   row.show(bridge.world);
   return row;
 }

@@ -30,6 +30,7 @@ function recording(): UiBridge & { heard: string[] } {
     heard,
     world: null,
     ui: { menuOpen: false },
+    overUi: false,
     report: (report) => void heard.push(`report ${report.world}`),
     left: (world: World) => void heard.push(`left ${world}`),
     reportUi: () => {},
@@ -48,7 +49,7 @@ function recording(): UiBridge & { heard: string[] } {
 }
 
 /** A world's windows, all shut. */
-const shut = () => ({ letter: false, party: false, inventory: false, character: false });
+const shut = () => ({ letter: false, inventory: false, character: false });
 
 /** What a world hands the bridge beside its name (R9, R11): its windows, no dialogue, no facts, no answers. */
 const side = (windows: () => ReturnType<typeof shut> = shut) => ({
@@ -227,7 +228,7 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
     bridge.report({ world: "hub", ...side(), answer: (request) => void answered.push(request) });
     bridge.left("hub");
 
-    bridge.request({ kind: "toggle", window: "party" });
+    bridge.request({ kind: "toggle", window: "character" });
 
     expect(answered).toEqual([]);
   });
@@ -248,7 +249,6 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
     const done: string[] = [];
     const answer = answering({
       inventory: () => void done.push("inventory"),
-      party: () => void done.push("party"),
       close: { letter: () => void done.push("close letter"), dialogue: () => void done.push("close dialogue") },
       leaveQueue: () => void done.push("leave the queue"),
       changeCharacter: () => void done.push("change character"),
@@ -257,7 +257,6 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
 
     answer({ kind: "toggle", window: "inventory" });
     answer({ kind: "toggle", window: "character" });
-    answer({ kind: "toggle", window: "party" });
     answer({ kind: "close", window: "letter" });
     answer({ kind: "close", window: "gear" });
     answer({ kind: "close", window: "dialogue" });
@@ -269,7 +268,6 @@ describe("the UI scene's requests and the world's blockers (FS-TQZ5J R9, R11)", 
 
     expect(done).toEqual([
       "inventory",
-      "party",
       "close letter",
       "close dialogue",
       "leave the queue",
@@ -463,6 +461,36 @@ describe("a move the UI scene took, heard by the world reported (FS-TQZ5J A1 R27
     bridge.moved(pointer, true);
 
     expect(scene.passes).toEqual([]);
+  });
+
+  // § Change: Phase 2: the party, R41: a world piece that hovers by coordinates hears the move with
+  // the pointer's coordinates; the bridge says, while it runs, that the pointer is over a UI piece
+  it("should say overUi while the world hears a move over a UI piece, and only then (§ Change: Phase 2: the party, R41)", () => {
+    const bridge = new GameUiBridge();
+    const scene = worldScene(bridge);
+    const seen: boolean[] = [];
+    scene.input.update = () => (seen.push(bridge.overUi), false);
+    reportWorld(scene, "run", side());
+
+    expect(bridge.overUi).toBe(false);
+    bridge.moved(pointer, true);
+    expect(bridge.overUi).toBe(false);
+    bridge.moved(pointer, false);
+
+    expect(seen).toEqual([true, false]);
+    expect(bridge.overUi).toBe(false);
+  });
+
+  it("should say overUi false again even when the world's pass throws", () => {
+    const bridge = new GameUiBridge();
+    const scene = worldScene(bridge);
+    scene.input.update = () => {
+      throw new Error("boom");
+    };
+    reportWorld(scene, "field", side());
+
+    expect(() => bridge.moved(pointer, true)).toThrow("boom");
+    expect(bridge.overUi).toBe(false);
   });
 
   it("should hand it to a world that reported without an input (a stand-in) as nothing at all", () => {

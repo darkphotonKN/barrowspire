@@ -21,7 +21,6 @@ interface BuiltRow {
 function aWorld(world: World) {
   const windows: { -readonly [K in keyof WorldWindows]: boolean } = {
     letter: false,
-    party: false,
     inventory: false,
     character: false,
   };
@@ -37,7 +36,6 @@ function aWorld(world: World) {
       answering({
         inventory: () => void (windows.inventory = !windows.inventory),
         character: () => void (windows.character = !windows.character),
-        party: () => void (windows.party = !windows.party),
       })(request);
     },
   };
@@ -45,12 +43,28 @@ function aWorld(world: World) {
 }
 
 /**
+ * The UI scene's party panel as the row reaches it (§ Change: Phase 2: the party, R39): open or shut,
+ * and refused while `refused` says so, as `PartyPanel.toggle` is by its `blocked`.
+ */
+function aPartyPanel() {
+  const party = { open: false, refused: false, toggles: 0 };
+  return Object.assign(party, {
+    isOpen: () => party.open,
+    toggle: () => {
+      party.toggles++;
+      if (!party.refused) party.open = !party.open;
+    },
+  });
+}
+
+/**
  * The UI scene's row on the game's bridge, with the UI scene's sounds lent, built on a recording row;
  * its Menu handed to a stand-in for the UI scene's menu slot, which fills and empties the slot as the
- * slot reports it (R10).
+ * slot reports it (R10); its Party the UI scene's own party panel.
  */
 function onBridge() {
-  const { bridge, heard } = heardInterfaceSounds();
+  const party = aPartyPanel();
+  const { bridge, heard } = heardInterfaceSounds(undefined, () => party.isOpen());
   const built: BuiltRow[] = [];
   const menuPresses: number[] = [];
   const menu = () => {
@@ -69,10 +83,11 @@ function onBridge() {
       };
     },
     menu,
+    party,
   );
   const live = () => built.filter((b) => !b.destroyed);
   const press = (icon: CornerIcon) => live()[0].icons.find((spec) => spec.icon === icon)!.press?.();
-  return { bridge, heard, row, built, live, press, menuPresses };
+  return { bridge, heard, row, built, live, press, menuPresses, party };
 }
 
 const shape = (icons: CornerIconSpec[]) => icons.map(({ icon, greyed }) => (greyed ? `${icon} (greyed)` : icon));
@@ -181,10 +196,23 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
     expect(row.covers(1, 1, "party")).toBe(false);
   });
 
+  it("should toggle the UI scene's own party panel on Party, asking the world nothing (§ Change: Phase 2: the party, R39)", () => {
+    const { bridge, row, press, party } = onBridge();
+    const world = aWorld("field");
+    bridge.report(world.report);
+    row.show(bridge.world);
+
+    press("party");
+    expect(party.open).toBe(true);
+    press("party");
+
+    expect(party.open).toBe(false);
+    expect(world.asked).toEqual([]);
+  });
+
   it.each<[CornerIcon, UiRequest]>([
     ["inventory", { kind: "toggle", window: "inventory" }],
     ["character", { kind: "toggle", window: "character" }],
-    ["party", { kind: "toggle", window: "party" }],
   ])("should ask the world, on %s, for %j", (icon, request) => {
     const { bridge, row, press } = onBridge();
     const world = aWorld("field");
@@ -223,7 +251,7 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
   });
 
   it("should refuse Party while the world reports a dialogue open, and still send Inventory and hand on Menu (R14)", () => {
-    const { bridge, row, press, menuPresses } = onBridge();
+    const { bridge, row, press, menuPresses, party } = onBridge();
     const world = aWorld("hub");
     bridge.report(world.report);
     row.show(bridge.world);
@@ -233,6 +261,7 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
     press("inventory");
     press("menu");
 
+    expect(party.toggles).toBe(0);
     expect(world.asked).toEqual([{ kind: "toggle", window: "inventory" }]);
     expect(menuPresses).toHaveLength(1);
   });
@@ -245,7 +274,7 @@ describe("the UI scene's corner row's presses (FS-TQZ5J R11, R14, R22)", () => {
 // holds nothing for it either (FS-TQZ5J A2 R32): what answers under it is what the town refuses (R14).
 describe("the UI scene's corner row where the UI's menu or the world keeps the screen (FS-3EBCA R18; FS-TQZ5J R14, A2 R32)", () => {
   it("should send nothing on Inventory, Character or Party while the UI's menu slot is filled, and still hand on Menu", () => {
-    const { bridge, row, press, menuPresses } = onBridge();
+    const { bridge, row, press, menuPresses, party } = onBridge();
     const world = aWorld("run");
     bridge.report(world.report);
     row.show(bridge.world);
@@ -255,6 +284,7 @@ describe("the UI scene's corner row where the UI's menu or the world keeps the s
     press("menu");
 
     expect(world.asked).toEqual([]);
+    expect(party.toggles).toBe(0);
     expect(menuPresses).toHaveLength(1);
     expect(bridge.ui.menuOpen).toBe(false);
   });
@@ -321,13 +351,17 @@ describe("the corner row's hover and refusal sounds (FS-WDM0X § Change: Menu, d
 
   it("should play menu_error for a window icon the world turns away: its answer changed no window", () => {
     const t = standing("run");
-    // the run turns Party away with a chest open: its answer leaves the panel shut
+    // the run turns Inventory away (its answer leaves the bag shut), and Party with a chest open (the
+    // panel's refusal reads it, § Change: Phase 2: the party, R38)
     t.bridge.report({ ...t.w.report, answer: (request: UiRequest) => void t.w.asked.push(request) });
+    t.party.refused = true;
 
+    t.press("inventory");
     t.press("party");
 
-    expect(t.w.asked).toEqual([{ kind: "toggle", window: "party" }]);
-    expect(t.heard()).toEqual(["menu_error"]);
+    expect(t.w.asked).toEqual([{ kind: "toggle", window: "inventory" }]);
+    expect(t.party.toggles).toBe(1);
+    expect(t.heard()).toEqual(["menu_error", "menu_error"]);
   });
 
   it("should play one sound for a press that changes a window, never menu_error beside it", () => {
