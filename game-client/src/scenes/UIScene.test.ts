@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { EventEmitter } from "eventemitter3";
+import type { RecordView } from "@/ui/settlement";
 
 // Only the UI scene's own config and its fit are under test: a Phaser stand-in whose Scene records
 // the config it was made with, and the scene plugin base ViewportFit extends.
@@ -1342,6 +1343,10 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
     lendUiBridge(registry, bridge);
     const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    // a Phaser object as deep as the settlement record reaches into one: every property and call another
+    const deep: unknown = new Proxy(() => deep, {
+      get: (_t, prop) => (prop === "then" || typeof prop === "symbol" ? undefined : deep),
+    });
     const keys = new Map<number, { justDown: boolean }>();
     const keyboard = Object.assign(new EventEmitter(), {
       addKey: (code: number) => {
@@ -1357,9 +1362,11 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     const scene = Object.assign(new UIScene(), {
       registry,
       events: new EventEmitter(),
-      add: any,
+      // the settlement record's scroll area masks its layer by a shape it makes, to the main camera
+      add: new Proxy({}, { get: (_t, prop) => (prop === "layer" ? () => deep : any) }),
+      make: deep,
       input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
-      cameras: { cameras: [] },
+      cameras: { cameras: [], main: deep },
       game: {},
       cache: { audio: { exists: (key: string) => key.startsWith("sfx:") } },
       sound: {
@@ -1461,6 +1468,29 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16â€
     expect(controls().isOpen()).toBe(false);
     expect(played).not.toContain("dialog_cancel");
     expect(bridge.ui.menuOpen).toBe(false);
+  });
+
+  // FS-84N1G Edge States: the panel and a window opening in the same frame, the window after H
+  it("should close the panel H opened as the inventory opens in the same frame, with inventory_open alone after it", () => {
+    const { scene, keyboard, played, controls } = created();
+    scene.update();
+    keyboard.emit("keydown-H");
+    keyboard.emit("keydown-I");
+    scene.update();
+    expect(controls().isOpen()).toBe(false);
+    expect(played).toEqual(["dialog_open", "inventory_open"]);
+  });
+
+  // FS-84N1G R16, end to end: the run's record, shown by the run in its own update, closes the open panel
+  it("should close the open panel, silently, as the run shows its settlement record", () => {
+    const { scene, bridge, keyboard, played, controls } = created();
+    keyboard.emit("keydown-H");
+    scene.update();
+    const view: RecordView = { title: "Escaped the barrow", status: { text: "Settled.", tone: "settled" }, carried: [], lost: [], earned: "", delve: "" };
+    bridge.record({ view, open: true });
+    scene.update();
+    expect(controls().isOpen()).toBe(false);
+    expect(played).toEqual(["dialog_open"]);
   });
 
   it("should close it first on Esc and on Q, with dialog_cancel, the inventory under it left open", () => {
