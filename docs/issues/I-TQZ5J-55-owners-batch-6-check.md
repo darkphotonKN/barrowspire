@@ -54,6 +54,10 @@ width (x spans):
       over the window take their own presses, hovers and wheel: the window under them scrolls, lights and
       plays nothing.
 - [ ] The corner row's hover label stays over the ability card after the card comes back up.
+- [ ] (Added 2026-11-14, batch 6 review: an intended look change.) Entering a world, the chat window is up at
+      full strength while the world fades in from black around it: it no longer fades with the world, as
+      the corner row and the HUD pieces do not. Holding left on a monster and right-pressing over the chat
+      window attacks, casts and strikes nothing.
 
 ### Where each chat sound plays (FS-WDM0X § Pass 2: the chat, as amended 2026-11-14)
 

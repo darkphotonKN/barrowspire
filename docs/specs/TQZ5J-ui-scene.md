@@ -2067,3 +2067,16 @@ chat's one sound per press); the owner's check is I-TQZ5J-55. No screenshots (th
   under the chat window nothing of the world lights or tips any more (R133). Nothing else is drawn in a
   new order: no world piece drew over the window before but the row, which no longer meets it.
 
+- **2026-11-14, an intended look change (batch 6 review).** The chat window no longer fades in from black
+  with its world: the world's cameras fade in (`cameraCurtain(scene).fadeIn`, `LOAD_PACE.worldFade`) as its
+  create runs, and the window now stands on the UI scene's camera, which takes no curtain, so it is up at
+  full strength from the world's first frame, as the corner row, the party frames and the HUD pieces already
+  were. Kept as it is: the interface does not fade with the world.
+- **2026-11-14, the review's LOWs.** A press on the window during a held world press (left held on a monster,
+  a right press over the window) is claimed by the UI scene's pointer slot by the window's place
+  (`ChatPiece.holds`), kept by its DOM event on the bridge (`claimPress`, `pressClaimed`), and refused by
+  the run's and the field's press and strike: R129 holds with the cameras aside, and no world tests the
+  window's rect (ADR-0081 Decision 3). `ChatWindow.keepsField(x, y, over)` is the press's own top-most hit
+  on the window with the field focused. `SceneKeyboard` and `typingGuard` live in `worldKeyboard.ts`. Each
+  world reports `invitesAboveChat` (a field and the run), read by `partyPromptWiring`; `UiChatSlot.floor()`
+  became `topEdge()`. `RUN_BUTTON_H` in `hudCornerLayout.ts` is every run button's height.
