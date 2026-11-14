@@ -33,14 +33,15 @@ function onRecord() {
   const slot = new UiRecordSlot(
     bridge,
     (at, onClose, onHover): RecordPiece => {
-      const r = { log: [] as string[], anchor: at, onClose, onHover };
+      const r = { log: [] as string[], anchor: at, onClose, onHover, up: false };
       records.push(r);
+      // as `SettlementRecord`: a rect while it is up, none while it is down
       return {
         set: (v) => void r.log.push(`set ${(v as unknown as { status: { text: string } }).status.text}`),
-        open: () => void r.log.push("open"),
-        close: () => void r.log.push("close"),
+        open: () => void (r.log.push("open"), (r.up = true)),
+        close: () => void (r.log.push("close"), (r.up = false)),
         relayout: (a) => void r.log.push(`relayout ${a.x},${a.bottom}`),
-        rect: () => ({ x: 280, y: 100, width: 520, height: 300 }),
+        rect: () => (r.up ? { x: 280, y: 100, width: 520, height: 300 } : null),
       };
     },
     () => anchor,

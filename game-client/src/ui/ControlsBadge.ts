@@ -20,15 +20,10 @@ import { CornerLabel } from "./cornerLabel";
 import { CONTROLS_BADGE_LABEL, controlsBadgeFrame, type Rect } from "./hudCornerLayout";
 import { BRONZE, Knockout } from "./knockout";
 import { BOOK, drawBookLines } from "./knockoutBook";
+import type { BadgeSpec } from "./uiSceneControlsBadge";
 
 /** The corner row's depth (ADR-0083 Decision 4). */
 const HUD_DEPTH = 1000;
-
-/** What a press and a hover on the badge do: the UI scene's. */
-export interface ControlsBadgeSpec {
-  press(): void;
-  hovered(): void;
-}
 
 export class ControlsBadge {
   private frame: Rect;
@@ -38,7 +33,7 @@ export class ControlsBadge {
   private readonly knockout: Knockout;
   private readonly label: CornerLabel;
 
-  constructor(scene: Phaser.Scene, spec: ControlsBadgeSpec) {
+  constructor(scene: Phaser.Scene, spec: BadgeSpec) {
     const f = (this.frame = controlsBadgeFrame(viewport));
     this.label = new CornerLabel(scene);
     this.graphics = scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
@@ -79,7 +74,7 @@ export class ControlsBadge {
     this.zone.destroy();
   }
 
-  private hover(on: boolean, spec: ControlsBadgeSpec): void {
+  private hover(on: boolean, spec: BadgeSpec): void {
     if (this.hovered === on) return;
     this.hovered = on;
     this.draw();

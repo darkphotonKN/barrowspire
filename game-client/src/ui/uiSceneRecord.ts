@@ -39,8 +39,6 @@ export class UiRecordSlot {
   private record: RecordPiece | null = null;
   /** The world the standing record was drawn for. */
   private builtFor: World | null = null;
-  /** Whether the run last said its record is up. */
-  private up = false;
 
   constructor(
     private readonly bridge: Pick<UiBridge, "play" | "request">,
@@ -74,19 +72,18 @@ export class UiRecordSlot {
       this.builtFor = world;
     }
     this.record.set(shown.view);
-    this.up = shown.open;
     if (shown.open) this.record.open();
     else this.record.close();
   }
 
-  /** Whether the record stands up now (FS-84N1G R16). */
+  /** Whether the record stands up now (FS-84N1G R16): it stands somewhere exactly while it is up. */
   isOpen(): boolean {
-    return this.record !== null && this.up;
+    return this.rect() !== null;
   }
 
   /** Where the record stands while it is up; none while it is down or gone (FS-84N1G R20). */
   rect(): Rect | null {
-    return this.isOpen() ? (this.record?.rect() ?? null) : null;
+    return this.record?.rect() ?? null;
   }
 
   /** The logical view changed: the record at its new place, its content and state untouched (FS-ZAJMH R13). */
@@ -102,7 +99,6 @@ export class UiRecordSlot {
     this.record?.close();
     this.record = null;
     this.builtFor = null;
-    this.up = false;
   }
 }
 

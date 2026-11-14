@@ -26,6 +26,7 @@ import { fillMaskArea, maskInView, viewport } from "@/render/viewport";
 import { onSceneEnd } from "@/scenes/sceneEnd";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { drawPanelTitle } from "./panelFrame";
+import type { Rect } from "./partyPanelLayout";
 import type { RecordRow, RecordTone, RecordView } from "./settlement";
 
 /** Over the resolved player's card (1500), under the passing notices (2000). */
@@ -102,7 +103,7 @@ export class SettlementRecord {
   private statusText?: Text;
   private hits: Phaser.GameObjects.Rectangle[] = [];
   /** Where the open record stands, logical units; none while it is down. */
-  private drawnRect: { x: number; y: number; width: number; height: number } | null = null;
+  private drawnRect: Rect | null = null;
   /** The view the open panel was built for, but for its status. */
   private drawnBody?: string;
   private area?: ScrollArea;
@@ -180,7 +181,7 @@ export class SettlementRecord {
   }
 
   /** Where it stands while open, logical units; none while down (FS-84N1G R20: what it covers). */
-  rect(): { x: number; y: number; width: number; height: number } | null {
+  rect(): Rect | null {
     return this.drawnRect;
   }
 
