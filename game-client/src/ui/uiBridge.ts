@@ -14,14 +14,21 @@
  * answers (R11), and the interface sounds the world's player actions and its minimap's step reach
  * through it (R12, R22). A pointer move the UI scene took from the world reaches the world through it
  * (A1 R27). The town's NPC dialogue crosses it as plain data, shown and taken down by the town, the
- * row picked handed back as its id (A2 R29, R30); so do the worlds' screen notices (A2 R33).
+ * row picked handed back as its id (A2 R29, R30); so do the worlds' screen notices (A2 R33). Phase 3
+ * adds the gear's, the container view's and the settlement record's data, the run's end appearing, the
+ * UI's state in parts (the gear's panels, the container open) and the requests only the world can
+ * answer for them: the run's equip and unequip, a take, the record's close (§ Change: Phase 3, R52–R54).
  */
 
 import type { WorldType } from "@/assets/types/client";
+import type { ContainerKind, ItemState } from "@/types/gameState";
 import type { UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
+import type { CarriedState } from "./EquipmentHud";
+import type { CharacterSource } from "./characterSheet";
 import type { SeenState } from "./partyFramesLayout";
+import type { RecordView } from "./settlement";
 import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
 
 /** The world a world scene draws (FS-TQZ5J "Words"): the town, a field, a run, as the server names them. */
@@ -101,6 +108,11 @@ export interface WorldBlockers {
    * the gear overlay or the letter panel; the run: its end).
    */
   readonly popups?: boolean;
+  /**
+   * The world turns the gear overlay away now: the town's dialogue (§ Change: Phase 3, R55). The UI
+   * scene refuses it while this is true or its menu slot is filled.
+   */
+  readonly gear?: boolean;
 }
 
 /** Where the world's own HUD stands, as the UI scene's pieces keep clear of it (§ Change: Phase 2: the party, R38). */
@@ -141,8 +153,11 @@ export const NO_FACTS: WorldFacts = {
 /** A world window the corner row's icons toggle (R11, R14); Party is the UI scene's own (§ Change: Phase 2, R39). */
 export type UiToggle = "inventory" | "character";
 
-/** What one Esc step closes in the world (R11, R17): the letter panel, the gear overlay, the dialogue. */
-export type UiClose = "letter" | "gear" | "dialogue";
+/**
+ * What the UI scene asks the world to close (R11, R17): the letter panel, the gear overlay, the dialogue;
+ * the run's settlement record, its Close (§ Change: Phase 3, R57).
+ */
+export type UiClose = "letter" | "gear" | "dialogue" | "record";
 
 /**
  * UI → world: what the UI scene asks of the world (R11). The corner row's `toggle` of a window; an
@@ -159,7 +174,11 @@ export type UiRequest =
   | { readonly kind: "leaveRun" }
   | { readonly kind: "fall" }
   | { readonly kind: "musicLevel"; readonly level: number }
-  | { readonly kind: "pickDialogue"; readonly id: string };
+  | { readonly kind: "pickDialogue"; readonly id: string }
+  /** The gear overlay wore or took off an item: the run's Equip or Unequip, by its entity id (§ Change: Phase 3, R54). */
+  | { readonly kind: "equip" | "unequip"; readonly item: string }
+  /** The container view took an item: the world sends its loot, and says `gear: taken` if it did (R54). */
+  | { readonly kind: "take"; readonly item: ItemState };
 
 /** World → UI: the world's report, whole (R9). */
 export interface WorldReport {
@@ -176,11 +195,12 @@ export interface WorldReport {
   /** Where its own HUD stands now, read as its windows are; none, nothing to keep clear of. */
   readonly layout?: () => WorldLayout;
   /**
-   * Hears the UI's state change (R10): as the menu opens the world closes its windows (FS-3EBCA R17)
-   * and ends an aim (FS-JTNPR req 15); its stride stops on its next frame, its guards reading the
-   * state (FS-G4VMQ R5). Heard inside the act that changed it, so the sounds hear it too (R22).
+   * Hears the UI's state change (R10), with what it was: as the menu opens the world closes its windows
+   * (FS-3EBCA R17) and ends an aim (FS-JTNPR req 15); its stride stops on its next frame, its guards
+   * reading the state (FS-G4VMQ R5); a gear panel opening ends an aim too (§ Change: Phase 3, R53).
+   * Heard inside the act that changed it, so the sounds hear it too (R22).
    */
-  readonly heardUi?: (ui: UiState) => void;
+  readonly heardUi?: (ui: UiState, was: UiState) => void;
   /** Answers a request of the UI scene's at once, or ignores one it has no answer for (R11). */
   readonly answer: (request: UiRequest) => void;
   /**
@@ -203,6 +223,9 @@ export type WorldAnswers = Partial<Record<UiToggle, () => void>> & {
   readonly fall?: () => void;
   readonly musicLevel?: (level: number) => void;
   readonly pickDialogue?: (id: string) => void;
+  readonly equip?: (item: string) => void;
+  readonly unequip?: (item: string) => void;
+  readonly take?: (item: ItemState) => void;
 };
 
 /** The world's `answer` from its answers: each request to its own, one with none ignored (R11). */
@@ -217,17 +240,65 @@ export function answering(answers: WorldAnswers): (request: UiRequest) => void {
         return answers.musicLevel?.(request.level);
       case "pickDialogue":
         return answers.pickDialogue?.(request.id);
+      case "equip":
+      case "unequip":
+        return answers[request.kind]?.(request.item);
+      case "take":
+        return answers.take?.(request.item);
       default:
         return answers[request.kind]?.();
     }
   };
 }
 
-/** UI → world: the UI's state (R10). */
+/**
+ * UI → world: the UI's state (R10), each part reported by the piece it is (§ Change: Phase 3, R53): the
+ * menu slot, the gear overlay's panels, the container view. A part left out is shut.
+ */
 export interface UiState {
   /** The ESC menu's slot is filled: the menu, OPTIONS or the run's Fall confirm. */
   readonly menuOpen: boolean;
+  /** The gear overlay's inventory is open, in stash mode or not. */
+  readonly inventory?: boolean;
+  /** The gear overlay's character panel is open. */
+  readonly character?: boolean;
+  /** The gear overlay is open in stash mode (the town's stash chest). */
+  readonly stash?: boolean;
+  /** The container the container view is open for; none, it is shut. */
+  readonly container?: string;
 }
+
+/**
+ * World → UI: the gear overlay's data (§ Change: Phase 3, R52): what a state tick hands it (what the
+ * player carries and wears, in a field and the run; the player's own state, for the stats panel), the
+ * level, an item the world sent a loot for, the town's stash chest opened, the town's letter panel
+ * taking the screen.
+ */
+export type GearMessage =
+  | { readonly kind: "seen"; readonly carried?: CarriedState; readonly character?: CharacterSource }
+  | { readonly kind: "level"; readonly level: number | undefined }
+  | { readonly kind: "taken"; readonly item: ItemState }
+  | { readonly kind: "openStash" }
+  | { readonly kind: "close" };
+
+/**
+ * World → UI: the container view's data (R52): a container opened (its entity and its kind, the view's
+ * face), its items, its close (`now`: unanimated, the world ending).
+ */
+export type ContainerMessage =
+  | { readonly kind: "open"; readonly entityId: string; readonly container: ContainerKind }
+  | { readonly kind: "items"; readonly items: readonly ItemState[] }
+  | { readonly kind: "close"; readonly now?: boolean };
+
+/** World → UI: the run's settlement record, its view and whether it is up (R52, R57). */
+export interface ShownRecord {
+  readonly view: RecordView;
+  readonly open: boolean;
+}
+
+/** The parts of the UI's state, as a key: two states with the same key are the same state. */
+const uiKey = (ui: UiState) =>
+  [ui.menuOpen, !!ui.inventory, !!ui.character, !!ui.stash, ui.container ?? ""].join("|");
 
 /**
  * What the UI scene draws for the worlds, told as the world says it (A2 R29, R33): its dialogue, or
@@ -237,6 +308,10 @@ export interface UiScreen {
   dialogue?(shown: ShownDialogue | null): void;
   notice?(notice: Notice): void;
   partySeen?(state: SeenState): void;
+  gear?(message: GearMessage): void;
+  container?(message: ContainerMessage): void;
+  record?(shown: ShownRecord | null): void;
+  endPopped?(): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -267,10 +342,10 @@ export interface UiBridge extends UiActWrapper {
    */
   moved(pointer: ScenePointer, onUi: boolean): void;
   /**
-   * The UI scene's report of its own state (R10): a change is heard by the world reported at once
-   * (`heardUi`).
+   * The UI scene's report of a part of its own state (R10; § Change: Phase 3, R53), merged into the
+   * rest: a change is heard by the world reported at once (`heardUi`), with what it was.
    */
-  reportUi(state: UiState): void;
+  reportUi(part: Partial<UiState>): void;
   /**
    * The world reported changed a part of its report (R9): its listeners hear it again at once, so the
    * UI scene reads the new facts in the same call (its menu yields, its rows retone).
@@ -305,6 +380,14 @@ export interface UiBridge extends UiActWrapper {
    * party frames' bars and levels follow it at once.
    */
   partySeen(state: SeenState): void;
+  /** The world hands the gear overlay its data (§ Change: Phase 3, R52): the UI scene has it when this returns. */
+  gear(message: GearMessage): void;
+  /** The world opens, fills or closes the container view (R52). */
+  container(message: ContainerMessage): void;
+  /** The run hands its settlement record, or none (R52, R57). */
+  record(shown: ShownRecord | null): void;
+  /** The run's end appeared (R58): the moved windows step aside, silently. */
+  endPopped(): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
 }
@@ -316,7 +399,19 @@ export interface UiBridge extends UiActWrapper {
  */
 export type WorldUi = Pick<
   UiBridge,
-  "act" | "play" | "ui" | "overUi" | "changed" | "showDialogue" | "closeDialogue" | "notice" | "partySeen"
+  | "act"
+  | "play"
+  | "ui"
+  | "overUi"
+  | "changed"
+  | "showDialogue"
+  | "closeDialogue"
+  | "notice"
+  | "partySeen"
+  | "gear"
+  | "container"
+  | "record"
+  | "endPopped"
 >;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
@@ -330,6 +425,10 @@ export const NO_UI: WorldUi = {
   closeDialogue: () => {},
   notice: () => {},
   partySeen: () => {},
+  gear: () => {},
+  container: () => {},
+  record: () => {},
+  endPopped: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -371,10 +470,12 @@ export class GameUiBridge implements UiBridge {
     this.tell(null);
   }
 
-  reportUi(state: UiState): void {
-    if (state.menuOpen === this.uiState.menuOpen) return;
-    this.uiState = state;
-    this.reported?.heardUi?.(state);
+  reportUi(part: Partial<UiState>): void {
+    const was = this.uiState;
+    const next = { ...was, ...part };
+    if (uiKey(next) === uiKey(was)) return;
+    this.uiState = next;
+    this.reported?.heardUi?.(next, was);
   }
 
   changed(): void {
@@ -424,6 +525,22 @@ export class GameUiBridge implements UiBridge {
 
   partySeen(state: SeenState): void {
     for (const screen of [...this.screens]) screen.partySeen?.(state);
+  }
+
+  gear(message: GearMessage): void {
+    for (const screen of [...this.screens]) screen.gear?.(message);
+  }
+
+  container(message: ContainerMessage): void {
+    for (const screen of [...this.screens]) screen.container?.(message);
+  }
+
+  record(shown: ShownRecord | null): void {
+    for (const screen of [...this.screens]) screen.record?.(shown);
+  }
+
+  endPopped(): void {
+    for (const screen of [...this.screens]) screen.endPopped?.();
   }
 
   onScreen(screen: UiScreen): () => void {

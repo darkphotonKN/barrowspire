@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-13
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: []
 labels: [ready-for-agent]
@@ -23,13 +23,13 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 
 ## Acceptance Criteria
 
-- [ ] A part reported merges into the UI's state; a change is heard by the world reported once,
+- [x] A part reported merges into the UI's state; a change is heard by the world reported once,
       with the state before; no change, nothing heard.
-- [ ] Each world → UI message reaches every screen listening, synchronously, and none after its stop.
-- [ ] `answering` hands `equip`, `unequip`, `take` and `close: record` to the world's answers; one
+- [x] Each world → UI message reaches every screen listening, synchronously, and none after its stop.
+- [x] `answering` hands `equip`, `unequip`, `take` and `close: record` to the world's answers; one
       with no answer is ignored.
-- [ ] No message type holds a function (the types).
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] No message type holds a function (the types).
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 
