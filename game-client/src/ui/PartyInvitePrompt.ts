@@ -244,7 +244,7 @@ export class PartyInvitePrompt {
     }
     // on the release, not the press (asked 2026-11-02): answering on the press closed the prompt
     // before a fighting scene's attack handler asked whether that press was the prompt's (R24)
-    t.setInteractive({ useHandCursor: true }).on("pointerup", press);
+    t.setInteractive().on("pointerup", press);
   }
 
   /**

@@ -175,7 +175,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       });
 
       const hitArea = this.add.rectangle(btnW / 2, btnH / 2, btnW, btnH, ui.well, 0);
-      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.setInteractive();
 
       container.add([titleText, subText, hitArea]);
 
@@ -408,7 +408,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     // Make Box Clickable for Prompt Input
     const hitArea = this.add
       .rectangle(boxX + boxW / 2, boxY + boxH / 2, boxW, boxH, ui.well, 0)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
 
     hitArea.on("pointerdown", () => {
       const input = prompt("Enter your Hero Name:", this.characterName);
@@ -429,7 +429,7 @@ export class CharacterCreationScene extends Phaser.Scene {
         letterSpacing: 2,
       })
       .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     diceText.on("pointerover", () => diceText.setColor(toCss(ui.torch)));
     diceText.on("pointerout", () => diceText.setColor(toCss(ui.accent)));
 
@@ -487,7 +487,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     const hit = this.add
       .rectangle(x + w / 2, y + h / 2, w, h, ui.well, 0)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     hit.on("pointerdown", onPress);
     hit.on("pointerover", () => draw("hover"));
     hit.on("pointerout", () => draw("idle"));

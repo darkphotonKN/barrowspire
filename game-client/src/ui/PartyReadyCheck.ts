@@ -214,7 +214,7 @@ export class PartyReadyCheck {
     g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
     this.text(r.x + r.width / 2, r.y + r.height / 2, label, colour, SMALL_PX)
       .setOrigin(0.5, 0.5)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .on("pointerdown", press);
   }
 

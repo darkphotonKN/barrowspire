@@ -785,7 +785,7 @@ export class ChatWindow {
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
         .setAlpha(shown[segment.channel] ? 1 : TAB_OFF_ALPHA)
-        .setInteractive({ useHandCursor: true })
+        .setInteractive()
         .on("pointerdown", () =>
           this.store.getState().toggleChannel(segment.channel),
         );
@@ -887,8 +887,9 @@ export class ChatWindow {
       )
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      // the whole picker is the hit area; the window hit-tests it itself, this only shows the hand
-      .setInteractive({ useHandCursor: true });
+      // the whole picker is the hit area; the window hit-tests it itself. It once showed the hand
+      // here; it stays interactive as it was, under the bone hand (FS-KYPQ9 § Change: Every hover keeps the bone hand)
+      .setInteractive();
     const arrowWidth = this.wordsSize(CHAT_PICKER_ARROW).width;
     const arrow = this.scene.add
       .text(
@@ -899,7 +900,7 @@ export class ChatWindow {
       )
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     this.pickerTexts.push(label, arrow);
     if (open) this.drawList(input);
   }
@@ -945,7 +946,7 @@ export class ChatWindow {
         .setScrollFactor(0)
         .setDepth(LIST_DEPTH + 1)
         .setAlpha(pickable ? 1 : ROW_CLOSED_ALPHA);
-      if (pickable) t.setInteractive({ useHandCursor: true });
+      if (pickable) t.setInteractive();
       this.pickerTexts.push(t);
     }
   }
@@ -977,7 +978,7 @@ export class ChatWindow {
       )
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       // on the release, not the press (asked 2026-11-02): folding on the press shrank the window
       // before the scene's attack handler asked whether that press was the window's (R31)
       .on("pointerup", () => this.store.getState().toggleFolded());

@@ -121,7 +121,7 @@ export class HudCorner {
         .setOrigin(0)
         .setScrollFactor(0)
         .setDepth(HUD_DEPTH)
-        .setInteractive({ useHandCursor: !spec.greyed });
+        .setInteractive();
       // its texture is drawn at the render scale, and drawn again at a new one (FS-7TQN4 R13); where
       // that fails, the icon goes back to its lines
       const knockout = new Knockout({

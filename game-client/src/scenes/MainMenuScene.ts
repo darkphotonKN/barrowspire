@@ -489,7 +489,7 @@ export class MainMenuScene extends Phaser.Scene {
       });
 
       const hitArea = this.add.rectangle(centerX, y + cardH / 2, cardW, cardH, ui.well, 0);
-      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.setInteractive();
 
       // Delete mark: a plain serif cross, not an emoji.
       const deleteText = this.add.text(panelX + panelW - 28, y + 24, "\u00d7", {
@@ -649,7 +649,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     const createBtnHit = this.add
       .rectangle(createBtnX, createBtnY, createBtnW, createBtnH, ui.well, 0)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
 
     createBtnHit.on("pointerdown", () => {
       this.scene.start("CharacterCreationScene");
@@ -784,7 +784,7 @@ export class MainMenuScene extends Phaser.Scene {
       emptyText.setOrigin(0.5);
 
       const hit = this.add.rectangle(0, 0, 140, 80, ui.well, 0);
-      hit.setInteractive({ useHandCursor: true });
+      hit.setInteractive();
       hit.on("pointerdown", () => {
         this.scene.start("CharacterCreationScene");
       });
@@ -857,7 +857,7 @@ export class MainMenuScene extends Phaser.Scene {
 
       if (card.deleteBtn && card.deleteHit) {
         card.deleteBtn.setVisible(true);
-        card.deleteHit.setInteractive({ useHandCursor: true }).setVisible(true);
+        card.deleteHit.setInteractive().setVisible(true);
 
         card.deleteHit.off("pointerdown");
         card.deleteHit.on("pointerdown", (e: Phaser.Input.Pointer) => {
@@ -994,7 +994,7 @@ export class MainMenuScene extends Phaser.Scene {
       draw("idle");
       const hit = this.add
         .rectangle(b.x, y, button.width, button.height, ui.well, 0)
-        .setInteractive({ useHandCursor: true });
+        .setInteractive();
       hit.on("pointerover", () => draw("hover"));
       hit.on("pointerout", () => draw("idle"));
       hit.on("pointerup", b.act);
@@ -1065,7 +1065,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.press = view.press;
 
     if (this.startButtonText && this.connectionStatusText) {
-      if (view.press) hitArea.setInteractive({ useHandCursor: true });
+      if (view.press) hitArea.setInteractive();
       else hitArea.disableInteractive();
       this.startButtonText.setText(view.label);
       this.connectionStatusText.setText(view.line);
@@ -1174,7 +1174,7 @@ export class MainMenuScene extends Phaser.Scene {
       color: toCss(buttonTextColor("cancel", "idle")),
     });
     cancelBtn.setOrigin(0.5);
-    cancelBtn.setInteractive({ useHandCursor: true });
+    cancelBtn.setInteractive();
 
     cancelBtn.on("pointerdown", () => {
       // leave_queue alone cancels (FS-K2HKP §Requirements 30)

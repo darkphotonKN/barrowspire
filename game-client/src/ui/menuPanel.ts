@@ -311,7 +311,7 @@ export function frameCloseHit(
     .rectangle(origin.x + centre.x, origin.y + centre.y, cross.width, cross.height, tones.panel, 0)
     .setScrollFactor(0)
     .setDepth(MENU_DEPTH + 1)
-    .setInteractive({ useHandCursor: true })
+    .setInteractive()
     .setName(name);
   hit.on("pointerup", onPress);
   hit.on("pointerover", () => {

@@ -293,7 +293,7 @@ export class SettlementRecord {
         palette.inkDeep,
         0,
       )
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .setScrollFactor(0)
       .setDepth(RECORD_DEPTH + 1)
       .setName("close-the-record");

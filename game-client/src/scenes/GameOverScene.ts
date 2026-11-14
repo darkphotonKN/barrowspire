@@ -42,7 +42,7 @@ export class GameOverScene extends Phaser.Scene {
       },
     );
     restartButton.setOrigin(0.5);
-    restartButton.setInteractive({ useHandCursor: true });
+    restartButton.setInteractive();
 
     restartButton.on("pointerover", () => restartButton.setColor("#c9a14e"));
     restartButton.on("pointerout", () => restartButton.setColor("#cdbf9a"));
@@ -54,7 +54,7 @@ export class GameOverScene extends Phaser.Scene {
       color: "#cdbf9a",
     });
     menuButton.setOrigin(0.5);
-    menuButton.setInteractive({ useHandCursor: true });
+    menuButton.setInteractive();
 
     menuButton.on("pointerover", () => menuButton.setColor("#c9a14e"));
     menuButton.on("pointerout", () => menuButton.setColor("#cdbf9a"));

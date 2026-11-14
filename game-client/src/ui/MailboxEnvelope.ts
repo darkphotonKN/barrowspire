@@ -250,7 +250,7 @@ export class MailboxEnvelope {
       .setOrigin(0)
       .setScrollFactor(0)
       .setDepth(HUD_DEPTH)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     this.zone.on("pointerdown", () => (this.deps.wrapper ?? PASS_THROUGH).act(() => this.press()));
     this.zone.on("pointerover", () => this.hover(true));
     this.zone.on("pointerout", () => this.hover(false));

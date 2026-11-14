@@ -176,7 +176,8 @@ export interface HudButton {
 /**
  * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
  * inert when not (amber means interactable, never otherwise). Given a `refused`, a greyed one takes
- * its press for that and nothing else, with no hand cursor (FS-WDM0X § Change pass 2 (party), P7). The party frames' Travel button is
+ * its press for that and nothing else (FS-WDM0X § Change pass 2 (party), P7); live or greyed, it has
+ * no cursor of its own, the bone hand stays (FS-KYPQ9 § Change: Every hover keeps the bone hand). The party frames' Travel button is
  * drawn by it too (FS-NCC9J R28), in the HUD band. Returns the label, for the caller to take down.
  *
  * The whole outlined button answers a press, not only its words: the label carries a hit area the
@@ -229,7 +230,7 @@ export function drawHudButton(
   }
   return (
     t
-      .setInteractive({ hitArea, hitAreaCallback, useHandCursor: true })
+      .setInteractive({ hitArea, hitAreaCallback })
       .on("pointerover", () => feedback.hovered?.())
       // on the release, as the invite prompt does: on the press its panel is still open and still
       // claims it, so the world under it never takes it for an attack (FS-R82NV R28)
@@ -440,7 +441,7 @@ export class PartyPanel {
     const { glyph: x } = drawPanelFrame(this.scene, g, panel);
     x.setScrollFactor(0)
       .setDepth(PARTY_PANEL_DEPTH)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     this.texts.push(x);
     // closed on the release: on the press the panel is still open, so the run and the field read
     // the press as the panel's and attack nothing (FS-R82NV R28; owner 2026-11-14)

@@ -5475,7 +5475,7 @@ export class BarrowspireScene extends Phaser.Scene {
       .setOrigin(0.5);
     const hit = this.add
       .rectangle(origin.x + at.x, origin.y + at.y, BUTTON_W, BUTTON_H, palette.inkDeep, 0)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .setScrollFactor(0)
       .setDepth(hitDepth)
       .setName(button.name);
@@ -5497,8 +5497,9 @@ export class BarrowspireScene extends Phaser.Scene {
       hit,
       setEnabled: (on: boolean) => {
         enabled = on;
-        // dimmed, it still takes its press, to say no, with no hand cursor (E6, as the party's P7)
-        if (hit.input) hit.input.cursor = on ? "pointer" : false;
+        // dimmed, it still takes its press, to say no (E6, as the party's P7); live or dimmed it has
+        // no cursor of its own, so none is left over it when it dims under the pointer: the bone
+        // hand stays (FS-KYPQ9 § Change: Every hover keeps the bone hand)
         rest();
       },
       destroy: () => {

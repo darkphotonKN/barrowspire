@@ -115,7 +115,7 @@ export class DisconnectNoticeScene extends Phaser.Scene {
       .zone(r.x, r.y, r.width, r.height)
       .setOrigin(0, 0)
       .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true })
+      .setInteractive()
       .on("pointerover", () => stroke(palette.frameBright))
       .on("pointerout", () => stroke(palette.frame))
       .on("pointerdown", () => this.press());

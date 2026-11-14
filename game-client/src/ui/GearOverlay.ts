@@ -183,7 +183,7 @@ const PURSE_ICON_GAP = 6;
 /** Which panel: the inventory on the right, the character panel (or the stash) on the left. */
 type Side = "left" | "right";
 
-/** A panel's ×: its drawn glyph, the zone that gives it the hand cursor, and its box. */
+/** A panel's ×: its drawn glyph, its interactive zone (no cursor of its own), and its box. */
 interface CloseMark {
   side: Side;
   box: Rect;
@@ -514,7 +514,8 @@ export class GearOverlay implements HudPanel, PurseShelf {
   /**
    * A panel's × (§ Change C4), drawn by the frame. Its press is hit-tested by hand with the
    * overlay's other presses (`onPointerDown`), so a scene that asks `covers` first still sees the
-   * panel there; the zone is only for the hand cursor.
+   * panel there. The zone, which once gave it the hand cursor, stays interactive as it was, with
+   * no cursor of its own: the bone hand stays over it (FS-KYPQ9 § Change: Every hover keeps the bone hand).
    */
   private closeMark(
     side: Side,
@@ -526,7 +527,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
       .setOrigin(0)
       .setScrollFactor(0)
       .setDepth(GEAR_OVERLAY_DEPTH + 3)
-      .setInteractive({ useHandCursor: true });
+      .setInteractive();
     return { side, box, glyph, zone, lit: false };
   }
 
