@@ -1,10 +1,10 @@
 ---
-id: I-TQZ5J-16
+id: I-TQZ5J-15
 status: open
 implements: FS-TQZ5J
-blocked_by: [I-TQZ5J-15]
+blocked_by: [I-TQZ5J-14]
 labels: [ready-for-agent]
-title: "FS-TQZ5J phase 3, slice 4: the settlement record and the run's controls panel (H) move into the UI scene"
+title: "FS-TQZ5J phase 3, slice 3: the settlement record and the run's controls panel (H) move into the UI scene"
 ---
 Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlement record and the controls panel (R50, R52, R54, R56–R59, R61, R62; the note on ADR-0083 2.3)
 
@@ -31,7 +31,7 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 
 ## Blocked By
 
-I-TQZ5J-15.
+I-TQZ5J-14.
 
 ## Spec Reference
 

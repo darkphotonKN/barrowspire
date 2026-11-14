@@ -1,10 +1,10 @@
 ---
-id: I-TQZ5J-17
+id: I-TQZ5J-16
 status: open
 implements: FS-TQZ5J
-blocked_by: [I-TQZ5J-16]
+blocked_by: [I-TQZ5J-15]
 labels: [ready-for-agent]
-title: "FS-TQZ5J phase 3, slice 5: the party frames lowest, every window over them, B1's transitional state ended"
+title: "FS-TQZ5J phase 3, slice 4: the party frames lowest, every window over them, B1's transitional state ended"
 ---
 Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlement record and the controls panel (R59, R60, R62, R63)
 
@@ -26,7 +26,7 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 
 ## Blocked By
 
-I-TQZ5J-16.
+I-TQZ5J-15.
 
 ## Spec Reference
 

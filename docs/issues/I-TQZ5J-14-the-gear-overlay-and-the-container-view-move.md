@@ -4,11 +4,16 @@ status: open
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-13]
 labels: [ready-for-agent]
-title: "FS-TQZ5J phase 3, slice 2: the gear overlay, HubGear, EquipmentHud, the purse and I, B, C, Q, E move into the UI scene"
+title: "FS-TQZ5J phase 3, slice 2: the gear overlay (HubGear, EquipmentHud, the purse) and the container view move into the UI scene, with I, B, C, Q, E and F"
 ---
-Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlement record and the controls panel (R50–R56, R58–R60, R64 for the gear)
+Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlement record and the controls panel (R50–R56, R58–R60, R62, R64 for the gear overlay and the container view)
 
 **Lane: AFK (agent).** game-client only.
+
+One slice, not two: a take from a container is pre-checked against the bag (`mayTake` → the gear's
+`roomForOne`) before the view marks it pending, synchronously. Moved apart, one of the two would ask
+the other across the bridge for an answer a request cannot return. So they move together, and the
+take stays inside one scene (the charter's rule).
 
 ## What to Build
 
@@ -24,7 +29,12 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 - I, B, C, Q (gear) and the inventory's E are the UI scene's (R56), as each world heard them.
 - The overlay stands a ground per open panel (R59) and acts only on its own top object (R60); the
   worlds drop `covers` from their click paths.
-- The run's end closes the gear overlay silently (R58).
+- The container view (a field's and the run's, their pending windows) is the UI scene's, at 1100
+  under the gear overlay (R62); the worlds open, fill and close it by `container` messages (a field's
+  `FieldPiles` through a `PileSatchel` over the bridge) and read `container` (R53); a take is pre-checked
+  by the UI's gear and asked as `take`, answered `gear: taken` when sent (R54); F and the run's Q's
+  second step are the UI scene's (R56); its ground is a child of its root (R59).
+- The run's end closes the gear overlay and the container view silently (R58).
 
 ## Acceptance Criteria
 
@@ -36,7 +46,10 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 - [ ] A press, hover or wheel on an open panel reaches no world handler; one in the clear band still
       attacks; a piece over the overlay (the party panel) takes the hover, the press and the wheel.
 - [ ] inventory_open/close and character_open/close once per action; none for a game-made close.
-- [ ] Every gear test that read a world scene still passes, moved with the code.
+- [ ] The container view opens, fills, closes (walking away, a hit, a floor change, E again, Q, the
+      world leaving) and takes (click, F) as today; the full bag refused before a send; a press on its
+      panel reaches no world handler; the gear overlay draws over it where they meet.
+- [ ] Every gear and container test that read a world scene still passes, moved with the code.
 - [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
@@ -46,11 +59,12 @@ I-TQZ5J-13.
 ## Spec Reference
 
 FS-TQZ5J §Change: Phase 3 (R50–R56, R58–R60, R64); A1 R25–R27; R17, R21, R22; FS-HRH2J; FS-VPD8Y §F;
-FS-7TGZ3; FS-WDM0X S1–S9.
+FS-7TGZ3; FS-WDM0X S1–S9; FS-2325V §D; FS-1D6BX R15–R19; FS-X2F2H R56–R60; FS-KE075 §J R60.
 
 ## TDD Approach
 
 - RED: a UI-scene gear slot over a fake bridge builds the gear per world and takes it down on a leave;
   the corner's Inventory toggles it under the menu and `blockers().gear`; Esc closes it after the
-  party panel; `gear: seen` reaches the overlay; equip sends `equip`.
+  party panel; `gear: seen` reaches the overlay; equip sends `equip`; the container slot opens on
+  `container: open`, reports `container`, and a take asks `take` only with room in the bag.
 - GREEN: `uiSceneGear.ts`, the worlds' reports and answers, the UI scene's mount.

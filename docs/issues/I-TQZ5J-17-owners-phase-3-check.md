@@ -1,10 +1,10 @@
 ---
-id: I-TQZ5J-18
+id: I-TQZ5J-17
 status: open
 implements: FS-TQZ5J
-blocked_by: [I-TQZ5J-13, I-TQZ5J-14, I-TQZ5J-15, I-TQZ5J-16, I-TQZ5J-17]
+blocked_by: [I-TQZ5J-13, I-TQZ5J-14, I-TQZ5J-15, I-TQZ5J-16]
 labels: [ready-for-agent]
-title: "FS-TQZ5J phase 3, slice 6: the owner's look-and-feel and listening check of the moved pieces (HITL)"
+title: "FS-TQZ5J phase 3, slice 5: the owner's look-and-feel and listening check of the moved pieces (HITL)"
 ---
 Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlement record and the controls panel (the owner's check, R58, R61, R64–R66)
 
