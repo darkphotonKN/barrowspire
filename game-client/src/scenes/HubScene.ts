@@ -26,7 +26,6 @@ import {
   type FieldDestination,
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
-import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { letterPanelState, type LetterPanelState } from "@/stores/letterPanelState";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { hudLine } from "@/ui/uiSceneNotices";
@@ -667,8 +666,6 @@ export class HubScene extends Phaser.Scene {
   private queuePending = false;
   /** A leave_hub has been sent and its reply has not come (FS-G4VMQ §Requirements 25). */
   private leavingHub = false;
-  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
-  private chatWindow?: ChatWindow;
   /**
    * The letter panel's open state (FS-1GZGD R40): only the town has one. While the panel is open it
    * owns the keys, as the ESC menu does. The envelope and the panel are the UI scene's; their open state
@@ -862,17 +859,9 @@ export class HubScene extends Phaser.Scene {
     );
 
     this.listenForQueue();
-    // a dialogue and the menu read Enter and Esc themselves; the gear overlay is open over the town.
-    // The letter panel is opened by a press, so it keeps a half-typed line as any press elsewhere
-    // does; the wheel and presses on it are the UI scene's, which reach no world (FS-1GZGD R40;
-    // FS-TQZ5J § Change: Batch 4, R106)
-    this.chatWindow = mountChatWindow(
-      this,
-      () => this.mayChat(),
-      {
-        keepsDraft: () => !!this.mailbox?.isOpen(),
-      },
-    );
+    // the chat window is the UI scene's, built as the town is reported: it reads the town's part of who
+    // owns Enter and Esc in its blockers, and keeps a half-typed line while the letter panel, opened by a
+    // press, holds the keys (FS-1GZGD R40; FS-TQZ5J § Change: Batch 6, R125, R126)
     // T and the party panel, the invite prompts and the ready check are the UI scene's: it asks the
     // town to close its letter panel as the panel opens, and reads the town's refusal and its popups'
     // covers in its report (FS-TQZ5J § Change: Phase 2: the party, R36, R38, R39)
@@ -954,7 +943,15 @@ export class HubScene extends Phaser.Scene {
    * overlay's refusal, its dialogue: the menu is the UI scene's own (§ Change: Phase 3, R55).
    */
   private blockers(): WorldBlockers {
-    return { dialogue: !!this.dialogue, party: !!this.dialogue, popups: this.coversPopups(), gear: !!this.dialogue };
+    return {
+      dialogue: !!this.dialogue,
+      party: !!this.dialogue,
+      popups: this.coversPopups(),
+      gear: !!this.dialogue,
+      // the town's part of who owns Enter and Esc: a dialogue or the letter panel (FS-WJGFJ R27; FS-TQZ5J
+      // § Change: Batch 6, R126); the menu and the gear overlay are the UI scene's own
+      chat: !!this.dialogue || !!this.mailbox?.isOpen(),
+    };
   }
 
   /**
@@ -979,14 +976,6 @@ export class HubScene extends Phaser.Scene {
   /** A window opening closes the letter panel first (FS-3EBCA R16). */
   private closeLetter(): void {
     if (this.mailbox?.isOpen()) this.mailbox.close();
-  }
-
-  /**
-   * Whether the chat input may take focus (FS-WJGFJ R27): not while a dialogue, the menu (FS-3EBCA
-   * R18), the gear overlay or the letter panel is up.
-   */
-  private mayChat(): boolean {
-    return !this.dialogue && !this.menuOpen && !this.gearOpen && !this.mailbox?.isOpen();
   }
 
   /** What the server sent while the hub loaded, to the listeners create has made, in order. */
@@ -1185,8 +1174,6 @@ export class HubScene extends Phaser.Scene {
     this.scenery = undefined;
     this.lightMap = undefined;
     this.groundLayer = undefined;
-    this.chatWindow?.destroy();
-    this.chatWindow = undefined;
     this.minimap?.destroy();
     this.minimap = undefined;
     this.minimapStage = undefined;
@@ -2104,7 +2091,8 @@ export class HubScene extends Phaser.Scene {
 
   /** M's guards in the town (FS-P0HSP §F.33): chat typing, or the menu, a dialogue card or the letter panel owning the keys. */
   private minimapKeysOwned(): boolean {
-    return !!this.chatWindow?.isTyping() || this.menuOpen || !!this.dialogue || !!this.mailbox?.isOpen();
+    // the player typing in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R127)
+    return !!this.ui.ui.typing || this.menuOpen || !!this.dialogue || !!this.mailbox?.isOpen();
   }
 
   /**

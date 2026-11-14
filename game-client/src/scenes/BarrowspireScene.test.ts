@@ -120,6 +120,11 @@ const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOv
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { chatWiring } = await import("@/ui/uiSceneChat");
+/** Whether the UI scene's chat may take the keys over the run (FS-TQZ5J § Change: Batch 6, R126). */
+const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: false }).bridge).mayOpen();
+/** The player typing in the UI scene's chat over the run, or not (FS-TQZ5J § Change: Batch 6, R127). */
+const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
 const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { NO_UI, worldContainer } = await import("@/ui/uiBridge");
 const { UiRecordSlot } = await import("@/ui/uiSceneRecord");
@@ -5905,7 +5910,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
   describe("the windows give way to the menu (FS-3EBCA R17, R18)", () => {
     type Windowed = Overlaid & {
       runEnded: boolean;
-      mayChat(): boolean;
     };
     function runWindows() {
       const env = overlayOnStage();
@@ -6010,9 +6014,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
 
     it("should give the chat input no focus while the menu is open (R18)", () => {
       const { run, pressEsc } = runWindows();
-      expect(run.mayChat()).toBe(true);
+      expect(chatMayOpen(run)).toBe(true);
       pressEsc();
-      expect(run.mayChat()).toBe(false);
+      expect(chatMayOpen(run)).toBe(false);
     });
   });
 
@@ -9435,7 +9439,6 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         escapedCountText?: object;
         positionReadout?: object;
         menu?: unknown;
-        chatWindow?: { isTyping(): boolean };
         minimapMode: string;
         createUI(): void;
         relayoutHud(): void;
@@ -9492,7 +9495,8 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           minimapStore: store.read,
           input: {
             setDefaultCursor: vi.fn(),
-            keyboard: { on: (event: string, fn: Key) => (keys[event] = fn) },
+            // as Phaser's: the UI scene's chat turns it off while typing (FS-TQZ5J § Change: Batch 6, R127)
+            keyboard: { enabled: true, resetKeys: () => {}, on: (event: string, fn: Key) => (keys[event] = fn) },
             on: (event: string, fn: (pointer?: object) => void) => (pointers[event] = fn),
           },
         });
@@ -9650,10 +9654,10 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         keys["keydown-M"]();
         expect(map()!.mode).toBe("enlarged");
         menuUpOver(run, false);
-        run.chatWindow = { isTyping: () => true };
+        typeInChat(run);
         keys["keydown-M"]();
         expect(map()!.mode).toBe("enlarged");
-        run.chatWindow = undefined;
+        typeInChat(run, false);
         expect(store.writes).toHaveLength(4);
       });
 
@@ -9674,9 +9678,9 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         menuUpOver(run);
         keys["keydown-M"]();
         menuUpOver(run, false);
-        run.chatWindow = { isTyping: () => true };
+        typeInChat(run);
         keys["keydown-M"]();
-        run.chatWindow = undefined;
+        typeInChat(run, false);
         expect(heard()).toEqual([]);
         // a floor of buildings: no minimap to step
         useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
@@ -9823,7 +9827,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
           menuUpOver(run);
           pointers.pointerdown(pointerAt(862, 109));
           menuUpOver(run, false);
-          run.chatWindow = { isTyping: () => true, covers: () => false } as MappedRun["chatWindow"];
+          typeInChat(run);
           pointers.pointerdown(pointerAt(862, 109));
           expect(map()!.mode).toBe("normal");
           expect(store.writes).toEqual([]);
@@ -10921,24 +10925,22 @@ describe("BarrowspireScene notices carry no importance (FS-WDM0X § Change, owne
 // run reports what they read of it: the panel turned away at its end or with a chest open, the popups
 // hidden at its end, the invites stacked above its chat window (FS-R82NV R28; FS-NCC9J R24; R38)
 describe("BarrowspireScene what the party pieces read of it (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
-  it("should turn the panel away at the run's end or with a container open, hide the popups at its end, and say its chat top", () => {
+  it("should turn the panel and the chat away at the run's end or with a container open, and hide the popups at its end", () => {
     const run = new BarrowspireScene() as unknown as {
       worldSide(): import("@/ui/uiBridge").WorldSide;
       runEnded: boolean;
       containerView?: { isOpen: boolean };
-      chatWindow?: unknown;
     };
     run.containerView = { isOpen: false };
-    run.chatWindow = { topEdge: () => 530 };
     const side = run.worldSide();
 
-    expect(side.blockers()).toMatchObject({ party: false, popups: false });
+    // the UI scene's chat is turned away by the run's end and an open chest (FS-TQZ5J § Change: Batch 6, R126)
+    expect(side.blockers()).toMatchObject({ party: false, popups: false, chat: false });
     run.containerView.isOpen = true;
-    expect(side.blockers()).toMatchObject({ party: true, popups: false });
+    expect(side.blockers()).toMatchObject({ party: true, popups: false, chat: true });
     run.containerView.isOpen = false;
     run.runEnded = true;
-    expect(side.blockers()).toMatchObject({ party: true, popups: true });
-    expect(side.layout?.().chatTop).toBe(530);
+    expect(side.blockers()).toMatchObject({ party: true, popups: true, chat: true });
   });
 });
 

@@ -169,11 +169,11 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
 });
 
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompt and the ready check hide as the
-// world says (blockers().popups) and stack above the chat window it reports (layout().chatTop), R38
+// world says (blockers().popups) and stack above the UI scene's chat window (R38; § Change: Batch 6, R132)
 describe("the invite prompt's and the ready check's wiring (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
   it("should hide them while the world says so, read as it is now, and with no world reported", () => {
     const bridge = new GameUiBridge();
-    const wiring = partyPromptWiring(bridge);
+    const wiring = partyPromptWiring(bridge, () => undefined);
     expect(wiring.hidden()).toBe(true);
     const town = aWorld("hub");
     bridge.report(town.report);
@@ -183,17 +183,14 @@ describe("the invite prompt's and the ready check's wiring (FS-TQZ5J § Change: 
     expect(wiring.hidden()).toBe(true);
   });
 
-  it("should stack the invites above the chat window's top the world reports, and nowhere in particular without one", () => {
+  it("should stack the invites above the UI scene's chat window's top, as its floor reads it (§ Change: Batch 6, R132)", () => {
     const bridge = new GameUiBridge();
-    const wiring = partyPromptWiring(bridge);
-    const field = aWorld("field");
     let chatTop: number | undefined = 520;
-    bridge.report({ ...field.report, layout: () => ({ chatTop }) });
+    const wiring = partyPromptWiring(bridge, () => chatTop);
+    bridge.report(aWorld("field").report);
 
     expect(wiring.floor()).toBe(520);
     chatTop = undefined;
-    expect(wiring.floor()).toBeUndefined();
-    bridge.report(aWorld("hub").report);
     expect(wiring.floor()).toBeUndefined();
   });
 });

@@ -43,7 +43,6 @@ import { addMist } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
-import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { abilityCard } from "@/ui/abilityCard";
 import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
@@ -212,8 +211,6 @@ export class FieldScene extends Phaser.Scene {
    * satchel the UI scene's, reached through the bridge (FS-TQZ5J § Change: Phase 3, R52, R53).
    */
   private piles?: FieldPiles;
-  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
-  private chatWindow?: ChatWindow;
   /**
    * The field's minimap at the top of the top-right column (FS-P0HSP): built with the field's
    * first state, from the stage create wires; gone with the visit.
@@ -330,10 +327,10 @@ export class FieldScene extends Phaser.Scene {
 
     this.unsubscribeState = socketManager.onGameStateUpdate((state) => this.renderState(state));
     this.listen();
-    this.chatWindow = mountChatWindow(this, () => this.mayChat());
+    // the chat window is the UI scene's, built as the field is reported (FS-TQZ5J § Change: Batch 6, R125)
     // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
-    // party invites are the UI scene's: never hidden in a field, stacked clear of the chat window
-    // the field reports (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38)
+    // party invites are the UI scene's: never hidden in a field, stacked clear of its chat window
+    // (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38; § Change: Batch 6, R132)
     // the HUD back to its anchors whenever the logical view changes (FS-ZAJMH R12, R13)
     relayoutOn(this, () => this.relayoutHud());
 
@@ -351,8 +348,6 @@ export class FieldScene extends Phaser.Scene {
     return {
       windows: () => this.windows(),
       blockers: () => ({ dialogue: false }),
-      // the invite stack stays clear of the chat window (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2, R38)
-      layout: () => ({ chatTop: this.chatWindow?.topEdge() }),
       // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
       facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
       // a gear panel opening ends a Shadow Shot hold (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53);
@@ -385,11 +380,6 @@ export class FieldScene extends Phaser.Scene {
    */
   private windows(): WorldWindows {
     return { letter: false };
-  }
-
-  /** Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18) or the UI scene's gear overlay is up. */
-  private mayChat(): boolean {
-    return !this.menuOpen && !this.ui.ui.inventory && !this.ui.ui.character;
   }
 
   /**
@@ -533,36 +523,24 @@ export class FieldScene extends Phaser.Scene {
       const at = viewport.toLogical(pointer);
       // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
       // §Change: Map mode icon, D7; FS-TQZ5J § Change: Phase 2: the party, R41)
-      if (this.ui.overUi || this.panelTakes(at.x, at.y)) this.minimap?.pointerOut();
+      if (this.ui.overUi) this.minimap?.pointerOut();
       else this.minimap?.pointerMove(at.x, at.y);
     });
     this.input.on("gameout", () => this.minimap?.pointerOut());
   }
 
   /**
-   * A press on the chat window is the window's, and one on the map mode icon M's: neither is an attack,
-   * a cast or a Shadow Shot hold. A press over the overlay's panels or the open satchel is the UI
-   * scene's and never reaches the field (FS-TQZ5J § Change: Phase 3, R59); one in the overlay's clear
-   * middle band attacks as with it closed (FS-HRH2J R8).
+   * A press on the map mode icon is M's: never an attack, a cast or a Shadow Shot hold. A press on the chat
+   * window, over the overlay's panels or on the open satchel is the UI scene's and never reaches the field
+   * (FS-TQZ5J § Change: Phase 3, R59; § Change: Batch 6, R129); one in the overlay's clear middle band
+   * attacks as with it closed (FS-HRH2J R8).
    */
   private takesPointer(x: number, y: number, primary: boolean): boolean {
     // the open menu's rows take their own presses; nothing in the world answers one (FS-G4VMQ R5),
     // nor the map mode icon, whose guards the menu is one of
     if (this.menuOpen) return true;
-    if (this.panelTakes(x, y)) return true;
     // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6)
     return this.minimap?.pointerDown(x, y, primary) ?? false;
-  }
-
-  /**
-   * Whether a press at (x, y), logical units, is a HUD panel's: the chat window's. Neither the world nor
-   * the map mode icon answers it. One on the UI scene's pieces (the corner row, the party panel, an
-   * invite prompt, the gear overlay, the satchel) never reaches the field: they are above it (FS-TQZ5J
-   * R7, R15; § Change: Phase 2: the party, R40; § Change: Phase 3, R59).
-   */
-  private panelTakes(x: number, y: number): boolean {
-    // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-    return this.chatWindow?.covers(x, y) ?? false;
   }
 
   /**
@@ -578,8 +556,6 @@ export class FieldScene extends Phaser.Scene {
     this.leavingHub = false;
     this.piles?.release();
     this.piles = undefined;
-    this.chatWindow?.destroy();
-    this.chatWindow = undefined;
     // what was charted since the last write, kept as the scene ends (FS-P0HSP §D.25)
     this.charting?.saveLast();
     this.minimap?.destroy();
@@ -788,7 +764,8 @@ export class FieldScene extends Phaser.Scene {
 
   /** M's guards in a field, the key's and the map mode icon's (FS-P0HSP §F.33): chat typing, or the ESC menu owning the keys. */
   private minimapKeysOwned(): boolean {
-    return !!this.chatWindow?.isTyping() || this.menuOpen;
+    // the player typing in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R127)
+    return !!this.ui.ui.typing || this.menuOpen;
   }
 
   /** The map overlay on the player (FS-P0HSP §F.31): each frame, after the figures have eased. */

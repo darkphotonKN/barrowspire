@@ -85,11 +85,6 @@ export class MailboxHud {
     this.panel.relayout();
   }
 
-  /** Whether a screen point lies under the open panel: what is drawn there takes no wheel or press. */
-  covers(x: number, y: number): boolean {
-    return this.panel.covers(x, y);
-  }
-
   /** Leaving the town: the panel closes with it, and `mail_arrived` fetches nothing until the next entry. */
   destroy(): void {
     this.deps.store.getState().leaveTown();

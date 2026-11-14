@@ -182,11 +182,6 @@ export class LetterPanel {
     this.draw();
   }
 
-  /** Whether a screen point lies on the open panel: a wheel or a press there is the panel's alone. */
-  covers(x: number, y: number): boolean {
-    return this.frame !== undefined && within(this.frame.panel, x, y);
-  }
-
   private clear(): void {
     this.hideTip();
     for (const o of this.objects) o.destroy();

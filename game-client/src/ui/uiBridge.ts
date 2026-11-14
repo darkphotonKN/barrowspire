@@ -25,6 +25,7 @@ import type { ContainerKind, ItemState } from "@/types/gameState";
 import type { UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
+import type { SceneKeyboard } from "./chatInput";
 import type { CarriedState } from "./EquipmentHud";
 import type { CharacterSource } from "./characterSheet";
 import type { SeenState } from "./partyFramesLayout";
@@ -115,12 +116,12 @@ export interface WorldBlockers {
    * scene refuses it while this is true or its menu slot is filled.
    */
   readonly gear?: boolean;
-}
-
-/** Where the world's own HUD stands, as the UI scene's pieces keep clear of it (§ Change: Phase 2: the party, R38). */
-export interface WorldLayout {
-  /** The screen y the invite stack stays above: the chat window's top edge, where the world has one. */
-  readonly chatTop?: number;
+  /**
+   * The world turns the chat's input away now (§ Change: Batch 6, R126): its part of the rule each world
+   * kept (the town's dialogue or its letter panel; the run's end or an open container). The UI scene's
+   * chat window takes no keys while this is true, its menu slot is filled or a gear panel is open.
+   */
+  readonly chat?: boolean;
 }
 
 /**
@@ -190,8 +191,6 @@ export interface WorldReport {
   readonly blockers: () => WorldBlockers;
   /** What its ESC menu's rows read now (R9, R16), read as its windows are. */
   readonly facts: () => WorldFacts;
-  /** Where its own HUD stands now, read as its windows are; none, nothing to keep clear of. */
-  readonly layout?: () => WorldLayout;
   /**
    * Hears the UI's state change (R10), with what it was: as the menu opens the world closes its windows
    * (FS-3EBCA R17) and ends an aim (FS-JTNPR req 15); its stride stops on its next frame, its guards
@@ -262,6 +261,11 @@ export interface UiState {
   readonly stash?: boolean;
   /** The container the container view is open for; none, it is shut. */
   readonly container?: string;
+  /**
+   * The player is typing in the chat window (§ Change: Batch 6, R127): the world's keyboard is off, and
+   * every world guard that read the window reads this.
+   */
+  readonly typing?: boolean;
 }
 
 /**
@@ -294,7 +298,7 @@ export interface ShownRecord {
 
 /** The parts of the UI's state, as a key: two states with the same key are the same state. */
 const uiKey = (ui: UiState) =>
-  [ui.menuOpen, !!ui.inventory, !!ui.character, !!ui.stash, ui.container ?? ""].join("|");
+  [ui.menuOpen, !!ui.inventory, !!ui.character, !!ui.stash, ui.container ?? "", !!ui.typing].join("|");
 
 /**
  * What the UI scene draws for the worlds, told as the world says it (A2 R29, R33): its dialogue, or
@@ -618,11 +622,43 @@ export function reportWorld(scene: ReportingScene, world: World, side: WorldSide
   const hear = (pointer: ScenePointer, onUi: boolean) => {
     if (input) hearMove(input, scene.cameras?.cameras ?? [], pointer, onUi);
   };
-  bridge.report({ world, ...side, hearMove: hear });
+  const typing = typingGuard(() => (scene.input as { keyboard?: SceneKeyboard | null } | undefined)?.keyboard);
+  const heardUi = (ui: UiState, was: UiState) => {
+    typing.heard(ui);
+    side.heardUi?.(ui, was);
+  };
+  bridge.report({ world, ...side, heardUi, hearMove: hear });
   onSceneEnd(scene, (end) => {
+    typing.end();
     if (end === "shutdown") bridge.left(world);
   });
   return bridge;
+}
+
+/**
+ * A world's keyboard while the player types in the UI scene's chat window (§ Change: Batch 6, R127): reset
+ * and off as `typing` comes on (a held stride key let go: the DOM field swallows its keyup), and handed back
+ * as it was as it goes or as the world ends. It turns on only a keyboard it turned off, so a late
+ * `typing: false` heard by the next world leaves that world's keyboard as it is.
+ */
+function typingGuard(keyboard: () => SceneKeyboard | null | undefined) {
+  let was: boolean | null = null;
+  const handBack = () => {
+    const keys = keyboard();
+    if (keys && was !== null) keys.enabled = was;
+    was = null;
+  };
+  return {
+    heard(ui: UiState): void {
+      if (!ui.typing) return handBack();
+      const keys = keyboard();
+      if (!keys || was !== null) return;
+      was = keys.enabled;
+      keys.resetKeys();
+      keys.enabled = false;
+    },
+    end: handBack,
+  };
 }
 
 /**

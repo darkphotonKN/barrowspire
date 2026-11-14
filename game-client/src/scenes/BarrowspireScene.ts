@@ -48,7 +48,6 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { healthPotionCount, potionCell } from "@/ui/potions";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
@@ -646,8 +645,6 @@ export class BarrowspireScene extends Phaser.Scene {
   private abilityUp = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
-  /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
-  private chatWindow?: ChatWindow;
   /**
    * What the player's actions that can open or close a window, and the minimap's step, run through:
    * the game's UI bridge, to the UI scene's interface sounds (FS-TQZ5J R12, R22; FS-WDM0X S9). Its
@@ -1111,8 +1108,6 @@ export class BarrowspireScene extends Phaser.Scene {
     // § Change: The pressed hand, and the hand on the menus, P7)
     if (end === "shutdown") findPointerLook(this)?.base("hand");
     this.tabKey = undefined;
-    this.chatWindow?.destroy();
-    this.chatWindow = undefined;
     // the kit's tells, slices and aim line go with the run, and the next first state is a fresh
     // baseline: a reconnect flashes nothing (FS-MAMHR §G.36)
     this.kit.forget();
@@ -1207,9 +1202,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui.changed();
     // the run is over: a Shadow Shot hold ends with nothing sent (FS-JTNPR req 15)
     this.cancelAim();
-    // a half-typed line goes, and the input hands the keyboard back before it is switched off
-    // here, so nothing turns it on again (FS-WJGFJ R27)
-    this.chatWindow?.cancelInput();
+    // a half-typed line went as the UI scene's chat heard the change above, and both keyboards were
+    // handed back before this one is switched off here, so nothing turns it on again (FS-WJGFJ R27;
+    // FS-TQZ5J § Change: Batch 6, R128)
     if (this.input.keyboard) {
       this.input.keyboard.enabled = false;
     }
@@ -3069,12 +3064,11 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui = reportWorld(this, "run", this.worldSide());
     // Connect via SocketManager
     this.connectToServer();
-    // the chat stream outlives the run; the window is the run's (FS-WJGFJ §C)
-    // the menu reads Enter and Esc, and the run's end takes the keys; the gear overlay and an open chest are up
-    this.chatWindow = mountChatWindow(this, () => this.mayChat());
+    // the chat window is the UI scene's, built as the run is reported; the run's end and an open chest
+    // turn it away in the run's blockers (FS-WJGFJ §C; FS-TQZ5J § Change: Batch 6, R125, R126)
     // T and the party panel are the UI scene's (FS-TQZ5J § Change: Phase 2: the party, R36)
-    // party invites are the UI scene's: hidden only once the run has ended, stacked clear of the chat
-    // window the run reports (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38)
+    // party invites are the UI scene's: hidden only once the run has ended, stacked clear of its chat
+    // window (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2: the party, R38; § Change: Batch 6, R132)
 
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
@@ -3145,9 +3139,14 @@ export class BarrowspireScene extends Phaser.Scene {
   private worldSide(): WorldSide {
     return {
       windows: () => this.windows(),
-      blockers: () => ({ dialogue: false, party: this.refusesParty(), popups: this.runEnded }),
-      // the invite stack stays clear of the chat window (FS-NCC9J R24; FS-TQZ5J § Change: Phase 2, R38)
-      layout: () => ({ chatTop: this.chatWindow?.topEdge() }),
+      // the run's part of who owns Enter and Esc: its end or an open chest (FS-WJGFJ R27; FS-TQZ5J
+      // § Change: Batch 6, R126); the menu and the gear overlay are the UI scene's own
+      blockers: () => ({
+        dialogue: false,
+        party: this.refusesParty(),
+        popups: this.runEnded,
+        chat: this.runEnded || this.containerView.isOpen,
+      }),
       facts: () => this.facts(),
       // the menu opens over no window (FS-3EBCA R17), the gear overlay and the party panel the UI
       // scene's, shut as it opens; it, and a gear panel opening, end a hold, and closing it does not
@@ -3204,15 +3203,6 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private refusesParty(): boolean {
     return this.runEnded || !!this.containerView?.isOpen;
-  }
-
-  /**
-   * Whether the chat input may take focus (FS-WJGFJ R27): not while the menu (FS-3EBCA R18), the
-   * run's end, the UI scene's gear overlay or an open chest owns the keys.
-   */
-  private mayChat(): boolean {
-    const gear = this.ui.ui.inventory || this.ui.ui.character;
-    return !this.menuOpen && !this.runEnded && !gear && !this.containerView.isOpen;
   }
 
   /** What the server sent while the run loaded, to the listeners create has made, in order. */
@@ -3311,7 +3301,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // of it to hand back (`handBackKeyboard`). While chat has focus the field stops every key
     // before Phaser's window listener and the keyboard is off; the check stands in case either moves.
     this.input.keyboard?.on("keydown-M", (event?: KeyboardEvent) => {
-      if (this.menuOpen || event?.repeat || this.chatWindow?.isTyping()) return;
+      if (this.menuOpen || event?.repeat || this.ui.ui.typing) return;
       this.cycleMinimap();
     });
 
@@ -3326,7 +3316,7 @@ export class BarrowspireScene extends Phaser.Scene {
       const at = viewport.toLogical(pointer);
       // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
       // §Change: Map mode icon, D7; FS-TQZ5J § Change: Phase 2: the party, R41)
-      if (this.ui.overUi || this.panelTakes(at.x, at.y)) this.dungeon?.modeIcon?.pointerOut();
+      if (this.ui.overUi) this.dungeon?.modeIcon?.pointerOut();
       else this.dungeon?.modeIcon?.pointerMove(at.x, at.y);
     });
     this.input.on("gameout", () => this.dungeon?.modeIcon?.pointerOut());
@@ -3341,7 +3331,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (this.combat.aiming) return;
       // the HUD is laid out in logical units; Phaser's pointer.x/y are backing px (FS-ZAJMH R15)
       const at = viewport.toLogical(pointer);
-      if (this.panelTakes(at.x, at.y)) return;
+      // a press on the chat window, the corner row or a window is the UI scene's and never reaches the run
+      // (FS-TQZ5J R7, R15; § Change: Phase 3, R59; § Change: Batch 6, R129)
       // a press on the map mode icon is M's, never an attack or a cast (FS-56CKV §Change: Map mode icon, D6);
       // one on the open satchel is the UI scene's, a loot, and never reaches the run (FS-2325V §D.2;
       // FS-TQZ5J § Change: Phase 3, R59)
@@ -3405,19 +3396,6 @@ export class BarrowspireScene extends Phaser.Scene {
         }
       }
     });
-  }
-
-  /**
-   * Whether a press at (x, y), logical units, is a HUD panel's: no attack, no cast, no hold, and
-   * nothing under it takes it, the map mode icon included. One on the UI scene's pieces (the corner
-   * row, the party panel, an invite prompt) never reaches the run: they are above it (FS-TQZ5J R7, R15; § Change: Phase
-   * 2: the party, R40).
-   */
-  private panelTakes(x: number, y: number): boolean {
-    // a press over the gear overlay's panels is the UI scene's: no attack, no cast, no hold; one in the
-    // clear middle band answers as with the overlay closed (FS-HRH2J R8; FS-TQZ5J § Change: Phase 3, R59)
-    // a press on the chat window is the window's: a toggle, the input, or nothing (FS-WJGFJ R31)
-    return this.chatWindow?.covers(x, y) ?? false;
   }
 
   /** The class this player's clicks answer for, lower-cased; a warrior when none is chosen. */
@@ -3891,7 +3869,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const iconStage: ModeIconStage = { graphics: () => this.add.graphics(), text: (words, style) => this.add.text(0, 0, words, style) };
     dungeon.modeIcon = new MinimapModeIcon(iconStage, {
       press: () => this.cycleMinimap(),
-      blocked: () => this.menuOpen || !!this.chatWindow?.isTyping(),
+      // the player typing in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R127)
+      blocked: () => this.menuOpen || !!this.ui.ui.typing,
     });
     // the floor's name on it, the floor card's title (FS-56CKV §Change: Map name, E1)
     if (this.builtFloor !== undefined) {

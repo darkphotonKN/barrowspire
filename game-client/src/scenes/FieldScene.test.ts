@@ -68,6 +68,11 @@ const { AbilityHud } = await import("@/ui/AbilityHud");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { chatWiring } = await import("@/ui/uiSceneChat");
+/** Whether the UI scene's chat may take the keys over the field (FS-TQZ5J § Change: Batch 6, R126). */
+const chatMayOpen = (field: object) => chatWiring(uiSceneOn(field, "field", { row: false }).bridge).mayOpen();
+/** The player typing in the UI scene's chat over the field, or not (FS-TQZ5J § Change: Batch 6, R127). */
+const typeInChat = (field: object, on = true) => uiSceneOn(field, "field", { row: false }).bridge.reportUi({ typing: on });
 const { abilityPlaceOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { equipmentPiece } = await import("@/ui/uiSceneGear");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
@@ -1733,7 +1738,11 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     const store = { held: null as string | null, writes: [] as string[] };
     field.minimapStore = () => ({ getItem: () => store.held, setItem: (_k: string, v: string) => void store.writes.push(v), removeItem: () => {} });
     const keys: Record<string, (event?: Partial<KeyboardEvent>) => void> = {};
-    field.input = { setDefaultCursor: vi.fn(), keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) } };
+    // its keyboard as Phaser's: the UI scene's chat turns it off while typing (FS-TQZ5J § Change: Batch 6, R127)
+    field.input = {
+      setDefaultCursor: vi.fn(),
+      keyboard: { enabled: true, resetKeys: () => {}, on: (name: string, fn: () => void) => void (keys[name] = fn) },
+    };
     (field as unknown as { bindMinimapKey(): void }).bindMinimapKey();
     const pressM = (event: Partial<KeyboardEvent> = {}) => keys["keydown-M"]?.(event);
     const render = (position: { x: number; y: number }, others: unknown[] = []) =>
@@ -1782,7 +1791,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     menuUpOver(field);
     pressM();
     menuUpOver(field, false);
-    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    typeInChat(field);
     pressM();
     expect(heard()).toEqual([]);
   });
@@ -1799,7 +1808,7 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     // a right press on it is its too: no class ability at the corner, and no step
     expect(takes(754, 163, false)).toBe(true);
     expect(map()!.mode).toBe("enlarged");
-    field.chatWindow = { isTyping: () => true, covers: () => false, destroy: vi.fn() };
+    typeInChat(field);
     expect(takes(754, 163)).toBe(true);
     expect(map()!.mode).toBe("enlarged");
     expect(store.writes).toEqual(["enlarged"]);
@@ -1919,10 +1928,10 @@ describe("FieldScene the field's minimap (FS-P0HSP; I-P0HSP-4)", () => {
     expect(store.writes).toEqual([]);
     render({ x: 600, y: 600 });
     pressM({ repeat: true });
-    field.chatWindow = { isTyping: () => true };
+    typeInChat(field);
     pressM();
     expect(store.writes).toEqual([]);
-    field.chatWindow = undefined;
+    typeInChat(field, false);
     pressM();
     pressM();
     pressM();
@@ -2589,7 +2598,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
     input: unknown;
     menu?: unknown;
     equipment?: unknown;
-    mayChat(): boolean;
     bindHudKeys(): void;
   };
 
@@ -2702,14 +2710,14 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
 
   it("should answer no I, B, C or T while the menu is open, and give the chat input no focus (R18)", () => {
     const { field, party, key, open } = fieldWindows();
-    expect(field.mayChat()).toBe(true);
+    expect(chatMayOpen(field)).toBe(true);
     key("ESC");
     key("I");
     key("B");
     key("C");
     party.pressT();
     expect(open()).toEqual(NONE);
-    expect(field.mayChat()).toBe(false);
+    expect(chatMayOpen(field)).toBe(false);
     key("ESC");
     expect(menuOver(field)).toBeUndefined();
   });
@@ -3002,18 +3010,12 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompts are the UI scene's; the field
 // reports what they read of it: never hidden, stacked above its chat window (FS-NCC9J R24; R38)
 describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
-  it("should never hide them, and say its chat window's top edge as the floor", () => {
-    const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide; chatWindow?: unknown };
-    let top = 512;
-    field.chatWindow = { topEdge: () => top };
+  it("should never hide them, nor turn the UI scene's chat away (FS-TQZ5J § Change: Batch 6, R126, R132)", () => {
+    const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide };
     const side = field.worldSide();
 
     expect(side.blockers().popups ?? false).toBe(false);
     expect(side.blockers().party ?? false).toBe(false);
-    expect(side.layout?.().chatTop).toBe(512);
-    top = 498;
-    expect(side.layout?.().chatTop).toBe(498);
-    field.chatWindow = undefined;
-    expect(side.layout?.().chatTop).toBeUndefined();
+    expect(side.blockers().chat ?? false).toBe(false);
   });
 });

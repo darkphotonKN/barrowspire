@@ -37,6 +37,8 @@ import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { UiMailboxSlot } from "@/ui/uiSceneMailbox";
 import { mountMailbox } from "@/ui/mailboxHud";
 import { hudPieces, mountHud } from "@/ui/hudPieces";
+import { UiChatSlot } from "@/ui/uiSceneChat";
+import { mountChat } from "@/ui/chatPiece";
 import { onSceneEnd } from "./sceneEnd";
 
 /**
@@ -112,6 +114,8 @@ export class UIScene extends Phaser.Scene {
   private record?: UiRecordSlot;
   /** The run's controls badge over its ability card (FS-84N1G R3–R8). */
   private badge?: UiControlsBadge;
+  /** The chat window, built for each world (FS-TQZ5J § Change: Batch 6, R125). */
+  private chat?: UiChatSlot;
   /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
   private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
@@ -137,6 +141,7 @@ export class UIScene extends Phaser.Scene {
     });
     this.mountInterface(bridge);
     this.mountMailboxSlot(bridge);
+    this.mountChatSlot(bridge);
     // the ability card, the potion cell and the bars, drawn from what each world hands (§ Change: Batch 5, R67)
     mountHud(this, bridge, hudPieces(this, () => this.residentArt()));
     this.mountKeys();
@@ -284,9 +289,11 @@ export class UIScene extends Phaser.Scene {
       cameras: () => this.cameras.cameras,
       anyDown: () => input.manager.pointers.some((p) => p.isDown),
       world: bridge,
-      // a press on the party panel keeps its invite field (§ Change: Phase 2: the party, R42)
+      // a press on the party panel keeps its invite field (§ Change: Phase 2: the party, R42), and one on
+      // the chat window its own (§ Change: Batch 6, R131)
       letGo: () => {
         if (this.party?.keepsField(pressedAt.x, pressedAt.y)) return;
+        if (this.chat?.keepsField(pressedAt.x, pressedAt.y)) return;
         letGoOfGameField(this.game.canvas?.parentElement, document);
       },
     });
@@ -453,6 +460,25 @@ export class UIScene extends Phaser.Scene {
   }
 
   /**
+   * The chat window (FS-TQZ5J § Change: Batch 6, R125–R132): built on this scene for each world as it is
+   * reported and taken down as it leaves and with the game, after the mailbox, so it is the last of the
+   * 1000s it never meets; a changed report re-reads who owns the keys at once (R128). Its wiring reads the
+   * menu slot, the gear panels and the world's chat blocker, keeps the draft under the world's letter
+   * panel, reports typing in the UI's state, and plays on the game's one player (R126, R127, R134).
+   */
+  private mountChatSlot(bridge: UiBridge): void {
+    const chat = new UiChatSlot(bridge, (wiring) => mountChat(this, wiring));
+    this.chat = chat;
+    chat.show(bridge.world);
+    const stop = bridge.onWorld((report) => chat.show(report));
+    onSceneEnd(this, () => {
+      stop();
+      chat.destroy();
+      this.chat = undefined;
+    });
+  }
+
+  /**
    * The party pieces for `world`, on this scene (FS-TQZ5J § Change: Phase 2: the party, R36): the party
    * panel, refused by the world's report and the menu slot, its opening closing the town's letter
    * panel, its own inputs through the interface sounds (R38, R39); the invite prompt in every world and
@@ -462,7 +488,8 @@ export class UIScene extends Phaser.Scene {
    */
   private partyPieces(bridge: UiBridge, world: World): PartyPieces {
     const wiring = partyPanelWiring(bridge);
-    const prompts = partyPromptWiring(bridge);
+    // the invites stack above this scene's own chat window, in a field and the run (§ Change: Batch 6, R132)
+    const prompts = partyPromptWiring(bridge, () => this.chat?.floor());
     // the party's sounds on the game's one player (FS-WDM0X § Change pass 2 (party))
     const { play } = wiring;
     // a window drawn over the party panel covers its DOM invite field where they meet: the run's controls

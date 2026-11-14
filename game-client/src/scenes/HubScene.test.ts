@@ -103,6 +103,9 @@ const { PartyPanel } = await import("@/ui/PartyPanel");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, mailboxOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { chatWiring } = await import("@/ui/uiSceneChat");
+/** Whether the UI scene's chat may take the keys over the town (FS-TQZ5J § Change: Batch 6, R126). */
+const chatMayOpen = (hub: object) => chatWiring(uiSceneOn(hub, "hub", { row: false }).bridge).mayOpen();
 const { hubGearPiece } = await import("@/ui/uiSceneGear");
 const { NO_UI } = await import("@/ui/uiBridge");
 const { reportWorld } = await import("@/ui/uiBridge");
@@ -2574,7 +2577,7 @@ describe("ESC menu by keyboard (reported 2026-10-29)", () => {
     const { hub, keys, press } = hubOnStage();
     press(keys.esc);
 
-    expect((hub as unknown as { mayChat(): boolean }).mayChat()).toBe(false);
+    expect(chatMayOpen(hub)).toBe(false);
   });
 });
 
@@ -2798,7 +2801,6 @@ describe("HubScene the party popups under the letter panel (FS-1GZGD R40; FS-R82
     hub.mailbox = { isOpen: () => letters, close: vi.fn() };
     const side = (hub.worldSide as () => import("@/ui/uiBridge").WorldSide)();
     const covered = () => side.blockers().popups;
-    expect(side.layout).toBeUndefined();
 
     expect(covered()).toBe(false);
     letters = true;
@@ -5254,7 +5256,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     const pointers: Record<string, (pointer?: { x: number; y: number; button?: number }) => void> = {};
     hub.input = {
       setDefaultCursor: vi.fn(),
-      keyboard: { on: (name: string, fn: () => void) => void (keys[name] = fn) },
+      // the town's keyboard as Phaser's: the UI scene's chat turns it off while typing (FS-TQZ5J § Change: Batch 6, R127)
+      keyboard: { enabled: true, resetKeys: () => {}, on: (name: string, fn: () => void) => void (keys[name] = fn) },
       on: (name: string, fn: () => void) => void (pointers[name] = fn),
     };
     (hub as unknown as { bindMinimapKey(): void }).bindMinimapKey();
@@ -5302,7 +5305,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
   type Arrange = (hub: Record<string, unknown>) => void;
   const GUARDS: [string, Arrange, Partial<KeyboardEvent>][] = [
     ["a held key's repeat", () => {}, { repeat: true }],
-    ["chat typing", (hub) => void (hub.chatWindow = { isTyping: () => true }), {}],
+    // the player typing in the UI scene's chat (FS-TQZ5J § Change: Batch 6, R127)
+    ["chat typing", (hub) => uiSceneOn(hub, "hub", { row: false }).bridge.reportUi({ typing: true }), {}],
     ["the menu panel up", (hub) => menuUpOver(hub), {}],
     ["a dialogue card up", (hub) => void (hub.dialogue = {}), {}],
     ["the letter panel open", (hub) => void (hub.mailbox = { isOpen: () => true }), {}],
@@ -5618,7 +5622,6 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
   type Windowed = {
     mailbox?: unknown;
     closeLetter(): void;
-    mayChat(): boolean;
   };
   function town() {
     const env = hubOnStage();
@@ -5820,9 +5823,9 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
 
     it("should give the chat input no focus", () => {
       const t = town();
-      expect(t.hub.mayChat()).toBe(true);
+      expect(chatMayOpen(t.hub)).toBe(true);
       t.press(t.keys.esc);
-      expect(t.hub.mayChat()).toBe(false);
+      expect(chatMayOpen(t.hub)).toBe(false);
     });
 
     it("should still close on Esc", () => {

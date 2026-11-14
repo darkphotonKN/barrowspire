@@ -1,7 +1,17 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { GameUiBridge, NO_FACTS, type World, type WorldBlockers, type WorldReport, type WorldWindows } from "./uiBridge";
+import { EventEmitter } from "eventemitter3";
+import {
+  GameUiBridge,
+  NO_FACTS,
+  lendUiBridge,
+  reportWorld,
+  type World,
+  type WorldBlockers,
+  type WorldReport,
+  type WorldWindows,
+} from "./uiBridge";
 import { UiChatSlot, type ChatPiece, type ChatWiring } from "./uiSceneChat";
 
 // FS-TQZ5J § Change: Batch 6, R125–R132: the chat window is the UI scene's, built as each world is reported
@@ -167,6 +177,44 @@ describe("the player typing, in the UI's state (FS-TQZ5J § Change: Batch 6, R12
     report(aWorld("hub"));
     built[0].wiring.play("menu_tab");
     expect(played).toEqual(["menu_tab"]);
+  });
+});
+
+describe("the run's end while the player types (FS-TQZ5J § Change: Batch 6, R128)", () => {
+  it("should cancel the line and hand the run its keyboard inside the run's change, before the run turns it off", () => {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    // the window as ChatWindow is: re-reading who owns the keys, and saying the player stopped typing
+    let typing = false;
+    const slot = new UiChatSlot(bridge, (wiring) => ({
+      keepsField: () => false,
+      topEdge: () => 468,
+      sync: () => {
+        if (typing && !wiring.mayOpen()) wiring.typing((typing = false));
+      },
+      destroy: () => {},
+    }));
+    bridge.onWorld((report) => slot.show(report));
+    const keyboard = { enabled: true, resetKeys: () => {} };
+    let ended = false;
+    reportWorld({ registry, events: new EventEmitter(), input: { keyboard } }, "run", {
+      windows: () => ({ letter: false }),
+      blockers: () => ({ dialogue: false, chat: ended }),
+      facts: () => NO_FACTS,
+      answer: () => {},
+    });
+    bridge.reportUi({ typing: (typing = true) });
+    expect(keyboard.enabled).toBe(false);
+
+    // the run's endRun: its end set, its change told, then its keyboard switched off for good
+    ended = true;
+    bridge.changed();
+    expect([typing, keyboard.enabled]).toEqual([false, true]);
+    keyboard.enabled = false;
+    bridge.reportUi({ typing: false });
+    expect(keyboard.enabled).toBe(false);
   });
 });
 

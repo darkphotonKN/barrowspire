@@ -728,12 +728,14 @@ describe("ChatWindow input (C26: Enter opens, Enter sends)", () => {
     expect(field().focused).toBe(false);
   });
 
-  it("should drop the draft and close when cancelled", () => {
-    const { press, field, window, keys } = inputRig();
+  it("should drop the draft and close when the keys are taken (the run's end, FS-TQZ5J § Change: Batch 6, R128)", () => {
+    let may = true;
+    const { press, field, window, keys } = inputRig(() => may);
     press("ENTER");
     field().value = "half";
 
-    window.cancelInput();
+    may = false;
+    window.sync();
 
     expect(field().value).toBe("");
     expect(window.isTyping()).toBe(false);
