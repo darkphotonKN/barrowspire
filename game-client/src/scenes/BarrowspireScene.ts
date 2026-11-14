@@ -125,7 +125,7 @@ import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
-import { scenePointerLook, type PointerLook } from "@/render/cursors";
+import { ensurePointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
@@ -3186,7 +3186,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * click point is unchanged; with no manifest or sheet the browser's `default`/`crosshair` applies.
    */
   private setupCustomCursor(): void {
-    this.pointerLook = scenePointerLook(this, this.art);
+    this.pointerLook = ensurePointerLook(this, this.art);
     this.pointerLook?.base("hand");
   }
 

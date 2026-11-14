@@ -180,20 +180,28 @@ export function pointerLookOf(game: LookGame, cursors: () => PointerCursors, pag
 }
 
 /**
- * A scene's look. A scene with the art (the menus and the worlds, after PreloadScene's resident
- * `fx-0`) makes it if it is not made yet, its cursors cropped from that art; one without (the
- * disconnect notice, a world's stop) only finds it. No game or no page, no look: a scene
- * stand-in.
+ * A scene's pointer look, made if it is not made yet: for a scene with the art (the menus and the
+ * worlds, after PreloadScene's resident `fx-0`), its cursors cropped from that art. No game or no
+ * page, no pointer look: a scene stand-in.
  */
-export function scenePointerLook(
+export function ensurePointerLook(
   scene: { game?: LookGame; textures: CursorTextures },
-  art?: Pick<ArtLibrary, "sheet">,
+  art: Pick<ArtLibrary, "sheet">,
 ): PointerLook | undefined {
   const game = scene.game;
   if (!game?.registry) return undefined;
-  if (!art || typeof window === "undefined") return lentPointerLook(game.registry);
+  if (typeof window === "undefined") return lentPointerLook(game.registry);
   return pointerLookOf(game, () => bakedCursors(cursorSource(art, scene.textures)), {
     window,
     document,
   });
+}
+
+/**
+ * A scene's pointer look if the game has one, never made here: for a scene without the art (the
+ * disconnect notice, a world's stop).
+ */
+export function findPointerLook(scene: { game?: LookGame }): PointerLook | undefined {
+  const game = scene.game;
+  return game?.registry ? lentPointerLook(game.registry) : undefined;
 }

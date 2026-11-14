@@ -7,4 +7,4 @@ export {
   type CursorSource,
   type CursorTextures,
 } from "./cursors";
-export { scenePointerLook, type PointerBase, type PointerLook } from "./pointerLook";
+export { ensurePointerLook, findPointerLook, type PointerBase, type PointerLook } from "./pointerLook";

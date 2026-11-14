@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { ArtManifest } from "@/render/art/manifest";
 import type { CursorSource } from "./cursors";
-import { bakedCursors, scenePointerLook } from "./pointerLook";
+import { bakedCursors, ensurePointerLook, findPointerLook } from "./pointerLook";
 import { STAND_IN_CURSORS, lookGame, pointerEvent } from "./pointerLook.standin";
 
 // FS-KYPQ9 § Change: The pressed hand, and the hand on the menus. The owner, 2026-11-14: 「Ａ」 the
@@ -222,12 +222,12 @@ describe("the baked cursors as the look shows them (FS-KYPQ9 § Change: The pres
 describe("a scene's pointer look (FS-KYPQ9 § Change: The pressed hand, P7)", () => {
   const textures = { getBase64: () => "" };
 
-  it("should find the game's look for a scene without the art, and make none", () => {
+  it("should find the game's pointer look for a scene without the art, and make none", () => {
     const page = lookGame();
-    expect(scenePointerLook({ game: page.game, textures })).toBeUndefined();
+    expect(findPointerLook({ game: page.game })).toBeUndefined();
 
     const look = page.look();
-    expect(scenePointerLook({ game: page.game, textures })).toBe(look);
+    expect(findPointerLook({ game: page.game })).toBe(look);
   });
 
   it("should make the game's look from a scene with the art, its cursors cropped from that art", () => {
@@ -240,7 +240,7 @@ describe("a scene's pointer look (FS-KYPQ9 § Change: The pressed hand, P7)", ()
       );
       const scene = { game: page.game, textures: { getBase64: (_key: string, frame?: string | number) => `data:${frame}` } };
 
-      const look = scenePointerLook(scene, { sheet: (name) => baked.sheets[name] });
+      const look = ensurePointerLook(scene, { sheet: (name) => baked.sheets[name] });
       look?.base("hand");
       expect(page.now()).toBe("url(data:cursor_hand/default/0/0) 6 1, default");
       window.dispatchEvent(pointerEvent("pointerup", LEFT, 0));
@@ -248,14 +248,16 @@ describe("a scene's pointer look (FS-KYPQ9 § Change: The pressed hand, P7)", ()
       expect(page.now()).toBe("url(data:cursor_hand_pressed/default/0/0) 6 1, default");
       window.dispatchEvent(pointerEvent("pointerup", LEFT, 0));
       expect(page.now()).toBe("url(data:cursor_hand/default/0/0) 6 1, default");
-      expect(scenePointerLook({ game: page.game, textures })).toBe(look);
+      expect(findPointerLook({ game: page.game })).toBe(look);
+      expect(ensurePointerLook(scene, { sheet: () => undefined })).toBe(look);
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("should give a scene with no game no look (a stand-in)", () => {
-    expect(scenePointerLook({ textures }, { sheet: () => undefined })).toBeUndefined();
+  it("should give a scene with no game no pointer look (a stand-in)", () => {
+    expect(ensurePointerLook({ textures }, { sheet: () => undefined })).toBeUndefined();
+    expect(findPointerLook({})).toBeUndefined();
   });
 });
 
@@ -286,7 +288,7 @@ describe("the look is the canvas cursor's one writer (FS-KYPQ9 § Change: The pr
   it.each(["scenes/MainMenuScene.ts", "scenes/CharacterCreationScene.ts", "scenes/HubScene.ts"])(
     "should have %s ask the look for the hand with its art",
     (file) => {
-      expect(read(file)).toMatch(/scenePointerLook\(this, this\.art\)\?\.base\("hand"\)/);
+      expect(read(file)).toMatch(/ensurePointerLook\(this, this\.art\)\?\.base\("hand"\)/);
     },
   );
 });

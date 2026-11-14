@@ -18,7 +18,7 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
-import { scenePointerLook } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
 import { viewport } from "@/render/viewport";
 
@@ -200,7 +200,7 @@ export function fieldCombatOnScene(
   const kit = new ClassKitFx(scene);
   // the game's one pointer: the hand, pressed under a held left button, the strike-mark over a
   // monster (FS-KYPQ9 §H.2, § Change: The pressed hand)
-  const pointer = scenePointerLook(scene, art);
+  const pointer = ensurePointerLook(scene, art);
   pointer?.base("hand");
 
   // the world point under the cursor now, wherever the camera has moved since it last moved

@@ -63,7 +63,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { folkLook } from "@/render/art/hubFolk";
 import { AMBIENT, LightMap, type LightSource } from "@/render/lighting";
-import { scenePointerLook } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 // the effects module has no barrel: its runtime and smoke are imported by path
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { ChimneySmoke } from "@/render/effects/smoke";
@@ -850,7 +850,7 @@ export class HubScene extends Phaser.Scene {
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3), pressed under a held left
     // button (§ Change: The pressed hand); the browser's `default` without its sheet. Nothing
     // hostile here, so no strike-mark.
-    scenePointerLook(this, this.art)?.base("hand");
+    ensurePointerLook(this, this.art)?.base("hand");
 
     // Baked ground with dirt paths when the manifest has it (FS-2325V §C.1), running on past
     // the edge at the gates and fading into the dark there (FS-0XMCP R18).

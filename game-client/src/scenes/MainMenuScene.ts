@@ -17,7 +17,7 @@ import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { CLASS_LORE } from "@/data/classLore";
 import { preloadArt, registerArt } from "@/render/art/phaser";
-import { scenePointerLook } from "@/render/cursors";
+import { ensurePointerLook } from "@/render/cursors";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { NO_WINDOWS, UiSounds, sceneUiSoundStage } from "@/audio/uiSounds";
 import { confirmDeletion } from "./deleteConfirm";
@@ -180,7 +180,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.art = registerArt(this, SCENE_ART.MainMenuScene);
     // the bone hand, pressed under a held left button, as in the worlds: the pointer is the game's
     // on the Bone & Soot menus too (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
-    scenePointerLook(this, this.art)?.base("hand");
+    ensurePointerLook(this, this.art)?.base("hand");
     const width = STAGE_WIDTH;
     const height = LOGICAL_HEIGHT;
 
