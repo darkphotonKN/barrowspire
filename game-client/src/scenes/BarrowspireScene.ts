@@ -125,7 +125,7 @@ import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
-import { ensurePointerLook, type PointerLook } from "@/render/cursors";
+import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
@@ -1131,6 +1131,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // on a stop the keyboard is handed back, by the keys still held here; either way the next
     // run's create binds its keys afresh
     if (end === "shutdown") this.handBackKeyboard();
+    // a monster's strike-mark is the run's; the hand stays, for the menus wear it too (FS-KYPQ9
+    // § Change: The pressed hand, and the hand on the menus, P7)
+    if (end === "shutdown") findPointerLook(this)?.base("hand");
     this.tabKey = undefined;
     this.progressHud = undefined;
     this.resourceHud = undefined;
