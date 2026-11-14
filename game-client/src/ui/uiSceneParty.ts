@@ -13,7 +13,7 @@
  * scene's act (R22).
  */
 
-import type { UiActWrapper } from "@/audio/uiSounds";
+import type { UiActWrapper, UiEffect } from "@/audio/uiSounds";
 import type { SeenState } from "./partyFramesLayout";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
 
@@ -45,7 +45,10 @@ export interface PartyPieces {
   rest?: readonly PartyPiece[];
 }
 
-/** What the party panel is built with in a world (R38, R39): its refusal, its opening, its wrapper. */
+/**
+ * What the party panel is built with in a world (R38, R39): its refusal, its opening, its wrapper, its
+ * buttons' sounds. `mountPartyPanel` takes it whole.
+ */
 export interface PartyPanelWiring {
   /** Refused while the menu slot is filled, the world turns it away, or no world is reported. */
   blocked: () => boolean;
@@ -53,6 +56,8 @@ export interface PartyPanelWiring {
   opening: () => void;
   /** The UI scene's act, its own inputs' sounds (FS-WDM0X S9). */
   wrapper: UiActWrapper;
+  /** The game's one player, its buttons' hover, press and greyed press (FS-WDM0X § Change pass 2 (party), P5–P7). */
+  play: (effect: UiEffect) => void;
 }
 
 /** What the invite prompt and the ready check are built with in a world (R38): when they hide, where they stop. */
@@ -75,7 +80,7 @@ export function partyPromptWiring(bridge: Pick<UiBridge, "world">): PartyPromptW
 }
 
 /** What of the bridge the panel's wiring reads, asks and plays through. */
-export type PartyBridge = Pick<UiBridge, "world" | "ui" | "request" | "act">;
+export type PartyBridge = Pick<UiBridge, "world" | "ui" | "request" | "act" | "play">;
 
 /**
  * The party panel's wiring in any world (R38, R39). Its opening asks the world reported to close its
@@ -90,6 +95,7 @@ export function partyPanelWiring(bridge: PartyBridge): PartyPanelWiring {
     },
     opening: () => bridge.request({ kind: "close", window: "letter" }),
     wrapper: { act: (run) => bridge.act(run) },
+    play: (effect) => bridge.play(effect),
   };
 }
 

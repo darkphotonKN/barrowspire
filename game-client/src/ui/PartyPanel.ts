@@ -88,16 +88,18 @@ export interface PartyPanelDeps {
 }
 
 /**
- * The panel as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party,
- * the real socket and DOM field, its ground under its buttons.
+ * What the world and the UI scene wire the panel with (FS-TQZ5J § Change: Phase 2: the party, R38,
+ * R39): its refusal, what gives way as it opens, its own inputs' wrapper, its buttons' sounds. The
+ * UI scene's `partyPanelWiring` is one.
  */
-export function mountPartyPanel(
-  scene: Phaser.Scene,
-  blocked: () => boolean,
-  opening?: () => void,
-  wrapper?: UiActWrapper,
-  play?: (effect: UiEffect) => void,
-): PartyPanel {
+export type PartyPanelWiring = Pick<PartyPanelDeps, "blocked" | "opening" | "wrapper" | "play">;
+
+/**
+ * The panel as the UI scene hangs it (FS-TQZ5J § Change: Phase 2: the party, R36): the app's party,
+ * the real socket and DOM field, its ground under its buttons, wired by `wiring`.
+ */
+export function mountPartyPanel(scene: Phaser.Scene, wiring: PartyPanelWiring): PartyPanel {
+  const { blocked, opening, wrapper, play } = wiring;
   return new PartyPanel(scene, {
     store: usePartyStore,
     world: () => useGameStore.getState().worldType,
@@ -156,6 +158,21 @@ export function hudButtonSounds(play: (effect: UiEffect) => void): HudButtonFeed
   };
 }
 
+/** One HUD button as {@link drawHudButton} draws it. */
+export interface HudButton {
+  /** Where it stands, logical units. */
+  readonly rect: Rect;
+  readonly label: string;
+  /** Whether the viewer may press it now: amber and live, or faint and inert. */
+  readonly enabled: boolean;
+  /** What its press does, live. */
+  readonly press: () => void;
+  /** Its label's depth; the HUD's (1000) without one. */
+  readonly depth?: number;
+  /** What it tells of the player's hand: its sounds (P5–P7). None, and it tells nothing. */
+  readonly feedback?: HudButtonFeedback;
+}
+
 /**
  * A brass-outlined HUD button, outlined on g: amber words when the viewer may press it, faint and
  * inert when not (amber means interactable, never otherwise). Given a `refused`, a greyed one takes
@@ -171,13 +188,9 @@ export function hudButtonSounds(play: (effect: UiEffect) => void): HudButtonFeed
 export function drawHudButton(
   scene: Phaser.Scene,
   g: Phaser.GameObjects.Graphics,
-  r: Rect,
-  label: string,
-  enabled: boolean,
-  press: () => void,
-  depth = HUD_DEPTH,
-  feedback: HudButtonFeedback = {},
+  button: HudButton,
 ): Phaser.GameObjects.Text {
+  const { rect: r, label, enabled, press, depth = HUD_DEPTH, feedback = {} } = button;
   g.lineStyle(1, palette.frame, enabled ? 0.8 : 0.3);
   g.strokeRoundedRect(r.x + 0.5, r.y + 0.5, r.width - 1, r.height - 1, 3);
   const t = scene.add
@@ -408,16 +421,14 @@ export class PartyPanel {
   ): void {
     const { play } = this.deps;
     this.texts.push(
-      drawHudButton(
-        this.scene,
-        g,
-        r,
+      drawHudButton(this.scene, g, {
+        rect: r,
         label,
         enabled,
         press,
-        PARTY_PANEL_DEPTH,
-        play ? hudButtonSounds(play) : {},
-      ),
+        depth: PARTY_PANEL_DEPTH,
+        feedback: play ? hudButtonSounds(play) : {},
+      }),
     );
   }
 

@@ -53,10 +53,17 @@ const partyMounts = vi.hoisted(
 vi.mock("@/ui/PartyPanel", () => ({
   mountPartyPanel: (
     _scene: unknown,
-    blocked: () => boolean,
-    opening?: () => void,
-    wrapper?: { act(run: () => void): void },
-    play?: (effect: string) => void,
+    {
+      blocked,
+      opening,
+      wrapper,
+      play,
+    }: {
+      blocked: () => boolean;
+      opening?: () => void;
+      wrapper?: { act(run: () => void): void };
+      play?: (effect: string) => void;
+    },
   ) => {
     const panel = { blocked, opening, wrapper, open: false, destroyed: false, keeps: false, play };
     partyMounts.push(panel);

@@ -330,16 +330,14 @@ export class PartyFrames {
     const at = this.leaderRow();
     if (this.travel === "hidden" || at < 0) return;
     this.names.push(
-      drawHudButton(
-        this.scene,
-        g,
-        partyTravelButtonRect(this.rects[at]),
-        TRAVEL_LABEL,
-        this.travel === "live",
-        () => this.deps.travel(),
-        HUD_DEPTH,
-        this.deps.play ? hudButtonSounds(this.deps.play) : {},
-      ),
+      drawHudButton(this.scene, g, {
+        rect: partyTravelButtonRect(this.rects[at]),
+        label: TRAVEL_LABEL,
+        enabled: this.travel === "live",
+        press: () => this.deps.travel(),
+        depth: HUD_DEPTH,
+        feedback: this.deps.play ? hudButtonSounds(this.deps.play) : {},
+      }),
     );
   }
 

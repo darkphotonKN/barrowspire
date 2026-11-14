@@ -17,7 +17,6 @@ import { mountPartyFrames } from "@/ui/PartyFrames";
 import { registerArt } from "@/render/art/phaser";
 import { RESIDENT_ART } from "@/render/art/sceneArt";
 import type { ArtLibrary, FrameQuery } from "@/render/art/library";
-import type { UiEffect } from "@/audio/uiSounds";
 import { uiBridgeOf, type UiBridge, type World } from "@/ui/uiBridge";
 import { UiCornerRow } from "@/ui/uiSceneCorner";
 import { UiDialogueSlot, handKeys } from "@/ui/uiSceneDialogue";
@@ -257,8 +256,8 @@ export class UIScene extends Phaser.Scene {
     const wiring = partyPanelWiring(bridge);
     const prompts = partyPromptWiring(bridge);
     // the party's sounds on the game's one player (FS-WDM0X § Change pass 2 (party))
-    const play = (effect: UiEffect) => bridge.play(effect);
-    const panel = mountPartyPanel(this, wiring.blocked, wiring.opening, wiring.wrapper, play);
+    const { play } = wiring;
+    const panel = mountPartyPanel(this, wiring);
     const prompt = mountPartyInvitePrompt(this, prompts.hidden, prompts.floor, play);
     const popups = world === "hub" ? [prompt, mountPartyReadyCheck(this, prompts.hidden, play)] : [prompt];
     const art = { resolve: (sheet: string, query?: FrameQuery) => this.residentArt().resolve(sheet, query) };
