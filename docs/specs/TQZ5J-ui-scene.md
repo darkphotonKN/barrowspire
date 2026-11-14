@@ -917,3 +917,67 @@ R47 in `BarrowspireScene.endPopsUp` (the one place E1 chimes): `dialog_open`, th
 rerun on the result: 186 of 186 pixel-equal, and R46's depth cases differ exactly as shot before (the
 letter panel's 2700 px included). The earlier sets (corner, menu, dialogue, notices) were not rerun:
 none of these changes draws or moves anything of theirs.
+
+### Note 2026-11-14: which interface goes where (ADR-0083)
+
+Appended after B1; the text above is not edited. It belongs to no one phase: it records where each
+of today's pieces stands under [ADR-0083](../adr/0083-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md)
+(owner, 2026-11-14: 「ok」; the frames rule 「任何ui都優先隊友列表」), so each later `## Change:`
+here starts from it. It is a record, not a requirement: each phase's own section names what it moves.
+The rule numbers are ADR-0083's (UI 1.1–1.3, world 2.1–2.3). Names and depths read on
+feat/client-ui-scene, 65e9a42c.
+
+| Class | Piece | Code | Depth today | Worlds |
+|---|---|---|---|---|
+| **Moved** | the corner row | `HudCorner` via `UiCornerRow` | 1000 | all |
+| | the ESC menu, OPTIONS and the run's Fall confirm | `menuPanel`, `optionsPanel`, `UiMenuSlot` | 1999 blocker, 2000, 2001 | all |
+| | the NPC dialogue card | `npcDialogue`, `UiDialogueSlot` | 2000 | town |
+| | the notices: the town's and the field's line, the run's notifications | `uiSceneNotices` | 1000; 2000 | all |
+| | the party panel and its invite field | `PartyPanel`, `partyInviteField` (DOM) | 1110; 1000 | all |
+| | the invite prompt | `PartyInvitePrompt` | 1000 | all |
+| | the ready check | `PartyReadyCheck` | 1000 | town |
+| | the party frames with Travel | `PartyFrames` | 1000 | all |
+| **Phase 3** | the gear overlay: inventory, character panel, stash | `GearOverlay` | 1100–1103; tips 2200; flash 2300 | all |
+| | the container view (its coffer, satchel and bone heap faces) | `ContainerView` | 1000 | field, run |
+| | the settlement record | `SettlementRecord` | 1600–1601 | run |
+| **Later** | the minimap, its map mode icon and name | `minimap`, `minimapModeIcon`, `minimapName` | 1000 (overlay 920); 1001–1002; 1001 | all |
+| | the mailbox: the envelope and the letter panel | `MailboxEnvelope`, `LetterPanel` | 1000; 1800, tip 2200 | town |
+| | the ability and potion bars | `AbilityHud`, `PotionHud` | 1000 | field and run; run |
+| | the target frame | `targetFrame` | 1000 | run |
+| | chat | `ChatWindow`, `chatInputField` | 1000–1002 | all |
+| | the ResourceHud and ProgressHud bars | `ResourceHud`, `ProgressHud` | 1000 | field and run; town and run |
+| | the ArrivalCard | `arrivalCard` | 960–961 | all |
+| **Stays in the world** | name plates and monster health bars | `render/markers` (`MARKER_DEPTH`) | 950, 951 | all |
+| | the function markers (a function NPC's or the stash's plate and sigil) | `render/markers/npc`, the town | 950 | town |
+| | damage numbers | none drawn today (a hit is a tint, `render/effects/hit`) | | |
+| | the open bar of a timed open, over its container | `ui/openBar`, the run | 951 | run |
+| | interact prompts over objects | none drawn today | | |
+| | the resolved card ("The barrow keeps you") | the run's `resolvedCard` | 1500 | run |
+| | WATCH THE DELVE and LEAVE THE BARROW | the run's buttons | 1000 | run |
+| | FallenCountdown | `fieldFallen`, the field | 1000 | field |
+| | the controls panel | the run's `controlsPanel` | 1200 | run |
+| | fog, darkness, aim lines | `render/world/fog`, `blackout`, `render/lighting/LightMap`, `render/effects/aimLine` | 500; 500; 135–136; 940 | fog: run; blackout: town, run; light-map: all; aim line: with the class kit's effects |
+
+Corrections to the table as drafted, each from the code:
+
+- **The coffer timed-open bar** is the open bar of any timed open, drawn over the shut container
+  the player stands at (FS-MQYEX §D), not the coffer's alone. The coffer is one of the container
+  view's three faces.
+- **Interact prompts over objects** and **damage numbers** are not drawn today. They stay in the
+  table as the rule's examples (2.1) for when they come. What is drawn over objects today is the
+  function markers, added to the table.
+- **Notices** are not all at 2000: the town's and the field's line stand at 1000 (over the corner
+  row by being added after it, A2 R28), the run's notifications at 2000.
+- **The container view** is at 1000, not in the windows' 1100–1800 band.
+
+**The frames rule, against the code.** The frames are not yet lowest in the UI scene: they share
+1000 with the corner row, the invite prompt, the ready check, the invite field and the notice line,
+drawn in the order added (each world's corner row is built before its party pieces). Phase 3 puts
+them under every other UI piece, puts the container view over them in the windows' band, and gives
+each moved window a ground of its own (`uiGround`, as R40), so that the frames sit under every window
+and a press, hover or wheel there passes through to neither Travel nor the world. That is phase 3's
+acceptance criterion by ADR-0083, and it ends B1's transitional edge state.
+
+**Open under the overlap rule.** The run's controls panel stays in the world (2.3) but meets the
+party panel today (R46, As built), and nothing in the run avoids it. It needs an avoidance or a move;
+this note does not choose.
