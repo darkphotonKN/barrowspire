@@ -26,13 +26,10 @@ import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPieces } fr
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { UiGearSlot, type GearKey } from "@/ui/uiSceneGear";
 import { mountGearPieces } from "@/ui/gearPieces";
-import { UiControlsSlot, UiRecordSlot, type ControlsPiece } from "@/ui/uiSceneRecord";
+import { UiControlsSlot, UiRecordSlot } from "@/ui/uiSceneRecord";
 import { SettlementRecord } from "@/ui/SettlementRecord";
-import { CONTROLS_PANEL_DEPTH, controlRows, controlsPanelRect, drawControlsPanel } from "@/ui/controlsPanel";
+import { mountControlsPiece } from "@/ui/controlsPiece";
 import { recordAnchor } from "@/ui/resolvedRow";
-import { uiGround } from "@/ui/uiGround";
-import { crispen } from "@/render/viewport";
-import { useGameStore } from "@/stores/gameStore";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
 
@@ -315,7 +312,7 @@ export class UIScene extends Phaser.Scene {
       (anchor, onClose, onHovered) => new SettlementRecord(this, anchor, onClose, onHovered),
       () => recordAnchor(viewport),
     );
-    const controls = new UiControlsSlot(bridge, () => this.controlsPiece());
+    const controls = new UiControlsSlot(bridge, () => mountControlsPiece(this));
     this.controls = controls;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
@@ -398,32 +395,6 @@ export class UIScene extends Phaser.Scene {
     const art = { resolve: (sheet: string, query?: FrameQuery) => this.residentArt().resolve(sheet, query) };
     const frames = mountPartyFrames(this, art, play);
     return { panel, rest: [...popups, frames] };
-  }
-
-  /**
-   * The run's controls panel, drawn as the run drew it at the view's centre, the active character's
-   * ability named, with a ground over its rect at its depth (§ Change: Phase 3, R59, R61); back to the
-   * centre on a new view, its text rasterised again.
-   */
-  private controlsPiece(): ControlsPiece {
-    const className = (useGameStore.getState().getActiveCharacter()?.className || "warrior").toLowerCase();
-    const centre = () => ({ x: viewport.centerX, y: viewport.centerY });
-    const panel = drawControlsPanel(this, centre(), className);
-    const rows = controlRows(className).length;
-    const ground = uiGround(this, CONTROLS_PANEL_DEPTH);
-    let hit = ground(controlsPanelRect(centre(), rows));
-    return {
-      relayout: () => {
-        panel.setPosition(viewport.centerX, viewport.centerY);
-        crispen([panel]);
-        hit.destroy();
-        hit = ground(controlsPanelRect(centre(), rows));
-      },
-      destroy: () => {
-        panel.destroy();
-        hit.destroy();
-      },
-    };
   }
 
   /**
