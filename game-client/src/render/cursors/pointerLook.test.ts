@@ -153,7 +153,11 @@ describe("the pointer look (FS-KYPQ9 § Change: The pressed hand, P4–P6)", () 
 });
 
 describe("one pointer look per game (FS-KYPQ9 § Change: The pressed hand, P6, P10)", () => {
-  it("should give every ask the same look, its cursors made once, its listeners added once", () => {
+  // the one set of listeners the pointer look watches the page with: the canvas's press and chord,
+  // the window's release, chord, cancel and blur, the document's hidden tab
+  const ONE_SET = 7;
+
+  it("should give every ask the same pointer look, its cursors made once, its listeners added once", () => {
     const page = lookGame();
     const cursors = vi.fn(() => STAND_IN_CURSORS);
     const { pointerLookOf } = page;
@@ -162,17 +166,19 @@ describe("one pointer look per game (FS-KYPQ9 § Change: The pressed hand, P6, P
 
     expect(second).toBe(first);
     expect(cursors).toHaveBeenCalledTimes(1);
+    expect(page.listeners()).toEqual({ added: ONE_SET, removed: 0 });
     first.base("hand");
     page.press();
     expect(page.shown).toEqual(["hand", "hand pressed"]);
   });
 
-  it("should take its listeners off and write nothing more once the game is destroyed", () => {
+  it("should take every listener off and write nothing more once the game is destroyed", () => {
     const page = lookGame();
     const look = page.look();
     look.base("hand");
 
     page.destroy();
+    expect(page.listeners()).toEqual({ added: ONE_SET, removed: ONE_SET });
     page.press();
     look.base("strike");
 
