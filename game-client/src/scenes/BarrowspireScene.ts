@@ -3287,11 +3287,11 @@ export class BarrowspireScene extends Phaser.Scene {
         // the gear overlay's wear and take off, sent as the run has always sent them (§ Change: Phase 3, R54)
         equip: (item) => socketManager.sendMessage(ActionType.Equip, { item_entity_id: item }),
         unequip: (item) => socketManager.sendMessage(ActionType.Unequip, { item_entity_id: item }),
-        // a take from the open satchel: the view has hidden it and marked its loot pending; tell the
-        // server, and hold it in the bag optimistically
         // Burn tome?'s Burn: the one interact for the altar (FS-3103M R25)
         burn: (altar) => socketManager.sendMessage(ActionType.Interact, { entity_id: altar }),
-        // it sounds as it is sent (FS-AND39 R7); a full bag's take never reaches here
+        // a take from the open satchel: the view has hidden it and marked its loot pending; tell the
+        // server, and hold it in the bag optimistically; it sounds as it is sent (FS-AND39 R7); a full
+        // bag's take never reaches here
         take: (item) => {
           const { action, payload } = lootMessage(item);
           socketManager.sendMessage(action, payload);

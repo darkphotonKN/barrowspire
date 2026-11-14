@@ -349,12 +349,6 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * What the field reports with its name (FS-TQZ5J R9, R11): its windows as they are when read, no
-   * dialogue, and its answers to the UI scene's requests. The corner row's presses come as these
-   * (R14): Menu the menu's path, Inventory and Character I's and C's, Party T's, each under its own
-   * refusals.
-   */
-  /**
    * The gameplay effects' player (FS-AND39 R13, R16): on the interface effects' stage and the same kept
    * level, for the world's own plays. The coffer opens and the gear moves are the UI scene's, which
    * plays them (FS-TQZ5J § Change: Merge with main, 2026-11-14).
@@ -363,6 +357,12 @@ export class FieldScene extends Phaser.Scene {
     this.gameplaySounds = new GameplaySounds(sceneUiSoundStage(this), browserSfxStore);
   }
 
+  /**
+   * What the field reports with its name (FS-TQZ5J R9, R11): its windows as they are when read, no
+   * dialogue, and its answers to the UI scene's requests. The corner row's presses come as these
+   * (R14): Menu the menu's path, Inventory and Character I's and C's, Party T's, each under its own
+   * refusals.
+   */
   private worldSide(): WorldSide {
     return {
       windows: () => this.windows(),
