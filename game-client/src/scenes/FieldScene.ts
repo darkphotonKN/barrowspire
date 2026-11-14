@@ -49,6 +49,8 @@ import { EquipmentHud } from "@/ui/EquipmentHud";
 import { PurseReader } from "@/ui/purse";
 import { apiClient } from "@/utils/api";
 import { RESOURCE_HUD_AT, ResourceHud } from "@/ui/ResourceHud";
+import { ProgressHud } from "@/ui/ProgressHud";
+import { progressOf } from "@/ui/progress";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
 import { PartyPanel, mountPartyPanel } from "@/ui/PartyPanel";
 import { escapeStep } from "@/ui/escapeOrder";
@@ -242,6 +244,8 @@ export class FieldScene extends Phaser.Scene {
   private equipment?: EquipmentHud;
   /** The Health and class resource bars, and the ability card: the run's own (FS-8AY7S req 20, 29). */
   private resourceHud?: ResourceHud;
+  /** The player's own XP bar along the bottom middle (FS-77DVN §C.13). */
+  private progressHud?: ProgressHud;
   /** The chat window (FS-WJGFJ §C): built with the scene, taken down with it. */
   private chatWindow?: ChatWindow;
   private partyPanel?: PartyPanel;
@@ -473,6 +477,8 @@ export class FieldScene extends Phaser.Scene {
    */
   private relayoutHud(): void {
     this.arrivalCard.relayout();
+    // the XP bar keeps to the bottom middle (FS-77DVN §A.4)
+    this.progressHud?.relayout();
     this.minimap?.place();
     this.abilityHud?.relayout();
     this.corner?.relayout();
@@ -839,6 +845,7 @@ export class FieldScene extends Phaser.Scene {
     this.equipment?.release();
     this.equipment = undefined;
     this.resourceHud = undefined;
+    this.progressHud = undefined;
     this.chatWindow?.destroy();
     this.chatWindow = undefined;
     this.partyPanel?.destroy();
@@ -961,6 +968,12 @@ export class FieldScene extends Phaser.Scene {
       if (self) this.keepCameraOn(self.sprite);
       this.followEntrance(state.current_player.position, state.gates ?? []);
       this.followFall(state.current_player);
+      // the player's own bar, fallen or not: experience is kept either way (FS-77DVN §C.13, §C.14)
+      const progress = progressOf(state.current_player);
+      if (progress) {
+        this.progressHud ??= new ProgressHud(this);
+        this.progressHud.show(progress);
+      }
     }
 
     this.drawGround(state.gates ?? [], state.walls ?? []);

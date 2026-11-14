@@ -3,10 +3,10 @@ import {
   atCap,
   equipRefusal,
   characterProgress,
-  levelLabel,
   levelRose,
   levelUpCue,
   progressOf,
+  xpBarEnds,
   xpCount,
   xpFraction,
 } from "./progress";
@@ -23,13 +23,23 @@ describe("xpFraction", () => {
   });
 });
 
-describe("levelLabel", () => {
-  it("should name the level below the cap", () => {
-    expect(levelLabel({ level: 7, next_level_at: 1650 })).toBe("Level 7");
+describe("xpBarEnds (FS-77DVN §B.8, §B.9, §B.11)", () => {
+  it("should read this level at the left and the next at the right, mid-way", () => {
+    expect(xpBarEnds({ level: 7, next_level_at: 1650 })).toEqual({
+      left: "7",
+      right: "8",
+    });
   });
 
-  it("should mark the cap when there is no next level", () => {
-    expect(levelLabel({ level: 20 })).toBe("Level 20 · Cap");
+  it("should read 1 and 2 at level 1", () => {
+    expect(xpBarEnds({ level: 1, next_level_at: 100 })).toEqual({
+      left: "1",
+      right: "2",
+    });
+  });
+
+  it("should read the cap level and Cap where there is no next level", () => {
+    expect(xpBarEnds({ level: 20 })).toEqual({ left: "20", right: "Cap" });
   });
 });
 

@@ -674,6 +674,18 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   heavier than Runed. The halo falls outside the tip and never changes its size or layout. A
   rarity colour is **never a fill**. *(Added by
   [FS-QE2QW](../../docs/specs/QE2QW-item-rarity-emphasis.md), 2026-11-08.)*
+- **Experience bar.** The player's own level and experience bar (`src/ui/ProgressHud.ts`, placed
+  by `src/ui/xpBarLayout.ts`) runs along the bottom middle of the canvas, centred on it, between
+  the chat window and the corner row and 16 px clear of each, its foot on their 16 px margin; it
+  shrinks with a narrow view and is never hidden. It has **no panel**: a 5 px bright-brass bar
+  (`palette.xpFill`) on its charcoal track (`palette.xpTrack`) in a brass rim, drawn by
+  `drawXpBar`; a brass stud at each end, the chat window's corner stud (`palette.frame` r 2, a
+  `palette.frameBright` highlight); and bare 12 px body-serif numerals in vellum (`hudText`) with
+  a 2 px dark stroke (`markerStroke`), this level at the left and the next at the right, or "Cap"
+  at the cap, each in a fixed slot so the bar never changes length with the level. No count on
+  the HUD (the character sheet keeps it). Shown in the town, every field and every run, alive or
+  dead; never on the menus. The level-up cue rises from just above its centre.
+  *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right

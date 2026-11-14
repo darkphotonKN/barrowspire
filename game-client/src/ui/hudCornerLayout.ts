@@ -97,6 +97,14 @@ export function cornerIconFrame(icon: CornerIcon, view: CornerView): Rect {
 }
 
 /**
+ * The row's left edge in `view`: its leftmost plate's, whichever icon stands there, so what keeps
+ * clear of the row on its left (FS-77DVN §A.2) never names one icon.
+ */
+export function cornerRowLeft(view: CornerView): number {
+  return Math.min(...CORNER_ICONS.map((icon) => cornerIconFrame(icon, view).x));
+}
+
+/**
  * Where a label `width` wide stands over `plate` (R5): its centre x and its bottom, centred on the
  * plate but never nearer the view's right edge than `LABEL_EDGE`.
  */

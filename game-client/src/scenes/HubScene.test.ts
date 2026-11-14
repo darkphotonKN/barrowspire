@@ -6142,3 +6142,59 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.sounds,\s*\);/);
   });
 });
+
+const { ProgressHud } = await import("@/ui/ProgressHud");
+
+// FS-77DVN §C.13, §A.4 (I-77DVN-1): the town keeps its XP bar mount, re-placed with the view.
+describe("HubScene the XP bar along the bottom (FS-77DVN §C.13, §A.4)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function levelledHub() {
+    const stage = hubOnStage();
+    Object.assign(stage.hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+    });
+    const render = (player: Record<string, unknown>) =>
+      stage.hub.renderState({
+        world_type: "hub",
+        current_player: { entity_id: "me", username: "Ignis", class: "mage", position: AWAY, ...player },
+        other_players: [],
+        walls: [],
+        gates: [],
+      });
+    return { ...stage, render };
+  }
+
+  it("should mount the bar from current_player", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { render } = levelledHub();
+
+    render({ level: 3, experience: 250, level_floor: 230, next_level_at: 400 });
+
+    expect(show).toHaveBeenCalledWith({ level: 3, experience: 250, level_floor: 230, next_level_at: 400 });
+  });
+
+  it("should draw no bar for a state that carries no level", () => {
+    const show = vi.spyOn(ProgressHud.prototype, "show");
+    const { render } = levelledHub();
+
+    render({});
+
+    expect(show).not.toHaveBeenCalled();
+  });
+
+  it("should place the bar again when the view changes", () => {
+    const relayout = vi.spyOn(ProgressHud.prototype, "relayout").mockImplementation(() => {});
+    const { hub, render } = levelledHub();
+    render({ level: 3, experience: 250, level_floor: 230, next_level_at: 400 });
+
+    (hub as unknown as { relayoutHud(): void }).relayoutHud();
+
+    expect(relayout).toHaveBeenCalledTimes(1);
+  });
+});
