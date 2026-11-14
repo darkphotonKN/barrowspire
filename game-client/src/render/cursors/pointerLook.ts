@@ -52,6 +52,12 @@ const LEFT_HELD = 1;
 const POINTER_LOOK_KEY = "pointerLook";
 
 /**
+ * What marks a pointer look on the registry. A registered symbol, not the class: Fast Refresh
+ * swaps this module and its class with it, and the game keeps the old module's pointer look.
+ */
+const POINTER_LOOK_BRAND = Symbol.for("barrowspire.pointerLook");
+
+/**
  * The baked cursors as the look shows them: the hand, the pressed hand and the strike-mark, each
  * cropped once. Without the pressed sheet a press shows the plain hand; without the others, the
  * browser's `default` and `crosshair` (P9).
@@ -67,6 +73,7 @@ export function bakedCursors(source: CursorSource | null | undefined): PointerCu
 }
 
 export class PointerLook {
+  readonly [POINTER_LOOK_BRAND] = true;
   private shownBase: PointerBase = "browser";
   private pressed = false;
   private shown?: string;
@@ -155,10 +162,12 @@ function watchLeft(look: PointerLook, canvas: EventTarget, page: LookPage): () =
   };
 }
 
-/** The game's look, if one was made. */
+/** The game's pointer look, if one was made, by this module or one Fast Refresh swapped out. */
 function lentPointerLook(registry: LookGame["registry"]): PointerLook | undefined {
   const lent = registry.get(POINTER_LOOK_KEY);
-  return lent instanceof PointerLook ? lent : undefined;
+  const branded =
+    typeof lent === "object" && lent !== null && (lent as Partial<PointerLook>)[POINTER_LOOK_BRAND] === true;
+  return branded ? (lent as PointerLook) : undefined;
 }
 
 /**
