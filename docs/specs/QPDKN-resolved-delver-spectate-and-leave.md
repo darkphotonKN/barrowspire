@@ -843,24 +843,24 @@ amended: WATCH, LEAVE, SETTLEMENT 200 above the bottom margin) are unchanged. **
 
 ### Acceptance Criteria
 
-- [ ] A death with a teammate in play: the record alone (one `dialog_open`, no card, no row); its CLOSE
+- [x] A death with a teammate in play: the record alone (one `dialog_open`, no card, no row); its CLOSE
       brings the card with WATCH and LEAVE and plays `dialog_open` alone; no SETTLEMENT while the card is up.
-- [ ] The card's LEAVE sends `leave_run` as today.
-- [ ] WATCH: the card down; LEAVE and SETTLEMENT side by side at the bottom centre, their bottom 70 above
+- [x] The card's LEAVE sends `leave_run` as today.
+- [x] WATCH: the card down; LEAVE and SETTLEMENT side by side at the bottom centre, their bottom 70 above
       the view's bottom; the switcher 8 above them naming the watched teammate; no corner LEAVE.
-- [ ] SETTLEMENT while spectating opens the record (`dialog_open`); closing it plays `menu_click`, brings no
+- [x] SETTLEMENT while spectating opens the record (`dialog_open`); closing it plays `menu_click`, brings no
       card, and leaves the row and the switcher as they were.
-- [ ] ► next, ◄ previous, round; Tab next; live arrows `menu_hover` and `menu_click` on the release; with
+- [x] ► next, ◄ previous, round; Tab next; live arrows `menu_hover` and `menu_click` on the release; with
       one teammate in play both greyed, a press `menu_error` and no change; no cursor of their own.
-- [ ] No "Watching" or "Tab: next player" text at the top centre; the target frame is not hidden while
+- [x] No "Watching" or "Tab: next player" text at the top centre; the target frame is not hidden while
       spectating.
-- [ ] The row and the switcher meet neither the open chat window nor its open list, nor the corner row or
+- [x] The row and the switcher meet neither the open chat window nor its open list, nor the corner row or
       its hover label, at every logical width from 1080 to 1280; their rects pinned at 1080 and 1280.
-- [ ] A death shown before any record: the card at once, one `dialog_open`, as today.
-- [ ] Solo death, solo escape and the escaped player's offer before WATCH: as today.
-- [ ] The own Health and resource bars and the potion cell stay up, frozen at the death or the escape;
+- [x] A death shown before any record: the card at once, one `dialog_open`, as today.
+- [x] Solo death, solo escape and the escaped player's offer before WATCH: as today.
+- [x] The own Health and resource bars and the potion cell stay up, frozen at the death or the escape;
       watching a teammate leaves them the player's own; the ability card stays down; a field's bars as today.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's look and listening check (HITL).
 
 ### Edge States
@@ -884,3 +884,35 @@ amended: WATCH, LEAVE, SETTLEMENT 200 above the bottom margin) are unchanged. **
 - Moving the card, the row or the switcher into the UI scene; the card's own look and words.
 - The escaped player's offer before WATCH; the record's look, anchor and scroll.
 - Any server, proto or gateway change.
+
+### As built (2026-11-14)
+
+Appended after the slices; the text above is not edited. Built in I-QPDKN-12 (the record first), I-QPDKN-13
+(the spectate controls) and I-QPDKN-14 (the own bars); the owner's check is I-QPDKN-15. No screenshots.
+
+- **The record first.** `syncResolvedView` puts the card up only while `record?.open` is false; `closeRecord`
+  runs it again before the held town's release, so the first close brings the card. The record slot's Close
+  only requests `close: record`; the run answers with `recordClosePressed`, which plays `dialog_open` when
+  `closeBringsCard()` (dead with a teammate in play, not watching, no card, the run not ended) and
+  `menu_click` otherwise, then closes. `fell` (sticky: a dead state, or a `settlement` with `outcome: died`,
+  which arrives first) empties the row until the player watches (`resolvedRow`'s `fell`, `watching`).
+- **The spectate controls.** `resolvedRow.ts`: `SPECTATE_ROW_BOTTOM` 70, `spectateRowY`, `rowSpan`,
+  `switcherRect`, `switcherWidth`, `SWITCHER_H`, `SWITCHER_ARROW_W` 28, `SWITCHER_PAD` 10, `SWITCHER_GAP` 8; the
+  row holds LEAVE for a fallen spectator. `spectateSwitcher.ts` (`SpectateSwitcher`): a `hudPanel` backing,
+  the words "Watching <name>" 14 px `hudText`, two `drawHudButton` arrows (`watch-previous`, `watch-next`, a
+  blank space for words) with 8 × 12 triangles in `interactable` or `hudFaint` at 0.45. `nextWatched` takes a
+  step (-1 for ◄). Gone: `placeLeaveInCorner`, `leaveButtonPlace`, `LEAVE_BUTTON_DEPTH`, `showSpectateHud`,
+  `SPECTATE_HUD_Y`, the ability card's `leaveUp`. The target frame's cover is the arrival card alone.
+- **The own bars.** `potions.ts` `runOwnHud(state, held)` and `OwnHud`; `resources.ts` `barsOf(me)`, which
+  `hudBars` uses in the delve; the run holds `heldHud` from the first resolved state until it resets.
+- **The numbers.** At 720 tall the spectate row's buttons span y 612–650 (their line y 631, where the old corner
+  LEAVE's centre stood) and the switcher y 576–604. LEAVE + SETTLEMENT at 1080: 442–536 and 544–688; at 1280:
+  517–611 and 619–763. LEAVE alone: 493–587 and 593–687. The switcher is its words' width plus 76, centred on
+  the row's centre (565 at 1080 with both buttons, 540 with LEAVE alone; 640 at 1280), never left of 442. The
+  sweep over 1080–1280 (rows, switchers of words 60–240 wide, the open and folded chat, its list, the corner
+  plates and 160-wide hover labels) is in `resolvedRow.test.ts`; the run's tests pin the rects at 1080 and
+  1280 with their stand-in's 7 px a character.
+- **Looks a player can see** (the owner's check): the record alone at a party death and the card after its
+  CLOSE; no SETTLEMENT by the card; the spectate row lower and the corner LEAVE gone; the switcher; no text at
+  the top centre and the target frame up while spectating; the escaped spectator's LEAVE and SETTLEMENT moved
+  down with the row; the own bars and potion cell standing frozen at the top left after a death or an escape.
