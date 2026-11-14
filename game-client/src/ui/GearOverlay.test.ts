@@ -197,16 +197,22 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     h: number;
     hand: boolean;
     destroyed: boolean;
+    interactive: boolean;
+    depth?: number;
+    /** The zone itself, as Phaser hands it in a pointer event's `over` list. */
+    obj: Record<string, unknown>;
   }[] = [];
   const zone = (x: number, y: number, w: number, h: number) => {
-    const z = { x, y, w, h, hand: false, destroyed: false };
+    const z = { x, y, w, h, hand: false, destroyed: false, interactive: false } as (typeof zones)[number];
     zones.push(z);
     const self: Record<string, unknown> = chain({
       setInteractive: (opts?: { useHandCursor?: boolean }) => (
-        (z.hand = opts?.useHandCursor ?? false), self
+        (z.interactive = true), (z.hand = opts?.useHandCursor ?? false), self
       ),
+      setDepth: (d: number) => ((z.depth = d), self),
       destroy: () => void (z.destroyed = true),
     });
+    z.obj = self;
     return self;
   };
   // as Phaser's, a container's destroy destroys what it holds
@@ -258,12 +264,22 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     y: y * renderScale,
     button,
   });
-  const move = (x: number, y: number) =>
-    input.emit("pointermove", pointer(x, y));
-  const press = (x: number, y: number, button: number) =>
-    input.emit("pointerdown", pointer(x, y, button));
-  const wheel = (x: number, y: number, dy: number) =>
-    input.emit("wheel", pointer(x, y), [], 0, dy);
+  /**
+   * What Phaser lists under the pointer at (x, y), top first (`topOnly`): the last-made live
+   * interactive zone over it, as the UI scene's input hands its scene-wide events (FS-TQZ5J § Change:
+   * Phase 3, R60). `over` given, that instead.
+   */
+  const under = (x: number, y: number) => {
+    const hit = zones.filter((z) => z.interactive && !z.destroyed && x >= z.x && x <= z.x + z.w && y >= z.y && y <= z.y + z.h);
+    const top = [...hit].sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0)).at(-1);
+    return top ? [top.obj] : [];
+  };
+  const move = (x: number, y: number, over: unknown[] = under(x, y)) =>
+    input.emit("pointermove", pointer(x, y), over);
+  const press = (x: number, y: number, button: number, over: unknown[] = under(x, y)) =>
+    input.emit("pointerdown", pointer(x, y, button), over);
+  const wheel = (x: number, y: number, dy: number, over: unknown[] = under(x, y)) =>
+    input.emit("wheel", pointer(x, y), over, 0, dy);
   /** One game step: the scene's update, after the keyboard has handed its keys their events. */
   const frame = () => events.emit("update");
   /** Shift pressed or released, then a frame. */
@@ -304,10 +320,9 @@ function overlayOnStage(
   gear: EquippedItems = worn(),
   world?: WorldType,
   renderScale = 1,
-  yields?: () => boolean,
 ) {
   const s = recordingScene(1080, 720, renderScale);
-  const overlay = new GearOverlay(s.scene, s.art, world, yields);
+  const overlay = new GearOverlay(s.scene, s.art, world);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
   overlay.onEquip = onEquip;
@@ -1830,7 +1845,7 @@ describe("GearOverlay, the inventory and the character panel apart (FS-HRH2J § 
         seen.push(`after ${panels()}`);
       }),
     };
-    overlay = new GearOverlay(s.scene, s.art, undefined, undefined, wrapper);
+    overlay = new GearOverlay(s.scene, s.art, undefined, wrapper);
     const { left, right } = overlayLayout(s.camera.width, s.camera.height);
     const closeOf = (panel: typeof left) => {
       const r = panelClose(panel);
@@ -1901,41 +1916,62 @@ describe("GearOverlay's titles, shared (FS-3EBCA R20, R22)", () => {
 });
 
 // FS-3EBCA R8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍"): the party panel opens over the open
-// inventory and character panel. It is the UI scene's now (FS-TQZ5J § Change: Phase 2, R40, R41): a press
-// or the wheel on it never reaches the world, and a move over it reaches the world with the bridge's
-// `overUi`, which the overlay yields to on a move alone (Amendment B1, R49).
-describe("GearOverlay yielding to a UI piece (FS-3EBCA R8; FS-TQZ5J § Change: Phase 2, R41, R49)", () => {
-  /** The overlay with `yields` saying whether a UI piece holds the pointer now. */
-  function yieldingOnStage(bag: ItemState[], yields: () => boolean) {
-    return overlayOnStage(bag, worn(), "field", 1, yields);
-  }
+// inventory and character panel. Both are the UI scene's now (FS-TQZ5J § Change: Phase 3, R59, R60): the
+// overlay stands a ground under each open panel, and acts on a move, a press or the wheel only when no
+// other UI piece is the top object under the pointer (Phaser's `over`).
+describe("GearOverlay's grounds and its own top object (FS-3EBCA R8; FS-TQZ5J § Change: Phase 3, R59, R60)", () => {
+  /** Another UI piece's object, as Phaser lists one over the overlay. */
+  const other = { name: "party-panel-ground" };
 
-  it("should neither light nor tip a bag item on a move while a UI piece holds the pointer", () => {
-    const shade = { on: true };
-    const env = yieldingOnStage([axe], () => shade.on);
-    env.move(...env.cell(0));
+  it("should stand an interactive ground at 1100 over each open panel, none over the clear band, no hand cursor", () => {
+    const env = overlayOnStage([axe]);
+    env.overlay.toggleCharacter();
+    const layout = overlayLayout(1080, 720);
+    const grounds = env.zones.filter((z) => !z.destroyed && z.interactive && z.depth === 1100);
+    expect(grounds.map((z) => [z.x, z.y, z.w, z.h]).sort()).toEqual(
+      [
+        [layout.left.x, layout.left.y, layout.left.w, layout.left.h],
+        [layout.right.x, layout.right.y, layout.right.w, layout.right.h],
+      ].sort(),
+    );
+    expect(grounds.every((z) => !z.hand)).toBe(true);
+
+    env.overlay.toggleCharacter();
+    expect(env.zones.filter((z) => !z.destroyed && z.depth === 1100)).toHaveLength(1);
+    env.overlay.hide();
+    expect(env.zones.filter((z) => !z.destroyed && z.depth === 1100)).toEqual([]);
+  });
+
+  it("should neither light nor tip a bag item on a move while another UI piece is over it", () => {
+    const env = overlayOnStage([axe], worn(), "field");
+    env.move(...env.cell(0), [other]);
     expect(env.shown()).not.toContain("axe");
-    // and with nothing of the UI scene's under it the same move tips it
-    shade.on = false;
+    // over its own ground the same move tips it, and over nothing of the UI scene's (a world press) too
     env.move(...env.cell(0));
+    expect(env.shown()).toContain("axe");
+    env.move(...env.cell(0), [other]);
+    env.move(...env.cell(0), []);
     expect(env.shown()).toContain("axe");
   });
 
-  it("should not take E for the item under a UI piece the pointer moved onto", () => {
-    const env = yieldingOnStage([axe], () => true);
-    env.move(...env.cell(0));
+  it("should not take E for the item under another UI piece the pointer moved onto", () => {
+    const env = overlayOnStage([axe], worn(), "field");
+    env.move(...env.cell(0), [other]);
     env.overlay.handleEquipKey();
     expect(env.onEquip).not.toHaveBeenCalled();
   });
 
-  // a press reaches the overlay only with nothing of the UI scene's under it (Phaser's top scene first,
-  // FS-TQZ5J R7), so the overlay never asks on one
-  it("should read no yield on a press: a right-press wears the item, a left-press on the × closes the panel", () => {
-    const env = yieldingOnStage([axe], () => true);
+  it("should act on a press only on its own: a right-press on its ground wears the item, one under another piece nothing", () => {
+    const env = overlayOnStage([axe], worn(), "field");
+    env.press(...env.cell(0), 2, [other]);
+    env.press(...env.cell(0), 2, []);
+    expect(env.onEquip).not.toHaveBeenCalled();
     env.press(...env.cell(0), 2);
     expect(env.onEquip).toHaveBeenCalledTimes(1);
 
     const box = panelClose(overlayLayout(1080, 720).right);
+    env.press(box.x + box.w / 2, box.y + box.h / 2, 0, [other]);
+    expect(env.overlay.isInventoryOpen()).toBe(true);
     env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
     expect(env.overlay.isInventoryOpen()).toBe(false);
   });
