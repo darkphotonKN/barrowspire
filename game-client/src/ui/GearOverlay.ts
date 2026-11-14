@@ -264,16 +264,18 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   /**
    * `world` is the world the overlay is drawn in; only a run marks unsafe finds (FS-18Z5F R36–37).
-   * `under` says whether a logical point lies under a panel drawn over the overlay (the party
-   * panel, FS-R82NV § Change C8): a press, the pointer or the wheel there is that panel's, not the
-   * overlay's. `wrapper` runs the overlay's own player input, the panels' ×, as the scene runs its
-   * own (the interface sounds' wrapper, FS-WDM0X S9); none, and the input runs as it is.
+   * `yields` says whether a UI piece holds the pointer now (the UI bridge's `overUi`): a move the UI
+   * scene took over one of its pieces, the party panel drawn over the overlay among them, which the
+   * overlay gives way to, nothing there lighting or tipping (FS-R82NV § Change C8; FS-TQZ5J § Change:
+   * Phase 2, R41, R49). Read on a move only: a press and the wheel over a UI piece never reach the
+   * world (FS-TQZ5J R7, R40). `wrapper` runs the overlay's own player input, the panels' ×, as the
+   * scene runs its own (the interface sounds' wrapper, FS-WDM0X S9); none, and the input runs as it is.
    */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly art: ArtLibrary,
     private readonly world?: WorldType,
-    private readonly under: (x: number, y: number) => boolean = () => false,
+    private readonly yields: () => boolean = () => false,
     private readonly wrapper: UiActWrapper = PASS_THROUGH,
   ) {}
 
@@ -1083,20 +1085,13 @@ export class GearOverlay implements HudPanel, PurseShelf {
 
   // ── Input ────────────────────────────────────────────────────────────────
 
-  /** The pointer in logical units: Phaser's `pointer.x/y` are backing px (FS-ZAJMH R15). */
-  private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    this.pointer = this.ownPoint(pointer);
-    this.updateHover();
-  }
-
   /**
-   * Where the pointer stands on the overlay, in logical units (Phaser's pointer.x/y are backing
-   * px, FS-ZAJMH R15): off every panel while a panel drawn over the overlay covers it, so nothing
-   * there hovers, lights or answers (FS-R82NV § Change C8).
+   * The pointer in logical units (Phaser's `pointer.x/y` are backing px, FS-ZAJMH R15): off every
+   * panel while a UI piece holds it, so nothing there hovers, lights or answers E (`yields`).
    */
-  private ownPoint(pointer: Phaser.Input.Pointer): { x: number; y: number } {
-    const at = viewport.toLogical(pointer);
-    return this.under(at.x, at.y) ? { x: -1, y: -1 } : at;
+  private onPointerMove(pointer: Phaser.Input.Pointer): void {
+    this.pointer = this.yields() ? { x: -1, y: -1 } : viewport.toLogical(pointer);
+    this.updateHover();
   }
 
   /**
@@ -1105,7 +1100,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
    * does nothing (R18).
    */
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    this.pointer = this.ownPoint(pointer);
+    this.pointer = viewport.toLogical(pointer);
     this.updateHover();
     if (pointer.button === 0) {
       const mark = this.closeAt(this.pointer.x, this.pointer.y);
@@ -1126,7 +1121,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     dy: number,
   ): void {
     const step = Math.sign(dy);
-    const at = this.ownPoint(pointer);
+    const at = viewport.toLogical(pointer);
     const scrolls = (g: ItemGrid | undefined): g is ItemGrid =>
       g !== undefined && g.visibleRows < g.rows && inRect(g.grid, at.x, at.y);
     /** A grid's first row a step on, kept so its last row stays in view. */

@@ -304,10 +304,10 @@ function overlayOnStage(
   gear: EquippedItems = worn(),
   world?: WorldType,
   renderScale = 1,
-  under?: (x: number, y: number) => boolean,
+  yields?: () => boolean,
 ) {
   const s = recordingScene(1080, 720, renderScale);
-  const overlay = new GearOverlay(s.scene, s.art, world, under);
+  const overlay = new GearOverlay(s.scene, s.art, world, yields);
   const onEquip = vi.fn();
   const onUnequip = vi.fn();
   overlay.onEquip = onEquip;
