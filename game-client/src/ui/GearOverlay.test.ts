@@ -1899,47 +1899,41 @@ describe("GearOverlay's titles, shared (FS-3EBCA R20, R22)", () => {
 });
 
 // FS-3EBCA R8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍"): the party panel opens over the open
-// inventory and character panel, and what lies under it is the party panel's, not the overlay's.
-describe("GearOverlay under the party panel (FS-3EBCA R8; FS-R82NV § Change C8)", () => {
-  /** A press, a hover or the wheel at a point the party panel covers. */
-  function shadowedOnStage(bag: ItemState[], shadowed: (x: number, y: number) => boolean) {
-    return overlayOnStage(bag, worn(), "field", 1, shadowed);
+// inventory and character panel. It is the UI scene's now (FS-TQZ5J § Change: Phase 2, R40, R41): a press
+// or the wheel on it never reaches the world, and a move over it reaches the world with the bridge's
+// `overUi`, which the overlay yields to on a move alone (Amendment B1, R49).
+describe("GearOverlay yielding to a UI piece (FS-3EBCA R8; FS-TQZ5J § Change: Phase 2, R41, R49)", () => {
+  /** The overlay with `yields` saying whether a UI piece holds the pointer now. */
+  function yieldingOnStage(bag: ItemState[], yields: () => boolean) {
+    return overlayOnStage(bag, worn(), "field", 1, yields);
   }
 
-  it("should not wear a bag item under the party panel on a right-press, nor show its tip", () => {
+  it("should neither light nor tip a bag item on a move while a UI piece holds the pointer", () => {
     const shade = { on: true };
-    const env = shadowedOnStage([axe], () => shade.on);
+    const env = yieldingOnStage([axe], () => shade.on);
     env.move(...env.cell(0));
     expect(env.shown()).not.toContain("axe");
-    env.press(...env.cell(0), 2);
-    expect(env.onEquip).not.toHaveBeenCalled();
-    // and with the party panel shut the same press wears it
+    // and with nothing of the UI scene's under it the same move tips it
     shade.on = false;
     env.move(...env.cell(0));
     expect(env.shown()).toContain("axe");
-    env.press(...env.cell(0), 2);
-    expect(env.onEquip).toHaveBeenCalledTimes(1);
   });
 
-  it("should not take E for the item under the party panel", () => {
-    const env = shadowedOnStage([axe], () => true);
+  it("should not take E for the item under a UI piece the pointer moved onto", () => {
+    const env = yieldingOnStage([axe], () => true);
     env.move(...env.cell(0));
     env.overlay.handleEquipKey();
     expect(env.onEquip).not.toHaveBeenCalled();
   });
 
-  it("should leave the inventory open on a left-press at its × under the party panel", () => {
-    const right = overlayLayout(1080, 720).right;
-    const box = panelClose(right);
-    const env = shadowedOnStage([], () => true);
-    env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
-    expect(env.overlay.isInventoryOpen()).toBe(true);
-  });
+  // a press reaches the overlay only with nothing of the UI scene's under it (Phaser's top scene first,
+  // FS-TQZ5J R7), so the overlay never asks on one
+  it("should read no yield on a press: a right-press wears the item, a left-press on the × closes the panel", () => {
+    const env = yieldingOnStage([axe], () => true);
+    env.press(...env.cell(0), 2);
+    expect(env.onEquip).toHaveBeenCalledTimes(1);
 
-  it("should answer a point the party panel does not cover as before", () => {
-    const right = overlayLayout(1080, 720).right;
-    const box = panelClose(right);
-    const env = shadowedOnStage([], (x) => x < right.x);
+    const box = panelClose(overlayLayout(1080, 720).right);
     env.press(box.x + box.w / 2, box.y + box.h / 2, 0);
     expect(env.overlay.isInventoryOpen()).toBe(false);
   });

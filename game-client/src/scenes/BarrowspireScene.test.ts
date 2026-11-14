@@ -5546,9 +5546,9 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
     });
 
     // the party panel is the UI scene's: a press on it never reaches the run (FS-TQZ5J § Change: Phase 2:
-    // the party, R40), and the overlay gives way to it as to any UI piece the bridge says the pointer is
-    // over (R41): its point stands off its panels there, so nothing under it answers
-    it("should keep the overlay under a UI piece from answering there: no equip for a bag item under it", () => {
+    // the party, R40), and a move over it reaches the run with the bridge saying so, the overlay giving
+    // way to it as to any UI piece (R41, R49): its point stands off its panels, so nothing under it tips
+    it("should keep the overlay under a UI piece from tipping there on a move", () => {
       const env = overlayOnStage();
       const run = env.run as unknown as Overlaid & { ui: object };
       const covered = { on: true };
@@ -5556,11 +5556,12 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       env.key("I");
       const cell = gearPanelLayout(layout.right, 1).cells[0].rect;
       const at = { x: cell.x + cell.w / 2, y: cell.y + cell.h / 2 };
-      env.press(at, 2);
-      expect(env.sentOf(ActionType.Equip)).toHaveLength(0);
+      const move = () => (env.run as unknown as { input: { emit(event: string, pointer: object): void } }).input.emit("pointermove", { ...at, button: 0 });
+      move();
+      expect(env.shown("Iron Sword")).toBe(false);
       covered.on = false;
-      env.press(at, 2);
-      expect(env.sentOf(ActionType.Equip)).toEqual([[ActionType.Equip, { item_entity_id: "sword" }]]);
+      move();
+      expect(env.shown("Iron Sword")).toBe(true);
     });
   });
 

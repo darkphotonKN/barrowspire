@@ -5415,16 +5415,18 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
 
     // integration of FS-R82NV § Change C8 with D5: the party panel is drawn over the overlay and
     // the row, so a press or hover on it is the panel's alone. It is the UI scene's: a press on it
-    // never reaches the town, and a move over it reaches it with the bridge saying so (FS-TQZ5J
-    // § Change: Phase 2: the party, R40, R41)
-    it("should give way to a UI piece the pointer is over, never stepping the mode (FS-R82NV § Change C8; FS-TQZ5J § Change: Phase 2, R41; D5)", () => {
-      const { hub, render, map, store, pointers } = townWithModes();
+    // never reaches the town, and a move over it reaches it with the bridge saying so, the only time
+    // the bridge says it (FS-TQZ5J § Change: Phase 2: the party, R40, R41)
+    it("should give way on a move to a UI piece the pointer is over, the icon unlit (FS-R82NV § Change C8; FS-TQZ5J § Change: Phase 2, R41; D7)", () => {
+      const { hub, render, pointers } = townWithModes();
       (hub as unknown as { bindMinimapPointer(): void }).bindMinimapPointer();
       render();
+      const icon = () => (hub.minimap as { modeIcon?: { hovered: boolean } } | undefined)?.modeIcon;
+      pointers.pointermove!(press(862, 109));
+      expect(icon()?.hovered).toBe(true);
       (hub as Record<string, unknown>).ui = { ...NO_UI, overUi: true };
-      pointers.pointerdown!(press(862, 109));
-      expect(map()!.mode).toBe("normal");
-      expect(store.writes).toEqual([]);
+      pointers.pointermove!(press(862, 109));
+      expect(icon()?.hovered).toBe(false);
     });
 
     it("should have no icon before the map is built, and take no press for it (D4)", () => {
