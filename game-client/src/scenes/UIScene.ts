@@ -42,13 +42,26 @@ import { onSceneEnd } from "./sceneEnd";
  */
 interface MenuKeyObjects {
   esc: Phaser.Input.Keyboard.Key;
-  e: Phaser.Input.Keyboard.Key;
   enter: Phaser.Input.Keyboard.Key;
   numbers: Phaser.Input.Keyboard.Key[];
   left: Phaser.Input.Keyboard.Key;
   right: Phaser.Input.Keyboard.Key;
-  /** The gear's I, B and C, read once a frame for the town, which polled them (§ Change: Phase 3, R56). */
-  gear: { i: Phaser.Input.Keyboard.Key; b: Phaser.Input.Keyboard.Key; c: Phaser.Input.Keyboard.Key };
+  /** The town's polled keys, standing only while the town is reported (§ Change: Phase 3, R56). */
+  town?: TownKeyObjects;
+}
+
+/**
+ * The town's E (its dialogue card's and its inventory's) and the gear's I, B and C, read once a frame
+ * for the town, which polled them (§ Change: Phase 3, R56). Made as the town is reported and removed
+ * as it leaves: Phaser 4.2.1 emits no `keydown-X` for a held key's auto-repeat while the scene holds a
+ * Key for its code (KeyboardPlugin.update: `repeat = key.isDown`, the event only `if (!key || !repeat)`),
+ * and a field's and the run's gear keys are heard on those events, repeat included.
+ */
+interface TownKeyObjects {
+  e: Phaser.Input.Keyboard.Key;
+  i: Phaser.Input.Keyboard.Key;
+  b: Phaser.Input.Keyboard.Key;
+  c: Phaser.Input.Keyboard.Key;
 }
 
 /** The keys a field and the run heard on key events, by the gear key each is (§ Change: Phase 3, R56). */
@@ -145,18 +158,18 @@ export class UIScene extends Phaser.Scene {
     if (!keys) return;
     const down = Phaser.Input.Keyboard.JustDown;
     const esc = down(keys.esc);
-    const e = down(keys.e);
     const enter = down(keys.enter);
     const numbered = keys.numbers.map((key) => down(key)).indexOf(true);
     const left = down(keys.left);
     const right = down(keys.right);
-    // the town's I, B and C, read every frame in every world so a press made elsewhere never answers
-    // in the town later (§ Change: Phase 3, R56)
-    const inventory = [down(keys.gear.i), down(keys.gear.b)].includes(true);
-    const character = down(keys.gear.c);
+    // the town's E, I, B and C, standing only while the town is reported (§ Change: Phase 3, R56)
+    const town = keys.town;
+    const e = town ? down(town.e) : false;
+    const inventory = town ? [down(town.i), down(town.b)].includes(true) : false;
+    const character = town ? down(town.c) : false;
     const carded = this.dialogue?.isOpen() ?? false;
     handKeys({ esc, e, enter, numbered, nudge: left === right ? undefined : left ? -1 : 1 }, this.dialogue, this.menu);
-    if (this.bridge()?.world?.world !== "hub") return;
+    if (!town || this.bridge()?.world?.world !== "hub") return;
     // the town polled its gear keys once a frame, and gave E to the open inventory after a shown card
     if (inventory) this.gear?.key("inventory");
     if (character) this.gear?.key("character");
@@ -172,22 +185,22 @@ export class UIScene extends Phaser.Scene {
    * The menu's and the dialogue card's keys on this scene's keyboard (R21, A2 R31). Esc is captured
    * while the scene is awake, as the worlds that bound it captured it, and handed back as it sleeps
    * (main menu, character creation) and taken again as it wakes; the shared keys are not captured
-   * here: the worlds that use them (the town's E and Enter among them) capture them as before. Phaser
-   * drops a scene's keys as it is destroyed with the game.
+   * here: the worlds that use them (the town's E and Enter among them) capture them as before. The
+   * town's E, I, B and C stand only while the town is reported (`TownKeyObjects`). Phaser drops a
+   * scene's keys as it is destroyed with the game.
    */
   private mountKeys(): void {
     const keyboard = this.input?.keyboard;
     if (!keyboard) return;
     const codes = Phaser.Input.Keyboard.KeyCodes;
-    this.keys = {
+    const keys: MenuKeyObjects = {
       esc: keyboard.addKey(codes.ESC),
       enter: keyboard.addKey(codes.ENTER, false),
       numbers: [codes.ONE, codes.TWO, codes.THREE].map((code) => keyboard.addKey(code, false)),
       left: keyboard.addKey(codes.LEFT, false),
       right: keyboard.addKey(codes.RIGHT, false),
-      e: keyboard.addKey(codes.E, false),
-      gear: { i: keyboard.addKey(codes.I, false), b: keyboard.addKey(codes.B, false), c: keyboard.addKey(codes.C, false) },
     };
+    this.keys = keys;
     this.events.on(Phaser.Scenes.Events.SLEEP, () => keyboard.removeCapture(codes.ESC));
     this.events.on(Phaser.Scenes.Events.WAKE, () => keyboard.addCapture(codes.ESC));
     // a field's and the run's gear keys, on key events as they heard them, uncaptured (R56)
@@ -197,21 +210,28 @@ export class UIScene extends Phaser.Scene {
       });
     // the run's H, on its key event as the run heard it (R56)
     keyboard.on("keydown-H", () => this.controls?.toggle());
-    // the town captured I, B and C while it stood, as its `addKey` did; let go as it leaves (R56)
-    const town = [codes.I, codes.B, codes.C];
-    let captured = false;
+    // the town's keys while it stands, I, B and C captured as its `addKey` did; removed and let go as
+    // it leaves, so a field's and the run's held keys repeat again (R56)
+    const captured = [codes.I, codes.B, codes.C];
+    const standTown = (want: boolean) => {
+      if (want === !!keys.town) return;
+      if (want) {
+        keys.town = {
+          e: keyboard.addKey(codes.E, false),
+          i: keyboard.addKey(codes.I, false),
+          b: keyboard.addKey(codes.B, false),
+          c: keyboard.addKey(codes.C, false),
+        };
+        keyboard.addCapture(captured);
+        return;
+      }
+      for (const key of Object.values(keys.town ?? {})) keyboard.removeKey(key, true);
+      keys.town = undefined;
+      keyboard.removeCapture(captured);
+    };
     const bridge = this.bridge();
-    const stop = bridge?.onWorld((report) => {
-      const want = report?.world === "hub";
-      if (want === captured) return;
-      captured = want;
-      if (want) keyboard.addCapture(town);
-      else keyboard.removeCapture(town);
-    });
-    if (bridge?.world?.world === "hub") {
-      captured = true;
-      keyboard.addCapture(town);
-    }
+    const stop = bridge?.onWorld((report) => standTown(report?.world === "hub"));
+    standTown(bridge?.world?.world === "hub");
     onSceneEnd(this, () => stop?.());
   }
 
