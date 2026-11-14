@@ -40,6 +40,8 @@ function recording(): UiBridge & { heard: string[] } {
     lendSounds: () => {},
     request: (request) => void heard.push(`request ${request.kind}`),
     moved: (_pointer, onUi) => void heard.push(`moved ${onUi ? "over the UI" : "off it"}`),
+    claimPress: () => void heard.push("claimPress"),
+    pressClaimed: () => false,
     onWorld: () => () => {},
     showDialogue: (dialogue) => void heard.push(`showDialogue ${dialogue.text}`),
     closeDialogue: () => void heard.push("closeDialogue"),
@@ -534,6 +536,30 @@ describe("a move the UI scene took, heard by the world reported (FS-TQZ5J A1 R27
 
 // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-13): the UI's state gains the gear's panels and the container
 // view's entity, each piece reporting its own part; the world hears every change with what it was.
+// FS-TQZ5J § Change: Batch 6, R129 (batch 6 review, LOW): a press the UI scene claims while its cameras stand
+// aside for a world's press, kept by its DOM event for the world's handlers in the same pass
+describe("a press the UI scene claims (FS-TQZ5J § Change: Batch 6, R129)", () => {
+  it("should say the claimed press is claimed, by its DOM event, and no later one", () => {
+    const bridge = new GameUiBridge();
+    const pointer = { event: { type: "mousedown" } as object };
+    expect(bridge.pressClaimed(pointer)).toBe(false);
+
+    bridge.claimPress(pointer);
+    expect(bridge.pressClaimed(pointer)).toBe(true);
+
+    pointer.event = { type: "mousedown" };
+    expect(bridge.pressClaimed(pointer)).toBe(false);
+  });
+
+  it("should claim nothing for a pointer with no event, nor answer for none", () => {
+    const bridge = new GameUiBridge();
+    bridge.claimPress({});
+    expect(bridge.pressClaimed({})).toBe(false);
+    expect(bridge.pressClaimed(undefined)).toBe(false);
+    expect(NO_UI.pressClaimed({ event: {} })).toBe(false);
+  });
+});
+
 describe("the UI's state in parts, heard with what it was (FS-TQZ5J § Change: Phase 3, R53)", () => {
   it("should merge a part into the UI's state and tell the world the change once, with the state before", () => {
     const bridge = new GameUiBridge();
