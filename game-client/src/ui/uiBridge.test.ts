@@ -45,6 +45,10 @@ function recording(): UiBridge & { heard: string[] } {
     closeDialogue: () => void heard.push("closeDialogue"),
     notice: (notice) => void heard.push(`notice ${notice.text}`),
     partySeen: () => void heard.push("partySeen"),
+    gear: (message) => void heard.push(`gear ${message.kind}`),
+    container: (message) => void heard.push(`container ${message.kind}`),
+    record: (shown) => void heard.push(`record ${shown ? "shown" : "none"}`),
+    endPopped: () => void heard.push("endPopped"),
     onScreen: () => () => {},
   };
 }
@@ -527,5 +531,136 @@ describe("a move the UI scene took, heard by the world reported (FS-TQZ5J A1 R27
     reportWorld(scene, "hub", side());
 
     expect(() => bridge.moved(pointer, true)).not.toThrow();
+  });
+});
+
+// FS-TQZ5J § Change: Phase 3 (I-TQZ5J-13): the UI's state gains the gear's panels and the container
+// view's entity, each piece reporting its own part; the world hears every change with what it was.
+describe("the UI's state in parts, heard with what it was (FS-TQZ5J § Change: Phase 3, R53)", () => {
+  it("should merge a part into the UI's state and tell the world the change once, with the state before", () => {
+    const bridge = new GameUiBridge();
+    const heard: [unknown, unknown][] = [];
+    bridge.report({ world: "run", ...side(), heardUi: (ui, was) => void heard.push([ui, was]) });
+
+    bridge.reportUi({ inventory: true, character: false, stash: false });
+    bridge.reportUi({ menuOpen: true });
+    bridge.reportUi({ container: "chest-1" });
+    bridge.reportUi({ container: "chest-1", inventory: true });
+
+    expect(heard).toEqual([
+      [
+        { menuOpen: false, inventory: true, character: false, stash: false },
+        { menuOpen: false },
+      ],
+      [
+        { menuOpen: true, inventory: true, character: false, stash: false },
+        { menuOpen: false, inventory: true, character: false, stash: false },
+      ],
+      [
+        { menuOpen: true, inventory: true, character: false, stash: false, container: "chest-1" },
+        { menuOpen: true, inventory: true, character: false, stash: false },
+      ],
+    ]);
+    expect(bridge.ui.container).toBe("chest-1");
+  });
+
+  it("should tell a container closed as none, and a change back from none as a change", () => {
+    const bridge = new GameUiBridge();
+    const heard: (string | undefined)[] = [];
+    bridge.report({ world: "field", ...side(), heardUi: (ui) => void heard.push(ui.container) });
+
+    bridge.reportUi({ container: "pile-1" });
+    bridge.reportUi({ container: undefined });
+    bridge.reportUi({ container: undefined });
+
+    expect(heard).toEqual(["pile-1", undefined]);
+  });
+});
+
+// FS-TQZ5J § Change: Phase 3 (I-TQZ5J-13): the world hands the UI scene the gear's, the container's and
+// the record's data, and that its run's end appeared, as plain data; the UI scene hears it at once.
+describe("the gear's, the container's and the record's data, told to the UI scene (FS-TQZ5J § Change: Phase 3, R52)", () => {
+  const item = { entity_id: "sword-1", name: "Sword" } as never;
+  const view = { title: "THE DELVE IS OVER" } as never;
+
+  it("should tell each screen listener every message at once, and none once it stopped listening", () => {
+    const bridge = new GameUiBridge();
+    const told: unknown[] = [];
+    const stop = bridge.onScreen({
+      gear: (message) => void told.push(["gear", message]),
+      container: (message) => void told.push(["container", message]),
+      record: (shown) => void told.push(["record", shown]),
+      endPopped: () => void told.push(["endPopped"]),
+    });
+    bridge.onScreen({ notice: () => {} });
+    const ui = reportWorld({ registry: registryWith(bridge), events: new EventEmitter() }, "run", side());
+
+    ui.gear({ kind: "seen", carried: { inventory: [item] }, character: { level: 3 } as never });
+    ui.gear({ kind: "level", level: 3 });
+    ui.gear({ kind: "taken", item });
+    ui.gear({ kind: "openStash" });
+    ui.gear({ kind: "close" });
+    ui.container({ kind: "open", entityId: "chest-1", container: "chest" });
+    ui.container({ kind: "items", items: [item] });
+    ui.container({ kind: "close", now: true });
+    ui.record({ view, open: true });
+    ui.record(null);
+    ui.endPopped();
+    stop();
+    bridge.endPopped();
+
+    expect(told).toEqual([
+      ["gear", { kind: "seen", carried: { inventory: [item] }, character: { level: 3 } }],
+      ["gear", { kind: "level", level: 3 }],
+      ["gear", { kind: "taken", item }],
+      ["gear", { kind: "openStash" }],
+      ["gear", { kind: "close" }],
+      ["container", { kind: "open", entityId: "chest-1", container: "chest" }],
+      ["container", { kind: "items", items: [item] }],
+      ["container", { kind: "close", now: true }],
+      ["record", { view, open: true }],
+      ["record", null],
+      ["endPopped"],
+    ]);
+  });
+
+  it("should hand a world lent no bridge calls that draw nothing", () => {
+    expect(() => {
+      NO_UI.gear({ kind: "close" });
+      NO_UI.container({ kind: "close" });
+      NO_UI.record(null);
+      NO_UI.endPopped();
+    }).not.toThrow();
+  });
+});
+
+// FS-TQZ5J § Change: Phase 3 (I-TQZ5J-13): the UI scene asks the world for the gear's sends, a take and
+// the record's close, as plain data; a world with no answer ignores them.
+describe("the gear's, the container's and the record's requests (FS-TQZ5J § Change: Phase 3, R54)", () => {
+  it("should hand equip, unequip, take and close: record to the world's answers, and ignore one it has none for", () => {
+    const done: string[] = [];
+    const item = { entity_id: "ring-1" } as never;
+    const answer = answering({
+      equip: (id) => void done.push(`equip ${id}`),
+      unequip: (id) => void done.push(`unequip ${id}`),
+      take: (taken) => void done.push(`take ${(taken as { entity_id: string }).entity_id}`),
+      close: { record: () => void done.push("close record") },
+    });
+
+    answer({ kind: "equip", item: "sword-1" });
+    answer({ kind: "unequip", item: "helm-1" });
+    answer({ kind: "take", item });
+    answer({ kind: "close", window: "record" });
+    answering({})({ kind: "take", item });
+
+    expect(done).toEqual(["equip sword-1", "unequip helm-1", "take ring-1", "close record"]);
+  });
+
+  it("should carry the world's part of the gear's refusal in its blockers, false where left out", () => {
+    const bridge = new GameUiBridge();
+    bridge.report({ world: "hub", ...side(), blockers: () => ({ dialogue: true, gear: true }) });
+    expect(bridge.world?.blockers().gear).toBe(true);
+    bridge.report({ world: "field", ...side() });
+    expect(bridge.world?.blockers().gear ?? false).toBe(false);
   });
 });
