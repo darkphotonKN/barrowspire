@@ -35,7 +35,7 @@ import {
   WINDOW_GLASS,
 } from "./models/architecture.js";
 import { brazier, lampPost, table, chair, barrel, BRAZIER_FLAME, LAMP_GLASS } from "./models/props.js";
-import { door, escapeDoor, lever, chest, sack } from "./models/interactables.js";
+import { door, escapeDoor, lever, chest, sack, tome, altar } from "./models/interactables.js";
 import { ICONS } from "./models/items.js";
 import {
   AWNINGS,
@@ -298,6 +298,31 @@ function propSheets() {
     },
   );
   return sheets;
+}
+
+/**
+ * The Tome of Filth and the Altar of Consecration (FS-3103M §H R23): two small props of the run,
+ * resident (charter default, not on demand: they are tiny), on an atlas of their own so no
+ * committed atlas reflows. The tome is one still frame; the altar's two states are framed together,
+ * as the chest's are, so the swap from `dormant` to `burned` never moves the sprite.
+ */
+function summoningSheets() {
+  return [
+    {
+      name: "tome",
+      group: "summoning",
+      kind: "prop",
+      animations: { default: still(tome) },
+      source: src("models/interactables.js", "tome"),
+    },
+    {
+      name: "altar",
+      group: "summoning",
+      kind: "prop",
+      animations: { dormant: still(() => altar("dormant")), burned: still(() => altar("burned")) },
+      source: src("models/interactables.js", "altar"),
+    },
+  ];
 }
 
 /**
@@ -699,6 +724,7 @@ export const CATALOGUE = [
   ...architectureSheets(),
   ...propSheets(),
   ...containerSheets(),
+  ...summoningSheets(),
   ...townSheets(),
   ...iconSheets(),
   ...characterSheets(),

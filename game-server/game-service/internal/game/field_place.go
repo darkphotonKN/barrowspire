@@ -53,10 +53,10 @@ type FieldElite int
 
 const (
 	// FieldEliteRolled is elite at the Spire's floor-1 chance, read live
-	// (FS-X2F2H §Requirements 28): the Meadows' points. The zero value.
+	// (FS-X2F2H §Requirements 28): the Meadows' points and the Forest's
+	// trail points (FS-3QHQZ §Change: Elites on the Forest's trail). The
+	// zero value.
 	FieldEliteRolled FieldElite = iota
-	// FieldEliteNever is never elite: the Forest's trail points.
-	FieldEliteNever
 	// FieldEliteAlways is always elite: the Forest's elite clearings.
 	FieldEliteAlways
 )

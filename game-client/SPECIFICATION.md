@@ -58,6 +58,7 @@ server state and sends intents. ✅
 - [x] Floor transitions → FS-F6F88
 - [ ] Floor layout from the floor map → FS-KE075
 - [ ] Told when a guarded chest will not open → FS-KE075
+- [ ] Tome and altar summoning → FS-3103M
 - [ ] Progress shown while a container opens → FS-MQYEX
 - [ ] Fog of war → FS-SRA9J
 - [ ] Minimap → FS-SRA9J
@@ -111,9 +112,13 @@ server state and sends intents. ✅
 - [ ] Ranged monsters drawn with their shots → FS-B4SG9
 - [x] Blood demon boss look → FS-VHGE7
 - [x] Demon fire claw look → FS-VHGE7
+- [ ] Monster ability effects → FS-C8VM7
+- [ ] Enemy art loaded per floor pool → FS-C8VM7
+- [ ] Champion boss look → FS-C8VM7
 - [x] Hub town props and dressing → FS-KYPQ9
 - [x] Skill and combat effects → FS-none
 - [x] Skill and combat effects in the world's art direction → FS-KYPQ9
+- [ ] Spire messages as lore lines → FS-XWHZP
 - [x] Custom cursors and entrance markers → FS-none
 - [x] Cursors and world indicators in the world's art direction → FS-KYPQ9
 - [x] Exterior run look → FS-2325V

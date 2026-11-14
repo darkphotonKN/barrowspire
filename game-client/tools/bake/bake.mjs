@@ -43,7 +43,7 @@ import { downscale } from "./lib/downscale.mjs";
 import { cropFrame, trimGrid, trimRect } from "./lib/trim.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
-import { labelTexts, writeReview } from "./lib/contact.mjs";
+import { labelTexts, lineupSets, writeReview } from "./lib/contact.mjs";
 import { buildingReviewTexts, writeBuildingReview } from "./lib/building.mjs";
 
 const OUT_DIR = join(CLIENT_ROOT, "public", "art");
@@ -114,7 +114,10 @@ async function bakeAll() {
     const review = reviewSheets(sheets);
     const labels = new Map();
     if (!CHECK && review.length)
-      for (const l of await page.evaluate((t) => window.bakeLabels(t), [...labelTexts(review, init.facings), ...buildingReviewTexts()]))
+      for (const l of await page.evaluate(
+        (t) => window.bakeLabels(t),
+        [...labelTexts([...review, ...lineupSets(sheets).flatMap((l) => l.sheets)], init.facings), ...buildingReviewTexts()],
+      ))
         labels.set(l.text, { w: l.w, h: l.h, px: Buffer.from(l.rgba, "base64") });
     return { tile: init.tile, facings: init.facings, sheets, labels };
   } finally {
@@ -305,7 +308,8 @@ async function main() {
     const review = reviewSheets(baked.sheets);
     if (review.length) {
       const theme = (await loadTheme()).BARROW;
-      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme });
+      const lineups = lineupSets(baked.sheets);
+      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme, lineups });
       // the building exteriors laid as a mock building beside today's pieces (FS-9PN7X §F.1)
       if (review.some((s) => s.group === "building")) files.push(...writeBuildingReview({ sheets: baked.sheets, labels: baked.labels, theme }));
       console.log(`bake: review contact sheets (not committed):\n  ${files.join("\n  ")}`);

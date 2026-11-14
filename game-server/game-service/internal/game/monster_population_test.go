@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"math/rand/v2"
+	"strings"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
@@ -171,6 +172,20 @@ func TestMapKeepOut_CoversTheWholeBuilding(t *testing.T) {
 	assert.True(t, covered, "the floor enclosed by a building's walls is not open ground")
 }
 
+// A tome run's tome and altar are kept out as a container is: no monster
+// starts on either. FS-3103M §C R8.
+func TestMapKeepOut_CoversTheTomeAndTheAltar(t *testing.T) {
+	em := ecs.NewEntityManager()
+	CreateTomeEntity(em, 500, 400)
+	CreateAltarEntity(em, 900, 400)
+	keepOut := mapKeepOut(em.GetAllEntities())
+
+	for _, at := range []point{{500, 400}, {900, 400}} {
+		assert.Contains(t, keepOut, centredArea(at.x, at.y, constants.ContainerWidthRadius, constants.ContainerHeightRadius),
+			"no monster starts on the object at (%v, %v)", at.x, at.y)
+	}
+}
+
 // A floor deeper in the run is visibly harder: higher levels, by the floor
 // offset, with the same spread. FS-77AB6 §Requirements 21.
 func TestBuildFloor_LevelsMonstersByTheFloorDepth(t *testing.T) {
@@ -224,7 +239,7 @@ func TestMonsterLevel_IsPartyPlusFloorOffsetPlusSpreadAtLeastOne(t *testing.T) {
 }
 
 // Over many seeded populations the mix matches the configured chance: a quarter
-// trolls on floor 1, more on floor 3, never more than the cap.
+// brutes, on a tier-1 pool trolls, on floor 1, more on floor 3, never more than the cap.
 // FS-77AB6 §Requirements 22.
 func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 	tests := []struct {
@@ -240,7 +255,7 @@ func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 		rng := seededSpawns(uint64(tt.floor))
 		trolls, total := 0, 0
 		for range 2000 {
-			for _, m := range rollMonsters(rng, 1, tt.floor) {
+			for _, m := range rollMonsters(rng, tier1Pool(), 1, tt.floor) {
 				total++
 				if m.Archetype == components.MonsterArchetypeTroll {
 					trolls++
@@ -251,34 +266,27 @@ func TestRollMonsters_TrollShareMatchesTheFloor(t *testing.T) {
 	}
 }
 
-// A rolled non-troll monster is 70% ghoul, 20% Barrow Thrall, 10% Spire Wraith
-// on every Spire floor, and nothing else, while the troll share stands.
-// FS-M8CSE §D R18.
-func TestRollArchetype_NonTrollMixOnEveryFloor(t *testing.T) {
+// On a tier-1 floor a rolled monster is the troll at the floor's brute share,
+// else one of the pool's three fodder, uniformly; never the Bone Archer, which
+// only fills an archer slot. The 70 / 20 / 10 mix is retired.
+// FS-C8VM7 §C R21-R22.
+func TestRollArchetype_Tier1PoolOnEveryFloor(t *testing.T) {
 	const rolls = 40000
+	pool := tier1Pool()
 	for floor := 1; floor <= 10; floor++ {
 		rng := seededSpawns(uint64(300 + floor))
 		counts := map[components.MonsterArchetype]int{}
 		for range rolls {
-			counts[rollArchetype(rng, floor)]++
+			counts[rollArchetype(rng, pool, floor)]++
 		}
 
-		nonTroll := float64(rolls - counts[components.MonsterArchetypeTroll])
-		assert.InDelta(t, trollShare(floor), float64(counts[components.MonsterArchetypeTroll])/rolls, 0.01, "floor %d troll share", floor)
-		assert.InDelta(t, 0.70, float64(counts[components.MonsterArchetypeGhoul])/nonTroll, 0.015, "floor %d ghouls", floor)
-		assert.InDelta(t, 0.20, float64(counts[components.MonsterArchetypeBarrowThrall])/nonTroll, 0.015, "floor %d Barrow Thralls", floor)
-		assert.InDelta(t, 0.10, float64(counts[components.MonsterArchetypeSpireWraith])/nonTroll, 0.015, "floor %d Spire Wraiths", floor)
-		assert.Len(t, counts, 4, "floor %d rolls only the four", floor)
+		fodder := float64(rolls - counts[components.MonsterArchetypeTroll])
+		assert.InDelta(t, bruteShare(floor), float64(counts[components.MonsterArchetypeTroll])/rolls, 0.01, "floor %d brute share", floor)
+		for _, a := range []components.MonsterArchetype{components.MonsterArchetypeGhoul, components.MonsterArchetypeBarrowThrall, components.MonsterArchetypeSpireWraith} {
+			assert.InDelta(t, 1.0/3, float64(counts[a])/fodder, 0.015, "floor %d %s", floor, a)
+		}
+		assert.Len(t, counts, 4, "floor %d rolls only the troll and the three fodder", floor)
 	}
-}
-
-// The shares of a non-troll roll make up the whole of it. FS-M8CSE §D R18.
-func TestSpireNonTrollMix_SharesSumToOne(t *testing.T) {
-	total := 0.0
-	for _, row := range spireNonTrollMix {
-		total += row.Share
-	}
-	assert.InDelta(t, 1.0, total, 1e-9)
 }
 
 // The Spire's roll stays the Spire's: populating is a run's alone, so a field
@@ -343,7 +351,7 @@ func TestRollMonsters_CountAndSpreadStayInRange(t *testing.T) {
 	levels := map[int]bool{}
 
 	for range 2000 {
-		monsters := rollMonsters(rng, 5, 1)
+		monsters := rollMonsters(rng, tier1Pool(), 5, 1)
 		counts[len(monsters)] = true
 		for _, m := range monsters {
 			levels[m.Level] = true
@@ -532,60 +540,69 @@ func TestRunBroadcast_CarriesTheFloorsMonsters(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
-// The top floor always holds exactly one demon, in addition to the standard
-// count, at party level + floor offset + 2 with no spread, and it is never an
-// elite. FS-77AB6 §Requirements 21, 24.
-func TestPopulateMonsters_TopFloorHasExactlyOneDemon(t *testing.T) {
+// The top floor of a height 3-9 run holds exactly one champion, at the
+// demon's level and never an elite, beside the standard count, and no Green
+// Demon. FS-77AB6 §Requirements 21, 24; FS-C8VM7 §D R26-R27.
+func TestPopulateMonsters_TopFloorHasExactlyOneChampion(t *testing.T) {
 	for seed := uint64(1); seed <= 30; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100}, delverAt{level: 4, x: 160, y: 100})
 		s.populateMonsters(3, true, nil)
 
-		var demons []*components.MonsterComponent
 		standard := 0
 		for _, m := range monstersIn(s) {
-			monster := monsterOf(m)
-			if monster.Boss {
-				// the green one: the top floor may hold a blood demon too (FS-VHGE7 §A R7)
-				if monster.Archetype == components.MonsterArchetypeDemon {
-					demons = append(demons, monster)
-				}
-				continue
+			if !monsterOf(m).Boss {
+				standard++
 			}
-			standard++
 		}
 
-		require.Len(t, demons, 1, "seed %d", seed)
-		demon := demons[0]
-		assert.Equal(t, components.MonsterArchetypeDemon, demon.Archetype)
-		assert.Equal(t, 4+MonsterLevelPerFloor*2+DemonLevelBonus, demon.Level, "seed %d", seed)
-		assert.Equal(t, "Demon", demon.Name)
-		assert.False(t, demon.Elite, "the demon is never an elite")
-		assert.GreaterOrEqual(t, standard, MonsterCountMin, "seed %d: the demon is in addition", seed)
+		bosses := bossesIn(s)
+		require.Len(t, bosses[championKey], 1, "seed %d", seed)
+		assert.Empty(t, bosses[components.MonsterArchetypeDemon], "seed %d: the champion stands where the demon stood", seed)
+		assertChampion(t, monsterOf(bosses[championKey][0]), 4+MonsterLevelPerFloor*2+DemonLevelBonus, "seed %d", seed)
+		assert.GreaterOrEqual(t, standard, MonsterCountMin, "seed %d: the champion is in addition", seed)
 	}
 }
 
-// Off the top floor the demon comes on its rare roll, at the configured rate on
-// floors 1 and 3; on the top floor, always. FS-77AB6 §Requirements 24.
-func TestRollDemon_RateMatchesTheConfiguredChance(t *testing.T) {
-	const rolls = 40000
-
-	for _, floor := range []int{1, 3} {
-		rng := seededSpawns(uint64(100 + floor))
-		demons := 0
-		for range rolls {
-			if _, rolled := rollDemon(rng, 1, floor, false); rolled {
-				demons++
-			}
-		}
-		assert.InDelta(t, DemonChance, float64(demons)/rolls, 0.002, "floor %d", floor)
+// No floor below the top rolls Vorsk, whatever the draw; on the top floor a
+// champion always stands in its place. FS-3103M §A R2-R3; FS-C8VM7 §D R26.
+func TestRollDemon_NeverBelowTheTop(t *testing.T) {
+	for floor := 1; floor < MasterSpireHeight; floor++ {
+		// a source that always draws 0 would take any chance there is
+		_, rolled := rollDemon(&drawQueue{}, tier1Pool(), 1, floor, false)
+		assert.False(t, rolled, "floor %d", floor)
 	}
 
 	rng := seededSpawns(9)
 	for range 1000 {
-		demon, rolled := rollDemon(rng, 1, 3, true)
-		require.True(t, rolled, "the top floor always has its demon")
-		assert.True(t, demon.Boss)
-		assert.False(t, demon.Elite)
+		champion, rolled := rollDemon(rng, tier1Pool(), 1, 3, true)
+		require.True(t, rolled, "the top floor always has its boss")
+		assert.True(t, champion.Boss)
+		assert.True(t, champion.Champion)
+		assert.False(t, champion.Elite)
+	}
+}
+
+// Over many seeded populations of floors 1-9 that are not the top, dungeon
+// floors and floors of buildings alike, no demon is placed, even from a source
+// that always draws 0. FS-3103M §A R2.
+func TestPopulateMonsters_NoDemonBelowTheTop(t *testing.T) {
+	for floor := 1; floor < MasterSpireHeight; floor++ {
+		zero := rosterOnRun(t, uint64(floor), delverAt{level: 2, x: 100, y: 100})
+		zero.spawnRand = &drawQueue{}
+		zero.populateMonsters(floor, false, nil)
+		assert.Empty(t, bossesIn(zero)[components.MonsterArchetypeDemon], "floor %d, a zero source", floor)
+
+		for seed := uint64(1); seed <= 20; seed++ {
+			for _, fallback := range []bool{false, true} {
+				s := rosterOnRun(t, seed, delverAt{level: 2, x: 100, y: 100})
+				currentFloor(t, s).Count = MasterSpireHeight
+				if fallback {
+					failGeneration(s)
+				}
+				s.buildFloor(floor, nil)
+				assert.Empty(t, bossesIn(s)[components.MonsterArchetypeDemon], "floor %d seed %d fallback %v", floor, seed, fallback)
+			}
+		}
 	}
 }
 
@@ -650,7 +667,7 @@ func TestRollMonsters_EliteRateMatchesTheFloor(t *testing.T) {
 		rng := seededSpawns(uint64(200 + tt.floor))
 		elites, total := 0, 0
 		for range 4000 {
-			for _, m := range rollMonsters(rng, 1, tt.floor) {
+			for _, m := range rollMonsters(rng, tier1Pool(), 1, tt.floor) {
 				total++
 				base := monsterSheets[m.Archetype].Name
 				if !m.Elite {
@@ -698,10 +715,12 @@ func TestCreateMonsterEntity_EliteHasMoreHealthAndDamage(t *testing.T) {
 	assert.Equal(t, "Dread Ghoul", monster.Name)
 }
 
-// The broadcast names every monster as the server authored it: the demon as the
-// boss, an elite with its prefix, the rest plain. FS-77AB6 §Requirements 32.
+// The broadcast names every monster as the server authored it: the champion as
+// the boss, an elite with its prefix, the rest plain. A blood demon the top
+// floor may also roll (FS-VHGE7 §A R7) is not counted, so no seed decides the
+// outcome. FS-77AB6 §Requirements 32.
 func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
-	s := rosterOnRun(t, 8, delverAt{level: 1, x: 100, y: 100})
+	s := rosterOnRun(t, 9, delverAt{level: 1, x: 100, y: 100})
 	s.populateMonsters(testSpireHeight, true, nil)
 	elite := CreateMonsterEntity(s.EntityManager, MonsterConfig{
 		Archetype: components.MonsterArchetypeTroll, Level: 2, Elite: true, Name: "Hollow Troll", X: 900, Y: 700,
@@ -715,10 +734,13 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 	bosses := 0
 	for _, m := range state.Monsters {
 		switch {
+		case components.MonsterArchetype(m.Archetype) == components.MonsterArchetypeBloodDemon:
+			assert.True(t, m.Boss, "a blood demon is a boss beside the champion")
 		case m.Boss:
+			// the top floor's champion, a tier-1 variant at a boss's level
 			bosses++
-			assert.Equal(t, "demon", m.Archetype)
-			assert.Equal(t, "Demon", m.Name)
+			assert.Contains(t, tier1Pool().archetypes(), components.MonsterArchetype(m.Archetype))
+			assert.Contains(t, m.Name, " the ")
 			assert.False(t, m.Elite)
 			assert.Equal(t, 1+MonsterLevelPerFloor*(testSpireHeight-1)+DemonLevelBonus, m.Level)
 		case m.EntityID == elite.ID:
@@ -731,20 +753,17 @@ func TestRunBroadcast_CarriesEliteBossAndName(t *testing.T) {
 	assert.Equal(t, 1, bosses)
 }
 
-// Building the run's last floor brings its guaranteed demon; the floors below
-// leave it to the roll. FS-77AB6 §Requirements 24 with FS-F6F88.
-func TestBuildFloor_TheTopFloorBringsItsDemon(t *testing.T) {
+// Building the run's last floor brings its guaranteed champion; the floors
+// below leave the demon to the roll. FS-77AB6 §Requirements 24 with FS-F6F88;
+// FS-C8VM7 §D R26.
+func TestBuildFloor_TheTopFloorBringsItsChampion(t *testing.T) {
 	for seed := uint64(1); seed <= 10; seed++ {
 		s := rosterOnRun(t, seed, delverAt{level: 1, x: 100, y: 100})
 		s.buildFloor(testSpireHeight, nil)
 
-		bosses := 0
-		for _, m := range monstersIn(s) {
-			if monsterOf(m).Archetype == components.MonsterArchetypeDemon { // the green one: the top floor may hold a blood demon too (FS-VHGE7 §A R7)
-				bosses++
-			}
-		}
-		assert.Equal(t, 1, bosses, "seed %d", seed)
+		// the top floor may hold a blood demon too (FS-VHGE7 §A R7)
+		assert.Len(t, bossesIn(s)[championKey], 1, "seed %d", seed)
+		assert.Empty(t, bossesIn(s)[components.MonsterArchetypeDemon], "seed %d", seed)
 	}
 }
 
@@ -786,27 +805,25 @@ func TestRollBloodDemon_RollsTheFloorsChance(t *testing.T) {
 	}
 }
 
-// The blood demon's roll is its own draw, after the green demon's: whichever
-// way the green one goes, the next draw alone decides the blood one.
+// The blood demon's roll is its own draw: below the top the demon's roll makes
+// none (FS-3103M §A R2), so the first draw alone decides the blood one.
 // FS-VHGE7 §A R6–8.
 func TestRollBloodDemon_IndependentOfTheGreenDemon(t *testing.T) {
 	tests := []struct {
-		name             string
-		green, blood     float64
-		wantGreen, wantB bool
+		name  string
+		blood float64
+		want  bool
 	}{
-		{"both", DemonChance / 2, 0.01, true, true},
-		{"green only", DemonChance / 2, 0.5, true, false},
-		{"blood only", 0.5, 0.01, false, true},
-		{"neither", 0.5, 0.5, false, false},
+		{"blood", 0.01, true},
+		{"none", 0.5, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rng := &drawQueue{floats: []float64{tt.green, tt.blood}}
-			_, green := rollDemon(rng, 1, 1, false)
+			rng := &drawQueue{floats: []float64{tt.blood}}
+			_, green := rollDemon(rng, tier1Pool(), 1, 1, false)
 			_, blood := rollBloodDemon(rng, 1, 1)
-			assert.Equal(t, tt.wantGreen, green)
-			assert.Equal(t, tt.wantB, blood)
+			assert.False(t, green)
+			assert.Equal(t, tt.want, blood)
 		})
 	}
 }
@@ -823,11 +840,35 @@ func forceBloodDemon(t *testing.T, chance float64) {
 func bossesIn(s *Session) map[components.MonsterArchetype][]*ecs.Entity {
 	out := map[components.MonsterArchetype][]*ecs.Entity{}
 	for _, m := range monstersIn(s) {
-		if monster := monsterOf(m); monster.Boss {
+		monster := monsterOf(m)
+		switch {
+		case monster.Champion:
+			out[championKey] = append(out[championKey], m)
+		case monster.Boss:
 			out[monster.Archetype] = append(out[monster.Archetype], m)
 		}
 	}
 	return out
+}
+
+// championKey is where bossesIn files a floor's champion, whatever its variant.
+const championKey components.MonsterArchetype = "(champion)"
+
+// assertChampion checks a champion is a boss, never an elite, at the demon's
+// level, named "<Name> the <Epithet>" from the lists, a variant of the roster.
+// FS-C8VM7 §D R26-R29.
+func assertChampion(t *testing.T, champion *components.MonsterComponent, level int, msgAndArgs ...any) {
+	t.Helper()
+	assert.True(t, champion.Boss, msgAndArgs...)
+	assert.True(t, champion.Champion, msgAndArgs...)
+	assert.False(t, champion.Elite, msgAndArgs...)
+	assert.Equal(t, level, champion.Level, msgAndArgs...)
+	_, onRoster := variantOf(champion.Archetype)
+	assert.True(t, onRoster, msgAndArgs...)
+	name, epithet, ok := strings.Cut(champion.Name, " the ")
+	assert.True(t, ok, msgAndArgs...)
+	assert.Contains(t, ChampionNames, name, msgAndArgs...)
+	assert.Contains(t, ChampionEpithets, epithet, msgAndArgs...)
 }
 
 // On an open top floor both demons stand: the blood demon at its level, named,
@@ -847,11 +888,11 @@ func TestPopulateMonsters_OpenFloorPlacesTheBloodDemonAfterTheDemon(t *testing.T
 		s.populateMonsters(top, true, nil)
 
 		bosses := bossesIn(s)
-		require.Len(t, bosses[components.MonsterArchetypeDemon], 1, "seed %d", seed)
+		require.Len(t, bosses[championKey], 1, "seed %d", seed)
 		require.Len(t, bosses[components.MonsterArchetypeBloodDemon], 1, "seed %d", seed)
-		green := transformOf(t, bosses[components.MonsterArchetypeDemon][0])
-		greenWithout := transformOf(t, bossesIn(without)[components.MonsterArchetypeDemon][0])
-		assert.Equal(t, *greenWithout, *green, "seed %d: the green demon's placement is unchanged", seed)
+		green := transformOf(t, bosses[championKey][0])
+		greenWithout := transformOf(t, bossesIn(without)[championKey][0])
+		assert.Equal(t, *greenWithout, *green, "seed %d: the champion's placement is unchanged", seed)
 
 		bloodEntity := bosses[components.MonsterArchetypeBloodDemon][0]
 		blood := monsterOf(bloodEntity)
@@ -889,14 +930,14 @@ func TestPopulateMonsters_BloodDemonWithNoSpotIsSkipped(t *testing.T) {
 
 	bosses := bossesIn(s)
 	assert.Empty(t, bosses[components.MonsterArchetypeBloodDemon])
-	assert.Len(t, bosses[components.MonsterArchetypeDemon], 1, "the guaranteed demon still relaxes")
+	assert.Len(t, bosses[championKey], 1, "the guaranteed champion still relaxes")
 	assert.Contains(t, logs.String(), `"level":"WARN"`)
 	assert.Contains(t, logs.String(), "blood_demon")
 	assert.NotContains(t, logs.String(), `"level":"ERROR"`)
 }
 
-// The boss on a run's top floor is its height's: the Demon below 10, with a
-// Blood Demon still able to roll beside it, and on a Master Spire Daa'gon alone.
+// The boss on a run's top floor is its height's: a champion below 10 (FS-C8VM7
+// §D R26), with a Blood Demon still able to roll beside it, and on a Master Spire Daa'gon alone.
 // On a dungeon floor and on a floor of buildings alike. FS-M8CSE §E R23, R24, R27;
 // §Edge States "Generation fails on a Master Spire top floor".
 func TestBuildFloor_TopFloorBossIsTheHeights(t *testing.T) {
@@ -924,10 +965,12 @@ func TestBuildFloor_TopFloorBossIsTheHeights(t *testing.T) {
 				if height == MasterSpireHeight {
 					assert.Len(t, bosses[components.MonsterArchetypeDaagon], 1, "the Master Spire's top floor holds Daa'gon")
 					assert.Empty(t, bosses[components.MonsterArchetypeDemon], "Daa'gon replaces the Demon")
+					assert.Empty(t, bosses[championKey], "no champion beside Daa'gon")
 					assert.Empty(t, bosses[components.MonsterArchetypeBloodDemon], "no Blood Demon rolls beside Daa'gon")
 					continue
 				}
-				assert.Len(t, bosses[components.MonsterArchetypeDemon], 1, "height %d", height)
+				assert.Len(t, bosses[championKey], 1, "height %d", height)
+				assert.Empty(t, bosses[components.MonsterArchetypeDemon], "height %d: no Green Demon", height)
 				assert.Len(t, bosses[components.MonsterArchetypeBloodDemon], 1, "height %d keeps its Blood Demon roll", height)
 				assert.Empty(t, bosses[components.MonsterArchetypeDaagon], "height %d", height)
 			}
@@ -952,8 +995,10 @@ func TestBuildFloor_MasterSpireLowerFloorsKeepTheirRolls(t *testing.T) {
 	}
 }
 
-// The demon's roll names the top floor's boss, and leaves any other floor to
-// its rare chance, a Master Spire's included. FS-M8CSE §E R23-R25.
+// The demon's roll names the top floor's boss, a champion below a Master
+// Spire's (from a tier-1 pool, its first member on these draws), and nothing
+// on any other floor, a Master Spire's included.
+// FS-M8CSE §E R23-R25; FS-C8VM7 §D R26; FS-3103M §A R2.
 func TestRollDemon_NamesTheFloorsBoss(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -965,15 +1010,14 @@ func TestRollDemon_NamesTheFloorsBoss(t *testing.T) {
 		wantLevel     int
 	}{
 		{"height 10's top", 10, true, nil, true, components.MonsterArchetypeDaagon, 4 + 9 + DaagonLevelBonus},
-		{"height 9's top", 9, true, nil, true, components.MonsterArchetypeDemon, 4 + 8 + DemonLevelBonus},
-		{"height 3's top", 3, true, nil, true, components.MonsterArchetypeDemon, 4 + 2 + DemonLevelBonus},
-		{"floor 9 of a Master Spire, on its chance", 9, false, []float64{0}, true, components.MonsterArchetypeDemon, 4 + 8 + DemonLevelBonus},
-		{"floor 9 of a Master Spire, off its chance", 9, false, []float64{DemonChance}, false, "", 0},
+		{"height 9's top", 9, true, nil, true, components.MonsterArchetypeGhoul, 4 + 8 + DemonLevelBonus},
+		{"height 3's top", 3, true, nil, true, components.MonsterArchetypeGhoul, 4 + 2 + DemonLevelBonus},
+		{"floor 9 of a Master Spire, never", 9, false, []float64{0}, false, "", 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			boss, rolled := rollDemon(&drawQueue{floats: tt.draws}, 4, tt.floor, tt.topFloor)
+			boss, rolled := rollDemon(&drawQueue{floats: tt.draws}, tier1Pool(), 4, tt.floor, tt.topFloor)
 
 			require.Equal(t, tt.wantRolled, rolled)
 			if !rolled {
@@ -1041,4 +1085,26 @@ func TestBloodDemon_NeverInAFieldOrTheHub(t *testing.T) {
 			assert.NotEqual(t, components.MonsterArchetypeBloodDemon, monsterOf(m).Archetype, name)
 		}
 	}
+}
+
+// The Demon is Vorsk by name; its archetype stays `demon`, and a spawned one
+// reports the name on the wire. FS-3103M §A R1, R4.
+func TestDemon_IsNamedVorsk(t *testing.T) {
+	assert.Equal(t, "demon", string(components.MonsterArchetypeDemon))
+	assert.Equal(t, "Vorsk", monsterSheets[components.MonsterArchetypeDemon].Name)
+
+	s := rosterOnRun(t, 1, delverAt{level: 1, x: 100, y: 100})
+	vorsk := CreateMonsterEntity(s.EntityManager, MonsterConfig{Archetype: components.MonsterArchetypeDemon, Level: 3, Boss: true, X: 900, Y: 700})
+	stateSerializer := serializer.NewStateSerializer(s.EntityManager, nil)
+	backendState, err := stateSerializer.SerializeBackendState(context.Background(), s.ID, s.worldType, s.EntityManager.GetAllEntities())
+	require.NoError(t, err)
+	state := stateSerializer.FormatStateToClientState(backendState, s.GetPlayerIDs()[0])
+	for _, m := range state.Monsters {
+		if m.EntityID == vorsk.ID {
+			assert.Equal(t, "Vorsk", m.Name)
+			assert.Equal(t, "demon", m.Archetype)
+			return
+		}
+	}
+	t.Fatal("Vorsk is not in the state")
 }

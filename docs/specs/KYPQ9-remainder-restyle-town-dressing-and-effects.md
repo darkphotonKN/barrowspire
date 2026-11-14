@@ -535,3 +535,5 @@ All commands run from `game-client/` with Node 22 on the path:
 - Sound, a day/night cycle, a lore name for the hub.
 
 ## Change: Arrival card → FS-PQ2TW
+
+## Change: Spire messages as lore lines → FS-XWHZP

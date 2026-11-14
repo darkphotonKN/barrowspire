@@ -35,6 +35,45 @@ const (
 	MonsterArchetypeGhost  MonsterArchetype = "ghost"
 )
 
+// The Spire's variants past each family's first (FS-C8VM7 §A R3): each its own
+// sheet, named in snake case as on the wire. Which family, role and unlock tier
+// each has is the roster's data (spireRoster), never read off the constant.
+const (
+	// the ghoul family
+	MonsterArchetypeGhast   MonsterArchetype = "ghast"
+	MonsterArchetypeRavener MonsterArchetype = "ravener"
+	// the skeleton family, after the Bone Archer
+	MonsterArchetypeAshenArcher MonsterArchetype = "ashen_archer"
+	MonsterArchetypeWightArcher MonsterArchetype = "wight_archer"
+	// the troll family
+	MonsterArchetypeCaveTroll  MonsterArchetype = "cave_troll"
+	MonsterArchetypeBloodTroll MonsterArchetype = "blood_troll"
+	// the thrall family, after the Barrow Thrall
+	MonsterArchetypePlagueThrall MonsterArchetype = "plague_thrall"
+	MonsterArchetypeBlightborn   MonsterArchetype = "blightborn"
+	// the ghost family, after the Spire Wraith
+	MonsterArchetypeShade   MonsterArchetype = "shade"
+	MonsterArchetypePhantom MonsterArchetype = "phantom"
+	MonsterArchetypeBanshee MonsterArchetype = "banshee"
+	// the goblin family: each variant a blade look and a blade + shield look,
+	// two archetypes of one variant (FS-C8VM7 §A R8)
+	MonsterArchetypeGoblin                MonsterArchetype = "goblin"
+	MonsterArchetypeGoblinShield          MonsterArchetype = "goblin_shield"
+	MonsterArchetypeGoblinCutthroat       MonsterArchetype = "goblin_cutthroat"
+	MonsterArchetypeGoblinCutthroatShield MonsterArchetype = "goblin_cutthroat_shield"
+	MonsterArchetypeGoblinReaver          MonsterArchetype = "goblin_reaver"
+	MonsterArchetypeGoblinReaverShield    MonsterArchetype = "goblin_reaver_shield"
+	MonsterArchetypeGoblinWarchief        MonsterArchetype = "goblin_warchief"
+	MonsterArchetypeGoblinWarchiefShield  MonsterArchetype = "goblin_warchief_shield"
+	// the ogre family
+	MonsterArchetypeOgre       MonsterArchetype = "ogre"
+	MonsterArchetypeOgreMauler MonsterArchetype = "ogre_mauler"
+	MonsterArchetypeOgreTyrant MonsterArchetype = "ogre_tyrant"
+	// the dark warrior family
+	MonsterArchetypeDarkWarrior MonsterArchetype = "dark_warrior"
+	MonsterArchetypeDarkReaper  MonsterArchetype = "dark_reaper"
+)
+
 // MonsterAction is what a monster is doing, as the state broadcast names it.
 // `attack` covers the wind-up and the strike, a demon's slam included.
 // FS-77AB6 §Requirements 32. `claw` is a demon's fire claw, from the tick it
@@ -46,7 +85,9 @@ const (
 	MonsterActionMove   MonsterAction = "move"
 	MonsterActionAttack MonsterAction = "attack"
 	MonsterActionClaw   MonsterAction = "claw"
-	MonsterActionDead   MonsterAction = "dead"
+	// MonsterActionAbility is a monster ability's wind-up (FS-C8VM7 §B R17)
+	MonsterActionAbility MonsterAction = "ability"
+	MonsterActionDead    MonsterAction = "dead"
 )
 
 // MonsterComponent marks a run entity as a monster. It rides the declared
@@ -63,6 +104,9 @@ type MonsterComponent struct {
 	Level int
 	Elite bool
 	Boss  bool
+	// Champion marks a top floor's champion boss (FS-C8VM7 §D): a variant at a
+	// boss's size whose kill pays the Demon's experience. In-process only.
+	Champion bool
 	// Name is server-authored, elite prefix included and level excluded: every
 	// client shows the same one and adds the level itself.
 	Name string
@@ -116,6 +160,16 @@ type MonsterComponent struct {
 	ShotSpeed          float64 // px/s
 	ShotRadius         float64 // px
 	ShotMaxFlight      float64 // px
+
+	// Ability is its monster ability, copied from its sheet at spawn; the zero
+	// value for a monster with none (FS-C8VM7 §B R10).
+	Ability MonsterAbility
+	// AbilityCooldown is the seconds before its ability is ready again: 0 at
+	// spawn, so it is ready then (R12).
+	AbilityCooldown float64
+	// AbilityPending is the ability it is winding up, fixed where it will land;
+	// the zero value while none is (R13).
+	AbilityPending PendingAbility
 
 	// Timers, counting down in seconds.
 	AttackCooldown        float64

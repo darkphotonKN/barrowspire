@@ -47,6 +47,8 @@ type KillRecord struct {
 	Level           int
 	Elite           bool
 	Boss            bool
+	// Champion is a top floor's champion boss (FS-C8VM7 §D R31)
+	Champion bool
 	// KillerMemberID is the delver whose hit took it to 0, credited even when
 	// that delver died, escaped or left before a projectile of theirs landed.
 	KillerMemberID uuid.UUID
@@ -310,6 +312,9 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		}
 	}
 
+	// a death burst's fuse burns on its corpse (FS-C8VM7 §B R16)
+	s.burnFuses(deltaTime, entities)
+
 	for _, entity := range entities {
 		if tc, ok := entity.GetComponent(ecs.ComponentTypeBurningTrail); ok {
 			s.burn(entity, tc.(*components.BurningTrailComponent), deltaTime, entities)
@@ -375,6 +380,11 @@ func tickCooldowns(entity *ecs.Entity, deltaTime float64) {
 // cost, or (for a targeted attack) with no valid target in range does nothing
 // at all: no damage, nothing spent, no cooldown started. FS-8AY7S §Requirements 10.
 func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackIntent, entities []*ecs.Entity) {
+	if intent.Kind == components.AttackMonsterAbility {
+		// a monster ability's shape and numbers are the monster's own
+		s.landAbility(attacker, intent, entities)
+		return
+	}
 	spec, ok := attackTable[intent.Kind]
 	if !ok {
 		return
@@ -884,6 +894,7 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 		Level:           monster.Level,
 		Elite:           monster.Elite,
 		Boss:            monster.Boss,
+		Champion:        monster.Champion,
 		KillerMemberID:  attack.AttackerMemberID,
 		Floor:           s.floor,
 	}
@@ -900,20 +911,7 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 // scaling stat plus the worn attribute, crit chance from the weapon's
 // critical_rate plus worn crit points, and a worn Lantern's pierce.
 func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
-	attack := components.AttackSnapshot{
-		AttackerEntityID: attacker.ID,
-		DamageType:       spec.damageType,
-		Coefficient:      spec.coefficient,
-		CritChance:       CritChance(0),
-		FromMonster:      attacker.HasComponent(ecs.ComponentTypeEnemy),
-	}
-
-	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
-		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
-	}
-	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
-		attack.Power = float64(cc.(*components.CombatComponent).Attack)
-	}
+	attack := bareSnapshot(attacker, spec)
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
 		stats := sc.(*components.StatsComponent)
 		attack.ScalingStat = scalingValue(spec.scaling, stats.Strength, stats.Agility, stats.Intelligence)
@@ -934,6 +932,26 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 		attack.Pierce = s.effects.PierceExtraTargets
 	}
 
+	return attack
+}
+
+// bareSnapshot is the part of an attack that needs nothing worn: who makes
+// it, its damage type and coefficient, the base crit, and its Combat attack
+// as the power. A monster wears nothing, so this is the whole of a monster's.
+func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
+	attack := components.AttackSnapshot{
+		AttackerEntityID: attacker.ID,
+		DamageType:       spec.damageType,
+		Coefficient:      spec.coefficient,
+		CritChance:       CritChance(0),
+		FromMonster:      attacker.HasComponent(ecs.ComponentTypeEnemy),
+	}
+	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
+		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
+	}
+	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCombat); ok {
+		attack.Power = float64(cc.(*components.CombatComponent).Attack)
+	}
 	return attack
 }
 

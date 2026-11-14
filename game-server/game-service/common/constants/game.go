@@ -12,6 +12,10 @@ const (
 	// ActionStartSolo asks for a run of one, built at once without the queue.
 	// FS-NSV3D §Requirements 8.
 	ActionStartSolo Action = "start_solo"
+	// ActionStartDevEndgameRun asks for the endgame test run, a run of one on a
+	// fixed plan; known only with the dev test room on. FS-BDRTJ §Change:
+	// Endgame test run, R21-R23.
+	ActionStartDevEndgameRun Action = "start_dev_endgame_run"
 	// ActionLeaveRun is a dead delver leaving a run for the hub before it ends.
 	// FS-QPDKN §Requirements 13.
 	ActionLeaveRun Action = "leave_run"

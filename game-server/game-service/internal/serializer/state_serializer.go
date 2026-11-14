@@ -68,12 +68,18 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		backendState.PartyOf = s.parties.Snapshot()
 	}
 
+	// a tome run's plan, on the run-level entity (FS-3103M §B R7)
+	var plan *components.TomePlanComponent
+
 	for _, entity := range entities {
 		// --- Floor (run-level entity; a hub has none) ---
 		if fc, hasFloor := entity.GetComponent(ecs.ComponentTypeFloor); hasFloor {
 			floor := fc.(*components.FloorComponent)
 			backendState.Floor = floor.Depth
 			backendState.CellSize = floor.CellSize
+		}
+		if pc, hasPlan := entity.GetComponent(ecs.ComponentTypeTomePlan); hasPlan {
+			plan = pc.(*components.TomePlanComponent)
 		}
 
 		// --- Player ---
@@ -328,6 +334,28 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 
+		// -- The tome and the altar (a tome run's, FS-3103M §E R14) --
+		if entity.HasComponent(ecs.ComponentTypeTome) {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				transform := tc.(*components.TransformComponent)
+				backendState.Tome = &types.TomeState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: transform.X, Y: transform.Y},
+				}
+			}
+			continue
+		}
+		if entity.HasComponent(ecs.ComponentTypeAltar) {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				transform := tc.(*components.TransformComponent)
+				backendState.Altar = &types.AltarState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: transform.X, Y: transform.Y},
+				}
+			}
+			continue
+		}
+
 		// -- Gates (the hub's; a run has none) --
 		if gc, isGate := entity.GetComponent(ecs.ComponentTypeGate); isGate {
 			tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform)
@@ -493,6 +521,15 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		// }
 	}
 
+	// whether the altar is burned is the run's plan's, read once the whole
+	// world has been walked (FS-3103M §B R7)
+	if plan != nil {
+		if backendState.Altar != nil {
+			backendState.Altar.Burned = plan.Burned
+		}
+		backendState.TomeCarried = plan.Carried && !plan.Burned
+	}
+
 	return backendState, nil
 }
 
@@ -559,6 +596,9 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Monsters:      backendState.Monsters,
 		Trails:        backendState.Trails,
 		Gates:         backendState.Gates,
+		Tome:          backendState.Tome,
+		Altar:         backendState.Altar,
+		TomeCarried:   backendState.TomeCarried,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -567,6 +607,10 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		if centres := interestCentres(backendState, playerID); len(centres) > 0 {
 			state.Monsters = nearAny(backendState.Monsters, centres, monsterAt)
 			state.Containers = nearAny(backendState.Containers, centres, containerAt)
+			// the tome is hidden: cut as a container is (FS-3103M §E R14)
+			if state.Tome != nil && !isNearAny(*state.Tome.Position, centres) {
+				state.Tome = nil
+			}
 		}
 	}
 
@@ -632,6 +676,10 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Monsters = fresh(state.Monsters)
 	state.Trails = fresh(state.Trails)
 	state.Gates = fresh(state.Gates)
+	// a sent frame keeps its own pointers; the next tick makes new ones
+	state.Tome = nil
+	state.Altar = nil
+	state.TomeCarried = false
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was
@@ -667,15 +715,21 @@ func interestCentres(backendState *types.BackendGameState, playerID uuid.UUID) [
 func nearAny[T any](list []T, centres []types.Position, at func(T) types.Position) []T {
 	kept := make([]T, 0, len(list))
 	for _, entity := range list {
-		p := at(entity)
-		for _, c := range centres {
-			if math.Hypot(p.X-c.X, p.Y-c.Y) <= interestRadius {
-				kept = append(kept, entity)
-				break
-			}
+		if isNearAny(at(entity), centres) {
+			kept = append(kept, entity)
 		}
 	}
 	return kept
+}
+
+// isNearAny is whether p lies within the interest radius of any centre.
+func isNearAny(p types.Position, centres []types.Position) bool {
+	for _, c := range centres {
+		if math.Hypot(p.X-c.X, p.Y-c.Y) <= interestRadius {
+			return true
+		}
+	}
+	return false
 }
 
 func monsterAt(m *types.MonsterState) types.Position { return m.Position }
@@ -733,6 +787,7 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 		Boss:      monster.Boss,
 		Facing:    types.Position{X: monster.FacingX, Y: monster.FacingY},
 		Action:    string(monster.Action),
+		Ability:   pendingAbilityState(monster),
 	}
 
 	if tc, ok := entity.GetComponent(ecs.ComponentTypeTransform); ok {
@@ -749,6 +804,23 @@ func monsterState(entity *ecs.Entity, monster *components.MonsterComponent) *typ
 		}
 	}
 
+	return state
+}
+
+// pendingAbilityState is a monster's ability while it winds one up, nil while
+// it does not: an area's or cone's centre, radius and angle, or for a shot its
+// kind and time left only. FS-C8VM7 §B R17.
+func pendingAbilityState(monster *components.MonsterComponent) *types.MonsterAbilityState {
+	pending := monster.AbilityPending
+	if pending.Remaining <= 0 {
+		return nil
+	}
+	ability := monster.Ability
+	state := &types.MonsterAbilityState{Kind: string(ability.Kind), Remaining: pending.Remaining}
+	if ability.Shape != components.AbilityShots {
+		state.X, state.Y = pending.X, pending.Y
+		state.Radius, state.Arc = ability.Radius, ability.Arc
+	}
 	return state
 }
 

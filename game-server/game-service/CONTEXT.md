@@ -294,6 +294,51 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   from where it stands to where its target stands crosses walkable ground only. It gates the shot,
   never aggro, which stays distance-only (ADR-0062 Decision 6).
 
+### The Spire's roster: tiers, families, variants and floor pools (FS-C8VM7, locked, not built)
+
+- **Archetype** — the code key of one monster kind (`MonsterArchetype`, the wire's `archetype`):
+  it picks the stat sheet on the server and the look on the client. Every **variant** is an
+  archetype; a goblin variant is two (its blade and shield **looks**). Bosses and field creatures
+  are archetypes that are not variants.
+- **Level tier** — a bucket of monster level: 1-5, 6-10, 11-15, 16-20, 21-25 (endgame), 26+ (deep
+  endgame, open-ended). A **floor's tier** is read from its **base level** (party level + the floor
+  offset, no spread), never from one monster's level or from the floor number alone. Always say
+  "level tier" or "a floor's tier" where the client's **size tier** (fodder / brute / boss, how big
+  a look is drawn) could be meant. *Avoid*: a bare "tier" in code names (`tierOf` reads a level).
+- **Family** — the variants that share one body (rig) and one **monster role**, and, for the new
+  families, one **monster ability**: Ghoul, Skeleton, Troll, Thrall, Ghost, Goblin, Ogre, Dark
+  Warrior. The family's first variant (its **step 0**) carries the sheet every step is derived
+  from. Not a class (players have classes), not an atlas group.
+- **Variant** — a named step in a family with its own sheet and **unlock tier** (Ghast, Cave
+  Troll, Goblin Reaver). The five tier-1 variants are today's Spire archetypes (Ghoul, Bone
+  Archer, Troll, Barrow Thrall, Spire Wraith). Each step up is stronger on HP, speed, damage and
+  defence. **Tiers only add**: a variant once unlocked is never removed from a higher tier.
+  *Avoid*: "subtype", "rank" (rank reads as elite), and "variant" for a recolour of a boss rig in
+  the bake (the blood demon is its own archetype, not a variant).
+- **Monster role** — what a family is for on a floor: **fodder**, **brute** or **ranged**. Pools,
+  hall packs and archer slots are built by role. Always "monster role" where a **room role**
+  (start, switch, treasure, …) or a dungeon spawn's placement role (hall pack, guard, room,
+  corridor) could be meant. "Brute share" is the chance a rolled monster is a brute (it was the
+  "troll share").
+- **Floor pool** — the 5 variants a Spire floor draws when it is built, from everything unlocked at
+  its tier, with at least one brute and two fodder; the floor's standard monsters come only from
+  it. Each floor draws its own. On the wire, `enemy_pool` on the floor map (the pool's archetypes,
+  never a boss). *Avoid*: a bare "pool", which `item_pool.go` already uses for items, and "mix"
+  (the retired fixed 70 / 20 / 10 mix).
+- **Archer slot** — a place FS-B4SG9 gives a ranged monster (some rolled room fodder, a hall pack's
+  first member). It takes the pool's ranged member, or stays fodder when the pool has none.
+- **Dark Warrior cap** — at most one Dark Warrior per 12 monsters on a floor, never more than 4.
+- **Monster ability** — a monster's one special move, sheet data like its shot: pounce, volley,
+  ground slam, death burst, wail, thrown dagger, rock throw, cleave. It replaces a swing when ready,
+  winds up with its area fixed (a **telegraph**), and hits delvers only. On the wire, the
+  `ability` action and the `ability` object on a monster's state. Always "monster ability" where a
+  class **ability** (a delver's right-click skill, below) could be meant. The demon's **slam** is
+  not a monster ability: it is the demon's wind-up strike; the Blood Troll's is the **ground slam**.
+- **Champion** — the boss of the top floor of a height 3-9 run: a variant unlocked at the floor's
+  tier but left out of its pool (from the pool at tier 1), at the demon's old level, with the
+  Demon sheet's HP and damage, mitigation × 1.5, drawn at boss size, named "<Name> the <Epithet>".
+  A boss, never an elite. *Avoid*: "elite boss", "mini-boss", and "champion" for an elite.
+
 ### Bosses (FS-77AB6, FS-VHGE7)
 
 - **Boss** — a monster spawned with `Boss: true`: never an elite, at most one of each kind a
@@ -301,6 +346,19 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   once FS-M8CSE adds Daa'gon.
 - **Demon** — the green boss (archetype `demon`): guaranteed on the top floor, rare below. With
   FS-M8CSE, a Master Spire's top floor holds Daa'gon in its place.
+  With FS-C8VM7 and FS-3103M (locked, not built) it is **Vorsk**, and only ever summoned.
+- **Vorsk** — the green demon's name (FS-3103M): archetype `demon` unchanged, display name
+  "Vorsk". Never rolled on any floor; it appears only when the party **summons** it. Drops on its
+  own row, more than any other boss. "The Green Demon" is its old name.
+- **Tome of Filth** — a small hidden book on one floor of about 2% of runs, at most one per run,
+  never on the top floor. Interacting takes it: run-level state the party holds, not a bag item;
+  never extracted, sold or settled, gone with the run. *Avoid*: "the book item", "tome item".
+- **Altar of Consecration** — the altar on a floor above the tome's and below the top, placed in
+  every tome run whether or not the tome was taken; altars exist only in tome runs. Interacting
+  with the tome burns it; without it, a lore line. Once burned it refuses quietly.
+- **Summon** — burning the Tome of Filth at the Altar of Consecration, which spawns Vorsk beside
+  the altar, on top of whatever the floor holds. The only way a demon of archetype `demon`
+  appears. *Avoid*: "spawn" for this player act (spawning is what population does).
 - **Blood Demon** — the red boss (archetype `blood_demon`): never guaranteed, rolled on every run
   floor at odds that climb with the floor; tougher than the demon. "Red demon" in conversation.
   With FS-M8CSE, it does not roll on a Master Spire's top floor.

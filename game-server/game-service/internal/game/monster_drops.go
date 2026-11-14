@@ -63,26 +63,33 @@ func (s *Session) rollKillDrop(r lootRand, table MonsterDrop, chance, fabledChan
 	return itemIDs
 }
 
-// fabledChanceFor is a Spire kill's Fabled chance per item: Daa'gon's own, else
-// any boss's, else an elite's on the floors that allow it, each times the floor
-// factor; anything else rolls none. FS-M8CSE §G R32.
+// fabledChanceFor is a Spire kill's Fabled chance per item: Vorsk's own on any
+// floor, Daa'gon's own, else any other boss's or an elite's on the floors that
+// allow them, each times the floor factor; anything else rolls none.
+// FS-M8CSE §G R32; FS-3103M §G R22.
 func fabledChanceFor(record systems.KillRecord) float64 {
 	var base float64
 	switch {
+	case record.Archetype == components.MonsterArchetypeDemon:
+		base = VorskFabledChance
 	case record.Archetype == components.MonsterArchetypeDaagon:
 		base = DaagonFabledChance
 	case record.Boss:
-		base = BossFabledChance
+		if record.Floor >= BossFabledMinFloor {
+			base = BossFabledChance
+		}
 	case record.Elite && record.Floor >= EliteFabledMinFloor:
 		base = EliteFabledChance
 	}
 	return base * floorFactor(record.Floor)
 }
 
-// monsterDropFor is the drop table row a kill rolls: the boss's, else an
-// elite's, else its archetype's.
+// monsterDropFor is the drop table row a kill rolls: Vorsk's own, else the
+// boss's, else an elite's, else its archetype's. FS-3103M §G R21.
 func monsterDropFor(record systems.KillRecord) (MonsterDrop, bool) {
 	switch {
+	case record.Archetype == components.MonsterArchetypeDemon:
+		return VorskMonsterDrop, true
 	case record.Boss:
 		return BossMonsterDrop, true
 	case record.Elite:

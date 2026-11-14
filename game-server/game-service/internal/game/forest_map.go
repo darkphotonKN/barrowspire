@@ -47,11 +47,12 @@ func ForlornForest(generated levelgen.Layout) FieldPlace {
 		StatFactor: FieldStatFactor,
 		DropFactor: ForestDropFactor,
 
-		// trail points never hold an elite; the elite clearings always do,
-		// named from the barrow prefixes
+		// trail points roll elite as the Meadows' do; the elite clearings
+		// always hold one, both named from the barrow prefixes (FS-3QHQZ
+		// §Change: Elites on the Forest's trail R31-R33)
 		RespawnDelay:   FieldRespawnDelay,
 		ElitePrefixes:  ElitePrefixes,
-		StandardElites: FieldEliteNever,
+		StandardElites: FieldEliteRolled,
 
 		// its clearing chests fill again 5 minutes after first opened (R19)
 		ChestRestockDelay: ForestChestRestockDelay,

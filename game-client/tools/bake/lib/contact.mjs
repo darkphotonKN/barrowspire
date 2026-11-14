@@ -6,7 +6,9 @@
 // (FS-8RBQY §D.7) follow the cast on the same sheet, one row per sheet, frames left to right.
 //
 // Written to tools/bake/review/ (gitignored) on every `npm run bake`, never by --check:
-//   contact-sheet.png          all sheets at 1×, labelled
+//   contact-sheet.png          all sheets at 1×, labelled; past CONTACT_PAGE_BYTES of pixels the
+//                              rest run on in contact-sheet-2.png, -3 … (one image tops 4 GiB of RGBA
+//                              once the cast outgrows it, which Node cannot allocate)
 //   contact-<sheet>-2x.png     each character sheet at ×2 (nearest-neighbour, to inspect pixels)
 //   contact-tower-2x.png       every tower sheet at ×2
 //   contact-spire-2x.png       the Spire's facade at ×2 (FS-0XMCP §R15)
@@ -14,6 +16,8 @@
 //   contact-interior-2x.png    the town buildings' furniture and fittings at ×2 (FS-B0H2D §G R30)
 //   contact-building-2x.png    the building exteriors and stone cap at ×2 (FS-9PN7X §F)
 //   contact-hall-2x.png        the enlarged Inn's great hall and taproom at ×2
+//   <LINEUPS file>             a family lineup per art slice at ×2 (FS-C8VM7 §H R48): one row per
+//                              sheet, each step beside the one below it, at key frames
 //   index.html                 the same from the baked atlases themselves, labelled from the
 //                              manifest's `facings`, with each clip playing at its fps
 // The HTML reads the committed atlases, so it also proves the manifest's frame order.
@@ -35,10 +39,114 @@ const hexRgb = (hex) => {
 };
 const mixRgb = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 
+/**
+ * The family lineups (FS-C8VM7 §H R48), one per art slice, for the owner to gate a family's look
+ * on: each row a sheet, a family's step-0 look first and its steps after it, so each shade sits
+ * beside the one below it. A lineup is written only when every sheet it names was baked.
+ */
+export const LINEUPS = [
+  {
+    file: "contact-old-family-variants-2x.png",
+    sheets: [
+      "creature_ghoul_base",
+      "creature_ghast_base",
+      "creature_ravener_base",
+      "creature_bone_archer_base",
+      "creature_ashen_archer_base",
+      "creature_wight_archer_base",
+      "creature_troll_base",
+      "creature_cave_troll_base",
+      "creature_blood_troll_base",
+      "creature_barrow_thrall_base",
+      "creature_plague_thrall_base",
+      "creature_blightborn_base",
+      "creature_spire_wraith_base",
+      "creature_shade_base",
+      "creature_phantom_base",
+      "creature_banshee_base",
+    ],
+  },
+  {
+    // the goblin beside the ghoul it stands below, each step's blade and shield looks
+    file: "contact-goblin-2x.png",
+    sheets: [
+      "creature_ghoul_base",
+      "creature_goblin_base",
+      "creature_goblin_shield_base",
+      "creature_goblin_cutthroat_base",
+      "creature_goblin_cutthroat_shield_base",
+      "creature_goblin_reaver_base",
+      "creature_goblin_reaver_shield_base",
+      "creature_goblin_warchief_base",
+      "creature_goblin_warchief_shield_base",
+    ],
+  },
+  {
+    // the ogre beside the troll it stands over, and its steps
+    file: "contact-ogre-2x.png",
+    sheets: ["creature_troll_base", "creature_ogre_base", "creature_ogre_mauler_base", "creature_ogre_tyrant_base"],
+  },
+  {
+    // the dark warrior and its Reaper, beside the ghoul (the bare skeleton it must not read as) and the troll
+    file: "contact-dark-warrior-2x.png",
+    sheets: ["creature_ghoul_base", "creature_troll_base", "creature_dark_warrior_base", "creature_dark_reaper_base"],
+  },
+  {
+    // the Tome of Filth and the altar's two states, beside the chest they stand smaller than (FS-3103M §H R23)
+    file: "contact-tome-altar-2x.png",
+    sheets: ["chest", "tome", "altar"],
+  },
+];
+
+/** The sheets each lineup names, from `sheets`; a lineup missing one is left out. */
+export function lineupSets(sheets) {
+  const byName = new Map(sheets.map((s) => [s.name, s]));
+  return LINEUPS.filter((l) => l.sheets.every((n) => byName.has(n))).map((l) => ({ file: l.file, sheets: l.sheets.map((n) => byName.get(n)) }));
+}
+
+/**
+ * A lineup's cells for a sheet: an 8-way sheet's idle in every facing, then its walk, its attack's
+ * wind-up and strike and its death's last frame facing se; a one-facing sheet's every frame.
+ */
+function lineupCells(s, facings) {
+  if (s.directions === 1) return Object.values(s.animations).flatMap((a) => a.frames[0]);
+  const se = facings.indexOf("se");
+  const at = (anim, i) => s.animations[anim] && s.animations[anim].frames[se][Math.min(i, s.animations[anim].frames[se].length - 1)];
+  const idle = s.animations.idle.frames.map((dir) => dir[0]);
+  return [...idle, at("walk", 2), at("attack", 1), at("attack", 3), at("death", Infinity)].filter(Boolean);
+}
+
+/** One lineup image at zoom `z`: a row per sheet, its name over it, every frame stood on one anchor. */
+export function composeLineup(sheets, facings, labels, theme, z = 2) {
+  const bg = mixRgb(hexRgb(theme.barrowDeep), hexRgb(theme.charcoal), 0.35);
+  const cell = mixRgb(bg, hexRgb(theme.barrowBrown), 0.25);
+  const ax = Math.max(...sheets.map((s) => s.anchor.x * s.frameWidth));
+  const ay = Math.max(...sheets.map((s) => s.anchor.y * s.frameHeight));
+  const cw = Math.ceil(ax + Math.max(...sheets.map((s) => (1 - s.anchor.x) * s.frameWidth)));
+  const ch = Math.ceil(ay + Math.max(...sheets.map((s) => (1 - s.anchor.y) * s.frameHeight)));
+  const lh = Math.max(18, ...sheets.map((s) => labels.get(s.name)?.h ?? 0));
+  const cols = Math.max(...sheets.map((s) => lineupCells(s, facings).length));
+  const rowH = lh + 4 + ch * z + M;
+  const c = canvas(M * 2 + cols * cw * z, M + sheets.length * rowH, bg);
+  sheets.forEach((s, r) => {
+    const top = M + r * rowH;
+    const l = labels.get(s.name);
+    if (l) blit(c, l.px, l.w, l.h, M, top);
+    lineupCells(s, facings).forEach((b64, i) => {
+      const x = M + i * cw * z;
+      const y = top + lh + 4;
+      fill(c, x + 1, y + 1, cw * z - 2, ch * z - 2, cell);
+      blit(c, Buffer.from(b64, "base64"), s.frameWidth, s.frameHeight, x + Math.round(ax - s.anchor.x * s.frameWidth) * z, y + Math.round(ay - s.anchor.y * s.frameHeight) * z, z);
+    });
+  });
+  return c;
+}
+
 /** The label texts the contact sheet needs, rendered by the bake page (main.js bakeLabels). */
 export function labelTexts(sheets, facings) {
   const texts = new Set(facings);
   for (const s of sheets) {
+    texts.add(s.name);
     texts.add(titleOf(s));
     for (const [anim, a] of Object.entries(s.animations)) texts.add(headerOf(anim, a));
   }
@@ -236,14 +344,39 @@ for (const [name, s] of Object.entries(D.sheets)) {
 `;
 }
 
-/** Writes the review set; returns the files written. */
-export function writeReview({ sheets, facings, labels, manifest, theme }) {
+/** The most RGBA one page of the 1x contact sheet may hold: a quarter of what Node can allocate. */
+export const CONTACT_PAGE_BYTES = 2 ** 30;
+
+/** `sheets` split, in order, into runs whose 1x contact sheet stays within CONTACT_PAGE_BYTES. */
+export function contactPages(sheets, labels, budget = CONTACT_PAGE_BYTES) {
+  const pages = [];
+  let page = [];
+  const bytes = (set) => {
+    const { width, height } = layout(set, 1, labels);
+    return width * height * 4;
+  };
+  for (const s of sheets) {
+    if (page.length && bytes([...page, s]) > budget) {
+      pages.push(page);
+      page = [];
+    }
+    page.push(s);
+  }
+  if (page.length) pages.push(page);
+  return pages;
+}
+
+/** Writes the review set (`lineups`: lineupSets of every baked sheet); returns the files written. */
+export function writeReview({ sheets, facings, labels, manifest, theme, lineups = [] }) {
   mkdirSync(REVIEW_DIR, { recursive: true });
   writeFileSync(join(REVIEW_DIR, ".gitignore"), "# regenerated by npm run bake for the owner's review; not committed\n*\n!.gitignore\n");
   const files = [];
-  const one = composeContact(sheets, facings, labels, theme, 1);
-  writeFileSync(join(REVIEW_DIR, "contact-sheet.png"), encodePng(one.width, one.height, one.rgba, { fast: true }));
-  files.push("contact-sheet.png");
+  contactPages(sheets, labels).forEach((page, i) => {
+    const one = composeContact(page, facings, labels, theme, 1);
+    const file = i === 0 ? "contact-sheet.png" : `contact-sheet-${i + 1}.png`;
+    writeFileSync(join(REVIEW_DIR, file), encodePng(one.width, one.height, one.rgba, { fast: true }));
+    files.push(file);
+  });
   const cast = sheets.filter((s) => s.directions > 1);
   for (const s of cast) {
     const two = composeContact([s], facings, labels, theme, 2);
@@ -264,6 +397,11 @@ export function writeReview({ sheets, facings, labels, manifest, theme }) {
     const file = `contact-${group}-2x.png`;
     writeFileSync(join(REVIEW_DIR, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(file);
+  }
+  for (const l of lineups) {
+    const two = composeLineup(l.sheets, facings, labels, theme, 2);
+    writeFileSync(join(REVIEW_DIR, l.file), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    files.push(l.file);
   }
   writeFileSync(join(REVIEW_DIR, "index.html"), reviewHtml(manifest, cast.map((s) => s.name), theme));
   files.push("index.html");

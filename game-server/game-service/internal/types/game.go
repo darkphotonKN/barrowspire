@@ -364,18 +364,54 @@ type MonsterState struct {
 	Position Position `json:"position"`
 	// the direction it faces; never zero
 	Facing Position `json:"facing"`
-	// idle | move | attack | claw | dead: attack is the wind-up and strike, a
-	// demon's slam included; claw a demon's fire claw, from the tick it lands
-	// for its show window (FS-VHGE7 §B R24)
-	Action        string `json:"action"`
-	CurrentHealth int    `json:"current_health"`
-	MaxHealth     int    `json:"max_health"`
+	// idle | move | attack | claw | ability | dead: attack is the wind-up and
+	// strike, a demon's slam included; claw a demon's fire claw, from the tick
+	// it lands for its show window (FS-VHGE7 §B R24); ability a monster
+	// ability's wind-up (FS-C8VM7 §B R17)
+	Action string `json:"action"`
+	// Ability is its monster ability while one is pending, absent otherwise
+	// (FS-C8VM7 §B R17)
+	Ability       *MonsterAbilityState `json:"ability,omitempty"`
+	CurrentHealth int                  `json:"current_health"`
+	MaxHealth     int                  `json:"max_health"`
+}
+
+// MonsterAbilityState is a monster's pending ability, fixed where it will land
+// so the client draws its telegraph from the server's numbers. A shot ability
+// sets only Kind and Remaining. FS-C8VM7 §B R17.
+type MonsterAbilityState struct {
+	// pounce | ground_slam | burst | wail | cleave | volley | dagger | rock
+	Kind string `json:"kind"`
+	// the area's centre, or the cone's apex, in world px
+	X float64 `json:"x"`
+	Y float64 `json:"y"`
+	// the area's radius or the cone's reach, in px; 0 for a shot
+	Radius float64 `json:"radius"`
+	// the cone's full angle in degrees; 0 for a circle
+	Arc float64 `json:"arc"`
+	// seconds until it lands
+	Remaining float64 `json:"remaining"`
 }
 
 // StairsState is the floor's way up. FS-F6F88 §Requirements 27.
 type StairsState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	Position *Position `json:"position"`
+}
+
+// TomeState is the Tome of Filth lying on the current floor: what it is and
+// where, nothing of the run's plan. FS-3103M §E R14-R15.
+type TomeState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+}
+
+// AltarState is the Altar of Consecration on its floor, burned once the tome
+// was burned at it. FS-3103M §E R14.
+type AltarState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Burned   bool      `json:"burned"`
 }
 
 // GateState is a hub gate as the client sees it: where it goes, where it

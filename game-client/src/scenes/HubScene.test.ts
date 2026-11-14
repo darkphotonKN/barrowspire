@@ -1988,6 +1988,143 @@ describe("HubScene the dev test room's gate (FS-BDRTJ §Requirements 2, 3, 5)", 
   });
 });
 
+describe("HubScene the endgame test run's gate (FS-BDRTJ §Change: Endgame test run, R20, R21, R23)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const ENDGAME_GATE = {
+    entity_id: "endgame-gate",
+    destination: "dev_endgame_run" as const,
+    position: { x: 160, y: 720 },
+    range: 80,
+  };
+  const ON = [...HUB_GATES, ENDGAME_GATE];
+
+  /** A hub whose states are rendered whole, with only the gates in them left to act on. */
+  function hubWithStates() {
+    const stage = queuedHubOnStage();
+    Object.assign(stage.hub, {
+      placePlayer: vi.fn(),
+      renderStructures: vi.fn(),
+      drawScenery: vi.fn(),
+      renderNPCs: vi.fn(),
+    });
+    stage.hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+    const render = (position: { x: number; y: number }, gates: unknown[] = ON) =>
+      stage.hub.renderState({
+        world_type: "hub",
+        current_player: { entity_id: "me", position },
+        other_players: [],
+        walls: [],
+        gates,
+      });
+    const texts = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
+    const label = () => texts().filter((m) => m.args[2] === "Endgame Test Run");
+    const said = (words: string) => texts().some((m) => m.args[2] === words);
+    return { ...stage, render, label, texts, said };
+  }
+
+  it("should stand one plain label at the gate's server position while the gate is in the state", () => {
+    const { render, label } = hubWithStates();
+    const foot = iso.worldToScreen(ENDGAME_GATE.position.x, ENDGAME_GATE.position.y);
+
+    render(AWAY);
+    render(AWAY);
+    expect(label()).toHaveLength(1);
+    expect(label()[0].args.slice(0, 2)).toEqual([foot.x, foot.y]);
+
+    render(AWAY, HUB_GATES);
+    expect(label()).toHaveLength(0);
+  });
+
+  it("should send one start_dev_endgame_run with an empty payload on stepping in, and no enter_field or field sign", () => {
+    const { hub, render, texts, send } = hubWithStates();
+
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+
+    expect(send.mock.calls).toEqual([[ActionType.StartDevEndgameRun, {}]]);
+    expect(hub.scene.start).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeUndefined();
+    // the label alone: no field name over a signpost
+    expect(texts().map((m) => m.args[2])).toEqual(["Endgame Test Run"]);
+  });
+
+  it("should send nothing more while lingering or stepping in again before the answer", () => {
+    const { render, send } = hubWithStates();
+
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+    render({ x: ENDGAME_GATE.position.x + 10, y: ENDGAME_GATE.position.y });
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should say a refusal in the server's words, in passing, and let the next step in ask again", () => {
+    const { render, send, refuse, said } = hubWithStates();
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+
+    refuse(ActionType.StartDevEndgameRun, "Walk to the gate first.", "not_at_gate");
+
+    expect(said("Walk to the gate first.")).toBe(true);
+    expect(said("not_at_gate")).toBe(false);
+
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should ignore a refusal it did not ask for", () => {
+    const { refuse, said } = hubWithStates();
+
+    refuse(ActionType.StartDevEndgameRun, "Walk to the gate first.", "not_at_gate");
+
+    expect(said("Walk to the gate first.")).toBe(false);
+  });
+
+  it("should not start the run while the Esc menu is open", () => {
+    const { hub, keys, press, render, send } = hubWithStates();
+    render(AWAY);
+    // the frame Esc is read on eases no body: the stand-in view has nowhere to ease to
+    hub.views.clear();
+    press(keys.esc);
+
+    render(ENDGAME_GATE.position);
+
+    expect(hub.menu).toBeDefined();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should neither label the gate nor send anything from it in a production build", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { render, label, send } = hubWithStates();
+
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+
+    expect(label()).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should drop the label and forget an unanswered start on release", () => {
+    const { hub, render, label, send } = hubWithStates();
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+
+    hub.release("shutdown");
+    expect(label()).toHaveLength(0);
+
+    render(AWAY);
+    render(ENDGAME_GATE.position);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("HubScene field gates (FS-0XMCP §Requirements 21, 22)", () => {
   afterEach(() => {
     vi.restoreAllMocks();

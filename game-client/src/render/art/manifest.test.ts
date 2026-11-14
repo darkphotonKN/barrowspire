@@ -568,6 +568,61 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     expect(states("chest")).toEqual(["closed", "open"]);
   });
 
+  describe("the Tome of Filth and the Altar of Consecration (FS-3103M §H R23)", () => {
+    type PropSheet = {
+      atlas: string;
+      frameWidth: number;
+      frameHeight: number;
+      anchor: { x: number; y: number };
+      directions: number;
+      animations: Record<string, { frames: unknown[][] }>;
+      source: string;
+      licence: string;
+    };
+    const prop = (name: string): PropSheet => baked.sheets[name];
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    it("bakes the tome as one still frame, and the altar's dormant and burned states framed together", () => {
+      expect(prop("tome").directions).toBe(1);
+      expect(Object.keys(prop("tome").animations)).toEqual(["default"]);
+      expect(prop("tome").animations.default.frames[0]).toHaveLength(1);
+      expect(Object.keys(prop("altar").animations)).toEqual(["dormant", "burned"]);
+      for (const a of Object.values(prop("altar").animations)) expect(a.frames[0]).toHaveLength(1);
+    });
+
+    it("packs both on a resident atlas of their own, so no committed atlas reflows", () => {
+      for (const name of ["tome", "altar"]) expect(atlasGroup(prop(name).atlas), name).toBe("summoning");
+      expect(
+        Object.entries(baked.sheets as Record<string, PropSheet>)
+          .filter(([, s]) => atlasGroup(s.atlas) === "summoning")
+          .map(([n]) => n)
+          .sort(),
+      ).toEqual(["altar", "tome"]);
+    });
+
+    it("draws both smaller than a chest: narrower, and standing lower over the anchor", () => {
+      const chest = prop("chest");
+      const standing = (s: PropSheet) => s.anchor.y * s.frameHeight;
+      for (const name of ["tome", "altar"]) {
+        expect(prop(name).frameWidth, name).toBeLessThan(chest.frameWidth);
+        expect(standing(prop(name)), name).toBeLessThan(standing(chest));
+      }
+      expect(standing(prop("tome"))).toBeLessThan(standing(prop("altar")));
+    });
+
+    it("is modelled in code, under the project's licence", () => {
+      for (const name of ["tome", "altar"]) {
+        expect(prop(name).source).toBe(`procedural: tools/bake/page/models/interactables.js#${name}`);
+        expect(prop(name).licence).toBe(baked.sheets.brazier.licence);
+      }
+    });
+
+    it("draws every colour from BARROW: no colour literal in models/interactables.js (ADR-0013)", () => {
+      const model = readFileSync(join(__dirname, "../../../tools/bake/page/models/interactables.js"), "utf8");
+      expect(model).not.toMatch(/#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/);
+    });
+  });
+
   it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
     const ground = Object.keys(baked.sheets).filter((n) =>
       n.startsWith("ground_"),
@@ -1634,6 +1689,217 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       // not the 7-frame default: the roar is held inside the clip, then strike and recovery
       expect(attack.frames[0].length).not.toBe(7);
       expect(attack.frames[0].length / attack.fps).toBeGreaterThan(0.4);
+    });
+  });
+
+  describe("the tiered roster's sheets (FS-C8VM7 §H R45-R47)", () => {
+    type TierSheet = {
+      atlas: string;
+      directions: number;
+      crown?: number;
+      animations: Record<
+        string,
+        { fps: number; loop: boolean; atlas?: string; frames: unknown[][] }
+      >;
+      source: string;
+      licence: string;
+    };
+    const PLAYERS = [
+      "char_knight_base",
+      "char_archer_base",
+      "char_wizard_base",
+    ];
+    const playerCrown =
+      PLAYERS.reduce((n, name) => n + baked.sheets[name].crown, 0) /
+      PLAYERS.length;
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+    const FODDER: [number, number] = [0.85, 1.0];
+    const BRUTE: [number, number] = [1.2, 1.5];
+    /**
+     * Each sheet: its variant's group (R41), its builder (`<module>.js#<fn>`), the step-0 sheet
+     * of its family it is drawn after, and its size band as a crown ratio to the player mean (the
+     * old families' brute, the troll, has always baked at 1.23x and is drawn up to its tier).
+     */
+    const TIERED: [string, string, string, string, [number, number]][] = [
+      ["creature_ghast_base", "ghast", "cast.js#ghast", "creature_ghoul_base", FODDER],
+      ["creature_ravener_base", "ravener", "cast.js#ravener", "creature_ghoul_base", FODDER],
+      ["creature_ashen_archer_base", "ashen_archer", "cast.js#ashenArcher", "creature_bone_archer_base", FODDER],
+      ["creature_wight_archer_base", "wight_archer", "cast.js#wightArcher", "creature_bone_archer_base", FODDER],
+      ["creature_cave_troll_base", "cave_troll", "cast.js#caveTroll", "creature_troll_base", BRUTE],
+      ["creature_blood_troll_base", "blood_troll", "cast.js#bloodTroll", "creature_troll_base", BRUTE],
+      ["creature_plague_thrall_base", "plague_thrall", "forlorn.js#plagueThrall", "creature_barrow_thrall_base", FODDER],
+      ["creature_blightborn_base", "blightborn", "forlorn.js#blightborn", "creature_barrow_thrall_base", FODDER],
+      ["creature_shade_base", "shade", "forlorn.js#shade", "creature_spire_wraith_base", FODDER],
+      ["creature_phantom_base", "phantom", "forlorn.js#phantom", "creature_spire_wraith_base", FODDER],
+      ["creature_banshee_base", "banshee", "forlorn.js#banshee", "creature_spire_wraith_base", FODDER],
+    ];
+    const sheetOf = (name: string): TierSheet => baked.sheets[name];
+
+    it.each(TIERED)(
+      "%s packs whole into its variant's own group, %s (R41)",
+      (name, group) => {
+        const sheet = sheetOf(name);
+        expect(sheet, name).toBeDefined();
+        expect(atlasGroup(sheet.atlas)).toBe(group);
+        for (const a of Object.values(sheet.animations))
+          expect(a.atlas, name).toBeUndefined();
+      },
+    );
+
+    it.each(TIERED)(
+      "%s has 8-way idle, walk, attack and death at its family's rates",
+      (name, _group, _fn, family) => {
+        const sheet = sheetOf(name);
+        const from = sheetOf(family);
+        expect(sheet.directions).toBe(8);
+        expect(Object.keys(sheet.animations)).toEqual([
+          "idle",
+          "walk",
+          "attack",
+          "death",
+        ]);
+        for (const [clip, a] of Object.entries(from.animations)) {
+          const own = sheet.animations[clip];
+          expect([own.fps, own.loop], clip).toEqual([a.fps, a.loop]);
+          expect(own.frames, clip).toHaveLength(8);
+          expect(own.frames.map((f) => f.length), clip).toEqual(
+            a.frames.map((f) => f.length),
+          );
+        }
+      },
+    );
+
+    it.each(TIERED)(
+      "%s is authored in code (characters/%s), under the project's licence",
+      (name, _group, fn) => {
+        expect(sheetOf(name).source).toBe(
+          `authored: tools/bake/page/characters/${fn}`,
+        );
+        expect(sheetOf(name).licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(TIERED)(
+      "%s stands in its size band (a recolour stands as its family's step-0 sheet)",
+      (name, _group, _fn, family, [min, max]) => {
+        const crown = sheetOf(name).crown as number;
+        expect(Number.isInteger(crown)).toBe(true);
+        expect(crown / playerCrown).toBeGreaterThanOrEqual(min);
+        expect(crown / playerCrown).toBeLessThanOrEqual(max);
+        expect(crown).toBe(sheetOf(family).crown);
+      },
+    );
+
+    /**
+     * The new families' rigs (R46): sheet, its variant's group (a goblin variant's two looks
+     * share one), its builder, the family's step-0 sheet (a higher step is a recolour of it, so it
+     * stands at the same height), and its size band.
+     */
+    const NEW_RIGS: [string, string, string, string, [number, number]][] = [
+      ["creature_goblin_base", "goblin", "goblin.js#goblin", "creature_goblin_base", FODDER],
+      ["creature_goblin_shield_base", "goblin", "goblin.js#goblinShield", "creature_goblin_base", FODDER],
+      ["creature_goblin_cutthroat_base", "goblin_cutthroat", "goblin.js#goblinCutthroat", "creature_goblin_base", FODDER],
+      ["creature_goblin_cutthroat_shield_base", "goblin_cutthroat", "goblin.js#goblinCutthroatShield", "creature_goblin_base", FODDER],
+      ["creature_goblin_reaver_base", "goblin_reaver", "goblin.js#goblinReaver", "creature_goblin_base", FODDER],
+      ["creature_goblin_reaver_shield_base", "goblin_reaver", "goblin.js#goblinReaverShield", "creature_goblin_base", FODDER],
+      ["creature_goblin_warchief_base", "goblin_warchief", "goblin.js#goblinWarchief", "creature_goblin_base", FODDER],
+      ["creature_goblin_warchief_shield_base", "goblin_warchief", "goblin.js#goblinWarchiefShield", "creature_goblin_base", FODDER],
+      ["creature_ogre_base", "ogre", "ogre.js#ogre", "creature_ogre_base", BRUTE],
+      ["creature_ogre_mauler_base", "ogre_mauler", "ogre.js#ogreMauler", "creature_ogre_base", BRUTE],
+      ["creature_ogre_tyrant_base", "ogre_tyrant", "ogre.js#ogreTyrant", "creature_ogre_base", BRUTE],
+      ["creature_dark_warrior_base", "dark_warrior", "darkWarrior.js#darkWarrior", "creature_dark_warrior_base", BRUTE],
+      ["creature_dark_reaper_base", "dark_reaper", "darkWarrior.js#darkReaper", "creature_dark_warrior_base", BRUTE],
+    ];
+    /** The standard clips every roster sheet bakes (characters/clips.js ANIMATIONS). */
+    const STANDARD: Record<string, [number, number, boolean]> = {
+      idle: [6, 5, true],
+      walk: [8, 10, true],
+      attack: [7, 12, false],
+      death: [7, 9, false],
+    };
+
+    it.each(NEW_RIGS)(
+      "%s packs whole into its variant's group, %s (R41)",
+      (name, group) => {
+        const sheet = sheetOf(name);
+        expect(sheet, name).toBeDefined();
+        expect(atlasGroup(sheet.atlas)).toBe(group);
+        for (const a of Object.values(sheet.animations))
+          expect(a.atlas, name).toBeUndefined();
+      },
+    );
+
+    it.each(NEW_RIGS)(
+      "%s has 8-way idle, walk, attack and death at the standard rates (R47)",
+      (name) => {
+        const sheet = sheetOf(name);
+        expect(sheet.directions).toBe(8);
+        expect(Object.keys(sheet.animations)).toEqual(Object.keys(STANDARD));
+        for (const [clip, [frames, fps, loop]] of Object.entries(STANDARD)) {
+          const a = sheet.animations[clip];
+          expect([a.fps, a.loop], clip).toEqual([fps, loop]);
+          expect(a.frames, clip).toHaveLength(8);
+          for (const dir of a.frames) expect(dir, clip).toHaveLength(frames);
+        }
+      },
+    );
+
+    it.each(NEW_RIGS)(
+      "%s is authored in code (characters/%s), under the project's licence",
+      (name, _group, fn) => {
+        expect(sheetOf(name).source).toBe(
+          `authored: tools/bake/page/characters/${fn}`,
+        );
+        expect(sheetOf(name).licence).toBe(baked.sheets.brazier.licence);
+      },
+    );
+
+    it.each(NEW_RIGS)(
+      "%s stands in its size band, at its family's step-0 height",
+      (name, _group, _fn, family, [min, max]) => {
+        const crown = sheetOf(name).crown as number;
+        expect(Number.isInteger(crown)).toBe(true);
+        expect(crown / playerCrown).toBeGreaterThanOrEqual(min);
+        expect(crown / playerCrown).toBeLessThanOrEqual(max);
+        expect(crown).toBe(sheetOf(family).crown);
+      },
+    );
+
+    it("stands the ogre over the troll, at the top of the brute band (R46, §F R34)", () => {
+      const ogre = sheetOf("creature_ogre_base").crown as number;
+      expect(ogre).toBeGreaterThan(sheetOf("creature_troll_base").crown as number);
+      expect(ogre / playerCrown).toBeGreaterThanOrEqual(1.45);
+    });
+
+    it("stands the dark warrior in the brute band, upright over the troll and under the ogre (R46)", () => {
+      const warrior = sheetOf("creature_dark_warrior_base").crown as number;
+      expect(warrior / playerCrown).toBeGreaterThanOrEqual(1.3);
+      expect(warrior).toBeGreaterThan(sheetOf("creature_troll_base").crown as number);
+      expect(warrior).toBeLessThan(sheetOf("creature_ogre_base").crown as number);
+    });
+
+    it("stands the goblin below a ghoul's height (R46)", () => {
+      expect(sheetOf("creature_goblin_base").crown).toBeLessThan(
+        sheetOf("creature_ghoul_base").crown as number,
+      );
+    });
+
+    it("gives each variant group its own sheets only, and leaves the five tier-1 looks in creatures", () => {
+      const groups = new Map<string, string[]>();
+      for (const [name, sheet] of Object.entries(baked.sheets) as [string, TierSheet][])
+        groups.set(atlasGroup(sheet.atlas), [...(groups.get(atlasGroup(sheet.atlas)) ?? []), name]);
+      for (const [name, group] of TIERED) expect(groups.get(group)).toEqual([name]);
+      for (const [name, group] of NEW_RIGS) expect(groups.get(group)).toContain(name);
+      for (const group of new Set(NEW_RIGS.map(([, g]) => g)))
+        expect(groups.get(group)).toEqual(NEW_RIGS.filter(([, g]) => g === group).map(([n]) => n));
+      for (const name of [
+        "creature_ghoul_base",
+        "creature_bone_archer_base",
+        "creature_troll_base",
+        "creature_barrow_thrall_base",
+        "creature_spire_wraith_base",
+      ])
+        expect(atlasGroup(sheetOf(name).atlas), name).toBe("creatures");
     });
   });
 

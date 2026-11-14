@@ -8,13 +8,16 @@ import { DEFAULT_RESIDENT_SHEET, FUNCTION_NPC_SHEETS, folkLook } from "./hubFolk
 import { RESIDENT_ART_PAGES, shippedManifest } from "./artLoader.standin";
 import { sheetAtlases, type ArtManifest } from "./manifest";
 import {
+  FLOOR_SCOPED_GROUPS,
   ON_DEMAND_ART,
   RESIDENT_ART,
+  VARIANT_ART,
   SCENE_ART,
   SCENE_SCOPED_GROUPS,
   atlasGroup,
   fieldArt,
   onDemandFor,
+  poolGroups,
   sceneAtlases,
   type OnDemandGroup,
 } from "./sceneArt";
@@ -22,6 +25,16 @@ import {
 const manifest = shippedManifest();
 
 const sorted = (keys: Iterable<string>) => [...keys].sort();
+
+/** FS-C8VM7 §G R41: the Spire variants' groups, each named by its variant id. */
+const VARIANT_GROUPS = [
+  "ghast", "ravener", "ashen_archer", "wight_archer", "cave_troll", "blood_troll", "plague_thrall",
+  "blightborn", "shade", "phantom", "banshee", "goblin", "goblin_cutthroat", "goblin_reaver",
+  "goblin_warchief", "ogre", "ogre_mauler", "ogre_tyrant", "dark_warrior", "dark_reaper",
+];
+
+/** Groups the shipped manifest has pages on. */
+const bakedGroups = (m: ArtManifest) => new Set(Object.keys(m.atlases).map(atlasGroup));
 
 describe("the scene art table (FS-C4JWH §A)", () => {
   it("should hold exactly the FS's rows (R4)", () => {
@@ -39,7 +52,9 @@ describe("the scene art table (FS-C4JWH §A)", () => {
   });
 
   it("should take the scene-scoped groups from the table, and only those (R2)", () => {
-    expect(sorted(SCENE_SCOPED_GROUPS)).toEqual(["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife"]);
+    expect(sorted(SCENE_SCOPED_GROUPS)).toEqual(
+      sorted(["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife", ...VARIANT_GROUPS]),
+    );
   });
 
   it("should name each atlas page's group by its key without the page number (R1)", () => {
@@ -57,15 +72,24 @@ describe("the scene art table (FS-C4JWH §A)", () => {
     expect(fieldArt("toString")).toEqual(["wildlife"]);
   });
 
-  it("should name only groups the shipped manifest has", () => {
-    const groups = new Set(Object.keys(manifest.atlases).map(atlasGroup));
-    for (const group of SCENE_SCOPED_GROUPS) expect(groups).toContain(group);
+  it("should name only groups the shipped manifest has, every variant group among them (FS-C8VM7 §H)", () => {
+    const groups = bakedGroups(manifest);
+    for (const group of SCENE_SCOPED_GROUPS) expect(groups, group).toContain(group);
+    for (const group of VARIANT_GROUPS) expect(groups, group).toContain(group);
   });
 });
 
 describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
-  it("should hold the 17 resident pages and no scene-scoped one at boot", () => {
+  it("should hold the 19 resident pages and no scene-scoped one at boot", () => {
+    expect(RESIDENT_ART_PAGES).toHaveLength(19);
     expect(sorted(sceneAtlases(manifest, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
+  });
+
+  it("should keep the tome and altar's group resident, and no variant group (FS-3103M §I, ADR-0081)", () => {
+    const boot = sceneAtlases(manifest, RESIDENT_ART).map(atlasGroup);
+    expect(boot).toContain("summoning");
+    expect(SCENE_SCOPED_GROUPS.has("summoning")).toBe(false);
+    for (const group of VARIANT_GROUPS) expect(boot).not.toContain(group);
   });
 
   it.each([
@@ -98,7 +122,7 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
   ].flat() as string[];
 
   it("should name the blood demon's group, what fetches it and what it draws meanwhile (R43, R46)", () => {
-    expect(ON_DEMAND_ART).toEqual([
+    expect(ON_DEMAND_ART.filter((entry) => entry.group === "blood_demon")).toEqual([
       {
         group: "blood_demon",
         archetype: "blood_demon",
@@ -120,7 +144,7 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
   });
 
   it("should count a group with two archetypes once, so its pages are fetched and evicted as one (FS-M8CSE §H R41)", () => {
-    expect(new Set(ON_DEMAND_ART.map((entry) => entry.group))).toEqual(new Set(["blood_demon"]));
+    expect(new Set(ON_DEMAND_ART.map((entry) => entry.group))).toEqual(new Set(["blood_demon", ...VARIANT_GROUPS]));
     expect(sorted(SCENE_SCOPED_GROUPS).filter((group) => group === "blood_demon")).toEqual(["blood_demon"]);
     const pages = sceneAtlases(manifest, ["blood_demon"]);
     expect(pages.length).toBe(new Set(pages).size);
@@ -172,13 +196,21 @@ describe("the on-demand groups (FS-VHGE7 §F, ADR-0071)", () => {
  *   demon on the top one and by chance on any other
  *   (`internal/game/monster_population.go:129,145-147`), and the blood demon by chance on any
  *   floor (FS-VHGE7 §A, §C R30), and Daa'gon on a Master Spire's top floor (FS-M8CSE §E R24);
- *   the Bone Archer in place of some of floor 1's ghouls (FS-B4SG9 §B)
+ *   the Bone Archer in place of some of floor 1's ghouls (FS-B4SG9 §B); every tiered variant
+ *   a floor's pool can draw, and a champion of any of them on the top floor (FS-C8VM7 §C, §D)
  */
 const MET = [
   { scene: "gentle_meadows", groups: fieldArt("gentle_meadows"), archetypes: ["boar"] },
   { scene: "forlorn_forest", groups: fieldArt("forlorn_forest"), archetypes: ["zombie", "ghost"] },
   { scene: "dev_test_room", groups: fieldArt("dev_test_room"), archetypes: ["troll", "demon"] },
-  { scene: "the run", groups: SCENE_ART.BarrowspireScene, archetypes: ["ghoul", "troll", "bone_archer", "barrow_thrall", "spire_wraith", "demon", "blood_demon", "daagon"] },
+  {
+    scene: "the run",
+    groups: SCENE_ART.BarrowspireScene,
+    archetypes: [
+      "ghoul", "troll", "bone_archer", "barrow_thrall", "spire_wraith", "demon", "blood_demon", "daagon",
+      ...VARIANT_ART.map((entry) => entry.archetype),
+    ],
+  },
 ];
 
 /** The sheets of `sheets` the scene holding `groups` would draw as a placeholder. */
@@ -212,7 +244,8 @@ const monsterSheets = (archetypes: readonly string[]) =>
 
 /**
  * What each archetype draws before its art can be there (FS-VHGE7 §F R52): a sheet on an on-demand
- * group is answered by its archetype's stand-in, and stays itself, to be reported, without one.
+ * group is answered by its archetype's stand-in, and stays itself, to be reported, without one. A
+ * sheet the bake has not made yet is never in, so it is answered the same way (FS-C8VM7 §G R44).
  */
 const entrySheets = (
   m: ArtManifest,
@@ -221,9 +254,9 @@ const entrySheets = (
 ) =>
   archetypes.flatMap((archetype) =>
     monsterSheets([archetype]).map((sheet) => {
-      const onDemand = sheetAtlases(m.sheets[sheet]).some((a) =>
-        table.some((entry) => entry.group === atlasGroup(a)),
-      );
+      const own = m.sheets[sheet];
+      const onDemand =
+        !own || sheetAtlases(own).some((a) => table.some((entry) => entry.group === atlasGroup(a)));
       const standIn = table.find((entry) => entry.archetype === archetype)?.standIn;
       return onDemand && standIn ? monsterLook(standIn.archetype).sheet : sheet;
     }),
@@ -311,8 +344,95 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
       ).toEqual(["creature_demon_base"]);
     });
 
+    it("should report a variant with no stand-in whose sheet is not baked (FS-C8VM7 §G R44)", () => {
+      const unbaked = structuredClone(manifest);
+      delete unbaked.sheets.creature_ogre_base;
+      const noStandIn = VARIANT_ART.filter((entry) => entry.archetype !== "ogre");
+      expect(
+        outsideScene(unbaked, SCENE_ART.BarrowspireScene, entrySheets(unbaked, ["ogre", "ghast"], noStandIn)),
+      ).toEqual(["creature_ogre_base"]);
+    });
+
+    it("should report a baked variant with no stand-in, its group not one the run preloads (FS-C8VM7 §G R44)", () => {
+      const noStandIn = VARIANT_ART.filter((entry) => entry.archetype !== "ogre");
+      expect(
+        outsideScene(manifest, SCENE_ART.BarrowspireScene, entrySheets(manifest, ["ogre", "ghast"], noStandIn)),
+      ).toEqual(["creature_ogre_base"]);
+    });
+
     it("should report an archetype with a look that no scene meets", () => {
       expect(unmet({ ...MONSTER_LOOKS, wraith: MONSTER_LOOKS.ghost })).toEqual(["wraith"]);
     });
+  });
+});
+
+describe("the Spire variants' groups (FS-C8VM7 §G R41, R44; ADR-0081)", () => {
+  /** The five tier-1 looks, loaded with the run on `creatures` (R41). */
+  const TIER_ONE = ["ghoul", "bone_archer", "troll", "barrow_thrall", "spire_wraith"];
+  const creaturePages = (sheet: string) => sheetAtlases(manifest.sheets[sheet]).map(atlasGroup);
+
+  it("should put every variant beyond the five tier-1 looks on a group named by its variant id", () => {
+    expect(new Set(VARIANT_ART.map((entry) => entry.group))).toEqual(new Set(VARIANT_GROUPS));
+    for (const group of VARIANT_GROUPS) expect(onDemandFor(group)?.group).toBe(group);
+    for (const archetype of TIER_ONE) expect(onDemandFor(archetype)).toBeUndefined();
+  });
+
+  it("should put a goblin variant's two looks on one group (R41)", () => {
+    for (const v of ["goblin", "goblin_cutthroat", "goblin_reaver", "goblin_warchief"]) {
+      expect(onDemandFor(`${v}_shield`)?.group).toBe(v);
+      expect(onDemandFor(`${v}_shield`)?.standIn).toEqual(onDemandFor(v)?.standIn);
+    }
+  });
+
+  it("should have a look of its own for every variant row, never the troll fallback", () => {
+    for (const { archetype } of VARIANT_ART)
+      expect(MONSTER_LOOKS[archetype]?.sheet).toBe(`creature_${archetype}_base`);
+  });
+
+  it("should hold every variant row to a stand-in on creatures, which every Spire floor holds (R44)", () => {
+    for (const { standIn } of VARIANT_ART) {
+      expect(TIER_ONE).toContain(standIn.archetype);
+      expect(new Set(creaturePages(monsterLook(standIn.archetype).sheet))).toEqual(new Set(["creatures"]));
+    }
+  });
+
+  it("should name the new families' stand-ins and tints: the goblin and dark warrior as the ghoul, the ogre as the troll", () => {
+    const standIn = (archetype: string) => onDemandFor(archetype)?.standIn;
+    expect(standIn("goblin_warchief")).toEqual({ archetype: "ghoul", tint: palette.goblinStandIn });
+    expect(standIn("ogre_mauler")).toEqual({ archetype: "troll", tint: palette.ogreStandIn });
+    expect(standIn("dark_warrior")).toEqual({ archetype: "ghoul", tint: palette.darkWarriorStandIn });
+    expect(standIn("banshee")).toEqual({ archetype: "spire_wraith" });
+    expect(standIn("ashen_archer")).toEqual({ archetype: "bone_archer" });
+  });
+
+  // never `creatures` or `boss`, so a floor fetches and evicts each on its own (ADR-0081 Consequences)
+  it("should find each variant sheet baked, on its own group's pages only (FS-C8VM7 §H)", () => {
+    for (const { group, archetype } of VARIANT_ART) {
+      const sheet = manifest.sheets[monsterLook(archetype).sheet];
+      expect(sheet, archetype).toBeDefined();
+      expect(new Set(sheetAtlases(sheet).map(atlasGroup)), archetype).toEqual(new Set([group]));
+    }
+  });
+});
+
+describe("the floor-scoped groups and a floor's pool (FS-C8VM7 §G R40-R43, ADR-0081 Decisions 2, 6)", () => {
+  it("should scope exactly the variant groups to the floor, and never the blood demon's", () => {
+    expect(sorted(FLOOR_SCOPED_GROUPS)).toEqual(sorted(VARIANT_GROUPS));
+    expect(FLOOR_SCOPED_GROUPS.has("blood_demon")).toBe(false);
+    for (const group of FLOOR_SCOPED_GROUPS) expect(SCENE_SCOPED_GROUPS).toContain(group);
+  });
+
+  it("should name the groups of a pool's archetypes, a goblin variant's two looks as one, each once", () => {
+    expect(poolGroups(["ghoul", "ghast", "goblin", "goblin_shield", "goblin_reaver_shield", "ogre_tyrant"])).toEqual([
+      "ghast",
+      "goblin",
+      "goblin_reaver",
+      "ogre_tyrant",
+    ]);
+  });
+
+  it("should name no group for a tier-1 look, a boss or an archetype it does not know", () => {
+    expect(poolGroups(["ghoul", "troll", "bone_archer", "barrow_thrall", "spire_wraith"])).toEqual([]);
+    expect(poolGroups(["blood_demon", "daagon", "demon", "wyrm"])).toEqual([]);
   });
 });

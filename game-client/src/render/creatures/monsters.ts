@@ -39,6 +39,7 @@ import {
 import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/footprint";
 import type { MarkerMode } from "./markerMode";
 import { onDemandFor } from "@/render/art/sceneArt";
+import { AbilityTelegraphs, type GroundBrush } from "@/render/effects/monsterAbility";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
@@ -74,7 +75,28 @@ export interface MonsterLook {
    * its body length (guideline "Size is a threat tier").
    */
   measure?: "length";
+  /**
+   * Where in its tier's band it stands, as a multiple of a player's height: the tier's own aim
+   * when absent. Inside the band only (FS-C8VM7 §F R34: the ogre family at the brute band's top).
+   */
+  aim?: number;
 }
+
+/** A Spire variant's own baked sheet (FS-C8VM7 §F R34): `creature_<archetype>_base`. */
+const variant = (archetype: string, tier: SizeTier, aim?: number): MonsterLook => ({
+  sheet: `creature_${archetype}_base`,
+  tier,
+  ...(aim === undefined ? {} : { aim }),
+});
+
+/** The ogre family reads bigger than a troll: the brute band's top (FS-C8VM7 §F R34). */
+const OGRE_AIM = SIZE_TIERS.brute.max;
+
+/**
+ * The goblin family reads smaller than the ghoul, near the fodder band's floor: a scale to the
+ * tier's aim would lift its shorter baked crown (68 to the ghoul's 72) to the ghoul's height.
+ */
+const GOBLIN_AIM = 0.86;
 
 /** Each archetype the client has a look for. */
 export const MONSTER_LOOKS: Record<string, MonsterLook> = {
@@ -114,6 +136,36 @@ export const MONSTER_LOOKS: Record<string, MonsterLook> = {
     elite: "creature_boar_elite",
     measure: "length",
   },
+  /**
+   * The Spire's tiered variants (FS-C8VM7 §A R3, R8; §F R34), each on its own sheet at its
+   * family's tier, until that sheet is in drawn as its stand-in (`drawnLook`, §G R44). The old
+   * families' steps are baked recolours of their tier-1 look; a goblin variant has a blade look
+   * and a blade-and-shield look, each its own archetype.
+   */
+  ghast: variant("ghast", "fodder"),
+  ravener: variant("ravener", "fodder"),
+  ashen_archer: variant("ashen_archer", "fodder"),
+  wight_archer: variant("wight_archer", "fodder"),
+  cave_troll: variant("cave_troll", "brute"),
+  blood_troll: variant("blood_troll", "brute"),
+  plague_thrall: variant("plague_thrall", "fodder"),
+  blightborn: variant("blightborn", "fodder"),
+  shade: variant("shade", "fodder"),
+  phantom: variant("phantom", "fodder"),
+  banshee: variant("banshee", "fodder"),
+  goblin: variant("goblin", "fodder", GOBLIN_AIM),
+  goblin_shield: variant("goblin_shield", "fodder", GOBLIN_AIM),
+  goblin_cutthroat: variant("goblin_cutthroat", "fodder", GOBLIN_AIM),
+  goblin_cutthroat_shield: variant("goblin_cutthroat_shield", "fodder", GOBLIN_AIM),
+  goblin_reaver: variant("goblin_reaver", "fodder", GOBLIN_AIM),
+  goblin_reaver_shield: variant("goblin_reaver_shield", "fodder", GOBLIN_AIM),
+  goblin_warchief: variant("goblin_warchief", "fodder", GOBLIN_AIM),
+  goblin_warchief_shield: variant("goblin_warchief_shield", "fodder", GOBLIN_AIM),
+  ogre: variant("ogre", "brute", OGRE_AIM),
+  ogre_mauler: variant("ogre_mauler", "brute", OGRE_AIM),
+  ogre_tyrant: variant("ogre_tyrant", "brute", OGRE_AIM),
+  dark_warrior: variant("dark_warrior", "brute"),
+  dark_reaper: variant("dark_reaper", "brute"),
 };
 
 /**
@@ -130,18 +182,36 @@ export function monsterLook(archetype: string): MonsterLook {
 }
 
 /**
- * The look a monster is drawn in now: its own, or, while the art of an on-demand group is not in
- * (ADR-0071 Decision 3), its stand-in: the named sheet, under its tint, at its own tier.
+ * The look a monster wears once its art is in: its archetype's, or a champion's (`boss: true` on a
+ * look not boss tier, FS-C8VM7 §F R35): the same sheet, scaled to the boss tier's aim.
+ */
+function ownLook(archetype: string, boss = false): MonsterLook {
+  const look = monsterLook(archetype);
+  if (!boss || look.tier === "boss") return look;
+  const { aim: _bandAim, ...rest } = look;
+  return { ...rest, tier: "boss" };
+}
+
+/**
+ * The look a monster is drawn in now: its own ({@link ownLook}), or, while the art of an on-demand
+ * group is not in (ADR-0071 Decision 3, ADR-0081 Decision 5), its stand-in: the named sheet, under
+ * its tint where it has one, at its own tier and aim.
  */
 export function drawnLook(
   archetype: string,
   art: Pick<ArtLibrary, "has">,
+  boss = false,
 ): MonsterLook {
-  const look = monsterLook(archetype);
+  const look = ownLook(archetype, boss);
   const standIn = onDemandFor(archetype)?.standIn;
-  return standIn && !art.has(look.sheet)
-    ? { ...monsterLook(standIn.archetype), tier: look.tier, tint: standIn.tint }
-    : look;
+  if (!standIn || art.has(look.sheet)) return look;
+  const { aim: _standInAim, ...stand } = monsterLook(standIn.archetype);
+  return {
+    ...stand,
+    tier: look.tier,
+    ...(look.aim === undefined ? {} : { aim: look.aim }),
+    ...(standIn.tint === undefined ? {} : { tint: standIn.tint }),
+  };
 }
 
 /** The sheet a monster is drawn from: its look's elite sheet for an elite, when it has one. */
@@ -166,6 +236,9 @@ export function monsterTint(
   );
 }
 
+/** Where a look stands in its tier's band: its own aim, else the tier's. */
+const lookAim = (look: MonsterLook): number => look.aim ?? SIZE_TIERS[look.tier].aim;
+
 /** The slice of the art library sizing reads. */
 interface SheetHeights {
   sheet(name: string): { crown?: number; length?: number } | undefined;
@@ -181,7 +254,7 @@ const HEIGHT_PER_LENGTH_PX = Math.cos(Math.PI / 6);
  * aim is the best guess.
  */
 export function monsterScale(look: MonsterLook, art: SheetHeights): number {
-  const aim = SIZE_TIERS[look.tier].aim;
+  const aim = lookAim(look);
   const player = art.sheet(PLAYER_REFERENCE_SHEET)?.crown;
   const own = art.sheet(look.sheet);
   const creature =
@@ -201,7 +274,7 @@ const BODY_RADIUS = 20;
  * narrower than the body.
  */
 export function footprintRadius(look: MonsterLook): number {
-  return BODY_RADIUS * Math.max(1, SIZE_TIERS[look.tier].aim);
+  return BODY_RADIUS * Math.max(1, lookAim(look));
 }
 
 /**
@@ -230,12 +303,17 @@ export function bodyColumn(
 
 // ── Clips and nameplate ───────────────────────────────────────────────────
 
-/** The clip each server action plays (req 34; a demon's fire claw, FS-VHGE7 §D R31). */
+/**
+ * The clip each server action plays (req 34; a demon's fire claw, FS-VHGE7 §D R31). An ability's
+ * wind-up, and a pounce's leap, is the attack clip (FS-C8VM7 §F R37): its effect, not the body,
+ * tells the ability apart, and the leap is the sprite following the server's position.
+ */
 export const ACTION_CLIPS: Record<MonsterAction, CharacterAnimation> = {
   idle: "idle",
   move: "walk",
   attack: "attack",
   claw: "claw",
+  ability: "attack",
   dead: "death",
 };
 
@@ -452,6 +530,8 @@ export interface MonsterStage {
   graphics(): MonsterBar;
   /** Backing px per logical unit (`viewport.renderScale`), so a bar's edges fall on whole px; 1 if absent. */
   renderScale?(): number;
+  /** A ground mark for an ability's telegraph or impact (FS-C8VM7 §F R36); none drawn if absent. */
+  ground?(): GroundBrush;
 }
 
 /**
@@ -509,6 +589,8 @@ export class MonsterRoster {
   private hovered?: string;
   /** Plates over every head, or none for the target frame (FS-48CTQ §A.1, §B.3). */
   private mode: MarkerMode = "overhead";
+  /** Each pending ability's area on the ground, a corpse's burst included (FS-C8VM7 §F R36). */
+  private readonly abilities?: AbilityTelegraphs;
 
   constructor(
     private readonly stage: MonsterStage,
@@ -516,7 +598,10 @@ export class MonsterRoster {
     private readonly targeting?: MonsterTargeting,
     private readonly effects?: MonsterEffects,
     private readonly artFetch?: MonsterArtFetch,
-  ) {}
+  ) {
+    const ground = stage.ground?.bind(stage);
+    if (ground) this.abilities = new AbilityTelegraphs(ground);
+  }
 
   /** How many monsters (corpses included) are on the canvas. */
   get size(): number {
@@ -530,6 +615,7 @@ export class MonsterRoster {
    */
   clear(): void {
     this.hovered = undefined;
+    this.abilities?.clear();
     this.sync([]);
   }
 
@@ -578,6 +664,7 @@ export class MonsterRoster {
       }
 
     for (const { archetype } of monsters) this.fetchArtOf(archetype);
+    this.abilities?.sync(monsters);
 
     for (const monster of monsters) {
       const view = this.views.get(monster.entity_id);
@@ -604,6 +691,7 @@ export class MonsterRoster {
 
   /** One frame: ease each monster toward the server, play its clip, seat its markers. */
   update(deltaMs: number): void {
+    this.abilities?.update(deltaMs);
     for (const view of this.views.values()) {
       const { pos, state } = view;
       const before = { x: pos.x, y: pos.y };
@@ -723,9 +811,10 @@ export class MonsterRoster {
   /**
    * The group's art is in: every monster drawn as a stand-in for it changes (§F R48), whichever
    * archetype asked. A group's later asks are dropped, so the first asker's callback answers them
-   * all (FS-M8CSE §H R42).
+   * all (FS-M8CSE §H R42); a floor's pool fetched ahead of its monsters answers here too (FS-C8VM7
+   * §G R42, R44).
    */
-  private redress(group: string): void {
+  redress(group: string): void {
     for (const view of this.views.values())
       if (onDemandFor(view.state.archetype)?.group === group) this.wearOwnLook(view);
   }
@@ -736,7 +825,7 @@ export class MonsterRoster {
    * hit column stands, a tier's height either way (crown × scale).
    */
   private wearOwnLook(view: MonsterView): void {
-    const look = monsterLook(view.state.archetype);
+    const look = ownLook(view.state.archetype, view.state.boss);
     const sheet = monsterSheet(look, view.state);
     view.look = look;
     view.scale = monsterScale(look, this.art);
@@ -748,7 +837,7 @@ export class MonsterRoster {
   }
 
   private create(state: MonsterState): MonsterView {
-    const look = drawnLook(state.archetype, this.art);
+    const look = drawnLook(state.archetype, this.art, state.boss);
     const sheet = monsterSheet(look, state);
     const facing = facingFrom(state.facing.x, state.facing.y, "se");
     const anim = new CharacterAnimator(this.art, { sheet }, facing);

@@ -183,7 +183,7 @@ func TestInitialSystems_RollsTheHeightFromTheSpawnSource(t *testing.T) {
 }
 
 // The top floor is wherever the run's own height says: below it stairs, on it
-// none and the guaranteed demon, on a dungeon and on a fallback floor alike, and
+// none and the guaranteed boss, on a dungeon and on a fallback floor alike, and
 // the height stands through the climb. FS-M8CSE §A Requirements 3-4, §C R15.
 func TestClimb_TheRollsHeightPlacesTheTopFloor(t *testing.T) {
 	tests := []struct {
@@ -206,18 +206,13 @@ func TestClimb_TheRollsHeightPlacesTheTopFloor(t *testing.T) {
 				require.NoError(t, s.regenerateFloor())
 				assert.Equal(t, height, currentFloor(t, s).Count, "the height is fixed for the run")
 
-				demons := 0
-				for _, m := range monstersIn(s) {
-					if monsterOf(m).Archetype == components.MonsterArchetypeDemon {
-						demons++
-					}
-				}
 				if depth < height {
 					assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1, "floor %d has stairs", depth)
 					continue
 				}
 				assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeStairs), "the top floor has none")
-				assert.Equal(t, 1, demons, "the top floor holds its demon")
+				// FS-C8VM7 §D R26: a champion stands where the demon stood
+				assert.Len(t, bossesIn(s)[championKey], 1, "the top floor holds its boss")
 			}
 
 			before := len(s.EntityManager.GetAllEntities())
@@ -405,8 +400,11 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	}
 	assert.Equal(t, wantStairs, stairs, "stairs")
 
+	// a tome run (FS-3103M, 2% of runs) also lays its tome or altar on the floor
+	tomeAndAltar := len(entityIDsWith(s, ecs.ComponentTypeTome)) + len(entityIDsWith(s, ecs.ComponentTypeAltar))
+
 	total := len(s.EntityManager.GetAllEntities())
-	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs
+	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar
 	assert.Equal(t, len(keep)+floorKinds, total, "nothing else is in the world")
 }
 

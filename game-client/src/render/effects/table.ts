@@ -534,6 +534,62 @@ export const EFFECTS = {
       accel: noAccel,
     },
   },
+  /**
+   * FS-C8VM7 §F R38: a goblin's thrown dagger in flight, a faint hostile-red glint behind a small
+   * blade, thinner than the bone arrow's glow, with a single mote now and then. Dies with it.
+   * *Starting values.*
+   */
+  thrownDaggerTrail: {
+    timing: {
+      kind: "stream",
+      lifeMs: 160,
+      intervalMs: 50,
+      maxAlive: 8,
+      onRelease: "cut",
+    },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["oxbloodText"],
+      scale: still,
+      alpha: { from: 0.35, to: 0.35 },
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["oxbloodText"],
+      count: 1,
+      scale: still,
+      alpha: { from: 0.8, to: 0 },
+      speed: { from: 20, to: 120 },
+      angle: { from: -8, to: 8 },
+      accel: noAccel,
+    },
+  },
+  /**
+   * FS-C8VM7 §F R38: an ogre's rock in flight, slow and heavy, shedding grit that falls and a few
+   * hostile-red motes, so a stone thrown in the dark still reads as a hostile's. No glow: it is
+   * not a flame. Dies with it. *Starting values.*
+   */
+  ogreRockTrail: {
+    timing: {
+      kind: "stream",
+      lifeMs: 320,
+      intervalMs: 60,
+      maxAlive: 10,
+      onRelease: "cut",
+    },
+    ease: "Quad.easeIn",
+    particles: {
+      texture: ["fx_dust", "fx_ember"],
+      tint: ["vellumDark", "oxbloodText"],
+      count: 2,
+      scale: still,
+      alpha: { from: 0.7, to: 0 },
+      speed: { from: 6, to: 24 },
+      angle: { from: 240, to: 300 },
+      accel: { x: 0, y: 160 },
+    },
+  },
 
   // ── Hit, death, escape (§G) ─────────────────────────────────────────────
   /** Part of the way toward oxblood, easing back to untinted. Applied by the hit module. */

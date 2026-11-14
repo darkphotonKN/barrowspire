@@ -99,7 +99,7 @@ export function nextWatched(
 
 /** One line of the run's ESC menu, or of the confirm that replaces its rows (FS-9K8EZ req 2, 3). */
 export interface RunMenuChoice {
-  id: "fall" | "leave" | "options" | "back" | "fall-now" | "not-yet";
+  id: "fall" | "leave" | "options" | "back" | "fall-now" | "not-yet" | "burn";
   label: string;
   /** Amber for a thing the player can do, the cancel register for going back. */
   register: "actionable" | "cancel";
@@ -122,11 +122,19 @@ export function runMenuChoices(state: { resolved: boolean }): RunMenuChoice[] {
   return [way, { ...OPTIONS_CHOICE }, BACK];
 }
 
+const NOT_YET: RunMenuChoice = { id: "not-yet", label: "Not yet  [Esc]", register: "cancel" };
+
 /** The one asking before a chosen death (FS-9K8EZ req 3): the line, and Fall or Not yet. */
 export const FALL_CONFIRM: { line: string; choices: RunMenuChoice[] } = {
   line: "The barrow keeps its dead. Fall here?",
-  choices: [
-    { id: "fall-now", label: "Fall", register: "actionable" },
-    { id: "not-yet", label: "Not yet  [Esc]", register: "cancel" },
-  ],
+  choices: [{ id: "fall-now", label: "Fall", register: "actionable" }, NOT_YET],
+};
+
+/**
+ * The one asking before the tome is burned at the altar (FS-3103M R25), on the Fall confirm's
+ * panel: the owner's line, and Burn or Not yet.
+ */
+export const BURN_CONFIRM: { line: string; choices: RunMenuChoice[] } = {
+  line: "Burn tome?",
+  choices: [{ id: "burn", label: "Burn", register: "actionable" }, NOT_YET],
 };

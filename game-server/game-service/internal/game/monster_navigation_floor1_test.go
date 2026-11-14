@@ -75,6 +75,7 @@ func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, see
 		}
 	}
 
+	reached := make([]bool, far)
 	for i, m := range chasers {
 		// five bodies of 40 px crowd round one delver: within a few bodies; a
 		// ranged monster stops where it shoots from (FS-B4SG9 §A R4)
@@ -82,8 +83,33 @@ func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, see
 		if mc := monsterOf(m); mc.ShotProjectileType != "" {
 			reach = max(reach, mc.AttackRange)
 		}
-		assert.LessOrEqual(t, closest[i], reach, "seed %d: monster %d never reached the delver", seed, i)
+		reached[i] = closest[i] <= reach
 	}
+	for i, m := range chasers {
+		if reached[i] {
+			continue
+		}
+		// a body queued against a chaser that reached, one standing to shoot
+		// in a corridor, was held by that body, not by a wall
+		assert.True(t, queuedBehind(t, m, chasers, reached),
+			"seed %d: monster %d never reached the delver (closest %.0f px)", seed, i, closest[i])
+	}
+}
+
+// queuedBehind is whether m stands in body contact with a chaser that reached.
+func queuedBehind(t *testing.T, m *ecs.Entity, chasers []*ecs.Entity, reached []bool) bool {
+	t.Helper()
+	at := transformOf(t, m)
+	for j, other := range chasers {
+		if other == m || !reached[j] {
+			continue
+		}
+		ot := transformOf(t, other)
+		if math.Hypot(at.X-ot.X, at.Y-ot.Y) <= 3*constants.PlayerRadius {
+			return true
+		}
+	}
+	return false
 }
 
 // On generated floor 1 layouts, a Bone Archer standing in range of a delver

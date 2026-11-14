@@ -54,8 +54,8 @@ func TestForestSheets_StartingValues(t *testing.T) {
 }
 
 // A spawn point's elite rule decides its elites: a rolled point at the Spire's
-// floor-1 chance (the Meadows, unchanged), a never point never, an always
-// point every time, with a name from the place's prefixes. R17.
+// floor-1 chance (the Meadows, unchanged), an always point every time, with a
+// name from the place's prefixes. R17.
 func TestRollFieldSpawn_EliteRule(t *testing.T) {
 	place := GentleMeadows()
 	place.ElitePrefixes = ElitePrefixes
@@ -75,7 +75,6 @@ func TestRollFieldSpawn_EliteRule(t *testing.T) {
 		return elites
 	}
 
-	assert.Zero(t, count(FieldEliteNever), "a never point is never elite")
 	assert.Equal(t, rolls, count(FieldEliteAlways), "an always point is always elite")
 	assert.InDelta(t, eliteChance(1), float64(count(FieldEliteRolled))/rolls, 0.01)
 }
@@ -86,23 +85,24 @@ func TestFieldPlace_StandardElitesDefaultToRolled(t *testing.T) {
 	assert.Equal(t, FieldEliteRolled, GentleMeadows().StandardElites)
 
 	// draws: the creature, the level, the prefix; no elite roll on an always point
-	always := rollFieldSpawn(&drawQueue{floats: []float64{0}, ints: []int{2, 3}}, GentleMeadows(), FieldEliteAlways)
+	always := rollFieldSpawn(&drawQueue{floats: []float64{0}, ints: []int{1, 3}}, GentleMeadows(), FieldEliteAlways)
 	assert.True(t, always.Elite)
-	assert.Equal(t, MeadowsMinLevel+2, always.Level)
+	assert.Equal(t, MeadowsMinLevel+1, always.Level)
 	assert.Equal(t, FieldElitePrefixes[3%len(FieldElitePrefixes)]+" Boar", always.Name)
 }
 
 // A field built with elite spawn points holds an elite on each, every time it
-// refills; its standard points follow the place's rule. R17.
+// refills; its standard points follow the place's rule, here a rolled chance
+// whose roll always misses. R17.
 func TestFieldPopulation_ElitePointsAlwaysHoldAnElite(t *testing.T) {
 	place := GentleMeadows()
-	place.StandardElites = FieldEliteNever
 	layout := FieldLayout{
 		SpawnPoints:      []FieldPoint{{X: 600, Y: 420}, {X: 1000, Y: 320}},
 		EliteSpawnPoints: []FieldPoint{{X: 1460, Y: 110}},
 	}
 
 	field := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, FieldBounds(place))
+	field.spawnRand = fixedRand{f: 0.999} // above every elite chance
 	field.InitialFieldMapObjects(place, layout)
 
 	require.Len(t, field.fieldPopulation.spawns, 3)
@@ -122,8 +122,9 @@ func TestFieldPopulation_ElitePointsAlwaysHoldAnElite(t *testing.T) {
 func TestRollMonsters_NeverAForestCreature(t *testing.T) {
 	rng := seededSpawns(18)
 	for floor := 1; floor <= 10; floor++ {
+		pool := drawFloorPool(rng, tierOf(floorBaseLevel(5, floor)))
 		for range 200 {
-			for _, m := range rollMonsters(rng, 5, floor) {
+			for _, m := range rollMonsters(rng, pool, 5, floor) {
 				assert.NotEqual(t, components.MonsterArchetypeZombie, m.Archetype)
 				assert.NotEqual(t, components.MonsterArchetypeGhost, m.Archetype)
 			}
@@ -133,7 +134,8 @@ func TestRollMonsters_NeverAForestCreature(t *testing.T) {
 
 // The Forest carries its tuning: zombies with a ghost one spawn in
 // ForestGhostShare, its band and factors, the field respawn, barrow elite
-// names, and trail points that are never elite. R9, R17.
+// names, and trail points that roll elite by the Meadows' rule. R9, R17,
+// §Change: Elites on the Forest's trail R32.
 func TestForlornForest_CarriesTheForestTuning(t *testing.T) {
 	place := ForlornForest(forestLayoutFor(t, forestSeed))
 
@@ -143,30 +145,39 @@ func TestForlornForest_CarriesTheForestTuning(t *testing.T) {
 	}, place.Creatures)
 	assert.Equal(t, ForestMinLevel, place.MinLevel)
 	assert.Equal(t, ForestMaxLevel, place.MaxLevel)
-	assert.Equal(t, 4, ForestMinLevel)
-	assert.Equal(t, 9, ForestMaxLevel)
+	assert.Equal(t, 8, ForestMinLevel)
+	assert.Equal(t, 12, ForestMaxLevel)
 	assert.Equal(t, FieldStatFactor, place.StatFactor)
 	assert.Equal(t, ForestDropFactor, place.DropFactor)
 	assert.Equal(t, FieldRespawnDelay, place.RespawnDelay)
 	assert.Equal(t, ElitePrefixes, place.ElitePrefixes)
-	assert.Equal(t, FieldEliteNever, place.StandardElites)
+	assert.Equal(t, FieldEliteRolled, place.StandardElites)
+	assert.Equal(t, GentleMeadows().StandardElites, place.StandardElites, "the Meadows' rule")
 }
 
 // Over many seeded rolls, a ghost is 1 spawn in 12 and the rest are zombies;
-// a trail point never rolls an elite, a clearing point always does, with a
-// barrow prefix. R17.
+// a trail point rolls elite at the Meadows' chance, eliteChance(1), with a
+// barrow prefix and no name otherwise; a clearing point always is elite.
+// R17, §Change: Elites on the Forest's trail R31, R33.
 func TestForestSpawns_GhostShareAndEliteRule(t *testing.T) {
 	place := ForlornForest(forestLayoutFor(t, forestSeed))
 	rng := seededSpawns(12)
 
-	ghosts := 0
+	ghosts, elites := 0, 0
+	levels := map[int]bool{}
 	const rolls = 24000
 	for range rolls {
 		m := rollFieldMonster(rng, place)
 		require.Contains(t, []components.MonsterArchetype{components.MonsterArchetypeZombie, components.MonsterArchetypeGhost}, m.Archetype)
-		require.False(t, m.Elite, "a standard point is never elite")
-		require.GreaterOrEqual(t, m.Level, ForestMinLevel)
-		require.LessOrEqual(t, m.Level, ForestMaxLevel)
+		if m.Elite {
+			elites++
+			require.Contains(t, barrowNames(m.Archetype), m.Name, "a trail elite carries a barrow prefix")
+		} else {
+			require.Empty(t, m.Name)
+		}
+		require.GreaterOrEqual(t, m.Level, place.MinLevel)
+		require.LessOrEqual(t, m.Level, place.MaxLevel)
+		levels[m.Level] = true
 		if m.Archetype == components.MonsterArchetypeGhost {
 			ghosts++
 		}
@@ -177,6 +188,8 @@ func TestForestSpawns_GhostShareAndEliteRule(t *testing.T) {
 	}
 	assert.InDelta(t, 1.0/12, float64(ghosts)/rolls, 0.01)
 	assert.InDelta(t, 1.0/12, ForestGhostShare, 1e-12)
+	assert.InDelta(t, eliteChance(1), float64(elites)/rolls, 0.01, "the trail's elite share is the Meadows'")
+	assert.Len(t, levels, place.MaxLevel-place.MinLevel+1, "every level in the band rolls")
 }
 
 // inAnyClearing is whether p stands inside any dead end's clearing.
@@ -314,10 +327,11 @@ func TestForestLayout_SkipsWhatCannotBePlaced(t *testing.T) {
 	assert.Equal(t, []FieldPoint{{X: 200, Y: 680}}, layout.EliteSpawnPoints)
 }
 
-// A booted Forest holds a plain zombie or ghost on every trail point and an
-// elite on every clearing point, each in the band, at the field factor with
-// the Spire's elite multipliers on top for an elite. R16, R17, AC "A Forest
-// elite's HP and damage".
+// A booted Forest holds a zombie or ghost on every trail point, now and then
+// an elite, and an elite on every clearing point, each in the band, at the
+// field factor with the Spire's elite multipliers on top for an elite. R16,
+// R17, AC "A Forest elite's HP and damage"; §Change: Elites on the Forest's
+// trail R31, R33.
 func TestForlornForest_BootedPopulation(t *testing.T) {
 	forest, place, _ := builtForest(t, forestSeed)
 	layout := forest.fieldLayout
@@ -328,18 +342,55 @@ func TestForlornForest_BootedPopulation(t *testing.T) {
 	for i := range forest.fieldPopulation.spawns {
 		m := spawnedAt(t, forest, i)
 		monster := monsterOf(m)
-		elite := i >= standard
+		clearing := i >= standard
 
-		assert.Equal(t, elite, monster.Elite, "point %d", i)
+		if clearing {
+			assert.True(t, monster.Elite, "point %d: a clearing point is always elite", i)
+			assert.Equal(t, layout.EliteSpawnPoints[i-standard], FieldPoint{X: monster.HomeX, Y: monster.HomeY})
+		}
 		assert.Contains(t, []components.MonsterArchetype{components.MonsterArchetypeZombie, components.MonsterArchetypeGhost}, monster.Archetype)
 		assert.GreaterOrEqual(t, monster.Level, place.MinLevel)
 		assert.LessOrEqual(t, monster.Level, place.MaxLevel)
-		assert.Equal(t, fieldFactored(monster.Archetype, monster.Level, place.StatFactor, elite), statsOf(t, m))
-		if elite {
+		assert.Equal(t, fieldFactored(monster.Archetype, monster.Level, place.StatFactor, monster.Elite), statsOf(t, m))
+		if monster.Elite {
 			assert.Contains(t, barrowNames(monster.Archetype), monster.Name)
-			assert.Equal(t, layout.EliteSpawnPoints[i-standard], FieldPoint{X: monster.HomeX, Y: monster.HomeY})
 		}
 	}
+}
+
+// A built Forest refilled many times holds on its trail points both elites
+// and plain monsters, every elite factored alike, and an elite on every
+// clearing point each time it refills. §Change: Elites on the Forest's trail
+// R31, R33, R34.
+func TestForlornForest_RefillsRollTrailElitesAndKeepClearingElites(t *testing.T) {
+	forest, place, _ := builtForest(t, forestSeed)
+	standard := len(forest.fieldLayout.SpawnPoints)
+	require.NotEmpty(t, forest.fieldLayout.EliteSpawnPoints)
+
+	trailElites, trailPlain := 0, 0
+	for range 60 {
+		for i := range forest.fieldPopulation.spawns {
+			e := spawnedAt(t, forest, i)
+			m := monsterOf(e)
+			// a trail elite is factored as a clearing elite of its archetype
+			// and level is (R33)
+			require.Equal(t, fieldFactored(m.Archetype, m.Level, place.StatFactor, m.Elite), statsOf(t, e), "point %d", i)
+			switch {
+			case i >= standard:
+				require.True(t, m.Elite, "clearing point %d is always elite", i)
+			case m.Elite:
+				trailElites++
+			default:
+				trailPlain++
+			}
+			slay(t, forest, spawnedAt(t, forest, i))
+		}
+		// the first update sees every death, the second runs the delay out
+		forest.fieldPopulation.update(0, forest.EntityManager.GetAllEntities())
+		forest.fieldPopulation.update(place.RespawnDelay, forest.EntityManager.GetAllEntities())
+	}
+	assert.NotZero(t, trailElites, "a trail point now and then holds an elite")
+	assert.NotZero(t, trailPlain, "most trail monsters are plain")
 }
 
 // Killing a zombie or a ghost is worth its row along FS-BDA7X's curve, with an

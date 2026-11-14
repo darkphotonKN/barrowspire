@@ -1,6 +1,7 @@
 # ADR-0071 — The blood demon's art is its own atlas group, fetched on demand when one first appears; the `boss` group keeps the green demon
 
 Status: accepted
+Amended by: ADR-0081 — Decision 2 (a Spire variant group is also fetched when a floor map's pool names it) and Decision 4 (a Spire variant group is evicted by a floor map whose pool does not name it); the blood demon's group is unchanged.
 Date: 2026-11-08
 Scope: `game-client` only: which atlas group the blood demon's sheet is packed in
 (`tools/bake/page/characters/cast.js`), and when the client loads it (`src/render/art/`, the

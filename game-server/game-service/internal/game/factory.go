@@ -34,12 +34,13 @@ type ClassGrowth struct {
 }
 
 // CreateMatchProgressEntity makes the run-level entity: match progress, the
-// floor the run is on and its Spire height. It outlives every floor change.
-// FS-F6F88 §Requirements 3, FS-M8CSE §A Requirement 3.
-func CreateMatchProgressEntity(em *ecs.EntityManager, spireHeight int) *ecs.Entity {
+// floor the run begins on and its Spire height. It outlives every floor change.
+// FS-F6F88 §Requirements 3, FS-M8CSE §A Requirement 3; the endgame test run
+// begins above the first (FS-BDRTJ R25).
+func CreateMatchProgressEntity(em *ecs.EntityManager, startFloor, spireHeight int) *ecs.Entity {
 	entity := em.CreateEntity()
 	entity.AddComponent(components.NewMatchProgressComponent())
-	entity.AddComponent(components.NewFloorComponent(firstFloor, spireHeight))
+	entity.AddComponent(components.NewFloorComponent(startFloor, spireHeight))
 
 	return entity
 }
@@ -375,6 +376,10 @@ type MonsterConfig struct {
 	// StatFactor scales a field monster's level stats before any promotion
 	// (FS-X2F2H §Requirements 29); 0 is a Spire monster's own, unscaled.
 	StatFactor float64
+	// Champion is a top floor's champion boss: its HP and damage the Demon
+	// sheet's at its level, its mitigation its variant's × the champion
+	// multiplier (FS-C8VM7 §D R28). Boss is set with it.
+	Champion bool
 }
 
 // CreateMonsterEntity spawns a monster from its archetype's sheet at its level.
@@ -391,6 +396,9 @@ func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entit
 	if config.StatFactor > 0 {
 		stats = stats.scaled(config.StatFactor)
 	}
+	if config.Champion {
+		stats = stats.champion(config.Level)
+	}
 	if config.Elite {
 		stats = stats.elite()
 	}
@@ -406,6 +414,7 @@ func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entit
 		Level:          config.Level,
 		Elite:          config.Elite,
 		Boss:           config.Boss,
+		Champion:       config.Champion,
 		Name:           name,
 		HomeX:          config.X,
 		HomeY:          config.Y,
@@ -426,6 +435,8 @@ func CreateMonsterEntity(em *ecs.EntityManager, config MonsterConfig) *ecs.Entit
 		ShotSpeed:          sheet.Shot.Speed,
 		ShotRadius:         sheet.Shot.Radius,
 		ShotMaxFlight:      sheet.Shot.MaxFlight,
+
+		Ability: sheet.Ability,
 	})
 	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
 	entity.AddComponent(components.NewVelocityComponent(0, 0, sheet.MoveSpeed))

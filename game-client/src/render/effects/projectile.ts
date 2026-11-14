@@ -64,6 +64,8 @@ export interface ProjectileKind {
   turns: boolean;
   /** Screen px above the footprint the body and its trail fly at, the whole flight. */
   lift: number;
+  /** The body's size over its baked size, when it is drawn smaller or larger (FS-C8VM7 §F R38). */
+  scale?: number;
   /** Plays the impact at the last world position. */
   impact(fx: Pick<EffectsRuntime, "play">, owner: OwnerKey, at: Point): void;
 }
@@ -213,6 +215,7 @@ export class ProjectileFlights {
       ? this.scene.add.image(0, 0, r.texture)
       : this.scene.add.image(0, 0, r.texture, r.frame);
     image.setOrigin(r.anchor.x, r.anchor.y);
+    if (kind.scale !== undefined) image.setScale(kind.scale);
     if (kind.tint) {
       const [trailing, leading = trailing] = kind.tint.map((k) => BARROW_HEX[k]);
       image.setTint(trailing, leading, trailing, leading);
