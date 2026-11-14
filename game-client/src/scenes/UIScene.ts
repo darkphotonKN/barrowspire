@@ -312,7 +312,7 @@ export class UIScene extends Phaser.Scene {
       (anchor, onClose, onHovered) => new SettlementRecord(this, anchor, onClose, onHovered),
       () => recordAnchor(viewport),
     );
-    const controls = new UiControlsSlot(bridge, () => mountControlsPiece(this));
+    const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose));
     this.controls = controls;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));

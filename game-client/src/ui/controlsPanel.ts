@@ -1,7 +1,7 @@
 /**
- * The run's controls panel (H), drawn as the run drew it (`toggleControlsPanel`): a dark panel at the
- * view's centre, the windows' one title (FS-3EBCA R20, R22), a row per control (its key in brass, its
- * action in the HUD's label tone), and "H to close" under them. The class's own ability is named as its
+ * The run's controls panel (H), drawn as the run drew it (`toggleControlsPanel`) at the view's centre,
+ * now in every window's frame with its × (FS-84N1G R13): the windows' one title (FS-3EBCA R20, R22), a
+ * row per control (its key in brass, its action in the HUD's label tone), and "H to close" under them. The class's own ability is named as its
  * HUD card names it (FS-8AY7S req 30).
  *
  * It is the UI scene's (FS-TQZ5J § Change: Phase 3, R50, the note on ADR-0083 2.3): at 1200, over the
@@ -13,7 +13,7 @@ import type Phaser from "phaser";
 import { RUN_ACTIONS } from "@/scenes/runActions";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { ABILITY_COPY } from "./abilityCopy";
-import { drawPanelTitle } from "./panelFrame";
+import { drawPanelFrame, drawPanelTitle, type FrameRect } from "./panelFrame";
 import type { Rect } from "./partyPanelLayout";
 
 /** Over the party panel (1110) and the gear overlay (1100), under the record (1600) and the popups (2000). */
@@ -55,12 +55,23 @@ export function controlsPanelRect(centre: { x: number; y: number }, rows: number
   return { x: centre.x - PANEL_W / 2, y: centre.y - h / 2, width: PANEL_W, height: h };
 }
 
-/** The panel, drawn about `centre` for `className`, held against the screen at its depth. */
+/** The panel as drawn: its container, and its × box and glyph in the container's space. */
+export interface DrawnControlsPanel {
+  container: Phaser.GameObjects.Container;
+  close: FrameRect;
+  glyph: Phaser.GameObjects.Text;
+}
+
+/**
+ * The panel, drawn about `centre` for `className`, held against the screen at its depth, in every
+ * window's frame with its × (`drawPanelFrame`, FS-84N1G R13): the × box and glyph handed back, for
+ * the caller to hit and light.
+ */
 export function drawControlsPanel(
   scene: Pick<Phaser.Scene, "add">,
   centre: { x: number; y: number },
   className: string,
-): Phaser.GameObjects.Container {
+): DrawnControlsPanel {
   const controls = controlRows(className);
   const panelW = PANEL_W;
   // the title, a 20 px row per control, and the hint under them, so a row added never runs
@@ -68,12 +79,10 @@ export function drawControlsPanel(
   const panelH = panelHeight(controls.length);
   const children: Phaser.GameObjects.GameObject[] = [];
 
+  // every window's frame and × (FS-84N1G R13; FS-3EBCA §F), the shared drawing, not a copy
   const bg = scene.add.graphics();
-  bg.fillStyle(palette.ink, 0.92);
-  bg.fillRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
-  bg.lineStyle(1, palette.frame, 0.5);
-  bg.strokeRoundedRect(-panelW / 2, -panelH / 2, panelW, panelH, 8);
-  children.push(bg);
+  const frame = drawPanelFrame(scene, bg, { x: -panelW / 2, y: -panelH / 2, width: panelW, height: panelH });
+  children.push(bg, frame.glyph);
 
   // the windows' one title (FS-3EBCA R20, R22)
   children.push(drawPanelTitle(scene as Phaser.Scene, { x: -panelW / 2, y: -panelH / 2, width: panelW }, "CONTROLS"));
@@ -104,8 +113,8 @@ export function drawControlsPanel(
   hint.setOrigin(0.5);
   children.push(hint);
 
-  const panel = scene.add.container(centre.x, centre.y, children);
-  panel.setDepth(CONTROLS_PANEL_DEPTH);
-  panel.setScrollFactor(0);
-  return panel;
+  const container = scene.add.container(centre.x, centre.y, children);
+  container.setDepth(CONTROLS_PANEL_DEPTH);
+  container.setScrollFactor(0);
+  return { container, close: frame.close, glyph: frame.glyph };
 }

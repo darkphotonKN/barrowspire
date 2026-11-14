@@ -94,12 +94,15 @@ export interface ControlsPiece {
   destroy(): void;
 }
 
+/** Builds the controls panel, its × handed in (FS-84N1G R14). */
+export type ControlsBuilder = (onClose: () => void) => ControlsPiece;
+
 export class UiControlsSlot {
   private panel: ControlsPiece | null = null;
 
   constructor(
-    private readonly bridge: Pick<UiBridge, "world" | "ui">,
-    private readonly build: () => ControlsPiece,
+    private readonly bridge: Pick<UiBridge, "world" | "ui" | "act" | "play">,
+    private readonly build: ControlsBuilder,
   ) {}
 
   /** Heard each world report, and none as the world leaves: it stands in the run alone, and goes with it. */
@@ -111,15 +114,30 @@ export class UiControlsSlot {
     return this.panel !== null;
   }
 
-  /** H (R56): opens or closes it in the run; refused while the menu slot is filled and after the run's end. */
+  /**
+   * H (R56): opens or closes it in the run, through the UI scene's act, `dialog_open` as it opens and
+   * `dialog_cancel` as it closes (FS-84N1G R11); refused, silently, while the menu slot is filled and
+   * after the run's end.
+   */
   toggle(): void {
-    const report = this.bridge.world;
-    if (report?.world !== "run" || this.bridge.ui.menuOpen || report.facts().ended) return;
-    if (this.panel) this.close();
-    else this.panel = this.build();
+    if (!this.mayOpen()) return;
+    this.bridge.act(() => {
+      if (this.panel) return this.dismiss();
+      this.bridge.play("dialog_open");
+      this.open();
+    });
   }
 
-  /** Closed: the run's end appeared (R58), or the run left. */
+  /** The player closed it (its ×, FS-84N1G R14): `dialog_cancel`, inside the UI scene's act. */
+  dismiss(): void {
+    if (!this.panel) return;
+    this.bridge.act(() => {
+      this.bridge.play("dialog_cancel");
+      this.close();
+    });
+  }
+
+  /** Closed by the game, silently (FS-WDM0X S4): the run's end appeared (R58), or the run left. */
   close(): void {
     this.panel?.destroy();
     this.panel = null;
@@ -131,5 +149,15 @@ export class UiControlsSlot {
 
   destroy(): void {
     this.close();
+  }
+
+  /** Whether it may open now: in the run, the menu slot empty, the run not ended (R56). */
+  private mayOpen(): boolean {
+    const report = this.bridge.world;
+    return report?.world === "run" && !this.bridge.ui.menuOpen && !report.facts().ended;
+  }
+
+  private open(): void {
+    this.panel ??= this.build(() => this.dismiss());
   }
 }
