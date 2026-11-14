@@ -403,3 +403,33 @@ describe("PartyReadyCheck at another logical width (FS-ZAJMH R12, R13)", () => {
     expect(env.find(QUESTION)).toBeDefined();
   });
 });
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): on the UI scene the popup stands a ground under its
+// buttons, so a press on it is the UI scene's (R40)
+describe("PartyReadyCheck on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R40)", () => {
+  it("should stand one ground over the shown popup, and take it down as the check closes", () => {
+    const env = fakeScene();
+    const grounds: { destroyed: boolean; rect: { width: number } }[] = [];
+    const store = createPartyStore({ selfId: () => WREN, now: () => 0, say: () => {} });
+    new PartyReadyCheck(env.scene, {
+      store,
+      commands: { ready: vi.fn() },
+      selfId: () => WREN,
+      hidden: () => false,
+      ground: (rect) => {
+        const g = { destroyed: false, rect };
+        grounds.push(g);
+        return { destroy: () => void (g.destroyed = true) };
+      },
+    });
+    const live = () => grounds.filter((g) => !g.destroyed);
+    expect(live()).toEqual([]);
+
+    store.getState().receiveReadyCheck(check());
+    expect(live()).toHaveLength(1);
+    expect(live()[0].rect.width).toBeGreaterThan(0);
+    store.getState().receiveReadyCheck(check({ outcome: "cancelled" }));
+
+    expect(live()).toEqual([]);
+  });
+});

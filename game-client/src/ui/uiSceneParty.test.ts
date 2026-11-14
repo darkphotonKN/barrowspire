@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { GameUiBridge, NO_FACTS, type UiRequest, type World, type WorldBlockers, type WorldReport } from "./uiBridge";
-import { UiPartySlot, partyPanelWiring, type PartyPanelPiece } from "./uiSceneParty";
+import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPanelPiece } from "./uiSceneParty";
 
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9): the party panel is the UI scene's, built for each
 // world reported and taken down as it leaves (R36); refused by the world's part of its rule and the UI
@@ -165,5 +165,65 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
     partyPanelWiring(bridge, "field").wrapper.act(() => void acted.push("ran"));
 
     expect(acted).toEqual(["act", "ran"]);
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompt and the ready check hide as the
+// world says (blockers().popups) and stack above the chat window it reports (layout().chatTop), R38
+describe("the invite prompt's and the ready check's wiring (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should hide them while the world says so, read as it is now, and with no world reported", () => {
+    const bridge = new GameUiBridge();
+    const wiring = partyPromptWiring(bridge);
+    expect(wiring.hidden()).toBe(true);
+    const town = aWorld("hub");
+    bridge.report(town.report);
+
+    expect(wiring.hidden()).toBe(false);
+    town.blockers.popups = true;
+    expect(wiring.hidden()).toBe(true);
+  });
+
+  it("should stack the invites above the chat window's top the world reports, and nowhere in particular without one", () => {
+    const bridge = new GameUiBridge();
+    const wiring = partyPromptWiring(bridge);
+    const field = aWorld("field");
+    let chatTop: number | undefined = 520;
+    bridge.report({ ...field.report, layout: () => ({ chatTop }) });
+
+    expect(wiring.floor()).toBe(520);
+    chatTop = undefined;
+    expect(wiring.floor()).toBeUndefined();
+    bridge.report(aWorld("hub").report);
+    expect(wiring.floor()).toBeUndefined();
+  });
+});
+
+describe("the UI scene's party slot's other pieces (FS-TQZ5J § Change: Phase 2: the party, R36)", () => {
+  it("should relay out and take down every other piece with the panel", () => {
+    const pieces: { world: World; relayouts: number; destroyed: boolean }[] = [];
+    const slot = new UiPartySlot((world) => {
+      const piece = { world, relayouts: 0, destroyed: false };
+      pieces.push(piece);
+      return {
+        panel: {
+          isOpen: () => false,
+          close: () => false,
+          toggle: () => {},
+          relayout: () => {},
+          keepsField: () => false,
+          destroy: () => {},
+        },
+        rest: [{ relayout: () => void piece.relayouts++, destroy: () => void (piece.destroyed = true) }, { destroy: () => {} }],
+      };
+    });
+    slot.show(aWorld("hub").report);
+
+    slot.relayout();
+    slot.show(aWorld("run").report);
+
+    expect(pieces.map((p) => [p.world, p.relayouts, p.destroyed])).toEqual([
+      ["hub", 1, true],
+      ["run", 0, false],
+    ]);
   });
 });

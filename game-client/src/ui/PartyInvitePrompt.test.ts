@@ -467,3 +467,50 @@ describe("PartyInvitePrompt at another logical width (FS-ZAJMH R12, R13)", () =>
     expect(env.prompt.shown()).toBe(1);
   });
 });
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): on the UI scene each shown prompt stands a ground
+// under its buttons, so a press on it is the UI scene's (R40)
+describe("PartyInvitePrompt on the UI scene (FS-TQZ5J § Change: Phase 2: the party, R40)", () => {
+  function grounded(opts: { hidden?: boolean } = {}) {
+    const env = fakeScene();
+    const grounds: { rect: { x: number; y: number; width: number; height: number }; destroyed: boolean }[] = [];
+    const store = createPartyStore({ selfId: () => ME, now: () => 0 });
+    const state = { hidden: opts.hidden ?? false };
+    new PartyInvitePrompt(env.scene, {
+      store,
+      commands: { accept: vi.fn(), decline: vi.fn() },
+      hidden: () => state.hidden,
+      world: () => "field",
+      floor: () => undefined,
+      ground: (rect) => {
+        const g = { rect, destroyed: false };
+        grounds.push(g);
+        return { destroy: () => void (g.destroyed = true) };
+      },
+    });
+    const live = () => grounds.filter((g) => !g.destroyed).map((g) => g.rect);
+    return { ...env, store, state, live, frame: () => env.events.emit("postupdate") };
+  }
+
+  it("should stand one ground over each shown prompt, its rect the prompt's, and none with no invite", () => {
+    const env = grounded();
+    expect(env.live()).toEqual([]);
+
+    env.store.getState().receiveInvite(invite("a"));
+    env.store.getState().receiveInvite(invite("b", "Mira"));
+
+    const frames = invitePromptFrames(2, { canvasWidth: viewport.width, panelOpen: false, note: false });
+    expect(env.live()).toEqual(frames.map((f) => f.panel));
+  });
+
+  it("should take its grounds down as the prompts hide, and stand them again as they show", () => {
+    const env = grounded();
+    env.store.getState().receiveInvite(invite("a"));
+    env.state.hidden = true;
+    env.frame();
+    expect(env.live()).toEqual([]);
+    env.state.hidden = false;
+    env.frame();
+    expect(env.live()).toHaveLength(1);
+  });
+});

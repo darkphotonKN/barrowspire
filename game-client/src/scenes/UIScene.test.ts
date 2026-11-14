@@ -70,6 +70,26 @@ vi.mock("@/ui/PartyPanel", () => ({
   },
 }));
 
+// The invite prompt and the ready check themselves are their own tests': here recording stand-ins for
+// what the UI scene mounts for each world (§ Change: Phase 2: the party, R36), their wiring kept.
+const popupMounts = vi.hoisted(
+  () => [] as { kind: "prompt" | "ready"; hidden: () => boolean; floor?: () => number | undefined; destroyed: boolean }[],
+);
+vi.mock("@/ui/PartyInvitePrompt", () => ({
+  mountPartyInvitePrompt: (_scene: unknown, hidden: () => boolean, floor?: () => number | undefined) => {
+    const made = { kind: "prompt" as const, hidden, floor, destroyed: false };
+    popupMounts.push(made);
+    return { relayout: () => {}, destroy: () => void (made.destroyed = true) };
+  },
+}));
+vi.mock("@/ui/PartyReadyCheck", () => ({
+  mountPartyReadyCheck: (_scene: unknown, hidden: () => boolean) => {
+    const made = { kind: "ready" as const, hidden, destroyed: false };
+    popupMounts.push(made);
+    return { relayout: () => {}, destroy: () => void (made.destroyed = true) };
+  },
+}));
+
 const Phaser = await import("phaser");
 const { UIScene } = await import("./UIScene");
 const { UI_SCENE } = await import("@/components/uiSceneLifecycle");
@@ -270,6 +290,15 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
       const code = source(file);
       expect(code).not.toMatch(/PartyPanel|mountPartyPanel|this\.partyPanel\b/);
       expect(code).not.toMatch(/keydown-T\b|KeyCodes\.T\b/);
+    },
+  );
+
+  // § Change: Phase 2: the party (I-TQZ5J-10): the invite prompt and the ready check are the UI scene's;
+  // no world mounts them or tests a prompt's rect
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
+    "should have %s mount no invite prompt or ready check, and test no prompt's rect",
+    (file) => {
+      expect(source(file)).not.toMatch(/PartyInvitePrompt|PartyReadyCheck|mountPartyInvitePrompt|mountPartyReadyCheck|this\.invitePrompt\b|this\.readyCheck\b/);
     },
   );
 
@@ -789,5 +818,84 @@ describe("the UI scene's pointer beside the worlds' (FS-TQZ5J A1 R25–R27)", ()
     input.emit("pointerout", pointer, [{ name: "the Party icon" }]);
 
     expect(heard).toEqual(["over the UI", "off it"]);
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9, I-TQZ5J-10): the UI scene builds the party pieces for
+// each world reported, the ready check in the town only, and takes them down as the world leaves; their
+// wiring reads the world's report
+describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R36, R38)", () => {
+  function created() {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      add: any,
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    const blockers = { dialogue: false, party: false, popups: false };
+    const report = (world: "hub" | "field" | "run", chatTop?: number) =>
+      bridge.report({
+        world,
+        windows: () => ({ letter: false, inventory: false, character: false }),
+        blockers: () => ({ ...blockers }),
+        facts: () => NO_FACTS,
+        layout: () => ({ chatTop }),
+        answer: () => {},
+      });
+    return { bridge, report, blockers };
+  }
+  const since = (n: number) => popupMounts.slice(n);
+
+  it("should build the town's panel, invite prompt and ready check, and the field's and the run's panel and prompt alone", () => {
+    const { bridge, report } = created();
+    const panels = partyMounts.length;
+    const popups = popupMounts.length;
+
+    report("hub");
+    expect(since(popups).map((m) => m.kind)).toEqual(["prompt", "ready"]);
+    bridge.left("hub");
+    report("field");
+    bridge.left("field");
+    report("run");
+
+    expect(partyMounts.length - panels).toBe(3);
+    expect(since(popups).map((m) => [m.kind, m.destroyed])).toEqual([
+      ["prompt", true],
+      ["ready", true],
+      ["prompt", true],
+      ["prompt", false],
+    ]);
+  });
+
+  it("should hide the popups as the world's report says, and stack the invites above the chat top it reports", () => {
+    const { report, blockers } = created();
+    const popups = popupMounts.length;
+    report("run", 540);
+    const [prompt] = since(popups);
+
+    expect(prompt.hidden()).toBe(false);
+    blockers.popups = true;
+    expect(prompt.hidden()).toBe(true);
+    expect(prompt.floor?.()).toBe(540);
+  });
+
+  it("should refuse the panel as the world's report or the menu says", () => {
+    const { bridge, report, blockers } = created();
+    report("run");
+    const panel = partyMounts.at(-1)!;
+
+    expect(panel.blocked()).toBe(false);
+    blockers.party = true;
+    expect(panel.blocked()).toBe(true);
+    blockers.party = false;
+    bridge.reportUi({ menuOpen: true });
+    expect(panel.blocked()).toBe(true);
   });
 });

@@ -10276,3 +10276,28 @@ describe("BarrowspireScene notices carry no importance (FS-WDM0X § Change, owne
     ]);
   });
 });
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9, I-TQZ5J-10): the party pieces are the UI scene's; the
+// run reports what they read of it: the panel turned away at its end or with a chest open, the popups
+// hidden at its end, the invites stacked above its chat window (FS-R82NV R28; FS-NCC9J R24; R38)
+describe("BarrowspireScene what the party pieces read of it (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should turn the panel away at the run's end or with a container open, hide the popups at its end, and say its chat top", () => {
+    const run = new BarrowspireScene() as unknown as {
+      worldSide(): import("@/ui/uiBridge").WorldSide;
+      runEnded: boolean;
+      containerView?: { isOpen: boolean };
+      chatWindow?: unknown;
+    };
+    run.containerView = { isOpen: false };
+    run.chatWindow = { topEdge: () => 530 };
+    const side = run.worldSide();
+
+    expect(side.blockers()).toMatchObject({ party: false, popups: false });
+    run.containerView.isOpen = true;
+    expect(side.blockers()).toMatchObject({ party: true, popups: false });
+    run.containerView.isOpen = false;
+    run.runEnded = true;
+    expect(side.blockers()).toMatchObject({ party: true, popups: true });
+    expect(side.layout?.().chatTop).toBe(530);
+  });
+});

@@ -2824,11 +2824,15 @@ describe("HubScene reads the purse after a gold Take (FS-7TGZ3 R9)", () => {
 });
 
 describe("HubScene the party popups under the letter panel (FS-1GZGD R40; FS-R82NV R32, FS-BJNYC R23)", () => {
+  // the popups are the UI scene's, which reads the town's rule in its report (FS-TQZ5J § Change: Phase 2:
+  // the party, R38): blockers().popups, the whole of it, the menu included; the town keeps no chat floor
   it("should hide the invite prompt and the ready check under the letter panel, as under the gear overlay and the menu", () => {
     const { hub, keys, gear, press } = hubOnStage();
     let letters = false;
     hub.mailbox = { isOpen: () => letters, close: vi.fn() };
-    const covered = () => (hub.coversPopups as () => boolean)();
+    const side = (hub.worldSide as () => import("@/ui/uiBridge").WorldSide)();
+    const covered = () => side.blockers().popups;
+    expect(side.layout).toBeUndefined();
 
     expect(covered()).toBe(false);
     letters = true;

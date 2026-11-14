@@ -2944,3 +2944,22 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(compose).toMatch(/new GearOverlay\([^;]*this\.ui,\s*\);/);
   });
 });
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompts are the UI scene's; the field
+// reports what they read of it: never hidden, stacked above its chat window (FS-NCC9J R24; R38)
+describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should never hide them, and say its chat window's top edge as the floor", () => {
+    const field = new FieldScene() as unknown as { worldSide(): import("@/ui/uiBridge").WorldSide; chatWindow?: unknown };
+    let top = 512;
+    field.chatWindow = { topEdge: () => top };
+    const side = field.worldSide();
+
+    expect(side.blockers().popups ?? false).toBe(false);
+    expect(side.blockers().party ?? false).toBe(false);
+    expect(side.layout?.().chatTop).toBe(512);
+    top = 498;
+    expect(side.layout?.().chatTop).toBe(498);
+    field.chatWindow = undefined;
+    expect(side.layout?.().chatTop).toBeUndefined();
+  });
+});
