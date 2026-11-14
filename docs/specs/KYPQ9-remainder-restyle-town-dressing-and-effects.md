@@ -535,3 +535,44 @@ All commands run from `game-client/` with Node 22 on the path:
 - Sound, a day/night cycle, a lore name for the hub.
 
 ## Change: Arrival card → FS-PQ2TW
+
+## Change: Every hover keeps the bone hand
+Status: shipped
+Date: 2026-11-14
+
+The owner, 2026-11-14: 「所有hover鼠標都要維持骨手」 (every hover keeps the bone hand). It came out of
+a code review of FS-WDM0X § Pass 2b: LEAVE THE BARROW dimmed under the pointer left the browser's
+`pointer` hand over the run, because Phaser 4.2.1 puts the default back on an out only for an
+object that still has a cursor (`InputManager.resetCursor`), and the dimmed button had just
+dropped its own. The rule takes the per-object cursor away instead of mending each dim.
+
+This is a cursor rule, so it lives here, in §H's ledger. It supersedes every "a hand cursor" or
+"no hand cursor" in the canvas specs written before it (FS-3EBCA, FS-7TQN4, FS-J1672, FS-QHN87,
+FS-G4VMQ, FS-HRH2J, FS-R82NV, FS-R6EYZ, FS-WDM0X § Pass 2b E6 and § Change pass 2 (party) P7). Their
+text stays as written; the cursor they name is now the world's default.
+
+R1. No interactive object in the game canvas has a cursor of its own: no `useHandCursor`, no
+    `cursor` in `setInteractive`'s config, no `input.cursor` set. That holds for live, dimmed and
+    greyed objects alike, in every scene (town, field, run, the UI scene, the main menu,
+    character creation, game over, the disconnect notice).
+R2. The cursor over the canvas is the world's default alone: the bone hand (`cursor_hand`, §H.2,
+    §H.3), installed by the town, the field and the run at create. Phaser changes the canvas's
+    cursor on an over or an out only for an object that has one (`InputManager.setCursor`,
+    `resetCursor`), so with none the default stays. The UI scene sets none and shows the world's.
+R3. The hover cue stays what each piece already draws: its brightening, its sound. Hit areas,
+    presses and what is interactive are unchanged; only the cursor goes.
+R4. Kept as they were, since they are not a per-object hover cursor: the strike-mark over a
+    living monster in the run and the field (§H.2, a default-cursor swap); the main menu, which
+    has no bone hand and keeps the browser's arrow (the town hands the menus back the browser's
+    on its stop); the party invite field's DOM `text`/`not-allowed` cursor, a DOM input over the
+    canvas. DOM pages outside the canvas are untouched.
+
+### Acceptance criteria
+- [x] `src/render/cursors/boneHand.test.ts` finds no `useHandCursor`, `cursor:` in a
+      `setInteractive` config or `input.cursor =` in the canvas code (all of `src` but `app`,
+      `components`, `api` and tests), and pins Phaser 4.2.1's over and out to that rule.
+- [x] LEAVE THE BARROW, the card's and the row's, sets no cursor live, dimmed or handed back after a
+      refusal (`BarrowspireScene.test.ts`, "should keep the bone hand over …").
+- [x] The HUD and party buttons, the corner row and the gear overlay's × ask for no cursor.
+- [ ] Manual check: over every button in town, field and run, live or greyed, the pointer stays
+      the bone hand; pressing a live LEAVE THE BARROW leaves the bone hand, not the browser's hand.
