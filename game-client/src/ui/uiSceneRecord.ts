@@ -1,6 +1,6 @@
 /**
  * The run's settlement record and its controls panel on the UI scene (FS-TQZ5J § Change: Phase 3, R50,
- * R56–R59, R61; the note on ADR-0083 2.3).
+ * R56–R59, R61; the note on ADR-0086 2.3).
  *
  * The record is drawn from the run's data (`record`: its view and whether it is up), where and as the
  * run drew it, its bottom on the anchor over the bottom-centre row. The run keeps what it means: its

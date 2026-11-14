@@ -16,7 +16,7 @@ closes as today, over the corner row again.
 - The interface carries the dialogue as plain data (R29): `showDialogue({ speaker, text, options })`
   and `closeDialogue` from the town; `pickDialogue` with an option's id back (R30). `speaker` is the
   name, role and portrait (texture key and frame); each option `{ id, label, register, enabled }`.
-  No callback crosses (ADR-0081).
+  No callback crosses (ADR-0084).
 - The UI scene's dialogue slot draws the card with `showDialogueCard` at the popup band (2000), with
   today's key hints, dimming and relayout; a card with the same speaker, text and option ids
   retones in place, any other replaces it (R29).

@@ -1,6 +1,6 @@
 # FS-TQZ5J: The UI scene over every world (phase 1)
 
-> Status: work-order · SPECIFICATION.md: none (pure architecture, see "No thin line") · Related ADRs: [ADR-0081](../adr/0081-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md) (the decision), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4, render scale) · Builds on: [FS-R6EYZ](R6EYZ-disconnect-notice.md) R11 (a scene drawn over every world), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (the viewport and render scale) · Moves, unchanged: [FS-3EBCA](3EBCA-hud-corner-icons.md) (the corner row), [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) and [FS-9K8EZ](9K8EZ-die-by-choice.md) (the ESC menus), [FS-28DDG](28DDG-music-in-the-hub.md) § Change (OPTIONS), [FS-T3DWX](T3DWX-fullscreen-in-the-options-panel.md) (its Fullscreen row), [FS-WDM0X](WDM0X-interface-sound-effects.md) (the interface sounds)
+> Status: work-order · SPECIFICATION.md: none (pure architecture, see "No thin line") · Related ADRs: [ADR-0084](../adr/0084-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md) (the decision), [ADR-0057](../adr/0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md) (Phaser 4, render scale) · Builds on: [FS-R6EYZ](R6EYZ-disconnect-notice.md) R11 (a scene drawn over every world), [FS-ZAJMH](ZAJMH-hd-canvas-and-fullscreen.md) (the viewport and render scale) · Moves, unchanged: [FS-3EBCA](3EBCA-hud-corner-icons.md) (the corner row), [FS-G4VMQ](G4VMQ-switch-character-and-leave-queue-from-hub.md) and [FS-9K8EZ](9K8EZ-die-by-choice.md) (the ESC menus), [FS-28DDG](28DDG-music-in-the-hub.md) § Change (OPTIONS), [FS-T3DWX](T3DWX-fullscreen-in-the-options-panel.md) (its Fullscreen row), [FS-WDM0X](WDM0X-interface-sound-effects.md) (the interface sounds)
 
 Promoted 2026-11-14 from the same day's draft, under the owner's approved charter (2026-11-13/14):
 「把ui介面獨立成一個scene 當模組 之後就不用每張地圖都要寫一次」 (make the UI its own scene, a
@@ -20,7 +20,7 @@ moves still holds, word for word. A player sees, hears and presses exactly what 
 **No thin line.** The README's survival test asks whether a line names something the system
 *does*. A player cannot do anything new here, and no owning feature's acceptance criteria change,
 so this is neither a new capability nor a behaviour change (no `## Change:` stub on the owners).
-It is a structural decision about where the interface lives: that *holds*, so it is ADR-0081, and
+It is a structural decision about where the interface lives: that *holds*, so it is ADR-0084, and
 this FS is its work order. **[charter: "it may be pure architecture"]**
 
 **Words.** A **world scene** is one of `HubScene`, `FieldScene`, `BarrowspireScene` (town, field,
@@ -507,7 +507,7 @@ Party (the harness's `corner/depth/after/hub-dialogue-*` shots). Slice 3 only ho
 dialogue is open; it does not put the card back on top. A notice left in a world would likewise stand
 under every UI piece it crosses. The owner approved the design the same day: the dialogue becomes
 typed data the world hands the UI scene, which draws it and hands back the id picked; the notices
-become typed messages. No function crosses the interface (ADR-0081). **[owner decision]**
+become typed messages. No function crosses the interface (ADR-0084). **[owner decision]**
 
 **What moves.** Phase 1 (§ Phases) now also moves into the UI scene, unchanged:
 
@@ -690,7 +690,7 @@ but the depths named in R46. **[charter]**
     check live in the party store, so they carry across a switch as today. No world scene mounts a
     party piece. **[charter; code]**
 37. **What the UI scene reads directly.** The party store, the game store's world and the auth
-    store's player, as the pieces read them today: app state, not a scene's field (ADR-0081 Decision 2
+    store's player, as the pieces read them today: app state, not a scene's field (ADR-0084 Decision 2
     forbids reaching into a scene). Party commands go out as before, from the pieces, through
     `partyCommands(socketManager)`: they were never a world's messages. The frames cut their busts
     from the UI scene's own art library over the resident art (`registerArt(…, RESIDENT_ART)`), where
@@ -836,8 +836,8 @@ Appended after the review of phase 2 (ecb92ba9..09ff93e0) and FS-WDM0X § Pass 2
 the As built paragraph included, is not edited. What the owner decided is **[owner]**; a review
 finding settled by the integrator, *Derived*.
 
-**R37 and ADR-0081.** R37 sends the party's commands from the pieces, which stood against ADR-0081
-Decision 2's "socket messages stay the world's". [ADR-0082](../adr/0082-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
+**R37 and ADR-0084.** R37 sends the party's commands from the pieces, which stood against ADR-0084
+Decision 2's "socket messages stay the world's". [ADR-0085](../adr/0085-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
 amends that clause: world-play messages stay the world's; a command a moved piece owns, reading only
 app state (the party now, chat later), goes from that piece. R37 stands as written.
 
@@ -855,7 +855,7 @@ app state (the party now, chat later), goes from that piece. R37 stands as writt
       end one sound). **[owner]**
     - **How.** The run shuts it in the party store, as the town shuts it for its letter panel
       (R39), outside any player action, so the interface sounds' window rule hears no close. No
-      request kind is added: the panel's open state is app state (R37, ADR-0082). *Derived.*
+      request kind is added: the panel's open state is app state (R37, ADR-0085). *Derived.*
     - **Once.** Only the end's first appearance closes it. The record rebuilt on a copy or a resize,
       the card redrawn on a resize, and the record brought back by SETTLEMENT (E2, E3) close
       nothing. A reconnect is a new start of the run (E2): its end appears anew and closes the
@@ -918,13 +918,13 @@ rerun on the result: 186 of 186 pixel-equal, and R46's depth cases differ exactl
 letter panel's 2700 px included). The earlier sets (corner, menu, dialogue, notices) were not rerun:
 none of these changes draws or moves anything of theirs.
 
-### Note 2026-11-14: which interface goes where (ADR-0083)
+### Note 2026-11-14: which interface goes where (ADR-0086)
 
 Appended after B1; the text above is not edited. It belongs to no one phase: it records where each
-of today's pieces stands under [ADR-0083](../adr/0083-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md)
+of today's pieces stands under [ADR-0086](../adr/0086-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md)
 (owner, 2026-11-14: 「ok」; the frames rule 「任何ui都優先隊友列表」), so each later `## Change:`
 here starts from it. It is a record, not a requirement: each phase's own section names what it moves.
-The rule numbers are ADR-0083's (UI 1.1–1.3, world 2.1–2.3). Names and depths read on
+The rule numbers are ADR-0086's (UI 1.1–1.3, world 2.1–2.3). Names and depths read on
 feat/client-ui-scene, 65e9a42c.
 
 | Class | Piece | Code | Depth today | Worlds |
@@ -976,7 +976,7 @@ drawn in the order added (each world's corner row is built before its party piec
 them under every other UI piece, puts the container view over them in the windows' band, and gives
 each moved window a ground of its own (`uiGround`, as R40), so that the frames sit under every window
 and a press, hover or wheel there passes through to neither Travel nor the world. That is phase 3's
-acceptance criterion by ADR-0083, and it ends B1's transitional edge state.
+acceptance criterion by ADR-0086, and it ends B1's transitional edge state.
 
 **Open under the overlap rule.** The run's controls panel stays in the world (2.3) but meets the
 party panel today (R46, As built), and nothing in the run avoids it. It needs an avoidance or a move;
@@ -1001,7 +1001,7 @@ integrator's defaults; no interview, no `challenge-me` pass. What the code force
 feat/client-ui-scene, b1ddcbb5) is marked **[code]**; the charter's scope and rules **[charter]**;
 the owner's own words **[owner]**; a default applied to a case the charter did not name, *Derived*.
 A1's pointer rules (R25–R27), A2's depth rule (R28), phase 2's ground (R40) and B1's precedent (R47)
-are inherited, not restated. The classification is ADR-0083's, as the note "which interface goes
+are inherited, not restated. The classification is ADR-0086's, as the note "which interface goes
 where" records it, with the one change below (the controls panel).
 
 **What it moves.** The gear overlay (the inventory, the character panel, the stash mode, the purse
@@ -1077,15 +1077,15 @@ today's equip behaviour. **[charter]**
     scene builds them for each world it hears reported and takes them down as that world leaves, as
     each world's create built them and its release let them go (a purse read in flight answers
     nobody; a gear notice from a past world says nothing). The open bar of a timed open stays in the
-    run (ADR-0083 2.1). No world scene builds `GearOverlay`, `HubGear`, `EquipmentHud`,
+    run (ADR-0086 2.1). No world scene builds `GearOverlay`, `HubGear`, `EquipmentHud`,
     `ContainerView`, `SettlementRecord` or a controls panel. **[charter; code]**
 51. **What the UI scene reads directly.** `HubGear`'s REST calls and the purse's wallet read go from
     the pieces, as before: they read only app state (the API client, the game store's active
-    character), so by ADR-0082 Decision 3 they are the pieces' own; so is the town's watch of the
+    character), so by ADR-0085 Decision 3 they are the pieces' own; so is the town's watch of the
     mailbox store's gold Takes, and the controls panel's ability name (the active character's class).
-    *Derived* (ADR-0082 D3; R37's precedent).
+    *Derived* (ADR-0085 D3; R37's precedent).
 52. **World → UI, as plain data.** The bridge carries, each a call the UI scene has answered when it
-    returns (ADR-0081 D2; ADR-0083 D3):
+    returns (ADR-0084 D2; ADR-0086 D3):
     - `gear(message)`: `seen` with what each state tick hands today (the carried inventory and
       equipment in a field and the run, the player's own state everywhere); `level`; `taken` (a loot
       the world sent, R54); `openStash` (the town's stash chest E, inside the town's act, FS-WDM0X S2);
@@ -1104,7 +1104,7 @@ today's equip behaviour. **[charter]**
     panel ending a Shadow Shot hold (FS-JTNPR req 15: `inventory` or `character` turning true); the
     run's `refusesParty`, `mayChat`, `checkChestDistance` and `toggleChest` (`container`). **[code]**
 54. **UI → world: requests.** R11 gains `equip` and `unequip`, by the item's entity id (the world
-    sends Equip and Unequip, world-play messages, ADR-0082 D1); `take`, with the item (the world sends
+    sends Equip and Unequip, world-play messages, ADR-0085 D1); `take`, with the item (the world sends
     its loot, the run's `lootMessage`, a field's `FieldPiles.loot`, and when it sent one answers
     `gear: taken` inside the call); and `close: record` (R57). `toggle` and `close: gear` leave it: the
     gear is the UI scene's (R55). A request with no answer is ignored, as before. **[code]**
@@ -1134,7 +1134,7 @@ today's equip behaviour. **[charter]**
 58. **The run's end clears the moved windows.** The end's first appearance (R47's moment, `endPopsUp`)
     closes the gear overlay, the container view and the controls panel, beside the party panel.
     Without it, their grounds (R59) would take the presses meant for the resolved card's buttons and
-    the bottom-centre row where they cover them (Facts), which today reach the buttons: ADR-0083 D5's
+    the bottom-centre row where they cover them (Facts), which today reach the buttons: ADR-0086 D5's
     "the world avoids the overlap", as R47. Silent (FS-WDM0X S4: what the game closes plays nothing),
     and once (R47's rule: a redraw, a copy, SETTLEMENT bringing the record back close nothing).
     Reopening is the player's: I, B, C and the icons the gear, E the container, H the panel, while
@@ -1144,7 +1144,7 @@ today's equip behaviour. **[charter]**
     the clear band between, where a press still attacks, FS-HRH2J R8); the container view one over
     its panel, a child of its root, so it moves and scales with the pop; the controls panel one over
     its rect. The record keeps its blocker. A press, a wheel or a move on them reaches no world
-    handler (R7) and no UI piece under them. **[code: ADR-0083 Consequences]**
+    handler (R7) and no UI piece under them. **[code: ADR-0086 Consequences]**
 60. **The overlay's and the view's own hit tests.** They still hit-test by hand, on the UI scene's
     scene-wide events, but act only when the top object under the pointer is their own (Phaser's
     `over`, `topOnly`), or, for a move, when nothing of the UI scene's is (a world press, R25, keeps
@@ -1154,9 +1154,9 @@ today's equip behaviour. **[charter]**
 61. **The controls panel's press.** With its ground (R59) a press on the open controls panel is the
     panel's: no attack, cast or Shadow Shot hold, and no party-panel button under it. Today a press
     there reached the world. Named for the owner's check: it is what drawing it over the party panel
-    asks (ADR-0083 Context, "pressing follows drawing"). *Derived* (the charter: each moved window a
+    asks (ADR-0086 Context, "pressing follows drawing"). *Derived* (the charter: each moved window a
     ground).
-62. **Depths, inside the UI scene (A2 R28; ADR-0083 D4).** The party frames lowest, at 999, under
+62. **Depths, inside the UI scene (A2 R28; ADR-0086 D4).** The party frames lowest, at 999, under
     every other piece; the corner row, the invite prompts, the ready check, the invite field and the
     notice line at 1000 as before; the windows: the container view 1100, under the gear overlay
     (1100–1103: its objects are made at each open, after the view's, and Phaser draws equal depths in
@@ -1166,7 +1166,7 @@ today's equip behaviour. **[charter]**
     code]**
 63. **B1's transitional state ends.** The frames under the character or stash panel are drawn over by
     it again, and its ground takes every press, hover and wheel there: no hidden cell lights, tips,
-    scrolls or moves under a frame. **[owner rule; ADR-0083 Consequences]**
+    scrolls or moves under a frame. **[owner rule; ADR-0086 Consequences]**
 64. **Presses that now land on what is drawn.** With the grounds, a press on a world button under an
     open moved window is the window's, where today it reached the button: the dead spectator's
     LEAVE THE BARROW in the corner under a reopened inventory, the end's buttons under a window
@@ -1193,13 +1193,13 @@ today's equip behaviour. **[charter]**
     - the container view over a field's FallenCountdown or an invite prompt, where they meet.
     No world piece comes to draw over a moved one it was under. **[code]**
 
-### Note 2026-11-14 (phase 3): the controls panel leaves ADR-0083 2.3
+### Note 2026-11-14 (phase 3): the controls panel leaves ADR-0086 2.3
 
 Appended to the classification of the note "which interface goes where"; that note is not edited. The
 run's controls panel was classified as staying (2.3: one world, no overlap), with the overlap it has
-with the party panel left open. ADR-0083's own rule settles it: a piece that comes to overlap a UI
+with the party panel left open. ADR-0086's own rule settles it: a piece that comes to overlap a UI
 piece leaves 2.3, and 1.3 moves it. The owner asked for the order (「塔內操作說明蓋在組隊上面」), so it
-moves into the UI scene at 1200, over the party panel (1110). This applies ADR-0083 as written and
+moves into the UI scene at 1200, over the party panel (1110). This applies ADR-0086 as written and
 changes none of its decisions, so it is recorded here, not in a new ADR (`docs/adr/README.md`: an ADR
 is replaced only when a decision changes). The table now reads: **Phase 3**: the controls panel, the
 run's `controlsPanel`, 1200, run.
@@ -1385,20 +1385,20 @@ but the depth named in R108. **[charter]**
 
 ### Note 2026-11-14 (batch 4): the minimap, the run's top-right column and the arrival card stay in the world
 
-Appended to the classification of the note "which interface goes where" (ADR-0083); that note is not
-edited, and neither is ADR-0083: this applies its rules as written, as the phase 3 note on the
+Appended to the classification of the note "which interface goes where" (ADR-0086); that note is not
+edited, and neither is ADR-0086: this applies its rules as written, as the phase 3 note on the
 controls panel did. The batch's first read of the code found four reasons the three pieces cannot
 move and still look as they do, and the integrator decided on 2026-11-14 to keep them in the world
 **[integrator]**:
 
-1. **The minimap's overlay mode is drawn at a world position and follows world objects** (ADR-0083
+1. **The minimap's overlay mode is drawn at a world position and follows world objects** (ADR-0086
    2.1). `Minimap.setMode` keeps one set of layers for every mode and only turns their scroll factor
    (1 in the overlay) and depth (920 in the overlay, 1000 in a panel). In the overlay they stand in the
    world, held against the world's main camera every frame (`frames: afterFrameSetUp(this.cameras.main,
    …)`) and moved onto the drawn figures every frame (`follow`), at 920: over the fog, the dust and the
    vignette (902, 905), under the aim line (940), the name plates and health bars (950, 951) and the
    open bar (951). In the UI scene it would need the world's camera scroll and figures across the
-   bridge every frame, which ADR-0083's Consequences rule out ("no per-frame world positions cross the
+   bridge every frame, which ADR-0086's Consequences rule out ("no per-frame world positions cross the
    bridge"), and it would draw over the aim line, the plates and the bars. **[code]**
 2. **The run's top-right column is one layout.** `BarrowspireScene.placeTopRightColumn` stands the
    minimap, its mode icon, the map name, the floor indicator, the escaped count and the dev position
@@ -1412,7 +1412,7 @@ move and still look as they do, and the integrator decided on 2026-11-14 to keep
    (1000) "so the HUD and notices stay readable through it" (`arrivalCard.ts`). Depth does not cross
    scenes, so in the UI scene the dark would cover every world HUD piece still in a world (the floor
    indicator, the escaped count, the town's queue line and Leave, WATCH THE DELVE and LEAVE THE BARROW,
-   FallenCountdown), and ADR-0083 D5 offers only moving each of them or the world avoiding an overlap a
+   FallenCountdown), and ADR-0086 D5 offers only moving each of them or the world avoiding an overlap a
    full-view dark always has. In the world it stays under the world's HUD and under every UI-scene
    piece, as today. **[code]**
 
@@ -1469,10 +1469,10 @@ minimap's `map_mode_switch` stays as it is (the world's `play`, FS-WDM0X S7).
      of the town standing keeps it; a field or the run builds none. No world scene builds
      `MailboxHud`, `MailboxEnvelope` or `LetterPanel`. **[charter; code]**
 102. **What the UI scene reads directly.** The mailbox store and its REST calls go from the pieces, as
-     before: they read only app state, so by ADR-0082 Decision 3 they are the pieces' own. The pieces'
+     before: they read only app state, so by ADR-0085 Decision 3 they are the pieces' own. The pieces'
      art is the UI scene's resident art library (the item icons are resident; the gear overlay draws its
      icons from it already). The letter panel's tips read the level the world last handed the gear
-     (`gear: level`), the value the town kept for it. *Derived* (ADR-0082 D3; R37's and R51's
+     (`gear: level`), the value the town kept for it. *Derived* (ADR-0085 D3; R37's and R51's
      precedent).
 103. **Its open state stays where it lives.** The letter panel's open state is the mailbox store's
      `panelOpen`, app state, as today. The town keeps reporting it as `windows().letter` and answering
@@ -1501,7 +1501,7 @@ minimap's `map_mode_switch` stays as it is (the world's `play`, FS-WDM0X S7).
      stay on the events they answer on today. No cursor of its own (FS-KYPQ9 § Change). **[code]**
 107. **Its keys.** Unchanged: Esc's letter step is the UI scene's (R17); the letter panel binds none; the
      town's keys the open panel owns stay refused by the town's own guards (R103). **[code]**
-108. **Depths, inside the UI scene (A2 R28; ADR-0083 D4).** The envelope at 1000 with the corner row; the
+108. **Depths, inside the UI scene (A2 R28; ADR-0086 D4).** The envelope at 1000 with the corner row; the
      letter panel at 1800, over the frames (999), the corner row, the invite prompts, the ready check,
      the gear overlay (1100–1103), the party panel (1110) and the controls panel (1200), under the popup
      band (2000), its tip at 2200. The one change a player can see (R24): **the letter panel draws over
@@ -1585,12 +1585,12 @@ feat/client-ui-batch5, cut from feat/client-ui-scene at ca2c0e77) is marked **[c
 scope and rules **[charter]**; the integrator's word **[integrator]**; a default applied to a case the
 charter did not name, *Derived*. A1's pointer rules (R25–R27), A2's depth rule (R28), the grounds
 (R40, R59), the overlay's hit tests (R60) and the depths (R62, the frames lowest at 999) are inherited,
-not restated. The classification is ADR-0083's.
+not restated. The classification is ADR-0086's.
 
 **What it moves.** The ability card (`AbilityHud`, a field and the run), the potion cell (`PotionHud`,
 the run), the Health and class resource bars (`ResourceHud`, a field and the run) and the level and
 experience bar with its level-up cue (`ProgressHud`, the town and the run). Each is fixed to the screen
-and shared by more than one world (ADR-0083 1.1, 1.2). **[charter]**
+and shared by more than one world (ADR-0086 1.1, 1.2). **[charter]**
 
 **The owner's process (2026-11-14):** 「剩下這些拉出來後檢查沒出錯就好了 不用比對 我測的時候再看就好」 (pull
 the rest out, check nothing errs, no comparing: he looks when he tests). No before/after screenshots
@@ -1607,7 +1607,7 @@ the rest out, check nothing errs, no comparing: he looks when he tests). No befo
   (`updateTargetFrame` → `mapName.giveWay`, `readoutCovers`), and it hides under the arrival card.
   That cluster (the minimap, its mode icon, the map name, the readout, the floor line, the escaped
   count, the target frame) and the arrival card's full-view dark stay in the world, recorded by
-  batch 4 as a note on ADR-0083's table.
+  batch 4 as a note on ADR-0086's table.
 - **Chat is held.** **[code]** See the note "Chat, held" below: moved alone, the chat window would
   draw over the town's letter panel and take its presses, and the letter panel is batch 4's to move.
 - **Chat's sounds** are built where the chat window stands today (FS-WDM0X § Pass 2: the chat).
@@ -1650,7 +1650,7 @@ the rest out, check nothing errs, no comparing: he looks when he tests). No befo
     restart or a reconnect builds them anew, so the level bar takes the new world's first state as its
     baseline (FS-BDA7X req 43). No world scene builds `AbilityHud`, `PotionHud`, `ResourceHud` or
     `ProgressHud`. **[charter; code]**
-68. **World → UI, as plain data (ADR-0083 D3).** The bridge gains `hud(message)`: `ability` with the
+68. **World → UI, as plain data (ADR-0086 D3).** The bridge gains `hud(message)`: `ability` with the
     card's view or none; `potion` with the cell's view or none; `bars` with the bars; `progress` with
     the progress. Each is sent where the world called its piece's `show` today, so every piece's own
     rule (a redraw only on a change, the cue on a rise, none for a fresh bar's first state) holds. The
@@ -1719,7 +1719,7 @@ brief's own rule ("if the scope collides with batch 4's pieces, stop and report"
   `keepsDraft`: the draft kept as the letter panel takes the keys, FS-1GZGD R40). Moved alone into the
   UI scene (1000, always over the world), the window would draw over the letter panel's lower left,
   across its list, and its ground (R40, R59, owed it by the overlay rule) would take the letter list's
-  presses there. That is a look and a press change ADR-0083 D5 settles only by moving the letter panel
+  presses there. That is a look and a press change ADR-0086 D5 settles only by moving the letter panel
   too, which is batch 4's mailbox. **[code]**
 - **So chat moves after the mailbox**, as § Phases ordered it (the mailbox before chat), in a later
   batch on top of both merges. The seam found, for that run: the window's `mayOpen` from the UI's state
@@ -1754,7 +1754,7 @@ Building it, the code stopped it a second time, on a piece neither batch moves. 
   draws over the window and takes its own presses. In the UI scene the window would draw over WATCH
   THE DELVE (or the left of LEAVE THE BARROW) and its ground would take the presses meant for them. A
   folded window (y 664–704) does not meet the row.
-- **ADR-0083 D5** settles it only by moving the row into the UI scene, or by the run avoiding the
+- **ADR-0086 D5** settles it only by moving the row into the UI scene, or by the run avoiding the
   overlap; R58's "the run's end clears the moved windows" does not fit a window the player keeps open
   to talk while waiting to watch. The row is classified as staying (2.3, the note "which interface goes
   where"); the overlap takes it out of 2.3, so it is the integrator's or the owner's call which way.
@@ -1797,11 +1797,11 @@ feat/client-ui-scene, d918dd7e) is marked **[code]**; the owner's words **[owner
 scope and the integrator's rules **[integrator]**; a default applied to a case neither named,
 *Derived*. A1's pointer rules (R25–R27), A2's depth rule (R28), the grounds (R40, R59), the overlay's
 hit tests (R60), the depths (R62, the frames lowest at 999) and batch 4's R106 are inherited, not
-restated. The classification is ADR-0083's. Numbered from R120.
+restated. The classification is ADR-0086's. Numbered from R120.
 
 **What it does.** The final UI-scene batch. (1) The run's bottom-centre row is re-laid off the chat
 window: shorter words, smaller type, buttons as wide as their words, and the row moved right of the
-open window where centring would meet it, so the row stays in the world (ADR-0083 2.3) and meets no UI
+open window where centring would meet it, so the row stays in the world (ADR-0086 2.3) and meets no UI
 piece. (2) That settles batch 5's second overlap, so chat moves into the UI scene (the seam batch 5
 recorded). (3) The review leftovers of batches 4 and 5. **[integrator]**
 
@@ -1887,7 +1887,7 @@ are the owner's check (I-TQZ5J-55). **[owner]**
      before, centred on the card, 8 apart (the row's gap: one spacing for the buttons). The corner LEAVE
      keeps its right edge on the corner margin and its centre y; it is 94 wide where it was 200. The
      settlement record keeps its anchor over the row's line (`recordAnchor`, unchanged). The row stays
-     in the world at 1000 (ADR-0083 2.3): after this it meets no UI piece. **[owner; Derived]**
+     in the world at 1000 (ADR-0086 2.3): after this it meets no UI piece. **[owner; Derived]**
 
 **Chat into the UI scene**
 
@@ -1899,7 +1899,7 @@ are the owner's check (I-TQZ5J-55). **[owner]**
      today). Its slot is its own file (`uiSceneChat.ts`, `UiChatSlot`), like the other slots; the window
      on the UI scene is `chatPiece.ts`. No world scene imports `ChatWindow` or `mountChatWindow`. Its
      lines, fold, filter and sent lines stay the chat store's, so they outlive every switch as before.
-     Its commands go from the piece (a line sent on the socket; ADR-0082). **[integrator; code]**
+     Its commands go from the piece (a line sent on the socket; ADR-0085). **[integrator; code]**
 126. **Who owns Enter and Esc (FS-WJGFJ R27).** The window may take the keys while no world is
      missing, the menu slot is empty, no gear panel is open (inventory, character) and the world does not
      turn it away. The world says so in its blockers: `blockers().chat`, the world's part of its old
@@ -2076,7 +2076,7 @@ chat's one sound per press); the owner's check is I-TQZ5J-55. No screenshots (th
   a right press over the window) is claimed by the UI scene's pointer slot by the window's place
   (`ChatPiece.holds`), kept by its DOM event on the bridge (`claimPress`, `pressClaimed`), and refused by
   the run's and the field's press and strike: R129 holds with the cameras aside, and no world tests the
-  window's rect (ADR-0081 Decision 3). `ChatWindow.keepsField(x, y, over)` is the press's own top-most hit
+  window's rect (ADR-0084 Decision 3). `ChatWindow.keepsField(x, y, over)` is the press's own top-most hit
   on the window with the field focused. `SceneKeyboard` and `typingGuard` live in `worldKeyboard.ts`. Each
   world reports `invitesAboveChat` (a field and the run), read by `partyPromptWiring`; `UiChatSlot.floor()`
   became `topEdge()`. `RUN_BUTTON_H` in `hudCornerLayout.ts` is every run button's height.
@@ -2114,7 +2114,7 @@ re-expressed on it. No moved piece went back into a world scene. The text above 
   request `burn`, which the run answers with the one interact. It sounds as the Fall confirm does:
   `dialog_open` as it opens, `dialog_confirm_heavy` for Burn, the rule's `settings_close` for Not yet, Esc
   and the × (FS-WDM0X § Change M13's mapping, applied to the new confirm; for the owner's listening check).
-- **FS-XWHZP, lore lines.** The lore line stays the run's own (ADR-0083 Decision 2.3: one world, a world
+- **FS-XWHZP, lore lines.** The lore line stays the run's own (ADR-0086 Decision 2.3: one world, a world
   effect's tremor, the arrival card's family, which stayed): main's `LoreLines` as it is. A refused fall is
   a lore line now, so it raises no notice.
 - **Everything else** (enemy tiers, Vorsk, Forest elites, field bands, the dev endgame run's gate, pprof

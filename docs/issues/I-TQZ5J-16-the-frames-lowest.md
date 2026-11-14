@@ -30,7 +30,7 @@ I-TQZ5J-15.
 
 ## Spec Reference
 
-FS-TQZ5J §Change: Phase 3 (R59, R60, R62, R63); Amendment B1's edge state; ADR-0083 D4, Consequences.
+FS-TQZ5J §Change: Phase 3 (R59, R60, R62, R63); Amendment B1's edge state; ADR-0086 D4, Consequences.
 
 ## TDD Approach
 

@@ -764,7 +764,7 @@ amended: WATCH, LEAVE, SETTLEMENT 200 above the bottom margin) are unchanged. **
      - **Who plays it.** The run, which alone knows what the close brings: the record slot's Close requests
        `close: record` and plays nothing; the run's answer plays `dialog_open` or `menu_click`, then acts,
        so a close that lets a held town in is still heard as it leaves (E5). The slot keeps the hover
-       (`menu_hover`, E4). No function crosses the bridge (ADR-0081); FS-TQZ5J R57's "Close plays
+       (`menu_hover`, E4). No function crosses the bridge (ADR-0084); FS-TQZ5J R57's "Close plays
        `menu_click`, then sends `close: record`" reads "Close sends `close: record`; the run plays its
        sound". *Derived* (an alternative, a sound named in the record's data, would go stale as teammates
        resolve between the send and the press).
@@ -785,7 +785,7 @@ amended: WATCH, LEAVE, SETTLEMENT 200 above the bottom margin) are unchanged. **
      width plus 24 a side, 38 high (FS-TQZ5J R120–R122), their bottom **70** above the view's bottom (at 720
      tall: y 612–650, the line y 631). Centred across unless centring would bring it within 12 of the open
      chat window's right edge; then its left edge is 442 (FS-TQZ5J R123's rule). In the HUD band (1000, hit
-     areas 1001), in the world (ADR-0083 2.3). **[owner]** It meets neither the corner row's plates (y 658
+     areas 1001), in the world (ADR-0086 2.3). **[owner]** It meets neither the corner row's plates (y 658
      and down) nor their hover labels: at 1080 its right edge is 688 and the leftmost label's left edge
      about 750; at 1280, 763 and about 950. The default 70 clears both, so no lower y was needed.
      - **The corner LEAVE folds in.** The dead spectator's LEAVE is the row's; the bottom-right corner
@@ -821,7 +821,7 @@ amended: WATCH, LEAVE, SETTLEMENT 200 above the bottom margin) are unchanged. **
 166. **A new logical view** puts the row and the switcher back in their places at once; nothing plays
      (E2). **[Derived]**
 167. **Never over UI pieces.** The record stays the UI scene's; the card, the row and the switcher stay the
-     world's (ADR-0083 2.3) and meet no UI piece: at every logical width from 1080 to 1280 neither the row
+     world's (ADR-0086 2.3) and meet no UI piece: at every logical width from 1080 to 1280 neither the row
      nor the switcher meets the open chat window or its open picker list, nor the corner row or its hover
      label. **[owner]**
 

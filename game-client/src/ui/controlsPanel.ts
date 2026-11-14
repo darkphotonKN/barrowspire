@@ -4,7 +4,7 @@
  * row per control (its key in brass, its action in the HUD's label tone), and "H to close" under them. The class's own ability is named as its
  * HUD card names it (FS-8AY7S req 30).
  *
- * It is the UI scene's (FS-TQZ5J § Change: Phase 3, R50, the note on ADR-0083 2.3): at 1200, over the
+ * It is the UI scene's (FS-TQZ5J § Change: Phase 3, R50, the note on ADR-0086 2.3): at 1200, over the
  * party panel (1110), as the owner asked (「塔內操作說明蓋在組隊上面」), with a ground over its rect, so a
  * press on it is its own (R59, R61).
  */

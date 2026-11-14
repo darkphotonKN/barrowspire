@@ -1,4 +1,4 @@
-# ADR-0081 — The interface is one UI scene over every world, talking to the worlds through a typed interface
+# ADR-0084 — The interface is one UI scene over every world, talking to the worlds through a typed interface
 
 Status: accepted
 Date: 2026-11-14
@@ -11,11 +11,11 @@ Specified by: [FS-TQZ5J](../specs/TQZ5J-ui-scene.md) (phase 1, and each later ph
 Builds on: [ADR-0057](0057-the-client-runs-phaser-4-pixel-rounding-by-vertex-round-mode-masks-by-the-mask-filter.md)
 (Phaser 4, the render scale), [FS-R6EYZ](../specs/R6EYZ-disconnect-notice.md) R11 (a scene drawn
 over every world is already how the disconnect notice works).
-Amended by: [ADR-0082](0082-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
+Amended by: [ADR-0085](0085-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
 — Decision 2 ("socket messages stay the world's": world-play messages do; a moved piece's own
 commands, reading only app state, go from the piece)
-Amended by: [ADR-0083](0083-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md)
-— Decision 5 (what moves: each piece decided by ADR-0083's rules, some of the run's pieces staying
+Amended by: [ADR-0086](0086-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md)
+— Decision 5 (what moves: each piece decided by ADR-0086's rules, some of the run's pieces staying
 in the world) and the "Depth inversion" consequence (a world piece meeting a UI piece is moved into
 the UI scene or the world avoids the overlap)
 

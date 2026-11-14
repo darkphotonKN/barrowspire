@@ -31,7 +31,7 @@ import { HUD_DEPTH } from "@/render/markers/markers";
  * The frames' depth: the lowest of the UI scene, one under the HUD's 1000 (the corner row, the invite
  * prompts, the ready check, the notice line), so every piece and every window (1100–1800) draws over
  * them and takes the presses, hovers and wheel there (the owner's 「任何ui都優先隊友列表」; FS-TQZ5J
- * § Change: Phase 3, R62, R63; ADR-0083 D4).
+ * § Change: Phase 3, R62, R63; ADR-0086 D4).
  */
 export const PARTY_FRAMES_DEPTH = HUD_DEPTH - 1;
 import { useAuthStore } from "@/stores/authStore";

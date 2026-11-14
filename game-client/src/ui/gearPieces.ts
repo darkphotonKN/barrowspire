@@ -4,7 +4,7 @@
  * purse and the gold Takes it reads again on; in a field and the run `EquipmentHud`, fed the world's
  * state ticks, its equip and unequip asked of the world, and the container view, whose take the gear's
  * bag pre-checks and the world sends. Their reads (REST, the wallet, the stores) are app state, so they
- * go from the pieces (ADR-0082 D3). The icons are resident art, which the UI scene's own library
+ * go from the pieces (ADR-0085 D3). The icons are resident art, which the UI scene's own library
  * resolves as a world's did. `uiSceneGear.ts` holds what is built; this is the building.
  */
 

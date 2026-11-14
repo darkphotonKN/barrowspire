@@ -1,7 +1,7 @@
 /**
  * The run's controls panel, built on the UI scene (FS-TQZ5J § Change: Phase 3, R50, R51, R59, R61): drawn
  * as the run drew it at the view's centre, the active character's ability named (the game store's
- * active character, app state the piece reads itself, ADR-0082 D3), with a ground over its rect at its
+ * active character, app state the piece reads itself, ADR-0085 D3), with a ground over its rect at its
  * depth; back to the centre on a new view, its text rasterised again. `uiSceneRecord.ts` holds the
  * slot that opens and closes it; `controlsPanel.ts` its drawing; this is the building.
  *

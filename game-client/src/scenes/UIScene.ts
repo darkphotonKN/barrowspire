@@ -81,7 +81,7 @@ const EVENT_GEAR_KEYS: readonly (readonly [string, GearKey])[] = [
 ];
 
 /**
- * The UI scene (FS-TQZ5J §A, ADR-0081): the one scene drawn over every world scene and under the
+ * The UI scene (FS-TQZ5J §A, ADR-0084): the one scene drawn over every world scene and under the
  * disconnect notice, holding the interface the worlds share. In the game's scene list after the
  * world scenes, so it is drawn over them and Phaser hands it a press first (R1, R7). Its life is the
  * worlds' reports through the UI bridge (`uiSceneLifecycle.ts`): launched on the first world entry,

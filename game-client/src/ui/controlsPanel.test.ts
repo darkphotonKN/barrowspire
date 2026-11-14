@@ -19,7 +19,7 @@ const { RUN_ACTIONS } = await import("@/scenes/runActions");
 const { CONTROLS_PANEL_DEPTH, controlRows, controlsPanelRect, drawControlsPanel } = await import("./controlsPanel");
 
 // The run's controls panel (H), drawn as the run drew it, now by the UI scene (FS-TQZ5J § Change: Phase 3,
-// R50, R59; the note on ADR-0083 2.3). Moved here from BarrowspireScene.test.ts with the panel.
+// R50, R59; the note on ADR-0086 2.3). Moved here from BarrowspireScene.test.ts with the panel.
 
 /** A stage that records the words drawn and the container made, every other call accepted. */
 function stage() {

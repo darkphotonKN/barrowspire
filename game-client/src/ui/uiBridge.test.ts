@@ -377,7 +377,7 @@ describe("the dialogue the world shows, told to the UI scene (FS-TQZ5J A2 R29)",
     expect(() => (NO_UI.showDialogue(card), NO_UI.closeDialogue())).not.toThrow();
   });
 
-  it("should carry only data: no function in the dialogue or its pick (ADR-0081)", () => {
+  it("should carry only data: no function in the dialogue or its pick (ADR-0084)", () => {
     const bridge = new GameUiBridge();
     const shown: unknown[] = [];
     bridge.onScreen({ dialogue: (d) => void shown.push(d) });

@@ -37,7 +37,7 @@ None (phase 2 is on the branch).
 
 ## Spec Reference
 
-FS-TQZ5J §Change: Phase 3 (R52–R55); R10, R11; ADR-0081 D2, ADR-0082, ADR-0083 D3.
+FS-TQZ5J §Change: Phase 3 (R52–R55); R10, R11; ADR-0084 D2, ADR-0085, ADR-0086 D3.
 
 ## TDD Approach
 

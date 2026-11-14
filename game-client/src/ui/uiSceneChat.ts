@@ -2,7 +2,7 @@
  * The chat window on the UI scene (FS-TQZ5J § Change: Batch 6: the end row and the chat, R125–R132): built as
  * each world is reported and taken down as it leaves, as each world's create built its own and its release
  * destroyed it, so a half-typed line goes with its world as before. Its lines, fold, filter and sent lines
- * are the chat store's, which outlive every switch; a sent line goes on the socket from the piece (ADR-0082).
+ * are the chat store's, which outlive every switch; a sent line goes on the socket from the piece (ADR-0085).
  *
  * What it reads of the UI scene and the world is its wiring: who owns Enter and Esc (the menu slot, the gear
  * panels, the world's `blockers().chat`), whether the draft is kept (the world's letter panel), the player's

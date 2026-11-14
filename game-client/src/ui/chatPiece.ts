@@ -1,6 +1,6 @@
 /**
  * The chat window on the UI scene (FS-TQZ5J § Change: Batch 6, R125): the app's chat store, the bottom-left
- * corner above the canvas bottom, the real DOM input row, a sent line on the socket (ADR-0082: the piece's
+ * corner above the canvas bottom, the real DOM input row, a sent line on the socket (ADR-0085: the piece's
  * own command), the player who is playing (a whisper they sent is their echo), and its wiring whole.
  */
 

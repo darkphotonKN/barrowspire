@@ -1,5 +1,5 @@
 /**
- * The UI bridge (FS-TQZ5J §B, ADR-0081 Decision 2): the one typed channel between the world scenes
+ * The UI bridge (FS-TQZ5J §B, ADR-0084 Decision 2): the one typed channel between the world scenes
  * and the UI scene. The world reports its state; the UI scene reports its own and asks the world for
  * what only the world can do. No scene imports another scene or calls its methods: each reaches the
  * bridge its game was lent, through {@link uiBridgeOf}, as it reaches the frame's fullscreen.

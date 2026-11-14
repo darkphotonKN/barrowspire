@@ -4,7 +4,7 @@
  * town's create mounted it and its release destroyed it. Building it is entering the town (the summary
  * fetched), taking it down leaving it (the panel closed, `mail_arrived` dropped). Only the town has one.
  *
- * It reads the mailbox store and makes its REST calls itself, as before (app state: ADR-0082 D3, R102).
+ * It reads the mailbox store and makes its REST calls itself, as before (app state: ADR-0085 D3, R102).
  * Its open state stays the store's `panelOpen`, which the town reports as `windows().letter` and closes
  * on `close: letter` (R103), so every path that reads or closes it through the bridge is unchanged. What
  * it reads of the UI scene is its wiring (R104): the envelope refused by the town's dialogue and the menu

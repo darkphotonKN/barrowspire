@@ -10,7 +10,7 @@
  * the HUD buttons do (FS-R82NV R28). No cursor of its own: the bone hand stays (FS-KYPQ9 § Change).
  *
  * It decides nothing: what a press and a hover do is handed in. It stands in the UI scene, at the
- * corner row's depth (ADR-0083 1.1); `uiSceneControlsBadge.ts` says when.
+ * corner row's depth (ADR-0086 1.1); `uiSceneControlsBadge.ts` says when.
  */
 
 import type Phaser from "phaser";
@@ -22,7 +22,7 @@ import { BRONZE, Knockout } from "./knockout";
 import { BOOK, drawBookLines } from "./knockoutBook";
 import type { BadgeSpec } from "./uiSceneControlsBadge";
 
-/** The corner row's depth (ADR-0083 Decision 4). */
+/** The corner row's depth (ADR-0086 Decision 4). */
 const HUD_DEPTH = 1000;
 
 export class ControlsBadge {

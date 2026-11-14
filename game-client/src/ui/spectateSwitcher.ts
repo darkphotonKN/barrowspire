@@ -1,6 +1,6 @@
 /**
  * The spectate switcher, "◄ <name> ►" (FS-QPDKN § Change: The party death flow and the spectate
- * switcher, R159–R162; the owner, 「切換箭頭就放在上方一些」): over the spectate row, in the run's world (ADR-0083
+ * switcher, R159–R162; the owner, 「切換箭頭就放在上方一些」): over the spectate row, in the run's world (ADR-0086
  * 2.3), in the HUD band.
  *
  * Bare, at the owner's word (「樣式可以不用加底色 直接顯示黃色名字 箭頭也不用匡跟底色」, 2026-11-14): no backing,

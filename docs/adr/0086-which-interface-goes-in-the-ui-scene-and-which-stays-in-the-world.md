@@ -1,16 +1,16 @@
-# ADR-0083 — Which interface goes in the UI scene and which stays in the world
+# ADR-0086 — Which interface goes in the UI scene and which stays in the world
 
 Status: accepted
 Date: 2026-11-14
 Scope: game-client's in-world interface: which pieces the UI scene holds and which a world scene
 keeps, how state crosses between them, and the depth order inside the UI scene. Not the main menu,
-character creation, the disconnect notice or the web platform's React UI (as ADR-0081).
-Amends: [ADR-0081](0081-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md)
+character creation, the disconnect notice or the web platform's React UI (as ADR-0084).
+Amends: [ADR-0084](0084-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md)
 — Decision 5 (what moves, phase by phase: now decided per piece by the rules below, and some of
 the run's pieces stay in the world) and its "Depth inversion" consequence (a world piece that meets
 a UI piece is moved into the UI scene or the world avoids the overlap; depth cannot settle it). The
-rest of ADR-0081, as amended by ADR-0082, stands.
-Builds on: [ADR-0082](0082-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
+rest of ADR-0084, as amended by ADR-0085, stands.
+Builds on: [ADR-0085](0085-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md)
 (a moved piece's own commands).
 Specified by: [FS-TQZ5J](../specs/TQZ5J-ui-scene.md) § Change: Phase 2: the party, its note of
 2026-11-14 "Which interface goes where" (the classification of today's pieces, with their code
@@ -22,7 +22,7 @@ The owner approved this on 2026-11-14 with 「ok」 after reading the draft, and
 same day: 「任何ui都優先隊友列表」 (every UI piece comes before the party list). Recorded without
 adversarial review: no `challenge-me` pass was run.
 
-ADR-0081 Decision 5 lists what moves in each phase, but gives no test for a piece it did not
+ADR-0084 Decision 5 lists what moves in each phase, but gives no test for a piece it did not
 name, and its Scope says "the run's HUD" moves whole. Phase 2 (the party) showed what the list
 leaves open:
 
@@ -57,9 +57,9 @@ leaves open:
       piece moves only if layering forces it. 2.3 is the one exception to 1.1; a piece that comes
       to overlap a UI piece leaves 2.3, and 1.3 moves it (or the world avoids the overlap, 5).
 3. **Data.** The world owns the game state and hands it to the UI scene as typed data through the
-   UiBridge: no functions cross it, and no scene calls another (ADR-0081 Decision 2). The UI scene
+   UiBridge: no functions cross it, and no scene calls another (ADR-0084 Decision 2). The UI scene
    asks the world to act with typed requests. A command a moved piece owns that reads only app
-   state goes from the piece (ADR-0082).
+   state goes from the piece (ADR-0085).
 4. **Depth order inside the UI scene, low to high:**
    - **the party frames lowest.** Every window draws over the frames and takes the presses there
      (the owner's rule above). Today they stand at 1000, level with the corner row (see
@@ -100,4 +100,4 @@ leaves open:
   an avoidance or a move; this ADR does not choose which.
 - **The bridge stays narrow.** Pieces that follow world objects stay where the objects are, so no
   per-frame world positions cross the bridge.
-- **ADR-0081's header carries `Amended by: ADR-0083`**; its body is unchanged.
+- **ADR-0084's header carries `Amended by: ADR-0086`**; its body is unchanged.

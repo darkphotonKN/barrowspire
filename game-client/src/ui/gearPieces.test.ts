@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 // FS-TQZ5J § Change: Phase 3 (I-TQZ5J-14): what the UI scene builds for each world's gear, its sources'
-// own reads going from the pieces (R51; ADR-0082 D3). The pieces themselves are their own tests': here
+// own reads going from the pieces (R51; ADR-0085 D3). The pieces themselves are their own tests': here
 // recording stand-ins for what is built, with what.
 const built = vi.hoisted(() => ({
   hub: [] as { refreshes: number; released: number; port?: { gearChanged?(): void } }[],

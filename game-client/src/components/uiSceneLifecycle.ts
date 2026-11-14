@@ -1,5 +1,5 @@
 /**
- * The UI scene's life in the game (FS-TQZ5J §A R2–R5, ADR-0081 Decision 1), driven by the worlds'
+ * The UI scene's life in the game (FS-TQZ5J §A R2–R5, ADR-0084 Decision 1), driven by the worlds'
  * own reports, heard as a listener on the game's UI bridge: the first world's report launches the UI
  * scene, a world switch never restarts it, it sleeps while no world is reported (the main menu,
  * character creation, Return to menu) and wakes with the next world. Phaser-free: it drives the

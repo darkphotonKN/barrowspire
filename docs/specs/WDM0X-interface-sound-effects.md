@@ -622,7 +622,7 @@ M14. **The main menu wires its own.** `MainMenuScene` makes a `UiSounds` in `cre
      Phaser-free function taking the asking and the playing, so it is tested on its own. One
      scene: nothing is duplicated into the UI scene. **[charter default; code]**
 M15. **A dialogue option says its sound.** `DialogueOption` gains an optional `sound`:
-     `"click" | "confirm" | "heavy" | "cancel"`, plain data like the rest (ADR-0081). Without one,
+     `"click" | "confirm" | "heavy" | "cancel"`, plain data like the rest (ADR-0084). Without one,
      a `cancel` row is `"cancel"` and an actionable row `"click"`. The UI scene plays `menu_click`,
      `dialog_confirm`, `dialog_confirm_heavy` or `dialog_cancel` for it as its pick is sent, by
      the pointer or its key. The town marks the door's three ways `"confirm"` and a resident's
@@ -886,7 +886,7 @@ edits nothing above. Every decision is **[owner]** unless marked *Derived*.
   row; CLOSE on the record. All but CLOSE are the run's `worldButton`. LEAVE THE BARROW dims while a
   `leave_run` is unanswered and takes no press then (`disableInteractive`); no other is ever greyed.
   None plays a sound.
-- **Where they live.** All are world pieces of the run, and stay so (ADR-0081; the settlement record
+- **Where they live.** All are world pieces of the run, and stay so (ADR-0084; the settlement record
   is FS-TQZ5J phase 6). A world plays an effect by `this.ui.play` on the game's UI bridge, which is
   the UI scene's one player (M3, FS-TQZ5J R22), as the town's `dialog_open` (M11) and the minimap's
   step (S7) do.

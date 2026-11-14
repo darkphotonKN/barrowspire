@@ -90,7 +90,7 @@ function game(statuses: Record<string, number> = {}, loading: string[] = []) {
   return { scenes, bridge, log, statuses, enter, loaded, ui, uiLog };
 }
 
-describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, ADR-0081 Decision 1)", () => {
+describe("the UI scene's life, driven by the worlds' reports (FS-TQZ5J R2–R5, ADR-0084 Decision 1)", () => {
   it("should stand unstarted in the main menu, and launch on the first world's report (R2, R3)", () => {
     const g = game({ MainMenuScene: RUNNING });
     expect(g.ui()).toBe(INIT);

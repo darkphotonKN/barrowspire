@@ -1,17 +1,17 @@
-# ADR-0082 — A moved piece's own commands go from the piece; world-play messages stay the world's
+# ADR-0085 — A moved piece's own commands go from the piece; world-play messages stay the world's
 
 Status: accepted
 Date: 2026-11-14
 Scope: game-client's UI scene and the world scenes: which of them sends a socket message. Not the
 server, not the message set.
-Amends: [ADR-0081](0081-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md)
+Amends: [ADR-0084](0084-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md)
 — Decision 2, its last clause ("socket messages stay the world's"). The rest of Decision 2 and every
-other decision of ADR-0081 stand.
+other decision of ADR-0084 stand.
 Specified by: [FS-TQZ5J](../specs/TQZ5J-ui-scene.md) § Change: Phase 2: the party, R37.
 
 ## Context
 
-ADR-0081 Decision 2 ends: "No scene imports or calls another scene; socket messages stay the
+ADR-0084 Decision 2 ends: "No scene imports or calls another scene; socket messages stay the
 world's." It was written in phase 1, when every piece the UI scene took (the corner row, the ESC
 menu, OPTIONS, the dialogue card, the notices) sent nothing of its own: what they did on the server
 (leave the queue, change character, leave the run, fall, a dialogue row) was the world's, so they
@@ -47,7 +47,7 @@ Recorded without adversarial review: no `challenge-me` pass was run; it settles 
 3. **The test is what the command reads.** If composing the message needs anything only a world
    knows (an entity, a position, a run's state), it is a world-play message (1), whatever piece the
    press landed on. If it needs only app state, it is the piece's (2). No scene imports or calls
-   another scene, as ADR-0081 Decision 2 says; that part is unchanged.
+   another scene, as ADR-0084 Decision 2 says; that part is unchanged.
 
 ## Consequences
 
@@ -60,4 +60,4 @@ Recorded without adversarial review: no `challenge-me` pass was run; it settles 
 - The line can blur: a command that later needs a world fact (say, an invite by the name of the
   player under the pointer) becomes a world-play message and goes through a request. Decide it by
   what it reads (3), not by where the button is drawn.
-- ADR-0081's header carries `Amended by: ADR-0082 — Decision 2`; its body is unchanged.
+- ADR-0084's header carries `Amended by: ADR-0085 — Decision 2`; its body is unchanged.
