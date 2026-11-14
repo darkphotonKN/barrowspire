@@ -308,6 +308,7 @@ export interface UiScreen {
   record?(shown: ShownRecord | null): void;
   endPopped?(): void;
   runBegun?(): void;
+  abilityCard?(up: boolean): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -392,6 +393,8 @@ export interface UiBridge extends UiActWrapper {
    * return or a climb (FS-84N1G R1). The UI scene opens the controls panel, silently (R2).
    */
   runBegun(): void;
+  /** The run's ability card came up or went (FS-84N1G R4): the controls badge stands over it while it is up. */
+  abilityCard(up: boolean): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
 }
@@ -417,6 +420,7 @@ export type WorldUi = Pick<
   | "record"
   | "endPopped"
   | "runBegun"
+  | "abilityCard"
 >;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
@@ -435,6 +439,7 @@ export const NO_UI: WorldUi = {
   record: () => {},
   endPopped: () => {},
   runBegun: () => {},
+  abilityCard: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -551,6 +556,10 @@ export class GameUiBridge implements UiBridge {
 
   runBegun(): void {
     for (const screen of [...this.screens]) screen.runBegun?.();
+  }
+
+  abilityCard(up: boolean): void {
+    for (const screen of [...this.screens]) screen.abilityCard?.(up);
   }
 
   onScreen(screen: UiScreen): () => void {

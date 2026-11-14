@@ -5,7 +5,8 @@
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
-import type { Placement } from "@/render/viewport";
+import { anchorAt, type Placement } from "@/render/viewport";
+import { ABILITY_CARD_H } from "./AbilityHud";
 
 export interface Rect {
   x: number;
@@ -59,6 +60,19 @@ export const ABILITY_CARD_PLACE: Placement = {
   dx: -CORNER_MARGIN,
   dy: -CORNER_ROW_CLEARANCE,
 };
+
+/**
+ * The run's controls badge (FS-84N1G R3; the owner, 「幫我做一個徽章 放在 技能上方區塊」): a plate the corner
+ * icons' size, its right edge on the ability card's, the row's gap above the card's top.
+ */
+export function controlsBadgeFrame(view: CornerView): Rect {
+  const card = anchorAt(ABILITY_CARD_PLACE, view);
+  const bottom = card.y - ABILITY_CARD_H - CORNER_ROW_HEADROOM;
+  return { x: card.x - CORNER_ICON_W, y: bottom - CORNER_ICON_H, width: CORNER_ICON_W, height: CORNER_ICON_H };
+}
+
+/** The controls badge's name and key under the pointer, as the corner row names its icons (FS-84N1G R7). */
+export const CONTROLS_BADGE_LABEL = "Controls (H)";
 
 /** The run's dead-spectator Leave the barrow button, 200 × 38 (FS-QPDKN req 10). */
 const LEAVE_BUTTON = { width: 200, height: 38 };

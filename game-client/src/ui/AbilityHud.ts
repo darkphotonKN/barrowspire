@@ -28,6 +28,8 @@ const NAME_H = 20;
 const LINE_ROW_H = 16;
 const LINE_ROWS = 2;
 const CARD_H = PAD * 2 + NAME_H + LINE_ROW_H * LINE_ROWS;
+/** The card's height, which the run's controls badge stands over (FS-84N1G R3). */
+export const ABILITY_CARD_H = CARD_H;
 const TEXT_W = CARD_W - PAD * 2 - GLYPH_W - GLYPH_GAP;
 
 export class AbilityHud {

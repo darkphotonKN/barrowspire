@@ -15,12 +15,14 @@ function stage() {
     new Proxy(o, { get: (t, prop) => (prop in t ? (t as Record<string | symbol, unknown>)[prop] : () => self(o)) }) as T;
   const scene = {
     add: {
-      graphics: () =>
-        self({
-          clear: () => (strokes.length = 0, self({})),
+      graphics: () => {
+        const g: object = self({
+          clear: () => ((strokes.length = 0), g),
           strokePath: () => void strokes.push("path"),
           strokeCircle: () => void strokes.push("circle"),
-        }),
+        });
+        return g;
+      },
       zone: (x: number, y: number, w: number, h: number) => {
         const z = { rect: [x, y, w, h], handlers: {} as Record<string, () => void>, destroyed: false } as (typeof zones)[number];
         zones.push(z);

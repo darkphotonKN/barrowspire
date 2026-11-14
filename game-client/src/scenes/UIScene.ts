@@ -29,6 +29,8 @@ import { mountGearPieces } from "@/ui/gearPieces";
 import { UiControlsSlot, UiRecordSlot, type OpenWindows } from "@/ui/uiSceneRecord";
 import { SettlementRecord } from "@/ui/SettlementRecord";
 import { mountControlsPiece } from "@/ui/controlsPiece";
+import { ControlsBadge } from "@/ui/ControlsBadge";
+import { UiControlsBadge } from "@/ui/uiSceneControlsBadge";
 import { recordAnchor } from "@/ui/resolvedRow";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { onSceneEnd } from "./sceneEnd";
@@ -104,6 +106,8 @@ export class UIScene extends Phaser.Scene {
   private controls?: UiControlsSlot;
   /** The run's settlement record (FS-TQZ5J § Change: Phase 3, R57). */
   private record?: UiRecordSlot;
+  /** The run's controls badge over its ability card (FS-84N1G R3–R8). */
+  private badge?: UiControlsBadge;
   /** The resident art the party frames cut their busts from, registered as a bust is first cut. */
   private art?: ArtLibrary;
   private keys?: MenuKeyObjects;
@@ -341,6 +345,9 @@ export class UIScene extends Phaser.Scene {
     const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose));
     this.controls = controls;
     this.record = record;
+    // the controls badge over the run's ability card, toggling the panel as H does (FS-84N1G R4, R8)
+    const badge = new UiControlsBadge(bridge, controls, (spec) => new ControlsBadge(this, spec));
+    this.badge = badge;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
     const notices = new UiNoticeLayer(bridge, (notice, gone) => drawNotice(this, notice, gone));
     this.menu = menu;
@@ -361,6 +368,7 @@ export class UIScene extends Phaser.Scene {
       party.show(report);
       record.world(report);
       controls.world(report);
+      this.badge?.world(report);
     });
     const stopScreen = bridge.onScreen({
       dialogue: (shown) => dialogue.show(shown),
@@ -375,6 +383,7 @@ export class UIScene extends Phaser.Scene {
       },
       // the run's first floor in view: the controls panel opens by itself, silently (FS-84N1G R2)
       runBegun: () => controls.runBegun(),
+      abilityCard: (up) => this.badge?.abilityCard(up),
     });
     relayoutOn(this, () => {
       corner.relayout();
@@ -384,6 +393,7 @@ export class UIScene extends Phaser.Scene {
       gear.relayout();
       record.relayout();
       controls.relayout();
+      badge.relayout();
     });
     onSceneEnd(this, () => {
       stop();
@@ -396,6 +406,8 @@ export class UIScene extends Phaser.Scene {
       gear.destroy();
       record.destroy();
       controls.destroy();
+      badge.destroy();
+      this.badge = undefined;
       this.gear = undefined;
       this.controls = undefined;
       this.record = undefined;

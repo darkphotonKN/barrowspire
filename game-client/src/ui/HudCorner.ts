@@ -28,7 +28,7 @@ import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
 import { CornerLabel } from "./cornerLabel";
 import { GLYPH_LINE_W, drawEnvelopeLines, envelopeKnockout } from "./MailboxEnvelope";
-import { BRONZE, CUT_W, Knockout, bend, oval, type KnockoutCut, type KnockoutInk, type KnockoutPicture, type Pt } from "./knockout";
+import { BRONZE, CUT_W, GREYED, GREYED_ALPHA, Knockout, bend, oval, type KnockoutCut, type KnockoutPicture, type Pt } from "./knockout";
 import { RUCKSACK, drawRucksackLines } from "./knockoutRucksack";
 import {
   CORNER_LABEL,
@@ -41,17 +41,6 @@ import {
 const HUD_DEPTH = 1000;
 /** Every glyph's line, the envelope's (FS-QHN87 R1); the cover margins follow it. */
 const LINE_W = GLYPH_LINE_W;
-/** The greyed Mailbox's lines. */
-const GREYED_ALPHA = 0.6;
-/**
- * The greyed Mailbox's knockout: the faint grey, never brightening under the pointer (FS-7TQN4 R9),
- * and flat, not lit from above, on the row's drop shadow (FS-S8Z2Y R6).
- */
-const GREYED: KnockoutInk = {
-  idle: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
-  hover: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
-  flat: true,
-};
 
 const labelOf = (spec: CornerIconSpec) =>
   spec.greyed && spec.icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[spec.icon];

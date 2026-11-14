@@ -78,6 +78,18 @@ export const BRONZE: KnockoutInk = {
   hover: { tint: mix(palette.frame, palette.interactableBright, 0.5), alpha: 1 },
 };
 
+/**
+ * The greyed knockout (ADR-0080 "Unavailable"): flat in the faint grey at 0.6, never brightening under
+ * the pointer (FS-7TQN4 R9), on the drop shadow with no gradient (FS-S8Z2Y R6). The greyed Mailbox wears
+ * it; one place, so no icon copies it.
+ */
+export const GREYED_ALPHA = 0.6;
+export const GREYED: KnockoutInk = {
+  idle: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+  hover: { tint: palette.hudFaint, alpha: GREYED_ALPHA },
+  flat: true,
+};
+
 /** The cut lines' width, in logical px (FS-7TQN4 R2). */
 export const CUT_W = 1.6;
 /**

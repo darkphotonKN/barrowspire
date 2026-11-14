@@ -660,6 +660,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * began (FS-84N1G R1); set once a start, at the first broadcast naming floor 1.
    */
   private beginDue = false;
+  /** Whether the UI scene was last told the ability card is up (FS-84N1G R4). */
+  private abilityUp = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
   /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
@@ -1117,6 +1119,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.resolvedCard = undefined;
     this.endPopped = false;
     this.beginDue = false;
+    this.abilityUp = false;
     this.canWatch = false;
     this.canLeave = false;
     this.row = { names: "", buttons: [] };
@@ -5101,12 +5104,15 @@ export class BarrowspireScene extends Phaser.Scene {
     if (!state) return;
     // just above the corner row, right-aligned with it (FS-3EBCA R13)
     this.abilityHud ??= new AbilityHud(this, ABILITY_CARD_PLACE);
-    this.abilityHud.show(
-      abilityCard(state, {
-        lockedOut: this.combat.lockedOut,
-        leaveUp: this.leaveButton !== undefined,
-      }),
-    );
+    const card = abilityCard(state, {
+      lockedOut: this.combat.lockedOut,
+      leaveUp: this.leaveButton !== undefined,
+    });
+    this.abilityHud.show(card);
+    // the controls badge stands over the card while it is up (FS-84N1G R4): told on each change
+    if ((card !== null) === this.abilityUp) return;
+    this.abilityUp = card !== null;
+    this.ui.abilityCard(this.abilityUp);
   }
 
   /**
