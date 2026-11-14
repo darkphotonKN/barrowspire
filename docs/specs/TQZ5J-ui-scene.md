@@ -630,3 +630,186 @@ first fills the popup band (2000) and settles Esc; the owner's check (I-TQZ5J-5)
 
 FS-WDM0X § Change: Menu, dialog and notice sounds (pass 1) gives the UI scene's pieces their hover,
 press, dialog and notice sounds. It supersedes A2 R33's "it plays no sound" for the notices.
+
+## Change: Phase 2: the party
+Status: work-order
+Date: 2026-11-14
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-14: 「按照你的建議吧」),
+with the integrator's defaults; no interview, no `challenge-me` pass. What the code forces (read on
+feat/client-ui-scene, ecb92ba9) is marked **[code]**; the charter's defaults **[charter]**; a default
+applied to a case the charter did not name, *Derived*. A1's pointer rules (R25–R27) and A2's depth
+rule (R28) are inherited, not restated.
+
+**The order of the phases changes.** § Phases put the gear overlay second and the party third. A
+first try at moving the gear overlay with the satchel / container view found the party panel (1110)
+drawing over both (1100, 1000): moved alone, the gear overlay would stand over a party panel still in
+a world. The party moves first, so this phase is the party; the gear overlay, the satchel / container
+view and the settlement record are phase 3; the rest keep their order after them. § Phases' table
+stands as the record of the plan as first written. **[charter]**
+
+**Lane.** game-client only. No server, proto, gateway or manifest change. No behaviour or look change
+but the depths named in R46. **[charter]**
+
+### Facts (verified 2026-11-14 on feat/client-ui-scene, ecb92ba9)
+
+- **Who mounts what.** Each world's `create` mounts the party panel (`mountPartyPanel`, its DOM invite
+  field, T, its × and buttons), the invite prompt (`mountPartyInvitePrompt`) and the party frames
+  (`mountPartyFrames`, with Travel); the town alone mounts the ready check (`mountPartyReadyCheck`:
+  the check only happens in the town, FS-BJNYC R4). Each world's `release` destroys them. **[code]**
+- **What they read of the world.** The panel: `blocked` (the town: its dialogue or the menu; a field:
+  the menu; the run: the menu, its end or an open chest), `opening` (the town: its letter panel
+  closes), the interface sounds' wrapper. The prompt: `hidden` (the town: the menu, the gear overlay
+  or the letter panel; a field: never; the run: its end) and `floor` (a field and the run: the chat
+  window's top edge; the town: none). The ready check: the town's `hidden`. The frames: the world's
+  art library (the class sheets, resident art, FS-C4JWH) and each state tick (`show(state)`). **[code]**
+- **What they read of their own.** The party store (`usePartyStore`: the party, `panelOpen`, the
+  invites, the ready check), the game store's world, the auth store's player, and they send through
+  `partyCommands(socketManager)`. These are app state and the socket, fed by `SocketManager`, read by
+  no scene's field: the town and the field read the party store themselves today. **[code]**
+- **What the world asks of them.** `windows().party` is the panel's open state; the answers `toggle:
+  party` and `close: party`; the menu opening (`heardUi`) and the letter panel opening
+  (`clearForLetter`) close it; the world's click paths (`panelTakes`, the field's `takesPointer`),
+  `GearOverlay`'s `under`, the town's map pointer and the field's and the run's map mode icon test
+  `partyPanel.covers` and `invitePrompt.covers`. **[code]**
+- **Their presses.** The panel's ×, its buttons and the frames' Travel (`drawHudButton`) and the
+  invite prompt's buttons answer on `pointerup` (main d6a64948); the ready check's on `pointerdown`.
+  Their grounds take no input: a press on the panel's or a prompt's ground reaches the world, which
+  refuses it only by the rect tests above (the town has none for the prompt and the ready check). A
+  greyed button takes no input. **[code]**
+- **Depths.** The panel 1110, its invite field (a DOM element) 1000, the prompt, the ready check and
+  the frames the HUD's 1000. **[code]**
+
+### Requirements (added)
+
+36. **What moves.** Into the UI scene, unchanged: the party panel with its invite field, T, its × and
+    its buttons; the invite prompt; the ready check; the party frames with Travel. The UI scene builds
+    them for each world it hears reported and takes them down as that world leaves, as each world's
+    `create` mounted and its `release` destroyed them: the ready check in the town only, the rest in
+    every world. A switch builds the next world's anew; the panel's open state, the invites and the
+    check live in the party store, so they carry across a switch as today. No world scene mounts a
+    party piece. **[charter; code]**
+37. **What the UI scene reads directly.** The party store, the game store's world and the auth
+    store's player, as the pieces read them today: app state, not a scene's field (ADR-0081 Decision 2
+    forbids reaching into a scene). Party commands go out as before, from the pieces, through
+    `partyCommands(socketManager)`: they were never a world's messages. The frames cut their busts
+    from the UI scene's own art library over the resident art (`registerArt(…, RESIDENT_ART)`), where
+    the class sheets are: the game's textures are one manager, and the world's library resolves the
+    same frames. **[charter; code]**
+38. **What crosses the interface, typed.** The world's part of each rule becomes plain state in its
+    report; the UI scene adds its own menu state where the rule read it:
+    - `blockers().party`: the world turns T and the Party icon away now (the town: its dialogue; the
+      run: its end or an open chest; a field: never). The panel is refused while this is true or the
+      menu slot is filled.
+    - `blockers().popups`: the world hides the invite prompts and the ready check now (the town: the
+      menu, the gear overlay or the letter panel; the run: its end; a field: never), the world's rule
+      whole, the menu included where it read it.
+    - `layout().chatTop`: the screen y the invite stack stays above (the chat window's top edge in a
+      field and the run; none in the town).
+    - `partySeen(state)`: each state tick the frames were shown, as plain data (the player's own and
+      the others' health, resource and level).
+    A report without them reads false and none. **[charter; code]**
+39. **The party leaves the world's windows and requests.** The party panel's open state is the UI
+    scene's to read (the store's `panelOpen`): `WorldWindows` loses `party`, `toggle` and `close` lose
+    `party`. The corner row's Party icon, Esc's party step (R17, `escapeStep`'s order unchanged:
+    letter, menu, party, gear), the menu opening over the windows (FS-3EBCA R17) and the Menu icon
+    after the run's end act on the UI scene's panel itself; the gear overlay's close stays a request.
+    The interface sounds' window state reads the panel from the UI scene and the rest from the report
+    (R22). The town's letter panel opening still closes the party panel: the town shuts it in the
+    party store, as the panel's own close does; the panel opening still asks the town to close its
+    letter panel (`close: letter`). **[charter; code]**
+40. **Their presses are the UI scene's.** The open panel, each shown invite prompt and the ready check
+    take every press, wheel and move on their rect: each stands an interactive ground under its own
+    buttons, drawn nothing, so Phaser stops there (R7). The world's `panelTakes` and the field's
+    `takesPointer` stop testing them, and so do `GearOverlay`'s `under` and the map pointers (R41). The
+    frames' ground stays open as today: a press on a frame reaches the world (an attack in a field or
+    the run); only Travel is the UI scene's. The ×, the buttons and Travel keep answering on
+    `pointerup`, the ready check's buttons on `pointerdown`. **[charter; code]**
+41. **A world hover by coordinates yields under any UI piece.** While the world hears a move the UI
+    scene took over one of its pieces (A1 R27), the bridge says so (`overUi`); the world pieces that
+    hovered by coordinates and gave way to the party panel (the gear overlay's `under`, the town's
+    map pointer, the field's and the run's map mode icon) give way to it instead, as to any UI piece.
+    So the gear overlay's slots under the party panel neither light nor tip, as today. This is how they
+    yield (R27's "says how it yields"). *Derived.*
+42. **The invite field keeps its rule (A1 R26).** A press on the party panel (its ground, a button,
+    its ×) keeps the invite field's focus; a press on any other UI piece or in the world lets it go;
+    the chat's field lets go for a press on the panel as it does today. The field is the UI scene's
+    DOM element, placed by its camera as before. **[charter; A1 R26]**
+43. **T is the UI scene's.** Owned outright (R21): no world binds it; the panel hears it on the UI
+    scene's keyboard as it heard it on the world's, under the same rule (refused while blocked, a
+    letter while a text field holds focus). **[charter; R21]**
+44. **Depths, inside the UI scene.** Today's: the panel 1110, its invite field, the prompts, the ready
+    check and the frames 1000 (R28). Among the UI scene's own pieces nothing meets in a new order: the
+    menu, the dialogue card and the run's notifications (2000) stand over every party piece as they
+    did; the town's and the field's notice line (y 57–87) stays clear of the prompts (from y 92) and of
+    the panel (from 18 % of the view's height, y 130 at 720). **[code]**
+45. **Parity.** Before (ecb92ba9) and after screenshots in the harness (R23): the party panel with no
+    party, in a party as leader and as member, greyed in a run; the invite prompt; the ready check;
+    the frames with Travel; in the town, a field and the run, at render scale 1, 1.5 and 2, windowed
+    and fullscreen. Pixel-equal except the depths named in R46. The earlier sets (corner 119, menu 498,
+    dialogue 144, notices 84) stay pixel-equal. **[charter]**
+46. **The depth inversion (R24).** Moved into the UI scene, the party pieces draw over every piece
+    still in a world. Each case where a world piece above a party piece's depth can meet it today is
+    named and shot before and after, for the owner's check:
+    - the panel (1110) under the run's controls panel (1200), its resolved card (1500), the gear
+      overlay's tips (2200) and flash (2300) today; over them after;
+    - the prompts (1000) under the gear overlay (1100, in a field and the run, where the prompt is
+      never hidden for it), its tips and flash, the run's controls panel and resolved card today; over
+      them after;
+    - the frames (1000) under the gear overlay's character panel (1100), its tips and flash, the
+      town's letter panel (1800) where they meet today; over them after.
+    No world piece comes to draw over a party piece it was under. **[code]**
+
+### Acceptance Criteria (added)
+
+- [ ] No world scene imports or mounts `PartyPanel`, `PartyInvitePrompt`, `PartyReadyCheck` or
+      `PartyFrames`, binds T, or tests a party piece's rect (`partyPanel.covers`,
+      `invitePrompt.covers`).
+- [ ] The UI scene builds the panel, the prompt and the frames for each world reported and the ready
+      check for the town only, and takes them down as the world leaves; an open panel stays open
+      across a switch.
+- [ ] T and the Party icon open and close the panel under `blockers().party` and the menu, as today
+      in each world; Esc closes the letter, the menu, the party panel, the gear overlay in that order;
+      the menu opening closes the panel; the letter panel opening closes it and the panel opening
+      closes the letter panel (the town).
+- [ ] The prompts and the ready check hide by `blockers().popups`, stack above `layout().chatTop`, and
+      the frames' bars and levels follow `partySeen`.
+- [ ] A press, wheel or move on the open panel, a prompt or the ready check reaches no world handler
+      (no attack, no cast, no gear slot lit or tipped, no map mode icon lit); a press on a frame
+      reaches the world as today; the panel's, the prompts' and Travel's presses answer on release.
+- [ ] A press on the panel keeps the invite field's focus; a press on another UI piece or in the
+      world lets it go.
+- [ ] Every party sound plays as FS-WDM0X says, once per player action (R22; FS-WDM0X § Change pass
+      2 (party)).
+- [ ] Before/after screenshots (R45) pixel-equal except R46's named cases, each shot; the earlier
+      sets stay pixel-equal.
+- [ ] Every acceptance criterion of FS-R82NV's panel, prompt and frames, FS-NCC9J R23–R28, FS-BJNYC
+      R23–R26, FS-B3NDZ and FS-CH21F R8–R12 still holds; their tests pass, moved with the code where
+      they tested a world scene.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's look-and-feel check of the party pieces and R46's cases passes.
+
+### Edge States (added)
+
+- **A press on the panel's or a prompt's ground in the town.** It was the town's, and nothing in the
+  town answered it but the chat field letting go, which R42 keeps.
+- **A world press passing over the panel** (a held Shadow Shot, a chat scrollbar drag): the world's
+  to its end (R25); while it is down the UI scene hits nothing, so the gear overlay's slots under the
+  panel can light under it (`overUi` is not said for a move Phaser handed the world itself). Today the
+  rect test kept them dark.
+- **The dialogue card's rows over the gear overlay.** R41 is the UI scene's whole: a move over a card
+  row now dims the gear overlay's hover under it too, where it lit before.
+- **A monster or an ally under the panel or a prompt in the run.** No longer lit under the pointer
+  there (the UI scene takes the move), where today it was.
+- **The panel open as the run ends.** As today: the run's end refuses T, and the panel is closed by
+  whatever closed it.
+- **A world still loading its art.** Its party pieces come with its report at `create`, as they came
+  with its `create`.
+
+### Out of Scope (added)
+
+- The gear overlay, the satchel / container view and the settlement record (phase 3), the minimap and
+  M, the mailbox, the run's HUD, chat.
+- Any change to what the party pieces look like, say or do, but R46's depths and the sounds of
+  FS-WDM0X's pass 2.
+- The server; the party's commands and the store's rules.

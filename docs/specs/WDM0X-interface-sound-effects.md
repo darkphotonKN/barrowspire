@@ -790,3 +790,64 @@ Items 1 and 2 (where nothing names a sound, apply none for now): the notices go 
 
 Built in 631920d7 (tests red in 8079e3c5). The listening check (I-WDM0X-7) stays open for the
 owner to hear the updated table.
+
+### Pass 2: the party (2026-11-14)
+
+Appended under the owner's approved charter (2026-11-14: 「按照你的建議吧」), with the party's half of
+his sound table, as the party pieces move into the UI scene (FS-TQZ5J § Change: Phase 2: the party).
+Pass 1's text and its listening-check overrides stand; this adds the party's sounds and edits nothing
+above. The chat's half of *Pass 2 (recorded, not built)* waits for chat's phase. Every play goes
+through the UI scene's one player (M3), one sound per player action (M2), the hover's cooldown (M4)
+kept. **[charter]** unless marked *Derived*.
+
+#### The mapping (pass 2, party)
+
+P1. **`notify_important`**: a party invite is received: a new invite enters the party store
+    (`party_invite`), in any world, whether its prompt shows now or waits hidden under an overlay or
+    behind four others. One per invite; an invite renewed, expired, answered or forgotten plays
+    nothing. This is the use O2 reserved it for.
+P2. **`dialog_open`**: the ready check opens: a new check enters the party store (its `open`
+    outcome), for every member, the leader included, whether the popup shows now or waits hidden.
+    The invite prompt appearing is the invite received, and plays P1's alone: one event, one sound
+    (M2's rule). A prompt shown later (an overlay closing, a fifth moving up) plays nothing more.
+    *Derived* (the charter's "never double a sound").
+P3. **`dialog_confirm`**: the invite prompt's *Accept*; the ready check's *Accept* (Ready).
+P4. **`dialog_cancel`**: the invite prompt's *Decline*; the ready check's *Decline* (not ready).
+P5. **`menu_hover`**: the pointer comes onto a live party button: the panel's *Create party*,
+    *Invite*, *Leave party*, *Kick* and *Transfer*, and the frames' *Travel*. A greyed one plays none
+    (M5). The panel's × keeps no hover, as every panel's × (O4); the prompts' and the ready check's
+    buttons have none: no sound is named for them (O1's rule).
+P6. **`menu_click`**: a live party button pressed (P5's), as it answers on its release. The Invite
+    button's press plays it whatever the field holds; Enter in the field is typing, not an option, and
+    plays nothing.
+P7. **`menu_error`**: a press on a greyed party button: the panel's greyed *Create party*,
+    *Invite*, *Leave party*, *Kick* or *Transfer* (greyed by role or by lock, a run's Invite), the
+    frames' greyed *Travel*, the invite prompt's greyed *Accept* in a run. A greyed button takes the
+    press for that, so a press on the greyed *Travel* in a field or the run no longer attacks.
+    *Derived* (Travel and the prompt's Accept are party buttons too).
+P8. **The panel's open and close keep their sounds.** T, the Party icon, the panel's ×, Esc and the
+    windows giving way still play `party_open` and `party_close` by the window rule (S8), and nothing
+    else: no `menu_click` on the Party icon (S1), no `dialog_*` on the ×.
+
+#### Acceptance Criteria (pass 2, party)
+
+- [ ] A new invite in the store plays `notify_important` once, shown or hidden; an invite's expiry,
+      answer or forgetting plays nothing; the prompt appearing for it plays nothing more.
+- [ ] A new ready check plays `dialog_open` once, for the leader and every member; a check redrawn,
+      answered or let go plays nothing.
+- [ ] *Accept* plays `dialog_confirm` and *Decline* `dialog_cancel`, on the invite prompt and the ready
+      check, once each, beside their commands as today.
+- [ ] Each live party button: a hover `menu_hover`, a press `menu_click`, once, beside its command; a
+      greyed one: no hover, a press `menu_error` and nothing sent.
+- [ ] T, the Party icon, the × and Esc play `party_open` / `party_close` only.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's listening check of the party sounds (HITL), with the table of where each plays.
+
+#### Edge States (pass 2, party)
+
+- **Several invites at once.** Each plays `notify_important`; a second restarts the first (S11).
+- **An invite while the UI scene sleeps** (the main menu): nothing plays; the prompt it makes in the
+  next world plays nothing either.
+- **The leader's own check.** The leader pressed *Enter as a party* (`dialog_confirm`, M12); the check
+  opening on the server's word plays `dialog_open` after it.
+- **Sound effects at 0.** Every party sound is silent (S16).
