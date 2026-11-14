@@ -19,7 +19,7 @@
       "image": "archer-0.png",
       "width": 2532,
       "height": 4060,
-      "sha256": "94102e1cfd95db3b3743187dedfa0c9021702a09790b2a3a43a186fed35a3f78"
+      "sha256": "88d1cbeac6b6e125fcd6514374d636e6ba63fd873dc615356cb4ff660707f20d"
     },
     "architecture-0": {
       "image": "architecture-0.png",
@@ -127,7 +127,7 @@
       "image": "folk-0.png",
       "width": 2036,
       "height": 2840,
-      "sha256": "5be5c90cc2b4b40b0038e20981ac7e740855d4913c086999a4d7e46bbc0b1022"
+      "sha256": "296880ba25b8c5da234e1af2ee11db2ec460f84c9fd4fed905288056918c7630"
     },
     "forest-0": {
       "image": "forest-0.png",
@@ -155,9 +155,9 @@
     },
     "icons-0": {
       "image": "icons-0.png",
-      "width": 1128,
-      "height": 72,
-      "sha256": "7106798d13411e494e59a2e3fdf1c26d935b31b89a049815e8af552263ada772"
+      "width": 2052,
+      "height": 136,
+      "sha256": "ab73f9510aaf1f83cdc0799b84e79cf312e2571fd860fdc88c06217b872a9e1b"
     },
     "interior-0": {
       "image": "interior-0.png",
@@ -169,13 +169,13 @@
       "image": "knight-0.png",
       "width": 3716,
       "height": 3056,
-      "sha256": "433bd679eb22de00df35da70fb931d1deec1cfd5199dc7ec1930355c29732356"
+      "sha256": "aafee8f4d6eb8e9642aed0369c3ee60e8ea8bb3e4cb79e3e4457b03ffbc0c126"
     },
     "mercenary-0": {
       "image": "mercenary-0.png",
       "width": 3428,
       "height": 3280,
-      "sha256": "e6af0c4fe9332b4fb5928e4ec03c3be56fa06ef052d79033f4a06139d8d587f2"
+      "sha256": "ef9d2e78332b3bfa673e766c2249eca08b9e552eea232003697d33cb2f2fb670"
     },
     "nature-0": {
       "image": "nature-0.png",
@@ -223,7 +223,7 @@
       "image": "wizard-0.png",
       "width": 2056,
       "height": 4000,
-      "sha256": "3f3084ea91ea0e3c21dd46e850dd4dae6f65205399bfc2e5bb051c959de7eadd"
+      "sha256": "9782390a6b9ef66c21fbe9a05904fa9342b8fad02debdd4981605c30dd506e5f"
     }
   },
   "sheets": {
@@ -38141,7 +38141,7 @@
       "source": "authored: tools/bake/page/models/town.js#hayCart",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_bow": {
+    "icon_axe_t1": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38164,10 +38164,10 @@
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#bow",
+      "source": "procedural: tools/bake/page/models/items.js#axe_t1",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_coins": {
+    "icon_axe_t2": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38190,10 +38190,10 @@
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#coins",
+      "source": "procedural: tools/bake/page/models/items.js#axe_t2",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_cuirass": {
+    "icon_axe_t3": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38216,10 +38216,10 @@
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#cuirass",
+      "source": "procedural: tools/bake/page/models/items.js#axe_t3",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_dagger": {
+    "icon_axe_t4": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38242,10 +38242,10 @@
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#dagger",
+      "source": "procedural: tools/bake/page/models/items.js#axe_t4",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_gauntlets": {
+    "icon_boots_t1": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38268,7 +38268,527 @@
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#gauntlets",
+      "source": "procedural: tools/bake/page/models/items.js#boots_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_boots_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 332,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#boots_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_boots_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 398,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#boots_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_boots_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 464,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#boots_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_bow_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 530,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#bow_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_bow_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 596,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#bow_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_bow_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 662,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#bow_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_bow_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 728,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#bow_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_coins": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 794,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#coins",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_cuirass_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 860,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#cuirass_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_cuirass_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 926,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#cuirass_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_cuirass_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 992,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#cuirass_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_cuirass_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1058,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#cuirass_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_dagger_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1124,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#dagger_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_dagger_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1190,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#dagger_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_dagger_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1256,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#dagger_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_dagger_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1322,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#dagger_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_gauntlets_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1388,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#gauntlets_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_gauntlets_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1454,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#gauntlets_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_gauntlets_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1520,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#gauntlets_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_gauntlets_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1586,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#gauntlets_t4",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "icon_gem": {
@@ -38287,7 +38807,7 @@
           "frames": [
             [
               {
-                "x": 332,
+                "x": 1652,
                 "y": 2
               }
             ]
@@ -38313,7 +38833,7 @@
           "frames": [
             [
               {
-                "x": 398,
+                "x": 1718,
                 "y": 2
               }
             ]
@@ -38323,7 +38843,293 @@
       "source": "procedural: tools/bake/page/models/items.js#generic",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_greaves": {
+    "icon_greaves_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1784,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#greaves_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_greaves_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1850,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#greaves_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_greaves_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1916,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#greaves_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_greaves_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1982,
+                "y": 2
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#greaves_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_helm_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 2,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#helm_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_helm_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 68,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#helm_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_helm_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 134,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#helm_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_helm_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 200,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#helm_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_mace_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 266,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#mace_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_mace_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 332,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#mace_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_mace_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 398,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#mace_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_mace_t4": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38340,39 +39146,13 @@
             [
               {
                 "x": 464,
-                "y": 2
+                "y": 68
               }
             ]
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#greaves",
-      "licence": "Barrowspire original work (procedural, no third-party assets)"
-    },
-    "icon_helm": {
-      "atlas": "icons-0",
-      "frameWidth": 64,
-      "frameHeight": 64,
-      "anchor": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "directions": 1,
-      "animations": {
-        "default": {
-          "fps": 0,
-          "loop": false,
-          "frames": [
-            [
-              {
-                "x": 530,
-                "y": 2
-              }
-            ]
-          ]
-        }
-      },
-      "source": "procedural: tools/bake/page/models/items.js#helm",
+      "source": "procedural: tools/bake/page/models/items.js#mace_t4",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "icon_potion_health": {
@@ -38391,8 +39171,8 @@
           "frames": [
             [
               {
-                "x": 596,
-                "y": 2
+                "x": 530,
+                "y": 68
               }
             ]
           ]
@@ -38417,8 +39197,8 @@
           "frames": [
             [
               {
-                "x": 662,
-                "y": 2
+                "x": 596,
+                "y": 68
               }
             ]
           ]
@@ -38427,7 +39207,33 @@
       "source": "procedural: tools/bake/page/models/items.js#potion_mana",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_ring": {
+    "icon_ring_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 662,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#ring_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_ring_t2": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38444,13 +39250,65 @@
             [
               {
                 "x": 728,
-                "y": 2
+                "y": 68
               }
             ]
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#ring",
+      "source": "procedural: tools/bake/page/models/items.js#ring_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_ring_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 794,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#ring_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_ring_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 860,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#ring_t4",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "icon_scroll": {
@@ -38469,8 +39327,8 @@
           "frames": [
             [
               {
-                "x": 794,
-                "y": 2
+                "x": 926,
+                "y": 68
               }
             ]
           ]
@@ -38495,8 +39353,8 @@
           "frames": [
             [
               {
-                "x": 860,
-                "y": 2
+                "x": 992,
+                "y": 68
               }
             ]
           ]
@@ -38505,7 +39363,7 @@
       "source": "procedural: tools/bake/page/models/items.js#skull",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_staff": {
+    "icon_spear_t1": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38521,17 +39379,17 @@
           "frames": [
             [
               {
-                "x": 926,
-                "y": 2
+                "x": 1058,
+                "y": 68
               }
             ]
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#staff",
+      "source": "procedural: tools/bake/page/models/items.js#spear_t1",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
-    "icon_sword": {
+    "icon_spear_t2": {
       "atlas": "icons-0",
       "frameWidth": 64,
       "frameHeight": 64,
@@ -38547,14 +39405,274 @@
           "frames": [
             [
               {
-                "x": 992,
-                "y": 2
+                "x": 1124,
+                "y": 68
               }
             ]
           ]
         }
       },
-      "source": "procedural: tools/bake/page/models/items.js#sword",
+      "source": "procedural: tools/bake/page/models/items.js#spear_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_spear_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1190,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#spear_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_spear_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1256,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#spear_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_staff_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1322,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#staff_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_staff_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1388,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#staff_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_staff_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1454,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#staff_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_staff_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1520,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#staff_t4",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_sword_t1": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1586,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#sword_t1",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_sword_t2": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1652,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#sword_t2",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_sword_t3": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1718,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#sword_t3",
+      "licence": "Barrowspire original work (procedural, no third-party assets)"
+    },
+    "icon_sword_t4": {
+      "atlas": "icons-0",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "anchor": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "directions": 1,
+      "animations": {
+        "default": {
+          "fps": 0,
+          "loop": false,
+          "frames": [
+            [
+              {
+                "x": 1784,
+                "y": 68
+              }
+            ]
+          ]
+        }
+      },
+      "source": "procedural: tools/bake/page/models/items.js#sword_t4",
       "licence": "Barrowspire original work (procedural, no third-party assets)"
     },
     "icon_vial_tonic": {
@@ -38573,8 +39691,8 @@
           "frames": [
             [
               {
-                "x": 1058,
-                "y": 2
+                "x": 1850,
+                "y": 68
               }
             ]
           ]
