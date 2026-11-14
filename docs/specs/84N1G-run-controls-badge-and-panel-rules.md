@@ -311,6 +311,19 @@ A1 below.
 - **R20, as built.** `PartyPanelDeps.covered(field)` is handed the invite field's rect; the UI scene
   answers by `rectsMeet` (`partyPanelLayout.ts`) against the open controls panel's and the open record's
   rects (`SettlementRecord.rect()`, kept as it is built).
+- **Review fixes (2026-11-14).** The review's LOWs, applied. The controls slot reads the windows itself
+  (`UiControlsSlot`'s third argument, `windows`) and reads them again as the panel opens, so a window
+  already open as H or the badge opens it never closes it, the world's container view and record
+  included: the UI scene steps before the world (`SceneManager.update` walks the scene list from its
+  end), so a window the world opens in its own update is first seen a frame later, after that frame's
+  H. "The panel and a window opening in the same frame" is the window opening after H on that frame;
+  one opened before H on it stays under the panel. The UI scene's update syncs the panel before it
+  reads its keys, so Esc never steps a panel that frame's sync closes. The × goes back unlit as its hit
+  is stood again on a new view. `OpenWindows` is keyed by `UiWindow`, a closed union, with `NO_WINDOWS`;
+  the badge's one spec is `BadgeSpec` (`uiSceneControlsBadge.ts`); `SettlementRecord.rect()` returns
+  `Rect`; the record slot has no `up` of its own, open exactly while its record has a rect;
+  `ABILITY_CARD_H` lives in `hudCornerLayout.ts`, which `AbilityHud` imports. The badge after a world
+  drag: Amendment A3.
 
 ## Amendment A1 2026-11-14 (no auto-show)
 
@@ -344,3 +357,13 @@ as R3–R9, R13–R16 and R20 say: the badge at 1000 above the ability card, the
 ×, the panel stepping aside under any window that opens, the invite field showing again where no window
 meets it. The book's own match to the approved preview D (render scale 1, 1.5, 2) was shot before this,
 pixel-equal.
+
+## Amendment A3 2026-11-14 (the badge after a world drag)
+
+Appended; the text above is not edited. The Edge State "The badge pressed during a world press
+elsewhere (a release over it after a drag that began on the world): it toggles, as a HUD button's
+release does" is wrong, and is withdrawn. Under FS-TQZ5J R25 a press that began on the world is the
+world's to its end: while it is down no UI piece is under the pointer for Phaser, so the badge's
+`pointerup` never fires for that release. **The badge does not toggle the panel on a release that ends
+a world press**, the same as every other HUD button (the corner row's icons included). The next press
+that begins on the badge toggles it as R8 says.
