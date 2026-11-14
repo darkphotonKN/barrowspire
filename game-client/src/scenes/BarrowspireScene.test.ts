@@ -5619,13 +5619,21 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       it("should carry the torch and fade the occluders at the watched teammate's drawn position, and jump to the next on ►", () => {
         const env = watching(ally(), brom());
         const { run, carry, fade } = lit(env);
+        // the drawn position is the world position's iso projection, never the world position itself:
+        // the torch rides on the figure as drawn, as the player's own does (`self.x`, `self.y`)
+        const drawnAt = (id: string, x: number, y: number) =>
+          Object.assign(run.otherPlayers.get(id) as { x: number; y: number }, { x, y });
+        drawnAt("ally", 412, 233);
+        drawnAt("brom", 655, 301);
         run.updateLighting(0, 16);
-        expect(carry).toHaveBeenLastCalledWith(run.otherPlayersPos.get("ally"));
+        expect(carry).toHaveBeenLastCalledWith({ x: 412, y: 233 });
+        expect(carry).not.toHaveBeenCalledWith(run.otherPlayersPos.get("ally"));
         const figure = fade.mock.calls.at(-1)![0] as { bounds: unknown; depth: unknown } | null;
         expect(figure).not.toBeNull();
         env.release("watch-next");
+        drawnAt("brom", 655, 301);
         run.updateLighting(16, 16);
-        expect(carry).toHaveBeenLastCalledWith(run.otherPlayersPos.get("brom"));
+        expect(carry).toHaveBeenLastCalledWith({ x: 655, y: 301 });
         expect(carry).not.toHaveBeenCalledWith(null);
       });
 
