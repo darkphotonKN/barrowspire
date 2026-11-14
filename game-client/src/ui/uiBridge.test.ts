@@ -44,6 +44,7 @@ function recording(): UiBridge & { heard: string[] } {
     showDialogue: (dialogue) => void heard.push(`showDialogue ${dialogue.text}`),
     closeDialogue: () => void heard.push("closeDialogue"),
     notice: (notice) => void heard.push(`notice ${notice.text}`),
+    partySeen: () => void heard.push("partySeen"),
     onScreen: () => () => {},
   };
 }
@@ -417,6 +418,32 @@ describe("the notices the world says, told to the UI scene (FS-TQZ5J A2 R33)", (
     expect(() => NO_UI.notice({ text: "A line.", look: { world: "hub" } })).not.toThrow();
   });
 });
+
+// FS-TQZ5J § Change: Phase 2: the party, R38 (I-TQZ5J-11): each state tick a world showed reaches the
+// UI scene's party frames through the bridge, as plain data
+describe("the state ticks a world shows, told to the UI scene (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should tell each screen listener the tick, at once, and none once it stopped listening", () => {
+    const bridge = new GameUiBridge();
+    const told: unknown[] = [];
+    const stop = bridge.onScreen({ partySeen: (state) => void told.push(state) });
+    bridge.onScreen({ notice: () => {} });
+    const tick = { current_player: { id: "me", current_health: 80, max_health: 100, level: 3 }, other_players: [] };
+
+    reportWorld({ registry: registryWith(bridge), events: new EventEmitter() }, "run", side()).partySeen(tick);
+    stop();
+    bridge.partySeen(tick);
+
+    expect(told).toEqual([tick]);
+    expect(() => NO_UI.partySeen(tick)).not.toThrow();
+  });
+});
+
+/** A registry with `bridge` lent. */
+function registryWith(bridge: UiBridge) {
+  const r = registry();
+  lendUiBridge(r, bridge);
+  return r;
+}
 
 // FS-TQZ5J Amendment A1 R27: a move the UI scene took still reaches the world reported, through the
 // world's own input pass (uiScenePointer.ts), over nothing of the world's while over a UI piece.

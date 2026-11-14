@@ -90,6 +90,16 @@ vi.mock("@/ui/PartyReadyCheck", () => ({
   },
 }));
 
+// The party frames themselves are PartyFrames.test's: here a recording stand-in, the ticks it was shown kept.
+const frameMounts = vi.hoisted(() => [] as { shown: unknown[]; destroyed: boolean }[]);
+vi.mock("@/ui/PartyFrames", () => ({
+  mountPartyFrames: () => {
+    const made = { shown: [] as unknown[], destroyed: false };
+    frameMounts.push(made);
+    return { show: (state: unknown) => void made.shown.push(state), destroy: () => void (made.destroyed = true) };
+  },
+}));
+
 const Phaser = await import("phaser");
 const { UIScene } = await import("./UIScene");
 const { UI_SCENE } = await import("@/components/uiSceneLifecycle");
@@ -299,6 +309,16 @@ describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)"
     "should have %s mount no invite prompt or ready check, and test no prompt's rect",
     (file) => {
       expect(source(file)).not.toMatch(/PartyInvitePrompt|PartyReadyCheck|mountPartyInvitePrompt|mountPartyReadyCheck|this\.invitePrompt\b|this\.readyCheck\b/);
+    },
+  );
+
+  // § Change: Phase 2: the party (I-TQZ5J-11): the frames are the UI scene's; each world hands its state
+  // ticks to the bridge
+  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
+    "should have %s mount no party frames, and hand each state tick it shows to the bridge",
+    (file) => {
+      expect(source(file)).not.toMatch(/PartyFrames|mountPartyFrames|this\.partyFrames\b/);
+      expect(source(file)).toMatch(/this\.ui\.partySeen\(state\);/);
     },
   );
 
@@ -884,6 +904,25 @@ describe("the UI scene's party pieces (FS-TQZ5J § Change: Phase 2: the party, R
     blockers.popups = true;
     expect(prompt.hidden()).toBe(true);
     expect(prompt.floor?.()).toBe(540);
+  });
+
+  it("should build the frames for each world, show them the world's state ticks, and take them down as it leaves", () => {
+    const { bridge, report } = created();
+    const before = frameMounts.length;
+    const tick = { current_player: { id: "me", current_health: 40, max_health: 100 } };
+
+    report("hub");
+    bridge.partySeen(tick);
+    bridge.left("hub");
+    bridge.partySeen(tick);
+    report("run");
+
+    const made = frameMounts.slice(before);
+    expect(made.map((m) => [m.shown.length, m.destroyed])).toEqual([
+      [1, true],
+      [0, false],
+    ]);
+    expect(made[0].shown[0]).toBe(tick);
   });
 
   it("should refuse the panel as the world's report or the menu says", () => {

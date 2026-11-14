@@ -227,3 +227,28 @@ describe("the UI scene's party slot's other pieces (FS-TQZ5J § Change: Phase 2:
     ]);
   });
 });
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-11): each state tick the world showed reaches the frames
+describe("the UI scene's party slot's state ticks (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should hand each tick to the pieces that read one, and none with no world", () => {
+    const shown: unknown[] = [];
+    const slot = new UiPartySlot(() => ({
+      panel: {
+        isOpen: () => false,
+        close: () => false,
+        toggle: () => {},
+        relayout: () => {},
+        keepsField: () => false,
+        destroy: () => {},
+      },
+      rest: [{ destroy: () => {} }, { show: (state) => void shown.push(state), destroy: () => {} }],
+    }));
+    const tick = { current_player: null, other_players: [] };
+    slot.seen(tick);
+    slot.show(aWorld("field").report);
+
+    slot.seen(tick);
+
+    expect(shown).toEqual([tick]);
+  });
+});

@@ -124,6 +124,7 @@ const { gearPanelLayout, overlayLayout, panelClose } = await import("@/ui/gearOv
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
+const { NO_UI } = await import("@/ui/uiBridge");
 
 /** A key as both scenes' key objects stand in for it here: pressed since the last frame, or not. */
 interface PressedKey {
@@ -10299,5 +10300,26 @@ describe("BarrowspireScene what the party pieces read of it (FS-TQZ5J § Change:
     run.runEnded = true;
     expect(side.blockers()).toMatchObject({ party: true, popups: true });
     expect(side.layout?.().chatTop).toBe(530);
+  });
+});
+
+// FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-11): the party frames are the UI scene's; the run hands
+// each state of its own world it shows to the bridge, as plain data (FS-R82NV R34, R35; R38)
+describe("BarrowspireScene the party frames' state ticks (FS-TQZ5J § Change: Phase 2: the party, R38)", () => {
+  it("should hand the bridge each state it shows, its players as the frames read them", () => {
+    const { run } = onStage();
+    const seen: unknown[] = [];
+    (run as unknown as { ui: object }).ui = { ...NO_UI, partySeen: (state: unknown) => void seen.push(state) };
+    const first = partyState();
+    const next = partyState(player("me", "Aldric", 130, { current_health: 25 }));
+
+    run.handleGameStateUpdate(first);
+    run.handleGameStateUpdate(next);
+
+    const players = (s: unknown) => {
+      const { current_player, other_players } = s as GameState;
+      return { current_player, other_players };
+    };
+    expect(seen.map(players)).toEqual([first, next].map(players));
   });
 });
