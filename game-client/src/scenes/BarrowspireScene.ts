@@ -5044,7 +5044,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.ui.gear({ kind: "level", level: this.characterLevel });
     if (!progress) return;
     // the UI scene's, at the top of the run's top-left stack (FS-TQZ5J § Change: Batch 5, R68, R69)
-    this.ui.hud({ kind: "progress", progress });
+    this.ui.hud({ world: "run", kind: "progress", progress });
   }
 
   /**
@@ -5054,10 +5054,10 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private showResourceBars(state: ClientGameState): void {
     // the UI scene's, under the level bar (FS-TQZ5J § Change: Batch 5, R68, R69)
-    this.ui.hud({ kind: "bars", bars: hudBars(state) });
+    this.ui.hud({ world: "run", kind: "bars", bars: hudBars(state) });
     // the potion cell is up exactly when the bars are (FS-P9G8R R24): the UI scene draws it right of
     // them (FS-TQZ5J § Change: Batch 5, R68)
-    this.ui.hud({ kind: "potion", cell: potionCell(state) });
+    this.ui.hud({ world: "run", kind: "potion", cell: potionCell(state) });
   }
 
   /**
@@ -5074,7 +5074,7 @@ export class BarrowspireScene extends Phaser.Scene {
       lockedOut: this.combat.lockedOut,
       leaveUp: this.leaveButton !== undefined,
     });
-    this.ui.hud({ kind: "ability", card });
+    this.ui.hud({ world: "run", kind: "ability", card });
     // the controls badge stands over the card while it is up (FS-84N1G R4): told on each change
     if ((card !== null) === this.abilityUp) return;
     this.abilityUp = card !== null;

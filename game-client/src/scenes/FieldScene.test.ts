@@ -1317,8 +1317,8 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     const told: unknown[] = [];
     uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
     field.renderState(archerState);
-    expect(told).toContainEqual({ kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
-    expect(told).toContainEqual({ kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
+    expect(told).toContainEqual({ world: "field", kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    expect(told).toContainEqual({ world: "field", kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
     expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
     // the UI scene's card, drawn from it
     expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));

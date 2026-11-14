@@ -803,7 +803,7 @@ export class FieldScene extends Phaser.Scene {
    */
   private showClassHud(state: ClientGameState): void {
     // the UI scene's, in the field's corner (FS-TQZ5J § Change: Batch 5, R68, R69)
-    this.ui.hud({ kind: "bars", bars: hudBars(state) });
+    this.ui.hud({ world: "field", kind: "bars", bars: hudBars(state) });
     this.showAbilityCard();
   }
 
@@ -814,7 +814,7 @@ export class FieldScene extends Phaser.Scene {
   private showAbilityCard(): void {
     const state = this.lastState;
     if (!state) return;
-    this.ui.hud({ kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }) });
+    this.ui.hud({ world: "field", kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false, leaveUp: false }) });
   }
 
   /** This client's player as drawn, once the field has reported them. */

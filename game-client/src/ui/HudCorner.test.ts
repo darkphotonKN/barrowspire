@@ -76,6 +76,7 @@ interface FakeText {
   words: string;
   x: number;
   y: number;
+  depth?: number;
   destroyed: boolean;
 }
 
@@ -209,7 +210,7 @@ function fakeScene(texture: TextureMode = "none") {
         width: words.length * 6,
         setOrigin: () => self,
         setScrollFactor: () => self,
-        setDepth: () => self,
+        setDepth: (d: number) => ((t.depth = d), self),
         setPosition: (nx: number, ny: number) => ((t.x = nx), (t.y = ny), self),
         destroy: () => void (t.destroyed = true),
       };

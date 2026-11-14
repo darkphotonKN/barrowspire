@@ -36,7 +36,7 @@ import { recordAnchor } from "@/ui/resolvedRow";
 import { mountInterfaceSounds } from "@/ui/uiSceneSounds";
 import { UiMailboxSlot } from "@/ui/uiSceneMailbox";
 import { mountMailbox } from "@/ui/mailboxHud";
-import { mountHud } from "@/ui/hudPieces";
+import { hudPieces, mountHud } from "@/ui/hudPieces";
 import { onSceneEnd } from "./sceneEnd";
 
 /**
@@ -138,7 +138,7 @@ export class UIScene extends Phaser.Scene {
     this.mountInterface(bridge);
     this.mountMailboxSlot(bridge);
     // the ability card, the potion cell and the bars, drawn from what each world hands (§ Change: Batch 5, R67)
-    mountHud(this, bridge, () => this.residentArt());
+    mountHud(this, bridge, hudPieces(this, () => this.residentArt()));
     this.mountKeys();
     this.mountPointer(bridge);
   }

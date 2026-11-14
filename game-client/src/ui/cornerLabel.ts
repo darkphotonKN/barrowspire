@@ -7,7 +7,12 @@ import { viewport } from "@/render/viewport";
 import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { cornerLabelAt, type Rect } from "./hudCornerLayout";
 
-const HUD_DEPTH = 1000;
+/**
+ * One over the HUD band (1000), under every window (1100+): an ability card rebuilt down → up makes its
+ * objects anew at 1000, on top of everything made there before, so a label level with it would go under
+ * it (FS-TQZ5J § Change: Batch 6, R139).
+ */
+const LABEL_DEPTH = 1001;
 
 /**
  * The corner's hover label (R5): 12 px vellum on the HUD panel, centred over its plate and kept
@@ -30,7 +35,7 @@ export class CornerLabel {
       })
       .setOrigin(0.5, 1)
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH);
+      .setDepth(LABEL_DEPTH);
     const at = cornerLabelAt(plate, t.width, viewport);
     t.setPosition(at.x, at.bottom);
     this.text = t;

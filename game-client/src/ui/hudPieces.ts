@@ -14,7 +14,7 @@ import { PotionHud } from "./PotionHud";
 import { ProgressHud } from "./ProgressHud";
 import { ResourceHud } from "./ResourceHud";
 import type { UiBridge } from "./uiBridge";
-import { UiHudSlot, type HudBuild } from "./uiSceneHud";
+import { UiHudSlot, hearHud, type HudBuild } from "./uiSceneHud";
 
 /** The pieces on `scene`, the potion's icon cut from `art` (the UI scene's resident art, read as it is built). */
 export function hudPieces(scene: Phaser.Scene, art: () => ArtLibrary): HudBuild {
@@ -27,18 +27,16 @@ export function hudPieces(scene: Phaser.Scene, art: () => ArtLibrary): HudBuild 
 }
 
 /**
- * The HUD slot on the UI scene (R67): for the world reported now and each one after, fed what each hands
- * through the bridge, back to its anchors on a new logical view, taken down with the scene.
+ * The HUD slot on the UI scene (R67): its pieces from `build` (the UI scene's `hudPieces` on itself), for the
+ * world reported now and each one after, fed what each hands through the bridge (`hearHud`), back to its
+ * anchors on a new logical view, taken down with the scene (§ Change: Batch 6, R138).
  */
-export function mountHud(scene: Phaser.Scene, bridge: UiBridge, art: () => ArtLibrary): UiHudSlot {
-  const slot = new UiHudSlot(bridge, hudPieces(scene, art));
-  slot.world(bridge.world);
-  const stopWorld = bridge.onWorld((report) => slot.world(report));
-  const stopScreen = bridge.onScreen({ hud: (message) => slot.hear(message) });
+export function mountHud(scene: Phaser.Scene, bridge: UiBridge, build: HudBuild): UiHudSlot {
+  const slot = new UiHudSlot(bridge, build);
+  const stop = hearHud(slot, bridge);
   relayoutOn(scene, () => slot.relayout());
   onSceneEnd(scene, () => {
-    stopWorld();
-    stopScreen();
+    stop();
     slot.destroy();
   });
   return slot;

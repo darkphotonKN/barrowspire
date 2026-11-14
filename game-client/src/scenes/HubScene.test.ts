@@ -6302,7 +6302,7 @@ describe("HubScene's level bar, the UI scene's (FS-TQZ5J § Change: Batch 5, R67
     const me = { entity_id: "me", position: AWAY, level: 2, experience: 150, level_floor: 100, next_level_at: 230 };
     hub.renderState({ world_type: "hub", current_player: me, other_players: [], walls: [], gates: HUB_GATES });
     expect(told).toEqual([
-      { kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } },
+      { world: "hub", kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } },
     ]);
     expect(hub.progressHud).toBeUndefined();
   });

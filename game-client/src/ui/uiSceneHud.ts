@@ -22,13 +22,15 @@ import type { UiBridge, World, WorldReport } from "./uiBridge";
 /**
  * World → UI: a HUD piece's data (R68), sent where the world showed the piece before: the ability card's
  * view or none (`abilityCard`), the potion cell's or none (`potionCell`), the bars (`hudBars`), the
- * player's progress (`progressOf`).
+ * player's progress (`progressOf`). Each names the world that sent it (§ Change: Batch 6, R137), so one
+ * sent late by a world that has left reaches none of the next world's pieces.
  */
-export type HudMessage =
+export type HudMessage = { readonly world: World } & (
   | { readonly kind: "ability"; readonly card: AbilityCardView | null }
   | { readonly kind: "potion"; readonly cell: PotionCellView | null }
   | { readonly kind: "bars"; readonly bars: HudBar[] }
-  | { readonly kind: "progress"; readonly progress: Progress };
+  | { readonly kind: "progress"; readonly progress: Progress }
+);
 
 export type HudKind = HudMessage["kind"];
 
@@ -84,6 +86,21 @@ interface HudStanding {
   progress?: HudPiece<Progress>;
 }
 
+/**
+ * The slot over `bridge` (R67; § Change: Batch 6, R138): built for the world reported now and each one
+ * after, taken down as each leaves, fed what each hands. Returns the stop. The UI scene's `mountHud` and
+ * the tests' stand-in both hear the bridge through this, one wiring.
+ */
+export function hearHud(slot: UiHudSlot, bridge: Pick<UiBridge, "world" | "onWorld" | "onScreen">): () => void {
+  slot.world(bridge.world);
+  const stopWorld = bridge.onWorld((report) => slot.world(report));
+  const stopScreen = bridge.onScreen({ hud: (message) => slot.hear(message) });
+  return () => {
+    stopWorld();
+    stopScreen();
+  };
+}
+
 export class UiHudSlot {
   private pieces: HudStanding = {};
   /** The world the standing pieces were built for; none, no world reported. */
@@ -104,10 +121,13 @@ export class UiHudSlot {
     this.builtFor = report?.world ?? null;
   }
 
-  /** What the world reported hands (R68): its piece built at its place on the first, shown each time. */
+  /**
+   * What the world reported hands (R68): its piece built at its place on the first, shown each time. A
+   * message from any other world (one that has left, heard late) draws nothing (§ Change: Batch 6, R137).
+   */
   hear(message: HudMessage): void {
-    const world = this.bridge.world?.world;
-    if (!world || world !== this.builtFor) return;
+    const world = message.world;
+    if (world !== this.builtFor || this.bridge.world?.world !== world) return;
     const places = HUD_PLACES[world];
     const pieces = this.pieces;
     switch (message.kind) {
@@ -124,11 +144,6 @@ export class UiHudSlot {
         if (places.progress) (pieces.progress ??= this.build.progress(places.progress)).show(message.progress);
         return;
     }
-  }
-
-  /** The piece standing for `kind`, if built: what a test reads. */
-  piece(kind: HudKind): unknown {
-    return this.pieces[kind];
   }
 
   /** The logical view changed: the standing pieces back to their anchors (FS-ZAJMH R13). */

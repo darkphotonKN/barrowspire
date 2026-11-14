@@ -2029,7 +2029,7 @@ export class HubScene extends Phaser.Scene {
       // the level and experience bar (FS-BDA7X req 42), top-left, clear of the queue panel at the bottom:
       // the UI scene's, from the first state that carries a level (FS-TQZ5J § Change: Batch 5, R68)
       const progress = progressOf(state.current_player);
-      if (progress) this.ui.hud({ kind: "progress", progress });
+      if (progress) this.ui.hud({ world: "hub", kind: "progress", progress });
 
       this.selfEntityID = state.current_player.entity_id;
       const self = this.views.get(this.selfEntityID);

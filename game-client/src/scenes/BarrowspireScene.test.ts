@@ -2575,8 +2575,8 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     const told: { kind: string }[] = [];
     uiSceneOn(run, "run", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
     run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
-    expect(told).toContainEqual({ kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
-    expect(told).toContainEqual({ kind: "bars", bars: [expect.objectContaining({ label: "Health:" })] });
+    expect(told).toContainEqual({ world: "run", kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
+    expect(told).toContainEqual({ world: "run", kind: "bars", bars: [expect.objectContaining({ label: "Health:" })] });
     const fields = run as unknown as Record<string, unknown>;
     expect([fields.progressHud, fields.resourceHud]).toEqual([undefined, undefined]);
   });
