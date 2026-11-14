@@ -145,16 +145,16 @@ describe("the party panel's wiring in each world (FS-TQZ5J § Change: Phase 2: t
     expect(partyPanelWiring(bridge, "hub").blocked()).toBe(true);
   });
 
-  it("should ask the town to close its letter panel as it opens, and give no opening elsewhere (FS-R82NV § Change C9)", () => {
+  // FS-R82NV § Change C9; FS-TQZ5J § Change: Phase 2, Amendment B1, R48: the UI scene names no world for
+  // it; a world with no letter panel ignores the request (R11)
+  it.each(["hub", "field", "run"] as const)("should ask the %s reported to close its letter panel as it opens", (world) => {
     const bridge = new GameUiBridge();
-    const town = aWorld("hub");
-    bridge.report(town.report);
+    const reported = aWorld(world);
+    bridge.report(reported.report);
 
-    partyPanelWiring(bridge, "hub").opening?.();
+    partyPanelWiring(bridge, world).opening?.();
 
-    expect(town.asked).toEqual([{ kind: "close", window: "letter" }]);
-    expect(partyPanelWiring(bridge, "field").opening).toBeUndefined();
-    expect(partyPanelWiring(bridge, "run").opening).toBeUndefined();
+    expect(reported.asked).toEqual([{ kind: "close", window: "letter" }]);
   });
 
   it("should run its own inputs through the UI scene's act (FS-WDM0X S9)", () => {
