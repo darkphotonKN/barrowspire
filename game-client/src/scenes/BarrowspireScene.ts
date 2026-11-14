@@ -655,6 +655,11 @@ export class BarrowspireScene extends Phaser.Scene {
    * panel, the other nothing more.
    */
   private endPopped = false;
+  /**
+   * An arrival on the run's first floor, waiting for its card to go before the UI scene is told the run
+   * began (FS-84N1G R1); set once a start, at the first broadcast naming floor 1.
+   */
+  private beginDue = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
   /** This player's level and experience bar (FS-BDA7X req 42), made with the first state that has them. */
@@ -1111,6 +1116,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.record = undefined;
     this.resolvedCard = undefined;
     this.endPopped = false;
+    this.beginDue = false;
     this.canWatch = false;
     this.canLeave = false;
     this.row = { names: "", buttons: [] };
@@ -3747,6 +3753,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     if (climb) this.settlePlayers();
     if (climb || arrived) this.playFloorCard(state);
+    // the controls panel opens by itself on the run's first floor only, never on a return (FS-84N1G R1)
+    if (arrived && state.floor === 1) this.beginDue = true;
     if (building) this.arrivalCard.built();
   }
 
@@ -5603,7 +5611,18 @@ export class BarrowspireScene extends Phaser.Scene {
     this.occluders.update(self ? { bounds: self.getBounds(), depth: self.depth } : null, delta);
   }
 
+  /**
+   * The run began, said once its first floor's card has gone, so the controls panel never covers the
+   * floor's card (FS-84N1G R1): once a start, on an arrival on floor 1.
+   */
+  private sayRunBegun(): void {
+    if (!this.beginDue || this.arrivalCard.up) return;
+    this.beginDue = false;
+    this.ui.runBegun();
+  }
+
   update(time: number, delta: number): void {
+    this.sayRunBegun();
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
     // skip all input/movement if player has escaped

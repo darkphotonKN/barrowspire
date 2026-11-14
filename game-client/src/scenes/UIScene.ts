@@ -373,6 +373,8 @@ export class UIScene extends Phaser.Scene {
         gear.endPopped();
         controls.close();
       },
+      // the run's first floor in view: the controls panel opens by itself, silently (FS-84N1G R2)
+      runBegun: () => controls.runBegun(),
     });
     relayoutOn(this, () => {
       corner.relayout();

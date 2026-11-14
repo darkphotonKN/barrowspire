@@ -307,6 +307,7 @@ export interface UiScreen {
   container?(message: ContainerMessage): void;
   record?(shown: ShownRecord | null): void;
   endPopped?(): void;
+  runBegun?(): void;
 }
 
 /** The UI scene's interface sounds as the bridge reaches them: the game's one `UiSounds` is one (R22). */
@@ -386,6 +387,11 @@ export interface UiBridge extends UiActWrapper {
    * still in play (R58): the moved windows step aside, silently.
    */
   endPopped(): void;
+  /**
+   * The player has arrived in the run on its first floor, and it is in view: once a start, never on a
+   * return or a climb (FS-84N1G R1). The UI scene opens the controls panel, silently (R2).
+   */
+  runBegun(): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
 }
@@ -410,6 +416,7 @@ export type WorldUi = Pick<
   | "container"
   | "record"
   | "endPopped"
+  | "runBegun"
 >;
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
@@ -427,6 +434,7 @@ export const NO_UI: WorldUi = {
   container: () => {},
   record: () => {},
   endPopped: () => {},
+  runBegun: () => {},
 };
 
 /** Told each world report, and none (null) as the world reported leaves. */
@@ -539,6 +547,10 @@ export class GameUiBridge implements UiBridge {
 
   endPopped(): void {
     for (const screen of [...this.screens]) screen.endPopped?.();
+  }
+
+  runBegun(): void {
+    for (const screen of [...this.screens]) screen.runBegun?.();
   }
 
   onScreen(screen: UiScreen): () => void {
