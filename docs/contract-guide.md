@@ -170,8 +170,8 @@ this flow           prose ──→ code       ONE lossy derivation, ONCE per fi
 Prose to code is still human interpretation. Three things keep it contained:
 
 - **It is a delta, not a restatement.** A feature spec's `§API surface` describes what that
-  feature *changes*. Feature specs are write-once, so an old one is never edited and re-derived
-  when a new one lands.
+  feature *changes*. Feature specs are append-only, so existing text is never edited and re-derived
+  when a change lands.
 - **It is typed.** Once a field exists in code, the compiler enforces every use of it. A
   plausible-sounding alternative name is not plausible to a compiler; it is undefined.
 - **It is checked against history, not memory.** The breaking-change gate compares the new
