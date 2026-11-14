@@ -556,6 +556,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
         if (capture) captures.add(code);
         return key;
       },
+      removeKey: (key: object) => keys.forEach((held, code) => held === key && keys.delete(code)),
       addCapture: (codes: number | number[]) => [codes].flat().forEach((code) => captures.add(code)),
       removeCapture: (codes: number | number[]) => [codes].flat().forEach((code) => captures.delete(code)),
     });
@@ -906,17 +907,39 @@ describe("the UI scene's gear and container view (FS-TQZ5J § Change: Phase 3, R
       const self: unknown = new Proxy(() => self, { get: (_t, prop) => (prop === "then" ? undefined : () => self) });
       return self;
     };
-    const keys = new Map<number, { justDown: boolean }>();
+    // its keyboard as Phaser 4.2.1's: `addKey` hands back the Key held for a code, `removeKey` lets it go,
+    // and a key down is told to the Key held for its code first, its `keydown-X` emitted only when no
+    // Key is held for it or the Key was not down already: a held key's auto-repeat reaches no
+    // `keydown-X` while the scene holds a Key for it (KeyboardPlugin.update, KeyboardPlugin.js 789–797)
+    type HeldKey = { keyCode: number; isDown: boolean; justDown: boolean };
+    const keys = new Map<number, HeldKey>();
     const captures = new Set<number>();
     const keyboard = Object.assign(new EventEmitter(), {
       addKey: (code: number) => {
-        const key = { justDown: false };
+        const key = keys.get(code) ?? { keyCode: code, isDown: false, justDown: false };
         keys.set(code, key);
         return key;
       },
+      removeKey: (key: HeldKey | number) => void keys.delete(typeof key === "number" ? key : key.keyCode),
       addCapture: (codes: number | number[]) => [codes].flat().forEach((c) => captures.add(c)),
       removeCapture: (codes: number | number[]) => [codes].flat().forEach((c) => captures.delete(c)),
     });
+    /** The browser's keydown for `name`, its first or (`repeat`) an auto-repeat while held, as Phaser hands it on. */
+    const keydown = (name: "E" | "I" | "B" | "C") => {
+      const key = keys.get(name.charCodeAt(0));
+      const wasDown = key?.isDown ?? false;
+      if (key && !wasDown) Object.assign(key, { isDown: true, justDown: true });
+      if (!key || !wasDown) keyboard.emit(`keydown-${name}`);
+    };
+    /** `name` held: its first keydown and `repeats` auto-repeats, a frame of the UI scene after each, then its keyup. */
+    const hold = (name: "E" | "I" | "B" | "C", repeats: number) => {
+      for (let i = 0; i <= repeats; i++) {
+        keydown(name);
+        scene.update();
+      }
+      const key = keys.get(name.charCodeAt(0));
+      if (key) Object.assign(key, { isDown: false, justDown: false });
+    };
     const input = Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } });
     const scene = Object.assign(new UIScene(), {
       registry,
@@ -933,11 +956,13 @@ describe("the UI scene's gear and container view (FS-TQZ5J § Change: Phase 3, R
       sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
     });
     scene.create();
+    /** A key pressed since the last frame, where the scene holds a Key for it, then the frame. */
     const poll = (code: number) => {
-      keys.get(code)!.justDown = true;
+      const key = keys.get(code);
+      if (key) key.justDown = true;
       scene.update();
     };
-    return { scene, bridge, report, asked, keyboard, captures, input, poll };
+    return { scene, bridge, report, asked, keyboard, captures, input, poll, keys, hold };
   }
 
   it("should build the gear in each world reported and the container view outside the town, letting each go as it leaves", () => {
@@ -977,6 +1002,47 @@ describe("the UI scene's gear and container view (FS-TQZ5J § Change: Phase 3, R
     report("field");
     expect([73, 66, 67].some((c) => captures.has(c))).toBe(false);
     void C;
+  });
+
+  // the review of phase 3 (MED-1): a field and the run heard their gear keys on key events, auto-repeat
+  // included, as the town polled its own once a press; the UI scene's Keys for the town's polling must
+  // not stand outside the town, where Phaser would drop a held key's repeats (§ Change: Phase 3, R56)
+  it.each(["field", "run"] as const)("should repeat a held E over the open inventory, and a held I, B or C, in a %s", (world) => {
+    const { hold } = created(world);
+    hold("I", 0);
+    expect(gearMounts[0].inventory).toBe(true);
+    hold("E", 3);
+    expect(gearMounts[0].log.filter((l) => l === "E")).toHaveLength(4);
+    hold("I", 2);
+    expect(gearMounts[0].inventory).toBe(false);
+    hold("B", 1);
+    expect(gearMounts[0].inventory).toBe(false);
+    hold("C", 2);
+    expect(gearMounts[0].character).toBe(true);
+  });
+
+  it("should act once on a held key in the town, polled once a press, as the town did", () => {
+    const { hold } = created("hub");
+    hold("I", 3);
+    expect(gearMounts[0].inventory).toBe(true);
+    hold("E", 3);
+    expect(gearMounts[0].log.filter((l) => l === "E")).toHaveLength(1);
+    hold("C", 2);
+    expect(gearMounts[0].character).toBe(true);
+  });
+
+  it("should hold the town's E, I, B and C Keys only while the town is reported, so a field after it repeats again", () => {
+    const { bridge, report, keys, hold } = created("hub");
+    expect([69, 73, 66, 67].every((c) => keys.has(c))).toBe(true);
+    bridge.left("hub");
+    report("field");
+    expect([69, 73, 66, 67].some((c) => keys.has(c))).toBe(false);
+    hold("I", 0);
+    hold("E", 2);
+    expect(gearMounts.at(-1)!.log.filter((l) => l === "E")).toHaveLength(3);
+    bridge.left("field");
+    report("hub");
+    expect([69, 73, 66, 67].every((c) => keys.has(c))).toBe(true);
   });
 
   it("should hand the gear its data and the container view its own, from the world through the bridge (R52)", () => {
