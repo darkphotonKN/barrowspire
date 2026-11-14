@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-16
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-15]
 labels: [ready-for-agent]
@@ -22,7 +22,7 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 - [ ] The frames draw under the corner row, the prompts, the notice line and every window.
 - [ ] Over a frame under the gear overlay, the container view, the controls panel or the record, a
       press, a hover and the wheel reach only the window.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

@@ -26,6 +26,14 @@ import type { WorldType } from "@/assets/types/client";
 import type { ArtLibrary } from "@/render/art/library";
 import { prefersReducedMotion } from "@/render/effects/mist";
 import { HUD_DEPTH } from "@/render/markers/markers";
+
+/**
+ * The frames' depth: the lowest of the UI scene, one under the HUD's 1000 (the corner row, the invite
+ * prompts, the ready check, the notice line), so every piece and every window (1100–1800) draws over
+ * them and takes the presses, hovers and wheel there (the owner's 「任何ui都優先隊友列表」; FS-TQZ5J
+ * § Change: Phase 3, R62, R63; ADR-0083 D4).
+ */
+export const PARTY_FRAMES_DEPTH = HUD_DEPTH - 1;
 import { useAuthStore } from "@/stores/authStore";
 import { useGameStore } from "@/stores/gameStore";
 import { usePartyStore, type PartyState } from "@/stores/partyStore";
@@ -231,11 +239,11 @@ export class PartyFrames {
         color: toCss(colour),
       })
       .setScrollFactor(0)
-      .setDepth(HUD_DEPTH);
+      .setDepth(PARTY_FRAMES_DEPTH);
   }
 
   private hud(): Phaser.GameObjects.Graphics {
-    return this.scene.add.graphics().setScrollFactor(0).setDepth(HUD_DEPTH);
+    return this.scene.add.graphics().setScrollFactor(0).setDepth(PARTY_FRAMES_DEPTH);
   }
 
   /**
@@ -270,7 +278,7 @@ export class PartyFrames {
       if (!cut) return;
       cut.image
         .setScrollFactor(0)
-        .setDepth(HUD_DEPTH)
+        .setDepth(PARTY_FRAMES_DEPTH)
         .setAlpha(row.away ? AWAY_ALPHA : 1);
       this.busts.push(cut);
     });
@@ -335,7 +343,7 @@ export class PartyFrames {
         label: TRAVEL_LABEL,
         enabled: this.travel === "live",
         press: () => this.deps.travel(),
-        depth: HUD_DEPTH,
+        depth: PARTY_FRAMES_DEPTH,
         feedback: this.deps.play ? hudButtonSounds(this.deps.play) : {},
       }),
     );
