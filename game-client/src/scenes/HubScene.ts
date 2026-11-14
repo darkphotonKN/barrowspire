@@ -27,7 +27,7 @@ import {
 } from "./hubGates";
 import { BARROW_HEX } from "@/utils/theme";
 import { ChatWindow, mountChatWindow } from "@/ui/ChatWindow";
-import { letterPanelState, type LetterPanelState } from "@/ui/mailboxHud";
+import { letterPanelState, type LetterPanelState } from "@/stores/letterPanelState";
 import { PARTY_ENTER_REFUSALS, partyEnterDoorText } from "@/ui/partyNotice";
 import { hudLine } from "@/ui/uiSceneNotices";
 import { progressOf } from "@/ui/progress";

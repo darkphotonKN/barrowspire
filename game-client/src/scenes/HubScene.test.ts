@@ -106,7 +106,7 @@ const { gearOver, mailboxOver, menuOver, partyPanelOver, uiSceneOn } = await imp
 const { hubGearPiece } = await import("@/ui/uiSceneGear");
 const { NO_UI } = await import("@/ui/uiBridge");
 const { reportWorld } = await import("@/ui/uiBridge");
-const { letterPanelState } = await import("@/ui/mailboxHud");
+const { letterPanelState } = await import("@/stores/letterPanelState");
 const { useMailboxStore } = await import("@/stores/mailboxStore");
 
 /** The UI scene's menu slot filled over the town (FS-TQZ5J R10), as every guard of the town's reads it. */

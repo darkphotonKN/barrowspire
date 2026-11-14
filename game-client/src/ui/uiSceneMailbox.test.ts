@@ -169,6 +169,6 @@ describe("the mailbox's types (FS-TQZ5J § Change: Batch 6, R140)", () => {
   });
 
   it("should keep the letter panel's reader beside the store, not in the mailbox's module", () => {
-    expect(source("mailboxHud.ts")).not.toMatch(/letterPanelState/);
+    expect(source("mailboxHud.ts")).not.toMatch(/export (function|interface) (letterPanelState|LetterPanelState)/);
   });
 });

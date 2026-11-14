@@ -15,8 +15,10 @@
  * its own.
  */
 
-import type { UiActWrapper, UiEffect } from "@/audio/uiSounds";
+import type { MailboxWiring } from "./mailboxHud";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
+
+export type { MailboxWiring };
 
 /** The mailbox as the UI scene keeps it. `MailboxHud` is one. */
 export interface MailboxPiece {
@@ -24,20 +26,6 @@ export interface MailboxPiece {
   relayout(): void;
   /** Leaving the town: the panel closes, and `mail_arrived` fetches nothing until the next entry. */
   destroy(): void;
-}
-
-/** What the mailbox is built with in the town (R102, R104, R109). `mountMailbox` takes it whole. */
-export interface MailboxWiring {
-  /** Whether the town's dialogue or the menu slot owns the screen now: the envelope opens nothing. */
-  blocked: () => boolean;
-  /** Closes the other windows just before the panel opens: the letter panel stands alone (FS-3EBCA R15). */
-  opening: () => void;
-  /** The character's level, where known: the enclosures' tips tone a requirement above it. */
-  level: () => number | undefined;
-  /** The UI scene's act: the envelope's press and the panel's ×, the player's own inputs (FS-WDM0X S9). */
-  wrapper: UiActWrapper;
-  /** The game's one player: the envelope's hover, refusal and new-letter sounds. */
-  play: (effect: UiEffect) => void;
 }
 
 /** The UI scene's own windows the envelope's opening closes, and the level the gear was last handed. */
