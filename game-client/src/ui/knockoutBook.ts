@@ -12,7 +12,7 @@
 
 import type Phaser from "phaser";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
-import { bend, oval, type KnockoutPicture, type Pt } from "./knockout";
+import { bend, oval, stroke, type KnockoutPicture, type Pt } from "./knockout";
 
 /** A box's outline from its top-left clockwise, every corner rounded by `rad`. */
 function roundedBox(l: number, t: number, r: number, b: number, rad: number, steps = 4): Pt[] {
@@ -70,15 +70,6 @@ export const BOOK: KnockoutPicture = {
 };
 
 type Pen = Pick<Phaser.GameObjects.Graphics, "lineStyle" | "beginPath" | "moveTo" | "lineTo" | "closePath" | "strokePath">;
-
-/** Strokes the line through `ps`, moved by (ox, oy), as one path, closed when `closed`. */
-function stroke(g: Pen, ps: readonly Pt[], ox: number, oy: number, closed = false): void {
-  g.beginPath();
-  g.moveTo(ox + ps[0][0], oy + ps[0][1]);
-  for (const [x, y] of ps.slice(1)) g.lineTo(ox + x, oy + y);
-  if (closed) g.closePath();
-  g.strokePath();
-}
 
 /**
  * The fallback (ADR-0080): the book in the row's lines, `GLYPH_LINE_W` wide, centred on (cx, cy), in
