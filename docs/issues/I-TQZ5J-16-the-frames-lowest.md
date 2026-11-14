@@ -19,8 +19,8 @@ Implements FS-TQZ5J §Change: Phase 3: the gear, the container view, the settlem
 
 ## Acceptance Criteria
 
-- [ ] The frames draw under the corner row, the prompts, the notice line and every window.
-- [ ] Over a frame under the gear overlay, the container view, the controls panel or the record, a
+- [x] The frames draw under the corner row, the prompts, the notice line and every window.
+- [x] Over a frame under the gear overlay, the container view, the controls panel or the record, a
       press, a hover and the wheel reach only the window.
 - [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 

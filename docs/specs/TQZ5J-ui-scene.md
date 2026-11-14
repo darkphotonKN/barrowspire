@@ -1206,32 +1206,32 @@ run's `controlsPanel`, 1200, run.
 
 ### Acceptance Criteria (added)
 
-- [ ] No world scene imports or builds `GearOverlay`, `HubGear`, `EquipmentHud`, `ContainerView`,
+- [x] No world scene imports or builds `GearOverlay`, `HubGear`, `EquipmentHud`, `ContainerView`,
       `SettlementRecord` or the controls panel, binds I, B, C, Q, F or H, or tests a moved piece's rect.
-- [ ] The UI scene builds the gear in every world, the container view in a field and the run, the
+- [x] The UI scene builds the gear in every world, the container view in a field and the run, the
       record and the controls panel in the run, and takes each down as its world leaves.
-- [ ] The bridge carries the gear's, the container's and the record's data and the `equip`,
+- [x] The bridge carries the gear's, the container's and the record's data and the `equip`,
       `unequip`, `take` and `close: record` requests as plain data: no function in a message (by the
       types and the diff).
-- [ ] I, B, C, Q, F, H, E and the corner icons open, close, equip, move, take and refuse exactly as
+- [x] I, B, C, Q, F, H, E and the corner icons open, close, equip, move, take and refuse exactly as
       today in each world (R55, R56), the stash chest's E included; Esc keeps letter, menu, party, gear,
       then the menu.
-- [ ] HubGear keeps its last lists on a reopen (no bag or stash flash), its loading line holds every
+- [x] HubGear keeps its last lists on a reopen (no bag or stash flash), its loading line holds every
       press, its refusals say their words; a take from a container lands in the bag in the same scene,
       the full bag refused before it is sent.
-- [ ] The record opens, scrolls, closes with `menu_click` before the held town comes in, and comes
+- [x] The record opens, scrolls, closes with `menu_click` before the held town comes in, and comes
       back on SETTLEMENT; the controls panel toggles on H and is refused under the menu and after the
       run's end.
-- [ ] The run's end closes the gear overlay, the container view and the controls panel with the party
+- [x] The run's end closes the gear overlay, the container view and the controls panel with the party
       panel, silently, once (R58).
-- [ ] The frames draw under every window; a press, a hover or the wheel over a frame under the gear
+- [x] The frames draw under every window; a press, a hover or the wheel over a frame under the gear
       overlay, the container view, the controls panel or the record reaches only the window: not Travel,
       not the world (R59, R62, R63). A press in the gear overlay's clear band still attacks.
-- [ ] Every interface sound plays as FS-WDM0X says, once per player action, none for what the game
+- [x] Every interface sound plays as FS-WDM0X says, once per player action, none for what the game
       closes; no hand cursor anywhere (boneHand.test.ts).
-- [ ] Before/after screenshots (R65) pixel-equal except R66's cases, each shot; the earlier sets
+- [x] Before/after screenshots (R65) pixel-equal except R66's cases, each shot; the earlier sets
       equal but for R66's.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's look-and-feel check of the moved pieces and R66's cases passes.
 
 ### Edge States (added)
@@ -1259,3 +1259,44 @@ run's `controlsPanel`, 1200, run.
 - The paused equip-flicker fix; any change to what the moved pieces look like, say or do but R58,
   R61, R64 and R66.
 - The server.
+
+### As built (2026-11-14)
+
+Appended after the slices; the text above is not edited. Built in I-TQZ5J-13 (the bridge), I-TQZ5J-14
+(the gear overlay and the container view, one slice: a take's bag check is synchronous across them),
+I-TQZ5J-15 (the record and the controls panel) and I-TQZ5J-16 (the frames at 999); the owner's check is
+I-TQZ5J-17.
+
+- **Where it lives.** `uiSceneGear.ts` (the gear and container slot), `gearPieces.ts` (their building:
+  `HubGear` with the gold-Take watch in the town, `EquipmentHud` and `ContainerView` elsewhere),
+  `uiSceneRecord.ts` (the record and controls slots), `controlsPanel.ts` (the panel's drawing, moved
+  from the run), `resolvedRow.ts` (`resolvedRowY`, `recordAnchor`, one rule for the run's row and the
+  record), `uiBridge.ts` (`gear`, `container`, `record`, `endPopped`; `equip`, `unequip`, `take`,
+  `close: record`; `UiState`'s parts, `reportUi` merging, `heardUi(ui, was)`; `worldContainer`, the
+  container view as a world reaches it; `gearOpened`). `toggle` and `close: gear` left the requests and
+  `WorldWindows` keeps only `letter`.
+- **R60, as built.** The overlay acts on a press and the wheel only with its own ground or × the top
+  object under the pointer, and lights on a move unless another piece is; the container view hears a
+  press only on its ground (a child of its root, so it pops and hides with it) and a move unless
+  another piece is on top.
+- **Parity (R65).** In the harness, before b1ddcbb5 against the branch at 177c408e: 222 of 222 phase-3
+  shots pixel-equal (the gear's panels, tips, compare row, flash, purse tip; the stash; the three
+  container faces, a full-bag refusal, a timed open's bar beside the view; the record short, long and
+  scrolled; the controls panel; the frames under the moved windows; hub, field and run at 1, 1.5 and 2,
+  windowed and fullscreen). The earlier sets stay pixel-equal: corner 119, menu 506, dialogue 144,
+  notices 84, party 186, their own named depth cases as before.
+- **R66, as shot.** Differ as named: the gear over the frames (hub, run), its tip over the dialogue card
+  and over a run notification (1× only; at 2× they do not meet), the inventory over the town's and the
+  field's notice line, the record and the controls panel over the party panel, and the gear, the
+  container view and the controls panel over the resolved card when open over it. Equal, because the
+  pieces do not meet at these layouts: the frames under the inventory, the container view, the record
+  and the controls panel; a tip over the party panel in a field; the gear and the container view over
+  the invite prompts.
+- **R59, R63, in real Phaser.** Over a frame under the open character panel, a press, a hover and the
+  wheel reach only the overlay's ground (no Travel, no world handler); a press in its clear band, beside
+  the container view, or on a frame with nothing open still reaches the world; a press on the open
+  controls panel or the container view's panel reaches no world handler.
+- **Seen, not built (for the owner's check).** The party panel's invite field is a DOM element, always
+  over the canvas, so with the controls panel open over the party panel its placeholder shows through
+  the controls panel near its left edge. The controls panel's ground still takes the press there. Not
+  avoided here: hiding the field or closing the party panel for the controls panel would be a new rule.

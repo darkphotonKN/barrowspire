@@ -34,6 +34,9 @@ In the town, a field and the run, windowed and fullscreen, at render scale 1 and
       resolved card where reopened. Accept or ask.
 - [ ] Phase 2's transitional state is gone: over a frame under the character or stash panel, nothing
       hidden lights, scrolls or moves.
+- [ ] The party panel's invite field (a DOM element, always over the canvas) shows through the
+      controls panel when it is open over the party panel (FS-TQZ5J § Change: Phase 3, As built). Accept
+      or ask.
 - [ ] The sounds below, unchanged.
 
 ## Where each moved sound plays after phase 3
@@ -43,6 +46,9 @@ In the town, a field and the run, windowed and fullscreen, at render scale 1 and
 | `inventory_open` / `inventory_close` | gear overlay | I or B, the Inventory icon, its ×, Esc, Q, the stash chest's E; once per action, none for a game-made close |
 | `character_open` / `character_close` | gear overlay | C, the Character icon, its ×, Esc, Q |
 | `menu_hover` / `menu_click` | settlement record | the pointer onto Close / Close pressed, before the held town comes in |
+
+Shots for R66: `…/scratchpad/ui-scene/p3-gear/depth/{gear-before,gear-after}/<world>-dpr{1-windowed|2-fullscreen}-<case>.png`
+under this session's scratchpad (see the run's report).
 
 ## Blocked By
 
