@@ -42,9 +42,11 @@ export function mountControlsPiece(scene: Phaser.Scene, onClose: () => void): Co
     return { under, hit };
   };
   let stood = stand();
+  /** The ground and the ×'s hit gone, the × unlit: a hit destroyed under the pointer hears no pointerout. */
   const takeDown = () => {
     stood.under.destroy();
     stood.hit.destroy();
+    lightClose(glyph, false);
   };
   return {
     relayout: () => {
@@ -55,8 +57,9 @@ export function mountControlsPiece(scene: Phaser.Scene, onClose: () => void): Co
     },
     rect: () => controlsPanelRect(centre(), rows),
     destroy: () => {
-      container.destroy();
+      // the glyph unlit before the container takes it down
       takeDown();
+      container.destroy();
     },
   };
 }
