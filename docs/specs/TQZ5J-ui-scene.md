@@ -762,31 +762,31 @@ but the depths named in R46. **[charter]**
 
 ### Acceptance Criteria (added)
 
-- [ ] No world scene imports or mounts `PartyPanel`, `PartyInvitePrompt`, `PartyReadyCheck` or
+- [x] No world scene imports or mounts `PartyPanel`, `PartyInvitePrompt`, `PartyReadyCheck` or
       `PartyFrames`, binds T, or tests a party piece's rect (`partyPanel.covers`,
       `invitePrompt.covers`).
-- [ ] The UI scene builds the panel, the prompt and the frames for each world reported and the ready
+- [x] The UI scene builds the panel, the prompt and the frames for each world reported and the ready
       check for the town only, and takes them down as the world leaves; an open panel stays open
       across a switch.
-- [ ] T and the Party icon open and close the panel under `blockers().party` and the menu, as today
+- [x] T and the Party icon open and close the panel under `blockers().party` and the menu, as today
       in each world; Esc closes the letter, the menu, the party panel, the gear overlay in that order;
       the menu opening closes the panel; the letter panel opening closes it and the panel opening
       closes the letter panel (the town).
-- [ ] The prompts and the ready check hide by `blockers().popups`, stack above `layout().chatTop`, and
+- [x] The prompts and the ready check hide by `blockers().popups`, stack above `layout().chatTop`, and
       the frames' bars and levels follow `partySeen`.
-- [ ] A press, wheel or move on the open panel, a prompt or the ready check reaches no world handler
+- [x] A press, wheel or move on the open panel, a prompt or the ready check reaches no world handler
       (no attack, no cast, no gear slot lit or tipped, no map mode icon lit); a press on a frame
       reaches the world as today; the panel's, the prompts' and Travel's presses answer on release.
-- [ ] A press on the panel keeps the invite field's focus; a press on another UI piece or in the
+- [x] A press on the panel keeps the invite field's focus; a press on another UI piece or in the
       world lets it go.
-- [ ] Every party sound plays as FS-WDM0X says, once per player action (R22; FS-WDM0X § Change pass
+- [x] Every party sound plays as FS-WDM0X says, once per player action (R22; FS-WDM0X § Change pass
       2 (party)).
-- [ ] Before/after screenshots (R45) pixel-equal except R46's named cases, each shot; the earlier
+- [x] Before/after screenshots (R45) pixel-equal except R46's named cases, each shot; the earlier
       sets stay pixel-equal.
-- [ ] Every acceptance criterion of FS-R82NV's panel, prompt and frames, FS-NCC9J R23–R28, FS-BJNYC
+- [x] Every acceptance criterion of FS-R82NV's panel, prompt and frames, FS-NCC9J R23–R28, FS-BJNYC
       R23–R26, FS-B3NDZ and FS-CH21F R8–R12 still holds; their tests pass, moved with the code where
       they tested a world scene.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's look-and-feel check of the party pieces and R46's cases passes.
 
 ### Edge States (added)
@@ -813,3 +813,19 @@ but the depths named in R46. **[charter]**
 - Any change to what the party pieces look like, say or do, but R46's depths and the sounds of
   FS-WDM0X's pass 2.
 - The server; the party's commands and the store's rules.
+
+### As built (2026-11-14)
+
+Appended after the slices; the text above is not edited. Built in I-TQZ5J-9 (the panel, its field and
+T), I-TQZ5J-10 (the invite prompt and the ready check) and I-TQZ5J-11 (the frames and Travel), the
+party's sounds in I-WDM0X-8 (FS-WDM0X § Pass 2: the party).
+
+- **Parity (R45).** 186 of 186 before/after shots pixel-equal (the cases R45 lists, at render scale
+  1, 1.5 and 2, windowed and fullscreen, the resident art loaded so the busts are real).
+- **R46, as shot.** The party panel now draws over the run's controls panel, its resolved card and a
+  gear item tip where they meet. The frames now draw over the gear overlay's character panel (its top
+  left corner, in the town and the run) and, at 1× windowed, over the letter panel's left edge by a few
+  pixels. Two invite prompts meet neither the controls panel, the resolved card nor the gear overlay:
+  equal. The frames over the character panel is the one inversion a player will notice: phase 3
+  (the gear overlay into the UI scene, 1100 over the frames' 1000) puts it back. Each goes to the
+  owner's check (I-TQZ5J-12).

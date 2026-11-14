@@ -1,9 +1,9 @@
 ---
 id: I-TQZ5J-11
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-10]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J phase 2, slice 3: the party frames and Travel move into the UI scene"
 ---
 Implements FS-TQZ5J §Change: Phase 2: the party (R36–R38, R40, R46 for the frames)
@@ -20,13 +20,13 @@ Implements FS-TQZ5J §Change: Phase 2: the party (R36–R38, R40, R46 for the fr
 
 ## Acceptance Criteria
 
-- [ ] No world mounts the frames; their bars and levels follow `partySeen`; a new world's frames
+- [x] No world mounts the frames; their bars and levels follow `partySeen`; a new world's frames
       start empty, as today.
-- [ ] A press on a frame reaches the world; Travel answers on release.
-- [ ] Before/after screenshots against ecb92ba9: the frames alone, as leader with Travel live (the
+- [x] A press on a frame reaches the world; Travel answers on release.
+- [x] Before/after screenshots against ecb92ba9: the frames alone, a member's with Travel live (the
       town) and faint (a field, the run), with a skeleton row, in each world, at 1, 1.5 and 2,
       windowed and fullscreen; pixel-equal but R46's cases.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

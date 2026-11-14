@@ -1,9 +1,9 @@
 ---
 id: I-WDM0X-8
-status: open
+status: done
 implements: FS-WDM0X
 blocked_by: [I-TQZ5J-11]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-WDM0X § Change pass 2 (party): the party's invite, ready check and button sounds"
 ---
 Implements FS-WDM0X §Change: Menu, dialog and notice sounds (pass 1), § Pass 2: the party (P1–P8)
@@ -21,8 +21,8 @@ Implements FS-WDM0X §Change: Menu, dialog and notice sounds (pass 1), § Pass 2
 
 ## Acceptance Criteria
 
-- [ ] Pass 2's criteria (P1–P8), each once per action.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Pass 2's criteria (P1–P8), each once per action.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

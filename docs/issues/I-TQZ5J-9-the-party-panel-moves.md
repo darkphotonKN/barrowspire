@@ -1,6 +1,6 @@
 ---
 id: I-TQZ5J-9
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: []
 labels: [ready-for-agent]
@@ -27,15 +27,15 @@ Implements FS-TQZ5J §Change: Phase 2: the party (R36–R44, R46 for the panel)
 
 ## Acceptance Criteria
 
-- [ ] Phase 2's criteria for the panel: no world mounts it or tests its rect; T and the Party icon
+- [x] Phase 2's criteria for the panel: no world mounts it or tests its rect; T and the Party icon
       under `blockers().party` and the menu; Esc's order; the menu and the letter panel close it.
-- [ ] A press, wheel or move on the open panel reaches no world handler; the gear overlay's slots
+- [x] A press, wheel or move on the open panel reaches no world handler; the gear overlay's slots
       under it neither light nor tip.
-- [ ] A press on the panel keeps the invite field; a press elsewhere lets it go.
-- [ ] Every test of the panel that read a world scene still passes, moved with the code.
-- [ ] Before/after screenshots against ecb92ba9: the panel with no party, as leader, as member, greyed
+- [x] A press on the panel keeps the invite field; a press elsewhere lets it go.
+- [x] Every test of the panel that read a world scene still passes, moved with the code.
+- [x] Before/after screenshots against ecb92ba9: the panel with no party, as leader, as member, greyed
       in a run, in each world, at 1, 1.5 and 2, windowed and fullscreen; pixel-equal but R46's cases.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 

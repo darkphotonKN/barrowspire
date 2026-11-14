@@ -831,16 +831,16 @@ P8. **The panel's open and close keep their sounds.** T, the Party icon, the pan
 
 #### Acceptance Criteria (pass 2, party)
 
-- [ ] A new invite in the store plays `notify_important` once, shown or hidden; an invite's expiry,
+- [x] A new invite in the store plays `notify_important` once, shown or hidden; an invite's expiry,
       answer or forgetting plays nothing; the prompt appearing for it plays nothing more.
-- [ ] A new ready check plays `dialog_open` once, for the leader and every member; a check redrawn,
+- [x] A new ready check plays `dialog_open` once, for the leader and every member; a check redrawn,
       answered or let go plays nothing.
-- [ ] *Accept* plays `dialog_confirm` and *Decline* `dialog_cancel`, on the invite prompt and the ready
+- [x] *Accept* plays `dialog_confirm` and *Decline* `dialog_cancel`, on the invite prompt and the ready
       check, once each, beside their commands as today.
-- [ ] Each live party button: a hover `menu_hover`, a press `menu_click`, once, beside its command; a
+- [x] Each live party button: a hover `menu_hover`, a press `menu_click`, once, beside its command; a
       greyed one: no hover, a press `menu_error` and nothing sent.
-- [ ] T, the Party icon, the × and Esc play `party_open` / `party_close` only.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] T, the Party icon, the × and Esc play `party_open` / `party_close` only.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's listening check of the party sounds (HITL), with the table of where each plays.
 
 #### Edge States (pass 2, party)

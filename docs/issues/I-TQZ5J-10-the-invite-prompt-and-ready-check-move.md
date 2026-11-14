@@ -1,9 +1,9 @@
 ---
 id: I-TQZ5J-10
-status: open
+status: done
 implements: FS-TQZ5J
 blocked_by: [I-TQZ5J-9]
-labels: [blocked]
+labels: [ready-for-agent]
 title: "FS-TQZ5J phase 2, slice 2: the invite prompt and the ready check move into the UI scene"
 ---
 Implements FS-TQZ5J §Change: Phase 2: the party (R36, R38, R40, R44, R46 for the prompt and the ready check)
@@ -19,13 +19,13 @@ Implements FS-TQZ5J §Change: Phase 2: the party (R36, R38, R40, R44, R46 for th
 
 ## Acceptance Criteria
 
-- [ ] No world mounts the prompt or the ready check; the ready check only in the town.
-- [ ] They hide by `blockers().popups` and stack above `layout().chatTop`.
-- [ ] A press on a prompt's or the check's ground reaches no world handler.
-- [ ] Before/after screenshots against ecb92ba9: one and two prompts, a run's greyed Accept, the ready
+- [x] No world mounts the prompt or the ready check; the ready check only in the town.
+- [x] They hide by `blockers().popups` and stack above `layout().chatTop`.
+- [x] A press on a prompt's or the check's ground reaches no world handler.
+- [x] Before/after screenshots against ecb92ba9: one and two prompts, a run's greyed Accept, the ready
       check (waiting, answered, the leader's), in each world they show, at 1, 1.5 and 2, windowed and
       fullscreen; pixel-equal but R46's cases.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 
 ## Blocked By
 
