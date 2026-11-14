@@ -5746,7 +5746,9 @@ export class BarrowspireScene extends Phaser.Scene {
   private updateLighting(time: number, delta: number): void {
     const watched = this.watchedFigure();
     const self = this.watchedPlayerId !== undefined ? watched?.sprite : this.player?.visible ? this.player : undefined;
-    const at = watched ? { x: watched.at.x, y: watched.at.y } : self ? { x: self.x, y: self.y } : null;
+    // the torch rides on the figure as drawn (the iso projection), never on the world position: the
+    // owner's repro (2026-11-15) had it land far off the watched teammate at their world x/y
+    const at = self ? { x: self.x, y: self.y } : null;
     this.lightMap?.carry(at);
     this.showNearChunks();
     this.lightMap?.update(time);
