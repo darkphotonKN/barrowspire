@@ -99,16 +99,37 @@ describe("the run's settlement record on the UI scene (FS-TQZ5J § Change: Phase
 describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3, R56, R58)", () => {
   function onControls(world: World = "run") {
     const bridge = new GameUiBridge();
-    const panels: { relayouts: number; destroyed: boolean }[] = [];
-    const slot = new UiControlsSlot(bridge, (): ControlsPiece => {
-      const p = { relayouts: 0, destroyed: false };
+    const played: string[] = [];
+    // the game's one player: an action's first effect asked is its one sound (FS-WDM0X M2)
+    let depth = 0;
+    let asked: string | null = null;
+    bridge.lendSounds({
+      act: (run) => {
+        if (depth > 0) return run();
+        depth++;
+        try {
+          return run();
+        } finally {
+          depth--;
+          if (asked) played.push(asked);
+          asked = null;
+        }
+      },
+      play: (effect) => {
+        if (depth > 0) asked ??= effect;
+        else played.push(effect);
+      },
+    });
+    const panels: { relayouts: number; destroyed: boolean; close: () => void }[] = [];
+    const slot = new UiControlsSlot(bridge, (close): ControlsPiece => {
+      const p = { relayouts: 0, destroyed: false, close };
       panels.push(p);
       return { relayout: () => void p.relayouts++, destroy: () => void (p.destroyed = true) };
     });
     const w = aWorld(world);
     bridge.report(w.report);
     slot.world(w.report);
-    return { bridge, slot, panels, w };
+    return { bridge, slot, panels, w, played };
   }
 
   it("should open and close on H in the run", () => {
@@ -118,7 +139,43 @@ describe("the run's controls panel on the UI scene (FS-TQZ5J § Change: Phase 3,
     slot.relayout();
     slot.toggle();
     expect(slot.isOpen()).toBe(false);
-    expect(panels).toEqual([{ relayouts: 1, destroyed: true }]);
+    expect(panels.map(({ relayouts, destroyed }) => ({ relayouts, destroyed }))).toEqual([{ relayouts: 1, destroyed: true }]);
+  });
+
+  // FS-84N1G R11 (the owner: 「音效用dialog的開關就可」): the player's open plays dialog_open, the close dialog_cancel
+  it("should play dialog_open as H opens it and dialog_cancel as H closes it, one sound each", () => {
+    const { slot, played } = onControls();
+    slot.toggle();
+    expect(played).toEqual(["dialog_open"]);
+    slot.toggle();
+    expect(played).toEqual(["dialog_open", "dialog_cancel"]);
+  });
+
+  it("should play nothing for an H it refuses (FS-84N1G R19)", () => {
+    const { slot, bridge, played } = onControls();
+    bridge.reportUi({ menuOpen: true });
+    slot.toggle();
+    expect(played).toEqual([]);
+  });
+
+  // FS-84N1G R14: its × closes it, as the player's close
+  it("should close on its ×, with dialog_cancel", () => {
+    const { slot, panels, played } = onControls();
+    slot.toggle();
+    panels[0].close();
+    expect(slot.isOpen()).toBe(false);
+    expect(panels[0].destroyed).toBe(true);
+    expect(played).toEqual(["dialog_open", "dialog_cancel"]);
+  });
+
+  // FS-84N1G R12: what the game closes plays nothing (FS-WDM0X S4)
+  it("should play nothing as the run's end or the run's leaving closes it", () => {
+    const { slot, played } = onControls();
+    slot.toggle();
+    slot.close();
+    slot.toggle();
+    slot.world(null);
+    expect(played).toEqual(["dialog_open", "dialog_open"]);
   });
 
   it("should refuse H outside the run, under the menu and after the run's end", () => {

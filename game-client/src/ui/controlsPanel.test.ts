@@ -3,10 +3,18 @@ import { describe, expect, it, vi } from "vitest";
 // The shared title drawing, watched: the controls panel titles itself through it (FS-3EBCA R20, R22).
 vi.mock("./panelFrame", async (importOriginal) => {
   const real = await importOriginal<typeof import("./panelFrame")>();
-  return { ...real, drawPanelTitle: vi.fn(() => ({ destroy: () => {} })) };
+  return {
+    ...real,
+    drawPanelTitle: vi.fn(() => ({ destroy: () => {} })),
+    // every window's frame, watched the same way (FS-84N1G R13): its × box and glyph handed back
+    drawPanelFrame: vi.fn((_scene: unknown, _g: unknown, panel: { x: number; y: number; width: number }) => ({
+      close: real.frameClose(panel),
+      glyph: { glyph: true },
+    })),
+  };
 });
 
-const { drawPanelTitle } = await import("./panelFrame");
+const { drawPanelFrame, drawPanelTitle, frameClose } = await import("./panelFrame");
 const { RUN_ACTIONS } = await import("@/scenes/runActions");
 const { CONTROLS_PANEL_DEPTH, controlRows, controlsPanelRect, drawControlsPanel } = await import("./controlsPanel");
 
@@ -51,6 +59,18 @@ describe("the run's controls panel (FS-TQZ5J § Change: Phase 3, R50)", () => {
     expect(words).toBe("CONTROLS");
     expect(panel.width).toBe(260);
     expect(panel.x).toBe(-130);
+  });
+
+  // FS-84N1G R13 (the owner: 「樣式也調成跟其他面板一樣外匡」): the frame every window wears, the shared one
+  it("should wear every window's frame about its rect, its × among its parts, and hand back the × box and glyph", () => {
+    const frame = vi.mocked(drawPanelFrame);
+    frame.mockClear();
+    const drawn = drawControlsPanel(stage().scene, { x: 400, y: 300 }, "warrior");
+    const h = 44 + controlRows("warrior").length * 20 + 32;
+    expect(frame).toHaveBeenCalledTimes(1);
+    expect(frame.mock.calls[0][2]).toEqual({ x: -130, y: -h / 2, width: 260, height: h });
+    expect(drawn.close).toEqual(frameClose({ x: -130, y: -h / 2, width: 260 }));
+    expect(drawn.glyph).toEqual({ glyph: true });
   });
 
   it("should list ESC as the menu", () => {
