@@ -76,6 +76,19 @@ describe("the controls panel's × (FS-84N1G R14)", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  // the review of FS-84N1G: the old hit is gone with no pointerout, so the × goes back unlit
+  it("should put the lit × back unlit as a new view stands its hit again", () => {
+    const { scene, zones } = stage();
+    const piece = mountControlsPiece(scene, () => {});
+    const glyph = glyphs.at(-1)!;
+    zones[1].handlers.pointerover();
+    const lit = glyph.colours.at(-1);
+    piece.relayout();
+    expect(glyph.colours.at(-1)).not.toBe(lit);
+    zones[3].handlers.pointerover();
+    expect(glyph.colours.at(-1)).toBe(lit);
+  });
+
   it("should stand the ground and then the × again on a new view, the old ones gone", () => {
     const { scene, zones } = stage();
     const piece = mountControlsPiece(scene, () => {});
