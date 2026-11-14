@@ -1310,7 +1310,7 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(abilityPlaceOver(field)).toEqual(ABILITY_CARD_PLACE);
   });
 
-  it("should hand its ability card to the UI scene through the bridge, as plain data, and build none (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+  it("should hand its bars and its ability card to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
     const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
     const { field } = kitOnStage({ lockedOut: false });
@@ -1318,6 +1318,8 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
     field.renderState(archerState);
     expect(told).toContainEqual({ kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    expect(told).toContainEqual({ kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
+    expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
     // the UI scene's card, drawn from it
     expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));
     expect((field as unknown as Record<string, unknown>).abilityHud).toBeUndefined();

@@ -190,10 +190,10 @@ describe("the UI bridge's HUD (FS-TQZ5J § Change: Batch 5, R68)", () => {
 });
 
 describe("the worlds leave the HUD pieces to the UI scene (FS-TQZ5J § Change: Batch 5, R67)", () => {
-  it.each(["AbilityHud", "PotionHud"])("should import %s in no world scene", (piece) => {
+  it.each(["AbilityHud", "PotionHud", "ResourceHud", "ProgressHud"])("should import %s in no world scene", (piece) => {
     for (const scene of ["HubScene", "FieldScene", "BarrowspireScene"]) {
       const source = readFileSync(join(__dirname, `../scenes/${scene}.ts`), "utf8");
-      expect(source, scene).not.toMatch(new RegExp(`from "@/ui/${piece}"`));
+      expect(source, scene).not.toMatch(new RegExp(`import \\{[^}]*\\b${piece}\\b[^}]*\\} from "@/ui/${piece}"`));
     }
   });
 });

@@ -2509,6 +2509,17 @@ describe("BarrowspireScene level and experience (FS-BDA7X req 42, 43)", () => {
     expect(shown("Level 20 · Cap")).toBe(true);
   });
 
+  it("should hand its progress and its bars to the UI scene through the bridge, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+    const { run } = onStage();
+    const told: { kind: string }[] = [];
+    uiSceneOn(run, "run", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    run.handleGameStateUpdate(withMe(me(2, 150, 100, 230)));
+    expect(told).toContainEqual({ kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
+    expect(told).toContainEqual({ kind: "bars", bars: [expect.objectContaining({ label: "Health:" })] });
+    const fields = run as unknown as Record<string, unknown>;
+    expect([fields.progressHud, fields.resourceHud]).toEqual([undefined, undefined]);
+  });
+
   it("should show the level-up cue once when the level rises, and not again while it holds", () => {
     const { run, cues } = onStage();
     run.handleGameStateUpdate(withMe(me(2, 220, 100, 230)));
