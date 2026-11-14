@@ -87,6 +87,7 @@ const { ProjectileFlights } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
@@ -333,6 +334,23 @@ describe("BarrowspireScene ending (game destroy on leaving /game)", () => {
     systems.shutdown();
 
     expect(systems.input.keyboard.enabled).toBe(true);
+  });
+
+  // the menus wear the bone hand too: a stop leaves the hand, not a monster's strike-mark, as the
+  // field's does (FS-KYPQ9 § Change: The pressed hand, and the hand on the menus, P7)
+  it("should leave the bone hand, not the strike-mark, on a stop", () => {
+    const scene = new BarrowspireScene();
+    const systems = sceneSystems();
+    Object.assign(scene, systems.scene);
+    const page = lookGame();
+    page.look().base("strike");
+    // the run lets go of the game's focus events as it stops
+    Object.assign(scene, { game: { ...page.game, events: new EventEmitter() } });
+    scene.init();
+
+    systems.shutdown();
+
+    expect(page.now()).toBe("hand");
   });
 
   // Phaser's stop destroys the run's keys before the run's own handler (KeyboardPlugin.shutdown →
