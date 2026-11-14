@@ -1711,20 +1711,20 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
     expect(watchButtons()).toHaveLength(0);
   });
 
-  // FS-QPDKN § Change: The party death flow and the spectate switcher, R159: neutral HUD, vellum words on the
-  // HUD panel's backing, never amber
-  it("should letter the switcher's name in vellum on the HUD panel, never amber", () => {
+  // FS-QPDKN § Change: The party death flow and the spectate switcher, R159, as the owner restyled it on 2026-11-14
+  // (「樣式可以不用加底色 直接顯示黃色名字」): the name in bright brass with no backing, never amber
+  it("should letter the switcher's name in the watched name's bright brass with no backing, never amber", () => {
     const { stage, pressWatch, watching } = resolvedOnStage(player("me", "Aldric", 130, dead));
     pressWatch();
     const name = stage.made.find((m) => m.kind === "text" && !m.destroyed && watching().includes(String(m.args[2])))!;
-    const style = name.args[3] as { color?: string };
-    expect(style.color).toBe(toCss(palette.hudText));
+    const style = name.args[3] as { color?: string; backgroundColor?: string };
+    expect(style.color).toBe(toCss(palette.watchedName));
     expect(style.color).not.toBe(toCss(palette.interactable));
+    expect(style.backgroundColor).toBeUndefined();
     const backing = stage.made.find(
       (m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillRoundedRect") && m.calls.includes("fillTriangle"),
-    )!;
-    expect(backing.calls).toContain("fillStyle");
-    expect(backing.calls.indexOf("fillRoundedRect")).toBeLessThan(backing.calls.indexOf("fillTriangle"));
+    );
+    expect(backing).toBeUndefined();
   });
 
   it("should cycle the watched player on Tab, never through the player's own body", () => {
@@ -5161,6 +5161,42 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       const paints = order.flatMap((m, i) => (m.kind === "graphics" ? [i] : []));
       expect(paints.length).toBeGreaterThan(0);
       for (const at of paints) expect(at).toBeLessThan(name);
+    });
+
+    it("should draw it bare: the name in watchedName, the arrows amber triangles with no backing or outline, bright under the pointer (the owner, 2026-11-14)", () => {
+      const env = watching(ally(), brom());
+      const from = env.stage.made.length;
+      env.release("watch-next");
+      const drawn = env.stage.made.slice(from).filter((m) => !m.destroyed);
+      const name = drawn.find((m) => m.kind === "text" && String(m.args[2]) === "Watching Brom")!;
+      expect((name.args[3] as { color: string }).color).toBe(toCss(palette.watchedName));
+      const paints = drawn.filter((m) => m.kind === "graphics");
+      expect(paints).toHaveLength(2);
+      for (const g of paints) {
+        expect(g.calls).not.toContain("fillRoundedRect");
+        expect(g.calls).not.toContain("strokeRoundedRect");
+        expect(g.calls).not.toContain("fillRect");
+        expect(g.calls).toContain("fillTriangle");
+        expect(g.last["fillStyle"]).toEqual([palette.interactable, 1]);
+      }
+      // each press area the framed arrow's size: 28 by the switcher's 28
+      for (const n of ["watch-previous", "watch-next"]) {
+        const zone = env.hit(n)!;
+        expect(zone.kind).toBe("zone");
+        expect(zone.args.slice(2)).toEqual([28, 28]);
+      }
+      env.over("watch-next");
+      expect(paints.map((g) => g.last["fillStyle"])).toContainEqual([palette.interactableBright, 1]);
+      env.hit("watch-next")!.handlers.pointerout();
+      for (const g of paints) expect(g.last["fillStyle"]).toEqual([palette.interactable, 1]);
+    });
+
+    it("should draw greyed arrows faint, with no outline", () => {
+      const env = watching(ally(), brom(dead));
+      const paints = env.stage.made.filter((m) => m.kind === "graphics" && !m.destroyed && m.calls.includes("fillTriangle") && m.depth === 1000);
+      const greyed = paints.filter((g) => JSON.stringify(g.last["fillStyle"]) === JSON.stringify([palette.hudFaint, 0.45]));
+      expect(greyed).toHaveLength(2);
+      for (const g of greyed) expect(g.calls).not.toContain("strokeRoundedRect");
     });
 
     it("should keep no cursor of their own on the arrows: the bone hand stays", () => {

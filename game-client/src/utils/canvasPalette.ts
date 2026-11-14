@@ -159,6 +159,12 @@ export const palette = {
   frame: BARROW_HEX.brass,
   frameBright: BARROW_HEX.brassBright,
   /**
+   * The watched teammate's name in the spectate switcher (FS-QPDKN § Change: The party death flow and the
+   * spectate switcher; the owner, 「直接顯示黃色名字」, 2026-11-14): the HUD's bright brass, the gold nearest the
+   * owner's yellow that is not amber, since a name is read, not acted on (amber is the switcher's arrows').
+   */
+  watchedName: BARROW_HEX.brassBright,
+  /**
    * The experience bar and the level-up cue (FS-BDA7X req 42, 43): progress is neither an
    * interactable, a friend nor a harm, so it takes the HUD's bright brass, never amber.
    */
