@@ -895,3 +895,11 @@ file. The text above is not edited.
 
 The tower's ceiling stays 1.0 and the village's 0.3. A retune for the louder mix, if the owner
 wants one, is a new `Tunes FS-28DDG`.
+
+### Amendment 2026-11-14: the village's file
+
+The owner replaced the village track with an ogg (2026-11-14: 「村莊的音檔我更新了幫我換一下」).
+R6's "the owner's mp3 alone" is superseded. The village now loads `village.m4a` first and then
+`village.ogg`, the same way as the tower and the effects (FS-WDM0X S21). The m4a is encoded from
+the ogg with afconvert (AAC, stereo, about 190 kbps). The new file is as loud as the mp3 it
+replaces (RMS -13.3 against -12.8 dBFS, peak -1.4 against -1.3), so the 0.3 cap (C9) stands.

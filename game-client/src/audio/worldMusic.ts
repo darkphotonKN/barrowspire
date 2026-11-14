@@ -34,10 +34,14 @@ export interface MusicTrack {
   maxGain: number;
 }
 
-/** The town's: the owner's mp3 alone (R6), under the shared, temporary cap of 0.3 (C9). */
+/**
+ * The town's: m4a first, then the owner's ogg, as the tower's and the effects load (W8; FS-WDM0X
+ * S21), under the shared, temporary cap of 0.3 (C9). The owner's 2026-11-14 ogg replaced the mp3
+ * of R6; it is as loud (about -13 dBFS RMS against -12.8), so the cap stands.
+ */
 export const VILLAGE_TRACK: MusicTrack = {
   key: "music:village",
-  urls: ["/audio/music/village.mp3"],
+  urls: ["/audio/music/village.m4a", "/audio/music/village.ogg"],
   maxGain: MUSIC_MAX_GAIN,
 };
 

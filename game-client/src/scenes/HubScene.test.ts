@@ -4234,13 +4234,13 @@ describe("HubScene music loading (FS-28DDG R12–R14)", () => {
       textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
     });
 
-  it("should queue the village mp3 alone, under its one key, beside the folk", () => {
+  it("should queue the village m4a then ogg, under its one key, beside the folk", () => {
     const art = residentArt();
     const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
 
     hub.preload();
 
-    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: ["/audio/music/village.mp3"] }]);
+    expect(art.queuedAudio).toEqual([{ key: MUSIC_KEY, url: ["/audio/music/village.m4a", "/audio/music/village.ogg"] }]);
     expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
   });
 
