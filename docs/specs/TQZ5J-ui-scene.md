@@ -874,17 +874,17 @@ app state (the party now, chat later), goes from that piece. R37 stands as writt
 
 #### Acceptance Criteria (added)
 
-- [ ] The first of the record and the card to appear in a run (a solo death, a solo escape, a death
+- [x] The first of the record and the card to appear in a run (a solo death, a solo escape, a death
       with a teammate in play, card or record first) closes an open party panel and plays
       `dialog_open` alone, no `party_close`; a closed panel stays closed and nothing more plays.
-- [ ] A later copy, a resize, and SETTLEMENT bringing the record back leave the panel as it is.
-- [ ] T and the Party icon reopen it after the end popped up while the run has not ended; after
+- [x] A later copy, a resize, and SETTLEMENT bringing the record back leave the panel as it is.
+- [x] T and the Party icon reopen it after the end popped up while the run has not ended; after
       `end_game` they are refused as before.
-- [ ] The panel opening requests `close: letter` in every world; the town closes its letter panel,
+- [x] The panel opening requests `close: letter` in every world; the town closes its letter panel,
       a field and the run answer nothing.
-- [ ] The gear overlay's hover and tip yield under a UI piece on a move; its press and wheel read no
+- [x] The gear overlay's hover and tip yield under a UI piece on a move; its press and wheel read no
       yield.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass; the party
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass; the party
       parity set and the earlier sets stay pixel-equal.
 
 #### Edge States (added)
@@ -907,3 +907,13 @@ app state (the party now, chat later), goes from that piece. R37 stands as writt
   into the UI scene (1100 over the frames' 1000), which puts the frames under it again, and nothing
   of this branch merges to main before then. No code change. It is on the owner's check
   (I-TQZ5J-12).
+
+#### As built (B1, 2026-11-14)
+
+R47 in `BarrowspireScene.endPopsUp` (the one place E1 chimes): `dialog_open`, then
+`usePartyStore.getState().closePanel()`. R48 in `partyPanelWiring`, which takes no world now. R49 in
+`GearOverlay`'s `yields`. With them, `drawHudButton` takes its button as one object and
+`mountPartyPanel` the panel's wiring whole (review LOWs, no behaviour change). The party parity set
+rerun on the result: 186 of 186 pixel-equal, and R46's depth cases differ exactly as shot before (the
+letter panel's 2700 px included). The earlier sets (corner, menu, dialogue, notices) were not rerun:
+none of these changes draws or moves anything of theirs.
