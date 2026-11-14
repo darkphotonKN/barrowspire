@@ -991,3 +991,271 @@ and FS-KYPQ9 § Change: Every hover keeps the bone hand, which draws nothing): c
 menu 506 of 506 (R45's "menu 498" was an older count; the set has shot 506 since I-TQZ5J-4's fix),
 dialogue 144 of 144, notices 84 of 84 pixel-equal. Each set's named depth cases (the dialogue card
 over the row, A2 R32; the notices' R35 cases) differ exactly as they did in the phase 2 run.
+
+## Change: Phase 3: the gear, the container view, the settlement record and the controls panel
+Status: work-order
+Date: 2026-11-14
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-14), with the
+integrator's defaults; no interview, no `challenge-me` pass. What the code forces (read on
+feat/client-ui-scene, b1ddcbb5) is marked **[code]**; the charter's scope and rules **[charter]**;
+the owner's own words **[owner]**; a default applied to a case the charter did not name, *Derived*.
+A1's pointer rules (R25–R27), A2's depth rule (R28), phase 2's ground (R40) and B1's precedent (R47)
+are inherited, not restated. The classification is ADR-0083's, as the note "which interface goes
+where" records it, with the one change below (the controls panel).
+
+**What it moves.** The gear overlay (the inventory, the character panel, the stash mode, the purse
+line, its tips and flash) with the two sources that feed it (`HubGear` in the town, `EquipmentHud` in
+a field and the run); the container view (its coffer, satchel and bone-heap faces) and its contents,
+so that a take from a container into the bag stays inside one scene; the settlement record; the run's
+controls panel. Their hotkeys move with them: I, B, C, Q, F, H and the inventory's E. **[charter]**
+
+**The owner's rules, as acceptance criteria.** The party frames are the lowest UI
+(「任何ui都優先隊友列表」): every window draws over them, and a press, a hover or the wheel over a frame
+under a window reaches only the window, neither Travel nor the world. Every hover keeps the bone hand
+(FS-KYPQ9 § Change). The controls panel draws over the party panel (「塔內操作說明蓋在組隊上面」).
+**[owner]**
+
+**Lane.** game-client only. No server, proto, gateway or manifest change. No behaviour or look change
+but the depths named in R66 and the presses named in R61 and R64. **[charter]**
+
+**Not in scope:** the paused equip-flicker fix (fix/client-equip-flicker). The gear overlay keeps
+today's equip behaviour. **[charter]**
+
+### Facts (verified 2026-11-14 on feat/client-ui-scene, b1ddcbb5)
+
+- **Who builds what.** The town's `composeGear`: a `GearOverlay` driven by a `HubGear` (REST, through
+  `gearAsCharacter(apiClient, the game store's active character)`) and a `PurseReader(apiClient)`.
+  The field's and the run's `composeEquipment`: a `GearOverlay` driven by an `EquipmentHud` (the
+  state's inventory and equipment; Equip and Unequip on the socket) and a `PurseReader`. The field's
+  `createPiles`: a `ContainerView` driven by `FieldPiles` (its `PileSatchel`); the run's create: a
+  `ContainerView` (pending 1000 ms) driven by the run's reach and states. The run's `showSettlement`: a
+  `SettlementRecord`, built on the first `settlement`. The run's H: `toggleControlsPanel`, a container
+  built inline. Each goes with its world's release. **[code]**
+- **What they read of the world.** The gear: each state tick (the field and the run hand
+  `current_player` to `sync` and `updateCharacter`, the town to `updateCharacter`), the level
+  (`setCharacterLevel`), a loot taken (`taken`), the town's stash chest E (`openStash`), the mailbox
+  store's gold Takes (the town's `watchGoldTakes` → `refreshPurse`), the bridge's `overUi` (`yields`,
+  B1 R49), the world's notice. The container view: open, items and close from its world, the level for
+  its tips, `mayTake` → the gear's `roomForOne`, a take → the loot message and the gear's `taken`. The
+  record: the payload's `settlementRecord(payload)`, its open state from the run (`openRecord`,
+  `closeRecord`, `toggleRecord`, the held town `resultHold`), its anchor over the bottom row. The
+  controls panel: the active character's class, for the ability's name. **[code]**
+- **What the world reads of them.** Their open state: `windows()`'s inventory and character; the town's
+  stash chest frame (`stashOpen`), its popups' blocker and `mayChat`; the field's and the run's
+  `mayChat`; the run's `refusesParty` and `mayChat` (the container open), `checkChestDistance` and
+  `toggleChest` (the container's entity). Their rects in the click paths (`panelTakes`, the town's
+  `overGear`, the map pointers' covers). The E key (`equipKey`). **[code]**
+- **Keys.** The town polls I, B and C once a frame (`JustDown`, captured by `addKey`), and E; the field
+  and the run hear I, B, C, Q, E, F (and the run H) on key events, uncaptured. Q in the run closes the
+  gear overlay, else the container view; in a field the gear overlay only; the town has no Q. The run's
+  keyboard is off from `end_game` (`endRun`). A focused text field (the chat's, the invite field) stops
+  every key before Phaser hears it. **[code]**
+- **Presses.** The gear overlay hit-tests by hand on its scene's scene-wide `pointermove`,
+  `pointerdown` and `wheel`; its two × zones are interactive (1103); the worlds refuse a press over its
+  open panels (`covers`), and a press in the clear band between them attacks (FS-HRH2J R8). The
+  container view hit-tests by hand from the world's pointer, its panel taking a press. The record
+  stands a blocker (1600) and Close (1601) and stops the wheel on them. The controls panel takes no
+  input: a press on it reaches the world. **[code]**
+- **Depths.** The gear overlay 1100 (frame), 1101 (content, stats), 1102 (hover ring), 1103 (×); its
+  item and purse tips 2200, its flash 2300. The container view 1000. The record 1600–1601. The
+  controls panel 1200. **[code]**
+- **Where they meet the end's pieces.** At 1080 × 720 the gear overlay's side panels (x 8–399 and
+  681–1072, y 29 to the corner row's clearance) cover the outer parts of the resolved card
+  (x 330–750, y 260–460, its WATCH and LEAVE buttons inside it) and of the bottom-centre row
+  (WATCH THE DELVE, LEAVE THE BARROW, SETTLEMENT); the container view's panel (x 360–720, y 160–562)
+  and the controls panel (x 410–670, y 192–528) cover the card's middle and the row's. The resolved
+  card draws over the gear overlay and the controls panel today (1500 over 1100, 1200), and a press on
+  any of those buttons reaches the button, whatever is drawn over it: none of the three takes a
+  press with an object. **[code]**
+
+### Requirements (added)
+
+50. **What moves.** Into the UI scene, unchanged: the gear overlay with its source (`HubGear` in the
+    town, `EquipmentHud` in a field and the run) and its purse reader; the container view with its
+    contents, in a field and the run; the settlement record and the controls panel, in the run. The UI
+    scene builds them for each world it hears reported and takes them down as that world leaves, as
+    each world's create built them and its release let them go (a purse read in flight answers
+    nobody; a gear notice from a past world says nothing). The open bar of a timed open stays in the
+    run (ADR-0083 2.1). No world scene builds `GearOverlay`, `HubGear`, `EquipmentHud`,
+    `ContainerView`, `SettlementRecord` or a controls panel. **[charter; code]**
+51. **What the UI scene reads directly.** `HubGear`'s REST calls and the purse's wallet read go from
+    the pieces, as before: they read only app state (the API client, the game store's active
+    character), so by ADR-0082 Decision 3 they are the pieces' own; so is the town's watch of the
+    mailbox store's gold Takes, and the controls panel's ability name (the active character's class).
+    *Derived* (ADR-0082 D3; R37's precedent).
+52. **World → UI, as plain data.** The bridge carries, each a call the UI scene has answered when it
+    returns (ADR-0081 D2; ADR-0083 D3):
+    - `gear(message)`: `seen` with what each state tick hands today (the carried inventory and
+      equipment in a field and the run, the player's own state everywhere); `level`; `taken` (a loot
+      the world sent, R54); `openStash` (the town's stash chest E, inside the town's act, FS-WDM0X S2);
+      `close` (the town's letter panel opening, FS-3EBCA R15).
+    - `container(message)`: `open` with the container's entity id and kind (its face), `items`, `close`
+      (and `now`, unanimated, as `closeNow`).
+    - `record(shown)`: the run's record, its view and whether it is open, sent again on any change;
+      none, no record.
+    - `endPopped()`: the run's end appeared (R58).
+    No function crosses: an item, an id, a view, a flag. **[charter; code]**
+53. **UI → world: the UI's state.** R10's state gains the gear's panels (`inventory`, `character`,
+    `stash`) and the container view's `container` (the entity it is open for). A piece reports its own
+    part, and the world hears every change at once with what it was (`heardUi`). The world reads it
+    where it read the module: the town's chest frame (`stash`), its popups' blocker and `mayChat`
+    (the gear open); every world's E left to an open inventory; a field's and the run's opening of a
+    panel ending a Shadow Shot hold (FS-JTNPR req 15: `inventory` or `character` turning true); the
+    run's `refusesParty`, `mayChat`, `checkChestDistance` and `toggleChest` (`container`). **[code]**
+54. **UI → world: requests.** R11 gains `equip` and `unequip`, by the item's entity id (the world
+    sends Equip and Unequip, world-play messages, ADR-0082 D1); `take`, with the item (the world sends
+    its loot, the run's `lootMessage`, a field's `FieldPiles.loot`, and when it sent one answers
+    `gear: taken` inside the call); and `close: record` (R57). `toggle` and `close: gear` leave it: the
+    gear is the UI scene's (R55). A request with no answer is ignored, as before. **[code]**
+55. **The gear is the UI scene's.** As the party panel in R39: `WorldWindows` keeps only `letter`; the
+    corner row's Inventory and Character, Esc's gear step (`escapeStep`'s order unchanged: letter,
+    menu, party, gear), the menu opening (its slot closes the gear as it closes the party panel) and
+    the Menu icon after the run's end act on the UI scene's gear; the interface sounds read its panels
+    from the UI scene. It is refused while the menu slot is filled or the world's new
+    `blockers().gear` holds (the town: its dialogue; a field and the run: never), as today's
+    `gearRefused` and `!menuOpen`. Its opening (not its closing) asks `close: letter` of the world
+    reported, as the town's `closeLetter` did (R48's way). **[code]**
+56. **Its keys move with it (R21).** I, B and C (every world), Q and F (a field and the run), H (the
+    run) are the UI scene's outright: no world binds them. E is shared by state: the world leaves it
+    while the inventory is open (`ui.inventory`), the UI scene acts on it only then, a shown dialogue
+    card's E first (A2 R31). Each is heard as its world heard it, so a held key repeats where it did:
+    the town's polled once a frame in the UI scene's update, and I, B and C captured while the town is
+    reported, let go as it leaves; a field's and the run's on key events, uncaptured. All are refused
+    while the menu slot is filled, and after the run's end (`facts().ended`: its keyboard was off);
+    the corner icons are not (FS-WDM0X, the run's icons work after the end). Q in the run closes the
+    gear, else the container view; in a field the gear only. **[code]**
+57. **The record in the UI scene.** Drawn from the run's `record` where and as today: its bottom on
+    the anchor over the bottom-centre row (one shared rule, `recordAnchor`), laid out again on a new
+    view, its blocker and Close at 1600–1601. Close plays `menu_click`, then sends `close: record`
+    (the run's close, which may let a held town in: FS-WDM0X § Pass 2b E5's order); its hover plays
+    `menu_hover` (E4). The run keeps the record's content, its open state, the held town (FS-GV8WN
+    R23) and the SETTLEMENT button. **[code]**
+58. **The run's end clears the moved windows.** The end's first appearance (R47's moment, `endPopsUp`)
+    closes the gear overlay, the container view and the controls panel, beside the party panel.
+    Without it, their grounds (R59) would take the presses meant for the resolved card's buttons and
+    the bottom-centre row where they cover them (Facts), which today reach the buttons: ADR-0083 D5's
+    "the world avoids the overlap", as R47. Silent (FS-WDM0X S4: what the game closes plays nothing),
+    and once (R47's rule: a redraw, a copy, SETTLEMENT bringing the record back close nothing).
+    Reopening is the player's: I, B, C and the icons the gear, E the container, H the panel, while
+    the run has not ended. *Derived* (the charter's B1 precedent: trivial and silent).
+59. **Grounds.** Each moved window stands an interactive ground at its own depth over its rect,
+    drawing nothing, no cursor of its own (R40's `uiGround`): the gear overlay one per open panel (not
+    the clear band between, where a press still attacks, FS-HRH2J R8); the container view one over
+    its panel, a child of its root, so it moves and scales with the pop; the controls panel one over
+    its rect. The record keeps its blocker. A press, a wheel or a move on them reaches no world
+    handler (R7) and no UI piece under them. **[code: ADR-0083 Consequences]**
+60. **The overlay's and the view's own hit tests.** They still hit-test by hand, on the UI scene's
+    scene-wide events, but act only when the top object under the pointer is their own (Phaser's
+    `over`, `topOnly`), or, for a move, when nothing of the UI scene's is (a world press, R25, keeps
+    lighting a cell as it passes, as today). A piece over them takes the hover, the press and the
+    wheel: the party panel, the controls panel, the dialogue card's rows, the menu's blocker. This
+    replaces B1 R49's `yields` (`overUi`), which stays the world's (its map pointers). *Derived.*
+61. **The controls panel's press.** With its ground (R59) a press on the open controls panel is the
+    panel's: no attack, cast or Shadow Shot hold, and no party-panel button under it. Today a press
+    there reached the world. Named for the owner's check: it is what drawing it over the party panel
+    asks (ADR-0083 Context, "pressing follows drawing"). *Derived* (the charter: each moved window a
+    ground).
+62. **Depths, inside the UI scene (A2 R28; ADR-0083 D4).** The party frames lowest, at 999, under
+    every other piece; the corner row, the invite prompts, the ready check, the invite field and the
+    notice line at 1000 as before; the windows: the container view 1100, under the gear overlay
+    (1100–1103: its objects are made at each open, after the view's, and Phaser draws equal depths in
+    the order added), the party panel 1110, the controls panel 1200, the record 1600–1601, the letter
+    panel 1800 (still the town's); the popup band 2000; tips 2200 and the flash 2300. The container
+    view stays under the gear overlay and the party panel where they meet, as today. **[charter;
+    code]**
+63. **B1's transitional state ends.** The frames under the character or stash panel are drawn over by
+    it again, and its ground takes every press, hover and wheel there: no hidden cell lights, tips,
+    scrolls or moves under a frame. **[owner rule; ADR-0083 Consequences]**
+64. **Presses that now land on what is drawn.** With the grounds, a press on a world button under an
+    open moved window is the window's, where today it reached the button: the dead spectator's
+    LEAVE THE BARROW in the corner under a reopened inventory, the end's buttons under a window
+    reopened over them (R58), the town's queue Leave under the inventory (already refused, `overGear`).
+    Named, not redesigned (B1's edge state "A reopened panel can cover the end's buttons again").
+    *Derived.*
+65. **Parity.** Before (b1ddcbb5) and after screenshots in the harness (R23): the inventory, the
+    character panel, the stash, an item tip and the compare row, the flash, the purse and its tip; the
+    container view (coffer, satchel, heap, a full bag's refusal, beside a timed open's bar); the record
+    (short and scrolled); the controls panel; the frames with each window open over them; in the town,
+    a field and the run, at render scale 1, 1.5 and 2, windowed and fullscreen. Pixel-equal except
+    R66's cases. The earlier sets (corner 119, menu 506, dialogue 144, notices 84, party 186) stay
+    pixel-equal but for R66's. **[charter]**
+66. **The depth changes (R24), named and shot.** Each case where two pieces meet in a new order:
+    - the gear overlay over the party frames: the owner's rule, B1's inversion undone;
+    - the gear's tips and flash over the dialogue card and the run's notifications, the inventory over
+      the town's and the field's notice line: phase 1's transitional overlaps gone, the order before
+      phase 1 back;
+    - the gear's tips over the party panel, the gear overlay over the invite prompts (a field, the
+      run): R46's inversions undone; the record over the party panel likewise;
+    - the controls panel over the party panel: the owner's ask;
+    - the controls panel, the gear overlay and the container view over the resolved card, where one
+      is reopened over it (R58);
+    - the container view over a field's FallenCountdown or an invite prompt, where they meet.
+    No world piece comes to draw over a moved one it was under. **[code]**
+
+### Note 2026-11-14 (phase 3): the controls panel leaves ADR-0083 2.3
+
+Appended to the classification of the note "which interface goes where"; that note is not edited. The
+run's controls panel was classified as staying (2.3: one world, no overlap), with the overlap it has
+with the party panel left open. ADR-0083's own rule settles it: a piece that comes to overlap a UI
+piece leaves 2.3, and 1.3 moves it. The owner asked for the order (「塔內操作說明蓋在組隊上面」), so it
+moves into the UI scene at 1200, over the party panel (1110). This applies ADR-0083 as written and
+changes none of its decisions, so it is recorded here, not in a new ADR (`docs/adr/README.md`: an ADR
+is replaced only when a decision changes). The table now reads: **Phase 3**: the controls panel, the
+run's `controlsPanel`, 1200, run.
+
+### Acceptance Criteria (added)
+
+- [ ] No world scene imports or builds `GearOverlay`, `HubGear`, `EquipmentHud`, `ContainerView`,
+      `SettlementRecord` or the controls panel, binds I, B, C, Q, F or H, or tests a moved piece's rect.
+- [ ] The UI scene builds the gear in every world, the container view in a field and the run, the
+      record and the controls panel in the run, and takes each down as its world leaves.
+- [ ] The bridge carries the gear's, the container's and the record's data and the `equip`,
+      `unequip`, `take` and `close: record` requests as plain data: no function in a message (by the
+      types and the diff).
+- [ ] I, B, C, Q, F, H, E and the corner icons open, close, equip, move, take and refuse exactly as
+      today in each world (R55, R56), the stash chest's E included; Esc keeps letter, menu, party, gear,
+      then the menu.
+- [ ] HubGear keeps its last lists on a reopen (no bag or stash flash), its loading line holds every
+      press, its refusals say their words; a take from a container lands in the bag in the same scene,
+      the full bag refused before it is sent.
+- [ ] The record opens, scrolls, closes with `menu_click` before the held town comes in, and comes
+      back on SETTLEMENT; the controls panel toggles on H and is refused under the menu and after the
+      run's end.
+- [ ] The run's end closes the gear overlay, the container view and the controls panel with the party
+      panel, silently, once (R58).
+- [ ] The frames draw under every window; a press, a hover or the wheel over a frame under the gear
+      overlay, the container view, the controls panel or the record reaches only the window: not Travel,
+      not the world (R59, R62, R63). A press in the gear overlay's clear band still attacks.
+- [ ] Every interface sound plays as FS-WDM0X says, once per player action, none for what the game
+      closes; no hand cursor anywhere (boneHand.test.ts).
+- [ ] Before/after screenshots (R65) pixel-equal except R66's cases, each shot; the earlier sets
+      equal but for R66's.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [ ] The owner's look-and-feel check of the moved pieces and R66's cases passes.
+
+### Edge States (added)
+
+- **A world press passing over a moved window** (a Shadow Shot hold, a chat scrollbar drag): the
+  world's to its end (R25); the UI scene hits nothing while it is down, so the gear overlay's cells
+  light under it by its coordinates, as today.
+- **A second button over the gear overlay during a world press** is the world's (A1's edge state):
+  the overlay acts on no press it did not start, where once it might equip.
+- **A monster or an ally under a moved window in the run** is no longer lit under the pointer there
+  (the UI scene takes the move), as phase 2 named for the party panel.
+- **The container view open as the world leaves**: closed at once, unanimated, as `FieldPiles.release`
+  and the run's release did; a pending loot outlives a close as before.
+- **The inventory open as the town leaves** (a match found): taken down with the world, silently, as
+  the overlay went with the scene.
+- **A dialogue opening over the character panel** (E with only it open, FS-HRH2J § Change C7): the
+  card's E is first; the inventory's E waits for it to close.
+- **A record arriving with the gear overlay open**: the end pops up (R58) and closes it with the party
+  panel; the record draws over whatever the player reopens, by depth.
+
+### Out of Scope (added)
+
+- The minimap and M, the mailbox, the ability, potion and target pieces, chat; the party pieces
+  (moved in phase 2) but for the frames' depth (R62).
+- The paused equip-flicker fix; any change to what the moved pieces look like, say or do but R58,
+  R61, R64 and R66.
+- The server.
