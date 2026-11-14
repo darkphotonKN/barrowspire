@@ -8,8 +8,8 @@ import {
   clampChatText,
   whisperOf,
   type ChatInputField,
-  type SceneKeyboard,
 } from "./chatInput";
+import type { SceneKeyboard } from "./worldKeyboard";
 
 // FS-WJGFJ §Requirements C26–C28. I-WJGFJ-4: the chat input's rules, on stand-ins for the
 // text field and the scene's keyboard. The DOM field itself is a thin adapter over these.

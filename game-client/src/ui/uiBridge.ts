@@ -25,13 +25,13 @@ import type { ContainerKind, ItemState } from "@/types/gameState";
 import type { UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
-import type { SceneKeyboard } from "./chatInput";
 import type { CarriedState } from "./EquipmentHud";
 import type { CharacterSource } from "./characterSheet";
 import type { SeenState } from "./partyFramesLayout";
 import type { RecordView } from "./settlement";
 import type { HudMessage } from "./uiSceneHud";
 import { hearMove, type InputCamera, type ScenePointer, type WorldInput } from "./uiScenePointer";
+import { typingGuard, type SceneKeyboard } from "./worldKeyboard";
 
 /** The world a world scene draws (FS-TQZ5J "Words"): the town, a field, a run, as the server names them. */
 export type World = WorldType;
@@ -649,7 +649,7 @@ export function reportWorld(scene: ReportingScene, world: World, side: WorldSide
   };
   const typing = typingGuard(() => (scene.input as { keyboard?: SceneKeyboard | null } | undefined)?.keyboard);
   const heardUi = (ui: UiState, was: UiState) => {
-    typing.heard(ui);
+    typing.heard(!!ui.typing);
     side.heardUi?.(ui, was);
   };
   bridge.report({ world, ...side, heardUi, hearMove: hear });
@@ -658,32 +658,6 @@ export function reportWorld(scene: ReportingScene, world: World, side: WorldSide
     if (end === "shutdown") bridge.left(world);
   });
   return bridge;
-}
-
-/**
- * A world's keyboard while the player types in the UI scene's chat window (§ Change: Batch 6, R127): reset
- * and off as `typing` comes on (a held stride key let go: the DOM field swallows its keyup), and handed back
- * as it was as it goes or as the world ends. It turns on only a keyboard it turned off, so a late
- * `typing: false` heard by the next world leaves that world's keyboard as it is.
- */
-function typingGuard(keyboard: () => SceneKeyboard | null | undefined) {
-  let was: boolean | null = null;
-  const handBack = () => {
-    const keys = keyboard();
-    if (keys && was !== null) keys.enabled = was;
-    was = null;
-  };
-  return {
-    heard(ui: UiState): void {
-      if (!ui.typing) return handBack();
-      const keys = keyboard();
-      if (!keys || was !== null) return;
-      was = keys.enabled;
-      keys.resetKeys();
-      keys.enabled = false;
-    },
-    end: handBack,
-  };
 }
 
 /**

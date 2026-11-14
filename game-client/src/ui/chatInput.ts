@@ -10,6 +10,7 @@
 
 import type { UiEffect } from "@/audio/uiSounds";
 import { CHAT_CHANNELS, type ChatChannel } from "@/stores/chatStore";
+import type { SceneKeyboard } from "./worldKeyboard";
 
 /**
  * Each channel's prefix, PoE style (FS-WJGFJ Amendment 2026-10-31): typed at the start of a line
@@ -73,11 +74,6 @@ export interface ChatInputField {
   blur(): void;
 }
 
-/** The part of a scene's keyboard plugin the input switches off while the player types. */
-export interface SceneKeyboard {
-  enabled: boolean;
-  resetKeys(): void;
-}
 
 /**
  * What a sent line carries: the picked channel and the text without its prefix; a whisper also
