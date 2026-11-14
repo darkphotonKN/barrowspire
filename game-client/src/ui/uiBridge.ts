@@ -22,7 +22,7 @@
 
 import type { WorldType } from "@/assets/types/client";
 import type { ContainerKind, ItemState } from "@/types/gameState";
-import type { ActionEffect, UiAct, UiActWrapper, WindowState } from "@/audio/uiSounds";
+import type { ActionEffect, UiAct, UiActWrapper, UiEffect, WindowState } from "@/audio/uiSounds";
 import { onSceneEnd, type EndingScene } from "@/scenes/sceneEnd";
 import type { GameRegistry } from "./gameFullscreen";
 import type { CarriedState } from "./EquipmentHud";
@@ -394,8 +394,9 @@ export interface UiBridge extends UiActWrapper {
   act: UiAct;
   /**
    * An effect a player's input plays: the world's minimap's mode step (FS-WDM0X S7), a UI piece's press;
-   * inside an act, the action's one sound. A gameplay effect only where it is the action's one sound
-   * (the town's stash chest E's `stash_open`, FS-WDM0X S2 as amended 2026-11-14).
+   * inside an act, the action's one sound. A gameplay effect only from the UI scene, where it is the
+   * action's one sound (the town's stash chest E's `stash_open`, FS-WDM0X S2 as amended 2026-11-14); a
+   * world reaches only the interface effects ({@link WorldUi}), and plays its own gameplay effects.
    */
   play(effect: ActionEffect): void;
   /** The UI scene lends the game's one player, as it is created (R22). */
@@ -446,7 +447,6 @@ export interface UiBridge extends UiActWrapper {
 export type WorldUi = Pick<
   UiBridge,
   | "act"
-  | "play"
   | "ui"
   | "overUi"
   | "pressClaimed"
@@ -462,7 +462,10 @@ export type WorldUi = Pick<
   | "abilityCard"
   | "hud"
   | "confirmBurn"
->;
+> & {
+  /** An interface effect a world's input plays (FS-WDM0X S7); its gameplay effects are its own player's. */
+  play(effect: UiEffect): void;
+};
 
 /** A world's UI in a game lent no bridge: each action runs as it is, nothing plays or is drawn, no menu is open. */
 export const NO_UI: WorldUi = {

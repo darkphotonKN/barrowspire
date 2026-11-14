@@ -340,6 +340,22 @@ describe("the UI's state and the world's changes (FS-TQZ5J R9, R10)", () => {
     expect(NO_UI.ui.menuOpen).toBe(false);
     expect(() => NO_UI.changed()).not.toThrow();
   });
+
+  it("should play a gameplay effect from the UI scene's half only: a world plays the interface effects (FS-WDM0X S2, S7)", () => {
+    const bridge = new GameUiBridge();
+    const played: string[] = [];
+    bridge.lendSounds({ act: (run) => run(), play: (effect) => played.push(effect) });
+    const scene = { registry: registry(), events: new EventEmitter() };
+    lendUiBridge(scene.registry, bridge);
+    const ui = reportWorld(scene, "field", side());
+
+    bridge.play("stash_open");
+    ui.play("map_mode_switch");
+    // @ts-expect-error a world's gameplay effects are its own player's, never the bridge's
+    ui.play("stash_open");
+
+    expect(played).toEqual(["stash_open", "map_mode_switch", "stash_open"]);
+  });
 });
 
 // FS-TQZ5J Amendment A2 R29, R30 (I-TQZ5J-7): the town hands the UI scene its dialogue as plain data,
