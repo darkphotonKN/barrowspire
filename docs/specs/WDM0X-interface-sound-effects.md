@@ -1003,15 +1003,15 @@ C5. **`menu_error`**: Enter on a whisper draft the client refuses to send: a nam
 
 #### Acceptance Criteria (pass 2, the chat)
 
-- [ ] A tab press plays `menu_tab` once, in the town, a field and the run.
-- [ ] The picker pressed with its list shut plays `menu_dropdown_open`; with it open, `menu_dropdown_close`;
+- [x] A tab press plays `menu_tab` once, in the town, a field and the run.
+- [x] The picker pressed with its list shut plays `menu_dropdown_open`; with it open, `menu_dropdown_close`;
       a press outside the open list, Esc in it and a row picked (pointer or Enter) play
       `menu_dropdown_close` once; Tab, typing, a resize and the keys taken play nothing.
-- [ ] The pointer onto a tab or a pickable row plays `menu_hover` once per one entered; a redraw under a
+- [x] The pointer onto a tab or a pickable row plays `menu_hover` once per one entered; a redraw under a
       still pointer, the arrows, a covered tab and the fold button play nothing.
-- [ ] Enter on `@Name` with no message, or `@ ` with no name, plays `menu_error` and sends nothing; Enter
+- [x] Enter on `@Name` with no message, or `@ ` with no name, plays `menu_error` and sends nothing; Enter
       on nothing plays nothing.
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's listening check (HITL), with the table of where each plays.
 
 #### Edge States (pass 2, the chat)

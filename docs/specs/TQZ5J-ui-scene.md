@@ -1459,16 +1459,16 @@ the rest out, check nothing errs, no comparing: he looks when he tests). No befo
 
 ### Acceptance Criteria (added)
 
-- [ ] No world scene imports or builds `AbilityHud`, `PotionHud`, `ResourceHud` or `ProgressHud`.
-- [ ] The town, a field and the run hand their bars, card, cell and progress through `hud(...)` as plain
+- [x] No world scene imports or builds `AbilityHud`, `PotionHud`, `ResourceHud` or `ProgressHud`.
+- [x] The town, a field and the run hand their bars, card, cell and progress through `hud(...)` as plain
       data, when they showed them before (by test and the types).
-- [ ] The UI scene draws each at its world's place, takes them down as the world leaves, and builds
+- [x] The UI scene draws each at its world's place, takes them down as the world leaves, and builds
       them anew for the next world; a level-up cue raises once per rise and never on a new world's first
       state.
-- [ ] The card greys and comes down exactly as before in a field and the run (the lockout, the parry,
+- [x] The card greys and comes down exactly as before in a field and the run (the lockout, the parry,
       a death, an escape, the leave button), and the badge stands over it exactly while it is up.
-- [ ] A press on any of them still reaches the world; they ask for no cursor (`boneHand.test.ts`).
-- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+- [x] A press on any of them still reaches the world; they ask for no cursor (`boneHand.test.ts`).
+- [x] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
 - [ ] The owner's look check, when he tests (no screenshots, the owner's rule above).
 
 ### Edge States (added)
@@ -1516,3 +1516,55 @@ brief's own rule ("if the scope collides with batch 4's pieces, stop and report"
   focus kept for a press on the window (A1 R26, as the party panel's `keepsField`); `layout().chatTop`
   read from the UI scene's own window; the run's `endRun` order (the input cancelled before the run's
   keyboard goes off). **[code]**
+
+### Note 2026-11-14 (batch 5), later: chat stays held, a second overlap
+
+Appended; nothing above is edited. The integrator answered the note "chat, held": batch 4 is merged into
+feat/client-ui-scene (4687f50a) with the letter panel in the UI scene at 1800, so the first overlap is
+settled there, and the chat was to move with a rule kept from batch 4's review (its R106): **the chat
+must ignore every press, move and wheel that lands on a UI piece drawn above it** (the letter panel, the
+gear overlay and its stash, the party panel, the controls panel, the record, the menu), since Phaser
+emits a scene's `pointerdown`, `pointermove`, `pointerup` and `wheel` on it whatever was hit; the letter
+panel open keeps the chat's draft. **[integrator]**
+
+Building it, the code stopped it a second time, on a piece neither batch moves. **[code]**
+
+- **The run's bottom-centre row meets the open window.** WATCH THE DELVE, LEAVE THE BARROW and
+  SETTLEMENT stand 200 × 38 at `resolvedRowY` (centre y 485 at 720: y 466–504), spread 216 apart about
+  the view's centre. With three buttons at 1080 the first spans x 224–424, with two x 324–524: inside
+  the open chat window (x 10–430, y 468–704). Today both are the run's at 1000 and the row, built later,
+  draws over the window and takes its own presses. In the UI scene the window would draw over WATCH
+  THE DELVE (or the left of LEAVE THE BARROW) and its ground would take the presses meant for them. A
+  folded window (y 664–704) does not meet the row.
+- **ADR-0083 D5** settles it only by moving the row into the UI scene, or by the run avoiding the
+  overlap; R58's "the run's end clears the moved windows" does not fit a window the player keeps open
+  to talk while waiting to watch. The row is classified as staying (2.3, the note "which interface goes
+  where"); the overlap takes it out of 2.3, so it is the integrator's or the owner's call which way.
+  Not this batch's.
+
+**The seam, for the run that moves chat** (adding to the note above): a ground over the panel and over
+the open list, made first so the window's tabs, fold button and picker stand on it; each scene-wide
+handler (`onPress`, `onDrag`, `onRelease`, `onWheel`) reads Phaser's `currentlyOver` (top-only, sorted
+top first) and acts only with nothing or the window's own object on top, which generalises `coveredAt`
+to every UI piece over it (the record's own `stopPropagation` keeps the wheel too, FS-GV8WN S6), the
+letter panel's rect and open state wired from the UI scene's letter slot at that merge; the chat's
+sounds (FS-WDM0X § Pass 2: the chat) already reach the UI scene's player and move unchanged.
+
+### As built (batch 5, 2026-11-14)
+
+Appended after the slices; the text above is not edited. Built in I-TQZ5J-30 (the slot, the card and
+the cell) and I-TQZ5J-31 (the bars and the level bar); the owner's look check is I-TQZ5J-32. No
+screenshots (the owner's rule).
+
+- **Where it lives.** `uiSceneHud.ts` (`UiHudSlot`, `HUD_PLACES`, `HudMessage`), `hudPieces.ts` (the real
+  pieces on the UI scene, and `mountHud`, which hears the bridge's reports and `hud` itself and goes with
+  the scene), one call in `UIScene.create`; the bridge's `hud` (`UiScreen.hud`, `UiBridge.hud`,
+  `WorldUi`, `NO_UI`, `GameUiBridge.hud`). Each piece gained a `destroy`; the level bar's takes a fading
+  cue with it.
+- **The worlds.** The town's `renderState`, a field's `showClassHud` and `showAbilityCard`, the run's
+  `showProgress`, `showResourceBars` and `showAbilityCard` hand their data; the run still tells
+  `abilityCard(up)` after the card (R70). None imports `AbilityHud`, `PotionHud`, `ResourceHud` or
+  `ProgressHud` (pinned by `uiSceneHud.test.ts`).
+- **No look or depth change** (R72): nothing at 1000 in the UI scene meets the pieces in a new order.
+- **Chat** held twice (the two notes above); its sounds are built where it stands (FS-WDM0X § Pass 2:
+  the chat, I-WDM0X-20).

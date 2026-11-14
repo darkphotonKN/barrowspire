@@ -1,6 +1,6 @@
 ---
 id: I-WDM0X-20
-status: open
+status: done
 implements: FS-WDM0X
 blocked_by: []
 labels: [ready-for-agent]
