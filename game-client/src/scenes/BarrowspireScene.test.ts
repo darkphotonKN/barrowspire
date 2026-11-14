@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { WorldUi } from "@/ui/uiBridge";
 import { resetHeldForTests } from "@/audio/sfxSetting";
 
 // node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
@@ -132,6 +133,24 @@ const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: fal
 const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
 const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
+
+/**
+ * The lore lines the run says through the UI bridge (FS-XWHZP; FS-TQZ5J § Change: Merge with main, the
+ * owner's 2026-11-14 call): each line said handed to `said`, each floor-change clear to `cleared`. A run
+ * lent no bridge says them to a copy of `NO_UI`, so the shared one is never spied on.
+ */
+function loreOf(run: object) {
+  const scene = run as { ui: WorldUi };
+  if (scene.ui === NO_UI) scene.ui = { ...NO_UI };
+  const said = vi.fn((_line: { text: string; tone: string }) => {});
+  const cleared = vi.fn();
+  vi.spyOn(scene.ui, "lore").mockImplementation((message) => {
+    expect(message.world).toBe("run");
+    if (message.kind === "say") said(message.line);
+    else cleared();
+  });
+  return { said, cleared };
+}
 const { UiRecordSlot } = await import("@/ui/uiSceneRecord");
 const { SettlementRecord } = await import("@/ui/SettlementRecord");
 const { recordAnchor } = await import("@/ui/resolvedRow");
@@ -1010,8 +1029,7 @@ describe("BarrowspireScene floor change (FS-F6F88 req 32, 33)", () => {
   // its baseline
   it("should say the switch and the escape door as hope lines when they turn, never on a floor's first broadcast", () => {
     const { run } = sceneOnStage();
-    const lore = run as unknown as { loreLines: { say(line: { text: string; tone: string }): void } };
-    const said = vi.spyOn(lore.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     const lines = () => said.mock.calls.map(([line]) => line);
     const seal = { text: "The seal breaks. Somewhere, a door gives.", tone: "hope" };
     const open = { text: "The way out stands open.", tone: "hope" };
@@ -6062,7 +6080,7 @@ describe("BarrowspireScene ESC menu and Fall where you stand (FS-9K8EZ req 1–8
     pick("fall-now");
     const before = option("fall-now")?.calls.length ?? 0;
 
-    const said = vi.spyOn((run as unknown as { loreLines: { say(line: object): void } }).loreLines, "say");
+    const said = loreOf(run).said;
     run.fallRefused({ message: "You are not in a delve." });
 
     expect(run.fallPending).toBe(false);
@@ -8683,8 +8701,8 @@ describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (F
 
   function speaking() {
     const s = onStage();
-    const run = s.run as unknown as FloorRun & { loreLines: { say(line: { text: string; tone: string }): void } };
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const run = s.run as unknown as FloorRun;
+    const said = loreOf(run).said;
     return { ...s, run, said, lines: () => said.mock.calls.map(([line]) => line) };
   }
 
@@ -8724,11 +8742,10 @@ describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (F
       init(data?: object): void;
       connectToServer(): void;
       showNotification(message: string, color: string): void;
-      loreLines: { say(line: object): void };
     };
     run.init({ sessionID: "run-a" });
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     run.connectToServer();
 
     listeners.get("exit_door_unlocked")?.({ message: "Exit door unlocked! Run to escape!" });
@@ -8746,12 +8763,31 @@ describe("BarrowspireScene lore lines on a floor change (FS-XWHZP R15)", () => {
 
   it("should take the old floor's lore lines down when the party leaves it", () => {
     const { run } = onStage();
-    const floor = run as unknown as { leaveFloor(): void; loreLines: { clear(): void } };
-    const cleared = vi.spyOn(floor.loreLines, "clear");
+    const floor = run as unknown as { leaveFloor(): void };
+    const cleared = loreOf(floor).cleared;
 
     floor.leaveFloor();
 
     expect(cleared).toHaveBeenCalledTimes(1);
+  });
+
+  // FS-TQZ5J § Change: Merge with main, the owner's 2026-11-14 call: the lines are the UI scene's, told
+  // through the bridge as plain data; the dread line's tremor still shakes the run's camera, at the UI
+  // scene's request as the line starts (FS-XWHZP R10)
+  it("should tell the UI scene's lines through the bridge, and tremble its own camera when a dread line asks", () => {
+    const { run } = onStage();
+    const shake = vi.fn();
+    const cameras = run.cameras as unknown as { main: Record<string, unknown> };
+    cameras.main = { ...cameras.main, shake };
+    const { bridge } = uiSceneOn(run, "run", { row: false });
+    const told: unknown[] = [];
+    bridge.onScreen({ lore: (message) => void told.push(message) });
+
+    (run as unknown as { leaveFloor(): void }).leaveFloor();
+    bridge.request({ kind: "tremor", durationMs: 220, intensity: 0.002 });
+
+    expect(told).toEqual([{ world: "run", kind: "clear" }]);
+    expect(shake).toHaveBeenCalledWith(220, 0.002);
   });
 });
 
@@ -8774,13 +8810,12 @@ describe("BarrowspireScene a guarded chest's refusal (FS-KE075 §J R60)", () => 
       showNotification(message: string, backing: number): void;
       containerView: { entityId: string | null; close: ReturnType<typeof vi.fn> };
       reaching?: string;
-      loreLines: { say(line: { text: string; tone: string }): void };
     };
     run.init({ sessionID: "run-a" });
     run.containerView = { entityId: null, close: vi.fn() };
     run.reaching = "chest-1";
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     run.connectToServer();
     return {
       run,
@@ -12154,7 +12189,6 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
   interface Summoned {
     bindRunInput(): void;
     showNotification(message: string, color: string): void;
-    loreLines: { say(line: { text: string; tone: string }): void };
     leaveFloor(): void;
   }
 
@@ -12178,7 +12212,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       },
     });
     run.bindRunInput();
-    const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+    const said = loreOf(run).said;
     const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
     const option = (id: string) =>
       stage.stage.made.find((m) => (m as { name?: string }).name === `menu-${id}` && !m.destroyed);
@@ -12350,7 +12384,7 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
       run.init({ sessionID: "run-a" });
       run.reaching = "chest-1";
       const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
-      const said = vi.spyOn(run.loreLines, "say").mockImplementation(() => {});
+      const said = loreOf(run).said;
       run.connectToServer();
       return { run, notified, said, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
     }

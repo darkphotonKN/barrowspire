@@ -194,6 +194,19 @@ vi.mock("@/ui/gearPieces", () => ({
   },
 }));
 
+// The lore line's dust is loreDust.test's: here a stand-in that plays nothing, so the UI scene's lore
+// lines need no art (FS-XWHZP R6, R7).
+vi.mock("@/render/effects/loreDust", () => ({
+  LoreDust: class {
+    start = () => false;
+    burst = () => false;
+    move = () => {};
+    stop = () => {};
+    clear = () => {};
+    forget = () => {};
+  },
+}));
+
 // The mailbox itself is LetterPanel.test's and MailboxEnvelope.test's: here a recording stand-in for what
 // the UI scene builds for the town (FS-TQZ5J § Change: Batch 4: the mailbox, R101), the scene it is built
 // on and its wiring kept.
@@ -1802,3 +1815,174 @@ describe("the UI scene's chat window (FS-TQZ5J § Change: Batch 6, R125–R128)"
   });
 });
 
+
+// FS-XWHZP §A–§C on the UI scene, at the owner's word (2026-11-14, 「蓋在面板上方」; FS-TQZ5J § Change:
+// Merge with main, appended note): the run says its lore lines through the bridge as plain data, and the
+// UI scene draws them at 1990, over every panel it holds, under the menu, the dialogue and the run's
+// notices; the queue, the timing and the dust are its own, the world's camera trembles on its request.
+describe("the UI scene's lore lines (FS-XWHZP; FS-TQZ5J § Change: Merge with main, 2026-11-14)", () => {
+  interface Drawn {
+    words: string;
+    depth?: number;
+    destroyed: boolean;
+  }
+
+  function created() {
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const any: unknown = new Proxy(() => any, { get: (_t, prop) => (prop === "then" ? undefined : () => any) });
+    const drawn: Drawn[] = [];
+    const text = (_x: number, _y: number, words: string) => {
+      const d: Drawn = { words, destroyed: false };
+      drawn.push(d);
+      const self: object = new Proxy(
+        {},
+        {
+          get: (_t, prop) => {
+            if (prop === "width") return words.length * 6;
+            if (prop === "height") return 26;
+            if (prop === "active") return !d.destroyed;
+            if (prop === "setDepth") return (depth: number) => ((d.depth = depth), self);
+            if (prop === "destroy") return () => void (d.destroyed = true);
+            return () => self;
+          },
+        },
+      );
+      return self;
+    };
+    const timers: { ms: number; fn: () => void; removed: boolean }[] = [];
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const ownShake = vi.fn();
+    const events = new EventEmitter();
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events,
+      sys: { settings: { status: 5 } },
+      add: new Proxy({}, { get: (_t, kind) => (kind === "text" ? text : any) }),
+      input: Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } }),
+      cameras: { cameras: [], main: { shake: ownShake } },
+      game: {},
+      time: {
+        delayedCall: (ms: number, fn: () => void) => {
+          const t = { ms, fn, removed: false };
+          timers.push(t);
+          return { remove: () => void (t.removed = true) };
+        },
+      },
+      tweens: { add: () => ({ remove: () => {} }) },
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    const asked: unknown[] = [];
+    const report = (world: "hub" | "field" | "run") =>
+      bridge.report({
+        world,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ dialogue: false }),
+        facts: () => NO_FACTS,
+        answer: (request) => void asked.push(request),
+      });
+    /** Each timer still to come, fired in the order set: the line's fade, its end, the gap. */
+    const runClock = () => {
+      for (let t = timers.find((x) => !x.removed); t; t = timers.find((x) => !x.removed)) {
+        t.removed = true;
+        t.fn();
+      }
+    };
+    const lore = (words: string) => drawn.filter((d) => d.words === words);
+    const standing = (words: string) => lore(words).some((d) => !d.destroyed);
+    return { bridge, report, drawn, lore, standing, runClock, asked, ownShake, events };
+  }
+
+  const said = (text: string, tone: "lore" | "dread" | "hope" = "hope") =>
+    ({ world: "run", kind: "say", line: { text, tone } }) as const;
+
+  it("should draw a line the run says on the UI scene, over every panel and under the menu and the notices", async () => {
+    const { PARTY_PANEL_DEPTH } = await import("@/ui/PartyPanel");
+    const { GEAR_OVERLAY_DEPTH } = await import("@/ui/GearOverlay");
+    const { CONTROLS_PANEL_DEPTH } = await import("@/ui/controlsPanel");
+    const { RECORD_DEPTH } = await import("@/ui/SettlementRecord");
+    const { MENU_DEPTH } = await import("@/ui/menuPanel");
+    const { bridge, report, lore } = created();
+    report("run");
+
+    bridge.lore(said("The way out stands open."));
+
+    const [line] = lore("The way out stands open.");
+    expect(line?.depth).toBe(1990);
+    // the gear overlay's panels (to 1103), the party panel, the controls panel, the record (to 1601), the
+    // letter panel (1800): all under it; the menu, the dialogue card and the run's notices (2000) over it
+    for (const panel of [GEAR_OVERLAY_DEPTH + 3, PARTY_PANEL_DEPTH, CONTROLS_PANEL_DEPTH, RECORD_DEPTH + 1, 1800])
+      expect(line!.depth!).toBeGreaterThan(panel);
+    expect(line!.depth!).toBeLessThan(MENU_DEPTH);
+  });
+
+  it("should show one line at a time, the next said after it on its own clock", () => {
+    const { bridge, report, standing, runClock } = created();
+    report("run");
+
+    bridge.lore(said("a"));
+    bridge.lore(said("b"));
+    expect([standing("a"), standing("b")]).toEqual([true, false]);
+
+    runClock();
+    expect([standing("a"), standing("b")]).toEqual([false, false]);
+  });
+
+  it("should take the line down and empty the queue on the run's floor change (R15)", () => {
+    const { bridge, report, standing, lore, runClock } = created();
+    report("run");
+    bridge.lore(said("a"));
+    bridge.lore(said("b"));
+
+    bridge.lore({ world: "run", kind: "clear" });
+    runClock();
+
+    expect(standing("a")).toBe(false);
+    expect(lore("b")).toEqual([]);
+  });
+
+  it("should take the run's lines down as it leaves, the queue with them, and draw none it says late", () => {
+    const { bridge, report, standing, lore, runClock } = created();
+    report("run");
+    bridge.lore(said("a"));
+    bridge.lore(said("b"));
+
+    bridge.left("run");
+    bridge.lore(said("late"));
+    report("hub");
+    bridge.lore(said("later"));
+    runClock();
+
+    expect(standing("a")).toBe(false);
+    expect([...lore("b"), ...lore("late"), ...lore("later")]).toEqual([]);
+  });
+
+  it("should ask the run to tremble its camera as a dread line starts, never its own", () => {
+    const { bridge, report, asked, ownShake } = created();
+    report("run");
+
+    bridge.lore(said("Something heard that.", "dread"));
+
+    expect(asked).toEqual([{ kind: "tremor", durationMs: 220, intensity: 0.002 }]);
+    expect(ownShake).not.toHaveBeenCalled();
+  });
+
+  it("should stop hearing the run's lines with the game (R4)", () => {
+    const { bridge, report, lore, events } = created();
+    report("run");
+    events.emit("destroy");
+
+    bridge.lore(said("a"));
+
+    expect(lore("a")).toEqual([]);
+  });
+});

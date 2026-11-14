@@ -237,6 +237,22 @@ describe("LoreLines (FS-XWHZP §A-§C)", () => {
     expect(shake).not.toHaveBeenCalled();
   });
 
+  // FS-TQZ5J § Change: Merge with main, the owner's 2026-11-14 call: on the UI scene the tremor is the
+  // world's camera's, asked for; never the host's own camera
+  it("should tremble through the host's tremor where it hands one, not its own camera (R10)", () => {
+    const { scene, shake } = stand();
+    const tremor = vi.fn();
+    const dust = { start: () => true, burst: () => true, move: () => {}, stop: () => {}, clear: () => {}, forget: () => {} };
+    const lines = new LoreLines(scene, dust, { reducedMotion: () => false, tremor });
+
+    lines.say(dread("x"));
+    lines.clear();
+    lines.say(hope("y"));
+
+    expect(tremor.mock.calls).toEqual([[220, 0.002]]);
+    expect(shake).not.toHaveBeenCalled();
+  });
+
   it("should not tremble under reduced motion, and still fade in, hold and out (R7)", () => {
     const { lines, shake, tweens, fire } = stand({ reducedMotion: true });
     lines.say(dread("x"));
