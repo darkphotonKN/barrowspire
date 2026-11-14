@@ -981,3 +981,13 @@ acceptance criterion by ADR-0083, and it ends B1's transitional edge state.
 **Open under the overlap rule.** The run's controls panel stays in the world (2.3) but meets the
 party panel today (R46, As built), and nothing in the run avoids it. It needs an avoidance or a move;
 this note does not choose.
+
+#### As built (B1), rerun 2026-11-14
+
+Appended after the note above; nothing above is edited. B1's last criterion ticks "the earlier sets
+stay pixel-equal", but its As built says they were not rerun. They are now, in the harness (R23),
+before 74ecdf3c against a fresh after built from feat/client-ui-scene at f10972f1 (B1, the review fixes
+and FS-KYPQ9 § Change: Every hover keeps the bone hand, which draws nothing): corner 119 of 119,
+menu 506 of 506 (R45's "menu 498" was an older count; the set has shot 506 since I-TQZ5J-4's fix),
+dialogue 144 of 144, notices 84 of 84 pixel-equal. Each set's named depth cases (the dialogue card
+over the row, A2 R32; the notices' R35 cases) differ exactly as they did in the phase 2 run.
