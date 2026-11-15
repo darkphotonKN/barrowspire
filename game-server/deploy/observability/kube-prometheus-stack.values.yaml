@@ -118,16 +118,41 @@ grafana:
         cpu: 50m
         memory: 64Mi
     datasources:
-      # exemplar dots on Prometheus panels link to the trace in Tempo
-      exemplarTraceIdDestinations:
-        datasourceUid: tempo
-        traceIdLabelName: trace_id
-        urlDisplayLabel: View trace
+      # Prometheus and Alertmanager are declared in additionalDataSources below:
+      # the chart's default datasource takes one exemplar label, and Tempo's
+      # service-graph exemplars use traceID while our services use trace_id.
+      defaultDatasourceEnabled: false
   # Tempo is its own release (tempo.values.yaml). After changing this, re-run:
   #   helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
-  #     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev \
+  #     --kube-context gke_barrowspire-512613_asia-east1_barrowspire-dev --version 92.16.1 \
   #     -n monitoring --reuse-values -f deploy/observability/kube-prometheus-stack.values.yaml
   additionalDataSources:
+    - name: Prometheus
+      type: prometheus
+      uid: prometheus
+      url: http://kube-prometheus-stack-prometheus.monitoring:9090/
+      access: proxy
+      isDefault: true
+      jsonData:
+        httpMethod: POST
+        timeInterval: 30s
+        # exemplar dots link to Tempo: trace_id from our services, traceID from
+        # Tempo's metrics-generator (service graph)
+        exemplarTraceIdDestinations:
+          - name: trace_id
+            datasourceUid: tempo
+            urlDisplayLabel: View trace
+          - name: traceID
+            datasourceUid: tempo
+            urlDisplayLabel: View trace
+    - name: Alertmanager
+      type: alertmanager
+      uid: alertmanager
+      url: http://kube-prometheus-stack-alertmanager.monitoring:9093/
+      access: proxy
+      jsonData:
+        handleGrafanaManagedAlerts: false
+        implementation: prometheus
     - name: Tempo
       type: tempo
       uid: tempo
