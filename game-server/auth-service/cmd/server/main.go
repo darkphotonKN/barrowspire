@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net"
-	"net/http"
 	"os/signal"
 	"strings"
 	"sync"
@@ -66,6 +65,8 @@ func main() {
 	}
 	defer commontracing.Close(shutdownTracing)
 
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
+
 	// --- database setup ---
 
 	db := config.InitDB()
@@ -112,11 +113,7 @@ func main() {
 	// --- metrics ---
 
 	// setup endpoint for metrics collection
-	go func() {
-		http.Handle("/metrics", commontelemetry.MetricsHandler()) // OpenMetrics, so exemplars survive the scrape
-		log.Println("Metrics server started on :8194")
-		http.ListenAndServe(":8194", nil)
-	}()
+	commontelemetry.ServeMetrics("8194")
 
 	// --- message broker - rabbit mq ---
 	ch, brokerClose := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)

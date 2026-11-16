@@ -6,13 +6,14 @@ import (
 	"log"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
+
+	_ "net/http/pprof"
 
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
@@ -25,9 +26,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	_ "github.com/joho/godotenv/autoload"
 	_ "github.com/lib/pq"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
-	_ "net/http/pprof"
 )
 
 var (
@@ -103,6 +102,8 @@ func main() {
 	}
 	defer commontracing.Close(shutdownTracing)
 
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
+
 	// tick metrics go over OTLP to the local docker collector only; GKE has no
 	// collector and sets no COLLECTOR_ENDPOINT, so they stay off there
 	shutdown, err := commontelemetry.Init(ctx, commontelemetry.Config{
@@ -156,11 +157,7 @@ func main() {
 	// --- metrics ---
 
 	// setup endpoint for metrics collection
-	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		log.Println("Metrics server started on :8195")
-		http.ListenAndServe(":8195", nil)
-	}()
+	commontelemetry.ServeMetrics("8195")
 
 	// --- message broker - rabbit mq ---
 	ch, brokerClose := broker.Connect(amqpUser, amqpPassword, amqpHost, amqpPort)
