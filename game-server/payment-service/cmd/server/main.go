@@ -89,7 +89,9 @@ func main() {
 		}
 	}()
 
-	svc := payment.NewService(repo, processor, ch, authpb.NewAuthServiceClient(authConn), cacheService, stripeWebhookSecret)
+	// wrapped so every repository call is a span above its queries
+	// (internal/payment/trace_gen.go)
+	svc := payment.NewService(payment.NewRepositoryWithTracing(repo, "payment/repository"), processor, ch, authpb.NewAuthServiceClient(authConn), cacheService, stripeWebhookSecret)
 	handler := payment.NewHandler(svc)
 
 	pb.RegisterPaymentServiceServer(grpcServer, handler)

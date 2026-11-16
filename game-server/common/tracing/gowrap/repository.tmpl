@@ -1,0 +1,41 @@
+import (
+    "context"
+
+    "go.opentelemetry.io/otel"
+
+    "github.com/darkphotonKN/barrowspire-server/common/tracing"
+)
+
+{{ $decorator := (or .Vars.DecoratorName (printf "%sWithTracing" .Interface.Name)) }}
+{{ $spanName := (or .Vars.SpanNamePrefix .Interface.Name) }}
+
+// {{$decorator}} is {{.Interface.Name}} with a span around every method that
+// takes a context, so a trace shows the repository call above its queries.
+// Methods without a context pass straight through.
+type {{$decorator}} struct {
+	{{.Interface.Type}}
+	_instance string
+}
+
+// New{{$decorator}} wraps base. instance names the tracer, e.g. "auth/repository".
+func New{{$decorator}}(base {{.Interface.Type}}, instance string) {{$decorator}} {
+	return {{$decorator}}{
+		{{.Interface.Name}}: base,
+		_instance: instance,
+	}
+}
+
+{{range $method := .Interface.Methods}}
+{{if $method.AcceptsContext}}
+// {{$method.Name}} implements {{$.Interface.Name}}
+func (_d {{$decorator}}) {{$method.Declaration}} {
+	ctx, _span := otel.Tracer(_d._instance).Start(ctx, "{{$spanName}}.{{$method.Name}}")
+	{{- if $method.ReturnsError}}
+	defer func() { tracing.EndSpan(_span, err) }()
+	{{- else}}
+	defer _span.End()
+	{{- end}}
+	{{$method.Pass (printf "_d.%s." $.Interface.Name) }}
+}
+{{end}}
+{{end}}
