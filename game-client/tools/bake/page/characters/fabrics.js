@@ -320,6 +320,12 @@ export const GEAR = {
   coat: mix(mix("ember", "oxblood", 0.5), "barrowDeep", 0.7),
   sash: mix(mix("ember", "oxblood", 0.35), "barrowDeep", 0.35),
   hairDark: mix("barrowDeep", "pitch", 0.35),
+  // the warrior's specialization looks (FS-1J1CB R1, R2; warriorLooks.js): the Guardian's
+  // surcoat in the shield's worn bone and its house cross in the shield's oxblood, and the
+  // Berserker's blood-dark forearm wraps
+  surcoat: shade(mix("vellum", "vellumDark", 0.5), 0.8),
+  houseRed: mix("oxblood", "barrowDeep", 0.12),
+  wraps: mix("oxblood", "pitch", 0.35),
 };
 
 /**
@@ -427,6 +433,9 @@ export function fabrics() {
     coat: mat(quilted(GEAR.coat), { rough: 0.85, normal: 1.2, side: D }),
     sash: mat(wool(GEAR.sash, { seed: 79, dirt: 0.35 }), { side: D }),
     hairDark: mat(hair(GEAR.hairDark, { seed: 67 }), { rough: 0.9 }),
+    surcoat: mat(wool(GEAR.surcoat, { seed: 201, dirt: 0.5 }), { side: D }),
+    houseRed: mat(wool(GEAR.houseRed, { seed: 203, dirt: 0.3 }), { side: D }),
+    wraps: mat(wool(GEAR.wraps, { seed: 207, dirt: 0.5 })),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),

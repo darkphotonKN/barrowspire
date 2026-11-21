@@ -82,15 +82,86 @@ export function longsword(rig, M, F) {
 }
 
 /**
- * A tall kite shield strapped to the forearm, curved across its width, painted in the house
- * colours: per pale, bone and oxblood, an iron boss at the heart.
+ * How far the bearded axe's cutting edge is turned from square to the haft, toward the haft's far
+ * end (rad): the beard sweeps down and out, so the edge faces partly along the haft. Carried head
+ * down, the haft hanging forward of the fist as a blade's point does, the edge then faces forward
+ * and a little down; square to the haft (the variant's axe) it faced up and forward.
  */
-export function kiteShield(rig, side, F) {
+export const AXE_EDGE_TURN = 0.55;
+
+/**
+ * A one-handed bearded axe (the Berserker's, FS-1J1CB R2), built in the grip frame like any held
+ * weapon (the normal grip: the haft runs out of the thumb side of the fist along +z): an ash haft
+ * with a leather grip under the fist, and at its far end the head, its poll on -y and its bit on
+ * +y, the side the thumb points to, which leads a cut swung toward it. The bit's long beard sweeps
+ * down and out toward the fist, so the edge faces {@link AXE_EDGE_TURN} toward the haft's end from
+ * square to it. `userData.edge` is that edge in the group's frame: `at`, the middle of the edge,
+ * and `dir`, the way it faces (the bake test, axe.test.mjs, holds it forward and down in the carry
+ * and leading the swing).
+ */
+export function beardedAxe(rig, M, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  const len = 0.36 * H;
+  const haft = new THREE.CylinderGeometry(0.009 * H, 0.011 * H, len, 10);
+  haft.rotateX(Math.PI / 2);
+  haft.translate(0, 0, len / 2 - 0.05 * H);
+  g.add(new THREE.Mesh(haft, M.woodDark));
+  g.add(new THREE.Mesh(rod(0.012 * H, 0.012 * H, 0.08 * H), F.leatherDark));
+  // the head, in shape coordinates (x toward the bit, the grip frame's +y; y along the haft, its
+  // +z), its top at the haft's end: the edge runs from the beard's tip up and in to the toe
+  const z0 = len - 0.05 * H;
+  const a = AXE_EDGE_TURN;
+  const n = [Math.cos(a), Math.sin(a)];
+  const beard = [0.118 * H, z0 - 0.092 * H];
+  const reach = 0.125 * H;
+  const toe = [beard[0] - n[1] * reach, beard[1] + n[0] * reach];
+  const mid = [(beard[0] + toe[0]) / 2, (beard[1] + toe[1]) / 2];
+  const belly = (d) => [mid[0] + n[0] * d, mid[1] + n[1] * d];
+  const s = new THREE.Shape();
+  s.moveTo(-0.022 * H, z0 - 0.032 * H);
+  s.lineTo(0, z0 - 0.03 * H);
+  s.lineTo(0.014 * H, z0 - 0.036 * H);
+  // the beard's hooked underside, down and out from the haft to its tip
+  s.quadraticCurveTo(0.075 * H, z0 - 0.05 * H, beard[0], beard[1]);
+  // the edge, a little bellied
+  s.quadraticCurveTo(...belly(0.012 * H), toe[0], toe[1]);
+  s.quadraticCurveTo(0.03 * H, z0 + 0.004 * H, 0.012 * H, z0 + 0.008 * H);
+  s.lineTo(0, z0 + 0.01 * H);
+  s.lineTo(-0.022 * H, z0 + 0.006 * H);
+  s.closePath();
+  const head = extrude(s, 0.008 * H, 0.002 * H);
+  head.applyMatrix4(GRIP_BASIS);
+  g.add(new THREE.Mesh(head, F.darkSteel));
+  // the bright ground edge: a strip along it, a little proud of the head's faces
+  const inset = 0.009 * H;
+  const e = new THREE.Shape();
+  e.moveTo(beard[0], beard[1]);
+  e.quadraticCurveTo(...belly(0.012 * H), toe[0], toe[1]);
+  e.lineTo(toe[0] - n[0] * inset, toe[1] - n[1] * inset);
+  e.quadraticCurveTo(...belly(0.012 * H - inset), beard[0] - n[0] * inset, beard[1] - n[1] * inset);
+  e.closePath();
+  const edge = extrude(e, 0.0092 * H, 0);
+  edge.applyMatrix4(GRIP_BASIS);
+  g.add(new THREE.Mesh(edge, F.steel));
+  const at = belly(0.006 * H);
+  g.userData.edge = { at: new THREE.Vector3(0, at[0], at[1]), dir: new THREE.Vector3(0, n[0], n[1]) };
+  return g;
+}
+
+/**
+ * A tall kite shield strapped to the forearm, curved across its width, painted in the house
+ * colours: per pale, bone and oxblood, an iron boss at the heart. `scale` sizes it in height and
+ * width about the strap (the Guardian's, FS-1J1CB R1: about 1.15); `cross` lays the house cross
+ * over the field counterchanged, oxblood on the bone half and bone on the oxblood, inside a narrow
+ * brass border. With neither it is the knight's own shield.
+ */
+export function kiteShield(rig, side, F, { scale = 1, cross = false } = {}) {
   const H = rig.H;
   const s = new THREE.Shape();
-  const w = 0.115 * H;
-  const top = 0.145 * H;
-  const bot = -0.27 * H;
+  const w = 0.115 * H * scale;
+  const top = 0.145 * H * scale;
+  const bot = -0.27 * H * scale;
   s.moveTo(-w, top * 0.72);
   s.quadraticCurveTo(0, top * 1.12, w, top * 0.72);
   s.quadraticCurveTo(w * 1.02, -0.02 * H, 0, bot);
@@ -100,12 +171,12 @@ export function kiteShield(rig, side, F) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) / w;
-    pos.setZ(i, pos.getZ(i) - x * x * 0.026 * H);
+    pos.setZ(i, pos.getZ(i) - x * x * 0.026 * H * scale);
   }
   geo.computeVertexNormals();
 
   // the outline's highest point, where the face's paint ends
-  const face = shieldFace(w, top * 0.92, bot);
+  const face = shieldFace(w, top * 0.92, bot, cross ? { w, top, bot, H } : null);
   // shape → forearm frame: long axis along forearm-local +z (up when the forearm is raised
   // forward), width along the forearm, face outward (+x on the left arm)
   const sx = side === "L" ? 1 : -1;
@@ -121,15 +192,40 @@ export function kiteShield(rig, side, F) {
   return attach(rig, `foreArm${side}`, geo, mats, [x + sx * 0.042, (fy + wy) / 2 - 0.01, -0.03]);
 }
 
-function shieldFace(w, top, bot) {
+/**
+ * The shield's painted face, the shape's box laid over the canvas. `cross` (the shape's own
+ * measures, H units) adds the counterchanged house cross and a brass border inside the rim, laid
+ * along the outline.
+ */
+function shieldFace(w, top, bot, cross = null) {
   const S = 256;
   const c = mkCanvas(S, S);
   const ctx = c.getContext("2d");
+  const boneTone = shade(mix("vellum", "vellumDark", 0.5), 0.82);
+  const redTone = mix("oxblood", "barrowDeep", 0.12);
   // per pale: bone to the left, oxblood to the right
-  ctx.fillStyle = cssRgb(shade(mix("vellum", "vellumDark", 0.5), 0.82));
+  ctx.fillStyle = cssRgb(boneTone);
   ctx.fillRect(0, 0, S, S);
-  ctx.fillStyle = cssRgb(mix("oxblood", "barrowDeep", 0.12));
+  ctx.fillStyle = cssRgb(redTone);
   ctx.fillRect(S * 0.5, 0, S * 0.5, S);
+  if (cross) {
+    // the cross, its arms through the boss: each half in the other half's colour
+    const bar = S * 0.1;
+    const armY = S * 0.46;
+    for (const [x0, tone] of [
+      [0, redTone],
+      [S * 0.5, boneTone],
+    ]) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, 0, S * 0.5, S);
+      ctx.clip();
+      ctx.fillStyle = cssRgb(tone);
+      ctx.fillRect(S * 0.5 - bar / 2, 0, bar, S);
+      ctx.fillRect(0, armY - bar / 2, S, bar);
+      ctx.restore();
+    }
+  }
   // the iron boss
   ctx.fillStyle = cssRgb(mix("slate", "pitch", 0.4));
   ctx.beginPath();
@@ -147,6 +243,28 @@ function shieldFace(w, top, bot) {
   ctx.strokeStyle = cssRgb(mix("barrowDeep", "pitch", 0.3));
   ctx.lineWidth = 18;
   ctx.strokeRect(0, 0, S, S);
+  if (cross) {
+    // the outline on the canvas (kiteShield's shape, the box mapped onto it), drawn in toward the
+    // middle: the dark rim along the edge, the brass border just inside it
+    const { w: sw, top: st, bot: sb, H } = cross;
+    const px = (x, y, k) => [((x * k) / (2 * sw) + 0.5) * S, ((top - (y * k + (1 - k) * (st * 0.72 + sb) / 2)) / (top - bot)) * S];
+    const outline = (k) => {
+      ctx.beginPath();
+      ctx.moveTo(...px(-sw, st * 0.72, k));
+      ctx.quadraticCurveTo(...px(0, st * 1.12, k), ...px(sw, st * 0.72, k));
+      ctx.quadraticCurveTo(...px(sw * 1.02, -0.02 * H, k), ...px(0, sb, k));
+      ctx.quadraticCurveTo(...px(-sw * 1.02, -0.02 * H, k), ...px(-sw, st * 0.72, k));
+      ctx.closePath();
+    };
+    ctx.strokeStyle = cssRgb(mix("barrowDeep", "pitch", 0.3));
+    ctx.lineWidth = 14;
+    outline(1);
+    ctx.stroke();
+    ctx.strokeStyle = cssRgb(mix("brass", "brassBright", 0.4));
+    ctx.lineWidth = 7;
+    outline(0.9);
+    ctx.stroke();
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   // ExtrudeGeometry's face UVs are the shape's own coordinates; map its box onto the canvas
