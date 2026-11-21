@@ -11,6 +11,25 @@ export const shippedManifest = (): ArtManifest =>
   ) as ArtManifest;
 
 /**
+ * Test-only: `manifest` with spec looks baked (FS-1J1CB R15), until feat/spec-looks brings the
+ * real ones: each named group (`knight_berserker`) gets one page, `<group>-0`, carrying the look's
+ * sheet `char_<group>`, a copy of its class's base sheet moved onto that page.
+ */
+export function withSpecLooks(manifest: ArtManifest, ...groups: string[]): ArtManifest {
+  const m = structuredClone(manifest);
+  for (const group of groups) {
+    const stem = group.split("_")[0];
+    const atlas = `${group}-0`;
+    m.atlases[atlas] = { ...m.atlases[`${stem}-0`], image: `${atlas}.png` };
+    const look = structuredClone(m.sheets[`char_${stem}_base`]);
+    look.atlas = atlas;
+    for (const anim of Object.values(look.animations)) delete anim.atlas;
+    m.sheets[`char_${group}`] = look;
+  }
+  return m;
+}
+
+/**
  * The shipped manifest's resident pages (FS-C4JWH §A R3), written out rather than derived, so a
  * test that compares against them checks the table: the four class groups, the 14 small ones and
  * the tome and altar's `summoning` (FS-3103M §I). The tiered roster's variant groups are not here:

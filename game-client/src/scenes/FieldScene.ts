@@ -15,8 +15,9 @@ import {
   type Facing8,
   type Point,
 } from "@/render/iso";
-import { preloadArt, registerArt } from "@/render/art/phaser";
-import { fieldArt } from "@/render/art/sceneArt";
+import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
+import { fieldArt, type SceneGroups } from "@/render/art/sceneArt";
+import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
@@ -186,6 +187,13 @@ export class FieldScene extends Phaser.Scene {
   /** Trees and the signpost, faded while they stand over the player (FS-2325V §C.5). */
   private occluders = new Occluders();
   private art!: ArtLibrary;
+  /**
+   * The field's groups and its own player's spec look, decided at preload (FS-1J1CB R20); the
+   * same set registered in create.
+   */
+  private artGroups?: SceneGroups;
+  /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
+  private looks?: SpecLooks;
   private lightMap?: LightMap;
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
@@ -275,7 +283,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadArt(this, fieldArt(this.field), {
+    // the player's own spec look with the field's art, from the character read (FS-1J1CB R20)
+    this.artGroups = withOwnLook(fieldArt(this.field), useGameStore.getState().getActiveCharacter());
+    preloadArt(this, this.artGroups, {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
@@ -297,7 +307,9 @@ export class FieldScene extends Phaser.Scene {
     boundCamera(camera, bounds);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this, fieldArt(this.field));
+    const groups = this.artGroups ?? fieldArt(this.field);
+    this.art = registerArt(this, groups);
+    this.looks = new SpecLooks(this.art, onDemandArt(this, this.art), containedBodies(this.views), groups);
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
@@ -716,6 +728,7 @@ export class FieldScene extends Phaser.Scene {
       view.name.destroy();
       view.title.destroy();
       this.views.delete(entityID);
+      this.looks?.forget(entityID);
     }
 
     // the field's monsters, projectiles and struck players, once the bodies stand
@@ -1056,6 +1069,8 @@ export class FieldScene extends Phaser.Scene {
       const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
       existing.facing = facingFrom(vx, vy, existing.facing);
       existing.title.show(player);
+      // a pick applied here shows its look once in (FS-1J1CB R22)
+      this.looks?.see(player.entity_id, player);
       if (!existing.anim.baked) {
         const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
         body?.setTexture(placeholderTexture(player.class, nearestScreenFacing(existing.facing)));
@@ -1065,7 +1080,8 @@ export class FieldScene extends Phaser.Scene {
 
     const body = this.add.sprite(0, 0, placeholderTexture(player.class, "down"));
     body.setName("body");
-    const anim = new CharacterAnimator(this.art, player.class);
+    // a spec look once it is in, its base class's sheet until then (FS-1J1CB R16, R21)
+    const anim = new CharacterAnimator(this.art, this.looks?.look(player) ?? player.class);
     if (anim.baked) anim.dress(body);
     else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
@@ -1081,6 +1097,7 @@ export class FieldScene extends Phaser.Scene {
     const sprite = this.add.container(0, 0, [body]);
     standAt(sprite, pos, 1);
     this.views.set(player.entity_id, { sprite, name, title, pos, target: { ...pos }, facing: "se", anim, fallen });
+    this.looks?.see(player.entity_id, player);
   }
 
   /**

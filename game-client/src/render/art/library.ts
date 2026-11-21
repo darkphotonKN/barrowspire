@@ -97,6 +97,14 @@ export class ArtLibrary {
     return this.sheet(name) !== undefined;
   }
 
+  /**
+   * Whether the manifest has the sheet at all, its pages loaded in this scene or not: a spec look
+   * baked but not yet fetched (FS-1J1CB R16, R19).
+   */
+  lists(name: string): boolean {
+    return this.manifest !== null && Object.hasOwn(this.manifest.sheets, name);
+  }
+
   /** The sheet, if it exists and every atlas page it sits on loaded. */
   sheet(name: string): ArtSheet | undefined {
     const sheet = this.manifest?.sheets[name];

@@ -8725,6 +8725,41 @@ const { artLoaderStandin, shippedManifest, RESIDENT_ART_PAGES } = await import("
 const { atlasTextureKey } = await import("@/render/art/library");
 
 // The run loads its creatures and the boss at entry, for every floor (FS-C4JWH §B R9).
+const { withSpecLooks } = await import("@/render/art/artLoader.standin");
+
+// FS-1J1CB R20 (ADR-0088 Decision 3): the player's own spec look comes with the run's preload.
+describe("BarrowspireScene spec looks (FS-1J1CB R20)", () => {
+  const enterAs = (specialization?: string) =>
+    useGameStore.setState({
+      characters: [
+        { id: "c1", name: "Wren", className: "archer", level: 20, experience: 0, levelFloor: 0, specialization, createdAt: "" },
+      ],
+      activeCharacterId: "c1",
+    });
+  afterEach(() => useGameStore.setState({ characters: [], activeCharacterId: null }));
+
+  it.each([
+    ["hunter", ["archer_hunter-0"]],
+    [undefined, []],
+  ])("should queue a character's own look (%s) with the creatures and the boss, and no other look", (spec, look) => {
+    enterAs(spec);
+    const art = artLoaderStandin({
+      manifest: withSpecLooks(shippedManifest(), "archer_hunter", "knight_berserker"),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const anything: Record<string, unknown> = new Proxy({}, { get: () => () => anything });
+    const run = Object.assign(new BarrowspireScene(), art.scene, {
+      make: { graphics: () => anything },
+    }) as unknown as { preload(): void };
+
+    run.preload();
+
+    const own = ["boss-0", "boss-1", "boss-2", "creatures-0", "creatures-1", "creatures-2", "creatures-3", "creatures-4"];
+    expect(art.queued.sort()).toEqual([...own, ...look].map(atlasTextureKey).sort());
+  });
+});
+
 describe("BarrowspireScene art loading (FS-C4JWH §B R7, R9)", () => {
   it("should queue the creatures and the boss and nothing else, the resident art being loaded", () => {
     const art = artLoaderStandin({

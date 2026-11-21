@@ -9,6 +9,7 @@
  */
 
 import { facingFrom, movesAwayFrom, type Facing8 } from "@/render/iso/facing";
+import { specializationOf } from "@/data/specializations";
 import { directionIndex } from "./manifest";
 
 /** The clips every character and creature sheet carries (FS-2325V §E.2). */
@@ -158,21 +159,43 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
   return choose("idle", facing);
 }
 
+/** A class's sheet stem (FS-1J1CB R15): the word its sheets and groups are named by. */
+export type ClassStem = "knight" | "wizard" | "archer" | "mercenary";
+
 /**
- * The sheet a server class draws from (today's `createKnight/Soldier/ArcherTextures`): warrior
+ * The stem a server class draws from (today's `createKnight/Soldier/ArcherTextures`): warrior
  * is the knight, mage the wizard, the mercenary his own (FS-MAMHR §H.42). Unknown classes fall
- * back to the knight, as the placeholder textures fall back to the warrior. Rivals reuse their
- * class's sheet (FS-2325V §E.3).
+ * back to the knight, as the placeholder textures fall back to the warrior.
  */
-export function characterSheet(playerClass: string | undefined): string {
+export function classStem(playerClass: string | undefined): ClassStem {
   switch ((playerClass ?? "").toLowerCase()) {
     case "mage":
-      return "char_wizard_base";
+      return "wizard";
     case "archer":
-      return "char_archer_base";
+      return "archer";
     case "mercenary":
-      return "char_mercenary_base";
+      return "mercenary";
     default:
-      return "char_knight_base";
+      return "knight";
   }
+}
+
+/**
+ * The sheet a server class draws from: its base sheet, `char_<stem>_base`. Rivals reuse their
+ * class's sheet (FS-2325V §E.3).
+ *
+ * Given a specialization (FS-1J1CB R16-R17), its spec look's sheet, `char_<stem>_<spec>` (R15),
+ * when the spec is one of the class's two (`specializationOf`) and `baked` says the manifest has
+ * that sheet; else the base. `baked` omitted: nothing is baked, so the base. Menus, character
+ * creation and the party busts call it with the class alone (R25).
+ */
+export function characterSheet(
+  playerClass: string | undefined,
+  specialization?: string,
+  baked: (sheet: string) => boolean = () => false,
+): string {
+  const stem = classStem(playerClass);
+  const spec = specializationOf(playerClass ?? "", specialization);
+  const look = spec && `char_${stem}_${spec}`;
+  return look && baked(look) ? look : `char_${stem}_base`;
 }

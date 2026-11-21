@@ -332,6 +332,46 @@ describe("characterSheet", () => {
   ])("should draw class %s from %s", (cls, sheet) => {
     expect(characterSheet(cls)).toBe(sheet);
   });
+
+  // FS-1J1CB R15-R17: a spec look's sheet, where the manifest has it
+  describe("with a specialization", () => {
+    const baked = (...sheets: string[]) => (name: string) => sheets.includes(name);
+
+    it("should draw a Berserker from the look's sheet when the manifest has it", () => {
+      expect(characterSheet("warrior", "berserker", baked("char_knight_berserker"))).toBe("char_knight_berserker");
+      expect(characterSheet("Warrior", "berserker", baked("char_knight_berserker"))).toBe("char_knight_berserker");
+    });
+
+    it("should draw the base sheet while the look is not in the manifest (R16)", () => {
+      expect(characterSheet("warrior", "berserker", baked("char_knight_guardian"))).toBe("char_knight_base");
+      expect(characterSheet("warrior", "berserker")).toBe("char_knight_base");
+    });
+
+    it.each([
+      ["mage", "spellwarden", "char_wizard_spellwarden"],
+      ["mage", "pyromancer", "char_wizard_pyromancer"],
+      ["archer", "hunter", "char_archer_hunter"],
+      ["archer", "shadow_ranger", "char_archer_shadow_ranger"],
+      ["mercenary", "duelist", "char_mercenary_duelist"],
+      ["mercenary", "sellsword", "char_mercenary_sellsword"],
+      ["warrior", "guardian", "char_knight_guardian"],
+    ])("should name %s's %s look %s", (cls, spec, sheet) => {
+      expect(characterSheet(cls, spec, () => true)).toBe(sheet);
+    });
+
+    it.each<[string | undefined, string | undefined, string]>([
+      ["warrior", "spellwarden", "char_knight_base"],
+      ["mage", "berserker", "char_wizard_base"],
+      ["warrior", "warlock", "char_knight_base"],
+      ["warrior", "toString", "char_knight_base"],
+      ["warrior", "", "char_knight_base"],
+      ["warrior", undefined, "char_knight_base"],
+      ["necromancer", "berserker", "char_knight_base"],
+      [undefined, "berserker", "char_knight_base"],
+    ])("should draw class %s with spec %s from the base, %s", (cls, spec, sheet) => {
+      expect(characterSheet(cls, spec, () => true)).toBe(sheet);
+    });
+  });
 });
 
 describe("the shipped character sheets", () => {
@@ -355,7 +395,7 @@ describe("the shipped character sheets", () => {
   );
 
   const CLASSES = ["warrior", "mage", "archer", "mercenary"];
-  const CLASS_SHEETS = CLASSES.map(characterSheet);
+  const CLASS_SHEETS = CLASSES.map((cls) => characterSheet(cls));
 
   it.each(CLASSES)(
     "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",

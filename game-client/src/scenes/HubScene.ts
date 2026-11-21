@@ -51,8 +51,9 @@ import {
   type Facing8,
   type Point,
 } from "@/render/iso";
-import { preloadArt, registerArt } from "@/render/art/phaser";
-import { SCENE_ART } from "@/render/art/sceneArt";
+import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
@@ -695,6 +696,13 @@ export class HubScene extends Phaser.Scene {
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
+  /**
+   * The town's groups and its own player's spec look, decided at preload (FS-1J1CB R20); the same
+   * set registered in create.
+   */
+  private artGroups: SceneGroups = SCENE_ART.HubScene;
+  /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
+  private looks?: SpecLooks;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
   private groundLayer?: GroundLayer;
   /** FS-2325V §C.7: carries the player's torch, replacing the overlay pool. */
@@ -806,8 +814,10 @@ export class HubScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
-    preloadArt(this, SCENE_ART.HubScene, {
+    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4); the player's
+    // own spec look with them, from the character read, by the town itself (FS-1J1CB R20)
+    this.artGroups = withOwnLook(SCENE_ART.HubScene, useGameStore.getState().getActiveCharacter());
+    preloadArt(this, this.artGroups, {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
@@ -830,7 +840,8 @@ export class HubScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this, SCENE_ART.HubScene);
+    this.art = registerArt(this, this.artGroups);
+    this.looks = new SpecLooks(this.art, onDemandArt(this, this.art), containedBodies(this.views), this.artGroups);
     this.occluders = new Occluders();
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3), pressed under a held left
     // button (§ Change: The pressed hand); the browser's `default` without its sheet. Nothing
@@ -2068,6 +2079,7 @@ export class HubScene extends Phaser.Scene {
       view.title.destroy();
       view.legs.destroy();
       this.views.delete(entityID);
+      this.looks?.forget(entityID);
     }
     // the town is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
     this.arrivalCard.built();
@@ -3123,8 +3135,9 @@ export class HubScene extends Phaser.Scene {
     if (existing) {
       existing.target = { x: player.position.x, y: player.position.y };
       this.updateAppearance(existing, player);
-      // a pick in town shows from the next state (FS-E1ZDG §B R8)
+      // a pick in town shows from the next state (FS-E1ZDG §B R8), and its look once in (FS-1J1CB R22)
       existing.title.show(player);
+      this.looks?.see(player.entity_id, player);
       return;
     }
 
@@ -3135,8 +3148,9 @@ export class HubScene extends Phaser.Scene {
 
     // The class's baked sheet, stood on its footprint by the sheet's anchor
     // (FS-2325V §E.5), others untinted as rivals are in a run (§E.3); the preview
-    // texture, others dimmed, only when the sheet is missing.
-    const anim = new CharacterAnimator(this.art, player.class);
+    // texture, others dimmed, only when the sheet is missing. A spec look once it is in, its base
+    // class's sheet until then (FS-1J1CB R16, R21).
+    const anim = new CharacterAnimator(this.art, this.looks?.look(player) ?? player.class);
     if (anim.baked) anim.dress(body);
     else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
@@ -3173,5 +3187,6 @@ export class HubScene extends Phaser.Scene {
     };
     this.placeName(view);
     this.views.set(player.entity_id, view);
+    this.looks?.see(player.entity_id, player);
   }
 }

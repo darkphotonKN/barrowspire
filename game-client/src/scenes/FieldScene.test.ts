@@ -1559,6 +1559,42 @@ const { atlasTextureKey } = await import("@/render/art/library");
 
 // Each field loads its own wildlife or dead from its preload, its id read in init, before preload
 // runs: Phaser hands the start data to init and create only (FS-C4JWH §B R7–R8, §A R5).
+const { withSpecLooks } = await import("@/render/art/artLoader.standin");
+const { useGameStore: gameStoreForLooks } = await import("@/stores/gameStore");
+
+// FS-1J1CB R20 (ADR-0088 Decision 3): the player's own spec look comes with the field's preload.
+describe("FieldScene spec looks (FS-1J1CB R20)", () => {
+  const enterAs = (specialization?: string) =>
+    gameStoreForLooks.setState({
+      characters: [
+        { id: "c1", name: "Wren", className: "archer", level: 20, experience: 0, levelFloor: 0, specialization, createdAt: "" },
+      ],
+      activeCharacterId: "c1",
+    });
+  afterEach(() => gameStoreForLooks.setState({ characters: [], activeCharacterId: null }));
+
+  it.each([
+    ["hunter", ["wildlife-0", "wildlife-1", "archer_hunter-0"]],
+    [undefined, ["wildlife-0", "wildlife-1"]],
+  ])("should queue a character's own look (%s) with the field's own group, and no other look", (spec, queued) => {
+    enterAs(spec);
+    const art = artLoaderStandin({
+      manifest: withSpecLooks(shippedManifest(), "archer_hunter", "knight_berserker"),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const field = Object.assign(new FieldScene(), art.scene) as unknown as {
+      init(data?: { field?: string }): void;
+      preload(): void;
+    };
+
+    field.init({ field: "gentle_meadows" });
+    field.preload();
+
+    expect(art.queued).toEqual(queued.map(atlasTextureKey));
+  });
+});
+
 describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
 
   it.each([

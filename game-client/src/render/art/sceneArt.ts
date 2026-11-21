@@ -8,15 +8,19 @@
  * scene-scoped groups each scene holds; every group it does not name is resident, so a group the
  * bake adds later costs memory, never draws as a placeholder by omission (§A R3). A scene-scoped
  * group may instead be **on demand** ({@link ON_DEMAND_ART}): in no scene's set, fetched while a
- * scene runs (FS-VHGE7 §F, ADR-0071).
+ * scene runs (FS-VHGE7 §F, ADR-0071), or a spec look's ({@link SPEC_LOOK_ART}, FS-1J1CB §C,
+ * ADR-0088), fetched when the world state carries a player who wears it.
  *
  * Pure, so it is tested against the real manifest without a canvas. The loading itself is
  * `preloadArt` / `registerArt` (`phaser.ts`).
  */
 
 import type { FieldId } from "@/assets/types/client";
+import type { ClassKey } from "@/data/classLore";
+import { SPECIALIZATIONS, specializationOf, type SpecializationId } from "@/data/specializations";
 import type { MonsterArchetype } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
+import { characterSheet, classStem } from "./animationSelect";
 import type { ArtManifest } from "./manifest";
 
 /** The scene-scoped groups a scene holds beyond the resident ones. */
@@ -148,6 +152,50 @@ export function poolGroups(pool: readonly string[]): string[] {
   return [...new Set(groups)];
 }
 
+/**
+ * A spec look's group (FS-1J1CB R15, R26; ADR-0088 Decision 7): the look's sheet, packed alone in
+ * group `<stem>_<spec>`, which a player of `playerClass` holding `specialization` fetches. Until
+ * it is in, the body draws `standIn`, its class's base sheet, untinted.
+ */
+export interface SpecLookGroup {
+  group: string;
+  playerClass: ClassKey;
+  specialization: SpecializationId;
+  /** The look's sheet, `char_<stem>_<spec>`. */
+  sheet: string;
+  /** The class's base sheet, on a resident group (ADR-0059 Decision 1). */
+  standIn: string;
+}
+
+/**
+ * FS-1J1CB R18, R26 (ADR-0088 Decision 1): one row per spec look, each its own on-demand group,
+ * scene-scoped and in no scene's set, so neither the boot download nor any scene's preload holds
+ * one; a world fetches it when its state carries a player who wears it, and preloads only its own
+ * player's (Decision 3). Named by the rule of R15 from FS-E1ZDG's eight, so a look the bake adds
+ * is on demand by its name, and one not yet baked resolves to its base (R16).
+ */
+export const SPEC_LOOK_ART: readonly SpecLookGroup[] = (
+  Object.entries(SPECIALIZATIONS) as [SpecializationId, (typeof SPECIALIZATIONS)[SpecializationId]][]
+).map(([specialization, { class: playerClass }]) => ({
+  group: `${classStem(playerClass)}_${specialization}`,
+  playerClass,
+  specialization,
+  sheet: characterSheet(playerClass, specialization, () => true),
+  standIn: characterSheet(playerClass),
+}));
+
+/**
+ * The spec look a player of `playerClass` holding `specialization` wears, if any: none before the
+ * pick, nor for an id the client does not know or one of another class (FS-1J1CB R16).
+ */
+export function specLookFor(
+  playerClass: string,
+  specialization: string | undefined,
+): SpecLookGroup | undefined {
+  const spec = specializationOf(playerClass, specialization);
+  return spec && SPEC_LOOK_ART.find((row) => row.specialization === spec);
+}
+
 /** Every group the tables name: the scene-scoped groups (§A R2). */
 export const SCENE_SCOPED_GROUPS: ReadonlySet<string> = new Set([
   ...[
@@ -158,6 +206,7 @@ export const SCENE_SCOPED_GROUPS: ReadonlySet<string> = new Set([
     SCENE_ART.BarrowspireScene,
   ].flat(),
   ...ON_DEMAND_ART.map((entry) => entry.group),
+  ...SPEC_LOOK_ART.map((row) => row.group),
 ]);
 
 /** The group an atlas page belongs to: its key without the page number (§A R1). */

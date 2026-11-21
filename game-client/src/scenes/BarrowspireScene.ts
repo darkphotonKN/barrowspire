@@ -133,7 +133,8 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
-import { SCENE_ART } from "@/render/art/sceneArt";
+import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { SpecLooks, withOwnLook, type LookBodies } from "@/render/art/specLooks";
 import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import { drawOpenBar, openBarFraction } from "@/ui/openBar";
@@ -282,6 +283,8 @@ const CAMERA_MARGIN = 160;
  * The manifest names the pool's radius and colour; it has no intensity of its own.
  */
 const STAIRS_POOL_INTENSITY = 0.85;
+/** The own body's key among the run's player bodies' spec looks: never a player id (FS-1J1CB R21). */
+const OWN_BODY = "self";
 /** A player's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
 /**
@@ -896,6 +899,13 @@ export class BarrowspireScene extends Phaser.Scene {
   private groundPlane?: WorldPlane;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
+  /**
+   * The run's groups and its own player's spec look, decided at preload (FS-1J1CB R20); the same
+   * set registered in create.
+   */
+  private artGroups: SceneGroups = SCENE_ART.BarrowspireScene;
+  /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
+  private looks?: SpecLooks;
   /** Baked ground, when the manifest has it; otherwise `groundPlane` is the placeholder floor. */
   private groundLayer?: GroundLayer;
   /** How this run is drawn: its world theme's look (FS-8RBQY §A). */
@@ -1075,6 +1085,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerNameText = undefined;
     this.playerTitle = undefined;
     this.playerAnim = undefined;
+    this.looks = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
     this.ownHealth = undefined;
@@ -1546,7 +1557,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders. The
     // creatures and the boss load with the run, for every floor: a climb loads nothing, and the
     // demon is never drawn before its art is in (FS-C4JWH §B R9)
-    preloadArt(this, SCENE_ART.BarrowspireScene, {
+    // and the player's own spec look with them, from the character read (FS-1J1CB R20)
+    this.artGroups = withOwnLook(SCENE_ART.BarrowspireScene, useGameStore.getState().getActiveCharacter());
+    preloadArt(this, this.artGroups, {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
@@ -3099,7 +3112,13 @@ export class BarrowspireScene extends Phaser.Scene {
     return null;
   }
 
-  private createPlayer(x: number, y: number, className?: string, username?: string): void {
+  private createPlayer(
+    x: number,
+    y: number,
+    className?: string,
+    username?: string,
+    specialization?: string,
+  ): void {
     const activeChar = useGameStore.getState().getActiveCharacter();
     const effectiveClass = (activeChar?.className || className || "warrior").toLowerCase();
     const displayName = activeChar?.name || username || "Hero";
@@ -3115,8 +3134,10 @@ export class BarrowspireScene extends Phaser.Scene {
     const at = worldToScreen(x, y);
 
     // The class's baked sheet, stood on its footprint by the sheet's anchor
-    // (FS-2325V §E.5); the placeholder texture only when the sheet is missing.
-    this.playerAnim = new CharacterAnimator(this.art, effectiveClass, this.playerFacing);
+    // (FS-2325V §E.5); the placeholder texture only when the sheet is missing. Its spec look,
+    // preloaded with the run, else its base until the look is in (FS-1J1CB R20, R21).
+    const look = this.looks?.look({ class: effectiveClass, specialization }) ?? effectiveClass;
+    this.playerAnim = new CharacterAnimator(this.art, look, this.playerFacing);
     if (this.playerAnim.baked) {
       this.playerAnim.dress(this.player);
       keepBodySize(this.player, this.playerAnim.artScale);
@@ -3156,6 +3177,29 @@ export class BarrowspireScene extends Phaser.Scene {
     followWith(this.cameras.main, this.player);
   }
 
+  /**
+   * The run's player bodies, as its spec looks re-dress them (FS-1J1CB R21): the own body under
+   * {@link OWN_BODY}, every other by its player id. A re-dressed body keeps its arcade body's size.
+   */
+  private lookBodies(): LookBodies {
+    return {
+      body: (id) => {
+        if (id === OWN_BODY)
+          return this.player && this.playerAnim ? { anim: this.playerAnim, sprite: this.player } : undefined;
+        const sprite = this.otherPlayers.get(id);
+        const anim = this.otherPlayersAnim.get(id);
+        return sprite && anim ? { anim, sprite } : undefined;
+      },
+      wear: (id, anim) => {
+        const sprite = id === OWN_BODY ? this.player : this.otherPlayers.get(id);
+        if (!sprite) return;
+        if (id === OWN_BODY) this.playerAnim = anim;
+        else this.otherPlayersAnim.set(id, anim);
+        keepBodySize(sprite, anim.artScale);
+      },
+    };
+  }
+
   /** The game's one pointer (FS-KYPQ9 § Change: The pressed hand). */
   private pointerLook?: PointerLook;
 
@@ -3188,7 +3232,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
-    this.art = registerArt(this, SCENE_ART.BarrowspireScene);
+    this.art = registerArt(this, this.artGroups);
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
@@ -3201,6 +3245,7 @@ export class BarrowspireScene extends Phaser.Scene {
       onDemand,
     );
     this.poolArt = new FloorPoolArt(onDemand, (group) => this.monsters?.redress(group));
+    this.looks = new SpecLooks(this.art, onDemand, this.lookBodies(), this.artGroups);
 
     // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
     // run always was; otherwise the map, when it comes
@@ -3744,8 +3789,16 @@ export class BarrowspireScene extends Phaser.Scene {
       // 第一次收到位置，建立玩家
       const firstSeen = !this.player;
       if (firstSeen) {
-        this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
+        this.createPlayer(
+          pos.x,
+          pos.y,
+          state.current_player.class,
+          state.current_player.username,
+          state.current_player.specialization,
+        );
       }
+      // its spec look: fetched if the read did not carry it, and worn once in (FS-1J1CB R19, R22)
+      this.looks?.see(OWN_BODY, state.current_player);
       // the title under the own name, from this state (FS-E1ZDG §K.41)
       this.playerTitle?.show(state.current_player);
       // escaped, and still sent their own state until the run ends (FS-QPDKN req 24): the body
@@ -4548,6 +4601,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersFacing.delete(playerId);
         this.otherPlayersWalkPhase.delete(playerId);
         this.otherPlayersAnim.delete(playerId);
+        this.looks?.forget(playerId);
 
         // remove name text
         const nameText = this.otherPlayersNameTexts.get(playerId);
@@ -4577,8 +4631,9 @@ export class BarrowspireScene extends Phaser.Scene {
         standAt(sprite, pos, 1);
 
         // Rivals wear their class's sheet, untinted: the name plate tells them apart
-        // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing.
-        const anim = new CharacterAnimator(this.art, cls);
+        // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing. A spec
+        // look once it is in, the base class's sheet until then (FS-1J1CB R16, R21).
+        const anim = new CharacterAnimator(this.art, this.looks?.look({ ...playerData, class: cls }) ?? cls);
         this.otherPlayersAnim.set(playerData.id, anim);
         if (anim.baked) {
           anim.dress(sprite);
@@ -4630,8 +4685,10 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersNameTexts.set(playerData.id, nameText);
         this.otherPlayersTitles.set(playerData.id, new NameplateTitle(this, nameStyle));
       }
-      // the title under their name, from this state (FS-E1ZDG §K.41)
+      // the title under their name, from this state (FS-E1ZDG §K.41), and their spec look:
+      // fetched the first time it is seen, worn once in (FS-1J1CB R19, R21, R22)
       this.otherPlayersTitles.get(playerData.id)?.show(playerData);
+      this.looks?.see(playerData.id, { ...playerData, class: cls });
 
       // 設定目標位置，在 update() 中平滑移動
       this.otherPlayersTargets.set(playerData.id, {

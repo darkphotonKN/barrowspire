@@ -4375,6 +4375,60 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
   });
 });
 
+const { withSpecLooks } = await import("@/render/art/artLoader.standin");
+const { useGameStore: gameStoreForLooks } = await import("@/stores/gameStore");
+
+// FS-1J1CB R20, R23 (ADR-0088 Decisions 3, 5): the player's own spec look comes with the town's
+// preload, read from the selected character; any other look group goes at the load.
+describe("HubScene spec looks (FS-1J1CB R20, R23)", () => {
+  const enterAs = (specialization?: string) =>
+    gameStoreForLooks.setState({
+      characters: [
+        { id: "c1", name: "Wren", className: "archer", level: 20, experience: 0, levelFloor: 0, specialization, createdAt: "" },
+      ],
+      activeCharacterId: "c1",
+    });
+  afterEach(() => gameStoreForLooks.setState({ characters: [], activeCharacterId: null }));
+
+  const looksArt = (textures: string[] = []) =>
+    artLoaderStandin({
+      manifest: withSpecLooks(shippedManifest(), "archer_hunter", "knight_berserker"),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, ...textures].map(atlasTextureKey),
+    });
+
+  it("should queue a Hunter's own look with the folk, and no other look", () => {
+    enterAs("hunter");
+    const art = looksArt();
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queued).toEqual(["folk-0", "archer_hunter-0"].map(atlasTextureKey));
+  });
+
+  it("should queue no look for a character with no specialization (R18)", () => {
+    enterAs(undefined);
+    const art = looksArt();
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
+  });
+
+  it("should keep the own look across the switch and evict another's, animations first (R23)", () => {
+    enterAs("hunter");
+    const art = looksArt(["folk-0", "archer_hunter-0", "knight_berserker-0"]);
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.textures.removed).toEqual([atlasTextureKey("knight_berserker-0")]);
+    expect(art.textures.exists(atlasTextureKey("archer_hunter-0"))).toBe(true);
+  });
+});
+
 const { VILLAGE_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
 /** The town's track's key (FS-28DDG § Change: The tower's music on every floor of a run, W1). */
 const MUSIC_KEY = VILLAGE_TRACK.key;

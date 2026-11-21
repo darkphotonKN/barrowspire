@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CharacterAnimator, CharacterMotion, type AnimatedSprite } from "./character";
-import { ArtLibrary } from "./library";
+import { ArtLibrary, PLACEHOLDER_TEXTURE } from "./library";
 import { CHARGE_MS } from "@/render/effects/charge";
 import type { ArtAnimation, ArtManifest } from "./manifest";
 
@@ -894,5 +894,73 @@ describe("CharacterAnimator", () => {
         startFrame: 5,
       });
     });
+  });
+});
+
+// FS-1J1CB R21-R22: a body re-dressed in its spec look, on its own sprite, between two frames.
+describe("CharacterAnimator.wearing", () => {
+  const STRIDE = 200; // world px/s, the server's DefaultSpeed
+  const art = () => new ArtLibrary(manifest(), quiet);
+
+  /** Walks `anim` east on `sprite` for `ms`, showing each frame as a scene does. */
+  function walkEast(anim: CharacterAnimator, sprite: ReturnType<typeof fakeSprite>, ms: number) {
+    const pos = { x: 0, y: 0 };
+    let t = 0;
+    for (; t <= ms; t += FRAME) {
+      pos.x += (STRIDE * FRAME) / 1000;
+      anim.show(sprite, anim.step(pos, t, FRAME, false));
+    }
+    return { pos, t };
+  }
+
+  it("should be a new animator for the look's sheet, turned the way the old one was", () => {
+    const anim = new CharacterAnimator(art(), "warrior", "nw");
+    const next = anim.wearing({ sheet: "char_mercenary_base" });
+    expect(next).not.toBe(anim);
+    expect(next.sheet).toBe("char_mercenary_base");
+    expect(next.baked).toBe(true);
+    expect(next.facing).toBe("nw");
+    expect(anim.sheet).toBe("char_knight_base");
+  });
+
+  it("should carry the stride on at its place on the same sprite, never drawing it without a texture", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    const { pos, t } = walkEast(anim, sprite, 500);
+    sprite.at(5);
+    const plays = sprite.plays.length;
+
+    const next = anim.wearing({ sheet: "char_mercenary_base" });
+    next.redress(sprite);
+
+    expect(sprite.plays.slice(plays)).toEqual([{ key: "char_mercenary_base/walk/0", startFrame: 5 }]);
+    expect(sprite.texture).not.toBe("");
+    expect(sprite.texture).not.toBe(PLACEHOLDER_TEXTURE);
+    // its pace carried too: the next frame still walks rather than standing for a beat
+    pos.x += (STRIDE * FRAME) / 1000;
+    expect(next.step(pos, t + FRAME, FRAME, false).animation).toBe("walk");
+  });
+
+  it("should keep a swing under way swinging, to its end", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    const at = { x: 0, y: 0 };
+    anim.attack(0, { x: 1, y: 0 });
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    sprite.at(2);
+
+    const next = anim.wearing({ sheet: "char_mercenary_base" });
+    next.redress(sprite);
+
+    expect(sprite.plays.at(-1)).toEqual({ key: "char_mercenary_base/attack/0", startFrame: 2 });
+    expect(next.step(at, 300, FRAME, false).animation).toBe("attack");
+    expect(next.step(at, 600, FRAME, false).animation).toBe("idle");
+  });
+
+  it("should only dress a body that has not stepped yet", () => {
+    const sprite = fakeSprite();
+    new CharacterAnimator(art(), "warrior").wearing({ sheet: "char_mercenary_base" }).redress(sprite);
+    expect(sprite.frame).toBe("char_mercenary_base/idle/1/0");
+    expect(sprite.plays).toEqual([]);
   });
 });
