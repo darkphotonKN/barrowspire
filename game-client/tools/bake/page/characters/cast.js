@@ -68,6 +68,7 @@ import { darkReaper, darkWarrior } from "./darkWarrior.js";
 import { cut, dress } from "./look.js";
 import { berserker, guardian } from "./warriorLooks.js";
 import { pyromancer, spellwarden } from "./mageLooks.js";
+import { hunter, shadowRanger } from "./archerLooks.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -162,7 +163,7 @@ export function archer(look) {
   piece("belt", F.leatherDark, { pouch: true }, (m, o) => belt(rig, m, M.brass, o));
   piece("cloak", F.rangerNight, cloakO, (m, o) => cloak(rig, m, o));
   piece("quiver", undefined, quiverO, (m, o) => quiver(rig, M, F, o));
-  piece("weapon", undefined, {}, () => bowInHand(rig, M, F));
+  piece("weapon", undefined, {}, (m, o) => bowInHand(rig, M, F, o));
 
   return d.finish(rig, ARCHER_STYLE);
 }
@@ -172,9 +173,9 @@ export function archer(look) {
  * while a clip draws (`fx.ik`), the right hand travels back along the arrow line and the string
  * follows it (`fx.draw`), an arrow on it when nocked (`fx.arrow`).
  */
-function bowInHand(rig, M, F) {
+function bowInHand(rig, M, F, o) {
   const bowMount = inHand(rig, "L");
-  const bow = longbow(rig, M, F);
+  const bow = longbow(rig, M, F, o);
   bowMount.add(bow.group);
 
   // the string follows the right hand while drawing; the hand is solved onto the arrow line
@@ -652,6 +653,8 @@ export const CAST = [
   specRow("knight", "berserker", berserker, { module: "warriorLooks", fn: "berserker", animations: BERSERKER_SHEET.animations }),
   specRow("wizard", "spellwarden", spellwarden, { module: "mageLooks", fn: "spellwarden" }),
   specRow("wizard", "pyromancer", pyromancer, { module: "mageLooks", fn: "pyromancer" }),
+  specRow("archer", "hunter", hunter, { module: "archerLooks", fn: "hunter" }),
+  specRow("archer", "shadow_ranger", shadowRanger, { module: "archerLooks", fn: "shadowRanger" }),
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds

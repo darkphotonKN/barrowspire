@@ -386,10 +386,15 @@ lit) while the player stands inside.
     upright tongue of flame.
   - **Hunter** (archer): a grey-brown wolf pelt over the shoulders, a laced hide jerkin, undyed
     grey-brown wool for the cloak and capelet, no hood, the face and loose brown hair showing,
-    long pale fletching and horn-capped nocks.
+    long pale fletching and horn-capped nocks. Bare of the hood, the pelt stands open at the
+    throat: closed up to the chin it read as a beard. *(Amended in the Hunter's bake,
+    2026-11-22, FS-1J1CB.)*
   - **Shadow Ranger** (archer): the Nightwood green dyed to a cold soot-black, the buff leather
     a cold grey, lifted or rimmed until the back passes the dark-room floor. A gloom
-    rises off the figure (*Auras*).
+    rises off the figure (*Auras*). The soot is lifted, not rimmed: the cowl, capelet and cloak
+    are pitch most of the way to slate, the sleeves and hose a darker step of it, still black at
+    a glance. Variant A's soot left her back a third under the floor. *(Amended in the Shadow
+    Ranger's bake, 2026-11-22, FS-1J1CB R10.)*
   - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
     mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
     half-cloak from the off shoulder on cloak bones.

@@ -1591,7 +1591,8 @@ describe("FieldScene spec looks (FS-1J1CB R20)", () => {
     field.init({ field: "gentle_meadows" });
     field.preload();
 
-    expect(art.queued).toEqual(queued.map(atlasTextureKey));
+    // the set, not the order: pages queue in the manifest's order, which a baked look joins
+    expect(art.queued.sort()).toEqual(queued.map(atlasTextureKey).sort());
   });
 });
 

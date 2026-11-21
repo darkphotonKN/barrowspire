@@ -278,7 +278,7 @@ function shieldFace(w, top, bot, cross = null) {
  * A longbow in the left hand, with a live string: `update(nock)` redraws the string to a
  * nock point in the bow's frame (clips pull it to the right hand while drawing).
  */
-export function longbow(rig, M, F) {
+export function longbow(rig, M, F, o = {}) {
   const H = rig.H;
   const g = new THREE.Group();
   const L = 0.4 * H;
@@ -305,6 +305,13 @@ export function longbow(rig, M, F) {
   g.add(new THREE.Mesh(stave, M.woodDark));
   g.add(new THREE.Mesh(rod(0.012 * H, 0.012 * H, 0.08 * H), F.leatherDark));
   const tips = [new THREE.Vector3(0, brace, -L), new THREE.Vector3(0, brace, L)];
+  // `nocks`: horn caps over the nocks (the Hunter, FS-1J1CB R5), each tapering out to its tip
+  if (o.nocks)
+    for (const [k, t] of tips.entries()) {
+      const cap = rod(0.0075 * H, 0.0035 * H, 0.05 * H, 7);
+      cap.rotateX(k === 0 ? Math.PI : 0);
+      g.add(placed(cap, F.horn, t.x, t.y - 0.002 * H, t.z + (k === 0 ? 0.012 : -0.012) * H));
+    }
   const stringMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(0.75, 0.7, 0.58), roughness: 0.9 });
   const strands = tips.map(() => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0022 * H, 0.0022 * H, 1, 4), stringMat);
@@ -363,14 +370,17 @@ export function quiver(rig, M, F, o) {
   const body = new THREE.CylinderGeometry(0.032 * H, 0.026 * H, 0.26 * H, 12, 1, true);
   g.add(new THREE.Mesh(body, F.leatherDouble));
   g.add(placed(new THREE.TorusGeometry(0.032 * H, 0.005 * H, 5, 14), M.brass, 0, 0.13 * H, 0, Math.PI / 2));
+  const fk = o.fletchLength ?? 1;
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     const x = Math.cos(a) * 0.016 * H;
     const z = Math.sin(a) * 0.016 * H;
     const shaft = new THREE.CylinderGeometry(0.003 * H, 0.003 * H, 0.08 * H, 4);
     g.add(placed(shaft, M.wood, x, 0.16 * H, z));
-    const fl = new THREE.BoxGeometry(0.014 * H, 0.05 * H, 0.002 * H);
-    g.add(placed(fl, F.linen, x, 0.205 * H, z, 0, a, 0));
+    // `fletchLength` draws the fletching out longer and stands it higher (1 today; the Hunter's
+    // goose feathers, FS-1J1CB R5), widening it a little with it
+    const fl = new THREE.BoxGeometry(0.014 * H * Math.min(fk, 1.4), 0.05 * H * fk, 0.002 * H);
+    g.add(placed(fl, F.linen, x, (0.205 + 0.025 * (fk - 1)) * H, z, 0, a, 0));
   }
   return g;
 }

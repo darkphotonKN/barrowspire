@@ -330,6 +330,25 @@ export const GEAR = {
   // scorched oxblood, the house oxblood a little toward ember under grime. Near-black (variant B's
   // soot) or the oxblood itself left her back under the dark-room floor (R10) on the black gown
   soot: mix("oxblood", "ember", 0.1),
+  // the archer's specialization looks (FS-1J1CB R5, R6; archerLooks.js). The Hunter: the wilds'
+  // own colours, warm and earthy, and nothing of the Nightwood green. A grey-brown wolf pelt over a
+  // cloak and capelet of undyed wool a shade browner and darker than it, so the pelt parts from
+  // them; a laced hide jerkin, pale goose fletching, horn nock caps, brown hair
+  wolf: mix(mix("slate", "barrowBrown", 0.55), "vellumDark", 0.08),
+  hunterWool: mix(mix("barrowBrown", "barrowDeep", 0.55), "slate", 0.2),
+  hunterWoolDark: mix(mix(mix("barrowBrown", "barrowDeep", 0.55), "slate", 0.2), "pitch", 0.35),
+  jerkinHide: mix("barrowBrown", "barrowDeep", 0.15),
+  goose: mix("vellum", "vellumDark", 0.25),
+  horn: mix("vellumDark", "barrowBrown", 0.35),
+  hairBrown: mix("barrowBrown", "barrowDeep", 0.3),
+  // the Shadow Ranger: the Nightwood dyed through to a cold soot-black, the warmth taken out; the
+  // buff leather a cold grey, the bracers, boots and fletching black. The soot is lifted toward
+  // slate, the sleeves and hose with it: variant A's soot (pitch a little past halfway to slate,
+  // under charcoal) left her back at 0.0159 against the dark-room floor's 0.0222 (R10)
+  shadow: mix("pitch", "slate", 0.85),
+  shadowDark: mix("pitch", "slate", 0.35),
+  shadowLeather: mix(mix("barrowDeep", "slate", 0.55), "pitch", 0.35),
+  shadowBlack: mix("pitch", "slate", 0.3),
 };
 
 /**
@@ -443,6 +462,19 @@ export function fabrics() {
     // the Spellwarden's spaulders: blackened iron, both faces drawn (a lame is an open shell)
     blackIronDouble: mat(plate(GEAR.blackIron, { rust: 0.3, seed: 6 }), { metal: 0.7, rough: 0.5, side: D }),
     soot: mat(wool(GEAR.soot, { seed: 153, dirt: 0.35 }), { side: D }),
+    // the Hunter's and the Shadow Ranger's cloth (FS-1J1CB R5, R6)
+    wolf: mat(hair(GEAR.wolf, { seed: 221 }), { rough: 0.95, side: D, normal: 1.4 }),
+    hunterWool: mat(wool(GEAR.hunterWool, { seed: 223, dirt: 0.45 }), { side: D }),
+    hunterWoolDark: mat(wool(GEAR.hunterWoolDark, { seed: 225 })),
+    jerkinHide: mat(leather(GEAR.jerkinHide, { seed: 227, dirt: 0.45 }), { rough: 0.75, side: D }),
+    goose: mat(linen(GEAR.goose, { seed: 229, dirt: 0.15 })),
+    horn: mat(bone(GEAR.horn, { seed: 231 }), { rough: 0.5 }),
+    hairBrown: mat(hair(GEAR.hairBrown, { seed: 233 }), { rough: 0.9 }),
+    shadow: mat(wool(GEAR.shadow, { seed: 235, dirt: 0.3 }), { side: D }),
+    shadowDark: mat(wool(GEAR.shadowDark, { seed: 237 })),
+    shadowLeather: mat(leather(GEAR.shadowLeather, { seed: 239, dirt: 0.3 }), { rough: 0.7 }),
+    shadowBlack: mat(leather(GEAR.shadowBlack, { seed: 241, dirt: 0.25 }), { rough: 0.65 }),
+    shadowFletch: mat(linen(GEAR.shadowDark, { seed: 243, dirt: 0.1 })),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),

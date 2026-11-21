@@ -886,7 +886,7 @@ export function coif(rig, mat) {
 }
 
 /** A short capelet riding the chest and covering the shoulder line, under a hood or cowl. */
-function capelet(rig, mat) {
+export function capelet(rig, mat) {
   const H = rig.H;
   const [, ny] = J(rig, "neck");
   const cape = rigidTube(
