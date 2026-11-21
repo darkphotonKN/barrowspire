@@ -396,6 +396,9 @@ describe("the shipped character sheets", () => {
 
   const CLASSES = ["warrior", "mage", "archer", "mercenary"];
   const CLASS_SHEETS = CLASSES.map((cls) => characterSheet(cls));
+  // a spec look is its class's figure re-dressed, on the class's clips, scale and trim (FS-1J1CB R9, R15)
+  const LOOK_SHEETS = Object.keys(manifest.sheets).filter((name) => /^char_(knight|archer|wizard|mercenary)_(?!base$)/.test(name));
+  const CLASS_OR_LOOK = [...CLASS_SHEETS, ...LOOK_SHEETS];
 
   it.each(CLASSES)(
     "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
@@ -408,9 +411,9 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should give walk_attack to the four classes alone, never a creature or a resident (FS-3V7GC)", () => {
+  it("should give walk_attack to the four classes and their spec looks alone, never a creature or a resident (FS-3V7GC)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
+      if (!CLASS_OR_LOOK.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
   });
 
   // the four classes at 1.5x since their run re-bakes (FS-HF0WW § Change: Class sheets at 1.5x
@@ -433,9 +436,9 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should bake the four classes alone at 2x and trimmed (FS-3V7GC)", () => {
+  it("should bake the four classes and their spec looks alone at 2x and trimmed (FS-3V7GC)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (!CLASS_SHEETS.includes(name)) {
+      if (!CLASS_OR_LOOK.includes(name)) {
         expect(sheet.scale, name).toBeUndefined();
         expect(sheet.trimmed, name).toBeUndefined();
       }

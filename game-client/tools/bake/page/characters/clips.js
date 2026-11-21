@@ -118,6 +118,24 @@ export const MERC_ANIMATIONS = withWalkAttack({
 /** The Mercenary's sheet re-baked with the run (FS-JS7C8 slice 8): his clips, the parry, and the running class's. */
 export const RUNNING_MERC_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, ...RUN_ANIMATIONS });
 
+/** The attack clips a dual-wielder swings with either hand (FS-1J1CB §D R28). */
+export const OFFHAND_OF = { attack: "attack_offhand", walk_attack: "walk_attack_offhand", backpedal_attack: "backpedal_attack_offhand" };
+
+/**
+ * `specs` with each attack clip's off-hand twin (FS-1J1CB §D R28, the Berserker first):
+ * `attack_offhand`, `walk_attack_offhand` and `backpedal_attack_offhand`, each the same frames,
+ * fps, loop, box and cloth as its right-hand clip, so the client's attack window times either hand
+ * alike. Their keys are {@link offhandPoses}.
+ */
+export function withOffhand(specs) {
+  const out = { ...specs };
+  for (const [clip, twin] of Object.entries(OFFHAND_OF)) if (specs[clip]) out[twin] = { ...specs[clip] };
+  return out;
+}
+
+/** The right-hand clip an animation name stands for: itself, or the attack an off-hand clip twins. */
+export const handless = (anim) => Object.entries(OFFHAND_OF).find(([, twin]) => twin === anim)?.[0] ?? anim;
+
 /**
  * Hub folk (FS-2325V §G.1) only idle and walk: they never fight or fall. Their idle is a shorter
  * loop, the breath of someone standing about, which keeps their sheets small.
@@ -505,6 +523,25 @@ const LOOSE_IK = 1.12;
  */
 export const ATTACK_TURN_LIMIT = 100;
 
+/**
+ * An upper arm turned `t` rad in one plane (Euler XYZ, as a bone's offset): the plane holding the
+ * arm hung `tilt` rad out to its side about the body's front-back axis and the way the thumb
+ * points, turned about the arm's own crosswise axis (+t back, -t forward). So the arm sweeps in that
+ * plane alone, and a weapon held on out of the fist leads with its thumb side (the Berserker's
+ * cleave).
+ */
+export function swingPlane(tilt, t) {
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), tilt).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), t));
+  const e = new THREE.Euler().setFromQuaternion(q, "XYZ");
+  return [e.x, e.y, e.z];
+}
+
+/** The plane the Berserker's cleave swings the axe arm in, from hanging (rad; about 137°: up and out over the right shoulder, across and down past the left hip). */
+export const CLEAVE_TILT = -2.4;
+
+/** The Berserker's wrist in the carry (rad): the haft hung forward of the fist, steeper than a blade's point, so the axe's edge faces forward and a little down (gear.js `AXE_EDGE_TURN`). */
+export const CLEAVE_CARRY = 1.3;
+
 export const ATTACKS = {
   /**
    * Knight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): a
@@ -632,6 +669,29 @@ export const ATTACKS = {
       P({ upperArmR: [-0.35, 0, -0.08], foreArmR: [-1.15, 0, 0], handR: [-0.1, 0, 0], upperArmL: [0.1, 0, 0.15], foreArmL: [-0.5, 0, 0] }, { z: 0.004 }, { glow: 1.3 }),
     ].map((p) => add(CAST_STANCE, p)),
 
+  /**
+   * Berserker (FS-1J1CB R2): a wide, swinging cut with the bearded axe, the free arm thrown back
+   * against it, not the knight's compact cut behind a shield. The axe arm turns in one plane
+   * ({@link swingPlane}) tipped {@link CLEAVE_TILT} from hanging, so the haft runs on out of the
+   * fist the whole way and the bit, on the thumb side, leads: the weight rocks back as the arm
+   * swings up and out behind the right shoulder (keys 0–1), the axe high over it with its edge
+   * turned up toward the foe; the pelvis turns in first while the chest is still back (key 2); the
+   * chest and the arm follow, the weight onto the front foot, the axe sweeping across the front
+   * at chest height (key 3, the strike) and on, wide, down to low past the left hip (key 4), the
+   * free arm and its axe flung out and back behind the left hip for balance (keys 3–4); it settles
+   * back to the carry, both axes low by the legs (keys 5–6).
+   */
+  cleave: () =>
+    [
+      P({ hips: [0, -0.08, 0], spine: [-0.03, -0.1, 0], chest: [-0.05, -0.2, 0], upperArmR: swingPlane(-1.2, 0.1), foreArmR: [-0.3, 0, 0], handR: [1.2, 0, 0], upperArmL: [-0.5, 0, 0.25], foreArmL: [-0.4, 0, 0], handL: [1.2, 0, 0] }, { z: -0.012 }),
+      P({ hips: [0, -0.2, 0], spine: [-0.07, -0.2, 0], chest: [-0.1, -0.38, 0], upperArmR: swingPlane(CLEAVE_TILT, 0.5), foreArmR: [-0.35, 0, 0], handR: [1.2, 0, 0], upperArmL: [-0.9, 0, 0.3], foreArmL: [-0.4, 0, 0], handL: [1.1, 0, 0] }, { z: -0.03 }),
+      P({ hips: [0, 0.15, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.3, 0], upperArmR: swingPlane(CLEAVE_TILT, -0.3), foreArmR: [-0.25, 0, 0], handR: [1.2, 0, 0], upperArmL: [-0.4, 0, 0.45], foreArmL: [-0.4, 0, 0], handL: [1.1, 0, 0] }),
+      P({ hips: [0, 0.35, 0], spine: [0.12, 0.2, 0], chest: [0.14, 0.32, 0], upperArmR: swingPlane(CLEAVE_TILT, -0.85), foreArmR: [-0.15, 0, 0], handR: [1.2, 0, 0], upperArmL: [0.55, 0, 0.75], foreArmL: [-0.3, 0, 0], handL: [1.1, 0, 0] }, { z: 0.045 }),
+      P({ hips: [0, 0.42, 0], spine: [0.15, 0.25, 0], chest: [0.2, 0.45, 0], upperArmR: swingPlane(CLEAVE_TILT, -1.9), foreArmR: [-0.2, 0, 0], handR: [1.2, 0, 0], upperArmL: [0.65, 0, 0.85], foreArmL: [-0.25, 0, 0], handL: [1.1, 0, 0] }, { z: 0.04 }),
+      P({ hips: [0, 0.15, 0], spine: [0.05, 0.06, 0], chest: [0.06, 0.1, 0], upperArmR: [-0.5, 0.4, 0.1], foreArmR: [-0.3, 0, 0], handR: [1.25, 0, 0], upperArmL: [0.2, 0, 0.4], foreArmL: [-0.3, 0, 0], handL: [1.2, 0, 0] }, { z: 0.015 }),
+      P({ upperArmR: [-0.05, 0.1, -0.14], foreArmR: [-0.1, 0, 0], handR: [CLEAVE_CARRY, 0, 0], upperArmL: [0, 0, 0.14], foreArmL: [-0.1, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }, { z: 0.005 }),
+    ].map((p) => add(STANCE, p)),
+
   /** Ghoul: a lunging overhead chop, jaw gaping. */
   chop: () => [
     P({ upperArmR: [-0.8, 0, -0.15], foreArmR: [-0.6, 0, 0], upperArmL: [-0.8, 0, 0.15], foreArmL: [-0.5, 0, 0] }, {}, { jaw: 0.1 }),
@@ -695,8 +755,8 @@ export function layerPoses(upper, lower) {
  * pose the attack never draws, and its bow sweeps wider than the frame); the legs step `cycles` of
  * `legs` (a looping cycle) over the same span, sampled between its keys.
  */
-function attackOverLegs(name, style, spec, attackSpec, legs, cycles) {
-  const attack = ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
+function attackOverLegs(name, style, spec, attackSpec, legs, cycles, hand = (p) => p) {
+  const attack = ATTACKS[style.attack]().map((p) => hand(add(p, style.attackExtra)));
   const duration = spec.frames / spec.fps;
   if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
     throw new Error(`clips: ${name} lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
@@ -724,6 +784,29 @@ export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
  */
 export function backpedalAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
   return attackOverLegs("backpedal_attack", style, spec, attackSpec, backpedalCycle(style), spec.cycles ?? BACKPEDAL_ATTACK_CYCLES);
+}
+
+/**
+ * An attack key swung with the other hand (FS-1J1CB §D R28): the key's upper body mirrored left for
+ * right ({@link mirror}) over `legs`, the right-hand clip's own legs ({@link layerPoses}: the spine
+ * takes up the turn between the two pelvises, so the chest is the mirrored key's). Baked and lit as
+ * every clip, never a sprite flipped at runtime, which would put the key light on the wrong side.
+ */
+export const offhandPose = (key, legs = key) => layerPoses(mirror(key), legs);
+
+/**
+ * The off-hand twins of a style's attack clips, keyed as {@link OFFHAND_OF}: the attack's keys
+ * swung with the other hand ({@link offhandPose}) over the attack's own stance, the walk's legs and
+ * the backpedal's, the same keys, fps and strike key as the right hand's.
+ */
+export function offhandPoses(style, specs) {
+  const attack = () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
+  return {
+    attack_offhand: () => attack().map((p) => offhandPose(p)),
+    walk_attack_offhand: () => attackOverLegs("walk_attack_offhand", style, specs.walk_attack_offhand, specs.attack, walkCycle(style), specs.walk_attack_offhand.cycles ?? WALK_ATTACK_CYCLES, mirror),
+    backpedal_attack_offhand: () =>
+      attackOverLegs("backpedal_attack_offhand", style, specs.backpedal_attack_offhand, specs.attack, backpedalCycle(style), specs.backpedal_attack_offhand.cycles ?? BACKPEDAL_ATTACK_CYCLES, mirror),
+  };
 }
 
 // --- parry ---------------------------------------------------------------------------------
@@ -787,6 +870,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     parry: () => parryClip(style, specs.parry.frames),
     walk_attack: () => walkAttackClip(style, specs.walk_attack, specs.attack),
     backpedal_attack: () => backpedalAttackClip(style, specs.backpedal_attack, specs.attack),
+    ...offhandPoses(style, specs),
   };
   const own = style.clips ?? {};
   return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));

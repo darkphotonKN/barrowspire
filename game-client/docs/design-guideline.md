@@ -139,14 +139,18 @@ and the two are not required to agree (ADR-0025).
 | **Brass** | `#9c7b3f`, `#c9a14e` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
-and its aim arrow) and nothing else. A shadow has nothing to be darker than in a dark barrow, and
+and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
+owner's pick, 2026-11-21, FS-1J1CB: the Shadow Shot's look is the Shadow Ranger's; every other
+archer looses the plain Heavy Shot, with no umbra.)* A shadow has nothing to be darker than in a dark barrow, and
 dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, desaturated
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
 One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
-interactable, which stays amber, and never stands in for a light source's colour.
+interactable, which stays amber, and never stands in for a light source's colour. It may also be
+baked into one body: the Pyromancer's embers on her hem and the flame in her focus's cage, still
+never marking an interactable. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
@@ -300,7 +304,12 @@ lit) while the player stands inside.
   full diagonal from above the right shoulder to below the left hip; the knight cuts compact
   behind a shield kept up before his chest, the mercenary wide, a drawing cut with his free hand
   thrown out against it; the wizard thrusts her sceptre from the shoulder with her free hand
-  opening (FS-2325V § Change: The class attacks move with weight and cut deep). Folk and
+  opening (FS-2325V § Change: The class attacks move with weight and cut deep).
+  A dual-wielder's off-hand attack (`attack_offhand`, `walk_attack_offhand`,
+  `backpedal_attack_offhand`, the Berserker first) is baked from the attack's upper-body keys
+  mirrored left for right, over the same legs, lit by the bake, with the same keys, fps and
+  strike key; never a sprite flipped at runtime, which puts the baked key light on the wrong
+  side. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)* Folk and
   creatures keep idle and walk.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
@@ -311,7 +320,13 @@ lit) while the player stands inside.
   knee, open at the front for the saddle, over mail chausses and plain boots, and a heavy oxblood
   cloak hangs to the calf. He carries a longsword and a tall kite shield painted per pale in bone
   and oxblood, with an iron boss. Worn and functional kit, never bright fantasy plate. *(Amended
-  at the owner's pick, 2026-11-04.)*
+  at the owner's pick, 2026-11-04.)* The mail and the conical nasal helm are the warrior's, and
+  the mail is the Guardian's body too: the Guardian's head is a flat-topped great helm over the
+  coif, he wears a bone surcoat with the house cross over the hauberk, and his kite shield is a
+  little larger, the cross laid counterchanged over its per-pale field. The Berserker goes
+  unhelmed with the coif pushed down round his neck, carries a bearded axe in each hand with the
+  cutting edge forward and down, and has no shield and no longsword. *(Amended at the owner's
+  pick, 2026-11-21, FS-1J1CB.)*
 - **Archer:** a ranger in Nightwood: cowl, capelet and cloak in a green dyed so deep it is
   nearly black, held just above black so the back still reads in a dark room, over muted buff
   leather that carries the figure. A deep cowl, closed over the crown, hides most of the
@@ -319,7 +334,11 @@ lit) while the player stands inside.
   like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
   ragged cloak hangs over the buff leather, with a quiver strapped over it on the back, near
   upright (about 17° off the spine), its fletching over the right shoulder. *(Amended at the owner's
-  pick, 2026-11-04.)*
+  pick, 2026-11-04.)* The cowl and the Nightwood green are the archer's and the Shadow Ranger's,
+  whose green is dyed through to a cold soot-black and lifted toward slate (or its edges rimmed)
+  so the back still reads. The Hunter wears no hood and no green: a wolf pelt and laced hide over
+  the buff, the cloak in undyed grey-brown wool, the face and hair showing. *(Amended at the
+  owner's pick, 2026-11-21, FS-1J1CB.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
   waist and opening from the hip, so she reads as a woman from the front. Her black hair falls
@@ -330,6 +349,13 @@ lit) while the player stands inside.
   chest. A short iron sceptre holds the glowing stone in its prongs, and a black tome hangs from
   her other hand. No hood, no hat, no staff: her long hair and collar keep her apart from the
   archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
+  A specialization's focus may be about 1.5x the sceptre's length, held and thrust as the
+  sceptre is, and is still never a staff. The Spellwarden wears blackened-iron spaulders and a
+  gorget over the gown. The Pyromancer's scapular is a scorched oxblood, not the teal, and her
+  hem is singed short with embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+  The scorched oxblood is the house oxblood a little toward ember under grime, not near-black:
+  her back on the black gown and raven hair falls under the dark-room floor below that.
+  *(Amended in the Pyromancer's bake, 2026-11-22, FS-1J1CB R10.)*
 - **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
   open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
   mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall
@@ -337,7 +363,43 @@ lit) while the player stands inside.
   carry him. His sword is a long, slender, curved dueling blade with a knuckle-bow, used
   one-handed with no shield. He is broad in the shoulder and heavy in the arm: never the
   knight's long mail, helm and shield, never the archer's hood and cloak. *(Amended at the
-  owner's pick, FS-MAMHR §H, 2026-10-31.)*
+  owner's pick, FS-MAMHR §H, 2026-10-31.)* The Duelist wears a robe wrapped closed across the
+  chest in faded madder with a slate-black sash, and a slate-black half-cloak slung from the off
+  shoulder in place of the left spaulder; a half-cloak is not the archer's hood and cloak. The
+  Sellsword's madder is dyed a charcoal black, never pure black, under a buff-leather coat
+  buckled in brass, with a spaulder on each shoulder. *(Amended at the owner's pick, 2026-11-21,
+  FS-1J1CB.)*
+- **Specializations:** a specialization re-dresses its class on the same rig, build, clips and
+  scale, changing only a few pieces (a helm, a coat, a weapon, a dye), so the class still reads
+  at a glance and a level-20 character reads as what it became. The eight looks:
+  - **Guardian** (knight): a worn bone surcoat with the oxblood house cross over the hauberk, the
+    flat-topped great helm with a dark eye-slit and a brass cross down the face, and a slightly
+    larger kite shield, its cross counterchanged inside a narrow brass border.
+  - **Berserker** (knight): bareheaded with dark hair and a full short beard, the coif down to a
+    mail mantle, blood-dark cloth round both forearms and the cloak torn short to the hips. A
+    bearded axe in each hand, edge forward and down, no shield; a wide cut with the free arm swung
+    back, the hands taking turns.
+  - **Spellwarden** (mage): blackened-iron spaulders and gorget, the tome bound in iron, and a
+    larger ward focus, an iron ring round a pale stone lit low. A ward winks round her (*Auras*).
+  - **Pyromancer** (mage): the scapular in scorched oxblood, the gown's hem singed and ragged
+    with embers in it that move with the cloth, and a larger fire focus, an iron cage holding an
+    upright tongue of flame.
+  - **Hunter** (archer): a grey-brown wolf pelt over the shoulders, a laced hide jerkin, undyed
+    grey-brown wool for the cloak and capelet, no hood, the face and loose brown hair showing,
+    long pale fletching and horn-capped nocks.
+  - **Shadow Ranger** (archer): the Nightwood green dyed to a cold soot-black, the buff leather
+    a cold grey, lifted or rimmed until the back passes the dark-room floor. A gloom
+    rises off the figure (*Auras*).
+  - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
+    mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
+    half-cloak from the off shoulder on cloak bones.
+  - **Sellsword** (mercenary): a sleeveless buff-leather coat buckled in brass over the arming
+    coat dyed charcoal black, a spaulder on each shoulder and a purse at the belt.
+
+  Every look keeps the faces rule, passes the leg and cloak guards on every clip, and is
+  approved on a contact sheet beside its base class before it ships. If a later contact-sheet
+  round changes a look, the bake slice that changed it updates its line here. *(Amended at the
+  owner's pick, 2026-11-21, FS-1J1CB.)*
 - **Faces:** every human wears one shared face: the same eyes, nose and mouth on the knight,
   archer, wizard, mercenary and every hub resident and NPC, men and women alike. A character is
   told by hair, beard, jaw, figure and gear, never by a face of its own. The head is one smooth
@@ -390,6 +452,12 @@ lit) while the player stands inside.
   (the bake fails any other). All four classes walked through their tunics and robes at 1x
   without anyone seeing it until the archer was baked at 2x, so review the walk frames, not
   only the idle.
+- **The dark-room floor.** No figure's back reads darker than the darkest approved class's
+  back: the mean luminance of the opaque pixels of a sheet's back-facing (`n`) idle frame is no
+  lower than the darkest of the four class sheets' own, measured the same way and checked by a
+  bake test against the baked sheets. It puts a number on the archer's "just above black": a
+  dark dye (the Shadow Ranger's soot) is lifted or rimmed until it
+  holds. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
 
 
 ### Enemy design language
@@ -575,6 +643,33 @@ shimmer's glint and nothing else. *(FS-QE2QW, 2026-11-08.)*
   rarity data as it is on the badge.
 - **It gives way.** A faint icon has no glints, none wink while an icon fades in or out, and
   `prefers-reduced-motion` drops the glints and keeps the still glow.
+
+### Auras
+
+An **aura** is a quiet loop of particles over one body, on for as long as that body is drawn
+alive with the specialization that owns it. It is not a shimmer: a shimmer marks a moment, an
+aura marks what the body became, so the 1200 ms cap and "not a lasting buff display" do not
+govern it. It is built on the shimmer's glint drawing and the baked glint and mote, never a new
+baked texture. *(Added at the owner's pick, 2026-11-21, FS-1J1CB.)*
+
+- **The ward** (the Spellwarden): `necrotic` glints with `vellum` centres winking slowly on a
+  faint shell round the figure, an ellipse a little wider than the shoulders from the shins to
+  just over the crown, so they trace a shield rather than scatter over the body. Dimmer than the
+  heal: about half its alpha at most, a wink every 400 to 700 ms, at most 6 alive.
+- **The gloom** (the Shadow Ranger): motes in `umbra` with no hot centre and no glow, rising a
+  little off the figure and sinking back as they fade, never bright, at most 8 alive. It reads by
+  hue, as the Shadow Shot does.
+- **No light, under the light-map.** An aura casts no light and no feet glow, and is drawn in
+  the world under the light-map, so a dark room dims it as it dims the body. It sorts with the
+  body, part in front and part behind.
+- **Cheap enough for every body.** At most the counts above alive, from a pool built once per
+  body, with no per-frame allocation and no yoyo tween.
+- **It follows the body.** It moves with the body's feet, hides when the body is hidden, stops
+  through the death clip and while the body is dead, and starts again when it is alive and drawn.
+- **Reduced motion.** Under `prefers-reduced-motion` an aura keeps a few still glints at a lower
+  alpha and drops the winking and the drift.
+- **Shimmers still play over it.** A heal shimmer on a Spellwarden plays in full; neither cuts
+  the other short.
 
 ---
 

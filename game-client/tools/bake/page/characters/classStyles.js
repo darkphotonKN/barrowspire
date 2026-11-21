@@ -2,7 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
-import { RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose } from "./clips.js";
+import { CLEAVE_CARRY, RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose, withOffhand } from "./clips.js";
 
 /**
  * How the playable classes carry their weapon (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪
@@ -118,7 +118,46 @@ export const KNIGHT_STYLE = {
   },
 };
 
+/**
+ * The Berserker's sheet (FS-1J1CB R9, R28): the knight's clips, and the off-hand twin of each
+ * attack (clips.js `withOffhand`), at the knight's 1.5x.
+ */
+export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations), scale: 1.5 };
+
+/**
+ * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a bearded axe
+ * in each hand (gear.js `beardedAxe`), no shield. At rest both arms hang low and a little out, the
+ * wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so the heads hang
+ * forward of the legs with the edge facing forward and a little down (axe.test.mjs). In the walk
+ * both wrists take back most of the arms' swing, so the axes sway without swinging up. In the run
+ * both arms pump, shorter than a sword arm and bent less, the wrists holding the hafts forward and
+ * down so the edges keep facing forward, never up. The cut is `cleave` (clips.js): wide, the free
+ * arm swung back against it.
+ */
+export const BERSERKER_STYLE = {
+  attack: "cleave",
+  speed: 1,
+  hold: pose({
+    upperArmR: [0.04, 0, -0.14],
+    foreArmR: [-0.04, 0, 0],
+    handR: [CLEAVE_CARRY, 0, 0],
+    upperArmL: [0.04, 0, 0.14],
+    foreArmL: [-0.04, 0, 0],
+    handL: [CLEAVE_CARRY, 0, 0],
+  }),
+  walk: { arms: [0.5, 0.5], wrist: [0.7, 0.7], lean: 0.05 },
+  run: {
+    arms: [0.6, 0.6],
+    elbow: [0.45, 0.45],
+    wrist: [0.6, 0.6],
+    hold: pose({ upperArmR: [0, 0, -0.12], upperArmL: [0, 0, 0.12], handR: [CLEAVE_CARRY, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }),
+  },
+};
+
 export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
+
+/** The archer's sheet: the run and backpedal_attack clips (FS-JS7C8), at 1.5x (ADR-0076). */
+export const ARCHER_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
 
 export const ARCHER_STYLE = {
   attack: "shot",
@@ -181,6 +220,23 @@ export const WIZARD_STYLE = {
   },
   idleExtra: () => pose({}, {}, { glow: 1 }),
 };
+
+/**
+ * The fist's give as a mage specialization falls (FS-1J1CB R3, R4), by death key: none while she
+ * buckles, then the wrist lets the focus fall level as she goes down, lying a little off the floor
+ * at the fist. The focus runs 0.2 H back past the fist and its head 0.3 H on, so the sceptre's
+ * death (no wrist at all) drives its head and its butt through the ground; this levels it,
+ * heading kept, turned a little on the haft so the ring or cage lies more flat than upright. The
+ * hand's own angles are zero in the death clip, so these are its whole turn.
+ */
+export const FOCUS_DEATH = [null, null, null, [-0.1, 0, -0.3], [0.21, 0.07, -0.8], [-0.89, -0.1, -0.85], [-0.97, -0.04, -0.85]];
+
+/**
+ * A mage specialization's carry and cast (FS-1J1CB R3, R4): the wizard's own, the focus held and
+ * thrust as the sceptre is ({@link WIZARD_STYLE}); in the death the wrist lays the longer focus
+ * level ({@link FOCUS_DEATH}).
+ */
+export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] && pose({ handR: FOCUS_DEATH[i] }) };
 
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
