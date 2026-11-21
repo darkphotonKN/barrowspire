@@ -186,6 +186,7 @@ func (s *GearSystem) sum(entity *ecs.Entity, bonus *components.GearBonusComponen
 	bonus.Intelligence += tree.Intelligence
 	bonus.AttackSpeedPercent += tree.AttackSpeedPercent
 	bonus.MoveSpeedPercent += tree.MoveSpeedPercent
+	bonus.CritChance += tree.CritPoints
 
 	vitality := bonus.Vitality
 	if sc, ok := entity.GetComponent(ecs.ComponentTypeStats); ok {

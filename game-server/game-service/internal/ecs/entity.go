@@ -80,6 +80,8 @@ const (
 
 	// Bull Rush's mark: a charge just ended (FS-8RZ51 R29)
 	ComponentTypeDashEnded ComponentType = "DashEnded"
+	// Quick Draw's count of arrows fired in the world (FS-8RZ51 R29)
+	ComponentTypeArrowCount ComponentType = "ArrowCount"
 
 	// an Arrow Rain still falling (FS-04EEA §E R26)
 	ComponentTypeArrowRain ComponentType = "ArrowRain"

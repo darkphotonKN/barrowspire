@@ -645,8 +645,9 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	} else if spec.spendsPool {
 		return // nothing to spend
 	}
+	spec = kickAsCast(attacker, spec)
 
-	monstersHit := 0
+	monstersHit, killsBefore := 0, len(s.kills)
 	switch spec.delivery {
 	case deliverTargeted:
 		if !s.strike(attacker, at, intent.TargetEntityID, spec) {
@@ -676,7 +677,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if pool != nil {
 		pool.Current -= spec.cost
 	}
-	kickAfterCast(attacker, spec.kind, monstersHit)
+	kickAfterCast(attacker, spec.kind, monstersHit, len(s.kills)-killsBefore)
 	if cooldowns != nil {
 		// worn attack speed, already capped, shortens every cooldown
 		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/(1+float64(wornGear(attacker).AttackSpeedPercent)/100))
@@ -798,7 +799,7 @@ func stepStance(entity *ecs.Entity, deltaTime float64) {
 		return
 	}
 	stance := pc.(*components.ParryComponent)
-	runStanceClocks(stance, deltaTime)
+	runStanceClocks(stance, deltaTime, parryWindowOf(entity))
 
 	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
 	if !ok {
@@ -818,11 +819,17 @@ func stepStance(entity *ecs.Entity, deltaTime float64) {
 	intents.Pending = rest
 }
 
-// runStanceClocks advances the whiff lockout and an open stance by a tick. A
-// stance past its window closes; if it negated nothing, the lockout starts,
-// counted from the moment the window ended rather than from this tick.
+// parryWindowOf is how long the entity's parry stance stays open: the
+// charter's window and what their passives add to it. FS-8RZ51 R29.
+func parryWindowOf(entity *ecs.Entity) float64 {
+	return parryWindow + passiveBonus(entity).ParryWindowSeconds
+}
+
+// runStanceClocks advances the whiff lockout and an open stance of window by
+// a tick. A stance past its window closes; if it negated nothing, the lockout
+// starts, counted from the moment the window ended rather than from this tick.
 // FS-MAMHR §Requirements 11, 15.
-func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
+func runStanceClocks(stance *components.ParryComponent, deltaTime, window float64) {
 	// before the close below, so a lockout started this tick is not shortened twice
 	if stance.LockoutRemaining > 0 {
 		stance.LockoutRemaining -= deltaTime
@@ -835,11 +842,11 @@ func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
 		return
 	}
 	stance.OpenFor += deltaTime
-	if stance.OpenFor <= parryWindow+parryEpsilon {
+	if stance.OpenFor <= window+parryEpsilon {
 		return
 	}
 	if !stance.Negated {
-		stance.LockoutRemaining = parryLockout - (stance.OpenFor - parryWindow)
+		stance.LockoutRemaining = parryLockout - (stance.OpenFor - window)
 		stance.LockoutTotal = stance.LockoutRemaining
 	}
 	stance.Open, stance.OpenFor, stance.Negated = false, 0, false
@@ -847,9 +854,9 @@ func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
 
 // parryStrike negates a strike landing on the target's open parry stance: no
 // damage, no crit roll, so nothing for Gravewarden's Oath to reflect. It grants
-// a parry charge up to the cap, counts the parry even at the cap, and leaves
-// the stance open. False when the target has no open stance.
-// FS-MAMHR §Requirements 14, 19.
+// a parry charge (two early in a Practiced Guard window, FS-8RZ51 R29) up to
+// the cap, counts the parry even at the cap, and leaves the stance open. False
+// when the target has no open stance. FS-MAMHR §Requirements 14, 19.
 func parryStrike(target *ecs.Entity) bool {
 	pc, ok := target.GetComponent(ecs.ComponentTypeParry)
 	if !ok {
@@ -864,7 +871,7 @@ func parryStrike(target *ecs.Entity) bool {
 	stance.Parries++
 	if rc, ok := target.GetComponent(ecs.ComponentTypeResource); ok {
 		if parryCharges := rc.(*components.ResourceComponent); parryCharges.Kind == components.ResourceParryCharges {
-			parryCharges.Current = min(parryCharges.Current+1, parryCharges.Max)
+			parryCharges.Current = min(parryCharges.Current+chargesForParry(target, stance), parryCharges.Max)
 		}
 	}
 
@@ -1159,12 +1166,13 @@ func distanceToSegment(px, py, ax, ay, bx, by float64) float64 {
 
 // applyHit resolves one hit against one target. A hit CanHit refuses is
 // discarded before the crit roll: one on a dead or resolved target, a monster's
-// on a monster, and, with player damage off, a delver's on a delver. A hit on a
+// on a monster, with player damage off a delver's on a delver, and a monster's
+// strike or shot an archer sidesteps (FS-8RZ51 R29). A hit on a
 // monster records its attacker, and the killing blow records the kill. A
 // monster's strike on a Gravewarden wearer is reflected. It reports whether the
 // hit landed.
 func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.Entity) bool {
-	if !CanHit(attack, target, s.playerDamage) {
+	if !CanHit(attack, target, s.playerDamage) || s.sidestepped(attack, target) {
 		return false
 	}
 	hc, _ := target.GetComponent(ecs.ComponentTypeHealth)
@@ -1173,7 +1181,7 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 
 	damage, crit := attack.TrueDamage, false
 	if damage <= 0 {
-		if s.forcedCrit(attack) {
+		if s.forcedCrit(attack, target) {
 			attack.CritChance = 1
 		}
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
@@ -1265,7 +1273,8 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 // snapshot captures what the attacker brings to this attack right now: class
 // attack plus the equipped weapon's attack_power and worn flat damage, the
 // scaling stat plus the worn attribute, crit chance from the weapon's
-// critical_rate plus worn crit points, and a worn Lantern's pierce.
+// critical_rate plus worn crit points (or a forced crit the cast carries), and
+// a worn Lantern's pierce.
 func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
 	attack := bareSnapshot(attacker, spec)
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
@@ -1283,6 +1292,9 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 	attack.ScalingStat += scalingValue(spec.scaling, gear.Strength, gear.Agility, gear.Intelligence)
 	attack.Power += float64(gear.FlatDamage)
 	attack.CritChance = CritChance(critRate + float64(gear.CritChance)/100)
+	if critsAsCast(attacker, spec.kind) {
+		attack.CritChance = 1
+	}
 
 	if WornUniqueEffects(s.em, attacker)[types.UniqueEffectPierce] {
 		attack.Pierce = s.effects.PierceExtraTargets

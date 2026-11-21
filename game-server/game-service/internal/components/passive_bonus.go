@@ -18,6 +18,10 @@ type PassiveBonusComponent struct {
 	// AttackSpeedPercent and MoveSpeedPercent count inside gear's caps (R25).
 	AttackSpeedPercent int
 	MoveSpeedPercent   int
+	// CritPoints are whole crit points, summed with gear's (R29).
+	CritPoints int
+	// ParryWindowSeconds lengthens the parry stance's window (R29).
+	ParryWindowSeconds float64
 
 	// MaxHealth and MaxResource are the bonus to the maxima, MaxResource to the
 	// class resource the tree names (stamina or mana).
@@ -28,10 +32,12 @@ type PassiveBonusComponent struct {
 
 	// The kickers' per-rank stats, by the attack row they change (R29): a
 	// percent more on its coefficient, a change to its cost, a percent more on
-	// its projectiles' flight speed. Nil when no held node changes any.
+	// its projectiles' flight speed, a percent more on its cooldown. Nil when
+	// no held node changes any.
 	CoefficientPercent     map[AttackKind]float64
 	CostChange             map[AttackKind]int
 	ProjectileSpeedPercent map[AttackKind]float64
+	CooldownPercent        map[AttackKind]float64
 	// Kickers is every kicker rule the body holds: its node at rank 3. The
 	// rules' numbers are the systems' that run them.
 	Kickers map[passivetree.Kicker]bool

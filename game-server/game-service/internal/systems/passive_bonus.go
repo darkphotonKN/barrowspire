@@ -122,6 +122,10 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 			bonus.AttackSpeedPercent += whole(amount)
 		case passivetree.StatMoveSpeed:
 			bonus.MoveSpeedPercent += whole(amount)
+		case passivetree.StatCrit:
+			bonus.CritPoints += whole(amount)
+		case passivetree.StatParryWindow:
+			bonus.ParryWindowSeconds += amount
 		case passivetree.StatMaxStamina:
 			if pool == components.ResourceStamina {
 				bonus.MaxResource += whole(amount)
@@ -143,6 +147,14 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 		case passivetree.StatFireballDamage:
 			// the left-click fireball only (R29)
 			addTo(&bonus.CoefficientPercent, components.AttackFireball, amount)
+		case passivetree.StatCutDamage:
+			// the cut only, not the riposte it arms into (R29)
+			addTo(&bonus.CoefficientPercent, components.AttackCut, amount)
+		case passivetree.StatRiposteDamage:
+			addTo(&bonus.CoefficientPercent, components.AttackRiposte, amount)
+		case passivetree.StatCutCooldown:
+			// the cut's row only, not the riposte resolving in its slot (R29)
+			addTo(&bonus.CooldownPercent, components.AttackCut, amount)
 		case passivetree.StatDashCost:
 			addTo(&bonus.CostChange, components.AttackDash, whole(amount))
 		case passivetree.StatTripleFireballCost:
