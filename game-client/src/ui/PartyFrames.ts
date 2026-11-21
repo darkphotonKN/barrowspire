@@ -6,8 +6,9 @@
  * member's class sheet, their name (the leader's crown first), and a bar slot: health and resource
  * in the HUD's own bar style at half height, always for the player (from their own state) and, in
  * every world the hub included, for a teammate when this world's state carries their health. "Lv N"
- * follows the player's own name (from their own state) and such a teammate's; any other teammate
- * shows name and bust alone, no word, no level. An away teammate's frame is greyed. A skeleton row
+ * follows the player's own name (from their own state) and such a teammate's, and their title, on its
+ * own faint line under the name, by the same rule (FS-E1ZDG §K.41); any other teammate shows name
+ * and bust alone, no word, no level, no title. An away teammate's frame is greyed. A skeleton row
  * is the invitee's name with a grey pulse where the bust and bars go, no countdown. A resource the
  * state does not carry yet is an empty bar.
  *
@@ -46,6 +47,8 @@ import type { UiEffect } from "@/audio/uiSounds";
 import {
   PARTY_FRAMES_PLACEMENT,
   PARTY_LEADER_MARK_W,
+  PARTY_NAME_PX as NAME_PX,
+  PARTY_TITLE_PX,
   PARTY_LEVEL_GAP,
   partyBustFrame,
   partyFrameRows,
@@ -103,7 +106,6 @@ export function mountPartyFrames(
   });
 }
 
-const NAME_PX = 13;
 /** A member's "Lv N", a step under the name so the leader's row keeps room for the name. */
 const LEVEL_PX = 11;
 /** An away member's frame: its bust and ring dimmed to this. */
@@ -203,7 +205,7 @@ export class PartyFrames {
       top,
       this.rows.map((r) =>
         r.kind === "member"
-          ? [r.kind, r.player_id, r.name, r.class, r.leader, r.away, r.level]
+          ? [r.kind, r.player_id, r.name, r.class, r.leader, r.away, r.level, r.title]
           : [r.kind, r.name],
       ),
       this.travel,
@@ -286,7 +288,7 @@ export class PartyFrames {
     // over the busts: the medallion rings, the leader's crown and the names
     const rings = (this.rings = this.hud());
     this.rows.forEach((row, i) => {
-      const { bust, name } = this.rects[i];
+      const { bust, name, title } = this.rects[i];
       if (row.kind !== "member") {
         const room = partyNameRoom(this.rects[i], false, false);
         this.names.push(
@@ -309,6 +311,12 @@ export class PartyFrames {
       );
       const label = this.text(nameX, name.y, row.name, colour, NAME_PX);
       this.names.push(label);
+      // the title on its own line under the name (FS-E1ZDG §K.41), shortened as a name is
+      if (row.title !== undefined) {
+        const room = partyNameRoom(this.rects[i], false, false);
+        const line = this.text(title.x, title.y, row.title, palette.hudFaint, PARTY_TITLE_PX);
+        this.names.push(fitted(line, room));
+      }
       if (row.level === undefined) {
         fitted(label, room);
         return;

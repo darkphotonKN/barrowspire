@@ -25,6 +25,10 @@ type fakeCharacters struct {
 	owned map[uuid.UUID]map[uuid.UUID]types.CharacterInPlay
 	// down makes every read fail the way an unreachable service does
 	down bool
+
+	// the passive spends asked for, and how they are answered (passive_spend_test.go)
+	spends []spendCall
+	spendAnswers
 }
 
 func newFakeCharacters() *fakeCharacters {

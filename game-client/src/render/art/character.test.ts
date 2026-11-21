@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CharacterAnimator, CharacterMotion, type AnimatedSprite } from "./character";
-import { ArtLibrary } from "./library";
+import { ArtLibrary, PLACEHOLDER_TEXTURE } from "./library";
 import { CHARGE_MS } from "@/render/effects/charge";
 import type { ArtAnimation, ArtManifest } from "./manifest";
 
@@ -894,5 +894,187 @@ describe("CharacterAnimator", () => {
         startFrame: 5,
       });
     });
+  });
+});
+
+// FS-1J1CB R21-R22: a body re-dressed in its spec look, on its own sprite, between two frames.
+describe("CharacterAnimator.wearing", () => {
+  const STRIDE = 200; // world px/s, the server's DefaultSpeed
+  const art = () => new ArtLibrary(manifest(), quiet);
+
+  /** Walks `anim` east on `sprite` for `ms`, showing each frame as a scene does. */
+  function walkEast(anim: CharacterAnimator, sprite: ReturnType<typeof fakeSprite>, ms: number) {
+    const pos = { x: 0, y: 0 };
+    let t = 0;
+    for (; t <= ms; t += FRAME) {
+      pos.x += (STRIDE * FRAME) / 1000;
+      anim.show(sprite, anim.step(pos, t, FRAME, false));
+    }
+    return { pos, t };
+  }
+
+  it("should be a new animator for the look's sheet, turned the way the old one was", () => {
+    const anim = new CharacterAnimator(art(), "warrior", "nw");
+    const next = anim.wearing({ sheet: "char_mercenary_base" });
+    expect(next).not.toBe(anim);
+    expect(next.sheet).toBe("char_mercenary_base");
+    expect(next.baked).toBe(true);
+    expect(next.facing).toBe("nw");
+    expect(anim.sheet).toBe("char_knight_base");
+  });
+
+  it("should carry the stride on at its place on the same sprite, never drawing it without a texture", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    const { pos, t } = walkEast(anim, sprite, 500);
+    sprite.at(5);
+    const plays = sprite.plays.length;
+
+    const next = anim.wearing({ sheet: "char_mercenary_base" });
+    next.redress(sprite);
+
+    expect(sprite.plays.slice(plays)).toEqual([{ key: "char_mercenary_base/walk/0", startFrame: 5 }]);
+    expect(sprite.texture).not.toBe("");
+    expect(sprite.texture).not.toBe(PLACEHOLDER_TEXTURE);
+    // its pace carried too: the next frame still walks rather than standing for a beat
+    pos.x += (STRIDE * FRAME) / 1000;
+    expect(next.step(pos, t + FRAME, FRAME, false).animation).toBe("walk");
+  });
+
+  it("should keep a swing under way swinging, to its end", () => {
+    const sprite = fakeSprite();
+    const anim = new CharacterAnimator(art(), "warrior");
+    const at = { x: 0, y: 0 };
+    anim.attack(0, { x: 1, y: 0 });
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    sprite.at(2);
+
+    const next = anim.wearing({ sheet: "char_mercenary_base" });
+    next.redress(sprite);
+
+    expect(sprite.plays.at(-1)).toEqual({ key: "char_mercenary_base/attack/0", startFrame: 2 });
+    expect(next.step(at, 300, FRAME, false).animation).toBe("attack");
+    expect(next.step(at, 600, FRAME, false).animation).toBe("idle");
+  });
+
+  it("should only dress a body that has not stepped yet", () => {
+    const sprite = fakeSprite();
+    new CharacterAnimator(art(), "warrior").wearing({ sheet: "char_mercenary_base" }).redress(sprite);
+    expect(sprite.frame).toBe("char_mercenary_base/idle/1/0");
+    expect(sprite.plays).toEqual([]);
+  });
+});
+
+// FS-1J1CB §D R29-R30: a Berserker's successive swings take the other hand, from his sheet's
+// off-hand clips; every other sheet swings as it always has.
+describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", () => {
+  const BERSERKER = "char_knight_berserker";
+  /** The test manifest with the Berserker's sheet: the knight's clips, the class's moving clips, and the off-hand three. */
+  function berserkerArt() {
+    const m = manifest();
+    m.sheets[BERSERKER] = {
+      ...m.sheets.char_knight_base,
+      animations: {
+        ...m.sheets.char_knight_base.animations,
+        run: clip(14, true, 8),
+        walk_attack: clip(12, false, 6),
+        backpedal_attack: clip(12, false, 6),
+        attack_offhand: clip(12, false, 6),
+        walk_attack_offhand: clip(12, false, 6),
+        backpedal_attack_offhand: clip(12, false, 6),
+      },
+    };
+    return new ArtLibrary(m, quiet);
+  }
+  const berserker = () => new CharacterAnimator(berserkerArt(), { sheet: BERSERKER });
+  const still = { x: 0, y: 0 };
+  const east = { x: 1, y: 0 };
+
+  /** Swings `anim` at each time in `at`, standing, and returns the clip each one shows. */
+  function swings(anim: CharacterAnimator, at: number[], swing = (_i: number) => ({})) {
+    const sprite = fakeSprite();
+    return at.map((t, i) => {
+      anim.attack(t, east, swing(i));
+      anim.show(sprite, anim.step(still, t, FRAME, false));
+      return sprite.plays.at(-1);
+    });
+  }
+
+  it("should play attack, attack_offhand, attack for three successive swings, right hand first (R29)", () => {
+    expect(swings(berserker(), [0, 500, 1000])).toEqual([
+      { key: `${BERSERKER}/attack/0`, startFrame: 0 },
+      { key: `${BERSERKER}/attack_offhand/0`, startFrame: 0 },
+      { key: `${BERSERKER}/attack/0`, startFrame: 0 },
+    ]);
+  });
+
+  it("should still take the other hand when a swing is cut short by the next (Edge States)", () => {
+    expect(swings(berserker(), [0, 100, 200]).map((p) => p?.key)).toEqual([
+      `${BERSERKER}/attack/0`,
+      `${BERSERKER}/attack_offhand/0`,
+      `${BERSERKER}/attack/0`,
+    ]);
+  });
+
+  it("should alternate a charge with the slashes around it (R29)", () => {
+    const charge = (i: number) => (i === 1 ? { charge: true, holdMs: CHARGE_MS } : {});
+    expect(swings(berserker(), [0, 1000, 2000], charge).map((p) => p?.key)).toEqual([
+      `${BERSERKER}/attack/0`,
+      `${BERSERKER}/attack_offhand/0`,
+      `${BERSERKER}/attack/0`,
+    ]);
+  });
+
+  /** Moves `anim` along `v` (world px/s) for 300 ms, then swings at `aim`; the clip the swing plays. */
+  function onTheMove(anim: CharacterAnimator, v: { x: number; y: number }, aim: { x: number; y: number }, at = 0) {
+    const pos = { x: 0, y: 0 };
+    anim.step(pos, at, FRAME, false);
+    for (let t = FRAME; t <= 300; t += FRAME) {
+      pos.x += (v.x * FRAME) / 1000;
+      pos.y += (v.y * FRAME) / 1000;
+      anim.step(pos, at + t, FRAME, false);
+    }
+    anim.attack(at + 300, aim);
+    pos.x += (v.x * FRAME) / 1000;
+    pos.y += (v.y * FRAME) / 1000;
+    return anim.step(pos, at + 300 + FRAME, FRAME, false).animation;
+  }
+
+  it("should walk an off-hand swing in walk_attack_offhand, and step back in backpedal_attack_offhand (R29)", () => {
+    const anim = berserker();
+    expect(onTheMove(anim, { x: 0, y: -200 }, { x: 0, y: -40 }, 0)).toBe("walk_attack");
+    expect(onTheMove(anim, { x: 0, y: -200 }, { x: 0, y: -40 }, 1000)).toBe("walk_attack_offhand");
+    expect(onTheMove(anim, { x: 0, y: 200 }, { x: 0, y: -40 }, 2000)).toBe("backpedal_attack");
+    expect(onTheMove(anim, { x: 0, y: 200 }, { x: 0, y: -40 }, 3000)).toBe("backpedal_attack_offhand");
+  });
+
+  it("should carry an off-hand swing over to walk_attack_offhand at the same point when the body sets off mid-swing", () => {
+    const sprite = fakeSprite(6); // as many frames as the fixture's swing clips
+    const anim = berserker();
+    anim.attack(0, east);
+    anim.attack(100, east);
+    anim.show(sprite, { animation: "attack_offhand", facing: "e", direction: 0, timeScale: 1 });
+    sprite.at(3);
+    anim.show(sprite, { animation: "walk_attack_offhand", facing: "e", direction: 0, timeScale: 1 });
+    expect(sprite.plays.at(-1)).toEqual({ key: `${BERSERKER}/walk_attack_offhand/0`, startFrame: 3 });
+  });
+
+  it("should play attack every time on a sheet without the off-hand clips (R29)", () => {
+    const anim = new CharacterAnimator(berserkerArt(), "warrior");
+    expect(swings(anim, [0, 500, 1000]).map((p) => p?.key)).toEqual([
+      "char_knight_base/attack/0",
+      "char_knight_base/attack/0",
+      "char_knight_base/attack/0",
+    ]);
+  });
+
+  it("should start a body re-dressed as a Berserker on the right hand (R30, Edge States: seen mid-session)", () => {
+    const base = new CharacterAnimator(berserkerArt(), "warrior");
+    swings(base, [0]);
+    const next = base.wearing({ sheet: BERSERKER });
+    expect(swings(next, [1000, 2000]).map((p) => p?.key)).toEqual([
+      `${BERSERKER}/attack/0`,
+      `${BERSERKER}/attack_offhand/0`,
+    ]);
   });
 });

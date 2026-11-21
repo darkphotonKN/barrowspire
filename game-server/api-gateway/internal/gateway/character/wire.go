@@ -20,8 +20,9 @@ type CharacterCreate struct {
 // Character is one of the signed-in member's characters. No member / owner
 // field: a character is only ever served to its owner.
 //
-// No omitempty except nextLevelAt: level 1 and 0 experience are real values
-// and must stay on the wire; nextLevelAt is ABSENT at the cap by contract.
+// No omitempty except nextLevelAt and specialization: level 1 and 0
+// experience are real values and must stay on the wire; nextLevelAt is ABSENT
+// at the cap, and specialization before the pick, by contract.
 type Character struct {
 	ID          string    `json:"id" format:"uuid" doc:"Character id."`
 	Name        string    `json:"name" doc:"Character name."`
@@ -31,6 +32,9 @@ type Character struct {
 	LevelFloor  int64     `json:"levelFloor" minimum:"0" doc:"Total experience at which the current level began."`
 	NextLevelAt *int64    `json:"nextLevelAt,omitempty" doc:"Total experience for the next level; absent at the level cap."`
 	CreatedAt   time.Time `json:"createdAt" doc:"Creation time."`
+	// Specialization is read-only: derived by character-service from the
+	// held tier-6 passive node (FS-E1ZDG R4), ABSENT before the pick.
+	Specialization *string `json:"specialization,omitempty" enum:"guardian,berserker,spellwarden,pyromancer,hunter,shadow_ranger,duelist,sellsword" doc:"The character's specialization, derived from its tier-6 passive node; absent before the pick. Read-only."`
 }
 
 // CharacterList is the signed-in member's live characters, oldest first.
@@ -41,14 +45,15 @@ type CharacterList struct {
 
 func characterFromProto(c *pb.Character) Character {
 	return Character{
-		ID:          c.GetId(),
-		Name:        c.GetName(),
-		Class:       c.GetClass(),
-		Level:       c.GetLevel(),
-		Experience:  c.GetExperience(),
-		LevelFloor:  c.GetLevelFloor(),
-		NextLevelAt: c.NextLevelAt,
-		CreatedAt:   c.GetCreatedAt().AsTime(),
+		ID:             c.GetId(),
+		Name:           c.GetName(),
+		Class:          c.GetClass(),
+		Level:          c.GetLevel(),
+		Experience:     c.GetExperience(),
+		LevelFloor:     c.GetLevelFloor(),
+		NextLevelAt:    c.NextLevelAt,
+		CreatedAt:      c.GetCreatedAt().AsTime(),
+		Specialization: c.Specialization,
 	}
 }
 

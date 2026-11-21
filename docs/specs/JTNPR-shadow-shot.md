@@ -298,3 +298,7 @@ agents to build both in this run.
   layout, greying and cooldown display: all FS-8AY7S.
 - Re-pricing or changing the warrior's dash or the mage's triple fireball.
 - Rebinding the ability to a key other than right-click.
+
+## Change: Shadow look only for the Shadow Ranger → FS-1J1CB
+
+## Change: Heavy Shot for every archer but the Shadow Ranger → FS-E1ZDG

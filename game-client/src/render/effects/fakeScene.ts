@@ -44,6 +44,7 @@ const CHAINED = [
   "startFollow",
   "setVisible",
   "setScrollFactor",
+  "setBlendMode",
   "stop",
 ];
 

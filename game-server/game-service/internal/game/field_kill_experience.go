@@ -61,7 +61,7 @@ func (s *Session) creditKill(memberID uuid.UUID, amount int) {
 		return
 	}
 
-	gainExperience(body, Classes[pc.(*components.PlayerComponent).Class].Growth, amount)
+	gainExperience(body, Classes[pc.(*components.PlayerComponent).Class], amount)
 
 	if visit, open := s.visits[memberID]; open {
 		visit.ExperienceGained += amount

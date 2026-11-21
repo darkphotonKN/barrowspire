@@ -46,6 +46,11 @@ export interface PublicPlayerState {
   /** Total experience that reaches the next level; absent at the cap (level 20). */
   next_level_at?: number;
   /**
+   * The character's specialization id (FS-E1ZDG §B R9), derived on the server from the tier-6 node held:
+   * on `current_player` and every `other_players` entry, in every world; absent before the pick.
+   */
+  specialization?: string;
+  /**
    * The Mercenary's parry stance (FS-MAMHR req 28): sent on a mercenary's own `current_player`,
    * and on their `other_players` entry to their party members (FS-CH21F R1); absent for every
    * other class and to anyone outside the party. Whether the stance is open this tick.
@@ -72,6 +77,34 @@ export interface PlayerState extends PublicPlayerState {
    * absent when they have none. Never on an `other_players` entry (R19).
    */
   timed_open?: TimedOpenState;
+  /**
+   * The right-click ability's cooldown (FS-Q18Q3 §A R1–R2): sent whenever the delver has an
+   * ability, in every world; a mercenary's is the whiff lockout. Absent from an older server.
+   * Never on an `other_players` entry (R6).
+   */
+  ability_cooldown?: CooldownState;
+  /**
+   * The tree ability's cooldown (FS-Q18Q3 §A R4): sent only while the character holds its tree's
+   * ability, so its absence means the ability is not held. Never on an `other_players` entry (R6).
+   */
+  tree_ability_cooldown?: CooldownState;
+  /**
+   * The passive tree's ranks held, by node id, nodes at rank 1 or more only (FS-8RZ51 R23): sent on
+   * `current_player` in every world, `{}` when none. Never on an `other_players` entry (ADR-0064).
+   */
+  passive_ranks?: Record<string, number>;
+  /** The unspent passive points, derived from the current level (FS-8RZ51 R7, R23). */
+  passive_points?: number;
+}
+
+/**
+ * One of the player's own abilities' cooldowns as the server judges it (FS-Q18Q3 §A R1–R3), in
+ * float seconds. `total` is the length it started at, worn attack speed applied, and does not
+ * change while it runs; both are 0 when nothing runs. Mirrors Go types.CooldownState.
+ */
+export interface CooldownState {
+  remaining: number;
+  total: number;
 }
 
 /**
@@ -100,6 +133,11 @@ export interface ResourceState {
   max: number;
   /** What the player's own ability costs in this pool. */
   ability_cost: number;
+  /**
+   * What one cast of the class's tree ability costs in this pool, the least it needs for one that
+   * spends a variable amount (FS-Q18Q3 §A R5). Present only while the tree ability is held.
+   */
+  tree_ability_cost?: number;
 }
 
 // Player equipment state from server (matches Go types.EquipmentState JSON tags).
@@ -361,9 +399,10 @@ export type MonsterArchetype =
 /**
  * What a monster is doing this tick. `attack` is the wind-up and the strike (a demon's slam).
  * `claw` is a demon's fire claw (FS-VHGE7 §B R24): no wind-up, reported for 0.4 s from the tick
- * it lands while the demon stands still.
+ * it lands while the demon stands still. `stunned` is every tick an Earthbreaker stun runs on it
+ * (FS-04EEA §C R17), whatever it was doing, a leap in the air included; `dead` wins over it.
  */
-export type MonsterAction = "idle" | "move" | "attack" | "claw" | "ability" | "dead";
+export type MonsterAction = "idle" | "move" | "attack" | "claw" | "ability" | "stunned" | "dead";
 
 /** A monster ability's kind (FS-C8VM7 §B R11, R17). */
 export type MonsterAbilityKind =

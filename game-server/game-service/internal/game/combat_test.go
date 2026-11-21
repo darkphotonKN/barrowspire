@@ -1,6 +1,7 @@
 package game
 
 import (
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"testing"
 
@@ -128,6 +129,124 @@ func TestLevelOneUnequipped_DamageMatchesTheOldNumbers(t *testing.T) {
 
 			dealt := 1000 - currentHealth(target)
 			assert.InDelta(t, tt.old, dealt, 0.2*float64(tt.old), "dealt %d against the old %d", dealt, tt.old)
+		})
+	}
+}
+
+// Each class names its tree ability beside its right-click. FS-04EEA §A R2.
+func TestClasses_EachNamesItsTreeAbility(t *testing.T) {
+	want := map[string]components.AttackKind{
+		"warrior":   components.AttackEarthbreaker,
+		"mage":      components.AttackBlink,
+		"archer":    components.AttackArrowRain,
+		"mercenary": components.AttackSettleTheDebt,
+	}
+	require.Len(t, Classes, len(want))
+	for class, kind := range want {
+		assert.Equal(t, kind, Classes[class].TreeAbility, class)
+	}
+}
+
+// A seated delver holds their class's tree ability once they hold their tree's
+// tier-3 node, and not before. FS-04EEA §A R2–R3.
+func TestAddPlayer_SeatsTheTreeAbilityHeldOnlyWithTheTierThreeNode(t *testing.T) {
+	for class, kind := range map[string]components.AttackKind{
+		"warrior":   components.AttackEarthbreaker,
+		"mage":      components.AttackBlink,
+		"archer":    components.AttackArrowRain,
+		"mercenary": components.AttackSettleTheDebt,
+	} {
+		t.Run(class, func(t *testing.T) {
+			s := unstartedRun(t)
+			without, _ := s.EntityManager.GetEntity(s.AddPlayer(uuid.New(), types.CharacterInPlay{Name: "Delver", Class: class}, ""))
+			_, held := systems.HeldTreeAbility(without)
+			assert.False(t, held, "no tier-3 node")
+
+			node, ok := passivetree.AbilityNode(class)
+			require.True(t, ok)
+			with, _ := s.EntityManager.GetEntity(s.AddPlayer(uuid.New(), types.CharacterInPlay{
+				Name: "Delver", Class: class, PassiveRanks: passivetree.Ranks{node.ID: 1},
+			}, ""))
+			got, held := systems.HeldTreeAbility(with)
+			assert.True(t, held)
+			assert.Equal(t, kind, got)
+		})
+	}
+}
+
+// Earthbreaker cast through the handler resolves on the tick for a warrior
+// holding the node, and does nothing at all for one without. FS-04EEA §A R3.
+func TestCastSkill_EarthbreakerOnlyForAWarriorHoldingTheNode(t *testing.T) {
+	node, _ := passivetree.AbilityNode("warrior")
+	for _, tt := range []struct {
+		name  string
+		ranks passivetree.Ranks
+		hit   bool
+	}{
+		{"with the node", passivetree.Ranks{node.ID: 1}, true},
+		{"without the node", nil, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := unstartedRun(t)
+			playerID := uuid.New()
+			entity, ok := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Wren", Class: "warrior", PassiveRanks: tt.ranks}, ""))
+			require.True(t, ok)
+			tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
+			transform := tc.(*components.TransformComponent)
+			transform.X, transform.Y = 500, 500
+			behind := unarmoredTarget(s, 440, 500)
+
+			require.NoError(t, s.handleCastSkill(playerID, "earthbreaker", 600, 500))
+			tick(s)
+
+			if tt.hit {
+				assert.Less(t, currentHealth(behind), 1000, "all round, behind included")
+				assert.Equal(t, 60, currentResource(entity))
+				return
+			}
+			assert.Equal(t, 1000, currentHealth(behind))
+			assert.Equal(t, 100, currentResource(entity))
+		})
+	}
+}
+
+// Settle the Debt cast through the handler resolves on the tick for a
+// mercenary holding the node, spending every parry charge on a hit behind
+// them as well; one without the node keeps them all. FS-04EEA §A R3, §F R30–R31.
+func TestCastSkill_SettleTheDebtOnlyForAMercHoldingTheNode(t *testing.T) {
+	node, _ := passivetree.AbilityNode("mercenary")
+	for _, tt := range []struct {
+		name  string
+		ranks passivetree.Ranks
+		hit   bool
+	}{
+		{"with the node", passivetree.Ranks{node.ID: 1}, true},
+		{"without the node", nil, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := unstartedRun(t)
+			playerID := uuid.New()
+			entity, ok := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Vael", Class: "mercenary", PassiveRanks: tt.ranks}, ""))
+			require.True(t, ok)
+			tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
+			transform := tc.(*components.TransformComponent)
+			transform.X, transform.Y = 500, 500
+			rc, _ := entity.GetComponent(ecs.ComponentTypeResource)
+			parryCharges := rc.(*components.ResourceComponent)
+			require.Equal(t, components.ResourceParryCharges, parryCharges.Kind)
+			parryCharges.Current = 2
+			behind := unarmoredTarget(s, 440, 500)
+
+			require.NoError(t, s.handleCastSkill(playerID, "settle_the_debt", 600, 500))
+			tick(s)
+
+			if tt.hit {
+				assert.Less(t, currentHealth(behind), 1000, "all round, behind included")
+				assert.Equal(t, 0, currentResource(entity))
+				return
+			}
+			assert.Equal(t, 1000, currentHealth(behind))
+			assert.Equal(t, 2, currentResource(entity))
 		})
 	}
 }

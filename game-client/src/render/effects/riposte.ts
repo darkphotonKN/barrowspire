@@ -3,10 +3,10 @@
  *
  * - The **riposte slice**: a big, clean band of steel sweeping the server's riposte exactly
  *   (§E.23: 240°, 90 px) toward the cursor. It plays in place of the cut effect on a left-click
- *   sent while the latest state shows 3 parry charges, the moment `cut` is sent (client
- *   prediction, as the cut does). The server arms the riposte, never the client (§E.24): there is
- *   no skill id, the client sends `cut` either way.
- * - The **armed tell**: while the latest state shows 3 parry charges, a glint runs again and again
+ *   sent while the latest state shows 3 parry charges (a Duelist's 2, never for a Sellsword:
+ *   FS-E1ZDG §L R45), the moment `cut` is sent (client prediction, as the cut does). The server arms the riposte, never
+ *   the client (§E.24): there is no skill id, the client sends `cut` either way.
+ * - The **armed tell**: while the latest state shows those charges, a glint runs again and again
  *   along a blade carried low at the merc's side, so the player knows the next left-click is the
  *   riposte. It sits below the stance tell's crosswise blade at the chest, so both read when both
  *   are up. It clears when the count drops.
@@ -18,6 +18,7 @@
  * (ADR-0013); no Bounce, Elastic or Back, no shake.
  */
 
+import { specializationOf } from "@/data/specializations";
 import { depthKey, worldToScreen, type Point } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
 import type { PlayerState } from "@/types/gameState";
@@ -27,6 +28,9 @@ import { fourPointStar } from "./star";
 
 /** The parry charges a riposte spends, all of them (FS-MAMHR §E.23). */
 export const RIPOSTE_CHARGES = 3;
+
+/** A Duelist's riposte arms at, and spends, 2 (FS-E1ZDG §I R32, §L R45). */
+export const QUICK_RIPOSTE_CHARGES = 2;
 
 /** The server's riposte (FS-MAMHR §E.23): a 240° arc centred on the aim, 90 px of reach. */
 export const RIPOSTE_SHAPE: ArcShape = {
@@ -50,16 +54,35 @@ const OVER_FIGURE = 3;
 /** The blade carried low at the merc's side, about the feet (screen px): hilt at the hip, point low. */
 const CARRIED = { from: { x: 7, y: -24 }, to: { x: 19, y: -6 } };
 
+/** The fields of the merc's own state the riposte reads: their parry charges and their spec. */
+export type RiposteState = Pick<PlayerState, "resource" | "specialization">;
+
+/**
+ * The parry charges a merc holding `specialization` has their cut ripostes at: 3, a Duelist's 2,
+ * and null for a Sellsword, whose cut never ripostes (FS-E1ZDG §J R33, §L R45).
+ */
+function riposteChargesOf(specialization: string | undefined): number | null {
+  switch (specializationOf("mercenary", specialization)) {
+    case "duelist":
+      return QUICK_RIPOSTE_CHARGES;
+    case "sellsword":
+      return null;
+    default:
+      return RIPOSTE_CHARGES;
+  }
+}
+
 /**
  * Whether the merc's next cut is the riposte (FS-MAMHR §G.33, §G.34): the latest state shows them
- * at 3 parry charges. The server arms it, never the client (§E.24): this only says which effect
- * the cut it is about to send should play, and whether the armed tell shows.
+ * at 3 parry charges, or 2 for a Duelist, and never for a Sellsword (FS-E1ZDG §L R45). The server
+ * arms it, never the client (§E.24): this only says which effect the cut it is about to send
+ * should play, and whether the armed tell shows.
  */
-export function riposteArmed(
-  me: Pick<PlayerState, "resource"> | null | undefined,
-): boolean {
+export function riposteArmed(me: RiposteState | null | undefined): boolean {
   const r = me?.resource;
-  return r?.kind === "parry_charges" && r.current >= RIPOSTE_CHARGES;
+  if (r?.kind !== "parry_charges") return false;
+  const charges = riposteChargesOf(me?.specialization);
+  return charges !== null && r.current >= charges;
 }
 
 /** The slice of a Phaser Graphics the slice and the tell draw with. */
@@ -153,13 +176,11 @@ export class RiposteFx {
   }
 
   /**
-   * The merc's own latest state (req 34): the tell is up at 3 parry charges and down below.
-   * `null` is a player out of the delve's state (escaped): the tell goes.
+   * The merc's own latest state (req 34): the tell is up while {@link riposteArmed} (3 parry
+   * charges, a Duelist's 2) and down below. `null` is a player out of the delve's state
+   * (escaped): the tell goes.
    */
-  sync(
-    me: Pick<PlayerState, "resource"> | null | undefined,
-    now: number,
-  ): void {
+  sync(me: RiposteState | null | undefined, now: number): void {
     const armed = riposteArmed(me);
     if (armed && !this.blade) {
       this.armedAt = now;

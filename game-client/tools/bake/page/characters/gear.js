@@ -8,7 +8,7 @@
 
 import * as THREE from "three";
 import { attach, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
-import { materials, mkCanvas } from "../materials.js";
+import { glow, materials, mkCanvas } from "../materials.js";
 import { cssRgb, mix, shade } from "../palette.js";
 
 // the grip point lives with the rig (rig.js), where the draw solver (draw.js) reads it too
@@ -82,15 +82,86 @@ export function longsword(rig, M, F) {
 }
 
 /**
- * A tall kite shield strapped to the forearm, curved across its width, painted in the house
- * colours: per pale, bone and oxblood, an iron boss at the heart.
+ * How far the bearded axe's cutting edge is turned from square to the haft, toward the haft's far
+ * end (rad): the beard sweeps down and out, so the edge faces partly along the haft. Carried head
+ * down, the haft hanging forward of the fist as a blade's point does, the edge then faces forward
+ * and a little down; square to the haft (the variant's axe) it faced up and forward.
  */
-export function kiteShield(rig, side, F) {
+export const AXE_EDGE_TURN = 0.55;
+
+/**
+ * A one-handed bearded axe (the Berserker's, FS-1J1CB R2), built in the grip frame like any held
+ * weapon (the normal grip: the haft runs out of the thumb side of the fist along +z): an ash haft
+ * with a leather grip under the fist, and at its far end the head, its poll on -y and its bit on
+ * +y, the side the thumb points to, which leads a cut swung toward it. The bit's long beard sweeps
+ * down and out toward the fist, so the edge faces {@link AXE_EDGE_TURN} toward the haft's end from
+ * square to it. `userData.edge` is that edge in the group's frame: `at`, the middle of the edge,
+ * and `dir`, the way it faces (the bake test, axe.test.mjs, holds it forward and down in the carry
+ * and leading the swing).
+ */
+export function beardedAxe(rig, M, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  const len = 0.36 * H;
+  const haft = new THREE.CylinderGeometry(0.009 * H, 0.011 * H, len, 10);
+  haft.rotateX(Math.PI / 2);
+  haft.translate(0, 0, len / 2 - 0.05 * H);
+  g.add(new THREE.Mesh(haft, M.woodDark));
+  g.add(new THREE.Mesh(rod(0.012 * H, 0.012 * H, 0.08 * H), F.leatherDark));
+  // the head, in shape coordinates (x toward the bit, the grip frame's +y; y along the haft, its
+  // +z), its top at the haft's end: the edge runs from the beard's tip up and in to the toe
+  const z0 = len - 0.05 * H;
+  const a = AXE_EDGE_TURN;
+  const n = [Math.cos(a), Math.sin(a)];
+  const beard = [0.118 * H, z0 - 0.092 * H];
+  const reach = 0.125 * H;
+  const toe = [beard[0] - n[1] * reach, beard[1] + n[0] * reach];
+  const mid = [(beard[0] + toe[0]) / 2, (beard[1] + toe[1]) / 2];
+  const belly = (d) => [mid[0] + n[0] * d, mid[1] + n[1] * d];
+  const s = new THREE.Shape();
+  s.moveTo(-0.022 * H, z0 - 0.032 * H);
+  s.lineTo(0, z0 - 0.03 * H);
+  s.lineTo(0.014 * H, z0 - 0.036 * H);
+  // the beard's hooked underside, down and out from the haft to its tip
+  s.quadraticCurveTo(0.075 * H, z0 - 0.05 * H, beard[0], beard[1]);
+  // the edge, a little bellied
+  s.quadraticCurveTo(...belly(0.012 * H), toe[0], toe[1]);
+  s.quadraticCurveTo(0.03 * H, z0 + 0.004 * H, 0.012 * H, z0 + 0.008 * H);
+  s.lineTo(0, z0 + 0.01 * H);
+  s.lineTo(-0.022 * H, z0 + 0.006 * H);
+  s.closePath();
+  const head = extrude(s, 0.008 * H, 0.002 * H);
+  head.applyMatrix4(GRIP_BASIS);
+  g.add(new THREE.Mesh(head, F.darkSteel));
+  // the bright ground edge: a strip along it, a little proud of the head's faces
+  const inset = 0.009 * H;
+  const e = new THREE.Shape();
+  e.moveTo(beard[0], beard[1]);
+  e.quadraticCurveTo(...belly(0.012 * H), toe[0], toe[1]);
+  e.lineTo(toe[0] - n[0] * inset, toe[1] - n[1] * inset);
+  e.quadraticCurveTo(...belly(0.012 * H - inset), beard[0] - n[0] * inset, beard[1] - n[1] * inset);
+  e.closePath();
+  const edge = extrude(e, 0.0092 * H, 0);
+  edge.applyMatrix4(GRIP_BASIS);
+  g.add(new THREE.Mesh(edge, F.steel));
+  const at = belly(0.006 * H);
+  g.userData.edge = { at: new THREE.Vector3(0, at[0], at[1]), dir: new THREE.Vector3(0, n[0], n[1]) };
+  return g;
+}
+
+/**
+ * A tall kite shield strapped to the forearm, curved across its width, painted in the house
+ * colours: per pale, bone and oxblood, an iron boss at the heart. `scale` sizes it in height and
+ * width about the strap (the Guardian's, FS-1J1CB R1: about 1.15); `cross` lays the house cross
+ * over the field counterchanged, oxblood on the bone half and bone on the oxblood, inside a narrow
+ * brass border. With neither it is the knight's own shield.
+ */
+export function kiteShield(rig, side, F, { scale = 1, cross = false } = {}) {
   const H = rig.H;
   const s = new THREE.Shape();
-  const w = 0.115 * H;
-  const top = 0.145 * H;
-  const bot = -0.27 * H;
+  const w = 0.115 * H * scale;
+  const top = 0.145 * H * scale;
+  const bot = -0.27 * H * scale;
   s.moveTo(-w, top * 0.72);
   s.quadraticCurveTo(0, top * 1.12, w, top * 0.72);
   s.quadraticCurveTo(w * 1.02, -0.02 * H, 0, bot);
@@ -100,12 +171,12 @@ export function kiteShield(rig, side, F) {
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i) / w;
-    pos.setZ(i, pos.getZ(i) - x * x * 0.026 * H);
+    pos.setZ(i, pos.getZ(i) - x * x * 0.026 * H * scale);
   }
   geo.computeVertexNormals();
 
   // the outline's highest point, where the face's paint ends
-  const face = shieldFace(w, top * 0.92, bot);
+  const face = shieldFace(w, top * 0.92, bot, cross ? { w, top, bot, H } : null);
   // shape → forearm frame: long axis along forearm-local +z (up when the forearm is raised
   // forward), width along the forearm, face outward (+x on the left arm)
   const sx = side === "L" ? 1 : -1;
@@ -121,15 +192,40 @@ export function kiteShield(rig, side, F) {
   return attach(rig, `foreArm${side}`, geo, mats, [x + sx * 0.042, (fy + wy) / 2 - 0.01, -0.03]);
 }
 
-function shieldFace(w, top, bot) {
+/**
+ * The shield's painted face, the shape's box laid over the canvas. `cross` (the shape's own
+ * measures, H units) adds the counterchanged house cross and a brass border inside the rim, laid
+ * along the outline.
+ */
+function shieldFace(w, top, bot, cross = null) {
   const S = 256;
   const c = mkCanvas(S, S);
   const ctx = c.getContext("2d");
+  const boneTone = shade(mix("vellum", "vellumDark", 0.5), 0.82);
+  const redTone = mix("oxblood", "barrowDeep", 0.12);
   // per pale: bone to the left, oxblood to the right
-  ctx.fillStyle = cssRgb(shade(mix("vellum", "vellumDark", 0.5), 0.82));
+  ctx.fillStyle = cssRgb(boneTone);
   ctx.fillRect(0, 0, S, S);
-  ctx.fillStyle = cssRgb(mix("oxblood", "barrowDeep", 0.12));
+  ctx.fillStyle = cssRgb(redTone);
   ctx.fillRect(S * 0.5, 0, S * 0.5, S);
+  if (cross) {
+    // the cross, its arms through the boss: each half in the other half's colour
+    const bar = S * 0.1;
+    const armY = S * 0.46;
+    for (const [x0, tone] of [
+      [0, redTone],
+      [S * 0.5, boneTone],
+    ]) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, 0, S * 0.5, S);
+      ctx.clip();
+      ctx.fillStyle = cssRgb(tone);
+      ctx.fillRect(S * 0.5 - bar / 2, 0, bar, S);
+      ctx.fillRect(0, armY - bar / 2, S, bar);
+      ctx.restore();
+    }
+  }
   // the iron boss
   ctx.fillStyle = cssRgb(mix("slate", "pitch", 0.4));
   ctx.beginPath();
@@ -147,6 +243,28 @@ function shieldFace(w, top, bot) {
   ctx.strokeStyle = cssRgb(mix("barrowDeep", "pitch", 0.3));
   ctx.lineWidth = 18;
   ctx.strokeRect(0, 0, S, S);
+  if (cross) {
+    // the outline on the canvas (kiteShield's shape, the box mapped onto it), drawn in toward the
+    // middle: the dark rim along the edge, the brass border just inside it
+    const { w: sw, top: st, bot: sb, H } = cross;
+    const px = (x, y, k) => [((x * k) / (2 * sw) + 0.5) * S, ((top - (y * k + (1 - k) * (st * 0.72 + sb) / 2)) / (top - bot)) * S];
+    const outline = (k) => {
+      ctx.beginPath();
+      ctx.moveTo(...px(-sw, st * 0.72, k));
+      ctx.quadraticCurveTo(...px(0, st * 1.12, k), ...px(sw, st * 0.72, k));
+      ctx.quadraticCurveTo(...px(sw * 1.02, -0.02 * H, k), ...px(0, sb, k));
+      ctx.quadraticCurveTo(...px(-sw * 1.02, -0.02 * H, k), ...px(-sw, st * 0.72, k));
+      ctx.closePath();
+    };
+    ctx.strokeStyle = cssRgb(mix("barrowDeep", "pitch", 0.3));
+    ctx.lineWidth = 14;
+    outline(1);
+    ctx.stroke();
+    ctx.strokeStyle = cssRgb(mix("brass", "brassBright", 0.4));
+    ctx.lineWidth = 7;
+    outline(0.9);
+    ctx.stroke();
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   // ExtrudeGeometry's face UVs are the shape's own coordinates; map its box onto the canvas
@@ -160,7 +278,7 @@ function shieldFace(w, top, bot) {
  * A longbow in the left hand, with a live string: `update(nock)` redraws the string to a
  * nock point in the bow's frame (clips pull it to the right hand while drawing).
  */
-export function longbow(rig, M, F) {
+export function longbow(rig, M, F, o = {}) {
   const H = rig.H;
   const g = new THREE.Group();
   const L = 0.4 * H;
@@ -187,6 +305,13 @@ export function longbow(rig, M, F) {
   g.add(new THREE.Mesh(stave, M.woodDark));
   g.add(new THREE.Mesh(rod(0.012 * H, 0.012 * H, 0.08 * H), F.leatherDark));
   const tips = [new THREE.Vector3(0, brace, -L), new THREE.Vector3(0, brace, L)];
+  // `nocks`: horn caps over the nocks (the Hunter, FS-1J1CB R5), each tapering out to its tip
+  if (o.nocks)
+    for (const [k, t] of tips.entries()) {
+      const cap = rod(0.0075 * H, 0.0035 * H, 0.05 * H, 7);
+      cap.rotateX(k === 0 ? Math.PI : 0);
+      g.add(placed(cap, F.horn, t.x, t.y - 0.002 * H, t.z + (k === 0 ? 0.012 : -0.012) * H));
+    }
   const stringMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(0.75, 0.7, 0.58), roughness: 0.9 });
   const strands = tips.map(() => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0022 * H, 0.0022 * H, 1, 4), stringMat);
@@ -245,14 +370,17 @@ export function quiver(rig, M, F, o) {
   const body = new THREE.CylinderGeometry(0.032 * H, 0.026 * H, 0.26 * H, 12, 1, true);
   g.add(new THREE.Mesh(body, F.leatherDouble));
   g.add(placed(new THREE.TorusGeometry(0.032 * H, 0.005 * H, 5, 14), M.brass, 0, 0.13 * H, 0, Math.PI / 2));
+  const fk = o.fletchLength ?? 1;
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * Math.PI * 2;
     const x = Math.cos(a) * 0.016 * H;
     const z = Math.sin(a) * 0.016 * H;
     const shaft = new THREE.CylinderGeometry(0.003 * H, 0.003 * H, 0.08 * H, 4);
     g.add(placed(shaft, M.wood, x, 0.16 * H, z));
-    const fl = new THREE.BoxGeometry(0.014 * H, 0.05 * H, 0.002 * H);
-    g.add(placed(fl, F.linen, x, 0.205 * H, z, 0, a, 0));
+    // `fletchLength` draws the fletching out longer and stands it higher (1 today; the Hunter's
+    // goose feathers, FS-1J1CB R5), widening it a little with it
+    const fl = new THREE.BoxGeometry(0.014 * H * Math.min(fk, 1.4), 0.05 * H * fk, 0.002 * H);
+    g.add(placed(fl, F.linen, x, (0.205 + 0.025 * (fk - 1)) * H, z, 0, a, 0));
   }
   return g;
 }
@@ -374,6 +502,97 @@ export function sceptre(rig, M, F, orbMat) {
     ]);
     g.add(new THREE.Mesh(new THREE.TubeGeometry(prong, 8, 0.004 * H, 5, false), F.blackIron));
   }
+  return g;
+}
+
+/**
+ * A mage specialization's focus haft (FS-1J1CB R3, R4): about 1.5x the sceptre's length and short
+ * of a staff. The head sits where the sceptre's does, `FOCUS_TOP` up from the fist, so it clears
+ * her head in every clip as the sceptre's does, and the haft runs on down past the fist to an iron
+ * knob at `FOCUS_BUTT`: the fist holds it higher up than the sceptre. In the grip frame (H).
+ */
+export const FOCUS_BUTT = -0.2;
+export const FOCUS_TOP = 0.2;
+
+function focusHaft(rig, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  g.add(placed(rod(0.0105 * H, 0.009 * H, (FOCUS_TOP - FOCUS_BUTT) * H, 8), F.blackIron, 0, 0, ((FOCUS_TOP + FOCUS_BUTT) / 2) * H));
+  g.add(placed(new THREE.SphereGeometry(0.015 * H, 10, 8), F.blackIron, 0, 0, FOCUS_BUTT * H));
+  g.add(placed(rod(0.013 * H, 0.013 * H, 0.07 * H), F.leatherDark));
+  // an iron band each side of the wrap
+  for (const z of [-0.045, 0.045]) g.add(placed(rod(0.0135 * H, 0.0135 * H, 0.01 * H, 8), F.blackIron, 0, 0, z * H));
+  // the collar the head sits in, widening up
+  g.add(placed(rod(0.009 * H, 0.016 * H, 0.022 * H, 8), F.blackIron, 0, 0, (FOCUS_TOP + 0.011) * H));
+  return g;
+}
+
+/**
+ * The Spellwarden's ward focus (FS-1J1CB R3): the focus haft (`focusHaft`) crowned with an open
+ * iron ring standing in the swing plane, a pale stone held at its heart on two short bars, lit
+ * `stoneMat` (necrotic toward vellum, low; it glows with the clip as the sceptre's orb does).
+ */
+export function wardFocus(rig, M, F, stoneMat) {
+  const H = rig.H;
+  const g = focusHaft(rig, F);
+  const R = 0.04;
+  const zc = FOCUS_TOP + 0.02 + R;
+  const ring = new THREE.TorusGeometry(R * H, 0.0055 * H, 8, 36);
+  ring.rotateY(Math.PI / 2);
+  g.add(placed(ring, F.blackIron, 0, 0, zc * H));
+  g.add(placed(new THREE.SphereGeometry(0.021 * H, 14, 10), stoneMat, 0, 0, zc * H));
+  for (const sy of [-1, 1]) g.add(placed(new THREE.BoxGeometry(0.006 * H, (R - 0.02) * H, 0.006 * H), F.blackIron, 0, sy * (R / 2 + 0.01) * H, zc * H));
+  // the ring's foot in the collar
+  g.add(placed(rod(0.006 * H, 0.006 * H, 0.02 * H, 6), F.blackIron, 0, 0, (FOCUS_TOP + 0.015) * H));
+  return g;
+}
+
+/** A tongue of flame along local +y, `h` tall and `r` wide (H), its foot a little under the origin. */
+function flameGeometry(h, r) {
+  const pts = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const w = r * Math.sin(Math.PI * Math.min(1, t * 1.6)) * (1 - t) ** 0.6;
+    pts.push(new THREE.Vector2(Math.max(0.0001, w), t * h - h * 0.15));
+  }
+  return new THREE.LatheGeometry(pts, 14);
+}
+
+/**
+ * The Pyromancer's fire focus (FS-1J1CB R4): the focus haft (`focusHaft`) crowned with an open
+ * iron cage of four bars and a rim, a coal at its foot and a tongue of flame in it, the flame kept
+ * upright in the world whatever the hand's tilt (a rig hook turns it each pose). The flame's body
+ * is `flameMat`, which glows with the clip as the sceptre's orb does; its core and the coal are
+ * the fire ramp (the guideline: fire baked into one body).
+ */
+export function fireFocus(rig, M, F, flameMat) {
+  const H = rig.H;
+  const g = focusHaft(rig, F);
+  const foot = FOCUS_TOP + 0.02;
+  const top = foot + 0.07;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const at = (r, z) => new THREE.Vector3(Math.cos(a) * r * H, Math.sin(a) * r * H, z * H);
+    const bar = new THREE.CatmullRomCurve3([at(0.012, foot - 0.006), at(0.033, foot + 0.028), at(0.024, top)]);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(bar, 10, 0.0042 * H, 5, false), F.blackIron));
+  }
+  g.add(placed(new THREE.TorusGeometry(0.024 * H, 0.0042 * H, 6, 24), F.blackIron, 0, 0, top * H));
+  g.add(placed(new THREE.SphereGeometry(0.016 * H, 10, 8), glow("fireDeep", 2.4), 0, 0, (foot + 0.008) * H));
+  const flame = new THREE.Group();
+  flame.position.set(0, 0, (foot + 0.02) * H);
+  flame.add(new THREE.Mesh(flameGeometry(0.12 * H, 0.03 * H), flameMat));
+  const core = new THREE.Mesh(flameGeometry(0.07 * H, 0.016 * H), glow("fireCore", 2.2));
+  core.position.y = 0.004 * H;
+  flame.add(core);
+  flame.userData.upright = true;
+  g.add(flame);
+  const q = new THREE.Quaternion();
+  rig.hooks.push((r) => {
+    r.root.updateMatrixWorld(true);
+    flame.parent.getWorldQuaternion(q);
+    flame.quaternion.copy(q.invert());
+    flame.updateMatrixWorld(true);
+  });
   return g;
 }
 

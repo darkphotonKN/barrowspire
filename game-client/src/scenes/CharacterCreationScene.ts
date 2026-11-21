@@ -289,7 +289,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     // Update Lore Text
     const lore = CLASS_LORE[key];
     if (this.loreTitleText) {
-      this.loreTitleText.setText(`${lore.name} — ${lore.title}`);
+      this.loreTitleText.setText(lore.name);
       this.loreTitleText.setFontFamily(CANVAS_FONT.body);
     }
     if (this.loreWeaponText) {

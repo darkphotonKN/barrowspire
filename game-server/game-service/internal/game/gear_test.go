@@ -181,7 +181,7 @@ func TestStep_Vitality_AddsMaxHealth_LevelUpNeverHeals(t *testing.T) {
 	assert.Equal(t, seatedMax, health.CurrentHealth, "seated at full")
 
 	health.CurrentHealth = 100
-	gainExperience(delver, warrior.Growth, int(progression.LevelFloor(2)))
+	gainExperience(delver, warrior, int(progression.LevelFloor(2)))
 	tick(s)
 
 	assert.Equal(t, seatedMax+warrior.Growth.MaxHealth+warrior.Growth.Vitality*HealthPerVitality, health.MaxHealth)

@@ -98,6 +98,8 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Per-class resources → FS-8AY7S
 - [x] Mercenary class → FS-MAMHR
 - [x] Archer's Shadow Shot → FS-JTNPR
+- [ ] Class tree abilities → FS-04EEA
+- [ ] Ability cooldowns in the owner's state → FS-Q18Q3
 
 ### Enemies
 
@@ -121,6 +123,8 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Experience from kills → FS-BDA7X
 - [x] Character levels with class stat growth → FS-BDA7X
 - [x] Level requirements on equipment → FS-BDA7X
+- [ ] Passive skill tree → FS-8RZ51
+- [ ] Specializations → FS-E1ZDG
 
 ### Delve layout
 
@@ -200,6 +204,7 @@ matchmaking); this service is the engine they feed. ✅
 - [x] Durable accounts and profile
 - [x] Persistent inventory across runs
 - [x] Progression persistence → FS-BDA7X
+- [ ] Skill tree persistence → FS-8RZ51
 
 ### Cross-context flows
 

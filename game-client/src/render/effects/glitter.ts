@@ -82,19 +82,10 @@ export function drawGlint(
   d: GlintDraw,
 ): DrawnGlint {
   const g = GLINT;
-  const body = fxImage(scene, art, "fx_glint", look.glint).setBlendMode("ADD");
-  const core = fxImage(scene, art, "fx_mote", look.centre)
-    .setBlendMode("ADD")
-    .setScale(g.core);
-  const glint = scene.add
-    .container(0, 0)
-    .setPosition(d.x, -d.h)
-    .setAlpha(0)
-    .setScale(g.growFrom * d.size);
-  glint.add([body, core]);
-  layer.add(glint);
+  const { glint, parts } = buildGlint(scene, art, layer, look);
+  glint.setPosition(d.x, -d.h).setScale(g.growFrom * d.size);
   return {
-    parts: [body, core, glint],
+    parts,
     tweens: [
       scene.tweens.add({
         targets: glint,
@@ -115,6 +106,27 @@ export function drawGlint(
       }),
     ],
   };
+}
+
+/**
+ * One glint's objects, unplaced and unanimated: the baked glint tinted the look's `glint` round its
+ * `centre` mote, both burning additively, in a container at alpha 0 added to `layer`. What
+ * {@link drawGlint} winks with tweens, and what an aura (FS-1J1CB R31) pools and winks by its clock.
+ */
+export function buildGlint(
+  scene: Pick<EffectsScene, "add">,
+  art: FxArt,
+  layer: { add(child: unknown): unknown },
+  look: GlintLook,
+): { glint: Phaser.GameObjects.Container; parts: { destroy(): void }[] } {
+  const body = fxImage(scene, art, "fx_glint", look.glint).setBlendMode("ADD");
+  const core = fxImage(scene, art, "fx_mote", look.centre)
+    .setBlendMode("ADD")
+    .setScale(GLINT.core);
+  const glint = scene.add.container(0, 0).setAlpha(0);
+  glint.add([body, core]);
+  layer.add(glint);
+  return { glint, parts: [body, core, glint] };
 }
 
 /** A Fabled icon's glints: its rarity colour round a pale hot centre (R14). */

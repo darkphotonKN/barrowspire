@@ -8,12 +8,13 @@ import * as Phaser from "phaser";
 import { BARROW_HEX } from "@/utils/theme";
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import { RESIDENT_ART } from "@/render/art/sceneArt";
-import { CharacterAnimator } from "@/render/art/character";
+import { CharacterAnimator, type CharacterLook } from "@/render/art/character";
 import { directionIndex } from "@/render/art/manifest";
 import type { ArtLibrary } from "@/render/art/library";
 import { projectileFlightOf } from "@/render/effects/flights";
 import {
   ProjectileFlights,
+  type Bystander,
   type Sighting,
 } from "@/render/effects/projectile";
 import { EffectsRuntime } from "@/render/effects/runtime";
@@ -23,7 +24,7 @@ import { worldDepth } from "@/render/iso/shapes";
 import { LightMap } from "@/render/lighting/LightMap";
 import { AMBIENT } from "@/render/lighting/lighting";
 import { GROUND_DEPTH } from "@/render/world/scene";
-import type { EffectCard, Stage } from "./effects";
+import type { EffectCard, Shooter, Stage } from "./effects";
 import { InTurn } from "./inTurn";
 
 /** Where the figure stands, in world px. */
@@ -38,6 +39,11 @@ const TILES = 12;
 const FLIGHT_MS = 320;
 /** Between one card and the next in "play all in turn". */
 const TURN_MS = 1600;
+/**
+ * The art the gallery holds beyond the resident: the run's creatures, so a tell drawn over a monster is
+ * shown on a monster's body (the stun tell, FS-04EEA R49).
+ */
+const GALLERY_ART = ["creatures"] as const;
 
 export class GalleryScene extends Phaser.Scene {
   private art!: ArtLibrary;
@@ -49,6 +55,11 @@ export class GalleryScene extends Phaser.Scene {
   private turns!: InTurn;
   /** Projectiles in the air, as a server state would list them. */
   private readonly sightings = new Map<string, Sighting>();
+  /**
+   * Who loosed the latest projectile, standing where the figure stands: a shot is drawn by its
+   * shooter, guessed at first sight as in a world (FS-1J1CB §F R41). None, the latest flew alone.
+   */
+  private shooter?: Bystander;
   private plays = 0;
   /** Set once create() has wired the runtime and the figure; a click before then plays nothing. */
   private ready = false;
@@ -58,12 +69,12 @@ export class GalleryScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // the mage and its effects: resident art (FS-C4JWH §A R3)
-    preloadArt(this, RESIDENT_ART);
+    // the mage and its effects: resident art (FS-C4JWH §A R3); and the creatures a tell stands over
+    preloadArt(this, [...RESIDENT_ART, ...GALLERY_ART]);
   }
 
   create(): void {
-    this.art = registerArt(this, RESIDENT_ART);
+    this.art = registerArt(this, [...RESIDENT_ART, ...GALLERY_ART]);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
     this.floor();
     this.lightMap = new LightMap(this, AMBIENT.run);
@@ -89,7 +100,7 @@ export class GalleryScene extends Phaser.Scene {
       direction: directionIndex(FACING),
       timeScale: 1,
     });
-    this.flights.sync([...this.sightings.values()]);
+    this.flights.sync([...this.sightings.values()], this.shooter ? [this.shooter] : []);
     this.lightMap.update(time);
   }
 
@@ -122,12 +133,15 @@ export class GalleryScene extends Phaser.Scene {
       lights: this.lightMap,
       now: () => this.time.now,
       later: (ms, fn) => void this.time.delayedCall(ms, fn),
-      fly: (projectileType) => this.fly(`flight:${n}`, projectileType),
+      fly: (projectileType, shooter) => this.fly(`flight:${n}`, projectileType, shooter),
+      wear: (who) => this.wear(who),
+      standAt: (at) => this.standAt(at),
     };
   }
 
   /** A projectile from the figure to the aim, synced each frame; gone, the flight lands it. */
-  private fly(entityId: string, projectileType: string): void {
+  private fly(entityId: string, projectileType: string, shooter?: Shooter): void {
+    this.shooter = shooter && { ...shooter, position: { ...AT } };
     const velocity = { vx: AIM.x - AT.x, vy: AIM.y - AT.y };
     const sighting: Sighting = {
       entity_id: entityId,
@@ -146,6 +160,20 @@ export class GalleryScene extends Phaser.Scene {
       },
       onComplete: () => this.sightings.delete(entityId),
     });
+  }
+
+  /** The figure in a class's base sheet (resident, ADR-0059), or a creature's look, from now on; its crown. */
+  private wear(who: string | CharacterLook): number | undefined {
+    this.animator = new CharacterAnimator(this.art, who);
+    this.animator.dress(this.figure);
+    return this.animator.crown;
+  }
+
+  /** The figure drawn standing at world point `at`, its torch with it. */
+  private standAt(at: Point): void {
+    const s = worldToScreen(at.x, at.y);
+    this.figure.setPosition(Math.round(s.x), Math.round(s.y)).setDepth(worldDepth(at.x, at.y, 1));
+    this.lightMap.carry({ x: s.x, y: s.y });
   }
 
   private spawnFigure(): void {

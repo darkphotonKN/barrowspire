@@ -140,6 +140,11 @@ export interface ActionMap {
    * waiting on that check, and ignores it otherwise; the leader sends none.
    */
   party_ready: { check_id: string; accept: boolean };
+  /**
+   * Spending one passive point in town (FS-8RZ51 R16): `rank` is the target rank, so a retry is the
+   * same message. Nothing answers a success (the next state shows it); a refusal is an error reply.
+   */
+  spend_passive_point: { node_id: string; rank: number };
 }
 
 export const ActionType = {
@@ -173,6 +178,7 @@ export const ActionType = {
   PartyTravel: "party_travel",
   PartyEnter: "party_enter",
   PartyReady: "party_ready",
+  SpendPassivePoint: "spend_passive_point",
 } as const;
 
 export type ActionType = (typeof ActionType)[keyof typeof ActionType];

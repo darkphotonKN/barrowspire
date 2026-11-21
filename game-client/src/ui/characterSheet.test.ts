@@ -119,6 +119,17 @@ describe("characterSheet header and experience (FS-HRH2J R25–26)", () => {
     expect(xp).toEqual({ fraction: 0, text: null });
   });
 
+  // FS-E1ZDG §K.37, §K.41: the title in place of the class name, in the header's capitals
+  it("should head a specialized character with their title, in capitals", () => {
+    const berserker = { username: "Bram", class: "warrior", specialization: "berserker" };
+    expect(characterSheet(berserker, nothingWorn()).className).toBe("WARRIOR · BERSERKER");
+  });
+
+  it("should head one with no spec, or one the client does not know, with the class name", () => {
+    expect(characterSheet({ username: "Bram", class: "warrior" }, nothingWorn()).className).toBe("WARRIOR");
+    expect(characterSheet({ username: "Bram", class: "warrior", specialization: "paladin" }, nothingWorn()).className).toBe("WARRIOR");
+  });
+
   it("should name a class the card does not know by its own word", () => {
     expect(
       characterSheet({ username: "X", class: "bard" }, nothingWorn()).className,
@@ -198,5 +209,68 @@ describe("characterSheet from gear (FS-HRH2J R29)", () => {
     expect(characterSheet(mage, worn).gear.stats).toEqual([
       { label: "Attack", value: "7" },
     ]);
+  });
+});
+
+describe("characterSheet passives (FS-8RZ51 R44)", () => {
+  const warrior = (passive_ranks: Record<string, number>): CharacterSource => ({
+    username: "Bram",
+    class: "warrior",
+    passive_ranks,
+  });
+
+  it("should list a filler's bonus summed over its ranks, from the golden's values", () => {
+    expect(
+      characterSheet(warrior({ "warrior.t1a": 2 }), nothingWorn()).passives
+        .stats,
+    ).toEqual(["+8% max HP"]);
+  });
+
+  it("should sum one stat two nodes raise into one line (a warrior's t1a and t2b both add max HP)", () => {
+    expect(
+      characterSheet(
+        warrior({ "warrior.t1a": 2, "warrior.t1b": 1, "warrior.t2b": 2 }),
+        nothingWorn(),
+      ).passives.stats,
+    ).toEqual(["+16% max HP", "+10 max stamina"]);
+  });
+
+  it("should word a sum in seconds, as the golden gives the unit (the mercenary's parry window)", () => {
+    expect(
+      characterSheet(
+        { username: "Vex", class: "mercenary", passive_ranks: { "mercenary.t2b": 3 } },
+        nothingWorn(),
+      ).passives.stats,
+    ).toEqual(["+0.06 s parry window"]);
+  });
+
+  it("should add a kicker's stat at rank 2 but not name it", () => {
+    const { passives } = characterSheet(warrior({ "warrior.t2a": 2 }), nothingWorn());
+    expect(passives.stats).toEqual(["+12% slash damage"]);
+    expect(passives.kickers).toEqual([]);
+  });
+
+  it("should name a kicker held at rank 3 on its own line, by its name from the copy, its stat summed too", () => {
+    const { passives } = characterSheet(
+      warrior({ "warrior.t2a": 3, "warrior.t2b": 3 }),
+      nothingWorn(),
+    );
+    expect(passives.stats).toEqual(["+18% slash damage", "+12% max HP"]);
+    expect(passives.kickers).toEqual(["Heavy Hand", "Thick Skin"]);
+  });
+
+  it("should read None yet when no rank is held, the ranks absent or empty", () => {
+    const none = { stats: [], kickers: [], note: "None yet" };
+    expect(characterSheet(warrior({}), nothingWorn()).passives).toEqual(none);
+    expect(characterSheet(mage, nothingWorn()).passives).toEqual(none);
+    expect(
+      characterSheet(warrior({ "warrior.t1a": 1 }), nothingWorn()).passives.note,
+    ).toBeNull();
+  });
+
+  it("should leave out a node id the golden lacks, never crash (R42)", () => {
+    expect(
+      characterSheet(warrior({ "warrior.t9z": 2 }), nothingWorn()).passives,
+    ).toEqual({ stats: [], kickers: [], note: "None yet" });
   });
 });

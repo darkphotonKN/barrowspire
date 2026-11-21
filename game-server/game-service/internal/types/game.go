@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/google/uuid"
 )
@@ -54,16 +55,31 @@ type PublicPlayerState struct {
 	Experience  int64  `json:"experience"`
 	LevelFloor  int64  `json:"level_floor"`
 	NextLevelAt *int64 `json:"next_level_at,omitempty"`
+	// Specialization is the body's (systems.Specialization), public as the
+	// title is; absent before the pick. FS-E1ZDG §B R9.
+	Specialization string `json:"specialization,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
 // points: Current is the pool rounded down, so a client comparing it with
 // AbilityCost reaches the same answer the server does. FS-8AY7S §Requirements 17.
+// TreeAbilityCost is the held tree ability's, the least the server requires to
+// cast it; nil while it is not held. FS-Q18Q3 §A R5.
 type ResourceState struct {
-	Kind        string `json:"kind"`
-	Current     int    `json:"current"`
-	Max         int    `json:"max"`
-	AbilityCost int    `json:"ability_cost"`
+	Kind            string `json:"kind"`
+	Current         int    `json:"current"`
+	Max             int    `json:"max"`
+	AbilityCost     int    `json:"ability_cost"`
+	TreeAbilityCost *int   `json:"tree_ability_cost,omitempty"`
+}
+
+// CooldownState is one of a delver's abilities' cooldowns as its owner is
+// told it, in float seconds: Remaining left before it can be cast again, Total
+// the length it started at (worn attack speed applied); both 0 when none
+// runs. FS-Q18Q3 §A R1–R3.
+type CooldownState struct {
+	Remaining float64 `json:"remaining"`
+	Total     float64 `json:"total"`
 }
 
 // ParryState is a mercenary's parry stance as its owner is told it. The parry
@@ -572,6 +588,11 @@ type CharacterInPlay struct {
 	Level int `json:"level"`
 	// total experience, monotonic
 	Experience int64 `json:"experience"`
+	// PassiveRanks is the passive tree ranks held, by node id, from the same
+	// record (FS-8RZ51 R14), raised by a spend in town (R20). Never written
+	// in place: every copy of the record shares it, so it is replaced whole.
+	// The queue entry and a handoff carry it with the rest of the character.
+	PassiveRanks passivetree.Ranks `json:"passive_ranks,omitempty"`
 }
 
 // WireCharacterID is id as a gRPC request or an event carries it. No character

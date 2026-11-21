@@ -11,7 +11,7 @@
 import * as THREE from "three";
 import { fbm, smoothstep, voronoi, hash2 } from "../noise.js";
 import { mkCanvas } from "../materials.js";
-import { mix, shade } from "../palette.js";
+import { color, grey, mix, shade } from "../palette.js";
 import { browMaterial, faceMaterial } from "./face.js";
 
 const S = 128;
@@ -320,6 +320,44 @@ export const GEAR = {
   coat: mix(mix("ember", "oxblood", 0.5), "barrowDeep", 0.7),
   sash: mix(mix("ember", "oxblood", 0.35), "barrowDeep", 0.35),
   hairDark: mix("barrowDeep", "pitch", 0.35),
+  // the warrior's specialization looks (FS-1J1CB R1, R2; warriorLooks.js): the Guardian's
+  // surcoat in the shield's worn bone and its house cross in the shield's oxblood, and the
+  // Berserker's blood-dark forearm wraps
+  surcoat: shade(mix("vellum", "vellumDark", 0.5), 0.8),
+  houseRed: mix("oxblood", "barrowDeep", 0.12),
+  wraps: mix("oxblood", "pitch", 0.35),
+  // the mage's specialization looks (FS-1J1CB R4; mageLooks.js): the Pyromancer's scapular in a
+  // scorched oxblood, the house oxblood a little toward ember under grime. Near-black (variant B's
+  // soot) or the oxblood itself left her back under the dark-room floor (R10) on the black gown
+  soot: mix("oxblood", "ember", 0.1),
+  // the archer's specialization looks (FS-1J1CB R5, R6; archerLooks.js). The Hunter: the wilds'
+  // own colours, warm and earthy, and nothing of the Nightwood green. A grey-brown wolf pelt over a
+  // cloak and capelet of undyed wool a shade browner and darker than it, so the pelt parts from
+  // them; a laced hide jerkin, pale goose fletching, horn nock caps, brown hair
+  wolf: mix(mix("slate", "barrowBrown", 0.55), "vellumDark", 0.08),
+  hunterWool: mix(mix("barrowBrown", "barrowDeep", 0.55), "slate", 0.2),
+  hunterWoolDark: mix(mix(mix("barrowBrown", "barrowDeep", 0.55), "slate", 0.2), "pitch", 0.35),
+  jerkinHide: mix("barrowBrown", "barrowDeep", 0.15),
+  goose: mix("vellum", "vellumDark", 0.25),
+  horn: mix("vellumDark", "barrowBrown", 0.35),
+  hairBrown: mix("barrowBrown", "barrowDeep", 0.3),
+  // the Shadow Ranger: the Nightwood dyed through to a cold soot-black, the warmth taken out; the
+  // buff leather a cold grey, the bracers, boots and fletching black. The soot is lifted toward
+  // slate, the sleeves and hose with it: variant A's soot (pitch a little past halfway to slate,
+  // under charcoal) left her back at 0.0159 against the dark-room floor's 0.0222 (R10)
+  shadow: mix("pitch", "slate", 0.85),
+  shadowDark: mix("pitch", "slate", 0.35),
+  shadowLeather: mix(mix("barrowDeep", "slate", 0.55), "pitch", 0.35),
+  shadowBlack: mix("pitch", "slate", 0.3),
+  // the mercenary's specialization looks (FS-1J1CB R7, R8; mercLooks.js). The Duelist keeps the
+  // madder (GEAR.coat) on a wrapped wool robe, under a half-cloak and sash in a cold slate-black,
+  // set against the warm madder so they part from it by temperature (variant A's cape)
+  duelistSlate: mix(mix("slate", "pitch", 0.45), "necrotic", 0.08),
+  // the Sellsword: the madder dyed a charcoal black, never pure black, the sash a cooler step of
+  // it, under a coat of oiled buff leather, browner than gold (variant B's)
+  sellBlack: mix("charcoal", "slate", 0.3),
+  sellSash: mix("charcoal", "slate", 0.5),
+  buffCoat: mix(mix("barrowBrown", "brass", 0.3), "barrowDeep", 0.2),
 };
 
 /**
@@ -427,6 +465,33 @@ export function fabrics() {
     coat: mat(quilted(GEAR.coat), { rough: 0.85, normal: 1.2, side: D }),
     sash: mat(wool(GEAR.sash, { seed: 79, dirt: 0.35 }), { side: D }),
     hairDark: mat(hair(GEAR.hairDark, { seed: 67 }), { rough: 0.9 }),
+    surcoat: mat(wool(GEAR.surcoat, { seed: 201, dirt: 0.5 }), { side: D }),
+    houseRed: mat(wool(GEAR.houseRed, { seed: 203, dirt: 0.3 }), { side: D }),
+    wraps: mat(wool(GEAR.wraps, { seed: 207, dirt: 0.5 })),
+    // the Spellwarden's spaulders: blackened iron, both faces drawn (a lame is an open shell)
+    blackIronDouble: mat(plate(GEAR.blackIron, { rust: 0.3, seed: 6 }), { metal: 0.7, rough: 0.5, side: D }),
+    soot: mat(wool(GEAR.soot, { seed: 153, dirt: 0.35 }), { side: D }),
+    // the Hunter's and the Shadow Ranger's cloth (FS-1J1CB R5, R6)
+    wolf: mat(hair(GEAR.wolf, { seed: 221 }), { rough: 0.95, side: D, normal: 1.4 }),
+    hunterWool: mat(wool(GEAR.hunterWool, { seed: 223, dirt: 0.45 }), { side: D }),
+    hunterWoolDark: mat(wool(GEAR.hunterWoolDark, { seed: 225 })),
+    jerkinHide: mat(leather(GEAR.jerkinHide, { seed: 227, dirt: 0.45 }), { rough: 0.75, side: D }),
+    goose: mat(linen(GEAR.goose, { seed: 229, dirt: 0.15 })),
+    horn: mat(bone(GEAR.horn, { seed: 231 }), { rough: 0.5 }),
+    hairBrown: mat(hair(GEAR.hairBrown, { seed: 233 }), { rough: 0.9 }),
+    shadow: mat(wool(GEAR.shadow, { seed: 235, dirt: 0.3 }), { side: D }),
+    shadowDark: mat(wool(GEAR.shadowDark, { seed: 237 })),
+    shadowLeather: mat(leather(GEAR.shadowLeather, { seed: 239, dirt: 0.3 }), { rough: 0.7 }),
+    shadowBlack: mat(leather(GEAR.shadowBlack, { seed: 241, dirt: 0.25 }), { rough: 0.65 }),
+    shadowFletch: mat(linen(GEAR.shadowDark, { seed: 243, dirt: 0.1 })),
+    // the Duelist's and the Sellsword's cloth (FS-1J1CB R7, R8): the robe a plain wool in the
+    // coat's madder, not the arming coat's quilting
+    duelistRobe: mat(wool(GEAR.coat, { seed: 245, dirt: 0.4 }), { side: D }),
+    duelistSlate: mat(wool(GEAR.duelistSlate, { seed: 247, dirt: 0.4 }), { side: D }),
+    sellBlack: mat(quilted(GEAR.sellBlack, { seed: 249 }), { rough: 0.85, normal: 1.2, side: D }),
+    sellSash: mat(wool(GEAR.sellSash, { seed: 251, dirt: 0.35 }), { side: D }),
+    // the buff coat painted flat and matte, as variant B was: the leather grain's scuffs lit it gold
+    buffCoat: mat(linen(GEAR.buffCoat, { seed: 253, dirt: 0.3 }), { rough: 0.75, side: D }),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),
@@ -434,5 +499,76 @@ export function fabrics() {
     browRaven: browMaterial(GEAR.raven),
     browGrey: browMaterial(GEAR.hairGrey),
   };
+  // the Pyromancer's gown (FS-1J1CB R4): the gown's own cloth with embers in its hem
+  SET.robeEmbers = withEmbers(SET.robe);
   return SET;
+}
+
+/**
+ * How far up the hem the Pyromancer's embers reach (H), the band {@link emberHem} is painted on
+ * and mageLooks.js `fitHem` lays at the foot of the gown.
+ */
+export const EMBER_BAND = 0.07;
+
+/**
+ * The Pyromancer's singed hem (FS-1J1CB R4): a tile of ember specks in the fire ramp on black, the
+ * gown's emissive map. Row 0 is the hem's edge, where the embers crowd and the cloth smoulders in
+ * broken runs; they thin out up the band and are gone well before its top, so the black clamped
+ * above it lights nothing. 128 columns round the cloth (repeating) by 32 rows up the band, near
+ * square texels on the mage's hem. Painted in the texture, the embers ride the skinned skirt and
+ * swing with the hem; never rigid on a body bone.
+ */
+export function emberHem({ seed = 157 } = {}) {
+  const W = 128;
+  const R = 32;
+  const c = mkCanvas(W, R);
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(W, R);
+  const hot = mix("fireHot", "fireCore", 0.25);
+  const deep = mix("fireDeep", "fireHot", 0.35);
+  // ember centres: a jittered grid, denser and hotter toward the hem
+  const specks = [];
+  const cells = 16;
+  for (let i = 0; i < cells; i++)
+    for (let k = 0; k < 2; k++) {
+      const h = hash2(i, k, seed);
+      if (k === 1 && h < 0.45) continue;
+      const x = ((i + hash2(i, k + 7, seed)) / cells) * W;
+      const y = (k === 0 ? 1.5 : 7) + hash2(i, k + 13, seed) * (k === 0 ? 7 : 12);
+      const r = 1.3 + 1.3 * hash2(i, k + 19, seed) * (1 - y / R);
+      specks.push({ x, y, r, c: h > 0.6 ? hot : deep, a: 1 - 0.55 * (y / R) });
+    }
+  for (let y = 0; y < R; y++)
+    for (let x = 0; x < W; x++) {
+      let e = [0, 0, 0];
+      // the smoulder along the edge, in broken runs
+      const run = smoothstep(0.6, 0.8, pf(x, 0, 16, seed + 3, 3)) * Math.max(0, 1 - y / 2);
+      if (run > 0.1) e = mix(e, deep, 0.7 * run);
+      for (const s of specks) {
+        const dx = Math.min(Math.abs(x - s.x), W - Math.abs(x - s.x));
+        const t = 1 - Math.hypot(dx, y - s.y) / s.r;
+        if (t > 0) e = mix(e, s.c, Math.min(1, t * 1.8) * s.a);
+      }
+      const o = (y * W + x) * 4;
+      img.data[o] = Math.round(Math.min(255, e[0]));
+      img.data[o + 1] = Math.round(Math.min(255, e[1]));
+      img.data[o + 2] = Math.round(Math.min(255, e[2]));
+      img.data[o + 3] = 255;
+    }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.ClampToEdgeWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.userData.band = EMBER_BAND;
+  return t;
+}
+
+/** `cloth` with embers in its hem: the same weave, lit by {@link emberHem} where the hem lays it. */
+function withEmbers(cloth) {
+  const m = cloth.clone();
+  m.emissive = color(grey(255));
+  m.emissiveMap = emberHem();
+  m.emissiveIntensity = 1.8;
+  return m;
 }

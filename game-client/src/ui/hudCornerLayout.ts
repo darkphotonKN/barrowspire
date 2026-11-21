@@ -1,7 +1,7 @@
 /**
  * The corner row's geometry and words (FS-3EBCA §A R1, R2, R5; §C R13): the panel icons in the
  * bottom-right corner of every world, from the right edge leftward Menu, Inventory, Character,
- * Party and the Mailbox, each the envelope's plate, the same places in every world. Phaser-free, so the
+ * Party, the Mailbox and the passive tree (FS-8RZ51 R32), each the envelope's plate, the same places in every world. Phaser-free, so the
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
@@ -19,15 +19,19 @@ export interface CornerView {
   height: number;
 }
 
-export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail";
+export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail" | "tree";
 
-/** The row from the right edge leftward (R1; the owner's row of five, 2026-11-12). */
+/**
+ * The row from the right edge leftward (R1; the owner's row of five, 2026-11-12), the passive tree's
+ * sixth at its left end (FS-8RZ51 R32), so none of the five moves.
+ */
 export const CORNER_ICONS: readonly CornerIcon[] = [
   "menu",
   "inventory",
   "character",
   "party",
   "mail",
+  "tree",
 ];
 
 /**
@@ -50,30 +54,26 @@ export const CORNER_ROW_CLEARANCE =
   CORNER_MARGIN + CORNER_ICON_H + CORNER_ROW_HEADROOM;
 
 /**
- * The ability card's place outside the town (R13; owner, "村莊以外會顯示右鍵的技能 就放在icon上方的位置"):
- * its bottom-right corner right-aligned with the row and the row's gap above it, in a run and a
- * field alike.
+ * The controls badge's anchor (FS-84N1G R3; FS-Q18Q3 R42): the place and height the ability card stood at
+ * above the corner row (FS-3EBCA R13; owner, "村莊以外會顯示右鍵的技能 就放在icon上方的位置"), its bottom-right corner
+ * right-aligned with the row, the row's gap above it, 72 px tall. The card is gone (FS-Q18Q3 R34); the
+ * badge keeps the rect it had over it, so these stay only as its anchor.
  */
-export const ABILITY_CARD_PLACE: Placement = {
+const BADGE_ANCHOR: Placement = {
   anchor: "bottom-right",
   dx: -CORNER_MARGIN,
   dy: -CORNER_ROW_CLEARANCE,
 };
-
-/**
- * The run's ability card's height (`AbilityHud`: its padding, its name row and its line's two rows), which
- * the controls badge stands over (FS-84N1G R3).
- */
-export const ABILITY_CARD_H = 72;
+const BADGE_ANCHOR_H = 72;
 
 /**
  * The run's controls badge (FS-84N1G R3; the owner, 「幫我做一個徽章 放在 技能上方區塊」): a plate the corner
- * icons' size, its right edge on the ability card's, the row's gap above the card's top.
+ * icons' size, where it stood over the ability card, its rect unchanged by the card's going (FS-Q18Q3 R42).
  */
 export function controlsBadgeFrame(view: CornerView): Rect {
-  const card = anchorAt(ABILITY_CARD_PLACE, view);
-  const bottom = card.y - ABILITY_CARD_H - CORNER_ROW_HEADROOM;
-  return { x: card.x - CORNER_ICON_W, y: bottom - CORNER_ICON_H, width: CORNER_ICON_W, height: CORNER_ICON_H };
+  const anchor = anchorAt(BADGE_ANCHOR, view);
+  const bottom = anchor.y - BADGE_ANCHOR_H - CORNER_ROW_HEADROOM;
+  return { x: anchor.x - CORNER_ICON_W, y: bottom - CORNER_ICON_H, width: CORNER_ICON_W, height: CORNER_ICON_H };
 }
 
 /** The controls badge's name and key under the pointer, as the corner row names its icons (FS-84N1G R7). */
@@ -94,6 +94,7 @@ export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {
   character: "Character (C)",
   party: "Party (T)",
   mail: "Mailbox",
+  tree: "Tree (P)",
 };
 /** The greyed Mailbox outside the town (R9). */
 export const CORNER_LABEL_GREYED_MAIL = "Mailbox · town only";

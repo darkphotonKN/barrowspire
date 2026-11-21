@@ -77,7 +77,8 @@ const (
 // MonsterAction is what a monster is doing, as the state broadcast names it.
 // `attack` covers the wind-up and the strike, a demon's slam included.
 // FS-77AB6 §Requirements 32. `claw` is a demon's fire claw, from the tick it
-// lands for its show window. FS-VHGE7 §B R24.
+// lands for its show window. FS-VHGE7 §B R24. `stunned` is every tick a stun
+// runs, whatever it was doing; `dead` wins over it. FS-04EEA §C R17.
 type MonsterAction string
 
 const (
@@ -87,6 +88,7 @@ const (
 	MonsterActionClaw   MonsterAction = "claw"
 	// MonsterActionAbility is a monster ability's wind-up (FS-C8VM7 §B R17)
 	MonsterActionAbility MonsterAction = "ability"
+	MonsterActionStunned MonsterAction = "stunned"
 	MonsterActionDead    MonsterAction = "dead"
 )
 
@@ -176,6 +178,9 @@ type MonsterComponent struct {
 	WindUpRemaining       float64
 	SlamCooldownRemaining float64
 	ClawShowRemaining     float64
+	// StunRemaining is how long it stays stunned: it neither moves nor
+	// strikes nor starts a wind-up until it runs out (FS-04EEA §C R13).
+	StunRemaining float64
 	// CorpseRemaining is how long a dead monster still lies before it is removed.
 	CorpseRemaining float64
 }

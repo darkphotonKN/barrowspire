@@ -160,6 +160,8 @@ type SessionManager interface {
 	EnterField(ctx context.Context, conn *websocket.Conn, fieldID string) (*game.Session, error)
 	LeaveField(ctx context.Context, player *types.Player) (*game.Session, error)
 	RenewToken(ctx context.Context, conn *websocket.Conn, token string) error
+	// spend_passive_point, as the connection's player (FS-8RZ51 R16–R20)
+	SpendPassivePoint(ctx context.Context, conn *websocket.Conn, nodeID string, rank int) error
 }
 
 // Routing failures. The world a message belongs to is server-held state, so
@@ -926,6 +928,13 @@ func (h *messageHub) Run(ctx context.Context) {
 					continue
 				}
 				go h.renewToken(clientPackage)
+
+			// A passive point spent in town, by the connection's player, never a
+			// player in the payload; off the loop, since it reads the queue and
+			// waits on character-service. Nothing is sent when it lands: the
+			// next state shows it. FS-8RZ51 §D R16–R22; ADR-0079.
+			case constants.ActionSpendPassivePoint:
+				go h.spendPassivePoint(clientPackage)
 
 			// A chat line: stamped and relayed on the loop to everyone seated on
 			// this pod; never forwarded to a world. FS-WJGFJ §Requirements B9–B11.

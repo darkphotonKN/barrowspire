@@ -37,6 +37,12 @@ const (
 	// ActionTokenRenewed answers an accepted renew_token. FS-ZPX58 R30.
 	ActionTokenRenewed Action = "token_renewed"
 
+	// ActionSpendPassivePoint is the connection's player taking one rank of a
+	// passive tree node in town; payload { "node_id", "rank" }, rank the target.
+	// Nothing answers a spend that lands; a refusal answers on this action.
+	// FS-8RZ51 §D R16–R22.
+	ActionSpendPassivePoint Action = "spend_passive_point"
+
 	// ActionEnterField is a hub member at a field gate asking to walk into
 	// this pod's channel of that field; payload { "field": "<id>" }.
 	// FS-X2F2H §Requirements 9.

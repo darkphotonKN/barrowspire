@@ -129,6 +129,18 @@ components:
           description: Total experience for the next level; absent at the level cap.
           format: int64
           type: integer
+        specialization:
+          description: The character's specialization, derived from its tier-6 passive node; absent before the pick. Read-only.
+          enum:
+            - guardian
+            - berserker
+            - spellwarden
+            - pyromancer
+            - hunter
+            - shadow_ranger
+            - duelist
+            - sellsword
+          type: string
       required:
         - id
         - name

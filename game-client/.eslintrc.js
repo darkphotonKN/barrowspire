@@ -120,8 +120,9 @@ const properties = (...groups) => ["error", ...groups.flat()];
 /** What the UI scene owns, which no world scene builds (FS-TQZ5J; the UI scene's own tests drive each). */
 const UI_SCENE_PIECES = [
   ["@/ui/ChatWindow", "The chat window is the UI scene's (FS-TQZ5J § Change: Batch 6, R125)."],
-  ["@/ui/AbilityHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
-  ["@/ui/PotionHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
+  ["@/ui/AbilityBar", "The ability bar is the UI scene's (FS-TQZ5J § Change: Batch 5, R67; FS-Q18Q3 R41)."],
+  ["@/ui/PassiveTreeOverlay", "The passive tree is the UI scene's: no world builds it or binds P (FS-8RZ51 §G)."],
+  ["@/ui/uiSceneTree", "The passive tree is the UI scene's: no world builds it or binds P (FS-8RZ51 §G)."],
   ["@/ui/ResourceHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
   ["@/ui/ProgressHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
   ["@/ui/HudCorner", "The corner row is the UI scene's (FS-TQZ5J R13, R15)."],

@@ -42,6 +42,9 @@ func TestRefuse_CrossesGRPCAsFailedPreconditionWithTheReason(t *testing.T) {
 		errcode.AlreadyLeading,
 		// FS-3R77D §Requirements A1
 		errcode.ItemNotInStash,
+		// FS-8RZ51 §API surface (spend-passive-point)
+		errcode.PassiveUnknownNode, errcode.PassiveRankOutOfOrder, errcode.PassiveMaxRank,
+		errcode.PassiveTierLocked, errcode.PassiveNoPoints, errcode.PassiveSpecializationTaken,
 	}
 	for _, code := range codesUnderTest {
 		t.Run(string(code), func(t *testing.T) {

@@ -8,7 +8,8 @@
  * Along the bottom middle, between the chat window and the corner row (`xpBarLayout`): no panel,
  * a bright-brass bar on its charcoal track in a brass rim, a brass stud at each end, this level and
  * the next (or "Cap") as bare stroked numerals. Body serif throughout (the blackletter bound). It
- * sits at the HUD's depth, under the notices.
+ * sits at the HUD's depth, under the notices. While the ability bar stands over it the cue rises from
+ * over the bar instead (FS-Q18Q3 R12), as the HUD slot tells it.
  */
 
 import type Phaser from "phaser";
@@ -29,7 +30,7 @@ const STUD_R = 2;
 const STUD_LIGHT_R = 0.9;
 const STUD_LIGHT_ALPHA = 0.9;
 const STUD_LIGHT_OFFSET = -0.5;
-/** The cue's bottom stands this far over the piece, and rises this far as it fades. */
+/** The cue's bottom stands this far over the piece (or the ability bar), and rises this far as it fades. */
 const CUE_GAP = 6;
 const CUE_RISE = 12;
 /** How long the cue holds before it fades, and the fade, in ms. */
@@ -75,6 +76,8 @@ export class ProgressHud {
   private readonly cues = new Set<Phaser.GameObjects.Text>();
   /** What the piece last drew, so the ~30 states a second that change nothing redraw nothing. */
   private drawn?: string;
+  /** The ability bar's top while it stands over the piece; none, no bar (FS-Q18Q3 R12). */
+  private barTop: number | null = null;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -92,6 +95,11 @@ export class ProgressHud {
     this.shownLevel = progress.level;
     this.progress = progress;
     this.draw();
+  }
+
+  /** Where the ability bar's top stands, or none while no bar stands: the next cue rises from over it (R12). */
+  cueOver(top: number | null): void {
+    this.barTop = top;
   }
 
   /**
@@ -164,10 +172,13 @@ export class ProgressHud {
       .setDepth(HUD_DEPTH);
   }
 
-  /** Above the piece's centre, rising a little as it fades: brief, and it takes no input. */
+  /**
+   * Above the piece's centre, or over the ability bar while one stands (FS-Q18Q3 R12), rising a little as
+   * it fades: brief, and it takes no input.
+   */
   private cue(level: number): void {
     const { piece } = this.frame;
-    const bottom = piece.y - CUE_GAP;
+    const bottom = (this.barTop ?? piece.y) - CUE_GAP;
     const cue = this.scene.add
       .text(piece.x + piece.width / 2, bottom, levelUpCue(level), {
         fontFamily: CANVAS_FONT.body,

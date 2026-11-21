@@ -15,7 +15,7 @@ const entries = Object.entries(EFFECTS) as [string, EffectEntry][];
 const oneShots = entries.filter(([, e]) => e.timing.kind === "oneShot");
 
 describe("effects table (FS-KYPQ9 §B.2)", () => {
-  it("should carry one entry per effect named in §B.2, FS-JTNPR req 22 and FS-VHGE7 §D R32", () => {
+  it("should carry one entry per effect named in §B.2, FS-JTNPR req 22, FS-1J1CB §F R40 and FS-VHGE7 §D R32", () => {
     expect(Object.keys(EFFECTS).sort()).toEqual(
       [
         "slash",
@@ -35,6 +35,10 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "shadowShotRelease",
         "shadowShotTrail",
         "shadowShotImpact",
+        // FS-1J1CB §F R40: Heavy Shot, every other archer's right-click
+        "heavyShotRelease",
+        "heavyShotTrail",
+        "heavyShotImpact",
         // FS-VHGE7 §D R32: a demon's fire claw
         "demonClaw",
         // FS-B4SG9 §D R22: a hostile's bone arrow in flight
@@ -47,6 +51,22 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "escape",
         "entranceBreath",
         "chimneySmoke",
+        // FS-04EEA §H R47: the stun tell over a stunned monster's head
+        "stunTell",
+        // FS-04EEA §H R43–R46: the tree abilities, each the caster's own
+        "earthbreakerSlam",
+        "earthbreakerRing",
+        "earthbreakerBandNear",
+        "earthbreakerBandMid",
+        "earthbreakerBandFar",
+        "earthbreakerShock",
+        "earthbreakerCrack",
+        "blinkOut",
+        "blinkIn",
+        "flurrySlash",
+        "flurryDust",
+        "flurryFlare",
+        "arrowRainImpact",
       ].sort(),
     );
   });
@@ -66,11 +86,28 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
       // FS-JTNPR req 21: heavier than the arrow's 140 / 300
       shadowShotRelease: 260,
       shadowShotImpact: 640,
+      // FS-1J1CB §F R40: heavier than the arrow's, no heavier than the Shadow Shot's
+      heavyShotRelease: 220,
+      heavyShotImpact: 480,
       // FS-VHGE7 §D R32: at most 250 ms, as quick as the claw
       demonClaw: 220,
       hit: 220,
       deathDust: 600,
       escape: 1000,
+      // FS-04EEA §H R43–R46: starting values, through the contact sheet (R49)
+      earthbreakerSlam: 1100,
+      earthbreakerRing: 420,
+      earthbreakerBandNear: 260,
+      earthbreakerBandMid: 280,
+      earthbreakerBandFar: 300,
+      earthbreakerShock: 560,
+      earthbreakerCrack: 1000,
+      blinkOut: 300,
+      blinkIn: 420,
+      flurrySlash: 200,
+      flurryDust: 500,
+      flurryFlare: 360,
+      arrowRainImpact: 320,
     };
     const got = Object.fromEntries(
       oneShots.map(([name, e]) => [

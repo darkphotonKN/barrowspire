@@ -589,9 +589,48 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
     expect(shown()).toContain("Level 3");
   });
 
+  // FS-E1ZDG §K.41: the header's class line is the title, from the character the world hands it
+  it("should head the panel with the character's title, the class name alone before the pick", () => {
+    const { overlay, shown } = statsOnStage();
+    overlay.updateCharacter({ ...ignis, level: 20, specialization: "pyromancer" });
+    expect(shown()).toContain("MAGE · PYROMANCER");
+    expect(shown()).not.toContain("MAGE");
+    overlay.updateCharacter(ignis);
+    expect(shown()).toContain("MAGE");
+  });
+
   it("should say Nothing worn when nothing is (edge state: Empty bag / nothing worn)", () => {
     const { shown } = statsOnStage(worn());
     expect(shown()).toContain("Nothing worn");
+  });
+
+  it("should list the passive tree's bonuses and the kickers held under Passives, None yet with none (FS-8RZ51 R44)", () => {
+    const { overlay, shown } = statsOnStage();
+    expect(shown()).toEqual(expect.arrayContaining(["PASSIVES", "None yet"]));
+
+    overlay.updateCharacter({
+      ...ignis,
+      passive_ranks: { "mage.t1a": 2, "mage.t2a": 3 },
+    });
+    expect(shown()).toEqual(
+      expect.arrayContaining([
+        "PASSIVES",
+        "+8% max HP",
+        "+18% fireball damage",
+        "Kindling",
+      ]),
+    );
+    expect(shown()).not.toContain("None yet");
+  });
+
+  it("should redraw the Passives group while open as passive_ranks change (FS-8RZ51 R41, R44)", () => {
+    const { overlay, shown } = statsOnStage();
+    overlay.updateCharacter({ ...ignis, passive_ranks: { "mage.t1a": 1 } });
+    expect(shown()).toContain("+4% max HP");
+
+    overlay.updateCharacter({ ...ignis, passive_ranks: { "mage.t1a": 2 } });
+    expect(shown()).toContain("+8% max HP");
+    expect(shown()).not.toContain("+4% max HP");
   });
 
   it("should update while open as health, the resource and worn gear change (R30)", () => {

@@ -317,6 +317,19 @@ export const palette = {
    */
   aimLine: BARROW_HEX.umbraLight,
   aimGlow: tint(BARROW_HEX.umbraLight, 0.3),
+  /**
+   * The same arrow for every archer but a Shadow Ranger (FS-1J1CB §F R42): the umbra arrow is
+   * part of the shadow look, so a Hunter's or an unspecialized archer's is the Heavy Shot's
+   * vellum, darker for the arrow and lifted to plain vellum for its glow-up.
+   */
+  heavyAimLine: BARROW_HEX.vellumDark,
+  heavyAimGlow: BARROW_HEX.vellum,
+  /**
+   * The archer's Arrow Rain aim circle (FS-04EEA R38): the ring in plain vellum, as the Heavy Shot's glow-up,
+   * over a faint wash of the darker vellum so the ground it covers reads. Not amber: not an interactable.
+   */
+  rainAimRing: BARROW_HEX.vellum,
+  rainAimFill: BARROW_HEX.vellumDark,
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
   //    baked sprite, from the oxblood family. Lifted toward vellum so they

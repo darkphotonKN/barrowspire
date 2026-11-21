@@ -2995,6 +2995,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       pos,
       sprite: add.container(0, 0, []),
       name: add.text(0, 0, ""),
+      // no title held: its line is NameplateTitle's to show
+      title: { setVisible: vi.fn(), stand: vi.fn(), show: vi.fn(), destroy: vi.fn() },
       legs: add.graphics(),
     });
     const self = player({ ...OUTDOORS });
@@ -4135,6 +4137,61 @@ describe("HubScene art loading (FS-C4JWH §B R7)", () => {
   });
 });
 
+const { withSpecLooks } = await import("@/render/art/artLoader.standin");
+const { useGameStore: gameStoreForLooks } = await import("@/stores/gameStore");
+
+// FS-1J1CB R20, R23 (ADR-0088 Decisions 3, 5): the player's own spec look comes with the town's
+// preload, read from the selected character; any other look group goes at the load.
+describe("HubScene spec looks (FS-1J1CB R20, R23)", () => {
+  const enterAs = (specialization?: string) =>
+    gameStoreForLooks.setState({
+      characters: [
+        { id: "c1", name: "Wren", className: "archer", level: 20, experience: 0, levelFloor: 0, specialization, createdAt: "" },
+      ],
+      activeCharacterId: "c1",
+    });
+  afterEach(() => gameStoreForLooks.setState({ characters: [], activeCharacterId: null }));
+
+  const looksArt = (textures: string[] = []) =>
+    artLoaderStandin({
+      manifest: withSpecLooks(shippedManifest(), "archer_hunter", "knight_berserker"),
+      cachedManifest: true,
+      textures: [...RESIDENT_ART_PAGES, ...textures].map(atlasTextureKey),
+    });
+
+  it("should queue a Hunter's own look with the folk, and no other look", () => {
+    enterAs("hunter");
+    const art = looksArt();
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    // the set, not the order: pages queue in the manifest's order, which a baked look joins
+    expect(art.queued.sort()).toEqual(["folk-0", "archer_hunter-0"].map(atlasTextureKey).sort());
+  });
+
+  it("should queue no look for a character with no specialization (R18)", () => {
+    enterAs(undefined);
+    const art = looksArt();
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    hub.preload();
+
+    expect(art.queued).toEqual([atlasTextureKey("folk-0")]);
+  });
+
+  it("should keep the own look across the switch and evict another's, animations first (R23)", () => {
+    enterAs("hunter");
+    const art = looksArt(["folk-0", "archer_hunter-0", "knight_berserker-0"]);
+    const hub = Object.assign(new HubScene(), art.scene) as unknown as { preload(): void };
+
+    art.boot({ preload: () => hub.preload() });
+
+    expect(art.textures.removed).toEqual([atlasTextureKey("knight_berserker-0")]);
+    expect(art.textures.exists(atlasTextureKey("archer_hunter-0"))).toBe(true);
+  });
+});
+
 const { VILLAGE_TRACK, MUSIC_FADE_IN_MS, MUSIC_FADE_OUT_MS, MUSIC_LEVEL_RAMP_MS } = await import("@/audio/worldMusic");
 /** The town's track's key (FS-28DDG § Change: The tower's music on every floor of a run, W1). */
 const MUSIC_KEY = VILLAGE_TRACK.key;
@@ -4776,6 +4833,7 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
     pos: { x, y: 0 },
     target: { x, y: 0 },
     anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+    title: { show: vi.fn(), stand: vi.fn() },
   });
 
   function onHub() {
@@ -4818,6 +4876,61 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
 
     expect(Object.keys(me)).not.toContain("wireFacing");
     expect(Object.keys(them)).not.toContain("wireFacing");
+  });
+});
+
+// FS-04EEA R41: a body whose reported position moves over 60 world px between two states is placed there
+describe("HubScene a body that jumps (FS-04EEA R41)", () => {
+  type Hub = {
+    views: Map<string, unknown>;
+    selfEntityID: string | null;
+    placeName(view: unknown): void;
+    updateAppearance(view: unknown, player: unknown): void;
+    placePlayer(player: unknown, isSelf: boolean): void;
+    easeTowardServerPositions(time: number, delta: number): void;
+  };
+  const view = (x: number) => ({
+    sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60 }) },
+    pos: { x, y: 0 },
+    target: { x, y: 0 },
+    anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+    title: { show: vi.fn(), stand: vi.fn() },
+  });
+  const entry = (entity_id: string, x: number) => ({
+    entity_id,
+    position: { x, y: 0 },
+    direction: { vx: 0, vy: 0, speed: 0 },
+  });
+
+  function onHub() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const hub = new HubScene() as unknown as Hub;
+    const jumper = view(100);
+    const walker = view(100);
+    hub.views = new Map([
+      ["me", jumper],
+      ["them", walker],
+    ]);
+    hub.selfEntityID = "me";
+    hub.placeName = vi.fn();
+    hub.updateAppearance = vi.fn();
+    return { hub, jumper, walker };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should draw a body at a state position 61 px on, the next frame, and glide one 40 px on", () => {
+    const { hub, jumper, walker } = onHub();
+
+    hub.placePlayer(entry("me", 161), true);
+    hub.placePlayer(entry("them", 140), false);
+    hub.easeTowardServerPositions(0, 16);
+
+    expect(jumper.pos).toEqual({ x: 161, y: 0 });
+    expect(walker.pos.x).toBeGreaterThan(100);
+    expect(walker.pos.x).toBeLessThan(140);
   });
 });
 
@@ -6237,5 +6350,86 @@ describe("HubScene the XP bar along the bottom (FS-77DVN §C.13, §A.4)", () => 
     hudOver(hub, "hub").relayout();
 
     expect(relayout).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FS-E1ZDG §K.41: a second, smaller line under every player's name with their title, own and others'
+describe("HubScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
+  type Hub = { placePlayer(player: unknown, isSelf: boolean): void; art: unknown };
+  const onStage = () => {
+    const { hub: raw, stage } = hubOnStage();
+    const hub = raw as unknown as Hub;
+    hub.art = ArtLibrary.empty({ warn: () => {} });
+    return { hub, stage };
+  };
+  const entry = (entity_id: string, extra: Record<string, unknown> = {}) => ({
+    entity_id,
+    id: entity_id,
+    username: entity_id,
+    class: "warrior",
+    position: { x: 300, y: 300 },
+    direction: { vx: 0, vy: 0, speed: 0 },
+    ...extra,
+  });
+  const words = (made: Made[]) => made.filter((m) => !m.destroyed && m.kind === "text").map((m) => m.args[2]);
+
+  it("should draw the title under the name of a player who holds a spec, and none for one who does not", () => {
+    const { hub, stage } = onStage();
+    hub.placePlayer(entry("Bram", { specialization: "berserker" }), true);
+    hub.placePlayer(entry("Wren", { class: "archer" }), false);
+    expect(words(stage.made)).toEqual(["Bram", "Warrior · Berserker", "Wren"]);
+  });
+
+  it("should show the title from the next state after a pick in town", () => {
+    const { hub, stage } = onStage();
+    hub.placePlayer(entry("Bram"), true);
+    hub.placePlayer(entry("Bram", { specialization: "guardian" }), true);
+    expect(words(stage.made)).toEqual(["Bram", "Warrior · Guardian"]);
+  });
+});
+
+// FS-1J1CB §E R35: the town's bodies carry their auras, own and others', hidden with the body.
+describe("HubScene auras (FS-1J1CB R35)", () => {
+  const view = (visible: boolean, pos: { x: number; y: number }) => ({
+    sprite: { visible },
+    pos,
+    anim: { baked: true, crown: 70 },
+    target: { ...pos },
+    title: { show: vi.fn() },
+  });
+
+  it("should follow every body at its drawn feet each frame, and none while it is hidden in another house", () => {
+    const hub = new HubScene() as unknown as {
+      auras: { follow: ReturnType<typeof vi.fn> };
+      views: Map<string, unknown>;
+      followAuras(time: number): void;
+    };
+    hub.auras = { follow: vi.fn() };
+    hub.views = new Map<string, unknown>([
+      ["me", view(true, { x: 10, y: 20 })],
+      ["inside", view(false, { x: 30, y: 40 })],
+    ]);
+
+    hub.followAuras(500);
+
+    expect(hub.auras.follow.mock.calls).toEqual([
+      ["me", { x: 10, y: 20 }, 70, 500],
+      ["inside", null, 70, 500],
+    ]);
+  });
+
+  it("should give a body its aura from each state, and take it with the body", () => {
+    const hub = new HubScene() as unknown as {
+      auras: { see: ReturnType<typeof vi.fn>; forget: ReturnType<typeof vi.fn> };
+      views: Map<string, unknown>;
+      placePlayer(player: unknown, isSelf: boolean): void;
+    };
+    hub.auras = { see: vi.fn(), forget: vi.fn() };
+    hub.views = new Map<string, unknown>([["w", view(true, { x: 0, y: 0 })]]);
+    const player = { entity_id: "w", class: "mage", specialization: "spellwarden", position: { x: 5, y: 5 } };
+
+    hub.placePlayer(player, false);
+
+    expect(hub.auras.see).toHaveBeenCalledWith("w", player);
   });
 });

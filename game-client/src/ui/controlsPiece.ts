@@ -1,7 +1,8 @@
 /**
  * The run's controls panel, built on the UI scene (FS-TQZ5J § Change: Phase 3, R50, R51, R59, R61): drawn
- * as the run drew it at the view's centre, the active character's ability named (the game store's
- * active character, app state the piece reads itself, ADR-0085 D3), with a ground over its rect at its
+ * as the run drew it at the view's centre, the active character's ability named by its class and
+ * specialization (the game store's active character, app state the piece reads itself, ADR-0085 D3;
+ * FS-E1ZDG §L.43), with a ground over its rect at its
  * depth; back to the centre on a new view, its text rasterised again. `uiSceneRecord.ts` holds the
  * slot that opens and closes it; `controlsPanel.ts` its drawing; this is the building.
  *
@@ -21,9 +22,10 @@ import type { ControlsPiece } from "./uiSceneRecord";
 
 /** The controls panel on `scene`, at the view's centre, with its ground and its ×, which calls `onClose`. */
 export function mountControlsPiece(scene: Phaser.Scene, onClose: () => void): ControlsPiece {
-  const className = (useGameStore.getState().getActiveCharacter()?.className || "warrior").toLowerCase();
+  const active = useGameStore.getState().getActiveCharacter();
+  const className = (active?.className || "warrior").toLowerCase();
   const centre = () => ({ x: viewport.centerX, y: viewport.centerY });
-  const { container, close, glyph } = drawControlsPanel(scene, centre(), className);
+  const { container, close, glyph } = drawControlsPanel(scene, centre(), className, active?.specialization);
   const rows = controlRows(className).length;
   const ground = uiGround(scene, CONTROLS_PANEL_DEPTH);
   /** The ground, then the × over it: at an equal depth Phaser hands a press to the later object. */

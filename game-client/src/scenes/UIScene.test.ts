@@ -193,6 +193,37 @@ vi.mock("@/ui/gearPieces", () => ({
   },
 }));
 
+// The passive tree's overlay itself is PassiveTreeOverlay.test's: here a recording stand-in for what the UI
+// scene builds for each world (FS-8RZ51 R32–R36), its wiring kept.
+const treeMounts = vi.hoisted(
+  () =>
+    [] as {
+      wiring: { world: string; dismiss(): void };
+      open: boolean;
+      shown: unknown[];
+      log: string[];
+      ground: object;
+      destroyed: boolean;
+    }[],
+);
+vi.mock("@/ui/PassiveTreeOverlay", () => ({
+  mountPassiveTree: (_scene: unknown, wiring: (typeof treeMounts)[number]["wiring"]) => {
+    const made = { wiring, open: false, shown: [] as unknown[], log: [] as string[], ground: {}, destroyed: false };
+    treeMounts.push(made);
+    return {
+      isOpen: () => made.open,
+      open: () => void (made.open = true),
+      close: () => void (made.open = false),
+      show: (source: unknown) => void made.shown.push(source),
+      pointerMove: (x: number, y: number) => void made.log.push(`move ${x},${y}`),
+      pointerDown: (x: number, y: number) => (made.log.push(`down ${x},${y}`), true),
+      owns: (o: unknown) => o === made.ground,
+      relayout: () => {},
+      destroy: () => void (made.destroyed = true),
+    };
+  },
+}));
+
 // The lore line's dust is loreDust.test's: here a stand-in that plays nothing, so the UI scene's lore
 // lines need no art (FS-XWHZP R6, R7).
 vi.mock("@/render/effects/loreDust", () => ({
@@ -513,7 +544,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     });
     scene.create();
     const live = () => zones.filter((z) => !z.destroyed);
-    const plate = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
+    const plate = (icon: "menu" | "inventory" | "character" | "party" | "mail" | "tree") => {
       const f = cornerIconFrame(icon, viewport);
       return live().find((z) => z.x === f.x && z.y === f.y);
     };
@@ -546,10 +577,12 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 
-  it("should build the row of the world reported as it is created: the town's four, no Mailbox of its own", () => {
+  it("should build the row of the world reported as it is created: the town's five, no Mailbox of its own", () => {
     const { live, plate } = created("hub");
 
-    expect(live()).toHaveLength(4);
+    // Menu, Inventory, Character, Party and the passive tree's Tree (FS-8RZ51 R32)
+    expect(live()).toHaveLength(5);
+    expect(plate("tree")).toBeDefined();
     expect(plate("mail")).toBeUndefined();
   });
 
@@ -560,8 +593,17 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
     report("field");
 
-    expect(live()).toHaveLength(5);
+    expect(live()).toHaveLength(6);
     expect(plate("mail")).toBeDefined();
+  });
+
+  // FS-8RZ51 R32: the Tree icon toggles the UI scene's own tree, in every world
+  it.each(["hub", "run"] as const)("should toggle the passive tree on the Tree icon's press in the %s", (world) => {
+    const { plate } = created(world);
+    plate("tree")!.handlers.pointerdown();
+    expect(treeMounts.at(-1)!.open).toBe(true);
+    plate("tree")!.handlers.pointerdown();
+    expect(treeMounts.at(-1)!.open).toBe(false);
   });
 
   it("should build nothing as it is created with no world reported", () => {
@@ -1413,15 +1455,15 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16�
     expect(menu.played.slice(-1)).toEqual(["settings_open"]);
   });
 
-  // FS-84N1G R4, R8: the controls badge stands as the run says its ability card is up, and goes at the end
-  it("should stand the controls badge while the run's ability card is up, and take it down as the run ends", () => {
+  // FS-84N1G R4, R8; FS-Q18Q3 R42: the controls badge stands as the run says its ability bar is live, and goes at the end
+  it("should stand the controls badge while the run's ability bar is live, and take it down as the run ends", () => {
     const { scene } = created();
-    const bridge = (scene as unknown as { bridge(): { abilityCard(up: boolean): void; changed(): void } }).bridge();
+    const bridge = (scene as unknown as { bridge(): { abilityBar(live: boolean): void; changed(): void } }).bridge();
     const badge = () => (scene as unknown as { badge: { isUp(): boolean } }).badge;
     expect(badge().isUp()).toBe(false);
-    bridge.abilityCard(true);
+    bridge.abilityBar(true);
     expect(badge().isUp()).toBe(true);
-    bridge.abilityCard(false);
+    bridge.abilityBar(false);
     expect(badge().isUp()).toBe(false);
   });
 
@@ -1845,5 +1887,128 @@ describe("the UI scene's lore lines (FS-XWHZP; FS-TQZ5J § Change: Merge with ma
     bridge.lore(said("a"));
 
     expect(lore("a")).toEqual([]);
+  });
+});
+
+// FS-8RZ51 §G R32, R33, R36, R41 (I-8RZ51-7): the passive tree on the UI scene, its P on the UI scene's
+// keyboard, its icon in the corner row, fed the gear's `seen` character, in the gear overlay's family
+describe("the UI scene's passive tree (FS-8RZ51 R32–R36, R41)", () => {
+  function created(world: "hub" | "field" | "run") {
+    gearMounts.length = 0;
+    treeMounts.length = 0;
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const facts = { ...NO_FACTS };
+    const heard: { tree?: boolean; inventory?: boolean }[] = [];
+    const report = (w: "hub" | "field" | "run") =>
+      bridge.report({
+        world: w,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ dialogue: false }),
+        facts: () => facts,
+        heardUi: (ui) => void heard.push({ tree: ui.tree, inventory: ui.inventory }),
+        answer: () => {},
+      });
+    report(world);
+    const any = (): unknown => {
+      const self: unknown = new Proxy(() => self, { get: (_t, prop) => (prop === "then" ? undefined : () => self) });
+      return self;
+    };
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ isDown: false, justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const input = Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } });
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      sys: { settings: { status: 5 } },
+      game: {},
+      input,
+      cameras: { cameras: [] },
+      children: { list: [] },
+      add: new Proxy({}, { get: () => any }),
+      time: { delayedCall: () => ({ remove: () => {} }) },
+      tweens: { add: () => ({ remove: () => {} }) },
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    return { scene, bridge, report, keyboard, input, facts, heard };
+  }
+
+  it.each(["hub", "field", "run"] as const)("should open and close the tree on P in the %s, reported in the UI's state", (world) => {
+    const { keyboard, bridge } = created(world);
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(true);
+    expect(bridge.ui.tree).toBe(true);
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(false);
+    expect(bridge.ui.tree).toBe(false);
+  });
+
+  it("should take no P while the player types in chat", () => {
+    const { keyboard, bridge } = created("hub");
+    bridge.reportUi({ typing: true });
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(false);
+  });
+
+  it("should close the inventory as the tree opens, and the tree as the inventory opens (R36)", () => {
+    const { keyboard } = created("field");
+    keyboard.emit("keydown-I");
+    expect(gearMounts[0].inventory).toBe(true);
+    keyboard.emit("keydown-P");
+    expect([gearMounts[0].inventory, treeMounts[0].open]).toEqual([false, true]);
+    keyboard.emit("keydown-C");
+    expect([gearMounts[0].character, treeMounts[0].open]).toEqual([true, false]);
+  });
+
+  it("should tell the world the tree opening, so an aim ends through gearOpened", () => {
+    const { keyboard, heard } = created("run");
+    keyboard.emit("keydown-P");
+    expect(heard.at(-1)?.tree).toBe(true);
+  });
+
+  it("should hand the tree the character the world hands the gear (R41)", () => {
+    const { keyboard, bridge } = created("run");
+    keyboard.emit("keydown-P");
+    bridge.gear({ kind: "seen", carried: {}, character: { username: "Ash", class: "archer", passive_points: 2 } as never });
+    expect(treeMounts[0].shown.at(-1)).toMatchObject({ class: "archer", passive_points: 2 });
+  });
+
+  it("should close the tree at the run's end, and on Esc before the gear (R36)", () => {
+    const { keyboard, bridge, facts } = created("run");
+    keyboard.emit("keydown-P");
+    bridge.endPopped();
+    expect(treeMounts[0].open).toBe(false);
+    facts.ended = true;
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(false);
+  });
+
+  it("should hand the open tree a move and a press on its own ground, logical units", () => {
+    const { keyboard, input } = created("hub");
+    vi.stubGlobal("document", { activeElement: null, documentElement: {} });
+    keyboard.emit("keydown-P");
+    input.emit("pointermove", { x: 30, y: 40 }, [treeMounts[0].ground]);
+    input.emit("pointerdown", { x: 30, y: 40, button: 0 }, [treeMounts[0].ground]);
+    input.emit("pointerdown", { x: 31, y: 41, button: 0 }, [{}]);
+    vi.unstubAllGlobals();
+    expect(treeMounts[0].log).toEqual(["move 30,40", "down 30,40"]);
+  });
+
+  it("should build the tree for each world reported, told its world", () => {
+    const { bridge, report } = created("hub");
+    bridge.left("hub");
+    report("field");
+    expect(treeMounts.map((m) => [m.wiring.world, m.destroyed])).toEqual([
+      ["hub", true],
+      ["field", false],
+    ]);
   });
 });

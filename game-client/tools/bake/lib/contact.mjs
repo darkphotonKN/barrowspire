@@ -18,6 +18,11 @@
 //   contact-hall-2x.png        the enlarged Inn's great hall and taproom at ×2
 //   <LINEUPS file>             a family lineup per art slice at ×2 (FS-C8VM7 §H R48): one row per
 //                              sheet, each step beside the one below it, at key frames
+//   contact-looks-<class>.png  a class's baked spec looks beside the class (FS-1J1CB R12), at game
+//                              scale: every clip × 8 facings, each look's frame under the class's
+//   contact-darkroom-<class>.png  the dark-room strip (R10, R12) at ×2: the back-facing frames of
+//                              the floor's class, the class and its looks, on the run's darkest
+//                              floor under the run's ambient
 //   index.html                 the same from the baked atlases themselves, labelled from the
 //                              manifest's `facings`, with each clip playing at its fps
 // The HTML reads the committed atlases, so it also proves the manifest's frame order.
@@ -26,6 +31,8 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { encodePng } from "./png.mjs";
 import { CLIENT_ROOT } from "./source.mjs";
+import { downscale } from "./downscale.mjs";
+import { CLASS_STEMS, isLookSheet } from "./darkRoom.mjs";
 
 export const REVIEW_DIR = join(CLIENT_ROOT, "tools", "bake", "review");
 
@@ -137,6 +144,124 @@ export function composeLineup(sheets, facings, labels, theme, z = 2) {
       const y = top + lh + 4;
       fill(c, x + 1, y + 1, cw * z - 2, ch * z - 2, cell);
       blit(c, Buffer.from(b64, "base64"), s.frameWidth, s.frameHeight, x + Math.round(ax - s.anchor.x * s.frameWidth) * z, y + Math.round(ay - s.anchor.y * s.frameHeight) * z, z);
+    });
+  });
+  return c;
+}
+
+/**
+ * The spec looks to review (FS-1J1CB R12), one set per class with a look baked: the class's own
+ * sheet and its looks', from `sheets`. A class whose own sheet was not baked has no set.
+ */
+export function lookSets(sheets) {
+  const byName = new Map(sheets.map((s) => [s.name, s]));
+  return CLASS_STEMS.flatMap((stem) => {
+    const base = byName.get(`char_${stem}_base`);
+    const looks = sheets.filter((s) => isLookSheet(s.name) && s.name.startsWith(`char_${stem}_`)).sort((a, b) => (a.name < b.name ? -1 : 1));
+    return base && looks.length ? [{ stem, base, looks }] : [];
+  });
+}
+
+/** A sheet's frame at game scale: a sheet baked at `scale` px per screen px brought back to 1x. */
+const at1x = (s, b64) => downscale(Buffer.from(b64, "base64"), s.frameWidth, s.frameHeight, s.scale ?? 1);
+
+/** Sheets laid on one anchor at game scale: the anchor's px and the cell that holds every frame. */
+function commonCell(sheets) {
+  const w = (s) => s.frameWidth / (s.scale ?? 1);
+  const h = (s) => s.frameHeight / (s.scale ?? 1);
+  const ax = Math.max(...sheets.map((s) => s.anchor.x * w(s)));
+  const ay = Math.max(...sheets.map((s) => s.anchor.y * h(s)));
+  return {
+    cw: Math.ceil(ax + Math.max(...sheets.map((s) => (1 - s.anchor.x) * w(s)))),
+    ch: Math.ceil(ay + Math.max(...sheets.map((s) => (1 - s.anchor.y) * h(s)))),
+    // where a sheet's 1x frame goes in the cell, so its anchor lands on the common one
+    off: (s) => [Math.round(ax - s.anchor.x * w(s)), Math.round(ay - s.anchor.y * h(s))],
+    w,
+    h,
+  };
+}
+
+/**
+ * A class's looks beside it (FS-1J1CB R12) at game scale: a column per frame of every clip any of
+ * them has, in clip order (a look's own clips, the Berserker's off-hand ones, after the class's),
+ * and for each facing a row per sheet, the class first, so each look's frame sits under the
+ * class's same frame. Every frame stands on one anchor.
+ */
+export function composeLooks(base, looks, facings, labels, theme) {
+  const sheets = [base, ...looks];
+  const bg = mixRgb(hexRgb(theme.barrowDeep), hexRgb(theme.charcoal), 0.35);
+  const cells = [mixRgb(bg, hexRgb(theme.barrowBrown), 0.18), mixRgb(bg, hexRgb(theme.barrowBrown), 0.32)];
+  const { cw, ch, off, w, h } = commonCell(sheets);
+  const clips = [...new Set(sheets.flatMap((s) => Object.keys(s.animations)))];
+  const span = (anim) => Math.max(...sheets.map((s) => s.animations[anim]?.frames[0].length ?? 0));
+  const lh = Math.max(18, ...[...labels.values()].map((l) => l.h));
+  const lw = Math.max(LABEL_W, ...sheets.map((s) => labels.get(s.name)?.w ?? 0)) + 12;
+  const cols = [];
+  let x = M + lw;
+  for (const anim of clips) {
+    cols.push({ anim, x });
+    x += span(anim) * cw + GAP;
+  }
+  const titles = M;
+  const header = titles + sheets.length * (lh + 4) + 4;
+  const top = header + lh + 4;
+  const groupH = sheets.length * ch + GAP;
+  const c = canvas(x - GAP + M, top + facings.length * groupH, bg);
+  const stamp = (text, sx, sy) => {
+    const l = labels.get(text);
+    if (l) blit(c, l.px, l.w, l.h, sx, sy);
+  };
+  sheets.forEach((s, r) => stamp(titleOf(s), M, titles + r * (lh + 4)));
+  for (const { anim, x: cx } of cols) {
+    const owner = sheets.find((s) => s.animations[anim]);
+    stamp(headerOf(anim, owner.animations[anim]), cx, header);
+  }
+  facings.forEach((f, d) => {
+    sheets.forEach((s, r) => {
+      const y = top + d * groupH + r * ch;
+      stamp(s.name, M, y + 2);
+      if (r === 0) stamp(f, M, y + 2 + lh);
+      const [ox, oy] = off(s);
+      for (const { anim, x: cx } of cols) {
+        const a = s.animations[anim];
+        for (let i = 0; i < span(anim); i++) fill(c, cx + i * cw + 1, y + 1, cw - 2, ch - 2, cells[r === 0 ? 0 : 1]);
+        a?.frames[d].forEach((b64, i) => blit(c, at1x(s, b64), w(s), h(s), cx + i * cw + ox, y + oy));
+      }
+    });
+  });
+  return c;
+}
+
+/**
+ * The dark-room strip (FS-1J1CB R10, R12) at zoom `z`: a row per sheet (`sheets`: the floor's
+ * class, the class, its looks), each its back-facing (`n`) idle and walk frames at game scale,
+ * lit as the world lights them: sprite and floor both multiplied by the run's ambient, the floor
+ * the run's darkest ground tone. `floor` and `ambient` are sRGB [r, g, b].
+ */
+export function composeDarkRoom(sheets, facings, labels, theme, { floor, ambient }, z = 2) {
+  const bg = mixRgb(hexRgb(theme.barrowDeep), hexRgb(theme.charcoal), 0.35);
+  const lit = (rgb) => rgb.map((v, i) => Math.round((v * ambient[i]) / 255));
+  const ground = lit(floor);
+  const n = facings.indexOf("n");
+  const { cw, ch, off, w, h } = commonCell(sheets);
+  const framesOf = (s) => ["idle", "walk"].flatMap((anim) => s.animations[anim]?.frames[n] ?? []);
+  const lh = Math.max(18, ...[...labels.values()].map((l) => l.h));
+  const cols = Math.max(...sheets.map((s) => framesOf(s).length));
+  const rowH = lh + 4 + ch * z + M;
+  const c = canvas(M * 2 + cols * cw * z, M + sheets.length * rowH, bg);
+  sheets.forEach((s, r) => {
+    const y0 = M + r * rowH;
+    const l = labels.get(s.name);
+    if (l) blit(c, l.px, l.w, l.h, M, y0);
+    const [ox, oy] = off(s);
+    framesOf(s).forEach((b64, i) => {
+      const x = M + i * cw * z;
+      const y = y0 + lh + 4;
+      fill(c, x, y, cw * z, ch * z, ground);
+      // the sprite under the light-map: each texel multiplied by the ambient
+      const px = at1x(s, b64);
+      for (let o = 0; o < px.length; o += 4) [px[o], px[o + 1], px[o + 2]] = lit([px[o], px[o + 1], px[o + 2]]);
+      blit(c, px, w(s), h(s), x + ox * z, y + oy * z, z);
     });
   });
   return c;
@@ -366,28 +491,32 @@ export function contactPages(sheets, labels, budget = CONTACT_PAGE_BYTES) {
   return pages;
 }
 
-/** Writes the review set (`lineups`: lineupSets of every baked sheet); returns the files written. */
-export function writeReview({ sheets, facings, labels, manifest, theme, lineups = [] }) {
-  mkdirSync(REVIEW_DIR, { recursive: true });
-  writeFileSync(join(REVIEW_DIR, ".gitignore"), "# regenerated by npm run bake for the owner's review; not committed\n*\n!.gitignore\n");
+/**
+ * Writes the review set into `dir` (`lineups`: lineupSets of every baked sheet; `looks`: lookSets
+ * of every baked sheet, with `darkRoom`: the floor's class sheet and the run's floor and ambient);
+ * returns the files written.
+ */
+export function writeReview({ sheets, facings, labels, manifest, theme, lineups = [], looks = [], darkRoom = null, dir = REVIEW_DIR }) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, ".gitignore"), "# regenerated by npm run bake for the owner's review; not committed\n*\n!.gitignore\n");
   const files = [];
   contactPages(sheets, labels).forEach((page, i) => {
     const one = composeContact(page, facings, labels, theme, 1);
     const file = i === 0 ? "contact-sheet.png" : `contact-sheet-${i + 1}.png`;
-    writeFileSync(join(REVIEW_DIR, file), encodePng(one.width, one.height, one.rgba, { fast: true }));
+    writeFileSync(join(dir, file), encodePng(one.width, one.height, one.rgba, { fast: true }));
     files.push(file);
   });
   const cast = sheets.filter((s) => s.directions > 1);
   for (const s of cast) {
     const two = composeContact([s], facings, labels, theme, 2);
     const file = `contact-${s.name}-2x.png`;
-    writeFileSync(join(REVIEW_DIR, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    writeFileSync(join(dir, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(file);
   }
   const tower = sheets.filter((s) => s.group === "tower");
   if (tower.length) {
     const two = composeContact(tower, facings, labels, theme, 2);
-    writeFileSync(join(REVIEW_DIR, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    writeFileSync(join(dir, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push("contact-tower-2x.png");
   }
   for (const group of ["spire", "forest", "interior", "building", "hall"]) {
@@ -395,15 +524,27 @@ export function writeReview({ sheets, facings, labels, manifest, theme, lineups 
     if (!set.length) continue;
     const two = composeContact(set, facings, labels, theme, 2);
     const file = `contact-${group}-2x.png`;
-    writeFileSync(join(REVIEW_DIR, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    writeFileSync(join(dir, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(file);
   }
   for (const l of lineups) {
     const two = composeLineup(l.sheets, facings, labels, theme, 2);
-    writeFileSync(join(REVIEW_DIR, l.file), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    writeFileSync(join(dir, l.file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(l.file);
   }
-  writeFileSync(join(REVIEW_DIR, "index.html"), reviewHtml(manifest, cast.map((s) => s.name), theme));
+  // the spec looks' gate (FS-1J1CB R12): each class's looks beside it, and their backs in the dark
+  for (const { stem, base, looks: set } of looks) {
+    const one = composeLooks(base, set, facings, labels, theme);
+    const file = `contact-looks-${stem}.png`;
+    writeFileSync(join(dir, file), encodePng(one.width, one.height, one.rgba, { fast: true }));
+    files.push(file);
+    if (!darkRoom) continue;
+    const strip = composeDarkRoom([...(darkRoom.sheet && darkRoom.sheet !== base ? [darkRoom.sheet] : []), base, ...set], facings, labels, theme, darkRoom);
+    const stripFile = `contact-darkroom-${stem}.png`;
+    writeFileSync(join(dir, stripFile), encodePng(strip.width, strip.height, strip.rgba, { fast: true }));
+    files.push(stripFile);
+  }
+  writeFileSync(join(dir, "index.html"), reviewHtml(manifest, cast.map((s) => s.name), theme));
   files.push("index.html");
-  return files.map((f) => join(REVIEW_DIR, f));
+  return files.map((f) => join(dir, f));
 }

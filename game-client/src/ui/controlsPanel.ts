@@ -2,7 +2,7 @@
  * The run's controls panel (H), drawn as the run drew it (`toggleControlsPanel`) at the view's centre,
  * now in every window's frame with its × (FS-84N1G R13): the windows' one title (FS-3EBCA R20, R22), a
  * row per control (its key in brass, its action in the HUD's label tone), and "H to close" under them. The class's own ability is named as its
- * HUD card names it (FS-8AY7S req 30).
+ * ability bar's tooltip names it, by class and specialization (FS-8AY7S req 30; FS-E1ZDG §L.43).
  *
  * It is the UI scene's (FS-TQZ5J § Change: Phase 3, R50, the note on ADR-0086 2.3): at 1200, over the
  * party panel (1110), as the owner asked (「塔內操作說明蓋在組隊上面」), with a ground over its rect, so a
@@ -12,7 +12,7 @@
 import type Phaser from "phaser";
 import { RUN_ACTIONS } from "@/scenes/runActions";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import { ABILITY_COPY } from "./abilityCopy";
+import { abilityCopy } from "./abilityCopy";
 import { drawPanelFrame, drawPanelTitle, type FrameRect } from "./panelFrame";
 import type { Rect } from "./partyPanelLayout";
 
@@ -24,8 +24,8 @@ const ROW_H = 20;
 const TITLE_H = 44;
 const FOOT_H = 32;
 
-/** The controls, key and action, in the order the panel lists them; the class's ability by its name. */
-export function controlRows(className: string): [string, string][] {
+/** The controls, key and action, in the order the panel lists them; the class's ability by its name, as its specialization names it. */
+export function controlRows(className: string, specialization?: string): [string, string][] {
   return [
     ["WASD", "Move"],
     ["E", "Interact"],
@@ -36,8 +36,8 @@ export function controlRows(className: string): [string, string][] {
     ["ENTER", "Chat"],
     ["Q", "Close Panel"],
     ["LEFT CLICK", "Attack"],
-    // the class's own ability, named as its HUD card names it (FS-8AY7S req 30)
-    ["RIGHT CLICK", ABILITY_COPY[className]?.name ?? "Class ability"],
+    // the class's own ability, named as the bar's tooltip names it (FS-8AY7S req 30; FS-E1ZDG §L.43)
+    ["RIGHT CLICK", abilityCopy(className, specialization)?.name ?? "Class ability"],
     [RUN_ACTIONS.drinkPotion.label, "Drink potion"],
     ["H", "Toggle Controls"],
     ["ESC", "Menu"],
@@ -63,7 +63,7 @@ export interface DrawnControlsPanel {
 }
 
 /**
- * The panel, drawn about `centre` for `className`, held against the screen at its depth, in every
+ * The panel, drawn about `centre` for `className` holding `specialization`, held against the screen at its depth, in every
  * window's frame with its × (`drawPanelFrame`, FS-84N1G R13): the × box and glyph handed back, for
  * the caller to hit and light.
  */
@@ -71,8 +71,9 @@ export function drawControlsPanel(
   scene: Pick<Phaser.Scene, "add">,
   centre: { x: number; y: number },
   className: string,
+  specialization?: string,
 ): DrawnControlsPanel {
-  const controls = controlRows(className);
+  const controls = controlRows(className, specialization);
   const panelW = PANEL_W;
   // the title, a 20 px row per control, and the hint under them, so a row added never runs
   // into the hint

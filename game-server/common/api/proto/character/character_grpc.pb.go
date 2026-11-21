@@ -20,10 +20,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CharacterService_CreateCharacter_FullMethodName = "/character.CharacterService/CreateCharacter"
-	CharacterService_ListCharacters_FullMethodName  = "/character.CharacterService/ListCharacters"
-	CharacterService_GetCharacter_FullMethodName    = "/character.CharacterService/GetCharacter"
-	CharacterService_DeleteCharacter_FullMethodName = "/character.CharacterService/DeleteCharacter"
+	CharacterService_CreateCharacter_FullMethodName   = "/character.CharacterService/CreateCharacter"
+	CharacterService_ListCharacters_FullMethodName    = "/character.CharacterService/ListCharacters"
+	CharacterService_GetCharacter_FullMethodName      = "/character.CharacterService/GetCharacter"
+	CharacterService_DeleteCharacter_FullMethodName   = "/character.CharacterService/DeleteCharacter"
+	CharacterService_SpendPassivePoint_FullMethodName = "/character.CharacterService/SpendPassivePoint"
 )
 
 // CharacterServiceClient is the client API for CharacterService service.
@@ -38,6 +39,11 @@ type CharacterServiceClient interface {
 	ListCharacters(ctx context.Context, in *ListCharactersRequest, opts ...grpc.CallOption) (*ListCharactersResponse, error)
 	GetCharacter(ctx context.Context, in *GetCharacterRequest, opts ...grpc.CallOption) (*Character, error)
 	DeleteCharacter(ctx context.Context, in *DeleteCharacterRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// SpendPassivePoint takes one rank of a passive tree node (FS-8RZ51 R12–R13).
+	// The rule is decided again under the character's row lock. A target rank
+	// already held is OK with applied = false and writes nothing (R10). A rule's
+	// refusal is FailedPrecondition with an ErrorInfo carrying its PASSIVE_* code.
+	SpendPassivePoint(ctx context.Context, in *SpendPassivePointRequest, opts ...grpc.CallOption) (*SpendPassivePointResponse, error)
 }
 
 type characterServiceClient struct {
@@ -88,6 +94,16 @@ func (c *characterServiceClient) DeleteCharacter(ctx context.Context, in *Delete
 	return out, nil
 }
 
+func (c *characterServiceClient) SpendPassivePoint(ctx context.Context, in *SpendPassivePointRequest, opts ...grpc.CallOption) (*SpendPassivePointResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SpendPassivePointResponse)
+	err := c.cc.Invoke(ctx, CharacterService_SpendPassivePoint_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CharacterServiceServer is the server API for CharacterService service.
 // All implementations must embed UnimplementedCharacterServiceServer
 // for forward compatibility.
@@ -100,6 +116,11 @@ type CharacterServiceServer interface {
 	ListCharacters(context.Context, *ListCharactersRequest) (*ListCharactersResponse, error)
 	GetCharacter(context.Context, *GetCharacterRequest) (*Character, error)
 	DeleteCharacter(context.Context, *DeleteCharacterRequest) (*emptypb.Empty, error)
+	// SpendPassivePoint takes one rank of a passive tree node (FS-8RZ51 R12–R13).
+	// The rule is decided again under the character's row lock. A target rank
+	// already held is OK with applied = false and writes nothing (R10). A rule's
+	// refusal is FailedPrecondition with an ErrorInfo carrying its PASSIVE_* code.
+	SpendPassivePoint(context.Context, *SpendPassivePointRequest) (*SpendPassivePointResponse, error)
 	mustEmbedUnimplementedCharacterServiceServer()
 }
 
@@ -121,6 +142,9 @@ func (UnimplementedCharacterServiceServer) GetCharacter(context.Context, *GetCha
 }
 func (UnimplementedCharacterServiceServer) DeleteCharacter(context.Context, *DeleteCharacterRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteCharacter not implemented")
+}
+func (UnimplementedCharacterServiceServer) SpendPassivePoint(context.Context, *SpendPassivePointRequest) (*SpendPassivePointResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SpendPassivePoint not implemented")
 }
 func (UnimplementedCharacterServiceServer) mustEmbedUnimplementedCharacterServiceServer() {}
 func (UnimplementedCharacterServiceServer) testEmbeddedByValue()                          {}
@@ -215,6 +239,24 @@ func _CharacterService_DeleteCharacter_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CharacterService_SpendPassivePoint_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SpendPassivePointRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CharacterServiceServer).SpendPassivePoint(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CharacterService_SpendPassivePoint_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CharacterServiceServer).SpendPassivePoint(ctx, req.(*SpendPassivePointRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CharacterService_ServiceDesc is the grpc.ServiceDesc for CharacterService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -237,6 +279,10 @@ var CharacterService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteCharacter",
 			Handler:    _CharacterService_DeleteCharacter_Handler,
+		},
+		{
+			MethodName: "SpendPassivePoint",
+			Handler:    _CharacterService_SpendPassivePoint_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

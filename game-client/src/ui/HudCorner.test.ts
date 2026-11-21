@@ -2054,3 +2054,62 @@ describe("HudCorner's hover and refusal for the interface sounds (FS-WDM0X § Ch
     expect(refused).not.toHaveBeenCalled();
   });
 });
+
+// FS-8RZ51 R32, R33, R40 (I-8RZ51-7): the sixth icon, the passive tree, a bronze knockout oak with its
+// lines as the fallback, named with its key; its ember marker set on the standing row, no numeral
+describe("HudCorner (FS-8RZ51 R32, R33: the Tree icon and its marker)", () => {
+  afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
+  const treeRow = (): CornerIconSpec[] => [{ icon: "menu" }, { icon: "tree", press: () => {} }];
+  const treeZone = (env: ReturnType<typeof setup>) => {
+    const f = cornerIconFrame("tree", viewport);
+    return env.zones.find((z) => !z.destroyed && z.x === f.x && z.y === f.y)!;
+  };
+
+  it("should stand the Tree's plate at the row's left end and name it with its key under the pointer", () => {
+    const env = setup(treeRow());
+    const z = treeZone(env);
+    expect([z.x, z.width, z.height]).toEqual([730, 54, 46]);
+    z.handlers.pointerover();
+    expect(env.liveTexts().map((t) => t.words)).toContain("Tree (P)");
+  });
+
+  it("should draw the Tree in lines where the scene makes no knockout, and as a knockout in its slot where it does", () => {
+    const lines = setup(treeRow());
+    expect(lines.graphics[1].calls).toContain("strokePath");
+    const solid = setup(treeRow(), "ok");
+    const t = solid.textures[1];
+    const f = cornerIconFrame("tree", viewport);
+    expect([t.x, t.y]).toEqual([f.x + f.width / 2, f.y + f.height / 2]);
+  });
+
+  it("should show the ember marker in lines while marked, and take it off at none", () => {
+    const env = setup(treeRow());
+    const tree = env.graphics[1];
+    expect(tree.strokes).not.toContain(palette.ember);
+    env.corner.mark(true);
+    expect(tree.strokes).toContain(palette.ember);
+    env.corner.mark(false);
+    expect(tree.strokes).not.toContain(palette.ember);
+  });
+
+  it("should draw the marker through the knockout renderer in the ember ink, at the icon's top right, and take it down", () => {
+    const env = setup(treeRow(), "ok");
+    env.corner.mark(true);
+    const marker = env.textures[2];
+    const f = cornerIconFrame("tree", viewport);
+    expect(marker.tints).toEqual([palette.ember, palette.ember, palette.ember, palette.ember]);
+    expect(marker.x).toBeGreaterThan(f.x + f.width / 2);
+    expect(marker.y).toBeLessThan(f.y + f.height / 2);
+    env.corner.mark(false);
+    expect(marker.destroyed).toBe(true);
+  });
+
+  it("should keep the marker through a relayout and take it down with the row", () => {
+    const env = setup(treeRow());
+    env.corner.mark(true);
+    env.corner.relayout();
+    expect(env.graphics[1].strokes).toContain(palette.ember);
+    env.corner.destroy();
+    expect(env.graphics.every((g) => g.destroyed)).toBe(true);
+  });
+});

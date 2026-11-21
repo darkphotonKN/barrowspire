@@ -662,6 +662,43 @@ describe("PartyFrames names", () => {
   });
 });
 
+// FS-E1ZDG §K.41: a member's title on its own line under their name, by the level's rule
+describe("PartyFrames: titles (FS-E1ZDG §K.41)", () => {
+  it("draws the own title and a same-world teammate's under their names", () => {
+    const { store, frames, live, liveText, colourOf } = setup("run");
+    store.getState().apply(update([member(ME, "Me", "mage"), member("wren", "Wren", "archer")]));
+    frames.show({
+      current_player: { id: ME, current_health: 50, max_health: 100, level: 20, specialization: "pyromancer" },
+      other_players: [{ id: "wren", current_health: 60, max_health: 120, level: 20, specialization: "hunter" }],
+    });
+    expect(live()).toEqual(["Me", "Mage · Pyromancer", "Lv 20", "Wren", "Archer · Hunter", "Lv 20"]);
+    // under a teammate's name, at its left; the leader's crown stands on the name line alone
+    const name = liveText("Wren")!;
+    const title = liveText("Archer · Hunter")!;
+    expect(title.x).toBe(name.x);
+    expect(liveText("Mage · Pyromancer")!.x).toBe(title.x);
+    expect(colourOf("Archer · Hunter")).toBe(toCss(palette.hudFaint));
+  });
+
+  it("draws no title for a teammate elsewhere, nor before the pick", () => {
+    const { store, frames, live } = setup("hub");
+    store.getState().apply(update([member(ME, "Me"), member("wren", "Wren", "archer")]));
+    frames.show({
+      current_player: { id: ME, current_health: 50, max_health: 100 },
+      other_players: [{ id: "wren", specialization: "hunter" }],
+    });
+    expect(live()).toEqual(["Me", "Wren"]);
+  });
+
+  it("redraws as a title arrives with the pick", () => {
+    const { store, frames, live } = setup("hub");
+    store.getState().apply(update([member(ME, "Me", "archer")]));
+    frames.show({ current_player: { id: ME, current_health: 50, max_health: 100 } });
+    frames.show({ current_player: { id: ME, current_health: 50, max_health: 100, specialization: "hunter" } });
+    expect(live()).toEqual(["Me", "Archer · Hunter"]);
+  });
+});
+
 // FS-CH21F §Requirements R8–R11; I-CH21F-2. Same-world teammates' bars in every world, the
 // hub included, and "Lv N" after their names.
 describe("PartyFrames: same-world teammates' vitals and level (FS-CH21F)", () => {

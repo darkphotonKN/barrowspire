@@ -304,3 +304,5 @@ the experience curve, the level cap or any experience rule; the cue's words; the
 the corner row's places, sizes or looks; the resource bars', the potion cell's and the party
 frames' looks; a field's top left; the run's top-right column, the spectate HUD and the resolved
 row; new art, new tokens or a dev-gallery family; any server, proto, gateway or contract change.
+
+## Change: Ability bar → FS-Q18Q3

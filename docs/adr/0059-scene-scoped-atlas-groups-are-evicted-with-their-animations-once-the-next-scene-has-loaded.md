@@ -11,6 +11,7 @@ say nothing about when art is loaded or freed; both stand unchanged.
 Builds on: ADR-0020 Consequences ("texture memory and atlas packing need budgeting"), ADR-0058
 (a 2x sheet costs about four times the memory, trimmed about twice)
 Amended by: [ADR-0071](0071-the-blood-demons-art-is-its-own-group-fetched-on-demand-when-one-first-appears.md) — Decision 2 ("never on demand while it runs") and Decision 6 (the placeholder), for a group the table names as on demand: the blood demon's
+Amended by: [ADR-0088](0088-a-specialization-looks-art-is-its-own-on-demand-group-fetched-when-the-world-state-carries-it.md) — Decision 1 (a specialization look is its own on-demand group, not resident with its class)
 
 ## Context
 

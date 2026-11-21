@@ -28,7 +28,9 @@ export type FxTexture =
   | "fx_scorch"
   | "fx_glow"
   | "fx_escape_column"
-  | "fx_arrow";
+  | "fx_arrow"
+  | "fx_ring"
+  | "fx_glint";
 
 /** §B.3: Linear, Sine, Quad and Cubic only. No Bounce, Elastic or Back. */
 export type Easing =
@@ -468,6 +470,85 @@ export const EFFECTS = {
     light: { color: "umbraLight", radius: 120, intensity: { from: 0.75, to: 0 } },
   },
 
+  // ── Archer: Heavy Shot (FS-1J1CB §F R40) ──────────────────────────────
+  /**
+   * Every archer's right-click but a Shadow Ranger's: the Shadow Shot's slow bolt with the shadow
+   * taken out, read as heavier than the arrow by weight, not by hue. A harder string-snap than
+   * the arrow's at the bow, with a burst of fibre and dust. Vellum only: no umbra, no light.
+   */
+  heavyShotRelease: {
+    timing: { kind: "oneShot", durationMs: 220 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellumDark"],
+      scale: still,
+      alpha: { from: 0.55, to: 0 },
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellumDark", "vellum"],
+      count: 7,
+      scale: { from: 1.2, to: 1.5 },
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 10, to: 30 },
+      angle: { from: -35, to: 35 },
+      accel: { x: 0, y: 20 },
+    },
+  },
+  /**
+   * A thicker pale wake than the arrow's air-streak, hanging a little longer behind the bolt, and
+   * a faint vellum glow on the bolt itself so it reads in the dark: never the Shadow Shot's pitch
+   * halo, and no riding light.
+   */
+  heavyShotTrail: {
+    timing: {
+      kind: "stream",
+      lifeMs: 420,
+      intervalMs: 40,
+      maxAlive: 24,
+      onRelease: "fade",
+    },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellum"],
+      scale: still,
+      alpha: { from: 0.35, to: 0.35 },
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellum"],
+      count: 2,
+      scale: { from: 1.5, to: 1.6 },
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 10, to: 90 },
+      angle: { from: -8, to: 8 },
+      accel: noAccel,
+    },
+  },
+  /** A heavier thud than the arrow's: dust and splinters where the bolt lands, dropping to the ground. */
+  heavyShotImpact: {
+    timing: { kind: "oneShot", durationMs: 480 },
+    ease: "Quad.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellumDark"],
+      scale: still,
+      alpha: { from: 0.45, to: 0 },
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["barrowBrown", "vellumDark"],
+      count: 11,
+      scale: { from: 1.1, to: 1.4 },
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 10, to: 30 },
+      angle: { from: 225, to: 315 },
+      accel: { x: 0, y: 200 },
+    },
+  },
+
   // ── Monsters: a demon's fire claw (FS-VHGE7 §D R32) ────────────────────
   /**
    * A flame swept through the swipe along the demon's facing and embers flung forward off it, with
@@ -675,6 +756,280 @@ export const EFFECTS = {
       speed: { from: 6, to: 10 },
       angle: { from: 265, to: 275 },
       accel: { x: 3, y: -4 },
+    },
+  },
+
+  // ── Class tree abilities (FS-04EEA §H) ─────────────────────────────────
+  /**
+   * The stun tell (R47): a pale haze held over a stunned monster's head, with brass and vellum
+   * motes winking up off it and falling back, for as long as its `action` is `stunned`. Pale, not
+   * the hostile oxblood: it reads as the monster reeling, not as a blow coming. Held, never
+   * looped on scale; cut at once when the stun ends. *Starting values,* through the contact sheet.
+   */
+  stunTell: {
+    timing: {
+      kind: "stream",
+      lifeMs: 600,
+      intervalMs: 110,
+      maxAlive: 6,
+      onRelease: "cut",
+    },
+    ease: "Sine.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellumDark"],
+      scale: { from: 0.5, to: 0.5 },
+      alpha: { from: 0.35, to: 0.35 },
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["vellum", "brassBright"],
+      count: 1,
+      scale: still,
+      alpha: { from: 0.95, to: 0 },
+      speed: { from: 12, to: 24 },
+      angle: { from: 200, to: 340 },
+      accel: { x: 0, y: 28 },
+    },
+  },
+  /**
+   * Earthbreaker (R43): the slam's crater, the ground at the warrior's feet darkened and broken,
+   * held most of its life (`Sine.easeIn`) and then gone. *Starting values,* through the contact sheet.
+   */
+  earthbreakerSlam: {
+    timing: { kind: "oneShot", durationMs: 1100 },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_scorch",
+      tint: ["pitch"],
+      scale: { from: 1.4, to: 1.4 },
+      alpha: { from: 0.9, to: 0 },
+      ground: true,
+    },
+  },
+  /**
+   * Earthbreaker (R43): the blow itself, a pale ring laid flat tight round the feet that holds a moment
+   * and fades, with the slam's dust thrown up off the ground and dropping back. The ring never grows
+   * (§B.4); the shock opens out by its bands ({@link earthbreakerBandNear} to `Far`).
+   */
+  earthbreakerRing: {
+    timing: { kind: "oneShot", durationMs: 420 },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_ring",
+      tint: ["vellum"],
+      scale: { from: 1.6, to: 1.6 },
+      alpha: { from: 1, to: 0 },
+      ground: true,
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellum", "vellumDark"],
+      count: 12,
+      scale: { from: 1.3, to: 1.6 },
+      alpha: { from: 0.95, to: 0 },
+      speed: { from: 24, to: 60 },
+      angle: { from: 190, to: 350 },
+      accel: { x: 0, y: 90 },
+    },
+  },
+  /**
+   * Earthbreaker (R43): the shock ring at 40 world px, a quarter of it. The warrior's steel smear is an
+   * arc round its pivot, so four laid at the feet, turned a quarter apart, close into a ring on the iso
+   * ground; three rings of them struck one after another, each wider and fainter, are the shock opening
+   * out to 90 world px without ever scaling a sprite (§B.4). Pale, never the hostile oxblood.
+   */
+  earthbreakerBandNear: {
+    timing: { kind: "oneShot", durationMs: 260 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_slash",
+      tint: ["vellumDark", "vellum"],
+      scale: { from: 0.62, to: 0.62 },
+      alpha: { from: 0.9, to: 0 },
+      ground: true,
+    },
+  },
+  /** Earthbreaker (R43): the shock ring at 65 world px, a quarter of it ({@link earthbreakerBandNear}). */
+  earthbreakerBandMid: {
+    timing: { kind: "oneShot", durationMs: 280 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_slash",
+      tint: ["vellumDark", "vellum"],
+      scale: { from: 1.02, to: 1.02 },
+      alpha: { from: 0.75, to: 0 },
+      ground: true,
+    },
+  },
+  /** Earthbreaker (R43): the shock ring at 90 world px, the reach it strikes to, a quarter of it. */
+  earthbreakerBandFar: {
+    timing: { kind: "oneShot", durationMs: 300 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_slash",
+      tint: ["vellumDark", "vellum"],
+      scale: { from: 1.4, to: 1.4 },
+      alpha: { from: 0.6, to: 0 },
+      ground: true,
+    },
+  },
+  /**
+   * Earthbreaker (R43): one puff of dust where the shock ring dies out at 90 world px, kicked outward
+   * along the ground (played heading in, so it streams out behind) and settling. Pale, so it reads on
+   * the brown ground.
+   */
+  earthbreakerShock: {
+    timing: { kind: "oneShot", durationMs: 560 },
+    ease: "Sine.easeIn",
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellum", "vellumDark"],
+      count: 3,
+      scale: { from: 1.3, to: 1.6 },
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 10, to: 28 },
+      angle: { from: -30, to: 30 },
+      accel: { x: 0, y: 24 },
+    },
+  },
+  /**
+   * Earthbreaker (R43): one split in a crack running out from the crater: the glint's four hairline rays
+   * laid flat and darkened to pitch, one turned along the crack's line and the other pair its side
+   * splits, so the stone reads broken, not burnt. A crack is two of these along its line, out to 90
+   * world px.
+   */
+  earthbreakerCrack: {
+    timing: { kind: "oneShot", durationMs: 1000 },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_glint",
+      tint: ["pitch"],
+      scale: { from: 1.6, to: 1.6 },
+      alpha: { from: 0.9, to: 0 },
+      ground: true,
+    },
+  },
+  /**
+   * Blink (R44): where the mage stood at the send, a necrotic glow at the body that goes out fast as
+   * pale motes are drawn in to it from round the figure, as if the dark took them. No light: the mage
+   * steps into the dark, not out of a flash. *Starting values,* through the contact sheet.
+   */
+  blinkOut: {
+    timing: { kind: "oneShot", durationMs: 300 },
+    ease: "Quad.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["necrotic"],
+      scale: { from: 1.6, to: 1.6 },
+      alpha: { from: 1, to: 0 },
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["vellum", "necrotic"],
+      count: 12,
+      scale: { from: 1, to: 1 },
+      alpha: { from: 0.95, to: 0 },
+      speed: { from: 0, to: 0 },
+      angle: { from: 0, to: 360 },
+      accel: { x: 0, y: 0 },
+      inward: 34,
+    },
+  },
+  /**
+   * Blink (R44): where the body is placed, a necrotic glow at the body with a short pale pool of
+   * light, and motes thrown up off the figure that fall back and settle round it (§B.6).
+   */
+  blinkIn: {
+    timing: { kind: "oneShot", durationMs: 420 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["necrotic"],
+      scale: { from: 1.6, to: 1.6 },
+      alpha: { from: 1, to: 0 },
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["vellum", "necrotic"],
+      count: 10,
+      scale: { from: 1, to: 1 },
+      alpha: { from: 0.95, to: 0 },
+      speed: { from: 18, to: 46 },
+      angle: { from: 200, to: 340 },
+      accel: { x: 0, y: 90 },
+    },
+    light: { color: "necrotic", radius: 110, intensity: { from: 0.8, to: 0 } },
+  },
+  /**
+   * Settle the Debt (R46): one cut of the flurry, the warrior's steel smear laid on the ground at the
+   * mercenary's feet and turned out along its own line, reaching 90 world px; quicker than the slash,
+   * as a flurry is. A flurry is a run of these all round him. *Starting values,* through the contact
+   * sheet.
+   */
+  flurrySlash: {
+    timing: { kind: "oneShot", durationMs: 200 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_slash",
+      tint: ["vellumDark", "vellum"],
+      scale: { from: 1.4, to: 1.4 },
+      alpha: { from: 0.95, to: 0 },
+      ground: true,
+      sweep: 0.9,
+    },
+  },
+  /**
+   * Settle the Debt (R46), from 3 charges spent: the ground round his feet kicked up in pale dust that
+   * settles, so a heavier flurry reads heavier underfoot as well as in its cuts.
+   */
+  flurryDust: {
+    timing: { kind: "oneShot", durationMs: 500 },
+    ease: "Sine.easeIn",
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellumDark", "vellumFaint"],
+      count: 10,
+      scale: { from: 1.2, to: 1.6 },
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 14, to: 40 },
+      angle: { from: 180, to: 360 },
+      accel: { x: 0, y: 50 },
+    },
+  },
+  /**
+   * Settle the Debt (R46), at 5 charges spent (a Sellsword's full count): the debt paid in one brass
+   * flash at his body as the last cut lands, with a short pool of brass light. Brass, the merc's coin,
+   * never amber (*interactable*) or oxblood (the hit's).
+   */
+  flurryFlare: {
+    timing: { kind: "oneShot", durationMs: 360 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["brass"],
+      scale: { from: 1.4, to: 1.4 },
+      alpha: { from: 0.65, to: 0 },
+    },
+    light: { color: "brassBright", radius: 120, intensity: { from: 0.8, to: 0 } },
+  },
+  /**
+   * Arrow Rain (R45): where one falling arrow lands inside the circle, on the ground, a pale puff of
+   * dust and splinters kicked up that drops back. Pale, so a volley reads on the brown ground. No
+   * light. *Starting values,* through the contact sheet.
+   */
+  arrowRainImpact: {
+    timing: { kind: "oneShot", durationMs: 320 },
+    ease: "Quad.easeIn",
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellum", "vellumDark"],
+      count: 6,
+      scale: { from: 1.2, to: 1.6 },
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 8, to: 24 },
+      angle: { from: 220, to: 320 },
+      accel: { x: 0, y: 180 },
     },
   },
 } as const satisfies Record<string, EffectEntry>;

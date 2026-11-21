@@ -11,7 +11,7 @@ import { palette, toCss } from "@/utils/canvasPalette";
 import { worldDepth } from "@/render/iso/shapes";
 import { worldToScreen } from "@/render/iso/projection";
 import type { footprintHitArea } from "@/render/world/footprint";
-import type { MonsterArchetype, MonsterState } from "@/types/gameState";
+import type { MonsterAction, MonsterArchetype, MonsterState } from "@/types/gameState";
 import {
   FALLBACK_LOOK,
   MONSTER_LOOKS,
@@ -735,6 +735,8 @@ describe("MonsterRoster clips", () => {
     ["move", "walk"],
     ["attack", "attack"],
     ["dead", "death"],
+    // FS-04EEA §H R47: a stunned monster stands in its idle clip, no new baked pose
+    ["stunned", "idle"],
   ] as const)("should play %s as the %s clip", (action, clipName) => {
     const { stage, sprites } = fakeStage();
     const roster = new MonsterRoster(stage, fixtureArt());
@@ -743,6 +745,15 @@ describe("MonsterRoster clips", () => {
     expect(sprites[0].anims.currentAnim?.key).toBe(
       `creature_ghoul_base/${clipName}/4`,
     );
+  });
+
+  it("should draw an action it does not know as it always has: idle, and no stun tell (FS-04EEA §Edge States)", () => {
+    const { stage, sprites } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ archetype: "ghoul", action: "dazed" as MonsterAction })]);
+    roster.update(FRAME);
+    expect(sprites[0].anims.currentAnim?.key).toBe("creature_ghoul_base/idle/4");
+    expect(roster.stunned()).toEqual([]);
   });
 
   it("should keep its last facing when the server sends none", () => {
@@ -841,6 +852,59 @@ describe("MonsterRoster death (req 36)", () => {
       "creature_troll_base/death/4",
       "creature_troll_base/walk/4",
     ]);
+  });
+});
+
+describe("MonsterRoster stun heads (FS-04EEA §H R47)", () => {
+  it("should name each living stunned monster, where it is drawn and how high its head stands, just under its bar", () => {
+    const { stage, sprites, bars } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([
+      monster({ entity_id: "dazed", action: "stunned", current_health: 60 }),
+      monster({ entity_id: "busy", action: "attack", position: { x: 100, y: 100 } }),
+    ]);
+    roster.update(FRAME);
+    const heads = roster.stunned();
+    expect(heads.map((h) => h.id)).toEqual(["dazed"]);
+    const [head] = heads;
+    expect(head.at).toEqual({ x: 400, y: 300 });
+    expect(head.lift).toBeGreaterThan(0);
+    // the head's top is the bottom of its marker stack: the bar sits just above it
+    const headY = sprites[0].y - head.lift;
+    expect(bars[0].y).toBeLessThan(headY);
+    expect(headY - bars[0].y).toBeLessThanOrEqual(OVERHEAD_BAR.height + 3);
+  });
+
+  it("should drop a monster once its action changes, and once it lies dead", () => {
+    const { stage } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    roster.sync([monster({ action: "stunned" })]);
+    roster.update(FRAME);
+    expect(roster.stunned()).toHaveLength(1);
+    roster.sync([monster({ action: "move" })]);
+    roster.update(FRAME);
+    expect(roster.stunned()).toEqual([]);
+    roster.sync([monster({ action: "stunned" })]);
+    roster.sync([monster({ action: "dead", current_health: 0 })]);
+    roster.update(FRAME);
+    expect(roster.stunned()).toEqual([]);
+  });
+
+  it("should follow a monster stunned mid-leap where its body is drawn, still flying to where the leap lands", () => {
+    const { stage } = fakeStage();
+    const roster = new MonsterRoster(stage, fixtureArt());
+    const leap = { kind: "pounce" as const, x: 500, y: 300, radius: 60, arc: 0, remaining: 0.3 };
+    roster.sync([monster({ action: "ability", ability: leap })]);
+    roster.update(FRAME);
+    // stunned in the air: the server flies it on, reporting `stunned` for the rest of the flight
+    roster.sync([monster({ action: "stunned", position: { x: 500, y: 300 }, ability: { ...leap, remaining: 0.1 } })]);
+    roster.update(FRAME);
+    const first = roster.stunned()[0].at.x;
+    roster.update(FRAME);
+    const second = roster.stunned()[0].at.x;
+    expect(first).toBeGreaterThan(400);
+    expect(second).toBeGreaterThan(first);
+    expect(second).toBeLessThanOrEqual(500);
   });
 });
 

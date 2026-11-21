@@ -363,3 +363,7 @@ changes.
 ## Change: The XP bar along the bottom → FS-77DVN
 
 ## Change: The party death flow and the spectate switcher → FS-QPDKN
+
+## Change: Sellsword's five parry charges → FS-E1ZDG
+
+## Change: Ability bar → FS-Q18Q3

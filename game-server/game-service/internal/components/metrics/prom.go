@@ -96,6 +96,7 @@ var knownActions = map[string]struct{}{
 	string(constants.ActionLeaveRun):           {},
 	string(constants.ActionForfeitRun):         {},
 	string(constants.ActionDrinkPotion):        {},
+	string(constants.ActionSpendPassivePoint):  {},
 	string(constants.ActionLeaveHub):           {},
 	string(constants.ActionWorldLeft):          {},
 	string(constants.ActionRenewToken):         {},

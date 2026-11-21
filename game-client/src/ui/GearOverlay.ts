@@ -1025,8 +1025,9 @@ export class GearOverlay implements HudPanel, PurseShelf {
   /**
    * Top to bottom: class, name, level and the experience bar (R25–26); health and the class
    * resource, each with a thin bar in its HUD colour (R27); the class card (R28); what worn gear
-   * adds (R29). Each row knows its height, so the panel shows the rows that fit and scrolls the
-   * rest (edge state "Small window").
+   * adds (R29); what the passive tree adds and the kickers held (FS-8RZ51 R44). Each row knows
+   * its height, so the panel shows the rows that fit and scrolls the rest (edge state "Small
+   * window").
    */
   private statsRows(sheet: CharacterSheet, area: Rect): StatsRow[] {
     const { x, w } = area;
@@ -1095,6 +1096,11 @@ export class GearOverlay implements HudPanel, PurseShelf {
     for (const s of sheet.gear.stats) stat(s.label, s.value);
     for (const a of sheet.gear.affixes) line(a, palette.hudText);
     if (sheet.gear.note) line(sheet.gear.note, palette.hudFaint);
+    // what the passive tree's held ranks add, then each kicker held (FS-8RZ51 R44)
+    section("PASSIVES", 8);
+    for (const s of sheet.passives.stats) line(s, palette.hudText);
+    for (const k of sheet.passives.kickers) line(k, palette.frameBright);
+    if (sheet.passives.note) line(sheet.passives.note, palette.hudFaint);
     return rows;
   }
 

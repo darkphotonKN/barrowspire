@@ -2,10 +2,15 @@ package character
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/character"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -25,6 +30,7 @@ type Service interface {
 	ListCharacters(ctx context.Context, memberID uuid.UUID) ([]*Character, error)
 	GetCharacter(ctx context.Context, memberID, id uuid.UUID) (*Character, error)
 	DeleteCharacter(ctx context.Context, memberID, id uuid.UUID) error
+	SpendPassivePoint(ctx context.Context, spend PassiveSpend) (*PassiveSpendResult, error)
 }
 
 func NewHandler(service Service) *Handler {
@@ -86,6 +92,29 @@ func (h *Handler) DeleteCharacter(ctx context.Context, req *pb.DeleteCharacterRe
 	return &emptypb.Empty{}, nil
 }
 
+func (h *Handler) SpendPassivePoint(ctx context.Context, req *pb.SpendPassivePointRequest) (*pb.SpendPassivePointResponse, error) {
+	memberID, id, err := parseScoped(req.GetMemberId(), req.GetCharacterId())
+	if err != nil {
+		return nil, err
+	}
+	spent, err := h.service.SpendPassivePoint(ctx, PassiveSpend{
+		MemberID:    memberID,
+		CharacterID: id,
+		NodeID:      req.GetNodeId(),
+		Rank:        int(req.GetRank()),
+	})
+	// a refusal crosses as its code alone: gRPC would put a wrapped chain's
+	// whole text on the wire as the message
+	var refusal *errcode.Refusal
+	if errors.As(err, &refusal) {
+		return nil, refusal.GRPCStatus().Err()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &pb.SpendPassivePointResponse{Applied: spent.Applied, PassiveRanks: ranksToProto(spent.Ranks)}, nil
+}
+
 func parseScoped(memberID, characterID string) (uuid.UUID, uuid.UUID, error) {
 	member, err := parseID("member_id", memberID)
 	if err != nil {
@@ -107,19 +136,36 @@ func parseID(field, raw string) (uuid.UUID, error) {
 }
 
 // toProto fills the level floor and next-level threshold from the shared
-// experience table; next_level_at stays unset at the cap.
+// experience table; next_level_at stays unset at the cap, and specialization
+// before the pick.
 func toProto(c *Character) *pb.Character {
 	out := &pb.Character{
-		Id:         c.ID.String(),
-		Name:       c.Name,
-		Class:      c.ClassID,
-		Level:      c.Level,
-		Experience: c.Exp,
-		LevelFloor: progression.LevelFloor(c.Level),
-		CreatedAt:  timestamppb.New(c.CreatedAt),
+		Id:           c.ID.String(),
+		Name:         c.Name,
+		Class:        c.ClassID,
+		Level:        c.Level,
+		Experience:   c.Exp,
+		LevelFloor:   progression.LevelFloor(c.Level),
+		CreatedAt:    timestamppb.New(c.CreatedAt),
+		PassiveRanks: ranksToProto(c.PassiveRanks),
 	}
 	if next, ok := progression.NextLevelAt(c.Level); ok {
 		out.NextLevelAt = &next
+	}
+	if c.Specialization != "" {
+		out.Specialization = &c.Specialization
+	}
+	return out
+}
+
+// ranksToProto lists the nodes held at rank 1 or more, by node id, so the
+// wire order is stable.
+func ranksToProto(ranks passivetree.Ranks) []*pb.PassiveRank {
+	out := make([]*pb.PassiveRank, 0, len(ranks))
+	for _, node := range slices.Sorted(maps.Keys(ranks)) {
+		if rank := ranks[node]; rank > 0 {
+			out = append(out, &pb.PassiveRank{NodeId: node, Rank: int32(rank)})
+		}
 	}
 	return out
 }

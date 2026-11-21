@@ -354,3 +354,5 @@ string`, field 5), canonical UUIDs of consumed item instances, empty when none.
 - Any `SPECIFICATION.md` / `CONTEXT.md` edit (the thin lines and the *Consumed item* term exist).
 
 ## Change: The party death flow and the spectate switcher → FS-QPDKN
+
+## Change: Ability bar → FS-Q18Q3

@@ -15,7 +15,8 @@ import {
 import { enterHubPayload, LEDGER_UNREACHABLE } from "@/characters/entry";
 import * as Phaser from "phaser";
 import { CANVAS_FONT, mix, palette, rgba, toCss } from "@/utils/canvasPalette";
-import { CLASS_LORE } from "@/data/classLore";
+import type { ClassKey } from "@/data/classLore";
+import { classLevelLine } from "@/data/specializations";
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import { ensurePointerLook } from "@/render/cursors";
 import { browserSfxStore } from "@/audio/sfxSetting";
@@ -711,8 +712,7 @@ export class MainMenuScene extends Phaser.Scene {
     this.centerHeroContainer.setDepth(15);
 
     if (activeChar) {
-      const cls = (activeChar.className || "warrior").toLowerCase() as keyof typeof CLASS_LORE;
-      const lore = CLASS_LORE[cls];
+      const cls = (activeChar.className || "warrior").toLowerCase() as ClassKey;
 
       // The hero is the class's own baked sheet on a lit plinth, facing us (FS-2325V §F.1-F.3).
       // It outlives this container, so a refresh does not restart its idle.
@@ -737,8 +737,9 @@ export class MainMenuScene extends Phaser.Scene {
       });
       nameText.setOrigin(0.5);
 
-      const classTitle = lore ? `${lore.title} • LV.${activeChar.level}` : `${cls.toUpperCase()} LV.${activeChar.level}`;
-      const classText = this.add.text(0, 106, classTitle, {
+      // The title where the character has one, else the class name (FS-E1ZDG §K.40).
+      const classLine = classLevelLine(cls, activeChar.specialization, activeChar.level);
+      const classText = this.add.text(0, 106, classLine, {
         fontFamily: CANVAS_FONT.body,
         fontSize: "11px",
         color: toCss(ui.label),
@@ -855,7 +856,7 @@ export class MainMenuScene extends Phaser.Scene {
       const progress = characterProgress(char);
       const capMark = atCap(progress) ? " · CAP" : "";
       card.classText
-        .setText(`${char.className.toUpperCase()} • LV.${char.level}${capMark}`)
+        .setText(`${classLevelLine(cls, char.specialization, char.level)}${capMark}`)
         .setPosition(panelX + 64, y + 40)
         .setVisible(true);
 

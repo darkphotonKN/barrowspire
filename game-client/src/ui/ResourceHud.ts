@@ -49,7 +49,7 @@ export const HUD_BAR_FILL: Readonly<Record<HudChannel, number>> = {
   unknown: palette.hudResourceOther,
 };
 
-/** The panel's height for `rows` bars: what the potion cell and the party frames measure from. */
+/** The panel's height for `rows` bars: what the party frames measure from. */
 export function resourceHudHeight(rows: number): number {
   return rows * ROW_H + PAD_Y * 2;
 }

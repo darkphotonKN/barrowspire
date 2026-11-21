@@ -17,3 +17,4 @@ export {
   type BarPainter,
 } from "./healthBar";
 export { NPC_NAME_PX, isFunctionNPC, sigilPoints } from "./npc";
+export { NameplateTitle, TITLE_LINE_PX } from "./titleLine";

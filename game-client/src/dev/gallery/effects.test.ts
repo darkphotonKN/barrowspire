@@ -20,6 +20,8 @@ const HELPERS = new Set([
   "sourceScan",
   // what the arrival card's three leaves share (FS-PQ2TW): it plays nothing of its own
   "cardLeaveCore",
+  // when an effect's steps play, for the tree abilities' staged looks (FS-04EEA §H): it plays nothing of its own
+  "staged",
 ]);
 
 const modules = readdirSync(EFFECTS_DIR)
@@ -74,6 +76,31 @@ describe("effect cards", () => {
     const cards = EFFECT_CARDS.filter((c) => c.module === "loreDust");
     expect(cards.map((c) => c.name)).toEqual(["Lore line (lore)", "Lore line (dread)", "Lore line (hope)"]);
     for (const card of cards) expect(card.demo).toBeTypeOf("function");
+  });
+
+  it("should card the ward on the mage, the gloom on the archer, and a ward under a heal, each playable (FS-1J1CB R38)", () => {
+    const cards = EFFECT_CARDS.filter((c) => c.module === "aura");
+    expect(cards.map((c) => c.name)).toEqual([
+      "Ward (Spellwarden aura, on the mage)",
+      "Gloom (Shadow Ranger aura, on the archer)",
+      "Ward under a heal shimmer",
+    ]);
+    for (const card of cards) expect(card.demo).toBeTypeOf("function");
+  });
+
+  it("should card each tree ability, the flurry at 1, 3 and 5 charges, and the stun tell on a monster, each playable (FS-04EEA R49)", () => {
+    const names = (module: string) => EFFECT_CARDS.filter((c) => c.module === module).map((c) => c.name);
+    expect(names("earthbreaker")).toHaveLength(1);
+    expect(names("blink")).toEqual(["Blink out and in"]);
+    expect(names("arrowRain")).toHaveLength(1);
+    expect(names("settleTheDebt")).toEqual([
+      "Settle the Debt (1 charge)",
+      "Settle the Debt (3 charges)",
+      "Settle the Debt (5 charges)",
+    ]);
+    expect(names("stun")).toEqual(["Stun tell (on a ghoul)"]);
+    for (const owner of ["earthbreaker", "blink", "arrowRain", "settleTheDebt", "stun"])
+      for (const card of EFFECT_CARDS.filter((c) => c.module === owner)) expect(card.demo).toBeTypeOf("function");
   });
 
   it("should give every card that can't be played a reason", () => {

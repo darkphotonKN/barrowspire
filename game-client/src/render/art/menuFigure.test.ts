@@ -414,7 +414,7 @@ describe("menus pick exactly the sheet that walks", () => {
 
   it("each class key has its own sheet, the Mercenary's included", () => {
     // FS-MAMHR §H.42: once approved, the merc draws from its own sheet, not the knight's
-    const sheets = (Object.keys(CLASS_LORE) as ClassKey[]).map(characterSheet);
+    const sheets = (Object.keys(CLASS_LORE) as ClassKey[]).map((cls) => characterSheet(cls));
     expect(new Set(sheets).size).toBe(sheets.length);
     expect(characterSheet("mercenary")).toBe("char_mercenary_base");
   });

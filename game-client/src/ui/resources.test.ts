@@ -4,7 +4,7 @@ import type {
   PlayerState,
   ResourceState,
 } from "@/types/gameState";
-import { abilityAffordable, hudBars, PARRY_PIPS, teammateHealthFill } from "./resources";
+import { abilityAffordable, hudBars, teammateHealthFill } from "./resources";
 
 const resource = (kind: string, current: number, max: number): ResourceState =>
   ({ kind, current, max, ability_cost: 10 }) as ResourceState;
@@ -69,12 +69,30 @@ describe("hudBars (FS-8AY7S req 20–25)", () => {
       );
       expect(bars[1].channel).toBe("parry");
       expect(bars[1].label).toBe("Parry:");
-      expect(bars[1].pips).toHaveLength(PARRY_PIPS);
+      expect(bars[1].pips).toHaveLength(3);
       expect(bars[1].pips?.filter(Boolean)).toHaveLength(held);
       // lit from the first pip on
       expect(bars[1].pips).toEqual([0, 1, 2].map((i) => i < held));
     },
   );
+
+  // FS-E1ZDG §L R44: one pip per point of the pool's max, so a Sellsword's 5 show 5
+  it.each([0, 3, 5])(
+    "should draw a Sellsword's parry charges as 5 pips, %i lit",
+    (held) => {
+      const bars = hudBars(
+        run(player({ class: "mercenary", specialization: "sellsword", resource: resource("parry_charges", held, 5) })),
+      );
+      expect(bars[1].pips).toEqual([0, 1, 2, 3, 4].map((i) => i < held));
+    },
+  );
+
+  it("should draw no pips for a pool with no max", () => {
+    expect(
+      hudBars(run(player({ resource: resource("parry_charges", 1, 0) })))[1]
+        .pips,
+    ).toEqual([]);
+  });
 
   it("should never light more than 3 pips, nor fewer than none", () => {
     expect(

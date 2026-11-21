@@ -45,14 +45,16 @@ export function bust(rig, mat, k = 1) {
 
 /**
  * Cloth over the torso (a tabard's upper half): the torso's own profile from `from` (H) up to the
- * neck, padded out, as an open panel over `arc`.
+ * neck, padded out, as an open panel over `arc`. `shape(t, a)` scales it in where it is cut away
+ * (rig.js `skinTube`): drawn in under the torso it leaves the body beneath showing, as a wrapped
+ * robe's V shows what it is wrapped over; `segs` cuts it finer round for such an edge (16).
  */
 export function overTorso(rig, mat, o = {}) {
   const pad = o.pad ?? 0.012;
   const cps = torsoProfile(rig, o)
     .filter((c) => c.p[1] >= o.from - 1e-6)
     .map((c) => ({ ...c, r: c.r.map((v) => v + pad) }));
-  return skinTube(rig, cps, mat, { segs: 16, steps: 4, arc: o.arc, caps: false, ground: false, uv: 4 });
+  return skinTube(rig, cps, mat, { segs: o.segs ?? 16, steps: 4, arc: o.arc, shape: o.shape, caps: false, ground: false, uv: 4 });
 }
 
 function torsoProfile(rig, o = {}) {
@@ -886,7 +888,7 @@ export function coif(rig, mat) {
 }
 
 /** A short capelet riding the chest and covering the shoulder line, under a hood or cowl. */
-function capelet(rig, mat) {
+export function capelet(rig, mat) {
   const H = rig.H;
   const [, ny] = J(rig, "neck");
   const cape = rigidTube(

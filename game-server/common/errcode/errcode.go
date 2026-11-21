@@ -237,6 +237,34 @@ const (
 	// is held for it; buying out is still allowed (ADR-0054). Decided by
 	// marketplace-service. Added for FS-72KT8 (No bidding against your own lead).
 	AlreadyLeading Code = "ALREADY_LEADING"
+
+	// --- Passive tree (FS-8RZ51) ------------------------------------------------
+	// The spend rule's refusals. Decided by common/passivetree, answered by
+	// character-service on SpendPassivePoint; game-service reads them for its
+	// words. FS-8RZ51 R9.
+
+	// PassiveUnknownNode: the node is not one of the character's class's nodes
+	// (an unknown id, or another class's node).
+	PassiveUnknownNode Code = "PASSIVE_UNKNOWN_NODE"
+
+	// PassiveRankOutOfOrder: the target rank is not one above the rank held.
+	// Ranks are taken one at a time. FS-8RZ51 R8.
+	PassiveRankOutOfOrder Code = "PASSIVE_RANK_OUT_OF_ORDER"
+
+	// PassiveMaxRank: the node is already at its highest rank.
+	PassiveMaxRank Code = "PASSIVE_MAX_RANK"
+
+	// PassiveTierLocked: the node's tier gate is not met by the ranks held.
+	// FS-8RZ51 R2.
+	PassiveTierLocked Code = "PASSIVE_TIER_LOCKED"
+
+	// PassiveNoPoints: the character has no unspent passive points.
+	// FS-8RZ51 R7.
+	PassiveNoPoints Code = "PASSIVE_NO_POINTS"
+
+	// PassiveSpecializationTaken: the other tier-6 node is already held, and
+	// a character holds one of the two. FS-8RZ51 R9.
+	PassiveSpecializationTaken Code = "PASSIVE_SPECIALIZATION_TAKEN"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -297,4 +325,12 @@ var domainCodes = map[Code]struct{}{
 
 	// FS-72KT8
 	AlreadyLeading: {},
+
+	// FS-8RZ51
+	PassiveUnknownNode:         {},
+	PassiveRankOutOfOrder:      {},
+	PassiveMaxRank:             {},
+	PassiveTierLocked:          {},
+	PassiveNoPoints:            {},
+	PassiveSpecializationTaken: {},
 }

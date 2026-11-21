@@ -239,6 +239,49 @@ func TestCombatSystem_Parry_EmptyWindowLocksTheStanceOutForASecondFromItsClose(t
 	assert.Zero(t, stance.LockoutRemaining)
 }
 
+// The whiff lockout keeps the length it started at, its overrun past the
+// window already taken off, for the merc's right-click cooldown on the wire;
+// it clears with the lockout. FS-Q18Q3 §A R2.
+func TestCombatSystem_Parry_LockoutKeepsTheLengthItStartedAt(t *testing.T) {
+	tests := []struct {
+		name string
+		dt   float64
+		want float64 // the lockout less the stance's overrun past 0.25 s
+	}{
+		{"60 Hz", 1.0 / 60, 1.0 - 1.0/60},
+		{"30 Hz", 1.0 / 30, 1.0 - (8.0/30 - 0.25)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newStanceWorld(tt.dt)
+			merc := parryMerc(w.em, 100, 100)
+			stance := parryOf(merc)
+
+			castParry(merc)
+			for range 60 {
+				w.tick()
+				if stance.LockoutRemaining > 0 {
+					break
+				}
+			}
+			require.Positive(t, stance.LockoutRemaining, "the window closed empty")
+
+			assert.InDelta(t, tt.want, stance.LockoutRemaining, 1e-9)
+			assert.InDelta(t, tt.want, stance.LockoutTotal, 1e-9, "the tick it starts")
+
+			w.tick()
+			assert.InDelta(t, tt.want-tt.dt, stance.LockoutRemaining, 1e-9)
+			assert.InDelta(t, tt.want, stance.LockoutTotal, 1e-9, "the length it started at stays put")
+
+			for stance.LockoutRemaining > 0 {
+				w.tick()
+			}
+			assert.Zero(t, stance.LockoutTotal, "cleared with the lockout")
+		})
+	}
+}
+
 // A window that negated a strike starts no lockout: the merc can raise the
 // stance again on the tick it closes. FS-MAMHR §Requirements 15.
 func TestCombatSystem_Parry_WindowThatParriedStartsNoLockout(t *testing.T) {

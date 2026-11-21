@@ -28,17 +28,21 @@ func (s *ResourceSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		if !ok || !InPlay(entity) {
 			continue
 		}
-		regenerate(rc.(*components.ResourceComponent), deltaTime)
+		regenerate(rc.(*components.ResourceComponent), passiveBonus(entity).RegenPercent, deltaTime)
 	}
 }
 
-func regenerate(pool *components.ResourceComponent, deltaTime float64) {
+// regenerate gains the pool its regen for deltaTime, its base raised by
+// bonusPercent of itself (the passive tree's, FS-8RZ51 R26), accrued in
+// sub-units so a bonus below a whole point is never rounded away.
+func regenerate(pool *components.ResourceComponent, bonusPercent, deltaTime float64) {
 	if pool.RegenPerSecond <= 0 {
 		return
 	}
 	if pool.Current < pool.Max {
+		perSecond := float64(pool.RegenPerSecond) * (1 + bonusPercent/100)
 		// rounded to the nearest sub-unit: exact whenever the tick divides it
-		pool.Accrued += int(math.Round(float64(pool.RegenPerSecond) * deltaTime * components.ResourceSubUnitsPerPoint))
+		pool.Accrued += int(math.Round(perSecond * deltaTime * components.ResourceSubUnitsPerPoint))
 		pool.Current += pool.Accrued / components.ResourceSubUnitsPerPoint
 		pool.Accrued %= components.ResourceSubUnitsPerPoint
 	}

@@ -94,6 +94,39 @@ func TestSerializeBackendState_MonsterAtNoHealthIsDead(t *testing.T) {
 	assert.Equal(t, string(components.MonsterActionDead), backendState.Monsters[0].Action)
 }
 
+// A stunned monster goes out as the `stunned` action, the only wire change for
+// the stun; one at no health while stunned lies dead. FS-04EEA §C R17.
+func TestSerializeBackendState_StunnedIsTheStunnedActionUntilDead(t *testing.T) {
+	tests := []struct {
+		name   string
+		health int
+		want   components.MonsterAction
+	}{
+		{"alive and stunned", 150, components.MonsterActionStunned},
+		{"killed while stunned", 0, components.MonsterActionDead},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			e := addMonster(em, "Troll", 300, 200, tt.health, 207)
+			mc, _ := e.GetComponent(ecs.ComponentTypeEnemy)
+			m := mc.(*components.MonsterComponent)
+			m.Action, m.StunRemaining = components.MonsterActionStunned, 0.6
+			s := NewStateSerializer(em, nil)
+
+			backendState, err := s.SerializeBackendState(context.Background(), uuid.New(), types.WorldTypeRun, em.GetAllEntities())
+			require.NoError(t, err)
+			clientState := s.FormatStateToClientState(backendState, uuid.New())
+
+			require.Len(t, clientState.Monsters, 1)
+			wire := wireOf(t, clientState)
+			got := wire["monsters"].([]any)[0].(map[string]any)
+			assert.Equal(t, string(tt.want), got["action"])
+		})
+	}
+}
+
 // A demon's fire claw goes out as the `claw` action, the only wire change for
 // it; a demon at no health mid-claw lies dead. FS-VHGE7 §B R24–25.
 func TestSerializeBackendState_DemonClawIsTheClawActionUntilDead(t *testing.T) {

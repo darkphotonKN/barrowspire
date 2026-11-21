@@ -14,11 +14,13 @@ import (
 	CombatSystem is the only code that reduces Health. FS-77AB6 §Requirements 1–11.
 
 	Handlers record attack intents as component data; this resolves them on the
-	tick: cooldown, cost, delivery (a targeted strike, a cone, projectiles, a dash),
-	then each hit through the damage formula. A dash sets a charge going that the
-	MovementSystem carries over the ticks after; this ends it once it is spent or
-	stopped, or when a new cast lands. Projectile impacts detected earlier
-	in the same tick are handed in by the ProjectileSystem and resolved here too.
+	tick: cooldown, cost, delivery (a targeted strike, a cone, projectiles, a dash,
+	a blink, an Arrow Rain), then each hit through the damage formula. A dash sets
+	a charge going that the MovementSystem carries over the ticks after; this ends
+	it once it is spent or stopped, or when a new cast lands. A blink is no charge:
+	it moves its caster at once, as far as the Ground lets a body reach. An Arrow
+	Rain is a floor entity this steps, its volleys falling on the ticks after.
+	Projectile impacts detected earlier in the same tick are handed in by the ProjectileSystem and resolved here too.
 
 	The worn uniques that ride on combat resolve here as well, every hit through
 	applyHit so a kill they make is credited to the wearer: Gravewarden's Oath
@@ -30,6 +32,11 @@ import (
 	exception): stances are raised before any strike resolves, and a monster
 	strike landing on an open one is negated for a parry charge.
 	FS-MAMHR §Requirements 10–21.
+
+	The passive tree's kickers ride on combat too, read from the body's
+	passive bonus (kickers.go): their stats change a row as a cast resolves,
+	their rank-3 rules run on a resolved cast, a landing hit and an ended
+	charge. FS-8RZ51 §F R29.
 */
 
 // Impact is a projectile reaching a damageable entity, waiting to be resolved.
@@ -76,6 +83,10 @@ type CombatSystem struct {
 	roll         func() float64
 	playerDamage PlayerDamage
 	effects      UniqueEffectTuning
+	// Ground is what a Blink lands on: the world's walls, doors, edge and, on a
+	// dungeon floor, its cells. A session hands over its own MovementSystem; a
+	// bare system stands on a run floor of today's size.
+	Ground Ground
 
 	// per-tick scratch: the floor this tick resolves on, and the kills it made
 	floor int
@@ -83,7 +94,14 @@ type CombatSystem struct {
 }
 
 func NewCombatSystem(em *ecs.EntityManager, roll func() float64, playerDamage PlayerDamage, effects UniqueEffectTuning) *CombatSystem {
-	return &CombatSystem{em: em, roll: roll, playerDamage: playerDamage, effects: effects}
+	return &CombatSystem{em: em, roll: roll, playerDamage: playerDamage, effects: effects, Ground: NewMovementSystem()}
+}
+
+// Ground is where a straight move through the world lands: the farthest point
+// toward to a body standing at from reaches without crossing anything that
+// blocks a walk. FS-04EEA §D R19.
+type Ground interface {
+	Reach(entities []*ecs.Entity, fromX, fromY, toX, toY float64) (x, y float64)
 }
 
 type delivery int
@@ -93,6 +111,15 @@ const (
 	deliverCone
 	deliverProjectile
 	deliverMovement
+	// deliverAround hits every valid target within reach all the way round
+	// the caster, its aim ignored. FS-04EEA §B R8.
+	deliverAround
+	// deliverBlink moves the caster toward its aim on the tick it resolves,
+	// never through what blocks a walk. FS-04EEA §D R18–R22.
+	deliverBlink
+	// deliverRain marks a circle at the aim, within reach, that volleys fall
+	// on over the ticks after. FS-04EEA §E R23–R24.
+	deliverRain
 )
 
 type scalingStat int
@@ -116,6 +143,9 @@ type projectileSpec struct {
 }
 
 type attackSpec struct {
+	// kind is the row this resolves as, set as a cast resolves: the intent's,
+	// or the riposte a cut arms into.
+	kind        components.AttackKind
 	delivery    delivery
 	damageType  components.DamageType
 	scaling     scalingStat
@@ -134,6 +164,16 @@ type attackSpec struct {
 	// casts but the dash; never a monster's. FS-JS7C8 §Change: Attacking pins
 	// the attacker R51.
 	pins bool
+	// spendsPool: a resolving cast spends every unit the caster's pool holds,
+	// n, cost being the least it needs, and lands at coefficient × n.
+	// FS-04EEA §F R29–R32.
+	spendsPool bool
+	// stuns: every monster a hit of it leaves alive is stunned (stunFor).
+	// FS-04EEA §B R10.
+	stuns bool
+	// pierce is what the caster's passives add to its projectiles' pierce, on
+	// top of a worn Lantern's. FS-8RZ51 R29.
+	pierce int
 }
 
 const (
@@ -144,10 +184,33 @@ const (
 	cutRange    = 55.0
 	cutHalfCone = 35 * math.Pi / 180 // a 70° cone
 	// the riposte: a wide, long cleave toward the cursor, paid with every parry
-	// charge the merc can hold. Charter defaults. FS-MAMHR §Requirements 23.
+	// charge the merc can hold; a Duelist's arms and pays at 2, a Sellsword's
+	// never arms (quick_riposte.go).
+	// Charter defaults. FS-MAMHR §Requirements 23.
 	riposteRange        = 90.0
 	riposteHalfCone     = 120 * math.Pi / 180 // a 240° cone
 	riposteParryCharges = 3
+	// Earthbreaker: a ground slam all round the warrior. Charter defaults.
+	// FS-04EEA §B R8.
+	earthbreakerRange = 90.0
+	// its stun: monsterStun on what it leaves alive, bossStun on a boss, a
+	// champion included. Charter defaults. FS-04EEA §B R10.
+	monsterStun = 1.0 // seconds
+	bossStun    = 0.5 // seconds
+	// Blink: the farthest the mage moves. Charter default. FS-04EEA §D R18.
+	blinkDistance = 180.0
+	// Settle the Debt: a flurry all round the merc. settleTheDebtLeastCost is
+	// the fewest parry charges it needs; it spends every one held. Charter
+	// defaults. FS-04EEA §F R29–R31.
+	settleTheDebtRange     = 90.0
+	settleTheDebtLeastCost = 1
+	// Arrow Rain: a circle of arrowRainRadius centred at most arrowRainReach
+	// from the archer, arrowRainVolleys falling on it arrowRainVolleyGap apart,
+	// the first one gap after the cast. Charter defaults. FS-04EEA §E R23–R24.
+	arrowRainReach     = 300.0
+	arrowRainRadius    = 70.0
+	arrowRainVolleys   = 5
+	arrowRainVolleyGap = 0.3 // seconds
 
 	// The charge runs dashDistance at dashSpeed: 0.4 s, 12 ticks of 15 px at
 	// the world's 30 per second. The distance is the old teleport's. Under the
@@ -263,6 +326,34 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackDash: {
 		delivery: deliverMovement, cost: 25, cooldown: 0.4,
 	},
+	// the warrior's tree ability: a slam all round on Strength, as the slash.
+	// FS-04EEA §B R8–R9 (integrator correction 2026-11-21), §A R5.
+	components.AttackEarthbreaker: {
+		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
+		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
+		pins: true, stuns: true,
+	},
+	// the mage's tree ability: an instant move toward the cursor, paid in
+	// mana. FS-04EEA §D R18, §A R5.
+	components.AttackBlink: {
+		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
+		pins: true,
+	},
+	// the archer's tree ability: a circle the arrows fall on, 5 volleys each
+	// on Agility. FS-04EEA §E R23–R25, §A R5.
+	components.AttackArrowRain: {
+		delivery: deliverRain, damageType: components.DamagePhysical, scaling: scaleAgility,
+		coefficient: 0.5, cost: 35, cooldown: 12, reach: arrowRainReach,
+		pins: true,
+	},
+	// the mercenary's tree ability: one hit all round per target at 1.0 per
+	// parry charge spent, on the cut's hybrid scaling. Its 0.25 s is the cut's
+	// slot (cooldownSlot), as the riposte's is. FS-04EEA §F R29–R33, §A R5.
+	components.AttackSettleTheDebt: {
+		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrengthAgility,
+		coefficient: 1.0, cost: settleTheDebtLeastCost, cooldown: 0.25, reach: settleTheDebtRange,
+		pins: true, spendsPool: true,
+	},
 }
 
 // AttackCost is what one resolved cast of an attack row costs its caster's
@@ -270,6 +361,31 @@ var attackTable = map[components.AttackKind]attackSpec{
 // FS-8AY7S §Requirements 9, 12.
 func AttackCost(kind components.AttackKind) int {
 	return attackTable[kind].cost
+}
+
+// TreeAbilityCost is what a tree ability costs its caster's class resource, as
+// the wire shows it: its row's cost, which for Settle the Debt, spending every
+// parry charge held, is the least it needs. FS-04EEA §A R5; FS-Q18Q3 §A R5.
+func TreeAbilityCost(kind components.AttackKind) int {
+	return AttackCost(kind)
+}
+
+// treeAbilities are the attack kinds only a caster holding them resolves.
+// FS-04EEA §A R3.
+var treeAbilities = map[components.AttackKind]bool{
+	components.AttackEarthbreaker:  true,
+	components.AttackBlink:         true,
+	components.AttackArrowRain:     true,
+	components.AttackSettleTheDebt: true,
+}
+
+// cooldownSlot is the cooldown a kind starts and waits on: Settle the Debt has
+// none of its own and shares the cut's. FS-04EEA §F R33.
+func cooldownSlot(kind components.AttackKind) components.AttackKind {
+	if kind == components.AttackSettleTheDebt {
+		return components.AttackCut
+	}
+	return kind
 }
 
 // skillAliases folds every cast_skill id the client sends onto its attack row.
@@ -288,6 +404,10 @@ var skillAliases = map[string]components.AttackKind{
 	"dash":               components.AttackDash,
 	"sprint":             components.AttackDash,
 	"parry":              components.AttackParry,
+	"earthbreaker":       components.AttackEarthbreaker,
+	"blink":              components.AttackBlink,
+	"arrow_rain":         components.AttackArrowRain,
+	"settle_the_debt":    components.AttackSettleTheDebt,
 }
 
 // SkillAttackKind names the attack a cast_skill id asks for, false when unknown.
@@ -307,6 +427,11 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		s.floor = floor.Depth
 	}
 
+	// before any hit, so a mark laid last tick has run a tick down
+	for _, entity := range entities {
+		tickDashEnded(entity, deltaTime)
+	}
+
 	for _, impact := range impacts {
 		if target, ok := s.em.GetEntity(impact.TargetEntityID); ok {
 			s.applyHit(impact.Attack, target)
@@ -319,6 +444,12 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 	for _, entity := range entities {
 		if tc, ok := entity.GetComponent(ecs.ComponentTypeBurningTrail); ok {
 			s.burn(entity, tc.(*components.BurningTrailComponent), deltaTime, entities)
+		}
+	}
+
+	for _, entity := range entities {
+		if rc, ok := entity.GetComponent(ecs.ComponentTypeArrowRain); ok {
+			s.fall(entity, rc.(*components.ArrowRainComponent), deltaTime, entities)
 		}
 	}
 
@@ -371,10 +502,85 @@ func tickCooldowns(entity *ecs.Entity, deltaTime float64) {
 	for kind, remaining := range cooldowns.Remaining {
 		if remaining-deltaTime <= 0 {
 			delete(cooldowns.Remaining, kind)
+			delete(cooldowns.Total, kind)
 			continue
 		}
 		cooldowns.Remaining[kind] = remaining - deltaTime
 	}
+}
+
+// startCooldown runs kind's cooldown for length seconds from now, keeping the
+// length it started at beside it. FS-Q18Q3 §A R3.
+func startCooldown(cooldowns *components.CooldownComponent, kind components.AttackKind, length float64) {
+	if cooldowns.Total == nil {
+		cooldowns.Total = make(map[components.AttackKind]float64)
+	}
+	cooldowns.Remaining[kind] = length
+	cooldowns.Total[kind] = length
+}
+
+// AbilityCooldown is the seconds left before the delver's right-click ability
+// can be cast again and the length that wait started at; 0, 0 when none runs.
+// A mercenary's parry has no cooldown row, so theirs is the whiff lockout.
+// False when the entity has no ability. FS-Q18Q3 §A R1–R2.
+func AbilityCooldown(entity *ecs.Entity) (remaining, total float64, ok bool) {
+	ac, ok := entity.GetComponent(ecs.ComponentTypeAbility)
+	if !ok {
+		return 0, 0, false
+	}
+	kind := ac.(*components.AbilityComponent).Kind
+
+	if kind == components.AttackParry {
+		if pc, ok := entity.GetComponent(ecs.ComponentTypeParry); ok {
+			stance := pc.(*components.ParryComponent)
+			if stance.LockoutRemaining > 0 {
+				return stance.LockoutRemaining, stance.LockoutTotal, true
+			}
+		}
+		return 0, 0, true
+	}
+
+	if cc, ok := entity.GetComponent(ecs.ComponentTypeCooldown); ok {
+		cooldowns := cc.(*components.CooldownComponent)
+		if left := cooldowns.Remaining[kind]; left > 0 {
+			return left, cooldowns.Total[kind], true
+		}
+	}
+	return 0, 0, true
+}
+
+// HeldTreeAbility is the tree ability the delver holds: the one their class
+// names, once the ranks on their body hold their tree's tier-3 node. False
+// while the node is not held, or for anything whose class names none.
+// FS-04EEA §A R2–R3; FS-Q18Q3 §A R4.
+func HeldTreeAbility(entity *ecs.Entity) (components.AttackKind, bool) {
+	tc, ok := entity.GetComponent(ecs.ComponentTypeTreeAbility)
+	if !ok {
+		return "", false
+	}
+	tree := tc.(*components.TreeAbilityComponent)
+	if PassiveRanks(entity)[tree.Node] < 1 {
+		return "", false
+	}
+	return tree.Kind, true
+}
+
+// TreeAbilityCooldown is the seconds left before the delver's held tree
+// ability can be cast again and the length that wait started at; 0, 0 when
+// none runs. A mercenary's is the cut's slot. False while the tree ability is
+// not held. FS-04EEA §F R33; FS-Q18Q3 §A R4.
+func TreeAbilityCooldown(entity *ecs.Entity) (remaining, total float64, ok bool) {
+	kind, held := HeldTreeAbility(entity)
+	if !held {
+		return 0, 0, false
+	}
+	if cc, ok := entity.GetComponent(ecs.ComponentTypeCooldown); ok {
+		cooldowns := cc.(*components.CooldownComponent)
+		if left := cooldowns.Remaining[cooldownSlot(kind)]; left > 0 {
+			return left, cooldowns.Total[cooldownSlot(kind)], true
+		}
+	}
+	return 0, 0, true
 }
 
 // resolve carries out one intent. A request while its caster is pinned, inside
@@ -388,10 +594,18 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		s.landAbility(attacker, intent, entities)
 		return
 	}
+	if treeAbilities[intent.Kind] {
+		// refused outright, like an unaffordable cast, unless the caster's
+		// class names it and they hold the node granting it (FS-04EEA §A R3)
+		if held, ok := HeldTreeAbility(attacker); !ok || held != intent.Kind {
+			return
+		}
+	}
 	spec, ok := attackTable[intent.Kind]
 	if !ok {
 		return
 	}
+	spec.kind = intent.Kind
 	if intent.Kind == components.AttackMonsterStrike && intent.Coefficient > 0 {
 		// a demon's slam: its multiple of its level damage (FS-VHGE7 §B R16)
 		spec.coefficient = intent.Coefficient
@@ -420,7 +634,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	var cooldowns *components.CooldownComponent
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCooldown); ok {
 		cooldowns = cc.(*components.CooldownComponent)
-		if cooldowns.Remaining[intent.Kind] > 0 {
+		if cooldowns.Remaining[cooldownSlot(intent.Kind)] > 0 {
 			return
 		}
 	}
@@ -428,21 +642,45 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	var pool *components.ResourceComponent
 	if rc, ok := attacker.GetComponent(ecs.ComponentTypeResource); ok {
 		pool = rc.(*components.ResourceComponent)
-		spec = armCut(intent.Kind, pool, spec)
+		spec = armCut(attacker, intent.Kind, pool, spec)
+	}
+	// the passive tree's per-rank stats, before the cost is checked, so a
+	// lowered cost is affordable at what it is lowered to (FS-8RZ51 R29)
+	spec = withPassives(spec, passiveBonus(attacker))
+	// a Sellsword's charges held as it resolves, before its cost is spent
+	// (FS-E1ZDG §J R35)
+	stacks := sellswordStacks(attacker, pool)
+	spec = withSellswordStacks(spec, stacks)
+	if pool != nil {
 		if pool.Current < spec.cost {
 			return
 		}
+		if spec.spendsPool {
+			spec = spendAll(spec, pool.Current)
+		}
+	} else if spec.spendsPool {
+		return // nothing to spend
 	}
+	spec = kickAsCast(attacker, spec)
 
+	landed, monstersHit, killsBefore := 0, 0, len(s.kills)
 	switch spec.delivery {
 	case deliverTargeted:
 		if !s.strike(attacker, at, intent.TargetEntityID, spec) {
 			return
 		}
 	case deliverCone:
-		s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
+		landed, monstersHit = s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
+	case deliverAround:
+		landed, monstersHit = s.around(attacker, at, spec, entities)
+	case deliverBlink:
+		if !s.blink(attacker, at, intent.TargetX, intent.TargetY, spec, entities) {
+			return
+		}
 	case deliverProjectile:
 		s.fire(attacker, at, intent.TargetX, intent.TargetY, spec)
+	case deliverRain:
+		s.startRain(attacker, at, intent.TargetX, intent.TargetY, spec)
 	}
 
 	// a new cast stops a charge in flight where the body stands; a new dash then
@@ -455,14 +693,39 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if pool != nil {
 		pool.Current -= spec.cost
 	}
-	// worn attack speed, already capped, shortens every cooldown and the pin
-	pace := 1 + float64(wornGear(attacker).AttackSpeedPercent)/100
+	kickAfterCast(attacker, spec.kind, monstersHit, len(s.kills)-killsBefore)
+	bloodHeal(attacker, spec.kind, landed)
+	// worn attack speed, already capped, the Berserker's past the cap and a
+	// Sellsword's stacks on top shorten every cooldown and the pin
+	pace := 1 + (float64(wornGear(attacker).AttackSpeedPercent+passiveBonus(attacker).AttackSpeedPastCapPercent)+sellswordAttackSpeedPercent(stacks))/100
 	if cooldowns != nil {
-		cooldowns.Remaining[intent.Kind] = spec.cooldown / pace
+		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/pace)
 	}
 	if spec.pins {
 		startAttackPin(attacker, AttackPinDuration/pace)
 	}
+}
+
+// blink moves the caster toward (aimX, aimY) by up to the row's reach, landing
+// where the Ground lets a body reach, reporting false when that is nowhere: the
+// aim under the caster, or a blocker at their edge. A charge in flight ends
+// where the body stood before the move, so an Ashwalk trail never runs along
+// the blink; nothing of the blink itself lasts past this tick. FS-04EEA §D
+// R18–R22.
+func (s *CombatSystem) blink(caster *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) bool {
+	dx, dy := aimX-at.X, aimY-at.Y
+	dist := math.Hypot(dx, dy)
+	if dist == 0 {
+		return false
+	}
+	share := min(dist, spec.reach) / dist
+	x, y := s.Ground.Reach(entities, at.X, at.Y, at.X+dx*share, at.Y+dy*share)
+	if math.Hypot(x-at.X, y-at.Y) <= dashEpsilon {
+		return false
+	}
+	s.endCharge(caster)
+	at.X, at.Y = x, y
+	return true
 }
 
 // startAttackPin pins the caster for length seconds. A pinned caster's casts
@@ -488,15 +751,31 @@ func tickAttackPin(entity *ecs.Entity, deltaTime float64) {
 }
 
 // armCut is the row a cut that passed its cooldown resolves as: the riposte
-// when the caster holds 3 parry charges, else the cut as it is. Its cost then
-// spends all 3, whether or not it hits anything; the cooldown it starts stays
-// the cut's slot. Any other attack, or any other resource, is left alone.
-// FS-MAMHR §Requirements 23–25.
-func armCut(kind components.AttackKind, pool *components.ResourceComponent, spec attackSpec) attackSpec {
-	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges || pool.Current < riposteParryCharges {
+// when the caster holds the parry charges it arms at (riposteChargesOf: 3, a
+// Duelist's 2, never for a Sellsword), else the cut as it is. Its cost then
+// spends that many, whether or not it hits anything; the cooldown it starts
+// stays the cut's slot. Any other attack, or any other resource, is left
+// alone. FS-MAMHR §Requirements 23–25; FS-E1ZDG §I R32, §J R33.
+func armCut(caster *ecs.Entity, kind components.AttackKind, pool *components.ResourceComponent, spec attackSpec) attackSpec {
+	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges {
 		return spec
 	}
-	return attackTable[components.AttackRiposte]
+	charges, ripostes := riposteChargesOf(caster)
+	if !ripostes || pool.Current < charges {
+		return spec
+	}
+	riposte := attackTable[components.AttackRiposte]
+	riposte.kind = components.AttackRiposte
+	riposte.cost = charges
+	return riposte
+}
+
+// spendAll is a pool-spending row as it resolves on n units held: it costs all
+// n and lands at its coefficient × n. FS-04EEA §F R30–R31.
+func spendAll(spec attackSpec, n int) attackSpec {
+	spec.cost = n
+	spec.coefficient *= float64(n)
+	return spec
 }
 
 // strike lands a targeted attack, reporting false when there was nothing in
@@ -542,7 +821,7 @@ func stepStance(entity *ecs.Entity, deltaTime float64) {
 		return
 	}
 	stance := pc.(*components.ParryComponent)
-	runStanceClocks(stance, deltaTime)
+	runStanceClocks(stance, deltaTime, parryWindowOf(entity))
 
 	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
 	if !ok {
@@ -562,16 +841,22 @@ func stepStance(entity *ecs.Entity, deltaTime float64) {
 	intents.Pending = rest
 }
 
-// runStanceClocks advances the whiff lockout and an open stance by a tick. A
-// stance past its window closes; if it negated nothing, the lockout starts,
-// counted from the moment the window ended rather than from this tick.
+// parryWindowOf is how long the entity's parry stance stays open: the
+// charter's window and what their passives add to it. FS-8RZ51 R29.
+func parryWindowOf(entity *ecs.Entity) float64 {
+	return parryWindow + passiveBonus(entity).ParryWindowSeconds
+}
+
+// runStanceClocks advances the whiff lockout and an open stance of window by
+// a tick. A stance past its window closes; if it negated nothing, the lockout
+// starts, counted from the moment the window ended rather than from this tick.
 // FS-MAMHR §Requirements 11, 15.
-func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
+func runStanceClocks(stance *components.ParryComponent, deltaTime, window float64) {
 	// before the close below, so a lockout started this tick is not shortened twice
 	if stance.LockoutRemaining > 0 {
 		stance.LockoutRemaining -= deltaTime
 		if stance.LockoutRemaining <= parryEpsilon {
-			stance.LockoutRemaining = 0
+			stance.LockoutRemaining, stance.LockoutTotal = 0, 0
 		}
 	}
 
@@ -579,20 +864,21 @@ func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
 		return
 	}
 	stance.OpenFor += deltaTime
-	if stance.OpenFor <= parryWindow+parryEpsilon {
+	if stance.OpenFor <= window+parryEpsilon {
 		return
 	}
 	if !stance.Negated {
-		stance.LockoutRemaining = parryLockout - (stance.OpenFor - parryWindow)
+		stance.LockoutRemaining = parryLockout - (stance.OpenFor - window)
+		stance.LockoutTotal = stance.LockoutRemaining
 	}
 	stance.Open, stance.OpenFor, stance.Negated = false, 0, false
 }
 
 // parryStrike negates a strike landing on the target's open parry stance: no
 // damage, no crit roll, so nothing for Gravewarden's Oath to reflect. It grants
-// a parry charge up to the cap, counts the parry even at the cap, and leaves
-// the stance open. False when the target has no open stance.
-// FS-MAMHR §Requirements 14, 19.
+// a parry charge (two early in a Practiced Guard window, FS-8RZ51 R29) up to
+// the cap, counts the parry even at the cap, and leaves the stance open. False
+// when the target has no open stance. FS-MAMHR §Requirements 14, 19.
 func parryStrike(target *ecs.Entity) bool {
 	pc, ok := target.GetComponent(ecs.ComponentTypeParry)
 	if !ok {
@@ -607,7 +893,7 @@ func parryStrike(target *ecs.Entity) bool {
 	stance.Parries++
 	if rc, ok := target.GetComponent(ecs.ComponentTypeResource); ok {
 		if parryCharges := rc.(*components.ResourceComponent); parryCharges.Kind == components.ResourceParryCharges {
-			parryCharges.Current = min(parryCharges.Current+1, parryCharges.Max)
+			parryCharges.Current = min(parryCharges.Current+chargesForParry(target, stance), parryCharges.Max)
 		}
 	}
 
@@ -616,13 +902,36 @@ func parryStrike(target *ecs.Entity) bool {
 }
 
 // cone hits every valid target within the attack's reach and arc around the
-// aim, each resolved on its own.
-func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) {
+// aim, each resolved on its own, and reports how many targets it landed on and
+// how many of them were monsters.
+func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) (landed, monstersHit int) {
 	aim := math.Atan2(aimY-at.Y, aimX-at.X)
-	attack := s.snapshot(attacker, spec)
+	return s.hitWithinReach(attacker, at, spec, entities, func(dx, dy float64) bool {
+		return math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) <= spec.halfArc
+	})
+}
 
+// around hits every valid target within the attack's reach all the way round
+// the caster, each resolved on its own, and reports how many targets it landed
+// on and how many of them were monsters. FS-04EEA §B R8.
+func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) (landed, monstersHit int) {
+	return s.hitWithinReach(attacker, at, spec, entities, allRound)
+}
+
+// hitWithinReach hits every valid target other than the attacker whose centre
+// is within the attack's reach and inShape, given its offset from the attacker,
+// and reports how many targets it landed on and how many of them were monsters.
+func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) (landed, monstersHit int) {
+	return s.hitAround(s.snapshot(attacker, spec), at.X, at.Y, spec.reach, entities, inShape)
+}
+
+// hitAround lands the attack once on every valid target other than its
+// attacker whose centre is within reach of (x, y) and inShape, given its
+// offset from there, and reports how many targets a hit landed on and how many
+// of them were monsters.
+func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach float64, entities []*ecs.Entity, inShape func(dx, dy float64) bool) (landed, monstersHit int) {
 	for _, target := range entities {
-		if target.ID == attacker.ID || !CanHit(attack, target, s.playerDamage) {
+		if target.ID == attack.AttackerEntityID || !CanHit(attack, target, s.playerDamage) {
 			continue
 		}
 		tc, ok := target.GetComponent(ecs.ComponentTypeTransform)
@@ -631,17 +940,24 @@ func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformCompon
 		}
 		to := tc.(*components.TransformComponent)
 
-		dx, dy := to.X-at.X, to.Y-at.Y
-		if math.Hypot(dx, dy) > spec.reach {
-			continue
-		}
-		if math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) > spec.halfArc {
+		dx, dy := to.X-x, to.Y-y
+		if math.Hypot(dx, dy) > reach || !inShape(dx, dy) {
 			continue
 		}
 
-		s.applyHit(attack, target)
+		if !s.applyHit(attack, target) {
+			continue
+		}
+		landed++
+		if target.HasComponent(ecs.ComponentTypeEnemy) {
+			monstersHit++
+		}
 	}
+	return landed, monstersHit
 }
+
+// allRound is a shape that takes every offset.
+func allRound(_, _ float64) bool { return true }
 
 // fire spawns the attack's projectiles, each carrying the attacker as they are now.
 func (s *CombatSystem) fire(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec) {
@@ -731,6 +1047,7 @@ func (s *CombatSystem) endCharge(entity *ecs.Entity) {
 		"unspent", charge.Remaining,
 	)
 	s.layBurningTrail(entity, charge.FromX, charge.FromY, at.X, at.Y)
+	markDashEnded(entity)
 }
 
 // layBurningTrail lays an Ashwalk Greaves wearer's trail along the path just
@@ -817,6 +1134,52 @@ func (s *CombatSystem) burn(entity *ecs.Entity, trail *components.BurningTrailCo
 	}
 }
 
+// startRain marks an Arrow Rain's circle: centred on the aim when it is
+// within the row's reach of the archer, else on the point that far along the
+// line toward it. The archer's volley hit is captured now, as a projectile's
+// is when it is fired. Nothing checks line of sight. FS-04EEA §E R23, R25, R27.
+func (s *CombatSystem) startRain(archer *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec) {
+	x, y := aimX, aimY
+	if dist := math.Hypot(aimX-at.X, aimY-at.Y); dist > spec.reach {
+		share := spec.reach / dist
+		x, y = at.X+(aimX-at.X)*share, at.Y+(aimY-at.Y)*share
+	}
+
+	rain := s.em.CreateEntity()
+	rain.AddComponent(&components.ArrowRainComponent{
+		Attack:      s.snapshot(archer, spec),
+		X:           x,
+		Y:           y,
+		Radius:      arrowRainRadius,
+		VolleysLeft: arrowRainVolleys,
+		UntilVolley: arrowRainVolleyGap,
+	})
+}
+
+// rainEpsilon absorbs the float drift of summing tick lengths, so the volleys
+// fall on exactly the ticks at 0.3, 0.6 … 1.5 s on 1/30 and 1/60 s ticks.
+const rainEpsilon = 1e-9
+
+// fall advances one Arrow Rain by a tick: on a volley it hits each valid
+// target whose centre is within its circle once, through applyHit, so each
+// rolls its own crit and a kill is credited to the archer. It keeps falling
+// whatever became of the archer, and goes once its last volley has fallen.
+// FS-04EEA §E R24–R26.
+func (s *CombatSystem) fall(entity *ecs.Entity, rain *components.ArrowRainComponent, deltaTime float64, entities []*ecs.Entity) {
+	rain.UntilVolley -= deltaTime
+	if rain.UntilVolley > rainEpsilon {
+		return
+	}
+
+	s.hitAround(rain.Attack, rain.X, rain.Y, rain.Radius, entities, allRound)
+
+	rain.VolleysLeft--
+	rain.UntilVolley += arrowRainVolleyGap
+	if rain.VolleysLeft <= 0 {
+		s.em.RemoveEntity(entity.ID)
+	}
+}
+
 // distanceToSegment is how far (px, py) lies from the segment (ax, ay)–(bx, by).
 func distanceToSegment(px, py, ax, ay, bx, by float64) float64 {
 	dx, dy := bx-ax, by-ay
@@ -830,12 +1193,15 @@ func distanceToSegment(px, py, ax, ay, bx, by float64) float64 {
 
 // applyHit resolves one hit against one target. A hit CanHit refuses is
 // discarded before the crit roll: one on a dead or resolved target, a monster's
-// on a monster, and, with player damage off, a delver's on a delver. A hit on a
+// on a monster, with player damage off a delver's on a delver, and a monster's
+// strike or shot an archer sidesteps (FS-8RZ51 R29). A hit on a
 // monster records its attacker, and the killing blow records the kill. A
-// monster's strike on a Gravewarden wearer is reflected.
-func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.Entity) {
-	if !CanHit(attack, target, s.playerDamage) {
-		return
+// Spellwarden's Arcane Ward takes its share from mana before HP. A monster's
+// strike on a Gravewarden wearer is reflected, on the whole hit. It reports
+// whether the hit landed.
+func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.Entity) bool {
+	if !CanHit(attack, target, s.playerDamage) || s.sidestepped(attack, target) {
+		return false
 	}
 	hc, _ := target.GetComponent(ecs.ComponentTypeHealth)
 	health := hc.(*components.HealthComponent)
@@ -843,17 +1209,29 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 
 	damage, crit := attack.TrueDamage, false
 	if damage <= 0 {
+		if s.forcedCrit(attack, target) {
+			attack.CritChance = 1
+		}
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
 	}
-	health.CurrentHealth = max(health.CurrentHealth-damage, 0)
+	damage = damageTaken(target, health, damage)
+	// the ward's mana share comes off first; only the HP share can be a
+	// killing blow (FS-E1ZDG Edge States)
+	toHealth := arcaneWard(target, damage)
+	if !lastStand(target, health, toHealth) {
+		health.CurrentHealth = max(health.CurrentHealth-toHealth, 0)
+	}
 
+	// the hit that took it to 0 is the killing blow; every later one stops at
+	// the dead-target check above, so this is true once per monster
+	kill := targetIsMonster && health.CurrentHealth == 0
 	if targetIsMonster {
 		monster := mc.(*components.MonsterComponent)
 		monster.LastAttacker = attack.AttackerEntityID
-		// the hit that took it to 0 is the killing blow; every later one stops
-		// at the dead-target check above, so this runs once per monster
-		if health.CurrentHealth == 0 {
+		if kill {
 			s.recordKill(attack, target, monster)
+		} else if attack.Stuns {
+			stun(monster, stunFor(monster))
 		}
 	}
 
@@ -868,6 +1246,20 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 	if attack.FromMonster {
 		s.reflect(attack, target, damage)
 	}
+	s.kickAfterHit(attack, crit, kill)
+	s.combust(attack, target, damage, crit)
+	s.split(attack, target, crit)
+	s.shadowRefund(attack, target)
+	return true
+}
+
+// stunFor is how long Earthbreaker stuns the monster: bossStun on a boss,
+// monsterStun on any other. FS-04EEA §B R10.
+func stunFor(monster *components.MonsterComponent) float64 {
+	if monster.Boss {
+		return bossStun
+	}
+	return monsterStun
 }
 
 // reflect answers a monster's strike on a Gravewarden's Oath wearer still in
@@ -917,7 +1309,9 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 // snapshot captures what the attacker brings to this attack right now: class
 // attack plus the equipped weapon's attack_power and worn flat damage, the
 // scaling stat plus the worn attribute, crit chance from the weapon's
-// critical_rate plus worn crit points, and a worn Lantern's pierce.
+// critical_rate plus worn crit points (or a forced crit the cast carries), and
+// a worn Lantern's pierce, or a Shadow Ranger's Shadow Shot piercing all; a
+// Berserker's coefficient blood-priced.
 func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
 	attack := bareSnapshot(attacker, spec)
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
@@ -935,10 +1329,16 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 	attack.ScalingStat += scalingValue(spec.scaling, gear.Strength, gear.Agility, gear.Intelligence)
 	attack.Power += float64(gear.FlatDamage)
 	attack.CritChance = CritChance(critRate + float64(gear.CritChance)/100)
+	if critsAsCast(attacker, spec.kind) {
+		attack.CritChance = 1
+	}
 
 	if WornUniqueEffects(s.em, attacker)[types.UniqueEffectPierce] {
 		attack.Pierce = s.effects.PierceExtraTargets
 	}
+	attack.Pierce += spec.pierce
+	attack.PiercesAll = shadowRangersShadowShot(attacker, spec.kind)
+	attack.Coefficient *= bloodPricedDamage(attacker)
 
 	return attack
 }
@@ -949,10 +1349,12 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
 	attack := components.AttackSnapshot{
 		AttackerEntityID: attacker.ID,
+		Kind:             spec.kind,
 		DamageType:       spec.damageType,
 		Coefficient:      spec.coefficient,
 		CritChance:       CritChance(0),
 		FromMonster:      attacker.HasComponent(ecs.ComponentTypeEnemy),
+		Stuns:            spec.stuns,
 	}
 	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
 		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID
@@ -965,8 +1367,9 @@ func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapsh
 
 // mitigation is the target's defense (own + Σ armor defense_rating + worn
 // defense) and magic resistance (own + Σ armor magic_resistance + worn magic
-// resistance), read at the moment of the hit. A delver's own magic resistance
-// is 0; a monster's comes from its stat sheet.
+// resistance), read at the moment of the hit, with a Spellwarden's spell
+// resistance. A delver's own magic resistance is 0; a monster's comes from its
+// stat sheet.
 func (s *CombatSystem) mitigation(target *ecs.Entity) Mitigation {
 	var m Mitigation
 
@@ -986,6 +1389,8 @@ func (s *CombatSystem) mitigation(target *ecs.Entity) Mitigation {
 	gear := wornGear(target)
 	m.Defense += gear.Defense
 	m.MagicResistance += gear.MagicResistance
+
+	m.SpellResistance = spellResistanceOf(target)
 
 	return m
 }

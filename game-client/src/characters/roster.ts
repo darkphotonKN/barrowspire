@@ -24,6 +24,8 @@ export interface Character {
   levelFloor: number;
   /** Absent at the level cap. */
   nextLevelAt?: number;
+  /** The server's spec id (FS-E1ZDG §B.6); absent before the pick. */
+  specialization?: string;
   createdAt: string;
 }
 
@@ -60,6 +62,7 @@ export function fromServer(c: ServerCharacter): Character {
     experience: c.experience,
     levelFloor: c.levelFloor,
     nextLevelAt: c.nextLevelAt,
+    specialization: c.specialization,
     createdAt: c.createdAt,
   };
 }

@@ -14,11 +14,13 @@ import {
   VARIANT_ART,
   SCENE_ART,
   SCENE_SCOPED_GROUPS,
+  SPEC_LOOK_ART,
   atlasGroup,
   fieldArt,
   onDemandFor,
   poolGroups,
   sceneAtlases,
+  specLookFor,
   type OnDemandGroup,
 } from "./sceneArt";
 
@@ -31,6 +33,12 @@ const VARIANT_GROUPS = [
   "ghast", "ravener", "ashen_archer", "wight_archer", "cave_troll", "blood_troll", "plague_thrall",
   "blightborn", "shade", "phantom", "banshee", "goblin", "goblin_cutthroat", "goblin_reaver",
   "goblin_warchief", "ogre", "ogre_mauler", "ogre_tyrant", "dark_warrior", "dark_reaper",
+];
+
+/** FS-1J1CB R15: the eight spec looks' groups, `<stem>_<spec>`. */
+const SPEC_LOOK_GROUPS = [
+  "knight_guardian", "knight_berserker", "wizard_spellwarden", "wizard_pyromancer", "archer_hunter",
+  "archer_shadow_ranger", "mercenary_duelist", "mercenary_sellsword",
 ];
 
 /** Groups the shipped manifest has pages on. */
@@ -53,7 +61,7 @@ describe("the scene art table (FS-C4JWH §A)", () => {
 
   it("should take the scene-scoped groups from the table, and only those (R2)", () => {
     expect(sorted(SCENE_SCOPED_GROUPS)).toEqual(
-      sorted(["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife", ...VARIANT_GROUPS]),
+      sorted(["blood_demon", "boss", "creatures", "fodder", "folk", "wildlife", ...VARIANT_GROUPS, ...SPEC_LOOK_GROUPS]),
     );
   });
 
@@ -72,9 +80,11 @@ describe("the scene art table (FS-C4JWH §A)", () => {
     expect(fieldArt("toString")).toEqual(["wildlife"]);
   });
 
+  // a spec look not yet baked is skipped, not an error (FS-1J1CB R26)
   it("should name only groups the shipped manifest has, every variant group among them (FS-C8VM7 §H)", () => {
     const groups = bakedGroups(manifest);
-    for (const group of SCENE_SCOPED_GROUPS) expect(groups, group).toContain(group);
+    for (const group of SCENE_SCOPED_GROUPS)
+      if (!SPEC_LOOK_GROUPS.includes(group)) expect(groups, group).toContain(group);
     for (const group of VARIANT_GROUPS) expect(groups, group).toContain(group);
   });
 });
@@ -283,7 +293,7 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
   });
 
   it("should keep the class sheets and the monster sizing reference on resident groups", () => {
-    const sheets = ["mage", "archer", "mercenary", "warrior", undefined].map(characterSheet);
+    const sheets = ["mage", "archer", "mercenary", "warrior", undefined].map((cls) => characterSheet(cls));
     expect(new Set(sheets).size).toBe(4);
     expect(outsideScene(manifest, RESIDENT_ART, [...sheets, PLAYER_REFERENCE_SHEET])).toEqual([]);
   });
@@ -435,4 +445,97 @@ describe("the floor-scoped groups and a floor's pool (FS-C8VM7 §G R40-R43, ADR-
     expect(poolGroups(["ghoul", "troll", "bone_archer", "barrow_thrall", "spire_wraith"])).toEqual([]);
     expect(poolGroups(["blood_demon", "daagon", "demon", "wyrm"])).toEqual([]);
   });
+});
+
+// FS-1J1CB §C R18, R26; ADR-0088 Decisions 1, 7: each spec look its own on-demand group.
+describe("the spec looks' groups (FS-1J1CB §C)", () => {
+  /** Every group a scene's preload set names. */
+  const preloaded = [
+    SCENE_ART.MainMenuScene,
+    SCENE_ART.CharacterCreationScene,
+    SCENE_ART.HubScene,
+    ...Object.values(SCENE_ART.FieldScene),
+    SCENE_ART.BarrowspireScene,
+  ].flat() as string[];
+
+  /**
+   * The shipped manifest with the Berserker's look baked as feat/spec-looks bakes it: its sheet
+   * alone in its own group, spilling to a second page, at 1.5x (R15).
+   */
+  const withBerserker = () => {
+    const m = structuredClone(manifest);
+    const page = (image: string) => ({ ...manifest.atlases["knight-0"], image });
+    m.atlases["knight_berserker-0"] = page("knight_berserker-0.png");
+    m.atlases["knight_berserker-1"] = page("knight_berserker-1.png");
+    const look = structuredClone(manifest.sheets.char_knight_base);
+    look.atlas = "knight_berserker-1";
+    for (const [clip, anim] of Object.entries(look.animations))
+      anim.atlas = clip === "idle" ? "knight_berserker-1" : "knight_berserker-0";
+    m.sheets.char_knight_berserker = { ...look, scale: 1.5 };
+    return m;
+  };
+
+  it("should hold one row per look: its group, the class and spec that fetch it, the base as stand-in (R26)", () => {
+    expect(SPEC_LOOK_ART).toHaveLength(8);
+    expect(SPEC_LOOK_ART.map((row) => row.group)).toEqual(SPEC_LOOK_GROUPS);
+    expect(SPEC_LOOK_ART.find((row) => row.group === "knight_berserker")).toEqual({
+      group: "knight_berserker",
+      playerClass: "warrior",
+      specialization: "berserker",
+      sheet: "char_knight_berserker",
+      standIn: "char_knight_base",
+    });
+    for (const row of SPEC_LOOK_ART) {
+      expect(characterSheet(row.playerClass, row.specialization, () => true)).toBe(row.sheet);
+      expect(row.standIn).toBe(characterSheet(row.playerClass));
+    }
+  });
+
+  it("should find a class's look by its spec, and none for a spec of another class or an unknown one", () => {
+    expect(specLookFor("mage", "spellwarden")?.group).toBe("wizard_spellwarden");
+    expect(specLookFor("Archer", "shadow_ranger")?.group).toBe("archer_shadow_ranger");
+    expect(specLookFor("warrior", "spellwarden")).toBeUndefined();
+    expect(specLookFor("warrior", "warlock")).toBeUndefined();
+    expect(specLookFor("warrior", undefined)).toBeUndefined();
+  });
+
+  it("should count each look's group scene-scoped, and in no scene's preload set nor any monster table (R18)", () => {
+    for (const group of SPEC_LOOK_GROUPS) {
+      expect(SCENE_SCOPED_GROUPS).toContain(group);
+      expect(preloaded).not.toContain(group);
+      expect(ON_DEMAND_ART.map((entry) => entry.group)).not.toContain(group);
+      expect(FLOOR_SCOPED_GROUPS.has(group)).toBe(false);
+    }
+  });
+
+  it("should hold every look's stand-in on a resident group, whether or not its sheet is baked (R26)", () => {
+    expect(outsideScene(manifest, RESIDENT_ART, SPEC_LOOK_ART.map((row) => row.standIn))).toEqual([]);
+  });
+
+  it("should leave the boot download and every scene's pages unchanged by a baked look's two pages (R18)", () => {
+    const grown = withBerserker();
+    for (const groups of [RESIDENT_ART, ...preloadSets()])
+      expect(sorted(sceneAtlases(grown, groups))).toEqual(sorted(sceneAtlases(manifest, groups)));
+    expect(sorted(sceneAtlases(grown, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
+  });
+
+  it("should hold a look's pages only in a scene whose set names its group (ADR-0088 Decision 3)", () => {
+    const grown = withBerserker();
+    expect(sorted(sceneAtlases(grown, [...SCENE_ART.HubScene, "knight_berserker"]))).toEqual(
+      sorted([...RESIDENT_ART_PAGES, "folk-0", "knight_berserker-0", "knight_berserker-1"]),
+    );
+    expect(outsideScene(grown, [...SCENE_ART.HubScene, "knight_berserker"], ["char_knight_berserker"])).toEqual([]);
+    expect(outsideScene(grown, SCENE_ART.HubScene, ["char_knight_berserker"])).toEqual(["char_knight_berserker"]);
+  });
+
+  /** Each scene's preload set, each field's own. */
+  function preloadSets(): (readonly string[])[] {
+    return [
+      SCENE_ART.MainMenuScene,
+      SCENE_ART.CharacterCreationScene,
+      SCENE_ART.HubScene,
+      ...Object.values(SCENE_ART.FieldScene),
+      SCENE_ART.BarrowspireScene,
+    ];
+  }
 });

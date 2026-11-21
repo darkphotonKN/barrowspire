@@ -116,11 +116,11 @@ describe("aimArrow (FS-JTNPR req 11)", () => {
   });
 });
 
-describe("AimLine (FS-JTNPR req 11, 15)", () => {
+describe("AimLine (FS-JTNPR req 11, 15; FS-1J1CB §F R42)", () => {
   it("should draw a thick shaft and a filled head in the umbra aim token, faint and unhaloed until ready", () => {
     const g = fakeGraphics();
     const line = new AimLine(g.make);
-    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
+    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
     const drawn = g.frame();
     expect(drawn.map((c) => c.method)).toEqual([
       "lineStyle",
@@ -136,7 +136,7 @@ describe("AimLine (FS-JTNPR req 11, 15)", () => {
   it("should glow up once ready: full strength over a softer, wider umbra halo", () => {
     const g = fakeGraphics();
     const line = new AimLine(g.make);
-    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, true);
+    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, true, true);
     const drawn = g.frame();
     expect(drawn.map((c) => c.method)).toEqual([
       "lineStyle",
@@ -171,8 +171,8 @@ describe("AimLine (FS-JTNPR req 11, 15)", () => {
   it("should redraw one graphics object each frame, not make a new one", () => {
     const g = fakeGraphics();
     const line = new AimLine(g.make);
-    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
-    line.draw({ x: 0, y: 0 }, { x: 0, y: 100 }, false);
+    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
+    line.draw({ x: 0, y: 0 }, { x: 0, y: 100 }, false, true);
     expect(g.made).toHaveLength(1);
     expect(g.made[0].calls.filter((c) => c.method === "clear")).toHaveLength(2);
     const { tail, neck, tip, left, right } = aimArrow({ x: 0, y: 0 }, { x: 0, y: 100 });
@@ -182,7 +182,7 @@ describe("AimLine (FS-JTNPR req 11, 15)", () => {
 
   it("should draw over the light-map and vignette, under the markers", () => {
     const g = fakeGraphics();
-    new AimLine(g.make).draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
+    new AimLine(g.make).draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
     expect(g.last("setDepth")).toEqual([AIM_LINE_DEPTH]);
     expect(AIM_LINE_DEPTH).toBeGreaterThan(905);
     expect(AIM_LINE_DEPTH).toBeLessThan(950);
@@ -191,22 +191,62 @@ describe("AimLine (FS-JTNPR req 11, 15)", () => {
   it("should leave no arrow behind once cleared, and draw afresh after", () => {
     const g = fakeGraphics();
     const line = new AimLine(g.make);
-    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
+    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
     expect(line.drawn).toBe(true);
     line.clear();
     expect(line.drawn).toBe(false);
     expect(g.made[0].destroyed).toBe(true);
     line.clear();
-    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
+    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
     expect(g.made).toHaveLength(2);
   });
 
   it("should forget an arrow the scene already destroyed, without touching it", () => {
     const g = fakeGraphics();
     const line = new AimLine(g.make);
-    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false);
+    line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
     line.forget();
     expect(line.drawn).toBe(false);
     expect(g.made[0].destroyed).toBe(false);
+  });
+
+  describe("every archer's but a Shadow Ranger's (FS-1J1CB §F R42)", () => {
+    it("should draw the arrow in vellumDark, faint until ready", () => {
+      const g = fakeGraphics();
+      new AimLine(g.make).draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, false);
+      const drawn = g.frame();
+      expect(drawn[0].args).toEqual([AIM_LINE_WIDTH, palette.heavyAimLine, AIM_LINE_ALPHA.faint]);
+      expect(drawn[2].args).toEqual([palette.heavyAimLine, AIM_LINE_ALPHA.faint]);
+    });
+
+    it("should glow up in vellum once ready", () => {
+      const g = fakeGraphics();
+      new AimLine(g.make).draw({ x: 0, y: 0 }, { x: 100, y: 0 }, true, false);
+      const drawn = g.frame();
+      expect(drawn[0].args).toEqual([AIM_GLOW_WIDTH, palette.heavyAimGlow, AIM_GLOW_ALPHA]);
+      expect(drawn[2].args).toEqual([palette.heavyAimGlow, AIM_GLOW_ALPHA]);
+      expect(drawn[4].args).toEqual([AIM_LINE_WIDTH, palette.heavyAimLine, AIM_LINE_ALPHA.ready]);
+      expect(drawn[6].args).toEqual([palette.heavyAimLine, AIM_LINE_ALPHA.ready]);
+    });
+
+    it("should take nothing of the shadow: vellumDark and vellum, never umbra", () => {
+      expect(palette.heavyAimLine).toBe(BARROW_HEX.vellumDark);
+      expect(palette.heavyAimGlow).toBe(BARROW_HEX.vellum);
+      for (const c of [palette.heavyAimLine, palette.heavyAimGlow]) {
+        expect(c).not.toBe(BARROW_HEX.umbra);
+        expect(c).not.toBe(BARROW_HEX.umbraLight);
+        expect(c).not.toBe(palette.aimLine);
+        expect(c).not.toBe(palette.aimGlow);
+      }
+    });
+
+    it("should change look between frames as the shooter does, on the one graphics object", () => {
+      const g = fakeGraphics();
+      const line = new AimLine(g.make);
+      line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, true);
+      line.draw({ x: 0, y: 0 }, { x: 100, y: 0 }, false, false);
+      expect(g.made).toHaveLength(1);
+      expect(g.last("lineStyle")).toEqual([AIM_LINE_WIDTH, palette.heavyAimLine, AIM_LINE_ALPHA.faint]);
+    });
   });
 });

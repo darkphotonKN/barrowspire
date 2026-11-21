@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/google/uuid"
 )
 
@@ -28,6 +29,11 @@ type fakeRepo struct {
 
 	grants   map[[2]uuid.UUID]bool
 	grantErr error
+
+	// the passive ranks get holds, and the spends written into them
+	ranks       passivetree.Ranks
+	spendWrites []PassiveSpend
+	spendErr    error
 }
 
 func (f *fakeRepo) Create(ctx context.Context, c *Character) (*Character, error) {
@@ -71,6 +77,36 @@ func (f *fakeRepo) ApplyExperienceGrant(ctx context.Context, grant ExperienceGra
 	apply(c)
 	out := *c
 	return &out, nil
+}
+
+// SpendPassivePoint holds get's ranks the way the row lock would: decide sees
+// them, and only a true answer writes the spend's rank.
+func (f *fakeRepo) SpendPassivePoint(ctx context.Context, spend PassiveSpend, decide func(*Character) (bool, error)) (*Character, error) {
+	if f.spendErr != nil {
+		return nil, f.spendErr
+	}
+	c := f.get
+	if c == nil || c.ID != spend.CharacterID || c.PlayerID != spend.MemberID || c.DeletedAt != nil {
+		return nil, commonconstants.ErrNotFound
+	}
+	locked := *c
+	locked.PassiveRanks = passivetree.Ranks{}
+	for node, rank := range f.ranks {
+		locked.PassiveRanks[node] = rank
+	}
+	write, err := decide(&locked)
+	if err != nil {
+		return nil, err
+	}
+	if write {
+		f.spendWrites = append(f.spendWrites, spend)
+		if f.ranks == nil {
+			f.ranks = passivetree.Ranks{}
+		}
+		f.ranks[spend.NodeID] = spend.Rank
+		locked.PassiveRanks[spend.NodeID] = spend.Rank
+	}
+	return &locked, nil
 }
 
 func (f *fakeRepo) SoftDelete(ctx context.Context, playerID, id uuid.UUID) error {
@@ -341,5 +377,57 @@ func TestGrantExperience_NotTheMembersLiveCharacter_NotFound(t *testing.T) {
 				t.Fatalf("character changed: exp %d", tt.stored.Exp)
 			}
 		})
+	}
+}
+
+// A character's specialization is the one its held tier-6 node grants, read
+// through the shared tree definition, on every read; none before the pick
+// and none on a new character. FS-E1ZDG §B R4–R5.
+func TestCharacterReads_SpecializationFromTheHeldTier6Node(t *testing.T) {
+	tests := []struct {
+		name  string
+		class string
+		ranks passivetree.Ranks
+		want  string
+	}{
+		{"no ranks", "warrior", nil, ""},
+		{"tiers below 6 only", "warrior", passivetree.Ranks{"warrior.t1a": 2, "warrior.t3": 1}, ""},
+		{"guardian", "warrior", passivetree.Ranks{"warrior.t6a": 1}, "guardian"},
+		{"berserker", "warrior", passivetree.Ranks{"warrior.t1a": 2, "warrior.t6b": 1}, "berserker"},
+		{"spellwarden", "mage", passivetree.Ranks{"mage.t6a": 1}, "spellwarden"},
+		{"pyromancer", "mage", passivetree.Ranks{"mage.t6b": 1}, "pyromancer"},
+		{"hunter", "archer", passivetree.Ranks{"archer.t6a": 1}, "hunter"},
+		{"shadow ranger", "archer", passivetree.Ranks{"archer.t6b": 1}, "shadow_ranger"},
+		{"duelist", "mercenary", passivetree.Ranks{"mercenary.t6a": 1}, "duelist"},
+		{"sellsword", "mercenary", passivetree.Ranks{"mercenary.t6b": 1}, "sellsword"},
+		{"another class's node is none", "warrior", passivetree.Ranks{"mage.t6b": 1}, ""},
+		{"rank 0 is not held", "warrior", passivetree.Ranks{"warrior.t6a": 0}, ""},
+		{"unknown class is none", "bard", passivetree.Ranks{"bard.t6a": 1}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			held := func() *Character { return &Character{ID: uuid.New(), ClassID: tt.class, PassiveRanks: tt.ranks} }
+			repo := &fakeRepo{get: held(), list: []*Character{held()}}
+			svc := NewService(repo, nil)
+
+			got, err := svc.GetCharacter(context.Background(), uuid.New(), repo.get.ID)
+			if err != nil || got.Specialization != tt.want {
+				t.Fatalf("get: specialization %q, %v; want %q", got.Specialization, err, tt.want)
+			}
+			list, err := svc.ListCharacters(context.Background(), uuid.New())
+			if err != nil || list[0].Specialization != tt.want {
+				t.Fatalf("list: specialization %q, %v; want %q", list[0].Specialization, err, tt.want)
+			}
+		})
+	}
+}
+
+func TestCreateCharacter_HasNoSpecialization(t *testing.T) {
+	svc := NewService(&fakeRepo{}, nil)
+
+	got, err := svc.CreateCharacter(context.Background(), CharacterCreate{MemberID: uuid.New(), Name: "Bram", Class: "warrior"})
+
+	if err != nil || got.Specialization != "" {
+		t.Fatalf("created specialization %q, %v; want none", got.Specialization, err)
 	}
 }

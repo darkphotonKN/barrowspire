@@ -208,7 +208,7 @@ func TestHandleEquip_AfterReachingTheLevel_TheSameEquipSucceeds(t *testing.T) {
 	entity, _ := s.EntityManager.GetEntity(playerEntityID)
 	sc, _ := entity.GetComponent(ecs.ComponentTypeStats)
 	stats := sc.(*components.StatsComponent)
-	gainExperience(entity, Classes["warrior"].Growth, int(progression.LevelFloor(5))-stats.Experience)
+	gainExperience(entity, Classes["warrior"], int(progression.LevelFloor(5))-stats.Experience)
 	require.Equal(t, 5, stats.Level)
 	assert.Nil(t, equipmentOf(t, s, playerEntityID).HeadSlot, "a level-up equips nothing by itself")
 

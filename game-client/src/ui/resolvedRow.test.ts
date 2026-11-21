@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_W, CHAT_WINDOW_X, chatPickerList, chatWindowFrame } from "./chatWindowLayout";
-import { CORNER_ICONS, RUN_BUTTON_H, cornerIconFrame, cornerLabelAt } from "./hudCornerLayout";
+import { CORNER_ICONS, CORNER_LABEL, CORNER_LABEL_GREYED_MAIL, RUN_BUTTON_H, cornerIconFrame, cornerLabelAt } from "./hudCornerLayout";
 import { rectsMeet } from "./partyPanelLayout";
 import { xpBarFrame } from "./xpBarLayout";
 import {
@@ -187,16 +187,18 @@ describe("the spectate row and the switcher (FS-QPDKN § Change: The party death
     const folded = chatWindowFrame(CHAT_WINDOW_X, bottom, true);
     const chat = [open.panel, chatPickerList(open).box, folded.panel, chatPickerList(folded).box];
     const y = spectateRowY({ height: 720 }) - RUN_BUTTON_H / 2;
-    // a hover label as wide as the widest the corner shows ("Mailbox · town only" measures about 126) and more,
-    // 12 px words with 3 px padding (cornerLabel.ts)
-    const LABEL_W = 160;
+    // each icon's hover label at a generous 8 px a letter, 12 px words with 3 px padding (cornerLabel.ts):
+    // "Mailbox · town only" (about 126 measured) reads 158; the passive tree's sixth icon, the row's left end
+    // since FS-8RZ51 R32, reads its own "Tree (P)", not the widest label
+    const labelW = (icon: (typeof CORNER_ICONS)[number]) => (icon === "mail" ? CORNER_LABEL_GREYED_MAIL : CORNER_LABEL[icon]).length * 8 + 6;
     const LABEL_H = 22;
     for (let width = 1080; width <= 1280; width++) {
       const v = view(width);
       const plates = CORNER_ICONS.map((icon) => cornerIconFrame(icon, v));
-      const labels = plates.map((plate) => {
-        const at = cornerLabelAt(plate, LABEL_W, v);
-        return { x: at.x - LABEL_W / 2, y: at.bottom - LABEL_H, width: LABEL_W, height: LABEL_H };
+      const labels = CORNER_ICONS.map((icon, i) => {
+        const w = labelW(icon);
+        const at = cornerLabelAt(plates[i], w, v);
+        return { x: at.x - w / 2, y: at.bottom - LABEL_H, width: w, height: LABEL_H };
       });
       // and the XP bar along the bottom middle (FS-77DVN §A; merge with main, 2026-11-14)
       const others = [...chat, ...plates, ...labels, xpBarFrame(v).piece];

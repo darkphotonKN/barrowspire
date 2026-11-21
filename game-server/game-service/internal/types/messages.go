@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -131,6 +132,27 @@ type CurrentPlayerState struct {
 	// absent when they have none. Nobody else is told it. FS-MQYEX
 	// §Requirements 18–19.
 	TimedOpen *TimedOpenState `json:"timed_open,omitempty"`
+	// AbilityCooldown is the recipient's right-click ability's cooldown, a
+	// mercenary's the whiff lockout; absent only for a delver with no ability.
+	// Never on another player. FS-Q18Q3 §A R1–R2, R6.
+	AbilityCooldown *CooldownState `json:"ability_cooldown,omitempty"`
+	// TreeAbilityCooldown is the recipient's tree ability's cooldown, a
+	// mercenary's the cut's slot; absent while they do not hold it. Never on
+	// another player. FS-Q18Q3 §A R4, R6.
+	TreeAbilityCooldown *CooldownState `json:"tree_ability_cooldown,omitempty"`
+	// PassiveState is the recipient's passive tree: the ranks their body holds
+	// and the points they have left, in every world. Never on another player.
+	// FS-8RZ51 §E R23.
+	*PassiveState
+}
+
+// PassiveState is a delver's passive tree as its owner is told it: Ranks by
+// node id, nodes at rank 1 or more, {} when none; Points unspent from the
+// body's current level, so a level-up in a run raises it at once. FS-8RZ51 R7,
+// R23.
+type PassiveState struct {
+	Ranks  passivetree.Ranks `json:"passive_ranks"`
+	Points int               `json:"passive_points"`
 }
 
 // OtherPlayerState is another player as one recipient is told them: what every
@@ -163,6 +185,15 @@ type BackendGameState struct {
 	// TimedOpens is each delver's timed open, attached only to the frame
 	// their own client is sent
 	TimedOpens map[uuid.UUID]*TimedOpenState
+	// AbilityCooldowns is each delver's right-click cooldown, attached only to
+	// the frame their own client is sent
+	AbilityCooldowns map[uuid.UUID]*CooldownState
+	// TreeAbilityCooldowns is each delver's held tree ability's cooldown,
+	// attached only to the frame their own client is sent
+	TreeAbilityCooldowns map[uuid.UUID]*CooldownState
+	// Passives is each delver's passive tree, attached only to the frame their
+	// own client is sent
+	Passives map[uuid.UUID]*PassiveState
 	// PartyOf is the pod's party membership snapshot (player id → party id) as
 	// this broadcast read it, once for all its recipients. Published immutable:
 	// shared, never written. FS-CH21F §Requirements 5–6.
