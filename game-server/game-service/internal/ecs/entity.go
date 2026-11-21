@@ -78,6 +78,9 @@ const (
 	ComponentTypePotion       ComponentType = "Potion"
 	ComponentTypeTimedOpen    ComponentType = "TimedOpen"
 
+	// an Arrow Rain still falling (FS-04EEA §E R26)
+	ComponentTypeArrowRain ComponentType = "ArrowRain"
+
 	ComponentTypeRespawn ComponentType = "Respawn"
 
 	// a tome run's plan on the run-level entity, and the tome and altar

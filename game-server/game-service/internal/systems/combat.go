@@ -15,11 +15,12 @@ import (
 
 	Handlers record attack intents as component data; this resolves them on the
 	tick: cooldown, cost, delivery (a targeted strike, a cone, projectiles, a dash,
-	a blink), then each hit through the damage formula. A dash sets a charge going
-	that the MovementSystem carries over the ticks after; this ends it once it is
-	spent or stopped, or when a new cast lands. A blink is no charge: it moves its
-	caster at once, as far as the Ground lets a body reach. Projectile impacts detected earlier
-	in the same tick are handed in by the ProjectileSystem and resolved here too.
+	a blink, an Arrow Rain), then each hit through the damage formula. A dash sets
+	a charge going that the MovementSystem carries over the ticks after; this ends
+	it once it is spent or stopped, or when a new cast lands. A blink is no charge:
+	it moves its caster at once, as far as the Ground lets a body reach. An Arrow
+	Rain is a floor entity this steps, its volleys falling on the ticks after.
+	Projectile impacts detected earlier in the same tick are handed in by the ProjectileSystem and resolved here too.
 
 	The worn uniques that ride on combat resolve here as well, every hit through
 	applyHit so a kill they make is credited to the wearer: Gravewarden's Oath
@@ -111,6 +112,9 @@ const (
 	// deliverBlink moves the caster toward its aim on the tick it resolves,
 	// never through what blocks a walk. FS-04EEA §D R18–R22.
 	deliverBlink
+	// deliverRain marks a circle at the aim, within reach, that volleys fall
+	// on over the ticks after. FS-04EEA §E R23–R24.
+	deliverRain
 )
 
 type scalingStat int
@@ -179,6 +183,13 @@ const (
 	// defaults. FS-04EEA §F R29–R31.
 	settleTheDebtRange     = 90.0
 	settleTheDebtLeastCost = 1
+	// Arrow Rain: a circle of arrowRainRadius centred at most arrowRainReach
+	// from the archer, arrowRainVolleys falling on it arrowRainVolleyGap apart,
+	// the first one gap after the cast. Charter defaults. FS-04EEA §E R23–R24.
+	arrowRainReach     = 300.0
+	arrowRainRadius    = 70.0
+	arrowRainVolleys   = 5
+	arrowRainVolleyGap = 0.3 // seconds
 
 	// The charge runs dashDistance at dashSpeed: 0.4 s, 12 ticks of 15 px at
 	// the world's 30 per second. The distance is the old teleport's. Under the
@@ -307,6 +318,13 @@ var attackTable = map[components.AttackKind]attackSpec{
 		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
 		slows: true,
 	},
+	// the archer's tree ability: a circle the arrows fall on, 5 volleys each
+	// on Agility. FS-04EEA §E R23–R25, §A R5.
+	components.AttackArrowRain: {
+		delivery: deliverRain, damageType: components.DamagePhysical, scaling: scaleAgility,
+		coefficient: 0.5, cost: 35, cooldown: 12, reach: arrowRainReach,
+		slows: true,
+	},
 	// the mercenary's tree ability: one hit all round per target at 1.0 per
 	// parry charge spent, on the cut's hybrid scaling. Its 0.25 s is the cut's
 	// slot (cooldownSlot), as the riposte's is. FS-04EEA §F R29–R33, §A R5.
@@ -400,6 +418,12 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 	for _, entity := range entities {
 		if tc, ok := entity.GetComponent(ecs.ComponentTypeBurningTrail); ok {
 			s.burn(entity, tc.(*components.BurningTrailComponent), deltaTime, entities)
+		}
+	}
+
+	for _, entity := range entities {
+		if rc, ok := entity.GetComponent(ecs.ComponentTypeArrowRain); ok {
+			s.fall(entity, rc.(*components.ArrowRainComponent), deltaTime, entities)
 		}
 	}
 
@@ -608,6 +632,8 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		}
 	case deliverProjectile:
 		s.fire(attacker, at, intent.TargetX, intent.TargetY, spec)
+	case deliverRain:
+		s.startRain(attacker, at, intent.TargetX, intent.TargetY, spec)
 	}
 
 	// a new cast stops a charge in flight where the body stands; a new dash then
@@ -825,16 +851,21 @@ func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformCompon
 // around hits every valid target within the attack's reach all the way round
 // the caster, each resolved on its own. FS-04EEA §B R8.
 func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) {
-	s.hitWithinReach(attacker, at, spec, entities, func(_, _ float64) bool { return true })
+	s.hitWithinReach(attacker, at, spec, entities, allRound)
 }
 
 // hitWithinReach hits every valid target other than the attacker whose centre
 // is within the attack's reach and inShape, given its offset from the attacker.
 func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) {
-	attack := s.snapshot(attacker, spec)
+	s.hitAround(s.snapshot(attacker, spec), at.X, at.Y, spec.reach, entities, inShape)
+}
 
+// hitAround lands the attack once on every valid target other than its
+// attacker whose centre is within reach of (x, y) and inShape, given its
+// offset from there.
+func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach float64, entities []*ecs.Entity, inShape func(dx, dy float64) bool) {
 	for _, target := range entities {
-		if target.ID == attacker.ID || !CanHit(attack, target, s.playerDamage) {
+		if target.ID == attack.AttackerEntityID || !CanHit(attack, target, s.playerDamage) {
 			continue
 		}
 		tc, ok := target.GetComponent(ecs.ComponentTypeTransform)
@@ -843,14 +874,17 @@ func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.Trans
 		}
 		to := tc.(*components.TransformComponent)
 
-		dx, dy := to.X-at.X, to.Y-at.Y
-		if math.Hypot(dx, dy) > spec.reach || !inShape(dx, dy) {
+		dx, dy := to.X-x, to.Y-y
+		if math.Hypot(dx, dy) > reach || !inShape(dx, dy) {
 			continue
 		}
 
 		s.applyHit(attack, target)
 	}
 }
+
+// allRound is a shape that takes every offset.
+func allRound(_, _ float64) bool { return true }
 
 // fire spawns the attack's projectiles, each carrying the attacker as they are now.
 func (s *CombatSystem) fire(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec) {
@@ -1022,6 +1056,52 @@ func (s *CombatSystem) burn(entity *ecs.Entity, trail *components.BurningTrailCo
 	trail.UntilPulse -= deltaTime
 	trail.Remaining -= deltaTime
 	if trail.Remaining <= trailEpsilon {
+		s.em.RemoveEntity(entity.ID)
+	}
+}
+
+// startRain marks an Arrow Rain's circle: centred on the aim when it is
+// within the row's reach of the archer, else on the point that far along the
+// line toward it. The archer's volley hit is captured now, as a projectile's
+// is when it is fired. Nothing checks line of sight. FS-04EEA §E R23, R25, R27.
+func (s *CombatSystem) startRain(archer *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec) {
+	x, y := aimX, aimY
+	if dist := math.Hypot(aimX-at.X, aimY-at.Y); dist > spec.reach {
+		share := spec.reach / dist
+		x, y = at.X+(aimX-at.X)*share, at.Y+(aimY-at.Y)*share
+	}
+
+	rain := s.em.CreateEntity()
+	rain.AddComponent(&components.ArrowRainComponent{
+		Attack:      s.snapshot(archer, spec),
+		X:           x,
+		Y:           y,
+		Radius:      arrowRainRadius,
+		VolleysLeft: arrowRainVolleys,
+		UntilVolley: arrowRainVolleyGap,
+	})
+}
+
+// rainEpsilon absorbs the float drift of summing tick lengths, so the volleys
+// fall on exactly the ticks at 0.3, 0.6 … 1.5 s on 1/30 and 1/60 s ticks.
+const rainEpsilon = 1e-9
+
+// fall advances one Arrow Rain by a tick: on a volley it hits each valid
+// target whose centre is within its circle once, through applyHit, so each
+// rolls its own crit and a kill is credited to the archer. It keeps falling
+// whatever became of the archer, and goes once its last volley has fallen.
+// FS-04EEA §E R24–R26.
+func (s *CombatSystem) fall(entity *ecs.Entity, rain *components.ArrowRainComponent, deltaTime float64, entities []*ecs.Entity) {
+	rain.UntilVolley -= deltaTime
+	if rain.UntilVolley > rainEpsilon {
+		return
+	}
+
+	s.hitAround(rain.Attack, rain.X, rain.Y, rain.Radius, entities, allRound)
+
+	rain.VolleysLeft--
+	rain.UntilVolley += arrowRainVolleyGap
+	if rain.VolleysLeft <= 0 {
 		s.em.RemoveEntity(entity.ID)
 	}
 }
