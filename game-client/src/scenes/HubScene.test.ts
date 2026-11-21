@@ -5151,6 +5151,61 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
   });
 });
 
+// FS-04EEA R41: a body whose reported position moves over 60 world px between two states is placed there
+describe("HubScene a body that jumps (FS-04EEA R41)", () => {
+  type Hub = {
+    views: Map<string, unknown>;
+    selfEntityID: string | null;
+    placeName(view: unknown): void;
+    updateAppearance(view: unknown, player: unknown): void;
+    placePlayer(player: unknown, isSelf: boolean): void;
+    easeTowardServerPositions(time: number, delta: number): void;
+  };
+  const view = (x: number) => ({
+    sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60 }) },
+    pos: { x, y: 0 },
+    target: { x, y: 0 },
+    anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+    title: { show: vi.fn(), stand: vi.fn() },
+  });
+  const entry = (entity_id: string, x: number) => ({
+    entity_id,
+    position: { x, y: 0 },
+    direction: { vx: 0, vy: 0, speed: 0 },
+  });
+
+  function onHub() {
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const hub = new HubScene() as unknown as Hub;
+    const jumper = view(100);
+    const walker = view(100);
+    hub.views = new Map([
+      ["me", jumper],
+      ["them", walker],
+    ]);
+    hub.selfEntityID = "me";
+    hub.placeName = vi.fn();
+    hub.updateAppearance = vi.fn();
+    return { hub, jumper, walker };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should draw a body at a state position 61 px on, the next frame, and glide one 40 px on", () => {
+    const { hub, jumper, walker } = onHub();
+
+    hub.placePlayer(entry("me", 161), true);
+    hub.placePlayer(entry("them", 140), false);
+    hub.easeTowardServerPositions(0, 16);
+
+    expect(jumper.pos).toEqual({ x: 161, y: 0 });
+    expect(walker.pos.x).toBeGreaterThan(100);
+    expect(walker.pos.x).toBeLessThan(140);
+  });
+});
+
 const { MINIMAP: TOWN_MINIMAP, WorldMinimap } = await import("@/ui/minimap");
 const { TOP_RIGHT_EDGE } = await import("@/ui/topRightColumn");
 const { anchorAt } = await import("@/render/viewport");

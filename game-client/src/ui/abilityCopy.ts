@@ -50,12 +50,32 @@ export function abilityCopy(cls: string | undefined, specialization?: string): A
   return Object.hasOwn(ABILITY_COPY, key) ? ABILITY_COPY[key] : null;
 }
 
+/**
+ * Each class's tree ability, cast on key 3 (FS-04EEA R50), keyed by `current_player.class` as the right-click's
+ * rows are: its name and one line, for FS-Q18Q3's tooltip on the key-3 square (R28).
+ */
+export const TREE_ABILITY_COPY: Readonly<Record<string, AbilityCopy>> = {
+  warrior: { name: "Earthbreaker", line: "Slam the ground: strike and stun all around you." },
+  mage: { name: "Blink", line: "Step through the dark toward where you point, never past a wall." },
+  archer: { name: "Arrow Rain", line: "Hold to mark the ground, release to rain arrows on it." },
+  mercenary: {
+    name: "Settle the Debt",
+    line: "Spend every parry charge on a flurry around you; each one cuts deeper.",
+  },
+};
+
+/** The tree-ability copy of a `cls` character, or null for a class with none (FS-04EEA R50). */
+export function treeAbilityCopy(cls: string | undefined): AbilityCopy | null {
+  const key = cls?.toLowerCase();
+  return key && Object.hasOwn(TREE_ABILITY_COPY, key) ? TREE_ABILITY_COPY[key] : null;
+}
+
 /** The level at which the skill tree's third tier, and its ability, can first be taken (FS-Q18Q3 R25; FS-8RZ51). */
 export const TREE_ABILITY_LEVEL = 10;
 
 /**
  * The 3 square's third line while it stands locked (FS-Q18Q3 R28), under the class's tree ability's name and
- * line, which FS-04EEA R50's ability data supplies; until it does, the locked tooltip reads this line alone.
+ * line from `TREE_ABILITY_COPY` (FS-04EEA R50); until the tooltip reads them, it reads this line alone.
  */
 export const TREE_LOCKED_NOTE = `Learned at the skill tree's third tier, from level ${TREE_ABILITY_LEVEL}.`;
 

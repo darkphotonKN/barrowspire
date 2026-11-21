@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { abilityCopy } from "./abilityCopy";
+import { abilityCopy, treeAbilityCopy } from "./abilityCopy";
 
 // FS-8AY7S req 30, FS-Q18Q3 R28: each class's right-click copy; FS-E1ZDG §L.43: looked up by class and
 // specialization, the archer's shot "Heavy Shot" for every archer but a Shadow Ranger
@@ -36,5 +36,22 @@ describe("abilityCopy (FS-8AY7S req 30; FS-E1ZDG §L.43)", () => {
     expect(abilityCopy("warrior", "shadow_ranger")?.name).toBe("Dash");
     expect(abilityCopy("archer", "berserker")?.name).toBe("Heavy Shot");
     expect(abilityCopy("archer", "paladin")?.name).toBe("Heavy Shot");
+  });
+});
+
+// FS-04EEA R50: each class's tree ability, its name and one line, for FS-Q18Q3's tooltip on the key-3 square
+describe("treeAbilityCopy (FS-04EEA R50)", () => {
+  it.each([
+    ["warrior", "Earthbreaker", "Slam the ground: strike and stun all around you."],
+    ["mage", "Blink", "Step through the dark toward where you point, never past a wall."],
+    ["archer", "Arrow Rain", "Hold to mark the ground, release to rain arrows on it."],
+    ["mercenary", "Settle the Debt", "Spend every parry charge on a flurry around you; each one cuts deeper."],
+  ])("should name the %s's tree ability and say how it works", (cls, name, line) => {
+    expect(treeAbilityCopy(cls)).toEqual({ name, line });
+  });
+
+  it("should read the class whatever its case, and have no row for an unknown one", () => {
+    expect(treeAbilityCopy("Mage")?.name).toBe("Blink");
+    for (const cls of ["necromancer", "constructor", "", undefined]) expect(treeAbilityCopy(cls)).toBeNull();
   });
 });

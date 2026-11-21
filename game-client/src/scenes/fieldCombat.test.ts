@@ -211,6 +211,33 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
 
 // FS-TQZ5J § Change: Batch 6, R129 (batch 6 review, LOW): a press on the UI scene's chat window during a held
 // world press reaches the field; the UI scene claims it, and a monster under the window is not struck
+describe("FieldCombat the tree ability on key 3 (FS-04EEA R35–R37)", () => {
+  /** A mage holding Blink, off cooldown, with the mana for it. */
+  const blinker = (x: number, current_health = 100) =>
+    me(x, current_health, "Mage", {
+      passive_ranks: { "mage.t3": 1 },
+      tree_ability_cooldown: { remaining: 0, total: 8 },
+      resource: { kind: "mana", current: 100, max: 100, ability_cost: 20, tree_ability_cost: 30 },
+    });
+
+  it("should send the player's tree ability from where they stand at the world point given", () => {
+    const { combat, state, sendMessage } = fieldOnStage();
+    state(blinker(200));
+    expect(combat.treeAbility({ x: 400, y: 520 })).toBe(true);
+    expect(sendMessage.mock.calls).toEqual([[ActionType.CastSkill, { skill_id: "blink", target_x: 400, target_y: 520 }]]);
+  });
+
+  it("should send nothing for a fallen player, before any state, or on a key's auto-repeat", () => {
+    const { combat, state, sendMessage } = fieldOnStage();
+    expect(combat.treeAbility({ x: 400, y: 520 })).toBe(false);
+    state(blinker(200, 0));
+    expect(combat.treeAbility({ x: 400, y: 520 })).toBe(false);
+    state(blinker(200));
+    expect(combat.treeAbility({ x: 400, y: 520 }, true)).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
 describe("FieldCombat under a press the UI scene claimed (FS-TQZ5J § Change: Batch 6, R129)", () => {
   it("should strike nothing on a claimed press, and strike on the next", () => {
     const { state, sprites, sendMessage, claim } = fieldOnStage();

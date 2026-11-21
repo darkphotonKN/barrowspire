@@ -36,6 +36,9 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
     attackClip: vi.fn(),
     abilityChanged: vi.fn(),
     abilityCast: vi.fn(),
+    earthbreaker: vi.fn(),
+    blink: vi.fn(),
+    settleTheDebt: vi.fn(),
   };
   const self = { me };
   const combat = new PlayerCombat(
@@ -468,6 +471,138 @@ describe("PlayerCombat abilityCast (FS-AND39 R4: each class's ability, once, at 
   it("should report nothing for a refused parry", () => {
     const { combat, look } = combatOnStage({ resource: charges(0), parry_open: true });
     expect(combat.cast("special", "mercenary", me, target)).toBe(false);
+    expect(look.abilityCast).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlayerCombat tree ability on key 3 (FS-04EEA §G R35–R37, R39, R40)", () => {
+  /** A `cls` character as the latest state shows them, holding their tree's ability unless told otherwise. */
+  const holding = (
+    cls: string,
+    resource: Partial<ResourceState> = {},
+    fields: { held?: boolean; remaining?: number } = {},
+  ): ReturnType<CombatSelf> => ({
+    passive_ranks: fields.held === false ? {} : { [`${cls}.t3`]: 1 },
+    tree_ability_cooldown: { remaining: fields.remaining ?? 0, total: 10 },
+    resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25, tree_ability_cost: 40, ...resource },
+  });
+  const mercenary = (charges: number) =>
+    holding("mercenary", { kind: "parry_charges", current: charges, max: 3, ability_cost: 0, tree_ability_cost: 1 });
+  const target = { x: 260, y: 40 };
+
+  it("should send one settle_the_debt at the cursor for a mercenary holding 2 parry charges", () => {
+    const { combat, send, look } = combatOnStage(mercenary(2));
+
+    expect(combat.treeAbility("mercenary", me, target)).toBe(true);
+
+    expect(send.mock.calls).toEqual([
+      [ActionType.CastSkill, { skill_id: "settle_the_debt", target_x: 260, target_y: 40 }],
+    ]);
+    expect(look.settleTheDebt).toHaveBeenCalledWith(me, 2);
+  });
+
+  it("should send nothing, and play nothing, for a mercenary at 0 parry charges", () => {
+    const { combat, send, look } = combatOnStage(mercenary(0));
+
+    expect(combat.treeAbility("mercenary", me, target)).toBe(false);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(look.settleTheDebt).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing on a key's auto-repeat: a held 3 sends once", () => {
+    const { combat, send } = combatOnStage(mercenary(2));
+
+    combat.treeAbility("mercenary", me, target);
+    combat.treeAbility("mercenary", me, target, true);
+    combat.treeAbility("mercenary", me, target, true);
+
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["warrior", "earthbreaker"],
+    ["mage", "blink"],
+  ] as const)("should send a %s's %s at the cursor's world point", (cls, skill) => {
+    const { combat, send, look } = combatOnStage(holding(cls));
+
+    expect(combat.treeAbility(cls, me, target)).toBe(true);
+
+    expect(send.mock.calls).toEqual([[ActionType.CastSkill, { skill_id: skill, target_x: 260, target_y: 40 }]]);
+    if (cls === "warrior") expect(look.earthbreaker).toHaveBeenCalledWith(me);
+    else expect(look.blink).toHaveBeenCalledWith(me, target);
+  });
+
+  // R40: a Blink strikes nothing, so it names no last-hit monster
+  it.each([
+    ["warrior", holding("warrior"), true],
+    ["mercenary", mercenary(1), true],
+    ["mage", holding("mage"), false],
+  ] as const)("should tell castSent for a %s's tree ability: %s", (cls, self, told) => {
+    const { combat, castSent } = combatOnStage(self);
+    combat.treeAbility(cls, me, target);
+    expect(castSent).toHaveBeenCalledTimes(told ? 1 : 0);
+  });
+
+  it.each([
+    ["the tree ability is not held", holding("warrior", {}, { held: false })],
+    ["no ranks are on the wire", { resource: holding("warrior")?.resource }],
+    ["it is on cooldown", holding("warrior", {}, { remaining: 0.4 })],
+    ["it is not affordable", holding("warrior", { current: 39 })],
+    ["no state has come yet", undefined],
+  ])("should send nothing when %s", (_, self) => {
+    const { combat, send, look, castSent } = combatOnStage(self);
+
+    expect(combat.treeAbility("warrior", me, target)).toBe(false);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(look.earthbreaker).not.toHaveBeenCalled();
+    expect(castSent).not.toHaveBeenCalled();
+  });
+
+  it("should send as soon as the cooldown the state shows is over, whatever was sent before", () => {
+    const { combat, send, self } = combatOnStage(holding("mage", {}, { remaining: 2 }));
+    combat.treeAbility("mage", me, target);
+    self.me = holding("mage");
+    combat.treeAbility("mage", me, target);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  // the archer's Arrow Rain is aimed by a hold of its own (R38), not this press
+  it("should send nothing for an archer's press", () => {
+    const { combat, send } = combatOnStage(holding("archer"));
+    expect(combat.treeAbility("archer", me, target)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing for a class with no tree ability", () => {
+    const { combat, send } = combatOnStage(holding("bard"));
+    expect(combat.treeAbility("bard", me, target)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  // R39: one hold at a time
+  it("should send nothing while a Shadow Shot hold is in progress", () => {
+    const { combat, send } = combatOnStage(holding("warrior"));
+    combat.cast("special", "archer", me, target);
+    expect(combat.aiming).toBe(true);
+
+    expect(combat.treeAbility("warrior", me, target)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should neither wait on nor start the click casts' cooldowns", () => {
+    const { combat, send } = combatOnStage(holding("warrior"));
+    combat.cast("special", "warrior", me, target);
+    expect(combat.treeAbility("warrior", me, target)).toBe(true);
+    expect(combat.cast("primary", "warrior", me, target)).toBe(false);
+    expect(send.mock.calls.map(([, p]) => (p as { skill_id: string }).skill_id)).toEqual(["dash", "earthbreaker"]);
+  });
+
+  // R48: no new sound; the class abilities' sound hook is never told of a tree ability
+  it("should report no class ability cast for a tree ability", () => {
+    const { combat, look } = combatOnStage(holding("warrior"));
+    combat.treeAbility("warrior", me, target);
     expect(look.abilityCast).not.toHaveBeenCalled();
   });
 });

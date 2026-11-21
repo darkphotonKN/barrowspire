@@ -60,6 +60,8 @@ vi.mock("phaser", async () => {
 });
 
 const { FieldScene } = await import("./FieldScene");
+const { RUN_ACTIONS } = await import("./runActions");
+const { screenToWorld } = await import("@/render/iso");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
@@ -1154,13 +1156,78 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     for (const gearKey of ["I", "B", "C", "Q", "F"]) expect(keys.has(`keydown-${gearKey}`)).toBe(false);
     // Esc and the ESC menu's keys are the UI scene's: the field binds none of them (FS-TQZ5J R17, R18,
     // R21); its Enter is chat's alone, guarded by the menu (ChatWindow, FS-WJGFJ R27)
-    for (const uiKey of ["ESC", "ONE", "TWO", "THREE", "LEFT", "RIGHT"]) expect(keys.has(`keydown-${uiKey}`)).toBe(false);
+    for (const uiKey of ["ESC", "ONE", "TWO", "LEFT", "RIGHT"]) expect(keys.has(`keydown-${uiKey}`)).toBe(false);
+    // but 3 is shared by state: the tree ability's while the menu is closed (FS-04EEA R35; ADR-0084 Decision 4)
+    expect(keys.has(`keydown-${RUN_ACTIONS.treeAbility.key}`)).toBe(true);
   });
 });
 
 // Leaving /game mid-field destroys the game: Phaser emits the scene's DESTROY only, after every
 // plugin has destroyed itself (sceneEnd.standin.ts). The field must still let go of what outlives
 // the game and ask the dead plugins nothing; on a stop it hands the cursor back (asked 2026-11-06).
+describe("FieldScene key 3, the tree ability (FS-04EEA §G R35, R36)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Keyed = FieldUnderTest & { input: unknown; fight?: unknown; bindTreeAbilityKey(): void };
+
+  /** The cursor's world point: the pointer at screen (400, 300) under the field's camera. */
+  const CURSOR = screenToWorld(400, 300);
+
+  /** A field with key 3 bound on a recording keyboard, its fight's tree-ability entry recorded. */
+  function keyedField() {
+    const env = fieldOnStage();
+    const field = env.field as Keyed;
+    const keys = new Map<string, (event?: { repeat?: boolean }) => void>();
+    field.input = {
+      // chat typing turns the field's keyboard off (FS-TQZ5J § Change: Batch 6, R127)
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb), enabled: true, resetKeys: vi.fn() },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+      activePointer: { positionToCamera: () => ({ x: 400, y: 300 }) },
+    };
+    const treeAbility = vi.fn();
+    field.fight = { treeAbility, cancelAim: vi.fn(), release: vi.fn() };
+    field.bindTreeAbilityKey();
+    /** One press of 3 as Phaser delivers it: the field's keydown event, then the UI scene's frame reading its own key. */
+    const pressThree = (event: { repeat?: boolean } = {}) => {
+      keys.get(`keydown-${RUN_ACTIONS.treeAbility.key}`)?.(event);
+      uiSceneOn(field, "field", { row: false }).key("three");
+    };
+    return { ...env, field, keys, treeAbility, pressThree };
+  }
+
+  it("should hand the fight a press of 3 at the cursor's world point, and a repeat as one", () => {
+    const { treeAbility, pressThree } = keyedField();
+    pressThree();
+    pressThree({ repeat: true });
+    expect(treeAbility.mock.calls).toEqual([
+      [CURSOR, false],
+      [CURSOR, true],
+    ]);
+  });
+
+  it("should leave 3 to the menu while it is open, and hand the fight nothing", () => {
+    const { field, treeAbility, pressThree } = keyedField();
+    menuUpOver(field);
+    pressThree();
+    expect(treeAbility).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["chat is typing", { typing: true }],
+    ["the inventory is open", { inventory: true }],
+    ["the character panel is open", { character: true }],
+    ["the passive tree is open", { tree: true }],
+  ])("should hand the fight nothing on 3 while %s", (_, ui) => {
+    const { field, treeAbility, pressThree } = keyedField();
+    uiSceneOn(field, "field", { row: false }).bridge.reportUi(ui);
+    pressThree();
+    expect(treeAbility).not.toHaveBeenCalled();
+  });
+});
+
 describe("FieldScene ending (game destroy on leaving /game)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1472,6 +1539,47 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
 
       expect(Object.keys(me)).not.toContain("wireFacing");
       expect(Object.keys(them)).not.toContain("wireFacing");
+    });
+  });
+
+  // FS-04EEA R41: a Blink's jump is placed, not glided, for the own body and every other
+  describe("a body that jumps (FS-04EEA R41)", () => {
+    const view = (x: number) => ({
+      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60, getBounds: () => ({ x: 0, y: 0, width: 40, height: 60 }) }) },
+      name: { setPosition: vi.fn() },
+      pos: { x, y: 0 },
+      target: { x, y: 0 },
+      facing: "se",
+      anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+      title: { show: vi.fn(), stand: vi.fn() },
+      fallen: false,
+    });
+    const entry = (entity_id: string, x: number) => ({
+      entity_id,
+      position: { x, y: 0 },
+      direction: { vx: 0, vy: 0, speed: 0 },
+      current_health: 100,
+    });
+
+    it.each([
+      ["me", true],
+      ["them", false],
+    ])("should draw %s at a state position 61 px on, the next frame, and glide one 40 px on", (id, isSelf) => {
+      const { field } = kitOnStage({});
+      const jumper = view(100);
+      const walker = view(100);
+      const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+
+      Object.assign(field, { views: new Map([[id, jumper]]), selfEntityID: "me" });
+      place.call(field, entry(id, 161), isSelf);
+      field.update(16, 16);
+      expect(jumper.pos).toEqual({ x: 161, y: 0 });
+
+      Object.assign(field, { views: new Map([[id, walker]]) });
+      place.call(field, entry(id, 140), isSelf);
+      field.update(32, 16);
+      expect(walker.pos.x).toBeGreaterThan(100);
+      expect(walker.pos.x).toBeLessThan(140);
     });
   });
 

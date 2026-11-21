@@ -18,6 +18,7 @@ import { riposteArmed } from "@/render/effects/riposte";
 import { parryRefused } from "@/ui/abilityBarView";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
 import { wearsShadow } from "@/render/effects/heavyShot";
+import { treeAbilityOf, treeAbilityReady } from "./treeAbility";
 
 /**
  * A targeted `attack`'s reach, centre to centre in world px, and its cooldown in ms: the server's
@@ -47,8 +48,9 @@ export interface CombatPort {
   now(): number;
   /**
    * Told the moment a cast that can strike has been sent: every primary, the right-click ability
-   * that casts at once, a fired Shadow Shot. Never the archer's right-press, which sends nothing,
-   * the parry, which strikes nothing, or a strike, whose `attack` names its own monster. The scene
+   * that casts at once, a fired Shadow Shot, an Earthbreaker or a Settle the Debt (FS-04EEA R40).
+   * Never the archer's right-press, which sends nothing, the parry or a Blink, which strike nothing,
+   * or a strike, whose `attack` names its own monster. The scene
    * names the hovered monster the last-hit one by it (FS-48CTQ §C.6).
    */
   castSent?(): void;
@@ -97,6 +99,14 @@ export interface CombatLook {
    * press, or a cast held back.
    */
   abilityCast?(ability: AbilityCast): void;
+  /**
+   * The tree abilities' looks, each as its cast is sent (FS-04EEA §H R42–R46): the slam round the warrior,
+   * the blink-out where the mage stands, the flurry round the mercenary for the parry charges it spends.
+   * Hooks for FS-04EEA's effects slice; a scene that sets none plays nothing.
+   */
+  earthbreaker?(from: Point): void;
+  blink?(from: Point, to: Point): void;
+  settleTheDebt?(from: Point, charges: number): void;
 }
 
 /**
@@ -104,7 +114,10 @@ export interface CombatLook {
  * and the specialization the archer's right-click is drawn by (FS-1J1CB §F R41, R42).
  */
 export type CombatSelf = () =>
-  | Pick<PlayerState, "parry_open" | "parry_lockout" | "resource" | "specialization">
+  | Pick<
+      PlayerState,
+      "parry_open" | "parry_lockout" | "resource" | "specialization" | "passive_ranks" | "tree_ability_cooldown"
+    >
   | null
   | undefined;
 
@@ -195,6 +208,33 @@ export class PlayerCombat {
       this.look.attackClip(aim, playerClass === "warrior" ? { charge: true, holdMs: CHARGE_MS } : undefined);
       this.lockFor(SPECIAL_COOLDOWN_MS, true);
     }
+    return true;
+  }
+
+  /**
+   * Key 3 pressed (FS-04EEA R35–R37, R39, R40): one `cast_skill` for a `playerClass` character's tree ability
+   * at the world point `target`, from `me`, when the latest state shows it held, off cooldown and affordable
+   * and no Shadow Shot hold is in progress; nothing on a key's auto-repeat (`repeat`). The archer's Arrow Rain
+   * is aimed by a hold of its own (R38), never this press. Whether the player may act at all (a menu open,
+   * resolved) is the scene's to decide before it asks. Whether it was sent.
+   */
+  treeAbility(playerClass: string, me: Point, target: Point, repeat = false): boolean {
+    if (repeat || this.hold.aiming) return false;
+    const ability = treeAbilityOf(playerClass);
+    if (ability === null || ability === "arrow_rain") return false;
+    const self = this.self();
+    if (!treeAbilityReady(playerClass, self)) return false;
+
+    // a copy: the effects are handed where the player stood, never the drawn position itself
+    const from = { x: me.x, y: me.y };
+    this.port.sendMessage(ActionType.CastSkill, { skill_id: ability, target_x: target.x, target_y: target.y });
+    if (ability === "blink") {
+      this.look.blink?.(from, target);
+      return true;
+    }
+    this.port.castSent?.();
+    if (ability === "earthbreaker") this.look.earthbreaker?.(from);
+    else this.look.settleTheDebt?.(from, self?.resource?.current ?? 0);
     return true;
   }
 

@@ -6554,6 +6554,183 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
 
 });
 
+describe("BarrowspireScene key 3, the tree ability (FS-04EEA §G R35–R37)", () => {
+  interface FakeKey {
+    justDown: boolean;
+    isDown: boolean;
+  }
+  const key = (): FakeKey => ({ justDown: false, isDown: false });
+
+  interface Keyed {
+    bindRunInput(): void;
+    endRun(): void;
+  }
+
+  /** A `cls` player in play holding their tree's ability, off cooldown, with `resource`. */
+  const holder = (cls: string, fields: Record<string, unknown> = {}) => ({
+    ...player("me", "Aldric", 130),
+    class: cls,
+    passive_ranks: { [`${cls}.t3`]: 1 },
+    tree_ability_cooldown: { remaining: 0, total: 10 },
+    resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25, tree_ability_cost: 40 },
+    ...fields,
+  });
+
+  /** The cursor's world point: the pointer at screen (400, 300) under the run's camera. */
+  const CURSOR = await_iso.screenToWorld(400, 300);
+
+  /** A run in play, its keys bound, this player `me` of class `cls`. */
+  function keyOnStage(cls = "warrior", me: object = holder(cls)) {
+    const stage = onStage();
+    vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
+    const run = stage.run as unknown as Keyed;
+    const keys = { esc: key(), enter: key(), one: key(), two: key(), three: key() };
+    const keyHandlers: Record<string, (event?: { repeat?: boolean }) => void> = {};
+    Object.assign(stage.run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        // chat typing turns the run's keyboard off (FS-TQZ5J § Change: Batch 6, R127)
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn), enabled: true, resetKeys: vi.fn() },
+        on: vi.fn(),
+        activePointer: { button: 0, positionToCamera: () => ({ x: 400, y: 300 }) },
+      },
+    });
+    stage.run.handleGameStateUpdate(partyState(me as ReturnType<typeof player>));
+    run.bindRunInput();
+    /** One press of 3 as Phaser delivers it: the run's keydown event, then the UI scene's frame reading its own key. */
+    const pressThree = (event: { repeat?: boolean } = {}) => {
+      keys.three.justDown = true;
+      keyHandlers[`keydown-${RUN_ACTIONS.treeAbility.key}`]?.(event);
+      uiFrame(run, keys);
+    };
+    const press = (k: FakeKey) => {
+      k.justDown = true;
+      uiFrame(run, keys);
+    };
+    const casts = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.CastSkill);
+    return { ...stage, run, keys, keyHandlers, pressThree, press, casts };
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("should bind the cast to the keydown event the mapping names", () => {
+    const { keyHandlers } = keyOnStage();
+    expect(keyHandlers[`keydown-${RUN_ACTIONS.treeAbility.key}`]).toBeTypeOf("function");
+  });
+
+  it.each([
+    ["warrior", "earthbreaker"],
+    ["mage", "blink"],
+  ])("should send one cast_skill for a %s's %s at the cursor's world point", (cls, skill) => {
+    const { pressThree, casts } = keyOnStage(cls);
+    pressThree();
+    expect(casts()).toEqual([[ActionType.CastSkill, { skill_id: skill, target_x: CURSOR.x, target_y: CURSOR.y }]]);
+  });
+
+  it("should send one settle_the_debt for a mercenary holding parry charges, and none at 0", () => {
+    const charged = (current: number) =>
+      holder("mercenary", { resource: { kind: "parry_charges", current, max: 3, ability_cost: 0, tree_ability_cost: 1 } });
+    const at2 = keyOnStage("mercenary", charged(2));
+    at2.pressThree();
+    expect(at2.casts().map(([, p]) => (p as { skill_id: string }).skill_id)).toEqual(["settle_the_debt"]);
+    vi.restoreAllMocks();
+
+    const at0 = keyOnStage("mercenary", charged(0));
+    at0.pressThree();
+    expect(at0.casts()).toHaveLength(0);
+  });
+
+  it("should send one cast for a held 3, whatever the key repeats", () => {
+    const { pressThree, casts } = keyOnStage();
+    pressThree();
+    pressThree({ repeat: true });
+    pressThree({ repeat: true });
+    expect(casts()).toHaveLength(1);
+  });
+
+  // ADR-0084 Decision 4: while the menu is open 1–3 are its rows; the run's has two to pick (Fall, Options),
+  // so 3 picks nothing there, and the world still sends nothing
+  it("should leave 3 to the menu, and send no cast, while the menu is open", () => {
+    const { run, pressThree, press, keys, casts, sent } = keyOnStage();
+    press(keys.esc);
+    const menu = menuOver(run);
+    expect(menu).toBeDefined();
+    pressThree();
+    expect(menuOver(run)).toBe(menu);
+    expect(casts()).toHaveLength(0);
+    expect(sent).not.toHaveBeenCalledWith(ActionType.ForfeitRun, expect.anything());
+  });
+
+  it.each([
+    ["chat is typing", { typing: true }],
+    ["the inventory is open", { inventory: true }],
+    ["the character panel is open", { character: true }],
+    ["the passive tree is open", { tree: true }],
+  ])("should send nothing on 3 while %s", (_, ui) => {
+    const { run, pressThree, casts } = keyOnStage();
+    uiSceneOn(run, "run", { row: false }).bridge.reportUi(ui);
+    pressThree();
+    expect(casts()).toHaveLength(0);
+  });
+
+  it.each([
+    ["the player is dead", holder("warrior", { current_health: 0 })],
+    ["the player has escaped", holder("warrior", { escape: true })],
+    ["the tree ability is not held", holder("warrior", { passive_ranks: {} })],
+    ["it is on cooldown", holder("warrior", { tree_ability_cooldown: { remaining: 3, total: 10 } })],
+    [
+      "it is not affordable",
+      holder("warrior", { resource: { kind: "stamina", current: 10, max: 100, ability_cost: 25, tree_ability_cost: 40 } }),
+    ],
+  ])("should send nothing on 3 when %s", (_, me) => {
+    const { pressThree, casts } = keyOnStage("warrior", me);
+    pressThree();
+    expect(casts()).toHaveLength(0);
+  });
+
+  it("should send nothing on 3 once the run has ended", () => {
+    const { run, pressThree, casts } = keyOnStage();
+    run.endRun();
+    pressThree();
+    expect(casts()).toHaveLength(0);
+  });
+});
+
+// FS-04EEA R41: a body whose reported position moves over 60 world px between two states is placed there,
+// the own body and every other, so the next frame draws it there; a walk still glides
+describe("BarrowspireScene a body that jumps (FS-04EEA R41)", () => {
+  interface Drawn {
+    playerPos?: { x: number; y: number };
+    otherPlayersPos: Map<string, { x: number; y: number }>;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** The run having seen the party at its first state, then at `meX` and `allyX` on the next. */
+  function moved(meX: number, allyX: number) {
+    const { run } = onStage();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160)));
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", meX), player("ally", "Wenna", allyX)));
+    return run as unknown as Drawn;
+  }
+
+  it("should place the own body and a teammate's at once at a state position 61 px on", () => {
+    const run = moved(130 + 61, 160 + 61);
+    expect(run.playerPos).toEqual(at(191, 300));
+    expect(run.otherPlayersPos.get("ally")).toEqual(at(221, 300));
+  });
+
+  it("should leave a 40 px move to the glide, own and teammate's", () => {
+    const run = moved(130 + 40, 160 + 40);
+    expect(run.playerPos).toEqual(at(130, 300));
+    expect(run.otherPlayersPos.get("ally")).toEqual(at(160, 300));
+  });
+});
+
 describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20–22)", () => {
   interface Overlaid {
     menu?: unknown;

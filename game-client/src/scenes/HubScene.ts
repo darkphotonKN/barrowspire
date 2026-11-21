@@ -53,6 +53,7 @@ import {
 } from "@/render/iso";
 import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { placeOnJump } from "@/render/jump";
 import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
 import { Auras } from "@/render/effects/aura";
 import { prefersReducedMotion } from "@/render/effects/mist";
@@ -3152,6 +3153,8 @@ export class HubScene extends Phaser.Scene {
     // for the first time is placed outright, so it does not slide in from the
     // origin.
     if (existing) {
+      // a body that jumps is placed there at once, never glided, as in every world (FS-04EEA R41)
+      placeOnJump(existing.pos, existing.target, player.position);
       existing.target = { x: player.position.x, y: player.position.y };
       this.updateAppearance(existing, player);
       // a pick in town shows from the next state (FS-E1ZDG §B R8), and its look once in (FS-1J1CB R22)

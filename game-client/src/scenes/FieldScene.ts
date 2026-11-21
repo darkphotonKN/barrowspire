@@ -52,7 +52,9 @@ import { GameplaySounds } from "@/audio/gameplaySounds";
 import { abilityBar } from "@/ui/abilityBarView";
 import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
-import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
+import { cursorWorldOf, fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
+import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { placeOnJump } from "@/render/jump";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
@@ -340,6 +342,7 @@ export class FieldScene extends Phaser.Scene {
     });
     this.createPiles();
     this.bindHudKeys();
+    this.bindTreeAbilityKey();
     this.bindMinimapKey();
     // the field's minimap, built with its first state (FS-P0HSP §A.1); as the overlay, held
     // against the screen from the main camera's frames (FS-1SEF0 §C.19)
@@ -570,6 +573,15 @@ export class FieldScene extends Phaser.Scene {
       else this.minimap?.pointerMove(at.x, at.y);
     });
     this.input.on("gameout", () => this.minimap?.pointerOut());
+  }
+
+  /**
+   * Key 3, the tree ability's cast at the world point under the cursor (FS-04EEA R35, R36), as the run binds
+   * it: held back while the UI scene's menu reads it as its third row, chat types or a gear panel is open; a
+   * fallen player sends nothing (`FieldCombat.treeAbility`).
+   */
+  private bindTreeAbilityKey(): void {
+    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.fight?.treeAbility(cursorWorldOf(this), repeat));
   }
 
   /**
@@ -1077,6 +1089,8 @@ export class FieldScene extends Phaser.Scene {
     const existing = this.views.get(player.entity_id);
     const fallen = isFallen(player);
     if (existing) {
+      // a jump, a Blink, is placed there at once, never glided (FS-04EEA R41)
+      placeOnJump(existing.pos, existing.target, player.position);
       existing.target = { x: player.position.x, y: player.position.y };
       // risen at the entrance: stand there at once rather than slide across the field
       if (existing.fallen && !fallen) existing.pos = { ...existing.target };

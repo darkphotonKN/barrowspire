@@ -144,6 +144,15 @@ export class FieldCombat {
     this.combat.cast(button, this.self.className, this.self.at, target);
   }
 
+  /**
+   * Key 3 at world point `target` (FS-04EEA R35–R37): the player's tree ability, unless they have fallen;
+   * nothing on a key's auto-repeat (`repeat`). Whether it was sent.
+   */
+  treeAbility(target: Point, repeat = false): boolean {
+    if (!this.self || this.self.fallen) return false;
+    return this.combat.treeAbility(this.self.className, this.self.at, target, repeat);
+  }
+
   /** The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11). */
   aimFrame(drawnAt: Point | undefined): void {
     this.combat.aimFrame(drawnAt);
@@ -181,6 +190,13 @@ export class FieldCombat {
     if (!this.self || this.self.fallen || this.parts.claimed?.()) return;
     this.combat.strike(this.self.at, entityId, them, this.self.className, this.parts.button?.());
   }
+}
+
+/** The world point under `scene`'s cursor now, wherever the camera has moved since it last moved. */
+export function cursorWorldOf(scene: Pick<Phaser.Scene, "input" | "cameras">): Point {
+  // Phaser types the result as `Vector2 | object`; with no output given it is a Vector2
+  const screen = scene.input.activePointer.positionToCamera(scene.cameras.main) as Phaser.Math.Vector2;
+  return screenToWorld(screen.x, screen.y);
 }
 
 /**
@@ -222,11 +238,7 @@ export function fieldCombatOnScene(
   const pointer = ensurePointerLook(scene, art);
   pointer?.base("hand");
 
-  // the world point under the cursor now, wherever the camera has moved since it last moved
-  const cursorWorld = (): Point => {
-    const screen = scene.input.activePointer.positionToCamera(scene.cameras.main) as Phaser.Math.Vector2;
-    return screenToWorld(screen.x, screen.y);
-  };
+  const cursorWorld = () => cursorWorldOf(scene);
 
   let charge: Charge | undefined;
 

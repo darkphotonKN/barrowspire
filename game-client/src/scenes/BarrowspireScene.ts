@@ -55,6 +55,8 @@ import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
+import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { placeOnJump } from "@/render/jump";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
   NO_FACTS,
@@ -3513,6 +3515,10 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drinkPotion();
     });
 
+    // 3 casts the tree ability (FS-04EEA R35, R36), an event as 1 is; held back while the UI scene's menu
+    // reads it as its third row, chat types or a gear panel is open
+    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.castTreeAbility(repeat));
+
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
       // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
@@ -3817,7 +3823,8 @@ export class BarrowspireScene extends Phaser.Scene {
       // stays hidden; the escape plays only for a body seen in play, not on a reconnect's rebuild
       if (state.current_player.escape === true) this.hideOwnBody(!firstSeen);
 
-      // 設定目標位置，在 update() 中平滑移動
+      // 設定目標位置，在 update() 中平滑移動; a jump, a Blink, is placed there at once (FS-04EEA R41)
+      if (this.playerPos) placeOnJump(this.playerPos, this.targetPosition, pos);
       this.targetPosition = { x: pos.x, y: pos.y };
 
       this.showProgress(state.current_player);
@@ -4709,7 +4716,9 @@ export class BarrowspireScene extends Phaser.Scene {
       this.looks?.see(playerData.id, { ...playerData, class: cls });
       this.auras?.see(playerData.id, { ...playerData, class: cls });
 
-      // 設定目標位置，在 update() 中平滑移動
+      // 設定目標位置，在 update() 中平滑移動; a jump, a Blink, is placed there at once (FS-04EEA R41)
+      const drawnAt = this.otherPlayersPos.get(playerData.id);
+      if (drawnAt) placeOnJump(drawnAt, this.otherPlayersTargets.get(playerData.id), playerData.position);
       this.otherPlayersTargets.set(playerData.id, {
         x: playerData.position.x,
         y: playerData.position.y,
@@ -5580,6 +5589,16 @@ export class BarrowspireScene extends Phaser.Scene {
         hit.destroy();
       },
     };
+  }
+
+  /**
+   * Key 3's tree-ability cast at the world point under the cursor (FS-04EEA R36, R37): only while this player
+   * is in play, neither resolved nor spectating, and the run not over; the combat judges the rest.
+   */
+  private castTreeAbility(repeat: boolean): void {
+    if (!this.player || !this.playerPos || this.runEnded) return;
+    if (resolved(this.lastGameState?.current_player)) return;
+    this.combat.treeAbility(this.ownClass(), this.playerPos, this.cursorWorld(), repeat);
   }
 
   /**
