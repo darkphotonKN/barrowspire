@@ -765,3 +765,270 @@ and the state's `facing` field that R27–R32 once specified are removed by the 
 4. **The attack legs' cycles** (R21: `walk_attack` 0.75, R10: `backpedal_attack` 0.75) are
    charter defaults; the owner tunes them at the archer's contact sheet, and judges the leg jump on
    a repeated swing (Edge States).
+
+## Change: Attacking pins the attacker
+Status: shipped
+Date: 2026-11-21
+
+Promoted `--from-thread` on 2026-11-22 from the owner-approved charter of 2026-11-21. The thread
+is the charter's locked decisions, so no interview was held; every decision below is a **charter
+default approved by the owner**, given with its reason. It lands here because it replaces §C (the
+attack slow), which this FS owns through `game-server/game-service/SPECIFICATION.md` "Attacking
+slows the attacker's movement". No new thin line, no new FS. Code citations are against main
+`d713329d`.
+
+**Why (owner).** Today a player can walk away while shooting or swinging, so kiting is trivial and
+ranged classes are over-favoured. Attacking must pin the attacker in place for a short time. The
+owner: this stays "just the animations and pinning".
+
+**What it changes in §C.** R14's slowed walk becomes no walk at all. R15 (the 0.45 factor) is
+retired. R16's window keeps its length and its end on the first tick after, now shortened by worn
+attack speed. R17 keeps its rule (only a resolved cast) and loses `dash`. R18 (a cast restarts the
+window) is replaced by a refusal. R19 (the walk after a charge is slowed) is replaced. R20 (runs,
+fields, the dev test room; nothing on the wire) is kept. R21 (the attack legs' pace) is untouched.
+
+### Decisions (charter defaults, owner-approved 2026-11-21)
+
+- **D1. The pin replaces the slow.** It reuses the built per-player timer
+  (`internal/components/attack_slow.go`, `AttackSlowDuration` in `internal/systems/combat.go`) and
+  the kinds that slowed, less `dash` (D6). `AttackSlowFactor` 0.45 is retired. *Reason:* the
+  smallest change, one mechanism.
+- **D2. One pin length, 0.6 s, for every kind,** divided by worn attack speed the way a cooldown
+  is (`/ (1 + AttackSpeedPercent/100)`, the capped total). *Reason:* one number, and gear still
+  matters; 0.6 s is about the attack clip's 0.583 s. Per-attack lengths wait for a later retune.
+- **D3. While pinned, the movement system ignores velocity:** `walkFactor` returns 0 for a pinned
+  entity. Moves keep updating the stored velocity; `handleMove` (`internal/game/session.go`) is
+  not changed and nothing is zeroed when a pin starts. When the pin ends the body walks in
+  whatever direction is held then, or stands if nothing is held. This is not a queue: velocity is
+  only the direction currently held, and nothing replays. *Reason:* `FieldScene` (which also
+  draws the dev test room) sends a move only when the held keys change, so dropping moves would
+  leave a key held through a pin stuck until a key changed; ignoring velocity works in every scene
+  with no client change and behaves the same in runs (the run scene sends every frame). The
+  server never moves a pinned body, and the client only eases toward server positions, so it
+  shows the body standing: kiting during the pin is refused by the server.
+- **D4. A cast tried during a pin is refused exactly like a cast on cooldown** (FS-8AY7S R10: it
+  does nothing) and does not restart the pin. *Reason:* the owner's "clicks to kite away are
+  rejected too". Accepted effect: today's 0.25 s-cooldown attacks fire at most once per pin
+  length until a later pace retune.
+- **D5. The parry is exempt:** it never pins and works while pinned (FS-MAMHR R13's no-root kept).
+  *Reason:* it is a defence, not an attack, and has no attack-table row.
+- **D6. The dash never pins** (its row drops the flag) **and is refused while pinned.** *Reason:*
+  nobody cancels a pin for 25 stamina, and the dash is movement, not an attack.
+- **D7. Shadow Shot's pin starts on release,** when the released cast resolves, never when the
+  hold begins. *Reason:* the hold is client presentation (ADR-0030); the server never sees it.
+- **D8. The pin applies in runs, field worlds and the dev test room.** *Reason:* wherever the
+  combat system resolves a player's cast, as R20 had it for the slow.
+- **D9. Nothing new on the wire.** The client mirrors the pin locally from its own casts.
+  *Reason:* ADR-0020 §3, and the client already mirrors cooldowns this way.
+- **D10. The client ignores attack clicks during its tracked pin, except the parry.** *Reason:* it
+  must not show a swing the server refuses. Not an absolute guarantee (jitter can let a click
+  reach the server at the edge); the server's refusal (D4) is the authority.
+- **D11. Clip choice is unchanged.** `selectAnimation` (`src/render/art/animationSelect.ts`)
+  already plays `attack` for an attacking body that is not moving, which a pinned body is.
+  *Reason:* nothing to build; `walk_attack` and `backpedal_attack` now show only in the latency
+  gap.
+- **D12. The latency gap is accepted.** The client's pin starts on the click, the server's on the
+  resolved tick. *Reason:* §C accepted the same gap for the slow.
+- **D13. A monster's hit neither interrupts nor extends a pin.** *Reason:* one rule, the pin is
+  the attacker's own cost.
+- **D14. Vocabulary is "pin"** (already in `game-server/game-service/CONTEXT.md`); in code
+  `AttackSlow*` becomes `AttackPin*`. *Reason:* code and vocabulary agree.
+- **D15. Built on branch `feat/attack-pin`, off main.**
+- **D16. An archer's Shadow Shot hold may begin during a pin; the pin gates the release the way
+  the cooldown does.** *Reason:* it matches today's cooldown handling ("a hold may begin at any
+  time; its release is what the cooldown gates"), no new hold rule.
+- **D17. The client's tracked pin is a fixed 600 ms and ignores worn attack speed,** like the
+  client's cooldown mirror. *Reason:* it can only err long, never let the client think it is free
+  before the server does; the state carries no worn attack-speed total.
+
+**Rejected:** a client-only pin (a modified client could ignore it, and it is the rule that
+balances ranged play); a server-held wind-up with the hit at its end (supersedes ADR-0030, needs
+deferred casts); keeping the 0.45 slow; zeroing velocity and dropping moves during the pin (D3's
+first form, which strands a held key in field worlds).
+
+**Facts checked in code (main `d713329d`):**
+
+- Tick order (`Session.step`): `applyIntents` (moves and casts queued) → gear → potions →
+  resources → monster AI → `MovementSystem` → projectiles → `CombatSystem`. A cast's own tick
+  still walks at full speed; the pin holds from the next tick's movement. `tickAttackSlow` runs
+  for an entity ahead of its `resolve`, so a pin ends before a cast on the same tick is judged.
+- `resolve` refuses on cooldown, then cost (after `armCut`), then (targeted) no target; it then
+  stops any charge (`endCharge`), starts a dash's charge, spends, starts the cooldown, and starts
+  the slow when the row `slows`. Every player row carries `slows: true` today, the dash's included.
+  The parry has no row; `stepStance` opens it.
+- `walkFactor` scales the walk only; a charge in flight moves at its own speed and never reads it.
+- `GameFrameRate` is 30 Hz: 0.6 s is 18 ticks; at the 50% attack-speed cap 0.4 s is 12 ticks.
+- The run scene (`BarrowspireScene`) sends the held stride every frame; `FieldScene` and
+  `HubScene` send velocity only when it changes. Neither changes here (D3).
+- The client's cooldown mirror is `PlayerCombat` (`src/render/combat/playerCombat.ts`), shared by
+  the run and the field (`src/scenes/fieldCombat.ts` composes it), with fixed constants
+  (`PRIMARY_COOLDOWN_MS` 250, `SPECIAL_COOLDOWN_MS` 400, `STRIKE_COOLDOWN_MS` 500). The Shadow Shot
+  hold is `ShadowShotAim` (`src/scenes/shadowShotAim.ts`): a release that is not `ready` (held too
+  briefly, on cooldown, unaffordable) answers "cancel" and sends nothing.
+- The state's `direction` carries `vx`, `vy` and `speed` from `VelocityComponent`; `FieldScene`
+  turns a figure still on a placeholder texture by `vx`, `vy`.
+
+### Requirements
+
+#### game-service
+
+49. **The pin (D1, D3).** A player whose cast of a pinning kind resolves is **pinned** from that
+    tick for the pin length. While pinned, `MovementSystem` does not walk them: `walkFactor`
+    returns 0 for an entity carrying the pin. Replaces R14's slowed walk; R15's
+    `AttackSlowFactor` is deleted.
+50. **Its length (D2).** `AttackPinDuration` = 0.6 s, divided by `1 + AttackSpeedPercent/100` of
+    the caster's worn total (already capped) on the tick the cast resolves, as the cooldown is.
+    Unequipped: 18 ticks at 30 Hz. The pin is lifted on the first tick after its window, before
+    that tick's casts are judged (R16's timing kept), so the body walks again on the tick after
+    that.
+51. **The pinning kinds (D1, D5, D6).** The rows that pin are `attack`, `slash`, `cut` and the
+    riposte it becomes, `arrow`, `fireball`, `shadow_shot`, `triple_fireball`. Not `dash`, whose
+    row drops the flag; not `parry`, which has no row; no monster row. Only a resolved cast pins
+    (R17's rule kept): one refused for cooldown, cost, target or the pin starts nothing.
+52. **The held direction is kept (D3).** `handleMove` is unchanged: a move during the pin sets the
+    stored velocity as it does today, and nothing zeroes it when a pin starts. On the first tick
+    the body may walk again, it walks the velocity it has then, at full move speed, or stands if
+    that is zero. Nothing is queued or replayed. `Speed` is never written by the pin.
+53. **Refused while pinned (D4, D6).** While pinned, `resolve` refuses every intent on an
+    attack-table row, the dash included, exactly as it refuses one on cooldown, and at the same
+    point (before the cost): no damage or projectile, nothing spent (parry charges included, for
+    a cut armed as the riposte), no cooldown started, no charge started or stopped, the pin not
+    restarted. Replaces R18.
+54. **The parry (D5).** While pinned, a `parry` opens the stance exactly as it does unpinned. A
+    parry never starts or changes a pin.
+55. **The dash (D6).** A resolved dash starts no pin, so the walk after its charge is at full
+    speed. A pinning cast that resolves while a charge is in flight stops the charge where the body
+    stands (`endCharge`, as today) and starts the pin. Replaces R19.
+56. **Shadow Shot (D7).** Its pin starts on the tick the released `shadow_shot` cast resolves.
+57. **Monsters (D13).** A hit taken neither ends nor extends a pin. No monster ever carries one.
+58. **Everywhere (D8).** The pin holds in runs, field worlds and the dev test room, wherever
+    `CombatSystem` resolves a player's cast (R20 kept). It is per-body state: a new body (a world
+    switch, a new run, a reconnect's new body) starts unpinned.
+59. **Names (D14).** `AttackSlowComponent` → `AttackPinComponent`, `ComponentTypeAttackSlow` →
+    `ComponentTypeAttackPin`, `AttackSlowDuration` → `AttackPinDuration`, `attackSlowEpsilon` →
+    `attackPinEpsilon`, `startAttackSlow` / `tickAttackSlow` → `startAttackPin` / `tickAttackPin`,
+    the row's `slows` → `pins`; the files and tests named to match. No other attack-table value
+    changes.
+60. **Nothing on the wire (D9).** No message, state field, `.proto` or OpenAPI change.
+    `direction.speed` reports the move speed as before; `direction.vx`, `vy` report the held
+    direction, pinned or not.
+
+#### game-client
+
+61. **The tracked pin (D9, D17).** `PlayerCombat` starts a tracked pin of a fixed
+    `ATTACK_PIN_MS` = 600 on every send of a pinning kind: the targeted strike (`attack`), the
+    primary casts (`slash`, `arrow`, `cut`, whether or not it is drawn as the riposte, `fireball`),
+    `triple_fireball`, and a fired `shadow_shot` release. Not on a `dash` or a `parry` send. It
+    ignores worn attack speed.
+62. **Clicks ignored while it runs (D10, D5, D6).** While the tracked pin runs, `strike` and
+    `cast` (primary or special, the warrior's dash included) send nothing and play nothing: no
+    effect, no attack clip, no `castSent`, no `abilityCast`, no cooldown or lockout started.
+    The Mercenary's right-click is exempt and sends `parry` as today, gated by `parryRefused`
+    alone.
+63. **The archer's hold (D16).** A right-press during the tracked pin begins the hold as today.
+    The pin gates the release as the cooldown does: while it runs the hold is not `ready` (the aim
+    line reads not ready) and a release ends the hold with nothing sent or played, as a release on
+    cooldown does. A release once the pin is over (and off cooldown, held long enough, affordable)
+    fires as today.
+64. **A new start.** `reset()` (a new world or a new run) clears the tracked pin, as it clears the
+    cooldowns.
+65. **Nothing else changes (D3, D11, D12).** `selectAnimation`, the scenes' movement sends
+    (`BarrowspireScene`, `FieldScene`, `HubScene`) and the ability card are not changed. The
+    client's pin starts on the click and the server's on the resolved tick; the gap is accepted.
+
+### Acceptance Criteria
+
+game-service (`make test` in `game-server/game-service`), through the systems and through a
+session:
+
+- [ ] For each pinning kind, a caster walking a held direction whose cast resolves walks at full
+      speed on the cast's tick, then stands for exactly 18 ticks, its velocity still the held
+      direction, then walks it at full speed on the next tick.
+- [ ] Worn attack speed shortens the pin as it shortens a cooldown: +50% (the cap) pins for 12
+      ticks, +20% for 15.
+- [ ] A move sent during the pin changes the stored velocity and not the position; after the pin
+      the body walks the latest direction sent. A stop sent during the pin leaves it standing
+      after the pin.
+- [ ] While pinned, each pinning kind and the dash is refused: no damage, the resource unchanged,
+      no cooldown started, no charge, and the pin ends on the tick it would have.
+- [ ] Two casts queued on one tick: the first resolves and pins, the second is refused.
+- [ ] A cast refused for cooldown, cost or target starts no pin.
+- [ ] A parry while pinned opens the stance; a parry never pins.
+- [ ] A resolved dash starts no pin, and the walk right after its charge is at full speed; a
+      pinning cast resolving during a charge stops the charge and pins.
+- [ ] A monster's strike on a pinned delver leaves the pin's remaining time as it would have
+      been; no monster ever carries the pin, its own strike included.
+- [ ] `direction.speed` is unchanged by the pin.
+- [ ] Through a session, in a run and in the dev test room: walk, slash, stand 18 ticks, walk on,
+      the key never re-sent.
+- [ ] No `AttackSlow`, `attackSlow` or `AttackSlowFactor` remains in game-service Go (a grep in
+      review). `internal/game/session.go` is unchanged.
+- [ ] No file under `game-server/common/api/proto`, `game-server/api-gateway`,
+      `game-client/src/api/generated` or any migration changes.
+
+game-client (`npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` in
+`game-client`), through `PlayerCombat` on its port's clock:
+
+- [ ] After each pinning send (strike, slash, arrow, cut, riposte, fireball, triple_fireball,
+      a fired Shadow Shot), `strike` and `cast` send and play nothing until 600 ms have passed,
+      and work once they have.
+- [ ] A dash send starts no tracked pin; a dash click during the pin sends nothing.
+- [ ] A Mercenary's right-click during the pin sends `parry` and raises the stance tell.
+- [ ] An archer's right-press during the pin begins the hold; a release during the pin sends
+      nothing and ends the hold; one after it fires.
+- [ ] `reset()` clears the tracked pin.
+- [ ] The tracked pin is 600 ms whatever gear is worn.
+- [ ] `animationSelect.ts`, `BarrowspireScene.ts`, `FieldScene.ts` and `HubScene.ts` are not
+      changed by the pin.
+
+Live check (at the browser check, see Out of Scope): in a run and in a field, a player holding a
+direction who attacks stands in `attack` for about 0.6 s, then walks on in the held direction with
+no key pressed again; a click during the stand does nothing; the Mercenary's parry still raises.
+
+### Edge States
+
+- **A key held through the pin.** Run and field alike: the body walks on the first tick it may,
+  with no key re-sent (D3).
+- **A key released during the pin.** The stop sets velocity to zero; the body stays standing.
+- **A key changed during the pin.** The last direction sent is the one walked; nothing earlier
+  replays.
+- **Two casts queued on one tick.** The first resolves and pins; the second is refused (R53).
+- **A charge in flight when an attack resolves.** The charge stops where the body stands and the
+  pin starts (R55). A charge can never start while pinned.
+- **Worn attack speed.** The server's pin is shorter than the client's fixed 600 ms, so the client
+  ignores some clicks the server would take. Errs safe (D17).
+- **Jitter.** A cast sent the moment the client's pin ends can reach the server a tick inside its
+  pin and be refused after the client drew the swing. The cooldown mirror has the same race; D12
+  accepts it. The swing is drawn with no hit.
+- **Attacks paced by the pin.** A 0.25 s-cooldown attack fires about once per 0.6 s while the
+  button is clicked repeatedly; the cooldown never binds before the pin does (D4, accepted).
+- **Pinned and pushed.** A pinned body is a standing body: collision resolution treats it as it
+  treats any body that is not walking, as today.
+- **Death, escape, floor change, world switch mid-pin.** The pin is the body's own state; it runs
+  out on its own timer or goes with the body. A dead or resolved body does not act anyway.
+- **Others' view.** An ally who attacks is seen standing for the pin; a figure still on a
+  placeholder texture in `FieldScene` may turn toward the held direction while standing, since
+  `direction.vx`, `vy` carry it. Accepted.
+- **The attack-on-the-move clips.** `walk_attack` and `backpedal_attack` show only in the latency
+  gap at the pin's edges (D11). The §C edge state "Kiting" (stepping back at the slowed speed) no
+  longer happens: the kiter stands.
+- **A Shadow Shot hold across the pin's end.** A hold begun during the pin and released after it
+  fires, if it is otherwise ready.
+
+### Out of Scope
+
+- Engagement, rooms waking together, cleave falloff, slower swings and monster retunes, drinking
+  time, monster counts, XP and drop rescale.
+- Retiring the attack-on-the-move clips (`walk_attack`, `backpedal_attack`) and their leg-pace
+  rules R10, R21.
+- Any HUD sign of the pin: the ability card does not grey for it, and no cursor or bar shows it.
+- Per-attack pin lengths, and reading worn attack speed on the client.
+- Any change to the wire, the attack table's values, the baked art, `internal/matchmaker`,
+  `internal/match_queue`, or another service.
+
+**Follow-ups (outside this change):**
+
+- The thin line "Attacking slows the attacker's movement" (`game-server/game-service/
+  SPECIFICATION.md`) reads loosely now; a reword with the pointer unchanged, via `spec-update`.
+- Open issue I-JS7C8-9 (the browser check) still tests "the slowed walk while attacking"; it needs
+  rewording to carry this change's live check.
