@@ -120,6 +120,9 @@ export const KNIGHT_STYLE = {
 
 export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
 
+/** The archer's sheet: the run and backpedal_attack clips (FS-JS7C8), at 1.5x (ADR-0076). */
+export const ARCHER_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
+
 export const ARCHER_STYLE = {
   attack: "shot",
   speed: 1.05,

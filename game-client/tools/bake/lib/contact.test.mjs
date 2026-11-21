@@ -1,5 +1,9 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { contactPages } from "./contact.mjs";
+import { composeDarkRoom, composeLooks, contactPages, lookSets, writeReview } from "./contact.mjs";
+import { decodePng } from "./png.mjs";
 
 // a creature sheet as the bake hands it to the review: 8 facings, four clips of `n` frames
 const sheet = (name, w = 100, h = 100, n = 6) => ({
@@ -23,5 +27,81 @@ describe("the 1x contact sheet's pages (lib/contact.mjs)", () => {
     expect(pages.length).toBeGreaterThan(1);
     expect(pages.flat().map((s) => s.name)).toEqual(cast.map((s) => s.name));
     for (const p of pages) expect(p.length).toBeGreaterThan(0);
+  });
+});
+
+// A class sheet as the bake hands it over, baked at 1.5x: 8 facings, its frames solid `rgb` inside
+// a clear rim two screen px wide, its anchor at the foot. `clips` maps each clip to its frame count.
+const SCALE = 1.5;
+const FW = 12;
+const FH = 12;
+const RIM = 3;
+const solid = (rgb) => {
+  const px = Buffer.alloc(FW * FH * 4);
+  for (let y = 0; y < FH; y++) for (let x = 0; x < FW; x++) if (x >= RIM && y >= RIM && x < FW - RIM && y < FH - RIM) px.set([...rgb, 255], (y * FW + x) * 4);
+  return px.toString("base64");
+};
+const classSheet = (name, rgb, clips = { idle: 2, walk: 3 }) => ({
+  name,
+  frameWidth: FW,
+  frameHeight: FH,
+  scale: SCALE,
+  anchor: { x: 0.5, y: 1 },
+  directions: 8,
+  source: "authored",
+  animations: Object.fromEntries(Object.entries(clips).map(([a, n]) => [a, { fps: 8, loop: true, frames: Array.from({ length: 8 }, () => Array(n).fill(solid(rgb))) }])),
+});
+const FACINGS = ["e", "se", "s", "sw", "w", "nw", "n", "ne"];
+const THEME = { barrowDeep: "#101010", charcoal: "#202020", barrowBrown: "#403020" };
+const at = (c, x, y) => [...c.rgba.subarray((y * c.width + x) * 4, (y * c.width + x) * 4 + 3)];
+
+describe("the spec looks' review (FS-1J1CB R12, lib/contact.mjs)", () => {
+  const base = classSheet("char_archer_base", [200, 0, 0]);
+  const hunter = classSheet("char_archer_hunter", [0, 200, 0]);
+  const shadow = classSheet("char_archer_shadow_ranger", [0, 0, 200], { idle: 2, walk: 3, attack_offhand: 4 });
+
+  it("sets each class with a baked look beside its own sheet, and no other", () => {
+    const sets = lookSets([classSheet("char_knight_base", [1, 1, 1]), shadow, base, hunter, sheet("creature_ghoul_base")]);
+    expect(sets.map((s) => [s.stem, s.base.name, s.looks.map((l) => l.name)])).toEqual([["archer", "char_archer_base", ["char_archer_hunter", "char_archer_shadow_ranger"]]]);
+    expect(lookSets([hunter])).toEqual([]);
+  });
+
+  it("lays each look's frame under the class's same frame, every clip × 8 facings, at game scale", () => {
+    const c = composeLooks(base, [hunter, shadow], FACINGS, new Map(), THEME);
+    // a 12 px frame baked at 1.5x is 8 screen px: a column per frame of each clip, the look's own clips after
+    const cell = FW / SCALE;
+    const cols = 2 + 3 + 4;
+    expect(c.width).toBeGreaterThanOrEqual(cols * cell);
+    // find the class's first idle frame in the first facing, then the looks' straight under it
+    const red = [];
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (at(c, x, y)[0] > 120 && at(c, x, y)[1] < 60) red.push([x, y]);
+    const [x0, y0] = red[0];
+    expect(at(c, x0, y0 + cell)[1]).toBeGreaterThan(120);
+    expect(at(c, x0, y0 + 2 * cell)[2]).toBeGreaterThan(120);
+    // the class's frame once in every facing down that column: eight runs of red
+    let runs = 0;
+    for (let y = y0; y < c.height; y++) if (at(c, x0, y)[0] > 120 && !(at(c, x0, y - 1)[0] > 120)) runs++;
+    expect(runs).toBe(8);
+  });
+
+  it("lights the dark-room strip as the world does: sprite and floor under the run's ambient", () => {
+    const floor = [100, 80, 60];
+    const ambient = [128, 128, 255];
+    const c = composeDarkRoom([base, hunter], FACINGS, new Map(), THEME, { floor, ambient }, 1);
+    const colours = new Set();
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) colours.add(at(c, x, y).join());
+    expect(colours).toContain([50, 40, 60].join());
+    // the class's red and the hunter's green, each halved by the ambient's red and green
+    expect(colours).toContain([100, 0, 0].join());
+    expect(colours).toContain([0, 100, 0].join());
+  });
+
+  it("writes each class's looks sheet and dark-room strip with the review", () => {
+    const dir = mkdtempSync(join(tmpdir(), "look-review-"));
+    const sheets = [base, hunter];
+    const manifest = { sheets: {} };
+    const files = writeReview({ sheets: [], facings: FACINGS, labels: new Map(), manifest, theme: THEME, looks: lookSets(sheets), darkRoom: { sheet: base, floor: [10, 10, 10], ambient: [200, 200, 200] }, dir });
+    expect(files.map((f) => f.slice(dir.length + 1))).toEqual(["contact-looks-archer.png", "contact-darkroom-archer.png", "index.html"]);
+    for (const f of files.slice(0, 2)) expect(decodePng(readFileSync(f)).width).toBeGreaterThan(0);
   });
 });
