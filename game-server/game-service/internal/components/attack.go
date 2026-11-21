@@ -82,6 +82,9 @@ type AttackSnapshot struct {
 	// Split marks a Hunter's split arrow: an arrow that never splits in turn.
 	// FS-E1ZDG §G R26.
 	Split bool
+	// PiercesAll marks a Shadow Ranger's Shadow Shot: a projectile that never
+	// stops at a target, whatever its Pierce. FS-E1ZDG §H R29.
+	PiercesAll bool
 }
 
 // AttackIntent is a request a handler validated and the CombatSystem has yet to

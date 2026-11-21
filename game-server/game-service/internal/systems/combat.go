@@ -1216,6 +1216,7 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 	s.kickAfterHit(attack, crit, kill)
 	s.combust(attack, target, damage, crit)
 	s.split(attack, target, crit)
+	s.shadowRefund(attack, target)
 	return true
 }
 
@@ -1276,7 +1277,7 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 // attack plus the equipped weapon's attack_power and worn flat damage, the
 // scaling stat plus the worn attribute, crit chance from the weapon's
 // critical_rate plus worn crit points (or a forced crit the cast carries), and
-// a worn Lantern's pierce.
+// a worn Lantern's pierce, or a Shadow Ranger's Shadow Shot piercing all.
 func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
 	attack := bareSnapshot(attacker, spec)
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
@@ -1302,6 +1303,7 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 		attack.Pierce = s.effects.PierceExtraTargets
 	}
 	attack.Pierce += spec.pierce
+	attack.PiercesAll = shadowRangersShadowShot(attacker, spec.kind)
 
 	return attack
 }
