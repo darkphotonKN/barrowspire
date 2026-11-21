@@ -140,10 +140,15 @@ func TestPassiveBonus_EveryFiller_ChangesExactlyItsStat(t *testing.T) {
 }
 
 // Acceptance "Holding t3, t6a or t6b changes no stat in this FS" (R30, R31).
+// The Berserker's blood price is FS-E1ZDG §D's stat, not this FS's
+// (berserker_test.go).
 func TestPassiveBonus_AbilityAndSpecializationNodes_ChangeNoStat(t *testing.T) {
 	for class := range classPools {
 		bare := statsOfClass(class, nil)
 		for _, slot := range []string{"t3", "t6a", "t6b"} {
+			if class+"."+slot == "warrior.t6b" {
+				continue
+			}
 			assert.Equal(t, bare, statsOfClass(class, passivetree.Ranks{class + "." + slot: 1}), "%s.%s", class, slot)
 		}
 	}

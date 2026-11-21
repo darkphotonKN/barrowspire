@@ -653,16 +653,16 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	}
 	spec = kickAsCast(attacker, spec)
 
-	monstersHit, killsBefore := 0, len(s.kills)
+	landed, monstersHit, killsBefore := 0, 0, len(s.kills)
 	switch spec.delivery {
 	case deliverTargeted:
 		if !s.strike(attacker, at, intent.TargetEntityID, spec) {
 			return
 		}
 	case deliverCone:
-		monstersHit = s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
+		landed, monstersHit = s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
 	case deliverAround:
-		monstersHit = s.around(attacker, at, spec, entities)
+		landed, monstersHit = s.around(attacker, at, spec, entities)
 	case deliverBlink:
 		if !s.blink(attacker, at, intent.TargetX, intent.TargetY, spec, entities) {
 			return
@@ -684,10 +684,11 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		pool.Current -= spec.cost
 	}
 	kickAfterCast(attacker, spec.kind, monstersHit, len(s.kills)-killsBefore)
+	bloodHeal(attacker, spec.kind, landed)
 	if cooldowns != nil {
-		// worn attack speed, already capped, and a Sellsword's stacks on top
-		// shorten every cooldown
-		attackSpeed := float64(wornGear(attacker).AttackSpeedPercent) + sellswordAttackSpeedPercent(stacks)
+		// worn attack speed, already capped, the Berserker's past the cap and a
+		// Sellsword's stacks on top shorten every cooldown
+		attackSpeed := float64(wornGear(attacker).AttackSpeedPercent+passiveBonus(attacker).AttackSpeedPastCapPercent) + sellswordAttackSpeedPercent(stacks)
 		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/(1+attackSpeed/100))
 	}
 	if spec.slows {
@@ -894,8 +895,9 @@ func parryStrike(target *ecs.Entity) bool {
 }
 
 // cone hits every valid target within the attack's reach and arc around the
-// aim, each resolved on its own, and reports how many monsters it hit.
-func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) int {
+// aim, each resolved on its own, and reports how many targets it landed on and
+// how many of them were monsters.
+func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) (landed, monstersHit int) {
 	aim := math.Atan2(aimY-at.Y, aimX-at.X)
 	return s.hitWithinReach(attacker, at, spec, entities, func(dx, dy float64) bool {
 		return math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) <= spec.halfArc
@@ -903,24 +905,24 @@ func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformCompon
 }
 
 // around hits every valid target within the attack's reach all the way round
-// the caster, each resolved on its own, and reports how many monsters it hit.
-// FS-04EEA §B R8.
-func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) int {
+// the caster, each resolved on its own, and reports how many targets it landed
+// on and how many of them were monsters. FS-04EEA §B R8.
+func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) (landed, monstersHit int) {
 	return s.hitWithinReach(attacker, at, spec, entities, allRound)
 }
 
 // hitWithinReach hits every valid target other than the attacker whose centre
 // is within the attack's reach and inShape, given its offset from the attacker,
-// and reports how many monsters it hit.
-func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) int {
+// and reports how many targets it landed on and how many of them were monsters.
+func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) (landed, monstersHit int) {
 	return s.hitAround(s.snapshot(attacker, spec), at.X, at.Y, spec.reach, entities, inShape)
 }
 
 // hitAround lands the attack once on every valid target other than its
 // attacker whose centre is within reach of (x, y) and inShape, given its
-// offset from there, and reports how many monsters a hit landed on.
-func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach float64, entities []*ecs.Entity, inShape func(dx, dy float64) bool) int {
-	monstersHit := 0
+// offset from there, and reports how many targets a hit landed on and how many
+// of them were monsters.
+func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach float64, entities []*ecs.Entity, inShape func(dx, dy float64) bool) (landed, monstersHit int) {
 	for _, target := range entities {
 		if target.ID == attack.AttackerEntityID || !CanHit(attack, target, s.playerDamage) {
 			continue
@@ -936,11 +938,15 @@ func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach f
 			continue
 		}
 
-		if s.applyHit(attack, target) && target.HasComponent(ecs.ComponentTypeEnemy) {
+		if !s.applyHit(attack, target) {
+			continue
+		}
+		landed++
+		if target.HasComponent(ecs.ComponentTypeEnemy) {
 			monstersHit++
 		}
 	}
-	return monstersHit
+	return landed, monstersHit
 }
 
 // allRound is a shape that takes every offset.
@@ -1234,6 +1240,9 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		s.reflect(attack, target, damage)
 	}
 	s.kickAfterHit(attack, crit, kill)
+	s.combust(attack, target, damage, crit)
+	s.split(attack, target, crit)
+	s.shadowRefund(attack, target)
 	return true
 }
 
@@ -1294,7 +1303,8 @@ func (s *CombatSystem) recordKill(attack components.AttackSnapshot, target *ecs.
 // attack plus the equipped weapon's attack_power and worn flat damage, the
 // scaling stat plus the worn attribute, crit chance from the weapon's
 // critical_rate plus worn crit points (or a forced crit the cast carries), and
-// a worn Lantern's pierce.
+// a worn Lantern's pierce, or a Shadow Ranger's Shadow Shot piercing all; a
+// Berserker's coefficient blood-priced.
 func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
 	attack := bareSnapshot(attacker, spec)
 	if sc, ok := attacker.GetComponent(ecs.ComponentTypeStats); ok {
@@ -1320,6 +1330,8 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 		attack.Pierce = s.effects.PierceExtraTargets
 	}
 	attack.Pierce += spec.pierce
+	attack.PiercesAll = shadowRangersShadowShot(attacker, spec.kind)
+	attack.Coefficient *= bloodPricedDamage(attacker)
 
 	return attack
 }

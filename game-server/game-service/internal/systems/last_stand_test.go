@@ -16,10 +16,7 @@ import (
 	monsterBlow takes 83 from every body here.
 */
 
-var (
-	guardianRanks  = passivetree.Ranks{"warrior.t6a": 1}
-	berserkerRanks = passivetree.Ranks{"warrior.t6b": 1}
-)
+// guardianRanks and berserkerRanks live in berserker_test.go.
 
 // struckAt is a warrior holding ranks at current HP and no stamina, struck
 // once by a killing monster blow.

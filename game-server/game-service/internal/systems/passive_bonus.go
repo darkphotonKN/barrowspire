@@ -30,8 +30,9 @@ import (
 // max HP then (own: class base plus level growth, no gear) as the basis of a
 // percent of max HP; later calls keep that basis, so a level-up since does not
 // recompute it (R26). A max that rose raises its current by the same amount,
-// so a full bar stays full (R27); a body at 0 is never raised. The component
-// is replaced, never written.
+// so a full bar stays full (R27); a body at 0 is never raised. The Berserker's
+// price, taken off the max once at seating or at the pick, clamps its current
+// instead (FS-E1ZDG §D R15, R17). The component is replaced, never written.
 func ApplyPassiveBonus(entity *ecs.Entity) {
 	pc, ok := entity.GetComponent(ecs.ComponentTypePlayer)
 	if !ok {
@@ -61,6 +62,7 @@ func ApplyPassiveBonus(entity *ecs.Entity) {
 	next.OwnMaxHealth = own
 	if health != nil {
 		health.MaxHealth, health.CurrentHealth = raiseMaximum(health.MaxHealth, health.CurrentHealth, next.MaxHealth-applied.AppliedMaxHealth)
+		health.MaxHealth, health.CurrentHealth = lowerMaximum(health.MaxHealth, health.CurrentHealth, next.MaxHealthTaken-applied.MaxHealthTaken)
 	}
 	next.AppliedMaxHealth = next.MaxHealth
 	if pool != nil {
@@ -78,6 +80,14 @@ func raiseMaximum(maximum, current, delta int) (int, int) {
 	if current > 0 {
 		current += delta
 	}
+	return maximum, max(min(current, maximum), 0)
+}
+
+// lowerMaximum lowers a maximum by taken and clamps its current to it: the
+// Berserker's price, which leaves a full bar full at seating and a bar below
+// the new max where it is at the pick (FS-E1ZDG §D R15, R17).
+func lowerMaximum(maximum, current, taken int) (int, int) {
+	maximum -= taken
 	return maximum, max(min(current, maximum), 0)
 }
 
@@ -176,6 +186,8 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 	}
 	// one rounding over the summed percent, to the nearest whole point (R26)
 	bonus.MaxHealth = whole(float64(ownMaxHealth) * maxHealthPercent / 100)
+	spec, _ := passivetree.SpecializationOf(class, ranks)
+	withBloodPrice(&bonus, spec, ownMaxHealth)
 	return bonus
 }
 

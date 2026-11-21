@@ -166,6 +166,11 @@ func kickAfterCast(caster *ecs.Entity, kind components.AttackKind, monstersHit, 
 // healShare heals the body share of its max HP, rounded to a whole point and
 // capped at its max. A body out of play, or at 0, heals nothing.
 func healShare(entity *ecs.Entity, share float64) {
+	healShareAtLeast(entity, share, 0)
+}
+
+// healShareAtLeast is healShare healing never less than least.
+func healShareAtLeast(entity *ecs.Entity, share float64, least int) {
 	hc, ok := entity.GetComponent(ecs.ComponentTypeHealth)
 	if !ok || !InPlay(entity) {
 		return
@@ -174,7 +179,7 @@ func healShare(entity *ecs.Entity, share float64) {
 	if health.CurrentHealth <= 0 {
 		return
 	}
-	health.CurrentHealth = min(health.CurrentHealth+whole(float64(health.MaxHealth)*share), health.MaxHealth)
+	health.CurrentHealth = min(health.CurrentHealth+max(least, whole(float64(health.MaxHealth)*share)), health.MaxHealth)
 }
 
 // damageTaken is what a hit of damage takes from the target: Thick Skin's
