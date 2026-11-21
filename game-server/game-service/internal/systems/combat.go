@@ -32,6 +32,11 @@ import (
 	exception): stances are raised before any strike resolves, and a monster
 	strike landing on an open one is negated for a parry charge.
 	FS-MAMHR §Requirements 10–21.
+
+	The passive tree's kickers ride on combat too, read from the body's
+	passive bonus (kickers.go): their stats change a row as a cast resolves,
+	their rank-3 rules run on a resolved cast, a landing hit and an ended
+	charge. FS-8RZ51 §F R29.
 */
 
 // Impact is a projectile reaching a damageable entity, waiting to be resolved.
@@ -138,6 +143,9 @@ type projectileSpec struct {
 }
 
 type attackSpec struct {
+	// kind is the row this resolves as, set as a cast resolves: the intent's,
+	// or the riposte a cut arms into.
+	kind        components.AttackKind
 	delivery    delivery
 	damageType  components.DamageType
 	scaling     scalingStat
@@ -162,6 +170,9 @@ type attackSpec struct {
 	// stuns: every monster a hit of it leaves alive is stunned (stunFor).
 	// FS-04EEA §B R10.
 	stuns bool
+	// pierce is what the caster's passives add to its projectiles' pierce, on
+	// top of a worn Lantern's. FS-8RZ51 R29.
+	pierce int
 }
 
 const (
@@ -413,6 +424,11 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 		s.floor = floor.Depth
 	}
 
+	// before any hit, so a mark laid last tick has run a tick down
+	for _, entity := range entities {
+		tickDashEnded(entity, deltaTime)
+	}
+
 	for _, impact := range impacts {
 		if target, ok := s.em.GetEntity(impact.TargetEntityID); ok {
 			s.applyHit(impact.Attack, target)
@@ -584,6 +600,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if !ok {
 		return
 	}
+	spec.kind = intent.Kind
 	if intent.Kind == components.AttackMonsterStrike && intent.Coefficient > 0 {
 		// a demon's slam: its multiple of its level damage (FS-VHGE7 §B R16)
 		spec.coefficient = intent.Coefficient
@@ -614,6 +631,11 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if rc, ok := attacker.GetComponent(ecs.ComponentTypeResource); ok {
 		pool = rc.(*components.ResourceComponent)
 		spec = armCut(intent.Kind, pool, spec)
+	}
+	// the passive tree's per-rank stats, before the cost is checked, so a
+	// lowered cost is affordable at what it is lowered to (FS-8RZ51 R29)
+	spec = withPassives(spec, passiveBonus(attacker))
+	if pool != nil {
 		if pool.Current < spec.cost {
 			return
 		}
@@ -624,15 +646,16 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		return // nothing to spend
 	}
 
+	monstersHit := 0
 	switch spec.delivery {
 	case deliverTargeted:
 		if !s.strike(attacker, at, intent.TargetEntityID, spec) {
 			return
 		}
 	case deliverCone:
-		s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
+		monstersHit = s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
 	case deliverAround:
-		s.around(attacker, at, spec, entities)
+		monstersHit = s.around(attacker, at, spec, entities)
 	case deliverBlink:
 		if !s.blink(attacker, at, intent.TargetX, intent.TargetY, spec, entities) {
 			return
@@ -653,6 +676,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if pool != nil {
 		pool.Current -= spec.cost
 	}
+	kickAfterCast(attacker, spec.kind, monstersHit)
 	if cooldowns != nil {
 		// worn attack speed, already capped, shortens every cooldown
 		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/(1+float64(wornGear(attacker).AttackSpeedPercent)/100))
@@ -718,7 +742,9 @@ func armCut(kind components.AttackKind, pool *components.ResourceComponent, spec
 	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges || pool.Current < riposteParryCharges {
 		return spec
 	}
-	return attackTable[components.AttackRiposte]
+	riposte := attackTable[components.AttackRiposte]
+	riposte.kind = components.AttackRiposte
+	return riposte
 }
 
 // spendAll is a pool-spending row as it resolves on n units held: it costs all
@@ -847,30 +873,33 @@ func parryStrike(target *ecs.Entity) bool {
 }
 
 // cone hits every valid target within the attack's reach and arc around the
-// aim, each resolved on its own.
-func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) {
+// aim, each resolved on its own, and reports how many monsters it hit.
+func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) int {
 	aim := math.Atan2(aimY-at.Y, aimX-at.X)
-	s.hitWithinReach(attacker, at, spec, entities, func(dx, dy float64) bool {
+	return s.hitWithinReach(attacker, at, spec, entities, func(dx, dy float64) bool {
 		return math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) <= spec.halfArc
 	})
 }
 
 // around hits every valid target within the attack's reach all the way round
-// the caster, each resolved on its own. FS-04EEA §B R8.
-func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) {
-	s.hitWithinReach(attacker, at, spec, entities, allRound)
+// the caster, each resolved on its own, and reports how many monsters it hit.
+// FS-04EEA §B R8.
+func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) int {
+	return s.hitWithinReach(attacker, at, spec, entities, allRound)
 }
 
 // hitWithinReach hits every valid target other than the attacker whose centre
-// is within the attack's reach and inShape, given its offset from the attacker.
-func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) {
-	s.hitAround(s.snapshot(attacker, spec), at.X, at.Y, spec.reach, entities, inShape)
+// is within the attack's reach and inShape, given its offset from the attacker,
+// and reports how many monsters it hit.
+func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) int {
+	return s.hitAround(s.snapshot(attacker, spec), at.X, at.Y, spec.reach, entities, inShape)
 }
 
 // hitAround lands the attack once on every valid target other than its
 // attacker whose centre is within reach of (x, y) and inShape, given its
-// offset from there.
-func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach float64, entities []*ecs.Entity, inShape func(dx, dy float64) bool) {
+// offset from there, and reports how many monsters a hit landed on.
+func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach float64, entities []*ecs.Entity, inShape func(dx, dy float64) bool) int {
+	monstersHit := 0
 	for _, target := range entities {
 		if target.ID == attack.AttackerEntityID || !CanHit(attack, target, s.playerDamage) {
 			continue
@@ -886,8 +915,11 @@ func (s *CombatSystem) hitAround(attack components.AttackSnapshot, x, y, reach f
 			continue
 		}
 
-		s.applyHit(attack, target)
+		if s.applyHit(attack, target) && target.HasComponent(ecs.ComponentTypeEnemy) {
+			monstersHit++
+		}
 	}
+	return monstersHit
 }
 
 // allRound is a shape that takes every offset.
@@ -981,6 +1013,7 @@ func (s *CombatSystem) endCharge(entity *ecs.Entity) {
 		"unspent", charge.Remaining,
 	)
 	s.layBurningTrail(entity, charge.FromX, charge.FromY, at.X, at.Y)
+	markDashEnded(entity)
 }
 
 // layBurningTrail lays an Ashwalk Greaves wearer's trail along the path just
@@ -1128,10 +1161,11 @@ func distanceToSegment(px, py, ax, ay, bx, by float64) float64 {
 // discarded before the crit roll: one on a dead or resolved target, a monster's
 // on a monster, and, with player damage off, a delver's on a delver. A hit on a
 // monster records its attacker, and the killing blow records the kill. A
-// monster's strike on a Gravewarden wearer is reflected.
-func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.Entity) {
+// monster's strike on a Gravewarden wearer is reflected. It reports whether the
+// hit landed.
+func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.Entity) bool {
 	if !CanHit(attack, target, s.playerDamage) {
-		return
+		return false
 	}
 	hc, _ := target.GetComponent(ecs.ComponentTypeHealth)
 	health := hc.(*components.HealthComponent)
@@ -1139,16 +1173,21 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 
 	damage, crit := attack.TrueDamage, false
 	if damage <= 0 {
+		if s.forcedCrit(attack) {
+			attack.CritChance = 1
+		}
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
 	}
+	damage = damageTaken(target, health, damage)
 	health.CurrentHealth = max(health.CurrentHealth-damage, 0)
 
+	// the hit that took it to 0 is the killing blow; every later one stops at
+	// the dead-target check above, so this is true once per monster
+	kill := targetIsMonster && health.CurrentHealth == 0
 	if targetIsMonster {
 		monster := mc.(*components.MonsterComponent)
 		monster.LastAttacker = attack.AttackerEntityID
-		// the hit that took it to 0 is the killing blow; every later one stops
-		// at the dead-target check above, so this runs once per monster
-		if health.CurrentHealth == 0 {
+		if kill {
 			s.recordKill(attack, target, monster)
 		} else if attack.Stuns {
 			stun(monster, stunFor(monster))
@@ -1166,6 +1205,8 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 	if attack.FromMonster {
 		s.reflect(attack, target, damage)
 	}
+	s.kickAfterHit(attack, crit, kill)
+	return true
 }
 
 // stunFor is how long Earthbreaker stuns the monster: bossStun on a boss,
@@ -1246,6 +1287,7 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 	if WornUniqueEffects(s.em, attacker)[types.UniqueEffectPierce] {
 		attack.Pierce = s.effects.PierceExtraTargets
 	}
+	attack.Pierce += spec.pierce
 
 	return attack
 }
@@ -1256,6 +1298,7 @@ func (s *CombatSystem) snapshot(attacker *ecs.Entity, spec attackSpec) component
 func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapshot {
 	attack := components.AttackSnapshot{
 		AttackerEntityID: attacker.ID,
+		Kind:             spec.kind,
 		DamageType:       spec.damageType,
 		Coefficient:      spec.coefficient,
 		CritChance:       CritChance(0),

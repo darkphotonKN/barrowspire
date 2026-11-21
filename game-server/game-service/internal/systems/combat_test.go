@@ -452,6 +452,7 @@ func TestCombatSystem_ProjectileSkillsFireSnapshots(t *testing.T) {
 				assert.Equal(t, components.AttackSnapshot{
 					AttackerEntityID: attacker.ID,
 					AttackerMemberID: memberID,
+					Kind:             tt.kind,
 					DamageType:       tt.dmgType,
 					Power:            17,
 					Coefficient:      attackTable[tt.kind].coefficient,
@@ -1029,6 +1030,7 @@ func TestCombatSystem_MonsterShot_FiresOneProjectileWithTheMonstersSnapshot(t *t
 	arrow := shots[0]
 	assert.Equal(t, components.AttackSnapshot{
 		AttackerEntityID: a.ID,
+		Kind:             components.AttackMonsterShot,
 		DamageType:       components.DamagePhysical,
 		Power:            7,
 		Coefficient:      1,

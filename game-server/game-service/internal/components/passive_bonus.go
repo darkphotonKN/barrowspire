@@ -1,6 +1,9 @@
 package components
 
-import "github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+import (
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+)
 
 // PassiveBonusComponent is what the body's held passive ranks add (FS-8RZ51
 // R25): built at seating and again by a spend in town, held apart from the
@@ -22,6 +25,16 @@ type PassiveBonusComponent struct {
 	MaxResource int
 	// RegenPercent is a percent of the class resource's base regen.
 	RegenPercent float64
+
+	// The kickers' per-rank stats, by the attack row they change (R29): a
+	// percent more on its coefficient, a change to its cost, a percent more on
+	// its projectiles' flight speed. Nil when no held node changes any.
+	CoefficientPercent     map[AttackKind]float64
+	CostChange             map[AttackKind]int
+	ProjectileSpeedPercent map[AttackKind]float64
+	// Kickers is every kicker rule the body holds: its node at rank 3. The
+	// rules' numbers are the systems' that run them.
+	Kickers map[passivetree.Kicker]bool
 
 	// OwnMaxHealth is the basis of a percent of max HP: own max HP (class base
 	// plus level growth, no gear) when the body was seated (R26).

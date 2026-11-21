@@ -62,3 +62,9 @@ func ResolveDamage(attack components.AttackSnapshot, target Mitigation, roll flo
 
 	return max(final, minimumDamage), crit
 }
+
+// ReducedDamage is damage made share less, rounded to the nearest point and
+// never below the minimum hit.
+func ReducedDamage(damage int, share float64) int {
+	return max(int(math.Round(float64(damage)*(1-share))), minimumDamage)
+}

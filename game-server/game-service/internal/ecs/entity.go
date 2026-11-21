@@ -78,6 +78,9 @@ const (
 	ComponentTypePotion       ComponentType = "Potion"
 	ComponentTypeTimedOpen    ComponentType = "TimedOpen"
 
+	// Bull Rush's mark: a charge just ended (FS-8RZ51 R29)
+	ComponentTypeDashEnded ComponentType = "DashEnded"
+
 	// an Arrow Rain still falling (FS-04EEA §E R26)
 	ComponentTypeArrowRain ComponentType = "ArrowRain"
 

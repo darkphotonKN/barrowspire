@@ -75,6 +75,10 @@ type AttackSnapshot struct {
 	// Stuns marks Earthbreaker's hit: a monster it leaves alive is stunned.
 	// FS-04EEA §B R10.
 	Stuns bool
+	// Kind is the attack row it was cast as; empty for a hit no row makes (a
+	// burning trail's, a reflected strike, a monster ability's). The passive
+	// tree's kickers read it at the hit (FS-8RZ51 R29).
+	Kind AttackKind
 }
 
 // AttackIntent is a request a handler validated and the CombatSystem has yet to

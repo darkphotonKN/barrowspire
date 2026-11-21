@@ -18,10 +18,11 @@ import (
 	ResourceSystem reads its regen, so every reader of gear's bonus reads the
 	tree's with it (R25).
 
-	sumPassives is the one place a node's per-rank value becomes a stat. A
-	stat it has no row for (a kicker's damage, cost or window) adds nothing
-	until its slice gives it one; a node with no per-rank value (the ability
-	and specialization nodes, R30, R31) adds nothing at all.
+	sumPassives is the one place a node's per-rank value becomes a stat, and
+	a kicker node at its last rank becomes a held rule (R29), which the
+	CombatSystem's kickers read (kickers.go). A stat it has no row for adds
+	nothing until its slice gives it one; a node with no per-rank value (the
+	ability and specialization nodes, R30, R31) adds nothing at all.
 */
 
 // ApplyPassiveBonus builds the body's passive bonus from the ranks it holds and
@@ -137,7 +138,29 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 			if pool == components.ResourceMana {
 				bonus.RegenPercent += amount
 			}
+		case passivetree.StatSlashDamage:
+			addTo(&bonus.CoefficientPercent, components.AttackSlash, amount)
+		case passivetree.StatFireballDamage:
+			// the left-click fireball only (R29)
+			addTo(&bonus.CoefficientPercent, components.AttackFireball, amount)
+		case passivetree.StatDashCost:
+			addTo(&bonus.CostChange, components.AttackDash, whole(amount))
+		case passivetree.StatTripleFireballCost:
+			addTo(&bonus.CostChange, components.AttackTripleFireball, whole(amount))
+		case passivetree.StatFireballSpeed:
+			// both fireball kinds (R29)
+			addTo(&bonus.ProjectileSpeedPercent, components.AttackFireball, amount)
+			addTo(&bonus.ProjectileSpeedPercent, components.AttackTripleFireball, amount)
 		}
+		if node.Kicker != "" && rank >= node.MaxRank {
+			if bonus.Kickers == nil {
+				bonus.Kickers = make(map[passivetree.Kicker]bool)
+			}
+			bonus.Kickers[node.Kicker] = true
+		}
+	}
+	if bonus.Kickers[passivetree.KickerDeepWellRegen] && pool == components.ResourceMana {
+		bonus.RegenPercent += deepWellRegenPercent
 	}
 	// one rounding over the summed percent, to the nearest whole point (R26)
 	bonus.MaxHealth = whole(float64(ownMaxHealth) * maxHealthPercent / 100)
@@ -146,4 +169,12 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 
 func whole(amount float64) int {
 	return int(math.Round(amount))
+}
+
+// addTo adds value to what key holds in *m, making the map on first use.
+func addTo[K comparable, V int | float64](m *map[K]V, key K, value V) {
+	if *m == nil {
+		*m = make(map[K]V)
+	}
+	(*m)[key] += value
 }

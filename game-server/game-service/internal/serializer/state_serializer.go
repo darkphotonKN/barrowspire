@@ -761,8 +761,9 @@ func monsterAt(m *types.MonsterState) types.Position { return m.Position }
 func containerAt(c *types.ContainerState) types.Position { return *c.Position }
 
 // resourceState is a delver's class resource as its owner is told it, its
-// ability priced in that pool, and its tree ability too while held; nil when
-// the delver carries none. FS-8AY7S §Requirements 17; FS-Q18Q3 §A R5.
+// ability priced in that pool at what a cast costs them, a kicker's lowering
+// taken in, and its tree ability too while held; nil when the delver carries
+// none. FS-8AY7S §Requirements 17; FS-Q18Q3 §A R5; FS-8RZ51 R29.
 func resourceState(entity *ecs.Entity) *types.ResourceState {
 	rc, ok := entity.GetComponent(ecs.ComponentTypeResource)
 	if !ok {
@@ -772,7 +773,7 @@ func resourceState(entity *ecs.Entity) *types.ResourceState {
 
 	state := &types.ResourceState{Kind: string(pool.Kind), Current: pool.Current, Max: pool.Max}
 	if ac, ok := entity.GetComponent(ecs.ComponentTypeAbility); ok {
-		state.AbilityCost = systems.AttackCost(ac.(*components.AbilityComponent).Kind)
+		state.AbilityCost = systems.CastCost(entity, ac.(*components.AbilityComponent).Kind)
 	}
 	if kind, held := systems.HeldTreeAbility(entity); held {
 		cost := systems.TreeAbilityCost(kind)
