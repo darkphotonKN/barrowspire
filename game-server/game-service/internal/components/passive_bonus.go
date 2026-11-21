@@ -18,6 +18,9 @@ type PassiveBonusComponent struct {
 	// AttackSpeedPercent and MoveSpeedPercent count inside gear's caps (R25).
 	AttackSpeedPercent int
 	MoveSpeedPercent   int
+	// AttackSpeedPastCapPercent counts after gear's cap: the Berserker's
+	// (FS-E1ZDG §D R16).
+	AttackSpeedPastCapPercent int
 	// CritPoints are whole crit points, summed with gear's (R29).
 	CritPoints int
 	// ParryWindowSeconds lengthens the parry stance's window (R29).
@@ -27,6 +30,10 @@ type PassiveBonusComponent struct {
 	// class resource the tree names (stamina or mana).
 	MaxHealth   int
 	MaxResource int
+	// MaxHealthTaken is what the specialization takes off the class body's
+	// max HP (OwnMaxHealth): the Berserker's blood price, 0 for any other
+	// (FS-E1ZDG §D R14).
+	MaxHealthTaken int
 	// RegenPercent is a percent of the class resource's base regen.
 	RegenPercent float64
 

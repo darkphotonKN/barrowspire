@@ -43,17 +43,19 @@ func (k *KillExperience) ConsumeKill(record systems.KillRecord) {
 		pc, _ := entity.GetComponent(ecs.ComponentTypePlayer)
 		player := pc.(*components.PlayerComponent)
 
-		gainExperience(entity, Classes[player.Class].Growth, amount)
+		gainExperience(entity, Classes[player.Class], amount)
 		k.tally.add(player.MemberID, player.CharacterID, amount)
 	}
 }
 
-// gainExperience adds experience to a delver and levels them up in the same
-// tick, once per level crossed, up to the cap. Each level grows the attributes,
-// max HP and a mana pool's max by the class growth; current HP and class
-// resource do not change.
-// FS-BDA7X §Requirements 8, 16–17, 19; FS-8AY7S §Requirements 15.
-func gainExperience(entity *ecs.Entity, growth ClassGrowth, amount int) {
+// gainExperience adds experience to a delver of class and levels them up in the
+// same tick, once per level crossed, up to the cap. Each level grows the
+// attributes, max HP and a mana pool's max by the class growth, a Berserker's
+// max HP by the scaled step; current HP and class resource do not change.
+// FS-BDA7X §Requirements 8, 16–17, 19; FS-8AY7S §Requirements 15; FS-E1ZDG
+// §D R15.
+func gainExperience(entity *ecs.Entity, class ClassConfig, amount int) {
+	growth := class.Growth
 	sc, ok := entity.GetComponent(ecs.ComponentTypeStats)
 	if !ok {
 		return
@@ -70,7 +72,7 @@ func gainExperience(entity *ecs.Entity, growth ClassGrowth, amount int) {
 		stats.Vitality += growth.Vitality
 
 		if hc, ok := entity.GetComponent(ecs.ComponentTypeHealth); ok {
-			hc.(*components.HealthComponent).MaxHealth += growth.MaxHealth
+			hc.(*components.HealthComponent).MaxHealth += maxHealthGrowth(class, stats.Level, systems.Specialization(entity))
 		}
 		if rc, ok := entity.GetComponent(ecs.ComponentTypeResource); ok {
 			if pool := rc.(*components.ResourceComponent); growsWithLevel(pool.Kind) {
