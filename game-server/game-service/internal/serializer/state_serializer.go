@@ -5,6 +5,7 @@ import (
 	"math"
 	"sync"
 
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/common/progression"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -45,6 +46,7 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 				Parries:          make(map[uuid.UUID]*types.ParryState),
 				TimedOpens:       make(map[uuid.UUID]*types.TimedOpenState),
 				AbilityCooldowns: make(map[uuid.UUID]*types.CooldownState),
+				Passives:         make(map[uuid.UUID]*types.PassiveState),
 				InPlay:           make(map[uuid.UUID]types.Position),
 				Items:            make([]uuid.UUID, 0),
 				Doors:            make([]*types.DoorState, 0),
@@ -188,6 +190,7 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				stats := statsC.(*components.StatsComponent)
 				level, experience = max(stats.Level, 1), int64(stats.Experience)
 			}
+			backendState.Passives[player.MemberID] = passiveState(entity, level)
 
 			playerState := &types.PlayerState{
 				PublicPlayerState: types.PublicPlayerState{
@@ -580,6 +583,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 			ParryState:      backendState.Parries[playerID],
 			TimedOpen:       backendState.TimedOpens[playerID],
 			AbilityCooldown: backendState.AbilityCooldowns[playerID],
+			PassiveState:    backendState.Passives[playerID],
 		}
 	}
 
@@ -659,6 +663,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	}
 	for k := range state.AbilityCooldowns {
 		delete(state.AbilityCooldowns, k)
+	}
+	for k := range state.Passives {
+		delete(state.Passives, k)
 	}
 	// the published snapshot is shared, so it is let go, never cleared
 	state.PartyOf = nil
@@ -769,6 +776,15 @@ func abilityCooldownState(entity *ecs.Entity) *types.CooldownState {
 		return nil
 	}
 	return &types.CooldownState{Remaining: remaining, Total: total}
+}
+
+// passiveState is a delver's passive tree as its owner is told it, the points
+// from their level now. The ranks are the body's own map, never written in
+// place (components.PassiveRanksComponent), so the frame shares it.
+// FS-8RZ51 R23.
+func passiveState(entity *ecs.Entity, level int) *types.PassiveState {
+	ranks := systems.PassiveRanks(entity)
+	return &types.PassiveState{Ranks: ranks, Points: passivetree.Unspent(int32(level), ranks)}
 }
 
 // parryState is a mercenary's parry stance as its owner is told it; nil for

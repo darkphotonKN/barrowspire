@@ -33,7 +33,7 @@ Implements FS-E1ZDG §G (Requirements 25–28)
 
 ## Blocked By
 
-I-E1ZDG-2 (the body carries its specialization).
+I-E1ZDG-2 (the body's specialization, read from its passive ranks).
 
 ## Spec Reference
 

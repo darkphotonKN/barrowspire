@@ -10,10 +10,7 @@ Implements FS-1J1CB §C (Requirements 16–27), §I (Requirement 48)
 
 **Lane: agent** (game-client).
 
-**Also blocked by the ADR FS-1J1CB names** (a spec look's art is its own on-demand group, fetched
-by a player's specialization; amends ADR-0059 Decision 1 and takes the new trigger ADR-0071
-Decision 6 reserves). It has no issue id: the integrator records it with `/record-decision` and
-clears this line. Build to FS-1J1CB §C; the ADR records the same rules.
+The loading rules are also recorded in ADR-0088; build to FS-1J1CB §C, which it matches.
 
 ## What to Build
 

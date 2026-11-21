@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pbitems "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -966,41 +967,45 @@ func (s *Session) manageEndSession() {
 
 var Classes = map[string]ClassConfig{
 	"warrior": {
-		Stats:    components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
-		Combat:   components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
-		Health:   components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
-		Resource: components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
-		Ability:  components.AttackDash,
-		Skills:   []components.SkillComponent{{SkillName: "slash", Level: 1}},
-		Growth:   ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
+		Stats:       components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
+		Combat:      components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
+		Health:      components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Ability:     components.AttackDash,
+		TreeAbility: components.AttackEarthbreaker,
+		Skills:      []components.SkillComponent{{SkillName: "slash", Level: 1}},
+		Growth:      ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
 	},
 	"mage": {
-		Stats:    components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
-		Combat:   components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
-		Health:   components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource: components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
-		Ability:  components.AttackTripleFireball,
-		Skills:   []components.SkillComponent{{SkillName: "fireball", Level: 1}},
-		Growth:   ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
+		Stats:       components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
+		Combat:      components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
+		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
+		Ability:     components.AttackTripleFireball,
+		TreeAbility: components.AttackBlink,
+		Skills:      []components.SkillComponent{{SkillName: "fireball", Level: 1}},
+		Growth:      ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
 	},
 	"archer": {
-		Stats:    components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
-		Combat:   components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
-		Health:   components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource: components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
-		Ability:  components.AttackShadowShot,
-		Skills:   []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
-		Growth:   ClassGrowth{Agility: 3, MaxHealth: 8},
+		Stats:       components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
+		Combat:      components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
+		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Ability:     components.AttackShadowShot,
+		TreeAbility: components.AttackArrowRain,
+		Skills:      []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
+		Growth:      ClassGrowth{Agility: 3, MaxHealth: 8},
 	},
 	// FS-MAMHR §Requirements 2.
 	"mercenary": {
-		Stats:    components.StatsComponent{Strength: 7, Agility: 7, Intelligence: 2, Vitality: 7},
-		Combat:   components.CombatComponent{Attack: 12, Defense: 7, AttackSpeed: 1.2, AttackRange: 1},
-		Health:   components.HealthComponent{CurrentHealth: 130, MaxHealth: 130},
-		Resource: components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
-		Ability:  components.AttackParry,
-		Skills:   []components.SkillComponent{{SkillName: "cut", Level: 1}},
-		Growth:   ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
+		Stats:       components.StatsComponent{Strength: 7, Agility: 7, Intelligence: 2, Vitality: 7},
+		Combat:      components.CombatComponent{Attack: 12, Defense: 7, AttackSpeed: 1.2, AttackRange: 1},
+		Health:      components.HealthComponent{CurrentHealth: 130, MaxHealth: 130},
+		Resource:    components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
+		Ability:     components.AttackParry,
+		TreeAbility: components.AttackSettleTheDebt,
+		Skills:      []components.SkillComponent{{SkillName: "cut", Level: 1}},
+		Growth:      ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
 	},
 }
 
@@ -1169,6 +1174,7 @@ func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterI
 		CharacterID:  character.ID,
 		Level:        level,
 		Experience:   character.Experience,
+		PassiveRanks: character.PassiveRanks,
 		Username:     character.Name,
 		X:            x,
 		Y:            y,
@@ -1550,6 +1556,30 @@ func (s *Session) seatedCharacterLocked(playerID uuid.UUID) (uuid.UUID, bool) {
 	}
 
 	return pc.(*components.PlayerComponent).CharacterID, true
+}
+
+/**
+* RaisePassiveRanks raises the passive tree ranks the member's body holds to
+* ranks, by the higher rank per node, so answers landing out of order never
+* lower one (FS-8RZ51 R20, R27). Only the body of characterID is raised: a body
+* seated as another character since the spend began keeps its own. Reports
+* whether a body took them. The component is replaced, never written, so a
+* frame already holding the old ranks stays whole.
+**/
+func (s *Session) RaisePassiveRanks(playerID, characterID uuid.UUID, ranks passivetree.Ranks) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seatedAs, here := s.seatedCharacterLocked(playerID)
+	if !here || seatedAs != characterID {
+		return false
+	}
+	entity, ok := s.EntityManager.GetEntity(s.playerIDToEntitiesID[playerID])
+	if !ok {
+		return false
+	}
+	entity.AddComponent(components.NewPassiveRanksComponent(passivetree.Higher(systems.PassiveRanks(entity), ranks)))
+	return true
 }
 
 // ErrSafeZone is returned when a world refuses combat.

@@ -116,7 +116,7 @@ export class UIScene extends Phaser.Scene {
   private controls?: UiControlsSlot;
   /** The run's settlement record (FS-TQZ5J § Change: Phase 3, R57). */
   private record?: UiRecordSlot;
-  /** The run's controls badge over its ability card (FS-84N1G R3–R8). */
+  /** The run's controls badge, standing while its ability bar is live (FS-84N1G R3–R8; FS-Q18Q3 R42). */
   private badge?: UiControlsBadge;
   /** The chat window, built for each world (FS-TQZ5J § Change: Batch 6, R125). */
   private chat?: UiChatSlot;
@@ -146,8 +146,9 @@ export class UIScene extends Phaser.Scene {
     this.mountInterface(bridge);
     this.mountMailboxSlot(bridge);
     this.mountChatSlot(bridge);
-    // the ability card, the potion cell and the bars, drawn from what each world hands (§ Change: Batch 5, R67)
-    mountHud(this, bridge, hudPieces(this, () => this.residentArt()));
+    // the ability bar, the bars and the level bar, drawn from what each world hands (§ Change: Batch 5, R67;
+    // FS-Q18Q3 R41)
+    mountHud(this, bridge, hudPieces(this));
     this.mountLoreSlot(bridge);
     this.mountKeys();
     this.mountPointer(bridge);
@@ -381,7 +382,8 @@ export class UIScene extends Phaser.Scene {
     const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose), () => this.openWindows());
     this.controls = controls;
     this.record = record;
-    // the controls badge over the run's ability card, toggling the panel as H does (FS-84N1G R4, R8)
+    // the run's controls badge while its ability bar is live, toggling the panel as H does (FS-84N1G R4, R8;
+    // FS-Q18Q3 R42)
     const badge = new UiControlsBadge(bridge, controls, (spec) => new ControlsBadge(this, spec));
     this.badge = badge;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
@@ -417,7 +419,7 @@ export class UIScene extends Phaser.Scene {
         gear.endPopped();
         controls.close();
       },
-      abilityCard: (up) => this.badge?.abilityCard(up),
+      abilityBar: (live) => this.badge?.abilityBar(live),
       // the run's Burn tome? in the menu slot (FS-3103M R25; FS-TQZ5J § Change: Merge with main, 2026-11-14)
       confirmBurn: (altar) => menu.confirmBurn(altar),
     });

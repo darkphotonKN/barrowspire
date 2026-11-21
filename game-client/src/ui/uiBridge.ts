@@ -331,7 +331,7 @@ export interface UiScreen {
   container?(message: ContainerMessage): void;
   record?(shown: ShownRecord | null): void;
   endPopped?(): void;
-  abilityCard?(up: boolean): void;
+  abilityBar?(live: boolean): void;
   /** A HUD piece's data the world hands (§ Change: Batch 5, R68). */
   hud?(message: HudMessage): void;
   /** The run's E at the altar with the tome carried: the menu slot asks Burn tome? (FS-3103M R25). */
@@ -434,12 +434,15 @@ export interface UiBridge extends UiActWrapper {
    * still in play (R58): the moved windows step aside, silently.
    */
   endPopped(): void;
-  /** The run's ability card came up or went (FS-84N1G R4): the controls badge stands over it while it is up. */
-  abilityCard(up: boolean): void;
+  /**
+   * The run's ability bar became live or stopped being live: up and not held (FS-Q18Q3 R42). The controls
+   * badge stands exactly while it is live (FS-84N1G R4), so it still goes at a death or an escape.
+   */
+  abilityBar(live: boolean): void;
   /** Hears what the worlds say to the screen from now on (A2 R29, R33). Returns the stop. */
   onScreen(screen: UiScreen): () => void;
   /**
-   * The world hands a HUD piece its data (§ Change: Batch 5, R68): the ability card, the potion cell, the
+   * The world hands a HUD piece its data (§ Change: Batch 5, R68): the ability bar (FS-Q18Q3 R40), the
    * bars, the level bar. The UI scene has drawn it when this returns.
    */
   hud(message: HudMessage): void;
@@ -475,7 +478,7 @@ export type WorldUi = Pick<
   | "container"
   | "record"
   | "endPopped"
-  | "abilityCard"
+  | "abilityBar"
   | "hud"
   | "confirmBurn"
   | "lore"
@@ -500,7 +503,7 @@ export const NO_UI: WorldUi = {
   container: () => {},
   record: () => {},
   endPopped: () => {},
-  abilityCard: () => {},
+  abilityBar: () => {},
   hud: () => {},
   confirmBurn: () => {},
   lore: () => {},
@@ -629,8 +632,8 @@ export class GameUiBridge implements UiBridge {
     for (const screen of [...this.screens]) screen.endPopped?.();
   }
 
-  abilityCard(up: boolean): void {
-    for (const screen of [...this.screens]) screen.abilityCard?.(up);
+  abilityBar(live: boolean): void {
+    for (const screen of [...this.screens]) screen.abilityBar?.(live);
   }
 
   hud(message: HudMessage): void {

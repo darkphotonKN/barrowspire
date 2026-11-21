@@ -174,3 +174,17 @@ func TestUnspent(t *testing.T) {
 		})
 	}
 }
+
+// R20: ranks only rise, so two answers merged in either order leave the
+// higher rank of each node; neither side is written.
+func TestHigher_TakesTheHigherRankPerNode(t *testing.T) {
+	older := w(map[string]int{"t1a": 1, "t1b": 2})
+	newer := w(map[string]int{"t1a": 2, "t2a": 1})
+	want := w(map[string]int{"t1a": 2, "t1b": 2, "t2a": 1})
+
+	assert.Equal(t, want, passivetree.Higher(older, newer))
+	assert.Equal(t, want, passivetree.Higher(newer, older))
+	assert.Equal(t, w(map[string]int{"t1a": 1, "t1b": 2}), older, "neither side is written")
+	assert.Equal(t, passivetree.Ranks{}, passivetree.Higher(nil, nil), "never nil")
+	assert.Equal(t, w(map[string]int{"t1a": 1}), passivetree.Higher(w(map[string]int{"t1a": 1, "t1b": 0}), nil), "a node at 0 is not held")
+}

@@ -8,6 +8,11 @@ title: "FS-Q18Q3 slice 2: the tree ability's cost and cooldown on current_player
 ---
 Implements FS-Q18Q3 §A (R4, R5, R6), §WebSocket message surface
 
+> **Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream.** Checked
+> against the UI-scene move: this slice is game-service only and is unaffected. The client types it
+> feeds (`tree_ability_cooldown`, `resource.tree_ability_cost`) already landed with I-Q18Q3-1; no
+> client file is touched here.
+
 ## Files it expects to touch
 
 - `game-server/game-service/internal/types/game.go` (`CurrentPlayerState.TreeAbilityCooldown

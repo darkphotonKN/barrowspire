@@ -11,14 +11,19 @@ Implements FS-E1ZDG §I (Requirement 32), §L (Requirements 45–46)
 **Lane: agent** (game-service, game-client). Changes FS-MAMHR §E.23 through its stub
 `## Change: Duelist and Sellsword riposte rules → FS-E1ZDG`.
 
+> *Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream.* The
+> ability card is gone: the parry copy goes to the ability bar's right-click tooltip copy
+> (`ui/abilityCopy.ts`, keyed by class and specialization, I-E1ZDG-2). The riposte tells stay
+> world drawing on the merc's figure.
+
 ## What to Build
 
 - **game-service**: `armCut` arms the riposte for a Duelist at **≥ 2** parry charges, and the
   riposte then **spends 2**. Their max stays 3. An unspecialized merc keeps 3 / 3.
 - **game-client**:
-  - `riposteArmed` takes the spec: a Duelist is armed at ≥ 2, so the armed tell and the riposte
-    slice show at 2.
-  - The Duelist's parry card line: "Turn a blow as it lands for a parry charge. At two, the cut
+  - World drawing: `riposteArmed` takes the spec (from `current_player.specialization`): a
+    Duelist is armed at ≥ 2, so the armed tell and the riposte slice show at 2.
+  - UI scene: the Duelist's parry row in `ui/abilityCopy.ts`, the bar's right-click tooltip: "Turn a blow as it lands for a parry charge. At two, the cut
     ripostes."
 
 ## Acceptance Criteria
@@ -27,13 +32,15 @@ Implements FS-E1ZDG §I (Requirement 32), §L (Requirements 45–46)
 - [ ] An unspecialized merc's riposte still needs and spends 3.
 - [ ] A Duelist at 3 who parries stays at 3.
 - [ ] The Duelist's armed tell and riposte slice show at 2 charges; an unspecialized merc's at 3.
-- [ ] The Duelist's card shows the Duelist line.
+- [ ] The copy lookup gives the Duelist's parry line for `("mercenary", "duelist")`; with I-Q18Q3-5
+      in, the right-click tooltip shows it.
 - [ ] `make test` in game-service; `npm test`, `npm run lint`, `npm run lint:fence`,
       `npx tsc --noEmit` in game-client.
 
 ## Blocked By
 
-I-E1ZDG-2 (the body carries its specialization; `specialization` on `current_player`).
+I-E1ZDG-2 (the body's specialization; `specialization` on `current_player`; the spec-keyed copy
+lookup). FS-Q18Q3 (square tooltips, I-Q18Q3-5) for the tooltip check only.
 
 ## Spec Reference
 
@@ -45,8 +52,8 @@ FS-E1ZDG §I R32; §L R45–46; §Acceptance Criteria "Duelist and Sellsword" ro
 - `game-server/game-service/internal/systems/combat.go` (`armCut`, the riposte cost)
 - `game-server/game-service/internal/systems/riposte_test.go`
 - `game-client/src/render/effects/riposte.ts` (`riposteArmed`) and test
-- `game-client/src/render/combat/playerCombat.ts`, `classKitFx.ts` (pass the spec through)
-- `game-client/src/ui/abilityCopy.ts`, `abilityCard.ts` (+ tests)
+- `game-client/src/render/combat/playerCombat.ts`, `classKitFx.ts` (world: pass the spec through)
+- `game-client/src/ui/abilityCopy.ts` (+ test): the Duelist's row
 
 ## TDD Approach
 

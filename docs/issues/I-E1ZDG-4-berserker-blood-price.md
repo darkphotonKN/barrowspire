@@ -18,7 +18,7 @@ Implements FS-E1ZDG §D (Requirements 14–18)
   - At seating (`classAtLevel` or the seat path), full HP of the reduced max.
   - On level-up (`gainExperience`), the max moves to the scaled value for the new level; current
     HP does not move.
-  - At the pick (I-E1ZDG-2's seam), the max drops and current HP clamps to it.
+  - At the pick (I-E1ZDG-2's seam in `RaisePassiveRanks`), the max drops and current HP clamps to it.
 - **+25% attack speed**: added to the attack speed percentage that shortens cooldowns in
   `CombatSystem.resolve`, after worn attack speed's cap.
 - **+10% damage**: the raw damage of every hit the Berserker's own attack-table casts land
@@ -40,7 +40,7 @@ Implements FS-E1ZDG §D (Requirements 14–18)
 
 ## Blocked By
 
-I-E1ZDG-2 (the body carries its specialization; the pick seam).
+I-E1ZDG-2 (the body's specialization, read from its passive ranks; the pick seam in `RaisePassiveRanks`).
 
 ## Spec Reference
 

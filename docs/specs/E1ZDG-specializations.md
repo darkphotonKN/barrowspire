@@ -1,6 +1,6 @@
 # FS-E1ZDG: Specializations
 
-> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Progression" (specializations); `game-server/api-gateway/SPECIFICATION.md` "### Characters" (specialization in the character read); `game-client/SPECIFICATION.md` "### Character" (specialization titles) → this FS · Character-service (no SPECIFICATION.md of its own) carries the derivation under this FS · Siblings (same scoping session, 2026-11-21): [FS-8RZ51](8RZ51-passive-skill-tree.md) (the tree, the tier-6 gate and the one-of-two rule; owns the pick), [FS-04EEA](04EEA-class-tree-abilities.md) (Settle the Debt), [FS-1J1CB](1J1CB-specialization-looks.md) (each spec's look, and the shadow on Shadow Shot) · Changes: [FS-MAMHR](MAMHR-mercenary-class.md) §E.23 (riposte arming and cost) via `## Change: Duelist and Sellsword riposte rules → FS-E1ZDG`; [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) R14, R22 (parry charges max 3, 3 pips) via `## Change: Sellsword's five parry charges → FS-E1ZDG` · Interacts with: [FS-77AB6](77AB6-monsters-and-combat.md) (attack table, damage formula), [FS-BDA7X](BDA7X-character-leveling.md) (seating, level-up growth, the character read), [FS-JTNPR](JTNPR-shadow-shot.md) (the archer's right-click), [FS-4R9M9](4R9M9-item-levels-affixes-and-uniques.md) (worn attack speed and its cap, pierce, reflect), [FS-F6F88](F6F88-multi-floor-delves.md) (floor changes), [FS-CH21F](CH21F-party-member-overhead-bars.md) (party frames), [FS-Q18Q3](Q18Q3-ability-bar.md) (where the ability name shows once the card goes) · Related ADRs: ADR-0001 (the edge checks shape, the owner decides), ADR-0030 (casts resolve on the server) · Vocabulary: pending via `domain-model` (specialization, title, Last Stand, Arcane Ward, spell resistance, Combustion, Split Shot, split arrow)
+> Status: work-order · SPECIFICATION.md: `game-server/game-service/SPECIFICATION.md` "### Progression" (specializations); `game-server/api-gateway/SPECIFICATION.md` "### Characters" (specialization in the character read); `game-client/SPECIFICATION.md` "### Character" (specialization titles) → this FS · Character-service (no SPECIFICATION.md of its own) carries the derivation under this FS · Siblings (same scoping session, 2026-11-21): [FS-8RZ51](8RZ51-passive-skill-tree.md) (the tree, the tier-6 gate and the one-of-two rule; owns the pick), [FS-04EEA](04EEA-class-tree-abilities.md) (Settle the Debt), [FS-1J1CB](1J1CB-specialization-looks.md) (each spec's look, and the shadow on Shadow Shot) · Changes: [FS-MAMHR](MAMHR-mercenary-class.md) §E.23 (riposte arming and cost) via `## Change: Duelist and Sellsword riposte rules → FS-E1ZDG`; [FS-8AY7S](8AY7S-class-resources-and-combat-hud.md) R14, R22 (parry charges max 3, 3 pips) via `## Change: Sellsword's five parry charges → FS-E1ZDG` · Interacts with: [FS-77AB6](77AB6-monsters-and-combat.md) (attack table, damage formula), [FS-BDA7X](BDA7X-character-leveling.md) (seating, level-up growth, the character read), [FS-JTNPR](JTNPR-shadow-shot.md) (the archer's right-click), [FS-4R9M9](4R9M9-item-levels-affixes-and-uniques.md) (worn attack speed and its cap, pierce, reflect), [FS-F6F88](F6F88-multi-floor-delves.md) (floor changes), [FS-CH21F](CH21F-party-member-overhead-bars.md) (party frames), [FS-Q18Q3](Q18Q3-ability-bar.md) (the ability bar, whose right-click tooltip names the ability) · Related ADRs: ADR-0001 (the edge checks shape, the owner decides), ADR-0030 (casts resolve on the server), [ADR-0084](../adr/0084-the-interface-is-one-ui-scene-over-every-world-talking-to-the-worlds-through-a-typed-interface.md), [ADR-0085](../adr/0085-a-moved-pieces-own-commands-go-from-the-piece-world-play-messages-stay-the-worlds.md), [ADR-0086](../adr/0086-which-interface-goes-in-the-ui-scene-and-which-stays-in-the-world.md) (the UI scene: nameplates are world drawing, the frames, character sheet and ability bar are UI-scene pieces fed by the UiBridge) · Vocabulary: pending via `domain-model` (specialization, title, Last Stand, Arcane Ward, spell resistance, Combustion, Split Shot, split arrow)
 
 ## Summary
 
@@ -48,24 +48,30 @@ starting value, expected to move in play.
 5. **character-service** exposes it on the character read: the gRPC `Character` message gains an
    optional `specialization` (one of §A.1's ids, unset before the pick), on `GetCharacter`,
    `ListCharacters` and `CreateCharacter` alike (always unset on a new character). The `.proto` is
-   edited and the Go regenerated with `make gen`; the generated Go is never hand-edited.
+   edited and the Go regenerated with `make gen`; the generated Go is never hand-edited. The field
+   is `specialization = 10`, after `passive_ranks = 9` *(integrator correction 2026-11-21 — reason:
+   field 9 went to FS-8RZ51's `passive_ranks`; built in I-E1ZDG-1)*.
 6. **api-gateway**'s `Character` gains an additive, read-only `specialization` field (§API
    surface), absent before the pick. The contract and the client are regenerated (`make openapi
    client`) and committed with the wire change; `openapi.yaml` and
    `game-client/src/api/generated/` are never hand-edited.
-7. **game-service** seats a character with the specialization its character read carries (the
-   character in play gains it beside class and level). It never derives one itself and never
-   accepts one from a client.
-8. **A pick in town takes effect when FS-8RZ51 applies the tier-6 spend to the character in play**,
-   by whatever rule FS-8RZ51 sets for any spend. From that tick the body carries the specialization:
-   its effects apply, its title and `specialization` reach the wire, and the Berserker's max HP
-   drops (§D.17).
+7. **game-service** reads a body's specialization from the passive ranks the body holds
+   (`systems.PassiveRanks(entity)`, seated from the character read's `passive_ranks` by FS-8RZ51),
+   through the **same** derivation character-service uses: one tier-6-node-to-specialization table
+   in the shared tree package (`common/passivetree`), never a second copy in either service. It
+   keeps no specialization field of its own and never accepts one from a client. *(integrator
+   correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream with FS-8RZ51's built
+   slices; the body already carries its ranks (I-8RZ51-3), so a stored copy would only disagree
+   with them, and character-service's table, private to it today, moves to the shared package.)*
+8. **A pick in town takes effect when FS-8RZ51 raises the body's ranks** (`RaisePassiveRanks`,
+   I-8RZ51-3). From the tick the body's ranks first hold a tier-6 node, the body is that
+   specialization: its effects apply, its title and `specialization` reach the wire, and the pick's
+   one-off changes happen (the Berserker's clamp, §D.17; the Sellsword's max, §J.34).
 9. **The world state** carries `specialization` on every player entry, `current_player` and every
    `other_players` entry alike (the title and the look are public), absent before the pick.
    game-service's typed message layer, not OpenAPI.
-10. An unknown specialization id on a character read (a tree change the service does not know yet)
-    seats the character with **no specialization** and logs a warning, never an error that refuses
-    the seat *(v1)*.
+10. Ranks naming no tier-6 node of the body's class (an unknown node id, or another class's)
+    give **no specialization**, never an error that refuses the seat *(v1)*.
 
 ### §C. Guardian: Last Stand (game-service)
 
@@ -183,34 +189,51 @@ starting value, expected to move in play.
 40. **The main menu's hero** and **the character list** show the title where a character has one,
     the class name where it has none, beside the level as today ("WARRIOR · BERSERKER • LV.20",
     "WARRIOR • LV.5"). They read `specialization` from the character read (§B.6).
-41. **In a world** (town, fields, runs), from `specialization` on the world state:
-    - **Nameplates:** under every player's name drawn over their figure, their own and others', a
-      second, smaller line with their title. No title, no line.
-    - **The stats panel header** (the gear overlay's character sheet) shows the title in place of
-      the class name.
-    - **Party frames:** a member's title shows on their frame whenever the state carries that
-      member (the player's own row always; a teammate's while they are in this world), the same
-      rule as the frame's level (FS-CH21F R10) *(v1 — reason: the party payload does not carry it)*.
+41. **In a world** (town, fields, runs), from `specialization` on the world state. *(integrator
+    correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream; each surface now
+    sits on the side ADR-0086 puts it.)*
+    - **Nameplates are world drawing** (ADR-0086 Decision 2.1: drawn at a world position,
+      following a body). Each world scene draws, under every player's name over their figure,
+      their own and others', a second, smaller line with their title. No title, no line.
+    - **The stats panel header** (the gear overlay's character sheet, a UI-scene piece) shows the
+      title in place of the class name.
+    - **Party frames** (a UI-scene piece): a member's title shows on their frame whenever the
+      state carries that member (the player's own row always; a teammate's while they are in this
+      world), the same rule as the frame's level (FS-CH21F R10) *(v1 — reason: the party payload
+      does not carry it)*.
+    - **How the UI scene learns it:** only as plain data the world already hands it through the
+      UiBridge (ADR-0086 Decision 3), never by reading a world: `specialization` rides the player
+      data in the world's `partySeen` state (the frames) and in the `character` of its `gear`
+      "seen" message (the character sheet), and the ability bar's view carries it as a copy key
+      (§L.43, §L.46). No new bridge request or call.
 42. Chat lines, whispers, the party panel, invites and the settlement record keep showing the bare
     name *(v1)*.
 
 ### §L. The client: what each spec changes in the HUD (game-client)
 
 43. **The archer's right-click is named "Heavy Shot"** for every archer except a Shadow Ranger,
-    whose shows **"Shadow Shot"** *(charter default)*, wherever the ability's name shows (the
-    ability card, the controls help line, and FS-Q18Q3's bar tooltip once it exists). The skill id
-    stays `shadow_shot`. The shadow look on the shot is FS-1J1CB's.
+    whose shows **"Shadow Shot"** *(charter default)*, wherever the ability's name shows: the
+    ability bar's right-click tooltip (FS-Q18Q3) and the run's controls panel. The copy lives in
+    `ui/abilityCopy.ts`, looked up by class and specialization; the world's bar view carries the
+    specialization beside the class so the UI scene's tooltip picks the right row. *(integrator
+    correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream, and the ability card
+    is gone, replaced by FS-Q18Q3's bar.)* The skill id stays `shadow_shot`. The shadow look on the
+    shot is FS-1J1CB's.
 44. **Parry pips:** a `parry_charges` resource is drawn as one pip per point of its **max**: 3 for
-    a mercenary, 5 for a Sellsword, in the HUD and in the party frames alike (changes FS-8AY7S R22).
+    a mercenary, 5 for a Sellsword, in the HUD's resource bars and in the party frames alike (both
+    UI-scene pieces fed the resource as data; changes FS-8AY7S R22).
 45. **The riposte tells:** the riposte-armed tell and the riposte slice (FS-MAMHR §G.33–34) show at
     **2** charges for a Duelist, at 3 for an unspecialized mercenary, and **never** for a
-    Sellsword, whose left-click always plays the cut.
-46. **Ability copy** follows the spec *(v1 starting copy, grim and terse; the implementer may tune
-    the wording)*:
+    Sellsword, whose left-click always plays the cut. These are world drawing on the merc's own
+    figure.
+46. **Ability copy** follows the spec, in the ability bar's right-click tooltip copy
+    (`ui/abilityCopy.ts`) *(v1 starting copy, grim and terse; the implementer may tune the
+    wording; integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream
+    and the ability card is gone)*:
     - Duelist's parry: "Turn a blow as it lands for a parry charge. At two, the cut ripostes."
     - Sellsword's parry: "Turn a blow as it lands for a parry charge. Each one held sharpens the
       cut."
-    - Every other card keeps its line.
+    - Every other row keeps its line.
 
 ## User Stories
 
@@ -285,14 +308,16 @@ starting value, expected to move in play.
       not hand-edited.
 - [ ] `openapi.yaml` and `game-client/src/api/generated/` are regenerated, not hand-edited, and
       committed with the wire change; the change is additive (no breaking-change gate fires).
-- [ ] A character seated in any world carries the specialization its character read returned;
+- [ ] A body whose ranks (`systems.PassiveRanks`) hold a tier-6 node is that specialization;
       `current_player.specialization` and the matching `other_players[].specialization` show it,
-      absent for a character without one.
+      absent for a body without one. game-service and character-service read one shared
+      node-to-specialization table. *(integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI
+      scene) landed upstream with FS-8RZ51's built ranks on the body.)*
 - [ ] Nothing a client sends sets or changes a specialization.
-- [ ] An unknown specialization id on the character read seats the character with none and logs a
-      warning.
-- [ ] After FS-8RZ51 applies a tier-6 spend to the character in play in town, the next state
-      carries the specialization and its effects apply.
+- [ ] Ranks naming no tier-6 node of the body's class give no specialization, and the seat goes
+      ahead.
+- [ ] After `RaisePassiveRanks` (I-8RZ51-3) raises a tier-6 node in town, the next state carries
+      the specialization and its effects apply.
 
 **Guardian**
 
@@ -369,9 +394,10 @@ starting value, expected to move in play.
       and "WARRIOR • LV.5" for a warrior with no spec.
 - [ ] Every nameplate of a player with a spec carries a title line under the name; one without a
       spec has none.
-- [ ] The stats panel header shows the title; the party frames show it on rows the state carries.
-- [ ] An archer without a spec and a Hunter see "Heavy Shot" on the ability card and the help line;
-      a Shadow Ranger sees "Shadow Shot".
+- [ ] The stats panel header and the party frames (UI-scene pieces) show the title from the data
+      the world hands them through the UiBridge; no UI-scene piece reads a world scene.
+- [ ] An archer without a spec and a Hunter see "Heavy Shot" in the ability bar's right-click
+      tooltip and the run's controls panel; a Shadow Ranger sees "Shadow Shot".
 - [ ] A mercenary's HUD and party frame show 3 pips; a Sellsword's show 5.
 - [ ] A Duelist's armed tell and riposte slice show at 2 charges; a Sellsword's never show.
 - [ ] `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` pass.
@@ -382,9 +408,8 @@ starting value, expected to move in play.
   fixed from seating.
 - **Character read fails at seating:** seating follows FS-BDA7X's existing rules; there is no
   separate specialization read to fail.
-- **Unknown spec id** (a tree change game-service does not know): seated with none, warning logged
-  (§B.10). The client shows no title for an id it does not know.
-- **Spec of another class** on a character read (a corrupt allocation): treated as unknown.
+- **Ranks naming an unknown tier-6 node, or another class's** (a tree change, a corrupt
+  allocation): no specialization (§B.10). The client shows no title for an id it does not know.
 - **Last Stand on a hit that leaves exactly 0 after a parry:** a parried strike deals no damage,
   so it never reaches Last Stand.
 - **Last Stand while already at 1 HP:** a killing blow is still a killing blow; it saves once.

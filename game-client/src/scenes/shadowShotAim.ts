@@ -40,7 +40,7 @@ export class ShadowShotAim {
   /**
    * Whether a release now would fire: held long enough, off the cooldown, and the archer's
    * `resource` as it stands now can pay (req 18), judged by `abilityAffordable`, the rule the
-   * ability card greys by, so the line and the card never disagree. `resource` is required: a
+   * ability bar's square greys by, so the line and the square never disagree. `resource` is required: a
    * caller with no resource on the wire passes `undefined` on purpose, which is affordable (the
    * server's own refusal stands). Holding longer changes nothing (req 12).
    */

@@ -39,6 +39,8 @@ const (
 	ComponentTypeDebuff   ComponentType = "Debuff"
 	ComponentTypeSkill    ComponentType = "Skill"
 	ComponentTypeAbility  ComponentType = "Ability"
+	// the class tree ability key 3 casts (FS-04EEA §A R2)
+	ComponentTypeTreeAbility ComponentType = "TreeAbility"
 
 	ComponentTypeStats      ComponentType = "Stats"
 	ComponentTypeCombat     ComponentType = "Combat"
@@ -64,7 +66,9 @@ const (
 	ComponentTypeAttackSlow   ComponentType = "AttackSlow"
 
 	ComponentTypeGearBonus ComponentType = "GearBonus"
-	ComponentTypeFrenzy    ComponentType = "Frenzy"
+	// the passive tree ranks a body holds (FS-8RZ51 R31)
+	ComponentTypePassiveRanks ComponentType = "PassiveRanks"
+	ComponentTypeFrenzy       ComponentType = "Frenzy"
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"

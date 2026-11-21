@@ -51,7 +51,7 @@ function recording(): UiBridge & { heard: string[] } {
     container: (message) => void heard.push(`container ${message.kind}`),
     record: (shown) => void heard.push(`record ${shown ? "shown" : "none"}`),
     endPopped: () => void heard.push("endPopped"),
-    abilityCard: () => void heard.push("abilityCard"),
+    abilityBar: () => void heard.push("abilityBar"),
     hud: (message) => void heard.push(`hud ${message.kind}`),
     confirmBurn: (altar) => void heard.push(`confirmBurn ${altar}`),
     lore: (message) => void heard.push(`lore ${message.kind}`),
@@ -666,16 +666,16 @@ describe("the gear's, the container's and the record's data, told to the UI scen
     ]);
   });
 
-  // FS-84N1G R4: the run's ability card up or not, plain data, for the controls badge
-  it("should tell each screen listener whether the run's ability card is up, and a world lent no bridge nothing", () => {
+  // FS-84N1G R4; FS-Q18Q3 R42: the run's ability bar live or not, plain data, for the controls badge
+  it("should tell each screen listener whether the run's ability bar is live, and a world lent no bridge nothing", () => {
     const bridge = new GameUiBridge();
     const told: boolean[] = [];
-    bridge.onScreen({ abilityCard: (up) => void told.push(up) });
+    bridge.onScreen({ abilityBar: (live) => void told.push(live) });
     const ui = reportWorld({ registry: registryWith(bridge), events: new EventEmitter() }, "run", side());
-    ui.abilityCard(true);
-    ui.abilityCard(false);
+    ui.abilityBar(true);
+    ui.abilityBar(false);
     expect(told).toEqual([true, false]);
-    expect(() => NO_UI.abilityCard(true)).not.toThrow();
+    expect(() => NO_UI.abilityBar(true)).not.toThrow();
   });
 
   it("should hand a world lent no bridge calls that draw nothing", () => {

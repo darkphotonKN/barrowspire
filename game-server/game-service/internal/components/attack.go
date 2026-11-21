@@ -31,6 +31,13 @@ const (
 	// AttackParry raises the mercenary's parry stance. It has no row in the attack
 	// table: no cost, no cooldown, no damage. FS-MAMHR §Requirements 10.
 	AttackParry AttackKind = "parry"
+	// The class tree abilities, granted by each class tree's tier-3 node and
+	// cast on key 3. Only the class that names one, holding that node, resolves
+	// it. FS-04EEA §A R1–R3.
+	AttackEarthbreaker  AttackKind = "earthbreaker"
+	AttackBlink         AttackKind = "blink"
+	AttackArrowRain     AttackKind = "arrow_rain"
+	AttackSettleTheDebt AttackKind = "settle_the_debt"
 	// AttackMonsterStrike is a monster's swing landing at the end of its
 	// wind-up. Only the MonsterAISystem records it; no client message maps to it.
 	AttackMonsterStrike AttackKind = "monster_strike"

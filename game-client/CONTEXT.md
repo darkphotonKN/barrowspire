@@ -627,9 +627,8 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   menu's hero and the character list, from the character read; I-E1ZDG-1); locked, not built in
   a world: the nameplates' second line, the stats panel header and the party frames, which read
   the world state (I-E1ZDG-2). A character with no specialization has no title and shows the
-  class name alone. Replaces
-  `classLore`'s old second names (IRON GUARDIAN, ARCANE MASTER, SHADOW RANGER, OATHLESS BLADE),
-  which go entirely. Not a profile **rank** title ("Delver", "Warden"). The specialization itself
+  class name alone. Replaces `classLore`'s old second names (IRON GUARDIAN, ARCANE MASTER, SHADOW
+  RANGER, OATHLESS BLADE), which go entirely. Not a profile **rank** title ("Delver", "Warden"). The specialization itself
   is game-service's term.
 - **Heavy Shot** (FS-E1ZDG): the archer's right-click as the screen names it for every archer but
   a Shadow Ranger, whose reads **Shadow Shot**. Display only: the skill id stays `shadow_shot`.

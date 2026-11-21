@@ -47,7 +47,7 @@ import { progressOf } from "@/ui/progress";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
-import { abilityCard } from "@/ui/abilityCard";
+import { abilityBar } from "@/ui/abilityBarView";
 import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
 import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
@@ -103,7 +103,7 @@ import { findPointerLook } from "@/render/cursors";
  * the satchel and their keys are the UI scene's: the field hands them its state and answers their
  * equips and takes (FS-TQZ5J § Change: Phase 3, R50–R56).
  * The class kit is the run's too (FS-8AY7S, FS-JTNPR, FS-MAMHR): the Health and class resource
- * bars top-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
+ * bars top-left, the ability bar over the level bar, the archer's Shadow Shot hold (the keys read
  * released while it is drawn) and the Mercenary's cut, riposte and parry, all through `fieldCombat`.
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
@@ -244,7 +244,7 @@ export class FieldScene extends Phaser.Scene {
   private ui: WorldUi = NO_UI;
   /** The gameplay sound effects' player (FS-AND39 R16), made in `create`, for the world's own plays: the fight's hits and casts, a take. */
   private gameplaySounds?: GameplaySounds;
-  /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
+  /** The latest field state, for the ability bar's redraw as the lockout or the hold starts and ends. */
   private lastState?: ClientGameState;
   /** The player's server-reported position, for reaching a pile. */
   private selfAt?: Point;
@@ -316,7 +316,8 @@ export class FieldScene extends Phaser.Scene {
       takesPointer: (x, y, primary) => this.takesPointer(x, y, primary),
       // a press on the UI scene's chat window during a held world press (FS-TQZ5J § Change: Batch 6, R129)
       pressClaimed: (pointer) => this.ui.pressClaimed(pointer),
-      lockout: () => this.showAbilityCard(),
+      // the lockout and the Shadow Shot hold are the bar's to show (FS-Q18Q3 R22, R23, R40)
+      abilityChanged: () => this.showAbilityBar(),
       sounds: this.gameplaySounds,
     });
     this.createPiles();
@@ -802,24 +803,28 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * The run's Health and class resource bars and its ability card (FS-8AY7S req 20–32), by the
-   * same rules: up while the player stands in the field, down while they lie fallen. A field has
-   * no leave button to share the card's corner.
+   * The run's Health and class resource bars (FS-8AY7S req 20–25) and the ability bar (FS-Q18Q3 §E, §G),
+   * by the same rules: up while the player stands in the field, down while they lie fallen.
    */
   private showClassHud(state: ClientGameState): void {
     // the UI scene's, in the field's corner (FS-TQZ5J § Change: Batch 5, R68, R69)
     this.ui.hud({ world: "field", kind: "bars", bars: hudBars(state) });
-    this.showAbilityCard();
+    this.showAbilityBar();
   }
 
   /**
-   * The ability card, redrawn on every state and as the lockout starts and ends (req 31): handed to the
-   * UI scene, which draws it above the corner row (FS-3EBCA R13; FS-TQZ5J § Change: Batch 5, R68).
+   * The ability bar, judged on every state and as the lockout or the hold starts and ends (FS-Q18Q3 R40):
+   * handed to the UI scene, which draws it over the level bar (R41), the potion square always greyed here.
    */
-  private showAbilityCard(): void {
+  private showAbilityBar(): void {
     const state = this.lastState;
     if (!state) return;
-    this.ui.hud({ world: "field", kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false }) });
+    const bar = abilityBar(state, {
+      world: "field",
+      lockedOut: this.fight?.lockedOut ?? false,
+      aiming: this.fight?.aiming ?? false,
+    });
+    this.ui.hud({ world: "field", kind: "bar", bar });
   }
 
   /** This client's player as drawn, once the field has reported them. */

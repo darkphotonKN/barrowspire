@@ -22,8 +22,17 @@ suite green. A second request is a new change, not this slice.
 
 Nothing at first. Present the sheet and captures. Apply at most one round of tweaks.
 
+*(Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream.)* Both files
+are UI-scene code. A tweak to either stays inside the UI scene and changes no `bar` message and no
+world scene. The captures show the bar as the UI scene draws it, over a world. They include the run's
+controls badge in its kept place over the bar's corner (FS-Q18Q3 R42), because whether the badge
+should now drop to the corner row is the owner's call. Record his answer here. Moving the badge is a
+change to FS-84N1G, not a tweak in this slice.
+
 ## Acceptance Criteria
 
+- [ ] The owner has seen the controls badge in its kept place and said whether it stays (answer
+      recorded below).
 - [ ] Each icon reads as its ability at render scale 1, 1.5 and 2; no specks, no vanished cuts, no
       accidental faces (ADR-0080's check).
 - [ ] Lit, greyed and active read apart; the greyed icon never brightens under the pointer.

@@ -684,8 +684,33 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   a 2 px dark stroke (`markerStroke`), this level at the left and the next at the right, or "Cap"
   at the cap, each in a fixed slot so the bar never changes length with the level. No count on
   the HUD (the character sheet keeps it). Shown in the town, every field and every run, alive or
-  dead; never on the menus. The level-up cue rises from just above its centre.
-  *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14.)*
+  dead; never on the menus. The level-up cue rises from just above its centre, or, where the ability
+  bar stands over it, from 6 px over the bar's top.
+  *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14; the cue over
+  the ability bar by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md), 2026-11-21.)*
+- **Ability bar.** Three squares in one row directly above the Experience bar, centred on the canvas
+  (`src/ui/AbilityBar.ts`, placed by `src/ui/abilityBarLayout.ts`): **1** the health potion,
+  **right-click** the class ability, **3** the tree ability, each 44 px, 10 apart, the cost slots' foot
+  6 px over the XP piece. Each square is a well of the HUD panel (`hudPanel` at 0.85) in a 1 px brass rim
+  (`frame` at 0.6) with a carved inner line, its icon a bronze knockout about 30 px across from the one
+  shared renderer (see "HUD icons"; the ten pictures are `src/ui/abilityIcons.ts`). Its key is set into
+  its top edge on a small plaque of the HUD panel in a brass rim, in the 12 px body serif in vellum: "1",
+  "3", and for the right-click a small mouse with its right button filled. Each ability's cost stands
+  under its square as a bare 12 px numeral with the 2 px dark stroke, in its resource bar's own colour
+  (`hudMana`, `hudStamina`, `hudParry`; vellum for a kind the client does not know); a cost of 0 draws
+  nothing. The potion square has no cost; its count (0 to 3) stands in its bottom-right corner in the
+  same stroked numeral, and at 0 the flask and the "0" go faint. **Greyed** (the player cannot use it:
+  short of the cost, cooling down, locked out, or a potion square in a field): the knockout flat in
+  `hudFaint` at 0.6, the key and the cost in `hudFaint`, never brightening under the pointer. **Active**
+  (Shadow Shot held, the mercenary's stance open): the rim 2 px in `frameBright` and the icon in the hover
+  ink; active and greyed can show together. Until the character holds its tree's ability, the 3 square
+  is locked: the padlock greyed and a faint "Lv 10" in its cost slot. While a cooldown runs, a dark
+  sweep (`ink` at about 0.55) covers the greyed square from 12 o'clock, receding clockwise; no seconds
+  numeral and no ready flash. Shown in runs and fields from the first
+  state, never in the town; in a run, once the player is out of the delve, it is held beside the held
+  Health and resource bars with every square greyed; in a field it goes while the player lies fallen.
+  It draws no press feedback of its own. *(Added by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md),
+  2026-11-21.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right
@@ -829,8 +854,10 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   glyph (`GLYPH_LINE_W`, over the renderer's 2 px join threshold, every angled corner a vertex
   inside one path) of the interactable amber, brighter under the pointer, with nothing filled and no
   emboss. Under the pointer a 12 px vellum label on the HUD panel names the icon and its key.
-  Everything is drawn in code from tokens, with no baked art. The ability card stands directly above
-  the row, 8 px over it. *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md),
+  Everything is drawn in code from tokens, with no baked art. *(2026-11-21: the ability card that stood
+  directly above the row, 8 px over it, was removed by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md);
+  the ability bar above the Experience bar holds it now, and the run's controls badge keeps the place it
+  had over the card.)* *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md),
   2026-11-12; rewritten by [FS-3EBCA § Change: The inventory icon is an inked
   backpack](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-13, and by its owner's tweak rounds
   the same day; glyphs drawn richer by [FS-QHN87](../../docs/specs/QHN87-richer-corner-glyphs.md),

@@ -95,7 +95,6 @@ const { MonsterRoster } = await import("@/render/creatures");
 const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
-const { ABILITY_CARD_PLACE } = await import("@/ui/hudCornerLayout");
 const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
 const { ActionType } = await import("@/assets/types/client");
 const { RUN_ACTIONS } = await import("./runActions");
@@ -113,7 +112,6 @@ const await_minimapName = await import("@/ui/minimapName");
 const await_progressHud = await import("@/ui/ProgressHud");
 const { ProgressHud: ProgressHudClass } = await_progressHud;
 const await_resourceHud = await import("@/ui/ResourceHud");
-const await_potions = await import("@/ui/potions");
 const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
@@ -131,7 +129,7 @@ const { createChatStore } = await import("@/stores/chatStore");
 const chatMayOpen = (run: object) => chatWiring(uiSceneOn(run, "run", { row: false }).bridge).mayOpen();
 /** The player typing in the UI scene's chat over the run, or not (FS-TQZ5J § Change: Batch 6, R127). */
 const typeInChat = (run: object, on = true) => uiSceneOn(run, "run", { row: false }).bridge.reportUi({ typing: on });
-const { abilityPlaceOver, abilityShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
+const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { GameUiBridge, NO_UI, worldContainer } = await import("@/ui/uiBridge");
 
 /**
@@ -2603,8 +2601,8 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
       const last = <K extends HudMessage["kind"]>(kind: K) =>
         told.filter((m): m is Extract<HudMessage, { kind: K }> => m.kind === kind).at(-1);
       const bars = () => ((last("bars") as { bars?: Bar[] } | undefined)?.bars ?? []).map((b) => [b.channel, b.fill]);
-      const cell = () => (last("potion") as { cell?: unknown } | undefined)?.cell;
-      return { bars, cell };
+      const bar = () => (last("bar") as { bar?: unknown } | undefined)?.bar;
+      return { bars, bar };
     }
     const potion = { item_id: "p1", entity_id: "ep1", name: "Lesser Heal Potion", quantity: 1, item_type: "consumable", healing_amount: 25 };
     const carrying = (n: number) => ({ consumable_1: n > 0 ? potion : null, consumable_2: n > 1 ? potion : null, consumable_3: null });
@@ -2646,15 +2644,16 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
       expect(hud.bars()).toEqual([["health", 0], ["mana", 0.25]]);
     });
 
-    it("should keep the potion cell beside them, frozen with its count", () => {
+    // FS-Q18Q3 R30: the ability bar is held with them, every square greyed, its potion count kept
+    it("should keep the ability bar with them, held greyed with its count", () => {
       const { run } = barsOnStage();
       const hud = heardHud(run);
       run.handleGameStateUpdate(withMe({ ...me(), equipment: carrying(2) } as never));
       run.handleGameStateUpdate(withMe({ ...me({ current_health: 0 }), equipment: carrying(2) } as never));
-      const atDeath = hud.cell();
-      expect(atDeath).toMatchObject({ count: 2 });
+      const atDeath = hud.bar();
+      expect(atDeath).toMatchObject({ potion: { count: 2, greyed: true }, ability: { greyed: true, active: false } });
       run.handleGameStateUpdate(withMe({ ...me({ current_health: 0 }), equipment: carrying(0) } as never));
-      expect(hud.cell()).toEqual(atDeath);
+      expect(hud.bar()).toEqual(atDeath);
     });
 
     it("should build them afresh, unfrozen, after a restart", () => {
@@ -2708,10 +2707,13 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
   });
 });
 
-describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
+describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
   type Resource = { kind: string; current: number; max: number; ability_cost: number };
+  type Cooldown = { remaining: number; total: number };
   const stamina = (current: number): Resource => ({ kind: "stamina", current, max: 100, ability_cost: 25 });
-  const me = (fields: { class?: string; resource?: Resource; escape?: boolean; current_health?: number } = {}) => ({
+  const me = (
+    fields: { class?: string; resource?: Resource; escape?: boolean; current_health?: number; ability_cooldown?: Cooldown } = {},
+  ) => ({
     ...player("me", "Aldric", 130),
     resource: stamina(100),
     ...fields,
@@ -2725,7 +2727,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     resetRun(end: "shutdown" | "destroy"): void;
   }
 
-  function cardOnStage() {
+  function barOnStage() {
     const stage = onStage();
     const carded = stage.run as unknown as Carded;
     const cam = (stage.run.cameras as { main: { width: number; height: number } }).main;
@@ -2737,10 +2739,10 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
         on: (event: string, fn: () => void) => (pointerHandlers[event] = fn),
       },
     });
-    // a click off the satchel: it takes none
     const live = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
-    const text = (content: string) => live().find((m) => m.args[2] === content);
-    const shown = () => abilityShownOver(carded);
+    /** The live text showing `words` now (the stage keeps a text's content as it is set). */
+    const said = (words: string) => live().find((m) => m.args[2] === words);
+    const shown = () => barShownOver(carded);
     const rightClick = () =>
       pointerHandlers.pointerdown({
         x: 10,
@@ -2753,7 +2755,7 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
       });
     const delayed = () =>
       (stage.run.time as { delayedCall: ReturnType<typeof vi.fn> }).delayedCall.mock.calls as [number, () => void][];
-    return { ...stage, carded, cam, live, text, shown, rightClick, delayed };
+    return { ...stage, carded, cam, live, said, shown, rightClick, delayed };
   }
 
   afterEach(() => {
@@ -2761,134 +2763,154 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
   });
 
   it.each([
-    ["warrior", "Dash", "Charge a short way toward the cursor."],
-    ["mage", "Triple Fireball", "Hurl three fireballs in a spread toward the cursor."],
-    ["archer", "Shadow Shot", "Hold to aim, release to loose one slow, heavy bolt."],
-  ])("should show the %s's card at the bottom right in a run, in the body serif", (cls, name, line) => {
-    const { run, cam, text } = cardOnStage();
+    ["warrior", "dash"],
+    ["mage", "triple_fireball"],
+    ["archer", "shadow_shot"],
+    ["mercenary", "parry"],
+  ])("should show the %s's ability on the bar at the bottom middle in a run", (cls, icon) => {
+    const { run, cam, said, shown } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ class: cls })));
-    for (const content of [name, line]) {
-      const t = text(content)!;
-      expect(t).toBeDefined();
-      expect(t.args[0] as number).toBeGreaterThan(cam.width / 2);
-      expect(t.args[1] as number).toBeGreaterThan(cam.height / 2);
-      expect((t.args[3] as { fontFamily?: string }).fontFamily).toBe(CANVAS_FONT.body);
-    }
+    expect(shown()?.ability.icon).toBe(icon);
+    // the locked 3 square's "Lv 10", under the bar's right square, low on the screen and right of centre
+    const locked = said("Lv 10")!;
+    expect(locked).toBeDefined();
+    expect(locked.last.setPosition[0] as number).toBeGreaterThan(cam.width / 2);
+    expect(locked.last.setPosition[0] as number).toBeLessThan(cam.width / 2 + 100);
+    expect(locked.last.setPosition[1] as number).toBeGreaterThan(cam.height / 2);
   });
 
   it.each([1, 2])(
-    "should put the card and the escaped count back at their right-hand corners when the view widens, at render scale %s (FS-ZAJMH R12, R13)",
+    "should put the bar back over the XP bar and the escaped count at its corner when the view widens, at render scale %s (FS-Q18Q3 R10; FS-ZAJMH R12, R13)",
     (renderScale) => {
-      const { run, text } = cardOnStage();
+      const { run, said, live } = barOnStage();
       const hud = run as unknown as { createUI(): void; relayoutHud(): void };
       // the satchel's own re-layout is ContainerView's test
       Object.assign((run as unknown as { containerView: object }).containerView, { relayout: vi.fn() });
       hud.createUI();
       run.handleGameStateUpdate(withMe(me()));
-      const name = text("Dash") as Made & { last: Record<string, unknown[]> };
-      const escaped = text("Escaped: 0") as Made & { last: Record<string, unknown[]> };
-      const nameX = name.last.setPosition[0] as number;
+      const locked = said("Lv 10")!;
+      const lockedX = locked.last.setPosition[0] as number;
+      const escaped = live().find((m) => m.args[2] === "Escaped: 0") as Made;
       expect(escaped.args[0]).toBe(800 - 10);
 
       // the harness's view is 800 wide; 200 more, as from 1080 to 1280
       viewport.set({ width: 1000, height: 600, renderScale });
       hud.relayoutHud();
-      // the card is the UI scene's, back in its corner on the UI scene's own relayout (FS-TQZ5J § Change: Batch 5, R73)
+      // the bar is the UI scene's, back over the XP bar on the UI scene's own relayout (FS-TQZ5J § Change: Batch 5, R73)
       hudOver(run, "run").relayout();
-      expect(name.last.setPosition[0]).toBe(nameX + 200);
+      expect(locked.last.setPosition[0]).toBe(lockedX + 100);
       expect(escaped.last.setX).toEqual([1000 - 10]);
       // moved, so rasterised again at the render scale of now (R5)
       expect(escaped.last.setResolution).toEqual([renderScale]);
+      expect(locked.last.setResolution).toEqual([renderScale]);
       viewport.set({ width: 800, height: 600, renderScale: 1 });
     },
   );
 
-  it("should grey the card with the pool one short of the cost, and light it at the cost", () => {
-    const { run, shown } = cardOnStage();
+  it("should grey the right-click square with the pool one short of the cost, and light it at the cost", () => {
+    const { run, shown } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ resource: stamina(24) })));
-    expect(shown()?.greyed).toBe(true);
+    expect(shown()?.ability.greyed).toBe(true);
     run.handleGameStateUpdate(withMe(me({ resource: stamina(25) })));
-    expect(shown()?.greyed).toBe(false);
+    expect(shown()?.ability.greyed).toBe(false);
   });
 
-  it("should show the card lit with no resource on the wire", () => {
-    const { run, shown } = cardOnStage();
+  it("should show the square lit with no resource on the wire, and no cost", () => {
+    const { run, shown } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ resource: undefined })));
-    expect(shown()).toMatchObject({ name: "Dash", greyed: false });
+    expect(shown()?.ability).toMatchObject({ icon: "dash", greyed: false, cost: null });
   });
 
-  it("should grey the card for the lockout after a right-click, and light it once the lockout ends", () => {
-    const { run, carded, sent, shown, rightClick, delayed } = cardOnStage();
+  it("should grey it while the server's cooldown runs, and light it once it is over (FS-Q18Q3 R22)", () => {
+    const { run, shown } = barOnStage();
+    run.handleGameStateUpdate(withMe(me({ ability_cooldown: { remaining: 0.3, total: 0.4 } })));
+    expect(shown()?.ability.greyed).toBe(true);
+    run.handleGameStateUpdate(withMe(me({ ability_cooldown: { remaining: 0, total: 0 } })));
+    expect(shown()?.ability.greyed).toBe(false);
+  });
+
+  it("should grey it for the lockout after a right-click, and light it once the lockout ends", () => {
+    const { run, carded, sent, shown, rightClick, delayed } = barOnStage();
     run.handleGameStateUpdate(withMe(me()));
     carded.bindRunInput();
     rightClick();
     expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(true);
-    expect(shown()?.greyed).toBe(true);
+    expect(shown()?.ability.greyed).toBe(true);
 
     const lockout = delayed().find(([ms]) => ms === 400);
     lockout![1]();
-    expect(shown()?.greyed).toBe(false);
+    expect(shown()?.ability.greyed).toBe(false);
   });
 
-  it("should show no card for a class with no row", () => {
-    const { run, shown } = cardOnStage();
+  it("should draw an empty well for a class with no row, the bar up (FS-Q18Q3 R27)", () => {
+    const { run, shown } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ class: "necromancer" })));
-    expect(shown()).toBeNull();
+    expect(shown()?.ability.icon).toBeNull();
   });
 
-  it("should show no card in the hub", () => {
-    const { run, shown, text } = cardOnStage();
+  it("should show no bar in the hub", () => {
+    const { run, shown, said } = barOnStage();
     run.handleGameStateUpdate({ ...withMe(me()), world_type: "hub" } as GameState);
     expect(shown()).toBeNull();
-    expect(text("Dash")).toBeUndefined();
+    expect(said("Lv 10")).toBeUndefined();
   });
 
+  it("should show no bar before the first state", () => {
+    const { shown } = barOnStage();
+    expect(shown()).toBeNull();
+  });
+
+  // FS-Q18Q3 R30 (FS-QPDKN R168): out of the delve the bar is held with the bars, every square greyed
   it.each([
     ["dies", { current_health: 0 }],
     ["escapes", { escape: true }],
-  ])("should take the card down when the player %s", (_, fields) => {
-    const { run, shown, text } = cardOnStage();
-    run.handleGameStateUpdate(withMe(me()));
-    expect(text("Dash")).toBeDefined();
-    run.handleGameStateUpdate(withMe(me(fields)));
-    expect(shown()).toBeNull();
-    expect(text("Dash")).toBeUndefined();
+  ])("should hold the bar greyed when the player %s, nothing active and no sweep", (_, fields) => {
+    const { run, shown, said } = barOnStage();
+    run.handleGameStateUpdate(withMe(me({ ability_cooldown: { remaining: 0.2, total: 0.4 } })));
+    run.handleGameStateUpdate(withMe(me({ ...fields, ability_cooldown: { remaining: 0.2, total: 0.4 } })));
+    expect(shown()).toMatchObject({
+      potion: { greyed: true },
+      ability: { icon: "dash", greyed: true, active: false, cost: 25 },
+      cooldowns: { ability: null, tree: null },
+    });
+    expect(said("Lv 10")).toBeDefined();
   });
 
-  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
-    const { run, carded } = cardOnStage();
-    run.handleGameStateUpdate(withMe(me()));
-    expect(abilityPlaceOver(carded)).toEqual(ABILITY_CARD_PLACE);
-  });
-
-  it("should hand the card to the UI scene, then tell the badge it is up, and build none (FS-TQZ5J § Change: Batch 5, R68, R70)", () => {
-    const { run, carded } = cardOnStage();
+  it("should hand the bar to the UI scene, then tell the badge it is live, and build none (FS-Q18Q3 R40–R42)", () => {
+    const { run, carded } = barOnStage();
     const told: string[] = [];
     uiSceneOn(run, "run", { row: false }).bridge.onScreen({
-      hud: (message) => void (message.kind === "ability" && told.push(`card ${message.card?.name ?? "none"}`)),
-      abilityCard: (up) => void told.push(`badge ${up}`),
+      hud: (message) =>
+        void (message.kind === "bar" && told.push(`bar ${message.bar === null ? "none" : message.bar.ability.greyed ? "grey" : "lit"}`)),
+      abilityBar: (live) => void told.push(`live ${live}`),
     });
     run.handleGameStateUpdate(withMe(me()));
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
-    expect(told).toEqual(["card Dash", "badge true", "card none", "badge false"]);
-    expect((carded as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
+    expect(told).toEqual(["bar lit", "live true", "bar grey", "live false"]);
+    expect((carded as unknown as Record<string, unknown>).abilityBar).toBeUndefined();
   });
 
-  it("should hand the potion cell to the UI scene beside the bars, and build none (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
-    const { run, carded } = cardOnStage();
-    const cells: unknown[] = [];
+  it("should hand the bar as plain data, no ability card and no potion cell (FS-Q18Q3 R34, R35, R40)", () => {
+    const { run } = barOnStage();
+    const kinds: string[] = [];
+    let bar: unknown;
     uiSceneOn(run, "run", { row: false }).bridge.onScreen({
-      hud: (message) => void (message.kind === "potion" && cells.push(message.cell)),
+      hud: (message) => {
+        kinds.push(message.kind);
+        if (message.kind === "bar") bar = message.bar;
+      },
     });
     run.handleGameStateUpdate(withMe(me()));
-    expect(cells.at(-1)).toEqual({ count: 0, keyLabel: "[1]", dimmed: true });
-    expect((carded as unknown as Record<string, unknown>).potionHud).toBeUndefined();
+    expect(kinds).toContain("bar");
+    expect(kinds.filter((k) => !["bars", "bar", "progress"].includes(k))).toEqual([]);
+    expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
+    expect(bar).toMatchObject({ potion: { count: 0, greyed: true } });
   });
 
   // FS-QPDKN § Change: The party death flow and the spectate switcher, R158: the dead spectator's LEAVE is the
-  // spectate row's; nothing takes the ability card's corner, and the card stays down out of the delve
-  it("should give the dead spectator no corner LEAVE, the card down", () => {
-    const { run, live } = cardOnStage();
+  // spectate row's; nothing takes the old card's corner
+  it("should give the dead spectator no corner LEAVE", () => {
+    const { run, live } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
     (run as unknown as { startWatching(): void }).startWatching();
     const labels = live().filter((m) => m.args[2] === "LEAVE");
@@ -2897,9 +2919,9 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
   });
 
   // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the run,
-  // and never reaches it, so the run's click path reads no rect of the row
-  it("should read no corner row in its click path: the row is the UI scene's (FS-TQZ5J R15)", () => {
-    const { run, carded, sent, rightClick } = cardOnStage();
+  // and never reaches it, so the run's click path reads no rect of the row; FS-Q18Q3 R33: nor the bar's
+  it("should read no corner row and no bar in its click path: both are the UI scene's (FS-TQZ5J R15; FS-Q18Q3 R33)", () => {
+    const { run, carded, sent, rightClick } = barOnStage();
     run.handleGameStateUpdate(withMe(me()));
     carded.bindRunInput();
     (run as unknown as { corner: unknown }).corner = { covers: () => true };
@@ -2908,11 +2930,22 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     expect(sent.mock.calls.some(([action]) => action === ActionType.CastSkill)).toBe(true);
   });
 
-  // FS-84N1G R4: the run tells the UI scene whether its card is up, for the controls badge, on each change
-  it("should tell the UI scene its card is up, and down at a death, once each change", () => {
-    const { run } = cardOnStage();
+  it("should test no rect of the bar and bind no key for it (FS-Q18Q3 R32, R33)", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    for (const scene of ["BarrowspireScene", "FieldScene"]) {
+      const source = readFileSync(join(__dirname, `${scene}.ts`), "utf8");
+      expect(source, scene).not.toMatch(/abilityBarFrame\(|from "@\/ui\/abilityBarLayout"/);
+      expect(source, scene).not.toMatch(/RUN_ACTIONS\.treeAbility/);
+    }
+  });
+
+  // FS-84N1G R4; FS-Q18Q3 R42: the run tells the UI scene whether its bar is live, for the controls badge,
+  // on each change: held at a death, it is no longer live
+  it("should tell the UI scene its bar is live, and not at a death though it stays held, once each change", () => {
+    const { run } = barOnStage();
     const told: boolean[] = [];
-    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityCard: (up: boolean) => void told.push(up) };
+    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityBar: (live: boolean) => void told.push(live) };
     run.handleGameStateUpdate(withMe(me()));
     run.handleGameStateUpdate(withMe(me()));
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
@@ -2920,36 +2953,37 @@ describe("BarrowspireScene ability card (FS-8AY7S req 29–33)", () => {
     expect(told).toEqual([true, false]);
   });
 
-  it("should tell the next start's card afresh after a restart", () => {
-    const { run, carded } = cardOnStage();
+  it("should tell the next start's bar afresh after a restart", () => {
+    const { run, carded } = barOnStage();
     const told: boolean[] = [];
-    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityCard: (up: boolean) => void told.push(up) };
+    (run as unknown as { ui: object }).ui = { ...NO_UI, abilityBar: (live: boolean) => void told.push(live) };
     run.handleGameStateUpdate(withMe(me()));
     carded.resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
     expect(told).toEqual([true, true]);
   });
 
-  it("should never be up with the leave button", () => {
-    const { run, carded, text } = cardOnStage();
+  it("should hold the bar greyed while the leave button is up", () => {
+    const { run, carded, shown } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
     expect(carded.leaveButton).toBeDefined();
-    expect(text("Dash")).toBeUndefined();
+    expect(shown()?.ability.greyed).toBe(true);
   });
 
-  it("should build the card afresh after a restart", () => {
-    const { run, carded, text } = cardOnStage();
-    run.handleGameStateUpdate(withMe(me()));
+  it("should build the bar afresh, live, after a restart", () => {
+    const { run, carded, shown } = barOnStage();
+    run.handleGameStateUpdate(withMe(me({ current_health: 0 })));
     carded.resetRun("shutdown");
     run.handleGameStateUpdate(withMe(me()));
-    expect(text("Dash")).toBeDefined();
+    expect(shown()?.ability.greyed).toBe(false);
   });
 
-  it.each(["warrior", "mage", "archer", "mercenary"])("should show the %s's card with no MP on it", (cls) => {
-    const { run, live, shown } = cardOnStage();
+  it.each(["warrior", "mage", "archer", "mercenary"])("should show the %s's bar with no MP on it", (cls) => {
+    const { run, live, shown } = barOnStage();
     run.handleGameStateUpdate(withMe(me({ class: cls })));
     expect(shown()).not.toBeNull();
-    expect(live().map((t) => String(t.args[2])).filter((t) => /\bMP\b/.test(t))).toEqual([]);
+    const words = live().map((t) => String(t.args[2]));
+    expect(words.filter((t) => /\bMP\b/.test(t))).toEqual([]);
   });
 
   it("should price nothing in MP on the main menu's controls line", () => {
@@ -6453,6 +6487,16 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     expect(drinks()).toHaveLength(0);
   });
 
+  // FS-Q18Q3 R32: the keys stay the world's, guarded by the UI's open menu; the bar shows no change from a press
+  it("should leave the ability bar as it was on a press of 1 while the menu is open", () => {
+    const { pressOne, press, keys, run } = drinkOnStage();
+    const before = JSON.stringify(barShownOver(run));
+    press(keys.esc);
+    pressOne();
+    expect(JSON.stringify(barShownOver(run))).toBe(before);
+    expect(barShownOver(run)?.potion).toEqual({ count: 1, greyed: false });
+  });
+
   it("should send no drink_potion on 1 while the menu's confirm is open", () => {
     const { pressOne, press, keys, drinks, sent } = drinkOnStage();
     press(keys.esc);
@@ -7528,16 +7572,26 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     expect(s.casts()).toHaveLength(1);
   });
 
-  it("should grey the ability card from a fired shot until the 1.2 s cooldown is over, and not for a hold", () => {
+  it("should grey the right-click square from a fired shot until the 1.2 s cooldown is over, and not for a hold", () => {
     const s = aimOnStage();
     s.press();
-    expect(abilityShownOver(s.run)?.greyed).toBe(false);
+    expect(barShownOver(s.run)?.ability.greyed).toBe(false);
     s.release(1300);
-    expect(abilityShownOver(s.run)?.greyed).toBe(true);
+    expect(barShownOver(s.run)?.ability.greyed).toBe(true);
     const cooldown = s.delayed().find(([ms]) => ms === 1200);
     expect(cooldown).toBeDefined();
     cooldown![1]();
-    expect(abilityShownOver(s.run)?.greyed).toBe(false);
+    expect(barShownOver(s.run)?.ability.greyed).toBe(false);
+  });
+
+  // FS-Q18Q3 R23: the right-click square is active while the hold lasts, lit as it begins and down as it ends
+  it("should light the right-click square while the hold lasts, and let it fall as the hold ends", () => {
+    const s = aimOnStage();
+    expect(barShownOver(s.run)?.ability.active).toBe(false);
+    s.press();
+    expect(barShownOver(s.run)?.ability.active).toBe(true);
+    s.release(1100);
+    expect(barShownOver(s.run)?.ability.active).toBe(false);
   });
 
   it("should allow a hold to begin during the left-click's own lockout", () => {
@@ -7717,9 +7771,9 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       withStamina(s, 89);
       s.press();
       s.release(1300);
-      expect(abilityShownOver(s.run)?.greyed).toBe(true);
+      expect(barShownOver(s.run)?.ability.greyed).toBe(true);
       withStamina(s, 90);
-      expect(abilityShownOver(s.run)?.greyed).toBe(false);
+      expect(barShownOver(s.run)?.ability.greyed).toBe(false);
       s.press();
       s.release(1600);
       expect(s.casts()).toHaveLength(1);
@@ -7740,7 +7794,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       expect(s.casts()).toEqual([[ActionType.CastSkill, expect.objectContaining({ skill_id: "shadow_shot" })]]);
     });
 
-    it("should draw the line ready exactly where the card is lit, for every stamina value", () => {
+    it("should draw the line ready exactly where the right-click square is lit, for every stamina value", () => {
       const s = aimOnStage();
       const draw = vi.spyOn(AimLine.prototype, "draw");
       s.press();
@@ -7748,7 +7802,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       for (let current = 0; current <= 100; current++) {
         withStamina(s, current);
         s.run.aimFrame();
-        expect(lineReady(draw)).toBe(abilityShownOver(s.run)?.greyed === false);
+        expect(lineReady(draw)).toBe(barShownOver(s.run)?.ability.greyed === false);
       }
     });
   });
@@ -7898,11 +7952,17 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       expect(stance(s)).toBe(false);
     });
 
-    it("should grey the Parry card while parry_lockout is above 0, and light it at 0", () => {
+    it("should grey the Parry square while parry_lockout is above 0, and light it at 0", () => {
       const s = parryOnStage({ parry_lockout: 0.98333 });
-      expect(abilityShownOver(s.run)).toMatchObject({ name: "Parry", greyed: true });
+      expect(barShownOver(s.run)?.ability).toMatchObject({ icon: "parry", greyed: true });
       s.run.handleGameStateUpdate(partyState(merc({ parry_lockout: 0 })));
-      expect(abilityShownOver(s.run)).toMatchObject({ name: "Parry", greyed: false });
+      expect(barShownOver(s.run)?.ability).toMatchObject({ icon: "parry", greyed: false });
+    });
+
+    // FS-Q18Q3 R23: the square is active while the stance is open, and greyed then too (a parry is refused)
+    it("should light the Parry square's rim while the stance is open", () => {
+      const s = parryOnStage({ parry_open: true });
+      expect(barShownOver(s.run)?.ability).toMatchObject({ active: true, greyed: true });
     });
   });
 
@@ -8328,7 +8388,6 @@ describe("the run's top-left stack, closed up (FS-77DVN §E)", () => {
   const { positionReadoutPlace } = await_positionReadout;
   const { minimapNameBox } = await_minimapName;
   const { HUD_COLUMN_W, resourceHudHeight } = await_resourceHud;
-  const { POTION_CELL_GAP, POTION_CELL_W } = await_potions;
   const { PARTY_FRAMES_PLACEMENT, partyFramesFrame } = await_partyFramesLayout;
   type Box = { x: number; y: number; width: number; height: number };
   /** A 12 px HUD line in its 3 px padding, at its largest, as the top-right column's test takes it. */
@@ -8346,12 +8405,11 @@ describe("the run's top-left stack, closed up (FS-77DVN §E)", () => {
    */
   const spectateHud = (width: number): Box => ({ x: width / 2 - 150, y: 10, width: 300, height: 56 });
 
-  /** The stack: the bars at their tallest, the potion cell beside them, four frames under them. */
+  /** The stack: the bars at their tallest, four frames under them (the potion cell beside them is gone, FS-Q18Q3 R35, R36). */
   function stack(): Box[] {
     const bars = { ...RESOURCE_HUD_AT.run, width: HUD_COLUMN_W, height: resourceHudHeight(2) };
-    const potion = { ...bars, x: bars.x + bars.width + POTION_CELL_GAP, width: POTION_CELL_W };
     const { x, top } = PARTY_FRAMES_PLACEMENT.run;
-    return [bars, potion, ...partyFramesFrame(4, x, top).map((f) => f.row)];
+    return [bars, ...partyFramesFrame(4, x, top).map((f) => f.row)];
   }
 
   it("should stand the bars at (10, 16), as a field's, and the frames from y 92", () => {

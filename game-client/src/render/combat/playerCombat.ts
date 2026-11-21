@@ -3,7 +3,7 @@
  * the targeted strike on a clicked monster (FS-77AB6 req 39) and the class casts on the left and
  * right click (FS-2325V §E.4, FS-KYPQ9 §D), with each class's kit (FS-8AY7S, FS-JTNPR, FS-MAMHR):
  * the archer's Shadow Shot hold, the Mercenary's cut, riposte and parry, and the ability lockout
- * the ability card greys by. What is sent, which effect plays and the cooldowns live here; whether
+ * the ability bar's square greys by. What is sent, which effect plays and the cooldowns live here; whether
  * the player may act at all (a menu open, fallen, escaped, the satchel under the pointer) is the
  * scene's to decide before it asks.
  */
@@ -15,7 +15,7 @@ import type { Point } from "@/render/iso";
 import { CHARGE_MS } from "@/render/effects/charge";
 import type { Swing } from "@/render/art/character";
 import { riposteArmed } from "@/render/effects/riposte";
-import { parryRefused } from "@/ui/abilityCard";
+import { parryRefused } from "@/ui/abilityBarView";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
 
 /**
@@ -26,7 +26,7 @@ export const STRIKE_RANGE = 60;
 export const STRIKE_COOLDOWN_MS = 500;
 /**
  * How long a left-click cast, and a right-click one, hold the next cast back. The right-click's
- * is the ability lockout: the ability card is grey while it runs (FS-8AY7S req 31).
+ * is the ability lockout: the ability bar's right-click square is grey while it runs (FS-Q18Q3 R22).
  */
 export const PRIMARY_COOLDOWN_MS = 250;
 export const SPECIAL_COOLDOWN_MS = 400;
@@ -81,8 +81,11 @@ export interface CombatLook {
    * the player (`CharacterMotion.attack`).
    */
   attackClip(aim: Point, swing?: Swing): void;
-  /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
-  lockout?(): void;
+  /**
+   * The ability's own client state changed: its lockout or the Shadow Shot hold started or ended, so the
+   * ability bar's right-click square is judged again (FS-Q18Q3 R22, R23, R40).
+   */
+  abilityChanged?(): void;
   /**
    * A class ability was just sent, once per send (FS-AND39 R4): its own hook, since the mage's
    * Triple Fireball draws with the primary's `fireball`. Never a primary, a strike, the archer's
@@ -157,7 +160,11 @@ export class PlayerCombat {
 
     // a hold may begin at any time; its release is what the cooldown gates (ADR-0030)
     if (button === "special" && playerClass === "archer") {
-      if (this.hold.press(this.port.now())) this.aimFrame(me);
+      if (this.hold.press(this.port.now())) {
+        this.aimFrame(me);
+        // the square is active while the hold lasts (FS-Q18Q3 R23)
+        this.look.abilityChanged?.();
+      }
       return true;
     }
     // the parry costs nothing and has no cooldown: never the cut's own lockout
@@ -195,7 +202,10 @@ export class PlayerCombat {
     const outcome = this.hold.release(this.port.now(), this.resource());
     if (outcome === null) return false;
     this.look.endAim();
-    if (outcome !== "fire" || !from) return false;
+    if (outcome !== "fire" || !from) {
+      this.look.abilityChanged?.();
+      return false;
+    }
 
     const me = { x: from.x, y: from.y };
     this.port.sendMessage(ActionType.CastSkill, {
@@ -208,12 +218,12 @@ export class PlayerCombat {
     this.look.shadowShot(me, target);
     this.look.attackClip({ x: target.x - me.x, y: target.y - me.y });
 
-    // the card greys for exactly the cooldown the next release is gated by (FS-8AY7S req 31)
+    // the square greys for exactly the cooldown the next release is gated by, the hold over (FS-Q18Q3 R22)
     this.abilityLockedOut = true;
-    this.look.lockout?.();
+    this.look.abilityChanged?.();
     this.port.later(SHADOW_SHOT_COOLDOWN_MS, () => {
       this.abilityLockedOut = false;
-      this.look.lockout?.();
+      this.look.abilityChanged?.();
     });
     return true;
   }
@@ -223,7 +233,9 @@ export class PlayerCombat {
    * change, the menu or equipment panel, a release off the canvas, the window losing focus.
    */
   cancelAim(): void {
-    if (this.hold.cancel()) this.look.endAim();
+    if (!this.hold.cancel()) return;
+    this.look.endAim();
+    this.look.abilityChanged?.();
   }
 
   /** Ready to strike and cast at once, no hold and no cooldown carried over: a new world or a new run. */
@@ -253,18 +265,18 @@ export class PlayerCombat {
     return true;
   }
 
-  /** Holds the next cast back for `ms`; an ability's hold is the lockout the card greys for. */
+  /** Holds the next cast back for `ms`; an ability's hold is the lockout the bar's square greys for. */
   private lockFor(ms: number, ability: boolean): void {
     this.canCast = false;
     if (ability) {
       this.abilityLockedOut = true;
-      this.look.lockout?.();
+      this.look.abilityChanged?.();
     }
     this.port.later(ms, () => {
       this.canCast = true;
       if (!ability) return;
       this.abilityLockedOut = false;
-      this.look.lockout?.();
+      this.look.abilityChanged?.();
     });
   }
 

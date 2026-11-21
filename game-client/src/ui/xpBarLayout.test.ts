@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  LOGICAL_HEIGHT,
-  LOGICAL_MAX_WIDTH,
-  LOGICAL_MIN_WIDTH,
-  anchorAt,
-} from "@/render/viewport";
+import { LOGICAL_HEIGHT, LOGICAL_MAX_WIDTH, LOGICAL_MIN_WIDTH } from "@/render/viewport";
 import {
   CHAT_WINDOW_MARGIN,
   CHAT_WINDOW_X,
@@ -12,8 +7,6 @@ import {
   chatWindowFrame,
 } from "./chatWindowLayout";
 import {
-  ABILITY_CARD_H,
-  ABILITY_CARD_PLACE,
   CORNER_ICONS,
   controlsBadgeFrame,
   cornerIconFrame,
@@ -154,10 +147,7 @@ describe("xpBarFrame against the other bottom pieces (FS-77DVN §A; the owner, 2
   /** A hover label as wide as the corner's widest and more, 12 px words with 3 px padding (cornerLabel.ts). */
   const LABEL_W = 160;
   const LABEL_H = 22;
-  /** The run's ability card (`AbilityHud`): 280 wide, its bottom-right corner at its place. */
-  const CARD_W = 280;
-
-  it("should meet neither the chat window open or folded nor its picker list, the corner row or its labels, the ability card nor the controls badge, at every width", () => {
+  it("should meet neither the chat window open or folded nor its picker list, the corner row or its labels, nor the controls badge, at every width (the ability bar's own sweep is abilityBarLayout.test.ts)", () => {
     const bottom = LOGICAL_HEIGHT - CHAT_WINDOW_MARGIN;
     const open = chatWindowFrame(CHAT_WINDOW_X, bottom);
     const folded = chatWindowFrame(CHAT_WINDOW_X, bottom, true);
@@ -170,9 +160,7 @@ describe("xpBarFrame against the other bottom pieces (FS-77DVN §A; the owner, 2
         const at = cornerLabelAt(plate, LABEL_W, v);
         return { x: at.x - LABEL_W / 2, y: at.bottom - LABEL_H, width: LABEL_W, height: LABEL_H };
       });
-      const corner = anchorAt(ABILITY_CARD_PLACE, v);
-      const card = { x: corner.x - CARD_W, y: corner.y - ABILITY_CARD_H, width: CARD_W, height: ABILITY_CARD_H };
-      for (const other of [...chat, ...plates, ...labels, card, controlsBadgeFrame(v)]) {
+      for (const other of [...chat, ...plates, ...labels, controlsBadgeFrame(v)]) {
         expect(rectsMeet(piece, other), `at ${width}`).toBe(false);
       }
     }

@@ -64,7 +64,7 @@ const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
-const { AbilityHud } = await import("@/ui/AbilityHud");
+const { AbilityBar } = await import("@/ui/AbilityBar");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
@@ -73,7 +73,7 @@ const { chatWiring } = await import("@/ui/uiSceneChat");
 const chatMayOpen = (field: object) => chatWiring(uiSceneOn(field, "field", { row: false }).bridge).mayOpen();
 /** The player typing in the UI scene's chat over the field, or not (FS-TQZ5J § Change: Batch 6, R127). */
 const typeInChat = (field: object, on = true) => uiSceneOn(field, "field", { row: false }).bridge.reportUi({ typing: on });
-const { abilityPlaceOver, hudOver } = await import("@/ui/uiSceneHud.standin");
+const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { equipmentPiece } = await import("@/ui/uiSceneGear");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
 type GearKey = import("@/ui/uiSceneGear").GearKey;
@@ -201,6 +201,8 @@ function fieldOnStage() {
     },
     // the XP bar's (FS-77DVN §C.13)
     graphics: () => any,
+    // the ability bar's grounds (FS-Q18Q3 R33)
+    zone: () => any,
   };
   field.cameras = { main: { width: 800, startFollow: vi.fn() } };
   field.time = { delayedCall: vi.fn() };
@@ -1322,14 +1324,11 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     return { ...stage, field };
   }
 
-  it("should draw the run's Health and stamina bars and the archer's ability card in a field", () => {
+  it("should draw the run's Health and stamina bars and the archer's ability bar in a field (FS-Q18Q3 R29)", () => {
     const bars = vi
       .spyOn(ResourceHud.prototype, "show")
       .mockImplementation(() => {});
-    const card = vi
-      .spyOn(AbilityHud.prototype, "show")
-      .mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: false });
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
 
     field.renderState(archerState);
 
@@ -1337,34 +1336,41 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       "Health:",
       "Stamina:",
     ]);
-    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({
-      name: "Shadow Shot",
-      greyed: false,
-    });
+    expect(barShownOver(field)?.ability).toEqual({ icon: "shadow_shot", greyed: false, active: false, cost: 25 });
   });
 
-  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+  // FS-Q18Q3 R29: the potion square always greyed in a field, where nothing is drunk
+  it("should grey the potion square in a field whatever is worn", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: false });
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
     field.renderState(archerState);
-    const { ABILITY_CARD_PLACE } = hudCorner;
-    expect(abilityPlaceOver(field)).toEqual(ABILITY_CARD_PLACE);
+    expect(barShownOver(field)?.potion).toEqual({ count: 0, greyed: true });
   });
 
-  it("should hand its bars and its ability card to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+  it("should hand its bars and its ability bar to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68; FS-Q18Q3 R40)", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: false });
+    const drawn = vi.spyOn(AbilityBar.prototype, "show");
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
     const told: unknown[] = [];
     uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
     field.renderState(archerState);
-    expect(told).toContainEqual({ world: "field", kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    expect(told).toContainEqual({ world: "field", kind: "bar", bar: expect.objectContaining({ ability: expect.objectContaining({ icon: "shadow_shot" }) }) });
     expect(told).toContainEqual({ world: "field", kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
+    const bar = told.find((m) => (m as { kind: string }).kind === "bar");
+    expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
+    expect(told.some((m) => ["ability", "potion"].includes((m as { kind: string }).kind))).toBe(false);
     expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
-    // the UI scene's card, drawn from it
-    expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));
-    expect((field as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
+    // the UI scene's bar, drawn from it
+    expect(drawn).toHaveBeenCalledWith(expect.objectContaining({ tree: { locked: true } }));
+  });
+
+  it("should take the bar down while the player lies fallen, as the bars (FS-Q18Q3 R30)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
+    field.renderState(archerState);
+    expect(barShownOver(field)).not.toBeNull();
+    field.renderState({ ...archerState, current_player: { ...archerState.current_player, current_health: 0 } });
+    expect(barShownOver(field)).toBeNull();
   });
 
   // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the
@@ -1376,16 +1382,25 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(f.takesPointer(1030, 680, true)).toBe(false);
   });
 
-  it("should grey the card while the ability lockout runs", () => {
+  it("should grey the right-click square while the ability lockout runs", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    const card = vi
-      .spyOn(AbilityHud.prototype, "show")
-      .mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: true });
+    const { field } = kitOnStage({ lockedOut: true, aiming: false });
 
     field.renderState(archerState);
 
-    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({ greyed: true });
+    expect(barShownOver(field)?.ability.greyed).toBe(true);
+  });
+
+  // FS-Q18Q3 R23, R40: the hold is the fight's, so the field judges the square again as it starts and ends
+  it("should light the right-click square while the archer holds Shadow Shot, told by the fight", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const fight = { lockedOut: false, aiming: false };
+    const { field } = kitOnStage(fight);
+    field.renderState(archerState);
+    expect(barShownOver(field)?.ability.active).toBe(false);
+    fight.aiming = true;
+    (field as unknown as { showAbilityBar(): void }).showAbilityBar();
+    expect(barShownOver(field)?.ability.active).toBe(true);
   });
 
   it("should keep walking with the gear overlay open (FS-HRH2J R7)", () => {

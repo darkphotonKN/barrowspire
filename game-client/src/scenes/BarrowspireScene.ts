@@ -49,7 +49,7 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { healthPotionCount, runOwnHud, type OwnHud } from "@/ui/potions";
+import { healthPotionCount } from "@/ui/potions";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
@@ -79,7 +79,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { RUN_BUTTON_H } from "@/ui/hudCornerLayout";
-import { abilityCard } from "@/ui/abilityCard";
+import { runOwnHud, type OwnHud } from "@/ui/abilityBarView";
 import { teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import {
@@ -316,13 +316,11 @@ const BUTTON_H = RUN_BUTTON_H;
  * design guideline's label step; each button as wide as its label plus its padding (`buttonWidth`, R122).
  */
 const BUTTON_LABEL = { fontSize: "13px", fontStyle: "bold", letterSpacing: 1 } as const;
-// The Health and class resource bars and the potion cell stand in the very top left, the party frames
-// under them (`RESOURCE_HUD_AT`, FS-77DVN §E.17), the level bar along the bottom middle (`xpBarLayout`,
-// FS-77DVN §A): the UI scene's HUD slot stands them (FS-TQZ5J § Change: Batch 5, R69, `HUD_PLACES`).
-/**
- * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
- * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
- */
+// The Health and class resource bars stand in the very top left, the party frames under them
+// (`RESOURCE_HUD_AT`, FS-77DVN §E.17), the level bar along the bottom middle (`xpBarLayout`, FS-77DVN §A)
+// and the ability bar over it (`abilityBarLayout`, FS-Q18Q3 §B): the UI scene's HUD slot stands them
+// (FS-TQZ5J § Change: Batch 5, R69, `HUD_PLACES`).
+/** The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). */
 export { TOP_RIGHT_EDGE };
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
@@ -586,7 +584,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * resets.
    */
   private fell = false;
-  /** The own bars and potion cell as the first state out of the delve drew them, held for the run (R168). */
+  /** The own bars and ability bar as the first state out of the delve drew them, held for the run (R168; FS-Q18Q3 R30). */
   private heldHud?: OwnHud;
   /**
    * The bottom-centre row as drawn: which buttons, by name, the buttons themselves, and its Leave
@@ -663,8 +661,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * panel, the other nothing more.
    */
   private endPopped = false;
-  /** Whether the UI scene was last told the ability card is up (FS-84N1G R4). */
-  private abilityUp = false;
+  /** Whether the UI scene was last told the ability bar is live, up and not held (FS-84N1G R4; FS-Q18Q3 R42). */
+  private barLive = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
   /**
@@ -882,7 +880,8 @@ export class BarrowspireScene extends Phaser.Scene {
         swing === undefined
           ? this.playerAnim?.attack(this.time.now, aim)
           : this.playerAnim?.attack(this.time.now, aim, swing),
-      lockout: () => this.showAbilityCard(),
+      // the lockout and the Shadow Shot hold are the bar's to show (FS-Q18Q3 R22, R23, R40)
+      abilityChanged: () => this.showOwnHud(),
       // each class's ability sounds as it is sent (FS-AND39 R4)
       abilityCast: (ability) => this.gameplaySounds?.play(ability),
     },
@@ -1145,7 +1144,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.record = undefined;
     this.resolvedCard = undefined;
     this.endPopped = false;
-    this.abilityUp = false;
+    this.barLive = false;
     this.canWatch = false;
     this.canLeave = false;
     this.fell = false;
@@ -3837,8 +3836,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // out of the delve, a hold ends the moment the client sees it (FS-JTNPR req 15)
     if (this.menuState(state).resolved) this.cancelAim();
     this.syncResolvedView(state);
-    this.showResourceBars(state);
-    this.showAbilityCard();
+    this.showOwnHud();
     // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
     // FS-TQZ5J § Change: Phase 2: the party, R38)
     this.ui.partySeen(state);
@@ -5241,38 +5239,32 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * This player's Health and class resource bars (FS-8AY7S req 20–25) and the potion cell beside
-   * them (FS-P9G8R R24): up while they are in the delve, held as they were once they are out of it
-   * (FS-QPDKN § Change: The party death flow and the spectate switcher, R168), and never before their
-   * first state.
+   * This player's Health and class resource bars (FS-8AY7S req 20–25) and the ability bar (FS-Q18Q3 §E, §G,
+   * R40), on every state and as the ability's lockout or hold starts or ends: up while they are in the
+   * delve, held as they were once they are out of it, every square greyed (FS-QPDKN § Change: The party
+   * death flow and the spectate switcher, R168; FS-Q18Q3 R30), and never before their first state.
    */
-  private showResourceBars(state: ClientGameState): void {
-    // out of the delve they stay, held as the state that showed it drew them (FS-QPDKN § Change: The party
-    // death flow and the spectate switcher, R168): the player's own, whoever they watch
-    const own = runOwnHud(state, this.heldHud);
-    if (!this.heldHud && state.current_player && resolved(state.current_player)) this.heldHud = own;
-    // the UI scene's, under the level bar (FS-TQZ5J § Change: Batch 5, R68, R69)
-    this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
-    // the potion cell is up exactly when the bars are (FS-P9G8R R24): the UI scene draws it right of
-    // them (FS-TQZ5J § Change: Batch 5, R68)
-    this.ui.hud({ world: "run", kind: "potion", cell: own.cell });
-  }
-
-  /**
-   * This player's ability card (FS-8AY7S req 29–32), redrawn on every state and as the lockout
-   * starts and ends: up while they are in the delve, grey while the ability cannot fire.
-   */
-  private showAbilityCard(): void {
+  private showOwnHud(): void {
     const state = this.lastGameState;
     if (!state) return;
-    // the UI scene draws it just above the corner row, right-aligned with it (FS-3EBCA R13; FS-TQZ5J
-    // § Change: Batch 5, R68)
-    const card = abilityCard(state, { lockedOut: this.combat.lockedOut });
-    this.ui.hud({ world: "run", kind: "ability", card });
-    // the controls badge stands over the card while it is up (FS-84N1G R4): told on each change
-    if ((card !== null) === this.abilityUp) return;
-    this.abilityUp = card !== null;
-    this.ui.abilityCard(this.abilityUp);
+    // out of the delve they stay, held as the state that showed it drew them (R168): the player's own,
+    // whoever they watch
+    const own = runOwnHud(state, this.heldHud, {
+      world: "run",
+      lockedOut: this.combat.lockedOut,
+      aiming: this.combat.aiming,
+    });
+    if (!this.heldHud && state.current_player && resolved(state.current_player)) this.heldHud = own;
+    // the UI scene's: the bars under the level bar, the ability bar over it (FS-TQZ5J § Change: Batch 5,
+    // R68, R69; FS-Q18Q3 R41)
+    this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
+    this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
+    // the controls badge stands while the bar is live, so it goes at a death though the bar is held
+    // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
+    const live = own.bar !== null && this.heldHud === undefined;
+    if (live === this.barLive) return;
+    this.barLive = live;
+    this.ui.abilityBar(live);
   }
 
   /**

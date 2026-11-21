@@ -93,6 +93,9 @@ const (
 	deliverCone
 	deliverProjectile
 	deliverMovement
+	// deliverAround hits every valid target within reach all the way round
+	// the caster, its aim ignored. FS-04EEA §B R8.
+	deliverAround
 )
 
 type scalingStat int
@@ -147,6 +150,12 @@ const (
 	riposteRange        = 90.0
 	riposteHalfCone     = 120 * math.Pi / 180 // a 240° cone
 	riposteParryCharges = 3
+	// Earthbreaker: a ground slam all round the warrior. Charter defaults.
+	// FS-04EEA §B R8.
+	earthbreakerRange = 90.0
+	// settleTheDebtLeastCost is the fewest parry charges Settle the Debt
+	// needs; it spends every one held. FS-04EEA §F R29–R30.
+	settleTheDebtLeastCost = 1
 
 	// The charge runs dashDistance at dashSpeed: 0.4 s, 12 ticks of 15 px at
 	// the world's 30 per second. The distance is the old teleport's. Under the
@@ -262,6 +271,13 @@ var attackTable = map[components.AttackKind]attackSpec{
 		delivery: deliverMovement, cost: 25, cooldown: 0.4,
 		slows: true,
 	},
+	// the warrior's tree ability: a slam all round on Strength, as the slash.
+	// FS-04EEA §B R8–R9 (integrator correction 2026-11-21), §A R5.
+	components.AttackEarthbreaker: {
+		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
+		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
+		slows: true,
+	},
 }
 
 // AttackCost is what one resolved cast of an attack row costs its caster's
@@ -269,6 +285,34 @@ var attackTable = map[components.AttackKind]attackSpec{
 // FS-8AY7S §Requirements 9, 12.
 func AttackCost(kind components.AttackKind) int {
 	return attackTable[kind].cost
+}
+
+// TreeAbilityCost is what a tree ability costs its caster's class resource, as
+// the wire shows it: its row's cost, or for Settle the Debt, which spends every
+// parry charge held, the least it needs. FS-04EEA §A R5; FS-Q18Q3 §A R5.
+func TreeAbilityCost(kind components.AttackKind) int {
+	if kind == components.AttackSettleTheDebt {
+		return settleTheDebtLeastCost
+	}
+	return AttackCost(kind)
+}
+
+// treeAbilities are the attack kinds only a caster holding them resolves.
+// FS-04EEA §A R3.
+var treeAbilities = map[components.AttackKind]bool{
+	components.AttackEarthbreaker:  true,
+	components.AttackBlink:         true,
+	components.AttackArrowRain:     true,
+	components.AttackSettleTheDebt: true,
+}
+
+// cooldownSlot is the cooldown a kind starts and waits on: Settle the Debt has
+// none of its own and shares the cut's. FS-04EEA §F R33.
+func cooldownSlot(kind components.AttackKind) components.AttackKind {
+	if kind == components.AttackSettleTheDebt {
+		return components.AttackCut
+	}
+	return kind
 }
 
 // skillAliases folds every cast_skill id the client sends onto its attack row.
@@ -287,6 +331,10 @@ var skillAliases = map[string]components.AttackKind{
 	"dash":               components.AttackDash,
 	"sprint":             components.AttackDash,
 	"parry":              components.AttackParry,
+	"earthbreaker":       components.AttackEarthbreaker,
+	"blink":              components.AttackBlink,
+	"arrow_rain":         components.AttackArrowRain,
+	"settle_the_debt":    components.AttackSettleTheDebt,
 }
 
 // SkillAttackKind names the attack a cast_skill id asks for, false when unknown.
@@ -417,6 +465,40 @@ func AbilityCooldown(entity *ecs.Entity) (remaining, total float64, ok bool) {
 	return 0, 0, true
 }
 
+// HeldTreeAbility is the tree ability the delver holds: the one their class
+// names, once the ranks on their body hold their tree's tier-3 node. False
+// while the node is not held, or for anything whose class names none.
+// FS-04EEA §A R2–R3; FS-Q18Q3 §A R4.
+func HeldTreeAbility(entity *ecs.Entity) (components.AttackKind, bool) {
+	tc, ok := entity.GetComponent(ecs.ComponentTypeTreeAbility)
+	if !ok {
+		return "", false
+	}
+	tree := tc.(*components.TreeAbilityComponent)
+	if PassiveRanks(entity)[tree.Node] < 1 {
+		return "", false
+	}
+	return tree.Kind, true
+}
+
+// TreeAbilityCooldown is the seconds left before the delver's held tree
+// ability can be cast again and the length that wait started at; 0, 0 when
+// none runs. A mercenary's is the cut's slot. False while the tree ability is
+// not held. FS-04EEA §F R33; FS-Q18Q3 §A R4.
+func TreeAbilityCooldown(entity *ecs.Entity) (remaining, total float64, ok bool) {
+	kind, held := HeldTreeAbility(entity)
+	if !held {
+		return 0, 0, false
+	}
+	if cc, ok := entity.GetComponent(ecs.ComponentTypeCooldown); ok {
+		cooldowns := cc.(*components.CooldownComponent)
+		if left := cooldowns.Remaining[cooldownSlot(kind)]; left > 0 {
+			return left, cooldowns.Total[cooldownSlot(kind)], true
+		}
+	}
+	return 0, 0, true
+}
+
 // resolve carries out one intent. A request inside its cooldown, short of its
 // cost, or (for a targeted attack) with no valid target in range does nothing
 // at all: no damage, nothing spent, no cooldown started. FS-8AY7S §Requirements 10.
@@ -425,6 +507,13 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		// a monster ability's shape and numbers are the monster's own
 		s.landAbility(attacker, intent, entities)
 		return
+	}
+	if treeAbilities[intent.Kind] {
+		// refused outright, like an unaffordable cast, unless the caster's
+		// class names it and they hold the node granting it (FS-04EEA §A R3)
+		if held, ok := HeldTreeAbility(attacker); !ok || held != intent.Kind {
+			return
+		}
 	}
 	spec, ok := attackTable[intent.Kind]
 	if !ok {
@@ -451,7 +540,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	var cooldowns *components.CooldownComponent
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCooldown); ok {
 		cooldowns = cc.(*components.CooldownComponent)
-		if cooldowns.Remaining[intent.Kind] > 0 {
+		if cooldowns.Remaining[cooldownSlot(intent.Kind)] > 0 {
 			return
 		}
 	}
@@ -472,6 +561,8 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		}
 	case deliverCone:
 		s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
+	case deliverAround:
+		s.around(attacker, at, spec, entities)
 	case deliverProjectile:
 		s.fire(attacker, at, intent.TargetX, intent.TargetY, spec)
 	}
@@ -488,7 +579,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	}
 	if cooldowns != nil {
 		// worn attack speed, already capped, shortens every cooldown
-		startCooldown(cooldowns, intent.Kind, spec.cooldown/(1+float64(wornGear(attacker).AttackSpeedPercent)/100))
+		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/(1+float64(wornGear(attacker).AttackSpeedPercent)/100))
 	}
 	if spec.slows {
 		startAttackSlow(attacker)
@@ -653,6 +744,20 @@ func parryStrike(target *ecs.Entity) bool {
 // aim, each resolved on its own.
 func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) {
 	aim := math.Atan2(aimY-at.Y, aimX-at.X)
+	s.hitWithinReach(attacker, at, spec, entities, func(dx, dy float64) bool {
+		return math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) <= spec.halfArc
+	})
+}
+
+// around hits every valid target within the attack's reach all the way round
+// the caster, each resolved on its own. FS-04EEA §B R8.
+func (s *CombatSystem) around(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity) {
+	s.hitWithinReach(attacker, at, spec, entities, func(_, _ float64) bool { return true })
+}
+
+// hitWithinReach hits every valid target other than the attacker whose centre
+// is within the attack's reach and inShape, given its offset from the attacker.
+func (s *CombatSystem) hitWithinReach(attacker *ecs.Entity, at *components.TransformComponent, spec attackSpec, entities []*ecs.Entity, inShape func(dx, dy float64) bool) {
 	attack := s.snapshot(attacker, spec)
 
 	for _, target := range entities {
@@ -666,10 +771,7 @@ func (s *CombatSystem) cone(attacker *ecs.Entity, at *components.TransformCompon
 		to := tc.(*components.TransformComponent)
 
 		dx, dy := to.X-at.X, to.Y-at.Y
-		if math.Hypot(dx, dy) > spec.reach {
-			continue
-		}
-		if math.Abs(normalizeAngle(math.Atan2(dy, dx)-aim)) > spec.halfArc {
+		if math.Hypot(dx, dy) > spec.reach || !inShape(dx, dy) {
 			continue
 		}
 

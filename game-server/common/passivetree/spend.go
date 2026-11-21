@@ -18,6 +18,21 @@ func Unspent(level int32, held Ranks) int {
 	return max(left, 0)
 }
 
+// Higher is a and b merged by the higher rank of each node (R20): ranks only
+// rise, so two answers merged in either order give the same ranks. A new map,
+// never nil; neither side is written, and a node at 0 is left out.
+func Higher(a, b Ranks) Ranks {
+	merged := make(Ranks, max(len(a), len(b)))
+	for _, side := range []Ranks{a, b} {
+		for node, rank := range side {
+			if rank > merged[node] {
+				merged[node] = rank
+			}
+		}
+	}
+	return merged
+}
+
 // Verdict is a spend the rule lets through.
 type Verdict int
 

@@ -1,7 +1,6 @@
 import { EventEmitter } from "eventemitter3";
 import { describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
-import { ArtLibrary } from "@/render/art/library";
 import { viewport } from "@/render/viewport";
 import { hudPieces, mountHud } from "./hudPieces";
 import type { HudBuild, HudKind } from "./uiSceneHud";
@@ -43,6 +42,7 @@ function onScene() {
       graphics: () => object("graphics"),
       text: (_x: number, _y: number, content: unknown) => object("text", content),
       sprite: () => object("sprite"),
+      zone: () => object("zone"),
     },
     tweens,
     events,
@@ -61,36 +61,52 @@ function onScene() {
   return { scene, bridge, report, live, standing, events, tweens };
 }
 
-const art = () => ArtLibrary.empty({ warn: () => {} });
+const BAR = {
+  potion: { count: 2, greyed: false },
+  ability: { icon: "dash", greyed: false, active: false, cost: 25 },
+  tree: { locked: true },
+  costChannel: "stamina",
+  cooldowns: { ability: null, tree: null },
+} as const;
 
 describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
-  it("should draw the card and the level bar the run hands, in the UI scene", () => {
+  it("should draw the ability bar and the level bar the run hands, in the UI scene (FS-Q18Q3 R41)", () => {
     viewport.set({ width: 1080, height: 720, renderScale: 1 });
     const { scene, bridge, report, live } = onScene();
     report("run");
-    mountHud(scene, bridge, hudPieces(scene, art));
-    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
-    bridge.hud({ world: "run", kind: "progress", progress: { level: 2, experience: 150, level_floor: 100, next_level_at: 230 } });
-    expect(live("Dash")).toBe(true);
+    mountHud(scene, bridge, hudPieces(scene));
+    bridge.hud({ world: "run", kind: "bar", bar: BAR });
+    bridge.hud({ world: "run", kind: "progress", progress: { level: 7, experience: 150, level_floor: 100, next_level_at: 230 } });
+    // the dash's cost and the locked 3 square's level (FS-Q18Q3 R15, R25)
+    expect(live("25")).toBe(true);
+    expect(live("Lv 10")).toBe(true);
     // the bar's end numerals, this level and the next (FS-77DVN §B.8)
-    expect(live("2")).toBe(true);
-    expect(live("3")).toBe(true);
+    expect(live("7")).toBe(true);
+    expect(live("8")).toBe(true);
   });
 
   it("should take them down as the run leaves, and draw nothing it hands after", () => {
     const { scene, bridge, report, live } = onScene();
-    mountHud(scene, bridge, hudPieces(scene, art));
+    mountHud(scene, bridge, hudPieces(scene));
     report("run");
-    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
+    bridge.hud({ world: "run", kind: "bar", bar: BAR });
     bridge.left("run");
-    expect(live("Dash")).toBe(false);
-    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
-    expect(live("Dash")).toBe(false);
+    expect(live("Lv 10")).toBe(false);
+    bridge.hud({ world: "run", kind: "bar", bar: BAR });
+    expect(live("Lv 10")).toBe(false);
+  });
+
+  it("should draw no ability bar in the hub (FS-Q18Q3 R29)", () => {
+    const { scene, bridge, report, live } = onScene();
+    mountHud(scene, bridge, hudPieces(scene));
+    report("hub");
+    bridge.hud({ world: "hub", kind: "bar", bar: BAR });
+    expect(live("Lv 10")).toBe(false);
   });
 
   it("should take a level-up cue still fading down with the town, and raise none for the next world's first state", () => {
     const { scene, bridge, report, live, tweens } = onScene();
-    mountHud(scene, bridge, hudPieces(scene, art));
+    mountHud(scene, bridge, hudPieces(scene));
     report("hub");
     bridge.hud({ world: "hub", kind: "progress", progress: { level: 2, experience: 220, level_floor: 100, next_level_at: 230 } });
     bridge.hud({ world: "hub", kind: "progress", progress: { level: 3, experience: 240, level_floor: 230, next_level_at: 390 } });
@@ -106,10 +122,10 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
 
   it("should take every piece down, and hear nothing more, with the scene", () => {
     const { scene, bridge, report, standing, events } = onScene();
-    mountHud(scene, bridge, hudPieces(scene, art));
+    mountHud(scene, bridge, hudPieces(scene));
     report("run");
     bridge.hud({ world: "run", kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
-    bridge.hud({ world: "run", kind: "potion", cell: { count: 1, keyLabel: "[1]", dimmed: false } });
+    bridge.hud({ world: "run", kind: "bar", bar: BAR });
     expect(standing().length).toBeGreaterThan(0);
     events.emit("shutdown");
     expect(standing()).toEqual([]);
@@ -128,16 +144,20 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
       relayout: () => void relaid.push(kind),
       destroy: () => void destroyed.push(kind),
     });
-    const build: HudBuild = { ability: piece("ability"), potion: piece("potion"), bars: piece("bars"), progress: piece("progress") };
+    const build: HudBuild = {
+      bar: () => ({ ...piece("bar")(), top: () => 612 }),
+      bars: piece("bars"),
+      progress: () => ({ ...piece("progress")(), cueOver: () => {} }),
+    };
     mountHud(scene, bridge, build);
     report("run");
-    bridge.hud({ world: "run", kind: "ability", card: { name: "Dash", line: "Charge.", greyed: false } });
+    bridge.hud({ world: "run", kind: "bar", bar: BAR });
     bridge.hud({ world: "run", kind: "bars", bars: [{ channel: "health", label: "Health:", fill: 1 }] });
     viewport.set({ width: 1280, height: 720, renderScale: 1 });
-    expect(relaid).toEqual(["ability", "bars"]);
+    expect(relaid).toEqual(["bar", "bars"]);
     events.emit("shutdown");
-    expect(destroyed).toEqual(["ability", "bars"]);
+    expect(destroyed).toEqual(["bar", "bars"]);
     viewport.set({ width: 1080, height: 720, renderScale: 1 });
-    expect(relaid).toEqual(["ability", "bars"]);
+    expect(relaid).toEqual(["bar", "bars"]);
   });
 });

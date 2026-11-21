@@ -34,7 +34,7 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
     aim: vi.fn(),
     endAim: vi.fn(),
     attackClip: vi.fn(),
-    lockout: vi.fn(),
+    abilityChanged: vi.fn(),
     abilityCast: vi.fn(),
   };
   const self = { me };
@@ -156,24 +156,43 @@ describe("PlayerCombat ability lockout (FS-8AY7S req 31)", () => {
     const { combat, look, elapse } = combatOnStage();
     combat.cast("special", "warrior", me, { x: 200, y: 100 });
     expect(combat.lockedOut).toBe(true);
-    expect(look.lockout).toHaveBeenCalledTimes(1);
+    expect(look.abilityChanged).toHaveBeenCalledTimes(1);
 
     elapse(SPECIAL_COOLDOWN_MS);
     expect(combat.lockedOut).toBe(false);
-    expect(look.lockout).toHaveBeenCalledTimes(2);
+    expect(look.abilityChanged).toHaveBeenCalledTimes(2);
   });
 
   it("should not lock the ability out for a primary", () => {
     const { combat, look } = combatOnStage();
     combat.cast("primary", "warrior", me, { x: 200, y: 100 });
     expect(combat.lockedOut).toBe(false);
-    expect(look.lockout).not.toHaveBeenCalled();
+    expect(look.abilityChanged).not.toHaveBeenCalled();
   });
 });
 
 describe("PlayerCombat Shadow Shot hold (FS-JTNPR req 8–18)", () => {
   const stamina = (current: number): ResourceState => ({ kind: "stamina", current, max: 100, ability_cost: 25 });
   const target = { x: 300, y: 100 };
+
+  // FS-Q18Q3 R23: the bar's right-click square is active while the hold lasts, so its start and its end
+  // each say the ability changed, once
+  it("should say the ability changed as a hold begins, and again as it ends unfired or is cancelled", () => {
+    const { combat, look, elapse } = combatOnStage({ resource: stamina(100) });
+    combat.cast("special", "archer", me, target);
+    expect(look.abilityChanged).toHaveBeenCalledTimes(1);
+    combat.aimFrame(me);
+    expect(look.abilityChanged).toHaveBeenCalledTimes(1);
+    // a quick tap: released before it is ready, nothing fired
+    expect(combat.releaseAim(me, target)).toBe(false);
+    expect(look.abilityChanged).toHaveBeenCalledTimes(2);
+    combat.cast("special", "archer", me, target);
+    combat.cancelAim();
+    expect(look.abilityChanged).toHaveBeenCalledTimes(4);
+    combat.cancelAim();
+    elapse(SHADOW_SHOT_MIN_HOLD_MS);
+    expect(look.abilityChanged).toHaveBeenCalledTimes(4);
+  });
 
   it("should only start aiming on an archer's right-press: nothing is sent, the hold is drawn", () => {
     const { combat, send, look } = combatOnStage();

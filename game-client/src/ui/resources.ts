@@ -59,7 +59,7 @@ export function fillOf(current: number, max: number): number {
 
 /**
  * Whether the pool can pay for the player's ability (FS-8AY7S req 31): the one affordability
- * judgement, read by the ability card's greying and by every client-side gate on a cast
+ * judgement, read by the ability bar's greying and by every client-side gate on a cast
  * (FS-JTNPR req 18), so the two never disagree. With no `resource` on the wire (an older server)
  * everything is affordable and the server's own refusal stands.
  */

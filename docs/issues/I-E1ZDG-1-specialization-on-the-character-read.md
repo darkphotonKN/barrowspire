@@ -1,6 +1,6 @@
 ---
 id: I-E1ZDG-1
-status: open
+status: done
 implements: FS-E1ZDG
 blocked_by: []
 labels: [ready-for-agent, blocked]
@@ -21,7 +21,8 @@ builds a second store of the pick.
   FS-8RZ51's tree definition (§B.4): one of `guardian`, `berserker`, `spellwarden`, `pyromancer`,
   `hunter`, `shadow_ranger`, `duelist`, `sellsword`, or none. Never stored on its own. The
   derivation is business logic in the service; any SQL stays in the repository.
-- **`character.proto`**: `Character` gains `optional string specialization = 9;`, set on
+- **`character.proto`**: `Character` gains `optional string specialization = 10;` *(integrator
+  correction 2026-11-21 — reason: field 9 is FS-8RZ51's `passive_ranks`)*, set on
   `GetCharacter`, `ListCharacters` and `CreateCharacter` (always unset on a new one). Regenerate
   with `make gen` in `game-server/common`; never hand-edit the Go.
 - **api-gateway**: `Character` in `wire.go` gains `Specialization *string

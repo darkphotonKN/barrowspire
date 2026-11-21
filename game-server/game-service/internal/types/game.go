@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/google/uuid"
 )
@@ -581,6 +582,11 @@ type CharacterInPlay struct {
 	Level int `json:"level"`
 	// total experience, monotonic
 	Experience int64 `json:"experience"`
+	// PassiveRanks is the passive tree ranks held, by node id, from the same
+	// record (FS-8RZ51 R14), raised by a spend in town (R20). Never written
+	// in place: every copy of the record shares it, so it is replaced whole.
+	// The queue entry and a handoff carry it with the rest of the character.
+	PassiveRanks passivetree.Ranks `json:"passive_ranks,omitempty"`
 }
 
 // WireCharacterID is id as a gRPC request or an event carries it. No character

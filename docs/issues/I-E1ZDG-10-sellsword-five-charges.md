@@ -12,11 +12,19 @@ Implements FS-E1ZDG §J (Requirements 33–36), §L (Requirements 44–46)
 `## Change: Duelist and Sellsword riposte rules → FS-E1ZDG`, and FS-8AY7S R14, R22 through its stub
 `## Change: Sellsword's five parry charges → FS-E1ZDG`.
 
+> *Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream.* The
+> ability card is gone: the parry copy goes to the ability bar's right-click tooltip copy
+> (`ui/abilityCopy.ts`, keyed by class and specialization, I-E1ZDG-2). The riposte tells stay
+> world drawing on the merc's figure. The
+> pips are drawn by two UI-scene pieces, the HUD's resource bars and the party frames, from the
+> resource the worlds hand them as data (`hud` bars, `partySeen`); the one pip rule lives in the
+> shared pure `ui/resources.ts`, so neither piece reads a world.
+
 ## What to Build
 
 - **game-service**
   - A Sellsword's parry-charge pool has **max 5**: at seating (seated at 0), and at the pick
-    (I-E1ZDG-2's seam: the max becomes 5, the count stays).
+    (I-E1ZDG-2's pick seam in `RaisePassiveRanks`: the max becomes 5, the count stays).
   - `armCut` never arms the riposte for a Sellsword.
   - Per charge held at the moment a cast resolves: **+5% cut damage** (the cut's raw damage ×
     `1 + 0.05 × charges`) and **+5% attack speed** (added after worn attack speed's cap, shortening
@@ -24,11 +32,12 @@ Implements FS-E1ZDG §J (Requirements 33–36), §L (Requirements 44–46)
   - Death's existing reset to 0 (FS-MAMHR R21) drops the stacks; nothing new there. Settle the
     Debt (FS-04EEA) spends the charges like any spend.
 - **game-client**
-  - `resources.ts` draws one pip per point of a `parry_charges` resource's **max** (3, or 5 for a
-    Sellsword), in the HUD and the party frames alike; `PARRY_PIPS` goes.
-  - `riposteArmed` is never true for a Sellsword: no armed tell, no riposte slice; the left-click
-    always plays the cut.
-  - The Sellsword's parry card line: "Turn a blow as it lands for a parry charge. Each one held
+  - `ui/resources.ts` makes one pip per point of a `parry_charges` resource's **max** (3, or 5
+    for a Sellsword); `PARRY_PIPS` goes. The UI scene's `ResourceHud` and party frames draw
+    whatever count the bar carries, five pips fitting their bar width.
+  - World drawing: `riposteArmed` is never true for a Sellsword: no armed tell, no riposte slice;
+    the left-click always plays the cut.
+  - UI scene: the Sellsword's parry row in `ui/abilityCopy.ts`, the bar's right-click tooltip: "Turn a blow as it lands for a parry charge. Each one held
     sharpens the cut."
 
 ## Acceptance Criteria
@@ -41,14 +50,16 @@ Implements FS-E1ZDG §J (Requirements 33–36), §L (Requirements 44–46)
 - [ ] The charges and stacks carry across a floor change.
 - [ ] A Sellsword's HUD and party frame show 5 pips; an unspecialized merc's and a Duelist's show 3.
 - [ ] A Sellsword at 5 charges shows no armed tell and plays the cut.
-- [ ] The Sellsword's card shows the Sellsword line.
+- [ ] The copy lookup gives the Sellsword's parry line for `("mercenary", "sellsword")`; with
+      I-Q18Q3-5 in, the right-click tooltip shows it.
 - [ ] `make test` in game-service; `npm test`, `npm run lint`, `npm run lint:fence`,
       `npx tsc --noEmit` in game-client.
 
 ## Blocked By
 
-I-E1ZDG-2 (the body carries its specialization; the pick seam; `specialization` on
-`current_player`).
+I-E1ZDG-2 (the body's specialization; the pick seam in `RaisePassiveRanks`; `specialization` on
+`current_player`; the spec-keyed copy lookup). FS-Q18Q3 (square tooltips, I-Q18Q3-5) for the
+tooltip check only.
 
 ## Spec Reference
 
@@ -62,9 +73,10 @@ FS-E1ZDG §J R33–36; §L R44–46; §Acceptance Criteria "Duelist and Sellswor
   cooldown)
 - `game-server/game-service/internal/systems/riposte_test.go`, `parry_test.go`,
   `game/character_seat_test.go`
-- `game-client/src/ui/resources.ts`, `ResourceHud.ts`, `partyFramesLayout.ts` (+ tests)
-- `game-client/src/render/effects/riposte.ts` (+ test)
-- `game-client/src/ui/abilityCopy.ts`, `abilityCard.ts` (+ tests)
+- `game-client/src/ui/resources.ts` (+ test); `ResourceHud.ts`, `PartyFrames.ts` only if five
+  pips need room (UI-scene pieces)
+- `game-client/src/render/effects/riposte.ts` (+ test; world)
+- `game-client/src/ui/abilityCopy.ts` (+ test): the Sellsword's row
 
 ## TDD Approach
 

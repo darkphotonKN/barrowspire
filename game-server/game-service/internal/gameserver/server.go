@@ -119,11 +119,13 @@ type Server struct {
 	partyMembership *partyMembership
 }
 
-// CharacterReader reads one of a member's characters from character-service,
-// scoped by member: another member's, a deleted, and an unknown character are
-// all types.ErrCharacterNotFound. FS-BDA7X §Requirements 5.
+// CharacterReader is character-service as the server uses it: reading one of
+// a member's characters, scoped by member (another member's, a deleted, and an
+// unknown character are all types.ErrCharacterNotFound; FS-BDA7X §Requirements
+// 5), and spending its passive points (FS-8RZ51 R19).
 type CharacterReader interface {
 	GetCharacter(ctx context.Context, memberID, characterID uuid.UUID) (types.CharacterInPlay, error)
+	PassiveSpender
 }
 
 type MessageSender interface {

@@ -1,32 +1,30 @@
 /**
- * The UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R73): the ability card, the potion cell, the
- * Health and resource bars and the level bar, which each world drew for itself and now hands through the
- * UI bridge as plain data (`hud`). The slot builds each piece for the world reported, where that world
- * stood it, on the first message that shows it, and takes them all down as the world leaves, so the next
- * world's are new (a new level bar takes its first state as its baseline, FS-BDA7X req 43).
+ * The UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R73): the Health and resource bars and the level
+ * bar, which each world drew for itself and now hands through the UI bridge as plain data (`hud`), and the
+ * ability bar, a UI-scene piece from the start (FS-Q18Q3 §L R40–R43). The slot builds each piece for the
+ * world reported, where that world stands it, on the first message that shows it, and takes them all down
+ * as the world leaves, so the next world's are new (a new level bar takes its first state as its baseline,
+ * FS-BDA7X req 43).
  *
  * Phaser-free: the UI scene hands it the builders (`hudPieces` on itself), so the wiring is tested on its
- * own. The pieces' own rules (a redraw only on a change, the cue on a rise) are theirs, unchanged.
+ * own. The pieces' own rules (a redraw only on a change, the cue on a rise) are theirs, unchanged; the slot
+ * only tells the level bar where the ability bar's top stands, so the cue rises over it (FS-Q18Q3 R12, R43).
  */
 
-import type { Placement } from "@/render/viewport";
-import type { AbilityCardView } from "./abilityCard";
-import { ABILITY_CARD_PLACE } from "./hudCornerLayout";
-import { POTION_CELL_GAP, type PotionCellView } from "./potions";
+import type { AbilityBarView } from "./abilityBarView";
 import type { Progress } from "./progress";
-import { HUD_COLUMN_W, RESOURCE_HUD_AT } from "./ResourceHud";
+import { RESOURCE_HUD_AT } from "./ResourceHud";
 import type { HudBar } from "./resources";
 import type { UiBridge, World, WorldReport } from "./uiBridge";
 
 /**
- * World → UI: a HUD piece's data (R68), sent where the world showed the piece before: the ability card's
- * view or none (`abilityCard`), the potion cell's or none (`potionCell`), the bars (`hudBars`), the
- * player's progress (`progressOf`). Each names the world that sent it (§ Change: Batch 6, R137), so one
- * sent late by a world that has left reaches none of the next world's pieces.
+ * World → UI: a HUD piece's data (R68): the ability bar's view or none (`abilityBar`, `runOwnHud`; FS-Q18Q3
+ * R40), the bars (`hudBars`), the player's progress (`progressOf`). Each names the world that sent it
+ * (§ Change: Batch 6, R137), so one sent late by a world that has left reaches none of the next world's
+ * pieces.
  */
 export type HudMessage = { readonly world: World } & (
-  | { readonly kind: "ability"; readonly card: AbilityCardView | null }
-  | { readonly kind: "potion"; readonly cell: PotionCellView | null }
+  | { readonly kind: "bar"; readonly bar: AbilityBarView | null }
   | { readonly kind: "bars"; readonly bars: HudBar[] }
   | { readonly kind: "progress"; readonly progress: Progress }
 );
@@ -39,7 +37,7 @@ export interface HudPoint {
   readonly y: number;
 }
 
-/** A HUD piece as the slot keeps it. `AbilityHud`, `PotionHud`, `ResourceHud` and `ProgressHud` are each one. */
+/** A HUD piece as the slot keeps it. `AbilityBar`, `ResourceHud` and `ProgressHud` are each one. */
 export interface HudPiece<V> {
   show(view: V): void;
   /** The logical view changed: back to its anchor. */
@@ -47,45 +45,50 @@ export interface HudPiece<V> {
   destroy(): void;
 }
 
+/** The ability bar as the slot keeps it (FS-Q18Q3 R41): it says where its top stands while it is up. */
+export interface AbilityBarPiece extends HudPiece<AbilityBarView | null> {
+  /** The bar's top (its key plaques' top) while it stands; none while it is down. */
+  top(): number | null;
+}
+
+/** The level bar as the slot keeps it: told where the ability bar's top stands, or none (FS-Q18Q3 R12). */
+export interface ProgressPiece extends HudPiece<Progress> {
+  cueOver(top: number | null): void;
+}
+
 /** How the slot builds each piece, at its place: the UI scene's real pieces, or a test's. */
 export interface HudBuild {
-  ability(place: Placement): HudPiece<AbilityCardView | null>;
-  potion(at: HudPoint): HudPiece<PotionCellView | null>;
+  /** The ability bar places itself, above the level bar (FS-Q18Q3 §B, `abilityBarLayout`). */
+  bar(): AbilityBarPiece;
   bars(at: HudPoint): HudPiece<HudBar[]>;
   /** The level bar places itself, along the bottom middle of every world (FS-77DVN §A, `xpBarLayout`). */
-  progress(): HudPiece<Progress>;
+  progress(): ProgressPiece;
 }
 
 interface HudPlaces {
-  readonly ability?: Placement;
-  readonly potion?: HudPoint;
+  /** The ability bar stands in this world: where, its own layout says (FS-Q18Q3 §B, R29). */
+  readonly bar?: true;
   readonly bars?: HudPoint;
   /** The level bar stands in this world: where, its own layout says (FS-77DVN §A). */
   readonly progress?: true;
 }
 
 /**
- * Where each world stands each piece (R69; FS-77DVN): the level bar in every world, along the bottom
- * middle by its own layout (§A, §C.13); a field's bars in its corner and the card above the corner row;
- * the run's bars in the very top left, as a field's (§E.17), the potion cell right of them and the card.
- * A piece with no place in a world is never drawn there.
+ * Where each world stands each piece (R69; FS-77DVN; FS-Q18Q3 R29): the level bar in every world, along the
+ * bottom middle by its own layout (§A, §C.13); the bars in the very top left of a run and a field (§E.17);
+ * the ability bar above the level bar in a run and a field, never the hub. A piece with no place in a world
+ * is never drawn there.
  */
 export const HUD_PLACES: Readonly<Record<World, HudPlaces>> = {
   hub: { progress: true },
-  field: { progress: true, bars: RESOURCE_HUD_AT.field, ability: ABILITY_CARD_PLACE },
-  run: {
-    progress: true,
-    bars: RESOURCE_HUD_AT.run,
-    potion: { x: RESOURCE_HUD_AT.run.x + HUD_COLUMN_W + POTION_CELL_GAP, y: RESOURCE_HUD_AT.run.y },
-    ability: ABILITY_CARD_PLACE,
-  },
+  field: { progress: true, bars: RESOURCE_HUD_AT.field, bar: true },
+  run: { progress: true, bars: RESOURCE_HUD_AT.run, bar: true },
 };
 
 interface HudStanding {
-  ability?: HudPiece<AbilityCardView | null>;
-  potion?: HudPiece<PotionCellView | null>;
+  bar?: AbilityBarPiece;
   bars?: HudPiece<HudBar[]>;
-  progress?: HudPiece<Progress>;
+  progress?: ProgressPiece;
 }
 
 /**
@@ -133,17 +136,21 @@ export class UiHudSlot {
     const places = HUD_PLACES[world];
     const pieces = this.pieces;
     switch (message.kind) {
-      case "ability":
-        if (places.ability) (pieces.ability ??= this.build.ability(places.ability)).show(message.card);
-        return;
-      case "potion":
-        if (places.potion) (pieces.potion ??= this.build.potion(places.potion)).show(message.cell);
+      case "bar":
+        if (!places.bar) return;
+        (pieces.bar ??= this.build.bar()).show(message.bar);
+        this.tellCue();
         return;
       case "bars":
         if (places.bars) (pieces.bars ??= this.build.bars(places.bars)).show(message.bars);
         return;
       case "progress":
-        if (places.progress) (pieces.progress ??= this.build.progress()).show(message.progress);
+        if (!places.progress) return;
+        if (!pieces.progress) {
+          pieces.progress = this.build.progress();
+          this.tellCue();
+        }
+        pieces.progress.show(message.progress);
         return;
     }
   }
@@ -151,11 +158,20 @@ export class UiHudSlot {
   /** The logical view changed: the standing pieces back to their anchors (FS-ZAJMH R13). */
   relayout(): void {
     for (const piece of this.standing()) piece.relayout?.();
+    this.tellCue();
   }
 
   destroy(): void {
     this.takeDown();
     this.builtFor = null;
+  }
+
+  /**
+   * The level bar told where the ability bar's top stands, or none while no bar stands (FS-Q18Q3 R12): both
+   * are this slot's, so nothing crosses the bridge for it (R43).
+   */
+  private tellCue(): void {
+    this.pieces.progress?.cueOver(this.pieces.bar?.top() ?? null);
   }
 
   private standing(): HudPiece<never>[] {

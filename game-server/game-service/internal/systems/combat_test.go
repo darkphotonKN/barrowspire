@@ -1,6 +1,7 @@
 package systems
 
 import (
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"math"
 	"testing"
 
@@ -583,9 +584,13 @@ func TestSkillAttackKind_FoldsAliases(t *testing.T) {
 		{"multishot_fireball", components.AttackTripleFireball, true},
 		{"dash", components.AttackDash, true},
 		{"sprint", components.AttackDash, true},
-		{"parry", components.AttackParry, true}, // the merc's stance, no table row
-		{"riposte", "", false},                  // armed on the server only
-		{"attack", "", false},                   // the targeted attack is its own action, not a skill
+		{"parry", components.AttackParry, true},               // the merc's stance, no table row
+		{"earthbreaker", components.AttackEarthbreaker, true}, // the tree abilities, one kind each
+		{"blink", components.AttackBlink, true},
+		{"arrow_rain", components.AttackArrowRain, true},
+		{"settle_the_debt", components.AttackSettleTheDebt, true},
+		{"riposte", "", false}, // armed on the server only
+		{"attack", "", false},  // the targeted attack is its own action, not a skill
 		{"meteor", "", false},
 	}
 
@@ -1181,4 +1186,259 @@ func TestCombatSystem_Cooldown_RefusedCastStartsNone(t *testing.T) {
 	remaining, total := cooldownState(attacker, components.AttackShadowShot)
 	assert.Zero(t, remaining)
 	assert.Zero(t, total)
+}
+
+// earthbreakerWarrior is a delver seated as a warrior naming Earthbreaker,
+// holding the warrior tree's tier-3 node when held is true.
+func earthbreakerWarrior(em *ecs.EntityManager, x, y float64, held bool) *ecs.Entity {
+	e := delver(em, x, y)
+	e.AddComponent(components.NewTreeAbilityComponent(components.AttackEarthbreaker, "warrior.t3"))
+	ranks := passivetree.Ranks{"warrior.t1a": 2}
+	if held {
+		ranks["warrior.t3"] = 1
+	}
+	e.AddComponent(components.NewPassiveRanksComponent(ranks))
+	return e
+}
+
+func slam(e *ecs.Entity) {
+	intend(e, components.AttackIntent{Kind: components.AttackEarthbreaker, TargetX: 400, TargetY: 100})
+}
+
+// A warrior with the node, 100 stamina and off cooldown slams everything within
+// 90 px all round: physical, 1.5 on Strength. 40 is spent and 10 s starts.
+// FS-04EEA §B R8–R9, §A R4–R5.
+func TestCombatSystem_Earthbreaker_HitsEveryValidTargetWithin90AllRound(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	east := dummy(em, 160, 100)
+	west := dummy(em, 15, 100) // 85 px behind the aim
+	x, y := offAim(100, 100, 89, 100)
+	south := dummy(em, x, y)
+	tooFar := dummy(em, 195, 100)
+
+	slam(warrior)
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	hit := int(RawDamage(12, 1.5, 8) + 0.5)
+	assert.Equal(t, 1000-hit, health(east))
+	assert.Equal(t, 1000-hit, health(west))
+	assert.Equal(t, 1000-hit, health(south))
+	assert.Equal(t, 1000, health(tooFar), "95 px is beyond the slam")
+	assert.Equal(t, 150, health(warrior), "never its own caster")
+	assert.Equal(t, 60, pool(warrior))
+	remaining, total := cooldownState(warrior, components.AttackEarthbreaker)
+	assert.InDelta(t, 10, remaining, 1e-9)
+	assert.InDelta(t, 10, total, 1e-9)
+}
+
+// The slam scales on Strength alone, worn Strength added, as the slash does.
+// FS-04EEA §B R9 (integrator correction 2026-11-21).
+func TestCombatSystem_Earthbreaker_ScalesOnStrengthWithWornStrength(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	warrior.AddComponent(&components.GearBonusComponent{Strength: 4, Agility: 30})
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+
+	attack := combat.snapshot(warrior, attackTable[components.AttackEarthbreaker])
+	assert.Equal(t, components.DamagePhysical, attack.DamageType)
+	assert.Equal(t, 1.5, attack.Coefficient)
+	assert.Equal(t, 12.0, attack.ScalingStat, "Strength 8 + worn 4; Agility counts for nothing")
+}
+
+// A tree-ability cast is refused outright unless the caster's class names it
+// and they hold the tier-3 node: no effect, no cost, no cooldown.
+// FS-04EEA §A R3; §Edge States "Tier-3 node not held", "Wrong class's id".
+func TestCombatSystem_TreeAbility_RefusedWithoutTheClassOrTheNode(t *testing.T) {
+	tests := []struct {
+		name   string
+		caster func(em *ecs.EntityManager) *ecs.Entity
+	}{
+		{"a warrior without the node", func(em *ecs.EntityManager) *ecs.Entity {
+			return earthbreakerWarrior(em, 100, 100, false)
+		}},
+		{"another class holding its own node", func(em *ecs.EntityManager) *ecs.Entity {
+			e := delver(em, 100, 100)
+			e.AddComponent(components.NewTreeAbilityComponent(components.AttackBlink, "mage.t3"))
+			e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mage.t3": 1}))
+			return e
+		}},
+		{"a class naming none", func(em *ecs.EntityManager) *ecs.Entity {
+			e := delver(em, 100, 100)
+			e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"warrior.t3": 1}))
+			return e
+		}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			caster := tt.caster(em)
+			target := dummy(em, 150, 100)
+
+			slam(caster)
+			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+			assert.Equal(t, 1000, health(target))
+			assert.Equal(t, 100, pool(caster))
+			remaining, total := cooldownState(caster, components.AttackEarthbreaker)
+			assert.Zero(t, remaining)
+			assert.Zero(t, total)
+			assert.False(t, caster.HasComponent(ecs.ComponentTypeAttackSlow))
+		})
+	}
+}
+
+// Inside its cooldown or short of its 40 stamina the slam does nothing and
+// spends nothing. FS-04EEA §A R4.
+func TestCombatSystem_Earthbreaker_RefusedInsideItsCooldownOrUnder40(t *testing.T) {
+	t.Run("inside its cooldown", func(t *testing.T) {
+		em := ecs.NewEntityManager()
+		warrior := earthbreakerWarrior(em, 100, 100, true)
+		combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+		slam(warrior)
+		combat.Update(tickSeconds, em.GetAllEntities(), nil)
+		target := dummy(em, 150, 100)
+
+		slam(warrior)
+		combat.Update(tickSeconds, em.GetAllEntities(), nil)
+
+		assert.Equal(t, 1000, health(target))
+		assert.Equal(t, 60, pool(warrior))
+	})
+	t.Run("under 40 stamina", func(t *testing.T) {
+		em := ecs.NewEntityManager()
+		warrior := earthbreakerWarrior(em, 100, 100, true)
+		resourceOf(warrior).Current = 39
+		target := dummy(em, 150, 100)
+
+		slam(warrior)
+		NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+		assert.Equal(t, 1000, health(target))
+		assert.Equal(t, 39, pool(warrior))
+		remaining, _ := cooldownState(warrior, components.AttackEarthbreaker)
+		assert.Zero(t, remaining)
+	})
+}
+
+// A slam that hits nothing still pays and cools down. FS-04EEA §B R11.
+func TestCombatSystem_Earthbreaker_HittingNothingStillSpendsAndCools(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+
+	slam(warrior)
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.Equal(t, 60, pool(warrior))
+	remaining, _ := cooldownState(warrior, components.AttackEarthbreaker)
+	assert.InDelta(t, 10, remaining, 1e-9)
+}
+
+// Worn attack speed shortens the slam's cooldown as every cooldown's.
+// FS-04EEA §A R6.
+func TestCombatSystem_Earthbreaker_WornAttackSpeedShortensItsCooldown(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	warrior.AddComponent(&components.GearBonusComponent{AttackSpeedPercent: 50})
+
+	slam(warrior)
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	remaining, total := cooldownState(warrior, components.AttackEarthbreaker)
+	assert.InDelta(t, 10/1.5, remaining, 1e-9)
+	assert.InDelta(t, 10/1.5, total, 1e-9)
+}
+
+// A resolving slam starts the attack slow and stops a charge in flight.
+// FS-04EEA §A R4.
+func TestCombatSystem_Earthbreaker_StartsTheAttackSlowAndEndsACharge(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+	intend(warrior, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
+	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	require.True(t, warrior.HasComponent(ecs.ComponentTypeDash))
+	warrior.RemoveComponent(ecs.ComponentTypeAttackSlow)
+
+	slam(warrior)
+	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.False(t, warrior.HasComponent(ecs.ComponentTypeDash), "the charge ends where the body stands")
+	assert.True(t, warrior.HasComponent(ecs.ComponentTypeAttackSlow))
+}
+
+// With player damage off the slam passes over other delvers; on, it hits them.
+// FS-04EEA §B R8.
+func TestCombatSystem_Earthbreaker_DelversOnlyWithPlayerDamageOn(t *testing.T) {
+	for _, tt := range []struct {
+		damage PlayerDamage
+		hit    bool
+	}{{PlayerDamageOff, false}, {PlayerDamageOn, true}} {
+		em := ecs.NewEntityManager()
+		warrior := earthbreakerWarrior(em, 100, 100, true)
+		other := delver(em, 150, 100)
+
+		slam(warrior)
+		NewCombatSystem(em, neverCrit, tt.damage, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+		assert.Equal(t, tt.hit, health(other) < 150, "player damage %v", tt.damage)
+	}
+}
+
+// The held read answers only with the class naming it and the node held.
+// FS-04EEA §A R3; FS-Q18Q3 §A R4.
+func TestHeldTreeAbility(t *testing.T) {
+	em := ecs.NewEntityManager()
+
+	kind, held := HeldTreeAbility(earthbreakerWarrior(em, 0, 0, true))
+	assert.True(t, held)
+	assert.Equal(t, components.AttackEarthbreaker, kind)
+
+	_, held = HeldTreeAbility(earthbreakerWarrior(em, 0, 0, false))
+	assert.False(t, held, "no tier-3 node")
+
+	nameless := delver(em, 0, 0)
+	nameless.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"warrior.t3": 1}))
+	_, held = HeldTreeAbility(nameless)
+	assert.False(t, held, "a class naming none")
+}
+
+// A tree ability's cost, as the wire shows it: Earthbreaker's 40, and Settle
+// the Debt's least, 1. FS-04EEA §A R5; FS-Q18Q3 §A R5.
+func TestTreeAbilityCost(t *testing.T) {
+	assert.Equal(t, 40, TreeAbilityCost(components.AttackEarthbreaker))
+	assert.Equal(t, 1, TreeAbilityCost(components.AttackSettleTheDebt))
+}
+
+// The held tree ability's cooldown is its own, the mercenary's the cut's slot;
+// none while it is not held. FS-04EEA §F R33; FS-Q18Q3 §A R4.
+func TestTreeAbilityCooldown(t *testing.T) {
+	em := ecs.NewEntityManager()
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	remaining, total, ok := TreeAbilityCooldown(warrior)
+	assert.True(t, ok)
+	assert.Zero(t, remaining)
+	assert.Zero(t, total)
+	slam(warrior)
+	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	remaining, total, ok = TreeAbilityCooldown(warrior)
+	assert.True(t, ok)
+	assert.InDelta(t, 10, remaining, 1e-9)
+	assert.InDelta(t, 10, total, 1e-9)
+
+	_, _, ok = TreeAbilityCooldown(earthbreakerWarrior(em, 0, 0, false))
+	assert.False(t, ok, "not held")
+
+	merc := mercenary(em, 300, 300)
+	merc.AddComponent(components.NewTreeAbilityComponent(components.AttackSettleTheDebt, "mercenary.t3"))
+	merc.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mercenary.t3": 1}))
+	intend(merc, components.AttackIntent{Kind: components.AttackCut, TargetX: 400, TargetY: 300})
+	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+	remaining, total, ok = TreeAbilityCooldown(merc)
+	assert.True(t, ok)
+	assert.InDelta(t, 0.25, remaining, 1e-9, "the cut's slot")
+	assert.InDelta(t, 0.25, total, 1e-9)
 }

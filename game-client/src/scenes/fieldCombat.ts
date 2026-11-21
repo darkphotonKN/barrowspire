@@ -88,7 +88,7 @@ export class FieldCombat {
     return this.combat.aiming;
   }
 
-  /** Whether the ability lockout runs: the ability card is grey (FS-8AY7S req 31). */
+  /** Whether the ability lockout runs: the bar's right-click square is grey (FS-Q18Q3 R22). */
   get lockedOut(): boolean {
     return this.combat.lockedOut;
   }
@@ -206,8 +206,8 @@ export function fieldCombatOnScene(
      * during a held world press, which Phaser hands on to the field. Never an attack, a cast or a hold.
      */
     pressClaimed?(pointer: Phaser.Input.Pointer | undefined): boolean;
-    /** The ability lockout started or ended: the ability card redraws (FS-8AY7S req 31). */
-    lockout?(): void;
+    /** The ability's lockout or the Shadow Shot hold started or ended: the ability bar is judged again (FS-Q18Q3 R40). */
+    abilityChanged?(): void;
     /** The scene's gameplay sound effects: hits, the player's wound and abilities (FS-AND39 R2–R4). */
     sounds?: GameplaySoundPlayer;
   },
@@ -270,7 +270,7 @@ export function fieldCombatOnScene(
         hooks.selfAnim()?.holdAim(undefined);
       },
       attackClip: (aim, swing) => hooks.selfAnim()?.attack(scene.time.now, aim, swing),
-      lockout: () => hooks.lockout?.(),
+      abilityChanged: () => hooks.abilityChanged?.(),
       abilityCast: (ability) => hooks.sounds?.play(ability),
     },
     kit,

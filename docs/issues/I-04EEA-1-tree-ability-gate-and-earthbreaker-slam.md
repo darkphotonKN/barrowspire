@@ -1,6 +1,6 @@
 ---
 id: I-04EEA-1
-status: open
+status: done
 implements: FS-04EEA
 blocked_by: ["FS-8RZ51 (the tier-3 node held on the seated delver, readable by the CombatSystem)"]
 labels: [blocked]

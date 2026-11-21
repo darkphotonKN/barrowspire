@@ -1,6 +1,6 @@
 ---
 id: I-8RZ51-1
-status: open
+status: done
 implements: FS-8RZ51
 blocked_by: []
 labels: [ready-for-agent]

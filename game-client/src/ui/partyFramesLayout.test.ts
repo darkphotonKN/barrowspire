@@ -3,7 +3,6 @@ import type { PartyMember, PartyUpdatePayload } from "@/stores/partyStore";
 import type { PlayerState } from "@/types/gameState";
 import { chatWindowFrame, CHAT_WINDOW_X } from "./chatWindowLayout";
 import { invitePromptFrames } from "./partyInvitePromptLayout";
-import { POTION_CELL_GAP, POTION_CELL_W } from "./potions";
 import { partyPanelLeft } from "./partyPanelLayout";
 
 /** The T panel's left edge at its leftmost, the narrowest view (FS-R82NV § Change C3). */
@@ -533,15 +532,6 @@ describe("partyFramesFrame", () => {
     width: HUD_COLUMN_W,
     height: resourceHudHeight(2),
   });
-  /** The run's potion cell, glued right of the bars and top-aligned with them. */
-  const potionCell = (): Rect => {
-    const bars = barsAt(RESOURCE_HUD_AT.run);
-    return {
-      ...bars,
-      x: bars.x + bars.width + POTION_CELL_GAP,
-      width: POTION_CELL_W,
-    };
-  };
 
   // FS-77DVN §E.17 supersedes FS-56CKV §D.20's run top 132 (and FS-R82NV R34's "run y 160") in
   // part: the run's bars rise to (10, 16), so its frames stand where a field's do (§E.21)
@@ -578,15 +568,15 @@ describe("partyFramesFrame", () => {
   });
 
   it.each([1080, 1280])(
-    "opens the T panel clear right of the run's potion cell at logical width %i (FS-R82NV § Change C3)",
+    "opens the T panel clear right of the run's bars at logical width %i (FS-R82NV § Change C3; the potion cell beside them is gone, FS-Q18Q3 R35, R36)",
     (W) => {
-      const cell = potionCell();
-      expect(partyPanelLeft(W)).toBeGreaterThan(cell.x + cell.width + 12);
+      const bars = barsAt(RESOURCE_HUD_AT.run);
+      expect(partyPanelLeft(W)).toBeGreaterThan(bars.x + bars.width + 12);
     },
   );
 
   it.each([1080, 1280])(
-    "keeps the most prompts clear of the bars and the potion cell, open panel or not, at logical width %i",
+    "keeps the most prompts clear of the bars, open panel or not, at logical width %i",
     (W) => {
       for (const panelOpen of [false, true])
         for (const note of [false, true])
@@ -596,7 +586,6 @@ describe("partyFramesFrame", () => {
             note,
             floor: chatPanel().y,
           })) {
-            expect(overlaps(prompt.panel, potionCell())).toBe(false);
             expect(overlaps(prompt.panel, barsAt(RESOURCE_HUD_AT.run))).toBe(
               false,
             );
@@ -608,16 +597,16 @@ describe("partyFramesFrame", () => {
   );
 
   const worlds = [
-    // the run: the bars in the corner, the potion cell beside them, the frames under them
-    { world: "run" as const, bars: RESOURCE_HUD_AT.run, potion: true },
+    // the run: the bars in the corner, the frames under them
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run },
     // the hub: no resource bars, the frames in the corner
-    { world: "hub" as const, bars: null, potion: false },
+    { world: "hub" as const, bars: null },
     // a field: the bars in the corner and the frames under them
-    { world: "field" as const, bars: RESOURCE_HUD_AT.field, potion: false },
+    { world: "field" as const, bars: RESOURCE_HUD_AT.field },
   ];
   it.each([1080, 1280].flatMap((W) => worlds.map((w) => ({ ...w, W }))))(
-    "in the $world at logical width $W, four rows clear the resource bars, the potion cell, the chat window, the T panel, the prompts and the ready check",
-    ({ world, bars, potion, W }) => {
+    "in the $world at logical width $W, four rows clear the resource bars, the chat window, the T panel, the prompts and the ready check",
+    ({ world, bars, W }) => {
       const { x, top } = PARTY_FRAMES_PLACEMENT[world];
       // the fullest party at the largest cap (PARTY_SIZE max 4): two members, two open invites
       const fullest = partyFrameRows(
@@ -651,7 +640,6 @@ describe("partyFramesFrame", () => {
         expect(frames.y).toBeGreaterThanOrEqual(at.y + at.height);
         expect(frames.x).toBe(at.x);
       }
-      if (potion) expect(overlaps(frames, potionCell())).toBe(false);
       expect(overlaps(frames, chatPanel())).toBe(false);
       // the T panel stands right of the frames (R28)
       expect(frames.x + frames.width).toBeLessThan(partyPanelLeft(W));

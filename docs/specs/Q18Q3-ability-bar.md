@@ -24,9 +24,12 @@ there was a choice). Recorded without adversarial review: no `challenge-me` pass
 > to the one **UI scene**'s HUD slot (`ui/uiSceneHud.ts`, built by `ui/hudPieces.ts`) as `hud`
 > messages through the UI bridge (`ui/uiBridge.ts`). The bar follows that pattern: it is a UI-scene
 > piece (ADR-0086 rules 1.1 and 1.2: fixed to the screen, shared by the run and a field), fed plain
-> data by the world, which keeps the casts and the drink (ADR-0085 Decision 1). Requirements R10,
-> R11, R12, R22, R28, R30–R36 and R40–R44 below are corrected or added for it, each marked
-> *(integrator correction 2026-11-21)*; nothing the player sees changes. The facts below were
+> data by the world, which keeps the casts and the drink (ADR-0085 Decision 1). Requirements R10–R12,
+> R22, R28–R30, R32–R35 and the new §L (R40–R44), two acceptance criteria and one edge state are
+> corrected or added for it, each marked *(integrator correction 2026-11-21)*. Nothing the player
+> sees changes. R30 then takes upstream's hold at death (FS-QPDKN R168): the bar is held greyed
+> with the top-left bars, so the potion count stays on screen *(integrator correction 2026-11-21 —
+> reason: keep FS-QPDKN R168's hold)*. The facts below were
 > verified at 632e1875; the UI-scene facts at the end of the list were verified at 76e70896.
 
 ## Facts this spec rests on
@@ -157,7 +160,8 @@ Verified 2026-11-21 on `chore/observability-setup` at 632e1875. Client paths und
     here.** *(Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream.
     Was: depth 1000 in the world scene.)*
 12. **The level-up cue rises from above the bar while the bar is up:** its bottom 6 px over the
-    bar's top (the key plaques' top); when no bar is up (the hub, or out of the delve) it keeps
+    bar's top (the key plaques' top), held bar included; when no bar is up (the hub, or a field
+    while fallen) it keeps
     FS-77DVN §D.16's place. Its words, timing and rise are unchanged. Both pieces stand in the UI
     scene's HUD slot, so the slot tells the level bar the ability bar's top while the bar stands
     and nothing crosses the bridge for it. **derived here — the cue's old place now lies under the
@@ -296,15 +300,18 @@ Verified 2026-11-21 on `chore/observability-setup` at 632e1875. Client paths und
     stands). **charter default — reason: "in the worlds the ability card shows today (check
     which)": checked, runs and fields.** *Derived here:* one three-square layout in both worlds,
     with the potion square honest about where it works.
-30. **Up from the player's first state, down once they are out of the delve** (dead, escaped,
-    left behind, spectating; in a field, fallen), exactly when the card was (`resolved(me)`).
-    No default is drawn before the first state. **derived here — the card's rule (FS-8AY7S R32).**
-    The leave-button rule goes: the bar is down whenever the leave button is up. The world sends a
-    null bar view to take it down; the HUD slot also takes it down as the world leaves.
-    *(Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream. Note:
-    upstream now holds the run's potion cell with the bars after death, FS-QPDKN R168; the bar
-    follows the card's rule instead, so the potion count leaves the screen at death with the
-    rest of the bar. The bars at the top left stay held.)*
+30. **Up from the player's first state, and up exactly as long as the world's top-left Health and
+    resource bars are.** No default is drawn before the first state. In play it is live (§D, §E).
+    **Out of the delve it is held, as the bars are** (FS-QPDKN § Change: The party death flow and
+    the spectate switcher, R168; `runOwnHud`): from the first state that shows the player dead,
+    escaped or left behind, spectating included, the bar stays up with **every square greyed**
+    (nothing can be cast or drunk), no sweep and no active state, the potion count and the costs
+    as that state showed them, unchanged by later states. It comes down when the bars do: in a
+    field while the player lies fallen (a field holds no bars), as the world leaves, and never in
+    the hub. The world sends the held view with the held bars and a null view to take it down; the
+    HUD slot also takes it down as the world leaves. The leave-button rule goes.
+    *(Integrator correction 2026-11-21 — reason: keep FS-QPDKN R168's hold.)* *(Was: down once out of the delve, the card's rule, FS-8AY7S R32, with the potion
+    count leaving the screen at death.)*
 
 ### §H. Keys and the pointer (game-client)
 
@@ -393,8 +400,9 @@ section is new; it says how the bar of §B–§H is wired, and changes nothing t
     badge over the ability card exactly while the card is up. With the card gone, the badge keeps
     the same rect (its anchor constants, `ABILITY_CARD_PLACE` and `ABILITY_CARD_H`, kept and renamed
     for the badge alone if they lose their card meaning) and stands exactly while the run's bar is
-    up and the run has not ended; the run's `abilityCard(up)` report says "the bar is up" (renamed
-    if the implementer wishes, one meaning). No badge in a field, as today. **derived here —
+    up **and live (not held, R30)** and the run has not ended, so it still goes at a death or an
+    escape as FS-84N1G R4 has it; the run's `abilityCard(up)` report says "the bar is up and live"
+    (renamed if the implementer wishes, one meaning). *(Integrator correction 2026-11-21 — reason: keep FS-QPDKN R168's hold.)* No badge in a field, as today. **derived here —
     smaller v1: no move of a piece FS-84N1G's owner placed by eye; whether it should now drop to
     the corner row is a question for the owner.**
 43. **The bar and the HUD pieces it meets stay in one scene:** the level bar, the resource bars and
@@ -445,8 +453,8 @@ section is new; it says how the bar of §B–§H is wired, and changes nothing t
     never casts or swings.
 20. As a delver with the ESC menu open, I want 1, 2 and 3 to pick nothing but the menu, so that
     opening the menu never drinks or casts.
-21. As a delver who dies, escapes or is left behind, I want the bar gone, so that the screen shows
-    the delve I am watching, not my empty pools.
+21. As a delver who dies, escapes or is left behind, I want the bar held greyed beside my held
+    bars, so that I see what I carried and that nothing can be used now. *(Integrator correction 2026-11-21 — reason: keep FS-QPDKN R168's hold.)*
 22. As a delver in the town, I want no ability bar, so that the safe zone reads as safe.
 23. As a delver, I want the level-up cue to rise over the bar, not under it, so that I read both.
 24. As a delver who resizes the window, I want the bar to stay centred over the XP bar, so that it
@@ -505,13 +513,29 @@ section is new; it says how the bar of §B–§H is wired, and changes nothing t
 - [ ] A press on any square starts no attack, cast or hold.
 - [ ] With the run's ESC menu or its confirm open, 1, 2 and 3 send no `drink_potion` and no cast;
       in a field, they pick the open menu's choices only.
-- [ ] Shown in a run and a field from the first state; hidden when dead, escaped, left behind,
-      spectating or fallen; never in the hub.
+- [ ] Shown in a run and a field from the first state; in a run, held from the first state that
+      shows the player dead, escaped or left behind (spectating included) with every square
+      greyed, no sweep, no active state, and the potion count and costs that state showed,
+      unchanged by later states; down in a field while fallen, as the world leaves, and never in
+      the hub; up exactly while the top-left bars are. *(Integrator correction 2026-11-21 — reason: keep FS-QPDKN R168's hold.)*
 - [ ] The level-up cue's bottom stands 6 px over the bar's top while the bar is up, and at
       FS-77DVN's place when it is not.
-- [ ] No ability card renders anywhere; `AbilityHud.ts` and `ABILITY_CARD_PLACE` are gone.
-- [ ] No potion cell renders at the top left; `PotionHud.ts`, `POTION_CELL_W`, `POTION_CELL_GAP`
-      and `POTION_HUD_X` are gone; the top-left clearance tests still pass.
+- [ ] No ability card renders anywhere; `AbilityHud.ts` is gone, and `ABILITY_CARD_PLACE` is gone
+      or kept only as the controls badge's anchor (R42). *(Integrator correction 2026-11-21 —
+      reason: ADR-0084–0086 (UI scene) landed upstream.)*
+- [ ] No potion cell renders at the top left; `PotionHud.ts`, `POTION_CELL_W` and
+      `POTION_CELL_GAP` are gone, with the cell's place in `HUD_PLACES.run`; the top-left clearance
+      tests still pass. *(Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene)
+      landed upstream. Was: `POTION_HUD_X` too, which upstream already replaced by the slot's
+      place.)*
+- [ ] *(Integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream.)* The
+      bar is a UI-scene HUD-slot piece: the run and the field send `hud` messages of kind `bar`
+      (plain data, naming the world, null to take it down); the slot builds it at
+      `HUD_PLACES.run` / `.field` and never in the hub; a `bar` message from a world that has left
+      draws nothing; no world scene draws it, tests its rect or binds a key for it; the slot has no
+      `ability` or `potion` kind left; a press on a square reaches no world; the tooltip draws at
+      2200; the controls badge keeps its rect and stands exactly while the run's bar is up and live (not held) and the
+      run has not ended.
 - [ ] Re-placed and re-crispened on resize; knockouts rebuilt on a render-scale change.
 - [ ] `PlayerState` types carry `ability_cooldown`, `tree_ability_cooldown` and
       `resource.tree_ability_cost`, all optional; an older server's state (none of them) draws the
@@ -525,6 +549,10 @@ section is new; it says how the bar of §B–§H is wired, and changes nothing t
 ## Edge States
 
 - **Before the first state:** no bar (no default squares).
+- **World switch** *(integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed
+  upstream)*: the HUD slot takes the bar down as the world leaves; a `bar` message heard late from
+  the world that left draws nothing (FS-TQZ5J § Change: Batch 6, R137); the next world's first
+  state builds it fresh, its sweep included.
 - **Missing `resource`:** no cost numerals, never greyed by cost; cooldowns and the lockout still
   grey.
 - **Missing cooldown fields (older server):** no sweep; the right-click square greys by the
@@ -539,8 +567,9 @@ section is new; it says how the bar of §B–§H is wired, and changes nothing t
 - **Gear swap mid-cooldown:** the sweep keeps its `total` (R3); the next cooldown takes the new
   length.
 - **Floor change:** cooldowns carry with the body (server); the bar stays up.
-- **Death, escape, left behind, fallen mid-cooldown:** the bar comes down; a cooldown still
-  running is not drawn anywhere.
+- **Death, escape, left behind mid-cooldown:** the bar is held greyed with the held bars; the
+  running cooldown's sweep is not drawn. **Fallen in a field:** the bar comes down with the bars.
+  *(Integrator correction 2026-11-21 — reason: keep FS-QPDKN R168's hold.)*
 - **Reconnect:** the next state's cooldowns are drawn at once.
 - **Full health:** the potion square is not greyed; a drink at full health is refused silently
   as today (FS-P9G8R R5–R7), the Health bar explains it.
