@@ -18,7 +18,8 @@ fire claw otherwise (FS-VHGE7 §B R18). A ranged monster, with a shot on its
 sheet, chases until it is in its shooting range with line of sight, and
 shoots where the others strike (FS-B4SG9 §A R4–R6). A monster with an ability
 on its sheet uses it in place of a swing when it is ready and its target is
-inside its distances (FS-C8VM7 §B R12; monster_ability.go).
+inside its distances (FS-C8VM7 §B R12; monster_ability.go). A stunned monster
+does none of it until its stun runs out (FS-04EEA §C; stun).
 
 It only sets a monster's velocity, facing and AI state. MovementSystem moves
 and collides it, exactly as it does a delver, and a strike is an attack intent
@@ -97,8 +98,8 @@ func (s *MonsterAISystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	}
 }
 
-// think runs one monster's tick: keep, drop or acquire a target, then wind up,
-// strike, show a claw out, chase or wander.
+// think runs one monster's tick: keep, drop or acquire a target, then stand
+// out a stun, or wind up, strike, show a claw out, chase or wander.
 func (s *MonsterAISystem) think(
 	deltaTime float64,
 	entity *ecs.Entity,
@@ -113,8 +114,15 @@ func (s *MonsterAISystem) think(
 	// and so does a monster ability (FS-C8VM7 §B R12)
 	monster.AbilityCooldown = max(monster.AbilityCooldown-deltaTime, 0)
 	monster.Route.SearchIn = max(monster.Route.SearchIn-deltaTime, 0)
+	// a stun runs out on its own clock, whatever else it does (FS-04EEA §C R15)
+	monster.StunRemaining = max(monster.StunRemaining-deltaTime, 0)
 
 	target, hunting := s.target(monster, at, delvers)
+
+	if monster.StunRemaining > stunEpsilon {
+		s.stunned(deltaTime, entity, monster, at, velocity)
+		return
+	}
 
 	if monster.AbilityPending.Remaining > 0 {
 		s.windUpAbility(deltaTime, entity, monster, at, velocity, target, hunting)
@@ -177,6 +185,45 @@ func (s *MonsterAISystem) think(
 	monster.WindUpRemaining = monster.WindUp
 	monster.SlamCooldownRemaining = monster.SlamCooldown
 	monster.Action = components.MonsterActionAttack
+}
+
+// stunEpsilon absorbs the float drift of summing tick lengths, so a stun
+// ends on the tick its length is used up.
+const stunEpsilon = 1e-9
+
+/*
+stun lands a stun of seconds on a living monster. A second stun leaves the
+longer of the two remaining, never their sum. A wind-up in progress, a strike,
+a slam, a draw or a monster ability still on the ground, ends with nothing
+landing, the cooldowns it started left spent; a claw's show gives way to the
+stun. A leap already in the air is left to land. FS-04EEA §C R14, R16, R17.
+*/
+func stun(monster *components.MonsterComponent, seconds float64) {
+	monster.StunRemaining = max(monster.StunRemaining, seconds)
+	monster.WindUpRemaining = 0
+	if !monster.AbilityPending.Leaping {
+		monster.AbilityPending = components.PendingAbility{}
+	}
+	monster.ClawShowRemaining = 0
+	monster.Action = components.MonsterActionStunned
+}
+
+// stunned is a stunned monster's tick once its timers have run and its target
+// is settled: it stands, without turning, and starts nothing. A leap already
+// in the air flies on and lands its area, and the stun holds it where it
+// lands. FS-04EEA §C R13–R15; §Edge States "Stun on a monster mid-leap".
+func (s *MonsterAISystem) stunned(
+	deltaTime float64,
+	entity *ecs.Entity,
+	monster *components.MonsterComponent,
+	at *components.TransformComponent,
+	velocity *components.VelocityComponent,
+) {
+	velocity.VX, velocity.VY = 0, 0
+	if monster.AbilityPending.Leaping {
+		s.pounce(deltaTime, entity, monster, at)
+	}
+	monster.Action = components.MonsterActionStunned
 }
 
 // claw lands a demon's fire claw on its target in range this same tick, at 1 ×

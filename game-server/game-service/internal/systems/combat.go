@@ -159,6 +159,9 @@ type attackSpec struct {
 	// n, cost being the least it needs, and lands at coefficient × n.
 	// FS-04EEA §F R29–R32.
 	spendsPool bool
+	// stuns: every monster a hit of it leaves alive is stunned (stunFor).
+	// FS-04EEA §B R10.
+	stuns bool
 }
 
 const (
@@ -176,6 +179,10 @@ const (
 	// Earthbreaker: a ground slam all round the warrior. Charter defaults.
 	// FS-04EEA §B R8.
 	earthbreakerRange = 90.0
+	// its stun: monsterStun on what it leaves alive, bossStun on a boss, a
+	// champion included. Charter defaults. FS-04EEA §B R10.
+	monsterStun = 1.0 // seconds
+	bossStun    = 0.5 // seconds
 	// Blink: the farthest the mage moves. Charter default. FS-04EEA §D R18.
 	blinkDistance = 180.0
 	// Settle the Debt: a flurry all round the merc. settleTheDebtLeastCost is
@@ -310,7 +317,7 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackEarthbreaker: {
 		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
 		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
-		slows: true,
+		slows: true, stuns: true,
 	},
 	// the mage's tree ability: an instant move toward the cursor, paid in
 	// mana. FS-04EEA §D R18, §A R5.
@@ -1143,6 +1150,8 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		// at the dead-target check above, so this runs once per monster
 		if health.CurrentHealth == 0 {
 			s.recordKill(attack, target, monster)
+		} else if attack.Stuns {
+			stun(monster, stunFor(monster))
 		}
 	}
 
@@ -1157,6 +1166,15 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 	if attack.FromMonster {
 		s.reflect(attack, target, damage)
 	}
+}
+
+// stunFor is how long Earthbreaker stuns the monster: bossStun on a boss,
+// monsterStun on any other. FS-04EEA §B R10.
+func stunFor(monster *components.MonsterComponent) float64 {
+	if monster.Boss {
+		return bossStun
+	}
+	return monsterStun
 }
 
 // reflect answers a monster's strike on a Gravewarden's Oath wearer still in
@@ -1242,6 +1260,7 @@ func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapsh
 		Coefficient:      spec.coefficient,
 		CritChance:       CritChance(0),
 		FromMonster:      attacker.HasComponent(ecs.ComponentTypeEnemy),
+		Stuns:            spec.stuns,
 	}
 	if pc, ok := attacker.GetComponent(ecs.ComponentTypePlayer); ok {
 		attack.AttackerMemberID = pc.(*components.PlayerComponent).MemberID

@@ -72,6 +72,9 @@ type AttackSnapshot struct {
 	// TrueDamage, when above 0, is exactly what the hit deals: unmitigated and
 	// never a crit (Gravewarden's Oath's reflected hit). FS-4R9M9 §Requirements 34.
 	TrueDamage int
+	// Stuns marks Earthbreaker's hit: a monster it leaves alive is stunned.
+	// FS-04EEA §B R10.
+	Stuns bool
 }
 
 // AttackIntent is a request a handler validated and the CombatSystem has yet to

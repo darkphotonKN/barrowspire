@@ -1442,3 +1442,102 @@ func TestTreeAbilityCooldown(t *testing.T) {
 	assert.InDelta(t, 0.25, remaining, 1e-9, "the cut's slot")
 	assert.InDelta(t, 0.25, total, 1e-9)
 }
+
+// Every monster the slam hits and leaves alive is stunned: 1.0 s, or 0.5 s on
+// a boss, a champion included, and reads `stunned` from the tick it lands.
+// FS-04EEA §B R10, §C R17.
+func TestCombatSystem_Earthbreaker_StunsWhatItLeavesAlive(t *testing.T) {
+	tests := []struct {
+		name string
+		mark func(m *components.MonsterComponent)
+		want float64
+	}{
+		{"a monster", func(*components.MonsterComponent) {}, 1.0},
+		{"a boss", func(m *components.MonsterComponent) { m.Boss = true }, 0.5},
+		{"a champion", func(m *components.MonsterComponent) { m.Boss, m.Champion = true, true }, 0.5},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			warrior := earthbreakerWarrior(em, 100, 100, true)
+			g := ghoul(em, 160, 100, 1000)
+			tt.mark(monster(g))
+
+			slam(warrior)
+			NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+			require.Less(t, health(g), 1000)
+			assert.Equal(t, tt.want, monster(g).StunRemaining)
+			assert.Equal(t, components.MonsterActionStunned, monster(g).Action)
+		})
+	}
+}
+
+// A monster the slam kills is not stunned, and one already dead is refused
+// before the roll and stunned by nothing; nor does any other hit stun.
+// FS-04EEA §B R10, §C R12.
+func TestCombatSystem_Earthbreaker_StunsNothingItKillsOrIsRefused(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	killed := ghoul(em, 160, 100, 20)
+	dead := ghoul(em, 40, 100, 1000)
+	hc, _ := dead.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 0
+	slashed := ghoul(em, 400, 100, 1000)
+	slasher := delver(em, 360, 100)
+
+	slam(warrior)
+	intend(slasher, components.AttackIntent{Kind: components.AttackSlash, TargetX: 400, TargetY: 100})
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	assert.Zero(t, health(killed))
+	assert.Zero(t, monster(killed).StunRemaining, "the hit that kills does not stun")
+	assert.Zero(t, monster(dead).StunRemaining)
+	require.Less(t, health(slashed), 1000)
+	assert.Zero(t, monster(slashed).StunRemaining, "only Earthbreaker stuns")
+	assert.Equal(t, components.MonsterActionIdle, monster(slashed).Action)
+}
+
+// A Blightborn the slam kills lies dead, unstunned, and its death burst's fuse
+// burns on to land. FS-04EEA §C R14; §Edge States "Stun on a death burst".
+func TestCombatSystem_Earthbreaker_KilledBlightbornStillBursts(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := sturdy(earthbreakerWarrior(em, 100, 100, true))
+	b := blightborn(em, 160, 100)
+	hc, _ := b.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 20
+
+	slam(warrior)
+	burstOut(em, ticks(0.8)+1)
+
+	assert.Equal(t, components.MonsterActionDead, monster(b).Action)
+	assert.Zero(t, monster(b).StunRemaining)
+	assert.Less(t, health(warrior), 100000, "the burst lands on the warrior")
+}
+
+// A slam's stun reads `stunned` on every tick of its 1.0 s, the landing tick
+// first, then the monster goes back to what it does. FS-04EEA §C R17.
+func TestCombatSystem_Earthbreaker_StunnedForTheStunsLength(t *testing.T) {
+	em := ecs.NewEntityManager()
+	warrior := earthbreakerWarrior(em, 100, 100, true)
+	g := hunter(em, 140, 100)
+	monster(g).AttackCooldown = 5 // so it stands idle at the end, in reach
+	hc, _ := g.GetComponent(ecs.ComponentTypeHealth)
+	hc.(*components.HealthComponent).CurrentHealth = 1000
+	ai := NewMonsterAISystem(firstRoll, nil)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+
+	slam(warrior)
+	stunnedTicks := 0
+	for range ticks(1.5) {
+		entities := em.GetAllEntities()
+		ai.Update(tickSeconds, entities)
+		combat.Update(tickSeconds, entities, nil)
+		if monster(g).Action == components.MonsterActionStunned {
+			stunnedTicks++
+		}
+	}
+
+	assert.Equal(t, 60, stunnedTicks, "1.0 s at 60 ticks a second")
+	assert.Equal(t, components.MonsterActionIdle, monster(g).Action)
+}
