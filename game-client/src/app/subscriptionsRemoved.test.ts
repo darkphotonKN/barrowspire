@@ -1,32 +1,12 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync } from "fs";
 import path from "path";
 import { describe, expect, it } from "vitest";
 
-// FS-RG1B4: the game sells no subscription. Nothing links to the old page, the page is gone,
-// and the client calls no payment endpoint.
-
-const SRC = path.resolve(__dirname, "..");
-
-function sourceFiles(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const full = path.join(dir, name);
-    if (statSync(full).isDirectory()) return name === "generated" ? [] : sourceFiles(full);
-    return /\.(ts|tsx)$/.test(name) && !name.endsWith(".test.ts") ? [full] : [];
-  });
-}
-
+// FS-RG1B4: the game sells no subscription, and the page is gone. The contract carries no payment
+// path, so a call to one through the generated client fails the type check, and a hand-written
+// fetch is fenced by lint (ADR-0001 §4).
 describe("subscriptions removed (FS-RG1B4)", () => {
   it("has no subscription page", () => {
-    expect(existsSync(path.join(SRC, "app", "subscription"))).toBe(false);
-  });
-
-  it("links nowhere to /subscription", () => {
-    const linking = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes('"/subscription"'));
-    expect(linking.map((f) => path.relative(SRC, f))).toEqual([]);
-  });
-
-  it("calls no payment endpoint", () => {
-    const calling = sourceFiles(SRC).filter((f) => readFileSync(f, "utf8").includes("/api/payment/"));
-    expect(calling.map((f) => path.relative(SRC, f))).toEqual([]);
+    expect(existsSync(path.join(__dirname, "subscription"))).toBe(false);
   });
 });

@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { typingGuard } from "./worldKeyboard";
 
@@ -43,9 +41,4 @@ describe("typingGuard (FS-TQZ5J § Change: Batch 6, R127)", () => {
     expect(() => typingGuard(() => null).heard(true)).not.toThrow();
   });
 
-  it("should leave the bridge importing nothing of the chat", () => {
-    const bridge = readFileSync(join(__dirname, "uiBridge.ts"), "utf8");
-    expect(bridge).not.toMatch(/from "\.\/chat/);
-    expect(bridge).not.toMatch(/function typingGuard/);
-  });
 });

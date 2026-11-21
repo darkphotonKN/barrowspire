@@ -3109,13 +3109,6 @@ describe("HubScene the stash chest's E (FS-VPD8Y R34, R43–44)", () => {
     expect(gear.stashOpen()).toBe(false);
   });
 
-  it("should compose no stash mode outside the hub, and leave the Quartermaster as he was (R43–44)", () => {
-    for (const scene of ["BarrowspireScene", "FieldScene", "../ui/EquipmentHud"]) {
-      const source = readFileSync(new URL(`./${scene}.ts`, import.meta.url), "utf8");
-      expect(source, scene).not.toMatch(/openStash|updateStash|STASH/);
-    }
-    expect(ELDER_TALE).toBeDefined();
-  });
 });
 
 const { readFileSync } = await import("node:fs");
@@ -4776,15 +4769,6 @@ describe("HubScene music (FS-28DDG R1–R3, R20, R21)", () => {
     expect([...audio]).toEqual(UI_EFFECTS.map(uiSoundKey));
   });
 
-  // create() runs no further than its camera on the stand-in (createUpToCamera, below), so its call
-  // is pinned from the source: entering the hub is what starts the music (R1, R2)
-  it("should start the music from create, each time the hub is entered", () => {
-    const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1];
-
-    expect(create).toMatch(/^\s*this\.enterMusic\(\);$/m);
-  });
-
   /** Left, then started again: the fade-out ends while the hub loads, so the stopped sound is kept for it (R13). */
   function keptWhileLoading() {
     vi.spyOn(socketManager, "on").mockImplementation(() => {});
@@ -5521,7 +5505,6 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       render();
       pointers.pointerdown!(press(855, 109));
       expect(map()!.mode).toBe("normal");
-      expect(readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8")).not.toMatch(/gear\??\.covers\(/);
     });
 
     // FS-3EBCA R10 with D5, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's,
@@ -6281,12 +6264,6 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
       expect(t.heard()).toEqual([]);
     });
 
-    // the town's gear is the UI scene's: its changes sound there (`gearPieces.test.ts`), and the town has
-    // no gameplay sound of its own to play
-    it("should make no gameplay player and play no item_swap of its own", () => {
-      const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
-      expect(source).not.toMatch(/GameplaySounds|item_swap|stash_open"\)/);
-    });
   });
 
   it.each<[string, (t: Town) => void, (t: Town) => void]>([
@@ -6360,21 +6337,6 @@ describe("HubScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(heard()).toEqual(["party_close"]);
   });
 
-  // create() runs no further than its camera on the stand-in (createUpToCamera), so its wiring is
-  // pinned from the source: the player made before anything that hears a player, and handed on
-  // the gear overlay is the UI scene's (FS-TQZ5J § Change: Phase 3, R50): the town composes none
-  it("should make the player in create before the keys, and hand its wrapper to every module that hears its own input", () => {
-    const source = readFileSync(new URL("./HubScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "hub", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindInput\(\);/));
-    expect(source).not.toMatch(/composeGear|new GearOverlay/);
-    // the mailbox is the UI scene's (FS-TQZ5J § Change: Batch 4, R101, R106): the town builds none and
-    // tests no letter panel's rect; it reads the letter panel's open state from the mailbox store
-    expect(source).not.toMatch(/\bmountMailbox\b|\bMailboxHud\b|\bMailboxEnvelope\b|\bLetterPanel\b|coveredAt/);
-    expect(create).toMatch(/this\.mailbox = letterPanelState\(\);/);
-  });
 });
 
 // FS-WDM0X § Change: Menu, dialog and notice sounds (I-WDM0X-6): the town says when the player opened

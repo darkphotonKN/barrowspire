@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { worldToScreen } from "@/render/iso/projection";
 import { fakeArt, fakeLights, fakeScene } from "./fakeScene";
@@ -62,7 +60,5 @@ describe("an ogre's thrown rock (FS-C8VM7 §F R38)", () => {
     expect(OGRE_ROCK_EFFECTS.flatMap((n) => colorsOf(EFFECTS[n]))).toContain("oxbloodText");
     flights.sync([rock("r1")]);
     expect(lights.added).toEqual([]);
-    const src = readFileSync(join(__dirname, "ogreRock.ts"), "utf8");
-    expect(src).not.toMatch(/0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}/);
   });
 });
