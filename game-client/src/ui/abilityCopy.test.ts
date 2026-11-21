@@ -32,6 +32,16 @@ describe("abilityCopy (FS-8AY7S req 30; FS-E1ZDG §L.43)", () => {
     expect(abilityCopy("Archer", "shadow_ranger")?.name).toBe("Shadow Shot");
   });
 
+  it("should give a Duelist's parry the two-charge line, its name unchanged (FS-E1ZDG §L.46)", () => {
+    expect(abilityCopy("mercenary", "duelist")).toEqual({
+      name: "Parry",
+      line: "Turn a blow as it lands for a parry charge. At two, the cut ripostes.",
+    });
+    expect(abilityCopy("mercenary")?.line).toBe(
+      "Turn a blow as it lands for a parry charge. At three, the cut ripostes.",
+    );
+  });
+
   it("should keep the class's row for another class's spec or an id it does not know", () => {
     expect(abilityCopy("warrior", "shadow_ranger")?.name).toBe("Dash");
     expect(abilityCopy("archer", "berserker")?.name).toBe("Heavy Shot");

@@ -34,6 +34,11 @@ export const ABILITY_COPY: Readonly<Record<string, AbilityCopy>> = {
 /** Where a specialization changes its class's row (FS-E1ZDG §L.43, §L.46), keyed by spec id; every other spec keeps it. */
 export const SPECIALIZATION_ABILITY_COPY: Readonly<Record<string, AbilityCopy>> = {
   shadow_ranger: { name: "Shadow Shot", line: ABILITY_COPY.archer.line },
+  // the riposte arms at 2 for a Duelist (FS-E1ZDG §I R32)
+  duelist: {
+    name: ABILITY_COPY.mercenary.name,
+    line: "Turn a blow as it lands for a parry charge. At two, the cut ripostes.",
+  },
 };
 
 /**

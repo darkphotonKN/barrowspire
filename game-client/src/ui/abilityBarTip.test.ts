@@ -58,6 +58,13 @@ describe("abilityTip: the right-click square (R28, R27)", () => {
     expect(shot("shadow_ranger")).toBe("Shadow Shot");
   });
 
+  it("should give a Duelist's parry the two-charge line (FS-E1ZDG §L.46)", () => {
+    expect(abilityTip("ability", view({ ability: { ...VIEW.ability, icon: "parry", specialization: "duelist" } }))).toEqual({
+      name: "Parry",
+      line: "Turn a blow as it lands for a parry charge. At two, the cut ripostes.",
+    });
+  });
+
   it("should show the tooltip of a greyed square too", () => {
     expect(abilityTip("ability", view({ ability: { ...VIEW.ability, greyed: true } }))?.name).toBe("Dash");
   });

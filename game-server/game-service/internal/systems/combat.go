@@ -183,7 +183,8 @@ const (
 	cutRange    = 55.0
 	cutHalfCone = 35 * math.Pi / 180 // a 70° cone
 	// the riposte: a wide, long cleave toward the cursor, paid with every parry
-	// charge the merc can hold. Charter defaults. FS-MAMHR §Requirements 23.
+	// charge the merc can hold; a Duelist's arms and pays at 2 (quick_riposte.go).
+	// Charter defaults. FS-MAMHR §Requirements 23.
 	riposteRange        = 90.0
 	riposteHalfCone     = 120 * math.Pi / 180 // a 240° cone
 	riposteParryCharges = 3
@@ -630,7 +631,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	var pool *components.ResourceComponent
 	if rc, ok := attacker.GetComponent(ecs.ComponentTypeResource); ok {
 		pool = rc.(*components.ResourceComponent)
-		spec = armCut(intent.Kind, pool, spec)
+		spec = armCut(attacker, intent.Kind, pool, spec)
 	}
 	// the passive tree's per-rank stats, before the cost is checked, so a
 	// lowered cost is affordable at what it is lowered to (FS-8RZ51 R29)
@@ -735,16 +736,22 @@ func tickAttackSlow(entity *ecs.Entity, deltaTime float64) {
 }
 
 // armCut is the row a cut that passed its cooldown resolves as: the riposte
-// when the caster holds 3 parry charges, else the cut as it is. Its cost then
-// spends all 3, whether or not it hits anything; the cooldown it starts stays
-// the cut's slot. Any other attack, or any other resource, is left alone.
-// FS-MAMHR §Requirements 23–25.
-func armCut(kind components.AttackKind, pool *components.ResourceComponent, spec attackSpec) attackSpec {
-	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges || pool.Current < riposteParryCharges {
+// when the caster holds the parry charges it arms at (riposteChargesOf: 3, a
+// Duelist's 2), else the cut as it is. Its cost then spends that many, whether
+// or not it hits anything; the cooldown it starts stays the cut's slot. Any
+// other attack, or any other resource, is left alone. FS-MAMHR §Requirements
+// 23–25; FS-E1ZDG §I R32.
+func armCut(caster *ecs.Entity, kind components.AttackKind, pool *components.ResourceComponent, spec attackSpec) attackSpec {
+	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges {
+		return spec
+	}
+	charges := riposteChargesOf(caster)
+	if pool.Current < charges {
 		return spec
 	}
 	riposte := attackTable[components.AttackRiposte]
 	riposte.kind = components.AttackRiposte
+	riposte.cost = charges
 	return riposte
 }
 

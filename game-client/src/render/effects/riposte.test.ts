@@ -99,6 +99,27 @@ describe("riposteArmed (FS-MAMHR §E.23, §G.33)", () => {
   });
 });
 
+describe("riposteArmed for a Duelist (FS-E1ZDG §I R32, §L R45)", () => {
+  const duelist = (n: number) => ({ ...charges(n), specialization: "duelist" });
+
+  it.each([2, 3])("should be armed at %i parry charges", (n) => {
+    expect(riposteArmed(duelist(n))).toBe(true);
+  });
+
+  it.each([0, 1])("should not be armed at %i parry charges", (n) => {
+    expect(riposteArmed(duelist(n))).toBe(false);
+  });
+
+  it("should still need 3 for an unspecialized merc", () => {
+    expect(riposteArmed(charges(2))).toBe(false);
+    expect(riposteArmed({ ...charges(2), specialization: undefined })).toBe(false);
+  });
+
+  it("should not arm another class's pool at 2", () => {
+    expect(riposteArmed({ ...charges(2, "stamina"), specialization: "duelist" })).toBe(false);
+  });
+});
+
 describe("RIPOSTE_SHAPE (FS-MAMHR §E.23)", () => {
   it("should match the server's riposte: a 240° arc, 90 px of reach", () => {
     expect(RIPOSTE_SHAPE.arc).toBeCloseTo(240 * DEG);
@@ -228,6 +249,14 @@ describe("RiposteFx armed tell (FS-MAMHR §G.34)", () => {
     f.fx.sync(state, 0);
     f.fx.follow(me, 0);
     expect(f.made).toHaveLength(0);
+  });
+
+  it("should show a Duelist's tell at 2 parry charges, and clear it at 1 (FS-E1ZDG §L R45)", () => {
+    const f = fake();
+    f.fx.sync({ ...charges(2), specialization: "duelist" }, 0);
+    expect(f.fx.armedShown).toBe(true);
+    f.fx.sync({ ...charges(1), specialization: "duelist" }, 16);
+    expect(f.fx.armedShown).toBe(false);
   });
 
   it("should take the tell down when the merc is gone from the state (escaped)", () => {
