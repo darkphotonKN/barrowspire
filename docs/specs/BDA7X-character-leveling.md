@@ -427,3 +427,5 @@ No member / owner field.
 ## Change: Minimap look and the run HUD's layout → FS-56CKV
 
 ## Change: The XP bar along the bottom → FS-77DVN
+
+## Change: Passive points from levels → FS-8RZ51

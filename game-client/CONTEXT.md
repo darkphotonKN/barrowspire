@@ -276,6 +276,13 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   stride, the feet stepping back. The only backward step: a class that is not attacking never
   steps back. The backpedal legs are a bake-only cycle; no sheet carries a standalone `backpedal`
   (FS-JS7C8, owner changes 2026-11-12).
+- **Off-hand clip** (FS-1J1CB §D; locked, not built): an attack clip swung with the left hand,
+  `attack_offhand`, `walk_attack_offhand` and `backpedal_attack_offhand`: the right-hand clip's
+  upper-body keys mirrored left for right at bake time, over the same legs, lit by the bake, with
+  the same keys, fps and strike key. Only the Berserker's sheet carries them. On a sheet that has
+  them each attack takes the other hand from the one before (right first), per client and per
+  body; no server change and nothing on the wire. Never a runtime sprite flip, which would put the
+  baked key light on the wrong side. *Avoid*: "mirrored attack" for it at runtime.
 - **Facing** (a character's): which of the 8 world directions its figure is turned to: its drawn
   movement, kept while it stands; a swing turns it to its aim. Never the pointer, and never sent to
   or received from the server: every client derives every figure's facing from the motion it
@@ -289,16 +296,39 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Scene-scoped group**: an atlas group loaded only by the scenes that draw it (folk, wildlife,
   fodder, creatures, boss) and freed when the next scene does not use it (ADR-0059, FS-C4JWH).
 - **On-demand group**: a scene-scoped group no scene preloads, fetched while a scene runs, the first
-  time a snapshot lists the archetype it draws (today only `blood_demon`). Freed by eviction like any
-  scene-scoped group (ADR-0071, FS-VHGE7).
-- **Stand-in**: what a monster on an on-demand group draws until the group is in: a sheet its scene
-  already holds, under a palette tint. A look, never the placeholder (ADR-0071).
+  time a snapshot lists the archetype it draws (today only `blood_demon`), or, for a **spec-look
+  group**, the first time a snapshot carries a player with its specialization. Freed by eviction
+  like any scene-scoped group (ADR-0071, FS-VHGE7, ADR-0088).
+- **Stand-in**: what a body on an on-demand group draws until its group is in: a sheet its scene
+  already holds. A monster's is a named sheet under a palette tint (ADR-0071), or a variant's
+  family's tier-1 look (ADR-0081); a player's is its **base class sheet**, untinted (FS-1J1CB,
+  ADR-0088; locked, not built). When the group lands the body is re-dressed in place on its own
+  sprite. A look, never the placeholder, and it logs no placeholder warning.
+- **Base class sheet**: a playable class's own sheet (`char_knight`, `char_wizard`, `char_archer`,
+  `char_mercenary`), on a resident group: what a player body with no specialization, an unknown
+  one, or an unbaked or not-yet-landed spec look draws, and what the menus and party busts always
+  draw (FS-1J1CB R16, R25).
 - **Variant group** (FS-C8VM7, ADR-0081; locked, not built): the on-demand group of one Spire
   **variant** (named by its variant id; a goblin variant's two looks share it). Unlike the blood
   demon's, it is **floor-scoped**: fetched when a new floor's map names it in `enemy_pool`, and
   evicted by the next floor map that does not. A variant's stand-in is its **family**'s tier-1 look
   on `creatures`. *Avoid*: "the `fodder` group" for it: `fodder` is the Forlorn Forest's dead's
   atlas group, unrelated to the **fodder** monster role.
+- **Spec look** (FS-1J1CB; locked, not built): how a specialization re-dresses its class's
+  figure: the class's own builder given a look (`knight(look)`), on the same rig, build, clips,
+  sheet scale and anchor, with a few pieces changed (a helm, a coat, a weapon, a dye). Baked as
+  `char_<base>_<spec>` (`char_knight_berserker`). Every player body in a world (the player's own
+  and every other) draws its specialization's spec look when its state entry carries one and the
+  look is baked, otherwise its **base class sheet**; the resolve is one function
+  (`characterSheet`, by class and specialization). The menus, character creation and the party
+  busts draw the base. The specialization itself is game-service's term. Not a shimmer's
+  **look** (three colours) or a **field look**. *Avoid*: "skin", "costume", and "the look" alone.
+- **Spec-look group** (FS-1J1CB, ADR-0088; locked, not built): the on-demand group a spec look is
+  packed alone in, `<base>_<spec>` (`knight_berserker`). Fetched the first time a snapshot
+  carries a player with that specialization; the player's own is preloaded with the world scene
+  when the character read carries it. Its stand-in is the base class sheet. Scene-scoped: kept
+  across a floor change, evicted with the scene, and never drawn by the UI scene. Not a **variant
+  group** (a monster's, floor-scoped).
 - **Eviction**: removing a scene-scoped group's pages from the texture manager (and so the GPU),
   with every animation registered on them, once the next scene's preload completes. Only ever of
   art; "unload" is not used for it (ADR-0059).
@@ -567,11 +597,24 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   panel, the stats (class, name, level and experience, health and resource, the class card, what
   worn gear adds), opened on its own by `C` or the corner row's Character icon. Never shown in
   stash mode, where the left panel is the **stash**.
-- **Ability card**: the HUD panel at the bottom right of a run or a field world showing the
-  player's class ability: its name, the right-mouse glyph and a line on how it works (FS-8AY7S),
-  standing directly above the **corner row** (FS-3EBCA).
-  Never in the hub. The ability itself is game-service's term
-  ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities").
+- ~~**Ability card**: the HUD panel at the bottom right of a run or a field world showing the
+  player's class ability.~~ Retired by FS-Q18Q3 (superseded, with FS-8AY7S's "Ability card on the
+  HUD"): the **ability bar** takes its place, and its name and line move into the squares'
+  tooltips.
+- **Ability bar** (FS-Q18Q3; locked, not built): the row of three **ability squares** at the
+  bottom middle of a run or a field world, directly above the XP bar, in the order **1** the
+  health potion, **right-click** the class ability, **3** the tree ability. Never in the hub; down
+  once the player is out of the delve. Takes over the potion cell's count. The abilities
+  themselves are game-service's terms
+  ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "Classes and abilities":
+  *ability*, *tree ability*).
+- **Ability square**: one square of the ability bar: a framed well holding a bronze **knockout**
+  icon, its key on a plaque set into its top edge (the right-mouse glyph for right-click), its
+  cost under it, a **cooldown sweep** from the server's `ability_cooldown` /
+  `tree_ability_cooldown` while it recovers, and greyed when it cannot be used. The right-click
+  square goes **active** during a Shadow Shot hold or an open parry stance. The 3 square is
+  **locked** (padlock, "Lv 10") while `tree_ability_cooldown` is absent. Not a **cell** (a
+  level's grid square, or a bag slot).
 - **Resource bars**: the player's own Health bar and, below it, their class resource bar at the
   top left of a run or a field world, under the level bar in a run, each labelled with its own
   name ("Health:", "Mana:",
@@ -579,11 +622,24 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   other players for now: teammates' health and resource live in the party frames (FS-CH21F R14).
   The player has no bar over their own head (FS-8AY7S).
 
+- **Title** (FS-E1ZDG): the class's display name and its specialization's, joined by " · "
+  ("Warrior · Berserker"), shown wherever the character appears. Built in the menus (the main
+  menu's hero and the character list, from the character read; I-E1ZDG-1); locked, not built in
+  a world: the nameplates' second line, the stats panel header and the party frames, which read
+  the world state (I-E1ZDG-2). A character with no specialization has no title and shows the
+  class name alone. Replaces
+  `classLore`'s old second names (IRON GUARDIAN, ARCANE MASTER, SHADOW RANGER, OATHLESS BLADE),
+  which go entirely. Not a profile **rank** title ("Delver", "Warden"). The specialization itself
+  is game-service's term.
+- **Heavy Shot** (FS-E1ZDG): the archer's right-click as the screen names it for every archer but
+  a Shadow Ranger, whose reads **Shadow Shot**. Display only: the skill id stays `shadow_shot`.
 - **Aim line**: the line an archer sees while holding to aim Shadow Shot, faint until a release
   would fire. Drawn for the aiming player only; the server never knows about it (ADR-0030).
 - **Stance tell**: the raised blade over a mercenary while their parry stance is open.
-- **Armed tell**: the blade carried at a mercenary's hip while they hold 3 parry charges (riposte
-  armed).
+- **Armed tell**: the blade carried at a mercenary's hip while their riposte is armed: at 3 parry
+  charges for an unspecialized mercenary (built), at **2** for a Duelist and **never** for a
+  Sellsword, whose left-click always plays the cut (FS-E1ZDG §L.45; locked, not built). The
+  **riposte slice** follows the same rule.
 - **Riposte slice**: the wide sword arc drawn when an armed mercenary cuts. Not the **cut**, the
   narrow arc of their ordinary left-click.
 - **Shimmer** (FS-KZC92): a one-shot glitter over one character's body, played the moment an
@@ -601,6 +657,20 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Item glitter** (FS-QE2QW): the quiet loop of small glints on a Fabled item's icon while that
   icon is shown. Not a **shimmer**: a shimmer is one-shot, on a body, and marks a moment; item
   glitter loops, on an icon, and marks what the item is. It shares only the shimmer's glint.
+- **Aura** (FS-1J1CB §E; locked, not built): a quiet loop of particles over one body, on for as
+  long as that body is drawn alive, worn for a held specialization. Not a **shimmer** (one-shot,
+  under 1200 ms, marks a moment; it does not count toward a shimmer's rules) and not **item
+  glitter** (on an icon). Built on the shimmer's glint drawing and pooled per body; no light, drawn
+  under the light-map, hidden with its body, stopped while it is dead. A shimmer plays over it in
+  full. Two exist: the **ward** and the **gloom**. *Avoid*: "buff display", "effect" alone.
+- **Ward**: the Spellwarden's aura: dim `necrotic` glints with `vellum` centres winking slowly on a
+  faint shell round the figure, so they trace a shield. The look of the spec only; the
+  Spellwarden's damage-to-mana effect is **Arcane Ward**, game-service's term (FS-E1ZDG §E).
+  Always "the ward" for the aura, "Arcane Ward" for the effect.
+- **Gloom**: the Shadow Ranger's aura: `umbra` motes with no hot centre, no glow and no light,
+  rising a little off the figure and sinking back as they fade; it reads by hue. Not the umbra
+  gloom a Shadow Shot carries in flight (FS-JTNPR), which belongs to the bolt: say "the shot's
+  gloom" for that.
 
 - **Logical view** (FS-ZAJMH): the coordinate space cameras and the HUD work in. Always **720
   units tall**; **1080 to 1280 units wide** depending on the shape of the space the game is given.
@@ -656,7 +726,7 @@ What the client draws of the Spire's roster and its bosses. The server owns the 
   area or cone on the ground, from the state's `ability` object, filling toward its landing) and
   an **impact** when it lands, plus the `thrown_dagger` and `ogre_rock` flights. The body plays its
   `attack` clip for `action: "ability"`. Always "monster ability" where the player's class
-  **ability** (the ability card) could be meant.
+  **ability** or **tree ability** (the ability bar) could be meant.
 - **Vorsk**: the green demon's screen name (FS-3103M); its archetype and sheet stay `demon`.
   "Green Demon" is the old name.
 - **Tome of Filth** and **Altar of Consecration**: the two small props of a tome run (FS-3103M):

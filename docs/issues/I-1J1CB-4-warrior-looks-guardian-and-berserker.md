@@ -1,0 +1,92 @@
+---
+id: I-1J1CB-4
+status: open
+implements: FS-1J1CB
+blocked_by: [I-1J1CB-3]
+labels: [blocked]
+title: "FS-1J1CB slice 4: bake the Guardian and the Berserker (dual axes held right, off-hand clips), through the contact sheet"
+---
+Implements FS-1J1CB §A (Requirements 1–2), §B (Requirements 9–15), §D (Requirement 28)
+
+**Lane: agent** (game-client bake). **HITL gate:** Kranti approves the contact sheet before this
+closes.
+
+**Where it runs** *(integrator correction 2026-11-21 — reason: ADR-0084–0086 (UI scene) landed upstream)*: the bake slices (I-1J1CB-3 to -7) run in the worktree
+`.claude/worktrees/spec-looks` (branch `feat/spec-looks`, cut from origin/main), where I-1J1CB-1's
+guideline amendment already landed. Build and bake there, not in the main checkout. This slice is
+bake-only (`tools/bake/`, `public/art/`) and touches no scene, so ADR-0084–0086 change nothing in
+it.
+
+## What to Build
+
+Port and finish the warrior looks from the variants worktree
+(`.claude/worktrees/agent-abdbd4471e67e1411/game-client/tools/bake/page/characters/knightLooks.js`,
+its `cast.js` and `fabrics.js` diffs) into a looks module beside `cast.js` (e.g. `warriorLooks.js`).
+
+- **Guardian** (R1): variant B's bone surcoat with the oxblood house cross, plus variant C's
+  flat-topped great helm over the coif (nothing else from C). The kite shield about 1.15x, its
+  decal per pale bone and oxblood with the house cross counterchanged over it and a brass border
+  inside the rim; the boss kept.
+- **Berserker** (R2): variant C's bare head (coif down to a mail mantle, dark hair, full short
+  beard), blood-dark wraps on **both** forearms, the cloak torn short; **a bearded axe in each
+  hand**, no shield, no longsword.
+- **Fix the axe**: in the variant's `beardedAxe` the edge points up. Rebuild the head in the grip
+  frame so the edge faces forward and down in the carry and leads the swing, with the hand in a
+  normal grip (guideline).
+- **A Berserker style** in `classStyles.js` beside `KNIGHT_STYLE`: both arms low, axes down and
+  forward by the legs; a wide cut with the free arm swung back; its run carry per the guideline.
+- **Off-hand clips** (R28): `attack_offhand`, `walk_attack_offhand`, `backpedal_attack_offhand`,
+  the attack's upper-body keys mirrored with `clips.js` `mirror` over the same legs, same keys, fps
+  and strike key. The Berserker's sheet options list them; no other sheet carries them.
+- Two `CAST` rows through slice 3's helper: `char_knight_guardian` / `knight_guardian`,
+  `char_knight_berserker` / `knight_berserker`. Bake.
+- Every clip passes the leg and cloak guards (R11); the surcoat is cut with `skirt({ over })`, the
+  torn cloak on cloak bones. No `KNOWN_CLIPPING` entry.
+- **Contact sheet** (R12) with slice 3's tool: both looks beside the knight, every clip × 8
+  directions, plus the dark-room strip. List it in the hand-back and hold until Kranti approves;
+  tweaks he asks for are made here. If a tweak changes a look, update its bullet in
+  `design-guideline.md` (I-1J1CB-1).
+
+## Acceptance Criteria
+
+- [ ] The manifest carries both sheets, each alone in its group, at 1.5x, with every knight clip;
+      the Berserker's also has the three off-hand clips with matching frame counts and fps.
+- [ ] Both pass the leg and cloak guards on every guarded pose of every clip.
+- [ ] A bake test on the Berserker's rig: in the idle carry each axe's edge direction has a
+      positive forward component and a non-positive up component; at the strike key the edge
+      leads the head's motion (dot with its velocity between keys 2 and 4 > 0), in both the
+      right-hand and the off-hand clip.
+- [ ] Both pass the dark-room test (slice 3).
+- [ ] `char_knight_base` is unchanged.
+- [ ] No raw colour; tones are `BARROW` tokens or blends.
+- [ ] Kranti approved the contact sheet.
+- [ ] `npm test`, `npm run lint` pass.
+
+## Blocked By
+
+I-1J1CB-3 (the look argument, the spec-row helper, the dark-room test, the review tool).
+
+## Spec Reference
+
+FS-1J1CB §A R1–R2; §B R9–R15; §D R28; §Acceptance Criteria "The bake"; User Stories 2, 4, 5, 7,
+27. Guideline *Characters / Enemies* (attack and carry rules). ADR-0021, ADR-0076.
+
+## Files expected to touch
+
+- `game-client/tools/bake/page/characters/warriorLooks.js` (new)
+- `game-client/tools/bake/page/characters/cast.js` (two `CAST` rows)
+- `game-client/tools/bake/page/characters/classStyles.js` (`BERSERKER_STYLE`, sheet options)
+- `game-client/tools/bake/page/characters/clips.js` (off-hand clips)
+- `game-client/tools/bake/page/characters/gear.js` (the axe, the larger shield and its decal)
+- `game-client/tools/bake/page/characters/fabrics.js` (look materials)
+- `game-client/tools/bake/page/characters/classMotion.test.mjs` or a new `axe.test.mjs`
+- `game-client/public/art/knight_guardian-*.png`, `knight_berserker-*.png`, `manifest.json`
+- `game-client/tools/bake/review/` (contact sheets)
+
+`manifest.json` is regenerated by the bake; a conflict with a parallel bake slice is resolved by
+re-running the bake on the merged tree, never by hand.
+
+## TDD Approach
+
+- RED: the axe-orientation test on today's variant axe fails (edge up).
+- GREEN: the axe head rebuilt in the grip frame; then the looks, the clips, the bake.
