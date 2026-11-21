@@ -147,6 +147,34 @@ describe("the world scenes' arrival (FS-PQ2TW R11, R37, R39)", () => {
       if (arrival && dark === "play") expect(darkens.mock.calls[0][1]).toEqual({ built: false });
     }
   });
+
+  // FS-PQ2TW R5, R8 (ADR-0075 Decision 4): the switch's verdict reaches the world with its start, beside
+  // what else the start names; a climb is not a world switch (ADR-0015) and keeps its own trigger
+  const STARTS = [
+    { name: "HubScene", Scene: HubScene, start: { sessionID: "hub-a" }, kept: {} },
+    { name: "FieldScene", Scene: FieldScene, start: { field: "forlorn_forest" }, kept: { field: "forlorn_forest" } },
+    { name: "BarrowspireScene", Scene: BarrowspireScene, start: { sessionID: "run-a" }, kept: { sessionID: "run-a" } },
+  ] as const;
+
+  it.each(STARTS.flatMap((w) => [true, false].map((arrival) => ({ ...w, arrival }))))(
+    "should have $name keep the arrival $arrival its start was handed, beside the rest of its start",
+    ({ Scene, start, kept, arrival }) => {
+      const scene = new Scene() as unknown as Created;
+
+      scene.init?.({ ...start, arrival });
+
+      expect(scene).toMatchObject({ ...kept, arrival });
+    },
+  );
+
+  it.each(STARTS)("should have $name read a start with no verdict as no arrival, not the last start's", ({ Scene }) => {
+    const scene = new Scene() as unknown as Created;
+
+    scene.init?.({ arrival: true });
+    scene.init?.();
+
+    expect(scene.arrival).toBe(false);
+  });
 });
 
 // FS-KYPQ9 § Change: The pressed hand (P7, P10): a scene with nothing hostile in it asks the one pointer

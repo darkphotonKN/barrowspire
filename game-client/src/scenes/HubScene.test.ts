@@ -16,50 +16,8 @@ interface FakeKey {
   justDown: boolean;
 }
 
-// Only the hub's chrome and keyboard are under test: a Phaser stand-in with the scene base class,
-// the key poll and the geometry the dialogue options are built with.
-vi.mock("phaser", async () => {
-  const { EventEmitter } = await import("eventemitter3");
-  class Scene {
-    events = new EventEmitter();
-    constructor(_config: unknown) {}
-  }
-  class Rectangle {
-    constructor(
-      public x: number,
-      public y: number,
-      public width: number,
-      public height: number,
-    ) {}
-    static Contains(): boolean {
-      return true;
-    }
-  }
-  const phaser = {
-    Scene,
-    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
-    BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
-    Geom: { Rectangle },
-    Input: {
-      Keyboard: {
-        // Phaser's JustDown: true once per press, and reading it clears the press
-        JustDown: (key: FakeKey) => {
-          const pressed = key.justDown;
-          key.justDown = false;
-          return pressed;
-        },
-        KeyCodes: {},
-      },
-    },
-    Math: {
-      Linear: (a: number, b: number, t: number) => a + (b - a) * t,
-      Distance: {
-        Between: (x1: number, y1: number, x2: number, y2: number) => Math.hypot(x2 - x1, y2 - y1),
-      },
-    },
-  };
-  return { ...phaser, default: phaser };
-});
+// A Phaser stand-in: the scene base class on Phaser's event emitter, its key poll, math and geometry.
+vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn());
 
 // The interiors' drawing is watched through these, called through to the real helpers: which walls
 // go to the wall pieces, which props stand where, and which footprints get a placeholder block.
@@ -98,8 +56,9 @@ const { townOutline } = await import("@/render/world/hubTown.fixture");
 const interiors = await import("@/render/world/hubInteriors");
 const walls_ = await import("@/render/world/walls");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { recordingStage } = await import("./recordingStage.standin");
+type Made = import("./recordingStage.standin").Made;
 const { EventEmitter } = await import("eventemitter3");
-const { PartyPanel } = await import("@/ui/PartyPanel");
 const { cornerIconFrame } = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, mailboxOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
@@ -234,149 +193,6 @@ describe("hubMenuChoices (FS-G4VMQ §Requirements 3; FS-28DDG § Change: Music v
   });
 });
 
-/** A scene object as the stand-in stage made it: what kind, with what, and whether it is gone. */
-interface Made {
-  kind: string;
-  args: unknown[];
-  destroyed: boolean;
-  active: boolean;
-  visible: boolean;
-  name?: string;
-  depth?: number;
-  /** The colour a text was last set to; its style's colour until then. */
-  color?: string;
-  /** The tint a sprite was last given. */
-  tint?: number;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  children: Made[];
-  /** What a text was last rasterised again at (`setResolution`); undefined while never. */
-  resolution?: number;
-  /** The pointer handlers it was given, by event, as Phaser would call them. */
-  handlers: Record<string, (pointer?: { x: number; y: number }) => void>;
-}
-
-/**
- * A stand-in for the slice of Phaser the hub's chrome draws with: every object it makes is
- * recorded by kind and answers any call, and destroying a container destroys what it holds.
- */
-function recordingStage() {
-  const made: Made[] = [];
-  const make = (kind: string, args: unknown[] = []): unknown => {
-    const self = {
-      kind,
-      args,
-      destroyed: false,
-      active: true,
-      visible: true,
-      x: typeof args[0] === "number" ? args[0] : 0,
-      y: typeof args[1] === "number" ? args[1] : 0,
-      width: 160,
-      height: 32,
-      children: [] as Made[],
-      handlers: {} as Record<string, () => void>,
-    } as Made & { [k: string]: unknown };
-    if (kind === "container" && Array.isArray(args[2])) self.children.push(...(args[2] as Made[]));
-    const kill = (m: Made) => {
-      if (m.destroyed) return;
-      m.destroyed = true;
-      m.active = false;
-      m.children.forEach(kill);
-      // what was hung on the object's destroy goes with it, as in Phaser
-      (m.handlers as Record<string, (() => void) | undefined>).destroy?.();
-    };
-    const proxy: unknown = new Proxy(self, {
-      get(target, prop) {
-        if (prop in target) return target[prop as string];
-        if (prop === "then") return undefined;
-        if (prop === "destroy") return () => kill(target);
-        if (prop === "setDepth")
-          return (depth: number) => {
-            target.depth = depth;
-            return proxy;
-          };
-        if (prop === "setVisible")
-          return (visible: boolean) => {
-            target.visible = visible;
-            return proxy;
-          };
-        if (prop === "setText")
-          return (content: unknown) => {
-            target.args[2] = content;
-            return proxy;
-          };
-        if (prop === "setName")
-          return (name: string) => {
-            target.name = name;
-            return proxy;
-          };
-        if (prop === "setScrollFactor")
-          return (factor: number) => {
-            target.scrollFactor = factor;
-            return proxy;
-          };
-        // what it was made pressable with: the menu's blocker hands its own hit test (FS-3EBCA R18)
-        if (prop === "setInteractive")
-          return (...args: unknown[]) => {
-            target.interactiveArgs = args;
-            return proxy;
-          };
-        if (prop === "setColor")
-          return (color: string) => {
-            target.color = color;
-            return proxy;
-          };
-        // moved, as Phaser moves it: a re-layout reads back where it went (FS-ZAJMH R13)
-        if (prop === "setPosition")
-          return (x: number, y: number) => {
-            target.x = x;
-            target.y = y;
-            return proxy;
-          };
-        if (prop === "setX")
-          return (x: number) => {
-            target.x = x;
-            return proxy;
-          };
-        if (prop === "setResolution")
-          return (resolution: number) => {
-            target.resolution = resolution;
-            return proxy;
-          };
-        if (prop === "setTint")
-          return (tint: number) => {
-            target.tint = tint;
-            return proxy;
-          };
-        // Phaser 4's mask filter (`maskInView`): what the object is masked by
-        if (prop === "filters")
-          return {
-            external: {
-              addMask: (source: unknown) => {
-                target.maskedBy = source;
-                return { setGameObject: (next: unknown) => void (target.maskedBy = next), invert: false };
-              },
-            },
-          };
-        if (prop === "getByName")
-          return (name: string) => target.children.find((c) => c.name === name) ?? null;
-        if (prop === "on" || prop === "once")
-          return (event: string, fn: () => void) => {
-            target.handlers[event] = fn;
-            return proxy;
-          };
-        return () => proxy;
-      },
-    });
-    // the proxy, so what a test finds here is what the scene holds
-    made.push(proxy as Made);
-    return proxy;
-  };
-  const add = new Proxy({}, { get: (_, kind) => (...args: unknown[]) => make(String(kind), args) });
-  return { made, add };
-}
 
 const key = (): FakeKey => ({ isDown: false, justDown: false });
 
@@ -1702,26 +1518,20 @@ describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Chang
   });
 
   // the town's part of the gear's refusal is its dialogue, `blockers().gear` (FS-TQZ5J § Change: Phase 3, R55)
-  it("should toggle the UI scene's gear overlay on the Inventory icon, not while the town's dialogue is open", () => {
+  // the character icon as C does (FS-HRH2J § Change C2)
+  it.each([
+    { window: "gear overlay", icon: "Inventory", press: "toggleGear", open: (g: { isOpen(): boolean }) => g.isOpen() },
+    { window: "character panel", icon: "Character", press: "toggleCharacter", open: (g: { character: boolean }) => g.character },
+  ] as const)("should toggle the UI scene's $window on the $icon icon, not while the town's dialogue is open", ({ press, open }) => {
     const { hub, gear, pressing } = withParty(false);
-    pressing.toggleGear();
-    expect(gear.isOpen()).toBe(true);
-    pressing.toggleGear();
-    expect(gear.isOpen()).toBe(false);
+    const isOpen = () => open(gear as never);
+    pressing[press]();
+    expect(isOpen()).toBe(true);
+    pressing[press]();
+    expect(isOpen()).toBe(false);
     hub.dialogue = {};
-    pressing.toggleGear();
-    expect(gear.isOpen()).toBe(false);
-  });
-
-  it("should toggle the UI scene's character panel as C does, not while the town's dialogue is open (FS-HRH2J § Change C2)", () => {
-    const { hub, gear, pressing } = withParty(false);
-    pressing.toggleCharacter();
-    expect(gear.character).toBe(true);
-    pressing.toggleCharacter();
-    expect(gear.character).toBe(false);
-    hub.dialogue = {};
-    pressing.toggleCharacter();
-    expect(gear.character).toBe(false);
+    pressing[press]();
+    expect(isOpen()).toBe(false);
   });
 });
 
@@ -2017,46 +1827,58 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
   });
 });
 
-describe("HubScene the dev test room's gate (FS-BDRTJ §Requirements 2, 3, 5)", () => {
+// FS-BDRTJ R2, R3, R5 and § Change: Endgame test run, R20, R23: the dev builds' gates in the town
+const DEV_GATE = {
+  entity_id: "dev-gate",
+  destination: "dev_test_room" as const,
+  position: { x: 120, y: 900 },
+  range: 80,
+};
+const ENDGAME_GATE = {
+  entity_id: "endgame-gate",
+  destination: "dev_endgame_run" as const,
+  position: { x: 160, y: 720 },
+  range: 80,
+};
+
+/** A hub whose states are rendered whole, `gate` beside the town's own, with only the gates left to act on. */
+function hubWithGate(gate: typeof DEV_GATE | typeof ENDGAME_GATE, words: string) {
+  const stage = queuedHubOnStage();
+  Object.assign(stage.hub, {
+    placePlayer: vi.fn(),
+    renderStructures: vi.fn(),
+    drawScenery: vi.fn(),
+    renderNPCs: vi.fn(),
+  });
+  stage.hub.views = new Map([["me", { pos: { ...AWAY } }]]);
+  const render = (position: { x: number; y: number }, gates: unknown[] = [...HUB_GATES, gate]) =>
+    stage.hub.renderState({
+      world_type: "hub",
+      current_player: { entity_id: "me", position },
+      other_players: [],
+      walls: [],
+      gates,
+    });
+  const texts = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
+  const label = () => texts().filter((m) => m.args[2] === words);
+  const said = (line: string) => texts().some((m) => m.args[2] === line);
+  return { ...stage, render, label, texts, said };
+}
+
+describe("HubScene the dev builds' gates (FS-BDRTJ R2, R5, R20, R23)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
-  const DEV_GATE = {
-    entity_id: "dev-gate",
-    destination: "dev_test_room" as const,
-    position: { x: 120, y: 900 },
-    range: 80,
-  };
-  const ON = [...HUB_GATES, DEV_GATE];
+  const GATES = [
+    { words: "Dev Test Room", gate: DEV_GATE },
+    { words: "Endgame Test Run", gate: ENDGAME_GATE },
+  ];
 
-  /** A hub whose states are rendered whole, with only the gates in them left to act on. */
-  function hubWithStates() {
-    const stage = queuedHubOnStage();
-    Object.assign(stage.hub, {
-      placePlayer: vi.fn(),
-      renderStructures: vi.fn(),
-      drawScenery: vi.fn(),
-      renderNPCs: vi.fn(),
-    });
-    stage.hub.views = new Map([["me", { pos: { ...AWAY } }]]);
-    const render = (position: { x: number; y: number }, gates: unknown[] = ON) =>
-      stage.hub.renderState({
-        world_type: "hub",
-        current_player: { entity_id: "me", position },
-        other_players: [],
-        walls: [],
-        gates,
-      });
-    const label = () =>
-      stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed && m.args[2] === "Dev Test Room");
-    return { ...stage, render, label };
-  }
-
-  it("should stand one plain label at the gate's server position while the gate is in the state", () => {
-    const { render, label } = hubWithStates();
-    const foot = iso.worldToScreen(DEV_GATE.position.x, DEV_GATE.position.y);
+  it.each(GATES)("should stand one plain $words label at the gate's server position while the gate is in the state", ({ words, gate }) => {
+    const { render, label } = hubWithGate(gate, words);
+    const foot = iso.worldToScreen(gate.position.x, gate.position.y);
 
     render(AWAY);
     render(AWAY);
@@ -2067,6 +1889,26 @@ describe("HubScene the dev test room's gate (FS-BDRTJ §Requirements 2, 3, 5)", 
     expect(label()).toHaveLength(0);
   });
 
+  it.each(GATES)("should neither label the $words gate nor send anything from it in a production build", ({ words, gate }) => {
+    vi.stubEnv("NODE_ENV", "production");
+    const { render, label, send } = hubWithGate(gate, words);
+
+    render(AWAY);
+    render(gate.position);
+
+    expect(label()).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("HubScene the dev test room's gate (FS-BDRTJ §Requirements 2, 3, 5)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const hubWithStates = () => hubWithGate(DEV_GATE, "Dev Test Room");
+
   it("should send enter_field for the room on stepping in, raising no field-name sign", () => {
     const { render, label, send } = hubWithStates();
 
@@ -2076,17 +1918,6 @@ describe("HubScene the dev test room's gate (FS-BDRTJ §Requirements 2, 3, 5)", 
     expect(send.mock.calls).toEqual([[ActionType.EnterField, { field: "dev_test_room" }]]);
     // the label alone: the sign would stand a second name over the Forest's post
     expect(label()).toHaveLength(1);
-  });
-
-  it("should neither label the gate nor send anything from it in a production build", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const { render, label, send } = hubWithStates();
-
-    render(AWAY);
-    render(DEV_GATE.position);
-
-    expect(label()).toHaveLength(0);
-    expect(send).not.toHaveBeenCalled();
   });
 
   it("should drop the label on release", () => {
@@ -2105,50 +1936,7 @@ describe("HubScene the endgame test run's gate (FS-BDRTJ §Change: Endgame test 
     vi.unstubAllEnvs();
   });
 
-  const ENDGAME_GATE = {
-    entity_id: "endgame-gate",
-    destination: "dev_endgame_run" as const,
-    position: { x: 160, y: 720 },
-    range: 80,
-  };
-  const ON = [...HUB_GATES, ENDGAME_GATE];
-
-  /** A hub whose states are rendered whole, with only the gates in them left to act on. */
-  function hubWithStates() {
-    const stage = queuedHubOnStage();
-    Object.assign(stage.hub, {
-      placePlayer: vi.fn(),
-      renderStructures: vi.fn(),
-      drawScenery: vi.fn(),
-      renderNPCs: vi.fn(),
-    });
-    stage.hub.views = new Map([["me", { pos: { ...AWAY } }]]);
-    const render = (position: { x: number; y: number }, gates: unknown[] = ON) =>
-      stage.hub.renderState({
-        world_type: "hub",
-        current_player: { entity_id: "me", position },
-        other_players: [],
-        walls: [],
-        gates,
-      });
-    const texts = () => stage.stage.made.filter((m) => m.kind === "text" && !m.destroyed);
-    const label = () => texts().filter((m) => m.args[2] === "Endgame Test Run");
-    const said = (words: string) => texts().some((m) => m.args[2] === words);
-    return { ...stage, render, label, texts, said };
-  }
-
-  it("should stand one plain label at the gate's server position while the gate is in the state", () => {
-    const { render, label } = hubWithStates();
-    const foot = iso.worldToScreen(ENDGAME_GATE.position.x, ENDGAME_GATE.position.y);
-
-    render(AWAY);
-    render(AWAY);
-    expect(label()).toHaveLength(1);
-    expect(label()[0].args.slice(0, 2)).toEqual([foot.x, foot.y]);
-
-    render(AWAY, HUB_GATES);
-    expect(label()).toHaveLength(0);
-  });
+  const hubWithStates = () => hubWithGate(ENDGAME_GATE, "Endgame Test Run");
 
   it("should send one start_dev_endgame_run with an empty payload on stepping in, and no enter_field or field sign", () => {
     const { hub, render, texts, send } = hubWithStates();
@@ -2209,17 +1997,6 @@ describe("HubScene the endgame test run's gate (FS-BDRTJ §Change: Endgame test 
 
     // the menu is the UI scene's (FS-TQZ5J §D; merge with main, 2026-11-14)
     expect(menuOver(hub)).toBeDefined();
-    expect(send).not.toHaveBeenCalled();
-  });
-
-  it("should neither label the gate nor send anything from it in a production build", () => {
-    vi.stubEnv("NODE_ENV", "production");
-    const { render, label, send } = hubWithStates();
-
-    render(AWAY);
-    render(ENDGAME_GATE.position);
-
-    expect(label()).toHaveLength(0);
     expect(send).not.toHaveBeenCalled();
   });
 
@@ -4241,28 +4018,20 @@ describe("HubScene the first frame of a visit (stuck walking after a death with 
     expect(body()).toEqual({ vx: 0, vy: 0 });
   });
 
-  it("should send that stop once, and nothing more while no key is held", () => {
-    const { hub, moves, runStride } = visit();
-    runStride();
-
-    hub.init({ arrival: false });
-    hub.update(0, 16);
-    hub.update(0, 16);
-    hub.update(0, 16);
-
-    expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
-  });
-
-  it("should send a key held into the visit as its first move, once", () => {
+  it.each([
+    { held: false, first: "that stop", move: { vx: 0, vy: 0 } },
+    { held: true, first: "the key held into the visit", move: { vx: 0, vy: -1 } },
+  ])("should send $first as its first move once, and nothing more on later frames", ({ held, move }) => {
     const { hub, keys, moves, runStride } = visit();
     runStride();
 
     hub.init({ arrival: false });
-    keys.w.isDown = true;
+    keys.w.isDown = held;
+    hub.update(0, 16);
     hub.update(0, 16);
     hub.update(0, 16);
 
-    expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: -1 }]]);
+    expect(moves().slice(1)).toEqual([[ActionType.Move, move]]);
   });
 });
 
@@ -4861,32 +4630,6 @@ describe("HubScene messages while its art downloads (FS-C4JWH Edge States)", () 
     expect(off.mock.calls.map(([action]) => action)).toEqual(
       expect.arrayContaining(["queue_status", "world_handoff", "world_handoff_failed", "party_ready_check", "party_notice"]),
     );
-  });
-});
-
-// FS-PQ2TW R8; ADR-0075 Decision 4. I-PQ2TW-2: the switch's verdict reaches the town with its start.
-describe("HubScene arrival from its start (FS-PQ2TW R5–R8)", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it.each([true, false])("should keep the arrival %s its start was handed", (arrival) => {
-    vi.spyOn(socketManager, "on").mockImplementation(() => {});
-    const hub = hubOnStage().hub as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
-
-    hub.init({ arrival });
-
-    expect(hub.arrival).toBe(arrival);
-  });
-
-  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
-    vi.spyOn(socketManager, "on").mockImplementation(() => {});
-    const hub = hubOnStage().hub as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
-
-    hub.init({ arrival: true });
-    hub.init();
-
-    expect(hub.arrival).toBe(false);
   });
 });
 
@@ -5651,35 +5394,10 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
  * Party icon (FS-R82NV R28; FS-3EBCA R8; FS-TQZ5J § Change: Phase 2: the party, R38). Its invite field
  * is a silent stand-in; its store the app's, which the town shuts as its letter panel opens (R39).
  */
+const { partyPanelOn: panelOn } = await import("@/ui/partyPanel.standin");
 function partyPanelOn(refused: () => boolean, opening?: () => void, wrapper?: { act(run: () => void): void }) {
   usePartyStore.setState({ party: null, panelOpen: false });
-  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
-  const keyboard = new EventEmitter();
-  const scene = {
-    add: { graphics: () => any, text: () => any },
-    input: Object.assign(new EventEmitter(), { keyboard }),
-    events: new EventEmitter(),
-  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
-  const panel = new PartyPanel(scene, {
-    store: usePartyStore,
-    world: () => null,
-    selfId: () => "me",
-    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
-    makeField: () => ({
-      value: "",
-      setEnabled: vi.fn(),
-      moveTo: vi.fn(),
-      show: vi.fn(),
-      hide: vi.fn(),
-      blur: vi.fn(),
-      destroy: vi.fn(),
-    }),
-    activeElement: () => null,
-    blocked: refused,
-    opening,
-    wrapper,
-  });
-  return { panel, pressT: () => keyboard.emit("keydown-T") };
+  return panelOn(refused, { store: usePartyStore, opening, wrapper });
 }
 
 // FS-3EBCA R8 and FS-R82NV § Change C2, C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
