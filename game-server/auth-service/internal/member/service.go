@@ -14,6 +14,7 @@ import (
 	commonbroker "github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
 	"go.opentelemetry.io/otel/codes"
@@ -161,44 +162,38 @@ func (s *service) CreateMember(ctx context.Context, req *pb.CreateMemberRequest)
 	// either both are visible or neither is. This is the core guarantee of
 	// the transactional outbox pattern, without it, an RPC can succeed
 	// while the event is lost (or vice versa)
-	tx, err := s.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-	// Safety net: if we return before Commit, roll back. Commit below
-	// makes this a no-op.
-	defer func() {
-		_ = tx.Rollback()
-	}()
+	var memberId uuid.UUID
+	err = commontracing.WithTx(ctx, s.db, "signup", func(ctx context.Context, tx *sqlx.Tx) error {
+		var err error
+		memberId, err = s.Repo.CreateTx(ctx, tx, req.Name, email, hashedPw)
+		if err != nil {
+			return err
+		}
 
-	memberId, err := s.Repo.CreateTx(ctx, tx, req.Name, email, hashedPw)
+		payload.UserID = memberId.String()
+		marshalledPayload, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+
+		if err := s.outboxPublisher.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+			RoutingKey: commonconstants.MemberSignedUpEvent,
+			Exchange:   commonconstants.AuthEventsExchange,
+			Payload:    marshalledPayload,
+		}); err != nil {
+			return fmt.Errorf("write outbox: %w", err)
+		}
+
+		// The verification code rides the same transaction, so a member never
+		// commits without one and no code is mailed for a rolled-back signup
+		// (FS-V6SFK §Requirements 14).
+		if err := s.codeIssuer.IssueTx(ctx, tx, Recipient{MemberID: memberId, Name: req.Name, Email: email}); err != nil {
+			return fmt.Errorf("issue verification code: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
-	}
-
-	payload.UserID = memberId.String()
-	marshalledPayload, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = s.outboxPublisher.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
-		RoutingKey: commonconstants.MemberSignedUpEvent,
-		Exchange:   commonconstants.AuthEventsExchange,
-		Payload:    marshalledPayload,
-	}); err != nil {
-		return nil, fmt.Errorf("write outbox: %w", err)
-	}
-
-	// The verification code rides the same transaction, so a member never
-	// commits without one and no code is mailed for a rolled-back signup
-	// (FS-V6SFK §Requirements 14).
-	if err = s.codeIssuer.IssueTx(ctx, tx, Recipient{MemberID: memberId, Name: req.Name, Email: email}); err != nil {
-		return nil, fmt.Errorf("issue verification code: %w", err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("commit member+outbox: %w", err)
 	}
 
 	// Post-commit read: member is guaranteed to exist. A failure here

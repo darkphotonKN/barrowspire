@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 )
 
@@ -19,7 +20,7 @@ var (
 	duration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "http_request_duration_seconds",
 		Help:    "HTTP request latency by method and matched route.",
-		Buckets: prometheus.DefBuckets,
+		Buckets: commontelemetry.LatencyBuckets,
 	}, []string{"method", "route"})
 )
 
