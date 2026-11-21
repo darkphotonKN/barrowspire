@@ -67,6 +67,7 @@ import { ogre, ogreMauler, ogreTyrant } from "./ogre.js";
 import { darkReaper, darkWarrior } from "./darkWarrior.js";
 import { cut, dress } from "./look.js";
 import { berserker, guardian } from "./warriorLooks.js";
+import { pyromancer, spellwarden } from "./mageLooks.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -649,6 +650,8 @@ export const CAST = [
   // the specialization looks (FS-1J1CB §A, R15): each its class re-dressed, alone in its own group
   specRow("knight", "guardian", guardian, { module: "warriorLooks", fn: "guardian" }),
   specRow("knight", "berserker", berserker, { module: "warriorLooks", fn: "berserker", animations: BERSERKER_SHEET.animations }),
+  specRow("wizard", "spellwarden", spellwarden, { module: "mageLooks", fn: "spellwarden" }),
+  specRow("wizard", "pyromancer", pyromancer, { module: "mageLooks", fn: "pyromancer" }),
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds

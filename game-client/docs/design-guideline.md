@@ -351,9 +351,11 @@ lit) while the player stands inside.
   archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
   A specialization's focus may be about 1.5x the sceptre's length, held and thrust as the
   sceptre is, and is still never a staff. The Spellwarden wears blackened-iron spaulders and a
-  gorget over the gown. The Pyromancer's scapular is a scorched, near-black oxblood, not the
-  teal, and her hem is singed short with embers in it. *(Amended at the owner's pick,
-  2026-11-21, FS-1J1CB.)*
+  gorget over the gown. The Pyromancer's scapular is a scorched oxblood, not the teal, and her
+  hem is singed short with embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+  The scorched oxblood is the house oxblood a little toward ember under grime, not near-black:
+  her back on the black gown and raven hair falls under the dark-room floor below that.
+  *(Amended in the Pyromancer's bake, 2026-11-22, FS-1J1CB R10.)*
 - **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
   open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
   mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall

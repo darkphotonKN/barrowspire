@@ -221,6 +221,23 @@ export const WIZARD_STYLE = {
   idleExtra: () => pose({}, {}, { glow: 1 }),
 };
 
+/**
+ * The fist's give as a mage specialization falls (FS-1J1CB R3, R4), by death key: none while she
+ * buckles, then the wrist lets the focus fall level as she goes down, lying a little off the floor
+ * at the fist. The focus runs 0.2 H back past the fist and its head 0.3 H on, so the sceptre's
+ * death (no wrist at all) drives its head and its butt through the ground; this levels it,
+ * heading kept, turned a little on the haft so the ring or cage lies more flat than upright. The
+ * hand's own angles are zero in the death clip, so these are its whole turn.
+ */
+export const FOCUS_DEATH = [null, null, null, [-0.1, 0, -0.3], [0.21, 0.07, -0.8], [-0.89, -0.1, -0.85], [-0.97, -0.04, -0.85]];
+
+/**
+ * A mage specialization's carry and cast (FS-1J1CB R3, R4): the wizard's own, the focus held and
+ * thrust as the sceptre is ({@link WIZARD_STYLE}); in the death the wrist lays the longer focus
+ * level ({@link FOCUS_DEATH}).
+ */
+export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] && pose({ handR: FOCUS_DEATH[i] }) };
+
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
 /**

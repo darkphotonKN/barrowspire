@@ -11,7 +11,7 @@
 import * as THREE from "three";
 import { fbm, smoothstep, voronoi, hash2 } from "../noise.js";
 import { mkCanvas } from "../materials.js";
-import { mix, shade } from "../palette.js";
+import { color, grey, mix, shade } from "../palette.js";
 import { browMaterial, faceMaterial } from "./face.js";
 
 const S = 128;
@@ -326,6 +326,10 @@ export const GEAR = {
   surcoat: shade(mix("vellum", "vellumDark", 0.5), 0.8),
   houseRed: mix("oxblood", "barrowDeep", 0.12),
   wraps: mix("oxblood", "pitch", 0.35),
+  // the mage's specialization looks (FS-1J1CB R4; mageLooks.js): the Pyromancer's scapular in a
+  // scorched oxblood, the house oxblood a little toward ember under grime. Near-black (variant B's
+  // soot) or the oxblood itself left her back under the dark-room floor (R10) on the black gown
+  soot: mix("oxblood", "ember", 0.1),
 };
 
 /**
@@ -436,6 +440,9 @@ export function fabrics() {
     surcoat: mat(wool(GEAR.surcoat, { seed: 201, dirt: 0.5 }), { side: D }),
     houseRed: mat(wool(GEAR.houseRed, { seed: 203, dirt: 0.3 }), { side: D }),
     wraps: mat(wool(GEAR.wraps, { seed: 207, dirt: 0.5 })),
+    // the Spellwarden's spaulders: blackened iron, both faces drawn (a lame is an open shell)
+    blackIronDouble: mat(plate(GEAR.blackIron, { rust: 0.3, seed: 6 }), { metal: 0.7, rough: 0.5, side: D }),
+    soot: mat(wool(GEAR.soot, { seed: 153, dirt: 0.35 }), { side: D }),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),
@@ -443,5 +450,76 @@ export function fabrics() {
     browRaven: browMaterial(GEAR.raven),
     browGrey: browMaterial(GEAR.hairGrey),
   };
+  // the Pyromancer's gown (FS-1J1CB R4): the gown's own cloth with embers in its hem
+  SET.robeEmbers = withEmbers(SET.robe);
   return SET;
+}
+
+/**
+ * How far up the hem the Pyromancer's embers reach (H), the band {@link emberHem} is painted on
+ * and mageLooks.js `fitHem` lays at the foot of the gown.
+ */
+export const EMBER_BAND = 0.07;
+
+/**
+ * The Pyromancer's singed hem (FS-1J1CB R4): a tile of ember specks in the fire ramp on black, the
+ * gown's emissive map. Row 0 is the hem's edge, where the embers crowd and the cloth smoulders in
+ * broken runs; they thin out up the band and are gone well before its top, so the black clamped
+ * above it lights nothing. 128 columns round the cloth (repeating) by 32 rows up the band, near
+ * square texels on the mage's hem. Painted in the texture, the embers ride the skinned skirt and
+ * swing with the hem; never rigid on a body bone.
+ */
+export function emberHem({ seed = 157 } = {}) {
+  const W = 128;
+  const R = 32;
+  const c = mkCanvas(W, R);
+  const ctx = c.getContext("2d");
+  const img = ctx.createImageData(W, R);
+  const hot = mix("fireHot", "fireCore", 0.25);
+  const deep = mix("fireDeep", "fireHot", 0.35);
+  // ember centres: a jittered grid, denser and hotter toward the hem
+  const specks = [];
+  const cells = 16;
+  for (let i = 0; i < cells; i++)
+    for (let k = 0; k < 2; k++) {
+      const h = hash2(i, k, seed);
+      if (k === 1 && h < 0.45) continue;
+      const x = ((i + hash2(i, k + 7, seed)) / cells) * W;
+      const y = (k === 0 ? 1.5 : 7) + hash2(i, k + 13, seed) * (k === 0 ? 7 : 12);
+      const r = 1.3 + 1.3 * hash2(i, k + 19, seed) * (1 - y / R);
+      specks.push({ x, y, r, c: h > 0.6 ? hot : deep, a: 1 - 0.55 * (y / R) });
+    }
+  for (let y = 0; y < R; y++)
+    for (let x = 0; x < W; x++) {
+      let e = [0, 0, 0];
+      // the smoulder along the edge, in broken runs
+      const run = smoothstep(0.6, 0.8, pf(x, 0, 16, seed + 3, 3)) * Math.max(0, 1 - y / 2);
+      if (run > 0.1) e = mix(e, deep, 0.7 * run);
+      for (const s of specks) {
+        const dx = Math.min(Math.abs(x - s.x), W - Math.abs(x - s.x));
+        const t = 1 - Math.hypot(dx, y - s.y) / s.r;
+        if (t > 0) e = mix(e, s.c, Math.min(1, t * 1.8) * s.a);
+      }
+      const o = (y * W + x) * 4;
+      img.data[o] = Math.round(Math.min(255, e[0]));
+      img.data[o + 1] = Math.round(Math.min(255, e[1]));
+      img.data[o + 2] = Math.round(Math.min(255, e[2]));
+      img.data[o + 3] = 255;
+    }
+  ctx.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.RepeatWrapping;
+  t.wrapT = THREE.ClampToEdgeWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.userData.band = EMBER_BAND;
+  return t;
+}
+
+/** `cloth` with embers in its hem: the same weave, lit by {@link emberHem} where the hem lays it. */
+function withEmbers(cloth) {
+  const m = cloth.clone();
+  m.emissive = color(grey(255));
+  m.emissiveMap = emberHem();
+  m.emissiveIntensity = 1.8;
+  return m;
 }

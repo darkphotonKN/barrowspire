@@ -8,7 +8,7 @@
 
 import * as THREE from "three";
 import { attach, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
-import { materials, mkCanvas } from "../materials.js";
+import { glow, materials, mkCanvas } from "../materials.js";
 import { cssRgb, mix, shade } from "../palette.js";
 
 // the grip point lives with the rig (rig.js), where the draw solver (draw.js) reads it too
@@ -492,6 +492,97 @@ export function sceptre(rig, M, F, orbMat) {
     ]);
     g.add(new THREE.Mesh(new THREE.TubeGeometry(prong, 8, 0.004 * H, 5, false), F.blackIron));
   }
+  return g;
+}
+
+/**
+ * A mage specialization's focus haft (FS-1J1CB R3, R4): about 1.5x the sceptre's length and short
+ * of a staff. The head sits where the sceptre's does, `FOCUS_TOP` up from the fist, so it clears
+ * her head in every clip as the sceptre's does, and the haft runs on down past the fist to an iron
+ * knob at `FOCUS_BUTT`: the fist holds it higher up than the sceptre. In the grip frame (H).
+ */
+export const FOCUS_BUTT = -0.2;
+export const FOCUS_TOP = 0.2;
+
+function focusHaft(rig, F) {
+  const H = rig.H;
+  const g = new THREE.Group();
+  g.add(placed(rod(0.0105 * H, 0.009 * H, (FOCUS_TOP - FOCUS_BUTT) * H, 8), F.blackIron, 0, 0, ((FOCUS_TOP + FOCUS_BUTT) / 2) * H));
+  g.add(placed(new THREE.SphereGeometry(0.015 * H, 10, 8), F.blackIron, 0, 0, FOCUS_BUTT * H));
+  g.add(placed(rod(0.013 * H, 0.013 * H, 0.07 * H), F.leatherDark));
+  // an iron band each side of the wrap
+  for (const z of [-0.045, 0.045]) g.add(placed(rod(0.0135 * H, 0.0135 * H, 0.01 * H, 8), F.blackIron, 0, 0, z * H));
+  // the collar the head sits in, widening up
+  g.add(placed(rod(0.009 * H, 0.016 * H, 0.022 * H, 8), F.blackIron, 0, 0, (FOCUS_TOP + 0.011) * H));
+  return g;
+}
+
+/**
+ * The Spellwarden's ward focus (FS-1J1CB R3): the focus haft (`focusHaft`) crowned with an open
+ * iron ring standing in the swing plane, a pale stone held at its heart on two short bars, lit
+ * `stoneMat` (necrotic toward vellum, low; it glows with the clip as the sceptre's orb does).
+ */
+export function wardFocus(rig, M, F, stoneMat) {
+  const H = rig.H;
+  const g = focusHaft(rig, F);
+  const R = 0.04;
+  const zc = FOCUS_TOP + 0.02 + R;
+  const ring = new THREE.TorusGeometry(R * H, 0.0055 * H, 8, 36);
+  ring.rotateY(Math.PI / 2);
+  g.add(placed(ring, F.blackIron, 0, 0, zc * H));
+  g.add(placed(new THREE.SphereGeometry(0.021 * H, 14, 10), stoneMat, 0, 0, zc * H));
+  for (const sy of [-1, 1]) g.add(placed(new THREE.BoxGeometry(0.006 * H, (R - 0.02) * H, 0.006 * H), F.blackIron, 0, sy * (R / 2 + 0.01) * H, zc * H));
+  // the ring's foot in the collar
+  g.add(placed(rod(0.006 * H, 0.006 * H, 0.02 * H, 6), F.blackIron, 0, 0, (FOCUS_TOP + 0.015) * H));
+  return g;
+}
+
+/** A tongue of flame along local +y, `h` tall and `r` wide (H), its foot a little under the origin. */
+function flameGeometry(h, r) {
+  const pts = [];
+  for (let i = 0; i <= 12; i++) {
+    const t = i / 12;
+    const w = r * Math.sin(Math.PI * Math.min(1, t * 1.6)) * (1 - t) ** 0.6;
+    pts.push(new THREE.Vector2(Math.max(0.0001, w), t * h - h * 0.15));
+  }
+  return new THREE.LatheGeometry(pts, 14);
+}
+
+/**
+ * The Pyromancer's fire focus (FS-1J1CB R4): the focus haft (`focusHaft`) crowned with an open
+ * iron cage of four bars and a rim, a coal at its foot and a tongue of flame in it, the flame kept
+ * upright in the world whatever the hand's tilt (a rig hook turns it each pose). The flame's body
+ * is `flameMat`, which glows with the clip as the sceptre's orb does; its core and the coal are
+ * the fire ramp (the guideline: fire baked into one body).
+ */
+export function fireFocus(rig, M, F, flameMat) {
+  const H = rig.H;
+  const g = focusHaft(rig, F);
+  const foot = FOCUS_TOP + 0.02;
+  const top = foot + 0.07;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    const at = (r, z) => new THREE.Vector3(Math.cos(a) * r * H, Math.sin(a) * r * H, z * H);
+    const bar = new THREE.CatmullRomCurve3([at(0.012, foot - 0.006), at(0.033, foot + 0.028), at(0.024, top)]);
+    g.add(new THREE.Mesh(new THREE.TubeGeometry(bar, 10, 0.0042 * H, 5, false), F.blackIron));
+  }
+  g.add(placed(new THREE.TorusGeometry(0.024 * H, 0.0042 * H, 6, 24), F.blackIron, 0, 0, top * H));
+  g.add(placed(new THREE.SphereGeometry(0.016 * H, 10, 8), glow("fireDeep", 2.4), 0, 0, (foot + 0.008) * H));
+  const flame = new THREE.Group();
+  flame.position.set(0, 0, (foot + 0.02) * H);
+  flame.add(new THREE.Mesh(flameGeometry(0.12 * H, 0.03 * H), flameMat));
+  const core = new THREE.Mesh(flameGeometry(0.07 * H, 0.016 * H), glow("fireCore", 2.2));
+  core.position.y = 0.004 * H;
+  flame.add(core);
+  flame.userData.upright = true;
+  g.add(flame);
+  const q = new THREE.Quaternion();
+  rig.hooks.push((r) => {
+    r.root.updateMatrixWorld(true);
+    flame.parent.getWorldQuaternion(q);
+    flame.quaternion.copy(q.invert());
+    flame.updateMatrixWorld(true);
+  });
   return g;
 }
 
