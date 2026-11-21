@@ -173,7 +173,7 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
     const { state, projectiles, hits, body } = fieldOnStage();
     state(me(200, 100));
     state(me(200, 92));
-    expect(projectiles.sync).toHaveBeenCalledWith([]);
+    expect(projectiles.sync).toHaveBeenCalledWith([], [expect.objectContaining({ entity_id: "e_me" })]);
     expect(hits.play).toHaveBeenCalledTimes(1);
     expect(hits.play.mock.calls[0][0]).toBe(body);
   });
@@ -303,6 +303,29 @@ describe("FieldCombat class kits, the run's own (FS-X2F2H §Requirements 56; FS-
     combat.releaseAim({ x: 400, y: 500 });
     expect(sendMessage).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "shadow_shot", target_x: 400, target_y: 500 });
     expect(combat.lockedOut).toBe(true);
+  });
+
+  // FS-1J1CB §F R41: a bolt is drawn by the archer it was likely loosed by, own or other
+  it("should fly the state's projectiles beside every player in that state, the shot's possible shooters", () => {
+    const { state, projectiles } = fieldOnStage();
+    const ally = { ...me(240, 100, "archer", { specialization: "shadow_ranger" }), id: "ally", entity_id: "e_ally" };
+    state(me(200, 100, "archer"), [], [ally]);
+    expect(projectiles.sync).toHaveBeenLastCalledWith([], [expect.objectContaining({ entity_id: "e_me" }), ally]);
+    state(null, [], [ally]);
+    expect(projectiles.sync).toHaveBeenLastCalledWith([], [ally]);
+  });
+
+  it.each([
+    ["shadow_ranger", true],
+    ["hunter", false],
+  ])("should release a %s's shot with the shadow: %s (FS-1J1CB §F R41)", (specialization, shadow) => {
+    const { combat, state, clock, look } = fieldOnStage();
+    const stamina = { kind: "stamina", current: 100, max: 100, ability_cost: 25 };
+    state(me(200, 100, "archer", { resource: stamina, specialization }));
+    combat.cast("special", { x: 400, y: 500 });
+    clock.now = SHADOW_SHOT_MIN_HOLD_MS;
+    combat.releaseAim({ x: 400, y: 500 });
+    expect(look.shadowShot).toHaveBeenCalledWith({ x: 200, y: 500 }, { x: 400, y: 500 }, shadow);
   });
 
   it("should not strike on an archer's right button", () => {

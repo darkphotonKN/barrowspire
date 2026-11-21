@@ -79,12 +79,13 @@ const { anchorAt, viewport } = await import("@/render/viewport");
 const { EffectsRuntime } = await import("@/render/effects/runtime");
 const { HitFeedback } = await import("@/render/effects/hit");
 const { fakeArt, fakeLights, fakeScene } = await import("@/render/effects/fakeScene");
-const { ProjectileFlights } = await import("@/render/effects/projectile");
+const { ProjectileFlights, shooterOf } = await import("@/render/effects/projectile");
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
 const { sceneSystems } = await import("./sceneEnd.standin");
 const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
+const { HEAVY_SHOT_FLIGHT } = await import("@/render/effects/heavyShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
 const { MENU_CONTROLS } = await import("./MainMenuScene");
@@ -515,15 +516,30 @@ describe("BarrowspireScene effect teardown (FS-KYPQ9 §B.9, §C.4)", () => {
   });
 });
 
-describe("BarrowspireScene projectile kinds (FS-JTNPR req 20, 23)", () => {
+describe("BarrowspireScene projectile kinds (FS-JTNPR req 20, 23; FS-1J1CB §F R41)", () => {
   it.each([
-    ["shadow_shot", "the shadow bolt", SHADOW_SHOT_FLIGHT],
+    // with no archer standing by it: every archer's but a Shadow Ranger's (FS-1J1CB §F R41)
+    ["shadow_shot", "the Heavy Shot", HEAVY_SHOT_FLIGHT],
     ["arrow", "the arrow", ARROW_FLIGHT],
     ["fireball", "the fireball", FIREBALL_FLIGHT],
     ["something_new", "the fireball, as drawn today", FIREBALL_FLIGHT],
     ["toString", "the fireball, as drawn today", FIREBALL_FLIGHT],
   ])("should fly a projectile of kind %s as %s", (type, _what, flight) => {
     expect(projectileFlightOf(type)).toBe(flight);
+  });
+
+  it("should fly the shadow bolt for a shadow_shot first seen beside a Shadow Ranger in the run's state", () => {
+    const { run } = sceneOnStage();
+    const sync = vi.fn();
+    run.projectiles = { sync, clear: vi.fn() };
+    const ranger = { ...player("ally", "Wenna", 160), class: "archer", specialization: "shadow_ranger" };
+    const shot = { entity_id: "s1", projectile_type: "shadow_shot", position: at(170, 300), velocity: { vx: 260, vy: 0 } };
+    const state = { ...floorState(1), other_players: [ranger], projectiles: [shot] } as GameState;
+    run.handleGameStateUpdate(state);
+    const [sightings, bystanders] = sync.mock.calls.at(-1)!;
+    expect(sightings).toEqual([shot]);
+    expect(bystanders).toEqual([ranger]);
+    expect(projectileFlightOf("shadow_shot", shooterOf(shot.position, bystanders))).toBe(SHADOW_SHOT_FLIGHT);
   });
 });
 
@@ -7419,7 +7435,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     class: cls,
   });
 
-  function aimOnStage(cls = "archer") {
+  function aimOnStage(cls = "archer", specialization?: string) {
     const stage = onStage();
     vi.spyOn(useGameStore.getState(), "getActiveCharacter").mockReturnValue({ className: cls } as never);
     const run = stage.run as unknown as Aimed;
@@ -7436,7 +7452,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
         activePointer: { button: 0, positionToCamera: () => ({ ...cursor }) },
       },
     });
-    run.handleGameStateUpdate(partyState(as(cls) as ReturnType<typeof player>));
+    run.handleGameStateUpdate(partyState({ ...as(cls), ...(specialization && { specialization }) } as ReturnType<typeof player>));
     run.bindRunInput();
     run.time.now = 1000;
     const fxPlay = vi.fn();
@@ -7543,7 +7559,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     expect(s.lineUp()).toBe(false);
   });
 
-  it("should send exactly one shadow_shot at the cursor's world point on a release held 0.3 s, with the Shadow Shot release and attack clip", () => {
+  it("should send exactly one shadow_shot at the cursor's world point on a release held 0.3 s, with the Heavy Shot release and attack clip", () => {
     const s = aimOnStage();
     s.press();
     s.release(1300, 520, 410);
@@ -7553,9 +7569,23 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       [ActionType.CastSkill, { skill_id: "shadow_shot", target_x: target.x, target_y: target.y }],
     ]);
     expect(s.fxPlay).toHaveBeenCalledTimes(1);
-    expect(s.fxPlay.mock.calls[0][1]).toBe("shadowShotRelease");
+    // no specialization: the Heavy Shot, the shadow is a Shadow Ranger's alone (FS-1J1CB §F R41)
+    expect(s.fxPlay.mock.calls[0][1]).toBe("heavyShotRelease");
     expect(s.attack).toHaveBeenCalledWith(1300, { x: target.x - ME_X, y: target.y - ME_Y });
     expect(s.lineUp()).toBe(false);
+  });
+
+  it.each([
+    ["shadow_ranger", "shadowShotRelease", true],
+    ["hunter", "heavyShotRelease", false],
+  ])("should play a %s's own release as %s, its aim line drawn with the shadow: %s (FS-1J1CB §F R41, R42)", (spec, release, shadow) => {
+    const s = aimOnStage("archer", spec);
+    const aim = vi.spyOn(s.run.kit as unknown as { aim(...args: unknown[]): void }, "aim");
+    s.press();
+    expect(aim.mock.calls.at(-1)?.[3]).toBe(shadow);
+    s.release(1300, 520, 410);
+    expect(s.fxPlay).toHaveBeenCalledTimes(1);
+    expect(s.fxPlay.mock.calls[0][1]).toBe(release);
   });
 
   it("should send and play nothing on a release under 0.3 s, and leave no line", () => {

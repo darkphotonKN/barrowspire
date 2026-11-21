@@ -317,6 +317,55 @@ describe("selectAnimation: the run, and the backward step only while attacking (
   });
 });
 
+describe("selectAnimation: the Berserker's off hand (FS-1J1CB §D R29)", () => {
+  const south = { vx: 0, vy: 90 };
+  const east = { vx: 90, vy: 0 };
+  const aimNorth = { x: 0, y: -50 };
+  /** The Berserker's sheet: the class clips, and the off-hand swing is the one running. */
+  const offhand = { run: true, walkAttack: true, backpedalAttack: true, offhand: true };
+
+  it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
+    [
+      "an off-hand swing standing plays attack_offhand, turned to the aim",
+      { attacking: true, aim: aimNorth, ...offhand },
+      { animation: "attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "an off-hand swing on the move plays walk_attack_offhand",
+      { attacking: true, aim: aimNorth, velocity: east, ...offhand },
+      { animation: "walk_attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "an off-hand swing stepping back from its aim plays backpedal_attack_offhand",
+      { attacking: true, aim: aimNorth, velocity: south, ...offhand },
+      { animation: "backpedal_attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "an off-hand charge plays the whole attack_offhand whichever way the body is carried",
+      { attacking: true, aim: aimNorth, velocity: south, ...offhand, walkAttack: false },
+      { animation: "attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "the hand only picks a swing clip: running between swings is the run",
+      { velocity: south, ...offhand },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "the hand only picks a swing clip: death is death",
+      { dead: true, attacking: true, facing: "ne", ...offhand },
+      { animation: "death", facing: "ne", direction: 7 },
+    ],
+    [
+      "a right-hand swing plays attack, as on every sheet",
+      { attacking: true, aim: aimNorth, ...offhand, offhand: false },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+  ])("%s", (_name, fields, want) => {
+    const got = selectAnimation(state(fields));
+    expect({ animation: got.animation, facing: got.facing, direction: got.direction }).toEqual(want);
+  });
+});
+
 describe("characterSheet", () => {
   it.each<[string | undefined, string]>([
     ["warrior", "char_knight_base"],
@@ -454,6 +503,21 @@ describe("the shipped character sheets", () => {
         if (other !== name) for (const page of pages(sheet)) expect(own.has(page), `${other} on ${name}'s ${page}`).toBe(false);
     }
     expect(Object.keys(manifest.atlases).filter((k) => k.startsWith("characters-"))).toEqual([]);
+  });
+
+  // the client picks the off hand by attack_offhand alone and plays the walking and backpedalling
+  // clips of the same hand, so a sheet with one carries all three, matched to the right hand's
+  it("should give the off-hand clips to the Berserker alone, all three, as long as the right hand's (FS-1J1CB R28)", () => {
+    const withOffhand = Object.keys(manifest.sheets).filter((name) => manifest.sheets[name].animations.attack_offhand);
+    expect(withOffhand).toEqual(["char_knight_berserker"]);
+    const clips = manifest.sheets.char_knight_berserker.animations;
+    for (const swing of ["attack", "walk_attack", "backpedal_attack"]) {
+      const left = clips[`${swing}_offhand`];
+      expect(left?.frames, swing).toHaveLength(8);
+      expect(left.fps, swing).toBe(clips[swing].fps);
+      expect(left.frames[0].length, swing).toBe(clips[swing].frames[0].length);
+      expect(left.loop, swing).toBe(false);
+    }
   });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {

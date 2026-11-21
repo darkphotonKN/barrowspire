@@ -21,7 +21,7 @@ export class ClassKitFx {
   riposte?: RiposteFx;
   /** The Mercenary's own cut (FS-MAMHR §G.32); made on first use, so a teardown can take it down. */
   cut?: CutFx;
-  /** The Shadow Shot hold's aim line (FS-JTNPR req 11); made on the hold's first draw. */
+  /** The right-click hold's aim line (FS-JTNPR req 11, FS-1J1CB §F R42); made on the hold's first draw. */
   aimLine?: AimLine;
 
   constructor(private readonly scene: Phaser.Scene) {}
@@ -71,10 +71,13 @@ export class ClassKitFx {
     this.riposte?.follow(at, now);
   }
 
-  /** The hold's line from the bow toward `toward`, faint until a release would fire. */
-  aim(from: Point, toward: Point, ready: boolean): void {
+  /**
+   * The hold's line from the bow toward `toward`, faint until a release would fire; umbra for a
+   * Shadow Ranger (`shadow`), vellum for every other archer (FS-1J1CB §F R42).
+   */
+  aim(from: Point, toward: Point, ready: boolean, shadow: boolean): void {
     this.aimLine ??= new AimLine(() => this.scene.add.graphics());
-    this.aimLine.draw(from, toward, ready);
+    this.aimLine.draw(from, toward, ready, shadow);
   }
 
   /** The hold ended: no line left behind. */

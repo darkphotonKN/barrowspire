@@ -32,6 +32,7 @@ import type {
   EffectsRuntime,
   OwnerKey,
 } from "@/render/effects/runtime";
+import { playHeavyShotRelease } from "@/render/effects/heavyShot";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
@@ -64,8 +65,17 @@ export interface Stage {
   now(): number;
   /** Runs `fn` after `ms`, for a demo that has to end what it started. */
   later(ms: number, fn: () => void): void;
-  /** Flies a projectile of a server `projectile_type` from the figure to `aim`, landing there. */
-  fly(projectileType: string): void;
+  /**
+   * Flies a projectile of a server `projectile_type` from the figure to `aim`, landing there; the
+   * figure stands as `shooter` for it, for a shot drawn by who loosed it (FS-1J1CB §F R41).
+   */
+  fly(projectileType: string, shooter?: Shooter): void;
+}
+
+/** Who the figure stands as when it looses a projectile: a class and its specialization. */
+export interface Shooter {
+  class: string;
+  specialization?: string;
 }
 
 export type EffectCard = { module: string; name: string } & (
@@ -174,7 +184,17 @@ export const EFFECT_CARDS: EffectCard[] = [
     name: "Shadow Shot aim line",
     demo: (s) => {
       const line = new AimLine(() => s.scene.add.graphics());
-      line.draw(s.at, s.aim, true);
+      line.draw(s.at, s.aim, true, true);
+      s.later(HOLD_MS / 2, () => line.clear());
+    },
+  },
+  {
+    module: "aimLine",
+    name: "Heavy Shot aim line",
+    demo: (s) => {
+      // every archer's but a Shadow Ranger's (FS-1J1CB §F R42)
+      const line = new AimLine(() => s.scene.add.graphics());
+      line.draw(s.at, s.aim, true, false);
       s.later(HOLD_MS / 2, () => line.clear());
     },
   },
@@ -362,8 +382,19 @@ export const EFFECT_CARDS: EffectCard[] = [
     module: "shadowShot",
     name: "Shadow Shot",
     demo: (s) => {
+      // a Shadow Ranger's alone (FS-1J1CB §F R39)
       playShadowShotRelease(s.fx, s.owner, s.at, s.aim);
-      s.fly("shadow_shot");
+      s.fly("shadow_shot", { class: "archer", specialization: "shadow_ranger" });
+    },
+  },
+  {
+    module: "heavyShot",
+    name: "Heavy Shot",
+    demo: (s) => {
+      // every archer's right-click but a Shadow Ranger's, a Hunter's here: beside the Shadow
+      // Shot's card, so the two are judged side by side (FS-1J1CB §F R40, R44)
+      playHeavyShotRelease(s.fx, s.owner, s.at, s.aim);
+      s.fly("shadow_shot", { class: "archer", specialization: "hunter" });
     },
   },
   {

@@ -154,7 +154,7 @@ import { ProjectileFlights } from "@/render/effects/projectile";
 import { projectileFlightOf } from "@/render/effects/flights";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playArrowRelease } from "@/render/effects/arrow";
-import { playShadowShotRelease } from "@/render/effects/shadowShot";
+import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
 import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
 import {
@@ -876,10 +876,11 @@ export class BarrowspireScene extends Phaser.Scene {
       cut: (from, to) => this.kit.playCut(from, to),
       riposte: (from, to) => this.kit.playRiposte(from, to),
       parry: () => this.kit.raiseParry(this.time.now),
-      shadowShot: (from, to) => {
-        if (this.fx) playShadowShotRelease(this.fx, "self", from, to);
+      // the Shadow Shot's for a Shadow Ranger, the Heavy Shot's for any other archer (FS-1J1CB §F R41)
+      shadowShot: (from, to, shadow) => {
+        if (this.fx) playArcherShotRelease(this.fx, "self", from, to, shadow);
       },
-      aim: (from, ready) => this.drawAim(from, ready),
+      aim: (from, ready, shadow) => this.drawAim(from, ready, shadow),
       endAim: () => this.endAimDrawing(),
       // a charge only when one carries the player (FS-3V7GC R6): every other clip is the plain attack
       attackClip: (aim, swing) =>
@@ -3605,12 +3606,13 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The hold as drawn: the archer's idle clip turned to the cursor, and the line from the bow
-   * toward it, faint until a release would fire. Local only (ADR-0030).
+   * toward it, faint until a release would fire; umbra for a Shadow Ranger, vellum otherwise
+   * (FS-1J1CB §F R42). Local only (ADR-0030).
    */
-  private drawAim(from: Point, ready: boolean): void {
+  private drawAim(from: Point, ready: boolean, shadow: boolean): void {
     const toward = this.cursorWorld();
     this.playerAnim?.holdAim({ x: toward.x - from.x, y: toward.y - from.y });
-    this.kit.aim(from, toward, ready);
+    this.kit.aim(from, toward, ready, shadow);
   }
 
   /** The world point under the cursor now, wherever the camera has moved since it last moved. */
@@ -3885,7 +3887,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.explore(state);
 
     // Update projectiles from server (fireballs)
-    this.updateProjectiles(state.projectiles || []);
+    this.updateProjectiles(state.projectiles || [], state);
 
     // Burning trails: the whole truth each tick, the key absent when none burn (FS-4R9M9 R56)
     this.trails.sync(state.trails ?? []);
@@ -4494,10 +4496,15 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Projectiles off `state.projectiles` (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4): first sight launches,
-   * each tick moves, an id gone from state lands (hit or max range alike). Rivals' too.
+   * each tick moves, an id gone from state lands (hit or max range alike). Rivals' too. A bolt is
+   * drawn by the archer it was likely loosed by, own or other, from the same state (FS-1J1CB §F R41).
    */
-  private updateProjectiles(projectiles: ProjectileState[]): void {
-    this.projectiles?.sync(projectiles);
+  private updateProjectiles(
+    projectiles: ProjectileState[],
+    state: Pick<ClientGameState, "current_player" | "other_players">,
+  ): void {
+    const players = [state.current_player, ...(state.other_players ?? [])].filter((p) => !!p);
+    this.projectiles?.sync(projectiles, players);
   }
 
   /**

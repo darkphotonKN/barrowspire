@@ -14,6 +14,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { projectileFlightOf } from "@/render/effects/flights";
 import {
   ProjectileFlights,
+  type Bystander,
   type Sighting,
 } from "@/render/effects/projectile";
 import { EffectsRuntime } from "@/render/effects/runtime";
@@ -23,7 +24,7 @@ import { worldDepth } from "@/render/iso/shapes";
 import { LightMap } from "@/render/lighting/LightMap";
 import { AMBIENT } from "@/render/lighting/lighting";
 import { GROUND_DEPTH } from "@/render/world/scene";
-import type { EffectCard, Stage } from "./effects";
+import type { EffectCard, Shooter, Stage } from "./effects";
 import { InTurn } from "./inTurn";
 
 /** Where the figure stands, in world px. */
@@ -49,6 +50,11 @@ export class GalleryScene extends Phaser.Scene {
   private turns!: InTurn;
   /** Projectiles in the air, as a server state would list them. */
   private readonly sightings = new Map<string, Sighting>();
+  /**
+   * Who loosed the latest projectile, standing where the figure stands: a shot is drawn by its
+   * shooter, guessed at first sight as in a world (FS-1J1CB §F R41). None, the latest flew alone.
+   */
+  private shooter?: Bystander;
   private plays = 0;
   /** Set once create() has wired the runtime and the figure; a click before then plays nothing. */
   private ready = false;
@@ -89,7 +95,7 @@ export class GalleryScene extends Phaser.Scene {
       direction: directionIndex(FACING),
       timeScale: 1,
     });
-    this.flights.sync([...this.sightings.values()]);
+    this.flights.sync([...this.sightings.values()], this.shooter ? [this.shooter] : []);
     this.lightMap.update(time);
   }
 
@@ -122,12 +128,13 @@ export class GalleryScene extends Phaser.Scene {
       lights: this.lightMap,
       now: () => this.time.now,
       later: (ms, fn) => void this.time.delayedCall(ms, fn),
-      fly: (projectileType) => this.fly(`flight:${n}`, projectileType),
+      fly: (projectileType, shooter) => this.fly(`flight:${n}`, projectileType, shooter),
     };
   }
 
   /** A projectile from the figure to the aim, synced each frame; gone, the flight lands it. */
-  private fly(entityId: string, projectileType: string): void {
+  private fly(entityId: string, projectileType: string, shooter?: Shooter): void {
+    this.shooter = shooter && { ...shooter, position: { ...AT } };
     const velocity = { vx: AIM.x - AT.x, vy: AIM.y - AT.y };
     const sighting: Sighting = {
       entity_id: entityId,

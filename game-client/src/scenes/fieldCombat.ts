@@ -1,5 +1,5 @@
 import type * as Phaser from "phaser";
-import type { ClientGameState, PlayerState, ProjectileState } from "@/types/gameState";
+import type { ClientGameState, PlayerState, ProjectileState, PublicPlayerState } from "@/types/gameState";
 import { screenToWorld, type Point } from "@/render/iso";
 import type { ArtLibrary } from "@/render/art/library";
 import { onDemandArt } from "@/render/art/phaser";
@@ -16,7 +16,7 @@ import { CHARGE_MS, playCharge, type Charge } from "@/render/effects/charge";
 import { playSlash } from "@/render/effects/slash";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { playFireballCast } from "@/render/effects/fireball";
-import { playShadowShotRelease } from "@/render/effects/shadowShot";
+import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
 import { ensurePointerLook } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
@@ -99,9 +99,12 @@ export class FieldCombat {
    */
   sync(state: Pick<ClientGameState, "current_player" | "other_players" | "monsters" | "projectiles">): void {
     this.monsters.sync(state.monsters ?? []);
-    this.parts.projectiles?.sync((state.projectiles ?? []) as ProjectileState[]);
-
     const me = state.current_player;
+    // every player standing in this state, own or other: a bolt is drawn by the archer it was
+    // likely loosed by (FS-1J1CB §F R41)
+    const players = [me, ...(state.other_players ?? [])].filter((p): p is PublicPlayerState => !!p);
+    this.parts.projectiles?.sync((state.projectiles ?? []) as ProjectileState[], players);
+
     this.me = me;
     this.self = me
       ? {
@@ -116,8 +119,8 @@ export class FieldCombat {
     this.parts.kit?.sync(me, this.parts.port.now());
 
     const present = new Set<string>();
-    for (const player of [me, ...(state.other_players ?? [])]) {
-      if (!player || player.current_health === undefined) continue;
+    for (const player of players) {
+      if (player.current_health === undefined) continue;
       present.add(player.entity_id);
       const before = this.lastHealth.get(player.entity_id);
       if (before !== undefined && player.current_health < before) {
@@ -259,11 +262,12 @@ export function fieldCombatOnScene(
       cut: (from, to) => kit.playCut(from, to),
       riposte: (from, to) => kit.playRiposte(from, to),
       parry: () => kit.raiseParry(scene.time.now),
-      shadowShot: (from, to) => playShadowShotRelease(fx, "self", from, to),
-      aim: (from, ready) => {
+      // the Shadow Shot's for a Shadow Ranger, the Heavy Shot's for any other archer (FS-1J1CB §F R41)
+      shadowShot: (from, to, shadow) => playArcherShotRelease(fx, "self", from, to, shadow),
+      aim: (from, ready, shadow) => {
         const toward = cursorWorld();
         hooks.selfAnim()?.holdAim({ x: toward.x - from.x, y: toward.y - from.y });
-        kit.aim(from, toward, ready);
+        kit.aim(from, toward, ready, shadow);
       },
       endAim: () => {
         kit.endAim();

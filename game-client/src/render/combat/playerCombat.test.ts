@@ -199,7 +199,7 @@ describe("PlayerCombat Shadow Shot hold (FS-JTNPR req 8–18)", () => {
     expect(combat.cast("special", "archer", me, target)).toBe(true);
     expect(combat.aiming).toBe(true);
     expect(send).not.toHaveBeenCalled();
-    expect(look.aim).toHaveBeenCalledWith(me, false);
+    expect(look.aim).toHaveBeenCalledWith(me, false, false);
   });
 
   it("should answer no other click and no strike while aiming", () => {
@@ -221,11 +221,11 @@ describe("PlayerCombat Shadow Shot hold (FS-JTNPR req 8–18)", () => {
     combat.cast("special", "archer", me, target);
     elapse(SHADOW_SHOT_MIN_HOLD_MS);
     combat.aimFrame(me);
-    expect(look.aim).toHaveBeenLastCalledWith(me, true);
+    expect(look.aim).toHaveBeenLastCalledWith(me, true, false);
 
     expect(combat.releaseAim(me, target)).toBe(true);
     expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "shadow_shot", target_x: 300, target_y: 100 });
-    expect(look.shadowShot).toHaveBeenCalledWith(me, target);
+    expect(look.shadowShot).toHaveBeenCalledWith(me, target, false);
     expect(look.attackClip).toHaveBeenCalledWith({ x: 200, y: 0 });
     expect(look.endAim).toHaveBeenCalledTimes(1);
     expect(combat.aiming).toBe(false);
@@ -265,6 +265,33 @@ describe("PlayerCombat Shadow Shot hold (FS-JTNPR req 8–18)", () => {
     combat.cast("special", "archer", me, target);
     combat.reset();
     expect(combat.aiming).toBe(false);
+  });
+
+  // FS-1J1CB §F R41, R42: the shadow is a Shadow Ranger's alone; every other archer's is the Heavy Shot
+  it.each([
+    ["a Shadow Ranger", "shadow_ranger", true],
+    ["a Hunter", "hunter", false],
+    ["an unspecialized archer", undefined, false],
+  ])("should aim and release %s's shot with the shadow: %s", (_, specialization, shadow) => {
+    const { combat, look, elapse } = combatOnStage({ resource: stamina(100), specialization });
+    combat.cast("special", "archer", me, target);
+    expect(look.aim).toHaveBeenLastCalledWith(me, false, shadow);
+    elapse(SHADOW_SHOT_MIN_HOLD_MS);
+    combat.aimFrame(me);
+    expect(look.aim).toHaveBeenLastCalledWith(me, true, shadow);
+    combat.releaseAim(me, target);
+    expect(look.shadowShot).toHaveBeenCalledWith(me, target, shadow);
+  });
+
+  it("should judge the shadow by the latest state, so a pick that lands mid-world shows on the next hold", () => {
+    const { combat, look, elapse, self } = combatOnStage({ resource: stamina(100) });
+    combat.cast("special", "archer", me, target);
+    combat.cancelAim();
+    self.me = { resource: stamina(100), specialization: "shadow_ranger" };
+    combat.cast("special", "archer", me, target);
+    elapse(SHADOW_SHOT_MIN_HOLD_MS);
+    combat.releaseAim(me, target);
+    expect(look.shadowShot).toHaveBeenCalledWith(me, target, true);
   });
 });
 

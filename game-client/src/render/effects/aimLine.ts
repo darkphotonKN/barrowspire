@@ -1,8 +1,9 @@
 /**
- * The archer's Shadow Shot aim line (FS-JTNPR req 11, 22): a short umbra arrow a little way out
- * from the bow, pointing where the bolt will fly. A hint of the heading, not a ruler of the range:
- * it never runs off the screen. Drawn faint until a release would fire; once it would, full and
- * haloed in a lighter umbra (the glow-up).
+ * The archer's right-click aim line (FS-JTNPR req 11, 22): a short arrow a little way out from the
+ * bow, pointing where the bolt will fly. A hint of the heading, not a ruler of the range: it never
+ * runs off the screen. Drawn faint until a release would fire; once it would, full and haloed in
+ * a lighter shade (the glow-up). Umbra for a Shadow Ranger only; every other archer's is the Heavy
+ * Shot's vellum (FS-1J1CB §F R42).
  *
  * A held drawing, not a table effect: the scene redraws it every frame of a hold and clears it
  * when the hold ends. Local only (ADR-0030): nothing about it is sent, and teammates never see it.
@@ -113,8 +114,14 @@ export class AimLine {
     return this.graphics !== undefined;
   }
 
-  /** Draws the arrow for this frame; `ready` is whether a release now would fire. */
-  draw(from: Point, toward: Point, ready: boolean): void {
+  /**
+   * Draws the arrow for this frame; `ready` is whether a release now would fire, `shadow` whether
+   * the archer is a Shadow Ranger (umbra) or any other (vellum).
+   */
+  draw(from: Point, toward: Point, ready: boolean, shadow: boolean): void {
+    const { line, glow } = shadow
+      ? { line: palette.aimLine, glow: palette.aimGlow }
+      : { line: palette.heavyAimLine, glow: palette.heavyAimGlow };
     if (!this.graphics) {
       this.graphics = this.make();
       this.graphics.setDepth(AIM_LINE_DEPTH);
@@ -124,15 +131,15 @@ export class AimLine {
     g.clear();
     if (ready) {
       const [t, l, r] = glowHead(tip, left, right);
-      g.lineStyle(AIM_GLOW_WIDTH, palette.aimGlow, AIM_GLOW_ALPHA);
+      g.lineStyle(AIM_GLOW_WIDTH, glow, AIM_GLOW_ALPHA);
       g.lineBetween(tail.x, tail.y, neck.x, neck.y);
-      g.fillStyle(palette.aimGlow, AIM_GLOW_ALPHA);
+      g.fillStyle(glow, AIM_GLOW_ALPHA);
       g.fillTriangle(t.x, t.y, l.x, l.y, r.x, r.y);
     }
     const alpha = ready ? AIM_LINE_ALPHA.ready : AIM_LINE_ALPHA.faint;
-    g.lineStyle(AIM_LINE_WIDTH, palette.aimLine, alpha);
+    g.lineStyle(AIM_LINE_WIDTH, line, alpha);
     g.lineBetween(tail.x, tail.y, neck.x, neck.y);
-    g.fillStyle(palette.aimLine, alpha);
+    g.fillStyle(line, alpha);
     g.fillTriangle(tip.x, tip.y, left.x, left.y, right.x, right.y);
   }
 

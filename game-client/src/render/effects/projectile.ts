@@ -4,13 +4,15 @@
  * when it leaves state.
  *
  *   const flights = new ProjectileFlights(scene, art, fx, kindOf);
- *   flights.sync(state.projectiles); // every state: first sight creates, each tick moves,
- *                                    // an id gone from state lands (hit or max range alike)
+ *   flights.sync(state.projectiles, players); // every state: first sight creates, each tick
+ *                                    // moves, an id gone from state lands (hit or max range alike)
  *   flights.clear();                 // resetRun: no impact, nothing left tracked
  *
  * Signal, unchanged: `ProjectileState` appearing, moving and disappearing. It is global and
  * carries no owner, so a rival's projectile flies, lights and lands like the player's own. Cast
- * and release are played by the scene on its own send, never here on first sight.
+ * and release are played by the scene on its own send, never here on first sight. A kind is
+ * chosen once, at first sight, from its type and the archer it was likely loosed by
+ * ({@link shooterOf}, FS-1J1CB §F R41): it keeps that look for its whole flight.
  *
  * The body is a plain baked image at the footprint, on the chest layer (`standAt(…, 5)`),
  * drawn its kind's `lift` above it: the server's position stays the footprint and the depth sorts
@@ -31,6 +33,7 @@ import {
   type Point,
 } from "@/render/iso/projection";
 import { worldDepth } from "@/render/iso/shapes";
+import type { PublicPlayerState } from "@/types/gameState";
 import { BARROW_HEX } from "@/utils/theme";
 import type {
   EffectsRuntime,
@@ -47,6 +50,34 @@ export interface Sighting {
   projectile_type: string;
   position: Point;
   velocity?: { vx: number; vy: number };
+}
+
+/** A player standing in the state a projectile is first seen in: who may have loosed it. */
+export type Bystander = Pick<PublicPlayerState, "class" | "position" | "specialization">;
+
+/**
+ * How far from where a bolt is first seen, in world px, its archer may stand (FS-1J1CB §F R41):
+ * the bolt is first seen within a tick of the bow.
+ */
+export const SHOOTER_REACH = 48;
+
+/**
+ * The archer a projectile first seen at `at` was likely loosed by: the nearest archer body within
+ * {@link SHOOTER_REACH}, or none (FS-1J1CB §F R41). A guess, v1: the wire names no shooter, and a
+ * wrong pick between two archers side by side is cosmetic.
+ */
+export function shooterOf(at: Point, bystanders: readonly Bystander[]): Bystander | undefined {
+  let best: Bystander | undefined;
+  let bestDistance = Infinity;
+  for (const b of bystanders) {
+    if (b.class?.toLowerCase() !== "archer") continue;
+    const d = Math.hypot(b.position.x - at.x, b.position.y - at.y);
+    if (d <= SHOOTER_REACH && d < bestDistance) {
+      best = b;
+      bestDistance = d;
+    }
+  }
+  return best;
 }
 
 /** What a kind of projectile looks like in flight and how it lands. */
@@ -95,12 +126,16 @@ export class ProjectileFlights {
     private readonly scene: FlightScene,
     private readonly art: FxArt,
     private readonly fx: Pick<EffectsRuntime, "play" | "release">,
-    private readonly kindOf: (projectileType: string) => ProjectileKind,
+    /** The look of a projectile of this type, loosed by `shooter` when an archer stood by it. */
+    private readonly kindOf: (projectileType: string, shooter?: Bystander) => ProjectileKind,
     private readonly logger: ArtLogger = console,
   ) {}
 
-  /** Brings flights in line with one state's projectiles. */
-  sync(projectiles: readonly Sighting[]): void {
+  /**
+   * Brings flights in line with one state's projectiles; `bystanders` are the players in that same
+   * state, from whom a newly seen projectile's shooter is guessed.
+   */
+  sync(projectiles: readonly Sighting[], bystanders: readonly Bystander[] = []): void {
     const seen = new Set<string>();
     for (const p of projectiles) {
       seen.add(p.entity_id);
@@ -111,7 +146,7 @@ export class ProjectileFlights {
       else
         this.flights.set(
           p.entity_id,
-          this.launch(p.entity_id, p.projectile_type, pos, heading),
+          this.launch(p.entity_id, this.kindOf(p.projectile_type, shooterOf(pos, bystanders)), pos, heading),
         );
     }
     for (const [id, flight] of this.flights) {
@@ -151,11 +186,10 @@ export class ProjectileFlights {
 
   private launch(
     id: string,
-    type: string,
+    kind: ProjectileKind,
     pos: Point,
     heading?: Point,
   ): Flight {
-    const kind = this.kindOf(type);
     const flight: Flight = {
       kind,
       body: this.body(kind),

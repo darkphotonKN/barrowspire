@@ -468,6 +468,85 @@ export const EFFECTS = {
     light: { color: "umbraLight", radius: 120, intensity: { from: 0.75, to: 0 } },
   },
 
+  // ── Archer: Heavy Shot (FS-1J1CB §F R40) ──────────────────────────────
+  /**
+   * Every archer's right-click but a Shadow Ranger's: the Shadow Shot's slow bolt with the shadow
+   * taken out, read as heavier than the arrow by weight, not by hue. A harder string-snap than
+   * the arrow's at the bow, with a burst of fibre and dust. Vellum only: no umbra, no light.
+   */
+  heavyShotRelease: {
+    timing: { kind: "oneShot", durationMs: 220 },
+    ease: "Quad.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellumDark"],
+      scale: still,
+      alpha: { from: 0.55, to: 0 },
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellumDark", "vellum"],
+      count: 7,
+      scale: { from: 1.2, to: 1.5 },
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 10, to: 30 },
+      angle: { from: -35, to: 35 },
+      accel: { x: 0, y: 20 },
+    },
+  },
+  /**
+   * A thicker pale wake than the arrow's air-streak, hanging a little longer behind the bolt, and
+   * a faint vellum glow on the bolt itself so it reads in the dark: never the Shadow Shot's pitch
+   * halo, and no riding light.
+   */
+  heavyShotTrail: {
+    timing: {
+      kind: "stream",
+      lifeMs: 420,
+      intervalMs: 40,
+      maxAlive: 24,
+      onRelease: "fade",
+    },
+    ease: "Sine.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellum"],
+      scale: still,
+      alpha: { from: 0.35, to: 0.35 },
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["vellum"],
+      count: 2,
+      scale: { from: 1.5, to: 1.6 },
+      alpha: { from: 0.9, to: 0 },
+      speed: { from: 10, to: 90 },
+      angle: { from: -8, to: 8 },
+      accel: noAccel,
+    },
+  },
+  /** A heavier thud than the arrow's: dust and splinters where the bolt lands, dropping to the ground. */
+  heavyShotImpact: {
+    timing: { kind: "oneShot", durationMs: 480 },
+    ease: "Quad.easeIn",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellumDark"],
+      scale: still,
+      alpha: { from: 0.45, to: 0 },
+    },
+    particles: {
+      texture: ["fx_dust"],
+      tint: ["barrowBrown", "vellumDark"],
+      count: 11,
+      scale: { from: 1.1, to: 1.4 },
+      alpha: { from: 0.85, to: 0 },
+      speed: { from: 10, to: 30 },
+      angle: { from: 225, to: 315 },
+      accel: { x: 0, y: 200 },
+    },
+  },
+
   // ── Monsters: a demon's fire claw (FS-VHGE7 §D R32) ────────────────────
   /**
    * A flame swept through the swipe along the demon's facing and embers flung forward off it, with

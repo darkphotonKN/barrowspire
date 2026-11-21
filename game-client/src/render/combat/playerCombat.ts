@@ -17,6 +17,7 @@ import type { Swing } from "@/render/art/character";
 import { riposteArmed } from "@/render/effects/riposte";
 import { parryRefused } from "@/ui/abilityBarView";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
+import { wearsShadow } from "@/render/effects/heavyShot";
 
 /**
  * A targeted `attack`'s reach, centre to centre in world px, and its cooldown in ms: the server's
@@ -67,13 +68,17 @@ export interface CombatLook {
   riposte(from: Point, to: Point): void;
   /** The Mercenary's stance tell, raised as `parry` is sent (FS-MAMHR §G.35). */
   parry(): void;
-  /** Shadow Shot's release at the bow (FS-JTNPR req 14). */
-  shadowShot(from: Point, to: Point): void;
+  /**
+   * The archer's right-click release at the bow, as `shadow_shot` is sent (FS-JTNPR req 14):
+   * the Shadow Shot's for a Shadow Ranger (`shadow`), the Heavy Shot's otherwise (FS-1J1CB §F R41).
+   */
+  shadowShot(from: Point, to: Point, shadow: boolean): void;
   /**
    * The archer's hold, drawn once a frame (FS-JTNPR req 10, 11): the figure turned to the cursor
-   * now and the line from the bow toward it, faint until a release would fire.
+   * now and the line from the bow toward it, faint until a release would fire; umbra for a Shadow
+   * Ranger (`shadow`), vellum for any other archer (FS-1J1CB §F R42).
    */
-  aim(from: Point, ready: boolean): void;
+  aim(from: Point, ready: boolean, shadow: boolean): void;
   /** The hold ended: no line left behind, the figure let go to its idle (req 15). */
   endAim(): void;
   /**
@@ -94,8 +99,14 @@ export interface CombatLook {
   abilityCast?(ability: AbilityCast): void;
 }
 
-/** This client's player as the latest state reported them: the parry, riposte and resource gates. */
-export type CombatSelf = () => Pick<PlayerState, "parry_open" | "parry_lockout" | "resource"> | null | undefined;
+/**
+ * This client's player as the latest state reported them: the parry, riposte and resource gates,
+ * and the specialization the archer's right-click is drawn by (FS-1J1CB §F R41, R42).
+ */
+export type CombatSelf = () =>
+  | Pick<PlayerState, "parry_open" | "parry_lockout" | "resource" | "specialization">
+  | null
+  | undefined;
 
 export class PlayerCombat {
   private canStrike = true;
@@ -190,7 +201,7 @@ export class PlayerCombat {
   /** The hold, once a frame, from where the archer is drawn now (FS-JTNPR req 10, 11). */
   aimFrame(from: Point | undefined): void {
     if (!this.hold.aiming || !from) return;
-    this.look.aim(from, this.hold.ready(this.port.now(), this.resource()));
+    this.look.aim(from, this.hold.ready(this.port.now(), this.resource()), this.shadow());
   }
 
   /**
@@ -215,7 +226,7 @@ export class PlayerCombat {
     });
     this.port.castSent?.();
     this.look.abilityCast?.("shadow_shot");
-    this.look.shadowShot(me, target);
+    this.look.shadowShot(me, target, this.shadow());
     this.look.attackClip({ x: target.x - me.x, y: target.y - me.y });
 
     // the square greys for exactly the cooldown the next release is gated by, the hold over (FS-Q18Q3 R22)
@@ -244,6 +255,11 @@ export class PlayerCombat {
     this.canCast = true;
     this.abilityLockedOut = false;
     this.hold.reset();
+  }
+
+  /** Whether the archer's right-click wears the shadow: a Shadow Ranger's alone (FS-1J1CB §F R39). */
+  private shadow(): boolean {
+    return wearsShadow(this.self()?.specialization);
   }
 
   /** The class resource as last broadcast; none from an older server (FS-JTNPR req 18). */
