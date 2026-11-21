@@ -1,6 +1,6 @@
 ---
 id: I-E1ZDG-5
-status: open
+status: done
 implements: FS-E1ZDG
 blocked_by: [I-E1ZDG-2]
 labels: [ready-for-agent]

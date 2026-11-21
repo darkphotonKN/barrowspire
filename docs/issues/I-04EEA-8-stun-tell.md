@@ -1,6 +1,6 @@
 ---
 id: I-04EEA-8
-status: open
+status: done
 implements: FS-04EEA
 blocked_by: [I-04EEA-2]
 labels: [blocked]

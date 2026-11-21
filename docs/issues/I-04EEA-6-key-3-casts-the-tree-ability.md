@@ -1,6 +1,6 @@
 ---
 id: I-04EEA-6
-status: open
+status: done
 implements: FS-04EEA
 blocked_by: [I-04EEA-1, I-04EEA-3, I-04EEA-5, "FS-8RZ51 (whether the character holds its tree's tier-3 node, on the wire)", "FS-Q18Q3 (I-Q18Q3-2: the server sending current_player.tree_ability_cooldown and resource.tree_ability_cost; the client types already exist in gameState.ts)"]
 labels: [blocked]
