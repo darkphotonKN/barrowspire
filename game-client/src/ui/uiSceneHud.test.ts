@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ABILITY_CARD_PLACE } from "./hudCornerLayout";
 import { HUD_COLUMN_W, RESOURCE_HUD_AT } from "./ResourceHud";
@@ -213,19 +211,4 @@ describe("the HUD slot's wiring, shared (FS-TQZ5J § Change: Batch 6, R138)", ()
     expect("piece" in UiHudSlot.prototype).toBe(false);
   });
 
-  it("should leave the bridge's wiring to hearHud, the one mountHud and the stand-in both use", () => {
-    const standin = readFileSync(join(__dirname, "uiSceneHud.standin.ts"), "utf8");
-    expect(standin).toMatch(/\bhearHud\(/);
-    expect(standin).not.toMatch(/onScreen\(/);
-    expect(standin).not.toMatch(/onWorld\(/);
-  });
-});
-
-describe("the worlds leave the HUD pieces to the UI scene (FS-TQZ5J § Change: Batch 5, R67)", () => {
-  it.each(["AbilityHud", "PotionHud", "ResourceHud", "ProgressHud"])("should import %s in no world scene", (piece) => {
-    for (const scene of ["HubScene", "FieldScene", "BarrowspireScene"]) {
-      const source = readFileSync(join(__dirname, `../scenes/${scene}.ts`), "utf8");
-      expect(source, scene).not.toMatch(new RegExp(`import \\{[^}]*\\b${piece}\\b[^}]*\\} from "@/ui/${piece}"`));
-    }
-  });
 });

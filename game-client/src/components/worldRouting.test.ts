@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WorldType, type WorldEnteredPayload } from "@/assets/types/client";
 import { keptPlaces } from "./arrival";
 import { WORLD_SCENES, sceneFor, switchWorld } from "./worldRouting";
-import { CARD_LEAVES } from "@/ui/arrivalCard";
 
 describe("sceneFor (FS-29KSH §Requirements 15; FS-X2F2H §Requirements 55)", () => {
   it.each([
@@ -135,41 +132,14 @@ describe("switchWorld hands the scene its arrival (FS-PQ2TW R5–R8)", () => {
   });
 });
 
-// FS-PQ2TW R39; ADR-0075 Consequences: a world added later cannot come without the card. Every
-// world scene builds the shared piece with its dust, hands it the start's verdict, tells it when its
-// place is built and keeps it on the view. The main menu is not a world: it has no place to arrive in.
+// FS-PQ2TW R39; ADR-0075 Consequences: a world added later cannot come without the card. Each world
+// scene's create plays its arrival through the shared card (sceneCreate.test.ts); this pins that the
+// walk there reaches every scene a world is drawn by. The main menu is not a world.
 describe("every world scene hands its arrival to the shared card (FS-PQ2TW R39)", () => {
-  const NOT_A_WORLD = "MainMenuScene";
-  const worlds = WORLD_SCENES.filter((key) => key !== NOT_A_WORLD);
-  const source = (key: string) => readFileSync(join(process.cwd(), "src", "scenes", `${key}.ts`), "utf8");
-
-  /** Whether a scene's source names a leave in a play of its card (R41, R53). */
-  // every value of the switch, so a leave added later is caught too
-  const named = new RegExp(`arrivalCard\\.play\\([^;]*["'](${CARD_LEAVES.join("|")})["']`);
-  const namesALeave = (scene: string) => named.test(scene);
-
-  it.each([...CARD_LEAVES])("should catch a scene that names the %s in its card's play", (leave) => {
-    expect(namesALeave(`this.arrivalCard.play(placeCard(this.place), { built: false }, "${leave}");`)).toBe(true);
-  });
+  const worlds = WORLD_SCENES.filter((key) => key !== "MainMenuScene");
 
   it("should walk every scene a world is drawn by", () => {
     expect(worlds).toEqual(expect.arrayContaining(Object.values(WorldType).map(sceneFor)));
-  });
-
-  it.each(worlds)("%s should play its arrival through the shared card, with both its leaves", (key) => {
-    const scene = source(key);
-    // the start's verdict, decided at the switch (R8)
-    expect(scene).toMatch(/this\.arrival = data\?\.arrival \?\? false/);
-    // the shared piece, with both its leaves: one without them never breaks to dust or smoke
-    // (R30, R37, §Change: Smoke R41)
-    expect(scene).toMatch(/new ArrivalCard\(this, cardLeaves\(this, \(\) => this\.art\)\)/);
-    // the card's one switch picks the leave: no scene names one (R41, R53)
-    expect(namesALeave(scene)).toBe(false);
-    // dark from create on an arrival (R11), with the table's words (R23)
-    expect(scene).toMatch(/if \(this\.arrival\) this\.arrivalCard\.(play|dark)\(/);
-    expect(scene).toMatch(/\bplaceCard\(/);
-    // the dark lifts once the place is built (R12), and follows the view (R16)
-    expect(scene).toMatch(/this\.arrivalCard\.built\(\)/);
-    expect(scene).toMatch(/this\.arrivalCard\.relayout\(\)/);
+    expect([...worlds].sort()).toEqual(["BarrowspireScene", "FieldScene", "HubScene"]);
   });
 });

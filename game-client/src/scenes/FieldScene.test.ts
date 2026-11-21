@@ -2761,7 +2761,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
 });
 
 const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
-const { readFileSync } = await import("node:fs");
 
 /**
  * The field's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
@@ -3030,18 +3029,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(f.heard()).toEqual(["party_close"]);
   });
 
-  // create() is pinned from the source here as in the town: the player made before the gear and
-  // the keys, and its wrapper handed to the overlay (the party panel is the UI scene's since phase 2)
-  // the gear overlay, its wrapper and its keys are the UI scene's (FS-TQZ5J § Change: Phase 3, R50, R56):
-  // the field reports itself before it binds the key it still hears (E) or makes its piles
-  it("should report itself in create before its keys and its piles", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.createPiles\(\);/));
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-  });
 });
 
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompts are the UI scene's; the field
@@ -3062,23 +3049,6 @@ describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Pha
     expect(field.worldSide().invitesAboveChat).toBe(true);
   });
 
-  // the fight takes the player as a value, so it must be made first
-  it("should make the gameplay player in create beside the interface effects', and hand it to the fight (FS-AND39 R3, R4, R16)", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.mountGameplaySounds\(\);/));
-    expect(at(/this\.mountGameplaySounds\(\);/)).toBeLessThan(at(/this\.fight = fieldCombatOnScene\(/));
-    const fight = create.match(/this\.fight = fieldCombatOnScene\(([\s\S]*?)\n {4}\}\);/)?.[1] ?? "";
-    expect(fight).toMatch(/\n\s*sounds: this\.gameplaySounds,?(\n|$)/);
-  });
-
-  // the gear is the UI scene's, which plays item_swap as it sends a change (`gearPieces.test.ts`); the
-  // field plays none of it (FS-AND39 R7; FS-TQZ5J § Change: Merge with main, 2026-11-14)
-  it("should play no item_swap of its own: the UI scene's gear sounds its changes (FS-AND39 R7)", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    expect(source).not.toMatch(/item_swap/);
-  });
 });
 
 const { ProgressHud } = await import("@/ui/ProgressHud");

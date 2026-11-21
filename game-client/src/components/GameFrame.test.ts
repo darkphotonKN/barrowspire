@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createElement, createRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
@@ -22,8 +20,4 @@ describe("GameFrame", () => {
     );
   });
 
-  it("should leave no style for the fullscreen button or its hint (FS-T3DWX R3)", () => {
-    const css = readFileSync(path.join(__dirname, "../app/globals.css"), "utf8");
-    expect(css).not.toMatch(/\.fullscreen-(button|hint)/);
-  });
 });

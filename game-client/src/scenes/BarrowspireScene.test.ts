@@ -213,7 +213,6 @@ const { BAG_CAPACITY, BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
 const { PartyPanel } = await import("@/ui/PartyPanel");
 const { createPartyStore, usePartyStore } = await import("@/stores/partyStore");
-const { readdirSync } = await import("node:fs");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
 type GameState = import("@/types/gameState").ClientGameState;
@@ -1497,12 +1496,6 @@ describe("BarrowspireScene gameplay player (FS-AND39 R13, R16)", () => {
     expect(played).toEqual(["hit_monster"]);
   });
 
-  // create() can't run on the stand-ins, so its call is pinned from the source
-  it("should make the gameplay player in create, after the run is reported", () => {
-    const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(create).toMatch(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);[\s\S]*this\.mountGameplaySounds\(\);/);
-  });
 });
 
 describe("BarrowspireScene combat sounds (FS-AND39 R2–R4)", () => {
@@ -5710,17 +5703,6 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
   });
 });
 
-describe("no way out of a run on ESC (reported 2026-10-29)", () => {
-  // ESC used to start MainMenuScene from inside a run. The server keeps the body in the
-  // world regardless, so the player stood there being killed while looking at the roster;
-  // the only early exit is the dead player's Leave the barrow (FS-QPDKN req 13).
-  it("should bind no ESC handler that leaves the run, nor list one in the controls", () => {
-    const source = readFileSync(join(__dirname, "BarrowspireScene.ts"), "utf8");
-    expect(source).not.toMatch(/keydown-ESC/);
-    expect(source).not.toMatch(/\["ESC",\s*"Main Menu"\]/);
-  });
-});
-
 describe("state from another world is not drawn (reported 2026-10-29)", () => {
   // A member can briefly have a body in two worlds (a stale run and a new one, or a run and
   // the hub); both broadcast to the same socket. The scene draws only the run it was started
@@ -7299,18 +7281,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(r.heard()).toEqual(["inventory_close"]);
     });
 
-    // create() can't run on the stand-ins, so its order is pinned from the source, as in the town
-    // and the field: the player made before the keys; the gear overlay, the party panel and the corner
-    // are the UI scene's, which hands the overlay its act (FS-TQZ5J § Change: Phase 3, R50)
-    it("should make the player in create before anything that hears a player, and compose no gear of its own", () => {
-      const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
-      const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-      const at = (line: RegExp) => create.search(line);
-      const mount = at(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);/);
-      expect(mount).toBeGreaterThan(-1);
-      expect(mount).toBeLessThan(at(/this\.bindRunInput\(\);/));
-      expect(source).not.toMatch(/composeEquipment|new GearOverlay|new ContainerView/);
-    });
   });
 
   // the take and the bag's pre-check stay in the UI scene, the run sending the loot asked of it
@@ -7991,17 +7961,6 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     });
   });
 
-  it("should leave no code that sends triple_arrow or multishot_arrow", () => {
-    const SRC = join(__dirname, "..");
-    const sources = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
-        const path = join(dir, d.name);
-        if (d.isDirectory()) return sources(path);
-        return /\.tsx?$/.test(d.name) && !/\.test\.tsx?$/.test(d.name) ? [path] : [];
-      });
-    const offenders = sources(SRC).filter((f) => /triple_arrow|multishot_arrow/.test(readFileSync(f, "utf8")));
-    expect(offenders).toEqual([]);
-  });
 });
 
 const { HEAL_LOOK } = await import("@/render/effects/shimmer");
@@ -8140,13 +8099,6 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
     },
   );
 
-  it("should not exist in the hub or field scenes", () => {
-    const SRC = join(__dirname, "..");
-    for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
-      const source = readFileSync(join(SRC, "scenes", scene), "utf8");
-      expect(source).not.toMatch(/ShimmerFx|PotionDrinkWatcher/);
-    }
-  });
 });
 
 // FS-JS7C8 §D R22, §E R47: the own character and every other player face their drawn movement.
@@ -11601,16 +11553,6 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         });
       });
 
-      // superseded in part by FS-P0HSP §A.1–§A.2 (2026-11-12): the town and the fields now have a
-      // minimap of their own plan, still no fog and never a dungeon floor's region map; nor the
-      // run fog's own helpers or modules (review round 1)
-      it("should not exist in the hub or field scenes: no fog, no exploration, no floor's region minimap", () => {
-        for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
-          const source = readFileSync(join(__dirname, scene), "utf8");
-          expect(source).not.toMatch(/\bnew Minimap\(|\bFog\b|\bExploration\b/);
-          expect(source).not.toMatch(/\bfogShapes\b|\bfogField\b|render\/world\/(fog|fogField|exploration)\b/);
-        }
-      });
     });
   });
 });

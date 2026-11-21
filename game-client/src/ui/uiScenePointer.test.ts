@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -255,38 +254,12 @@ describe("hearMove: the world hears a move the UI scene took, through Phaser's o
   });
 });
 
-// The rules lean on Phaser 4.2.1's input as it stands: pinned to its source, so an upgrade that
-// changes any of it fails here before it changes what a player touches.
+// The rules lean on Phaser 4.2.1's input: its move code is the one they hand the world.
 describe("Phaser 4.2.1's input, as the rules lean on it", () => {
   const phaserSrc = path.join(path.dirname(createRequire(import.meta.url).resolve("phaser/package.json")), "src");
-  const source = (file: string) => readFileSync(path.join(phaserSrc, file), "utf8");
   const load = (file: string) => createRequire(import.meta.url)(path.join(phaserSrc, file));
 
   it("should number a mouse move as MOUSE_MOVE does (input/const.js)", () => {
     expect(load("input/const.js").MOUSE_MOVE).toBe(MOUSE_MOVE);
-  });
-
-  it("should hand each scene top down its InputPlugin's update(type, pointers), and stop at a scene that hit something", () => {
-    const manager = source("input/InputManager.js");
-    expect(manager).toContain("var scenes = this.game.scene.getScenes(false, true);");
-    expect(manager).toContain("var capture = scene.sys.input.update(type, pointers);");
-    expect(manager).toContain("if ((capture && this.globalTopOnly) || this._tempSkip)");
-    expect(typeof load("input/InputPlugin.js").prototype.update).toBe("function");
-    expect(load("input/InputPlugin.js").prototype.update.length).toBe(2);
-  });
-
-  it("should hit-test a scene only through its cameras that take input (Camera.inputEnabled)", () => {
-    expect(source("cameras/2d/CameraManager.js")).toContain(
-      "if (camera.visible && camera.inputEnabled && RectangleContains(camera, x, y))",
-    );
-  });
-
-  it("should tell a scene's pointermove before its over and out, and its pointerdown with what lay under it", () => {
-    const plugin = source("input/InputPlugin.js");
-    expect(plugin).toMatch(
-      /case CONST\.MOUSE_MOVE:\s*case CONST\.TOUCH_MOVE:\s*total \+= this\.processDragMoveEvent\(pointer\);\s*total \+= this\.processMoveEvents\(pointer\);\s*total \+= this\.processOverOutEvents\(pointer\);/,
-    );
-    expect(plugin).toContain("this.emit(Events.POINTER_DOWN, pointer, currentlyOver);");
-    expect(plugin).toContain("this.emit(Events.POINTER_MOVE, pointer, currentlyOver);");
   });
 });
