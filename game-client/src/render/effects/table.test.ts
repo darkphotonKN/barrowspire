@@ -53,6 +53,20 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "chimneySmoke",
         // FS-04EEA §H R47: the stun tell over a stunned monster's head
         "stunTell",
+        // FS-04EEA §H R43–R46: the tree abilities, each the caster's own
+        "earthbreakerSlam",
+        "earthbreakerRing",
+        "earthbreakerBandNear",
+        "earthbreakerBandMid",
+        "earthbreakerBandFar",
+        "earthbreakerShock",
+        "earthbreakerCrack",
+        "blinkOut",
+        "blinkIn",
+        "flurrySlash",
+        "flurryDust",
+        "flurryFlare",
+        "arrowRainImpact",
       ].sort(),
     );
   });
@@ -80,6 +94,20 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
       hit: 220,
       deathDust: 600,
       escape: 1000,
+      // FS-04EEA §H R43–R46: starting values, through the contact sheet (R49)
+      earthbreakerSlam: 1100,
+      earthbreakerRing: 420,
+      earthbreakerBandNear: 260,
+      earthbreakerBandMid: 280,
+      earthbreakerBandFar: 300,
+      earthbreakerShock: 560,
+      earthbreakerCrack: 1000,
+      blinkOut: 300,
+      blinkIn: 420,
+      flurrySlash: 200,
+      flurryDust: 500,
+      flurryFlare: 360,
+      arrowRainImpact: 320,
     };
     const got = Object.fromEntries(
       oneShots.map(([name, e]) => [

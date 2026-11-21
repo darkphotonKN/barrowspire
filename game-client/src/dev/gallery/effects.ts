@@ -11,9 +11,16 @@ import type Phaser from "phaser";
 import { itemView } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
+import type { CharacterLook } from "@/render/art/character";
+import { monsterLook } from "@/render/creatures/monsters";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { AimCircle } from "@/render/effects/aimCircle";
 import { AimLine } from "@/render/effects/aimLine";
+import { ARROW_RAIN, ArrowRain } from "@/render/effects/arrowRain";
+import { playBlinkIn, playBlinkOut } from "@/render/effects/blink";
+import { playEarthbreaker } from "@/render/effects/earthbreaker";
+import { playSettleTheDebt } from "@/render/effects/settleTheDebt";
+import { Staged } from "@/render/effects/staged";
 import { Auras } from "@/render/effects/aura";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
@@ -74,10 +81,13 @@ export interface Stage {
    */
   fly(projectileType: string, shooter?: Shooter): void;
   /**
-   * Re-dresses the figure in a class's base sheet, for a card shown on another body than the
-   * mage's (an aura on the archer, FS-1J1CB R38). Returns its sheet's `crown`.
+   * Re-dresses the figure in a class's base sheet, or a creature's look, for a card shown on another
+   * body than the mage's (an aura on the archer, FS-1J1CB R38; the stun tell on a monster, FS-04EEA
+   * R49). Returns its sheet's `crown`.
    */
-  wear(className: string): number | undefined;
+  wear(who: string | CharacterLook): number | undefined;
+  /** Moves the figure to stand at world point `at`, for a card whose body is placed elsewhere (a Blink). */
+  standAt(at: Point): void;
 }
 
 /** Who the figure stands as when it looses a projectile: a class and its specialization. */
@@ -115,6 +125,28 @@ const STUN_LIFT_FALLBACK = 80;
 
 /** A frame's step, in ms, for a demo that drives its own frames. */
 const FRAME_MS = 33;
+
+/**
+ * The creature the stun tell is shown over, as a run draws it over a stunned monster (FS-04EEA R49): the
+ * ghoul's own look, named by the roster's table.
+ */
+const STUNNED_LOOK: CharacterLook = { sheet: monsterLook("ghoul").sheet };
+
+/** Between the Blink's out and its in, as a jump lands a tick or two after the send. */
+const BLINK_LANDS_MS = 120;
+
+/** How long the Arrow Rain card holds its circle: past the last volley's landing. */
+const RAIN_HOLD_MS = ARROW_RAIN.volleys * ARROW_RAIN.intervalMs + 400;
+
+/**
+ * The flurry for `charges` parry charges spent, on the mercenary as a world plays it on his send (FS-04EEA
+ * R46, R49); the mage again once it is done.
+ */
+function playFlurry(s: Stage, charges: number): void {
+  s.wear("mercenary");
+  playSettleTheDebt(s.fx, new Staged(s.scene.time), s.owner, s.at, charges);
+  s.later(HOLD_MS / 2, () => s.wear("mage"));
+}
 
 /**
  * An ability's telegraph as a run draws it (FS-C8VM7 §F R36): its area at the figure's feet, the
@@ -220,6 +252,60 @@ export const EFFECT_CARDS: EffectCard[] = [
       circle.draw(s.aim);
       s.later(HOLD_MS / 2, () => circle.clear());
     },
+  },
+  {
+    module: "arrowRain",
+    name: "Arrow Rain volleys, mid-rain in the circle",
+    // on the archer's release at the circle the aim drew, held here as the rain falls into it (FS-04EEA R45, R49)
+    demo: (s) => {
+      s.wear("archer");
+      const circle = new AimCircle(() => s.scene.add.graphics());
+      circle.draw(s.aim);
+      new ArrowRain(s.scene, s.art, s.fx).start(s.at, s.aim);
+      s.later(RAIN_HOLD_MS, () => {
+        circle.clear();
+        s.wear("mage");
+      });
+    },
+  },
+  {
+    module: "blink",
+    name: "Blink out and in",
+    // out where the mage stands at the send, in where the jump places the body (FS-04EEA R44)
+    demo: (s) => {
+      playBlinkOut(s.fx, s.owner, s.at);
+      s.later(BLINK_LANDS_MS, () => {
+        s.standAt(s.aim);
+        playBlinkIn(s.fx, s.owner, s.aim);
+      });
+      s.later(HOLD_MS, () => s.standAt(s.at));
+    },
+  },
+  {
+    module: "earthbreaker",
+    name: "Earthbreaker slam",
+    // round the warrior's feet on the send (FS-04EEA R43)
+    demo: (s) => {
+      s.wear("warrior");
+      playEarthbreaker(s.fx, new Staged(s.scene.time), s.owner, s.at);
+      s.later(HOLD_MS / 2, () => s.wear("mage"));
+    },
+  },
+  // FS-04EEA R46, R49: the flurry at 1, 3 and 5 parry charges, each to read distinctly
+  {
+    module: "settleTheDebt",
+    name: "Settle the Debt (1 charge)",
+    demo: (s) => playFlurry(s, 1),
+  },
+  {
+    module: "settleTheDebt",
+    name: "Settle the Debt (3 charges)",
+    demo: (s) => playFlurry(s, 3),
+  },
+  {
+    module: "settleTheDebt",
+    name: "Settle the Debt (5 charges)",
+    demo: (s) => playFlurry(s, 5),
   },
   {
     module: "aimLine",
@@ -496,12 +582,17 @@ export const EFFECT_CARDS: EffectCard[] = [
   },
   {
     module: "stun",
-    name: "Stun tell",
-    // over the figure's head as a world draws it over a stunned monster's (FS-04EEA §H R47)
+    name: "Stun tell (on a ghoul)",
+    // over a stunned monster's head, on a monster's body standing at its idle, as a world draws it (FS-04EEA
+    // §H R47, R49)
     demo: (s) => {
+      const crown = s.wear(STUNNED_LOOK);
       const tells = new StunTells(s.fx);
-      tells.show([{ id: s.owner, at: s.at, lift: s.crown ?? STUN_LIFT_FALLBACK }]);
-      s.later(HOLD_MS, () => tells.clear());
+      tells.show([{ id: s.owner, at: s.at, lift: crown ?? STUN_LIFT_FALLBACK }]);
+      s.later(HOLD_MS, () => {
+        tells.clear();
+        s.wear("mage");
+      });
     },
   },
   {

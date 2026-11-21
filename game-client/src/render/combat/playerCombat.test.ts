@@ -596,6 +596,24 @@ describe("PlayerCombat tree ability on key 3 (FS-04EEA §G R35–R37, R39, R40)"
     expect(send.mock.calls.map(([, p]) => (p as { skill_id: string }).skill_id)).toEqual(["dash", "earthbreaker"]);
   });
 
+  // R42: the class attack clip, aimed at the target, rides the send as every ability's does
+  it.each([
+    ["warrior", holding("warrior")],
+    ["mage", holding("mage")],
+    ["mercenary", mercenary(2)],
+  ] as const)("should play a %s's attack clip toward the cursor on the send", (cls, self) => {
+    const { combat, look } = combatOnStage(self);
+    combat.treeAbility(cls, me, target);
+    expect(look.attackClip).toHaveBeenCalledTimes(1);
+    expect(look.attackClip).toHaveBeenCalledWith({ x: target.x - me.x, y: target.y - me.y });
+  });
+
+  it("should play no attack clip for a press that sends nothing", () => {
+    const { combat, look } = combatOnStage(holding("warrior", { current: 0 }));
+    combat.treeAbility("warrior", me, target);
+    expect(look.attackClip).not.toHaveBeenCalled();
+  });
+
   // R48: no new sound; the class abilities' sound hook is never told of a tree ability
   it("should report no class ability cast for a tree ability", () => {
     const { combat, look } = combatOnStage(holding("warrior"));
@@ -643,6 +661,24 @@ describe("PlayerCombat Arrow Rain aim on key 3 (FS-04EEA §G R38–R40)", () => 
     expect(look.endRainAim).toHaveBeenCalledTimes(1);
     expect(look.arrowRain).toHaveBeenCalledWith(origin, { x: 300, y: 0 });
     expect(combat.rainAiming).toBe(false);
+  });
+
+  // R42: the clip rides the release that sends, aimed at the circle; the press sends nothing and plays nothing
+  it("should play the attack clip toward the circle on the release that sends, and none on the press", () => {
+    const { combat, look } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    expect(look.attackClip).not.toHaveBeenCalled();
+    combat.releaseTreeAbility("archer", origin, far);
+    expect(look.attackClip).toHaveBeenCalledTimes(1);
+    expect(look.attackClip).toHaveBeenCalledWith({ x: 300, y: 0 });
+  });
+
+  it("should play no attack clip on a release that sends nothing", () => {
+    const { combat, look, self } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    self.me = archer({ current: 0 });
+    combat.releaseTreeAbility("archer", origin, near);
+    expect(look.attackClip).not.toHaveBeenCalled();
   });
 
   it("should send one arrow_rain at the cursor on a tap", () => {

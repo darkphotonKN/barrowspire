@@ -47,7 +47,7 @@ export interface FieldCombatParts {
   port: CombatPort;
   look: CombatLook;
   /** How the player's own class kit is drawn, fed each state (FS-MAMHR §G.33–§G.36). */
-  kit?: Pick<ClassKitFx, "sync" | "forget">;
+  kit?: Pick<ClassKitFx, "sync" | "forget" | "landed">;
   projectiles?: Pick<ProjectileFlights, "sync" | "clear">;
   hits?: Pick<HitFeedback, "play" | "clearAll">;
   /** The strike-mark over a living monster, the hand otherwise. */
@@ -196,6 +196,11 @@ export class FieldCombat {
     this.combat.cancelAim();
   }
 
+  /** The jump rule placed this client's own body at world point `at` (FS-04EEA R41): a Blink just sent lands there (R44). */
+  landed(at: Point): void {
+    this.parts.kit?.landed(at, this.parts.port.now());
+  }
+
   /** Everything one visit drew is let go: the next visit starts ready and empty. */
   release(): void {
     this.monsters.clear();
@@ -257,7 +262,7 @@ export function fieldCombatOnScene(
   },
 ): FieldCombat {
   const fx = new EffectsRuntime(scene, art, lightMap);
-  const kit = new ClassKitFx(scene);
+  const kit = new ClassKitFx(scene, { fx: () => fx, art: () => art });
   // the game's one pointer: the hand, pressed under a held left button, the strike-mark over a
   // monster (FS-KYPQ9 §H.2, § Change: The pressed hand)
   const pointer = ensurePointerLook(scene, art);
@@ -311,10 +316,14 @@ export function fieldCombatOnScene(
         hooks.selfAnim()?.holdAim(undefined);
       },
       attackClip: (aim, swing) => hooks.selfAnim()?.attack(scene.time.now, aim, swing),
-      // key 3's Arrow Rain aim circle, a world effect the field draws (FS-04EEA R38; ADR-0086 2.2); the
-      // volleys' `arrowRain` hook is FS-04EEA's effects slice
+      // key 3's Arrow Rain aim circle, a world effect the field draws (FS-04EEA R38; ADR-0086 2.2)
       rainAim: (centre) => kit.rainAim(centre),
       endRainAim: () => kit.endRainAim(),
+      // the tree abilities' looks, world effects the field draws, the caster's own (FS-04EEA §H R42–R46)
+      earthbreaker: (from) => kit.earthbreaker(from),
+      blink: (from) => kit.blink(from, scene.time.now),
+      settleTheDebt: (from, charges) => kit.settleTheDebt(from, charges),
+      arrowRain: (from, centre) => kit.arrowRain(from, centre),
       abilityChanged: () => hooks.abilityChanged?.(),
       abilityCast: (ability) => hooks.sounds?.play(ability),
     },

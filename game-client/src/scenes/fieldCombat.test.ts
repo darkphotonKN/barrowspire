@@ -73,7 +73,7 @@ function fieldOnStage() {
   const button = { pressed: 0 as number | undefined };
   /** Whether the UI scene claimed the press now heard (FS-TQZ5J § Change: Batch 6, R129). */
   const claim = { now: false };
-  const kit = { sync: vi.fn(), forget: vi.fn() };
+  const kit = { sync: vi.fn(), forget: vi.fn(), landed: vi.fn() };
   const sounds = { play: vi.fn() };
   const stuns = { show: vi.fn(), clear: vi.fn() };
   const look = {
@@ -262,6 +262,14 @@ describe("FieldCombat the tree ability on key 3 (FS-04EEA R35–R37)", () => {
     state(blinker(200));
     expect(combat.treeAbility({ x: 400, y: 520 }, true)).toBe(false);
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  // R44: the own body placed by the jump rule is where a Blink just sent lands, on the field's clock
+  it("should hand the kit where the own body was placed, and when", () => {
+    const { combat, kit, clock } = fieldOnStage();
+    clock.now = 1234;
+    combat.landed({ x: 320, y: 200 });
+    expect(kit.landed).toHaveBeenCalledWith({ x: 320, y: 200 }, 1234);
   });
 });
 

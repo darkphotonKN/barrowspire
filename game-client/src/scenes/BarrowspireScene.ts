@@ -697,9 +697,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private music?: WorldMusic;
   /**
    * The player's own class kit drawn (FS-MAMHR §G.32–§G.36, FS-JTNPR req 11), shared with the
-   * field scene: the merc's cut, riposte, stance and parry flash, and the archer's aim line.
+   * field scene: the merc's cut, riposte, stance and parry flash, the archer's aim line, and the tree
+   * abilities' looks on this run's effects runtime (FS-04EEA §H R43–R46).
    */
-  private readonly kit = new ClassKitFx(this);
+  private readonly kit = new ClassKitFx(this, { fx: () => this.fx, art: () => this.art });
   /** This player's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
   private characterLevel?: number;
 
@@ -887,10 +888,14 @@ export class BarrowspireScene extends Phaser.Scene {
       },
       aim: (from, ready, shadow) => this.drawAim(from, ready, shadow),
       endAim: () => this.endAimDrawing(),
-      // key 3's Arrow Rain aim circle, a world effect the run draws (FS-04EEA R38; ADR-0086 2.2); the
-      // volleys' `arrowRain` hook is FS-04EEA's effects slice
+      // key 3's Arrow Rain aim circle, a world effect the run draws (FS-04EEA R38; ADR-0086 2.2)
       rainAim: (centre) => this.kit.rainAim(centre),
       endRainAim: () => this.kit.endRainAim(),
+      // the tree abilities' looks, world effects the run draws, the caster's own (FS-04EEA §H R42–R46)
+      earthbreaker: (from) => this.kit.earthbreaker(from),
+      blink: (from) => this.kit.blink(from, this.time.now),
+      settleTheDebt: (from, charges) => this.kit.settleTheDebt(from, charges),
+      arrowRain: (from, centre) => this.kit.arrowRain(from, centre),
       // a charge only when one carries the player (FS-3V7GC R6): every other clip is the plain attack
       attackClip: (aim, swing) =>
         swing === undefined
@@ -3851,8 +3856,9 @@ export class BarrowspireScene extends Phaser.Scene {
       // stays hidden; the escape plays only for a body seen in play, not on a reconnect's rebuild
       if (state.current_player.escape === true) this.hideOwnBody(!firstSeen);
 
-      // 設定目標位置，在 update() 中平滑移動; a jump, a Blink, is placed there at once (FS-04EEA R41)
-      if (this.playerPos) placeOnJump(this.playerPos, this.targetPosition, pos);
+      // 設定目標位置，在 update() 中平滑移動; a jump, a Blink, is placed there at once (FS-04EEA R41), and the
+      // Blink just sent lands there (R44)
+      if (this.playerPos && placeOnJump(this.playerPos, this.targetPosition, pos)) this.kit.landed(pos, this.time.now);
       this.targetPosition = { x: pos.x, y: pos.y };
 
       this.showProgress(state.current_player);
@@ -4427,6 +4433,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
+    // a rain falls with its floor, and a Blink waiting to land lands nowhere (FS-04EEA R44, R45)
+    this.kit.leaveFloor();
     // the old floor's lore lines go with it; the floor card speaks for the new one (FS-XWHZP R15)
     this.ui.lore({ world: "run", kind: "clear" });
     // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights

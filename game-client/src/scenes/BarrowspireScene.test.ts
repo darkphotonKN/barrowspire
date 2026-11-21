@@ -6744,6 +6744,58 @@ describe("BarrowspireScene key 3, the tree ability (FS-04EEA §G R35–R37)", ()
   });
 });
 
+// FS-04EEA §H R42–R46: each tree ability's look is the run's own kit's, on its send
+describe("BarrowspireScene tree-ability looks (FS-04EEA §H R42–R46)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const holding = (cls: string, resource: Record<string, unknown> = {}) => ({
+    passive_ranks: { [`${cls}.t3`]: 1 },
+    tree_ability_cooldown: { remaining: 0, total: 10 },
+    resource: { kind: "stamina", current: 100, max: 100, ability_cost: 0, tree_ability_cost: 1, ...resource },
+  });
+
+  it.each([
+    ["warrior", "earthbreaker", undefined],
+    ["mage", "blink", undefined],
+    ["mercenary", "settleTheDebt", 3],
+  ])("should draw a %s's tree ability through the kit as it is sent: %s", (cls, hook, charges) => {
+    const { run } = onStage();
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const r = run as unknown as {
+      kit: Record<string, (...a: unknown[]) => void>;
+      lastGameState: unknown;
+      combat: { treeAbility(cls: string, me: unknown, target: unknown): boolean };
+    };
+    const drawn = vi.spyOn(r.kit, hook).mockImplementation(() => {});
+    r.lastGameState = { current_player: holding(cls, { current: 3 }) };
+    expect(r.combat.treeAbility(cls, { x: 100, y: 100 }, { x: 200, y: 100 })).toBe(true);
+    expect(drawn).toHaveBeenCalledTimes(1);
+    expect(drawn.mock.calls[0]?.[0]).toEqual({ x: 100, y: 100 });
+    // the flurry is weighed by the parry charges the latest state shows at the send
+    if (charges !== undefined) expect(drawn.mock.calls[0]?.[1]).toBe(charges);
+  });
+
+  it("should rain through the kit on an archer's release", () => {
+    const { run } = onStage();
+    vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const r = run as unknown as {
+      kit: { arrowRain(from: unknown, centre: unknown): void };
+      lastGameState: unknown;
+      combat: {
+        treeAbility(cls: string, me: unknown, target: unknown): boolean;
+        releaseTreeAbility(cls: string, me: unknown, cursor: unknown): boolean;
+      };
+    };
+    const rain = vi.spyOn(r.kit, "arrowRain").mockImplementation(() => {});
+    r.lastGameState = { current_player: holding("archer") };
+    r.combat.treeAbility("archer", { x: 0, y: 0 }, { x: 100, y: 0 });
+    expect(r.combat.releaseTreeAbility("archer", { x: 0, y: 0 }, { x: 100, y: 0 })).toBe(true);
+    expect(rain).toHaveBeenCalledWith({ x: 0, y: 0 }, { x: 100, y: 0 });
+  });
+});
+
 // FS-04EEA R41: a body whose reported position moves over 60 world px between two states is placed there,
 // the own body and every other, so the next frame draws it there; a walk still glides
 describe("BarrowspireScene a body that jumps (FS-04EEA R41)", () => {
@@ -6774,6 +6826,19 @@ describe("BarrowspireScene a body that jumps (FS-04EEA R41)", () => {
     const run = moved(130 + 40, 160 + 40);
     expect(run.playerPos).toEqual(at(130, 300));
     expect(run.otherPlayersPos.get("ally")).toEqual(at(160, 300));
+  });
+
+  // R44: the own Blink lands where the jump places the own body; a teammate's jump, or a walk, lands none
+  it.each([
+    ["the own body's jump", 130 + 61, 160, [{ x: 191, y: 300 }]],
+    ["a teammate's jump alone", 130, 160 + 61, []],
+    ["a walk", 130 + 40, 160 + 40, []],
+  ])("should hand the kit only %s as a landing", (_, meX, allyX, want) => {
+    const { run } = onStage();
+    const landed = vi.spyOn((run as unknown as { kit: { landed(at: unknown, now: number): void } }).kit, "landed");
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160)));
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", meX), player("ally", "Wenna", allyX)));
+    expect(landed.mock.calls.map(([where]) => ({ ...(where as object) }))).toEqual(want);
   });
 });
 
@@ -9125,6 +9190,14 @@ describe("BarrowspireScene escapes and the exit door's one-shot as lore lines (F
 describe("BarrowspireScene lore lines on a floor change (FS-XWHZP R15)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  // FS-04EEA R45: a rain falls with its floor; a Blink waiting to land lands nowhere on the next
+  it("should let the kit's rain and waiting Blink go with the floor", () => {
+    const { run } = onStage();
+    const left = vi.spyOn((run as unknown as { kit: { leaveFloor(): void } }).kit, "leaveFloor");
+    (run as unknown as { leaveFloor(): void }).leaveFloor();
+    expect(left).toHaveBeenCalledTimes(1);
   });
 
   it("should take the old floor's lore lines down when the party leaves it", () => {

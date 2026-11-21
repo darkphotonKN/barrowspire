@@ -8,7 +8,7 @@ import * as Phaser from "phaser";
 import { BARROW_HEX } from "@/utils/theme";
 import { preloadArt, registerArt } from "@/render/art/phaser";
 import { RESIDENT_ART } from "@/render/art/sceneArt";
-import { CharacterAnimator } from "@/render/art/character";
+import { CharacterAnimator, type CharacterLook } from "@/render/art/character";
 import { directionIndex } from "@/render/art/manifest";
 import type { ArtLibrary } from "@/render/art/library";
 import { projectileFlightOf } from "@/render/effects/flights";
@@ -39,6 +39,11 @@ const TILES = 12;
 const FLIGHT_MS = 320;
 /** Between one card and the next in "play all in turn". */
 const TURN_MS = 1600;
+/**
+ * The art the gallery holds beyond the resident: the run's creatures, so a tell drawn over a monster is
+ * shown on a monster's body (the stun tell, FS-04EEA R49).
+ */
+const GALLERY_ART = ["creatures"] as const;
 
 export class GalleryScene extends Phaser.Scene {
   private art!: ArtLibrary;
@@ -64,12 +69,12 @@ export class GalleryScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // the mage and its effects: resident art (FS-C4JWH §A R3)
-    preloadArt(this, RESIDENT_ART);
+    // the mage and its effects: resident art (FS-C4JWH §A R3); and the creatures a tell stands over
+    preloadArt(this, [...RESIDENT_ART, ...GALLERY_ART]);
   }
 
   create(): void {
-    this.art = registerArt(this, RESIDENT_ART);
+    this.art = registerArt(this, [...RESIDENT_ART, ...GALLERY_ART]);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
     this.floor();
     this.lightMap = new LightMap(this, AMBIENT.run);
@@ -129,7 +134,8 @@ export class GalleryScene extends Phaser.Scene {
       now: () => this.time.now,
       later: (ms, fn) => void this.time.delayedCall(ms, fn),
       fly: (projectileType, shooter) => this.fly(`flight:${n}`, projectileType, shooter),
-      wear: (className) => this.wear(className),
+      wear: (who) => this.wear(who),
+      standAt: (at) => this.standAt(at),
     };
   }
 
@@ -156,11 +162,18 @@ export class GalleryScene extends Phaser.Scene {
     });
   }
 
-  /** The figure in a class's base sheet from now on (both resident, ADR-0059); its crown. */
-  private wear(className: string): number | undefined {
-    this.animator = new CharacterAnimator(this.art, className);
+  /** The figure in a class's base sheet (resident, ADR-0059), or a creature's look, from now on; its crown. */
+  private wear(who: string | CharacterLook): number | undefined {
+    this.animator = new CharacterAnimator(this.art, who);
     this.animator.dress(this.figure);
     return this.animator.crown;
+  }
+
+  /** The figure drawn standing at world point `at`, its torch with it. */
+  private standAt(at: Point): void {
+    const s = worldToScreen(at.x, at.y);
+    this.figure.setPosition(Math.round(s.x), Math.round(s.y)).setDepth(worldDepth(at.x, at.y, 1));
+    this.lightMap.carry({ x: s.x, y: s.y });
   }
 
   private spawnFigure(): void {

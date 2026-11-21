@@ -101,16 +101,16 @@ export interface CombatLook {
    */
   abilityCast?(ability: AbilityCast): void;
   /**
-   * The tree abilities' looks, each as its cast is sent (FS-04EEA §H R42–R46): the slam round the warrior,
-   * the blink-out where the mage stands, the flurry round the mercenary for the parry charges it spends.
-   * Hooks for FS-04EEA's effects slice; a scene that sets none plays nothing.
+   * The tree abilities' looks, each as its cast is sent (FS-04EEA §H R42–R46), beside the attack clip: the slam
+   * round the warrior, the blink-out where the mage stands, the flurry round the mercenary for the parry
+   * charges it spends. A scene that sets none plays nothing.
    */
   earthbreaker?(from: Point): void;
   blink?(from: Point, to: Point): void;
   settleTheDebt?(from: Point, charges: number): void;
   /**
-   * The Arrow Rain sent from `from` onto the circle centred at `centre` (FS-04EEA §H): the volleys' hook for
-   * FS-04EEA's effects slice; a scene that sets none plays nothing.
+   * The Arrow Rain sent from `from` onto the circle centred at `centre` (FS-04EEA §H R45): its volleys. A
+   * scene that sets none plays nothing.
    */
   arrowRain?(from: Point, centre: Point): void;
   /**
@@ -259,6 +259,8 @@ export class PlayerCombat {
     // a copy: the effects are handed where the player stood, never the drawn position itself
     const from = { x: me.x, y: me.y };
     this.port.sendMessage(ActionType.CastSkill, { skill_id: ability, target_x: target.x, target_y: target.y });
+    // the class attack clip aimed at the target, on the send as every ability's (R42)
+    this.look.attackClip({ x: target.x - from.x, y: target.y - from.y });
     if (ability === "blink") {
       this.look.blink?.(from, target);
       return true;
@@ -295,6 +297,7 @@ export class PlayerCombat {
     const centre = arrowRainCentre(from, cursor);
     this.port.sendMessage(ActionType.CastSkill, { skill_id: "arrow_rain", target_x: centre.x, target_y: centre.y });
     this.port.castSent?.();
+    this.look.attackClip({ x: centre.x - from.x, y: centre.y - from.y });
     this.look.arrowRain?.(from, centre);
     return true;
   }

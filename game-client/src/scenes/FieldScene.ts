@@ -1094,8 +1094,8 @@ export class FieldScene extends Phaser.Scene {
     const existing = this.views.get(player.entity_id);
     const fallen = isFallen(player);
     if (existing) {
-      // a jump, a Blink, is placed there at once, never glided (FS-04EEA R41)
-      placeOnJump(existing.pos, existing.target, player.position);
+      // a jump, a Blink, is placed there at once, never glided (FS-04EEA R41); the own Blink lands there (R44)
+      if (placeOnJump(existing.pos, existing.target, player.position) && isSelf) this.fight?.landed(player.position);
       existing.target = { x: player.position.x, y: player.position.y };
       // risen at the entrance: stand there at once rather than slide across the field
       if (existing.fallen && !fallen) existing.pos = { ...existing.target };

@@ -1410,6 +1410,7 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
         sync: vi.fn(),
         update: vi.fn(),
         release: vi.fn(),
+        landed: fight.landed ?? vi.fn(),
       }),
     });
     const idle = { isDown: false };
@@ -1632,6 +1633,20 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       field.update(32, 16);
       expect(walker.pos.x).toBeGreaterThan(100);
       expect(walker.pos.x).toBeLessThan(140);
+    });
+
+    // R44: the own Blink lands where the jump places the own body; a teammate's jump, or a walk, lands none
+    it.each([
+      ["my own jump", "me", true, 161, [{ x: 161, y: 0 }]],
+      ["a teammate's jump", "them", false, 161, []],
+      ["my own walk", "me", true, 140, []],
+    ])("should tell the fight of %s only when it is mine", (_, id, isSelf, x, want) => {
+      const landed = vi.fn();
+      const { field } = kitOnStage({ landed });
+      const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+      Object.assign(field, { views: new Map([[id, view(100)]]), selfEntityID: "me" });
+      place.call(field, entry(id, x), isSelf);
+      expect(landed.mock.calls.map(([at]) => at)).toEqual(want);
     });
   });
 
