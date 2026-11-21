@@ -1214,6 +1214,7 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		s.reflect(attack, target, damage)
 	}
 	s.kickAfterHit(attack, crit, kill)
+	s.combust(attack, target, damage, crit)
 	return true
 }
 
