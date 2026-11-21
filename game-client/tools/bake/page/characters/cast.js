@@ -66,11 +66,13 @@ import * as goblins from "./goblin.js";
 import { ogre, ogreMauler, ogreTyrant } from "./ogre.js";
 import { darkReaper, darkWarrior } from "./darkWarrior.js";
 import { cut, dress } from "./look.js";
+import { berserker, guardian } from "./warriorLooks.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
   ARCHER_SHEET,
   ARCHER_STYLE,
+  BERSERKER_SHEET,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
   KNIGHT_STYLE,
@@ -119,7 +121,7 @@ export function knight(look) {
   piece("belt", F.leatherDark, { r: [0.106, 0.086], dy: 0.03 }, (m, o) => belt(rig, m, M.brass, o));
   piece("cloak", F.cloakKnight, cloakO, (m, o) => cloak(rig, m, o));
   piece("weapon", undefined, {}, () => inHand(rig, "R").add(longsword(rig, M, F)));
-  piece("shield", undefined, {}, () => kiteShield(rig, "L", F));
+  piece("shield", undefined, {}, (m, o) => kiteShield(rig, "L", F, o));
 
   return d.finish(rig, KNIGHT_STYLE);
 }
@@ -644,6 +646,9 @@ export const CAST = [
   // class re-baked, the owner's 2026-11-12 pick); each class moved to 1.5× (ADR-0076, the owner's
   // 「感覺可以」) when it was re-baked with the run (FS-HF0WW § Change: Class sheets at 1.5x)
   ...Object.keys(CLASS_ROWS).map((base) => classRow(base)),
+  // the specialization looks (FS-1J1CB §A, R15): each its class re-dressed, alone in its own group
+  specRow("knight", "guardian", guardian, { module: "warriorLooks", fn: "guardian" }),
+  specRow("knight", "berserker", berserker, { module: "warriorLooks", fn: "berserker", animations: BERSERKER_SHEET.animations }),
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds
