@@ -374,8 +374,9 @@ export const palette = {
   //    and earth above; only the soot between the bones is its own.
   boneHeapSoot: shade(BARROW_HEX.barrowDeep, 0.6),
 
-  // -- Menu chrome: the canvas menus (loading screen, main menu, character creation) wear the web
-  //    UI's Bone & Soot look (design-guideline "UI Chrome"). Bone is the torch, one per view:
+  // -- Menu chrome: the canvas menus (loading screen, main menu, character creation) wear Bone &
+  //    Soot, the web UI's look until ADR-0087, now their own (design-guideline "UI Chrome"). Bone
+  //    is the torch, one per view:
   //    the primary CTA, the title, the active selection. Iron frames, soot grounds, grey stone
   //    panels. Never used past the menus: the hub, the run and the HUD keep the barrow ramp.
   //    Derive menu shades with `mix()` toward `menu.well` / `menu.torch`, not `shade()` /
