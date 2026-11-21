@@ -84,7 +84,7 @@ func rains(em *ecs.EntityManager) []*components.ArrowRainComponent {
 }
 
 // A resolving Arrow Rain spends 35 stamina, starts a 12 s cooldown and the
-// attack slow, and centres a 70 px circle on the target, or 300 px along the
+// attack pin, and centres a 70 px circle on the target, or 300 px along the
 // line toward it when the target is further. FS-04EEA §E R23, §A R4–R5.
 func TestCombatSystem_ArrowRain_CentresTheCircleWithin300AndPaysItsCost(t *testing.T) {
 	tests := []struct {
@@ -115,7 +115,7 @@ func TestCombatSystem_ArrowRain_CentresTheCircleWithin300AndPaysItsCost(t *testi
 			remaining, total := cooldownState(archer, components.AttackArrowRain)
 			assert.InDelta(t, 12, remaining, 1e-9)
 			assert.InDelta(t, 12, total, 1e-9)
-			assert.True(t, archer.HasComponent(ecs.ComponentTypeAttackSlow))
+			assert.True(t, archer.HasComponent(ecs.ComponentTypeAttackPin))
 		})
 	}
 }

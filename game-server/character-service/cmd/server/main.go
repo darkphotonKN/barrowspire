@@ -83,7 +83,9 @@ func main() {
 	}
 
 	repo := character.NewRepository(db)
-	service := character.NewService(repo, publishCh)
+	// wrapped so every repository call is a span above its queries
+	// (internal/character/trace_gen.go)
+	service := character.NewService(character.NewRepositoryWithTracing(repo, "character/repository"), publishCh)
 	handler := character.NewHandler(service)
 	consumer := character.NewConsumer(service, createdCh, matchEndedCh, slog.Default())
 	// declare the listeners' topology and start consuming; match.ended carries

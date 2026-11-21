@@ -121,7 +121,7 @@ func TestCombatSystem_SettleTheDebt_HittingNothingStillSpendsEveryCharge(t *test
 
 	assert.Equal(t, 0, pool(merc))
 	assert.InDelta(t, 0.25, cooldownsOf(merc)[components.AttackCut], 1e-9)
-	assert.True(t, merc.HasComponent(ecs.ComponentTypeAttackSlow))
+	assert.True(t, merc.HasComponent(ecs.ComponentTypeAttackPin))
 }
 
 // At 0 parry charges, or inside the cut's slot, the flurry does nothing and
@@ -137,7 +137,7 @@ func TestCombatSystem_SettleTheDebt_RefusedAtZeroChargesOrInsideTheCutsSlot(t *t
 
 		assert.Equal(t, 1000, health(target))
 		assert.Zero(t, cooldownsOf(merc)[components.AttackCut], "no slot started")
-		assert.False(t, merc.HasComponent(ecs.ComponentTypeAttackSlow))
+		assert.False(t, merc.HasComponent(ecs.ComponentTypeAttackPin))
 	})
 	t.Run("inside the cut's slot", func(t *testing.T) {
 		em := ecs.NewEntityManager()
@@ -207,7 +207,7 @@ func TestCombatSystem_SettleTheDebt_AtThreeChargesDisarmsTheRiposte(t *testing.T
 	merc := settleMerc(w.em, 3, 3)
 	settle(merc)
 	w.tick()
-	w.ticks(15) // the cut's slot runs out
+	w.ticks(37) // the cut's slot and the 0.6 s attack pin run out
 	near := dummyOffAim(w.em, 40, 0)
 	far := dummyOffAim(w.em, 80, 0) // inside the riposte's 90, past the cut's 55
 
@@ -279,7 +279,7 @@ func TestCombatSystem_SettleTheDebt_RefusedWithoutTheNodeOrForAnotherClass(t *te
 			assert.Equal(t, 1000, health(target))
 			assert.Equal(t, 3, pool(caster))
 			assert.Zero(t, cooldownsOf(caster)[components.AttackCut])
-			assert.False(t, caster.HasComponent(ecs.ComponentTypeAttackSlow))
+			assert.False(t, caster.HasComponent(ecs.ComponentTypeAttackPin))
 		})
 	}
 }

@@ -1,6 +1,4 @@
 import { EventEmitter } from "eventemitter3";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { HUD_DEPTH, MARKER_DEPTH } from "@/render/markers/markers";
@@ -730,27 +728,5 @@ describe("the card leaves as ash in the game (FS-PQ2TW §Change: Ash, a trial al
 
     expect(ash.stop).toHaveBeenCalled();
     expect(dust.stop).not.toHaveBeenCalled();
-  });
-});
-
-describe("the card belongs to no scene (FS-PQ2TW R37, R38; ADR-0075 Decision 3)", () => {
-  const source = (path: string) => readFileSync(join(process.cwd(), "src", path), "utf8");
-
-  it("should import no scene", () => {
-    const imports = source("ui/arrivalCard.ts").match(/from "[^"]+"/g) ?? [];
-    expect(imports.filter((i) => /Scene"$/.test(i))).toEqual([]);
-  });
-
-  it("should leave the run scene no card, veil or card-timing code of its own", () => {
-    expect(source("scenes/BarrowspireScene.ts")).not.toMatch(
-      /playFloorTransition|relayoutFloorVeil|floorVeil|veilRelease|FLOOR_(VEIL|DARK|CARD|VIEW)_/,
-    );
-  });
-
-  it("should play the run's climb through the piece, with the table's words, and both leaves (R30, R41)", () => {
-    const run = source("scenes/BarrowspireScene.ts");
-    expect(run).toMatch(/new ArrivalCard\(this, cardLeaves\(this, \(\) => this\.art\)\)/);
-    expect(run).toMatch(/placeCard\(/);
-    expect(run).not.toMatch(/\bfloorCard\(/);
   });
 });

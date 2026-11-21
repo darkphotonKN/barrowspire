@@ -79,7 +79,7 @@ func TestCombatSystem_Blink_OpenGround_MovesUpTo180TowardTheTarget(t *testing.T)
 			remaining, total := cooldownState(mage, components.AttackBlink)
 			assert.InDelta(t, 8, remaining, 1e-9)
 			assert.InDelta(t, 8, total, 1e-9)
-			assert.True(t, mage.HasComponent(ecs.ComponentTypeAttackSlow))
+			assert.True(t, mage.HasComponent(ecs.ComponentTypeAttackPin))
 		})
 	}
 }
@@ -219,7 +219,7 @@ func TestCombatSystem_Blink_PassesThroughBodies(t *testing.T) {
 }
 
 // A Blink that cannot move the mage at all does nothing: no move, no mana, no
-// cooldown, no attack slow. FS-04EEA §D R21; §Edge States "Blink at the target
+// cooldown, no attack pin. FS-04EEA §D R21; §Edge States "Blink at the target
 // under the mage".
 func TestCombatSystem_Blink_GoingNowhere_ResolvesToNothing(t *testing.T) {
 	tests := []struct {
@@ -248,7 +248,7 @@ func TestCombatSystem_Blink_GoingNowhere_ResolvesToNothing(t *testing.T) {
 			remaining, total := cooldownState(mage, components.AttackBlink)
 			assert.Zero(t, remaining)
 			assert.Zero(t, total)
-			assert.False(t, mage.HasComponent(ecs.ComponentTypeAttackSlow))
+			assert.False(t, mage.HasComponent(ecs.ComponentTypeAttackPin))
 		})
 	}
 }

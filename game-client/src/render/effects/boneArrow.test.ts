@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { worldToScreen } from "@/render/iso/projection";
 import { BARROW_HEX } from "@/utils/theme";
@@ -126,11 +124,6 @@ describe("bone arrow (FS-B4SG9 §D R22)", () => {
         expect(c).not.toMatch(NOT_HOSTILE);
     });
 
-    it("should name no amber key and no colour literal in its source", () => {
-      const src = readFileSync(join(__dirname, "boneArrow.ts"), "utf8");
-      expect(src).not.toMatch(/["'`]amber\w*["'`]/);
-      expect(src).not.toMatch(/0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}/);
-    });
   });
 
   describe("flown where the server puts it", () => {

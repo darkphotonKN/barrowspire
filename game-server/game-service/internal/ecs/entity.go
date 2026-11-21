@@ -63,7 +63,7 @@ const (
 
 	ComponentTypeAttackIntent ComponentType = "AttackIntent"
 	ComponentTypeCooldown     ComponentType = "Cooldown"
-	ComponentTypeAttackSlow   ComponentType = "AttackSlow"
+	ComponentTypeAttackPin    ComponentType = "AttackPin"
 
 	ComponentTypeGearBonus ComponentType = "GearBonus"
 	// the passive tree ranks a body holds (FS-8RZ51 R31)

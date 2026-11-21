@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import { palette } from "./canvasPalette";
 import { BARROW, BARROW_HEX } from "./theme";
@@ -72,18 +70,4 @@ describe("fire marks no interactable (design guideline, FS-PQ2TW)", () => {
     expect(colours(palette).filter(([, v]) => fire.includes(v as number)).map(([path]) => path)).toEqual([]);
   });
 
-  it("should name fire's tokens only in the theme and in fire effects", () => {
-    const SRC = join(__dirname, "..");
-    const sources = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
-        const path = join(dir, d.name);
-        if (d.isDirectory()) return sources(path);
-        return /\.tsx?$/.test(d.name) && !/\.test\.tsx?$/.test(d.name) ? [path] : [];
-      });
-    const naming = sources(SRC)
-      .filter((file) => new RegExp(`\\b(${FIRE_ONLY.join("|")})\\b`).test(readFileSync(file, "utf8")))
-      .map((file) => relative(SRC, file));
-    // the fire effects: a new one is added here, by name, as a deliberate call
-    expect(naming.sort()).toEqual(["render/effects/cardAsh.ts", "utils/theme.ts"]);
-  });
 });

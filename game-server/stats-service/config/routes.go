@@ -31,7 +31,9 @@ func SetupServices(db *sqlx.DB, amqpChannel, republishCh *amqp.Channel) (*grpc.S
 	// create service with repository, inbox, AMQP channel, and cache; the inbox
 	// writes into stats' own processed_events inside each event's transaction
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel) // adapter
-	service := stats.NewService(repo, commoninbox.NewRepo(), publishCh, db, cacheService)
+	// wrapped so every repository call is a span above its queries
+	// (internal/stats/trace_gen.go)
+	service := stats.NewService(stats.NewRepositoryWithTracing(repo, "stats/repository"), commoninbox.NewRepo(), publishCh, db, cacheService)
 
 	// create gRPC handler with service
 	handler := stats.NewHandler(service)

@@ -72,7 +72,7 @@ func killGhoul(t *testing.T, s *Session, playerID uuid.UUID) {
 	require.NoError(t, s.handleAttack(playerID, g.ID))
 	tick(s)
 	require.Equal(t, 0, currentHealth(g), "the ghoul died on the tick")
-	tickFor(s, 0.5)
+	tickFor(s, systems.AttackPinDuration)
 }
 
 // Wightfang: each kill is +15% attack speed, stacking ×3; the stacks expire
@@ -91,8 +91,8 @@ func TestRun_Wightfang_KillsStackAttackSpeedThenExpire(t *testing.T) {
 	killGhoul(t, s, playerID)
 	assert.Equal(t, 45, gearOf(t, delver).AttackSpeedPercent, "a fourth kill keeps three stacks")
 
-	// the fourth kill was 0.5 s ago: the timer was reset by it
-	tickFor(s, 3.4)
+	// the fourth kill was 0.6 s ago: the timer was reset by it
+	tickFor(s, 3.3)
 	assert.Equal(t, 45, gearOf(t, delver).AttackSpeedPercent, "still within 4 s of the last kill")
 
 	tickFor(s, 0.2)

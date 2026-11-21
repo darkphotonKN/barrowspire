@@ -4,6 +4,7 @@ import { CHARGE_MS } from "@/render/effects/charge";
 import { SHADOW_SHOT_COOLDOWN_MS, SHADOW_SHOT_MIN_HOLD_MS } from "@/scenes/shadowShotAim";
 import type { ResourceState } from "@/types/gameState";
 import {
+  ATTACK_PIN_MS,
   PRIMARY_COOLDOWN_MS,
   PlayerCombat,
   SPECIAL_COOLDOWN_MS,
@@ -76,13 +77,18 @@ describe("PlayerCombat strike (FS-77AB6 req 39; FS-X2F2H §Requirements 56)", ()
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("should strike once per cooldown, and again once it has passed", () => {
+  // the 600 ms attack pin outlasts the strike's own cooldown (FS-JS7C8 D4)
+  it("should strike once per pin, past its cooldown, and again once the pin is over", () => {
     const { combat, send, elapse } = combatOnStage();
     combat.strike(me, "boar-1", me);
     combat.strike(me, "boar-1", me);
     expect(send).toHaveBeenCalledTimes(1);
 
     elapse(STRIKE_COOLDOWN_MS);
+    combat.strike(me, "boar-1", me);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    elapse(ATTACK_PIN_MS - STRIKE_COOLDOWN_MS);
     combat.strike(me, "boar-1", me);
     expect(send).toHaveBeenCalledTimes(2);
   });
@@ -134,19 +140,18 @@ describe("PlayerCombat cast (FS-2325V §E.4; FS-KYPQ9 §D)", () => {
     expect(look.attackClip).toHaveBeenCalledWith({ x: 120, y: -60 }, hold);
   });
 
-  it.each([
-    ["primary", PRIMARY_COOLDOWN_MS],
-    ["special", SPECIAL_COOLDOWN_MS],
-  ] as const)("should hold every cast for the %s cooldown", (button, cooldown) => {
+  // the special's cooldown binds after the dash, which never pins; after any attack the 600 ms
+  // pin binds before either cooldown does (FS-JS7C8 D4, "Attacks paced by the pin")
+  it("should hold every cast for the special cooldown", () => {
     const { combat, send, elapse } = combatOnStage();
-    combat.cast(button, "mage", me, me);
-    combat.cast("primary", "mage", me, me);
-    elapse(cooldown - 1);
-    combat.cast("primary", "mage", me, me);
+    combat.cast("special", "warrior", me, me);
+    combat.cast("primary", "warrior", me, me);
+    elapse(SPECIAL_COOLDOWN_MS - 1);
+    combat.cast("primary", "warrior", me, me);
     expect(send).toHaveBeenCalledTimes(1);
 
     elapse(1);
-    combat.cast("primary", "mage", me, me);
+    combat.cast("primary", "warrior", me, me);
     expect(send).toHaveBeenCalledTimes(2);
   });
 
@@ -783,5 +788,167 @@ describe("PlayerCombat Arrow Rain aim on key 3 (FS-04EEA §G R38–R40)", () => 
     expect(combat.releaseTreeAbility("archer", me, near)).toBe(false);
     expect(send).not.toHaveBeenCalled();
     expect(look.endRainAim).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlayerCombat attack pin (FS-JS7C8 §Change: Attacking pins the attacker, R61–R64)", () => {
+  it("should send nothing on a second primary while the pin runs, and send it once 600 ms have passed", () => {
+    const { combat, send, look, elapse } = combatOnStage();
+    combat.cast("primary", "mage", me, me);
+    elapse(PRIMARY_COOLDOWN_MS);
+    expect(combat.cast("primary", "mage", me, me)).toBe(false);
+    elapse(300 - PRIMARY_COOLDOWN_MS);
+    expect(combat.cast("primary", "mage", me, me)).toBe(false);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(look.attackClip).toHaveBeenCalledTimes(1);
+
+    elapse(ATTACK_PIN_MS - 300);
+    expect(combat.cast("primary", "mage", me, me)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  const target = { x: 160, y: 100 };
+  const resource = {
+    stamina: { kind: "stamina", current: 100, max: 100, ability_cost: 25 },
+    charges: (current: number): ResourceState => ({ kind: "parry_charges", current, max: 3, ability_cost: 0 }),
+  } as const;
+  type Stage = ReturnType<typeof combatOnStage>;
+  const sends: [string, ReturnType<CombatSelf>, (s: Stage) => boolean][] = [
+    ["strike", undefined, ({ combat }) => combat.strike(me, "boar-1", target)],
+    ["slash", undefined, ({ combat }) => combat.cast("primary", "warrior", me, target)],
+    ["arrow", undefined, ({ combat }) => combat.cast("primary", "archer", me, target)],
+    ["cut", { resource: resource.charges(2) }, ({ combat }) => combat.cast("primary", "mercenary", me, target)],
+    ["riposte", { resource: resource.charges(3) }, ({ combat }) => combat.cast("primary", "mercenary", me, target)],
+    ["fireball", undefined, ({ combat }) => combat.cast("primary", "mage", me, target)],
+    ["triple_fireball", undefined, ({ combat }) => combat.cast("special", "mage", me, target)],
+    [
+      "a fired shadow_shot",
+      { resource: resource.stamina },
+      ({ combat, elapse }) => {
+        combat.cast("special", "archer", me, target);
+        elapse(SHADOW_SHOT_MIN_HOLD_MS);
+        return combat.releaseAim(me, target);
+      },
+    ],
+  ];
+  const probes: [string, (s: Stage) => boolean][] = [
+    ["strike", ({ combat }) => combat.strike(me, "boar-2", target)],
+    ["a primary cast", ({ combat }) => combat.cast("primary", "mage", me, target)],
+    ["a special cast", ({ combat }) => combat.cast("special", "mage", me, target)],
+    ["the warrior's dash", ({ combat }) => combat.cast("special", "warrior", me, target)],
+  ];
+  const cases = sends.flatMap(([sent, self, send]) => probes.map(([probe, act]) => [sent, probe, self, send, act] as const));
+
+  it.each(cases)("after %s, should answer %s with nothing sent or played until the pin is over", (_, __, self, sendIt, probe) => {
+    const stage = combatOnStage(self);
+    const { send, look, castSent, elapse } = stage;
+    expect(sendIt(stage)).toBe(true);
+    elapse(ATTACK_PIN_MS - 1);
+    vi.clearAllMocks();
+
+    expect(probe(stage)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(castSent).not.toHaveBeenCalled();
+    for (const fn of Object.values(look)) expect(fn).not.toHaveBeenCalled();
+
+    elapse(1);
+    expect(probe(stage)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("should pin for 600 ms whatever gear is worn: +50% attack speed shortens nothing", () => {
+    const weapon = { affixes: [{ stat: "attack_speed", tier: 1, value: 50 }] };
+    const worn = { resource: resource.stamina, equipment: { weapon } };
+    const { combat, send, elapse } = combatOnStage(worn as ReturnType<CombatSelf>);
+    combat.cast("primary", "archer", me, target);
+    elapse(ATTACK_PIN_MS - 1);
+    expect(combat.cast("primary", "archer", me, target)).toBe(false);
+    elapse(1);
+    expect(combat.cast("primary", "archer", me, target)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should start no pin on a dash: a strike goes at once after it", () => {
+    const { combat, send } = combatOnStage();
+    expect(combat.cast("special", "warrior", me, target)).toBe(true);
+    expect(combat.strike(me, "boar-1", target)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it("should still send a Mercenary's parry and raise the stance while the pin runs, starting no pin", () => {
+    const { combat, send, look, self } = combatOnStage({ resource: resource.charges(0) });
+    combat.cast("primary", "mercenary", me, target);
+    expect(combat.cast("special", "mercenary", me, target)).toBe(true);
+    expect(send).toHaveBeenLastCalledWith(ActionType.CastSkill, { skill_id: "parry", target_x: 160, target_y: 100 });
+    expect(look.parry).toHaveBeenCalledTimes(1);
+
+    const fresh = combatOnStage(self.me);
+    fresh.combat.cast("special", "mercenary", me, target);
+    expect(fresh.combat.cast("primary", "mercenary", me, target)).toBe(true);
+  });
+
+  it("should clear the pin on a reset: the next cast and strike go at once", () => {
+    const { combat, send } = combatOnStage();
+    combat.cast("primary", "warrior", me, target);
+    combat.reset();
+    expect(combat.cast("primary", "warrior", me, target)).toBe(true);
+    combat.reset();
+    expect(combat.strike(me, "boar-1", target)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  describe("the archer's Shadow Shot hold (R63)", () => {
+    function pinnedArcher() {
+      const stage = combatOnStage({ resource: resource.stamina });
+      stage.combat.cast("primary", "archer", me, target);
+      vi.clearAllMocks();
+      return stage;
+    }
+
+    it("should begin the hold on a right-press during the pin, with nothing sent", () => {
+      const { combat, send, look } = pinnedArcher();
+      expect(combat.cast("special", "archer", me, target)).toBe(true);
+      expect(combat.aiming).toBe(true);
+      expect(send).not.toHaveBeenCalled();
+      expect(look.aim).toHaveBeenCalledWith(me, false, false);
+    });
+
+    it("should read not ready while the pin runs, held long enough, and end a release then with nothing sent", () => {
+      const { combat, send, look, castSent, elapse } = pinnedArcher();
+      combat.cast("special", "archer", me, target);
+      elapse(SHADOW_SHOT_MIN_HOLD_MS);
+      combat.aimFrame(me);
+      expect(look.aim).toHaveBeenLastCalledWith(me, false, false);
+
+      expect(combat.releaseAim(me, target)).toBe(false);
+      expect(combat.aiming).toBe(false);
+      expect(look.endAim).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+      expect(castSent).not.toHaveBeenCalled();
+      expect(look.shadowShot).not.toHaveBeenCalled();
+      expect(look.attackClip).not.toHaveBeenCalled();
+      expect(combat.lockedOut).toBe(false);
+    });
+
+    it("should fire a hold begun during the pin and released after it", () => {
+      const { combat, send, look, elapse } = pinnedArcher();
+      combat.cast("special", "archer", me, target);
+      elapse(ATTACK_PIN_MS);
+      combat.aimFrame(me);
+      expect(look.aim).toHaveBeenLastCalledWith(me, true, false);
+      expect(combat.releaseAim(me, target)).toBe(true);
+      expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "shadow_shot", target_x: 160, target_y: 100 });
+    });
+
+    it("should leave the cooldown unstarted by a release the pin refused: the next hold fires once the pin is over", () => {
+      const { combat, send, elapse } = pinnedArcher();
+      combat.cast("special", "archer", me, target);
+      elapse(SHADOW_SHOT_MIN_HOLD_MS);
+      combat.releaseAim(me, target);
+      combat.cast("special", "archer", me, target);
+      elapse(ATTACK_PIN_MS - SHADOW_SHOT_MIN_HOLD_MS);
+      expect(combat.releaseAim(me, target)).toBe(true);
+      expect(send).toHaveBeenCalledTimes(1);
+    });
   });
 });

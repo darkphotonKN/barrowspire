@@ -247,7 +247,7 @@ func TestKicker_BullRush(t *testing.T) {
 		target := dummy(w.em, at.X+40, at.Y)
 		w.cast(components.AttackSlash, at.X+100, at.Y)
 		first = 1000 - health(target)
-		w.ticks(30)
+		w.ticks(37) // past the 0.6 s attack pin (FS-JS7C8)
 		w.cast(components.AttackSlash, at.X+100, at.Y)
 		return first, 1000 - first - health(target)
 	}

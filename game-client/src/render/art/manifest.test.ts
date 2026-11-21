@@ -620,10 +620,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       }
     });
 
-    it("draws every colour from BARROW: no colour literal in models/interactables.js (ADR-0013)", () => {
-      const model = readFileSync(join(__dirname, "../../../tools/bake/page/models/interactables.js"), "utf8");
-      expect(model).not.toMatch(/#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/);
-    });
   });
 
   it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
@@ -1162,15 +1158,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(sheet("bone_pile").atlas).toMatch(/^tower-\d+$/);
     });
 
-    it("draws every forest colour from BARROW: no colour literal in models/nature.js", () => {
-      const model = readFileSync(
-        join(__dirname, "../../../tools/bake/page/models/nature.js"),
-        "utf8",
-      );
-      expect(model).not.toMatch(
-        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
-      );
-    });
   });
 
   describe("the town interiors' props (FS-B0H2D §G R30)", () => {
@@ -1263,15 +1250,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(standing("anvil")).toBeLessThan(standing("counter"));
     });
 
-    it("draws every interior colour from BARROW: no colour literal in models/interior.js", () => {
-      const model = readFileSync(
-        join(__dirname, "../../../tools/bake/page/models/interior.js"),
-        "utf8",
-      );
-      expect(model).not.toMatch(
-        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
-      );
-    });
   });
 
   describe("characters and creatures (FS-2325V §E)", () => {

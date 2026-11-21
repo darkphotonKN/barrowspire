@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/darkphotonKN/barrowspire-server/auth-service/internal/models"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -264,22 +265,10 @@ func NewTransactor(db *sqlx.DB) *transactor {
 	return &transactor{db: db}
 }
 
-// InTx commits when fn returns nil and rolls back otherwise.
-func (t *transactor) InTx(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
-	tx, err := t.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	// no-op once Commit has run
-	defer func() { _ = tx.Rollback() }()
-
-	if err := fn(tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit tx: %w", err)
-	}
-	return nil
+// InTx commits when fn returns nil and rolls back otherwise, inside a repo.tx
+// span named by operation.
+func (t *transactor) InTx(ctx context.Context, operation string, fn func(ctx context.Context, tx *sqlx.Tx) error) error {
+	return commontracing.WithTx(ctx, t.db, operation, fn)
 }
 
 // LockMemberTx reads the member and holds its row until the caller's

@@ -13,6 +13,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/auth"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/gin-gonic/gin"
@@ -254,6 +255,10 @@ func (s *Server) announceCurrentWorld(msgChan chan interface{}, player *types.Pl
 * Serves each individually connected player.
 **/
 func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
+	// one reader per live connection, so its lifetime is the connection's
+	metrics.WSConnections.Inc()
+	defer metrics.WSConnections.Dec()
+
 	for {
 		slog.Debug("Listening for player messages")
 		_, message, err := conn.ReadMessage()
@@ -279,6 +284,7 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 		err = json.Unmarshal(message, &decodedMsg)
 
 		if err != nil {
+			metrics.CountWSMessage(metrics.DirectionIn, metrics.TypeMalformed)
 			slog.Error("Error when decoding payload", "error", err)
 
 			if err := conn.WriteJSON(types.Message{Action: "Error", Payload: map[string]interface{}{"error": "Your message to server was the incorrect format and could not be decoded as JSON."}}); err != nil {
@@ -286,6 +292,8 @@ func (s *Server) ServeConnectedPlayer(conn *websocket.Conn) {
 			}
 			continue
 		}
+
+		metrics.CountWSMessage(metrics.DirectionIn, decodedMsg.Action)
 
 		clientPackage := types.ClientPackage{Message: decodedMsg, Conn: conn}
 
@@ -446,6 +454,7 @@ func (s *Server) startClientWriter(conn *websocket.Conn, msgChan chan interface{
 				// the channel is closed when the connection is cleaned up
 				return
 			}
+			metrics.CountWSMessage(metrics.DirectionOut, outboundType(msg))
 		}
 	}()
 }
@@ -693,7 +702,7 @@ func (s *Server) leaveCurrentWorld(player *types.Player) {
 
 		// remove from server's sessions map
 		s.mu.Lock()
-		delete(s.sessions, playerSession.ID)
+		s.removeSessionLocked(playerSession.ID)
 		s.mu.Unlock()
 
 		slog.Info("Session shut down and removed", "session_id", playerSession.ID)
@@ -836,4 +845,19 @@ func asMember(ctx context.Context, token types.BearerToken) context.Context {
 		return ctx
 	}
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+string(token))
+}
+
+// outboundType is the type a message to a client is counted under: the
+// per-tick state carries no action, everything else is a types.Message.
+func outboundType(msg interface{}) string {
+	switch m := msg.(type) {
+	case types.Message:
+		return m.Action
+	case *types.Message:
+		return m.Action
+	case *types.ClientGameState, types.ClientGameState:
+		return metrics.TypeState
+	default:
+		return metrics.TypeOther
+	}
 }

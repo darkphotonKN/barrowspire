@@ -145,9 +145,10 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
 			hpAfterFirst, shotsAfterFirst := health(target), len(projectiles(em))
 			assert.Equal(t, 100-tt.cost, pool(attacker))
-			// refilled so only the cooldown can refuse what follows; one Shadow
-			// Shot alone nearly drains the pool
+			// refilled and unpinned so only the cooldown can refuse what
+			// follows; one Shadow Shot alone nearly drains the pool
 			resourceOf(attacker).Current = 100
+			attacker.RemoveComponent(ecs.ComponentTypeAttackPin)
 
 			// inside the cooldown: nothing at all happens
 			intend(attacker, intent)
@@ -253,7 +254,8 @@ func TestCombatSystem_UnequippingChangesTheNextHit(t *testing.T) {
 
 	ec, _ := attacker.GetComponent(ecs.ComponentTypeEquipment)
 	ec.(*components.EquipmentComponent).WeaponSlot = nil
-	for elapsed := 0.0; elapsed <= attackTable[components.AttackTargeted].cooldown; elapsed += tickSeconds {
+	// past the swing's cooldown and the pin it started
+	for elapsed := 0.0; elapsed <= max(attackTable[components.AttackTargeted].cooldown, AttackPinDuration); elapsed += tickSeconds {
 		combat.Update(tickSeconds, em.GetAllEntities(), nil)
 	}
 
@@ -1286,7 +1288,7 @@ func TestCombatSystem_TreeAbility_RefusedWithoutTheClassOrTheNode(t *testing.T) 
 			remaining, total := cooldownState(caster, components.AttackEarthbreaker)
 			assert.Zero(t, remaining)
 			assert.Zero(t, total)
-			assert.False(t, caster.HasComponent(ecs.ComponentTypeAttackSlow))
+			assert.False(t, caster.HasComponent(ecs.ComponentTypeAttackPin))
 		})
 	}
 }
@@ -1352,22 +1354,22 @@ func TestCombatSystem_Earthbreaker_WornAttackSpeedShortensItsCooldown(t *testing
 	assert.InDelta(t, 10/1.5, total, 1e-9)
 }
 
-// A resolving slam starts the attack slow and stops a charge in flight.
+// A resolving slam starts the attack pin and stops a charge in flight.
 // FS-04EEA §A R4.
-func TestCombatSystem_Earthbreaker_StartsTheAttackSlowAndEndsACharge(t *testing.T) {
+func TestCombatSystem_Earthbreaker_StartsTheAttackPinAndEndsACharge(t *testing.T) {
 	em := ecs.NewEntityManager()
 	warrior := earthbreakerWarrior(em, 100, 100, true)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
 	intend(warrior, components.AttackIntent{Kind: components.AttackDash, TargetX: 400, TargetY: 100})
 	combat.Update(tickSeconds, em.GetAllEntities(), nil)
 	require.True(t, warrior.HasComponent(ecs.ComponentTypeDash))
-	warrior.RemoveComponent(ecs.ComponentTypeAttackSlow)
+	warrior.RemoveComponent(ecs.ComponentTypeAttackPin)
 
 	slam(warrior)
 	combat.Update(tickSeconds, em.GetAllEntities(), nil)
 
 	assert.False(t, warrior.HasComponent(ecs.ComponentTypeDash), "the charge ends where the body stands")
-	assert.True(t, warrior.HasComponent(ecs.ComponentTypeAttackSlow))
+	assert.True(t, warrior.HasComponent(ecs.ComponentTypeAttackPin))
 }
 
 // With player damage off the slam passes over other delvers; on, it hits them.

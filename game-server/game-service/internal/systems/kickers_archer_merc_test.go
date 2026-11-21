@@ -18,8 +18,9 @@ import (
 	rankedBody (kickers_test.go) standing at (100, 100).
 */
 
-// cooldownTicks outlasts every left-click's 0.25 s cooldown on 1/60 s ticks.
-const cooldownTicks = 16
+// cooldownTicks outlasts every left-click's 0.25 s cooldown and the 0.6 s
+// attack pin (FS-JS7C8) on 1/60 s ticks.
+const cooldownTicks = 37
 
 // volley fires n arrows toward +x, a cooldown apart, and returns each one's
 // pierce in firing order. Each arrow is cleared once read.
@@ -79,6 +80,7 @@ func TestKicker_QuickDraw(t *testing.T) {
 		require.Len(t, shots, 1)
 		assert.Equal(t, 0, shots[0].PierceLeft)
 		clearShots(w.em)
+		w.ticks(cooldownTicks) // the Shadow Shot's pin runs out
 		assert.Equal(t, []int{1}, w.volley(t, 1), "the 4th arrow, the Shadow Shot between")
 	})
 	t.Run("R3: the 4th arrow hits both ghouls in a line", func(t *testing.T) {
@@ -128,7 +130,7 @@ const (
 
 // Fleet Foot: +3% move speed a rank, inside the cap; at R3 Sidestep: 10% of
 // monster strikes (melee or shot) on the archer miss, negated like a parry
-// but granting nothing, and the archer's casts keep the attack slow.
+// but granting nothing, and the archer's casts keep the attack pin.
 func TestKicker_FleetFoot(t *testing.T) {
 	t.Run("the stat, each rank", func(t *testing.T) {
 		for rank := 0; rank <= 3; rank++ {
@@ -196,10 +198,10 @@ func TestKicker_FleetFoot(t *testing.T) {
 		w.tick()
 		assert.Equal(t, 200, health(troll))
 	})
-	t.Run("R3: the archer's casts keep the attack slow", func(t *testing.T) {
+	t.Run("R3: the archer's casts keep the attack pin", func(t *testing.T) {
 		w := newKickerWorld("archer", passivetree.Ranks{"archer.t2b": 3}, neverCrit)
 		w.cast(components.AttackArrow, 400, 100)
-		assert.True(t, w.body.HasComponent(ecs.ComponentTypeAttackSlow))
+		assert.True(t, w.body.HasComponent(ecs.ComponentTypeAttackPin))
 	})
 	t.Run("R3: a delver's hit on the archer rolls no Sidestep", func(t *testing.T) {
 		r := &countedRoll{value: sidestepDraw}

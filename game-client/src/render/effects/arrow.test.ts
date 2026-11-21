@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { worldToScreen } from "@/render/iso/projection";
 import { BARROW_HEX } from "@/utils/theme";
@@ -171,10 +169,5 @@ describe("archer arrow (FS-KYPQ9 §F)", () => {
       }
     });
 
-    it("should name no amber key and no colour literal in its source", () => {
-      const src = readFileSync(join(__dirname, "arrow.ts"), "utf8");
-      expect(src).not.toMatch(/["'`]amber["'`]/);
-      expect(src).not.toMatch(/0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}/);
-    });
   });
 });

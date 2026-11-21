@@ -73,11 +73,13 @@ describe("the run's controls panel (FS-TQZ5J § Change: Phase 3, R50)", () => {
     expect(drawn.glyph).toEqual({ glyph: true });
   });
 
-  it("should list ESC as the menu", () => {
+  // ESC opens the menu and never leaves the run (reported 2026-10-29; FS-QPDKN req 13)
+  it("should list ESC as the menu, not as a way to the main menu", () => {
     const { scene, words } = stage();
     drawControlsPanel(scene, { x: 400, y: 300 }, "warrior");
     expect(words).toContain("ESC");
     expect(words).toContain("Menu");
+    expect(words).not.toContain("Main Menu");
   });
 
   it("should list the drink, its key read from the mapping (FS-P9G8R R26)", () => {

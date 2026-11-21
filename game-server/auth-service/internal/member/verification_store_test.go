@@ -36,7 +36,7 @@ func TestVerificationStore_CodeLifecycle(t *testing.T) {
 	transactor := member.NewTransactor(db)
 	ctx := context.Background()
 
-	err := transactor.InTx(ctx, func(tx *sqlx.Tx) error {
+	err := transactor.InTx(ctx, "test", func(ctx context.Context, tx *sqlx.Tx) error {
 		_, err := repo.VerificationCodeTx(ctx, tx, id)
 		assert.ErrorIs(t, err, commonconstants.ErrNotFound, "no row answers ErrNotFound")
 		return nil
@@ -44,7 +44,7 @@ func TestVerificationStore_CodeLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	seedCode(t, db, repo, id)
-	require.NoError(t, transactor.InTx(ctx, func(tx *sqlx.Tx) error {
+	require.NoError(t, transactor.InTx(ctx, "test", func(ctx context.Context, tx *sqlx.Tx) error {
 		m, err := repo.LockMemberTx(ctx, tx, id)
 		require.NoError(t, err)
 		assert.Empty(t, m.Password, "the locked member never carries the password hash")
@@ -83,7 +83,7 @@ func TestVerificationStore_UpdateEmail(t *testing.T) {
 	ctx := context.Background()
 	fresh := "moved-" + uuid.NewString() + "@barrowspire.test"
 
-	require.NoError(t, transactor.InTx(ctx, func(tx *sqlx.Tx) error {
+	require.NoError(t, transactor.InTx(ctx, "test", func(ctx context.Context, tx *sqlx.Tx) error {
 		m, err := repo.UpdateEmailTx(ctx, tx, id, fresh)
 		require.NoError(t, err)
 		assert.Equal(t, fresh, m.Email)
@@ -93,7 +93,7 @@ func TestVerificationStore_UpdateEmail(t *testing.T) {
 
 	// another member's address, compared case-insensitively by the
 	// lower(email) unique index
-	err := transactor.InTx(ctx, func(tx *sqlx.Tx) error {
+	err := transactor.InTx(ctx, "test", func(ctx context.Context, tx *sqlx.Tx) error {
 		_, err := repo.UpdateEmailTx(ctx, tx, other, fresh)
 		return err
 	})
@@ -107,7 +107,7 @@ func TestTransactor_RollsBackOnError(t *testing.T) {
 	ctx := context.Background()
 	boom := errors.New("test: abort")
 
-	err := member.NewTransactor(db).InTx(ctx, func(tx *sqlx.Tx) error {
+	err := member.NewTransactor(db).InTx(ctx, "test", func(ctx context.Context, tx *sqlx.Tx) error {
 		if _, err := repo.MarkEmailVerifiedTx(ctx, tx, id, time.Now()); err != nil {
 			return err
 		}

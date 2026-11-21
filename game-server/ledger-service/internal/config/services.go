@@ -19,14 +19,24 @@ type Services struct {
 	LedgerActivities *ledgeractivity.Activities
 }
 
+// tracer names for the repository and query decorators
+const (
+	repoTracer  = "ledger/repository"
+	queryTracer = "ledger/query"
+)
+
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	// read side
-	getTransactionQuery := ledgerquery.NewGetTransactionQuery(db)
-	listEntriesQuery := ledgerquery.NewListEntriesQuery(db)
+	// each query is wrapped so it shows as a span above its SQL
+	// (internal/ledger/grpc/trace_gen.go)
+	getTransactionQuery := ledgergrpc.NewTransactionReaderWithTracing(ledgerquery.NewGetTransactionQuery(db), queryTracer)
+	listEntriesQuery := ledgergrpc.NewEntriesReaderWithTracing(ledgerquery.NewListEntriesQuery(db), queryTracer)
 	ledgerHandler := ledgergrpc.NewHandler(getTransactionQuery, listEntriesQuery)
 
 	// write side: the saga's AppendLedgerTx activity -> use case -> repository
-	ledgerRepo := ledgerrepository.NewLedgerRepository(db)
+	// wrapped so each call is a span above its queries
+	// (internal/ledger/repository/trace_gen.go)
+	ledgerRepo := ledgerrepository.NewLedgerRepositoryWithTracing(ledgerrepository.NewLedgerRepository(db), repoTracer)
 	appendTransactionUC := ledgerusecase.NewAppendTransactionUC(ledgerRepo)
 	ledgerActivities := ledgeractivity.NewActivities(appendTransactionUC)
 

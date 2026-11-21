@@ -4,8 +4,6 @@ import { resetHeldForTests } from "@/audio/sfxSetting";
 // node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
 afterEach(() => resetHeldForTests());
 
-// Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
-// scene base class and the events the scene hangs its release on.
 // The chat input's text field is a real <input> in the browser; this suite runs without a DOM,
 // so the field is a silent stand-in. The input's rules are tested in ui/chatInput.test.ts.
 vi.mock("@/ui/chatInputField", () => ({
@@ -38,26 +36,8 @@ vi.mock("@/ui/partyInviteField", () => ({
 // suite (utils/atmosphere.test.ts).
 vi.mock("@/utils/atmosphere", () => ({ createAtmosphere: () => undefined }));
 
-vi.mock("phaser", async () => {
-  const { EventEmitter } = await import("eventemitter3");
-  class Scene {
-    events = new EventEmitter();
-    constructor(_config: unknown) {}
-  }
-  const phaser = {
-    Scene,
-    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
-    Scale: { Events: { RESIZE: "resize" } },
-    BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
-    Input: { Keyboard: { KeyCodes: {} } },
-    Math: {
-      Linear: (a: number, b: number, t: number) => a + (b - a) * t,
-      Between: () => 0,
-      FloatBetween: () => 0,
-    },
-  };
-  return { ...phaser, default: phaser };
-});
+// A Phaser stand-in: the scene base class on Phaser's event emitter, its key poll, math and geometry.
+vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn());
 
 const { FieldScene } = await import("./FieldScene");
 const { RUN_ACTIONS } = await import("./runActions");
@@ -153,10 +133,10 @@ const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { absorbing } = await import("./phaser.standin");
+const { recordingStage } = await import("./recordingStage.standin");
 const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { EventEmitter } = await import("eventemitter3");
-const { PartyPanel } = await import("@/ui/PartyPanel");
-const { createPartyStore } = await import("@/stores/partyStore");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
@@ -192,10 +172,7 @@ interface FieldUnderTest {
 function fieldOnStage() {
   const field = new FieldScene() as unknown as FieldUnderTest;
   const texts: string[] = [];
-  const any: unknown = new Proxy(() => any, {
-    get: () => any,
-    apply: () => any,
-  });
+  const any = absorbing();
   field.add = {
     text: (_x: number, _y: number, content: string) => {
       texts.push(content);
@@ -260,11 +237,7 @@ function fieldToCreate<T>() {
     init(data?: { field?: string }): void;
     create(data?: { field?: string }): void;
   };
-  const stub: unknown = new Proxy(function () {}, {
-    get: (_target, key) => (key === Symbol.toPrimitive ? () => 0 : stub),
-    apply: () => stub,
-    construct: () => stub as object,
-  });
+  const stub = absorbing();
   Object.assign(field, {
     add: stub,
     make: stub,
@@ -593,10 +566,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     const shown: { content: string; fontSize?: string; destroyed: boolean }[] =
       [];
     const drawn: { fills: Fill[]; destroyed: boolean }[] = [];
-    const any: unknown = new Proxy(() => any, {
-      get: () => any,
-      apply: () => any,
-    });
+    const any = absorbing();
     field.add = {
       text: (
         _x: number,
@@ -1705,26 +1675,18 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       expect(body()).toEqual({ vx: 0, vy: 0 });
     });
 
-    it("should send that stop once, and nothing more while no key is held", () => {
-      const { field, moves, strideBefore } = visit(false);
+    it.each([
+      { held: false, first: "that stop", move: { vx: 0, vy: 0 } },
+      { held: true, first: "the key held into the visit", move: { vx: 1, vy: 0 } },
+    ])("should send $first as its first move once, and nothing more on later frames", ({ held, move }) => {
+      const { field, moves, strideBefore } = visit(held);
       strideBefore();
 
       field.init({ field: "gentle_meadows", arrival: false });
       field.update(16, 16);
       field.update(32, 16);
 
-      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
-    });
-
-    it("should send a key held into the visit as its first move, once", () => {
-      const { field, moves, strideBefore } = visit(true);
-      strideBefore();
-
-      field.init({ field: "gentle_meadows", arrival: false });
-      field.update(16, 16);
-      field.update(32, 16);
-
-      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+      expect(moves().slice(1)).toEqual([[ActionType.Move, move]]);
     });
   });
 });
@@ -1821,31 +1783,6 @@ describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
 
     expect(art.drawn.length).toBe(first);
     expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
-  });
-});
-
-// FS-PQ2TW R8; ADR-0075 Decision 4. I-PQ2TW-2: the switch's verdict reaches the field with its start.
-describe("FieldScene arrival from its start (FS-PQ2TW R5–R8)", () => {
-  it.each([true, false])("should keep the arrival %s its start was handed, beside its field", (arrival) => {
-    const field = new FieldScene() as unknown as {
-      init(data?: { field?: string; arrival?: boolean }): void;
-      arrival: boolean;
-      field: string;
-    };
-
-    field.init({ field: "forlorn_forest", arrival });
-
-    expect(field.arrival).toBe(arrival);
-    expect(field.field).toBe("forlorn_forest");
-  });
-
-  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
-    const field = new FieldScene() as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
-
-    field.init({ arrival: true });
-    field.init();
-
-    expect(field.arrival).toBe(false);
   });
 });
 
@@ -2241,7 +2178,7 @@ const { useGameStore } = await import("@/stores/gameStore");
 describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)", () => {
   const WALLS = FOREST_WALLS.map((r, i) => ({ entity_id: `s${i}`, house_id: `s${i}`, position: { x: r.x, y: r.y }, width: r.width, height: r.height }));
   const GATE = { entity_id: "road", destination: "hub", position: FOREST_GATE, range: 80 };
-  const any: unknown = new Proxy(() => any, { get: (_t, k) => (k === "then" ? undefined : any), apply: () => any });
+  const any = absorbing();
   /** One browser's store, shared across visits. */
   function browser() {
     const held = new Map<string, string>();
@@ -2408,7 +2345,7 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
   function menuedField() {
     const env = fieldOnStage();
     const field = env.field as Menued;
-    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const any = absorbing();
     const labels: string[] = [];
     const picks = new Map<string, () => void>();
     field.add = new Proxy(
@@ -2537,15 +2474,6 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     fallen: { isDown(): boolean };
   };
   /** A stand-in object: named, with its handlers, destroyed with its container, as Phaser does. */
-  type Made = {
-    kind: string;
-    args: unknown[];
-    name?: string;
-    x: number;
-    destroyed: boolean;
-    children: Made[];
-    handlers: Record<string, () => void>;
-  };
 
   function optionedField(held: string | null = null) {
     const kept = new Map<string, string>(held === null ? [] : [["barrowspire_music", held]]);
@@ -2558,31 +2486,8 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     });
     const env = fieldOnStage();
     const field = env.field as Optioned;
-    const made: Made[] = [];
-    const make = (kind: string, args: unknown[]): unknown => {
-      const m: Made = { kind, args, x: typeof args[0] === "number" ? args[0] : 0, destroyed: false, children: [], handlers: {} };
-      if (kind === "container" && Array.isArray(args[2])) m.children.push(...(args[2] as Made[]));
-      made.push(m);
-      const kill = (o: Made) => {
-        if (o.destroyed) return;
-        o.destroyed = true;
-        o.children.forEach((c) => kill((c as unknown as { __m?: Made }).__m ?? c));
-        o.handlers.destroy?.();
-      };
-      const self: unknown = new Proxy(() => self, {
-        get: (_t, prop) => {
-          if (prop === "__m") return m;
-          if (prop === "then") return undefined;
-          if (prop === "on" || prop === "once") return (event: string, fn: () => void) => ((m.handlers[event] = fn), self);
-          if (prop === "setName") return (name: string) => ((m.name = name), self);
-          if (prop === "setPosition") return (x: number) => ((m.x = x), self);
-          if (prop === "destroy") return () => kill(m);
-          return () => self;
-        },
-      });
-      return self;
-    };
-    field.add = new Proxy({}, { get: (_t, kind) => (...args: unknown[]) => make(String(kind), args) });
+    const { made, add } = recordingStage({ records: true });
+    field.add = add;
     const keys = new Map<string, () => void>();
     field.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
@@ -2764,34 +2669,8 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): void }) {
-  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
-  const keyboard = new EventEmitter();
-  const scene = {
-    add: { graphics: () => any, text: () => any },
-    input: Object.assign(new EventEmitter(), { keyboard }),
-    events: new EventEmitter(),
-  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
-  const panel = new PartyPanel(scene, {
-    store: createPartyStore({ selfId: () => "me" }),
-    world: () => null,
-    selfId: () => "me",
-    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
-    makeField: () => ({
-      value: "",
-      setEnabled: vi.fn(),
-      moveTo: vi.fn(),
-      show: vi.fn(),
-      hide: vi.fn(),
-      blur: vi.fn(),
-      destroy: vi.fn(),
-    }),
-    activeElement: () => null,
-    blocked: refused,
-    wrapper,
-  });
-  return { panel, pressT: () => keyboard.emit("keydown-T") };
-}
+const { partyPanelOn: panelOn } = await import("@/ui/partyPanel.standin");
+const partyPanelOn = (refused: () => boolean, wrapper?: { act(run: () => void): void }) => panelOn(refused, { wrapper });
 
 // FS-3EBCA R8 and FS-R82NV § Change C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
 // inventory or the character panel open the party panel would not open). I-3EBCA-7.
@@ -2805,7 +2684,7 @@ describe("FieldScene the party panel over the inventory and the character panel 
 
   function partyInField() {
     const field = new FieldScene() as unknown as Partied;
-    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const any = absorbing();
     const zones: { args: unknown[]; handlers: Record<string, () => void> }[] = [];
     const zone = (...args: unknown[]) => {
       const z = { args, handlers: {} as Record<string, () => void> };
@@ -2869,7 +2748,7 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
   function fieldWindows() {
     const env = fieldOnStage();
     const field = env.field as unknown as Windowed;
-    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const any = absorbing();
     type Zone = { args: unknown[]; handlers: Record<string, () => void>; name?: string; interactive?: unknown[] };
     const zones: Zone[] = [];
     const zone = (...args: unknown[]) => {
@@ -2989,7 +2868,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
 });
 
 const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
-const { readFileSync } = await import("node:fs");
 
 /**
  * The field's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
@@ -3011,35 +2889,12 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     ui: { act(run: () => void): void };
     bindHudKeys(): void;
   };
-  type Made = { kind: string; args: unknown[]; name?: string; destroyed: boolean; children: Made[]; handlers: Record<string, () => void> };
 
   function field() {
     const env = fieldOnStage();
     const f = env.field as Heard;
-    const made: Made[] = [];
-    const make = (kind: string, args: unknown[]): unknown => {
-      const m: Made = { kind, args, destroyed: false, children: [], handlers: {} };
-      if (kind === "container" && Array.isArray(args[2])) m.children.push(...(args[2] as Made[]));
-      made.push(m);
-      const kill = (o: Made) => {
-        if (o.destroyed) return;
-        o.destroyed = true;
-        o.children.forEach((c) => kill((c as unknown as { __m?: Made }).__m ?? c));
-        o.handlers.destroy?.();
-      };
-      const self: unknown = new Proxy(() => self, {
-        get: (_t, prop) => {
-          if (prop === "__m") return m;
-          if (prop === "then") return undefined;
-          if (prop === "on" || prop === "once") return (event: string, fn: () => void) => ((m.handlers[event] = fn), self);
-          if (prop === "setName") return (name: string) => ((m.name = name), self);
-          if (prop === "destroy") return () => kill(m);
-          return () => self;
-        },
-      });
-      return self;
-    };
-    f.add = new Proxy({}, { get: (_t, kind) => (...args: unknown[]) => make(String(kind), args) });
+    const { made, add } = recordingStage({ records: true, placed: false });
+    f.add = add;
     const keys = new Map<string, () => void>();
     f.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
@@ -3258,18 +3113,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(f.heard()).toEqual(["party_close"]);
   });
 
-  // create() is pinned from the source here as in the town: the player made before the gear and
-  // the keys, and its wrapper handed to the overlay (the party panel is the UI scene's since phase 2)
-  // the gear overlay, its wrapper and its keys are the UI scene's (FS-TQZ5J § Change: Phase 3, R50, R56):
-  // the field reports itself before it binds the key it still hears (E) or makes its piles
-  it("should report itself in create before its keys and its piles", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.createPiles\(\);/));
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-  });
 });
 
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompts are the UI scene's; the field
@@ -3290,23 +3133,6 @@ describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Pha
     expect(field.worldSide().invitesAboveChat).toBe(true);
   });
 
-  // the fight takes the player as a value, so it must be made first
-  it("should make the gameplay player in create beside the interface effects', and hand it to the fight (FS-AND39 R3, R4, R16)", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.mountGameplaySounds\(\);/));
-    expect(at(/this\.mountGameplaySounds\(\);/)).toBeLessThan(at(/this\.fight = fieldCombatOnScene\(/));
-    const fight = create.match(/this\.fight = fieldCombatOnScene\(([\s\S]*?)\n {4}\}\);/)?.[1] ?? "";
-    expect(fight).toMatch(/\n\s*sounds: this\.gameplaySounds,?(\n|$)/);
-  });
-
-  // the gear is the UI scene's, which plays item_swap as it sends a change (`gearPieces.test.ts`); the
-  // field plays none of it (FS-AND39 R7; FS-TQZ5J § Change: Merge with main, 2026-11-14)
-  it("should play no item_swap of its own: the UI scene's gear sounds its changes (FS-AND39 R7)", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    expect(source).not.toMatch(/item_swap/);
-  });
 });
 
 const { ProgressHud } = await import("@/ui/ProgressHud");

@@ -33,6 +33,12 @@ export const STRIKE_COOLDOWN_MS = 500;
  */
 export const PRIMARY_COOLDOWN_MS = 250;
 export const SPECIAL_COOLDOWN_MS = 400;
+/**
+ * The client's mirror of the server's attack pin (FS-JS7C8 R61): every attack sent holds the next
+ * one back this long, fixed whatever gear is worn (D17), so it errs long and never short. Nothing
+ * on the wire carries it (D9). The parry and the dash never start it.
+ */
+export const ATTACK_PIN_MS = 600;
 /** How far from the warrior a primary slash lands, at most, in world px. */
 const SLASH_REACH = 50;
 /** The pointer button that is the right one. */
@@ -138,6 +144,8 @@ export class PlayerCombat {
   private canStrike = true;
   private canCast = true;
   private abilityLockedOut = false;
+  /** When the tracked attack pin ends, on the port's clock; none running before then. */
+  private pinnedUntil = -Infinity;
   /** The archer's Shadow Shot hold (FS-JTNPR req 8–17): client presentation only (ADR-0030). */
   private readonly hold = new ShadowShotAim();
   /** The archer's Arrow Rain aim on key 3 (FS-04EEA R38): client presentation only (ADR-0030). */
@@ -172,18 +180,19 @@ export class PlayerCombat {
 
   /**
    * A targeted `attack` on the monster standing at world point `them`, from `me`: sent only off
-   * cooldown and within reach, as the server would refuse anything else. An archer's right button
+   * cooldown, out of the attack pin and within reach, as the server would refuse anything else. An archer's right button
    * is the Shadow Shot hold, and a hold answers no click (FS-JTNPR req 8, 16): `button` is the
    * pointer button that pressed. Whether it was sent.
    */
   strike(me: Point, entityId: string, them: Point, playerClass?: string, button?: number): boolean {
     if (this.hold.aiming || this.rain.aiming) return false;
     if (button === RIGHT_BUTTON && playerClass === "archer") return false;
-    if (!this.canStrike) return false;
+    if (!this.canStrike || this.pinned()) return false;
     // world positions, never the sprites' screen positions
     if (Math.hypot(them.x - me.x, them.y - me.y) > STRIKE_RANGE) return false;
 
     this.port.sendMessage(ActionType.Attack, { enemy_entity_id: entityId });
+    this.pin();
     this.look.slash({ x: me.x, y: me.y }, { x: them.x, y: them.y });
     this.look.attackClip({ x: them.x - me.x, y: them.y - me.y });
     this.canStrike = false;
@@ -197,7 +206,7 @@ export class PlayerCombat {
    * The class cast a click asks for, from `me` toward the world point `target`. The archer's
    * right-press only starts the Shadow Shot hold, and the Mercenary's sends `parry`, gated by the
    * latest state alone (FS-JTNPR req 8; FS-MAMHR §C.10, §G.35); every other cast waits out the
-   * cooldown, and the class attack clip rides the same trigger as the effect (FS-2325V §E.4).
+   * cooldown and the attack pin (FS-JS7C8 R62), and the class attack clip rides the same trigger as the effect (FS-2325V §E.4).
    * Whether anything was cast or begun.
    */
   cast(button: CastButton, playerClass: string, from: Point, target: Point): boolean {
@@ -217,11 +226,12 @@ export class PlayerCombat {
     }
     // the parry costs nothing and has no cooldown: never the cut's own lockout
     if (button === "special" && playerClass === "mercenary") return this.parry(target);
-    if (!this.canCast) return false;
+    if (!this.canCast || this.pinned()) return false;
 
     const aim = { x: target.x - me.x, y: target.y - me.y };
     if (button === "primary") {
       this.primary(playerClass, me, target);
+      this.pin();
       this.port.castSent?.();
       this.look.attackClip(aim, undefined);
       this.lockFor(PRIMARY_COOLDOWN_MS, false);
@@ -256,9 +266,12 @@ export class PlayerCombat {
       return true;
     }
 
+    // a pinned caster's casts are refused, so the send waits the pin out (FS-JS7C8 R62)
+    if (this.pinned()) return false;
     // a copy: the effects are handed where the player stood, never the drawn position itself
     const from = { x: me.x, y: me.y };
     this.port.sendMessage(ActionType.CastSkill, { skill_id: ability, target_x: target.x, target_y: target.y });
+    this.pin();
     // the class attack clip aimed at the target, on the send as every ability's (R42)
     this.look.attackClip({ x: target.x - from.x, y: target.y - from.y });
     if (ability === "blink") {
@@ -272,12 +285,13 @@ export class PlayerCombat {
   }
 
   /**
-   * The hold, once a frame, from where the archer is drawn now (FS-JTNPR req 10, 11); and an Arrow Rain aim's
+   * The hold, once a frame, from where the archer is drawn now (FS-JTNPR req 10, 11): never ready while the
+   * attack pin runs, which gates the release as the cooldown does (FS-JS7C8 R63); and an Arrow Rain aim's
    * circle at the world point `cursor` under the cursor now, pulled in to the reach (FS-04EEA R38).
    */
   aimFrame(from: Point | undefined, cursor?: Point): void {
     if (!from) return;
-    if (this.hold.aiming) this.look.aim(from, this.hold.ready(this.port.now(), this.resource()), this.shadow());
+    if (this.hold.aiming) this.look.aim(from, !this.pinned() && this.hold.ready(this.port.now(), this.resource()), this.shadow());
     if (this.rain.aiming && cursor) this.look.rainAim?.(arrowRainCentre(from, cursor));
   }
 
@@ -288,7 +302,7 @@ export class PlayerCombat {
    * either way. Whether it was sent.
    */
   releaseTreeAbility(playerClass: string, me: Point, cursor: Point): boolean {
-    const outcome = this.rain.release(treeAbilityReady(playerClass, this.self()));
+    const outcome = this.rain.release(!this.pinned() && treeAbilityReady(playerClass, this.self()));
     if (outcome === null) return false;
     this.look.endRainAim?.();
     if (outcome !== "cast") return false;
@@ -296,6 +310,7 @@ export class PlayerCombat {
     const from = { x: me.x, y: me.y };
     const centre = arrowRainCentre(from, cursor);
     this.port.sendMessage(ActionType.CastSkill, { skill_id: "arrow_rain", target_x: centre.x, target_y: centre.y });
+    this.pin();
     this.port.castSent?.();
     this.look.attackClip({ x: centre.x - from.x, y: centre.y - from.y });
     this.look.arrowRain?.(from, centre);
@@ -305,9 +320,14 @@ export class PlayerCombat {
   /**
    * The right button let go (FS-JTNPR req 13, 14, 18): a ready, affordable hold sends exactly one
    * `shadow_shot` at the world point `target`, and plays the release and the attack clip on that
-   * send; any other release ends the hold with nothing sent or played. Whether it fired.
+   * send; any other release, one during the attack pin included (FS-JS7C8 R63), ends the hold
+   * with nothing sent or played. Whether it fired.
    */
   releaseAim(from: Point | undefined, target: Point): boolean {
+    if (this.pinned()) {
+      this.cancelAim();
+      return false;
+    }
     const outcome = this.hold.release(this.port.now(), this.resource());
     if (outcome === null) return false;
     this.look.endAim();
@@ -322,6 +342,7 @@ export class PlayerCombat {
       target_x: target.x,
       target_y: target.y,
     });
+    this.pin();
     this.port.castSent?.();
     this.look.abilityCast?.("shadow_shot");
     this.look.shadowShot(me, target, this.shadow());
@@ -349,11 +370,12 @@ export class PlayerCombat {
     this.look.abilityChanged?.();
   }
 
-  /** Ready to strike and cast at once, no hold and no cooldown carried over: a new world or a new run. */
+  /** Ready to strike and cast at once, no hold, cooldown or pin carried over: a new world or a new run. */
   reset(): void {
     this.canStrike = true;
     this.canCast = true;
     this.abilityLockedOut = false;
+    this.pinnedUntil = -Infinity;
     this.hold.reset();
     this.rain.cancel();
   }
@@ -361,6 +383,16 @@ export class PlayerCombat {
   /** Whether the archer's right-click wears the shadow: a Shadow Ranger's alone (FS-1J1CB §F R39). */
   private shadow(): boolean {
     return wearsShadow(this.self()?.specialization);
+  }
+
+  /** Whether the tracked attack pin runs: every attack click but the parry is ignored (FS-JS7C8 R62). */
+  private pinned(): boolean {
+    return this.port.now() < this.pinnedUntil;
+  }
+
+  /** Starts the tracked attack pin, on the send of an attack that pins (FS-JS7C8 R61). */
+  private pin(): void {
+    this.pinnedUntil = this.port.now() + ATTACK_PIN_MS;
   }
 
   /** The class resource as last broadcast; none from an older server (FS-JTNPR req 18). */
@@ -436,6 +468,7 @@ export class PlayerCombat {
       this.look.dash(me, target);
     } else if (playerClass === "mage") {
       this.port.sendMessage(ActionType.CastSkill, { skill_id: "triple_fireball", ...at });
+      this.pin();
       this.port.castSent?.();
       this.look.abilityCast?.("triple_fireball");
       this.look.fireball(me, target);

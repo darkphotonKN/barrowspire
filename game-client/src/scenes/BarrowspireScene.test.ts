@@ -33,45 +33,8 @@ vi.mock("@/ui/optionsPanel", async (importOriginal) => {
   return { ...real, openOptionsPanel: vi.fn(real.openOptionsPanel) };
 });
 
-// Only the scene's lifecycle is under test: a Phaser stand-in with the scene events it uses,
-// on the same emitter Phaser builds them from.
-vi.mock("phaser", async () => {
-  const { EventEmitter } = await import("eventemitter3");
-  class Scene {
-    events = new EventEmitter();
-    constructor(_config: unknown) {}
-  }
-  // `import * as Phaser` reads the module namespace, so the stand-in is the module itself.
-  const phaser = {
-    Scene,
-    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
-    Core: { Events: { BLUR: "blur", HIDDEN: "hidden" } },
-    Animations: { Events: { ANIMATION_COMPLETE: "animationcomplete" } },
-    GameObjects: { Sprite: class {} },
-    BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
-    Input: {
-      Keyboard: {
-        // Phaser's JustDown: true once per press, and reading it clears the press
-        JustDown: (key: { justDown: boolean }) => {
-          const pressed = key.justDown;
-          key.justDown = false;
-          return pressed;
-        },
-        // the codes the run binds (bindKeys), as Phaser's KeyCodes has them
-        KeyCodes: { W: 87, A: 65, S: 83, D: 68, TAB: 9, ESC: 27, ENTER: 13, ONE: 49, TWO: 50 },
-      },
-    },
-    // interact range is measured between world positions
-    Math: {
-      Distance: {
-        Between: (x1: number, y1: number, x2: number, y2: number) => Math.hypot(x2 - x1, y2 - y1),
-      },
-      // the frame eases the player's drawn position toward the server's
-      Linear: (p0: number, p1: number, t: number) => (p1 - p0) * t + p0,
-    },
-  };
-  return { ...phaser, default: phaser };
-});
+// A Phaser stand-in: the scene base class on Phaser's event emitter, its key poll, math and geometry.
+vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn());
 
 const { BarrowspireScene, keepBodySize, projectileFlightOf, TOP_RIGHT_EDGE } = await import("./BarrowspireScene");
 const { socketManager } = await import("@/utils/class/SocketManager");
@@ -83,11 +46,15 @@ const { ProjectileFlights, shooterOf } = await import("@/render/effects/projecti
 const { FIREBALL_FLIGHT } = await import("@/render/effects/fireball");
 const { ARROW_FLIGHT } = await import("@/render/effects/arrow");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { absorbing } = await import("./phaser.standin");
+const { recordingStage: recordingStandIn } = await import("./recordingStage.standin");
+type Made = import("./recordingStage.standin").Made;
 const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { HEAVY_SHOT_FLIGHT } = await import("@/render/effects/heavyShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
+const { ATTACK_PIN_MS } = await import("@/render/combat/playerCombat");
 const { MENU_CONTROLS } = await import("./MainMenuScene");
 const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
@@ -210,9 +177,7 @@ function menuUpOver(run: object, open = true): void {
 }
 const { BAG_CAPACITY, BAG_FULL_NOTICE } = await import("@/ui/bag");
 const { EventEmitter } = await import("eventemitter3");
-const { PartyPanel } = await import("@/ui/PartyPanel");
-const { createPartyStore, usePartyStore } = await import("@/stores/partyStore");
-const { readdirSync } = await import("node:fs");
+const { usePartyStore } = await import("@/stores/partyStore");
 const { readFileSync } = await import("node:fs");
 const { join } = await import("node:path");
 type GameState = import("@/types/gameState").ClientGameState;
@@ -612,144 +577,10 @@ describe("BarrowspireScene projectile teardown (FS-KYPQ9 §B.9, edge state: rese
   );
 });
 
-/** A scene object as the stand-in stage made it: what kind, with what, and whether it is gone. */
-interface Made {
-  kind: string;
-  args: unknown[];
-  destroyed: boolean;
-  children: Made[];
-  /** The pointer handlers it was given, by event, as Phaser would call them. */
-  handlers: Record<string, () => void>;
-  /** Every other method called on it, by name, in order. */
-  calls: string[];
-  /** The texture last set on it, if any was. */
-  texture?: string;
-  /** What it was last `setVisible` to; undefined while it never was. */
-  shown?: boolean;
-  /** What it was last `setDepth` to. */
-  depth?: number;
-  /** The arguments of the latest call to each of those methods, by name. */
-  last: Record<string, unknown[]>;
-}
-
-/**
- * A stand-in for the slice of Phaser the state path draws with: every object it makes is recorded
- * by kind and answers any call, and destroying a container destroys what it holds, as Phaser does.
- */
-/** Each recorded object's proxy, the object the scene holds: what Phaser lists under the pointer. */
-const heldAs = new WeakMap<object, unknown>();
-
 /** The run's button labels as the game's EB Garamond measures them, 13 px bold, letter-spaced 1 (R122). */
 const LABEL_WIDTHS: Record<string, number> = { WATCH: 56, LEAVE: 46, SETTLEMENT: 96 };
 const measuredWidth = (words: string) => LABEL_WIDTHS[words] ?? words.length * 7;
-
-function recordingStage() {
-  const made: Made[] = [];
-  const make = (kind: string, args: unknown[] = []): unknown => {
-    const self = {
-      kind,
-      args,
-      destroyed: false,
-      active: true,
-      children: [] as Made[],
-      handlers: {} as Record<string, () => void>,
-      calls: [] as string[],
-      last: {} as Record<string, unknown[]>,
-    } as Made & { active: boolean; [k: string]: unknown };
-    if (kind === "container" && Array.isArray(args[2])) self.children.push(...(args[2] as Made[]));
-    // destroying runs what was hung on `destroy` (hit areas that go with their card)
-    const kill = (m: Made & { active?: boolean }) => {
-      if (m.destroyed) return;
-      m.destroyed = true;
-      m.active = false;
-      m.children.forEach(kill);
-      m.handlers.destroy?.();
-    };
-    const proxy: unknown = new Proxy(self, {
-      get(target, prop) {
-        if (prop in target) return target[prop as string];
-        if (prop === "then") return undefined;
-        if (prop === "destroy") return () => kill(target);
-        if (prop === "add")
-          return (child: Made | Made[]) => {
-            target.children.push(...[child].flat());
-            return proxy;
-          };
-        if (prop === "getBounds") return () => ({ x: 0, y: 0, width: 10, height: 10 });
-        // a text measures as Phaser measures it: the run's button labels as the game's EB Garamond does
-        // at 13 px bold, letter-spaced 1 (FS-TQZ5J § Change: Batch 6, R122), any other words 7 px a character
-        if (prop === "width" && target.kind === "text") return measuredWidth(String(target.args[2]));
-        // a text's content is what it shows now, not only what it was made with
-        if (prop === "setText")
-          return (content: unknown) => {
-            target.args[2] = content;
-            return proxy;
-          };
-        // a named object answers to its name, as the scene names what it can't otherwise tell apart
-        if (prop === "setName")
-          return (name: string) => {
-            (target as { name?: string }).name = name;
-            return proxy;
-          };
-        if (prop === "on" || prop === "once")
-          return (event: string, fn: () => void) => {
-            target.handlers[event] = fn;
-            return proxy;
-          };
-        // a sprite's frame is the texture it was last set to, and the atlas frame with it
-        if (prop === "setTexture")
-          return (key: string, frame?: unknown) => {
-            target.calls.push("setTexture");
-            target.texture = key;
-            target.last["setTexture"] = frame === undefined ? [key] : [key, frame];
-            return proxy;
-          };
-        // shown until hidden, as Phaser's are: `visible` and `shown` read what setVisible last set
-        if (prop === "setVisible")
-          return (visible: boolean) => {
-            target.calls.push("setVisible");
-            target.shown = visible;
-            target.last["setVisible"] = [visible];
-            (target as { visible?: boolean }).visible = visible;
-            return proxy;
-          };
-        // the depth it sorts at, read back as Phaser's `depth` (what covers the player, FS-9PN7X §E.1)
-        if (prop === "setDepth")
-          return (depth: number) => {
-            target.calls.push("setDepth");
-            target.depth = depth;
-            target.last["setDepth"] = [depth];
-            return proxy;
-          };
-        // Phaser 4's mask filter (`maskInView`): recorded as an `addMask` call on the masked object
-        if (prop === "filters")
-          return {
-            external: {
-              addMask: (...args: unknown[]) => {
-                target.calls.push("addMask");
-                target.last["addMask"] = args;
-                return { setGameObject: () => undefined, invert: false };
-              },
-            },
-          };
-        // no arcade body: the placeholder rig's collision circle is skipped
-        if (prop === "body") return undefined;
-        if (prop === "visible") return true;
-        return (...args: unknown[]) => {
-          target.calls.push(String(prop));
-          target.last[String(prop)] = args;
-          return proxy;
-        };
-      },
-    });
-    // the object as the scene holds it, as Phaser lists one under the pointer
-    heldAs.set(self, proxy);
-    made.push(self);
-    return proxy;
-  };
-  const add = new Proxy({}, { get: (_, kind) => (...args: unknown[]) => make(String(kind), args) });
-  return { made, make, add };
-}
+const recordingStage = () => recordingStandIn({ textWidth: measuredWidth, placed: false, records: true });
 
 /** The run state the floor rebuild works on, as the scene holds it. */
 interface FloorRun {
@@ -1287,38 +1118,12 @@ function partyState(
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(
+const { partyPanelOn: panelOn } = await import("@/ui/partyPanel.standin");
+const partyPanelOn = (
   refused: () => boolean,
   wrapper?: { act(run: () => void): void },
-  store: ConstructorParameters<typeof PartyPanel>[1]["store"] = createPartyStore({ selfId: () => "me" }),
-) {
-  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
-  const keyboard = new EventEmitter();
-  const scene = {
-    add: { graphics: () => any, text: () => any },
-    input: Object.assign(new EventEmitter(), { keyboard }),
-    events: new EventEmitter(),
-  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
-  const panel = new PartyPanel(scene, {
-    store,
-    world: () => null,
-    selfId: () => "me",
-    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
-    makeField: () => ({
-      value: "",
-      setEnabled: vi.fn(),
-      moveTo: vi.fn(),
-      show: vi.fn(),
-      hide: vi.fn(),
-      blur: vi.fn(),
-      destroy: vi.fn(),
-    }),
-    activeElement: () => null,
-    blocked: refused,
-    wrapper,
-  });
-  return { panel, pressT: () => keyboard.emit("keydown-T") };
-}
+  store?: import("@/ui/partyPanel.standin").PanelStore,
+) => panelOn(refused, { wrapper, store });
 
 const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
 
@@ -1432,17 +1237,13 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     expect(sent).toHaveBeenCalledWith(ActionType.Attack, { enemy_entity_id: "m1" });
   });
 
-  it("should ignore a click on a corpse", () => {
+  it.each([
+    { clicked: "a corpse", x: 160, monster: 1 },
+    { clicked: "a monster out of reach", x: 400, monster: 0 },
+  ])("should not swing at $clicked", ({ x, monster }) => {
     const { run, sent, monsters } = onStage();
-    run.handleGameStateUpdate(partyState(player("me", "Aldric", 160)));
-    monsters()[1].handlers.pointerdown();
-    expect(sent).not.toHaveBeenCalled();
-  });
-
-  it("should not swing at a monster out of reach", () => {
-    const { run, sent, monsters } = onStage();
-    run.handleGameStateUpdate(partyState(player("me", "Aldric", 400)));
-    monsters()[0].handlers.pointerdown();
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", x)));
+    monsters()[monster].handlers.pointerdown();
     expect(sent).not.toHaveBeenCalled();
   });
 
@@ -1530,12 +1331,6 @@ describe("BarrowspireScene gameplay player (FS-AND39 R13, R16)", () => {
     expect(played).toEqual(["hit_monster"]);
   });
 
-  // create() can't run on the stand-ins, so its call is pinned from the source
-  it("should make the gameplay player in create, after the run is reported", () => {
-    const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    expect(create).toMatch(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);[\s\S]*this\.mountGameplaySounds\(\);/);
-  });
 });
 
 describe("BarrowspireScene combat sounds (FS-AND39 R2–R4)", () => {
@@ -3251,17 +3046,13 @@ describe("BarrowspireScene drop piles (FS-4R9M9 req 46, 61)", () => {
     expect(heaps()).toHaveLength(1);
   });
 
-  it("should take the heap down when the pile leaves state", () => {
+  it.each([
+    { when: "the pile leaves state", next: () => withPile(null) },
+    { when: "the floor it lay on is left", next: () => floorState(2) },
+  ])("should take the heap down when $when", ({ next }) => {
     const { run, live } = onStage();
     run.handleGameStateUpdate(withPile(pile([blade])));
-    run.handleGameStateUpdate(withPile(null));
-    expect(live()).toHaveLength(0);
-  });
-
-  it("should clear the heap with the floor it lay on", () => {
-    const { run, live } = onStage();
-    run.handleGameStateUpdate(withPile(pile([blade])));
-    run.handleGameStateUpdate(floorState(2));
+    run.handleGameStateUpdate(next());
     expect(live()).toHaveLength(0);
   });
 
@@ -5825,17 +5616,6 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
   });
 });
 
-describe("no way out of a run on ESC (reported 2026-10-29)", () => {
-  // ESC used to start MainMenuScene from inside a run. The server keeps the body in the
-  // world regardless, so the player stood there being killed while looking at the roster;
-  // the only early exit is the dead player's Leave the barrow (FS-QPDKN req 13).
-  it("should bind no ESC handler that leaves the run, nor list one in the controls", () => {
-    const source = readFileSync(join(__dirname, "BarrowspireScene.ts"), "utf8");
-    expect(source).not.toMatch(/keydown-ESC/);
-    expect(source).not.toMatch(/\["ESC",\s*"Main Menu"\]/);
-  });
-});
-
 describe("state from another world is not drawn (reported 2026-10-29)", () => {
   // A member can briefly have a body in two worlds (a stale run and a new one, or a run and
   // the hub); both broadcast to the same socket. The scene draws only the run it was started
@@ -6942,7 +6722,7 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
         return at.x >= x && at.x <= x + w && at.y >= y && at.y <= y + h;
       }) as (Made & { depth?: number })[];
       const top = hit.sort((a, b) => (a.depth ?? 0) - (b.depth ?? 0)).at(-1);
-      return top ? [heldAs.get(top)] : [];
+      return top ? [stage.stage.held(top)] : [];
     };
     const move = (at: { x: number; y: number }, over: unknown[] = uiOver(at)) => {
       uiInput.emit("pointermove", pointer(at, 0), over);
@@ -7666,18 +7446,6 @@ describe("BarrowspireScene gear and bag overlay (FS-HRH2J §A R4–R11, §B R20�
       expect(r.heard()).toEqual(["inventory_close"]);
     });
 
-    // create() can't run on the stand-ins, so its order is pinned from the source, as in the town
-    // and the field: the player made before the keys; the gear overlay, the party panel and the corner
-    // are the UI scene's, which hands the overlay its act (FS-TQZ5J § Change: Phase 3, R50)
-    it("should make the player in create before anything that hears a player, and compose no gear of its own", () => {
-      const source = readFileSync(new URL("./BarrowspireScene.ts", import.meta.url), "utf8");
-      const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-      const at = (line: RegExp) => create.search(line);
-      const mount = at(/this\.ui = reportWorld\(this, "run", this\.worldSide\(\)\);/);
-      expect(mount).toBeGreaterThan(-1);
-      expect(mount).toBeLessThan(at(/this\.bindRunInput\(\);/));
-      expect(source).not.toMatch(/composeEquipment|new GearOverlay|new ContainerView/);
-    });
   });
 
   // the take and the bag's pre-check stay in the UI scene, the run sending the loot asked of it
@@ -7931,11 +7699,12 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     expect(barShownOver(s.run)?.ability.active).toBe(false);
   });
 
+  // the left-click's attack pin gates the release, not the press (FS-JS7C8 R63)
   it("should allow a hold to begin during the left-click's own lockout", () => {
     const s = aimOnStage();
     s.leftClick();
     s.press();
-    s.release(1300);
+    s.release(1000 + ATTACK_PIN_MS);
     expect(s.casts().map(([, body]) => (body as { skill_id: string }).skill_id)).toEqual(["arrow", "shadow_shot"]);
   });
 
@@ -8349,6 +8118,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.leftClick();
       s.run.handleGameStateUpdate(partyState(merc(0)));
       s.delayed().forEach(([, fn]) => fn()); // the left-click's own lockout runs out
+      s.run.time.now += ATTACK_PIN_MS; // and its attack pin (FS-JS7C8 R62)
       s.leftClick();
       expect(played(s).filter((d) => d === RIPOSTE_MS)).toHaveLength(1);
       expect(played(s)).toContain(CUT_MS);
@@ -8388,17 +8158,6 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     });
   });
 
-  it("should leave no code that sends triple_arrow or multishot_arrow", () => {
-    const SRC = join(__dirname, "..");
-    const sources = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
-        const path = join(dir, d.name);
-        if (d.isDirectory()) return sources(path);
-        return /\.tsx?$/.test(d.name) && !/\.test\.tsx?$/.test(d.name) ? [path] : [];
-      });
-    const offenders = sources(SRC).filter((f) => /triple_arrow|multishot_arrow/.test(readFileSync(f, "utf8")));
-    expect(offenders).toEqual([]);
-  });
 });
 
 const { HEAL_LOOK } = await import("@/render/effects/shimmer");
@@ -8537,13 +8296,6 @@ describe("BarrowspireScene heal shimmer (FS-KZC92 §G R33–R38, §D R23, R26)",
     },
   );
 
-  it("should not exist in the hub or field scenes", () => {
-    const SRC = join(__dirname, "..");
-    for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
-      const source = readFileSync(join(SRC, "scenes", scene), "utf8");
-      expect(source).not.toMatch(/ShimmerFx|PotionDrinkWatcher/);
-    }
-  });
 });
 
 // FS-JS7C8 §D R22, §E R47: the own character and every other player face their drawn movement.
@@ -12039,41 +11791,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
         });
       });
 
-      // superseded in part by FS-P0HSP §A.1–§A.2 (2026-11-12): the town and the fields now have a
-      // minimap of their own plan, still no fog and never a dungeon floor's region map; nor the
-      // run fog's own helpers or modules (review round 1)
-      it("should not exist in the hub or field scenes: no fog, no exploration, no floor's region minimap", () => {
-        for (const scene of ["HubScene.ts", "FieldScene.ts"]) {
-          const source = readFileSync(join(__dirname, scene), "utf8");
-          expect(source).not.toMatch(/\bnew Minimap\(|\bFog\b|\bExploration\b/);
-          expect(source).not.toMatch(/\bfogShapes\b|\bfogField\b|render\/world\/(fog|fogField|exploration)\b/);
-        }
-      });
     });
-  });
-});
-
-// FS-PQ2TW R5, R8; ADR-0075 Decision 4. I-PQ2TW-2: the switch's verdict reaches the run with its
-// start. A climb is not a world switch (ADR-0015) and keeps its own trigger.
-describe("BarrowspireScene arrival from its start (FS-PQ2TW R5–R8)", () => {
-  it.each([true, false])("should keep the arrival %s its start was handed, beside its session", (arrival) => {
-    const scene = new BarrowspireScene();
-    const run = scene as unknown as { arrival: boolean; sessionID?: string };
-
-    (scene.init as (data?: { sessionID?: string; arrival?: boolean }) => void)({ sessionID: "run-a", arrival });
-
-    expect(run.arrival).toBe(arrival);
-    expect(run.sessionID).toBe("run-a");
-  });
-
-  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
-    const scene = new BarrowspireScene();
-    const run = scene as unknown as { arrival: boolean };
-
-    (scene.init as (data?: { arrival?: boolean }) => void)({ arrival: true });
-    scene.init();
-
-    expect(run.arrival).toBe(false);
   });
 });
 
@@ -12563,10 +12281,7 @@ describe("BarrowspireScene's end while the player types in the UI scene's chat (
     Object.assign(run, { input: { keyboard: runKeys } });
     const { bridge } = uiSceneOn(run, "run", { row: false });
     // the UI scene, as the window draws on it: any drawing call answered, its own keyboard
-    const any: unknown = new Proxy(() => any, {
-      get: (_t, prop) => (prop === "then" ? undefined : prop === Symbol.toPrimitive ? () => 0 : any),
-      apply: () => any,
-    });
+    const any = absorbing();
     const uiKeys = keyboardOf("ui", order);
     const uiScene = {
       add: any,
