@@ -1169,8 +1169,9 @@ func distanceToSegment(px, py, ax, ay, bx, by float64) float64 {
 // on a monster, with player damage off a delver's on a delver, and a monster's
 // strike or shot an archer sidesteps (FS-8RZ51 R29). A hit on a
 // monster records its attacker, and the killing blow records the kill. A
-// monster's strike on a Gravewarden wearer is reflected. It reports whether the
-// hit landed.
+// Spellwarden's Arcane Ward takes its share from mana before HP. A monster's
+// strike on a Gravewarden wearer is reflected, on the whole hit. It reports
+// whether the hit landed.
 func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.Entity) bool {
 	if !CanHit(attack, target, s.playerDamage) || s.sidestepped(attack, target) {
 		return false
@@ -1187,8 +1188,11 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
 	}
 	damage = damageTaken(target, health, damage)
-	if !lastStand(target, health, damage) {
-		health.CurrentHealth = max(health.CurrentHealth-damage, 0)
+	// the ward's mana share comes off first; only the HP share can be a
+	// killing blow (FS-E1ZDG Edge States)
+	toHealth := arcaneWard(target, damage)
+	if !lastStand(target, health, toHealth) {
+		health.CurrentHealth = max(health.CurrentHealth-toHealth, 0)
 	}
 
 	// the hit that took it to 0 is the killing blow; every later one stops at
@@ -1330,8 +1334,9 @@ func bareSnapshot(attacker *ecs.Entity, spec attackSpec) components.AttackSnapsh
 
 // mitigation is the target's defense (own + Σ armor defense_rating + worn
 // defense) and magic resistance (own + Σ armor magic_resistance + worn magic
-// resistance), read at the moment of the hit. A delver's own magic resistance
-// is 0; a monster's comes from its stat sheet.
+// resistance), read at the moment of the hit, with a Spellwarden's spell
+// resistance. A delver's own magic resistance is 0; a monster's comes from its
+// stat sheet.
 func (s *CombatSystem) mitigation(target *ecs.Entity) Mitigation {
 	var m Mitigation
 
@@ -1351,6 +1356,8 @@ func (s *CombatSystem) mitigation(target *ecs.Entity) Mitigation {
 	gear := wornGear(target)
 	m.Defense += gear.Defense
 	m.MagicResistance += gear.MagicResistance
+
+	m.SpellResistance = spellResistanceOf(target)
 
 	return m
 }

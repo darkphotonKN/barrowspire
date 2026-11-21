@@ -82,6 +82,10 @@ func TestResolveDamage_MitigationCritAndFloor(t *testing.T) {
 			Mitigation{}, 0.2, 60, true,
 		},
 		{"crit then mitigate", physical(40), Mitigation{Defense: 50}, 0.0, 30, true},
+		{"spell resistance takes its share off a mitigated magic hit", magic(100), Mitigation{MagicResistance: 50, SpellResistance: 0.10}, noCrit, 45, false},
+		{"spell resistance rounds to nearest", magic(25), Mitigation{SpellResistance: 0.10}, noCrit, 23, false}, // 22.5
+		{"spell resistance never takes a hit below 1", magic(1), Mitigation{SpellResistance: 0.10}, noCrit, 1, false},
+		{"spell resistance leaves a physical hit alone", physical(100), Mitigation{Defense: 50, SpellResistance: 0.10}, noCrit, 50, false},
 	}
 
 	for _, tt := range tests {

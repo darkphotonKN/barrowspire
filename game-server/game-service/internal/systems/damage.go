@@ -30,6 +30,9 @@ const (
 type Mitigation struct {
 	Defense         int // mitigates physical hits
 	MagicResistance int // mitigates magic hits
+	// SpellResistance is the share a magic hit loses after magic resistance's
+	// mitigation: the Spellwarden's (FS-E1ZDG §E R19), 0 on any other body
+	SpellResistance float64
 }
 
 // RawDamage is a hit before crit and mitigation.
@@ -52,13 +55,13 @@ func ResolveDamage(attack components.AttackSnapshot, target Mitigation, roll flo
 		raw *= CritMultiplier
 	}
 
-	rating := target.Defense
+	rating, kept := target.Defense, 1.0
 	if attack.DamageType == components.DamageMagic {
-		rating = target.MagicResistance
+		rating, kept = target.MagicResistance, 1-target.SpellResistance
 	}
 	rating = max(rating, 0)
 
-	final := int(math.Round(raw * mitigationBase / (mitigationBase + mitigationWeight*float64(rating))))
+	final := int(math.Round(raw * mitigationBase / (mitigationBase + mitigationWeight*float64(rating)) * kept))
 
 	return max(final, minimumDamage), crit
 }
