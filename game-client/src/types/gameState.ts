@@ -399,9 +399,10 @@ export type MonsterArchetype =
 /**
  * What a monster is doing this tick. `attack` is the wind-up and the strike (a demon's slam).
  * `claw` is a demon's fire claw (FS-VHGE7 §B R24): no wind-up, reported for 0.4 s from the tick
- * it lands while the demon stands still.
+ * it lands while the demon stands still. `stunned` is every tick an Earthbreaker stun runs on it
+ * (FS-04EEA §C R17), whatever it was doing, a leap in the air included; `dead` wins over it.
  */
-export type MonsterAction = "idle" | "move" | "attack" | "claw" | "ability" | "dead";
+export type MonsterAction = "idle" | "move" | "attack" | "claw" | "ability" | "stunned" | "dead";
 
 /** A monster ability's kind (FS-C8VM7 §B R11, R17). */
 export type MonsterAbilityKind =

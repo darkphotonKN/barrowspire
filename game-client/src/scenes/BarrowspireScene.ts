@@ -160,6 +160,7 @@ import { playFireballCast } from "@/render/effects/fireball";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
+import { StunTells } from "@/render/effects/stun";
 import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
 import {
   MonsterRoster,
@@ -886,6 +887,10 @@ export class BarrowspireScene extends Phaser.Scene {
       },
       aim: (from, ready, shadow) => this.drawAim(from, ready, shadow),
       endAim: () => this.endAimDrawing(),
+      // key 3's Arrow Rain aim circle, a world effect the run draws (FS-04EEA R38; ADR-0086 2.2); the
+      // volleys' `arrowRain` hook is FS-04EEA's effects slice
+      rainAim: (centre) => this.kit.rainAim(centre),
+      endRainAim: () => this.kit.endRainAim(),
       // a charge only when one carries the player (FS-3V7GC R6): every other clip is the plain attack
       attackClip: (aim, swing) =>
         swing === undefined
@@ -939,6 +944,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private lightMap?: LightMap;
   /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
   private fx?: EffectsRuntime;
+  /** The stun tell over each stunned monster's head, for every viewer (FS-04EEA §H R47). */
+  private stunTells?: StunTells;
   /** The warrior's charge kicking dust at their drawn feet while the server carries it (§D.2). */
   private charge?: Charge;
   /** The struck-character tint (FS-KYPQ9 §G.1). */
@@ -1140,6 +1147,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // every effect's sprites, emitters, tweens, timers and short-lived lights (FS-KYPQ9 §B.9, §C.4)
     this.fx?.clearAll();
     this.fx = undefined;
+    this.stunTells = undefined;
     this.charge = undefined;
     this.hits?.clearAll();
     this.hits = undefined;
@@ -3516,8 +3524,12 @@ export class BarrowspireScene extends Phaser.Scene {
     });
 
     // 3 casts the tree ability (FS-04EEA R35, R36), an event as 1 is; held back while the UI scene's menu
-    // reads it as its third row, chat types or a gear panel is open
-    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.castTreeAbility(repeat));
+    // reads it as its third row, chat types or a gear panel is open. Letting go casts an archer's Arrow Rain
+    // aim, or only cancels it while the key is held back (R38)
+    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.castTreeAbility(repeat), {
+      release: () => this.releaseTreeAbility(),
+      cancel: () => this.cancelAim(),
+    });
 
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
@@ -3613,10 +3625,14 @@ export class BarrowspireScene extends Phaser.Scene {
     return (activeChar?.className || "warrior").toLowerCase();
   }
 
-  /** The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11). */
+  /**
+   * The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11), and an
+   * Arrow Rain aim's circle at the cursor now (FS-04EEA R38).
+   */
   private aimFrame(): void {
-    if (!this.combat.aiming || !this.playerPos) return;
-    this.combat.aimFrame(this.playerPos);
+    if (!this.playerPos) return;
+    if (this.combat.rainAiming) this.combat.aimFrame(this.playerPos, this.cursorWorld());
+    else if (this.combat.aiming) this.combat.aimFrame(this.playerPos);
   }
 
   /**
@@ -3651,8 +3667,20 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Ends a hold with nothing sent and no cooldown started (FS-JTNPR req 15): death, a floor
-   * change, the menu or equipment panel, a release off the canvas, the window losing focus.
+   * Key 3 let go (FS-04EEA R38): an archer's Arrow Rain aim casts at the circle under the cursor while this
+   * player is still in play and the run not over; otherwise it only ends, with nothing sent.
+   */
+  private releaseTreeAbility(): void {
+    if (!this.player || !this.playerPos || this.runEnded || resolved(this.lastGameState?.current_player)) {
+      this.cancelAim();
+      return;
+    }
+    this.combat.releaseTreeAbility(this.ownClass(), this.playerPos, this.cursorWorld());
+  }
+
+  /**
+   * Ends a hold, or an Arrow Rain aim, with nothing sent and no cooldown started (FS-JTNPR req 15, FS-04EEA
+   * R38): death, a floor change, the menu or equipment panel, a release off the canvas, the window losing focus.
    */
   private cancelAim(): void {
     this.combat.cancelAim();
@@ -5314,6 +5342,7 @@ export class BarrowspireScene extends Phaser.Scene {
     buildAtmosphere(this);
     // world effects over the baked fx sheets, lighting through the light-map (FS-KYPQ9 §B, §C)
     this.fx = new EffectsRuntime(this, this.art, this.lightMap);
+    this.stunTells = new StunTells(this.fx);
     this.hits = new HitFeedback(this);
     this.shimmers = new ShimmerFx(this, this.art, this.lightMap);
     this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
@@ -5869,6 +5898,7 @@ export class BarrowspireScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
+    this.stunTells?.show(this.monsters?.stunned() ?? []);
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms

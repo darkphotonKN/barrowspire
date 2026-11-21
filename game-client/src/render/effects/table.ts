@@ -756,6 +756,40 @@ export const EFFECTS = {
       accel: { x: 3, y: -4 },
     },
   },
+
+  // ── Class tree abilities (FS-04EEA §H) ─────────────────────────────────
+  /**
+   * The stun tell (R47): a pale haze held over a stunned monster's head, with brass and vellum
+   * motes winking up off it and falling back, for as long as its `action` is `stunned`. Pale, not
+   * the hostile oxblood: it reads as the monster reeling, not as a blow coming. Held, never
+   * looped on scale; cut at once when the stun ends. *Starting values,* through the contact sheet.
+   */
+  stunTell: {
+    timing: {
+      kind: "stream",
+      lifeMs: 600,
+      intervalMs: 110,
+      maxAlive: 6,
+      onRelease: "cut",
+    },
+    ease: "Sine.easeOut",
+    sprite: {
+      texture: "fx_glow",
+      tint: ["vellumDark"],
+      scale: { from: 0.5, to: 0.5 },
+      alpha: { from: 0.35, to: 0.35 },
+    },
+    particles: {
+      texture: ["fx_ember"],
+      tint: ["vellum", "brassBright"],
+      count: 1,
+      scale: still,
+      alpha: { from: 0.95, to: 0 },
+      speed: { from: 12, to: 24 },
+      angle: { from: 200, to: 340 },
+      accel: { x: 0, y: 28 },
+    },
+  },
 } as const satisfies Record<string, EffectEntry>;
 
 export type EffectName = keyof typeof EFFECTS;

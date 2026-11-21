@@ -1,7 +1,8 @@
 /**
  * How the player's own class kit is drawn, shared by every world that has monsters (FS-X2F2H
  * §Requirements 56): the Mercenary's cut, riposte slice, armed tell, stance tell and parry flash
- * (FS-MAMHR §G.32–§G.36), and the archer's Shadow Shot aim line (FS-JTNPR req 11). Each piece is
+ * (FS-MAMHR §G.32–§G.36), the archer's Shadow Shot aim line (FS-JTNPR req 11) and Arrow Rain aim circle
+ * (FS-04EEA R38). Each piece is
  * made on its first use, fed every state and every frame, and taken down with the world. Only
  * this client's own player is ever drawn by it: a teammate's kit is never (FS-MAMHR §G.38).
  */
@@ -13,6 +14,7 @@ import { CutFx } from "@/render/effects/cut";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx, riposteArmed } from "@/render/effects/riposte";
 import { AimLine } from "@/render/effects/aimLine";
+import { AimCircle } from "@/render/effects/aimCircle";
 
 export class ClassKitFx {
   /** The Mercenary's own stance tell and parry flash (FS-MAMHR §G.35, §G.36); made on first use. */
@@ -23,6 +25,8 @@ export class ClassKitFx {
   cut?: CutFx;
   /** The right-click hold's aim line (FS-JTNPR req 11, FS-1J1CB §F R42); made on the hold's first draw. */
   aimLine?: AimLine;
+  /** Key 3's Arrow Rain aim circle (FS-04EEA R38); made on the aim's first draw. */
+  aimCircle?: AimCircle;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -85,6 +89,17 @@ export class ClassKitFx {
     this.aimLine?.clear();
   }
 
+  /** The Arrow Rain aim's circle round `centre`, a world point already pulled in to the reach (FS-04EEA R38). */
+  rainAim(centre: Point): void {
+    this.aimCircle ??= new AimCircle(() => this.scene.add.graphics());
+    this.aimCircle.draw(centre);
+  }
+
+  /** The Arrow Rain aim ended, cast or cancelled: no circle left behind. */
+  endRainAim(): void {
+    this.aimCircle?.clear();
+  }
+
   /**
    * The world is torn down (a restart, which a reconnect is, or leaving a field): everything
    * drawn goes, and the next first state is a fresh baseline, so a reconnect flashes nothing.
@@ -100,5 +115,7 @@ export class ClassKitFx {
     this.cut = undefined;
     this.aimLine?.forget();
     this.aimLine = undefined;
+    this.aimCircle?.forget();
+    this.aimCircle = undefined;
   }
 }

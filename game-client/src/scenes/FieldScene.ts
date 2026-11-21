@@ -393,10 +393,11 @@ export class FieldScene extends Phaser.Scene {
       invitesAboveChat: true,
       // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
       facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
-      // a gear panel opening ends a Shadow Shot hold (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53);
-      // the menu opens over no window, the gear overlay and the party panel the UI scene's (FS-3EBCA R17)
+      // the menu or a gear panel opening ends a Shadow Shot hold or an Arrow Rain aim (FS-JTNPR req 15;
+      // FS-04EEA R38; FS-TQZ5J § Change: Phase 3, R53); the menu opens over no window, the gear overlay and
+      // the party panel the UI scene's (FS-3EBCA R17)
       heardUi: (ui, was) => {
-        if (gearOpened(ui, was)) this.fight?.cancelAim();
+        if ((ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.fight?.cancelAim();
       },
       answer: answering({
         changeCharacter: () => this.changeCharacter(),
@@ -578,10 +579,14 @@ export class FieldScene extends Phaser.Scene {
   /**
    * Key 3, the tree ability's cast at the world point under the cursor (FS-04EEA R35, R36), as the run binds
    * it: held back while the UI scene's menu reads it as its third row, chat types or a gear panel is open; a
-   * fallen player sends nothing (`FieldCombat.treeAbility`).
+   * fallen player sends nothing (`FieldCombat.treeAbility`). Letting go of it casts an archer's Arrow Rain aim
+   * at the cursor, or only cancels it while the UI scene holds the key back (FS-04EEA R38).
    */
   private bindTreeAbilityKey(): void {
-    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.fight?.treeAbility(cursorWorldOf(this), repeat));
+    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.fight?.treeAbility(cursorWorldOf(this), repeat), {
+      release: () => this.fight?.releaseTreeAbility(cursorWorldOf(this)),
+      cancel: () => this.fight?.cancelAim(),
+    });
   }
 
   /**

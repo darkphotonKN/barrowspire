@@ -40,6 +40,7 @@ import { bodyHitArea, footprintHitArea, type BodyColumn } from "@/render/world/f
 import type { MarkerMode } from "./markerMode";
 import { onDemandFor } from "@/render/art/sceneArt";
 import { AbilityTelegraphs, type GroundBrush } from "@/render/effects/monsterAbility";
+import type { StunHead } from "@/render/effects/stun";
 import type { MonsterAction, MonsterState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 
@@ -306,7 +307,10 @@ export function bodyColumn(
 /**
  * The clip each server action plays (req 34; a demon's fire claw, FS-VHGE7 §D R31). An ability's
  * wind-up, and a pounce's leap, is the attack clip (FS-C8VM7 §F R37): its effect, not the body,
- * tells the ability apart, and the leap is the sprite following the server's position.
+ * tells the ability apart, and the leap is the sprite following the server's position. A stunned
+ * monster stands in its idle clip (FS-04EEA §H R47), its stun tell over its head; stunned mid-leap,
+ * it still flies to where the leap lands, since the leap is the position and the ground mark, not
+ * the clip. An action the client does not know plays idle, as before.
  */
 export const ACTION_CLIPS: Record<MonsterAction, CharacterAnimation> = {
   idle: "idle",
@@ -314,6 +318,7 @@ export const ACTION_CLIPS: Record<MonsterAction, CharacterAnimation> = {
   attack: "attack",
   claw: "claw",
   ability: "attack",
+  stunned: "idle",
   dead: "death",
 };
 
@@ -755,6 +760,22 @@ export class MonsterRoster {
    */
   standing(): { parts: MonsterSprite[]; at: Point }[] {
     return [...this.views.values()].map((view) => ({ parts: [view.sprite], at: view.pos }));
+  }
+
+  /**
+   * Each living monster the latest broadcast reports `stunned` (FS-04EEA §H R47), for its stun
+   * tell: where it is drawn, eased, so one stunned mid-leap is followed along the rest of its
+   * flight; and screen px from its feet up to its head, where its marker stack begins. Read it
+   * after the frame's {@link update}.
+   */
+  stunned(): StunHead[] {
+    const heads: StunHead[] = [];
+    for (const { state, sprite, anim, pos } of this.views.values()) {
+      if (state.action !== "stunned") continue;
+      const base = markerBase(sprite, anim.crown, false, anim.artScale) ?? sprite.y;
+      heads.push({ id: state.entity_id, at: { x: pos.x, y: pos.y }, lift: sprite.y - base });
+    }
+    return heads;
   }
 
   /** The clip a monster should be playing, this frame. */

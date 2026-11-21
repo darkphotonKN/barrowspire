@@ -44,3 +44,20 @@ describe("ClassKitFx guarding (FS-MAMHR §G.35)", () => {
     expect(kit.guarding).toBe(false);
   });
 });
+
+describe("ClassKitFx Arrow Rain aim circle (FS-04EEA R38)", () => {
+  it("should draw the circle on the aim, and leave none once the aim ends", () => {
+    const kit = new ClassKitFx(scene());
+    kit.rainAim({ x: 100, y: 100 });
+    expect(kit.aimCircle?.drawn).toBe(true);
+    kit.endRainAim();
+    expect(kit.aimCircle?.drawn).toBe(false);
+  });
+
+  it("should drop the circle with the world", () => {
+    const kit = new ClassKitFx(scene());
+    kit.rainAim({ x: 100, y: 100 });
+    kit.forget();
+    expect(kit.aimCircle).toBeUndefined();
+  });
+});

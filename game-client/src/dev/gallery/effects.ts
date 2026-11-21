@@ -12,6 +12,7 @@ import { itemView } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
 import { worldToScreen, type Point } from "@/render/iso/projection";
+import { AimCircle } from "@/render/effects/aimCircle";
 import { AimLine } from "@/render/effects/aimLine";
 import { Auras } from "@/render/effects/aura";
 import { playArrowRelease } from "@/render/effects/arrow";
@@ -38,6 +39,7 @@ import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
+import { StunTells } from "@/render/effects/stun";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
 import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
@@ -107,6 +109,9 @@ const FABLED_SAMPLE: ItemState = {
 };
 const FABLED_ICON_SIDE = 64;
 const FABLED_ICON_OFFSET = { x: 90, y: -60 };
+
+/** Screen px over the feet the stun tell stands at on a figure whose sheet records no crown. */
+const STUN_LIFT_FALLBACK = 80;
 
 /** A frame's step, in ms, for a demo that drives its own frames. */
 const FRAME_MS = 33;
@@ -206,6 +211,16 @@ function sayLore(s: Stage, line: LoreLine): void {
 }
 
 export const EFFECT_CARDS: EffectCard[] = [
+  {
+    module: "aimCircle",
+    name: "Arrow Rain aim circle",
+    demo: (s) => {
+      // held at the point the figure aims, as key 3's hold draws it (FS-04EEA R38)
+      const circle = new AimCircle(() => s.scene.add.graphics());
+      circle.draw(s.aim);
+      s.later(HOLD_MS / 2, () => circle.clear());
+    },
+  },
   {
     module: "aimLine",
     name: "Shadow Shot aim line",
@@ -477,6 +492,16 @@ export const EFFECT_CARDS: EffectCard[] = [
     demo: (s) => {
       const smoke = new ChimneySmoke(s.fx, s.owner, s.at, CHIMNEY_LIFT);
       s.later(HOLD_MS, () => smoke.setVisible(false));
+    },
+  },
+  {
+    module: "stun",
+    name: "Stun tell",
+    // over the figure's head as a world draws it over a stunned monster's (FS-04EEA §H R47)
+    demo: (s) => {
+      const tells = new StunTells(s.fx);
+      tells.show([{ id: s.owner, at: s.at, lift: s.crown ?? STUN_LIFT_FALLBACK }]);
+      s.later(HOLD_MS, () => tells.clear());
     },
   },
   {

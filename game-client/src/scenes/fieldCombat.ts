@@ -18,6 +18,7 @@ import { playArrowRelease } from "@/render/effects/arrow";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
+import { StunTells } from "@/render/effects/stun";
 import { ensurePointerLook } from "@/render/cursors";
 import { socketManager } from "@/utils/class/SocketManager";
 import { viewport } from "@/render/viewport";
@@ -61,6 +62,8 @@ export interface FieldCombatParts {
   clearEffects?(): void;
   /** The scene's gameplay sound effects: the player's own wound plays on them (FS-AND39 R3). */
   sounds?: GameplaySoundPlayer;
+  /** The stun tell over each stunned monster's head, as on a run floor (FS-04EEA §H R47). */
+  stuns?: Pick<StunTells, "show" | "clear">;
 }
 
 export class FieldCombat {
@@ -88,6 +91,11 @@ export class FieldCombat {
     return this.combat.aiming;
   }
 
+  /** Whether an archer is aiming Arrow Rain on key 3 (FS-04EEA R38): no click is answered; the archer walks on. */
+  get rainAiming(): boolean {
+    return this.combat.rainAiming;
+  }
+
   /** Whether the ability lockout runs: the bar's right-click square is grey (FS-Q18Q3 R22). */
   get lockedOut(): boolean {
     return this.combat.lockedOut;
@@ -113,7 +121,7 @@ export class FieldCombat {
           fallen: me.current_health !== undefined && me.current_health <= 0,
         }
       : undefined;
-    // a fallen player's hold ends the moment the client sees it (FS-JTNPR req 15)
+    // a fallen player's hold, or Arrow Rain aim, ends the moment the client sees it (FS-JTNPR req 15, FS-04EEA R38)
     if (!this.self || this.self.fallen) this.combat.cancelAim();
     // the merc's own stance, parries and armed riposte: never a teammate's (FS-MAMHR §G.38)
     this.parts.kit?.sync(me, this.parts.port.now());
@@ -133,9 +141,10 @@ export class FieldCombat {
     for (const id of this.lastHealth.keys()) if (!present.has(id)) this.lastHealth.delete(id);
   }
 
-  /** One frame: the monsters ease and animate. */
+  /** One frame: the monsters ease and animate, a stunned one under its stun tell. */
   update(deltaMs: number): void {
     this.monsters.update(deltaMs);
+    this.parts.stuns?.show(this.monsters.stunned());
   }
 
   /** A click on the ground at world point `target`: the class cast, unless the player has fallen. */
@@ -153,9 +162,24 @@ export class FieldCombat {
     return this.combat.treeAbility(this.self.className, this.self.at, target, repeat);
   }
 
-  /** The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11). */
-  aimFrame(drawnAt: Point | undefined): void {
-    this.combat.aimFrame(drawnAt);
+  /**
+   * The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11), and an
+   * Arrow Rain aim's circle at the world point `cursor` under the cursor now (FS-04EEA R38).
+   */
+  aimFrame(drawnAt: Point | undefined, cursor?: Point): void {
+    this.combat.aimFrame(drawnAt, cursor);
+  }
+
+  /**
+   * Key 3 let go with the cursor at world point `cursor` (FS-04EEA R38): an Arrow Rain aim casts at its
+   * circle's centre, unless the player has fallen, which only cancels. Whether it was sent.
+   */
+  releaseTreeAbility(cursor: Point): boolean {
+    if (!this.self || this.self.fallen) {
+      this.combat.cancelAim();
+      return false;
+    }
+    return this.combat.releaseTreeAbility(this.self.className, this.self.at, cursor);
   }
 
   /** The right button let go at world point `target`: a ready hold fires (FS-JTNPR req 13, 14). */
@@ -167,7 +191,7 @@ export class FieldCombat {
     this.combat.releaseAim(this.self.at, target);
   }
 
-  /** Ends a hold with nothing sent and no cooldown started (FS-JTNPR req 15). */
+  /** Ends a hold, or an Arrow Rain aim, with nothing sent and no cooldown started (FS-JTNPR req 15, FS-04EEA R38). */
   cancelAim(): void {
     this.combat.cancelAim();
   }
@@ -175,6 +199,7 @@ export class FieldCombat {
   /** Everything one visit drew is let go: the next visit starts ready and empty. */
   release(): void {
     this.monsters.clear();
+    this.parts.stuns?.clear();
     this.parts.projectiles?.clear();
     this.parts.hits?.clearAll();
     this.parts.clearEffects?.();
@@ -286,12 +311,17 @@ export function fieldCombatOnScene(
         hooks.selfAnim()?.holdAim(undefined);
       },
       attackClip: (aim, swing) => hooks.selfAnim()?.attack(scene.time.now, aim, swing),
+      // key 3's Arrow Rain aim circle, a world effect the field draws (FS-04EEA R38; ADR-0086 2.2); the
+      // volleys' `arrowRain` hook is FS-04EEA's effects slice
+      rainAim: (centre) => kit.rainAim(centre),
+      endRainAim: () => kit.endRainAim(),
       abilityChanged: () => hooks.abilityChanged?.(),
       abilityCast: (ability) => hooks.sounds?.play(ability),
     },
     kit,
     projectiles: new ProjectileFlights(scene, art, fx, projectileFlightOf),
     hits: new HitFeedback(scene),
+    stuns: new StunTells(fx),
     cursor: (over) => pointer?.base(over ? "strike" : "hand"),
     bodyOf: hooks.bodyOf,
     button: () => scene.input.activePointer?.button,
@@ -313,7 +343,7 @@ export function fieldCombatOnScene(
     charge?.follow(at);
     kit.follow(at, scene.time.now);
     hooks.selfAnim()?.guard(kit.guarding, scene.time.now);
-    combat.aimFrame(at);
+    combat.aimFrame(at, combat.rainAiming ? cursorWorld() : undefined);
   };
   scene.events.on("update", followSelf);
 

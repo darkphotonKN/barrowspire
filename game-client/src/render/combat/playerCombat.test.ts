@@ -39,6 +39,9 @@ function combatOnStage(me: ReturnType<CombatSelf> = undefined) {
     earthbreaker: vi.fn(),
     blink: vi.fn(),
     settleTheDebt: vi.fn(),
+    rainAim: vi.fn(),
+    endRainAim: vi.fn(),
+    arrowRain: vi.fn(),
   };
   const self = { me };
   const combat = new PlayerCombat(
@@ -568,12 +571,6 @@ describe("PlayerCombat tree ability on key 3 (FS-04EEA §G R35–R37, R39, R40)"
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  // the archer's Arrow Rain is aimed by a hold of its own (R38), not this press
-  it("should send nothing for an archer's press", () => {
-    const { combat, send } = combatOnStage(holding("archer"));
-    expect(combat.treeAbility("archer", me, target)).toBe(false);
-    expect(send).not.toHaveBeenCalled();
-  });
 
   it("should send nothing for a class with no tree ability", () => {
     const { combat, send } = combatOnStage(holding("bard"));
@@ -604,5 +601,140 @@ describe("PlayerCombat tree ability on key 3 (FS-04EEA §G R35–R37, R39, R40)"
     const { combat, look } = combatOnStage(holding("warrior"));
     combat.treeAbility("warrior", me, target);
     expect(look.abilityCast).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlayerCombat Arrow Rain aim on key 3 (FS-04EEA §G R38–R40)", () => {
+  /** An archer as the latest state shows them, holding Arrow Rain unless told otherwise. */
+  const archer = (
+    resource: Partial<ResourceState> = {},
+    fields: { held?: boolean; remaining?: number } = {},
+  ): ReturnType<CombatSelf> => ({
+    passive_ranks: fields.held === false ? {} : { "archer.t3": 1 },
+    tree_ability_cooldown: { remaining: fields.remaining ?? 0, total: 12 },
+    resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25, tree_ability_cost: 35, ...resource },
+  });
+  const origin = { x: 0, y: 0 };
+  const near = { x: 120, y: 50 };
+  const far = { x: 500, y: 0 };
+
+  it("should send nothing on the press and draw the circle at the cursor", () => {
+    const { combat, send, look } = combatOnStage(archer());
+    expect(combat.treeAbility("archer", origin, near)).toBe(true);
+    expect(combat.rainAiming).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+    expect(look.rainAim).toHaveBeenLastCalledWith(near);
+  });
+
+  it("should draw the circle each frame at the cursor now, pulled in to 300 px", () => {
+    const { combat, look } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    combat.aimFrame(origin, far);
+    expect(look.rainAim).toHaveBeenLastCalledWith({ x: 300, y: 0 });
+  });
+
+  it("should send the pulled-in centre on the release, counted as a cast that can strike", () => {
+    const { combat, send, look, castSent } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    expect(combat.releaseTreeAbility("archer", origin, far)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "arrow_rain", target_x: 300, target_y: 0 });
+    expect(castSent).toHaveBeenCalledTimes(1);
+    expect(look.endRainAim).toHaveBeenCalledTimes(1);
+    expect(look.arrowRain).toHaveBeenCalledWith(origin, { x: 300, y: 0 });
+    expect(combat.rainAiming).toBe(false);
+  });
+
+  it("should send one arrow_rain at the cursor on a tap", () => {
+    const { combat, send } = combatOnStage(archer());
+    combat.treeAbility("archer", me, near);
+    combat.releaseTreeAbility("archer", me, near);
+    expect(send.mock.calls).toEqual([[ActionType.CastSkill, { skill_id: "arrow_rain", target_x: 120, target_y: 50 }]]);
+  });
+
+  it.each([
+    ["now on cooldown", archer({}, { remaining: 4 })],
+    ["now short of stamina", archer({ current: 20 })],
+  ])("should send nothing on a release when the gates no longer hold: %s", (_, now) => {
+    const { combat, send, look, self, castSent } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    self.me = now;
+    expect(combat.releaseTreeAbility("archer", origin, near)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(castSent).not.toHaveBeenCalled();
+    expect(look.arrowRain).not.toHaveBeenCalled();
+    expect(look.endRainAim).toHaveBeenCalledTimes(1);
+    expect(combat.rainAiming).toBe(false);
+  });
+
+  it.each([
+    ["off cooldown but not held", archer({}, { held: false })],
+    ["on cooldown", archer({}, { remaining: 4 })],
+    ["short of stamina", archer({ current: 34 })],
+  ])("should neither aim nor draw on a press %s", (_, now) => {
+    const { combat, look } = combatOnStage(now);
+    expect(combat.treeAbility("archer", origin, near)).toBe(false);
+    expect(combat.rainAiming).toBe(false);
+    expect(look.rainAim).not.toHaveBeenCalled();
+  });
+
+  it("should start nothing more on the key's auto-repeat", () => {
+    const { combat, look } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    combat.treeAbility("archer", origin, far, true);
+    expect(look.rainAim).toHaveBeenCalledTimes(1);
+  });
+
+  it("should end on a cancel with nothing sent and no circle left", () => {
+    const { combat, send, look } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    combat.cancelAim();
+    expect(combat.rainAiming).toBe(false);
+    expect(look.endRainAim).toHaveBeenCalledTimes(1);
+    expect(combat.releaseTreeAbility("archer", origin, near)).toBe(false);
+    combat.aimFrame(origin, near);
+    expect(look.rainAim).toHaveBeenCalledTimes(1);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should leave no aim standing after a reset", () => {
+    const { combat } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    combat.reset();
+    expect(combat.rainAiming).toBe(false);
+  });
+
+  // the archer keeps walking: an Arrow Rain aim is not the Shadow Shot hold the keys read released by
+  it("should not read as the Shadow Shot hold", () => {
+    const { combat } = combatOnStage(archer());
+    combat.treeAbility("archer", origin, near);
+    expect(combat.aiming).toBe(false);
+  });
+
+  // R38, R39: left- and right-click are ignored while the aim is held, one hold at a time
+  it("should answer no click and no strike during the aim", () => {
+    const { combat, send, look } = combatOnStage(archer());
+    combat.treeAbility("archer", me, near);
+    expect(combat.cast("primary", "archer", me, near)).toBe(false);
+    expect(combat.cast("special", "archer", me, near)).toBe(false);
+    expect(combat.strike(me, "boar-1", { x: 120, y: 100 }, "archer", 0)).toBe(false);
+    expect(combat.aiming).toBe(false);
+    expect(look.aim).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should start no aim while a Shadow Shot hold is in progress", () => {
+    const { combat, look } = combatOnStage(archer());
+    combat.cast("special", "archer", me, near);
+    expect(combat.treeAbility("archer", me, near)).toBe(false);
+    expect(combat.rainAiming).toBe(false);
+    expect(look.rainAim).not.toHaveBeenCalled();
+  });
+
+  it("should send nothing on a release with no aim running", () => {
+    const { combat, send, look } = combatOnStage(archer());
+    expect(combat.releaseTreeAbility("archer", me, near)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(look.endRainAim).not.toHaveBeenCalled();
   });
 });

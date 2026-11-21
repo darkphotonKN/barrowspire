@@ -1188,15 +1188,43 @@ describe("FieldScene key 3, the tree ability (FS-04EEA §G R35, R36)", () => {
       activePointer: { positionToCamera: () => ({ x: 400, y: 300 }) },
     };
     const treeAbility = vi.fn();
-    field.fight = { treeAbility, cancelAim: vi.fn(), release: vi.fn() };
+    const releaseTreeAbility = vi.fn();
+    const cancelAim = vi.fn();
+    field.fight = { treeAbility, releaseTreeAbility, cancelAim, release: vi.fn() };
     field.bindTreeAbilityKey();
     /** One press of 3 as Phaser delivers it: the field's keydown event, then the UI scene's frame reading its own key. */
     const pressThree = (event: { repeat?: boolean } = {}) => {
       keys.get(`keydown-${RUN_ACTIONS.treeAbility.key}`)?.(event);
       uiSceneOn(field, "field", { row: false }).key("three");
     };
-    return { ...env, field, keys, treeAbility, pressThree };
+    const letGoThree = () => keys.get(`keyup-${RUN_ACTIONS.treeAbility.key}`)?.();
+    return { ...env, field, keys, treeAbility, releaseTreeAbility, cancelAim, pressThree, letGoThree };
   }
+
+  // FS-04EEA R38: letting go casts the archer's Arrow Rain aim at the cursor
+  it("should hand the fight a let-go of 3 at the cursor's world point", () => {
+    const { releaseTreeAbility, cancelAim, letGoThree } = keyedField();
+    letGoThree();
+    expect(releaseTreeAbility.mock.calls).toEqual([[CURSOR]]);
+    expect(cancelAim).not.toHaveBeenCalled();
+  });
+
+  it("should only cancel on a let-go of 3 while chat is typing", () => {
+    const { field, releaseTreeAbility, cancelAim, letGoThree } = keyedField();
+    uiSceneOn(field, "field", { row: false }).bridge.reportUi({ typing: true });
+    letGoThree();
+    expect(releaseTreeAbility).not.toHaveBeenCalled();
+    expect(cancelAim).toHaveBeenCalledTimes(1);
+  });
+
+  // FS-JTNPR req 15, FS-04EEA R38: the menu opening ends a hold or an aim; closing it resumes none
+  it("should end an aim as the menu opens, not as it closes", () => {
+    const { field, cancelAim } = keyedField();
+    menuUpOver(field);
+    expect(cancelAim).toHaveBeenCalledTimes(1);
+    menuUpOver(field, false);
+    expect(cancelAim).toHaveBeenCalledTimes(1);
+  });
 
   it("should hand the fight a press of 3 at the cursor's world point, and a repeat as one", () => {
     const { treeAbility, pressThree } = keyedField();

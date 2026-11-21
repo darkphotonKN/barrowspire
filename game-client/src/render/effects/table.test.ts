@@ -51,6 +51,8 @@ describe("effects table (FS-KYPQ9 §B.2)", () => {
         "escape",
         "entranceBreath",
         "chimneySmoke",
+        // FS-04EEA §H R47: the stun tell over a stunned monster's head
+        "stunTell",
       ].sort(),
     );
   });

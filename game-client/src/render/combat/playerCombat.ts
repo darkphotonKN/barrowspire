@@ -17,6 +17,7 @@ import type { Swing } from "@/render/art/character";
 import { riposteArmed } from "@/render/effects/riposte";
 import { parryRefused } from "@/ui/abilityBarView";
 import { SHADOW_SHOT_COOLDOWN_MS, ShadowShotAim } from "@/scenes/shadowShotAim";
+import { ArrowRainAim, arrowRainCentre } from "@/scenes/arrowRainAim";
 import { wearsShadow } from "@/render/effects/heavyShot";
 import { treeAbilityOf, treeAbilityReady } from "./treeAbility";
 
@@ -48,7 +49,7 @@ export interface CombatPort {
   now(): number;
   /**
    * Told the moment a cast that can strike has been sent: every primary, the right-click ability
-   * that casts at once, a fired Shadow Shot, an Earthbreaker or a Settle the Debt (FS-04EEA R40).
+   * that casts at once, a fired Shadow Shot, an Earthbreaker, an Arrow Rain or a Settle the Debt (FS-04EEA R40).
    * Never the archer's right-press, which sends nothing, the parry or a Blink, which strike nothing,
    * or a strike, whose `attack` names its own monster. The scene
    * names the hovered monster the last-hit one by it (FS-48CTQ §C.6).
@@ -107,6 +108,18 @@ export interface CombatLook {
   earthbreaker?(from: Point): void;
   blink?(from: Point, to: Point): void;
   settleTheDebt?(from: Point, charges: number): void;
+  /**
+   * The Arrow Rain sent from `from` onto the circle centred at `centre` (FS-04EEA §H): the volleys' hook for
+   * FS-04EEA's effects slice; a scene that sets none plays nothing.
+   */
+  arrowRain?(from: Point, centre: Point): void;
+  /**
+   * The archer's Arrow Rain aim, drawn once a frame (FS-04EEA R38): the ground circle centred at `centre`, a
+   * world point already pulled in to the server's reach. Local only (ADR-0030).
+   */
+  rainAim?(centre: Point): void;
+  /** The Arrow Rain aim ended, cast or cancelled: no circle left behind. */
+  endRainAim?(): void;
 }
 
 /**
@@ -127,6 +140,8 @@ export class PlayerCombat {
   private abilityLockedOut = false;
   /** The archer's Shadow Shot hold (FS-JTNPR req 8–17): client presentation only (ADR-0030). */
   private readonly hold = new ShadowShotAim();
+  /** The archer's Arrow Rain aim on key 3 (FS-04EEA R38): client presentation only (ADR-0030). */
+  private readonly rain = new ArrowRainAim();
 
   constructor(
     private readonly port: CombatPort,
@@ -137,6 +152,14 @@ export class PlayerCombat {
   /** Whether an archer is drawing a Shadow Shot: no other click is answered, the keys read released. */
   get aiming(): boolean {
     return this.hold.aiming;
+  }
+
+  /**
+   * Whether an archer is aiming Arrow Rain (FS-04EEA R38): no click is answered, but the archer keeps
+   * walking, so it is never {@link aiming}.
+   */
+  get rainAiming(): boolean {
+    return this.rain.aiming;
   }
 
   /**
@@ -154,7 +177,7 @@ export class PlayerCombat {
    * pointer button that pressed. Whether it was sent.
    */
   strike(me: Point, entityId: string, them: Point, playerClass?: string, button?: number): boolean {
-    if (this.hold.aiming) return false;
+    if (this.hold.aiming || this.rain.aiming) return false;
     if (button === RIGHT_BUTTON && playerClass === "archer") return false;
     if (!this.canStrike) return false;
     // world positions, never the sprites' screen positions
@@ -178,7 +201,8 @@ export class PlayerCombat {
    * Whether anything was cast or begun.
    */
   cast(button: CastButton, playerClass: string, from: Point, target: Point): boolean {
-    if (this.hold.aiming) return false;
+    // one hold at a time: a click during an Arrow Rain aim is ignored (FS-04EEA R38, R39)
+    if (this.hold.aiming || this.rain.aiming) return false;
     // a copy: the effects are handed where the player stood, never the drawn position itself
     const me = { x: from.x, y: from.y };
 
@@ -214,16 +238,23 @@ export class PlayerCombat {
   /**
    * Key 3 pressed (FS-04EEA R35–R37, R39, R40): one `cast_skill` for a `playerClass` character's tree ability
    * at the world point `target`, from `me`, when the latest state shows it held, off cooldown and affordable
-   * and no Shadow Shot hold is in progress; nothing on a key's auto-repeat (`repeat`). The archer's Arrow Rain
-   * is aimed by a hold of its own (R38), never this press. Whether the player may act at all (a menu open,
-   * resolved) is the scene's to decide before it asks. Whether it was sent.
+   * and no Shadow Shot hold is in progress; nothing on a key's auto-repeat (`repeat`). The archer's press sends
+   * nothing: it starts the Arrow Rain aim, its circle drawn at `target` (R38), and {@link releaseTreeAbility}
+   * casts. Whether the player may act at all (a menu open, resolved) is the scene's to decide before it asks.
+   * Whether it was sent or an aim begun.
    */
   treeAbility(playerClass: string, me: Point, target: Point, repeat = false): boolean {
-    if (repeat || this.hold.aiming) return false;
+    if (repeat || this.hold.aiming || this.rain.aiming) return false;
     const ability = treeAbilityOf(playerClass);
-    if (ability === null || ability === "arrow_rain") return false;
+    if (ability === null) return false;
     const self = this.self();
     if (!treeAbilityReady(playerClass, self)) return false;
+
+    if (ability === "arrow_rain") {
+      this.rain.press();
+      this.look.rainAim?.(arrowRainCentre(me, target));
+      return true;
+    }
 
     // a copy: the effects are handed where the player stood, never the drawn position itself
     const from = { x: me.x, y: me.y };
@@ -238,10 +269,34 @@ export class PlayerCombat {
     return true;
   }
 
-  /** The hold, once a frame, from where the archer is drawn now (FS-JTNPR req 10, 11). */
-  aimFrame(from: Point | undefined): void {
-    if (!this.hold.aiming || !from) return;
-    this.look.aim(from, this.hold.ready(this.port.now(), this.resource()), this.shadow());
+  /**
+   * The hold, once a frame, from where the archer is drawn now (FS-JTNPR req 10, 11); and an Arrow Rain aim's
+   * circle at the world point `cursor` under the cursor now, pulled in to the reach (FS-04EEA R38).
+   */
+  aimFrame(from: Point | undefined, cursor?: Point): void {
+    if (!from) return;
+    if (this.hold.aiming) this.look.aim(from, this.hold.ready(this.port.now(), this.resource()), this.shadow());
+    if (this.rain.aiming && cursor) this.look.rainAim?.(arrowRainCentre(from, cursor));
+  }
+
+  /**
+   * Key 3 let go (FS-04EEA R38, R40): an Arrow Rain aim sends one `arrow_rain` at the circle's centre, the
+   * world point `cursor` pulled in to the reach from `me`, when the tree-ability gates still hold (R36), and
+   * counts as a cast that can strike; any other release ends the aim with nothing sent. No circle is left
+   * either way. Whether it was sent.
+   */
+  releaseTreeAbility(playerClass: string, me: Point, cursor: Point): boolean {
+    const outcome = this.rain.release(treeAbilityReady(playerClass, this.self()));
+    if (outcome === null) return false;
+    this.look.endRainAim?.();
+    if (outcome !== "cast") return false;
+
+    const from = { x: me.x, y: me.y };
+    const centre = arrowRainCentre(from, cursor);
+    this.port.sendMessage(ActionType.CastSkill, { skill_id: "arrow_rain", target_x: centre.x, target_y: centre.y });
+    this.port.castSent?.();
+    this.look.arrowRain?.(from, centre);
+    return true;
   }
 
   /**
@@ -280,10 +335,12 @@ export class PlayerCombat {
   }
 
   /**
-   * Ends a hold with nothing sent and no cooldown started (FS-JTNPR req 15): death, a floor
-   * change, the menu or equipment panel, a release off the canvas, the window losing focus.
+   * Ends a hold, or an Arrow Rain aim, with nothing sent and no cooldown started (FS-JTNPR req 15, FS-04EEA
+   * R38): death, a floor change, the menu or equipment panel, a release off the canvas, the window losing
+   * focus. No line or circle is left behind.
    */
   cancelAim(): void {
+    if (this.rain.cancel()) this.look.endRainAim?.();
     if (!this.hold.cancel()) return;
     this.look.endAim();
     this.look.abilityChanged?.();
@@ -295,6 +352,7 @@ export class PlayerCombat {
     this.canCast = true;
     this.abilityLockedOut = false;
     this.hold.reset();
+    this.rain.cancel();
   }
 
   /** Whether the archer's right-click wears the shadow: a Shadow Ranger's alone (FS-1J1CB §F R39). */

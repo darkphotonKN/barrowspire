@@ -75,6 +75,7 @@ function fieldOnStage() {
   const claim = { now: false };
   const kit = { sync: vi.fn(), forget: vi.fn() };
   const sounds = { play: vi.fn() };
+  const stuns = { show: vi.fn(), clear: vi.fn() };
   const look = {
     slash: vi.fn(),
     dash: vi.fn(),
@@ -87,6 +88,8 @@ function fieldOnStage() {
     aim: vi.fn(),
     endAim: vi.fn(),
     attackClip: vi.fn(),
+    rainAim: vi.fn(),
+    endRainAim: vi.fn(),
   };
   const combat = new FieldCombat({
     roster: (targeting) =>
@@ -113,13 +116,14 @@ function fieldOnStage() {
     cursor,
     bodyOf: (id) => (id === "e_me" ? (body as never) : undefined),
     sounds,
+    stuns,
   });
   const state = (
     player: ReturnType<typeof me> | null,
     monsters = [boar("b1", 1000), boar("b2", 1100, "dead")],
     others: ReturnType<typeof me>[] = [],
   ) => combat.sync({ current_player: player as never, other_players: others as never, monsters: monsters as never, projectiles: [] });
-  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, claim, kit, look, sounds };
+  return { combat, sprites, sendMessage, cursor, hits, projectiles, body, state, clock, button, claim, kit, look, sounds, stuns };
 }
 
 describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
@@ -211,6 +215,29 @@ describe("FieldCombat (FS-X2F2H §Requirements 56)", () => {
 
 // FS-TQZ5J § Change: Batch 6, R129 (batch 6 review, LOW): a press on the UI scene's chat window during a held
 // world press reaches the field; the UI scene claims it, and a monster under the window is not struck
+describe("FieldCombat the stun tell (FS-04EEA §H R47)", () => {
+  const stunned = (id: string, x: number) => ({ ...boar(id, x), action: "stunned" });
+
+  it("should carry the tell over each stunned monster each frame, and take it away once the action changes", () => {
+    const { combat, state, stuns } = fieldOnStage();
+    state(me(200), [stunned("b1", 1000), boar("b2", 1100)] as never);
+    combat.update(16);
+    expect(stuns.show).toHaveBeenLastCalledWith([expect.objectContaining({ id: "b1", at: { x: 1000, y: 500 } })]);
+
+    state(me(200), [boar("b1", 1000), boar("b2", 1100)]);
+    combat.update(16);
+    expect(stuns.show).toHaveBeenLastCalledWith([]);
+  });
+
+  it("should take every tell away when the visit is let go", () => {
+    const { combat, state, stuns } = fieldOnStage();
+    state(me(200), [stunned("b1", 1000)] as never);
+    combat.update(16);
+    combat.release();
+    expect(stuns.clear).toHaveBeenCalled();
+  });
+});
+
 describe("FieldCombat the tree ability on key 3 (FS-04EEA R35–R37)", () => {
   /** A mage holding Blink, off cooldown, with the mana for it. */
   const blinker = (x: number, current_health = 100) =>
@@ -234,6 +261,50 @@ describe("FieldCombat the tree ability on key 3 (FS-04EEA R35–R37)", () => {
     expect(combat.treeAbility({ x: 400, y: 520 })).toBe(false);
     state(blinker(200));
     expect(combat.treeAbility({ x: 400, y: 520 }, true)).toBe(false);
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("FieldCombat the Arrow Rain aim on key 3 (FS-04EEA R38)", () => {
+  /** An archer holding Arrow Rain, off cooldown, with the stamina for it. */
+  const rainer = (x: number, current_health = 100) =>
+    me(x, current_health, "Archer", {
+      passive_ranks: { "archer.t3": 1 },
+      tree_ability_cooldown: { remaining: 0, total: 12 },
+      resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25, tree_ability_cost: 35 },
+    });
+
+  it("should aim on the press, draw the circle each frame and send the pulled-in centre on the release", () => {
+    const { combat, state, sendMessage, look } = fieldOnStage();
+    state(rainer(200));
+    expect(combat.treeAbility({ x: 260, y: 500 })).toBe(true);
+    expect(combat.rainAiming).toBe(true);
+    expect(sendMessage).not.toHaveBeenCalled();
+    combat.aimFrame({ x: 200, y: 500 }, { x: 700, y: 500 });
+    expect(look.rainAim).toHaveBeenLastCalledWith({ x: 500, y: 500 });
+
+    combat.releaseTreeAbility({ x: 700, y: 500 });
+    expect(sendMessage.mock.calls).toEqual([[ActionType.CastSkill, { skill_id: "arrow_rain", target_x: 500, target_y: 500 }]]);
+    expect(look.endRainAim).toHaveBeenCalledTimes(1);
+  });
+
+  it("should end the aim with nothing sent once the player falls", () => {
+    const { combat, state, sendMessage, look } = fieldOnStage();
+    state(rainer(200));
+    combat.treeAbility({ x: 260, y: 500 });
+    state(rainer(200, 0));
+    expect(combat.rainAiming).toBe(false);
+    expect(look.endRainAim).toHaveBeenCalledTimes(1);
+    combat.releaseTreeAbility({ x: 260, y: 500 });
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("should end the aim with nothing sent on a cancel", () => {
+    const { combat, state, sendMessage } = fieldOnStage();
+    state(rainer(200));
+    combat.treeAbility({ x: 260, y: 500 });
+    combat.cancelAim();
+    combat.releaseTreeAbility({ x: 260, y: 500 });
     expect(sendMessage).not.toHaveBeenCalled();
   });
 });
