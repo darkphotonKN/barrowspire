@@ -18,6 +18,7 @@ import {
 import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { fieldArt, type SceneGroups } from "@/render/art/sceneArt";
 import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
+import { Auras } from "@/render/effects/aura";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
@@ -40,7 +41,7 @@ import {
   worldSeed,
   type FieldLook,
 } from "@/render/world";
-import { addMist } from "@/render/effects/mist";
+import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
@@ -194,6 +195,8 @@ export class FieldScene extends Phaser.Scene {
   private artGroups?: SceneGroups;
   /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
   private looks?: SpecLooks;
+  /** The Spellwardens' wards and the Shadow Rangers' glooms, one per body (FS-1J1CB §E). */
+  private auras?: Auras;
   private lightMap?: LightMap;
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
@@ -310,6 +313,7 @@ export class FieldScene extends Phaser.Scene {
     const groups = this.artGroups ?? fieldArt(this.field);
     this.art = registerArt(this, groups);
     this.looks = new SpecLooks(this.art, onDemandArt(this, this.art), containedBodies(this.views), groups);
+    this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
@@ -606,6 +610,8 @@ export class FieldScene extends Phaser.Scene {
     this.lastState = undefined;
     this.selfAt = undefined;
     this.views.clear();
+    this.auras?.clear();
+    this.auras = undefined;
     this.selfEntityID = null;
     this.followedSprite = undefined;
     this.groundDrawn = false;
@@ -651,6 +657,7 @@ export class FieldScene extends Phaser.Scene {
       view.name.setPosition(s.x, s.y - (body?.displayHeight ?? 60) - NAME_GAP);
       view.title.stand(view.name);
     }
+    this.followAuras(time);
     // the light-map in daylight; the torch rides with the player as in every world
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     this.lightMap?.carry(self ? { x: self.sprite.x, y: self.sprite.y } : null);
@@ -661,6 +668,13 @@ export class FieldScene extends Phaser.Scene {
       self && selfBody ? { bounds: selfBody.getBounds(), depth: self.sprite.depth } : null,
       delta,
     );
+  }
+
+  /** Every body's aura on the feet just drawn; none from the fall to the rising (FS-1J1CB R35). */
+  private followAuras(time: number): void {
+    if (!this.auras) return;
+    for (const [id, view] of this.views)
+      this.auras.follow(id, view.sprite.visible && !view.fallen ? view.pos : null, view.anim.crown, time);
   }
 
   private bindInput(): void {
@@ -729,6 +743,7 @@ export class FieldScene extends Phaser.Scene {
       view.title.destroy();
       this.views.delete(entityID);
       this.looks?.forget(entityID);
+      this.auras?.forget(entityID);
     }
 
     // the field's monsters, projectiles and struck players, once the bodies stand
@@ -1071,6 +1086,7 @@ export class FieldScene extends Phaser.Scene {
       existing.title.show(player);
       // a pick applied here shows its look once in (FS-1J1CB R22)
       this.looks?.see(player.entity_id, player);
+      this.auras?.see(player.entity_id, player);
       if (!existing.anim.baked) {
         const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
         body?.setTexture(placeholderTexture(player.class, nearestScreenFacing(existing.facing)));
@@ -1098,6 +1114,7 @@ export class FieldScene extends Phaser.Scene {
     standAt(sprite, pos, 1);
     this.views.set(player.entity_id, { sprite, name, title, pos, target: { ...pos }, facing: "se", anim, fallen });
     this.looks?.see(player.entity_id, player);
+    this.auras?.see(player.entity_id, player);
   }
 
   /**

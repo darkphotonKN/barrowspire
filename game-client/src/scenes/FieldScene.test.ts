@@ -3247,3 +3247,62 @@ describe("FieldScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
     expect(texts).toEqual(["Ignis", "Mage · Pyromancer", "Wren"]);
   });
 });
+
+// FS-1J1CB §E R35: a field's bodies carry their auras, stopped from the fall to the rising.
+describe("FieldScene auras (FS-1J1CB R35)", () => {
+  const view = (fallen: boolean, pos: { x: number; y: number }, visible = true) => ({
+    sprite: { visible, getByName: () => null },
+    pos,
+    target: { ...pos },
+    facing: "se",
+    fallen,
+    anim: { baked: true, crown: 72 },
+    title: { show: vi.fn() },
+  });
+
+  it("should follow a standing body at its feet and none fallen, then again once it rises", () => {
+    const field = new FieldScene() as unknown as {
+      auras: { follow: ReturnType<typeof vi.fn> };
+      views: Map<string, ReturnType<typeof view>>;
+      followAuras(time: number): void;
+    };
+    field.auras = { follow: vi.fn() };
+    const down = view(true, { x: 3, y: 4 });
+    field.views = new Map([
+      ["up", view(false, { x: 1, y: 2 })],
+      ["down", down],
+    ]);
+
+    field.followAuras(100);
+    down.fallen = false;
+    field.followAuras(116);
+
+    expect(field.auras.follow.mock.calls).toEqual([
+      ["up", { x: 1, y: 2 }, 72, 100],
+      ["down", null, 72, 100],
+      ["up", { x: 1, y: 2 }, 72, 116],
+      ["down", { x: 3, y: 4 }, 72, 116],
+    ]);
+  });
+
+  it("should give a body its aura from each state", () => {
+    const field = new FieldScene() as unknown as {
+      auras: { see: ReturnType<typeof vi.fn> };
+      views: Map<string, unknown>;
+      placePlayer(player: unknown, isSelf: boolean): void;
+    };
+    field.auras = { see: vi.fn() };
+    field.views = new Map<string, unknown>([["r", view(false, { x: 0, y: 0 })]]);
+    const player = {
+      entity_id: "r",
+      class: "archer",
+      specialization: "shadow_ranger",
+      position: { x: 5, y: 5 },
+      current_health: 50,
+    };
+
+    field.placePlayer(player, false);
+
+    expect(field.auras.see).toHaveBeenCalledWith("r", player);
+  });
+});

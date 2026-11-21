@@ -145,6 +145,8 @@ import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/c
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { Auras } from "@/render/effects/aura";
+import { prefersReducedMotion } from "@/render/effects/mist";
 import { playSlash } from "@/render/effects/slash";
 import { CHARGE_MS, playCharge, type Charge } from "@/render/effects/charge";
 import { DeathDust } from "@/render/effects/death";
@@ -941,6 +943,11 @@ export class BarrowspireScene extends Phaser.Scene {
   private hits?: HitFeedback;
   /** The local player's shimmers: the heal shimmer on a drink (FS-KZC92 §G). */
   private shimmers?: ShimmerFx;
+  /**
+   * The Spellwardens' wards and the Shadow Rangers' glooms, the player's own and every rival's,
+   * one per body (FS-1J1CB §E). A heal shimmer plays over a ward as over any body (R37).
+   */
+  private auras?: Auras;
   /** Reads a drink off `current_player` alone; never a teammate's (FS-KZC92 R33–R35). */
   private readonly drinks = new PotionDrinkWatcher();
   /** Which characters have settled their death dust this death (FS-KYPQ9 §G.2). */
@@ -1137,6 +1144,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // every live shimmer and its light, and the next run's first state is a baseline (FS-KZC92 R26)
     this.shimmers?.forget();
     this.shimmers = undefined;
+    this.auras?.clear();
+    this.auras = undefined;
     this.drinks.forget();
     this.lightMap?.clearTransient();
     this.houseFloors = [];
@@ -3801,6 +3810,7 @@ export class BarrowspireScene extends Phaser.Scene {
       }
       // its spec look: fetched if the read did not carry it, and worn once in (FS-1J1CB R19, R22)
       this.looks?.see(OWN_BODY, state.current_player);
+      this.auras?.see(OWN_BODY, state.current_player);
       // the title under the own name, from this state (FS-E1ZDG §K.41)
       this.playerTitle?.show(state.current_player);
       // escaped, and still sent their own state until the run ends (FS-QPDKN req 24): the body
@@ -4609,6 +4619,7 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersWalkPhase.delete(playerId);
         this.otherPlayersAnim.delete(playerId);
         this.looks?.forget(playerId);
+        this.auras?.forget(playerId);
 
         // remove name text
         const nameText = this.otherPlayersNameTexts.get(playerId);
@@ -4696,6 +4707,7 @@ export class BarrowspireScene extends Phaser.Scene {
       // fetched the first time it is seen, worn once in (FS-1J1CB R19, R21, R22)
       this.otherPlayersTitles.get(playerData.id)?.show(playerData);
       this.looks?.see(playerData.id, { ...playerData, class: cls });
+      this.auras?.see(playerData.id, { ...playerData, class: cls });
 
       // 設定目標位置，在 update() 中平滑移動
       this.otherPlayersTargets.set(playerData.id, {
@@ -5295,6 +5307,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.fx = new EffectsRuntime(this, this.art, this.lightMap);
     this.hits = new HitFeedback(this);
     this.shimmers = new ShimmerFx(this, this.art, this.lightMap);
+    this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
     this.projectiles = new ProjectileFlights(this, this.art, this.fx, projectileFlightOf);
   }
 
@@ -5955,6 +5968,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
+    // after the hide rule, so an aura hides in the frame its body does (FS-1J1CB R35)
+    this.followAuras(time);
     this.updateTargetFrame(delta);
 
     // the open bar fills on between states (FS-MQYEX R22)
@@ -5963,6 +5978,24 @@ export class BarrowspireScene extends Phaser.Scene {
     // 檢查寶箱距離，太遠自動關閉. A reach that waits on the server is judged by the states (FS-MQYEX R26)
     if (this.containerView.isOpen) {
       this.checkChestDistance();
+    }
+  }
+
+  /**
+   * Every body's aura on its drawn feet (FS-1J1CB R35): hidden with its body (the blackout, an
+   * escape), stopped from the death clip until the body rises.
+   */
+  private followAuras(time: number): void {
+    const auras = this.auras;
+    if (!auras) return;
+    if (this.player && this.playerPos) {
+      const alive = this.player.visible && !isDead(this.lastGameState?.current_player);
+      auras.follow(OWN_BODY, alive ? this.playerPos : null, this.playerAnim?.crown, time);
+    }
+    for (const [playerId, sprite] of this.otherPlayers) {
+      const pos = this.otherPlayersPos.get(playerId);
+      const alive = sprite.visible && (this.otherPlayersPrevHp.get(playerId) ?? 1) > 0;
+      auras.follow(playerId, alive && pos ? pos : null, this.otherPlayersAnim.get(playerId)?.crown, time);
     }
   }
 

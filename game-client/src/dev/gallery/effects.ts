@@ -13,6 +13,7 @@ import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import { AimLine } from "@/render/effects/aimLine";
+import { Auras } from "@/render/effects/aura";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
@@ -23,7 +24,7 @@ import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
 import { HitFeedback } from "@/render/effects/hit";
 import { LoreDust } from "@/render/effects/loreDust";
-import { addMist } from "@/render/effects/mist";
+import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
@@ -70,6 +71,11 @@ export interface Stage {
    * figure stands as `shooter` for it, for a shot drawn by who loosed it (FS-1J1CB §F R41).
    */
   fly(projectileType: string, shooter?: Shooter): void;
+  /**
+   * Re-dresses the figure in a class's base sheet, for a card shown on another body than the
+   * mage's (an aura on the archer, FS-1J1CB R38). Returns its sheet's `crown`.
+   */
+  wear(className: string): number | undefined;
 }
 
 /** Who the figure stands as when it looses a projectile: a class and its specialization. */
@@ -132,6 +138,27 @@ function playTelegraph(
     s.later(t, () => telegraphs.update(FRAME_MS));
   s.later(windMs, () => telegraphs.sync(listed()));
   s.later(windMs + IMPACT_MS + 2 * FRAME_MS, () => telegraphs.clear());
+}
+
+/** How long an aura card holds: an aura has no end of its own, so the demo ends it (FS-1J1CB R31). */
+const AURA_HOLD_MS = 4800;
+
+/**
+ * An aura as a world draws it (FS-1J1CB §E, R38): on the figure dressed as `who`'s class, seen
+ * with `who`'s specialization, followed each frame at its feet on the scene clock, under the
+ * player's own reduced-motion setting; then gone, and the mage back. `also` plays over it.
+ */
+function playAura(s: Stage, who: Shooter, also?: (s: Stage) => void): void {
+  const crown = s.wear(who.class);
+  const auras = new Auras(s.scene, s.art, { reducedMotion: prefersReducedMotion() });
+  auras.see(s.owner, who);
+  for (let t = 0; t <= AURA_HOLD_MS; t += FRAME_MS)
+    s.later(t, () => auras.follow(s.owner, s.at, crown, s.now()));
+  if (also) s.later(AURA_HOLD_MS / 4, () => also(s));
+  s.later(AURA_HOLD_MS + FRAME_MS, () => {
+    auras.clear();
+    s.wear("mage");
+  });
 }
 
 /**
@@ -205,6 +232,27 @@ export const EFFECT_CARDS: EffectCard[] = [
       playArrowRelease(s.fx, s.owner, s.at, s.aim);
       s.fly("arrow");
     },
+  },
+  {
+    module: "aura",
+    name: "Ward (Spellwarden aura, on the mage)",
+    demo: (s) => playAura(s, { class: "mage", specialization: "spellwarden" }),
+  },
+  {
+    module: "aura",
+    name: "Gloom (Shadow Ranger aura, on the archer)",
+    demo: (s) => playAura(s, { class: "archer", specialization: "shadow_ranger" }),
+  },
+  {
+    module: "aura",
+    name: "Ward under a heal shimmer",
+    demo: (s) =>
+      // a potion drunk by a Spellwarden: the heal plays in full over the ward (FS-1J1CB R37)
+      playAura(s, { class: "mage", specialization: "spellwarden" }, (st) => {
+        const shimmers = new ShimmerFx(st.scene, st.art, st.lights);
+        shimmers.follow(st.at);
+        shimmers.playGranted(HEAL_LOOK, st.crown);
+      }),
   },
   {
     module: "boneArrow",

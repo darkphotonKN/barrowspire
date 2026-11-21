@@ -128,9 +128,11 @@ const INVOKED = {
 
 /**
  * Depth sub-layers about the figure (`standAt(…, 1)`, its legs at 2): in front just over it, as
- * the parry's guard is; behind and on the ground just under it (R24).
+ * the parry's guard is; behind and on the ground just under it (R24). An aura sorts by the same
+ * (FS-1J1CB R34).
  */
-const LAYER = { behind: 0, ground: 0, front: 3 } as const;
+export const SHIMMER_LAYER = { behind: 0, ground: 0, front: 3 } as const;
+const LAYER = SHIMMER_LAYER;
 
 /** The baked sheets each base draws with. */
 const GRANTED_SHEETS = ["fx_glint", "fx_mote", "fx_glow"] as const;

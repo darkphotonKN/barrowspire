@@ -56,6 +56,16 @@ export function worldToScreen(x: number, y: number): Point {
 }
 
 /**
+ * {@link worldToScreen} written into `out` and returned, for a caller that projects every frame
+ * and allocates nothing doing it (an aura per body, FS-1J1CB R34).
+ */
+export function worldToScreenInto(x: number, y: number, out: Point): Point {
+  out.x = (x - y) * HALF_W;
+  out.y = (x + y) * HALF_H;
+  return out;
+}
+
+/**
  * The world position under a screen point (camera scroll already applied, e.g.
  * Phaser's `pointer.worldX/worldY`). Exact inverse of `worldToScreen`.
  */

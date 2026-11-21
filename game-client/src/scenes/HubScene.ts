@@ -54,6 +54,8 @@ import {
 import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
 import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
 import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
+import { Auras } from "@/render/effects/aura";
+import { prefersReducedMotion } from "@/render/effects/mist";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
@@ -703,6 +705,8 @@ export class HubScene extends Phaser.Scene {
   private artGroups: SceneGroups = SCENE_ART.HubScene;
   /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
   private looks?: SpecLooks;
+  /** The Spellwardens' wards and the Shadow Rangers' glooms, one per body (FS-1J1CB §E). */
+  private auras?: Auras;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
   private groundLayer?: GroundLayer;
   /** FS-2325V §C.7: carries the player's torch, replacing the overlay pool. */
@@ -842,6 +846,7 @@ export class HubScene extends Phaser.Scene {
     ensureCharacterTextures(this);
     this.art = registerArt(this, this.artGroups);
     this.looks = new SpecLooks(this.art, onDemandArt(this, this.art), containedBodies(this.views), this.artGroups);
+    this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
     this.occluders = new Occluders();
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3), pressed under a held left
     // button (§ Change: The pressed hand); the browser's `default` without its sheet. Nothing
@@ -1190,6 +1195,8 @@ export class HubScene extends Phaser.Scene {
     this.held = undefined;
     this.oneShots = undefined;
     this.views.clear();
+    this.auras?.clear();
+    this.auras = undefined;
     this.npcs.clear();
     this.closeDialogue();
     // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
@@ -1263,6 +1270,7 @@ export class HubScene extends Phaser.Scene {
     this.offerConversation();
     this.updateBuildings();
     this.hideWhoIsElsewhere();
+    this.followAuras(time);
     this.showStashChest();
     this.carryTheTorch(time, delta);
   }
@@ -1389,6 +1397,16 @@ export class HubScene extends Phaser.Scene {
     }
     const stash = markerShown(HUB_STASH_CHEST.at);
     this.stashMarks.forEach((m) => m.setVisible(stash));
+  }
+
+  /**
+   * Every body's aura on its drawn feet, read after the hide rule so it hides with its body in the
+   * frame the body does (FS-1J1CB R35). The town has no deaths.
+   */
+  private followAuras(time: number): void {
+    if (!this.auras) return;
+    for (const [id, view] of this.views)
+      this.auras.follow(id, view.sprite.visible ? view.pos : null, view.anim.crown, time);
   }
 
   /**
@@ -2080,6 +2098,7 @@ export class HubScene extends Phaser.Scene {
       view.legs.destroy();
       this.views.delete(entityID);
       this.looks?.forget(entityID);
+      this.auras?.forget(entityID);
     }
     // the town is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
     this.arrivalCard.built();
@@ -3138,6 +3157,8 @@ export class HubScene extends Phaser.Scene {
       // a pick in town shows from the next state (FS-E1ZDG §B R8), and its look once in (FS-1J1CB R22)
       existing.title.show(player);
       this.looks?.see(player.entity_id, player);
+      // its aura with it, starting from the next frame once it carries one (FS-1J1CB R35)
+      this.auras?.see(player.entity_id, player);
       return;
     }
 
@@ -3188,5 +3209,6 @@ export class HubScene extends Phaser.Scene {
     this.placeName(view);
     this.views.set(player.entity_id, view);
     this.looks?.see(player.entity_id, player);
+    this.auras?.see(player.entity_id, player);
   }
 }

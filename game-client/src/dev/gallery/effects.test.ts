@@ -76,6 +76,16 @@ describe("effect cards", () => {
     for (const card of cards) expect(card.demo).toBeTypeOf("function");
   });
 
+  it("should card the ward on the mage, the gloom on the archer, and a ward under a heal, each playable (FS-1J1CB R38)", () => {
+    const cards = EFFECT_CARDS.filter((c) => c.module === "aura");
+    expect(cards.map((c) => c.name)).toEqual([
+      "Ward (Spellwarden aura, on the mage)",
+      "Gloom (Shadow Ranger aura, on the archer)",
+      "Ward under a heal shimmer",
+    ]);
+    for (const card of cards) expect(card.demo).toBeTypeOf("function");
+  });
+
   it("should give every card that can't be played a reason", () => {
     const unexplained = EFFECT_CARDS.filter(
       (c) => c.demo === null && !c.reason.trim(),

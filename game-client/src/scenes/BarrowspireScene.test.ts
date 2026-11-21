@@ -12552,3 +12552,51 @@ describe("BarrowspireScene the tome, the altar and the burn (FS-3103M §I)", () 
     });
   });
 });
+
+// FS-1J1CB §E R35: the run's bodies carry their auras, the player's own and every rival's: hidden
+// with the body, stopped from the death clip until it rises.
+describe("BarrowspireScene auras (FS-1J1CB R35)", () => {
+  it("should follow each body alive and drawn, and none hidden, escaped or dead", () => {
+    const scene = new BarrowspireScene() as unknown as Record<string, unknown> & { followAuras(time: number): void };
+    const follow = vi.fn();
+    const ownPos = { x: 100, y: 120 };
+    Object.assign(scene, {
+      auras: { follow },
+      player: { visible: true },
+      playerPos: ownPos,
+      playerAnim: { crown: 76 },
+      lastGameState: { current_player: { current_health: 40 } },
+      otherPlayers: new Map([
+        ["alive", { visible: true }],
+        ["hidden", { visible: false }],
+        ["dead", { visible: true }],
+      ]),
+      otherPlayersPos: new Map([
+        ["alive", { x: 1, y: 2 }],
+        ["hidden", { x: 3, y: 4 }],
+        ["dead", { x: 5, y: 6 }],
+      ]),
+      otherPlayersPrevHp: new Map([
+        ["alive", 30],
+        ["dead", 0],
+      ]),
+      otherPlayersAnim: new Map([["alive", { crown: 80 }]]),
+    });
+
+    scene.followAuras(900);
+    // the player falls: their own aura stops with the death clip
+    (scene.lastGameState as { current_player: { current_health: number } }).current_player.current_health = 0;
+    scene.followAuras(916);
+
+    expect(follow.mock.calls).toEqual([
+      ["self", ownPos, 76, 900],
+      ["alive", { x: 1, y: 2 }, 80, 900],
+      ["hidden", null, undefined, 900],
+      ["dead", null, undefined, 900],
+      ["self", null, 76, 916],
+      ["alive", { x: 1, y: 2 }, 80, 916],
+      ["hidden", null, undefined, 916],
+      ["dead", null, undefined, 916],
+    ]);
+  });
+});

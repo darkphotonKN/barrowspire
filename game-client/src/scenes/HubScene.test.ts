@@ -6651,3 +6651,49 @@ describe("HubScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
     expect(words(stage.made)).toEqual(["Bram", "Warrior · Guardian"]);
   });
 });
+
+// FS-1J1CB §E R35: the town's bodies carry their auras, own and others', hidden with the body.
+describe("HubScene auras (FS-1J1CB R35)", () => {
+  const view = (visible: boolean, pos: { x: number; y: number }) => ({
+    sprite: { visible },
+    pos,
+    anim: { baked: true, crown: 70 },
+    target: { ...pos },
+    title: { show: vi.fn() },
+  });
+
+  it("should follow every body at its drawn feet each frame, and none while it is hidden in another house", () => {
+    const hub = new HubScene() as unknown as {
+      auras: { follow: ReturnType<typeof vi.fn> };
+      views: Map<string, unknown>;
+      followAuras(time: number): void;
+    };
+    hub.auras = { follow: vi.fn() };
+    hub.views = new Map<string, unknown>([
+      ["me", view(true, { x: 10, y: 20 })],
+      ["inside", view(false, { x: 30, y: 40 })],
+    ]);
+
+    hub.followAuras(500);
+
+    expect(hub.auras.follow.mock.calls).toEqual([
+      ["me", { x: 10, y: 20 }, 70, 500],
+      ["inside", null, 70, 500],
+    ]);
+  });
+
+  it("should give a body its aura from each state, and take it with the body", () => {
+    const hub = new HubScene() as unknown as {
+      auras: { see: ReturnType<typeof vi.fn>; forget: ReturnType<typeof vi.fn> };
+      views: Map<string, unknown>;
+      placePlayer(player: unknown, isSelf: boolean): void;
+    };
+    hub.auras = { see: vi.fn(), forget: vi.fn() };
+    hub.views = new Map<string, unknown>([["w", view(true, { x: 0, y: 0 })]]);
+    const player = { entity_id: "w", class: "mage", specialization: "spellwarden", position: { x: 5, y: 5 } };
+
+    hub.placePlayer(player, false);
+
+    expect(hub.auras.see).toHaveBeenCalledWith("w", player);
+  });
+});

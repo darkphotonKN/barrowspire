@@ -129,6 +129,7 @@ export class GalleryScene extends Phaser.Scene {
       now: () => this.time.now,
       later: (ms, fn) => void this.time.delayedCall(ms, fn),
       fly: (projectileType, shooter) => this.fly(`flight:${n}`, projectileType, shooter),
+      wear: (className) => this.wear(className),
     };
   }
 
@@ -153,6 +154,13 @@ export class GalleryScene extends Phaser.Scene {
       },
       onComplete: () => this.sightings.delete(entityId),
     });
+  }
+
+  /** The figure in a class's base sheet from now on (both resident, ADR-0059); its crown. */
+  private wear(className: string): number | undefined {
+    this.animator = new CharacterAnimator(this.art, className);
+    this.animator.dress(this.figure);
+    return this.animator.crown;
   }
 
   private spawnFigure(): void {
