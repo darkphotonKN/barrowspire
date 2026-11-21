@@ -7,14 +7,13 @@
  */
 
 import type { ClientGameState, CooldownState, PlayerState, ResourceState } from "@/types/gameState";
-import { ABILITY_COPY, type AbilityCopy } from "./abilityCopy";
 import type { AbilityIconKey } from "./abilityIcons";
 import { resolved } from "./party";
 import { healthPotionCount } from "./potions";
 import { abilityAffordable, barsOf, hudBars, resourceBar, type HudBar, type HudChannel } from "./resources";
 
 /** Each class's right-click ability, as its icon is keyed (R16). A class with none draws an empty well (R27). */
-const CLASS_ABILITY_ICON: Readonly<Record<string, AbilityIconKey>> = {
+export const CLASS_ABILITY_ICON: Readonly<Record<string, AbilityIconKey>> = {
   warrior: "dash",
   mage: "triple_fireball",
   archer: "shadow_shot",
@@ -24,15 +23,22 @@ const CLASS_ABILITY_ICON: Readonly<Record<string, AbilityIconKey>> = {
 /** The right-click square (R22, R23): its icon, or none for a class with no row; its cost, or none to draw. */
 export interface AbilitySquareView {
   icon: AbilityIconKey | null;
+  /**
+   * The player's specialization, beside the icon's class as the key its tooltip copy is looked up by
+   * (FS-E1ZDG §L.43); absent before the pick.
+   */
+  specialization?: string;
   greyed: boolean;
   active: boolean;
   cost: number | null;
 }
 
-/** The potion square (R24): the health potions worn, 0 to 3, and whether a press would drink nothing. */
+/** The potion square (R24): the health potions worn, 0 to 3, whether a press would drink nothing, and whether in a field. */
 export interface PotionSquareView {
   count: number;
   greyed: boolean;
+  /** In a field, where a potion is never drunk (R29): its tooltip says so (R28). */
+  field: boolean;
 }
 
 /** The 3 square (R25): locked until the character holds its tree's ability (the held square is FS-Q18Q3 R26's). */
@@ -59,12 +65,6 @@ export interface AbilityBarContext {
   lockedOut: boolean;
   /** The archer is holding Shadow Shot (R23; FS-JTNPR). */
   aiming: boolean;
-}
-
-/** The class's ability copy, or null for a class with none (FS-8AY7S req 30). */
-export function abilityCopy(cls: string | undefined): AbilityCopy | null {
-  if (!cls) return null;
-  return ABILITY_COPY[cls.toLowerCase()] ?? null;
 }
 
 /**
@@ -102,12 +102,13 @@ function liveBar(me: PlayerState, ctx: AbilityBarContext): AbilityBarView {
   const cooling = (me.ability_cooldown?.remaining ?? 0) > 0;
   const count = healthPotionCount(me.equipment);
   return {
-    potion: { count, greyed: count === 0 || ctx.world === "field" },
+    potion: { count, greyed: count === 0 || ctx.world === "field", field: ctx.world === "field" },
     ability: {
       icon: iconOf(me.class),
       greyed: abilityGreyed(resource, ctx.lockedOut) || cooling || parryRefused(me),
       active: ctx.aiming || me.parry_open === true,
       cost: costOf(resource),
+      ...(me.specialization && { specialization: me.specialization }),
     },
     tree: { locked: true },
     costChannel: resource ? resourceBar(resource).channel : null,

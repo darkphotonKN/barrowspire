@@ -1,9 +1,12 @@
 /**
  * What each class's ability says (FS-8AY7S req 30; the ability bar's tooltips, FS-Q18Q3 R28): its
- * name and one line on how it works, keyed by `current_player.class`. Data only: a class gains,
- * loses or changes its words here without touching the bar's code (FS-JTNPR swaps the archer to
- * Shadow Shot, FS-MAMHR adds the mercenary's Parry). A class with no row has no tooltip (R27).
+ * name and one line on how it works, keyed by `current_player.class`, and where a specialization
+ * changes them, by its id (FS-E1ZDG §L.43, §L.46). Data only: a class or a spec gains, loses or
+ * changes its words here without touching the bar's code (FS-MAMHR adds the mercenary's Parry). A
+ * class with no row has no tooltip (R27).
  */
+
+import { specializationOf } from "@/data/specializations";
 
 export interface AbilityCopy {
   name: string;
@@ -16,8 +19,9 @@ export const ABILITY_COPY: Readonly<Record<string, AbilityCopy>> = {
     name: "Triple Fireball",
     line: "Hurl three fireballs in a spread toward the cursor.",
   },
+  // every archer's but a Shadow Ranger's (FS-E1ZDG §L.43); the skill id stays shadow_shot
   archer: {
-    name: "Shadow Shot",
+    name: "Heavy Shot",
     line: "Hold to aim, release to loose one slow, heavy bolt.",
   },
   // FS-MAMHR req 37; the line stays short
@@ -26,3 +30,39 @@ export const ABILITY_COPY: Readonly<Record<string, AbilityCopy>> = {
     line: "Turn a blow as it lands for a parry charge. At three, the cut ripostes.",
   },
 };
+
+/** Where a specialization changes its class's row (FS-E1ZDG §L.43, §L.46), keyed by spec id; every other spec keeps it. */
+export const SPECIALIZATION_ABILITY_COPY: Readonly<Record<string, AbilityCopy>> = {
+  shadow_ranger: { name: "Shadow Shot", line: ABILITY_COPY.archer.line },
+};
+
+/**
+ * The right-click copy of a `cls` character holding `specialization`, or null for a class with none
+ * (FS-8AY7S req 30): the spec's row where it has one, else the class's. A spec of another class, or an
+ * id the client does not know, keeps the class's row. The one lookup the bar's tooltip and the run's
+ * controls panel read.
+ */
+export function abilityCopy(cls: string | undefined, specialization?: string): AbilityCopy | null {
+  if (!cls) return null;
+  const spec = specializationOf(cls, specialization);
+  if (spec && Object.hasOwn(SPECIALIZATION_ABILITY_COPY, spec)) return SPECIALIZATION_ABILITY_COPY[spec];
+  const key = cls.toLowerCase();
+  return Object.hasOwn(ABILITY_COPY, key) ? ABILITY_COPY[key] : null;
+}
+
+/** The level at which the skill tree's third tier, and its ability, can first be taken (FS-Q18Q3 R25; FS-8RZ51). */
+export const TREE_ABILITY_LEVEL = 10;
+
+/**
+ * The 3 square's third line while it stands locked (FS-Q18Q3 R28), under the class's tree ability's name and
+ * line, which FS-04EEA R50's ability data supplies; until it does, the locked tooltip reads this line alone.
+ */
+export const TREE_LOCKED_NOTE = `Learned at the skill tree's third tier, from level ${TREE_ABILITY_LEVEL}.`;
+
+/** The potion square's copy (FS-Q18Q3 R28), and its third line with none worn or in a field. */
+export const POTION_COPY: AbilityCopy = {
+  name: "Health Potion",
+  line: "Drink to heal at once, from your first potion slot.",
+};
+export const POTION_NONE_NOTE = "No health potion worn.";
+export const POTION_FIELD_NOTE = "Potions are drunk only in the Spire.";

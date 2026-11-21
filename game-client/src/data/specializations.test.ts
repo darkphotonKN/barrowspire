@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SPECIALIZATIONS, characterTitle, classLevelLine } from "./specializations";
+import { SPECIALIZATIONS, characterTitle, classLevelLine, nameplateTitle, specializationOf } from "./specializations";
 
 describe("characterTitle (FS-E1ZDG §K.37)", () => {
   it("should join the class and the spec with a middle dot", () => {
@@ -69,5 +69,31 @@ describe("classLevelLine: the main menu hero and the character list (FS-E1ZDG §
 
   it("should fall back to the raw class for a class it does not know", () => {
     expect(classLevelLine("bard", undefined, 3)).toBe("BARD • LV.3");
+  });
+});
+
+describe("nameplateTitle (FS-E1ZDG §K.41, one rule for the three worlds)", () => {
+  it("should give the player's title line from the world state", () => {
+    expect(nameplateTitle({ class: "warrior", specialization: "berserker" })).toBe("Warrior · Berserker");
+    expect(nameplateTitle({ class: "Archer", specialization: "shadow_ranger" })).toBe("Archer · Shadow Ranger");
+  });
+
+  it("should give no line before the pick, for an unknown id, or for another class's", () => {
+    expect(nameplateTitle({ class: "warrior" })).toBeUndefined();
+    expect(nameplateTitle({ class: "warrior", specialization: "paladin" })).toBeUndefined();
+    expect(nameplateTitle({ class: "warrior", specialization: "pyromancer" })).toBeUndefined();
+  });
+});
+
+describe("specializationOf (FS-E1ZDG §Edge States)", () => {
+  it("should name a spec of the class", () => {
+    expect(specializationOf("archer", "shadow_ranger")).toBe("shadow_ranger");
+    expect(specializationOf("ARCHER", "hunter")).toBe("hunter");
+  });
+
+  it("should name none for no spec, an unknown id, or another class's", () => {
+    expect(specializationOf("archer", undefined)).toBeUndefined();
+    expect(specializationOf("archer", "constructor")).toBeUndefined();
+    expect(specializationOf("archer", "berserker")).toBeUndefined();
   });
 });

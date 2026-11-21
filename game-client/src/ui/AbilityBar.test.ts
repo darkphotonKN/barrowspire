@@ -4,6 +4,7 @@ import { viewport } from "@/render/viewport";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { AbilityBarView } from "./abilityBarView";
 import { abilityBarFrame } from "./abilityBarLayout";
+import { sweepPolygon } from "./abilityCooldown";
 import { ABILITY_ICONS } from "./abilityIcons";
 import { BRONZE, GREYED, GREYED_ALPHA, type KnockoutDeps } from "./knockout";
 import type { Rect } from "./hudCornerLayout";
@@ -57,8 +58,25 @@ interface Made {
   destroyed: boolean;
 }
 
+/** A text's size: 7 px a character, wrapped at its style's width into rows of its font size plus 4. */
+function measure(m: Made): { width: number; height: number } {
+  const chars = (m.words ?? "").length * 7;
+  const wrap = (m.style?.wordWrap as { width: number } | undefined)?.width ?? Infinity;
+  const rows = Math.max(1, Math.ceil(chars / wrap));
+  return { width: Math.min(chars, wrap), height: rows * (parseInt(String(m.style?.fontSize ?? "12"), 10) + 4) };
+}
+
 function fakeScene() {
   const made: Made[] = [];
+  /** How the scene's input polls the pointer: "always" while a tooltip is up, so a piece opening over a still pointer takes it. */
+  const polls: string[] = [];
+  /** The UI scene's clock and its per-frame listeners: `tick` moves the clock and runs one frame. */
+  const time = { now: 0 };
+  const updates: ((now: number, delta: number) => void)[] = [];
+  const tick = (ms: number) => {
+    time.now += ms;
+    for (const fn of [...updates]) fn(time.now, ms);
+  };
   const object = (m: Made) => {
     made.push(m);
     const self: Record<string, unknown> = new Proxy(
@@ -66,6 +84,8 @@ function fakeScene() {
       {
         get: (_t, prop) => {
           if (prop === "then") return undefined;
+          // a text's measure, as a 7 px-wide face wrapping at its style's width would give it
+          if (m.kind === "text" && (prop === "width" || prop === "height")) return measure(m)[prop];
           if (prop === "setDepth") return (d: number) => ((m.depth = d), self);
           if (prop === "setScrollFactor") return (s: number) => ((m.scrollFactor = s), self);
           if (prop === "setInteractive") return () => ((m.interactive = true), self);
@@ -96,21 +116,37 @@ function fakeScene() {
       zone: (x: number, y: number, width: number, height: number) =>
         object({ kind: "zone", ops: [], rect: { x, y, width, height }, handlers: {}, destroyed: false }),
     },
+    input: {
+      setPollAlways: () => void polls.push("always"),
+      setPollOnMove: () => void polls.push("onMove"),
+    },
+    time,
+    events: {
+      on: (event: string, fn: (now: number, delta: number) => void) => void (event === "update" && updates.push(fn)),
+      off: (event: string, fn: (now: number, delta: number) => void) =>
+        void (event === "update" && updates.includes(fn) && updates.splice(updates.indexOf(fn), 1)),
+    },
   } as unknown as Phaser.Scene;
   const live = () => made.filter((m) => !m.destroyed);
   const ops = () => live().filter((m) => m.kind === "graphics").flatMap((g) => g.ops);
   const texts = () => live().filter((m) => m.kind === "text");
   const zones = () => live().filter((m) => m.kind === "zone");
-  return { scene, made, live, ops, texts, zones };
+  /** The tooltip's objects: everything standing in the item-tip band. */
+  const tip = () => live().filter((m) => m.depth === 2200);
+  const tipTexts = () => tip().filter((m) => m.kind === "text");
+  const tipOps = () => tip().filter((m) => m.kind === "graphics").flatMap((g) => g.ops);
+  return { scene, made, live, ops, texts, zones, polls, tip, tipTexts, tipOps, time, updates, tick };
 }
 
 const VIEW: AbilityBarView = {
-  potion: { count: 2, greyed: false },
+  potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
   tree: { locked: true },
   costChannel: "stamina",
   cooldowns: { ability: null, tree: null },
 };
+/** The squares' grounds, left to right. */
+const SQUARE = { potion: 0, ability: 1, tree: 2 } as const;
 const view = (fields: Partial<AbilityBarView> = {}): AbilityBarView => ({ ...VIEW, ...fields });
 
 const frame = () => abilityBarFrame(viewport);
@@ -273,7 +309,7 @@ describe("AbilityBar: the potion square (FS-Q18Q3 §E R24)", () => {
 
   it("should stay at 0: the flask faint, a faint '0'", () => {
     const { scene, texts } = fakeScene();
-    new AbilityBar(scene).show(view({ potion: { count: 0, greyed: true } }));
+    new AbilityBar(scene).show(view({ potion: { count: 0, greyed: true, field: false } }));
     const { corner, plaque } = frame().squares.potion;
     expect(knockoutOf("potion")!.deps.ink).toBe(GREYED);
     expect(textAt(texts(), corner.x, corner.y)).toMatchObject({ words: "0", color: toCss(palette.hudFaint) });
@@ -328,7 +364,7 @@ describe("AbilityBar: the pointer (FS-Q18Q3 §C R17, §H R33)", () => {
 
   it("should never brighten a greyed square under the pointer: its ink is the unavailable one", () => {
     const { scene, zones } = fakeScene();
-    new AbilityBar(scene).show(view({ potion: { count: 0, greyed: true } }));
+    new AbilityBar(scene).show(view({ potion: { count: 0, greyed: true, field: false } }));
     zones()[0].handlers.pointerover();
     expect(knockoutOf("potion")!.deps.ink).toBe(GREYED);
     expect(GREYED.hover).toEqual(GREYED.idle);
@@ -387,5 +423,284 @@ describe("AbilityBar: shown, down and moved (FS-Q18Q3 §B R10, R12, §L R41)", (
     expect(textAt(texts(), ...plaqueCentre(f.squares.tree.plaque))?.words).toBe("3");
     expect(knockoutOf("dash")!.shows.at(-1)?.f).toEqual(f.squares.ability.icon);
     for (const t of texts()) expect(t.ops).toContainEqual({ m: "setResolution", args: [renderScale] });
+  });
+});
+
+describe("AbilityBar: the tooltips (FS-Q18Q3 §F R28, §L R41)", () => {
+  /** The bar shown with `v`, the pointer over square `s`. */
+  const hovering = (s: keyof typeof SQUARE, v: AbilityBarView = VIEW) => {
+    const fake = fakeScene();
+    const bar = new AbilityBar(fake.scene);
+    bar.show(v);
+    fake.zones()[SQUARE[s]].handlers.pointerover();
+    return { ...fake, bar };
+  };
+  const words = (texts: Made[]) => texts.map((t) => t.words);
+  /** A text's ink: as set, else as made. */
+  const ink = (t: Made | undefined) => t?.color ?? t?.style?.color;
+
+  it("should show the square's name in the 16 px body serif in vellum and how it works in 13 px label, in the item-tip band", () => {
+    const { tipTexts, tip } = hovering("ability");
+    const [name, line] = tipTexts();
+    expect(words(tipTexts())).toEqual(["Dash", "Charge a short way toward the cursor."]);
+    expect(ink(name)).toBe(toCss(palette.hudText));
+    expect(name.style).toMatchObject({ fontFamily: CANVAS_FONT.body, fontSize: "16px" });
+    expect(ink(line)).toBe(toCss(palette.hudLabel));
+    expect(line.style).toMatchObject({ fontFamily: CANVAS_FONT.body, fontSize: "13px" });
+    for (const m of tip()) expect(m.scrollFactor).toBe(0);
+  });
+
+  it("should stand on the HUD panel at 0.85 in a 1 px brass rim, at most 240 px wide, its words wrapping inside it", () => {
+    const { tipOps, tipTexts } = hovering("potion");
+    const fill = tipOps().find((o) => o.m === "fillRect")!.args as number[];
+    expect(tipOps()).toContainEqual({ m: "fillStyle", args: [palette.hudPanel, 0.85] });
+    expect(tipOps()).toContainEqual({ m: "lineStyle", args: [1, palette.frame, 0.6] });
+    expect(tipOps()).toContainEqual({ m: "strokeRect", args: fill });
+    expect(fill[2]).toBeLessThanOrEqual(240);
+    for (const t of tipTexts()) {
+      expect(t.style?.wordWrap).toMatchObject({ width: expect.any(Number) });
+      expect(t.x! + measure(t).width).toBeLessThanOrEqual(fill[0] + fill[2]);
+      expect(t.x!).toBeGreaterThanOrEqual(fill[0]);
+    }
+  });
+
+  it("should centre it over its square, above the bar, and keep the right-hand square's inside the view at 1080", () => {
+    const f = frame();
+    for (const s of ["ability", "tree"] as const) {
+      const { tipOps } = hovering(s);
+      const [x, y, w, h] = tipOps().find((o) => o.m === "fillRect")!.args as number[];
+      expect(y + h).toBeLessThan(f.top);
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(x + w).toBeLessThanOrEqual(1080);
+      if (s === "ability") expect(Math.abs(x + w / 2 - (f.squares.ability.well.x + 22))).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("should carry the potion's third line in a field and with none worn, in the faint vellum", () => {
+    const inField = hovering("potion", view({ potion: { count: 2, greyed: true, field: true } }));
+    expect(words(inField.tipTexts())).toEqual([
+      "Health Potion",
+      "Drink to heal at once, from your first potion slot.",
+      "Potions are drunk only in the Spire.",
+    ]);
+    expect(ink(inField.tipTexts()[2])).toBe(toCss(palette.hudFaint));
+    expect(inField.tipTexts()[2].style).toMatchObject({ fontSize: "13px" });
+    const none = hovering("potion", view({ potion: { count: 0, greyed: true, field: false } }));
+    expect(none.tipTexts().at(-1)?.words).toBe("No health potion worn.");
+  });
+
+  it("should read the locked 3 square's third line alone while the tree abilities' copy is not in the client's data", () => {
+    const { tipTexts } = hovering("tree");
+    expect(words(tipTexts())).toEqual(["Learned at the skill tree's third tier, from level 10."]);
+    expect(ink(tipTexts()[0])).toBe(toCss(palette.hudFaint));
+  });
+
+  it("should show a greyed square's tooltip, its icon never brightening", () => {
+    const { tipTexts } = hovering("ability", view({ ability: { ...VIEW.ability, greyed: true } }));
+    expect(tipTexts()[0]?.words).toBe("Dash");
+    expect(knockoutOf("dash")!.deps.ink).toBe(GREYED);
+  });
+
+  it("should show no tooltip for a class with no row (R27)", () => {
+    const { tip } = hovering("ability", view({ ability: { icon: null, greyed: false, active: false, cost: null } }));
+    expect(tip()).toEqual([]);
+  });
+
+  it("should go as the pointer leaves, and the next square's show as it enters", () => {
+    const { zones, tip, tipTexts } = hovering("potion");
+    zones()[SQUARE.potion].handlers.pointerout();
+    expect(tip()).toEqual([]);
+    zones()[SQUARE.ability].handlers.pointerover();
+    expect(tipTexts()[0]?.words).toBe("Dash");
+  });
+
+  it("should go with the bar as it comes down, and as its world leaves", () => {
+    const down = hovering("ability");
+    down.bar.show(null);
+    expect(down.tip()).toEqual([]);
+    const left = hovering("ability");
+    left.bar.destroy();
+    expect(left.live()).toEqual([]);
+  });
+
+  it("should follow a change under the pointer: the last potion drunk adds the none-worn line", () => {
+    const { bar, tipTexts } = hovering("potion");
+    expect(tipTexts()).toHaveLength(2);
+    bar.show(view({ potion: { count: 0, greyed: true, field: false } }));
+    expect(tipTexts().at(-1)?.words).toBe("No health potion worn.");
+    expect(tipTexts()).toHaveLength(3);
+  });
+
+  it("should follow a resize back over its square", () => {
+    const { bar, tipOps } = hovering("ability");
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    bar.relayout();
+    const [x, , w] = tipOps().find((o) => o.m === "fillRect")!.args as number[];
+    expect(Math.abs(x + w / 2 - (frame().squares.ability.well.x + 22))).toBeLessThanOrEqual(1);
+  });
+
+  it("should poll the pointer while it shows, so a window or the menu opening over a still pointer takes it", () => {
+    const { zones, polls } = hovering("ability");
+    expect(polls.at(-1)).toBe("always");
+    zones()[SQUARE.ability].handlers.pointerout();
+    expect(polls.at(-1)).toBe("onMove");
+  });
+
+  it("should poll on the pointer's moves alone while no tooltip ever showed", () => {
+    const { zones, polls } = hovering("ability", view({ ability: { icon: null, greyed: false, active: false, cost: null } }));
+    zones()[SQUARE.ability].handlers.pointerout();
+    expect(polls).toEqual([]);
+  });
+});
+
+describe("AbilityBar: the cooldown sweep (FS-Q18Q3 §D R18–R21, §L R41)", () => {
+  const cooling = (remaining: number, total = 1.2, fields: Partial<AbilityBarView> = {}) =>
+    view({ ability: { ...VIEW.ability, greyed: true }, cooldowns: { ability: { remaining, total }, tree: null }, ...fields });
+  /** The wedge as drawn now: the points of the last `fillPoints` on any graphics, or none. */
+  const wedge = (ops: Op[]) => ops.filter((o) => o.m === "fillPoints").map((o) => o.args[0] as { x: number; y: number }[]);
+  const shown = (v: AbilityBarView, now = 1000) => {
+    const fake = fakeScene();
+    fake.time.now = now;
+    const bar = new AbilityBar(fake.scene);
+    bar.show(v);
+    return { ...fake, bar };
+  };
+  const well = () => frame().squares.ability.well;
+
+  it("should cover remaining / total of the right-click well from 12 o'clock in the ink at 0.55", () => {
+    const { ops } = shown(cooling(0.6));
+    expect(ops()).toContainEqual({ m: "fillStyle", args: [palette.ink, 0.55] });
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5)]);
+  });
+
+  it("should run down with the UI scene's clock between states, never below 0", () => {
+    const { ops, tick } = shown(cooling(1.2));
+    tick(600);
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5)]);
+    tick(900);
+    expect(wedge(ops())).toEqual([]);
+  });
+
+  it("should be corrected by the next state, run on from the time it is heard", () => {
+    const { ops, bar, tick, time } = shown(cooling(1.2));
+    tick(300);
+    time.now += 100;
+    bar.show(cooling(0.6));
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5)]);
+    tick(300);
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.25)]);
+  });
+
+  it("should keep its stamp for a state that carries the same cooldown", () => {
+    const { ops, bar, tick } = shown(cooling(1.2));
+    tick(600);
+    bar.show(cooling(1.2, 1.2, { potion: { count: 1, greyed: false, field: false } }));
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5)]);
+  });
+
+  it.each([
+    ["{0, 0}", { remaining: 0, total: 0 }],
+    ["total 0 with remaining > 0", { remaining: 0.5, total: 0 }],
+    ["none (an older server)", null],
+  ])("should draw no sweep and tick nothing for %s", (_name, ability) => {
+    const { ops, updates, tick } = shown(view({ cooldowns: { ability, tree: null } }));
+    expect(wedge(ops())).toEqual([]);
+    expect(updates).toEqual([]);
+    tick(16);
+    expect(wedge(ops())).toEqual([]);
+  });
+
+  it("should stop listening to the frames once the sweep is clear, so nothing redraws while nothing runs", () => {
+    const { updates, tick, made } = shown(cooling(0.3));
+    expect(updates).toHaveLength(1);
+    tick(400);
+    expect(updates).toEqual([]);
+    const count = made.reduce((n, m) => n + m.ops.length, 0);
+    tick(16);
+    expect(made.reduce((n, m) => n + m.ops.length, 0)).toBe(count);
+  });
+
+  it("should listen once however many states arrive while it runs", () => {
+    const { updates, bar } = shown(cooling(1.2));
+    bar.show(cooling(1.1));
+    bar.show(cooling(1.0));
+    expect(updates).toHaveLength(1);
+  });
+
+  it("should sweep the right-click square alone: no wedge on the potion, none on the locked 3 square", () => {
+    const { ops } = shown(view({ cooldowns: { ability: null, tree: { remaining: 4, total: 8 } } }));
+    expect(wedge(ops())).toEqual([]);
+  });
+
+  it("should draw no seconds numeral (R20)", () => {
+    const { texts } = shown(cooling(0.6));
+    expect(texts().map((t) => t.words).filter((w) => w && /\d\.\d|s$/.test(w))).toEqual([]);
+  });
+
+  it("should draw active, greyed and swept at once: a Shadow Shot hold inside a running cooldown", () => {
+    const { ops } = shown(cooling(0.6, 1.2, { ability: { icon: "shadow_shot", greyed: true, active: true, cost: 30 } }));
+    expect(ops()).toContainEqual({ m: "lineStyle", args: [2, palette.frameBright, 1] });
+    expect(knockoutOf("shadow_shot")!.deps.ink).toBe(GREYED);
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5)]);
+  });
+
+  it("should lay the wedge over the well's ground and under its rim, its plaque and its icon", () => {
+    const { made, ops } = shown(cooling(0.6, 1.2, { ability: { ...VIEW.ability, active: true } }));
+    const graphics = made.filter((m) => m.kind === "graphics");
+    const { x, y, width, height } = well();
+    const at = (pred: (g: Made) => boolean) => graphics.findIndex(pred);
+    const ground = at((g) => g.ops.some((o) => o.m === "fillRect" && o.args.join() === [x, y, width, height].join()));
+    const sweep = at((g) => g.ops.some((o) => o.m === "fillPoints"));
+    const face = at((g) => g.ops.some((o) => o.m === "strokeRoundedRect"));
+    expect(ground).toBeGreaterThanOrEqual(0);
+    expect(ground).toBeLessThan(sweep);
+    expect(sweep).toBeLessThan(face);
+    expect(ops()).toContainEqual({ m: "lineStyle", args: [2, palette.frameBright, 1] });
+    expect(graphics[face].ops).toContainEqual({ m: "lineStyle", args: [2, palette.frameBright, 1] });
+  });
+
+  it("should hold no sweep once the bar is held at a death mid-cooldown, and stop ticking (FS-QPDKN R168)", () => {
+    const { ops, bar, updates } = shown(cooling(1.2));
+    bar.show(view({ ability: { ...VIEW.ability, greyed: true }, potion: { ...VIEW.potion, greyed: true } }));
+    expect(wedge(ops())).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it("should draw the next state's cooldown at once on a reconnect", () => {
+    const { ops, bar, tick } = shown(VIEW);
+    tick(5000);
+    bar.show(cooling(0.9));
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.75)]);
+  });
+
+  it.each([
+    ["as it comes down", (bar: InstanceType<typeof AbilityBar>) => bar.show(null)],
+    ["as its world leaves", (bar: InstanceType<typeof AbilityBar>) => bar.destroy()],
+  ])("should stop ticking %s, and a fresh bar starts its sweep fresh", (_name, leave) => {
+    const { bar, updates, tick, live } = shown(cooling(1.2));
+    leave(bar);
+    expect(updates).toEqual([]);
+    tick(16);
+    expect(live()).toEqual([]);
+    bar.show(cooling(1.2));
+    tick(600);
+    expect(wedge(live().flatMap((m) => m.ops))).toEqual([sweepPolygon(well(), 0.5)]);
+  });
+
+  it("should follow a resize back over its square", () => {
+    const { ops, bar } = shown(cooling(0.6));
+    viewport.set({ width: 1280, height: 720, renderScale: 1 });
+    bar.relayout();
+    expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5)]);
+  });
+
+  it("should not rebuild the tooltip with the frames while the pointer stands over a running sweep", () => {
+    const { zones, made, tick, tipTexts } = shown(cooling(1.2));
+    zones()[SQUARE.ability].handlers.pointerover();
+    const count = made.length;
+    tick(16);
+    tick(16);
+    expect(made.length).toBe(count);
+    expect(tipTexts()[0]?.words).toBe("Dash");
   });
 });

@@ -1459,6 +1459,25 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
     expect(cursor).not.toHaveBeenCalledWith("strike");
   });
 
+  // FS-E1ZDG §K.41: a second, smaller line under every player's name with their title, own and others'
+  it("should draw the title line under the own name and another's for a player who holds a spec, none without", () => {
+    const { run, texts } = onStage();
+    run.handleGameStateUpdate(
+      partyState(
+        { ...player("me", "Aldric", 130), specialization: "guardian" } as ReturnType<typeof player>,
+        { ...player("ally", "Wenna", 160), class: "archer", specialization: "shadow_ranger" } as ReturnType<typeof player>,
+      ),
+    );
+    const words = texts().map((t) => t.content);
+    expect(words).toEqual(expect.arrayContaining(["Warrior · Guardian", "Archer · Shadow Ranger"]));
+  });
+
+  it("should draw no title line for a player with no spec", () => {
+    const { run, texts } = onStage();
+    run.handleGameStateUpdate(partyState());
+    expect(texts().some((t) => /^(Warrior|Mage|Archer|Mercenary) · /.test(String(t.content)))).toBe(false);
+  });
+
   it("should letter another player's name in the ally channel, never the hostile one", () => {
     const { run, texts } = onStage();
     run.handleGameStateUpdate(partyState());
@@ -6494,7 +6513,7 @@ describe("BarrowspireScene drink key (FS-P9G8R R27–R29; edge state: menu open)
     press(keys.esc);
     pressOne();
     expect(JSON.stringify(barShownOver(run))).toBe(before);
-    expect(barShownOver(run)?.potion).toEqual({ count: 1, greyed: false });
+    expect(barShownOver(run)?.potion).toEqual({ count: 1, greyed: false, field: false });
   });
 
   it("should send no drink_potion on 1 while the menu's confirm is open", () => {

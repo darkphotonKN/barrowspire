@@ -26,29 +26,11 @@ var classes = map[string]bool{"warrior": true, "mage": true, "archer": true, "me
 // unicode.IsSpace leaves it out, because the client's whisper parse (JS \s) splits on it.
 func splitsAName(r rune) bool { return unicode.IsSpace(r) || r == '\uFEFF' }
 
-// specializations is FS-E1ZDG R1's spec ids per class, in the order the shared
-// tree lists the class's tier-6 nodes: t6a's, then t6b's.
-var specializations = map[string][2]string{
-	"warrior":   {"guardian", "berserker"},
-	"mage":      {"spellwarden", "pyromancer"},
-	"archer":    {"hunter", "shadow_ranger"},
-	"mercenary": {"duelist", "sellsword"},
-}
-
-// withSpecialization sets c's specialization from the tier-6 node it holds
-// (FS-E1ZDG R4): none before the pick, and none for a node of another class.
+// withSpecialization sets c's specialization from the tier-6 node it holds,
+// through the shared table (FS-E1ZDG R4, R7): none before the pick, and none
+// for a node of another class.
 func withSpecialization(c *Character) *Character {
-	c.Specialization = ""
-	nodes, ok := passivetree.SpecializationNodes(c.ClassID)
-	if !ok {
-		return c
-	}
-	for i, node := range nodes {
-		if c.PassiveRanks[node.ID] > 0 {
-			c.Specialization = specializations[c.ClassID][i]
-			return c
-		}
-	}
+	c.Specialization, _ = passivetree.SpecializationOf(c.ClassID, c.PassiveRanks)
 	return c
 }
 

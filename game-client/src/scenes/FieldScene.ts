@@ -21,7 +21,7 @@ import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { LightMap } from "@/render/lighting";
-import { FIELD_MARKER_OUTLINE, MARKER_DEPTH } from "@/render/markers";
+import { FIELD_MARKER_OUTLINE, MARKER_DEPTH, NameplateTitle } from "@/render/markers";
 import {
   GroundLayer,
   MEADOWS_LOOK,
@@ -152,6 +152,8 @@ function roadHomeGate(gates: readonly GateState[]): GateState | undefined {
 interface PlayerView {
   sprite: Phaser.GameObjects.Container;
   name: Phaser.GameObjects.Text;
+  /** The title line under the name (FS-E1ZDG §K.41), stood with it; none before the pick. */
+  title: NameplateTitle;
   pos: Point;
   target: Point;
   facing: Facing8;
@@ -635,6 +637,7 @@ export class FieldScene extends Phaser.Scene {
       if (view.anim.baked && body) view.anim.show(body, view.anim.step(view.pos, time, delta, view.fallen));
       const s = worldToScreen(view.pos.x, view.pos.y);
       view.name.setPosition(s.x, s.y - (body?.displayHeight ?? 60) - NAME_GAP);
+      view.title.stand(view.name);
     }
     // the light-map in daylight; the torch rides with the player as in every world
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
@@ -711,6 +714,7 @@ export class FieldScene extends Phaser.Scene {
       if (present.has(entityID)) continue;
       view.sprite.destroy();
       view.name.destroy();
+      view.title.destroy();
       this.views.delete(entityID);
     }
 
@@ -1051,6 +1055,7 @@ export class FieldScene extends Phaser.Scene {
       existing.fallen = fallen;
       const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
       existing.facing = facingFrom(vx, vy, existing.facing);
+      existing.title.show(player);
       if (!existing.anim.baked) {
         const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
         body?.setTexture(placeholderTexture(player.class, nearestScreenFacing(existing.facing)));
@@ -1064,20 +1069,18 @@ export class FieldScene extends Phaser.Scene {
     if (anim.baked) anim.dress(body);
     else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
+    const nameStyle = { fontFamily: CANVAS_FONT.body, color: toCss(palette.markerHub), ...FIELD_MARKER_STROKE };
     const name = this.add
-      .text(0, 0, player.username, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "12px",
-        color: toCss(palette.markerHub),
-        ...FIELD_MARKER_STROKE,
-      })
+      .text(0, 0, player.username, { ...nameStyle, fontSize: "12px" })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);
+    const title = new NameplateTitle(this, nameStyle);
+    title.show(player);
 
     const pos = { x: player.position.x, y: player.position.y };
     const sprite = this.add.container(0, 0, [body]);
     standAt(sprite, pos, 1);
-    this.views.set(player.entity_id, { sprite, name, pos, target: { ...pos }, facing: "se", anim, fallen });
+    this.views.set(player.entity_id, { sprite, name, title, pos, target: { ...pos }, facing: "se", anim, fallen });
   }
 
   /**

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { ClientGameState, EquipmentState, ItemState, PlayerState, ResourceState } from "@/types/gameState";
 import {
   abilityBar,
-  abilityCopy,
   abilityGreyed,
   parryRefused,
   runOwnHud,
@@ -51,22 +50,6 @@ const run = (fields: Partial<PlayerState> = {}): BarState => ({ world_type: "run
 const field = (fields: Partial<PlayerState> = {}): BarState => ({ world_type: "field", current_player: me(fields) });
 const inRun: AbilityBarContext = { world: "run", lockedOut: false, aiming: false };
 const inField: AbilityBarContext = { ...inRun, world: "field" };
-
-describe("abilityCopy (FS-8AY7S req 30, kept for the bar's tooltips)", () => {
-  it.each([
-    ["warrior", "Dash"],
-    ["mage", "Triple Fireball"],
-    ["archer", "Shadow Shot"],
-    ["mercenary", "Parry"],
-  ])("should name the %s's ability", (cls, name) => {
-    expect(abilityCopy(cls)?.name).toBe(name);
-  });
-
-  it("should read the class whatever its case, and have no row for an unknown one", () => {
-    expect(abilityCopy("Mage")?.name).toBe("Triple Fireball");
-    for (const cls of ["necromancer", "", undefined]) expect(abilityCopy(cls)).toBeNull();
-  });
-});
 
 describe("abilityGreyed (FS-8AY7S req 31; FS-JTNPR req 18)", () => {
   it("should grey exactly where the pool cannot pay, for every value", () => {
@@ -129,6 +112,11 @@ describe("abilityBar: the right-click square (FS-Q18Q3 §E R22, R23, R27)", () =
     expect(abilityBar(run({ class: cls }), inRun)?.ability.icon).toBe(icon);
   });
 
+  it("should carry the specialization beside the icon as the copy key (FS-E1ZDG §L.43)", () => {
+    expect(abilityBar(run({ class: "archer", specialization: "shadow_ranger" }), inRun)?.ability.specialization).toBe("shadow_ranger");
+    expect(abilityBar(run({ class: "archer" }), inRun)?.ability).not.toHaveProperty("specialization");
+  });
+
   it("should show an empty well for a class with no row (R27)", () => {
     expect(abilityBar(run({ class: "necromancer" }), inRun)?.ability.icon).toBeNull();
   });
@@ -189,15 +177,15 @@ describe("abilityBar: the right-click square (FS-Q18Q3 §E R22, R23, R27)", () =
 
 describe("abilityBar: the potion square (FS-Q18Q3 §E R24, §G R29)", () => {
   it.each([0, 1, 2, 3])("should count %i health potions worn", (n) => {
-    expect(abilityBar(run({ equipment: equipment(n) }), inRun)?.potion).toEqual({ count: n, greyed: n === 0 });
+    expect(abilityBar(run({ equipment: equipment(n) }), inRun)?.potion).toEqual({ count: n, greyed: n === 0, field: false });
   });
 
   it("should read 0, greyed, with no equipment on the wire", () => {
-    expect(abilityBar(run(), inRun)?.potion).toEqual({ count: 0, greyed: true });
+    expect(abilityBar(run(), inRun)?.potion).toEqual({ count: 0, greyed: true, field: false });
   });
 
-  it("should always be greyed in a field, where nothing is drunk", () => {
-    expect(abilityBar(field({ equipment: equipment(3) }), inField)?.potion).toEqual({ count: 3, greyed: true });
+  it("should always be greyed in a field, where nothing is drunk, and say it is in a field (R28)", () => {
+    expect(abilityBar(field({ equipment: equipment(3) }), inField)?.potion).toEqual({ count: 3, greyed: true, field: true });
   });
 });
 
@@ -233,7 +221,7 @@ describe("runOwnHud (FS-QPDKN R168; FS-Q18Q3 R30)", () => {
     });
     expect(fills(hud)[0]).toEqual(["health", fill]);
     expect(hud.bar).toEqual({
-      potion: { count: 2, greyed: true },
+      potion: { count: 2, greyed: true, field: false },
       ability: { icon: "shadow_shot", greyed: true, active: false, cost: 25 },
       tree: { locked: true },
       costChannel: "stamina",

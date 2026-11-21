@@ -3225,6 +3225,8 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       pos,
       sprite: add.container(0, 0, []),
       name: add.text(0, 0, ""),
+      // no title held: its line is NameplateTitle's to show
+      title: { setVisible: vi.fn(), stand: vi.fn(), show: vi.fn(), destroy: vi.fn() },
       legs: add.graphics(),
     });
     const self = player({ ...OUTDOORS });
@@ -5049,6 +5051,7 @@ describe("HubScene facing from movement, nothing on the wire (FS-JS7C8 §D R22, 
     pos: { x, y: 0 },
     target: { x, y: 0 },
     anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+    title: { show: vi.fn(), stand: vi.fn() },
   });
 
   function onHub() {
@@ -6557,5 +6560,40 @@ describe("HubScene the XP bar along the bottom (FS-77DVN §C.13, §A.4)", () => 
     hudOver(hub, "hub").relayout();
 
     expect(relayout).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FS-E1ZDG §K.41: a second, smaller line under every player's name with their title, own and others'
+describe("HubScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
+  type Hub = { placePlayer(player: unknown, isSelf: boolean): void; art: unknown };
+  const onStage = () => {
+    const { hub: raw, stage } = hubOnStage();
+    const hub = raw as unknown as Hub;
+    hub.art = ArtLibrary.empty({ warn: () => {} });
+    return { hub, stage };
+  };
+  const entry = (entity_id: string, extra: Record<string, unknown> = {}) => ({
+    entity_id,
+    id: entity_id,
+    username: entity_id,
+    class: "warrior",
+    position: { x: 300, y: 300 },
+    direction: { vx: 0, vy: 0, speed: 0 },
+    ...extra,
+  });
+  const words = (made: Made[]) => made.filter((m) => !m.destroyed && m.kind === "text").map((m) => m.args[2]);
+
+  it("should draw the title under the name of a player who holds a spec, and none for one who does not", () => {
+    const { hub, stage } = onStage();
+    hub.placePlayer(entry("Bram", { specialization: "berserker" }), true);
+    hub.placePlayer(entry("Wren", { class: "archer" }), false);
+    expect(words(stage.made)).toEqual(["Bram", "Warrior · Berserker", "Wren"]);
+  });
+
+  it("should show the title from the next state after a pick in town", () => {
+    const { hub, stage } = onStage();
+    hub.placePlayer(entry("Bram"), true);
+    hub.placePlayer(entry("Bram", { specialization: "guardian" }), true);
+    expect(words(stage.made)).toEqual(["Bram", "Warrior · Guardian"]);
   });
 });

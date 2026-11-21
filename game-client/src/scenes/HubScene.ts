@@ -66,6 +66,7 @@ import { townLines, type TownLines } from "./townLines";
 import {
   MARKER_DEPTH,
   NPC_NAME_PX,
+  NameplateTitle,
   isFunctionNPC,
   markerBase,
   sigilPoints,
@@ -533,6 +534,8 @@ interface PlayerView {
    * placed over the head each frame rather than riding in the depth-sorted container.
    */
   name: Phaser.GameObjects.Text;
+  /** The title line under the name (FS-E1ZDG §K.41), stood with it; none before the pick. */
+  title: NameplateTitle;
   /** Drawn separately so the legs sit beneath the body. */
   legs: Phaser.GameObjects.Graphics;
   /** Where the server last said they are (world position). */
@@ -1370,6 +1373,7 @@ export class HubScene extends Phaser.Scene {
       const shown = !hidden(view.pos);
       view.sprite.setVisible(shown);
       view.name.setVisible(shown);
+      view.title.setVisible(shown);
       view.legs.setVisible(shown);
     }
     const stash = markerShown(HUB_STASH_CHEST.at);
@@ -2061,6 +2065,7 @@ export class HubScene extends Phaser.Scene {
 
       view.sprite.destroy();
       view.name.destroy();
+      view.title.destroy();
       view.legs.destroy();
       this.views.delete(entityID);
     }
@@ -3064,9 +3069,10 @@ export class HubScene extends Phaser.Scene {
     });
   }
 
-  /** A player's name plate over their head ({@link markerBase}); the hub has no corpses. */
+  /** A player's name plate over their head ({@link markerBase}), their title under it; the hub has no corpses. */
   private placeName(view: PlayerView): void {
     this.placeMarker(view.sprite, view.name, view.anim);
+    view.title.stand(view.name);
   }
 
   /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
@@ -3117,6 +3123,8 @@ export class HubScene extends Phaser.Scene {
     if (existing) {
       existing.target = { x: player.position.x, y: player.position.y };
       this.updateAppearance(existing, player);
+      // a pick in town shows from the next state (FS-E1ZDG §B R8)
+      existing.title.show(player);
       return;
     }
 
@@ -3134,14 +3142,13 @@ export class HubScene extends Phaser.Scene {
 
     // a marker above the lighting, placed by placeName: a 60 px preview keeps it where it
     // always was, a baked sheet puts it just over the head
+    const nameStyle = { fontFamily: "var(--font-body), serif", color: toCss(palette.markerHub) };
     const name = this.add
-      .text(0, 0, player.username, {
-        fontFamily: "var(--font-body), serif",
-        fontSize: "12px",
-        color: toCss(palette.markerHub),
-      })
+      .text(0, 0, player.username, { ...nameStyle, fontSize: "12px" })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);
+    const title = new NameplateTitle(this, nameStyle);
+    title.show(player);
 
     const pos = { x: player.position.x, y: player.position.y };
     const sprite = this.add.container(0, 0, [body]);
@@ -3154,6 +3161,7 @@ export class HubScene extends Phaser.Scene {
     const view: PlayerView = {
       sprite,
       name,
+      title,
       legs,
       target: { ...pos },
       pos,

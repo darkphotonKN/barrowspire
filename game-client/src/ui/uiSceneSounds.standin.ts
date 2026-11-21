@@ -28,6 +28,7 @@ export function heardInterfaceSounds(onto?: UiBridge, own: Partial<UiWindows> = 
     party: own.party ?? (() => false),
     inventory: own.inventory ?? (() => false),
     character: own.character ?? (() => false),
+    tree: own.tree ?? (() => false),
   });
   const heard = () => {
     const out = played;

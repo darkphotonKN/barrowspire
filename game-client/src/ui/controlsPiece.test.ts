@@ -19,6 +19,8 @@ const glyphs = vi.hoisted(() => [{ colours: [] as string[], setColor(c: string) 
 
 const { mountControlsPiece } = await import("./controlsPiece");
 const { viewport } = await import("@/render/viewport");
+const { drawControlsPanel } = await import("./controlsPanel");
+const { useGameStore } = await import("@/stores/gameStore");
 
 interface Zone {
   rect: { x: number; y: number; width: number; height: number };
@@ -96,5 +98,17 @@ describe("the controls panel's × (FS-84N1G R14)", () => {
     expect(zones.map((z) => z.destroyed)).toEqual([true, true, false, false]);
     piece.destroy();
     expect(zones.every((z) => z.destroyed)).toBe(true);
+  });
+});
+
+// FS-E1ZDG §L.43: the panel names the right-click as the active character's class and specialization do
+describe("the controls panel's right-click name", () => {
+  it("should draw for the active character's class and specialization", () => {
+    useGameStore.setState({
+      characters: [{ id: "c1", name: "Wren", className: "archer", level: 20, experience: 0, levelFloor: 0, specialization: "shadow_ranger", createdAt: "" }],
+      activeCharacterId: "c1",
+    });
+    mountControlsPiece(stage().scene, () => {});
+    expect(vi.mocked(drawControlsPanel)).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), "archer", "shadow_ranger");
   });
 });

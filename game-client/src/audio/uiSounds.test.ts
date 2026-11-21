@@ -18,7 +18,7 @@ import {
 
 /** A window state with only `open` open. */
 function open(...windows: (keyof WindowState)[]): WindowState {
-  const state: WindowState = { menu: false, letter: false, party: false, inventory: false, character: false };
+  const state: WindowState = { menu: false, letter: false, party: false, inventory: false, character: false, tree: false };
   for (const w of windows) state[w] = true;
   return state;
 }
@@ -36,6 +36,11 @@ describe("windowSound, the one rule (FS-WDM0X S8, S3, S5, S6)", () => {
     ["the menu closing over nothing", open("menu"), open(), "settings_close"],
     ["the letter panel closing", open("letter"), open(), "mailbox_close"],
     ["the party panel closing", open("party", "inventory"), open("inventory"), "party_close"],
+    // FS-8RZ51 R36: the tree plays the character panel's open and close (v1)
+    ["the tree opening over the inventory", open("inventory"), open("tree"), "character_open"],
+    ["the tree closing", open("tree"), open(), "character_close"],
+    ["the inventory opening over the tree", open("tree"), open("inventory"), "inventory_open"],
+    ["the party panel opening over the tree", open("tree"), open("tree", "party"), "party_open"],
     ["the menu slot occupied before and after (an OPTIONS swap)", open("menu"), open("menu"), null],
     ["nothing changing", open("inventory", "party"), open("inventory", "party"), null],
     ["nothing open before or after", open(), open(), null],

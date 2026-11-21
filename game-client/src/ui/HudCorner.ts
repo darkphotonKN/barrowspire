@@ -1,8 +1,9 @@
 /**
  * The corner row (FS-3EBCA): the panel icons in the bottom-right corner of every world, from the
  * right Menu (a riveted gear: one Esc press), Inventory (a round rucksack: the inventory), Character
- * (a strapped bust with pauldrons: the character panel), Party (three busts: the party panel) and
- * the Mailbox.
+ * (a strapped bust with pauldrons: the character panel), Party (three busts: the party panel), the
+ * Mailbox and, at the row's left end, the Tree (an oak: the passive tree, FS-8RZ51 R32), which carries
+ * a small ember marker while points are unspent, set on the standing row (`mark`, R33).
  * In the town the Mailbox is the mailbox's own envelope (`MailboxEnvelope`, FS-1GZGD § Change),
  * which this row leaves its slot to; elsewhere it is drawn here, greyed (R9).
  *
@@ -30,6 +31,7 @@ import { CornerLabel } from "./cornerLabel";
 import { GLYPH_LINE_W, drawEnvelopeLines, envelopeKnockout } from "./MailboxEnvelope";
 import { BRONZE, CUT_W, GREYED, GREYED_ALPHA, Knockout, bend, oval, type KnockoutCut, type KnockoutPicture, type Pt } from "./knockout";
 import { RUCKSACK, drawRucksackLines } from "./knockoutRucksack";
+import { MARKER_AT, MARKER_BOX, MARKER_INK, MARKER_KNOCKOUT, TREE_KNOCKOUT, drawMarkerLines, drawTreeLines } from "./knockoutTree";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
@@ -85,6 +87,8 @@ interface DrawnIcon {
   /** The icon as a knockout, where the scene can draw one (FS-7TQN4 R1). */
   knockout: Knockout;
   hovered: boolean;
+  /** The Tree's ember marker while points are unspent (FS-8RZ51 R33), as a knockout where it can stand. */
+  marker?: Knockout;
 }
 
 /** What each icon is as a knockout, about its slot's centre (FS-7TQN4 R3–R7). */
@@ -93,14 +97,19 @@ function pictureOf(spec: CornerIconSpec, frame: Rect): KnockoutPicture {
   if (spec.icon === "menu") return GEAR_KNOCKOUT;
   if (spec.icon === "inventory") return RUCKSACK;
   if (spec.icon === "character") return CHARACTER_KNOCKOUT;
+  if (spec.icon === "tree") return TREE_KNOCKOUT;
   return PARTY_KNOCKOUT;
 }
 
 export class HudCorner {
   private readonly icons: DrawnIcon[];
   private readonly label: CornerLabel;
+  private readonly scene: Phaser.Scene;
+  /** Whether the Tree carries its marker (FS-8RZ51 R33). */
+  private marked = false;
 
   constructor(scene: Phaser.Scene, deps: HudCornerDeps) {
+    this.scene = scene;
     this.label = new CornerLabel(scene);
     this.icons = deps.icons.map((spec) => {
       const frame = cornerIconFrame(spec.icon, viewport);
@@ -142,6 +151,32 @@ export class HudCorner {
     );
   }
 
+  /**
+   * The Tree icon's marker on or off (FS-8RZ51 R33): a small ember point at the icon's top right,
+   * drawn by the knockout renderer where it can stand and in lines where not, no numeral. Set on the
+   * standing row, nothing rebuilt.
+   */
+  mark(on: boolean): void {
+    if (on === this.marked) return;
+    this.marked = on;
+    const tree = this.icons.find((i) => i.spec.icon === "tree");
+    if (!tree) return;
+    if (on)
+      tree.marker = new Knockout({
+        scene: this.scene,
+        depth: HUD_DEPTH,
+        picture: MARKER_KNOCKOUT,
+        ink: MARKER_INK,
+        name: "the tree icon's marker",
+        lost: () => this.draw(tree),
+      });
+    else {
+      tree.marker?.destroy();
+      tree.marker = undefined;
+    }
+    this.draw(tree);
+  }
+
   /** The logical view changed: every icon back to the corner (FS-ZAJMH R12, R13). */
   relayout(): void {
     for (const icon of this.icons) {
@@ -155,8 +190,9 @@ export class HudCorner {
 
   destroy(): void {
     this.label.hide();
-    for (const { graphics, zone, knockout } of this.icons) {
+    for (const { graphics, zone, knockout, marker } of this.icons) {
       knockout.destroy();
+      marker?.destroy();
       graphics.destroy();
       zone.destroy();
     }
@@ -178,6 +214,21 @@ export class HudCorner {
 
   private draw(icon: DrawnIcon): void {
     const g = icon.graphics.clear();
+    this.drawIcon(icon, g);
+    this.drawMarker(icon, g);
+  }
+
+  /** The Tree's marker, where it is on (FS-8RZ51 R33): its knockout, else its ring in lines. */
+  private drawMarker(icon: DrawnIcon, g: Phaser.GameObjects.Graphics): void {
+    if (!icon.marker) return;
+    const f = icon.frame;
+    const cx = f.x + f.width / 2;
+    const cy = f.y + f.height / 2;
+    const box = { x: cx + MARKER_AT[0] - MARKER_BOX / 2, y: cy + MARKER_AT[1] - MARKER_BOX / 2, width: MARKER_BOX, height: MARKER_BOX };
+    if (!icon.marker.show(box, false)) drawMarkerLines(g, cx, cy);
+  }
+
+  private drawIcon(icon: DrawnIcon, g: Phaser.GameObjects.Graphics): void {
     const f = icon.frame;
     // a knockout where the scene can draw one; today's line glyph where it cannot (FS-7TQN4 R15)
     if (icon.knockout.show(f, icon.hovered)) return;
@@ -195,6 +246,7 @@ export class HudCorner {
     else if (icon.spec.icon === "inventory") drawRucksackLines(g, cx, cy, ink, alpha);
     else if (icon.spec.icon === "character") drawCharacter(g, cx, cy + 1, ink, alpha);
     else if (icon.spec.icon === "party") drawParty(g, cx, cy, ink, alpha);
+    else if (icon.spec.icon === "tree") drawTreeLines(g, cx, cy, ink, alpha);
   }
 }
 

@@ -46,6 +46,11 @@ export interface PublicPlayerState {
   /** Total experience that reaches the next level; absent at the cap (level 20). */
   next_level_at?: number;
   /**
+   * The character's specialization id (FS-E1ZDG §B R9), derived on the server from the tier-6 node held:
+   * on `current_player` and every `other_players` entry, in every world; absent before the pick.
+   */
+  specialization?: string;
+  /**
    * The Mercenary's parry stance (FS-MAMHR req 28): sent on a mercenary's own `current_player`,
    * and on their `other_players` entry to their party members (FS-CH21F R1); absent for every
    * other class and to anyone outside the party. Whether the stance is open this tick.
@@ -83,6 +88,13 @@ export interface PlayerState extends PublicPlayerState {
    * ability, so its absence means the ability is not held. Never on an `other_players` entry (R6).
    */
   tree_ability_cooldown?: CooldownState;
+  /**
+   * The passive tree's ranks held, by node id, nodes at rank 1 or more only (FS-8RZ51 R23): sent on
+   * `current_player` in every world, `{}` when none. Never on an `other_players` entry (ADR-0064).
+   */
+  passive_ranks?: Record<string, number>;
+  /** The unspent passive points, derived from the current level (FS-8RZ51 R7, R23). */
+  passive_points?: number;
 }
 
 /**

@@ -101,6 +101,13 @@ describe("the run's controls panel (FS-TQZ5J § Change: Phase 3, R50)", () => {
     expect(new Map(controlRows("no-such-class")).get("RIGHT CLICK")).toBe("Class ability");
   });
 
+  it("should name the archer's shot by the specialization: Heavy Shot but for a Shadow Ranger (FS-E1ZDG §L.43)", () => {
+    const shot = (specialization?: string) => new Map(controlRows("archer", specialization)).get("RIGHT CLICK");
+    expect(shot()).toBe("Heavy Shot");
+    expect(shot("hunter")).toBe("Heavy Shot");
+    expect(shot("shadow_ranger")).toBe("Shadow Shot");
+  });
+
   it("should stand at the centre it is given, at 1200, held against the screen, its ground's rect about it", () => {
     const { scene, containers } = stage();
     drawControlsPanel(scene, { x: 400, y: 300 }, "warrior");

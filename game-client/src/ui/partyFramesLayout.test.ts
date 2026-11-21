@@ -11,6 +11,8 @@ import {
   PARTY_FRAMES_PLACEMENT,
   partyBustFrame,
   partyFrameRows,
+  PARTY_NAME_PX,
+  PARTY_TITLE_PX,
   partyFramesFrame,
   partyNameRoom,
   partyTravelButtonRect,
@@ -339,6 +341,36 @@ describe("partyFrameRows: a row's level", () => {
   });
 });
 
+// FS-E1ZDG §K.41: the title on a frame by the level's rule, own row always, a teammate's while in this world
+describe("partyFrameRows: a row's title", () => {
+  const rowsOf = (others: PlayerState[] = [], own: Partial<PlayerState> = { specialization: "berserker" }) =>
+    memberRows(
+      partyFrameRows(party([member(ME, "Me"), member("wren", "Wren", { class: "archer" })]), ME, {
+        current_player: seen(ME, { current_health: 9, max_health: 9, ...own }),
+        other_players: others,
+      }),
+    );
+
+  it("carries the player's own title from their own state", () => {
+    expect(rowsOf()[0].title).toBe("Warrior · Berserker");
+  });
+
+  it("carries a same-world teammate's title", () => {
+    const rows = rowsOf([seen("wren", { current_health: 30, max_health: 120, specialization: "shadow_ranger" })]);
+    expect(rows[1].title).toBe("Archer · Shadow Ranger");
+  });
+
+  it("gives a teammate elsewhere no title, whatever their broadcast says (§Edge States)", () => {
+    const rows = rowsOf([seen("wren", { specialization: "shadow_ranger" })]);
+    expect(rows[1]).not.toHaveProperty("title");
+  });
+
+  it("gives no title before the pick, or for a spec the client does not know", () => {
+    expect(rowsOf([], {})[0]).not.toHaveProperty("title");
+    expect(rowsOf([], { specialization: "paladin" })[0]).not.toHaveProperty("title");
+  });
+});
+
 describe("partyFrameRows: an away member is greyed (FS-NCC9J R25)", () => {
   const rowOf = (extra: Partial<PartyMember>, others: PlayerState[] = []) =>
     memberRows(
@@ -515,6 +547,16 @@ describe("partyFramesFrame", () => {
       expect(health.y + health.height).toBeLessThanOrEqual(resource.y);
       expect(name.x).toBeGreaterThan(bust.x + bust.r);
       expect(name.x).toBe(health.x);
+    }
+  });
+
+  // FS-E1ZDG §K.41: the title's own line under the name, over the bars, inside the row
+  it("stands the title line under the name and over the bars", () => {
+    for (const { row, name, title, health } of partyFramesFrame(2, 10, 86)) {
+      expect(title.x).toBe(name.x);
+      expect(title.y).toBeGreaterThanOrEqual(name.y + PARTY_NAME_PX);
+      expect(title.y + PARTY_TITLE_PX).toBeLessThanOrEqual(health.y);
+      expect(health.y).toBeGreaterThan(row.y);
     }
   });
 

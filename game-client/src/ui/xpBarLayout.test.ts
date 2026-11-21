@@ -62,6 +62,12 @@ describe("xpBarFrame: the piece's place (FS-77DVN §A)", () => {
     expect(wide.x + wide.width / 2).toBe(640);
   });
 
+  // FS-8RZ51 R43: the passive tree's sixth icon is the row's leftmost plate; the bar keeps clear of it
+  it.each(WIDTHS.filter((w) => w % 40 === 0))("should keep 16 px clear of the tree's plate, the six-icon row's left end, at %i", (width) => {
+    const { piece } = xpBarFrame(view(width));
+    expect(piece.x + piece.width).toBeLessThanOrEqual(cornerIconFrame("tree", view(width)).x - 16);
+  });
+
   it.each(WIDTHS)(
     "should keep the rule at %i: centred, whole and even, capped, 16 px clear of both neighbours, drawn",
     (width) => {

@@ -47,18 +47,19 @@ export interface AbilityIcon {
 }
 
 // ── Geometry, in local px ─────────────────────────────────────────────────────────────────────────
+// The exported helpers draw the passive tree's pictures too (`passiveIcons.ts`, FS-8RZ51 R40).
 
 /** A closed shape: its outline, its last point joined back to its first. */
-type Shape = Pt[];
+export type Shape = Pt[];
 
 /** The points `ps` turned by `a`, scaled by `s`, then moved by (x, y). */
-function place(ps: readonly Pt[], { x = 0, y = 0, a = 0, s = 1 }: { x?: number; y?: number; a?: number; s?: number }): Pt[] {
+export function place(ps: readonly Pt[], { x = 0, y = 0, a = 0, s = 1 }: { x?: number; y?: number; a?: number; s?: number }): Pt[] {
   const [c, n] = [Math.cos(a), Math.sin(a)];
   return ps.map(([px, py]) => [x + s * (px * c - py * n), y + s * (px * n + py * c)] as Pt);
 }
 
 /** A circle's outline, in `steps` points. */
-function circle(cx: number, cy: number, r: number, steps = 32): Shape {
+export function circle(cx: number, cy: number, r: number, steps = 32): Shape {
   return oval(cx, cy, r, r, 0, 2 * Math.PI, steps).slice(0, -1);
 }
 
@@ -89,7 +90,7 @@ function densify(ps: readonly Pt[], step = 0.25): Pt[] {
  * either end so the cut reaches that shape's edge. Read from a point over none, so a run across
  * the outline's first point stays one path.
  */
-function gapOver(front: readonly Pt[], behind: readonly (readonly Pt[])[]): KnockoutCut[] {
+export function gapOver(front: readonly Pt[], behind: readonly (readonly Pt[])[]): KnockoutCut[] {
   const ps = densify(front);
   const over = ps.map(([x, y]) => behind.some((b) => inside(b, x, y)));
   const from = over.indexOf(false);
@@ -109,7 +110,7 @@ function gapOver(front: readonly Pt[], behind: readonly (readonly Pt[])[]): Knoc
 }
 
 /** The line glyph of a picture's parts: each shape's outline, closed, and the cuts given. */
-function linesOf(shapes: readonly Shape[], cuts: readonly KnockoutCut[] = []): KnockoutCut[] {
+export function linesOf(shapes: readonly Shape[], cuts: readonly KnockoutCut[] = []): KnockoutCut[] {
   return [...shapes.map((path) => ({ path, closed: true })), ...cuts];
 }
 
@@ -144,7 +145,7 @@ function crescent(o: Pt, r: number, bite: Pt, rb: number, steps = 28): Shape {
 }
 
 /** A box's outline from its top-left clockwise, its corners rounded by `r`. */
-function roundedBox(left: number, top: number, right: number, bottom: number, r: number): Shape {
+export function roundedBox(left: number, top: number, right: number, bottom: number, r: number): Shape {
   return [
     ...oval(left + r, top + r, r, r, Math.PI, 1.5 * Math.PI, 4),
     ...oval(right - r, top + r, r, r, -0.5 * Math.PI, 0, 4),
@@ -158,7 +159,7 @@ function roundedBox(left: number, top: number, right: number, bottom: number, r:
  * `shaft` to each side, and its fletching flared `fletch` long to `out` each side at the tail, a
  * notch cut into its end: one outline.
  */
-function arrow({ tip, head, barb, shaft, tail, fletch, out }: { tip: number; head: number; barb: number; shaft: number; tail: number; fletch: number; out: number }): Shape {
+export function arrow({ tip, head, barb, shaft, tail, fletch, out }: { tip: number; head: number; barb: number; shaft: number; tail: number; fletch: number; out: number }): Shape {
   const base = tip - head;
   const side = (m: 1 | -1): Pt[] => [
     [base, m * barb],
@@ -167,6 +168,19 @@ function arrow({ tip, head, barb, shaft, tail, fletch, out }: { tip: number; hea
     [tail, m * out],
   ];
   return [[tip, 0], ...side(1), [tail + fletch * 0.4, 0], ...side(-1).reverse()];
+}
+
+/** A four-pointed flash or glint, `r` from its middle to each point, its sides drawn in to `waist`. */
+export function twinkle(cx: number, cy: number, r: number, waist: number): Shape {
+  const out: Pt[] = [];
+  for (let i = 0; i < 4; i++) {
+    const a = (i * Math.PI) / 2 - Math.PI / 2;
+    const tip: Pt = [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
+    const next: Pt = [cx + Math.cos(a + Math.PI / 2) * r, cy + Math.sin(a + Math.PI / 2) * r];
+    const pull: Pt = [cx + Math.cos(a + Math.PI / 4) * waist, cy + Math.sin(a + Math.PI / 4) * waist];
+    out.push(tip, ...bend(tip, pull, next, 6).slice(0, -1));
+  }
+  return out;
 }
 
 // ── The class abilities ───────────────────────────────────────────────────────────────────────────
@@ -330,18 +344,7 @@ const EARTHBREAKER: AbilityIcon = (() => {
  * the right, and two smaller ones trailing back to where the mage stood.
  */
 const BLINK: AbilityIcon = (() => {
-  const star = (cx: number, cy: number, r: number, waist: number): Shape => {
-    const out: Pt[] = [];
-    for (let i = 0; i < 4; i++) {
-      const a = (i * Math.PI) / 2 - Math.PI / 2;
-      const tip: Pt = [cx + Math.cos(a) * r, cy + Math.sin(a) * r];
-      const next: Pt = [cx + Math.cos(a + Math.PI / 2) * r, cy + Math.sin(a + Math.PI / 2) * r];
-      const pull: Pt = [cx + Math.cos(a + Math.PI / 4) * waist, cy + Math.sin(a + Math.PI / 4) * waist];
-      out.push(tip, ...bend(tip, pull, next, 6).slice(0, -1));
-    }
-    return out;
-  };
-  const flashes = [star(4, -4, 10.8, 1.6), star(-7.6, 6.2, 6, 1.4), star(-11.2, 11.6, 3.4, 1.1)];
+  const flashes = [twinkle(4, -4, 10.8, 1.6), twinkle(-7.6, 6.2, 6, 1.4), twinkle(-11.2, 11.6, 3.4, 1.1)];
   return {
     picture: { silhouette: flashes, cuts: [] },
     lines: linesOf(flashes),
@@ -480,8 +483,13 @@ export type AbilityIconPen = Pick<
  * `ink` at `alpha`, with nothing filled; each line one path, so the renderer joins its corners.
  */
 export function drawAbilityIconLines(g: AbilityIconPen, key: AbilityIconKey, cx: number, cy: number, ink: number, alpha: number): void {
+  drawIconLines(g, ABILITY_ICONS[key], cx, cy, ink, alpha);
+}
+
+/** Any icon's fallback, as {@link drawAbilityIconLines}: the passive tree's pictures draw theirs here too. */
+export function drawIconLines(g: AbilityIconPen, icon: AbilityIcon, cx: number, cy: number, ink: number, alpha: number): void {
   g.lineStyle(GLYPH_LINE_W, ink, alpha);
-  for (const line of ABILITY_ICONS[key].lines) {
+  for (const line of icon.lines) {
     if ("ring" in line) {
       g.strokeCircle(cx + line.ring.x, cy + line.ring.y, line.ring.r);
       continue;

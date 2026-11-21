@@ -60,6 +60,7 @@ function onSlot() {
   const gears: BuiltGear[] = [];
   const containers: BuiltContainer[] = [];
   const wirings: GearWiring[] = [];
+  const opened: string[] = [];
   const slot = new UiGearSlot(bridge, (world, wiring) => {
     wirings.push(wiring);
     const gear: BuiltGear = {
@@ -140,15 +141,30 @@ function onSlot() {
     };
     containers.push(container);
     return { gear, container };
-  });
+  }, undefined, () => void opened.push("opened"));
   const enter = (world: World, blockers: Partial<WorldBlockers> = {}) => {
     const w = aWorld(world, blockers);
     bridge.report(w.report);
     slot.show(w.report);
     return w;
   };
-  return { bridge, slot, gears, containers, wirings, enter };
+  return { bridge, slot, gears, containers, wirings, enter, opened };
 }
+
+// FS-8RZ51 R36 (I-8RZ51-7): a gear panel opening closes the passive tree, told through `opened`
+describe("the gear slot's opening, told to the UI scene (FS-8RZ51 R36)", () => {
+  it("should tell each gear panel opening, the stash's too, and no close or stay", () => {
+    const { slot, enter, opened } = onSlot();
+    enter("hub");
+    slot.toggle("inventory");
+    slot.toggle("character");
+    slot.toggle("character");
+    slot.close();
+    expect(opened).toEqual(["opened", "opened"]);
+    slot.hear({ kind: "openStash" });
+    expect(opened).toHaveLength(3);
+  });
+});
 
 describe("the UI scene's gear slot, built for each world reported (FS-TQZ5J § Change: Phase 3, R50)", () => {
   it("should build the gear in every world and a container view in a field and the run, and take them down as the world leaves", () => {

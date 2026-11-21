@@ -55,16 +55,22 @@ type PublicPlayerState struct {
 	Experience  int64  `json:"experience"`
 	LevelFloor  int64  `json:"level_floor"`
 	NextLevelAt *int64 `json:"next_level_at,omitempty"`
+	// Specialization is the body's (systems.Specialization), public as the
+	// title is; absent before the pick. FS-E1ZDG §B R9.
+	Specialization string `json:"specialization,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
 // points: Current is the pool rounded down, so a client comparing it with
 // AbilityCost reaches the same answer the server does. FS-8AY7S §Requirements 17.
+// TreeAbilityCost is the held tree ability's, the least the server requires to
+// cast it; nil while it is not held. FS-Q18Q3 §A R5.
 type ResourceState struct {
-	Kind        string `json:"kind"`
-	Current     int    `json:"current"`
-	Max         int    `json:"max"`
-	AbilityCost int    `json:"ability_cost"`
+	Kind            string `json:"kind"`
+	Current         int    `json:"current"`
+	Max             int    `json:"max"`
+	AbilityCost     int    `json:"ability_cost"`
+	TreeAbilityCost *int   `json:"tree_ability_cost,omitempty"`
 }
 
 // CooldownState is one of a delver's abilities' cooldowns as its owner is

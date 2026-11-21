@@ -62,7 +62,7 @@ function onScene() {
 }
 
 const BAR = {
-  potion: { count: 2, greyed: false },
+  potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
   tree: { locked: true },
   costChannel: "stamina",

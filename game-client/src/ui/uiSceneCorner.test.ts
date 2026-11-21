@@ -15,6 +15,8 @@ interface BuiltRow {
   icons: CornerIconSpec[];
   relayouts: number;
   destroyed: boolean;
+  /** The tree icon's marker as last set (FS-8RZ51 R33). */
+  marked?: boolean;
 }
 
 /** A world as it reports itself: its windows and its dialogue, as they are now; what it was asked. */
@@ -68,13 +70,27 @@ function aPartyPanel() {
  * its Menu handed to a stand-in for the UI scene's menu slot, which fills and empties the slot as the
  * slot reports it (R10); its Party the UI scene's own party panel.
  */
+/** The UI scene's passive tree as the row reaches it (FS-8RZ51 R32): open or shut, refused while `refused` says so. */
+function aTree() {
+  const tree = { open: false, refused: false, toggles: 0 };
+  return Object.assign(tree, {
+    isOpen: () => tree.open,
+    toggle: () => {
+      tree.toggles++;
+      if (!tree.refused) tree.open = !tree.open;
+    },
+  });
+}
+
 function onBridge() {
   const party = aPartyPanel();
   const gear = aGear();
+  const tree = aTree();
   const { bridge, heard } = heardInterfaceSounds(undefined, {
     party: () => party.isOpen(),
     inventory: () => gear.inventory,
     character: () => gear.character,
+    tree: () => tree.open,
   });
   const built: BuiltRow[] = [];
   const menuPresses: number[] = [];
@@ -91,15 +107,17 @@ function onBridge() {
         relayout: () => void b.relayouts++,
         destroy: () => void (b.destroyed = true),
         covers: (_x, _y, icon) => icon === "menu",
+        mark: (on) => void (b.marked = on),
       };
     },
     menu,
     party,
     gear,
+    tree,
   );
   const live = () => built.filter((b) => !b.destroyed);
   const press = (icon: CornerIcon) => live()[0].icons.find((spec) => spec.icon === icon)!.press?.();
-  return { bridge, heard, row, built, live, press, menuPresses, party, gear };
+  return { bridge, heard, row, built, live, press, menuPresses, party, gear, tree };
 }
 
 const shape = (icons: CornerIconSpec[]) => icons.map(({ icon, greyed }) => (greyed ? `${icon} (greyed)` : icon));
@@ -112,16 +130,16 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
     row.show(bridge.world);
 
     expect(live()).toHaveLength(1);
-    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party"]);
+    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "tree"]);
   });
 
-  it.each(["field", "run"] as const)("should build the same four in the %s, and the greyed Mailbox", (world) => {
+  it.each(["field", "run"] as const)("should build the same five in the %s, and the greyed Mailbox", (world) => {
     const { bridge, row, live } = onBridge();
     bridge.report(aWorld(world).report);
 
     row.show(bridge.world);
 
-    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "mail (greyed)"]);
+    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "tree", "mail (greyed)"]);
     expect(live()[0].icons.at(-1)!.press).toBeUndefined();
   });
 
@@ -143,7 +161,7 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
     }
     expect(built).toHaveLength(3);
     expect(live()).toEqual([]);
-    expect(built.map((b) => shape(b.icons).length)).toEqual([4, 5, 4]);
+    expect(built.map((b) => shape(b.icons).length)).toEqual([5, 6, 5]);
   });
 
   it("should rebuild on a report of another world, and keep the row standing on a report of the same one", () => {
@@ -158,7 +176,7 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
 
     expect(built).toHaveLength(2);
     expect(built[0].destroyed).toBe(true);
-    expect(shape(live()[0].icons)).toHaveLength(4);
+    expect(shape(live()[0].icons)).toHaveLength(5);
   });
 
   it("should relay the row out on a new view, and take it down with the UI scene", () => {
@@ -171,6 +189,56 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
 
     expect(built[0].relayouts).toBe(1);
     expect(built[0].destroyed).toBe(true);
+  });
+});
+
+// FS-8RZ51 R32, R33 (I-8RZ51-7): the tree icon toggles the UI scene's tree inside the scene's act, and
+// carries the marker set on the standing row
+describe("the UI scene's corner row's tree icon (FS-8RZ51 R32, R33)", () => {
+  it("should toggle the UI scene's tree inside its act, the character panel's sounds playing (R36, v1)", () => {
+    const { bridge, heard, row, press, tree } = onBridge();
+    bridge.report(aWorld("run").report);
+    row.show(bridge.world);
+
+    press("tree");
+    expect(tree.open).toBe(true);
+    expect(heard()).toEqual(["character_open"]);
+    press("tree");
+    expect(tree.open).toBe(false);
+    expect(heard()).toEqual(["character_close"]);
+  });
+
+  it("should refuse the tree icon while the menu slot is filled, and play the refusal for a toggle that changes nothing", () => {
+    const { bridge, heard, row, press, tree } = onBridge();
+    bridge.report(aWorld("hub").report);
+    row.show(bridge.world);
+    bridge.reportUi({ menuOpen: true });
+
+    press("tree");
+    expect(tree.toggles).toBe(0);
+    expect(heard()).toEqual(["menu_error"]);
+
+    bridge.reportUi({ menuOpen: false });
+    tree.refused = true;
+    press("tree");
+    expect(heard()).toEqual(["menu_error"]);
+  });
+
+  it("should set the marker on the standing row without rebuilding it, and on each row built after", () => {
+    const { bridge, row, built } = onBridge();
+    bridge.report(aWorld("hub").report);
+    row.show(bridge.world);
+
+    row.mark(true);
+    expect(built).toHaveLength(1);
+    expect(built[0].marked).toBe(true);
+    bridge.left("hub");
+    row.show(null);
+    bridge.report(aWorld("run").report);
+    row.show(bridge.world);
+    expect(built[1].marked).toBe(true);
+    row.mark(false);
+    expect(built[1].marked).toBe(false);
   });
 });
 

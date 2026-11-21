@@ -155,7 +155,7 @@ import { playFireballCast } from "@/render/effects/fireball";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
-import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
+import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
 import {
   MonsterRoster,
   phaserMonsterStage,
@@ -530,6 +530,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
+  /** The title lines under the names (FS-E1ZDG §K.41), the player's own and each other's; none before the pick. */
+  private playerTitle?: NameplateTitle;
+  private otherPlayersTitles: Map<string, NameplateTitle> = new Map();
   private otherPlayersNameTexts: Map<string, Phaser.GameObjects.Text> =
     new Map();
 
@@ -1070,6 +1073,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerPos = undefined;
     this.playerLegs = undefined;
     this.playerNameText = undefined;
+    this.playerTitle = undefined;
     this.playerAnim = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
@@ -1086,6 +1090,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.otherPlayersClass.clear();
     this.otherPlayersAnim.clear();
     this.otherPlayersNameTexts.clear();
+    this.otherPlayersTitles.clear();
     this.otherPlayersPrevHp.clear();
 
     this.buildings = [];
@@ -3128,16 +3133,18 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // username label above player
     const base = markerBase(this.player, this.playerAnim.crown, false, this.playerAnim.artScale) ?? at.y;
-    this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, {
-      fontSize: "11px",
+    const nameStyle = {
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.markerSelf),
       stroke: toCss(palette.markerStroke),
       strokeThickness: 3,
       align: "center",
-    });
+    };
+    this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, { ...nameStyle, fontSize: "11px" });
     this.playerNameText.setOrigin(0.5, 1);
     this.playerNameText.setDepth(MARKER_DEPTH.name);
+    // its words come with each state (handleGameStateUpdate)
+    this.playerTitle = new NameplateTitle(this, nameStyle);
 
     // 玩家與所有建築牆壁/門碰撞
     this.buildings.forEach((building) => {
@@ -3704,6 +3711,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.player.setVisible(false);
     this.playerLegs?.setVisible(false);
     this.playerNameText?.setVisible(false);
+    this.playerTitle?.setVisible(false);
   }
 
   private handleGameStateUpdate(state: ClientGameState): void {
@@ -3738,6 +3746,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (firstSeen) {
         this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
       }
+      // the title under the own name, from this state (FS-E1ZDG §K.41)
+      this.playerTitle?.show(state.current_player);
       // escaped, and still sent their own state until the run ends (FS-QPDKN req 24): the body
       // stays hidden; the escape plays only for a body seen in play, not on a reconnect's rebuild
       if (state.current_player.escape === true) this.hideOwnBody(!firstSeen);
@@ -4545,6 +4555,8 @@ export class BarrowspireScene extends Phaser.Scene {
           nameText.destroy();
           this.otherPlayersNameTexts.delete(playerId);
         }
+        this.otherPlayersTitles.get(playerId)?.destroy();
+        this.otherPlayersTitles.delete(playerId);
         // remove their health bar
         this.teammateHealthBars.get(playerId)?.graphics.destroy();
         this.teammateHealthBars.delete(playerId);
@@ -4600,23 +4612,26 @@ export class BarrowspireScene extends Phaser.Scene {
         if (!anim.baked) this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
         // their name, always over their head in the ally channel (FS-77AB6 req 40, FS-CH21F R13)
+        const nameStyle = {
+          fontFamily: CANVAS_FONT.body,
+          color: toCss(palette.markerAlly),
+          stroke: toCss(palette.markerStroke),
+          strokeThickness: 3,
+          align: "center",
+        };
         const nameText = this.add.text(
           sprite.x,
           (markerBase(sprite, anim.crown, false, anim.artScale) ?? sprite.y) - NAME_GAP,
           playerData.username || "Unknown",
-          {
-            fontSize: "11px",
-            fontFamily: CANVAS_FONT.body,
-            color: toCss(palette.markerAlly),
-            stroke: toCss(palette.markerStroke),
-            strokeThickness: 3,
-            align: "center",
-          },
+          { ...nameStyle, fontSize: "11px" },
         );
         nameText.setOrigin(0.5, 1);
         nameText.setDepth(MARKER_DEPTH.name);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
+        this.otherPlayersTitles.set(playerData.id, new NameplateTitle(this, nameStyle));
       }
+      // the title under their name, from this state (FS-E1ZDG §K.41)
+      this.otherPlayersTitles.get(playerData.id)?.show(playerData);
 
       // 設定目標位置，在 update() 中平滑移動
       this.otherPlayersTargets.set(playerData.id, {
@@ -5055,7 +5070,10 @@ export class BarrowspireScene extends Phaser.Scene {
       this.otherPlayersLegs.get(playerId)?.setVisible(shown);
       this.teammateHealthBars.get(playerId)?.graphics.setVisible(shown);
       // shown, the name keeps what the hover said this frame
-      if (!shown) this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
+      if (!shown) {
+        this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
+        this.otherPlayersTitles.get(playerId)?.setVisible(false);
+      }
     });
     this.monsters?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
 
@@ -5823,6 +5841,9 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && this.playerNameText) {
       if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - NAME_GAP);
       this.playerNameText.setVisible(this.player.visible && ownBase !== null);
+      // the title stands where the name was just put, the name over it; none over a corpse
+      if (ownBase !== null) this.playerTitle?.stand(this.playerNameText);
+      else this.playerTitle?.setVisible(false);
     }
 
     this.sendMovementIntent(vx, vy);
@@ -5961,6 +5982,10 @@ export class BarrowspireScene extends Phaser.Scene {
       if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
       else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
       nameText.setVisible(base !== null);
+      // the title stands where the name was just put, the name over it (FS-E1ZDG §K.41)
+      const title = this.otherPlayersTitles.get(playerId);
+      if (barTop !== null || base !== null) title?.stand(nameText);
+      else title?.setVisible(false);
     }
   }
 

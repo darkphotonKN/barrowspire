@@ -65,7 +65,7 @@ function onHud() {
 
 type HudData = HudMessage extends infer M ? (M extends HudMessage ? Omit<M, "world"> : never) : never;
 const VIEW: AbilityBarView = {
-  potion: { count: 2, greyed: false },
+  potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
   tree: { locked: true },
   costChannel: "stamina",

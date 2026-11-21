@@ -140,9 +140,12 @@ type Session struct {
 	monsterAISystem *systems.MonsterAISystem
 	// what every floor's monster AI rolls from (wander picks); injected, so a
 	// test's roll holds across floor changes
-	monsterRoll        func() float64
-	monsterDeathSystem *systems.MonsterDeathSystem
-	skillSystem        *systems.SkillSystem
+	monsterRoll func() float64
+	// the pick's one-off changes, run once as a raise makes a body a
+	// specialization (FS-E1ZDG §B R8); injected, so a test can see it run
+	specializationGained func(entity *ecs.Entity, spec string)
+	monsterDeathSystem   *systems.MonsterDeathSystem
+	skillSystem          *systems.SkillSystem
 
 	// told of every kill record, in order, on the tick that made it
 	killConsumers []KillConsumer
@@ -332,6 +335,11 @@ func withMonsterRoll(roll func() float64) sessionOption {
 	return func(s *Session) { s.monsterRoll = roll }
 }
 
+// withSpecializationGained runs gained in place of the pick's one-off changes.
+func withSpecializationGained(gained func(entity *ecs.Entity, spec string)) sessionOption {
+	return func(s *Session) { s.specializationGained = gained }
+}
+
 // newSession builds a world without starting its loops, so a test can step its
 // tick by hand. opts replace its default dependencies.
 func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds, opts ...sessionOption) *Session {
@@ -357,16 +365,17 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		visits:                   make(map[uuid.UUID]FieldVisit),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
-		playerDamage:       playerDamage,
-		movementSystem:     movementSystem,
-		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
-		monsterRoll:        rand.Float64,
-		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
-		skillSystem:        systems.NewSkillSystem(),
-		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
-		runExperience:      runExperience,
-		stopChan:           make(chan struct{}),
-		isRunning:          false,
+		playerDamage:         playerDamage,
+		movementSystem:       movementSystem,
+		combatSystem:         systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
+		monsterRoll:          rand.Float64,
+		specializationGained: gainedSpecialization,
+		monsterDeathSystem:   systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
+		skillSystem:          systems.NewSkillSystem(),
+		killConsumers:        []KillConsumer{NewKillLog(slog.Default())},
+		runExperience:        runExperience,
+		stopChan:             make(chan struct{}),
+		isRunning:            false,
 
 		worldType: bounds.Type,
 		mapWidth:  bounds.Width,
@@ -1564,7 +1573,9 @@ func (s *Session) seatedCharacterLocked(playerID uuid.UUID) (uuid.UUID, bool) {
 * lower one (FS-8RZ51 R20, R27). Only the body of characterID is raised: a body
 * seated as another character since the spend began keeps its own. Reports
 * whether a body took them. The component is replaced, never written, so a
-* frame already holding the old ranks stays whole.
+* frame already holding the old ranks stays whole. A raise that takes the body
+* from no specialization to one is the pick: its one-off changes run, once
+* (FS-E1ZDG §B R8).
 **/
 func (s *Session) RaisePassiveRanks(playerID, characterID uuid.UUID, ranks passivetree.Ranks) bool {
 	s.mu.Lock()
@@ -1578,7 +1589,11 @@ func (s *Session) RaisePassiveRanks(playerID, characterID uuid.UUID, ranks passi
 	if !ok {
 		return false
 	}
+	before := systems.Specialization(entity)
 	entity.AddComponent(components.NewPassiveRanksComponent(passivetree.Higher(systems.PassiveRanks(entity), ranks)))
+	if spec := systems.Specialization(entity); before == "" && spec != "" {
+		s.specializationGained(entity, spec)
+	}
 	return true
 }
 

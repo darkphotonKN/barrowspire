@@ -136,6 +136,10 @@ type CurrentPlayerState struct {
 	// mercenary's the whiff lockout; absent only for a delver with no ability.
 	// Never on another player. FS-Q18Q3 §A R1–R2, R6.
 	AbilityCooldown *CooldownState `json:"ability_cooldown,omitempty"`
+	// TreeAbilityCooldown is the recipient's tree ability's cooldown, a
+	// mercenary's the cut's slot; absent while they do not hold it. Never on
+	// another player. FS-Q18Q3 §A R4, R6.
+	TreeAbilityCooldown *CooldownState `json:"tree_ability_cooldown,omitempty"`
 	// PassiveState is the recipient's passive tree: the ranks their body holds
 	// and the points they have left, in every world. Never on another player.
 	// FS-8RZ51 §E R23.
@@ -184,6 +188,9 @@ type BackendGameState struct {
 	// AbilityCooldowns is each delver's right-click cooldown, attached only to
 	// the frame their own client is sent
 	AbilityCooldowns map[uuid.UUID]*CooldownState
+	// TreeAbilityCooldowns is each delver's held tree ability's cooldown,
+	// attached only to the frame their own client is sent
+	TreeAbilityCooldowns map[uuid.UUID]*CooldownState
 	// Passives is each delver's passive tree, attached only to the frame their
 	// own client is sent
 	Passives map[uuid.UUID]*PassiveState

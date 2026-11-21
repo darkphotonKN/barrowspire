@@ -5,6 +5,7 @@ import {
   NO_FACTS,
   NO_UI,
   answering,
+  gearOpened,
   lendUiBridge,
   reportWorld,
   uiBridgeOf,
@@ -616,6 +617,32 @@ describe("the UI's state in parts, heard with what it was (FS-TQZ5J § Change: P
     bridge.reportUi({ container: undefined });
 
     expect(heard).toEqual(["pile-1", undefined]);
+  });
+
+  // FS-8RZ51 R36: the tree's open state is a part of the UI's state; the world hears it change
+  it("should tell the world the tree opening and closing as a change of the UI's state", () => {
+    const bridge = new GameUiBridge();
+    const heard: (boolean | undefined)[] = [];
+    bridge.report({ world: "run", ...side(), heardUi: (ui) => void heard.push(ui.tree) });
+
+    bridge.reportUi({ tree: true });
+    bridge.reportUi({ tree: true });
+    bridge.reportUi({ tree: false });
+
+    expect(heard).toEqual([true, false]);
+  });
+});
+
+// FS-8RZ51 R36 (I-8RZ51-7): every world ends an aim as the tree opens, through the one test it reads
+describe("gearOpened (FS-TQZ5J § Change: Phase 3, R53; FS-8RZ51 R36)", () => {
+  it.each([
+    ["the inventory opening", { menuOpen: false, inventory: true }, { menuOpen: false }, true],
+    ["the character panel opening", { menuOpen: false, character: true }, { menuOpen: false }, true],
+    ["the tree opening", { menuOpen: false, tree: true }, { menuOpen: false }, true],
+    ["the tree closing", { menuOpen: false }, { menuOpen: false, tree: true }, false],
+    ["the tree staying open", { menuOpen: false, tree: true }, { menuOpen: false, tree: true }, false],
+  ])("should count %s", (_case, ui, was, opened) => {
+    expect(gearOpened(ui, was)).toBe(opened);
   });
 });
 

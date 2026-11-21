@@ -1340,11 +1340,11 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
   });
 
   // FS-Q18Q3 R29: the potion square always greyed in a field, where nothing is drunk
-  it("should grey the potion square in a field whatever is worn", () => {
+  it("should grey the potion square in a field whatever is worn, and say it is a field (FS-Q18Q3 R28)", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
     const { field } = kitOnStage({ lockedOut: false, aiming: false });
     field.renderState(archerState);
-    expect(barShownOver(field)?.potion).toEqual({ count: 0, greyed: true });
+    expect(barShownOver(field)?.potion).toEqual({ count: 0, greyed: true, field: true });
   });
 
   it("should hand its bars and its ability bar to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68; FS-Q18Q3 R40)", () => {
@@ -1424,6 +1424,7 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       target: { x, y: 0 },
       facing: "se",
       anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+      title: { show: vi.fn(), stand: vi.fn() },
       fallen: false,
     });
 
@@ -3172,5 +3173,41 @@ describe("FieldScene the XP bar along the bottom (FS-77DVN §C.13, §C.14, §A.4
     (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
 
     expect(destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FS-E1ZDG §K.41: a second, smaller line under every player's name with their title, own and others'
+describe("FieldScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
+  it("should draw the title under the name of a player who holds a spec, and none for one who does not", async () => {
+    const { ArtLibrary } = await import("@/render/art/library");
+    const field = new FieldScene() as unknown as FieldUnderTest & { art: unknown };
+    const texts: string[] = [];
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    field.add = new Proxy(
+      {},
+      {
+        get: (_, kind) => (_x: number, _y: number, content: string) => {
+          if (kind === "text") texts.push(content);
+          return any;
+        },
+      },
+    );
+    field.art = ArtLibrary.empty({ warn: () => {} });
+    field.views = new Map();
+    const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+    const entry = (entity_id: string, extra: Record<string, unknown> = {}) => ({
+      entity_id,
+      username: entity_id,
+      class: "mage",
+      position: { x: 1, y: 2 },
+      direction: { vx: 0, vy: 0, speed: 0 },
+      current_health: 100,
+      ...extra,
+    });
+
+    place.call(field, entry("Ignis", { specialization: "pyromancer" }), true);
+    place.call(field, entry("Wren"), false);
+
+    expect(texts).toEqual(["Ignis", "Mage · Pyromancer", "Wren"]);
   });
 });

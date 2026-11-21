@@ -14,24 +14,43 @@
  * Each square lays its own ground on the UI scene, so a press there is the bar's and never the world's, and
  * a move over it reaches the world only as a move on the UI (R33); the pointer over a lit square lifts its
  * bronze. At the corner row's depth (ADR-0086 Decision 4), under every window, the menu and the notices.
+ *
+ * The pointer over a square, greyed or not, shows its tooltip (§F R28; `abilityBarTip`), heard by the
+ * square's own ground's over and out, drawn in the item-tip band (2200) and taken down on leave and with the
+ * bar. A window or the menu over a square stands higher on the UI scene and takes the pointer first, so the
+ * ground hears it leave; while a tooltip shows the scene polls the pointer, so one opening over a still
+ * pointer takes it too.
+ *
+ * While a cooldown runs, a dark wedge sweeps the right-click square (§D R18–R21; `abilityCooldown`): stamped
+ * on the UI scene's clock as a `bar` message whose cooldown changed is heard (the bridge is synchronous, so
+ * that is the state's arrival, R41), run down from there by the scene's own frames, and corrected by the
+ * next. It lies on its own layer over the well's ground and under its rim, plaque and icon, and it alone is
+ * redrawn each frame, only while a sweep runs; nothing else, the tooltip included, follows the frames.
  */
 
 import type Phaser from "phaser";
 import { crispen, viewport } from "@/render/viewport";
 import { RUN_ACTIONS } from "@/scenes/runActions";
+import type { CooldownState } from "@/types/gameState";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import type { AbilityBarView } from "./abilityBarView";
 import { ABILITY_BAR_SQUARES, abilityBarFrame, type AbilityBarFrame, type AbilityBarSquare, type AbilitySquareFrame } from "./abilityBarLayout";
+import { ABILITY_TIP_MAX_W, abilityTip, abilityTipPlace } from "./abilityBarTip";
+import { cooldownSwept, sweepPolygon } from "./abilityCooldown";
+import { TREE_ABILITY_LEVEL } from "./abilityCopy";
 import { ABILITY_ICONS, drawAbilityIconLines, type AbilityIconKey } from "./abilityIcons";
 import { BRONZE, GREYED, GREYED_ALPHA, Knockout } from "./knockout";
 import type { HudChannel } from "./resources";
 import type { AbilityBarPiece } from "./uiSceneHud";
-import type { XpBarView } from "./xpBarLayout";
+import type { Point, XpBarView } from "./xpBarLayout";
 
 /** The corner row's band on the UI scene (R11; ADR-0086 Decision 4). */
 const BAR_DEPTH = 1000;
-/** The level at which the skill tree's third tier, and its ability, can first be taken (R25; FS-8RZ51). */
-export const TREE_ABILITY_LEVEL = 10;
+/** The item-tip band, over the windows and the menu (R28; ADR-0086 Decision 4). */
+const TIP_DEPTH = 2200;
+/** Inside the tooltip's rim, and between its lines. */
+const TIP_PAD = 10;
+const TIP_LINE_GAP = 4;
 /** What the locked 3 square reads in its cost slot (R25). */
 const LOCKED_LINE = `Lv ${TREE_ABILITY_LEVEL}`;
 /** The well's fill and rim (R13), the carved line inside it, and the lit rim of the active state (R17). */
@@ -40,6 +59,8 @@ const RIM_ALPHA = 0.6;
 const CARVE_INSET = 3;
 const CARVE_ALPHA = 0.5;
 const ACTIVE_RIM_W = 2;
+/** The sweep's wedge over a cooling square (R18). */
+const SWEEP_ALPHA = 0.55;
 /** The right-mouse glyph, drawn small enough to sit in its plaque (R14): the card's mouse, scaled down. */
 const MOUSE_W = 8;
 const MOUSE_H = 10;
@@ -67,6 +88,41 @@ interface SquareLook {
   corner: string | null;
 }
 
+/** The tooltip's three lines, each in the card's size and tone (R28). */
+const TIP_LINES = [
+  { part: "name", size: 16, ink: palette.hudText },
+  { part: "line", size: 13, ink: palette.hudLabel },
+  { part: "note", size: 13, ink: palette.hudFaint },
+] as const;
+
+/** The tooltip standing over a square. */
+interface ShownTip {
+  ground: Phaser.GameObjects.Graphics;
+  lines: Phaser.GameObjects.Text[];
+}
+
+/**
+ * The squares a cooldown sweeps, each read from the view (R18, R21): the right-click alone, as the potion's
+ * drink cooldown is not on the wire. The held 3 square (R26) joins with its own `cooldowns.tree`.
+ */
+const SWEPT: Partial<Record<AbilityBarSquare, (view: AbilityBarView) => CooldownState | null>> = {
+  ability: (view) => view.cooldowns.ability,
+};
+
+/** What of a Phaser Graphics the sweep draws with: its wedge's points are plain ones, as Phaser reads them. */
+interface SweepGraphics {
+  clear(): SweepGraphics;
+  fillStyle(color: number, alpha?: number): unknown;
+  fillPoints(points: Point[], closeShape?: boolean): unknown;
+  destroy(): void;
+}
+
+/** A square's cooldown as last heard, and when on the UI scene's clock. */
+interface HeardCooldown {
+  cooldown: CooldownState;
+  at: number;
+}
+
 interface DrawnSquare {
   ground: Phaser.GameObjects.Zone;
   key: Phaser.GameObjects.Text;
@@ -81,8 +137,18 @@ interface DrawnSquare {
 
 export class AbilityBar implements AbilityBarPiece {
   private frame: AbilityBarFrame;
-  private graphics?: Phaser.GameObjects.Graphics;
+  /** The wells' fill and carved line, under the sweep. */
+  private wells?: Phaser.GameObjects.Graphics;
+  /** The sweep's wedges, the one layer redrawn each frame while a cooldown runs (R18, R19). */
+  private sweep?: SweepGraphics;
+  /** Over the sweep: the rims, the plaques and the icons' line glyphs. */
+  private face?: Phaser.GameObjects.Graphics;
+  /** Each swept square's cooldown as last heard (R41). */
+  private heard: Partial<Record<AbilityBarSquare, HeardCooldown>> = {};
+  /** Listening to the UI scene's frames, exactly while a sweep runs. */
+  private ticking = false;
   private squares?: Record<AbilityBarSquare, DrawnSquare>;
+  private tip?: ShownTip;
   /** What the bar last drew, so the states that change nothing redraw nothing. */
   private shown: AbilityBarView | null = null;
 
@@ -97,6 +163,7 @@ export class AbilityBar implements AbilityBarPiece {
     if (JSON.stringify(view) === JSON.stringify(this.shown)) return;
     this.shown = view;
     if (!view) return this.takeDown();
+    this.hear(view);
     this.draw();
   }
 
@@ -122,27 +189,69 @@ export class AbilityBar implements AbilityBarPiece {
     this.shown = null;
   }
 
+  /** Stamps each swept square's cooldown that changed with the time it is heard; one unchanged keeps its stamp (R19, R41). */
+  private hear(view: AbilityBarView): void {
+    for (const [s, of] of Object.entries(SWEPT) as [AbilityBarSquare, (v: AbilityBarView) => CooldownState | null][]) {
+      const cooldown = of(view);
+      const was = this.heard[s]?.cooldown;
+      if (!cooldown) delete this.heard[s];
+      else if (!was || was.remaining !== cooldown.remaining || was.total !== cooldown.total)
+        this.heard[s] = { cooldown: { ...cooldown }, at: this.scene.time.now };
+    }
+  }
+
+  /** The wedges as they stand on the UI scene's clock now; listening to the frames exactly while one runs. */
+  private readonly drawSweep = (): void => {
+    const g = this.sweep?.clear();
+    let running = false;
+    if (g)
+      for (const [s, heard] of Object.entries(this.heard) as [AbilityBarSquare, HeardCooldown][]) {
+        const points = sweepPolygon(this.frame.squares[s].well, cooldownSwept(heard.cooldown, heard.at, this.scene.time.now));
+        if (points.length === 0) continue;
+        running = true;
+        g.fillStyle(palette.ink, SWEEP_ALPHA);
+        g.fillPoints(points, true);
+      }
+    this.tick(running);
+  };
+
+  private tick(on: boolean): void {
+    if (on === this.ticking) return;
+    this.ticking = on;
+    if (on) this.scene.events.on("update", this.drawSweep);
+    else this.scene.events.off("update", this.drawSweep);
+  }
+
   private draw(): void {
     const view = this.shown;
     if (!view) return;
     const squares = (this.squares ??= this.build());
-    const g = this.graphics!.clear();
+    const wells = this.wells!.clear();
+    const face = this.face!.clear();
     for (const s of ABILITY_BAR_SQUARES) {
       const drawn = squares[s];
       drawn.look = lookOf(s, view);
-      this.drawSquare(g, this.frame.squares[s], drawn);
+      this.drawSquare(wells, face, this.frame.squares[s], drawn);
     }
+    this.drawSweep();
     // moved by a re-layout after a render-scale change: rasterised again (FS-ZAJMH R5)
     crispen(ABILITY_BAR_SQUARES.flatMap((s) => [squares[s].key, squares[s].under, squares[s].corner]));
+    this.drawTip();
   }
 
-  private drawSquare(g: Phaser.GameObjects.Graphics, f: AbilitySquareFrame, drawn: DrawnSquare): void {
+  /** A square: its well on `wells`, under the sweep; its rim, plaque and icon over it on `g`, the face. */
+  private drawSquare(
+    wells: Phaser.GameObjects.Graphics,
+    g: Phaser.GameObjects.Graphics,
+    f: AbilitySquareFrame,
+    drawn: DrawnSquare,
+  ): void {
     const look = drawn.look!;
     const { well, plaque } = f;
-    g.fillStyle(palette.hudPanel, WELL_ALPHA);
-    g.fillRect(well.x, well.y, well.width, well.height);
-    g.lineStyle(1, palette.hudPanelDeep, CARVE_ALPHA);
-    g.strokeRect(well.x + CARVE_INSET, well.y + CARVE_INSET, well.width - CARVE_INSET * 2, well.height - CARVE_INSET * 2);
+    wells.fillStyle(palette.hudPanel, WELL_ALPHA);
+    wells.fillRect(well.x, well.y, well.width, well.height);
+    wells.lineStyle(1, palette.hudPanelDeep, CARVE_ALPHA);
+    wells.strokeRect(well.x + CARVE_INSET, well.y + CARVE_INSET, well.width - CARVE_INSET * 2, well.height - CARVE_INSET * 2);
     if (look.active) g.lineStyle(ACTIVE_RIM_W, palette.frameBright, 1);
     else g.lineStyle(1, palette.frame, RIM_ALPHA);
     g.strokeRect(well.x, well.y, well.width, well.height);
@@ -199,7 +308,10 @@ export class AbilityBar implements AbilityBarPiece {
 
   /** The bar's objects, made once while it is up; only their content changes. */
   private build(): Record<AbilityBarSquare, DrawnSquare> {
-    this.graphics = this.scene.add.graphics().setScrollFactor(0).setDepth(BAR_DEPTH);
+    // made in this order, so at one depth the sweep stands over the wells and under the face and the icons
+    this.wells = this.scene.add.graphics().setScrollFactor(0).setDepth(BAR_DEPTH);
+    this.sweep = this.scene.add.graphics().setScrollFactor(0).setDepth(BAR_DEPTH);
+    this.face = this.scene.add.graphics().setScrollFactor(0).setDepth(BAR_DEPTH);
     const made = ABILITY_BAR_SQUARES.map((s) => {
       const f = this.frame.squares[s];
       const ground = groundOf(this.frame, f);
@@ -226,10 +338,62 @@ export class AbilityBar implements AbilityBarPiece {
   private hover(f: AbilitySquareFrame, drawn: DrawnSquare, on: boolean): void {
     if (drawn.hovered === on) return;
     drawn.hovered = on;
-    if (!this.shown || !drawn.look?.icon) return;
+    const look = drawn.look;
     // the knockout alone is re-inked; a line glyph is drawn with every square, so the bar is drawn again
-    if (drawn.knockout?.show(f.icon, on || drawn.look.active)) return;
-    this.draw();
+    if (this.shown && look?.icon && !drawn.knockout?.show(f.icon, on || look.active)) return this.draw();
+    this.drawTip();
+  }
+
+  /** The hovered square's tooltip, drawn anew from the view (R28); none where nothing is hovered or it has none. */
+  private drawTip(): void {
+    this.takeTipDown();
+    const s = ABILITY_BAR_SQUARES.find((sq) => this.squares?.[sq].hovered);
+    const tip = s && this.shown && abilityTip(s, this.shown);
+    if (!s || !tip) return;
+    // the ground first, so the words stand over it in the same band
+    const ground = this.scene.add.graphics().setScrollFactor(0).setDepth(TIP_DEPTH);
+    const lines = TIP_LINES.flatMap(({ part, size, ink }) => {
+      const words = tip[part];
+      return words ? [this.tipText(words, size, ink)] : [];
+    });
+    const width = Math.min(ABILITY_TIP_MAX_W, Math.ceil(Math.max(...lines.map((t) => t.width))) + TIP_PAD * 2);
+    const textH = lines.reduce((h, t) => h + Math.ceil(t.height), 0) + TIP_LINE_GAP * (lines.length - 1);
+    const height = textH + TIP_PAD * 2;
+    const at = abilityTipPlace(this.frame, s, { width, height }, this.view);
+    ground.fillStyle(palette.hudPanel, WELL_ALPHA);
+    ground.fillRect(at.x, at.y, width, height);
+    ground.lineStyle(1, palette.frame, RIM_ALPHA);
+    ground.strokeRect(at.x, at.y, width, height);
+    let y = at.y + TIP_PAD;
+    for (const t of lines) {
+      t.setPosition(at.x + TIP_PAD, y);
+      y += Math.ceil(t.height) + TIP_LINE_GAP;
+    }
+    crispen(lines);
+    this.tip = { ground, lines };
+    // heard every frame while it shows: a window or the menu opening over a still pointer takes it (R28)
+    this.scene.input.setPollAlways();
+  }
+
+  /** A tooltip line in the body serif, wrapping inside the tooltip's widest. */
+  private tipText(words: string, size: number, ink: number): Phaser.GameObjects.Text {
+    return this.scene.add
+      .text(0, 0, words, {
+        fontFamily: CANVAS_FONT.body,
+        fontSize: `${size}px`,
+        color: toCss(ink),
+        wordWrap: { width: ABILITY_TIP_MAX_W - TIP_PAD * 2, useAdvancedWrap: true },
+      })
+      .setScrollFactor(0)
+      .setDepth(TIP_DEPTH);
+  }
+
+  private takeTipDown(): void {
+    if (!this.tip) return;
+    this.tip.ground.destroy();
+    for (const t of this.tip.lines) t.destroy();
+    this.tip = undefined;
+    this.scene.input.setPollOnMove();
   }
 
   /** A 12 px body-serif word: a plaque's key in its panel, or a bare stroked numeral over the world (R14, R15). */
@@ -247,6 +411,9 @@ export class AbilityBar implements AbilityBarPiece {
   }
 
   private takeDown(): void {
+    this.tick(false);
+    this.heard = {};
+    this.takeTipDown();
     if (this.squares)
       for (const s of ABILITY_BAR_SQUARES) {
         const drawn = this.squares[s];
@@ -256,8 +423,8 @@ export class AbilityBar implements AbilityBarPiece {
         drawn.under.destroy();
         drawn.corner.destroy();
       }
-    this.graphics?.destroy();
-    this.graphics = undefined;
+    for (const g of [this.wells, this.sweep, this.face]) g?.destroy();
+    this.wells = this.sweep = this.face = undefined;
     this.squares = undefined;
   }
 }

@@ -122,12 +122,16 @@ export class UiGearSlot {
   private alive = { on: false };
   /** The level the world last handed (R52). */
   private lastLevel: number | undefined;
+  /** The panels as last reported, so an opening is told once (FS-8RZ51 R36). */
+  private reported = { inventory: false, character: false };
 
   constructor(
     private readonly bridge: GearBridge,
     private readonly build: (world: World, wiring: GearWiring) => GearPieces,
     /** The UI scene's gameplay effects player, handed to each world's pieces (FS-AND39 R5, R7). */
     private readonly sounds: GameplaySoundPlayer = SILENT,
+    /** A gear panel opened: the UI scene's passive tree closes (FS-8RZ51 R36). */
+    private readonly opened: () => void = () => {},
   ) {}
 
   /**
@@ -296,9 +300,12 @@ export class UiGearSlot {
   /** The UI's state, as the pieces stand now (R53). */
   private report(): void {
     const gear = this.pieces?.gear;
+    const now = { inventory: gear?.isInventoryOpen() ?? false, character: gear?.isCharacterOpen() ?? false };
+    const was = this.reported;
+    this.reported = now;
+    if ((now.inventory && !was.inventory) || (now.character && !was.character)) this.opened();
     this.bridge.reportUi({
-      inventory: gear?.isInventoryOpen() ?? false,
-      character: gear?.isCharacterOpen() ?? false,
+      ...now,
       stash: gear?.stashOpen() ?? false,
       container: this.pieces?.container?.entityId,
     });

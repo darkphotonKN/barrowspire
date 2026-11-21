@@ -10,16 +10,18 @@ const CLOSED: WorldWindows = { letter: false };
  * gear overlay (§ Change: Phase 2: the party, R39; § Change: Phase 3, R55).
  */
 function town() {
-  const windows: { -readonly [K in keyof WorldWindows]: boolean } & { party: boolean; inventory: boolean; character: boolean } = {
+  const windows: { -readonly [K in keyof WorldWindows]: boolean } & { party: boolean; inventory: boolean; character: boolean; tree: boolean } = {
     ...CLOSED,
     party: false,
     inventory: false,
     character: false,
+    tree: false,
   };
   const { bridge, sounds, heard } = heardInterfaceSounds(undefined, {
     party: () => windows.party,
     inventory: () => windows.inventory,
     character: () => windows.character,
+    tree: () => windows.tree,
   });
   let reads = 0;
   bridge.report({
@@ -109,6 +111,20 @@ describe("the interface sounds on the UI scene, heard through the UI bridge (FS-
     expect(t.heard()).toEqual(["settings_open"]);
     t.bridge.act(() => t.bridge.reportUi({ menuOpen: false }));
     expect(t.heard()).toEqual(["settings_close"]);
+  });
+
+  // FS-8RZ51 R36: the tree is one more window, playing the character panel's sounds (v1)
+  it("should play the character panel's open and close for the UI scene's own tree", () => {
+    const t = town();
+    t.windows.inventory = true;
+
+    t.bridge.act(() => {
+      t.windows.inventory = false;
+      t.windows.tree = true;
+    });
+    expect(t.heard()).toEqual(["character_open"]);
+    t.bridge.act(() => void (t.windows.tree = false));
+    expect(t.heard()).toEqual(["character_close"]);
   });
 
   it("should hand back what the world's action returns", () => {

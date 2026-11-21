@@ -36,6 +36,19 @@ const CLASS_NAMES: Record<ClassKey, string> = {
 };
 
 /**
+ * The specialization a character of `className` holding `specialization` is: none before the pick,
+ * and none for an id the client does not know or one of another class (FS-E1ZDG §Edge States).
+ */
+export function specializationOf(
+  className: string,
+  specialization: string | undefined,
+): SpecializationId | undefined {
+  if (!specialization || !Object.hasOwn(SPECIALIZATIONS, specialization)) return undefined;
+  const id = specialization as SpecializationId;
+  return SPECIALIZATIONS[id].class === className.toLowerCase() ? id : undefined;
+}
+
+/**
  * The character's title, "Warrior · Berserker" (FS-E1ZDG §K.37). None before the pick, and none
  * for an id the client does not know or one of another class: such a character shows its class
  * name alone.
@@ -44,10 +57,21 @@ export function characterTitle(
   className: string,
   specialization: string | undefined,
 ): string | undefined {
-  if (!specialization || !Object.hasOwn(SPECIALIZATIONS, specialization)) return undefined;
-  const spec = SPECIALIZATIONS[specialization as SpecializationId];
-  if (spec.class !== className) return undefined;
+  const id = specializationOf(className, specialization);
+  if (!id) return undefined;
+  const spec = SPECIALIZATIONS[id];
   return `${CLASS_NAMES[spec.class]} · ${spec.name}`;
+}
+
+/**
+ * The title line a world draws under a player's name over their figure, their own and others'
+ * (FS-E1ZDG §K.41), from the player's entry in the world state: none, no line. The town, the
+ * fields and the runs all draw this one rule.
+ */
+export function nameplateTitle(
+  player: { class: string; specialization?: string },
+): string | undefined {
+  return characterTitle(player.class, player.specialization);
 }
 
 /**

@@ -1,7 +1,7 @@
 /**
  * The corner row's geometry and words (FS-3EBCA §A R1, R2, R5; §C R13): the panel icons in the
  * bottom-right corner of every world, from the right edge leftward Menu, Inventory, Character,
- * Party and the Mailbox, each the envelope's plate, the same places in every world. Phaser-free, so the
+ * Party, the Mailbox and the passive tree (FS-8RZ51 R32), each the envelope's plate, the same places in every world. Phaser-free, so the
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
@@ -19,15 +19,19 @@ export interface CornerView {
   height: number;
 }
 
-export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail";
+export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail" | "tree";
 
-/** The row from the right edge leftward (R1; the owner's row of five, 2026-11-12). */
+/**
+ * The row from the right edge leftward (R1; the owner's row of five, 2026-11-12), the passive tree's
+ * sixth at its left end (FS-8RZ51 R32), so none of the five moves.
+ */
 export const CORNER_ICONS: readonly CornerIcon[] = [
   "menu",
   "inventory",
   "character",
   "party",
   "mail",
+  "tree",
 ];
 
 /**
@@ -90,6 +94,7 @@ export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {
   character: "Character (C)",
   party: "Party (T)",
   mail: "Mailbox",
+  tree: "Tree (P)",
 };
 /** The greyed Mailbox outside the town (R9). */
 export const CORNER_LABEL_GREYED_MAIL = "Mailbox · town only";
