@@ -1,11 +1,12 @@
 /**
  * The ability bar's view (FS-Q18Q3 §E, §G, §L R40): the three squares as the world judges them from its
- * latest state and what only its combat knows (the client's lockout, the Shadow Shot hold), handed to the
- * UI scene as plain data, with no function and no Phaser object (ADR-0086 Decision 3). Pure, so every rule
+ * latest state and what only its combat knows (the client's lockout, the Shadow Shot hold, key 3's gate),
+ * handed to the UI scene as plain data, with no function and no Phaser object (ADR-0086 Decision 3). Pure, so every rule
  * is tested without a canvas; `AbilityBar` on the UI scene draws what this returns. The copy lives in
  * `./abilityCopy`, and the UI side looks it up from the keys the view carries.
  */
 
+import { treeAbilityOf, treeAbilityReady } from "@/render/combat/treeAbility";
 import type { ClientGameState, CooldownState, PlayerState, ResourceState } from "@/types/gameState";
 import type { AbilityIconKey } from "./abilityIcons";
 import { resolved } from "./party";
@@ -41,9 +42,22 @@ export interface PotionSquareView {
   field: boolean;
 }
 
-/** The 3 square (R25): locked until the character holds its tree's ability (the held square is FS-Q18Q3 R26's). */
+/**
+ * The 3 square (R25, R26): locked until the character holds its tree's ability (`tree_ability_cooldown` on
+ * the wire), then held, its icon the class's tree ability, its cost under it, greyed exactly where key 3
+ * would send nothing (`treeAbilityReady`, FS-04EEA R36). Never active (R26).
+ */
 export interface TreeSquareView {
-  locked: true;
+  locked: boolean;
+  /**
+   * The class's tree ability, by its icon key, or none for a class with none (R27): held, the picture drawn;
+   * locked and held alike, the key its tooltip copy is looked up by (R28). Locked, the padlock is drawn.
+   */
+  ability: AbilityIconKey | null;
+  /** Always while locked. */
+  greyed: boolean;
+  /** `resource.tree_ability_cost` to draw under it, or none (locked, a cost of 0, or no resource, R15). */
+  cost: number | null;
 }
 
 /** The bar as the world hands it to the UI scene (R40). */
@@ -110,7 +124,7 @@ function liveBar(me: PlayerState, ctx: AbilityBarContext): AbilityBarView {
       cost: costOf(resource),
       ...(me.specialization && { specialization: me.specialization }),
     },
-    tree: { locked: true },
+    tree: treeSquare(me),
     costChannel: resource ? resourceBar(resource).channel : null,
     cooldowns: { ability: me.ability_cooldown ?? null, tree: me.tree_ability_cooldown ?? null },
   };
@@ -126,8 +140,21 @@ function heldBar(me: PlayerState, ctx: AbilityBarContext): AbilityBarView {
     ...live,
     potion: { ...live.potion, greyed: true },
     ability: { ...live.ability, greyed: true, active: false },
+    tree: { ...live.tree, greyed: true },
     cooldowns: { ability: null, tree: null },
   };
+}
+
+/**
+ * The 3 square of `me` (R25, R26): held once `tree_ability_cooldown` is on the wire, whatever cost rides
+ * beside it, and then greyed by the one gate key 3's send reads (held, off cooldown, affordable), so the
+ * square and the send never disagree. FS-04EEA keeps no key-3 client lockout of its own.
+ */
+function treeSquare(me: PlayerState): TreeSquareView {
+  const ability = treeAbilityOf(me.class);
+  if (!me.tree_ability_cooldown) return { locked: true, ability, greyed: true, cost: null };
+  const cost = me.resource?.tree_ability_cost ?? 0;
+  return { locked: false, ability, greyed: !treeAbilityReady(me.class, me), cost: cost > 0 ? cost : null };
 }
 
 function iconOf(cls: string | undefined): AbilityIconKey | null {

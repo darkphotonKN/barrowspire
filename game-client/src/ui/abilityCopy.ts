@@ -75,7 +75,7 @@ export const TREE_ABILITY_LEVEL = 10;
 
 /**
  * The 3 square's third line while it stands locked (FS-Q18Q3 R28), under the class's tree ability's name and
- * line from `TREE_ABILITY_COPY` (FS-04EEA R50); until the tooltip reads them, it reads this line alone.
+ * line from `TREE_ABILITY_COPY` (FS-04EEA R50); alone for a class with none.
  */
 export const TREE_LOCKED_NOTE = `Learned at the skill tree's third tier, from level ${TREE_ABILITY_LEVEL}.`;
 

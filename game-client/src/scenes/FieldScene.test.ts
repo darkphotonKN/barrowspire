@@ -1428,7 +1428,31 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(told.some((m) => ["ability", "potion"].includes((m as { kind: string }).kind))).toBe(false);
     expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
     // the UI scene's bar, drawn from it
-    expect(drawn).toHaveBeenCalledWith(expect.objectContaining({ tree: { locked: true } }));
+    expect(drawn).toHaveBeenCalledWith(expect.objectContaining({ tree: { locked: true, ability: "arrow_rain", greyed: true, cost: null } }));
+  });
+
+  // FS-Q18Q3 R26, R40: once the tree ability is held, the field's bar message carries the held 3 square
+  it("should send the held 3 square once tree_ability_cooldown is on the wire, greyed by cost and cooldown (FS-Q18Q3 R26)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
+    const told: unknown[] = [];
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    const holding = (resource: Record<string, unknown>, remaining = 0) => ({
+      ...archerState,
+      current_player: {
+        ...archerState.current_player,
+        passive_ranks: { "archer.t3": 1 },
+        tree_ability_cooldown: { remaining, total: 12 },
+        resource: { ...archerState.current_player.resource, ...resource },
+      },
+    });
+    const lastTree = () => (told.filter((m) => (m as { kind: string }).kind === "bar").at(-1) as { bar: { tree: unknown } }).bar.tree;
+    field.renderState(holding({ tree_ability_cost: 40 }));
+    expect(lastTree()).toEqual({ locked: false, ability: "arrow_rain", greyed: false, cost: 40 });
+    field.renderState(holding({ current: 30, tree_ability_cost: 40 }));
+    expect(lastTree()).toEqual({ locked: false, ability: "arrow_rain", greyed: true, cost: 40 });
+    field.renderState(holding({ tree_ability_cost: 40 }, 6));
+    expect(lastTree()).toEqual({ locked: false, ability: "arrow_rain", greyed: true, cost: 40 });
   });
 
   it("should take the bar down while the player lies fallen, as the bars (FS-Q18Q3 R30)", () => {

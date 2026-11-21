@@ -64,7 +64,7 @@ function onScene() {
 const BAR = {
   potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
-  tree: { locked: true },
+  tree: { locked: true, ability: "earthbreaker", greyed: true, cost: null },
   costChannel: "stamina",
   cooldowns: { ability: null, tree: null },
 } as const;

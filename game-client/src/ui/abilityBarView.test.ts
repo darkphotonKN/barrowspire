@@ -191,8 +191,59 @@ describe("abilityBar: the potion square (FS-Q18Q3 §E R24, §G R29)", () => {
 
 describe("abilityBar: the 3 square, locked (FS-Q18Q3 §E R25)", () => {
   it("should be locked with no tree_ability_cooldown on the wire, a tree_ability_cost beside it or not", () => {
-    expect(abilityBar(run(), inRun)?.tree).toEqual({ locked: true });
-    expect(abilityBar(run({ resource: { ...stamina(100), tree_ability_cost: 40 } }), inRun)?.tree).toEqual({ locked: true });
+    const locked = { locked: true, ability: "earthbreaker", greyed: true, cost: null };
+    expect(abilityBar(run(), inRun)?.tree).toEqual(locked);
+    expect(abilityBar(run({ resource: { ...stamina(100), tree_ability_cost: 40 } }), inRun)?.tree).toEqual(locked);
+  });
+});
+
+// FS-Q18Q3 §E R26: once tree_ability_cooldown is on the wire, the class's tree ability, its cost and its
+// greying, judged by the same gate key 3's send reads (FS-04EEA R36, `treeAbilityReady`)
+describe("abilityBar: the 3 square, held (FS-Q18Q3 §E R26, §C R15)", () => {
+  const held = (cls: string, fields: Partial<PlayerState> = {}) =>
+    run({ class: cls, passive_ranks: { [`${cls}.t3`]: 1 }, tree_ability_cooldown: { remaining: 0, total: 0 }, ...fields });
+
+  it("should give a held, greyed Earthbreaker reading 40 to a warrior short of its cost", () => {
+    const state = held("warrior", { resource: { ...stamina(30), tree_ability_cost: 40 } });
+    expect(abilityBar(state, inRun)?.tree).toEqual({ locked: false, ability: "earthbreaker", greyed: true, cost: 40 });
+  });
+
+  it.each([
+    ["warrior", "earthbreaker"],
+    ["mage", "blink"],
+    ["archer", "arrow_rain"],
+    ["mercenary", "settle_the_debt"],
+  ] as const)("should light a %s's %s when it is affordable and off cooldown", (cls, ability) => {
+    const state = held(cls, { resource: { ...stamina(40), tree_ability_cost: 40 } });
+    expect(abilityBar(state, inRun)?.tree).toEqual({ locked: false, ability, greyed: false, cost: 40 });
+  });
+
+  it("should grey while its cooldown runs, and hand the cooldown on for the sweep (R18)", () => {
+    const cd = { remaining: 3, total: 8 };
+    const bar = abilityBar(held("mage", { resource: { ...stamina(100), tree_ability_cost: 30 }, tree_ability_cooldown: cd }), inRun);
+    expect(bar?.tree).toMatchObject({ locked: false, greyed: true });
+    expect(bar?.cooldowns.tree).toEqual(cd);
+  });
+
+  it("should grey a mercenary's square during the cut's slot and read cost 1", () => {
+    const parry: ResourceState = { kind: "parry_charges", current: 2, max: 3, ability_cost: 0, tree_ability_cost: 1 };
+    const cutting = held("mercenary", { resource: parry, tree_ability_cooldown: { remaining: 0.2, total: 0.25 } });
+    expect(abilityBar(cutting, inRun)?.tree).toEqual({ locked: false, ability: "settle_the_debt", greyed: true, cost: 1 });
+    expect(abilityBar({ ...cutting, current_player: { ...cutting.current_player!, tree_ability_cooldown: { remaining: 0, total: 0.25 } } }, inRun)?.tree)
+      .toEqual({ locked: false, ability: "settle_the_debt", greyed: false, cost: 1 });
+  });
+
+  it("should agree with the key-3 gate: never lit where the send would be refused", () => {
+    // the node not held, so key 3 sends nothing: the square says so
+    expect(abilityBar(held("warrior", { passive_ranks: {} }), inRun)?.tree.greyed).toBe(true);
+  });
+
+  it("should draw no cost and grey by no cost with no resource on the wire (Edge States)", () => {
+    expect(abilityBar(held("warrior", { resource: undefined }), inRun)?.tree).toEqual({ locked: false, ability: "earthbreaker", greyed: false, cost: null });
+  });
+
+  it("should give a class with no tree ability an empty held square (R27)", () => {
+    expect(abilityBar(held("necromancer"), inRun)?.tree).toMatchObject({ locked: false, ability: null, greyed: true });
   });
 });
 
@@ -223,10 +274,20 @@ describe("runOwnHud (FS-QPDKN R168; FS-Q18Q3 R30)", () => {
     expect(hud.bar).toEqual({
       potion: { count: 2, greyed: true, field: false },
       ability: { icon: "shadow_shot", greyed: true, active: false, cost: 25 },
-      tree: { locked: true },
+      tree: { locked: true, ability: "arrow_rain", greyed: true, cost: null },
       costChannel: "stamina",
       cooldowns: { ability: null, tree: null },
     });
+  });
+
+  it("should hold a held 3 square greyed, its cost as that state had it, no sweep", () => {
+    const hud = runOwnHud(
+      run({ current_health: 0, passive_ranks: { "warrior.t3": 1 }, tree_ability_cooldown: { remaining: 2, total: 8 }, resource: { ...stamina(100), tree_ability_cost: 40 } }),
+      undefined,
+      inRun,
+    );
+    expect(hud.bar?.tree).toEqual({ locked: false, ability: "earthbreaker", greyed: true, cost: 40 });
+    expect(hud.bar?.cooldowns.tree).toBeNull();
   });
 
   it("should give back what is held, whatever the state says", () => {

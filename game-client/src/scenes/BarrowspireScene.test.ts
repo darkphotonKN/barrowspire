@@ -2743,11 +2743,19 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
 });
 
 describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
-  type Resource = { kind: string; current: number; max: number; ability_cost: number };
+  type Resource = { kind: string; current: number; max: number; ability_cost: number; tree_ability_cost?: number };
   type Cooldown = { remaining: number; total: number };
   const stamina = (current: number): Resource => ({ kind: "stamina", current, max: 100, ability_cost: 25 });
   const me = (
-    fields: { class?: string; resource?: Resource; escape?: boolean; current_health?: number; ability_cooldown?: Cooldown } = {},
+    fields: {
+      class?: string;
+      resource?: Resource;
+      escape?: boolean;
+      current_health?: number;
+      ability_cooldown?: Cooldown;
+      passive_ranks?: Record<string, number>;
+      tree_ability_cooldown?: Cooldown;
+    } = {},
   ) => ({
     ...player("me", "Aldric", 130),
     resource: stamina(100),
@@ -2909,6 +2917,44 @@ describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
       cooldowns: { ability: null, tree: null },
     });
     expect(said("Lv 10")).toBeDefined();
+  });
+
+  // FS-Q18Q3 R26, R40: the held 3 square rides the run's bar message, greyed by cost and cooldown by the
+  // gate key 3's send reads, and held greyed with the rest at a death (R30)
+  describe("the held 3 square (FS-Q18Q3 R26)", () => {
+    const holding = (fields: Parameters<typeof me>[0] = {}) =>
+      me({
+        passive_ranks: { "warrior.t3": 1 },
+        tree_ability_cooldown: { remaining: 0, total: 8 },
+        resource: { ...stamina(100), tree_ability_cost: 40 },
+        ...fields,
+      });
+
+    it("should send the warrior's Earthbreaker with its cost once tree_ability_cooldown is on the wire, the padlock gone", () => {
+      const { run, shown, said } = barOnStage();
+      run.handleGameStateUpdate(withMe(holding()));
+      expect(shown()?.tree).toEqual({ locked: false, ability: "earthbreaker", greyed: false, cost: 40 });
+      expect(shown()?.cooldowns.tree).toEqual({ remaining: 0, total: 8 });
+      expect(said("Lv 10")).toBeUndefined();
+      expect(said("40")).toBeDefined();
+    });
+
+    it.each([
+      ["short of its cost", { resource: { ...stamina(30), tree_ability_cost: 40 } }],
+      ["cooling down", { tree_ability_cooldown: { remaining: 3, total: 8 } }],
+    ])("should grey it %s", (_, fields) => {
+      const { run, shown } = barOnStage();
+      run.handleGameStateUpdate(withMe(holding(fields)));
+      expect(shown()?.tree).toMatchObject({ locked: false, greyed: true, cost: 40 });
+    });
+
+    it("should hold it greyed with the rest at a death mid-cooldown, no sweep", () => {
+      const { run, shown } = barOnStage();
+      run.handleGameStateUpdate(withMe(holding({ tree_ability_cooldown: { remaining: 3, total: 8 } })));
+      run.handleGameStateUpdate(withMe(holding({ current_health: 0, tree_ability_cooldown: { remaining: 3, total: 8 } })));
+      expect(shown()?.tree).toEqual({ locked: false, ability: "earthbreaker", greyed: true, cost: 40 });
+      expect(shown()?.cooldowns.tree).toBeNull();
+    });
   });
 
   it("should hand the bar to the UI scene, then tell the badge it is live, and build none (FS-Q18Q3 R40–R42)", () => {

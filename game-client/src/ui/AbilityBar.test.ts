@@ -141,7 +141,7 @@ function fakeScene() {
 const VIEW: AbilityBarView = {
   potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
-  tree: { locked: true },
+  tree: { locked: true, ability: "earthbreaker", greyed: true, cost: null },
   costChannel: "stamina",
   cooldowns: { ability: null, tree: null },
 };
@@ -325,6 +325,75 @@ describe("AbilityBar: the 3 square, locked (FS-Q18Q3 §E R25)", () => {
     expect(knockoutOf("locked")!.deps.ink).toBe(GREYED);
     expect(textAt(texts(), ...plaqueCentre(plaque))).toMatchObject({ words: "3", color: toCss(palette.hudFaint) });
     expect(textAt(texts(), ...costCentre(cost))).toMatchObject({ words: "Lv 10", color: toCss(palette.hudFaint) });
+    expect(knockoutOf("earthbreaker")).toBeUndefined();
+  });
+});
+
+describe("AbilityBar: the 3 square, held (FS-Q18Q3 §E R26, §C R15–R17)", () => {
+  const HELD: AbilityBarView["tree"] = { locked: false, ability: "earthbreaker", greyed: false, cost: 40 };
+  const held = (fields: Partial<AbilityBarView["tree"]> = {}, rest: Partial<AbilityBarView> = {}) =>
+    view({ tree: { ...HELD, ...fields }, ...rest });
+
+  it("should draw the class's tree ability as a bronze knockout in its slot, no padlock, the key lit", () => {
+    const { scene, texts } = fakeScene();
+    new AbilityBar(scene).show(held());
+    const { icon, plaque } = frame().squares.tree;
+    expect(knockoutOf("earthbreaker")!.deps).toMatchObject({ ink: BRONZE, depth: 1000 });
+    expect(knockoutOf("earthbreaker")!.shows.at(-1)).toEqual({ f: icon, hovered: false });
+    expect(knockoutOf("locked")).toBeUndefined();
+    expect(textAt(texts(), ...plaqueCentre(plaque))).toMatchObject({ words: "3", color: toCss(palette.hudText) });
+  });
+
+  it.each([
+    ["stamina", palette.hudStamina],
+    ["mana", palette.hudMana],
+    ["parry", palette.hudParry],
+    ["unknown", palette.hudText],
+  ] as const)("should set its cost under it, a bare stroked numeral in the %s channel's colour", (channel, ink) => {
+    const { scene, texts } = fakeScene();
+    new AbilityBar(scene).show(held({}, { costChannel: channel }));
+    const cost = textAt(texts(), ...costCentre(frame().squares.tree.cost));
+    expect(cost).toMatchObject({ words: "40", color: toCss(ink) });
+    expect(cost?.style).toMatchObject({ fontSize: "12px", strokeThickness: 2 });
+  });
+
+  it("should grey it: the unavailable ink, the key and the cost faint", () => {
+    const { scene, texts } = fakeScene();
+    new AbilityBar(scene).show(held({ greyed: true }));
+    const { plaque, cost } = frame().squares.tree;
+    expect(knockoutOf("earthbreaker")!.deps.ink).toBe(GREYED);
+    expect(textAt(texts(), ...plaqueCentre(plaque))?.color).toBe(toCss(palette.hudFaint));
+    expect(textAt(texts(), ...costCentre(cost))).toMatchObject({ words: "40", color: toCss(palette.hudFaint) });
+  });
+
+  it("should draw no cost for none, and read a mercenary's 1 in the parry colour", () => {
+    const none = fakeScene();
+    new AbilityBar(none.scene).show(held({ cost: null }));
+    expect(textAt(none.texts(), ...costCentre(frame().squares.tree.cost))?.words).toBe("");
+    const merc = fakeScene();
+    new AbilityBar(merc.scene).show(held({ ability: "settle_the_debt", cost: 1 }, { costChannel: "parry", ability: { ...VIEW.ability, icon: "parry", cost: null } }));
+    expect(knockoutOf("settle_the_debt")).toBeDefined();
+    expect(textAt(merc.texts(), ...costCentre(frame().squares.tree.cost))).toMatchObject({ words: "1", color: toCss(palette.hudParry) });
+  });
+
+  it("should draw an empty well with its plaque for a class with no tree ability, and nothing fails (R27)", () => {
+    const { scene, texts } = fakeScene();
+    new AbilityBar(scene).show(held({ ability: null, greyed: true, cost: null }));
+    expect(knockouts.map((k) => k.deps.picture)).toEqual([ABILITY_ICONS.potion.picture, ABILITY_ICONS.dash.picture]);
+    expect(textAt(texts(), ...plaqueCentre(frame().squares.tree.plaque))?.words).toBe("3");
+  });
+
+  it("should never draw it active: the rim stays 1 px brass (R26)", () => {
+    const { scene, ops } = fakeScene();
+    new AbilityBar(scene).show(held());
+    expect(ops()).not.toContainEqual({ m: "lineStyle", args: [2, palette.frameBright, 1] });
+  });
+
+  it("should lift its lit bronze under the pointer", () => {
+    const lit = fakeScene();
+    new AbilityBar(lit.scene).show(held());
+    lit.zones()[SQUARE.tree].handlers.pointerover();
+    expect(knockoutOf("earthbreaker")!.shows.at(-1)?.hovered).toBe(true);
   });
 });
 
@@ -489,10 +558,21 @@ describe("AbilityBar: the tooltips (FS-Q18Q3 §F R28, §L R41)", () => {
     expect(none.tipTexts().at(-1)?.words).toBe("No health potion worn.");
   });
 
-  it("should read the locked 3 square's third line alone while the tree abilities' copy is not in the client's data", () => {
+  it("should read the locked 3 square's tree ability, name and line, and its third line in the faint vellum", () => {
     const { tipTexts } = hovering("tree");
-    expect(words(tipTexts())).toEqual(["Learned at the skill tree's third tier, from level 10."]);
-    expect(ink(tipTexts()[0])).toBe(toCss(palette.hudFaint));
+    expect(words(tipTexts())).toEqual([
+      "Earthbreaker",
+      "Slam the ground: strike and stun all around you.",
+      "Learned at the skill tree's third tier, from level 10.",
+    ]);
+    expect(ink(tipTexts()[2])).toBe(toCss(palette.hudFaint));
+  });
+
+  it("should read the held 3 square's tree ability, name and line alone, greyed or lit (R28)", () => {
+    for (const greyed of [false, true]) {
+      const { tipTexts } = hovering("tree", view({ tree: { locked: false, ability: "blink", greyed, cost: 30 } }));
+      expect(words(tipTexts())).toEqual(["Blink", "Step through the dark toward where you point, never past a wall."]);
+    }
   });
 
   it("should show a greyed square's tooltip, its icon never brightening", () => {
@@ -627,9 +707,47 @@ describe("AbilityBar: the cooldown sweep (FS-Q18Q3 §D R18–R21, §L R41)", () 
     expect(updates).toHaveLength(1);
   });
 
-  it("should sweep the right-click square alone: no wedge on the potion, none on the locked 3 square", () => {
+  it("should sweep no wedge on the potion, and none on the locked 3 square", () => {
     const { ops } = shown(view({ cooldowns: { ability: null, tree: { remaining: 4, total: 8 } } }));
     expect(wedge(ops())).toEqual([]);
+  });
+
+  // FS-Q18Q3 R26: the held 3 square takes its own sweep, from `tree_ability_cooldown`
+  describe("the held 3 square's", () => {
+    const treeWell = () => frame().squares.tree.well;
+    const treeCooling = (remaining: number, total = 8, ability: AbilityBarView["cooldowns"]["ability"] = null) =>
+      view({
+        tree: { locked: false, ability: "earthbreaker", greyed: true, cost: 40 },
+        cooldowns: { ability, tree: { remaining, total } },
+      });
+
+    it("should cover remaining / total of the 3 well and run down with the clock, never below 0", () => {
+      const { ops, tick } = shown(treeCooling(4));
+      expect(wedge(ops())).toEqual([sweepPolygon(treeWell(), 0.5)]);
+      tick(2000);
+      expect(wedge(ops())).toEqual([sweepPolygon(treeWell(), 0.25)]);
+      tick(3000);
+      expect(wedge(ops())).toEqual([]);
+    });
+
+    it("should be corrected by the next state", () => {
+      const { ops, bar, tick } = shown(treeCooling(4));
+      tick(1000);
+      bar.show(treeCooling(6));
+      expect(wedge(ops())).toEqual([sweepPolygon(treeWell(), 0.75)]);
+    });
+
+    it("should run beside the right-click's, each on its own well, on one frame listener", () => {
+      const { ops, updates } = shown(treeCooling(4, 8, { remaining: 0.6, total: 1.2 }));
+      expect(wedge(ops())).toEqual([sweepPolygon(well(), 0.5), sweepPolygon(treeWell(), 0.5)]);
+      expect(updates).toHaveLength(1);
+    });
+
+    it("should draw none at {0, 0}", () => {
+      const { ops, updates } = shown(treeCooling(0, 0));
+      expect(wedge(ops())).toEqual([]);
+      expect(updates).toEqual([]);
+    });
   });
 
   it("should draw no seconds numeral (R20)", () => {

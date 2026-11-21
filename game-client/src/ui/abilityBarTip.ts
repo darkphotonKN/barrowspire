@@ -5,7 +5,16 @@
  * canvas; `AbilityBar` draws what this returns.
  */
 
-import { abilityCopy, POTION_COPY, POTION_FIELD_NOTE, POTION_NONE_NOTE, TREE_LOCKED_NOTE, type AbilityCopy } from "./abilityCopy";
+import { TREE_ABILITY } from "@/render/combat/treeAbility";
+import {
+  abilityCopy,
+  POTION_COPY,
+  POTION_FIELD_NOTE,
+  POTION_NONE_NOTE,
+  TREE_LOCKED_NOTE,
+  treeAbilityCopy,
+  type AbilityCopy,
+} from "./abilityCopy";
 import { CLASS_ABILITY_ICON, type AbilityBarView } from "./abilityBarView";
 import type { AbilityBarFrame, AbilityBarSquare } from "./abilityBarLayout";
 import type { AbilityIconKey } from "./abilityIcons";
@@ -41,16 +50,24 @@ export function abilityTip(s: AbilityBarSquare, view: AbilityBarView): AbilityTi
       const copy = view.ability.icon && copyOf(view.ability.icon, view.ability.specialization);
       return copy ? { ...copy } : null;
     }
-    case "tree":
-      // the tree ability's name and line come with FS-04EEA R50's ability data; until then, the third line alone
-      return { note: TREE_LOCKED_NOTE };
+    case "tree": {
+      // held and locked alike, the class's tree ability's name and line (FS-04EEA R50); locked, a third line
+      const { locked, ability } = view.tree;
+      const copy = ability && treeAbilityCopy(classOf(TREE_ABILITY, ability));
+      if (!locked) return copy ? { ...copy } : null;
+      return { ...copy, note: TREE_LOCKED_NOTE };
+    }
   }
 }
 
 /** The right-click copy of the class whose ability is keyed `icon`, as its `specialization` names it (FS-E1ZDG §L.43). */
 function copyOf(icon: AbilityIconKey, specialization: string | undefined): AbilityCopy | null {
-  const cls = Object.keys(CLASS_ABILITY_ICON).find((c) => CLASS_ABILITY_ICON[c] === icon);
-  return abilityCopy(cls, specialization);
+  return abilityCopy(classOf(CLASS_ABILITY_ICON, icon), specialization);
+}
+
+/** The class whose ability `byClass` keys as `icon`. */
+function classOf(byClass: Readonly<Record<string, string>>, icon: AbilityIconKey): string | undefined {
+  return Object.keys(byClass).find((c) => byClass[c] === icon);
 }
 
 /**

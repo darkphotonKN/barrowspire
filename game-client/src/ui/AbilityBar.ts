@@ -9,7 +9,9 @@
  * numeral in the resource bar's own colour. Greyed, the icon takes the renderer's unavailable ink and the
  * key and the cost fall to the faint vellum; active, the rim is lit 2 px bright brass and the icon takes the
  * hover ink. The potion square carries its count in its bottom-right corner; the 3 square stands locked, a
- * padlock and a faint "Lv 10" (R25). Where a scene cannot make the knockout's texture, the icon's line glyph.
+ * padlock and a faint "Lv 10" (R25), until the character holds its tree's ability, then shows that ability's
+ * icon and cost as the right-click square does, never active (R26). Where a scene cannot make the knockout's
+ * texture, the icon's line glyph.
  *
  * Each square lays its own ground on the UI scene, so a press there is the bar's and never the world's, and
  * a move over it reaches the world only as a move on the UI (R33); the pointer over a lit square lifts its
@@ -21,10 +23,10 @@
  * ground hears it leave; while a tooltip shows the scene polls the pointer, so one opening over a still
  * pointer takes it too.
  *
- * While a cooldown runs, a dark wedge sweeps the right-click square (§D R18–R21; `abilityCooldown`): stamped
- * on the UI scene's clock as a `bar` message whose cooldown changed is heard (the bridge is synchronous, so
- * that is the state's arrival, R41), run down from there by the scene's own frames, and corrected by the
- * next. It lies on its own layer over the well's ground and under its rim, plaque and icon, and it alone is
+ * While a cooldown runs, a dark wedge sweeps the right-click square or the held 3 square (§D R18–R21, §E
+ * R26; `abilityCooldown`): stamped on the UI scene's clock as a `bar` message whose cooldown changed is
+ * heard (the bridge is synchronous, so that is the state's arrival, R41), run down from there by the scene's
+ * own frames, and corrected by the next. It lies on its own layer over the well's ground and under its rim, plaque and icon, and it alone is
  * redrawn each frame, only while a sweep runs; nothing else, the tooltip included, follows the frames.
  */
 
@@ -102,11 +104,12 @@ interface ShownTip {
 }
 
 /**
- * The squares a cooldown sweeps, each read from the view (R18, R21): the right-click alone, as the potion's
- * drink cooldown is not on the wire. The held 3 square (R26) joins with its own `cooldowns.tree`.
+ * The squares a cooldown sweeps, each read from the view (R18, R21, R26): the right-click and the held 3
+ * square, never the locked one; not the potion, as its drink cooldown is not on the wire.
  */
 const SWEPT: Partial<Record<AbilityBarSquare, (view: AbilityBarView) => CooldownState | null>> = {
   ability: (view) => view.cooldowns.ability,
+  tree: (view) => (view.tree.locked ? null : view.cooldowns.tree),
 };
 
 /** What of a Phaser Graphics the sweep draws with: its wedge's points are plain ones, as Phaser reads them. */
@@ -436,7 +439,9 @@ function groundOf(bar: AbilityBarFrame, f: AbilitySquareFrame) {
 
 /** What square `s` shows of `view` (§E): its icon, flags, plaque key, the words under it and in its corner. */
 function lookOf(s: AbilityBarSquare, view: AbilityBarView): SquareLook {
-  const costInk = (greyed: boolean) => (greyed ? palette.hudFaint : COST_INK[view.costChannel ?? "unknown"]);
+  // a cost under its square, in its pool's colour, faint when greyed; none to draw for none (R15)
+  const costUnder = (cost: number | null, greyed: boolean) =>
+    cost === null ? null : { words: String(cost), ink: greyed ? palette.hudFaint : COST_INK[view.costChannel ?? "unknown"] };
   switch (s) {
     case "potion": {
       const { count, greyed } = view.potion;
@@ -444,19 +449,17 @@ function lookOf(s: AbilityBarSquare, view: AbilityBarView): SquareLook {
     }
     case "ability": {
       const { icon, greyed, active, cost } = view.ability;
-      const under = cost === null ? null : { words: String(cost), ink: costInk(greyed) };
-      return { icon, greyed, active, key: null, under, corner: null };
+      return { icon, greyed, active, key: null, under: costUnder(cost, greyed), corner: null };
     }
-    case "tree":
+    case "tree": {
+      const key = RUN_ACTIONS.treeAbility.label;
       // locked until the character holds its tree's ability (R25): the padlock, the key and "Lv 10" faint
-      return {
-        icon: "locked",
-        greyed: true,
-        active: false,
-        key: RUN_ACTIONS.treeAbility.label,
-        under: { words: LOCKED_LINE, ink: palette.hudFaint },
-        corner: null,
-      };
+      if (view.tree.locked)
+        return { icon: "locked", greyed: true, active: false, key, under: { words: LOCKED_LINE, ink: palette.hudFaint }, corner: null };
+      // held (R26): the class's tree ability and its cost, as the right-click's; never active
+      const { ability, greyed, cost } = view.tree;
+      return { icon: ability, greyed, active: false, key, under: costUnder(cost, greyed), corner: null };
+    }
   }
 }
 

@@ -9,7 +9,7 @@ import { ABILITY_TIP_MAX_W, abilityTip, abilityTipPlace } from "./abilityBarTip"
 const VIEW: AbilityBarView = {
   potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
-  tree: { locked: true },
+  tree: { locked: true, ability: "earthbreaker", greyed: true, cost: null },
   costChannel: "stamina",
   cooldowns: { ability: null, tree: null },
 };
@@ -67,9 +67,31 @@ describe("abilityTip: the right-click square (R28, R27)", () => {
   });
 });
 
-describe("abilityTip: the 3 square, locked (R28; FS-04EEA R50 not yet in the client's data)", () => {
-  it("should read only the locked third line", () => {
-    expect(abilityTip("tree", VIEW)).toEqual({ note: "Learned at the skill tree's third tier, from level 10." });
+describe("abilityTip: the 3 square (R28; FS-04EEA R50)", () => {
+  const LOCKED_NOTE = "Learned at the skill tree's third tier, from level 10.";
+  const tree = (fields: Partial<AbilityBarView["tree"]>) => view({ tree: { ...VIEW.tree, ...fields } });
+
+  it.each([
+    ["earthbreaker", "Earthbreaker", "Slam the ground: strike and stun all around you."],
+    ["blink", "Blink", "Step through the dark toward where you point, never past a wall."],
+    ["arrow_rain", "Arrow Rain", "Hold to mark the ground, release to rain arrows on it."],
+    ["settle_the_debt", "Settle the Debt", "Spend every parry charge on a flurry around you; each one cuts deeper."],
+  ] as const)("should read the class's %s name and line, held, greyed or lit", (ability, name, line) => {
+    expect(abilityTip("tree", tree({ locked: false, ability, greyed: false, cost: 40 }))).toEqual({ name, line });
+    expect(abilityTip("tree", tree({ locked: false, ability, greyed: true, cost: 40 }))).toEqual({ name, line });
+  });
+
+  it("should read the same name and line locked, with the locked third line under them", () => {
+    expect(abilityTip("tree", VIEW)).toEqual({
+      name: "Earthbreaker",
+      line: "Slam the ground: strike and stun all around you.",
+      note: LOCKED_NOTE,
+    });
+  });
+
+  it("should read only the locked third line for a class with no tree ability, and nothing held (R27)", () => {
+    expect(abilityTip("tree", tree({ ability: null }))).toEqual({ note: LOCKED_NOTE });
+    expect(abilityTip("tree", tree({ locked: false, ability: null, greyed: true }))).toBeNull();
   });
 });
 

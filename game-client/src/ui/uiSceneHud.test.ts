@@ -67,7 +67,7 @@ type HudData = HudMessage extends infer M ? (M extends HudMessage ? Omit<M, "wor
 const VIEW: AbilityBarView = {
   potion: { count: 2, greyed: false, field: false },
   ability: { icon: "dash", greyed: false, active: false, cost: 25 },
-  tree: { locked: true },
+  tree: { locked: true, ability: "earthbreaker", greyed: true, cost: null },
   costChannel: "stamina",
   cooldowns: { ability: null, tree: null },
 };
