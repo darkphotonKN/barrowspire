@@ -38,21 +38,22 @@ func NewStateSerializer(em *ecs.EntityManager, parties PartyMembership) *StateSe
 	return &StateSerializer{em: em, parties: parties, backendStatePool: &sync.Pool{
 		New: func() interface{} {
 			return &types.BackendGameState{
-				Players:    make(map[uuid.UUID]*types.PlayerState),
-				LeftBehind: make(map[uuid.UUID]*types.PlayerState),
-				Escaped:    make(map[uuid.UUID]*types.PlayerState),
-				Resources:  make(map[uuid.UUID]*types.ResourceState),
-				Parries:    make(map[uuid.UUID]*types.ParryState),
-				TimedOpens: make(map[uuid.UUID]*types.TimedOpenState),
-				InPlay:     make(map[uuid.UUID]types.Position),
-				Items:      make([]uuid.UUID, 0),
-				Doors:      make([]*types.DoorState, 0),
-				Walls:      make([]*types.WallState, 0),
-				Containers: make([]*types.ContainerState, 0),
-				EscapeDoor: make([]*types.EscapeDoorState, 0),
-				Switch:     make([]*types.SwitchState, 0),
-				Stairs:     make([]*types.StairsState, 0),
-				Monsters:   make([]*types.MonsterState, 0),
+				Players:          make(map[uuid.UUID]*types.PlayerState),
+				LeftBehind:       make(map[uuid.UUID]*types.PlayerState),
+				Escaped:          make(map[uuid.UUID]*types.PlayerState),
+				Resources:        make(map[uuid.UUID]*types.ResourceState),
+				Parries:          make(map[uuid.UUID]*types.ParryState),
+				TimedOpens:       make(map[uuid.UUID]*types.TimedOpenState),
+				AbilityCooldowns: make(map[uuid.UUID]*types.CooldownState),
+				InPlay:           make(map[uuid.UUID]types.Position),
+				Items:            make([]uuid.UUID, 0),
+				Doors:            make([]*types.DoorState, 0),
+				Walls:            make([]*types.WallState, 0),
+				Containers:       make([]*types.ContainerState, 0),
+				EscapeDoor:       make([]*types.EscapeDoorState, 0),
+				Switch:           make([]*types.SwitchState, 0),
+				Stairs:           make([]*types.StairsState, 0),
+				Monsters:         make([]*types.MonsterState, 0),
 			}
 		},
 	}}
@@ -177,6 +178,9 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 			if timedOpen := timedOpenState(entity); timedOpen != nil {
 				backendState.TimedOpens[player.MemberID] = timedOpen
+			}
+			if cooldown := abilityCooldownState(entity); cooldown != nil {
+				backendState.AbilityCooldowns[player.MemberID] = cooldown
 			}
 
 			level, experience := 1, int64(0)
@@ -571,10 +575,11 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 	var currentPlayer *types.CurrentPlayerState
 	if ownState != nil {
 		currentPlayer = &types.CurrentPlayerState{
-			PlayerState: ownState,
-			Resource:    backendState.Resources[playerID],
-			ParryState:  backendState.Parries[playerID],
-			TimedOpen:   backendState.TimedOpens[playerID],
+			PlayerState:     ownState,
+			Resource:        backendState.Resources[playerID],
+			ParryState:      backendState.Parries[playerID],
+			TimedOpen:       backendState.TimedOpens[playerID],
+			AbilityCooldown: backendState.AbilityCooldowns[playerID],
 		}
 	}
 
@@ -651,6 +656,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	}
 	for k := range state.TimedOpens {
 		delete(state.TimedOpens, k)
+	}
+	for k := range state.AbilityCooldowns {
+		delete(state.AbilityCooldowns, k)
 	}
 	// the published snapshot is shared, so it is let go, never cleared
 	state.PartyOf = nil
@@ -751,6 +759,16 @@ func resourceState(entity *ecs.Entity) *types.ResourceState {
 		state.AbilityCost = systems.AttackCost(ac.(*components.AbilityComponent).Kind)
 	}
 	return state
+}
+
+// abilityCooldownState is a delver's right-click cooldown as its owner is told
+// it; nil when the delver has no ability. FS-Q18Q3 §A R1–R2.
+func abilityCooldownState(entity *ecs.Entity) *types.CooldownState {
+	remaining, total, ok := systems.AbilityCooldown(entity)
+	if !ok {
+		return nil
+	}
+	return &types.CooldownState{Remaining: remaining, Total: total}
 }
 
 // parryState is a mercenary's parry stance as its owner is told it; nil for

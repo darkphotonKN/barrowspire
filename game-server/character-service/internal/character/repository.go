@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	commonhelpers "github.com/darkphotonKN/barrowspire-server/common/utils"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -41,10 +42,13 @@ func (r *repository) Create(ctx context.Context, c *Character) (*Character, erro
 	if err := r.db.QueryRowxContext(ctx, query, c.ID, c.PlayerID, c.ClassID, c.Name).StructScan(&created); err != nil {
 		return nil, wrapDBErr("create character", err)
 	}
+	// a new character holds no ranks
+	created.PassiveRanks = passivetree.Ranks{}
 	return &created, nil
 }
 
-// ListByPlayer returns the member's live characters, oldest first.
+// ListByPlayer returns the member's live characters, oldest first, each with
+// its held passive ranks. The ranks of every listed character are one query.
 func (r *repository) ListByPlayer(ctx context.Context, playerID uuid.UUID) ([]*Character, error) {
 	query := `
 		SELECT ` + characterColumns + `
@@ -56,11 +60,36 @@ func (r *repository) ListByPlayer(ctx context.Context, playerID uuid.UUID) ([]*C
 	if err := r.db.SelectContext(ctx, &characters, query, playerID); err != nil {
 		return nil, wrapDBErr("list characters by player", err)
 	}
+	if len(characters) == 0 {
+		return characters, nil
+	}
+
+	ranksQuery := `
+		SELECT pr.character_id, pr.node_id, pr.rank
+		FROM passive_ranks pr
+		JOIN characters c ON c.id = pr.character_id
+		WHERE c.player_id = $1 AND c.deleted_at IS NULL`
+	rows := []passiveRank{}
+	if err := r.db.SelectContext(ctx, &rows, ranksQuery, playerID); err != nil {
+		return nil, wrapDBErr("list passive ranks by player", err)
+	}
+	byCharacter := make(map[uuid.UUID]passivetree.Ranks, len(characters))
+	for _, c := range characters {
+		c.PassiveRanks = passivetree.Ranks{}
+		byCharacter[c.ID] = c.PassiveRanks
+	}
+	for _, row := range rows {
+		// a character created between the two reads is not listed; skip its rows
+		if ranks, ok := byCharacter[row.CharacterID]; ok {
+			ranks[row.NodeID] = row.Rank
+		}
+	}
 	return characters, nil
 }
 
-// GetByPlayer reads one of the member's live characters. Another member's, a
-// deleted, and an unknown character are all ErrNotFound.
+// GetByPlayer reads one of the member's live characters with its held passive
+// ranks. Another member's, a deleted, and an unknown character are all
+// ErrNotFound.
 func (r *repository) GetByPlayer(ctx context.Context, playerID, id uuid.UUID) (*Character, error) {
 	query := `
 		SELECT ` + characterColumns + `
@@ -71,6 +100,11 @@ func (r *repository) GetByPlayer(ctx context.Context, playerID, id uuid.UUID) (*
 	if err := r.db.GetContext(ctx, &c, query, id, playerID); err != nil {
 		return nil, wrapDBErr("get character by player", err)
 	}
+	ranks, err := passiveRanksOf(ctx, r.db, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.PassiveRanks = ranks
 	return &c, nil
 }
 
@@ -154,4 +188,80 @@ func (r *repository) ApplyExperienceGrant(ctx context.Context, grant ExperienceG
 		return nil, wrapDBErr("commit experience grant", err)
 	}
 	return &updated, nil
+}
+
+// SpendPassivePoint decides and writes one passive spend in one transaction.
+// The member's live character row is locked first, so spends of one character
+// serialise (FS-8RZ51 R13); its ranks are read after the lock, so decide sees
+// every spend committed before it. Only when decide answers true is the
+// spend's rank written. decide's error comes back as is, and the transaction
+// rolls back with nothing written.
+func (r *repository) SpendPassivePoint(ctx context.Context, spend PassiveSpend, decide func(*Character) (bool, error)) (*Character, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return nil, wrapDBErr("begin passive spend", err)
+	}
+	// a no-op once committed
+	defer func() { _ = tx.Rollback() }()
+
+	var c Character
+	lockQuery := `
+		SELECT ` + characterColumns + `
+		FROM characters
+		WHERE id = $1 AND player_id = $2 AND deleted_at IS NULL
+		FOR UPDATE`
+	if err := tx.GetContext(ctx, &c, lockQuery, spend.CharacterID, spend.MemberID); err != nil {
+		return nil, wrapDBErr("lock character for passive spend", err)
+	}
+	ranks, err := passiveRanksOf(ctx, tx, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	c.PassiveRanks = ranks
+
+	write, err := decide(&c)
+	if err != nil {
+		return nil, err
+	}
+	if !write {
+		return &c, nil
+	}
+
+	upsertQuery := `
+		INSERT INTO passive_ranks (character_id, node_id, rank)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (character_id, node_id) DO UPDATE
+		SET rank = EXCLUDED.rank, updated_at = NOW()`
+	if _, err := tx.ExecContext(ctx, upsertQuery, c.ID, spend.NodeID, spend.Rank); err != nil {
+		return nil, wrapDBErr("write passive rank", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, wrapDBErr("commit passive spend", err)
+	}
+	c.PassiveRanks[spend.NodeID] = spend.Rank
+	return &c, nil
+}
+
+// passiveRank is one passive_ranks row.
+type passiveRank struct {
+	CharacterID uuid.UUID `db:"character_id"`
+	NodeID      string    `db:"node_id"`
+	Rank        int       `db:"rank"`
+}
+
+// passiveRanksOf reads one character's held ranks; none is an empty Ranks.
+func passiveRanksOf(ctx context.Context, q sqlx.QueryerContext, characterID uuid.UUID) (passivetree.Ranks, error) {
+	query := `
+		SELECT character_id, node_id, rank
+		FROM passive_ranks
+		WHERE character_id = $1`
+	rows := []passiveRank{}
+	if err := sqlx.SelectContext(ctx, q, &rows, query, characterID); err != nil {
+		return nil, wrapDBErr("read passive ranks", err)
+	}
+	ranks := passivetree.Ranks{}
+	for _, row := range rows {
+		ranks[row.NodeID] = row.Rank
+	}
+	return ranks, nil
 }

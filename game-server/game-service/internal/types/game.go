@@ -66,6 +66,15 @@ type ResourceState struct {
 	AbilityCost int    `json:"ability_cost"`
 }
 
+// CooldownState is one of a delver's abilities' cooldowns as its owner is
+// told it, in float seconds: Remaining left before it can be cast again, Total
+// the length it started at (worn attack speed applied); both 0 when none
+// runs. FS-Q18Q3 §A R1–R3.
+type CooldownState struct {
+	Remaining float64 `json:"remaining"`
+	Total     float64 `json:"total"`
+}
+
 // ParryState is a mercenary's parry stance as its owner is told it. The parry
 // charges themselves ride ResourceState. FS-MAMHR §Requirements 27–28.
 type ParryState struct {

@@ -1,0 +1,648 @@
+{
+  "nodes": [
+    {
+      "id": "warrior.t1a",
+      "class": "warrior",
+      "tier": 1,
+      "slot": "t1a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_hp",
+        "amount": 4,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "warrior.t1b",
+      "class": "warrior",
+      "tier": 1,
+      "slot": "t1b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_stamina",
+        "amount": 10,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "warrior.t2a",
+      "class": "warrior",
+      "tier": 2,
+      "slot": "t2a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "slash_damage",
+        "amount": 6,
+        "unit": "percent"
+      },
+      "kicker": "multi_hit_slash_refund"
+    },
+    {
+      "id": "warrior.t2b",
+      "class": "warrior",
+      "tier": 2,
+      "slot": "t2b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "max_hp",
+        "amount": 4,
+        "unit": "percent"
+      },
+      "kicker": "low_hp_damage_reduction"
+    },
+    {
+      "id": "warrior.t3",
+      "class": "warrior",
+      "tier": 3,
+      "slot": "t3",
+      "kind": "ability",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 8
+      }
+    },
+    {
+      "id": "warrior.t4a",
+      "class": "warrior",
+      "tier": 4,
+      "slot": "t4a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "warrior.t3"
+      },
+      "perRank": {
+        "stat": "strength",
+        "amount": 2,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "warrior.t4b",
+      "class": "warrior",
+      "tier": 4,
+      "slot": "t4b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "warrior.t3"
+      },
+      "perRank": {
+        "stat": "stamina_regen",
+        "amount": 10,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "warrior.t5a",
+      "class": "warrior",
+      "tier": 5,
+      "slot": "t5a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "stamina_regen",
+        "amount": 10,
+        "unit": "percent"
+      },
+      "kicker": "kill_stamina_refund"
+    },
+    {
+      "id": "warrior.t5b",
+      "class": "warrior",
+      "tier": 5,
+      "slot": "t5b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "dash_cost",
+        "amount": -3,
+        "unit": "flat"
+      },
+      "kicker": "post_dash_forced_crit"
+    },
+    {
+      "id": "warrior.t6a",
+      "class": "warrior",
+      "tier": 6,
+      "slot": "t6a",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "warrior.t6b",
+      "class": "warrior",
+      "tier": 6,
+      "slot": "t6b",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "mage.t1a",
+      "class": "mage",
+      "tier": 1,
+      "slot": "t1a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_hp",
+        "amount": 4,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "mage.t1b",
+      "class": "mage",
+      "tier": 1,
+      "slot": "t1b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_mana",
+        "amount": 15,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "mage.t2a",
+      "class": "mage",
+      "tier": 2,
+      "slot": "t2a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "fireball_damage",
+        "amount": 6,
+        "unit": "percent"
+      },
+      "kicker": "fireball_crit_refund"
+    },
+    {
+      "id": "mage.t2b",
+      "class": "mage",
+      "tier": 2,
+      "slot": "t2b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "max_mana",
+        "amount": 15,
+        "unit": "flat"
+      },
+      "kicker": "deep_well_regen"
+    },
+    {
+      "id": "mage.t3",
+      "class": "mage",
+      "tier": 3,
+      "slot": "t3",
+      "kind": "ability",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 8
+      }
+    },
+    {
+      "id": "mage.t4a",
+      "class": "mage",
+      "tier": 4,
+      "slot": "t4a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "mage.t3"
+      },
+      "perRank": {
+        "stat": "intelligence",
+        "amount": 2,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "mage.t4b",
+      "class": "mage",
+      "tier": 4,
+      "slot": "t4b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "mage.t3"
+      },
+      "perRank": {
+        "stat": "mana_regen",
+        "amount": 10,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "mage.t5a",
+      "class": "mage",
+      "tier": 5,
+      "slot": "t5a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "triple_fireball_cost",
+        "amount": -2,
+        "unit": "flat"
+      },
+      "kicker": "five_fireball_volley"
+    },
+    {
+      "id": "mage.t5b",
+      "class": "mage",
+      "tier": 5,
+      "slot": "t5b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "fireball_speed",
+        "amount": 8,
+        "unit": "percent"
+      },
+      "kicker": "fireball_extra_pierce"
+    },
+    {
+      "id": "mage.t6a",
+      "class": "mage",
+      "tier": 6,
+      "slot": "t6a",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "mage.t6b",
+      "class": "mage",
+      "tier": 6,
+      "slot": "t6b",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "archer.t1a",
+      "class": "archer",
+      "tier": 1,
+      "slot": "t1a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_hp",
+        "amount": 4,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "archer.t1b",
+      "class": "archer",
+      "tier": 1,
+      "slot": "t1b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_stamina",
+        "amount": 10,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "archer.t2a",
+      "class": "archer",
+      "tier": 2,
+      "slot": "t2a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "attack_speed",
+        "amount": 4,
+        "unit": "percent"
+      },
+      "kicker": "every_fourth_arrow_pierces"
+    },
+    {
+      "id": "archer.t2b",
+      "class": "archer",
+      "tier": 2,
+      "slot": "t2b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "move_speed",
+        "amount": 3,
+        "unit": "percent"
+      },
+      "kicker": "sidestep"
+    },
+    {
+      "id": "archer.t3",
+      "class": "archer",
+      "tier": 3,
+      "slot": "t3",
+      "kind": "ability",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 8
+      }
+    },
+    {
+      "id": "archer.t4a",
+      "class": "archer",
+      "tier": 4,
+      "slot": "t4a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "archer.t3"
+      },
+      "perRank": {
+        "stat": "agility",
+        "amount": 2,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "archer.t4b",
+      "class": "archer",
+      "tier": 4,
+      "slot": "t4b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "archer.t3"
+      },
+      "perRank": {
+        "stat": "stamina_regen",
+        "amount": 10,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "archer.t5a",
+      "class": "archer",
+      "tier": 5,
+      "slot": "t5a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "crit",
+        "amount": 3,
+        "unit": "flat"
+      },
+      "kicker": "shadow_shot_forced_crit"
+    },
+    {
+      "id": "archer.t5b",
+      "class": "archer",
+      "tier": 5,
+      "slot": "t5b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "stamina_regen",
+        "amount": 10,
+        "unit": "percent"
+      },
+      "kicker": "kill_shadow_shot_refund"
+    },
+    {
+      "id": "archer.t6a",
+      "class": "archer",
+      "tier": 6,
+      "slot": "t6a",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "archer.t6b",
+      "class": "archer",
+      "tier": 6,
+      "slot": "t6b",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "mercenary.t1a",
+      "class": "mercenary",
+      "tier": 1,
+      "slot": "t1a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "max_hp",
+        "amount": 4,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "mercenary.t1b",
+      "class": "mercenary",
+      "tier": 1,
+      "slot": "t1b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {},
+      "perRank": {
+        "stat": "strength",
+        "amount": 2,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "mercenary.t2a",
+      "class": "mercenary",
+      "tier": 2,
+      "slot": "t2a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "cut_damage",
+        "amount": 6,
+        "unit": "percent"
+      },
+      "kicker": "wind_up_cut_forced_crit"
+    },
+    {
+      "id": "mercenary.t2b",
+      "class": "mercenary",
+      "tier": 2,
+      "slot": "t2b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 4
+      },
+      "perRank": {
+        "stat": "parry_window",
+        "amount": 0.02,
+        "unit": "seconds"
+      },
+      "kicker": "early_parry_double_charge"
+    },
+    {
+      "id": "mercenary.t3",
+      "class": "mercenary",
+      "tier": 3,
+      "slot": "t3",
+      "kind": "ability",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 8
+      }
+    },
+    {
+      "id": "mercenary.t4a",
+      "class": "mercenary",
+      "tier": 4,
+      "slot": "t4a",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "mercenary.t3"
+      },
+      "perRank": {
+        "stat": "agility",
+        "amount": 2,
+        "unit": "flat"
+      }
+    },
+    {
+      "id": "mercenary.t4b",
+      "class": "mercenary",
+      "tier": 4,
+      "slot": "t4b",
+      "kind": "filler",
+      "maxRank": 2,
+      "gate": {
+        "requires": "mercenary.t3"
+      },
+      "perRank": {
+        "stat": "max_hp",
+        "amount": 4,
+        "unit": "percent"
+      }
+    },
+    {
+      "id": "mercenary.t5a",
+      "class": "mercenary",
+      "tier": 5,
+      "slot": "t5a",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "riposte_damage",
+        "amount": 8,
+        "unit": "percent"
+      },
+      "kicker": "riposte_heal"
+    },
+    {
+      "id": "mercenary.t5b",
+      "class": "mercenary",
+      "tier": 5,
+      "slot": "t5b",
+      "kind": "kicker",
+      "maxRank": 3,
+      "gate": {
+        "spentAbove": 13
+      },
+      "perRank": {
+        "stat": "cut_cooldown",
+        "amount": -4,
+        "unit": "percent"
+      },
+      "kicker": "killing_cut_parry_charge"
+    },
+    {
+      "id": "mercenary.t6a",
+      "class": "mercenary",
+      "tier": 6,
+      "slot": "t6a",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    },
+    {
+      "id": "mercenary.t6b",
+      "class": "mercenary",
+      "tier": 6,
+      "slot": "t6b",
+      "kind": "specialization",
+      "maxRank": 1,
+      "gate": {
+        "spentAbove": 18
+      }
+    }
+  ]
+}

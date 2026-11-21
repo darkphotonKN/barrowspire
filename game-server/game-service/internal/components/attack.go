@@ -100,6 +100,10 @@ func NewAttackIntentComponent() *AttackIntentComponent {
 // CooldownComponent is the seconds left before each attack kind can be used again.
 type CooldownComponent struct {
 	Remaining map[AttackKind]float64
+	// Total is the length each running cooldown started at, worn attack speed
+	// applied, kept so its owner is told one length for the whole of it
+	// whatever gear changes on the way; cleared with Remaining. FS-Q18Q3 §A R3.
+	Total map[AttackKind]float64
 }
 
 func (c *CooldownComponent) Type() ecs.ComponentType {
@@ -107,5 +111,5 @@ func (c *CooldownComponent) Type() ecs.ComponentType {
 }
 
 func NewCooldownComponent() *CooldownComponent {
-	return &CooldownComponent{Remaining: make(map[AttackKind]float64)}
+	return &CooldownComponent{Remaining: make(map[AttackKind]float64), Total: make(map[AttackKind]float64)}
 }

@@ -370,10 +370,51 @@ func tickCooldowns(entity *ecs.Entity, deltaTime float64) {
 	for kind, remaining := range cooldowns.Remaining {
 		if remaining-deltaTime <= 0 {
 			delete(cooldowns.Remaining, kind)
+			delete(cooldowns.Total, kind)
 			continue
 		}
 		cooldowns.Remaining[kind] = remaining - deltaTime
 	}
+}
+
+// startCooldown runs kind's cooldown for length seconds from now, keeping the
+// length it started at beside it. FS-Q18Q3 §A R3.
+func startCooldown(cooldowns *components.CooldownComponent, kind components.AttackKind, length float64) {
+	if cooldowns.Total == nil {
+		cooldowns.Total = make(map[components.AttackKind]float64)
+	}
+	cooldowns.Remaining[kind] = length
+	cooldowns.Total[kind] = length
+}
+
+// AbilityCooldown is the seconds left before the delver's right-click ability
+// can be cast again and the length that wait started at; 0, 0 when none runs.
+// A mercenary's parry has no cooldown row, so theirs is the whiff lockout.
+// False when the entity has no ability. FS-Q18Q3 §A R1–R2.
+func AbilityCooldown(entity *ecs.Entity) (remaining, total float64, ok bool) {
+	ac, ok := entity.GetComponent(ecs.ComponentTypeAbility)
+	if !ok {
+		return 0, 0, false
+	}
+	kind := ac.(*components.AbilityComponent).Kind
+
+	if kind == components.AttackParry {
+		if pc, ok := entity.GetComponent(ecs.ComponentTypeParry); ok {
+			stance := pc.(*components.ParryComponent)
+			if stance.LockoutRemaining > 0 {
+				return stance.LockoutRemaining, stance.LockoutTotal, true
+			}
+		}
+		return 0, 0, true
+	}
+
+	if cc, ok := entity.GetComponent(ecs.ComponentTypeCooldown); ok {
+		cooldowns := cc.(*components.CooldownComponent)
+		if left := cooldowns.Remaining[kind]; left > 0 {
+			return left, cooldowns.Total[kind], true
+		}
+	}
+	return 0, 0, true
 }
 
 // resolve carries out one intent. A request inside its cooldown, short of its
@@ -447,7 +488,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	}
 	if cooldowns != nil {
 		// worn attack speed, already capped, shortens every cooldown
-		cooldowns.Remaining[intent.Kind] = spec.cooldown / (1 + float64(wornGear(attacker).AttackSpeedPercent)/100)
+		startCooldown(cooldowns, intent.Kind, spec.cooldown/(1+float64(wornGear(attacker).AttackSpeedPercent)/100))
 	}
 	if spec.slows {
 		startAttackSlow(attacker)
@@ -563,7 +604,7 @@ func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
 	if stance.LockoutRemaining > 0 {
 		stance.LockoutRemaining -= deltaTime
 		if stance.LockoutRemaining <= parryEpsilon {
-			stance.LockoutRemaining = 0
+			stance.LockoutRemaining, stance.LockoutTotal = 0, 0
 		}
 	}
 
@@ -576,6 +617,7 @@ func runStanceClocks(stance *components.ParryComponent, deltaTime float64) {
 	}
 	if !stance.Negated {
 		stance.LockoutRemaining = parryLockout - (stance.OpenFor - parryWindow)
+		stance.LockoutTotal = stance.LockoutRemaining
 	}
 	stance.Open, stance.OpenFor, stance.Negated = false, 0, false
 }

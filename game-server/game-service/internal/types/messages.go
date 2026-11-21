@@ -131,6 +131,10 @@ type CurrentPlayerState struct {
 	// absent when they have none. Nobody else is told it. FS-MQYEX
 	// §Requirements 18–19.
 	TimedOpen *TimedOpenState `json:"timed_open,omitempty"`
+	// AbilityCooldown is the recipient's right-click ability's cooldown, a
+	// mercenary's the whiff lockout; absent only for a delver with no ability.
+	// Never on another player. FS-Q18Q3 §A R1–R2, R6.
+	AbilityCooldown *CooldownState `json:"ability_cooldown,omitempty"`
 }
 
 // OtherPlayerState is another player as one recipient is told them: what every
@@ -163,6 +167,9 @@ type BackendGameState struct {
 	// TimedOpens is each delver's timed open, attached only to the frame
 	// their own client is sent
 	TimedOpens map[uuid.UUID]*TimedOpenState
+	// AbilityCooldowns is each delver's right-click cooldown, attached only to
+	// the frame their own client is sent
+	AbilityCooldowns map[uuid.UUID]*CooldownState
 	// PartyOf is the pod's party membership snapshot (player id → party id) as
 	// this broadcast read it, once for all its recipients. Published immutable:
 	// shared, never written. FS-CH21F §Requirements 5–6.

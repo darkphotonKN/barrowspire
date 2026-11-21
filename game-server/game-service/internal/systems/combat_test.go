@@ -1095,3 +1095,90 @@ func TestCombatSystem_MonsterShot_FromADeadMonsterIsDropped(t *testing.T) {
 
 	assert.Empty(t, projectiles(em))
 }
+
+func cooldownState(e *ecs.Entity, kind components.AttackKind) (remaining, total float64) {
+	c, _ := e.GetComponent(ecs.ComponentTypeCooldown)
+	cooldowns := c.(*components.CooldownComponent)
+	return cooldowns.Remaining[kind], cooldowns.Total[kind]
+}
+
+// A resolved right-click keeps the length its cooldown started at, worn attack
+// speed applied, beside the seconds left; both clear when it runs out.
+// FS-Q18Q3 §A R1, R3.
+func TestCombatSystem_Cooldown_KeepsTheLengthItStartedAt(t *testing.T) {
+	tests := []struct {
+		name        string
+		kind        components.AttackKind
+		attackSpeed int
+		want        float64
+	}{
+		{"dash", components.AttackDash, 0, 0.4},
+		{"triple fireball", components.AttackTripleFireball, 0, 0.4},
+		{"shadow shot", components.AttackShadowShot, 0, 1.2},
+		{"dash at +50% attack speed", components.AttackDash, 50, 0.4 / 1.5},
+		{"shadow shot at +50% attack speed", components.AttackShadowShot, 50, 1.2 / 1.5},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			attacker := delver(em, 100, 100)
+			attacker.AddComponent(&components.GearBonusComponent{AttackSpeedPercent: tt.attackSpeed})
+			combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+
+			intend(attacker, components.AttackIntent{Kind: tt.kind, TargetX: 200, TargetY: 100})
+			combat.Update(tickSeconds, em.GetAllEntities(), nil)
+
+			remaining, total := cooldownState(attacker, tt.kind)
+			assert.InDelta(t, tt.want, remaining, 1e-9, "the tick it resolves")
+			assert.InDelta(t, tt.want, total, 1e-9)
+
+			combat.Update(tickSeconds, em.GetAllEntities(), nil)
+			remaining, total = cooldownState(attacker, tt.kind)
+			assert.InDelta(t, tt.want-tickSeconds, remaining, 1e-9, "falls tick by tick")
+			assert.InDelta(t, tt.want, total, 1e-9, "the length it started at stays put")
+
+			// one tick past its length, so float drift in the count cannot leave a sliver
+			for range int(math.Ceil(tt.want / tickSeconds)) {
+				combat.Update(tickSeconds, em.GetAllEntities(), nil)
+			}
+			remaining, total = cooldownState(attacker, tt.kind)
+			assert.Zero(t, remaining, "run out")
+			assert.Zero(t, total, "nothing runs")
+		})
+	}
+}
+
+// Taking the attack-speed gear off mid-cooldown leaves the running cooldown's
+// starting length alone; the next cast takes the new length. FS-Q18Q3 §A R3.
+func TestCombatSystem_Cooldown_GearSwapMidCooldownLeavesItsTotal(t *testing.T) {
+	em := ecs.NewEntityManager()
+	attacker := delver(em, 100, 100)
+	gear := &components.GearBonusComponent{AttackSpeedPercent: 50}
+	attacker.AddComponent(gear)
+	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+
+	intend(attacker, components.AttackIntent{Kind: components.AttackDash, TargetX: 200, TargetY: 100})
+	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+
+	gear.AttackSpeedPercent = 0
+	combat.Update(tickSeconds, em.GetAllEntities(), nil)
+
+	_, total := cooldownState(attacker, components.AttackDash)
+	assert.InDelta(t, 0.4/1.5, total, 1e-9)
+}
+
+// A cast refused for its cost starts no cooldown, so nothing reaches the wire.
+// FS-8AY7S §Requirements 10, FS-Q18Q3 §Acceptance Criteria.
+func TestCombatSystem_Cooldown_RefusedCastStartsNone(t *testing.T) {
+	em := ecs.NewEntityManager()
+	attacker := delver(em, 100, 100)
+	resourceOf(attacker).Current = 89 // one short of Shadow Shot's 90
+
+	intend(attacker, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 200, TargetY: 100})
+	NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects).Update(tickSeconds, em.GetAllEntities(), nil)
+
+	remaining, total := cooldownState(attacker, components.AttackShadowShot)
+	assert.Zero(t, remaining)
+	assert.Zero(t, total)
+}

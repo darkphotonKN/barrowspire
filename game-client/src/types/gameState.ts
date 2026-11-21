@@ -72,6 +72,27 @@ export interface PlayerState extends PublicPlayerState {
    * absent when they have none. Never on an `other_players` entry (R19).
    */
   timed_open?: TimedOpenState;
+  /**
+   * The right-click ability's cooldown (FS-Q18Q3 §A R1–R2): sent whenever the delver has an
+   * ability, in every world; a mercenary's is the whiff lockout. Absent from an older server.
+   * Never on an `other_players` entry (R6).
+   */
+  ability_cooldown?: CooldownState;
+  /**
+   * The tree ability's cooldown (FS-Q18Q3 §A R4): sent only while the character holds its tree's
+   * ability, so its absence means the ability is not held. Never on an `other_players` entry (R6).
+   */
+  tree_ability_cooldown?: CooldownState;
+}
+
+/**
+ * One of the player's own abilities' cooldowns as the server judges it (FS-Q18Q3 §A R1–R3), in
+ * float seconds. `total` is the length it started at, worn attack speed applied, and does not
+ * change while it runs; both are 0 when nothing runs. Mirrors Go types.CooldownState.
+ */
+export interface CooldownState {
+  remaining: number;
+  total: number;
 }
 
 /**
@@ -100,6 +121,11 @@ export interface ResourceState {
   max: number;
   /** What the player's own ability costs in this pool. */
   ability_cost: number;
+  /**
+   * What one cast of the class's tree ability costs in this pool, the least it needs for one that
+   * spends a variable amount (FS-Q18Q3 §A R5). Present only while the tree ability is held.
+   */
+  tree_ability_cost?: number;
 }
 
 // Player equipment state from server (matches Go types.EquipmentState JSON tags).

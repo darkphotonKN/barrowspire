@@ -977,6 +977,11 @@ export interface components {
              * @description Total experience for the next level; absent at the level cap.
              */
             nextLevelAt?: number;
+            /**
+             * @description The character's specialization, derived from its tier-6 passive node; absent before the pick. Read-only.
+             * @enum {string}
+             */
+            specialization?: "guardian" | "berserker" | "spellwarden" | "pyromancer" | "hunter" | "shadow_ranger" | "duelist" | "sellsword";
         };
         CharacterCreate: {
             /** @description warrior, mage, archer or mercenary (decided by character-service). */
