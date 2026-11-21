@@ -14,10 +14,11 @@ import (
 	CombatSystem is the only code that reduces Health. FS-77AB6 §Requirements 1–11.
 
 	Handlers record attack intents as component data; this resolves them on the
-	tick: cooldown, cost, delivery (a targeted strike, a cone, projectiles, a dash),
-	then each hit through the damage formula. A dash sets a charge going that the
-	MovementSystem carries over the ticks after; this ends it once it is spent or
-	stopped, or when a new cast lands. Projectile impacts detected earlier
+	tick: cooldown, cost, delivery (a targeted strike, a cone, projectiles, a dash,
+	a blink), then each hit through the damage formula. A dash sets a charge going
+	that the MovementSystem carries over the ticks after; this ends it once it is
+	spent or stopped, or when a new cast lands. A blink is no charge: it moves its
+	caster at once, as far as the Ground lets a body reach. Projectile impacts detected earlier
 	in the same tick are handed in by the ProjectileSystem and resolved here too.
 
 	The worn uniques that ride on combat resolve here as well, every hit through
@@ -76,6 +77,10 @@ type CombatSystem struct {
 	roll         func() float64
 	playerDamage PlayerDamage
 	effects      UniqueEffectTuning
+	// Ground is what a Blink lands on: the world's walls, doors, edge and, on a
+	// dungeon floor, its cells. A session hands over its own MovementSystem; a
+	// bare system stands on a run floor of today's size.
+	Ground Ground
 
 	// per-tick scratch: the floor this tick resolves on, and the kills it made
 	floor int
@@ -83,7 +88,14 @@ type CombatSystem struct {
 }
 
 func NewCombatSystem(em *ecs.EntityManager, roll func() float64, playerDamage PlayerDamage, effects UniqueEffectTuning) *CombatSystem {
-	return &CombatSystem{em: em, roll: roll, playerDamage: playerDamage, effects: effects}
+	return &CombatSystem{em: em, roll: roll, playerDamage: playerDamage, effects: effects, Ground: NewMovementSystem()}
+}
+
+// Ground is where a straight move through the world lands: the farthest point
+// toward to a body standing at from reaches without crossing anything that
+// blocks a walk. FS-04EEA §D R19.
+type Ground interface {
+	Reach(entities []*ecs.Entity, fromX, fromY, toX, toY float64) (x, y float64)
 }
 
 type delivery int
@@ -96,6 +108,9 @@ const (
 	// deliverAround hits every valid target within reach all the way round
 	// the caster, its aim ignored. FS-04EEA §B R8.
 	deliverAround
+	// deliverBlink moves the caster toward its aim on the tick it resolves,
+	// never through what blocks a walk. FS-04EEA §D R18–R22.
+	deliverBlink
 )
 
 type scalingStat int
@@ -153,6 +168,8 @@ const (
 	// Earthbreaker: a ground slam all round the warrior. Charter defaults.
 	// FS-04EEA §B R8.
 	earthbreakerRange = 90.0
+	// Blink: the farthest the mage moves. Charter default. FS-04EEA §D R18.
+	blinkDistance = 180.0
 	// settleTheDebtLeastCost is the fewest parry charges Settle the Debt
 	// needs; it spends every one held. FS-04EEA §F R29–R30.
 	settleTheDebtLeastCost = 1
@@ -276,6 +293,12 @@ var attackTable = map[components.AttackKind]attackSpec{
 	components.AttackEarthbreaker: {
 		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrength,
 		coefficient: 1.5, cost: 40, cooldown: 10, reach: earthbreakerRange,
+		slows: true,
+	},
+	// the mage's tree ability: an instant move toward the cursor, paid in
+	// mana. FS-04EEA §D R18, §A R5.
+	components.AttackBlink: {
+		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
 		slows: true,
 	},
 }
@@ -563,6 +586,10 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		s.cone(attacker, at, intent.TargetX, intent.TargetY, spec, entities)
 	case deliverAround:
 		s.around(attacker, at, spec, entities)
+	case deliverBlink:
+		if !s.blink(attacker, at, intent.TargetX, intent.TargetY, spec, entities) {
+			return
+		}
 	case deliverProjectile:
 		s.fire(attacker, at, intent.TargetX, intent.TargetY, spec)
 	}
@@ -584,6 +611,28 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if spec.slows {
 		startAttackSlow(attacker)
 	}
+}
+
+// blink moves the caster toward (aimX, aimY) by up to the row's reach, landing
+// where the Ground lets a body reach, reporting false when that is nowhere: the
+// aim under the caster, or a blocker at their edge. A charge in flight ends
+// where the body stood before the move, so an Ashwalk trail never runs along
+// the blink; nothing of the blink itself lasts past this tick. FS-04EEA §D
+// R18–R22.
+func (s *CombatSystem) blink(caster *ecs.Entity, at *components.TransformComponent, aimX, aimY float64, spec attackSpec, entities []*ecs.Entity) bool {
+	dx, dy := aimX-at.X, aimY-at.Y
+	dist := math.Hypot(dx, dy)
+	if dist == 0 {
+		return false
+	}
+	share := min(dist, spec.reach) / dist
+	x, y := s.Ground.Reach(entities, at.X, at.Y, at.X+dx*share, at.Y+dy*share)
+	if math.Hypot(x-at.X, y-at.Y) <= dashEpsilon {
+		return false
+	}
+	s.endCharge(caster)
+	at.X, at.Y = x, y
+	return true
 }
 
 // startAttackSlow starts the caster's attack slow at its full window, or

@@ -411,6 +411,9 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	for _, opt := range opts {
 		opt(s)
 	}
+	// a Blink lands on the walk's own ground: its walls, doors, bounds and, on
+	// a dungeon floor, its cells (FS-04EEA §D R19)
+	s.combatSystem.Ground = s.movementSystem
 	// no floor yet: the AI steers straight until a floor build hands it a grid
 	s.monsterAISystem = newMonsterAI(s.monsterRoll, nil)
 	// a run's kill awards the whole party; a field's, the killer alone
@@ -3384,6 +3387,11 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 
 	// only the tick reads the AI, and a floor build holds buildMu as a tick does
 	s.monsterAISystem = newMonsterAI(s.monsterRoll, dungeon)
+	// a straight move reads the floor's cells; a floor of buildings has none
+	s.movementSystem.Grid = nil
+	if dungeon != nil {
+		s.movementSystem.Grid = dungeon.navGrid()
+	}
 
 	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
 		floor.CellSize = cellSize

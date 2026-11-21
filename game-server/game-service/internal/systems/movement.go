@@ -31,9 +31,20 @@ import (
 type MovementSystem struct {
 	MapWidth, MapHeight float64
 	PlayersPassThrough  bool
+	// Grid is a dungeon floor's cells, nil on any other floor. The walk never
+	// reads it (a floor's shell walls bound the walk); a straight move does
+	// (Reach).
+	Grid ClearLine
 
 	// the tick's alone
 	walls *wallIndex
+}
+
+// ClearLine is a dungeon floor's cell grid as a straight move reads it.
+type ClearLine interface {
+	// Clear reports whether a body of half-size half moving straight from a to
+	// b overlaps only walkable cells.
+	Clear(ax, ay, bx, by, half float64) bool
 }
 
 // NewMovementSystem returns a system bounded to a run floor of today's size. A
@@ -222,6 +233,139 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 	}
 
+}
+
+// reachStep is the longest leg Reach sweeps at once, px. Each leg is swept
+// continuously, so the length only bounds how far a landing strays from the
+// line, never what it can pass through.
+const reachStep = constants.PlayerRadius / 4
+
+// reachBisections is how finely Reach places a landing short of rock: a leg
+// halved this many times, well under a pixel.
+const reachBisections = 24
+
+/*
+Reach is where a body standing at from lands moving straight toward to: to
+itself, or the farthest point short of the first thing on the line that blocks
+a walk, a wall, a closed door, the world's edge or, given a Grid, a cell that
+is not walkable. Bodies never block it. Nothing beyond the first blocker is
+reached, even with open ground past it. FS-04EEA §D R19–R20.
+
+The line is cut into legs of at most reachStep, and each leg is swept as a
+walk's step is, X then Y, against the walls and closed doors: so no wall,
+however thin, is crossed. A leg either axis's sweep cuts short ends the move
+there; it never slides along what stopped it. On a dungeon floor each leg is
+first tested against the grid, and one that would touch rock is cut back to
+where it stops touching.
+*/
+func (s *MovementSystem) Reach(entities []*ecs.Entity, fromX, fromY, toX, toY float64) (float64, float64) {
+	dx, dy := toX-fromX, toY-fromY
+	length := math.Hypot(dx, dy)
+	if length == 0 {
+		return fromX, fromY
+	}
+	share := s.shareInside(fromX, fromY, dx, dy)
+	if share <= 0 {
+		return fromX, fromY
+	}
+	dx, dy = dx*share, dy*share
+
+	blockers := s.wallIndexOf(wallsAndDoors(entities))
+	legs := max(1, int(math.Ceil(length*share/reachStep)))
+	legX, legY := dx/float64(legs), dy/float64(legs)
+
+	x, y := fromX, fromY
+	for range legs {
+		share, stopped := 1.0, false
+		if s.Grid != nil && !s.Grid.Clear(x, y, x+legX, y+legY, constants.PlayerRadius) {
+			share, stopped = s.clearShare(x, y, legX, legY), true
+		}
+		var cut bool
+		x, y, cut = sweepLeg(blockers, x, y, legX*share, legY*share)
+		if stopped || cut {
+			break
+		}
+	}
+	return x, y
+}
+
+// legSweeps bounds how often sweepLeg shrinks a leg before it settles for
+// the last point it found clear off the line.
+const legSweeps = 8
+
+// sweepLeg moves a body from (x, y) by (dx, dy), swept X then Y against the
+// walls and closed doors, and reports whether anything cut the leg short. A
+// leg cut short is swept again at the share it reached, until the whole of
+// that share passes on both axes: so the body stops on the line, never ahead
+// of it on the axis that was not cut.
+func sweepLeg(blockers wallTests, x, y, dx, dy float64) (float64, float64, bool) {
+	share, cut := 1.0, false
+	// the last point reached clear, the fallback if the share never settles
+	clearX, clearY := x, y
+	for range legSweeps {
+		tX := blockers.sweepX(x, y, dx*share)
+		nextX := x + dx*share*tX
+		tY := blockers.sweepY(nextX, y, dy*share*tX)
+		if tX == 1 && tY == 1 {
+			return x + dx*share, y + dy*share, cut
+		}
+		clearX, clearY = nextX, y+dy*share*tX*tY
+		share *= tX * tY
+		cut = true
+		if share == 0 {
+			break
+		}
+	}
+	return clearX, clearY, true
+}
+
+// shareInside is the share, 0 to 1, of the move (dx, dy) from (x, y) a body
+// makes before it would leave this world's bounds.
+func (s *MovementSystem) shareInside(x, y, dx, dy float64) float64 {
+	width, height := s.bounds()
+	r := constants.PlayerRadius
+	share := 1.0
+	if dx > 0 {
+		share = min(share, (width-r-x)/dx)
+	} else if dx < 0 {
+		share = min(share, (r-x)/dx)
+	}
+	if dy > 0 {
+		share = min(share, (height-r-y)/dy)
+	} else if dy < 0 {
+		share = min(share, (r-y)/dy)
+	}
+	return max(share, 0)
+}
+
+// clearShare is the largest share of the leg (dx, dy) from (x, y) the grid
+// finds clear, found by halving: a leg is shorter than half a cell, so the
+// grid tests it as one box, and a shorter share is clear whenever a longer one
+// is.
+func (s *MovementSystem) clearShare(x, y, dx, dy float64) float64 {
+	lo, hi := 0.0, 1.0
+	for range reachBisections {
+		mid := (lo + hi) / 2
+		if s.Grid.Clear(x, y, x+dx*mid, y+dy*mid, constants.PlayerRadius) {
+			lo = mid
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+// wallsAndDoors picks the walls and the doors out of the entities.
+func wallsAndDoors(entities []*ecs.Entity) (walls, doors []*ecs.Entity) {
+	for _, entity := range entities {
+		if entity.HasComponent(ecs.ComponentTypeWall) {
+			walls = append(walls, entity)
+		}
+		if entity.HasComponent(ecs.ComponentTypeDoor) {
+			doors = append(doors, entity)
+		}
+	}
+	return walls, doors
 }
 
 // walkFactor is what the entity's walk is paced at this tick, as a share of
