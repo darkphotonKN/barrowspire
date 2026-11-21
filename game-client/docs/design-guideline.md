@@ -614,9 +614,9 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 
 ## UI Chrome (align to the pre-rendered world)
 
-- **The canvas menus wear the web UI's Bone & Soot.** The loading screen, the main menu and character creation
-  (`src/ui/menuChrome.ts`) are the gate into the game, so they match the site
-  rather than the barrow: soot ground with dust and a vignette, grey-stone panels with a 1px
+- **The canvas menus wear Bone & Soot**, the web UI's look until 2026-11-21, kept as their own
+  when the web moved to Barrow Vellum ([ADR-0087](../../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)). The loading screen, the main menu and character creation
+  (`src/ui/menuChrome.ts`) are the gate into the game: soot ground with dust and a vignette, grey-stone panels with a 1px
   iron hairline and a carved edge, bone-grey text, iron section titles, ash grey for cancel and
   subtitles, and bone as the one torch per view (the primary button, the page title, the active
   selection). The primary button is a bone fill with soot text, a bright-bone inset hairline and
@@ -624,8 +624,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   hero h1, word for word (`THE AGE OF BARROWSPIRE`), in blackletter with the Atmosphere
   treatment: a bone gradient fill, a soft bone glow, a hard dark foot shadow, and a pool of bone
   light behind it. It has no tagline under it. Phaser still never reads the DOM's UI table
-  (ADR-0025): the values come from the `menu*` entries of `BARROW` / `BARROW_HEX`, which mirror
-  `globals.css` `:root` and must agree with it, through `palette.menu`. The figures' plinths are
+  (ADR-0025): the values come from the `menu*` entries of `BARROW` / `BARROW_HEX`, through
+  `palette.menu`. They no longer mirror `globals.css` `:root` (ADR-0087). The figures' plinths are
   slate stone with iron rims under a bone pool. **What stays on the game palette:** the baked
   figures themselves, the HUD pieces a menu reuses (the roster's XP bar, the HP/MP stat colours,
   the item tip), and everything past the menus: hub, run, HUD and overlays.
@@ -886,29 +886,42 @@ applies here too: the web platform uses **Pirata One + EB Garamond** — see Typ
 **The web UI has its own palette.** It is separate from the Part I game palette, and the two are
 not required to agree
 ([ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
-Going from the menus into a delve is a deliberate change of register: the bone-and-soot web UI is
-the gate, and the torch-lit barrow is the place. UI drawn over the canvas as DOM (the `/game`
+The web UI wears the barrow's materials (vellum, umber, brass) without its amber torch, so going
+from the site into a delve changes the light, not the world. UI drawn over the canvas as DOM (the `/game`
 page's chrome, the header) belongs to the UI palette. The Phaser HUD inside the canvas belongs to
-the game palette. The canvas menus (main menu, character creation) are part of the gate,
-so they take the Bone & Soot values through game-palette mirror tokens (Part I "UI Chrome").
+the game palette. The canvas menus (main menu, character creation) keep Bone & Soot, the
+web's previous palette, as their own game-palette tokens (Part I "UI Chrome", ADR-0087).
 
-**Direction: Bone & Soot.** *Modern web design, medieval aesthetics.* A neutral soot base,
-bone-white as the single torch per view, grey stone surfaces, and iron framing, finished with the
-Atmosphere layer (see Material & depth). Fast, scannable, keyboard- and mobile-friendly: the
+**Direction: Barrow Vellum.** *Modern web design, medieval aesthetics.* A charcoal base, umber
+panels, vellum text, a lifted vellum as the single torch per view, and brass framing, finished
+with the Atmosphere layer (see Material & depth). No amber. Fast, scannable, keyboard- and mobile-friendly: the
 medievalism is in the finish, never at the cost of usability.
 
 **How it was chosen.** On 2026-10-21 the owner compared 18 candidate palettes live on the home
 page, through a throwaway switcher over the real `:root` tokens, and chose Bone & Soot with the
 Atmosphere layer on
 ([FS-8TCN2](../../docs/specs/8TCN2-bone-and-soot-web-ui-palette.md)). It replaced torch amber on
-warm umber, which read as busy on pages people look at for long stretches. The choice was made
-by eye. A later reskin should start from this record rather than relitigate it blind.
+warm umber, which read as busy on pages people look at for long stretches. On 2026-11-21 the
+owner compared four palettes on the real home, Bazaar, auth and profile pages at 375px and
+1280px, and moved to Barrow Vellum
+([ADR-0087](../../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)):
+the game's own vellum, umber and brass, with the amber torch still left out. Gold brass on text
+(the game's `brassBright`) was tried and rejected, because it brought the busy amber read back.
+The choice was made by eye. A later reskin should start from this record rather than relitigate
+it blind. The Bone & Soot values are kept below ("Former palette: Bone & Soot") for a swap-back.
 
-**Iron is the structure role, and its tokens are named "brass".** `--color-brass`,
-`--color-brass-bright`, `--color-border` and `--color-border-strong` hold iron-grey values. The
-names stay as they are (a semantic rename is a separate, mechanical follow-up), so **in a token
-name, "brass" is a role, not a hue.** The prose in this part says *iron* for that role. Brass as
-a colour belongs to the game palette.
+**Brass is the structure role.** `--color-brass` is a real brass `#9c7b3f`: hairlines, dividers,
+frames. `--color-brass-bright` is **vellum** `#cdbf9a`, not the game's gold `brassBright`,
+because it also colours text: the logo accent, `h2` section titles, auth links, active filter
+chips and the verified badge. Gold there read as amber. So in a token name, "brass-bright" is a
+role (bright structure and its text), and its hue is vellum.
+
+**Reading older prose in this part.** Much of what follows was written under Bone & Soot and keeps
+its words. Read **bone** as the torch (`--color-primary`, now lifted vellum), **bone-grey** as
+the text ramp (now vellum), **iron** as the structure role (`--color-brass`, now brass), **iron
+bright** as `--color-brass-bright` (now vellum), **ash grey** as `--color-accent` (now dark
+vellum), and **soot / stone** as the page and surfaces (now charcoal and umber). The rules hold
+unchanged; only the hues moved. The tables above carry the current values.
 
 **Runtime source of truth.** The UI palette is defined in
 [`../src/app/globals.css`](../src/app/globals.css) `:root`. Where DOM code needs the same values
@@ -930,7 +943,7 @@ game canvas, so it stays on the game palette with every scene.
 
 ## Principles
 
-1. **Soot, never black.** The base is a **neutral soot** (`--color-bg-dark` `#121212`), never
+1. **Charcoal, never black.** The base is **charcoal** (`--color-bg-dark` `#161310`), never
    `#000`. What makes it read as a surface rather than an absence is the material layer: grain,
    surface gradients, carved edges and the vignette (see Material & depth).
    *Why this changed, deliberately.* This principle used to read "dark, never black" and forbade
@@ -941,14 +954,17 @@ game canvas, so it stays on the game palette with every scene.
    low-chroma light, so on a neutral ground it reads as lit material, where a saturated accent on
    the same ground read as neon. The material layer and the Atmosphere bounds now carry the
    emission risk that the warm base used to carry. Pure `#000` stays forbidden.
-2. **One torch per view.** Bone (`--color-primary` `#e9dfc9`) marks the single most important
-   thing: primary CTA, active nav, page `h1`, the focal number. Overuse dilutes it. Text on a
-   bone fill is always `--color-bg-dark`.
-3. **Iron is structure, not fill.** Iron (`--color-brass` `#5c5a55`) lives in 1px hairline
+   *And back, partly (2026-11-21, ADR-0087).* The base is warm again, but the torch is a
+   low-chroma vellum rather than amber, so the reason above still holds: a pale, unsaturated
+   light reads as lit material on the umber ground, not as emission.
+2. **One torch per view.** Lifted vellum (`--color-primary` `#e6d8b0`) marks the single most
+   important thing: primary CTA, active nav, page `h1`, the focal number. Overuse dilutes it.
+   Text on a torch fill is always `--color-bg-dark`.
+3. **Brass is structure, not fill.** Brass (`--color-brass` `#9c7b3f`) lives in 1px hairline
    borders, dividers, focus rings, and hover glows, and is rarely a solid fill. Panels are dark;
-   iron frames them.
+   brass frames them.
 4. **Modern layout, medieval finish.** Grid/flex, responsive, generous spacing, real interaction
-   affordances. Medieval means blackletter display, uppercase spaced labels, bone-grey text, iron
+   affordances. Medieval means blackletter display, uppercase spaced labels, vellum text, brass
    rules, small carved/wax-seal badges, and the CSS material layer below. No image textures.
 5. **Motion communicates.** Entrance/hover/focus show *what changed*; ≤0.3s; honor
    `prefers-reduced-motion`. No decorative animation.
@@ -959,36 +975,36 @@ game canvas, so it stays on the game palette with every scene.
 
 | Token | CSS var | Value | Use |
 |---|---|---|---|
-| Primary (bone, the torch) | `--color-primary` | `#e9dfc9` | the four torch uses: primary CTA, active nav, page `h1`, focal number |
-| Primary bright | `--color-primary-bright` | `#f6efdf` | hover and emphasis on bone; top stop of the Atmosphere title gradient |
-| Accent (ash grey) | `--color-accent` | `#8c8c84` | secondary, cancel, subtitle |
+| Primary (lifted vellum, the torch) | `--color-primary` | `#e6d8b0` | the four torch uses: primary CTA, active nav, page `h1`, focal number |
+| Primary bright | `--color-primary-bright` | `#f2e8cc` | hover and emphasis on the torch; top stop of the Atmosphere title gradient |
+| Accent (dark vellum) | `--color-accent` | `#9b8e6a` | secondary, cancel, subtitle |
 | Danger (oxblood) | `--color-danger` | `#6e1f1f` | fill: errors, destructive, death |
 | Danger text | `--color-danger-text` | `#d07a6a` | error copy (oxblood lifted so it reads as text) |
-| Page bg (soot) | `--color-bg-dark` | `#121212` | body / page background; text on a bone fill |
-| Page bg (deepest) | `--color-bg-darker` | `#0a0a0a` | splash, wells, dropdown base |
-| Ground, well | `--color-bg-well` | `#0a0a0a` (the `--color-bg-darker` step) | inputs, card-entry wells, panels over the page; used translucent via `color-mix()` |
-| Ground, inset | `--color-bg-inset` | `#0e0e0e` | inset control groups on the game page chrome; used translucent via `color-mix()` |
-| Ground, dropdown | `--color-bg-dropdown` | `#070707` | dropdown and popover base (user menu, notification panel); used translucent via `color-mix()` |
-| Surface / card | `--color-bg-card` | `rgba(28, 28, 27, 0.88)` | cards, panels, modals (with blur) |
-| Surface raised | `--color-bg-card-2` | `rgba(38, 37, 35, 0.92)` | hovered/elevated card, nested panel |
-| Surface, opaque | `--color-bg-card-opaque` / `--color-bg-card-2-opaque` | `#1b1b1a` / `#242322`: each surface composited over soot, read back in the browser | `prefers-reduced-transparency` |
-| Iron (structure) | `--color-brass` | `#5c5a55` | borders, dividers, focus rings, hover glows |
-| Iron bright | `--color-brass-bright` | `#8a8780` | hover/focus structure; `h2` section titles under the Atmosphere |
-| Border (iron hairline) | `--color-border` | `--color-brass` at 30% (1.26:1 on soot) | default 1px borders/dividers |
-| Border strong | `--color-border-strong` | `--color-brass` at 60% (1.73:1 on soot) | hover/focus/active border |
-| Text primary (bone-grey) | `--color-text` | `#cfc9bb` | body text, item names, values |
-| Text dim | `--color-text-dim` | `#9b968b` | labels, secondary info |
-| Text muted | `--color-text-muted` | `#85817a` | footnotes, hints, small labels |
-| Text placeholder | `--color-text-placeholder` | `#5e5b55` | input placeholder |
+| Page bg (charcoal) | `--color-bg-dark` | `#161310` | body / page background; text on a torch fill |
+| Page bg (deepest, pitch) | `--color-bg-darker` | `#100c0a` | splash, wells, dropdown base |
+| Ground, well | `--color-bg-well` | `#100c0a` (the `--color-bg-darker` step) | inputs, card-entry wells, panels over the page; used translucent via `color-mix()` |
+| Ground, inset | `--color-bg-inset` | `#130f0c` | inset control groups on the game page chrome; used translucent via `color-mix()` |
+| Ground, dropdown | `--color-bg-dropdown` | `#0c0907` | dropdown and popover base (user menu, notification panel); used translucent via `color-mix()` |
+| Surface / card (umber) | `--color-bg-card` | `rgba(31, 26, 21, 0.88)` | cards, panels, modals (with blur) |
+| Surface raised (umber) | `--color-bg-card-2` | `rgba(36, 29, 23, 0.92)` | hovered/elevated card, nested panel |
+| Surface, opaque | `--color-bg-card-opaque` / `--color-bg-card-2-opaque` | `#1e1914` / `#231c16`: each surface composited over charcoal | `prefers-reduced-transparency` |
+| Brass (structure) | `--color-brass` | `#9c7b3f` | borders, dividers, focus rings, hover glows |
+| Brass bright (vellum) | `--color-brass-bright` | `#cdbf9a` | hover/focus structure; `h2` section titles under the Atmosphere; logo accent, links, active chips |
+| Border (brass hairline) | `--color-border` | `--color-brass` at 30% (1.48:1 on charcoal) | default 1px borders/dividers |
+| Border strong | `--color-border-strong` | `--color-brass` at 60% (2.45:1 on charcoal) | hover/focus/active border |
+| Text primary (vellum) | `--color-text` | `#cdbf9a` | body text, item names, values |
+| Text dim | `--color-text-dim` | `#9b8e6a` | labels, secondary info |
+| Text muted | `--color-text-muted` | `#8d8362` | footnotes, hints, small labels |
+| Text placeholder | `--color-text-placeholder` | `#6b6349` | input placeholder |
 
-**`--color-text` (bone-grey) is the default body colour.** Pure white is off-palette: bone is the
-brightest thing on the page, and bone is the torch. The material tokens were re-derived against
-soot rather than carried over from the amber palette:
+**`--color-text` (vellum) is the default body colour.** Pure white is off-palette: the torch is the
+brightest thing on the page. The material tokens below were derived against soot under Bone &
+Soot and are kept as they were (ADR-0087); the figures are re-measured on charcoal:
 
-| Token | Bone & Soot value | Why |
+| Token | Value | Why |
 |---|---|---|
-| `--color-border` / `-strong` | `--color-brass` at 30% / 60% | under amber the hairlines sat at 1.20:1 and 1.62:1 on the page; these land at 1.26:1 and 1.73:1 on soot, the same quiet frame |
-| `--focus-ring` | 2px of `--color-brass-bright` at 70% | 3.17:1 on soot, over the 3:1 non-text floor (amber's ring was 1.90:1) |
+| `--color-border` / `-strong` | `--color-brass` at 30% / 60% | under amber the hairlines sat at 1.20:1 and 1.62:1 on the page; these landed at 1.26:1 and 1.73:1 on soot; brass on charcoal lands at 1.48:1 and 2.45:1, a frame you can just see |
+| `--focus-ring` | 2px of `--color-brass-bright` at 70% | 5.49:1 on charcoal with vellum as brass-bright (3.17:1 under Bone & Soot; amber's ring was 1.90:1), over the 3:1 non-text floor |
 | `--glow-brass` | 18px of `--color-brass-bright` at 22% | plain iron is too dark on soot to read as a glow at all |
 | `--glow-torch` | 22px of `--color-primary` at 16% | bone is lighter than amber, so it takes a lower alpha to stay a glow and not an emission |
 | `--surface-gradient`, `--edge-carved`, `--edge-engraved` | the same stops in neutral white (`255,255,255`) | the warm highlights (`255,245,225`, `255,240,214`) were the amber palette's cast and read as a tint on soot |
@@ -1000,32 +1016,37 @@ back to an old raw triple.
 
 ### Contrast floor (the bases are chosen against it)
 
-**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured in the
-browser against `--color-bg-dark` `#121212`:
+**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured against
+`--color-bg-dark` `#161310` (ADR-0087, 2026-11-21):
 
-| Text token | Value | Ratio | Tier |
-|---|---|---|---|
-| `--color-text` (bone-grey) | `#cfc9bb` | 11.35:1 | body |
-| `--color-primary` (bone) | `#e9dfc9` | 14.15:1 | body |
-| `--color-primary-bright` | `#f6efdf` | 16.35:1 | body |
-| `--color-bg-dark` on bone fill | `#121212` | 14.15:1 | body |
-| `--color-text-dim` | `#9b968b` | 6.36:1 | body |
-| `--color-text-muted` | `#85817a` | 4.83:1 | body |
-| `--color-danger-text` | `#d07a6a` | 5.95:1 | body |
-| `--color-accent` (ash grey) | `#8c8c84` | 5.53:1 | body |
-| `--color-brass-bright` (iron bright, `h2`) | `#8a8780` | 5.23:1 | body |
-| `--color-text-placeholder` | `#5e5b55` | 2.77:1 | placeholder only |
+| Text token | Value | On page | On card | On raised panel | Tier |
+|---|---|---|---|---|---|
+| `--color-text` (vellum) | `#cdbf9a` | 10.15:1 | 9.56:1 | 9.22:1 | body |
+| `--color-primary` (lifted vellum) | `#e6d8b0` | 13.05:1 | | | body |
+| `--color-bg-dark` on torch fill | `#161310` | 13.05:1 | | | body |
+| `--color-text-dim` | `#9b8e6a` | 5.70:1 | 5.37:1 | 5.18:1 | body |
+| `--color-text-muted` | `#8d8362` | 4.90:1 | 4.61:1 | 4.45:1 | body (page and card) |
+| `--color-danger-text` | `#d07a6a` | 5.88:1 | | | body |
+| `--color-accent` (dark vellum) | `#9b8e6a` | 5.70:1 | | | body |
+| `--color-brass-bright` (vellum, `h2`) | `#cdbf9a` | 10.15:1 | | | body |
+| `--color-text-placeholder` | `#6b6349` | 3.09:1 | | | placeholder only |
 
-Measured in the browser on the running app (FS-8TCN2 slice 3, 2026-10-21): each token resolved
-through `getComputedStyle` and its WCAG ratio taken against the resolved `--color-bg-dark`. The
-preview estimated text 11.4, dim 6.4, muted 4.8 and torch 14.2, and the browser agrees.
+Card and raised panel are the opaque surface tokens (`#1e1914`, `#231c16`). Muted text falls to
+4.45:1 on the raised panel, as Bone & Soot's muted did (4.05:1); keep long muted copy off raised
+panels. `#8d8362` was proposed for dim, but at 4.45:1 on the raised panel it sits in the muted
+slot, and the game's dark vellum `#9b8e6a` carries dim.
+
 `--color-text-placeholder` is below the floor on purpose: it marks an empty input and never
 carries copy, so nothing that has to be read may use it (the auth footer, which used it, now
 uses `--color-text-muted`).
 
+*Under Bone & Soot (2026-10-21 to 2026-11-21)* the same measurements on soot `#121212` were: text
+11.35, bone 14.15, dim 6.36, muted 4.83, danger 5.95, ash 5.53, iron bright 5.23, placeholder
+2.77. Kept for the swap-back.
+
 **The value range moves with the base.** Under the amber palette, `--color-text-dim` and
 `--color-text-muted` had to be lifted when the base changed, because both failed their tier
-against the new ground. The same holds here: if a text token fails against soot, lift the token
+against the new ground. The same holds here: if a text token fails against the ground, lift the token
 within its role. Never fix it by changing the ground behind the text.
 
 **Every text token clears 4.5:1**, including `--color-text-muted`. An earlier draft parked it in
@@ -1046,9 +1067,9 @@ too. The browser figures are in the rarity table; one colour, Runed, was lifted 
 under the old amber palette amber became the entire accent system by default: **49 occurrences in
 `globals.css` against 4 brass and 1 oxblood.** One saturated hue on a dark ground, repeated
 everywhere, is neon regardless of what the token is called. This rule closed that gap, and it
-holds with bone as the torch: a light repeated everywhere stops being a torch.
+holds with vellum as the torch: a light repeated everywhere stops being a torch.
 
-**Bone (`--color-primary`) is permitted on exactly four things, at most one instance each per
+**The torch (`--color-primary`) is permitted on exactly four things, at most one instance each per
 view:**
 
 1. the **primary CTA**
@@ -1068,14 +1089,47 @@ still break the rule.
 
 | Role | Colour | Used for |
 |---|---|---|
-| Structure | **iron** `--color-brass` `#5c5a55` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
-| Structure, bright | **iron bright** `--color-brass-bright` `#8a8780` | hover/focus structure, `h2` section titles |
-| Text | **bone-grey** `--color-text` / `-dim` / `-muted` | all body, label and value text |
-| Surface | **soot / stone** `--color-bg-*` | pages, cards, panels, wells |
-| Secondary action | **ash grey** `--color-accent` | cancel, secondary, subtitle |
+| Structure | **brass** `--color-brass` `#9c7b3f` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
+| Structure, bright | **vellum** `--color-brass-bright` `#cdbf9a` | hover/focus structure, `h2` section titles, links, active chips |
+| Text | **vellum** `--color-text` / `-dim` / `-muted` | all body, label and value text |
+| Surface | **charcoal / umber** `--color-bg-*` | pages, cards, panels, wells |
+| Secondary action | **dark vellum** `--color-accent` | cancel, secondary, subtitle |
 | Danger | **oxblood** `--color-danger` (fill), `--color-danger-text` (copy) | errors, destructive, death |
 
-A view that needs a second emphasis colour reaches for **iron bright**, never a second bone.
+A view that needs a second emphasis colour reaches for **brass-bright**, never a second torch.
+
+### Former palette: Bone & Soot (swap-back)
+
+The web UI's palette from 2026-10-21 to 2026-11-21 ([FS-8TCN2](../../docs/specs/8TCN2-bone-and-soot-web-ui-palette.md),
+[ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)), replaced by
+Barrow Vellum ([ADR-0087](../../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)).
+The canvas menus still wear it through their `menu*` tokens. To swap the web back, put this block
+into `globals.css` `:root` and the matching strings into the `UI` table in `src/utils/theme.ts`
+(borders `rgba(92, 90, 85, 0.3)` / `0.6`, focus ring `0 0 0 2px rgba(138, 135, 128, 0.7)`), then
+restore this part's tables from git history at ADR-0087's commit's parent.
+
+```css
+--color-primary: #e9dfc9;          /* bone, the torch */
+--color-primary-bright: #f6efdf;
+--color-accent: #8c8c84;           /* ash grey */
+--color-danger: #6e1f1f;
+--color-danger-text: #d07a6a;
+--color-bg-dark: #121212;          /* soot */
+--color-bg-darker: #0a0a0a;
+--color-bg-card: rgba(28, 28, 27, 0.88);
+--color-bg-card-2: rgba(38, 37, 35, 0.92);
+--color-bg-card-opaque: #1b1b1a;
+--color-bg-card-2-opaque: #242322;
+--color-bg-well: #0a0a0a;
+--color-bg-inset: #0e0e0e;
+--color-bg-dropdown: #070707;
+--color-brass: #5c5a55;            /* iron */
+--color-brass-bright: #8a8780;     /* iron bright */
+--color-text: #cfc9bb;             /* bone-grey */
+--color-text-dim: #9b968b;
+--color-text-muted: #85817a;
+--color-text-placeholder: #5e5b55;
+```
 
 ---
 
@@ -1210,7 +1264,7 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
 - **Glows (hover/focus):** structure-tinted `box-shadow` derived from `--color-brass` /
   `--color-brass-bright`, opacity `0.1–0.4`. A torch-tinted glow belongs only to the primary CTA
   (see the Atmosphere layer). Focus ring is `--focus-ring`, derived from the iron structure role
-  (2px of `--color-brass-bright` at 70%, 3.17:1 on soot); it must stay plainly visible on soot.
+  (2px of `--color-brass-bright` at 70%, 5.49:1 on charcoal); it must stay plainly visible on the page.
   **Never neon.**
 - **Borders:** 1px iron hairline (`--color-border`); raise to `--color-border-strong` on
   hover/focus/active.

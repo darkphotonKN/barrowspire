@@ -12,6 +12,15 @@
 > Verification is the build plus in-browser measurement: contrast ratios, a token audit, and
 > looking at the result.
 
+> **Note 2026-11-21: the web palette is Barrow Vellum now
+> ([ADR-0087](../adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)).**
+> Kranti compared four palettes on the real home, Bazaar, auth and profile pages and moved the web
+> to the game's vellum, umber and brass, with no amber torch and `--color-brass-bright` held to
+> vellum. This FS's token values describe Bone & Soot as shipped; the current values are in the
+> design guideline Part II, which also keeps the Bone & Soot block for a swap-back. The canvas
+> menus keep Bone & Soot as their own `menu*` tokens. Everything else here (the Atmosphere
+> layer, the material re-derivation, the UI table, the fence) stands.
+
 ## Summary
 
 The web platform (landing, auth, profile, leaderboard, subscription, Bazaar, header and menus)
