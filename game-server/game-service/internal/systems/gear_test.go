@@ -81,6 +81,7 @@ func TestGearSystem_Unequip_RemovedOnTheNextTick(t *testing.T) {
 	ec.(*components.EquipmentComponent).ChestSlot = nil
 	cd, _ := attacker.GetComponent(ecs.ComponentTypeCooldown)
 	cd.(*components.CooldownComponent).Remaining = map[components.AttackKind]float64{}
+	attacker.RemoveComponent(ecs.ComponentTypeAttackPin)
 
 	assert.Equal(t, 25, slashOnce(em, attacker, target), "12 × 1.5 × (1 + 8/20) = 25.2")
 	assert.Greater(t, geared, 25)

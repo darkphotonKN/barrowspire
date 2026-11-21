@@ -225,12 +225,13 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 }
 
 // walkFactor is what the entity's walk is paced at this tick, as a share of
-// its move speed: AttackSlowFactor inside an attack slow, else 1. It scales the
-// walk only, never VelocityComponent.Speed, which gear owns and the wire
-// reports. FS-JS7C8 §C R15.
+// its move speed: 0 while pinned, else 1. It scales the walk only, never
+// VelocityComponent itself: the held direction is kept through the pin, so the
+// body walks it on the first tick after, and Speed stays what gear set and the
+// wire reports. FS-JS7C8 §Change: Attacking pins the attacker R49, R52.
 func walkFactor(entity *ecs.Entity) float64 {
-	if entity.HasComponent(ecs.ComponentTypeAttackSlow) {
-		return AttackSlowFactor
+	if entity.HasComponent(ecs.ComponentTypeAttackPin) {
+		return 0
 	}
 	return 1
 }

@@ -24,20 +24,27 @@ type dashWorld struct {
 	em     *ecs.EntityManager
 	move   *MovementSystem
 	combat *CombatSystem
+	dt     float64 // seconds per tick
 }
 
 func newDashWorld() *dashWorld {
+	return newDashWorldAt(tickSeconds)
+}
+
+// newDashWorldAt is a dashWorld ticking dt seconds at a time.
+func newDashWorldAt(dt float64) *dashWorld {
 	em := ecs.NewEntityManager()
 	return &dashWorld{
 		em:     em,
 		move:   NewMovementSystem(),
 		combat: NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects),
+		dt:     dt,
 	}
 }
 
 func (w *dashWorld) tick() {
-	w.move.Update(tickSeconds, w.em.GetAllEntities())
-	w.combat.Update(tickSeconds, w.em.GetAllEntities(), nil)
+	w.move.Update(w.dt, w.em.GetAllEntities())
+	w.combat.Update(w.dt, w.em.GetAllEntities(), nil)
 }
 
 func (w *dashWorld) ticks(n int) {
@@ -138,9 +145,10 @@ func TestDash_ReplacesTheWalkWhileItLasts(t *testing.T) {
 	}
 	assert.InDelta(t, 300+dashDistance, path[len(path)-1][1], 1e-6)
 
-	// still inside the dash's attack slow, so at its pace (FS-JS7C8 §C R19)
+	// the dash never pins, so the walk is back at full speed (FS-JS7C8
+	// §Change: Attacking pins the attacker R55)
 	w.tick()
-	assert.InDelta(t, walkedX+AttackSlowFactor*constants.DefaultSpeed*tickSeconds, transformOf(t, d).X, 1e-9, "the walk resumes")
+	assert.InDelta(t, walkedX+constants.DefaultSpeed*tickSeconds, transformOf(t, d).X, 1e-9, "the walk resumes")
 }
 
 // What stops a charge short: it ends where it stopped, and nothing carries the

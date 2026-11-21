@@ -144,9 +144,10 @@ func TestCombatSystem_CooldownIgnoresRequestsAndSpendsNothing(t *testing.T) {
 			combat.Update(tickSeconds, em.GetAllEntities(), nil)
 			hpAfterFirst, shotsAfterFirst := health(target), len(projectiles(em))
 			assert.Equal(t, 100-tt.cost, pool(attacker))
-			// refilled so only the cooldown can refuse what follows; one Shadow
-			// Shot alone nearly drains the pool
+			// refilled and unpinned so only the cooldown can refuse what
+			// follows; one Shadow Shot alone nearly drains the pool
 			resourceOf(attacker).Current = 100
+			attacker.RemoveComponent(ecs.ComponentTypeAttackPin)
 
 			// inside the cooldown: nothing at all happens
 			intend(attacker, intent)
@@ -252,7 +253,8 @@ func TestCombatSystem_UnequippingChangesTheNextHit(t *testing.T) {
 
 	ec, _ := attacker.GetComponent(ecs.ComponentTypeEquipment)
 	ec.(*components.EquipmentComponent).WeaponSlot = nil
-	for elapsed := 0.0; elapsed <= attackTable[components.AttackTargeted].cooldown; elapsed += tickSeconds {
+	// past the swing's cooldown and the pin it started
+	for elapsed := 0.0; elapsed <= max(attackTable[components.AttackTargeted].cooldown, AttackPinDuration); elapsed += tickSeconds {
 		combat.Update(tickSeconds, em.GetAllEntities(), nil)
 	}
 
