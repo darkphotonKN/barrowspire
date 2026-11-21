@@ -90,6 +90,7 @@ const { sceneSystems } = await import("./sceneEnd.standin");
 const { SHADOW_SHOT_FLIGHT } = await import("@/render/effects/shadowShot");
 const { AimLine } = await import("@/render/effects/aimLine");
 const { CUT_MS } = await import("@/render/effects/cut");
+const { ATTACK_PIN_MS } = await import("@/render/combat/playerCombat");
 const { MENU_CONTROLS } = await import("./MainMenuScene");
 const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
@@ -6241,11 +6242,12 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
     expect(s.run.abilityHud?.shown?.greyed).toBe(false);
   });
 
+  // the left-click's attack pin gates the release, not the press (FS-JS7C8 R63)
   it("should allow a hold to begin during the left-click's own lockout", () => {
     const s = aimOnStage();
     s.leftClick();
     s.press();
-    s.release(1300);
+    s.release(1000 + ATTACK_PIN_MS);
     expect(s.casts().map(([, body]) => (body as { skill_id: string }).skill_id)).toEqual(["arrow", "shadow_shot"]);
   });
 
@@ -6660,6 +6662,7 @@ describe("BarrowspireScene Shadow Shot hold (FS-JTNPR req 8–17; ADR-0030)", ()
       s.leftClick();
       s.run.handleGameStateUpdate(partyState(merc(0)));
       s.delayed().forEach(([, fn]) => fn()); // the left-click's own lockout runs out
+      s.run.time.now += ATTACK_PIN_MS; // and its attack pin (FS-JS7C8 R62)
       s.leftClick();
       expect(played(s).filter((d) => d === RIPOSTE_MS)).toHaveLength(1);
       expect(played(s)).toContain(CUT_MS);
