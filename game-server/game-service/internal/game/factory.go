@@ -5,6 +5,7 @@ import (
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
@@ -119,6 +120,8 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 
 	// the ranks held, read by the systems on the body, never the record (FS-8RZ51 R31)
 	entity.AddComponent(components.NewPassiveRanksComponent(config.PassiveRanks))
+	// and what they add, built at seating from the health and pool above (R24)
+	systems.ApplyPassiveBonus(entity)
 
 	// initialize equipment with loadout
 	entity.AddComponent(components.NewEquipmentComponent(config.PlayerLoadout))

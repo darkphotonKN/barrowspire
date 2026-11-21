@@ -1568,16 +1568,22 @@ func (s *Session) seatedCharacterLocked(playerID uuid.UUID) (uuid.UUID, bool) {
 }
 
 /**
-* RaisePassiveRanks raises the passive tree ranks the member's body holds to
-* ranks, by the higher rank per node, so answers landing out of order never
-* lower one (FS-8RZ51 R20, R27). Only the body of characterID is raised: a body
-* seated as another character since the spend began keeps its own. Reports
-* whether a body took them. The component is replaced, never written, so a
-* frame already holding the old ranks stays whole. A raise that takes the body
-* from no specialization to one is the pick: its one-off changes run, once
-* (FS-E1ZDG §B R8).
+* RaisePassiveRanks raises the passive tree ranks the member's HUB world body
+* holds to ranks, by the higher rank per node, so answers landing out of order
+* never lower one, and recomputes the body's passive bonus from them at once
+* (FS-8RZ51 R20, R27). Only the body of characterID is raised: a body seated as
+* another character since the spend began keeps its own. A field or a run
+* refuses: its body sees a spend from its next seating (R24, ADR-0082).
+* Reports whether a body took them. The component is replaced, never written,
+* so a frame already holding the old ranks stays whole. A raise that takes the
+* body from no specialization to one is the pick: its one-off changes run,
+* once, after the bonus (FS-E1ZDG §B R8).
 **/
 func (s *Session) RaisePassiveRanks(playerID, characterID uuid.UUID, ranks passivetree.Ranks) bool {
+	if s.worldType != types.WorldTypeHub {
+		return false
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1591,6 +1597,7 @@ func (s *Session) RaisePassiveRanks(playerID, characterID uuid.UUID, ranks passi
 	}
 	before := systems.Specialization(entity)
 	entity.AddComponent(components.NewPassiveRanksComponent(passivetree.Higher(systems.PassiveRanks(entity), ranks)))
+	systems.ApplyPassiveBonus(entity)
 	if spec := systems.Specialization(entity); before == "" && spec != "" {
 		s.specializationGained(entity, spec)
 	}

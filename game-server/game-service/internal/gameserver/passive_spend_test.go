@@ -179,6 +179,37 @@ func TestSpendPassivePoint_InTown_PersistsAndTheNextStateCarriesIt(t *testing.T)
 	assert.False(t, refused, "nothing is sent on success")
 }
 
+// hubFrameHealth is the member's max and current HP on the latest hub frame.
+func (r *spendRig) hubFrameHealth() (maxHP, currentHP int, ok bool) {
+	frame := r.inbox.latestFrame(r.hub.ID)
+	if frame == nil || frame.CurrentPlayer == nil {
+		return 0, 0, false
+	}
+	return frame.CurrentPlayer.MaxHealth, frame.CurrentPlayer.CurrentHealth, true
+}
+
+// Acceptance (FS-8RZ51 R27): a spend in town of t1a raises the HUB body's max
+// and current HP by the same amount at once: a level-3 warrior's own 174 max
+// HP, 4% of it rounded is 7.
+func TestSpendPassivePoint_InTown_TheHubBodyFeelsIt(t *testing.T) {
+	rig := newSpendRig(t, "warrior", 3, nil)
+
+	var maxBefore, currentBefore int
+	require.Eventually(t, func() bool {
+		var ok bool
+		maxBefore, currentBefore, ok = rig.hubFrameHealth()
+		_, points, treeOK := rig.hubFrameTree()
+		return ok && treeOK && points == 2 && maxBefore > 0
+	}, forfeitSettle, 10*time.Millisecond)
+
+	rig.send("warrior.t1a", 1)
+
+	require.Eventually(t, func() bool {
+		maxHP, currentHP, ok := rig.hubFrameHealth()
+		return ok && maxHP == maxBefore+7 && currentHP == currentBefore+7
+	}, forfeitSettle, 10*time.Millisecond, "max and current HP rise by 7 together")
+}
+
 // Acceptance: in a field, a run or no world, refused "Points are spent in
 // town."; character-service is not called.
 func TestSpendPassivePoint_OutOfTown_IsRefusedWithoutACall(t *testing.T) {

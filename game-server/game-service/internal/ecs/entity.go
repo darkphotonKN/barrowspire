@@ -68,6 +68,8 @@ const (
 	ComponentTypeGearBonus ComponentType = "GearBonus"
 	// the passive tree ranks a body holds (FS-8RZ51 R31)
 	ComponentTypePassiveRanks ComponentType = "PassiveRanks"
+	// what those ranks add to the body (FS-8RZ51 R25)
+	ComponentTypePassiveBonus ComponentType = "PassiveBonus"
 	ComponentTypeFrenzy       ComponentType = "Frenzy"
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"

@@ -62,9 +62,9 @@ func TestSeating_TheBodyHoldsTheCharactersRanks(t *testing.T) {
 }
 
 // R20, R27: a spend in town raises the body's ranks, by the higher rank per
-// node, and only on the body of the character that spent.
+// node, and only on the body of the character that spent, in the HUB world.
 func TestRaisePassiveRanks(t *testing.T) {
-	s := newPassiveWorld()
+	s := newHubWorld()
 	memberID := uuid.New()
 	character := rankedWarrior(passivetree.Ranks{"warrior.t1a": 2})
 	s.AddPlayer(memberID, character, "")
