@@ -349,6 +349,15 @@ export const GEAR = {
   shadowDark: mix("pitch", "slate", 0.35),
   shadowLeather: mix(mix("barrowDeep", "slate", 0.55), "pitch", 0.35),
   shadowBlack: mix("pitch", "slate", 0.3),
+  // the mercenary's specialization looks (FS-1J1CB R7, R8; mercLooks.js). The Duelist keeps the
+  // madder (GEAR.coat) on a wrapped wool robe, under a half-cloak and sash in a cold slate-black,
+  // set against the warm madder so they part from it by temperature (variant A's cape)
+  duelistSlate: mix(mix("slate", "pitch", 0.45), "necrotic", 0.08),
+  // the Sellsword: the madder dyed a charcoal black, never pure black, the sash a cooler step of
+  // it, under a coat of oiled buff leather, browner than gold (variant B's)
+  sellBlack: mix("charcoal", "slate", 0.3),
+  sellSash: mix("charcoal", "slate", 0.5),
+  buffCoat: mix(mix("barrowBrown", "brass", 0.3), "barrowDeep", 0.2),
 };
 
 /**
@@ -475,6 +484,14 @@ export function fabrics() {
     shadowLeather: mat(leather(GEAR.shadowLeather, { seed: 239, dirt: 0.3 }), { rough: 0.7 }),
     shadowBlack: mat(leather(GEAR.shadowBlack, { seed: 241, dirt: 0.25 }), { rough: 0.65 }),
     shadowFletch: mat(linen(GEAR.shadowDark, { seed: 243, dirt: 0.1 })),
+    // the Duelist's and the Sellsword's cloth (FS-1J1CB R7, R8): the robe a plain wool in the
+    // coat's madder, not the arming coat's quilting
+    duelistRobe: mat(wool(GEAR.coat, { seed: 245, dirt: 0.4 }), { side: D }),
+    duelistSlate: mat(wool(GEAR.duelistSlate, { seed: 247, dirt: 0.4 }), { side: D }),
+    sellBlack: mat(quilted(GEAR.sellBlack, { seed: 249 }), { rough: 0.85, normal: 1.2, side: D }),
+    sellSash: mat(wool(GEAR.sellSash, { seed: 251, dirt: 0.35 }), { side: D }),
+    // the buff coat painted flat and matte, as variant B was: the leather grain's scuffs lit it gold
+    buffCoat: mat(linen(GEAR.buffCoat, { seed: 253, dirt: 0.3 }), { rough: 0.75, side: D }),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),

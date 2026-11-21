@@ -397,7 +397,10 @@ lit) while the player stands inside.
     Ranger's bake, 2026-11-22, FS-1J1CB R10.)*
   - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
     mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
-    half-cloak from the off shoulder on cloak bones.
+    half-cloak from the off shoulder on cloak bones. The V shows the breeches' dark wool beneath
+    it. The half-cloak hangs wide of the arm and stops at his side: carried round the front of
+    the arm, the cut's free arm, thrown out and back, lifted it over his head like a wing. The
+    knee cop goes under the robe. *(Amended in the Duelist's bake, 2026-11-22, FS-1J1CB.)*
   - **Sellsword** (mercenary): a sleeveless buff-leather coat buckled in brass over the arming
     coat dyed charcoal black, a spaulder on each shoulder and a purse at the belt.
 

@@ -69,6 +69,7 @@ import { cut, dress } from "./look.js";
 import { berserker, guardian } from "./warriorLooks.js";
 import { pyromancer, spellwarden } from "./mageLooks.js";
 import { hunter, shadowRanger } from "./archerLooks.js";
+import { duelist, sellsword } from "./mercLooks.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -655,6 +656,8 @@ export const CAST = [
   specRow("wizard", "pyromancer", pyromancer, { module: "mageLooks", fn: "pyromancer" }),
   specRow("archer", "hunter", hunter, { module: "archerLooks", fn: "hunter" }),
   specRow("archer", "shadow_ranger", shadowRanger, { module: "archerLooks", fn: "shadowRanger" }),
+  specRow("mercenary", "duelist", duelist, { module: "mercLooks", fn: "duelist" }),
+  specRow("mercenary", "sellsword", sellsword, { module: "mercLooks", fn: "sellsword" }),
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds
