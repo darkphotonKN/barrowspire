@@ -42,6 +42,13 @@ describe("abilityCopy (FS-8AY7S req 30; FS-E1ZDG §L.43)", () => {
     );
   });
 
+  it("should give a Sellsword's parry the sharpening line, its name unchanged (FS-E1ZDG §L.46)", () => {
+    expect(abilityCopy("mercenary", "sellsword")).toEqual({
+      name: "Parry",
+      line: "Turn a blow as it lands for a parry charge. Each one held sharpens the cut.",
+    });
+  });
+
   it("should keep the class's row for another class's spec or an id it does not know", () => {
     expect(abilityCopy("warrior", "shadow_ranger")?.name).toBe("Dash");
     expect(abilityCopy("archer", "berserker")?.name).toBe("Heavy Shot");

@@ -414,8 +414,8 @@ export class PlayerCombat {
     }
     if (playerClass === "mercenary") {
       // the cut, toward the cursor; the server resolves its cone (FS-MAMHR §B.6, §G.32). At 3
-      // parry charges (a Duelist's 2, FS-E1ZDG §L R45) the server throws it as the riposte, so
-      // the riposte slice plays (§G.33)
+      // parry charges (a Duelist's 2, never for a Sellsword: FS-E1ZDG §L R45) the server throws
+      // it as the riposte, so the riposte slice plays (§G.33)
       const riposte = riposteArmed(this.self());
       this.port.sendMessage(ActionType.CastSkill, { skill_id: "cut", target_x: target.x, target_y: target.y });
       if (riposte) this.look.riposte(me, target);

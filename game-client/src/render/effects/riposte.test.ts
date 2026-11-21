@@ -120,6 +120,17 @@ describe("riposteArmed for a Duelist (FS-E1ZDG §I R32, §L R45)", () => {
   });
 });
 
+describe("riposteArmed for a Sellsword (FS-E1ZDG §J R33, §L R45)", () => {
+  const sellsword = (n: number) => ({
+    resource: { kind: "parry_charges" as const, current: n, max: 5, ability_cost: 0 },
+    specialization: "sellsword",
+  });
+
+  it.each([0, 2, 3, 4, 5])("should never be armed, at %i parry charges", (n) => {
+    expect(riposteArmed(sellsword(n))).toBe(false);
+  });
+});
+
 describe("RIPOSTE_SHAPE (FS-MAMHR §E.23)", () => {
   it("should match the server's riposte: a 240° arc, 90 px of reach", () => {
     expect(RIPOSTE_SHAPE.arc).toBeCloseTo(240 * DEG);
@@ -257,6 +268,16 @@ describe("RiposteFx armed tell (FS-MAMHR §G.34)", () => {
     expect(f.fx.armedShown).toBe(true);
     f.fx.sync({ ...charges(1), specialization: "duelist" }, 16);
     expect(f.fx.armedShown).toBe(false);
+  });
+
+  it("should never show a Sellsword's tell, even at 5 parry charges (FS-E1ZDG §L R45)", () => {
+    const f = fake();
+    f.fx.sync(
+      { resource: { kind: "parry_charges", current: 5, max: 5, ability_cost: 0 }, specialization: "sellsword" },
+      0,
+    );
+    expect(f.fx.armedShown).toBe(false);
+    expect(f.made).toHaveLength(0);
   });
 
   it("should take the tell down when the merc is gone from the state (escaped)", () => {

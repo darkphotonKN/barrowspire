@@ -122,6 +122,8 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 	entity.AddComponent(components.NewPassiveRanksComponent(config.PassiveRanks))
 	// and what they add, built at seating from the health and pool above (R24)
 	systems.ApplyPassiveBonus(entity)
+	// a Sellsword's pool holds 5, seated at 0 as every merc's (FS-E1ZDG §J R34)
+	systems.ApplySellswordPool(entity)
 
 	// initialize equipment with loadout
 	entity.AddComponent(components.NewEquipmentComponent(config.PlayerLoadout))

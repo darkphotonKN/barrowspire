@@ -39,6 +39,11 @@ export const SPECIALIZATION_ABILITY_COPY: Readonly<Record<string, AbilityCopy>> 
     name: ABILITY_COPY.mercenary.name,
     line: "Turn a blow as it lands for a parry charge. At two, the cut ripostes.",
   },
+  // a Sellsword never ripostes; each charge held is a sharper, faster cut (FS-E1ZDG §J R33, R35)
+  sellsword: {
+    name: ABILITY_COPY.mercenary.name,
+    line: "Turn a blow as it lands for a parry charge. Each one held sharpens the cut.",
+  },
 };
 
 /**

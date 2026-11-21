@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type Phaser from "phaser";
 import {
+  drawHudPips,
   HUD_COLUMN_W,
   RESOURCE_HUD_AT,
   ResourceHud,
   resourceHudHeight,
 } from "./ResourceHud";
 import type { HudBar } from "./resources";
+import type { BarGraphics } from "./ResourceHud";
 
 // The panel hangs from a fixed top edge and grows down, so whatever stands under it keeps its place.
 
@@ -114,5 +116,37 @@ describe("ResourceHud (top anchored)", () => {
     rects.length = 0;
     hud.show([health, mana]);
     expect(rects[0]).toEqual([X, TOP, 180, resourceHudHeight(2)]);
+  });
+});
+
+// FS-E1ZDG §L R44: a Sellsword's five pips share the bar's width with the gaps, as a merc's three do
+describe("drawHudPips", () => {
+  const drawn = (count: number, w: number) => {
+    const rects: number[][] = [];
+    const g = {
+      fillStyle: () => g,
+      fillRect: (...args: number[]) => {
+        rects.push(args);
+        return g;
+      },
+      lineStyle: () => g,
+      strokeRect: () => g,
+    };
+    drawHudPips(g as unknown as BarGraphics, 0, 0, w, 8, Array.from({ length: count }, (_, i) => i < 2));
+    return rects;
+  };
+
+  it.each([
+    [3, 98],
+    [5, 98],
+    [5, 128],
+  ])("should fit %i pips inside a %i px bar, each the same width", (count, w) => {
+    const rects = drawn(count, w);
+    expect(rects).toHaveLength(count);
+    const widths = new Set(rects.map(([, , pw]) => pw));
+    expect(widths.size).toBe(1);
+    expect([...widths][0]).toBeGreaterThan(0);
+    const [x, , pw] = rects[count - 1];
+    expect(x + pw).toBeLessThanOrEqual(w);
   });
 });

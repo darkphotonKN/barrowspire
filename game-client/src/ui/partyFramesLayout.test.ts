@@ -238,6 +238,31 @@ describe("partyFrameRows: a teammate's bar slot", () => {
     ]);
   });
 
+  // FS-E1ZDG §L R44: a Sellsword's frame shows their 5
+  it("draws a Sellsword teammate's five parry charges as five pips", () => {
+    const others = [
+      seen("wren", {
+        current_health: 60,
+        max_health: 120,
+        specialization: "sellsword",
+        resource: {
+          kind: "parry_charges",
+          current: 4,
+          max: 5,
+          ability_cost: 1,
+        },
+      }),
+    ];
+    const slot = slotOf(two({ where: "run" }), others);
+    expect(slot.kind === "bars" && slot.resource?.pips).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+  });
+
   // FS-CH21F R8: the hub's refusal is lifted; one rule decides bars in every world
   it("shows a teammate in the hub, listed in the hub's state, both bars", () => {
     const others = [

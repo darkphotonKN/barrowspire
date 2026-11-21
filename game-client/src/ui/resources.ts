@@ -13,9 +13,6 @@ import type {
 } from "@/types/gameState";
 import { resolved } from "./party";
 
-/** How many pips a `parry_charges` resource is drawn as (req 22). */
-export const PARRY_PIPS = 3;
-
 /** Which colour channel a bar is drawn in: health, a known resource, or one the client does not know. */
 export type HudChannel = "health" | "mana" | "stamina" | "parry" | "unknown";
 
@@ -26,7 +23,7 @@ export interface HudBar {
   label: string | null;
   /** How full, 0 to 1. */
   fill: number;
-  /** Set only for parry charges: one entry per pip, lit for each charge held. */
+  /** Set only for parry charges: one entry per pip, one pip per point of the max, lit for each charge held. */
   pips?: boolean[];
 }
 
@@ -101,7 +98,8 @@ export function barsOf(me: PlayerState): HudBar[] {
 
 /**
  * A class resource as a bar (req 21, 22): its channel and label from `resource.kind`, never from
- * a class table, and parry charges as pips. The HUD and the party frames (FS-R82NV R34) share it.
+ * a class table, and parry charges as one pip per point of the pool's max: 3 for a mercenary, 5
+ * for a Sellsword (FS-E1ZDG §L R44). The HUD and the party frames (FS-R82NV R34) share it.
  */
 export function resourceBar(res: ResourceState): HudBar {
   const known = KINDS[res.kind];
@@ -111,7 +109,7 @@ export function resourceBar(res: ResourceState): HudBar {
     fill: fillOf(res.current, res.max),
   };
   if (bar.channel === "parry")
-    bar.pips = Array.from({ length: PARRY_PIPS }, (_, i) => i < res.current);
+    bar.pips = Array.from({ length: res.max }, (_, i) => i < res.current);
   return bar;
 }
 

@@ -322,6 +322,17 @@ describe("PlayerCombat Mercenary (FS-MAMHR §G.32–§G.35)", () => {
     expect(look.cut).not.toHaveBeenCalled();
   });
 
+  it("should play a Sellsword's cut at 5 parry charges, never the riposte slice (FS-E1ZDG §L R45)", () => {
+    const { combat, send, look } = combatOnStage({
+      resource: { kind: "parry_charges", current: 5, max: 5, ability_cost: 0 },
+      specialization: "sellsword",
+    });
+    combat.cast("primary", "mercenary", me, target);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, { skill_id: "cut", target_x: 160, target_y: 100 });
+    expect(look.cut).toHaveBeenCalledWith(me, target);
+    expect(look.riposte).not.toHaveBeenCalled();
+  });
+
   it("should send parry and raise the stance on a right-click, with no clip and no lockout", () => {
     const { combat, send, look } = combatOnStage({ resource: charges(0) });
     combat.cast("special", "mercenary", me, target);

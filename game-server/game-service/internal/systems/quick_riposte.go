@@ -10,11 +10,15 @@ import (
 const quickRiposteCharges = 2
 
 // riposteChargesOf is the parry charges a caster's cut arms the riposte at,
-// and the riposte then spends: 2 for a Duelist, 3 for any other body.
-// Everything else about the riposte is the row's (FS-MAMHR §E.23).
-func riposteChargesOf(caster *ecs.Entity) int {
-	if Specialization(caster) == passivetree.Duelist {
-		return quickRiposteCharges
+// and the riposte then spends: 2 for a Duelist, 3 for any other body. False
+// for a Sellsword, whose cut never ripostes (FS-E1ZDG §J R33). Everything
+// else about the riposte is the row's (FS-MAMHR §E.23).
+func riposteChargesOf(caster *ecs.Entity) (int, bool) {
+	switch Specialization(caster) {
+	case passivetree.Duelist:
+		return quickRiposteCharges, true
+	case passivetree.Sellsword:
+		return 0, false
 	}
-	return riposteParryCharges
+	return riposteParryCharges, true
 }

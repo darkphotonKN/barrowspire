@@ -183,7 +183,8 @@ const (
 	cutRange    = 55.0
 	cutHalfCone = 35 * math.Pi / 180 // a 70° cone
 	// the riposte: a wide, long cleave toward the cursor, paid with every parry
-	// charge the merc can hold; a Duelist's arms and pays at 2 (quick_riposte.go).
+	// charge the merc can hold; a Duelist's arms and pays at 2, a Sellsword's
+	// never arms (quick_riposte.go).
 	// Charter defaults. FS-MAMHR §Requirements 23.
 	riposteRange        = 90.0
 	riposteHalfCone     = 120 * math.Pi / 180 // a 240° cone
@@ -636,6 +637,10 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	// the passive tree's per-rank stats, before the cost is checked, so a
 	// lowered cost is affordable at what it is lowered to (FS-8RZ51 R29)
 	spec = withPassives(spec, passiveBonus(attacker))
+	// a Sellsword's charges held as it resolves, before its cost is spent
+	// (FS-E1ZDG §J R35)
+	stacks := sellswordStacks(attacker, pool)
+	spec = withSellswordStacks(spec, stacks)
 	if pool != nil {
 		if pool.Current < spec.cost {
 			return
@@ -680,8 +685,10 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	}
 	kickAfterCast(attacker, spec.kind, monstersHit, len(s.kills)-killsBefore)
 	if cooldowns != nil {
-		// worn attack speed, already capped, shortens every cooldown
-		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/(1+float64(wornGear(attacker).AttackSpeedPercent)/100))
+		// worn attack speed, already capped, and a Sellsword's stacks on top
+		// shorten every cooldown
+		attackSpeed := float64(wornGear(attacker).AttackSpeedPercent) + sellswordAttackSpeedPercent(stacks)
+		startCooldown(cooldowns, cooldownSlot(intent.Kind), spec.cooldown/(1+attackSpeed/100))
 	}
 	if spec.slows {
 		startAttackSlow(attacker)
@@ -737,16 +744,16 @@ func tickAttackSlow(entity *ecs.Entity, deltaTime float64) {
 
 // armCut is the row a cut that passed its cooldown resolves as: the riposte
 // when the caster holds the parry charges it arms at (riposteChargesOf: 3, a
-// Duelist's 2), else the cut as it is. Its cost then spends that many, whether
-// or not it hits anything; the cooldown it starts stays the cut's slot. Any
-// other attack, or any other resource, is left alone. FS-MAMHR §Requirements
-// 23–25; FS-E1ZDG §I R32.
+// Duelist's 2, never for a Sellsword), else the cut as it is. Its cost then
+// spends that many, whether or not it hits anything; the cooldown it starts
+// stays the cut's slot. Any other attack, or any other resource, is left
+// alone. FS-MAMHR §Requirements 23–25; FS-E1ZDG §I R32, §J R33.
 func armCut(caster *ecs.Entity, kind components.AttackKind, pool *components.ResourceComponent, spec attackSpec) attackSpec {
 	if kind != components.AttackCut || pool.Kind != components.ResourceParryCharges {
 		return spec
 	}
-	charges := riposteChargesOf(caster)
-	if pool.Current < charges {
+	charges, ripostes := riposteChargesOf(caster)
+	if !ripostes || pool.Current < charges {
 		return spec
 	}
 	riposte := attackTable[components.AttackRiposte]

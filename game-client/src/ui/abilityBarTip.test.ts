@@ -65,6 +65,13 @@ describe("abilityTip: the right-click square (R28, R27)", () => {
     });
   });
 
+  it("should give a Sellsword's parry the sharpening line (FS-E1ZDG §L.46)", () => {
+    expect(abilityTip("ability", view({ ability: { ...VIEW.ability, icon: "parry", specialization: "sellsword" } }))).toEqual({
+      name: "Parry",
+      line: "Turn a blow as it lands for a parry charge. Each one held sharpens the cut.",
+    });
+  });
+
   it("should show the tooltip of a greyed square too", () => {
     expect(abilityTip("ability", view({ ability: { ...VIEW.ability, greyed: true } }))?.name).toBe("Dash");
   });

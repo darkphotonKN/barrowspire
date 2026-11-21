@@ -3,8 +3,8 @@
  *
  * - The **riposte slice**: a big, clean band of steel sweeping the server's riposte exactly
  *   (§E.23: 240°, 90 px) toward the cursor. It plays in place of the cut effect on a left-click
- *   sent while the latest state shows 3 parry charges (a Duelist's 2: FS-E1ZDG §L R45), the
- *   moment `cut` is sent (client prediction, as the cut does). The server arms the riposte, never
+ *   sent while the latest state shows 3 parry charges (a Duelist's 2, never for a Sellsword:
+ *   FS-E1ZDG §L R45), the moment `cut` is sent (client prediction, as the cut does). The server arms the riposte, never
  *   the client (§E.24): there is no skill id, the client sends `cut` either way.
  * - The **armed tell**: while the latest state shows those charges, a glint runs again and again
  *   along a blade carried low at the merc's side, so the player knows the next left-click is the
@@ -58,16 +58,31 @@ const CARRIED = { from: { x: 7, y: -24 }, to: { x: 19, y: -6 } };
 export type RiposteState = Pick<PlayerState, "resource" | "specialization">;
 
 /**
+ * The parry charges a merc holding `specialization` has their cut ripostes at: 3, a Duelist's 2,
+ * and null for a Sellsword, whose cut never ripostes (FS-E1ZDG §J R33, §L R45).
+ */
+function riposteChargesOf(specialization: string | undefined): number | null {
+  switch (specializationOf("mercenary", specialization)) {
+    case "duelist":
+      return QUICK_RIPOSTE_CHARGES;
+    case "sellsword":
+      return null;
+    default:
+      return RIPOSTE_CHARGES;
+  }
+}
+
+/**
  * Whether the merc's next cut is the riposte (FS-MAMHR §G.33, §G.34): the latest state shows them
- * at 3 parry charges, or 2 for a Duelist (FS-E1ZDG §L R45). The server arms it, never the client
- * (§E.24): this only says which effect the cut it is about to send should play, and whether the
- * armed tell shows.
+ * at 3 parry charges, or 2 for a Duelist, and never for a Sellsword (FS-E1ZDG §L R45). The server
+ * arms it, never the client (§E.24): this only says which effect the cut it is about to send
+ * should play, and whether the armed tell shows.
  */
 export function riposteArmed(me: RiposteState | null | undefined): boolean {
   const r = me?.resource;
   if (r?.kind !== "parry_charges") return false;
-  const duelist = specializationOf("mercenary", me?.specialization) === "duelist";
-  return r.current >= (duelist ? QUICK_RIPOSTE_CHARGES : RIPOSTE_CHARGES);
+  const charges = riposteChargesOf(me?.specialization);
+  return charges !== null && r.current >= charges;
 }
 
 /** The slice of a Phaser Graphics the slice and the tell draw with. */
