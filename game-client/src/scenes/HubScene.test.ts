@@ -4404,7 +4404,8 @@ describe("HubScene spec looks (FS-1J1CB R20, R23)", () => {
 
     hub.preload();
 
-    expect(art.queued).toEqual(["folk-0", "archer_hunter-0"].map(atlasTextureKey));
+    // the set, not the order: pages queue in the manifest's order, which a baked look joins
+    expect(art.queued.sort()).toEqual(["folk-0", "archer_hunter-0"].map(atlasTextureKey).sort());
   });
 
   it("should queue no look for a character with no specialization (R18)", () => {
