@@ -3586,6 +3586,9 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 			continue
 		}
 
+		// a Guardian's Last Stand is ready again on every new floor (FS-E1ZDG R12)
+		entity.RemoveComponent(ecs.ComponentTypeLastStandSpent)
+
 		if vc, ok := entity.GetComponent(ecs.ComponentTypeVelocity); ok {
 			velocity := vc.(*components.VelocityComponent)
 			velocity.VX, velocity.VY = 0, 0

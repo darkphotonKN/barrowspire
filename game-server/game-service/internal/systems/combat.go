@@ -1187,7 +1187,9 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
 	}
 	damage = damageTaken(target, health, damage)
-	health.CurrentHealth = max(health.CurrentHealth-damage, 0)
+	if !lastStand(target, health, damage) {
+		health.CurrentHealth = max(health.CurrentHealth-damage, 0)
+	}
 
 	// the hit that took it to 0 is the killing blow; every later one stops at
 	// the dead-target check above, so this is true once per monster

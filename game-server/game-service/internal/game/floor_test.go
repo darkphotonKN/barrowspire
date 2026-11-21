@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -532,6 +533,37 @@ func TestRegenerateFloor_MovesTheLivingAndLeavesTheDeadBehind(t *testing.T) {
 	assert.NotContains(t, state.Players, escaped)
 	assert.Equal(t, 1, state.EscapedCount, "escaped count unchanged")
 	assert.Equal(t, 2, state.Floor)
+}
+
+// A Guardian's Last Stand, spent on one floor, saves them again on the next.
+// FS-E1ZDG §C R12; §Acceptance Criteria "Guardian".
+func TestRegenerateFloor_ReadiesTheGuardiansLastStand(t *testing.T) {
+	s := newRun(t, &countingItemsClient{})
+	guardian := uuid.New()
+	s.AddPlayer(guardian, types.CharacterInPlay{Name: "Wren", Class: "warrior", PassiveRanks: passivetree.Ranks{"warrior.t6a": 1}}, "")
+	body := delverEntity(t, s, guardian)
+	hc, _ := body.GetComponent(ecs.ComponentTypeHealth)
+	health := hc.(*components.HealthComponent)
+
+	combat := systems.NewCombatSystem(s.EntityManager, func() float64 { return 0.999 }, systems.PlayerDamageOff, UniqueEffects)
+	killingBlow := func() {
+		combat.Update(1.0/30, s.EntityManager.GetAllEntities(), []systems.Impact{{
+			TargetEntityID: body.ID,
+			Attack: components.AttackSnapshot{
+				AttackerEntityID: uuid.New(), Kind: components.AttackMonsterStrike, FromMonster: true,
+				DamageType: components.DamagePhysical, Power: 5000, Coefficient: 1,
+			},
+		}})
+	}
+
+	killingBlow()
+	require.Equal(t, 1, health.CurrentHealth, "saved on floor 1")
+	require.NoError(t, s.regenerateFloor())
+
+	killingBlow()
+	assert.Equal(t, 1, health.CurrentHealth, "saved again on floor 2")
+	killingBlow()
+	assert.Zero(t, health.CurrentHealth, "once on floor 2")
 }
 
 func transformOf(t *testing.T, e *ecs.Entity) *components.TransformComponent {

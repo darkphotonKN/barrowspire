@@ -88,6 +88,9 @@ const (
 
 	ComponentTypeRespawn ComponentType = "Respawn"
 
+	// a Guardian's Last Stand spent on this floor (FS-E1ZDG §C R11-12)
+	ComponentTypeLastStandSpent ComponentType = "LastStandSpent"
+
 	// a tome run's plan on the run-level entity, and the tome and altar
 	// themselves (FS-3103M §B-C)
 	ComponentTypeTomePlan ComponentType = "TomePlan"
