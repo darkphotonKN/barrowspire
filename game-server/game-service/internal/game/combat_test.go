@@ -209,3 +209,44 @@ func TestCastSkill_EarthbreakerOnlyForAWarriorHoldingTheNode(t *testing.T) {
 		})
 	}
 }
+
+// Settle the Debt cast through the handler resolves on the tick for a
+// mercenary holding the node, spending every parry charge on a hit behind
+// them as well; one without the node keeps them all. FS-04EEA §A R3, §F R30–R31.
+func TestCastSkill_SettleTheDebtOnlyForAMercHoldingTheNode(t *testing.T) {
+	node, _ := passivetree.AbilityNode("mercenary")
+	for _, tt := range []struct {
+		name  string
+		ranks passivetree.Ranks
+		hit   bool
+	}{
+		{"with the node", passivetree.Ranks{node.ID: 1}, true},
+		{"without the node", nil, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := unstartedRun(t)
+			playerID := uuid.New()
+			entity, ok := s.EntityManager.GetEntity(s.AddPlayer(playerID, types.CharacterInPlay{Name: "Vael", Class: "mercenary", PassiveRanks: tt.ranks}, ""))
+			require.True(t, ok)
+			tc, _ := entity.GetComponent(ecs.ComponentTypeTransform)
+			transform := tc.(*components.TransformComponent)
+			transform.X, transform.Y = 500, 500
+			rc, _ := entity.GetComponent(ecs.ComponentTypeResource)
+			parryCharges := rc.(*components.ResourceComponent)
+			require.Equal(t, components.ResourceParryCharges, parryCharges.Kind)
+			parryCharges.Current = 2
+			behind := unarmoredTarget(s, 440, 500)
+
+			require.NoError(t, s.handleCastSkill(playerID, "settle_the_debt", 600, 500))
+			tick(s)
+
+			if tt.hit {
+				assert.Less(t, currentHealth(behind), 1000, "all round, behind included")
+				assert.Equal(t, 0, currentResource(entity))
+				return
+			}
+			assert.Equal(t, 1000, currentHealth(behind))
+			assert.Equal(t, 2, currentResource(entity))
+		})
+	}
+}

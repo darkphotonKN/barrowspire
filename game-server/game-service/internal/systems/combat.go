@@ -151,6 +151,10 @@ type attackSpec struct {
 	// slows: resolving it starts its caster's attack slow. Every row a player
 	// casts; never a monster's. FS-JS7C8 §C R17.
 	slows bool
+	// spendsPool: a resolving cast spends every unit the caster's pool holds,
+	// n, cost being the least it needs, and lands at coefficient × n.
+	// FS-04EEA §F R29–R32.
+	spendsPool bool
 }
 
 const (
@@ -170,8 +174,10 @@ const (
 	earthbreakerRange = 90.0
 	// Blink: the farthest the mage moves. Charter default. FS-04EEA §D R18.
 	blinkDistance = 180.0
-	// settleTheDebtLeastCost is the fewest parry charges Settle the Debt
-	// needs; it spends every one held. FS-04EEA §F R29–R30.
+	// Settle the Debt: a flurry all round the merc. settleTheDebtLeastCost is
+	// the fewest parry charges it needs; it spends every one held. Charter
+	// defaults. FS-04EEA §F R29–R31.
+	settleTheDebtRange     = 90.0
 	settleTheDebtLeastCost = 1
 
 	// The charge runs dashDistance at dashSpeed: 0.4 s, 12 ticks of 15 px at
@@ -301,6 +307,14 @@ var attackTable = map[components.AttackKind]attackSpec{
 		delivery: deliverBlink, cost: 30, cooldown: 8, reach: blinkDistance,
 		slows: true,
 	},
+	// the mercenary's tree ability: one hit all round per target at 1.0 per
+	// parry charge spent, on the cut's hybrid scaling. Its 0.25 s is the cut's
+	// slot (cooldownSlot), as the riposte's is. FS-04EEA §F R29–R33, §A R5.
+	components.AttackSettleTheDebt: {
+		delivery: deliverAround, damageType: components.DamagePhysical, scaling: scaleStrengthAgility,
+		coefficient: 1.0, cost: settleTheDebtLeastCost, cooldown: 0.25, reach: settleTheDebtRange,
+		slows: true, spendsPool: true,
+	},
 }
 
 // AttackCost is what one resolved cast of an attack row costs its caster's
@@ -311,12 +325,9 @@ func AttackCost(kind components.AttackKind) int {
 }
 
 // TreeAbilityCost is what a tree ability costs its caster's class resource, as
-// the wire shows it: its row's cost, or for Settle the Debt, which spends every
-// parry charge held, the least it needs. FS-04EEA §A R5; FS-Q18Q3 §A R5.
+// the wire shows it: its row's cost, which for Settle the Debt, spending every
+// parry charge held, is the least it needs. FS-04EEA §A R5; FS-Q18Q3 §A R5.
 func TreeAbilityCost(kind components.AttackKind) int {
-	if kind == components.AttackSettleTheDebt {
-		return settleTheDebtLeastCost
-	}
 	return AttackCost(kind)
 }
 
@@ -575,6 +586,11 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 		if pool.Current < spec.cost {
 			return
 		}
+		if spec.spendsPool {
+			spec = spendAll(spec, pool.Current)
+		}
+	} else if spec.spendsPool {
+		return // nothing to spend
 	}
 
 	switch spec.delivery {
@@ -670,6 +686,14 @@ func armCut(kind components.AttackKind, pool *components.ResourceComponent, spec
 		return spec
 	}
 	return attackTable[components.AttackRiposte]
+}
+
+// spendAll is a pool-spending row as it resolves on n units held: it costs all
+// n and lands at its coefficient × n. FS-04EEA §F R30–R31.
+func spendAll(spec attackSpec, n int) attackSpec {
+	spec.cost = n
+	spec.coefficient *= float64(n)
+	return spec
 }
 
 // strike lands a targeted attack, reporting false when there was nothing in
