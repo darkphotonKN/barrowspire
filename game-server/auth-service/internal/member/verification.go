@@ -137,9 +137,10 @@ func hashVerificationCode(memberID uuid.UUID, code string) []byte {
 }
 
 // Transactor runs fn inside one database transaction: committed when fn
-// returns nil, rolled back otherwise.
+// returns nil, rolled back otherwise. operation names the transaction on its
+// trace span; fn's ctx carries that span, so its queries nest under it.
 type Transactor interface {
-	InTx(ctx context.Context, fn func(tx *sqlx.Tx) error) error
+	InTx(ctx context.Context, operation string, fn func(ctx context.Context, tx *sqlx.Tx) error) error
 }
 
 // VerificationStore is what checking codes and changing the email need from
@@ -181,7 +182,7 @@ func (v *Verifier) Verify(ctx context.Context, memberID uuid.UUID, code string) 
 		verified *models.Member
 		refusal  error
 	)
-	err := v.tx.InTx(ctx, func(tx *sqlx.Tx) error {
+	err := v.tx.InTx(ctx, "verify_email", func(ctx context.Context, tx *sqlx.Tx) error {
 		m, err := v.store.LockMemberTx(ctx, tx, memberID)
 		if err != nil {
 			return fmt.Errorf("lock member: %w", err)
@@ -229,7 +230,7 @@ func (v *Verifier) Verify(ctx context.Context, memberID uuid.UUID, code string) 
 // Resend issues the unverified member a new code, killing the old one.
 func (v *Verifier) Resend(ctx context.Context, memberID uuid.UUID) error {
 	var refusal error
-	err := v.tx.InTx(ctx, func(tx *sqlx.Tx) error {
+	err := v.tx.InTx(ctx, "resend_verification", func(ctx context.Context, tx *sqlx.Tx) error {
 		m, err := v.store.LockMemberTx(ctx, tx, memberID)
 		if err != nil {
 			return fmt.Errorf("lock member: %w", err)
@@ -261,7 +262,7 @@ func (v *Verifier) ChangeEmail(ctx context.Context, memberID uuid.UUID, email st
 		changed *models.Member
 		refusal error
 	)
-	err = v.tx.InTx(ctx, func(tx *sqlx.Tx) error {
+	err = v.tx.InTx(ctx, "change_email", func(ctx context.Context, tx *sqlx.Tx) error {
 		m, err := v.store.LockMemberTx(ctx, tx, memberID)
 		if err != nil {
 			return fmt.Errorf("lock member: %w", err)

@@ -21,8 +21,8 @@ type fakeTx struct {
 	commits, rollbacks int
 }
 
-func (f *fakeTx) InTx(ctx context.Context, fn func(tx *sqlx.Tx) error) error {
-	if err := fn(nil); err != nil {
+func (f *fakeTx) InTx(ctx context.Context, _ string, fn func(ctx context.Context, tx *sqlx.Tx) error) error {
+	if err := fn(ctx, nil); err != nil {
 		f.rollbacks++
 		return err
 	}

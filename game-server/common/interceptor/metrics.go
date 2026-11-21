@@ -7,12 +7,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
 
+	commontelemetry "github.com/darkphotonKN/barrowspire-server/common/telemetry"
 	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 )
 
 // one set per process: registering a second one on the default registry panics
 var serverMetrics = sync.OnceValue(func() *grpcprom.ServerMetrics {
-	m := grpcprom.NewServerMetrics(grpcprom.WithServerHandlingTimeHistogram())
+	m := grpcprom.NewServerMetrics(grpcprom.WithServerHandlingTimeHistogram(
+		grpcprom.WithHistogramBuckets(commontelemetry.LatencyBuckets)))
 	prometheus.MustRegister(m)
 	return m
 })
