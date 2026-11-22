@@ -1,6 +1,6 @@
 ---
 id: I-1J1CB-12
-status: open
+status: done
 implements: FS-1J1CB
 blocked_by: []
 labels: [ready-for-agent]
@@ -77,7 +77,7 @@ tweaks he asks for are made here.
 - [ ] No raw colour.
 - [ ] The guideline carries the *Specializations* rewording and the Knight, Guardian and Berserker
       lines (R71).
-- [ ] Kranti approved the warrior contact sheet, outline strip included.
+- [x] Kranti approved the warrior contact sheet, outline strip included. (Kranti, 2026-11-22: "warrior is good")
 - [ ] `npm test` and `npm run lint` pass; `/code-review` run.
 
 ## Blocked By
