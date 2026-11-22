@@ -625,12 +625,12 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
 
     overlay.updateCharacter({
       ...ignis,
-      passive_ranks: { "mage.t1a": 2, "mage.t2a": 3 },
+      passive_ranks: { "mage.t2b": 2, "mage.t2a": 3 },
     });
     expect(shown()).toEqual(
       expect.arrayContaining([
         "PASSIVES",
-        "+8% max HP",
+        "+30 max mana",
         "+18% fireball damage",
         "Kindling",
       ]),
@@ -640,12 +640,12 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
 
   it("should redraw the Passives group while open as passive_ranks change (FS-8RZ51 R41, R44)", () => {
     const { overlay, shown } = statsOnStage();
-    overlay.updateCharacter({ ...ignis, passive_ranks: { "mage.t1a": 1 } });
-    expect(shown()).toContain("+4% max HP");
+    overlay.updateCharacter({ ...ignis, passive_ranks: { "mage.t2b": 1 } });
+    expect(shown()).toContain("+15 max mana");
 
-    overlay.updateCharacter({ ...ignis, passive_ranks: { "mage.t1a": 2 } });
-    expect(shown()).toContain("+8% max HP");
-    expect(shown()).not.toContain("+4% max HP");
+    overlay.updateCharacter({ ...ignis, passive_ranks: { "mage.t2b": 2 } });
+    expect(shown()).toContain("+30 max mana");
+    expect(shown()).not.toContain("+15 max mana");
   });
 
   it("should update while open as health, the resource and worn gear change (R30)", () => {

@@ -21,14 +21,18 @@ var treeGoldenPath = filepath.Join("..", "..", "..", "game-client", "src", "data
 
 type treeGolden struct {
 	Nodes []Node `json:"nodes"`
+	// PrimaryAttributes is each class's attributes a Might node raises
+	// (FS-8RZ51 §Change: Tree v2 V14).
+	PrimaryAttributes map[string][]Attribute `json:"primaryAttributes"`
 }
 
 // treeFromDefinition is the golden's shape filled from the definition: every
-// class in order, each class's nodes in slot order.
+// class in order, each class's nodes in definition order (V1).
 func treeFromDefinition() treeGolden {
-	golden := treeGolden{Nodes: []Node{}}
+	golden := treeGolden{Nodes: []Node{}, PrimaryAttributes: map[string][]Attribute{}}
 	for _, class := range classes {
 		golden.Nodes = append(golden.Nodes, Nodes(class)...)
+		golden.PrimaryAttributes[class] = PrimaryAttributes(class)
 	}
 	return golden
 }

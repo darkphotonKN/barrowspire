@@ -26,8 +26,9 @@ type PassiveBonusComponent struct {
 	// ParryWindowSeconds lengthens the parry stance's window (R29).
 	ParryWindowSeconds float64
 
-	// MaxHealth and MaxResource are the bonus to the maxima, MaxResource to the
-	// class resource the tree names (stamina or mana).
+	// MaxHealth and MaxResource are the bonus to the maxima: MaxHealth Thick
+	// Skin's percent and Vitality's flat points summed (FS-8RZ51 V16),
+	// MaxResource the class resource the tree names (mana).
 	MaxHealth   int
 	MaxResource int
 	// MaxHealthTaken is what the specialization takes off the class body's

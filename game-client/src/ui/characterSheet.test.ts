@@ -219,20 +219,24 @@ describe("characterSheet passives (FS-8RZ51 R44)", () => {
     passive_ranks,
   });
 
-  it("should list a filler's bonus summed over its ranks, from the golden's values", () => {
+  it("should list a node's bonus summed over its ranks, from the golden's values", () => {
     expect(
-      characterSheet(warrior({ "warrior.t1a": 2 }), nothingWorn()).passives
+      characterSheet(warrior({ "warrior.t2b": 2 }), nothingWorn()).passives
         .stats,
     ).toEqual(["+8% max HP"]);
   });
 
-  it("should sum one stat two nodes raise into one line (a warrior's t1a and t2b both add max HP)", () => {
+  it("should sum one stat two nodes raise into one line (an archer's Haste and Quick Draw both add attack speed)", () => {
     expect(
       characterSheet(
-        warrior({ "warrior.t1a": 2, "warrior.t1b": 1, "warrior.t2b": 2 }),
+        {
+          username: "Wren",
+          class: "archer",
+          passive_ranks: { "archer.ua1": 1, "archer.t2a": 2 },
+        },
         nothingWorn(),
       ).passives.stats,
-    ).toEqual(["+16% max HP", "+10 max stamina"]);
+    ).toEqual(["+10% attack speed"]);
   });
 
   it("should word a sum in seconds, as the golden gives the unit (the mercenary's parry window)", () => {
@@ -242,6 +246,29 @@ describe("characterSheet passives (FS-8RZ51 R44)", () => {
         nothingWorn(),
       ).passives.stats,
     ).toEqual(["+0.06 s parry window"]);
+  });
+
+  it("should keep a flat and a percent max HP apart, Vitality's and Thick Skin's (V30)", () => {
+    expect(
+      characterSheet(
+        warrior({ "warrior.r1": 1, "warrior.ua2": 1, "warrior.t2b": 1 }),
+        nothingWorn(),
+      ).passives.stats,
+    ).toEqual(["+10 max HP", "+4% max HP"]);
+  });
+
+  it.each([
+    ["warrior", ["+4 Strength"]],
+    ["mage", ["+4 Intelligence"]],
+    ["archer", ["+4 Agility"]],
+    ["mercenary", ["+4 Strength", "+4 Agility"]],
+  ])("should sum the %s's Might into its attribute lines (V30)", (cls, lines) => {
+    expect(
+      characterSheet(
+        { username: "Ash", class: cls, passive_ranks: { [`${cls}.r2`]: 1, [`${cls}.ua3`]: 1 } },
+        nothingWorn(),
+      ).passives.stats,
+    ).toEqual(lines);
   });
 
   it("should add a kicker's stat at rank 2 but not name it", () => {
@@ -264,13 +291,16 @@ describe("characterSheet passives (FS-8RZ51 R44)", () => {
     expect(characterSheet(warrior({}), nothingWorn()).passives).toEqual(none);
     expect(characterSheet(mage, nothingWorn()).passives).toEqual(none);
     expect(
-      characterSheet(warrior({ "warrior.t1a": 1 }), nothingWorn()).passives.note,
+      characterSheet(warrior({ "warrior.t2b": 1 }), nothingWorn()).passives.note,
     ).toBeNull();
   });
 
-  it("should leave out a node id the golden lacks, never crash (R42)", () => {
+  it("should leave out a node id the golden lacks, a retired one too, never crash (R42, V21)", () => {
     expect(
-      characterSheet(warrior({ "warrior.t9z": 2 }), nothingWorn()).passives,
+      characterSheet(
+        warrior({ "warrior.t9z": 2, "warrior.t1a": 2 }),
+        nothingWorn(),
+      ).passives,
     ).toEqual({ stats: [], kickers: [], note: "None yet" });
   });
 });

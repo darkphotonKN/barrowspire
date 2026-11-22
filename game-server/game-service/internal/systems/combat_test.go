@@ -1197,7 +1197,7 @@ func TestCombatSystem_Cooldown_RefusedCastStartsNone(t *testing.T) {
 func earthbreakerWarrior(em *ecs.EntityManager, x, y float64, held bool) *ecs.Entity {
 	e := delver(em, x, y)
 	e.AddComponent(components.NewTreeAbilityComponent(components.AttackEarthbreaker, "warrior.t3"))
-	ranks := passivetree.Ranks{"warrior.t1a": 2}
+	ranks := passivetree.Ranks{"warrior.r1": 1}
 	if held {
 		ranks["warrior.t3"] = 1
 	}

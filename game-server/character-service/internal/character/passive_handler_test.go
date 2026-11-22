@@ -29,30 +29,30 @@ func ranksOf(t *testing.T, wire []*pb.PassiveRank) passivetree.Ranks {
 }
 
 func TestSpendPassivePoint_ParsesAndAnswersAppliedWithEveryRank(t *testing.T) {
-	stub := &stubService{spend: &PassiveSpendResult{Applied: true, Ranks: passivetree.Ranks{"warrior.t1b": 1, "warrior.t1a": 2}}}
+	stub := &stubService{spend: &PassiveSpendResult{Applied: true, Ranks: passivetree.Ranks{"warrior.ua1": 1, "warrior.t2a": 2}}}
 	client := dial(t, stub)
 	member, id := uuid.New(), uuid.New()
 
 	got, err := client.SpendPassivePoint(context.Background(), &pb.SpendPassivePointRequest{
-		MemberId: member.String(), CharacterId: id.String(), NodeId: "warrior.t1a", Rank: 2,
+		MemberId: member.String(), CharacterId: id.String(), NodeId: "warrior.t2a", Rank: 2,
 	})
 
 	if err != nil {
 		t.Fatalf("spend: %v", err)
 	}
-	if want := (PassiveSpend{MemberID: member, CharacterID: id, NodeID: "warrior.t1a", Rank: 2}); stub.spent != want {
+	if want := (PassiveSpend{MemberID: member, CharacterID: id, NodeID: "warrior.t2a", Rank: 2}); stub.spent != want {
 		t.Fatalf("service got %+v, want %+v", stub.spent, want)
 	}
-	if ranks := ranksOf(t, got.GetPassiveRanks()); !got.GetApplied() || len(ranks) != 2 || ranks["warrior.t1a"] != 2 || ranks["warrior.t1b"] != 1 {
+	if ranks := ranksOf(t, got.GetPassiveRanks()); !got.GetApplied() || len(ranks) != 2 || ranks["warrior.t2a"] != 2 || ranks["warrior.ua1"] != 1 {
 		t.Fatalf("applied %v ranks %v", got.GetApplied(), got.GetPassiveRanks())
 	}
 }
 
 func TestSpendPassivePoint_AlreadyHeld_OKNotApplied(t *testing.T) {
-	client := dial(t, &stubService{spend: &PassiveSpendResult{Applied: false, Ranks: passivetree.Ranks{"warrior.t1a": 2}}})
+	client := dial(t, &stubService{spend: &PassiveSpendResult{Applied: false, Ranks: passivetree.Ranks{"warrior.t2a": 2}}})
 
 	got, err := client.SpendPassivePoint(context.Background(), &pb.SpendPassivePointRequest{
-		MemberId: uuid.NewString(), CharacterId: uuid.NewString(), NodeId: "warrior.t1a", Rank: 2,
+		MemberId: uuid.NewString(), CharacterId: uuid.NewString(), NodeId: "warrior.t2a", Rank: 2,
 	})
 
 	if err != nil || got.GetApplied() || len(got.GetPassiveRanks()) != 1 {
@@ -66,14 +66,14 @@ func TestSpendPassivePoint_AlreadyHeld_OKNotApplied(t *testing.T) {
 func TestSpendPassivePoint_Refusal_FailedPreconditionWithTheCode(t *testing.T) {
 	codesOfTheRule := []errcode.Code{
 		errcode.PassiveUnknownNode, errcode.PassiveRankOutOfOrder, errcode.PassiveMaxRank,
-		errcode.PassiveTierLocked, errcode.PassiveNoPoints, errcode.PassiveSpecializationTaken,
+		errcode.PassiveTierLocked, errcode.PassiveNoPoints, errcode.PassiveSideTaken,
 	}
 	for _, code := range codesOfTheRule {
 		t.Run(string(code), func(t *testing.T) {
 			client := dial(t, &stubService{err: fmt.Errorf("spend passive point: %w", errcode.Refuse(code))})
 
 			_, err := client.SpendPassivePoint(context.Background(), &pb.SpendPassivePointRequest{
-				MemberId: uuid.NewString(), CharacterId: uuid.NewString(), NodeId: "warrior.t1a", Rank: 1,
+				MemberId: uuid.NewString(), CharacterId: uuid.NewString(), NodeId: "warrior.r1", Rank: 1,
 			})
 
 			st := status.Convert(err)
@@ -93,11 +93,11 @@ func TestSpendPassivePoint_ErrorCodes(t *testing.T) {
 		req  *pb.SpendPassivePointRequest
 		want codes.Code
 	}{
-		{"not found", commonconstants.ErrNotFound, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: id, NodeId: "warrior.t1a", Rank: 1}, codes.NotFound},
+		{"not found", commonconstants.ErrNotFound, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: id, NodeId: "warrior.r1", Rank: 1}, codes.NotFound},
 		{"invalid", commonconstants.ErrInvalidInput, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: id, Rank: 0}, codes.InvalidArgument},
-		{"database down", commonconstants.ErrTransient, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: id, NodeId: "warrior.t1a", Rank: 1}, codes.Unavailable},
-		{"non-uuid member", nil, &pb.SpendPassivePointRequest{MemberId: "nope", CharacterId: id, NodeId: "warrior.t1a", Rank: 1}, codes.InvalidArgument},
-		{"non-uuid character", nil, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: "nope", NodeId: "warrior.t1a", Rank: 1}, codes.InvalidArgument},
+		{"database down", commonconstants.ErrTransient, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: id, NodeId: "warrior.r1", Rank: 1}, codes.Unavailable},
+		{"non-uuid member", nil, &pb.SpendPassivePointRequest{MemberId: "nope", CharacterId: id, NodeId: "warrior.r1", Rank: 1}, codes.InvalidArgument},
+		{"non-uuid character", nil, &pb.SpendPassivePointRequest{MemberId: member, CharacterId: "nope", NodeId: "warrior.r1", Rank: 1}, codes.InvalidArgument},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -113,7 +113,7 @@ func TestSpendPassivePoint_ErrorCodes(t *testing.T) {
 }
 
 func TestCharacterRead_CarriesHeldRanks_NewCharacterNone(t *testing.T) {
-	held := &Character{ID: uuid.New(), Level: 5, PassiveRanks: passivetree.Ranks{"mage.t1a": 1, "mage.t2a": 0}}
+	held := &Character{ID: uuid.New(), Level: 5, PassiveRanks: passivetree.Ranks{"mage.r1": 1, "mage.r2": 0}}
 	client := dial(t, &stubService{character: held, list: []*Character{held, {ID: uuid.New(), Level: 1}}})
 	member := uuid.NewString()
 
@@ -121,8 +121,8 @@ func TestCharacterRead_CarriesHeldRanks_NewCharacterNone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
-	if ranks := ranksOf(t, got.GetPassiveRanks()); len(ranks) != 1 || ranks["mage.t1a"] != 1 {
-		t.Fatalf("get ranks %v, want only mage.t1a at 1", got.GetPassiveRanks())
+	if ranks := ranksOf(t, got.GetPassiveRanks()); len(ranks) != 1 || ranks["mage.r1"] != 1 {
+		t.Fatalf("get ranks %v, want only mage.r1 at 1", got.GetPassiveRanks())
 	}
 
 	list, err := client.ListCharacters(context.Background(), &pb.ListCharactersRequest{MemberId: member})

@@ -348,9 +348,6 @@ func TestKicker_DeepWell(t *testing.T) {
 	t.Run("R3: 25% more regen", func(t *testing.T) {
 		assert.Equal(t, 20, manaOver4s(passivetree.Ranks{"mage.t2b": 3}), "4/s × 1.25 over 4 s")
 	})
-	t.Run("R3: sums with the t4b filler's +10%", func(t *testing.T) {
-		assert.Equal(t, 21, manaOver4s(passivetree.Ranks{"mage.t2b": 3, "mage.t4b": 1}), "4/s × 1.35 over 4 s is 21.6")
-	})
 	t.Run("R2: no rule", func(t *testing.T) {
 		assert.Equal(t, 16, manaOver4s(passivetree.Ranks{"mage.t2b": 2}))
 	})

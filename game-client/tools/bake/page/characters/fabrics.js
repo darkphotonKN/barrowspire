@@ -326,10 +326,17 @@ export const GEAR = {
   surcoat: shade(mix("vellum", "vellumDark", 0.5), 0.8),
   houseRed: mix("oxblood", "barrowDeep", 0.12),
   wraps: mix("oxblood", "pitch", 0.35),
+  // the cord wound on the Berserker's hafts (FS-1J1CB §Change: Looks v2 R55): undyed hemp gone dark with grip
+  cord: mix(mix("vellumDark", "barrowBrown", 0.55), "barrowDeep", 0.25),
   // the mage's specialization looks (FS-1J1CB R4; mageLooks.js): the Pyromancer's scapular in a
-  // scorched oxblood, the house oxblood a little toward ember under grime. Near-black (variant B's
+  // scorched oxblood (fabrics `pyroSoot`), the house oxblood a little toward ember under grime. Near-black (variant B's
   // soot) or the oxblood itself left her back under the dark-room floor (R10) on the black gown
   soot: mix("oxblood", "ember", 0.1),
+  // the mage looks v2 (FS-1J1CB §Change: Looks v2 R56, R57, R63; mageKit.js). The Spellwarden's
+  // gown a dark iron-grey wool, lighter than the wizard's black so the iron reads on it and her back
+  // keeps the dark-room floor; the Pyromancer's leathers scorched toward ember, her boots soot-black
+  wardenGown: mix(mix("charcoal", "slate", 0.45), "pitch", 0.2),
+  scorch: mix(mix("barrowDeep", "ember", 0.22), "pitch", 0.25),
   // the archer's specialization looks (FS-1J1CB R5, R6; archerLooks.js). The Hunter: the wilds'
   // own colours, warm and earthy, and nothing of the Nightwood green. A grey-brown wolf pelt over a
   // cloak and capelet of undyed wool a shade browner and darker than it, so the pelt parts from
@@ -344,11 +351,26 @@ export const GEAR = {
   // the Shadow Ranger: the Nightwood dyed through to a cold soot-black, the warmth taken out; the
   // buff leather a cold grey, the bracers, boots and fletching black. The soot is lifted toward
   // slate, the sleeves and hose with it: variant A's soot (pitch a little past halfway to slate,
-  // under charcoal) left her back at 0.0159 against the dark-room floor's 0.0222 (R10)
-  shadow: mix("pitch", "slate", 0.85),
+  // under charcoal) left her back at 0.0159 against the dark-room floor's 0.0222 (R10). Looks v2
+  // (FS-1J1CB §Change: Looks v2 R59) lifted it again, 0.85 to 0.93 of the way to slate: her
+  // longer cloak, the liripipe and the dagged mantle fill more of her back, and at 0.85 it read
+  // 0.0216, under the floor
+  shadow: mix("pitch", "slate", 0.93),
   shadowDark: mix("pitch", "slate", 0.35),
   shadowLeather: mix(mix("barrowDeep", "slate", 0.55), "pitch", 0.35),
   shadowBlack: mix("pitch", "slate", 0.3),
+  // the archer looks v2 (FS-1J1CB §Change: Looks v2 R58, R59, R63; archerKit.js). The Hunter's
+  // recurve sinew-backed wood a warm honey-brown, its grip rawhide and its string and bindings
+  // sinew; her belt and bracers a hide a shade warmer than the knight's dark leather. The Shadow
+  // Ranger's longbow blackened and oiled, its string darker than the base's, her quiver and its
+  // hood a cold slate leather lifted off the soot so her back keeps the dark-room floor (R65)
+  hunterBow: mix(mix("barrowBrown", "brass", 0.25), "barrowDeep", 0.2),
+  rawhide: mix("vellumDark", "barrowBrown", 0.45),
+  sinew: mix(mix("vellumDark", "barrowBrown", 0.6), "barrowDeep", 0.15),
+  hunterLeather: mix(mix("barrowBrown", "barrowDeep", 0.6), "ember", 0.06),
+  shadowBow: mix("pitch", "slate", 0.22),
+  shadowString: mix("pitch", "slate", 0.12),
+  shadowQuiver: mix(mix("slate", "pitch", 0.4), "necrotic", 0.06),
   // the mercenary's specialization looks (FS-1J1CB R7, R8; mercLooks.js). The Duelist keeps the
   // madder (GEAR.coat) on a wrapped wool robe, under a half-cloak and sash in a cold slate-black,
   // set against the warm madder so they part from it by temperature (variant A's cape)
@@ -358,6 +380,16 @@ export const GEAR = {
   sellBlack: mix("charcoal", "slate", 0.3),
   sellSash: mix("charcoal", "slate", 0.5),
   buffCoat: mix(mix("barrowBrown", "brass", 0.3), "barrowDeep", 0.2),
+  // the mercenary looks v2 (FS-1J1CB §Change: Looks v2 R60, R61, R63; mercKit.js). The Duelist's
+  // blade polished near white at the edge, its fittings blackened iron, its scabbard a lacquer
+  // black warmed toward oxblood, its grip a pale core under slate cord; the Sellsword's falchion a
+  // dark forged iron ground bright at the edge, his plate and iron pitted, his belts and grip an
+  // oiled brown leather, his studs and buckles a dull brass
+  duelistEdge: mix("vellum", "slateLight", 0.45),
+  duelistSaya: mix("pitch", "oxblood", 0.32),
+  sellSteel: mix("slate", "slateLight", 0.55),
+  sellLeather: mix(mix("barrowBrown", "barrowDeep", 0.5), "pitch", 0.15),
+  sellBrass: mix("brass", "barrowBrown", 0.25),
 };
 
 /**
@@ -468,9 +500,40 @@ export function fabrics() {
     surcoat: mat(wool(GEAR.surcoat, { seed: 201, dirt: 0.5 }), { side: D }),
     houseRed: mat(wool(GEAR.houseRed, { seed: 203, dirt: 0.3 }), { side: D }),
     wraps: mat(wool(GEAR.wraps, { seed: 207, dirt: 0.5 })),
-    // the Spellwarden's spaulders: blackened iron, both faces drawn (a lame is an open shell)
-    blackIronDouble: mat(plate(GEAR.blackIron, { rust: 0.3, seed: 6 }), { metal: 0.7, rough: 0.5, side: D }),
-    soot: mat(wool(GEAR.soot, { seed: 153, dirt: 0.35 }), { side: D }),
+    // the warrior looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the knight's textures at
+    // a new tone. The Guardian's is kept: mail scoured bright and near clean of rust, polished steel
+    // with few dents, his cloak's wool brushed; the Berserker's is neglected: mail gone to rust and
+    // filth, pitted iron, a cloak dragged through the barrow. Metal against cloth and sheen against
+    // matte between the two (R63's per-spec contrast).
+    guardianMail: mat(mail(GEAR.mail, { rust: 0.03, dirt: 0.2, seed: 301 }), { metal: 0.85, rough: 0.36, normal: 1.25 }),
+    guardianMailDouble: mat(mail(GEAR.mail, { rust: 0.03, dirt: 0.2, seed: 301 }), { metal: 0.85, rough: 0.36, normal: 1.25, side: D }),
+    guardianMailDark: mat(mail(GEAR.blackIron, { rust: 0.1, dirt: 0.3, seed: 303 }), { metal: 0.75, rough: 0.48 }),
+    guardianSteel: mat(plate(GEAR.darkSteel, { dents: 0.2, rust: 0.02, dirt: 0.15, seed: 305 }), { metal: 0.85, rough: 0.34 }),
+    guardianCloak: mat(wool(GEAR.cloakKnight, { seed: 307, dirt: 0.3 }), { side: D }),
+    guardianBelt: mat(leather(GEAR.leatherDark, { seed: 309, dirt: 0.2 }), { rough: 0.55 }),
+    berserkerMail: mat(mail(GEAR.mail, { rust: 0.55, dirt: 0.75, seed: 311 }), { metal: 0.6, rough: 0.62, normal: 1.3 }),
+    berserkerMailDouble: mat(mail(GEAR.mail, { rust: 0.55, dirt: 0.75, seed: 311 }), { metal: 0.6, rough: 0.62, normal: 1.3, side: D }),
+    berserkerMailDark: mat(mail(GEAR.blackIron, { rust: 0.6, dirt: 0.75, seed: 313 }), { metal: 0.6, rough: 0.66 }),
+    berserkerIron: mat(plate(GEAR.darkSteel, { dents: 0.95, rust: 0.45, dirt: 0.55, seed: 315 }), { metal: 0.7, rough: 0.55 }),
+    berserkerEdge: mat(plate(GEAR.steel, { dents: 0.6, rust: 0.08, dirt: 0.2, seed: 317 }), { metal: 0.85, rough: 0.3 }),
+    berserkerFur: mat(hair(GEAR.fur, { seed: 319 }), { rough: 0.95, side: D, normal: 1.5 }),
+    berserkerCloak: mat(wool(GEAR.cloakKnight, { seed: 321, dirt: 0.85 }), { side: D }),
+    berserkerLeather: mat(leather(GEAR.leatherDark, { seed: 323, dirt: 0.7 }), { rough: 0.8 }),
+    cord: mat(linen(GEAR.cord, { seed: 325, dirt: 0.55 }), { rough: 0.9, normal: 1.4 }),
+    // the mage looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the wizard's textures at a
+    // new tone (the Spellwarden's spaulders and collar drawn both faces: a lame is an open shell).
+    // The Spellwarden's is kept and heavy: iron blackened and oiled, few dents and a
+    // little rust, a close-fulled grey wool, her scapular brushed; the Pyromancer's is burnt:
+    // a gown filthy with soot over its embers, iron fire-pitted and scaled with rust, leather
+    // charred matte. Metal and sheen against singed cloth (R63's per-spec contrast).
+    wardenIron: mat(plate(GEAR.blackIron, { dents: 0.3, rust: 0.12, dirt: 0.25, seed: 331 }), { metal: 0.8, rough: 0.38 }),
+    wardenIronDouble: mat(plate(GEAR.blackIron, { dents: 0.3, rust: 0.12, dirt: 0.25, seed: 331 }), { metal: 0.8, rough: 0.38, side: D }),
+    wardenGown: mat(wool(GEAR.wardenGown, { seed: 333, dirt: 0.2 }), { side: D }),
+    wardenScapular: mat(wool(GEAR.scapular, { seed: 335, dirt: 0.15 }), { side: D }),
+    wardenLeather: mat(leather(GEAR.leatherDark, { seed: 337, dirt: 0.2 }), { rough: 0.5 }),
+    pyroIron: mat(plate(GEAR.blackIron, { dents: 0.85, rust: 0.6, dirt: 0.8, seed: 341 }), { metal: 0.55, rough: 0.7 }),
+    pyroLeather: mat(leather(GEAR.scorch, { seed: 343, dirt: 0.75 }), { rough: 0.85, side: D }),
+    pyroSoot: mat(wool(GEAR.soot, { seed: 345, dirt: 0.7 }), { side: D }),
     // the Hunter's and the Shadow Ranger's cloth (FS-1J1CB R5, R6)
     wolf: mat(hair(GEAR.wolf, { seed: 221 }), { rough: 0.95, side: D, normal: 1.4 }),
     hunterWool: mat(wool(GEAR.hunterWool, { seed: 223, dirt: 0.45 }), { side: D }),
@@ -484,6 +547,20 @@ export function fabrics() {
     shadowLeather: mat(leather(GEAR.shadowLeather, { seed: 239, dirt: 0.3 }), { rough: 0.7 }),
     shadowBlack: mat(leather(GEAR.shadowBlack, { seed: 241, dirt: 0.25 }), { rough: 0.65 }),
     shadowFletch: mat(linen(GEAR.shadowDark, { seed: 243, dirt: 0.1 })),
+    // the archer looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the ranger's textures at
+    // a new tone. The Hunter's is the wilds': hide and rawhide matte and grimed, her bow's back
+    // scuffed, her pelt shaggy; the Shadow Ranger's is kept dark and close: black leather oiled to
+    // a sheen, her iron clean and few-dented. Matte against sheen, fur against oiled leather and
+    // iron (R63's per-spec contrast).
+    hunterBow: mat(leather(GEAR.hunterBow, { seed: 351, dirt: 0.35 }), { rough: 0.62 }),
+    rawhide: mat(leather(GEAR.rawhide, { seed: 353, dirt: 0.5 }), { rough: 0.8 }),
+    sinew: mat(linen(GEAR.sinew, { seed: 355, dirt: 0.4 }), { rough: 0.85 }),
+    hunterLeather: mat(leather(GEAR.hunterLeather, { seed: 357, dirt: 0.6 }), { rough: 0.8 }),
+    hunterSheath: mat(leather(GEAR.leather, { seed: 359, dirt: 0.55 }), { rough: 0.78 }),
+    shadowBow: mat(leather(GEAR.shadowBow, { seed: 361, dirt: 0.08 }), { rough: 0.32 }),
+    shadowString: mat(linen(GEAR.shadowString, { seed: 363, dirt: 0.05 }), { rough: 0.7 }),
+    shadowIron: mat(plate(GEAR.blackIron, { dents: 0.15, rust: 0.02, dirt: 0.1, seed: 365 }), { metal: 0.85, rough: 0.3 }),
+    shadowQuiver: mat(leather(GEAR.shadowQuiver, { seed: 367, dirt: 0.15 }), { rough: 0.42, side: D }),
     // the Duelist's and the Sellsword's cloth (FS-1J1CB R7, R8): the robe a plain wool in the
     // coat's madder, not the arming coat's quilting
     duelistRobe: mat(wool(GEAR.coat, { seed: 245, dirt: 0.4 }), { side: D }),
@@ -492,6 +569,27 @@ export function fabrics() {
     sellSash: mat(wool(GEAR.sellSash, { seed: 251, dirt: 0.35 }), { side: D }),
     // the buff coat painted flat and matte, as variant B was: the leather grain's scuffs lit it gold
     buffCoat: mat(linen(GEAR.buffCoat, { seed: 253, dirt: 0.3 }), { rough: 0.75, side: D }),
+    // the mercenary looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the mercenary's
+    // textures at a new tone. The Duelist's is kept: a blade polished bright and clean, its iron
+    // blackened with little rust, lacquer with a sheen, matte wool and silk cord; the Sellsword's is
+    // used hard: forged iron pitted, dented and rusted at the seams, plate gone dull, leather oiled
+    // dark and scuffed, brass dulled with grime. Polished steel and matte cloth against oiled
+    // leather and pitted iron (R63's per-spec contrast).
+    duelistSteel: mat(plate(GEAR.steel, { dents: 0.05, rust: 0, dirt: 0.06, seed: 371 }), { metal: 0.9, rough: 0.22 }),
+    duelistEdgeSteel: mat(plate(GEAR.duelistEdge, { dents: 0.02, rust: 0, dirt: 0.02, seed: 373 }), { metal: 0.9, rough: 0.18 }),
+    duelistIron: mat(plate(GEAR.blackIron, { dents: 0.12, rust: 0.05, dirt: 0.15, seed: 375 }), { metal: 0.75, rough: 0.4 }),
+    duelistLeather: mat(leather(GEAR.leatherDark, { seed: 377, dirt: 0.25 }), { rough: 0.6 }),
+    duelistSaya: mat(leather(GEAR.duelistSaya, { seed: 379, dirt: 0.05 }), { rough: 0.28 }),
+    duelistCord: mat(linen(GEAR.duelistSlate, { seed: 381, dirt: 0.2 }), { rough: 0.8, normal: 1.3 }),
+    duelistCore: mat(linen(GEAR.linen, { seed: 383, dirt: 0.3 }), { rough: 0.7 }),
+    sellSteel: mat(plate(GEAR.sellSteel, { dents: 0.6, rust: 0.3, dirt: 0.45, seed: 385 }), { metal: 0.7, rough: 0.5 }),
+    sellEdge: mat(plate(GEAR.steel, { dents: 0.35, rust: 0.05, dirt: 0.15, seed: 387 }), { metal: 0.85, rough: 0.3 }),
+    sellIron: mat(plate(GEAR.blackIron, { dents: 0.75, rust: 0.5, dirt: 0.55, seed: 389 }), { metal: 0.6, rough: 0.6 }),
+    sellPlate: mat(plate(GEAR.darkSteel, { dents: 0.8, rust: 0.35, dirt: 0.5, seed: 391 }), { metal: 0.7, rough: 0.52 }),
+    sellPlateDouble: mat(plate(GEAR.darkSteel, { dents: 0.8, rust: 0.35, dirt: 0.5, seed: 391 }), { metal: 0.7, rough: 0.52, side: D }),
+    sellLeather: mat(leather(GEAR.sellLeather, { seed: 393, dirt: 0.55 }), { rough: 0.45 }),
+    sellRoll: mat(wool(GEAR.sellSash, { seed: 397, dirt: 0.6 }), { normal: 1.4 }),
+    sellBrass: mat(plate(GEAR.sellBrass, { dents: 0.3, rust: 0, dirt: 0.45, seed: 395 }), { metal: 0.8, rough: 0.45 }),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),
@@ -499,8 +597,9 @@ export function fabrics() {
     browRaven: browMaterial(GEAR.raven),
     browGrey: browMaterial(GEAR.hairGrey),
   };
-  // the Pyromancer's gown (FS-1J1CB R4): the gown's own cloth with embers in its hem
-  SET.robeEmbers = withEmbers(SET.robe);
+  // the Pyromancer's gown (FS-1J1CB R4, §Change: Looks v2 R57, R63): embers in its hem, in a gown
+  // of her own, sooted
+  SET.pyroGown = withEmbers(mat(wool(GEAR.robe, { seed: 347, dirt: 0.75 }), { side: D }));
   return SET;
 }
 

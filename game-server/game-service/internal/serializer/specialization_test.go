@@ -32,13 +32,13 @@ func TestFormatStateToClientState_EveryPlayerEntryCarriesTheSpecialization(t *te
 	}
 }
 
-// No tier-6 node held, or one naming another class's: the field is absent on
+// No specialization node held, or one naming another class's: the field is absent on
 // both, never empty or null (R10).
 func TestFormatStateToClientState_NoSpecializationIsAbsent(t *testing.T) {
 	for name, ranks := range map[string]passivetree.Ranks{
-		"no tier-6 node":     {"warrior.t1a": 2},
-		"another class's":    {"mage.t6a": 1},
-		"an unknown node id": {"warrior.t6z": 1},
+		"no specialization node": {"warrior.r1": 1, "warrior.m4": 1},
+		"another class's":        {"mage.t6a": 1},
+		"an unknown node id":     {"warrior.t6z": 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			w := newPartyWorld()

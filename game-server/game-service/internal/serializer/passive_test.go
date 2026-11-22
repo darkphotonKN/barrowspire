@@ -34,12 +34,12 @@ func TestFormatStateToClientState_CurrentPlayerCarriesTheTree(t *testing.T) {
 		t.Run(string(world), func(t *testing.T) {
 			em := ecs.NewEntityManager()
 			wren := uuid.New()
-			seatRanked(em, wren, 6, passivetree.Ranks{"warrior.t1a": 2, "warrior.t1b": 1})
+			seatRanked(em, wren, 6, passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1})
 
 			_, frame := wireFor(t, em, world, wren)
 			me := frame["current_player"].(map[string]any)
 
-			assert.Equal(t, map[string]any{"warrior.t1a": float64(2), "warrior.t1b": float64(1)}, me["passive_ranks"])
+			assert.Equal(t, map[string]any{"warrior.r1": float64(1), "warrior.r2": float64(1), "warrior.ua1": float64(1)}, me["passive_ranks"])
 			assert.Equal(t, float64(2), me["passive_points"], "level 6 earns 5, 3 held")
 		})
 	}
@@ -64,7 +64,7 @@ func TestFormatStateToClientState_NoRanksHeldIsAnEmptyObject(t *testing.T) {
 func TestFormatStateToClientState_PassivePointsFollowTheCurrentLevel(t *testing.T) {
 	em := ecs.NewEntityManager()
 	wren := uuid.New()
-	stats := seatRanked(em, wren, 5, passivetree.Ranks{"warrior.t1a": 1})
+	stats := seatRanked(em, wren, 5, passivetree.Ranks{"warrior.r1": 1})
 
 	_, frame := wireFor(t, em, types.WorldTypeRun, wren)
 	require.Equal(t, float64(3), frame["current_player"].(map[string]any)["passive_points"])
@@ -80,7 +80,7 @@ func TestFormatStateToClientState_TheTreeIsTheOwnersAlone(t *testing.T) {
 	w := newPartyWorld()
 	for _, id := range []uuid.UUID{w.wren, w.mage, w.merc, w.stranger, w.solo} {
 		e := delverOf(t, w.em, id)
-		e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"warrior.t1a": 1}))
+		e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"warrior.r1": 1}))
 	}
 	for _, world := range everyWorld {
 		others := w.frameFor(t, world, w.wren)

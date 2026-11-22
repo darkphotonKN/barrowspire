@@ -383,7 +383,7 @@ func TestGrantExperience_NotTheMembersLiveCharacter_NotFound(t *testing.T) {
 // A character's specialization is the one its held tier-6 node grants, read
 // through the shared tree definition, on every read; none before the pick
 // and none on a new character. FS-E1ZDG §B R4–R5.
-func TestCharacterReads_SpecializationFromTheHeldTier6Node(t *testing.T) {
+func TestCharacterReads_SpecializationFromTheHeldSpecializationNode(t *testing.T) {
 	tests := []struct {
 		name  string
 		class string
@@ -391,9 +391,9 @@ func TestCharacterReads_SpecializationFromTheHeldTier6Node(t *testing.T) {
 		want  string
 	}{
 		{"no ranks", "warrior", nil, ""},
-		{"tiers below 6 only", "warrior", passivetree.Ranks{"warrior.t1a": 2, "warrior.t3": 1}, ""},
+		{"no specialization node", "warrior", passivetree.Ranks{"warrior.r1": 1, "warrior.t3": 1, "warrior.m4": 1}, ""},
 		{"guardian", "warrior", passivetree.Ranks{"warrior.t6a": 1}, "guardian"},
-		{"berserker", "warrior", passivetree.Ranks{"warrior.t1a": 2, "warrior.t6b": 1}, "berserker"},
+		{"berserker", "warrior", passivetree.Ranks{"warrior.m4": 1, "warrior.t6b": 1}, "berserker"},
 		{"spellwarden", "mage", passivetree.Ranks{"mage.t6a": 1}, "spellwarden"},
 		{"pyromancer", "mage", passivetree.Ranks{"mage.t6b": 1}, "pyromancer"},
 		{"hunter", "archer", passivetree.Ranks{"archer.t6a": 1}, "hunter"},

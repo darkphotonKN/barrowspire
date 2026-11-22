@@ -27,7 +27,7 @@ func newPassiveWorld() *Session {
 }
 
 func TestSeating_TheBodyHoldsTheCharactersRanks(t *testing.T) {
-	ranks := passivetree.Ranks{"warrior.t1a": 2, "warrior.t1b": 1}
+	ranks := passivetree.Ranks{"warrior.r1": 1, "warrior.t2a": 2}
 
 	t.Run("seated in a world", func(t *testing.T) {
 		s := newPassiveWorld()
@@ -66,16 +66,16 @@ func TestSeating_TheBodyHoldsTheCharactersRanks(t *testing.T) {
 func TestRaisePassiveRanks(t *testing.T) {
 	s := newHubWorld()
 	memberID := uuid.New()
-	character := rankedWarrior(passivetree.Ranks{"warrior.t1a": 2})
+	character := rankedWarrior(passivetree.Ranks{"warrior.t2a": 2})
 	s.AddPlayer(memberID, character, "")
 
-	assert.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.t1a": 1, "warrior.t1b": 1}))
-	assert.Equal(t, passivetree.Ranks{"warrior.t1a": 2, "warrior.t1b": 1}, systems.PassiveRanks(delverEntity(t, s, memberID)),
+	assert.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.t2a": 1, "warrior.r1": 1}))
+	assert.Equal(t, passivetree.Ranks{"warrior.t2a": 2, "warrior.r1": 1}, systems.PassiveRanks(delverEntity(t, s, memberID)),
 		"an older answer never lowers a rank")
 
-	assert.False(t, s.RaisePassiveRanks(memberID, uuid.New(), passivetree.Ranks{"warrior.t1b": 2}), "another character's spend")
-	assert.False(t, s.RaisePassiveRanks(uuid.New(), character.ID, passivetree.Ranks{"warrior.t1b": 2}), "no body here")
-	assert.Equal(t, passivetree.Ranks{"warrior.t1a": 2, "warrior.t1b": 1}, systems.PassiveRanks(delverEntity(t, s, memberID)))
+	assert.False(t, s.RaisePassiveRanks(memberID, uuid.New(), passivetree.Ranks{"warrior.t2a": 3}), "another character's spend")
+	assert.False(t, s.RaisePassiveRanks(uuid.New(), character.ID, passivetree.Ranks{"warrior.t2a": 3}), "no body here")
+	assert.Equal(t, passivetree.Ranks{"warrior.t2a": 2, "warrior.r1": 1}, systems.PassiveRanks(delverEntity(t, s, memberID)))
 }
 
 // FS-8RZ51 R23, Acceptance "A level-up in a run raises passive_points in the
@@ -102,7 +102,7 @@ func TestRun_ALevelUpRaisesPassivePointsInTheSameTick(t *testing.T) {
 // FS-E1ZDG §B R8: a raise that takes the body from no specialization to one
 // makes it that specialization from the next state, and runs the pick's seam
 // once; a later raise of other nodes does not run it again.
-func TestRaisePassiveRanks_ATier6RaiseIsThePick(t *testing.T) {
+func TestRaisePassiveRanks_ASpecializationRaiseIsThePick(t *testing.T) {
 	type pick struct {
 		entity *ecs.Entity
 		spec   string
@@ -111,7 +111,7 @@ func TestRaisePassiveRanks_ATier6RaiseIsThePick(t *testing.T) {
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, HubBounds(),
 		withSpecializationGained(func(entity *ecs.Entity, spec string) { picks = append(picks, pick{entity, spec}) }))
 	memberID := uuid.New()
-	character := types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "warrior", Level: 20, PassiveRanks: passivetree.Ranks{"warrior.t1a": 2}}
+	character := types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "warrior", Level: 20, PassiveRanks: passivetree.Ranks{"warrior.r1": 1}}
 	s.AddPlayer(memberID, character, "")
 	specializationNow := func() any {
 		state := serializer.NewStateSerializer(s.EntityManager, nil)
@@ -120,8 +120,8 @@ func TestRaisePassiveRanks_ATier6RaiseIsThePick(t *testing.T) {
 		return state.FormatStateToClientState(backend, memberID).CurrentPlayer.Specialization
 	}
 
-	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.t1b": 1}))
-	assert.Empty(t, picks, "no tier-6 node, no pick")
+	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.r2": 1}))
+	assert.Empty(t, picks, "no specialization node, no pick")
 	assert.Equal(t, "", specializationNow())
 
 	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.t6b": 1}))
@@ -129,13 +129,13 @@ func TestRaisePassiveRanks_ATier6RaiseIsThePick(t *testing.T) {
 	require.Len(t, picks, 1)
 	assert.Equal(t, pick{delverEntity(t, s, memberID), "berserker"}, picks[0])
 
-	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.t4a": 2}))
+	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.m4": 1}))
 	assert.Len(t, picks, 1, "the pick runs once")
 	assert.Equal(t, "berserker", specializationNow())
 }
 
-// A body seated already holding its tier-6 node is that specialization from
-// seating; no raise is a pick for it.
+// A body seated already holding its specialization node is that
+// specialization from seating; no raise is a pick for it.
 func TestRaisePassiveRanks_SeatedSpecializedIsNoPick(t *testing.T) {
 	picked := 0
 	s := newSession(&mockSessionCloser{}, nil, &mockStateSerializer{}, ecs.NewEntityManager(), &mockEventEmitter{}, nil, HubBounds(),
@@ -144,7 +144,7 @@ func TestRaisePassiveRanks_SeatedSpecializedIsNoPick(t *testing.T) {
 	character := types.CharacterInPlay{ID: uuid.New(), Name: "Wren", Class: "archer", Level: 20, PassiveRanks: passivetree.Ranks{"archer.t6b": 1}}
 	s.AddPlayer(memberID, character, "")
 
-	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"archer.t1a": 1}))
+	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"archer.r1": 1}))
 
 	assert.Equal(t, "shadow_ranger", systems.Specialization(delverEntity(t, s, memberID)))
 	assert.Zero(t, picked)

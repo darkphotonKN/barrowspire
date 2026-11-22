@@ -166,14 +166,14 @@ func TestSpendPassivePoint_InTown_PersistsAndTheNextStateCarriesIt(t *testing.T)
 		return ok && len(ranks) == 0 && points == 2
 	}, forfeitSettle, 10*time.Millisecond, "level 3 earns 2 before the spend")
 
-	rig.send("warrior.t1a", 1)
+	rig.send("warrior.r1", 1)
 
 	require.Eventually(t, func() bool {
 		ranks, points, ok := rig.hubFrameTree()
-		return ok && ranks["warrior.t1a"] == 1 && points == 1
+		return ok && ranks["warrior.r1"] == 1 && points == 1
 	}, forfeitSettle, 10*time.Millisecond, "the next state carries the rank, one point fewer")
-	assert.Equal(t, []spendCall{{rig.player.ID, rig.character.ID, "warrior.t1a", 1}}, rig.characters.spendCalls())
-	assert.Equal(t, passivetree.Ranks{"warrior.t1a": 1}, rig.recordRanks(t), "the character in play takes it")
+	assert.Equal(t, []spendCall{{rig.player.ID, rig.character.ID, "warrior.r1", 1}}, rig.characters.spendCalls())
+	assert.Equal(t, passivetree.Ranks{"warrior.r1": 1}, rig.recordRanks(t), "the character in play takes it")
 
 	_, refused := rig.inbox.awaitWithin(spendQuiet, spendAction)
 	assert.False(t, refused, "nothing is sent on success")
@@ -188,9 +188,8 @@ func (r *spendRig) hubFrameHealth() (maxHP, currentHP int, ok bool) {
 	return frame.CurrentPlayer.MaxHealth, frame.CurrentPlayer.CurrentHealth, true
 }
 
-// Acceptance (FS-8RZ51 R27): a spend in town of t1a raises the HUB body's max
-// and current HP by the same amount at once: a level-3 warrior's own 174 max
-// HP, 4% of it rounded is 7.
+// Acceptance (FS-8RZ51 R27, §Change: Tree v2 V16): a spend in town of r1
+// raises the HUB body's max and current HP by Vitality's flat 5 at once.
 func TestSpendPassivePoint_InTown_TheHubBodyFeelsIt(t *testing.T) {
 	rig := newSpendRig(t, "warrior", 3, nil)
 
@@ -202,12 +201,12 @@ func TestSpendPassivePoint_InTown_TheHubBodyFeelsIt(t *testing.T) {
 		return ok && treeOK && points == 2 && maxBefore > 0
 	}, forfeitSettle, 10*time.Millisecond)
 
-	rig.send("warrior.t1a", 1)
+	rig.send("warrior.r1", 1)
 
 	require.Eventually(t, func() bool {
 		maxHP, currentHP, ok := rig.hubFrameHealth()
-		return ok && maxHP == maxBefore+7 && currentHP == currentBefore+7
-	}, forfeitSettle, 10*time.Millisecond, "max and current HP rise by 7 together")
+		return ok && maxHP == maxBefore+5 && currentHP == currentBefore+5
+	}, forfeitSettle, 10*time.Millisecond, "max and current HP rise by 5 together")
 }
 
 // Acceptance: in a field, a run or no world, refused "Points are spent in
@@ -231,7 +230,7 @@ func TestSpendPassivePoint_OutOfTown_IsRefusedWithoutACall(t *testing.T) {
 			rig := newSpendRig(t, "warrior", 3, nil)
 			rig.server.setCurrentWorld(rig.player, place(rig))
 
-			rig.send("warrior.t1a", 1)
+			rig.send("warrior.r1", 1)
 
 			reply, answered := rig.inbox.await(spendAction)
 			require.True(t, answered, "the spend was never answered")
@@ -253,7 +252,7 @@ func TestSpendPassivePoint_WhileQueued_IsRefusedWithoutACall(t *testing.T) {
 	rig.queue.players = append(rig.queue.players, &queued)
 	rig.queue.mu.Unlock()
 
-	err := rig.spend("warrior.t1a", 1)
+	err := rig.spend("warrior.r1", 1)
 
 	assert.Equal(t, passiveQueued, spendRefusalWords(err))
 	assert.Empty(t, rig.characters.spendCalls())
@@ -269,7 +268,7 @@ func TestSpendPassivePoint_QueueUnreadable_IsNotSaved(t *testing.T) {
 	rig.queue.queuedErr = errors.New("redis: connection refused")
 	rig.queue.mu.Unlock()
 
-	err := rig.spend("warrior.t1a", 1)
+	err := rig.spend("warrior.r1", 1)
 
 	assert.Equal(t, passiveNotSaved, spendRefusalWords(err))
 	assert.Empty(t, rig.characters.spendCalls())
@@ -284,14 +283,20 @@ func warriorRanks(slots map[string]int) passivetree.Ranks {
 	return ranks
 }
 
-// Acceptance: a rule refusal answers in its words (§Edge States) and does not
-// call character-service.
+// Held states along the warrior's tree (FS-8RZ51 §Change: Tree v2 V2), by
+// slot.
+var (
+	spendToR2 = map[string]int{"r1": 1, "r2": 1}
+	spendToM2 = map[string]int{"r1": 1, "r2": 1, "ua1": 1, "m1": 1, "m2": 1}
+	spendToM4 = map[string]int{"r1": 1, "r2": 1, "ua1": 1, "m1": 1, "m2": 1, "t3": 1, "m3": 1, "la1": 1, "m4": 1}
+)
+
+// Acceptance: a rule refusal answers in its words (§Edge States, §Change:
+// Tree v2 V18) and does not call character-service.
 func TestSpendPassivePoint_RuleRefusals_InTheirWords(t *testing.T) {
-	tier1Full := map[string]int{"t1a": 2, "t1b": 2}
-	tier3Open := map[string]int{"t1a": 2, "t1b": 2, "t2a": 3, "t2b": 3}
-	// 18 spent above tier 6, one point left at level 20 once t6a is held
-	tier6Open := map[string]int{"t1a": 2, "t1b": 2, "t2a": 3, "t2b": 3, "t3": 1, "t4a": 2, "t4b": 2, "t5a": 3}
-	guardian := maps.Clone(tier6Open)
+	upperA := maps.Clone(spendToR2)
+	upperA["ua1"] = 1
+	guardian := maps.Clone(spendToM4)
 	guardian["t6a"] = 1
 
 	tests := []struct {
@@ -302,15 +307,17 @@ func TestSpendPassivePoint_RuleRefusals_InTheirWords(t *testing.T) {
 		rank  int
 		want  string
 	}{
-		{"another class's node", 5, nil, "mage.t1a", 1, "Unknown node."},
+		{"another class's node", 5, nil, "mage.r1", 1, "Unknown node."},
 		{"an unknown node", 5, nil, "warrior.t9z", 1, "Unknown node."},
-		{"out of order", 5, nil, "warrior.t1a", 2, "Take the ranks one at a time."},
-		{"max rank", 5, map[string]int{"t1a": 2}, "warrior.t1a", 3, "Already at its highest rank."},
-		{"tier 2 one short", 10, map[string]int{"t1a": 2, "t1b": 1}, "warrior.t2a", 1, "Spend 1 more point above to open this tier."},
-		{"tier 2 with nothing spent", 10, nil, "warrior.t2a", 1, "Spend 4 more points above to open this tier."},
-		{"tier 4 before the ability", 20, tier3Open, "warrior.t4a", 1, "Take Earthbreaker first."},
-		{"no points", 5, tier1Full, "warrior.t2a", 1, "No points to spend."},
-		{"the other specialization", 20, guardian, "warrior.t6b", 1, "You chose Guardian."},
+		{"a retired node", 5, nil, "warrior.t1a", 1, "Unknown node."},
+		{"out of order", 5, nil, "warrior.r1", 2, "Take the ranks one at a time."},
+		{"max rank", 5, map[string]int{"r1": 1}, "warrior.r1", 2, "Already at its highest rank."},
+		{"not reachable, not linked", 10, nil, "warrior.r2", 1, "Not reachable yet: take a node linked to it first."},
+		{"not reachable, the ability below level 10", 9, spendToM2, "warrior.t3", 1, "Not reachable yet: reach level 10."},
+		{"not reachable, a specialization below level 20", 19, spendToM4, "warrior.t6a", 1, "Not reachable yet: reach level 20."},
+		{"no points", 3, spendToR2, "warrior.ua1", 1, "No points to spend."},
+		{"side taken, the spec group", 20, guardian, "warrior.t6b", 1, "You chose Guardian."},
+		{"side taken, any other group", 10, upperA, "warrior.ub1", 1, "Locked: you chose the other side."},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -324,24 +331,25 @@ func TestSpendPassivePoint_RuleRefusals_InTheirWords(t *testing.T) {
 	}
 }
 
-// The mage's tree ability and specialization are named for the mage.
-func TestSpendPassivePoint_RefusalsNameTheClasssOwn(t *testing.T) {
-	held := passivetree.Ranks{"mage.t1a": 2, "mage.t1b": 2, "mage.t2a": 3, "mage.t2b": 3}
-	assert.Equal(t, "Take Blink first.", tierLockedWords("mage", held, "mage.t4a"))
-	assert.Equal(t, "You chose Pyromancer.", specializationTakenWords("mage", passivetree.Ranks{"mage.t6b": 1}))
+// The specialization chosen is named for the class's own; a side with no
+// specialization says only that the other side was chosen.
+func TestSideTakenWords_NameTheClasssOwn(t *testing.T) {
+	assert.Equal(t, "You chose Pyromancer.", sideTakenWords("mage", passivetree.Ranks{"mage.t6b": 1}, "mage.t6a"))
+	assert.Equal(t, "You chose Duelist.", sideTakenWords("mercenary", passivetree.Ranks{"mercenary.t6a": 1}, "mercenary.t6b"))
+	assert.Equal(t, "Locked: you chose the other side.", sideTakenWords("mage", passivetree.Ranks{"mage.la1": 1}, "mage.lb1"))
 }
 
 // Acceptance: a repeat of a spend already applied sends nothing and calls
 // nothing.
 func TestSpendPassivePoint_AlreadyHeld_SendsAndCallsNothing(t *testing.T) {
-	rig := newSpendRig(t, "warrior", 5, warriorRanks(map[string]int{"t1a": 1}))
+	rig := newSpendRig(t, "warrior", 5, warriorRanks(map[string]int{"r1": 1}))
 
-	rig.send("warrior.t1a", 1)
+	rig.send("warrior.r1", 1)
 
 	_, answered := rig.inbox.awaitWithin(spendQuiet, spendAction)
 	assert.False(t, answered, "nothing is sent")
 	assert.Empty(t, rig.characters.spendCalls())
-	assert.Equal(t, warriorRanks(map[string]int{"t1a": 1}), rig.recordRanks(t))
+	assert.Equal(t, warriorRanks(map[string]int{"r1": 1}), rig.recordRanks(t))
 }
 
 // Acceptance: character-service unreachable, timing out or not finding the
@@ -362,7 +370,7 @@ func TestSpendPassivePoint_CharacterServiceFails_NotSaved(t *testing.T) {
 
 			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 			defer cancel()
-			err := rig.server.SpendPassivePoint(ctx, rig.conn, "warrior.t1a", 1)
+			err := rig.server.SpendPassivePoint(ctx, rig.conn, "warrior.r1", 1)
 
 			assert.Equal(t, passiveNotSaved, spendRefusalWords(err))
 			assert.Len(t, rig.characters.spendCalls(), 1, "never retried")
@@ -373,31 +381,43 @@ func TestSpendPassivePoint_CharacterServiceFails_NotSaved(t *testing.T) {
 }
 
 // Acceptance: after a run raised the level, character-service refusing with
-// no points (its grant not yet consumed) reads as a level still being
-// recorded. Any other refusal of its own reads in the rule's words.
+// no points (its grant not yet consumed), or a node our check found reachable
+// as not reachable (its level behind ours), reads as a level still being
+// recorded. A side taken there (a race with another tab) reads as the side
+// locked, the spec group's too, since the record does not show the choice.
+// Any other refusal of its own reads in the rule's words (§Change: Tree v2
+// V18, §Edge States).
 func TestSpendPassivePoint_CharacterServiceRefuses(t *testing.T) {
 	tests := []struct {
-		rule *passivetree.Refusal
-		want string
+		name  string
+		level int
+		held  map[string]int
+		node  string
+		rule  *passivetree.Refusal
+		want  string
 	}{
-		{passivetree.ErrNoPoints, "Your new level is still being recorded. Try again in a moment."},
-		{passivetree.ErrMaxRank, "Already at its highest rank."},
-		{passivetree.ErrUnknownNode, "Unknown node."},
+		{"no points", 3, nil, "warrior.r1", passivetree.ErrNoPoints, "Your new level is still being recorded. Try again in a moment."},
+		{"not reachable", 10, spendToM2, "warrior.t3", passivetree.ErrNotReachable, "Your new level is still being recorded. Try again in a moment."},
+		{"side taken", 5, spendToR2, "warrior.ub1", passivetree.ErrSideTaken, "Locked: you chose the other side."},
+		{"side taken, the spec group", 20, spendToM4, "warrior.t6b", passivetree.ErrSideTaken, "Locked: you chose the other side."},
+		{"max rank", 3, nil, "warrior.r1", passivetree.ErrMaxRank, "Already at its highest rank."},
+		{"unknown node", 3, nil, "warrior.r1", passivetree.ErrUnknownNode, "Unknown node."},
 	}
 	for _, tt := range tests {
-		t.Run(string(tt.rule.Code), func(t *testing.T) {
-			rig := newSpendRig(t, "warrior", 3, nil)
+		t.Run(tt.name, func(t *testing.T) {
+			held := warriorRanks(tt.held)
+			rig := newSpendRig(t, "warrior", tt.level, held)
 			rig.characters.mu.Lock()
 			rig.characters.spendErr = fmt.Errorf("spend: %w", tt.rule)
 			rig.characters.mu.Unlock()
 
-			rig.send("warrior.t1a", 1)
+			rig.send(tt.node, 1)
 
 			reply, answered := rig.inbox.await(spendAction)
 			require.True(t, answered)
 			require.NotNil(t, reply.Error)
 			assert.Equal(t, tt.want, *reply.Error)
-			assert.Empty(t, rig.recordRanks(t))
+			assert.Equal(t, held, rig.recordRanks(t))
 		})
 	}
 }
@@ -412,7 +432,7 @@ func TestSpendPassivePoint_RunsOffTheLoop(t *testing.T) {
 	rig.characters.mu.Unlock()
 	defer close(hold)
 
-	rig.send("warrior.t1a", 1)
+	rig.send("warrior.r1", 1)
 	require.Eventually(t, func() bool { return len(rig.characters.spendCalls()) == 1 }, forfeitSettle, 5*time.Millisecond)
 
 	// another connection, answered on the loop while the spend waits
@@ -429,19 +449,19 @@ func TestSpendPassivePoint_RunsOffTheLoop(t *testing.T) {
 // Acceptance: two OK answers arriving out of order leave the record, and the
 // HUB world body, at the higher ranks.
 func TestSpendPassivePoint_AnswersOutOfOrder_KeepTheHigherRanks(t *testing.T) {
-	rig := newSpendRig(t, "warrior", 6, nil)
+	rig := newSpendRig(t, "warrior", 10, nil)
 	rig.characters.mu.Lock()
 	rig.characters.scripted = []passivetree.Ranks{
-		warriorRanks(map[string]int{"t1a": 2}),
+		warriorRanks(map[string]int{"r1": 1, "r2": 1, "ua1": 1, "t2a": 2}),
 		// an answer that left character-service before the one above
-		warriorRanks(map[string]int{"t1a": 1, "t1b": 1}),
+		warriorRanks(map[string]int{"r1": 1, "r2": 1, "ua1": 1, "t2a": 1, "m1": 1}),
 	}
 	rig.characters.mu.Unlock()
 
-	require.NoError(t, rig.spend("warrior.t1a", 1))
-	require.NoError(t, rig.spend("warrior.t1b", 1))
+	require.NoError(t, rig.spend("warrior.r1", 1))
+	require.NoError(t, rig.spend("warrior.m1", 1))
 
-	want := warriorRanks(map[string]int{"t1a": 2, "t1b": 1})
+	want := warriorRanks(map[string]int{"r1": 1, "r2": 1, "ua1": 1, "t2a": 2, "m1": 1})
 	assert.Equal(t, want, rig.recordRanks(t))
 	assert.Equal(t, want, systems.PassiveRanks(hubBodyOf(t, rig.hub, rig.player.ID)))
 }
@@ -453,7 +473,7 @@ func TestSpendPassivePoint_ActsForTheConnectionsPlayer(t *testing.T) {
 
 	rig.server.serverChan <- types.ClientPackage{Conn: rig.conn, Message: types.Message{
 		Action:  spendAction,
-		Payload: map[string]interface{}{"node_id": "warrior.t1a", "rank": float64(1), "player_id": uuid.NewString()},
+		Payload: map[string]interface{}{"node_id": "warrior.r1", "rank": float64(1), "player_id": uuid.NewString()},
 	}}
 
 	require.Eventually(t, func() bool { return len(rig.characters.spendCalls()) == 1 }, forfeitSettle, 5*time.Millisecond)
@@ -468,9 +488,9 @@ func TestSpendPassivePoint_MalformedPayload(t *testing.T) {
 	}{
 		"no node":         {map[string]interface{}{"rank": float64(1)}, "Unknown node."},
 		"a node not text": {map[string]interface{}{"node_id": 7, "rank": float64(1)}, "Unknown node."},
-		"no rank":         {map[string]interface{}{"node_id": "warrior.t1a"}, "Take the ranks one at a time."},
-		"a part rank":     {map[string]interface{}{"node_id": "warrior.t1a", "rank": 1.5}, "Take the ranks one at a time."},
-		"rank 0":          {map[string]interface{}{"node_id": "warrior.t1a", "rank": float64(0)}, "Take the ranks one at a time."},
+		"no rank":         {map[string]interface{}{"node_id": "warrior.r1"}, "Take the ranks one at a time."},
+		"a part rank":     {map[string]interface{}{"node_id": "warrior.r1", "rank": 1.5}, "Take the ranks one at a time."},
+		"rank 0":          {map[string]interface{}{"node_id": "warrior.r1", "rank": float64(0)}, "Take the ranks one at a time."},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -490,7 +510,7 @@ func TestSpendPassivePoint_MalformedPayload(t *testing.T) {
 // Acceptance: entering the HUB loads the character's ranks into the character
 // in play and onto the body; a same-pod switch into a run carries them.
 func TestEntry_TheRanksRideTheCharacterInPlay(t *testing.T) {
-	ranks := warriorRanks(map[string]int{"t1a": 2, "t1b": 1})
+	ranks := warriorRanks(map[string]int{"r1": 1, "r2": 1, "ub1": 1, "t2b": 2})
 	rig := newSpendRig(t, "warrior", 6, ranks)
 
 	assert.Equal(t, ranks, rig.recordRanks(t))
@@ -503,7 +523,7 @@ func TestEntry_TheRanksRideTheCharacterInPlay(t *testing.T) {
 // A handoff seat is built from the queue entry's character, which crosses pods
 // as JSON: the ranks cross with it.
 func TestCharacterInPlay_TheRanksCrossAsJSON(t *testing.T) {
-	character := types.CharacterInPlay{ID: uuid.New(), Class: "archer", Level: 7, PassiveRanks: passivetree.Ranks{"archer.t1a": 2}}
+	character := types.CharacterInPlay{ID: uuid.New(), Class: "archer", Level: 7, PassiveRanks: passivetree.Ranks{"archer.r1": 1, "archer.t2a": 2}}
 
 	encoded, err := json.Marshal(character)
 	require.NoError(t, err)

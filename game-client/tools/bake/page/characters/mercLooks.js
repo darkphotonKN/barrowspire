@@ -1,16 +1,27 @@
-// The mercenary's specialization looks (FS-1J1CB §A R7–R8): the Duelist and the Sellsword, each the
-// swordsman in madder re-dressed on his own rig, build and clips (cast.js `mercenary(look)`,
-// look.js). Ported from the /variants round's mercSpecs.js (Duelist A's half-cloak with a wrapped
-// robe; Sellsword B with the madder dyed black), cleaned up and rebuilt on the look's pieces. The
-// half-cloak, rigid on the chest in the variant, hangs on cloak bones here (R11).
+// The mercenary's specialization looks (FS-1J1CB §A R7–R8, §Change: Looks v2 R49–R69): the Duelist
+// and the Sellsword, each the swordsman in madder re-dressed on his own rig, build and clips
+// (cast.js `mercenary(look)`, look.js).
+//
+// Each look is a look object composed from the mercenary kit (R68, mercKit.js: each look's own
+// wear, the edge bindings, cuff bands and studded belt, the long-hilted blade and its scabbard, the
+// broad falchion and its scabbard), so a third mercenary look is one more object here, one more id
+// in cast.js `SPEC_LOOKS` and one more `specRow`, with no change to the kit's pieces or to look.js.
+//
+// The two are cut as opposites, each against the swordsman too (R50): the Duelist long and narrow,
+// a robe let down near to the ankle and flared at the hem, deep bell sleeves, a half-cloak from
+// the off shoulder down past the hip, a long slender blade on a long hilt; the Sellsword square
+// and heavy, both shoulders under big spaulders, a high buff collar, the buff coat's skirts flared
+// wide over the black, bucket-topped boots, a broad falchion on a long grip. Both keep the class's
+// bare head and one-handed blade (R71).
 
 import * as THREE from "three";
-import { attach, ellipsoid, jointAt as J, mount, rigidTube, skinTube } from "./rig.js";
+import { attach, ellipsoid, jointAt as J, rigidTube, skinTube } from "./rig.js";
 import { cloakBones, overTorso, sash, skirt } from "./anatomy.js";
-import { spaulder } from "./gear.js";
+import { buckle, inHand, spaulder, studRow } from "./gear.js";
+import { DUELIST_STYLE } from "./classStyles.js";
+import { WEAR, bedroll, binding, cuffBand, falchion, falchionScabbard, longBlade, longScabbard, onChest, purse, studdedBelt } from "./mercKit.js";
 
-
-// --- the Duelist (R7) ------------------------------------------------------------------------
+// --- the Duelist (R7, R49, R50, R60, R63) -------------------------------------------------------
 
 /**
  * How firmly the half-cloak's chain is held, link by link from the collar (anatomy.js `cloakBones`
@@ -20,8 +31,8 @@ import { spaulder } from "./gear.js";
  */
 const HALF_CLOAK_HELD = [0.5, 1, 1, 1];
 
-/** The half-cloak's length down the back, from the shoulder line to the hip (H): its bone chain's too. */
-const HALF_CLOAK = 0.27;
+/** The half-cloak's length down the back, from the shoulder line (H): its bone chain's too. */
+const HALF_CLOAK = 0.42;
 
 /**
  * The cloak chain's weights a fraction `t` down a cloak (anatomy.js `cloak`): the chest at the
@@ -38,13 +49,13 @@ function chainAt(t) {
 }
 
 /**
- * A half-cloak in slate-black slung from the off (left) shoulder: round the back of the neck, over
- * the left shoulder and down the back and the outside of the arm to the hip, its hem long behind
- * and short at the side (variant A `halfCape`). Skinned like the knight's cloak: the back hangs on
- * the cloak chain (`cloakBones`) and the edge at his side rides the chest. It is cut wide of the
- * arm and stops at his side, not round the front of the arm as the variant's did: carried by the
- * arm, the cut's free arm thrown out and back lifted it over his head like a wing; hung in front of
- * it, the arm came through it. Tagged as a cloak, so the cloak guard holds the legs inside it (R11).
+ * A half-cloak in slate-black slung from the off (left) shoulder (R49: pushed further, let down
+ * past the hip and cut fuller): round the back of the neck, over the left shoulder and down the
+ * back and the outside of the arm, its hem long behind and short at the side. Skinned like the
+ * knight's cloak: the back hangs on the cloak chain (`cloakBones`) and the edge at his side rides
+ * the chest. It is cut wide of the arm and stops at his side: carried by the arm, the cut's free
+ * arm thrown out and back lifted it over his head like a wing; hung in front of it, the arm came
+ * through it. Tagged as a cloak, so the cloak guard holds the legs inside it (R11).
  */
 function halfCloak(rig, mat) {
   const [, ny] = J(rig, "neck");
@@ -54,15 +65,16 @@ function halfCloak(rig, mat) {
   // the arm (the tube's angle runs his right 0, front π/2, left π, back 3π/2)
   const cps = [
     { p: [0, top, -0.004], r: [0.076, 0.062] },
-    { p: [0.028, top - 0.026, -0.006], r: [0.17, 0.094] },
-    { p: [0.04, top - 0.09, -0.008], r: [0.182, 0.11] },
-    { p: [0.045, (top + hy) / 2 - 0.04, -0.01], r: [0.184, 0.118] },
-    { p: [0.046, top - HALF_CLOAK, -0.014], r: [0.186, 0.122] },
+    { p: [0.028, top - 0.026, -0.006], r: [0.174, 0.096] },
+    { p: [0.04, top - 0.09, -0.008], r: [0.19, 0.114] },
+    { p: [0.046, (top + hy) / 2 - 0.04, -0.012], r: [0.196, 0.124] },
+    { p: [0.048, top - HALF_CLOAK * 0.78, -0.016], r: [0.2, 0.13] },
+    { p: [0.048, top - HALF_CLOAK, -0.02], r: [0.204, 0.136] },
   ].map((c) => ({ ...c, w: { chest: 1 } }));
   // from a little before his left side round it and across the back to right of centre
-  const arc = [Math.PI - 0.25, (Math.PI * 3) / 2 + 0.5];
+  const arc = [Math.PI - 0.25, (Math.PI * 3) / 2 + 0.55];
   // the hem lifts toward the front: long behind, short at the side
-  const drop = (t, a) => -Math.max(0, Math.sin(a)) * 0.1 * t * t + Math.max(0, -Math.sin(a)) * 0.015 * t;
+  const drop = (t, a) => -Math.max(0, Math.sin(a)) * 0.12 * t * t + Math.max(0, -Math.sin(a)) * 0.015 * t;
   // the back on the chain, the edge at his side on the chest
   const weight = (t, a) => {
     const side = THREE.MathUtils.smoothstep(Math.sin(a), -0.15, 0.4);
@@ -95,13 +107,30 @@ function wrappedBody(rig, mat, hy) {
 }
 
 /**
- * Wide sleeves over both arms from the shoulder to the middle of the forearm, open at the cuff, so
- * the vambrace and the bracer come out of them: the arm's own tube (anatomy.js `arms`), to its
- * fifth ring, flared toward the mouth.
+ * The robe's collar (R63: an edge binding in the cloak's slate): a band down the wrapped V's two
+ * edges from the throat to just above the sash, and round the back of the neck, so the wrap reads
+ * as a cut. Rigid on the chest.
  */
-function wideSleeves(rig, mat, r) {
+function robeCollar(rig, mat) {
+  const [, ny] = J(rig, "neck");
+  const low = 0.63;
+  const high = ny - 0.012;
+  const edge = (a0, a1) => Array.from({ length: 6 }, (_, i) => i / 5).map((u) => onChest(rig, a0 + (a1 - a0) * u, high + (low - high) * u, 0.017));
+  const right = edge(Math.PI / 2 - 0.5, V.at + 0.02);
+  const left = edge(Math.PI / 2 + 0.42, V.at + 0.06).reverse();
+  const back = [Math.PI * 0.85, Math.PI, Math.PI * 1.25, Math.PI * 1.5, Math.PI * 1.75, Math.PI * 2, Math.PI * 2.15].map((a) => onChest(rig, a, ny + 0.002, 0.014));
+  binding(rig, "chest", [...right, ...left, ...back], mat, { r: 0.0058 });
+}
+
+/**
+ * Deep bell sleeves over both arms (R49: the shoulder and arm line re-cut), from the shoulder to
+ * past the middle of the forearm, open and wide at the mouth so the vambrace and the bracer come
+ * out of them, a slate band round each mouth: the arm's own tube (anatomy.js `arms`), flared toward
+ * the mouth.
+ */
+function bellSleeves(rig, mat, band, r) {
   const ar = rig.p.armR * r;
-  const flare = [1.12, 1.12, 1.16, 1.3, 1.55, 1.8];
+  const flare = [1.12, 1.16, 1.3, 1.5, 1.62, 1.7, 1.76];
   for (const s of ["L", "R"]) {
     const [x, uy] = J(rig, `upperArm${s}`);
     const [, fy] = J(rig, `foreArm${s}`);
@@ -111,29 +140,27 @@ function wideSleeves(rig, mat, r) {
       { p: [x, uy - 0.07, 0.002], r: [0.039 * ar, 0.042 * ar], w: { [`upperArm${s}`]: 1 } },
       { p: [x, fy + 0.03, 0], r: [0.032 * ar, 0.033 * ar], w: { [`upperArm${s}`]: 1 } },
       { p: [x, fy - 0.018, 0.002], r: [0.033 * ar, 0.033 * ar], w: { [`foreArm${s}`]: 1 } },
-      { p: [x, fy - 0.06, 0.005], r: [0.036 * ar, 0.033 * ar], w: { [`foreArm${s}`]: 1 } },
+      { p: [x, fy - 0.05, 0.005], r: [0.035 * ar, 0.033 * ar], w: { [`foreArm${s}`]: 1 } },
+      { p: [x, fy - 0.08, 0.008], r: [0.036 * ar, 0.034 * ar], w: { [`foreArm${s}`]: 1 } },
     ].map((c, i) => ({ ...c, r: c.r.map((v) => v * flare[i]) }));
-    skinTube(rig, cps, mat, { segs: 16, steps: 4, caps: false, uv: 5, ground: false });
+    skinTube(rig, cps, mat, { segs: 18, steps: 4, caps: false, uv: 5, ground: false });
+    cuffBand(rig, `foreArm${s}`, fy - 0.078, 0.036 * ar * flare[6] + 0.002, band, { w: 0.01 });
   }
 }
 
-/** The robe's skirts, split at both sides from the sash down: a front panel and a back one. */
-const SPLIT = 0.22;
-const PANELS = [
-  [SPLIT, Math.PI - SPLIT],
-  [Math.PI + SPLIT, Math.PI * 2 - SPLIT],
-];
-
 /**
- * The robe's cut below the sash (R7, R11): to mid-calf over the tall boots, hung as the mage's robe
- * is (the thigh carrying the cloth over the knee it bends, the panels below it), so the legs stay
- * inside it through the run, the walk, the cut and the parry. The panels carry more of it than the
- * mage's (0.55, not 0.35): his run's stride is longer, and at her 0.35 his leading knee came out
- * through the front panel by 6.3 px on the run's first key. 0.52 to 0.6 all pass every clip.
+ * The robe's cut below the sash (R7, R11, R49: let down near to the ankle and flared, so his hem
+ * line is a wide bell in a black fill), open down the front from the sash as the arming coat is
+ * (its `arc`), hung as the mage's robe is (the thigh carrying the cloth over the knee it bends, the
+ * panels below it), so the legs stay inside it through the run, the walk, the cut and the parry.
+ * The panels carry more of it than the mage's (0.55, not 0.35): his run's stride is longer, and at
+ * her 0.35 his leading knee came out through the front panel. v1's skirts were split at both
+ * sides; flared this wide, each split's edge swung out in the run as a loose flap, so the robe is
+ * whole round the back and sides and open only at the front.
  */
 const ROBE = {
-  bottom: 0.16,
-  rBottom: [0.15, 0.132],
+  bottom: 0.085,
+  rBottom: [0.2, 0.18],
   legFollow: 0.5,
   panelWeight: 0.55,
   kneeCover: 0.05,
@@ -159,92 +186,184 @@ function woundSash(rig, mat, o) {
 }
 
 /**
- * The Duelist (R7): variant A's half-cloak from the off shoulder on cloak bones in place of the left
- * spaulder, over a robe in faded madder wrapped left over right in a deep V, wide-sleeved and
- * split-skirted to mid-calf, girt with a wide slate-black sash wound twice. "Almost" samurai: a
- * cut, not a costume, so no lacing and no topknot. The vambrace, blade, hair and beard stay; the
- * knee cop goes under the robe.
+ * The cord the half-cloak is tied by (R63: a strap where a garment hangs): from its edge over the
+ * left breast down across the chest under the right arm, knotted at the breast.
+ */
+function cloakCord(rig, mat) {
+  const H = rig.H;
+  const [, ny] = J(rig, "neck");
+  const [, cy] = J(rig, "chest");
+  const pts = [
+    [Math.PI / 2 + 0.95, ny - 0.03],
+    [Math.PI / 2 + 0.5, cy + 0.045],
+    [Math.PI / 2, cy + 0.02],
+    [Math.PI / 2 - 0.55, cy - 0.005],
+    [Math.PI / 2 - 1.05, cy - 0.02],
+  ].map(([a, y]) => onChest(rig, a, y, 0.024));
+  binding(rig, "chest", pts, mat, { r: 0.0036 });
+  attach(rig, "chest", ellipsoid(0.008 * H, 0.007 * H, 0.006 * H, 8), mat, pts[1]);
+}
+
+/** Where the Duelist's scabbard rides: thrust through the sash at the left hip, slung back and out. */
+const DUELIST_SCABBARD = { at: [0.1, 0.03, 0.045], tilt: 1.0, out: 0.22 };
+
+/**
+ * The Duelist (R7, §Change: Looks v2 R60, R63): variant A's half-cloak from the off shoulder on
+ * cloak bones in place of the left spaulder, let down past the hip and tied across the chest by a
+ * cord; a robe in faded madder wrapped left over right in a deep V, its collar bound in slate, deep
+ * bell sleeves banded in slate at the mouth, skirted near to the ankle, open at the front and
+ * flared at the hem; a wide slate-black sash wound twice; the long-hilted curved blade in his right
+ * hand and its lacquered scabbard through the sash. "Almost" samurai: a cut, not a costume, so no
+ * lacing and no topknot. His run's wrist is re-keyed in his own style (classStyles.js
+ * DUELIST_STYLE), so the long hilt keeps off his forearm. The vambrace, hair and beard stay; the
+ * knee cop goes under the robe. His wear is kept (fabrics.js `duelist*`): polished steel,
+ * blackened iron, lacquer and matte wool.
  */
 export const duelist = {
+  tones: WEAR.duelist,
   // the robe's under-layer, showing in the V, is the breeches' dark wool
   mats: (F) => ({ torso: F.breeches, arms: F.duelistRobe, coat: F.duelistRobe, sash: F.duelistSlate }),
   opts: { coat: ROBE },
   omit: ["spaulder", "collar", "kneeCop"],
-  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD }),
+  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.26, strap: HALF_CLOAK_HELD }),
   swap: {
-    coat: (rig, { mat, o }) => {
-      for (const arc of PANELS) skirt(rig, mat, { ...o, arc });
-    },
     sash: (rig, { mat, o }) => woundSash(rig, mat, o),
+    scabbard: (rig, { F }) => longScabbard(rig, { sheath: F.duelistSaya, iron: F.duelistIron, cord: F.duelistCord }, DUELIST_SCABBARD),
+    weapon: (rig, { F }) => inHand(rig, "R").add(longBlade(rig, { steel: F.duelistSteel, edge: F.duelistEdgeSteel, iron: F.duelistIron, core: F.duelistCore, cord: F.duelistCord })),
   },
+  style: DUELIST_STYLE,
   add: (rig, { F, hy }) => {
     wrappedBody(rig, F.duelistRobe, hy);
-    wideSleeves(rig, F.duelistRobe, 1.06);
+    robeCollar(rig, F.duelistSlate);
+    bellSleeves(rig, F.duelistRobe, F.duelistSlate, 1.06);
     halfCloak(rig, F.duelistSlate);
+    cloakCord(rig, F.duelistCord);
   },
 };
 
-// --- the Sellsword (R8) ----------------------------------------------------------------------
+// --- the Sellsword (R8, R49, R50, R61, R63) -----------------------------------------------------
 
 /** How far the buff coat stands off the torso (H). */
 const BUFF_PAD = 0.014;
 
 /**
+ * The black arming coat's skirts (R49: the hem re-cut): flared wide at the hem, so his hem line is
+ * square and heavy, hung as the knight's hauberk is (the thighs carrying most of it), the buff
+ * coat's skirts over it (`buffSkirts`).
+ */
+const SELL_COAT = { bottom: 0.355, rBottom: [0.2, 0.172], legFollow: 0.72, panelWeight: 0.3 };
+
+/**
  * A sleeveless buff-leather coat over the arming coat, from the waist to the neck, closed down the
- * front with four brass buckles (variant B `buffJerkin`). Skinned on the torso, not rigid on the
- * chest as the variant was, so it bends with him; the sash rides over its foot.
+ * front with five brass buckles and a row of brass studs down each side of the closure (R63).
+ * Skinned on the torso, so it bends with him.
  */
 function buffCoat(rig, mat, brass) {
   const H = rig.H;
   const [, hy] = J(rig, "hips");
-  const [, cy] = J(rig, "chest");
-  const td = rig.p.torsoD;
   overTorso(rig, mat, { from: hy - 0.012, pad: BUFF_PAD, arc: [Math.PI / 2 + 0.1, Math.PI / 2 + Math.PI * 2 - 0.1] });
-  // the buckles on the coat's front, which the torso's profile sets (anatomy.js `torsoProfile`)
-  const front = [
-    [hy + 0.06, 0.002 + 0.064 * td],
-    [cy - 0.005, 0.006 + 0.074 * td],
-    [cy + 0.06, 0.01 + 0.079 * td],
-  ];
-  const zAt = (y) => {
-    const [[y0, z0], [y1, z1]] = y < front[1][0] ? [front[0], front[1]] : [front[1], front[2]];
-    return z0 + ((z1 - z0) * (y - y0)) / (y1 - y0) + BUFF_PAD + 0.002;
-  };
-  for (let i = 0; i < 4; i++) {
-    const y = hy + 0.085 + i * 0.05;
-    attach(rig, "chest", new THREE.BoxGeometry(0.018 * H, 0.009 * H, 0.006 * H), brass, [0, y, zAt(y)]);
+  for (let i = 0; i < 5; i++) {
+    const y = hy + 0.075 + i * 0.042;
+    const p = onChest(rig, Math.PI / 2, y, BUFF_PAD + 0.003);
+    // under the chest's profile (onChest's lowest ring) the belly draws in a little
+    if (y < J(rig, "chest")[1] - 0.03) p[2] -= 0.004;
+    attach(rig, "chest", new THREE.BoxGeometry(0.018 * H, 0.009 * H, 0.006 * H), brass, p);
   }
-}
-
-/** A fat leather purse on its drawstring at the right hip, tied in brass (variant B `purse`). */
-function purse(rig, mat, brass) {
-  const H = rig.H;
-  const [, hy] = J(rig, "hips");
-  const g = mount(rig, "hips", [-0.1, hy - 0.03, 0.06], { rz: -0.1 });
-  const bag = new THREE.Mesh(ellipsoid(0.03 * H, 0.036 * H, 0.026 * H, 12), mat);
-  bag.position.y = -0.03 * H;
-  g.add(bag);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.009 * H, 0.014 * H, 0.016 * H, 8), mat);
-  neck.position.y = 0.006 * H;
-  g.add(neck);
-  const tie = new THREE.Mesh(new THREE.TorusGeometry(0.011 * H, 0.0025 * H, 5, 10), brass);
-  tie.rotation.x = Math.PI / 2;
-  tie.position.y = 0.002 * H;
-  g.add(tie);
+  const rows = [-1, 1].map((s) => Array.from({ length: 6 }, (_, i) => onChest(rig, Math.PI / 2 + s * 0.2, hy + 0.08 + i * 0.034, BUFF_PAD + 0.002)));
+  for (const pts of rows) studRow(rig, "chest", pts.filter((p) => p[1] > J(rig, "chest")[1] - 0.04), brass, { r: 0.0036, normal: ([px, , pz]) => [px, 0, pz] });
 }
 
 /**
- * The Sellsword (R8): variant B, the madder base dyed black (Kranti's pick): the arming coat and the
- * sash a charcoal black, never pure black, under a sleeveless buff-leather coat buckled in brass,
- * with a spaulder on both shoulders and a purse at the belt. The blade, vambrace, hair and beard stay.
+ * The buff coat's skirts over the black arming coat's (R49): four tabbed panels, split at the
+ * front, the sides and the back, cut on the arming coat's own rig (anatomy.js `skirt({ over })`) so
+ * the black never comes out through them, stopping short of its hem so a band of black shows below.
+ */
+function buffSkirts(rig, mat, coat) {
+  const arcs = [
+    [Math.PI / 2 + 0.24, Math.PI - 0.1],
+    [Math.PI + 0.1, (Math.PI * 3) / 2 - 0.08],
+    [(Math.PI * 3) / 2 + 0.08, Math.PI * 2 - 0.1],
+    [Math.PI * 2 + 0.1, Math.PI * 2 + Math.PI / 2 - 0.24],
+  ];
+  for (const arc of arcs) skirt(rig, mat, { over: coat, arc, bottom: coat.bottom + 0.035, rTop: coat.rTop.map((v) => v + 0.008), rBottom: coat.rBottom.map((v) => v + 0.022) });
+}
+
+/** A high standing collar of buff leather, flared at its lip, open a little at the throat (R49: his neck and shoulder line squared). */
+function buffCollar(rig, mat) {
+  const [, ny] = J(rig, "neck");
+  const gap = 0.45;
+  const geo = rigidTube(
+    rig.H,
+    [
+      { p: [0, ny - 0.018, 0.002], r: [0.062, 0.058] },
+      { p: [0, ny + 0.02, -0.002], r: [0.06, 0.057] },
+      { p: [0, ny + 0.048, -0.008], r: [0.068, 0.064] },
+    ],
+    { segs: 22, steps: 3, caps: false, arc: [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap] },
+  );
+  attach(rig, "chest", geo, mat, [0, 0, 0]);
+}
+
+/** Buff gauntlet cuffs, flared wide over both wrists (R49: the arm's line re-cut, R63: a contrasting cuff). */
+function gauntletCuffs(rig, mat, { wy }) {
+  for (const s of ["L", "R"]) {
+    const [x] = J(rig, `foreArm${s}`);
+    const geo = rigidTube(
+      rig.H,
+      [
+        { p: [x, wy + 0.072, 0.002], r: [0.06, 0.058] },
+        { p: [x, wy + 0.03, 0.002], r: [0.046, 0.045] },
+        { p: [x, wy + 0.004, 0.002], r: [0.04, 0.04] },
+      ],
+      { segs: 16, steps: 2, caps: false },
+    );
+    attach(rig, `foreArm${s}`, geo, mat, [0, 0, 0]);
+  }
+}
+
+/** Bucket tops on his tall boots: a stiff leather cuff flared out over each knee's foot (R49: the leg line re-cut). */
+function bootTops(rig, mat) {
+  for (const s of ["L", "R"]) cuffBand(rig, `shin${s}`, 0.212, 0.064, mat, { w: 0.056, flare: 0.74 });
+}
+
+/** Where the Sellsword's scabbard rides: slung from the sword belt on the left hip, the point back. */
+const SELL_SCABBARD = { at: [0.108, -0.02, 0.03], tilt: 0.42, out: 0.14 };
+
+/**
+ * The Sellsword (R8, §Change: Looks v2 R61, R63): variant B, the madder base dyed black (Kranti's
+ * pick), pushed further and squared off: the arming coat in charcoal black, never pure black, its
+ * skirts flared wide, under a sleeveless buff-leather coat buckled and studded in brass, its own
+ * tabbed skirts over the black; a high buff collar; a big spaulder on each shoulder; flared buff
+ * gauntlet cuffs; a broad studded sword belt for the sash, the purse and the scabbard's hanger
+ * buckle on it; bucket-topped boots; a bedroll across his back; his hair cropped and the beard
+ * grown full. A broad falchion on a long grip in his right hand and its wide scabbard slung on the
+ * left hip. His wear is used hard (fabrics.js `sell*`): pitted iron, oiled leather, dull brass.
  */
 export const sellsword = {
-  tones: (F) => ({ coat: F.sellBlack, sash: F.sellSash }),
-  // the sash rides over the buff coat's foot
-  opts: { sash: { pad: 0.02 } },
-  add: (rig, { F, M }) => {
-    buffCoat(rig, F.buffCoat, M.brass);
-    spaulder(rig, "R", F.darkSteelDouble, { lames: 3, size: 0.98 });
-    purse(rig, F.leatherDark, M.brass);
+  tones: WEAR.sellsword,
+  opts: {
+    coat: SELL_COAT,
+    hair: { tail: false },
+    beard: { full: 1.35 },
+    spaulder: { lames: 4, size: 1.4 },
+  },
+  omit: ["kneeCop"],
+  swap: {
+    collar: (rig, { F }) => buffCollar(rig, F.buffCoat),
+    sash: (rig, { F, hy }) => studdedBelt(rig, { mat: F.sellLeather, stud: F.sellBrass, y: hy + 0.012, rx: 0.106 * rig.p.hipW + 0.02, rz: 0.082 * rig.p.torsoD + 0.02, w: 0.034 }),
+    scabbard: (rig, { F }) => falchionScabbard(rig, { sheath: F.sellLeather, iron: F.sellIron }, SELL_SCABBARD),
+    weapon: (rig, { F }) => inHand(rig, "R").add(falchion(rig, { steel: F.sellSteel, edge: F.sellEdge, iron: F.sellIron, grip: F.sellLeather })),
+  },
+  add: (rig, kit) => {
+    const { F, coat } = kit;
+    buffCoat(rig, F.buffCoat, F.sellBrass);
+    buffSkirts(rig, F.buffCoat, coat);
+    spaulder(rig, "R", F.sellPlateDouble, { lames: 4, size: 1.4 });
+    gauntletCuffs(rig, F.buffCoat, kit);
+    bootTops(rig, F.sellLeather);
+    purse(rig, F.sellLeather, F.sellBrass);
+    bedroll(rig, { roll: F.sellRoll, strap: F.sellLeather, brass: F.sellBrass });
+    // the scabbard's hanger buckle on the belt over the left hip
+    buckle(rig, "hips", [0.112, J(rig, "hips")[1], 0.07], F.sellBrass, { w: 0.02, ry: 0.9 });
   },
 };

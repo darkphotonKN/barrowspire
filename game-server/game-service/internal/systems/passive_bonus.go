@@ -112,7 +112,8 @@ func passiveBonusOf(entity *ecs.Entity) (components.PassiveBonusComponent, bool)
 // counts for nothing more. Each stat reads in the unit the tree gives it.
 func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool components.ResourceKind) components.PassiveBonusComponent {
 	var bonus components.PassiveBonusComponent
-	var maxHealthPercent float64
+	var maxHealthPercent, maxHealthFlat float64
+	primary := passivetree.PrimaryAttributes(class)
 	for _, node := range passivetree.Nodes(class) {
 		rank := min(ranks[node.ID], node.MaxRank)
 		if node.PerRank == nil || rank <= 0 {
@@ -121,13 +122,18 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 		amount := node.PerRank.Amount * float64(rank)
 		switch node.PerRank.Stat {
 		case passivetree.StatMaxHP:
-			maxHealthPercent += amount
-		case passivetree.StatStrength:
-			bonus.Strength += whole(amount)
-		case passivetree.StatAgility:
-			bonus.Agility += whole(amount)
-		case passivetree.StatIntelligence:
-			bonus.Intelligence += whole(amount)
+			// Thick Skin's percent of own max HP, Vitality's whole points (V16)
+			switch node.PerRank.Unit {
+			case passivetree.UnitPercent:
+				maxHealthPercent += amount
+			case passivetree.UnitFlat:
+				maxHealthFlat += amount
+			}
+		case passivetree.StatPrimaryAttribute:
+			// Might: each attribute the class names takes the full amount (V16)
+			for _, attribute := range primary {
+				addAttribute(&bonus, attribute, whole(amount))
+			}
 		case passivetree.StatAttackSpeed:
 			bonus.AttackSpeedPercent += whole(amount)
 		case passivetree.StatMoveSpeed:
@@ -136,20 +142,12 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 			bonus.CritPoints += whole(amount)
 		case passivetree.StatParryWindow:
 			bonus.ParryWindowSeconds += amount
-		case passivetree.StatMaxStamina:
-			if pool == components.ResourceStamina {
-				bonus.MaxResource += whole(amount)
-			}
 		case passivetree.StatMaxMana:
 			if pool == components.ResourceMana {
 				bonus.MaxResource += whole(amount)
 			}
 		case passivetree.StatStaminaRegen:
 			if pool == components.ResourceStamina {
-				bonus.RegenPercent += amount
-			}
-		case passivetree.StatManaRegen:
-			if pool == components.ResourceMana {
 				bonus.RegenPercent += amount
 			}
 		case passivetree.StatSlashDamage:
@@ -184,11 +182,24 @@ func sumPassives(class string, ranks passivetree.Ranks, ownMaxHealth int, pool c
 	if bonus.Kickers[passivetree.KickerDeepWellRegen] && pool == components.ResourceMana {
 		bonus.RegenPercent += deepWellRegenPercent
 	}
-	// one rounding over the summed percent, to the nearest whole point (R26)
-	bonus.MaxHealth = whole(float64(ownMaxHealth) * maxHealthPercent / 100)
+	// one rounding over the summed percent, to the nearest whole point (R26),
+	// the flat points on top (V16)
+	bonus.MaxHealth = whole(float64(ownMaxHealth)*maxHealthPercent/100) + whole(maxHealthFlat)
 	spec, _ := passivetree.SpecializationOf(class, ranks)
 	withBloodPrice(&bonus, spec, ownMaxHealth)
 	return bonus
+}
+
+// addAttribute adds points to the attribute of bonus it names.
+func addAttribute(bonus *components.PassiveBonusComponent, attribute passivetree.Attribute, points int) {
+	switch attribute {
+	case passivetree.AttributeStrength:
+		bonus.Strength += points
+	case passivetree.AttributeAgility:
+		bonus.Agility += points
+	case passivetree.AttributeIntelligence:
+		bonus.Intelligence += points
+	}
 }
 
 func whole(amount float64) int {

@@ -149,8 +149,9 @@ One exception, text only: a whisper's line in the chat window is drawn in umbra 
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be
-baked into one body: the Pyromancer's embers on her hem and the flame in her focus's cage, still
-never marking an interactable. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+baked into one body: the Pyromancer's embers on her hem and the flame and coals in her brazier,
+still never marking an interactable. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB, and at
+the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
@@ -326,7 +327,10 @@ lit) while the player stands inside.
   little larger, the cross laid counterchanged over its per-pale field. The Berserker goes
   unhelmed with the coif pushed down round his neck, carries a bearded axe in each hand with the
   cutting edge forward and down, and has no shield and no longsword. *(Amended at the owner's
-  pick, 2026-11-21, FS-1J1CB.)*
+  pick, 2026-11-21, FS-1J1CB.)* The Guardian carries a flanged mace, not the longsword, and a
+  shield about 1.3x the knight's; the Berserker's axes are long-hafted, about 1.3x the old, with
+  grips wrapped in cord to a pommel knob. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB
+  §Change: Looks v2.)*
 - **Archer:** a ranger in Nightwood: cowl, capelet and cloak in a green dyed so deep it is
   nearly black, held just above black so the back still reads in a dark room, over muted buff
   leather that carries the figure. A deep cowl, closed over the crown, hides most of the
@@ -338,7 +342,12 @@ lit) while the player stands inside.
   whose green is dyed through to a cold soot-black and lifted toward slate (or its edges rimmed)
   so the back still reads. The Hunter wears no hood and no green: a wolf pelt and laced hide over
   the buff, the cloak in undyed grey-brown wool, the face and hair showing. *(Amended at the
-  owner's pick, 2026-11-21, FS-1J1CB.)*
+  owner's pick, 2026-11-21, FS-1J1CB.)* The Hunter carries a heavy recurve, shorter than the
+  longbow, and a skinning knife on her belt, her cloak cut short to a hunting cape over the hips.
+  The Shadow Ranger carries a slim blackened longbow at the longbow's length, and her quiver is
+  hooded: its fletching shows only as a dark edge under the hood, the one exception to "its
+  fletching over the right shoulder". Each look's bow keeps the live string and the draw.
+  *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
   waist and opening from the hip, so she reads as a woman from the front. Her black hair falls
@@ -349,10 +358,14 @@ lit) while the player stands inside.
   chest. A short iron sceptre holds the glowing stone in its prongs, and a black tome hangs from
   her other hand. No hood, no hat, no staff: her long hair and collar keep her apart from the
   archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
-  A specialization's focus may be about 1.5x the sceptre's length, held and thrust as the
-  sceptre is, and is still never a staff. The Spellwarden wears blackened-iron spaulders and a
-  gorget over the gown. The Pyromancer's scapular is a scorched oxblood, not the teal, and her
-  hem is singed short with embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+  A specialization's focus is its own, held and thrust as the sceptre is, its carry re-keyed in
+  the look's own style. "No staff" has one exception: the Spellwarden's iron-shod warding staff,
+  taller than her crown, with her tome hung on her hip. The Pyromancer's focus is a short brazier
+  rod, about the sceptre's length; the wizard carries the sceptre, and neither she nor the
+  Pyromancer carries a staff. The Spellwarden wears blackened iron over the gown. The
+  Pyromancer's scapular is a scorched oxblood, not the teal, and her hem is singed short with
+  embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB, and at the owner's
+  charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
   The scorched oxblood is the house oxblood a little toward ember under grime, not near-black:
   her back on the black gown and raven hair falls under the dark-room floor below that.
   *(Amended in the Pyromancer's bake, 2026-11-22, FS-1J1CB R10.)*
@@ -368,41 +381,107 @@ lit) while the player stands inside.
   shoulder in place of the left spaulder; a half-cloak is not the archer's hood and cloak. The
   Sellsword's madder is dyed a charcoal black, never pure black, under a buff-leather coat
   buckled in brass, with a spaulder on each shoulder. *(Amended at the owner's pick, 2026-11-21,
-  FS-1J1CB.)*
+  FS-1J1CB.)* The knuckle-bowed dueling blade stays the base's. The Duelist carries a long-hilted
+  curved single-edged blade with a plain round guard and a grip about two fists long, swung
+  one-handed in the mercenary's cut; the Sellsword carries a broad falchion, a heavy wide blade
+  swelling to a clipped point on a long grip, carried and swung in one hand. Each spec's scabbard
+  is re-cut to its blade. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks
+  v2.)*
 - **Specializations:** a specialization re-dresses its class on the same rig, build, clips and
-  scale, changing only a few pieces (a helm, a coat, a weapon, a dye), so the class still reads
-  at a glance and a level-20 character reads as what it became. The eight looks:
-  - **Guardian** (knight): a worn bone surcoat with the oxblood house cross over the hauberk, the
-    flat-topped great helm with a dark eye-slit and a brass cross down the face, and a slightly
-    larger kite shield, its cross counterchanged inside a narrow brass border.
-  - **Berserker** (knight): bareheaded with dark hair and a full short beard, the coif down to a
-    mail mantle, blood-dark cloth round both forearms and the cloak torn short to the hips. A
-    bearded axe in each hand, edge forward and down, no shield; a wide cut with the free arm swung
-    back, the hands taking turns.
-  - **Spellwarden** (mage): blackened-iron spaulders and gorget, the tome bound in iron, and a
-    larger ward focus, an iron ring round a pale stone lit low. A ward winks round her (*Auras*).
-  - **Pyromancer** (mage): the scapular in scorched oxblood, the gown's hem singed and ragged
-    with embers in it that move with the cloth, and a larger fire focus, an iron cage holding an
-    upright tongue of flame.
-  - **Hunter** (archer): a grey-brown wolf pelt over the shoulders, a laced hide jerkin, undyed
-    grey-brown wool for the cloak and capelet, no hood, the face and loose brown hair showing,
-    long pale fletching and horn-capped nocks. Bare of the hood, the pelt stands open at the
-    throat: closed up to the chin it read as a beard. *(Amended in the Hunter's bake,
-    2026-11-22, FS-1J1CB.)*
+  scale, re-cutting its outline, its weapon and its detail, so a look reads as a different figure
+  from its base and from its sibling in a black fill, and a level-20 character reads as what it
+  became. The class still reads by its rig, build and motion and at least one class mark: the
+  knight's mail, the archer's bow and cloak, the mage's gown, the mercenary's bare head and
+  one-handed blade. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
+  The eight looks:
+  - **Guardian** (knight): a worn bone surcoat banded in oxblood at the hem, the house cross on
+    the breast and the back, over the hauberk's bright, scoured mail; ailettes on both shoulders,
+    bone boards with the cross edged in brass, so the shoulder line is square without plate; the
+    flat-topped great helm in polished steel with a dark eye-slit over a row of brass rivets, a
+    brass cross on the face, and an oxblood fan crest on a torse. A flanged mace in place of the
+    longsword, and a kite shield about 1.3x the knight's, its cross counterchanged inside a brass
+    border, brass studs round its rim and the boss, its guige slung behind; a studded sword belt;
+    the cloak fuller, to the calf. He cuts the knight's compact cut, his shield carried a little
+    higher and out so the mace passes before it. *(Amended at the owner's charter, 2026-11-22,
+    FS-1J1CB §Change: Looks v2.)*
+  - **Berserker** (knight): bareheaded with dark hair and a full beard braided below the chin in
+    iron rings, the coif down to a mail mantle under a shaggy bear's pelt that stands past the
+    shoulders; the arms bare, blood-dark cloth wound thick from wrist to elbow and a studded band
+    round each upper arm; the mail gone to rust and filth; the cloak torn short to the hips and
+    shredded into tatters toward the knee; cord bound round the shins. A heavy, long-hafted
+    bearded axe in each hand, its grip wrapped in cord to an iron knob, edge forward and down, no
+    shield; a wide cut with the free arm swung back, the hands taking turns. The mail on his body
+    is his class mark; his bare arms are the one knight's arms not in mail. *(Amended at the
+    owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
+  - **Spellwarden** (mage): tall, broad and heavy in iron. The gown cut to a bell in an
+    iron-grey wool under the teal scapular, its sleeves narrower than the wizard's; a high
+    standing collar of blackened iron flaring up behind her head, lined in teal, its edge rolled
+    and riveted; a riveted gorget and heavy four-lame spaulders; a low girdle studded in iron, the
+    tome bound in iron bands and hung by two buckled straps on her left hip, so her left hand is
+    free and opens in the cast. In her right hand an iron-shod warding staff taller than her
+    crown, stood upright beside her: a dark ash haft bound in iron bands, a leather grip, an iron
+    shoe, and at its head an iron cage of six bars closed over a pale stone lit low. A ward winks
+    round her (*Auras*). *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks
+    v2.)*
+  - **Pyromancer** (mage): lean, short and burnt. The gown sooted and singed off under the knee,
+    torn ragged, with embers in its hem that move with the cloth, over tall scorched boots; the
+    scapular in scorched oxblood; fitted sleeves under studded scorched-leather bracers, and one
+    scorched leather spaulder on the torch arm; her hair drawn up off the neck into a high knot
+    bound in an iron ring and crossed with iron pins. In her right hand a brazier rod, short and
+    top-heavy, held up out from her side like a torch: a haft about the sceptre's length under an
+    open iron fire cage about twice the old focus's width, coals in its dish and a tall upright
+    tongue of flame. An iron oil flask hangs on her right hip. *(Amended at the owner's charter,
+    2026-11-22, FS-1J1CB §Change: Looks v2.)*
+  - **Hunter** (archer): bareheaded, broad at the shoulder and short-cloaked. A shaggy grey-brown
+    wolf pelt standing past the shoulder points, open at the throat (closed up to the chin it
+    read as a beard), its forepaws knotted on her breast and the wolf's head thrown back behind
+    her neck; a laced hide jerkin bound at the hem; the cloak cut short to a ragged hunting cape
+    over the hips in undyed grey-brown wool, the ranger's cloak cut off, so the quiver still rides
+    over it; the face and loose brown hair tied at the nape, goose feathers in it; fur wrapped
+    thick round the shins and cross-gartered in sinew; a long laced bracer on the bow arm. A heavy
+    recurve in her left hand, shorter than the longbow: thick sinew-backed limbs, horn-capped tips
+    curling away from her, a rawhide grip. A skinning knife in its sheath rides the belt across
+    her front, clear of the bow hand; high goose fletching over the right shoulder on a baldric.
+    Matte and warm: hide, fur and rawhide, grimed. *(Amended at the owner's charter, 2026-11-22,
+    FS-1J1CB §Change: Looks v2.)*
   - **Shadow Ranger** (archer): the Nightwood green dyed to a cold soot-black, the buff leather
     a cold grey, lifted or rimmed until the back passes the dark-room floor. A gloom
     rises off the figure (*Auras*). The soot is lifted, not rimmed: the cowl, capelet and cloak
     are pitch most of the way to slate, the sleeves and hose a darker step of it, still black at
     a glance. Variant A's soot left her back a third under the floor. *(Amended in the Shadow
-    Ranger's bake, 2026-11-22, FS-1J1CB R10.)*
-  - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
-    mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
-    half-cloak from the off shoulder on cloak bones. The V shows the breeches' dark wool beneath
-    it. The half-cloak hangs wide of the arm and stops at his side: carried round the front of
-    the arm, the cut's free arm, thrown out and back, lifted it over his head like a wing. The
-    knee cop goes under the robe. *(Amended in the Duelist's bake, 2026-11-22, FS-1J1CB.)*
-  - **Sellsword** (mercenary): a sleeveless buff-leather coat buckled in brass over the arming
-    coat dyed charcoal black, a spaulder on each shoulder and a purse at the belt.
+    Ranger's bake, 2026-11-22, FS-1J1CB R10.)* The cowl drawn deep, its point let out into a long
+    liripipe hanging down her back; a dagged mantle standing past the shoulders, clasped in iron
+    at the throat; the cloak let down near to the ankle, fuller behind and dagged at the hem; black
+    bracers and belt riveted in iron, dark wraps cross-gartered round the shins. A slim blackened
+    longbow at the longbow's length, iron-nocked, its string darker than the base's; the quiver
+    hooded in slate leather on a black baldric, its fletching a dark edge under the hood. Sheen and
+    iron against the Hunter's matte fur. Her longer cloak and mantle filled more of her back, so
+    the soot is lifted again, near to slate. *(Amended at the owner's charter, 2026-11-22,
+    FS-1J1CB §Change: Looks v2.)*
+  - **Duelist** (mercenary): long and narrow at the top, a bell at the hem. A wrapped robe in
+    faded madder, its V and collar bound in slate, deep bell sleeves banded in slate at the mouth,
+    the skirt let down near to the ankle, open at the front and flared wide at the hem (v1's
+    side splits swung out as loose flaps once the hem was this wide); a slate-black sash wound
+    twice; the slate-black half-cloak from the off shoulder on cloak bones, let down past the hip
+    and tied across the chest by a cord, hung wide of the arm and stopping at his side (carried
+    round the front of the arm, the cut's free arm lifted it over his head like a wing). A cut
+    and not a costume: no armour lacing, no topknot, no ornament. The long-hilted curved blade in
+    his right hand, polished bright and ground at the edge, its round iron guard plain; its
+    lacquered scabbard thrust through the sash at the left hip and slung back, swinging down as
+    he falls. His run's wrist takes back less of the pump than the mercenary's, so the long hilt
+    keeps off his forearm. The V shows the breeches' dark wool; the knee cop goes under the robe.
+    Polished steel, lacquer and matte wool. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB
+    §Change: Looks v2.)*
+  - **Sellsword** (mercenary): square and heavy, used hard. The arming coat dyed charcoal black,
+    its skirts flared wide at mid-thigh; over it a sleeveless buff-leather coat closed with five
+    brass buckles between rows of brass studs, its own tabbed skirts over the black, a band of
+    black showing below them; a high buff collar; a big four-lame spaulder on each shoulder; flared
+    buff gauntlet cuffs; a broad studded sword belt in place of the sash, the purse on it;
+    bucket-topped boots; a rolled bedroll strapped across his back; his hair cropped and his beard
+    grown full. The broad falchion in his right hand, dark forged iron ground bright at the edge,
+    and its wide scabbard slung on the left hip. Pitted iron, oiled leather and dull brass against
+    the Duelist's polish. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks
+    v2.)*
 
   Every look keeps the faces rule, passes the leg and cloak guards on every clip, and is
   approved on a contact sheet beside its base class before it ships. If a later contact-sheet

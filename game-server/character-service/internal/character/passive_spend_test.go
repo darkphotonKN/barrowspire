@@ -25,9 +25,10 @@ func spendOf(c *Character, node string, rank int) PassiveSpend {
 }
 
 func TestSpendPassivePoint_TargetAlreadyHeld_NotAppliedNothingWritten(t *testing.T) {
-	svc, repo, c := spender(5, passivetree.Ranks{"warrior.t1a": 2})
+	held := passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1, "warrior.t2a": 2}
+	svc, repo, c := spender(5, held)
 
-	got, err := svc.SpendPassivePoint(context.Background(), spendOf(c, "warrior.t1a", 2))
+	got, err := svc.SpendPassivePoint(context.Background(), spendOf(c, "warrior.t2a", 2))
 
 	if err != nil {
 		t.Fatalf("spend: %v", err)
@@ -35,30 +36,30 @@ func TestSpendPassivePoint_TargetAlreadyHeld_NotAppliedNothingWritten(t *testing
 	if got.Applied || len(repo.spendWrites) != 0 {
 		t.Fatalf("applied %v writes %v, want a no-op", got.Applied, repo.spendWrites)
 	}
-	if !maps.Equal(got.Ranks, passivetree.Ranks{"warrior.t1a": 2}) {
+	if !maps.Equal(got.Ranks, held) {
 		t.Fatalf("ranks %v", got.Ranks)
 	}
 }
 
 func TestSpendPassivePoint_Allowed_WritesTheOneRank(t *testing.T) {
-	svc, repo, c := spender(5, passivetree.Ranks{"warrior.t1a": 1})
+	svc, repo, c := spender(10, passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1, "warrior.t2a": 1})
 
-	got, err := svc.SpendPassivePoint(context.Background(), spendOf(c, "warrior.t1a", 2))
+	got, err := svc.SpendPassivePoint(context.Background(), spendOf(c, "warrior.t2a", 2))
 
 	if err != nil {
 		t.Fatalf("spend: %v", err)
 	}
-	if !got.Applied || len(repo.spendWrites) != 1 || repo.spendWrites[0] != spendOf(c, "warrior.t1a", 2) {
-		t.Fatalf("applied %v writes %v, want one write of t1a rank 2", got.Applied, repo.spendWrites)
+	if !got.Applied || len(repo.spendWrites) != 1 || repo.spendWrites[0] != spendOf(c, "warrior.t2a", 2) {
+		t.Fatalf("applied %v writes %v, want one write of t2a rank 2", got.Applied, repo.spendWrites)
 	}
-	if !maps.Equal(got.Ranks, passivetree.Ranks{"warrior.t1a": 2}) {
+	if !maps.Equal(got.Ranks, passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1, "warrior.t2a": 2}) {
 		t.Fatalf("ranks %v", got.Ranks)
 	}
 }
 
 func TestSpendPassivePoint_RepeatedSpend_SecondIsANoOp(t *testing.T) {
 	svc, repo, c := spender(5, nil)
-	spend := spendOf(c, "warrior.t1b", 1)
+	spend := spendOf(c, "warrior.r1", 1)
 
 	first, err := svc.SpendPassivePoint(context.Background(), spend)
 	if err != nil {
@@ -74,12 +75,16 @@ func TestSpendPassivePoint_RepeatedSpend_SecondIsANoOp(t *testing.T) {
 	}
 }
 
-// fullTree is 18 ranks above tier 6 plus t6a: every gate open, one point left
-// at level 20.
-var fullTree = passivetree.Ranks{
-	"warrior.t1a": 2, "warrior.t1b": 2, "warrior.t2a": 3, "warrior.t2b": 3, "warrior.t3": 1,
-	"warrior.t4a": 2, "warrior.t4b": 2, "warrior.t5a": 3, "warrior.t6a": 1,
-}
+// toM2 is the cheapest path to the ability's link (FS-8RZ51 §Change: Tree v2
+// V2), and guardian the cheapest to Guardian, held.
+var (
+	toM2     = passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1, "warrior.m1": 1, "warrior.m2": 1}
+	guardian = passivetree.Ranks{
+		"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1, "warrior.m1": 1, "warrior.m2": 1,
+		"warrior.t3": 1, "warrior.m3": 1, "warrior.la1": 1, "warrior.m4": 1, "warrior.t6a": 1,
+	}
+	upperA = passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1}
+)
 
 func TestSpendPassivePoint_Refused_TheRulesCodeAndNothingWritten(t *testing.T) {
 	tests := []struct {
@@ -90,13 +95,16 @@ func TestSpendPassivePoint_Refused_TheRulesCodeAndNothingWritten(t *testing.T) {
 		rank  int
 		want  errcode.Code
 	}{
-		{"another class's node", 5, nil, "mage.t1a", 1, errcode.PassiveUnknownNode},
+		{"another class's node", 5, nil, "mage.r1", 1, errcode.PassiveUnknownNode},
 		{"unknown node", 5, nil, "warrior.nope", 1, errcode.PassiveUnknownNode},
-		{"rank 2 with none held", 5, nil, "warrior.t1a", 2, errcode.PassiveRankOutOfOrder},
-		{"rank 3 of a filler", 10, passivetree.Ranks{"warrior.t1a": 2}, "warrior.t1a", 3, errcode.PassiveMaxRank},
-		{"tier 2 with 3 spent", 10, passivetree.Ranks{"warrior.t1a": 2, "warrior.t1b": 1}, "warrior.t2a", 1, errcode.PassiveTierLocked},
-		{"no points at level 1", 1, nil, "warrior.t1a", 1, errcode.PassiveNoPoints},
-		{"the other specialization", 20, fullTree, "warrior.t6b", 1, errcode.PassiveSpecializationTaken},
+		{"a retired node", 5, nil, "warrior.t1a", 1, errcode.PassiveUnknownNode},
+		{"rank 2 with none held", 5, nil, "warrior.r1", 2, errcode.PassiveRankOutOfOrder},
+		{"rank 2 of a one-rank node", 10, passivetree.Ranks{"warrior.r1": 1}, "warrior.r1", 2, errcode.PassiveMaxRank},
+		{"not linked", 10, nil, "warrior.r2", 1, errcode.PassiveTierLocked},
+		{"the ability below level 10", 9, toM2, "warrior.t3", 1, errcode.PassiveTierLocked},
+		{"no points at level 1", 1, nil, "warrior.r1", 1, errcode.PassiveNoPoints},
+		{"the other side", 10, upperA, "warrior.ub1", 1, errcode.PassiveSideTaken},
+		{"the other specialization", 20, guardian, "warrior.t6b", 1, errcode.PassiveSideTaken},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,11 +128,11 @@ func TestSpendPassivePoint_Malformed_InvalidInputRepositoryNotCalled(t *testing.
 		name  string
 		spend func(c *Character) PassiveSpend
 	}{
-		{"no member", func(c *Character) PassiveSpend { s := spendOf(c, "warrior.t1a", 1); s.MemberID = uuid.Nil; return s }},
-		{"no character", func(c *Character) PassiveSpend { s := spendOf(c, "warrior.t1a", 1); s.CharacterID = uuid.Nil; return s }},
+		{"no member", func(c *Character) PassiveSpend { s := spendOf(c, "warrior.r1", 1); s.MemberID = uuid.Nil; return s }},
+		{"no character", func(c *Character) PassiveSpend { s := spendOf(c, "warrior.r1", 1); s.CharacterID = uuid.Nil; return s }},
 		{"no node", func(c *Character) PassiveSpend { return spendOf(c, "", 1) }},
-		{"rank 0", func(c *Character) PassiveSpend { return spendOf(c, "warrior.t1a", 0) }},
-		{"rank below 0", func(c *Character) PassiveSpend { return spendOf(c, "warrior.t1a", -1) }},
+		{"rank 0", func(c *Character) PassiveSpend { return spendOf(c, "warrior.r1", 0) }},
+		{"rank below 0", func(c *Character) PassiveSpend { return spendOf(c, "warrior.r1", -1) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -144,7 +152,7 @@ func TestSpendPassivePoint_NotTheMembersLiveCharacter_NotFound(t *testing.T) {
 	svc, repo, c := spender(5, nil)
 	repo.spendErr = commonconstants.ErrNotFound
 
-	_, err := svc.SpendPassivePoint(context.Background(), spendOf(c, "warrior.t1a", 1))
+	_, err := svc.SpendPassivePoint(context.Background(), spendOf(c, "warrior.r1", 1))
 
 	if !errors.Is(err, commonconstants.ErrNotFound) {
 		t.Fatalf("err = %v, want ErrNotFound", err)

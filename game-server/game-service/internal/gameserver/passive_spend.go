@@ -35,7 +35,7 @@ type PassiveSpender interface {
 // together; it runs off the message hub's loop (R19).
 const passiveSpendTimeout = 3 * time.Second
 
-// The refusals, word for word (FS-8RZ51 §Edge States).
+// The refusals, word for word (FS-8RZ51 §Edge States, §Change: Tree v2 V18).
 const (
 	passiveNotInTown    = "Points are spent in town."
 	passiveQueued       = "Leave the queue to spend points."
@@ -43,31 +43,25 @@ const (
 	passiveOutOfOrder   = "Take the ranks one at a time."
 	passiveUnknownNode  = "Unknown node."
 	passiveNoPoints     = "No points to spend."
+	passiveNotLinked    = "Not reachable yet: take a node linked to it first."
+	passiveSideLocked   = "Locked: you chose the other side."
 	passiveNotSaved     = "Could not save the point. Try again."
 	passiveLevelPending = "Your new level is still being recorded. Try again in a moment."
 )
 
-// The names the refusals use: each class's tree ability (FS-04EEA R1) and the
-// specialization each tier-6 node grants (FS-E1ZDG R1). The client owns the
-// rest of the tree's copy.
-var (
-	treeAbilityNames = map[string]string{
-		"warrior":   "Earthbreaker",
-		"mage":      "Blink",
-		"archer":    "Arrow Rain",
-		"mercenary": "Settle the Debt",
-	}
-	specializationNames = map[string]string{
-		"warrior.t6a":   "Guardian",
-		"warrior.t6b":   "Berserker",
-		"mage.t6a":      "Spellwarden",
-		"mage.t6b":      "Pyromancer",
-		"archer.t6a":    "Hunter",
-		"archer.t6b":    "Shadow Ranger",
-		"mercenary.t6a": "Duelist",
-		"mercenary.t6b": "Sellsword",
-	}
-)
+// specializationNames is the name of each specialization (FS-E1ZDG R1), the
+// one name the refusals use. The client owns the rest of the tree's copy,
+// the kicker names included (V18).
+var specializationNames = map[string]string{
+	passivetree.Guardian:     "Guardian",
+	passivetree.Berserker:    "Berserker",
+	passivetree.Spellwarden:  "Spellwarden",
+	passivetree.Pyromancer:   "Pyromancer",
+	passivetree.Hunter:       "Hunter",
+	passivetree.ShadowRanger: "Shadow Ranger",
+	passivetree.Duelist:      "Duelist",
+	passivetree.Sellsword:    "Sellsword",
+}
 
 var (
 	errSpendNotInTown = errors.New("passive spend outside the HUB world")
@@ -144,8 +138,10 @@ func (s *Server) SpendPassivePoint(ctx context.Context, conn *websocket.Conn, no
 		var rule *passivetree.Refusal
 		switch {
 		// the level on the record is ahead of character-service's: the run's
-		// grant is still on its way (R21; FS-BDA7X R25)
-		case errors.Is(err, passivetree.ErrNoPoints):
+		// grant is still on its way (R21; FS-BDA7X R25). Level is the only
+		// input the two checks can disagree on, so a node our check found
+		// reachable reads the same (V18)
+		case errors.Is(err, passivetree.ErrNoPoints), errors.Is(err, passivetree.ErrNotReachable):
 			return refuseSpend(passiveLevelPending, err)
 		case errors.As(err, &rule):
 			return refuseSpend(ruleRefusalWords(rule, character.Class, held, nodeID), err)
@@ -198,8 +194,9 @@ func (s *Server) takePassiveRanks(memberID, characterID uuid.UUID, answered pass
 	}
 }
 
-// ruleRefusalWords is a spend rule refusal in the player's words (§Edge
-// States): a tier lock says what opens it, the specialization taken names it.
+// ruleRefusalWords is a spend rule refusal in the player's words (V18): a
+// node not reachable yet says what it needs, a locked side names the
+// specialization chosen when it is the spec group.
 func ruleRefusalWords(err error, class string, held passivetree.Ranks, nodeID string) string {
 	switch {
 	case errors.Is(err, passivetree.ErrUnknownNode):
@@ -210,51 +207,32 @@ func ruleRefusalWords(err error, class string, held passivetree.Ranks, nodeID st
 		return passiveMaxRank
 	case errors.Is(err, passivetree.ErrNoPoints):
 		return passiveNoPoints
-	case errors.Is(err, passivetree.ErrTierLocked):
-		return tierLockedWords(class, held, nodeID)
-	case errors.Is(err, passivetree.ErrSpecializationTaken):
-		return specializationTakenWords(class, held)
+	case errors.Is(err, passivetree.ErrNotLinked):
+		return passiveNotLinked
+	case errors.Is(err, passivetree.ErrLevelTooLow):
+		node, _ := passivetree.Lookup(nodeID)
+		return fmt.Sprintf("Not reachable yet: reach level %d.", node.MinLevel)
+	case errors.Is(err, passivetree.ErrSideTaken):
+		return sideTakenWords(class, held, nodeID)
 	default:
 		return passiveNotSaved
 	}
 }
 
-// tierLockedWords says what opens nodeID's tier: the tree ability for tier 4,
-// else how many more ranks the smaller tiers need.
-func tierLockedWords(class string, held passivetree.Ranks, nodeID string) string {
+// sideTakenWords names the specialization the character chose when nodeID is
+// in the spec group, and otherwise, or when held does not show the choice (a
+// race character-service decided), says the other side was chosen.
+func sideTakenWords(class string, held passivetree.Ranks, nodeID string) string {
 	node, _ := passivetree.Lookup(nodeID)
-	if node.Gate.Requires != "" && held[node.Gate.Requires] < 1 {
-		name, ok := treeAbilityNames[class]
-		if !ok {
-			name = "the tree ability"
-		}
-		return "Take " + name + " first."
+	if node.Exclusive == nil || node.Exclusive.Group != passivetree.GroupSpec {
+		return passiveSideLocked
 	}
-	spent := 0
-	for _, n := range passivetree.Nodes(class) {
-		if n.Tier < node.Tier {
-			spent += max(held[n.ID], 0)
+	if spec, ok := passivetree.SpecializationOf(class, held); ok {
+		if name, named := specializationNames[spec]; named {
+			return "You chose " + name + "."
 		}
 	}
-	short := max(node.Gate.SpentAbove-spent, 1)
-	if short == 1 {
-		return "Spend 1 more point above to open this tier."
-	}
-	return fmt.Sprintf("Spend %d more points above to open this tier.", short)
-}
-
-// specializationTakenWords names the specialization the character holds.
-func specializationTakenWords(class string, held passivetree.Ranks) string {
-	if nodes, ok := passivetree.SpecializationNodes(class); ok {
-		for _, n := range nodes {
-			if held[n.ID] > 0 {
-				if name, named := specializationNames[n.ID]; named {
-					return "You chose " + name + "."
-				}
-			}
-		}
-	}
-	return "You chose the other specialization."
+	return passiveSideLocked
 }
 
 // spendPassivePoint answers one spend_passive_point off the loop: nothing when

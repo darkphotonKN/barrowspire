@@ -137,7 +137,7 @@ export function archer(look) {
   rig.hooks = [];
   const cloakO = opts("cloak", { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
   const quiverO = opts("quiver", ARCHER_QUIVER);
-  cloakBones(rig, { length: cloakO.length, drag: 0.36, strap: quiverO.strap });
+  cloakBones(rig, { length: cloakO.cutFrom ?? cloakO.length, drag: 0.36, strap: quiverO.strap });
   skirtBones(rig, { stiffness: 55 });
   d.bones(rig);
   const [, hy] = J(rig, "hips");
@@ -172,11 +172,13 @@ export function archer(look) {
 /**
  * A longbow in the left hand with its live string (the delver archer's, and the Bone Archer's):
  * while a clip draws (`fx.ik`), the right hand travels back along the arrow line and the string
- * follows it (`fx.draw`), an arrow on it when nocked (`fx.arrow`).
+ * follows it (`fx.draw`), an arrow on it when nocked (`fx.arrow`). A spec look hands its own bow
+ * in through the weapon's options (`o.bow`, built as `longbow` is and strung by gear.js
+ * `liveString`: the archer kit's, FS-1J1CB §Change: Looks v2 R58, R59), and keeps the draw.
  */
-function bowInHand(rig, M, F, o) {
+function bowInHand(rig, M, F, o = {}) {
   const bowMount = inHand(rig, "L");
-  const bow = longbow(rig, M, F, o);
+  const bow = (o.bow ?? longbow)(rig, M, F, o);
   bowMount.add(bow.group);
 
   // the string follows the right hand while drawing; the hand is solved onto the arrow line

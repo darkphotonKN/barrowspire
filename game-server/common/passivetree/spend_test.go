@@ -20,30 +20,29 @@ func w(slots map[string]int) passivetree.Ranks {
 	return held
 }
 
-// Ranks spent above each gate, one short and exactly met.
+// Held states along the warrior's tree (V2), each the one before plus a node.
 var (
-	spent3  = map[string]int{"t1a": 2, "t1b": 1}
-	spent4  = map[string]int{"t1a": 2, "t1b": 2}
-	spent10 = map[string]int{"t1a": 2, "t1b": 2, "t2a": 3, "t2b": 3}
-	spent11 = with(spent10, "t3", 1)
-	spent12 = with(spent11, "t4a", 1)
-	spent13 = with(spent11, "t4a", 2)
-	spent17 = map[string]int{"t1a": 2, "t1b": 2, "t2a": 3, "t2b": 3, "t3": 1, "t4a": 2, "t4b": 2, "t5a": 2}
-	spent18 = with(spent17, "t5a", 3)
+	toR2  = map[string]int{"r1": 1, "r2": 1}
+	toM2  = with(with(toR2, "ua1", 1), "m1", 1, "m2", 1)
+	toM3  = with(toM2, "t3", 1, "m3", 1)
+	toM4  = with(toM3, "la1", 1, "m4", 1)
+	toT6a = with(toM4, "t6a", 1)
 )
 
-func with(base map[string]int, slot string, rank int) map[string]int {
-	out := map[string]int{slot: rank}
+// with is base and the slot ranks given in pairs, a new map.
+func with(base map[string]int, pairs ...any) map[string]int {
+	out := make(map[string]int, len(base)+len(pairs)/2)
 	for k, v := range base {
-		if k != slot {
-			out[k] = v
-		}
+		out[k] = v
+	}
+	for i := 0; i < len(pairs); i += 2 {
+		out[pairs[i].(string)] = pairs[i+1].(int)
 	}
 	return out
 }
 
-// FS-8RZ51 §Acceptance Criteria "Points and rules": each refusal, and each
-// allowed one step later.
+// FS-8RZ51 §Change: Tree v2 §Acceptance Criteria "Graph and rule (common)":
+// each refusal of V5, and each allowed one step later.
 func TestCheckSpend_RefusesByRuleAndAllowsOneStepLater(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -54,49 +53,53 @@ func TestCheckSpend_RefusesByRuleAndAllowsOneStepLater(t *testing.T) {
 		target  int
 		wantErr error
 	}{
-		{"another class's node", "warrior", 10, w(nil), "mage.t1a", 1, passivetree.ErrUnknownNode},
-		{"another class's node, as its own class", "mage", 10, passivetree.Ranks{}, "mage.t1a", 1, nil},
+		{"r1 at level 2 with nothing held", "warrior", 2, w(nil), "warrior.r1", 1, nil},
+		{"r2 with r1 unheld", "warrior", 10, w(nil), "warrior.r2", 1, passivetree.ErrNotLinked},
+		{"r2 with r1 held", "warrior", 10, w(map[string]int{"r1": 1}), "warrior.r2", 1, nil},
+
+		{"another class's node", "warrior", 10, w(nil), "mage.r1", 1, passivetree.ErrUnknownNode},
+		{"another class's node, as its own class", "mage", 10, passivetree.Ranks{}, "mage.r1", 1, nil},
 		{"an unknown id", "warrior", 10, w(nil), "warrior.t9", 1, passivetree.ErrUnknownNode},
-		{"an unknown class", "paladin", 10, passivetree.Ranks{}, "paladin.t1a", 1, passivetree.ErrUnknownNode},
-		{"an unknown id, a real one", "warrior", 10, w(nil), "warrior.t1b", 1, nil},
+		{"a retired id", "warrior", 10, w(nil), "warrior.t1a", 1, passivetree.ErrUnknownNode},
+		{"an unknown class", "paladin", 10, passivetree.Ranks{}, "paladin.r1", 1, passivetree.ErrUnknownNode},
 
-		{"rank 2 with rank 0 held", "warrior", 10, w(nil), "warrior.t1a", 2, passivetree.ErrRankOutOfOrder},
-		{"rank 2 with rank 1 held", "warrior", 10, w(map[string]int{"t1a": 1}), "warrior.t1a", 2, nil},
+		{"rank 2 with rank 0 held", "warrior", 10, w(toR2), "warrior.ua1", 2, passivetree.ErrRankOutOfOrder},
+		{"kicker rank 3 with rank 1 held", "warrior", 10, w(with(toR2, "ua1", 1, "t2a", 1)), "warrior.t2a", 3, passivetree.ErrRankOutOfOrder},
+		{"kicker rank 2 with rank 1 held", "warrior", 10, w(with(toR2, "ua1", 1, "t2a", 1)), "warrior.t2a", 2, nil},
 
-		{"rank 3 of a 2-rank filler", "warrior", 10, w(map[string]int{"t1b": 2}), "warrior.t1b", 3, passivetree.ErrMaxRank},
-		{"rank 2 of a 2-rank filler", "warrior", 10, w(map[string]int{"t1b": 1}), "warrior.t1b", 2, nil},
-		{"rank 2 of the 1-rank ability", "warrior", 15, w(spent11), "warrior.t3", 2, passivetree.ErrMaxRank},
+		{"rank 2 of a traversal node", "warrior", 10, w(map[string]int{"r1": 1}), "warrior.r1", 2, passivetree.ErrMaxRank},
+		{"rank 4 of a kicker", "warrior", 10, w(with(toR2, "ua1", 1, "t2a", 3)), "warrior.t2a", 4, passivetree.ErrMaxRank},
+		{"rank 2 of the ability", "warrior", 15, w(toM3), "warrior.t3", 2, passivetree.ErrMaxRank},
 
-		{"a tier-2 node with 3 spent above", "warrior", 10, w(spent3), "warrior.t2a", 1, passivetree.ErrTierLocked},
-		{"a tier-2 node with 4 spent above", "warrior", 10, w(spent4), "warrior.t2a", 1, nil},
+		{"m1 with only ua1 held", "warrior", 10, w(with(toR2, "ua1", 1)), "warrior.m1", 1, nil},
+		{"m1 with only ub1 held", "warrior", 10, w(with(toR2, "ub1", 1)), "warrior.m1", 1, nil},
+		{"m1 with neither upper first node", "warrior", 10, w(toR2), "warrior.m1", 1, passivetree.ErrNotLinked},
 
-		{"the tier-3 node with 7 spent above", "warrior", 10, w(map[string]int{"t1a": 2, "t1b": 2, "t2a": 3}), "warrior.t3", 1, passivetree.ErrTierLocked},
-		{"the tier-3 node with 8 spent above", "warrior", 10, w(map[string]int{"t1a": 2, "t1b": 2, "t2a": 3, "t2b": 1}), "warrior.t3", 1, nil},
+		{"ub1 with ua1 held", "warrior", 10, w(with(toR2, "ua1", 1)), "warrior.ub1", 1, passivetree.ErrSideTaken},
+		{"t2b with ua1 held", "warrior", 10, w(with(toR2, "ua1", 1)), "warrior.t2b", 1, passivetree.ErrSideTaken},
+		{"ub2 with ua1 held", "warrior", 10, w(with(toR2, "ua1", 1)), "warrior.ub2", 1, passivetree.ErrSideTaken},
+		{"ua1 with ub1 held", "warrior", 10, w(with(toR2, "ub1", 1)), "warrior.ua1", 1, passivetree.ErrSideTaken},
+		{"t2a with ua1 held, its own side", "warrior", 10, w(with(toR2, "ua1", 1)), "warrior.t2a", 1, nil},
 
-		{"a tier-4 node without t3", "warrior", 15, w(spent10), "warrior.t4a", 1, passivetree.ErrTierLocked},
-		{"a tier-4 node with t3", "warrior", 15, w(spent11), "warrior.t4a", 1, nil},
+		{"t6b with t6a held", "warrior", 20, w(toT6a), "warrior.t6b", 1, passivetree.ErrSideTaken},
+		{"t6a with t6b held", "warrior", 20, w(with(toM4, "t6b", 1)), "warrior.t6a", 1, passivetree.ErrSideTaken},
 
-		{"a tier-5 node with 12 spent above", "warrior", 15, w(spent12), "warrior.t5a", 1, passivetree.ErrTierLocked},
-		{"a tier-5 node with 13 spent above", "warrior", 15, w(spent13), "warrior.t5a", 1, nil},
+		{"t3 with m2 held at level 9", "warrior", 9, w(toM2), "warrior.t3", 1, passivetree.ErrLevelTooLow},
+		{"t3 with m2 held at level 10", "warrior", 10, w(toM2), "warrior.t3", 1, nil},
+		{"t6a with m4 held at level 19", "warrior", 19, w(toM4), "warrior.t6a", 1, passivetree.ErrLevelTooLow},
+		{"t6a with m4 held at level 20", "warrior", 20, w(toM4), "warrior.t6a", 1, nil},
+		{"t6a with m4 unheld at level 20", "warrior", 20, w(toM3), "warrior.t6a", 1, passivetree.ErrNotLinked},
 
-		{"a tier-6 node with 17 spent above", "warrior", 20, w(spent17), "warrior.t6a", 1, passivetree.ErrTierLocked},
-		{"a tier-6 node with 18 spent above", "warrior", 20, w(spent18), "warrior.t6a", 1, nil},
+		{"side taken and unlinked answers side taken", "warrior", 10, w(with(toR2, "ua1", 1)), "warrior.ub3", 1, passivetree.ErrSideTaken},
+		{"side taken at 0 unspent answers side taken", "warrior", 4, w(with(toR2, "ua1", 1)), "warrior.ub1", 1, passivetree.ErrSideTaken},
+		{"unlinked at 0 unspent answers not reachable", "warrior", 1, w(nil), "warrior.r2", 1, passivetree.ErrNotLinked},
 
-		{"t6b with t6a held", "warrior", 20, w(with(spent18, "t6a", 1)), "warrior.t6b", 1, passivetree.ErrSpecializationTaken},
-		{"t6b with t6a not held", "warrior", 20, w(spent18), "warrior.t6b", 1, nil},
-		{"t6a with t6b held", "warrior", 20, w(with(spent18, "t6b", 1)), "warrior.t6a", 1, passivetree.ErrSpecializationTaken},
-
-		{"a tier-1 node at 0 unspent (level 1)", "warrior", 1, w(nil), "warrior.t1a", 1, passivetree.ErrNoPoints},
-		{"a tier-1 node at 1 unspent (level 2)", "warrior", 2, w(nil), "warrior.t1a", 1, nil},
-		{"a tier-2 node at 0 unspent", "warrior", 5, w(spent4), "warrior.t2a", 1, passivetree.ErrNoPoints},
-		{"a tier-2 node at 1 unspent", "warrior", 6, w(spent4), "warrior.t2a", 1, nil},
-		{"a tier-6 node at 0 unspent", "warrior", 19, w(spent18), "warrior.t6a", 1, passivetree.ErrNoPoints},
-		{"a tier-6 node at level 20", "warrior", 20, w(spent18), "warrior.t6a", 1, nil},
+		{"r1 at 0 unspent (level 1)", "warrior", 1, w(nil), "warrior.r1", 1, passivetree.ErrNoPoints},
+		{"ua1 at 0 unspent", "warrior", 3, w(toR2), "warrior.ua1", 1, passivetree.ErrNoPoints},
+		{"ua1 at 1 unspent", "warrior", 4, w(toR2), "warrior.ua1", 1, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.GreaterOrEqual(t, passivetree.Unspent(tt.level, tt.held), 0, "unspent")
-
 			verdict, err := passivetree.CheckSpend(tt.class, tt.level, tt.held, tt.node, tt.target)
 			if tt.wantErr != nil {
 				require.Error(t, err)
@@ -106,6 +109,18 @@ func TestCheckSpend_RefusesByRuleAndAllowsOneStepLater(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, passivetree.Allowed, verdict)
 		})
+	}
+}
+
+// Every lower:b node is refused side taken once la1 is held (V6).
+func TestCheckSpend_TakingASideLocksEveryNodeOfTheOther(t *testing.T) {
+	held := w(with(toM3, "la1", 1))
+	for _, n := range passivetree.Nodes("warrior") {
+		if n.Exclusive == nil || n.Exclusive.Group != passivetree.GroupLower || n.Exclusive.Side != "b" {
+			continue
+		}
+		_, err := passivetree.CheckSpend("warrior", 20, held, n.ID, 1)
+		assert.ErrorIs(t, err, passivetree.ErrSideTaken, n.ID)
 	}
 }
 
@@ -119,11 +134,12 @@ func TestCheckSpend_ATargetAlreadyHeldIsANoOp(t *testing.T) {
 		node   string
 		target int
 	}{
-		{"the rank held", 10, w(map[string]int{"t1a": 1}), "warrior.t1a", 1},
-		{"below the rank held", 10, w(map[string]int{"t1a": 2}), "warrior.t1a", 1},
-		{"at max rank", 10, w(map[string]int{"t1a": 2}), "warrior.t1a", 2},
-		{"at 0 unspent", 2, w(map[string]int{"t1a": 1}), "warrior.t1a", 1},
-		{"the specialization held", 20, w(with(spent18, "t6a", 1)), "warrior.t6a", 1},
+		{"the rank held", 10, w(map[string]int{"r1": 1}), "warrior.r1", 1},
+		{"below the rank held", 10, w(with(toR2, "ua1", 1, "t2a", 2)), "warrior.t2a", 1},
+		{"at max rank", 10, w(with(toR2, "ua1", 1, "t2a", 3)), "warrior.t2a", 3},
+		{"at 0 unspent", 2, w(map[string]int{"r1": 1}), "warrior.r1", 1},
+		{"on a locked side", 10, w(with(toR2, "ua1", 1, "ub1", 1)), "warrior.ub1", 1},
+		{"the specialization held", 20, w(toT6a), "warrior.t6a", 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,15 +159,27 @@ func TestCheckSpend_RefusalsCarryTheirCode(t *testing.T) {
 		{passivetree.ErrUnknownNode, errcode.PassiveUnknownNode},
 		{passivetree.ErrRankOutOfOrder, errcode.PassiveRankOutOfOrder},
 		{passivetree.ErrMaxRank, errcode.PassiveMaxRank},
-		{passivetree.ErrTierLocked, errcode.PassiveTierLocked},
+		{passivetree.ErrSideTaken, errcode.PassiveSideTaken},
+		{passivetree.ErrNotReachable, errcode.PassiveTierLocked},
+		{passivetree.ErrNotLinked, errcode.PassiveTierLocked},
+		{passivetree.ErrLevelTooLow, errcode.PassiveTierLocked},
 		{passivetree.ErrNoPoints, errcode.PassiveNoPoints},
-		{passivetree.ErrSpecializationTaken, errcode.PassiveSpecializationTaken},
 	}
 	for _, tt := range tests {
 		var refused *passivetree.Refusal
 		require.True(t, errors.As(tt.err, &refused), "%v", tt.err)
 		assert.Equal(t, tt.code, refused.Code)
 	}
+}
+
+// V7: both reasons a node is not reachable yet are ErrNotReachable, the one
+// a refusal read off the wire is; neither is the other.
+func TestCheckSpend_NotReachableHasTwoReasons(t *testing.T) {
+	assert.ErrorIs(t, passivetree.ErrNotLinked, passivetree.ErrNotReachable)
+	assert.ErrorIs(t, passivetree.ErrLevelTooLow, passivetree.ErrNotReachable)
+	assert.NotErrorIs(t, passivetree.ErrNotLinked, passivetree.ErrLevelTooLow)
+	assert.NotErrorIs(t, passivetree.ErrNotReachable, passivetree.ErrNotLinked)
+	assert.NotErrorIs(t, passivetree.ErrSideTaken, passivetree.ErrNotReachable)
 }
 
 // R7: earned(level) − Σ ranks held, never below 0.
@@ -164,9 +192,14 @@ func TestUnspent(t *testing.T) {
 	}{
 		{"level 1, nothing held", 1, nil, 0},
 		{"level 10, nothing held", 10, w(nil), 9},
-		{"level 10, 4 held", 10, w(spent4), 5},
-		{"level 20, 18 held", 20, w(spent18), 2},
-		{"more held than earned", 1, w(map[string]int{"t1a": 2}), 0},
+		{"level 10, 4 held", 10, w(with(toR2, "ua1", 1, "m1", 1)), 5},
+		{"level 20, 10 held", 20, w(toT6a), 10},
+		{"more held than earned", 1, w(map[string]int{"r1": 1}), 0},
+		// V8: only nodes the definition knows cost, each at most its max
+		{"a retired id costs nothing", 10, w(map[string]int{"t1a": 2}), 9},
+		{"an unknown id costs nothing", 10, passivetree.Ranks{"paladin.r1": 3}, 9},
+		{"a rank above max counts its max", 10, w(with(toR2, "ua1", 1, "t2a", 7)), 3},
+		{"a rank below 0 costs nothing", 10, w(map[string]int{"r1": -2}), 9},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -178,13 +211,13 @@ func TestUnspent(t *testing.T) {
 // R20: ranks only rise, so two answers merged in either order leave the
 // higher rank of each node; neither side is written.
 func TestHigher_TakesTheHigherRankPerNode(t *testing.T) {
-	older := w(map[string]int{"t1a": 1, "t1b": 2})
-	newer := w(map[string]int{"t1a": 2, "t2a": 1})
-	want := w(map[string]int{"t1a": 2, "t1b": 2, "t2a": 1})
+	older := w(map[string]int{"t2a": 1, "r1": 1})
+	newer := w(map[string]int{"t2a": 2, "ua1": 1})
+	want := w(map[string]int{"t2a": 2, "r1": 1, "ua1": 1})
 
 	assert.Equal(t, want, passivetree.Higher(older, newer))
 	assert.Equal(t, want, passivetree.Higher(newer, older))
-	assert.Equal(t, w(map[string]int{"t1a": 1, "t1b": 2}), older, "neither side is written")
+	assert.Equal(t, w(map[string]int{"t2a": 1, "r1": 1}), older, "neither side is written")
 	assert.Equal(t, passivetree.Ranks{}, passivetree.Higher(nil, nil), "never nil")
-	assert.Equal(t, w(map[string]int{"t1a": 1}), passivetree.Higher(w(map[string]int{"t1a": 1, "t1b": 0}), nil), "a node at 0 is not held")
+	assert.Equal(t, w(map[string]int{"r1": 1}), passivetree.Higher(w(map[string]int{"r1": 1, "r2": 0}), nil), "a node at 0 is not held")
 }
