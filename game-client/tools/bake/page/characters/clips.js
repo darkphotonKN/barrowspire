@@ -749,6 +749,16 @@ export function layerPoses(upper, lower) {
 }
 
 /**
+ * A style's attack keys: its attack's, each with `style.attackExtra` added, one pose for every key
+ * or, a function of the key's index, a key's own (a spec look's grip re-keyed key by key, FS-1J1CB
+ * §Change: Looks v2 R62).
+ */
+export function attackKeys(style) {
+  const extra = typeof style.attackExtra === "function" ? style.attackExtra : () => style.attackExtra;
+  return ATTACKS[style.attack]().map((p, i) => add(p, extra(i)));
+}
+
+/**
  * The attack from the waist up over a leg cycle from the waist down: `spec`'s frames span exactly
  * the attack clip's duration (`attackSpec`), or `name` is refused. The upper body is the attack
  * key showing at that moment, as the attack clip itself would show it (an in-between would be a
@@ -756,7 +766,7 @@ export function layerPoses(upper, lower) {
  * `legs` (a looping cycle) over the same span, sampled between its keys.
  */
 function attackOverLegs(name, style, spec, attackSpec, legs, cycles, hand = (p) => p) {
-  const attack = ATTACKS[style.attack]().map((p) => hand(add(p, style.attackExtra)));
+  const attack = attackKeys(style).map(hand);
   const duration = spec.frames / spec.fps;
   if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
     throw new Error(`clips: ${name} lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
@@ -800,7 +810,7 @@ export const offhandPose = (key, legs = key) => layerPoses(mirror(key), legs);
  * the backpedal's, the same keys, fps and strike key as the right hand's.
  */
 export function offhandPoses(style, specs) {
-  const attack = () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
+  const attack = () => attackKeys(style);
   return {
     attack_offhand: () => attack().map((p) => offhandPose(p)),
     walk_attack_offhand: () => attackOverLegs("walk_attack_offhand", style, specs.walk_attack_offhand, specs.attack, walkCycle(style), specs.walk_attack_offhand.cycles ?? WALK_ATTACK_CYCLES, mirror),
@@ -865,7 +875,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     idle: () => idleCycle(style, specs.idle.frames),
     walk: () => walkCycle(style),
     run: () => runCycle(style),
-    attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
+    attack: () => attackKeys(style),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
     walk_attack: () => walkAttackClip(style, specs.walk_attack, specs.attack),

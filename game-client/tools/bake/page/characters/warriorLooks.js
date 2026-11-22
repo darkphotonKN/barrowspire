@@ -10,10 +10,10 @@
 import * as THREE from "three";
 import { attach, jointAt as J, rigidTube } from "./rig.js";
 import { hair, overTorso, shortBeard, skirt } from "./anatomy.js";
-import { extrude, inHand, limbGuard } from "./gear.js";
+import { buckle, extrude, inHand, limbGuard, studRow } from "./gear.js";
 import { BERSERKER_STYLE, GUARDIAN_STYLE } from "./classStyles.js";
 import { hash2 } from "../noise.js";
-import { WEAR, buckle, flangedMace, heavyAxe, shieldTrims, studRow } from "./warriorKit.js";
+import { WEAR, flangedMace, heavyAxe, shieldTrims } from "./warriorKit.js";
 
 // --- the Guardian (R1, R49, R50, R54, R63) ---------------------------------------------------
 

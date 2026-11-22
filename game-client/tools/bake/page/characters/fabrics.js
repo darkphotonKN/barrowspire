@@ -329,9 +329,14 @@ export const GEAR = {
   // the cord wound on the Berserker's hafts (FS-1J1CB §Change: Looks v2 R55): undyed hemp gone dark with grip
   cord: mix(mix("vellumDark", "barrowBrown", 0.55), "barrowDeep", 0.25),
   // the mage's specialization looks (FS-1J1CB R4; mageLooks.js): the Pyromancer's scapular in a
-  // scorched oxblood, the house oxblood a little toward ember under grime. Near-black (variant B's
+  // scorched oxblood (fabrics `pyroSoot`), the house oxblood a little toward ember under grime. Near-black (variant B's
   // soot) or the oxblood itself left her back under the dark-room floor (R10) on the black gown
   soot: mix("oxblood", "ember", 0.1),
+  // the mage looks v2 (FS-1J1CB §Change: Looks v2 R56, R57, R63; mageKit.js). The Spellwarden's
+  // gown a dark iron-grey wool, lighter than the wizard's black so the iron reads on it and her back
+  // keeps the dark-room floor; the Pyromancer's leathers scorched toward ember, her boots soot-black
+  wardenGown: mix(mix("charcoal", "slate", 0.45), "pitch", 0.2),
+  scorch: mix(mix("barrowDeep", "ember", 0.22), "pitch", 0.25),
   // the archer's specialization looks (FS-1J1CB R5, R6; archerLooks.js). The Hunter: the wilds'
   // own colours, warm and earthy, and nothing of the Nightwood green. A grey-brown wolf pelt over a
   // cloak and capelet of undyed wool a shade browner and darker than it, so the pelt parts from
@@ -490,9 +495,20 @@ export function fabrics() {
     berserkerCloak: mat(wool(GEAR.cloakKnight, { seed: 321, dirt: 0.85 }), { side: D }),
     berserkerLeather: mat(leather(GEAR.leatherDark, { seed: 323, dirt: 0.7 }), { rough: 0.8 }),
     cord: mat(linen(GEAR.cord, { seed: 325, dirt: 0.55 }), { rough: 0.9, normal: 1.4 }),
-    // the Spellwarden's spaulders: blackened iron, both faces drawn (a lame is an open shell)
-    blackIronDouble: mat(plate(GEAR.blackIron, { rust: 0.3, seed: 6 }), { metal: 0.7, rough: 0.5, side: D }),
-    soot: mat(wool(GEAR.soot, { seed: 153, dirt: 0.35 }), { side: D }),
+    // the mage looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the wizard's textures at a
+    // new tone (the Spellwarden's spaulders and collar drawn both faces: a lame is an open shell).
+    // The Spellwarden's is kept and heavy: iron blackened and oiled, few dents and a
+    // little rust, a close-fulled grey wool, her scapular brushed; the Pyromancer's is burnt:
+    // a gown filthy with soot over its embers, iron fire-pitted and scaled with rust, leather
+    // charred matte. Metal and sheen against singed cloth (R63's per-spec contrast).
+    wardenIron: mat(plate(GEAR.blackIron, { dents: 0.3, rust: 0.12, dirt: 0.25, seed: 331 }), { metal: 0.8, rough: 0.38 }),
+    wardenIronDouble: mat(plate(GEAR.blackIron, { dents: 0.3, rust: 0.12, dirt: 0.25, seed: 331 }), { metal: 0.8, rough: 0.38, side: D }),
+    wardenGown: mat(wool(GEAR.wardenGown, { seed: 333, dirt: 0.2 }), { side: D }),
+    wardenScapular: mat(wool(GEAR.scapular, { seed: 335, dirt: 0.15 }), { side: D }),
+    wardenLeather: mat(leather(GEAR.leatherDark, { seed: 337, dirt: 0.2 }), { rough: 0.5 }),
+    pyroIron: mat(plate(GEAR.blackIron, { dents: 0.85, rust: 0.6, dirt: 0.8, seed: 341 }), { metal: 0.55, rough: 0.7 }),
+    pyroLeather: mat(leather(GEAR.scorch, { seed: 343, dirt: 0.75 }), { rough: 0.85, side: D }),
+    pyroSoot: mat(wool(GEAR.soot, { seed: 345, dirt: 0.7 }), { side: D }),
     // the Hunter's and the Shadow Ranger's cloth (FS-1J1CB R5, R6)
     wolf: mat(hair(GEAR.wolf, { seed: 221 }), { rough: 0.95, side: D, normal: 1.4 }),
     hunterWool: mat(wool(GEAR.hunterWool, { seed: 223, dirt: 0.45 }), { side: D }),
@@ -521,8 +537,9 @@ export function fabrics() {
     browRaven: browMaterial(GEAR.raven),
     browGrey: browMaterial(GEAR.hairGrey),
   };
-  // the Pyromancer's gown (FS-1J1CB R4): the gown's own cloth with embers in its hem
-  SET.robeEmbers = withEmbers(SET.robe);
+  // the Pyromancer's gown (FS-1J1CB R4, §Change: Looks v2 R57, R63): embers in its hem, in a gown
+  // of her own, sooted
+  SET.pyroGown = withEmbers(mat(wool(GEAR.robe, { seed: 347, dirt: 0.75 }), { side: D }));
   return SET;
 }
 

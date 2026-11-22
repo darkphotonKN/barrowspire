@@ -149,8 +149,9 @@ One exception, text only: a whisper's line in the chat window is drawn in umbra 
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be
-baked into one body: the Pyromancer's embers on her hem and the flame in her focus's cage, still
-never marking an interactable. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+baked into one body: the Pyromancer's embers on her hem and the flame and coals in her brazier,
+still never marking an interactable. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB, and at
+the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
@@ -352,10 +353,14 @@ lit) while the player stands inside.
   chest. A short iron sceptre holds the glowing stone in its prongs, and a black tome hangs from
   her other hand. No hood, no hat, no staff: her long hair and collar keep her apart from the
   archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
-  A specialization's focus may be about 1.5x the sceptre's length, held and thrust as the
-  sceptre is, and is still never a staff. The Spellwarden wears blackened-iron spaulders and a
-  gorget over the gown. The Pyromancer's scapular is a scorched oxblood, not the teal, and her
-  hem is singed short with embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+  A specialization's focus is its own, held and thrust as the sceptre is, its carry re-keyed in
+  the look's own style. "No staff" has one exception: the Spellwarden's iron-shod warding staff,
+  taller than her crown, with her tome hung on her hip. The Pyromancer's focus is a short brazier
+  rod, about the sceptre's length; the wizard carries the sceptre, and neither she nor the
+  Pyromancer carries a staff. The Spellwarden wears blackened iron over the gown. The
+  Pyromancer's scapular is a scorched oxblood, not the teal, and her hem is singed short with
+  embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB, and at the owner's
+  charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
   The scorched oxblood is the house oxblood a little toward ember under grime, not near-black:
   her back on the black gown and raven hair falls under the dark-room floor below that.
   *(Amended in the Pyromancer's bake, 2026-11-22, FS-1J1CB R10.)*
@@ -398,11 +403,25 @@ lit) while the player stands inside.
     shield; a wide cut with the free arm swung back, the hands taking turns. The mail on his body
     is his class mark; his bare arms are the one knight's arms not in mail. *(Amended at the
     owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
-  - **Spellwarden** (mage): blackened-iron spaulders and gorget, the tome bound in iron, and a
-    larger ward focus, an iron ring round a pale stone lit low. A ward winks round her (*Auras*).
-  - **Pyromancer** (mage): the scapular in scorched oxblood, the gown's hem singed and ragged
-    with embers in it that move with the cloth, and a larger fire focus, an iron cage holding an
-    upright tongue of flame.
+  - **Spellwarden** (mage): tall, broad and heavy in iron. The gown cut to a bell in an
+    iron-grey wool under the teal scapular, its sleeves narrower than the wizard's; a high
+    standing collar of blackened iron flaring up behind her head, lined in teal, its edge rolled
+    and riveted; a riveted gorget and heavy four-lame spaulders; a low girdle studded in iron, the
+    tome bound in iron bands and hung by two buckled straps on her left hip, so her left hand is
+    free and opens in the cast. In her right hand an iron-shod warding staff taller than her
+    crown, stood upright beside her: a dark ash haft bound in iron bands, a leather grip, an iron
+    shoe, and at its head an iron cage of six bars closed over a pale stone lit low. A ward winks
+    round her (*Auras*). *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks
+    v2.)*
+  - **Pyromancer** (mage): lean, short and burnt. The gown sooted and singed off under the knee,
+    torn ragged, with embers in its hem that move with the cloth, over tall scorched boots; the
+    scapular in scorched oxblood; fitted sleeves under studded scorched-leather bracers, and one
+    scorched leather spaulder on the torch arm; her hair drawn up off the neck into a high knot
+    bound in an iron ring and crossed with iron pins. In her right hand a brazier rod, short and
+    top-heavy, held up out from her side like a torch: a haft about the sceptre's length under an
+    open iron fire cage about twice the old focus's width, coals in its dish and a tall upright
+    tongue of flame. An iron oil flask hangs on her right hip. *(Amended at the owner's charter,
+    2026-11-22, FS-1J1CB §Change: Looks v2.)*
   - **Hunter** (archer): a grey-brown wolf pelt over the shoulders, a laced hide jerkin, undyed
     grey-brown wool for the cloak and capelet, no hood, the face and loose brown hair showing,
     long pale fletching and horn-capped nocks. Bare of the hood, the pelt stands open at the

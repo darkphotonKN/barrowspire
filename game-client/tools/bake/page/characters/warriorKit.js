@@ -1,52 +1,20 @@
 // The warrior kit (FS-1J1CB §Change: Looks v2 R68, R69): what every warrior specialization look
-// (warriorLooks.js) is composed from. The trims a look is finished with (rivet and stud rows,
-// buckles, the kite shield's studs and guige) and each look's own wear (the fabric keys it re-dyes,
-// fabrics.js), and the weapons only spec looks carry (the Guardian's flanged mace, the Berserker's
-// heavy bearded axe). The knight's own kite shield stays in gear.js, which the base uses; a look
+// (warriorLooks.js) is composed from. The trims a look is finished with (the kite shield's studs
+// and guige; the stud rows and buckles every class kit shares live in gear.js) and each look's own
+// wear (the fabric keys it re-dyes, fabrics.js), and the weapons only spec looks carry (the
+// Guardian's flanged mace, the Berserker's heavy bearded axe). The knight's own kite shield stays in gear.js, which the base uses; a look
 // sizes it through its options and straps the kit's trims to it. Split from warriorLooks.js past
 // R69's 400 lines; a third warrior look adds a look object there and, at most, a piece here,
 // changing none of the pieces already here.
 
 import * as THREE from "three";
-import { attach } from "./rig.js";
-import { GRIP_BASIS, extrude, placed, rod } from "./gear.js";
+import { GRIP_BASIS, extrude, placed, rod, stud } from "./gear.js";
 
 /** Each spec look's own wear (R63): the fabric keys it re-dyes over the knight's, from fabrics.js. */
 export const WEAR = {
   guardian: (F) => ({ mail: F.guardianMail, mailDouble: F.guardianMailDouble, mailDark: F.guardianMailDark, darkSteel: F.guardianSteel, cloakKnight: F.guardianCloak }),
   berserker: (F) => ({ mail: F.berserkerMail, mailDouble: F.berserkerMailDouble, mailDark: F.berserkerMailDark, cloakKnight: F.berserkerCloak, leatherDark: F.berserkerLeather }),
 };
-
-/** A stud or rivet head: a flattened dome `r` (H) across, its face along +z. */
-const stud = (H, r) => {
-  const g = new THREE.SphereGeometry(r * H, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5);
-  g.rotateX(Math.PI / 2);
-  g.scale(1, 1, 0.6);
-  return g;
-};
-
-/**
- * A row of studs on `bone` at `points` (H, bind pose), each turned to face `normal(point)` (a unit
- * [x, y, z]): the rivets round a helm's brow, the studs on a belt or a shield's rim.
- */
-export function studRow(rig, bone, points, mat, { r = 0.006, normal }) {
-  const z = new THREE.Vector3(0, 0, 1);
-  for (const p of points) {
-    const q = new THREE.Quaternion().setFromUnitVectors(z, new THREE.Vector3(...normal(p)).normalize());
-    const e = new THREE.Euler().setFromQuaternion(q);
-    attach(rig, bone, stud(rig.H, r), mat, p, { rx: e.x, ry: e.y, rz: e.z });
-  }
-}
-
-/** A buckle: an open frame `w` (H) across with its tongue, on `bone` at `at`, facing +z turned `ry` about the vertical. */
-export function buckle(rig, bone, at, mat, { w = 0.026, ry = 0 } = {}) {
-  const H = rig.H;
-  const g = new THREE.TorusGeometry(w * 0.5 * H, 0.0035 * H, 4, 4);
-  g.rotateZ(Math.PI / 4);
-  g.scale(1, 1.25, 1);
-  attach(rig, bone, g, mat, at, { ry });
-  attach(rig, bone, new THREE.BoxGeometry(0.003 * H, w * 1.1 * H, 0.003 * H), mat, at, { ry });
-}
 
 /**
  * How far the heavy axe's cutting edge is turned from square to the haft, toward the haft's far
