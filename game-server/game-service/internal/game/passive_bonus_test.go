@@ -65,8 +65,8 @@ func newHubWorld() *Session {
 }
 
 // Acceptance "A spend in town raises the HUB body's max and current HP by the
-// same amount at once" (R27), here Thick Skin's percent, and Deep Well's max
-// and current mana.
+// same amount at once" (R27), here Thick Skin's percent and Vitality's flat 5
+// (V16), and Deep Well's max and current mana.
 func TestRaisePassiveRanks_InTown_TheBodyFeelsItAtOnce(t *testing.T) {
 	t.Run("max HP", func(t *testing.T) {
 		s := newHubWorld()
@@ -88,6 +88,26 @@ func TestRaisePassiveRanks_InTown_TheBodyFeelsItAtOnce(t *testing.T) {
 
 		gearTick(s)
 		assert.Equal(t, maxBefore+gain, after.MaxHealth, "the gear pass keeps it")
+	})
+
+	t.Run("max HP, Vitality's flat points", func(t *testing.T) {
+		s := newHubWorld()
+		memberID := uuid.New()
+		character := rankedWarrior(nil)
+		s.AddPlayer(memberID, character, "")
+		gearTick(s)
+		body := bodyHealth(t, delverEntity(t, s, memberID))
+		body.CurrentHealth -= 30
+		maxBefore, currentBefore := body.MaxHealth, body.CurrentHealth
+
+		require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"warrior.r1": 1}))
+
+		after := bodyHealth(t, delverEntity(t, s, memberID))
+		assert.Equal(t, maxBefore+5, after.MaxHealth)
+		assert.Equal(t, currentBefore+5, after.CurrentHealth)
+
+		gearTick(s)
+		assert.Equal(t, maxBefore+5, after.MaxHealth, "the gear pass keeps it")
 	})
 
 	t.Run("max mana", func(t *testing.T) {

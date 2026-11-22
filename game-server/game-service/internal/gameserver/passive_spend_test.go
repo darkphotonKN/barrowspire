@@ -188,9 +188,8 @@ func (r *spendRig) hubFrameHealth() (maxHP, currentHP int, ok bool) {
 	return frame.CurrentPlayer.MaxHealth, frame.CurrentPlayer.CurrentHealth, true
 }
 
-// Acceptance (FS-8RZ51 R27): a spend in town of r1 raises the HUB body's max
-// and current HP by the same amount at once. The amount is I-8RZ51-16's to
-// pin: until it lands, Vitality's flat 5 reads as a percent.
+// Acceptance (FS-8RZ51 R27, §Change: Tree v2 V16): a spend in town of r1
+// raises the HUB body's max and current HP by Vitality's flat 5 at once.
 func TestSpendPassivePoint_InTown_TheHubBodyFeelsIt(t *testing.T) {
 	rig := newSpendRig(t, "warrior", 3, nil)
 
@@ -206,8 +205,8 @@ func TestSpendPassivePoint_InTown_TheHubBodyFeelsIt(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		maxHP, currentHP, ok := rig.hubFrameHealth()
-		return ok && maxHP > maxBefore && currentHP-currentBefore == maxHP-maxBefore
-	}, forfeitSettle, 10*time.Millisecond, "max and current HP rise together")
+		return ok && maxHP == maxBefore+5 && currentHP == currentBefore+5
+	}, forfeitSettle, 10*time.Millisecond, "max and current HP rise by 5 together")
 }
 
 // Acceptance: in a field, a run or no world, refused "Points are spent in

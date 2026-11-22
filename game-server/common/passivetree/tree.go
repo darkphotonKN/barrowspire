@@ -25,17 +25,14 @@ const (
 type Stat string
 
 const (
+	// StatMaxHP is a percent of own max HP (Thick Skin) or flat points
+	// (Vitality), as its Unit says (V16).
 	StatMaxHP Stat = "max_hp"
 	// StatPrimaryAttribute raises each of the class's primary attributes
 	// by the full amount (V14, PrimaryAttributes).
 	StatPrimaryAttribute   Stat = "primary_attribute"
-	StatMaxStamina         Stat = "max_stamina"
 	StatMaxMana            Stat = "max_mana"
-	StatStrength           Stat = "strength"
-	StatIntelligence       Stat = "intelligence"
-	StatAgility            Stat = "agility"
 	StatStaminaRegen       Stat = "stamina_regen"
-	StatManaRegen          Stat = "mana_regen"
 	StatSlashDamage        Stat = "slash_damage"
 	StatFireballDamage     Stat = "fireball_damage"
 	StatCutDamage          Stat = "cut_damage"
