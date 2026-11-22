@@ -498,3 +498,273 @@ idle only).
 - A full staff for either mage spec; a new palette token for the ward.
 - A global aura budget or culling auras outside the camera.
 - Recording the ADR (§C) and the vocabulary (domain-model): named here, done by their owners.
+
+## Change: Looks v2: more drastic, more different
+Status: work-order
+Date: 2026-11-22
+
+> Anchored here: this FS owns "Specialization looks" (`game-client/SPECIFICATION.md` "### Character"),
+> and this change rewrites its §A looks, a value in R1, R3 and R4 each, and §G's guideline
+> wording. The line is unchanged. Scoped and promoted under the owner's charter of 2026-11-22:
+> every value below not quoted from him is a **charter default**, with its reason. Art calls inside
+> each pick (tones, sizes, cuts) stay Claude's (R12), gated on the contact sheet.
+
+The owner's words, on the eight baked looks (2026-11-22): "They need to be more different. The
+weapons need to change more. Just don't give me variants. Just improve them further. The current
+designs are good, but make them more drastic, more different. Enhance the details more. In the
+future, we're going to be building upon that and adding more variety in the specialization tree.
+So keep that in mind."
+
+### Facts this change rests on
+
+- The eight looks are baked as §A states them (I-1J1CB-4 to -7), each a look object (`look.js`:
+  `tones`, `mats`, `opts`, `omit`, `swap`, `bones`, `add`, `style`) over its class's builder in
+  `cast.js`, authored in `warriorLooks.js`, `mageLooks.js`, `archerLooks.js` and `mercLooks.js`,
+  each baked as its own `specRow` into its own group.
+- Each spec's weapon today is close to its base's: the Guardian keeps the longsword; the
+  Berserker's axes are one-handed at 0.36 H; both mage foci are the sceptre's carry at about 1.5x
+  (`gear.js` `wardFocus`, `fireFocus`, `FOCUS_TOP`, `FOCUS_BUTT`); both archers carry the class's
+  longbow; the Duelist and the Sellsword carry the mercenary's knuckle-bowed dueling sword.
+- The dark-room floor (R10) measured on today's four class sheets is **0.0222** (mean relative
+  luminance of the darkest class back's opaque `n` idle pixels, `lib/darkRoom.mjs`).
+- The contact tool (`lib/contact.mjs`) already composes each class's looks beside the base
+  (`lookSets`, `composeLooks`), a ×2 sheet per sheet, and the dark-room strip (`composeDarkRoom`).
+- `CONTEXT.md` already defines **Silhouette** (a player's outline drawn through a building). To keep
+  that term clean, this change calls the owner's "black silhouette" test the look's **outline in a
+  black fill**, and its contact-sheet row the **outline strip**.
+
+### Requirements
+
+**§J. The bar**
+
+49. **Identity kept, pushed much further** *(charter default — reason: the owner's "the current
+    designs are good ... just improve them further", "don't give me variants")*. Each look keeps
+    the pieces §A names as its identity (the Guardian's great helm and surcoat, the Berserker's
+    bare head and torn cloak, the Spellwarden's iron, the Pyromancer's scorch and singed hem, the
+    Hunter's pelt and bare head, the Shadow Ranger's soot, the Duelist's robe and half-cloak, the
+    Sellsword's buff coat over black), and enlarges, re-cuts and layers them. No look is replaced
+    by another design, and no `/variants` round is run.
+50. **Outline first** *(charter default — reason: the owner's "more different"; a dye or a trim
+    alone disappears in a black fill)*. At game scale (1x screen px), each look's outline in a
+    black fill, in the idle and at the attack's strike key in all 8 facings, reads as a different
+    figure from its base class AND from its sibling spec. To get there, each look differs from each of
+    the other two in at least two of the outline's parts: the head, the shoulder line, the
+    weapon, the hem or cloak line. The owner judges it on the outline strip (R70).
+51. **The outline is measured and logged, not gated** *(charter default — reason: no approved
+    number exists yet; the logged figures are what a later floor would be set from)*. The bake
+    logs, for each look, the fraction of differing opaque pixels against its base and against its
+    sibling: the two idle frames' opaque masks laid on one anchor and XORed, over the `n`, `e`,
+    `s` and `w` facings, divided by their union.
+52. **Then the weapon, then the detail.** A detail never costs the outline: a strap, trim or pouch
+    that softens a cut the outline relies on is moved or dropped.
+
+**§K. The weapons**
+
+53. **Every spec's weapon or focus changes**, and is clearly unlike its base's and its sibling's
+    in outline at game scale. The picks below are the charter's. The baking slice may refine a
+    pick's shape, size and tone, and may not drop the pick.
+54. **Guardian:** a **flanged mace** in the right hand in place of the longsword: an iron haft,
+    a leather grip and a pommel knob, and a head of flanges standing clear of the haft, so it reads
+    as a mace and never as a sword. It is shorter than the longsword *(charter default — reason: a
+    one-handed mace, so the shield carries the outline)*. The **kite shield is bigger again**,
+    about 1.3x the knight's in height and width *(charter default — reason: "bigger again" over
+    R1's 1.15x; refined at the contact sheet)*. It keeps its iron boss, the house cross
+    counterchanged over the per-pale field and the brass border. Shield and mace are carried and
+    swung in the knight's compact cut behind the raised shield.
+55. **Berserker:** the two bearded axes kept and made **heavier**: hafts about 1.3x today's
+    (0.36 H → about 0.47 H) *(charter default — reason: "longer hafts"; refined at the contact
+    sheet)*, a broader bit and beard, and the grip **wrapped** in cord to a pommel knob. Each edge
+    faces **forward and down** in the carry and **leads** the swing in both hands' clips (R2, the
+    owner's earlier fix; `axe.test.mjs` holds the new head, with `AXE_EDGE_TURN` re-set if the
+    beard's sweep changes). The hands still alternate (R28, R29 unchanged).
+56. **Spellwarden:** an **iron-shod warding staff** in the right hand in place of the ward focus.
+    It is a staff taller than her crown, with an iron shoe at the foot and, at its head, an iron
+    **cage** round the ward stone (bars closing over it, not R3's open ring). The stone keeps R3's
+    tone (`necrotic` toward `vellum`, low, glowing with the clip). The iron-bound tome moves **to
+    the left hip**, hung from the belt (rigid on the hips, clear of the gown's swing), so the left
+    hand is free and opens in the cast as the guideline's thrust has it. **This bends the
+    guideline's "no staff" for the Spellwarden only** (R66). The wizard and the Pyromancer still
+    carry no staff.
+57. **Pyromancer:** a **brazier-headed rod** in place of the fire focus: a short haft, about the
+    sceptre's length, under a large open **fire cage**, an iron brazier of bars about twice the
+    width of today's cage *(charter default — reason: short and top-heavy, so her outline is the
+    opposite of the Spellwarden's tall staff)*, holding coals and a larger upright tongue of flame
+    (kept upright in the world in every pose, the existing hook). Fire's ramp only.
+58. **Hunter:** a **heavy recurve hunting bow** in the left hand in place of the longbow: shorter
+    than the longbow, with thicker limbs, tips curling away from her and horn-capped (R5), and a
+    leather grip wrap. The live string and the draw are kept (`cast.js` `bowInHand`, `draw.js`
+    `drawGrip` / `solveDraw`), with the nock points taken from the recurve. A **skinning knife** in
+    a leather sheath rides the belt, clear of the draw and of the bow hand's carry.
+59. **Shadow Ranger:** a **slimmer blackened longbow**: the longbow's length, thinner limbs, the
+    wood blackened and the string darker than the base's, both in token mixes. A **hooded
+    quiver**: a leather hood over its mouth, so the fletching shows only as a dark edge under it,
+    unlike the Hunter's high goose fletching. The quiver still rides over the cloak, never sunk
+    into it. If the hood darkens the back, it is lifted toward slate as R6's soot is, until R65
+    holds.
+60. **Duelist:** a **long-hilted curved single-edged blade** in place of the knuckle-bowed dueling
+    sword, to match the robe: a wrapped grip about two fists long, a plain round iron guard in
+    place of the cross and knuckle-bow, and a blade of even, shallow curve to a clean point. It is
+    still swung one-handed in the mercenary's wide cut, the hilt's butt clear of the forearm. The
+    empty scabbard at the hip is re-cut to the blade. "Almost" samurai (R7) holds: a plain guard,
+    no ornament.
+61. **Sellsword:** a **broad falchion**: a heavy, wide single-edged blade swelling toward a clipped
+    point, with a plain cross and a longer grip, so it looks like a two-handed weapon. He carries
+    and swings it one-handed in the mercenary's cut. The scabbard is re-cut to it. The coin purse
+    stays.
+62. **Every weapon stays inside its class's clips.** Same clips, keys, fps and strike key (7 keys
+    at 12 fps, the strike at key 3). Where a weapon's length breaks a pose (a haft through a
+    thigh, a staff's foot through the ground, a head through her head, the shield through the
+    front knee), the **look's** grip or hold is re-keyed in a look style beside the class's (as
+    `BERSERKER_STYLE` and `FOCUS_STYLE` are), never by editing the class's style. The base clips
+    keep their bytes. The motion tests that hold a weapon clear (`classMotion.test.mjs`'s blade
+    points against the shield and the head; `axe.test.mjs`) hold for each new weapon too.
+
+**§L. The detail**
+
+63. **Layered detail on every look** *(charter default — reason: the owner's "enhance the details
+    more")*. Each look gains:
+    - **trims**: edge bindings and contrasting hem or cuff bands;
+    - **straps and buckles** where a garment or a piece of gear hangs (the shield's guige, the
+      tome's hanger, the quiver's strap, the purse and knife on the belt);
+    - **wear and dirt in the fabrics**: each look's cloths and metals carry their own `dirt`,
+      `rust` and `dents` and their own seeds in `fabrics.js`, never the base's texture reused at a
+      new tone;
+    - **per-spec material contrast**: the two siblings differ in surface as well as outline
+      (metal against cloth, matte against sheen, light against dark).
+64. **Tokens only.** Every new tone is a `BARROW` token or a mix or shade of tokens (`palette.js`
+    `mix`, `shade`). No raw colour, and no new palette token.
+
+**§M. What holds**
+
+65. **The guards and the floor hold on every look.** Every look passes the leg- and cloak-clearance
+    guards on every guarded pose of every clip, the Berserker's off-hand clips included (R11). No
+    look is added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`. Each look's `n` idle back is no darker
+    than the dark-room floor, 0.0222 (R10).
+66. **Base and other atlases are byte-identical.** `char_knight_base`, `char_wizard_base`,
+    `char_archer_base`, `char_mercenary_base` and every atlas outside the eight look groups keep
+    their bytes. Only the rebaked class's look pages and the manifest's entries for them change.
+67. **Each look is still its own on-demand group** (ADR-0088). Sheet and group names (R15), the
+    manifest's format, the scene art rows (R26) and §C's loading are unchanged. A look's frame box
+    may grow (a staff, a larger shield); the memory is re-measured at the browser check (R27).
+
+**§N. Built to grow**
+
+68. **A class kit, and looks composed from it** *(charter default — reason: the owner's "we're
+    going to be building upon that and adding more variety in the specialization tree")*. Each
+    class's looks module opens with that class's **kit**: its shared trims (bindings, straps,
+    buckles, rivet rows, the wear settings) and its spec weapons (the warrior's mace, heavy axe
+    and shield options; the mage's staff and brazier rod; the archer's recurve, slim longbow,
+    knife and hooded quiver; the mercenary's long-hilted blade and falchion). Each spec look is a
+    look object (`look.js`) composed from kit pieces. A future third or fourth look for a class
+    is then one more look object in that module, one more id in `cast.js` `SPEC_LOOKS` (FS-E1ZDG's)
+    and one more `specRow`, with no change to the kit's existing pieces or to `look.js`.
+69. **Where gear lives.** A weapon only spec looks use is built in its class's kit. `gear.js` keeps
+    what a base figure uses or two classes share (`inHand`, `spaulder`, `limbGuard`, `tome`, the
+    base weapons). Today's spec-only builders (`beardedAxe`, `wardFocus`, `fireFocus` and their
+    constants) move into their class kits as each class is rebaked. A module that grows past about
+    400 lines splits its kit into `<class>Kit.js` beside it.
+
+**§O. The gate and the guideline**
+
+70. **One contact sheet per class** (R12), approved by Kranti before that class's slice closes:
+    both looks beside the base, every clip × 8 facings at game scale, the ×2 sheet per look, the
+    dark-room strip, and the new **outline strip**. The outline strip shows each look, its base
+    and its sibling as black fills on one anchor at game scale, idle and strike key × 8 facings,
+    with R51's logged figures under it. Tweaks he asks for are made in the same slice.
+71. **The guideline (Part I) is amended**, attributed to the owner's charter of 2026-11-22
+    (FS-1J1CB §Change: Looks v2). Each class's slice updates its own lines:
+    - *Specializations* clause: "changing only a few pieces (a helm, a coat, a weapon, a dye)"
+      becomes a re-dress of outline, weapon and detail, so a look reads as a different figure
+      from its base and its sibling in a black fill. The class still reads by its rig, build and
+      motion and at least one class mark (the knight's mail, the archer's bow and cloak, the
+      mage's gown, the mercenary's bare head and one-handed blade) *(charter default — reason: §A
+      kept the class reading at a glance; v2 keeps it by the body, not the kit)*.
+    - Each spec's bullet is restated for its v2 look and weapon.
+    - **Knight**: the Guardian carries a flanged mace, not the longsword, and a larger shield; the
+      Berserker's axes are long-hafted with wrapped grips.
+    - **Mage**: "no staff" gains its one exception, the Spellwarden's iron-shod warding staff (her
+      tome on the hip). The Pyromancer's focus is a short brazier rod. R45's "a spec's focus may be
+      about 1.5x the sceptre, still no staff" is restated to match.
+    - **Archer**: the Hunter's heavy recurve and skinning knife; the Shadow Ranger's slim black
+      longbow and hooded quiver (her fletching under the hood, an exception to "its fletching over
+      the right shoulder").
+    - **Mercenary**: the Duelist's long-hilted curved blade with a round guard; the Sellsword's
+      broad falchion. "His sword is a long, slender, curved dueling blade with a knuckle-bow" stays
+      the base's.
+72. **Superseded values.** For the looks they name, this change supersedes: R1's "about 1.15x"
+    shield and "the ... longsword ... stay"; R3's "about 1.5x the sceptre's length, short of a
+    staff", and its "open iron ring", and the Out of Scope line "A full staff for either mage spec"
+    for the Spellwarden; R4's "about 1.5x the sceptre's length"; R5's "The bow ... stay"; R7's
+    "the dueling blade ... stay"; R8's "The blade ... stay". Every other §A–§I requirement stands.
+73. **Review** (R47 holds). Each rebake slice runs the bake's guards, the manifest tests and the
+    bake tests, and goes through `/code-review` (the kit restructure is code). The owner's contact
+    sheet is the art gate.
+
+### Acceptance Criteria
+
+**The bake (each class)**
+
+- [ ] Both looks of the class are rebaked as R49–R63 state them, each with its charter weapon
+      (R54–R61), in its own group under its R15 name, at 1.5x, with every clip of its base sheet
+      (the Berserker's three off-hand clips too).
+- [ ] The bake logs R51's outline figures for both looks against the base and the sibling.
+- [ ] Both looks pass the leg- and cloak-clearance guards on every guarded pose of every clip;
+      `KNOWN_CLIPPING` and `MIRRORED_LEGACY` gain no entry.
+- [ ] Both looks' `n` idle backs are at or above the dark-room floor (0.0222).
+- [ ] The class's base sheet and every atlas outside the rebaked look groups are byte-identical
+      (`git diff --stat public/art/` lists only the class's look pages and `manifest.json`).
+- [ ] The weapon-clearance motion tests hold for the new weapons: the Guardian's mace head clear
+      of the shield and the head; the Berserker's axe edges forward and down in the carry and
+      leading at the strike in both hands' clips; the Spellwarden's staff clear of her head, legs
+      and the ground; the archers' strings follow the draw.
+- [ ] Any re-keyed grip or hold is in a look style; the class's own style is unchanged.
+- [ ] No raw colour; every new tone is a `BARROW` token, mix or shade.
+- [ ] The class's looks module is a kit plus looks composed from it (R68); its spec-only weapon
+      builders live in the kit (R69).
+- [ ] The class's guideline lines carry R71's amendments.
+- [ ] Kranti approved the class's contact sheet, outline strip included (R70).
+- [ ] `npm test` and `npm run lint` pass.
+
+**Across the change**
+
+- [ ] All four classes' slices are done; all eight looks are v2.
+- [ ] The manifest's sheet and group names, its format, the scene art rows and §C's loading are
+      unchanged.
+- [ ] Browser check: every v2 look in town and a run as I-1J1CB-11 walks it; the memory is
+      re-measured and recorded (R27).
+- [ ] `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` pass.
+
+### Edge States
+
+- **One class rebaked before the others:** its two looks are v2, the rest v1. Each look is its
+  own group, so nothing else moves, and the slices run serially, so the manifest never conflicts.
+- **A look's frame box grows** (the staff, the larger shield): only that look's frames and pages
+  grow. The base and the anchor convention are untouched, and the stand-in swap (R21) still keeps
+  the feet where they were.
+- **The swap from stand-in to look** now changes the weapon too (a knight's sword becomes a mace,
+  a sceptre becomes a staff) between one frame and the next (accepted, ADR-0088 Decision 4).
+- **The staff's foot** in idle stays above the ground plane. In walk and run it is carried clear
+  of the legs. A key that sinks it is re-keyed in the look style (R62).
+- **A larger shield against the knee** in the walk or the cut: re-keyed in the look style, never
+  by shrinking it below "bigger again".
+- **The Berserker's longer hafts in the low carry** cross no thigh. If one does, the carry is
+  re-keyed in `BERSERKER_STYLE`, and the mirrored off-hand clips follow (R28).
+- **The Hunter's recurve is shorter:** the drawn arrow and Heavy Shot's runtime bolt are unchanged
+  (out of scope). Only the string's rest and nock points move with the bow.
+- **The hooded quiver darkens the Shadow Ranger's back:** lifted toward slate until the floor
+  holds (R59).
+- **The contact sheet is rejected:** tweaks in the same slice. The slice does not close, and the
+  next class's slice stays blocked.
+- **The outline figures look small** for a pair the owner approves: logged as they are. Only the
+  owner's eye gates them (R51).
+- **A future third spec per class:** one more look object, `SPEC_LOOKS` id and `specRow` (R68).
+  Not built here.
+
+### Out of Scope
+
+- The auras (§E): the ward and the gloom are unchanged.
+- Runtime effects: Heavy Shot, the Shadow Shot, the aim line, the shimmers, the swap (§C, §F).
+- New specializations, or a third or fourth look per class (the structure allows one, R68).
+- New clips, new attack styles beyond a look's grip and hold re-keys, new sounds.
+- The base class looks, the menus and the party busts (R25: base look).
+- Any server change; the manifest's format; ADR-0088's loading; new palette tokens.
