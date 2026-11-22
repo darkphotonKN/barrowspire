@@ -10,12 +10,13 @@
  * a press or a hover on it never reaches the world or a party frame under it; its tooltips stand in the
  * item tips' band (2200), on the gear overlay's tip ground and placement (`tipGround`, `itemTipRow`).
  *
- * Node pictures (R40): each node draws its picture (`nodePicture`: the tree's own from `passiveIcons.ts`,
- * the ability node its tree ability's from the ability bar's `ABILITY_ICONS`) through the one knockout
- * renderer (`Knockout`, ADR-0080), in `BRONZE` or, greyed, in `GREYED`, its lines where the scene
- * cannot; a node the copy lacks draws the fallback glyph (`drawUnknownGlyph`) with its id as its name
- * (R42). Every colour is a palette token (ADR-0013,
- * ADR-0025).
+ * Node pictures (R40, V29): each node draws its picture (`nodePicture`: the tree's own from
+ * `passiveIcons.ts`, the ability node its tree ability's from the ability bar's `ABILITY_ICONS`), fitted to
+ * its plate (`fitIcon`), through the one knockout renderer (`Knockout`, ADR-0080), in the near-white
+ * `TREE_INK` or, greyed, in `GREYED`, its lines where the scene cannot; a lit node's whole plate fill is lit
+ * in its edge's token. A locked node's lock mark is the padlock (`LOCK_ICON`) on a dark backing, drawn the
+ * same way. A node the copy lacks draws the fallback glyph (`drawUnknownGlyph`) with its id as its name
+ * (R42). Every colour is a palette token (ADR-0013, ADR-0025).
  *
  * In town a press on a node spends through `TreeSpend` and the wiring's `spend`, the tree's own commands
  * (R38): the ask before a spend that takes a side (V27) and a refusal's reason stand in the footer band, the
@@ -30,8 +31,8 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { drawIconLines, type AbilityIcon } from "./abilityIcons";
 import { itemTipRow } from "./gearOverlayLayout";
 import { tipGround } from "./itemTip";
-import { BRONZE, GREYED, GREYED_ALPHA, Knockout } from "./knockout";
-import { nodeIcon, type NodeIconKey } from "./passiveIcons";
+import { GREYED, GREYED_ALPHA, Knockout, TREE_INK } from "./knockout";
+import { LOCK_ICON, fitIcon, nodeIcon, type NodeIconKey } from "./passiveIcons";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
 import { drawPanelFrame, drawPanelTitle, lightClose, type FrameRect } from "./panelFrame";
 import { TREE_RANK_GAP, nodeAt, treeLayout, type PlateLayout, type TreeLayout } from "./passiveTreeLayout";
@@ -42,13 +43,15 @@ import type { TreePiece, TreeWiring } from "./uiSceneTree";
 
 /**
  * The overlay's depths (ADR-0086 Decision 4): its ground and frame over the gear overlay's 1100–1103,
- * its contents over them, the lock marks over the plates' pictures, the hover ring over all, all under
- * the party panel (1110).
+ * its contents over them, the node pictures over the plates' fills (a picture made while the contents are
+ * drawn would stand under them at one depth), the lock marks over the pictures, the hover ring over all,
+ * all under the party panel (1110).
  */
 export const TREE_DEPTH = 1104;
 const CONTENT_DEPTH = TREE_DEPTH + 1;
-export const LOCK_DEPTH = TREE_DEPTH + 2;
-const HOVER_DEPTH = TREE_DEPTH + 3;
+export const PICTURE_DEPTH = TREE_DEPTH + 2;
+export const LOCK_DEPTH = TREE_DEPTH + 3;
+const HOVER_DEPTH = TREE_DEPTH + 4;
 /** The item tips' band (ADR-0086 Decision 4). */
 const TIP_DEPTH = 2200;
 
@@ -69,6 +72,12 @@ function plateEdge(node: NodeView): { color: number; alpha: number; width: numbe
   if (node.state === "available") return { color: palette.hudLabel, alpha: 0.8, width: 1 };
   return { color: palette.hudFaint, alpha: GREYED_ALPHA, width: 1 };
 }
+
+/**
+ * How strongly a lit node's plate fill takes its edge's token over the panel ground (V29): available and
+ * spendable, held, or at max. Tuned at the contact sheet.
+ */
+export const LIT_PLATE_ALPHA = 0.35;
 
 /** A link's line (V24): bright brass when both ends are held, faint otherwise, dimmer still with a locked far end. */
 function linkLine(link: LinkView): { color: number; alpha: number; width: number } {
@@ -108,26 +117,6 @@ export function drawUnknownGlyph(g: Pen, cx: number, cy: number, ink: number, al
   g.moveTo(cx - 8, cy - 8);
   g.lineTo(cx + 8, cy + 8);
   g.strokePath();
-}
-
-/** What the lock mark draws with. */
-type LockPen = Pick<Phaser.GameObjects.Graphics, "fillStyle" | "fillRoundedRect" | "lineStyle" | "strokeRect" | "lineBetween">;
-
-/**
- * A locked node's lock mark in its `box` (V25): a placeholder padlock, a body and its shackle on a dark
- * backing, from palette tokens. Slice 19 (I-8RZ51-19) draws its picture here.
- */
-export function drawLockMark(g: LockPen, box: FrameRect): void {
-  g.fillStyle(palette.hudPanelDeep, 0.95);
-  g.fillRoundedRect(box.x - 1, box.y - 1, box.width + 2, box.height + 2, 2);
-  const left = box.x + 2;
-  const right = box.x + box.width - 2;
-  const waist = box.y + box.height * 0.45;
-  g.lineStyle(1, palette.hudLabel, 1);
-  g.strokeRect(left, waist, right - left, box.y + box.height - 1 - waist);
-  g.lineBetween(left + 1.5, waist, left + 1.5, box.y + 1.5);
-  g.lineBetween(left + 1.5, box.y + 1.5, right - 1.5, box.y + 1.5);
-  g.lineBetween(right - 1.5, box.y + 1.5, right - 1.5, waist);
 }
 
 /** What the overlay is built with in one world. */
@@ -269,7 +258,7 @@ export class PassiveTreeOverlay implements TreePiece {
     content.setDepth(CONTENT_DEPTH).setScrollFactor(0);
     const locks = this.scene.add.graphics().setDepth(LOCK_DEPTH).setScrollFactor(0);
     view.nodes.forEach((node, i) => {
-      if (node.state === "locked") drawLockMark(locks, layout.plates[i].lock);
+      if (node.state === "locked") this.drawLock(locks, layout.plates[i].lock);
     });
     this.hoverRing = this.scene.add.graphics().setDepth(HOVER_DEPTH).setScrollFactor(0);
     this.parts = [chrome, content, locks, this.hoverRing];
@@ -337,37 +326,48 @@ export class PassiveTreeOverlay implements TreePiece {
   }
 
   /**
-   * A node's plate, round for a traversal node (V23), its edge by its state, and its picture, or the
-   * fallback glyph for a node the copy lacks (V25, R40, R42).
+   * A node's plate, round for a traversal node (V23), its edge by its state, its whole fill lit when the
+   * node is (V29), and its picture fitted to it, or the fallback glyph for a node the copy lacks (V25,
+   * R40, R42).
    */
   private drawPlate(g: Phaser.GameObjects.Graphics, node: NodeView, { rect: plate, round }: PlateLayout): void {
     const edge = plateEdge(node);
-    g.fillStyle(palette.hudPanelDeep, 0.9);
-    if (round) g.fillCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
-    else g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
+    const dim = greyed(node);
+    const fill = (color: number, alpha: number) => {
+      g.fillStyle(color, alpha);
+      if (round) g.fillCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
+      else g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
+    };
+    fill(palette.hudPanelDeep, 0.9);
+    if (!dim) fill(edge.color, LIT_PLATE_ALPHA);
     g.lineStyle(edge.width, edge.color, edge.alpha);
     if (round) g.strokeCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
     else g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
-    const cx = plate.x + plate.width / 2;
-    const cy = plate.y + plate.height / 2;
-    const dim = greyed(node);
     const picture = nodePicture(node.icon);
     if (picture) {
-      // its lines where the knockout cannot stand, now or at a new render scale (ADR-0080 "Fallback")
-      const lines = () => drawIconLines(g, picture, cx, cy, dim ? palette.hudFaint : palette.interactable, dim ? GREYED_ALPHA : 0.85);
-      const knockout = new Knockout({
-        scene: this.scene,
-        depth: CONTENT_DEPTH,
-        picture: picture.picture,
-        ink: dim ? GREYED : BRONZE,
-        name: `the ${node.id} node`,
-        lost: lines,
-      });
-      this.knockouts.push(knockout);
-      if (!knockout.show(plate, false)) lines();
+      this.drawPicture(g, fitIcon(picture, plate.width), plate, dim, `the ${node.id} node`, PICTURE_DEPTH);
       return;
     }
-    drawUnknownGlyph(g, cx, cy, dim ? palette.hudFaint : palette.frame, dim ? GREYED_ALPHA : 0.9);
+    drawUnknownGlyph(g, plate.x + plate.width / 2, plate.y + plate.height / 2, dim ? palette.hudFaint : palette.frame, dim ? GREYED_ALPHA : 0.9);
+  }
+
+  /** A locked node's lock mark in its `box` (V25, V29): the padlock on a dark disc that parts it from the plate's edge. */
+  private drawLock(g: Phaser.GameObjects.Graphics, box: FrameRect): void {
+    g.fillStyle(palette.hudPanelDeep, 0.95);
+    g.fillCircle(box.x + box.width / 2, box.y + box.height / 2, box.width / 2 + 1.5);
+    this.drawPicture(g, fitIcon(LOCK_ICON, box.width, 0), box, false, "a lock mark", LOCK_DEPTH);
+  }
+
+  /**
+   * `icon` on the box `at` as its knockout, in the tree ink or greyed, at `depth`; its lines on `g` where
+   * the knockout cannot stand, now or at a new render scale (ADR-0080 "Fallback").
+   */
+  private drawPicture(g: Phaser.GameObjects.Graphics, icon: AbilityIcon, at: FrameRect, dim: boolean, name: string, depth: number): void {
+    const lines = () =>
+      drawIconLines(g, icon, at.x + at.width / 2, at.y + at.height / 2, dim ? palette.hudFaint : TREE_INK.idle.tint, dim ? GREYED_ALPHA : TREE_INK.idle.alpha);
+    const knockout = new Knockout({ scene: this.scene, depth, picture: icon.picture, ink: dim ? GREYED : TREE_INK, name, lost: lines });
+    this.knockouts.push(knockout);
+    if (!knockout.show(at, false)) lines();
   }
 
   /** The × lit under the pointer; the node under it ringed and its tooltip beside it (R37). */

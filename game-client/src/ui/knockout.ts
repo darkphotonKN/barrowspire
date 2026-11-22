@@ -91,6 +91,18 @@ export const BRONZE: KnockoutInk = {
 };
 
 /**
+ * The passive tree's pictures (FS-8RZ51 §Change: Tree v2 V29): near-white, the canvas's lightest vellum
+ * (`palette.hudText`) whole and flat, so no lift toward the amber warms it, on the same drop shadow. The
+ * tree marks hover with a ring, never a brighter picture. Only the tree wears it; the row and the
+ * ability bar keep `BRONZE`.
+ */
+export const TREE_INK: KnockoutInk = {
+  idle: { tint: palette.hudText, alpha: 1 },
+  hover: { tint: palette.hudText, alpha: 1 },
+  flat: true,
+};
+
+/**
  * The greyed knockout (ADR-0080 "Unavailable"): flat in the faint grey at 0.6, never brightening under
  * the pointer (FS-7TQN4 R9), on the drop shadow with no gradient (FS-S8Z2Y R6). The greyed Mailbox wears
  * it; one place, so no icon copies it.

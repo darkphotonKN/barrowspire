@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { LOCK_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, drawLockMark, drawUnknownGlyph } from "./PassiveTreeOverlay";
-import { BRONZE, GREYED } from "./knockout";
+import { LIT_PLATE_ALPHA, LOCK_DEPTH, PICTURE_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, drawUnknownGlyph } from "./PassiveTreeOverlay";
+import { GREYED, TREE_INK } from "./knockout";
+import { PICTURE_MARGIN } from "./passiveIcons";
 import { treeLayout } from "./passiveTreeLayout";
 import { treeView, type TreeSource } from "./passiveTreeModel";
 import type { World } from "./uiBridge";
@@ -23,6 +24,10 @@ interface Made {
   y?: number;
   ops: string[];
   inks: number[];
+  /** Each fill's colour and alpha, in order. */
+  fills?: [number, number][];
+  /** Each path point drawn (`moveTo`, `lineTo`). */
+  pts?: [number, number][];
   destroyed: boolean;
 }
 
@@ -41,6 +46,8 @@ function stage() {
         // a container takes its children down with it, as Phaser's does
         if (prop === "destroy") return () => [rec, ...(rec.children ?? [])].forEach((m) => (m.destroyed = true));
         if (prop === "lineStyle") return (_w: number, ink: number) => (rec.inks.push(ink), rec.ops.push(prop), self);
+        if (prop === "fillStyle") return (ink: number, alpha = 1) => ((rec.fills ??= []).push([ink, alpha]), rec.ops.push(prop), self);
+        if (prop === "moveTo" || prop === "lineTo") return (x: number, y: number) => ((rec.pts ??= []).push([x, y]), rec.ops.push(prop), self);
         return () => (rec.ops.push(prop), self);
       },
     });
@@ -179,19 +186,58 @@ describe("the passive tree overlay's graph (FS-8RZ51 V23–V25, I-8RZ51-17)", ()
 
   it("should draw the 24 traversal plates round and the rest square", () => {
     const [, plates] = pens(opened());
-    expect(count(plates.ops, "fillCircle")).toBe(24);
-    expect(count(plates.ops, "fillRoundedRect")).toBe(7);
     expect(count(plates.ops, "strokeRoundedRect")).toBe(7);
+    // the ground under every plate, and a lit one's fill over it (V29): only the root is lit
+    expect(count(plates.ops, "fillCircle")).toBe(24 + 1);
+    expect(count(plates.ops, "fillRoundedRect")).toBe(7);
   });
 
   it("should draw a lock mark on each locked node, over its picture, and none where nothing is locked", () => {
     const marks = (env: ReturnType<typeof opened>) => env.live().find((m) => m.kind === "graphics" && m.depth === LOCK_DEPTH);
     const locked = opened("hub", warrior(TRUNK));
-    // every upper:b node: ub1, t2b, ub2, ub3, ub4
-    expect(count(marks(locked)!.ops, "strokeRect")).toBe(5);
+    // every upper:b node: ub1, t2b, ub2, ub3, ub4, each on its dark backing, its padlock in lines here
+    expect(count(marks(locked)!.ops, "fillCircle")).toBe(5);
+    expect(count(marks(locked)!.ops, "strokePath")).toBeGreaterThanOrEqual(5);
+    expect(marks(locked)!.inks.every((ink) => ink === palette.hudText)).toBe(true);
     expect(LOCK_DEPTH).toBeGreaterThan(TREE_DEPTH + 1);
     expect(LOCK_DEPTH).toBeLessThan(1110);
-    expect(count(marks(opened())!.ops, "strokeRect")).toBe(0);
+    expect(marks(opened())!.ops).not.toContain("fillCircle");
+  });
+
+  it("should light a lit node's whole plate in its edge's token over the ground, and no other (V29)", () => {
+    const fills = (env: ReturnType<typeof opened>) => pens(env)[1].fills!;
+    const over = (env: ReturnType<typeof opened>, ink: number) => fills(env).filter(([c, a]) => c === ink && a === LIT_PLATE_ALPHA).length;
+    // a fresh warrior with points: only the root is open, and it is spendable
+    const fresh = opened("hub", warrior());
+    expect(over(fresh, palette.interactable)).toBe(1);
+    expect(fills(fresh).filter(([, a]) => a === LIT_PLATE_ALPHA)).toHaveLength(1);
+    // with no point to spend, the open root is greyed, not lit
+    expect(fills(opened("hub", warrior({}, 0))).filter(([, a]) => a === LIT_PLATE_ALPHA)).toHaveLength(0);
+    // the trunk held, each at its one rank: three plates lit in bright brass; Heavy Hand and m1 open and spendable, in amber
+    const trunk = opened("hub", warrior(TRUNK));
+    expect(over(trunk, palette.frameBright)).toBe(3);
+    expect(over(trunk, palette.interactable)).toBe(2);
+    // a node held short of its last rank lit in brass
+    expect(over(opened("hub", warrior({ ...TRUNK, "warrior.t2a": 1 })), palette.frame)).toBe(1);
+  });
+
+  it("should fit every picture inside its plate less the margin (V29)", () => {
+    const env = opened("hub", warrior(TRUNK));
+    const plates = env.layout.plates;
+    for (const [x, y] of pens(env)[1].pts!) {
+      const home = plates.find(({ rect }) => x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height);
+      expect(home, `${x},${y} on no plate`).toBeDefined();
+      const { rect, round } = home!;
+      const [cx, cy, room] = [rect.x + rect.width / 2, rect.y + rect.height / 2, rect.width / 2 - PICTURE_MARGIN + 0.01];
+      if (round) expect(Math.hypot(x - cx, y - cy)).toBeLessThanOrEqual(room);
+      else expect(Math.max(Math.abs(x - cx), Math.abs(y - cy))).toBeLessThanOrEqual(room);
+    }
+  });
+
+  it("should draw the pictures' lines in the vellum ink, a greyed one in the faint grey (V29)", () => {
+    const inks = pens(opened("hub", warrior(TRUNK)))[1].inks;
+    expect(inks).toContain(palette.hudText);
+    expect(inks).toContain(palette.hudFaint);
   });
 
   it("should ring a round plate round under the pointer", () => {
@@ -384,27 +430,6 @@ describe("the fallback glyph (FS-8RZ51 R42)", () => {
   });
 });
 
-describe("the lock mark (FS-8RZ51 V25, V29)", () => {
-  it("should draw a simple padlock in its box from palette tokens, its picture slice 19's", () => {
-    const calls: string[] = [];
-    const inks: number[] = [];
-    const g = new Proxy(
-      {},
-      {
-        get: (_t, prop: string) => (...args: number[]) => {
-          calls.push(prop);
-          if (prop === "lineStyle") inks.push(args[1]);
-          if (prop === "fillStyle") inks.push(args[0]);
-        },
-      },
-    );
-    drawLockMark(g as never, { x: 0, y: 0, width: 10, height: 10 });
-    expect(calls).toContain("strokeRect");
-    expect(calls).toContain("lineBetween");
-    expect(inks.every((ink) => Object.values(palette).includes(ink as never))).toBe(true);
-  });
-});
-
 describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, I-8RZ51-11)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -413,13 +438,14 @@ describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, 
   /** The stand-in scene given what the game's has to make a knockout: each texture's tint and alpha recorded. */
   function texturing() {
     const env = stage();
-    const images: { tints: number[]; alpha?: number }[] = [];
-    const chain = (rec: { tints: number[]; alpha?: number }, extra: Record<string, unknown> = {}): unknown => {
+    const images: { tints: number[]; alpha?: number; depth?: number }[] = [];
+    const chain = (rec: { tints: number[]; alpha?: number; depth?: number }, extra: Record<string, unknown> = {}): unknown => {
       const self: unknown = new Proxy(extra, {
         get: (t, prop: string) => {
           if (prop in t) return t[prop];
           if (prop === "setTint") return (...tints: number[]) => ((rec.tints = tints), self);
           if (prop === "setAlpha") return (a: number) => ((rec.alpha = a), self);
+          if (prop === "setDepth") return (d: number) => ((rec.depth = d), self);
           return () => self;
         },
       });
@@ -452,11 +478,34 @@ describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, 
     const overlay = new PassiveTreeOverlay(env.scene, { world: "hub", dismiss: () => {}, spend: () => true });
     overlay.show(source);
     overlay.open();
-    expect(env.images).toHaveLength(31);
+    // a knockout for every plate, and one for each locked node's padlock
+    expect(env.images).toHaveLength(31 + treeView(source).nodes.filter((n) => n.state === "locked").length);
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("should draw a locked and a closed node greyed, flat in the faint grey at the greyed alpha, and an open one in bronze (V25)", () => {
+  it("should draw each lock mark's padlock as its knockout in the vellum ink, over the plates (V25, V29)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const env = texturing();
+    const overlay = new PassiveTreeOverlay(env.scene, { world: "hub", dismiss: () => {}, spend: () => true });
+    overlay.show(warrior(TRUNK));
+    overlay.open();
+    // 31 plates, then the five upper:b padlocks
+    expect(env.images).toHaveLength(36);
+    for (const lock of env.images.slice(31)) expect(lock.tints).toEqual([palette.hudText]);
+    // every picture over the plates' fills, every padlock over the pictures
+    for (const picture of env.images.slice(0, 31)) {
+      expect(picture.depth).toBe(PICTURE_DEPTH);
+      expect(picture.depth).toBeGreaterThan(TREE_DEPTH + 1);
+    }
+    for (const lock of env.images.slice(31)) expect(lock.depth).toBe(LOCK_DEPTH);
+    expect(LOCK_DEPTH).toBeGreaterThan(PICTURE_DEPTH);
+    const marks = env.live().find((m) => m.kind === "graphics" && m.depth === LOCK_DEPTH)!;
+    expect(marks.ops.filter((o) => o === "fillCircle")).toHaveLength(5);
+    expect(marks.ops).not.toContain("strokePath");
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("should draw a locked and a closed node greyed, flat in the faint grey at the greyed alpha, and an open one in the vellum tree ink (V25, V29)", () => {
     const env = texturing();
     const overlay = new PassiveTreeOverlay(env.scene, { world: "hub", dismiss: () => {}, spend: () => true });
     overlay.show(warrior(GUARDIAN, 1, 20));
@@ -471,8 +520,8 @@ describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, 
     other.show(warrior({}, 1));
     other.open();
     // a fresh warrior's root is open, the node it links to closed behind it
-    expect(fresh.images[0].tints).toHaveLength(4);
-    expect(fresh.images[0].alpha).toBe(BRONZE.idle.alpha);
+    expect(fresh.images[0].tints).toEqual([palette.hudText]);
+    expect(fresh.images[0].alpha).toBe(TREE_INK.idle.alpha);
     expect(fresh.images[1].tints).toEqual([GREYED.idle.tint]);
     expect(fresh.images[1].alpha).toBe(GREYED.idle.alpha);
   });

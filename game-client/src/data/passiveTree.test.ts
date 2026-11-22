@@ -32,12 +32,12 @@ describe("the passive tree's copy against the golden (FS-8RZ51 R6, R39)", () => 
     }
   });
 
-  it("should name every class's traversal nodes by what each raises, each with its interim picture (V13)", () => {
+  it("should name every class's traversal nodes by what each raises, each with its own picture (V13, V29)", () => {
     const byStat: Record<string, [string, string]> = {
-      max_hp: ["Vitality", "health"],
-      primary_attribute: ["Might", "attribute"],
-      attack_speed: ["Haste", "regen"],
-      move_speed: ["Fleetness", "reserve"],
+      max_hp: ["Vitality", "vitality"],
+      primary_attribute: ["Might", "might"],
+      attack_speed: ["Haste", "haste"],
+      move_speed: ["Fleetness", "fleetness"],
     };
     const traversal = PASSIVE_NODES.filter((n) => n.kind === "traversal");
     expect(traversal).toHaveLength(4 * 24);

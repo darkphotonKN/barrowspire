@@ -1,18 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { palette } from "@/utils/canvasPalette";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
 import { ABILITY_ICONS, ABILITY_ICON_SLOT, type AbilityIconPen } from "./abilityIcons";
-import { BRONZE, GREYED, Knockout, type Pt } from "./knockout";
-import { PASSIVE_ICONS, PASSIVE_ICON_KEYS, drawPassiveIconLines, nodeIcon, type PassiveIconKey } from "./passiveIcons";
+import { GREYED, Knockout, TREE_INK, type Pt } from "./knockout";
+import {
+  LOCK_ICON,
+  PASSIVE_ICONS,
+  PASSIVE_ICON_KEYS,
+  PICTURE_MARGIN,
+  TRAVERSAL_ICON_KEYS,
+  drawPassiveIconLines,
+  fitIcon,
+  nodeIcon,
+  type PassiveIconKey,
+} from "./passiveIcons";
 
-// FS-8RZ51 §G R40 (I-8RZ51-10, I-8RZ51-11): the passive tree's four shared filler pictures and every
-// class's six each, bronze knockouts for the one renderer (ADR-0080) with their line glyphs, in the
-// ability bar's shape (`AbilityIcon`) and its 30 px box.
+// FS-8RZ51 §G R40 (I-8RZ51-10, I-8RZ51-11) and §Change: Tree v2 V29 (I-8RZ51-19): the passive tree's
+// four traversal pictures and every class's six each, knockouts for the one renderer (ADR-0080) with
+// their line glyphs, in the ability bar's shape (`AbilityIcon`) and its 30 px box, each fitted to its
+// plate; and the lock mark's padlock.
+
+const TRAVERSAL = ["vitality", "might", "haste", "fleetness"] as const;
 
 const EVERY = [
-  "health",
-  "reserve",
-  "attribute",
-  "regen",
+  ...TRAVERSAL,
   "heavy_hand",
   "thick_skin",
   "long_wind",
@@ -95,10 +106,34 @@ function texturingScene() {
   return { scene: scene as never, images };
 }
 
-describe("passiveIcons (FS-8RZ51 R40: the filler four, and six per class)", () => {
-  it("should key the twenty-eight pictures by what they show", () => {
+/** Every point a picture puts down: its silhouette, its cuts, its holes' and rings' reach, its lines. */
+function reach(icon: { picture: { silhouette: readonly (readonly Pt[])[]; cuts: readonly ({ path: readonly Pt[] } | { ring: { x: number; y: number; r: number } })[]; holes?: readonly { x: number; y: number; r: number }[] } }): Pt[] {
+  const ring = ({ x, y, r }: { x: number; y: number; r: number }): Pt[] => [
+    [x - r, y - r],
+    [x + r, y + r],
+  ];
+  return [
+    ...icon.picture.silhouette.flat(),
+    ...icon.picture.cuts.flatMap((c) => ("ring" in c ? ring(c.ring) : c.path)),
+    ...(icon.picture.holes ?? []).flatMap(ring),
+  ];
+}
+
+describe("passiveIcons (FS-8RZ51 R40, V29: the traversal four, and six per class)", () => {
+  it("should key the twenty-eight pictures by what they show, the filler four retired", () => {
     expect([...PASSIVE_ICON_KEYS].sort()).toEqual([...EVERY].sort());
     expect(Object.keys(PASSIVE_ICONS).sort()).toEqual([...EVERY].sort());
+    expect([...TRAVERSAL_ICON_KEYS]).toEqual([...TRAVERSAL]);
+    for (const key of ["health", "reserve", "attribute", "regen"]) expect(Object.hasOwn(PASSIVE_ICONS, key)).toBe(false);
+  });
+
+  it.each(TRAVERSAL)("should draw %s inside the box's round, so it fits a round traversal plate", (key) => {
+    for (const [x, y] of reach(PASSIVE_ICONS[key])) expect(Math.hypot(x, y), `${key} at ${x},${y}`).toBeLessThanOrEqual(HALF + 0.01);
+  });
+
+  it("should give each traversal picture its own silhouette, unlike every other picture's", () => {
+    const sig = (key: PassiveIconKey) => JSON.stringify(PASSIVE_ICONS[key].picture.silhouette);
+    for (const key of TRAVERSAL) for (const other of EVERY) if (other !== key) expect(sig(key)).not.toBe(sig(other));
   });
 
   it("should make no copy of a tree ability's picture: the tier-3 nodes draw the ability bar's", () => {
@@ -145,6 +180,47 @@ describe("passiveIcons (FS-8RZ51 R40: the filler four, and six per class)", () =
   });
 });
 
+describe("a picture fitted to its plate (V23, V29)", () => {
+  it.each([24, 32, 40])("should scale a picture to a %i px plate less the margin each side, about its centre", (size) => {
+    const icon = fitIcon(PASSIVE_ICONS.guardian, size);
+    const room = size / 2 - PICTURE_MARGIN;
+    const pts = reach(icon);
+    for (const [x, y] of pts) expect(Math.max(Math.abs(x), Math.abs(y))).toBeLessThanOrEqual(room + 0.01);
+    // it fills its room: the original's widest reach, scaled
+    const widest = (ps: Pt[]) => Math.max(...ps.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y))));
+    expect(widest(pts)).toBeCloseTo((widest(reach(PASSIVE_ICONS.guardian)) * room) / HALF, 5);
+    for (const line of icon.lines) if (!("ring" in line)) for (const [x, y] of line.path) expect(Math.max(Math.abs(x), Math.abs(y))).toBeLessThanOrEqual(room + 0.01);
+  });
+
+  it("should hand back the same picture where the plate holds the box as drawn", () => {
+    expect(fitIcon(PASSIVE_ICONS.guardian, HALF * 2 + PICTURE_MARGIN * 2)).toBe(PASSIVE_ICONS.guardian);
+  });
+
+  it("should keep a traversal picture inside a round 24 px plate", () => {
+    for (const key of TRAVERSAL) for (const [x, y] of reach(fitIcon(PASSIVE_ICONS[key], 24))) expect(Math.hypot(x, y)).toBeLessThanOrEqual(12 - PICTURE_MARGIN + 0.01);
+  });
+});
+
+describe("the lock mark's padlock (V25, V29)", () => {
+  it("should be a padlock: a body and a shackle, a keyhole through it, inside the box, with lines", () => {
+    expect(LOCK_ICON.picture.silhouette.length).toBeGreaterThanOrEqual(2);
+    expect(LOCK_ICON.picture.holes?.length).toBeGreaterThan(0);
+    for (const p of reach(LOCK_ICON)) expect(inSlot(p)).toBe(true);
+    expect(LOCK_ICON.lines.length).toBeGreaterThan(0);
+  });
+
+  it("should draw as a knockout on a scene that makes textures, falling back to nothing", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { scene, images } = texturingScene();
+    const lost = vi.fn();
+    expect(new Knockout({ scene, depth: 1106, picture: fitIcon(LOCK_ICON, 14).picture, ink: TREE_INK, lost }).show({ x: 0, y: 0, width: 14, height: 14 }, false)).toBe(true);
+    expect(images).toHaveLength(1);
+    expect(lost).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+});
+
 describe("passiveIcons through the one renderer (ADR-0080)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -154,7 +230,7 @@ describe("passiveIcons through the one renderer (ADR-0080)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { scene, images } = texturingScene();
     const lost = vi.fn();
-    const knockout = new Knockout({ scene, depth: 1105, picture: PASSIVE_ICONS[key].picture, ink: BRONZE, lost });
+    const knockout = new Knockout({ scene, depth: 1105, picture: PASSIVE_ICONS[key].picture, ink: TREE_INK, lost });
     expect(knockout.show({ x: 100, y: 100, width: 36, height: 36 }, false)).toBe(true);
     expect(images).toHaveLength(1);
     expect(lost).not.toHaveBeenCalled();
@@ -167,6 +243,13 @@ describe("passiveIcons through the one renderer (ADR-0080)", () => {
     new Knockout({ scene, depth: 1105, picture: PASSIVE_ICONS.guardian.picture, ink: GREYED }).show({ x: 0, y: 0, width: 36, height: 36 }, false);
     expect(images[0].tints).toEqual([GREYED.idle.tint]);
     expect(images[0].alpha).toBe(GREYED.idle.alpha);
+  });
+
+  it("should stand in the tree ink flat in the vellum, whole, plainly brighter than greyed", () => {
+    const { scene, images } = texturingScene();
+    new Knockout({ scene, depth: 1105, picture: PASSIVE_ICONS.vitality.picture, ink: TREE_INK }).show({ x: 0, y: 0, width: 24, height: 24 }, false);
+    expect(images[0].tints).toEqual([palette.hudText]);
+    expect(images[0].alpha).toBe(1);
   });
 });
 

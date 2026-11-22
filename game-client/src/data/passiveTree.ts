@@ -92,15 +92,14 @@ export interface PassiveNodeCopy {
 }
 
 /**
- * The four traversal nodes, the same in every class (V13), with their interim pictures until slice 19
- * draws their own (V29): Vitality the heart, Might the standing stone, Haste the circling arrows,
- * Fleetness the urn.
+ * The four traversal nodes, the same in every class (V13), each with its own picture (V29): Vitality
+ * the heart and its pulse, Might the flexed arm, Haste the gust, Fleetness the bare foot in stride.
  */
 const TRAVERSAL = {
-  vitality: { name: "Vitality", icon: "health" },
-  might: { name: "Might", icon: "attribute" },
-  haste: { name: "Haste", icon: "regen" },
-  fleetness: { name: "Fleetness", icon: "reserve" },
+  vitality: { name: "Vitality", icon: "vitality" },
+  might: { name: "Might", icon: "might" },
+  haste: { name: "Haste", icon: "haste" },
+  fleetness: { name: "Fleetness", icon: "fleetness" },
 } as const satisfies Record<string, PassiveNodeCopy>;
 
 /** Which traversal node stands in each slot, the same for every class (V2's table). */

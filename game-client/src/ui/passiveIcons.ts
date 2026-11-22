@@ -1,21 +1,23 @@
 /**
- * The passive tree's node pictures (FS-8RZ51 §G R40): the four filler pictures every class shares
- * (health, reserve, attribute, regen) and every class's six (four kickers, two specializations), each
- * a bronze knockout for the one shared renderer (`Knockout`, ADR-0080) with the same picture in lines
- * where a scene cannot make the texture. The tier-3 nodes draw their tree ability's picture from the
- * ability bar (`ABILITY_ICONS`), never a copy of it.
+ * The passive tree's node pictures (FS-8RZ51 §G R40; §Change: Tree v2 V29): the four traversal
+ * pictures every class shares (Vitality, Might, Haste, Fleetness), every class's six (four kickers, two
+ * specializations), and the lock mark's padlock, each a knockout for the one shared renderer (`Knockout`,
+ * ADR-0080) with the same picture in lines where a scene cannot make the texture. The ability nodes draw
+ * their tree ability's picture from the ability bar (`ABILITY_ICONS`), never a copy of it.
  *
  * In the ability bar's language and shape (`AbilityIcon`, `abilityIcons.ts`): a solid silhouette with
  * its inner lines cut through to the ground, in local px about the node plate's centre, x to the right
- * and y down, inside the same 30 px box (the plate is 36). Built to survive render scale 1: no feature
- * under about 3 px, no cut under the renderer's 1.6 px, no two cuts close enough to read as one. Data
- * only: the overlay picks the ink (`BRONZE`, or `GREYED` at `GREYED_ALPHA` for a locked or closed node).
- * Tweak rounds from the owner's contact sheet land here.
+ * and y down, drawn in the same 30 px box and fitted to its plate (`fitIcon`). Built to survive render
+ * scale 1: no feature under about 3 px, no cut under the renderer's 1.6 px, no two cuts close enough to
+ * read as one. The traversal four stand smallest, on round plates, so they keep inside the box's round
+ * and are drawn bold. Data only: the overlay picks the ink (`TREE_INK`, or `GREYED` for a locked or
+ * closed node). Tweak rounds from the owner's contact sheet land here.
  */
 
-import { bend, oval, type KnockoutCut, type Pt } from "./knockout";
+import { bend, oval, type KnockoutCut, type KnockoutPicture, type Pt } from "./knockout";
 import {
   ABILITY_ICONS,
+  ABILITY_ICON_SLOT,
   arrow,
   circle,
   drawIconLines,
@@ -30,11 +32,11 @@ import {
   type Shape,
 } from "./abilityIcons";
 
+/** The traversal nodes' pictures, the same in every class (V13, V29). */
+export const TRAVERSAL_ICON_KEYS = ["vitality", "might", "haste", "fleetness"] as const;
+
 export const PASSIVE_ICON_KEYS = [
-  "health",
-  "reserve",
-  "attribute",
-  "regen",
+  ...TRAVERSAL_ICON_KEYS,
   "heavy_hand",
   "thick_skin",
   "long_wind",
@@ -61,7 +63,7 @@ export const PASSIVE_ICON_KEYS = [
   "sellsword",
 ] as const;
 
-/** A passive node's picture: a filler's by what it raises, a class node's by its name. */
+/** A passive node's picture: a traversal node's by its name, a class node's by its name. */
 export type PassiveIconKey = (typeof PASSIVE_ICON_KEYS)[number];
 
 /** What a tree node draws (R40): one of the tree's own pictures, or the tier-3 node's tree ability's from the ability bar. */
@@ -163,73 +165,173 @@ const spark = (x: number, y: number, r: number): Shape => [
   [x - r * 0.7, y],
 ];
 
-// ── The filler four (every class) ─────────────────────────────────────────────────────────────────
+// ── Scaling ───────────────────────────────────────────────────────────────────────────────────────
 
-/** Health (max HP): a heart, a highlight cut round the shoulder of its left lobe. */
-const HEALTH: AbilityIcon = (() => {
-  const heart: Shape = Array.from({ length: 48 }, (_, i) => {
+/** `icon` scaled by `s` about the box's centre: its silhouette, cuts, holes and lines alike. */
+function scaled(icon: AbilityIcon, s: number): AbilityIcon {
+  const pts = (ps: readonly Pt[]): Pt[] => ps.map(([x, y]) => [x * s, y * s] as Pt);
+  const disc = ({ x, y, r }: { x: number; y: number; r: number }) => ({ x: x * s, y: y * s, r: r * s });
+  const cut = (c: KnockoutCut): KnockoutCut => ("ring" in c ? { ring: disc(c.ring) } : { ...c, path: pts(c.path) });
+  const { silhouette, cuts, holes } = icon.picture;
+  const picture: KnockoutPicture = { silhouette: silhouette.map(pts), cuts: cuts.map(cut), ...(holes ? { holes: holes.map(disc) } : {}) };
+  return { picture, lines: icon.lines.map(cut) };
+}
+
+/** How far a picture reaches from the box's centre, its holes' and rings' edges included. */
+function reach({ picture }: AbilityIcon): number {
+  const far = (ps: readonly Pt[]) => Math.max(0, ...ps.map(([x, y]) => Math.hypot(x, y)));
+  const disc = ({ x, y, r }: { x: number; y: number; r: number }) => Math.hypot(x, y) + r;
+  return Math.max(
+    ...picture.silhouette.map(far),
+    ...picture.cuts.map((c) => ("ring" in c ? disc(c.ring) : far(c.path))),
+    ...(picture.holes ?? []).map(disc),
+  );
+}
+
+/** A traversal picture drawn freely, brought inside the box's round, a hair in, for a round plate (V23). */
+function inRound(icon: AbilityIcon): AbilityIcon {
+  const room = ABILITY_ICON_SLOT / 2 - 0.4;
+  const far = reach(icon);
+  return far > room ? scaled(icon, room / far) : icon;
+}
+
+/** The clear ring between a plate's edge and its picture, in logical px (V29). */
+export const PICTURE_MARGIN = 3;
+
+/**
+ * `icon` fitted to a plate `size` px across (V23, V29): its 30 px box scaled to the plate less `margin`
+ * each side, about the plate's centre. Its cuts keep the renderer's width, so a small plate's picture is
+ * drawn bold.
+ */
+export function fitIcon(icon: AbilityIcon, size: number, margin = PICTURE_MARGIN): AbilityIcon {
+  const s = (size - 2 * margin) / ABILITY_ICON_SLOT;
+  return s === 1 ? icon : scaled(icon, s);
+}
+
+// ── The traversal four (every class, V29) ─────────────────────────────────────────────────────────
+
+/** The heart's outline, `s` times the classic curve, its foot at the box's foot. */
+const heart = (s: number, dy: number): Shape =>
+  Array.from({ length: 48 }, (_, i) => {
     const t = (i / 48) * 2 * Math.PI;
     const x = 16 * Math.sin(t) ** 3;
     const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    return [x * 0.8, -y * 0.8 - 1] as Pt;
+    return [x * s, -y * s + dy] as Pt;
   });
-  const shine: KnockoutCut = { path: oval(-5.6, -4.4, 3.8, 3.8, Math.PI * 1.02, Math.PI * 1.56, 8) };
-  return {
-    picture: { silhouette: [heart], cuts: [shine] },
-    lines: linesOf([heart], [shine]),
-  };
-})();
+
+/** Vitality (+max HP): a heart with a pulse line cut across it, one beat. */
+const VITALITY: AbilityIcon = inRound(
+  (() => {
+    const body = heart(0.84, -1.6);
+    const pulse: KnockoutCut = {
+      path: [
+        [-15, 0.6],
+        [-6, 0.6],
+        [-3.6, -5.6],
+        [0.4, 7.4],
+        [3.6, -2],
+        [5.6, 0.6],
+        [15, 0.6],
+      ],
+    };
+    return {
+      picture: { silhouette: [body], cuts: [pulse] },
+      lines: linesOf([body], [pulse]),
+    };
+  })(),
+);
 
 /**
- * Reserve (max stamina, max mana): a two-handled urn, its handles looped from neck to shoulder, its lip seated by a cut, a zigzag band cut
- * round its belly and its foot parted from it.
+ * Might (+the class's attribute): an arm flexed, the bicep swelling over it, the forearm raised to a
+ * clenched fist, its curled fingers parted from the thumb by a cut, and the elbow's crease cut in (not
+ * Steady Hand's open palm, nor Heavy Hand's mailed fist on its cuff).
  */
-const RESERVE: AbilityIcon = (() => {
-  const belly = circle(0, 3.6, 9, 40);
-  const neck = roundedBox(-3.6, -9.6, 3.6, -4, 0.5);
-  const lip = roundedBox(-6.2, -12.6, 6.2, -9.2, 1.2);
-  const foot = roundedBox(-5.4, 11.4, 5.4, 14.4, 0.8);
-  const handle = band([[3, -8.4], ...bend([3, -8.4], [12.4, -9.8], [7.4, -0.4], 16)], () => 1.5);
-  const handles = [handle, mirror(handle)];
-  const zigzag: KnockoutCut = {
-    path: Array.from({ length: 7 }, (_, i) => [-9.6 + i * 3.2, i % 2 ? 5.4 : 2.2] as Pt),
-  };
-  const lipSeat: KnockoutCut = { path: [[-6.6, -9.2], [6.6, -9.2]] };
-  const footSeat: KnockoutCut = { path: [[-5.8, 11.6], [5.8, 11.6]] };
-  return {
-    picture: { silhouette: [...handles, belly, neck, lip, foot], cuts: [lipSeat, zigzag, footSeat] },
-    lines: [...linesOf([belly, neck, lip, foot, ...handles]), zigzag],
-  };
-})();
+const MIGHT: AbilityIcon = inRound(
+  (() => {
+    const arm: Shape = [
+      [-14.6, 7.8],
+      [-14.6, 12.6],
+      [9.6, 12.6],
+      ...bend([9.6, 12.6], [13.8, 12.6], [13.8, 8], 6),
+      [13.2, -5],
+      [6.4, -5],
+      [6.4, 4.2],
+      ...bend([6.4, 4.2], [5.8, -3.4], [-0.4, -2.2], 10),
+      ...bend([-0.4, -2.2], [-6, -1.4], [-9.4, 4.4], 8),
+      ...bend([-9.4, 4.4], [-11.6, 7.6], [-14.6, 7.8], 4),
+    ];
+    const fist = roundedBox(-2.6, -15, 14.2, -4.4, 4);
+    const thumb: KnockoutCut = { path: [[-3, -9.6], [6.6, -9.6], ...bend([6.6, -9.6], [9, -9.8], [9.4, -15.4], 4)] };
+    const knuckle: KnockoutCut = { path: [[2.6, -9.6], [2.6, -4]] };
+    const wrist: KnockoutCut = { path: [[6, -4.2], [14.6, -4.2]] };
+    return {
+      picture: { silhouette: [arm, fist], cuts: [thumb, knuckle, wrist] },
+      lines: linesOf([arm, fist], [thumb, knuckle]),
+    };
+  })(),
+);
 
-/** Attribute (Strength, Intelligence, Agility): a standing stone, the rising rune Tiwaz cut in it, a crack at its flank. */
-const ATTRIBUTE: AbilityIcon = (() => {
-  const stone: Shape = [
-    [-6.6, 13.6],
-    ...bend([-6.6, 13.6], [-8.4, 2], [-7, -7.6]),
-    ...bend([-7, -7.6], [-5.6, -13.4], [0.6, -13.8]),
-    ...bend([0.6, -13.8], [6.2, -13.2], [7.2, -7]),
-    ...bend([7.2, -7], [8.4, 3], [7, 13.6]),
-  ];
-  const rune: KnockoutCut[] = [
-    { path: [[0, -7.6], [0, 8.4]] },
-    { path: [[-4.4, -2.8], [0, -7.6], [4.4, -2.8]] },
-  ];
-  const crack: KnockoutCut = { path: [[8.2, 3.4], [5.4, 6], [6, 9.6]] };
-  return {
-    picture: { silhouette: [stone], cuts: [...rune, crack] },
-    lines: linesOf([stone], rune),
-  };
-})();
+/**
+ * Haste (+attack speed): a gust, three swept wind strokes, the top one curling back up and the foot one
+ * down, each thinning to its tail (not Practiced Guard's hourglass).
+ */
+const HASTE: AbilityIcon = inRound(
+  (() => {
+    const half = (u: number) => 1.3 + 1.2 * Math.sin(Math.PI * Math.min(1, u * 1.4));
+    const top = band([[-13, -5.4], ...bend([-13, -5.4], [-2, -8.6], [5, -7.4], 10), ...oval(5, -11.6, 4.2, 4.2, Math.PI / 2, -Math.PI * 0.9, 12).slice(1)], half);
+    const mid = band([[-15, 1.4], ...bend([-15, 1.4], [0, -1.4], [14, 0.6], 12)], half);
+    const foot = band([[-10, 7.4], ...bend([-10, 7.4], [-1, 9.4], [3.6, 8.4], 8), ...oval(3.6, 12, 3.6, 3.6, -Math.PI / 2, Math.PI * 0.8, 10).slice(1)], half);
+    return {
+      picture: { silhouette: [top, mid, foot], cuts: [] },
+      lines: linesOf([top, mid, foot]),
+    };
+  })(),
+);
 
-/** Regen (stamina regen, mana regen): two arrows chasing each other round a circle, clockwise. */
-const REGEN: AbilityIcon = (() => {
-  const SPAN = (125 * Math.PI) / 180;
-  const arc = (from: number): Shape => curvedArrow(0, 0, 10, 3.4, from, from + SPAN, 2.4, (28 * Math.PI) / 180);
-  const arrows = [arc((-160 * Math.PI) / 180), arc((20 * Math.PI) / 180)];
+/**
+ * Fleetness (+move speed): a bare foot in stride, heel lifted and pushing off its toes, its toes shown
+ * along its top and its sole arched, three speed lines trailing behind it (not Fleet Foot's winged boot).
+ */
+const FLEETNESS: AbilityIcon = inRound(
+  (() => {
+    const AT = { x: 3, y: 2, a: 0.22 };
+    const foot = place(
+      [
+        [-5, -15],
+        [0, -15],
+        [0.6, -6],
+        ...bend([0.6, -6], [2, -2.4], [7, -1.4], 6),
+        ...bend([7, -1.4], [8.3, -3.4], [9.6, -1.2], 4),
+        ...bend([9.6, -1.2], [10.9, -3.2], [12.2, -0.8], 4),
+        ...bend([12.2, -0.8], [15.8, -1.8], [15.2, 2.2], 6),
+        ...bend([15.2, 2.2], [15, 4.6], [12, 4.6], 4),
+        [7, 4.8],
+        ...bend([7, 4.8], [2, 2.2], [-2.6, 4.6], 8),
+        ...bend([-2.6, 4.6], [-8.2, 5.8], [-7.4, 0.4], 8),
+        ...bend([-7.4, 0.4], [-6, -3], [-5.2, -6], 6),
+      ],
+      AT,
+    );
+    const line = (y: number, from: number, to: number) => band([[from, y], [to, y]], (u) => 0.9 + 0.9 * u);
+    const lines = [line(-7, -15, -7.6), line(-1, -16, -9.6), line(5, -14.6, -10.4)];
+    return {
+      picture: { silhouette: [foot, ...lines], cuts: [] },
+      lines: linesOf([foot, ...lines]),
+    };
+  })(),
+);
+
+// ── The lock mark (V25, V29) ──────────────────────────────────────────────────────────────────────
+
+/** The lock mark's padlock: a squat body with a keyhole through it, its shackle looped over it. */
+export const LOCK_ICON: AbilityIcon = (() => {
+  const body = roundedBox(-11.4, -2.4, 11.4, 14, 3);
+  const shackle = band(oval(0, -2, 7, 10, Math.PI, 2 * Math.PI, 16), () => 2.8);
+  const keyhole = { x: 0, y: 4.4, r: 3 };
+  const slot: KnockoutCut = { path: [[0, 5.4], [0, 10.6]] };
   return {
-    picture: { silhouette: arrows, cuts: [] },
-    lines: linesOf(arrows),
+    picture: { silhouette: [shackle, body], cuts: [slot], holes: [keyhole] },
+    lines: [...linesOf([body], [{ path: oval(0, -2, 7, 10, Math.PI, 2 * Math.PI, 16) }, slot]), { ring: keyhole }],
   };
 })();
 
@@ -767,10 +869,10 @@ const SELLSWORD: AbilityIcon = (() => {
 
 /** Every passive picture, by its key (R40). */
 export const PASSIVE_ICONS: Readonly<Record<PassiveIconKey, AbilityIcon>> = {
-  health: HEALTH,
-  reserve: RESERVE,
-  attribute: ATTRIBUTE,
-  regen: REGEN,
+  vitality: VITALITY,
+  might: MIGHT,
+  haste: HASTE,
+  fleetness: FLEETNESS,
   heavy_hand: HEAVY_HAND,
   thick_skin: THICK_SKIN,
   long_wind: LONG_WIND,
