@@ -9,6 +9,7 @@
 import * as THREE from "three";
 import { attach, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
 import { materials, mkCanvas } from "../materials.js";
+import { BOW_BRACE, BOW_GRIP } from "./draw.js";
 import { cssRgb, mix, shade } from "../palette.js";
 
 // the grip point lives with the rig (rig.js), where the draw solver (draw.js) reads it too
@@ -284,8 +285,22 @@ export function longbow(rig, M, F, o = {}) {
       g.add(placed(cap, F.horn, t.x, t.y - 0.002 * H, t.z + (k === 0 ? 0.012 : -0.012) * H));
     }
   const stringMat = new THREE.MeshStandardMaterial({ color: new THREE.Color().setRGB(0.75, 0.7, 0.58), roughness: 0.9 });
+  return liveString(rig, g, { tips, stringMat, M, F });
+}
+
+/**
+ * A bow's live string and its arrow, added to the bow's group `g` (in the grip frame): a strand
+ * from each of `tips` (the points the string leaves the stave, bow-local) to the nock point, and
+ * an arrow on it when nocked. It rests at draw.js's `BOW_BRACE` and the arrow points at its
+ * `BOW_GRIP`, the line the draw solves along. Shared by the longbow and the archer kit's bows (archerKit.js:
+ * FS-1J1CB §Change: Looks v2 R58, R59), so a look's bow keeps the live string and the draw.
+ * `g.userData.bow` holds the string's tips, its strands and the arrow (the tests read them).
+ * Returns `{ group, update(nock, showArrow) }`.
+ */
+export function liveString(rig, g, { tips, stringMat, M, F, r = 0.0022 }) {
+  const H = rig.H;
   const strands = tips.map(() => {
-    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.0022 * H, 0.0022 * H, 1, 4), stringMat);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r * H, r * H, 1, 4), stringMat);
     g.add(m);
     return m;
   });
@@ -305,8 +320,8 @@ export function longbow(rig, M, F, o = {}) {
   }
   g.add(arrow);
 
-  const rest = new THREE.Vector3(0, brace, 0);
-  const grip = new THREE.Vector3(0, -0.012 * H, 0);
+  const rest = new THREE.Vector3(0, BOW_BRACE * H, 0);
+  const grip = new THREE.Vector3(0, -BOW_GRIP * H, 0);
   const tmp = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
   /** Draws the string to `nock` (bow-local; null = at rest) and shows the arrow when nocked. */
@@ -327,6 +342,7 @@ export function longbow(rig, M, F, o = {}) {
     }
   }
   update(null, false);
+  g.userData.bow = { tips: tips.map((t) => t.clone()), strands, arrow };
   return { group: g, update };
 }
 
@@ -338,8 +354,10 @@ export function quiver(rig, M, F, o) {
   const H = rig.H;
   const [, cy] = J(rig, "chest");
   const g = mount(rig, "chest", [o.at[0], cy + o.at[1], o.at[2] * rig.p.torsoD], { rz: (o.tilt * Math.PI) / 180, rx: o.rx });
-  const body = new THREE.CylinderGeometry(0.032 * H, 0.026 * H, 0.26 * H, 12, 1, true);
-  g.add(new THREE.Mesh(body, F.leatherDouble));
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.032 * H, 0.026 * H, 0.26 * H, 12, 1, true), F.leatherDouble);
+  // the case, which rides over the cloak (archerLooks.test.mjs)
+  body.userData.case = true;
+  g.add(body);
   g.add(placed(new THREE.TorusGeometry(0.032 * H, 0.005 * H, 5, 14), M.brass, 0, 0.13 * H, 0, Math.PI / 2));
   const fk = o.fletchLength ?? 1;
   for (let i = 0; i < 6; i++) {

@@ -342,7 +342,12 @@ lit) while the player stands inside.
   whose green is dyed through to a cold soot-black and lifted toward slate (or its edges rimmed)
   so the back still reads. The Hunter wears no hood and no green: a wolf pelt and laced hide over
   the buff, the cloak in undyed grey-brown wool, the face and hair showing. *(Amended at the
-  owner's pick, 2026-11-21, FS-1J1CB.)*
+  owner's pick, 2026-11-21, FS-1J1CB.)* The Hunter carries a heavy recurve, shorter than the
+  longbow, and a skinning knife on her belt, her cloak cut short to a hunting cape over the hips.
+  The Shadow Ranger carries a slim blackened longbow at the longbow's length, and her quiver is
+  hooded: its fletching shows only as a dark edge under the hood, the one exception to "its
+  fletching over the right shoulder". Each look's bow keeps the live string and the draw.
+  *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
   waist and opening from the hip, so she reads as a woman from the front. Her black hair falls
@@ -422,17 +427,32 @@ lit) while the player stands inside.
     open iron fire cage about twice the old focus's width, coals in its dish and a tall upright
     tongue of flame. An iron oil flask hangs on her right hip. *(Amended at the owner's charter,
     2026-11-22, FS-1J1CB §Change: Looks v2.)*
-  - **Hunter** (archer): a grey-brown wolf pelt over the shoulders, a laced hide jerkin, undyed
-    grey-brown wool for the cloak and capelet, no hood, the face and loose brown hair showing,
-    long pale fletching and horn-capped nocks. Bare of the hood, the pelt stands open at the
-    throat: closed up to the chin it read as a beard. *(Amended in the Hunter's bake,
-    2026-11-22, FS-1J1CB.)*
+  - **Hunter** (archer): bareheaded, broad at the shoulder and short-cloaked. A shaggy grey-brown
+    wolf pelt standing past the shoulder points, open at the throat (closed up to the chin it
+    read as a beard), its forepaws knotted on her breast and the wolf's head thrown back behind
+    her neck; a laced hide jerkin bound at the hem; the cloak cut short to a ragged hunting cape
+    over the hips in undyed grey-brown wool, the ranger's cloak cut off, so the quiver still rides
+    over it; the face and loose brown hair tied at the nape, goose feathers in it; fur wrapped
+    thick round the shins and cross-gartered in sinew; a long laced bracer on the bow arm. A heavy
+    recurve in her left hand, shorter than the longbow: thick sinew-backed limbs, horn-capped tips
+    curling away from her, a rawhide grip. A skinning knife in its sheath rides the belt across
+    her front, clear of the bow hand; high goose fletching over the right shoulder on a baldric.
+    Matte and warm: hide, fur and rawhide, grimed. *(Amended at the owner's charter, 2026-11-22,
+    FS-1J1CB §Change: Looks v2.)*
   - **Shadow Ranger** (archer): the Nightwood green dyed to a cold soot-black, the buff leather
     a cold grey, lifted or rimmed until the back passes the dark-room floor. A gloom
     rises off the figure (*Auras*). The soot is lifted, not rimmed: the cowl, capelet and cloak
     are pitch most of the way to slate, the sleeves and hose a darker step of it, still black at
     a glance. Variant A's soot left her back a third under the floor. *(Amended in the Shadow
-    Ranger's bake, 2026-11-22, FS-1J1CB R10.)*
+    Ranger's bake, 2026-11-22, FS-1J1CB R10.)* The cowl drawn deep, its point let out into a long
+    liripipe hanging down her back; a dagged mantle standing past the shoulders, clasped in iron
+    at the throat; the cloak let down near to the ankle, fuller behind and dagged at the hem; black
+    bracers and belt riveted in iron, dark wraps cross-gartered round the shins. A slim blackened
+    longbow at the longbow's length, iron-nocked, its string darker than the base's; the quiver
+    hooded in slate leather on a black baldric, its fletching a dark edge under the hood. Sheen and
+    iron against the Hunter's matte fur. Her longer cloak and mantle filled more of her back, so
+    the soot is lifted again, near to slate. *(Amended at the owner's charter, 2026-11-22,
+    FS-1J1CB §Change: Looks v2.)*
   - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
     mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
     half-cloak from the off shoulder on cloak bones. The V shows the breeches' dark wool beneath

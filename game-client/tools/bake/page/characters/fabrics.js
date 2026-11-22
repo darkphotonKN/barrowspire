@@ -351,11 +351,26 @@ export const GEAR = {
   // the Shadow Ranger: the Nightwood dyed through to a cold soot-black, the warmth taken out; the
   // buff leather a cold grey, the bracers, boots and fletching black. The soot is lifted toward
   // slate, the sleeves and hose with it: variant A's soot (pitch a little past halfway to slate,
-  // under charcoal) left her back at 0.0159 against the dark-room floor's 0.0222 (R10)
-  shadow: mix("pitch", "slate", 0.85),
+  // under charcoal) left her back at 0.0159 against the dark-room floor's 0.0222 (R10). Looks v2
+  // (FS-1J1CB §Change: Looks v2 R59) lifted it again, 0.85 to 0.93 of the way to slate: her
+  // longer cloak, the liripipe and the dagged mantle fill more of her back, and at 0.85 it read
+  // 0.0216, under the floor
+  shadow: mix("pitch", "slate", 0.93),
   shadowDark: mix("pitch", "slate", 0.35),
   shadowLeather: mix(mix("barrowDeep", "slate", 0.55), "pitch", 0.35),
   shadowBlack: mix("pitch", "slate", 0.3),
+  // the archer looks v2 (FS-1J1CB §Change: Looks v2 R58, R59, R63; archerKit.js). The Hunter's
+  // recurve sinew-backed wood a warm honey-brown, its grip rawhide and its string and bindings
+  // sinew; her belt and bracers a hide a shade warmer than the knight's dark leather. The Shadow
+  // Ranger's longbow blackened and oiled, its string darker than the base's, her quiver and its
+  // hood a cold slate leather lifted off the soot so her back keeps the dark-room floor (R65)
+  hunterBow: mix(mix("barrowBrown", "brass", 0.25), "barrowDeep", 0.2),
+  rawhide: mix("vellumDark", "barrowBrown", 0.45),
+  sinew: mix(mix("vellumDark", "barrowBrown", 0.6), "barrowDeep", 0.15),
+  hunterLeather: mix(mix("barrowBrown", "barrowDeep", 0.6), "ember", 0.06),
+  shadowBow: mix("pitch", "slate", 0.22),
+  shadowString: mix("pitch", "slate", 0.12),
+  shadowQuiver: mix(mix("slate", "pitch", 0.4), "necrotic", 0.06),
   // the mercenary's specialization looks (FS-1J1CB R7, R8; mercLooks.js). The Duelist keeps the
   // madder (GEAR.coat) on a wrapped wool robe, under a half-cloak and sash in a cold slate-black,
   // set against the warm madder so they part from it by temperature (variant A's cape)
@@ -522,6 +537,20 @@ export function fabrics() {
     shadowLeather: mat(leather(GEAR.shadowLeather, { seed: 239, dirt: 0.3 }), { rough: 0.7 }),
     shadowBlack: mat(leather(GEAR.shadowBlack, { seed: 241, dirt: 0.25 }), { rough: 0.65 }),
     shadowFletch: mat(linen(GEAR.shadowDark, { seed: 243, dirt: 0.1 })),
+    // the archer looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the ranger's textures at
+    // a new tone. The Hunter's is the wilds': hide and rawhide matte and grimed, her bow's back
+    // scuffed, her pelt shaggy; the Shadow Ranger's is kept dark and close: black leather oiled to
+    // a sheen, her iron clean and few-dented. Matte against sheen, fur against oiled leather and
+    // iron (R63's per-spec contrast).
+    hunterBow: mat(leather(GEAR.hunterBow, { seed: 351, dirt: 0.35 }), { rough: 0.62 }),
+    rawhide: mat(leather(GEAR.rawhide, { seed: 353, dirt: 0.5 }), { rough: 0.8 }),
+    sinew: mat(linen(GEAR.sinew, { seed: 355, dirt: 0.4 }), { rough: 0.85 }),
+    hunterLeather: mat(leather(GEAR.hunterLeather, { seed: 357, dirt: 0.6 }), { rough: 0.8 }),
+    hunterSheath: mat(leather(GEAR.leather, { seed: 359, dirt: 0.55 }), { rough: 0.78 }),
+    shadowBow: mat(leather(GEAR.shadowBow, { seed: 361, dirt: 0.08 }), { rough: 0.32 }),
+    shadowString: mat(linen(GEAR.shadowString, { seed: 363, dirt: 0.05 }), { rough: 0.7 }),
+    shadowIron: mat(plate(GEAR.blackIron, { dents: 0.15, rust: 0.02, dirt: 0.1, seed: 365 }), { metal: 0.85, rough: 0.3 }),
+    shadowQuiver: mat(leather(GEAR.shadowQuiver, { seed: 367, dirt: 0.15 }), { rough: 0.42, side: D }),
     // the Duelist's and the Sellsword's cloth (FS-1J1CB R7, R8): the robe a plain wool in the
     // coat's madder, not the arming coat's quilting
     duelistRobe: mat(wool(GEAR.coat, { seed: 245, dirt: 0.4 }), { side: D }),
