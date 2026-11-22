@@ -125,14 +125,14 @@ export const KNIGHT_STYLE = {
 export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations), scale: 1.5 };
 
 /**
- * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a bearded axe
- * in each hand (gear.js `beardedAxe`), no shield. At rest both arms hang low and a little out, the
- * wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so the heads hang
- * forward of the legs with the edge facing forward and a little down (axe.test.mjs). In the walk
- * both wrists take back most of the arms' swing, so the axes sway without swinging up. In the run
- * both arms pump, shorter than a sword arm and bent less, the wrists holding the hafts forward and
- * down so the edges keep facing forward, never up. The cut is `cleave` (clips.js): wide, the free
- * arm swung back against it.
+ * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a heavy
+ * bearded axe in each hand (warriorKit.js `heavyAxe`), no shield. At rest both arms hang low and a
+ * little out, the wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so
+ * the heads hang forward of the legs with the edge facing forward and a little down
+ * (axe.test.mjs). In the walk both wrists take back most of the arms' swing, so the axes sway
+ * without swinging up. In the run both arms pump, shorter than a sword arm and bent less, the
+ * wrists holding the hafts forward and down so the edges keep facing forward, never up. The cut is
+ * `cleave` (clips.js): wide, the free arm swung back against it.
  */
 export const BERSERKER_STYLE = {
   attack: "cleave",
@@ -153,6 +153,16 @@ export const BERSERKER_STYLE = {
     hold: pose({ upperArmR: [0, 0, -0.12], upperArmL: [0, 0, 0.12], handR: [CLEAVE_CARRY, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }),
   },
 };
+
+/**
+ * The Guardian's cut (FS-1J1CB §Change: Looks v2 R54, R62), his own beside {@link KNIGHT_STYLE}: the
+ * knight's compact slash behind the raised shield, his shield arm carried a little higher and out
+ * through every key ({@link GUARDIAN_SHIELD_LIFT}), so the flanged mace, swung on through to low
+ * past the left hip, passes under and before the shield's bigger face and never through it
+ * (warriorLooks.test.mjs). The carry, the walk and the run are the knight's.
+ */
+export const GUARDIAN_SHIELD_LIFT = pose({ upperArmL: [-0.1, 0, 0.08] });
+export const GUARDIAN_STYLE = { ...KNIGHT_STYLE, attackExtra: GUARDIAN_SHIELD_LIFT };
 
 export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
 

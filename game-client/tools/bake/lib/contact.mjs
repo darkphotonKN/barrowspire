@@ -23,6 +23,10 @@
 //   contact-darkroom-<class>.png  the dark-room strip (R10, R12) at ×2: the back-facing frames of
 //                              the floor's class, the class and its looks, on the run's darkest
 //                              floor under the run's ambient
+//   contact-outline-<class>.png   the outline strip (FS-1J1CB §Change: Looks v2 R70) at ×2: the
+//                              class and its looks as black fills on one anchor at game scale,
+//                              the idle and the strike key × 8 facings, each look's outline
+//                              figures (R51, lib/outline.mjs) under it
 //   index.html                 the same from the baked atlases themselves, labelled from the
 //                              manifest's `facings`, with each clip playing at its fps
 // The HTML reads the committed atlases, so it also proves the manifest's frame order.
@@ -33,6 +37,7 @@ import { encodePng } from "./png.mjs";
 import { CLIENT_ROOT } from "./source.mjs";
 import { downscale } from "./downscale.mjs";
 import { CLASS_STEMS, isLookSheet } from "./darkRoom.mjs";
+import { outlineFigures } from "./outline.mjs";
 
 export const REVIEW_DIR = join(CLIENT_ROOT, "tools", "bake", "review");
 
@@ -265,6 +270,68 @@ export function composeDarkRoom(sheets, facings, labels, theme, { floor, ambient
     });
   });
   return c;
+}
+
+/** The attack's strike key (FS-2325V: 7 keys at 12 fps, the strike at key 3). */
+const STRIKE_KEY = 3;
+
+/**
+ * The outline strip (FS-1J1CB §Change: Looks v2 R70) at zoom `z`: a row per sheet (the class, then
+ * its looks), each its idle (key 0) and its attack's strike key in every facing, filled black on
+ * one anchor at game scale on a pale cell, so the owner judges the outline alone (R50); each
+ * look's figures ({@link outlineTexts}) printed under it.
+ */
+export function composeOutline(base, looks, facings, labels, theme, z = 2) {
+  const sheets = [base, ...looks];
+  const bg = mixRgb(hexRgb(theme.barrowDeep), hexRgb(theme.charcoal), 0.35);
+  const pale = hexRgb(theme.vellum);
+  const ink = hexRgb(theme.pitch);
+  const { cw, ch, off, w, h } = commonCell(sheets);
+  const keys = [
+    ["idle", 0],
+    ["attack", STRIKE_KEY],
+  ];
+  const lh = Math.max(18, ...[...labels.values()].map((l) => l.h));
+  const lw = Math.max(LABEL_W, ...sheets.map((s) => labels.get(s.name)?.w ?? 0)) + 12;
+  const texts = outlineTexts({ base, looks }, facings);
+  const header = M;
+  const top = header + lh + 4;
+  const rowH = ch * z + 4;
+  const groupW = keys.length * cw * z + GAP;
+  const notes = top + sheets.length * rowH + M;
+  const width = Math.max(M + lw + facings.length * groupW - GAP + M, M * 2 + Math.max(0, ...texts.map((t) => labels.get(t)?.w ?? 0)));
+  const c = canvas(width, notes + texts.length * (lh + 4) + M, bg);
+  const stamp = (text, sx, sy) => {
+    const l = labels.get(text);
+    if (l) blit(c, l.px, l.w, l.h, sx, sy);
+  };
+  facings.forEach((f, d) => stamp(f, M + lw + d * groupW, header));
+  sheets.forEach((s, r) => {
+    const y = top + r * rowH;
+    stamp(s.name, M, y + 2);
+    const [ox, oy] = off(s);
+    facings.forEach((_, d) =>
+      keys.forEach(([anim, k], i) => {
+        const x = M + lw + d * groupW + i * cw * z;
+        fill(c, x + 1, y + 1, cw * z - 2, ch * z - 2, pale);
+        const b64 = s.animations[anim]?.frames[d][k];
+        if (!b64) return;
+        // the frame's own colours dropped: every px it covers, black, by its coverage
+        const px = at1x(s, b64);
+        for (let o = 0; o < px.length; o += 4) [px[o], px[o + 1], px[o + 2]] = ink;
+        blit(c, px, w(s), h(s), x + ox * z, y + oy * z, z);
+      }),
+    );
+  });
+  texts.forEach((t, i) => stamp(t, M, notes + i * (lh + 4)));
+  return c;
+}
+
+/** Each look's outline figures (R51, lib/outline.mjs) as the strip prints them and the bake logs them. */
+export function outlineTexts(set, facings) {
+  return outlineFigures(set, facings).map(
+    (f) => `${f.sheet}  ·  outline vs ${set.base.name} ${f.base.toFixed(3)}${f.siblings.map((o) => `  ·  vs ${o.sheet} ${o.figure.toFixed(3)}`).join("")}`,
+  );
 }
 
 /** The label texts the contact sheet needs, rendered by the bake page (main.js bakeLabels). */
@@ -543,6 +610,10 @@ export function writeReview({ sheets, facings, labels, manifest, theme, lineups 
     const stripFile = `contact-darkroom-${stem}.png`;
     writeFileSync(join(dir, stripFile), encodePng(strip.width, strip.height, strip.rgba, { fast: true }));
     files.push(stripFile);
+    const outline = composeOutline(base, set, facings, labels, theme);
+    const outlineFile = `contact-outline-${stem}.png`;
+    writeFileSync(join(dir, outlineFile), encodePng(outline.width, outline.height, outline.rgba, { fast: true }));
+    files.push(outlineFile);
   }
   writeFileSync(join(dir, "index.html"), reviewHtml(manifest, cast.map((s) => s.name), theme));
   files.push("index.html");

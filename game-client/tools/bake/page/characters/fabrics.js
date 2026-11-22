@@ -326,6 +326,8 @@ export const GEAR = {
   surcoat: shade(mix("vellum", "vellumDark", 0.5), 0.8),
   houseRed: mix("oxblood", "barrowDeep", 0.12),
   wraps: mix("oxblood", "pitch", 0.35),
+  // the cord wound on the Berserker's hafts (FS-1J1CB §Change: Looks v2 R55): undyed hemp gone dark with grip
+  cord: mix(mix("vellumDark", "barrowBrown", 0.55), "barrowDeep", 0.25),
   // the mage's specialization looks (FS-1J1CB R4; mageLooks.js): the Pyromancer's scapular in a
   // scorched oxblood, the house oxblood a little toward ember under grime. Near-black (variant B's
   // soot) or the oxblood itself left her back under the dark-room floor (R10) on the black gown
@@ -468,6 +470,26 @@ export function fabrics() {
     surcoat: mat(wool(GEAR.surcoat, { seed: 201, dirt: 0.5 }), { side: D }),
     houseRed: mat(wool(GEAR.houseRed, { seed: 203, dirt: 0.3 }), { side: D }),
     wraps: mat(wool(GEAR.wraps, { seed: 207, dirt: 0.5 })),
+    // the warrior looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the knight's textures at
+    // a new tone. The Guardian's is kept: mail scoured bright and near clean of rust, polished steel
+    // with few dents, his cloak's wool brushed; the Berserker's is neglected: mail gone to rust and
+    // filth, pitted iron, a cloak dragged through the barrow. Metal against cloth and sheen against
+    // matte between the two (R63's per-spec contrast).
+    guardianMail: mat(mail(GEAR.mail, { rust: 0.03, dirt: 0.2, seed: 301 }), { metal: 0.85, rough: 0.36, normal: 1.25 }),
+    guardianMailDouble: mat(mail(GEAR.mail, { rust: 0.03, dirt: 0.2, seed: 301 }), { metal: 0.85, rough: 0.36, normal: 1.25, side: D }),
+    guardianMailDark: mat(mail(GEAR.blackIron, { rust: 0.1, dirt: 0.3, seed: 303 }), { metal: 0.75, rough: 0.48 }),
+    guardianSteel: mat(plate(GEAR.darkSteel, { dents: 0.2, rust: 0.02, dirt: 0.15, seed: 305 }), { metal: 0.85, rough: 0.34 }),
+    guardianCloak: mat(wool(GEAR.cloakKnight, { seed: 307, dirt: 0.3 }), { side: D }),
+    guardianBelt: mat(leather(GEAR.leatherDark, { seed: 309, dirt: 0.2 }), { rough: 0.55 }),
+    berserkerMail: mat(mail(GEAR.mail, { rust: 0.55, dirt: 0.75, seed: 311 }), { metal: 0.6, rough: 0.62, normal: 1.3 }),
+    berserkerMailDouble: mat(mail(GEAR.mail, { rust: 0.55, dirt: 0.75, seed: 311 }), { metal: 0.6, rough: 0.62, normal: 1.3, side: D }),
+    berserkerMailDark: mat(mail(GEAR.blackIron, { rust: 0.6, dirt: 0.75, seed: 313 }), { metal: 0.6, rough: 0.66 }),
+    berserkerIron: mat(plate(GEAR.darkSteel, { dents: 0.95, rust: 0.45, dirt: 0.55, seed: 315 }), { metal: 0.7, rough: 0.55 }),
+    berserkerEdge: mat(plate(GEAR.steel, { dents: 0.6, rust: 0.08, dirt: 0.2, seed: 317 }), { metal: 0.85, rough: 0.3 }),
+    berserkerFur: mat(hair(GEAR.fur, { seed: 319 }), { rough: 0.95, side: D, normal: 1.5 }),
+    berserkerCloak: mat(wool(GEAR.cloakKnight, { seed: 321, dirt: 0.85 }), { side: D }),
+    berserkerLeather: mat(leather(GEAR.leatherDark, { seed: 323, dirt: 0.7 }), { rough: 0.8 }),
+    cord: mat(linen(GEAR.cord, { seed: 325, dirt: 0.55 }), { rough: 0.9, normal: 1.4 }),
     // the Spellwarden's spaulders: blackened iron, both faces drawn (a lame is an open shell)
     blackIronDouble: mat(plate(GEAR.blackIron, { rust: 0.3, seed: 6 }), { metal: 0.7, rough: 0.5, side: D }),
     soot: mat(wool(GEAR.soot, { seed: 153, dirt: 0.35 }), { side: D }),

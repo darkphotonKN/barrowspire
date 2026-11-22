@@ -326,7 +326,10 @@ lit) while the player stands inside.
   little larger, the cross laid counterchanged over its per-pale field. The Berserker goes
   unhelmed with the coif pushed down round his neck, carries a bearded axe in each hand with the
   cutting edge forward and down, and has no shield and no longsword. *(Amended at the owner's
-  pick, 2026-11-21, FS-1J1CB.)*
+  pick, 2026-11-21, FS-1J1CB.)* The Guardian carries a flanged mace, not the longsword, and a
+  shield about 1.3x the knight's; the Berserker's axes are long-hafted, about 1.3x the old, with
+  grips wrapped in cord to a pommel knob. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB
+  §Change: Looks v2.)*
 - **Archer:** a ranger in Nightwood: cowl, capelet and cloak in a green dyed so deep it is
   nearly black, held just above black so the back still reads in a dark room, over muted buff
   leather that carries the figure. A deep cowl, closed over the crown, hides most of the
@@ -370,15 +373,31 @@ lit) while the player stands inside.
   buckled in brass, with a spaulder on each shoulder. *(Amended at the owner's pick, 2026-11-21,
   FS-1J1CB.)*
 - **Specializations:** a specialization re-dresses its class on the same rig, build, clips and
-  scale, changing only a few pieces (a helm, a coat, a weapon, a dye), so the class still reads
-  at a glance and a level-20 character reads as what it became. The eight looks:
-  - **Guardian** (knight): a worn bone surcoat with the oxblood house cross over the hauberk, the
-    flat-topped great helm with a dark eye-slit and a brass cross down the face, and a slightly
-    larger kite shield, its cross counterchanged inside a narrow brass border.
-  - **Berserker** (knight): bareheaded with dark hair and a full short beard, the coif down to a
-    mail mantle, blood-dark cloth round both forearms and the cloak torn short to the hips. A
-    bearded axe in each hand, edge forward and down, no shield; a wide cut with the free arm swung
-    back, the hands taking turns.
+  scale, re-cutting its outline, its weapon and its detail, so a look reads as a different figure
+  from its base and from its sibling in a black fill, and a level-20 character reads as what it
+  became. The class still reads by its rig, build and motion and at least one class mark: the
+  knight's mail, the archer's bow and cloak, the mage's gown, the mercenary's bare head and
+  one-handed blade. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
+  The eight looks:
+  - **Guardian** (knight): a worn bone surcoat banded in oxblood at the hem, the house cross on
+    the breast and the back, over the hauberk's bright, scoured mail; ailettes on both shoulders,
+    bone boards with the cross edged in brass, so the shoulder line is square without plate; the
+    flat-topped great helm in polished steel with a dark eye-slit over a row of brass rivets, a
+    brass cross on the face, and an oxblood fan crest on a torse. A flanged mace in place of the
+    longsword, and a kite shield about 1.3x the knight's, its cross counterchanged inside a brass
+    border, brass studs round its rim and the boss, its guige slung behind; a studded sword belt;
+    the cloak fuller, to the calf. He cuts the knight's compact cut, his shield carried a little
+    higher and out so the mace passes before it. *(Amended at the owner's charter, 2026-11-22,
+    FS-1J1CB §Change: Looks v2.)*
+  - **Berserker** (knight): bareheaded with dark hair and a full beard braided below the chin in
+    iron rings, the coif down to a mail mantle under a shaggy bear's pelt that stands past the
+    shoulders; the arms bare, blood-dark cloth wound thick from wrist to elbow and a studded band
+    round each upper arm; the mail gone to rust and filth; the cloak torn short to the hips and
+    shredded into tatters toward the knee; cord bound round the shins. A heavy, long-hafted
+    bearded axe in each hand, its grip wrapped in cord to an iron knob, edge forward and down, no
+    shield; a wide cut with the free arm swung back, the hands taking turns. The mail on his body
+    is his class mark; his bare arms are the one knight's arms not in mail. *(Amended at the
+    owner's charter, 2026-11-22, FS-1J1CB §Change: Looks v2.)*
   - **Spellwarden** (mage): blackened-iron spaulders and gorget, the tome bound in iron, and a
     larger ward focus, an iron ring round a pale stone lit low. A ward winks round her (*Auras*).
   - **Pyromancer** (mage): the scapular in scorched oxblood, the gown's hem singed and ragged

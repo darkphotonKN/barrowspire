@@ -539,7 +539,7 @@ export function swingPlane(tilt, t) {
 /** The plane the Berserker's cleave swings the axe arm in, from hanging (rad; about 137°: up and out over the right shoulder, across and down past the left hip). */
 export const CLEAVE_TILT = -2.4;
 
-/** The Berserker's wrist in the carry (rad): the haft hung forward of the fist, steeper than a blade's point, so the axe's edge faces forward and a little down (gear.js `AXE_EDGE_TURN`). */
+/** The Berserker's wrist in the carry (rad): the haft hung forward of the fist, steeper than a blade's point, so the axe's edge faces forward and a little down (warriorKit.js `AXE_EDGE_TURN`). */
 export const CLEAVE_CARRY = 1.3;
 
 export const ATTACKS = {
