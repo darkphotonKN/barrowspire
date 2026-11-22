@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { anchorAt } from "@/render/viewport";
 import {
   CORNER_LABEL,
   CORNER_LABEL_GREYED_MAIL,
-  ABILITY_CARD_PLACE,
   CORNER_ROW_CLEARANCE,
   CORNER_ICONS,
   cornerIconFrame,
@@ -22,6 +20,8 @@ describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward
     ["character", 898],
     ["party", 842],
     ["mail", 786],
+    // FS-8RZ51 R32: the passive tree's sixth at the row's left end, none of the five moved
+    ["tree", 730],
   ] as const)("should put %s at x %i, y 658, 54 x 46, in a 1080 x 720 view, 56 px from the next (FS-QHN87 round 2)", (icon, x) => {
     expect(cornerIconFrame(icon, { width: 1080, height: 720 })).toEqual({
       x,
@@ -32,7 +32,7 @@ describe("cornerIconFrame (FS-3EBCA R1, R2: the row from the right edge leftward
   });
 
   it("should keep each icon 200 px further right in a 1280-wide view", () => {
-    for (const icon of ["menu", "inventory", "character", "party", "mail"] as const)
+    for (const icon of CORNER_ICONS)
       expect(cornerIconFrame(icon, { width: 1280, height: 720 }).x).toBe(
         cornerIconFrame(icon, { width: 1080, height: 720 }).x + 200,
       );
@@ -54,9 +54,11 @@ describe("cornerRowLeft (FS-3EBCA R1, R2; FS-77DVN §A.2)", () => {
     expect(cornerRowLeft(view)).toBe(Math.min(...plates));
   });
 
-  it("should stand at 786 in a 1080-wide view and 986 in a 1280-wide one", () => {
-    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(786);
-    expect(cornerRowLeft({ width: 1280, height: 720 })).toBe(986);
+  // FS-8RZ51 R43: the sixth icon moves the row's left edge with it
+  it("should stand at 730 in a 1080-wide view and 930 in a 1280-wide one, the tree's plate", () => {
+    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(730);
+    expect(cornerRowLeft({ width: 1280, height: 720 })).toBe(930);
+    expect(cornerRowLeft({ width: 1080, height: 720 })).toBe(cornerIconFrame("tree", { width: 1080, height: 720 }).x);
   });
 });
 
@@ -68,6 +70,7 @@ describe("corner labels (FS-3EBCA R5)", () => {
       character: "Character (C)",
       party: "Party (T)",
       mail: "Mailbox",
+      tree: "Tree (P)",
     });
     expect(CORNER_LABEL_GREYED_MAIL).toBe("Mailbox · town only");
   });
@@ -82,26 +85,15 @@ describe("corner labels (FS-3EBCA R5)", () => {
   });
 });
 
-describe("what stands above the row outside the town (FS-3EBCA R13, R14)", () => {
-  const view = { width: 1080, height: 720 };
-  const row = cornerIconFrame("menu", view);
-  it("should stand the ability card's bottom-right corner at (width - 16, 650), right-aligned with the row", () => {
-    expect(anchorAt(ABILITY_CARD_PLACE, view)).toEqual({ x: 1064, y: 650 });
-    expect(anchorAt(ABILITY_CARD_PLACE, view).x).toBe(row.x + row.width);
-    expect(anchorAt(ABILITY_CARD_PLACE, view).y).toBe(row.y - 8);
-    expect(anchorAt(ABILITY_CARD_PLACE, { width: 1280, height: 720 })).toEqual({ x: 1264, y: 650 });
-  });
-});
-
 // FS-84N1G R3, R7 (the owner: 「幫我做一個徽章 放在 技能上方區塊」): the controls badge, a plate the corner
-// icons' size, right-aligned with the ability card, the row's gap above it
-describe("the controls badge's place and words (FS-84N1G R3, R7)", () => {
-  it("should stand a 54 × 46 plate right-aligned with the ability card, 8 px above its top", () => {
+// icons' size, where it stood over the ability card; FS-Q18Q3 R42: the card is gone and the rect is kept
+describe("the controls badge's place and words (FS-84N1G R3, R7; FS-Q18Q3 R42)", () => {
+  it("should stand a 54 × 46 plate right-aligned with the row, where it stood 8 px over the 72 px card", () => {
     const view = { width: 1080, height: 720 };
-    const card = anchorAt(ABILITY_CARD_PLACE, view);
+    const row = cornerIconFrame("menu", view);
     const plate = controlsBadgeFrame(view);
     expect(plate).toEqual({ x: 1064 - 54, y: 650 - 72 - 8 - 46, width: 54, height: 46 });
-    expect(plate.x + plate.width).toBe(card.x);
+    expect(plate.x + plate.width).toBe(row.x + row.width);
     expect(controlsBadgeFrame({ width: 1920, height: 1080 })).toEqual({ x: 1904 - 54, y: 1010 - 72 - 8 - 46, width: 54, height: 46 });
   });
 

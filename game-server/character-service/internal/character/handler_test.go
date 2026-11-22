@@ -24,6 +24,8 @@ import (
 type stubService struct {
 	character *Character
 	list      []*Character
+	spend     *PassiveSpendResult
+	spent     PassiveSpend
 	err       error
 }
 
@@ -44,6 +46,11 @@ func (s *stubService) GetCharacter(ctx context.Context, memberID, id uuid.UUID) 
 
 func (s *stubService) DeleteCharacter(ctx context.Context, memberID, id uuid.UUID) error {
 	return s.err
+}
+
+func (s *stubService) SpendPassivePoint(ctx context.Context, spend PassiveSpend) (*PassiveSpendResult, error) {
+	s.spent = spend
+	return s.spend, s.err
 }
 
 func dial(t *testing.T, svc Service) pb.CharacterServiceClient {
@@ -113,6 +120,35 @@ func TestListCharacters_MapsEveryCharacterInOrder(t *testing.T) {
 	cs := got.GetCharacters()
 	if len(cs) != 2 || cs[0].GetName() != "first" || cs[1].GetName() != "second" || cs[1].GetLevelFloor() != 600 || cs[1].GetNextLevelAt() != 870 {
 		t.Fatalf("got %+v", cs)
+	}
+}
+
+// The specialization is set on the wire when the character holds one, and
+// unset (not "") before the pick. FS-E1ZDG R5.
+func TestCharacterReads_SpecializationSetOnlyWhenHeld(t *testing.T) {
+	client := dial(t, &stubService{
+		character: &Character{ID: uuid.New(), ClassID: "warrior", Level: 20, Specialization: "berserker"},
+		list: []*Character{
+			{ID: uuid.New(), ClassID: "warrior", Level: 5},
+			{ID: uuid.New(), ClassID: "archer", Level: 20, Specialization: "shadow_ranger"},
+		},
+	})
+
+	got, err := client.GetCharacter(context.Background(), &pb.GetCharacterRequest{MemberId: uuid.NewString(), CharacterId: uuid.NewString()})
+	if err != nil || got.Specialization == nil || got.GetSpecialization() != "berserker" {
+		t.Fatalf("get specialization %v, %v; want berserker", got.Specialization, err)
+	}
+	list, err := client.ListCharacters(context.Background(), &pb.ListCharactersRequest{MemberId: uuid.NewString()})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	cs := list.GetCharacters()
+	if cs[0].Specialization != nil || cs[1].GetSpecialization() != "shadow_ranger" {
+		t.Fatalf("list specializations %v, %v; want unset, shadow_ranger", cs[0].Specialization, cs[1].Specialization)
+	}
+	created, err := client.CreateCharacter(context.Background(), &pb.CreateCharacterRequest{MemberId: uuid.NewString(), Name: "Bram", Class: "warrior"})
+	if err != nil || created.Specialization != nil {
+		t.Fatalf("created specialization %v, %v; want unset", created.Specialization, err)
 	}
 }
 

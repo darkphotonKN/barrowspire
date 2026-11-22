@@ -4,7 +4,7 @@
 // (the leg-clearance guard on the folk, clearance.js).
 
 import { FACINGS } from "../facing.js";
-import { ANIMATIONS, applyPose, clipsFor, groundPose, simulateSprings } from "./clips.js";
+import { ANIMATIONS, applyPose, clipsFor, groundPose, handless, simulateSprings } from "./clips.js";
 
 /** A character sheet's rig and every pose it bakes (clip, frame, how to apply it), in bake order. */
 export function characterPoses(sheet) {
@@ -20,13 +20,15 @@ export function characterPoses(sheet) {
     // walk_attack and backpedal_attack (a class's attack on the move) carry their cloth with the
     // legs and calm the shot's fling like the attack; the walk_attack's cloth walks like the walk,
     // a run or backpedal_attack names how fast it carries the cloth (characters/clips.js
-    // RUN_ANIMATIONS, BACKPEDAL_ATTACK_SPEED), in walks
-    const carried = spec.speed ?? (anim === "walk" || anim === "walk_attack" ? 1 : 0);
+    // RUN_ANIMATIONS, BACKPEDAL_ATTACK_SPEED), in walks; an off-hand attack (FS-1J1CB R28) carries
+    // its cloth as its right-hand clip does
+    const clip = handless(anim);
+    const carried = spec.speed ?? (clip === "walk" || clip === "walk_attack" ? 1 : 0);
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,
       speed: carried * (style.speed ?? 1),
-      settle: anim === "death",
-      calm: anim === "attack" || anim === "parry" || anim === "walk_attack" || anim === "backpedal_attack" ? 0.25 : 1,
+      settle: clip === "death",
+      calm: clip === "attack" || clip === "parry" || clip === "walk_attack" || clip === "backpedal_attack" ? 0.25 : 1,
     });
   }
   // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the

@@ -11,8 +11,17 @@ import type Phaser from "phaser";
 import { itemView } from "@/items/itemView";
 import type { ArtLibrary } from "@/render/art/library";
 import { artSprite } from "@/render/art/phaser";
+import type { CharacterLook } from "@/render/art/character";
+import { monsterLook } from "@/render/creatures/monsters";
 import { worldToScreen, type Point } from "@/render/iso/projection";
+import { AimCircle } from "@/render/effects/aimCircle";
 import { AimLine } from "@/render/effects/aimLine";
+import { ARROW_RAIN, ArrowRain } from "@/render/effects/arrowRain";
+import { playBlinkIn, playBlinkOut } from "@/render/effects/blink";
+import { playEarthbreaker } from "@/render/effects/earthbreaker";
+import { playSettleTheDebt } from "@/render/effects/settleTheDebt";
+import { Staged } from "@/render/effects/staged";
+import { Auras } from "@/render/effects/aura";
 import { playArrowRelease } from "@/render/effects/arrow";
 import { CHARGE_MS, playCharge } from "@/render/effects/charge";
 import { CutFx } from "@/render/effects/cut";
@@ -23,7 +32,7 @@ import { playEscape } from "@/render/effects/escape";
 import { playFireballCast } from "@/render/effects/fireball";
 import { HitFeedback } from "@/render/effects/hit";
 import { LoreDust } from "@/render/effects/loreDust";
-import { addMist } from "@/render/effects/mist";
+import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { AbilityTelegraphs, IMPACT_MS } from "@/render/effects/monsterAbility";
 import { ParryFx } from "@/render/effects/parry";
 import { RiposteFx } from "@/render/effects/riposte";
@@ -32,10 +41,12 @@ import type {
   EffectsRuntime,
   OwnerKey,
 } from "@/render/effects/runtime";
+import { playHeavyShotRelease } from "@/render/effects/heavyShot";
 import { playShadowShotRelease } from "@/render/effects/shadowShot";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
 import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
+import { StunTells } from "@/render/effects/stun";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
 import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
@@ -64,8 +75,25 @@ export interface Stage {
   now(): number;
   /** Runs `fn` after `ms`, for a demo that has to end what it started. */
   later(ms: number, fn: () => void): void;
-  /** Flies a projectile of a server `projectile_type` from the figure to `aim`, landing there. */
-  fly(projectileType: string): void;
+  /**
+   * Flies a projectile of a server `projectile_type` from the figure to `aim`, landing there; the
+   * figure stands as `shooter` for it, for a shot drawn by who loosed it (FS-1J1CB §F R41).
+   */
+  fly(projectileType: string, shooter?: Shooter): void;
+  /**
+   * Re-dresses the figure in a class's base sheet, or a creature's look, for a card shown on another
+   * body than the mage's (an aura on the archer, FS-1J1CB R38; the stun tell on a monster, FS-04EEA
+   * R49). Returns its sheet's `crown`.
+   */
+  wear(who: string | CharacterLook): number | undefined;
+  /** Moves the figure to stand at world point `at`, for a card whose body is placed elsewhere (a Blink). */
+  standAt(at: Point): void;
+}
+
+/** Who the figure stands as when it looses a projectile: a class and its specialization. */
+export interface Shooter {
+  class: string;
+  specialization?: string;
 }
 
 export type EffectCard = { module: string; name: string } & (
@@ -92,8 +120,33 @@ const FABLED_SAMPLE: ItemState = {
 const FABLED_ICON_SIDE = 64;
 const FABLED_ICON_OFFSET = { x: 90, y: -60 };
 
+/** Screen px over the feet the stun tell stands at on a figure whose sheet records no crown. */
+const STUN_LIFT_FALLBACK = 80;
+
 /** A frame's step, in ms, for a demo that drives its own frames. */
 const FRAME_MS = 33;
+
+/**
+ * The creature the stun tell is shown over, as a run draws it over a stunned monster (FS-04EEA R49): the
+ * ghoul's own look, named by the roster's table.
+ */
+const STUNNED_LOOK: CharacterLook = { sheet: monsterLook("ghoul").sheet };
+
+/** Between the Blink's out and its in, as a jump lands a tick or two after the send. */
+const BLINK_LANDS_MS = 120;
+
+/** How long the Arrow Rain card holds its circle: past the last volley's landing. */
+const RAIN_HOLD_MS = ARROW_RAIN.volleys * ARROW_RAIN.intervalMs + 400;
+
+/**
+ * The flurry for `charges` parry charges spent, on the mercenary as a world plays it on his send (FS-04EEA
+ * R46, R49); the mage again once it is done.
+ */
+function playFlurry(s: Stage, charges: number): void {
+  s.wear("mercenary");
+  playSettleTheDebt(s.fx, new Staged(s.scene.time), s.owner, s.at, charges);
+  s.later(HOLD_MS / 2, () => s.wear("mage"));
+}
 
 /**
  * An ability's telegraph as a run draws it (FS-C8VM7 §F R36): its area at the figure's feet, the
@@ -122,6 +175,27 @@ function playTelegraph(
     s.later(t, () => telegraphs.update(FRAME_MS));
   s.later(windMs, () => telegraphs.sync(listed()));
   s.later(windMs + IMPACT_MS + 2 * FRAME_MS, () => telegraphs.clear());
+}
+
+/** How long an aura card holds: an aura has no end of its own, so the demo ends it (FS-1J1CB R31). */
+const AURA_HOLD_MS = 4800;
+
+/**
+ * An aura as a world draws it (FS-1J1CB §E, R38): on the figure dressed as `who`'s class, seen
+ * with `who`'s specialization, followed each frame at its feet on the scene clock, under the
+ * player's own reduced-motion setting; then gone, and the mage back. `also` plays over it.
+ */
+function playAura(s: Stage, who: Shooter, also?: (s: Stage) => void): void {
+  const crown = s.wear(who.class);
+  const auras = new Auras(s.scene, s.art, { reducedMotion: prefersReducedMotion() });
+  auras.see(s.owner, who);
+  for (let t = 0; t <= AURA_HOLD_MS; t += FRAME_MS)
+    s.later(t, () => auras.follow(s.owner, s.at, crown, s.now()));
+  if (also) s.later(AURA_HOLD_MS / 4, () => also(s));
+  s.later(AURA_HOLD_MS + FRAME_MS, () => {
+    auras.clear();
+    s.wear("mage");
+  });
 }
 
 /**
@@ -170,11 +244,85 @@ function sayLore(s: Stage, line: LoreLine): void {
 
 export const EFFECT_CARDS: EffectCard[] = [
   {
+    module: "aimCircle",
+    name: "Arrow Rain aim circle",
+    demo: (s) => {
+      // held at the point the figure aims, as key 3's hold draws it (FS-04EEA R38)
+      const circle = new AimCircle(() => s.scene.add.graphics());
+      circle.draw(s.aim);
+      s.later(HOLD_MS / 2, () => circle.clear());
+    },
+  },
+  {
+    module: "arrowRain",
+    name: "Arrow Rain volleys, mid-rain in the circle",
+    // on the archer's release at the circle the aim drew, held here as the rain falls into it (FS-04EEA R45, R49)
+    demo: (s) => {
+      s.wear("archer");
+      const circle = new AimCircle(() => s.scene.add.graphics());
+      circle.draw(s.aim);
+      new ArrowRain(s.scene, s.art, s.fx).start(s.at, s.aim);
+      s.later(RAIN_HOLD_MS, () => {
+        circle.clear();
+        s.wear("mage");
+      });
+    },
+  },
+  {
+    module: "blink",
+    name: "Blink out and in",
+    // out where the mage stands at the send, in where the jump places the body (FS-04EEA R44)
+    demo: (s) => {
+      playBlinkOut(s.fx, s.owner, s.at);
+      s.later(BLINK_LANDS_MS, () => {
+        s.standAt(s.aim);
+        playBlinkIn(s.fx, s.owner, s.aim);
+      });
+      s.later(HOLD_MS, () => s.standAt(s.at));
+    },
+  },
+  {
+    module: "earthbreaker",
+    name: "Earthbreaker slam",
+    // round the warrior's feet on the send (FS-04EEA R43)
+    demo: (s) => {
+      s.wear("warrior");
+      playEarthbreaker(s.fx, new Staged(s.scene.time), s.owner, s.at);
+      s.later(HOLD_MS / 2, () => s.wear("mage"));
+    },
+  },
+  // FS-04EEA R46, R49: the flurry at 1, 3 and 5 parry charges, each to read distinctly
+  {
+    module: "settleTheDebt",
+    name: "Settle the Debt (1 charge)",
+    demo: (s) => playFlurry(s, 1),
+  },
+  {
+    module: "settleTheDebt",
+    name: "Settle the Debt (3 charges)",
+    demo: (s) => playFlurry(s, 3),
+  },
+  {
+    module: "settleTheDebt",
+    name: "Settle the Debt (5 charges)",
+    demo: (s) => playFlurry(s, 5),
+  },
+  {
     module: "aimLine",
     name: "Shadow Shot aim line",
     demo: (s) => {
       const line = new AimLine(() => s.scene.add.graphics());
-      line.draw(s.at, s.aim, true);
+      line.draw(s.at, s.aim, true, true);
+      s.later(HOLD_MS / 2, () => line.clear());
+    },
+  },
+  {
+    module: "aimLine",
+    name: "Heavy Shot aim line",
+    demo: (s) => {
+      // every archer's but a Shadow Ranger's (FS-1J1CB §F R42)
+      const line = new AimLine(() => s.scene.add.graphics());
+      line.draw(s.at, s.aim, true, false);
       s.later(HOLD_MS / 2, () => line.clear());
     },
   },
@@ -185,6 +333,27 @@ export const EFFECT_CARDS: EffectCard[] = [
       playArrowRelease(s.fx, s.owner, s.at, s.aim);
       s.fly("arrow");
     },
+  },
+  {
+    module: "aura",
+    name: "Ward (Spellwarden aura, on the mage)",
+    demo: (s) => playAura(s, { class: "mage", specialization: "spellwarden" }),
+  },
+  {
+    module: "aura",
+    name: "Gloom (Shadow Ranger aura, on the archer)",
+    demo: (s) => playAura(s, { class: "archer", specialization: "shadow_ranger" }),
+  },
+  {
+    module: "aura",
+    name: "Ward under a heal shimmer",
+    demo: (s) =>
+      // a potion drunk by a Spellwarden: the heal plays in full over the ward (FS-1J1CB R37)
+      playAura(s, { class: "mage", specialization: "spellwarden" }, (st) => {
+        const shimmers = new ShimmerFx(st.scene, st.art, st.lights);
+        shimmers.follow(st.at);
+        shimmers.playGranted(HEAL_LOOK, st.crown);
+      }),
   },
   {
     module: "boneArrow",
@@ -362,8 +531,19 @@ export const EFFECT_CARDS: EffectCard[] = [
     module: "shadowShot",
     name: "Shadow Shot",
     demo: (s) => {
+      // a Shadow Ranger's alone (FS-1J1CB §F R39)
       playShadowShotRelease(s.fx, s.owner, s.at, s.aim);
-      s.fly("shadow_shot");
+      s.fly("shadow_shot", { class: "archer", specialization: "shadow_ranger" });
+    },
+  },
+  {
+    module: "heavyShot",
+    name: "Heavy Shot",
+    demo: (s) => {
+      // every archer's right-click but a Shadow Ranger's, a Hunter's here: beside the Shadow
+      // Shot's card, so the two are judged side by side (FS-1J1CB §F R40, R44)
+      playHeavyShotRelease(s.fx, s.owner, s.at, s.aim);
+      s.fly("shadow_shot", { class: "archer", specialization: "hunter" });
     },
   },
   {
@@ -398,6 +578,21 @@ export const EFFECT_CARDS: EffectCard[] = [
     demo: (s) => {
       const smoke = new ChimneySmoke(s.fx, s.owner, s.at, CHIMNEY_LIFT);
       s.later(HOLD_MS, () => smoke.setVisible(false));
+    },
+  },
+  {
+    module: "stun",
+    name: "Stun tell (on a ghoul)",
+    // over a stunned monster's head, on a monster's body standing at its idle, as a world draws it (FS-04EEA
+    // §H R47, R49)
+    demo: (s) => {
+      const crown = s.wear(STUNNED_LOOK);
+      const tells = new StunTells(s.fx);
+      tells.show([{ id: s.owner, at: s.at, lift: crown ?? STUN_LIFT_FALLBACK }]);
+      s.later(HOLD_MS, () => {
+        tells.clear();
+        s.wear("mage");
+      });
     },
   },
   {

@@ -34,18 +34,28 @@ type Services struct {
 	ExpireHoldsUC *usecase.ExpireHoldsUC
 }
 
+// tracer names for the repository and query decorators
+const (
+	repoTracer  = "wallet/repository"
+	queryTracer = "wallet/query"
+)
+
 func NewServices(ctx context.Context, db *sqlx.DB) *Services {
-	accountRepo := accountrepo.NewAccountRepository(db)
+	// every consumer takes the repository or query through its own interface,
+	// wrapped so each call is a span above its SQL (the trace_gen.go files in
+	// internal/account/repository, usecase and grpc)
+	concreteAccountRepo := accountrepo.NewAccountRepository(db)
+	accountRepo := accountrepo.NewAccountRepositoryWithTracing(concreteAccountRepo, repoTracer)
 	placeHoldUC := usecase.NewPlaceHoldUC(accountRepo)
 	releaseHoldUC := usecase.NewReleaseHoldUC(accountRepo)
 	createAccUC := usecase.NewCreateAccountUC(accountRepo)
 	depositGoldUC := usecase.NewDepositGoldUC(accountRepo)
 	withdrawGoldUC := usecase.NewWithdrawGoldUC(accountRepo)
-	getAccQuery := accountquery.NewGetAccountQuery(db)
-	processedActivities := accountrepo.NewProcessedActivityRepo()
-	creditUC := usecase.NewCreditUC(db, accountRepo, processedActivities)
+	getAccQuery := accountgrpc.NewAccountReaderWithTracing(accountquery.NewGetAccountQuery(db), queryTracer)
+	processedActivities := usecase.NewActivityMarkerWithTracing(accountrepo.NewProcessedActivityRepo(), repoTracer)
+	creditUC := usecase.NewCreditUC(db, usecase.NewCreditAccountsWithTracing(concreteAccountRepo, repoTracer), processedActivities)
 
-	staleHoldsQuery := accountquery.NewStaleReservedHoldsQuery(db)
+	staleHoldsQuery := accountgrpc.NewStaleHoldsReaderWithTracing(accountquery.NewStaleReservedHoldsQuery(db), queryTracer)
 
 	accHandler := accountgrpc.NewHandler(accountgrpc.Deps{
 		CreateAccountUC:  createAccUC,
@@ -63,16 +73,17 @@ func NewServices(ctx context.Context, db *sqlx.DB) *Services {
 	// transaction, which the gRPC path has no need of.
 	outboxService := commonoutbox.NewService(commonoutbox.NewRepo(db))
 	createOnSignupUC := usecase.NewCreateAccountOnSignupUC(
-		db, accountRepo, commoninbox.NewRepo(), outboxService,
+		db, usecase.NewAccountWriterWithTracing(concreteAccountRepo, repoTracer), commoninbox.NewRepo(), outboxService,
 	)
 
 	commitHoldUC := usecase.NewCommitHoldUC(accountRepo)
 	releaseAllHoldsUC := usecase.NewReleaseAllHoldsUC(accountRepo)
 	releaseLosingHoldsUC := usecase.NewReleaseLosingHoldsUC(accountRepo)
-	creditSellerUC := usecase.NewCreditSellerUC(db, accountRepo, processedActivities)
+	creditSellerUC := usecase.NewCreditSellerUC(db, usecase.NewSellerAccountsWithTracing(concreteAccountRepo, repoTracer), processedActivities)
 	activities := accountactivity.NewActivities(commitHoldUC, releaseAllHoldsUC, releaseLosingHoldsUC, creditSellerUC, releaseHoldUC)
 
-	expireHoldsUC := usecase.NewExpireHoldsUC(accountquery.NewExpiredHoldsQuery(db), accountRepo)
+	// holdAccounts is a subset of account.Repository, so the traced repository serves it
+	expireHoldsUC := usecase.NewExpireHoldsUC(usecase.NewExpiredHoldsWithTracing(accountquery.NewExpiredHoldsQuery(db), queryTracer), accountRepo)
 
 	return &Services{
 		AccHandler:       accHandler,

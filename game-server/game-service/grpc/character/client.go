@@ -1,5 +1,6 @@
 // Package grpccharacter reads characters from character-service, the owner of
-// a member's characters and their level and experience (FS-BDA7X).
+// a member's characters, their level and experience (FS-BDA7X) and their
+// passive tree ranks (FS-8RZ51), and spends a passive point there.
 package grpccharacter
 
 import (
@@ -8,6 +9,8 @@ import (
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/character"
 	"github.com/darkphotonKN/barrowspire-server/common/discovery"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -15,7 +18,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Client reads characters over gRPC. It dials once and reuses the connection.
+// Client reads characters, and spends their passive points, over gRPC. It dials once and reuses the connection.
 type Client struct {
 	conn *grpc.ClientConn
 }
@@ -64,10 +67,70 @@ func toCharacterInPlay(character *pb.Character) (types.CharacterInPlay, error) {
 	}
 
 	return types.CharacterInPlay{
-		ID:         id,
-		Name:       character.GetName(),
-		Class:      character.GetClass(),
-		Level:      int(character.GetLevel()),
-		Experience: character.GetExperience(),
+		ID:           id,
+		Name:         character.GetName(),
+		Class:        character.GetClass(),
+		Level:        int(character.GetLevel()),
+		Experience:   character.GetExperience(),
+		PassiveRanks: ranksOf(character.GetPassiveRanks()),
 	}, nil
+}
+
+// ranksOf is the held ranks the service sent, by node id; never nil.
+func ranksOf(held []*pb.PassiveRank) passivetree.Ranks {
+	ranks := make(passivetree.Ranks, len(held))
+	for _, r := range held {
+		ranks[r.GetNodeId()] = int(r.GetRank())
+	}
+	return ranks
+}
+
+/**
+* SpendPassivePoint takes the character to rank of nodeID (FS-8RZ51 R12–R13)
+* and answers every rank it holds after: on a new rank and on one already held
+* alike (R10). A refusal is the spend rule's own (*passivetree.Refusal, match
+* with errors.Is); another member's, a deleted and an unknown character are
+* types.ErrCharacterNotFound; anything else means the service could not answer.
+**/
+func (c *Client) SpendPassivePoint(ctx context.Context, memberID, characterID uuid.UUID, nodeID string, rank int) (passivetree.Ranks, error) {
+	res, err := pb.NewCharacterServiceClient(c.conn).SpendPassivePoint(ctx, &pb.SpendPassivePointRequest{
+		MemberId:    memberID.String(),
+		CharacterId: characterID.String(),
+		NodeId:      nodeID,
+		Rank:        int32(rank),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("spend %s rank %d for character %s: %w", nodeID, rank, characterID, spendError(err))
+	}
+	return ranksOf(res.GetPassiveRanks()), nil
+}
+
+// spendRefusals is the spend rule's refusals by the code they cross gRPC with.
+var spendRefusals = func() map[errcode.Code]*passivetree.Refusal {
+	byCode := map[errcode.Code]*passivetree.Refusal{}
+	for _, rule := range []*passivetree.Refusal{
+		passivetree.ErrUnknownNode, passivetree.ErrRankOutOfOrder, passivetree.ErrMaxRank,
+		passivetree.ErrTierLocked, passivetree.ErrNoPoints, passivetree.ErrSpecializationTaken,
+	} {
+		byCode[rule.Code] = rule
+	}
+	return byCode
+}()
+
+// spendError reads what a failed spend means: the rule's refusal by its
+// ErrorInfo code, not found, or the service failing to answer.
+func spendError(err error) error {
+	st, ok := status.FromError(err)
+	if !ok {
+		return err
+	}
+	if code, refused := errcode.RefusalReason(st); refused {
+		if rule, known := spendRefusals[code]; known {
+			return rule
+		}
+	}
+	if st.Code() == codes.NotFound {
+		return types.ErrCharacterNotFound
+	}
+	return err
 }

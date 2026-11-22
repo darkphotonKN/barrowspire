@@ -24,7 +24,6 @@ export interface ClassLoreData {
   key: ClassKey;
   name: string;
   englishTitle: string;
-  title: string;
   description: string;
   primaryStat: string;
   weaponType: string;
@@ -38,7 +37,6 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     key: "warrior",
     name: "WARRIOR",
     englishTitle: "THE WARRIOR",
-    title: "IRON GUARDIAN",
     description:
       "Steadfast defender hailing from the Mountain Iron Halls. Clad in heavy plate armor, wielding a forged greatsword and kite shield to stand as an impenetrable bulwark against the darkness.",
     primaryStat: "Strength 8 / Vitality 9",
@@ -65,7 +63,6 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     key: "mage",
     name: "MAGE",
     englishTitle: "THE MAGE",
-    title: "ARCANE MASTER",
     description:
       "Master scholar of the elemental arcanum. Commands raw primordial fire to launch explosive Fireballs from afar, backed by vast mana reserves to incinerate horrors in the deep.",
     primaryStat: "Intelligence 9 / Agility 3",
@@ -85,7 +82,6 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     key: "archer",
     name: "ARCHER",
     englishTitle: "THE ARCHER",
-    title: "SHADOW RANGER",
     description:
       "Swift ranger navigating the mist and shadows of the deep timberland. Moves with deadly speed through the cold dark, releasing precision arrows to pierce foes from afar.",
     primaryStat: "Agility 8 / Strength 4",
@@ -105,7 +101,6 @@ export const CLASS_LORE: Record<ClassKey, ClassLoreData> = {
     key: "mercenary",
     name: "MERCENARY",
     englishTitle: "THE MERCENARY",
-    title: "OATHLESS BLADE",
     description:
       "Sworn to no banner, bound by no oath but the coin. He turns the barrow's blows aside on a notched blade, and when the dead have spent their strength, answers every one of them at once.",
     primaryStat: "Strength 7 / Agility 7",

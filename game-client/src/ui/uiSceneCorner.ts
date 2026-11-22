@@ -10,6 +10,10 @@
  * Character its own gear overlay (§ Change: Phase 3, R55): a press toggles it there, inside the same
  * act, under the same refusals.
  *
+ * Tree is the UI scene's own passive tree (FS-8RZ51 R32): its press toggles it there, inside the same act,
+ * under the gear's refusals. Its marker, on while the player holds unspent points (R33), is set on the
+ * standing row as the points change, never rebuilding it, and on each row built after.
+ *
  * Menu is the UI scene's own menu slot's (R16): its press is handed to the slot. While the slot is
  * filled its blocker, in the same scene and over the row, takes every icon's hover and press but
  * Menu's, whose plate it leaves to the icon (FS-3EBCA R18, `covers`).
@@ -44,12 +48,24 @@ export interface CornerGear {
 /** No gear overlay: a row whose Inventory and Character change nothing. */
 const NO_GEAR: CornerGear = { isInventoryOpen: () => false, isCharacterOpen: () => false, toggle: () => {} };
 
+/** The passive tree as the row's Tree icon reaches it: the UI scene's own (FS-8RZ51 R32). */
+export interface CornerTree {
+  isOpen(): boolean;
+  /** Under the tree's own refusals: the gear's. */
+  toggle(): void;
+}
+
+/** No tree: a row whose Tree icon changes nothing. */
+const NO_TREE: CornerTree = { isOpen: () => false, toggle: () => {} };
+
 /** The row as the UI scene keeps it. `HudCorner` is one. */
 export interface CornerRow {
   relayout(): void;
   destroy(): void;
   /** Whether a screen point lies on an icon's plate, or on `icon`'s only. */
   covers(x: number, y: number, icon?: CornerIcon): boolean;
+  /** The Tree icon's marker on or off (FS-8RZ51 R33). */
+  mark(on: boolean): void;
 }
 
 /** What of the bridge the row reads, asks and plays through. */
@@ -62,6 +78,8 @@ export class UiCornerRow {
   private row: CornerRow | null = null;
   /** The world the standing row was built for. */
   private builtFor: WorldReport["world"] | null = null;
+  /** The Tree icon's marker, set on each row built (FS-8RZ51 R33). */
+  private marked = false;
 
   constructor(
     private readonly bridge: CornerBridge,
@@ -72,6 +90,8 @@ export class UiCornerRow {
     private readonly party: CornerParty = NO_PARTY,
     /** The Inventory and Character icons' overlay: the UI scene's gear slot (§ Change: Phase 3, R55). */
     private readonly gear: CornerGear = NO_GEAR,
+    /** The Tree icon's overlay: the UI scene's tree slot (FS-8RZ51 R32). */
+    private readonly tree: CornerTree = NO_TREE,
   ) {}
 
   /**
@@ -85,6 +105,13 @@ export class UiCornerRow {
     const icons = this.icons(report.world);
     this.row = this.build(icons);
     this.builtFor = report.world;
+    if (this.marked) this.row.mark(true);
+  }
+
+  /** The Tree icon's marker, on while the player holds unspent points (FS-8RZ51 R33): set on the standing row. */
+  mark(on: boolean): void {
+    this.marked = on;
+    this.row?.mark(on);
   }
 
   /** Whether a screen point lies on the standing row's plates, or on `icon`'s: the menu's blocker leaves Menu's (FS-3EBCA R18). */
@@ -108,8 +135,8 @@ export class UiCornerRow {
   }
 
   /**
-   * Menu, Inventory, Character and Party; outside the town the Mailbox too, greyed, the mailbox being
-   * the town's: the town's own envelope stands in its slot there (R13; FS-3EBCA R9).
+   * Menu, Inventory, Character, Party and Tree (FS-8RZ51 R32); outside the town the Mailbox too, greyed,
+   * the mailbox being the town's: the town's own envelope stands in its slot there (R13; FS-3EBCA R9).
    */
   private icons(world: WorldReport["world"]): CornerIconSpec[] {
     // a hover on a pressable icon, and the greyed Mailbox's press, sounded (FS-WDM0X § Change M5, M10)
@@ -122,6 +149,7 @@ export class UiCornerRow {
         hovered,
       })),
       { icon: "party", press: () => this.send("party", () => this.party.toggle()), hovered },
+      { icon: "tree", press: () => this.send("tree", () => this.tree.toggle()), hovered },
     ];
     const greyedMail: CornerIconSpec = { icon: "mail", greyed: true, refused: () => this.bridge.play("menu_error") };
     return world === "hub" ? icons : [...icons, greyedMail];
@@ -141,7 +169,7 @@ export class UiCornerRow {
     });
   }
 
-  /** What a press can change, as one key: the world's letter panel, the UI's party panel, gear overlay and menu slot. */
+  /** What a press can change, as one key: the world's letter panel, the UI's party panel, gear overlay, tree and menu slot. */
   private screen(): string {
     const windows = this.bridge.world?.windows();
     return JSON.stringify([
@@ -149,6 +177,7 @@ export class UiCornerRow {
       this.party.isOpen(),
       this.gear.isInventoryOpen(),
       this.gear.isCharacterOpen(),
+      this.tree.isOpen(),
       this.bridge.ui.menuOpen,
     ]);
   }

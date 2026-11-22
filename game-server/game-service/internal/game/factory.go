@@ -1,9 +1,11 @@
 package game
 
 import (
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 )
@@ -17,7 +19,10 @@ type ClassConfig struct {
 	// Ability is the attack row the class's right-click resolves to.
 	// FS-8AY7S §Requirements 12.
 	Ability components.AttackKind
-	Skills  []components.SkillComponent
+	// TreeAbility is the attack row the class's key 3 resolves to, once the
+	// character holds their tree's tier-3 node. FS-04EEA §A R2.
+	TreeAbility components.AttackKind
+	Skills      []components.SkillComponent
 	// Growth is what each level past the first adds. FS-BDA7X §Requirements 19.
 	Growth ClassGrowth
 }
@@ -64,6 +69,8 @@ type PlayerConfig struct {
 	ItemIDList    []uuid.UUID
 	Escape        bool
 	PlayerLoadout *components.EquipmentConfig
+	// PassiveRanks is the passive tree ranks the character holds (FS-8RZ51 R31)
+	PassiveRanks passivetree.Ranks
 	// LoadoutUnknown is set when the stored loadout could not be read, so
 	// PlayerLoadout is empty for want of it, not because nothing is stored.
 	LoadoutUnknown bool
@@ -92,6 +99,12 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 		entity.AddComponent(components.NewParryComponent())
 	}
 
+	// the class's tree ability and the node granting it; whether it is held
+	// is read from the ranks on the body, cast by cast. FS-04EEA §A R2–R3.
+	if node, ok := passivetree.AbilityNode(config.ClassName); ok && config.Class.TreeAbility != "" {
+		entity.AddComponent(components.NewTreeAbilityComponent(config.Class.TreeAbility, node.ID))
+	}
+
 	for _, skill := range config.Class.Skills {
 		entity.AddComponent(components.NewSkillComponent(skill.SkillName, skill.Level))
 	}
@@ -104,6 +117,13 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 	stats.Level = max(config.Level, 1)
 	stats.Experience = int(config.Experience)
 	entity.AddComponent(stats)
+
+	// the ranks held, read by the systems on the body, never the record (FS-8RZ51 R31)
+	entity.AddComponent(components.NewPassiveRanksComponent(config.PassiveRanks))
+	// and what they add, built at seating from the health and pool above (R24)
+	systems.ApplyPassiveBonus(entity)
+	// a Sellsword's pool holds 5, seated at 0 as every merc's (FS-E1ZDG §J R34)
+	systems.ApplySellswordPool(entity)
 
 	// initialize equipment with loadout
 	entity.AddComponent(components.NewEquipmentComponent(config.PlayerLoadout))

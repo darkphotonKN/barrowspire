@@ -1,8 +1,8 @@
 /**
  * The gear and stats overlay's left panel as words and numbers (FS-HRH2J §C R24–30): the
  * character's class, name, level and experience, health and class resource, the class card's
- * base numbers and what worn gear adds. Phaser-free, so the summing and the rows are tested
- * without a canvas; `GearOverlay` draws what this returns.
+ * base numbers, what worn gear adds and what the passive tree adds (FS-8RZ51 R44). Phaser-free,
+ * so the summing and the rows are tested without a canvas; `GearOverlay` draws what this returns.
  *
  * It reads only what the client already holds (R24): the player's own world state, the worn
  * items the overlay draws, and the static class card. Nothing is fetched.
@@ -14,6 +14,8 @@ import { affixLine } from "@/items/itemLines";
 import { itemStats, type StatLine } from "@/marketplace/detail";
 import { atCap, progressOf, xpCount, xpFraction } from "./progress";
 import { RESOURCE_KINDS, type HudChannel } from "./resources";
+import { PASSIVE_NODES, nodeCopy, rankEffect } from "@/data/passiveTree";
+import { characterTitle } from "@/data/specializations";
 
 /** What the panel reads off the player's own world state (R24); every number may be absent. */
 export type CharacterSource = Pick<PlayerState, "username" | "class"> &
@@ -27,12 +29,17 @@ export type CharacterSource = Pick<PlayerState, "username" | "class"> &
       | "current_health"
       | "max_health"
       | "resource"
+      // the passive tree's, read by the tree overlay from the same character (FS-8RZ51 R41)
+      | "passive_ranks"
+      | "passive_points"
+      // the header's title (FS-E1ZDG §K.41)
+      | "specialization"
     >
   >;
 
 /** The left panel, top to bottom. */
 export interface CharacterSheet {
-  /** The class's display name, as the menus show it. */
+  /** The class's display name, as the menus show it, or the character's title where they hold a spec (FS-E1ZDG §K.41). */
   className: string;
   name: string;
   /** The level; absent from the state means 1 (R25). */
@@ -44,6 +51,8 @@ export interface CharacterSheet {
   /** The class card's level-1 numbers (R28); none for a class the card does not know. */
   classStats: StatLine[];
   gear: GearStats;
+  /** What the passive tree's held ranks add (FS-8RZ51 R44). */
+  passives: PassiveStats;
 }
 
 /** One `current / max` row, drawn with a thin bar in its HUD channel's colour. */
@@ -66,7 +75,8 @@ export function characterSheet(
     : undefined;
   const progress = progressOf(player);
   return {
-    className: lore?.name ?? (player.class ?? "").toUpperCase(),
+    // the header sets its line in capitals, and keeps doing so for the title (FS-E1ZDG §K.37)
+    className: characterTitle(key, player.specialization)?.toUpperCase() ?? lore?.name ?? (player.class ?? "").toUpperCase(),
     name: player.username,
     level: progress?.level ?? 1,
     xp: !progress
@@ -78,6 +88,7 @@ export function characterSheet(
     resources: resourceRows(player),
     classStats: lore ? classStatLines(lore.stats) : [],
     gear: gearStats(worn),
+    passives: passiveStats(player.passive_ranks ?? {}),
   };
 }
 
@@ -163,5 +174,44 @@ export function gearStats(worn: EquippedItems): GearStats {
       affixLine({ stat, value }),
     ),
     note: wearing ? null : "Nothing worn",
+  };
+}
+
+/** What the passive tree's held ranks add (FS-8RZ51 R44). */
+export interface PassiveStats {
+  /** One line per stat the held nodes raise, summed over every node that raises it. */
+  stats: string[];
+  /** One line per kicker held at its last rank (R29), by its name; its id where the copy lacks it (R42). */
+  kickers: string[];
+  /** "None yet" when the group has no line; null otherwise. */
+  note: string | null;
+}
+
+/**
+ * The held ranks' bonuses, from the golden's per-rank values (R6, R39), so a retuned number shows
+ * without an edit. One line per stat, summed across nodes, in the tree's order; then each kicker
+ * whose R3 rule is held.
+ */
+function passiveStats(ranks: Readonly<Record<string, number>>): PassiveStats {
+  const totals = new Map<string, { amount: number; unit: string }>();
+  const kickers: string[] = [];
+  for (const node of PASSIVE_NODES) {
+    const rank = Object.hasOwn(ranks, node.id) ? Math.min(ranks[node.id], node.maxRank) : 0;
+    if (rank <= 0) continue;
+    if (node.kind === "kicker" && rank === node.maxRank)
+      kickers.push(nodeCopy(node.id)?.name ?? node.id);
+    if (!node.perRank) continue;
+    const { stat, amount, unit } = node.perRank;
+    const total = totals.get(stat) ?? { amount: 0, unit };
+    total.amount += amount * rank;
+    totals.set(stat, total);
+  }
+  const stats = [...totals].map(([stat, { amount, unit }]) =>
+    rankEffect({ stat, amount, unit }),
+  );
+  return {
+    stats,
+    kickers,
+    note: stats.length || kickers.length ? null : "None yet",
   };
 }

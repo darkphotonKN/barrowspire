@@ -1,53 +1,37 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BARROW, BARROW_HEX } from "@/utils/theme";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { buttonTextColor } from "./menuChrome";
 
-/** Each canvas-menu token and the globals.css :root variable it mirrors. */
-const MIRRORS: Record<string, string> = {
-  menuBone: "--color-primary",
-  menuBoneBright: "--color-primary-bright",
-  menuAsh: "--color-accent",
-  menuDangerText: "--color-danger-text",
-  menuSoot: "--color-bg-dark",
-  menuSootDeep: "--color-bg-darker",
-  menuStone: "--color-bg-card-opaque",
-  menuStoneRaised: "--color-bg-card-2-opaque",
-  menuIron: "--color-brass",
-  menuIronBright: "--color-brass-bright",
-  menuText: "--color-text",
-  menuTextDim: "--color-text-dim",
-  menuTextMuted: "--color-text-muted",
-  menuTextFaint: "--color-text-placeholder",
-};
-
-const css = readFileSync(
-  path.resolve(__dirname, "../app/globals.css"),
-  "utf8",
-);
-const root = css.slice(css.indexOf(":root {"), css.indexOf("}", css.indexOf(":root {")));
-
-function rootValue(variable: string): string | undefined {
-  const match = root.match(new RegExp(`${variable}:\\s*(#[0-9a-fA-F]{6})\\s*;`));
-  return match?.[1].toLowerCase();
-}
+/**
+ * The canvas-menu tokens. They held the web's :root values until ADR-0087 moved the web to
+ * Barrow Vellum; the menus kept Bone & Soot as their own, so they no longer mirror :root.
+ */
+const MENU_TOKENS = [
+  "menuBone",
+  "menuBoneBright",
+  "menuAsh",
+  "menuDangerText",
+  "menuSoot",
+  "menuSootDeep",
+  "menuStone",
+  "menuStoneRaised",
+  "menuIron",
+  "menuIronBright",
+  "menuText",
+  "menuTextDim",
+  "menuTextMuted",
+  "menuTextFaint",
+] as const;
 
 describe("canvas menu palette", () => {
-  it.each(Object.entries(MIRRORS))(
-    "%s mirrors %s in globals.css :root",
-    (token, variable) => {
-      const key = token as keyof typeof BARROW;
-      expect(rootValue(variable), variable).toBeDefined();
-      expect(BARROW[key]).toBe(rootValue(variable));
-      expect(toCss(BARROW_HEX[key])).toBe(rootValue(variable));
-    },
-  );
+  it.each(MENU_TOKENS)("%s agrees between BARROW and BARROW_HEX", (token) => {
+    expect(toCss(BARROW_HEX[token])).toBe(BARROW[token]);
+  });
 
   it("covers every menu token in BARROW", () => {
     const menuKeys = Object.keys(BARROW).filter((k) => k.startsWith("menu"));
-    expect(menuKeys.sort()).toEqual(Object.keys(MIRRORS).sort());
+    expect(menuKeys.sort()).toEqual([...MENU_TOKENS].sort());
   });
 });
 

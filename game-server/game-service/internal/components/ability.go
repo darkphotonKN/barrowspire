@@ -16,3 +16,21 @@ func (a *AbilityComponent) Type() ecs.ComponentType {
 func NewAbilityComponent(kind AttackKind) *AbilityComponent {
 	return &AbilityComponent{Kind: kind}
 }
+
+// TreeAbilityComponent names a delver's tree ability, the attack row their
+// class's key 3 resolves to, and the tier-3 node of their class tree that
+// grants it. Naming it is not holding it: the node must be among the ranks the
+// body holds. FS-04EEA §A R2–R3.
+type TreeAbilityComponent struct {
+	Kind AttackKind
+	// Node is the passive tree node id that grants Kind.
+	Node string
+}
+
+func (t *TreeAbilityComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeTreeAbility
+}
+
+func NewTreeAbilityComponent(kind AttackKind, node string) *TreeAbilityComponent {
+	return &TreeAbilityComponent{Kind: kind, Node: node}
+}

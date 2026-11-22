@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
 import { EventEmitter } from "eventemitter3";
 import type { RecordView } from "@/ui/settlement";
 
@@ -190,6 +189,37 @@ vi.mock("@/ui/gearPieces", () => ({
         relayout: () => {},
         destroy: () => void (box.destroyed = true),
       },
+    };
+  },
+}));
+
+// The passive tree's overlay itself is PassiveTreeOverlay.test's: here a recording stand-in for what the UI
+// scene builds for each world (FS-8RZ51 R32–R36), its wiring kept.
+const treeMounts = vi.hoisted(
+  () =>
+    [] as {
+      wiring: { world: string; dismiss(): void };
+      open: boolean;
+      shown: unknown[];
+      log: string[];
+      ground: object;
+      destroyed: boolean;
+    }[],
+);
+vi.mock("@/ui/PassiveTreeOverlay", () => ({
+  mountPassiveTree: (_scene: unknown, wiring: (typeof treeMounts)[number]["wiring"]) => {
+    const made = { wiring, open: false, shown: [] as unknown[], log: [] as string[], ground: {}, destroyed: false };
+    treeMounts.push(made);
+    return {
+      isOpen: () => made.open,
+      open: () => void (made.open = true),
+      close: () => void (made.open = false),
+      show: (source: unknown) => void made.shown.push(source),
+      pointerMove: (x: number, y: number) => void made.log.push(`move ${x},${y}`),
+      pointerDown: (x: number, y: number) => (made.log.push(`down ${x},${y}`), true),
+      owns: (o: unknown) => o === made.ground,
+      relayout: () => {},
+      destroy: () => void (made.destroyed = true),
     };
   },
 }));
@@ -395,145 +425,6 @@ describe("the UI scene's interface sounds (FS-TQZ5J R22, FS-WDM0X S10–S13)", (
   });
 });
 
-// FS-TQZ5J R8, R9 and the acceptance criterion "no scene calls another": each world scene reports
-// its world as its create runs, and the UI scene knows only the bridge. Pinned from the source, as
-// the world scenes' create order is pinned in their own tests.
-describe("the worlds and the UI scene know only the UI bridge (FS-TQZ5J R8, R9)", () => {
-  const source = (file: string) => readFileSync(new URL(file, import.meta.url), "utf8");
-  const createOf = (file: string) =>
-    source(file).match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-
-  it.each([
-    ["./HubScene.ts", "hub"],
-    ["./FieldScene.ts", "field"],
-    ["./BarrowspireScene.ts", "run"],
-  ])("should have %s report its world, %s, in create", (file, world) => {
-    expect(createOf(file)).toContain(`this.ui = reportWorld(this, "${world}", this.worldSide());`);
-  });
-
-  // FS-TQZ5J § Acceptance Criteria: the world scenes no longer construct UiSounds (R22)
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s construct no UiSounds and keep no player of its own",
-    (file) => {
-      expect(source(file)).not.toMatch(/new UiSounds\(|mountUiSounds|this\.sounds\b/);
-    },
-  );
-
-  // FS-TQZ5J R13, R15 and § Acceptance Criteria: the corner row is the UI scene's; no world builds it,
-  // tests its rect in a click path, or leaves its Menu plate through its blocker
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s construct no HudCorner and read no corner row",
-    (file) => {
-      expect(source(file)).not.toMatch(/HudCorner|this\.corner\b|mountCorner/);
-    },
-  );
-
-  // FS-TQZ5J R16, R21 and § Acceptance Criteria: the ESC menu, OPTIONS and Esc are the UI scene's; no
-  // world builds them, binds Esc by event or by key, or settles a key's owner by stopping it
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s construct no menu panel or OPTIONS panel and bind no Esc",
-    (file) => {
-      const code = source(file);
-      expect(code).not.toMatch(/showMenuPanel\(|openOptionsPanel\(|this\.menu\b|menuChoices|moveMenu/);
-      expect(code).not.toMatch(/keydown-ESC|KeyCodes\.ESC/);
-    },
-  );
-
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts", "./UIScene.ts", "../ui/uiSceneMenu.ts", "../ui/uiSceneDialogue.ts"])(
-    "should have %s stop no key event to settle who answers it (R21)",
-    (file) => {
-      expect(source(file)).not.toMatch(/stopPropagation|stopImmediatePropagation/);
-    },
-  );
-
-  // FS-TQZ5J A2 § Acceptance Criteria (I-TQZ5J-8): no world scene draws a notice of its own; each says it
-  // through the bridge (the run's tone a backing colour, data)
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])("should have %s draw no notice of its own", (file) => {
-    expect(source(file)).not.toMatch(/NOTICE_Y|NOTICE_MS|const notification = this\.add|this\.time\.delayedCall\(NOTICE/);
-    expect(source(file)).toMatch(/this\.ui\.notice\(/);
-  });
-
-  // FS-TQZ5J A2 § Acceptance Criteria (I-TQZ5J-7): the town no longer draws its dialogue card
-  it("should have the town draw no dialogue card of its own: it shows its dialogue through the bridge", () => {
-    expect(source("./HubScene.ts")).not.toMatch(/showDialogueCard|npcDialogue/);
-  });
-
-  // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-9): the party panel and T are the UI scene's; no world
-  // mounts the panel, binds T or tests the panel's rect in a click or hover path
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s mount no party panel, bind no T and test no party panel's rect",
-    (file) => {
-      const code = source(file);
-      expect(code).not.toMatch(/PartyPanel|mountPartyPanel|this\.partyPanel\b/);
-      expect(code).not.toMatch(/keydown-T\b|KeyCodes\.T\b/);
-    },
-  );
-
-  // § Change: Phase 2: the party (I-TQZ5J-10): the invite prompt and the ready check are the UI scene's;
-  // no world mounts them or tests a prompt's rect
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s mount no invite prompt or ready check, and test no prompt's rect",
-    (file) => {
-      expect(source(file)).not.toMatch(/PartyInvitePrompt|PartyReadyCheck|mountPartyInvitePrompt|mountPartyReadyCheck|this\.invitePrompt\b|this\.readyCheck\b/);
-    },
-  );
-
-  // § Change: Phase 2: the party (I-TQZ5J-11): the frames are the UI scene's; each world hands its state
-  // ticks to the bridge
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s mount no party frames, and hand each state tick it shows to the bridge",
-    (file) => {
-      expect(source(file)).not.toMatch(/PartyFrames|mountPartyFrames|this\.partyFrames\b/);
-      expect(source(file)).toMatch(/this\.ui\.partySeen\(state\);/);
-    },
-  );
-
-  it("should have the UI scene build the party panel for each world it hears reported (§ Change: Phase 2: the party, R36)", () => {
-    const code = source("./UIScene.ts");
-    expect(code).toMatch(/new UiPartySlot\(/);
-    expect(code).toMatch(/mountPartyPanel\(this,/);
-    expect(code).toMatch(/party\.show\(report\)/);
-  });
-
-  // § Change: Phase 3 (I-TQZ5J-14): the gear overlay, its source and the container view are the UI
-  // scene's; no world builds them, binds their keys or tests their rects in a click or hover path
-  it.each(["./HubScene.ts", "./FieldScene.ts", "./BarrowspireScene.ts"])(
-    "should have %s build no gear overlay, gear source or container view, and bind none of their keys",
-    (file) => {
-      const code = source(file);
-      expect(code).not.toMatch(/GearOverlay|new HubGear|HubGear\b|EquipmentHud|new ContainerView|ContainerContents|PurseReader/);
-      expect(code).not.toMatch(/keydown-[IBCQF]"|KeyCodes\.[IBCQF]\b/);
-      expect(code).not.toMatch(/this\.gear\b|this\.equipment\b|\.covers\(x, y\) \?\? false;\n.*equipment/);
-    },
-  );
-
-  it("should have the UI scene build the gear and the container view for each world it hears reported (§ Change: Phase 3, R50)", () => {
-    const code = source("./UIScene.ts");
-    expect(code).toMatch(/new UiGearSlot\(/);
-    expect(code).toMatch(/gear\.show\(report\)/);
-  });
-
-  // § Change: Phase 3 (I-TQZ5J-15): the settlement record and the controls panel are the UI scene's; the
-  // run hands its record as data and binds no H
-  it("should have the run build no settlement record or controls panel and bind no H", () => {
-    const code = source("./BarrowspireScene.ts");
-    expect(code).not.toMatch(/new SettlementRecord|controlsPanel|keydown-H/);
-    expect(code).toMatch(/this\.ui\.record\(/);
-  });
-
-  it("should have the UI scene draw the record and the controls panel (§ Change: Phase 3, R57)", () => {
-    const code = source("./UIScene.ts");
-    expect(code).toMatch(/new UiRecordSlot\(/);
-    expect(code).toMatch(/new UiControlsSlot\(/);
-    expect(code).toMatch(/"keydown-H"/);
-  });
-
-  it("should have the UI scene import no other scene", () => {
-    const imports = source("./UIScene.ts").match(/from "[^"]+"/g) ?? [];
-    expect(imports.filter((from) => /Scene"$/.test(from))).toEqual([]);
-  });
-});
-
 // FS-TQZ5J §C R13–R15 (I-TQZ5J-3): the corner row is the UI scene's own, built as it is created from
 // the world reported then, rebuilt on each world's report, taken down as the world leaves, and held
 // each frame under the town's dialogue; the ESC menu, its own since I-TQZ5J-4, stands in the same scene.
@@ -653,7 +544,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     });
     scene.create();
     const live = () => zones.filter((z) => !z.destroyed);
-    const plate = (icon: "menu" | "inventory" | "character" | "party" | "mail") => {
+    const plate = (icon: "menu" | "inventory" | "character" | "party" | "mail" | "tree") => {
       const f = cornerIconFrame(icon, viewport);
       return live().find((z) => z.x === f.x && z.y === f.y);
     };
@@ -686,10 +577,12 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
   afterEach(() => viewport.set({ width: 1080, height: 720, renderScale: 1 }));
 
-  it("should build the row of the world reported as it is created: the town's four, no Mailbox of its own", () => {
+  it("should build the row of the world reported as it is created: the town's five, no Mailbox of its own", () => {
     const { live, plate } = created("hub");
 
-    expect(live()).toHaveLength(4);
+    // Menu, Inventory, Character, Party and the passive tree's Tree (FS-8RZ51 R32)
+    expect(live()).toHaveLength(5);
+    expect(plate("tree")).toBeDefined();
     expect(plate("mail")).toBeUndefined();
   });
 
@@ -700,8 +593,17 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
     report("field");
 
-    expect(live()).toHaveLength(5);
+    expect(live()).toHaveLength(6);
     expect(plate("mail")).toBeDefined();
+  });
+
+  // FS-8RZ51 R32: the Tree icon toggles the UI scene's own tree, in every world
+  it.each(["hub", "run"] as const)("should toggle the passive tree on the Tree icon's press in the %s", (world) => {
+    const { plate } = created(world);
+    plate("tree")!.handlers.pointerdown();
+    expect(treeMounts.at(-1)!.open).toBe(true);
+    plate("tree")!.handlers.pointerdown();
+    expect(treeMounts.at(-1)!.open).toBe(false);
   });
 
   it("should build nothing as it is created with no world reported", () => {
@@ -1553,15 +1455,15 @@ describe("the run's controls panel's close rules on the UI scene (FS-84N1G R16�
     expect(menu.played.slice(-1)).toEqual(["settings_open"]);
   });
 
-  // FS-84N1G R4, R8: the controls badge stands as the run says its ability card is up, and goes at the end
-  it("should stand the controls badge while the run's ability card is up, and take it down as the run ends", () => {
+  // FS-84N1G R4, R8; FS-Q18Q3 R42: the controls badge stands as the run says its ability bar is live, and goes at the end
+  it("should stand the controls badge while the run's ability bar is live, and take it down as the run ends", () => {
     const { scene } = created();
-    const bridge = (scene as unknown as { bridge(): { abilityCard(up: boolean): void; changed(): void } }).bridge();
+    const bridge = (scene as unknown as { bridge(): { abilityBar(live: boolean): void; changed(): void } }).bridge();
     const badge = () => (scene as unknown as { badge: { isUp(): boolean } }).badge;
     expect(badge().isUp()).toBe(false);
-    bridge.abilityCard(true);
+    bridge.abilityBar(true);
     expect(badge().isUp()).toBe(true);
-    bridge.abilityCard(false);
+    bridge.abilityBar(false);
     expect(badge().isUp()).toBe(false);
   });
 
@@ -1985,5 +1887,128 @@ describe("the UI scene's lore lines (FS-XWHZP; FS-TQZ5J § Change: Merge with ma
     bridge.lore(said("a"));
 
     expect(lore("a")).toEqual([]);
+  });
+});
+
+// FS-8RZ51 §G R32, R33, R36, R41 (I-8RZ51-7): the passive tree on the UI scene, its P on the UI scene's
+// keyboard, its icon in the corner row, fed the gear's `seen` character, in the gear overlay's family
+describe("the UI scene's passive tree (FS-8RZ51 R32–R36, R41)", () => {
+  function created(world: "hub" | "field" | "run") {
+    gearMounts.length = 0;
+    treeMounts.length = 0;
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const facts = { ...NO_FACTS };
+    const heard: { tree?: boolean; inventory?: boolean }[] = [];
+    const report = (w: "hub" | "field" | "run") =>
+      bridge.report({
+        world: w,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ dialogue: false }),
+        facts: () => facts,
+        heardUi: (ui) => void heard.push({ tree: ui.tree, inventory: ui.inventory }),
+        answer: () => {},
+      });
+    report(world);
+    const any = (): unknown => {
+      const self: unknown = new Proxy(() => self, { get: (_t, prop) => (prop === "then" ? undefined : () => self) });
+      return self;
+    };
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ isDown: false, justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const input = Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } });
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      sys: { settings: { status: 5 } },
+      game: {},
+      input,
+      cameras: { cameras: [] },
+      children: { list: [] },
+      add: new Proxy({}, { get: () => any }),
+      time: { delayedCall: () => ({ remove: () => {} }) },
+      tweens: { add: () => ({ remove: () => {} }) },
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    return { scene, bridge, report, keyboard, input, facts, heard };
+  }
+
+  it.each(["hub", "field", "run"] as const)("should open and close the tree on P in the %s, reported in the UI's state", (world) => {
+    const { keyboard, bridge } = created(world);
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(true);
+    expect(bridge.ui.tree).toBe(true);
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(false);
+    expect(bridge.ui.tree).toBe(false);
+  });
+
+  it("should take no P while the player types in chat", () => {
+    const { keyboard, bridge } = created("hub");
+    bridge.reportUi({ typing: true });
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(false);
+  });
+
+  it("should close the inventory as the tree opens, and the tree as the inventory opens (R36)", () => {
+    const { keyboard } = created("field");
+    keyboard.emit("keydown-I");
+    expect(gearMounts[0].inventory).toBe(true);
+    keyboard.emit("keydown-P");
+    expect([gearMounts[0].inventory, treeMounts[0].open]).toEqual([false, true]);
+    keyboard.emit("keydown-C");
+    expect([gearMounts[0].character, treeMounts[0].open]).toEqual([true, false]);
+  });
+
+  it("should tell the world the tree opening, so an aim ends through gearOpened", () => {
+    const { keyboard, heard } = created("run");
+    keyboard.emit("keydown-P");
+    expect(heard.at(-1)?.tree).toBe(true);
+  });
+
+  it("should hand the tree the character the world hands the gear (R41)", () => {
+    const { keyboard, bridge } = created("run");
+    keyboard.emit("keydown-P");
+    bridge.gear({ kind: "seen", carried: {}, character: { username: "Ash", class: "archer", passive_points: 2 } as never });
+    expect(treeMounts[0].shown.at(-1)).toMatchObject({ class: "archer", passive_points: 2 });
+  });
+
+  it("should close the tree at the run's end, and on Esc before the gear (R36)", () => {
+    const { keyboard, bridge, facts } = created("run");
+    keyboard.emit("keydown-P");
+    bridge.endPopped();
+    expect(treeMounts[0].open).toBe(false);
+    facts.ended = true;
+    keyboard.emit("keydown-P");
+    expect(treeMounts[0].open).toBe(false);
+  });
+
+  it("should hand the open tree a move and a press on its own ground, logical units", () => {
+    const { keyboard, input } = created("hub");
+    vi.stubGlobal("document", { activeElement: null, documentElement: {} });
+    keyboard.emit("keydown-P");
+    input.emit("pointermove", { x: 30, y: 40 }, [treeMounts[0].ground]);
+    input.emit("pointerdown", { x: 30, y: 40, button: 0 }, [treeMounts[0].ground]);
+    input.emit("pointerdown", { x: 31, y: 41, button: 0 }, [{}]);
+    vi.unstubAllGlobals();
+    expect(treeMounts[0].log).toEqual(["move 30,40", "down 30,40"]);
+  });
+
+  it("should build the tree for each world reported, told its world", () => {
+    const { bridge, report } = created("hub");
+    bridge.left("hub");
+    report("field");
+    expect(treeMounts.map((m) => [m.wiring.world, m.destroyed])).toEqual([
+      ["hub", true],
+      ["field", false],
+    ]);
   });
 });

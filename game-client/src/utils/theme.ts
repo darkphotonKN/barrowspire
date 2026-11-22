@@ -9,15 +9,15 @@
  *
  * Two palettes live in this file (ADR-0025). `BARROW` / `BARROW_HEX` are the
  * GAME palette, read only by Phaser code. `UI` at the bottom is the web UI
- * palette (Bone & Soot), read only by DOM code, and it mirrors globals.css
- * :root. The two are not required to agree, and neither reads the other.
+ * palette (Barrow Vellum, ADR-0087), read only by DOM code, and it mirrors
+ * globals.css :root. The two are not required to agree, and neither reads the
+ * other.
  *
- * One seam crosses: the canvas MENUS (PreloadScene, MainMenuScene,
- * CharacterCreationScene and src/ui/menuChrome.ts) wear the site's Bone & Soot look, so
- * the gate into the game matches the web UI. Phaser still never reads `UI`:
- * the `menu*` entries below are game-palette tokens that MIRROR the matching
- * globals.css :root values, and must agree with them. Everything past the
- * menus (hub, run, HUD, baked art) stays on the barrow ramp.
+ * The canvas MENUS (PreloadScene, MainMenuScene, CharacterCreationScene and
+ * src/ui/menuChrome.ts) wear Bone & Soot, the web palette from 2026-10-21 to
+ * 2026-11-21, through the `menu*` entries below. Since ADR-0087 those are their
+ * own values and no longer mirror globals.css :root. Everything past the menus
+ * (hub, run, HUD, baked art) stays on the barrow ramp.
  */
 
 export const BARROW = {
@@ -79,7 +79,8 @@ export const BARROW = {
   rarityRuned: "#c07a3a",
   rarityFabled: "#d678c8",
 
-  // Menu chrome: Bone & Soot, mirroring globals.css :root token for token (see the header).
+  // Menu chrome: Bone & Soot, the canvas menus' own values (ADR-0087; see the header). The
+  // comments name the web token each held until 2026-11-21, which is also the swap-back table.
   // Read only by the canvas menus, through `palette.menu` in canvasPalette.ts.
   menuBone: "#e9dfc9", //         --color-primary (the torch)
   menuBoneBright: "#f6efdf", //   --color-primary-bright
@@ -152,9 +153,9 @@ export const BARROW_HEX = {
 } as const;
 
 /**
- * The web UI palette (Bone & Soot) as CSS strings, for DOM code that cannot
- * read a CSS variable: Stripe Elements renders in a cross-origin iframe, and a
- * 2D canvas takes a literal fillStyle.
+ * The web UI palette (Barrow Vellum, ADR-0087) as CSS strings, for DOM code
+ * that cannot read a CSS variable: Stripe Elements renders in a cross-origin
+ * iframe, and a 2D canvas takes a literal fillStyle.
  *
  * ADR-0025: this table MIRRORS `globals.css` `:root` and must agree with it,
  * token for token. Change a value in both places or in neither. It is a
@@ -167,34 +168,34 @@ export const BARROW_HEX = {
  * transparent) is exactly X at alpha p.
  */
 export const UI = {
-  // Torch: bone. Text on a bone fill is bgDark.
-  primary: "#e9dfc9", //              --color-primary
-  primaryBright: "#f6efdf", //        --color-primary-bright
-  accent: "#8c8c84", //               --color-accent (ash grey)
+  // Torch: lifted vellum. Text on a torch fill is bgDark.
+  primary: "#e6d8b0", //              --color-primary
+  primaryBright: "#f2e8cc", //        --color-primary-bright
+  accent: "#9b8e6a", //               --color-accent (dark vellum)
   danger: "#6e1f1f", //               --color-danger (oxblood fill)
   dangerText: "#d07a6a", //           --color-danger-text
 
-  // Surfaces: soot and grey stone
-  bgDark: "#121212", //               --color-bg-dark
-  bgDarker: "#0a0a0a", //             --color-bg-darker
-  bgCard: "rgba(28, 28, 27, 0.88)", //   --color-bg-card
-  bgCard2: "rgba(38, 37, 35, 0.92)", //  --color-bg-card-2
-  bgCardOpaque: "#1b1b1a", //         --color-bg-card-opaque
-  bgCard2Opaque: "#242322", //        --color-bg-card-2-opaque
-  bgWell: "#0a0a0a", //               --color-bg-well
-  bgInset: "#0e0e0e", //              --color-bg-inset
-  bgDropdown: "#070707", //           --color-bg-dropdown
+  // Surfaces: charcoal and umber
+  bgDark: "#161310", //               --color-bg-dark
+  bgDarker: "#100c0a", //             --color-bg-darker
+  bgCard: "rgba(31, 26, 21, 0.88)", //   --color-bg-card
+  bgCard2: "rgba(36, 29, 23, 0.92)", //  --color-bg-card-2
+  bgCardOpaque: "#1e1914", //         --color-bg-card-opaque
+  bgCard2Opaque: "#231c16", //        --color-bg-card-2-opaque
+  bgWell: "#100c0a", //               --color-bg-well
+  bgInset: "#130f0c", //              --color-bg-inset
+  bgDropdown: "#0c0907", //           --color-bg-dropdown
 
-  // Iron: structure ("brass" is the role name, not the hue)
-  brass: "#5c5a55", //                --color-brass
-  brassBright: "#8a8780", //          --color-brass-bright
-  border: "rgba(92, 90, 85, 0.3)", //         --color-border (brass 30%)
-  borderStrong: "rgba(92, 90, 85, 0.6)", //   --color-border-strong (brass 60%)
-  focusRing: "0 0 0 2px rgba(138, 135, 128, 0.7)", // --focus-ring (brass-bright 70%)
+  // Brass: structure. brassBright is vellum, not the game's gold (ADR-0087).
+  brass: "#9c7b3f", //                --color-brass
+  brassBright: "#cdbf9a", //          --color-brass-bright
+  border: "rgba(156, 123, 63, 0.3)", //         --color-border (brass 30%)
+  borderStrong: "rgba(156, 123, 63, 0.6)", //   --color-border-strong (brass 60%)
+  focusRing: "0 0 0 2px rgba(205, 191, 154, 0.7)", // --focus-ring (brass-bright 70%)
 
-  // Text
-  text: "#cfc9bb", //                 --color-text
-  textDim: "#9b968b", //              --color-text-dim
-  textMuted: "#85817a", //            --color-text-muted
-  textPlaceholder: "#5e5b55", //      --color-text-placeholder
+  // Text: the vellum ramp
+  text: "#cdbf9a", //                 --color-text
+  textDim: "#9b8e6a", //              --color-text-dim
+  textMuted: "#8d8362", //            --color-text-muted
+  textPlaceholder: "#6b6349", //      --color-text-placeholder
 } as const;

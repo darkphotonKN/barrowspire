@@ -1,6 +1,6 @@
 /**
- * The run's controls badge (FS-84N1G R3, R5–R9): a book above the ability card that opens and closes the
- * controls panel, as H does.
+ * The run's controls badge (FS-84N1G R3, R5–R9): a book over the corner row, where it stood above the ability
+ * card (its rect kept, FS-Q18Q3 R42), that opens and closes the controls panel, as H does.
  *
  * Drawn as the corner row's icons are (ADR-0080): an embossed bronze **knockout** of the owner's book
  * (`BOOK`, `knockoutBook.ts`) through the shared renderer, bare over the world on a plate the corner
@@ -59,7 +59,7 @@ export class ControlsBadge {
     this.draw();
   }
 
-  /** The logical view changed: back above the ability card (FS-ZAJMH R12, R13). */
+  /** The logical view changed: back to its place over the corner row (FS-ZAJMH R12, R13). */
   relayout(): void {
     this.frame = controlsBadgeFrame(viewport);
     this.zone.setPosition(this.frame.x, this.frame.y);

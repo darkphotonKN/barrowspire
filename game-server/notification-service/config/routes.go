@@ -41,7 +41,9 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// The welcome potion is found by catalogue name (FS-1GZGD A10): its template
 	// id differs per environment, since the dev seed mints it.
 	itemsClient := mailbox.NewItemsClient(itemsConn)
-	mailboxService := mailbox.NewService(db, mailbox.NewRepository(db),
+	// repositories are wrapped so every call is a span above its queries
+	// (internal/*/trace_gen.go)
+	mailboxService := mailbox.NewService(db, mailbox.NewRepositoryWithTracing(mailbox.NewRepository(db), "mailbox/repository"),
 		itemsClient, mailbox.NewWalletClient(walletConn), arrivals, inboxRepo,
 		MaxConcurrentClaims).
 		WithWelcomeGift(itemsClient, os.Getenv("WELCOME_GIFT_TEMPLATE_NAME"))
@@ -50,7 +52,7 @@ func SetupServices(db *sqlx.DB, amqpChannel *amqp.Channel, itemsConn, walletConn
 	// Create service with repositories and DB handle (for tx-wrapped inbox
 	// pattern); the signup handling stores each new account's welcome letter
 	// through the mailbox (FS-1GZGD R57)
-	service := notification.NewService(db, repo, inboxRepo, mailer, mailboxService)
+	service := notification.NewService(db, notification.NewRepositoryWithTracing(repo, "notification/repository"), inboxRepo, mailer, mailboxService)
 
 	// Create gRPC handler with service
 	handler := notification.NewHandler(service)

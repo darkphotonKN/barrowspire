@@ -20,10 +20,12 @@ export interface UiWindows {
   inventory(): boolean;
   /** Whether the gear overlay's character panel is open now. */
   character(): boolean;
+  /** Whether the passive tree is open now (FS-8RZ51 R36). */
+  tree(): boolean;
 }
 
 /** None of the UI scene's own windows: none open. */
-const NO_WINDOWS: UiWindows = { party: () => false, inventory: () => false, character: () => false };
+const NO_WINDOWS: UiWindows = { party: () => false, inventory: () => false, character: () => false, tree: () => false };
 
 /**
  * Makes the game's one player and lends it to `bridge` (R22). Its window state is the UI scene's own
@@ -45,6 +47,7 @@ export function mountInterfaceSounds(
     party: own.party(),
     inventory: own.inventory(),
     character: own.character(),
+    tree: own.tree(),
     menu: bridge.ui.menuOpen,
   });
   const sounds = new UiSounds(stage, store, windows, now);

@@ -996,3 +996,192 @@ func TestMonsterAISystem_Ranged_ArrowDamagesByTheMonsterFormula(t *testing.T) {
 	assert.Equal(t, 150-mitigated(7, 1), health(d))
 	assert.Empty(t, projectiles(em), "the arrow never pierces")
 }
+
+// stunTick runs one tick of the AI and the CombatSystem, asserting the
+// stunned monster stood still with nothing handed on: velocity 0, nothing struck.
+func stunTick(t *testing.T, em *ecs.EntityManager, ai *MonsterAISystem, combat *CombatSystem, m *ecs.Entity) {
+	t.Helper()
+	entities := em.GetAllEntities()
+	ai.Update(tickSeconds, entities)
+	assert.Zero(t, velocityOf(t, m).VX)
+	assert.Zero(t, velocityOf(t, m).VY)
+	assert.Empty(t, handed(m), "a stunned monster hands the CombatSystem nothing")
+	assert.Equal(t, components.MonsterActionStunned, monster(m).Action)
+	combat.Update(tickSeconds, entities, nil)
+}
+
+// A stunned monster neither moves nor strikes nor starts a wind-up, whatever
+// its target does: in its reach, out of it, gone, or beyond the leash.
+// FS-04EEA §C R13; §Edge States "Stun and leash".
+func TestMonsterAISystem_Stunned_NeitherMovesNorStrikes(t *testing.T) {
+	tests := []struct {
+		name string
+		at   float64 // the delver's x, the monster at 500
+	}{
+		{"its target in reach", 540},
+		{"its target out of reach", 700},
+		{"nobody near", 1400},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			g := hunter(em, 500, 500)
+			d := delver(em, tt.at, 500)
+			monster(g).Target = d.ID
+			monster(g).HomeX = 2000 // beyond the leash of home, so unstunned it walks
+			facingX, facingY := monster(g).FacingX, monster(g).FacingY
+			stun(monster(g), 1.0)
+
+			ai, combat := NewMonsterAISystem(firstRoll, nil), NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
+			for range 30 {
+				stunTick(t, em, ai, combat, g)
+			}
+
+			assert.Equal(t, 150, health(d))
+			assert.Zero(t, monster(g).WindUpRemaining)
+			assert.Equal(t, facingX, monster(g).FacingX, "it does not turn while stunned")
+			assert.Equal(t, facingY, monster(g).FacingY)
+		})
+	}
+}
+
+// A stun landing half-way through a wind-up ends it with nothing landing: a
+// ghoul's strike, a demon's slam, an archer's draw, a Blood Troll's slam on the
+// ground. The cooldowns the wind-up started stay spent. FS-04EEA §C R14.
+func TestMonsterAISystem_StunMidWindUp_LandsNothingAndLeavesItsCooldownsSpent(t *testing.T) {
+	tests := []struct {
+		name  string
+		stand func(t *testing.T, em *ecs.EntityManager, x, y float64) *ecs.Entity
+		at    float64 // the delver's x, the monster at 500
+		spent func(m *components.MonsterComponent) float64
+	}{
+		{"a strike", func(_ *testing.T, em *ecs.EntityManager, x, y float64) *ecs.Entity { return hunter(em, x, y) }, 540,
+			func(m *components.MonsterComponent) float64 { return m.AttackCooldown }},
+		{"a demon's slam", demon, 560,
+			func(m *components.MonsterComponent) float64 { return m.SlamCooldownRemaining }},
+		{"a ranged draw", func(_ *testing.T, em *ecs.EntityManager, x, y float64) *ecs.Entity { return archer(em, x, y) }, 700,
+			func(m *components.MonsterComponent) float64 { return m.AttackCooldown }},
+		{"a monster ability on the ground", bloodTroll, 580,
+			func(m *components.MonsterComponent) float64 { return m.AbilityCooldown }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			em := ecs.NewEntityManager()
+			g := tt.stand(t, em, 500, 500)
+			d := sturdy(delver(em, tt.at, 500))
+			brawl(em, 1)
+			m := monster(g)
+			require.Positive(t, m.WindUpRemaining+m.AbilityPending.Remaining, "winding up")
+			brawl(em, 6)
+			before := tt.spent(m)
+			require.Positive(t, before)
+
+			stun(m, 0.5)
+
+			assert.Zero(t, m.WindUpRemaining)
+			assert.Zero(t, m.AbilityPending.Remaining)
+			assert.Equal(t, before, tt.spent(m), "the cooldown it started stays spent")
+			brawl(em, ticks(0.5)-1)
+			assert.Equal(t, 100000, health(d), "nothing lands from the wind-up")
+			assert.Empty(t, projectiles(em), "no shot leaves")
+		})
+	}
+}
+
+// A leap already in the air lands where it was going and hits there; the stun
+// then holds the monster where it landed. FS-04EEA §C R14; §Edge States "Stun
+// on a monster mid-leap".
+func TestMonsterAISystem_StunMidLeap_TheLeapStillLands(t *testing.T) {
+	em := ecs.NewEntityManager()
+	r := ravener(em, 500, 500)
+	target := sturdy(delver(em, 700, 500))
+	brawl := brawlOn(em, openFloor(12, 10))
+	brawl(ticks(0.5))
+	m := monster(r)
+	require.True(t, m.AbilityPending.Leaping, "in the air")
+
+	stun(m, 1.0)
+	assert.Equal(t, components.MonsterActionStunned, m.Action)
+	brawl(ticks(0.3))
+
+	assert.Equal(t, 700.0, transformOf(t, r).X, "it lands at the aimed point")
+	assert.Less(t, health(target), 100000, "its area hits")
+	assert.Zero(t, m.AbilityPending.Remaining)
+	assert.Equal(t, components.MonsterActionStunned, m.Action, "held where it landed")
+	assert.Zero(t, velocityOf(t, r).VX)
+}
+
+// During a stun its cooldowns count down and it keeps its target, so it acts on
+// them the tick the stun ends. FS-04EEA §C R15.
+func TestMonsterAISystem_Stun_CooldownsRunAndTheTargetIsKept(t *testing.T) {
+	em := ecs.NewEntityManager()
+	g := demon(t, em, 500, 500)
+	d := sturdy(delver(em, 560, 500))
+	m := monster(g)
+	m.Target = d.ID
+	m.AttackCooldown, m.SlamCooldownRemaining, m.AbilityCooldown = 0.9, 3, 2
+	m.Route.SearchIn = 0.5
+	stun(m, 1.0)
+
+	brawl(em, 30)
+
+	assert.InDelta(t, 0.4, m.AttackCooldown, 1e-9)
+	assert.InDelta(t, 2.5, m.SlamCooldownRemaining, 1e-9)
+	assert.InDelta(t, 1.5, m.AbilityCooldown, 1e-9)
+	assert.InDelta(t, 0, m.Route.SearchIn, 1e-9)
+	assert.Equal(t, d.ID, m.Target, "it keeps its target")
+
+	brawl(em, 30)
+	assert.Equal(t, d.ID, m.Target)
+	assert.NotEqual(t, components.MonsterActionStunned, m.Action, "the stun is over")
+	assert.Equal(t, components.MonsterActionClaw, m.Action, "it claws its target, the slam cooling, the tick the stun ends")
+}
+
+// A delver who hits a stunned monster with no target is taken up as its target
+// during the stun. FS-04EEA §C R15.
+func TestMonsterAISystem_Stun_TakesUpItsAttacker(t *testing.T) {
+	em := ecs.NewEntityManager()
+	g := hunter(em, 500, 500)
+	d := delver(em, 1200, 500)
+	m := monster(g)
+	stun(m, 1.0)
+	m.LastAttacker = d.ID
+
+	think(em)
+
+	assert.Equal(t, d.ID, m.Target)
+	assert.Equal(t, components.MonsterActionStunned, m.Action)
+}
+
+// A second stun leaves the longer of the two remaining. FS-04EEA §C R16.
+func TestStun_SecondStun_KeepsTheLonger(t *testing.T) {
+	tests := []struct {
+		left, stun, want float64
+	}{
+		{0.3, 1.0, 1.0},
+		{0.8, 0.5, 0.8},
+	}
+	for _, tt := range tests {
+		m := &components.MonsterComponent{StunRemaining: tt.left}
+		stun(m, tt.stun)
+		assert.Equal(t, tt.want, m.StunRemaining, "%v left, %v landing", tt.left, tt.stun)
+	}
+}
+
+// A demon showing its claw reports `stunned` for the stun; the claw has
+// already landed, and its show does not resume after. FS-04EEA §Edge States
+// "Stun and the claw's show".
+func TestMonsterAISystem_StunMidClawShow_ReportsStunned(t *testing.T) {
+	em := ecs.NewEntityManager()
+	g := demon(t, em, 500, 500)
+	sturdy(delver(em, 560, 500))
+	m := monster(g)
+	m.ClawShowRemaining = 0.4
+	m.AttackCooldown = 5
+	stun(m, 0.1)
+
+	brawl(em, 5) // 0.1 s is 6 ticks: on the sixth it is over
+	assert.Equal(t, components.MonsterActionStunned, m.Action)
+	brawl(em, 1)
+	assert.Equal(t, components.MonsterActionIdle, m.Action, "the show is over")
+}

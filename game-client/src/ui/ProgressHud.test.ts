@@ -351,3 +351,25 @@ describe("ProgressHud: the level-up cue (FS-77DVN §D.16)", () => {
     expect(numerals(texts).map((t) => t.words)).toEqual(["8", "9"]);
   });
 });
+
+// FS-Q18Q3 §B R12: while the ability bar is up the cue rises from 6 px over the bar's top, which the HUD
+// slot tells it; with no bar it keeps FS-77DVN §D.16's place
+describe("ProgressHud: the cue over the ability bar (FS-Q18Q3 R12)", () => {
+  const next: Progress = { level: 8, experience: 230, level_floor: 230, next_level_at: 400 };
+
+  it("should rise from 6 px over the bar's top while the bar is up, and from over the piece once it is down", () => {
+    const { scene, tweens, texts } = fakeScene();
+    const hud = new ProgressHud(scene);
+    const { piece } = xpBarFrame(viewport);
+    hud.show(mid);
+    hud.cueOver(612);
+    hud.show(next);
+    const over = texts.find((t) => t.words === "Risen to level 8");
+    expect(over).toMatchObject({ x: piece.x + piece.width / 2, y: 612 - 6 });
+    expect(tweens[0]).toMatchObject({ y: 612 - 6 - 12 });
+
+    hud.cueOver(null);
+    hud.show({ level: 9, experience: 400, level_floor: 400, next_level_at: 600 });
+    expect(texts.find((t) => t.words === "Risen to level 9")).toMatchObject({ y: piece.y - 6 });
+  });
+});

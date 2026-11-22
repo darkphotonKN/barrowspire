@@ -14,6 +14,7 @@ import (
 	grpccharacter "github.com/darkphotonKN/barrowspire-server/game-service/grpc/character"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/chatbus"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/gameserver"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/handoff"
@@ -22,6 +23,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partypresence"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/partystore"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/queuemetrics"
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -87,7 +89,10 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
 	matchAnnouncer := handoff.NewRedis(redisClient)
 	// a match is as many players as a full party: one setting (FS-R82NV R8)
-	matchmaker := matchmaker.NewMatchmaker(partySize, pod.ID, matchQueueRedis, matchAnnouncer)
+	// the queue the matchmaker reads is wrapped to set the depth gauge and time
+	// each match's wait, leaving the matchmaker itself untouched
+	measuredQueue := queuemetrics.Wrap(matchQueueRedis, pod.ID, metrics.MatchmakingQueueDepth, metrics.MatchmakingWaitSeconds)
+	matchmaker := matchmaker.NewMatchmaker(partySize, pod.ID, measuredQueue, matchAnnouncer)
 
 	// outbox is built once in main and shared with the worker that drains it;
 	// the worker is woken once match-end rows commit

@@ -7,7 +7,9 @@ import "github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 // consumable slots. The GearSystem rewrites it every tick; the character's own
 // stats are never touched by it. FS-4R9M9 §Requirements 39–40.
 type GearBonusComponent struct {
-	// Attributes, added to the character's own wherever they are read.
+	// Attributes, added to the character's own wherever they are read. These
+	// and the two speeds carry the passive tree's too (PassiveBonusComponent,
+	// FS-8RZ51 R25), so every reader sums them with gear's.
 	Strength     int
 	Agility      int
 	Intelligence int

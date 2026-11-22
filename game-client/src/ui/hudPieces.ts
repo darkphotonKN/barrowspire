@@ -1,26 +1,23 @@
 /**
- * The HUD pieces on the UI scene (FS-TQZ5J § Change: Batch 5, R67–R73): the real `AbilityHud`,
- * `PotionHud`, `ResourceHud` and `ProgressHud`, unchanged, built on the scene they are handed; and the
- * UI scene's HUD slot mounted over its game's bridge, hearing the worlds' reports and their `hud` data,
- * relaid out with the scene's view and taken down with the scene.
+ * The HUD pieces on the UI scene (FS-TQZ5J § Change: Batch 5, R67–R73): the real `AbilityBar` (FS-Q18Q3
+ * R41), `ResourceHud` and `ProgressHud`, built on the scene they are handed; and the UI scene's HUD slot
+ * mounted over its game's bridge, hearing the worlds' reports and their `hud` data, relaid out with the
+ * scene's view and taken down with the scene.
  */
 
 import type Phaser from "phaser";
-import type { ArtLibrary } from "@/render/art/library";
 import { relayoutOn } from "@/render/viewport";
 import { onSceneEnd } from "@/scenes/sceneEnd";
-import { AbilityHud } from "./AbilityHud";
-import { PotionHud } from "./PotionHud";
+import { AbilityBar } from "./AbilityBar";
 import { ProgressHud } from "./ProgressHud";
 import { ResourceHud } from "./ResourceHud";
 import type { UiBridge } from "./uiBridge";
 import { UiHudSlot, hearHud, type HudBuild } from "./uiSceneHud";
 
-/** The pieces on `scene`, the potion's icon cut from `art` (the UI scene's resident art, read as it is built). */
-export function hudPieces(scene: Phaser.Scene, art: () => ArtLibrary): HudBuild {
+/** The pieces on `scene`. */
+export function hudPieces(scene: Phaser.Scene): HudBuild {
   return {
-    ability: (place) => new AbilityHud(scene, place),
-    potion: (at) => new PotionHud(scene, art(), at.x, at.y),
+    bar: () => new AbilityBar(scene),
     bars: (at) => new ResourceHud(scene, at.x, at.y),
     progress: () => new ProgressHud(scene),
   };

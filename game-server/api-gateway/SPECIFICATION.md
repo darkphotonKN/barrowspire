@@ -79,6 +79,7 @@ not code or file paths. Marked ✅ DONE vs ⏳ PLANNED.
 ### Characters
 
 - [x] Character level and experience read → FS-BDA7X
+- [ ] Specialization in the character read → FS-E1ZDG
 
 ### Chat
 

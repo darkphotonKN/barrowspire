@@ -15,13 +15,15 @@ import {
   type Facing8,
   type Point,
 } from "@/render/iso";
-import { preloadArt, registerArt } from "@/render/art/phaser";
-import { fieldArt } from "@/render/art/sceneArt";
+import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
+import { fieldArt, type SceneGroups } from "@/render/art/sceneArt";
+import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
+import { Auras } from "@/render/effects/aura";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { LightMap } from "@/render/lighting";
-import { FIELD_MARKER_OUTLINE, MARKER_DEPTH } from "@/render/markers";
+import { FIELD_MARKER_OUTLINE, MARKER_DEPTH, NameplateTitle } from "@/render/markers";
 import {
   GroundLayer,
   MEADOWS_LOOK,
@@ -39,7 +41,7 @@ import {
   worldSeed,
   type FieldLook,
 } from "@/render/world";
-import { addMist } from "@/render/effects/mist";
+import { addMist, prefersReducedMotion } from "@/render/effects/mist";
 import { DROP_PILE, paintDropPile } from "@/render/world/dropPile";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SACK, paintSack, sackFrame } from "@/render/world/sack";
@@ -47,10 +49,12 @@ import { progressOf } from "@/ui/progress";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
-import { abilityCard } from "@/ui/abilityCard";
+import { abilityBar } from "@/ui/abilityBarView";
 import { hudBars } from "@/ui/resources";
 import { createAtmosphere } from "@/utils/atmosphere";
-import { fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
+import { cursorWorldOf, fieldCombatOnScene, type FieldCombat } from "./fieldCombat";
+import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { placeOnJump } from "@/render/jump";
 import { FieldPiles } from "./fieldPiles";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
@@ -103,7 +107,7 @@ import { findPointerLook } from "@/render/cursors";
  * the satchel and their keys are the UI scene's: the field hands them its state and answers their
  * equips and takes (FS-TQZ5J § Change: Phase 3, R50–R56).
  * The class kit is the run's too (FS-8AY7S, FS-JTNPR, FS-MAMHR): the Health and class resource
- * bars top-left, the ability card bottom-right, the archer's Shadow Shot hold (the keys read
+ * bars top-left, the ability bar over the level bar, the archer's Shadow Shot hold (the keys read
  * released while it is drawn) and the Mercenary's cut, riposte and parry, all through `fieldCombat`.
  *
  * Walking into the entrance gate sends one leave_field and waits for world_entered or a refusal,
@@ -152,6 +156,8 @@ function roadHomeGate(gates: readonly GateState[]): GateState | undefined {
 interface PlayerView {
   sprite: Phaser.GameObjects.Container;
   name: Phaser.GameObjects.Text;
+  /** The title line under the name (FS-E1ZDG §K.41), stood with it; none before the pick. */
+  title: NameplateTitle;
   pos: Point;
   target: Point;
   facing: Facing8;
@@ -184,6 +190,15 @@ export class FieldScene extends Phaser.Scene {
   /** Trees and the signpost, faded while they stand over the player (FS-2325V §C.5). */
   private occluders = new Occluders();
   private art!: ArtLibrary;
+  /**
+   * The field's groups and its own player's spec look, decided at preload (FS-1J1CB R20); the
+   * same set registered in create.
+   */
+  private artGroups?: SceneGroups;
+  /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
+  private looks?: SpecLooks;
+  /** The Spellwardens' wards and the Shadow Rangers' glooms, one per body (FS-1J1CB §E). */
+  private auras?: Auras;
   private lightMap?: LightMap;
   private views = new Map<string, PlayerView>();
   private selfEntityID: string | null = null;
@@ -244,7 +259,7 @@ export class FieldScene extends Phaser.Scene {
   private ui: WorldUi = NO_UI;
   /** The gameplay sound effects' player (FS-AND39 R16), made in `create`, for the world's own plays: the fight's hits and casts, a take. */
   private gameplaySounds?: GameplaySounds;
-  /** The latest field state, for the ability card's redraw as the lockout starts and ends. */
+  /** The latest field state, for the ability bar's redraw as the lockout or the hold starts and ends. */
   private lastState?: ClientGameState;
   /** The player's server-reported position, for reaching a pile. */
   private selfAt?: Point;
@@ -273,7 +288,9 @@ export class FieldScene extends Phaser.Scene {
   }
 
   preload(): void {
-    preloadArt(this, fieldArt(this.field), {
+    // the player's own spec look with the field's art, from the character read (FS-1J1CB R20)
+    this.artGroups = withOwnLook(fieldArt(this.field), useGameStore.getState().getActiveCharacter());
+    preloadArt(this, this.artGroups, {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
@@ -295,7 +312,10 @@ export class FieldScene extends Phaser.Scene {
     boundCamera(camera, bounds);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this, fieldArt(this.field));
+    const groups = this.artGroups ?? fieldArt(this.field);
+    this.art = registerArt(this, groups);
+    this.looks = new SpecLooks(this.art, onDemandArt(this, this.art), containedBodies(this.views), groups);
+    this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
     // past the map's edge, the field's flat edge tint and nothing else; the ground, laid with the
     // first state, road and all, fades into it (FS-KSD6K §Requirements 14, 16)
     camera.setBackgroundColor(this.look.beyond);
@@ -316,11 +336,13 @@ export class FieldScene extends Phaser.Scene {
       takesPointer: (x, y, primary) => this.takesPointer(x, y, primary),
       // a press on the UI scene's chat window during a held world press (FS-TQZ5J § Change: Batch 6, R129)
       pressClaimed: (pointer) => this.ui.pressClaimed(pointer),
-      lockout: () => this.showAbilityCard(),
+      // the lockout and the Shadow Shot hold are the bar's to show (FS-Q18Q3 R22, R23, R40)
+      abilityChanged: () => this.showAbilityBar(),
       sounds: this.gameplaySounds,
     });
     this.createPiles();
     this.bindHudKeys();
+    this.bindTreeAbilityKey();
     this.bindMinimapKey();
     // the field's minimap, built with its first state (FS-P0HSP §A.1); as the overlay, held
     // against the screen from the main camera's frames (FS-1SEF0 §C.19)
@@ -371,10 +393,11 @@ export class FieldScene extends Phaser.Scene {
       invitesAboveChat: true,
       // a field is never queued (FS-X2F2H R20): Change character, dimmed while it is asked
       facts: () => ({ ...NO_FACTS, leaving: this.leavingHub }),
-      // a gear panel opening ends a Shadow Shot hold (FS-JTNPR req 15; FS-TQZ5J § Change: Phase 3, R53);
-      // the menu opens over no window, the gear overlay and the party panel the UI scene's (FS-3EBCA R17)
+      // the menu or a gear panel opening ends a Shadow Shot hold or an Arrow Rain aim (FS-JTNPR req 15;
+      // FS-04EEA R38; FS-TQZ5J § Change: Phase 3, R53); the menu opens over no window, the gear overlay and
+      // the party panel the UI scene's (FS-3EBCA R17)
       heardUi: (ui, was) => {
-        if (gearOpened(ui, was)) this.fight?.cancelAim();
+        if ((ui.menuOpen && !was.menuOpen) || gearOpened(ui, was)) this.fight?.cancelAim();
       },
       answer: answering({
         changeCharacter: () => this.changeCharacter(),
@@ -554,6 +577,19 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
+   * Key 3, the tree ability's cast at the world point under the cursor (FS-04EEA R35, R36), as the run binds
+   * it: held back while the UI scene's menu reads it as its third row, chat types or a gear panel is open; a
+   * fallen player sends nothing (`FieldCombat.treeAbility`). Letting go of it casts an archer's Arrow Rain aim
+   * at the cursor, or only cancels it while the UI scene holds the key back (FS-04EEA R38).
+   */
+  private bindTreeAbilityKey(): void {
+    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.fight?.treeAbility(cursorWorldOf(this), repeat), {
+      release: () => this.fight?.releaseTreeAbility(cursorWorldOf(this)),
+      cancel: () => this.fight?.cancelAim(),
+    });
+  }
+
+  /**
    * A press on the map mode icon is M's: never an attack, a cast or a Shadow Shot hold. A press on the chat
    * window, over the overlay's panels or on the open satchel is the UI scene's and never reaches the field
    * (FS-TQZ5J § Change: Phase 3, R59; § Change: Batch 6, R129); one in the overlay's clear middle band
@@ -591,6 +627,8 @@ export class FieldScene extends Phaser.Scene {
     this.lastState = undefined;
     this.selfAt = undefined;
     this.views.clear();
+    this.auras?.clear();
+    this.auras = undefined;
     this.selfEntityID = null;
     this.followedSprite = undefined;
     this.groundDrawn = false;
@@ -634,7 +672,9 @@ export class FieldScene extends Phaser.Scene {
       if (view.anim.baked && body) view.anim.show(body, view.anim.step(view.pos, time, delta, view.fallen));
       const s = worldToScreen(view.pos.x, view.pos.y);
       view.name.setPosition(s.x, s.y - (body?.displayHeight ?? 60) - NAME_GAP);
+      view.title.stand(view.name);
     }
+    this.followAuras(time);
     // the light-map in daylight; the torch rides with the player as in every world
     const self = this.selfEntityID ? this.views.get(this.selfEntityID) : undefined;
     this.lightMap?.carry(self ? { x: self.sprite.x, y: self.sprite.y } : null);
@@ -645,6 +685,13 @@ export class FieldScene extends Phaser.Scene {
       self && selfBody ? { bounds: selfBody.getBounds(), depth: self.sprite.depth } : null,
       delta,
     );
+  }
+
+  /** Every body's aura on the feet just drawn; none from the fall to the rising (FS-1J1CB R35). */
+  private followAuras(time: number): void {
+    if (!this.auras) return;
+    for (const [id, view] of this.views)
+      this.auras.follow(id, view.sprite.visible && !view.fallen ? view.pos : null, view.anim.crown, time);
   }
 
   private bindInput(): void {
@@ -710,7 +757,10 @@ export class FieldScene extends Phaser.Scene {
       if (present.has(entityID)) continue;
       view.sprite.destroy();
       view.name.destroy();
+      view.title.destroy();
       this.views.delete(entityID);
+      this.looks?.forget(entityID);
+      this.auras?.forget(entityID);
     }
 
     // the field's monsters, projectiles and struck players, once the bodies stand
@@ -802,24 +852,28 @@ export class FieldScene extends Phaser.Scene {
   }
 
   /**
-   * The run's Health and class resource bars and its ability card (FS-8AY7S req 20–32), by the
-   * same rules: up while the player stands in the field, down while they lie fallen. A field has
-   * no leave button to share the card's corner.
+   * The run's Health and class resource bars (FS-8AY7S req 20–25) and the ability bar (FS-Q18Q3 §E, §G),
+   * by the same rules: up while the player stands in the field, down while they lie fallen.
    */
   private showClassHud(state: ClientGameState): void {
     // the UI scene's, in the field's corner (FS-TQZ5J § Change: Batch 5, R68, R69)
     this.ui.hud({ world: "field", kind: "bars", bars: hudBars(state) });
-    this.showAbilityCard();
+    this.showAbilityBar();
   }
 
   /**
-   * The ability card, redrawn on every state and as the lockout starts and ends (req 31): handed to the
-   * UI scene, which draws it above the corner row (FS-3EBCA R13; FS-TQZ5J § Change: Batch 5, R68).
+   * The ability bar, judged on every state and as the lockout or the hold starts and ends (FS-Q18Q3 R40):
+   * handed to the UI scene, which draws it over the level bar (R41), the potion square always greyed here.
    */
-  private showAbilityCard(): void {
+  private showAbilityBar(): void {
     const state = this.lastState;
     if (!state) return;
-    this.ui.hud({ world: "field", kind: "ability", card: abilityCard(state, { lockedOut: this.fight?.lockedOut ?? false }) });
+    const bar = abilityBar(state, {
+      world: "field",
+      lockedOut: this.fight?.lockedOut ?? false,
+      aiming: this.fight?.aiming ?? false,
+    });
+    this.ui.hud({ world: "field", kind: "bar", bar });
   }
 
   /** This client's player as drawn, once the field has reported them. */
@@ -1040,12 +1094,18 @@ export class FieldScene extends Phaser.Scene {
     const existing = this.views.get(player.entity_id);
     const fallen = isFallen(player);
     if (existing) {
+      // a jump, a Blink, is placed there at once, never glided (FS-04EEA R41); the own Blink lands there (R44)
+      if (placeOnJump(existing.pos, existing.target, player.position) && isSelf) this.fight?.landed(player.position);
       existing.target = { x: player.position.x, y: player.position.y };
       // risen at the entrance: stand there at once rather than slide across the field
       if (existing.fallen && !fallen) existing.pos = { ...existing.target };
       existing.fallen = fallen;
       const { vx, vy } = player.direction ?? { vx: 0, vy: 0 };
       existing.facing = facingFrom(vx, vy, existing.facing);
+      existing.title.show(player);
+      // a pick applied here shows its look once in (FS-1J1CB R22)
+      this.looks?.see(player.entity_id, player);
+      this.auras?.see(player.entity_id, player);
       if (!existing.anim.baked) {
         const body = existing.sprite.getByName("body") as Phaser.GameObjects.Sprite | null;
         body?.setTexture(placeholderTexture(player.class, nearestScreenFacing(existing.facing)));
@@ -1055,24 +1115,25 @@ export class FieldScene extends Phaser.Scene {
 
     const body = this.add.sprite(0, 0, placeholderTexture(player.class, "down"));
     body.setName("body");
-    const anim = new CharacterAnimator(this.art, player.class);
+    // a spec look once it is in, its base class's sheet until then (FS-1J1CB R16, R21)
+    const anim = new CharacterAnimator(this.art, this.looks?.look(player) ?? player.class);
     if (anim.baked) anim.dress(body);
     else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
+    const nameStyle = { fontFamily: CANVAS_FONT.body, color: toCss(palette.markerHub), ...FIELD_MARKER_STROKE };
     const name = this.add
-      .text(0, 0, player.username, {
-        fontFamily: CANVAS_FONT.body,
-        fontSize: "12px",
-        color: toCss(palette.markerHub),
-        ...FIELD_MARKER_STROKE,
-      })
+      .text(0, 0, player.username, { ...nameStyle, fontSize: "12px" })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);
+    const title = new NameplateTitle(this, nameStyle);
+    title.show(player);
 
     const pos = { x: player.position.x, y: player.position.y };
     const sprite = this.add.container(0, 0, [body]);
     standAt(sprite, pos, 1);
-    this.views.set(player.entity_id, { sprite, name, pos, target: { ...pos }, facing: "se", anim, fallen });
+    this.views.set(player.entity_id, { sprite, name, title, pos, target: { ...pos }, facing: "se", anim, fallen });
+    this.looks?.see(player.entity_id, player);
+    this.auras?.see(player.entity_id, player);
   }
 
   /**

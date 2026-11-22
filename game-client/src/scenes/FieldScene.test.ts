@@ -4,8 +4,6 @@ import { resetHeldForTests } from "@/audio/sfxSetting";
 // node has no window, so an effects level a test sets is held for the module's life: each test starts a new visit
 afterEach(() => resetHeldForTests());
 
-// Only the field's entrance trigger and its replies are under test: a Phaser stand-in with the
-// scene base class and the events the scene hangs its release on.
 // The chat input's text field is a real <input> in the browser; this suite runs without a DOM,
 // so the field is a silent stand-in. The input's rules are tested in ui/chatInput.test.ts.
 vi.mock("@/ui/chatInputField", () => ({
@@ -38,33 +36,17 @@ vi.mock("@/ui/partyInviteField", () => ({
 // suite (utils/atmosphere.test.ts).
 vi.mock("@/utils/atmosphere", () => ({ createAtmosphere: () => undefined }));
 
-vi.mock("phaser", async () => {
-  const { EventEmitter } = await import("eventemitter3");
-  class Scene {
-    events = new EventEmitter();
-    constructor(_config: unknown) {}
-  }
-  const phaser = {
-    Scene,
-    Scenes: { Events: { SHUTDOWN: "shutdown", DESTROY: "destroy" } },
-    Scale: { Events: { RESIZE: "resize" } },
-    BlendModes: { NORMAL: 0, ADD: 1, MULTIPLY: 2 },
-    Input: { Keyboard: { KeyCodes: {} } },
-    Math: {
-      Linear: (a: number, b: number, t: number) => a + (b - a) * t,
-      Between: () => 0,
-      FloatBetween: () => 0,
-    },
-  };
-  return { ...phaser, default: phaser };
-});
+// A Phaser stand-in: the scene base class on Phaser's event emitter, its key poll, math and geometry.
+vi.mock("phaser", async () => (await import("./phaser.standin")).phaserStandIn());
 
 const { FieldScene } = await import("./FieldScene");
+const { RUN_ACTIONS } = await import("./runActions");
+const { screenToWorld } = await import("@/render/iso");
 const { socketManager } = await import("@/utils/class/SocketManager");
 const { ActionType } = await import("@/assets/types/client");
 const { EquipmentHud } = await import("@/ui/EquipmentHud");
 const { ResourceHud } = await import("@/ui/ResourceHud");
-const { AbilityHud } = await import("@/ui/AbilityHud");
+const { AbilityBar } = await import("@/ui/AbilityBar");
 const hudCorner = await import("@/ui/hudCornerLayout");
 const { cornerRowOn } = await import("@/ui/uiSceneCorner.standin");
 const { gearOver, menuOver, partyPanelOver, uiSceneOn } = await import("@/ui/uiSceneMenu.standin");
@@ -73,7 +55,7 @@ const { chatWiring } = await import("@/ui/uiSceneChat");
 const chatMayOpen = (field: object) => chatWiring(uiSceneOn(field, "field", { row: false }).bridge).mayOpen();
 /** The player typing in the UI scene's chat over the field, or not (FS-TQZ5J § Change: Batch 6, R127). */
 const typeInChat = (field: object, on = true) => uiSceneOn(field, "field", { row: false }).bridge.reportUi({ typing: on });
-const { abilityPlaceOver, hudOver } = await import("@/ui/uiSceneHud.standin");
+const { barShownOver, hudOver } = await import("@/ui/uiSceneHud.standin");
 const { equipmentPiece } = await import("@/ui/uiSceneGear");
 type UiKey = import("@/ui/uiSceneMenu.standin").UiKey;
 type GearKey = import("@/ui/uiSceneGear").GearKey;
@@ -151,10 +133,10 @@ const { palette } = await import("@/utils/canvasPalette");
 const { FALLEN_LINE, fallenFrame } = await import("./fieldFallen");
 const { viewport } = await import("@/render/viewport");
 const { sceneSystems } = await import("./sceneEnd.standin");
+const { absorbing } = await import("./phaser.standin");
+const { recordingStage } = await import("./recordingStage.standin");
 const { lookGame } = await import("@/render/cursors/pointerLook.standin");
 const { EventEmitter } = await import("eventemitter3");
-const { PartyPanel } = await import("@/ui/PartyPanel");
-const { createPartyStore } = await import("@/stores/partyStore");
 const { projectedBounds } = await import("@/render/iso/projection");
 const { MEADOWS_LOOK } = await import("@/render/world/fieldLook");
 const { FOREST_SIZE } = await import("@/render/world/forest.fixture");
@@ -190,10 +172,7 @@ interface FieldUnderTest {
 function fieldOnStage() {
   const field = new FieldScene() as unknown as FieldUnderTest;
   const texts: string[] = [];
-  const any: unknown = new Proxy(() => any, {
-    get: () => any,
-    apply: () => any,
-  });
+  const any = absorbing();
   field.add = {
     text: (_x: number, _y: number, content: string) => {
       texts.push(content);
@@ -201,6 +180,8 @@ function fieldOnStage() {
     },
     // the XP bar's (FS-77DVN §C.13)
     graphics: () => any,
+    // the ability bar's grounds (FS-Q18Q3 R33)
+    zone: () => any,
   };
   field.cameras = { main: { width: 800, startFollow: vi.fn() } };
   field.time = { delayedCall: vi.fn() };
@@ -256,11 +237,7 @@ function fieldToCreate<T>() {
     init(data?: { field?: string }): void;
     create(data?: { field?: string }): void;
   };
-  const stub: unknown = new Proxy(function () {}, {
-    get: (_target, key) => (key === Symbol.toPrimitive ? () => 0 : stub),
-    apply: () => stub,
-    construct: () => stub as object,
-  });
+  const stub = absorbing();
   Object.assign(field, {
     add: stub,
     make: stub,
@@ -589,10 +566,7 @@ describe("FieldScene fallen (FS-X2F2H §Requirements 58)", () => {
     const shown: { content: string; fontSize?: string; destroyed: boolean }[] =
       [];
     const drawn: { fills: Fill[]; destroyed: boolean }[] = [];
-    const any: unknown = new Proxy(() => any, {
-      get: () => any,
-      apply: () => any,
-    });
+    const any = absorbing();
     field.add = {
       text: (
         _x: number,
@@ -1152,13 +1126,106 @@ describe("FieldScene equip HUD, the run's own (FS-X2F2H §Requirements 56, Edge 
     for (const gearKey of ["I", "B", "C", "Q", "F"]) expect(keys.has(`keydown-${gearKey}`)).toBe(false);
     // Esc and the ESC menu's keys are the UI scene's: the field binds none of them (FS-TQZ5J R17, R18,
     // R21); its Enter is chat's alone, guarded by the menu (ChatWindow, FS-WJGFJ R27)
-    for (const uiKey of ["ESC", "ONE", "TWO", "THREE", "LEFT", "RIGHT"]) expect(keys.has(`keydown-${uiKey}`)).toBe(false);
+    for (const uiKey of ["ESC", "ONE", "TWO", "LEFT", "RIGHT"]) expect(keys.has(`keydown-${uiKey}`)).toBe(false);
+    // but 3 is shared by state: the tree ability's while the menu is closed (FS-04EEA R35; ADR-0084 Decision 4)
+    expect(keys.has(`keydown-${RUN_ACTIONS.treeAbility.key}`)).toBe(true);
   });
 });
 
 // Leaving /game mid-field destroys the game: Phaser emits the scene's DESTROY only, after every
 // plugin has destroyed itself (sceneEnd.standin.ts). The field must still let go of what outlives
 // the game and ask the dead plugins nothing; on a stop it hands the cursor back (asked 2026-11-06).
+describe("FieldScene key 3, the tree ability (FS-04EEA §G R35, R36)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Keyed = FieldUnderTest & { input: unknown; fight?: unknown; bindTreeAbilityKey(): void };
+
+  /** The cursor's world point: the pointer at screen (400, 300) under the field's camera. */
+  const CURSOR = screenToWorld(400, 300);
+
+  /** A field with key 3 bound on a recording keyboard, its fight's tree-ability entry recorded. */
+  function keyedField() {
+    const env = fieldOnStage();
+    const field = env.field as Keyed;
+    const keys = new Map<string, (event?: { repeat?: boolean }) => void>();
+    field.input = {
+      // chat typing turns the field's keyboard off (FS-TQZ5J § Change: Batch 6, R127)
+      keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb), enabled: true, resetKeys: vi.fn() },
+      on: () => undefined,
+      setDefaultCursor: vi.fn(),
+      activePointer: { positionToCamera: () => ({ x: 400, y: 300 }) },
+    };
+    const treeAbility = vi.fn();
+    const releaseTreeAbility = vi.fn();
+    const cancelAim = vi.fn();
+    field.fight = { treeAbility, releaseTreeAbility, cancelAim, release: vi.fn() };
+    field.bindTreeAbilityKey();
+    /** One press of 3 as Phaser delivers it: the field's keydown event, then the UI scene's frame reading its own key. */
+    const pressThree = (event: { repeat?: boolean } = {}) => {
+      keys.get(`keydown-${RUN_ACTIONS.treeAbility.key}`)?.(event);
+      uiSceneOn(field, "field", { row: false }).key("three");
+    };
+    const letGoThree = () => keys.get(`keyup-${RUN_ACTIONS.treeAbility.key}`)?.();
+    return { ...env, field, keys, treeAbility, releaseTreeAbility, cancelAim, pressThree, letGoThree };
+  }
+
+  // FS-04EEA R38: letting go casts the archer's Arrow Rain aim at the cursor
+  it("should hand the fight a let-go of 3 at the cursor's world point", () => {
+    const { releaseTreeAbility, cancelAim, letGoThree } = keyedField();
+    letGoThree();
+    expect(releaseTreeAbility.mock.calls).toEqual([[CURSOR]]);
+    expect(cancelAim).not.toHaveBeenCalled();
+  });
+
+  it("should only cancel on a let-go of 3 while chat is typing", () => {
+    const { field, releaseTreeAbility, cancelAim, letGoThree } = keyedField();
+    uiSceneOn(field, "field", { row: false }).bridge.reportUi({ typing: true });
+    letGoThree();
+    expect(releaseTreeAbility).not.toHaveBeenCalled();
+    expect(cancelAim).toHaveBeenCalledTimes(1);
+  });
+
+  // FS-JTNPR req 15, FS-04EEA R38: the menu opening ends a hold or an aim; closing it resumes none
+  it("should end an aim as the menu opens, not as it closes", () => {
+    const { field, cancelAim } = keyedField();
+    menuUpOver(field);
+    expect(cancelAim).toHaveBeenCalledTimes(1);
+    menuUpOver(field, false);
+    expect(cancelAim).toHaveBeenCalledTimes(1);
+  });
+
+  it("should hand the fight a press of 3 at the cursor's world point, and a repeat as one", () => {
+    const { treeAbility, pressThree } = keyedField();
+    pressThree();
+    pressThree({ repeat: true });
+    expect(treeAbility.mock.calls).toEqual([
+      [CURSOR, false],
+      [CURSOR, true],
+    ]);
+  });
+
+  it("should leave 3 to the menu while it is open, and hand the fight nothing", () => {
+    const { field, treeAbility, pressThree } = keyedField();
+    menuUpOver(field);
+    pressThree();
+    expect(treeAbility).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["chat is typing", { typing: true }],
+    ["the inventory is open", { inventory: true }],
+    ["the character panel is open", { character: true }],
+    ["the passive tree is open", { tree: true }],
+  ])("should hand the fight nothing on 3 while %s", (_, ui) => {
+    const { field, treeAbility, pressThree } = keyedField();
+    uiSceneOn(field, "field", { row: false }).bridge.reportUi(ui);
+    pressThree();
+    expect(treeAbility).not.toHaveBeenCalled();
+  });
+});
+
 describe("FieldScene ending (game destroy on leaving /game)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -1313,6 +1380,7 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
         sync: vi.fn(),
         update: vi.fn(),
         release: vi.fn(),
+        landed: fight.landed ?? vi.fn(),
       }),
     });
     const idle = { isDown: false };
@@ -1322,14 +1390,11 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     return { ...stage, field };
   }
 
-  it("should draw the run's Health and stamina bars and the archer's ability card in a field", () => {
+  it("should draw the run's Health and stamina bars and the archer's ability bar in a field (FS-Q18Q3 R29)", () => {
     const bars = vi
       .spyOn(ResourceHud.prototype, "show")
       .mockImplementation(() => {});
-    const card = vi
-      .spyOn(AbilityHud.prototype, "show")
-      .mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: false });
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
 
     field.renderState(archerState);
 
@@ -1337,34 +1402,65 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       "Health:",
       "Stamina:",
     ]);
-    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({
-      name: "Shadow Shot",
-      greyed: false,
-    });
+    expect(barShownOver(field)?.ability).toEqual({ icon: "shadow_shot", greyed: false, active: false, cost: 25 });
   });
 
-  it("should stand the card just above the corner row, right-aligned with it (FS-3EBCA R13)", () => {
+  // FS-Q18Q3 R29: the potion square always greyed in a field, where nothing is drunk
+  it("should grey the potion square in a field whatever is worn, and say it is a field (FS-Q18Q3 R28)", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: false });
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
     field.renderState(archerState);
-    const { ABILITY_CARD_PLACE } = hudCorner;
-    expect(abilityPlaceOver(field)).toEqual(ABILITY_CARD_PLACE);
+    expect(barShownOver(field)?.potion).toEqual({ count: 0, greyed: true, field: true });
   });
 
-  it("should hand its bars and its ability card to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68)", () => {
+  it("should hand its bars and its ability bar to the UI scene through the bridge, as plain data, and build neither (FS-TQZ5J § Change: Batch 5, R67, R68; FS-Q18Q3 R40)", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    const card = vi.spyOn(AbilityHud.prototype, "show").mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: false });
+    const drawn = vi.spyOn(AbilityBar.prototype, "show");
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
     const told: unknown[] = [];
     uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
     field.renderState(archerState);
-    expect(told).toContainEqual({ world: "field", kind: "ability", card: expect.objectContaining({ name: "Shadow Shot", greyed: false }) });
+    expect(told).toContainEqual({ world: "field", kind: "bar", bar: expect.objectContaining({ ability: expect.objectContaining({ icon: "shadow_shot" }) }) });
     expect(told).toContainEqual({ world: "field", kind: "bars", bars: [expect.objectContaining({ label: "Health:" }), expect.objectContaining({ label: "Stamina:" })] });
+    const bar = told.find((m) => (m as { kind: string }).kind === "bar");
+    expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
+    expect(told.some((m) => ["ability", "potion"].includes((m as { kind: string }).kind))).toBe(false);
     expect((field as unknown as Record<string, unknown>).resourceHud).toBeUndefined();
-    // the UI scene's card, drawn from it
-    expect(card).toHaveBeenCalledWith(expect.objectContaining({ name: "Shadow Shot" }));
-    expect((field as unknown as Record<string, unknown>).abilityHud).toBeUndefined();
+    // the UI scene's bar, drawn from it
+    expect(drawn).toHaveBeenCalledWith(expect.objectContaining({ tree: { locked: true, ability: "arrow_rain", greyed: true, cost: null } }));
+  });
+
+  // FS-Q18Q3 R26, R40: once the tree ability is held, the field's bar message carries the held 3 square
+  it("should send the held 3 square once tree_ability_cooldown is on the wire, greyed by cost and cooldown (FS-Q18Q3 R26)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
+    const told: unknown[] = [];
+    uiSceneOn(field, "field", { row: false }).bridge.onScreen({ hud: (message) => void told.push(message) });
+    const holding = (resource: Record<string, unknown>, remaining = 0) => ({
+      ...archerState,
+      current_player: {
+        ...archerState.current_player,
+        passive_ranks: { "archer.t3": 1 },
+        tree_ability_cooldown: { remaining, total: 12 },
+        resource: { ...archerState.current_player.resource, ...resource },
+      },
+    });
+    const lastTree = () => (told.filter((m) => (m as { kind: string }).kind === "bar").at(-1) as { bar: { tree: unknown } }).bar.tree;
+    field.renderState(holding({ tree_ability_cost: 40 }));
+    expect(lastTree()).toEqual({ locked: false, ability: "arrow_rain", greyed: false, cost: 40 });
+    field.renderState(holding({ current: 30, tree_ability_cost: 40 }));
+    expect(lastTree()).toEqual({ locked: false, ability: "arrow_rain", greyed: true, cost: 40 });
+    field.renderState(holding({ tree_ability_cost: 40 }, 6));
+    expect(lastTree()).toEqual({ locked: false, ability: "arrow_rain", greyed: true, cost: 40 });
+  });
+
+  it("should take the bar down while the player lies fallen, as the bars (FS-Q18Q3 R30)", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const { field } = kitOnStage({ lockedOut: false, aiming: false });
+    field.renderState(archerState);
+    expect(barShownOver(field)).not.toBeNull();
+    field.renderState({ ...archerState, current_player: { ...archerState.current_player, current_health: 0 } });
+    expect(barShownOver(field)).toBeNull();
   });
 
   // FS-3EBCA R10, now FS-TQZ5J R7, R15: a press on the corner row is the UI scene's, above the
@@ -1376,16 +1472,25 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
     expect(f.takesPointer(1030, 680, true)).toBe(false);
   });
 
-  it("should grey the card while the ability lockout runs", () => {
+  it("should grey the right-click square while the ability lockout runs", () => {
     vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
-    const card = vi
-      .spyOn(AbilityHud.prototype, "show")
-      .mockImplementation(() => {});
-    const { field } = kitOnStage({ lockedOut: true });
+    const { field } = kitOnStage({ lockedOut: true, aiming: false });
 
     field.renderState(archerState);
 
-    expect(card.mock.calls.at(-1)?.[0]).toMatchObject({ greyed: true });
+    expect(barShownOver(field)?.ability.greyed).toBe(true);
+  });
+
+  // FS-Q18Q3 R23, R40: the hold is the fight's, so the field judges the square again as it starts and ends
+  it("should light the right-click square while the archer holds Shadow Shot, told by the fight", () => {
+    vi.spyOn(ResourceHud.prototype, "show").mockImplementation(() => {});
+    const fight = { lockedOut: false, aiming: false };
+    const { field } = kitOnStage(fight);
+    field.renderState(archerState);
+    expect(barShownOver(field)?.ability.active).toBe(false);
+    fight.aiming = true;
+    (field as unknown as { showAbilityBar(): void }).showAbilityBar();
+    expect(barShownOver(field)?.ability.active).toBe(true);
   });
 
   it("should keep walking with the gear overlay open (FS-HRH2J R7)", () => {
@@ -1409,6 +1514,7 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       target: { x, y: 0 },
       facing: "se",
       anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+      title: { show: vi.fn(), stand: vi.fn() },
       fallen: false,
     });
 
@@ -1456,6 +1562,61 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
 
       expect(Object.keys(me)).not.toContain("wireFacing");
       expect(Object.keys(them)).not.toContain("wireFacing");
+    });
+  });
+
+  // FS-04EEA R41: a Blink's jump is placed, not glided, for the own body and every other
+  describe("a body that jumps (FS-04EEA R41)", () => {
+    const view = (x: number) => ({
+      sprite: { setPosition: vi.fn(), setDepth: vi.fn(), getByName: () => ({ displayHeight: 60, getBounds: () => ({ x: 0, y: 0, width: 40, height: 60 }) }) },
+      name: { setPosition: vi.fn() },
+      pos: { x, y: 0 },
+      target: { x, y: 0 },
+      facing: "se",
+      anim: { baked: true, facing: "se", step: vi.fn(), show: vi.fn() },
+      title: { show: vi.fn(), stand: vi.fn() },
+      fallen: false,
+    });
+    const entry = (entity_id: string, x: number) => ({
+      entity_id,
+      position: { x, y: 0 },
+      direction: { vx: 0, vy: 0, speed: 0 },
+      current_health: 100,
+    });
+
+    it.each([
+      ["me", true],
+      ["them", false],
+    ])("should draw %s at a state position 61 px on, the next frame, and glide one 40 px on", (id, isSelf) => {
+      const { field } = kitOnStage({});
+      const jumper = view(100);
+      const walker = view(100);
+      const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+
+      Object.assign(field, { views: new Map([[id, jumper]]), selfEntityID: "me" });
+      place.call(field, entry(id, 161), isSelf);
+      field.update(16, 16);
+      expect(jumper.pos).toEqual({ x: 161, y: 0 });
+
+      Object.assign(field, { views: new Map([[id, walker]]) });
+      place.call(field, entry(id, 140), isSelf);
+      field.update(32, 16);
+      expect(walker.pos.x).toBeGreaterThan(100);
+      expect(walker.pos.x).toBeLessThan(140);
+    });
+
+    // R44: the own Blink lands where the jump places the own body; a teammate's jump, or a walk, lands none
+    it.each([
+      ["my own jump", "me", true, 161, [{ x: 161, y: 0 }]],
+      ["a teammate's jump", "them", false, 161, []],
+      ["my own walk", "me", true, 140, []],
+    ])("should tell the fight of %s only when it is mine", (_, id, isSelf, x, want) => {
+      const landed = vi.fn();
+      const { field } = kitOnStage({ landed });
+      const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+      Object.assign(field, { views: new Map([[id, view(100)]]), selfEntityID: "me" });
+      place.call(field, entry(id, x), isSelf);
+      expect(landed.mock.calls.map(([at]) => at)).toEqual(want);
     });
   });
 
@@ -1514,26 +1675,18 @@ describe("FieldScene class kits, the run's own (FS-X2F2H §Requirements 56; FS-8
       expect(body()).toEqual({ vx: 0, vy: 0 });
     });
 
-    it("should send that stop once, and nothing more while no key is held", () => {
-      const { field, moves, strideBefore } = visit(false);
+    it.each([
+      { held: false, first: "that stop", move: { vx: 0, vy: 0 } },
+      { held: true, first: "the key held into the visit", move: { vx: 1, vy: 0 } },
+    ])("should send $first as its first move once, and nothing more on later frames", ({ held, move }) => {
+      const { field, moves, strideBefore } = visit(held);
       strideBefore();
 
       field.init({ field: "gentle_meadows", arrival: false });
       field.update(16, 16);
       field.update(32, 16);
 
-      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 0, vy: 0 }]]);
-    });
-
-    it("should send a key held into the visit as its first move, once", () => {
-      const { field, moves, strideBefore } = visit(true);
-      strideBefore();
-
-      field.init({ field: "gentle_meadows", arrival: false });
-      field.update(16, 16);
-      field.update(32, 16);
-
-      expect(moves().slice(1)).toEqual([[ActionType.Move, { vx: 1, vy: 0 }]]);
+      expect(moves().slice(1)).toEqual([[ActionType.Move, move]]);
     });
   });
 });
@@ -1543,6 +1696,43 @@ const { atlasTextureKey } = await import("@/render/art/library");
 
 // Each field loads its own wildlife or dead from its preload, its id read in init, before preload
 // runs: Phaser hands the start data to init and create only (FS-C4JWH §B R7–R8, §A R5).
+const { withSpecLooks } = await import("@/render/art/artLoader.standin");
+const { useGameStore: gameStoreForLooks } = await import("@/stores/gameStore");
+
+// FS-1J1CB R20 (ADR-0088 Decision 3): the player's own spec look comes with the field's preload.
+describe("FieldScene spec looks (FS-1J1CB R20)", () => {
+  const enterAs = (specialization?: string) =>
+    gameStoreForLooks.setState({
+      characters: [
+        { id: "c1", name: "Wren", className: "archer", level: 20, experience: 0, levelFloor: 0, specialization, createdAt: "" },
+      ],
+      activeCharacterId: "c1",
+    });
+  afterEach(() => gameStoreForLooks.setState({ characters: [], activeCharacterId: null }));
+
+  it.each([
+    ["hunter", ["wildlife-0", "wildlife-1", "archer_hunter-0"]],
+    [undefined, ["wildlife-0", "wildlife-1"]],
+  ])("should queue a character's own look (%s) with the field's own group, and no other look", (spec, queued) => {
+    enterAs(spec);
+    const art = artLoaderStandin({
+      manifest: withSpecLooks(shippedManifest(), "archer_hunter", "knight_berserker"),
+      cachedManifest: true,
+      textures: RESIDENT_ART_PAGES.map(atlasTextureKey),
+    });
+    const field = Object.assign(new FieldScene(), art.scene) as unknown as {
+      init(data?: { field?: string }): void;
+      preload(): void;
+    };
+
+    field.init({ field: "gentle_meadows" });
+    field.preload();
+
+    // the set, not the order: pages queue in the manifest's order, which a baked look joins
+    expect(art.queued.sort()).toEqual(queued.map(atlasTextureKey).sort());
+  });
+});
+
 describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
 
   it.each([
@@ -1593,31 +1783,6 @@ describe("FieldScene art loading (FS-C4JWH §B R7–R8)", () => {
 
     expect(art.drawn.length).toBe(first);
     expect(art.camera.fades).toEqual(["fadeIn(200, 18, 18, 18)", "reset"]);
-  });
-});
-
-// FS-PQ2TW R8; ADR-0075 Decision 4. I-PQ2TW-2: the switch's verdict reaches the field with its start.
-describe("FieldScene arrival from its start (FS-PQ2TW R5–R8)", () => {
-  it.each([true, false])("should keep the arrival %s its start was handed, beside its field", (arrival) => {
-    const field = new FieldScene() as unknown as {
-      init(data?: { field?: string; arrival?: boolean }): void;
-      arrival: boolean;
-      field: string;
-    };
-
-    field.init({ field: "forlorn_forest", arrival });
-
-    expect(field.arrival).toBe(arrival);
-    expect(field.field).toBe("forlorn_forest");
-  });
-
-  it("should read a start with no verdict as no arrival, and not keep the last start's", () => {
-    const field = new FieldScene() as unknown as { init(data?: { arrival?: boolean }): void; arrival: boolean };
-
-    field.init({ arrival: true });
-    field.init();
-
-    expect(field.arrival).toBe(false);
   });
 });
 
@@ -2013,7 +2178,7 @@ const { useGameStore } = await import("@/stores/gameStore");
 describe("FieldScene charted ground kept (FS-P0HSP §D.25–§D.27; I-P0HSP-5)", () => {
   const WALLS = FOREST_WALLS.map((r, i) => ({ entity_id: `s${i}`, house_id: `s${i}`, position: { x: r.x, y: r.y }, width: r.width, height: r.height }));
   const GATE = { entity_id: "road", destination: "hub", position: FOREST_GATE, range: 80 };
-  const any: unknown = new Proxy(() => any, { get: (_t, k) => (k === "then" ? undefined : any), apply: () => any });
+  const any = absorbing();
   /** One browser's store, shared across visits. */
   function browser() {
     const held = new Map<string, string>();
@@ -2180,7 +2345,7 @@ describe("FieldScene ESC menu (FS-G4VMQ § Change C1–C4)", () => {
   function menuedField() {
     const env = fieldOnStage();
     const field = env.field as Menued;
-    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const any = absorbing();
     const labels: string[] = [];
     const picks = new Map<string, () => void>();
     field.add = new Proxy(
@@ -2309,15 +2474,6 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     fallen: { isDown(): boolean };
   };
   /** A stand-in object: named, with its handlers, destroyed with its container, as Phaser does. */
-  type Made = {
-    kind: string;
-    args: unknown[];
-    name?: string;
-    x: number;
-    destroyed: boolean;
-    children: Made[];
-    handlers: Record<string, () => void>;
-  };
 
   function optionedField(held: string | null = null) {
     const kept = new Map<string, string>(held === null ? [] : [["barrowspire_music", held]]);
@@ -2330,31 +2486,8 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
     });
     const env = fieldOnStage();
     const field = env.field as Optioned;
-    const made: Made[] = [];
-    const make = (kind: string, args: unknown[]): unknown => {
-      const m: Made = { kind, args, x: typeof args[0] === "number" ? args[0] : 0, destroyed: false, children: [], handlers: {} };
-      if (kind === "container" && Array.isArray(args[2])) m.children.push(...(args[2] as Made[]));
-      made.push(m);
-      const kill = (o: Made) => {
-        if (o.destroyed) return;
-        o.destroyed = true;
-        o.children.forEach((c) => kill((c as unknown as { __m?: Made }).__m ?? c));
-        o.handlers.destroy?.();
-      };
-      const self: unknown = new Proxy(() => self, {
-        get: (_t, prop) => {
-          if (prop === "__m") return m;
-          if (prop === "then") return undefined;
-          if (prop === "on" || prop === "once") return (event: string, fn: () => void) => ((m.handlers[event] = fn), self);
-          if (prop === "setName") return (name: string) => ((m.name = name), self);
-          if (prop === "setPosition") return (x: number) => ((m.x = x), self);
-          if (prop === "destroy") return () => kill(m);
-          return () => self;
-        },
-      });
-      return self;
-    };
-    field.add = new Proxy({}, { get: (_t, kind) => (...args: unknown[]) => make(String(kind), args) });
+    const { made, add } = recordingStage({ records: true });
+    field.add = add;
     const keys = new Map<string, () => void>();
     field.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
@@ -2536,34 +2669,8 @@ describe("FieldScene Options (FS-28DDG § Change: Music volume in an Options pan
  * A real party panel on a bare stand-in scene, refused by `refused`: the scene's own rule for T
  * and the Party icon (FS-R82NV R28; FS-3EBCA R8). Its invite field is a silent stand-in.
  */
-function partyPanelOn(refused: () => boolean, wrapper?: { act(run: () => void): void }) {
-  const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
-  const keyboard = new EventEmitter();
-  const scene = {
-    add: { graphics: () => any, text: () => any },
-    input: Object.assign(new EventEmitter(), { keyboard }),
-    events: new EventEmitter(),
-  } as unknown as ConstructorParameters<typeof PartyPanel>[0];
-  const panel = new PartyPanel(scene, {
-    store: createPartyStore({ selfId: () => "me" }),
-    world: () => null,
-    selfId: () => "me",
-    commands: { create: vi.fn(), invite: vi.fn(), kick: vi.fn(), transfer: vi.fn(), leave: vi.fn() },
-    makeField: () => ({
-      value: "",
-      setEnabled: vi.fn(),
-      moveTo: vi.fn(),
-      show: vi.fn(),
-      hide: vi.fn(),
-      blur: vi.fn(),
-      destroy: vi.fn(),
-    }),
-    activeElement: () => null,
-    blocked: refused,
-    wrapper,
-  });
-  return { panel, pressT: () => keyboard.emit("keydown-T") };
-}
+const { partyPanelOn: panelOn } = await import("@/ui/partyPanel.standin");
+const partyPanelOn = (refused: () => boolean, wrapper?: { act(run: () => void): void }) => panelOn(refused, { wrapper });
 
 // FS-3EBCA R8 and FS-R82NV § Change C8 (owner 2026-11-12: "開道具欄跟角色欄時開不了隊伍": with the
 // inventory or the character panel open the party panel would not open). I-3EBCA-7.
@@ -2577,7 +2684,7 @@ describe("FieldScene the party panel over the inventory and the character panel 
 
   function partyInField() {
     const field = new FieldScene() as unknown as Partied;
-    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const any = absorbing();
     const zones: { args: unknown[]; handlers: Record<string, () => void> }[] = [];
     const zone = (...args: unknown[]) => {
       const z = { args, handlers: {} as Record<string, () => void> };
@@ -2641,7 +2748,7 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
   function fieldWindows() {
     const env = fieldOnStage();
     const field = env.field as unknown as Windowed;
-    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    const any = absorbing();
     type Zone = { args: unknown[]; handlers: Record<string, () => void>; name?: string; interactive?: unknown[] };
     const zones: Zone[] = [];
     const zone = (...args: unknown[]) => {
@@ -2761,7 +2868,6 @@ describe("FieldScene the windows give way to the menu (FS-3EBCA R17, R18)", () =
 });
 
 const { hearWorld } = await import("@/ui/uiSceneSounds.standin");
-const { readFileSync } = await import("node:fs");
 
 /**
  * The field's interface sounds, as the UI scene plays them (FS-TQZ5J R22): its game lent a UI bridge with the
@@ -2783,35 +2889,12 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     ui: { act(run: () => void): void };
     bindHudKeys(): void;
   };
-  type Made = { kind: string; args: unknown[]; name?: string; destroyed: boolean; children: Made[]; handlers: Record<string, () => void> };
 
   function field() {
     const env = fieldOnStage();
     const f = env.field as Heard;
-    const made: Made[] = [];
-    const make = (kind: string, args: unknown[]): unknown => {
-      const m: Made = { kind, args, destroyed: false, children: [], handlers: {} };
-      if (kind === "container" && Array.isArray(args[2])) m.children.push(...(args[2] as Made[]));
-      made.push(m);
-      const kill = (o: Made) => {
-        if (o.destroyed) return;
-        o.destroyed = true;
-        o.children.forEach((c) => kill((c as unknown as { __m?: Made }).__m ?? c));
-        o.handlers.destroy?.();
-      };
-      const self: unknown = new Proxy(() => self, {
-        get: (_t, prop) => {
-          if (prop === "__m") return m;
-          if (prop === "then") return undefined;
-          if (prop === "on" || prop === "once") return (event: string, fn: () => void) => ((m.handlers[event] = fn), self);
-          if (prop === "setName") return (name: string) => ((m.name = name), self);
-          if (prop === "destroy") return () => kill(m);
-          return () => self;
-        },
-      });
-      return self;
-    };
-    f.add = new Proxy({}, { get: (_t, kind) => (...args: unknown[]) => make(String(kind), args) });
+    const { made, add } = recordingStage({ records: true, placed: false });
+    f.add = add;
     const keys = new Map<string, () => void>();
     f.input = {
       keyboard: { on: (event: string, cb: () => void) => keys.set(event, cb) },
@@ -3030,18 +3113,6 @@ describe("FieldScene interface sounds (FS-WDM0X S1–S9; I-WDM0X-2)", () => {
     expect(f.heard()).toEqual(["party_close"]);
   });
 
-  // create() is pinned from the source here as in the town: the player made before the gear and
-  // the keys, and its wrapper handed to the overlay (the party panel is the UI scene's since phase 2)
-  // the gear overlay, its wrapper and its keys are the UI scene's (FS-TQZ5J § Change: Phase 3, R50, R56):
-  // the field reports itself before it binds the key it still hears (E) or makes its piles
-  it("should report itself in create before its keys and its piles", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeGreaterThan(-1);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.createPiles\(\);/));
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.bindHudKeys\(\);/));
-  });
 });
 
 // FS-TQZ5J § Change: Phase 2: the party (I-TQZ5J-10): the invite prompts are the UI scene's; the field
@@ -3062,23 +3133,6 @@ describe("FieldScene what the party's popups read of it (FS-TQZ5J § Change: Pha
     expect(field.worldSide().invitesAboveChat).toBe(true);
   });
 
-  // the fight takes the player as a value, so it must be made first
-  it("should make the gameplay player in create beside the interface effects', and hand it to the fight (FS-AND39 R3, R4, R16)", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    const create = source.match(/\n {2}create\(\): void \{\n([\s\S]*?)\n {2}\}\n/)?.[1] ?? "";
-    const at = (line: RegExp) => create.search(line);
-    expect(at(/this\.ui = reportWorld\(this, "field", this\.worldSide\(\)\);/)).toBeLessThan(at(/this\.mountGameplaySounds\(\);/));
-    expect(at(/this\.mountGameplaySounds\(\);/)).toBeLessThan(at(/this\.fight = fieldCombatOnScene\(/));
-    const fight = create.match(/this\.fight = fieldCombatOnScene\(([\s\S]*?)\n {4}\}\);/)?.[1] ?? "";
-    expect(fight).toMatch(/\n\s*sounds: this\.gameplaySounds,?(\n|$)/);
-  });
-
-  // the gear is the UI scene's, which plays item_swap as it sends a change (`gearPieces.test.ts`); the
-  // field plays none of it (FS-AND39 R7; FS-TQZ5J § Change: Merge with main, 2026-11-14)
-  it("should play no item_swap of its own: the UI scene's gear sounds its changes (FS-AND39 R7)", () => {
-    const source = readFileSync(new URL("./FieldScene.ts", import.meta.url), "utf8");
-    expect(source).not.toMatch(/item_swap/);
-  });
 });
 
 const { ProgressHud } = await import("@/ui/ProgressHud");
@@ -3157,5 +3211,100 @@ describe("FieldScene the XP bar along the bottom (FS-77DVN §C.13, §C.14, §A.4
     (field as unknown as { events: { emit(e: string): void } }).events.emit("shutdown");
 
     expect(destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+// FS-E1ZDG §K.41: a second, smaller line under every player's name with their title, own and others'
+describe("FieldScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
+  it("should draw the title under the name of a player who holds a spec, and none for one who does not", async () => {
+    const { ArtLibrary } = await import("@/render/art/library");
+    const field = new FieldScene() as unknown as FieldUnderTest & { art: unknown };
+    const texts: string[] = [];
+    const any: unknown = new Proxy(() => any, { get: () => any, apply: () => any });
+    field.add = new Proxy(
+      {},
+      {
+        get: (_, kind) => (_x: number, _y: number, content: string) => {
+          if (kind === "text") texts.push(content);
+          return any;
+        },
+      },
+    );
+    field.art = ArtLibrary.empty({ warn: () => {} });
+    field.views = new Map();
+    const place = (FieldScene.prototype as unknown as { placePlayer: (...a: unknown[]) => void }).placePlayer;
+    const entry = (entity_id: string, extra: Record<string, unknown> = {}) => ({
+      entity_id,
+      username: entity_id,
+      class: "mage",
+      position: { x: 1, y: 2 },
+      direction: { vx: 0, vy: 0, speed: 0 },
+      current_health: 100,
+      ...extra,
+    });
+
+    place.call(field, entry("Ignis", { specialization: "pyromancer" }), true);
+    place.call(field, entry("Wren"), false);
+
+    expect(texts).toEqual(["Ignis", "Mage · Pyromancer", "Wren"]);
+  });
+});
+
+// FS-1J1CB §E R35: a field's bodies carry their auras, stopped from the fall to the rising.
+describe("FieldScene auras (FS-1J1CB R35)", () => {
+  const view = (fallen: boolean, pos: { x: number; y: number }, visible = true) => ({
+    sprite: { visible, getByName: () => null },
+    pos,
+    target: { ...pos },
+    facing: "se",
+    fallen,
+    anim: { baked: true, crown: 72 },
+    title: { show: vi.fn() },
+  });
+
+  it("should follow a standing body at its feet and none fallen, then again once it rises", () => {
+    const field = new FieldScene() as unknown as {
+      auras: { follow: ReturnType<typeof vi.fn> };
+      views: Map<string, ReturnType<typeof view>>;
+      followAuras(time: number): void;
+    };
+    field.auras = { follow: vi.fn() };
+    const down = view(true, { x: 3, y: 4 });
+    field.views = new Map([
+      ["up", view(false, { x: 1, y: 2 })],
+      ["down", down],
+    ]);
+
+    field.followAuras(100);
+    down.fallen = false;
+    field.followAuras(116);
+
+    expect(field.auras.follow.mock.calls).toEqual([
+      ["up", { x: 1, y: 2 }, 72, 100],
+      ["down", null, 72, 100],
+      ["up", { x: 1, y: 2 }, 72, 116],
+      ["down", { x: 3, y: 4 }, 72, 116],
+    ]);
+  });
+
+  it("should give a body its aura from each state", () => {
+    const field = new FieldScene() as unknown as {
+      auras: { see: ReturnType<typeof vi.fn> };
+      views: Map<string, unknown>;
+      placePlayer(player: unknown, isSelf: boolean): void;
+    };
+    field.auras = { see: vi.fn() };
+    field.views = new Map<string, unknown>([["r", view(false, { x: 0, y: 0 })]]);
+    const player = {
+      entity_id: "r",
+      class: "archer",
+      specialization: "shadow_ranger",
+      position: { x: 5, y: 5 },
+      current_health: 50,
+    };
+
+    field.placePlayer(player, false);
+
+    expect(field.auras.see).toHaveBeenCalledWith("r", player);
   });
 });

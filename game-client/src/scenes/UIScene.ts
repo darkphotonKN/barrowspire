@@ -27,6 +27,11 @@ import { UiNoticeLayer, drawNotice } from "@/ui/uiSceneNotices";
 import { UiPartySlot, partyPanelWiring, partyPromptWiring, type PartyPieces } from "@/ui/uiSceneParty";
 import { UiScenePointer } from "@/ui/uiScenePointer";
 import { UiGearSlot, type GearKey } from "@/ui/uiSceneGear";
+import { UiTreeSlot } from "@/ui/uiSceneTree";
+import { mountPassiveTree } from "@/ui/PassiveTreeOverlay";
+import { passiveTreeCommands } from "@/ui/passiveTreeCommands";
+import { socketManager } from "@/utils/class/SocketManager";
+import { isTextEntry } from "@/ui/partyPanelLayout";
 import { mountGearPieces } from "@/ui/gearPieces";
 import { UiControlsSlot, UiRecordSlot, type OpenWindows } from "@/ui/uiSceneRecord";
 import { SettlementRecord } from "@/ui/SettlementRecord";
@@ -112,11 +117,13 @@ export class UIScene extends Phaser.Scene {
   private party?: UiPartySlot;
   /** The gear overlay and the container view (FS-TQZ5J § Change: Phase 3, R50). */
   private gear?: UiGearSlot;
+  /** The passive tree, built for each world (FS-8RZ51 §G R32–R37). */
+  private tree?: UiTreeSlot;
   /** The run's controls panel (FS-TQZ5J § Change: Phase 3, R50, R56). */
   private controls?: UiControlsSlot;
   /** The run's settlement record (FS-TQZ5J § Change: Phase 3, R57). */
   private record?: UiRecordSlot;
-  /** The run's controls badge over its ability card (FS-84N1G R3–R8). */
+  /** The run's controls badge, standing while its ability bar is live (FS-84N1G R3–R8; FS-Q18Q3 R42). */
   private badge?: UiControlsBadge;
   /** The chat window, built for each world (FS-TQZ5J § Change: Batch 6, R125). */
   private chat?: UiChatSlot;
@@ -142,12 +149,14 @@ export class UIScene extends Phaser.Scene {
       party: () => this.party?.isOpen() ?? false,
       inventory: () => this.gear?.isInventoryOpen() ?? false,
       character: () => this.gear?.isCharacterOpen() ?? false,
+      tree: () => this.tree?.isOpen() ?? false,
     });
     this.mountInterface(bridge);
     this.mountMailboxSlot(bridge);
     this.mountChatSlot(bridge);
-    // the ability card, the potion cell and the bars, drawn from what each world hands (§ Change: Batch 5, R67)
-    mountHud(this, bridge, hudPieces(this, () => this.residentArt()));
+    // the ability bar, the bars and the level bar, drawn from what each world hands (§ Change: Batch 5, R67;
+    // FS-Q18Q3 R41)
+    mountHud(this, bridge, hudPieces(this));
     this.mountLoreSlot(bridge);
     this.mountKeys();
     this.mountPointer(bridge);
@@ -254,6 +263,13 @@ export class UIScene extends Phaser.Scene {
       });
     // the run's H, on its key event as the run heard it (R56)
     keyboard.on("keydown-H", () => this.controls?.toggle());
+    // the passive tree's P, the UI scene's alone in every world, uncaptured so it still types in a DOM
+    // field, and no key while the player types in chat or a text field holds the focus (FS-8RZ51 R32)
+    keyboard.on("keydown-P", () => {
+      const focused = typeof document === "undefined" ? null : document.activeElement;
+      if (this.bridge()?.ui.typing || isTextEntry(focused as HTMLElement | null)) return;
+      this.tree?.key();
+    });
     // the town's keys while it stands, I, B and C captured as its `addKey` did; removed and let go as
     // it leaves, so a field's and the run's held keys repeat again (R56)
     const captured = [codes.I, codes.B, codes.C];
@@ -318,20 +334,24 @@ export class UIScene extends Phaser.Scene {
     input.on("pointerup", () => pointer.released());
     input.on("pointerupoutside", () => pointer.released());
     input.on("pointermove", (p: Phaser.Input.Pointer, over: unknown[]) => pointer.moved(p, over));
-    // the container view hit-tests by hand, on its own ground only (§ Change: Phase 3, R60)
+    // the container view hit-tests by hand, on its own ground only (§ Change: Phase 3, R60), as the
+    // passive tree does on its own (FS-8RZ51 R34)
     input.on("pointermove", (p: Phaser.Input.Pointer, over: unknown[]) => {
       const at = viewport.toLogical(p);
       this.gear?.pointerMove(at.x, at.y, over);
+      this.tree?.pointerMove(at.x, at.y, over);
     });
     input.on("pointerdown", (p: Phaser.Input.Pointer, over: unknown[]) => {
       const at = viewport.toLogical(p);
       this.gear?.pointerDown(at.x, at.y, p.button === 0, over);
+      this.tree?.pointerDown(at.x, at.y, over);
     });
     input.on("pointerout", (p: Phaser.Input.Pointer) => pointer.left(p));
   }
 
   /**
-   * The corner row (R13), the menu slot (R16), the dialogue slot (A2 R29) and the notices (A2 R33). The
+   * The corner row (R13), the menu slot (R16), the dialogue slot (A2 R29), the notices (A2 R33) and the
+   * passive tree (FS-8RZ51 §G), fed the gear's own-player state, in the gear overlay's family. The
    * row of the world reported as this scene is created (the first world's, whose report launched it),
    * and each later world's on its report; the slot yielding as each report is heard (R20); the town's
    * card drawn as the town shows it, in the popup band over the row, and gone with its world (R32); each
@@ -353,6 +373,8 @@ export class UIScene extends Phaser.Scene {
       fullscreen: () => lentFullscreen(this.registry),
       party: { isOpen: () => party.isOpen(), close: () => party.close() },
       gear: { isOpen: () => gear.isOpen(), close: () => void gear.close() },
+      // Esc's tree step, between the party panel and the gear (FS-8RZ51 R36)
+      tree: { isOpen: () => tree.isOpen(), close: () => void tree.close() },
       // Esc's first step (FS-84N1G R17)
       controls: { isOpen: () => this.controls?.isOpen() ?? false, dismiss: () => this.controls?.dismiss() },
     });
@@ -365,12 +387,29 @@ export class UIScene extends Phaser.Scene {
       bridge,
       (world, wiring) => mountGearPieces(this, () => this.residentArt(), world, wiring),
       gameplay,
+      // a gear panel opening closes the passive tree (FS-8RZ51 R36)
+      () => void tree.close(),
     );
-    const corner = new UiCornerRow(bridge, (icons) => new HudCorner(this, { icons }), () => menu.pressMenu(), party, {
-      isInventoryOpen: () => gear.isInventoryOpen(),
-      isCharacterOpen: () => gear.isCharacterOpen(),
-      toggle: (window) => gear.toggle(window),
+    // the passive tree for each world, fed the character the gear is, its opening closing the gear, its
+    // points setting the corner icon's marker (FS-8RZ51 R32–R36, R41); it spends in town through its own
+    // commands over the app's socket, their refusals claimed here, open or not (R38; ADR-0085 Decision 2)
+    const tree = new UiTreeSlot(bridge, (_world, wiring) => mountPassiveTree(this, wiring), {
+      gear: { close: () => gear.close() },
+      marker: (on) => corner.mark(on),
+      commands: passiveTreeCommands(socketManager),
     });
+    const corner = new UiCornerRow(
+      bridge,
+      (icons) => new HudCorner(this, { icons }),
+      () => menu.pressMenu(),
+      party,
+      {
+        isInventoryOpen: () => gear.isInventoryOpen(),
+        isCharacterOpen: () => gear.isCharacterOpen(),
+        toggle: (window) => gear.toggle(window),
+      },
+      { isOpen: () => tree.isOpen(), toggle: () => tree.toggle() },
+    );
     // the run's settlement record, drawn from its data at its anchor (§ Change: Phase 3, R57), and its
     // controls panel, the UI scene's own (R56)
     const record = new UiRecordSlot(
@@ -381,7 +420,8 @@ export class UIScene extends Phaser.Scene {
     const controls = new UiControlsSlot(bridge, (onClose) => mountControlsPiece(this, onClose), () => this.openWindows());
     this.controls = controls;
     this.record = record;
-    // the controls badge over the run's ability card, toggling the panel as H does (FS-84N1G R4, R8)
+    // the run's controls badge while its ability bar is live, toggling the panel as H does (FS-84N1G R4, R8;
+    // FS-Q18Q3 R42)
     const badge = new UiControlsBadge(bridge, controls, (spec) => new ControlsBadge(this, spec));
     this.badge = badge;
     const dialogue = new UiDialogueSlot(bridge, (spec) => showDialogueCard(this, spec));
@@ -391,9 +431,11 @@ export class UIScene extends Phaser.Scene {
     this.dialogue = dialogue;
     this.party = party;
     this.gear = gear;
+    this.tree = tree;
     corner.show(bridge.world);
     // the container view's root first, so the gear overlay's objects, made at each open, draw over it
     gear.show(bridge.world);
+    tree.show(bridge.world);
     party.show(bridge.world);
     const stop = bridge.onWorld((report) => {
       menu.sync();
@@ -401,6 +443,7 @@ export class UIScene extends Phaser.Scene {
       notices.sync();
       corner.show(report);
       gear.show(report);
+      tree.show(report);
       party.show(report);
       record.world(report);
       controls.world(report);
@@ -410,14 +453,19 @@ export class UIScene extends Phaser.Scene {
       dialogue: (shown) => dialogue.show(shown),
       notice: (notice) => notices.say(notice),
       partySeen: (state) => party.seen(state),
-      gear: (message) => gear.hear(message),
+      // the own player's state is the tree's too (FS-8RZ51 R41)
+      gear: (message) => {
+        gear.hear(message);
+        tree.hear(message);
+      },
       container: (message) => gear.hearContainer(message),
       record: (shown) => record.show(shown, bridge.world?.world ?? null),
       endPopped: () => {
         gear.endPopped();
+        tree.endPopped();
         controls.close();
       },
-      abilityCard: (up) => this.badge?.abilityCard(up),
+      abilityBar: (live) => this.badge?.abilityBar(live),
       // the run's Burn tome? in the menu slot (FS-3103M R25; FS-TQZ5J § Change: Merge with main, 2026-11-14)
       confirmBurn: (altar) => menu.confirmBurn(altar),
     });
@@ -427,6 +475,7 @@ export class UIScene extends Phaser.Scene {
       dialogue.relayout();
       party.relayout();
       gear.relayout();
+      tree.relayout();
       record.relayout();
       controls.relayout();
       badge.relayout();
@@ -440,11 +489,13 @@ export class UIScene extends Phaser.Scene {
       corner.destroy();
       party.destroy();
       gear.destroy();
+      tree.destroy();
       record.destroy();
       controls.destroy();
       badge.destroy();
       this.badge = undefined;
       this.gear = undefined;
+      this.tree = undefined;
       this.controls = undefined;
       this.record = undefined;
       this.menu = undefined;

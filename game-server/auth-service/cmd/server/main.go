@@ -127,6 +127,10 @@ func main() {
 	// --- member service setup ---
 	publishCh := commonbroker.NewAmqpPublisher(ch)
 	memberRepo := member.NewRepository(db)
+	// each consumer takes the repository through its own interface; the wrap
+	// makes every call a span above its queries (internal/member/trace_gen.go)
+	const repoTracer = "auth/repository"
+	tracedRepo := member.NewRepositoryWithTracing(memberRepo, repoTracer)
 
 	// --- outbox workers ---
 	// The worker drains the outbox table and publishes events to RabbitMQ.
@@ -136,11 +140,11 @@ func main() {
 	// staying cheap for a low-traffic auth DB.
 	outboxRepo := commonoutbox.NewRepo(db)
 	outboxService := commonoutbox.NewService(outboxRepo)
-	codeIssuer := member.NewCodeIssuer(memberRepo, outboxService, time.Now)
-	verifier := member.NewVerifier(member.NewTransactor(db), memberRepo, codeIssuer, time.Now)
+	codeIssuer := member.NewCodeIssuer(member.NewVerificationCodeWriterWithTracing(memberRepo, repoTracer), outboxService, time.Now)
+	verifier := member.NewVerifier(member.NewTransactor(db), member.NewVerificationStoreWithTracing(memberRepo, repoTracer), codeIssuer, time.Now)
 	// Built once: the embedded blocklist loads into a map of 100k+ entries.
 	passwordPolicy := member.EmbeddedPasswordPolicy()
-	memberService := member.NewService(db, memberRepo, publishCh, outboxService, passwordPolicy, codeIssuer, verifier)
+	memberService := member.NewService(db, tracedRepo, publishCh, outboxService, passwordPolicy, codeIssuer, verifier)
 	memberHandler := member.NewHandler(memberService)
 
 	workersWg := sync.WaitGroup{}
@@ -157,7 +161,7 @@ func main() {
 	// The last hop of the loop: wallet announces a new gold account, auth caches
 	// its id onto the member, and the next login mints it as a claim. Nothing
 	// else writes members.account_id.
-	accountRecorder := member.NewAccountRecorder(db, memberRepo, commoninbox.NewRepo())
+	accountRecorder := member.NewAccountRecorder(db, member.NewAccountIDWriterWithTracing(memberRepo, repoTracer), commoninbox.NewRepo())
 	accountConsumer := member.NewConsumer(ch, accountRecorder)
 	if err := accountConsumer.SetupConsumer(); err != nil {
 		log.Fatalf("Failed to set up account.created consumer: %v", err)

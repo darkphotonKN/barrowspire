@@ -49,12 +49,14 @@ import {
 import { browserMusicStore } from "@/audio/musicSetting";
 import type { UiEffect } from "@/audio/uiSounds";
 import { WorldMusic, preloadMusic, sceneMusicStage, worldTrack } from "@/audio/worldMusic";
-import { healthPotionCount, runOwnHud, type OwnHud } from "@/ui/potions";
+import { healthPotionCount } from "@/ui/potions";
 import { sceneUiSoundStage } from "@/audio/uiSounds";
 import { browserSfxStore } from "@/audio/sfxSetting";
 import { GameplaySounds } from "@/audio/gameplaySounds";
 import { PotionDrinkWatcher } from "@/ui/potionDrink";
 import { RUN_ACTIONS } from "./runActions";
+import { bindTreeAbilityKey } from "./treeAbilityKey";
+import { placeOnJump } from "@/render/jump";
 import { onSceneEnd, releaseCaptures, type SceneEnd } from "./sceneEnd";
 import {
   NO_FACTS,
@@ -79,7 +81,7 @@ import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
  */
 const RUN_ONE_SHOTS = ["exit_door_unlocked", "end_game", "settlement"];
 import { RUN_BUTTON_H } from "@/ui/hudCornerLayout";
-import { abilityCard } from "@/ui/abilityCard";
+import { runOwnHud, type OwnHud } from "@/ui/abilityBarView";
 import { teammateHealthFill } from "@/ui/resources";
 import { equipRefusal, progressOf, type EquipReply } from "@/ui/progress";
 import {
@@ -133,7 +135,8 @@ import {
   type WorldPlane,
 } from "@/render/iso";
 import { artSprite, onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
-import { SCENE_ART } from "@/render/art/sceneArt";
+import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { SpecLooks, withOwnLook, type LookBodies } from "@/render/art/specLooks";
 import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
 import { drawOpenBar, openBarFraction } from "@/ui/openBar";
@@ -144,6 +147,8 @@ import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/c
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
 import { HEAL_LOOK, ShimmerFx } from "@/render/effects/shimmer";
+import { Auras } from "@/render/effects/aura";
+import { prefersReducedMotion } from "@/render/effects/mist";
 import { playSlash } from "@/render/effects/slash";
 import { CHARGE_MS, playCharge, type Charge } from "@/render/effects/charge";
 import { DeathDust } from "@/render/effects/death";
@@ -153,9 +158,10 @@ import { ProjectileFlights } from "@/render/effects/projectile";
 import { projectileFlightOf } from "@/render/effects/flights";
 import { playFireballCast } from "@/render/effects/fireball";
 import { playArrowRelease } from "@/render/effects/arrow";
-import { playShadowShotRelease } from "@/render/effects/shadowShot";
+import { playArcherShotRelease } from "@/render/effects/heavyShot";
 import { playDemonClaw } from "@/render/effects/demonClaw";
-import { MARKER_BAR, MARKER_DEPTH, markerBase } from "@/render/markers";
+import { StunTells } from "@/render/effects/stun";
+import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
 import {
   MonsterRoster,
   phaserMonsterStage,
@@ -282,6 +288,8 @@ const CAMERA_MARGIN = 160;
  * The manifest names the pool's radius and colour; it has no intensity of its own.
  */
 const STAIRS_POOL_INTENSITY = 0.85;
+/** The own body's key among the run's player bodies' spec looks: never a player id (FS-1J1CB R21). */
+const OWN_BODY = "self";
 /** A player's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
 /**
@@ -316,13 +324,11 @@ const BUTTON_H = RUN_BUTTON_H;
  * design guideline's label step; each button as wide as its label plus its padding (`buttonWidth`, R122).
  */
 const BUTTON_LABEL = { fontSize: "13px", fontStyle: "bold", letterSpacing: 1 } as const;
-// The Health and class resource bars and the potion cell stand in the very top left, the party frames
-// under them (`RESOURCE_HUD_AT`, FS-77DVN §E.17), the level bar along the bottom middle (`xpBarLayout`,
-// FS-77DVN §A): the UI scene's HUD slot stands them (FS-TQZ5J § Change: Batch 5, R69, `HUD_PLACES`).
-/**
- * The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). The
- * ability card stands above the corner row (`ABILITY_CARD_PLACE`, FS-3EBCA R13).
- */
+// The Health and class resource bars stand in the very top left, the party frames under them
+// (`RESOURCE_HUD_AT`, FS-77DVN §E.17), the level bar along the bottom middle (`xpBarLayout`, FS-77DVN §A)
+// and the ability bar over it (`abilityBarLayout`, FS-Q18Q3 §B): the UI scene's HUD slot stands them
+// (FS-TQZ5J § Change: Batch 5, R69, `HUD_PLACES`).
+/** The top-right column's corner, now shared with the town and the fields (FS-P0HSP §G.35). */
 export { TOP_RIGHT_EDGE };
 /**
  * Screen px above a player's marker base (`markerBase`: a baked head, or a placeholder's frame
@@ -532,6 +538,9 @@ export class BarrowspireScene extends Phaser.Scene {
 
   // username labels
   private playerNameText?: Phaser.GameObjects.Text;
+  /** The title lines under the names (FS-E1ZDG §K.41), the player's own and each other's; none before the pick. */
+  private playerTitle?: NameplateTitle;
+  private otherPlayersTitles: Map<string, NameplateTitle> = new Map();
   private otherPlayersNameTexts: Map<string, Phaser.GameObjects.Text> =
     new Map();
 
@@ -586,7 +595,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * resets.
    */
   private fell = false;
-  /** The own bars and potion cell as the first state out of the delve drew them, held for the run (R168). */
+  /** The own bars and ability bar as the first state out of the delve drew them, held for the run (R168; FS-Q18Q3 R30). */
   private heldHud?: OwnHud;
   /**
    * The bottom-centre row as drawn: which buttons, by name, the buttons themselves, and its Leave
@@ -663,8 +672,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * panel, the other nothing more.
    */
   private endPopped = false;
-  /** Whether the UI scene was last told the ability card is up (FS-84N1G R4). */
-  private abilityUp = false;
+  /** Whether the UI scene was last told the ability bar is live, up and not held (FS-84N1G R4; FS-Q18Q3 R42). */
+  private barLive = false;
   /** Tab, the next player to watch (req 8); made with the run, removed with it. */
   private tabKey?: Phaser.Input.Keyboard.Key;
   /**
@@ -688,9 +697,10 @@ export class BarrowspireScene extends Phaser.Scene {
   private music?: WorldMusic;
   /**
    * The player's own class kit drawn (FS-MAMHR §G.32–§G.36, FS-JTNPR req 11), shared with the
-   * field scene: the merc's cut, riposte, stance and parry flash, and the archer's aim line.
+   * field scene: the merc's cut, riposte, stance and parry flash, the archer's aim line, and the tree
+   * abilities' looks on this run's effects runtime (FS-04EEA §H R43–R46).
    */
-  private readonly kit = new ClassKitFx(this);
+  private readonly kit = new ClassKitFx(this, { fx: () => this.fx, art: () => this.art });
   /** This player's level, for the "Requires level N" hints (req 45); unknown until the server sends it. */
   private characterLevel?: number;
 
@@ -872,17 +882,27 @@ export class BarrowspireScene extends Phaser.Scene {
       cut: (from, to) => this.kit.playCut(from, to),
       riposte: (from, to) => this.kit.playRiposte(from, to),
       parry: () => this.kit.raiseParry(this.time.now),
-      shadowShot: (from, to) => {
-        if (this.fx) playShadowShotRelease(this.fx, "self", from, to);
+      // the Shadow Shot's for a Shadow Ranger, the Heavy Shot's for any other archer (FS-1J1CB §F R41)
+      shadowShot: (from, to, shadow) => {
+        if (this.fx) playArcherShotRelease(this.fx, "self", from, to, shadow);
       },
-      aim: (from, ready) => this.drawAim(from, ready),
+      aim: (from, ready, shadow) => this.drawAim(from, ready, shadow),
       endAim: () => this.endAimDrawing(),
+      // key 3's Arrow Rain aim circle, a world effect the run draws (FS-04EEA R38; ADR-0086 2.2)
+      rainAim: (centre) => this.kit.rainAim(centre),
+      endRainAim: () => this.kit.endRainAim(),
+      // the tree abilities' looks, world effects the run draws, the caster's own (FS-04EEA §H R42–R46)
+      earthbreaker: (from) => this.kit.earthbreaker(from),
+      blink: (from) => this.kit.blink(from, this.time.now),
+      settleTheDebt: (from, charges) => this.kit.settleTheDebt(from, charges),
+      arrowRain: (from, centre) => this.kit.arrowRain(from, centre),
       // a charge only when one carries the player (FS-3V7GC R6): every other clip is the plain attack
       attackClip: (aim, swing) =>
         swing === undefined
           ? this.playerAnim?.attack(this.time.now, aim)
           : this.playerAnim?.attack(this.time.now, aim, swing),
-      lockout: () => this.showAbilityCard(),
+      // the lockout and the Shadow Shot hold are the bar's to show (FS-Q18Q3 R22, R23, R40)
+      abilityChanged: () => this.showOwnHud(),
       // each class's ability sounds as it is sent (FS-AND39 R4)
       abilityCast: (ability) => this.gameplaySounds?.play(ability),
     },
@@ -894,6 +914,13 @@ export class BarrowspireScene extends Phaser.Scene {
   private groundPlane?: WorldPlane;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
+  /**
+   * The run's groups and its own player's spec look, decided at preload (FS-1J1CB R20); the same
+   * set registered in create.
+   */
+  private artGroups: SceneGroups = SCENE_ART.BarrowspireScene;
+  /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
+  private looks?: SpecLooks;
   /** Baked ground, when the manifest has it; otherwise `groundPlane` is the placeholder floor. */
   private groundLayer?: GroundLayer;
   /** How this run is drawn: its world theme's look (FS-8RBQY §A). */
@@ -922,12 +949,19 @@ export class BarrowspireScene extends Phaser.Scene {
   private lightMap?: LightMap;
   /** Every world effect's sprites, emitters, tweens and lights, by owner (FS-KYPQ9 §B.9). */
   private fx?: EffectsRuntime;
+  /** The stun tell over each stunned monster's head, for every viewer (FS-04EEA §H R47). */
+  private stunTells?: StunTells;
   /** The warrior's charge kicking dust at their drawn feet while the server carries it (§D.2). */
   private charge?: Charge;
   /** The struck-character tint (FS-KYPQ9 §G.1). */
   private hits?: HitFeedback;
   /** The local player's shimmers: the heal shimmer on a drink (FS-KZC92 §G). */
   private shimmers?: ShimmerFx;
+  /**
+   * The Spellwardens' wards and the Shadow Rangers' glooms, the player's own and every rival's,
+   * one per body (FS-1J1CB §E). A heal shimmer plays over a ward as over any body (R37).
+   */
+  private auras?: Auras;
   /** Reads a drink off `current_player` alone; never a teammate's (FS-KZC92 R33–R35). */
   private readonly drinks = new PotionDrinkWatcher();
   /** Which characters have settled their death dust this death (FS-KYPQ9 §G.2). */
@@ -1071,7 +1105,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.playerPos = undefined;
     this.playerLegs = undefined;
     this.playerNameText = undefined;
+    this.playerTitle = undefined;
     this.playerAnim = undefined;
+    this.looks = undefined;
     this.playerFacing = "se";
     this.walkPhase = 0;
     this.ownHealth = undefined;
@@ -1087,6 +1123,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.otherPlayersClass.clear();
     this.otherPlayersAnim.clear();
     this.otherPlayersNameTexts.clear();
+    this.otherPlayersTitles.clear();
     this.otherPlayersPrevHp.clear();
 
     this.buildings = [];
@@ -1115,12 +1152,15 @@ export class BarrowspireScene extends Phaser.Scene {
     // every effect's sprites, emitters, tweens, timers and short-lived lights (FS-KYPQ9 §B.9, §C.4)
     this.fx?.clearAll();
     this.fx = undefined;
+    this.stunTells = undefined;
     this.charge = undefined;
     this.hits?.clearAll();
     this.hits = undefined;
     // every live shimmer and its light, and the next run's first state is a baseline (FS-KZC92 R26)
     this.shimmers?.forget();
     this.shimmers = undefined;
+    this.auras?.clear();
+    this.auras = undefined;
     this.drinks.forget();
     this.lightMap?.clearTransient();
     this.houseFloors = [];
@@ -1145,7 +1185,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.record = undefined;
     this.resolvedCard = undefined;
     this.endPopped = false;
-    this.abilityUp = false;
+    this.barLive = false;
     this.canWatch = false;
     this.canLeave = false;
     this.fell = false;
@@ -1542,7 +1582,9 @@ export class BarrowspireScene extends Phaser.Scene {
     // baked world and prop art (FS-2325V §B.6); the textures above stay as placeholders. The
     // creatures and the boss load with the run, for every floor: a climb loads nothing, and the
     // demon is never drawn before its art is in (FS-C4JWH §B R9)
-    preloadArt(this, SCENE_ART.BarrowspireScene, {
+    // and the player's own spec look with them, from the character read (FS-1J1CB R20)
+    this.artGroups = withOwnLook(SCENE_ART.BarrowspireScene, useGameStore.getState().getActiveCharacter());
+    preloadArt(this, this.artGroups, {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
@@ -3095,7 +3137,13 @@ export class BarrowspireScene extends Phaser.Scene {
     return null;
   }
 
-  private createPlayer(x: number, y: number, className?: string, username?: string): void {
+  private createPlayer(
+    x: number,
+    y: number,
+    className?: string,
+    username?: string,
+    specialization?: string,
+  ): void {
     const activeChar = useGameStore.getState().getActiveCharacter();
     const effectiveClass = (activeChar?.className || className || "warrior").toLowerCase();
     const displayName = activeChar?.name || username || "Hero";
@@ -3111,8 +3159,10 @@ export class BarrowspireScene extends Phaser.Scene {
     const at = worldToScreen(x, y);
 
     // The class's baked sheet, stood on its footprint by the sheet's anchor
-    // (FS-2325V §E.5); the placeholder texture only when the sheet is missing.
-    this.playerAnim = new CharacterAnimator(this.art, effectiveClass, this.playerFacing);
+    // (FS-2325V §E.5); the placeholder texture only when the sheet is missing. Its spec look,
+    // preloaded with the run, else its base until the look is in (FS-1J1CB R20, R21).
+    const look = this.looks?.look({ class: effectiveClass, specialization }) ?? effectiveClass;
+    this.playerAnim = new CharacterAnimator(this.art, look, this.playerFacing);
     if (this.playerAnim.baked) {
       this.playerAnim.dress(this.player);
       keepBodySize(this.player, this.playerAnim.artScale);
@@ -3129,16 +3179,18 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // username label above player
     const base = markerBase(this.player, this.playerAnim.crown, false, this.playerAnim.artScale) ?? at.y;
-    this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, {
-      fontSize: "11px",
+    const nameStyle = {
       fontFamily: CANVAS_FONT.body,
       color: toCss(palette.markerSelf),
       stroke: toCss(palette.markerStroke),
       strokeThickness: 3,
       align: "center",
-    });
+    };
+    this.playerNameText = this.add.text(at.x, base - NAME_GAP, displayName, { ...nameStyle, fontSize: "11px" });
     this.playerNameText.setOrigin(0.5, 1);
     this.playerNameText.setDepth(MARKER_DEPTH.name);
+    // its words come with each state (handleGameStateUpdate)
+    this.playerTitle = new NameplateTitle(this, nameStyle);
 
     // 玩家與所有建築牆壁/門碰撞
     this.buildings.forEach((building) => {
@@ -3148,6 +3200,29 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 相機跟隨玩家
     followWith(this.cameras.main, this.player);
+  }
+
+  /**
+   * The run's player bodies, as its spec looks re-dress them (FS-1J1CB R21): the own body under
+   * {@link OWN_BODY}, every other by its player id. A re-dressed body keeps its arcade body's size.
+   */
+  private lookBodies(): LookBodies {
+    return {
+      body: (id) => {
+        if (id === OWN_BODY)
+          return this.player && this.playerAnim ? { anim: this.playerAnim, sprite: this.player } : undefined;
+        const sprite = this.otherPlayers.get(id);
+        const anim = this.otherPlayersAnim.get(id);
+        return sprite && anim ? { anim, sprite } : undefined;
+      },
+      wear: (id, anim) => {
+        const sprite = id === OWN_BODY ? this.player : this.otherPlayers.get(id);
+        if (!sprite) return;
+        if (id === OWN_BODY) this.playerAnim = anim;
+        else this.otherPlayersAnim.set(id, anim);
+        keepBodySize(sprite, anim.artScale);
+      },
+    };
   }
 
   /** The game's one pointer (FS-KYPQ9 § Change: The pressed hand). */
@@ -3182,7 +3257,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(palette.mapEdge);
 
     // Baked art, or placeholders for whatever is missing (FS-2325V "Edge States").
-    this.art = registerArt(this, SCENE_ART.BarrowspireScene);
+    this.art = registerArt(this, this.artGroups);
     // the baked cursors, cropped from the atlas just registered
     this.setupCustomCursor();
     this.occluders = new Occluders();
@@ -3195,6 +3270,7 @@ export class BarrowspireScene extends Phaser.Scene {
       onDemand,
     );
     this.poolArt = new FloorPoolArt(onDemand, (group) => this.monsters?.redress(group));
+    this.looks = new SpecLooks(this.art, onDemand, this.lookBodies(), this.artGroups);
 
     // the floor is sized by its map (FS-KE075 §H.42): one held already sizes it here, as the
     // run always was; otherwise the map, when it comes
@@ -3452,6 +3528,14 @@ export class BarrowspireScene extends Phaser.Scene {
       this.drinkPotion();
     });
 
+    // 3 casts the tree ability (FS-04EEA R35, R36), an event as 1 is; held back while the UI scene's menu
+    // reads it as its third row, chat types or a gear panel is open. Letting go casts an archer's Arrow Rain
+    // aim, or only cancels it while the key is held back (R38)
+    bindTreeAbilityKey(this.input.keyboard, () => this.ui.ui, (repeat) => this.castTreeAbility(repeat), {
+      release: () => this.releaseTreeAbility(),
+      cancel: () => this.cancelAim(),
+    });
+
     this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
       const at = viewport.toLogical(pointer);
       // the map mode icon lit under the pointer, unless a panel or a UI piece lies over it (FS-56CKV
@@ -3546,20 +3630,25 @@ export class BarrowspireScene extends Phaser.Scene {
     return (activeChar?.className || "warrior").toLowerCase();
   }
 
-  /** The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11). */
+  /**
+   * The Shadow Shot hold, drawn once a frame from where the archer is drawn (FS-JTNPR req 10, 11), and an
+   * Arrow Rain aim's circle at the cursor now (FS-04EEA R38).
+   */
   private aimFrame(): void {
-    if (!this.combat.aiming || !this.playerPos) return;
-    this.combat.aimFrame(this.playerPos);
+    if (!this.playerPos) return;
+    if (this.combat.rainAiming) this.combat.aimFrame(this.playerPos, this.cursorWorld());
+    else if (this.combat.aiming) this.combat.aimFrame(this.playerPos);
   }
 
   /**
    * The hold as drawn: the archer's idle clip turned to the cursor, and the line from the bow
-   * toward it, faint until a release would fire. Local only (ADR-0030).
+   * toward it, faint until a release would fire; umbra for a Shadow Ranger, vellum otherwise
+   * (FS-1J1CB §F R42). Local only (ADR-0030).
    */
-  private drawAim(from: Point, ready: boolean): void {
+  private drawAim(from: Point, ready: boolean, shadow: boolean): void {
     const toward = this.cursorWorld();
     this.playerAnim?.holdAim({ x: toward.x - from.x, y: toward.y - from.y });
-    this.kit.aim(from, toward, ready);
+    this.kit.aim(from, toward, ready, shadow);
   }
 
   /** The world point under the cursor now, wherever the camera has moved since it last moved. */
@@ -3583,8 +3672,20 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * Ends a hold with nothing sent and no cooldown started (FS-JTNPR req 15): death, a floor
-   * change, the menu or equipment panel, a release off the canvas, the window losing focus.
+   * Key 3 let go (FS-04EEA R38): an archer's Arrow Rain aim casts at the circle under the cursor while this
+   * player is still in play and the run not over; otherwise it only ends, with nothing sent.
+   */
+  private releaseTreeAbility(): void {
+    if (!this.player || !this.playerPos || this.runEnded || resolved(this.lastGameState?.current_player)) {
+      this.cancelAim();
+      return;
+    }
+    this.combat.releaseTreeAbility(this.ownClass(), this.playerPos, this.cursorWorld());
+  }
+
+  /**
+   * Ends a hold, or an Arrow Rain aim, with nothing sent and no cooldown started (FS-JTNPR req 15, FS-04EEA
+   * R38): death, a floor change, the menu or equipment panel, a release off the canvas, the window losing focus.
    */
   private cancelAim(): void {
     this.combat.cancelAim();
@@ -3705,6 +3806,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.player.setVisible(false);
     this.playerLegs?.setVisible(false);
     this.playerNameText?.setVisible(false);
+    this.playerTitle?.setVisible(false);
   }
 
   private handleGameStateUpdate(state: ClientGameState): void {
@@ -3737,13 +3839,26 @@ export class BarrowspireScene extends Phaser.Scene {
       // 第一次收到位置，建立玩家
       const firstSeen = !this.player;
       if (firstSeen) {
-        this.createPlayer(pos.x, pos.y, state.current_player.class, state.current_player.username);
+        this.createPlayer(
+          pos.x,
+          pos.y,
+          state.current_player.class,
+          state.current_player.username,
+          state.current_player.specialization,
+        );
       }
+      // its spec look: fetched if the read did not carry it, and worn once in (FS-1J1CB R19, R22)
+      this.looks?.see(OWN_BODY, state.current_player);
+      this.auras?.see(OWN_BODY, state.current_player);
+      // the title under the own name, from this state (FS-E1ZDG §K.41)
+      this.playerTitle?.show(state.current_player);
       // escaped, and still sent their own state until the run ends (FS-QPDKN req 24): the body
       // stays hidden; the escape plays only for a body seen in play, not on a reconnect's rebuild
       if (state.current_player.escape === true) this.hideOwnBody(!firstSeen);
 
-      // 設定目標位置，在 update() 中平滑移動
+      // 設定目標位置，在 update() 中平滑移動; a jump, a Blink, is placed there at once (FS-04EEA R41), and the
+      // Blink just sent lands there (R44)
+      if (this.playerPos && placeOnJump(this.playerPos, this.targetPosition, pos)) this.kit.landed(pos, this.time.now);
       this.targetPosition = { x: pos.x, y: pos.y };
 
       this.showProgress(state.current_player);
@@ -3823,7 +3938,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.explore(state);
 
     // Update projectiles from server (fireballs)
-    this.updateProjectiles(state.projectiles || []);
+    this.updateProjectiles(state.projectiles || [], state);
 
     // Burning trails: the whole truth each tick, the key absent when none burn (FS-4R9M9 R56)
     this.trails.sync(state.trails ?? []);
@@ -3837,8 +3952,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // out of the delve, a hold ends the moment the client sees it (FS-JTNPR req 15)
     if (this.menuState(state).resolved) this.cancelAim();
     this.syncResolvedView(state);
-    this.showResourceBars(state);
-    this.showAbilityCard();
+    this.showOwnHud();
     // the party frames are the UI scene's: this state's players, as plain data (FS-R82NV R34, R35;
     // FS-TQZ5J § Change: Phase 2: the party, R38)
     this.ui.partySeen(state);
@@ -4319,6 +4433,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private leaveFloor(): void {
     // a hold drawn on the old floor never fires on the new one (FS-JTNPR req 15)
     this.cancelAim();
+    // a rain falls with its floor, and a Blink waiting to land lands nowhere (FS-04EEA R44, R45)
+    this.kit.leaveFloor();
     // the old floor's lore lines go with it; the floor card speaks for the new one (FS-XWHZP R15)
     this.ui.lore({ world: "run", kind: "clear" });
     // the next floor is built from its own map (FS-KE075 §H.43), a dungeon's chunks and lights
@@ -4433,10 +4549,15 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * Projectiles off `state.projectiles` (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4): first sight launches,
-   * each tick moves, an id gone from state lands (hit or max range alike). Rivals' too.
+   * each tick moves, an id gone from state lands (hit or max range alike). Rivals' too. A bolt is
+   * drawn by the archer it was likely loosed by, own or other, from the same state (FS-1J1CB §F R41).
    */
-  private updateProjectiles(projectiles: ProjectileState[]): void {
-    this.projectiles?.sync(projectiles);
+  private updateProjectiles(
+    projectiles: ProjectileState[],
+    state: Pick<ClientGameState, "current_player" | "other_players">,
+  ): void {
+    const players = [state.current_player, ...(state.other_players ?? [])].filter((p) => !!p);
+    this.projectiles?.sync(projectiles, players);
   }
 
   /**
@@ -4540,6 +4661,8 @@ export class BarrowspireScene extends Phaser.Scene {
         this.otherPlayersFacing.delete(playerId);
         this.otherPlayersWalkPhase.delete(playerId);
         this.otherPlayersAnim.delete(playerId);
+        this.looks?.forget(playerId);
+        this.auras?.forget(playerId);
 
         // remove name text
         const nameText = this.otherPlayersNameTexts.get(playerId);
@@ -4547,6 +4670,8 @@ export class BarrowspireScene extends Phaser.Scene {
           nameText.destroy();
           this.otherPlayersNameTexts.delete(playerId);
         }
+        this.otherPlayersTitles.get(playerId)?.destroy();
+        this.otherPlayersTitles.delete(playerId);
         // remove their health bar
         this.teammateHealthBars.get(playerId)?.graphics.destroy();
         this.teammateHealthBars.delete(playerId);
@@ -4567,8 +4692,9 @@ export class BarrowspireScene extends Phaser.Scene {
         standAt(sprite, pos, 1);
 
         // Rivals wear their class's sheet, untinted: the name plate tells them apart
-        // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing.
-        const anim = new CharacterAnimator(this.art, cls);
+        // (FS-2325V §E.3). The placeholder rival texture only when the sheet is missing. A spec
+        // look once it is in, the base class's sheet until then (FS-1J1CB R16, R21).
+        const anim = new CharacterAnimator(this.art, this.looks?.look({ ...playerData, class: cls }) ?? cls);
         this.otherPlayersAnim.set(playerData.id, anim);
         if (anim.baked) {
           anim.dress(sprite);
@@ -4602,25 +4728,33 @@ export class BarrowspireScene extends Phaser.Scene {
         if (!anim.baked) this.drawLegs(legs, sprite.x, sprite.y, "se", 0, false, palette.hudLabel);
 
         // their name, always over their head in the ally channel (FS-77AB6 req 40, FS-CH21F R13)
+        const nameStyle = {
+          fontFamily: CANVAS_FONT.body,
+          color: toCss(palette.markerAlly),
+          stroke: toCss(palette.markerStroke),
+          strokeThickness: 3,
+          align: "center",
+        };
         const nameText = this.add.text(
           sprite.x,
           (markerBase(sprite, anim.crown, false, anim.artScale) ?? sprite.y) - NAME_GAP,
           playerData.username || "Unknown",
-          {
-            fontSize: "11px",
-            fontFamily: CANVAS_FONT.body,
-            color: toCss(palette.markerAlly),
-            stroke: toCss(palette.markerStroke),
-            strokeThickness: 3,
-            align: "center",
-          },
+          { ...nameStyle, fontSize: "11px" },
         );
         nameText.setOrigin(0.5, 1);
         nameText.setDepth(MARKER_DEPTH.name);
         this.otherPlayersNameTexts.set(playerData.id, nameText);
+        this.otherPlayersTitles.set(playerData.id, new NameplateTitle(this, nameStyle));
       }
+      // the title under their name, from this state (FS-E1ZDG §K.41), and their spec look:
+      // fetched the first time it is seen, worn once in (FS-1J1CB R19, R21, R22)
+      this.otherPlayersTitles.get(playerData.id)?.show(playerData);
+      this.looks?.see(playerData.id, { ...playerData, class: cls });
+      this.auras?.see(playerData.id, { ...playerData, class: cls });
 
-      // 設定目標位置，在 update() 中平滑移動
+      // 設定目標位置，在 update() 中平滑移動; a jump, a Blink, is placed there at once (FS-04EEA R41)
+      const drawnAt = this.otherPlayersPos.get(playerData.id);
+      if (drawnAt) placeOnJump(drawnAt, this.otherPlayersTargets.get(playerData.id), playerData.position);
       this.otherPlayersTargets.set(playerData.id, {
         x: playerData.position.x,
         y: playerData.position.y,
@@ -5057,7 +5191,10 @@ export class BarrowspireScene extends Phaser.Scene {
       this.otherPlayersLegs.get(playerId)?.setVisible(shown);
       this.teammateHealthBars.get(playerId)?.graphics.setVisible(shown);
       // shown, the name keeps what the hover said this frame
-      if (!shown) this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
+      if (!shown) {
+        this.otherPlayersNameTexts.get(playerId)?.setVisible(false);
+        this.otherPlayersTitles.get(playerId)?.setVisible(false);
+      }
     });
     this.monsters?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
 
@@ -5213,8 +5350,10 @@ export class BarrowspireScene extends Phaser.Scene {
     buildAtmosphere(this);
     // world effects over the baked fx sheets, lighting through the light-map (FS-KYPQ9 §B, §C)
     this.fx = new EffectsRuntime(this, this.art, this.lightMap);
+    this.stunTells = new StunTells(this.fx);
     this.hits = new HitFeedback(this);
     this.shimmers = new ShimmerFx(this, this.art, this.lightMap);
+    this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
     this.projectiles = new ProjectileFlights(this, this.art, this.fx, projectileFlightOf);
   }
 
@@ -5241,38 +5380,32 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * This player's Health and class resource bars (FS-8AY7S req 20–25) and the potion cell beside
-   * them (FS-P9G8R R24): up while they are in the delve, held as they were once they are out of it
-   * (FS-QPDKN § Change: The party death flow and the spectate switcher, R168), and never before their
-   * first state.
+   * This player's Health and class resource bars (FS-8AY7S req 20–25) and the ability bar (FS-Q18Q3 §E, §G,
+   * R40), on every state and as the ability's lockout or hold starts or ends: up while they are in the
+   * delve, held as they were once they are out of it, every square greyed (FS-QPDKN § Change: The party
+   * death flow and the spectate switcher, R168; FS-Q18Q3 R30), and never before their first state.
    */
-  private showResourceBars(state: ClientGameState): void {
-    // out of the delve they stay, held as the state that showed it drew them (FS-QPDKN § Change: The party
-    // death flow and the spectate switcher, R168): the player's own, whoever they watch
-    const own = runOwnHud(state, this.heldHud);
-    if (!this.heldHud && state.current_player && resolved(state.current_player)) this.heldHud = own;
-    // the UI scene's, under the level bar (FS-TQZ5J § Change: Batch 5, R68, R69)
-    this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
-    // the potion cell is up exactly when the bars are (FS-P9G8R R24): the UI scene draws it right of
-    // them (FS-TQZ5J § Change: Batch 5, R68)
-    this.ui.hud({ world: "run", kind: "potion", cell: own.cell });
-  }
-
-  /**
-   * This player's ability card (FS-8AY7S req 29–32), redrawn on every state and as the lockout
-   * starts and ends: up while they are in the delve, grey while the ability cannot fire.
-   */
-  private showAbilityCard(): void {
+  private showOwnHud(): void {
     const state = this.lastGameState;
     if (!state) return;
-    // the UI scene draws it just above the corner row, right-aligned with it (FS-3EBCA R13; FS-TQZ5J
-    // § Change: Batch 5, R68)
-    const card = abilityCard(state, { lockedOut: this.combat.lockedOut });
-    this.ui.hud({ world: "run", kind: "ability", card });
-    // the controls badge stands over the card while it is up (FS-84N1G R4): told on each change
-    if ((card !== null) === this.abilityUp) return;
-    this.abilityUp = card !== null;
-    this.ui.abilityCard(this.abilityUp);
+    // out of the delve they stay, held as the state that showed it drew them (R168): the player's own,
+    // whoever they watch
+    const own = runOwnHud(state, this.heldHud, {
+      world: "run",
+      lockedOut: this.combat.lockedOut,
+      aiming: this.combat.aiming,
+    });
+    if (!this.heldHud && state.current_player && resolved(state.current_player)) this.heldHud = own;
+    // the UI scene's: the bars under the level bar, the ability bar over it (FS-TQZ5J § Change: Batch 5,
+    // R68, R69; FS-Q18Q3 R41)
+    this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
+    this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
+    // the controls badge stands while the bar is live, so it goes at a death though the bar is held
+    // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
+    const live = own.bar !== null && this.heldHud === undefined;
+    if (live === this.barLive) return;
+    this.barLive = live;
+    this.ui.abilityBar(live);
   }
 
   /**
@@ -5493,6 +5626,16 @@ export class BarrowspireScene extends Phaser.Scene {
         hit.destroy();
       },
     };
+  }
+
+  /**
+   * Key 3's tree-ability cast at the world point under the cursor (FS-04EEA R36, R37): only while this player
+   * is in play, neither resolved nor spectating, and the run not over; the combat judges the rest.
+   */
+  private castTreeAbility(repeat: boolean): void {
+    if (!this.player || !this.playerPos || this.runEnded) return;
+    if (resolved(this.lastGameState?.current_player)) return;
+    this.combat.treeAbility(this.ownClass(), this.playerPos, this.cursorWorld(), repeat);
   }
 
   /**
@@ -5763,6 +5906,7 @@ export class BarrowspireScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
+    this.stunTells?.show(this.monsters?.stunned() ?? []);
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {
       // still update other players smoothly, and keep hiding what stands in the rooms
@@ -5831,6 +5975,9 @@ export class BarrowspireScene extends Phaser.Scene {
     if (this.player && this.playerNameText) {
       if (ownBase !== null) this.playerNameText.setPosition(this.player.x, ownBase - NAME_GAP);
       this.playerNameText.setVisible(this.player.visible && ownBase !== null);
+      // the title stands where the name was just put, the name over it; none over a corpse
+      if (ownBase !== null) this.playerTitle?.stand(this.playerNameText);
+      else this.playerTitle?.setVisible(false);
     }
 
     this.sendMovementIntent(vx, vy);
@@ -5878,6 +6025,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
     // 檢查是否進入/離開建築
     this.checkBuildingStatus();
+    // after the hide rule, so an aura hides in the frame its body does (FS-1J1CB R35)
+    this.followAuras(time);
     this.updateTargetFrame(delta);
 
     // the open bar fills on between states (FS-MQYEX R22)
@@ -5886,6 +6035,24 @@ export class BarrowspireScene extends Phaser.Scene {
     // 檢查寶箱距離，太遠自動關閉. A reach that waits on the server is judged by the states (FS-MQYEX R26)
     if (this.containerView.isOpen) {
       this.checkChestDistance();
+    }
+  }
+
+  /**
+   * Every body's aura on its drawn feet (FS-1J1CB R35): hidden with its body (the blackout, an
+   * escape), stopped from the death clip until the body rises.
+   */
+  private followAuras(time: number): void {
+    const auras = this.auras;
+    if (!auras) return;
+    if (this.player && this.playerPos) {
+      const alive = this.player.visible && !isDead(this.lastGameState?.current_player);
+      auras.follow(OWN_BODY, alive ? this.playerPos : null, this.playerAnim?.crown, time);
+    }
+    for (const [playerId, sprite] of this.otherPlayers) {
+      const pos = this.otherPlayersPos.get(playerId);
+      const alive = sprite.visible && (this.otherPlayersPrevHp.get(playerId) ?? 1) > 0;
+      auras.follow(playerId, alive && pos ? pos : null, this.otherPlayersAnim.get(playerId)?.crown, time);
     }
   }
 
@@ -5969,6 +6136,10 @@ export class BarrowspireScene extends Phaser.Scene {
       if (barTop !== null) nameText.setPosition(sprite.x, barTop - 1 - NAME_OVER_BAR_GAP);
       else if (base !== null) nameText.setPosition(sprite.x, base - NAME_GAP);
       nameText.setVisible(base !== null);
+      // the title stands where the name was just put, the name over it (FS-E1ZDG §K.41)
+      const title = this.otherPlayersTitles.get(playerId);
+      if (barTop !== null || base !== null) title?.stand(nameText);
+      else title?.setVisible(false);
     }
   }
 

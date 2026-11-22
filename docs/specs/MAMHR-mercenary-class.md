@@ -434,3 +434,9 @@ specified in Requirements.
   earned.
 
 ## Change: The class attacks move with weight and cut deep → FS-2325V
+
+## Change: Duelist and Sellsword riposte rules → FS-E1ZDG
+
+## Change: The Oathless Blade title gives way to specialization titles → FS-E1ZDG
+
+## Change: Settle the Debt spends parry charges → FS-04EEA

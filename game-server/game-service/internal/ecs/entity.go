@@ -39,6 +39,8 @@ const (
 	ComponentTypeDebuff   ComponentType = "Debuff"
 	ComponentTypeSkill    ComponentType = "Skill"
 	ComponentTypeAbility  ComponentType = "Ability"
+	// the class tree ability key 3 casts (FS-04EEA §A R2)
+	ComponentTypeTreeAbility ComponentType = "TreeAbility"
 
 	ComponentTypeStats      ComponentType = "Stats"
 	ComponentTypeCombat     ComponentType = "Combat"
@@ -61,10 +63,14 @@ const (
 
 	ComponentTypeAttackIntent ComponentType = "AttackIntent"
 	ComponentTypeCooldown     ComponentType = "Cooldown"
-	ComponentTypeAttackSlow   ComponentType = "AttackSlow"
+	ComponentTypeAttackPin    ComponentType = "AttackPin"
 
 	ComponentTypeGearBonus ComponentType = "GearBonus"
-	ComponentTypeFrenzy    ComponentType = "Frenzy"
+	// the passive tree ranks a body holds (FS-8RZ51 R31)
+	ComponentTypePassiveRanks ComponentType = "PassiveRanks"
+	// what those ranks add to the body (FS-8RZ51 R25)
+	ComponentTypePassiveBonus ComponentType = "PassiveBonus"
+	ComponentTypeFrenzy       ComponentType = "Frenzy"
 
 	ComponentTypeBurningTrail ComponentType = "BurningTrail"
 	ComponentTypeDash         ComponentType = "Dash"
@@ -72,7 +78,18 @@ const (
 	ComponentTypePotion       ComponentType = "Potion"
 	ComponentTypeTimedOpen    ComponentType = "TimedOpen"
 
+	// Bull Rush's mark: a charge just ended (FS-8RZ51 R29)
+	ComponentTypeDashEnded ComponentType = "DashEnded"
+	// Quick Draw's count of arrows fired in the world (FS-8RZ51 R29)
+	ComponentTypeArrowCount ComponentType = "ArrowCount"
+
+	// an Arrow Rain still falling (FS-04EEA §E R26)
+	ComponentTypeArrowRain ComponentType = "ArrowRain"
+
 	ComponentTypeRespawn ComponentType = "Respawn"
+
+	// a Guardian's Last Stand spent on this floor (FS-E1ZDG §C R11-12)
+	ComponentTypeLastStandSpent ComponentType = "LastStandSpent"
 
 	// a tome run's plan on the run-level entity, and the tome and altar
 	// themselves (FS-3103M §B-C)

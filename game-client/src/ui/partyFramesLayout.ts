@@ -11,6 +11,7 @@ import {
   type PartyMember,
   type PartyUpdatePayload,
 } from "@/stores/partyStore";
+import { characterTitle } from "@/data/specializations";
 import type { PlayerState } from "@/types/gameState";
 import { characterSheet } from "@/render/art/animationSelect";
 import type { FrameQuery } from "@/render/art/library";
@@ -49,6 +50,12 @@ export interface PartyMemberFrameRow {
    * them). Never on a teammate elsewhere (R11).
    */
   level?: number;
+  /**
+   * The member's title, "Warrior · Berserker" (FS-E1ZDG §K.41), by the level's rule: on the player's
+   * own row from their own state, on a teammate's only while this world's state lists them. None
+   * before the pick.
+   */
+  title?: string;
 }
 
 /**
@@ -65,7 +72,7 @@ export type PartyFrameRow = PartyMemberFrameRow | PartySkeletonRow;
 /** The slice of a broadcast player the frames read. */
 export type SeenPlayer = Pick<
   PlayerState,
-  "id" | "current_health" | "max_health" | "resource" | "level"
+  "id" | "current_health" | "max_health" | "resource" | "level" | "specialization"
 >;
 
 /** What this state shows of the players: the player's own, and the others' broadcast. */
@@ -125,30 +132,31 @@ export function partyFrameRows(
 ): PartyFrameRow[] {
   if (!party) return [];
   const byId = new Map((seen.other_players ?? []).map((p) => [p.id, p]));
+  /** A member's row, its level and title read from `shown`: the state's entry for them, where the frame may show it. */
   const row = (
     m: PartyMember,
     away: boolean,
     slot: PartyFrameSlot,
-    level?: number,
-  ): PartyMemberFrameRow => ({
-    kind: "member",
-    player_id: m.player_id,
-    name: m.name,
-    class: m.class,
-    leader: m.player_id === party.leader_id,
-    away,
-    slot,
-    ...(level !== undefined && { level }),
-  });
+    shown?: SeenPlayer | null,
+  ): PartyMemberFrameRow => {
+    const level = shown?.level;
+    const title = shown ? characterTitle(m.class, shown.specialization) : undefined;
+    return {
+      kind: "member",
+      player_id: m.player_id,
+      name: m.name,
+      class: m.class,
+      leader: m.player_id === party.leader_id,
+      away,
+      slot,
+      ...(level !== undefined && { level }),
+      ...(title !== undefined && { title }),
+    };
+  };
   const teammate = (m: PartyMember): PartyMemberFrameRow => {
     const mate = byId.get(m.player_id);
     const slot = slotOf(mate);
-    return row(
-      m,
-      memberAway(m),
-      slot,
-      slot.kind === "bars" ? mate?.level : undefined,
-    );
+    return row(m, memberAway(m), slot, slot.kind === "bars" ? mate : undefined);
   };
   const self = party.members.filter((m) => m.player_id === selfId);
   const others = party.members.filter((m) => m.player_id !== selfId);
@@ -158,12 +166,7 @@ export function partyFrameRows(
     .map((r): PartySkeletonRow => ({ kind: "skeleton", name: r.name }));
   const members = [
     ...self.map((m) =>
-      row(
-        m,
-        false,
-        selfSlotOf(seen.current_player),
-        seen.current_player?.level,
-      ),
+      row(m, false, selfSlotOf(seen.current_player), seen.current_player),
     ),
     ...others.map(teammate),
   ];
@@ -227,6 +230,8 @@ export interface PartyFrameRect {
   bust: { x: number; y: number; r: number };
   /** The name's top-left; the leader mark takes {@link PARTY_LEADER_MARK_W} of it first. */
   name: { x: number; y: number };
+  /** The title line's top-left, under the name (FS-E1ZDG §K.41). */
+  title: { x: number; y: number };
   health: Rect;
   resource: Rect;
 }
@@ -237,7 +242,7 @@ export interface PartyFrameRect {
  * across the view (FS-R82NV § Change C3: x 390 at its narrowest).
  */
 const FRAME_W = HUD_COLUMN_W;
-const ROW_H = 40;
+const ROW_H = 46;
 const ROW_GAP = 6;
 const PAD = 4;
 /** Room kept between the bars' right end and the frame's edge. */
@@ -247,9 +252,14 @@ const TEXT_GAP = 8;
 /** Half the HUD's own 8 px bar (`ResourceHud`), as R34 asks. */
 const BAR_H = 4;
 const BAR_GAP = 3;
-/** Where the name and the bars sit below a frame's top edge. */
+/** A member's name, and their title on its own line under it (FS-E1ZDG §K.41), in px. */
+export const PARTY_NAME_PX = 13;
+export const PARTY_TITLE_PX = 10;
+/** Where the name, the title and the bars sit below a frame's top edge. */
 const NAME_Y = 3;
-const HEALTH_Y = 22;
+/** Under the name, and under the foot of the leader's Travel button too, so a title runs the frame's width. */
+const TITLE_Y = NAME_Y + PARTY_NAME_PX + 4;
+const HEALTH_Y = TITLE_Y + PARTY_TITLE_PX + 3;
 /** Room the leader's crown takes before the name. */
 export const PARTY_LEADER_MARK_W = 14;
 
@@ -272,6 +282,7 @@ export function partyFramesFrame(
       row: { x, y, width: FRAME_W, height: ROW_H },
       bust,
       name: { x: textX, y: y + NAME_Y },
+      title: { x: textX, y: y + TITLE_Y },
       health: { ...bar, y: y + HEALTH_Y },
       resource: { ...bar, y: y + HEALTH_Y + BAR_H + BAR_GAP },
     };

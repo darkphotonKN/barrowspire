@@ -16,6 +16,10 @@ type ParryComponent struct {
 	Negated bool
 	// LockoutRemaining is the seconds left on the whiff lockout, 0 when none.
 	LockoutRemaining float64
+	// LockoutTotal is the length the running whiff lockout started at, 0 when
+	// none: the merc's right-click cooldown as its owner is told it.
+	// FS-Q18Q3 §A R2.
+	LockoutTotal float64
 	// Parries is how many strikes this mercenary has parried in this run,
 	// at the parry-charge cap included. It only ever rises.
 	Parries int

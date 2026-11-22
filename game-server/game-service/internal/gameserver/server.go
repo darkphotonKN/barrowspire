@@ -16,6 +16,7 @@ import (
 	grpcauth "github.com/darkphotonKN/barrowspire-server/game-service/grpc/auth"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components/metrics"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/game"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/matchmaker"
@@ -119,11 +120,13 @@ type Server struct {
 	partyMembership *partyMembership
 }
 
-// CharacterReader reads one of a member's characters from character-service,
-// scoped by member: another member's, a deleted, and an unknown character are
-// all types.ErrCharacterNotFound. FS-BDA7X §Requirements 5.
+// CharacterReader is character-service as the server uses it: reading one of
+// a member's characters, scoped by member (another member's, a deleted, and an
+// unknown character are all types.ErrCharacterNotFound; FS-BDA7X §Requirements
+// 5), and spending its passive points (FS-8RZ51 R19).
 type CharacterReader interface {
 	GetCharacter(ctx context.Context, memberID, characterID uuid.UUID) (types.CharacterInPlay, error)
+	PassiveSpender
 }
 
 type MessageSender interface {
@@ -1357,6 +1360,7 @@ func (s *Server) createRun(players *types.ResolvedMatchedPlayers, newWorld newRu
 	newGameSession.AddPlayersToPendingConnection(players.HandoffPlayers)
 
 	s.sessions[newGameSession.ID] = newGameSession
+	metrics.DelvesActive.Inc()
 
 	// NOTE: keep this info level, important to save meta data DO NOT REMOVE
 	slog.Info("New game session initiated", "session_id", newGameSession.ID, "local_players", len(players.LocalPlayers))
@@ -1377,9 +1381,21 @@ func (s *Server) CloseSession(sessionID uuid.UUID) error {
 		return fmt.Errorf("Attempted to remove a session that didnt exist")
 	}
 
-	// delete session
-	delete(s.sessions, sessionID)
+	s.removeSessionLocked(sessionID)
 	return nil
+}
+
+// removeSessionLocked forgets a world, counting a run's end once however many
+// paths race to close it. Callers hold the write lock.
+func (s *Server) removeSessionLocked(sessionID uuid.UUID) {
+	session, exists := s.sessions[sessionID]
+	if !exists {
+		return
+	}
+	delete(s.sessions, sessionID)
+	if session.WorldType() == types.WorldTypeRun {
+		metrics.DelvesActive.Dec()
+	}
 }
 
 /**

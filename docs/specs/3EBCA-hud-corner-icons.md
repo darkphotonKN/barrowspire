@@ -1141,3 +1141,5 @@ For the whole row:
 ## Change: The run's controls badge and the controls panel's rules → FS-84N1G
 
 ## Change: The party death flow and the spectate switcher → FS-QPDKN
+
+## Change: The tree icon in the corner row → FS-8RZ51

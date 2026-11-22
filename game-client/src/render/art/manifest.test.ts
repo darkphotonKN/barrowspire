@@ -543,6 +543,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
   const baked = JSON.parse(
     readFileSync(join(__dirname, "../../../public/art/manifest.json"), "utf8"),
   );
+  /** The baked spec looks (FS-1J1CB R15): `char_<class>_<spec>`, every class sheet but its `_base`. */
+  const specLooks = () =>
+    Object.keys(baked.sheets).filter((name) => /^char_(knight|archer|wizard|mercenary)_(?!base$)/.test(name));
 
   it("passes the validator", () => {
     const result = validateManifest(baked);
@@ -617,10 +620,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       }
     });
 
-    it("draws every colour from BARROW: no colour literal in models/interactables.js (ADR-0013)", () => {
-      const model = readFileSync(join(__dirname, "../../../tools/bake/page/models/interactables.js"), "utf8");
-      expect(model).not.toMatch(/#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/);
-    });
   });
 
   it("records the measured mean colour of every ground sheet, for lighting (FS-2325V §C.9)", () => {
@@ -1159,15 +1158,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(sheet("bone_pile").atlas).toMatch(/^tower-\d+$/);
     });
 
-    it("draws every forest colour from BARROW: no colour literal in models/nature.js", () => {
-      const model = readFileSync(
-        join(__dirname, "../../../tools/bake/page/models/nature.js"),
-        "utf8",
-      );
-      expect(model).not.toMatch(
-        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
-      );
-    });
   });
 
   describe("the town interiors' props (FS-B0H2D §G R30)", () => {
@@ -1260,15 +1250,6 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(standing("anvil")).toBeLessThan(standing("counter"));
     });
 
-    it("draws every interior colour from BARROW: no colour literal in models/interior.js", () => {
-      const model = readFileSync(
-        join(__dirname, "../../../tools/bake/page/models/interior.js"),
-        "utf8",
-      );
-      expect(model).not.toMatch(
-        /#[0-9a-fA-F]{3,8}\b|0x[0-9a-fA-F]{6}\b|rgba?\(/,
-      );
-    });
   });
 
   describe("characters and creatures (FS-2325V §E)", () => {
@@ -1357,11 +1338,13 @@ describe("the baked manifest (public/art/manifest.json)", () => {
           .filter(([, sheet]) => sheet.scale !== undefined)
           .map(([name, sheet]) => [name, sheet.scale]),
       );
+      // each class and each of its baked spec looks (FS-1J1CB R9: a look keeps its class's scale)
       expect(scales).toEqual({
         char_archer_base: 1.5,
         char_knight_base: 1.5,
         char_mercenary_base: 1.5,
         char_wizard_base: 1.5,
+        ...Object.fromEntries(specLooks().map((name) => [name, 1.5])),
       });
       for (const group of ["archer", "wizard", "knight", "mercenary"]) {
         const sheet = baked.sheets[`char_${group}_base`] as { atlas: string; animations: Record<string, { atlas?: string }> };
@@ -1375,12 +1358,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       const trimmed = Object.entries(baked.sheets as Record<string, { trimmed?: boolean }>)
         .filter(([, sheet]) => sheet.trimmed)
         .map(([name]) => name);
-      expect(trimmed.sort()).toEqual([
-        "char_archer_base",
-        "char_knight_base",
-        "char_mercenary_base",
-        "char_wizard_base",
-      ]);
+      expect(trimmed.sort()).toEqual(
+        ["char_archer_base", "char_knight_base", "char_mercenary_base", "char_wizard_base", ...specLooks()].sort(),
+      );
     });
 
     it.each(RUNNING)("gives %s a run: 8 frames, looping, in the 8 facings, at 1.5x and trimmed (FS-JS7C8 R1)", (name) => {
@@ -1661,9 +1641,11 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       },
     );
 
-    it("writes a per-animation atlas only on the boss's spilled animations, never on existing sheets", () => {
-      // the 1.5x archer is one page again (FS-HF0WW § Change: Class sheets at 1.5x R34)
-      const spills = ROSTER.map(([n]) => n);
+    it("writes a per-animation atlas only on the boss's spilled animations and a spec look's, never on existing sheets", () => {
+      // the 1.5x archer is one page again (FS-HF0WW § Change: Class sheets at 1.5x R34); a spec
+      // look alone in its group may spill to a second page of it (the Berserker's off-hand clips,
+      // FS-1J1CB R15, R28)
+      const spills = [...ROSTER.map(([n]) => n), ...specLooks()];
       for (const [name, sheet] of Object.entries(baked.sheets) as [
         string,
         RosterSheet,

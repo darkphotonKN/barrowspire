@@ -55,6 +55,56 @@ else
 	exit 1
 fi
 
+# The structural fences that replaced source-scanning tests: each fixture must be rejected with its
+# rule's own words, so a fixture that trips some other rule does not pass for this one.
+must_reject() { # fixture, expected message fragment, what it proves
+	local out
+	out=$(npx next lint --file "lint-fixtures/$1" 2>&1)
+	if printf '%s' "${out}" | grep -qF -- "$2"; then
+		echo "  ok: $1 rejected"
+	else
+		echo "❌ the fence did NOT reject lint-fixtures/$1: $3"
+		printf '%s\n' "${out}" | sed 's/^/    /'
+		exit 1
+	fi
+}
+
+echo "→ the motion fence must REJECT Back/Elastic easing in an effect, a camera shake and an explode (FS-KYPQ9 §B.3, §B.5, §B.6)"
+must_reject banned-easing.ts "No Bounce, Elastic or Back easing" "silly easing passes unchecked"
+must_reject camera-shake.ts "No camera shake" "a camera shake passes unchecked"
+must_reject camera-shake.ts "No radial explode" "an explode passes unchecked"
+
+echo "→ the cursor fence must REJECT an object's own cursor and a canvas cursor write (FS-KYPQ9 P7, P10)"
+must_reject own-cursor.ts "a cursor of its own" "an object's own cursor passes unchecked"
+must_reject own-cursor.ts "'setDefaultCursor' is restricted" "a second canvas cursor writer passes unchecked"
+
+echo "→ the fire fence must REJECT fire's ramp outside the theme and the fire effects (ADR-0025)"
+must_reject fire-token.ts "Fire's tokens" "fire's ramp leaks unchecked"
+
+echo "→ the sound generators must stay seeded and Phaser-free (FS-AND39 R9)"
+must_reject unseeded-sfx.ts "'Math.random' is restricted" "an unseeded draw passes unchecked"
+must_reject unseeded-sfx.ts "'phaser' import is restricted" "a Phaser import passes unchecked"
+
+echo "→ a world scene must REJECT building the UI scene's pieces (FS-TQZ5J)"
+must_reject world-builds-ui.ts "The chat window is the UI scene's" "a world builds the UI scene's chat unchecked"
+must_reject world-builds-ui.ts "'UiSounds' import from '@/audio/uiSounds' is restricted" "a world makes its own interface player unchecked"
+
+echo "→ the interactable, nature and interior bake models must draw every colour from BARROW (ADR-0013)"
+# the models are browser code the bake page serves, outside next lint's reach: grepped instead. The
+# others mix colours through rgb("token") and are not in the fence.
+FENCED_MODELS="tools/bake/page/models/interactables.js tools/bake/page/models/nature.js tools/bake/page/models/interior.js"
+models=$(grep -lE '#[0-9a-fA-F]{3,8}([^0-9a-zA-Z_]|$)|0x[0-9a-fA-F]{6}([^0-9a-zA-Z_]|$)|rgba?\(' ${FENCED_MODELS} 2>/dev/null || true)
+if printf 'const c = "#1c1613";\n' | grep -qE '#[0-9a-fA-F]{3,8}([^0-9a-zA-Z_]|$)'; then :; else
+	echo "❌ the bake model pattern matches nothing: it enforces nothing"
+	exit 1
+fi
+if [ -n "${models}" ]; then
+	echo "❌ a bake model carries a colour literal:"
+	printf '%s\n' "${models}" | sed 's/^/    /'
+	exit 1
+fi
+echo "  ok: no colour literal in the fenced bake models"
+
 echo "→ the token fence must REJECT a raw hex in CSS outside :root (ADR-0013)"
 if ./scripts-check-css-tokens.sh lint-fixtures/raw-hex-css.css >/dev/null 2>&1; then
 	echo "❌ the CSS fence did NOT reject lint-fixtures/raw-hex-css.css — it enforces nothing"
@@ -81,9 +131,9 @@ echo "  ok — globals.css passes"
 
 echo "→ the fence must ACCEPT the real tree"
 out=$(npx next lint 2>&1)
-if printf '%s' "${out}" | grep -q 'no-restricted-syntax'; then
-	echo "❌ the tree contains a banned fetch:"
-	printf '%s\n' "${out}" | grep -B2 'no-restricted-syntax' | sed 's/^/    /'
+if printf '%s' "${out}" | grep -qE 'no-restricted-(syntax|properties|imports)'; then
+	echo "❌ the tree breaks a fence:"
+	printf '%s\n' "${out}" | grep -B2 -E 'no-restricted-(syntax|properties|imports)' | sed 's/^/    /'
 	exit 1
 fi
 echo "  ok — tree passes"

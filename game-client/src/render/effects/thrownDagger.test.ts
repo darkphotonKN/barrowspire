@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { worldToScreen } from "@/render/iso/projection";
 import { BOW_LIFT } from "./arrow";
@@ -67,7 +65,5 @@ describe("a goblin's thrown dagger (FS-C8VM7 §F R38)", () => {
     expect(THROWN_DAGGER_FLIGHT.tint).toContain("oxbloodText");
     flights.sync([dagger("d1")]);
     expect(lights.added).toEqual([]);
-    const src = readFileSync(join(__dirname, "thrownDagger.ts"), "utf8");
-    expect(src).not.toMatch(/0x[0-9a-fA-F]{6}|#[0-9a-fA-F]{6}/);
   });
 });

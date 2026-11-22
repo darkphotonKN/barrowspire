@@ -31,6 +31,13 @@ const (
 	// AttackParry raises the mercenary's parry stance. It has no row in the attack
 	// table: no cost, no cooldown, no damage. FS-MAMHR §Requirements 10.
 	AttackParry AttackKind = "parry"
+	// The class tree abilities, granted by each class tree's tier-3 node and
+	// cast on key 3. Only the class that names one, holding that node, resolves
+	// it. FS-04EEA §A R1–R3.
+	AttackEarthbreaker  AttackKind = "earthbreaker"
+	AttackBlink         AttackKind = "blink"
+	AttackArrowRain     AttackKind = "arrow_rain"
+	AttackSettleTheDebt AttackKind = "settle_the_debt"
 	// AttackMonsterStrike is a monster's swing landing at the end of its
 	// wind-up. Only the MonsterAISystem records it; no client message maps to it.
 	AttackMonsterStrike AttackKind = "monster_strike"
@@ -65,6 +72,19 @@ type AttackSnapshot struct {
 	// TrueDamage, when above 0, is exactly what the hit deals: unmitigated and
 	// never a crit (Gravewarden's Oath's reflected hit). FS-4R9M9 §Requirements 34.
 	TrueDamage int
+	// Stuns marks Earthbreaker's hit: a monster it leaves alive is stunned.
+	// FS-04EEA §B R10.
+	Stuns bool
+	// Kind is the attack row it was cast as; empty for a hit no row makes (a
+	// burning trail's, a reflected strike, a monster ability's). The passive
+	// tree's kickers read it at the hit (FS-8RZ51 R29).
+	Kind AttackKind
+	// Split marks a Hunter's split arrow: an arrow that never splits in turn.
+	// FS-E1ZDG §G R26.
+	Split bool
+	// PiercesAll marks a Shadow Ranger's Shadow Shot: a projectile that never
+	// stops at a target, whatever its Pierce. FS-E1ZDG §H R29.
+	PiercesAll bool
 }
 
 // AttackIntent is a request a handler validated and the CombatSystem has yet to
@@ -100,6 +120,10 @@ func NewAttackIntentComponent() *AttackIntentComponent {
 // CooldownComponent is the seconds left before each attack kind can be used again.
 type CooldownComponent struct {
 	Remaining map[AttackKind]float64
+	// Total is the length each running cooldown started at, worn attack speed
+	// applied, kept so its owner is told one length for the whole of it
+	// whatever gear changes on the way; cleared with Remaining. FS-Q18Q3 §A R3.
+	Total map[AttackKind]float64
 }
 
 func (c *CooldownComponent) Type() ecs.ComponentType {
@@ -107,5 +131,5 @@ func (c *CooldownComponent) Type() ecs.ComponentType {
 }
 
 func NewCooldownComponent() *CooldownComponent {
-	return &CooldownComponent{Remaining: make(map[AttackKind]float64)}
+	return &CooldownComponent{Remaining: make(map[AttackKind]float64), Total: make(map[AttackKind]float64)}
 }

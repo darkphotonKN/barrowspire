@@ -6,6 +6,8 @@ Scope: `game-client`, both the DOM styling layer (`src/app/globals.css`, compone
 Phaser layer (`src/scenes/**`, `src/render/**`)
 Amends: [ADR-0013](0013-client-styling-is-token-only-and-the-fence-must-be-watched-to-fail.md),
 only the clause that the two definition sites are "the same palette in two forms" and "must agree"
+Amended by: [ADR-0087](0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)
+— the web palette is Barrow Vellum, not Bone & Soot, and the canvas menus keep Bone & Soot as their own
 
 ## Context
 

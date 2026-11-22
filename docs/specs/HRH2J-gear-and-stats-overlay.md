@@ -423,3 +423,5 @@ C15. **The controls help** (the run's H panel, and the web page's controls list)
 - Drag, a separate equipment panel, or moving the gear slots out of the inventory.
 - A key or icon for the stash; a stash panel opened without the inventory.
 - Moving or resizing either panel by hand (parked, "draggable windows").
+
+## Change: Passives on the character panel → FS-8RZ51

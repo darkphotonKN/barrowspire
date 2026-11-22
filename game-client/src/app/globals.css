@@ -18,63 +18,67 @@
   --font-heading: var(--font-pirata), 'Pirata One', 'UnifrakturMaguntia', Georgia, serif;
   --font-body: var(--font-garamond), 'EB Garamond', Georgia, serif;
 
-  /* ── Palette: Bone & Soot (the web UI palette) ──────────────────────────
+  /* ── Palette: Barrow Vellum (the web UI palette) ───────────────────────
      ADR-0013: this block and src/utils/theme.ts are the ONLY places a raw
      colour may appear. Everything else refers. A new colour is a token here
      first, then referenced.
      ADR-0025: this is the UI palette, and the UI table in theme.ts mirrors
      it as JS strings (for Stripe, which cannot read var()). The two MUST
      agree. The game canvas has its own palette (BARROW) and does not track
-     this one. Values: docs/design-guideline.md Part II. */
+     this one. ADR-0087: Barrow Vellum replaced Bone & Soot on 2026-11-21:
+     the barrow's vellum, umber and brass, with no amber torch. The canvas
+     menus kept Bone & Soot and no longer mirror this block. Values:
+     docs/design-guideline.md Part II. */
 
-  /* Torch: bone. One per view: primary CTA, active nav, page h1, focal
-     number. Text on a bone fill is always --color-bg-dark. */
-  --color-primary: #e9dfc9;
-  --color-primary-bright: #f6efdf;
+  /* Torch: lifted vellum. One per view: primary CTA, active nav, page h1,
+     focal number. Text on a torch fill is always --color-bg-dark. */
+  --color-primary: #e6d8b0;
+  --color-primary-bright: #f2e8cc;
 
-  /* Ash grey: secondary, cancel, subtitle. */
-  --color-accent: #8c8c84;
+  /* Secondary, cancel, subtitle: the game's dark vellum. */
+  --color-accent: #9b8e6a;
   --color-danger: #6e1f1f;
   /* Oxblood is a fill. On a dark ground it is unreadable as text, so error
      COPY uses a lifted oxblood that still reads as the same family. */
   --color-danger-text: #d07a6a;
 
-  /* Surfaces: neutral soot and grey stone. Soot, never #000: the material
-     layer (grain, surface gradients, carved edges, vignette) is what makes
-     the base read as a surface rather than an absence. */
-  --color-bg-dark: #121212;
-  --color-bg-darker: #0a0a0a;
-  --color-bg-card: rgba(28, 28, 27, 0.88);
-  --color-bg-card-2: rgba(38, 37, 35, 0.92);
+  /* Surfaces: charcoal page, umber panels. Never #000: the material layer
+     (grain, surface gradients, carved edges, vignette) is what makes the
+     base read as a surface rather than an absence. */
+  --color-bg-dark: #161310;
+  --color-bg-darker: #100c0a;
+  --color-bg-card: rgba(31, 26, 21, 0.88);
+  --color-bg-card-2: rgba(36, 29, 23, 0.92);
   /* Opaque equivalents, for prefers-reduced-transparency: each surface
      composited over --color-bg-dark. */
-  --color-bg-card-opaque: #1b1b1a;
-  --color-bg-card-2-opaque: #242322;
-  /* Deep grounds below the page, used translucent via color-mix(). Neutral
-     steps around --color-bg-darker, in the order they had under amber:
-     dropdown deepest, well at the darker step, inset just under the page. */
-  --color-bg-well: #0a0a0a;     /* inputs, card-entry wells, panels over the page */
-  --color-bg-inset: #0e0e0e;    /* inset control groups on the game page chrome */
-  --color-bg-dropdown: #070707; /* dropdown and popover base */
+  --color-bg-card-opaque: #1e1914;
+  --color-bg-card-2-opaque: #231c16;
+  /* Deep grounds below the page, used translucent via color-mix(): dropdown
+     deepest, well at the darker step (the game's pitch), inset just under
+     the page. */
+  --color-bg-well: #100c0a;     /* inputs, card-entry wells, panels over the page */
+  --color-bg-inset: #130f0c;    /* inset control groups on the game page chrome */
+  --color-bg-dropdown: #0c0907; /* dropdown and popover base */
 
-  /* Iron: structure, not fill. Borders, dividers, focus rings, glows.
-     "brass" is the role name, not the hue (FS-8TCN2 keeps the names). */
-  --color-brass: #5c5a55;
-  --color-brass-bright: #8a8780;
-  /* Alphas re-derived against soot so a hairline sits at about the same
-     contrast it had under amber: 1.26:1 and 1.73:1 on --color-bg-dark. */
+  /* Brass: structure, not fill. Borders, dividers, focus rings, glows.
+     brass-bright is vellum, not the game's gold brassBright: it also colours
+     text (logo accent, section titles, links, active chips), and gold there
+     brought back the busy amber read (ADR-0087). */
+  --color-brass: #9c7b3f;
+  --color-brass-bright: #cdbf9a;
+  /* Hairlines at 1.48:1 and 2.45:1 on --color-bg-dark. */
   --color-border: color-mix(in srgb, var(--color-brass) 30%, transparent);
   --color-border-strong: color-mix(in srgb, var(--color-brass) 60%, transparent);
 
-  /* Text: measured in the browser against --color-bg-dark. Floor 4.5:1.
-     text 11.35 · dim 6.36 · muted 4.83 (design-guideline.md contrast floor). */
-  --color-text: #cfc9bb;
-  --color-text-dim: #9b968b;
-  --color-text-muted: #85817a;
-  --color-text-placeholder: #5e5b55;
+  /* Text: the game's vellum ramp, against --color-bg-dark. Floor 4.5:1.
+     text 10.15 · dim 5.70 · muted 4.90 (design-guideline.md contrast floor). */
+  --color-text: #cdbf9a;
+  --color-text-dim: #9b8e6a;
+  --color-text-muted: #8d8362;
+  --color-text-placeholder: #6b6349;
 
   /* Rarity: data, not theme. Not part of the UI palette and unchanged by
-     Bone & Soot. Exempt from one-torch, but ONLY on the rarity badge, the
+     a palette change. Exempt from one-torch, but ONLY on the rarity badge, the
      card accent border, and a faint hover glow. */
   --rarity-common: #a2946d;
   --rarity-uncommon: #6f8f4a;
@@ -103,8 +107,8 @@
   --shadow-float: 0 10px 40px rgba(0, 0, 0, 0.62);
   --glow-brass: 0 0 18px color-mix(in srgb, var(--color-brass-bright) 22%, transparent);
   --glow-torch: 0 0 22px color-mix(in srgb, var(--color-primary) 16%, transparent);
-  /* Iron bright at 70%: 3.17:1 on --color-bg-dark, over the 3:1 non-text
-     floor, so focus stays plainly visible on soot. */
+  /* brass-bright at 70%: 5.49:1 on --color-bg-dark, over the 3:1 non-text
+     floor. */
   --focus-ring: 0 0 0 2px color-mix(in srgb, var(--color-brass-bright) 70%, transparent);
 }
 
@@ -927,7 +931,7 @@ body:has(.game-page) {
 }
 
 /* ── Email verification (FS-V6SFK R35–R36) ────────────────────────────────
-   Iron structure and bone-grey text only: the banner sits on every signed-in
+   Brass structure and vellum text only: the banner sits on every signed-in
    view, so it never takes the torch from the view's own primary CTA. */
 .verify-banner {
   background-color: var(--color-bg-card);

@@ -8,9 +8,9 @@ import { CANVAS_FONT, palette, rgba, toCss } from "@/utils/canvasPalette";
 import { cornerLabelAt, type Rect } from "./hudCornerLayout";
 
 /**
- * One over the HUD band (1000), under every window (1100+): an ability card rebuilt down → up makes its
- * objects anew at 1000, on top of everything made there before, so a label level with it would go under
- * it (FS-TQZ5J § Change: Batch 6, R139).
+ * One over the HUD band (1000), under every window (1100+): a HUD piece rebuilt down → up (the ability
+ * bar) makes its objects anew at 1000, on top of everything made there before, so a label level with it
+ * would go under it (FS-TQZ5J § Change: Batch 6, R139).
  */
 const LABEL_DEPTH = 1001;
 

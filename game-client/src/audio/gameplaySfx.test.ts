@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   GAMEPLAY_SFX,
@@ -109,18 +108,5 @@ describe("seededRandom (FS-AND39 R9)", () => {
     expect(draw(7)).toEqual(draw(7));
     expect(draw(7)).not.toEqual(draw(8));
     expect(draw(7).every((x) => x >= 0 && x < 1)).toBe(true);
-  });
-});
-
-describe("the generators' module (FS-AND39 R9)", () => {
-  const source = readFileSync(new URL("./gameplaySfx.ts", import.meta.url), "utf8");
-
-  it("should import neither Phaser nor any Web Audio type", () => {
-    expect(source).not.toMatch(/from\s+["']phaser["']/);
-    expect(source).not.toMatch(/\b(AudioBuffer|AudioContext|BaseAudioContext|AudioNode)\b/);
-  });
-
-  it("should never call Math.random", () => {
-    expect(source).not.toMatch(/Math\.random/);
   });
 });

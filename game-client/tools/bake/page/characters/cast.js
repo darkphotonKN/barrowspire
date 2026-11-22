@@ -13,7 +13,7 @@ import { attach, createRig, ellipsoid, jointAt as J, mount, rigidTube } from "./
 import { fabrics, retonedFabrics } from "./fabrics.js";
 import { mix, shade } from "../palette.js";
 import { variantTones } from "./variantTones.js";
-import { ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose } from "./clips.js";
+import { ANIMATIONS, pose } from "./clips.js";
 import { drawGrip, solveDraw } from "./draw.js";
 import {
   arms,
@@ -65,10 +65,17 @@ import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
 import * as goblins from "./goblin.js";
 import { ogre, ogreMauler, ogreTyrant } from "./ogre.js";
 import { darkReaper, darkWarrior } from "./darkWarrior.js";
+import { cut, dress } from "./look.js";
+import { berserker, guardian } from "./warriorLooks.js";
+import { pyromancer, spellwarden } from "./mageLooks.js";
+import { hunter, shadowRanger } from "./archerLooks.js";
+import { duelist, sellsword } from "./mercLooks.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
+  ARCHER_SHEET,
   ARCHER_STYLE,
+  BERSERKER_SHEET,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
   KNIGHT_STYLE,
@@ -86,70 +93,80 @@ import {
  * chausses; no plate at all. A heavy oxblood cloak to the calf, a longsword on a plain belt, and a
  * tall kite shield painted per pale in bone and oxblood.
  */
-export function knight() {
+export function knight(look) {
   const M = materials();
-  const F = fabrics();
+  const d = dress(look, { F: fabrics(), M });
+  const { F, kit, piece, opts } = d;
   const rig = createRig(...KNIGHT_BUILD);
   rig.hooks = [];
-  cloakBones(rig, { length: 0.64, drag: 0.34 });
+  const cloakO = opts("cloak", { length: 0.64, spread: 1.5, flare: 1.3 });
+  cloakBones(rig, { length: cloakO.length, drag: 0.34 });
   skirtBones(rig, { stiffness: 55 });
+  d.bones(rig);
   const [, hy] = J(rig, "hips");
   const [, ky] = J(rig, "shinL");
   // the hauberk is open across the front by `gap` radians each side of centre
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
-  const hauberk = { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112] };
+  const hauberk = opts("hauberk", { top: hy + 0.02, bottom: ky + 0.02, rTop: [0.104, 0.082], rBottom: [0.13, 0.112], legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
+  Object.assign(kit, { hy, ky, hauberk, openFront });
 
-  torso(rig, F.mail);
-  neck(rig, F.mail);
-  arms(rig, F.mail);
-  legs(rig, F.mailDark, { under: hauberk });
-  hands(rig, F.leatherDark);
-  boots(rig, F.leatherDark, { top: 0.1 });
+  piece("torso", F.mail, {}, (m) => torso(rig, m));
+  piece("neck", F.mail, {}, (m) => neck(rig, m));
+  piece("arms", F.mail, {}, (m) => arms(rig, m));
+  piece("legs", F.mailDark, { under: cut(hauberk) }, (m, o) => legs(rig, m, o));
+  piece("hands", F.leatherDark, {}, (m) => hands(rig, m));
+  piece("boots", F.leatherDark, { top: 0.1 }, (m, o) => boots(rig, m, o));
   head(rig, F.skin);
   face(rig, F.face, F.browDark);
-  coif(rig, F.mailDouble);
-  nasalHelm(rig, F);
-  skirt(rig, F.mail, { ...hauberk, legFollow: 0.75, panels: true, panelWeight: 0.3, arc: openFront(0.12), segs: 30 });
-  belt(rig, F.leatherDark, M.brass, { r: [0.106, 0.086], dy: 0.03 });
-  cloak(rig, F.cloakKnight, { length: 0.64, spread: 1.5, flare: 1.3 });
-  inHand(rig, "R").add(longsword(rig, M, F));
-  kiteShield(rig, "L", F);
+  piece("coif", F.mailDouble, {}, (m) => coif(rig, m));
+  piece("helm", undefined, {}, () => nasalHelm(rig, F));
+  piece("hauberk", F.mail, hauberk, (m, o) => skirt(rig, m, o));
+  piece("belt", F.leatherDark, { r: [0.106, 0.086], dy: 0.03 }, (m, o) => belt(rig, m, M.brass, o));
+  piece("cloak", F.cloakKnight, cloakO, (m, o) => cloak(rig, m, o));
+  piece("weapon", undefined, {}, () => inHand(rig, "R").add(longsword(rig, M, F)));
+  piece("shield", undefined, {}, (m, o) => kiteShield(rig, "L", F, o));
 
-  const style = KNIGHT_STYLE;
-  return { rig, style };
+  return d.finish(rig, KNIGHT_STYLE);
 }
 
-export function archer() {
+export function archer(look) {
   const M = materials();
-  const F = fabrics();
+  const d = dress(look, { F: fabrics(), M });
+  const { F, kit, piece, opts } = d;
   const rig = createRig(...ARCHER_BUILD);
   rig.hooks = [];
-  cloakBones(rig, { length: 0.56, drag: 0.36, strap: ARCHER_QUIVER.strap });
+  const cloakO = opts("cloak", { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
+  const quiverO = opts("quiver", ARCHER_QUIVER);
+  cloakBones(rig, { length: cloakO.length, drag: 0.36, strap: quiverO.strap });
   skirtBones(rig, { stiffness: 55 });
+  d.bones(rig);
   const [, hy] = J(rig, "hips");
   const [, fy] = J(rig, "foreArmL");
   const [, wy] = J(rig, "handL");
-  const tunic = { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] };
+  const tunic = opts("tunic", { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094], legFollow: 0.7, panels: true, panelWeight: 0.3 });
+  Object.assign(kit, { hy, fy, wy, tunic });
 
-  torso(rig, F.buff);
-  neck(rig, F.skin);
-  arms(rig, F.rangerNightDark);
-  legs(rig, F.rangerHose, { under: tunic });
-  hands(rig, F.leather);
-  boots(rig, F.leather, { top: 0.21 });
+  piece("torso", F.buff, {}, (m) => torso(rig, m));
+  piece("neck", F.skin, {}, (m) => neck(rig, m));
+  piece("arms", F.rangerNightDark, {}, (m) => arms(rig, m));
+  piece("legs", F.rangerHose, { under: cut(tunic) }, (m, o) => legs(rig, m, o));
+  piece("hands", F.leather, {}, (m) => hands(rig, m));
+  piece("boots", F.leather, { top: 0.21 }, (m, o) => boots(rig, m, o));
   head(rig, F.skin);
   face(rig, F.face, F.browDark);
   // a deep cowl over a shadowed face, its crown drawn back into a long, full point that droops
-  cowl(rig, F.rangerNight, { shade: 2, brow: 0.34, gap: 1.05, point: { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 } });
-  for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], F.leatherDark);
-  skirt(rig, F.buff, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 });
-  belt(rig, F.leatherDark, M.brass, { pouch: true });
-  cloak(rig, F.rangerNight, { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
-  quiver(rig, M, F, ARCHER_QUIVER);
-  bowInHand(rig, M, F);
+  const point = { dir: [0, 0.46, -0.89], length: 0.094, droop: 0.4, pinch: 0.55, girth: 5, swell: 0.12 };
+  piece("cowl", F.rangerNight, { shade: 2, brow: 0.34, gap: 1.05, point }, (m, o) => cowl(rig, m, o));
+  piece("bracers", F.leatherDark, {}, (m) => {
+    for (const s of ["L", "R"]) limbGuard(rig, `foreArm${s}`, wy + 0.02, fy - 0.025, [0.034, 0.031], m);
+  });
+  piece("tunic", F.buff, tunic, (m, o) => skirt(rig, m, o));
+  piece("belt", F.leatherDark, { pouch: true }, (m, o) => belt(rig, m, M.brass, o));
+  piece("cloak", F.rangerNight, cloakO, (m, o) => cloak(rig, m, o));
+  piece("quiver", undefined, quiverO, (m, o) => quiver(rig, M, F, o));
+  piece("weapon", undefined, {}, (m, o) => bowInHand(rig, M, F, o));
 
-  const style = ARCHER_STYLE;
-  return { rig, style };
+  return d.finish(rig, ARCHER_STYLE);
 }
 
 /**
@@ -157,9 +174,9 @@ export function archer() {
  * while a clip draws (`fx.ik`), the right hand travels back along the arrow line and the string
  * follows it (`fx.draw`), an arrow on it when nocked (`fx.arrow`).
  */
-function bowInHand(rig, M, F) {
+function bowInHand(rig, M, F, o) {
   const bowMount = inHand(rig, "L");
-  const bow = longbow(rig, M, F);
+  const bow = longbow(rig, M, F, o);
   bowMount.add(bow.group);
 
   // the string follows the right hand while drawing; the hand is solved onto the arrow line
@@ -185,65 +202,83 @@ function bowInHand(rig, M, F) {
  * from the other hand. Narrower in the shoulder and chest than the men, the waist drawn in; no
  * hat, no hood, no staff, so she reads as neither the ranger's cowl nor the mercenary's bare head.
  */
-export function wizard() {
+export function wizard(look) {
   const M = materials();
-  const F = fabrics();
+  const d = dress(look, { F: fabrics(), M });
+  const { F, kit, piece, opts } = d;
   const rig = createRig(...WIZARD_BUILD);
   rig.hooks = [];
   skirtBones(rig, { stiffness: 38, drag: 0.28 });
+  d.bones(rig);
   const [, hy] = J(rig, "hips");
   const [, cy] = J(rig, "chest");
   const td = rig.p.torsoD;
-  const gown = { top: hy - 0.005, bottom: 0.016, rTop: [0.108, 0.08], rBottom: [0.155, 0.138] };
   // the scapular's front and back panels
   const panels = [
     [Math.PI / 2 - 0.5, Math.PI / 2 + 0.5],
     [-Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5],
   ];
-
   // her figure is drawn at the waist: the gown is cut to it and the skirt only opens from the hip
   const waist = 0.76;
-  torso(rig, F.robe, { waist, neckW: 0.85 });
-  neck(rig, F.skin, { w: 0.85 });
-  arms(rig, F.robe, { sleeve: (t) => 1 + 1.35 * THREE.MathUtils.smoothstep(t, 0.45, 1) });
-  // the thighs' roots drawn in under her pinched waist too, where the torso alone covers them over
-  // the gown's top (the owner, 2026-11-12: "腰部似乎也有一點")
-  legs(rig, F.breeches, { under: { ...gown, torso: { waist } } });
-  hands(rig, F.skin, { size: 0.9 });
-  boots(rig, F.leatherDark, { top: 0.08 });
-  head(rig, F.skin, { jaw: 0.88 });
-  face(rig, F.face, F.browRaven);
-  hair(rig, F.raven, { long: true });
-  standingCollar(rig, F.scapular, { rise: 0.04, gap: 0.8 });
   // the gown's rig (FS-HF0WW § Change: The guard measures a leg through the cloth; the owner,
   // 2026-11-12: "法師跑步會輕微破圖 膝蓋處會凸出衣服"): the thigh carries the cloth over the knee it
   // bends, handing it to the panels from 0.05 H under the knee, so the run's leading knee stays in
   // 64 columns, so the scapular's 10 lie on them one for one (anatomy.js `overSkirt`)
-  const robe = { ...gown, legFollow: 0.5, panels: true, panelWeight: 0.35, segs: 64, trail: 0.02, kneeCover: 0.05 };
-  skirt(rig, F.robe, robe);
-  for (const arc of panels) {
-    overTorso(rig, F.scapular, { from: hy - 0.01, arc, pad: 0.012, waist });
-    // cut on the gown's rig, so it moves with it and the black gown never comes out through it
-    // (the owner, 2026-11-12: "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉")
-    skirt(rig, F.scapular, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, over: robe });
-  }
-  bust(rig, F.scapular);
-  hairFall(rig, F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 });
-  faceLocks(rig, F.raven);
+  const robe = opts("gown", {
+    top: hy - 0.005,
+    bottom: 0.016,
+    rTop: [0.108, 0.08],
+    rBottom: [0.155, 0.138],
+    legFollow: 0.5,
+    panels: true,
+    panelWeight: 0.35,
+    segs: 64,
+    trail: 0.02,
+    kneeCover: 0.05,
+  });
+  Object.assign(kit, { hy, cy, td, waist, robe, panels });
+
+  piece("torso", F.robe, { waist, neckW: 0.85 }, (m, o) => torso(rig, m, o));
+  piece("neck", F.skin, { w: 0.85 }, (m, o) => neck(rig, m, o));
+  piece("arms", F.robe, { sleeve: (t) => 1 + 1.35 * THREE.MathUtils.smoothstep(t, 0.45, 1) }, (m, o) => arms(rig, m, o));
+  // the thighs' roots drawn in under her pinched waist too, where the torso alone covers them over
+  // the gown's top (the owner, 2026-11-12: "腰部似乎也有一點")
+  piece("legs", F.breeches, { under: { ...cut(robe), torso: { waist } } }, (m, o) => legs(rig, m, o));
+  piece("hands", F.skin, { size: 0.9 }, (m, o) => hands(rig, m, o));
+  piece("boots", F.leatherDark, { top: 0.08 }, (m, o) => boots(rig, m, o));
+  head(rig, F.skin, { jaw: 0.88 });
+  face(rig, F.face, F.browRaven);
+  piece("hair", F.raven, { long: true }, (m, o) => hair(rig, m, o));
+  piece("collar", F.scapular, { rise: 0.04, gap: 0.8 }, (m, o) => standingCollar(rig, m, o));
+  piece("gown", F.robe, robe, (m, o) => skirt(rig, m, o));
+  piece("scapular", F.scapular, {}, (m) => {
+    for (const arc of panels) {
+      overTorso(rig, m, { from: hy - 0.01, arc, pad: 0.012, waist });
+      // cut on the gown's rig, so it moves with it and the black gown never comes out through it
+      // (the owner, 2026-11-12: "法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉")
+      skirt(rig, m, { top: hy - 0.005, bottom: 0.05, rTop: [0.116, 0.086], rBottom: [0.16, 0.146], arc, over: robe });
+    }
+  });
+  piece("bust", F.scapular, {}, (m) => bust(rig, m));
+  piece("hairFall", F.raven, { length: 0.3, width: 0.07, depth: 0.098, arc: 0.85 }, (m, o) => hairFall(rig, m, o));
+  piece("faceLocks", F.raven, {}, (m) => faceLocks(rig, m));
   // the scapular's clasps
-  for (let i = 0; i < 3; i++)
-    attach(rig, "chest", new THREE.BoxGeometry(0.018 * rig.H, 0.008 * rig.H, 0.008 * rig.H), M.brass, [0, cy + 0.07 - i * 0.045, 0.086 * td + 0.012 - i * 0.004]);
-  belt(rig, F.leatherDark, M.brass, { r: [0.056, 0.064], dy: 0.07, pouch: true });
-  const orbMat = M.arcane.clone();
+  piece("clasps", M.brass, {}, (m) => {
+    for (let i = 0; i < 3; i++)
+      attach(rig, "chest", new THREE.BoxGeometry(0.018 * rig.H, 0.008 * rig.H, 0.008 * rig.H), m, [0, cy + 0.07 - i * 0.045, 0.086 * td + 0.012 - i * 0.004]);
+  });
+  piece("belt", F.leatherDark, { r: [0.056, 0.064], dy: 0.07, pouch: true }, (m, o) => belt(rig, m, M.brass, o));
+  // the sceptre, or a look's focus (FS-1J1CB R3, R4): the stone glows with the clip (`fx.glow`)
+  // in whatever holds it
+  const orbMat = d.mat("orb", M.arcane).clone();
   const base = orbMat.emissiveIntensity;
-  inHand(rig, "R").add(sceptre(rig, M, F, orbMat));
-  inHand(rig, "L", { rx: -Math.PI / 2 }).add(tome(rig, F));
+  piece("weapon", orbMat, {}, (m) => inHand(rig, "R").add(sceptre(rig, M, F, m)));
+  piece("tome", undefined, {}, () => inHand(rig, "L", { rx: -Math.PI / 2 }).add(tome(rig, F)));
   rig.hooks.push((r, p) => {
     orbMat.emissiveIntensity = base * (p.fx.glow ?? 1);
   });
 
-  const style = WIZARD_STYLE;
-  return { rig, style };
+  return d.finish(rig, WIZARD_STYLE);
 }
 
 /**
@@ -256,51 +291,55 @@ export function wizard() {
  * scabbard at the hip, no shield, no cloak. Broad in the shoulder and heavy in the arm, so it
  * reads as neither the knight nor the archer.
  */
-export function mercenary() {
-  const F = fabrics();
+export function mercenary(look) {
+  const d = dress(look, { F: fabrics(), M: materials() });
+  const { F, kit, piece, opts } = d;
   const rig = createRig(...MERCENARY_BUILD);
   rig.hooks = [];
   skirtBones(rig, { stiffness: 55 });
+  d.bones(rig);
   const [, hy] = J(rig, "hips");
   const [, ny] = J(rig, "neck");
   const [, fy] = J(rig, "foreArmL");
   const [, wy] = J(rig, "handL");
   // the coat is open across the front by `gap` radians each side of centre
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
-  const coatSkirts = { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112] };
+  const coat = opts("coat", { top: hy + 0.02, bottom: hy - 0.2, rTop: [0.104, 0.084], rBottom: [0.13, 0.112], legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
+  Object.assign(kit, { hy, ny, fy, wy, coat, openFront });
 
-  torso(rig, F.coat);
-  neck(rig, F.skin);
-  arms(rig, F.coat, { r: 1.06 });
-  legs(rig, F.breeches, { under: coatSkirts });
-  hands(rig, F.leatherDark);
-  boots(rig, F.leatherDark, { top: 0.22 });
+  piece("torso", F.coat, {}, (m) => torso(rig, m));
+  piece("neck", F.skin, {}, (m) => neck(rig, m));
+  piece("arms", F.coat, { r: 1.06 }, (m, o) => arms(rig, m, o));
+  piece("legs", F.breeches, { under: cut(coat) }, (m, o) => legs(rig, m, o));
+  piece("hands", F.leatherDark, {}, (m) => hands(rig, m));
+  piece("boots", F.leatherDark, { top: 0.22 }, (m, o) => boots(rig, m, o));
   head(rig, F.skin);
   face(rig, F.face, F.browDark);
-  hair(rig, F.hairDark, { tail: true });
-  shortBeard(rig, F.hairDark, { full: 0.8 });
+  piece("hair", F.hairDark, { tail: true }, (m, o) => hair(rig, m, o));
+  piece("beard", F.hairDark, { full: 0.8 }, (m, o) => shortBeard(rig, m, o));
   // the coat's standing collar
-  const collar = rigidTube(
-    rig.H,
-    [
-      { p: [0, ny - 0.016, 0.002], r: [0.05, 0.05] },
-      { p: [0, ny + 0.022, 0.004], r: [0.044, 0.045] },
-    ],
-    { segs: 18, steps: 2, caps: false, arc: openFront(0.35) },
-  );
-  attach(rig, "chest", collar, F.coat, [0, 0, 0]);
+  piece("collar", F.coat, {}, (m) => {
+    const collar = rigidTube(
+      rig.H,
+      [
+        { p: [0, ny - 0.016, 0.002], r: [0.05, 0.05] },
+        { p: [0, ny + 0.022, 0.004], r: [0.044, 0.045] },
+      ],
+      { segs: 18, steps: 2, caps: false, arc: openFront(0.35) },
+    );
+    attach(rig, "chest", collar, m, [0, 0, 0]);
+  });
   // the coat's skirts, split at the front
-  skirt(rig, F.coat, { ...coatSkirts, legFollow: 0.7, panels: true, panelWeight: 0.35, arc: openFront(0.16), segs: 30 });
-  sash(rig, F.sash, { side: "R", depth: 0.045 });
-  spaulder(rig, "L", F.darkSteelDouble, { lames: 3, size: 0.98 });
-  limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.04, 0.038], F.darkSteel);
-  limbGuard(rig, "foreArmL", wy + 0.02, fy - 0.035, [0.038, 0.035], F.leatherDark);
-  kneeCop(rig, "L", F.darkSteel);
-  scabbard(rig, "L", F);
-  inHand(rig, "R").add(curvedSword(rig, F));
+  piece("coat", F.coat, coat, (m, o) => skirt(rig, m, o));
+  piece("sash", F.sash, { side: "R", depth: 0.045 }, (m, o) => sash(rig, m, o));
+  piece("spaulder", F.darkSteelDouble, { lames: 3, size: 0.98 }, (m, o) => spaulder(rig, "L", m, o));
+  piece("vambrace", F.darkSteel, {}, (m) => limbGuard(rig, "foreArmR", wy + 0.02, fy - 0.03, [0.04, 0.038], m));
+  piece("bracer", F.leatherDark, {}, (m) => limbGuard(rig, "foreArmL", wy + 0.02, fy - 0.035, [0.038, 0.035], m));
+  piece("kneeCop", F.darkSteel, {}, (m) => kneeCop(rig, "L", m));
+  piece("scabbard", undefined, {}, () => scabbard(rig, "L", F));
+  piece("weapon", undefined, {}, () => inHand(rig, "R").add(curvedSword(rig, F)));
 
-  const style = MERCENARY_STYLE;
-  return { rig, style };
+  return d.finish(rig, MERCENARY_STYLE);
 }
 
 /** A skull on the head bone, its jaw on the jaw bone, hostile red light (`eye`) in the sockets. */
@@ -549,6 +588,54 @@ function trollOf(variant = null) {
 }
 
 /**
+ * The four classes by sheet stem: the builder (cast.js) and its sheet's options (classStyles.js),
+ * shared by the class's own row and its spec looks' rows, so a look is baked as its class is.
+ */
+const CLASS_ROWS = {
+  knight: { build: knight, sheet: KNIGHT_SHEET },
+  archer: { build: archer, sheet: ARCHER_SHEET },
+  wizard: { build: wizard, sheet: WIZARD_SHEET },
+  mercenary: { build: mercenary, sheet: MERCENARY_SHEET },
+};
+
+/** The class's own row: sheet `char_<base>_base` in group `<base>`, trimmed. */
+function classRow(base) {
+  const { build, sheet } = CLASS_ROWS[base];
+  return { sheet: `char_${base}_base`, group: base, fn: base, build, ...sheet, trim: true };
+}
+
+/** Each class's specializations (FS-E1ZDG ids), by the class's sheet stem (FS-1J1CB R15). */
+export const SPEC_LOOKS = {
+  knight: ["guardian", "berserker"],
+  wizard: ["spellwarden", "pyromancer"],
+  archer: ["hunter", "shadow_ranger"],
+  mercenary: ["duelist", "sellsword"],
+};
+
+/**
+ * A spec look's cast row (FS-1J1CB R9, R15): its class's builder dressed in `look` (look.js), as
+ * sheet `char_<base>_<spec>` packed alone in group `<base>_<spec>`, with the class's sheet options
+ * (its clips, 1.5x) and trimmed as the class is. `module` and `fn` name where the look is authored,
+ * for the manifest's provenance; `sheet` adds to the class's sheet options (the Berserker's
+ * off-hand clips, R9). The base class's own row is untouched.
+ */
+export function specRow(base, spec, look, { module, fn, ...sheet } = {}) {
+  const c = CLASS_ROWS[base];
+  if (!c) throw new Error(`cast: no class "${base}" (one of ${Object.keys(CLASS_ROWS).join(", ")})`);
+  if (!SPEC_LOOKS[base].includes(spec)) throw new Error(`cast: ${base} has no spec "${spec}" (one of ${SPEC_LOOKS[base].join(", ")})`);
+  return {
+    sheet: `char_${base}_${spec}`,
+    group: `${base}_${spec}`,
+    fn: fn ?? base,
+    ...(module ? { module } : {}),
+    build: () => c.build(look),
+    ...c.sheet,
+    ...sheet,
+    trim: true,
+  };
+}
+
+/**
  * The cast as manifest sheets. `_base` is the body layer: equipment layers can join it later as
  * `<sheet>_<slot>` sheets sharing its frame size and anchor (FS-2325V §E.6). A creature built in
  * its own module names it (`module`, for the manifest's provenance); one with its own clip
@@ -556,17 +643,21 @@ function trollOf(variant = null) {
  * no existing atlas reflows.
  */
 export const CAST = [
-  // The four classes (FS-HF0WW, FS-3V7GC): each baked at 2× (twice the px per screen px, drawn at
-  // half scale) with its attack layered over the walk (walk_attack), in its own group; each frame
-  // trimmed to its pixels (lib/trim.mjs)
-  { sheet: "char_knight_base", group: "knight", fn: "knight", build: knight, ...KNIGHT_SHEET, trim: true },
-  // the archer runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8:
-  // the first class re-baked, the owner's 2026-11-12 pick), baked at 1.5× (ADR-0076, the owner's
-  // 「感覺可以」): each class moves to 1.5× when it is re-baked with the run (FS-HF0WW § Change:
-  // Class sheets at 1.5x)
-  { sheet: "char_archer_base", group: "archer", fn: "archer", build: archer, animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5, trim: true },
-  { sheet: "char_wizard_base", group: "wizard", fn: "wizard", build: wizard, ...WIZARD_SHEET, trim: true },
-  { sheet: "char_mercenary_base", group: "mercenary", fn: "mercenary", build: mercenary, ...MERCENARY_SHEET, trim: true },
+  // The four classes (FS-HF0WW, FS-3V7GC): each with its attack layered over the walk
+  // (walk_attack), in its own group; each frame trimmed to its pixels (lib/trim.mjs). The archer
+  // runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8: the first
+  // class re-baked, the owner's 2026-11-12 pick); each class moved to 1.5× (ADR-0076, the owner's
+  // 「感覺可以」) when it was re-baked with the run (FS-HF0WW § Change: Class sheets at 1.5x)
+  ...Object.keys(CLASS_ROWS).map((base) => classRow(base)),
+  // the specialization looks (FS-1J1CB §A, R15): each its class re-dressed, alone in its own group
+  specRow("knight", "guardian", guardian, { module: "warriorLooks", fn: "guardian" }),
+  specRow("knight", "berserker", berserker, { module: "warriorLooks", fn: "berserker", animations: BERSERKER_SHEET.animations }),
+  specRow("wizard", "spellwarden", spellwarden, { module: "mageLooks", fn: "spellwarden" }),
+  specRow("wizard", "pyromancer", pyromancer, { module: "mageLooks", fn: "pyromancer" }),
+  specRow("archer", "hunter", hunter, { module: "archerLooks", fn: "hunter" }),
+  specRow("archer", "shadow_ranger", shadowRanger, { module: "archerLooks", fn: "shadowRanger" }),
+  specRow("mercenary", "duelist", duelist, { module: "mercLooks", fn: "duelist" }),
+  specRow("mercenary", "sellsword", sellsword, { module: "mercLooks", fn: "sellsword" }),
   { sheet: "creature_ghoul_base", group: "creatures", fn: "ghoul", build: ghoul },
   { sheet: "creature_troll_base", group: "creatures", fn: "troll", build: troll },
   // the Bone Archer (FS-B4SG9 §E R24, R25): the ghoul holding a bow, in the group the run already holds

@@ -4,7 +4,9 @@
 //
 //   npm run bake              bake and write public/art/, plus the review contact sheets of
 //                             the cast and the tower interior in tools/bake/review/ (gitignored; lib/contact.mjs)
-//                             and the building exteriors laid as a mock building (lib/building.mjs)
+//                             and the building exteriors laid as a mock building (lib/building.mjs),
+//                             and each baked spec look beside its class with its dark-room strip
+//                             (FS-1J1CB R12)
 //   npm run bake -- --check   bake, write nothing, exit 1 if the output would change
 //
 // Characters and creatures (FS-2325V §E, ADR-0021) are authored in page/characters/: one
@@ -42,8 +44,9 @@ import { packAtlases } from "./lib/pack.mjs";
 import { downscale } from "./lib/downscale.mjs";
 import { cropFrame, trimGrid, trimRect } from "./lib/trim.mjs";
 import { startServer } from "./lib/server.mjs";
-import { CLIENT_ROOT, loadManifestValidator, loadTheme } from "./lib/source.mjs";
-import { labelTexts, lineupSets, writeReview } from "./lib/contact.mjs";
+import { CLIENT_ROOT, loadLighting, loadManifestValidator, loadTheme } from "./lib/source.mjs";
+import { labelTexts, lineupSets, lookSets, writeReview } from "./lib/contact.mjs";
+import { darkRoom, darkestGround } from "./lib/darkRoom.mjs";
 import { buildingReviewTexts, writeBuildingReview } from "./lib/building.mjs";
 
 const OUT_DIR = join(CLIENT_ROOT, "public", "art");
@@ -276,6 +279,12 @@ async function main() {
   const result = validateManifest(manifest);
   if (!result.ok) throw new Error(`bake: the manifest fails the client's validator\n  ${result.errors.join("\n  ")}`);
 
+  // the dark-room floor (FS-1J1CB R10): each spec look's back against the darkest class back, as
+  // the bake test (lib/darkRoom.test.mjs) holds it on the committed sheets
+  const room = darkRoom(manifest, (k) => ({ width: manifest.atlases[k].width, height: manifest.atlases[k].height, rgba: images[k] }));
+  console.log(`bake: dark-room floor ${room.floor.toFixed(4)} (${room.darkest})`);
+  for (const l of room.looks) console.log(`  ${l.sheet.padEnd(28)} back ${l.luminance.toFixed(4)}${l.luminance < room.floor ? "  DARKER THAN THE FLOOR" : ""}`);
+
   const json = `${JSON.stringify(manifest, null, 2)}\n`;
   const changed = [];
   for (const [key, atlas] of Object.entries(manifest.atlases)) {
@@ -309,7 +318,13 @@ async function main() {
     if (review.length) {
       const theme = (await loadTheme()).BARROW;
       const lineups = lineupSets(baked.sheets);
-      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme, lineups });
+      // each spec look beside its class, and the backs on the run's darkest floor under its ambient
+      const looks = lookSets(baked.sheets);
+      const lit = looks.length ? (await loadLighting()).AMBIENT.run : 0;
+      const dark = looks.length
+        ? { sheet: baked.sheets.find((x) => x.name === room.darkest), floor: darkestGround(manifest).rgb, ambient: [(lit >> 16) & 255, (lit >> 8) & 255, lit & 255] }
+        : null;
+      const files = writeReview({ sheets: review, facings: manifest.facings, labels: baked.labels, manifest, theme, lineups, looks, darkRoom: dark });
       // the building exteriors laid as a mock building beside today's pieces (FS-9PN7X §F.1)
       if (review.some((s) => s.group === "building")) files.push(...writeBuildingReview({ sheets: baked.sheets, labels: baked.labels, theme }));
       console.log(`bake: review contact sheets (not committed):\n  ${files.join("\n  ")}`);

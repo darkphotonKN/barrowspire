@@ -1,8 +1,10 @@
 package game
 
 import (
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 )
 
 // seatLevel is the level a character is seated at: its own, held to 1..cap.
@@ -34,6 +36,18 @@ func classAtLevel(class ClassConfig, level int) ClassConfig {
 	}
 
 	return class
+}
+
+// maxHealthGrowth is the max HP a level-up from level adds to a class body of
+// spec: the class growth, or a Berserker's step between the two scaled class
+// bodies, so theirs is always round(0.67 × (base + (level − 1) × growth)).
+// FS-BDA7X §Requirements 17; FS-E1ZDG §D R15.
+func maxHealthGrowth(class ClassConfig, level int, spec string) int {
+	if spec != passivetree.Berserker {
+		return class.Growth.MaxHealth
+	}
+	classBody := class.Health.MaxHealth + (level-1)*class.Growth.MaxHealth
+	return systems.BloodPricedMaxHealth(classBody+class.Growth.MaxHealth) - systems.BloodPricedMaxHealth(classBody)
 }
 
 // growsWithLevel reports whether a class resource of this kind takes the class

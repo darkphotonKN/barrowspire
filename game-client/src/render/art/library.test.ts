@@ -244,3 +244,15 @@ describe("ArtLibrary.forget (FS-C8VM7 §G R43)", () => {
     expect(art.has("brazier")).toBe(true);
   });
 });
+
+describe("ArtLibrary.lists (FS-1J1CB R16)", () => {
+  it("should say whether the manifest has a sheet, loaded in this scene or not, and warn about nothing", () => {
+    const warn = vi.fn();
+    const art = new ArtLibrary(manifest(), { warn }, new Set(["props-0"]));
+    expect(art.lists("brazier")).toBe(true);
+    expect(art.has("brazier")).toBe(false);
+    expect(art.lists("dragon")).toBe(false);
+    expect(ArtLibrary.empty({ warn }).lists("brazier")).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

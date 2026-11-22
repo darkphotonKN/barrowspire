@@ -13,6 +13,7 @@ import (
 	"time"
 
 	pbitems "github.com/darkphotonKN/barrowspire-server/common/api/proto/items"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	grpcitems "github.com/darkphotonKN/barrowspire-server/game-service/grpc/items"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -139,9 +140,12 @@ type Session struct {
 	monsterAISystem *systems.MonsterAISystem
 	// what every floor's monster AI rolls from (wander picks); injected, so a
 	// test's roll holds across floor changes
-	monsterRoll        func() float64
-	monsterDeathSystem *systems.MonsterDeathSystem
-	skillSystem        *systems.SkillSystem
+	monsterRoll func() float64
+	// the pick's one-off changes, run once as a raise makes a body a
+	// specialization (FS-E1ZDG §B R8); injected, so a test can see it run
+	specializationGained func(entity *ecs.Entity, spec string)
+	monsterDeathSystem   *systems.MonsterDeathSystem
+	skillSystem          *systems.SkillSystem
 
 	// told of every kill record, in order, on the tick that made it
 	killConsumers []KillConsumer
@@ -331,6 +335,11 @@ func withMonsterRoll(roll func() float64) sessionOption {
 	return func(s *Session) { s.monsterRoll = roll }
 }
 
+// withSpecializationGained runs gained in place of the pick's one-off changes.
+func withSpecializationGained(gained func(entity *ecs.Entity, spec string)) sessionOption {
+	return func(s *Session) { s.specializationGained = gained }
+}
+
 // newSession builds a world without starting its loops, so a test can step its
 // tick by hand. opts replace its default dependencies.
 func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, serializer StateSerializer, em *ecs.EntityManager, eventEmitter EventEmitter, itemsClient grpcitems.ItemsClient, bounds WorldBounds, opts ...sessionOption) *Session {
@@ -356,16 +365,17 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 		visits:                   make(map[uuid.UUID]FieldVisit),
 		MessageCh:                make(chan types.ClientPackage, 100),
 
-		playerDamage:       playerDamage,
-		movementSystem:     movementSystem,
-		combatSystem:       systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
-		monsterRoll:        rand.Float64,
-		monsterDeathSystem: systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
-		skillSystem:        systems.NewSkillSystem(),
-		killConsumers:      []KillConsumer{NewKillLog(slog.Default())},
-		runExperience:      runExperience,
-		stopChan:           make(chan struct{}),
-		isRunning:          false,
+		playerDamage:         playerDamage,
+		movementSystem:       movementSystem,
+		combatSystem:         systems.NewCombatSystem(em, rand.Float64, playerDamage, UniqueEffects),
+		monsterRoll:          rand.Float64,
+		specializationGained: gainedSpecialization,
+		monsterDeathSystem:   systems.NewMonsterDeathSystem(em, MonsterCorpseLifetime),
+		skillSystem:          systems.NewSkillSystem(),
+		killConsumers:        []KillConsumer{NewKillLog(slog.Default())},
+		runExperience:        runExperience,
+		stopChan:             make(chan struct{}),
+		isRunning:            false,
 
 		worldType: bounds.Type,
 		mapWidth:  bounds.Width,
@@ -401,6 +411,9 @@ func newSession(sessionCloser SessionCloser, sender *messaging.MessageSender, se
 	for _, opt := range opts {
 		opt(s)
 	}
+	// a Blink lands on the walk's own ground: its walls, doors, bounds and, on
+	// a dungeon floor, its cells (FS-04EEA §D R19)
+	s.combatSystem.Ground = s.movementSystem
 	// no floor yet: the AI steers straight until a floor build hands it a grid
 	s.monsterAISystem = newMonsterAI(s.monsterRoll, nil)
 	// a run's kill awards the whole party; a field's, the killer alone
@@ -966,41 +979,45 @@ func (s *Session) manageEndSession() {
 
 var Classes = map[string]ClassConfig{
 	"warrior": {
-		Stats:    components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
-		Combat:   components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
-		Health:   components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
-		Resource: components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
-		Ability:  components.AttackDash,
-		Skills:   []components.SkillComponent{{SkillName: "slash", Level: 1}},
-		Growth:   ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
+		Stats:       components.StatsComponent{Strength: 8, Agility: 4, Intelligence: 2, Vitality: 9},
+		Combat:      components.CombatComponent{Attack: 12, Defense: 10, AttackSpeed: 1.0, AttackRange: 1},
+		Health:      components.HealthComponent{CurrentHealth: 150, MaxHealth: 150},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Ability:     components.AttackDash,
+		TreeAbility: components.AttackEarthbreaker,
+		Skills:      []components.SkillComponent{{SkillName: "slash", Level: 1}},
+		Growth:      ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
 	},
 	"mage": {
-		Stats:    components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
-		Combat:   components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
-		Health:   components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource: components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
-		Ability:  components.AttackTripleFireball,
-		Skills:   []components.SkillComponent{{SkillName: "fireball", Level: 1}},
-		Growth:   ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
+		Stats:       components.StatsComponent{Strength: 2, Agility: 3, Intelligence: 9, Vitality: 3},
+		Combat:      components.CombatComponent{Attack: 15, Defense: 3, AttackSpeed: 0.8, AttackRange: 6},
+		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
+		Ability:     components.AttackTripleFireball,
+		TreeAbility: components.AttackBlink,
+		Skills:      []components.SkillComponent{{SkillName: "fireball", Level: 1}},
+		Growth:      ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
 	},
 	"archer": {
-		Stats:    components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
-		Combat:   components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
-		Health:   components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
-		Resource: components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
-		Ability:  components.AttackShadowShot,
-		Skills:   []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
-		Growth:   ClassGrowth{Agility: 3, MaxHealth: 8},
+		Stats:       components.StatsComponent{Strength: 4, Agility: 8, Intelligence: 3, Vitality: 5},
+		Combat:      components.CombatComponent{Attack: 10, Defense: 5, AttackSpeed: 1.5, AttackRange: 8},
+		Health:      components.HealthComponent{CurrentHealth: 100, MaxHealth: 100},
+		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
+		Ability:     components.AttackShadowShot,
+		TreeAbility: components.AttackArrowRain,
+		Skills:      []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
+		Growth:      ClassGrowth{Agility: 3, MaxHealth: 8},
 	},
 	// FS-MAMHR §Requirements 2.
 	"mercenary": {
-		Stats:    components.StatsComponent{Strength: 7, Agility: 7, Intelligence: 2, Vitality: 7},
-		Combat:   components.CombatComponent{Attack: 12, Defense: 7, AttackSpeed: 1.2, AttackRange: 1},
-		Health:   components.HealthComponent{CurrentHealth: 130, MaxHealth: 130},
-		Resource: components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
-		Ability:  components.AttackParry,
-		Skills:   []components.SkillComponent{{SkillName: "cut", Level: 1}},
-		Growth:   ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
+		Stats:       components.StatsComponent{Strength: 7, Agility: 7, Intelligence: 2, Vitality: 7},
+		Combat:      components.CombatComponent{Attack: 12, Defense: 7, AttackSpeed: 1.2, AttackRange: 1},
+		Health:      components.HealthComponent{CurrentHealth: 130, MaxHealth: 130},
+		Resource:    components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
+		Ability:     components.AttackParry,
+		TreeAbility: components.AttackSettleTheDebt,
+		Skills:      []components.SkillComponent{{SkillName: "cut", Level: 1}},
+		Growth:      ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
 	},
 }
 
@@ -1169,6 +1186,7 @@ func (s *Session) buildBodyLocked(playerID uuid.UUID, character types.CharacterI
 		CharacterID:  character.ID,
 		Level:        level,
 		Experience:   character.Experience,
+		PassiveRanks: character.PassiveRanks,
 		Username:     character.Name,
 		X:            x,
 		Y:            y,
@@ -1550,6 +1568,43 @@ func (s *Session) seatedCharacterLocked(playerID uuid.UUID) (uuid.UUID, bool) {
 	}
 
 	return pc.(*components.PlayerComponent).CharacterID, true
+}
+
+/**
+* RaisePassiveRanks raises the passive tree ranks the member's HUB world body
+* holds to ranks, by the higher rank per node, so answers landing out of order
+* never lower one, and recomputes the body's passive bonus from them at once
+* (FS-8RZ51 R20, R27). Only the body of characterID is raised: a body seated as
+* another character since the spend began keeps its own. A field or a run
+* refuses: its body sees a spend from its next seating (R24, ADR-0082).
+* Reports whether a body took them. The component is replaced, never written,
+* so a frame already holding the old ranks stays whole. A raise that takes the
+* body from no specialization to one is the pick: its one-off changes run,
+* once, after the bonus (FS-E1ZDG §B R8).
+**/
+func (s *Session) RaisePassiveRanks(playerID, characterID uuid.UUID, ranks passivetree.Ranks) bool {
+	if s.worldType != types.WorldTypeHub {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	seatedAs, here := s.seatedCharacterLocked(playerID)
+	if !here || seatedAs != characterID {
+		return false
+	}
+	entity, ok := s.EntityManager.GetEntity(s.playerIDToEntitiesID[playerID])
+	if !ok {
+		return false
+	}
+	before := systems.Specialization(entity)
+	entity.AddComponent(components.NewPassiveRanksComponent(passivetree.Higher(systems.PassiveRanks(entity), ranks)))
+	systems.ApplyPassiveBonus(entity)
+	if spec := systems.Specialization(entity); before == "" && spec != "" {
+		s.specializationGained(entity, spec)
+	}
+	return true
 }
 
 // ErrSafeZone is returned when a world refuses combat.
@@ -3332,6 +3387,11 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 
 	// only the tick reads the AI, and a floor build holds buildMu as a tick does
 	s.monsterAISystem = newMonsterAI(s.monsterRoll, dungeon)
+	// a straight move reads the floor's cells; a floor of buildings has none
+	s.movementSystem.Grid = nil
+	if dungeon != nil {
+		s.movementSystem.Grid = dungeon.navGrid()
+	}
 
 	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
 		floor.CellSize = cellSize
@@ -3525,6 +3585,9 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 		if player.Escape {
 			continue
 		}
+
+		// a Guardian's Last Stand is ready again on every new floor (FS-E1ZDG R12)
+		entity.RemoveComponent(ecs.ComponentTypeLastStandSpent)
 
 		if vc, ok := entity.GetComponent(ecs.ComponentTypeVelocity); ok {
 			velocity := vc.(*components.VelocityComponent)

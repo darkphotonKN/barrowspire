@@ -12,6 +12,11 @@ service CharacterService {
   rpc ListCharacters(ListCharactersRequest) returns (ListCharactersResponse);
   rpc GetCharacter(GetCharacterRequest) returns (Character);
   rpc DeleteCharacter(DeleteCharacterRequest) returns (google.protobuf.Empty);
+  // SpendPassivePoint takes one rank of a passive tree node (FS-8RZ51 R12–R13).
+  // The rule is decided again under the character's row lock. A target rank
+  // already held is OK with applied = false and writes nothing (R10). A rule's
+  // refusal is FailedPrecondition with an ErrorInfo carrying its PASSIVE_* code.
+  rpc SpendPassivePoint(SpendPassivePointRequest) returns (SpendPassivePointResponse);
 }
 
 message Character {
@@ -27,6 +32,19 @@ message Character {
   // total experience for the next level; unset at the cap
   optional int64 next_level_at = 7;
   google.protobuf.Timestamp created_at = 8;
+  // held passive tree ranks, nodes at rank 1 or more, by node id (FS-8RZ51 R14)
+  repeated PassiveRank passive_ranks = 9;
+  // the specialization the held tier-6 node grants: guardian, berserker,
+  // spellwarden, pyromancer, hunter, shadow_ranger, duelist or sellsword;
+  // unset before the pick (FS-E1ZDG R4-R5)
+  optional string specialization = 10;
+}
+
+// PassiveRank is one held node of the passive tree.
+message PassiveRank {
+  // <class>.<slot>, e.g. warrior.t1a
+  string node_id = 1;
+  int32 rank = 2;
 }
 
 message CreateCharacterRequest {
@@ -52,4 +70,19 @@ message GetCharacterRequest {
 message DeleteCharacterRequest {
   string member_id = 1;
   string character_id = 2;
+}
+
+message SpendPassivePointRequest {
+  string member_id = 1;
+  string character_id = 2;
+  string node_id = 3;
+  // the target rank: the rank held plus one; the idempotency key (ADR-0083)
+  int32 rank = 4;
+}
+
+message SpendPassivePointResponse {
+  // false when the target rank was already held and nothing was written
+  bool applied = 1;
+  // every rank the character holds after the spend
+  repeated PassiveRank passive_ranks = 2;
 }

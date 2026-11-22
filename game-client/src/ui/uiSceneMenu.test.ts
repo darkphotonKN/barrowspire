@@ -89,10 +89,20 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
       gear.inventory = gear.character = false;
     },
   };
+  // the UI scene's own passive tree (FS-8RZ51 R36), open or shut
+  const tree = { open: false, closes: 0 };
+  const treeSlot = {
+    isOpen: () => tree.open,
+    close: () => {
+      tree.closes++;
+      tree.open = false;
+    },
+  };
   const { bridge, heard } = heardInterfaceSounds(undefined, {
     party: () => party.open,
     inventory: () => gear.inventory,
     character: () => gear.character,
+    tree: () => tree.open,
   });
   const drawn: Drawn[] = [];
   const stored = { level: 3 };
@@ -129,6 +139,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     fullscreen: () => fullscreen,
     party: panel,
     gear: gearSlot,
+    tree: treeSlot,
   });
   const live = () => drawn.filter((d) => !d.destroyed);
   const shown = () => live()[0];
@@ -141,7 +152,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     const action = (spec.actions as Record<string, (() => void) | undefined>)[id] ?? spec.close;
     action();
   };
-  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party, gear };
+  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party, gear, tree };
 }
 
 describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)", () => {
@@ -227,6 +238,47 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
 
     expect(closed).toEqual(["letter"]);
     expect(t.gear.inventory).toBe(false);
+    expect(t.slot.isOpen()).toBe(false);
+  });
+
+  // FS-8RZ51 R36: Esc closes letter → menu → party → tree → gear
+  it("should close the party panel before the tree, and the tree before the gear (FS-8RZ51 R36)", () => {
+    const t = onBridge();
+    const town = aWorld("hub");
+    t.bridge.report(town.report);
+    t.party.open = true;
+    t.tree.open = true;
+    t.gear.inventory = true;
+
+    t.esc();
+    expect([t.party.open, t.tree.open, t.gear.inventory]).toEqual([false, true, true]);
+    t.esc();
+    expect([t.tree.open, t.gear.inventory]).toEqual([false, true]);
+    t.esc();
+    expect(t.gear.inventory).toBe(false);
+    expect(t.slot.isOpen()).toBe(false);
+  });
+
+  it("should shut the tree as the menu opens over it, with only the menu's sound (FS-8RZ51 R36; FS-3EBCA R17)", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.tree.open = true;
+
+    t.bridge.act(() => t.slot.pressMenu());
+
+    expect(t.slot.isOpen()).toBe(true);
+    expect(t.tree.open).toBe(false);
+    expect(t.heard()).toEqual(["settings_open"]);
+  });
+
+  it("should shut the tree on the Menu icon after the run's end, opening no menu", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run", { ended: true }).report);
+    t.tree.open = true;
+
+    t.slot.pressMenu();
+
+    expect(t.tree.open).toBe(false);
     expect(t.slot.isOpen()).toBe(false);
   });
 

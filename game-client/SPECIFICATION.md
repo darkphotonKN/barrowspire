@@ -70,9 +70,10 @@ server state and sends intents. ✅
 - [ ] Leave a run early after escaping → FS-GV8WN
 - [x] Die by choice from the run's ESC menu → FS-9K8EZ
 - [x] Health and class resource bars on the HUD → FS-8AY7S
-- [x] Ability card on the HUD → FS-8AY7S
+- [ ] ~Ability card on the HUD~ → superseded by FS-Q18Q3
 - [x] Shadow Shot aimed by holding → FS-JTNPR
 - [x] Potion count and drink key on the HUD → FS-P9G8R
+- [ ] Class tree abilities → FS-04EEA
 - [ ] Allocated pickup notices → FS-V780R
 - [x] Unsafe marking on run finds → FS-18Z5F
 - [ ] Other delvers' names over their heads → FS-CH21F
@@ -87,11 +88,14 @@ server state and sends intents. ✅
 - [x] Gold in the gear overlay → FS-7TGZ3
 - [ ] Listed items marked in the gear overlay → FS-GTNP8
 - [ ] A character name is one word → FS-KCQ06
+- [ ] Passive skill tree → FS-8RZ51
+- [ ] Specialization titles → FS-E1ZDG
+- [ ] Specialization looks → FS-1J1CB
 
 ### Presentation
 
 - [x] Fantasy-medieval presentation on the web platform → FS-SWMNW
-- [x] Bone & Soot presentation on the web platform → FS-8TCN2
+- [x] Barrow Vellum presentation on the web platform (was Bone & Soot; ADR-0087) → FS-8TCN2
 - [x] Bone & Soot presentation on the canvas menus → FS-none
 - [ ] Fantasy-medieval presentation in the game canvas → FS-W6BP1
 - [x] Isometric projection of the game world → FS-2325V
@@ -146,6 +150,7 @@ server state and sends intents. ✅
 ### HUD
 
 - [ ] Panel shortcut icons on the HUD → FS-3EBCA
+- [ ] Ability bar → FS-Q18Q3
 
 ### Hub
 

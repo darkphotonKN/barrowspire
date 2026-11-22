@@ -51,8 +51,12 @@ import {
   type Facing8,
   type Point,
 } from "@/render/iso";
-import { preloadArt, registerArt } from "@/render/art/phaser";
-import { SCENE_ART } from "@/render/art/sceneArt";
+import { onDemandArt, preloadArt, registerArt } from "@/render/art/phaser";
+import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
+import { placeOnJump } from "@/render/jump";
+import { SpecLooks, containedBodies, withOwnLook } from "@/render/art/specLooks";
+import { Auras } from "@/render/effects/aura";
+import { prefersReducedMotion } from "@/render/effects/mist";
 import { drawTorchBar } from "@/ui/torchBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
@@ -66,6 +70,7 @@ import { townLines, type TownLines } from "./townLines";
 import {
   MARKER_DEPTH,
   NPC_NAME_PX,
+  NameplateTitle,
   isFunctionNPC,
   markerBase,
   sigilPoints,
@@ -533,6 +538,8 @@ interface PlayerView {
    * placed over the head each frame rather than riding in the depth-sorted container.
    */
   name: Phaser.GameObjects.Text;
+  /** The title line under the name (FS-E1ZDG §K.41), stood with it; none before the pick. */
+  title: NameplateTitle;
   /** Drawn separately so the legs sit beneath the body. */
   legs: Phaser.GameObjects.Graphics;
   /** Where the server last said they are (world position). */
@@ -692,6 +699,15 @@ export class HubScene extends Phaser.Scene {
   private readonly minimapStore: MinimapModeStore = browserMinimapStore;
   /** Baked art (FS-2325V §B.6); an empty library draws placeholders. */
   private art!: ArtLibrary;
+  /**
+   * The town's groups and its own player's spec look, decided at preload (FS-1J1CB R20); the same
+   * set registered in create.
+   */
+  private artGroups: SceneGroups = SCENE_ART.HubScene;
+  /** The player bodies' spec looks, fetched as the state carries them (FS-1J1CB §C R19, R21). */
+  private looks?: SpecLooks;
+  /** The Spellwardens' wards and the Shadow Rangers' glooms, one per body (FS-1J1CB §E). */
+  private auras?: Auras;
   /** Baked ground, when the manifest has it; otherwise the placeholder floor. */
   private groundLayer?: GroundLayer;
   /** FS-2325V §C.7: carries the player's torch, replacing the overlay pool. */
@@ -803,8 +819,10 @@ export class HubScene extends Phaser.Scene {
   }
 
   preload(): void {
-    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4)
-    preloadArt(this, SCENE_ART.HubScene, {
+    // baked world and prop art (FS-2325V §B.6), and the townsfolk (FS-C4JWH §A R4); the player's
+    // own spec look with them, from the character read, by the town itself (FS-1J1CB R20)
+    this.artGroups = withOwnLook(SCENE_ART.HubScene, useGameStore.getState().getActiveCharacter());
+    preloadArt(this, this.artGroups, {
       bar: () => drawTorchBar(this),
       fadeIn: true,
     });
@@ -827,7 +845,9 @@ export class HubScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
     ensureCharacterTextures(this);
-    this.art = registerArt(this, SCENE_ART.HubScene);
+    this.art = registerArt(this, this.artGroups);
+    this.looks = new SpecLooks(this.art, onDemandArt(this, this.art), containedBodies(this.views), this.artGroups);
+    this.auras = new Auras(this, this.art, { reducedMotion: prefersReducedMotion() });
     this.occluders = new Occluders();
     // The run's hand, so hub and run share one pointer (FS-KYPQ9 §H.3), pressed under a held left
     // button (§ Change: The pressed hand); the browser's `default` without its sheet. Nothing
@@ -1176,6 +1196,8 @@ export class HubScene extends Phaser.Scene {
     this.held = undefined;
     this.oneShots = undefined;
     this.views.clear();
+    this.auras?.clear();
+    this.auras = undefined;
     this.npcs.clear();
     this.closeDialogue();
     // the chimneys' smoke, puffs still burning out too: none outlives this scene instance
@@ -1249,6 +1271,7 @@ export class HubScene extends Phaser.Scene {
     this.offerConversation();
     this.updateBuildings();
     this.hideWhoIsElsewhere();
+    this.followAuras(time);
     this.showStashChest();
     this.carryTheTorch(time, delta);
   }
@@ -1370,10 +1393,21 @@ export class HubScene extends Phaser.Scene {
       const shown = !hidden(view.pos);
       view.sprite.setVisible(shown);
       view.name.setVisible(shown);
+      view.title.setVisible(shown);
       view.legs.setVisible(shown);
     }
     const stash = markerShown(HUB_STASH_CHEST.at);
     this.stashMarks.forEach((m) => m.setVisible(stash));
+  }
+
+  /**
+   * Every body's aura on its drawn feet, read after the hide rule so it hides with its body in the
+   * frame the body does (FS-1J1CB R35). The town has no deaths.
+   */
+  private followAuras(time: number): void {
+    if (!this.auras) return;
+    for (const [id, view] of this.views)
+      this.auras.follow(id, view.sprite.visible ? view.pos : null, view.anim.crown, time);
   }
 
   /**
@@ -2061,8 +2095,11 @@ export class HubScene extends Phaser.Scene {
 
       view.sprite.destroy();
       view.name.destroy();
+      view.title.destroy();
       view.legs.destroy();
       this.views.delete(entityID);
+      this.looks?.forget(entityID);
+      this.auras?.forget(entityID);
     }
     // the town is drawn: an arrival's dark lifts off it (FS-PQ2TW R12)
     this.arrivalCard.built();
@@ -3064,9 +3101,10 @@ export class HubScene extends Phaser.Scene {
     });
   }
 
-  /** A player's name plate over their head ({@link markerBase}); the hub has no corpses. */
+  /** A player's name plate over their head ({@link markerBase}), their title under it; the hub has no corpses. */
   private placeName(view: PlayerView): void {
     this.placeMarker(view.sprite, view.name, view.anim);
+    view.title.stand(view.name);
   }
 
   /** A name plate over whoever stands in `sprite`: a baked head (`crown`), or the frame's top. */
@@ -3115,8 +3153,15 @@ export class HubScene extends Phaser.Scene {
     // for the first time is placed outright, so it does not slide in from the
     // origin.
     if (existing) {
+      // a body that jumps is placed there at once, never glided, as in every world (FS-04EEA R41)
+      placeOnJump(existing.pos, existing.target, player.position);
       existing.target = { x: player.position.x, y: player.position.y };
       this.updateAppearance(existing, player);
+      // a pick in town shows from the next state (FS-E1ZDG §B R8), and its look once in (FS-1J1CB R22)
+      existing.title.show(player);
+      this.looks?.see(player.entity_id, player);
+      // its aura with it, starting from the next frame once it carries one (FS-1J1CB R35)
+      this.auras?.see(player.entity_id, player);
       return;
     }
 
@@ -3127,21 +3172,21 @@ export class HubScene extends Phaser.Scene {
 
     // The class's baked sheet, stood on its footprint by the sheet's anchor
     // (FS-2325V §E.5), others untinted as rivals are in a run (§E.3); the preview
-    // texture, others dimmed, only when the sheet is missing.
-    const anim = new CharacterAnimator(this.art, player.class);
+    // texture, others dimmed, only when the sheet is missing. A spec look once it is in, its base
+    // class's sheet until then (FS-1J1CB R16, R21).
+    const anim = new CharacterAnimator(this.art, this.looks?.look(player) ?? player.class);
     if (anim.baked) anim.dress(body);
     else if (!isSelf) body.setTint(BARROW_HEX.vellumDark);
 
     // a marker above the lighting, placed by placeName: a 60 px preview keeps it where it
     // always was, a baked sheet puts it just over the head
+    const nameStyle = { fontFamily: "var(--font-body), serif", color: toCss(palette.markerHub) };
     const name = this.add
-      .text(0, 0, player.username, {
-        fontFamily: "var(--font-body), serif",
-        fontSize: "12px",
-        color: toCss(palette.markerHub),
-      })
+      .text(0, 0, player.username, { ...nameStyle, fontSize: "12px" })
       .setOrigin(0.5)
       .setDepth(MARKER_DEPTH.name);
+    const title = new NameplateTitle(this, nameStyle);
+    title.show(player);
 
     const pos = { x: player.position.x, y: player.position.y };
     const sprite = this.add.container(0, 0, [body]);
@@ -3154,6 +3199,7 @@ export class HubScene extends Phaser.Scene {
     const view: PlayerView = {
       sprite,
       name,
+      title,
       legs,
       target: { ...pos },
       pos,
@@ -3165,5 +3211,7 @@ export class HubScene extends Phaser.Scene {
     };
     this.placeName(view);
     this.views.set(player.entity_id, view);
+    this.looks?.see(player.entity_id, player);
+    this.auras?.see(player.entity_id, player);
   }
 }

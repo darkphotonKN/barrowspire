@@ -4,11 +4,10 @@ import { CLASS_LORE } from "./classLore";
 describe("CLASS_LORE: the Mercenary (FS-MAMHR §G.30)", () => {
   const merc = CLASS_LORE.mercenary;
 
-  it("should name and title the class as the charter does", () => {
+  it("should name the class as the charter does", () => {
     expect(merc.key).toBe("mercenary");
     expect(merc.name).toBe("MERCENARY");
     expect(merc.englishTitle).toBe("THE MERCENARY");
-    expect(merc.title).toBe("OATHLESS BLADE");
   });
 
   it("should carry the blurb verbatim", () => {
@@ -59,5 +58,12 @@ describe("CLASS_LORE: each class's resource (FS-8AY7S req 3, no shared mana pool
   it("should carry no MP on any class", () => {
     for (const lore of Object.values(CLASS_LORE))
       expect("mp" in lore.stats, lore.key).toBe(false);
+  });
+});
+
+describe("CLASS_LORE: no old second names (FS-E1ZDG §K.38)", () => {
+  it("should carry no title on any class: a title is the specialization's", () => {
+    for (const lore of Object.values(CLASS_LORE))
+      expect("title" in lore, lore.key).toBe(false);
   });
 });

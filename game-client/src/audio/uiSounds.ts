@@ -101,6 +101,8 @@ export interface WindowState {
   party: boolean;
   inventory: boolean;
   character: boolean;
+  /** The passive tree (FS-8RZ51 R36): one more window, with the character panel's sounds (v1). */
+  tree: boolean;
 }
 
 /** The windows in the S3 order, each with its open and close sound: the first to change names the sound. */
@@ -110,6 +112,8 @@ const WINDOW_ORDER: readonly { window: keyof WindowState; open: UiEffect; close:
   { window: "party", open: "party_open", close: "party_close" },
   { window: "inventory", open: "inventory_open", close: "inventory_close" },
   { window: "character", open: "character_open", close: "character_close" },
+  // no sound of its own (FS-8RZ51 R36, v1: FS-WDM0X owns the set)
+  { window: "tree", open: "character_open", close: "character_close" },
 ];
 
 /**
@@ -176,6 +180,7 @@ export const NO_WINDOWS: Readonly<WindowState> = {
   party: false,
   inventory: false,
   character: false,
+  tree: false,
 };
 
 /** How long after a hover sounds the next is held back, so a quick sweep over the rows does not stack (§ Change M4). Tunable. */

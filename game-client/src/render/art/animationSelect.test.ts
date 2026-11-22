@@ -317,6 +317,55 @@ describe("selectAnimation: the run, and the backward step only while attacking (
   });
 });
 
+describe("selectAnimation: the Berserker's off hand (FS-1J1CB §D R29)", () => {
+  const south = { vx: 0, vy: 90 };
+  const east = { vx: 90, vy: 0 };
+  const aimNorth = { x: 0, y: -50 };
+  /** The Berserker's sheet: the class clips, and the off-hand swing is the one running. */
+  const offhand = { run: true, walkAttack: true, backpedalAttack: true, offhand: true };
+
+  it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
+    [
+      "an off-hand swing standing plays attack_offhand, turned to the aim",
+      { attacking: true, aim: aimNorth, ...offhand },
+      { animation: "attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "an off-hand swing on the move plays walk_attack_offhand",
+      { attacking: true, aim: aimNorth, velocity: east, ...offhand },
+      { animation: "walk_attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "an off-hand swing stepping back from its aim plays backpedal_attack_offhand",
+      { attacking: true, aim: aimNorth, velocity: south, ...offhand },
+      { animation: "backpedal_attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "an off-hand charge plays the whole attack_offhand whichever way the body is carried",
+      { attacking: true, aim: aimNorth, velocity: south, ...offhand, walkAttack: false },
+      { animation: "attack_offhand", facing: "n", direction: 6 },
+    ],
+    [
+      "the hand only picks a swing clip: running between swings is the run",
+      { velocity: south, ...offhand },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "the hand only picks a swing clip: death is death",
+      { dead: true, attacking: true, facing: "ne", ...offhand },
+      { animation: "death", facing: "ne", direction: 7 },
+    ],
+    [
+      "a right-hand swing plays attack, as on every sheet",
+      { attacking: true, aim: aimNorth, ...offhand, offhand: false },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+  ])("%s", (_name, fields, want) => {
+    const got = selectAnimation(state(fields));
+    expect({ animation: got.animation, facing: got.facing, direction: got.direction }).toEqual(want);
+  });
+});
+
 describe("characterSheet", () => {
   it.each<[string | undefined, string]>([
     ["warrior", "char_knight_base"],
@@ -331,6 +380,46 @@ describe("characterSheet", () => {
     [undefined, "char_knight_base"],
   ])("should draw class %s from %s", (cls, sheet) => {
     expect(characterSheet(cls)).toBe(sheet);
+  });
+
+  // FS-1J1CB R15-R17: a spec look's sheet, where the manifest has it
+  describe("with a specialization", () => {
+    const baked = (...sheets: string[]) => (name: string) => sheets.includes(name);
+
+    it("should draw a Berserker from the look's sheet when the manifest has it", () => {
+      expect(characterSheet("warrior", "berserker", baked("char_knight_berserker"))).toBe("char_knight_berserker");
+      expect(characterSheet("Warrior", "berserker", baked("char_knight_berserker"))).toBe("char_knight_berserker");
+    });
+
+    it("should draw the base sheet while the look is not in the manifest (R16)", () => {
+      expect(characterSheet("warrior", "berserker", baked("char_knight_guardian"))).toBe("char_knight_base");
+      expect(characterSheet("warrior", "berserker")).toBe("char_knight_base");
+    });
+
+    it.each([
+      ["mage", "spellwarden", "char_wizard_spellwarden"],
+      ["mage", "pyromancer", "char_wizard_pyromancer"],
+      ["archer", "hunter", "char_archer_hunter"],
+      ["archer", "shadow_ranger", "char_archer_shadow_ranger"],
+      ["mercenary", "duelist", "char_mercenary_duelist"],
+      ["mercenary", "sellsword", "char_mercenary_sellsword"],
+      ["warrior", "guardian", "char_knight_guardian"],
+    ])("should name %s's %s look %s", (cls, spec, sheet) => {
+      expect(characterSheet(cls, spec, () => true)).toBe(sheet);
+    });
+
+    it.each<[string | undefined, string | undefined, string]>([
+      ["warrior", "spellwarden", "char_knight_base"],
+      ["mage", "berserker", "char_wizard_base"],
+      ["warrior", "warlock", "char_knight_base"],
+      ["warrior", "toString", "char_knight_base"],
+      ["warrior", "", "char_knight_base"],
+      ["warrior", undefined, "char_knight_base"],
+      ["necromancer", "berserker", "char_knight_base"],
+      [undefined, "berserker", "char_knight_base"],
+    ])("should draw class %s with spec %s from the base, %s", (cls, spec, sheet) => {
+      expect(characterSheet(cls, spec, () => true)).toBe(sheet);
+    });
   });
 });
 
@@ -355,7 +444,10 @@ describe("the shipped character sheets", () => {
   );
 
   const CLASSES = ["warrior", "mage", "archer", "mercenary"];
-  const CLASS_SHEETS = CLASSES.map(characterSheet);
+  const CLASS_SHEETS = CLASSES.map((cls) => characterSheet(cls));
+  // a spec look is its class's figure re-dressed, on the class's clips, scale and trim (FS-1J1CB R9, R15)
+  const LOOK_SHEETS = Object.keys(manifest.sheets).filter((name) => /^char_(knight|archer|wizard|mercenary)_(?!base$)/.test(name));
+  const CLASS_OR_LOOK = [...CLASS_SHEETS, ...LOOK_SHEETS];
 
   it.each(CLASSES)(
     "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
@@ -368,9 +460,9 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should give walk_attack to the four classes alone, never a creature or a resident (FS-3V7GC)", () => {
+  it("should give walk_attack to the four classes and their spec looks alone, never a creature or a resident (FS-3V7GC)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (!CLASS_SHEETS.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
+      if (!CLASS_OR_LOOK.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
   });
 
   // the four classes at 1.5x since their run re-bakes (FS-HF0WW § Change: Class sheets at 1.5x
@@ -393,9 +485,9 @@ describe("the shipped character sheets", () => {
     },
   );
 
-  it("should bake the four classes alone at 2x and trimmed (FS-3V7GC)", () => {
+  it("should bake the four classes and their spec looks alone at 2x and trimmed (FS-3V7GC)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (!CLASS_SHEETS.includes(name)) {
+      if (!CLASS_OR_LOOK.includes(name)) {
         expect(sheet.scale, name).toBeUndefined();
         expect(sheet.trimmed, name).toBeUndefined();
       }
@@ -411,6 +503,21 @@ describe("the shipped character sheets", () => {
         if (other !== name) for (const page of pages(sheet)) expect(own.has(page), `${other} on ${name}'s ${page}`).toBe(false);
     }
     expect(Object.keys(manifest.atlases).filter((k) => k.startsWith("characters-"))).toEqual([]);
+  });
+
+  // the client picks the off hand by attack_offhand alone and plays the walking and backpedalling
+  // clips of the same hand, so a sheet with one carries all three, matched to the right hand's
+  it("should give the off-hand clips to the Berserker alone, all three, as long as the right hand's (FS-1J1CB R28)", () => {
+    const withOffhand = Object.keys(manifest.sheets).filter((name) => manifest.sheets[name].animations.attack_offhand);
+    expect(withOffhand).toEqual(["char_knight_berserker"]);
+    const clips = manifest.sheets.char_knight_berserker.animations;
+    for (const swing of ["attack", "walk_attack", "backpedal_attack"]) {
+      const left = clips[`${swing}_offhand`];
+      expect(left?.frames, swing).toHaveLength(8);
+      expect(left.fps, swing).toBe(clips[swing].fps);
+      expect(left.frames[0].length, swing).toBe(clips[swing].frames[0].length);
+      expect(left.loop, swing).toBe(false);
+    }
   });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {

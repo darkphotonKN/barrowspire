@@ -25,6 +25,11 @@ import (
 	Worn uniques' passive effects are summed here too, each once however many
 	copies are worn (R29): kill_frenzy's stacks inside the attack speed cap
 	(R32) and floor_attributes (R37). The frenzy timer runs down here.
+
+	The passive tree's attributes and speeds are summed in beside gear's, so
+	every reader of the bonus reads them, and its speeds count inside the same
+	caps: one ceiling on the total (FS-8RZ51 R25). Its maxima are not: the
+	tree moves those itself, at seating and on a spend (ApplyPassiveBonus).
 */
 
 // GearCaps are the ceilings on summed percentages, in whole percent.
@@ -173,6 +178,15 @@ func (s *GearSystem) sum(entity *ecs.Entity, bonus *components.GearBonusComponen
 		bonus.Intelligence += climbed
 		bonus.Vitality += climbed
 	}
+
+	// the passive tree's, summed with gear's and inside the same caps (FS-8RZ51 R25)
+	tree := passiveBonus(entity)
+	bonus.Strength += tree.Strength
+	bonus.Agility += tree.Agility
+	bonus.Intelligence += tree.Intelligence
+	bonus.AttackSpeedPercent += tree.AttackSpeedPercent
+	bonus.MoveSpeedPercent += tree.MoveSpeedPercent
+	bonus.CritChance += tree.CritPoints
 
 	vitality := bonus.Vitality
 	if sc, ok := entity.GetComponent(ecs.ComponentTypeStats); ok {

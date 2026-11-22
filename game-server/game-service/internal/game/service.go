@@ -2,8 +2,6 @@ package game
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -11,6 +9,7 @@ import (
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commonoutbox "github.com/darkphotonKN/barrowspire-server/common/outbox"
+	commontracing "github.com/darkphotonKN/barrowspire-server/common/tracing"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/jmoiron/sqlx"
@@ -20,9 +19,7 @@ import (
 
 // TxBeginner begins the transaction the match-end outbox rows are written in.
 // *sqlx.DB satisfies it.
-type TxBeginner interface {
-	BeginTxx(ctx context.Context, opts *sql.TxOptions) (*sqlx.Tx, error)
-}
+type TxBeginner = commontracing.TxBeginner
 
 // OutboxWriter records an event in the outbox inside a caller's transaction.
 type OutboxWriter interface {
@@ -191,52 +188,36 @@ func (s *service) PublishFieldVisit(ctx context.Context, visit FieldVisit) error
 // without its loot or the other way round. The rows are written under ids, so
 // writing the same settlement again leaves the rows already there
 // (FS-GV8WN §B R7).
-func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.FormattedMatchData, ids settlementIDs) (err error) {
-	tx, err := s.db.BeginTxx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin match end outbox tx: %w", err)
-	}
-	defer func() {
-		if err == nil {
-			return
+func (s *service) writeMatchEndOutbox(ctx context.Context, data *types.FormattedMatchData, ids settlementIDs) error {
+	err := commontracing.WithTx(ctx, s.db, "match_end_outbox", func(ctx context.Context, tx *sqlx.Tx) error {
+		err := s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+			ID:         ids.ItemsExtracted,
+			RoutingKey: commonconstants.ItemsExtracted,
+			Exchange:   commonconstants.GameEventsExchange,
+			Payload:    data.ItemsExtractedEvent,
+		})
+		if err != nil {
+			return fmt.Errorf("create items extracted outbox row: %w", err)
 		}
-		if rbErr := tx.Rollback(); rbErr != nil && !errors.Is(rbErr, sql.ErrTxDone) {
-			err = errors.Join(err, fmt.Errorf("rollback match end outbox tx: %w", rbErr))
-		}
-	}()
 
-	err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
-		ID:         ids.ItemsExtracted,
-		RoutingKey: commonconstants.ItemsExtracted,
-		Exchange:   commonconstants.GameEventsExchange,
-		Payload:    data.ItemsExtractedEvent,
+		// a sweep carries no match result (FS-GV8WN R14)
+		if data.MatchEndedEvent == nil {
+			return nil
+		}
+
+		err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
+			ID:         ids.MatchEnded,
+			RoutingKey: commonconstants.GameMatchEnded,
+			Exchange:   commonconstants.GameEventsExchange,
+			Payload:    data.MatchEndedEvent,
+		})
+		if err != nil {
+			return fmt.Errorf("create match ended outbox row: %w", err)
+		}
+		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("create items extracted outbox row: %w", err)
-	}
-
-	// a sweep carries no match result (FS-GV8WN R14)
-	if data.MatchEndedEvent == nil {
-		return s.commitMatchEnd(tx)
-	}
-
-	err = s.outbox.CreateOutboxTx(ctx, tx, commonoutbox.OutboxParams{
-		ID:         ids.MatchEnded,
-		RoutingKey: commonconstants.GameMatchEnded,
-		Exchange:   commonconstants.GameEventsExchange,
-		Payload:    data.MatchEndedEvent,
-	})
-	if err != nil {
-		return fmt.Errorf("create match ended outbox row: %w", err)
-	}
-
-	return s.commitMatchEnd(tx)
-}
-
-// commitMatchEnd commits the match-end rows and wakes the outbox worker.
-func (s *service) commitMatchEnd(tx *sqlx.Tx) error {
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit match end outbox tx: %w", err)
+		return err
 	}
 
 	// the delver is already on the way home and will look for this loot: send

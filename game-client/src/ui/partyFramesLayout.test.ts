@@ -3,7 +3,6 @@ import type { PartyMember, PartyUpdatePayload } from "@/stores/partyStore";
 import type { PlayerState } from "@/types/gameState";
 import { chatWindowFrame, CHAT_WINDOW_X } from "./chatWindowLayout";
 import { invitePromptFrames } from "./partyInvitePromptLayout";
-import { POTION_CELL_GAP, POTION_CELL_W } from "./potions";
 import { partyPanelLeft } from "./partyPanelLayout";
 
 /** The T panel's left edge at its leftmost, the narrowest view (FS-R82NV § Change C3). */
@@ -12,6 +11,8 @@ import {
   PARTY_FRAMES_PLACEMENT,
   partyBustFrame,
   partyFrameRows,
+  PARTY_NAME_PX,
+  PARTY_TITLE_PX,
   partyFramesFrame,
   partyNameRoom,
   partyTravelButtonRect,
@@ -237,6 +238,31 @@ describe("partyFrameRows: a teammate's bar slot", () => {
     ]);
   });
 
+  // FS-E1ZDG §L R44: a Sellsword's frame shows their 5
+  it("draws a Sellsword teammate's five parry charges as five pips", () => {
+    const others = [
+      seen("wren", {
+        current_health: 60,
+        max_health: 120,
+        specialization: "sellsword",
+        resource: {
+          kind: "parry_charges",
+          current: 4,
+          max: 5,
+          ability_cost: 1,
+        },
+      }),
+    ];
+    const slot = slotOf(two({ where: "run" }), others);
+    expect(slot.kind === "bars" && slot.resource?.pips).toEqual([
+      true,
+      true,
+      true,
+      true,
+      false,
+    ]);
+  });
+
   // FS-CH21F R8: the hub's refusal is lifted; one rule decides bars in every world
   it("shows a teammate in the hub, listed in the hub's state, both bars", () => {
     const others = [
@@ -337,6 +363,36 @@ describe("partyFrameRows: a row's level", () => {
       seen("wren", { current_health: 30, max_health: 120 }),
     ]);
     expect(rows[1].level).toBeUndefined();
+  });
+});
+
+// FS-E1ZDG §K.41: the title on a frame by the level's rule, own row always, a teammate's while in this world
+describe("partyFrameRows: a row's title", () => {
+  const rowsOf = (others: PlayerState[] = [], own: Partial<PlayerState> = { specialization: "berserker" }) =>
+    memberRows(
+      partyFrameRows(party([member(ME, "Me"), member("wren", "Wren", { class: "archer" })]), ME, {
+        current_player: seen(ME, { current_health: 9, max_health: 9, ...own }),
+        other_players: others,
+      }),
+    );
+
+  it("carries the player's own title from their own state", () => {
+    expect(rowsOf()[0].title).toBe("Warrior · Berserker");
+  });
+
+  it("carries a same-world teammate's title", () => {
+    const rows = rowsOf([seen("wren", { current_health: 30, max_health: 120, specialization: "shadow_ranger" })]);
+    expect(rows[1].title).toBe("Archer · Shadow Ranger");
+  });
+
+  it("gives a teammate elsewhere no title, whatever their broadcast says (§Edge States)", () => {
+    const rows = rowsOf([seen("wren", { specialization: "shadow_ranger" })]);
+    expect(rows[1]).not.toHaveProperty("title");
+  });
+
+  it("gives no title before the pick, or for a spec the client does not know", () => {
+    expect(rowsOf([], {})[0]).not.toHaveProperty("title");
+    expect(rowsOf([], { specialization: "paladin" })[0]).not.toHaveProperty("title");
   });
 });
 
@@ -519,6 +575,16 @@ describe("partyFramesFrame", () => {
     }
   });
 
+  // FS-E1ZDG §K.41: the title's own line under the name, over the bars, inside the row
+  it("stands the title line under the name and over the bars", () => {
+    for (const { row, name, title, health } of partyFramesFrame(2, 10, 86)) {
+      expect(title.x).toBe(name.x);
+      expect(title.y).toBeGreaterThanOrEqual(name.y + PARTY_NAME_PX);
+      expect(title.y + PARTY_TITLE_PX).toBeLessThanOrEqual(health.y);
+      expect(health.y).toBeGreaterThan(row.y);
+    }
+  });
+
   // the fullest party (cap 4, the player's row among them), in each world that mounts the frames,
   // at the view's two ends; with the XP bar gone to the bottom middle (FS-77DVN §A), nothing of it
   // stands in the top-left column
@@ -533,15 +599,6 @@ describe("partyFramesFrame", () => {
     width: HUD_COLUMN_W,
     height: resourceHudHeight(2),
   });
-  /** The run's potion cell, glued right of the bars and top-aligned with them. */
-  const potionCell = (): Rect => {
-    const bars = barsAt(RESOURCE_HUD_AT.run);
-    return {
-      ...bars,
-      x: bars.x + bars.width + POTION_CELL_GAP,
-      width: POTION_CELL_W,
-    };
-  };
 
   // FS-77DVN §E.17 supersedes FS-56CKV §D.20's run top 132 (and FS-R82NV R34's "run y 160") in
   // part: the run's bars rise to (10, 16), so its frames stand where a field's do (§E.21)
@@ -578,15 +635,15 @@ describe("partyFramesFrame", () => {
   });
 
   it.each([1080, 1280])(
-    "opens the T panel clear right of the run's potion cell at logical width %i (FS-R82NV § Change C3)",
+    "opens the T panel clear right of the run's bars at logical width %i (FS-R82NV § Change C3; the potion cell beside them is gone, FS-Q18Q3 R35, R36)",
     (W) => {
-      const cell = potionCell();
-      expect(partyPanelLeft(W)).toBeGreaterThan(cell.x + cell.width + 12);
+      const bars = barsAt(RESOURCE_HUD_AT.run);
+      expect(partyPanelLeft(W)).toBeGreaterThan(bars.x + bars.width + 12);
     },
   );
 
   it.each([1080, 1280])(
-    "keeps the most prompts clear of the bars and the potion cell, open panel or not, at logical width %i",
+    "keeps the most prompts clear of the bars, open panel or not, at logical width %i",
     (W) => {
       for (const panelOpen of [false, true])
         for (const note of [false, true])
@@ -596,7 +653,6 @@ describe("partyFramesFrame", () => {
             note,
             floor: chatPanel().y,
           })) {
-            expect(overlaps(prompt.panel, potionCell())).toBe(false);
             expect(overlaps(prompt.panel, barsAt(RESOURCE_HUD_AT.run))).toBe(
               false,
             );
@@ -608,16 +664,16 @@ describe("partyFramesFrame", () => {
   );
 
   const worlds = [
-    // the run: the bars in the corner, the potion cell beside them, the frames under them
-    { world: "run" as const, bars: RESOURCE_HUD_AT.run, potion: true },
+    // the run: the bars in the corner, the frames under them
+    { world: "run" as const, bars: RESOURCE_HUD_AT.run },
     // the hub: no resource bars, the frames in the corner
-    { world: "hub" as const, bars: null, potion: false },
+    { world: "hub" as const, bars: null },
     // a field: the bars in the corner and the frames under them
-    { world: "field" as const, bars: RESOURCE_HUD_AT.field, potion: false },
+    { world: "field" as const, bars: RESOURCE_HUD_AT.field },
   ];
   it.each([1080, 1280].flatMap((W) => worlds.map((w) => ({ ...w, W }))))(
-    "in the $world at logical width $W, four rows clear the resource bars, the potion cell, the chat window, the T panel, the prompts and the ready check",
-    ({ world, bars, potion, W }) => {
+    "in the $world at logical width $W, four rows clear the resource bars, the chat window, the T panel, the prompts and the ready check",
+    ({ world, bars, W }) => {
       const { x, top } = PARTY_FRAMES_PLACEMENT[world];
       // the fullest party at the largest cap (PARTY_SIZE max 4): two members, two open invites
       const fullest = partyFrameRows(
@@ -651,7 +707,6 @@ describe("partyFramesFrame", () => {
         expect(frames.y).toBeGreaterThanOrEqual(at.y + at.height);
         expect(frames.x).toBe(at.x);
       }
-      if (potion) expect(overlaps(frames, potionCell())).toBe(false);
       expect(overlaps(frames, chatPanel())).toBe(false);
       // the T panel stands right of the frames (R28)
       expect(frames.x + frames.width).toBeLessThan(partyPanelLeft(W));

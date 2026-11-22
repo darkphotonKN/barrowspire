@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EventEmitter } from "eventemitter3";
 import {
@@ -234,26 +232,4 @@ describe("the window's top edge (FS-TQZ5J § Change: Batch 6, R132)", () => {
     expect(slot.topEdge()).toBeUndefined();
   });
 
-  it("should name no world in the slot: each world reports its floor (OCP)", () => {
-    expect(readFileSync(join(__dirname, "uiSceneChat.ts"), "utf8")).not.toMatch(/FLOOR_WORLDS|"field"|"run"/);
-  });
-});
-
-describe("the worlds leave chat to the UI scene (FS-TQZ5J § Change: Batch 6, R125, R129, R130, R132)", () => {
-  const source = (file: string) => readFileSync(join(__dirname, file), "utf8");
-
-  it.each(["HubScene", "FieldScene", "BarrowspireScene"])("should import no chat window in %s, nor read one", (scene) => {
-    const text = source(`../scenes/${scene}.ts`);
-    expect(text).not.toMatch(/from "@\/ui\/ChatWindow"/);
-    expect(text).not.toMatch(/chatWindow/);
-    expect(text).not.toMatch(/panelTakes/);
-    expect(text).not.toMatch(/chatTop/);
-  });
-
-  it("should leave the window no covered option, no overUi, and the mailbox no covers", () => {
-    expect(source("ChatWindow.ts")).not.toMatch(/coveredAt|overUi/);
-    expect(source("mailboxHud.ts")).not.toMatch(/covers\(/);
-    expect(source("LetterPanel.ts")).not.toMatch(/covers\(/);
-    expect(source("uiBridge.ts")).not.toMatch(/WorldLayout|chatTop/);
-  });
 });

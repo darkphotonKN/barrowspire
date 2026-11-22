@@ -134,9 +134,10 @@ func (s *ProjectileSystem) Update(deltaTime float64, entities []*ecs.Entity) []I
 
 		// Check collision with damageable entities: the first one it can hit stops
 		// it, unless it has pierce left, when it flies on and never hits that one
-		// again. Whatever it cannot hit is passed through without spending pierce:
-		// the dead, delvers out of play and, with player damage off, a delver's
-		// shot through other delvers.
+		// again; one that pierces all (a Shadow Ranger's Shadow Shot) never stops
+		// at a target. Whatever it cannot hit is passed through without spending
+		// pierce: the dead, delvers out of play and, with player damage off, a
+		// delver's shot through other delvers.
 		for _, target := range targets {
 			if target.ID == proj.OwnerEntityID {
 				continue // Do not hit self
@@ -156,6 +157,9 @@ func (s *ProjectileSystem) Update(deltaTime float64, entities []*ecs.Entity) []I
 				impacts = append(impacts, Impact{Attack: proj.Attack, TargetEntityID: target.ID})
 				proj.HitEntityIDs = append(proj.HitEntityIDs, target.ID)
 
+				if proj.Attack.PiercesAll {
+					continue
+				}
 				if proj.PierceLeft > 0 {
 					proj.PierceLeft--
 					continue

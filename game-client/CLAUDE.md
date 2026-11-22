@@ -9,7 +9,8 @@ looks. If this file and the guideline disagree, the guideline wins.
 Three rules that catch people out:
 
 - Two palettes ([ADR-0025](../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
-  DOM code uses Bone & Soot from `globals.css` and the `UI` table in `src/utils/theme.ts`.
+  DOM code uses Barrow Vellum ([ADR-0087](../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md))
+  from `globals.css` and the `UI` table in `src/utils/theme.ts`.
   Phaser code uses the barrow ramp in `BARROW` / `BARROW_HEX`, named by what a thing is through
   `palette` in `src/utils/canvasPalette.ts` (`palette.door`, not `BARROW_HEX.slate`). Neither
   side reads the other's. The canvas menus are the exception: they read `palette.menu`.

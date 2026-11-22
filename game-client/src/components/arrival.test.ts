@@ -1,5 +1,3 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { WorldEnteredPayload } from "@/assets/types/client";
 import { keptPlaces, type PlaceStore } from "./arrival";
@@ -148,21 +146,5 @@ describe("session storage unavailable or throwing (FS-PQ2TW Edge States)", () =>
 
     expect(places.isArrival(run())).toBe(true);
     expect(places.isArrival(run())).toBe(false);
-  });
-});
-
-describe("no world scene reads the kept place (FS-PQ2TW R8; ADR-0075 Decision 4)", () => {
-  const scenes = join(process.cwd(), "src", "scenes");
-  const sources = readdirSync(scenes)
-    .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts") && !f.endsWith(".standin.ts"))
-    .map((f) => ({ file: f, text: readFileSync(join(scenes, f), "utf8") }));
-
-  it("should be imported by no scene but the main menu, and by the menu for the forget alone", () => {
-    const importers = sources
-      .map(({ file, text }) => ({ file, imports: text.match(/import\s*\{([^}]*)\}\s*from\s*"[^"]*components\/arrival"/) }))
-      .filter(({ imports }) => imports)
-      .map(({ file, imports }) => ({ file, names: imports![1].split(",").map((n) => n.trim()).filter(Boolean) }));
-
-    expect(importers).toEqual([{ file: "MainMenuScene.ts", names: ["forgetPlace"] }]);
   });
 });

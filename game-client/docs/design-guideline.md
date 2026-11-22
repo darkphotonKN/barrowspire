@@ -139,14 +139,18 @@ and the two are not required to agree (ADR-0025).
 | **Brass** | `#9c7b3f`, `#c9a14e` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
-and its aim arrow) and nothing else. A shadow has nothing to be darker than in a dark barrow, and
+and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
+owner's pick, 2026-11-21, FS-1J1CB: the Shadow Shot's look is the Shadow Ranger's; every other
+archer looses the plain Heavy Shot, with no umbra.)* A shadow has nothing to be darker than in a dark barrow, and
 dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, desaturated
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
 One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
-interactable, which stays amber, and never stands in for a light source's colour.
+interactable, which stays amber, and never stands in for a light source's colour. It may also be
+baked into one body: the Pyromancer's embers on her hem and the flame in her focus's cage, still
+never marking an interactable. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
 
 **Rules:**
 - Keep darks as bases, **never pure black** — preserve enough value range that pixel
@@ -300,7 +304,12 @@ lit) while the player stands inside.
   full diagonal from above the right shoulder to below the left hip; the knight cuts compact
   behind a shield kept up before his chest, the mercenary wide, a drawing cut with his free hand
   thrown out against it; the wizard thrusts her sceptre from the shoulder with her free hand
-  opening (FS-2325V § Change: The class attacks move with weight and cut deep). Folk and
+  opening (FS-2325V § Change: The class attacks move with weight and cut deep).
+  A dual-wielder's off-hand attack (`attack_offhand`, `walk_attack_offhand`,
+  `backpedal_attack_offhand`, the Berserker first) is baked from the attack's upper-body keys
+  mirrored left for right, over the same legs, lit by the bake, with the same keys, fps and
+  strike key; never a sprite flipped at runtime, which puts the baked key light on the wrong
+  side. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)* Folk and
   creatures keep idle and walk.
   Creature variants change proportions and add bones (tail, jaw, hunch), or lay the spine
   horizontal on four legs.
@@ -311,7 +320,13 @@ lit) while the player stands inside.
   knee, open at the front for the saddle, over mail chausses and plain boots, and a heavy oxblood
   cloak hangs to the calf. He carries a longsword and a tall kite shield painted per pale in bone
   and oxblood, with an iron boss. Worn and functional kit, never bright fantasy plate. *(Amended
-  at the owner's pick, 2026-11-04.)*
+  at the owner's pick, 2026-11-04.)* The mail and the conical nasal helm are the warrior's, and
+  the mail is the Guardian's body too: the Guardian's head is a flat-topped great helm over the
+  coif, he wears a bone surcoat with the house cross over the hauberk, and his kite shield is a
+  little larger, the cross laid counterchanged over its per-pale field. The Berserker goes
+  unhelmed with the coif pushed down round his neck, carries a bearded axe in each hand with the
+  cutting edge forward and down, and has no shield and no longsword. *(Amended at the owner's
+  pick, 2026-11-21, FS-1J1CB.)*
 - **Archer:** a ranger in Nightwood: cowl, capelet and cloak in a green dyed so deep it is
   nearly black, held just above black so the back still reads in a dark room, over muted buff
   leather that carries the figure. A deep cowl, closed over the crown, hides most of the
@@ -319,7 +334,11 @@ lit) while the player stands inside.
   like real cloth, never a split hood or a sharp spike. A capelet sits under the cowl and a
   ragged cloak hangs over the buff leather, with a quiver strapped over it on the back, near
   upright (about 17° off the spine), its fletching over the right shoulder. *(Amended at the owner's
-  pick, 2026-11-04.)*
+  pick, 2026-11-04.)* The cowl and the Nightwood green are the archer's and the Shadow Ranger's,
+  whose green is dyed through to a cold soot-black and lifted toward slate (or its edges rimmed)
+  so the back still reads. The Hunter wears no hood and no green: a wolf pelt and laced hide over
+  the buff, the cloak in undyed grey-brown wool, the face and hair showing. *(Amended at the
+  owner's pick, 2026-11-21, FS-1J1CB.)*
 - **Mage:** a woman by default, a raven-haired occultist: grim and scholarly, never glamour and
   never a pointed hat. She is narrower in the shoulder than the men, her gown cut in at a belted
   waist and opening from the hip, so she reads as a woman from the front. Her black hair falls
@@ -330,6 +349,13 @@ lit) while the player stands inside.
   chest. A short iron sceptre holds the glowing stone in its prongs, and a black tome hangs from
   her other hand. No hood, no hat, no staff: her long hair and collar keep her apart from the
   archer's cowl and the mercenary's tied-back hair and blade. *(Amended at the owner's pick, 2026-11-04 and 2026-11-05.)*
+  A specialization's focus may be about 1.5x the sceptre's length, held and thrust as the
+  sceptre is, and is still never a staff. The Spellwarden wears blackened-iron spaulders and a
+  gorget over the gown. The Pyromancer's scapular is a scorched oxblood, not the teal, and her
+  hem is singed short with embers in it. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
+  The scorched oxblood is the house oxblood a little toward ember under grime, not near-black:
+  her back on the black gown and raven hair falls under the dark-room floor below that.
+  *(Amended in the Pyromancer's bake, 2026-11-22, FS-1J1CB R10.)*
 - **Mercenary:** a lightly armoured, skilled swordsman built on strength. He is a fighter in the
   open, never a rogue or an assassin. He wears a quilted arming coat in faded madder, skirted to
   mid-thigh, with a madder sash, one blackened spaulder, a vambrace on the sword arm and tall
@@ -337,7 +363,51 @@ lit) while the player stands inside.
   carry him. His sword is a long, slender, curved dueling blade with a knuckle-bow, used
   one-handed with no shield. He is broad in the shoulder and heavy in the arm: never the
   knight's long mail, helm and shield, never the archer's hood and cloak. *(Amended at the
-  owner's pick, FS-MAMHR §H, 2026-10-31.)*
+  owner's pick, FS-MAMHR §H, 2026-10-31.)* The Duelist wears a robe wrapped closed across the
+  chest in faded madder with a slate-black sash, and a slate-black half-cloak slung from the off
+  shoulder in place of the left spaulder; a half-cloak is not the archer's hood and cloak. The
+  Sellsword's madder is dyed a charcoal black, never pure black, under a buff-leather coat
+  buckled in brass, with a spaulder on each shoulder. *(Amended at the owner's pick, 2026-11-21,
+  FS-1J1CB.)*
+- **Specializations:** a specialization re-dresses its class on the same rig, build, clips and
+  scale, changing only a few pieces (a helm, a coat, a weapon, a dye), so the class still reads
+  at a glance and a level-20 character reads as what it became. The eight looks:
+  - **Guardian** (knight): a worn bone surcoat with the oxblood house cross over the hauberk, the
+    flat-topped great helm with a dark eye-slit and a brass cross down the face, and a slightly
+    larger kite shield, its cross counterchanged inside a narrow brass border.
+  - **Berserker** (knight): bareheaded with dark hair and a full short beard, the coif down to a
+    mail mantle, blood-dark cloth round both forearms and the cloak torn short to the hips. A
+    bearded axe in each hand, edge forward and down, no shield; a wide cut with the free arm swung
+    back, the hands taking turns.
+  - **Spellwarden** (mage): blackened-iron spaulders and gorget, the tome bound in iron, and a
+    larger ward focus, an iron ring round a pale stone lit low. A ward winks round her (*Auras*).
+  - **Pyromancer** (mage): the scapular in scorched oxblood, the gown's hem singed and ragged
+    with embers in it that move with the cloth, and a larger fire focus, an iron cage holding an
+    upright tongue of flame.
+  - **Hunter** (archer): a grey-brown wolf pelt over the shoulders, a laced hide jerkin, undyed
+    grey-brown wool for the cloak and capelet, no hood, the face and loose brown hair showing,
+    long pale fletching and horn-capped nocks. Bare of the hood, the pelt stands open at the
+    throat: closed up to the chin it read as a beard. *(Amended in the Hunter's bake,
+    2026-11-22, FS-1J1CB.)*
+  - **Shadow Ranger** (archer): the Nightwood green dyed to a cold soot-black, the buff leather
+    a cold grey, lifted or rimmed until the back passes the dark-room floor. A gloom
+    rises off the figure (*Auras*). The soot is lifted, not rimmed: the cowl, capelet and cloak
+    are pitch most of the way to slate, the sleeves and hose a darker step of it, still black at
+    a glance. Variant A's soot left her back a third under the floor. *(Amended in the Shadow
+    Ranger's bake, 2026-11-22, FS-1J1CB R10.)*
+  - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
+    mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
+    half-cloak from the off shoulder on cloak bones. The V shows the breeches' dark wool beneath
+    it. The half-cloak hangs wide of the arm and stops at his side: carried round the front of
+    the arm, the cut's free arm, thrown out and back, lifted it over his head like a wing. The
+    knee cop goes under the robe. *(Amended in the Duelist's bake, 2026-11-22, FS-1J1CB.)*
+  - **Sellsword** (mercenary): a sleeveless buff-leather coat buckled in brass over the arming
+    coat dyed charcoal black, a spaulder on each shoulder and a purse at the belt.
+
+  Every look keeps the faces rule, passes the leg and cloak guards on every clip, and is
+  approved on a contact sheet beside its base class before it ships. If a later contact-sheet
+  round changes a look, the bake slice that changed it updates its line here. *(Amended at the
+  owner's pick, 2026-11-21, FS-1J1CB.)*
 - **Faces:** every human wears one shared face: the same eyes, nose and mouth on the knight,
   archer, wizard, mercenary and every hub resident and NPC, men and women alike. A character is
   told by hair, beard, jaw, figure and gear, never by a face of its own. The head is one smooth
@@ -390,6 +460,12 @@ lit) while the player stands inside.
   (the bake fails any other). All four classes walked through their tunics and robes at 1x
   without anyone seeing it until the archer was baked at 2x, so review the walk frames, not
   only the idle.
+- **The dark-room floor.** No figure's back reads darker than the darkest approved class's
+  back: the mean luminance of the opaque pixels of a sheet's back-facing (`n`) idle frame is no
+  lower than the darkest of the four class sheets' own, measured the same way and checked by a
+  bake test against the baked sheets. It puts a number on the archer's "just above black": a
+  dark dye (the Shadow Ranger's soot) is lifted or rimmed until it
+  holds. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)*
 
 
 ### Enemy design language
@@ -576,6 +652,33 @@ shimmer's glint and nothing else. *(FS-QE2QW, 2026-11-08.)*
 - **It gives way.** A faint icon has no glints, none wink while an icon fades in or out, and
   `prefers-reduced-motion` drops the glints and keeps the still glow.
 
+### Auras
+
+An **aura** is a quiet loop of particles over one body, on for as long as that body is drawn
+alive with the specialization that owns it. It is not a shimmer: a shimmer marks a moment, an
+aura marks what the body became, so the 1200 ms cap and "not a lasting buff display" do not
+govern it. It is built on the shimmer's glint drawing and the baked glint and mote, never a new
+baked texture. *(Added at the owner's pick, 2026-11-21, FS-1J1CB.)*
+
+- **The ward** (the Spellwarden): `necrotic` glints with `vellum` centres winking slowly on a
+  faint shell round the figure, an ellipse a little wider than the shoulders from the shins to
+  just over the crown, so they trace a shield rather than scatter over the body. Dimmer than the
+  heal: about half its alpha at most, a wink every 400 to 700 ms, at most 6 alive.
+- **The gloom** (the Shadow Ranger): motes in `umbra` with no hot centre and no glow, rising a
+  little off the figure and sinking back as they fade, never bright, at most 8 alive. It reads by
+  hue, as the Shadow Shot does.
+- **No light, under the light-map.** An aura casts no light and no feet glow, and is drawn in
+  the world under the light-map, so a dark room dims it as it dims the body. It sorts with the
+  body, part in front and part behind.
+- **Cheap enough for every body.** At most the counts above alive, from a pool built once per
+  body, with no per-frame allocation and no yoyo tween.
+- **It follows the body.** It moves with the body's feet, hides when the body is hidden, stops
+  through the death clip and while the body is dead, and starts again when it is alive and drawn.
+- **Reduced motion.** Under `prefers-reduced-motion` an aura keeps a few still glints at a lower
+  alpha and drops the winking and the drift.
+- **Shimmers still play over it.** A heal shimmer on a Spellwarden plays in full; neither cuts
+  the other short.
+
 ---
 
 ## Typography — push fully medieval
@@ -614,9 +717,9 @@ Where the bound and the message conflict — an end-of-run heading long enough t
 
 ## UI Chrome (align to the pre-rendered world)
 
-- **The canvas menus wear the web UI's Bone & Soot.** The loading screen, the main menu and character creation
-  (`src/ui/menuChrome.ts`) are the gate into the game, so they match the site
-  rather than the barrow: soot ground with dust and a vignette, grey-stone panels with a 1px
+- **The canvas menus wear Bone & Soot**, the web UI's look until 2026-11-21, kept as their own
+  when the web moved to Barrow Vellum ([ADR-0087](../../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)). The loading screen, the main menu and character creation
+  (`src/ui/menuChrome.ts`) are the gate into the game: soot ground with dust and a vignette, grey-stone panels with a 1px
   iron hairline and a carved edge, bone-grey text, iron section titles, ash grey for cancel and
   subtitles, and bone as the one torch per view (the primary button, the page title, the active
   selection). The primary button is a bone fill with soot text, a bright-bone inset hairline and
@@ -624,8 +727,8 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   hero h1, word for word (`THE AGE OF BARROWSPIRE`), in blackletter with the Atmosphere
   treatment: a bone gradient fill, a soft bone glow, a hard dark foot shadow, and a pool of bone
   light behind it. It has no tagline under it. Phaser still never reads the DOM's UI table
-  (ADR-0025): the values come from the `menu*` entries of `BARROW` / `BARROW_HEX`, which mirror
-  `globals.css` `:root` and must agree with it, through `palette.menu`. The figures' plinths are
+  (ADR-0025): the values come from the `menu*` entries of `BARROW` / `BARROW_HEX`, through
+  `palette.menu`. They no longer mirror `globals.css` `:root` (ADR-0087). The figures' plinths are
   slate stone with iron rims under a bone pool. **What stays on the game palette:** the baked
   figures themselves, the HUD pieces a menu reuses (the roster's XP bar, the HP/MP stat colours,
   the item tip), and everything past the menus: hub, run, HUD and overlays.
@@ -684,8 +787,33 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   a 2 px dark stroke (`markerStroke`), this level at the left and the next at the right, or "Cap"
   at the cap, each in a fixed slot so the bar never changes length with the level. No count on
   the HUD (the character sheet keeps it). Shown in the town, every field and every run, alive or
-  dead; never on the menus. The level-up cue rises from just above its centre.
-  *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14.)*
+  dead; never on the menus. The level-up cue rises from just above its centre, or, where the ability
+  bar stands over it, from 6 px over the bar's top.
+  *(Added by [FS-77DVN](../../docs/specs/77DVN-xp-bar-along-the-bottom.md), 2026-11-14; the cue over
+  the ability bar by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md), 2026-11-21.)*
+- **Ability bar.** Three squares in one row directly above the Experience bar, centred on the canvas
+  (`src/ui/AbilityBar.ts`, placed by `src/ui/abilityBarLayout.ts`): **1** the health potion,
+  **right-click** the class ability, **3** the tree ability, each 44 px, 10 apart, the cost slots' foot
+  6 px over the XP piece. Each square is a well of the HUD panel (`hudPanel` at 0.85) in a 1 px brass rim
+  (`frame` at 0.6) with a carved inner line, its icon a bronze knockout about 30 px across from the one
+  shared renderer (see "HUD icons"; the ten pictures are `src/ui/abilityIcons.ts`). Its key is set into
+  its top edge on a small plaque of the HUD panel in a brass rim, in the 12 px body serif in vellum: "1",
+  "3", and for the right-click a small mouse with its right button filled. Each ability's cost stands
+  under its square as a bare 12 px numeral with the 2 px dark stroke, in its resource bar's own colour
+  (`hudMana`, `hudStamina`, `hudParry`; vellum for a kind the client does not know); a cost of 0 draws
+  nothing. The potion square has no cost; its count (0 to 3) stands in its bottom-right corner in the
+  same stroked numeral, and at 0 the flask and the "0" go faint. **Greyed** (the player cannot use it:
+  short of the cost, cooling down, locked out, or a potion square in a field): the knockout flat in
+  `hudFaint` at 0.6, the key and the cost in `hudFaint`, never brightening under the pointer. **Active**
+  (Shadow Shot held, the mercenary's stance open): the rim 2 px in `frameBright` and the icon in the hover
+  ink; active and greyed can show together. Until the character holds its tree's ability, the 3 square
+  is locked: the padlock greyed and a faint "Lv 10" in its cost slot. While a cooldown runs, a dark
+  sweep (`ink` at about 0.55) covers the greyed square from 12 o'clock, receding clockwise; no seconds
+  numeral and no ready flash. Shown in runs and fields from the first
+  state, never in the town; in a run, once the player is out of the delve, it is held beside the held
+  Health and resource bars with every square greyed; in a field it goes while the player lies fallen.
+  It draws no press feedback of its own. *(Added by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md),
+  2026-11-21.)*
 - **Countdowns.** Every countdown in the game canvas wears one look: a 7 px bar along the
   bottom of its panel, edge to edge (never inset in the padding), in the XP bar's bright brass
   (`palette.xpFill` on `palette.xpTrack`, brass rim), draining smoothly every frame from the right
@@ -829,8 +957,10 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   glyph (`GLYPH_LINE_W`, over the renderer's 2 px join threshold, every angled corner a vertex
   inside one path) of the interactable amber, brighter under the pointer, with nothing filled and no
   emboss. Under the pointer a 12 px vellum label on the HUD panel names the icon and its key.
-  Everything is drawn in code from tokens, with no baked art. The ability card stands directly above
-  the row, 8 px over it. *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md),
+  Everything is drawn in code from tokens, with no baked art. *(2026-11-21: the ability card that stood
+  directly above the row, 8 px over it, was removed by [FS-Q18Q3](../../docs/specs/Q18Q3-ability-bar.md);
+  the ability bar above the Experience bar holds it now, and the run's controls badge keeps the place it
+  had over the card.)* *(Added by [FS-3EBCA](../../docs/specs/3EBCA-hud-corner-icons.md),
   2026-11-12; rewritten by [FS-3EBCA § Change: The inventory icon is an inked
   backpack](../../docs/specs/3EBCA-hud-corner-icons.md), 2026-11-13, and by its owner's tweak rounds
   the same day; glyphs drawn richer by [FS-QHN87](../../docs/specs/QHN87-richer-corner-glyphs.md),
@@ -886,29 +1016,42 @@ applies here too: the web platform uses **Pirata One + EB Garamond** — see Typ
 **The web UI has its own palette.** It is separate from the Part I game palette, and the two are
 not required to agree
 ([ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)).
-Going from the menus into a delve is a deliberate change of register: the bone-and-soot web UI is
-the gate, and the torch-lit barrow is the place. UI drawn over the canvas as DOM (the `/game`
+The web UI wears the barrow's materials (vellum, umber, brass) without its amber torch, so going
+from the site into a delve changes the light, not the world. UI drawn over the canvas as DOM (the `/game`
 page's chrome, the header) belongs to the UI palette. The Phaser HUD inside the canvas belongs to
-the game palette. The canvas menus (main menu, character creation) are part of the gate,
-so they take the Bone & Soot values through game-palette mirror tokens (Part I "UI Chrome").
+the game palette. The canvas menus (main menu, character creation) keep Bone & Soot, the
+web's previous palette, as their own game-palette tokens (Part I "UI Chrome", ADR-0087).
 
-**Direction: Bone & Soot.** *Modern web design, medieval aesthetics.* A neutral soot base,
-bone-white as the single torch per view, grey stone surfaces, and iron framing, finished with the
-Atmosphere layer (see Material & depth). Fast, scannable, keyboard- and mobile-friendly: the
+**Direction: Barrow Vellum.** *Modern web design, medieval aesthetics.* A charcoal base, umber
+panels, vellum text, a lifted vellum as the single torch per view, and brass framing, finished
+with the Atmosphere layer (see Material & depth). No amber. Fast, scannable, keyboard- and mobile-friendly: the
 medievalism is in the finish, never at the cost of usability.
 
 **How it was chosen.** On 2026-10-21 the owner compared 18 candidate palettes live on the home
 page, through a throwaway switcher over the real `:root` tokens, and chose Bone & Soot with the
 Atmosphere layer on
 ([FS-8TCN2](../../docs/specs/8TCN2-bone-and-soot-web-ui-palette.md)). It replaced torch amber on
-warm umber, which read as busy on pages people look at for long stretches. The choice was made
-by eye. A later reskin should start from this record rather than relitigate it blind.
+warm umber, which read as busy on pages people look at for long stretches. On 2026-11-21 the
+owner compared four palettes on the real home, Bazaar, auth and profile pages at 375px and
+1280px, and moved to Barrow Vellum
+([ADR-0087](../../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)):
+the game's own vellum, umber and brass, with the amber torch still left out. Gold brass on text
+(the game's `brassBright`) was tried and rejected, because it brought the busy amber read back.
+The choice was made by eye. A later reskin should start from this record rather than relitigate
+it blind. The Bone & Soot values are kept below ("Former palette: Bone & Soot") for a swap-back.
 
-**Iron is the structure role, and its tokens are named "brass".** `--color-brass`,
-`--color-brass-bright`, `--color-border` and `--color-border-strong` hold iron-grey values. The
-names stay as they are (a semantic rename is a separate, mechanical follow-up), so **in a token
-name, "brass" is a role, not a hue.** The prose in this part says *iron* for that role. Brass as
-a colour belongs to the game palette.
+**Brass is the structure role.** `--color-brass` is a real brass `#9c7b3f`: hairlines, dividers,
+frames. `--color-brass-bright` is **vellum** `#cdbf9a`, not the game's gold `brassBright`,
+because it also colours text: the logo accent, `h2` section titles, auth links, active filter
+chips and the verified badge. Gold there read as amber. So in a token name, "brass-bright" is a
+role (bright structure and its text), and its hue is vellum.
+
+**Reading older prose in this part.** Much of what follows was written under Bone & Soot and keeps
+its words. Read **bone** as the torch (`--color-primary`, now lifted vellum), **bone-grey** as
+the text ramp (now vellum), **iron** as the structure role (`--color-brass`, now brass), **iron
+bright** as `--color-brass-bright` (now vellum), **ash grey** as `--color-accent` (now dark
+vellum), and **soot / stone** as the page and surfaces (now charcoal and umber). The rules hold
+unchanged; only the hues moved. The tables above carry the current values.
 
 **Runtime source of truth.** The UI palette is defined in
 [`../src/app/globals.css`](../src/app/globals.css) `:root`. Where DOM code needs the same values
@@ -930,7 +1073,7 @@ game canvas, so it stays on the game palette with every scene.
 
 ## Principles
 
-1. **Soot, never black.** The base is a **neutral soot** (`--color-bg-dark` `#121212`), never
+1. **Charcoal, never black.** The base is **charcoal** (`--color-bg-dark` `#161310`), never
    `#000`. What makes it read as a surface rather than an absence is the material layer: grain,
    surface gradients, carved edges and the vignette (see Material & depth).
    *Why this changed, deliberately.* This principle used to read "dark, never black" and forbade
@@ -941,14 +1084,17 @@ game canvas, so it stays on the game palette with every scene.
    low-chroma light, so on a neutral ground it reads as lit material, where a saturated accent on
    the same ground read as neon. The material layer and the Atmosphere bounds now carry the
    emission risk that the warm base used to carry. Pure `#000` stays forbidden.
-2. **One torch per view.** Bone (`--color-primary` `#e9dfc9`) marks the single most important
-   thing: primary CTA, active nav, page `h1`, the focal number. Overuse dilutes it. Text on a
-   bone fill is always `--color-bg-dark`.
-3. **Iron is structure, not fill.** Iron (`--color-brass` `#5c5a55`) lives in 1px hairline
+   *And back, partly (2026-11-21, ADR-0087).* The base is warm again, but the torch is a
+   low-chroma vellum rather than amber, so the reason above still holds: a pale, unsaturated
+   light reads as lit material on the umber ground, not as emission.
+2. **One torch per view.** Lifted vellum (`--color-primary` `#e6d8b0`) marks the single most
+   important thing: primary CTA, active nav, page `h1`, the focal number. Overuse dilutes it.
+   Text on a torch fill is always `--color-bg-dark`.
+3. **Brass is structure, not fill.** Brass (`--color-brass` `#9c7b3f`) lives in 1px hairline
    borders, dividers, focus rings, and hover glows, and is rarely a solid fill. Panels are dark;
-   iron frames them.
+   brass frames them.
 4. **Modern layout, medieval finish.** Grid/flex, responsive, generous spacing, real interaction
-   affordances. Medieval means blackletter display, uppercase spaced labels, bone-grey text, iron
+   affordances. Medieval means blackletter display, uppercase spaced labels, vellum text, brass
    rules, small carved/wax-seal badges, and the CSS material layer below. No image textures.
 5. **Motion communicates.** Entrance/hover/focus show *what changed*; ≤0.3s; honor
    `prefers-reduced-motion`. No decorative animation.
@@ -959,36 +1105,36 @@ game canvas, so it stays on the game palette with every scene.
 
 | Token | CSS var | Value | Use |
 |---|---|---|---|
-| Primary (bone, the torch) | `--color-primary` | `#e9dfc9` | the four torch uses: primary CTA, active nav, page `h1`, focal number |
-| Primary bright | `--color-primary-bright` | `#f6efdf` | hover and emphasis on bone; top stop of the Atmosphere title gradient |
-| Accent (ash grey) | `--color-accent` | `#8c8c84` | secondary, cancel, subtitle |
+| Primary (lifted vellum, the torch) | `--color-primary` | `#e6d8b0` | the four torch uses: primary CTA, active nav, page `h1`, focal number |
+| Primary bright | `--color-primary-bright` | `#f2e8cc` | hover and emphasis on the torch; top stop of the Atmosphere title gradient |
+| Accent (dark vellum) | `--color-accent` | `#9b8e6a` | secondary, cancel, subtitle |
 | Danger (oxblood) | `--color-danger` | `#6e1f1f` | fill: errors, destructive, death |
 | Danger text | `--color-danger-text` | `#d07a6a` | error copy (oxblood lifted so it reads as text) |
-| Page bg (soot) | `--color-bg-dark` | `#121212` | body / page background; text on a bone fill |
-| Page bg (deepest) | `--color-bg-darker` | `#0a0a0a` | splash, wells, dropdown base |
-| Ground, well | `--color-bg-well` | `#0a0a0a` (the `--color-bg-darker` step) | inputs, card-entry wells, panels over the page; used translucent via `color-mix()` |
-| Ground, inset | `--color-bg-inset` | `#0e0e0e` | inset control groups on the game page chrome; used translucent via `color-mix()` |
-| Ground, dropdown | `--color-bg-dropdown` | `#070707` | dropdown and popover base (user menu, notification panel); used translucent via `color-mix()` |
-| Surface / card | `--color-bg-card` | `rgba(28, 28, 27, 0.88)` | cards, panels, modals (with blur) |
-| Surface raised | `--color-bg-card-2` | `rgba(38, 37, 35, 0.92)` | hovered/elevated card, nested panel |
-| Surface, opaque | `--color-bg-card-opaque` / `--color-bg-card-2-opaque` | `#1b1b1a` / `#242322`: each surface composited over soot, read back in the browser | `prefers-reduced-transparency` |
-| Iron (structure) | `--color-brass` | `#5c5a55` | borders, dividers, focus rings, hover glows |
-| Iron bright | `--color-brass-bright` | `#8a8780` | hover/focus structure; `h2` section titles under the Atmosphere |
-| Border (iron hairline) | `--color-border` | `--color-brass` at 30% (1.26:1 on soot) | default 1px borders/dividers |
-| Border strong | `--color-border-strong` | `--color-brass` at 60% (1.73:1 on soot) | hover/focus/active border |
-| Text primary (bone-grey) | `--color-text` | `#cfc9bb` | body text, item names, values |
-| Text dim | `--color-text-dim` | `#9b968b` | labels, secondary info |
-| Text muted | `--color-text-muted` | `#85817a` | footnotes, hints, small labels |
-| Text placeholder | `--color-text-placeholder` | `#5e5b55` | input placeholder |
+| Page bg (charcoal) | `--color-bg-dark` | `#161310` | body / page background; text on a torch fill |
+| Page bg (deepest, pitch) | `--color-bg-darker` | `#100c0a` | splash, wells, dropdown base |
+| Ground, well | `--color-bg-well` | `#100c0a` (the `--color-bg-darker` step) | inputs, card-entry wells, panels over the page; used translucent via `color-mix()` |
+| Ground, inset | `--color-bg-inset` | `#130f0c` | inset control groups on the game page chrome; used translucent via `color-mix()` |
+| Ground, dropdown | `--color-bg-dropdown` | `#0c0907` | dropdown and popover base (user menu, notification panel); used translucent via `color-mix()` |
+| Surface / card (umber) | `--color-bg-card` | `rgba(31, 26, 21, 0.88)` | cards, panels, modals (with blur) |
+| Surface raised (umber) | `--color-bg-card-2` | `rgba(36, 29, 23, 0.92)` | hovered/elevated card, nested panel |
+| Surface, opaque | `--color-bg-card-opaque` / `--color-bg-card-2-opaque` | `#1e1914` / `#231c16`: each surface composited over charcoal | `prefers-reduced-transparency` |
+| Brass (structure) | `--color-brass` | `#9c7b3f` | borders, dividers, focus rings, hover glows |
+| Brass bright (vellum) | `--color-brass-bright` | `#cdbf9a` | hover/focus structure; `h2` section titles under the Atmosphere; logo accent, links, active chips |
+| Border (brass hairline) | `--color-border` | `--color-brass` at 30% (1.48:1 on charcoal) | default 1px borders/dividers |
+| Border strong | `--color-border-strong` | `--color-brass` at 60% (2.45:1 on charcoal) | hover/focus/active border |
+| Text primary (vellum) | `--color-text` | `#cdbf9a` | body text, item names, values |
+| Text dim | `--color-text-dim` | `#9b8e6a` | labels, secondary info |
+| Text muted | `--color-text-muted` | `#8d8362` | footnotes, hints, small labels |
+| Text placeholder | `--color-text-placeholder` | `#6b6349` | input placeholder |
 
-**`--color-text` (bone-grey) is the default body colour.** Pure white is off-palette: bone is the
-brightest thing on the page, and bone is the torch. The material tokens were re-derived against
-soot rather than carried over from the amber palette:
+**`--color-text` (vellum) is the default body colour.** Pure white is off-palette: the torch is the
+brightest thing on the page. The material tokens below were derived against soot under Bone &
+Soot and are kept as they were (ADR-0087); the figures are re-measured on charcoal:
 
-| Token | Bone & Soot value | Why |
+| Token | Value | Why |
 |---|---|---|
-| `--color-border` / `-strong` | `--color-brass` at 30% / 60% | under amber the hairlines sat at 1.20:1 and 1.62:1 on the page; these land at 1.26:1 and 1.73:1 on soot, the same quiet frame |
-| `--focus-ring` | 2px of `--color-brass-bright` at 70% | 3.17:1 on soot, over the 3:1 non-text floor (amber's ring was 1.90:1) |
+| `--color-border` / `-strong` | `--color-brass` at 30% / 60% | under amber the hairlines sat at 1.20:1 and 1.62:1 on the page; these landed at 1.26:1 and 1.73:1 on soot; brass on charcoal lands at 1.48:1 and 2.45:1, a frame you can just see |
+| `--focus-ring` | 2px of `--color-brass-bright` at 70% | 5.49:1 on charcoal with vellum as brass-bright (3.17:1 under Bone & Soot; amber's ring was 1.90:1), over the 3:1 non-text floor |
 | `--glow-brass` | 18px of `--color-brass-bright` at 22% | plain iron is too dark on soot to read as a glow at all |
 | `--glow-torch` | 22px of `--color-primary` at 16% | bone is lighter than amber, so it takes a lower alpha to stay a glow and not an emission |
 | `--surface-gradient`, `--edge-carved`, `--edge-engraved` | the same stops in neutral white (`255,255,255`) | the warm highlights (`255,245,225`, `255,240,214`) were the amber palette's cast and read as a tint on soot |
@@ -1000,32 +1146,37 @@ back to an old raw triple.
 
 ### Contrast floor (the bases are chosen against it)
 
-**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured in the
-browser against `--color-bg-dark` `#121212`:
+**Body and label text ≥ 4.5:1. Decorative, hint and disabled text ≥ 3:1.** Measured against
+`--color-bg-dark` `#161310` (ADR-0087, 2026-11-21):
 
-| Text token | Value | Ratio | Tier |
-|---|---|---|---|
-| `--color-text` (bone-grey) | `#cfc9bb` | 11.35:1 | body |
-| `--color-primary` (bone) | `#e9dfc9` | 14.15:1 | body |
-| `--color-primary-bright` | `#f6efdf` | 16.35:1 | body |
-| `--color-bg-dark` on bone fill | `#121212` | 14.15:1 | body |
-| `--color-text-dim` | `#9b968b` | 6.36:1 | body |
-| `--color-text-muted` | `#85817a` | 4.83:1 | body |
-| `--color-danger-text` | `#d07a6a` | 5.95:1 | body |
-| `--color-accent` (ash grey) | `#8c8c84` | 5.53:1 | body |
-| `--color-brass-bright` (iron bright, `h2`) | `#8a8780` | 5.23:1 | body |
-| `--color-text-placeholder` | `#5e5b55` | 2.77:1 | placeholder only |
+| Text token | Value | On page | On card | On raised panel | Tier |
+|---|---|---|---|---|---|
+| `--color-text` (vellum) | `#cdbf9a` | 10.15:1 | 9.56:1 | 9.22:1 | body |
+| `--color-primary` (lifted vellum) | `#e6d8b0` | 13.05:1 | | | body |
+| `--color-bg-dark` on torch fill | `#161310` | 13.05:1 | | | body |
+| `--color-text-dim` | `#9b8e6a` | 5.70:1 | 5.37:1 | 5.18:1 | body |
+| `--color-text-muted` | `#8d8362` | 4.90:1 | 4.61:1 | 4.45:1 | body (page and card) |
+| `--color-danger-text` | `#d07a6a` | 5.88:1 | | | body |
+| `--color-accent` (dark vellum) | `#9b8e6a` | 5.70:1 | | | body |
+| `--color-brass-bright` (vellum, `h2`) | `#cdbf9a` | 10.15:1 | | | body |
+| `--color-text-placeholder` | `#6b6349` | 3.09:1 | | | placeholder only |
 
-Measured in the browser on the running app (FS-8TCN2 slice 3, 2026-10-21): each token resolved
-through `getComputedStyle` and its WCAG ratio taken against the resolved `--color-bg-dark`. The
-preview estimated text 11.4, dim 6.4, muted 4.8 and torch 14.2, and the browser agrees.
+Card and raised panel are the opaque surface tokens (`#1e1914`, `#231c16`). Muted text falls to
+4.45:1 on the raised panel, as Bone & Soot's muted did (4.05:1); keep long muted copy off raised
+panels. `#8d8362` was proposed for dim, but at 4.45:1 on the raised panel it sits in the muted
+slot, and the game's dark vellum `#9b8e6a` carries dim.
+
 `--color-text-placeholder` is below the floor on purpose: it marks an empty input and never
 carries copy, so nothing that has to be read may use it (the auth footer, which used it, now
 uses `--color-text-muted`).
 
+*Under Bone & Soot (2026-10-21 to 2026-11-21)* the same measurements on soot `#121212` were: text
+11.35, bone 14.15, dim 6.36, muted 4.83, danger 5.95, ash 5.53, iron bright 5.23, placeholder
+2.77. Kept for the swap-back.
+
 **The value range moves with the base.** Under the amber palette, `--color-text-dim` and
 `--color-text-muted` had to be lifted when the base changed, because both failed their tier
-against the new ground. The same holds here: if a text token fails against soot, lift the token
+against the new ground. The same holds here: if a text token fails against the ground, lift the token
 within its role. Never fix it by changing the ground behind the text.
 
 **Every text token clears 4.5:1**, including `--color-text-muted`. An earlier draft parked it in
@@ -1046,9 +1197,9 @@ too. The browser figures are in the rarity table; one colour, Runed, was lifted 
 under the old amber palette amber became the entire accent system by default: **49 occurrences in
 `globals.css` against 4 brass and 1 oxblood.** One saturated hue on a dark ground, repeated
 everywhere, is neon regardless of what the token is called. This rule closed that gap, and it
-holds with bone as the torch: a light repeated everywhere stops being a torch.
+holds with vellum as the torch: a light repeated everywhere stops being a torch.
 
-**Bone (`--color-primary`) is permitted on exactly four things, at most one instance each per
+**The torch (`--color-primary`) is permitted on exactly four things, at most one instance each per
 view:**
 
 1. the **primary CTA**
@@ -1068,14 +1219,47 @@ still break the rule.
 
 | Role | Colour | Used for |
 |---|---|---|
-| Structure | **iron** `--color-brass` `#5c5a55` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
-| Structure, bright | **iron bright** `--color-brass-bright` `#8a8780` | hover/focus structure, `h2` section titles |
-| Text | **bone-grey** `--color-text` / `-dim` / `-muted` | all body, label and value text |
-| Surface | **soot / stone** `--color-bg-*` | pages, cards, panels, wells |
-| Secondary action | **ash grey** `--color-accent` | cancel, secondary, subtitle |
+| Structure | **brass** `--color-brass` `#9c7b3f` / `--color-border` | borders, dividers, focus rings, hairlines, hover glows |
+| Structure, bright | **vellum** `--color-brass-bright` `#cdbf9a` | hover/focus structure, `h2` section titles, links, active chips |
+| Text | **vellum** `--color-text` / `-dim` / `-muted` | all body, label and value text |
+| Surface | **charcoal / umber** `--color-bg-*` | pages, cards, panels, wells |
+| Secondary action | **dark vellum** `--color-accent` | cancel, secondary, subtitle |
 | Danger | **oxblood** `--color-danger` (fill), `--color-danger-text` (copy) | errors, destructive, death |
 
-A view that needs a second emphasis colour reaches for **iron bright**, never a second bone.
+A view that needs a second emphasis colour reaches for **brass-bright**, never a second torch.
+
+### Former palette: Bone & Soot (swap-back)
+
+The web UI's palette from 2026-10-21 to 2026-11-21 ([FS-8TCN2](../../docs/specs/8TCN2-bone-and-soot-web-ui-palette.md),
+[ADR-0025](../../docs/adr/0025-the-web-ui-and-the-game-canvas-have-separate-palettes.md)), replaced by
+Barrow Vellum ([ADR-0087](../../docs/adr/0087-the-web-ui-palette-is-barrow-vellum-and-the-canvas-menus-keep-bone-and-soot.md)).
+The canvas menus still wear it through their `menu*` tokens. To swap the web back, put this block
+into `globals.css` `:root` and the matching strings into the `UI` table in `src/utils/theme.ts`
+(borders `rgba(92, 90, 85, 0.3)` / `0.6`, focus ring `0 0 0 2px rgba(138, 135, 128, 0.7)`), then
+restore this part's tables from git history at ADR-0087's commit's parent.
+
+```css
+--color-primary: #e9dfc9;          /* bone, the torch */
+--color-primary-bright: #f6efdf;
+--color-accent: #8c8c84;           /* ash grey */
+--color-danger: #6e1f1f;
+--color-danger-text: #d07a6a;
+--color-bg-dark: #121212;          /* soot */
+--color-bg-darker: #0a0a0a;
+--color-bg-card: rgba(28, 28, 27, 0.88);
+--color-bg-card-2: rgba(38, 37, 35, 0.92);
+--color-bg-card-opaque: #1b1b1a;
+--color-bg-card-2-opaque: #242322;
+--color-bg-well: #0a0a0a;
+--color-bg-inset: #0e0e0e;
+--color-bg-dropdown: #070707;
+--color-brass: #5c5a55;            /* iron */
+--color-brass-bright: #8a8780;     /* iron bright */
+--color-text: #cfc9bb;             /* bone-grey */
+--color-text-dim: #9b968b;
+--color-text-muted: #85817a;
+--color-text-placeholder: #5e5b55;
+```
 
 ---
 
@@ -1210,7 +1394,7 @@ Type scale (px, desktop; functional base ~14px). Prefer these steps:
 - **Glows (hover/focus):** structure-tinted `box-shadow` derived from `--color-brass` /
   `--color-brass-bright`, opacity `0.1–0.4`. A torch-tinted glow belongs only to the primary CTA
   (see the Atmosphere layer). Focus ring is `--focus-ring`, derived from the iron structure role
-  (2px of `--color-brass-bright` at 70%, 3.17:1 on soot); it must stay plainly visible on soot.
+  (2px of `--color-brass-bright` at 70%, 5.49:1 on charcoal); it must stay plainly visible on the page.
   **Never neon.**
 - **Borders:** 1px iron hairline (`--color-border`); raise to `--color-border-strong` on
   hover/focus/active.

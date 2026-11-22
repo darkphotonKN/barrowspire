@@ -204,7 +204,7 @@ func TestGainExperience_GrowsOnlyAManaPool(t *testing.T) {
 			entity.AddComponent(&components.StatsComponent{Level: 1})
 			entity.AddComponent(components.NewResourceComponent(tt.kind, 20, 50, 0))
 
-			gainExperience(entity, ClassGrowth{MaxMana: 10}, 100)
+			gainExperience(entity, ClassConfig{Growth: ClassGrowth{MaxMana: 10}}, 100)
 
 			rc, _ := entity.GetComponent(ecs.ComponentTypeResource)
 			pool := rc.(*components.ResourceComponent)

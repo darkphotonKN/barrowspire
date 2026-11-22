@@ -63,6 +63,8 @@ export interface SheetClips {
   walkAttack?: boolean;
   run?: boolean;
   backpedalAttack?: boolean;
+  /** The off-hand clips, `attack_offhand` and the rest (FS-1J1CB §D): only the Berserker's. */
+  offhand?: boolean;
 }
 
 /** How a swing is drawn beyond its aim ({@link CharacterMotion.attack}). */
@@ -86,6 +88,10 @@ export class CharacterMotion {
   private guarding = false;
   /** The swing running is a charge, its pose held past the clip: never split over the walk. */
   private charging = false;
+  /** Swings this motion has started: the even ones the right hand's, the odd the left's (FS-1J1CB R29). */
+  private swings = 0;
+  /** The swing running is on the off hand: the last {@link attack} took the left. */
+  private leftHand = false;
 
   private readonly clips: Required<SheetClips>;
 
@@ -93,7 +99,8 @@ export class CharacterMotion {
    * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the four classes', FS-HF0WW,
    * FS-3V7GC), so an attack drawn while moving keeps the legs walking. `clips.run` and
    * `clips.backpedalAttack`: it carries those (FS-JS7C8), so a moving class runs, and steps
-   * backward while it attacks moving away from its aim.
+   * backward while it attacks moving away from its aim. `clips.offhand`: it carries the off-hand
+   * clips (the Berserker's, FS-1J1CB §D), so each swing takes the other hand from the one before.
    */
   constructor(
     public facing: Facing8 = "se",
@@ -104,6 +111,7 @@ export class CharacterMotion {
       walkAttack: clips.walkAttack ?? false,
       run: clips.run ?? false,
       backpedalAttack: clips.backpedalAttack ?? false,
+      offhand: clips.offhand ?? false,
     };
   }
 
@@ -117,10 +125,14 @@ export class CharacterMotion {
    * the hold's length: the charge (CHARGE_MS) is shorter than a class's attack.
    * `swing.holdMs` keeps the attack pose for longer than the clip, its last frame held. A hold
    * shorter than the clip changes nothing.
+   *
+   * On a sheet with the off-hand clips every attack, a charge and one cut short included, takes
+   * the other hand from the one before, the right first (FS-1J1CB R29).
    */
   attack(now: number, aim?: Point, swing: Swing = {}): void {
     this.attackEnds = now + Math.max(this.attackMs, swing.holdMs ?? 0);
     this.charging = swing.charge ?? false;
+    this.leftHand = this.clips.offhand && this.swings++ % 2 === 1;
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
   }
 
@@ -143,6 +155,22 @@ export class CharacterMotion {
     if (raised) this.attackEnds = Math.min(this.attackEnds, now);
     this.guarding = up;
     return raised;
+  }
+
+  /**
+   * Takes on `from`'s motion: its facing, its measured pace, a swing, a held aim and a guard
+   * under way. A body changing sheet mid-scene goes on as it was (FS-1J1CB R21), save the hand:
+   * its next swing is the right one (R30), as for a body first seen mid-session.
+   */
+  carry(from: CharacterMotion): void {
+    this.facing = from.facing;
+    this.velocity = { ...from.velocity };
+    this.last = from.last && { ...from.last };
+    this.attackEnds = from.attackEnds;
+    this.aim = from.aim;
+    this.holding = from.holding;
+    this.guarding = from.guarding;
+    this.charging = from.charging;
   }
 
   /** One frame: `pos` is the world position just drawn, `deltaMs` the frame's length. */
@@ -170,6 +198,7 @@ export class CharacterMotion {
       walkAttack: this.clips.walkAttack && !this.charging,
       run: this.clips.run,
       backpedalAttack: this.clips.backpedalAttack,
+      offhand: this.leftHand,
     });
     this.facing = choice.facing;
     return choice;
@@ -196,6 +225,8 @@ export class CharacterAnimator {
   readonly artScale: number;
 
   private readonly variant?: string;
+  /** The clip chosen at the last {@link step}: what a re-dress carries on ({@link redress}). */
+  private chosen?: AnimationChoice;
 
   /** `who` is a server class (`characterSheet`), or the {@link CharacterLook} to draw. */
   constructor(
@@ -220,6 +251,7 @@ export class CharacterAnimator {
         walkAttack: this.carries("walk_attack"),
         run: this.carries("run"),
         backpedalAttack: this.carries("backpedal_attack"),
+        offhand: this.carries("attack_offhand"),
       },
     );
   }
@@ -257,7 +289,32 @@ export class CharacterAnimator {
   }
 
   step(pos: Point, now: number, deltaMs: number, dead: boolean): AnimationChoice {
-    return this.motion.step(pos, now, deltaMs, dead);
+    this.chosen = this.motion.step(pos, now, deltaMs, dead);
+    return this.chosen;
+  }
+
+  /**
+   * A new animator for `look`, carrying this one's motion and the clip it last chose: a body
+   * re-dressed in its spec look (FS-1J1CB R21-R22, ADR-0071 Decision 3's swap). Put it on the
+   * body's own sprite with {@link redress}.
+   */
+  wearing(look: CharacterLook): CharacterAnimator {
+    const next = new CharacterAnimator(this.art, look, this.motion.facing);
+    next.motion.carry(this.motion);
+    next.chosen = this.chosen;
+    next.swingPending = this.swingPending;
+    next.guardPending = this.guardPending;
+    return next;
+  }
+
+  /**
+   * Puts this sheet on a sprite that was playing another's, between one frame and the next: dressed
+   * as {@link dress} does, then the clip it carries played on at its place ({@link show}), so the
+   * sprite never goes without a texture and the stride or swing does not restart.
+   */
+  redress(sprite: AnimatedSprite, size = 1): void {
+    this.dress(sprite, size);
+    if (this.chosen) this.show(sprite, this.chosen);
   }
 
   /**
@@ -346,6 +403,13 @@ const sheetOf = (key: string) => key.split("/")[0];
 
 /**
  * The clips an attack plays: standing, or on the move where the sheet carries it, walking or
- * stepping back from its aim (FS-JS7C8 R13).
+ * stepping back from its aim (FS-JS7C8 R13), with either hand (FS-1J1CB R29).
  */
-const SWINGS: ReadonlySet<CharacterAnimation> = new Set(["attack", "walk_attack", "backpedal_attack"]);
+const SWINGS: ReadonlySet<CharacterAnimation> = new Set([
+  "attack",
+  "walk_attack",
+  "backpedal_attack",
+  "attack_offhand",
+  "walk_attack_offhand",
+  "backpedal_attack_offhand",
+]);

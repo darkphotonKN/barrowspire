@@ -2,12 +2,15 @@ package character
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/common/errcode"
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/common/progression"
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -22,6 +25,14 @@ var classes = map[string]bool{"warrior": true, "mage": true, "archer": true, "me
 // splitsAName reports whether r would break a name in two. U+FEFF counts although Go's
 // unicode.IsSpace leaves it out, because the client's whisper parse (JS \s) splits on it.
 func splitsAName(r rune) bool { return unicode.IsSpace(r) || r == '\uFEFF' }
+
+// withSpecialization sets c's specialization from the tier-6 node it holds,
+// through the shared table (FS-E1ZDG R4, R7): none before the pick, and none
+// for a node of another class.
+func withSpecialization(c *Character) *Character {
+	c.Specialization, _ = passivetree.SpecializationOf(c.ClassID, c.PassiveRanks)
+	return c
+}
 
 type service struct {
 	repo      Repository
@@ -41,6 +52,12 @@ type Repository interface {
 	// ErrAlreadyProcessed; a character that is not the member's live one is
 	// ErrNotFound. Either way nothing changes.
 	ApplyExperienceGrant(ctx context.Context, grant ExperienceGrant, apply func(*Character)) (*Character, error)
+	// SpendPassivePoint locks the member's live character, reads its ranks
+	// onto it and asks decide whether to write the spend's rank; the
+	// character comes back with the ranks held after. decide's error is
+	// returned as is with nothing written; a character that is not the
+	// member's live one is ErrNotFound.
+	SpendPassivePoint(ctx context.Context, spend PassiveSpend, decide func(*Character) (bool, error)) (*Character, error)
 }
 
 func NewService(repo Repository, ch *amqp.Channel) *service {
@@ -72,13 +89,16 @@ func (s *service) CreateCharacter(ctx context.Context, in CharacterCreate) (*Cha
 	if err != nil {
 		return nil, fmt.Errorf("create character: %w", err)
 	}
-	return created, nil
+	return withSpecialization(created), nil
 }
 
 func (s *service) ListCharacters(ctx context.Context, memberID uuid.UUID) ([]*Character, error) {
 	characters, err := s.repo.ListByPlayer(ctx, memberID)
 	if err != nil {
 		return nil, fmt.Errorf("list characters: %w", err)
+	}
+	for _, c := range characters {
+		withSpecialization(c)
 	}
 	return characters, nil
 }
@@ -88,7 +108,7 @@ func (s *service) GetCharacter(ctx context.Context, memberID, id uuid.UUID) (*Ch
 	if err != nil {
 		return nil, fmt.Errorf("get character: %w", err)
 	}
-	return character, nil
+	return withSpecialization(character), nil
 }
 
 func (s *service) DeleteCharacter(ctx context.Context, memberID, id uuid.UUID) error {
@@ -118,4 +138,38 @@ func (s *service) GrantExperience(ctx context.Context, grant ExperienceGrant) er
 		return fmt.Errorf("grant experience: %w", err)
 	}
 	return nil
+}
+
+// SpendPassivePoint takes one rank of a passive tree node, deciding the spend
+// rule again on what the locked character holds (FS-8RZ51 R13). A target
+// already held answers Applied false and writes nothing (R10); a refusal is
+// the rule's errcode.Refusal (wrapped; match it with errors.As), with nothing
+// written.
+func (s *service) SpendPassivePoint(ctx context.Context, spend PassiveSpend) (*PassiveSpendResult, error) {
+	if spend.MemberID == uuid.Nil || spend.CharacterID == uuid.Nil || spend.NodeID == "" {
+		return nil, fmt.Errorf("spend passive point: member, character and node required: %w", commonconstants.ErrInvalidInput)
+	}
+	if spend.Rank < 1 {
+		return nil, fmt.Errorf("spend passive point: rank %d must be at least 1: %w", spend.Rank, commonconstants.ErrInvalidInput)
+	}
+
+	var verdict passivetree.Verdict
+	decide := func(c *Character) (bool, error) {
+		v, err := passivetree.CheckSpend(c.ClassID, c.Level, c.PassiveRanks, spend.NodeID, spend.Rank)
+		var refusal *passivetree.Refusal
+		if errors.As(err, &refusal) {
+			return false, errcode.Refuse(refusal.Code)
+		}
+		if err != nil {
+			return false, err
+		}
+		verdict = v
+		return v == passivetree.Allowed, nil
+	}
+
+	c, err := s.repo.SpendPassivePoint(ctx, spend, decide)
+	if err != nil {
+		return nil, fmt.Errorf("spend passive point: %w", err)
+	}
+	return &PassiveSpendResult{Applied: verdict == passivetree.Allowed, Ranks: c.PassiveRanks}, nil
 }

@@ -295,3 +295,24 @@ func TestListMyCharacters_NoCharactersIsAnEmptyArray(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.JSONEq(t, `{"characters":[]}`, w.Body.String())
 }
+
+// specialization is carried when character-service sets it and absent before
+// the pick, on both reads. FS-E1ZDG R6, §API surface.
+func TestCharacterReads_SpecializationOnlyWhenHeld(t *testing.T) {
+	member := uuid.New()
+	berserker := pbCharacter(uuid.NewString(), "Ash", "warrior", 20, 40000, 38530, nil)
+	berserker.Specialization = proto.String("berserker")
+	none := pbCharacter(uuid.NewString(), "Bram", "warrior", 5, 650, 600, proto.Int64(870))
+	client := &fakeCharacterClient{character: berserker, characters: []*pb.Character{none, berserker}}
+	router := newRouter(client, signedIn(member))
+
+	w := testsupport.Do(router, http.MethodGet, "/api/characters/"+berserker.GetId(), "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	assert.Equal(t, "berserker", testsupport.Decode(t, w)["specialization"])
+
+	w = testsupport.Do(router, http.MethodGet, "/api/characters", "")
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	list := testsupport.Decode(t, w)["characters"].([]any)
+	assert.NotContains(t, list[0].(map[string]any), "specialization", "absent before the pick")
+	assert.Equal(t, "berserker", list[1].(map[string]any)["specialization"])
+}

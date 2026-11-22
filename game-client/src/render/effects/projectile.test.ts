@@ -4,7 +4,10 @@ import { worldDepth } from "@/render/iso/shapes";
 import { ARROW_FLIGHT, BOW_LIFT } from "./arrow";
 import { fakeArt, fakeLights, fakeScene, type FakeObject } from "./fakeScene";
 import { FIREBALL_FLIGHT, HAND_LIFT } from "./fireball";
-import { ProjectileFlights, type Sighting } from "./projectile";
+import { projectileFlightOf } from "./flights";
+import { HEAVY_SHOT_FLIGHT } from "./heavyShot";
+import { ProjectileFlights, SHOOTER_REACH, shooterOf, type Bystander, type Sighting } from "./projectile";
+import { SHADOW_SHOT_FLIGHT } from "./shadowShot";
 import { EffectsRuntime } from "./runtime";
 import { EFFECTS } from "./table";
 
@@ -336,5 +339,95 @@ describe("projectile flights (FS-KYPQ9 §E.2, §E.3, §F.2–§F.4, §B.9)", () 
         true,
       );
     });
+  });
+
+  describe("who loosed a shadow_shot (FS-1J1CB §F R41)", () => {
+    const shot = (id: string, x: number, y: number): Sighting => ({
+      entity_id: id,
+      projectile_type: "shadow_shot",
+      position: { x, y },
+      velocity: { vx: 260, vy: 0 },
+    });
+    const archer = (x: number, y: number, specialization?: string): Bystander => ({
+      class: "archer",
+      position: { x, y },
+      ...(specialization ? { specialization } : {}),
+    });
+    /** The trail the shot streams: its lifespan names which look it flies. */
+    const trailLife = () =>
+      (streams()[0].args[3] as { lifespan: number }).lifespan;
+    const lifeOf = (kind: typeof HEAVY_SHOT_FLIGHT) => {
+      const t = EFFECTS[kind.trail].timing;
+      return t.kind === "stream" ? t.lifeMs : -1;
+    };
+
+    beforeEach(() => {
+      flights = new ProjectileFlights(fake.scene, fakeArt, fx, projectileFlightOf, { warn: () => {} });
+    });
+
+    it("should tell the two looks apart by their trails", () => {
+      expect(lifeOf(HEAVY_SHOT_FLIGHT)).not.toBe(lifeOf(SHADOW_SHOT_FLIGHT));
+    });
+
+    it.each([
+      ["a Hunter", "hunter", HEAVY_SHOT_FLIGHT],
+      ["an unspecialized archer", undefined, HEAVY_SHOT_FLIGHT],
+      ["a Shadow Ranger", "shadow_ranger", SHADOW_SHOT_FLIGHT],
+    ])("should fly a bolt first seen 20 px from %s as that archer's shot", (_, spec, kind) => {
+      flights.sync([shot("s1", 220, 200)], [archer(200, 200, spec)]);
+      expect(trailLife()).toBe(lifeOf(kind));
+    });
+
+    it("should fly a bolt first seen 300 px from any archer as the Heavy Shot", () => {
+      flights.sync([shot("s1", 500, 200)], [archer(200, 200, "shadow_ranger")]);
+      expect(trailLife()).toBe(lifeOf(HEAVY_SHOT_FLIGHT));
+    });
+
+    it("should give a bolt to the nearer of two archers side by side", () => {
+      flights.sync([shot("s1", 230, 200)], [archer(200, 200, "hunter"), archer(240, 200, "shadow_ranger")]);
+      expect(trailLife()).toBe(lifeOf(SHADOW_SHOT_FLIGHT));
+    });
+
+    it("should keep the look it was given for its whole flight, and land with it", () => {
+      flights.sync([shot("s1", 220, 200)], [archer(200, 200, "hunter")]);
+      // a Shadow Ranger now stands by the bolt: it is still the Hunter's
+      flights.sync([shot("s1", 300, 200)], [archer(300, 210, "shadow_ranger")]);
+      expect(streams()).toHaveLength(1);
+      expect(trailLife()).toBe(lifeOf(HEAVY_SHOT_FLIGHT));
+      const before = fake.made.length;
+      flights.sync([], [archer(300, 210, "shadow_ranger")]);
+      const puff = fake.made.slice(before).find((m) => m.kind === "particles")!;
+      const impact = EFFECTS.heavyShotImpact.timing;
+      expect((puff.args[3] as { lifespan: number }).lifespan).toBe(
+        impact.kind === "oneShot" ? impact.durationMs : -1,
+      );
+    });
+  });
+});
+
+describe("shooterOf (FS-1J1CB §F R41)", () => {
+  const at = { x: 100, y: 100 };
+  const body = (cls: string, x: number, specialization?: string): Bystander => ({
+    class: cls,
+    position: { x, y: 100 },
+    ...(specialization ? { specialization } : {}),
+  });
+
+  it("should name the nearest archer within 48 world px", () => {
+    const near = body("archer", 130, "hunter");
+    expect(shooterOf(at, [body("archer", 140), near])).toBe(near);
+    expect(SHOOTER_REACH).toBe(48);
+    expect(shooterOf(at, [body("archer", 100 + SHOOTER_REACH)])).toBeDefined();
+    expect(shooterOf(at, [body("archer", 100 + SHOOTER_REACH + 1)])).toBeUndefined();
+  });
+
+  it("should pass over a nearer body of another class", () => {
+    const archer = body("Archer", 140);
+    expect(shooterOf(at, [body("mage", 101, "shadow_ranger"), archer])).toBe(archer);
+  });
+
+  it("should name nobody with no archer near", () => {
+    expect(shooterOf(at, [])).toBeUndefined();
+    expect(shooterOf(at, [body("warrior", 100)])).toBeUndefined();
   });
 });

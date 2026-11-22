@@ -44,7 +44,10 @@ func SetupServices(ctx context.Context, db *sqlx.DB, amqpChannel, republishCh *a
 
 	// Create service with repository and AMQP channel
 	publishCh := commonbroker.NewAmqpPublisher(amqpChannel)
-	service := items.NewService(repo, db, publishCh, outboxService, commoninbox.NewRepo(), characterClient)
+	// wrapped so every repository call is a span above its queries
+	// (internal/items/trace_gen.go)
+	tracedRepo := items.NewRepositoryWithTracing(repo, "items/repository")
+	service := items.NewService(tracedRepo, db, publishCh, outboxService, commoninbox.NewRepo(), characterClient)
 
 	// instantiate activity
 	freezeItemActivity := items.NewItemsActivity(service)

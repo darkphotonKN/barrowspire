@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/utils/apiError";
 import {
   ACTIVE_CHARACTER_KEY,
+  fromServer,
   LEGACY_ACTIVE_SLOT_KEY,
   LEGACY_SLOTS_KEY,
   loadRoster,
@@ -222,5 +223,16 @@ describe("loadRoster active character (FS-BDA7X req 39)", () => {
     expect(roster.activeId).toBe(cale?.id);
     expect(storage.getItem(ACTIVE_CHARACTER_KEY)).toBe(cale?.id);
     expect(storage.getItem(LEGACY_ACTIVE_SLOT_KEY)).toBeNull();
+  });
+});
+
+describe("fromServer specialization (FS-E1ZDG §K.40)", () => {
+  it("should carry the specialization the character read names", () => {
+    const berserker = { ...server("Ash"), level: 20, specialization: "berserker" as const };
+    expect(fromServer(berserker).specialization).toBe("berserker");
+  });
+
+  it("should carry none before the pick", () => {
+    expect(fromServer(server("Bram")).specialization).toBeUndefined();
   });
 });

@@ -332,7 +332,7 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   ground slam, death burst, wail, thrown dagger, rock throw, cleave. It replaces a swing when ready,
   winds up with its area fixed (a **telegraph**), and hits delvers only. On the wire, the
   `ability` action and the `ability` object on a monster's state. Always "monster ability" where a
-  class **ability** (a delver's right-click skill, below) could be meant. The demon's **slam** is
+  class **ability** or **tree ability** (a delver's, below) could be meant. The demon's **slam** is
   not a monster ability: it is the demon's wind-up strike; the Blood Troll's is the **ground slam**.
 - **Champion** — the boss of the top floor of a height 3-9 run: a variant unlocked at the floor's
   tier but left out of its pool (from the pool at tier 1), at the demon's old level, with the
@@ -666,26 +666,47 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   changes who *receives* a pickup, never what drops or who may click it; drops and coffers stay
   single-copy. Distinct from the field's *killer-first window*, which reserves at drop time.
 
-### Classes and abilities (FS-8AY7S, FS-MAMHR, FS-JTNPR, ADR-0030)
+### Classes and abilities (FS-8AY7S, FS-MAMHR, FS-JTNPR, FS-04EEA, ADR-0030)
 
 - **Class** — a character's archetype, by its server id: `warrior`, `mage`, `archer`, `mercenary`
   (FS-MAMHR). The id is the term in code and on the wire. Display names belong to game-client:
   the screen and the art say other things (the warrior is drawn from the *knight* sheet, the mage
   from the *wizard* sheet).
-- **Ability** — a class's one right-click skill: `dash` (warrior), `triple_fireball` (mage),
-  Shadow Shot (archer), the parry stance (mercenary). Not every `cast_skill` is an ability:
-  left-click attacks (`slash`, `arrow`, `fireball`, `cut`) go out as `cast_skill` too. On the wire,
-  *skill* is the message and *ability* is the role.
-- **Class resource** — what a class's ability costs: **mana** (mage), **stamina** (warrior,
-  archer), **parry charges** (mercenary). One per class. Only abilities spend it; left-click
-  attacks are free. Replaces the shared mana pool every class had before FS-8AY7S. On the wire
-  the kinds are `mana`, `stamina` and `parry_charges` (never bare `parry`).
+- **Ability** — a class skill a delver casts that is not a left-click attack. A class has two:
+  its **class ability**, the right-click one every character has (`dash` (warrior),
+  `triple_fireball` (mage), Shadow Shot (archer), the parry stance (mercenary)), and its **tree
+  ability** (below), once earned. A bare "ability" means the right-click one, as the code already
+  does (`AbilityComponent`, `ability_cost`, `ability_cooldown`); write **tree ability** for the
+  other, never a bare "ability". Not every `cast_skill` is an ability: left-click attacks
+  (`slash`, `arrow`, `fireball`, `cut`) go out as `cast_skill` too. On the wire, *skill* is the
+  message and *ability* is the role.
+- **Tree ability** (FS-04EEA, locked, not built) — a class's second ability, granted by holding
+  its passive tree's tier-3 node and cast with key 3: **Earthbreaker** (warrior), **Blink**
+  (mage), **Arrow Rain** (archer), **Settle the Debt** (mercenary). One per class, named in the
+  class config beside the class ability. Resolves like every cast (cooldown, cost in the class
+  resource, ADR-0030); a cast by a caster without the node is refused as an unaffordable one is.
+  On the wire, `tree_ability_cooldown` and `resource.tree_ability_cost` (FS-Q18Q3). Not a monster
+  ability.
+- **Stun** (FS-04EEA) — server state on a monster, applied only by Earthbreaker: while it runs the
+  monster neither moves, strikes nor starts a wind-up, and a wind-up in progress ends with nothing
+  landing; its cooldowns keep counting. A second stun takes the longer, never stacks. On the wire,
+  monster `action: "stunned"`. Delvers are never stunned.
+- **Volley** (FS-04EEA) — one of an Arrow Rain's five timed falls of arrows into its circle, 0.3 s
+  apart; each hits every valid target inside the circle at that moment. **Collides twice**: a
+  Wight Archer's `volley` is a **monster ability** (three fanned bone arrows, FS-C8VM7), and the
+  mage's triple fireball is called "the volley" in the Wide Volley kicker. Write "Arrow Rain
+  volley" or "monster volley" where either could be meant, and "triple fireball" for the mage's.
+- **Class resource** — what a class's abilities cost (the class ability and the tree ability):
+  **mana** (mage), **stamina** (warrior, archer), **parry charges** (mercenary). One per class.
+  Only abilities spend it; left-click attacks are free. Replaces the shared mana pool every class
+  had before FS-8AY7S. On the wire the kinds are `mana`, `stamina` and `parry_charges` (never bare
+  `parry`).
 - **Mana** — the mage's class resource: a big pool that regenerates slowly. "MP" is old HUD
   shorthand, not a separate term.
 - **Stamina** — the warrior's and archer's class resource: a small pool that regenerates
   quickly.
-- **Parry charge** — the mercenary's class resource: a count from 0 to 3, gained one per parried
-  strike and never regenerated. Kept until spent, carried across floors, lost on death. **Always
+- **Parry charge** — the mercenary's class resource: a count from 0 to its max (3; 5 for a
+  Sellsword, FS-E1ZDG), gained one per parried strike and never regenerated. Kept until spent, carried across floors, lost on death. **Always
   say "parry charge", never just "charge"**: in this service *charge* already means the warrior's
   dash in flight (`DashComponent`, "a charge in flight").
 - **Parry stance** — the mercenary's ability: a short window, opened on the tick its cast
@@ -696,18 +717,98 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Riposte** — the cleave the mercenary's next left-click becomes once they hold 3 parry
   charges: a wide front arc that hits every enemy in it and spends all three. **Riposte armed**
   is the state of holding 3 parry charges with the riposte not yet thrown. The riposte has no
-  skill id: the client sends `cut`, and the server arms it from the parry-charge count.
+  skill id: the client sends `cut`, and the server arms it from the parry-charge count. A
+  Duelist's arms at 2 and spends 2; a Sellsword's never arms (FS-E1ZDG).
 - **Cut** — the mercenary's left-click: a narrow sword cone scaling on the mean of Strength and
   Agility (FS-MAMHR). Not the warrior's `slash`.
 - **Shadow Shot** — the archer's ability: one slow, heavy projectile. The client draws the hold
-  to aim; the server only sees the release (ADR-0030).
+  to aim; the server only sees the release (ADR-0030). The skill id stays `shadow_shot` for every
+  archer; game-client shows it as **Heavy Shot** to all but a Shadow Ranger (FS-E1ZDG).
 - **Resolved cast** — a cast the server acts on: skill id plus target point, judged on the tick
   against cooldown and cost. Aiming, holding and wind-up before it are client presentation and
   never reach game-service state (ADR-0030).
-- **Attack slow** (FS-JS7C8) — the slower walk a player has for a short window after each of their
-  casts resolves (every attack row a player casts, never the parry): their move speed times a
-  factor, restored on the first tick after the window. Never slows a charge in flight. Not a
-  cooldown: a cooldown gates the next cast, the attack slow paces the walk.
+- **Pin** (attack pin; FS-JS7C8 §Change: Attacking pins the attacker) — the
+  short window after a player's attacking cast resolves in which they cannot move or attack: the
+  movement system does not walk them (the direction they hold is kept, so they walk on in it as the
+  pin ends), and every cast but the parry is refused as if on cooldown. One length for every kind (0.6 s), shortened by worn attack speed. Started by
+  every attack row a player casts except the dash; never by the parry, which also works while
+  pinned; never by or on a monster, and a monster's hit neither ends nor extends it. Never on the
+  wire: the client tracks its own from the casts it sends. A player is **pinned** while it runs.
+  Not a cooldown: a cooldown gates one kind's next cast, the pin holds the whole body. Not a fixed
+  resident: an NPC is never "pinned". Code: `AttackPin` (was `AttackSlow`).
+- *Retired:* **attack slow** (FS-JS7C8 §C) — the slower walk the pin replaced. Do not use the term in
+  new prose.
+
+### Passive tree (FS-8RZ51, ADR-0082, ADR-0083; locked, not built)
+
+character-service owns the ranks and has no CONTEXT.md of its own, so its share of these words is
+here. The tree's definition and spend rule are one package, `game-server/common/passivetree`.
+
+- **Passive point** — what a level-up gives to spend on the passive tree: one per level-up from 2
+  to 19, two at 20, so **20** in all. Earned from level, never stored: level L has earned `L − 1`
+  (20 at level 20). Not attribute points (deferred by FS-BDA7X), and not "skill points".
+- **Unspent points** — `earned(level) − Σ ranks held`: derived, never stored (on the wire,
+  `current_player.passive_points`). Points may be saved indefinitely; saving never gets round a
+  gate. Spent only in town (ADR-0082).
+- **Passive tree** — a class's tree of six tiers of nodes, the same shape for every class: tier 1
+  filler, 2 kicker, 3 the tree ability, 4 filler, 5 kicker, 6 the specialization pick. 22 ranks
+  for 20 points, so a full character cannot take everything. No respec. "Tree" alone is fine
+  here; the client's overlay is the **tree overlay**.
+- **Node** — one place in a passive tree, id `<class>.<slot>` (`warrior.t2a`, `mercenary.t6b`):
+  the slot, never the node's name, so a rename never strands a saved rank. Its **kind** is
+  filler, kicker, ability or specialization. A class's nodes are only its own. A shipped node id
+  is permanent: never removed, renamed, re-tiered or given fewer ranks.
+- **Rank** — how many points a character holds in one node, 1 to its max (2, 3, or 1 for the tier-3
+  and tier-6 nodes), taken one at a time and in order; on the wire `passive_ranks` (node id →
+  rank, nodes at rank ≥ 1). A spend names its **target rank**, which is its idempotency key: a
+  target already held is a no-op success. Not a monster's standing (that is **elite**; "rank" is
+  avoided for variants) and not game-client's profile **rank** title.
+- **Tier** (tree tier) — one of a passive tree's six rows, numbered 1 at the top. Always "tree
+  tier" or "tier N of the tree" where a **level tier** (monster level bucket) or the client's
+  **size tier** could be meant.
+- **Tier gate** — what opens a tree tier: points **spent above** (the ranks held in every tier with
+  a smaller number: 4 for tier 2, 8 for tier 3, 13 for tier 5, 18 for tier 6), except tier 4,
+  whose gate is the tier-3 node held. Tier 1 is open.
+- **Filler node** — a 2-rank node in tier 1 or 4 that adds one stat per rank (max HP %, max
+  resource, a main stat, regen %), shared in kind across classes. Its bonus sits beside the
+  character's stats like worn gear's, never written into them.
+- **Kicker** — a 3-rank node in tier 2 or 5: R1 and R2 add a stat, R3 adds it again **plus** its
+  **kicker rule**, a small rule built only on primitives the game already has (a refund, a forced
+  crit, an extra pierce). "The R3 kicker" means the rule; "a kicker" alone means the node.
+- **Spend** — taking one rank with one passive point: `spend_passive_point {node_id, rank}` over the
+  game socket, checked by game-service and decided again by character-service under a row lock
+  (`SpendPassivePoint`). Takes effect at the next seating, except the HUB body, which takes it at
+  once (ADR-0082).
+
+### Specializations (FS-E1ZDG; locked, not built)
+
+- **Specialization** — the strong passive a level-20 character picks with its tier-6 point, one of
+  its class's two, for good: `guardian` / `berserker` (warrior), `spellwarden` / `pyromancer`
+  (mage), `hunter` / `shadow_ranger` (archer), `duelist` / `sellsword` (mercenary). Derived from
+  the tier-6 node held, never stored on its own; character-service puts it on the character read,
+  game-service seats it and sends it for every player (public, unlike ranks). An unknown id seats
+  as none. "Spec" in conversation; not a feature spec. Its **title** and look are game-client's.
+- **Last Stand** — the Guardian's: once per floor (once per visit where there are no floors), a
+  hit that would take them to 0 HP leaves them at 1 HP with stamina refilled. Only a hit triggers
+  it; falling by choice does not.
+- **Blood price** — the Berserker's: max HP × 0.67 on the class body (gear and tree on top), for
+  +25% attack speed, +10% damage, and a small heal per slash that hits.
+- **Arcane Ward** — the Spellwarden's: 25% of each hit's final damage is taken from mana first,
+  the rest (and whatever mana cannot cover) from HP. A resource, not an immunity.
+- **Spell resistance** — the Spellwarden's 10% less from a magic hit, applied **after** magic
+  resistance's mitigation. Not **magic resistance** (the stat and its mitigation): a second,
+  later cut. No delver takes magic damage today, so it does nothing yet.
+- **Combustion** — the Pyromancer's: a fireball crit on a monster (left-click or triple fireball)
+  explodes on every other monster within 60 px for half the crit's damage, magic, unmitigated,
+  never a crit and never exploding again. Not the burning trail.
+- **Split Shot** — the Hunter's: a left-click arrow that crits a monster fires one **split arrow**
+  from it toward the nearest other living monster within 220 px. Shadow Shot never splits.
+- **Split arrow** — the projectile Split Shot fires: 60% of an arrow's raw damage, its own crit
+  roll, no pierce, never splits. An ordinary `arrow` on the wire.
+- Shadow Ranger, Duelist and Sellsword change existing words rather than add new ones: a Shadow
+  Ranger's Shadow Shot pierces every target and refunds stamina per monster; a Duelist's
+  **riposte** arms at 2; a Sellsword's **parry charge** max is 5, each held one sharpening the cut,
+  and it never ripostes.
 
 ### Mailbox arrivals (FS-1GZGD amendment 2026-11-04, ADR-0045)
 
