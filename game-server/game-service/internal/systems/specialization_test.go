@@ -28,8 +28,8 @@ func TestSpecialization(t *testing.T) {
 	}{
 		{"a berserker", body("warrior", passivetree.Ranks{"warrior.t6b": 1}), passivetree.Berserker},
 		{"a shadow ranger", body("archer", passivetree.Ranks{"archer.t6b": 1}), passivetree.ShadowRanger},
-		{"no tier-6 node", body("warrior", passivetree.Ranks{"warrior.t1a": 2}), ""},
-		{"another class's tier-6 node", body("warrior", passivetree.Ranks{"mage.t6a": 1}), ""},
+		{"no specialization node", body("warrior", passivetree.Ranks{"warrior.r1": 1}), ""},
+		{"another class's specialization node", body("warrior", passivetree.Ranks{"mage.t6a": 1}), ""},
 		{"an unknown node", body("warrior", passivetree.Ranks{"warrior.t9": 1}), ""},
 		{"no ranks at all", body("warrior", nil), ""},
 		{"no body", ecs.NewEntityManager().CreateEntity(), ""},

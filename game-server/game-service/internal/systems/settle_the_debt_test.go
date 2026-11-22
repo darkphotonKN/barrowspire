@@ -259,7 +259,7 @@ func TestCombatSystem_SettleTheDebt_RefusedWithoutTheNodeOrForAnotherClass(t *te
 	}{
 		{"a merc without the node", func(em *ecs.EntityManager) *ecs.Entity {
 			e := settleMerc(em, 3, 3)
-			e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mercenary.t1a": 2}))
+			e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mercenary.r1": 1}))
 			return e
 		}},
 		{"a warrior holding its own node", func(em *ecs.EntityManager) *ecs.Entity {

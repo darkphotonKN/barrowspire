@@ -8,7 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 )
 
-// FS-E1ZDG §A R1, §B R4, R7, R10: the one tier-6-node-to-specialization table
+// FS-E1ZDG §A R1, §B R4, R7, R10: the one specialization-node-to-specialization table
 // both services read. None before the pick, and none for a node of another
 // class or one the tree does not know.
 func TestSpecializationOf(t *testing.T) {
@@ -19,7 +19,7 @@ func TestSpecializationOf(t *testing.T) {
 		want  string
 	}{
 		{"guardian", "warrior", passivetree.Ranks{"warrior.t6a": 1}, passivetree.Guardian},
-		{"berserker", "warrior", passivetree.Ranks{"warrior.t1a": 2, "warrior.t6b": 1}, passivetree.Berserker},
+		{"berserker", "warrior", passivetree.Ranks{"warrior.r1": 1, "warrior.m4": 1, "warrior.t6b": 1}, passivetree.Berserker},
 		{"spellwarden", "mage", passivetree.Ranks{"mage.t6a": 1}, passivetree.Spellwarden},
 		{"pyromancer", "mage", passivetree.Ranks{"mage.t6b": 1}, passivetree.Pyromancer},
 		{"hunter", "archer", passivetree.Ranks{"archer.t6a": 1}, passivetree.Hunter},
@@ -27,7 +27,7 @@ func TestSpecializationOf(t *testing.T) {
 		{"duelist", "mercenary", passivetree.Ranks{"mercenary.t6a": 1}, passivetree.Duelist},
 		{"sellsword", "mercenary", passivetree.Ranks{"mercenary.t6b": 1}, passivetree.Sellsword},
 		{"no ranks", "warrior", nil, ""},
-		{"tiers below 6 only", "warrior", passivetree.Ranks{"warrior.t1a": 2, "warrior.t3": 1}, ""},
+		{"no specialization node", "warrior", passivetree.Ranks{"warrior.r1": 1, "warrior.t3": 1, "warrior.m4": 1}, ""},
 		{"another class's node", "warrior", passivetree.Ranks{"mage.t6a": 1}, ""},
 		{"an unknown node", "warrior", passivetree.Ranks{"warrior.t6c": 1}, ""},
 		{"rank 0 is not held", "warrior", passivetree.Ranks{"warrior.t6a": 0}, ""},
@@ -42,7 +42,7 @@ func TestSpecializationOf(t *testing.T) {
 	}
 }
 
-// The ids are §A.1's, snake_case, one per class per tier-6 slot.
+// The ids are §A.1's, snake_case, one per class per specialization slot.
 func TestSpecializationIDs(t *testing.T) {
 	assert.Equal(t,
 		[]string{"guardian", "berserker", "spellwarden", "pyromancer", "hunter", "shadow_ranger", "duelist", "sellsword"},

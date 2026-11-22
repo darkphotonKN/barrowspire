@@ -44,9 +44,9 @@ func TestSeating_ABerserkersWornAndTreeMaxHPAddOnTopUnscaled(t *testing.T) {
 		return bodyHealth(t, delverEntity(t, s, memberID))
 	}
 	warrior := berserkerAt(20)
-	warrior.PassiveRanks = passivetree.Ranks{"warrior.t1a": 2}
+	warrior.PassiveRanks = passivetree.Ranks{"warrior.t2b": 2}
 	berserker := berserkerAt(20)
-	berserker.PassiveRanks["warrior.t1a"] = 2
+	berserker.PassiveRanks["warrior.t2b"] = 2
 
 	plain, priced := seatAt(warrior), seatAt(berserker)
 
@@ -61,7 +61,7 @@ func TestRaisePassiveRanks_TheBerserkerPickClampsCurrentHP(t *testing.T) {
 		s := newHubWorld()
 		memberID := uuid.New()
 		character := berserkerAt(20)
-		character.PassiveRanks = passivetree.Ranks{"warrior.t1a": 2}
+		character.PassiveRanks = passivetree.Ranks{"warrior.t2b": 2}
 		s.AddPlayer(memberID, character, "")
 		gearTick(s)
 		body := bodyHealth(t, delverEntity(t, s, memberID))

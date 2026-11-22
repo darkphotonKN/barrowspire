@@ -105,12 +105,14 @@ func (c *Client) SpendPassivePoint(ctx context.Context, memberID, characterID uu
 	return ranksOf(res.GetPassiveRanks()), nil
 }
 
-// spendRefusals is the spend rule's refusals by the code they cross gRPC with.
+// spendRefusals is the spend rule's refusals by the code they cross gRPC with
+// (FS-8RZ51 §Change: Tree v2 V19). PASSIVE_TIER_LOCKED reads as not reachable
+// yet, which of its two reasons the code does not say.
 var spendRefusals = func() map[errcode.Code]*passivetree.Refusal {
 	byCode := map[errcode.Code]*passivetree.Refusal{}
 	for _, rule := range []*passivetree.Refusal{
 		passivetree.ErrUnknownNode, passivetree.ErrRankOutOfOrder, passivetree.ErrMaxRank,
-		passivetree.ErrTierLocked, passivetree.ErrNoPoints, passivetree.ErrSpecializationTaken,
+		passivetree.ErrSideTaken, passivetree.ErrNotReachable, passivetree.ErrNoPoints,
 	} {
 		byCode[rule.Code] = rule
 	}

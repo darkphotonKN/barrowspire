@@ -55,17 +55,17 @@ func TestRepositorySpendPassivePoint_WritesOneRank_RepeatWritesNothing(t *testin
 	ctx := context.Background()
 	member := uuid.New()
 	cleanup(member)
-	c := leveled(t, repo, member, 5)
+	c := leveled(t, repo, member, 6)
 	svc := NewService(repo, nil)
-	spend := PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: "warrior.t1a", Rank: 1}
+	spend := PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: "warrior.r1", Rank: 1}
 
 	first, err := svc.SpendPassivePoint(ctx, spend)
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
 	written := storedRanks(t, repo, c.ID)
-	if !first.Applied || len(written) != 1 || written["warrior.t1a"].Rank != 1 {
-		t.Fatalf("applied %v stored %v, want t1a at 1", first.Applied, written)
+	if !first.Applied || len(written) != 1 || written["warrior.r1"].Rank != 1 {
+		t.Fatalf("applied %v stored %v, want r1 at 1", first.Applied, written)
 	}
 
 	second, err := svc.SpendPassivePoint(ctx, spend)
@@ -73,30 +73,46 @@ func TestRepositorySpendPassivePoint_WritesOneRank_RepeatWritesNothing(t *testin
 		t.Fatalf("repeat: %v", err)
 	}
 	again := storedRanks(t, repo, c.ID)
-	if second.Applied || !maps.Equal(again, written) || !maps.Equal(second.Ranks, passivetree.Ranks{"warrior.t1a": 1}) {
+	if second.Applied || !maps.Equal(again, written) || !maps.Equal(second.Ranks, passivetree.Ranks{"warrior.r1": 1}) {
 		t.Fatalf("repeat applied %v stored %v ranks %v, want a no-op", second.Applied, again, second.Ranks)
 	}
 
-	// the next rank is an update of the same row
-	if third, err := svc.SpendPassivePoint(ctx, PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: "warrior.t1a", Rank: 2}); err != nil || !third.Applied {
+	// a kicker's next rank is an update of the same row
+	for _, s := range []PassiveSpend{
+		{MemberID: member, CharacterID: c.ID, NodeID: "warrior.r2", Rank: 1},
+		{MemberID: member, CharacterID: c.ID, NodeID: "warrior.ua1", Rank: 1},
+		{MemberID: member, CharacterID: c.ID, NodeID: "warrior.t2a", Rank: 1},
+	} {
+		if _, err := svc.SpendPassivePoint(ctx, s); err != nil {
+			t.Fatalf("spend %+v: %v", s, err)
+		}
+	}
+	if third, err := svc.SpendPassivePoint(ctx, PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: "warrior.t2a", Rank: 2}); err != nil || !third.Applied {
 		t.Fatalf("rank 2 = %+v, %v", third, err)
 	}
-	if stored := storedRanks(t, repo, c.ID); len(stored) != 1 || stored["warrior.t1a"].Rank != 2 {
+	if stored := storedRanks(t, repo, c.ID); len(stored) != 4 || stored["warrior.t2a"].Rank != 2 {
 		t.Fatalf("after rank 2 stored %v", stored)
 	}
 }
 
-// Two spends that together need two points, at level 2 (one point): the row
-// lock serialises them, so one lands and the other sees it and is refused.
+// Two spends that together need two points, at level 5 with three of its four
+// held: the row lock serialises them, so one lands and the other sees it and
+// is refused.
 func TestRepositorySpendPassivePoint_ConcurrentSpendsPastThePoints_OneLands(t *testing.T) {
 	repo, cleanup := testRepo(t)
 	ctx := context.Background()
 	member := uuid.New()
 	cleanup(member)
-	c := leveled(t, repo, member, 2)
+	c := leveled(t, repo, member, 5)
 	svc := NewService(repo, nil)
+	for _, node := range []string{"warrior.r1", "warrior.r2", "warrior.ua1"} {
+		if _, err := svc.SpendPassivePoint(ctx, PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: node, Rank: 1}); err != nil {
+			t.Fatalf("spend %s: %v", node, err)
+		}
+	}
 
-	nodes := []string{"warrior.t1a", "warrior.t1b"}
+	// both linked from ua1, neither locking the other
+	nodes := []string{"warrior.t2a", "warrior.m1"}
 	errs := make([]error, len(nodes))
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -126,8 +142,8 @@ func TestRepositorySpendPassivePoint_ConcurrentSpendsPastThePoints_OneLands(t *t
 	if landed != 1 || refused != 1 {
 		t.Fatalf("landed %d refused %d, want 1 / 1", landed, refused)
 	}
-	if stored := storedRanks(t, repo, c.ID); len(stored) != 1 {
-		t.Fatalf("stored %v, want one rank", stored)
+	if stored := storedRanks(t, repo, c.ID); len(stored) != 4 {
+		t.Fatalf("stored %v, want one rank more", stored)
 	}
 }
 
@@ -139,7 +155,7 @@ func TestRepositorySpendPassivePoint_Refused_NothingWritten(t *testing.T) {
 	c := leveled(t, repo, member, 1)
 	svc := NewService(repo, nil)
 
-	_, err := svc.SpendPassivePoint(ctx, PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: "warrior.t1a", Rank: 1})
+	_, err := svc.SpendPassivePoint(ctx, PassiveSpend{MemberID: member, CharacterID: c.ID, NodeID: "warrior.r1", Rank: 1})
 
 	var refusal *errcode.Refusal
 	if !errors.As(err, &refusal) || refusal.Code != errcode.PassiveNoPoints {
@@ -174,7 +190,7 @@ func TestRepositorySpendPassivePoint_NotTheMembersLiveCharacter_NotFound(t *test
 		t.Run(tt.name, func(t *testing.T) {
 			decided := false
 
-			_, err := repo.SpendPassivePoint(ctx, PassiveSpend{MemberID: tt.member, CharacterID: tt.id, NodeID: "warrior.t1a", Rank: 1},
+			_, err := repo.SpendPassivePoint(ctx, PassiveSpend{MemberID: tt.member, CharacterID: tt.id, NodeID: "warrior.r1", Rank: 1},
 				func(*Character) (bool, error) { decided = true; return true, nil })
 
 			if !errors.Is(err, commonconstants.ErrNotFound) || decided {
@@ -200,15 +216,14 @@ func TestRepositoryRead_CarriesHeldRanks(t *testing.T) {
 	spent := leveled(t, repo, member, 5)
 	fresh := leveled(t, repo, member, 5)
 	for _, s := range []PassiveSpend{
-		{MemberID: member, CharacterID: spent.ID, NodeID: "warrior.t1a", Rank: 1},
-		{MemberID: member, CharacterID: spent.ID, NodeID: "warrior.t1a", Rank: 2},
-		{MemberID: member, CharacterID: spent.ID, NodeID: "warrior.t1b", Rank: 1},
+		{MemberID: member, CharacterID: spent.ID, NodeID: "warrior.r1", Rank: 1},
+		{MemberID: member, CharacterID: spent.ID, NodeID: "warrior.r2", Rank: 1},
 	} {
 		if _, err := svc.SpendPassivePoint(ctx, s); err != nil {
 			t.Fatalf("spend %+v: %v", s, err)
 		}
 	}
-	want := passivetree.Ranks{"warrior.t1a": 2, "warrior.t1b": 1}
+	want := passivetree.Ranks{"warrior.r1": 1, "warrior.r2": 1}
 
 	got, err := repo.GetByPlayer(ctx, member, spent.ID)
 	if err != nil || !maps.Equal(got.PassiveRanks, want) {

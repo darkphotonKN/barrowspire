@@ -37,7 +37,7 @@ func TestAddPlayer_ASellswordIsSeatedAtZeroOfFive(t *testing.T) {
 	}{
 		{"a Sellsword", passivetree.Ranks{"mercenary.t6b": 1}, 5},
 		{"a Duelist", passivetree.Ranks{"mercenary.t6a": 1}, 3},
-		{"an unspecialized merc", passivetree.Ranks{"mercenary.t1a": 1}, 3},
+		{"an unspecialized merc", passivetree.Ranks{"mercenary.r1": 1}, 3},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -59,7 +59,7 @@ func TestAddPlayer_ASellswordIsSeatedAtZeroOfFive(t *testing.T) {
 func TestRaisePassiveRanks_TheSellswordPickRaisesTheMaxToFive(t *testing.T) {
 	s := newHubWorld()
 	memberID := uuid.New()
-	character := mercCharacter(passivetree.Ranks{"mercenary.t1a": 1})
+	character := mercCharacter(passivetree.Ranks{"mercenary.r1": 1})
 	s.AddPlayer(memberID, character, "")
 	body := delverEntity(t, s, memberID)
 	parryPoolOf(t, body).Current = 2
@@ -74,7 +74,7 @@ func TestRaisePassiveRanks_TheSellswordPickRaisesTheMaxToFive(t *testing.T) {
 func TestRaisePassiveRanks_TheDuelistPickKeepsThree(t *testing.T) {
 	s := newHubWorld()
 	memberID := uuid.New()
-	character := mercCharacter(passivetree.Ranks{"mercenary.t1a": 1})
+	character := mercCharacter(passivetree.Ranks{"mercenary.r1": 1})
 	s.AddPlayer(memberID, character, "")
 
 	require.True(t, s.RaisePassiveRanks(memberID, character.ID, passivetree.Ranks{"mercenary.t6a": 1}))

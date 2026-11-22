@@ -23,12 +23,12 @@ func TestToCharacterInPlay_TakesEverythingFromTheRecord(t *testing.T) {
 
 	character, err := toCharacterInPlay(&pb.Character{
 		Id: id.String(), Name: "Wren", Class: "archer", Level: 5, Experience: 640, LevelFloor: 600,
-		PassiveRanks: []*pb.PassiveRank{{NodeId: "archer.t1a", Rank: 2}, {NodeId: "archer.t1b", Rank: 1}},
+		PassiveRanks: []*pb.PassiveRank{{NodeId: "archer.t2a", Rank: 2}, {NodeId: "archer.r1", Rank: 1}},
 	})
 
 	require.NoError(t, err)
 	assert.Equal(t, types.CharacterInPlay{ID: id, Name: "Wren", Class: "archer", Level: 5, Experience: 640,
-		PassiveRanks: passivetree.Ranks{"archer.t1a": 2, "archer.t1b": 1}}, character)
+		PassiveRanks: passivetree.Ranks{"archer.t2a": 2, "archer.r1": 1}}, character)
 }
 
 func TestToCharacterInPlay_RefusesARecordWithoutAnID(t *testing.T) {
@@ -45,17 +45,23 @@ func TestToCharacterInPlay_NoRanksIsEmpty(t *testing.T) {
 	assert.Equal(t, passivetree.Ranks{}, character.PassiveRanks)
 }
 
-// FS-8RZ51 R13, R21: a refusal carries the rule's code, read back as the spend
-// rule's own refusal; a character not the member's is not found; anything
-// else is the service failing to answer.
+// FS-8RZ51 R13, R21, §Change: Tree v2 V19: a refusal carries the rule's code,
+// read back as the spend rule's own refusal; a character not the member's is
+// not found; anything else is the service failing to answer.
 func TestSpendError_ReadsTheRefusal(t *testing.T) {
 	for _, rule := range []*passivetree.Refusal{
 		passivetree.ErrUnknownNode, passivetree.ErrRankOutOfOrder, passivetree.ErrMaxRank,
-		passivetree.ErrTierLocked, passivetree.ErrNoPoints, passivetree.ErrSpecializationTaken,
+		passivetree.ErrSideTaken, passivetree.ErrNotReachable, passivetree.ErrNoPoints,
 	} {
 		err := spendError(errcode.Refuse(rule.Code))
 		assert.ErrorIs(t, err, rule, "%s", rule.Code)
 	}
+
+	// either reason not reachable crosses as the one code, read as neither
+	notReachable := spendError(errcode.Refuse(errcode.PassiveTierLocked))
+	assert.NotErrorIs(t, notReachable, passivetree.ErrNotLinked)
+	assert.NotErrorIs(t, notReachable, passivetree.ErrLevelTooLow)
+	assert.ErrorIs(t, spendError(errcode.Refuse(passivetree.ErrNotLinked.Code)), passivetree.ErrNotReachable)
 
 	assert.ErrorIs(t, spendError(status.Error(codes.NotFound, "character")), types.ErrCharacterNotFound)
 

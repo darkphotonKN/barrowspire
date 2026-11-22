@@ -6,13 +6,18 @@ import "github.com/darkphotonKN/barrowspire-server/common/errcode"
 type Ranks map[string]int
 
 // Unspent is the points a character of level holding held has left to spend:
-// earned(level) − Σ ranks held, never below 0 (FS-8RZ51 R7). It is derived,
-// never stored.
+// earned(level) − Σ ranks held, never below 0 (FS-8RZ51 R7). Only nodes the
+// definition knows count, each at most its max rank, so a retired or unknown
+// id costs nothing (V8). It is derived, never stored.
 func Unspent(level int32, held Ranks) int {
+	return definition.unspent(level, held)
+}
+
+func (t *tree) unspent(level int32, held Ranks) int {
 	left := Earned(level)
-	for _, rank := range held {
-		if rank > 0 {
-			left -= rank
+	for id, rank := range held {
+		if n, known := t.byID[id]; known && rank > 0 {
+			left -= min(rank, n.MaxRank)
 		}
 	}
 	return max(left, 0)
@@ -49,28 +54,56 @@ const (
 type Refusal struct {
 	Code errcode.Code
 	rule string
+	// of is the refusal this one is a reason for, if any: errors.Is matches
+	// both.
+	of *Refusal
 }
 
 func (r *Refusal) Error() string { return "passive spend refused: " + r.rule }
 
-// The spend rule's refusals (R9), one per rule. Match them with errors.Is.
+// Unwrap is the refusal r is a reason for, so errors.Is(ErrNotLinked,
+// ErrNotReachable) holds.
+func (r *Refusal) Unwrap() error {
+	if r.of == nil {
+		return nil
+	}
+	return r.of
+}
+
+// The spend rule's refusals (V5), one per rule. Match them with errors.Is.
 var (
-	ErrUnknownNode         = &Refusal{Code: errcode.PassiveUnknownNode, rule: "not one of the class's nodes"}
-	ErrRankOutOfOrder      = &Refusal{Code: errcode.PassiveRankOutOfOrder, rule: "not the next rank"}
-	ErrMaxRank             = &Refusal{Code: errcode.PassiveMaxRank, rule: "already at its highest rank"}
-	ErrTierLocked          = &Refusal{Code: errcode.PassiveTierLocked, rule: "tier locked"}
-	ErrNoPoints            = &Refusal{Code: errcode.PassiveNoPoints, rule: "no points to spend"}
-	ErrSpecializationTaken = &Refusal{Code: errcode.PassiveSpecializationTaken, rule: "the other specialization is held"}
+	ErrUnknownNode    = &Refusal{Code: errcode.PassiveUnknownNode, rule: "not one of the class's nodes"}
+	ErrRankOutOfOrder = &Refusal{Code: errcode.PassiveRankOutOfOrder, rule: "not the next rank"}
+	ErrMaxRank        = &Refusal{Code: errcode.PassiveMaxRank, rule: "already at its highest rank"}
+	// ErrSideTaken: another side of the node's exclusive group is taken,
+	// for good (V6).
+	ErrSideTaken = &Refusal{Code: errcode.PassiveSideTaken, rule: "another side of its group is taken"}
+	// ErrNotReachable: not reachable yet (V7). The rule answers one of its
+	// two reasons; a refusal read off the wire is this one.
+	ErrNotReachable = &Refusal{Code: errcode.PassiveTierLocked, rule: "not reachable yet"}
+	// ErrNotLinked: none of the node's links is held.
+	ErrNotLinked = &Refusal{Code: errcode.PassiveTierLocked, rule: "not reachable yet: no linked node held", of: ErrNotReachable}
+	// ErrLevelTooLow: the character is below the node's level gate.
+	ErrLevelTooLow = &Refusal{Code: errcode.PassiveTierLocked, rule: "not reachable yet: level too low", of: ErrNotReachable}
+	ErrNoPoints    = &Refusal{Code: errcode.PassiveNoPoints, rule: "no points to spend"}
 )
 
-// CheckSpend is the spend rule (R9): may a character of class and level,
+// CheckSpend is the spend rule (V5): may a character of class and level,
 // holding held, take nodeID to target rank? It answers Allowed or AlreadyHeld
 // (a target at or below the rank held, R10), or the first rule that refused
-// it, in R9's order. A target below 1 is the caller's validation; here it
+// it, in V5's order. A target below 1 is the caller's validation; here it
 // reads as already held.
 func CheckSpend(class string, level int32, held Ranks, nodeID string, target int) (Verdict, error) {
-	node, ok := Lookup(nodeID)
-	if !ok || node.Class != class {
+	t, ok := trees[class]
+	if !ok {
+		return 0, ErrUnknownNode
+	}
+	return t.checkSpend(level, held, nodeID, target)
+}
+
+func (t *tree) checkSpend(level int32, held Ranks, nodeID string, target int) (Verdict, error) {
+	node, ok := t.byID[nodeID]
+	if !ok {
 		return 0, ErrUnknownNode
 	}
 	have := held[nodeID]
@@ -83,36 +116,43 @@ func CheckSpend(class string, level int32, held Ranks, nodeID string, target int
 	if target > node.MaxRank {
 		return 0, ErrMaxRank
 	}
-	if !gateMet(node, held) {
-		return 0, ErrTierLocked
+	if t.anotherSideTaken(node, held) {
+		return 0, ErrSideTaken
 	}
-	if Unspent(level, held) < 1 {
+	if !linked(node, held) {
+		return 0, ErrNotLinked
+	}
+	if level < node.MinLevel {
+		return 0, ErrLevelTooLow
+	}
+	if t.unspent(level, held) < 1 {
 		return 0, ErrNoPoints
-	}
-	if node.Kind == KindSpecialization && otherSpecializationHeld(node, held) {
-		return 0, ErrSpecializationTaken
 	}
 	return Allowed, nil
 }
 
-// gateMet is node's tier gate against held: the node it requires held, and
-// at least SpentAbove ranks held in the class's smaller tiers.
-func gateMet(node Node, held Ranks) bool {
-	if node.Gate.Requires != "" && held[node.Gate.Requires] < 1 {
+// anotherSideTaken is whether any node on another side of node's exclusive
+// group is held. False for a node on no side.
+func (t *tree) anotherSideTaken(node Node, held Ranks) bool {
+	if node.Exclusive == nil {
 		return false
 	}
-	spent := 0
-	for _, n := range trees[node.Class] {
-		if n.Tier < node.Tier {
-			spent += max(held[n.ID], 0)
+	for _, n := range t.nodes {
+		if n.Exclusive != nil && n.Exclusive.Group == node.Exclusive.Group &&
+			n.Exclusive.Side != node.Exclusive.Side && held[n.ID] > 0 {
+			return true
 		}
 	}
-	return spent >= node.Gate.SpentAbove
+	return false
 }
 
-func otherSpecializationHeld(node Node, held Ranks) bool {
-	for _, n := range trees[node.Class] {
-		if n.Kind == KindSpecialization && n.ID != node.ID && held[n.ID] > 0 {
+// linked is whether node is the root or any of its links is held.
+func linked(node Node, held Ranks) bool {
+	if len(node.Requires) == 0 {
+		return true
+	}
+	for _, id := range node.Requires {
+		if held[id] > 0 {
 			return true
 		}
 	}

@@ -241,7 +241,7 @@ const (
 	// --- Passive tree (FS-8RZ51) ------------------------------------------------
 	// The spend rule's refusals. Decided by common/passivetree, answered by
 	// character-service on SpendPassivePoint; game-service reads them for its
-	// words. FS-8RZ51 R9.
+	// words. FS-8RZ51 R9, §Change: Tree v2 V5–V7.
 
 	// PassiveUnknownNode: the node is not one of the character's class's nodes
 	// (an unknown id, or another class's node).
@@ -254,8 +254,9 @@ const (
 	// PassiveMaxRank: the node is already at its highest rank.
 	PassiveMaxRank Code = "PASSIVE_MAX_RANK"
 
-	// PassiveTierLocked: the node's tier gate is not met by the ranks held.
-	// FS-8RZ51 R2.
+	// PassiveTierLocked: the node is not reachable yet: none of its links is
+	// held, or the character is below its level gate. The code keeps its v1
+	// name. FS-8RZ51 §Change: Tree v2 V7.
 	PassiveTierLocked Code = "PASSIVE_TIER_LOCKED"
 
 	// PassiveNoPoints: the character has no unspent passive points.
@@ -263,8 +264,15 @@ const (
 	PassiveNoPoints Code = "PASSIVE_NO_POINTS"
 
 	// PassiveSpecializationTaken: the other tier-6 node is already held, and
-	// a character holds one of the two. FS-8RZ51 R9.
+	// a character holds one of the two. FS-8RZ51 R9. No longer answered: the
+	// specialization pair is the spec group, refused PassiveSideTaken. Kept
+	// registered for any reader (§Change: Tree v2 V7).
 	PassiveSpecializationTaken Code = "PASSIVE_SPECIALIZATION_TAKEN"
+
+	// PassiveSideTaken: another side of the node's exclusive group is
+	// already taken, which locks this side for good. FS-8RZ51 §Change: Tree
+	// v2 V6, V7.
+	PassiveSideTaken Code = "PASSIVE_SIDE_TAKEN"
 )
 
 // domainCodes is the registry of domain-specific codes: the only reasons a
@@ -333,4 +341,5 @@ var domainCodes = map[Code]struct{}{
 	PassiveTierLocked:          {},
 	PassiveNoPoints:            {},
 	PassiveSpecializationTaken: {},
+	PassiveSideTaken:           {},
 }

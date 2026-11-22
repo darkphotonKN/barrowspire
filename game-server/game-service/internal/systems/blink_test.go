@@ -19,7 +19,7 @@ func blinkMage(em *ecs.EntityManager, x, y float64) *ecs.Entity {
 	e := delver(em, x, y)
 	e.AddComponent(components.NewResourceComponent(components.ResourceMana, 100, 100, 0))
 	e.AddComponent(components.NewTreeAbilityComponent(components.AttackBlink, "mage.t3"))
-	e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mage.t1a": 2, "mage.t3": 1}))
+	e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mage.r1": 1, "mage.t3": 1}))
 	return e
 }
 
@@ -299,7 +299,7 @@ func TestCombatSystem_Blink_RefusedWithoutTheClassOrTheNode(t *testing.T) {
 	}{
 		{"a mage without the node", func(em *ecs.EntityManager) *ecs.Entity {
 			e := blinkMage(em, 100, 100)
-			e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mage.t1a": 2}))
+			e.AddComponent(components.NewPassiveRanksComponent(passivetree.Ranks{"mage.r1": 1}))
 			return e
 		}},
 		{"a warrior holding their own node", func(em *ecs.EntityManager) *ecs.Entity {
