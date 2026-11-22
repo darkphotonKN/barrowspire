@@ -576,10 +576,13 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.hoverRing?.destroy();
     this.hideTip();
     this.hidePurseTip();
-    const children: Phaser.GameObjects.GameObject[] = this.inventoryOpen
-      ? this.inventoryParts(this.layout.right)
-      : [];
-    if (this.stash) children.push(...this.stashPanel(this.stash));
+    // every well in one Graphics, under all else: one draw, where a Graphics a well between the
+    // icons broke their batch and halved the frame rate with a full bag at render scale 2
+    const wells = this.scene.add.graphics();
+    const children: Phaser.GameObjects.GameObject[] = [wells];
+    if (this.inventoryOpen)
+      children.push(...this.inventoryParts(this.layout.right, wells));
+    if (this.stash) children.push(...this.stashPanel(this.stash, wells));
 
     this.content = this.scene.add.container(0, 0, children);
     this.content.setDepth(GEAR_OVERLAY_DEPTH + 1).setScrollFactor(0);
@@ -591,8 +594,14 @@ export class GearOverlay implements HudPanel, PurseShelf {
     this.redrawStats();
   }
 
-  /** The inventory's insides: the slots, the bag and its count, the hint and the purse line. */
-  private inventoryParts(right: Rect): Phaser.GameObjects.GameObject[] {
+  /**
+   * The inventory's insides: the slots, the bag and its count, the hint and the purse line. The
+   * wells go into `wells`; the rest is returned.
+   */
+  private inventoryParts(
+    right: Rect,
+    wells: Phaser.GameObjects.Graphics,
+  ): Phaser.GameObjects.GameObject[] {
     this.gear = gearPanelLayout(
       right,
       this.inventory.length,
@@ -605,7 +614,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     for (const { slot, label } of GEAR_SLOTS) {
       const item = this.equipped[slot];
       const rect = g.slots[slot];
-      children.push(this.well(rect, item));
+      this.well(wells, rect, item);
       if (item) children.push(...this.held(rect, item));
       else children.push(this.slotLabel(rect, label));
     }
@@ -634,7 +643,7 @@ export class GearOverlay implements HudPanel, PurseShelf {
     count.setOrigin(1, 0);
     children.push(count);
 
-    children.push(...this.itemGrid(g, this.inventory));
+    children.push(...this.itemGrid(g, this.inventory, wells));
 
     const hint = this.scene.add.text(
       g.innerX + g.innerW / 2,
@@ -711,13 +720,14 @@ export class GearOverlay implements HudPanel, PurseShelf {
    * A slot's or cell's well; a held item adds its rarity edge, and an unsafe find in a run an
    * oxblood inner edge clear of it (FS-18Z5F R36); a cell past 30 is tinted over (R23). A Runed
    * or Fabled item's outline stands in for the hairline, under the rarity edge (FS-QE2QW R9).
+   * Drawn into `g`, the one Graphics every well of a redraw shares.
    */
   private well(
+    g: Phaser.GameObjects.Graphics,
     r: Rect,
     item: ItemState | null | undefined,
     over = false,
-  ): Phaser.GameObjects.Graphics {
-    const g = this.scene.add.graphics();
+  ): void {
     g.fillStyle(over ? palette.damage : palette.inkDeep, over ? 0.35 : 0.6);
     g.fillRoundedRect(r.x, r.y, r.w, r.h, WELL_RADIUS);
     const view = item ? this.view(item) : undefined;
@@ -747,7 +757,6 @@ export class GearOverlay implements HudPanel, PurseShelf {
       g.fillStyle(edge, 0.9);
       g.fillRect(r.x + 1, r.y + 5, EDGE_W, r.h - 10);
     }
-    return g;
   }
 
   /**
@@ -934,7 +943,10 @@ export class GearOverlay implements HudPanel, PurseShelf {
    * the bag's are, rows past 60 tinted over and the count in the over tone, scrolled by the
    * wheel. A status line shows over it as over the bag (edge state "REST load fails").
    */
-  private stashPanel(stash: ItemState[]): Phaser.GameObjects.GameObject[] {
+  private stashPanel(
+    stash: ItemState[],
+    wells: Phaser.GameObjects.Graphics,
+  ): Phaser.GameObjects.GameObject[] {
     if (!this.layout) return [];
     const s = stashPanelLayout(
       this.layout.left,
@@ -955,22 +967,24 @@ export class GearOverlay implements HudPanel, PurseShelf {
     );
     count.setOrigin(1, 0);
     out.push(count);
-    out.push(...this.itemGrid(s, stash));
+    out.push(...this.itemGrid(s, stash, wells));
     return out;
   }
 
   /**
    * A bag's or the stash's cells with what they hold, the rows past capacity tinted over, a
-   * scroll bar when its rows do not all fit, and the status line over it while one is set.
+   * scroll bar when its rows do not all fit, and the status line over it while one is set. The
+   * wells go into `wells`.
    */
   private itemGrid(
     g: ItemGrid,
     items: readonly ItemState[],
+    wells: Phaser.GameObjects.Graphics,
   ): Phaser.GameObjects.GameObject[] {
     const out: Phaser.GameObjects.GameObject[] = [];
     for (const cell of g.cells) {
       const item = items[cell.index];
-      out.push(this.well(cell.rect, item, cell.over));
+      this.well(wells, cell.rect, item, cell.over);
       if (item) out.push(...this.held(cell.rect, item));
     }
     if (g.visibleRows < g.rows)
