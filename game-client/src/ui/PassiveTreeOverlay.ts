@@ -1,23 +1,24 @@
 /**
- * The passive tree overlay (FS-8RZ51 §G R34–R37, R41, R42): a canvas window in the gear overlay's
- * family, on the UI scene (ADR-0084; ADR-0086 rules 1.1, 1.2), drawn from `passiveTreeModel` into
- * `passiveTreeLayout`'s rects. The shared panel frame and title (`drawPanelFrame`, `drawPanelTitle`), the
- * header with the class and the unspent points, the six tiers with their gates, each node a plate with
- * its picture and `r / max`, inked by its state, the "or" between the tier-6 nodes; outside the town the
+ * The passive tree overlay (FS-8RZ51 §G R34, R36, R37, R41, R42; §Change: Tree v2 V25): a canvas window
+ * in the gear overlay's family, on the UI scene (ADR-0084; ADR-0086 rules 1.1, 1.2), drawn from
+ * `passiveTreeModel` into `passiveTreeLayout`'s rects. The shared panel frame and title
+ * (`drawPanelFrame`, `drawPanelTitle`), the header with the class and the unspent points, one row per
+ * graph depth until slice 17 draws the graph, each node a plate with its picture and `r / max`, inked
+ * by its state, an "or" between a row's two nodes (today's two sides of a group); outside the town the
  * footer says points are spent in town (R38). It stands in the window band between the gear overlay
  * (1100–1103) and the party panel (1110), with its own interactive ground over its rect (`uiGround`), so
  * a press or a hover on it never reaches the world or a party frame under it; its tooltips stand in the
  * item tips' band (2200), on the gear overlay's tip ground and placement (`tipGround`, `itemTipRow`).
  *
  * Node pictures (R40): each node draws its picture (`nodePicture`: the tree's own from `passiveIcons.ts`,
- * the tier-3 node its tree ability's from the ability bar's `ABILITY_ICONS`) through the one knockout
+ * the ability node its tree ability's from the ability bar's `ABILITY_ICONS`) through the one knockout
  * renderer (`Knockout`, ADR-0080), in `BRONZE` or, greyed, in `GREYED`, its lines where the scene
  * cannot; a node the copy lacks draws the fallback glyph (`drawUnknownGlyph`) with its id as its name
  * (R42). Every colour is a palette token (ADR-0013,
  * ADR-0025).
  *
  * In town a press on a node spends through `TreeSpend` and the wiring's `spend`, the tree's own commands
- * (R38): the tier-6 ask and a refusal's reason stand in the footer band, the ask with its Yes and No.
+ * (R38): the specialization's ask and a refusal's reason stand in the footer band, the ask with its Yes and No.
  * Outside it nodes take no press. Its pointer is handed in by the UI scene in logical units
  * (`uiSceneTree.ts`), hit-tested by hand.
  */
@@ -50,14 +51,14 @@ const TIP_DEPTH = 2200;
 
 /** The window's one title (FS-3EBCA R20). */
 export const TREE_TITLE = "Passive Tree";
-/** What a class the client does not know shows in place of its tiers (R42). */
+/** What a class the client does not know shows in place of its nodes (R42). */
 export const NO_TREE = "No tree is known for this class.";
 
 const TIP_PAD = 8;
 const TIP_LINE_GAP = 2;
 const TIP_WRAP = 240;
 
-/** A plate's edge, by the node's state and whether its next rank could be taken now (R35). */
+/** A plate's edge, by the node's state and whether its next rank could be taken now (V25). */
 function plateEdge(node: NodeView): { color: number; alpha: number; width: number } {
   if (node.state === "max") return { color: palette.frameBright, alpha: 1, width: 2 };
   if (node.state === "held") return { color: palette.frame, alpha: 1, width: 1.5 };
@@ -66,7 +67,7 @@ function plateEdge(node: NodeView): { color: number; alpha: number; width: numbe
   return { color: palette.hudFaint, alpha: GREYED_ALPHA, width: 1 };
 }
 
-/** Whether a node draws greyed: locked, closed, or open with no point to take it (§Edge States). */
+/** Whether a node draws greyed: closed, locked, or open with no point to take it (V25, §Edge States). */
 const greyed = (node: NodeView) => node.state === "locked" || node.state === "closed" || (node.state === "available" && !node.spendable);
 
 /** A tip line's colour (R37): the held ranks marked in brass, a refusal's reason muted. */
@@ -78,8 +79,8 @@ function tipColour(line: TipLine): number {
 }
 
 /**
- * The picture a node draws (R40), where it has one: the tree's own (`passiveIcons.ts`), or the tier-3
- * node's tree ability's from the ability bar. Slice 11 gives the archer's and the mercenary's own six.
+ * The picture a node draws (R40), where it has one: the tree's own (`passiveIcons.ts`), or the ability
+ * node's tree ability's from the ability bar.
  */
 export function nodePicture(icon: NodeIconKey | undefined): AbilityIcon | undefined {
   return icon ? nodeIcon(icon) : undefined;
@@ -114,10 +115,10 @@ export class PassiveTreeOverlay implements TreePiece {
   private ground?: { destroy(): void };
   private closeMark?: { box: FrameRect; glyph: Phaser.GameObjects.Text; lit: boolean };
   private hoverRing?: Phaser.GameObjects.Graphics;
-  /** The node under the pointer, as [row, node], and its tip. */
+  /** The node under the pointer, as [depth row, node], and its tip. */
   private hovered?: [number, number];
   private tip?: { container: Phaser.GameObjects.Container; width: number; height: number };
-  /** Its spends: the ones in flight, the tier-6 ask, a refusal's reason (R38). */
+  /** Its spends: the ones in flight, the specialization's ask, a refusal's reason (R38). */
   private readonly spend: TreeSpend;
 
   constructor(
@@ -163,7 +164,7 @@ export class PassiveTreeOverlay implements TreePiece {
   }
 
   /**
-   * A press: the × closes it; in town the tier-6 ask's Yes or No answers it, a node's plate spends on it
+   * A press: the × closes it; in town the specialization's ask's Yes or No answers it, a node's plate spends on it
    * (R38), and anywhere else on the panel clears the ask and a refusal. Every press on the panel is the
    * overlay's.
    */
@@ -180,7 +181,7 @@ export class PassiveTreeOverlay implements TreePiece {
     const at = nodeAt(layout, x, y);
     if (this.spend.asking() && inside(layout.answers.yes, x, y)) this.spend.answer(true);
     else if (this.spend.asking() && inside(layout.answers.no, x, y)) this.spend.answer(false);
-    else if (at) this.spend.press(view.tiers[at[0]].nodes[at[1]], view);
+    else if (at) this.spend.press(view.rows[at[0]].nodes[at[1]], view);
     else this.spend.clear();
     this.redraw();
     return true;
@@ -224,7 +225,7 @@ export class PassiveTreeOverlay implements TreePiece {
     // a node now showing the rank its spend went for takes clicks again
     this.spend.seen(view);
     this.drawnKey = this.key();
-    const layout = treeLayout(viewport, view.tiers.map((t) => t.nodes.length));
+    const layout = treeLayout(viewport, view.rows.map((r) => r.nodes.length));
     this.layout = layout;
     const { panel } = layout;
     this.ground = uiGround(this.scene, TREE_DEPTH)(panel);
@@ -254,12 +255,10 @@ export class PassiveTreeOverlay implements TreePiece {
     if (!view.known) text(layout.panel.x + layout.panel.width / 2, layout.footer.y - 40, NO_TREE, 12, palette.hudLabel);
     const g = this.scene.add.graphics();
     parts.push(g);
-    view.tiers.forEach((tier, r) => {
+    view.rows.forEach((depth, r) => {
       const row = layout.rows[r];
-      text(row.gate.x, row.gate.y - 2, `TIER ${tier.tier}`, 10, palette.hudLabel, [0, 1]);
-      text(row.gate.x, row.gate.y + 2, tier.gate, 11, palette.hudText, [0, 0]).setWordWrapWidth(row.nodes[0].x - row.gate.x - 12);
       if (row.between) text(row.between.x, row.between.y, "or", 11, palette.hudLabel);
-      tier.nodes.forEach((node, n) => {
+      depth.nodes.forEach((node, n) => {
         const plate = row.nodes[n];
         this.drawPlate(g, node, plate);
         const rankInk = node.rank > 0 ? palette.frameBright : greyed(node) ? palette.hudFaint : palette.hudLabel;
@@ -271,7 +270,7 @@ export class PassiveTreeOverlay implements TreePiece {
     return parts;
   }
 
-  /** In town, the footer band: the tier-6 ask with its Yes and No, or a refusal's reason (R38). */
+  /** In town, the footer band: the specialization's ask with its Yes and No, or a refusal's reason (R38). */
   private spendFooter(
     g: Phaser.GameObjects.Graphics,
     layout: TreeLayout,
@@ -297,7 +296,7 @@ export class PassiveTreeOverlay implements TreePiece {
     }
   }
 
-  /** A node's plate, its edge by its state, and its picture, or the fallback glyph for a node the copy lacks (R35, R40, R42). */
+  /** A node's plate, its edge by its state, and its picture, or the fallback glyph for a node the copy lacks (V25, R40, R42). */
   private drawPlate(g: Phaser.GameObjects.Graphics, node: NodeView, plate: FrameRect): void {
     g.fillStyle(palette.hudPanelDeep, 0.9);
     g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
@@ -344,7 +343,7 @@ export class PassiveTreeOverlay implements TreePiece {
       if (at) {
         const plate = layout.rows[at[0]].nodes[at[1]];
         this.hoverRing?.lineStyle(1, palette.interactableBright, 1).strokeRoundedRect(plate.x - 2, plate.y - 2, plate.width + 4, plate.height + 4, 5);
-        this.tip = this.buildTip(view.tiers[at[0]].nodes[at[1]].tip);
+        this.tip = this.buildTip(view.rows[at[0]].nodes[at[1]].tip);
       }
     }
     if (this.tip) {

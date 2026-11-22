@@ -18,13 +18,13 @@ function fakeSocket() {
 describe("passiveTreeCommands (FS-8RZ51 R38, R16)", () => {
   it("should send spend_passive_point with the node and its target rank in town", () => {
     const { socket, sent } = fakeSocket();
-    expect(passiveTreeCommands(socket, () => "hub").spend("mage.t1a", 1)).toBe(true);
-    expect(sent).toEqual([["spend_passive_point", { node_id: "mage.t1a", rank: 1 }]]);
+    expect(passiveTreeCommands(socket, () => "hub").spend("mage.r1", 1)).toBe(true);
+    expect(sent).toEqual([["spend_passive_point", { node_id: "mage.r1", rank: 1 }]]);
   });
 
   it.each(["field", "run", null] as const)("should send nothing in %s: points are spent in town", (world) => {
     const { socket, sent } = fakeSocket();
-    expect(passiveTreeCommands(socket, () => world).spend("mage.t1a", 1)).toBe(false);
+    expect(passiveTreeCommands(socket, () => world).spend("mage.r1", 1)).toBe(false);
     expect(sent).toEqual([]);
   });
 
@@ -33,7 +33,7 @@ describe("passiveTreeCommands (FS-8RZ51 R38, R16)", () => {
     let world: "hub" | "field" = "field";
     const tree = passiveTreeCommands(socket, () => world);
     world = "hub";
-    expect(tree.spend("warrior.t1b", 2)).toBe(true);
+    expect(tree.spend("warrior.t2a", 2)).toBe(true);
     expect(sent).toHaveLength(1);
   });
 

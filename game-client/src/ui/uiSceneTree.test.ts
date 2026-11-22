@@ -35,7 +35,7 @@ interface BuiltTree extends TreePiece {
 }
 
 const me = (points: number): CharacterSource =>
-  ({ username: "Ash", class: "warrior", level: 6, passive_ranks: { "warrior.t1a": 1 }, passive_points: points }) as CharacterSource;
+  ({ username: "Ash", class: "warrior", level: 6, passive_ranks: { "warrior.r1": 1 }, passive_points: points }) as CharacterSource;
 
 function onSlot() {
   const gear = { open: false, closes: 0 };
@@ -304,8 +304,8 @@ describe("the tree slot's spends (FS-8RZ51 R38)", () => {
     const town = aWorld("hub");
     t.bridge.report(town.report);
     t.slot.show(t.bridge.world);
-    expect(t.built[0].wiring.spend("warrior.t1a", 2)).toBe(true);
-    expect(t.spends).toEqual([["warrior.t1a", 2]]);
+    expect(t.built[0].wiring.spend("warrior.t2a", 2)).toBe(true);
+    expect(t.spends).toEqual([["warrior.t2a", 2]]);
     expect(town.asked).toEqual([]);
   });
 });
