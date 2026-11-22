@@ -335,3 +335,15 @@ export const MERCENARY_STYLE = {
     { z: -0.01 },
   ),
 };
+
+/**
+ * The Duelist's run (FS-1J1CB §Change: Looks v2 R60, R62), his own beside {@link MERCENARY_STYLE}:
+ * the long-hilted blade (mercKit.js `longBlade`) carried as the mercenary carries his, the wrist
+ * taking back less of the arm's pump ({@link DUELIST_RUN_WRIST}, the mercenary's RUN_WRIST 0.85).
+ * Taken back the whole way, the wrist folded the blade's point down to the forearm's line at the
+ * front of the pump, and the long hilt lay along the inside of the forearm, the butt 0.036 H off
+ * its line (mercLooks.test.mjs); so the point rides a little higher at the front of the pump. The
+ * carry, the walk, the cut and the parry are the mercenary's.
+ */
+export const DUELIST_RUN_WRIST = [0, 0.55];
+export const DUELIST_STYLE = { ...MERCENARY_STYLE, run: { ...MERCENARY_STYLE.run, wrist: DUELIST_RUN_WRIST } };

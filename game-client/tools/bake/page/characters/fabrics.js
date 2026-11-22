@@ -380,6 +380,16 @@ export const GEAR = {
   sellBlack: mix("charcoal", "slate", 0.3),
   sellSash: mix("charcoal", "slate", 0.5),
   buffCoat: mix(mix("barrowBrown", "brass", 0.3), "barrowDeep", 0.2),
+  // the mercenary looks v2 (FS-1J1CB §Change: Looks v2 R60, R61, R63; mercKit.js). The Duelist's
+  // blade polished near white at the edge, its fittings blackened iron, its scabbard a lacquer
+  // black warmed toward oxblood, its grip a pale core under slate cord; the Sellsword's falchion a
+  // dark forged iron ground bright at the edge, his plate and iron pitted, his belts and grip an
+  // oiled brown leather, his studs and buckles a dull brass
+  duelistEdge: mix("vellum", "slateLight", 0.45),
+  duelistSaya: mix("pitch", "oxblood", 0.32),
+  sellSteel: mix("slate", "slateLight", 0.55),
+  sellLeather: mix(mix("barrowBrown", "barrowDeep", 0.5), "pitch", 0.15),
+  sellBrass: mix("brass", "barrowBrown", 0.25),
 };
 
 /**
@@ -559,6 +569,27 @@ export function fabrics() {
     sellSash: mat(wool(GEAR.sellSash, { seed: 251, dirt: 0.35 }), { side: D }),
     // the buff coat painted flat and matte, as variant B was: the leather grain's scuffs lit it gold
     buffCoat: mat(linen(GEAR.buffCoat, { seed: 253, dirt: 0.3 }), { rough: 0.75, side: D }),
+    // the mercenary looks' own wear (FS-1J1CB §Change: Looks v2 R63), never the mercenary's
+    // textures at a new tone. The Duelist's is kept: a blade polished bright and clean, its iron
+    // blackened with little rust, lacquer with a sheen, matte wool and silk cord; the Sellsword's is
+    // used hard: forged iron pitted, dented and rusted at the seams, plate gone dull, leather oiled
+    // dark and scuffed, brass dulled with grime. Polished steel and matte cloth against oiled
+    // leather and pitted iron (R63's per-spec contrast).
+    duelistSteel: mat(plate(GEAR.steel, { dents: 0.05, rust: 0, dirt: 0.06, seed: 371 }), { metal: 0.9, rough: 0.22 }),
+    duelistEdgeSteel: mat(plate(GEAR.duelistEdge, { dents: 0.02, rust: 0, dirt: 0.02, seed: 373 }), { metal: 0.9, rough: 0.18 }),
+    duelistIron: mat(plate(GEAR.blackIron, { dents: 0.12, rust: 0.05, dirt: 0.15, seed: 375 }), { metal: 0.75, rough: 0.4 }),
+    duelistLeather: mat(leather(GEAR.leatherDark, { seed: 377, dirt: 0.25 }), { rough: 0.6 }),
+    duelistSaya: mat(leather(GEAR.duelistSaya, { seed: 379, dirt: 0.05 }), { rough: 0.28 }),
+    duelistCord: mat(linen(GEAR.duelistSlate, { seed: 381, dirt: 0.2 }), { rough: 0.8, normal: 1.3 }),
+    duelistCore: mat(linen(GEAR.linen, { seed: 383, dirt: 0.3 }), { rough: 0.7 }),
+    sellSteel: mat(plate(GEAR.sellSteel, { dents: 0.6, rust: 0.3, dirt: 0.45, seed: 385 }), { metal: 0.7, rough: 0.5 }),
+    sellEdge: mat(plate(GEAR.steel, { dents: 0.35, rust: 0.05, dirt: 0.15, seed: 387 }), { metal: 0.85, rough: 0.3 }),
+    sellIron: mat(plate(GEAR.blackIron, { dents: 0.75, rust: 0.5, dirt: 0.55, seed: 389 }), { metal: 0.6, rough: 0.6 }),
+    sellPlate: mat(plate(GEAR.darkSteel, { dents: 0.8, rust: 0.35, dirt: 0.5, seed: 391 }), { metal: 0.7, rough: 0.52 }),
+    sellPlateDouble: mat(plate(GEAR.darkSteel, { dents: 0.8, rust: 0.35, dirt: 0.5, seed: 391 }), { metal: 0.7, rough: 0.52, side: D }),
+    sellLeather: mat(leather(GEAR.sellLeather, { seed: 393, dirt: 0.55 }), { rough: 0.45 }),
+    sellRoll: mat(wool(GEAR.sellSash, { seed: 397, dirt: 0.6 }), { normal: 1.4 }),
+    sellBrass: mat(plate(GEAR.sellBrass, { dents: 0.3, rust: 0, dirt: 0.45, seed: 395 }), { metal: 0.8, rough: 0.45 }),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),

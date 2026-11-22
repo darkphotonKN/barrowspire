@@ -381,7 +381,12 @@ lit) while the player stands inside.
   shoulder in place of the left spaulder; a half-cloak is not the archer's hood and cloak. The
   Sellsword's madder is dyed a charcoal black, never pure black, under a buff-leather coat
   buckled in brass, with a spaulder on each shoulder. *(Amended at the owner's pick, 2026-11-21,
-  FS-1J1CB.)*
+  FS-1J1CB.)* The knuckle-bowed dueling blade stays the base's. The Duelist carries a long-hilted
+  curved single-edged blade with a plain round guard and a grip about two fists long, swung
+  one-handed in the mercenary's cut; the Sellsword carries a broad falchion, a heavy wide blade
+  swelling to a clipped point on a long grip, carried and swung in one hand. Each spec's scabbard
+  is re-cut to its blade. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks
+  v2.)*
 - **Specializations:** a specialization re-dresses its class on the same rig, build, clips and
   scale, re-cutting its outline, its weapon and its detail, so a look reads as a different figure
   from its base and from its sibling in a black fill, and a level-20 character reads as what it
@@ -453,14 +458,30 @@ lit) while the player stands inside.
     iron against the Hunter's matte fur. Her longer cloak and mantle filled more of her back, so
     the soot is lifted again, near to slate. *(Amended at the owner's charter, 2026-11-22,
     FS-1J1CB §Change: Looks v2.)*
-  - **Duelist** (mercenary): a wrapped robe in faded madder, wide-sleeved and split-skirted to
-    mid-calf, a cut and not a costume (no armour lacing, no topknot), a slate-black sash and a
-    half-cloak from the off shoulder on cloak bones. The V shows the breeches' dark wool beneath
-    it. The half-cloak hangs wide of the arm and stops at his side: carried round the front of
-    the arm, the cut's free arm, thrown out and back, lifted it over his head like a wing. The
-    knee cop goes under the robe. *(Amended in the Duelist's bake, 2026-11-22, FS-1J1CB.)*
-  - **Sellsword** (mercenary): a sleeveless buff-leather coat buckled in brass over the arming
-    coat dyed charcoal black, a spaulder on each shoulder and a purse at the belt.
+  - **Duelist** (mercenary): long and narrow at the top, a bell at the hem. A wrapped robe in
+    faded madder, its V and collar bound in slate, deep bell sleeves banded in slate at the mouth,
+    the skirt let down near to the ankle, open at the front and flared wide at the hem (v1's
+    side splits swung out as loose flaps once the hem was this wide); a slate-black sash wound
+    twice; the slate-black half-cloak from the off shoulder on cloak bones, let down past the hip
+    and tied across the chest by a cord, hung wide of the arm and stopping at his side (carried
+    round the front of the arm, the cut's free arm lifted it over his head like a wing). A cut
+    and not a costume: no armour lacing, no topknot, no ornament. The long-hilted curved blade in
+    his right hand, polished bright and ground at the edge, its round iron guard plain; its
+    lacquered scabbard thrust through the sash at the left hip and slung back, swinging down as
+    he falls. His run's wrist takes back less of the pump than the mercenary's, so the long hilt
+    keeps off his forearm. The V shows the breeches' dark wool; the knee cop goes under the robe.
+    Polished steel, lacquer and matte wool. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB
+    §Change: Looks v2.)*
+  - **Sellsword** (mercenary): square and heavy, used hard. The arming coat dyed charcoal black,
+    its skirts flared wide at mid-thigh; over it a sleeveless buff-leather coat closed with five
+    brass buckles between rows of brass studs, its own tabbed skirts over the black, a band of
+    black showing below them; a high buff collar; a big four-lame spaulder on each shoulder; flared
+    buff gauntlet cuffs; a broad studded sword belt in place of the sash, the purse on it;
+    bucket-topped boots; a rolled bedroll strapped across his back; his hair cropped and his beard
+    grown full. The broad falchion in his right hand, dark forged iron ground bright at the edge,
+    and its wide scabbard slung on the left hip. Pitted iron, oiled leather and dull brass against
+    the Duelist's polish. *(Amended at the owner's charter, 2026-11-22, FS-1J1CB §Change: Looks
+    v2.)*
 
   Every look keeps the faces rule, passes the leg and cloak guards on every clip, and is
   approved on a contact sheet beside its base class before it ships. If a later contact-sheet
