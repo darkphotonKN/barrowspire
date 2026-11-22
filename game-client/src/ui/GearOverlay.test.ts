@@ -151,7 +151,10 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     });
     return self;
   };
+  /** How many Graphics objects were made: each is its own draw, so their count is a cost. */
+  const made = { graphics: 0 };
   const graphics = () => {
+    made.graphics++;
     const at = seq++;
     let fill = -1;
     const own: (typeof triangles)[number][] = [];
@@ -310,6 +313,7 @@ function recordingScene(width = 1080, height = 720, renderScale = 1) {
     keyboard: keys.keyboard,
     keys: keys.keys,
     captured: keys.captured,
+    made,
   };
 }
 
@@ -388,6 +392,17 @@ describe("GearOverlay (FS-HRH2J §A, §B)", () => {
     for (const c of fills) expect(menu).not.toContain(c);
     // the ground is the party panel's carved frame, in the game palette (FS-HRH2J § Change C16)
     expect(strokes).toContain(BARROW_HEX.brass);
+  });
+
+  // Each Graphics is its own draw, and a well between two icons breaks the icons' batch: a bag of
+  // 28 items, a Graphics a well, halved the frame rate at render scale 2 (seen 2026-11-22: 75 fps
+  // open against 144 closed; the wells in one Graphics, 144 open). The wells are one drawing.
+  it("should draw every well of the slots and the bag in one Graphics, however full the bag", () => {
+    const full = Array.from({ length: 28 }, (_, i) => item(`i${i}`, { weapon_type: "sword" }));
+    const { made } = overlayOnStage(full, worn({ weapon: sword, head: helm }));
+    const wells = BAG_CAPACITY + 10;
+    // the frame, its title rule, the divider, the hover ring and the wells: a handful, never one a well
+    expect(made.graphics).toBeLessThan(wells / 4);
   });
 
   it("should show the item tip on hover (R15)", () => {

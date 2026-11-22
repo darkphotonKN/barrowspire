@@ -119,10 +119,11 @@ export class LightMap {
     const existing = scene.textures.exists(TEXTURE_KEY)
       ? (scene.textures.get(TEXTURE_KEY) as Phaser.Textures.DynamicTexture)
       : undefined;
-    // the backing store's px, not the logical view's: sharp at any render scale (FS-ZAJMH R6)
+    // the backing store's px, not the logical view's: sharp at any render scale (FS-ZAJMH R6);
+    // at the camera's exact size, odd or not (see `fit`)
     this.texture =
       existing ??
-      scene.textures.addDynamicTexture(TEXTURE_KEY, cam.width, cam.height)!;
+      scene.textures.addDynamicTexture(TEXTURE_KEY, cam.width, cam.height, false)!;
 
     this.image = scene.add
       .image(0, 0, TEXTURE_KEY)
@@ -324,10 +325,13 @@ export class LightMap {
       // (probe: drawn right after 64 -> 200x160). Kept because it is harmless: a resize is rare
       // and the texture is refilled every frame, so a fresh one costs nothing seen.
       this.texture.destroy();
+      // never `forceEven`: Phaser would lift an odd side by one, the size would never match the
+      // camera, and the full-screen texture would be made again every frame
       this.texture = this.scene.textures.addDynamicTexture(
         TEXTURE_KEY,
         cam.width,
         cam.height,
+        false,
       )!;
       this.image.setTexture(TEXTURE_KEY).setSize(cam.width, cam.height);
     }
