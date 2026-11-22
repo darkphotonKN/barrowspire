@@ -83,7 +83,11 @@ function fakeScene(renderScale = 1, scroll = { x: 0, y: 0 }) {
     }
     return img;
   };
-  const addDynamicTexture = vi.fn((_key: string, w: number, h: number) => makeTexture(w, h));
+  // as Phaser's: `forceEven` (default true) floors the size, then lifts an odd side by one
+  const even = (n: number) => (Math.floor(n) % 2 ? Math.floor(n) + 1 : Math.floor(n));
+  const addDynamicTexture = vi.fn((_key: string, w: number, h: number, forceEven = true) =>
+    forceEven ? makeTexture(even(w), even(h)) : makeTexture(w, h),
+  );
   const scene = {
     events,
     cameras: {
@@ -334,6 +338,18 @@ describe("LightMap at a render scale (FS-ZAJMH R6: follows the backing store, al
     ]);
     expect(fake.placed.textures).toBe(1);
     expect(fake.placed.scale).toBe(0.5);
+  });
+
+  // a window that fits the camera to an odd side: Phaser rounds a dynamic texture up to even by
+  // default, and a texture one px off the camera was destroyed and made again every frame, a
+  // full-screen framebuffer a frame (seen 2026-11-22: 1378x775 camera, 1378x776 texture)
+  it("should build its texture once for a camera with an odd side, at the camera's exact size", () => {
+    const fake = fakeScene(1);
+    Object.assign(fake.scene.cameras.main, { width: 1377, height: 775 });
+    const map = new LightMap(fake.scene as unknown as Scene, BARROW_HEX.slate);
+    for (let t = 0; t < 10; t++) map.update(t * 16);
+    expect(fake.addDynamicTexture).toHaveBeenCalledTimes(1);
+    expect([fake.texture.width, fake.texture.height]).toEqual([1377, 775]);
   });
 
   it("should make its texture afresh when a scene starts at another render scale than the last", () => {
