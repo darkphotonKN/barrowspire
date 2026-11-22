@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { composeDarkRoom, composeLooks, contactPages, lookSets, writeReview } from "./contact.mjs";
+import { composeDarkRoom, composeLooks, composeOutline, contactPages, lookSets, outlineTexts, writeReview } from "./contact.mjs";
 import { decodePng } from "./png.mjs";
 
 // a creature sheet as the bake hands it to the review: 8 facings, four clips of `n` frames
@@ -52,7 +52,7 @@ const classSheet = (name, rgb, clips = { idle: 2, walk: 3 }) => ({
   animations: Object.fromEntries(Object.entries(clips).map(([a, n]) => [a, { fps: 8, loop: true, frames: Array.from({ length: 8 }, () => Array(n).fill(solid(rgb))) }])),
 });
 const FACINGS = ["e", "se", "s", "sw", "w", "nw", "n", "ne"];
-const THEME = { barrowDeep: "#101010", charcoal: "#202020", barrowBrown: "#403020" };
+const THEME = { barrowDeep: "#101010", charcoal: "#202020", barrowBrown: "#403020", vellum: "#c0c0c0", pitch: "#000000" };
 const at = (c, x, y) => [...c.rgba.subarray((y * c.width + x) * 4, (y * c.width + x) * 4 + 3)];
 
 describe("the spec looks' review (FS-1J1CB R12, lib/contact.mjs)", () => {
@@ -101,7 +101,50 @@ describe("the spec looks' review (FS-1J1CB R12, lib/contact.mjs)", () => {
     const sheets = [base, hunter];
     const manifest = { sheets: {} };
     const files = writeReview({ sheets: [], facings: FACINGS, labels: new Map(), manifest, theme: THEME, looks: lookSets(sheets), darkRoom: { sheet: base, floor: [10, 10, 10], ambient: [200, 200, 200] }, dir });
-    expect(files.map((f) => f.slice(dir.length + 1))).toEqual(["contact-looks-archer.png", "contact-darkroom-archer.png", "index.html"]);
-    for (const f of files.slice(0, 2)) expect(decodePng(readFileSync(f)).width).toBeGreaterThan(0);
+    expect(files.map((f) => f.slice(dir.length + 1))).toEqual(["contact-looks-archer.png", "contact-darkroom-archer.png", "contact-outline-archer.png", "index.html"]);
+    for (const f of files.slice(0, 3)) expect(decodePng(readFileSync(f)).width).toBeGreaterThan(0);
+  });
+});
+
+describe("the outline strip (FS-1J1CB §Change: Looks v2 R70, lib/contact.mjs)", () => {
+  // the strike is attack key 3: each sheet's attack frames solid, its strike frame a clear one
+  const withAttack = (name, rgb) => {
+    const s = classSheet(name, rgb, { idle: 2, attack: 7 });
+    const empty = Buffer.alloc(FW * FH * 4).toString("base64");
+    s.animations.attack.frames = s.animations.attack.frames.map((dir) => dir.map((b64, i) => (i === 3 ? solid(rgb) : empty)));
+    return s;
+  };
+  const base = withAttack("char_knight_base", [200, 0, 0]);
+  const guardian = withAttack("char_knight_guardian", [0, 200, 0]);
+  const berserker = withAttack("char_knight_berserker", [0, 0, 200]);
+
+  it("fills each look, its base and its sibling black on a pale ground, idle and strike × 8 facings, a row each", () => {
+    const c = composeOutline(base, [guardian, berserker], FACINGS, new Map(), THEME, 1);
+    const black = (x, y) => at(c, x, y).every((v) => v === 0);
+    const cell = FW / SCALE;
+    // every colour on the strip is the ground, the pale cells or black: no sheet's own colour shows
+    const colours = new Set();
+    for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) colours.add(at(c, x, y).join());
+    for (const rgb of [[200, 0, 0], [0, 200, 0], [0, 0, 200]]) expect(colours).not.toContain(rgb.join());
+    // black runs across the first figure row: idle and strike in each of the 8 facings
+    let y = 0;
+    while (y < c.height && ![...Array(c.width).keys()].some((x) => black(x, y))) y++;
+    let runs = 0;
+    for (let x = 1; x < c.width; x++) if (black(x, y + 1) && !black(x - 1, y + 1)) runs++;
+    expect(runs).toBe(16);
+    // three rows of figures, one per sheet
+    let rows = 0;
+    const col = [...Array(c.width).keys()].find((x) => black(x, y + 1));
+    for (let yy = 1; yy < c.height; yy++) if (black(col, yy) && !black(col, yy - 1)) rows++;
+    expect(rows).toBe(3);
+    expect(cell).toBe(8);
+  });
+
+  it("prints each look's R51 figures under the strip, against its base and its sibling", () => {
+    const texts = outlineTexts({ base, looks: [guardian, berserker] }, FACINGS);
+    expect(texts).toEqual([
+      "char_knight_guardian  ·  outline vs char_knight_base 0.000  ·  vs char_knight_berserker 0.000",
+      "char_knight_berserker  ·  outline vs char_knight_base 0.000  ·  vs char_knight_guardian 0.000",
+    ]);
   });
 });

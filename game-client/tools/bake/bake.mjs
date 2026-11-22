@@ -6,7 +6,7 @@
 //                             the cast and the tower interior in tools/bake/review/ (gitignored; lib/contact.mjs)
 //                             and the building exteriors laid as a mock building (lib/building.mjs),
 //                             and each baked spec look beside its class with its dark-room strip
-//                             (FS-1J1CB R12)
+//                             (FS-1J1CB R12) and its outline strip (FS-1J1CB §Change: Looks v2 R70)
 //   npm run bake -- --check   bake, write nothing, exit 1 if the output would change
 //
 // Characters and creatures (FS-2325V §E, ADR-0021) are authored in page/characters/: one
@@ -45,7 +45,7 @@ import { downscale } from "./lib/downscale.mjs";
 import { cropFrame, trimGrid, trimRect } from "./lib/trim.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadLighting, loadManifestValidator, loadTheme } from "./lib/source.mjs";
-import { labelTexts, lineupSets, lookSets, writeReview } from "./lib/contact.mjs";
+import { labelTexts, lineupSets, lookSets, outlineTexts, writeReview } from "./lib/contact.mjs";
 import { darkRoom, darkestGround } from "./lib/darkRoom.mjs";
 import { buildingReviewTexts, writeBuildingReview } from "./lib/building.mjs";
 
@@ -119,7 +119,11 @@ async function bakeAll() {
     if (!CHECK && review.length)
       for (const l of await page.evaluate(
         (t) => window.bakeLabels(t),
-        [...labelTexts([...review, ...lineupSets(sheets).flatMap((l) => l.sheets)], init.facings), ...buildingReviewTexts()],
+        [
+          ...labelTexts([...review, ...lineupSets(sheets).flatMap((l) => l.sheets)], init.facings),
+          ...lookSets(sheets).flatMap((set) => outlineTexts(set, init.facings)),
+          ...buildingReviewTexts(),
+        ],
       ))
         labels.set(l.text, { w: l.w, h: l.h, px: Buffer.from(l.rgba, "base64") });
     return { tile: init.tile, facings: init.facings, sheets, labels };
@@ -284,6 +288,9 @@ async function main() {
   const room = darkRoom(manifest, (k) => ({ width: manifest.atlases[k].width, height: manifest.atlases[k].height, rgba: images[k] }));
   console.log(`bake: dark-room floor ${room.floor.toFixed(4)} (${room.darkest})`);
   for (const l of room.looks) console.log(`  ${l.sheet.padEnd(28)} back ${l.luminance.toFixed(4)}${l.luminance < room.floor ? "  DARKER THAN THE FLOOR" : ""}`);
+  // each look's outline against its base and its sibling (FS-1J1CB §Change: Looks v2 R51): logged, not gated
+  console.log("bake: outline figures (XOR over union of the n, e, s, w idles at 1x)");
+  for (const set of lookSets(baked.sheets)) for (const t of outlineTexts(set, manifest.facings)) console.log(`  ${t}`);
 
   const json = `${JSON.stringify(manifest, null, 2)}\n`;
   const changed = [];

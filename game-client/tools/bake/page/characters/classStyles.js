@@ -125,14 +125,14 @@ export const KNIGHT_STYLE = {
 export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations), scale: 1.5 };
 
 /**
- * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a bearded axe
- * in each hand (gear.js `beardedAxe`), no shield. At rest both arms hang low and a little out, the
- * wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so the heads hang
- * forward of the legs with the edge facing forward and a little down (axe.test.mjs). In the walk
- * both wrists take back most of the arms' swing, so the axes sway without swinging up. In the run
- * both arms pump, shorter than a sword arm and bent less, the wrists holding the hafts forward and
- * down so the edges keep facing forward, never up. The cut is `cleave` (clips.js): wide, the free
- * arm swung back against it.
+ * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a heavy
+ * bearded axe in each hand (warriorKit.js `heavyAxe`), no shield. At rest both arms hang low and a
+ * little out, the wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so
+ * the heads hang forward of the legs with the edge facing forward and a little down
+ * (axe.test.mjs). In the walk both wrists take back most of the arms' swing, so the axes sway
+ * without swinging up. In the run both arms pump, shorter than a sword arm and bent less, the
+ * wrists holding the hafts forward and down so the edges keep facing forward, never up. The cut is
+ * `cleave` (clips.js): wide, the free arm swung back against it.
  */
 export const BERSERKER_STYLE = {
   attack: "cleave",
@@ -153,6 +153,16 @@ export const BERSERKER_STYLE = {
     hold: pose({ upperArmR: [0, 0, -0.12], upperArmL: [0, 0, 0.12], handR: [CLEAVE_CARRY, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }),
   },
 };
+
+/**
+ * The Guardian's cut (FS-1J1CB §Change: Looks v2 R54, R62), his own beside {@link KNIGHT_STYLE}: the
+ * knight's compact slash behind the raised shield, his shield arm carried a little higher and out
+ * through every key ({@link GUARDIAN_SHIELD_LIFT}), so the flanged mace, swung on through to low
+ * past the left hip, passes under and before the shield's bigger face and never through it
+ * (warriorLooks.test.mjs). The carry, the walk and the run are the knight's.
+ */
+export const GUARDIAN_SHIELD_LIFT = pose({ upperArmL: [-0.1, 0, 0.08] });
+export const GUARDIAN_STYLE = { ...KNIGHT_STYLE, attackExtra: GUARDIAN_SHIELD_LIFT };
 
 export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
 
@@ -222,21 +232,62 @@ export const WIZARD_STYLE = {
 };
 
 /**
- * The fist's give as a mage specialization falls (FS-1J1CB R3, R4), by death key: none while she
- * buckles, then the wrist lets the focus fall level as she goes down, lying a little off the floor
- * at the fist. The focus runs 0.2 H back past the fist and its head 0.3 H on, so the sceptre's
- * death (no wrist at all) drives its head and its butt through the ground; this levels it,
- * heading kept, turned a little on the haft so the ring or cage lies more flat than upright. The
- * hand's own angles are zero in the death clip, so these are its whole turn.
+ * The Spellwarden's carry (FS-1J1CB §Change: Looks v2 R56, R62), her own beside
+ * {@link WIZARD_STYLE}: the iron-shod warding staff (mageKit.js `wardingStaff`) stood upright
+ * beside her, the forearm out and forward of her right hip, the wrist turned in so the staff
+ * stands plumb, the fist round it a little under its middle, so the shoe hangs clear over the
+ * ground and the cage stands over her crown.
+ * The walk swings that arm short, the wrist keeping the staff upright; in the run the forearm pumps
+ * level, out from the hip and never crossing in, the wrist holding the staff up. The cast is the
+ * wizard's thrust, the staff's head driven at the foe; in the death the fist lets the staff fall
+ * level, clear of the ground ({@link WARD_DEATH}).
  */
-export const FOCUS_DEATH = [null, null, null, [-0.1, 0, -0.3], [0.21, 0.07, -0.8], [-0.89, -0.1, -0.85], [-0.97, -0.04, -0.85]];
+export const WARD_HOLD = pose({ upperArmR: [-0.2, 0, -0.3], foreArmR: [-0.95, 0, 0], handR: [-0.2, -0.45, 0], foreArmL: [-0.15, 0, 0] });
+export const WARD_RUN_HOLD = pose({ upperArmL: [0, 0, 0.14], upperArmR: [-0.1, 0, -0.3], handR: [0.12, -0.45, 0] });
+/**
+ * The fist's give as she falls, by death key: none while she buckles, then the wrist turns the
+ * long staff out from under her and lays it level beside her as she goes down, its shoe and its
+ * cage both off the floor. The hand's own angles are zero in the death clip, so these are its
+ * whole turn.
+ */
+export const WARD_DEATH = [null, null, null, [0, -0.4, 0], [0.6, -0.8, -1.2], [0, -1.6, -0.8], [0.2, -1.6, -0.4]];
+export const SPELLWARDEN_STYLE = {
+  ...WIZARD_STYLE,
+  hold: WARD_HOLD,
+  walk: { ...WIZARD_STYLE.walk, arms: [0.8, 0.3] },
+  run: { ...WIZARD_STYLE.run, arms: [1, 0.4], wrist: [0, 1], cross: [0, 0], hold: WARD_RUN_HOLD },
+  deathExtra: (i) => WARD_DEATH[i] && pose({ handR: WARD_DEATH[i] }),
+};
 
 /**
- * A mage specialization's carry and cast (FS-1J1CB R3, R4): the wizard's own, the focus held and
- * thrust as the sceptre is ({@link WIZARD_STYLE}); in the death the wrist lays the longer focus
- * level ({@link FOCUS_DEATH}).
+ * The Pyromancer's carry (FS-1J1CB §Change: Looks v2 R57, R62), her own beside
+ * {@link WIZARD_STYLE}: the brazier rod (mageKit.js `brazierRod`) held up out from her right
+ * side like a torch, the arm lifted out, the forearm level and the wrist turned in so the rod
+ * stands upright, the fire riding high and out from her, never against her face or the gown. The walk swings that arm short; the run pumps it level, out
+ * from the hip. The cast is the wizard's thrust, the cage turned out from her head as she draws
+ * it back ({@link PYRE_CAST}); in the death the fist lays the brazier down clear of the ground
+ * ({@link PYRE_DEATH}).
  */
-export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] && pose({ handR: FOCUS_DEATH[i] }) };
+export const PYRE_HOLD = pose({ upperArmR: [-0.1, 0, -0.6], foreArmR: [-1.2, 0, 0], handR: [-0.05, -0.7, 0], foreArmL: [-0.15, 0, 0] });
+export const PYRE_RUN_HOLD = pose({ upperArmL: [0, 0, 0.14], upperArmR: [-0.15, 0, -0.45], handR: [0.12, -0.6, 0] });
+/**
+ * The fist's own turn on each cast key (rad, added to the wizard's): as she draws the brazier back
+ * by her shoulder (key 1) the wrist turns its cage out from her head.
+ */
+export const PYRE_CAST = [null, [0, 0.25, 0], null, null, null, null, null];
+/**
+ * The fist's give as she falls, by death key: none while she buckles, then the wrist lays the
+ * brazier on its side out from under her, its cage off the floor.
+ */
+export const PYRE_DEATH = [null, null, null, null, [0.2, -0.4, -1.2], [0.4, -1.6, 0], [0.4, -1.6, -0.8]];
+export const PYROMANCER_STYLE = {
+  ...WIZARD_STYLE,
+  hold: PYRE_HOLD,
+  walk: { ...WIZARD_STYLE.walk, arms: [0.8, 0.3] },
+  run: { ...WIZARD_STYLE.run, arms: [1, 0.4], wrist: [0, 1], cross: [0, 0], hold: PYRE_RUN_HOLD },
+  attackExtra: (i) => PYRE_CAST[i] && pose({ handR: PYRE_CAST[i] }),
+  deathExtra: (i) => PYRE_DEATH[i] && pose({ handR: PYRE_DEATH[i] }),
+};
 
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
@@ -284,3 +335,15 @@ export const MERCENARY_STYLE = {
     { z: -0.01 },
   ),
 };
+
+/**
+ * The Duelist's run (FS-1J1CB §Change: Looks v2 R60, R62), his own beside {@link MERCENARY_STYLE}:
+ * the long-hilted blade (mercKit.js `longBlade`) carried as the mercenary carries his, the wrist
+ * taking back less of the arm's pump ({@link DUELIST_RUN_WRIST}, the mercenary's RUN_WRIST 0.85).
+ * Taken back the whole way, the wrist folded the blade's point down to the forearm's line at the
+ * front of the pump, and the long hilt lay along the inside of the forearm, the butt 0.036 H off
+ * its line (mercLooks.test.mjs); so the point rides a little higher at the front of the pump. The
+ * carry, the walk, the cut and the parry are the mercenary's.
+ */
+export const DUELIST_RUN_WRIST = [0, 0.55];
+export const DUELIST_STYLE = { ...MERCENARY_STYLE, run: { ...MERCENARY_STYLE.run, wrist: DUELIST_RUN_WRIST } };

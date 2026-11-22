@@ -728,7 +728,12 @@ export function cloakBones(rig, o = {}) {
   }
 }
 
-/** The cloak sheet: an open tube behind the shoulders, weighted down the cloak chain. */
+/**
+ * The cloak sheet: an open tube behind the shoulders, weighted down the cloak chain. `cutFrom`
+ * cuts it short from a cloak that long (H): the same fullness at each height as the longer cloak,
+ * ending at `length` (the Hunter's hunting cape, FS-1J1CB §Change: Looks v2 R49), where a short
+ * cloak cut whole would reach its full depth higher and stand out behind the shoulders.
+ */
 export function cloak(rig, mat, o = {}) {
   const [, ny] = J(rig, "neck");
   const sw = rig.p.shoulderW;
@@ -743,21 +748,24 @@ export function cloak(rig, mat, o = {}) {
   for (let i = 0; i < N; i++) {
     const t = i / (N - 1);
     const y = top - len * t;
-    const lat = (0.075 + 0.07 * Math.min(1, t * 2.4) + 0.05 * t * flare) * sw;
-    const dep = (0.052 + 0.045 * Math.min(1, t * 2.2) + 0.03 * t * flare) * td;
+    // how far down a cloak `cutFrom` long this height is (t itself when uncut): its fullness and
+    // its weights down the cloak chain are the longer cloak's (cloakBones laid that long)
+    const d = o.cutFrom ? (t * len) / o.cutFrom : t;
+    const lat = (0.075 + 0.07 * Math.min(1, d * 2.4) + 0.05 * d * flare) * sw;
+    const dep = (0.052 + 0.045 * Math.min(1, d * 2.2) + 0.03 * d * flare) * td;
     // cloak chain weights: segment index along its length
-    const k = t * 4;
+    const k = d * 4;
     const w = {};
-    if (t < 0.08) {
-      w.chest = 1 - t / 0.08;
-      w.cloak0 = t / 0.08;
+    if (d < 0.08) {
+      w.chest = 1 - d / 0.08;
+      w.cloak0 = d / 0.08;
     } else {
       const i0 = Math.min(3, Math.floor(k - 0.3));
       const f = THREE.MathUtils.clamp(k - 0.3 - i0, 0, 1);
       w[`cloak${Math.max(0, i0)}`] = 1 - f;
       w[`cloak${Math.min(3, i0 + 1)}`] = (w[`cloak${Math.min(3, i0 + 1)}`] ?? 0) + f;
     }
-    cps.push({ p: [0, y, -back * 0.2 - 0.012 * t], r: [lat, dep], w });
+    cps.push({ p: [0, y, -back * 0.2 - 0.012 * d], r: [lat, dep], w });
   }
   const arc = [-Math.PI / 2 - spread, -Math.PI / 2 + spread];
   const drop = o.ragged

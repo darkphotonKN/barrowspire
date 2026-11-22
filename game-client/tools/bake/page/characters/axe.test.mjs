@@ -1,6 +1,6 @@
-// The Berserker's bearded axes (FS-1J1CB R2, R28): built on his own rig (cast.js `knight` in the
-// look, warriorLooks.js), posed through his own clips, each axe's cutting edge read back from the
-// mesh as the bake builds it. The edge faces forward and down in the carry and leads the swing,
+// The Berserker's heavy bearded axes (FS-1J1CB R2, R28, §Change: Looks v2 R55): built on his own
+// rig (cast.js `knight` in the look, the warrior kit's `heavyAxe`, warriorKit.js), posed through
+// his own clips, each axe's cutting edge read back from the mesh as the bake builds it. The edge faces forward and down in the carry and leads the swing,
 // in the right hand's attack and the left hand's off-hand attack alike; the hand is never turned
 // over for it (the guideline's normal grip): the head is set so in the grip frame.
 
@@ -80,6 +80,28 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
 
   it("carries a bearded axe in each hand", () => {
     expect(Object.keys(axes).sort()).toEqual(["L", "R"]);
+  });
+
+  it("makes each axe heavy (R55): a haft about 0.47 H, about 1.3x the old 0.36, wrapped in cord to a pommel knob", () => {
+    for (const side of ["L", "R"]) {
+      const { haft, grip, knob, bit } = axes[side].userData.axe;
+      expect(haft).toBeGreaterThanOrEqual(0.45);
+      expect(haft).toBeLessThanOrEqual(0.49);
+      // the cord runs from the knob up past the fist
+      expect(grip.from).toBeLessThan(0);
+      expect(grip.to).toBeGreaterThan(0.06);
+      expect(knob).toBeLessThan(grip.from);
+      // a broader bit and beard than the old one's 0.118 H out from the haft and 0.125 H of edge
+      expect(bit.out).toBeGreaterThan(0.14);
+      expect(bit.edge).toBeGreaterThan(0.155);
+    }
+  });
+
+  it.each(["idle", "walk", "run"])("keeps each heavier head off the ground through the %s", (anim) => {
+    clips[anim].forEach((p, i) => {
+      const e = read(rig, axes, p);
+      for (const side of ["L", "R"]) expect(e[side].at.y, `${anim} @${i} ${side}`).toBeGreaterThan(0.03);
+    });
   });
 
   it("holds each axe's edge forward and not up in the idle carry, on every frame", () => {
