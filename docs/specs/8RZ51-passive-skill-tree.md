@@ -533,3 +533,521 @@ is edited and regenerated with `make gen`, never hand-edited.
 - Balancing: every number here is a placeholder tuned later under `Tunes FS-8RZ51`.
 - Re-applying a spend to a body already in a field or a run (R24).
 - Rebindable keys.
+
+## Change: Tree v2: a traversal graph with locked sides
+Status: work-order
+Date: 2026-11-22
+
+> Charter approved by Kranti, 2026-11-22. Every decision below is a *charter default*, with its
+> reason where the charter or this promotion gave one; the charter's own words are quoted where it
+> settled the point. Kranti's ask, in his words: the tier-6 nodes don't say what they do ("your look
+> changes" isn't the point, it's a note); the icons should be whiter and higher contrast, and a lit
+> node should light the whole plate; there are too many points: "single point of basic passives
+> that give everyone the same amount... 1 point here, 1 point there, with the tree side you didn't
+> choose [unreachable]... We want some that you can't reach at all... Add some links in between
+> where if you choose that side, you can't get the other side, and that it checks out." The
+> specialization tree will grow, so this is built for extension.
+>
+> **What this changes in the work order above:** R2 (the six-tier shape), R5 (one refund path, V20),
+> R9 (the spend rule), R28 (fillers retired), R31's gate ("18 spent" and the one-of-two rule), R35
+> (the layout and the five states), R37 (the tier-3 and tier-6 words), R40 (the filler pictures, the
+> picture count, the ink), R44 (how the Passives group sums), and the "Points and rules", "Effects"
+> and "Client" acceptance rows that name tiers, fillers or the 11-node shape. **Unchanged:** R1, R3,
+> R4, R6–R8, R10–R27, R29, R30's effect, R32–R34, R36, R38 (save the ask, V27), R39, R41–R43, the
+> API surface's RPC and socket shapes, and every kicker, ability and specialization rule.
+>
+> **Lanes:** every slice is agent-authored; the server slices are named in the charter, so this is
+> not server work taken on by inference. **Vocabulary** folded into `game-service/CONTEXT.md` by
+> `domain-model` (2026-11-22): *traversal node*, *link*, *reachable*, *exclusive group*, *side*,
+> *locked side*; *tree tier*, *tier gate* and *filler node* retired.
+
+### Summary
+
+The tree stops being six tiers of gated rows and becomes a **graph**: a node can be ranked once any
+node it links from is held. Most nodes are now one-rank **traversal** nodes (Vitality, Might, Haste,
+Fleetness), the same for every class, which carry a character from the root to the kickers, the
+ability and the specialization. The upper and lower halves each split into two **sides**, and
+taking any node on one side **locks** the other side for good, as the specialization pair already
+did. The cheapest path to a specialization costs 10 of the 20 points, so a character can never fill
+even the sides it chose, and the sides it didn't choose are out of reach.
+
+The overlay draws the graph: its links, node sizes by kind, a locked side under a lock mark. Every
+node now says what it does, the specialization in plain words with its numbers. The pictures are
+drawn in near-white ink, and a lit node lights its whole plate. Existing spends are void: one
+migration clears every character's ranks, a one-time full refund (alpha, very few players).
+
+### Requirements
+
+Numbered 1–30 below and cited as **V1–V30**, apart from the work order's R1–R44.
+
+#### §V-A. The graph (game-server/common/passivetree)
+
+1. **The node, as the package and the golden carry it** *(charter default — reason: the gates
+   become links, so tier and gate leave the node)*: `id`, `class`, `slot`, `kind`, `maxRank`,
+   `requires` (node ids, **any of**, empty for the root), `minLevel` (0 when none), `exclusive`
+   (`{group, side}`, absent when the node is on no side), `perRank`, `kicker`. `tier` and `gate`
+   are gone from the node and the golden. The golden also gains a top-level `primaryAttributes`
+   (V14). Golden node order is the definition's: trunk, upper side a, upper side b, middle, lower
+   side a, lower side b, end, the specializations.
+2. **The shape, the same for every class** *(charter default)*. Slots, kinds, ranks, links, gates
+   and sides:
+
+   | Slot | Kind | Max rank | Requires (any of) | Min level | Exclusive | Per rank |
+   |---|---|---|---|---|---|---|
+   | `r1` | traversal | 1 | (root) | | | Vitality |
+   | `r2` | traversal | 1 | r1 | | | Might |
+   | `ua1` | traversal | 1 | r2 | | upper:a | Haste |
+   | `t2a` | kicker | 3 | ua1 | | upper:a | unchanged (R29) |
+   | `ua2` | traversal | 1 | t2a | | upper:a | Vitality |
+   | `ua3` | traversal | 1 | ua2 | | upper:a | Might |
+   | `ua4` | traversal | 1 | ua3 | | upper:a | Haste |
+   | `ub1` | traversal | 1 | r2 | | upper:b | Fleetness |
+   | `t2b` | kicker | 3 | ub1 | | upper:b | unchanged (R29) |
+   | `ub2` | traversal | 1 | t2b | | upper:b | Vitality |
+   | `ub3` | traversal | 1 | ub2 | | upper:b | Might |
+   | `ub4` | traversal | 1 | ub3 | | upper:b | Fleetness |
+   | `m1` | traversal | 1 | ua1, ub1 | | | Vitality |
+   | `m2` | traversal | 1 | m1 | | | Might |
+   | `t3` | ability | 1 | m2 | 10 | | none (R30) |
+   | `m3` | traversal | 1 | t3 | | | Vitality |
+   | `la1` | traversal | 1 | m3 | | lower:a | Haste |
+   | `t5a` | kicker | 3 | la1 | | lower:a | unchanged (R29) |
+   | `la2` | traversal | 1 | t5a | | lower:a | Vitality |
+   | `la3` | traversal | 1 | la2 | | lower:a | Might |
+   | `la4` | traversal | 1 | la3 | | lower:a | Haste |
+   | `lb1` | traversal | 1 | m3 | | lower:b | Fleetness |
+   | `t5b` | kicker | 3 | lb1 | | lower:b | unchanged (R29) |
+   | `lb2` | traversal | 1 | t5b | | lower:b | Vitality |
+   | `lb3` | traversal | 1 | lb2 | | lower:b | Might |
+   | `la5` | traversal | 1 | la4 | | lower:a | Vitality |
+   | `lb4` | traversal | 1 | lb3 | | lower:b | Fleetness |
+   | `m4` | traversal | 1 | la1, lb1 | | | Vitality |
+   | `lb5` | traversal | 1 | lb4 | | lower:b | Vitality |
+   | `t6a` | specialization | 1 | m4 | 20 | spec:a | none (R31) |
+   | `t6b` | specialization | 1 | m4 | 20 | spec:b | none (R31) |
+
+   31 nodes and 39 ranks per class. *(charter default (coordinator), 2026-11-22 — reason: removes the level-19 trap)*: there is no `m5`; the specializations require `m4`
+   directly, and each lower side ends in a fifth single node (`la5`, `lb5`, Vitality). `m1` and `m4` link from either side's first node, so a kicker
+   is never required. Requires are written as full ids (`warrior.r1`).
+3. **Ids stay permanent** (R5). The kicker, ability and specialization ids (`t2a`, `t2b`, `t3`,
+   `t5a`, `t5b`, `t6a`, `t6b`) keep their ids, rules and per-rank stats. The fillers `t1a`, `t1b`,
+   `t4a` and `t4b` are **retired**: no class defines them, and those slots are never used again.
+   Kind `filler` goes with them. This change's one-time refund (V20) is the refund path R5 asks
+   for. It is used once, here.
+4. **Points earned are unchanged** (R4): 1 per level-up from 2 to 19, 2 at level 20, 20 in all. No
+   respec.
+5. **The spend rule** (replaces R9; still one function, `CheckSpend`). A spend of node N to target
+   rank r for a character of class C, level L, holding H, answers in this order:
+   - N not one of C's nodes: **unknown node**;
+   - r ≤ H[N]: **already held**, a no-op success (R10, unchanged);
+   - r ≠ H[N] + 1: **out of order**; r > N's max rank: **max rank**;
+   - N has an `exclusive {group, side}` and any node of **another side of that group** is held at
+     rank ≥ 1: **side taken** (`PASSIVE_SIDE_TAKEN`);
+   - N has requires and none of them is held at rank ≥ 1, or L < N's `minLevel`: **not reachable**
+     (`PASSIVE_TIER_LOCKED`, the same code, V7);
+   - unspent(L, H) < 1: **no points**;
+   - otherwise **allowed**.
+
+   *(charter default — reason for the order: a locked side is for good, so it is the more useful
+   answer than "not connected", which it usually also is.)* The per-tier "points spent above"
+   gates are gone.
+6. **Locked sides.** A side is *taken* when any of its nodes is held at rank ≥ 1. Taking one side
+   of a group locks every node of every other side of it, permanently. Groups and sides are data:
+   a group may have any number of sides, and a node on no side belongs to no group *(charter
+   default — reason: future specialization sub-trees, e.g. three sides under one spec)*. Each class
+   has `upper` (a/b), `lower` (a/b) and `spec` (a/b). The specialization pair is the `spec` group,
+   so `otherSpecializationHeld` goes. `SpecializationOf` still reads `t6a`/`t6b` (FS-E1ZDG §B R7).
+7. **Refusal codes.** `PASSIVE_SIDE_TAKEN` is added to `common/errcode` and registered as a
+   refusal. `PASSIVE_TIER_LOCKED` now means "not reachable yet": not linked, or the level is too
+   low. The six existing codes stay registered (removing one would break a reader).
+   `PASSIVE_SPECIALIZATION_TAKEN` is no longer answered by the rule, because the spec pair refuses
+   with `PASSIVE_SIDE_TAKEN`. Its constant stays.
+8. **Unspent counts only nodes the definition knows**, each at most its max rank. A retired or
+   otherwise unknown id costs nothing *(charter default — reason: R42's "unknown ids are ignored",
+   applied to the points as well; a stray row never reads as points short)*.
+9. **The package names what the sides need.** Per class: `AbilityNode` and `SpecializationNodes`
+   (unchanged), the primary attributes (V14), and a read of which side of a group is taken, if any,
+   so game-service's words (V18) never restate the rule.
+10. **The math, pinned by a test per class** *(charter default — the charter: "must be stated and
+    pinned by a test")*:
+    - the cheapest path to either specialization is **10** points (r1, r2, ua1 or ub1, m1, m2, t3,
+      m3, la1 or lb1, m4, t6), leaving **10** of 20 *(charter default (coordinator), 2026-11-22 — reason: removes the level-19 trap)*;
+    - the chosen sides hold **13** more ranks (upper: a kicker at 3 and three singles; lower: a
+      kicker at 3 and four singles), more than 10, so at least 3 always stay unfilled;
+    - the unchosen sides (**15** ranks) and the other specialization can never be taken;
+    - **no trap** *(charter default (coordinator), 2026-11-22 — reason: removes the level-19 trap)*: everything above the lower fork holds at most **13** ranks (r1, r2, one
+      upper side's 7, m1, m2, t3, m3), so any character with 18 spent holds `la1` or `lb1`, and at
+      level 20 its 2 new points always reach `m4` and a specialization;
+    - the ability's cheapest path is **6** points (reachable by level 7), but it waits for level 10.
+
+    The test computes these from the definition (a cheapest-path walk over `requires`), never from
+    constants. A shape change that breaks one fails it.
+11. **Built for extension.** The rule, the math walk and the client layout read only `requires`,
+    `minLevel` and `exclusive`, never a slot name. A fixture tree with nodes past a specialization
+    and a three-sided group is ruled on and laid out with no code change (V-E's test).
+12. **The golden is rewritten** with `-update` (R6). The client test still fails when either side
+    has an id the other lacks.
+
+#### §V-B. Traversal nodes
+
+13. **Kind `traversal`**: 1 rank, the same four in every class, named in the client copy: Vitality,
+    Might, Haste, Fleetness *(charter default)*.
+14. **Their values** *(charter default; all placeholders, tuned later under `Tunes FS-8RZ51`)*:
+
+    | Node | Per rank (stat, amount, unit) | Reads |
+    |---|---|---|
+    | Vitality | `max_hp`, 5, flat | +5 max HP |
+    | Might | `primary_attribute`, 2, flat | +2 to the class's attribute |
+    | Haste | `attack_speed`, 2, percent | +2% attack speed |
+    | Fleetness | `move_speed`, 2, percent | +2% move speed |
+
+    - **Vitality's 5:** about 4% of the median class base max HP. game-service's class config has
+      warrior 150, mage 100, archer 100, mercenary 130, so the median is 115, 4% of that is 4.6,
+      and the whole number is **5**.
+    - **`primary_attribute`** is a new stat. The package names each class's primary attributes:
+      warrior `[strength]`, mage `[intelligence]`, archer `[agility]`, mercenary
+      `[strength, agility]`. Each one named gets the full amount, so a mercenary's Might is +2
+      Strength **and** +2 Agility, because the cut scales on their average. The golden carries
+      the table as `primaryAttributes`.
+    - Haste and Fleetness sum with gear inside gear's caps (R25).
+15. **Placement** is V2's table: the same in every class.
+
+#### §V-C. Effects (game-service)
+
+16. **`sumPassives` reads `max_hp`'s unit.** Percent is of own max HP at seating (R26; Thick Skin
+    keeps it). Flat adds whole points (Vitality). Both sum into the one max HP bonus.
+    `primary_attribute` adds its amount to each attribute the class names. A spend in town raises
+    the HUB body's max and current HP together (R27, unchanged).
+17. **The retired fillers' references go.** Stats no node names any more lose their constant and
+    their `sumPassives` row: `max_stamina`, `mana_regen`, and the bare `strength`, `intelligence`
+    and `agility` rows, now reached only through `primary_attribute`. Dead code is deleted, never
+    kept (docs/specs/README.md *Removal*). Tests that seated or spent `t1a`, `t1b`, `t4a` or `t4b`
+    move to live ids.
+18. **The refusal words** (game-service, §Edge States):
+    - not reachable, not linked: "Not reachable yet: take a node linked to it first.";
+    - not reachable, level too low: "Not reachable yet: reach level N.";
+    - side taken in the `spec` group: "You chose <specialization name>." (the words used today);
+    - side taken in any other group: "Locked: you chose the other side."
+
+    game-service holds no kicker names (they are the client's), so its words name only the spec.
+    The tooltip names the kicker (V25). A `PASSIVE_TIER_LOCKED` from character-service that
+    game-service's own check passed reads as a level still being recorded, the same as
+    `PASSIVE_NO_POINTS` does today (R21), because level is the only input the two can disagree on.
+    A `PASSIVE_SIDE_TAKEN` from character-service (a race, see §Edge States) answers in the
+    side-taken words.
+19. **The gRPC client maps `PASSIVE_SIDE_TAKEN`** to the rule's refusal, as it maps the six today.
+
+#### §V-D. Persistence (character-service)
+
+20. **Existing spends are void.** One migration, `000005`, clears `passive_ranks`
+    (`DELETE FROM passive_ranks`). It runs once and is a **one-time full refund** of every
+    character's points, the tier-3 ability and the specialization included. Every character reads
+    back `earned(level)` unspent and no specialization. The down migration is a no-op: the refund
+    cannot be undone. *(charter default — reason: alpha, a very small player base; mapping old
+    ranks onto the new shape would invent choices the player never made.)* It rolls out with a
+    redeploy of game-service, so no seated body keeps its old ranks. The table, its key and its
+    rank check (1..3) are unchanged.
+21. **Unknown ids are still ignored** everywhere: the rule (V8), `sumPassives` (it walks the
+    class's nodes), the client (R42). A spend naming one is refused as an unknown node.
+22. **No `.proto`, gateway or OpenAPI change.** `PassiveRank`, the character read and
+    `SpendPassivePoint` keep their shape. Only the refusal set gains one code.
+
+#### §V-E. The overlay draws a graph (game-client)
+
+23. **The layout comes from the node data, not from per-class placement** (replaces R35's rows)
+    *(charter default)*:
+    - **Depth** runs left to right, the root at the left. A node's depth is 0 for the root, else 1
+      more than the smallest depth among its requires. *(Reason: today's shape is 13 deep, which
+      does not fit 720 px tall with rank labels; a 1280×720 screen has width to spare.)*
+    - **Lane** is a node's `exclusive {group, side}`, or the trunk for a node on no side. The trunk
+      is the middle row. Sides `a` stand above it, and `b` and later sides below it, alternating
+      outward when a group has more than two.
+    - **Rows.** A lane takes the free row on its side nearest the trunk across every depth it
+      spans. Lanes are placed in order of their first depth, deepest first, so the end of the tree
+      sits nearest the trunk. Ties go by group order in the definition, then side order.
+    - **Today's shape** therefore lays out on 13 columns (depth 0–12) and 5 rows *(charter default (coordinator), 2026-11-22 — reason: removes the level-19 trap)*. The
+      trunk is row 0. `spec:a` and `spec:b` take rows −1 and +1 at depth 9. `lower:a` and `lower:b`
+      take −2 and +2 at depths 7–12. `upper:a` and `upper:b` take −1 and +1 at depths 2–6.
+    - **Starting sizes:** columns 64 px apart, rows 72 px apart. Plates are 24 px and round for
+      traversal, 32 px for a kicker, 40 px for the ability and a specialization. These are tuned
+      at the browser check.
+    - The panel is centred, as now, and fits a 1280×720 view and up, clear of the corner row. It
+      keeps its title, its header with the class and the unspent points, and its footer.
+24. **Links.** One link per `requires` edge: a straight line from plate edge to plate edge, under
+    the plates. It is **lit** (bright brass) when both ends are held, faint otherwise, and dimmed
+    with the node when its far end is locked. No link passes through a plate other than its two
+    ends (tested on today's shape).
+25. **Node states** (replace R35's five):
+    - **max** and **held**: as before;
+    - **available**: reachable, its side not taken;
+    - **closed**: not reachable yet, because none of its requires is held or the level is too low.
+      Greyed, no lock mark. Its tooltip says what it needs;
+    - **locked**: another side of its group is taken. Dimmed, with a small **lock mark** on the
+      plate. This is for good. Its tooltip reads "Locked: you chose <name>.", where the name is the
+      held side's headline node: its kicker, else its specialization, else "the other side" for a
+      side with neither (a future sub-tree).
+
+    The words "closed" and "locked" swap meaning against R35: "locked" is now only the permanent
+    case.
+26. **Tooltips** (replace R37's tier-3 and tier-6 words; copy stays in
+    `game-client/src/data/passiveTree.ts`, keyed by id) *(charter default)*:
+    - **every node:** its name, its kind (Passive, Kicker, Ability, Specialization), `Rank r / max`,
+      then the lines below, then why it cannot be taken, if it cannot. No tier line;
+    - **traversal:** one line, "<Name>: <effect>", e.g. "Vitality: +5 max HP", "Might: +2
+      Strength" (mercenary: "Might: +2 Strength, +2 Agility"), written from the golden's value and
+      `primaryAttributes`, so a retune shows without a copy edit;
+    - **kicker:** unchanged (each rank, the R3 kicker);
+    - **ability:** its name, one plain line of what it does (FS-04EEA), and "Cast with 3." The
+      lines:
+      - Earthbreaker: "Slam the ground: hit and stun everything within 90 px for 1 s (0.5 s on a
+        boss)."
+      - Blink: "Teleport up to 180 px toward the cursor; walls stop you."
+      - Arrow Rain: "Five volleys of arrows fall on a 70 px circle over 1.5 s."
+      - Settle the Debt: "A flurry all round you that spends every parry charge, harder for each
+        one."
+    - **specialization:** its title, then **what it does** in plain words, numbers included (the
+      FS-E1ZDG effect), then the reason line if any, and last a separate, faint note, "Your look
+      changes." That note is never the main line. The lines:
+      - Guardian: "Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and
+        refills your stamina."
+      - Berserker: "Blood price: 33% less max HP for +25% attack speed and +10% damage; each slash
+        that hits heals 1.5% of max HP."
+      - Spellwarden: "Arcane Ward: a quarter of each hit's damage comes off your mana first, and
+        magic hits deal 10% less."
+      - Pyromancer: "Combustion: a fireball crit explodes for half its damage on every other monster
+        within 60 px."
+      - Hunter: "Split Shot: an arrow crit splits off a 60% arrow at the nearest other monster
+        within 220 px."
+      - Shadow Ranger: "Shadow Shot pierces every target in its line; each monster it hits refunds
+        8 stamina."
+      - Duelist: "Quick riposte: your cut ripostes at 2 parry charges and spends only 2."
+      - Sellsword: "Five parry charges and no riposte; each charge held gives +5% cut damage and +5%
+        attack speed."
+
+      The ability and specialization numbers are FS-04EEA's and FS-E1ZDG's, copied into the
+      words. A retune there is a copy edit here, because those numbers are not in the golden.
+    - **reasons:** closed, not linked: "Not reachable yet: take <requires' names, joined by 'or'>
+      first."; closed by level: "Not reachable yet: reach level N."; locked: V25's words; no points
+      and level 1: as today.
+27. **The ask covers every spend that locks a side** (extends R38) *(charter default — reason: R38
+    asked only on tier 6 because it was "the one spend that closes another node"; now the first
+    node of any side does that too)*:
+    - the first node of a side, when no side of its group is taken, asks once: "Take <name>?
+      <other side's headline>'s side is gone for good.";
+    - a specialization keeps its words: "Choose <name>? <other> is gone for good.";
+    - "no" sends nothing.
+28. **The client's rule is the server's, restated for the answer only** (as R9 was): reachability,
+    `minLevel` and sides from the golden. The server decides every spend again.
+29. **Icons** *(charter default)*:
+    - **Ink.** Every tree node picture is drawn in near-white ink: the canvas palette's lightest
+      vellum token, `palette.hudText` (`BARROW_HEX.vellum`), as a new tree ink beside `BRONZE` in
+      `knockout.ts`. Never raw hex (ADR-0013). Greyed stays `GREYED`, plainly dimmer. The ability
+      bar's icons keep `BRONZE` and are untouched.
+    - **Lit plate.** A lit node (available and spendable, held, max) lights its **whole plate
+      fill**, not only its edge: the plate fills with its edge's token over the panel ground. The
+      mix starts at 0.35 and is tuned at the contact sheet. The near-white picture stays readable
+      on it.
+    - **Four new pictures, built in code** (ADR-0080 renderer, `picture` and `lines`), each distinct
+      from every kicker picture:
+      - **Vitality:** a heart with a pulse line cut across it;
+      - **Might:** a clenched fist, knuckles parted by cuts (not Steady Hand's open palm);
+      - **Haste:** a gust, three swept wind strokes (not an hourglass, which is Practiced Guard's);
+      - **Fleetness:** a bare foot in stride trailing three speed lines (not a winged foot: Fleet
+        Foot's picture is already a winged boot).
+
+      The charter asked for "an hourglass-or-wind mark" and "a winged foot". The hourglass and the
+      winged foot would repeat Practiced Guard's and Fleet Foot's pictures, so the distinctness
+      rule wins.
+    - **The lock mark** is a small padlock drawn in code from palette tokens.
+    - **Retired pictures.** The four filler pictures (`health`, `reserve`, `attribute`, `regen`)
+      are deleted with the fillers.
+    - **The gate** is a contact sheet of the four new pictures and the lock mark, plus every tree
+      picture in the new ink, lit and greyed, approved before the icon slice closes.
+30. **The character panel's Passives group** (R44) keeps working:
+    - it sums per stat **and unit**, so a flat and a percent max HP are two lines ("+10 max HP",
+      "+4% max HP");
+    - `primary_attribute` sums into the class's attribute lines ("+4 Intelligence"; a mercenary
+      "+4 Strength" and "+4 Agility");
+    - the kickers-held lines are unchanged.
+
+### User Stories
+
+1. As a player, I want most of my points to go into small nodes that walk me across the tree, so
+   that every point is a step toward something I want.
+2. As a player, I want taking one side of my tree to lock the other, so that my build is a real
+   choice and two characters of one class differ.
+3. As a player, I want a locked side drawn locked with the name of what I chose, so that I know why
+   I can't take it.
+4. As a player, I want to be asked once before a spend locks a side, so that a misclick never costs
+   me half a tree.
+5. As a player, I want a node I can't reach yet to say what it needs, so that I can plan the next
+   points.
+6. As a player, I want to see the links between nodes, lit along my path, so that the tree reads as
+   a route.
+7. As a player, I want to see big nodes as big plates, so that I can tell a kicker, my ability and
+   my specialization from a small step.
+8. As a player, I want the specialization's tooltip to say what it does, with its numbers, so that
+   I pick it for its play and not its look.
+9. As a player, I want the look change as a small note, so that it does not hide the effect.
+10. As a player, I want the ability's tooltip to say what it does and that it casts with 3, so that
+    I know what level 10 brings.
+11. As a player, I want the tree's pictures bright and clear, and a lit node lit across its plate,
+    so that I can read the tree at a glance.
+12. As a player, I want the four small nodes to have pictures of their own, so that I never mistake
+    a step for a kicker.
+13. As a player whose old spends were voided, I want all my points back at once, so that I can
+    rebuild on the new tree.
+14. As a player at level 19 with every point spent, I want the tree to show what level 20 opens and
+    what it still needs, so that I'm not surprised.
+15. As a player with two tabs open, I want a spend on one side to block the other side's spend in
+    the other tab, so that I never hold both sides.
+16. As a mercenary, I want Might to raise both Strength and Agility, so that it helps my cut, which
+    scales on both.
+17. As a player, I want the character panel to show my Vitality and Might bonuses, so that I see
+    what my steps bought.
+18. As a developer, I want the sides and the links to be data, so that a specialization sub-tree
+    with three sides needs no new rule code.
+19. As a developer, I want the tree's math pinned by a test computed from the definition, so that a
+    shape change that lets a character fill everything fails.
+20. As a developer, I want the layout computed from the links and sides, so that a new node lays
+    itself out without per-class placement.
+21. As an operator, I want the refund to be one migration that runs once, so that the reset is
+    simple and auditable.
+
+### Acceptance Criteria
+
+Graph and rule (common)
+- [ ] Every class's tree matches V2's table: 31 nodes, 39 ranks, each node's kind, max rank,
+      requires, min level, side and per-rank value pinned by a test.
+- [ ] No class defines `t1a`, `t1b`, `t4a` or `t4b`, and no node is of kind `filler`.
+- [ ] The rule allows `r1` at level 2 with nothing held, and refuses `r2` with `r1` unheld
+      (not reachable).
+- [ ] `m1` is allowed with only `ua1` held, and with only `ub1` held.
+- [ ] With `ua1` held, `ub1`, `t2b` and `ub2` are refused side taken. With `la1` held, every
+      `lower:b` node is refused side taken. With `t6a` held, `t6b` is refused side taken.
+- [ ] `t3` with `m2` held is refused not reachable at level 9 and allowed at level 10. `t6a` with
+      `m4` held is refused not reachable at 19 and allowed at 20.
+- [ ] The refusal order is V5's: a node both side-taken and unlinked answers side taken. A
+      side-taken node at 0 unspent answers side taken.
+- [ ] A target already held is a no-op, not a refusal (R10, unchanged).
+- [ ] `Unspent` ignores a retired id (`warrior.t1a: 2` costs nothing) and caps a rank at its max.
+- [ ] The math test (V10), per class and computed from the definition: cheapest spec path 10, the
+      own sides' remaining 13 > 10, the unchosen 15 ranks plus the other spec unreachable from any
+      chosen state, the ability's path 6 with level 10.
+- [ ] The no-trap test (V10), per class: the most ranks holdable without `la1` or `lb1` is 13, so
+      every state with 18 spent holds one; from every such state at level 20, 2 points reach `m4`
+      and a specialization. *(charter default (coordinator), 2026-11-22 — reason: removes the level-19 trap)*
+- [ ] A fixture tree with a three-sided group and nodes past a specialization is ruled on
+      correctly by `CheckSpend` with no code change.
+- [ ] `PASSIVE_SIDE_TAKEN` is a registered refusal. All six existing codes are still registered.
+- [ ] The golden carries `requires`, `minLevel`, `exclusive` and `primaryAttributes`, and no
+      `tier` or `gate`. It fails when the definition differs, and `-update` rewrites it.
+
+Persistence (character-service)
+- [ ] Migration `000005` empties `passive_ranks`. After it, every character reads no ranks and no
+      specialization, and `passive_points` = `earned(level)`. The down migration changes nothing.
+- [ ] Two concurrent spends of `ua1` and `ub1` for one character: exactly one lands, and the other
+      is refused `PASSIVE_SIDE_TAKEN` and writes nothing (DB test, the row lock).
+- [ ] A spend of a retired id is refused `PASSIVE_UNKNOWN_NODE`.
+
+Effects and words (game-service)
+- [ ] A body holding `r1`, `m1` and `m3` has +15 max HP flat, current raised with it. With Thick
+      Skin at 2 as well, it also has 8% of own max HP, both summed.
+- [ ] Might adds +2 Strength (warrior), +2 Intelligence (mage), +2 Agility (archer), and +2
+      Strength and +2 Agility (mercenary).
+- [ ] Haste and Fleetness add 2% each inside gear's caps. The tree plus gear never exceeds the cap.
+- [ ] A body holding a retired id seats with nothing from it.
+- [ ] No `sumPassives` row or stat constant names a stat no node uses. No test seats or spends a
+      retired id.
+- [ ] The refusal words of V18, one test each, including a character-service `PASSIVE_TIER_LOCKED`
+      that game-service passed reading as the level still being recorded.
+
+Client
+- [ ] Every node of the class is drawn at its derived depth and lane. On today's shape the
+      expected placement is V23's (13 columns, 5 rows). No two plates overlap. No link passes
+      through a plate other than its ends. The panel fits 1280×720 clear of the corner row.
+- [ ] The fixture tree of the rule test lays out with no layout code change.
+- [ ] Plate sizes by kind: traversal small and round, kicker larger, ability and specialization
+      largest.
+- [ ] A link is lit only when both its ends are held.
+- [ ] After `ua1`, every `upper:b` node draws locked with the lock mark, and its tooltip reads
+      "Locked: you chose Heavy Hand." (warrior). After `t6a`, `t6b` reads "Locked: you chose
+      Guardian."
+- [ ] A closed node's tooltip says what it needs: the linked nodes' names, or the level.
+- [ ] Every traversal tooltip reads "<Name>: <effect>" from the golden. Every specialization
+      tooltip's first line after the title is its V26 effect line, and "Your look changes." is the
+      last line, in the faint tone. Every ability tooltip names the ability, its V26 line and
+      "Cast with 3."
+- [ ] The first spend on a side asks once, and "no" sends nothing. A spend on a side already taken
+      by this character does not ask.
+- [ ] Tree pictures draw in the vellum ink token. A lit node's plate fill is lit. A greyed one is
+      plainly dimmer. The ability bar's icons are unchanged.
+- [ ] Four traversal pictures and the lock mark exist with line fallbacks. The filler pictures are
+      gone. A contact sheet is approved before the icon slice closes.
+- [ ] The Passives group shows flat and percent max HP as separate lines, and Might under the
+      class's attributes.
+- [ ] The golden ↔ copy id test still holds both ways.
+
+### Edge States
+
+- **A body holding a retired id** (a record loaded before the wipe on a pod that outlived it, or a
+  row an old character-service wrote mid-rollout): it gives nothing at seating, costs no point
+  (V8), is required by nothing, sits on no side, and is drawn nowhere. The Passives group ignores
+  it. A spend naming it is "Unknown node." It is never deleted by game-service. The next entry
+  reads the truth from character-service.
+- **Two clients racing to spend on opposite sides** (two tabs, `ua1` and `ub1`): both may pass
+  game-service's check against a record that holds neither. character-service decides each under
+  the same `SELECT … FOR UPDATE` on the character row: the first writes its rank. The second
+  reads that rank under the lock and is refused `PASSIVE_SIDE_TAKEN`, writing nothing. Its client
+  hears "Locked: you chose the other side." The idempotency key is still the target rank: a retry
+  of the landed spend is a no-op, and a retry of the refused one is refused again. The record
+  merges the landed answer by higher rank (R20), so it never holds both sides.
+- **Level 19 with all points spent** *(charter default (coordinator), 2026-11-22 — reason: removes the level-19 trap)*: 18 are held, so by V10's no-trap guarantee
+  `la1` or `lb1` is among them (at most 13 ranks fit above the lower fork). The specializations
+  draw closed with "Not reachable yet: reach level 20." (plus "take Vitality first" when `m4` is
+  not held), and the header reads "0 points". At level 20 the two new points always reach `m4` and
+  a specialization, or the specialization and one more rank when `m4` is held. No character can
+  spend itself out of a specialization.
+- **The ability reachable before level 10:** at level 7 the path to `t3` can be held. `t3` draws
+  closed, "Not reachable yet: reach level 10."
+- **Level 1:** `r1` draws available-but-greyed, "Reach level 2 for your first point." Everything
+  else is closed.
+- **The first node of a side:** the ask (V27). Confirmed, the other side locks at once in the
+  drawing, and the server's next state confirms it.
+- **A spend refused side taken** while the client still drew the side open (a stale state):
+  "Locked: you chose the other side." The next state draws the lock.
+- **Level not yet recorded** at level 10 or 20 (the run's grant still in flight): character-service
+  answers `PASSIVE_TIER_LOCKED` where game-service passed. The words are "Your new level is still
+  being recorded. Try again in a moment."
+- **The wipe while online:** the redeploy drops every session. The next entry reads no ranks and
+  full points, and the marker shows.
+- **A specialization lost to the wipe:** the title and look go (FS-E1ZDG derives them from the
+  ranks). The pick is taken again at level 20 under the new rule.
+- **A Sellsword holding Bloodied Riposte:** unchanged (accepted in the work order).
+- **Unknown class or node id on the client:** fallback glyph and id (R42). A link to an id the
+  golden lacks is not drawn.
+- **A future group with three sides:** the layout alternates its sides outward. The lock reads
+  "Locked: you chose the other side." when the held side has no kicker or spec.
+
+### API surface
+
+No HTTP endpoint, `.proto` or OpenAPI change. The shapes in the work order's table are unchanged.
+What changes:
+
+| Op | Surface | Change |
+|---|---|---|
+| spend-passive-point | gRPC `CharacterService.SpendPassivePoint` | Errors gain `PASSIVE_SIDE_TAKEN` · FailedPrecondition (errcode.Refusal). `PASSIVE_TIER_LOCKED` now means "not reachable yet". `PASSIVE_SPECIALIZATION_TAKEN` stays registered and is no longer answered. |
+| spend | WS inbound `spend_passive_point` | Payload unchanged. The refusal words gain V18's lines. |
+| tree definition | `game-client/src/data/passiveTree.golden.json` (the client's contract with `common/passivetree`, R6) | Nodes lose `tier` and `gate` and gain `requires`, `minLevel` and `exclusive`. Top-level `primaryAttributes` is added. Kind `traversal` is added and `filler` removed. Stat `primary_attribute` is added. `max_hp` may be `flat`. |
+
+### Out of Scope
+
+- Respec, refunds beyond this one, and a reset tool.
+- New kickers, new specializations, specialization sub-trees (built for, not built), and any
+  change to a kicker, ability or specialization rule or number.
+- A build planner, a path preview, or a warning that a spend leaves too few points for a
+  specialization.
+- Mapping old ranks onto the new shape.
+- The ability bar's icons and FS-E1ZDG's or FS-04EEA's own text (their "18 spent" wording is
+  superseded here, since the pick's gate is this FS's, FS-E1ZDG §A R3).
+- Balancing: every number is a placeholder, tuned later under `Tunes FS-8RZ51`.

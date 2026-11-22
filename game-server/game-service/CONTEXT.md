@@ -681,7 +681,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
   (`slash`, `arrow`, `fireball`, `cut`) go out as `cast_skill` too. On the wire, *skill* is the
   message and *ability* is the role.
 - **Tree ability** (FS-04EEA, locked, not built) — a class's second ability, granted by holding
-  its passive tree's tier-3 node and cast with key 3: **Earthbreaker** (warrior), **Blink**
+  its passive tree's ability node and cast with key 3: **Earthbreaker** (warrior), **Blink**
   (mage), **Arrow Rain** (archer), **Settle the Debt** (mercenary). One per class, named in the
   class config beside the class ability. Resolves like every cast (cooldown, cost in the class
   resource, ADR-0030); a cast by a caster without the node is refused as an unaffordable one is.
@@ -739,7 +739,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - *Retired:* **attack slow** (FS-JS7C8 §C) — the slower walk the pin replaced. Do not use the term in
   new prose.
 
-### Passive tree (FS-8RZ51, ADR-0082, ADR-0083; locked, not built)
+### Passive tree (FS-8RZ51, ADR-0082, ADR-0083; tree v2 locked 2026-11-22 in §Change: Tree v2, not built)
 
 character-service owns the ranks and has no CONTEXT.md of its own, so its share of these words is
 here. The tree's definition and spend rule are one package, `game-server/common/passivetree`.
@@ -747,45 +747,62 @@ here. The tree's definition and spend rule are one package, `game-server/common/
 - **Passive point** — what a level-up gives to spend on the passive tree: one per level-up from 2
   to 19, two at 20, so **20** in all. Earned from level, never stored: level L has earned `L − 1`
   (20 at level 20). Not attribute points (deferred by FS-BDA7X), and not "skill points".
-- **Unspent points** — `earned(level) − Σ ranks held`: derived, never stored (on the wire,
-  `current_player.passive_points`). Points may be saved indefinitely; saving never gets round a
-  gate. Spent only in town (ADR-0082).
-- **Passive tree** — a class's tree of six tiers of nodes, the same shape for every class: tier 1
-  filler, 2 kicker, 3 the tree ability, 4 filler, 5 kicker, 6 the specialization pick. 22 ranks
-  for 20 points, so a full character cannot take everything. No respec. "Tree" alone is fine
-  here; the client's overlay is the **tree overlay**.
-- **Node** — one place in a passive tree, id `<class>.<slot>` (`warrior.t2a`, `mercenary.t6b`):
-  the slot, never the node's name, so a rename never strands a saved rank. Its **kind** is
-  filler, kicker, ability or specialization. A class's nodes are only its own. A shipped node id
-  is permanent: never removed, renamed, re-tiered or given fewer ranks.
-- **Rank** — how many points a character holds in one node, 1 to its max (2, 3, or 1 for the tier-3
-  and tier-6 nodes), taken one at a time and in order; on the wire `passive_ranks` (node id →
+- **Unspent points** — `earned(level) − Σ ranks held` over the nodes the definition knows (a
+  retired id costs nothing): derived, never stored (on the wire, `current_player.passive_points`).
+  Points may be saved indefinitely; saving never opens a node that is not reachable. Spent only in
+  town (ADR-0082).
+- **Passive tree** — a class's **graph** of nodes joined by links, the same shape for every class:
+  a trunk from the **root**, an upper and a lower fork into two **sides** each, the tree ability in
+  the middle and the specialization pair at the end. 39 ranks for 20 points, and the cheapest path
+  to a specialization is 10, so a character never fills even the sides it chose. No respec. "Tree"
+  alone is fine here; the client's overlay is the **tree overlay**.
+- **Node** — one place in a passive tree, id `<class>.<slot>` (`warrior.ua1`, `mercenary.t6b`):
+  the slot, never the node's name, so a rename never strands a saved rank. Slots like `t2a` or
+  `t6b` are permanent labels left from the six-tier shape, not tiers. Its **kind** is traversal,
+  kicker, ability or specialization. A class's nodes are only its own. A shipped node id is
+  permanent: never renamed or given fewer ranks, and a retired id is never reused.
+- **Traversal node** — a 1-rank node that carries a character across the tree, the same four in
+  every class: **Vitality** (flat max HP), **Might** (the class's **primary attribute**: Strength,
+  Intelligence, Agility; the mercenary's Strength and Agility), **Haste** (attack speed),
+  **Fleetness** (move speed). Its bonus sits beside the character's stats like worn gear's. Not
+  a "filler" (retired) and not a "basic passive" in prose.
+- **Link** — a node's `requires`: the nodes it is reached from, **any of** them held at rank ≥ 1.
+  The root has none. The links are the tree's only connection rule; there is no "points spent"
+  gate. "Requires" in code, "link" in prose and on the overlay.
+- **Reachable** — a node whose link is held and whose **level gate**, if it has one, is met (the
+  tree ability's level 10, the specializations' level 20). Refused otherwise as "not reachable
+  yet" (`PASSIVE_TIER_LOCKED`, the code kept from v1). The client draws it **closed**.
+- **Exclusive group** and **side** — a node may sit on one side of one group (`exclusive {group,
+  side}`): `upper`, `lower` and `spec`, each with sides `a` and `b` today. A group may have any
+  number of sides. A side is **taken** once any of its nodes is held.
+- **Locked side** — every other side of a group once one side is taken: for good, never reachable
+  again (`PASSIVE_SIDE_TAKEN`). The client draws it **locked**, with a lock mark. Locked is only
+  this permanent case. A node merely not reachable yet is **closed**, never "locked". A side is
+  named by its **headline** node, its kicker or its specialization.
+- **Rank** — how many points a character holds in one node, 1 to its max (3 for a kicker, 1 for
+  every other kind), taken one at a time and in order; on the wire `passive_ranks` (node id →
   rank, nodes at rank ≥ 1). A spend names its **target rank**, which is its idempotency key: a
   target already held is a no-op success. Not a monster's standing (that is **elite**; "rank" is
   avoided for variants) and not game-client's profile **rank** title.
-- **Tier** (tree tier) — one of a passive tree's six rows, numbered 1 at the top. Always "tree
-  tier" or "tier N of the tree" where a **level tier** (monster level bucket) or the client's
-  **size tier** could be meant.
-- **Tier gate** — what opens a tree tier: points **spent above** (the ranks held in every tier with
-  a smaller number: 4 for tier 2, 8 for tier 3, 13 for tier 5, 18 for tier 6), except tier 4,
-  whose gate is the tier-3 node held. Tier 1 is open.
-- **Filler node** — a 2-rank node in tier 1 or 4 that adds one stat per rank (max HP %, max
-  resource, a main stat, regen %), shared in kind across classes. Its bonus sits beside the
-  character's stats like worn gear's, never written into them.
-- **Kicker** — a 3-rank node in tier 2 or 5: R1 and R2 add a stat, R3 adds it again **plus** its
-  **kicker rule**, a small rule built only on primitives the game already has (a refund, a forced
-  crit, an extra pierce). "The R3 kicker" means the rule; "a kicker" alone means the node.
+- **Kicker** — a 3-rank node, the second node of each side: R1 and R2 add a stat, R3 adds it again
+  **plus** its **kicker rule**, a small rule built only on primitives the game already has (a
+  refund, a forced crit, an extra pierce). "The R3 kicker" means the rule; "a kicker" alone means
+  the node. Never required: the middle and end of the trunk link from a side's first node.
 - **Spend** — taking one rank with one passive point: `spend_passive_point {node_id, rank}` over the
   game socket, checked by game-service and decided again by character-service under a row lock
   (`SpendPassivePoint`). Takes effect at the next seating, except the HUB body, which takes it at
   once (ADR-0082).
+- *Retired (tree v2):* **tree tier** (the six rows), **tier gate** ("points spent above"), and
+  **filler node** (the 2-rank `t1a`, `t1b`, `t4a`, `t4b`). Do not use them in new prose. "The
+  tier-3 node" is the **ability node** (`t3`); "the tier-6 nodes" are the **specialization nodes**
+  (`t6a`, `t6b`).
 
 ### Specializations (FS-E1ZDG; locked, not built)
 
-- **Specialization** — the strong passive a level-20 character picks with its tier-6 point, one of
+- **Specialization** — the strong passive a level-20 character picks with its specialization node, one of
   its class's two, for good: `guardian` / `berserker` (warrior), `spellwarden` / `pyromancer`
   (mage), `hunter` / `shadow_ranger` (archer), `duelist` / `sellsword` (mercenary). Derived from
-  the tier-6 node held, never stored on its own; character-service puts it on the character read,
+  the specialization node held, never stored on its own; character-service puts it on the character read,
   game-service seats it and sends it for every player (public, unlike ranks). An unknown id seats
   as none. "Spec" in conversation; not a feature spec. Its **title** and look are game-client's.
 - **Last Stand** — the Guardian's: once per floor (once per visit where there are no floors), a
