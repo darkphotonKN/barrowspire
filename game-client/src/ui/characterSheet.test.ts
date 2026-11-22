@@ -248,6 +248,29 @@ describe("characterSheet passives (FS-8RZ51 R44)", () => {
     ).toEqual(["+0.06 s parry window"]);
   });
 
+  it("should keep a flat and a percent max HP apart, Vitality's and Thick Skin's (V30)", () => {
+    expect(
+      characterSheet(
+        warrior({ "warrior.r1": 1, "warrior.ua2": 1, "warrior.t2b": 1 }),
+        nothingWorn(),
+      ).passives.stats,
+    ).toEqual(["+10 max HP", "+4% max HP"]);
+  });
+
+  it.each([
+    ["warrior", ["+4 Strength"]],
+    ["mage", ["+4 Intelligence"]],
+    ["archer", ["+4 Agility"]],
+    ["mercenary", ["+4 Strength", "+4 Agility"]],
+  ])("should sum the %s's Might into its attribute lines (V30)", (cls, lines) => {
+    expect(
+      characterSheet(
+        { username: "Ash", class: cls, passive_ranks: { [`${cls}.r2`]: 1, [`${cls}.ua3`]: 1 } },
+        nothingWorn(),
+      ).passives.stats,
+    ).toEqual(lines);
+  });
+
   it("should add a kicker's stat at rank 2 but not name it", () => {
     const { passives } = characterSheet(warrior({ "warrior.t2a": 2 }), nothingWorn());
     expect(passives.stats).toEqual(["+12% slash damage"]);

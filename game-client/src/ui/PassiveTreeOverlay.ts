@@ -1,11 +1,11 @@
 /**
- * The passive tree overlay (FS-8RZ51 §G R34, R36, R37, R41, R42; §Change: Tree v2 V25): a canvas window
- * in the gear overlay's family, on the UI scene (ADR-0084; ADR-0086 rules 1.1, 1.2), drawn from
- * `passiveTreeModel` into `passiveTreeLayout`'s rects. The shared panel frame and title
- * (`drawPanelFrame`, `drawPanelTitle`), the header with the class and the unspent points, one row per
- * graph depth until slice 17 draws the graph, each node a plate with its picture and `r / max`, inked
- * by its state, an "or" between a row's two nodes (today's two sides of a group); outside the town the
- * footer says points are spent in town (R38). It stands in the window band between the gear overlay
+ * The passive tree overlay (FS-8RZ51 §G R34, R36, R37, R41, R42; §Change: Tree v2 V23–V25, V27): a
+ * canvas window in the gear overlay's family, on the UI scene (ADR-0084; ADR-0086 rules 1.1, 1.2), drawn
+ * from `passiveTreeModel` into `passiveTreeLayout`'s rects. The shared panel frame and title
+ * (`drawPanelFrame`, `drawPanelTitle`), the header with the class and the unspent points, then the tree
+ * as a graph: its links under the plates, lit when both ends are held (V24); each node a plate sized by
+ * its kind, round for a traversal node, with its picture and `r / max`, inked by its state, a locked
+ * one dimmed under a lock mark (V25); outside the town the footer says points are spent in town (R38). It stands in the window band between the gear overlay
  * (1100–1103) and the party panel (1110), with its own interactive ground over its rect (`uiGround`), so
  * a press or a hover on it never reaches the world or a party frame under it; its tooltips stand in the
  * item tips' band (2200), on the gear overlay's tip ground and placement (`tipGround`, `itemTipRow`).
@@ -18,7 +18,8 @@
  * ADR-0025).
  *
  * In town a press on a node spends through `TreeSpend` and the wiring's `spend`, the tree's own commands
- * (R38): the specialization's ask and a refusal's reason stand in the footer band, the ask with its Yes and No.
+ * (R38): the ask before a spend that takes a side (V27) and a refusal's reason stand in the footer band, the
+ * ask with its Yes and No.
  * Outside it nodes take no press. Its pointer is handed in by the UI scene in logical units
  * (`uiSceneTree.ts`), hit-tested by hand.
  */
@@ -33,19 +34,21 @@ import { BRONZE, GREYED, GREYED_ALPHA, Knockout } from "./knockout";
 import { nodeIcon, type NodeIconKey } from "./passiveIcons";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
 import { drawPanelFrame, drawPanelTitle, lightClose, type FrameRect } from "./panelFrame";
-import { TREE_RANK_GAP, nodeAt, treeLayout, type TreeLayout } from "./passiveTreeLayout";
-import { SPENT_IN_TOWN, TreeSpend, treeView, type NodeView, type TipLine, type TreeSource, type TreeView } from "./passiveTreeModel";
+import { TREE_RANK_GAP, nodeAt, treeLayout, type PlateLayout, type TreeLayout } from "./passiveTreeLayout";
+import { SPENT_IN_TOWN, TreeSpend, treeView, type LinkView, type NodeView, type TipLine, type TreeSource, type TreeView } from "./passiveTreeModel";
 import type { World } from "./uiBridge";
 import { uiGround } from "./uiGround";
 import type { TreePiece, TreeWiring } from "./uiSceneTree";
 
 /**
  * The overlay's depths (ADR-0086 Decision 4): its ground and frame over the gear overlay's 1100–1103,
- * its contents and hover ring over them, all under the party panel (1110).
+ * its contents over them, the lock marks over the plates' pictures, the hover ring over all, all under
+ * the party panel (1110).
  */
 export const TREE_DEPTH = 1104;
 const CONTENT_DEPTH = TREE_DEPTH + 1;
-const HOVER_DEPTH = TREE_DEPTH + 2;
+export const LOCK_DEPTH = TREE_DEPTH + 2;
+const HOVER_DEPTH = TREE_DEPTH + 3;
 /** The item tips' band (ADR-0086 Decision 4). */
 const TIP_DEPTH = 2200;
 
@@ -67,6 +70,13 @@ function plateEdge(node: NodeView): { color: number; alpha: number; width: numbe
   return { color: palette.hudFaint, alpha: GREYED_ALPHA, width: 1 };
 }
 
+/** A link's line (V24): bright brass when both ends are held, faint otherwise, dimmer still with a locked far end. */
+function linkLine(link: LinkView): { color: number; alpha: number; width: number } {
+  if (link.lit) return { color: palette.frameBright, alpha: 1, width: 2 };
+  if (link.dim) return { color: palette.hudFaint, alpha: GREYED_ALPHA / 2, width: 1 };
+  return { color: palette.hudFaint, alpha: GREYED_ALPHA, width: 1 };
+}
+
 /** Whether a node draws greyed: closed, locked, or open with no point to take it (V25, §Edge States). */
 const greyed = (node: NodeView) => node.state === "locked" || node.state === "closed" || (node.state === "available" && !node.spendable);
 
@@ -74,6 +84,7 @@ const greyed = (node: NodeView) => node.state === "locked" || node.state === "cl
 function tipColour(line: TipLine): number {
   if (line.tone === "name") return palette.frameBright;
   if (line.tone === "kind" || line.tone === "reason") return palette.hudLabel;
+  if (line.tone === "note") return palette.hudFaint;
   if (line.tone === "effect" || line.tone === "kicker" || line.tone === "grant") return line.held ? palette.frameBright : palette.hudText;
   return palette.hudText;
 }
@@ -99,6 +110,26 @@ export function drawUnknownGlyph(g: Pen, cx: number, cy: number, ink: number, al
   g.strokePath();
 }
 
+/** What the lock mark draws with. */
+type LockPen = Pick<Phaser.GameObjects.Graphics, "fillStyle" | "fillRoundedRect" | "lineStyle" | "strokeRect" | "lineBetween">;
+
+/**
+ * A locked node's lock mark in its `box` (V25): a placeholder padlock, a body and its shackle on a dark
+ * backing, from palette tokens. Slice 19 (I-8RZ51-19) draws its picture here.
+ */
+export function drawLockMark(g: LockPen, box: FrameRect): void {
+  g.fillStyle(palette.hudPanelDeep, 0.95);
+  g.fillRoundedRect(box.x - 1, box.y - 1, box.width + 2, box.height + 2, 2);
+  const left = box.x + 2;
+  const right = box.x + box.width - 2;
+  const waist = box.y + box.height * 0.45;
+  g.lineStyle(1, palette.hudLabel, 1);
+  g.strokeRect(left, waist, right - left, box.y + box.height - 1 - waist);
+  g.lineBetween(left + 1.5, waist, left + 1.5, box.y + 1.5);
+  g.lineBetween(left + 1.5, box.y + 1.5, right - 1.5, box.y + 1.5);
+  g.lineBetween(right - 1.5, box.y + 1.5, right - 1.5, waist);
+}
+
 /** What the overlay is built with in one world. */
 export type PassiveTreeDeps = TreeWiring;
 
@@ -115,8 +146,8 @@ export class PassiveTreeOverlay implements TreePiece {
   private ground?: { destroy(): void };
   private closeMark?: { box: FrameRect; glyph: Phaser.GameObjects.Text; lit: boolean };
   private hoverRing?: Phaser.GameObjects.Graphics;
-  /** The node under the pointer, as [depth row, node], and its tip. */
-  private hovered?: [number, number];
+  /** The node under the pointer, by id, and its tip. */
+  private hovered?: string;
   private tip?: { container: Phaser.GameObjects.Container; width: number; height: number };
   /** Its spends: the ones in flight, the specialization's ask, a refusal's reason (R38). */
   private readonly spend: TreeSpend;
@@ -164,7 +195,7 @@ export class PassiveTreeOverlay implements TreePiece {
   }
 
   /**
-   * A press: the × closes it; in town the specialization's ask's Yes or No answers it, a node's plate spends on it
+   * A press: the × closes it; in town the ask's Yes or No answers it, a node's plate spends on it
    * (R38), and anywhere else on the panel clears the ask and a refusal. Every press on the panel is the
    * overlay's.
    */
@@ -178,10 +209,10 @@ export class PassiveTreeOverlay implements TreePiece {
     }
     if (!inside(layout.panel, x, y)) return false;
     if (this.world !== "hub") return true;
-    const at = nodeAt(layout, x, y);
+    const at = view.nodes.find((n) => n.id === nodeAt(layout, x, y));
     if (this.spend.asking() && inside(layout.answers.yes, x, y)) this.spend.answer(true);
     else if (this.spend.asking() && inside(layout.answers.no, x, y)) this.spend.answer(false);
-    else if (at) this.spend.press(view.rows[at[0]].nodes[at[1]], view);
+    else if (at) this.spend.press(at);
     else this.spend.clear();
     this.redraw();
     return true;
@@ -225,7 +256,7 @@ export class PassiveTreeOverlay implements TreePiece {
     // a node now showing the rank its spend went for takes clicks again
     this.spend.seen(view);
     this.drawnKey = this.key();
-    const layout = treeLayout(viewport, view.rows.map((r) => r.nodes.length));
+    const layout = treeLayout(viewport, view.nodes, view.links);
     this.layout = layout;
     const { panel } = layout;
     this.ground = uiGround(this.scene, TREE_DEPTH)(panel);
@@ -236,8 +267,12 @@ export class PassiveTreeOverlay implements TreePiece {
     chrome.setDepth(TREE_DEPTH).setScrollFactor(0);
     const content = this.scene.add.container(0, 0, this.contentParts(view, layout));
     content.setDepth(CONTENT_DEPTH).setScrollFactor(0);
+    const locks = this.scene.add.graphics().setDepth(LOCK_DEPTH).setScrollFactor(0);
+    view.nodes.forEach((node, i) => {
+      if (node.state === "locked") drawLockMark(locks, layout.plates[i].lock);
+    });
     this.hoverRing = this.scene.add.graphics().setDepth(HOVER_DEPTH).setScrollFactor(0);
-    this.parts = [chrome, content, this.hoverRing];
+    this.parts = [chrome, content, locks, this.hoverRing];
     this.hovered = undefined;
     this.updateHover();
   }
@@ -253,24 +288,29 @@ export class PassiveTreeOverlay implements TreePiece {
     };
     text(layout.header.x, layout.header.y, view.header, 13, palette.hudText);
     if (!view.known) text(layout.panel.x + layout.panel.width / 2, layout.footer.y - 40, NO_TREE, 12, palette.hudLabel);
+    // the links first, so they stand under the plates (V24)
+    const lines = this.scene.add.graphics();
+    view.links.forEach((link, i) => {
+      const { a, b } = layout.links[i];
+      const line = linkLine(link);
+      lines.lineStyle(line.width, line.color, line.alpha);
+      lines.lineBetween(a.x, a.y, b.x, b.y);
+    });
     const g = this.scene.add.graphics();
-    parts.push(g);
-    view.rows.forEach((depth, r) => {
-      const row = layout.rows[r];
-      if (row.between) text(row.between.x, row.between.y, "or", 11, palette.hudLabel);
-      depth.nodes.forEach((node, n) => {
-        const plate = row.nodes[n];
-        this.drawPlate(g, node, plate);
-        const rankInk = node.rank > 0 ? palette.frameBright : greyed(node) ? palette.hudFaint : palette.hudLabel;
-        text(plate.x + plate.width / 2, plate.y + plate.height + TREE_RANK_GAP, `${node.rank} / ${node.maxRank}`, 10, rankInk, [0.5, 0]);
-      });
+    parts.push(lines, g);
+    view.nodes.forEach((node, i) => {
+      const plate = layout.plates[i];
+      this.drawPlate(g, node, plate);
+      const { rect } = plate;
+      const rankInk = node.rank > 0 ? palette.frameBright : greyed(node) ? palette.hudFaint : palette.hudLabel;
+      text(rect.x + rect.width / 2, rect.y + rect.height + TREE_RANK_GAP, `${node.rank} / ${node.maxRank}`, 10, rankInk, [0.5, 0]);
     });
     if (this.world !== "hub") text(layout.footer.x, layout.footer.y, SPENT_IN_TOWN, 11, palette.hudLabel);
     else this.spendFooter(g, layout, text);
     return parts;
   }
 
-  /** In town, the footer band: the specialization's ask with its Yes and No, or a refusal's reason (R38). */
+  /** In town, the footer band: the ask with its Yes and No (V27), or a refusal's reason (R38). */
   private spendFooter(
     g: Phaser.GameObjects.Graphics,
     layout: TreeLayout,
@@ -296,13 +336,18 @@ export class PassiveTreeOverlay implements TreePiece {
     }
   }
 
-  /** A node's plate, its edge by its state, and its picture, or the fallback glyph for a node the copy lacks (V25, R40, R42). */
-  private drawPlate(g: Phaser.GameObjects.Graphics, node: NodeView, plate: FrameRect): void {
-    g.fillStyle(palette.hudPanelDeep, 0.9);
-    g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
+  /**
+   * A node's plate, round for a traversal node (V23), its edge by its state, and its picture, or the
+   * fallback glyph for a node the copy lacks (V25, R40, R42).
+   */
+  private drawPlate(g: Phaser.GameObjects.Graphics, node: NodeView, { rect: plate, round }: PlateLayout): void {
     const edge = plateEdge(node);
+    g.fillStyle(palette.hudPanelDeep, 0.9);
+    if (round) g.fillCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
+    else g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
     g.lineStyle(edge.width, edge.color, edge.alpha);
-    g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
+    if (round) g.strokeCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
+    else g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
     const cx = plate.x + plate.width / 2;
     const cy = plate.y + plate.height / 2;
     const dim = greyed(node);
@@ -336,14 +381,17 @@ export class PassiveTreeOverlay implements TreePiece {
       if (lit !== mark.lit) lightClose(mark.glyph, (mark.lit = lit));
     }
     const at = nodeAt(layout, this.pointer.x, this.pointer.y);
-    if (at?.[0] !== this.hovered?.[0] || at?.[1] !== this.hovered?.[1]) {
+    if (at !== this.hovered) {
       this.hovered = at;
       this.hideTip();
       this.hoverRing?.clear();
-      if (at) {
-        const plate = layout.rows[at[0]].nodes[at[1]];
-        this.hoverRing?.lineStyle(1, palette.interactableBright, 1).strokeRoundedRect(plate.x - 2, plate.y - 2, plate.width + 4, plate.height + 4, 5);
-        this.tip = this.buildTip(view.rows[at[0]].nodes[at[1]].tip);
+      const i = view.nodes.findIndex((n) => n.id === at);
+      if (i >= 0) {
+        const { rect, round } = layout.plates[i];
+        const ring = this.hoverRing?.lineStyle(1, palette.interactableBright, 1);
+        if (round) ring?.strokeCircle(rect.x + rect.width / 2, rect.y + rect.height / 2, rect.width / 2 + 2);
+        else ring?.strokeRoundedRect(rect.x - 2, rect.y - 2, rect.width + 4, rect.height + 4, 5);
+        this.tip = this.buildTip(view.nodes[i].tip);
       }
     }
     if (this.tip) {

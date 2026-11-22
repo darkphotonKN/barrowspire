@@ -1,15 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { NO_TREE, PassiveTreeOverlay, TREE_DEPTH, drawUnknownGlyph } from "./PassiveTreeOverlay";
+import { LOCK_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, drawLockMark, drawUnknownGlyph } from "./PassiveTreeOverlay";
 import { BRONZE, GREYED } from "./knockout";
 import { treeLayout } from "./passiveTreeLayout";
 import { treeView, type TreeSource } from "./passiveTreeModel";
 import type { World } from "./uiBridge";
 
-// FS-8RZ51 §G R34, R36, R37, R41, R42 (I-8RZ51-7) and §Change: Tree v2 V25 (I-8RZ51-14): the overlay on
-// a recording stand-in for the UI scene: its frame, title, header, depth rows, nodes and footer; its ground between the gear overlay and the party panel;
-// its tooltips in the item tips' band; its × and its redraws.
+// FS-8RZ51 §G R34, R36, R37, R41, R42 (I-8RZ51-7) and §Change: Tree v2 V23–V25, V27 (I-8RZ51-14,
+// I-8RZ51-17): the overlay on a recording stand-in for the UI scene: its frame, title, header, the graph's
+// links and plates, its lock marks and footer; its ground between the gear overlay and the party panel;
+// its tooltips in the item tips' band; its × and its redraws; the side ask.
 
 interface Made {
   kind: "text" | "graphics" | "zone" | "container";
@@ -73,8 +74,6 @@ const held = (slots: string[]) => Object.fromEntries(slots.map((s) => [`warrior.
 const TRUNK = held(["r1", "r2", "ua1"]);
 /** The path to the specializations. */
 const TO_M4 = held(["r1", "r2", "ua1", "m1", "m2", "t3", "m3", "la1", "m4"]);
-/** A warrior's nodes per depth row (V23): the interim rows until slice 17. */
-const ROWS = [1, 1, 2, 3, 3, 3, 3, 2, 3, 4, 2, 2, 2];
 
 function opened(world: World = "hub", source: TreeSource | undefined = warrior()) {
   const env = stage();
@@ -83,14 +82,24 @@ function opened(world: World = "hub", source: TreeSource | undefined = warrior()
   const overlay = new PassiveTreeOverlay(env.scene, { world, dismiss, spend: (id, rank) => (sent.push([id, rank]), true) });
   overlay.show(source);
   overlay.open();
-  const layout = treeLayout(viewport, ROWS);
-  /** A press on the plate of the node at [depth row, node]. */
-  const click = (row: number, node: number) => {
-    const p = layout.rows[row].nodes[node];
-    return overlay.pointerDown(p.x + 4, p.y + 4);
+  const view = treeView(source ?? { class: "" });
+  const layout = treeLayout(viewport, view.nodes, view.links);
+  /** The middle of a node's plate, by its slot. */
+  const at = (slot: string) => {
+    const p = layout.plates.find((q) => q.id === `${source?.class}.${slot}`)!.rect;
+    return { x: p.x + p.width / 2, y: p.y + p.height / 2 };
+  };
+  /** A press on the plate of the node in `slot`. */
+  const click = (slot: string) => {
+    const p = at(slot);
+    return overlay.pointerDown(p.x, p.y);
+  };
+  const hover = (slot: string) => {
+    const p = at(slot);
+    overlay.pointerMove(p.x, p.y);
   };
   const press = (box: { x: number; y: number }) => overlay.pointerDown(box.x + 2, box.y + 2);
-  return { ...env, overlay, dismiss, layout, sent, click, press };
+  return { ...env, overlay, dismiss, layout, sent, click, hover, press };
 }
 
 describe("the passive tree overlay's panel (FS-8RZ51 R34, R35)", () => {
@@ -107,8 +116,9 @@ describe("the passive tree overlay's panel (FS-8RZ51 R34, R35)", () => {
     expect(words).toContain("Warrior · 3 points");
     expect(words.filter((w) => /^\d \/ \d$/.test(w))).toHaveLength(31);
     expect(words).toContain("2 / 3");
-    expect(words).toContain("or");
-    expect(words.some((w) => /tier|spent/i.test(w))).toBe(false);
+    // the old tier rows' "or" and gate column are gone (I-8RZ51-17)
+    expect(words).not.toContain("or");
+    expect(words.some((w) => /tier|spent|gate/i.test(w))).toBe(false);
   });
 
   it("should stand its ground over its panel, and its frame and contents between the gear overlay and the party panel", () => {
@@ -145,6 +155,54 @@ describe("the passive tree overlay's panel (FS-8RZ51 R34, R35)", () => {
   });
 });
 
+describe("the passive tree overlay's graph (FS-8RZ51 V23–V25, I-8RZ51-17)", () => {
+  /** The content's graphics, in the order drawn: the links, then the plates. */
+  const pens = (env: ReturnType<typeof opened>) => {
+    const content = env.live().find((m) => m.kind === "container" && m.depth === TREE_DEPTH + 1)!;
+    return content.children!.filter((c) => c.kind === "graphics");
+  };
+  const count = (ops: string[], op: string) => ops.filter((o) => o === op).length;
+
+  it("should draw one link per requires edge, under the plates", () => {
+    const [links, plates] = pens(opened());
+    expect(count(links.ops, "lineBetween")).toBe(32);
+    expect(count(plates.ops, "lineBetween")).toBe(0);
+    expect(count(plates.ops, "fillCircle") + count(plates.ops, "fillRoundedRect")).toBeGreaterThanOrEqual(31);
+  });
+
+  it("should light a link only when both its ends are held", () => {
+    const lit = (source: TreeSource) => pens(opened("hub", source))[0].inks.filter((ink) => ink === palette.frameBright).length;
+    expect(lit(warrior())).toBe(0);
+    // r1→r2 and r2→ua1; ua1→t2a and ua1→m1 have one end unheld
+    expect(lit(warrior(TRUNK))).toBe(2);
+  });
+
+  it("should draw the 24 traversal plates round and the rest square", () => {
+    const [, plates] = pens(opened());
+    expect(count(plates.ops, "fillCircle")).toBe(24);
+    expect(count(plates.ops, "fillRoundedRect")).toBe(7);
+    expect(count(plates.ops, "strokeRoundedRect")).toBe(7);
+  });
+
+  it("should draw a lock mark on each locked node, over its picture, and none where nothing is locked", () => {
+    const marks = (env: ReturnType<typeof opened>) => env.live().find((m) => m.kind === "graphics" && m.depth === LOCK_DEPTH);
+    const locked = opened("hub", warrior(TRUNK));
+    // every upper:b node: ub1, t2b, ub2, ub3, ub4
+    expect(count(marks(locked)!.ops, "strokeRect")).toBe(5);
+    expect(LOCK_DEPTH).toBeGreaterThan(TREE_DEPTH + 1);
+    expect(LOCK_DEPTH).toBeLessThan(1110);
+    expect(count(marks(opened())!.ops, "strokeRect")).toBe(0);
+  });
+
+  it("should ring a round plate round under the pointer", () => {
+    const env = opened();
+    env.hover("r1");
+    const ring = env.live().find((m) => m.kind === "graphics" && m.depth === LOCK_DEPTH + 1)!;
+    expect(ring.ops).toContain("strokeCircle");
+    expect(ring.ops).not.toContain("strokeRoundedRect");
+  });
+});
+
 describe("the passive tree overlay's redraws (FS-8RZ51 R41)", () => {
   it("should redraw as the ranks or the points change, and not on a tick that changes nothing", () => {
     const { overlay, made, words } = opened("hub", warrior({}, 3));
@@ -168,9 +226,8 @@ describe("the passive tree overlay's redraws (FS-8RZ51 R41)", () => {
 
 describe("the passive tree overlay's tooltips and presses (FS-8RZ51 R37)", () => {
   it("should show a hovered node's tooltip in the item tips' band, and take it down off every node", () => {
-    const { overlay, layout, live, depthOf } = opened("hub", warrior(TRUNK));
-    const plate = layout.rows[3].nodes[0];
-    overlay.pointerMove(plate.x + 4, plate.y + 4);
+    const { overlay, layout, live, depthOf, hover } = opened("hub", warrior(TRUNK));
+    hover("t2a");
     const tip = live().filter((m) => m.kind === "text" && m.words?.includes("Heavy Hand"));
     expect(tip).toHaveLength(1);
     expect(depthOf("Heavy Hand")).toBe(2200);
@@ -180,21 +237,19 @@ describe("the passive tree overlay's tooltips and presses (FS-8RZ51 R37)", () =>
   });
 
   it("should mark the held ranks in its tooltip", () => {
-    const { overlay, layout, live } = opened("hub", warrior({ ...TRUNK, "warrior.t2a": 1 }));
-    const plate = layout.rows[3].nodes[0];
-    overlay.pointerMove(plate.x + 4, plate.y + 4);
+    const { live, hover } = opened("hub", warrior({ ...TRUNK, "warrior.t2a": 1 }));
+    hover("t2a");
     const lines = live().filter((m) => m.kind === "text").map((m) => m.words!);
     expect(lines).toContain("• Rank 1: +6% slash damage");
     expect(lines).toContain("  Rank 2: +6% slash damage");
   });
 
   it.each([
-    ["a closed node what it needs", warrior(), 3, 2, "Not reachable yet: take Haste or Fleetness first."],
-    ["a locked node the side chosen", warrior(TRUNK), 2, 1, "Locked: you chose Heavy Hand."],
-  ])("should say on %s (V25, V26)", (_what, source, row, n, words) => {
-    const { overlay, layout, live } = opened("hub", source);
-    const plate = layout.rows[row].nodes[n];
-    overlay.pointerMove(plate.x + 4, plate.y + 4);
+    ["a closed node what it needs", warrior(), "m1", "Not reachable yet: take Haste or Fleetness first."],
+    ["a locked node the side chosen", warrior(TRUNK), "ub1", "Locked: you chose Heavy Hand."],
+  ])("should say on %s (V25, V26)", (_what, source, slot, words) => {
+    const { live, hover } = opened("hub", source);
+    hover(slot);
     expect(live().some((m) => m.words === words)).toBe(true);
   });
 
@@ -221,16 +276,16 @@ describe("the passive tree overlay's tooltips and presses (FS-8RZ51 R37)", () =>
 describe("the passive tree overlay's spends (FS-8RZ51 R38)", () => {
   it("should send an available node's next rank once in town, and nothing on a second click", () => {
     const { click, sent } = opened("hub", warrior({ ...TRUNK, "warrior.t2a": 1 }));
-    expect(click(3, 0)).toBe(true);
-    expect(click(3, 0)).toBe(true);
+    expect(click("t2a")).toBe(true);
+    expect(click("t2a")).toBe(true);
     expect(sent).toEqual([["warrior.t2a", 2]]);
   });
 
   it("should take a click on the node again once the state shows the rank", () => {
     const { overlay, click, sent } = opened("hub", warrior(TRUNK));
-    click(3, 0);
+    click("t2a");
     overlay.show(warrior({ ...TRUNK, "warrior.t2a": 1 }, 2));
-    click(3, 0);
+    click("t2a");
     expect(sent).toEqual([
       ["warrior.t2a", 1],
       ["warrior.t2a", 2],
@@ -239,23 +294,23 @@ describe("the passive tree overlay's spends (FS-8RZ51 R38)", () => {
 
   it.each(["field", "run"] as const)("should take no node click in %s, its footer saying points are spent in town", (world) => {
     const { click, sent, words } = opened(world, warrior());
-    expect(click(0, 0)).toBe(true);
+    expect(click("r1")).toBe(true);
     expect(sent).toEqual([]);
     expect(words()).toContain("Points are spent in town.");
   });
 
   it("should send nothing for a closed or a locked node", () => {
     const { click, sent } = opened("hub", warrior());
-    click(1, 0);
+    click("r2");
     expect(sent).toEqual([]);
     const locked = opened("hub", warrior(TRUNK));
-    locked.click(2, 1);
+    locked.click("ub1");
     expect(locked.sent).toEqual([]);
   });
 
   it("should ask once in the panel on a specialization click, and send nothing on No", () => {
     const { click, press, sent, words, layout } = opened("hub", warrior(TO_M4, 2, 20));
-    click(9, 2);
+    click("t6a");
     expect(sent).toEqual([]);
     expect(words()).toContain("Choose Guardian? Berserker is gone for good.");
     expect(words()).toEqual(expect.arrayContaining(["Yes", "No"]));
@@ -267,17 +322,31 @@ describe("the passive tree overlay's spends (FS-8RZ51 R38)", () => {
 
   it("should send the specialization on Yes", () => {
     const { click, press, sent, layout } = opened("hub", warrior(TO_M4, 2, 20));
-    click(9, 3);
+    click("t6b");
     press(layout.answers.yes);
     expect(sent).toEqual([["warrior.t6b", 1]]);
   });
 
+  it("should ask once in the panel on the first node of a side, send it on Yes, and nothing on No (V27)", () => {
+    const fork = warrior(held(["r1", "r2"]));
+    const no = opened("hub", fork);
+    no.click("ua1");
+    expect(no.words()).toContain("Take Haste? Thick Skin's side is gone for good.");
+    no.press(no.layout.answers.no);
+    expect(no.sent).toEqual([]);
+    const yes = opened("hub", fork);
+    yes.click("ub1");
+    expect(yes.words()).toContain("Take Fleetness? Heavy Hand's side is gone for good.");
+    yes.press(yes.layout.answers.yes);
+    expect(yes.sent).toEqual([["warrior.ub1", 1]]);
+  });
+
   it("should show a refusal's reason in the panel until the next click, and until it closes", () => {
     const { overlay, click, words } = opened("hub", warrior());
-    click(0, 0);
+    click("r1");
     overlay.refused("Leave the queue to spend points.");
     expect(words()).toContain("Leave the queue to spend points.");
-    click(0, 0);
+    click("r1");
     expect(words()).not.toContain("Leave the queue to spend points.");
     overlay.refused("No points to spend.");
     overlay.close();
@@ -312,6 +381,27 @@ describe("the fallback glyph (FS-8RZ51 R42)", () => {
     expect(calls.length).toBeGreaterThan(1);
     expect(calls.some((c) => c.startsWith("fill"))).toBe(false);
     expect(inks).toEqual([palette.frame]);
+  });
+});
+
+describe("the lock mark (FS-8RZ51 V25, V29)", () => {
+  it("should draw a simple padlock in its box from palette tokens, its picture slice 19's", () => {
+    const calls: string[] = [];
+    const inks: number[] = [];
+    const g = new Proxy(
+      {},
+      {
+        get: (_t, prop: string) => (...args: number[]) => {
+          calls.push(prop);
+          if (prop === "lineStyle") inks.push(args[1]);
+          if (prop === "fillStyle") inks.push(args[0]);
+        },
+      },
+    );
+    drawLockMark(g as never, { x: 0, y: 0, width: 10, height: 10 });
+    expect(calls).toContain("strokeRect");
+    expect(calls).toContain("lineBetween");
+    expect(inks.every((ink) => Object.values(palette).includes(ink as never))).toBe(true);
   });
 });
 
@@ -371,8 +461,8 @@ describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, 
     const overlay = new PassiveTreeOverlay(env.scene, { world: "hub", dismiss: () => {}, spend: () => true });
     overlay.show(warrior(GUARDIAN, 1, 20));
     overlay.open();
-    // drawn row by row: Berserker where the view lays it, locked by Guardian
-    const order = (source: TreeSource) => treeView(source).rows.flatMap((r) => r.nodes.map((n) => n.id));
+    // drawn in the definition's order: Berserker where the view lays it, locked by Guardian
+    const order = (source: TreeSource) => treeView(source).nodes.map((n) => n.id);
     const berserker = env.images[order(warrior(GUARDIAN, 1, 20)).indexOf("warrior.t6b")];
     expect(berserker.tints).toEqual([GREYED.idle.tint]);
     expect(berserker.alpha).toBe(GREYED.idle.alpha);

@@ -2,9 +2,10 @@
  * The passive tree as the overlay draws it (FS-8RZ51 §G R37, R42; §Change: Tree v2 V23, V25, V26, V28;
  * §Edge States): from the golden (structure and numbers, `@/data/passiveTree`), the character's held
  * ranks, unspent points and level, each node with its depth, its rank, its one state of five, whether
- * the spend rule would take its next rank now, and its tooltip's lines. Until slice 17 draws the graph
- * the nodes stand in one row per depth. Phaser-free, so the rule and the words are tested without a
- * canvas; `PassiveTreeOverlay` draws what this returns.
+ * the spend rule would take its next rank now, the ask before a spend that locks a side, and its
+ * tooltip's lines; and one link per `requires` edge, lit or dim (V24). Phaser-free, so the rule and the
+ * words are tested without a canvas; `passiveTreeLayout` places what this returns and
+ * `PassiveTreeOverlay` draws it.
  *
  * The rule read here is the server's own (V5, `common/passivetree`), restated for the player's answer
  * only (V28): reachability, `minLevel` and sides, read from the nodes' data and never a slot name
@@ -12,7 +13,7 @@
  */
 
 import { characterTitle } from "@/data/specializations";
-import { classNodes, nodeCopy, rankEffect, type PassiveNodeDef, type PassiveNodeKind } from "@/data/passiveTree";
+import { classNodes, nodeCopy, rankEffect, type PassiveExclusive, type PassiveNodeDef, type PassiveNodeKind } from "@/data/passiveTree";
 import type { NodeIconKey } from "./passiveIcons";
 import type { CharacterSource } from "./characterSheet";
 
@@ -26,12 +27,21 @@ export type TreeSource = Pick<CharacterSource, "class" | "level" | "passive_rank
  */
 export type NodeState = "max" | "held" | "available" | "closed" | "locked";
 
-/** One line of a node's tooltip (R37); `held` marks a rank the character holds. */
+/**
+ * One line of a node's tooltip (R37, V26); `held` marks a rank the character holds. A `note` is an
+ * aside drawn faint, never the main line: a specialization's look.
+ */
 export interface TipLine {
   text: string;
-  tone: "name" | "kind" | "rank" | "effect" | "kicker" | "grant" | "reason";
+  tone: "name" | "kind" | "rank" | "effect" | "kicker" | "grant" | "reason" | "note";
   held?: boolean;
 }
+
+/** A specialization's closing note (V26): the look is an aside to what it does. */
+export const LOOK_NOTE = "Your look changes.";
+
+/** An ability node's key (V26). */
+export const CAST_WITH = "Cast with 3.";
 
 export interface NodeView {
   id: string;
@@ -40,20 +50,28 @@ export interface NodeView {
   kind: PassiveNodeKind;
   /** 0 for the root, else one more than its shallowest link (V23). */
   depth: number;
+  /** Its side of a group, the lane it is laid in; none on the trunk (V23). */
+  lane?: PassiveExclusive;
   rank: number;
   maxRank: number;
   state: NodeState;
   /** Whether the spend rule would take its next rank now (V5): an available or held node with a point to spend. */
   spendable: boolean;
+  /** What to ask before its spend, where the spend would lock another side for good (V27). */
+  ask?: string;
   /** The picture it draws (R40); none for a node the copy lacks, which draws the fallback glyph (R42). */
   icon?: NodeIconKey;
   tip: TipLine[];
 }
 
-/** One depth's nodes, in the definition's order: the interim row until slice 17 draws the graph. */
-export interface DepthRow {
-  depth: number;
-  nodes: NodeView[];
+/** One `requires` edge (V24): from the node linked from to the node that needs it. */
+export interface LinkView {
+  from: string;
+  to: string;
+  /** Both ends held. */
+  lit: boolean;
+  /** Its far end, the node that needs it, is locked: it dims with that node. */
+  dim: boolean;
 }
 
 export interface TreeView {
@@ -62,7 +80,10 @@ export interface TreeView {
   points: number;
   /** The class and the unspent points (R35): "Warrior · 3 points". */
   header: string;
-  rows: DepthRow[];
+  /** Every node, in the definition's order. */
+  nodes: NodeView[];
+  /** One per `requires` edge whose both ends the tree defines (§Edge States: a stray link is not drawn). */
+  links: LinkView[];
 }
 
 /** The overlay's footer outside town (R38; §Edge States: not in town). */
@@ -86,13 +107,26 @@ export function treeView(source: TreeSource, nodes: readonly PassiveNodeDef[] = 
   const points = Math.max(0, source.passive_points ?? 0);
   const rule = new TreeRule(nodes, source.passive_ranks ?? {}, source.level ?? 1);
   const views = nodes.map((n) => nodeView(n, rule, points, source));
-  const depths = [...new Set(views.map((n) => n.depth))].sort((a, b) => a - b);
   return {
     known: nodes.length > 0,
     points,
     header: `${capital(source.class)} · ${plural(points, "point")}`,
-    rows: depths.map((depth) => ({ depth, nodes: views.filter((n) => n.depth === depth) })),
+    nodes: views,
+    links: linksOf(views, nodes),
   };
+}
+
+/** One link per `requires` edge between two nodes of the tree (V24): lit when both ends are held, dim when its far end is locked. */
+function linksOf(views: readonly NodeView[], nodes: readonly PassiveNodeDef[]): LinkView[] {
+  const byId = new Map(views.map((v) => [v.id, v]));
+  const heldNode = (v: NodeView) => v.rank > 0;
+  return nodes.flatMap((n) => {
+    const to = byId.get(n.id)!;
+    return n.requires.flatMap((id) => {
+      const from = byId.get(id);
+      return from ? [{ from: id, to: n.id, lit: heldNode(from) && heldNode(to), dim: to.state === "locked" }] : [];
+    });
+  });
 }
 
 /** A node's name: its copy's, else its id (R42). */
@@ -161,9 +195,29 @@ class TreeRule {
    * "the other side" for a side with neither.
    */
   chosenName(taken: PassiveNodeDef): string {
-    const side = this.nodes.filter((n) => n.exclusive?.group === taken.exclusive?.group && n.exclusive?.side === taken.exclusive?.side);
-    const headline = side.find((n) => n.kind === "kicker") ?? side.find((n) => n.kind === "specialization");
-    return headline ? nameOf(headline.id) : "the other side";
+    return (taken.exclusive && this.headline(taken.exclusive)) ?? "the other side";
+  }
+
+  /**
+   * The ask before a spend that would take a side (V27): on a node of a group none of whose sides is
+   * taken yet, naming the other side by its headline. A specialization keeps its own words.
+   */
+  ask(node: PassiveNodeDef): string | undefined {
+    const own = node.exclusive;
+    if (!own || this.nodes.some((n) => n.exclusive?.group === own.group && this.rank(n.id) > 0)) return undefined;
+    const others = [...new Set(this.nodes.filter((n) => n.exclusive?.group === own.group && n.exclusive.side !== own.side).map((n) => n.exclusive!.side))];
+    const headline = others.length === 1 ? this.headline({ group: own.group, side: others[0] }) : undefined;
+    const name = nameOf(node.id);
+    if (node.kind === "specialization") return `Choose ${name}? ${headline ?? "The other"} is gone for good.`;
+    if (headline) return `Take ${name}? ${headline}'s side is gone for good.`;
+    return `Take ${name}? The other side${others.length > 1 ? "s are" : " is"} gone for good.`;
+  }
+
+  /** A side's headline node's name (V25): its kicker, else its specialization; none for a side with neither. */
+  private headline(side: PassiveExclusive): string | undefined {
+    const on = this.nodes.filter((n) => n.exclusive?.group === side.group && n.exclusive.side === side.side);
+    const headline = on.find((n) => n.kind === "kicker") ?? on.find((n) => n.kind === "specialization");
+    return headline && nameOf(headline.id);
   }
 }
 
@@ -178,10 +232,12 @@ function nodeView(node: PassiveNodeDef, rule: TreeRule, points: number, source: 
     name: nameOf(node.id),
     kind: node.kind,
     depth: rule.depth(node),
+    lane: node.exclusive,
     rank,
     maxRank: node.maxRank,
     state,
     spendable,
+    ask: spendable ? rule.ask(node) : undefined,
     icon: nodeCopy(node.id)?.icon,
     tip: tipLines(node, rank, source, reasons(state, taken && rule.chosenName(taken), unreached, points, source.level)),
   };
@@ -201,30 +257,47 @@ function reasons(state: NodeState, chosen: string | undefined, unreached: Unreac
 }
 
 /**
- * A node's tooltip (R37, V26): its name, its kind, its rank, each rank's effect with the held ones
- * marked and a kicker's R3 rule labelled as the last rank's; the ability and its key, a
- * specialization's title and its look; why it cannot be taken, where it cannot.
+ * A node's tooltip (R37, V26): its name, its kind, its rank, then what it does, then why it cannot be
+ * taken, where it cannot. No tier line.
  */
 function tipLines(node: PassiveNodeDef, rank: number, source: TreeSource, why: readonly string[]): TipLine[] {
-  const copy = nodeCopy(node.id);
   const lines: TipLine[] = [
     { text: nameOf(node.id), tone: "name" },
     { text: KIND_WORD[node.kind] ?? capital(node.kind), tone: "kind" },
     { text: `Rank ${rank} / ${node.maxRank}`, tone: "rank" },
+    ...effectLines(node, rank, source),
   ];
+  for (const text of why) lines.push({ text, tone: "reason" });
+  // the look is an aside, last and faint, after any reason (V26)
+  if (node.kind === "specialization") lines.push({ text: LOOK_NOTE, tone: "note" });
+  return lines;
+}
+
+/**
+ * What a node does, by kind (V26): a traversal node "<Name>: <effect>" from the golden; a kicker each
+ * rank's effect, its R3 rule labelled as the last rank's; the ability its line and its key; a
+ * specialization its title, then its line. A held rank is marked.
+ */
+function effectLines(node: PassiveNodeDef, rank: number, source: TreeSource): TipLine[] {
+  const copy = nodeCopy(node.id);
+  const held = rank > 0;
+  const grant = (text: string): TipLine => ({ text, tone: "grant", held });
+  // what an ability or a specialization does, from the copy (V26); none for an id it lacks (R42)
+  const does = copy?.effect ? [grant(copy.effect)] : [];
+  if (node.kind === "traversal")
+    return node.perRank ? [{ text: `${nameOf(node.id)}: ${rankEffect(node.perRank, node.class)}`, tone: "effect", held }] : [];
+  if (node.kind === "ability") return [...does, grant(CAST_WITH)];
+  if (node.kind === "specialization") {
+    const title = characterTitle(source.class, copy?.specialization) ?? nameOf(node.id);
+    return [grant(`Grants the title ${title}.`), ...does];
+  }
+  const lines: TipLine[] = [];
   if (node.perRank) {
-    const effect = rankEffect(node.perRank);
+    const effect = rankEffect(node.perRank, node.class);
     for (let r = 1; r <= node.maxRank; r++) lines.push({ text: `Rank ${r}: ${effect}`, tone: "effect", held: r <= rank });
   }
   if (node.kind === "kicker" && copy?.kicker)
     lines.push({ text: `Rank ${node.maxRank} kicker: ${copy.kicker}`, tone: "kicker", held: rank >= node.maxRank });
-  // placeholder words; FS-04EEA and FS-E1ZDG own them, and slice 18 rewrites them (V26)
-  if (node.kind === "ability") lines.push({ text: `Grants ${nameOf(node.id)}, cast with 3.`, tone: "grant", held: rank > 0 });
-  if (node.kind === "specialization") {
-    const title = characterTitle(source.class, copy?.specialization) ?? nameOf(node.id);
-    lines.push({ text: `Grants the title ${title}. Your look changes.`, tone: "grant", held: rank > 0 });
-  }
-  for (const text of why) lines.push({ text, tone: "reason" });
   return lines;
 }
 
@@ -233,8 +306,9 @@ export const SPEND_IN_FLIGHT_MS = 5000;
 
 /**
  * The overlay's spends (R38), Phaser-free: a click on a node the model calls spendable sends its next
- * rank, save on a specialization, which asks once first ("Choose <name>? <other> is gone for good."). While a spend
- * is in flight its node takes no second click, until the state shows the rank, a refusal arrives, or
+ * rank, save on one that would take a side, which asks once first, in the model's words (V27: "Take
+ * <name>? <other>'s side is gone for good.", a specialization "Choose <name>? <other> is gone for
+ * good."). While a spend is in flight its node takes no second click, until the state shows the rank, a refusal arrives, or
  * `SPEND_IN_FLIGHT_MS` pass; a retry then is the same target rank, which the server takes as a no-op
  * once it has landed (R10, R22). A refusal's reason stands until the next click or the tree closing.
  * The spend rule is the server's: nothing here refuses beyond the model's `spendable`.
@@ -251,18 +325,17 @@ export class TreeSpend {
     private readonly now: () => number = Date.now,
   ) {}
 
-  /** A click on `node` in `view`, the tree as drawn. */
-  press(node: NodeView, view: TreeView): void {
+  /** A click on `node`, as the tree drew it. */
+  press(node: NodeView): void {
     this.refusal = undefined;
     this.ask = undefined;
     if (!node.spendable || this.held(node.id)) return;
     const rank = node.rank + 1;
-    if (node.kind !== "specialization") return this.go(node.id, rank);
-    const other = view.rows.flatMap((r) => r.nodes).find((n) => n.kind === "specialization" && n.id !== node.id);
-    this.ask = { id: node.id, rank, words: `Choose ${node.name}? ${other?.name ?? "The other"} is gone for good.` };
+    if (!node.ask) return this.go(node.id, rank);
+    this.ask = { id: node.id, rank, words: node.ask };
   }
 
-  /** The specialization's ask answered: yes sends it, no sends nothing. */
+  /** The ask answered: yes sends it, no sends nothing. */
   answer(yes: boolean): void {
     const ask = this.ask;
     this.ask = undefined;
@@ -277,7 +350,7 @@ export class TreeSpend {
 
   /** The state as drawn now: a node showing its target rank is answered. */
   seen(view: TreeView): void {
-    for (const node of view.rows.flatMap((r) => r.nodes)) {
+    for (const node of view.nodes) {
       const sent = this.inFlight.get(node.id);
       if (sent && node.rank >= sent.rank) this.inFlight.delete(node.id);
     }
@@ -294,7 +367,7 @@ export class TreeSpend {
     return this.refusal;
   }
 
-  /** The specialization's ask standing, if one does. */
+  /** The ask standing, if one does. */
   asking(): string | undefined {
     return this.ask?.words;
   }

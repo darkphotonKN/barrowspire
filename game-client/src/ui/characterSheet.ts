@@ -14,7 +14,7 @@ import { affixLine } from "@/items/itemLines";
 import { itemStats, type StatLine } from "@/marketplace/detail";
 import { atCap, progressOf, xpCount, xpFraction } from "./progress";
 import { RESOURCE_KINDS, type HudChannel } from "./resources";
-import { PASSIVE_NODES, nodeCopy, rankEffect } from "@/data/passiveTree";
+import { PASSIVE_NODES, nodeCopy, rankEffect, rankStats } from "@/data/passiveTree";
 import { characterTitle } from "@/data/specializations";
 
 /** What the panel reads off the player's own world state (R24); every number may be absent. */
@@ -179,7 +179,7 @@ export function gearStats(worn: EquippedItems): GearStats {
 
 /** What the passive tree's held ranks add (FS-8RZ51 R44). */
 export interface PassiveStats {
-  /** One line per stat the held nodes raise, summed over every node that raises it. */
+  /** One line per stat and unit the held nodes raise, summed over every node that raises it (V30). */
   stats: string[];
   /** One line per kicker held at its last rank (R29), by its name; its id where the copy lacks it (R42). */
   kickers: string[];
@@ -189,11 +189,12 @@ export interface PassiveStats {
 
 /**
  * The held ranks' bonuses, from the golden's per-rank values (R6, R39), so a retuned number shows
- * without an edit. One line per stat, summed across nodes, in the tree's order; then each kicker
+ * without an edit. One line per stat and unit, summed across nodes, in the tree's order, so a flat and
+ * a percent max HP stay two lines; Might counts under its class's attributes (V30). Then each kicker
  * whose R3 rule is held.
  */
 function passiveStats(ranks: Readonly<Record<string, number>>): PassiveStats {
-  const totals = new Map<string, { amount: number; unit: string }>();
+  const totals = new Map<string, { stat: string; amount: number; unit: string }>();
   const kickers: string[] = [];
   for (const node of PASSIVE_NODES) {
     const rank = Object.hasOwn(ranks, node.id) ? Math.min(ranks[node.id], node.maxRank) : 0;
@@ -201,14 +202,14 @@ function passiveStats(ranks: Readonly<Record<string, number>>): PassiveStats {
     if (node.kind === "kicker" && rank === node.maxRank)
       kickers.push(nodeCopy(node.id)?.name ?? node.id);
     if (!node.perRank) continue;
-    const { stat, amount, unit } = node.perRank;
-    const total = totals.get(stat) ?? { amount: 0, unit };
-    total.amount += amount * rank;
-    totals.set(stat, total);
+    for (const { stat, amount, unit } of rankStats(node.perRank, node.class)) {
+      const key = `${stat} ${unit}`;
+      const total = totals.get(key) ?? { stat, amount: 0, unit };
+      total.amount += amount * rank;
+      totals.set(key, total);
+    }
   }
-  const stats = [...totals].map(([stat, { amount, unit }]) =>
-    rankEffect({ stat, amount, unit }),
-  );
+  const stats = [...totals.values()].map((total) => rankEffect(total));
   return {
     stats,
     kickers,

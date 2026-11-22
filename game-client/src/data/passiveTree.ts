@@ -9,13 +9,15 @@
  * exclusive group (`exclusive`). The copy holds each node's name, its R3 kicker's words, and what it
  * draws (R40): a traversal node one of four interim pictures until slice 19 (V29), a kicker or a
  * specialization its own (`passiveIcons.ts`), the ability its tree ability's picture from the ability
- * bar; and a specialization's pick (FS-E1ZDG). Effect lines are written from the golden's per-rank
- * values (`STAT_WORDS`), so a retuned number shows without a copy edit.
+ * bar; a specialization's pick (FS-E1ZDG); and an ability's or a specialization's line of what it does
+ * (V26), the ability named as the ability bar names it (FS-04EEA R50). Stat lines are written from the
+ * golden's per-rank values (`STAT_WORDS`, `rankStats`), so a retuned number shows without a copy edit.
  *
  * Every name here is a placeholder (FS-8RZ51 R29 "All numbers are placeholders"; the ability and
  * specialization words are FS-04EEA's and FS-E1ZDG's). Pure data, no Phaser.
  */
 
+import { TREE_ABILITY_COPY } from "@/ui/abilityCopy";
 import type { NodeIconKey } from "@/ui/passiveIcons";
 import type { SpecializationId } from "./specializations";
 import golden from "./passiveTree.golden.json";
@@ -82,6 +84,11 @@ export interface PassiveNodeCopy {
   icon: NodeIconKey;
   /** A specialization node's pick (FS-E1ZDG): its title's name. */
   specialization?: SpecializationId;
+  /**
+   * What an ability or a specialization does, in one plain line with its numbers (V26): FS-04EEA's and
+   * FS-E1ZDG's, copied into the words, so a retune there is an edit here. No other kind has one.
+   */
+  effect?: string;
 }
 
 /**
@@ -132,38 +139,82 @@ export const PASSIVE_COPY: Readonly<Record<string, PassiveNodeCopy>> = {
   ...traversal("warrior"),
   "warrior.t2a": { name: "Heavy Hand", icon: "heavy_hand", kicker: "A slash that hits 2 or more monsters refunds 5 stamina." },
   "warrior.t2b": { name: "Thick Skin", icon: "thick_skin", kicker: "While below half max HP, damage taken is 10% less." },
-  "warrior.t3": { name: "Earthbreaker", icon: "earthbreaker" },
+  "warrior.t3": { name: TREE_ABILITY_COPY.warrior.name, icon: "earthbreaker", effect: "Slam the ground: hit and stun everything within 90 px for 1 s (0.5 s on a boss)." },
   "warrior.t5a": { name: "Long Wind", icon: "long_wind", kicker: "A kill refunds 15 stamina." },
   "warrior.t5b": { name: "Bull Rush", icon: "bull_rush", kicker: "Your first hit within 3 s of a dash ending is a sure crit." },
-  "warrior.t6a": { name: "Guardian", icon: "guardian", specialization: "guardian" },
-  "warrior.t6b": { name: "Berserker", icon: "berserker", specialization: "berserker" },
+  "warrior.t6a": {
+    name: "Guardian",
+    icon: "guardian",
+    specialization: "guardian",
+    effect: "Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and refills your stamina.",
+  },
+  "warrior.t6b": {
+    name: "Berserker",
+    icon: "berserker",
+    specialization: "berserker",
+    effect: "Blood price: 33% less max HP for +25% attack speed and +10% damage; each slash that hits heals 1.5% of max HP.",
+  },
 
   ...traversal("mage"),
   "mage.t2a": { name: "Kindling", icon: "kindling", kicker: "A fireball crit refunds 5 mana." },
   "mage.t2b": { name: "Deep Well", icon: "deep_well", kicker: "+25% mana regen." },
-  "mage.t3": { name: "Blink", icon: "blink" },
+  "mage.t3": { name: TREE_ABILITY_COPY.mage.name, icon: "blink", effect: "Teleport up to 180 px toward the cursor; walls stop you." },
   "mage.t5a": { name: "Wide Volley", icon: "wide_volley", kicker: "The volley throws 5 fireballs, not 3." },
   "mage.t5b": { name: "Searing", icon: "searing", kicker: "Fireballs pierce one more monster." },
-  "mage.t6a": { name: "Spellwarden", icon: "spellwarden", specialization: "spellwarden" },
-  "mage.t6b": { name: "Pyromancer", icon: "pyromancer", specialization: "pyromancer" },
+  "mage.t6a": {
+    name: "Spellwarden",
+    icon: "spellwarden",
+    specialization: "spellwarden",
+    effect: "Arcane Ward: a quarter of each hit's damage comes off your mana first, and magic hits deal 10% less.",
+  },
+  "mage.t6b": {
+    name: "Pyromancer",
+    icon: "pyromancer",
+    specialization: "pyromancer",
+    effect: "Combustion: a fireball crit explodes for half its damage on every other monster within 60 px.",
+  },
 
   ...traversal("archer"),
   "archer.t2a": { name: "Quick Draw", icon: "quick_draw", kicker: "Every 4th arrow pierces one more monster." },
   "archer.t2b": { name: "Fleet Foot", icon: "fleet_foot", kicker: "Sidestep: 10% of monster strikes on you miss." },
-  "archer.t3": { name: "Arrow Rain", icon: "arrow_rain" },
+  "archer.t3": { name: TREE_ABILITY_COPY.archer.name, icon: "arrow_rain", effect: "Five volleys of arrows fall on a 70 px circle over 1.5 s." },
   "archer.t5a": { name: "Eagle Eye", icon: "eagle_eye", kicker: "Every Shadow Shot is a sure crit." },
   "archer.t5b": { name: "Hunter's Breath", icon: "hunters_breath", kicker: "A kill refunds Shadow Shot's cost." },
-  "archer.t6a": { name: "Hunter", icon: "hunter", specialization: "hunter" },
-  "archer.t6b": { name: "Shadow Ranger", icon: "shadow_ranger", specialization: "shadow_ranger" },
+  "archer.t6a": {
+    name: "Hunter",
+    icon: "hunter",
+    specialization: "hunter",
+    effect: "Split Shot: an arrow crit splits off a 60% arrow at the nearest other monster within 220 px.",
+  },
+  "archer.t6b": {
+    name: "Shadow Ranger",
+    icon: "shadow_ranger",
+    specialization: "shadow_ranger",
+    effect: "Shadow Shot pierces every target in its line; each monster it hits refunds 8 stamina.",
+  },
 
   ...traversal("mercenary"),
   "mercenary.t2a": { name: "Keen Edge", icon: "keen_edge", kicker: "A cut on a monster in its wind-up is a sure crit." },
   "mercenary.t2b": { name: "Practiced Guard", icon: "practiced_guard", kicker: "A strike parried in the first half of the window grants 2 parry charges." },
-  "mercenary.t3": { name: "Settle the Debt", icon: "settle_the_debt" },
+  "mercenary.t3": {
+    name: TREE_ABILITY_COPY.mercenary.name,
+    icon: "settle_the_debt",
+    effect: "A flurry all round you that spends every parry charge, harder for each one.",
+  },
   "mercenary.t5a": { name: "Bloodied Riposte", icon: "bloodied_riposte", kicker: "A riposte that hits heals 5% of max HP, once per riposte." },
   "mercenary.t5b": { name: "Steady Hand", icon: "steady_hand", kicker: "A cut that kills grants 1 parry charge." },
-  "mercenary.t6a": { name: "Duelist", icon: "duelist", specialization: "duelist" },
-  "mercenary.t6b": { name: "Sellsword", icon: "sellsword", specialization: "sellsword" },
+  "mercenary.t6a": {
+    name: "Duelist",
+    icon: "duelist",
+    specialization: "duelist",
+    effect: "Quick riposte: your cut ripostes at 2 parry charges and spends only 2.",
+  },
+  "mercenary.t6b": {
+    name: "Sellsword",
+    icon: "sellsword",
+    specialization: "sellsword",
+    effect: "Five parry charges and no riposte; each charge held gives +5% cut damage and +5% attack speed.",
+  },
 };
 
 /** A node's copy, where the client has it (R42: a node id it lacks draws with its id as its name). */
@@ -198,10 +249,23 @@ export const STAT_WORDS: Readonly<Record<string, (amount: number, unit: string) 
   parry_window: (a) => `${signed(a)} s parry window`,
 };
 
-/** One rank's effect in words (R37, R39): the stat's own words, else its name and amount. */
-export function rankEffect(perRank: PassivePerRank): string {
-  const words = Object.hasOwn(STAT_WORDS, perRank.stat) ? STAT_WORDS[perRank.stat] : undefined;
-  if (words) return words(perRank.amount, perRank.unit);
-  const unit = perRank.unit === "percent" ? "%" : perRank.unit === "seconds" ? " s" : "";
-  return `${signed(perRank.amount)}${unit} ${perRank.stat.replace(/_/g, " ")}`;
+/**
+ * What one rank of a `cls` node raises (V14): Might's `primary_attribute` is each attribute the class
+ * names, each by the full amount; any other stat, or Might in a class the golden lacks, is itself.
+ */
+export function rankStats(perRank: PassivePerRank, cls: string): PassivePerRank[] {
+  const attributes = perRank.stat === "primary_attribute" ? primaryAttributes(cls) : [];
+  return attributes.length ? attributes.map((stat) => ({ ...perRank, stat })) : [perRank];
+}
+
+/** One stat's effect in words: its own words, else its name and amount. */
+function statWords({ stat, amount, unit }: PassivePerRank): string {
+  if (Object.hasOwn(STAT_WORDS, stat)) return STAT_WORDS[stat](amount, unit);
+  const suffix = unit === "percent" ? "%" : unit === "seconds" ? " s" : "";
+  return `${signed(amount)}${suffix} ${stat.replace(/_/g, " ")}`;
+}
+
+/** One rank's effect in words for a `cls` node (R37, R39, V26): Might names the class's attributes. */
+export function rankEffect(perRank: PassivePerRank, cls = ""): string {
+  return rankStats(perRank, cls).map(statWords).join(", ");
 }

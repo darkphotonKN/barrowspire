@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ABILITY_ICONS } from "@/ui/abilityIcons";
+import { treeAbilityCopy } from "@/ui/abilityCopy";
 import { PASSIVE_ICONS, nodeIcon } from "@/ui/passiveIcons";
-import { PASSIVE_COPY, PASSIVE_NODES, classNodes, nodeCopy, primaryAttributes, rankEffect } from "./passiveTree";
+import { PASSIVE_COPY, PASSIVE_NODES, classNodes, nodeCopy, primaryAttributes, rankEffect, rankStats } from "./passiveTree";
 import { SPECIALIZATIONS } from "./specializations";
 
 // FS-8RZ51 R6, R39, R42 and §Change: Tree v2 (V1, V12, V13): the client reads the tree's structure and
@@ -70,6 +71,29 @@ describe("the passive tree's copy against the golden (FS-8RZ51 R6, R39)", () => 
     expect(PASSIVE_COPY["mercenary.t6b"].specialization).toBe("sellsword");
   });
 
+  it("should say what each ability and specialization does, in V26's words, and give no other kind a line", () => {
+    const lines = Object.fromEntries(PASSIVE_NODES.filter((n) => PASSIVE_COPY[n.id].effect).map((n) => [n.id, PASSIVE_COPY[n.id].effect]));
+    expect(lines).toEqual({
+      "warrior.t3": "Slam the ground: hit and stun everything within 90 px for 1 s (0.5 s on a boss).",
+      "warrior.t6a": "Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and refills your stamina.",
+      "warrior.t6b": "Blood price: 33% less max HP for +25% attack speed and +10% damage; each slash that hits heals 1.5% of max HP.",
+      "mage.t3": "Teleport up to 180 px toward the cursor; walls stop you.",
+      "mage.t6a": "Arcane Ward: a quarter of each hit's damage comes off your mana first, and magic hits deal 10% less.",
+      "mage.t6b": "Combustion: a fireball crit explodes for half its damage on every other monster within 60 px.",
+      "archer.t3": "Five volleys of arrows fall on a 70 px circle over 1.5 s.",
+      "archer.t6a": "Split Shot: an arrow crit splits off a 60% arrow at the nearest other monster within 220 px.",
+      "archer.t6b": "Shadow Shot pierces every target in its line; each monster it hits refunds 8 stamina.",
+      "mercenary.t3": "A flurry all round you that spends every parry charge, harder for each one.",
+      "mercenary.t6a": "Quick riposte: your cut ripostes at 2 parry charges and spends only 2.",
+      "mercenary.t6b": "Five parry charges and no riposte; each charge held gives +5% cut damage and +5% attack speed.",
+    });
+    for (const node of PASSIVE_NODES) expect(!!PASSIVE_COPY[node.id].effect, node.id).toBe(node.kind === "ability" || node.kind === "specialization");
+  });
+
+  it("should name each ability node as the ability bar names its class's tree ability (FS-04EEA R50)", () => {
+    for (const node of PASSIVE_NODES.filter((n) => n.kind === "ability")) expect(PASSIVE_COPY[node.id].name, node.id).toBe(treeAbilityCopy(node.class)?.name);
+  });
+
   it("should have no copy for an id it does not know (R42)", () => {
     expect(nodeCopy("warrior.t9z")).toBeUndefined();
     expect(nodeCopy("toString")).toBeUndefined();
@@ -132,6 +156,26 @@ describe("rankEffect (FS-8RZ51 R37, R39)", () => {
     expect(rankEffect(perRank)).toBe(words);
   });
 
+  it.each([
+    ["warrior", "+2 Strength"],
+    ["mage", "+2 Intelligence"],
+    ["archer", "+2 Agility"],
+    ["mercenary", "+2 Strength, +2 Agility"],
+  ])("should write Might's primary attribute as the %s's own attributes (V14, V26)", (cls, words) => {
+    expect(rankEffect({ stat: "primary_attribute", amount: 2, unit: "flat" }, cls)).toBe(words);
+  });
+
+  it("should spread Might over the class's attributes, each by the full amount, and keep any other stat whole (V14)", () => {
+    const might = { stat: "primary_attribute", amount: 3, unit: "flat" };
+    expect(rankStats(might, "mercenary")).toEqual([
+      { stat: "strength", amount: 3, unit: "flat" },
+      { stat: "agility", amount: 3, unit: "flat" },
+    ]);
+    expect(rankStats(might, "necromancer")).toEqual([might]);
+    const hp = { stat: "max_hp", amount: 5, unit: "flat" };
+    expect(rankStats(hp, "mercenary")).toEqual([hp]);
+  });
+
   it("should write a stat it has no words for from its own name", () => {
     expect(rankEffect({ stat: "bone_dust", amount: 5, unit: "percent" })).toBe("+5% bone dust");
   });
@@ -139,7 +183,7 @@ describe("rankEffect (FS-8RZ51 R37, R39)", () => {
   it("should have words for every stat the golden carries", () => {
     for (const node of PASSIVE_NODES) {
       if (!node.perRank) continue;
-      expect(rankEffect(node.perRank), node.id).not.toContain("_");
+      expect(rankEffect(node.perRank, node.class), node.id).not.toContain("_");
     }
   });
 });
