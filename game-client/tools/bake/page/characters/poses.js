@@ -24,6 +24,7 @@ export function characterPoses(sheet) {
     const carried = spec.speed ?? (clip === "walk" ? 1 : 0);
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,
+      clip,
       speed: carried * (style.speed ?? 1),
       settle: clip === "death",
       calm: clip === "attack" || clip === "parry" ? 0.25 : 1,

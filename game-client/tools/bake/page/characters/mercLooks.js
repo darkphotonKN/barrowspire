@@ -20,6 +20,17 @@ import { spaulder } from "./gear.js";
  */
 const HALF_CLOAK_HELD = [0.5, 1, 1, 1];
 
+/**
+ * How the half-cloak is carried in the run (FS-JS7C8 § Change: The mercenary's sprint and trailing
+ * sword R159, owner 2026-11-23: 「左肩還是會破圖 跑步時就讓匹夫不要這貼 飛高一點吧」): its top let
+ * swing free (`strap` 1, not `HALF_CLOAK_HELD`'s 0.5, so the collar link drags back and flings as a
+ * cloak hung free does) and its top two links hung turned out to his left (`tilt`, rad), so the
+ * cloth over the shoulder stands off it. Held close, the sprint's free-arm pump drove his left upper
+ * arm out through it on keys 3–7 (0, 0, 0, 20, 80, 113, 52, 37 edges). Every other clip keeps the
+ * chain as it was (cloakBones `clips`).
+ */
+const HALF_CLOAK_RUN = { strap: [1, 1, 1, 1], tilt: [0.4, 0.2] };
+
 /** The half-cloak's length down the back, from the shoulder line to the hip (H): its bone chain's too. */
 const HALF_CLOAK = 0.27;
 
@@ -183,7 +194,7 @@ export const duelist = {
   mats: (F) => ({ torso: F.breeches, arms: F.duelistRobe, coat: F.duelistRobe, sash: F.duelistSlate }),
   opts: { coat: ROBE, skirtSprings: { skirtB: ROBE_BACK_CARRY } },
   omit: ["spaulder", "collar", "kneeCop"],
-  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD }),
+  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD, clips: { run: HALF_CLOAK_RUN } }),
   swap: {
     coat: (rig, { mat, o }) => {
       for (const arc of PANELS) skirt(rig, mat, { ...o, arc });

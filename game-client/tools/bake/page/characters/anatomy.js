@@ -706,7 +706,10 @@ function skirtWeights(rig, o) {
  * skinned mesh is built. `strap` (per bone from the top, 1 free) holds the cloak's top to the back
  * under something strapped over it (the archer's quiver): that bone's drag and fling scale by it,
  * its stiffness by its inverse (at most 5x), so the cloth under the strap stays on the back and
- * the rest swings from there.
+ * the rest swings from there. `tilt` (per bone from the top, rad) hangs a link turned about the
+ * back's line, out to his left for a positive one. `clips` gives a clip options of its own by its
+ * name (`{ run: { strap, tilt } }`), over these, each link's spring worked out from them the same
+ * way (rig.js `spring` `clips`; the Duelist's half-cloak in the run, mercLooks.js).
  */
 export function cloakBones(rig, o = {}) {
   const [, ny] = J(rig, "neck");
@@ -716,17 +719,25 @@ export function cloakBones(rig, o = {}) {
   rig.addBone("cloak0", "chest", 0, ny - 0.02 - cy, -back);
   const seg = len / 4;
   for (let i = 1; i <= 3; i++) rig.addBone(`cloak${i}`, `cloak${i - 1}`, 0, -seg, -0.004);
-  for (let i = 0; i <= 3; i++) {
-    const held = o.strap?.[i] ?? 1;
-    spring(rig, `cloak${i}`, {
+  const link = (i, c) => {
+    const held = c.strap?.[i] ?? 1;
+    return {
       stiffness: (70 - i * 12) / Math.max(held, 0.2),
-      damping: 8,
-      drag: (o.drag ?? 0.32) * (0.5 + i * 0.35) * held,
+      drag: (c.drag ?? 0.32) * (0.5 + i * 0.35) * held,
       inertia: (0.8 + i * 0.25) * held,
+      ...(c.tilt && { rest: [0, 0, c.tilt[i] ?? 0] }),
+    };
+  };
+  for (let i = 0; i <= 3; i++) {
+    const clips = o.clips && Object.fromEntries(Object.entries(o.clips).map(([clip, c]) => [clip, link(i, { ...o, ...c })]));
+    spring(rig, `cloak${i}`, {
+      ...link(i, o),
+      damping: 8,
       limit: 1.0,
       gravity: i === 0 ? 0.25 : 0.85,
       drape: -0.3,
       axes: "xz",
+      clips,
     });
   }
 }
