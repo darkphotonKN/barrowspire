@@ -203,6 +203,13 @@ describe("the fog over each region (FS-SRA9J §C.8–§C.10)", () => {
     expect(FOG.void).toBe(1);
   });
 
+  it("veils lighter, the three states still apart: unexplored 0.6, explored 0.35, void > unexplored > explored > visible (FS-SRA9J §Change: Lighter fog and lit regions, F1)", () => {
+    expect([FOG.unexplored.alpha, FOG.explored.alpha]).toEqual([0.6, 0.35]);
+    expect(FOG.void).toBeGreaterThan(FOG.unexplored.alpha);
+    expect(FOG.unexplored.alpha).toBeGreaterThan(FOG.explored.alpha);
+    expect(FOG.explored.alpha).toBeGreaterThan(0);
+  });
+
   it("never covers a screen point twice, so the explored dim never compounds", () => {
     const grid = new RegionGrid(fixture as never);
     // a scatter of states over the fixture's regions
