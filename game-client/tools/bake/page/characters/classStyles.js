@@ -2,6 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
+import * as THREE from "three";
 import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose, withOffhand } from "./clips.js";
 
 /**
@@ -319,6 +320,30 @@ export const FOCUS_DEATH = [null, null, null, [-0.1, 0, -0.3], [0.21, 0.07, -0.8
  */
 export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] && pose({ handR: FOCUS_DEATH[i] }) };
 
+/** How far the upper arms spread out at rest (rad; rig.js `rig.rest.upperArmL`/`upperArmR`, about z). */
+const ARM_SPREAD = 0.1;
+
+/**
+ * The right upper arm's pose offset for three turns in the chest's frame, made in order: swung
+ * `back` about x, out `out` past the rest's spread about z, then `twist` about its own length (y).
+ * The bones take one Euler triple (XYZ) over the rest, so it is the triple those three make, less
+ * the rest, to the thousandth as keys are written.
+ */
+function rightArmTurned({ back, out, twist }) {
+  const turn = (x, y, z, a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(x, y, z), a);
+  const q = turn(1, 0, 0, back)
+    .multiply(turn(0, 0, 1, -(ARM_SPREAD + out)))
+    .multiply(turn(0, 1, 0, twist));
+  const e = new THREE.Euler().setFromQuaternion(q, "XYZ");
+  return [e.x, e.y, e.z + ARM_SPREAD].map((v) => Math.round(v * 1000) / 1000);
+}
+
+/**
+ * The trailing sword arm's three turns (rad; {@link MERC_TRAILING_SWORD}): a tune round edits these,
+ * never the triple they make.
+ */
+export const MERC_TRAILING_TURNS = { back: 0.5, out: 0.3, twist: 0.6 };
+
 /**
  * The mercenary's trailing sword in his sprint (FS-JS7C8 § Change: The mercenary's sprint and
  * trailing sword M2, M3, R97–R102; the owner: "右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作", then
@@ -327,9 +352,9 @@ export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] 
  * hips bone's height; the curved blade lies behind him, its point hanging down and its edge
  * down, well off the ground. Keyed as three turns of the upper arm in the chest's frame: swung
  * back 0.5 rad, out 0.3 rad past the rest's 0.1, then turned 0.6 rad about its own length (the
- * shoulder's inward turn), held as the one Euler triple those make, the bones' XYZ order, less the
- * rest; the elbow a little bent (0.3 rad) and the forearm pronated 1.6 rad, so the arm's 2.2 rad of
- * turn brings the edge down while the fist stays square on the forearm (the normal grip); the
+ * shoulder's inward turn) ({@link MERC_TRAILING_TURNS}), held as the one Euler triple those make,
+ * the bones' XYZ order, less the rest ({@link rightArmTurned}); the elbow a little bent (0.3 rad)
+ * and the forearm pronated 1.6 rad, so the arm's 2.2 rad of turn brings the edge down while the fist stays square on the forearm (the normal grip); the
  * wrist cocks the blade back down past the vertical (1.0 rad). Out from the hip, the arm and the
  * Duelist's wide sleeve stay clear of his robe and of his half-cloak's hem, which the sprint
  * carries out behind (mercLooks.test.mjs). Measured on the rig over the cycle: the upper arm
@@ -338,7 +363,7 @@ export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] 
  * point 0.55–0.65 H behind the hips bone; the edge 34.6–46.0° below level; the blade's centre line
  * at least 0.22 H off the ground.
  */
-const MERC_TRAILING_SWORD = pose({ upperArmR: [0.76, 0.547, -0.373], foreArmR: [-0.3, 1.6, 0], handR: [1, 0, 0] });
+const MERC_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(MERC_TRAILING_TURNS), foreArmR: [-0.3, 1.6, 0], handR: [1, 0, 0] });
 
 /**
  * The trailing arm's share of the shared pump (clips.js `runCycle`, RUN_ARM): with the chest's

@@ -497,7 +497,9 @@ export function bareFeet(rig, mat, o = {}) {
 
 /**
  * Adds a skirt's spring bones (front and back panels) under the hips. Call before any skinned
- * mesh is built; `skirt({ panels: true })` then weights its hem to them.
+ * mesh is built; `skirt({ panels: true })` then weights its hem to them. `stiffness` and `drag`
+ * set all four panels' springs; a panel's own options under its bone's name (`skirtB: { drag,
+ * limit }`) go over them for that panel alone (the Duelist's robe, mercLooks.js `ROBE_BACK_CARRY`).
  */
 export function skirtBones(rig, o = {}) {
   rig.addBone("skirtF", "hips", 0, -0.03, 0.05);
@@ -505,7 +507,7 @@ export function skirtBones(rig, o = {}) {
   rig.addBone("skirtL", "hips", 0.07, -0.03, 0);
   rig.addBone("skirtR", "hips", -0.07, -0.03, 0);
   for (const b of ["skirtF", "skirtB", "skirtL", "skirtR"])
-    spring(rig, b, { stiffness: o.stiffness ?? 45, damping: 7, drag: o.drag ?? 0.2, inertia: 1.1, limit: 0.8, gravity: 0.6 });
+    spring(rig, b, { stiffness: o.stiffness ?? 45, damping: 7, drag: o.drag ?? 0.2, inertia: 1.1, limit: 0.8, gravity: 0.6, ...o[b] });
 }
 
 /**

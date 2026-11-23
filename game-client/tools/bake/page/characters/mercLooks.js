@@ -149,6 +149,8 @@ const ROBE = {
  * swing shin folding to 1.8 rad), which came out through it by 3.62 px on the run's second key.
  * Standing (no speed) it hangs as before; the cut is unchanged. The other panels, and the base's and
  * the Sellsword's coats, keep the shared springs. 0.38 to 0.5 with 1 to 1.4 all pass every clip.
+ * Given to the back panel alone through the mercenary's skirt springs (`skirtSprings`, cast.js
+ * `mercenary`; anatomy.js `skirtBones`' per-bone options).
  */
 const ROBE_BACK_CARRY = { drag: 0.4, limit: 1.1 };
 
@@ -179,12 +181,9 @@ function woundSash(rig, mat, o) {
 export const duelist = {
   // the robe's under-layer, showing in the V, is the breeches' dark wool
   mats: (F) => ({ torso: F.breeches, arms: F.duelistRobe, coat: F.duelistRobe, sash: F.duelistSlate }),
-  opts: { coat: ROBE },
+  opts: { coat: ROBE, skirtSprings: { skirtB: ROBE_BACK_CARRY } },
   omit: ["spaulder", "collar", "kneeCop"],
-  bones: (rig) => {
-    cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD });
-    for (const s of rig.springs) if (s.bone === "skirtB") Object.assign(s, ROBE_BACK_CARRY);
-  },
+  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD }),
   swap: {
     coat: (rig, { mat, o }) => {
       for (const arc of PANELS) skirt(rig, mat, { ...o, arc });

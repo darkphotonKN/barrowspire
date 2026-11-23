@@ -296,7 +296,8 @@ export function mercenary(look) {
   const { F, kit, piece, opts } = d;
   const rig = createRig(...MERCENARY_BUILD);
   rig.hooks = [];
-  skirtBones(rig, { stiffness: 55 });
+  // the coat's panel springs; a look may give a panel its own (the Duelist's robe, mercLooks.js)
+  skirtBones(rig, opts("skirtSprings", { stiffness: 55 }));
   d.bones(rig);
   const [, hy] = J(rig, "hips");
   const [, ny] = J(rig, "neck");
