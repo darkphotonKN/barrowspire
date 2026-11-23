@@ -41,12 +41,12 @@ by how much in this issue. Don't loosen it.
 
 ## Acceptance Criteria
 
-- [ ] The guards run on all three looks on every key of today's `attack`; the result (pass, or
+- [x] The guards run on all three looks on every key of today's `attack`; the result (pass, or
       each failure's key and depth) is recorded here.
-- [ ] The sleeve guard's rejection fixture fails it.
-- [ ] Sampling is along edges, at most 0.005 H apart; the sleeve is skinned as posed.
-- [ ] Nothing added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`.
-- [ ] `npm test`, `npm run lint` in `game-client` pass.
+- [x] The sleeve guard's rejection fixture fails it.
+- [x] Sampling is along edges, at most 0.005 H apart; the sleeve is skinned as posed.
+- [x] Nothing added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`.
+- [x] `npm test`, `npm run lint` in `game-client` pass.
 
 ## Blocked By
 
@@ -67,3 +67,30 @@ bullet on the staff or focus out of the torso, head, robe and sleeve; Edge State
 - `game-client/tools/bake/page/characters/mageLooks.test.mjs`
 - `game-client/tools/bake/page/characters/classMotion.test.mjs` (`GEAR.wizard`, the focus-length points)
 - possibly `game-client/tools/bake/page/characters/edgeGuards.mjs` (only if a shared helper is missing)
+
+## Built (2026-11-23, agent)
+
+The guards are in `f85d1980`, written against today's cast (`22cabd3a`). Each takes the clip and
+its keys as parameters, so I-JS7C8-29 and -30 run them unchanged.
+
+- **Out of the torso and the head** (`classMotion.test.mjs` `STAFFS`: the sceptre and a
+  focus-length haft, points every 0.05 H at most). On today's cast the nearest point was key 1:
+  0.049 H out of the torso and 0.068 H out of the head.
+- **Outside the robe** (`outsideRobe`). Every point below the waist is outside it, by at least
+  0.161 H on today's cast.
+- **The sleeve guard (new, `mageLooks.test.mjs`).** It samples every edge of the right hand's
+  mount at most 0.005 H apart. The fist's own grip (±0.035 H about the grip point) is left out.
+  Each point is checked against her right forearm, her right hand and the flared right sleeve,
+  skinned as posed. On today's cast the edges were 0.087 H outside the arm and sleeve (key 1) and
+  0.0053–0.0066 H outside the hand. Each solid has a fixture that must fail: the focus moved so
+  its haft lies along the forearm's axis fails it.
+- **The head and the ground.** The 1.3-skull-radii head guard now covers the base's sceptre too.
+- **Pre-existing, recorded, out of this change.** The base's **death** clip puts its sceptre
+  **0.20 H under the ground** on key 6. The ground check skips that one clip and sheet
+  (`mageLooks.test.mjs` `overGround`: `char_wizard_base` `death`). This is a follow-up, not
+  something this change caused (her death keys are held by digest, R115).
+- **On the pointed cast (I-JS7C8-29, `b0e03f10`)**, on all three looks with no exemption: out of
+  the torso by 0.141 H and the head by 0.26 H on the pointed keys. The focus's haft clears the
+  flared right sleeve by **0.0019 H** (the Spellwarden and the Pyromancer, keys 3–4, beside the
+  fist), and the sceptre by 0.0059 H. The cage sits 1.691 skull radii from her skull in the cast.
+- Nothing was added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`.

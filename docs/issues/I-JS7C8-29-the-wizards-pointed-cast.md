@@ -47,16 +47,16 @@ Run I-JS7C8-28's guards on the new cast on all three looks. If one can only pass
 
 ## Acceptance Criteria
 
-- [ ] RED first, against today's cast: the staff 77° above level and 78° off the facing at key 3
+- [x] RED first, against today's cast: the staff 77° above level and 78° off the facing at key 3
       (needs within 10° in plan and 0–15° below level); the orb at 0.95 H (needs under the
       shoulder at keys 3–4 and under the crown on every key).
-- [ ] Keys 3 and 4 meet R125 on all three looks.
-- [ ] The normal grip holds on every `attack` key; the wrist cocks at most 1.3 rad.
-- [ ] The wizard's cast describe (wind-up, weight, pelvis first, curve, free hand) and
+- [x] Keys 3 and 4 meet R125 on all three looks.
+- [x] The normal grip holds on every `attack` key; the wrist cocks at most 1.3 rad.
+- [x] The wizard's cast describe (wind-up, weight, pelvis first, curve, free hand) and
       `ATTACK_TURN_LIMIT` pass unchanged.
-- [ ] I-JS7C8-28's guards pass on the new cast on all three looks, with no exemption.
-- [ ] The frame box per sheet, measured, is recorded here, with the E2 option it meets.
-- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit` in `game-client` pass.
+- [x] I-JS7C8-28's guards pass on the new cast on all three looks, with no exemption.
+- [x] The frame box per sheet, measured, is recorded here, with the E2 option it meets.
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit` in `game-client` pass.
 
 ## Blocked By
 
@@ -80,3 +80,33 @@ R4, R5.
 - `game-client/tools/bake/page/characters/clips.js` (`ATTACKS.cast`)
 - `game-client/tools/bake/page/characters/classMotion.test.mjs` (the point describe, the normal grip on `attack`)
 - `game-client/tools/bake/page/characters/mageLooks.test.mjs` (the looks' point and guards)
+
+## Built (2026-11-23, agent)
+
+E2 (b) as decided. `ATTACKS.cast` (`clips.js`) changes the right arm and wrist on keys 3–5 only
+(`b0e03f10`). The other keys, the stance, the trunk's turns, the weight, `z` and the glow are as
+before. It is still 7 keys at 12 fps with the strike and `fx.glow` 5 at key 3.
+
+| Key | `upperArmR` | `foreArmR` | `handR` |
+|---|---|---|---|
+| 3 (strike) | −1.5, 0, −0.12 → **−0.92, 0.46, −0.89** | −0.2, 0, 0 → **−0.05, 0.26, 0** | 0.15, 0, 0 → **1.2, 0.12, 0** |
+| 4 | −1.38, 0.1, 0.05 → **−0.86, 0.4, −1.02** | −0.25, 0, 0 → **−0.05, 0.28, 0** | 0.1, 0, 0 → **1.2, 0.12, 0** |
+| 5 | −0.8, 0, −0.1 → **−0.6, 0.2, −0.55** | −1.0, 0, 0 → **−0.6, 0.14, 0** | — → **0.55, 0.06, 0** |
+
+- **The point (R125), keys 3 and 4, on the sceptre and a focus alike.** The staff is **0.1°** off
+  the facing in plan and **6.7° / 8.7°** below level. The shoulder-to-hand line is **23.6°** from
+  the staff: the arm reaches out to her right and turns palm down. The elbow is bent **2.9°**. The
+  hand is at **0.667 / 0.661 H**, between the chest bone (0.641) and the shoulder (0.725 / 0.722).
+  The orb is at **0.62 / 0.60 H** (today's strike held it at 0.95).
+- **The grip (R126).** The normal-grip test now runs on `attack`. The wrist cocks **1.2 rad**,
+  under `CLEAVE_CARRY` 1.3, so the arm's angle does the rest.
+- **Weight and arcs (R127).** The cast describe passes unchanged. Key 5 eases the wrist (0.55) as
+  the arm comes in, so the orb stays under her crown (0.69 H; today's key 5 read 0.93). The staff
+  turns 44° and 62° a frame into the carry, under `ATTACK_TURN_LIMIT` 100°.
+- **The guards (R128, R129).** I-JS7C8-28's guards pass on all three looks with no exemption (see
+  I-JS7C8-28 Built: the sleeve at 0.0019 H on the focuses, keys 3–4).
+- **The box, predicted (E2).** The bake's first pass was replayed, and the replay reads today's
+  three boxes exactly. Predicted: 222 × 192 → **234 × 186**, 225 × 195 → **237 × 189**, 225 × 198 →
+  **234 × 192**. Each is +12 px wide, set by the cast's key 4 in `sw` and `ne` (its shadow), and
+  shorter than today's. That meets E2 (b). The bake (I-JS7C8-30) reproduced all three, anchors
+  included.
