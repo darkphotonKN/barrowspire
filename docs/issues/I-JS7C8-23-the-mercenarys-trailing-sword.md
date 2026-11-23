@@ -126,5 +126,7 @@ arm clears the Duelist's half-cloak and his robe (the sleeve by 0.050 H), which 
 must-fail list. `MERC_RUN_BLADE` is gone, and the header comment no longer describes his raised
 run blade. The knight's `RUN_*` carry, the shared sprint keys and every digest are unchanged.
 
-Review round 1 found the Sellsword's right spaulder, turned with this carry's 0.6 rad upper-arm
-twist and 0.5 rad swing, sunk 0.052 H into his torso on the run (escalated; see I-JS7C8-22).
+Review rounds 1 and 2: the Sellsword's right spaulder, turned with this carry's swing, sinks 0.041 H
+into his body on the run (surface depth). That is under the 0.062 H his approved attack sinks it,
+and I-JS7C8-22's guard holds the run to the attack. Keeping the spaulders out of the chest is a
+look change, left to the owner as a follow-up (see I-JS7C8-22).

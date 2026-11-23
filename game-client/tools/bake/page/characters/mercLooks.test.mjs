@@ -51,7 +51,7 @@ vi.mock("./fabrics.js", async () => {
 const THREE = await import("three");
 const { CAST, mercenary } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, tubeNow } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, outside, tubeNow } = await import("./clearance.js");
 const { OFFHAND_OF } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
 const { skirtBones } = await import("./anatomy.js");
@@ -366,6 +366,62 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
   }
   /** How many of the right spaulder's edges `segs` cross the head. */
   const spaulderMeasure = (rig, segs) => ({ head: crossings(segs, headOf(rig).flatMap(trianglesOf)) });
+
+  /**
+   * How deep any of `pts` lies inside the body tube `mesh` (H), on its surface: for each point the
+   * tube's own reading (clearance.js `outside`) calls inside, its distance to the nearest of the
+   * mesh's triangles as posed; 0 for none inside. The tube's reading alone runs square to the axis,
+   * which near the shoulder, where the torso's rings close in to the neck, reads about twice as
+   * deep as the surface lies (the Sellsword's right spaulder on the run, into the torso: 0.052 H
+   * against about 0.023 H).
+   */
+  const sunkInto = (mesh, pts) => {
+    const { rings, mids } = tubeNow(mesh);
+    const inside = pts.filter((v) => (outside(rings, mids, v) ?? 1) < 0);
+    if (!inside.length) return 0;
+    const tris = trianglesOf(mesh).map((t) => new THREE.Triangle(...t));
+    const balls = tris.map((t) => t.getMidpoint(new THREE.Vector3())).map((c, k) => [c, Math.max(...[tris[k].a, tris[k].b, tris[k].c].map((v) => v.distanceTo(c)))]);
+    const at = new THREE.Vector3();
+    let worst = 0;
+    for (const v of inside) {
+      let d = Infinity;
+      tris.forEach((t, k) => {
+        if (v.distanceTo(balls[k][0]) - balls[k][1] >= d) return;
+        t.closestPointToPoint(v, at);
+        d = Math.min(d, at.distanceTo(v));
+      });
+      worst = Math.max(worst, d);
+    }
+    return worst;
+  };
+  /** The spaulder's lames on side `s` as edges. */
+  const lameSegments = (rig, s) => lamesOn(rig, s).flatMap((m) => edgesOf(m));
+  /** How deep the spaulder's edges `segs` sink into the body, the torso or what is worn over it, at worst (H). */
+  const spaulderSunk = (rig, segs) => {
+    const pts = along(segs, STEP * rig.H);
+    return Math.max(...bodyOf(rig).map((m) => sunkInto(m, pts))) / rig.H;
+  };
+  /** The spaulders each figure wears: the base's on the off (left) shoulder, the Sellsword's on both; the Duelist's cloak in its place. */
+  const SPAULDERS = { char_mercenary_base: ["L"], [DUELIST]: [], [SELLSWORD]: ["L", "R"] };
+  /** How deep the spaulder on side `s` sinks on every baked frame of `anim`, the figure posed as the bake poses it. */
+  const sunkMemo = new Map();
+  const sunkOn = (sheet, r, anim, s) => {
+    const key = `${sheet} ${anim} ${s}`;
+    if (!sunkMemo.has(key)) {
+      const { rig, poses } = characterPoses(r);
+      sunkMemo.set(
+        key,
+        poses
+          .filter((p) => p.anim === anim)
+          .map((p) => {
+            p.apply();
+            rig.root.updateMatrixWorld(true);
+            return spaulderSunk(rig, lameSegments(rig, s));
+          }),
+      );
+    }
+    return sunkMemo.get(key);
+  };
   /** The figure posed on every baked frame of `anim`, the sword's, the arm's and the spaulder's measures on each. */
   function guarded(r, anim) {
     const { rig, poses } = characterPoses(r);
@@ -404,6 +460,7 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
     expect(names(bodyOf(rig))).toEqual([...PIECES[sheet].body].sort());
     expect(names(hipPiecesOf(rig))).toEqual([...PIECES[sheet].hips].sort());
     expect(lamesOn(rig, "R")).toHaveLength(PIECES[sheet].spaulder);
+    for (const s of ["L", "R"]) expect(lamesOn(rig, s), `${s} spaulder`).toHaveLength(SPAULDERS[sheet].includes(s) ? 3 : 0);
     expect(headOf(rig).length).toBeGreaterThan(0);
   });
 
@@ -458,6 +515,22 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
 
   it.each(CASES)("%s %s: no edge of the right spaulder, turning with the arm's twist, crosses the head (R104)", (sheet, anim, r) => {
     for (const f of frames(sheet, r, anim)) expect(f.spaulder.head, `frame ${f.i}: spaulder edges through the head`).toBe(0);
+  });
+
+  /**
+   * The spaulders sink a little into the chest on clips already shipped: as the arm swings out and
+   * back the top lame's inner rim tips down into the front of the upper chest. So the guarded clip
+   * may sink a spaulder no deeper than the attack does, the deepest clip of the figure's approved
+   * sheet, measured the same way on the surface (the base's left 0.052 H, the Sellsword's left
+   * 0.061 and right 0.062 H; the death 0.040–0.048, the walk 0.002–0.010). Not the walk: it sits
+   * far under the approved attack and death, so it would hold the run alone to it. Keeping the
+   * spaulder out of the chest on every clip is a look change (it would follow only part of the
+   * arm's swing, every clip re-baked), not this guard's.
+   */
+  const SPAULDER_CASES = FIGURES.flatMap(([sheet, r]) => SPAULDERS[sheet].flatMap((s) => GUARDED.map((anim) => [sheet, s, anim, r])));
+  it.each(SPAULDER_CASES)("%s %s spaulder %s: sinks into the torso and what is worn over it no deeper than the attack, the deepest shipped clip, sinks it (R104)", (sheet, s, anim, r) => {
+    const limit = Math.max(...sunkOn(sheet, r, "attack", s));
+    sunkOn(sheet, r, anim, s).forEach((d, i) => expect(d, `frame ${i}: the ${s} spaulder into the body (H), the attack's ${limit.toFixed(4)}`).toBeLessThanOrEqual(limit));
   });
 
   /** A figure posed on its run's first baked frame, for the fixtures to move its pieces from. */
@@ -554,5 +627,15 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
     const lame = middle(lamesOn(rig, "R")[0]);
     const head = new THREE.Vector3().setFromMatrixPosition(rig.bones.head.matrixWorld);
     expect(spaulderMeasure(rig, moved(segs, head.sub(lame))).head).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["char_mercenary_base", "L", base],
+    [SELLSWORD, "R", row(SELLSWORD)],
+  ])("finds the %s %s spaulder pushed into the chest: its lames moved onto the chest bone sink deeper than the attack sinks it", (sheet, s, r) => {
+    const rig = posedOn(r);
+    const lame = middle(lamesOn(rig, s)[0]);
+    const chest = new THREE.Vector3().setFromMatrixPosition(rig.bones.chest.matrixWorld);
+    expect(spaulderSunk(rig, moved(lameSegments(rig, s), chest.sub(lame)))).toBeGreaterThan(Math.max(...sunkOn(sheet, r, "attack", s)));
   });
 });
