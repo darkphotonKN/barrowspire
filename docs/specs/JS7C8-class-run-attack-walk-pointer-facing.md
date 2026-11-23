@@ -1564,6 +1564,13 @@ untouched byte for byte.
 > line on look changes makes one exception. See *Owner change, 2026-11-23: the Duelist's robe
 > carried out behind over the heel kick*.
 
+> **Edited in place again on 2026-11-23 (owner tune round after the contact sheet, I-JS7C8-23's
+> carry retuned).** Requirement numbers are kept. R98 is restated (the arm turns about its length
+> outward, the thumb-web out), R158 is added (the blade angled out, seen from above), and the
+> Acceptance Criteria gain R158's line. The owner's left-shoulder report is escalated for the
+> Duelist, not routed around. See *Owner change, 2026-11-23: the blade angled out, the thumb-web
+> turned out*.
+
 ### Owner change, 2026-11-23: the Duelist's robe carried out behind over the heel kick
 
 I-JS7C8-21 put the shared sprint under him (its legs, lean and 16 fps, his sword arm left as it
@@ -1610,6 +1617,69 @@ Change the Duelist's robe. So:
   the elbow). It is held as a must-fail entry against today's carry (`mercLooks.test.mjs`
   `TODAY_FAILS`), which I-JS7C8-23's trailing carry replaces and must clear (R102, R104). Never an
   exemption, and not baked: the one bake (R109) comes after I-JS7C8-23.
+
+### Owner change, 2026-11-23: the blade angled out, the thumb-web turned out
+
+After approving the contact sheet (I-JS7C8-25) the owner played the run and said:
+
+> 「拖劍時我感覺劍體應該會往伸外 目前你是做成往內好像不太合理」
+> 「手的虎口是朝外的所以自然的話劍尖會偏外」
+> 「然後左肩好像會破圖也修一下」
+
+As he trails the sword, the blade should reach outward; built, it angles inward, which does not
+look right. The hand's thumb-web faces outward, so the point naturally angles out. And the left
+shoulder seems to break up; fix that too.
+
+- **What was built** (*measured*, I-JS7C8-23's carry: `MERC_TRAILING_TURNS` back 0.5, out 0.3, twist
+  0.6, the forearm pronated 1.6 rad, the elbow 0.3, the wrist cocked 1.0, the sway 0.1). Seen from
+  above, the line from the hand to the point ran back and **13.7–19.0° inward** (16.0° on average)
+  of the straight-back line through the hand, toward his left; the point stayed 0.06–0.13 H right
+  of the hips bone only because the hand rides 0.22–0.24 H out. The grip's axis out of the fist
+  (the thumb-web) pointed 12.4–17.2° inward. The arm's 2.2 rad of turn about its length went
+  inward (the shoulder turned in, the forearm pronated), so the thumb-web faced in, toward his back.
+- **The carry, so (R98 restated, R158).** The same 2.2 rad of turn, the other way: the upper arm
+  turned out 0.6 rad (`MERC_TRAILING_TURNS.twist` −0.6) and the forearm supinated 1.6 rad (still
+  within R98's 1.6), so the thumb-web faces out and the blade leaves the fist outward. The wrist
+  still cocks only in the swing (`handR` y and z 0): the angle never comes from bending the wrist
+  sideways, and the normal-grip test holds. Turned so, the cock that hangs the point 15–45° below
+  level is 1.55 rad (was 1.0) and the elbow 0.1 (was 0.3). The outward turn lifts the hand, so the
+  arm swings back 0.46 rad (was 0.5) and the sway is 0.08 of the pump (was 0.1), which keep the
+  hand within R97's 0.06 H of the hips bone with the sway in R100's band; the arm stands 0.22 rad
+  out (was 0.3).
+- *Measured, why those.* Out 0.15 or less keeps the hand lower, but the Duelist's right sleeve
+  near the elbow then crosses his half-cloak's right hem on the run's last key (2–9 edges,
+  `mercLooks.test.mjs`, R104); out 0.22 clears it. Out 0.25–0.3 clears it too but lifts the hand
+  to 0.07–0.08 H over the hips bone, past R97. The inward (pronated) turn cannot bring the blade
+  out within R98: about 20° out needs about 3.0 rad of forearm turn alone (172°).
+- *Measured, the new carry* (32 samples, his rig and style): the blade **25.4–34.2° outward**
+  (30.0° on average), the point 0.41–0.47 H right of the hips bone, the hand 0.22–0.26 H; the
+  blade 28.9–42.7° below level; the edge 32.1–46.5° below level; the hand 0.030 H under to 0.058 H
+  over the hips bone and 0.12–0.21 H behind it; the arm 26.1–39.8° behind the trunk (33.2° on
+  average), the elbow bent 5.3–6.2°; the sway 13.7° peak to peak; the point 0.43–0.61 H behind the
+  hips bone; the blade's centre line at least 0.118 H off the ground. The bands are tight: the
+  blade's lowest angle 2.3° inside 45°, the hand's top 0.002 H inside 0.06, the arm's least angle
+  1.1° inside 25°, the sway 1.7° inside 12.
+- **The left shoulder (escalated for the Duelist, not routed around).** *Looked at*, the run's
+  baked frames at ×4–×8 on all three looks (51e91465): the Duelist's left sleeve and shoulder come
+  out through his half-cloak on keys 3–7, madder patches on the slate cloak, plain at nw, w, n and
+  sw, jagged at se. The base's and the Sellsword's left spaulders read clean: at the front of the
+  free arm's pump the top lame's rim sinks into the chest (*measured*, on the surface: the base
+  0.015 H, the Sellsword's coat 0.026 H and torso 0.015 H, against the walk's 0.002 and 0.008 H),
+  but nothing shows through at ×8. *Measured*, the Duelist's left arm's edges across the
+  half-cloak on each run key: 0, 0, 0, 18, 74, 113, 52, 37 (the walk 0, 0, 0, 14, 17, 14, 12, 0, the
+  attack up to 100, both shipped). The upper arm, near the shoulder, does it: the cloak's rings
+  there sit barely outside it. Run-only levers measured, none clears it: the free arm's pump
+  halved (100 at key 5), held in toward the body (75, and the forearm then sinks into the body,
+  100 or more edges), swung further forward (73); the chest's counter-turn halved (76); the
+  cloak's chain springs in the run (no sideways swing, half the inertia, a tighter limit, a
+  stiffer chain: 18–130); the cloak's side weighted to the chest (70). Only the cloak's cut
+  clears it: each of its four rings 0.02 H wider and 0.02 H further out to his left: the run 0 on
+  every key, the walk 0, the attack 75 at worst (from 100); half that (0.01 H) leaves the run 46.
+  That is a look change to the Duelist (FS-1J1CB R7's half-cloak) that re-bakes every clip of his
+  sheet, so it is escalated (M6), not made here. Options for the owner: (a) the cut 0.02 H wider
+  at the shoulder, every Duelist clip re-baked (it also clears the walk's smaller pokes); (b) leave
+  it. The base's and the Sellsword's spaulders are not changed: nothing shows to fix, and holding
+  the run to the walk's sink would halve the free arm's pump (M4).
 
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
@@ -1815,6 +1885,11 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
     both), never by rolling the fist on the forearm. *Measured:* about 2.6 rad of turn between
     the two gives 30–40° (see *The edge*). *Estimate:* split so that the forearm's own turn stays
     within about 90° (1.6 rad), a forearm's pronation, with the rest at the shoulder.
+    *Restated 2026-11-23 (owner change, 「手的虎口是朝外的所以自然的話劍尖會偏外」):* the turn about the
+    arm's length goes **outward**, the thumb-web turned out: the upper arm turned out and the
+    forearm supinated, the forearm's own turn still within 1.6 rad, so the blade leaves the fist
+    outward (R158). The inward turn first estimated here (the shoulder turned in, the forearm
+    pronated) turned the blade in.
 99. **Never on the ground (M2).** On every sample, and on every baked run frame of the three
     looks, the lowest point of every mesh the sword carries (the blade, the cross, the knuckle-bow,
     the grip, the pommel) stands **at least 0.06 H (about 4.8 world px at 1x) above the ground**.
@@ -1926,6 +2001,22 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
      hem in the run 0.224–0.316 H up and 0.172–0.219 H behind (was 0.156–0.254 and 0.133–0.189), in
      the walk 0.191–0.198 H up (was 0.176–0.193). Judged at the contact sheet (R111).
 
+#### The blade angled out (owner change 2026-11-23)
+
+158. **The blade angled out (owner change 2026-11-23, 「拖劍時我感覺劍體應該會往伸外 目前你是做成往內好像不太合理」,
+     「手的虎口是朝外的所以自然的話劍尖會偏外」).** Seen from above (the model's level plane), the line
+     from the hand to the point runs back and out to his right: on every sample of the run it
+     lies **20–35° outward** of the straight-back line through the hand (the model's −z), never
+     inward, so the blade never crosses behind his back toward his left; the point stays further
+     out to his right than the hand. The angle comes from the arm's turn about its length with
+     the thumb-web turned out (R98, restated), never from bending the wrist sideways: the wrist
+     cocks only in the swing (`handR` y and z 0) and the normal-grip test holds. Everything else
+     in R97–R102 holds as written: the point 15–45° below level, the edge at least 30° below
+     level, every sword mesh at least 0.06 H off the ground, the hand at the hip within 0.06 H,
+     the sway 12–26°. On every baked run frame of the three looks the guards of R104–R106 pass
+     unchanged, and the frame box holds (R110). *Measured* before: 13.7–19.0° inward; after:
+     25.4–34.2° outward.
+
 ### Acceptance Criteria
 
 Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `clearance.test.mjs`,
@@ -1967,6 +2058,10 @@ Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `cl
 - [ ] The shared sprint's keys are unchanged under him (M1). The Duelist's robe back panel is carried
       out behind in the run (`ROBE_BACK_CARRY`), its cut and its rest unchanged, and its leg guard
       passes every clip (R114).
+- [ ] Seen from above, the blade 20–35° outward of the straight-back line through the hand on
+      every sample, never inward, the point further out to his right than the hand; the arm
+      turned out about its length with the forearm's own turn within 1.6 rad and the wrist cocked
+      only in the swing, the normal-grip test passing (R158, R98 restated).
 - [ ] The knight's and the wizard's run tests, and the shared run's tests (plain style, `RUN_STEP`
       key for key, the 10° lean, the pump bands, `RUN_PACE` within 1 at 14 fps), pass unchanged.
 
