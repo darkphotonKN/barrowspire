@@ -8,6 +8,7 @@ import {
   ANIMATIONS,
   ATTACKS,
   ATTACK_TURN_LIMIT,
+  CLEAVE_CARRY,
   RUNNING_CLASS_ANIMATIONS,
   RUN_ANIMATIONS,
   RUN_ARM,
@@ -665,7 +666,8 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
   const rig = rigOf(build);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(["idle", "walk", "run"])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
+  // the wizard's cast too (FS-JS7C8 § Change: The wizard's sprint and pointed cast R126): it points the staff along the aim
+  it.each(["idle", "walk", "run", ...(name === "wizard" ? ["attack"] : [])])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
     clips[anim].forEach((p, i) => {
       posed(rig, p);
       // the knuckles' axis (the hand's +x, about which the wrist cocks) in the forearm's frame: a
@@ -762,6 +764,72 @@ describe.each(STAFFS)("the wizard's staff guards on $held: out of the torso, the
     posed(rig, clips.attack[3]);
     expect(staffMeasure(rig, pts.map(world))[part], "where she holds it").toBeLessThan(0);
     expect(staffMeasure(rig, movedTo(to()))[part]).toBeGreaterThan(0);
+  });
+});
+
+/** The top of her skull (classMotion's `inside` head: the ellipsoid on the head bone), world, on the pose the rig holds now. */
+function crownOf(rig) {
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  const bind = new THREE.Vector3(0, hy + 0.048 + r * 1.05, hz + 0.004).multiplyScalar(rig.H).sub(rig.bind.head);
+  return bind.applyMatrix4(rig.bones.head.matrixWorld);
+}
+
+/** The keys of the cast that point (R125): the strike and its carry through. */
+const POINTED = [3, 4];
+
+describe.each(STAFFS)("the wizard's cast points $held along the aim like a spell being cast (FS-JS7C8 § Change: The wizard's sprint and pointed cast R124–R126, R129; W4, E2 (b))", ({ style, points }) => {
+  const rig = rigOf(WIZARD_BUILD);
+  const pts = points(rig);
+  const [butt, top] = [pts[0], pts.at(-1)];
+  const keys = clipsFor(style, WIZARD_SHEET.animations).attack;
+
+  /** On key `i`: the staff (butt to top) in degrees, plan off the facing (+z) and from level (+ up), and the arm's measures. */
+  const measure = (i) => {
+    posed(rig, keys[i]);
+    const d = world(top).sub(world(butt));
+    const [sh, el, hand] = [at(rig, "upperArmR"), at(rig, "foreArmR"), at(rig, "handR")];
+    return {
+      plan: Math.abs(Math.atan2(d.x, d.z)) * DEG,
+      level: Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG,
+      arm: hand.clone().sub(sh).angleTo(d) * DEG,
+      elbow: 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG,
+      hand: hand.y,
+      chest: at(rig, "chest").y,
+      shoulder: sh.y,
+      top: world(top).y,
+    };
+  };
+
+  it.each(POINTED)("on key %i lays the staff within 10° of the facing in plan and 0–15° below level, the orb leading", (i) => {
+    const m = measure(i);
+    expect(m.plan, `plan @${i}`).toBeLessThanOrEqual(10);
+    expect(m.level, `from level @${i}`).toBeLessThanOrEqual(0);
+    expect(m.level, `from level @${i}`).toBeGreaterThanOrEqual(-15);
+  });
+
+  it.each(POINTED)("on key %i reaches the arm along it: the shoulder-to-hand line within 25° of the staff, the elbow bent at most 20°", (i) => {
+    const m = measure(i);
+    expect(m.arm, `arm to staff @${i}`).toBeLessThanOrEqual(25);
+    expect(m.elbow, `elbow @${i}`).toBeLessThanOrEqual(20);
+  });
+
+  it.each(POINTED)("on key %i holds the hand between the chest bone's height and the shoulder's, the orb not above the shoulder", (i) => {
+    const m = measure(i);
+    expect(m.hand, `hand over the chest bone @${i}`).toBeGreaterThanOrEqual(m.chest);
+    expect(m.hand, `hand under the shoulder @${i}`).toBeLessThanOrEqual(m.shoulder);
+    expect(m.top, `orb under the shoulder @${i}`).toBeLessThanOrEqual(m.shoulder);
+  });
+
+  it("never lifts the orb over her crown, on any key", () => {
+    keys.forEach((p, i) => {
+      posed(rig, p);
+      expect(world(top).y, `orb @${i}`).toBeLessThan(crownOf(rig).y);
+    });
+  });
+
+  it(`cocks the wrist at most CLEAVE_CARRY (${CLEAVE_CARRY} rad), the most any carry cocks, on every key`, () => {
+    keys.forEach((p, i) => expect(Math.abs((p.b.handR ?? [0])[0]), `wrist @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY));
   });
 });
 

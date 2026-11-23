@@ -656,18 +656,28 @@ export const ATTACKS = {
    * with the body behind it. The weight rocks back as the sceptre is drawn back by the right
    * shoulder and the free hand reaches toward the aim (keys 0–1); the pelvis turns into the thrust
    * first while the chest is still back (key 2); the chest follows, the weight comes onto the
-   * front foot and the sceptre thrusts toward the aim, the orb flaring, the free hand opening out
-   * to the side (key 3, the strike, as before); it carries on past (key 4) and settles back to the
-   * carry (keys 5–6). Each key's hips turn on top of the cast's stance.
+   * front foot and the arm reaches out nearly straight, the sceptre pointed along the aim like a
+   * spell being cast, the orb flaring, the free hand opening out to the side (key 3, the strike);
+   * it carries on, still pointed and a little lower (key 4), and settles back to the carry (keys
+   * 5–6), the wrist easing as the arm comes in. Each key's hips turn on top of the cast's stance.
+   *
+   * The point (FS-JS7C8 § Change: The wizard's sprint and pointed cast R125, R126; the owner:
+   * 「法師攻擊時法杖要伸直指向怪物像施法一樣」): on keys 3–4 the staff lies along the facing in plan and
+   * 7–9° below level, the hand about a third of the way from the chest bone up to the shoulder,
+   * the elbow all but straight. The fist holds a staff square to the forearm, and the wrist cocks
+   * it 1.2 rad toward the arm, under CLEAVE_CARRY; the rest of the turn is the arm's: reached out
+   * to her right of the aim by about 24°, the forearm turned palm down, so the staff runs on in
+   * from the hand along the aim. The wrist is held at 1.2 so a look's longer focus, its butt 0.2 H
+   * back past the fist, clears her flared right sleeve.
    */
   cast: () =>
     [
       P({ hips: [0, -0.05, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.1, 0], upperArmR: [-0.15, 0, -0.25], foreArmR: [-1.5, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.25, 0, 0.15], foreArmL: [-0.7, 0, 0] }, { z: -0.008 }, { glow: 1.6 }),
       P({ hips: [0, -0.17, 0], spine: [-0.06, -0.15, 0], chest: [-0.1, -0.22, 0], upperArmR: [0.4, 0, -0.9], foreArmR: [-1.9, 0, 0], handR: [0, 0, 0], upperArmL: [-1.0, 0, 0.2], foreArmL: [-0.35, 0, 0], handL: [-0.3, 0, 0] }, { z: -0.025 }, { glow: 2.8 }),
       P({ hips: [0, 0.08, 0], spine: [0, -0.08, 0], chest: [-0.04, -0.18, 0], upperArmR: [-0.45, 0, -0.75], foreArmR: [-1.55, 0, 0], handR: [0.25, 0, 0], upperArmL: [-1.0, 0, 0.3], foreArmL: [-0.3, 0, 0], handL: [-0.4, 0, 0] }, {}, { glow: 3.8 }),
-      P({ hips: [0, 0.3, 0], spine: [0.08, 0.1, 0], chest: [0.12, 0.18, 0], upperArmR: [-1.5, 0, -0.12], foreArmR: [-0.2, 0, 0], handR: [0.15, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.04 }, { glow: 5 }),
-      P({ hips: [0, 0.33, 0], spine: [0.1, 0.14, 0], chest: [0.14, 0.24, 0], upperArmR: [-1.38, 0.1, 0.05], foreArmR: [-0.25, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.035 }, { glow: 3.6 }),
-      P({ hips: [0, 0.17, 0], spine: [0.04, 0.05, 0], chest: [0.04, 0.06, 0], upperArmR: [-0.8, 0, -0.1], foreArmR: [-1.0, 0, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
+      P({ hips: [0, 0.3, 0], spine: [0.08, 0.1, 0], chest: [0.12, 0.18, 0], upperArmR: [-0.92, 0.46, -0.89], foreArmR: [-0.05, 0.26, 0], handR: [1.2, 0.12, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.04 }, { glow: 5 }),
+      P({ hips: [0, 0.33, 0], spine: [0.1, 0.14, 0], chest: [0.14, 0.24, 0], upperArmR: [-0.86, 0.4, -1.02], foreArmR: [-0.05, 0.28, 0], handR: [1.2, 0.12, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.035 }, { glow: 3.6 }),
+      P({ hips: [0, 0.17, 0], spine: [0.04, 0.05, 0], chest: [0.04, 0.06, 0], upperArmR: [-0.6, 0.2, -0.55], foreArmR: [-0.6, 0.14, 0], handR: [0.55, 0.06, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
       P({ upperArmR: [-0.35, 0, -0.08], foreArmR: [-1.15, 0, 0], handR: [-0.1, 0, 0], upperArmL: [0.1, 0, 0.15], foreArmL: [-0.5, 0, 0] }, { z: 0.004 }, { glow: 1.3 }),
     ].map((p) => add(CAST_STANCE, p)),
 
