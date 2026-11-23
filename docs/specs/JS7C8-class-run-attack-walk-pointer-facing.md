@@ -1512,6 +1512,32 @@ HITL:
   lane).
 - Rewording the open browser check I-JS7C8-9, which still names every class's `walk_attack`.
 
+### Integrated with Looks v2, 2026-11-23
+
+Merged into main `697260c6` (FS-1J1CB § Change: Looks v2) on `integrate/class-sprint-into-main`,
+every class sheet re-baked. Requirement text above is unchanged; what changed on the looks, and why:
+
+- **Each look's own bow in the low ready.** The Hunter carries Looks v2's recurve and the Shadow
+  Ranger its slim longbow (R58, R59) in the same grip and keys (`ARCHER_LOW_READY`); the run
+  guards (R72–R77, R87–R90) read each figure's own bow (`userData.bow`), its string's own tips.
+  The owner's rule for the merge, 「如果有改武器就套用main的」, does not touch them: Looks v2 wrote no
+  carry of its own for either, so the low ready with the nocked arrow applies.
+- **R90 moves from the Hunter to the Shadow Ranger.** The recurve is shorter: the Hunter's tip now
+  stays under her hair in every facing (n 0.056 H, ne 0.082 H under), so her escalation is moot.
+  The Shadow Ranger's deeper Looks v2 cowl (the liripipe) stands lower than the ranger's, and her
+  slim longbow, the longbow's length, draws its tip over it in n by 0.013 H and ne by 0.030 H (the
+  base's margin there: 0.003 and 0.007 H). Clearing it would cant her bow past R88's band, lower her
+  hands under R73's, or raise Looks v2's cowl, so it is **bounded at 0.035 H in n and ne and
+  escalated to the owner** (archerLooks.test.mjs), as the Hunter's was.
+- **The Shadow Ranger's cloak drags further (`SHADOW_CLOAK.drag` 0.46; the archer's 0.36).** Her
+  Looks v2 cloak, let down to 0.66 H, met the sprint's heel kick: the boot came 5.99 px (1x) through
+  it on run frame 3. 0.40 reads 3.03 px, 0.42 2.33, 0.44 and on 0. Standing it hangs as Looks v2 cut
+  it. A per-look seam: cast.js `archer` reads `cloak.drag`.
+- **The draw's count.** The Looks v2 test of the live string counted draws across three attack
+  clips (six or more); with R79 her one clip draws on three keys, and the test reads that.
+- **Boxes.** The base 252 × 225 (unchanged); the Hunter 237 × 213 and the Shadow Ranger 258 × 231,
+  Looks v2's own boxes exactly (main's), so the run grew neither.
+
 ## Change: The mercenary's sprint and trailing sword
 Status: work-order
 Date: 2026-11-23
@@ -2057,6 +2083,33 @@ HITL:
   except the Duelist's robe back panel carried out behind in the run (R114, the owner 2026-11-23).
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
+
+### Integrated with Looks v2, 2026-11-23
+
+Merged into main `697260c6` (FS-1J1CB § Change: Looks v2) on `integrate/class-sprint-into-main`.
+The owner first ruled 「如果有改武器就套用main的」 (a look whose weapon Looks v2 changed keeps Looks v2's
+handling), then for this class 「Duelist 也改拖劍」: all three figures trail the sword.
+
+- **The Duelist trails his long-hilted blade.** Looks v2's run wrist re-key (`DUELIST_RUN_WRIST`
+  [0, 0.55]), written for the raised-blade pump, is dropped: the hilt keeps more than 0.052 H off his
+  forearm on every pose without it. His trailing arm swings out 0.45 rad past the rest's spread
+  (`DUELIST_TRAILING_TURNS`; the mercenary's 0.3): Looks v2's half-cloak, let down to 0.42 H (from
+  0.27) and wider across his back, was crossed by the arm past the elbow on run frame 6 (15 edges);
+  0.4 still crossed it (7, frame 7), 0.42 was the first clear. The long blade passes every R104
+  guard (legs, boots, the robe, the half-cloak, the body, the wound sash and long scabbard) and the
+  0.06 H ground margin (R99) on every run frame.
+- **The Duelist's robe follows his legs more (`ROBE_LEG_FOLLOW` 0.8, was Looks v2's 0.5), and
+  `ROBE_BACK_CARRY` stays.** Looks v2's robe, to 0.085 H and flared, followed the thigh less high
+  up, and the sprint's knee drive pushed the upper front of each thigh 2.08 px (1x) through it on
+  run frames 2 and 6 (the limit is 0.67). 0.7 (the mercenary's own coat's) reads 1.69 px, 0.75 1.60,
+  0.8 0.25. Without the back carry the back panel leaks again (2.20 px, frame 1). Standing it hangs
+  as Looks v2 cut it; this is the owner's 「改 Duelist 長袍」 applied again.
+- **The Sellsword** trails his broad falchion unchanged; the guards read it (`falchion`) and his
+  four-lame spaulders, his studded belt, purse and falchion scabbard at the hips.
+- **The trailing angle** (the owner's later "blade outward") is being retuned on
+  `feat/run-knight-sprint`; this note is extended when it is merged in.
+- **Boxes.** The base 297 × 261 (unchanged); the Duelist 306 × 270 and the Sellsword 279 × 255,
+  Looks v2's boxes exactly.
 
 ## Change: The wizard's sprint and pointed cast
 Status: work-order
@@ -2686,6 +2739,30 @@ HITL:
   the ground. A fix (a wrist key on her death, as the looks' `FOCUS_DEATH`, re-baked) is the
   owner's to decide; once fixed, the bound goes back to the ground.
 
+### Integrated with Looks v2, 2026-11-23
+
+Merged into main `697260c6` (FS-1J1CB § Change: Looks v2) on `integrate/class-sprint-into-main`.
+The owner: 「如果有改武器就套用main的」 (a look whose weapon Looks v2 changed keeps Looks v2's handling).
+
+- **The pointed cast is the base wizard's alone.** The Spellwarden (the warding staff, −0.46 to
+  0.62 H on the grip) and the Pyromancer (the brazier rod) keep Looks v2's cast: clips.js
+  `staffCast`, the wizard's thrust with keys 3–5 as they were before R125 (main `697260c6`), plus
+  `PYRE_CAST`'s key-1 wrist. The cast keys share 0–2 and 6; `cast` and `staffCast` differ in 3–5
+  only. The pointing checks (R124–R126, the crown on every key) read the sceptre only.
+- **Their carries are Looks v2's under the sprint.** Hold, walk arms and run carry (`WARD_RUN_HOLD`,
+  `PYRE_RUN_HOLD`, wrist [0, 1], cross [0, 0]) stay theirs; the run takes the sprint's lean, stride
+  0.88 and 16 fps. Our carry change (W2: the wrist back, `SCEPTRE_RUN_OUT`) is the base's only.
+  Deaths: their own (`WARD_DEATH`, `PYRE_DEATH`); `FOCUS_DEATH` and `FOCUS_STYLE` went with v1's
+  foci. The base's death sceptre bound (`groundFloor`, I-JS7C8-28) stays for the base.
+- **R128's staff guards read each look's own gear on its own cast.** classMotion.test.mjs's STAFFS
+  take the warding staff's and the brazier rod's spans (pinned to mageKit.js `STAFF` and `BRAZIER`
+  in mageLooks.test.mjs, where `FOCUS_BUTT`/`FOCUS_TOP` were) and pass: out of the torso, the head
+  and the robe on every cast key. mageLooks.test.mjs's forearm, hand and sleeve guard, and the head
+  and ground sweep, read all three figures and pass.
+- **Boxes (R130).** The base 234 × 186 (unchanged); the Spellwarden 300 × 255 and the Pyromancer
+  255 × 225, Looks v2's boxes exactly (the staff stands over her crown, the brazier rides high), so
+  manifest.test.ts' ceilings for the looks are re-based to them.
+
 ## Change: The knight's sprint, and the attack-on-the-move clips retired
 Status: work-order
 Date: 2026-11-23
@@ -3271,3 +3348,23 @@ HITL:
 - A new attack, a walk-attack of any other shape, a transition clip, or a finer facing.
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, the charge's server behaviour, and any
   game-server change (the human lane).
+
+### Integrated with Looks v2, 2026-11-23
+
+Merged into main `697260c6` (FS-1J1CB § Change: Looks v2) on `integrate/class-sprint-into-main`.
+
+- **The Guardian** keeps Looks v2's `GUARDIAN_STYLE` (the shield lift on his cut,
+  `GUARDIAN_SHIELD_LIFT`); his carry, walk and run are the knight's by reference, so his run is the
+  sprint with `RUN_BLADE` 0.45. warriorLooks.test.mjs reads him on his own style.
+- **The Berserker's run lifts his heavy axes (`BERSERKER_RUN_LIFT`, the run's wrists 0.32 rad less
+  tipped than `CLEAVE_CARRY`).** Looks v2's heavy axes (the haft 0.47 H against 0.36) under the
+  sprint's lean dipped their lowest point to −0.003 H, through the ground, on run keys 1 and 5 (Looks
+  v2's own run, without the lean: 0.041 H). Lifted, 0.062 H: over the 0.06 H axe floor, the edges
+  still forward and never up past 30° (R148 otherwise kept).
+- **The idle and walk axe floors are re-based to Looks v2's measures, not lifted.** The heavy axes
+  hang lower in Looks v2's own carry: 0.018 H in the idle, 0.0017 H in the walk (keys 1 and 5), where
+  the old axes read 0.108 and 0.091 H. Lifting them is a change to Looks v2's approved carry: held at
+  those measures (axe.test.mjs `AXE_FLOORS`) and **left to the owner**.
+- **Boxes (R151, K5).** The base 276 × 228 (unchanged); the Guardian 255 × 219 and the Berserker
+  291 × 258, Looks v2's boxes exactly (the Berserker one atlas page now, `knight_berserker-1.png`
+  gone); manifest.test.ts' `KNIGHT_BOX` re-based to them.

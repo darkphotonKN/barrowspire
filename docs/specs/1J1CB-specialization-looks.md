@@ -769,6 +769,25 @@ So keep that in mind."
 - The base class looks, the menus and the party busts (R25: base look).
 - Any server change; the manifest's format; ADR-0088's loading; new palette tokens.
 
+### Integrated with FS-JS7C8, 2026-11-23
+
+The class sprints (FS-JS7C8) merged onto this change on `integrate/class-sprint-into-main`. The
+owner: 「如果有改武器就套用main的」, then 「Duelist 也改拖劍」. Looks v2's decisions it touched, each the
+smallest change, recorded in full in FS-JS7C8's "Integrated with Looks v2" notes:
+
+- The Spellwarden and the Pyromancer keep this change's carries, run carries and cast (R56, R57,
+  R62), as clips.js `staffCast`; the sprint's lean, stride and fps apply.
+- The Duelist (R60, R62): his run trails the long blade (the mercenary's sprint), the run wrist
+  re-key dropped, the trailing arm out 0.45 past the longer half-cloak; the robe's `legFollow`
+  0.5 → 0.8 so the sprint's knee drive stays inside it. His silhouette at rest is unchanged.
+- The Shadow Ranger (R59, R65): her cloak's drag 0.36 → 0.46 so the sprint's heel kick stays inside
+  it; her slim longbow's tip in the low ready stands over her cowl in n and ne by up to 0.030 H,
+  escalated to the owner.
+- The Berserker (R55): his heavy axes ride 0.32 rad higher at the wrist in the run only; his idle
+  and walk carry is untouched, its lowest axe points (0.018 and 0.0017 H) left to the owner.
+- The Guardian (R54): `GUARDIAN_SHIELD_LIFT` kept; his run is the knight's sprint.
+- Every look's frame box is this change's, unchanged.
+
 ## Change: The wizard's sprint and pointed cast → FS-JS7C8
 
 ## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8
