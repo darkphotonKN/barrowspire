@@ -604,6 +604,20 @@ function outsideRobe(rig, w) {
   return (Math.hypot(b.x / rx, (b.z - z) / rz) - 1) * Math.min(rx, rz);
 }
 
+/**
+ * On every key of `keys`: the right fist keeps its thumb side where the forearm has it. The
+ * knuckles' axis (the hand's +x, about which the wrist cocks) read in the forearm's frame: a fist
+ * rolled over on the forearm turns it about.
+ */
+function expectThumbSideKept(rig, keys, label) {
+  keys.forEach((p, i) => {
+    posed(rig, p);
+    const x = new THREE.Vector3(1, 0, 0).transformDirection(rig.bones.handR.matrixWorld);
+    const fore = new THREE.Matrix4().extractRotation(rig.bones.foreArmR.matrixWorld).invert();
+    expect(x.applyMatrix4(fore).x, `${label} @${i}`).toBeGreaterThan(0);
+  });
+}
+
 // owner, 2026-11-12, of the held run keys' fist turned over (hand [0.7, π, 0]): "跑步時武器是不是拿反了"
 describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turned over in the hand (FS-JS7C8 R2)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
@@ -611,14 +625,18 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
 
   // the wizard's cast too (FS-JS7C8 § Change: The wizard's sprint and pointed cast R126): it points the staff along the aim
   it.each(["idle", "walk", "run", ...(name === "wizard" ? ["attack"] : [])])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
-    clips[anim].forEach((p, i) => {
-      posed(rig, p);
-      // the knuckles' axis (the hand's +x, about which the wrist cocks) in the forearm's frame: a
-      // fist rolled over on the forearm turns it about
-      const x = new THREE.Vector3(1, 0, 0).transformDirection(rig.bones.handR.matrixWorld);
-      const fore = new THREE.Matrix4().extractRotation(rig.bones.foreArmR.matrixWorld).invert();
-      expect(x.applyMatrix4(fore).x, `${name} ${anim} @${i}`).toBeGreaterThan(0);
-    });
+    expectThumbSideKept(rig, clips[anim], `${name} ${anim}`);
+  });
+});
+
+// her own idle and cast keys (FS-1J1CB § Change: The Spellwarden's long staff planted and swung
+// heavy R77, R79): the fist on the planted staff, and pushing the long staff forward
+describe("the Spellwarden holds the long staff in a normal grip, never turned over in the hand (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R77, R79)", () => {
+  const rig = rigOf(WIZARD_BUILD);
+  const clips = clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations);
+
+  it.each(["idle", "attack"])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
+    expectThumbSideKept(rig, clips[anim], `Spellwarden ${anim}`);
   });
 });
 
@@ -664,8 +682,10 @@ const BRAZIER_SPAN = [-0.084, 0.388];
 const span = ([from, to]) => along(from, to, Math.ceil((to - from) / 0.05));
 /**
  * The wizard's staff guards read each of these on its own style's cast: the base's sceptre on the
- * pointed cast, each look's staff on the staff cast (clips.js `staffCast`; the owner, 2026-11-23:
- * 「如果有改武器就套用main的」). The pointing itself is the base wizard's alone (`pointed`).
+ * pointed cast, the Pyromancer's brazier rod on the staff cast (clips.js `staffCast`; the owner,
+ * 2026-11-23: 「如果有改武器就套用main的」), the Spellwarden's warding staff on her own heavy cast
+ * (clips.js `wardCast`, FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy
+ * R79–R82). The pointing itself is the base wizard's alone (`pointed`).
  */
 const STAFFS = [
   { held: "the sceptre", style: WIZARD_STYLE, points: (rig) => GEAR.wizard(rig).weapon, pointed: true },

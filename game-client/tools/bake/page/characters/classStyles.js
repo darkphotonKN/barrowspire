@@ -428,16 +428,17 @@ export const WIZARD_STYLE = {
  * The Spellwarden's carry (FS-1J1CB §Change: Looks v2 R56, R62), her own beside
  * {@link WIZARD_STYLE}: the iron-shod warding staff (mageKit.js `wardingStaff`) stood upright
  * beside her, the forearm out and forward of her right hip, the wrist turned in so the staff
- * stands plumb, the fist round it a little under its middle, so the shoe hangs clear over the
- * ground and the cage stands over her crown.
+ * stands plumb, the fist round it a little under its middle, so the shoe is carried clear over the
+ * ground and the cage stands over her crown. This is her walk's carry; her idle plants the staff
+ * on the ground instead ({@link WARD_PLANT}).
  * The walk swings that arm short, the wrist keeping the staff upright; in the run the forearm pumps
- * level, out from the hip and never crossing in, the wrist holding the staff up. The cast is the
- * wizard's thrust, the staff's head driven at the foe; in the death the fist lets the staff fall
- * level, clear of the ground ({@link WARD_DEATH}). *
- * Integrated with FS-JS7C8 on 2026-11-23, the owner: 「如果有改武器就套用main的」: her carry, walk, run
- * carry and cast stay Looks v2's, the cast the wizard's thrust as it was before the pointed cast
- * (clips.js `staffCast`), under the sprint's lean, stride and 16 fps; the pointed cast is the base
- * wizard's alone.
+ * level, out from the hip and never crossing in, the wrist holding the staff up. Her cast is her
+ * own heavy cast, the long staff pushed forward with the elbow bent (clips.js `wardCast`); in the
+ * death the fist lets the staff fall level, clear of the ground ({@link WARD_DEATH}).
+ * Integrated with FS-JS7C8 on 2026-11-23, the owner: 「如果有改武器就套用main的」: her carry, walk and
+ * run carry stay Looks v2's, under the sprint's lean, stride and 16 fps; the pointed cast is the
+ * base wizard's alone. FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy
+ * (R74–R81) then gave her the planted idle and her own cast's keys 3–5 in place of Looks v2's.
  */
 export const WARD_HOLD = pose({ upperArmR: [-0.2, 0, -0.3], foreArmR: [-0.95, 0, 0], handR: [-0.2, -0.45, 0], foreArmL: [-0.15, 0, 0] });
 export const WARD_RUN_HOLD = pose({ upperArmL: [0, 0, 0.14], upperArmR: [-0.1, 0, -0.3], handR: [0.12, -0.45, 0] });
@@ -451,10 +452,12 @@ export const WARD_DEATH = [null, null, null, [0, -0.4, 0], [0.6, -0.8, -1.2], [0
 /**
  * The planted staff in her idle (FS-1J1CB § Change: The Spellwarden's long staff planted and swung
  * heavy R74–R77; the owner, 2026-11-23: 「站立不動時應該把長杖垂直頂在地面上不用拿在空中 但也不用到垂直
- * 可以往外有一點點角度」): the shoe's point on the ground at `shoe` (model space, H: ahead of and to
- * the right of her right foot, just outside the bell's hem, `height` over the ground), the staff
- * `tilt` degrees off vertical, its top leaning out to her right. The fist holds the leather grip
- * where it is mounted, so 0.46 H up the staff: about 0.45 H over the ground.
+ * 可以往外有一點點角度」): the shoe's point on the ground at `shoe` (model space [x, z], H: ahead of
+ * and to the right of her right foot, just outside the bell's hem, `height` over the ground), the
+ * staff `tilt` degrees off vertical, its top leaning straight out to her right (−x, in the frontal
+ * plane). The fist holds the leather grip where it is mounted, so 0.46 H up the staff: about
+ * 0.45 H over the ground. {@link WARD_PLANT_ARM} is solved from it (the solve is in
+ * mageLooks.test.mjs, which re-derives the keys and holds every baked idle frame to it).
  */
 export const WARD_PLANT = { shoe: [-0.1, 0.16], height: 0.0012, tilt: 10 };
 /**
@@ -463,7 +466,8 @@ export const WARD_PLANT = { shoe: [-0.1, 0.16], height: 0.0012, tilt: 10 };
  * dropped and brought a touch forward (the clavicle), the arm hanging out and forward with the
  * elbow a little bent (21–24°), the wrist cocked back 0.88 rad and turned in so the staff stands
  * up out of the fist. Solved on her rig (the fist's grip on the staff's line, the staff along it),
- * to the thousandth.
+ * to the thousandth, by mageLooks.test.mjs `solvePlantArm`: change {@link WARD_PLANT}, the idle or
+ * her rig and that test gives the new keys. One key per idle frame, so the shared idle's 6.
  */
 export const WARD_PLANT_ARM = [
   { clavicleR: [-0.005, 0.03, 0.095], upperArmR: [-0.273, -0.124, -0.221], foreArmR: [-0.216, -0.091, 0], handR: [-0.883, -0.303, -0.143] },

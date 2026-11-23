@@ -488,13 +488,14 @@ const UPRIGHT_CAST = [
  * and swung heavy R79–R81; the owner, 2026-11-23: 「攻擊時 不用像短杖要伸直 可以有一點前傾的角度因為長杖比較
  * 重的話不可能跟短杖一樣伸直攻擊」): the long staff pushed forward, not reached out straight. On the
  * strike and its carry through (keys 3–4) the arm is swung out and forward at her right side, the
- * elbow bent 46–55°, the fist pushed forward at the waist, out past her right hip, so the staff's
- * head tips toward the target 34–39° from vertical along the facing and its foot swings back
+ * elbow bent 55° and 46°, the fist pushed forward at the waist, out past her right hip, so the staff's
+ * head tips toward the target about 34° and 40° from vertical along the facing and its foot swings back
  * outside the hip; the trunk leans in further than {@link UPRIGHT_CAST} (the spine and the chest
- * 0.06 and 0.04–0.06 rad more each); key 5 brings it back toward upright (about 22°), the elbow
- * about 56°. The fist is held out at her side, not in front of her chest, so the head and its
- * shadow stay inside her Looks v2 frame box (R84). The free arm, the hips, the lunge and the glow
- * as the staff cast's.
+ * each 0.06 rad more on keys 3–4, 0.03 more on key 5) and the lunge goes 0.01 deeper on keys 3–4
+ * (`z` 0.05 and 0.045, the staff cast's 0.04 and 0.035; key 5 the same 0.015); key 5 brings the
+ * staff back toward upright (about 22°), the elbow about 56°. The fist is held out at her side,
+ * not in front of her chest, so the head and its shadow stay inside her Looks v2 frame box (R84).
+ * The free arm, the hips and the glow as the staff cast's.
  */
 const WARD_CAST = [
   P({ hips: [0, 0.3, 0], spine: [0.14, 0.1, 0], chest: [0.18, 0.18, 0], upperArmR: [-0.84, -0.69, -0.95], foreArmR: [-0.96, -0.16, 0], handR: [0.24, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.05 }, { glow: 5 }),
