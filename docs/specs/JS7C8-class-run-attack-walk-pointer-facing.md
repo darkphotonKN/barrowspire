@@ -1571,6 +1571,12 @@ untouched byte for byte.
 > Duelist, not routed around. See *Owner change, 2026-11-23: the blade angled out, the thumb-web
 > turned out*.
 
+> **Edited in place a third time on 2026-11-23 (owner tune round after playing the outward blade,
+> I-JS7C8-23).** Requirement numbers are kept. R159 is added (the Duelist's half-cloak carried off
+> the shoulder in the run), R106's escalation note and the Out of Scope line on look changes gain
+> it, and the Acceptance Criteria gain R159's line. The left-shoulder escalation is answered. See
+> *Owner change, 2026-11-23: the Duelist's half-cloak carried off the shoulder in the run*.
+
 ### Owner change, 2026-11-23: the Duelist's robe carried out behind over the heel kick
 
 I-JS7C8-21 put the shared sprint under him (its legs, lean and 16 fps, his sword arm left as it
@@ -1679,7 +1685,48 @@ shoulder seems to break up; fix that too.
   sheet, so it is escalated (M6), not made here. Options for the owner: (a) the cut 0.02 H wider
   at the shoulder, every Duelist clip re-baked (it also clears the walk's smaller pokes); (b) leave
   it. The base's and the Sellsword's spaulders are not changed: nothing shows to fix, and holding
-  the run to the walk's sink would halve the free arm's pump (M4).
+  the run to the walk's sink would halve the free arm's pump (M4). *Answered 2026-11-23:* neither
+  (a) nor (b). The owner asked for the cape carried off him in the run instead (R159), the cut and
+  every other clip as they were. See *Owner change, 2026-11-23: the Duelist's half-cloak carried
+  off the shoulder in the run*.
+
+### Owner change, 2026-11-23: the Duelist's half-cloak carried off the shoulder in the run
+
+After playing the outward blade the owner said:
+
+> 「左肩還是會破圖 跑步時就讓披風不要這貼 飛高一點吧」
+
+The left shoulder still breaks through. In the run, have the cape sit less close and fly a little
+higher.
+
+- **What it answers.** The left-shoulder escalation above: the Duelist's left upper arm, near the
+  shoulder, comes out through his half-cloak on the run's keys 3–7. Not the cut widened (option
+  (a)), which re-bakes every clip of his sheet; the cloak's carry in the run alone.
+- **The carry, so (R159).** The half-cloak's chain (anatomy.js `cloakBones`) gets springs of its
+  own for the run (`cloakBones` `clips`, read per clip by `simulateSprings`; `HALF_CLOAK_RUN` in
+  mercLooks.js): its top let swing free (`strap` 1 on every link, not `HALF_CLOAK_HELD`'s 0.5 at
+  the collar, so the collar link drags back and flings as a cloak hung free does), and its top two
+  links hung turned out to his left (`tilt` 0.4 and 0.2 rad about the back's line), so the cloth
+  over the shoulder stands off it and the hem rides higher. Its drag (0.34), its swing limit, its
+  cut and its weights are unchanged. His idle, walk, attack, death and parry carry the chain as
+  before, so their frames are unchanged; the base and the Sellsword have no half-cloak.
+- *Measured, the crossings* (the left arm's edges, the skin, the wide sleeve, the bracer and the
+  fist, across the half-cloak on each baked run key; the same count as the escalation's, read by
+  `mercLooks.test.mjs`, its edge set a little wider): before **0, 0, 0, 20, 80, 113, 52, 37**,
+  after **0 on every key**. The walk (0, 0, 0, 14, 17, 14, 14, 0) and the attack (up to 100) are
+  shipped and unchanged.
+- *Measured, the shape in the run* (H, as the bake poses him): the cloak's lowest point 0.454–0.585
+  over the ground (was 0.423–0.589; up to 0.05 higher, most at keys 0, 1 and 7); its furthest
+  reach to his left of the hips bone 0.224–0.325 (was 0.207–0.315); its top 0.786–0.888 (was
+  0.774–0.873, never above the head by more than before plus 0.024); the cloth over the left
+  shoulder joint 0.083–0.134 above it (was 0.079–0.126).
+- *Measured, why those.* Only run-only levers on the chain were tried. More drag flings the back
+  out but pitches the chain back about the collar, which drops the cloth over the shoulder onto
+  the arm (drag 0.6: up to 146 edges). The top let free alone leaves keys 5–7 (23, 8, 10); a tilt
+  alone leaves keys 3–5; the top tilted back as well as out makes it worse (up to 105). Free and
+  tilted out: `tilt` 0.4/0.2 (taken), 0.4/0.15, 0.4/0.3, 0.45/0.2 and 0.5/0.3 all read 0; 0.35/0.2
+  and 0.3/0.2 read 4 at key 5, 0.4/0 reads 11. Every guard passes on the run with it: the legs and
+  boots inside the half-cloak, the sword and the right arm past the elbow clear of it.
 
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
@@ -1940,7 +1987,9 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
     pass with a different look (a shorter cloak, a sleeve cut back, the spaulder moved), that is
     escalated, never exempted or changed here. *Escalated and decided 2026-11-23:* the leg guard on
     the Duelist's robe against the sprint's heel kick, answered by R114 (the owner, 「改 Duelist
-    長袍」). Any other look change is still escalated.
+    長袍」). *Decided again 2026-11-23:* the Duelist's left arm through his half-cloak in the run,
+    answered by R159 (the owner, 「跑步時就讓披風不要這貼 飛高一點吧」). Any other look change is
+    still escalated.
 
 #### The attack-on-the-move clips leave his sheets (M5)
 
@@ -2017,6 +2066,20 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
      unchanged, and the frame box holds (R110). *Measured* before: 13.7–19.0° inward; after:
      25.4–34.2° outward.
 
+#### The Duelist's half-cloak in the run (owner change 2026-11-23)
+
+159. **The half-cloak carried off the shoulder in the run (owner change 2026-11-23, 「左肩還是會破圖
+     跑步時就讓披風不要這貼 飛高一點吧」).** On every baked run frame of the Duelist, no edge of his
+     left arm (the skin and the wide sleeve the left arm's bones carry most, the bracer and the
+     fist) crosses his half-cloak; a fixture with the fist moved onto the cloak's back must fail.
+     It is answered by the cloak's carry in the run alone: the chain's springs in the run let its
+     top swing free and hang its top links turned out to his left (`HALF_CLOAK_RUN`), never by the
+     free arm's pump, the shared sprint or the cut. The cape still hangs from his left shoulder:
+     its top no higher over the head than before by more than 0.03 H, and every R104–R106 guard
+     passes on the run, the cloak guard included. His other clips carry the chain as before and
+     bake the same frames; the base's and the Sellsword's sheets are unchanged. *Measured* before:
+     0, 0, 0, 20, 80, 113, 52, 37 edges on keys 0–7; after: 0.
+
 ### Acceptance Criteria
 
 Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `clearance.test.mjs`,
@@ -2062,6 +2125,9 @@ Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `cl
       every sample, never inward, the point further out to his right than the hand; the arm
       turned out about its length with the forearm's own turn within 1.6 rad and the wrist cocked
       only in the swing, the normal-grip test passing (R158, R98 restated).
+- [ ] On every baked run frame of the Duelist no edge of his left arm crosses his half-cloak, and
+      the fixture with the fist on the cloak's back fails; the chain's run springs
+      (`HALF_CLOAK_RUN`) apply to the run alone, his other clips' frames unchanged (R159).
 - [ ] The knight's and the wizard's run tests, and the shared run's tests (plain style, `RUN_STEP`
       key for key, the 10° lean, the pump bands, `RUN_PACE` within 1 at 14 fps), pass unchanged.
 
@@ -2149,7 +2215,8 @@ HITL:
 - Any change to the archer's sprint values, her carry or her sheets (R92). A change to the shared
   sprint that would move her keys is escalated, not made.
 - A look change to the base, the Duelist or the Sellsword (escalated if the guards ask for one),
-  except the Duelist's robe back panel carried out behind in the run (R114, the owner 2026-11-23).
+  except the Duelist's robe back panel carried out behind in the run (R114, the owner 2026-11-23)
+  and his half-cloak carried off the shoulder in the run (R159, the owner 2026-11-23).
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
 
