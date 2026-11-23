@@ -64,9 +64,9 @@ const specs = BERSERKER_SHEET.animations;
 const clips = clipsFor(style, specs);
 
 /**
- * The attack clips the Berserker's sheet carries and their off-hand twins: `attack` and
- * `attack_offhand` alone, his sheets carrying no attack on the move (FS-JS7C8 § Change: The
- * knight's sprint, and the attack-on-the-move clips retired R149).
+ * The attack clip the Berserker's sheet carries and its off-hand twin: `attack` and
+ * `attack_offhand` alone, no class carrying an attack on the move (FS-JS7C8 § Change: The
+ * knight's sprint, and the attack-on-the-move clips retired R149, R155).
  */
 const TWINS = Object.entries(OFFHAND_OF).filter(([clip]) => clip in specs);
 
@@ -75,9 +75,6 @@ const SWINGS = TWINS.flatMap(([clip, twin]) => [
   [clip, "R"],
   [twin, "L"],
 ]);
-
-/** The frame a clip shows attack key `k` on. */
-const frameOf = (anim, k) => Math.round((k * specs[anim].frames) / specs.attack.frames);
 
 describe("the Berserker's axes (FS-1J1CB R2)", () => {
   it("dresses in the Berserker's own style, the cleave", () => {
@@ -113,7 +110,7 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
   });
 
   it.each(SWINGS)("leads the head's motion with the edge at the strike of %s (the %s hand)", (anim, side) => {
-    const [a, b, c] = [2, 3, 4].map((k) => read(rig, axes, clips[anim][frameOf(anim, k)])[side]);
+    const [a, b, c] = [2, 3, 4].map((k) => read(rig, axes, clips[anim][k])[side]);
     const v = c.at.clone().sub(a.at).normalize();
     expect(b.dir.dot(v), `${anim} ${side}`).toBeGreaterThan(0);
   });
@@ -135,9 +132,9 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
 });
 
 describe("the Berserker's off-hand clips (FS-1J1CB §D R28)", () => {
-  it("swings attack and attack_offhand alone: no attack on the move, no off-hand twin of one (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)", () => {
+  it("swings attack and attack_offhand alone (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149, R155)", () => {
     expect(TWINS).toEqual([["attack", "attack_offhand"]]);
-    for (const anim of ["walk_attack", "backpedal_attack", "walk_attack_offhand", "backpedal_attack_offhand"]) expect(specs, anim).not.toHaveProperty(anim);
+    expect(Object.keys(specs).filter((anim) => anim.includes("attack"))).toEqual(["attack", "attack_offhand"]);
   });
 
   it.each(TWINS)("twins %s as %s: the same frames, fps and loop", (clip, twin) => {

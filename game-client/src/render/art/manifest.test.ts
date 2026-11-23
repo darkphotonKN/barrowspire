@@ -276,31 +276,13 @@ describe("validateManifest", () => {
     });
   });
 
-  describe("a sheet's walk_attack (FS-HF0WW)", () => {
-    /** Gives the door an attack of 7 frames at 12 fps and a walk_attack of `count` at `fps`. */
-    const withWalkAttack = (count: number, fps: number, attack = true) => (m: Fixture) => {
-      const clip = (n: number, f: number) => ({ fps: f, loop: false, frames: [Array(n).fill({ x: 0, y: 0 })] });
-      Object.assign(m.sheets.door.animations, {
-        ...(attack ? { attack: clip(7, 12) } : {}),
-        walk_attack: clip(count, fps),
-      });
-    };
-
-    it("accepts one as long as the attack, at any frame count", () => {
-      for (const [count, fps] of [[7, 12], [14, 24]]) {
-        const m = fixture();
-        withWalkAttack(count, fps)(m);
-        expect(validateManifest(m).ok, `${count}/${fps}`).toBe(true);
-      }
-    });
-
-    it.each([
-      ["more frames", 8, 12, true],
-      ["a faster fps", 14, 25, true],
-      ["no attack", 7, 12, false],
-    ])("rejects one with %s", (_, count, fps, attack) => {
-      rejects(withWalkAttack(count, fps, attack), /door: walk_attack must last as long as attack/);
-    });
+  // the clip's length check went with the clip (FS-JS7C8 § Change: The knight's sprint, and the
+  // attack-on-the-move clips retired R155, Edge States: a sheet from an older bake)
+  it("no longer reads a walk_attack's length: no sheet plays one", () => {
+    const m = fixture();
+    const clip = (n: number, f: number) => ({ fps: f, loop: false, frames: [Array(n).fill({ x: 0, y: 0 })] });
+    Object.assign(m.sheets.door.animations, { attack: clip(7, 12), walk_attack: clip(8, 12) });
+    expect(validateManifest(m).ok).toBe(true);
   });
 
   describe("a sheet baked at more px than it is drawn (scale, FS-HF0WW)", () => {
@@ -1283,7 +1265,7 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       // his sprint dropped his attacks on the move, the parry kept (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
       char_mercenary_base: ["parry", "run"],
     };
-    /** The class sheets re-baked with the run and the backward step, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
+    /** The class sheets re-baked with the run, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
     const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {

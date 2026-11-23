@@ -91,7 +91,7 @@ export interface CombatLook {
   /** The hold ended: no line left behind, the figure let go to its idle (req 15). */
   endAim(): void;
   /**
-   * The class attack clip, aimed; `swing` marks a charge, its pose held while the server carries
+   * The class attack clip, aimed; `swing.holdMs` holds a charge's pose while the server carries
    * the player (`CharacterMotion.attack`).
    */
   attackClip(aim: Point, swing?: Swing): void;
@@ -237,9 +237,8 @@ export class PlayerCombat {
       this.lockFor(PRIMARY_COOLDOWN_MS, false);
     } else {
       this.special(playerClass, me, target);
-      // a warrior's charge holds the whole pose for as long as the server carries them (§D.2),
-      // never split over the walk (FS-3V7GC R6)
-      this.look.attackClip(aim, playerClass === "warrior" ? { charge: true, holdMs: CHARGE_MS } : undefined);
+      // a warrior's charge holds the whole pose for as long as the server carries them (§D.2)
+      this.look.attackClip(aim, playerClass === "warrior" ? { holdMs: CHARGE_MS } : undefined);
       this.lockFor(SPECIAL_COOLDOWN_MS, true);
     }
     return true;

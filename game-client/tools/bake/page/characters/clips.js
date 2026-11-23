@@ -1,6 +1,8 @@
 // Hand-keyed clips on the shared rig (ADR-0021 §3, FS-2325V §E.1–E.2): idle, walk, a class
-// attack and death, a class's run and its attack over the walk's legs run backward (FS-JS7C8), plus spring-lagged secondary motion
-// for cloaks, robes and beards.
+// attack and death, a class's run (FS-JS7C8 §A), the Mercenary's parry and the Berserker's
+// off-hand attack, plus spring-lagged secondary motion for cloaks, robes and beards. No class
+// attacks on the move: `walk_attack` and `backpedal_attack` were retired (FS-JS7C8 § Change: The
+// knight's sprint, and the attack-on-the-move clips retired, R155).
 //
 // A pose is { b: { bone: [rx, ry, rz] }, body: { rx, rz, x, y, z }, fx: { … } }. Bone angles are
 // offsets on top of the rig's rest pose, in radians, Euler XYZ. Signs, for a limb hanging along
@@ -21,68 +23,6 @@ export const ANIMATIONS = {
   death: { frames: 7, fps: 9, loop: false },
 };
 
-
-/**
- * How many walk cycles the legs of `walk_attack` take while the upper body shoots once, on a
- * sheet without `run`. Such a class walks at about 2.7x (WALK_PACE in
- * src/render/art/animationSelect.ts: the server's 200 world px/s over the 74 px/s the 1x stride
- * covers), so one 8-frame cycle takes about 0.3 s, and the shot lasts 7 frames at 12 fps, 0.58 s:
- * two cycles fit it, so the feet stay nearly planted.
- */
-export const WALK_ATTACK_CYCLES = 2;
-
-/**
- * The same on a sheet that carries `run` (FS-JS7C8 R21, tuning FS-HF0WW): its class runs, and
- * attacking slows it to about 90 world px/s (the server's attack slow, 0.45 × 200). Over the
- * 0.58 s swing 0.75 walk cycles (6 of the walk's 8 keys, a step and a half) walk the legs at
- * about 76 px/s by WALK_PACE (82 by pace.js), under the ground's 90: the owner's "走的動畫可以再
- * 放慢一些腳步的播放" (one cycle was about 101).
- */
-export const RUN_WALK_ATTACK_CYCLES = 0.75;
-
-/**
- * How many backward walk cycles the legs of `backpedal_attack` step across the swing (FS-JS7C8
- * R10): the same 0.75 as `walk_attack`, its legs being the walk's run backward
- * ({@link backpedalCycle}). The walk measures about 79.7 world px/s at its 10 fps on the archer's
- * rig (pace.js), one cycle about 63.8 px, so 0.75 cycles over the 0.58 s swing walk the legs at
- * about 82 px/s, under the 90 the slowed body moves; one cycle would be about 109.
- */
-export const BACKPEDAL_ATTACK_CYCLES = 0.75;
-
-/**
- * How `backpedal_attack` carries its cloth (simulateSprings, rig heights per second, in walks):
- * out behind, as half a walk would. The body steps back, but each heel stepping back under the hem
- * kicks the cloth out ahead of it (owner 2026-11-12: "騎士後退攻擊 腳會穿過斗篷", "弓箭手後退攻擊
- * 腳跟處也會穿過斗篷"): dragged backward at half a walk (-0.5), the cloth pressed forward against the
- * legs and the heels came out through the knight's cloak by 18.8 px and the archer's by 10.5
- * (clearance.js `cloakClearance`); carried out from +0.3 neither does. Half a walk hangs it as a
- * slow walk does, heavy, never flung.
- */
-export const BACKPEDAL_ATTACK_SPEED = 0.5;
-
-/**
- * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
- * walk from the waist down, played while a class attacks on the move. It lasts exactly as long as
- * `specs.attack` (twice its frames at twice its fps: 14 at 24 for the 7 at 12), so the client's
- * attack window times it unchanged. The upper body steps through the attack's own keys, each held
- * two frames, just as the attack plays them; the legs walk `cycles` walk cycles across it (0.75 on
- * a sheet that runs, else two). It is `boxed`: drawn in the frame the other clips set, never
- * widening it, so the sheet keeps its frame box (the bake fails if it would clip).
- *
- * A sheet that runs also gets `backpedal_attack` (FS-JS7C8 §B R8): the same attack over the walk's
- * legs run backward, played when the class moves more than 90° from its aim while attacking, as
- * long, `boxed` too, its legs stepping {@link BACKPEDAL_ATTACK_CYCLES} cycles back.
- */
-export function withWalkAttack(specs) {
-  const cycles = specs.run ? RUN_WALK_ATTACK_CYCLES : WALK_ATTACK_CYCLES;
-  const swing = { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true };
-  return {
-    ...specs,
-    walk_attack: { ...swing, cycles },
-    ...(specs.run ? { backpedal_attack: { ...swing, cycles: BACKPEDAL_ATTACK_CYCLES, speed: BACKPEDAL_ATTACK_SPEED } } : {}),
-  };
-}
-
 /**
  * A playable class's run (FS-JS7C8 §A): 8 frames looping, at the fps that puts its measured pace
  * (pace.js) in the run's 180–220 world px/s. `speed` is how fast the clip carries the body, in rig
@@ -93,36 +33,22 @@ export const RUN_ANIMATIONS = {
 };
 
 /**
- * The playable classes' clips (FS-3V7GC): the four, and `walk_attack`. The knight, the archer
- * and the wizard; the mercenary's are {@link MERC_ANIMATIONS}.
- */
-export const CLASS_ANIMATIONS = withWalkAttack(ANIMATIONS);
-
-/**
- * A class sheet re-baked with the run (FS-JS7C8 R36: one class at a time, the archer first): a
- * class's clips, the run, `walk_attack` walking its legs over 0.75 cycles and `backpedal_attack`.
- * No standalone backpedal: a class not attacking always faces where it runs (R8, R45).
- */
-export const RUNNING_CLASS_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, ...RUN_ANIMATIONS });
-
-/**
  * The Mercenary's clips (FS-MAMHR §H): a class's, and the parry, which raises into the guard fast
  * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
  * long as the stance is up. There is no parry on the move: the guard is whole-body (FS-3V7GC R7).
  */
-export const MERC_ANIMATIONS = withWalkAttack({
+export const MERC_ANIMATIONS = {
   ...ANIMATIONS,
   parry: { frames: 4, fps: 24, loop: false },
-});
+};
 
-/** The attack clips a dual-wielder swings with either hand (FS-1J1CB §D R28). */
-export const OFFHAND_OF = { attack: "attack_offhand", walk_attack: "walk_attack_offhand", backpedal_attack: "backpedal_attack_offhand" };
+/** The attack clip a dual-wielder swings with either hand (FS-1J1CB §D R28). */
+export const OFFHAND_OF = { attack: "attack_offhand" };
 
 /**
- * `specs` with each attack clip's off-hand twin (FS-1J1CB §D R28, the Berserker first):
- * `attack_offhand`, `walk_attack_offhand` and `backpedal_attack_offhand`, each the same frames,
- * fps, loop, box and cloth as its right-hand clip, so the client's attack window times either hand
- * alike. Their keys are {@link offhandPoses}.
+ * `specs` with the attack's off-hand twin (FS-1J1CB §D R28, the Berserker first):
+ * `attack_offhand`, the same frames, fps, loop and cloth as the right hand's `attack`, so the
+ * client's attack window times either hand alike. Its keys are {@link offhandPoses}.
  */
 export function withOffhand(specs) {
   const out = { ...specs };
@@ -405,20 +331,6 @@ export function runCycle(style) {
   };
   const frames = [...half, ...half.map(mirror)];
   return frames.map((p, i) => add(p, arms(i), r.hold ?? style.hold, style.runExtra?.(i)));
-}
-
-/**
- * The backpedal's legs (FS-JS7C8 R8), `backpedal_attack`'s from the waist down: the class's walk
- * run backward in time (owner 2026-11-12: "後退姿勢重做 攻擊時的往前走動很好 後退不用特別有微蹲的感覺
- * 用往前的這個姿勢做後退"). Key k is walk key −k, so key 0 is the walk's own and every pose,
- * the pelvis height, the knee bend and the stride are the walk's: the upright stance of
- * `walk_attack`, no crouch, the planted foot sliding forward under the body instead of back.
- * Catmull-Rom sampling ({@link sample}) runs the same curve backward through reversed keys, so
- * the in-betweens are the walk's too.
- */
-export function backpedalCycle(style) {
-  const walk = walkCycle(style);
-  return walk.map((_, k) => walk[(walk.length - k) % walk.length]);
 }
 
 // --- idle ----------------------------------------------------------------------------------
@@ -761,44 +673,6 @@ export function layerPoses(upper, lower) {
 }
 
 /**
- * The attack from the waist up over a leg cycle from the waist down: `spec`'s frames span exactly
- * the attack clip's duration (`attackSpec`), or `name` is refused. The upper body is the attack
- * key showing at that moment, as the attack clip itself would show it (an in-between would be a
- * pose the attack never draws, and its bow sweeps wider than the frame); the legs step `cycles` of
- * `legs` (a looping cycle) over the same span, sampled between its keys.
- */
-function attackOverLegs(name, style, spec, attackSpec, legs, cycles, hand = (p) => p) {
-  const attack = ATTACKS[style.attack]().map((p) => hand(add(p, style.attackExtra)));
-  const duration = spec.frames / spec.fps;
-  if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
-    throw new Error(`clips: ${name} lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
-  const stride = (cycles * legs.length) / spec.frames;
-  return Array.from({ length: spec.frames }, (_, i) =>
-    layerPoses(
-      attack[Math.min(attack.length - 1, Math.floor((i * attackSpec.fps) / spec.fps + 1e-9))],
-      sample(legs, (i * stride) % legs.length, true),
-    ),
-  );
-}
-
-/**
- * The attack over the walk (`walk_attack`): the legs walk `spec.cycles` cycles
- * ({@link WALK_ATTACK_CYCLES} when the spec names none).
- */
-export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
-  return attackOverLegs("walk_attack", style, spec, attackSpec, walkCycle(style), spec.cycles ?? WALK_ATTACK_CYCLES);
-}
-
-/**
- * The attack over the backpedal's legs (`backpedal_attack`, FS-JS7C8 §B R8), composed exactly as
- * {@link walkAttackClip}: the legs step `spec.cycles` backpedal cycles
- * ({@link BACKPEDAL_ATTACK_CYCLES} when the spec names none).
- */
-export function backpedalAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
-  return attackOverLegs("backpedal_attack", style, spec, attackSpec, backpedalCycle(style), spec.cycles ?? BACKPEDAL_ATTACK_CYCLES);
-}
-
-/**
  * An attack key swung with the other hand (FS-1J1CB §D R28): the key's upper body mirrored left for
  * right ({@link mirror}) over `legs`, the right-hand clip's own legs ({@link layerPoses}: the spine
  * takes up the turn between the two pelvises, so the chest is the mirrored key's). Baked and lit as
@@ -807,17 +681,14 @@ export function backpedalAttackClip(style, spec, attackSpec = ANIMATIONS.attack)
 export const offhandPose = (key, legs = key) => layerPoses(mirror(key), legs);
 
 /**
- * The off-hand twins of a style's attack clips, keyed as {@link OFFHAND_OF}: the attack's keys
- * swung with the other hand ({@link offhandPose}) over the attack's own stance, the walk's legs and
- * the backpedal's, the same keys, fps and strike key as the right hand's.
+ * The off-hand twin of a style's attack, keyed as {@link OFFHAND_OF}: the attack's keys swung with
+ * the other hand ({@link offhandPose}) over the attack's own stance, the same keys, fps and strike
+ * key as the right hand's.
  */
-export function offhandPoses(style, specs) {
+export function offhandPoses(style) {
   const attack = () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra));
   return {
     attack_offhand: () => attack().map((p) => offhandPose(p)),
-    walk_attack_offhand: () => attackOverLegs("walk_attack_offhand", style, specs.walk_attack_offhand, specs.attack, walkCycle(style), specs.walk_attack_offhand.cycles ?? WALK_ATTACK_CYCLES, mirror),
-    backpedal_attack_offhand: () =>
-      attackOverLegs("backpedal_attack_offhand", style, specs.backpedal_attack_offhand, specs.attack, backpedalCycle(style), specs.backpedal_attack_offhand.cycles ?? BACKPEDAL_ATTACK_CYCLES, mirror),
   };
 }
 
@@ -880,9 +751,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     attack: () => ATTACKS[style.attack]().map((p) => add(p, style.attackExtra)),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
-    walk_attack: () => walkAttackClip(style, specs.walk_attack, specs.attack),
-    backpedal_attack: () => backpedalAttackClip(style, specs.backpedal_attack, specs.attack),
-    ...offhandPoses(style, specs),
+    ...offhandPoses(style),
   };
   const own = style.clips ?? {};
   return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));

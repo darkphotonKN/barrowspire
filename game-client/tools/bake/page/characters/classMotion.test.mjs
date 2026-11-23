@@ -8,7 +8,6 @@ import {
   ANIMATIONS,
   ATTACK_TURN_LIMIT,
   CLEAVE_CARRY,
-  RUNNING_CLASS_ANIMATIONS,
   RUN_ANIMATIONS,
   RUN_ARM,
   RUN_COUNTER,
@@ -1307,11 +1306,10 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
 
   it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own with no attack on the move (R66, R68, R79)", () => {
     expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
-    expect(ARCHER_SHEET.animations).not.toBe(RUNNING_CLASS_ANIMATIONS);
     expect(ARCHER_SHEET.scale).toBe(1.5);
     // idle, walk, attack, death and her run, in that order: no walk_attack, no backpedal_attack (D7, D8)
     expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
-    for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(RUNNING_CLASS_ANIMATIONS[anim]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
   });
 
   it("covers the ground at RUN_PACE at her 16 fps: the shorter stride holds the measured pace within 1 px/s of 194 (R68, D2)", () => {
@@ -1322,17 +1320,10 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
   it("leaves the shared run as on main key for key (R66; § Change: The mercenary's sprint and trailing sword R93; § Change: The wizard's sprint and pointed cast R115, R116; § Change: The knight's sprint, and the attack-on-the-move clips retired R137, R143)", () => {
     expect([RUN_LEAN, RUN_ARM, RUN_ELBOW, RUN_COUNTER]).toEqual([0.24, 0.85, -1.57, 0.14]);
     expect(RUN_ANIMATIONS).toEqual({ run: { frames: 8, fps: 14, loop: true, speed: 2.5 } });
-    expect(RUNNING_CLASS_ANIMATIONS).toEqual({
-      idle: { frames: 6, fps: 5, loop: true },
-      walk: { frames: 8, fps: 10, loop: true },
-      attack: { frames: 7, fps: 12, loop: false },
-      death: { frames: 7, fps: 9, loop: false },
-      run: { frames: 8, fps: 14, loop: true, speed: 2.5 },
-      walk_attack: { frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75 },
-      backpedal_attack: { frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75, speed: 0.5 },
-    });
-    // the shared run on a plain style: RUN_STEP and the shared keys, which clips.test.mjs also checks key for key
-    expect(digest({ RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, plain: runCycle({ attack: "slash", hold: pose() }) })).toBe("61942c2885748ec4c0c0845b1730e8ddd9ebd17452255ffd2ae8c66eeff23874");
+    // the shared run on a plain style: RUN_STEP and the shared keys, which clips.test.mjs also checks
+    // key for key. Its digest was taken with RUNNING_CLASS_ANIMATIONS until FS-JS7C8 R155 retired that set;
+    // the plain run's own keys read 3917fe5b… before and after.
+    expect(digest({ RUN_ANIMATIONS, plain: runCycle({ attack: "slash", hold: pose() }) })).toBe("369e8170db3cdc5dccb3d68f522afca0afc55caae70c294b7fcdca7abac6fb0f");
     // the wizard's and the knight's "unchanged" digests retired with their runs (their other clips: their sprints' describes)
   });
 

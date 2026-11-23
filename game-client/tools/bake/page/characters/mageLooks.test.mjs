@@ -130,7 +130,7 @@ describe("the mage's spec looks pass the guards on every clip (FS-1J1CB R11)", (
   // every moving clip the sheet carries (clearance.test.mjs reads the same on a rebuilt base)
   it.each(FIGURES)("%s shows no hip, thigh or knee through the cloth in any facing, at rest and on every moving clip", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
-    const anims = ["idle", "run", "walk", "walk_attack", "backpedal_attack"].filter((anim) => anim in r.animations);
+    const anims = ["idle", "run", "walk"].filter((anim) => anim in r.animations);
     expect(anims).toEqual(expect.arrayContaining(["idle", "run", "walk"]));
     const seen = seenThroughCloth(rig, poses.filter((p) => anims.includes(p.anim)));
     expect(seen.length).toBeGreaterThan(0);

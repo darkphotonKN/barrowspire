@@ -181,8 +181,8 @@ export const KNIGHT_SPRINT_STRIDE = 0.84;
 export const KNIGHT_BUILD = [2.0, { shoulderW: 1.1, torsoW: 1.06 }];
 
 /**
- * How the knight's standing attack carries his cloak (simulateSprings, in walks, as
- * BACKPEDAL_ATTACK_SPEED): out behind as by half a walk. The slash's stance sets his right foot
+ * How the knight's standing attack carries his cloak (simulateSprings, rig heights per second,
+ * in walks): out behind as by half a walk. The slash's stance sets his right foot
  * back under the cloak as the cut settles, and hanging still the cloak let his calf and boot through
  * it by 7.6 px on the last key (clearance.js `cloakClearance`); half a walk holds it off the heel.
  */
@@ -192,11 +192,10 @@ export const KNIGHT_ATTACK_CLOTH = 0.5;
  * The knight's sheet at 1.5x (FS-HF0WW § Change: Class sheets at 1.5x R35), a clip set of his own
  * (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149): the
  * four, his attack's cloth carried by KNIGHT_ATTACK_CLOTH, and his run, the sprint's clip at 16 fps
- * ({@link SPRINT_RUN}, R138). Built without withWalkAttack and without RUNNING_CLASS_ANIMATIONS:
- * attacking no longer moves him (the pin), so his sheets carry no `walk_attack` and no
- * `backpedal_attack`, and the client plays his `attack` moving or not (R150). The Guardian takes
- * it through cast.js `specRow`, the Berserker through {@link BERSERKER_SHEET}. He was the last
- * class to carry them: no class sheet reads RUNNING_CLASS_ANIMATIONS now.
+ * ({@link SPRINT_RUN}, R138). No attack on the move: attacking no longer moves him (the pin), and
+ * the client plays his `attack` moving or not (R150). He was the last class to carry
+ * `walk_attack` and `backpedal_attack`, and their code was retired after his bake (R155). The
+ * Guardian takes it through cast.js `specRow`, the Berserker through {@link BERSERKER_SHEET}.
  */
 export const KNIGHT_SHEET = {
   animations: { ...ANIMATIONS, attack: { ...ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN },
@@ -312,9 +311,8 @@ export const ARCHER_LOW_READY = pose(
  * The archer's sheet at 1.5x (ADR-0076), a clip set of her own (FS-JS7C8 § Change: The archer's
  * sprint and low-ready bow R79, D7, D8): the four, and her run, her own sprint (R68): 16 fps over a
  * shorter stride, so its measured pace stays at RUN_PACE, the cloth carried at the shared run's
- * speed ({@link SPRINT_RUN}). Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
- * no `walk_attack` and no `backpedal_attack`, and the client plays her `attack` moving or not. The
- * Hunter and the Shadow Ranger take it through cast.js `specRow`.
+ * speed ({@link SPRINT_RUN}). No attack on the move: attacking no longer moves her (the pin), and
+ * the client plays her `attack` moving or not. The Hunter and the Shadow Ranger take it through cast.js `specRow`.
  */
 export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
@@ -363,9 +361,8 @@ export const WIZARD_SPRINT_STRIDE = 0.88;
 /**
  * The wizard's sheet at 1.5x (FS-HF0WW § Change: Class sheets at 1.5x R35), a clip set of her own
  * (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131): the four and her run, the
- * sprint's clip at 16 fps ({@link SPRINT_RUN}, R116). Built without withWalkAttack: attacking no
- * longer moves her (the pin), so her sheets carry no `walk_attack` and no `backpedal_attack`, and
- * the client plays her cast moving or not (R132). The Spellwarden and the Pyromancer take it
+ * sprint's clip at 16 fps ({@link SPRINT_RUN}, R116). No attack on the move: attacking no longer
+ * moves her (the pin), and the client plays her cast moving or not (R132). The Spellwarden and the Pyromancer take it
  * through cast.js `specRow`.
  */
 export const WIZARD_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
@@ -473,9 +470,9 @@ export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1
 /**
  * The mercenary's sheet at 1.5x (FS-HF0WW § Change: Class sheets at 1.5x R35), a clip set of his
  * own (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107): the four, his parry
- * (FS-MAMHR §H) and his run, the sprint's clip at 16 fps ({@link SPRINT_RUN}, R94). Built without
- * withWalkAttack: attacking no longer moves him (the pin), so his sheets carry no `walk_attack`
- * and no `backpedal_attack`, and the client plays his `attack` moving or not (R108). The Duelist
+ * (FS-MAMHR §H) and his run, the sprint's clip at 16 fps ({@link SPRINT_RUN}, R94). No attack on
+ * the move: attacking no longer moves him (the pin), and the client plays his `attack` moving or
+ * not (R108). The Duelist
  * and the Sellsword take it through cast.js `specRow`.
  */
 export const MERCENARY_SHEET = { animations: { ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, run: SPRINT_RUN }, scale: 1.5 };

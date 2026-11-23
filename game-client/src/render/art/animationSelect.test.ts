@@ -66,28 +66,8 @@ describe("selectAnimation", () => {
       { animation: "attack", facing: "sw", direction: 3 },
     ],
     [
-      "attacking while walking on a sheet with walk_attack keeps the legs walking, turned to the aim",
-      { attacking: true, walkAttack: true, velocity: { vx: 200, vy: 0 }, aim: { x: -30, y: 30 } },
-      { animation: "walk_attack", facing: "sw", direction: 3 },
-    ],
-    [
-      "attacking while walking on a sheet with walk_attack, with no aim, faces the way it walks",
-      { attacking: true, walkAttack: true, velocity: { vx: 0, vy: -200 } },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "attacking while standing on a sheet with walk_attack is the whole-body attack",
-      { attacking: true, walkAttack: true, aim: { x: 0, y: -50 } },
-      { animation: "attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a drift below walking speed is still the whole-body attack",
-      { attacking: true, walkAttack: true, velocity: { vx: 5, vy: 0 }, aim: { x: 50, y: 0 } },
-      { animation: "attack", facing: "e", direction: 0 },
-    ],
-    [
       "dead wins over an attack on the move",
-      { dead: true, attacking: true, walkAttack: true, facing: "w", velocity: { vx: 200, vy: 0 } },
+      { dead: true, attacking: true, facing: "w", velocity: { vx: 200, vy: 0 } },
       { animation: "death", facing: "w", direction: 4 },
     ],
     [
@@ -180,7 +160,7 @@ describe("selectAnimation", () => {
   });
 });
 
-describe("selectAnimation: the run, and the backward step only while attacking (FS-JS7C8)", () => {
+describe("selectAnimation: the run, and the standing attack on the move (FS-JS7C8)", () => {
   const north = { vx: 0, vy: -90 };
   const south = { vx: 0, vy: 90 };
   const east = { vx: 90, vy: 0 };
@@ -188,8 +168,8 @@ describe("selectAnimation: the run, and the backward step only while attacking (
   const southWest = { vx: -64, vy: 64 };
   const aimNorth = { x: 0, y: -50 };
   const aimNorthEast = { x: 35, y: -35 };
-  /** A class sheet re-baked with run, walk_attack and backpedal_attack (I-JS7C8-12 on). */
-  const full = { run: true, walkAttack: true, backpedalAttack: true };
+  /** A class sheet: every class carries `run` (FS-JS7C8 §A), and none an attack on the move. */
+  const full = { run: true };
   /** Attacking, as a swing on the move is told. */
   const swinging = (aim: { x: number; y: number }, velocity: { vx: number; vy: number }) => ({
     attacking: true,
@@ -199,38 +179,28 @@ describe("selectAnimation: the run, and the backward step only while attacking (
 
   it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
     [
-      "attacking while moving more than 90° from the aim steps back, turned to the aim (R9)",
+      "attacking while moving more than 90° from the aim plays the standing attack turned to the aim, never a backward step (FS-JS7C8 § Change: The knight's sprint R155)",
       { ...swinging(aimNorth, south), ...full },
-      { animation: "backpedal_attack", facing: "n", direction: 6 },
+      { animation: "attack", facing: "n", direction: 6 },
     ],
     [
-      "attacking while moving at 135° from the aim steps back (R9)",
+      "attacking while moving at 135° from the aim plays the standing attack (R155)",
       { ...swinging(aimNorth, southWest), ...full },
-      { animation: "backpedal_attack", facing: "n", direction: 6 },
+      { animation: "attack", facing: "n", direction: 6 },
     ],
     [
-      "attacking while moving at exactly 90° from the aim walks, turned to the aim (R9)",
-      { ...swinging(aimNorth, east), ...full },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a diagonal aim at exactly 90° from the movement walks (R9)",
+      "a diagonal aim at 90° from the movement plays the standing attack turned to the aim (R155)",
       { ...swinging(aimNorthEast, southEast), ...full },
-      { animation: "walk_attack", facing: "ne", direction: 7 },
+      { animation: "attack", facing: "ne", direction: 7 },
     ],
     [
-      "attacking while moving toward the aim walks, turned to the aim (R9)",
-      { ...swinging(aimNorth, north), ...full },
-      { animation: "walk_attack", facing: "n", direction: 6 },
+      "attacking while moving toward the aim plays the standing attack turned to the aim (FS-JS7C8 § Change: The knight's sprint R155)",
+      { ...swinging(aimNorth, north), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
     ],
     [
-      "a sheet with walk_attack but no backpedal_attack walks at any angle (R11)",
-      { ...swinging(aimNorth, south), run: true, walkAttack: true },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a charge plays the whole attack whichever way the body is carried (Fact 11)",
-      { ...swinging(aimNorth, south), run: true, walkAttack: false, backpedalAttack: true },
+      "attacking while moving at 90° from the aim plays the standing attack turned to the aim (R155)",
+      { ...swinging(aimNorth, east), run: true },
       { animation: "attack", facing: "n", direction: 6 },
     ],
     [
@@ -314,10 +284,10 @@ describe("selectAnimation: the run, and the backward step only while attacking (
   });
 
   it.each<[string, Partial<CharacterState>]>([
-    ["backpedal_attack", { ...swinging(aimNorth, south), ...full }],
-    ["walk_attack", { ...swinging(aimNorth, east), ...full }],
-  ])("should play %s at its authored rate (R9)", (_name, fields) => {
-    expect(selectAnimation(state(fields)).timeScale).toBe(1);
+    ["stepping away from the aim", { ...swinging(aimNorth, south), ...full }],
+    ["at 90° from the aim", { ...swinging(aimNorth, east), ...full }],
+  ])("should play the attack on the move, %s, at its authored rate (R155)", (_name, fields) => {
+    expect(selectAnimation(state(fields))).toMatchObject({ animation: "attack", timeScale: 1 });
   });
 
   it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s (R4)", () => {
@@ -370,7 +340,7 @@ describe("selectAnimation: the Berserker's off hand (FS-1J1CB §D R29)", () => {
   const east = { vx: 90, vy: 0 };
   const aimNorth = { x: 0, y: -50 };
   /** The Berserker's sheet: the class clips, and the off-hand swing is the one running. */
-  const offhand = { run: true, walkAttack: true, backpedalAttack: true, offhand: true };
+  const offhand = { run: true, offhand: true };
 
   it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
     [
@@ -379,18 +349,13 @@ describe("selectAnimation: the Berserker's off hand (FS-1J1CB §D R29)", () => {
       { animation: "attack_offhand", facing: "n", direction: 6 },
     ],
     [
-      "an off-hand swing on the move plays walk_attack_offhand",
+      "an off-hand swing on the move plays attack_offhand, turned to the aim (FS-JS7C8 § Change: The knight's sprint R155)",
       { attacking: true, aim: aimNorth, velocity: east, ...offhand },
-      { animation: "walk_attack_offhand", facing: "n", direction: 6 },
+      { animation: "attack_offhand", facing: "n", direction: 6 },
     ],
     [
-      "an off-hand swing stepping back from its aim plays backpedal_attack_offhand",
+      "an off-hand swing stepping back from its aim plays attack_offhand, turned to the aim (R155)",
       { attacking: true, aim: aimNorth, velocity: south, ...offhand },
-      { animation: "backpedal_attack_offhand", facing: "n", direction: 6 },
-    ],
-    [
-      "an off-hand charge plays the whole attack_offhand whichever way the body is carried",
-      { attacking: true, aim: aimNorth, velocity: south, ...offhand, walkAttack: false },
       { animation: "attack_offhand", facing: "n", direction: 6 },
     ],
     [
