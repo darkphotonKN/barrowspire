@@ -44,3 +44,19 @@ FS-JS7C8 §Change: The knight's sprint, and the attack-on-the-move clips retired
 ## Files it expects to touch
 
 `game-client/SPECIFICATION.md`.
+
+## Built (2026-11-23, agent)
+
+Step 1 (at lock), through `spec-update`. In `game-client/SPECIFICATION.md` "### Presentation":
+
+- `- [ ] Walk-and-attack animation → FS-HF0WW` now reads
+  `- [ ] ~Walk-and-attack animation~ → removed FS-JS7C8`, unchecked.
+- `- [ ] Run and backpedal animations → FS-JS7C8` now reads
+  `- [ ] Run animation for every class → FS-JS7C8`, unchecked, pointer unchanged. It names no
+  backpedal and no attack-on-the-move clip, and not the sprint's look, so it survives a re-tune.
+
+No other line changed. `game-server/game-service/SPECIFICATION.md` "Attacking slows the attacker's
+movement" is left as it is: its loose wording is a follow-up outside this change (FS-JS7C8 §Change:
+Attacking pins the attacker, Follow-ups), and this issue does not ask for it. No FS `Status:` moved.
+
+Left open: step 2, deleting the struck line once I-JS7C8-35 has merged into main, via `spec-update`.
