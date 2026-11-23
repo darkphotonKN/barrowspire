@@ -278,3 +278,231 @@ on the minimap; a full-screen map; minimap zoom, rotation or click-to-ping; new 
 ## Change: Minimap modes: enlarged and overlay → FS-1SEF0
 
 ## Change: Minimap in the town and the fields → FS-P0HSP
+
+
+## Change: Lighter fog and lit regions
+Status: work-order
+Date: 2026-11-23
+
+> Charter, approved by the owner on 2026-11-23 ("核准"). Every decision below is a **charter
+> default** the owner approved, with its reason; where this section settles something the charter
+> left open it says **derived here** and why. His complaint, in his words: 「在塔裡有迷霧時 感覺有點過多
+> 有時週在周圍都還是有迷霧 進到一個區塊時可以亮一點」 (in the tower the fog feels like too much; sometimes
+> there is still fog right around you; entering a region could be brighter). Decision:
+> [ADR-0090](../adr/0090-a-region-is-visible-from-two-walkable-steps-and-fog-floors-take-the-runs-lifted-ambient.md),
+> amending ADR-0063 Decision 2's "visible". Recorded without adversarial review: no `challenge-me`
+> pass.
+>
+> **Why it felt heavy** (the coordinator's reading, checked here against local main e9dc5f17): the
+> veils (`FOG.unexplored` 0.8, `FOG.explored` 0.55, `render/world/fog.ts`) lie over
+> `TOWER_AMBIENT` (`render/lighting/lighting.ts`), the run's slate already sunk a third of the way
+> to pitch. And a region is visible only while a member stands in it (§B.3), so the region one cell
+> past a doorway, or the next corridor segment (FS-KE075 §5: segments of at most 16 cells), stays
+> under the 0.8 veil.
+>
+> **Charter wording corrected (fact, not a decision change).** D3 names the fog floors' ambient as
+> "`AMBIENT.run` (`TOWER_AMBIENT` before its 0.33 sink toward pitch)". Those are two colours, not
+> one: `AMBIENT.run` is `mix(slate, necrotic, 0.4)` (`#4c5c61`, relative luminance 0.100), while
+> `TOWER_AMBIENT`'s unsunk base is `mix(slate, necrotic, 0.3)` (`#485459`, 0.084); `TOWER_AMBIENT`
+> itself is `#363c3f` (0.044). This section takes the value D3 names, `AMBIENT.run`, under one
+> named constant (F7), so the other is a one-word swap if the owner prefers it at his look (D4).
+>
+> **What this changes elsewhere in this FS:** §B.3's "visible" (a member in the region) widens to
+> F3; §C.8's and §C.9's veil values (0.8, 0.55) and the Acceptance Criteria row naming them give way
+> to F1. **Over [FS-8RBQY](8RBQY-tower-interior-run-look.md)** (shipped, not rewritten): on fog
+> floors only, §B.6's tower ambient gives way to F7 and F8, and §B.7's "the tower ambient is never lifted
+> to buy readability" holds on floors without fog only. The design guideline's "The world may stay
+> dark" gains the same exception (F9). **Unchanged:** the three states and what each shows (§C.8–
+> §C.14), the soft edges and fades (§C.26, §C.27; `FOG.fade` 320 ms), the monster rule's text (§D,
+> B3 still owner-pending with rule C current), the minimap's drawing rules (§E), floors 2–3, the
+> hub and the fields.
+>
+> **Lane:** game-client only, agent-authored. No server, wire, golden or art change.
+
+### Summary
+
+On floor 1 the fog is lighter, and it no longer hugs the player. Unexplored rooms lie under a
+thinner veil and walked ones under a thinner dim, so the floor's layout reads while the three
+states stay apart. The room or corridor ahead lifts its veil as a member comes within two steps of
+it, so standing at a doorway shows the room beyond. And on a floor with fog the light-map takes the
+run's own ambient instead of the tower's darker one: the fog now carries the darkness, so the
+region the party is in reads clearly brighter than the veiled ones around it.
+
+### Requirements
+
+Numbered F1–F11.
+
+#### §F-A. The veils
+
+1. **Lighter veils** *(charter default D1 — reason: two constants fix the density; the layout reads
+   better and the three states stay distinct)*: `FOG.unexplored` is `veil(0.6)` and `FOG.explored`
+   `veil(0.35)`, in `render/world/fog.ts` `FOG` as today, the walls' tints following their share as
+   today (§C.8, §C.9). The order holds: void (1) > unexplored > explored > visible (0).
+2. **The values are the owner's eyeball call** *(charter default D4)*: acceptance criteria test the
+   order and that each is one named constant, and the owner's look (F11) settles the numbers. A
+   retune he asks for is an edit to `FOG` (`Tunes FS-SRA9J`).
+
+#### §F-B. Regions within reach are visible
+
+3. **A region is visible while a living, in-play member's cell reaches one of its cells within two
+   steps over 4-connected walkable cells**; the region a member stands in counts as before
+   *(charter default D2 — reason: at a doorway the room or next corridor segment ahead is already
+   clear, no fog hugging you; walkable-only, so never through a wall)*. A step goes to the cell
+   directly north, south, west or east, and only onto a walkable cell (a cell in a region,
+   `RegionGrid.walkable`). So a region two cells away straight through a wall cell is not reached,
+   and a diagonal cell is two steps away only through a walkable cell beside both. Two steps is
+   160 px on floor 1 (`cell_size` 80).
+4. **A member's cell** is the one their position lies in, or, for a position on no walkable cell,
+   the nearest walkable cell among the eight around it, as §B.7 already picks a region.
+   **(derived here: one rule for "where a member is")**
+5. **A region reached this way is visible in every sense** and becomes explored afterwards like any
+   visible region (§B.4) *(D2)*: drawn in full (§C.10), its lights on (§C.12), its walls at their
+   brightest bordering state (§C.11), the head clearance and soft edges as for any visible region
+   (§C.13, §C.26), and shown as visible on the minimap (§E.22) by the minimap's unchanged rules. The
+   monster rule's text is unchanged, so a monster standing in a region reached early is shown,
+   whether or not it is within 400 px of a member (§D.15 "in a visible region"). A 1–3 cell
+   corridor segment is still seen with its group (`TINY_SEGMENT`, `seenTogether`): reaching any
+   region of a group makes the group visible. Dead and escaped members reach nothing (§B.3).
+   **(derived here: a region drawn in full with its monsters hidden would break §C.10)**
+6. **Worked out once per floor, never per frame** *(D2)*: the regions within reach of each walkable
+   cell depend only on the floor's cells, so they are worked out once for the floor (when its
+   exploration is made, or for a cell the first time a member stands on it), and each new set of
+   party positions only looks them up. The fog is still redrawn only when a region's state changes
+   (§C.13). **(derived here: floor 1's 72 × 48 cells reach at most 13 cells each)**
+
+#### §F-C. The fog floors' ambient
+
+7. **On a floor with fog, the light-map's ambient is `AMBIENT.run`** *(charter default D3 — reason:
+   on fog floors darkness is now the fog's job, so a visible region reads clearly brighter)*, named
+   once as `FOG_FLOOR_AMBIENT` in `render/lighting/lighting.ts` (equal to `AMBIENT.run`; see the
+   wording note above). Floors without fog (floors 2–3) keep `TOWER_AMBIENT`, which is unchanged, as
+   is the tower theme's own `ambient` in `WORLD_THEMES`. A fog floor is one whose floor map carries
+   regions (§A.1).
+8. **When it lifts and when it returns:** the light-map's ambient is lifted when the floor's fog is
+   put up (`buildDungeonWalls`, through `LightMap.setAmbient`) and returned to the world theme's when
+   the fog goes with its floor (`dropDungeon`). Before the fog stands the floor keeps the theme's
+   ambient. The change is at once, not faded. **(derived here: tying it to the fog means a lifted
+   floor is never shown without its veils, and a climb to floor 2 returns the tower's dark at once)**
+9. **Readability is unchanged.** Markers stay above the light-map, and the marker contrast test
+   (`render/markers/markers.test.ts`) also covers `FOG_FLOOR_AMBIENT` over the darkest tower ground
+   mean at the canvas edge and must stay at least 3:1. If it fails, that is reported to the owner:
+   neither the markers nor the test are changed to pass it. The design guideline's "The world may
+   stay dark" (`game-client/docs/design-guideline.md`, "The readability floor") names the exception:
+   on a fog floor the ambient is the run's, as a look, the fog carrying the dark (FS-8RBQY §B.7's
+   "never lifted" holds on floors without fog). **(derived here: the guideline is the art SSOT and
+   says "never lifted")**
+
+#### §F-D. Bounds and the owner's look
+
+10. **Bounds** *(charter)*: game-client only; fog floors only; no server or wire change; the monster
+    rule (B3, rule C) untouched; the minimap's drawing rules untouched; no new art; `FOG.fade`
+    (320 ms) and the feather (`FEATHER`) unchanged.
+11. **A browser check for the owner** *(D4)*: he plays floor 1 and judges the veils and the ambient
+    by eye; a retune is `Tunes FS-SRA9J`.
+
+### User Stories
+
+1. As a delver on floor 1, I want the fog lighter, so that the tower does not feel smothered.
+2. As a delver, I want to still tell an unexplored room from a walked one, so that the fog keeps
+   meaning something.
+3. As a delver at a doorway, I want the room ahead already clear, so that I see what I am walking
+   into.
+4. As a delver in a corridor, I want the next stretch of corridor clear before I step into it, so
+   that fog never sits right next to me.
+5. As a delver, I want a room behind a wall to stay fogged, so that the fog never sees through
+   stone.
+6. As a delver, I want a room I glimpsed from its doorway to stay explored, so that the map
+   remembers it.
+7. As a delver, I want the room I am in to look clearly brighter than the veiled rooms around it,
+   so that I can tell at a glance where I am.
+8. As a delver, I want floors 2 and 3 to keep their dark look, so that the lifted light is floor 1's
+   alone.
+9. As a delver, I want monsters' plates and bars as readable as before, so that a lighter floor
+   never hides a threat.
+10. As a party, we want what any of us has within reach to be clear for all of us, so that the fog
+    stays shared.
+11. As a delver whose teammate died, I want their position to stop uncovering anything, so that
+    only the living explore.
+12. As a delver climbing to floor 2, I want the tower's dark back at once, so that each floor keeps
+    its own look.
+13. As the owner, I want the brightness in one place each, so that I can tune it by eye.
+
+### Acceptance Criteria
+
+Veils
+- [ ] `FOG.unexplored` is `veil(0.6)` and `FOG.explored` `veil(0.35)`; void > unexplored > explored
+      > 0 (test on `FOG`); the walls' tints follow their share (the existing wall-tint tests pass
+      with the new values).
+
+Reach (`exploration.test.ts`, over hand-made grids and the fixture floor)
+- [ ] A member in a corridor two walkable steps from a room's cell makes the room visible; at three
+      steps it is not.
+- [ ] A region two cells away only through a wall cell is not reached; a diagonal cell counts at two
+      steps only through a walkable cell beside both.
+- [ ] The member's own region is visible as before; a member on no walkable cell reaches from the
+      nearest walkable cell (§B.7).
+- [ ] A region reached and then left behind stays explored.
+- [ ] Dead and escaped members reach nothing.
+- [ ] Reaching one region of a tiny segment's group makes the group visible.
+- [ ] The reach is not walked again for a cell already worked out (a test counting walks while a
+      member crosses regions), and the fog still redraws only on a state change (the existing
+      counted test, its expectations updated for reach).
+- [ ] A monster in a region reached early, more than 400 px from every member, is shown; one in an
+      explored region past 400 px is hidden (`shows`, rule text unchanged).
+
+Ambient
+- [ ] `FOG_FLOOR_AMBIENT` equals `AMBIENT.run`; `TOWER_AMBIENT` and `WORLD_THEMES.tower.ambient`
+      are unchanged (`lighting.test.ts`, `worldTheme.test.ts`).
+- [ ] On a fog floor the light-map's ambient is `FOG_FLOOR_AMBIENT` from when the fog stands;
+      before it stands, on floors 2–3 and after a climb from floor 1 to floor 2, it is
+      `TOWER_AMBIENT` (scene test).
+- [ ] The marker contrast test covers `FOG_FLOOR_AMBIENT` over the darkest tower ground and stays at
+      least 3:1.
+- [ ] The design guideline's "The world may stay dark" names the fog-floor exception.
+
+Untouched
+- [ ] `FOG.fade` (320), `FEATHER` and `SHOWN_WITHIN` (400) are unchanged; the minimap's code and
+      drawing rules are unchanged, and its tests unchanged save a walker position and expectation
+      the reach moves; floors 2–3 and the fields draw no fog and keep their ambient.
+
+Check
+- [ ] The owner's browser check (HITL) passes.
+- [ ] `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` green.
+
+### Edge States
+
+- **At a doorway:** a doorway is a room cell (§Edge States above), so a member in it already has
+  the room; the corridor segment outside is one step away and visible too.
+- **Two corridor segments meeting:** the next segment is visible once a member is within two cells
+  of its first cell, so the veil ahead in a corridor starts at least two cells off.
+- **Parallel corridors or rooms back to back across a wall:** not reached unless walkable cells link
+  them within two steps; the wall's far side stays at its own state.
+- **A member pressed against a wall's edge:** reaches from the nearest walkable cell (F4).
+- **Back and forth across the two-step line:** the region turns visible and explored each time and
+  fades each time (§C.27), as it does today at a region's edge. Accepted.
+- **Several members:** every region any of them reaches is visible (§B.5).
+- **A monster in a region reached early:** shown, its region being visible (F5). B3's options are
+  unchanged; this widens where rule C's "visible region" holds.
+- **Lights in a region reached early:** on, as in any visible region (§C.12).
+- **Arriving on floor 1:** the first draw is all unexplored, then the party's regions and those in
+  reach lift their veil over one fade (§Edge States "Arriving on the floor"); the ambient is lifted
+  when the fog is put up, the same moment.
+- **Floor map not yet in:** no fog and the theme's ambient (§Edge States above, F8).
+- **A climb to floor 2:** the fog goes with floor 1 and the ambient returns to `TOWER_AMBIENT` at
+  once (F8).
+- **Reconnect or a fresh scene:** the light-map is made with the theme's ambient, lifted when the
+  floor's fog stands; exploration starts over (§B.6).
+- **Spectating:** the living's positions reach as anyone's (§E.24).
+- **Canvas renderer:** the same; the light-map's ambient is a fill colour under both renderers.
+- **The lifted ambient fails the marker contrast floor:** reported to the owner (F9); nothing is
+  changed to pass it.
+
+### Out of Scope
+
+- Changing the monster rule (B3) or `SHOWN_WITHIN`; drawing monsters above the fog.
+- Changing the minimap's drawing rules, `FOG.fade`, the feather, or the head clearance.
+- A reach other than two walkable steps; line of sight; a reach measured in px through walls.
+- A light or flash on entering a region; any per-region brightness other than the fog's states.
+- Lifting the ambient on floors 2–3, in the hub or the fields; changing `TOWER_AMBIENT` or
+  `AMBIENT.run`.
+- Any server, wire, golden or art change.

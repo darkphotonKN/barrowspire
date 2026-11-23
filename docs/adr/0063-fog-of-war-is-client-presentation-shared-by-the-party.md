@@ -5,6 +5,7 @@ Date: 2026-11-06
 Scope: `game-client` on dungeon floors (floor 1 today). The server is not involved.
 Specified by [FS-SRA9J](../specs/SRA9J-fog-of-war-and-minimap.md).
 Amended by: [ADR-0068](0068-unexplored-regions-are-veiled-not-blacked-out-and-fog-edges-are-feathered-and-faded.md) — Decision 2's look for the unexplored state ("black"): veiled, its ground and walls drawn; the rest stands
+Amended by: [ADR-0090](0090-a-region-is-visible-from-two-walkable-steps-and-fog-floors-take-the-runs-lifted-ambient.md) — Decision 2's "visible (a living member is in it)": also while a member's cell reaches it within two walkable steps; the rest stands
 Amends: none. The indoor blackout's rule ("a view rule, never a visibility rule", `CONTEXT.md`
 "Indoor blackout", FS-9PN7X) and the light source's ("no effect on what anyone can see or hit")
 stand; this ADR applies the same stance to fog.
