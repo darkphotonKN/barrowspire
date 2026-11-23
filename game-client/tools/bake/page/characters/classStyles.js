@@ -21,16 +21,17 @@ import { ANIMATIONS, CLEAVE_CARRY, RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, RUN
  *
  * In the run (then "目前跑步時 武器擺動位置有點不自然 跑的時候可以高一點 有點過垂 武器可以往內側擺動一些"
  * and, of the sceptre, "只是要合理的位置 但跑步時為什麼手會擺到肩膀", then "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
- * then "戰士 傭兵 跑步時提劍的角度再提升15度") the knight's and the mercenary's sword arm pumps about
- * the chest like a free arm (RUN_ARM, RUN_ELBOW). The wrist holds a blade forward along the forearm,
- * raised above level ({@link RUN_BLADE}, {@link MERC_RUN_BLADE}), taking back most of the arm's pump
- * ({@link RUN_WRIST}): the point ahead of the hand, the knight's 24–41° above level, the
- * mercenary's 22–39° ({@link RUN_BLADE_ELEV}; raised about 15° twice, from 5–8° below to 10–12°
- * above, then from 9–26° and 7–24°), lowest as the arm swings back. Raised so, the point rises past
- * the crown, under {@link RUN_TIP_CEIL}, and the blade never passes through the head or behind it.
- * At the front of the pump the upper arm turns in ({@link RUN_CROSS}, clips.js `run.cross`), so the
- * hand crosses in toward the midline before the torso, about 0.07 H ({@link RUN_CROSS_REACH}), the
- * blade angled about 28° across the body, and goes back out to the side behind.
+ * then "戰士 傭兵 跑步時提劍的角度再提升15度") the knight's sword arm pumps about the chest like a
+ * free arm (RUN_ARM, RUN_ELBOW). The wrist holds the blade forward along the forearm, raised above
+ * level ({@link RUN_BLADE}), taking back most of the arm's pump ({@link RUN_WRIST}): the point ahead
+ * of the hand, 24–41° above level ({@link RUN_BLADE_ELEV}; raised about 15° twice, the last time
+ * from 9–26°), lowest as the arm swings back. Raised so, the point rises past the crown, under
+ * {@link RUN_TIP_CEIL}, and the blade never passes through the head or behind it. At the front of
+ * the pump the upper arm turns in ({@link RUN_CROSS}, clips.js `run.cross`), so the hand crosses in
+ * toward the midline before the torso, about 0.07 H ({@link RUN_CROSS_REACH}), the blade angled
+ * about 28° across the body, and goes back out to the side behind. The mercenary no longer runs
+ * this carry: in his sprint his sword trails behind him, its point down
+ * ({@link MERC_TRAILING_SWORD}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword).
  *
  * The wizard's sceptre arm pumps smaller ({@link SCEPTRE_RUN_ARM}) about a centre drawn back
  * ({@link SCEPTRE_RUN_BACK}), so her hand peaks at the lower chest ({@link SCEPTRE_RUN_PEAK}), not by
@@ -49,8 +50,6 @@ export const SCEPTRE_TILT = 40;
 const REST_SCEPTRE = [-0.68, -0.25, 0];
 const WALK_WRIST = [0, 0.7];
 const RUN_BLADE = [0.68, 0, 0];
-/** The mercenary's: his curved blade's point rises about 6° off its line, so his wrist sets it a little lower. */
-const MERC_RUN_BLADE = [0.82, 0, 0];
 const RUN_WRIST = [0, 0.85];
 /** The band a blade keeps in the run, degrees from level (+ up): raised, never back up to the old upright carry's 74–85° (was 5 to 35, and −10 to 20 before). */
 export const RUN_BLADE_ELEV = [20, 50];
@@ -320,6 +319,34 @@ export const FOCUS_DEATH = [null, null, null, [-0.1, 0, -0.3], [0.21, 0.07, -0.8
  */
 export const FOCUS_STYLE = { ...WIZARD_STYLE, deathExtra: (i) => FOCUS_DEATH[i] && pose({ handR: FOCUS_DEATH[i] }) };
 
+/**
+ * The mercenary's trailing sword in his sprint (FS-JS7C8 § Change: The mercenary's sprint and
+ * trailing sword M2, M3, R97–R102; the owner: "右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作", then
+ * "不用抬高 可以往下垂 但不要拖地"): his run's `hold`, the sword arm's whole carry there. The arm swings
+ * back behind the leaning trunk nearly straight, out a little from the hip, the hand at about the
+ * hips bone's height; the curved blade lies behind him, its point hanging down and its edge
+ * down, well off the ground. Keyed as three turns of the upper arm in the chest's frame: swung
+ * back 0.5 rad, out 0.3 rad past the rest's 0.1, then turned 0.6 rad about its own length (the
+ * shoulder's inward turn), held as the one Euler triple those make, the bones' XYZ order, less the
+ * rest; the elbow a little bent (0.3 rad) and the forearm pronated 1.6 rad, so the arm's 2.2 rad of
+ * turn brings the edge down while the fist stays square on the forearm (the normal grip); the
+ * wrist cocks the blade back down past the vertical (1.0 rad). Out from the hip, the arm and the
+ * Duelist's wide sleeve stay clear of his robe and of his half-cloak's hem, which the sprint
+ * carries out behind (mercLooks.test.mjs). Measured on the rig over the cycle: the upper arm
+ * 26.6–43.8° behind the trunk (35.4° on average), the elbow bent 16.6–17.8°, the hand 0.04 H under
+ * to 0.05 H over the hips bone and 0.11–0.20 H behind it; the blade 22.3–28.6° below level, its
+ * point 0.55–0.65 H behind the hips bone; the edge 34.6–46.0° below level; the blade's centre line
+ * at least 0.22 H off the ground.
+ */
+const MERC_TRAILING_SWORD = pose({ upperArmR: [0.76, 0.547, -0.373], foreArmR: [-0.3, 1.6, 0], handR: [1, 0, 0] });
+
+/**
+ * The trailing arm's share of the shared pump (clips.js `runCycle`, RUN_ARM): with the chest's
+ * counter-turn it sways the arm 17.2° peak to peak in his sagittal plane (M3's "about ±10°", R100's
+ * 12–26°), furthest back as the free arm swings furthest forward and his right knee leads.
+ */
+const MERC_TRAILING_SWAY = 0.1;
+
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
 /**
@@ -342,10 +369,10 @@ export const MERCENARY_STYLE = {
   }),
   walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
   // the sprint (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R94): the trunk about
-  // 20° forward ({@link SPRINT_LEAN}) over the sprint's legs ({@link SPRINT_STEP}); the run's carry
-  // (FS-JS7C8 R2) above them: both arms pump free from the shoulder, the sword arm a little out
-  // from the hip, crossing in at the front, the blade held forward about level
-  run: { wrist: RUN_WRIST, cross: [0, RUN_CROSS], hold: pose({ upperArmR: [0, 0, -0.1], handR: MERC_RUN_BLADE }), lean: SPRINT_LEAN, legs: SPRINT_STEP },
+  // 20° forward ({@link SPRINT_LEAN}) over the sprint's legs ({@link SPRINT_STEP}); the sword trails
+  // behind him ({@link MERC_TRAILING_SWORD}), the arm swaying a tenth of the shared pump
+  // ({@link MERC_TRAILING_SWAY}) and never bending with it; the free arm pumps as the shared run's
+  run: { arms: [1, MERC_TRAILING_SWAY], elbow: [1, 0], hold: MERC_TRAILING_SWORD, lean: SPRINT_LEAN, legs: SPRINT_STEP },
   // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
   // little lean back from the blow
   guard: pose(

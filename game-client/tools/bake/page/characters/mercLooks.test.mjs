@@ -356,17 +356,17 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
   });
 
   /**
-   * Checks today's carry already fails, as `<sheet> <clip> <check>`, measured when the guards were
-   * written (I-JS7C8-22) or when the sprint went under it (I-JS7C8-21): each runs as a test that
-   * must fail, so the carry that clears it turns it red and its entry goes. Never an exemption: the
-   * guard's limit is the same, and nothing is added here for a new carry. The Duelist's right wide
-   * sleeve once lay under the robe's back panel on run frames 1 and 6 (0.0107 and 0.0021 H in); on
-   * the sprint, the trunk leaning 20°, it clears it by 0.004 H, so that entry went. The lean instead
-   * swings today's pumping sword arm up
-   * behind him into the Duelist's half-cloak on run frame 7 (6 edges of the arm past the elbow
-   * across it). I-JS7C8-23's trailing carry replaces today's and must clear it.
+   * Checks the carry already fails, as `<sheet> <clip> <check>`: each runs as a test that must
+   * fail, so the carry that clears it turns it red and its entry goes. Never an exemption: the
+   * guard's limit is the same, and nothing is added here for a new carry. Empty since I-JS7C8-23.
+   * The Duelist's right wide sleeve once lay under the robe's back panel on run frames 1 and 6
+   * (I-JS7C8-22: 0.0107 and 0.0021 H in), cleared by the sprint's 20° lean (I-JS7C8-21); the lean
+   * then swung the old pumping sword arm up behind him into his half-cloak on run frame 7 (6 edges
+   * across it). The trailing sword (classStyles.js `MERC_TRAILING_SWORD`), out from the hip, clears
+   * both: the arm past the elbow at least 0.05 H outside every leg, boot and skirt of the Duelist
+   * and 0.086 H of the base's and the Sellsword's, no edge of it across the half-cloak.
    */
-  const TODAY_FAILS = new Set(["char_mercenary_duelist run arm through the cloak"]);
+  const TODAY_FAILS = new Set([]);
   const guard = (key) => (TODAY_FAILS.has(key) ? it.fails : it);
 
   for (const [sheet, anim, r] of CASES) {

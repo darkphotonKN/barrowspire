@@ -1092,3 +1092,121 @@ describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and
     for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
   });
 });
+
+/**
+ * The mercenary's trailing sword in his sprint (FS-JS7C8 § Change: The mercenary's sprint and
+ * trailing sword M2–M4, R97–R102; the owner: "右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作", then
+ * "不用抬高 可以往下垂 但不要拖地"), on his rig as cast.js builds it, over 32 samples of the cycle: the
+ * sword arm swung back behind him, nearly straight, the hand at the hip; the curved blade trailing
+ * behind, its point and its edge down, never on the ground; the arm swaying a little with the
+ * stride; the free arm pumping as the shared run's does.
+ */
+describe("the mercenary's trailing sword in the sprint (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R97–R102)", () => {
+  const rig = mercenaryRig();
+  const gear = GEAR.mercenary(rig);
+  const tip = gear.weapon.at(-1);
+  const run = clipsFor(MERCENARY_STYLE, MERCENARY_SHEET.animations).run;
+  /** The angle of a line from straight down in his sagittal plane (degrees, + back). */
+  const fromDown = (d) => Math.atan2(-d.z, -d.y) * DEG;
+  const bendAt = (sh, el, hand) => 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG;
+  const samples = SPRINT_SAMPLES.map((f) => {
+    footing(rig, run, f);
+    rig.root.updateMatrixWorld(true);
+    const [hips, neck, chest, sh, el, hand, shL, elL, handL] = ["hips", "neck", "chest", "upperArmR", "foreArmR", "handR", "upperArmL", "foreArmL", "handL"].map((b) => at(rig, b));
+    const t = world(tip);
+    const d = t.clone().sub(hand);
+    // the edge: the grip frame's -y (gear.js `curvedSword`), the grip riding the hand unturned
+    const edge = new THREE.Vector3(0, -1, 0).transformDirection(rig.bones.handR.matrixWorld);
+    return {
+      f,
+      // the upper arm behind the hips-to-neck line (R97)
+      back: fromDown(el.clone().sub(sh)) - fromDown(hips.clone().sub(neck)),
+      bend: bendAt(sh, el, hand),
+      bendL: bendAt(shL, elL, handL),
+      hand: hand.clone().sub(hips).divideScalar(rig.H),
+      handL: handL.clone().sub(hips).divideScalar(rig.H),
+      handLOverChest: (handL.y - chest.y) / rig.H,
+      blade: Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG,
+      tipAhead: d.z,
+      tipBehindHips: (hips.z - t.z) / rig.H,
+      edge: -Math.asin(edge.y) * DEG,
+      lowest: Math.min(...gear.weapon.map((m) => world(m).y)) / rig.H,
+      weapon: gear.weapon.map(world),
+      free: [shL, elL, handL],
+    };
+  });
+
+  it("swings the sword arm 25–50° behind the trunk on every sample (30–45° on average), the elbow bent 0–20°, the hand within 0.06 H of the hips bone's height and behind it (R97)", () => {
+    for (const s of samples) {
+      expect(s.back, `arm back @${s.f}`).toBeGreaterThanOrEqual(25);
+      expect(s.back, `arm back @${s.f}`).toBeLessThanOrEqual(50);
+      expect(s.bend, `elbow @${s.f}`).toBeGreaterThanOrEqual(0);
+      expect(s.bend, `elbow @${s.f}`).toBeLessThanOrEqual(20);
+      expect(Math.abs(s.hand.y), `hand height against the hips bone @${s.f}`).toBeLessThanOrEqual(0.06);
+      expect(s.hand.z, `hand behind the hips bone @${s.f}`).toBeLessThan(0);
+    }
+    const m = mean(samples.map((s) => s.back));
+    expect(m).toBeGreaterThanOrEqual(30);
+    expect(m).toBeLessThanOrEqual(45);
+  });
+
+  it("trails the blade behind him, 15–45° below level, the point at least 0.3 H behind the hips bone and never ahead of the hand, the edge at least 30° below level (R98)", () => {
+    for (const s of samples) {
+      expect(s.blade, `blade @${s.f}`).toBeGreaterThanOrEqual(-45);
+      expect(s.blade, `blade @${s.f}`).toBeLessThanOrEqual(-15);
+      expect(s.tipAhead, `point behind the hand @${s.f}`).toBeLessThan(0);
+      expect(s.tipBehindHips, `point behind the hips bone @${s.f}`).toBeGreaterThanOrEqual(0.3);
+      expect(s.edge, `edge below level @${s.f}`).toBeGreaterThanOrEqual(30);
+    }
+  });
+
+  it("turns the edge down by turning the arm about its length, never the fist on the forearm: the forearm's own turn within 1.6 rad, the hand cocked only in the swing (R98)", () => {
+    const { foreArmR, handR } = MERCENARY_STYLE.run.hold.b;
+    expect(Math.abs(foreArmR[1])).toBeLessThanOrEqual(1.6);
+    expect([handR[1], handR[2]]).toEqual([0, 0]);
+    // the normal-grip test (above, "holds the weapon in a normal grip") reads every key of his run
+  });
+
+  it("keeps the blade's centre line at least 0.06 H over the ground on every sample, its half width above that (R99)", () => {
+    // gear.js `curvedSword`: the blade 0.019 H wide; the guard on every mesh's edges is mercLooks.test.mjs's
+    for (const s of samples) expect(s.lowest - 0.0095, `the sword over the ground @${s.f}`).toBeGreaterThanOrEqual(0.06);
+  });
+
+  it("sways the trailing arm 12–26° peak to peak with the stride, furthest back as the free arm swings furthest forward (R100)", () => {
+    const backs = samples.map((s) => s.back);
+    expect(range(backs)).toBeGreaterThanOrEqual(12);
+    expect(range(backs)).toBeLessThanOrEqual(26);
+    const most = samples.reduce((a, b) => (b.back > a.back ? b : a));
+    const front = samples.reduce((a, b) => (b.handL.z > a.handL.z ? b : a));
+    expect(Math.abs(most.f - front.f), "the sword arm back with the free arm forward").toBeLessThanOrEqual(0.5);
+  });
+
+  it("pumps the free arm as the shared run does: the elbow 80–100° on every key, the hand back past the hip by 0.06 H, its front height under the chest bone recorded (R101)", () => {
+    const r = MERCENARY_STYLE.run;
+    expect([r.arms?.[0] ?? 1, r.elbow?.[0] ?? 1, r.cross?.[0] ?? 0, r.wrist?.[0] ?? 0]).toEqual([1, 1, 0, 0]);
+    expect([RUN_ARM, RUN_ELBOW]).toEqual([0.85, -1.57]);
+    for (const s of samples.filter((s) => Number.isInteger(s.f))) {
+      expect(s.bendL, `free elbow @${s.f}`).toBeGreaterThanOrEqual(80);
+      expect(s.bendL, `free elbow @${s.f}`).toBeLessThanOrEqual(100);
+    }
+    const front = samples.reduce((a, b) => (b.handL.z > a.handL.z ? b : a));
+    const back = samples.reduce((a, b) => (b.handL.z < a.handL.z ? b : a));
+    expect(-back.handL.z, "the free hand back past the hip").toBeGreaterThanOrEqual(0.06);
+    // recorded, not tuned away (R101): with the sprint's 20° lean the free hand peaks a little under
+    // the chest bone at the front of its pump (measured 0.027 H under), above the hips bone
+    expect(front.handLOverChest, "the free hand's front height against the chest bone (H)").toBeGreaterThanOrEqual(-0.04);
+    expect(front.handLOverChest, "the free hand's front height against the chest bone (H)").toBeLessThanOrEqual(-0.015);
+    expect(front.handL.y, "the free hand's front above the hips bone").toBeGreaterThan(0);
+  });
+
+  it("keeps the sword clear of the free arm by more than 0.06 × armR H on every sample (R102)", () => {
+    const reach = 0.06 * rig.p.armR;
+    for (const s of samples) {
+      const seg = s.free.slice(1).map((p, i) => new THREE.Line3(s.free[i], p));
+      for (const w of s.weapon) {
+        const near = Math.min(...seg.map((l) => l.closestPointToPoint(w, true, new THREE.Vector3()).distanceTo(w)));
+        expect(near / rig.H, `@${s.f}: the sword into the free arm`).toBeGreaterThan(reach);
+      }
+    }
+  });
+});
