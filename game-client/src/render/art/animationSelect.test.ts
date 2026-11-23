@@ -66,28 +66,8 @@ describe("selectAnimation", () => {
       { animation: "attack", facing: "sw", direction: 3 },
     ],
     [
-      "attacking while walking on a sheet with walk_attack keeps the legs walking, turned to the aim",
-      { attacking: true, walkAttack: true, velocity: { vx: 200, vy: 0 }, aim: { x: -30, y: 30 } },
-      { animation: "walk_attack", facing: "sw", direction: 3 },
-    ],
-    [
-      "attacking while walking on a sheet with walk_attack, with no aim, faces the way it walks",
-      { attacking: true, walkAttack: true, velocity: { vx: 0, vy: -200 } },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "attacking while standing on a sheet with walk_attack is the whole-body attack",
-      { attacking: true, walkAttack: true, aim: { x: 0, y: -50 } },
-      { animation: "attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a drift below walking speed is still the whole-body attack",
-      { attacking: true, walkAttack: true, velocity: { vx: 5, vy: 0 }, aim: { x: 50, y: 0 } },
-      { animation: "attack", facing: "e", direction: 0 },
-    ],
-    [
       "dead wins over an attack on the move",
-      { dead: true, attacking: true, walkAttack: true, facing: "w", velocity: { vx: 200, vy: 0 } },
+      { dead: true, attacking: true, facing: "w", velocity: { vx: 200, vy: 0 } },
       { animation: "death", facing: "w", direction: 4 },
     ],
     [
@@ -180,7 +160,7 @@ describe("selectAnimation", () => {
   });
 });
 
-describe("selectAnimation: the run, and the backward step only while attacking (FS-JS7C8)", () => {
+describe("selectAnimation: the run, and the standing attack on the move (FS-JS7C8)", () => {
   const north = { vx: 0, vy: -90 };
   const south = { vx: 0, vy: 90 };
   const east = { vx: 90, vy: 0 };
@@ -188,8 +168,8 @@ describe("selectAnimation: the run, and the backward step only while attacking (
   const southWest = { vx: -64, vy: 64 };
   const aimNorth = { x: 0, y: -50 };
   const aimNorthEast = { x: 35, y: -35 };
-  /** A class sheet re-baked with run, walk_attack and backpedal_attack (I-JS7C8-12 on). */
-  const full = { run: true, walkAttack: true, backpedalAttack: true };
+  /** A class sheet: every class carries `run` (FS-JS7C8 §A), and none an attack on the move. */
+  const full = { run: true };
   /** Attacking, as a swing on the move is told. */
   const swinging = (aim: { x: number; y: number }, velocity: { vx: number; vy: number }) => ({
     attacking: true,
@@ -199,39 +179,64 @@ describe("selectAnimation: the run, and the backward step only while attacking (
 
   it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
     [
-      "attacking while moving more than 90° from the aim steps back, turned to the aim (R9)",
+      "attacking while moving more than 90° from the aim plays the standing attack turned to the aim, never a backward step (FS-JS7C8 § Change: The knight's sprint R155)",
       { ...swinging(aimNorth, south), ...full },
-      { animation: "backpedal_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "attacking while moving at 135° from the aim steps back (R9)",
-      { ...swinging(aimNorth, southWest), ...full },
-      { animation: "backpedal_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "attacking while moving at exactly 90° from the aim walks, turned to the aim (R9)",
-      { ...swinging(aimNorth, east), ...full },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a diagonal aim at exactly 90° from the movement walks (R9)",
-      { ...swinging(aimNorthEast, southEast), ...full },
-      { animation: "walk_attack", facing: "ne", direction: 7 },
-    ],
-    [
-      "attacking while moving toward the aim walks, turned to the aim (R9)",
-      { ...swinging(aimNorth, north), ...full },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a sheet with walk_attack but no backpedal_attack walks at any angle (R11)",
-      { ...swinging(aimNorth, south), run: true, walkAttack: true },
-      { animation: "walk_attack", facing: "n", direction: 6 },
-    ],
-    [
-      "a charge plays the whole attack whichever way the body is carried (Fact 11)",
-      { ...swinging(aimNorth, south), run: true, walkAttack: false, backpedalAttack: true },
       { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while moving at 135° from the aim plays the standing attack (R155)",
+      { ...swinging(aimNorth, southWest), ...full },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a diagonal aim at 90° from the movement plays the standing attack turned to the aim (R155)",
+      { ...swinging(aimNorthEast, southEast), ...full },
+      { animation: "attack", facing: "ne", direction: 7 },
+    ],
+    [
+      "attacking while moving toward the aim plays the standing attack turned to the aim (FS-JS7C8 § Change: The knight's sprint R155)",
+      { ...swinging(aimNorth, north), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "attacking while moving at 90° from the aim plays the standing attack turned to the aim (R155)",
+      { ...swinging(aimNorth, east), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a sheet with run and no attack on the move plays the whole attack, turned to the aim, while attacking on the move (the archer's, FS-JS7C8 R80)",
+      { ...swinging(aimNorth, south), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a sheet with run and no attack on the move runs turned to its movement when not attacking (R80)",
+      { velocity: south, facing: "n", run: true },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "the mercenary's sheet (parry and run, no attack on the move) plays the whole attack turned to the aim while attacking on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, R108)",
+      { ...swinging(aimNorth, south), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "the mercenary's sheet plays the parry while guarding on the move, turned the way he goes (R108)",
+      { guarding: true, velocity: south, facing: "w", run: true },
+      { animation: "parry", facing: "s", direction: 2 },
+    ],
+    [
+      "the mercenary's sheet runs turned to its movement when neither attacking nor guarding (R108)",
+      { velocity: south, facing: "n", run: true },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
+      "the wizard's sheet (run, no attack on the move) plays the standing cast turned to the aim while attacking on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131, R132)",
+      { ...swinging(aimNorthEast, southWest), run: true },
+      { animation: "attack", facing: "ne", direction: 7 },
+    ],
+    [
+      "the wizard's sheet runs turned to her movement when not attacking (R132)",
+      { velocity: east, facing: "n", run: true },
+      { animation: "run", facing: "e", direction: 0 },
     ],
     [
       "attacking while standing is the whole-body attack",
@@ -279,10 +284,10 @@ describe("selectAnimation: the run, and the backward step only while attacking (
   });
 
   it.each<[string, Partial<CharacterState>]>([
-    ["backpedal_attack", { ...swinging(aimNorth, south), ...full }],
-    ["walk_attack", { ...swinging(aimNorth, east), ...full }],
-  ])("should play %s at its authored rate (R9)", (_name, fields) => {
-    expect(selectAnimation(state(fields)).timeScale).toBe(1);
+    ["stepping away from the aim", { ...swinging(aimNorth, south), ...full }],
+    ["at 90° from the aim", { ...swinging(aimNorth, east), ...full }],
+  ])("should play the attack on the move, %s, at its authored rate (R155)", (_name, fields) => {
+    expect(selectAnimation(state(fields))).toMatchObject({ animation: "attack", timeScale: 1 });
   });
 
   it("should play the run at the speed drawn over RUN_PACE: about 1x at the server's 200 px/s (R4)", () => {
@@ -291,6 +296,19 @@ describe("selectAnimation: the run, and the backward step only while attacking (
     expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
     expect(got.timeScale).toBeGreaterThanOrEqual(0.9);
     expect(got.timeScale).toBeLessThanOrEqual(1.1);
+  });
+
+  it("should play the run at speed / RUN_PACE on a sheet with run and no attack on the move (the archer's, R80)", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, run: true }));
+    expect(got.animation).toBe("run");
+    expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
+  });
+
+  it("should play the wizard's sprint at speed / RUN_PACE and her cast at its authored rate on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R132)", () => {
+    const run = selectAnimation(state({ velocity: { vx: 200, vy: 0 }, run: true }));
+    expect([run.animation, run.timeScale]).toEqual(["run", 200 / RUN_PACE]);
+    const cast = selectAnimation(state({ ...swinging(aimNorth, { vx: 200, vy: 0 }), run: true }));
+    expect([cast.animation, cast.timeScale]).toEqual(["attack", 1]);
   });
 
   it("should cap the run's playback as the walk's for a burst", () => {
@@ -322,7 +340,7 @@ describe("selectAnimation: the Berserker's off hand (FS-1J1CB §D R29)", () => {
   const east = { vx: 90, vy: 0 };
   const aimNorth = { x: 0, y: -50 };
   /** The Berserker's sheet: the class clips, and the off-hand swing is the one running. */
-  const offhand = { run: true, walkAttack: true, backpedalAttack: true, offhand: true };
+  const offhand = { run: true, offhand: true };
 
   it.each<[string, Partial<CharacterState>, Omit<AnimationChoice, "timeScale">]>([
     [
@@ -331,18 +349,13 @@ describe("selectAnimation: the Berserker's off hand (FS-1J1CB §D R29)", () => {
       { animation: "attack_offhand", facing: "n", direction: 6 },
     ],
     [
-      "an off-hand swing on the move plays walk_attack_offhand",
+      "an off-hand swing on the move plays attack_offhand, turned to the aim (FS-JS7C8 § Change: The knight's sprint R155)",
       { attacking: true, aim: aimNorth, velocity: east, ...offhand },
-      { animation: "walk_attack_offhand", facing: "n", direction: 6 },
+      { animation: "attack_offhand", facing: "n", direction: 6 },
     ],
     [
-      "an off-hand swing stepping back from its aim plays backpedal_attack_offhand",
+      "an off-hand swing stepping back from its aim plays attack_offhand, turned to the aim (R155)",
       { attacking: true, aim: aimNorth, velocity: south, ...offhand },
-      { animation: "backpedal_attack_offhand", facing: "n", direction: 6 },
-    ],
-    [
-      "an off-hand charge plays the whole attack_offhand whichever way the body is carried",
-      { attacking: true, aim: aimNorth, velocity: south, ...offhand, walkAttack: false },
       { animation: "attack_offhand", facing: "n", direction: 6 },
     ],
     [
@@ -449,20 +462,68 @@ describe("the shipped character sheets", () => {
   const LOOK_SHEETS = Object.keys(manifest.sheets).filter((name) => /^char_(knight|archer|wizard|mercenary)_(?!base$)/.test(name));
   const CLASS_OR_LOOK = [...CLASS_SHEETS, ...LOOK_SHEETS];
 
-  it.each(CLASSES)(
-    "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
-    (cls) => {
-      const { attack, walk_attack: walkAttack } = manifest.sheets[characterSheet(cls)].animations;
-      expect(walkAttack?.loop).toBe(false);
-      expect(walkAttack?.frames).toHaveLength(8);
-      // the client times the window by the attack clip, so the two must last alike
-      expect(walkAttack.frames[0].length / walkAttack.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
-    },
-  );
-
-  it("should give walk_attack to the four classes and their spec looks alone, never a creature or a resident (FS-3V7GC)", () => {
+  // the archer's sheets dropped theirs with her sprint (FS-JS7C8 § Change: The archer's sprint and
+  // low-ready bow R79), the mercenary's with his (§ Change: The mercenary's sprint and trailing
+  // sword R107), the wizard's with hers (§ Change: The wizard's sprint and pointed cast R131), and
+  // the knight's, the last, with his (§ Change: The knight's sprint, and the attack-on-the-move
+  // clips retired R149)
+  it("should give no sheet an attack on the move: no walk_attack, backpedal_attack or off-hand twin of either (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (!CLASS_OR_LOOK.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
+      for (const clip of ["walk_attack", "backpedal_attack", "walk_attack_offhand", "backpedal_attack_offhand"])
+        expect(sheet.animations, `${name} ${clip}`).not.toHaveProperty(clip);
+  });
+
+  it("should give the archer and her looks her five clips alone: no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)", () => {
+    const hers = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_archer_"));
+    expect(hers.sort()).toEqual(["char_archer_base", "char_archer_hunter", "char_archer_shadow_ranger"]);
+    for (const name of hers) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // her sprint: 8 frames looping at 16 fps, in the 8 facings (R68)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
+  });
+
+  it("should give the mercenary and his looks his six clips alone: the parry kept, no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)", () => {
+    const his = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_mercenary_"));
+    expect(his.sort()).toEqual(["char_mercenary_base", "char_mercenary_duelist", "char_mercenary_sellsword"]);
+    for (const name of his) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // the shared sprint: 8 frames looping at 16 fps, in the 8 facings (R94)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
+  });
+
+  it("should give the knight and his looks his five clips, the Berserker attack_offhand too: no walk_attack, no backpedal_attack (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)", () => {
+    const his = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_knight_"));
+    expect(his.sort()).toEqual(["char_knight_base", "char_knight_berserker", "char_knight_guardian"]);
+    for (const name of his) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      const five = ["idle", "walk", "attack", "death", "run"];
+      expect(Object.keys(animations), name).toEqual(name === "char_knight_berserker" ? [...five, "attack_offhand"] : five);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // the sprint's clip: 8 frames looping at 16 fps, in the 8 facings (R138)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
+  });
+
+  it("should give the wizard and her looks her five clips alone: no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)", () => {
+    const hers = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_wizard_"));
+    expect(hers.sort()).toEqual(["char_wizard_base", "char_wizard_pyromancer", "char_wizard_spellwarden"]);
+    for (const name of hers) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // the sprint's clip: 8 frames looping at 16 fps, in the 8 facings (R116)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
   });
 
   // the four classes at 1.5x since their run re-bakes (FS-HF0WW § Change: Class sheets at 1.5x
@@ -505,19 +566,17 @@ describe("the shipped character sheets", () => {
     expect(Object.keys(manifest.atlases).filter((k) => k.startsWith("characters-"))).toEqual([]);
   });
 
-  // the client picks the off hand by attack_offhand alone and plays the walking and backpedalling
-  // clips of the same hand, so a sheet with one carries all three, matched to the right hand's
-  it("should give the off-hand clips to the Berserker alone, all three, as long as the right hand's (FS-1J1CB R28)", () => {
+  // the client picks the off hand by attack_offhand, the one off-hand clip now that no sheet
+  // attacks on the move (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips
+  // retired R149), matched to the right hand's
+  it("should give the off-hand attack to the Berserker alone, as long as the right hand's (FS-1J1CB R28)", () => {
     const withOffhand = Object.keys(manifest.sheets).filter((name) => manifest.sheets[name].animations.attack_offhand);
     expect(withOffhand).toEqual(["char_knight_berserker"]);
-    const clips = manifest.sheets.char_knight_berserker.animations;
-    for (const swing of ["attack", "walk_attack", "backpedal_attack"]) {
-      const left = clips[`${swing}_offhand`];
-      expect(left?.frames, swing).toHaveLength(8);
-      expect(left.fps, swing).toBe(clips[swing].fps);
-      expect(left.frames[0].length, swing).toBe(clips[swing].frames[0].length);
-      expect(left.loop, swing).toBe(false);
-    }
+    const { attack, attack_offhand: left } = manifest.sheets.char_knight_berserker.animations;
+    expect(left?.frames).toHaveLength(8);
+    expect(left.fps).toBe(attack.fps);
+    expect(left.frames[0].length).toBe(attack.frames[0].length);
+    expect(left.loop).toBe(false);
   });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {

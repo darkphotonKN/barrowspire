@@ -768,3 +768,7 @@ So keep that in mind."
 - New clips, new attack styles beyond a look's grip and hold re-keys, new sounds.
 - The base class looks, the menus and the party busts (R25: base look).
 - Any server change; the manifest's format; ADR-0088's loading; new palette tokens.
+
+## Change: The wizard's sprint and pointed cast → FS-JS7C8
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8

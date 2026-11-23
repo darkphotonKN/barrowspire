@@ -251,18 +251,14 @@ export function createBaker() {
    * also drawn as an opacity pass, which scales each frame's alpha; `opacity.floor` is the
    * ground shadow's.
    */
-  function bakeCharacter(root, poses, yaws, { pad = 0.06, opacity = null, scale = 1, sizing = null } = {}) {
+  function bakeCharacter(root, poses, yaws, { pad = 0.06, opacity = null, scale = 1 } = {}) {
     prep(root);
     scene.add(root);
-    // pass 1: bounds over every pose and facing, from the skinned vertices themselves. A pose
-    // whose `sizing` is false (FS-HF0WW, FS-3V7GC: a class's walk_attack) does not set the frame;
-    // it must fit the frame the others set, pad included, or the bake fails rather than clip it.
+    // pass 1: bounds over every pose and facing, from the skinned vertices themselves
     const b = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
-    const fit = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity };
     let reach = 1;
     const w = new THREE.Vector3();
-    for (const [k, apply] of poses.entries()) {
-      const into = !sizing || sizing[k] ? b : fit;
+    for (const apply of poses) {
       root.rotation.y = 0;
       apply();
       root.updateMatrixWorld(true);
@@ -285,17 +281,15 @@ export function createBaker() {
           reach = Math.max(reach, Math.hypot(p[0], p[2]) * 2 + p[1] + 1);
           for (const q of [p, shadowOf(p)]) {
             const [vx, vy] = toView(q);
-            if (vx < into.minX) into.minX = vx;
-            if (vx > into.maxX) into.maxX = vx;
-            if (vy < into.minY) into.minY = vy;
-            if (vy > into.maxY) into.maxY = vy;
+            if (vx < b.minX) b.minX = vx;
+            if (vx > b.maxX) b.maxX = vx;
+            if (vy < b.minY) b.minY = vy;
+            if (vy > b.maxY) b.maxY = vy;
           }
         }
       }
     }
     const { ax, ay, w1, h1, frameWidth: fw, frameHeight: fh, anchorPx } = frameBox(b, { pad, scale });
-    if (fit.minX * K1 < -ax || fit.maxX * K1 > w1 - ax || fit.maxY * K1 > ay || fit.minY * K1 < ay - h1)
-      throw new Error(`bake: a pose that may not size the frame falls outside it (${JSON.stringify(fit)})`);
     camera.left = -ax / K1;
     camera.right = camera.left + w1 / K1;
     camera.top = ay / K1;

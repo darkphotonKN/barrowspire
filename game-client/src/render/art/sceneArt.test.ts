@@ -459,8 +459,10 @@ describe("the spec looks' groups (FS-1J1CB §C)", () => {
   ].flat() as string[];
 
   /**
-   * The shipped manifest with the Berserker's look baked as feat/spec-looks bakes it: its sheet
-   * alone in its own group, spilling to a second page, at 1.5x (R15).
+   * The shipped manifest with a synthetic Berserker look: its sheet alone in its own group,
+   * spilling to a second page, at 1.5x (R15). A fixture for a look over two pages: the shipped
+   * Berserker's has fitted one page since his re-bake without the attacks on the move (FS-JS7C8
+   * R154).
    */
   const withBerserker = () => {
     const m = structuredClone(manifest);

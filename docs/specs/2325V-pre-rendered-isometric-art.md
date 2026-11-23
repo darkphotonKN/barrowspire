@@ -593,3 +593,7 @@ Date: 2026-11-12
 
 - A third path; drawing other players' swings. The archer's shot (its own change above); the mercenary's parry (FS-MAMHR §G.35, a raise into
   a held guard, unchanged); the creatures' attacks; the server's timing or any hit rule.
+
+## Change: The wizard's sprint and pointed cast → FS-JS7C8
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8

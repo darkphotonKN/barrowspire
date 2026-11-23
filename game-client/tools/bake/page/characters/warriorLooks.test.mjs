@@ -26,8 +26,9 @@ vi.mock("./fabrics.js", async () => {
 
 const { CAST } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, seenThroughCloth } = await import("./clearance.js");
 const { OFFHAND_OF } = await import("./clips.js");
+const { BERSERKER_STYLE, GUARDIAN_STYLE, KNIGHT_STYLE, SPRINT_RUN } = await import("./classStyles.js");
 const gear = await import("./gear.js");
 const kit = await import("./warriorKit.js");
 const looks = await import("./warriorLooks.js");
@@ -36,6 +37,14 @@ const { knight } = await import("./cast.js");
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_knight_base");
 const LOOKS = ["char_knight_guardian", "char_knight_berserker"].map((sheet) => [sheet, { ...row(sheet), name: sheet }]);
+/** The knight's three figures as the bake poses them: his own and the two looks. */
+const FIGURES = [["char_knight_base", { ...base, name: "char_knight_base" }], ...LOOKS];
+/**
+ * The clips the camera check reads: at rest and every moving clip. His sheets carry no attack on
+ * the move (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149),
+ * and the Berserker's `attack_offhand` stands as `attack` does.
+ */
+const MOVING = ["idle", "run", "walk"];
 
 describe("the warrior's spec looks in the cast (FS-1J1CB R9, R15)", () => {
   it.each(LOOKS)("bakes %s alone in its own group, at the knight's 1.5x, trimmed, with every knight clip", (sheet, r) => {
@@ -45,15 +54,31 @@ describe("the warrior's spec looks in the cast (FS-1J1CB R9, R15)", () => {
     for (const [anim, spec] of Object.entries(base.animations)) expect(r.animations[anim], `${sheet} ${anim}`).toEqual(spec);
   });
 
-  it("gives the off-hand clips to the Berserker's sheet alone", () => {
-    const twins = Object.values(OFFHAND_OF);
-    expect(Object.keys(row("char_knight_berserker").animations)).toEqual([...Object.keys(base.animations), ...twins]);
-    for (const c of CAST) if (c.sheet !== "char_knight_berserker") for (const t of twins) expect(c.animations?.[t], `${c.sheet} ${t}`).toBeUndefined();
+  // FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R138: the
+  // Guardian takes his sprint through the knight's style, the Berserker through his own. Integrated
+  // with Looks v2 (2026-11-23): the Guardian's own style (FS-1J1CB § Change: Looks v2 R54, R62)
+  // re-keys only his cut's shield arm, so his carry, walk and run stay the knight's by reference
+  it("runs the Guardian on the knight's run and the Berserker on his own, each sheet's run the sprint's clip by reference", () => {
+    const guardian = row("char_knight_guardian").build().style;
+    expect(guardian).toBe(GUARDIAN_STYLE);
+    for (const k of ["hold", "walk", "run"]) expect(guardian[k], k).toBe(KNIGHT_STYLE[k]);
+    expect(row("char_knight_berserker").build().style).toBe(BERSERKER_STYLE);
+    for (const sheet of ["char_knight_base", "char_knight_guardian", "char_knight_berserker"]) expect(row(sheet).animations.run, sheet).toBe(SPRINT_RUN);
+  });
+
+  // his one attack is `attack`, so its one twin is `attack_offhand`: no walk_attack_offhand, no
+  // backpedal_attack_offhand (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move
+  // clips retired R149; FS-1J1CB R9, R28)
+  it("gives the off-hand attack, attack_offhand alone, to the Berserker's sheet alone", () => {
+    expect(Object.keys(row("char_knight_berserker").animations)).toEqual([...Object.keys(base.animations), "attack_offhand"]);
+    for (const c of CAST)
+      for (const t of Object.values(OFFHAND_OF))
+        if (c.sheet !== "char_knight_berserker" || t !== "attack_offhand") expect(c.animations?.[t], `${c.sheet} ${t}`).toBeUndefined();
   });
 });
 
-describe("the warrior's spec looks pass the guards on every clip (FS-1J1CB R11)", () => {
-  it.each(LOOKS)("%s keeps its legs inside the hauberk and its surcoat, no exemption", (sheet, r) => {
+describe("the warrior's figures pass the guards on every clip (FS-1J1CB R11; FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R142)", () => {
+  it.each(FIGURES)("%s keeps its legs inside the hauberk and its surcoat, no exemption", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
     expect(mirroredGarment(rig)).toBe(false);
     expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
@@ -63,11 +88,26 @@ describe("the warrior's spec looks pass the guards on every clip (FS-1J1CB R11)"
     expect(clearanceError(sheet, clips, { scale: r.scale, mirrored: false, known: new Map(), legacy: new Set() })).toBeNull();
   });
 
-  it.each(LOOKS)("%s keeps every leg and boot inside its cloak", (sheet, r) => {
+  it.each(FIGURES)("%s keeps every leg and boot inside its cloak", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
     const clips = cloakClearance(rig, poses);
     expect(clips).not.toBeNull();
     expect(cloakClearanceError(sheet, clips, { scale: r.scale })).toBeNull();
+  });
+
+  // FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R142: the
+  // camera sees no hip, thigh or knee through the hauberk, the surcoat or the waist on each look,
+  // as the bake poses it, at rest and on every moving clip the sheet carries. His own figure is
+  // clearance.test.mjs's: its rebuilt base wears the same hauberk, legs, cloak and springs on
+  // KNIGHT_STYLE and KNIGHT_SHEET, with fewer parts to hide a leg, so it reads at least as much
+  it.each(LOOKS)("%s shows no hip, thigh or knee through the cloth in any facing, at rest and on every moving clip", (sheet, r) => {
+    const { rig, poses } = characterPoses(r);
+    const anims = MOVING.filter((anim) => anim in r.animations);
+    expect(anims).toEqual(MOVING);
+    const seen = seenThroughCloth(rig, poses.filter((p) => anims.includes(p.anim)));
+    expect(seen.length).toBeGreaterThan(0);
+    const worst = seen.reduce((m, f) => (f.seen > m.seen ? f : m), { seen: 0 });
+    expect(worst.seen, `${sheet} ${worst.anim} frame ${worst.i}`).toBe(0);
   });
 });
 

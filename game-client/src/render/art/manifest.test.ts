@@ -276,31 +276,16 @@ describe("validateManifest", () => {
     });
   });
 
-  describe("a sheet's walk_attack (FS-HF0WW)", () => {
-    /** Gives the door an attack of 7 frames at 12 fps and a walk_attack of `count` at `fps`. */
-    const withWalkAttack = (count: number, fps: number, attack = true) => (m: Fixture) => {
-      const clip = (n: number, f: number) => ({ fps: f, loop: false, frames: [Array(n).fill({ x: 0, y: 0 })] });
-      Object.assign(m.sheets.door.animations, {
-        ...(attack ? { attack: clip(7, 12) } : {}),
-        walk_attack: clip(count, fps),
-      });
-    };
-
-    it("accepts one as long as the attack, at any frame count", () => {
-      for (const [count, fps] of [[7, 12], [14, 24]]) {
-        const m = fixture();
-        withWalkAttack(count, fps)(m);
-        expect(validateManifest(m).ok, `${count}/${fps}`).toBe(true);
-      }
-    });
-
-    it.each([
-      ["more frames", 8, 12, true],
-      ["a faster fps", 14, 25, true],
-      ["no attack", 7, 12, false],
-    ])("rejects one with %s", (_, count, fps, attack) => {
-      rejects(withWalkAttack(count, fps, attack), /door: walk_attack must last as long as attack/);
-    });
+  // the clip's length check went with the clip (FS-JS7C8 § Change: The knight's sprint, and the
+  // attack-on-the-move clips retired R155). Kept: it is the one test of the Edge State "a sheet from
+  // an older bake" on the validator's side (nothing checks its length); the real manifest's lack of
+  // the clip (animationSelect.test.ts) and the animator not playing it (character.test.ts) are
+  // pinned elsewhere
+  it("should accept a sheet from an older bake whose walk_attack is longer than its attack: nothing checks its length", () => {
+    const m = fixture();
+    const clip = (n: number, f: number) => ({ fps: f, loop: false, frames: [Array(n).fill({ x: 0, y: 0 })] });
+    Object.assign(m.sheets.door.animations, { attack: clip(7, 12), walk_attack: clip(8, 12) });
+    expect(validateManifest(m).ok).toBe(true);
   });
 
   describe("a sheet baked at more px than it is drawn (scale, FS-HF0WW)", () => {
@@ -1268,18 +1253,22 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     ];
 
     /**
-     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), every
-     * class's attack on the move (FS-HF0WW, FS-3V7GC), and a re-baked class's run and its attack
-     * over the backpedal's legs (FS-JS7C8 §A, §B: the archer first, then the wizard; no
-     * standalone backpedal).
+     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35) and a
+     * re-baked class's run (FS-JS7C8 §A; no standalone backpedal). No class carries an attack on
+     * the move now (FS-HF0WW's and FS-3V7GC's, retired by FS-JS7C8 § Change: The knight's sprint,
+     * and the attack-on-the-move clips retired R149).
      */
     const OWN_CLIPS: Record<string, string[]> = {
-      char_knight_base: ["run", "walk_attack", "backpedal_attack"],
-      char_archer_base: ["run", "walk_attack", "backpedal_attack"],
-      char_wizard_base: ["run", "walk_attack", "backpedal_attack"],
-      char_mercenary_base: ["parry", "run", "walk_attack", "backpedal_attack"],
+      // his sprint dropped his attacks on the move, the last class's (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)
+      char_knight_base: ["run"],
+      // her sprint dropped her attacks on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
+      char_archer_base: ["run"],
+      // her sprint and pointed cast dropped her attacks on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)
+      char_wizard_base: ["run"],
+      // his sprint dropped his attacks on the move, the parry kept (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
+      char_mercenary_base: ["parry", "run"],
     };
-    /** The class sheets re-baked with the run and the backward step, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
+    /** The class sheets re-baked with the run, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
     const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
 
     it.each(CAST)("%s has 8-way idle, walk, attack and death", (name) => {
@@ -1374,17 +1363,48 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const dir of a.frames) expect(dir).toHaveLength(8);
     });
 
-    it.each(RUNNING)("gives %s backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", (name) => {
+    it.each(RUNNING)("gives %s no standalone backpedal (FS-JS7C8 R8)", (name) => {
+      expect(baked.sheets[name].animations).not.toHaveProperty("backpedal");
+    });
+
+    /**
+     * The knight's frame box ceiling (FS-JS7C8 § Change: The knight's sprint, and the
+     * attack-on-the-move clips retired R151, K5): his box and anchor no larger than before the
+     * change in either dimension, so a tune round cannot grow either unseen. Integrated with
+     * Looks v2 (2026-11-23): the looks' ceilings are their Looks v2 boxes (main 697260c6), which
+     * the integrated bake matches exactly; the Berserker's heavy axes and pelt grew his from 267 × 240
+     * and the Guardian's bigger shield cut his to 255 × 219 there, not the sprint.
+     */
+    const KNIGHT_BOX: [string, { width: number; height: number; x: number; y: number }][] = [
+      ["char_knight_base", { width: 276, height: 228, x: 114, y: 168 }],
+      ["char_knight_guardian", { width: 255, height: 219, x: 105, y: 165 }],
+      ["char_knight_berserker", { width: 291, height: 258, x: 117, y: 195 }],
+    ];
+    it.each(KNIGHT_BOX)("keeps %s's frame box and anchor within the pre-change ones (FS-JS7C8 R151, K5)", (name, max) => {
       const sheet = baked.sheets[name];
-      expect(sheet.animations).not.toHaveProperty("backpedal");
-      const a = sheet.animations.backpedal_attack;
-      const attack = sheet.animations.attack;
-      expect(a).toBeDefined();
-      expect(a.loop).toBe(false);
-      expect([a.frames[0].length, a.fps]).toEqual([14, 24]);
-      expect(a.frames[0].length / a.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
-      expect(a.frames).toHaveLength(8);
-      for (const dir of a.frames) expect(dir).toHaveLength(14);
+      expect(sheet.frameWidth, `${name} width`).toBeLessThanOrEqual(max.width);
+      expect(sheet.frameHeight, `${name} height`).toBeLessThanOrEqual(max.height);
+      expect(Math.round(sheet.anchor.x * sheet.frameWidth), `${name} anchor x`).toBeLessThanOrEqual(max.x);
+      expect(Math.round(sheet.anchor.y * sheet.frameHeight), `${name} anchor y`).toBeLessThanOrEqual(max.y);
+    });
+
+    /**
+     * The wizard's frame box ceiling (FS-JS7C8 § Change: The wizard's sprint and pointed cast R130,
+     * E2 (b)): no taller than before the change, and no wider than the pointed cast baked it, so a
+     * tune round cannot grow either unseen. Integrated with Looks v2 (2026-11-23): the looks keep
+     * Looks v2's staff cast, not the pointed one (the owner: 「如果有改武器就套用main的」), so their
+     * ceilings are their Looks v2 boxes (main 697260c6), which the integrated bake matches exactly:
+     * the warding staff stands over her crown and the brazier rod rides high.
+     */
+    const WIZARD_BOX: [string, { width: number; height: number }][] = [
+      ["char_wizard_base", { width: 234, height: 192 }],
+      ["char_wizard_spellwarden", { width: 300, height: 255 }],
+      ["char_wizard_pyromancer", { width: 255, height: 225 }],
+    ];
+    it.each(WIZARD_BOX)("keeps %s's frame box within its ceiling: the pre-change height, the pointed cast's width, a look's its Looks v2 box (FS-JS7C8 R130, E2 (b))", (name, max) => {
+      const sheet = baked.sheets[name];
+      expect(sheet.frameHeight, `${name} height`).toBeLessThanOrEqual(max.height);
+      expect(sheet.frameWidth, `${name} width`).toBeLessThanOrEqual(max.width);
     });
 
     it("loops idle and walk, and plays attack and death once", () => {

@@ -47,8 +47,7 @@ function manifest(): ArtManifest {
         source: "authored: tools/bake/page/characters/cast.js#knight",
         licence: "Barrowspire-original",
       },
-      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35), and the
-      // attack on the move, as long as his attack (12 frames at 24 fps, 6 at 12; FS-3V7GC)
+      // the Mercenary's carries the parry clip besides the four (FS-MAMHR §G.35)
       char_mercenary_base: {
         atlas: "characters-0",
         frameWidth: 147,
@@ -61,14 +60,12 @@ function manifest(): ArtManifest {
           attack: clip(12, false, 6),
           death: clip(9, false, 7),
           parry: clip(24, false, 4),
-          walk_attack: clip(24, false, 12),
         },
         crown: 80,
         source: "authored: tools/bake/page/characters/cast.js#mercenary",
         licence: "Barrowspire-original",
       },
-      // the Archer's (FS-HF0WW): baked at 2x, carrying the attack on the move, which
-      // lasts as long as the attack (14 frames at 24 fps, 7 at 12)
+      // the Archer's (FS-HF0WW): baked at 2x
       char_archer_base: {
         atlas: "characters-0",
         frameWidth: 326,
@@ -81,7 +78,6 @@ function manifest(): ArtManifest {
           walk: clip(10, true, 8),
           attack: clip(12, false, 7),
           death: clip(9, false, 7),
-          walk_attack: clip(24, false, 14),
         },
         crown: 78,
         source: "authored: tools/bake/page/characters/cast.js#archer",
@@ -211,7 +207,7 @@ describe("CharacterMotion", () => {
     // a charge: the server carries the body for longer than the swing lasts
     const motion = new CharacterMotion("se", 500);
     motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
-    motion.attack(1000, { x: 40, y: 0 }, { charge: true, holdMs: 800 });
+    motion.attack(1000, { x: 40, y: 0 }, { holdMs: 800 });
     const pos = { x: 0, y: 0 };
     let choice = motion.step(pos, 1000, FRAME, false);
     for (let t = 1000 + FRAME; t < 1799; t += FRAME) {
@@ -226,7 +222,7 @@ describe("CharacterMotion", () => {
 
   it("should keep the clip's length when the hold asked for is shorter", () => {
     const motion = new CharacterMotion("se", 500);
-    motion.attack(1000, { x: 0, y: -40 }, { charge: true, holdMs: 100 });
+    motion.attack(1000, { x: 0, y: -40 }, { holdMs: 100 });
     expect(motion.step({ x: 0, y: 0 }, 1499, FRAME, false).animation).toBe("attack");
     expect(motion.step({ x: 0, y: 0 }, 1500, FRAME, false).animation).toBe("idle");
   });
@@ -277,7 +273,7 @@ describe("CharacterMotion", () => {
 
   describe("facing its movement (FS-JS7C8 §D R22, R24)", () => {
     it("should face the way it runs and keep that facing once it stops", () => {
-      const motion = new CharacterMotion("se", 500, { run: true, walkAttack: true, backpedalAttack: true });
+      const motion = new CharacterMotion("se", 500, { run: true });
       expect(walk(motion, { x: -200, y: 0 }, 300)).toMatchObject({ animation: "run", facing: "w" });
       expect(motion.step({ x: -60, y: 0 }, 300 + FRAME, FRAME, false)).toMatchObject({ animation: "run", facing: "w" });
       let choice = motion.step({ x: -60, y: 0 }, 2000, 1000, false);
@@ -287,33 +283,23 @@ describe("CharacterMotion", () => {
     });
 
     it("should never step backward when not attacking, whichever way it last faced (R45)", () => {
-      const motion = new CharacterMotion("n", 500, { run: true, walkAttack: true, backpedalAttack: true });
+      const motion = new CharacterMotion("n", 500, { run: true });
       expect(walk(motion, { x: 0, y: 200 }, 300)).toMatchObject({ animation: "run", facing: "s" });
     });
 
-    it("should step back in backpedal_attack while attacking away from the aim, turned to the aim (R9)", () => {
-      const motion = new CharacterMotion("se", 583, { run: true, walkAttack: true, backpedalAttack: true });
+    it("should play the standing attack while attacking away from the aim, turned to the aim (FS-JS7C8 § Change: The knight's sprint R155)", () => {
+      const motion = new CharacterMotion("se", 583, { run: true });
       walk(motion, { x: 0, y: 90 }, 300);
       motion.attack(300, { x: 0, y: -40 });
       expect(motion.step({ x: 0, y: 28 }, 300 + FRAME, FRAME, false)).toMatchObject({
-        animation: "backpedal_attack",
+        animation: "attack",
         facing: "n",
         timeScale: 1,
       });
     });
 
-    it("should keep walk_attack at any angle on a sheet without backpedal_attack (R11)", () => {
-      const motion = new CharacterMotion("se", 583, { run: true, walkAttack: true });
-      walk(motion, { x: 0, y: 90 }, 300);
-      motion.attack(300, { x: 0, y: -40 });
-      expect(motion.step({ x: 0, y: 28 }, 300 + FRAME, FRAME, false)).toMatchObject({
-        animation: "walk_attack",
-        facing: "n",
-      });
-    });
-
     it("should keep the attack's facing standing after the swing, until it moves again (R24)", () => {
-      const motion = new CharacterMotion("se", 500, { run: true, walkAttack: true, backpedalAttack: true });
+      const motion = new CharacterMotion("se", 500, { run: true });
       motion.attack(0, { x: 0, y: -40 });
       expect(motion.step({ x: 0, y: 0 }, 0, FRAME, false)).toMatchObject({ animation: "attack", facing: "n" });
       expect(motion.step({ x: 0, y: 0 }, 500, FRAME, false)).toMatchObject({ animation: "idle", facing: "n" });
@@ -457,7 +443,7 @@ describe("CharacterAnimator", () => {
   it("should hold a charge's pose past the clip on its last frame, without replaying the swing", () => {
     const sprite = fakeSprite();
     const anim = new CharacterAnimator(art(), "warrior");
-    anim.attack(0, { x: 40, y: 0 }, { charge: true, holdMs: 700 });
+    anim.attack(0, { x: 40, y: 0 }, { holdMs: 700 });
     const swing = anim.step({ x: 0, y: 0 }, 0, FRAME, false);
     anim.show(sprite, swing);
     sprite.at(6);
@@ -577,7 +563,7 @@ describe("CharacterAnimator", () => {
     });
   });
 
-  describe("attacking on the move (walk_attack, FS-HF0WW, FS-3V7GC)", () => {
+  describe("attacking on the move: the standing attack, turned to the aim (FS-JS7C8 § Change: The knight's sprint R155)", () => {
     /** An archer drawn walking east at the server's pace, then loosing at `aim`. */
     function shootingWhileWalking(aim: { x: number; y: number }) {
       const anim = new CharacterAnimator(art(), "archer");
@@ -591,9 +577,9 @@ describe("CharacterAnimator", () => {
       return { anim, choice: anim.step(pos, 300 + FRAME, FRAME, false), pos };
     }
 
-    it("should keep the legs walking while the archer shoots on the move, turned to the aim", () => {
+    it("should play the archer's standing attack while she shoots on the move, turned to the aim", () => {
       const { choice } = shootingWhileWalking({ x: 0, y: -40 });
-      expect(choice).toMatchObject({ animation: "walk_attack", facing: "n", timeScale: 1 });
+      expect(choice).toMatchObject({ animation: "attack", facing: "n", timeScale: 1 });
     });
 
     it("should shoot standing still with the whole-body attack", () => {
@@ -602,7 +588,7 @@ describe("CharacterAnimator", () => {
       expect(anim.step({ x: 0, y: 0 }, 0, FRAME, false).animation).toBe("attack");
     });
 
-    it("should leave every sheet without the clip sliding its attack along, as before", () => {
+    it("should play the knight's standing attack on the move, as every sheet does", () => {
       const anim = new CharacterAnimator(art(), "warrior");
       const pos = { x: 0, y: 0 };
       for (let t = 0; t <= 300; t += FRAME) {
@@ -617,69 +603,36 @@ describe("CharacterAnimator", () => {
     it("should end with the attack window, which the attack clip times (583 ms)", () => {
       const { anim, pos } = shootingWhileWalking({ x: 40, y: 0 });
       pos.x += 3;
-      expect(anim.step(pos, 300 + 583, FRAME, false).animation).toBe("walk_attack");
+      expect(anim.step(pos, 300 + 583, FRAME, false).animation).toBe("attack");
       pos.x += 3;
       expect(anim.step(pos, 300 + 584, FRAME, false).animation).toBe("walk");
-    });
-
-    it("should play it from its first frame on each new shot", () => {
-      const sprite = fakeSprite();
-      const anim = new CharacterAnimator(art(), "archer");
-      const shot = { animation: "walk_attack", facing: "e", direction: 0, timeScale: 1 } as const;
-      anim.attack(0);
-      anim.show(sprite, shot);
-      sprite.at(6);
-      anim.show(sprite, shot);
-      anim.attack(600);
-      anim.show(sprite, shot);
-      expect(sprite.plays).toEqual([
-        { key: "char_archer_base/walk_attack/0", startFrame: 0 },
-        { key: "char_archer_base/walk_attack/0", startFrame: 0 },
-      ]);
-    });
-
-    it("should carry a shot on from where it got when the archer starts or stops moving mid-draw", () => {
-      const sprite = fakeSprite();
-      const anim = new CharacterAnimator(art(), "archer");
-      anim.attack(0);
-      anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
-      sprite.at(3); // the attack's 4th of 7 (the fake lists 8 frames: 3 of 8 → 5 of 14)
-      anim.show(sprite, { animation: "walk_attack", facing: "e", direction: 0, timeScale: 1 });
-      expect(sprite.plays[1]).toEqual({ key: "char_archer_base/walk_attack/0", startFrame: 5 });
-      sprite.at(6);
-      anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
-      expect(sprite.plays[2]).toEqual({ key: "char_archer_base/attack/0", startFrame: 5 });
     });
 
     it("should still start a walk from its first frame when the shot ends", () => {
       const sprite = fakeSprite();
       const anim = new CharacterAnimator(art(), "archer");
-      anim.show(sprite, { animation: "walk_attack", facing: "e", direction: 0, timeScale: 1 });
-      sprite.at(7);
+      anim.attack(0);
+      anim.show(sprite, { animation: "attack", facing: "e", direction: 0, timeScale: 1 });
+      sprite.at(6);
       anim.show(sprite, { animation: "walk", facing: "e", direction: 0, timeScale: 2.7 });
       expect(sprite.plays[1]).toEqual({ key: "char_archer_base/walk/0", startFrame: 0 });
     });
 
-    it("should play the warrior's real charge (CHARGE_MS) whole on a class sheet whose attack outlasts it (FS-3V7GC R6)", () => {
+    it("should hold the warrior's real charge (CHARGE_MS) for the attack's own length on a class sheet whose attack outlasts it", () => {
       // every class's attack is 7 frames at 12 fps, 583 ms: longer than the charge's 470 ms, so
-      // only the explicit charge, never the hold's length, keeps the swing off the walk
+      // the hold changes nothing and the window is the swing's
       const attackMs = (7 / 12) * 1000;
       expect(CHARGE_MS).toBeLessThan(attackMs);
-      const motion = new CharacterMotion("se", attackMs, { walkAttack: true });
+      const motion = new CharacterMotion("se", attackMs, { run: true });
       motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
-      motion.attack(1000, { x: 40, y: 0 }, { charge: true, holdMs: CHARGE_MS });
+      motion.attack(1000, { x: 40, y: 0 }, { holdMs: CHARGE_MS });
       const pos = { x: 0, y: 0 };
       for (let t = 1000 + FRAME; t < 1000 + attackMs; t += FRAME) {
         pos.x += (450 * FRAME) / 1000;
         expect(motion.step(pos, t, FRAME, false).animation, `at ${(t - 1000).toFixed(0)} ms`).toBe("attack");
       }
-      // the hold is shorter than the swing, so the window is the swing's
       pos.x += (200 * FRAME) / 1000;
-      expect(motion.step(pos, 1000 + attackMs, FRAME, false).animation).toBe("walk");
-      // the next swing on the move, not a charge, walks again
-      motion.attack(1700, { x: 40, y: 0 });
-      pos.x += (200 * FRAME) / 1000;
-      expect(motion.step(pos, 1700 + FRAME, FRAME, false).animation).toBe("walk_attack");
+      expect(motion.step(pos, 1000 + attackMs, FRAME, false).animation).toBe("run");
     });
 
     /** Walks the character east at the server's pace for 300 ms; returns where it got. */
@@ -692,15 +645,15 @@ describe("CharacterAnimator", () => {
       return pos;
     }
 
-    it("should keep a melee class's legs walking while it swings on the move, turned to its target (FS-3V7GC)", () => {
+    it("should play a melee class's standing attack while it swings on the move, turned to its target", () => {
       const anim = new CharacterAnimator(art(), "mercenary");
       const pos = walking(anim);
       anim.attack(300, { x: -30, y: 30 });
       pos.x += (200 * FRAME) / 1000;
-      expect(anim.step(pos, 300 + FRAME, FRAME, false)).toMatchObject({ animation: "walk_attack", facing: "sw" });
+      expect(anim.step(pos, 300 + FRAME, FRAME, false)).toMatchObject({ animation: "attack", facing: "sw" });
     });
 
-    it("should leave the mercenary's parry on the move whole-body, and a cut inside it on the move over the walk (FS-3V7GC)", () => {
+    it("should leave the mercenary's parry on the move whole-body, and play a cut inside it on the move as the standing attack", () => {
       const anim = new CharacterAnimator(art(), "mercenary");
       const pos = walking(anim);
       anim.guard(true, 300);
@@ -708,27 +661,15 @@ describe("CharacterAnimator", () => {
       expect(anim.step(pos, 300 + FRAME, FRAME, false).animation).toBe("parry");
       anim.attack(300 + FRAME, { x: 40, y: 0 });
       pos.x += (200 * FRAME) / 1000;
-      expect(anim.step(pos, 300 + 2 * FRAME, FRAME, false).animation).toBe("walk_attack");
-    });
-
-    it("should hold a charge's pose whole, never split over the walk", () => {
-      const motion = new CharacterMotion("se", 500, { walkAttack: true });
-      motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
-      motion.attack(1000, { x: 40, y: 0 }, { charge: true, holdMs: 800 });
-      const pos = { x: 0, y: 0 };
-      for (let t = 1000 + FRAME; t < 1799; t += FRAME) {
-        pos.x += (450 * FRAME) / 1000;
-        expect(motion.step(pos, t, FRAME, false).animation).toBe("attack");
-      }
+      expect(anim.step(pos, 300 + 2 * FRAME, FRAME, false).animation).toBe("attack");
     });
   });
 
-  describe("the run and the backward step while attacking (FS-JS7C8 §A, §B)", () => {
-    /** The test manifest with the archer re-baked: `run`, and `backpedal_attack` unless told not to. */
-    function rebaked(withBackpedalAttack = true) {
+  describe("the run (FS-JS7C8 §A)", () => {
+    /** The test manifest with the archer re-baked with `run`. */
+    function rebaked() {
       const m = manifest();
       m.sheets.char_archer_base.animations.run = clip(14, true, 8);
-      if (withBackpedalAttack) m.sheets.char_archer_base.animations.backpedal_attack = clip(24, false, 14);
       return new ArtLibrary(m, quiet);
     }
 
@@ -758,25 +699,6 @@ describe("CharacterAnimator", () => {
       expect(moving(anim, { x: 0, y: 200 }).choice).toMatchObject({ animation: "run", facing: "s" });
     });
 
-    it("should step back in backpedal_attack attacking more than 90° from the aim, on a sheet that carries it (R9)", () => {
-      const anim = new CharacterAnimator(rebaked(), "archer");
-      expect(shooting(anim, { x: 0, y: 90 }, { x: 0, y: -40 })).toMatchObject({
-        animation: "backpedal_attack",
-        facing: "n",
-        timeScale: 1,
-      });
-    });
-
-    it("should keep walk_attack attacking at exactly 90° from the aim (R9)", () => {
-      const anim = new CharacterAnimator(rebaked(), "archer");
-      expect(shooting(anim, { x: 90, y: 0 }, { x: 0, y: -40 })).toMatchObject({ animation: "walk_attack", facing: "n" });
-    });
-
-    it("should keep walk_attack at any angle on a sheet with run but no backpedal_attack (R11)", () => {
-      const anim = new CharacterAnimator(rebaked(false), "archer");
-      expect(shooting(anim, { x: 0, y: 90 }, { x: 0, y: -40 })).toMatchObject({ animation: "walk_attack", facing: "n" });
-    });
-
     it("should never choose a standalone backpedal, even on a sheet that still carries one (R45)", () => {
       const m = manifest();
       m.sheets.char_archer_base.animations.run = clip(14, true, 8);
@@ -785,7 +707,7 @@ describe("CharacterAnimator", () => {
       anim.step({ x: 0, y: 0 }, 0, FRAME, false);
       for (const v of [{ x: 0, y: 200 }, { x: 0, y: -200 }, { x: 200, y: 0 }, { x: -200, y: 0 }])
         expect(moving(anim, v).choice.animation).toBe("run");
-      expect(shooting(anim, { x: 0, y: 90 }, { x: 0, y: -40 }).animation).toBe("walk_attack");
+      expect(shooting(anim, { x: 0, y: 90 }, { x: 0, y: -40 }).animation).toBe("attack");
     });
 
     it("should walk turned to its movement on a sheet without run, as today", () => {
@@ -793,59 +715,11 @@ describe("CharacterAnimator", () => {
       expect(moving(anim, { x: 0, y: 200 }).choice).toMatchObject({ animation: "walk", facing: "s" });
     });
 
-    it("should never run or step back a look that lacks the clips (hub folk)", () => {
+    it("should never run a look that lacks the clip (hub folk)", () => {
       const anim = new CharacterAnimator(rebaked(), { sheet: "folk_resident_trousers", variant: "slate" });
       expect(moving(anim, { x: 0, y: 200 }).choice.animation).toBe("walk");
     });
 
-    it("should keep the frame index when walk_attack swaps to backpedal_attack and back mid-swing (R13)", () => {
-      const sprite = fakeSprite(14);
-      const anim = new CharacterAnimator(rebaked(), "archer");
-      anim.attack(0);
-      anim.show(sprite, { animation: "walk_attack", facing: "n", direction: 6, timeScale: 1 });
-      sprite.at(5);
-      anim.show(sprite, { animation: "backpedal_attack", facing: "n", direction: 6, timeScale: 1 });
-      expect(sprite.plays[1]).toEqual({ key: "char_archer_base/backpedal_attack/6", startFrame: 5 });
-      sprite.at(9);
-      anim.show(sprite, { animation: "walk_attack", facing: "n", direction: 6, timeScale: 1 });
-      expect(sprite.plays[2]).toEqual({ key: "char_archer_base/walk_attack/6", startFrame: 9 });
-    });
-
-    it("should carry backpedal_attack over to attack when the body stops mid-swing (R13)", () => {
-      const sprite = fakeSprite(14);
-      const anim = new CharacterAnimator(rebaked(), "archer");
-      anim.attack(0);
-      anim.show(sprite, { animation: "backpedal_attack", facing: "n", direction: 6, timeScale: 1 });
-      sprite.at(8); // 8 of 14 → 4 of the attack's 7
-      anim.show(sprite, { animation: "attack", facing: "n", direction: 6, timeScale: 1 });
-      expect(sprite.plays[1]).toEqual({ key: "char_archer_base/attack/6", startFrame: 4 });
-    });
-
-    it("should start a new swing's backpedal_attack from its first frame (R13)", () => {
-      const sprite = fakeSprite(14);
-      const anim = new CharacterAnimator(rebaked(), "archer");
-      const back = { animation: "backpedal_attack", facing: "n", direction: 6, timeScale: 1 } as const;
-      anim.attack(0);
-      anim.show(sprite, back);
-      sprite.at(10);
-      anim.attack(600);
-      anim.show(sprite, back);
-      expect(sprite.plays).toEqual([
-        { key: "char_archer_base/backpedal_attack/6", startFrame: 0 },
-        { key: "char_archer_base/backpedal_attack/6", startFrame: 0 },
-      ]);
-    });
-
-    it("should play a charge whole as attack, never stepping back (Fact 11)", () => {
-      const motion = new CharacterMotion("se", 583, { run: true, walkAttack: true, backpedalAttack: true });
-      motion.step({ x: 0, y: 0 }, 1000, FRAME, false);
-      motion.attack(1000, { x: 0, y: -40 }, { charge: true, holdMs: CHARGE_MS });
-      const pos = { x: 0, y: 0 };
-      for (let t = 1000 + FRAME; t < 1000 + 583; t += FRAME) {
-        pos.y += (450 * FRAME) / 1000;
-        expect(motion.step(pos, t, FRAME, false).animation).toBe("attack");
-      }
-    });
   });
 
   describe("drawing a look rather than a class (hub folk, FS-2325V §G)", () => {
@@ -969,7 +843,7 @@ describe("CharacterAnimator.wearing", () => {
 // off-hand clips; every other sheet swings as it always has.
 describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", () => {
   const BERSERKER = "char_knight_berserker";
-  /** The test manifest with the Berserker's sheet: the knight's clips, the class's moving clips, and the off-hand three. */
+  /** The test manifest with the Berserker's sheet: the knight's clips, the run, and the off-hand attack. */
   function berserkerArt() {
     const m = manifest();
     m.sheets[BERSERKER] = {
@@ -977,11 +851,7 @@ describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", ()
       animations: {
         ...m.sheets.char_knight_base.animations,
         run: clip(14, true, 8),
-        walk_attack: clip(12, false, 6),
-        backpedal_attack: clip(12, false, 6),
         attack_offhand: clip(12, false, 6),
-        walk_attack_offhand: clip(12, false, 6),
-        backpedal_attack_offhand: clip(12, false, 6),
       },
     };
     return new ArtLibrary(m, quiet);
@@ -1017,7 +887,7 @@ describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", ()
   });
 
   it("should alternate a charge with the slashes around it (R29)", () => {
-    const charge = (i: number) => (i === 1 ? { charge: true, holdMs: CHARGE_MS } : {});
+    const charge = (i: number) => (i === 1 ? { holdMs: CHARGE_MS } : {});
     expect(swings(berserker(), [0, 1000, 2000], charge).map((p) => p?.key)).toEqual([
       `${BERSERKER}/attack/0`,
       `${BERSERKER}/attack_offhand/0`,
@@ -1040,32 +910,55 @@ describe("CharacterAnimator: the Berserker's alternate hands (FS-1J1CB §D)", ()
     return anim.step(pos, at + 300 + FRAME, FRAME, false).animation;
   }
 
-  it("should walk an off-hand swing in walk_attack_offhand, and step back in backpedal_attack_offhand (R29)", () => {
-    const anim = berserker();
-    expect(onTheMove(anim, { x: 0, y: -200 }, { x: 0, y: -40 }, 0)).toBe("walk_attack");
-    expect(onTheMove(anim, { x: 0, y: -200 }, { x: 0, y: -40 }, 1000)).toBe("walk_attack_offhand");
-    expect(onTheMove(anim, { x: 0, y: 200 }, { x: 0, y: -40 }, 2000)).toBe("backpedal_attack");
-    expect(onTheMove(anim, { x: 0, y: 200 }, { x: 0, y: -40 }, 3000)).toBe("backpedal_attack_offhand");
-  });
-
-  it("should carry an off-hand swing over to walk_attack_offhand at the same point when the body sets off mid-swing", () => {
-    const sprite = fakeSprite(6); // as many frames as the fixture's swing clips
-    const anim = berserker();
-    anim.attack(0, east);
-    anim.attack(100, east);
-    anim.show(sprite, { animation: "attack_offhand", facing: "e", direction: 0, timeScale: 1 });
-    sprite.at(3);
-    anim.show(sprite, { animation: "walk_attack_offhand", facing: "e", direction: 0, timeScale: 1 });
-    expect(sprite.plays.at(-1)).toEqual({ key: `${BERSERKER}/walk_attack_offhand/0`, startFrame: 3 });
-  });
-
-  it("should play attack every time on a sheet without the off-hand clips (R29)", () => {
+  it("should play attack every time on a sheet without the off-hand clip (R29)", () => {
     const anim = new CharacterAnimator(berserkerArt(), "warrior");
     expect(swings(anim, [0, 500, 1000]).map((p) => p?.key)).toEqual([
       "char_knight_base/attack/0",
       "char_knight_base/attack/0",
       "char_knight_base/attack/0",
     ]);
+  });
+
+  it("should play attack and attack_offhand on the move, turned to the aim, even on a sheet from an older bake that still carries the attacks on the move (FS-JS7C8 § Change: The knight's sprint R155, Edge States)", () => {
+    const m = manifest();
+    m.sheets[BERSERKER] = {
+      ...m.sheets.char_knight_base,
+      animations: {
+        ...m.sheets.char_knight_base.animations,
+        run: clip(14, true, 8),
+        attack_offhand: clip(12, false, 6),
+        walk_attack: clip(12, false, 6),
+        backpedal_attack: clip(12, false, 6),
+        walk_attack_offhand: clip(12, false, 6),
+        backpedal_attack_offhand: clip(12, false, 6),
+      },
+    };
+    const anim = new CharacterAnimator(new ArtLibrary(m, quiet), { sheet: BERSERKER });
+    const toward = { x: 0, y: -200 };
+    const away = { x: 0, y: 200 };
+    const aim = { x: 0, y: -40 };
+    expect(onTheMove(anim, toward, aim, 0)).toBe("attack");
+    expect(onTheMove(anim, toward, aim, 1000)).toBe("attack_offhand");
+    expect(onTheMove(anim, away, aim, 2000)).toBe("attack");
+    expect(onTheMove(anim, away, aim, 3000)).toBe("attack_offhand");
+  });
+
+  it("should carry an off-hand swing on as the new sheet's attack, at the same point, when the body is re-dressed mid-swing (FS-1J1CB R21, R30)", () => {
+    const sprite = fakeSprite(6); // as many frames as the fixture's swing clips
+    const anim = berserker();
+    const at = { x: 0, y: 0 };
+    anim.attack(0, east);
+    anim.show(sprite, anim.step(at, 0, FRAME, false));
+    anim.attack(500, east);
+    anim.show(sprite, anim.step(at, 500, FRAME, false));
+    expect(sprite.plays.at(-1)).toEqual({ key: `${BERSERKER}/attack_offhand/0`, startFrame: 0 });
+    sprite.at(3);
+
+    // the base sheet has no off-hand clips, and the new motion's hand is the right (R30)
+    const next = anim.wearing({ sheet: "char_knight_base" });
+    next.redress(sprite);
+    next.show(sprite, next.step(at, 500 + FRAME, FRAME, false));
+    expect(sprite.plays.at(-1)).toEqual({ key: "char_knight_base/attack/0", startFrame: 3 });
   });
 
   it("should start a body re-dressed as a Berserker on the right hand (R30, Edge States: seen mid-session)", () => {

@@ -185,9 +185,13 @@ const LIRIPIPE = { shade: 2, brow: 0.3, gap: 0.95, reach: 0.028, point: { dir: [
 
 /**
  * Her cloak let down near to the ankle and fuller behind, hung a little further off her back so
- * her stride stays inside it (R65), its hem cut in long dags.
+ * her stride stays inside it (R65), its hem cut in long dags. Its chain drags back further with her
+ * speed than the ranger's (`drag` 0.46, the archer's 0.36; cast.js `archer`; integrated with
+ * FS-JS7C8 2026-11-23): this long a cloak met the sprint's heel kick (the shared SPRINT_STEP's
+ * swing shin folding to 1.8 rad), the boot out through it by 5.99 px at 1x on run frame 3. 0.40
+ * reads 3.03 px, 0.42 2.33, 0.44 and on 0. Standing (no speed) it hangs as Looks v2 cut it.
  */
-const SHADOW_CLOAK = { length: 0.66, spread: 1.45, flare: 2.6, back: 0.16, ragged: { teeth: 10, depth: 0.08, seed: 31 } };
+const SHADOW_CLOAK = { length: 0.66, spread: 1.45, flare: 2.6, back: 0.16, drag: 0.46, ragged: { teeth: 10, depth: 0.08, seed: 31 } };
 
 /**
  * Her quiver seated a little further off her back and its foot tipped further out than the

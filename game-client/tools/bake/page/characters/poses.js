@@ -17,18 +17,16 @@ export function characterPoses(sheet) {
   for (const [anim, spec] of Object.entries(specs)) {
     const frames = clips[anim];
     if (frames.length !== spec.frames) throw new Error(`bake: ${sheet.name} ${anim} has ${frames.length} frames, not ${spec.frames}`);
-    // walk_attack and backpedal_attack (a class's attack on the move) carry their cloth with the
-    // legs and calm the shot's fling like the attack; the walk_attack's cloth walks like the walk,
-    // a run or backpedal_attack names how fast it carries the cloth (characters/clips.js
-    // RUN_ANIMATIONS, BACKPEDAL_ATTACK_SPEED), in walks; an off-hand attack (FS-1J1CB R28) carries
-    // its cloth as its right-hand clip does
+    // the walk carries its cloth as a walk, a run names how fast it carries it (characters/clips.js
+    // RUN_ANIMATIONS), in walks, and the attack and the parry calm the swing's fling; an off-hand
+    // attack (FS-1J1CB R28) carries its cloth as its right-hand clip does
     const clip = handless(anim);
-    const carried = spec.speed ?? (clip === "walk" || clip === "walk_attack" ? 1 : 0);
+    const carried = spec.speed ?? (clip === "walk" ? 1 : 0);
     springs[anim] = simulateSprings(rig, frames, {
       ...spec,
       speed: carried * (style.speed ?? 1),
       settle: clip === "death",
-      calm: clip === "attack" || clip === "parry" || clip === "walk_attack" || clip === "backpedal_attack" ? 0.25 : 1,
+      calm: clip === "attack" || clip === "parry" ? 0.25 : 1,
     });
   }
   // A palette variant (a hub resident's) re-dresses the same rig and poses: its clips follow the
@@ -42,8 +40,6 @@ export function characterPoses(sheet) {
         poses.push({
           anim: name,
           i,
-          // a clip `boxed` into the frame the others set (a class's walk_attack) never widens it
-          sizing: !spec.boxed,
           apply: () => {
             variant.dress();
             applyPose(rig, p, springs[anim][i]);

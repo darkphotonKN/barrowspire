@@ -149,6 +149,18 @@ function bellSleeves(rig, mat, band, r) {
 }
 
 /**
+ * How much of the thighs' swing the robe's hem follows (anatomy.js `skirt`, `legFollow`; integrated
+ * with Looks v2 2026-11-23, FS-JS7C8 § Change: The mercenary's sprint and trailing sword, the
+ * owner's 「改 Duelist 長袍」 again): 0.8, was Looks v2's 0.5. Looks v2's robe, longer and wider at
+ * the hem (to 0.085 H, from 0.16), follows the thigh less high up, so the sprint's knee drive
+ * (the shared SPRINT_STEP thigh at −0.85) pushed the upper front of each thigh out through it, by
+ * 2.08 px at 1x on run frames 2 and 6 (the guard's limit 0.67). 0.7, the mercenary's own coat's,
+ * reads 1.69 px; 0.75 1.60; 0.8 0.25; 0.9 0.23. Standing (no thigh swing) it hangs exactly as
+ * Looks v2 cut it; in motion the hem follows his legs a little more.
+ */
+const ROBE_LEG_FOLLOW = 0.8;
+
+/**
  * The robe's cut below the sash (R7, R11, R49: let down near to the ankle and flared, so his hem
  * line is a wide bell in a black fill), open down the front from the sash as the arming coat is
  * (its `arc`), hung as the mage's robe is (the thigh carrying the cloth over the knee it bends, the
@@ -161,12 +173,25 @@ function bellSleeves(rig, mat, band, r) {
 const ROBE = {
   bottom: 0.085,
   rBottom: [0.2, 0.18],
-  legFollow: 0.5,
+  legFollow: ROBE_LEG_FOLLOW,
   panelWeight: 0.55,
   kneeCover: 0.05,
   trail: 0.02,
   segs: 32,
 };
+
+/**
+ * How the robe's back panel is carried in the run (FS-JS7C8 § Change: The mercenary's sprint and
+ * trailing sword, owner 2026-11-23: 「改 Duelist 長袍」): its spring (anatomy.js `skirtBones`,
+ * `skirtB`) drags back further with his speed (`drag`, was 0.2) and may swing further (`limit`, was
+ * 0.8 rad), so in the sprint the back panel flies out behind over the heel kick (the shared sprint's
+ * swing shin folding to 1.8 rad), which came out through it by 3.62 px on the run's second key.
+ * Standing (no speed) it hangs as before; the cut is unchanged. The other panels, and the base's and
+ * the Sellsword's coats, keep the shared springs. 0.38 to 0.5 with 1 to 1.4 all pass every clip.
+ * Given to the back panel alone through the mercenary's skirt springs (`skirtSprings`, cast.js
+ * `mercenary`; anatomy.js `skirtBones`' per-bone options).
+ */
+const ROBE_BACK_CARRY = { drag: 0.4, limit: 1.1 };
 
 /** A wide sash wound twice about the waist: a deep band with the second turn standing over it. */
 function woundSash(rig, mat, o) {
@@ -214,8 +239,9 @@ const DUELIST_SCABBARD = { at: [0.1, 0.03, 0.045], tilt: 1.0, out: 0.22 };
  * bell sleeves banded in slate at the mouth, skirted near to the ankle, open at the front and
  * flared at the hem; a wide slate-black sash wound twice; the long-hilted curved blade in his right
  * hand and its lacquered scabbard through the sash. "Almost" samurai: a cut, not a costume, so no
- * lacing and no topknot. His run's wrist is re-keyed in his own style (classStyles.js
- * DUELIST_STYLE), so the long hilt keeps off his forearm. The vambrace, hair and beard stay; the
+ * lacing and no topknot. His run is his own style (classStyles.js DUELIST_STYLE): under FS-JS7C8's sprint he trails the sword as the mercenary does, the arm a
+ * little further out past the half-cloak (the owner, 2026-11-23: 「Duelist 也改拖劍」), the hilt clear
+ * of his forearm. The vambrace, hair and beard stay; the
  * knee cop goes under the robe. His wear is kept (fabrics.js `duelist*`): polished steel,
  * blackened iron, lacquer and matte wool.
  */
@@ -223,7 +249,7 @@ export const duelist = {
   tones: WEAR.duelist,
   // the robe's under-layer, showing in the V, is the breeches' dark wool
   mats: (F) => ({ torso: F.breeches, arms: F.duelistRobe, coat: F.duelistRobe, sash: F.duelistSlate }),
-  opts: { coat: ROBE },
+  opts: { coat: ROBE, skirtSprings: { skirtB: ROBE_BACK_CARRY } },
   omit: ["spaulder", "collar", "kneeCop"],
   bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.26, strap: HALF_CLOAK_HELD }),
   swap: {

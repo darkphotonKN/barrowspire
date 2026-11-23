@@ -38,9 +38,10 @@ const classSheet = (atlas: string, idleAtlas = atlas) => ({
 const page = (image: string) => ({ image, width: 1024, height: 1024, sha256: "a".repeat(64) });
 
 /**
- * The class sheets resident, and the Berserker's and the Spellwarden's looks baked, each alone in
- * its own group as feat/spec-looks bakes them (FS-1J1CB R15): the Berserker's spilling to a second
- * page. The Guardian's look is not baked.
+ * A synthetic manifest: the class sheets resident, and the Berserker's and the Spellwarden's looks
+ * baked, each alone in its own group (FS-1J1CB R15), the Berserker's spilling to a second page so a
+ * look over two pages is covered (the shipped one has fitted one page since FS-JS7C8 R154). The Guardian's look is not
+ * baked.
  */
 const manifest = {
   version: 1,

@@ -1,6 +1,8 @@
 // Hand-keyed clips on the shared rig (ADR-0021 §3, FS-2325V §E.1–E.2): idle, walk, a class
-// attack and death, a class's run and its attack over the walk's legs run backward (FS-JS7C8), plus spring-lagged secondary motion
-// for cloaks, robes and beards.
+// attack and death, a class's run (FS-JS7C8 §A), the Mercenary's parry and the Berserker's
+// off-hand attack, plus spring-lagged secondary motion for cloaks, robes and beards. No class
+// attacks on the move: `walk_attack` and `backpedal_attack` were retired (FS-JS7C8 § Change: The
+// knight's sprint, and the attack-on-the-move clips retired, R155).
 //
 // A pose is { b: { bone: [rx, ry, rz] }, body: { rx, rz, x, y, z }, fx: { … } }. Bone angles are
 // offsets on top of the rig's rest pose, in radians, Euler XYZ. Signs, for a limb hanging along
@@ -21,68 +23,6 @@ export const ANIMATIONS = {
   death: { frames: 7, fps: 9, loop: false },
 };
 
-
-/**
- * How many walk cycles the legs of `walk_attack` take while the upper body shoots once, on a
- * sheet without `run`. Such a class walks at about 2.7x (WALK_PACE in
- * src/render/art/animationSelect.ts: the server's 200 world px/s over the 74 px/s the 1x stride
- * covers), so one 8-frame cycle takes about 0.3 s, and the shot lasts 7 frames at 12 fps, 0.58 s:
- * two cycles fit it, so the feet stay nearly planted.
- */
-export const WALK_ATTACK_CYCLES = 2;
-
-/**
- * The same on a sheet that carries `run` (FS-JS7C8 R21, tuning FS-HF0WW): its class runs, and
- * attacking slows it to about 90 world px/s (the server's attack slow, 0.45 × 200). Over the
- * 0.58 s swing 0.75 walk cycles (6 of the walk's 8 keys, a step and a half) walk the legs at
- * about 76 px/s by WALK_PACE (82 by pace.js), under the ground's 90: the owner's "走的動畫可以再
- * 放慢一些腳步的播放" (one cycle was about 101).
- */
-export const RUN_WALK_ATTACK_CYCLES = 0.75;
-
-/**
- * How many backward walk cycles the legs of `backpedal_attack` step across the swing (FS-JS7C8
- * R10): the same 0.75 as `walk_attack`, its legs being the walk's run backward
- * ({@link backpedalCycle}). The walk measures about 79.7 world px/s at its 10 fps on the archer's
- * rig (pace.js), one cycle about 63.8 px, so 0.75 cycles over the 0.58 s swing walk the legs at
- * about 82 px/s, under the 90 the slowed body moves; one cycle would be about 109.
- */
-export const BACKPEDAL_ATTACK_CYCLES = 0.75;
-
-/**
- * How `backpedal_attack` carries its cloth (simulateSprings, rig heights per second, in walks):
- * out behind, as half a walk would. The body steps back, but each heel stepping back under the hem
- * kicks the cloth out ahead of it (owner 2026-11-12: "騎士後退攻擊 腳會穿過斗篷", "弓箭手後退攻擊
- * 腳跟處也會穿過斗篷"): dragged backward at half a walk (-0.5), the cloth pressed forward against the
- * legs and the heels came out through the knight's cloak by 18.8 px and the archer's by 10.5
- * (clearance.js `cloakClearance`); carried out from +0.3 neither does. Half a walk hangs it as a
- * slow walk does, heavy, never flung.
- */
-export const BACKPEDAL_ATTACK_SPEED = 0.5;
-
-/**
- * `specs` with `walk_attack` added (FS-HF0WW, FS-3V7GC): the attack from the waist up over the
- * walk from the waist down, played while a class attacks on the move. It lasts exactly as long as
- * `specs.attack` (twice its frames at twice its fps: 14 at 24 for the 7 at 12), so the client's
- * attack window times it unchanged. The upper body steps through the attack's own keys, each held
- * two frames, just as the attack plays them; the legs walk `cycles` walk cycles across it (0.75 on
- * a sheet that runs, else two). It is `boxed`: drawn in the frame the other clips set, never
- * widening it, so the sheet keeps its frame box (the bake fails if it would clip).
- *
- * A sheet that runs also gets `backpedal_attack` (FS-JS7C8 §B R8): the same attack over the walk's
- * legs run backward, played when the class moves more than 90° from its aim while attacking, as
- * long, `boxed` too, its legs stepping {@link BACKPEDAL_ATTACK_CYCLES} cycles back.
- */
-export function withWalkAttack(specs) {
-  const cycles = specs.run ? RUN_WALK_ATTACK_CYCLES : WALK_ATTACK_CYCLES;
-  const swing = { frames: specs.attack.frames * 2, fps: specs.attack.fps * 2, loop: false, boxed: true };
-  return {
-    ...specs,
-    walk_attack: { ...swing, cycles },
-    ...(specs.run ? { backpedal_attack: { ...swing, cycles: BACKPEDAL_ATTACK_CYCLES, speed: BACKPEDAL_ATTACK_SPEED } } : {}),
-  };
-}
-
 /**
  * A playable class's run (FS-JS7C8 §A): 8 frames looping, at the fps that puts its measured pace
  * (pace.js) in the run's 180–220 world px/s. `speed` is how fast the clip carries the body, in rig
@@ -93,39 +33,22 @@ export const RUN_ANIMATIONS = {
 };
 
 /**
- * The playable classes' clips (FS-3V7GC): the four, and `walk_attack`. The knight, the archer
- * and the wizard; the mercenary's are {@link MERC_ANIMATIONS}.
- */
-export const CLASS_ANIMATIONS = withWalkAttack(ANIMATIONS);
-
-/**
- * A class sheet re-baked with the run (FS-JS7C8 R36: one class at a time, the archer first): a
- * class's clips, the run, `walk_attack` walking its legs over 0.75 cycles and `backpedal_attack`.
- * No standalone backpedal: a class not attacking always faces where it runs (R8, R45).
- */
-export const RUNNING_CLASS_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, ...RUN_ANIMATIONS });
-
-/**
  * The Mercenary's clips (FS-MAMHR §H): a class's, and the parry, which raises into the guard fast
  * enough to land inside the server's 0.25 s window (§C.11) and then holds its last frame for as
  * long as the stance is up. There is no parry on the move: the guard is whole-body (FS-3V7GC R7).
  */
-export const MERC_ANIMATIONS = withWalkAttack({
+export const MERC_ANIMATIONS = {
   ...ANIMATIONS,
   parry: { frames: 4, fps: 24, loop: false },
-});
+};
 
-/** The Mercenary's sheet re-baked with the run (FS-JS7C8 slice 8): his clips, the parry, and the running class's. */
-export const RUNNING_MERC_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, ...RUN_ANIMATIONS });
-
-/** The attack clips a dual-wielder swings with either hand (FS-1J1CB §D R28). */
-export const OFFHAND_OF = { attack: "attack_offhand", walk_attack: "walk_attack_offhand", backpedal_attack: "backpedal_attack_offhand" };
+/** The attack clip a dual-wielder swings with either hand (FS-1J1CB §D R28). */
+export const OFFHAND_OF = { attack: "attack_offhand" };
 
 /**
- * `specs` with each attack clip's off-hand twin (FS-1J1CB §D R28, the Berserker first):
- * `attack_offhand`, `walk_attack_offhand` and `backpedal_attack_offhand`, each the same frames,
- * fps, loop, box and cloth as its right-hand clip, so the client's attack window times either hand
- * alike. Their keys are {@link offhandPoses}.
+ * `specs` with the attack's off-hand twin (FS-1J1CB §D R28, the Berserker first):
+ * `attack_offhand`, the same frames, fps, loop and cloth as the right hand's `attack`, so the
+ * client's attack window times either hand alike. Its keys are {@link offhandPoses}.
  */
 export function withOffhand(specs) {
   const out = { ...specs };
@@ -346,8 +269,9 @@ function steadyNeck(...chain) {
  * leg, {@link RUN_ARM}); the pelvis turns with the stride and the shoulders against it
  * ({@link RUN_COUNTER}); the neck takes up every turn, roll and lean of the chest, so the head stays
  * steady and looks ahead. `style.run` scales it as `style.walk` scales the walk (stride, knee fold,
- * arm swing per arm, elbow bend per arm, lean, twist, flight): a longbow hand keeps its arm near
- * straight and its swing short so the bow hangs along the side. `style.run.wrist` (per arm, 0 by
+ * arm swing per arm, elbow bend per arm, lean, twist, flight): `arms` and `elbow` at 0 turn the
+ * pump off, so `hold` alone poses the arms (the archer's two-handed low-ready bow, classStyles.js
+ * `ARCHER_LOW_READY`). `style.run.wrist` (per arm, 0 by
  * default) is how much of the arm's pump the wrist takes back, so a weapon in that hand turns less
  * than the forearm through the swing (1 would hold its angle to the chest). `style.run.cross` (per
  * arm, rad, 0 by default) turns the upper arm in about its length toward the front of the pump and
@@ -355,34 +279,38 @@ function steadyNeck(...chain) {
  * swinging across the body (FS-JS7C8 R2, owner 2026-11-12: "武器可以往內側擺動一些"). `style.run.hold`, when
  * a class gives one, carries the weapon in the run in place of `style.hold` (the idle's carry
  * hangs the arm at the side, which the pump would add to: a sword or sceptre arm then pumps from
- * the shoulder like a free arm, its wrist setting the weapon's angle). `style.runExtra(i)` adds a
- * class's own.
+ * the shoulder like a free arm, its wrist setting the weapon's angle). `style.run.legs`, when a class
+ * gives one, is its own step in {@link RUN_STEP}'s shape, any of its rows in place of the shared
+ * ones (the archer's sprint, FS-JS7C8 § Change: The archer's sprint and low-ready bow R68, R69: a
+ * shorter stride with a higher knee, which `stride`, scaling every thigh key, cannot give).
+ * `style.runExtra(i)` adds a class's own.
  */
 export function runCycle(style) {
   const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], wrist: [0, 0], cross: [0, 0], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
+  const step = { ...RUN_STEP, ...r.legs };
   const half = [0, 1, 2, 3].map((i) => {
     const c = swing(i);
     const hipsY = 0.12 * c * r.twist;
     // the chest turns back past square, with the arms: its world turn is -RUN_COUNTER·c
     const upperY = -(0.12 + RUN_COUNTER) * c * r.twist;
-    const leg = (name, k) => [RUN_STEP[name][i] * k, 0, 0];
-    const hips = [0, hipsY, RUN_STEP.hipsZ[i]];
-    const spine = [r.lean * 0.8, upperY * 0.4, RUN_STEP.chestZ[i] * 0.5];
-    const chest = [r.lean * 0.2, upperY * 0.6, RUN_STEP.chestZ[i] * 0.5];
+    const leg = (name, k) => [step[name][i] * k, 0, 0];
+    const hips = [0, hipsY, step.hipsZ[i]];
+    const spine = [r.lean * 0.8, upperY * 0.4, step.chestZ[i] * 0.5];
+    const chest = [r.lean * 0.2, upperY * 0.6, step.chestZ[i] * 0.5];
     return pose(
       {
         thighR: leg("thighR", r.stride),
         thighL: leg("thighL", r.stride),
         shinR: leg("shinR", r.knee),
         shinL: leg("shinL", r.knee),
-        footR: [RUN_STEP.footR[i] + RUN_STEP.thighR[i] * (1 - r.stride) + RUN_STEP.shinR[i] * (1 - r.knee), 0, 0],
-        footL: [RUN_STEP.footL[i] + RUN_STEP.thighL[i] * (1 - r.stride) + RUN_STEP.shinL[i] * (1 - r.knee), 0, 0],
+        footR: [step.footR[i] + step.thighR[i] * (1 - r.stride) + step.shinR[i] * (1 - r.knee), 0, 0],
+        footL: [step.footL[i] + step.thighL[i] * (1 - r.stride) + step.shinL[i] * (1 - r.knee), 0, 0],
         hips,
         spine,
         chest,
         neck: steadyNeck(hips, spine, chest),
       },
-      { y: RUN_STEP.lift[i] * r.lift },
+      { y: step.lift[i] * r.lift },
     );
   });
   // the arms over the whole cycle, after the mirror, so each arm keeps its own swing and bend
@@ -403,20 +331,6 @@ export function runCycle(style) {
   };
   const frames = [...half, ...half.map(mirror)];
   return frames.map((p, i) => add(p, arms(i), r.hold ?? style.hold, style.runExtra?.(i)));
-}
-
-/**
- * The backpedal's legs (FS-JS7C8 R8), `backpedal_attack`'s from the waist down: the class's walk
- * run backward in time (owner 2026-11-12: "後退姿勢重做 攻擊時的往前走動很好 後退不用特別有微蹲的感覺
- * 用往前的這個姿勢做後退"). Key k is walk key −k, so key 0 is the walk's own and every pose,
- * the pelvis height, the knee bend and the stride are the walk's: the upright stance of
- * `walk_attack`, no crouch, the planted foot sliding forward under the body instead of back.
- * Catmull-Rom sampling ({@link sample}) runs the same curve backward through reversed keys, so
- * the in-betweens are the walk's too.
- */
-export function backpedalCycle(style) {
-  const walk = walkCycle(style);
-  return walk.map((_, k) => walk[(walk.length - k) % walk.length]);
 }
 
 // --- idle ----------------------------------------------------------------------------------
@@ -542,6 +456,31 @@ export const CLEAVE_TILT = -2.4;
 /** The Berserker's wrist in the carry (rad): the haft hung forward of the fist, steeper than a blade's point, so the axe's edge faces forward and a little down (warriorKit.js `AXE_EDGE_TURN`). */
 export const CLEAVE_CARRY = 1.3;
 
+/** The wizard's cast, keys 0–2 and 6 (see ATTACKS `cast`): the wind-up and the settle every staff cast shares. */
+const CAST_KEYS = [
+  P({ hips: [0, -0.05, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.1, 0], upperArmR: [-0.15, 0, -0.25], foreArmR: [-1.5, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.25, 0, 0.15], foreArmL: [-0.7, 0, 0] }, { z: -0.008 }, { glow: 1.6 }),
+  P({ hips: [0, -0.17, 0], spine: [-0.06, -0.15, 0], chest: [-0.1, -0.22, 0], upperArmR: [0.4, 0, -0.9], foreArmR: [-1.9, 0, 0], handR: [0, 0, 0], upperArmL: [-1.0, 0, 0.2], foreArmL: [-0.35, 0, 0], handL: [-0.3, 0, 0] }, { z: -0.025 }, { glow: 2.8 }),
+  P({ hips: [0, 0.08, 0], spine: [0, -0.08, 0], chest: [-0.04, -0.18, 0], upperArmR: [-0.45, 0, -0.75], foreArmR: [-1.55, 0, 0], handR: [0.25, 0, 0], upperArmL: [-1.0, 0, 0.3], foreArmL: [-0.3, 0, 0], handL: [-0.4, 0, 0] }, {}, { glow: 3.8 }),
+  null,
+  null,
+  null,
+  P({ upperArmR: [-0.35, 0, -0.08], foreArmR: [-1.15, 0, 0], handR: [-0.1, 0, 0], upperArmL: [0.1, 0, 0.15], foreArmL: [-0.5, 0, 0] }, { z: 0.004 }, { glow: 1.3 }),
+];
+/** The pointed cast's keys 3–5 (FS-JS7C8 § Change: The wizard's sprint and pointed cast R125, R126): the strike, the carry through, the ease back. */
+const POINTED_CAST = [
+  P({ hips: [0, 0.3, 0], spine: [0.08, 0.1, 0], chest: [0.12, 0.18, 0], upperArmR: [-0.92, 0.46, -0.89], foreArmR: [-0.05, 0.26, 0], handR: [1.2, 0.12, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.04 }, { glow: 5 }),
+  P({ hips: [0, 0.33, 0], spine: [0.1, 0.14, 0], chest: [0.14, 0.24, 0], upperArmR: [-0.86, 0.4, -1.02], foreArmR: [-0.05, 0.28, 0], handR: [1.2, 0.12, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.035 }, { glow: 3.6 }),
+  P({ hips: [0, 0.17, 0], spine: [0.04, 0.05, 0], chest: [0.04, 0.06, 0], upperArmR: [-0.6, 0.2, -0.55], foreArmR: [-0.6, 0.14, 0], handR: [0.55, 0.06, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
+];
+/** Keys 3–5 as they were before the pointed cast (main 697260c6): the staff driven up and on out of the fist. */
+const UPRIGHT_CAST = [
+  P({ hips: [0, 0.3, 0], spine: [0.08, 0.1, 0], chest: [0.12, 0.18, 0], upperArmR: [-1.5, 0, -0.12], foreArmR: [-0.2, 0, 0], handR: [0.15, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.04 }, { glow: 5 }),
+  P({ hips: [0, 0.33, 0], spine: [0.1, 0.14, 0], chest: [0.14, 0.24, 0], upperArmR: [-1.38, 0.1, 0.05], foreArmR: [-0.25, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.035 }, { glow: 3.6 }),
+  P({ hips: [0, 0.17, 0], spine: [0.04, 0.05, 0], chest: [0.04, 0.06, 0], upperArmR: [-0.8, 0, -0.1], foreArmR: [-1.0, 0, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
+];
+/** The wizard's seven cast keys with `strike` (three keys) as keys 3–5, each on the cast's stance. */
+const castKeys = (strike) => CAST_KEYS.map((k, i) => k ?? strike[i - 3]).map((p) => add(CAST_STANCE, p));
+
 export const ATTACKS = {
   /**
    * Knight (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): a
@@ -654,20 +593,31 @@ export const ATTACKS = {
    * with the body behind it. The weight rocks back as the sceptre is drawn back by the right
    * shoulder and the free hand reaches toward the aim (keys 0–1); the pelvis turns into the thrust
    * first while the chest is still back (key 2); the chest follows, the weight comes onto the
-   * front foot and the sceptre thrusts toward the aim, the orb flaring, the free hand opening out
-   * to the side (key 3, the strike, as before); it carries on past (key 4) and settles back to the
-   * carry (keys 5–6). Each key's hips turn on top of the cast's stance.
+   * front foot and the arm reaches out nearly straight, the sceptre pointed along the aim like a
+   * spell being cast, the orb flaring, the free hand opening out to the side (key 3, the strike);
+   * it carries on, still pointed and a little lower (key 4), and settles back to the carry (keys
+   * 5–6), the wrist easing as the arm comes in. Each key's hips turn on top of the cast's stance.
+   *
+   * The point (FS-JS7C8 § Change: The wizard's sprint and pointed cast R125, R126; the owner:
+   * 「法師攻擊時法杖要伸直指向怪物像施法一樣」): on keys 3–4 the staff lies along the facing in plan and
+   * 7–9° below level, the hand about a third of the way from the chest bone up to the shoulder,
+   * the elbow all but straight. The fist holds a staff square to the forearm, and the wrist cocks
+   * it 1.2 rad toward the arm, under CLEAVE_CARRY; the rest of the turn is the arm's: reached out
+   * to her right of the aim by about 24°, the forearm turned palm down, so the staff runs on in
+   * from the hand along the aim. The wrist is held at 1.2 so a look's longer focus, its butt 0.2 H
+   * back past the fist, clears her flared right sleeve.
    */
-  cast: () =>
-    [
-      P({ hips: [0, -0.05, 0], spine: [-0.02, -0.05, 0], chest: [-0.04, -0.1, 0], upperArmR: [-0.15, 0, -0.25], foreArmR: [-1.5, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.25, 0, 0.15], foreArmL: [-0.7, 0, 0] }, { z: -0.008 }, { glow: 1.6 }),
-      P({ hips: [0, -0.17, 0], spine: [-0.06, -0.15, 0], chest: [-0.1, -0.22, 0], upperArmR: [0.4, 0, -0.9], foreArmR: [-1.9, 0, 0], handR: [0, 0, 0], upperArmL: [-1.0, 0, 0.2], foreArmL: [-0.35, 0, 0], handL: [-0.3, 0, 0] }, { z: -0.025 }, { glow: 2.8 }),
-      P({ hips: [0, 0.08, 0], spine: [0, -0.08, 0], chest: [-0.04, -0.18, 0], upperArmR: [-0.45, 0, -0.75], foreArmR: [-1.55, 0, 0], handR: [0.25, 0, 0], upperArmL: [-1.0, 0, 0.3], foreArmL: [-0.3, 0, 0], handL: [-0.4, 0, 0] }, {}, { glow: 3.8 }),
-      P({ hips: [0, 0.3, 0], spine: [0.08, 0.1, 0], chest: [0.12, 0.18, 0], upperArmR: [-1.5, 0, -0.12], foreArmR: [-0.2, 0, 0], handR: [0.15, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.04 }, { glow: 5 }),
-      P({ hips: [0, 0.33, 0], spine: [0.1, 0.14, 0], chest: [0.14, 0.24, 0], upperArmR: [-1.38, 0.1, 0.05], foreArmR: [-0.25, 0, 0], handR: [0.1, 0, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.035 }, { glow: 3.6 }),
-      P({ hips: [0, 0.17, 0], spine: [0.04, 0.05, 0], chest: [0.04, 0.06, 0], upperArmR: [-0.8, 0, -0.1], foreArmR: [-1.0, 0, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
-      P({ upperArmR: [-0.35, 0, -0.08], foreArmR: [-1.15, 0, 0], handR: [-0.1, 0, 0], upperArmL: [0.1, 0, 0.15], foreArmL: [-0.5, 0, 0] }, { z: 0.004 }, { glow: 1.3 }),
-    ].map((p) => add(CAST_STANCE, p)),
+  cast: () => castKeys(POINTED_CAST),
+
+  /**
+   * The staff cast of the mage looks (FS-1J1CB § Change: Looks v2 R56, R57; the owner, integrating
+   * Looks v2 with FS-JS7C8 on 2026-11-23: 「如果有改武器就套用main的」): the wizard's thrust as it was
+   * before the pointed cast, so the Spellwarden's warding staff and the Pyromancer's brazier rod
+   * keep the cast Looks v2 was made on. Keys 0–2 and 6 are the cast's own; on keys 3–5 the staff
+   * stands up out of the fist as the thrust drives it, not pointed along the aim
+   * ({@link UPRIGHT_CAST}). The base wizard's sceptre keeps the pointed cast.
+   */
+  staffCast: () => castKeys(UPRIGHT_CAST),
 
   /**
    * Berserker (FS-1J1CB R2): a wide, swinging cut with the bearded axe, the free arm thrown back
@@ -759,44 +709,6 @@ export function attackKeys(style) {
 }
 
 /**
- * The attack from the waist up over a leg cycle from the waist down: `spec`'s frames span exactly
- * the attack clip's duration (`attackSpec`), or `name` is refused. The upper body is the attack
- * key showing at that moment, as the attack clip itself would show it (an in-between would be a
- * pose the attack never draws, and its bow sweeps wider than the frame); the legs step `cycles` of
- * `legs` (a looping cycle) over the same span, sampled between its keys.
- */
-function attackOverLegs(name, style, spec, attackSpec, legs, cycles, hand = (p) => p) {
-  const attack = attackKeys(style).map(hand);
-  const duration = spec.frames / spec.fps;
-  if (Math.abs(duration - attackSpec.frames / attackSpec.fps) > 1e-9)
-    throw new Error(`clips: ${name} lasts ${duration}s, not the attack's ${attackSpec.frames / attackSpec.fps}s`);
-  const stride = (cycles * legs.length) / spec.frames;
-  return Array.from({ length: spec.frames }, (_, i) =>
-    layerPoses(
-      attack[Math.min(attack.length - 1, Math.floor((i * attackSpec.fps) / spec.fps + 1e-9))],
-      sample(legs, (i * stride) % legs.length, true),
-    ),
-  );
-}
-
-/**
- * The attack over the walk (`walk_attack`): the legs walk `spec.cycles` cycles
- * ({@link WALK_ATTACK_CYCLES} when the spec names none).
- */
-export function walkAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
-  return attackOverLegs("walk_attack", style, spec, attackSpec, walkCycle(style), spec.cycles ?? WALK_ATTACK_CYCLES);
-}
-
-/**
- * The attack over the backpedal's legs (`backpedal_attack`, FS-JS7C8 §B R8), composed exactly as
- * {@link walkAttackClip}: the legs step `spec.cycles` backpedal cycles
- * ({@link BACKPEDAL_ATTACK_CYCLES} when the spec names none).
- */
-export function backpedalAttackClip(style, spec, attackSpec = ANIMATIONS.attack) {
-  return attackOverLegs("backpedal_attack", style, spec, attackSpec, backpedalCycle(style), spec.cycles ?? BACKPEDAL_ATTACK_CYCLES);
-}
-
-/**
  * An attack key swung with the other hand (FS-1J1CB §D R28): the key's upper body mirrored left for
  * right ({@link mirror}) over `legs`, the right-hand clip's own legs ({@link layerPoses}: the spine
  * takes up the turn between the two pelvises, so the chest is the mirrored key's). Baked and lit as
@@ -805,17 +717,14 @@ export function backpedalAttackClip(style, spec, attackSpec = ANIMATIONS.attack)
 export const offhandPose = (key, legs = key) => layerPoses(mirror(key), legs);
 
 /**
- * The off-hand twins of a style's attack clips, keyed as {@link OFFHAND_OF}: the attack's keys
- * swung with the other hand ({@link offhandPose}) over the attack's own stance, the walk's legs and
- * the backpedal's, the same keys, fps and strike key as the right hand's.
+ * The off-hand twin of a style's attack, keyed as {@link OFFHAND_OF}: the attack's keys swung with
+ * the other hand ({@link offhandPose}) over the attack's own stance, the same keys, fps and strike
+ * key as the right hand's.
  */
-export function offhandPoses(style, specs) {
+export function offhandPoses(style) {
   const attack = () => attackKeys(style);
   return {
     attack_offhand: () => attack().map((p) => offhandPose(p)),
-    walk_attack_offhand: () => attackOverLegs("walk_attack_offhand", style, specs.walk_attack_offhand, specs.attack, walkCycle(style), specs.walk_attack_offhand.cycles ?? WALK_ATTACK_CYCLES, mirror),
-    backpedal_attack_offhand: () =>
-      attackOverLegs("backpedal_attack_offhand", style, specs.backpedal_attack_offhand, specs.attack, backpedalCycle(style), specs.backpedal_attack_offhand.cycles ?? BACKPEDAL_ATTACK_CYCLES, mirror),
   };
 }
 
@@ -878,9 +787,7 @@ export function clipsFor(style, specs = ANIMATIONS) {
     attack: () => attackKeys(style),
     death: () => deathClip(style),
     parry: () => parryClip(style, specs.parry.frames),
-    walk_attack: () => walkAttackClip(style, specs.walk_attack, specs.attack),
-    backpedal_attack: () => backpedalAttackClip(style, specs.backpedal_attack, specs.attack),
-    ...offhandPoses(style, specs),
+    ...offhandPoses(style),
   };
   const own = style.clips ?? {};
   return Object.fromEntries(Object.keys(specs).map((anim) => [anim, own[anim] ? own[anim](specs[anim]) : make[anim]()]));

@@ -102,8 +102,8 @@ server state and sends intents. ✅
 - [x] Pre-rendered world and prop art → FS-2325V
 - [x] Pre-rendered character and creature art → FS-2325V
 - [ ] High-detail character art → FS-HF0WW
-- [ ] Walk-and-attack animation → FS-HF0WW
-- [ ] Run and backpedal animations → FS-JS7C8
+- [ ] ~Walk-and-attack animation~ → removed FS-JS7C8
+- [ ] Run animation for every class → FS-JS7C8
 - [ ] Legs stay inside garments → FS-HF0WW
 - [ ] Baked frames trimmed to their pixels → FS-HF0WW
 - [x] Faces on the human cast → FS-67QQY

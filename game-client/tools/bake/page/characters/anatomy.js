@@ -160,11 +160,12 @@ export function legs(rig, mat, o = {}) {
 /**
  * How far inside a garment's wall `legs({ under })` keeps a thigh (H; about 3.5–3.6 1x px on the
  * classes, H 1.92–2.0): one value for the four classes, the least (in 0.0025 steps) that keeps
- * every class's legs inside its garment in every clip, to the leg-clearance guard's one baked px (clearance.js). The 2x
- * wizard's walk and walk_attack set it (FS-3V7GC §C): her leading thigh and knee swing out
- * through the robe, which follows a thigh by only a fifth of its swing; at 0.0375 she shows 0.52
- * 1x px, past the half px a 2x sheet allows. Under the cloth, so no garment changes for it. (It
- * was 0.012, set by the 2x archer's walk, before the other classes were baked at 2x.)
+ * every class's legs inside its garment in every clip, to the leg-clearance guard's one baked px
+ * (clearance.js). The 2x wizard's walk sets it (FS-3V7GC §C; her attack on the move did too until
+ * FS-JS7C8 R155 retired it): her leading thigh and knee swing out through the robe, which follows a
+ * thigh by only a fifth of its swing; at 0.0375 she shows 0.52 1x px, past the half px a 2x sheet
+ * allows. Under the cloth, so no garment changes for it. (It was 0.012, set by the 2x archer's
+ * walk, before the other classes were baked at 2x.)
  */
 export const UNDER_CLEAR = 0.04;
 
@@ -497,7 +498,9 @@ export function bareFeet(rig, mat, o = {}) {
 
 /**
  * Adds a skirt's spring bones (front and back panels) under the hips. Call before any skinned
- * mesh is built; `skirt({ panels: true })` then weights its hem to them.
+ * mesh is built; `skirt({ panels: true })` then weights its hem to them. `stiffness` and `drag`
+ * set all four panels' springs; a panel's own options under its bone's name (`skirtB: { drag,
+ * limit }`) go over them for that panel alone (the Duelist's robe, mercLooks.js `ROBE_BACK_CARRY`).
  */
 export function skirtBones(rig, o = {}) {
   rig.addBone("skirtF", "hips", 0, -0.03, 0.05);
@@ -505,7 +508,7 @@ export function skirtBones(rig, o = {}) {
   rig.addBone("skirtL", "hips", 0.07, -0.03, 0);
   rig.addBone("skirtR", "hips", -0.07, -0.03, 0);
   for (const b of ["skirtF", "skirtB", "skirtL", "skirtR"])
-    spring(rig, b, { stiffness: o.stiffness ?? 45, damping: 7, drag: o.drag ?? 0.2, inertia: 1.1, limit: 0.8, gravity: 0.6 });
+    spring(rig, b, { stiffness: o.stiffness ?? 45, damping: 7, drag: o.drag ?? 0.2, inertia: 1.1, limit: 0.8, gravity: 0.6, ...o[b] });
 }
 
 /**

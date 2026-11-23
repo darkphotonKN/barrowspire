@@ -64,9 +64,10 @@ vi.mock("./fabrics.js", async () => {
 const THREE = await import("three");
 const { CAST, wizard } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, seenThroughCloth } = await import("./clearance.js");
 const { OFFHAND_OF } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
+const { along, edgesOf, leastOutside, shown } = await import("./edgeGuards.mjs");
 const gear = await import("./gear.js");
 const { sceptre } = gear;
 const kit = await import("./mageKit.js");
@@ -78,6 +79,8 @@ const { WIZARD_BUILD } = await import("./classStyles.js");
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_wizard_base");
 const LOOKS = ["char_wizard_spellwarden", "char_wizard_pyromancer"].map((sheet) => [sheet, { ...row(sheet), name: sheet }]);
+/** The wizard's three figures as the bake poses them: her own and the two looks. */
+const FIGURES = [["char_wizard_base", { ...row("char_wizard_base"), name: "char_wizard_base" }], ...LOOKS];
 
 /** The meshes riding the right hand's mount: the sceptre, or a look's focus. */
 function focusMeshes(rig) {
@@ -129,7 +132,7 @@ describe("the mage's spec looks in the cast (FS-1J1CB R9, R15)", () => {
 });
 
 describe("the mage's spec looks pass the guards on every clip (FS-1J1CB R11)", () => {
-  it.each(LOOKS)("%s keeps her legs inside the gown and the scapular, no exemption", (sheet, r) => {
+  it.each(FIGURES)("%s keeps her legs inside the gown and the scapular, no exemption", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
     expect(mirroredGarment(rig)).toBe(false);
     expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
@@ -137,6 +140,19 @@ describe("the mage's spec looks pass the guards on every clip (FS-1J1CB R11)", (
     const clips = legClearance(rig, poses);
     expect(Object.keys(clips ?? {}).sort()).toEqual(expect.arrayContaining(["idle", "walk", "run", "attack"]));
     expect(clearanceError(sheet, clips, { scale: r.scale, mirrored: false, known: new Map(), legacy: new Set() }), JSON.stringify(clips)).toBeNull();
+  });
+
+  // FS-JS7C8 § Change: The wizard's sprint and pointed cast R120: the camera sees no hip, thigh or
+  // knee through her gown on her own figure and each look, as the bake poses them, at rest and on
+  // every moving clip the sheet carries (clearance.test.mjs reads the same on a rebuilt base)
+  it.each(FIGURES)("%s shows no hip, thigh or knee through the cloth in any facing, at rest and on every moving clip", (sheet, r) => {
+    const { rig, poses } = characterPoses(r);
+    const anims = ["idle", "run", "walk"].filter((anim) => anim in r.animations);
+    expect(anims).toEqual(expect.arrayContaining(["idle", "run", "walk"]));
+    const seen = seenThroughCloth(rig, poses.filter((p) => anims.includes(p.anim)));
+    expect(seen.length).toBeGreaterThan(0);
+    const worst = seen.reduce((m, f) => (f.seen > m.seen ? f : m), { seen: 0 });
+    expect(worst.seen, `${sheet} ${worst.anim} frame ${worst.i}`).toBe(0);
   });
 
   it.each(LOOKS)("%s passes the cloak guard (she wears no cloak, so nothing to show through)", (sheet, r) => {
@@ -239,10 +255,24 @@ describe("the mage kit (FS-1J1CB §Change: Looks v2 R68, R69)", () => {
     const { WIZARD_STYLE, SPELLWARDEN_STYLE, PYROMANCER_STYLE } = await import("./classStyles.js");
     expect(looks.spellwarden.style).toBe(SPELLWARDEN_STYLE);
     expect(looks.pyromancer.style).toBe(PYROMANCER_STYLE);
+    // their cast the wizard's thrust as Looks v2 was made on it, before FS-JS7C8's pointed cast,
+    // which is the base wizard's alone (the owner, 2026-11-23: 「如果有改武器就套用main的」)
     for (const s of [SPELLWARDEN_STYLE, PYROMANCER_STYLE]) {
       expect(s).not.toBe(WIZARD_STYLE);
-      expect(s.attack).toBe(WIZARD_STYLE.attack);
+      expect(WIZARD_STYLE.attack).toBe("cast");
+      expect(s.attack).toBe("staffCast");
     }
+  });
+});
+
+// classMotion.test.mjs reads each look's haft from these sizes as literals (it cannot load
+// mageKit.js, which needs the bake page's theme): held here, where mageKit.js loads, so they cannot
+// drift apart (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128; integrated with Looks
+// v2 2026-11-23: the v1 foci's FOCUS_BUTT and FOCUS_TOP went with them)
+describe("the haft spans classMotion's staff guards copy (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128)", () => {
+  it("keeps the warding staff at −0.46 to 0.62 H and the brazier rod at −0.084 to 0.388 H, as classMotion.test.mjs's STAFFS reads them", () => {
+    expect([kit.STAFF.butt, kit.STAFF.top]).toEqual([-0.46, 0.62]);
+    expect([kit.BRAZIER.pommel, kit.BRAZIER.top]).toEqual([-0.084, 0.388]);
   });
 });
 
@@ -315,7 +345,7 @@ describe("the Spellwarden's staff (FS-1J1CB §Change: Looks v2 R56)", () => {
  * comes to her skull (in skull radii from its centre) and to the ground (H), and `each(pose)` for
  * a look's own check.
  */
-function sweep(rig, poses, each = () => {}) {
+function sweep(rig, poses, each = () => {}, floor = () => 0) {
   const head = skull(rig);
   const meshes = focusMeshes(rig);
   expect(meshes.length).toBeGreaterThan(5);
@@ -334,7 +364,8 @@ function sweep(rig, poses, each = () => {}) {
         v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
         const d = outOfSkull(head, local.copy(v).applyMatrix4(inv));
         if (d < worst.head) [worst.head, at.head] = [d, `${p.anim} @${p.i}`];
-        if (v.y < worst.ground) [worst.ground, at.ground] = [v.y, `${p.anim} @${p.i}`];
+        const over = v.y / rig.H - floor(p.anim);
+        if (over < worst.ground) [worst.ground, at.ground] = [over, `${p.anim} @${p.i}`];
       }
     }
     each(p);
@@ -342,14 +373,26 @@ function sweep(rig, poses, each = () => {}) {
   return { worst, at };
 }
 
+/**
+ * How far under the ground each figure's mount may reach on a clip (H): the ground itself on every
+ * clip, but the base's death. Her sceptre's death has no wrist (WARD_DEATH and PYRE_DEATH are the looks' alone), so
+ * as she lies down it reads 0.20 H under the ground on key 6 (I-JS7C8-28, recorded, not loosened:
+ * her death keys are held by digest and out of FS-JS7C8 § Change: The wizard's sprint and pointed
+ * cast, R115; its Follow-ups carry it to the owner). Bounded at that depth, not skipped, so it
+ * cannot sink further unseen. Her head is held on every clip.
+ */
+const groundFloor = (sheet, anim) => (sheet === "char_wizard_base" && anim === "death" ? -0.21 : 0);
+
+// the base's sceptre too (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128): the cast
+// points it along the aim, past her head
 describe("each look's gear clears her head and the ground in every clip (FS-1J1CB R3, R4, §Change: Looks v2 R62)", () => {
-  it.each(LOOKS)("%s never passes what she holds through her head or under the ground", (sheet, r) => {
+  it.each(FIGURES)("%s never passes what she holds through her head or under the ground", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
-    const { worst, at } = sweep(rig, poses);
+    const { worst, at } = sweep(rig, poses, () => {}, (anim) => groundFloor(sheet, anim));
     // clear of the skull by its hair, as the sceptre is (about 1.5 skull radii from its centre at
     // the nearest, in the run)
     expect(worst.head, `nearest the head at ${at.head}`).toBeGreaterThanOrEqual(1.3);
-    expect(worst.ground / rig.H, `lowest at ${at.ground}`).toBeGreaterThanOrEqual(0);
+    expect(worst.ground, `lowest over its floor at ${at.ground}`).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -396,5 +439,159 @@ describe("the Pyromancer's flame stays upright on every pose (FS-1J1CB §Change:
     flames[0].getWorldQuaternion(q);
     // the tongue's length (its own +y) stands up the world's +y
     expect(new THREE.Vector3(0, 1, 0).applyQuaternion(q).y).toBeGreaterThan(0.999);
+  });
+});
+
+// FS-JS7C8 § Change: The wizard's sprint and pointed cast R128, R129: the sceptre or a look's focus
+// stays clear of the right arm that holds it on every baked frame of the cast, on all three
+// figures: no point along any edge of the meshes the right hand's mount carries lies inside her
+// right arm (the skinned tube, shoulder to wrist, the gown's sleeve flaring to 2.35 times its
+// width at the wrist: cast.js `sleeve`) or her right hand (the fist and the thumb), save where the
+// fist closes on the haft. Each solid has a fixture that must fail.
+describe("the sceptre or focus clear of her right forearm, hand and flared sleeve in the cast (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128, R129)", () => {
+  /** The clips the guard reads, every baked frame of each: the cast (I-JS7C8-29 re-keys it; the bake's frames are what is read). */
+  const GUARDED = ["attack"];
+  /** How far apart the points sampled along an edge lie, at most (H). */
+  const STEP = 0.005;
+  /** The fist's own grip on the haft, left out of the hand's check (H, along the grip frame's +z either side of the grip point): the hand's fist is 0.036 H tall about it (anatomy.js `hands`, size 0.9). */
+  const GRIP = 0.035;
+
+  /** The right hand's mount (inHand's group, the grip frame: its +z along the haft from the fist). */
+  const gripOf = (rig) => rig.bones.handR.children.find((g) => !g.isBone && !g.isMesh);
+  /** The bone carrying most of a skinned mesh's vertex `i`. */
+  const heaviest = (m, i) => {
+    const idx = m.geometry.attributes.skinIndex;
+    const wt = m.geometry.attributes.skinWeight;
+    let k = 0;
+    for (let j = 1; j < 4; j++) if (wt.getComponent(i, j) > wt.getComponent(i, k)) k = j;
+    return m.skeleton.bones[idx.getComponent(i, k)].name;
+  };
+  /** Her right arm: the skinned tube the right forearm carries (anatomy.js `arms`, the sleeve's flare in it). */
+  const armOf = (rig) => {
+    const out = [];
+    rig.root.traverse((o) => {
+      if (!o.isSkinnedMesh || !o.geometry.userData.tube || o.userData.garment || o.userData.leg) return;
+      const n = o.geometry.attributes.position.count;
+      for (let i = 0; i < n; i++) if (heaviest(o, i) === "foreArmR") return out.push(o);
+    });
+    return out;
+  };
+  /** Her right hand: the fist and the thumb (anatomy.js `hands`), the rigid meshes on the hand bone outside the mount. */
+  const handOf = (rig) => {
+    const grip = gripOf(rig);
+    return rig.bones.handR.children.filter((o) => o.isMesh && o !== grip);
+  };
+
+  /**
+   * The points along every edge of the mount's drawn meshes, at most STEP apart, model space, each
+   * with how far up the haft it lies from the grip point (H, the grip frame's z).
+   */
+  function focusPoints(rig) {
+    const grip = gripOf(rig);
+    const inv = new THREE.Matrix4().copy(grip.matrixWorld).invert();
+    const segs = [];
+    grip.traverse((o) => o.isMesh && shown(o) && segs.push(...edgesOf(o)));
+    return along(segs, STEP * rig.H).map((v) => ({ v, z: v.clone().applyMatrix4(inv).z / rig.H }));
+  }
+
+  /** How far `v` lies outside an ellipsoid mesh (a SphereGeometry scaled, posed rigid; H-free units): negative inside. */
+  const outsideEllipsoid = (m, v) => {
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    const half = m.geometry.boundingBox.getSize(new THREE.Vector3()).multiplyScalar(0.5);
+    const c = m.geometry.boundingBox.getCenter(new THREE.Vector3());
+    const l = v.clone().applyMatrix4(new THREE.Matrix4().copy(m.matrixWorld).invert()).sub(c);
+    return (Math.hypot(l.x / half.x, l.y / half.y, l.z / half.z) - 1) * Math.min(half.x, half.y, half.z);
+  };
+
+  /**
+   * What the guard reads on the pose the rig holds now, for the mount's points `pts`: the least
+   * distance any point lies outside the right arm, and any point off the grip outside the right
+   * hand (H; negative inside). The grip window is the fist's alone: the arm and its sleeve end at
+   * the wrist, so the haft through the fist is held clear of them too.
+   */
+  function measure(rig, pts) {
+    const [arm] = leastOutside(armOf(rig), pts.map((p) => p.v));
+    const free = pts.filter((p) => Math.abs(p.z) > GRIP).map((p) => p.v);
+    const hand = Math.min(...handOf(rig).flatMap((m) => free.map((v) => outsideEllipsoid(m, v))));
+    return { arm: arm === null ? Infinity : arm / rig.H, hand: hand / rig.H };
+  }
+
+  /** The figure posed on every baked frame of `anim`, the guard's measures on each. */
+  const memo = new Map();
+  const frames = (sheet, r, anim) => {
+    const key = `${sheet} ${anim}`;
+    if (!memo.has(key)) {
+      const { rig, poses } = characterPoses(r);
+      memo.set(
+        key,
+        poses
+          .filter((p) => p.anim === anim)
+          .map((p) => {
+            p.apply();
+            rig.root.updateMatrixWorld(true);
+            return { i: p.i, ...measure(rig, focusPoints(rig)) };
+          }),
+      );
+    }
+    return memo.get(key);
+  };
+  const CASES = FIGURES.flatMap(([sheet, r]) => GUARDED.map((anim) => [sheet, anim, r]));
+
+  it.each(FIGURES)("%s: one right arm, the fist and the thumb, and the mount's meshes are there", (sheet, r) => {
+    const { rig } = r.build();
+    rig.root.updateMatrixWorld(true);
+    expect(armOf(rig)).toHaveLength(1);
+    expect(handOf(rig)).toHaveLength(2);
+    expect(focusPoints(rig).length).toBeGreaterThan(1000);
+  });
+
+  it.each(CASES)("%s %s: every frame baked, no exemption for the figure", (sheet, anim, r) => {
+    expect(frames(sheet, r, anim)).toHaveLength(r.animations[anim].frames);
+    expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
+    expect(MIRRORED_LEGACY.has(sheet)).toBe(false);
+  });
+
+  it.each(CASES)("%s %s: no point along the mount's edges, the grip's too, inside her right arm or its flared sleeve", (sheet, anim, r) => {
+    for (const f of frames(sheet, r, anim)) expect(f.arm, `${sheet} ${anim} frame ${f.i}`).toBeGreaterThan(0);
+  });
+
+  it.each(CASES)("%s %s: no point along the mount's edges off the grip inside her right hand", (sheet, anim, r) => {
+    for (const f of frames(sheet, r, anim)) expect(f.hand, `${sheet} ${anim} frame ${f.i}`).toBeGreaterThan(0);
+  });
+
+  /** A figure posed on its cast's strike (key 3), for the fixtures to move the mount from. */
+  const posedOn = (r) => {
+    const { rig, poses } = characterPoses(r);
+    poses.find((p) => p.anim === "attack" && p.i === 3).apply();
+    rig.root.updateMatrixWorld(true);
+    return rig;
+  };
+  const world = (rig, b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld);
+  /** `pts` turned and moved by `m`, copies. */
+  const transformed = (pts, m) => pts.map((p) => ({ v: p.v.clone().applyMatrix4(m), z: p.z }));
+
+  it.each(FIGURES)("%s: finds the focus laid along her forearm: its haft turned onto the forearm's axis, the grip at its middle, reads inside the arm", (sheet, r) => {
+    const rig = posedOn(r);
+    const pts = focusPoints(rig);
+    const grip = gripOf(rig);
+    const from = new THREE.Vector3(0, 0, 1).transformDirection(grip.matrixWorld);
+    const [elbow, wrist] = [world(rig, "foreArmR"), world(rig, "handR")];
+    const to = wrist.clone().sub(elbow).normalize();
+    const g = new THREE.Vector3().setFromMatrixPosition(grip.matrixWorld);
+    const m = new THREE.Matrix4()
+      .makeTranslation(elbow.clone().lerp(wrist, 0.5))
+      .multiply(new THREE.Matrix4().makeRotationFromQuaternion(new THREE.Quaternion().setFromUnitVectors(from, to)))
+      .multiply(new THREE.Matrix4().makeTranslation(g.negate()));
+    expect(measure(rig, pts).arm, "the focus where she holds it").toBeGreaterThan(0);
+    expect(measure(rig, transformed(pts, m)).arm).toBeLessThan(0);
+  });
+
+  it.each(FIGURES)("%s: finds the focus's head pushed into her fist: its head moved onto the fist reads inside the hand", (sheet, r) => {
+    const rig = posedOn(r);
+    const pts = focusPoints(rig);
+    const fist = handOf(rig).reduce((a, b) => (b.geometry.attributes.position.count > a.geometry.attributes.position.count ? b : a));
+    const head = pts.filter((p) => p.z > 0.24).reduce((s, p) => s.add(p.v), new THREE.Vector3()).divideScalar(pts.filter((p) => p.z > 0.24).length);
+    const m = new THREE.Matrix4().makeTranslation(new THREE.Vector3().setFromMatrixPosition(fist.matrixWorld).sub(head));
+    expect(measure(rig, transformed(pts, m)).hand).toBeLessThan(0);
   });
 });

@@ -1,8 +1,27 @@
 // The owner's review of character art (ADR-0021 §5, FS-2325V §E.7): every class and creature ×
 // 8 directions × each animation, at game scale (1×) and zoomed ×2. A re-baked class shows its
-// `run`, `walk_attack` (its legs over 0.75 walk cycles) and `backpedal_attack` (the attack over the
-// walk's legs run backward, 0.75 cycles) beside its `walk` and `attack` (FS-JS7C8 R37, R41), in clip
-// order; no sheet carries a standalone backpedal. The tower interior sheets
+// `run` beside its `walk` and `attack` (FS-JS7C8 R37, R41), in clip order; no sheet carries a
+// standalone backpedal, and no class an attack on the move (`walk_attack`, `backpedal_attack`,
+// retired: FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired). The archer and her looks show `run` as her
+// sprint (the trunk about 20° forward, a quicker, shorter stride with knee drive and heel kick,
+// the bow held two-handed low in front at about 45°) and carry no `walk_attack` and no
+// `backpedal_attack` (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79, R85): her
+// clips are idle, walk, attack, death and run. The mercenary and his looks show `run` as the same
+// sprint with the sword trailing behind (the sword arm back, the hand at the hip, the curved blade
+// low behind him, its point and its edge down and off the ground) and carry no `walk_attack` and
+// no `backpedal_attack` (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, R113):
+// his clips are idle, walk, attack, death, parry and run. The wizard and her looks show `run` as
+// the sprint's lean and 16 fps cadence on her own legs (the shared fast run's, at a 12% shorter
+// stride), her sceptre or focus carried as before, and `attack` as the pointed cast (the arm
+// reached out all but straight, the staff or focus along the aim at chest-to-shoulder height),
+// and carry no `walk_attack` and no `backpedal_attack` (FS-JS7C8 § Change: The wizard's sprint and
+// pointed cast R131, R136): her clips are idle, walk, attack, death and run. The knight and his
+// looks show `run` as the sprint's lean and 16 fps cadence on his own legs (the shared fast run's,
+// at a 16% shorter stride), his blade carried raised as before with the wrist held back under the
+// lean, the shield up before his chest, the Berserker's two axes as before, and carry no
+// `walk_attack` and no `backpedal_attack` (FS-JS7C8 § Change: The knight's sprint, and the
+// attack-on-the-move clips retired R149, R157): his clips are idle, walk, attack, death and run,
+// and the Berserker's `attack_offhand` too, the one off-hand twin. The tower interior sheets
 // (FS-8RBQY §D.7) follow the cast on the same sheet, one row per sheet, frames left to right.
 //
 // Written to tools/bake/review/ (gitignored) on every `npm run bake`, never by --check:
