@@ -1,12 +1,12 @@
 /**
- * The ready-check popup (FS-BJNYC R23–R26): when the leader chooses Enter as a party, every member,
- * the leader included, sees the same carved popup at the top centre: "<leader> would enter the
- * Spire. Are you ready?", one row per member with a tick box and their state, and the shared
- * countdown (FS-B3NDZ): the whole seconds from the server's `expires_in_ms` above a bar along the
- * popup's foot that drains every frame over the check's first window. The leader's row is ticked
- * from the moment it
- * opens. A member still waiting has **Decline** and **Accept**; once they press one, the answer
- * stands in the buttons' place. The leader's popup is status only.
+ * The ready-check popup (FS-BJNYC R23–R26): when the leader chooses Challenge the Spire with
+ * Party, every member, the leader included, sees the same carved popup at the top centre:
+ * "<leader> would enter the Spire. Are you ready?", one row per member with a tick box and their
+ * state, and the shared countdown (FS-B3NDZ): the whole seconds from the server's `expires_in_ms`
+ * above a bar along the popup's foot that drains every frame over the check's first window. The
+ * leader's row is ticked from the moment it opens. A member still waiting has **Decline** and
+ * **Accept**; once they press one, the answer stands in the buttons' place. The leader's popup is
+ * status only.
  *
  * The check lives in the party store, which the socket feeds; the popup only draws it. It closes
  * when the store lets the check go: on `started` (the scene follows `world_entered`) or on

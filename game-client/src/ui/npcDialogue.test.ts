@@ -106,15 +106,15 @@ describe("the card's rows tell the interface sounds (FS-WDM0X § Change: Menu, d
       name: "The Spire's door",
       line: "The Spire's door stands open.",
       rows: [
-        { id: "solo", label: "Descend alone  [1]", colour: BARROW_HEX.amber, onPick, enabled: () => false },
-        { id: "queue", label: "Wait for company  [2]", colour: BARROW_HEX.amber, onPick },
+        { id: "solo", label: "Challenge the Spire Alone  [1]", colour: BARROW_HEX.amber, onPick, enabled: () => false },
+        { id: "enter", label: "Challenge the Spire with Party  [2]", colour: BARROW_HEX.amber, onPick },
       ],
       tones,
       feedback,
     });
     const hit = (id: string) => made.find((m) => m.name === `choice-${id}`)!;
 
-    hit("queue").handlers.pointerover();
+    hit("enter").handlers.pointerover();
     hit("solo").handlers.pointerover();
     hit("solo").handlers.pointerup();
 

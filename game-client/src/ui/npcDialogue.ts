@@ -17,7 +17,7 @@ import { maskedBust, type Portrait } from "./bustPortrait";
 import { carvedPanel } from "./carvedPanel";
 import { MENU_DEPTH, menuOption, type MenuFeedback, type MenuOption, type MenuTones } from "./menuPanel";
 
-/** One answer: its label already carries its key, e.g. "Descend alone  [1]". */
+/** One answer: its label already carries its key, e.g. "Challenge the Spire Alone  [1]". */
 export interface DialogueCardRow {
   id: string;
   label: string;

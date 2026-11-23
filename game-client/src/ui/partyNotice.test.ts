@@ -93,7 +93,8 @@ describe("partyNoticeText for party_enter's refusals (FS-BJNYC R22, §Copy)", ()
 });
 
 // FS-BJNYC R22, §Copy door rows (amended 2026-11-02): the door keys its words by the action pressed,
-// so the two shared codes read for the one who pressed Enter as a party; the rest in the chat's words.
+// so the two shared codes read for the one who pressed Challenge the Spire with Party; the rest in
+// the chat's words.
 describe("partyEnterDoorText (FS-BJNYC R22, §Copy door rows)", () => {
   it.each([
     [{ code: "not_member" }, "Form a party first."],

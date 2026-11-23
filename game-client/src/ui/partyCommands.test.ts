@@ -100,7 +100,8 @@ describe("partyCommands", () => {
       "party_accept",
       "party_create",
       "party_decline",
-      // the door's Enter as a party (FS-BJNYC R21): a no-character refusal is an error reply
+      // the door's Challenge the Spire with Party (FS-BJNYC R21): a no-character refusal is an
+      // error reply
       "party_enter",
       "party_invite",
       "party_kick",

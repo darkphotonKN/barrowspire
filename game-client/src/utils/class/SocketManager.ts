@@ -434,7 +434,7 @@ export class SocketManager {
       this.listeners.get(data.action)?.(data.payload);
     } else if (data.action === "party_ready_check") {
       // The ready-check popup reads the store; the hub's one listener still hears it, to give the
-      // door's Enter as a party back. FS-BJNYC R21, R23.
+      // door's Challenge the Spire with Party back. FS-BJNYC R21, R23.
       if (!isPartyReadyCheck(data.payload)) return;
       usePartyStore.getState().receiveReadyCheck(data.payload);
       this.listeners.get(data.action)?.(data.payload);

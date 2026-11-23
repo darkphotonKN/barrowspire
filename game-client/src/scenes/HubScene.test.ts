@@ -756,35 +756,47 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9;
   });
 
   it.each([
-    // one fixed order for everyone: Enter as a party third (FS-BJNYC R21, amended 2026-11-02, Nick)
-    { party: "leader" as const, ids: ["solo", "queue", "enter", "dismiss"] },
-    { party: "member" as const, ids: ["solo", "queue", "enter", "dismiss"] },
-    { party: "none" as const, ids: ["solo", "queue", "enter", "dismiss"] },
-  ])("should offer $party every choice, in the order $ids, with the one opening line", ({ party, ids }) => {
+    // Alone, Party, Randoms, Not yet; a party is not offered Randoms
+    // (FS-BJNYC §Change: Plainer door choices, P1–P3)
+    { party: "leader" as const, ids: ["solo", "enter", "dismiss"] },
+    { party: "member" as const, ids: ["solo", "enter", "dismiss"] },
+    { party: "none" as const, ids: ["solo", "enter", "queue", "dismiss"] },
+  ])("should offer $party the choices $ids, in that order, with the one opening line", ({ party, ids }) => {
     const dialogue = delveChoices({ queued: false, party });
-    const label = { enter: "Enter as a party", solo: "Descend alone", queue: "Wait for company", dismiss: "Not yet" };
+    const label = {
+      solo: "Challenge the Spire Alone",
+      enter: "Challenge the Spire with Party",
+      queue: "Challenge the Spire with Randoms [Two Player]",
+      dismiss: "Not yet",
+    };
 
     expect(dialogue.line).toBe(OPEN_LINE);
     expect(dialogue.choices.map((c) => c.id)).toEqual(ids);
     expect(dialogue.choices.map((c) => c.label)).toEqual(ids.map((id) => label[id as keyof typeof label]));
-    expect(dialogue.choices.map((c) => c.register)).toEqual(["actionable", "actionable", "actionable", "cancel"]);
+    expect(dialogue.choices.map((c) => c.register)).toEqual([...ids.slice(0, -1).map(() => "actionable"), "cancel"]);
     // none greyed for the player's party standing: with nothing in flight, every choice can be pressed
     for (const choice of dialogue.choices) expect(choice.enabled?.(IDLE) ?? true).toBe(true);
   });
 
   it.each(["none", "member", "leader"] as const)(
-    "should keep the door up after each of the three for %s, and hold each back only while its own send is unanswered",
+    "should keep the door up after each way in offered to %s, and hold each back only while its own send is unanswered",
     (party) => {
       const byId = Object.fromEntries(delveChoices({ queued: false, party }).choices.map((c) => [c.id, c]));
+      // Randoms is offered only outside a party (FS-BJNYC §Change: Plainer door choices, P3)
+      const ways = party === "none" ? ["enter", "solo", "queue"] : ["enter", "solo"];
 
-      for (const id of ["enter", "solo", "queue"]) expect(byId[id].stays).toBe(true);
+      for (const id of ways) expect(byId[id].stays).toBe(true);
       expect(byId.solo.enabled?.({ ...IDLE, soloPending: true })).toBe(false);
       expect(byId.enter.enabled?.({ ...IDLE, enterPending: true })).toBe(false);
-      expect(byId.queue.enabled?.({ ...IDLE, queuePending: true })).toBe(false);
       // one send in flight holds back only its own choice
       expect(byId.solo.enabled?.({ ...IDLE, enterPending: true, queuePending: true })).toBe(true);
       expect(byId.enter.enabled?.({ ...IDLE, soloPending: true, queuePending: true })).toBe(true);
-      expect(byId.queue.enabled?.({ ...IDLE, soloPending: true, enterPending: true })).toBe(true);
+      if (party === "none") {
+        expect(byId.queue.enabled?.({ ...IDLE, queuePending: true })).toBe(false);
+        expect(byId.queue.enabled?.({ ...IDLE, soloPending: true, enterPending: true })).toBe(true);
+      } else {
+        expect(byId.queue).toBeUndefined();
+      }
       expect(byId.dismiss.enabled).toBeUndefined();
       expect(byId.dismiss.stays).toBeUndefined();
     },
@@ -794,7 +806,7 @@ describe("delveChoices (FS-NSV3D §Requirements 1, 4; FS-0XMCP §Requirements 9;
     const dialogue = delveChoices({ queued: false, party: "none" }, "Form a party first.");
 
     expect(dialogue.line).toBe("Form a party first.");
-    expect(dialogue.choices.map((c) => c.id)).toEqual(["solo", "queue", "enter", "dismiss"]);
+    expect(dialogue.choices.map((c) => c.id)).toEqual(["solo", "enter", "queue", "dismiss"]);
   });
 });
 
@@ -826,11 +838,13 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
   };
   /** The same two, this player leading now. */
   const LED_BY_SELF = { ...LED_BY_WREN, leader_id: "self", reason: "transferred" };
+  // Alone, Party, Randoms, Not yet; a party is not offered Randoms
+  // (FS-BJNYC §Change: Plainer door choices, P2, P3)
   const STANDINGS = [
-    { standing: "no party", party: null, order: ["solo", "queue", "enter", "dismiss"] },
-    { standing: "a member", party: LED_BY_WREN, order: ["solo", "queue", "enter", "dismiss"] },
-    { standing: "the leader", party: LED_BY_SELF, order: ["solo", "queue", "enter", "dismiss"] },
-    { standing: "a party of one", party: PARTY_OF_ONE, order: ["solo", "queue", "enter", "dismiss"] },
+    { standing: "no party", party: null, order: ["solo", "enter", "queue", "dismiss"] },
+    { standing: "a member", party: LED_BY_WREN, order: ["solo", "enter", "dismiss"] },
+    { standing: "the leader", party: LED_BY_SELF, order: ["solo", "enter", "dismiss"] },
+    { standing: "a party of one", party: PARTY_OF_ONE, order: ["solo", "enter", "dismiss"] },
   ];
   /** Whether the door's card says `text` now (a redrawn card's old words are destroyed with it). */
   const says = (stage: { made: Made[] }, text: string) =>
@@ -847,6 +861,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
   /** The drawn choices, top to bottom. */
   const drawnOrder = (choice: (id: string) => Made | undefined) =>
     ["enter", "solo", "queue", "dismiss"]
+      .filter((id) => choice(id) !== undefined)
       .map((id) => ({ id, y: (choice(id) as Made).y }))
       .sort((p, q) => p.y - q.y)
       .map((p) => p.id);
@@ -860,7 +875,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     vi.restoreAllMocks();
   });
 
-  it.each(STANDINGS)("should show $standing all four choices, the three amber, in order, with the one opening line", ({ party, order }) => {
+  it.each(STANDINGS)("should show $standing the choices $order, the ways in amber, with the one opening line", ({ party, order }) => {
     usePartyStore.setState({ party });
     const { stage, choice, label, atTheDoor } = queuedHubOnStage();
 
@@ -868,10 +883,10 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
 
     expect(says(stage, OPEN_LINE)).toBe(true);
     expect(drawnOrder(choice)).toEqual(order);
-    for (const id of ["enter", "solo", "queue"]) expect(toneOf(label, id)).toBe(AMBER);
+    for (const id of order.filter((id) => id !== "dismiss")) expect(toneOf(label, id)).toBe(AMBER);
   });
 
-  it.each(STANDINGS)("should send each of the three for $standing, once while unanswered, the door staying up", ({ party }) => {
+  it.each(STANDINGS)("should send each way in offered to $standing, once while unanswered, the door staying up", ({ party, order }) => {
     usePartyStore.setState({ party });
     const { hub, choice, atTheDoor, send } = queuedHubOnStage();
     atTheDoor();
@@ -881,20 +896,43 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
       choice(id)?.handlers.pointerup();
     }
 
-    expect(send.mock.calls.map((c) => c[0])).toEqual([ActionType.PartyEnter, ActionType.StartSolo, ActionType.Find_Game]);
+    const sent = [ActionType.PartyEnter, ActionType.StartSolo];
+    expect(send.mock.calls.map((c) => c[0])).toEqual(order.includes("queue") ? [...sent, ActionType.Find_Game] : sent);
     expect(hub.dialogue).toBeDefined();
   });
 
-  it("should send the leader's Enter as a party on key 3, its place for everyone, and once only", () => {
+  it("should send the leader's Challenge the Spire with Party on key 2, its place for everyone, and once only (P2)", () => {
     usePartyStore.setState({ party: PARTY_OF_ONE });
     const { atTheDoor, send, keys, answer } = queuedHubOnStage();
     atTheDoor();
 
-    answer(keys.three);
-    answer(keys.three);
+    answer(keys.two);
+    answer(keys.two);
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send).toHaveBeenCalledWith(ActionType.PartyEnter, {});
+  });
+
+  it("should press nothing on key 3 in a party, Randoms not being offered there (P2, P3)", () => {
+    usePartyStore.setState({ party: LED_BY_WREN });
+    const { hub, atTheDoor, send, keys, answer } = queuedHubOnStage();
+    atTheDoor();
+
+    answer(keys.three);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(hub.dialogue).toBeDefined();
+  });
+
+  it("should send Challenge the Spire with Randoms on key 3 for a player in no party (P2)", () => {
+    usePartyStore.setState({ party: null });
+    const { atTheDoor, send, keys, answer } = queuedHubOnStage();
+    atTheDoor();
+
+    answer(keys.three);
+
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0][0]).toBe(ActionType.Find_Game);
   });
 
   it.each([
@@ -906,7 +944,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     { standing: "the leader", party: LED_BY_SELF, notice: { code: "not_at_gate" }, words: "Walk to the Spire's door first." },
     { standing: "the leader", party: LED_BY_SELF, notice: { code: "not_in_town", names: ["Wren"] }, words: "Wren is not in the town." },
     { standing: "the leader", party: LED_BY_SELF, notice: { code: "unavailable" }, words: "The party cannot be changed right now." },
-  ])("should say $words in the door's panel when Enter as a party is refused $notice.code for $standing", ({ party, notice, words }) => {
+  ])("should say $words in the door's panel when Challenge the Spire with Party is refused $notice.code for $standing", ({ party, notice, words }) => {
     usePartyStore.setState({ party });
     const { hub, stage, choice, label, atTheDoor, send, reply } = queuedHubOnStage();
     atTheDoor();
@@ -918,33 +956,49 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     expect(hub.dialogue).toBeDefined();
     expect(says(stage, words)).toBe(true);
     expect(says(stage, OPEN_LINE)).toBe(false);
-    // the door stays, every choice offered and pressable, so the player can pick another
-    for (const id of ["enter", "solo", "queue"]) expect(toneOf(label, id)).toBe(AMBER);
+    // the door stays, every choice it offers still pressable, so the player can pick another
+    // (Randoms only outside a party, FS-BJNYC §Change: Plainer door choices, P3)
+    const offered = party === null ? ["enter", "solo", "queue"] : ["enter", "solo"];
+    for (const id of offered) expect(toneOf(label, id)).toBe(AMBER);
+    expect(choice("queue") !== undefined).toBe(party === null);
     expect(choice("dismiss")).toBeDefined();
     choice("enter")?.handlers.pointerup();
     expect(send).toHaveBeenCalledTimes(2);
   });
 
-  it.each([
-    { id: "solo", action: "start_solo" },
-    { id: "queue", action: "find_game" },
-  ])("should say the server's words in the door's panel when a member's $action is refused", ({ id, action }) => {
+  it("should say the server's words in the door's panel when a member's start_solo is refused", () => {
     usePartyStore.setState({ party: LED_BY_WREN });
     const { hub, stage, choice, label, atTheDoor, send, refuse } = queuedHubOnStage();
     atTheDoor();
-    choice(id)?.handlers.pointerup();
+    choice("solo")?.handlers.pointerup();
 
-    refuse(action, "Your party enters together.");
+    refuse("start_solo", "Your party enters together.");
 
     expect(hub.dialogue).toBeDefined();
     expect(says(stage, "Your party enters together.")).toBe(true);
     expect(passing(stage, "Your party enters together.")).toBe(false);
     expect(hub.soloPending).toBe(false);
+    expect(hub.queued).toBe(false);
+    for (const each of ["enter", "solo"]) expect(toneOf(label, each)).toBe(AMBER);
+    choice("solo")?.handlers.pointerup();
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  // FS-BJNYC §Change: Plainer door choices, Edge States: a find_game in flight when the player joins
+  it("should drop Randoms on joining a party with a find_game in flight, and say its refusal in the door's panel", () => {
+    usePartyStore.setState({ party: null });
+    const { hub, stage, choice, atTheDoor, refuse } = queuedHubOnStage();
+    atTheDoor();
+    choice("queue")?.handlers.pointerup();
+
+    usePartyStore.setState({ party: LED_BY_WREN });
+    expect(drawnOrder(choice)).toEqual(["solo", "enter", "dismiss"]);
+    refuse("find_game", "Your party enters together.");
+
+    expect(hub.dialogue).toBeDefined();
+    expect(says(stage, "Your party enters together.")).toBe(true);
     expect(hub.queuePending).toBe(false);
     expect(hub.queued).toBe(false);
-    for (const each of ["enter", "solo", "queue"]) expect(toneOf(label, each)).toBe(AMBER);
-    choice(id)?.handlers.pointerup();
-    expect(send).toHaveBeenCalledTimes(2);
   });
 
   it("should say an unreadable gear refusal at the door in the client's words", () => {
@@ -1017,10 +1071,11 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
   });
 
   it.each([
-    { id: "solo", action: "start_solo" },
-    { id: "queue", action: "find_game" },
-  ])("should show a $action refusal in passing once the door has closed", ({ id, action }) => {
-    usePartyStore.setState({ party: LED_BY_WREN });
+    // Randoms is pressed from outside a party: a party is not offered it (P3)
+    { id: "solo", action: "start_solo", party: LED_BY_WREN },
+    { id: "queue", action: "find_game", party: null },
+  ])("should show a $action refusal in passing once the door has closed", ({ id, action, party }) => {
+    usePartyStore.setState({ party });
     const { hub, stage, choice, atTheDoor, keys, answer, refuse } = queuedHubOnStage();
     atTheDoor();
     choice(id)?.handlers.pointerup();
@@ -1033,7 +1088,8 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
   });
 
   it("should forget the pending sends with the visit, and hand the replies back", () => {
-    usePartyStore.setState({ party: PARTY_OF_ONE });
+    // in no party, so the door offers Randoms beside Party (P3)
+    usePartyStore.setState({ party: null });
     const { hub, choice, atTheDoor, off } = queuedHubOnStage();
     atTheDoor();
     choice("enter")?.handlers.pointerup();
@@ -1047,17 +1103,17 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     expect(off).toHaveBeenCalledWith("party_ready_check");
   });
 
-  it("should redraw the open door when the player's place in the party changes, the opening line back, the order unchanged", () => {
+  it("should redraw the open door when the player's place in the party changes, the opening line back, Randoms only outside a party", () => {
     usePartyStore.setState({ party: LED_BY_WREN });
     const { stage, choice, atTheDoor, reply } = queuedHubOnStage();
     atTheDoor();
     choice("enter")?.handlers.pointerup();
     reply("party_notice", { code: "not_leader" });
-    expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
+    expect(drawnOrder(choice)).toEqual(["solo", "enter", "dismiss"]);
 
     // the lead handed to this player while they stand at the door: the refusal no longer holds
     usePartyStore.setState({ party: LED_BY_SELF });
-    expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
+    expect(drawnOrder(choice)).toEqual(["solo", "enter", "dismiss"]);
     expect(says(stage, OPEN_LINE)).toBe(true);
     expect(says(stage, "Only your leader can lead the party in.")).toBe(false);
 
@@ -1066,18 +1122,23 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
     usePartyStore.setState({ party: { ...LED_BY_SELF, reason: "presence" } });
     expect(stage.made.length).toBe(drawn);
 
+    // leaving the party adds Randoms back, and joining one takes it away (FS-BJNYC §Change: Plainer
+    // door choices, P3)
     usePartyStore.setState({ party: null });
-    expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
+    expect(drawnOrder(choice)).toEqual(["solo", "enter", "queue", "dismiss"]);
+    expect(says(stage, OPEN_LINE)).toBe(true);
+    usePartyStore.setState({ party: LED_BY_WREN });
+    expect(drawnOrder(choice)).toEqual(["solo", "enter", "dismiss"]);
     expect(says(stage, OPEN_LINE)).toBe(true);
   });
 
-  it("should keep Enter as a party third each time the door opens, whatever the party", () => {
+  it("should keep Party second each time the door opens, Randoms after it only outside a party (P2, P3)", () => {
     const { choice, atTheDoor, keys, answer } = queuedHubOnStage();
 
     for (const party of [null, PARTY_OF_ONE, LED_BY_WREN, null]) {
       usePartyStore.setState({ party });
       atTheDoor();
-      expect(drawnOrder(choice)).toEqual(["solo", "queue", "enter", "dismiss"]);
+      expect(drawnOrder(choice)).toEqual(party === null ? ["solo", "enter", "queue", "dismiss"] : ["solo", "enter", "dismiss"]);
       answer(keys.esc);
     }
   });
@@ -1099,7 +1160,7 @@ describe("HubScene the Spire's door for every party standing (FS-BJNYC §Require
   // the match already took the player out of the queue, so the panel comes down (R24).
   const MATCH_FAILED = "The match failed. Queue again.";
 
-  it("should take the queue down and say why when a match is called off, Wait for company pressable again", () => {
+  it("should take the queue down and say why when a match is called off, Randoms pressable again", () => {
     const { hub, stage, choice, atTheDoor, reply, refuse, button, send } = queuedHubOnStage();
     reply("find_game", { message: "Successfully joined matchmaking queue" });
     reply("queue_status", { current: 2, total: 2 });
@@ -1143,7 +1204,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     vi.restoreAllMocks();
   });
 
-  it("should show Descend alone, Wait for company, Enter as a party and Not yet, amber and the cancel register", () => {
+  it("should show Alone, Party, Randoms and Not yet, amber and the cancel register (FS-BJNYC §Change: Plainer door choices, P1, P2)", () => {
     const { hub, stage, choice, label, atTheDoor } = queuedHubOnStage();
 
     atTheDoor();
@@ -1162,10 +1223,10 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect((label("queue").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
     expect((label("enter").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.amber));
     expect((label("dismiss").args[3] as { color: string }).color).toBe(toCss(BARROW_HEX.arcane));
-    // top to bottom down the card, in the spec's order
-    expect(solo.y).toBeLessThan(queue.y);
-    expect(queue.y).toBeLessThan((choice("enter") as Made).y);
-    expect((choice("enter") as Made).y).toBeLessThan(dismiss.y);
+    // top to bottom down the card, in the spec's order: Alone, Party, Randoms, Not yet
+    expect(solo.y).toBeLessThan((choice("enter") as Made).y);
+    expect((choice("enter") as Made).y).toBeLessThan(queue.y);
+    expect(queue.y).toBeLessThan(dismiss.y);
   });
 
   it("should give the storekeeper one dismiss choice and no Open pack (FS-HRH2J R45)", () => {
@@ -1186,7 +1247,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(hub.scene.start).not.toHaveBeenCalled();
   });
 
-  it("should send one find_game on Wait for company and keep the door up until it is answered", () => {
+  it("should send one find_game on Challenge the Spire with Randoms and keep the door up until it is answered", () => {
     const { hub, choice, label, atTheDoor, send } = queuedHubOnStage();
     atTheDoor();
 
@@ -1200,7 +1261,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(label("queue").color).not.toBe(toCss(BARROW_HEX.amber));
   });
 
-  it("should send one start_solo on Descend alone, keep the dialogue open and grey the choice until the reply", () => {
+  it("should send one start_solo on Challenge the Spire Alone, keep the dialogue open and grey the choice until the reply", () => {
     const { hub, choice, label, atTheDoor, send } = queuedHubOnStage();
     atTheDoor();
     const solo = choice("solo") as Made;
@@ -1218,7 +1279,7 @@ describe("HubScene the Spire's door panel (FS-NSV3D §Requirements 1–6, FS-0XM
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("should confirm Descend alone on Enter, and once only", () => {
+  it("should confirm Challenge the Spire Alone on Enter, and once only", () => {
     const { keys, answer, atTheDoor, send } = queuedHubOnStage();
     atTheDoor();
 
@@ -2624,19 +2685,21 @@ describe("dialogue choices by mouse and by number (reported 2026-10-29)", () => 
     expect(back.destroyed).toBe(true);
   });
 
-  // Wait for company had no key at all: E and Enter meant the first choice, Descend alone.
-  it("should answer Descend alone on 1 and Wait for company on 2, with those keys on the labels", () => {
+  // Randoms (once Wait for company) had no key at all: E and Enter meant the first choice, Alone.
+  // Now Alone 1, Party 2, Randoms 3 (FS-BJNYC §Change: Plainer door choices, P2).
+  it("should answer Alone on 1 and Randoms on 3, with those keys on the labels", () => {
     const { stage, keys, atTheDoor, answer } = hubOnStage();
     const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
     atTheDoor();
     const labels = stage.made
       .filter((m) => m.kind === "text" && !m.destroyed)
       .map((m) => String(m.args[2]));
-    expect(labels).toContain("Descend alone  [1]");
-    expect(labels).toContain("Wait for company  [2]");
+    expect(labels).toContain("Challenge the Spire Alone  [1]");
+    expect(labels).toContain("Challenge the Spire with Party  [2]");
+    expect(labels).toContain("Challenge the Spire with Randoms [Two Player]  [3]");
     expect(labels).toContain("Not yet  [Esc]");
 
-    answer(keys.two);
+    answer(keys.three);
     expect(send).toHaveBeenLastCalledWith("find_game", expect.anything());
 
     atTheDoor();
@@ -2681,9 +2744,9 @@ describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", ()
         speaker: { name: "The Spire's door" },
         text: "The Spire's door stands open. Few return whole,\nand fewer return twice.",
         options: [
-          { id: "solo", label: "Descend alone", register: "actionable", enabled: true, sound: "confirm" },
-          { id: "queue", label: "Wait for company", register: "actionable", enabled: true, sound: "confirm" },
-          { id: "enter", label: "Enter as a party", register: "actionable", enabled: true, sound: "confirm" },
+          { id: "solo", label: "Challenge the Spire Alone", register: "actionable", enabled: true, sound: "confirm" },
+          { id: "enter", label: "Challenge the Spire with Party", register: "actionable", enabled: true, sound: "confirm" },
+          { id: "queue", label: "Challenge the Spire with Randoms [Two Player]", register: "actionable", enabled: true, sound: "confirm" },
           { id: "dismiss", label: "Not yet", register: "cancel", enabled: true },
         ],
       },
@@ -2701,7 +2764,8 @@ describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", ()
 
     expect(send).toHaveBeenCalledWith(ActionType.Find_Game, expect.anything());
     expect(hub.dialogue).toBeDefined();
-    expect(shown.at(-1)?.options.map((o) => o.enabled)).toEqual([true, false, true, true]);
+    // Alone, Party, Randoms (dimmed while its send is unanswered), Not yet
+    expect(shown.at(-1)?.options.map((o) => o.enabled)).toEqual([true, true, false, true]);
   });
 
   it("should turn the Elder's page on Go on, and close on Farewell", () => {
@@ -2731,13 +2795,13 @@ describe("the town's dialogue through the UI bridge (FS-TQZ5J A2 R29–R31)", ()
     expect(hub.dialogue).toBeDefined();
   });
 
-  it("should send Wait for company once on 2, the card's key, the town's own handler acting on nothing", () => {
+  it("should send Randoms once on 3, the card's key, the town's own handler acting on nothing", () => {
     const { atTheDoor, keys, press } = hubOnStage();
     const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
     atTheDoor();
     send.mockClear();
 
-    press(keys.two);
+    press(keys.three);
 
     expect(send.mock.calls.filter((c) => c[0] === ActionType.Find_Game)).toHaveLength(1);
     expect(send.mock.calls.filter((c) => c[0] === ActionType.StartSolo || c[0] === ActionType.PartyEnter)).toEqual([]);

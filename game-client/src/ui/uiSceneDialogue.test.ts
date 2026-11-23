@@ -72,15 +72,16 @@ const option = (id: string, label: string, extra: Partial<DialogueOption> = {}):
   ...extra,
 });
 
-/** The Spire's door, as the town hands it over: three ways and Not yet; `waiting` held back. */
+/** The Spire's door, as the town hands it over to a player in no party: three ways and Not yet
+ * (FS-BJNYC §Change: Plainer door choices, P1, P2); `waiting` held back. */
 function door(waiting?: string, text = "The Spire's door stands open."): ShownDialogue {
   return {
     speaker: { name: "The Spire's door" },
     text,
     options: [
-      option("solo", "Descend alone", { enabled: waiting !== "solo" }),
-      option("queue", "Wait for company", { enabled: waiting !== "queue" }),
-      option("enter", "Enter as a party", { enabled: waiting !== "enter" }),
+      option("solo", "Challenge the Spire Alone", { enabled: waiting !== "solo" }),
+      option("enter", "Challenge the Spire with Party", { enabled: waiting !== "enter" }),
+      option("queue", "Challenge the Spire with Randoms [Two Player]", { enabled: waiting !== "queue" }),
       option("dismiss", "Not yet", { register: "cancel" }),
     ],
   };
@@ -115,13 +116,13 @@ describe("the dialogue card drawn from the town's data (FS-TQZ5J A2 R29, R32)", 
 
     const rows = t.shown()!.spec.rows;
     expect(rows.map((r) => r.label)).toEqual([
-      "Descend alone  [1]",
-      "Wait for company  [2]",
-      "Enter as a party  [3]",
+      "Challenge the Spire Alone  [1]",
+      "Challenge the Spire with Party  [2]",
+      "Challenge the Spire with Randoms [Two Player]  [3]",
       "Not yet  [Esc]",
     ]);
     expect(rows.map((r) => r.colour)).toEqual([BARROW_HEX.amber, BARROW_HEX.amber, BARROW_HEX.amber, BARROW_HEX.arcane]);
-    expect(rows.map((r) => r.enabled?.() ?? true)).toEqual([true, false, true, true]);
+    expect(rows.map((r) => r.enabled?.() ?? true)).toEqual([true, true, false, true]);
     expect(t.shown()!.spec.tones).toEqual({
       panel: BARROW_HEX.charcoal,
       frame: BARROW_HEX.brass,
@@ -248,14 +249,15 @@ describe("the dialogue card's keys, the UI scene's while it is shown (FS-TQZ5J A
 
     t.key({ numbered: 1 });
 
-    expect(town.asked).toEqual([{ kind: "pickDialogue", id: "queue" }]);
+    // the door's second row is Party (FS-BJNYC §Change: Plainer door choices, P2)
+    expect(town.asked).toEqual([{ kind: "pickDialogue", id: "enter" }]);
   });
 
   it("should send nothing for a number on a dimmed row, or past the actionable rows", () => {
     const t = onBridge();
     const town = aTown();
     t.bridge.report(town.report);
-    t.slot.show(door("queue"));
+    t.slot.show(door("enter"));
 
     t.key({ numbered: 1 });
     t.slot.show({ ...door(), options: door().options.slice(0, 1).concat(door().options.slice(3)) });
@@ -374,9 +376,9 @@ describe("the dialogue card's sounds (FS-WDM0X § Change: Menu, dialog and notic
     speaker: { name: "The Spire's door" },
     text: "The Spire's door stands open.",
     options: [
-      option("solo", "Descend alone", { enabled: waiting !== "solo", sound: "confirm" }),
-      option("queue", "Wait for company", { enabled: waiting !== "queue", sound: "confirm" }),
-      option("enter", "Enter as a party", { enabled: waiting !== "enter", sound: "confirm" }),
+      option("solo", "Challenge the Spire Alone", { enabled: waiting !== "solo", sound: "confirm" }),
+      option("enter", "Challenge the Spire with Party", { enabled: waiting !== "enter", sound: "confirm" }),
+      option("queue", "Challenge the Spire with Randoms [Two Player]", { enabled: waiting !== "queue", sound: "confirm" }),
       option("dismiss", "Not yet", { register: "cancel" }),
     ],
   });
@@ -389,7 +391,7 @@ describe("the dialogue card's sounds (FS-WDM0X § Change: Menu, dialog and notic
     t.key({ confirm: true });
 
     expect(t.heard()).toEqual(["dialog_confirm", "dialog_confirm", "dialog_confirm"]);
-    expect(t.town.asked.map((r) => (r.kind === "pickDialogue" ? r.id : r.kind))).toEqual(["solo", "queue", "solo"]);
+    expect(t.town.asked.map((r) => (r.kind === "pickDialogue" ? r.id : r.kind))).toEqual(["solo", "enter", "solo"]);
   });
 
   it("should play menu_click for an actionable row that names no sound: the Elder's Go on", () => {

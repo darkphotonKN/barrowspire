@@ -76,8 +76,8 @@ const PARTY_ENTER_DOOR_COPY: Readonly<Record<string, string>> = {
 };
 
 /**
- * What the Spire's door says when it refuses Enter as a party: its own words where §Copy gives
- * them, every other code in the chat's words; null for a code with no words at all.
+ * What the Spire's door says when it refuses Challenge the Spire with Party: its own words where
+ * §Copy gives them, every other code in the chat's words; null for a code with no words at all.
  */
 export function partyEnterDoorText(notice: PartyNoticePayload): string | null {
   return Object.hasOwn(PARTY_ENTER_DOOR_COPY, notice.code)

@@ -380,16 +380,16 @@ const DOOR_LINE = "The Spire's door stands open. Few return whole,\nand fewer re
 
 /**
  * What the Spire's door offers, from the hub's state as the panel opens (FS-NSV3D §Requirements
- * 1, 2, 4; FS-0XMCP §Requirements 8, 9; FS-BJNYC R20–R22): as a party, alone, with company, or
- * not yet. While the player is already queued there is nothing to offer but the fact, so the panel
- * says so and closes; the corner panel carries the count. The door is a place, not a keeper, so
- * its card carries no role.
+ * 1, 2, 4; FS-0XMCP §Requirements 8, 9; FS-BJNYC R20–R22): alone, with the party, with randoms,
+ * or not yet. While the player is already queued there is nothing to offer but the fact, so the
+ * panel says so and closes; the corner panel carries the count. The door is a place, not a keeper,
+ * so its card carries no role.
  *
- * Every player sees every choice, whatever their party: the server decides, and a choice that does
- * not apply is refused in words (`refusal`, said in place of the opening line). One order for
- * everyone, Enter as a party third (key 3), whatever the party (FS-BJNYC R21, amended 2026-11-02,
- * Nick); E and Enter press the first. Each of the three keeps the door up
- * until it is answered and is held back only while its own send is unanswered.
+ * Alone, Party, Randoms, Not yet, one order for everyone; a player in a party (a member, the leader
+ * or a party of just the leader) is not offered Randoms (FS-BJNYC §Change: Plainer door choices,
+ * P1–P3). Otherwise the server decides, and a choice that does not apply is refused in words
+ * (`refusal`, said in place of the opening line; R22). E and Enter press the first. Each way in
+ * keeps the door up until it is answered and is held back only while its own send is unanswered.
  */
 export function delveChoices(state: HubState, refusal?: string): Dialogue {
   if (state.queued) {
@@ -400,7 +400,7 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
   }
   const enter: DialogueChoice = {
     id: "enter",
-    label: "Enter as a party",
+    label: "Challenge the Spire with Party",
     register: "actionable",
     act: (scene) => scene.enterAsParty(),
     stays: true,
@@ -408,31 +408,30 @@ export function delveChoices(state: HubState, refusal?: string): Dialogue {
     // a yes that sends the player on (FS-WDM0X § Change M12)
     sound: "confirm",
   };
-  const ways: DialogueChoice[] = [
-    {
-      id: "solo",
-      label: "Descend alone",
-      register: "actionable",
-      act: (scene) => scene.startSolo(),
-      stays: true,
-      enabled: ({ soloPending }) => !soloPending,
-      sound: "confirm",
-    },
-    {
-      id: "queue",
-      label: "Wait for company",
-      register: "actionable",
-      act: (scene) => scene.joinQueue(),
-      stays: true,
-      enabled: ({ queuePending }) => !queuePending,
-      sound: "confirm",
-    },
-  ];
+  const solo: DialogueChoice = {
+    id: "solo",
+    label: "Challenge the Spire Alone",
+    register: "actionable",
+    act: (scene) => scene.startSolo(),
+    stays: true,
+    enabled: ({ soloPending }) => !soloPending,
+    sound: "confirm",
+  };
+  // the match size is not on the wire: "[Two Player]" holds while MATCH_SIZE is 2 (P5)
+  const queue: DialogueChoice = {
+    id: "queue",
+    label: "Challenge the Spire with Randoms [Two Player]",
+    register: "actionable",
+    act: (scene) => scene.joinQueue(),
+    stays: true,
+    enabled: ({ queuePending }) => !queuePending,
+    sound: "confirm",
+  };
   const dismiss: DialogueChoice = { id: "dismiss", label: "Not yet", register: "cancel" };
   return {
     line: refusal ?? DOOR_LINE,
-    // one order for everyone, Enter as a party third (FS-BJNYC R21, amended 2026-11-02, Nick)
-    choices: [...ways, enter, dismiss],
+    // a party enters as a party, so it is not offered the random queue (P3)
+    choices: state.party === "none" ? [solo, enter, queue, dismiss] : [solo, enter, dismiss],
   };
 }
 

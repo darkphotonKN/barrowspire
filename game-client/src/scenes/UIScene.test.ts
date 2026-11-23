@@ -764,8 +764,9 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       speaker: { name: "The Spire's door" },
       text: "The Spire's door stands open.",
       options: [
-        { id: "solo", label: "Descend alone", register: "actionable" as const, enabled: true },
-        { id: "queue", label: "Wait for company", register: "actionable" as const, enabled: true },
+        { id: "solo", label: "Challenge the Spire Alone", register: "actionable" as const, enabled: true },
+        { id: "enter", label: "Challenge the Spire with Party", register: "actionable" as const, enabled: true },
+        { id: "queue", label: "Challenge the Spire with Randoms [Two Player]", register: "actionable" as const, enabled: true },
         { id: "dismiss", label: "Not yet", register: "cancel" as const, enabled: true },
       ],
     };
@@ -779,7 +780,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
       press(ENTER);
       press(TWO);
 
-      expect(asked).toEqual(["pickDialogue solo", "pickDialogue solo", "pickDialogue queue"]);
+      expect(asked).toEqual(["pickDialogue solo", "pickDialogue solo", "pickDialogue enter"]);
     });
 
     it("should act on E, Enter or a number with no card shown not at all", () => {

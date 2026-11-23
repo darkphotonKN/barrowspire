@@ -185,7 +185,7 @@ export default function Home() {
         <SectionTitle>How it goes</SectionTitle>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          <StepCard step="01" title="THE DOOR" description="Walk to the Spire's door at the back of the town. Go in alone, or wait for company and go in together." />
+          <StepCard step="01" title="THE DOOR" description="Walk to the Spire's door at the back of the town. Go in alone, with your party, or with a stranger from the queue." />
           <StepCard step="02" title="PLUNDER" description="Break the coffers open and take what the dead drop. Put it on. You will need it." />
           <StepCard step="03" title="CLIMB" description="Meet at the stairs to go up. Everyone goes, or nobody does. The next floor is worse." />
           <StepCard step="04" title="ESCAPE" description="Find the switch and walk out the sealed door with what you carry. Fall, and the barrow keeps what you found." />
