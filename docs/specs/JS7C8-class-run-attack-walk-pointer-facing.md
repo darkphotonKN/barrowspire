@@ -2117,7 +2117,9 @@ untouched byte for byte.
 > frame-box acceptance line with R130. See *Decided 2026-11-23: E1 (a), E2 (b)*, after the
 > escalations. Edited again the same day (I-JS7C8-27, the lean broke a guard of her kept carry): W2
 > carries the change, R122 and R123 and their acceptance lines are restated. See *Decided
-> 2026-11-23: the carry changed under W2*.
+> 2026-11-23: the carry changed under W2*. Edited again the same day (review round 1 of
+> I-JS7C8-27..30): R123 (i) catches up with the code (`SCEPTRE_RUN_PEAK` deleted, not kept), and
+> *Follow-ups (outside this change)* records the base's death, after Out of Scope.
 
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
@@ -2451,10 +2453,11 @@ the robe, first `RUN_SCEPTRE` x −0.28 with the arm out to `upperArmR` z −0.1
      `armR` H; the orb above the hand and ahead of it; every sceptre point outside the robe
      (`outsideRobe`); the carry out of the torso and the head (`deepestCarry`); the normal grip.
 123. **The bands the lean moves, restated, not tuned away (W2).** The 20° lean lowers her chest, so:
-     (i) the sceptre hand peaks at 0.56–0.59 H (*measured* 0.574), under her chest bone's height and
-     never at the shoulder, in place of `SCEPTRE_RUN_PEAK` 0.61 ± 0.01, which stays the knight-era
-     shared run's constant; (ii) *restated 2026-11-23:* the sceptre leans 24–40° off vertical on
-     every sample (*measured* 26.0–37.3° by the test's sampling, the wrist taking back the trunk's
+     (i) the sceptre hand peaks at 0.56–0.59 H (*measured* 0.574; `WIZARD_SPRINT_PEAK`), under her
+     chest bone's height and never at the shoulder, in place of `SCEPTRE_RUN_PEAK` 0.61 ± 0.01,
+     which is deleted (*restated 2026-11-23,* built under I-JS7C8-27: the wizard was its only
+     reader, and the knight carries no sceptre); (ii) *restated 2026-11-23:* the sceptre leans
+     24–40° off vertical on every sample (*measured* 26.0–37.3° by the test's sampling, the wrist taking back the trunk's
      further 10°; 23.4–37.8° on the 10° lean), inside the owner-approved 15–45°, in place of
      `SCEPTRE_RUN_TILT` 15–40° (`WIZARD_SPRINT_TILT`; the kept carry read 36.7–48.5°); (iii) the tome hand's front height against the chest bone is
      recorded (*measured* 0.022 H under it), not tuned away, as the mercenary's free hand was (R101).
@@ -2595,8 +2598,9 @@ Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `cl
 - [ ] The wind-up, the weight, the pelvis before the chest, the curved path, the open free hand and
       `ATTACK_TURN_LIMIT` hold on the new cast (R127).
 - [ ] On all three looks, the staff or focus is out of the torso, the head and the robe, its head is
-      at least 1.3 skull radii from the skull and above the ground on every clip, and the focus is
-      clear of her right forearm, hand and sleeve. The sleeve guard's rejection fixture fails
+      at least 1.3 skull radii from the skull and above the ground on every clip (but the base's
+      death, bounded at −0.21 H: see Follow-ups), and the focus is clear of her right forearm, hand
+      and sleeve. The sleeve guard's rejection fixture fails
       (R128, R129).
 - [ ] The knight's run tests and sheet test (the shared run's plain style, `RUN_STEP` key for key,
       the 10° lean, the pump bands, the 14 fps pace) pass unchanged (R121).
@@ -2670,3 +2674,14 @@ HITL:
 - The fireball's start point and the 8-facing aim (Edge States).
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
+
+**Follow-ups (outside this change):**
+
+- The base wizard's death puts her sceptre 0.20 H under the ground on key 6 (*measured* 0.201 H,
+  `char_wizard_base` `death` @6): the sceptre's death has no wrist key (`FOCUS_DEATH` is the looks'
+  alone), so as she lies down the haft goes through the floor. It predates this change; her death
+  keys are held by digest and out of it (R115, Out of Scope). `mageLooks.test.mjs` "each focus
+  clears her head and the ground" bounds it at −0.21 H (`groundFloor`) rather than skipping the
+  clip, so it cannot sink further unseen; every other clip, and the looks' deaths, stay held at
+  the ground. A fix (a wrist key on her death, as the looks' `FOCUS_DEATH`, re-baked) is the
+  owner's to decide; once fixed, the bound goes back to the ground.
