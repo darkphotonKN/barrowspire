@@ -4,7 +4,10 @@
 // included, with no exemption; the Duelist's half-cloak hangs on cloak bones, never rigid on the
 // chest; the Sellsword keeps no madder. Plain materials, named by the key they were cut from, stand
 // in for the bake page's painted ones: the checks read geometry and which cloth each piece is cut
-// from.
+// from. The run's sword and sword arm are guarded here too (FS-JS7C8 § Change: The mercenary's
+// sprint and trailing sword R104–R106): sampled along their meshes' edges against the legs, the
+// boots, the skirts, the Duelist's half-cloak and the body on every baked frame of the run, on all
+// three figures, each check with a fixture that must fail.
 
 import { describe, it, expect, vi } from "vitest";
 
@@ -45,10 +48,12 @@ vi.mock("./fabrics.js", async () => {
   return { fabrics: () => any, retonedFabrics: () => any, mat: () => new THREE.MeshBasicMaterial(), paint: () => ({}), pf: () => 0, pn: () => 0 };
 });
 
+const THREE = await import("three");
 const { CAST, mercenary } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, tubeNow } = await import("./clearance.js");
 const { OFFHAND_OF } = await import("./clips.js");
+const { along, boneOf, cloakOf, crossings, edgesOf, leastOutside, legSolids, moved, segmentsOf, trianglesOf } = await import("./edgeGuards.mjs");
 
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_mercenary_base");
@@ -219,5 +224,233 @@ describe("the Sellsword (FS-1J1CB R8)", () => {
 
   it("keeps the shared face under the mercenary's own hair (R14)", () => {
     expect(new Set(matsOf(rig, "head"))).toEqual(new Set(["F.skin", "F.face", "F.browDark", "F.hairDark"]));
+  });
+});
+
+describe("the mercenary's sword and sword arm clear of everything they pass (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R104–R106)", () => {
+  const FIGURES = [["char_mercenary_base", base], ...LOOKS];
+  /**
+   * The clips the guards read, every baked frame of each. The run's carry is the one they were
+   * written for (R104); the run's keys come from the style, so a new carry is guarded unchanged.
+   */
+  const GUARDED = ["run"];
+  /** How far apart the points sampled along an edge lie, at most (H). */
+  const STEP = 0.005;
+  /** The sword's lowest point over the ground, at least (H; R99, the sprint's own flight lift). */
+  const GROUND = 0.06;
+
+  /** The curved sword's group on the right hand's grip (gear.js `curvedSword`): the blade's parent. */
+  const swordOf = (rig) => {
+    let g;
+    rig.bones.handR.traverse((o) => o.isMesh && o.material.name === "F.steel" && o.geometry.type === "ExtrudeGeometry" && (g = o.parent));
+    return g;
+  };
+  /** The blade alone (the steel extrusion), for the fixtures to place by its middle. */
+  const bladeOf = (rig) => swordOf(rig).children.find((o) => o.isMesh && o.material.name === "F.steel");
+  /** Whether `o` lies inside `root`. */
+  const within = (o, root) => {
+    for (let p = o; p; p = p.parent) if (p === root) return true;
+    return false;
+  };
+  /** The bone carrying most of a skinned mesh's vertex `i`. */
+  const heaviest = (m, i) => {
+    const idx = m.geometry.attributes.skinIndex;
+    const wt = m.geometry.attributes.skinWeight;
+    let k = 0;
+    for (let j = 1; j < 4; j++) if (wt.getComponent(i, j) > wt.getComponent(i, k)) k = j;
+    return m.skeleton.bones[idx.getComponent(i, k)].name;
+  };
+  const PAST_ELBOW = new Set(["foreArmR", "handR"]);
+  /**
+   * The right arm's own pieces past the elbow, the sword left out, as edges: the rigid ones riding
+   * the forearm and the hand (the vambrace, the fist), and every edge of a skinned piece both of
+   * whose ends the forearm or the hand carries most (the arm's skin, the Duelist's wide sleeve).
+   */
+  const armSegments = (rig) => {
+    const sword = swordOf(rig);
+    const out = [];
+    rig.root.traverse((o) => {
+      if (!o.isMesh || within(o, sword)) return;
+      if (o.isSkinnedMesh) {
+        if (!o.userData.garment && !o.userData.cloak && !o.userData.leg) out.push(...edgesOf(o, (i) => PAST_ELBOW.has(heaviest(o, i))));
+      } else if (PAST_ELBOW.has(boneOf(o))) out.push(...segmentsOf(o));
+    });
+    return out;
+  };
+  /**
+   * The body the sword must not cross: the torso and what is worn over it (the Duelist's wrapped
+   * robe, the Sellsword's buff coat), the skinned meshes carried by the trunk's bones alone.
+   */
+  const TRUNK = new Set(["hips", "spine", "chest", "neck"]);
+  const bodyOf = (rig) => {
+    const out = [];
+    rig.root.traverse((o) => {
+      if (!o.isSkinnedMesh || o.userData.garment || o.userData.cloak || o.userData.leg) return;
+      const n = o.geometry.attributes.position.count;
+      for (let i = 0; i < n; i++) if (!TRUNK.has(heaviest(o, i))) return;
+      out.push(o);
+    });
+    return out;
+  };
+  /** A solid's name in a failure: the leg, the boot's bone, or the skirt. */
+  const nameOf = (m) => (m.userData.leg ? `the ${m.userData.leg} leg` : m.userData.garment ? `the skirt (${m.material.name})` : `the boot on ${boneOf(m)}`);
+
+  /**
+   * What the guards read on the pose the rig holds now, for edges `segs`: per solid (legSolids) the
+   * least distance a sampled point lies outside it (H; null where none reaches it), how many edges
+   * cross the half-cloak and the body, and the lowest sampled point over the ground (H).
+   */
+  function measure(rig, segs) {
+    const H = rig.H;
+    const pts = along(segs, STEP * H);
+    const solid = legSolids(rig);
+    const cloak = cloakOf(rig);
+    return {
+      solid: leastOutside(solid, pts).map((w, k) => ({ name: nameOf(solid[k]), least: w === null ? null : w / H })),
+      cloak: cloak ? crossings(segs, trianglesOf(cloak)) : 0,
+      body: crossings(segs, bodyOf(rig).flatMap(trianglesOf)),
+      lowest: Math.min(...pts.map((v) => v.y)) / H,
+    };
+  }
+  /** The figure posed on every baked frame of `anim`, the sword's and the arm's measures on each. */
+  function guarded(r, anim) {
+    const { rig, poses } = characterPoses(r);
+    const frames = poses.filter((p) => p.anim === anim);
+    return frames.map((p) => {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      return { i: p.i, sword: measure(rig, segmentsOf(swordOf(rig))), arm: measure(rig, armSegments(rig)) };
+    });
+  }
+  const memo = new Map();
+  const frames = (sheet, r, anim) => {
+    const key = `${sheet} ${anim}`;
+    if (!memo.has(key)) memo.set(key, guarded(r, anim));
+    return memo.get(key);
+  };
+  const CASES = FIGURES.flatMap(([sheet, r]) => GUARDED.map((anim) => [sheet, anim, r]));
+
+  it.each(CASES)("%s %s: every frame baked, no exemption for the figure (R106)", (sheet, anim, r) => {
+    expect(frames(sheet, r, anim)).toHaveLength(r.animations[anim].frames);
+    expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
+    expect(MIRRORED_LEGACY.has(sheet)).toBe(false);
+  });
+
+  it.each(CASES)("%s %s: no point along the sword's edges inside a leg, a boot or a skirt (R104)", (sheet, anim, r) => {
+    for (const f of frames(sheet, r, anim)) {
+      // the measure ran: the sword comes level with at least one of them on every frame
+      expect(f.sword.solid.some((s) => s.least !== null), `frame ${f.i}: no leg, boot or skirt measured`).toBe(true);
+      for (const s of f.sword.solid) if (s.least !== null) expect(s.least, `frame ${f.i}: the sword inside ${s.name} (H)`).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(CASES)("%s %s: no edge of the sword crosses the half-cloak or the body (R104)", (sheet, anim, r) => {
+    for (const f of frames(sheet, r, anim)) {
+      expect(f.sword.cloak, `frame ${f.i}: sword edges through the half-cloak`).toBe(0);
+      expect(f.sword.body, `frame ${f.i}: sword edges through the body`).toBe(0);
+    }
+  });
+
+  it.each(CASES)("%s %s: the sword's lowest point at least 0.06 H over the ground (R99)", (sheet, anim, r) => {
+    for (const f of frames(sheet, r, anim)) expect(f.sword.lowest, `frame ${f.i}: the sword over the ground (H)`).toBeGreaterThanOrEqual(GROUND);
+  });
+
+  /**
+   * Checks today's carry already fails, as `<sheet> <clip> <check>`, measured when the guards were
+   * written (I-JS7C8-22): each runs as a test that must fail, so the carry that clears it turns it
+   * red and its entry goes. Never an exemption: the guard's limit is the same, and nothing is added
+   * here for a new carry. The Duelist's right wide sleeve: its flared mouth lies under the robe's
+   * back panel, next to the right side split, a little above the hips bone, on run frames 1
+   * (0.0107 H in) and 6 (0.0021 H in). I-JS7C8-23's trailing carry replaces today's.
+   */
+  const TODAY_FAILS = new Set(["char_mercenary_duelist run arm in the solids"]);
+  const guard = (key) => (TODAY_FAILS.has(key) ? it.fails : it);
+
+  for (const [sheet, anim, r] of CASES) {
+    guard(`${sheet} ${anim} arm in the solids`)(`${sheet} ${anim}: the arm past the elbow (the fist, the vambrace, the sleeve) inside no leg, boot or skirt (R104)`, () => {
+      for (const f of frames(sheet, r, anim)) {
+        expect(f.arm.solid.some((s) => s.least !== null), `frame ${f.i}: no leg, boot or skirt measured`).toBe(true);
+        for (const s of f.arm.solid) if (s.least !== null) expect(s.least, `frame ${f.i}: the arm inside ${s.name} (H)`).toBeGreaterThan(0);
+      }
+    });
+  }
+
+  it.each(CASES)("%s %s: no edge of the arm past the elbow crosses the half-cloak (R104)", (sheet, anim, r) => {
+    for (const f of frames(sheet, r, anim)) expect(f.arm.cloak, `frame ${f.i}: arm edges through the half-cloak`).toBe(0);
+  });
+
+  /** A figure posed on its run's first baked frame, for the fixtures to move its pieces from. */
+  const posedOn = (r) => {
+    const { rig, poses } = characterPoses(r);
+    poses.find((p) => p.anim === "run" && p.i === 0).apply();
+    rig.root.updateMatrixWorld(true);
+    return rig;
+  };
+  /** The middle of a mesh's drawn points, model space. */
+  const middle = (m) => new THREE.Box3().setFromObject(m).getCenter(new THREE.Vector3());
+  /** The sword's edges moved so the blade's middle sits at `to`. */
+  const swordAt = (rig, to) => moved(segmentsOf(swordOf(rig)), to.clone().sub(middle(bladeOf(rig))));
+  /** The arm's edges moved so the fist (the hand bone) sits at `to`. */
+  const armAt = (rig, to) => moved(armSegments(rig), to.clone().sub(new THREE.Vector3().setFromMatrixPosition(rig.bones.handR.matrixWorld)));
+  const solidNamed = (m, name) => m.solid.find((s) => s.name === name)?.least;
+  /** A point a fraction `t` from a tube's middle ring's centre out to its wall at the back (−z). */
+  const intoBack = (mesh, t) => {
+    const { rings, mids } = tubeNow(mesh);
+    const k = Math.floor(rings.length / 2);
+    const back = rings[k].reduce((a, v) => (v.z < a.z ? v : a));
+    return mids[k].clone().lerp(back, t);
+  };
+  const triangleMiddle = (tris, at) => {
+    const t = tris[Math.floor(tris.length * at)];
+    return t[0].clone().add(t[1]).add(t[2]).divideScalar(3);
+  };
+  /** The Duelist's half-cloak, posed, and a point on its back. */
+  const cloakBack = () => {
+    const rig = posedOn(LOOKS[0][1]);
+    const tris = trianglesOf(cloakOf(rig));
+    return { rig, tris, at: triangleMiddle(tris, 0.5) };
+  };
+
+  it("finds a sword pushed into a leg: the blade's middle moved onto the right thigh's axis reads inside it", () => {
+    const rig = posedOn(base);
+    const thigh = legSolids(rig).find((m) => m.userData.leg === "R");
+    const { mids } = tubeNow(thigh);
+    expect(solidNamed(measure(rig, swordAt(rig, mids[Math.floor(mids.length / 4)])), "the R leg")).toBeLessThan(0);
+  });
+
+  it("finds a sword pushed through the coat's back skirt: the blade's middle moved inside its back wall reads inside it", () => {
+    const rig = posedOn(base);
+    const coat = legSolids(rig).find((m) => m.userData.garment);
+    expect(solidNamed(measure(rig, swordAt(rig, intoBack(coat, 0.8))), nameOf(coat))).toBeLessThan(0);
+  });
+
+  it("finds a sword pushed through the half-cloak's back: its edges moved onto the cloak cross it", () => {
+    const { rig, at } = cloakBack();
+    expect(measure(rig, swordAt(rig, at)).cloak).toBeGreaterThan(0);
+  });
+
+  it("finds a sword pushed through the torso: its edges moved onto the chest cross the body", () => {
+    const rig = posedOn(base);
+    expect(bodyOf(rig).length).toBeGreaterThanOrEqual(1);
+    expect(measure(rig, swordAt(rig, new THREE.Vector3().setFromMatrixPosition(rig.bones.chest.matrixWorld))).body).toBeGreaterThan(0);
+  });
+
+  it("finds a sword on the ground: its edges lowered to 0.03 H read under the margin", () => {
+    const rig = posedOn(base);
+    const segs = segmentsOf(swordOf(rig));
+    const low = measure(rig, segs).lowest;
+    expect(measure(rig, moved(segs, new THREE.Vector3(0, (0.03 - low) * rig.H, 0))).lowest).toBeLessThan(GROUND);
+  });
+
+  it("finds the arm's pieces pushed into the half-cloak: the fist moved onto the cloak's back, the arm's edges cross it", () => {
+    const { rig, at } = cloakBack();
+    expect(armSegments(rig).length).toBeGreaterThan(0);
+    expect(measure(rig, armAt(rig, at)).cloak).toBeGreaterThan(0);
+  });
+
+  it("finds the arm's pieces pushed into a leg: the fist moved onto the right thigh's axis reads inside it", () => {
+    const rig = posedOn(base);
+    const { mids } = tubeNow(legSolids(rig).find((m) => m.userData.leg === "R"));
+    expect(solidNamed(measure(rig, armAt(rig, mids[Math.floor(mids.length / 4)])), "the R leg")).toBeLessThan(0);
   });
 });

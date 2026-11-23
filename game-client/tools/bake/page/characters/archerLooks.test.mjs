@@ -51,7 +51,8 @@ vi.mock("./fabrics.js", async () => {
 const THREE = await import("three");
 const { CAST, archer } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, outside, throughCloth, tubeNow } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, throughCloth, tubeNow } = await import("./clearance.js");
+const { along, boneOf, cloakOf, crossings, leastOutside, legSolids, segmentsOf, shown, trianglesOf } = await import("./edgeGuards.mjs");
 const { OFFHAND_OF, applyPose, clipsFor, groundPose, sample } = await import("./clips.js");
 const { BOW_BRACE, BOW_GRIP, drawGrip } = await import("./draw.js");
 const { AZIMUTH, ELEVATION, K1 } = await import("../projection.js");
@@ -236,11 +237,6 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
   /** 32 samples over the 8-key cycle, as the FS measures her run. */
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
   const at = (rig, b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld);
-  /** Whether `o` and every parent of it is drawn (the bow's arrow hides while nothing is nocked). */
-  const shown = (o) => {
-    for (let p = o; p; p = p.parent) if (!p.visible) return false;
-    return true;
-  };
   /** The group the longbow hangs in on the left hand's grip (cast.js `bowInHand`): the stave's parent. */
   const bowFrame = (rig) => {
     let g;
@@ -257,115 +253,8 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     });
     return out;
   };
-  /**
-   * Every edge of every drawn mesh of the bow (the stave, its grip, the Hunter's nock caps, the
-   * string's two strands and, when one is nocked, the arrow), as model-space segments. The string's
-   * strands are 4-sided cylinders with vertices only at the tips and the nock (gear.js `longbow`),
-   * so their long stretches are only seen along their edges.
-   */
-  const bowSegments = (bow) => {
-    const out = [];
-    bow.traverse((o) => {
-      if (!o.isMesh || !shown(o)) return;
-      const pos = o.geometry.attributes.position;
-      const vs = Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
-      const index = o.geometry.index;
-      const tri = (k) => (index ? index.getX(k) : k);
-      const seen = new Set();
-      const count = index ? index.count : pos.count;
-      for (let k = 0; k + 2 < count; k += 3)
-        for (const [a, b] of [
-          [tri(k), tri(k + 1)],
-          [tri(k + 1), tri(k + 2)],
-          [tri(k + 2), tri(k)],
-        ]) {
-          const key = a < b ? `${a},${b}` : `${b},${a}`;
-          if (seen.has(key) || vs[a].distanceToSquared(vs[b]) < 1e-12) continue;
-          seen.add(key);
-          out.push([vs[a], vs[b]]);
-        }
-    });
-    return out;
-  };
-  /** Points along every segment, no further apart than `step` (model units), both ends included. */
-  const along = (segments, step) =>
-    segments.flatMap(([a, b]) => {
-      const n = Math.max(1, Math.ceil(a.distanceTo(b) / step));
-      return Array.from({ length: n + 1 }, (_, k) => a.clone().lerp(b, k / n));
-    });
-  /**
-   * The least distance any of `pts` lies outside each of the `solid` tubes (clearance.js
-   * `outside`), per mesh; null for a mesh no point reaches along its length.
-   */
-  const leastOutside = (solid, pts) =>
-    solid.map((m) => {
-      const { rings, mids } = tubeNow(m);
-      let worst = null;
-      for (const v of pts) {
-        const o = outside(rings, mids, v);
-        if (o !== null && (worst === null || o < worst)) worst = o;
-      }
-      return worst;
-    });
-  /** Whether segment a–b crosses triangle p–q–r (Möller–Trumbore, the segment's ends included). */
-  const crosses = (a, b, p, q, r) => {
-    const d = new THREE.Vector3().subVectors(b, a);
-    const e1 = new THREE.Vector3().subVectors(q, p);
-    const e2 = new THREE.Vector3().subVectors(r, p);
-    const h = new THREE.Vector3().crossVectors(d, e2);
-    const det = e1.dot(h);
-    if (Math.abs(det) < 1e-12) return false;
-    const s = new THREE.Vector3().subVectors(a, p);
-    const u = s.dot(h) / det;
-    if (u < 0 || u > 1) return false;
-    const qv = new THREE.Vector3().crossVectors(s, e1);
-    const v = d.dot(qv) / det;
-    if (v < 0 || u + v > 1) return false;
-    const t = e2.dot(qv) / det;
-    return t >= 0 && t <= 1;
-  };
-  /** A mesh's triangles as posed (a skinned one through its bones), model space. */
-  const trianglesOf = (m) => {
-    const pos = m.geometry.attributes.position;
-    const vs = Array.from({ length: pos.count }, (_, i) => (m.isSkinnedMesh ? m.getVertexPosition(i, new THREE.Vector3()) : new THREE.Vector3().fromBufferAttribute(pos, i)).applyMatrix4(m.matrixWorld));
-    const index = m.geometry.index;
-    const count = index ? index.count : pos.count;
-    const tri = (k) => vs[index ? index.getX(k) : k];
-    return Array.from({ length: Math.floor(count / 3) }, (_, k) => [tri(3 * k), tri(3 * k + 1), tri(3 * k + 2)]);
-  };
-  /** How many of `segments` cross any of `triangles` (boxes first, so most pairs are skipped). */
-  const crossings = (segments, triangles) => {
-    const box = new THREE.Box3();
-    for (const t of triangles) for (const v of t) box.expandByPoint(v);
-    const tbox = triangles.map((t) => new THREE.Box3().setFromPoints(t));
-    const sbox = new THREE.Box3();
-    let n = 0;
-    for (const [a, b] of segments) {
-      sbox.makeEmpty().expandByPoint(a).expandByPoint(b);
-      if (!sbox.intersectsBox(box)) continue;
-      if (triangles.some((t, k) => sbox.intersectsBox(tbox[k]) && crosses(a, b, ...t))) n++;
-    }
-    return n;
-  };
   /** The cloak (anatomy.js `cloak` tags it) and the quiver's meshes, which the bow must not cross. */
-  const backMeshes = (rig) => {
-    let cloakMesh;
-    rig.root.traverse((o) => o.userData.cloak && (cloakMesh = o));
-    return { cloak: cloakMesh, quiver: quiverMeshes(rig) };
-  };
-  /** The legs and the tunic (skinned), and the boots' feet and shafts riding the foot and shin bones. */
-  const legSolids = (rig) => {
-    const solid = [];
-    rig.root.traverse((o) => {
-      if (!o.isMesh || !o.geometry.userData.tube) return;
-      if (o.isSkinnedMesh ? o.userData.leg || o.userData.garment : /^(shin|foot)[LR]$/.test(boneOf(o))) solid.push(o);
-    });
-    return solid;
-  };
-  const boneOf = (o) => {
-    for (let p = o.parent; p; p = p.parent) if (p.isBone) return p.name;
-    return "";
-  };
+  const backMeshes = (rig) => ({ cloak: cloakOf(rig), quiver: quiverMeshes(rig) });
   /** The bow's arrow (gear.js `longbow`): the group holding the steel head. */
   const arrowOf = (bow) => bow.children.find((o) => o.isGroup && o.children.some((m) => m.isMesh && m.material.name === "F.steel")) ?? null;
   /** The top of the meshes the head bone carries (the cowl, or the Hunter's hair). */
@@ -546,7 +435,7 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     for (const p of frames) {
       p.apply();
       rig.root.updateMatrixWorld(true);
-      const pts = along(bowSegments(bow), step);
+      const pts = along(segmentsOf(bow), step);
       const least = leastOutside(solid, pts);
       // the measure ran: the bow comes level with at least one of them on every frame
       expect(least.some((w) => w !== null), `frame ${p.i}: no leg, boot or tunic measured`).toBe(true);
@@ -563,7 +452,7 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     const thigh = solid.find((m) => m.isSkinnedMesh && m.userData.leg && tubeNow(m).mids.some((c) => c.x < 0));
     const { mids } = tubeNow(thigh);
     const into = mids[Math.floor(mids.length / 4)].clone().sub(new THREE.Vector3(0, -BOW_GRIP * rig.H, 0).applyMatrix4(bow.matrixWorld));
-    const pts = along(bowSegments(bow), 0.005 * rig.H).map((v) => v.add(into));
+    const pts = along(segmentsOf(bow), 0.005 * rig.H).map((v) => v.add(into));
     expect(Math.min(...leastOutside(solid, pts).filter((w) => w !== null))).toBeLessThan(0);
   });
 
@@ -578,7 +467,7 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     for (const p of frames) {
       p.apply();
       rig.root.updateMatrixWorld(true);
-      const segments = bowSegments(bow);
+      const segments = segmentsOf(bow);
       expect(crossings(segments, trianglesOf(cloak)), `frame ${p.i}: edges through the cloak`).toBe(0);
       expect(crossings(segments, quiver.flatMap(trianglesOf)), `frame ${p.i}: edges through the quiver`).toBe(0);
     }
@@ -590,7 +479,7 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     const bow = bowFrame(rig);
     poses.find((p) => p.anim === "run" && p.i === 0).apply();
     rig.root.updateMatrixWorld(true);
-    const segments = bowSegments(bow);
+    const segments = segmentsOf(bow);
     const grip = new THREE.Vector3(0, -BOW_GRIP * rig.H, 0).applyMatrix4(bow.matrixWorld);
     const moved = (to) => {
       const d = to.clone().sub(grip);
