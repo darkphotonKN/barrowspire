@@ -1081,6 +1081,14 @@ Date: 2026-11-23
 > arcane green. These are starting points: the owner tunes them at the Tree colours page (L13). L4's
 > table, its count of new bases and the Hues criterion are edited in place for it.
 >
+> **Review note, 2026-11-23** (code review of I-8RZ51-22, L11's "never in amber or the edge's
+> brass", now held by a measured distance: every hue at least 0.06 OKLab from `frame`, `frameBright`,
+> `interactable` and `interactableBright`): refund's pale gold from bright brass alone, `#cbb074`,
+> stood 0.047 from a max plate's bright-brass edge, so it turns a fifth of the way to the tree's teal,
+> `#aead80` (0.061 off), the least shift among derivations from existing tokens that stays clear of
+> amber, vellum and arcane green. Still no new base; the owner may retune it at L13. L4's refund row
+> is edited in place for it, and L4's pointer to the review page corrected to L13.
+>
 > **What this changes in § Change: Tree v2:** V29's **Ink** clause (one near-white ink for every
 > picture that is not greyed), for lit nodes only. **Unchanged:** V25's states and which of them are greyed, V29's ink on open nodes, V29's lit
 > plate, its pictures and its lock mark, V24's links, every plate's shape, edge and fill, the hover
@@ -1123,7 +1131,7 @@ Numbered 1–14 below and cited as **L1–L14**.
 
 4. **Ten hues, each a palette token** *(charter defaults T4 and T5 — reason: colour by what the
    node gives; tokens only, ADR-0013)*. The charter's list named "nine" and gave ten; all ten are
-   kept. Starting values, retuned at the review page (L12):
+   kept. Starting values, retuned at the review page (L13):
 
    | Hue | Meaning | Token (`palette.treeHue.*`) | Resolves from | Starting value | Nodes |
    |---|---|---|---|---|---|
@@ -1135,7 +1143,7 @@ Numbered 1–14 below and cited as **L1–L14**.
    | frost | speed | `speed` | new `BARROW_HEX.frost` | `#8ac2e6` | Haste, Quick Draw, Arrow Rain |
    | verdigris | movement, evasion | `movement` | new `BARROW_HEX.verdigris` | `#5fa88a` | Fleetness, Fleet Foot, Hunter |
    | amethyst | crit | `crit` | new `BARROW_HEX.amethyst` | `#a088cc` | Bull Rush, Eagle Eye, Keen Edge, Shadow Ranger |
-   | pale gold | resource refund | `refund` | derived, `tint(BARROW_HEX.brassBright, 0.5)`, no new base | `#cbb074` | Long Wind, Hunter's Breath, Steady Hand, Sellsword |
+   | pale gold | resource refund | `refund` | derived, `mix(tint(BARROW_HEX.brassBright, 0.5), BARROW_HEX.teal, 0.2)`, no new base | `#aead80` | Long Wind, Hunter's Breath, Steady Hand, Sellsword |
    | silver | the duel | `steel` | new `BARROW_HEX.silver` | `#c2c8d0` | Duelist, Settle the Debt |
 
    The seven new bases go into `BARROW` and `BARROW_HEX` (`src/utils/theme.ts`) and the guideline's

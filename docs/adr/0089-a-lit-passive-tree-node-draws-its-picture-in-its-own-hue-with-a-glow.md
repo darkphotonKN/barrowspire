@@ -2,8 +2,11 @@
 
 Status: accepted
 Date: 2026-11-23
-Corrected: 2026-11-23, the same day, before this record was merged or shipped (see "The owner's
-correction" below). The text is edited in place for that reason alone; once merged it is append-only.
+Corrected: 2026-11-23, the same day, before this record was merged or shipped: for the owner's
+correction (see "The owner's correction" below), then for the coordinator's starting values (mana
+a tree-only `teal` in place of reusing `necrotic`, a clearer `frost`, a cooler `silver`) and the
+review's move of refund off the edge's brass, with the figures under Consequences measured again on
+those values. The text is edited in place for those reasons alone; once merged it is append-only.
 Scope: `game-client` only: the inks of the passive tree overlay's node pictures
 (`src/ui/PassiveTreeOverlay.ts`, `src/ui/knockout.ts`), the tree's hue tokens (`src/utils/theme.ts`,
 `src/utils/canvasPalette.ts`) and the design guideline's HUD icons rule. Not the icons' shapes, the
@@ -110,18 +113,24 @@ picture under the pointer.
   and an open node stays near-white, so a glance tells held from open without reading the plates.
 - **V29's near-white ink stays, for open nodes only.** `TREE_INK` is kept; an open node keeps its
   4.7:1 on its amber-lit plate.
-- **A lit picture is coloured, not lighter.** Most hues are darker than vellum (OKLCH L 0.61–0.82
-  against 0.81), so a lit node reads "on" by chroma and its glow, not by lightness. Three hues carry
-  less chroma than vellum itself (mana's reused necrotic, speed's frost, the duel's silver), so they
-  lean on their glow; the review page shows them, and a hue the owner finds dull is retuned there.
-- **Contrast is lower than vellum's.** On a held plate a lit ink's body stands 2.7–6.3:1 (its lifted
-  top 3.2–6.3:1), on a max plate 2.2–5.1:1; the warm and blue hues sit under the 3:1 non-text floor on
-  a max plate. Where the halo shows through the cuts at the centre the ink stands about 1.6–2.4:1
-  against it. That is the halo's price; its alpha is shown and tunable on the review page.
+- **A lit picture is coloured, not lighter.** Most lit inks are darker than vellum (OKLCH L 0.61–0.81
+  against 0.81), so a lit node reads "on" by chroma and its glow, not by lightness. The duel's silver
+  carries less chroma than vellum itself, a neutral metal on purpose, and speed's pale frost little
+  more, so those two lean on their glow; the review page shows them, and a hue the owner finds dull is
+  retuned there.
+- **Contrast is lower than vellum's.** On a held plate a lit ink's body stands 2.7–6.2:1 (its lifted
+  top 3.2–6.2:1), on a max plate 2.2–5.0:1; the warm, blue and violet hues sit under the 3:1 non-text
+  floor on a max plate. Where the halo shows through the cuts at the centre the ink stands about
+  1.6–2.4:1 against it. That is the halo's price; its alpha is shown and tunable on the review page.
 - **Ten hues, and some are close.** After the 10% mix the tightest pairs are health and fire (5.7
-  OKLab units), speed and silver, defence and mana, power and refund (about 7). The pictures differ in
-  shape too, but each hue is checked at render scale 1 on the review page before it ships, and the
-  owner may retune any single hue there.
+  OKLab units), movement and mana (6.5), speed and silver (7.1), power and refund (7.5). The pictures
+  differ in shape too, but each hue is checked at render scale 1 on the review page before it ships,
+  and the owner may retune any single hue there.
+- **No halo reads as the edge's brass or as amber.** Every hue stands at least 6 OKLab units from
+  `frame`, `frameBright`, `interactable` and `interactableBright` (a test holds it). Refund's pale gold
+  derived from bright brass alone stood 4.7 from a max plate's bright-brass edge, so it turns a fifth
+  of the way to the tree's teal (`#aead80`, 6.1 off), the least shift among derivations from existing
+  tokens that stays clear of amber, vellum and arcane green.
 - **Two of the hues touch guideline rules** and get a narrow note in the guideline: speed's pale
   frost is not the forbidden neon cyan, and crit's violet is not umbra, which stays the shadow's. Both
   are tree-picture hues only.
