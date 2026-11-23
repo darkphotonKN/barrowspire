@@ -65,16 +65,16 @@ const THREE = await import("three");
 const { CAST, wizard } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
 const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, seenThroughCloth } = await import("./clearance.js");
-const { OFFHAND_OF } = await import("./clips.js");
+const { CLEAVE_CARRY, OFFHAND_OF, add, applyPose, clipsFor, groundPose, pose } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
-const { along, edgesOf, leastOutside, shown } = await import("./edgeGuards.mjs");
+const { along, edgesOf, leastOutside, legSolids, shown } = await import("./edgeGuards.mjs");
 const gear = await import("./gear.js");
 const { sceptre } = gear;
 const kit = await import("./mageKit.js");
 const looks = await import("./mageLooks.js");
 const { materials } = await import("../materials.js");
 const { fabrics } = await import("./fabrics.js");
-const { WIZARD_BUILD } = await import("./classStyles.js");
+const { SPELLWARDEN_STYLE, WARD_PLANT, WARD_PLANT_ARM, WIZARD_BUILD, WIZARD_SHEET } = await import("./classStyles.js");
 
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_wizard_base");
@@ -255,13 +255,14 @@ describe("the mage kit (FS-1J1CB §Change: Looks v2 R68, R69)", () => {
     const { WIZARD_STYLE, SPELLWARDEN_STYLE, PYROMANCER_STYLE } = await import("./classStyles.js");
     expect(looks.spellwarden.style).toBe(SPELLWARDEN_STYLE);
     expect(looks.pyromancer.style).toBe(PYROMANCER_STYLE);
-    // their cast the wizard's thrust as Looks v2 was made on it, before FS-JS7C8's pointed cast,
-    // which is the base wizard's alone (the owner, 2026-11-23: 「如果有改武器就套用main的」)
-    for (const s of [SPELLWARDEN_STYLE, PYROMANCER_STYLE]) {
-      expect(s).not.toBe(WIZARD_STYLE);
-      expect(WIZARD_STYLE.attack).toBe("cast");
-      expect(s.attack).toBe("staffCast");
-    }
+    // the Pyromancer's cast the wizard's thrust as Looks v2 was made on it, before FS-JS7C8's
+    // pointed cast, which is the base wizard's alone (the owner, 2026-11-23: 「如果有改武器就套用main的」);
+    // the Spellwarden's her own heavy cast on its wind-up and settle (FS-1J1CB § Change: The
+    // Spellwarden's long staff planted and swung heavy R79)
+    for (const s of [SPELLWARDEN_STYLE, PYROMANCER_STYLE]) expect(s).not.toBe(WIZARD_STYLE);
+    expect(WIZARD_STYLE.attack).toBe("cast");
+    expect(PYROMANCER_STYLE.attack).toBe("staffCast");
+    expect(SPELLWARDEN_STYLE.attack).toBe("wardCast");
   });
 });
 
@@ -425,6 +426,182 @@ describe("the Spellwarden's staff keeps clear of her legs on every pose (FS-1J1C
   });
 });
 
+// FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R74–R77 (the owner,
+// 2026-11-23: 「站立不動時應該把長杖垂直頂在地面上不用拿在空中 但也不用到垂直 可以往外有一點點角度」): on every
+// idle frame as the bake poses it, the shoe's point stands on the ground and stays where it is
+// planted, the staff a little out from vertical, its top away from her, the fist on the grip about
+// 0.45 H up, the arm hanging a little bent, the staff clear of the gown, the scapular, the legs and
+// the boots
+/**
+ * The solve that keys {@link WARD_PLANT_ARM} (FS-1J1CB § Change: The Spellwarden's long staff
+ * planted and swung heavy R74, R77), kept here so the keys are re-derived, not trusted. On each
+ * idle frame of `r`'s sheet, over the idle as her style poses it less her arm keys, a damped
+ * Gauss–Newton turns the right clavicle, upper arm, forearm (its twist held at 0) and hand until
+ * the fist's grip (the staff's mount, its +z up the staff) stands on the staff's line, 0.46 H
+ * (mageKit.js `STAFF.butt`) up from `plant`'s shoe, the staff `plant.tilt` off vertical with its top
+ * leaning straight out to her right (−x). Many arms do that; a light pull toward `REST` (the
+ * clavicle's four times as firm) picks the one nearest a relaxed hanging arm. Each frame starts
+ * from the one before. Returns one array per frame: upperArmR (3), foreArmR (2), handR (3),
+ * clavicleR (3).
+ */
+function solvePlantArm(r, plant) {
+  const { rig } = r.build();
+  const H = rig.H;
+  let staff = null;
+  rig.root.traverse((o) => o.userData.staff && (staff = o));
+  const grip = staff.parent;
+  const base = clipsFor({ ...SPELLWARDEN_STYLE, idleExtra: undefined }, r.animations).idle;
+  const REST = [-0.2, 0, -0.3, -0.75, 0, -0.6, -0.45, 0, 0, 0, 0];
+  const [PULL, AT, ALONG, STEP, DAMP] = [0.01, 30, 10, 1e-5, 1e-4];
+  const t = plant.tilt * (Math.PI / 180);
+  const up = new THREE.Vector3(-Math.sin(t), Math.cos(t), 0);
+  const shoe = new THREE.Vector3(plant.shoe[0], plant.height, plant.shoe[1]).multiplyScalar(H);
+  const want = shoe.clone().addScaledVector(up, -kit.STAFF.butt * H);
+  const keyOf = (x) => pose({ upperArmR: x.slice(0, 3), foreArmR: [x[3], x[4], 0], handR: x.slice(5, 8), clavicleR: x.slice(8, 11) });
+  const residual = (i, x) => {
+    applyPose(rig, add(base[i], keyOf(x)));
+    groundPose(rig);
+    const at = new THREE.Vector3().setFromMatrixPosition(grip.matrixWorld).sub(want).divideScalar(H);
+    const along = new THREE.Vector3(0, 0, 1).transformDirection(grip.matrixWorld).sub(up);
+    return [...at.toArray().map((v) => v * AT), ...along.toArray().map((v) => v * ALONG), ...x.map((v, k) => PULL * (v - REST[k]) * (k >= 8 ? 4 : 1))];
+  };
+  const solveFrame = (i, x0) => {
+    let x = [...x0];
+    const n = x.length;
+    for (let it = 0; it < 80; it++) {
+      const r0 = residual(i, x);
+      const J = x.map((_, k) => residual(i, x.map((v, j) => (j === k ? v + STEP : v))).map((v, j) => (v - r0[j]) / STEP));
+      // the normal equations (JᵀJ + DAMP·I) dx = −Jᵀr, by Gaussian elimination with partial pivoting
+      const A = J.map((a, p) => J.map((c, q) => a.reduce((s, v, j) => s + v * c[j], 0) + (p === q ? DAMP : 0)));
+      const b = J.map((a) => -a.reduce((s, v, j) => s + v * r0[j], 0));
+      for (let p = 0; p < n; p++) {
+        let m = p;
+        for (let q = p + 1; q < n; q++) if (Math.abs(A[q][p]) > Math.abs(A[m][p])) m = q;
+        [A[p], A[m], b[p], b[m]] = [A[m], A[p], b[m], b[p]];
+        for (let q = p + 1; q < n; q++) {
+          const f = A[q][p] / A[p][p];
+          for (let c = p; c < n; c++) A[q][c] -= f * A[p][c];
+          b[q] -= f * b[p];
+        }
+      }
+      const dx = new Array(n).fill(0);
+      for (let p = n - 1; p >= 0; p--) dx[p] = (b[p] - A[p].slice(p + 1).reduce((s, v, c) => s + v * dx[p + 1 + c], 0)) / A[p][p];
+      x = x.map((v, k) => v + dx[k]);
+      if (Math.hypot(...dx) < 1e-8) break;
+    }
+    return x;
+  };
+  const out = [];
+  for (let i = 0, x = REST; i < base.length; i++) out.push((x = solveFrame(i, x)));
+  return out;
+}
+
+describe("the Spellwarden plants the long staff on the ground in her idle (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R74–R77)", () => {
+  const r = { ...row("char_wizard_spellwarden"), name: "char_wizard_spellwarden" };
+  const { rig, poses } = characterPoses(r);
+  const staff = tagged(rig, "staff");
+  const { butt, top } = staff.userData.staff;
+  const H = rig.H;
+  const idle = poses.filter((p) => p.anim === "idle");
+  const world = (b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld);
+  /** The staff's measures on the pose the rig holds now: its shoe's point and top (model space), the grip's height (H), the elbow's bend (°). */
+  const measure = () => {
+    rig.root.updateMatrixWorld(true);
+    const shoe = new THREE.Vector3(0, 0, butt * H).applyMatrix4(staff.matrixWorld);
+    const tip = new THREE.Vector3(0, 0, top * H).applyMatrix4(staff.matrixWorld);
+    const d = tip.clone().sub(shoe);
+    const [sh, el, wr] = [world("upperArmR"), world("foreArmR"), world("handR")];
+    return {
+      shoe,
+      tilt: Math.acos(d.y / d.length()) * (180 / Math.PI),
+      out: d.x / d.length(),
+      grip: new THREE.Vector3().setFromMatrixPosition(staff.matrixWorld).y / H,
+      elbow: 180 - sh.clone().sub(el).angleTo(wr.clone().sub(el)) * (180 / Math.PI),
+    };
+  };
+  const frames = idle.map((p) => (p.apply(), { i: p.i, ...measure() }));
+  /** The staff's drawn meshes as points along their edges, model space, at most 0.005 H apart. */
+  const staffPoints = () => {
+    const segs = [];
+    staff.traverse((o) => o.isMesh && shown(o) && segs.push(...edgesOf(o)));
+    return along(segs, 0.005 * H);
+  };
+  /** The least distance any staff point lies outside her gown, scapular, legs and boots (H; negative inside). */
+  const outsideLegsAndCloth = (pts) => Math.min(...leastOutside(legSolids(rig), pts).filter((v) => v !== null)) / H;
+
+  // WARD_PLANT_ARM carries one solved arm per idle frame (R78: the shared idle's 6 frames): a sheet
+  // with more or fewer would leave frames unplanted, so it must be solved again (below)
+  it("poses six idle frames, one solved arm key for each", () => {
+    expect(r.animations.idle.frames).toBe(6);
+    expect(WARD_PLANT_ARM).toHaveLength(r.animations.idle.frames);
+    expect(frames).toHaveLength(WARD_PLANT_ARM.length);
+  });
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the staff stands where WARD_PLANT plants it, the shoe within 0.002 H, the tilt within 0.5°", (_, f) => {
+    const planted = new THREE.Vector3(WARD_PLANT.shoe[0], WARD_PLANT.height, WARD_PLANT.shoe[1]).multiplyScalar(H);
+    expect(f.shoe.distanceTo(planted) / H).toBeLessThanOrEqual(0.002);
+    expect(Math.abs(f.tilt - WARD_PLANT.tilt)).toBeLessThanOrEqual(0.5);
+  });
+
+  it("re-derives WARD_PLANT_ARM from WARD_PLANT, to the thousandth", () => {
+    const keys = solvePlantArm(r, WARD_PLANT).map((x) => ({
+      clavicleR: x.slice(8, 11),
+      upperArmR: x.slice(0, 3),
+      foreArmR: [x[3], x[4], 0],
+      handR: x.slice(5, 8),
+    }));
+    const thousandth = (k) => Object.fromEntries(Object.entries(k).map(([b, v]) => [b, v.map((a) => Math.round(a * 1000) / 1000 + 0)]));
+    expect(keys.map(thousandth)).toEqual(WARD_PLANT_ARM);
+  });
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the shoe's point stands on the ground, 0–0.003 H over it", (_, f) => {
+    expect(f.shoe.y / H).toBeGreaterThanOrEqual(0);
+    expect(f.shoe.y / H).toBeLessThanOrEqual(0.003);
+  });
+
+  it("keeps the shoe where it is planted: its point moves at most 0.003 H between frames", () => {
+    for (let k = 0; k < frames.length; k++) {
+      const [a, b] = [frames[k], frames[(k + 1) % frames.length]];
+      expect(a.shoe.distanceTo(b.shoe) / H, `frame ${a.i} to ${b.i}`).toBeLessThanOrEqual(0.003);
+    }
+  });
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the staff 8–12° off vertical, its top out to her right, away from her", (_, f) => {
+    expect(f.tilt).toBeGreaterThanOrEqual(8);
+    expect(f.tilt).toBeLessThanOrEqual(12);
+    // her right is -x
+    expect(f.out).toBeLessThan(0);
+  });
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the fist on the grip about 0.45 H up, the elbow a little bent (15–35°)", (_, f) => {
+    expect(f.grip).toBeGreaterThanOrEqual(0.44);
+    expect(f.grip).toBeLessThanOrEqual(0.47);
+    expect(f.elbow).toBeGreaterThanOrEqual(15);
+    expect(f.elbow).toBeLessThanOrEqual(35);
+  });
+
+  it(`turns the wrist no further than CLEAVE_CARRY (${CLEAVE_CARRY} rad) on any idle key`, () => {
+    clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations).idle.forEach((p, i) => {
+      for (const a of p.b.handR ?? [0, 0, 0]) expect(Math.abs(a), `idle @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY);
+    });
+  });
+
+  it.each(idle.map((p) => [p.i, p]))("frame %i: the staff clear of her gown, scapular, legs and boots", (_, p) => {
+    p.apply();
+    rig.root.updateMatrixWorld(true);
+    expect(outsideLegsAndCloth(staffPoints())).toBeGreaterThan(0);
+  });
+
+  it("finds the staff pushed into her gown: its points moved to under the hips read inside", () => {
+    idle[0].apply();
+    rig.root.updateMatrixWorld(true);
+    const pts = staffPoints();
+    const mid = pts.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(pts.length);
+    const to = world("hips").sub(new THREE.Vector3(0, 0.2 * H, 0));
+    expect(outsideLegsAndCloth(pts.map((v) => v.clone().add(to.clone().sub(mid))))).toBeLessThan(0);
+  });
+});
+
 describe("the Pyromancer's flame stays upright on every pose (FS-1J1CB §Change: Looks v2 R57)", () => {
   const r = { ...row("char_wizard_pyromancer"), name: "char_wizard_pyromancer" };
   const { rig, poses } = characterPoses(r);
@@ -449,8 +626,14 @@ describe("the Pyromancer's flame stays upright on every pose (FS-1J1CB §Change:
 // width at the wrist: cast.js `sleeve`) or her right hand (the fist and the thumb), save where the
 // fist closes on the haft. Each solid has a fixture that must fail.
 describe("the sceptre or focus clear of her right forearm, hand and flared sleeve in the cast (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128, R129)", () => {
-  /** The clips the guard reads, every baked frame of each: the cast (I-JS7C8-29 re-keys it; the bake's frames are what is read). */
+  /**
+   * The clips the guard reads, every baked frame of each: the cast (I-JS7C8-29 re-keys it; the
+   * bake's frames are what is read), and the Spellwarden's idle, where the fist holds the planted
+   * staff low by the flared cuff (FS-1J1CB § Change: The Spellwarden's long staff planted and swung
+   * heavy R77).
+   */
   const GUARDED = ["attack"];
+  const guardedOf = (sheet) => (sheet === "char_wizard_spellwarden" ? [...GUARDED, "idle"] : GUARDED);
   /** How far apart the points sampled along an edge lie, at most (H). */
   const STEP = 0.005;
   /** The fist's own grip on the haft, left out of the hand's check (H, along the grip frame's +z either side of the grip point): the hand's fist is 0.036 H tall about it (anatomy.js `hands`, size 0.9). */
@@ -535,7 +718,7 @@ describe("the sceptre or focus clear of her right forearm, hand and flared sleev
     }
     return memo.get(key);
   };
-  const CASES = FIGURES.flatMap(([sheet, r]) => GUARDED.map((anim) => [sheet, anim, r]));
+  const CASES = FIGURES.flatMap(([sheet, r]) => guardedOf(sheet).map((anim) => [sheet, anim, r]));
 
   it.each(FIGURES)("%s: one right arm, the fist and the thumb, and the mount's meshes are there", (sheet, r) => {
     const { rig } = r.build();

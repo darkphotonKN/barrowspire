@@ -604,6 +604,20 @@ function outsideRobe(rig, w) {
   return (Math.hypot(b.x / rx, (b.z - z) / rz) - 1) * Math.min(rx, rz);
 }
 
+/**
+ * On every key of `keys`: the right fist keeps its thumb side where the forearm has it. The
+ * knuckles' axis (the hand's +x, about which the wrist cocks) read in the forearm's frame: a fist
+ * rolled over on the forearm turns it about.
+ */
+function expectThumbSideKept(rig, keys, label) {
+  keys.forEach((p, i) => {
+    posed(rig, p);
+    const x = new THREE.Vector3(1, 0, 0).transformDirection(rig.bones.handR.matrixWorld);
+    const fore = new THREE.Matrix4().extractRotation(rig.bones.foreArmR.matrixWorld).invert();
+    expect(x.applyMatrix4(fore).x, `${label} @${i}`).toBeGreaterThan(0);
+  });
+}
+
 // owner, 2026-11-12, of the held run keys' fist turned over (hand [0.7, π, 0]): "跑步時武器是不是拿反了"
 describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turned over in the hand (FS-JS7C8 R2)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
@@ -611,14 +625,18 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
 
   // the wizard's cast too (FS-JS7C8 § Change: The wizard's sprint and pointed cast R126): it points the staff along the aim
   it.each(["idle", "walk", "run", ...(name === "wizard" ? ["attack"] : [])])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
-    clips[anim].forEach((p, i) => {
-      posed(rig, p);
-      // the knuckles' axis (the hand's +x, about which the wrist cocks) in the forearm's frame: a
-      // fist rolled over on the forearm turns it about
-      const x = new THREE.Vector3(1, 0, 0).transformDirection(rig.bones.handR.matrixWorld);
-      const fore = new THREE.Matrix4().extractRotation(rig.bones.foreArmR.matrixWorld).invert();
-      expect(x.applyMatrix4(fore).x, `${name} ${anim} @${i}`).toBeGreaterThan(0);
-    });
+    expectThumbSideKept(rig, clips[anim], `${name} ${anim}`);
+  });
+});
+
+// her own idle and cast keys (FS-1J1CB § Change: The Spellwarden's long staff planted and swung
+// heavy R77, R79): the fist on the planted staff, and pushing the long staff forward
+describe("the Spellwarden holds the long staff in a normal grip, never turned over in the hand (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R77, R79)", () => {
+  const rig = rigOf(WIZARD_BUILD);
+  const clips = clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations);
+
+  it.each(["idle", "attack"])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
+    expectThumbSideKept(rig, clips[anim], `Spellwarden ${anim}`);
   });
 });
 
@@ -664,8 +682,10 @@ const BRAZIER_SPAN = [-0.084, 0.388];
 const span = ([from, to]) => along(from, to, Math.ceil((to - from) / 0.05));
 /**
  * The wizard's staff guards read each of these on its own style's cast: the base's sceptre on the
- * pointed cast, each look's staff on the staff cast (clips.js `staffCast`; the owner, 2026-11-23:
- * 「如果有改武器就套用main的」). The pointing itself is the base wizard's alone (`pointed`).
+ * pointed cast, the Pyromancer's brazier rod on the staff cast (clips.js `staffCast`; the owner,
+ * 2026-11-23: 「如果有改武器就套用main的」), the Spellwarden's warding staff on her own heavy cast
+ * (clips.js `wardCast`, FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy
+ * R79–R82). The pointing itself is the base wizard's alone (`pointed`).
  */
 const STAFFS = [
   { held: "the sceptre", style: WIZARD_STYLE, points: (rig) => GEAR.wizard(rig).weapon, pointed: true },
@@ -783,6 +803,76 @@ describe.each(STAFFS.filter((s) => s.pointed))("the wizard's cast points $held a
 
   it(`cocks the wrist at most CLEAVE_CARRY (${CLEAVE_CARRY} rad), the most any carry cocks, on every key`, () => {
     keys.forEach((p, i) => expect(Math.abs((p.b.handR ?? [0])[0]), `wrist @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY));
+  });
+});
+
+// FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R79–R81 (the owner,
+// 2026-11-23: 「攻擊時 不用像短杖要伸直 可以有一點前傾的角度因為長杖比較重的話不可能跟短杖一樣伸直攻擊」): her own
+// strike keys, the heavy staff pushed forward with the elbow bent, not reached out straight
+describe("the Spellwarden's heavy cast pushes the long staff forward, the elbow bent (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R79–R81)", () => {
+  const rig = rigOf(WIZARD_BUILD);
+  const pts = span(WARD_STAFF_SPAN);
+  const staff = riding(rig, "handR", gripAt(rig, "R"), {}, pts);
+  const grip = riding(rig, "handR", gripAt(rig, "R"), {}, [[0, 0, 0]])[0];
+  const keys = clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations).attack;
+  const shared = clipsFor({ ...SPELLWARDEN_STYLE, attack: "staffCast" }, WIZARD_SHEET.animations).attack;
+
+  /** On key `i`: the staff (shoe to top) in degrees off vertical and, in plan, off the facing (+z); the elbow's bend; the grip's height against the hips' and the chest bone's. */
+  const measure = (i) => {
+    posed(rig, keys[i]);
+    const d = world(staff.at(-1)).sub(world(staff[0]));
+    const [sh, el, hand] = [at(rig, "upperArmR"), at(rig, "foreArmR"), at(rig, "handR")];
+    return {
+      vert: Math.acos(d.y / d.length()) * DEG,
+      plan: Math.abs(Math.atan2(d.x, d.z)) * DEG,
+      elbow: 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG,
+      grip: world(grip).y,
+      hips: at(rig, "hips").y,
+      chest: at(rig, "chest").y,
+    };
+  };
+  /** How far forward the trunk pitches on key `p` (rad): the spine's and the chest's own pitch. */
+  const pitch = (p) => (p.b.spine?.[0] ?? 0) + (p.b.chest?.[0] ?? 0);
+
+  it("keeps 7 keys, the staff cast's wind-up and settle (keys 0–2 and 6), and its glow on keys 3–5", () => {
+    expect(keys).toHaveLength(7);
+    for (const i of [0, 1, 2, 6]) expect(keys[i], `key ${i}`).toEqual(shared[i]);
+    expect(keys.slice(3, 6).map((p) => p.fx.glow)).toEqual([5, 3.6, 2.2]);
+    expect(SPELLWARDEN_STYLE.attack).not.toBe("staffCast");
+    expect(PYROMANCER_STYLE.attack).toBe("staffCast");
+  });
+
+  it.each([3, 4])("on key %i tips the staff's head toward the target 30–45° from vertical, within 15° of the facing in plan", (i) => {
+    const m = measure(i);
+    expect(m.vert, `from vertical @${i}`).toBeGreaterThanOrEqual(30);
+    expect(m.vert, `from vertical @${i}`).toBeLessThanOrEqual(45);
+    expect(m.plan, `plan @${i}`).toBeLessThanOrEqual(15);
+  });
+
+  it.each([3, 4])("on key %i bends the elbow 40–60°, the fist pushed forward between the waist and the lower chest", (i) => {
+    const m = measure(i);
+    expect(m.elbow, `elbow @${i}`).toBeGreaterThanOrEqual(40);
+    expect(m.elbow, `elbow @${i}`).toBeLessThanOrEqual(60);
+    expect(m.grip, `grip over the hips @${i}`).toBeGreaterThanOrEqual(m.hips);
+    expect(m.grip, `grip under the chest bone @${i}`).toBeLessThanOrEqual(m.chest);
+  });
+
+  it.each([3, 4, 5])("on key %i leans the trunk into the strike further than the staff cast does", (i) => {
+    expect(pitch(keys[i]), `key ${i}`).toBeGreaterThan(pitch(shared[i]));
+  });
+
+  it("eases the staff back toward upright on key 5: 15–30° from vertical, the elbow 50–70°", () => {
+    const m = measure(5);
+    expect(m.vert).toBeGreaterThanOrEqual(15);
+    expect(m.vert).toBeLessThanOrEqual(30);
+    expect(m.elbow).toBeGreaterThanOrEqual(50);
+    expect(m.elbow).toBeLessThanOrEqual(70);
+  });
+
+  it(`cocks the wrist at most CLEAVE_CARRY (${CLEAVE_CARRY} rad) on every key`, () => {
+    keys.forEach((p, i) => {
+      for (const a of p.b.handR ?? [0, 0, 0]) expect(Math.abs(a), `wrist @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY);
+    });
   });
 });
 
@@ -1274,6 +1364,30 @@ describe("the wizard's other clips under her sprint (FS-JS7C8 § Change: The wiz
       idle: "2f82927bda6e6b5cb45d2ad98f76f40251a196837b3e9aae1091b7966fe153f1",
       walk: "746ba76d1a2af89d94b8851e3b3c73b608d8a03d1c451257e68963f53516e07d",
       death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+  });
+});
+
+describe("the Spellwarden's other clips, and the Pyromancer's, as main had them (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R78, R79, R83)", () => {
+  it("keeps the Spellwarden's walk, run and death keys byte for byte as at 4d56d258: only her idle and her cast move", () => {
+    const clips = clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations);
+    const want = {
+      walk: "2ce1be36db9ec90668a788195e16919f7c7543df34cbe8dc722b05b49d43fe47",
+      run: "09f3bb14f60bb46b1a69001d00cce4832e76d644263fd75099177d4c487574ae",
+      death: "083c6e820b5ed206e43bd75a6291e8544486b0eca224cf62ee44bc2deafb15eb",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+  });
+
+  it("keeps every Pyromancer clip byte for byte as at 4d56d258: her brazier rod keeps the staff cast", () => {
+    const clips = clipsFor(PYROMANCER_STYLE, WIZARD_SHEET.animations);
+    const want = {
+      idle: "4fd6bc6a25d1ec5909a628aaa48b35cc43f08c53073b2289955f7bbcaa0090d5",
+      walk: "cefa7b139c461e96e5465fc8e4cc40bef1bb46595f529045b9e0599ca376b450",
+      attack: "30044acd544500624072b69de47304415abdb333d70f53d5995e2766ab9e0d36",
+      death: "f0bb5379e9fc2e230fa07a48b2ed2b2e1cfe0e16659668b51b82067131b9b401",
+      run: "14603511410e6a548811df123d1d45e4446c6093169fe65d04b6cdd133c6a5b7",
     };
     for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
   });
