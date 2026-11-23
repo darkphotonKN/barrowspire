@@ -9,6 +9,7 @@ export {
 } from "./LightMap";
 export {
   AMBIENT,
+  FOG_FLOOR_AMBIENT,
   PLAYER_TORCH,
   TOWER_AMBIENT,
   sourceFromManifest,

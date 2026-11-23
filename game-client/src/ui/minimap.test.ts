@@ -780,10 +780,12 @@ describe("the minimap's look (FS-56CKV §A)", () => {
 
     it("should stroke the outline in one 1 px stroke of the edge token, each point projected, a closed loop closed and an open run not", () => {
       const { map, panel, show } = mapped();
-      // room 20 walked through, then the corridor it opens on: the room explored, the corridor visible
+      // room 20 walked through, then the corridor it opens on, out of room 20's reach (FS-SRA9J
+      // §Change: Lighter fog and lit regions, F3): the room explored, the corridor visible, and room
+      // 21, a cell of it two walkable steps off, visible with it
       show([cellAt(4, 21)]);
-      show([cellAt(6, 17)]);
-      expect(map.content.regions.map((r) => `${r.id}${r.state[0]}`).sort()).toEqual([`${NEXT_DOOR}e`, `${CORRIDOR}v`].sort());
+      show([cellAt(11, 18)]);
+      expect(map.content.regions.map((r) => `${r.id}${r.state[0]}`).sort()).toEqual([`${NEXT_DOOR}e`, "21v", `${CORRIDOR}v`].sort());
       const drawn = panel.drawn();
       expect(drawn.filter((c) => c.name === "lineStyle").at(-1)).toEqual({
         name: "lineStyle",

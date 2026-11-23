@@ -369,3 +369,5 @@ outdoor look is kept, untouched, as the exterior theme for a future outdoor plac
 ## Change: Spire height and the climb → FS-M8CSE
 
 ## Change: Wall shadow layer → FS-V8FT3
+
+## Change: Lifted ambient on fog floors → FS-SRA9J §Change: Lighter fog and lit regions

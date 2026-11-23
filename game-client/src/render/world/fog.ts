@@ -77,11 +77,15 @@ export const FOG = {
   floorDepth: 1,
   /**
    * An unexplored region's veil (§C.8): dense, darker than the explored one but not opaque, so its
-   * ground and walls read faintly through it. Tune here.
+   * ground and walls read faintly through it. The owner's eyeball value (FS-SRA9J §Change: Lighter
+   * fog and lit regions, F1, F2): a retune is an edit here (`Tunes FS-SRA9J`).
    */
-  unexplored: veil(0.8),
-  /** An explored region's veil (§C.9): the lighter dim. Tune here. */
-  explored: veil(0.55),
+  unexplored: veil(0.6),
+  /**
+   * An explored region's veil (§C.9): the lighter dim. The owner's eyeball value (FS-SRA9J §Change:
+   * Lighter fog and lit regions, F1, F2): a retune is an edit here (`Tunes FS-SRA9J`).
+   */
+  explored: veil(0.35),
   /** The void and off the floor: the darkest ink, opaque, as the canvas round the floor is. */
   void: 1,
   /** Milliseconds a region's change of state eases over, fog and wall tint alike. Tune here. */

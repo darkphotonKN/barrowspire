@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ArtManifest, ArtRgb } from "@/render/art/manifest";
 import {
   AMBIENT,
+  FOG_FLOOR_AMBIENT,
   TOWER_AMBIENT,
   contrastRatio,
   groundMean,
@@ -125,14 +126,25 @@ describe("the readability floor in the tower interior (FS-8RBQY §B.7)", () => {
     expect(darkest).toBe("ground_flags");
   });
 
-  it.each(Object.entries(MARKER_INKS))(
-    "should keep the %s marker at 3:1 or better under the tower ambient at any canvas edge",
-    (_, ink) => {
+  // the tower's own ambient, and a fog floor's, the run's (FS-SRA9J §Change: Lighter fog and lit
+  // regions, F9): a lifted ambient that fails here is reported to the owner, never passed by a change
+  const AMBIENTS: [string, number][] = [
+    ["the tower ambient", TOWER_AMBIENT],
+    ["a fog floor's ambient", FOG_FLOOR_AMBIENT],
+  ];
+
+  it.each(
+    AMBIENTS.flatMap(([under, ambient]) =>
+      Object.entries(MARKER_INKS).map(([name, ink]) => [name, under, ambient, ink] as const),
+    ),
+  )(
+    "should keep the %s marker at 3:1 or better under %s at any canvas edge",
+    (_, __, ambient, ink) => {
       for (const [w, h] of CANVASES)
         expect(
           contrastRatio(
             ink,
-            litEdgeGround(darkestMean, TOWER_AMBIENT, edgeVignetteAlpha(w, h)),
+            litEdgeGround(darkestMean, ambient, edgeVignetteAlpha(w, h)),
           ),
           `${w}×${h}`,
         ).toBeGreaterThanOrEqual(FLOOR);

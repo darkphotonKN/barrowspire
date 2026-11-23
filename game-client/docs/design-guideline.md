@@ -723,7 +723,10 @@ Marker colours are palette tokens like any other.
 **The world may stay dark.** Ambient is never lifted for readability: the hub keeps its warm
 dusk and the run its dark barrow. Lifting cannot work anyway — any multiply darkening lowers
 contrast, and against the baked ground even full light under the vignette reaches only about
-1.8:1. Ultima Online solves it the same way, with overlays that ignore lighting.
+1.8:1. Ultima Online solves it the same way, with overlays that ignore lighting. One exception,
+and it is a look, not a lift for readability: on a fog floor the ambient is the run's own while the
+fog stands, the fog carrying the dark, and the markers keep their 3:1 above it; floors without fog
+keep the tower's dark, never lifted (FS-SRA9J §Change: Lighter fog and lit regions, ADR-0090).
 
 **Daylit fields keep the floor.** A daylit field's daylight is that field's look, not a lift for
 readability. The floor holds there unchanged: markers draw above the light-map and keep at least

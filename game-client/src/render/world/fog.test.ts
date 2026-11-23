@@ -203,6 +203,13 @@ describe("the fog over each region (FS-SRA9J §C.8–§C.10)", () => {
     expect(FOG.void).toBe(1);
   });
 
+  it("veils lighter, the three states still apart: unexplored 0.6, explored 0.35, void > unexplored > explored > visible (FS-SRA9J §Change: Lighter fog and lit regions, F1)", () => {
+    expect([FOG.unexplored.alpha, FOG.explored.alpha]).toEqual([0.6, 0.35]);
+    expect(FOG.void).toBeGreaterThan(FOG.unexplored.alpha);
+    expect(FOG.unexplored.alpha).toBeGreaterThan(FOG.explored.alpha);
+    expect(FOG.explored.alpha).toBeGreaterThan(0);
+  });
+
   it("never covers a screen point twice, so the explored dim never compounds", () => {
     const grid = new RegionGrid(fixture as never);
     // a scatter of states over the fixture's regions
@@ -691,8 +698,10 @@ describe("the fog layer (FS-SRA9J §C.13)", () => {
         tweens.finish();
       }
     for (let i = 0; i < 10; i++) shown();
-    // the first draw, then A, C, B each lit in turn
-    expect(fog.redraws).toBe(4);
+    // the first draw, then each change of what is within two walkable steps (FS-SRA9J §Change:
+    // Lighter fog and lit regions, F3): A; A and C, C's first cell (5, 2) two steps from cell 3;
+    // C alone from cell 7; C and B, B's doorway (11, 2) two steps from cell 9; B alone from cell 13
+    expect(fog.redraws).toBe(6);
     expect(images.length).toBeGreaterThan(0);
   });
 
