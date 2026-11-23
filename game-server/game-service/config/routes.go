@@ -46,7 +46,7 @@ type Downstreams struct {
 * liveness key, then releases every downstream connection; call it on
 * shutdown, before redis is closed.
 **/
-func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, partySize int, outbox game.OutboxWriter, outboxWaker game.OutboxWaker, devTestRoom bool) (*gin.Engine, func() error, error) {
+func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.Channel, redisClient redis.UniversalClient, pod Pod, party PartySettings, outbox game.OutboxWriter, outboxWaker game.OutboxWaker, devTestRoom bool) (*gin.Engine, func() error, error) {
 	// gin.Default() with its access logger swapped: the default one writes the
 	// raw query, and the WebSocket connect carries the bearer token in it
 	router := gin.New()
@@ -88,11 +88,12 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 	// -- match maker --
 	matchQueueRedis := matchqueue.NewRedis(redisClient)
 	matchAnnouncer := handoff.NewRedis(redisClient)
-	// a match is as many players as a full party: one setting (FS-R82NV R8)
+	// a random match's size is its own setting, apart from the party cap
+	// (FS-R82NV §Change: Party cap 3, match size its own setting S2; ADR-0091)
 	// the queue the matchmaker reads is wrapped to set the depth gauge and time
 	// each match's wait, leaving the matchmaker itself untouched
 	measuredQueue := queuemetrics.Wrap(matchQueueRedis, pod.ID, metrics.MatchmakingQueueDepth, metrics.MatchmakingWaitSeconds)
-	matchmaker := matchmaker.NewMatchmaker(partySize, pod.ID, measuredQueue, matchAnnouncer)
+	matchmaker := matchmaker.NewMatchmaker(party.MatchSize, pod.ID, measuredQueue, matchAnnouncer)
 
 	// outbox is built once in main and shared with the worker that drains it;
 	// the worker is woken once match-end rows commit
@@ -105,8 +106,9 @@ func SetupRouter(ctx context.Context, db *sqlx.DB, addrs Downstreams, ch *amqp.C
 		gameserver.WithVisitSettler(gameService),
 		// the world channel rides the same Redis the matchmaker and handoff use (FS-5SH4G R13)
 		gameserver.WithChatBus(chatbus.NewRedis(redisClient)),
-		// the party cap is the match size; parties live in the same Redis (FS-R82NV R8, FS-NCC9J R1)
-		gameserver.WithPartySize(partySize),
+		// the party cap, PARTY_SIZE; parties live in the same Redis (FS-R82NV §Change: Party cap 3,
+		// match size its own setting S1, FS-NCC9J R1)
+		gameserver.WithPartySize(party.Cap),
 		gameserver.WithPartyStore(partystore.NewRedis(redisClient)),
 		// the presence index and the pod inbox ride it too: invites reach players on other pods
 		// (FS-R82NV R7, R9)

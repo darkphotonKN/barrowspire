@@ -699,6 +699,32 @@ func TestPartyInvite_AnsweredOnlyByItsTarget(t *testing.T) {
 	awaitParty(t, kaelenInbox, partyUpdateAction, "Kaelen, the target, still can")
 }
 
+// At a cap of 3, the production default, a leader takes two members, and the next invite is
+// refused party_full; every update carries size 3. FS-R82NV §Change: Party cap 3, match size its
+// own setting S1 and its fourth acceptance row.
+func TestPartyInvite_CapOfThree_TakesTwoMembersThenRefusesFull(t *testing.T) {
+	rig := newPartyRig(t, WithPartySize(3))
+	wren, wrenConn, wrenInbox := rig.inHub(t, "Wren")
+	_, kaelenConn, kaelenInbox := rig.inHub(t, "Kaelen")
+	idris, idrisConn, idrisInbox := rig.inHub(t, "Idris")
+	_, _, brannInbox := rig.inHub(t, "Brann")
+
+	rig.partied(t, wrenConn, wrenInbox, "Kaelen", kaelenConn, kaelenInbox)
+	inviteID := rig.invited(t, wrenConn, "Idris", idrisInbox)
+	awaitParty(t, wrenInbox, partyNoticeAction, "Wren") // sent
+	sendParty(rig.server, idrisConn, partyAcceptAction, map[string]interface{}{"invite_id": inviteID})
+
+	full := awaitUpdateAbout(t, wrenInbox, idris.ID, "Wren, on Idris joining")
+	assert.EqualValues(t, 3, full.Payload["size"], "size is the cap")
+	assert.Len(t, full.Payload["members"], 3, "the leader and two members")
+	assert.Equal(t, wren.ID.String(), full.Payload["leader_id"])
+
+	sendParty(rig.server, wrenConn, partyInviteAction, map[string]interface{}{"name": "Brann"})
+	refused := awaitParty(t, wrenInbox, partyNoticeAction, "Wren, inviting a fourth")
+	assert.Equal(t, "party_full", refused.Payload["code"])
+	assertNoParty(t, brannInbox, partyInviteAction, "Brann: a full party sends no prompt")
+}
+
 // The first invite makes the inviter the leader of a party of one, and they are
 // told so at once, like any other change, so their client shows a party before
 // anyone answers. Both the prompt and the update carry the party's cap as size,

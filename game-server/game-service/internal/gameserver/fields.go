@@ -121,7 +121,7 @@ type bootOptions struct {
 	// one-second ticker unless a test turns them by hand (FS-R82NV R14)
 	partyNow   func() time.Time
 	partyTicks <-chan time.Time
-	// the party cap, PARTY_SIZE in production (FS-R82NV R8)
+	// the party cap, PARTY_SIZE in production (FS-R82NV §Change: Party cap 3, match size its own setting S1)
 	partySize int
 	// where parties live; nil refuses every party change unavailable (FS-NCC9J R1, R8)
 	partyStore partyStore

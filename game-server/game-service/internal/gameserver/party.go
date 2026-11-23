@@ -97,7 +97,8 @@ type partySender interface {
 // partyTickInterval is how often the hub's loop ticks the registry.
 const partyTickInterval = time.Second
 
-// defaultPartySize is the party cap when the pod is given none. FS-R82NV R8.
+// defaultPartySize is the party cap when the pod is given none (tests only; production passes
+// PARTY_SIZE). FS-R82NV §Change: Party cap 3, match size its own setting S1, S4.
 const defaultPartySize = 2
 
 // partyRegistryConfig is what a registry is built from.
