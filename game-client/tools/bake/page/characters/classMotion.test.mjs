@@ -1,15 +1,36 @@
 // The playable classes' own motion on their own rigs and styles (classStyles.js): the run of
 // FS-JS7C8 R2 as each class carries it, the weapon kept out of the body and the head, and the
 // attack of FS-2325V § Change: The class attacks move with weight and cut deep.
+import { createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { ATTACKS, ATTACK_TURN_LIMIT, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
+import {
+  ATTACKS,
+  ATTACK_TURN_LIMIT,
+  RUNNING_CLASS_ANIMATIONS,
+  RUN_ANIMATIONS,
+  RUN_ARM,
+  RUN_COUNTER,
+  RUN_ELBOW,
+  RUN_LEAN,
+  add,
+  applyPose,
+  clipsFor,
+  groundPose,
+  pose,
+  runCycle,
+  walkCycle,
+} from "./clips.js";
 import { attach, createRig, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
 import { boots, coif, hair, head, legs, shortBeard } from "./anatomy.js";
 import { VIEW_DIR } from "../projection.js";
 import { FACINGS, yawFor } from "../facing.js";
-import { footing, measurePace } from "./pace.js";
+import { GROUND_EPS, footing, measurePace } from "./pace.js";
+import { RUN_PACE } from "../../../../src/render/art/animationSelect";
 import {
+  ARCHER_BUILD,
+  ARCHER_SHEET,
+  ARCHER_STYLE,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
   KNIGHT_STYLE,
@@ -811,5 +832,154 @@ describe("the mercenary cuts wider and lighter than the knight (FS-2325V § Chan
     const frames = parryClip(MERCENARY_STYLE, MERC_ANIMATIONS.parry.frames);
     for (const [bone, want] of Object.entries({ upperArmR: [-0.81, -0.54, -0.03], handR: [-0.06, 1.01, -0.8], foreArmR: [-1.37, 0, 0] }))
       want.forEach((v, j) => expect(frames.at(-1).b[bone][j], bone).toBeCloseTo(v, 9));
+  });
+});
+
+describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow R66–R71)", () => {
+  /** Her rig as cast.js builds it: her build, her legs under the tunic and her boots, whose soles every clip is grounded on. */
+  function archerRig() {
+    const rig = createRig(...ARCHER_BUILD);
+    const [, hy] = J(rig, "hips");
+    legs(rig, new THREE.MeshBasicMaterial(), { under: { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] } });
+    boots(rig, new THREE.MeshBasicMaterial(), { top: 0.21 });
+    return rig;
+  }
+  const rig = archerRig();
+  const spec = ARCHER_SHEET.animations.run;
+  const run = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations).run;
+  const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
+  const KEYS = [0, 1, 2, 3, 4, 5, 6, 7];
+  const range = (x) => Math.max(...x) - Math.min(...x);
+  const mean = (x) => x.reduce((s, v) => s + v, 0) / x.length;
+  const corr = (a, b) => {
+    const [ma, mb] = [mean(a), mean(b)];
+    const cov = a.reduce((s, v, i) => s + (v - ma) * (b[i] - mb), 0);
+    const sd = (x, mx) => Math.sqrt(x.reduce((s, v) => s + (v - mx) ** 2, 0));
+    return cov / (sd(a, ma) * sd(b, mb));
+  };
+
+  it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own (R66, R68)", () => {
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(ARCHER_SHEET.animations).not.toBe(RUNNING_CLASS_ANIMATIONS);
+    expect(ARCHER_SHEET.scale).toBe(1.5);
+    // every other clip spec as the running classes carry it (I-JS7C8-18 drops her attacks on the move)
+    for (const [anim, other] of Object.entries(RUNNING_CLASS_ANIMATIONS)) if (anim !== "run") expect(ARCHER_SHEET.animations[anim], anim).toEqual(other);
+  });
+
+  it("leans her trunk about 20° from the hips, the head brought back to look ahead and held steady (R67, D1)", () => {
+    applyPose(rig, pose());
+    rig.root.updateMatrixWorld(true);
+    const lean = () => {
+      const [h, n] = [at(rig, "hips"), at(rig, "neck")];
+      return Math.atan2(n.z - h.z, n.y - h.y) * DEG;
+    };
+    const pitch = () => {
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(rig.bones.head.matrixWorld);
+      return Math.atan2(-fwd.y, fwd.z) * DEG;
+    };
+    const [restLean, restPitch] = [lean(), pitch()];
+    const leans = [];
+    const yaw = [];
+    const roll = [];
+    for (const f of SAMPLES) {
+      const { head } = footing(rig, run, f);
+      leans.push(lean() - restLean);
+      expect(Math.abs(pitch() - restPitch), `head pitch @${f}`).toBeLessThanOrEqual(3);
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(head);
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(head);
+      yaw.push(Math.atan2(fwd.x, fwd.z));
+      roll.push(Math.atan2(up.x, up.y));
+    }
+    expect(mean(leans)).toBeGreaterThanOrEqual(19);
+    expect(mean(leans)).toBeLessThanOrEqual(21);
+    for (const [k, v] of leans.entries()) {
+      expect(v, `lean sample ${k}`).toBeGreaterThanOrEqual(18);
+      expect(v, `lean sample ${k}`).toBeLessThanOrEqual(22);
+    }
+    expect(range(yaw)).toBeLessThan(0.08);
+    expect(range(roll)).toBeLessThan(0.06);
+  });
+
+  it("covers the ground at RUN_PACE at her 16 fps: the shorter stride holds the measured pace within 1 px/s of 194 (R68, D2)", () => {
+    expect(RUN_PACE).toBe(194);
+    expect(Math.abs(measurePace(rig, run, spec.fps) - RUN_PACE)).toBeLessThan(1);
+  });
+
+  it("drives the swing knee higher than the shared run's 0.311 H and kicks the heel past its 1.45 rad fold (R69, D3)", () => {
+    // the shared run's knee peaks at 0.3111 H on her rig: hers clears it by a visible margin
+    const knee = Math.max(
+      ...SAMPLES.map((f) => {
+        footing(rig, run, f);
+        return Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H;
+      }),
+    );
+    expect(knee).toBeGreaterThan(0.32);
+    expect(Math.max(...run.flatMap((p) => [p.b.shinL[0], p.b.shinR[0]]))).toBeGreaterThan(1.45);
+  });
+
+  it("keeps the flight and the bob, never softened: a flight frame each step, a foot planted in 4 keys, a lift of 0.045 H, a bob of 0.056–0.07 H (R69, D3)", () => {
+    for (const half of [KEYS.slice(0, 4), KEYS.slice(4)]) {
+      const flights = half.filter((f) => {
+        const { L, R } = footing(rig, run, f);
+        return Math.min(L.y, R.y) > 0.02;
+      });
+      expect(flights.length, `step ${half}`).toBeGreaterThanOrEqual(1);
+    }
+    const planted = KEYS.filter((f) => {
+      const { L, R } = footing(rig, run, f);
+      return Math.min(L.y, R.y) < GROUND_EPS;
+    });
+    expect(planted.length).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...run.map((p) => p.body.y ?? 0))).toBeGreaterThanOrEqual(0.045);
+    const hips = SAMPLES.map((f) => footing(rig, run, f).hips.y / rig.H);
+    expect(range(hips)).toBeGreaterThanOrEqual(0.056);
+    expect(range(hips)).toBeLessThan(0.07);
+  });
+
+  it("turns her shoulders against the hips with the stride, 6.5–10° each way (R70)", () => {
+    const lineYaw = (l, r) => {
+      const [a, b] = [at(rig, l), at(rig, r)];
+      return Math.atan2(b.z - a.z, a.x - b.x) * DEG;
+    };
+    const shoulders = [];
+    const hips = [];
+    for (const f of SAMPLES) {
+      footing(rig, run, f);
+      shoulders.push(lineYaw("upperArmL", "upperArmR"));
+      hips.push(lineYaw("thighL", "thighR"));
+    }
+    expect(corr(shoulders, hips)).toBeLessThan(-0.8);
+    const turn = Math.max(...shoulders.map(Math.abs));
+    expect(turn).toBeGreaterThanOrEqual(6.5);
+    expect(turn).toBeLessThanOrEqual(10);
+  });
+
+  /**
+   * The sha256 of a value's JSON, to hold what main 970f2dc7 keyed byte for byte. A digest changes
+   * only when the keys do: one that fails here means another class's run, or her other clips, moved.
+   */
+  const digest = (x) => createHash("sha256").update(JSON.stringify(x)).digest("hex");
+
+  it("leaves the shared run, and the knight's, the wizard's and the mercenary's sheets and clips, as on main key for key (R66)", () => {
+    expect([RUN_LEAN, RUN_ARM, RUN_ELBOW, RUN_COUNTER]).toEqual([0.24, 0.85, -1.57, 0.14]);
+    expect(RUN_ANIMATIONS).toEqual({ run: { frames: 8, fps: 14, loop: true, speed: 2.5 } });
+    expect(RUNNING_CLASS_ANIMATIONS).toEqual({
+      idle: { frames: 6, fps: 5, loop: true },
+      walk: { frames: 8, fps: 10, loop: true },
+      attack: { frames: 7, fps: 12, loop: false },
+      death: { frames: 7, fps: 9, loop: false },
+      run: { frames: 8, fps: 14, loop: true, speed: 2.5 },
+      walk_attack: { frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75 },
+      backpedal_attack: { frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75, speed: 0.5 },
+    });
+    // the shared run on a plain style: RUN_STEP and the shared keys, which clips.test.mjs also checks key for key
+    expect(digest({ RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, plain: runCycle({ attack: "slash", hold: pose() }) })).toBe("61942c2885748ec4c0c0845b1730e8ddd9ebd17452255ffd2ae8c66eeff23874");
+    const others = { knight: "2003ed6258943506c9f149e513e21da6f4788f94211d14a544e813f5f318d48a", wizard: "aea609c5d4078d06bde2cc6f580905681b9d20f2e1076b05897eac934f761d02", mercenary: "2c80ffd6f0cac2361e2499744416e78255f4195e561b5bf060c2659daf5356f2" };
+    for (const { name, style, sheet } of CLASSES) expect(digest({ sheet, clips: clipsFor(style, sheet.animations) }), name).toBe(others[name]);
+  });
+
+  it("leaves her idle, walk, attack and death keys as on main (R78)", () => {
+    const { idle, walk, attack, death } = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations);
+    expect(digest({ idle, walk, attack, death })).toBe("dc90b9547a617074e84472f0d146587ec6a9f260fd5b55fce9d8dfbe7202ee54");
   });
 });

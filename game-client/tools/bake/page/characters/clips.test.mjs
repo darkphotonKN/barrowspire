@@ -435,12 +435,12 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     boots(rig, new THREE.MeshBasicMaterial(), { top: 0.21 });
     return rig;
   }
-  // the archer's style as cast.js keys it, simplified to what the clips read
+  // the archer's style as cast.js keys it, simplified to what the walk and the attacks read (her
+  // sprint is her own run, on her real style: classMotion.test.mjs "the archer's sprint")
   const archer = {
     attack: "shot",
     hold: pose({ upperArmL: [0.02, 0, 0.04], foreArmL: [-0.3, 0, 0], handL: [-0.9, 0, 0], foreArmR: [-0.1, 0, 0] }),
     walk: { arms: [0.7, 1], lean: 0.06 },
-    run: { arms: [0.3, 1], elbow: [0.215, 1] },
   };
   const plain = { attack: "slash", hold: pose() };
   const rig = archerLegs();
@@ -630,16 +630,6 @@ describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {
     expect(corr(rx(run, "upperArmR"), rx(run, "thighR"))).toBeLessThan(-0.8);
     expect(corr(rx(run, "upperArmL"), rx(run, "thighL"))).toBeLessThan(-0.8);
     expect(corr(rx(run, "upperArmR"), rx(run, "thighL"))).toBeGreaterThan(0.8);
-  });
-
-  it("keeps a class's own arm on its own side all the way round: the bow arm's short swing and near-straight elbow in every frame", () => {
-    const bow = { hold: pose(), run: archer.run };
-    for (const clip of [runCycle(bow)])
-      for (const p of clip) {
-        expect(Math.abs(p.b.upperArmL[0])).toBeLessThanOrEqual(0.26);
-        expect(p.b.foreArmL[0]).toBeGreaterThan(-0.5);
-        expect(p.b.foreArmR[0]).toBeLessThan(-1);
-      }
   });
 
   it("the run: the upper body turns against the hips with the stride", () => {

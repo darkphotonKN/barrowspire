@@ -355,34 +355,38 @@ function steadyNeck(...chain) {
  * swinging across the body (FS-JS7C8 R2, owner 2026-11-12: "武器可以往內側擺動一些"). `style.run.hold`, when
  * a class gives one, carries the weapon in the run in place of `style.hold` (the idle's carry
  * hangs the arm at the side, which the pump would add to: a sword or sceptre arm then pumps from
- * the shoulder like a free arm, its wrist setting the weapon's angle). `style.runExtra(i)` adds a
- * class's own.
+ * the shoulder like a free arm, its wrist setting the weapon's angle). `style.run.legs`, when a class
+ * gives one, is its own step in {@link RUN_STEP}'s shape, any of its rows in place of the shared
+ * ones (the archer's sprint, FS-JS7C8 § Change: The archer's sprint and low-ready bow R68, R69: a
+ * shorter stride with a higher knee, which `stride`, scaling every thigh key, cannot give).
+ * `style.runExtra(i)` adds a class's own.
  */
 export function runCycle(style) {
   const r = { stride: 1, knee: 1, arms: [1, 1], elbow: [1, 1], wrist: [0, 0], cross: [0, 0], lean: RUN_LEAN, twist: 1, lift: 1, ...(style.run ?? {}) };
+  const step = { ...RUN_STEP, ...r.legs };
   const half = [0, 1, 2, 3].map((i) => {
     const c = swing(i);
     const hipsY = 0.12 * c * r.twist;
     // the chest turns back past square, with the arms: its world turn is -RUN_COUNTER·c
     const upperY = -(0.12 + RUN_COUNTER) * c * r.twist;
-    const leg = (name, k) => [RUN_STEP[name][i] * k, 0, 0];
-    const hips = [0, hipsY, RUN_STEP.hipsZ[i]];
-    const spine = [r.lean * 0.8, upperY * 0.4, RUN_STEP.chestZ[i] * 0.5];
-    const chest = [r.lean * 0.2, upperY * 0.6, RUN_STEP.chestZ[i] * 0.5];
+    const leg = (name, k) => [step[name][i] * k, 0, 0];
+    const hips = [0, hipsY, step.hipsZ[i]];
+    const spine = [r.lean * 0.8, upperY * 0.4, step.chestZ[i] * 0.5];
+    const chest = [r.lean * 0.2, upperY * 0.6, step.chestZ[i] * 0.5];
     return pose(
       {
         thighR: leg("thighR", r.stride),
         thighL: leg("thighL", r.stride),
         shinR: leg("shinR", r.knee),
         shinL: leg("shinL", r.knee),
-        footR: [RUN_STEP.footR[i] + RUN_STEP.thighR[i] * (1 - r.stride) + RUN_STEP.shinR[i] * (1 - r.knee), 0, 0],
-        footL: [RUN_STEP.footL[i] + RUN_STEP.thighL[i] * (1 - r.stride) + RUN_STEP.shinL[i] * (1 - r.knee), 0, 0],
+        footR: [step.footR[i] + step.thighR[i] * (1 - r.stride) + step.shinR[i] * (1 - r.knee), 0, 0],
+        footL: [step.footL[i] + step.thighL[i] * (1 - r.stride) + step.shinL[i] * (1 - r.knee), 0, 0],
         hips,
         spine,
         chest,
         neck: steadyNeck(hips, spine, chest),
       },
-      { y: RUN_STEP.lift[i] * r.lift },
+      { y: step.lift[i] * r.lift },
     );
   });
   // the arms over the whole cycle, after the mirror, so each arm keeps its own swing and bend

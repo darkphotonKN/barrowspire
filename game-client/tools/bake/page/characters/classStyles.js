@@ -156,8 +156,46 @@ export const BERSERKER_STYLE = {
 
 export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
 
-/** The archer's sheet: the run and backpedal_attack clips (FS-JS7C8), at 1.5x (ADR-0076). */
-export const ARCHER_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
+/**
+ * The archer's sprint's forward lean (FS-JS7C8 § Change: The archer's sprint and low-ready bow
+ * R67, D1, the owner: "跑更快的話身體可能會更加前傾"): twice the shared RUN_LEAN, tilting her
+ * hips-to-neck line about 20° (20.2–20.5° measured on her rig; the shared run's is about 10°). The
+ * neck takes it back out (clips.js steadyNeck), so her head still looks ahead.
+ */
+export const ARCHER_SPRINT_LEAN = 0.48;
+
+/**
+ * The archer's sprint's legs (R68, R69; D2, D3), the rows of clips.js RUN_STEP she keys her own
+ * (`run.legs`), right foot planted: contact, down, push, flight. Played at 16 fps, not the shared 14,
+ * over a stride about 12% shorter, so her measured pace stays at RUN_PACE (194.09 world px/s at 16
+ * fps against the shared keys' 221.39 there): the stance thigh lands less far ahead (−0.39, was
+ * −0.46) and pushes off less far behind (0.275, was 0.33). The swing leg drives its knee higher
+ * (the thigh to −0.85 as it passes, was −0.52; the knee peaks at 0.335 H, was 0.311) and kicks its
+ * heel further up behind (the shin folds to 1.8 under the seat, was 1.45; just off the toe only
+ * 1.4, since 1.45 there kicks the heel out through the cloak's hem), then paws back down to land.
+ * The stance knee gives a little more in the down (0.72, was 0.65) and the flight lifts higher
+ * (0.06 H, was 0.045), so the bob is never softer than the shared run's (0.062 H, was 0.055; a
+ * softer bob was reverted 2026-11-12, "像浮在上面"). Each foot angle keeps the world sole angle the
+ * shared step gives it (thigh + shin + foot), so the stance foot still lands on its heel and pushes
+ * off its toes.
+ */
+export const ARCHER_SPRINT_STEP = {
+  thighR: [-0.39, -0.12, 0.275, 0.3],
+  shinR: [0.3, 0.72, 0.35, 1],
+  footR: [-0.06, -0.6, -0.025, -0.4],
+  thighL: [0.24, -0.4, -0.85, -0.62],
+  shinL: [1.4, 1.8, 1.5, 0.7],
+  footL: [-0.94, -0.91, -0.45, -0.18],
+  lift: [0, 0, 0, 0.06],
+};
+
+/**
+ * The archer's sheet at 1.5x (ADR-0076): the running class's clips (FS-JS7C8), her run her own
+ * sprint (§ Change: The archer's sprint and low-ready bow R68): 16 fps over a shorter stride, so its
+ * measured pace stays at RUN_PACE, the cloth carried at the shared run's speed. A clip set of her
+ * own: RUNNING_CLASS_ANIMATIONS, the wizard's, is not changed.
+ */
+export const ARCHER_SHEET = { animations: { ...RUNNING_CLASS_ANIMATIONS, run: { ...RUNNING_CLASS_ANIMATIONS.run, fps: 16 } }, scale: 1.5 };
 
 export const ARCHER_STYLE = {
   attack: "shot",
@@ -169,12 +207,11 @@ export const ARCHER_STYLE = {
     foreArmR: [-0.1, 0, 0],
   }),
   walk: { arms: [0.7, 1], lean: 0.06 },
-  // the bow arm swings shorter and near straight, so the longbow hangs along the side as in the
-  // walk instead of sweeping across the body; the legs keep the shared stride the paces are
-  // measured on (backpedal_attack's legs are the walk's run backward, clips.js backpedalCycle).
-  // In absolute terms the jog's (a 0.25 rad swing, a 0.34 rad elbow) under the fast run's
-  // RUN_ARM 0.85 and RUN_ELBOW -1.57: the bow arm keeps its short swing while the draw arm pumps
-  run: { arms: [0.3, 1], elbow: [0.215, 1] },
+  // her sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow): the trunk about 20°
+  // forward ({@link ARCHER_SPRINT_LEAN}) over her own legs ({@link ARCHER_SPRINT_STEP}). The arms
+  // are still the shared pump's, the bow arm's swing short and near straight (I-JS7C8-17 carries the
+  // bow two-handed instead)
+  run: { arms: [0.3, 1], elbow: [0.215, 1], lean: ARCHER_SPRINT_LEAN, legs: ARCHER_SPRINT_STEP },
 };
 
 /**

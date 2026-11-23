@@ -6,6 +6,7 @@ import { applyPose, clipsFor, groundPose, pose, simulateSprings, walkCycle, ANIM
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
+  ARCHER_SHEET,
   ARCHER_STYLE,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
@@ -328,7 +329,7 @@ describe("thighs worn under a garment (anatomy.js legs({ under }))", () => {
 });
 
 /** Each class's clip specs as cast.js bakes its sheet. */
-const SHEETS = { knight: KNIGHT_SHEET.animations, archer: RUNNING_CLASS_ANIMATIONS, wizard: WIZARD_SHEET.animations, mercenary: MERCENARY_SHEET.animations };
+const SHEETS = { knight: KNIGHT_SHEET.animations, archer: ARCHER_SHEET.animations, wizard: WIZARD_SHEET.animations, mercenary: MERCENARY_SHEET.animations };
 
 /**
  * The four classes' garments as cast.js cuts them (the knight's hauberk to the knee, open at the
