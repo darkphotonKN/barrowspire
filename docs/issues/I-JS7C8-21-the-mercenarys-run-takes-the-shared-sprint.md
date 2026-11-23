@@ -41,21 +41,21 @@ are not touched. His sword arm keeps today's run carry in this slice; I-JS7C8-23
 
 ## Acceptance Criteria
 
-- [ ] RED first: the archer's and the mercenary's digests are committed green against
+- [x] RED first: the archer's and the mercenary's digests are committed green against
       `2018f786`. His sprint tests are red against today's run: lean 9.96–10.26° (needs 19–21°
       mean, 18–22° every sample); 14 fps (needs 16); knee 0.311 H (needs > 0.32); shin fold 1.45
       rad (needs > 1.45).
-- [ ] The archer's run keys, `ARCHER_SHEET` and her other clips match their digests. The shared
+- [x] The archer's run keys, `ARCHER_SHEET` and her other clips match their digests. The shared
       run's digest (:995) and the knight's and the wizard's digests (:996) are unchanged.
-- [ ] One shared definition of the sprint's legs, lean and run spec, read by both classes.
-- [ ] His run, on his rig as cast.js builds him: the lean bands; the head's pitch within 3° of
+- [x] One shared definition of the sprint's legs, lean and run spec, read by both classes.
+- [x] His run, on his rig as cast.js builds him: the lean bands; the head's pitch within 3° of
       rest, yaw range < 0.08 rad, roll < 0.06; knee > 0.32 H; shin > 1.45 rad; a flight frame per
       step (both soles > 0.02 H); ≥ 4 planted keys; lift ≥ 0.045 H; bob 0.056–0.07 H; the pelvis
       once a step; shoulders anti-correlated with the hips (< −0.8), peaking at 6.5–10°.
-- [ ] His pace at 16 fps within 180–220 and within 3 px/s of `RUN_PACE` 194; the value recorded.
-- [ ] His idle, walk, attack, death and parry match their digests. The carry-out-of-body and
+- [x] His pace at 16 fps within 180–220 and within 3 px/s of `RUN_PACE` 194; the value recorded.
+- [x] His idle, walk, attack, death and parry match their digests. The carry-out-of-body and
       normal-grip tests pass on his run.
-- [ ] `npm test`, `npm run lint`, `npx tsc --noEmit` in `game-client` pass.
+- [x] `npm test`, `npm run lint`, `npx tsc --noEmit` in `game-client` pass.
 
 ## Blocked By
 
@@ -81,3 +81,36 @@ shared sprint, his run, his pace and "the knight's and the wizard's run tests pa
   `RUN_STEP`; `RUNNING_MERC_ANIMATIONS`' run spec)
 - `game-client/tools/bake/page/characters/classMotion.test.mjs` (the digests, his sprint describe,
   his rows out of `CLASSES`' run describe)
+
+## Built (2026-11-23, agent; review round 1 the same day)
+
+The archer's sprint is defined once in `classStyles.js`: `SPRINT_STEP` (the legs), `SPRINT_LEAN`
+(the trunk about 20° forward) and `SPRINT_RUN` (the 16 fps run spec). `ARCHER_STYLE.run` and
+`ARCHER_SHEET` read it, and so do `MERCENARY_STYLE.run` and `MERCENARY_SHEET`. No new `runCycle`
+parameter. `RUN_STEP`, `RUN_LEAN`, `RUN_ARM`, `RUN_ELBOW`, `RUN_COUNTER`, `RUN_ANIMATIONS` and
+`RUNNING_CLASS_ANIMATIONS` are unchanged.
+
+- **Digests (R92, R103).** Taken at `2018f786` (`classMotion.test.mjs`): the archer's run keys and
+  `ARCHER_SHEET`, and the mercenary's idle, walk, attack, death and parry. They stay green through
+  I-JS7C8-23 and -24. The shared run's digest and the knight's and the wizard's are unchanged.
+- **His sprint, on his rig.** The archer's generic sprint tests run for both classes. On his rig:
+  lean 20.20–20.50°, knee 0.335 H, bob 0.062 H. He leaves `CLASSES`' shared fast-run describe
+  (`SHARED_RUNNERS` is the knight and the wizard, unchanged). Review round 1 dropped the unread
+  `pump` on his `CLASSES` entry and rewrote the comment over it.
+- **His pace (R95, option (a)).** `measurePace` reads **196.58** world px/s at 16 fps on his rig
+  and style. That is inside 180–220 and 2.58 px/s from `RUN_PACE` 194. `RUN_PACE` is not changed.
+  If the owner picks (b) or (c) at I-JS7C8-25, the work comes back to this slice.
+- **The Duelist's robe (owner 2026-11-23, 「改 Duelist 長袍」; R114).** Under the sprint his heel
+  kick came out through the robe's back panel by 3.62 px on run key 1 (the limit is 0.667). Only
+  the back panel's spring changes (`mercLooks.js` `ROBE_BACK_CARRY` on `skirtB`): `drag` 0.2 → 0.4
+  and `limit` 0.8 → 1.1 rad. The run then reads 0.23 px at worst (key 2), and every other clip
+  reads 0. The back hem in the run is now 0.224–0.316 H up (was 0.156–0.254) and 0.172–0.219 H
+  behind (was 0.133–0.189). In the walk it is 0.191–0.198 H up (was 0.176–0.193). At rest the robe
+  hangs as before: the back hem's centre 0.171 H up and 0.118 H behind the hips bone in the idle.
+  The front and side panels, the base's coat and the Sellsword's keep the shared spring.
+  Review round 1: the carry now goes through a per-bone seam on `anatomy.js` `skirtBones` (a
+  panel's own options under its bone's name), passed by the mercenary builder as the look's
+  `skirtSprings` options (`cast.js`). Nothing mutates `rig.springs` after the fact any more.
+  `mercLooks.test.mjs` asserts the seam, the Duelist's `skirtB` at 0.4 / 1.1 with his other panels
+  shared, and every panel of the base and the Sellsword on the shared 0.2 / 0.8. No pixel change
+  (`npm run bake -- --check` clean).
