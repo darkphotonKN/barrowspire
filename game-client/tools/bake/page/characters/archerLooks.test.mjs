@@ -255,6 +255,115 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     });
     return out;
   };
+  /**
+   * Every edge of every drawn mesh of the bow (the stave, its grip, the Hunter's nock caps, the
+   * string's two strands and, when one is nocked, the arrow), as model-space segments. The string's
+   * strands are 4-sided cylinders with vertices only at the tips and the nock (gear.js `longbow`),
+   * so their long stretches are only seen along their edges.
+   */
+  const bowSegments = (bow) => {
+    const out = [];
+    bow.traverse((o) => {
+      if (!o.isMesh || !shown(o)) return;
+      const pos = o.geometry.attributes.position;
+      const vs = Array.from({ length: pos.count }, (_, i) => new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
+      const index = o.geometry.index;
+      const tri = (k) => (index ? index.getX(k) : k);
+      const seen = new Set();
+      const count = index ? index.count : pos.count;
+      for (let k = 0; k + 2 < count; k += 3)
+        for (const [a, b] of [
+          [tri(k), tri(k + 1)],
+          [tri(k + 1), tri(k + 2)],
+          [tri(k + 2), tri(k)],
+        ]) {
+          const key = a < b ? `${a},${b}` : `${b},${a}`;
+          if (seen.has(key) || vs[a].distanceToSquared(vs[b]) < 1e-12) continue;
+          seen.add(key);
+          out.push([vs[a], vs[b]]);
+        }
+    });
+    return out;
+  };
+  /** Points along every segment, no further apart than `step` (model units), both ends included. */
+  const along = (segments, step) =>
+    segments.flatMap(([a, b]) => {
+      const n = Math.max(1, Math.ceil(a.distanceTo(b) / step));
+      return Array.from({ length: n + 1 }, (_, k) => a.clone().lerp(b, k / n));
+    });
+  /**
+   * The least distance any of `pts` lies outside each of the `solid` tubes (clearance.js
+   * `outside`), per mesh; null for a mesh no point reaches along its length.
+   */
+  const leastOutside = (solid, pts) =>
+    solid.map((m) => {
+      const { rings, mids } = tubeNow(m);
+      let worst = null;
+      for (const v of pts) {
+        const o = outside(rings, mids, v);
+        if (o !== null && (worst === null || o < worst)) worst = o;
+      }
+      return worst;
+    });
+  /** Whether segment a–b crosses triangle p–q–r (Möller–Trumbore, the segment's ends included). */
+  const crosses = (a, b, p, q, r) => {
+    const d = new THREE.Vector3().subVectors(b, a);
+    const e1 = new THREE.Vector3().subVectors(q, p);
+    const e2 = new THREE.Vector3().subVectors(r, p);
+    const h = new THREE.Vector3().crossVectors(d, e2);
+    const det = e1.dot(h);
+    if (Math.abs(det) < 1e-12) return false;
+    const s = new THREE.Vector3().subVectors(a, p);
+    const u = s.dot(h) / det;
+    if (u < 0 || u > 1) return false;
+    const qv = new THREE.Vector3().crossVectors(s, e1);
+    const v = d.dot(qv) / det;
+    if (v < 0 || u + v > 1) return false;
+    const t = e2.dot(qv) / det;
+    return t >= 0 && t <= 1;
+  };
+  /** A mesh's triangles as posed (a skinned one through its bones), model space. */
+  const trianglesOf = (m) => {
+    const pos = m.geometry.attributes.position;
+    const vs = Array.from({ length: pos.count }, (_, i) => (m.isSkinnedMesh ? m.getVertexPosition(i, new THREE.Vector3()) : new THREE.Vector3().fromBufferAttribute(pos, i)).applyMatrix4(m.matrixWorld));
+    const index = m.geometry.index;
+    const count = index ? index.count : pos.count;
+    const tri = (k) => vs[index ? index.getX(k) : k];
+    return Array.from({ length: Math.floor(count / 3) }, (_, k) => [tri(3 * k), tri(3 * k + 1), tri(3 * k + 2)]);
+  };
+  /** How many of `segments` cross any of `triangles` (boxes first, so most pairs are skipped). */
+  const crossings = (segments, triangles) => {
+    const box = new THREE.Box3();
+    for (const t of triangles) for (const v of t) box.expandByPoint(v);
+    const tbox = triangles.map((t) => new THREE.Box3().setFromPoints(t));
+    const sbox = new THREE.Box3();
+    let n = 0;
+    for (const [a, b] of segments) {
+      sbox.makeEmpty().expandByPoint(a).expandByPoint(b);
+      if (!sbox.intersectsBox(box)) continue;
+      if (triangles.some((t, k) => sbox.intersectsBox(tbox[k]) && crosses(a, b, ...t))) n++;
+    }
+    return n;
+  };
+  /** The cloak (anatomy.js `cloak` tags it) and the quiver's meshes, which the bow must not cross. */
+  const backMeshes = (rig) => {
+    let cloakMesh;
+    rig.root.traverse((o) => o.userData.cloak && (cloakMesh = o));
+    return { cloak: cloakMesh, quiver: quiverMeshes(rig) };
+  };
+  /** The legs and the tunic (skinned), and the boots' feet and shafts riding the foot and shin bones. */
+  const legSolids = (rig) => {
+    const solid = [];
+    rig.root.traverse((o) => {
+      if (!o.isMesh || !o.geometry.userData.tube) return;
+      if (o.isSkinnedMesh ? o.userData.leg || o.userData.garment : /^(shin|foot)[LR]$/.test(boneOf(o))) solid.push(o);
+    });
+    return solid;
+  };
+  const boneOf = (o) => {
+    for (let p = o.parent; p; p = p.parent) if (p.isBone) return p.name;
+    return "";
+  };
   /** The top of the meshes the head bone carries (the cowl, or the Hunter's hair). */
   const crown = (rig) => {
     let top = -Infinity;
@@ -369,35 +478,73 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     }
   });
 
-  it.each(FIGURES)("%s: no point of the bow passes through a leg, a boot or the tunic on any baked run frame (R76)", (sheet, r) => {
+  it.each(FIGURES)("%s: no point of the bow, its string or its arrow passes through a leg, a boot or the tunic on any baked run frame (R76)", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
-    const bone = (o) => {
-      for (let p = o.parent; p; p = p.parent) if (p.isBone) return p.name;
-      return "";
-    };
-    // the legs and the tunic (skinned), and the boots' feet and shafts riding the foot and shin bones
-    const solid = [];
-    rig.root.traverse((o) => {
-      if (!o.isMesh || !o.geometry.userData.tube) return;
-      if (o.isSkinnedMesh ? o.userData.leg || o.userData.garment : /^(shin|foot)[LR]$/.test(bone(o))) solid.push(o);
-    });
+    const solid = legSolids(rig);
     expect(solid.length).toBeGreaterThanOrEqual(7);
+    const bow = bowFrame(rig);
+    const frames = poses.filter((p) => p.anim === "run");
+    expect(frames).toHaveLength(8);
+    // sampled along every edge, at most 0.005 H apart: the string's long stretches included
+    const step = 0.005 * rig.H;
+    for (const p of frames) {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      const pts = along(bowSegments(bow), step);
+      const least = leastOutside(solid, pts);
+      // the measure ran: the bow comes level with at least one of them on every frame
+      expect(least.some((w) => w !== null), `frame ${p.i}: no leg, boot or tunic measured`).toBe(true);
+      for (const [k, w] of least.entries()) if (w !== null) expect(w, `frame ${p.i}: the bow inside ${boneOf(solid[k]) || "the tunic or a leg"}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("finds a bow pushed into a leg: the same sampled points, moved so the grip sits on the right thigh's axis, read inside it", () => {
+    const { rig, poses } = characterPoses(base);
+    const solid = legSolids(rig);
+    const bow = bowFrame(rig);
+    poses.find((p) => p.anim === "run" && p.i === 0).apply();
+    rig.root.updateMatrixWorld(true);
+    const thigh = solid.find((m) => m.isSkinnedMesh && m.userData.leg && tubeNow(m).mids.some((c) => c.x < 0));
+    const { mids } = tubeNow(thigh);
+    const into = mids[Math.floor(mids.length / 4)].clone().sub(new THREE.Vector3(0, -BOW_GRIP * rig.H, 0).applyMatrix4(bow.matrixWorld));
+    const pts = along(bowSegments(bow), 0.005 * rig.H).map((v) => v.add(into));
+    expect(Math.min(...leastOutside(solid, pts).filter((w) => w !== null))).toBeLessThan(0);
+  });
+
+  it.each(FIGURES)("%s: the bow, its string and its arrow cross neither the cloak nor the quiver on any baked run frame", (sheet, r) => {
+    const { rig, poses } = characterPoses(r);
+    const { cloak, quiver } = backMeshes(rig);
+    expect(cloak).toBeTruthy();
+    expect(quiver.length).toBeGreaterThanOrEqual(3);
     const bow = bowFrame(rig);
     const frames = poses.filter((p) => p.anim === "run");
     expect(frames).toHaveLength(8);
     for (const p of frames) {
       p.apply();
       rig.root.updateMatrixWorld(true);
-      const pts = bowPoints(bow);
-      for (const m of solid) {
-        const { rings, mids } = tubeNow(m);
-        let worst = Infinity;
-        for (const v of pts) {
-          const o = outside(rings, mids, v);
-          if (o !== null) worst = Math.min(worst, o);
-        }
-        expect(worst, `frame ${p.i}: the bow inside ${bone(m) || "the tunic or a leg"}`).toBeGreaterThan(0);
-      }
+      const segments = bowSegments(bow);
+      expect(crossings(segments, trianglesOf(cloak)), `frame ${p.i}: edges through the cloak`).toBe(0);
+      expect(crossings(segments, quiver.flatMap(trianglesOf)), `frame ${p.i}: edges through the quiver`).toBe(0);
     }
+  });
+
+  it("finds a bow pushed into the cloak and the quiver: the same edges, moved onto the cloak's back and onto the quiver's case, cross them", () => {
+    const { rig, poses } = characterPoses(base);
+    const { cloak, quiver } = backMeshes(rig);
+    const bow = bowFrame(rig);
+    poses.find((p) => p.anim === "run" && p.i === 0).apply();
+    rig.root.updateMatrixWorld(true);
+    const segments = bowSegments(bow);
+    const grip = new THREE.Vector3(0, -BOW_GRIP * rig.H, 0).applyMatrix4(bow.matrixWorld);
+    const moved = (to) => {
+      const d = to.clone().sub(grip);
+      return segments.map(([a, b]) => [a.clone().add(d), b.clone().add(d)]);
+    };
+    const cloakTris = trianglesOf(cloak);
+    const onCloak = cloakTris[Math.floor(cloakTris.length / 2)];
+    expect(crossings(moved(onCloak[0].clone().add(onCloak[1]).add(onCloak[2]).divideScalar(3)), cloakTris)).toBeGreaterThan(0);
+    const caseMesh = quiver.find((o) => o.material.name === "F.leatherDouble");
+    const centre = new THREE.Vector3().setFromMatrixPosition(caseMesh.matrixWorld);
+    expect(crossings(moved(centre), quiver.flatMap(trianglesOf))).toBeGreaterThan(0);
   });
 });

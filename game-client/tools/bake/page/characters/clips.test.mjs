@@ -408,7 +408,6 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
       expect(m.bowAhead, `key ${i}`).toBeGreaterThanOrEqual(0.4);
     }
   });
-
 });
 
 describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {

@@ -937,6 +937,24 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     expect(range(hips)).toBeLessThan(0.07);
   });
 
+  it("raises and lowers the pelvis once a step on the baked keys: two rises and two falls over the cycle, highest in each step's flight (R69)", () => {
+    // the 8 keys the bake draws, as the shared run's test reads them (clips.test.mjs)
+    const heights = KEYS.map((f) => footing(rig, run, f).hips.y);
+    const n = heights.length;
+    const peaks = KEYS.filter((_, i) => heights[i] > heights[(i + n - 1) % n] && heights[i] >= heights[(i + 1) % n]);
+    const dips = KEYS.filter((_, i) => heights[i] < heights[(i + n - 1) % n] && heights[i] <= heights[(i + 1) % n]);
+    expect([peaks.length, dips.length]).toEqual([2, 2]);
+    // one peak in each step (keys 0–3 and 4–7), at or next to that step's flight key (3 and 7)
+    for (const [k, flight] of [
+      [0, 3],
+      [1, 7],
+    ]) {
+      const f = peaks[k];
+      const d = Math.min(Math.abs(f - flight), 8 - Math.abs(f - flight));
+      expect(d, `step ${k} peak @${f}`).toBeLessThanOrEqual(1);
+    }
+  });
+
   it("turns her shoulders against the hips with the stride, 6.5–10° each way (R70)", () => {
     const lineYaw = (l, r) => {
       const [a, b] = [at(rig, l), at(rig, r)];

@@ -523,6 +523,10 @@ describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guar
     }
   });
 
+  // a control on the measure, not on a sheet: the archer's sheets no longer carry backpedal_attack
+  // (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79), but her cloak, fed the shared
+  // clip set's backward step with its old cloth (`before`), is still a cloak the guard must catch
+  // a heel through, so she stays beside the knight here
   it.each(["knight", "archer"])("reads the %s's cloak as it hung on the backward step before: pressed forward against the legs (the cloth dragged back at half a walk), the heels through it", (cls) => {
     const before = { ...RUNNING_CLASS_ANIMATIONS, backpedal_attack: { ...RUNNING_CLASS_ANIMATIONS.backpedal_attack, speed: -0.5 } };
     const { rig, posesOf } = dressed(cls, { specs: before });
