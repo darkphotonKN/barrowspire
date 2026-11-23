@@ -801,3 +801,155 @@ over her cowl and the Berserker's idle and walk axe floors are accepted as they 
 ## Change: The wizard's sprint and pointed cast → FS-JS7C8
 
 ## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8
+
+## Change: The Spellwarden's long staff planted and swung heavy
+Status: work-order
+Date: 2026-11-23
+
+> Anchored here: this FS owns "Specialization looks" (`game-client/SPECIFICATION.md` "### Character"),
+> and the Spellwarden's warding staff and how she carries it are this FS's (§Change: Looks v2 R56,
+> R62; kept through the sprint integration, "Integrated with FS-JS7C8, 2026-11-23"). The line is
+> unchanged. Promoted from the thread under the owner's approval of the plan (「好 就照這樣做」):
+> every value below not quoted from him is a **charter default**, with its reason. Art calls inside
+> them stay Claude's (R12), gated on the contact sheet.
+
+The owner (2026-11-23): 「但轉職變拿長杖後 站立不動時應該把長杖垂直頂在地面上不用拿在空中 但也不用到垂直
+可以往外有一點點角度 然後攻擊時 不用像短杖要伸直 可以有一點前傾的角度因為長杖比較重的話不可能跟短杖一樣伸直攻擊」
+(once she specializes into the long staff, standing still she should plant it on the ground, not
+hold it in the air; not quite vertical, a little angle outward; and attacking she need not reach
+straight out as with the short staff: a little forward tilt, because a heavy long staff can't be
+thrust out straight like a short one).
+
+### Facts this change rests on
+
+- Only the Spellwarden carries a long staff: the warding staff (`mageKit.js` `STAFF`: the shoe's
+  point 0.46 H under the fist's grip, the finial's tip 0.62 H over it). The Pyromancer's brazier
+  rod and the base wizard's sceptre are short.
+- Her idle today is `WARD_HOLD` (`classStyles.js`) under the shared idle's breathing: the staff 2–7°
+  off vertical, its shoe 0.088–0.104 H over the ground, the fist's grip 0.545–0.564 H up, the
+  elbow bent 63–66° (measured on her rig at main 4d56d258).
+- Her cast is clips.js `staffCast` (the wizard's thrust before the pointed cast, shared with the
+  Pyromancer): on the strike (keys 3–4) the arm reached out all but straight (elbow 11° and 14°),
+  the staff stood 12.6° and 15.5° off vertical; key 5 eases back (elbow 57°).
+- Her walk carry is `WARD_HOLD` too; her run carry is `WARD_RUN_HOLD` under the sprint, her death
+  `WARD_DEATH`.
+- Her gown is cut to a bell, 0.19 H across and 0.17 H fore and aft at the hem (`mageLooks.js`
+  `BELL`), so it covers her feet: a shoe stood beside her right foot is under the gown. Her arm
+  (shoulder to the fist's grip) reaches about 0.36 H at full stretch, and the fist holds the staff
+  square to the hand, so with the shoe on the ground the fist's grip is 0.46 H up the staff,
+  about 0.45 H over the ground at the tilt asked for.
+- Her frame box is 300×255 at 1.5x (Looks v2).
+
+### Requirements
+
+**§M. The planted staff (her idle)**
+
+74. **The shoe on the ground** *(the owner's 「垂直頂在地面上不用拿在空中」)*. On every idle frame the
+    staff's iron shoe stands on the ground: its point between 0 and 0.003 H over it (about a
+    quarter of a 1x px), never under it, never floating. The breathing never lifts or sinks it:
+    the staff stays where it is planted (its point moves at most 0.003 H between frames) and the
+    hand follows it, each idle frame's arm keyed to the planted staff.
+75. **A little out from vertical** *(the owner's 「不用到垂直 可以往外有一點點角度」; charter default
+    ~10°, reason: "a little" angle that still reads as leaning, not as a plumb pole)*. The staff
+    stands 8–12° off vertical on every idle frame, its top leaning outward, away from her (to her
+    right), never in toward her head.
+76. **Where it is planted** *(charter default — reason: "beside her right foot" under a bell gown
+    that covers the foot)*. The shoe stands just outside her gown's hem, ahead of and to the right
+    of her right foot; the staff, its shoe and its head clear of the gown, the scapular, her legs
+    and boots on every idle frame, as R62's guards hold them.
+77. **The hand on the grip, the arm relaxed** *(charter default — reason: a planted staff is
+    leaned on, not held up)*. The right fist holds the staff on its leather grip, as it is mounted
+    (the staff's measures fix the grip at about 0.45 H over the ground: the top of the thigh,
+    about hip height on her figure); the arm hangs with the elbow a little bent (15–35°, short of
+    locked straight); the right shoulder may drop and come forward a little to reach (the
+    clavicle, part of the arm's chain). The wrist turns no further than any carry does
+    (`CLEAVE_CARRY`, 1.3 rad) and the fist keeps its thumb side where the forearm has it. The
+    staff stays clear of her right forearm, its flared sleeve and her hand (as the cast's guard
+    holds them, FS-JS7C8 R128–R129), and of her head (at least 1.3 skull radii from its centre).
+78. **The idle only.** Her walk keeps `WARD_HOLD`; the base wizard's and the Pyromancer's idles keep
+    their bytes. The shared idle's breathing, weight shift and timing (6 frames at 5 fps) are hers
+    unchanged.
+
+**§N. The heavy cast (her attack)**
+
+79. **Her own strike keys** *(the owner's 「不用像短杖要伸直 可以有一點前傾的角度」)*. The Spellwarden casts
+    with keys of her own for keys 3–5 (the strike, the carry through and the ease back); keys 0–2
+    and 6 stay the staff cast's, so the wind-up and the settle are unchanged. Same 7 keys at 12
+    fps, the strike at key 3, the glow's timing and peaks as the staff cast's (5, 3.6, 2.2 on keys
+    3–5): the client's attack window is untouched. The Pyromancer keeps `staffCast`; the base
+    wizard keeps the pointed cast.
+80. **The staff pushed forward, not reached out straight** *(charter default — reason: "a little
+    forward tilt" of a heavy staff, still read as a strike)*. On keys 3 and 4 the staff leans its
+    head toward the target 30–45° from vertical, within 15° of the facing in plan; the elbow bent
+    40–60°, never straight; the fist pushed forward to between the waist and the lower chest; the
+    trunk leaning into the strike further than the staff cast leans (its spine and chest pitched
+    forward more than `staffCast`'s on the same keys). The staff's foot passes outside her right
+    hip, clear of the gown.
+81. **The ease back.** Key 5 brings the staff back toward upright (15–30° from vertical), the elbow
+    bending further (50–70°), before key 6's settle.
+82. **Clear on every cast frame.** The staff clear of her head (at least 1.3 skull radii from its
+    centre), her torso, the gown, her legs and boots, her right forearm, sleeve and hand, and the
+    ground, on every baked attack frame (the guards of R62 and FS-JS7C8 R128–R129).
+
+**§O. What stays, the box, the bake, the review**
+
+83. **Walk, run and death unchanged**, pixel for pixel: her walk (`WARD_HOLD`), her run
+    (`WARD_RUN_HOLD` under the sprint) and her death (`WARD_DEATH`) keep their keys byte for byte,
+    and their baked frames are pixel-identical to main 4d56d258's.
+84. **The frame box does not grow** *(charter default — reason: Looks v2's box is the budget)*. Her
+    sheet's frame stays within 300×255 at 1.5x. A pose that would grow it is escalated to the
+    owner, not shipped.
+85. **One bake, her sheet only.** One re-bake changes only her atlas pages and her manifest entry;
+    every other atlas is byte-identical, and `npm run bake -- --check` is clean after it.
+86. **The contact sheet** (R12; HITL, nothing waits on it). Main 4d56d258 beside the new sheet, her
+    idle and her attack, all 8 facings, at ×1 and ×2, still and animated, written under
+    `game-client/tools/bake/review/spellwarden-staff/` (gitignored). The owner's eye is the gate.
+87. **Superseded values.** For the Spellwarden only, this change supersedes: R62's "same keys" for
+    her idle's right arm and her cast's keys 3–5; Looks v2's edge state "The staff's foot in idle
+    stays above the ground plane" (it now stands on it); and "Integrated with FS-JS7C8,
+    2026-11-23"'s "keep this change's carries ... and cast ... as clips.js `staffCast`" for her
+    idle and her cast (her walk and run carries are kept). Everything else stands.
+
+### Acceptance Criteria
+
+- [ ] On every idle frame of her baked poses the shoe's point is 0–0.003 H over the ground and
+      moves at most 0.003 H between frames; the staff stands 8–12° off vertical, its top out to her
+      right; the fist's grip about 0.45 H up; the elbow bent 15–35°; the wrist within 1.3 rad.
+- [ ] On every idle frame the staff is clear of her gown, scapular, legs, boots, right forearm and
+      sleeve, right hand, and head (≥ 1.3 skull radii); each guard has a fixture that must fail.
+- [ ] Her attack has 7 keys at 12 fps; keys 0–2 and 6 equal `staffCast`'s; the glow on keys 3–5 is
+      5, 3.6, 2.2.
+- [ ] On keys 3 and 4 the staff is 30–45° from vertical toward the facing (within 15° in plan), the
+      elbow bent 40–60°, the fist between the waist and the lower chest, the trunk pitched forward
+      further than `staffCast`'s; on key 5 the staff is 15–30° from vertical, the elbow 50–70°.
+- [ ] On every attack frame the staff clears her head (≥ 1.3 skull radii), torso, gown, legs,
+      boots, right forearm, sleeve and hand, and the ground.
+- [ ] Her walk, run and death keys are byte-identical to main 4d56d258's (digest), their baked
+      frames pixel-identical; the Pyromancer's and the base wizard's clips keep their bytes.
+- [ ] Her frame box is at most 300×255.
+- [ ] `git diff --stat public/art/` after the bake lists only her atlas pages and `manifest.json`,
+      the manifest's diff only her entry; `npm run bake -- --check` is clean.
+- [ ] The contact sheet (R86) is written and reviewed by the owner.
+- [ ] `npm test`, `npm run lint` and `npx tsc --noEmit` pass.
+
+### Edge States
+
+- **The breathing moves her shoulder:** each idle frame carries its own arm keys, so the hand
+  follows the planted staff; the shoe never rises or sinks with the breath.
+- **The gown's hem sways with her weight shift** (its springs): the shoe stands far enough out that
+  the hem clears it on every frame as baked, springs included.
+- **From the planted idle into the cast and back:** the cast's wind-up (key 0) lifts the staff off
+  the ground from wherever the idle left it, and key 6's settle hands it back to the idle, where it
+  is planted again. The sprite swap between clips is instant, as for every class.
+- **Walking off from the planted idle:** the walk carries the staff in `WARD_HOLD`, its shoe off the
+  ground, as today; the swap is instant.
+- **A guard that can only pass with a change beyond her arm's and the cast's trunk keys** (the
+  staff's mount, its length, the gown): escalated to the owner, not routed around.
+- **The box would grow:** escalated (R84).
+
+### Out of Scope
+
+- The Pyromancer's brazier rod, the base wizard's sceptre, and their clips.
+- Her walk, run and death; the staff's model and its mount in the hand; the gown.
+- The cast's wind-up and settle keys (0–2, 6), its timing and the client's attack window.
+- Any runtime or server change; the manifest's format.
