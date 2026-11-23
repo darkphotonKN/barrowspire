@@ -491,7 +491,7 @@ describe("FieldScene drop piles (FS-X2F2H §Requirements 33, 56, 59, 60)", () =>
 
     const state = pileState("field");
     field.renderState(state);
-    expect(piles.sync).toHaveBeenCalledWith(state.containers, "member-me");
+    expect(piles.sync).toHaveBeenCalledWith(state.containers, "member-me", ARRIVAL);
     expect(piles.follow).toHaveBeenCalledWith(ARRIVAL);
   });
 
