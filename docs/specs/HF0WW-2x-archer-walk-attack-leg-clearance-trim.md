@@ -637,3 +637,5 @@ Date: 2026-11-12
 ## Change: The archer's sprint and low-ready bow → FS-JS7C8
 
 ## Change: The mercenary's sprint and trailing sword → FS-JS7C8
+
+## Change: The wizard's sprint and pointed cast → FS-JS7C8

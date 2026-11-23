@@ -2057,3 +2057,535 @@ HITL:
   except the Duelist's robe back panel carried out behind in the run (R114, the owner 2026-11-23).
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
+
+## Change: The wizard's sprint and pointed cast
+Status: work-order
+Date: 2026-11-23
+
+Promoted `--from-thread` on 2026-11-23 from the owner-approved charter "法師與戰士衝刺跑", its wizard
+item. The thread is the charter's locked decisions, so no interview was held; every decision
+below is a **charter default approved by the owner** ("做好就接著做不用問我"), given with its
+reason. It lands here for the reason the archer's and the mercenary's did: it changes the run
+(§A) and the attack-on-the-move clips (§B, R5) this FS owns through `game-client/SPECIFICATION.md`
+"Run and backpedal animations", and takes `walk_attack` off sheets FS-HF0WW's "Walk-and-attack
+animation" built, so FS-HF0WW carries a pointer stub to this section. It also re-keys the
+wizard's cast, which FS-2325V `## Change: The class attacks move with weight and cut deep` owns
+(R4: "the strike thrusts the sceptre toward the aim"), and so the focus looks' cast, which
+FS-1J1CB R3 and R4 hold "thrust as the sceptre is" at "today's frame size": both carry a pointer
+stub. No new thin line, no new FS. Code citations are against `22cabd3a` (`feat/run-merc-sprint`,
+the mercenary's sheets re-baked, I-JS7C8-24). Measures marked *measured* were read on her own rig
+and style (each look's `CAST` row built and posed as the bake poses it, `poses.js`
+`characterPoses`, or `rigOf(WIZARD_BUILD)` as classMotion.test.mjs builds her; 32 samples over the
+run's cycle) by a throwaway script that is not committed. Frame boxes marked *measured* were read
+by that script replaying the bake's first pass (baker.js `bakeCharacter` :254-296: every sizing
+pose, its vertices and their ground shadows in the 8 facings, then frameBox.js `frameBox`, pad
+0.06); it reproduces today's three manifest boxes and anchors exactly.
+
+**Why (owner).**
+
+> 「做完後就接著做法師跟戰士的跑步 法師攻擊時法杖要伸直指向怪物像施法一樣 戰士暫時只要調跑步就好 一樣移除攻擊時前後走動的部分 做好就接著做不用問我」
+
+Once the mercenary is done, do the mage's and the warrior's runs. When the mage attacks, her staff
+should stretch straight out and point at the monster, as if casting a spell. For the warrior,
+only the run for now. As before, remove the attack clips that step forward and back. When it is
+done, carry on without asking. For the archer, earlier: 「跑步時可以更有衝刺感…想要有快一點的跑步感」,
+「跑更快的話身體可能會更加前傾」; for the mercenary: 「移動時也要像弓箭手跑的感覺」.
+
+**What it changes, for the wizard's three sheets only** (`char_wizard_base`,
+`char_wizard_spellwarden`, `char_wizard_pyromancer`):
+
+- R2: her lean (about 10° → about 20°) and "the legs are slice 5's ... the 14 fps cadence
+  unchanged, key for key". Her sceptre (or focus) arm and tome arm keep R2's carry.
+- R3: her cadence becomes the sprint's (16 fps) over a shorter stride (*escalated*, below: not the
+  sprint's own legs).
+- R5: "`walk_attack` stays on every class sheet" no longer holds for her; `walk` does.
+- R8–R11, R13, R21: `backpedal_attack` and `walk_attack` leave her sheets, so their leg rules no
+  longer apply to her.
+- R37, R41, R48: her contact sheet and the guideline lose those two clips.
+- FS-2325V `## Change: The class attacks move with weight and cut deep` R4: at the strike the
+  sceptre no longer stands up out of the fist; it points along the aim. R1's anticipation,
+  weight, arcs and follow-through, and R5's 7 keys at 12 fps with the strike at key 3, stand.
+- `## Change: Attacking pins the attacker`, Out of Scope: "Retiring the attack-on-the-move clips"
+  is done for her sheets too. The knight stays out of scope (the charter's next item).
+
+The knight (and his looks) is untouched: his run key for key, his `walk_attack` and
+`backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps. The archer's and the mercenary's sheets are
+untouched byte for byte.
+
+### Decisions (charter defaults, owner-approved 2026-11-23)
+
+- **W1. The shared sprint** (`SPRINT_STEP`, `SPRINT_LEAN` about 20°, `SPRINT_RUN` 16 fps); the
+  archer's and the mercenary's keys and sheets unchanged, held by digest. Her pace within the
+  shared tolerance used for the mercenary (option (a): within 3 px/s of `RUN_PACE` 194), measured
+  on her rig. *Reason:* the owner's 「一樣」 (as with the others). ***Escalated:** the shared legs
+  fail her robe's guards and her pace. See Escalated 2026-11-23, E1.*
+- **W2. Her run keeps today's carry**, the sceptre or focus arm's smaller pump and the tome arm's
+  full pump, re-measured under the 20° lean. The carry changes only if the lean breaks a guard or
+  puts the orb or her head over a ceiling, and that is said.
+- **W3. The robe.** The robe and leg guards pass in the run on all three looks with no exemption.
+  If the sprint's heel kick or knee drive pokes through, the first fix is the robe's back carried
+  out in the run (as the Duelist's `ROBE_BACK_CARRY`), the robe at rest unchanged. The shared legs
+  never change. *Reason:* her robe has a clipping history (FS-HF0WW § Change: The guard measures a
+  leg through the cloth: the knee through the gown, the waist, the black dots behind the knee).
+  ***Escalated:** the poke is the knee drive at the front, which the back carry cannot reach (E1).*
+- **W4. The pointed cast.** The cast is re-keyed: the sceptre (or focus) arm extends straight,
+  the elbow nearly straight, toward the target, and the staff points along the aim like a spell
+  being cast, at about chest-to-shoulder height, never over her head. The free hand may open or
+  brace naturally. The same frames and fps as today, so the client's attack window times it
+  unchanged. The clip already faces the aim (animationSelect.ts:155-157), so "points at the
+  monster" means it points straight ahead along the facing in each of the 8 facings. The
+  Spellwarden's and the Pyromancer's focuses point the same way. The staff and the focus stay
+  clear of her body, robe and head. The frame box does not grow; if it would, escalate.
+  *Reason:* the owner, 「法師攻擊時法杖要伸直指向怪物像施法一樣」. ***Escalated:** a straight arm along
+  the aim grows the box (E2).*
+- **W5. `walk_attack` and `backpedal_attack` leave her three sheets.** Idle, walk and death are
+  unchanged. A sheet without them plays the standing cast (the client's fallback, no code change).
+- **W6. The owner sees the contact sheet** (ADR-0021 §5), but later slices and the charter's next
+  item do not wait on it.
+
+**Escalate (report back, don't route around):** a default the code contradicts; a guard that
+needs a look change beyond W3's robe carry; the frame box growing; the pace leaving its tolerance.
+
+### Escalated 2026-11-23 (to the coordinator, not routed around)
+
+**E1. The shared sprint's legs under her robe (W1, W3), and her pace.** On her rig, the shared
+sprint's legs fail her robe's guards, and her pace leaves W1's tolerance. *Measured,* on all
+three looks (the shared legs, lean and 16 fps, her carry as it is):
+
+- The leg guard (`clearance.js` `legClearance`) reads **3.20 px** at 1.5x on the run's keys 2 and 6
+  (the limit is 0.667). It is the swing thigh at the front, just above the knee (bind 0.353 H up),
+  raised by the sprint's knee drive (`SPRINT_STEP.thighL` −0.85 at key 2) to 0.43 H off the ground
+  and 0.144 H ahead of the hips bone. It comes out through the gown's front. Keys 3 and 7 read
+  0.66 px and keys 1 and 5 read 0.12–0.14 px, at the knee. The camera sees a thigh or knee through
+  the cloth (`seenThroughCloth`) on keys 1, 2, 3, 5, 6 and 7 (12–59 vertex-facings a key). It is
+  neither the heel kick nor the lean: the 20° lean over today's legs reads 0 px and 0 seen, and
+  the shared legs at 14 fps read the same 3.20.
+- W3's fix does not reach it. With the back panel carried out (`skirtB` `drag` 0.28 → 0.4–0.8,
+  `limit` 0.8 → 1.1–1.4) the guard still reads 3.20 px; the back hem in the run rises from 0.11–0.24 H to
+  0.20–0.46 H. The front panel already swings as far as the thigh (`pushPanels`: `skirtF` to
+  −0.85 rad in the run), and a wider `limit` changes nothing. The gown's own weighting does not
+  clear it either: `legFollow` 0.5 → 0.6, 0.7, 0.9 reads 2.89, 2.49, 1.97 px; `panelWeight` 0.35 →
+  0.5, 0.65 reads 2.79, 2.21 px (and lets the knee through today's run, 0.19 px); `kneeCover` 0.05
+  → 0.08 reads 3.20 px and 0.12 reads 6.35; a fuller front cut (depth 0.08 → 0.09 at the top,
+  0.138 → 0.15 at the hem) reads 3.18 px and shows the waist in the walk. Each of these is also a
+  look change in every clip, which W3 does not allow.
+- Her own lower knee drive, which would put her off the shared sprint, does not clear it until it
+  is about the shared fast run's (−0.52). At `thighL` key 2 −0.75, −0.7, −0.65, −0.6 and −0.55 it reads
+  1.92, 1.34, 0.91, 0.67 and 0.67 px, and a knee is still seen on 4–6 keys.
+- Her pace on the shared legs at 16 fps is **190.65** world px/s: 3.35 under `RUN_PACE`, outside
+  W1's 3 px/s. Her legs are shorter than the others' (build 1.92 against the archer's 1.96 and the
+  mercenary's 1.98). Today her own run reads 190.22 at 14 fps, held only to the class band
+  180–220 (classMotion.test.mjs:510-517).
+
+The options:
+
+- **(a) Default, kept until the coordinator picks:** the sprint's lean (`SPRINT_LEAN`) and its
+  clip (`SPRINT_RUN`: 16 fps, `speed` 2.5, both read by reference) over the shared fast run's legs
+  (`RUN_STEP`) at a stride of **0.88** (`run.stride`, clips.js:363), so the stride is 12% shorter,
+  as the sprint's is. *Measured* on all three looks: the leg guard 0 px and nothing seen through
+  the cloth on every run key; pace **194.21** (within 1 px/s of `RUN_PACE`, the archer's own
+  tolerance); bob 0.062 H (the sprint's); knee peak 0.311 H (today's, under the sprint's 0.335).
+  The robe is unchanged and needs no exemption. What it gives up is the sprint's higher knee and
+  heel kick, mostly hidden by an ankle-length gown. It is the smallest look change: the robe as it
+  is, the lean and the cadence the archer's and the mercenary's. `SPRINT_STEP` is not changed, and
+  her run is not on it.
+- (b) The shared sprint's legs, with a robe change beyond W3: the gown's front carried up by the
+  driven knee in the run. No existing cloth setting does it (above). It needs new rig work, such as a
+  front panel bone pushed by the thigh at knee height or a run-only weighting, and it shows the
+  gown's front lifting with each stride. Not measured. Her pace there is 190.65, outside 3 px/s; it
+  would also need her own fps (16 × 194 / 190.65 ≈ 16.28) or a wider tolerance.
+- (c) The 20° lean over today's legs and cadence (14 fps). *Measured:* 0 px, nothing seen, pace
+  190.22 (today's). No quicker cadence.
+
+**E2. The pointed cast grows the frame box (W4).** *Measured* (the bake's first pass replayed):
+today's boxes are set by the cast's strike (key 3: the right edge in `ne`, the top in `nw`, the
+sceptre standing up there with the orb at 0.95 H) and the death (key 4: the left edge in `sw`, the
+bottom in `se`). With keys 3 and 4 keyed as W4 says (the elbow straight, the staff along the
+facing 8° below level, the hand at 0.68 H, today's lunge), the width grows and the height does not:
+
+| Sheet | Today | W4 as written (8° below) | Without the cast |
+|---|---|---|---|
+| `char_wizard_base` | 222 × 192 | **240** × 189 | 201 × 180 |
+| `char_wizard_spellwarden` | 225 × 195 | **243** × 192 | 201 × 186 |
+| `char_wizard_pyromancer` | 225 × 198 | **240** × 195 | 201 × 186 |
+
+The new width comes from key 4 in `ne` and `sw`, where her facing runs across the screen. On the
+base, the same point reads 249 wide at level, 231 at 15° below, and 231 without the forward lunge
+(`body.z` 0 at keys 3–4). It fits (at most 222) only with the staff about 25° below level (213 × 183:
+the orb at 0.44 H, about her hips, aimed at the ground a body length ahead) or the elbow bent about
+45° (213 × 183; 29° reads 228, 63° reads 204). The options:
+
+- **(a) Default, kept until the coordinator picks:** W4 as written, and the bake (R133) stops
+  before it commits a box wider than today's. The coordinator picks before then.
+- (b) Accept the wider box: about +18 px (1.5x) of width each, about +8%; the height holds. The
+  frames are trimmed (lib/trim.mjs), so the atlas pays only for the pixels drawn; dropping the
+  attacks on the move (R131) takes 28 of 64 frames a facing off.
+- (c) Hold the box with the elbow bent about 45°: the staff still along the aim, the hand nearer
+  the chest. It is not "伸直".
+- (d) Hold the box with the staff about 25° below level: the arm straight, the orb about at her hips.
+  It is not "chest to shoulder".
+
+### Facts checked in code (`22cabd3a`)
+
+- **Her sheets share one clip set and one style.** `CLASS_ROWS.wizard` (cast.js:597) is `{ build:
+  wizard, sheet: WIZARD_SHEET }`; `specRow` (cast.js:622) spreads it into the Spellwarden's and the
+  Pyromancer's rows (cast.js:656-657). `WIZARD_SHEET` (classStyles.js:280) is `{ animations:
+  RUNNING_CLASS_ANIMATIONS, scale: 1.5 }`, and `RUNNING_CLASS_ANIMATIONS` = `withWalkAttack({
+  ...ANIMATIONS, ...RUN_ANIMATIONS })` (clips.js:106), which the knight's sheet also reads
+  (classStyles.js:92). `wizard()` returns `WIZARD_STYLE` (cast.js:281); both looks return
+  `FOCUS_STYLE` (mageLooks.js), which is `{ ...WIZARD_STYLE, deathExtra }` (classStyles.js:320). So
+  her run, her carry and her cast reach the looks with no change of their own. `ARCHER_SHEET` (:243)
+  and `MERCENARY_SHEET` (:360) are built without `withWalkAttack`.
+- **The sprint is shared already.** `SPRINT_LEAN` 0.48 (classStyles.js:171), `SPRINT_STEP`
+  (:189-197), `SPRINT_RUN` `{ ...RUN_ANIMATIONS.run, fps: 16 }` (:200); `ARCHER_STYLE.run` (:258) and
+  `MERCENARY_STYLE.run` (:378) read them by reference, and the shared-sprint describe holds that
+  (classMotion.test.mjs:902-913). `runCycle` (clips.js:362-409) takes `run.lean`, `run.legs` and
+  `run.stride` (scaling every thigh key, the foot keeping its world angle). No new parameter is
+  needed.
+- **Her run today** (`WIZARD_STYLE.run`, classStyles.js:296-301): `{ arms: [1, SCEPTRE_RUN_ARM],
+  wrist: RUN_SCEPTRE_WRIST, cross: [0, RUN_CROSS], hold: pose({ upperArmL: [0, 0, 0.14], upperArmR:
+  [SCEPTRE_RUN_BACK, 0, -0.12], handR: RUN_SCEPTRE }) }`: `SCEPTRE_RUN_ARM` 0.76 (:65),
+  `SCEPTRE_RUN_BACK` 0.25 (:66), `RUN_SCEPTRE` [−0.1, 0, 0] (:62), `RUN_SCEPTRE_WRIST` [0, 1.2] (:63),
+  `RUN_CROSS` 0.3 (:59); tested against `SCEPTRE_RUN_PEAK` 0.61 (:68) and `SCEPTRE_RUN_TILT` [15, 40]
+  (:70) in the shared fast run's describe (classMotion.test.mjs:285-517, rows `SHARED_RUNNERS`
+  :283).
+- *Measured, her run today (14 fps, on her rig):* the hips-to-neck lean 9.96–10.26°; pace 190.22
+  world px/s; the pelvis 0.484–0.540 H (a bob of 0.056 H); the knee's peak 0.311 H; the chest bone
+  0.613–0.668 H; the right shoulder 0.697–0.760 H; the head bone 0.784–0.840 H; the sceptre hand
+  0.474–0.612 H, from 0.08 H behind to 0.22 H ahead of the hips bone; the tome hand 0.479–0.699 H;
+  the sceptre 17–31° off vertical (mean 24°, from the hand to the top of the mount's meshes), its top 0.74–0.85
+  H off the ground; the sceptre's lowest point 0.40 H, a focus's 0.27 H.
+- *Measured, the 20° lean under her carry* (the same keys of the arms, `SPRINT_LEAN`, at 16 fps;
+  the arms do not read the legs): lean 20.20–20.50°; the chest bone 0.599–0.661 H; the right
+  shoulder 0.674–0.752 H; the head bone 0.760–0.822 H; the sceptre hand 0.458–0.571 H (peak 0.571,
+  0.574 over option (a)'s legs, against `SCEPTRE_RUN_PEAK` 0.61 ± 0.01); the tome hand 0.459–0.637 H,
+  at the front of its pump 0.022 H under the chest bone (today's test asks it above,
+  classMotion.test.mjs:323-342); the sceptre 30–40.3° off vertical by the test's own sampling (:360-392;
+  30–42° by the mount's meshes), its top 0.67–0.81 H. Copies of classMotion.test.mjs with her run
+  on the lean (and on option (a)'s legs) pass the carry out of the torso and the head, the hand
+  crossing in (`RUN_CROSS_REACH`), the weapon clear of the free arm, and the normal grip. They fail
+  only those three bands, besides the rows the sprint retires (the 10° lean, the shared legs, the
+  14 fps pace). The tilt test stops at its first failing sample, so its orb-ahead and out-of-robe
+  checks were not read past it.
+- **Her cast today** (`ATTACKS.cast`, clips.js:663-672, over `CAST_STANCE` :478): 7 keys at 12 fps
+  (`ANIMATIONS.attack`, clips.js:20), the glow peaking at key 3 (`fx.glow` 5), not looping. No hold
+  is added: `clipsFor` makes `attack` from `ATTACKS[style.attack]()` plus `style.attackExtra`
+  (clips.js:870), and neither style has an `attackExtra`. *Measured* on her rig (the arm is the
+  same on all three looks; yaw + toward her left; the staff from the mount's butt to its top):
+
+  | Key | Shoulder→hand, from level / yaw | Elbow bent | Hand (H) | Staff from level / yaw | Staff off the facing | Top (H) |
+  |---|---|---|---|---|---|---|
+  | 0 | −35° / −39° | 86° | 0.59 | +71° / +75° | 85° | 0.88 |
+  | 1 | −33° / −79° | 109° | 0.62 | +37° / +64° | 70° | 0.80 |
+  | 2 | −8° / −54° | 89° | 0.70 | +44° / +76° | 80° | 0.92 |
+  | 3 (strike) | −10° / +12° | 11° | 0.67 | +77° / +16° | 78° | 0.95 |
+  | 4 | −17° / +31° | 14° | 0.63 | +74° / +40° | 78° | 0.91 |
+  | 5 | −21° / −3° | 57° | 0.63 | +78° / +138° | 99° | 0.93 |
+  | 6 | −39° / −20° | 66° | 0.56 | +80° / +89° | 90° | 0.86 |
+
+  Over the clip the shoulder stands at 0.72–0.73 H, the chest bone at 0.64 H, the head bone at
+  0.81–0.82 H. At the strike the arm already reaches forward nearly straight and a little below
+  level, the hand 0.37 H ahead of the hips. But the sceptre stands nearly upright out of the fist
+  (77° above level, 78° off the facing), the orb at 0.95 H, over her crown (*estimate:* about 0.92 H, the skull of classMotion.test.mjs `inside` standing about 0.11 H over the head bone), the top 0.47 H
+  ahead of the hips. The Spellwarden's ring stands at 0.97 H, the Pyromancer's cage at 0.96 H.
+  In the grip frame (gear.js) the sceptre runs from −0.073 to 0.291 H (`sceptre` :487), and each focus from
+  −0.214 to about 0.30 H (`FOCUS_BUTT` −0.2 and `FOCUS_TOP` 0.2, :514-515, the ring or cage above):
+  the fist holds a focus 0.21 H up its haft, so, pointed along the arm, its butt reaches back toward the
+  forearm. Her gown's sleeves flare to 2.35 times their width at the wrist (cast.js:243, `sleeve`).
+- **The wrist.** A carry today cocks the hand in the swing plane at most `CLEAVE_CARRY` 1.3 rad
+  (clips.js:545); the mercenary's trailing sword 1.0 (classStyles.js:341), the rest blade 0.95 (:47).
+  The trial point above needed 1.57–1.72 rad to lay the staff along a straight arm. *Estimate:* a
+  human wrist deviates toward the little finger about 30–40° and flexes about 80°, so a staff
+  along the forearm comes from the arm's angle as much as from the wrist.
+- **How the client aims her cast.** A click sends `fireball` (playerCombat.ts:457), a right-click
+  `triple_fireball` (:470); either calls `attackClip(aim)` with `aim` the world vector from her to
+  the click (:231, :236, :242). `selectAnimation` turns the attack to `facingFrom(aim)`
+  (animationSelect.ts:155), the nearest of the 8 facings (facing.ts:23-31, 45° sectors), and plays
+  `attack` whenever the sheet carries no `walk_attack` (:157). The fireball flies along the exact
+  aim from 15 screen px along it at 42 screen px above her feet (`HAND_REACH`, `HAND_LIFT`,
+  fireball.ts:24, :27). At 1x her height is 1.92 units, 75 screen px of height (projection.js
+  `VPX` 39.19), so 42 px is about 0.56 H. A pointed staff therefore points within 22.5° of the
+  true aim, and the fireball does not start at the orb.
+- **Clip choice needs no client change.** `walkAttack` and `backpedalAttack` come from what the
+  sheet carries (character.ts:111-113); without them `attack` plays moving or not
+  (animationSelect.ts:157).
+- **The tests that name her attack-on-the-move clips:** `animationSelect.test.ts:486`
+  (`WALK_ATTACKERS` includes `mage`); `manifest.test.ts:1280` (`OWN_CLIPS.char_wizard_base`),
+  :1384-1386 (`BACKPEDALLING`); `clearance.test.mjs:404` (`MOVING.wizard`) and :501 (the scapular
+  over the gown through both attacks on the move); `classMotion.test.mjs:285-295` (the
+  `SHARED_RUNNERS` sheet test), :631 (`CARRIED`), :741-745 (the cast is what the attacks on the
+  move draw), and :1055-1056 (her sheet and clips held by digest as "unchanged");
+  `mageLooks.test.mjs:115` (the looks carry every wizard clip, which follows her sheet).
+- **Her sheets today** (`public/art/manifest.json`, each one page, 1.5x, trimmed, crown 74):
+  `char_wizard_base` 222 × 192, anchor (87, 147) px; `char_wizard_spellwarden` 225 × 195, (87,
+  147); `char_wizard_pyromancer` 225 × 198, (87, 153). Frames per facing: idle 6, walk 8, attack
+  7, death 7, run 8, `walk_attack` 14, `backpedal_attack` 14: 64. Atlases: `wizard-0` 2056 × 4000
+  (32.9 MB RGBA, PNG 4,906,841 B), `wizard_spellwarden-0` 3116 × 2700 (33.7 MB, 5,261,079 B),
+  `wizard_pyromancer-0` 2224 × 3764 (33.5 MB, 5,148,652 B).
+
+### Requirements
+
+#### Her run: the sprint's lean and cadence (W1, W3; E1)
+
+115. **The others' keys held first (W1).** Before anything moves, tests hold by digest, as they
+     are at `22cabd3a`: the mercenary's run keys (`clipsFor(MERCENARY_STYLE,
+     MERCENARY_SHEET.animations).run`) and `MERCENARY_SHEET`, beside the archer's run keys and
+     `ARCHER_SHEET` (classMotion.test.mjs:1059-1062) and the mercenary's other clips (:1095-1104);
+     the knight's sheet and clips (:1055); and her own idle, walk and death keys. The shared run's
+     digest (:1054) holds. They stay green through every slice of this change.
+116. **The sprint read, not changed (W1).** `SPRINT_LEAN`, `SPRINT_STEP`, `SPRINT_RUN`, `RUN_STEP`,
+     `RUN_LEAN`, `RUN_ARM`, `RUN_ELBOW`, `RUN_COUNTER`, `RUN_ANIMATIONS` and
+     `RUNNING_CLASS_ANIMATIONS` keep their values. Her run reads `SPRINT_LEAN` and her sheet's run
+     is `SPRINT_RUN`, by reference.
+117. **Her legs (E1, default (a)).** Her run is the shared fast run's legs (`RUN_STEP`, no
+     `run.legs`) at a stride of 0.88 (`run.stride`, a named constant beside the sprint's, e.g.
+     `WIZARD_SPRINT_STRIDE`), the knee and the flight at 1. If the coordinator picks (b), this
+     requirement and R118–R120 are restated through write-a-spec before the slice is built.
+118. **Her run, measured as the sprinters' are** (classMotion.test.mjs:916-1020, on her rig): the
+     lean 19–21° on average and 18–22° on every sample (*measured* 20.20–20.50); the head's pitch
+     within 3° of rest, its yaw range under 0.08 rad and its roll under 0.06; a flight frame with
+     both soles over 0.02 H in each step, a foot planted in at least 4 of the 8 keys, a lift of at
+     least 0.045 H; a bob of at least 0.056 H and under 0.07 H (*measured* 0.062); the pelvis rising
+     and falling once a step, highest at or next to each flight key; the shoulders against the
+     hips (correlation below −0.8, peaking at 6.5–10°). Her knee is held to today's (at least 0.30 H,
+     *measured* 0.311), not to the sprint's 0.32 (E1).
+119. **Her pace (W1; E1).** Measured by `measurePace` at 16 fps on her rig and style, her run lies
+     within 1 px/s of `RUN_PACE` (194) (*measured* 194.21). `RUN_PACE`, `animationSelect.ts` and the
+     server's 200 px/s do not change.
+120. **The robe passes, no exemption (W3).** On all three looks, on every clip their sheets carry:
+     the leg guard (`legClearance`, run at bake by `main.js` and by `clearance.test.mjs` and
+     `mageLooks.test.mjs`) reads at most the 1.5x limit; the camera sees no hip, thigh or knee
+     through the cloth (`seenThroughCloth`, `clearance.test.mjs` "no leg is seen through the
+     cloth"); the black gown never comes out through the teal scapular by a baked px
+     (`clearance.test.mjs` `overGarment`, "the mage's scapular stays over her gown"). Nothing is
+     added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`. The gown, the scapular and their springs
+     (`skirtBones` stiffness 38, drag 0.28, cast.js:211) are unchanged. *Measured* under option (a):
+     0 px and nothing seen on every run key of the three looks. The scapular check was not
+     measured. A look change these guards would ask for is escalated (W3, E1).
+121. **Retired for the wizard:** R2's "the legs are slice 5's ... the 14 fps cadence unchanged,
+     key for key", the 10° lean, and her rows of the shared fast run's tests
+     (classMotion.test.mjs:285-517: the sheet test, the 10° lean, "the shared legs key for key",
+     the 14 fps pace and "its attacks on the move walk the legs at most 90"), and her "unchanged"
+     digest (:1055-1056). The knight keeps them.
+
+#### Her carry under the lean (W2)
+
+122. **The carry is kept.** `WIZARD_STYLE.run`'s `arms`, `wrist`, `cross` and `hold`, and her
+     idle and walk `hold`, are unchanged; the looks take them through `FOCUS_STYLE`. Her run's
+     describe holds, on every sample: the sceptre-arm and tome-arm elbows bent 80–100° on every
+     key; each hand back past the hip by at least 0.06 H; the sceptre hand crossing in at the front
+     (`RUN_CROSS_REACH`, before the torso); the weapon clear of the free arm by more than 0.06 ×
+     `armR` H; the orb above the hand and ahead of it; every sceptre point outside the robe
+     (`outsideRobe`); the carry out of the torso and the head (`deepestCarry`); the normal grip.
+123. **The bands the lean moves, restated, not tuned away (W2).** The 20° lean lowers her chest, so:
+     (i) the sceptre hand peaks at 0.56–0.59 H (*measured* 0.574), under her chest bone's height and
+     never at the shoulder, in place of `SCEPTRE_RUN_PEAK` 0.61 ± 0.01, which stays the knight-era
+     shared run's constant; (ii) the sceptre leans 15–45° off vertical on every sample (*measured*
+     30–40.3° by the test's sampling) in place of `SCEPTRE_RUN_TILT` 15–40°: the trunk leans 10°
+     further and the sceptre with it; (iii) the tome hand's front height against the chest bone is
+     recorded (*measured* 0.022 H under it), not tuned away, as the mercenary's free hand was (R101).
+     No guard broke and no ceiling was crossed: the orb's top stands at 0.67–0.81 H, under her crown
+     (about 0.11 H over the head bone's 0.76–0.82 H), and nothing went into her head. So the carry is unchanged (W2). Each band is judged
+     at the contact sheet (R134).
+
+#### The pointed cast (W4; E2)
+
+124. **The same clip.** `ATTACKS.cast` keeps 7 keys at 12 fps, not looping, the strike and the
+     glow's peak (`fx.glow` 5) at key 3, over `CAST_STANCE`. The attack id (`cast`), the clip name
+     (`attack`) and the client's attack window are unchanged. The knight's, the archer's and the
+     mercenary's attacks are not touched.
+125. **The point (W4).** On key 3, and on key 4 as it carries through, posed and grounded as the bake
+     poses her:
+     - the staff (the grip frame's +z, from the butt to the top of the mount) lies within 10° of the
+       facing in plan, and 0–15° below level. The orb leads; she points it along the aim, at a
+       monster on the same ground (*estimate:* about 5–10° below level reads as at the monster);
+     - the arm reaches toward the aim: the shoulder-to-hand line within 25° of the staff's line,
+       the elbow bent at most 20°;
+     - the hand stands between the chest bone's height and the shoulder's (today 0.64–0.73 H), and
+       the orb is never above the shoulder.
+     On every key of the cast, the orb (or the focus's head) is never above her crown (the top of the skull as classMotion.test.mjs `inside` models it).
+     Not over her head: today's strike holds it at 0.95 H. The model faces +z and each facing is
+     baked by turning it (facing.js `yawFor`), so the point holds in all 8 facings by construction.
+     The 8 facings' contact sheet shows it (R134).
+126. **A hand that could hold it.** On every key of the cast the fist keeps its thumb side where the
+     forearm has it: the normal-grip test (classMotion.test.mjs:609-623), extended from idle, walk
+     and run to `attack`. The wrist cocks the hand in the swing plane at most 1.3 rad
+     (`CLEAVE_CARRY`, the most any carry cocks today). The arm's angle lays the staff along the aim
+     as much as the wrist does (see *The wrist*).
+127. **Weight and arcs kept** (FS-2325V § Change: The class attacks move with weight and cut deep
+     R1, R4; classMotion.test.mjs:688-739). The wind-up draws the orb back against the facing by at
+     least 0.04 H with the weight back; the thrust carries it forward at least 0.2 H from the
+     wind-up to the strike, onto the front foot by at least 0.03; the pelvis turns into it (at least
+     0.15 rad) before the chest. The orb's path is curved, with no step carrying more than 40% of
+     it and the strike's steps faster than the first and the last. The free hand opens out to the
+     side at the strike by at least 0.08 H (W4's "may open": the open hand kept). The weapon
+     turns at most `ATTACK_TURN_LIMIT` (100°) a frame from the carry into key 0, key 0 into key 1,
+     through keys 4–6 and back to the carry. Only the right arm's keys and the wrist change.
+     *Estimate:* keys 2–5. The stance, the trunk's turns, the weight and the glow stay as they are
+     unless R125–R128 need them moved.
+128. **Clear of her body (W4).** On every key of the cast, on all three looks: the staff or focus
+     stays out of the torso and the head (`deepestCarry`, its points every 0.05 H along the haft);
+     wherever it passes below the waist it stays outside the robe (`outsideRobe`); its head stays
+     at least 1.3 skull radii from her skull and above the ground (`mageLooks.test.mjs` "each focus
+     clears her head and the ground in every clip"). No edge of the focus's haft, butt knob or head
+     (sampled along mesh edges at most 0.005 H apart, as `edgeGuards.mjs` `along`) lies inside her
+     right forearm, her right hand or the gown's flared right sleeve. That last guard is new, with a
+     rejection fixture: the same focus moved so its haft lies along the forearm's axis must fail it.
+129. **The looks point the same (W4).** The Spellwarden's ward focus and the Pyromancer's fire
+     focus take the same keys (`FOCUS_STYLE` spreads `WIZARD_STYLE`), and R125–R128 hold for each on
+     its own row. The fire focus's flame stays upright in the world (gear.js `fireFocus`, its hook),
+     so pointed, the flame stands up out of a level cage. That is judged at the contact sheet
+     (R134), not re-keyed.
+130. **The frame box (W4; E2).** Each wizard sheet's frame box is no larger than today's (222 × 192,
+     225 × 195, 225 × 198) in either dimension. Option (a) of E2 holds until the coordinator picks.
+     If the bake would grow a box, it stops before committing and that is reported, never routed
+     around. A pick of (b), (c) or (d) is recorded here through write-a-spec, and R125 or this
+     requirement is restated.
+
+#### The attack-on-the-move clips leave her sheets (W5)
+
+131. **Her clip set (W5).** The three wizard sheets carry `idle`, `walk`, `attack`, `death` and
+     `run`, in that order, and **no `walk_attack` and no `backpedal_attack`**. `WIZARD_SHEET` is
+     built without `withWalkAttack`, its run `SPRINT_RUN`. The looks take it through `specRow`.
+     `RUNNING_CLASS_ANIMATIONS` stays for the knight. A test control that needs her old clips builds
+     them explicitly, as the archer's cloak control does (clearance.test.mjs:537-547). Her idle, walk
+     and death keys match their `22cabd3a` digests (R115).
+132. **Clip choice unchanged (W5).** `animationSelect.ts` and `character.ts` are not changed. On her
+     sheets `carries` finds no `walk_attack` or `backpedal_attack`, so an attacking wizard plays the
+     cast turned to her aim, moving or not (animationSelect.ts:157). Not attacking, she runs turned
+     to her movement (R4). A pinned wizard stands (R49). In the latency gap at the pin's edges the
+     standing cast may slide a tick or two with the drawn movement: accepted, as for the others.
+
+#### Bake, review and budget (W6)
+
+133. **One bake.** The three wizard sheets are re-baked once with R115–R132 by the bake tool (`npm
+     run bake`), never drawn or edited by hand. `npm run bake -- --check` is clean afterwards. Only
+     `wizard-0.png`, `wizard_spellwarden-0.png`, `wizard_pyromancer-0.png` and their manifest
+     entries change. **The archer's, the knight's and the mercenary's manifest entries and atlases
+     are byte-identical** (their sheets' `animations`, frame boxes, anchors, crowns, and the
+     atlases' `sha256`).
+134. **The contact sheet (W6).** For each of the three sheets: the new run beside `22cabd3a`'s and
+     the new cast beside `22cabd3a`'s, 8 facings, at game scale and at ×2, with an animated preview
+     playing the run at its fps × `200 / RUN_PACE` and the cast at 12 fps. Also a ×4 detail of the
+     staff or focus at the strike (key 3) in `e`, `ne` and `n`, and of the gown's front over the
+     knee on the run's keys 2 and 6. The regular contact sheet, the looks' sheet and the dark-room
+     strip show her clips without `walk_attack` and `backpedal_attack`. The owner approves
+     (ADR-0021 §5). Later slices and the charter's next item do not wait on it. Tune rounds after
+     it stay inside this change.
+135. **The report.** From the bake, for each sheet: the atlas pages and dimensions before and after,
+     RGBA and PNG bytes before and after, the change in per cent, and the frame box before and after.
+     Before (`22cabd3a`): `wizard-0` 2056 × 4000 (32.9 MB, PNG 4,906,841 B), `wizard_spellwarden-0`
+     3116 × 2700 (33.7 MB, 5,261,079 B), `wizard_pyromancer-0` 2224 × 3764 (33.5 MB, 5,148,652 B).
+     *Estimate:* 64 → 36 frames a facing (−44%), about 18–20 MB RGBA each if the box holds.
+136. **Docs.** `game-client/docs/design-guideline.md`'s character clip list says that the wizard
+     runs with the sprint's lean and cadence, her sceptre carried as before, that her cast points
+     the staff along the aim, and that her sheets carry no attack-on-the-move clips. The
+     `tools/bake/lib/contact.mjs` header notes say the same.
+
+### Acceptance Criteria
+
+Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `clearance.test.mjs`,
+`mageLooks.test.mjs`, `castLooks.test.mjs`, on her rig and style as cast.js builds her):
+
+- [ ] The archer's and the mercenary's run keys and sheets, the mercenary's other clips, the
+      knight's sheet and clips, and the shared run match their `22cabd3a` digests (R115, R116).
+- [ ] Her sheet options carry exactly `idle`, `walk`, `attack`, `death`, `run`; `run` is
+      `SPRINT_RUN` by reference (8 frames, looping, 16 fps, `speed` 2.5); her run reads
+      `SPRINT_LEAN` by reference and `RUN_STEP`'s legs at the named stride 0.88; the two looks'
+      rows carry the same (R116, R117, R131).
+- [ ] Her run: the lean 19–21° on average and 18–22° on every sample; the head steady; a flight
+      frame each step; 4 planted keys; a lift of at least 0.045 H; a bob of 0.056–0.07 H; the
+      pelvis once a step; the shoulders counter-turning at 6.5–10°; the knee at least 0.30 H (R118).
+- [ ] Her pace at 16 fps within 1 px/s of `RUN_PACE`, which is still 194; the value recorded (R119).
+- [ ] The leg guard, the seen-through-the-cloth check and the scapular-over-gown check pass the
+      three looks on every clip they carry, with nothing added to `KNOWN_CLIPPING` or
+      `MIRRORED_LEGACY`, the gown and its springs unchanged (R120).
+- [ ] Her carry's keys are unchanged; the elbows, the hands back past the hip, the cross-in, the
+      free-arm clearance, the orb ahead of the hand, the sceptre outside the robe, the carry out
+      of the body and the head, and the normal grip pass on her run (R122).
+- [ ] The sceptre hand peaks at 0.56–0.59 H; the sceptre 15–45° off vertical on every sample; the
+      tome hand's front height recorded (R123).
+- [ ] The cast keeps 7 keys at 12 fps with the strike and the glow peak at key 3 (R124).
+- [ ] On keys 3 and 4: the staff within 10° of the facing in plan and 0–15° below level; the
+      shoulder-to-hand line within 25° of it; the elbow bent at most 20°; the hand between the
+      chest bone and the shoulder; the orb not above the shoulder. On every cast key the orb is not
+      above her crown. Seen red against today's cast: the staff 77° above level, 78°
+      off the facing, the orb at 0.95 H (R125).
+- [ ] The normal grip holds on every key of `attack`, and the wrist cocks at most 1.3 rad (R126).
+- [ ] The wind-up, the weight, the pelvis before the chest, the curved path, the open free hand and
+      `ATTACK_TURN_LIMIT` hold on the new cast (R127).
+- [ ] On all three looks, the staff or focus is out of the torso, the head and the robe, its head is
+      at least 1.3 skull radii from the skull and above the ground on every clip, and the focus is
+      clear of her right forearm, hand and sleeve. The sleeve guard's rejection fixture fails
+      (R128, R129).
+- [ ] The knight's run tests and sheet test (the shared run's plain style, `RUN_STEP` key for key,
+      the 10° lean, the pump bands, the 14 fps pace) pass unchanged (R121).
+
+Manifest and client (`npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` in
+`game-client`):
+
+- [ ] In `public/art/manifest.json` the three wizard sheets carry `idle`, `walk`, `attack`,
+      `death`, `run` (8 frames at 16 fps, looping, 8 facings), at 1.5x and trimmed, and no
+      `walk_attack`, `backpedal_attack` or `backpedal` (R131).
+- [ ] The archer's, the knight's and the mercenary's manifest entries and atlases are
+      byte-identical to `22cabd3a`'s (R133).
+- [ ] The shipped-sheet tests in `animationSelect.test.ts` and `manifest.test.ts` name the wizard
+      without `walk_attack` and `backpedal_attack`, with `run`; the knight keeps both clips.
+- [ ] `animationSelect.ts` and `character.ts` are unchanged (R132).
+- [ ] `npm run bake -- --check` is clean.
+- [ ] Each wizard frame box is at most today's (222 × 192, 225 × 195, 225 × 198), or as the
+      coordinator's E2 pick restates it. The report gives each atlas's dimensions, RGBA and PNG
+      bytes before and after, and the change in per cent (R130, R135).
+- [ ] No file under `game-server/`, `game-client/src/api/generated` or any migration changes.
+
+HITL:
+
+- [ ] **The owner approves** the three wizard sheets' new run and cast beside `22cabd3a`'s on the
+      contact sheet (ADR-0021 §5), or names a tune round (R134). Nothing else waits on it (W6).
+- [ ] **Browser check:** in a run and in the town, the wizard, the Spellwarden and the Pyromancer
+      run at 200 px/s with the sprint's lean and cadence, the feet not visibly sliding and no leg
+      through the gown. A click and a right-click cast point the staff or focus at the target, in
+      the facing nearest it, standing still or moving (she stands in the pin). No `walk_attack` or
+      `backpedal_attack` ever shows for her, and a second player sees the same.
+
+### Edge States
+
+- **Casting on the move.** The pin stands her (R49), so the cast shows standing, turned to the
+  aim. In the latency gap at the pin's edges the standing cast may slide a tick or two (W5,
+  accepted).
+- **An aim between two facings.** The clip is baked in 8 facings and the client turns it to the
+  nearest (facing.ts:23-31), so the staff points up to 22.5° off the true aim; the fireball
+  flies the true aim. Expected; a finer facing is out of scope.
+- **The fireball's start.** It starts at 42 screen px over her feet and 15 px along the aim
+  (fireball.ts), not at the orb. *Estimate:* a staff pointed 5–10° below level from the hand at
+  about 0.65 H puts the orb near 0.6 H, about 45 screen px up at 1x, close to the fireball's 42.
+  Moving the effect to the orb is out of scope.
+- **Running into a cast.** The cast starts from its own key 0 (out of the idle carry), so a cast
+  started mid-run jumps from the run's carry to the wind-up, as today.
+- **Setting off and stopping.** Her carry is the same in the run as today, so setting off and
+  stopping look as they do now, under a trunk that leans 10° further.
+- **The three looks.** A focus is 1.5x the sceptre and held 0.21 H up its haft, so pointed its butt
+  reaches back toward her forearm and the flared sleeve (R128 guards it). The fire focus's flame
+  stands upright out of the level cage (R129). The Spellwarden's spaulders ride the extended arm.
+- **Gear move speed.** At +20% (240 px/s) her run plays at about 1.24x (about 19.8 fps), capped by
+  `MAX_WALK_SCALE` as today.
+- **Mixed parties.** Until the knight is redone he runs at 14 fps with `walk_attack`, while the
+  archer, the mercenary and the wizard carry no attack on the move. Expected.
+- **Other players.** Others draw her from the same sheet, so they see the run and the pointed cast.
+- **The dark-room strip.** `contact-darkroom-wizard` is regenerated with the new run, if the bake
+  writes one for her, as the others' were.
+
+### Out of Scope
+
+- The knight's run and his looks' runs, and dropping his `walk_attack` and `backpedal_attack`
+  (the charter's next item). `RUNNING_CLASS_ANIMATIONS` stays for him.
+- The `walk_attack` and `backpedal_attack` branches in `animationSelect.ts` and `character.ts`, and
+  `BACKPEDAL_PACE`. They go when the last class drops the clips.
+- Her idle, walk and death keys; her carry's keys (W2); a transition clip.
+- Any change to the archer's or the mercenary's keys, carries or sheets, or to the shared sprint's
+  keys (R115, R116). Changing them is escalated, not done.
+- A look change to the gown, the scapular, the sleeves or the focuses (W3, E1), unless the
+  coordinator picks one.
+- The fireball's start point and the 8-facing aim (Edge States).
+- `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
+  lane).

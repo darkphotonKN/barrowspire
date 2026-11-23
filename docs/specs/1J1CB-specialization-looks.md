@@ -498,3 +498,5 @@ idle only).
 - A full staff for either mage spec; a new palette token for the ward.
 - A global aura budget or culling auras outside the camera.
 - Recording the ADR (§C) and the vocabulary (domain-model): named here, done by their owners.
+
+## Change: The wizard's sprint and pointed cast → FS-JS7C8
