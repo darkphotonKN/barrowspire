@@ -429,3 +429,83 @@ C9. **It closes the letter panel as it opens, and the letter panel and the menu 
 - Any change to what the panel holds or to the party protocol.
 
 ## Change: The XP bar along the bottom → FS-77DVN
+
+## Change: Party cap 3, match size its own setting
+Status: work-order
+Date: 2026-11-24
+
+Charter "Party of three", approved by the owner 2026-11-24 ("Approve, run it"). Owner: "increase
+the scope of number of players for party size ... from 2 to 3, for party players. Nothing changed
+for the random queue of 2 players (non party)". R8 made `PARTY_SIZE` both the party cap and the
+matchmaker's match size, so raising one raised the other; this change splits them.
+[ADR-0091](../adr/0091-the-party-cap-and-the-match-size-are-separate-settings.md) amends
+ADR-0035's "the matchmaker's match size is the party size". R8, User Story 21 and the
+`PARTY_SIZE` acceptance row are replaced by S1–S3, story S-US1 and the rows below. The text above
+is not edited; where this section and it disagree, this section wins.
+
+### Requirements
+
+S1. **`PARTY_SIZE` is the party cap only.** Env, default **3**, a whole number from 2 to 4;
+    anything else fails startup with an error that names `PARTY_SIZE`. It feeds the hub's party
+    cap (`WithPartySize`), so `party_full` (R19), `size` on `party_update` (R21) and every other
+    use of the cap follow it. **(charter default 1: the owner's ask, parties of three)**
+S2. **`MATCH_SIZE` is the matchmaker's match size.** Env, new, default **2**, a whole number from
+    2 to 4; anything else fails startup with an error that names `MATCH_SIZE`. Loaded the same way
+    as `PARTY_SIZE` and passed to `NewMatchmaker` in place of the party size. The matchmaker and
+    the match queue themselves do not change. **(charter default 2: the random queue keeps the
+    knob it had through `PARTY_SIZE`, and stays at 2)**
+S3. **The two are independent.** No startup check ties them; `MATCH_SIZE` above `PARTY_SIZE` is
+    allowed and gives FS-988SM R10's split party. Both values are logged at startup.
+S4. **gameserver's own default stays 2.** `defaultPartySize` in `internal/gameserver/party.go`, the
+    cap when a pod is built without `WithPartySize` (tests only; production always passes the
+    config value), is unchanged. **(charter default 5: production never reads it, and the tests
+    that pin a cap-2 party lean on it)**
+S5. **No client change.** The client takes the cap from `size` on `party_update`, never a literal,
+    and its party frames are already laid out and tested at the largest cap (4). A party of three
+    is checked in the browser, not built. **(charter default 6)**
+S6. **A matched party stays the match's size.** A random match of 2 forms a party of 2 under a cap
+    of 3; inside its run nobody can be invited (FS-NCC9J R10 `in_run`) and its members leave it
+    with the run (FS-988SM, ADR-0039), so the room is never used. Nothing to build. **(charter
+    default 7)**
+
+### User Stories
+
+S-US1. As an operator, I want the party cap and the random match size to be separate settings, so
+    that parties can grow without random matches growing with them. *(Replaces story 21.)*
+S-US2. As a player, I want to form a party of three, so that three friends can enter the Spire
+    together.
+S-US3. As a player in the random queue, I want matches to stay at two players, so that queueing
+    alone plays as it did.
+S-US4. As an operator, I want a mistyped `PARTY_SIZE` or `MATCH_SIZE` to stop the pod with an error
+    that names it, so that a bad deploy fails loudly instead of running at a surprise size.
+
+### Acceptance Criteria
+
+- [ ] `PARTY_SIZE` unset gives a party cap of 3; `2`, `3`, `4` (spaces trimmed) are taken; `1`, `5`, `0`, a negative or a non-number fails startup with an error naming `PARTY_SIZE`. (S1)
+- [ ] `MATCH_SIZE` unset gives a match size of 2; `2`, `3`, `4` (spaces trimmed) are taken; `1`, `5`, `0`, a negative or a non-number fails startup with an error naming `MATCH_SIZE`. (S2)
+- [ ] `PARTY_SIZE` feeds the hub's party cap and `MATCH_SIZE` feeds `NewMatchmaker`; with both unset a pod caps parties at 3 and matches 2 players. (S1, S2)
+- [ ] With both unset, a leader can invite two players and both can accept; a fourth invite is refused `party_full`; `party_update` carries `size` 3. (S1)
+- [ ] With both unset, two solo players who queue are matched as before and their matched party has 2 members. (S2, S6)
+- [ ] A party of three passes the ready check and enters the Spire together. (S1)
+- [ ] No file under `internal/matchmaker/` or `internal/match_queue/` changes. (S2)
+- [ ] Client (browser check): a party of three shows three frames, the panel lists three members, and no layout overlaps. (S5)
+
+### Edge States
+
+- **`MATCH_SIZE` above `PARTY_SIZE`** (an operator's choice): FS-988SM R10, the first ones up to
+  the cap are members, the rest play outside the party. Not refused at startup (S3).
+- **`PARTY_SIZE=2` set explicitly:** the old cap, with matches still at 2; the same shape as
+  before this change.
+- **Only one of the two set:** the other takes its own default; nothing is derived from the one
+  that is set.
+- **A deploy that set `PARTY_SIZE` to change the match size:** now changes only the cap; the match
+  size needs `MATCH_SIZE`. No manifest in the repo sets either today.
+- **A party of three with one member offline at the ready check:** as for any party size (FS-BJNYC).
+
+### Out of Scope
+
+- Any change inside the matchmaker or the match queue (FS-K2HKP; user-owned).
+- Filling a party from the queue (ADR-0035, still deferred).
+- A party cap above 4, or a hub travel margin (`HubTravelMargin`, FS-NCC9J) other than 4.
+- Any wire, proto or HTTP contract change.
+- Changing gameserver's test default (S4).

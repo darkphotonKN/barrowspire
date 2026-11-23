@@ -383,3 +383,80 @@ village" reads "X is not in the town".
 - A party of just the leader entered at once, with no ready check → refused **`too_few`** (R3, R5). Nick: "如果隊伍只有一人 也顯示需要大於1人".
 - Door choices greyed or hidden by party standing (solo and queue greyed for members; no entry choice for non-leaders and players in no party) → **every choice for everyone, pressable, refused in words at the door** (R20–R22). Nick: "改成都可以按 然後出現對應拒絕文字 包含沒組隊時按組隊進場 也會出現需要先組隊的文字".
 - The door's line "Your party enters together." for a party member → **one opening line for everyone**; the words now answer a pressed Descend alone or Wait for company.
+
+## Change: Party cap 3, match size its own setting → FS-R82NV
+
+## Change: Plainer door choices, no random queue in a party
+Status: work-order
+Date: 2026-11-24
+
+Charter "Party of three", extended by the owner 2026-11-24 (same rules). Owner: "in party there is
+no 'queue with other random players' option, and improve the wording of those in the phaser
+client, now its too convoluted. 'Challenge The Spire Along', 'Challenge the Spire With Party',
+'Challenge the Spire with Randoms [Two Player]'. For now only two players for the randoms, we'll
+add 3 player queues in future." R20's labels, its order and its "none is greyed or hidden" (for the
+queue choice only) are replaced by P1–P3; R21, R22 and the §Copy refusal rows stand. The text above
+is not edited; where this section and it disagree, this section wins. Rides beside
+[FS-R82NV § Change: Party cap 3, match size its own setting](R82NV-party-formation.md) (parties of
+three; random matches stay at two).
+
+### Requirements
+
+P1. **The labels.** At the Spire's door the choices read: **Challenge the Spire Alone** (sends
+    `start_solo`, was *Descend alone*), **Challenge the Spire with Party** (`party_enter`, was
+    *Enter as a party*), **Challenge the Spire with Randoms [Two Player]** (`find_game`, was *Wait
+    for company*), and **Not yet** (unchanged). Each keeps its key suffix as today. **(charter
+    default D1: the owner's wording; "Along" read as "Alone", and "the" lowercased in all three
+    for one style)**
+P2. **The order.** Alone, Party, Randoms, Not yet, the same order for everyone: Alone is key 1,
+    Party key 2, Randoms key 3 (when offered, P3). E and Enter still press the first choice. This
+    replaces R20's "Enter as a party third (key 3)". **(charter default D2: the owner's listed
+    order)**
+P3. **No random queue in a party.** A player in a party (a member, the leader, or a party of just
+    the leader) is not offered *Challenge the Spire with Randoms [Two Player]* at all; they see
+    Alone, Party and Not yet. A player in no party sees all four. This replaces R20's "none is
+    greyed or hidden" for this one choice only; Alone and Party are still offered to everyone,
+    and Party's refusal for a player in no party ("Form a party first.") is unchanged. R20's redraw
+    when the player's party standing changes while the door is open adds or removes the choice
+    live, on the opening line. **(charter default D3: the owner, "in party there is no 'queue with
+    other random players' option")**
+P4. **The server does not change.** R1's `find_game` refusal for a party member ("Your party
+    enters together.") stays as the authoritative guard; the door no longer offers the way to reach
+    it. **(charter default D4)**
+P5. **"[Two Player]" is client text.** The match size is not sent to the client; the label is a
+    literal, true while `MATCH_SIZE` is 2 (FS-R82NV S2). A three-player random queue is a later
+    change and revisits this label. **(charter default D5: charter Bounds, no wire change)**
+P6. **Other copy follows.** Any other player-visible text that names an old label is reworded to
+    the new names; code comments may stay or follow. **(charter default D6)**
+
+### Acceptance Criteria
+
+- [ ] A player in no party at the door sees, in order: "Challenge the Spire Alone [1]", "Challenge the Spire with Party [2]", "Challenge the Spire with Randoms [Two Player] [3]", "Not yet [Esc]" (key suffixes as the dialogue draws them today). (P1, P2)
+- [ ] A member, a leader, and a party of just the leader each see Alone [1], Party [2] and Not yet [Esc], and no Randoms choice. (P3)
+- [ ] Each choice still sends what it sent: Alone `start_solo`, Party `party_enter`, Randoms `find_game`; each stays up until answered and holds back only while its own send is unanswered (R21). (P1)
+- [ ] E and Enter press Alone. Key 2 presses Party; key 3 presses Randoms when offered and nothing when it is not. (P2, P3)
+- [ ] Joining a party while the door is open removes the Randoms choice; leaving or losing the party while it is open adds it back; both on the opening line. (P3)
+- [ ] Party pressed by a player in no party still reads "Form a party first." in the door's panel. (P3)
+- [ ] No player-visible text in the client names "Descend alone", "Wait for company" or "Enter as a party". (P6)
+- [ ] At 1080 × 720 and 1280 × 720 the longest label fits the door's panel without overflow. (P1)
+- [ ] No server file changes. (P4)
+
+### Edge States
+
+- **A `find_game` in flight when the player joins a party:** the redraw drops the choice; the
+  server's answer (the queue taking them, or R1's refusal) is handled as today, in the door's
+  panel if it is still open (R22).
+- **A party of just the leader:** a party, so no Randoms (P3); Party is refused `too_few` as today.
+- **Already queued:** the door says the queue is gathering, as today; no choice list, no change.
+- **Two brackets on one label:** "[Two Player]" sits beside the key suffix ("[3]"). Kept as the
+  owner wrote it; the browser check judges it.
+- **A long label:** if the longest label does not fit the panel at 1080, the panel's own wrap or
+  width rule applies; the label's words do not change.
+
+### Out of Scope
+
+- A three-player random queue, or sending the match size to the client.
+- Any server change, including R1's refusal words.
+- The ready-check popup, the queued panel and the refusal table's words (§Copy), which name no
+  door choice.
+- Renaming the choices' ids (`solo`, `enter`, `queue`) or the actions they send.

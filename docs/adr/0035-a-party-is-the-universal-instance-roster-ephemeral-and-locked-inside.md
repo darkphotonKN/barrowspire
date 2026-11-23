@@ -3,6 +3,7 @@
 Status: accepted
 Date: 2026-11-01
 Amended by: [ADR-0039](0039-a-matched-party-lives-only-for-its-run.md) — for matched parties only: the "persists across instances" clause and the instance lock's "they stay a member" clause
+Amended by: [ADR-0091](0091-the-party-cap-and-the-match-size-are-separate-settings.md) — the "The matchmaker's match size is the party size" consequence: the party cap and the random match size are separate settings
 Scope: `game-server/game-service`
 Realized by: [FS-BJNYC](../specs/BJNYC-party-instance-entry.md) (party entry, auto-formed party,
 instance lock), [FS-R82NV](../specs/R82NV-party-formation.md) (party lifetime, Redis pointers),

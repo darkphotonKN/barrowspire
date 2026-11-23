@@ -196,3 +196,5 @@ inbound action.
 - Any change to the queue, matchmaker, Redis keys or handoff.
 - A confirmation step before descending alone.
 - Showing the queue count inside the NPC dialogue.
+
+## Change: Plainer door choices, no random queue in a party → FS-BJNYC

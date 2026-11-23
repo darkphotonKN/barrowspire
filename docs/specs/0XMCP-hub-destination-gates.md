@@ -357,3 +357,5 @@ changed to walk players to the door one at a time as a stopgap. Players on other
 FS-JEAVX) never collided, so the effect only showed among players on one pod.
 
 ## Change: The chapel and the graveyard → FS-R4MYX
+
+## Change: Plainer door choices, no random queue in a party → FS-BJNYC

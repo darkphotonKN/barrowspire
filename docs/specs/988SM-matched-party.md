@@ -268,3 +268,5 @@ Parties players form by hand are unchanged.
   every run, not only matched ones, so it belongs to its own item.
 - Seat timing and FS-K2HKP's seat release (15 s); a never-arrived member is not given the 30 s
   reconnect grace.
+
+## Change: Party cap 3, match size its own setting → FS-R82NV
