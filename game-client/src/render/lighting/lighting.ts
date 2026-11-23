@@ -157,13 +157,25 @@ export const AMBIENT: Record<WorldKind, number> = {
  * The tower interior's ambient (FS-8RBQY §B.6): the run's cold slate, sunk toward pitch, so the
  * inside of the Barrowspire is darker than a run outdoors and its sconces and slits throw their
  * pools into it. The exterior world theme keeps {@link AMBIENT}`.run`. Never lifted for
- * readability: markers carry that above the light-map.
+ * readability: markers carry that above the light-map. On a fog floor it gives way to
+ * {@link FOG_FLOOR_AMBIENT} while the fog stands, as a look (FS-SRA9J §Change: Lighter fog and lit
+ * regions, F7).
  */
 export const TOWER_AMBIENT = mix(
   mix(BARROW_HEX.slate, BARROW_HEX.necrotic, 0.3),
   BARROW_HEX.pitch,
   0.33,
 );
+
+/**
+ * A fog floor's ambient (FS-SRA9J §Change: Lighter fog and lit regions, F7; ADR-0090 Decision 2):
+ * the run's own, {@link AMBIENT}`.run`, in place of {@link TOWER_AMBIENT} while the floor's fog
+ * stands. The fog carries the dark there, so the region the party is in reads clearly brighter
+ * than the veiled ones around it. A look, not a readability lift: FS-8RBQY §B.7's "never lifted"
+ * holds on floors without fog, and markers still carry readability above the light-map. Named
+ * once, so the owner's eyeball retune is a one-word swap (D4).
+ */
+export const FOG_FLOOR_AMBIENT = AMBIENT.run;
 
 /**
  * The Forlorn Forest's ambient (FS-3QHQZ §Requirements 26): "a little gloomy but not so dark". An

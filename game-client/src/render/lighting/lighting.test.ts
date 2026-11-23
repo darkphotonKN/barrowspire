@@ -7,6 +7,7 @@ import {
   flickerAt,
   TOWER_AMBIENT,
   FOREST_AMBIENT,
+  FOG_FLOOR_AMBIENT,
   litEdgeGround,
   relativeLuminance,
   sourceFromManifest,
@@ -128,6 +129,11 @@ describe("ambient per world (FS-2325V §C.8, §C.9)", () => {
   it("should light the Forest dim, not dark: strictly between the hub's dusk and a run's barrow cold (FS-3QHQZ §Requirements 26)", () => {
     expect(relativeLuminance(FOREST_AMBIENT)).toBeLessThan(relativeLuminance(AMBIENT.hub));
     expect(relativeLuminance(FOREST_AMBIENT)).toBeGreaterThan(relativeLuminance(AMBIENT.run));
+  });
+
+  it("should light a fog floor with the run's own ambient, the tower's still darker (FS-SRA9J §Change: Lighter fog and lit regions, F7)", () => {
+    expect(FOG_FLOOR_AMBIENT).toBe(AMBIENT.run);
+    expect(relativeLuminance(TOWER_AMBIENT)).toBeLessThan(relativeLuminance(FOG_FLOOR_AMBIENT));
   });
 
   it("should mix the forest ambient from tokens: an overcast grey-green, cooler than the hub", () => {

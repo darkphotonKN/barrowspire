@@ -142,7 +142,7 @@ import { drawTorchBar } from "@/ui/torchBar";
 import { drawOpenBar, openBarFraction } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
-import { HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
+import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
 import { ensurePointerLook, findPointerLook, type PointerLook } from "@/render/cursors";
 import { EffectsRuntime } from "@/render/effects/runtime";
 import { HitFeedback } from "@/render/effects/hit";
@@ -4052,12 +4052,32 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private dropDungeon(): void {
     this.dungeon?.chunks.clear();
-    this.dungeon?.fog?.destroy();
+    this.dropFog();
     this.dungeon?.minimap?.destroy();
     this.dungeon?.modeIcon?.destroy();
     this.dungeon?.mapName?.destroy();
     this.dungeon = undefined;
     this.placeTopRightColumn();
+  }
+
+  /**
+   * The floor's fog put up, and with it the light-map's lifted ambient, at once: the fog carries
+   * the floor's dark while it stands (FS-SRA9J §Change: Lighter fog and lit regions, F7, F8;
+   * ADR-0090 Decision 2). With `dropFog` the only way the fog comes and goes, so the ambient is
+   * `FOG_FLOOR_AMBIENT` exactly while a fog stands.
+   */
+  private standFog(dungeon: DungeonFloor, fog: Fog): void {
+    dungeon.fog = fog;
+    this.lightMap?.setAmbient(FOG_FLOOR_AMBIENT);
+  }
+
+  /** The floor's fog, if it stood, taken down with its lifted ambient, the world theme's back at once (F8). */
+  private dropFog(): void {
+    const dungeon = this.dungeon;
+    if (!dungeon?.fog) return;
+    this.lightMap?.setAmbient(this.worldLook.ambient);
+    dungeon.fog.destroy();
+    dungeon.fog = undefined;
   }
 
   /**
@@ -4090,7 +4110,7 @@ export class BarrowspireScene extends Phaser.Scene {
       () => ({ back, front: (back * BAKE.WALL_FRONT) / BAKE.WALL_BACK }),
       wallLayout(dungeon.grid, plan),
     );
-    dungeon.fog = fog;
+    this.standFog(dungeon, fog);
     const stand = (part: Phaser.GameObjects.Sprite | Phaser.GameObjects.Graphics, at: Point) =>
       dungeon.chunks.add(fog.gate(part, at), worldToScreen(at.x, at.y));
     if (baked) {

@@ -763,6 +763,12 @@ function sceneOnStage() {
     run.art as InstanceType<typeof ArtLibrary>,
     run.monsterTargeting,
   );
+  // made with the world theme's ambient, as the scene makes it; each later change recorded with
+  // whether the floor's fog stood when it came (FS-SRA9J §Change: Lighter fog and lit regions, F8)
+  const lit = {
+    ambient: (run as unknown as { worldLook: { ambient: number } }).worldLook.ambient,
+    ambients: [] as { ambient: number; fog: boolean }[],
+  };
   run.lightMap = {
     add: (source: unknown, gate?: () => boolean) => {
       lights.push(source);
@@ -775,6 +781,14 @@ function sceneOnStage() {
     },
     clear: () => lights.splice(0),
     clearTransient: () => {},
+    get ambient() {
+      return lit.ambient;
+    },
+    ambients: lit.ambients,
+    setAmbient: (ambient: number) => {
+      lit.ambient = ambient;
+      lit.ambients.push({ ambient, fog: !!(run as unknown as { dungeon?: { fog?: unknown } }).dungeon?.fog });
+    },
   };
   run.groundLayer = {
     paint: (houses: { id: string }[], floor?: unknown) => {
@@ -9867,6 +9881,7 @@ const { FIXED_LIGHT_CAP } = await import("@/render/world/floorLights");
 const { GROUND_DEPTH, GROUND_MARGIN, GroundLayer } = await import("@/render/world/scene");
 const await_fog = await import("@/render/world/fog");
 const await_exploration = await import("@/render/world/exploration");
+const await_lighting = await import("@/render/lighting/lighting");
 
 describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () => {
   const manifest = JSON.parse(readFileSync(join(__dirname, "../../public/art/manifest.json"), "utf8"));
@@ -10551,6 +10566,41 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       handle(bare(floorState(2)));
       expect(layers.every((m) => m.destroyed)).toBe(true);
       expect(run.dungeon).toBeUndefined();
+    });
+
+    describe("the fog floor's ambient (FS-SRA9J §Change: Lighter fog and lit regions, F7, F8)", () => {
+      const { FOG_FLOOR_AMBIENT, TOWER_AMBIENT } = await_lighting;
+      type Lit = { ambient: number; ambients: { ambient: number; fog: boolean }[] };
+      const lit = (run: unknown) => (run as { lightMap: Lit }).lightMap;
+
+      it("should lift the light-map to the fog floor's ambient when floor 1's fog stands, never before it", () => {
+        // the snapshot before its map: no fog yet, the tower's ambient, then the map's fog and the lift
+        const { run } = dungeonStage(inRoom, {}, { late: true });
+        expect((run as unknown as FoggedRun).dungeon?.fog).toBeDefined();
+        expect(lit(run).ambient).toBe(FOG_FLOOR_AMBIENT);
+        expect(lit(run).ambients).toEqual([{ ambient: FOG_FLOOR_AMBIENT, fog: true }]);
+      });
+
+      it("should return the tower's ambient at once on a climb to a floor without fog", () => {
+        const { run, handle } = stageIn(inRoom);
+        expect(lit(run).ambient).toBe(FOG_FLOOR_AMBIENT);
+        useGameStore.getState().receiveFloorMap(mapOf(floorState(2)));
+        handle(bare(floorState(2)));
+        expect(run.dungeon).toBeUndefined();
+        expect(lit(run).ambient).toBe(TOWER_AMBIENT);
+        // and floor 3 keeps it
+        useGameStore.getState().receiveFloorMap(mapOf(floorState(3)));
+        handle(bare(floorState(3)));
+        expect(lit(run).ambient).toBe(TOWER_AMBIENT);
+      });
+
+      it("should leave floors 2 and 3 at the tower's ambient, never lifting it, on a fresh scene", () => {
+        const { run } = sceneOnStage();
+        run.handleGameStateUpdate(floorState(2));
+        run.handleGameStateUpdate(floorState(3));
+        expect(lit(run).ambient).toBe(TOWER_AMBIENT);
+        expect(lit(run).ambients).toEqual([]);
+      });
     });
 
     it("should start a new dungeon floor unexplored, the party's regions visible at once", () => {
