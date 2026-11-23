@@ -43,6 +43,9 @@ import {
   SCEPTRE_RUN_PEAK,
   SCEPTRE_RUN_TILT,
   SCEPTRE_TILT,
+  SPRINT_LEAN,
+  SPRINT_RUN,
+  SPRINT_STEP,
   WIZARD_BUILD,
   WIZARD_SHEET,
   WIZARD_STYLE,
@@ -50,6 +53,13 @@ import {
 import { MERC_ANIMATIONS, parryClip } from "./clips.js";
 
 const DEG = 180 / Math.PI;
+
+/**
+ * The sha256 of a value's JSON, to hold keys byte for byte as a commit had them (main 970f2dc7 for
+ * the shared run's and the other classes', `2018f786` for the archer's run and sheet and the
+ * mercenary's other clips). A digest changes only when the keys do.
+ */
+const digest = (x) => createHash("sha256").update(JSON.stringify(x)).digest("hex");
 
 /** A class's rig as cast.js builds it, with the legs and boots every clip is grounded on. */
 function rigOf(build) {
@@ -229,9 +239,10 @@ function deepestCarry(rig, gear, frames) {
  * `low` names the arm that pumps only to the lower chest ({@link SCEPTRE_RUN_PEAK}): the wizard's
  * sceptre arm. `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
  * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
- * the knight's 5° below to 12° above and the mercenary's 8° below to 10° above each raised about 15°,
- * then "戰士 傭兵 跑步時提劍的角度再提升15度": the knight's 9-26° and the mercenary's 7-24° raised about
- * 15° again).
+ * the knight's 5° below to 12° above raised about 15°, then "戰士 傭兵 跑步時提劍的角度再提升15度": the
+ * knight's 9-26° raised about 15° again). The mercenary no longer runs the shared fast run: he runs
+ * the sprint ({@link SHARED_RUNNERS}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword
+ * R96), so his blade band, his pump and his pace are his sprint's own tests below.
  */
 const CLASSES = [
   {
@@ -251,7 +262,6 @@ const CLASSES = [
     sheet: MERCENARY_SHEET,
     pump: ["L", "R"],
     rest: "point",
-    runBlade: [21, 40],
   },
   {
     name: "wizard",
@@ -264,7 +274,14 @@ const CLASSES = [
   },
 ];
 
-describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward step (FS-JS7C8 slices 6–8, FS-HF0WW § Change: Class sheets at 1.5x R35)", ({ sheet }) => {
+/**
+ * The classes that still run the shared fast run (FS-JS7C8 R2, R3: RUN_STEP's legs key for key at
+ * 14 fps, the 10° lean): the knight and the wizard. The mercenary sprints (FS-JS7C8 § Change: The
+ * mercenary's sprint and trailing sword R94, R96).
+ */
+const SHARED_RUNNERS = CLASSES.filter(({ name }) => name !== "mercenary");
+
+describe.each(SHARED_RUNNERS)("the $name's sheet at 1.5x with the run and the backward step (FS-JS7C8 slices 6–8, FS-HF0WW § Change: Class sheets at 1.5x R35)", ({ sheet }) => {
   it("carries run, walk_attack over 0.75 walk cycles and backpedal_attack over 0.75, no standalone backpedal, at scale 1.5", () => {
     expect(sheet.scale).toBe(1.5);
     const a = sheet.animations;
@@ -276,7 +293,7 @@ describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward 
   });
 });
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, low, rest, runBlade }) => {
+describe.each(SHARED_RUNNERS)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, low, rest, runBlade }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -835,39 +852,64 @@ describe("the mercenary cuts wider and lighter than the knight (FS-2325V § Chan
   });
 });
 
-describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow R66–R71)", () => {
-  /** Her rig as cast.js builds it: her build, her legs under the tunic and her boots, whose soles every clip is grounded on. */
-  function archerRig() {
-    const rig = createRig(...ARCHER_BUILD);
-    const [, hy] = J(rig, "hips");
-    legs(rig, new THREE.MeshBasicMaterial(), { under: { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] } });
-    boots(rig, new THREE.MeshBasicMaterial(), { top: 0.21 });
-    return rig;
-  }
-  const rig = archerRig();
-  const spec = ARCHER_SHEET.animations.run;
-  const run = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations).run;
-  const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
-  const KEYS = [0, 1, 2, 3, 4, 5, 6, 7];
-  const range = (x) => Math.max(...x) - Math.min(...x);
-  const mean = (x) => x.reduce((s, v) => s + v, 0) / x.length;
-  const corr = (a, b) => {
-    const [ma, mb] = [mean(a), mean(b)];
-    const cov = a.reduce((s, v, i) => s + (v - ma) * (b[i] - mb), 0);
-    const sd = (x, mx) => Math.sqrt(x.reduce((s, v) => s + (v - mx) ** 2, 0));
-    return cov / (sd(a, ma) * sd(b, mb));
-  };
+/** The archer's rig as cast.js builds it: her build, her legs under the tunic and her boots, whose soles every clip is grounded on. */
+function archerRig() {
+  const rig = createRig(...ARCHER_BUILD);
+  const [, hy] = J(rig, "hips");
+  legs(rig, new THREE.MeshBasicMaterial(), { under: { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] } });
+  boots(rig, new THREE.MeshBasicMaterial(), { top: 0.21 });
+  return rig;
+}
 
-  it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own with no attack on the move (R66, R68, R79)", () => {
-    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
-    expect(ARCHER_SHEET.animations).not.toBe(RUNNING_CLASS_ANIMATIONS);
-    expect(ARCHER_SHEET.scale).toBe(1.5);
-    // idle, walk, attack, death and her run, in that order: no walk_attack, no backpedal_attack (D7, D8)
-    expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
-    for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(RUNNING_CLASS_ANIMATIONS[anim]);
+/** The mercenary's rig as cast.js builds it: his build, his legs and his boots, whose soles every clip is grounded on. */
+function mercenaryRig() {
+  const rig = createRig(...MERCENARY_BUILD);
+  legs(rig, new THREE.MeshBasicMaterial());
+  boots(rig, new THREE.MeshBasicMaterial(), { top: 0.22 });
+  return rig;
+}
+
+/** The 32 samples over the sprint's cycle and its 8 baked keys. */
+const SPRINT_SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
+const KEYS = [0, 1, 2, 3, 4, 5, 6, 7];
+const range = (x) => Math.max(...x) - Math.min(...x);
+const mean = (x) => x.reduce((s, v) => s + v, 0) / x.length;
+const corr = (a, b) => {
+  const [ma, mb] = [mean(a), mean(b)];
+  const cov = a.reduce((s, v, i) => s + (v - ma) * (b[i] - mb), 0);
+  const sd = (x, mx) => Math.sqrt(x.reduce((s, v) => s + (v - mx) ** 2, 0));
+  return cov / (sd(a, ma) * sd(b, mb));
+};
+
+/**
+ * The classes that run the shared sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow
+ * R67–R70; § Change: The mercenary's sprint and trailing sword M1, R93, R94): its legs, its lean
+ * and its 16 fps, each on its own rig and under its own arms.
+ */
+const SPRINTERS = [
+  { name: "archer", rig: archerRig, style: ARCHER_STYLE, sheet: ARCHER_SHEET },
+  { name: "mercenary", rig: mercenaryRig, style: MERCENARY_STYLE, sheet: MERCENARY_SHEET },
+];
+
+describe("the sprint, one definition the archer and the mercenary share (FS-JS7C8 § Change: The mercenary's sprint and trailing sword M1, R93)", () => {
+  it("is 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, over its own legs and a lean twice the shared run's", () => {
+    expect(SPRINT_RUN).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(SPRINT_LEAN).toBe(0.48);
+    expect(SPRINT_LEAN).toBe(2 * RUN_LEAN);
   });
 
-  it("leans her trunk about 20° from the hips, the head brought back to look ahead and held steady (R67, D1)", () => {
+  it.each(SPRINTERS)("is what the $name's run reads: the legs, the lean and the run spec, by reference", ({ style, sheet }) => {
+    expect(style.run.legs).toBe(SPRINT_STEP);
+    expect(style.run.lean).toBe(SPRINT_LEAN);
+    expect(sheet.animations.run).toBe(SPRINT_RUN);
+  });
+});
+
+describe.each(SPRINTERS)("the $name's sprint on its own rig and style (FS-JS7C8 § Change: The archer's sprint and low-ready bow R67, R69, R70; § Change: The mercenary's sprint and trailing sword R94)", ({ rig: build, style, sheet }) => {
+  const rig = build();
+  const run = clipsFor(style, sheet.animations).run;
+
+  it("leans the trunk about 20° from the hips, the head brought back to look ahead and held steady (R67, D1)", () => {
     applyPose(rig, pose());
     rig.root.updateMatrixWorld(true);
     const lean = () => {
@@ -882,7 +924,7 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     const leans = [];
     const yaw = [];
     const roll = [];
-    for (const f of SAMPLES) {
+    for (const f of SPRINT_SAMPLES) {
       const { head } = footing(rig, run, f);
       leans.push(lean() - restLean);
       expect(Math.abs(pitch() - restPitch), `head pitch @${f}`).toBeLessThanOrEqual(3);
@@ -901,15 +943,10 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     expect(range(roll)).toBeLessThan(0.06);
   });
 
-  it("covers the ground at RUN_PACE at her 16 fps: the shorter stride holds the measured pace within 1 px/s of 194 (R68, D2)", () => {
-    expect(RUN_PACE).toBe(194);
-    expect(Math.abs(measurePace(rig, run, spec.fps) - RUN_PACE)).toBeLessThan(1);
-  });
-
   it("drives the swing knee higher than the shared run's 0.311 H and kicks the heel past its 1.45 rad fold (R69, D3)", () => {
-    // the shared run's knee peaks at 0.3111 H on her rig: hers clears it by a visible margin
+    // the shared run's knee peaks at 0.311 H on either rig: the sprint clears it by a visible margin
     const knee = Math.max(
-      ...SAMPLES.map((f) => {
+      ...SPRINT_SAMPLES.map((f) => {
         footing(rig, run, f);
         return Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H;
       }),
@@ -932,7 +969,7 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     });
     expect(planted.length).toBeGreaterThanOrEqual(4);
     expect(Math.max(...run.map((p) => p.body.y ?? 0))).toBeGreaterThanOrEqual(0.045);
-    const hips = SAMPLES.map((f) => footing(rig, run, f).hips.y / rig.H);
+    const hips = SPRINT_SAMPLES.map((f) => footing(rig, run, f).hips.y / rig.H);
     expect(range(hips)).toBeGreaterThanOrEqual(0.056);
     expect(range(hips)).toBeLessThan(0.07);
   });
@@ -955,14 +992,14 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     }
   });
 
-  it("turns her shoulders against the hips with the stride, 6.5–10° each way (R70)", () => {
+  it("turns the shoulders against the hips with the stride, 6.5–10° each way (R70)", () => {
     const lineYaw = (l, r) => {
       const [a, b] = [at(rig, l), at(rig, r)];
       return Math.atan2(b.z - a.z, a.x - b.x) * DEG;
     };
     const shoulders = [];
     const hips = [];
-    for (const f of SAMPLES) {
+    for (const f of SPRINT_SAMPLES) {
       footing(rig, run, f);
       shoulders.push(lineYaw("upperArmL", "upperArmR"));
       hips.push(lineYaw("thighL", "thighR"));
@@ -972,14 +1009,28 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     expect(turn).toBeGreaterThanOrEqual(6.5);
     expect(turn).toBeLessThanOrEqual(10);
   });
+});
 
-  /**
-   * The sha256 of a value's JSON, to hold what main 970f2dc7 keyed byte for byte. A digest changes
-   * only when the keys do: one that fails here means another class's run, or her other clips, moved.
-   */
-  const digest = (x) => createHash("sha256").update(JSON.stringify(x)).digest("hex");
+describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow R66–R71)", () => {
+  const rig = archerRig();
+  const spec = ARCHER_SHEET.animations.run;
+  const run = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations).run;
 
-  it("leaves the shared run, and the knight's, the wizard's and the mercenary's sheets and clips, as on main key for key (R66)", () => {
+  it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own with no attack on the move (R66, R68, R79)", () => {
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(ARCHER_SHEET.animations).not.toBe(RUNNING_CLASS_ANIMATIONS);
+    expect(ARCHER_SHEET.scale).toBe(1.5);
+    // idle, walk, attack, death and her run, in that order: no walk_attack, no backpedal_attack (D7, D8)
+    expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(RUNNING_CLASS_ANIMATIONS[anim]);
+  });
+
+  it("covers the ground at RUN_PACE at her 16 fps: the shorter stride holds the measured pace within 1 px/s of 194 (R68, D2)", () => {
+    expect(RUN_PACE).toBe(194);
+    expect(Math.abs(measurePace(rig, run, spec.fps) - RUN_PACE)).toBeLessThan(1);
+  });
+
+  it("leaves the shared run, and the knight's and the wizard's sheets and clips, as on main key for key (R66; § Change: The mercenary's sprint and trailing sword R93)", () => {
     expect([RUN_LEAN, RUN_ARM, RUN_ELBOW, RUN_COUNTER]).toEqual([0.24, 0.85, -1.57, 0.14]);
     expect(RUN_ANIMATIONS).toEqual({ run: { frames: 8, fps: 14, loop: true, speed: 2.5 } });
     expect(RUNNING_CLASS_ANIMATIONS).toEqual({
@@ -993,12 +1044,51 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     });
     // the shared run on a plain style: RUN_STEP and the shared keys, which clips.test.mjs also checks key for key
     expect(digest({ RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, plain: runCycle({ attack: "slash", hold: pose() }) })).toBe("61942c2885748ec4c0c0845b1730e8ddd9ebd17452255ffd2ae8c66eeff23874");
-    const others = { knight: "2003ed6258943506c9f149e513e21da6f4788f94211d14a544e813f5f318d48a", wizard: "aea609c5d4078d06bde2cc6f580905681b9d20f2e1076b05897eac934f761d02", mercenary: "2c80ffd6f0cac2361e2499744416e78255f4195e561b5bf060c2659daf5356f2" };
-    for (const { name, style, sheet } of CLASSES) expect(digest({ sheet, clips: clipsFor(style, sheet.animations) }), name).toBe(others[name]);
+    const others = { knight: "2003ed6258943506c9f149e513e21da6f4788f94211d14a544e813f5f318d48a", wizard: "aea609c5d4078d06bde2cc6f580905681b9d20f2e1076b05897eac934f761d02" };
+    for (const { name, style, sheet } of SHARED_RUNNERS) expect(digest({ sheet, clips: clipsFor(style, sheet.animations) }), name).toBe(others[name]);
+  });
+
+  it("keeps her run keys and her sheet byte for byte as at 2018f786, now read from the shared sprint (§ Change: The mercenary's sprint and trailing sword R92, R93)", () => {
+    expect(digest(run), "her run keys").toBe("20fe48c323216e8d91686fa7e1b3324acb004bfe960e005089298da1213034de");
+    expect(digest(ARCHER_SHEET), "her sheet").toBe("e6c879218d09b0b82b07c10ad369e4c02513e1375d6b23621e3315f9203199e4");
   });
 
   it("leaves her idle, walk, attack and death keys as on main (R78)", () => {
     const { idle, walk, attack, death } = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations);
     expect(digest({ idle, walk, attack, death })).toBe("dc90b9547a617074e84472f0d146587ec6a9f260fd5b55fce9d8dfbe7202ee54");
+  });
+});
+
+describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R92–R96, R103)", () => {
+  const rig = mercenaryRig();
+  const spec = MERCENARY_SHEET.animations.run;
+  const clips = clipsFor(MERCENARY_STYLE, MERCENARY_SHEET.animations);
+
+  it("runs the sprint's clip: 8 frames looping at 16 fps, speed 2.5, his parry kept, at 1.5x (R94)", () => {
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(MERCENARY_SHEET.scale).toBe(1.5);
+    expect(MERCENARY_SHEET.animations.parry).toEqual(MERC_ANIMATIONS.parry);
+  });
+
+  // escalated 2026-11-23 (R95, option (a) until the owner picks): the shared keys at 16 fps read
+  // 196.58 world px/s on his rig, his legs a little longer than hers; held to the class band and
+  // within 3 px/s of RUN_PACE, not her 1
+  it("covers 180–220 world px/s at the sprint's 16 fps, within 3 px/s of RUN_PACE (R95)", () => {
+    expect(RUN_PACE).toBe(194);
+    const pace = measurePace(rig, clips.run, spec.fps);
+    expect(pace).toBeGreaterThanOrEqual(180);
+    expect(pace).toBeLessThanOrEqual(220);
+    expect(Math.abs(pace - RUN_PACE)).toBeLessThanOrEqual(3);
+  });
+
+  it("leaves his idle, walk, attack, death and parry keys byte for byte as at 2018f786 (R103)", () => {
+    const want = {
+      idle: "b93c784529de8dec33796406d69366c579f33d5fead1ad91f55ccf8148be2c48",
+      walk: "248f6fbd833980c45f25fb817eebcaa71e375ae305b22cb8330e9d01b2f89205",
+      attack: "ef586ff78bf0fdd575e0a7e8969296dc496737e27b35b901acc11fa6e527d3d7",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+      parry: "6bebd4018f25caf3f167afe0ced5e8919ad4619e51f97da329cc193ccfc172a4",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
   });
 });

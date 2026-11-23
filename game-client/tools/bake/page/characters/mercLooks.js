@@ -141,6 +141,17 @@ const ROBE = {
   segs: 32,
 };
 
+/**
+ * How the robe's back panel is carried in the run (FS-JS7C8 § Change: The mercenary's sprint and
+ * trailing sword, owner 2026-11-23: 「改 Duelist 長袍」): its spring (anatomy.js `skirtBones`,
+ * `skirtB`) drags back further with his speed (`drag`, was 0.2) and may swing further (`limit`, was
+ * 0.8 rad), so in the sprint the back panel flies out behind over the heel kick (the shared sprint's
+ * swing shin folding to 1.8 rad), which came out through it by 3.62 px on the run's second key.
+ * Standing (no speed) it hangs as before; the cut is unchanged. The other panels, and the base's and
+ * the Sellsword's coats, keep the shared springs. 0.38 to 0.5 with 1 to 1.4 all pass every clip.
+ */
+const ROBE_BACK_CARRY = { drag: 0.4, limit: 1.1 };
+
 /** A wide sash wound twice about the waist: a deep band with the second turn standing over it. */
 function woundSash(rig, mat, o) {
   const H = rig.H;
@@ -170,7 +181,10 @@ export const duelist = {
   mats: (F) => ({ torso: F.breeches, arms: F.duelistRobe, coat: F.duelistRobe, sash: F.duelistSlate }),
   opts: { coat: ROBE },
   omit: ["spaulder", "collar", "kneeCop"],
-  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD }),
+  bones: (rig) => {
+    cloakBones(rig, { length: HALF_CLOAK, drag: 0.34, strap: HALF_CLOAK_HELD });
+    for (const s of rig.springs) if (s.bone === "skirtB") Object.assign(s, ROBE_BACK_CARRY);
+  },
   swap: {
     coat: (rig, { mat, o }) => {
       for (const arc of PANELS) skirt(rig, mat, { ...o, arc });

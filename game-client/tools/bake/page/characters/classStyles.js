@@ -157,18 +157,26 @@ export const BERSERKER_STYLE = {
 export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
 
 /**
- * The archer's sprint's forward lean (FS-JS7C8 § Change: The archer's sprint and low-ready bow
- * R67, D1, the owner: "跑更快的話身體可能會更加前傾"): twice the shared RUN_LEAN, tilting her
- * hips-to-neck line about 20° (20.2–20.5° measured on her rig; the shared run's is about 10°). The
- * neck takes it back out (clips.js steadyNeck), so her head still looks ahead.
+ * The sprint, one run the archer and the mercenary share (FS-JS7C8 § Change: The mercenary's sprint
+ * and trailing sword M1, R93, the owner: "移動時也要像弓箭手跑的感覺"): its lean ({@link SPRINT_LEAN}),
+ * its legs ({@link SPRINT_STEP}) and its clip at 16 fps ({@link SPRINT_RUN}), first keyed for the
+ * archer (§ Change: The archer's sprint and low-ready bow) and defined here once, so each class's
+ * `run` reads the same keys under its own arms. The knight and the wizard keep the shared fast run
+ * (clips.js RUN_STEP, RUN_LEAN, RUN_ANIMATIONS).
+ *
+ * The sprint's forward lean (§ Change: The archer's sprint and low-ready bow R67, D1, the owner:
+ * "跑更快的話身體可能會更加前傾"): twice the shared RUN_LEAN, tilting the hips-to-neck line about 20°
+ * (20.2–20.5° measured on her rig and on his; the shared run's is about 10°). The neck takes it
+ * back out (clips.js steadyNeck), so the head still looks ahead.
  */
-export const ARCHER_SPRINT_LEAN = 0.48;
+export const SPRINT_LEAN = 0.48;
 
 /**
- * The archer's sprint's legs (R68, R69; D2, D3), the rows of clips.js RUN_STEP she keys her own
+ * The sprint's legs (R68, R69; D2, D3), the rows of clips.js RUN_STEP it keys its own
  * (`run.legs`), right foot planted: contact, down, push, flight. Played at 16 fps, not the shared 14,
- * over a stride about 12% shorter, so her measured pace stays at RUN_PACE (194.09 world px/s at 16
- * fps against the shared keys' 221.39 there): the stance thigh lands less far ahead (−0.39, was
+ * over a stride about 12% shorter, so the archer's measured pace stays at RUN_PACE (194.09 world px/s
+ * at 16 fps against the shared keys' 221.39 there; the mercenary's, his legs a little longer, reads
+ * 196.58, held within 3 px/s of it: § Change: The mercenary's sprint and trailing sword R95): the stance thigh lands less far ahead (−0.39, was
  * −0.46) and pushes off less far behind (0.275, was 0.33). The swing leg drives its knee higher
  * (the thigh to −0.85 as it passes, was −0.52; the knee peaks at 0.335 H, was 0.311) and kicks its
  * heel further up behind (the shin folds to 1.8 under the seat, was 1.45; just off the toe only
@@ -179,7 +187,7 @@ export const ARCHER_SPRINT_LEAN = 0.48;
  * shared step gives it (thigh + shin + foot), so the stance foot still lands on its heel and pushes
  * off its toes.
  */
-export const ARCHER_SPRINT_STEP = {
+export const SPRINT_STEP = {
   thighR: [-0.39, -0.12, 0.275, 0.3],
   shinR: [0.3, 0.72, 0.35, 1],
   footR: [-0.06, -0.6, -0.025, -0.4],
@@ -188,6 +196,9 @@ export const ARCHER_SPRINT_STEP = {
   footL: [-0.94, -0.91, -0.45, -0.18],
   lift: [0, 0, 0, 0.06],
 };
+
+/** The sprint's clip (R68): the shared run's 8 looping frames and its cloth speed 2.5, at 16 fps. */
+export const SPRINT_RUN = { ...RUN_ANIMATIONS.run, fps: 16 };
 
 /**
  * The archer's carry in her sprint, the two-handed low-ready bow (FS-JS7C8 § Change: The archer's
@@ -225,12 +236,12 @@ export const ARCHER_LOW_READY = pose(
  * The archer's sheet at 1.5x (ADR-0076), a clip set of her own (FS-JS7C8 § Change: The archer's
  * sprint and low-ready bow R79, D7, D8): the four, and her run, her own sprint (R68): 16 fps over a
  * shorter stride, so its measured pace stays at RUN_PACE, the cloth carried at the shared run's
- * speed. Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
+ * speed ({@link SPRINT_RUN}). Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
  * no `walk_attack` and no `backpedal_attack`, and the client plays her `attack` moving or not. The
  * Hunter and the Shadow Ranger take it through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, the
  * wizard's, is not changed.
  */
-export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: { ...RUN_ANIMATIONS.run, fps: 16 } }, scale: 1.5 };
+export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
 export const ARCHER_STYLE = {
   attack: "shot",
@@ -243,9 +254,9 @@ export const ARCHER_STYLE = {
   }),
   walk: { arms: [0.7, 1], lean: 0.06 },
   // her sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow): the trunk about 20°
-  // forward ({@link ARCHER_SPRINT_LEAN}) over her own legs ({@link ARCHER_SPRINT_STEP}), the bow
+  // forward ({@link SPRINT_LEAN}) over the sprint's legs ({@link SPRINT_STEP}), the bow
   // carried two-handed at the low ready ({@link ARCHER_LOW_READY}): no pump, no elbow swing
-  run: { arms: [0, 0], elbow: [0, 0], hold: ARCHER_LOW_READY, lean: ARCHER_SPRINT_LEAN, legs: ARCHER_SPRINT_STEP },
+  run: { arms: [0, 0], elbow: [0, 0], hold: ARCHER_LOW_READY, lean: SPRINT_LEAN, legs: SPRINT_STEP },
 };
 
 /**
@@ -313,9 +324,10 @@ export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1
 
 /**
  * The mercenary re-baked with the run and the backward step at 1.5x, his parry kept (FS-JS7C8
- * slice 8, FS-HF0WW § Change: Class sheets at 1.5x R35).
+ * slice 8, FS-HF0WW § Change: Class sheets at 1.5x R35), his run the sprint's clip at 16 fps
+ * ({@link SPRINT_RUN}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword R94).
  */
-export const MERCENARY_SHEET = { animations: RUNNING_MERC_ANIMATIONS, scale: 1.5 };
+export const MERCENARY_SHEET = { animations: { ...RUNNING_MERC_ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
 export const MERCENARY_STYLE = {
   attack: "cut",
@@ -329,9 +341,11 @@ export const MERCENARY_STYLE = {
     handR: REST_BLADE,
   }),
   walk: { stride: 1.05, arms: [0.75, 0.45], lean: 0.07 },
-  // the run's carry (FS-JS7C8 R2): both arms pump free from the shoulder, the sword arm a little
-  // out from the hip, crossing in at the front, the blade held forward about level
-  run: { wrist: RUN_WRIST, cross: [0, RUN_CROSS], hold: pose({ upperArmR: [0, 0, -0.1], handR: MERC_RUN_BLADE }) },
+  // the sprint (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R94): the trunk about
+  // 20° forward ({@link SPRINT_LEAN}) over the sprint's legs ({@link SPRINT_STEP}); the run's carry
+  // (FS-JS7C8 R2) above them: both arms pump free from the shoulder, the sword arm a little out
+  // from the hip, crossing in at the front, the blade held forward about level
+  run: { wrist: RUN_WRIST, cross: [0, RUN_CROSS], hold: pose({ upperArmR: [0, 0, -0.1], handR: MERC_RUN_BLADE }), lean: SPRINT_LEAN, legs: SPRINT_STEP },
   // the parry (FS-MAMHR §G.35): the blade raised up and across before him, feet set square, a
   // little lean back from the blow
   guard: pose(
