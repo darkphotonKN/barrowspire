@@ -487,17 +487,19 @@ const UPRIGHT_CAST = [
  * The Spellwarden's heavy cast, keys 3–5 (FS-1J1CB § Change: The Spellwarden's long staff planted
  * and swung heavy R79–R81; the owner, 2026-11-23: 「攻擊時 不用像短杖要伸直 可以有一點前傾的角度因為長杖比較
  * 重的話不可能跟短杖一樣伸直攻擊」): the long staff pushed forward, not reached out straight. On the
- * strike and its carry through (keys 3–4) the fist is pushed forward to her right, at the waist,
- * the elbow bent about 50°, the wrist cocked down 0.64–0.66 rad so the staff's head tips toward the
- * target about 40° from vertical along the facing, its foot swung back outside her right hip; the
- * trunk leans in further than {@link UPRIGHT_CAST} (the spine and the chest 0.06 and 0.04–0.06 rad
- * more each); key 5 brings it back toward upright (about 23°), the elbow bending to about 58°. The
- * free arm, the hips, the lunge and the glow as the staff cast's.
+ * strike and its carry through (keys 3–4) the arm is swung out and forward at her right side, the
+ * elbow bent 46–55°, the fist pushed forward at the waist, out past her right hip, so the staff's
+ * head tips toward the target 34–39° from vertical along the facing and its foot swings back
+ * outside the hip; the trunk leans in further than {@link UPRIGHT_CAST} (the spine and the chest
+ * 0.06 and 0.04–0.06 rad more each); key 5 brings it back toward upright (about 22°), the elbow
+ * about 56°. The fist is held out at her side, not in front of her chest, so the head and its
+ * shadow stay inside her Looks v2 frame box (R84). The free arm, the hips, the lunge and the glow
+ * as the staff cast's.
  */
 const WARD_CAST = [
-  P({ hips: [0, 0.3, 0], spine: [0.14, 0.1, 0], chest: [0.18, 0.18, 0], upperArmR: [-1.19, -0.47, -0.7], foreArmR: [-0.9, 0.2, 0], handR: [0.66, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.05 }, { glow: 5 }),
-  P({ hips: [0, 0.33, 0], spine: [0.16, 0.14, 0], chest: [0.2, 0.24, 0], upperArmR: [-1.3, -0.45, -0.88], foreArmR: [-0.86, 0.27, 0], handR: [0.64, 0, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.045 }, { glow: 3.6 }),
-  P({ hips: [0, 0.17, 0], spine: [0.07, 0.05, 0], chest: [0.07, 0.06, 0], upperArmR: [-1.08, -0.33, -0.8], foreArmR: [-1.01, 0.01, 0], handR: [0.61, 0, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
+  P({ hips: [0, 0.3, 0], spine: [0.14, 0.1, 0], chest: [0.18, 0.18, 0], upperArmR: [-0.84, -0.69, -0.95], foreArmR: [-0.96, -0.16, 0], handR: [0.24, 0, 0], upperArmL: [-0.45, 0, 0.9], foreArmL: [-0.25, 0, 0], handL: [-0.5, 0, 0] }, { z: 0.05 }, { glow: 5 }),
+  P({ hips: [0, 0.33, 0], spine: [0.16, 0.14, 0], chest: [0.2, 0.24, 0], upperArmR: [-0.84, -0.81, -1.1], foreArmR: [-0.8, -0.2, 0], handR: [0.08, 0, 0], upperArmL: [-0.3, 0, 0.75], foreArmL: [-0.4, 0, 0] }, { z: 0.045 }, { glow: 3.6 }),
+  P({ hips: [0, 0.17, 0], spine: [0.07, 0.05, 0], chest: [0.07, 0.06, 0], upperArmR: [-0.81, -0.6, -0.97], foreArmR: [-0.97, -0.2, 0], handR: [0.19, 0, 0], upperArmL: [-0.05, 0, 0.35], foreArmL: [-0.6, 0, 0] }, { z: 0.015 }, { glow: 2.2 }),
 ];
 /** The wizard's seven cast keys with `strike` (three keys) as keys 3–5, each on the cast's stance. */
 const castKeys = (strike) => CAST_KEYS.map((k, i) => k ?? strike[i - 3]).map((p) => add(CAST_STANCE, p));
