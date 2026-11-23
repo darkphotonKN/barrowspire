@@ -3,7 +3,7 @@ id: I-SRA9J-8
 status: open
 implements: FS-SRA9J
 blocked_by: [I-SRA9J-5, I-SRA9J-6, I-SRA9J-7]
-labels: [blocked]
+labels: []
 title: "FS-SRA9J slice 8: the owner's browser check of the lighter fog, regions lit within reach and the fog floor's ambient (HITL)"
 ---
 Implements FS-SRA9J §Change: Lighter fog and lit regions, §F-D (F10, F11), §Acceptance Criteria ("Check"), §Edge States
