@@ -1,6 +1,6 @@
 ---
 id: I-JS7C8-27
-status: open
+status: done
 implements: FS-JS7C8
 blocked_by: []
 labels: [ready-for-agent]

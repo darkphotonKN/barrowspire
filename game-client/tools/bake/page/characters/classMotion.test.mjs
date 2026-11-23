@@ -186,9 +186,18 @@ function inBind(rig, bone, w) {
 }
 
 /**
+ * The head the guards read: an ellipsoid of the head's radius on the head bone, its centre and
+ * semi-axes in the head bone's bind space (H).
+ */
+function headEllipsoid(rig) {
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  return { centre: new THREE.Vector3(0, hy + 0.048, hz + 0.004), radii: new THREE.Vector3(r, r * 1.05, r * 1.08) };
+}
+
+/**
  * How deep a world point lies inside the body (H; negative outside): the torso, read on the bone
- * each part of it rides (the pelvis, the spine, the chest), and the head, an ellipsoid of the
- * head's radius on the head bone.
+ * each part of it rides (the pelvis, the spine, the chest), and the head ({@link headEllipsoid}).
  */
 function inside(rig, w) {
   const rings = torsoRings(rig);
@@ -212,10 +221,9 @@ function inside(rig, w) {
       deepest = Math.max(deepest, (1 - v) * Math.min(rx, rz));
     }
   }
-  const [, hhy, hhz] = J(rig, "head");
-  const h = inBind(rig, "head", w);
-  const r = rig.p.headR;
-  const head = (1 - Math.hypot(h.x / r, (h.y - hhy - 0.048) / (r * 1.05), (h.z - hhz - 0.004) / (r * 1.08))) * r;
+  const { centre, radii } = headEllipsoid(rig);
+  const h = inBind(rig, "head", w).sub(centre).divide(radii);
+  const head = (1 - h.length()) * radii.x;
   return { torso: deepest, head };
 }
 
@@ -711,7 +719,8 @@ const STAFF_GUARDED = ["attack"];
  * own sceptre ({@link GEAR}`.wizard`, butt −0.06 to the orb's top 0.29) and a look's focus (gear.js
  * `focusHaft`: the knob at `FOCUS_BUTT` −0.2, 0.015 H round, to the ring's or the cage's top, about
  * `FOCUS_TOP` 0.2 + 0.105), each read on the style that holds it (the looks' FOCUS_STYLE spreads
- * hers). gear.js's sizes, read here as GEAR reads them (gear.js needs the bake page's theme).
+ * hers). gear.js's sizes, read here as GEAR reads them (gear.js needs the bake page's theme); their
+ * values are pinned to gear.js's own in mageLooks.test.mjs, which loads it.
  */
 const [FOCUS_BUTT, FOCUS_TOP] = [-0.2, 0.2];
 const STAFFS = [
@@ -767,11 +776,10 @@ describe.each(STAFFS)("the wizard's staff guards on $held: out of the torso, the
   });
 });
 
-/** The top of her skull (classMotion's `inside` head: the ellipsoid on the head bone), world, on the pose the rig holds now. */
+/** The top of her skull (`inside`'s head, {@link headEllipsoid}), world, on the pose the rig holds now. */
 function crownOf(rig) {
-  const [, hy, hz] = J(rig, "head");
-  const r = rig.p.headR;
-  const bind = new THREE.Vector3(0, hy + 0.048 + r * 1.05, hz + 0.004).multiplyScalar(rig.H).sub(rig.bind.head);
+  const { centre, radii } = headEllipsoid(rig);
+  const bind = centre.add(new THREE.Vector3(0, radii.y, 0)).multiplyScalar(rig.H).sub(rig.bind.head);
   return bind.applyMatrix4(rig.bones.head.matrixWorld);
 }
 
@@ -1158,17 +1166,17 @@ describe.each(LEANED_RUNNERS)("the $name's sprint on its own rig and style (FS-J
 
   // the sprint's legs only: the wizard's knee is held to the shared run's (her own describe)
   if (style.run.legs === SPRINT_STEP)
-  it("drives the swing knee higher than the shared run's 0.311 H and kicks the heel past its 1.45 rad fold (R69, D3)", () => {
-    // the shared run's knee peaks at 0.311 H on either rig: the sprint clears it by a visible margin
-    const knee = Math.max(
-      ...SPRINT_SAMPLES.map((f) => {
-        footing(rig, run, f);
-        return Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H;
-      }),
-    );
-    expect(knee).toBeGreaterThan(0.32);
-    expect(Math.max(...run.flatMap((p) => [p.b.shinL[0], p.b.shinR[0]]))).toBeGreaterThan(1.45);
-  });
+    it("drives the swing knee higher than the shared run's 0.311 H and kicks the heel past its 1.45 rad fold (R69, D3)", () => {
+      // the shared run's knee peaks at 0.311 H on either rig: the sprint clears it by a visible margin
+      const knee = Math.max(
+        ...SPRINT_SAMPLES.map((f) => {
+          footing(rig, run, f);
+          return Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H;
+        }),
+      );
+      expect(knee).toBeGreaterThan(0.32);
+      expect(Math.max(...run.flatMap((p) => [p.b.shinL[0], p.b.shinR[0]]))).toBeGreaterThan(1.45);
+    });
 
   it("keeps the flight and the bob, never softened: a flight frame each step, a foot planted in 4 keys, a lift of 0.045 H, a bob of 0.056–0.07 H (R69, D3)", () => {
     for (const half of [KEYS.slice(0, 4), KEYS.slice(4)]) {

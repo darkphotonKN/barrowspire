@@ -1397,6 +1397,22 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const dir of a.frames) expect(dir).toHaveLength(14);
     });
 
+    /**
+     * The wizard's frame box ceiling (FS-JS7C8 § Change: The wizard's sprint and pointed cast R130,
+     * E2 (b)): no taller than before the change, and no wider than the pointed cast baked it, so a
+     * tune round cannot grow either unseen.
+     */
+    const WIZARD_BOX: [string, { width: number; height: number }][] = [
+      ["char_wizard_base", { width: 234, height: 192 }],
+      ["char_wizard_spellwarden", { width: 237, height: 195 }],
+      ["char_wizard_pyromancer", { width: 234, height: 198 }],
+    ];
+    it.each(WIZARD_BOX)("keeps %s's frame box within its ceiling: the pre-change height, the pointed cast's width (FS-JS7C8 R130, E2 (b))", (name, max) => {
+      const sheet = baked.sheets[name];
+      expect(sheet.frameHeight, `${name} height`).toBeLessThanOrEqual(max.height);
+      expect(sheet.frameWidth, `${name} width`).toBeLessThanOrEqual(max.width);
+    });
+
     it("loops idle and walk, and plays attack and death once", () => {
       for (const name of CAST) {
         const a = baked.sheets[name].animations;

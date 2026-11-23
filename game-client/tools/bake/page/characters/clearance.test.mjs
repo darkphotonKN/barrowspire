@@ -510,7 +510,8 @@ describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法
   // a control on the measure, not on her sheet: her run now leans as the sprint does over a
   // shorter stride (FS-JS7C8 § Change: The wizard's sprint and pointed cast R117), and on it the
   // old cut's dip reads 0.59 px, under a baked px; fed her run as it was (the 10° lean at 14 fps,
-  // the full stride), it is still a cut the guard must catch, so the control builds that run
+  // the full stride), it is still a cut the guard must catch, so the control builds that run: its
+  // lean, cadence and stride restored, the carry kept as it is now (W2's arm and wrist, R122)
   const RUN_BEFORE = { style: { ...WIZARD_STYLE, run: { ...WIZARD_STYLE.run, lean: RUN_LEAN, stride: 1 } }, specs: RUNNING_CLASS_ANIMATIONS };
   it("measures the scapular cut on the gown's rings but not its columns (the gown at 32 columns, the panel at 16 across its own arc): the panel dips under the gown's faces behind the knee in her run as it was by more than a baked px", () => {
     const { rig, posesOf } = dressed("wizard", { gownSegs: 32, panelSegs: 16, ...RUN_BEFORE });

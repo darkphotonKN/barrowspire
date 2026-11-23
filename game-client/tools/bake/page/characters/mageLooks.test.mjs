@@ -54,7 +54,7 @@ const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakCl
 const { OFFHAND_OF } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
 const { along, edgesOf, leastOutside, shown } = await import("./edgeGuards.mjs");
-const { fireFocus, sceptre, wardFocus } = await import("./gear.js");
+const { FOCUS_BUTT, FOCUS_TOP, fireFocus, sceptre, wardFocus } = await import("./gear.js");
 const { materials } = await import("../materials.js");
 const { fabrics } = await import("./fabrics.js");
 const { WIZARD_BUILD } = await import("./classStyles.js");
@@ -203,6 +203,14 @@ describe("the Spellwarden's iron (FS-1J1CB R3)", () => {
   });
 });
 
+// classMotion.test.mjs reads the focus's haft from these sizes as literals (it cannot load gear.js,
+// which needs the bake page's theme): held here, where gear.js loads, so they cannot drift apart
+describe("the focus's haft sizes classMotion's staff guards copy (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128)", () => {
+  it("keeps FOCUS_BUTT at −0.2 H and FOCUS_TOP at 0.2 H, as classMotion.test.mjs's STAFFS reads them", () => {
+    expect([FOCUS_BUTT, FOCUS_TOP]).toEqual([-0.2, 0.2]);
+  });
+});
+
 describe("each focus is about 1.5x the sceptre (FS-1J1CB R3, R4)", () => {
   /**
    * A piece of gear's length along the grip frame's +z (H), pommel to tip, the upright flame stood
@@ -230,13 +238,14 @@ describe("each focus is about 1.5x the sceptre (FS-1J1CB R3, R4)", () => {
 });
 
 /**
- * The clips whose ground each figure's mount is held over: every clip, but the base's death. Her
- * sceptre's death has no wrist (FOCUS_DEATH is the looks' alone), so as she lies down it reads
- * 0.20 H under the ground on key 6 (I-JS7C8-28, recorded, not loosened: her death keys are held by
- * digest and out of FS-JS7C8 § Change: The wizard's sprint and pointed cast, R115). Her head is held
- * on every clip.
+ * How far under the ground each figure's mount may reach on a clip (H): the ground itself on every
+ * clip, but the base's death. Her sceptre's death has no wrist (FOCUS_DEATH is the looks' alone), so
+ * as she lies down it reads 0.20 H under the ground on key 6 (I-JS7C8-28, recorded, not loosened:
+ * her death keys are held by digest and out of FS-JS7C8 § Change: The wizard's sprint and pointed
+ * cast, R115; its Follow-ups carry it to the owner). Bounded at that depth, not skipped, so it
+ * cannot sink further unseen. Her head is held on every clip.
  */
-const overGround = (sheet, anim) => sheet !== "char_wizard_base" || anim !== "death";
+const groundFloor = (sheet, anim) => (sheet === "char_wizard_base" && anim === "death" ? -0.21 : 0);
 
 // the base's sceptre too (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128): the cast
 // points it along the aim, past her head
@@ -249,6 +258,7 @@ describe("each focus clears her head and the ground in every clip (FS-1J1CB R3, 
     const v = new THREE.Vector3();
     const local = new THREE.Vector3();
     const inv = new THREE.Matrix4();
+    // the ground's worst: the least margin over its clip's floor (H)
     const worst = { head: Infinity, ground: Infinity };
     const at = { head: "", ground: "" };
     for (const p of poses) {
@@ -261,14 +271,15 @@ describe("each focus clears her head and the ground in every clip (FS-1J1CB R3, 
           v.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
           const d = outOfSkull(head, local.copy(v).applyMatrix4(inv));
           if (d < worst.head) [worst.head, at.head] = [d, `${p.anim} @${p.i}`];
-          if (overGround(sheet, p.anim) && v.y < worst.ground) [worst.ground, at.ground] = [v.y, `${p.anim} @${p.i}`];
+          const over = v.y / rig.H - groundFloor(sheet, p.anim);
+          if (over < worst.ground) [worst.ground, at.ground] = [over, `${p.anim} @${p.i}`];
         }
       }
     }
     // clear of the skull by its hair, as the sceptre is (about 1.5 skull radii from its centre at
     // the nearest, in the run)
     expect(worst.head, `nearest the head at ${at.head}`).toBeGreaterThanOrEqual(1.3);
-    expect(worst.ground / rig.H, `lowest at ${at.ground}`).toBeGreaterThanOrEqual(0);
+    expect(worst.ground, `lowest over its floor at ${at.ground}`).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -283,7 +294,7 @@ describe("the sceptre or focus clear of her right forearm, hand and flared sleev
   const GUARDED = ["attack"];
   /** How far apart the points sampled along an edge lie, at most (H). */
   const STEP = 0.005;
-  /** The fist's own grip on the haft, left out (H, along the grip frame's +z either side of the grip point): the hand's fist is 0.036 H tall about it (anatomy.js `hands`, size 0.9). */
+  /** The fist's own grip on the haft, left out of the hand's check (H, along the grip frame's +z either side of the grip point): the hand's fist is 0.036 H tall about it (anatomy.js `hands`, size 0.9). */
   const GRIP = 0.035;
 
   /** The right hand's mount (inHand's group, the grip frame: its +z along the haft from the fist). */
@@ -335,12 +346,13 @@ describe("the sceptre or focus clear of her right forearm, hand and flared sleev
 
   /**
    * What the guard reads on the pose the rig holds now, for the mount's points `pts`: the least
-   * distance any point off the grip lies outside the right arm, and outside the right hand (H;
-   * negative inside).
+   * distance any point lies outside the right arm, and any point off the grip outside the right
+   * hand (H; negative inside). The grip window is the fist's alone: the arm and its sleeve end at
+   * the wrist, so the haft through the fist is held clear of them too.
    */
   function measure(rig, pts) {
+    const [arm] = leastOutside(armOf(rig), pts.map((p) => p.v));
     const free = pts.filter((p) => Math.abs(p.z) > GRIP).map((p) => p.v);
-    const [arm] = leastOutside(armOf(rig), free);
     const hand = Math.min(...handOf(rig).flatMap((m) => free.map((v) => outsideEllipsoid(m, v))));
     return { arm: arm === null ? Infinity : arm / rig.H, hand: hand / rig.H };
   }
@@ -380,7 +392,7 @@ describe("the sceptre or focus clear of her right forearm, hand and flared sleev
     expect(MIRRORED_LEGACY.has(sheet)).toBe(false);
   });
 
-  it.each(CASES)("%s %s: no point along the mount's edges inside her right arm or its flared sleeve", (sheet, anim, r) => {
+  it.each(CASES)("%s %s: no point along the mount's edges, the grip's too, inside her right arm or its flared sleeve", (sheet, anim, r) => {
     for (const f of frames(sheet, r, anim)) expect(f.arm, `${sheet} ${anim} frame ${f.i}`).toBeGreaterThan(0);
   });
 
