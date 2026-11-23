@@ -1279,6 +1279,30 @@ describe("the wizard's other clips under her sprint (FS-JS7C8 § Change: The wiz
   });
 });
 
+describe("the Spellwarden's other clips, and the Pyromancer's, as main had them (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R78, R79, R83)", () => {
+  it("keeps the Spellwarden's walk, run and death keys byte for byte as at 4d56d258: only her idle and her cast move", () => {
+    const clips = clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations);
+    const want = {
+      walk: "2ce1be36db9ec90668a788195e16919f7c7543df34cbe8dc722b05b49d43fe47",
+      run: "09f3bb14f60bb46b1a69001d00cce4832e76d644263fd75099177d4c487574ae",
+      death: "083c6e820b5ed206e43bd75a6291e8544486b0eca224cf62ee44bc2deafb15eb",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+  });
+
+  it("keeps every Pyromancer clip byte for byte as at 4d56d258: her brazier rod keeps the staff cast", () => {
+    const clips = clipsFor(PYROMANCER_STYLE, WIZARD_SHEET.animations);
+    const want = {
+      idle: "4fd6bc6a25d1ec5909a628aaa48b35cc43f08c53073b2289955f7bbcaa0090d5",
+      walk: "cefa7b139c461e96e5465fc8e4cc40bef1bb46595f529045b9e0599ca376b450",
+      attack: "30044acd544500624072b69de47304415abdb333d70f53d5995e2766ab9e0d36",
+      death: "f0bb5379e9fc2e230fa07a48b2ed2b2e1cfe0e16659668b51b82067131b9b401",
+      run: "14603511410e6a548811df123d1d45e4446c6093169fe65d04b6cdd133c6a5b7",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+  });
+});
+
 describe("the knight's other clips under his sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R137)", () => {
   it("keeps his idle, walk, attack and death keys byte for byte as at 23717cbb, his attack's cloth at KNIGHT_ATTACK_CLOTH", () => {
     const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);

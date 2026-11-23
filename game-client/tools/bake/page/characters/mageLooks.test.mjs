@@ -65,16 +65,16 @@ const THREE = await import("three");
 const { CAST, wizard } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
 const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, seenThroughCloth } = await import("./clearance.js");
-const { OFFHAND_OF } = await import("./clips.js");
+const { CLEAVE_CARRY, OFFHAND_OF, clipsFor } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
-const { along, edgesOf, leastOutside, shown } = await import("./edgeGuards.mjs");
+const { along, edgesOf, leastOutside, legSolids, shown } = await import("./edgeGuards.mjs");
 const gear = await import("./gear.js");
 const { sceptre } = gear;
 const kit = await import("./mageKit.js");
 const looks = await import("./mageLooks.js");
 const { materials } = await import("../materials.js");
 const { fabrics } = await import("./fabrics.js");
-const { WIZARD_BUILD } = await import("./classStyles.js");
+const { SPELLWARDEN_STYLE, WIZARD_BUILD, WIZARD_SHEET } = await import("./classStyles.js");
 
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_wizard_base");
@@ -425,6 +425,95 @@ describe("the Spellwarden's staff keeps clear of her legs on every pose (FS-1J1C
   });
 });
 
+// FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R74–R77 (the owner,
+// 2026-11-23: 「站立不動時應該把長杖垂直頂在地面上不用拿在空中 但也不用到垂直 可以往外有一點點角度」): on every
+// idle frame as the bake poses it, the shoe's point stands on the ground and stays where it is
+// planted, the staff a little out from vertical, its top away from her, the fist on the grip about
+// 0.45 H up, the arm hanging a little bent, the staff clear of the gown, the scapular, the legs and
+// the boots
+describe("the Spellwarden plants the long staff on the ground in her idle (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R74–R77)", () => {
+  const r = { ...row("char_wizard_spellwarden"), name: "char_wizard_spellwarden" };
+  const { rig, poses } = characterPoses(r);
+  const staff = tagged(rig, "staff");
+  const { butt, top } = staff.userData.staff;
+  const H = rig.H;
+  const idle = poses.filter((p) => p.anim === "idle");
+  const world = (b) => new THREE.Vector3().setFromMatrixPosition(rig.bones[b].matrixWorld);
+  /** The staff's measures on the pose the rig holds now: its shoe's point and top (model space), the grip's height (H), the elbow's bend (°). */
+  const measure = () => {
+    rig.root.updateMatrixWorld(true);
+    const shoe = new THREE.Vector3(0, 0, butt * H).applyMatrix4(staff.matrixWorld);
+    const tip = new THREE.Vector3(0, 0, top * H).applyMatrix4(staff.matrixWorld);
+    const d = tip.clone().sub(shoe);
+    const [sh, el, wr] = [world("upperArmR"), world("foreArmR"), world("handR")];
+    return {
+      shoe,
+      tilt: Math.acos(d.y / d.length()) * (180 / Math.PI),
+      out: d.x / d.length(),
+      grip: new THREE.Vector3().setFromMatrixPosition(staff.matrixWorld).y / H,
+      elbow: 180 - sh.clone().sub(el).angleTo(wr.clone().sub(el)) * (180 / Math.PI),
+    };
+  };
+  const frames = idle.map((p) => (p.apply(), { i: p.i, ...measure() }));
+  /** The staff's drawn meshes as points along their edges, model space, at most 0.005 H apart. */
+  const staffPoints = () => {
+    const segs = [];
+    staff.traverse((o) => o.isMesh && shown(o) && segs.push(...edgesOf(o)));
+    return along(segs, 0.005 * H);
+  };
+  /** The least distance any staff point lies outside her gown, scapular, legs and boots (H; negative inside). */
+  const outsideLegsAndCloth = (pts) => Math.min(...leastOutside(legSolids(rig), pts).filter((v) => v !== null)) / H;
+
+  it("poses all six idle frames", () => expect(frames).toHaveLength(r.animations.idle.frames));
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the shoe's point stands on the ground, 0–0.003 H over it", (_, f) => {
+    expect(f.shoe.y / H).toBeGreaterThanOrEqual(0);
+    expect(f.shoe.y / H).toBeLessThanOrEqual(0.003);
+  });
+
+  it("keeps the shoe where it is planted: its point moves at most 0.003 H between frames", () => {
+    for (let k = 0; k < frames.length; k++) {
+      const [a, b] = [frames[k], frames[(k + 1) % frames.length]];
+      expect(a.shoe.distanceTo(b.shoe) / H, `frame ${a.i} to ${b.i}`).toBeLessThanOrEqual(0.003);
+    }
+  });
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the staff 8–12° off vertical, its top out to her right, away from her", (_, f) => {
+    expect(f.tilt).toBeGreaterThanOrEqual(8);
+    expect(f.tilt).toBeLessThanOrEqual(12);
+    // her right is -x
+    expect(f.out).toBeLessThan(0);
+  });
+
+  it.each(frames.map((f) => [f.i, f]))("frame %i: the fist on the grip about 0.45 H up, the elbow a little bent (15–35°)", (_, f) => {
+    expect(f.grip).toBeGreaterThanOrEqual(0.44);
+    expect(f.grip).toBeLessThanOrEqual(0.47);
+    expect(f.elbow).toBeGreaterThanOrEqual(15);
+    expect(f.elbow).toBeLessThanOrEqual(35);
+  });
+
+  it(`turns the wrist no further than CLEAVE_CARRY (${CLEAVE_CARRY} rad) on any idle key`, () => {
+    clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations).idle.forEach((p, i) => {
+      for (const a of p.b.handR ?? [0, 0, 0]) expect(Math.abs(a), `idle @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY);
+    });
+  });
+
+  it.each(idle.map((p) => [p.i, p]))("frame %i: the staff clear of her gown, scapular, legs and boots", (_, p) => {
+    p.apply();
+    rig.root.updateMatrixWorld(true);
+    expect(outsideLegsAndCloth(staffPoints())).toBeGreaterThan(0);
+  });
+
+  it("finds the staff pushed into her gown: its points moved to under the hips read inside", () => {
+    idle[0].apply();
+    rig.root.updateMatrixWorld(true);
+    const pts = staffPoints();
+    const mid = pts.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(pts.length);
+    const to = world("hips").sub(new THREE.Vector3(0, 0.2 * H, 0));
+    expect(outsideLegsAndCloth(pts.map((v) => v.clone().add(to.clone().sub(mid))))).toBeLessThan(0);
+  });
+});
+
 describe("the Pyromancer's flame stays upright on every pose (FS-1J1CB §Change: Looks v2 R57)", () => {
   const r = { ...row("char_wizard_pyromancer"), name: "char_wizard_pyromancer" };
   const { rig, poses } = characterPoses(r);
@@ -449,8 +538,14 @@ describe("the Pyromancer's flame stays upright on every pose (FS-1J1CB §Change:
 // width at the wrist: cast.js `sleeve`) or her right hand (the fist and the thumb), save where the
 // fist closes on the haft. Each solid has a fixture that must fail.
 describe("the sceptre or focus clear of her right forearm, hand and flared sleeve in the cast (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128, R129)", () => {
-  /** The clips the guard reads, every baked frame of each: the cast (I-JS7C8-29 re-keys it; the bake's frames are what is read). */
+  /**
+   * The clips the guard reads, every baked frame of each: the cast (I-JS7C8-29 re-keys it; the
+   * bake's frames are what is read), and the Spellwarden's idle, where the fist holds the planted
+   * staff low by the flared cuff (FS-1J1CB § Change: The Spellwarden's long staff planted and swung
+   * heavy R77).
+   */
   const GUARDED = ["attack"];
+  const guardedOf = (sheet) => (sheet === "char_wizard_spellwarden" ? [...GUARDED, "idle"] : GUARDED);
   /** How far apart the points sampled along an edge lie, at most (H). */
   const STEP = 0.005;
   /** The fist's own grip on the haft, left out of the hand's check (H, along the grip frame's +z either side of the grip point): the hand's fist is 0.036 H tall about it (anatomy.js `hands`, size 0.9). */
@@ -535,7 +630,7 @@ describe("the sceptre or focus clear of her right forearm, hand and flared sleev
     }
     return memo.get(key);
   };
-  const CASES = FIGURES.flatMap(([sheet, r]) => GUARDED.map((anim) => [sheet, anim, r]));
+  const CASES = FIGURES.flatMap(([sheet, r]) => guardedOf(sheet).map((anim) => [sheet, anim, r]));
 
   it.each(FIGURES)("%s: one right arm, the fist and the thumb, and the mount's meshes are there", (sheet, r) => {
     const { rig } = r.build();

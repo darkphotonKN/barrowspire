@@ -448,10 +448,38 @@ export const WARD_RUN_HOLD = pose({ upperArmL: [0, 0, 0.14], upperArmR: [-0.1, 0
  * whole turn.
  */
 export const WARD_DEATH = [null, null, null, [0, -0.4, 0], [0.6, -0.8, -1.2], [0, -1.6, -0.8], [0.2, -1.6, -0.4]];
+/**
+ * The planted staff in her idle (FS-1J1CB § Change: The Spellwarden's long staff planted and swung
+ * heavy R74–R77; the owner, 2026-11-23: 「站立不動時應該把長杖垂直頂在地面上不用拿在空中 但也不用到垂直
+ * 可以往外有一點點角度」): the shoe's point on the ground at `shoe` (model space, H: ahead of and to
+ * the right of her right foot, just outside the bell's hem, `height` over the ground), the staff
+ * `tilt` degrees off vertical, its top leaning out to her right. The fist holds the leather grip
+ * where it is mounted, so 0.46 H up the staff: about 0.45 H over the ground.
+ */
+export const WARD_PLANT = { shoe: [-0.1, 0.16], height: 0.0012, tilt: 10 };
+/**
+ * Her right arm on each idle frame, on top of the idle's breathing, so the hand follows the staff
+ * where {@link WARD_PLANT} stands it and the breath never lifts or sinks the shoe: the shoulder
+ * dropped and brought a touch forward (the clavicle), the arm hanging out and forward with the
+ * elbow a little bent (21–24°), the wrist cocked back 0.88 rad and turned in so the staff stands
+ * up out of the fist. Solved on her rig (the fist's grip on the staff's line, the staff along it),
+ * to the thousandth.
+ */
+export const WARD_PLANT_ARM = [
+  { clavicleR: [-0.005, 0.03, 0.095], upperArmR: [-0.273, -0.124, -0.221], foreArmR: [-0.216, -0.091, 0], handR: [-0.883, -0.303, -0.143] },
+  { clavicleR: [-0.005, 0.034, 0.11], upperArmR: [-0.286, -0.126, -0.218], foreArmR: [-0.162, -0.099, 0], handR: [-0.886, -0.298, -0.157] },
+  { clavicleR: [-0.005, 0.032, 0.103], upperArmR: [-0.275, -0.117, -0.203], foreArmR: [-0.183, -0.088, 0], handR: [-0.878, -0.3, -0.146] },
+  { clavicleR: [-0.004, 0.031, 0.095], upperArmR: [-0.27, -0.11, -0.205], foreArmR: [-0.222, -0.08, 0], handR: [-0.885, -0.296, -0.136] },
+  { clavicleR: [-0.004, 0.029, 0.087], upperArmR: [-0.265, -0.109, -0.214], foreArmR: [-0.263, -0.075, 0], handR: [-0.888, -0.296, -0.127] },
+  { clavicleR: [-0.004, 0.027, 0.083], upperArmR: [-0.261, -0.115, -0.219], foreArmR: [-0.27, -0.078, 0], handR: [-0.883, -0.303, -0.127] },
+];
 export const SPELLWARDEN_STYLE = {
   ...WIZARD_STYLE,
   attack: "staffCast",
   hold: WARD_HOLD,
+  // the idle plants the staff ({@link WARD_PLANT}); the left arm as WARD_HOLD carries it
+  idle: { hold: pose({ foreArmL: [-0.15, 0, 0] }) },
+  idleExtra: (i) => pose(WARD_PLANT_ARM[i], {}, { glow: 1 }),
   walk: { ...WIZARD_STYLE.walk, arms: [0.8, 0.3] },
   run: { ...WIZARD_STYLE.run, arms: [1, 0.4], wrist: [0, 1], cross: [0, 0], hold: WARD_RUN_HOLD },
   deathExtra: (i) => WARD_DEATH[i] && pose({ handR: WARD_DEATH[i] }),

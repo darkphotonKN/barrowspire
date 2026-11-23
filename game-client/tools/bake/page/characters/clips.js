@@ -335,7 +335,12 @@ export function runCycle(style) {
 
 // --- idle ----------------------------------------------------------------------------------
 
-/** Breathing and a slow weight shift over one loop. */
+/**
+ * Breathing and a slow weight shift over one loop. `style.idle.hold`, when a style gives one,
+ * carries the weapon at rest in place of `style.hold` (the Spellwarden's planted staff, FS-1J1CB
+ * § Change: The Spellwarden's long staff planted and swung heavy R74–R78), so the walk keeps
+ * `style.hold`.
+ */
 export function idleCycle(style, n) {
   const k = style.idle ?? {};
   return Array.from({ length: n }, (_, i) => {
@@ -362,7 +367,7 @@ export function idleCycle(style, n) {
         },
         { x: 0.006 * shift },
       ),
-      style.hold,
+      k.hold ?? style.hold,
       style.idleExtra?.(i, ph),
     );
   });
