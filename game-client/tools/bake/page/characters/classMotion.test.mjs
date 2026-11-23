@@ -283,13 +283,6 @@ const CLASSES = [
     // recorded, not tuned away (FS-JS7C8 § Change: The wizard's sprint and pointed cast R123 (iii)):
     // under the sprint's 20° lean her tome hand peaks a little under the chest bone (measured 0.022 H under)
     freeFront: [-0.035, -0.01],
-    // escalated 2026-11-23 (I-JS7C8-27), her carry kept as R122 asks: under the sprint's lean the
-    // sceptre leans 36.7–48.5° off vertical by this test's sampling (the FS measured 30–40.3; 23.4–37.8
-    // on the 10° lean), and the shaft's foot touches the robe on run key 1 by 0.0006 H (0.0033 H
-    // clear on the 10° lean). Measured, not routed around: the arm out 0.01–0.02 rad (hold
-    // upperArmR z −0.13 or −0.14) clears the robe by 0.0010 or 0.0027 H, and the wrist a further
-    // 0.1 rad back (RUN_SCEPTRE −0.2) brings the lean to 31–43°; both change the carry's keys
-    held: { tilt: "36.7–48.5° under the sprint's lean, escalated", robe: "0.0006 H into it on key 1 under the sprint's lean, escalated" },
     rest: "upright",
   },
 ];
@@ -321,7 +314,7 @@ describe.each(SHARED_RUNNERS)("the $name's sheet at 1.5x with the run and the ba
   });
 });
 
-describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-JS7C8 R2; § Change: The wizard's sprint and pointed cast R122, R123)", ({ name, build, style, pump, low, lowPeak, tilt, freeFront, held, rest, runBlade }) => {
+describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-JS7C8 R2; § Change: The wizard's sprint and pointed cast R122, R123)", ({ name, build, style, pump, low, lowPeak, tilt, freeFront, rest, runBlade }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -404,11 +397,8 @@ describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-
     },
   );
 
-  // `held` (the wizard's, escalated 2026-11-23, I-JS7C8-27): a check her carry fails under the
-  // sprint's lean, kept as it was (W2, R122), held must-fail until the coordinator picks, never
-  // exempted; it.fails turns red the day it passes
   if (rest === "upright") {
-    (held?.tilt ? it.fails : it)(`leans the sceptre ${tilt?.join("–")}° off vertical on every sample${held?.tilt ? ` (held: ${held.tilt})` : ""}`, () => {
+    it(`leans the sceptre ${tilt?.join("–")}° off vertical on every sample`, () => {
       const tip = GEAR[name](rig).weapon.at(-1);
       for (const f of SAMPLES) {
         pose8(f);
@@ -419,7 +409,7 @@ describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-
       }
     });
 
-    (held?.robe ? it.fails : it)(`keeps every sceptre point outside the robe on every sample${held?.robe ? ` (held: ${held.robe})` : ""}`, () => {
+    it("keeps every sceptre point outside the robe on every sample", () => {
       const gear = GEAR[name](rig);
       for (const f of SAMPLES) {
         pose8(f);

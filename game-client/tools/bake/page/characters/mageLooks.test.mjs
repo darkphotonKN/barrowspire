@@ -50,7 +50,7 @@ vi.mock("./fabrics.js", async () => {
 const THREE = await import("three");
 const { CAST, wizard } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
-const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment } = await import("./clearance.js");
+const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, seenThroughCloth } = await import("./clearance.js");
 const { OFFHAND_OF } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
 const { fireFocus, sceptre, wardFocus } = await import("./gear.js");
@@ -61,6 +61,8 @@ const { WIZARD_BUILD } = await import("./classStyles.js");
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_wizard_base");
 const LOOKS = ["char_wizard_spellwarden", "char_wizard_pyromancer"].map((sheet) => [sheet, { ...row(sheet), name: sheet }]);
+/** The wizard's three figures as the bake poses them: her own and the two looks. */
+const FIGURES = [["char_wizard_base", { ...row("char_wizard_base"), name: "char_wizard_base" }], ...LOOKS];
 
 /** The meshes riding the right hand's mount: the sceptre, or a look's focus. */
 function focusMeshes(rig) {
@@ -112,7 +114,7 @@ describe("the mage's spec looks in the cast (FS-1J1CB R9, R15)", () => {
 });
 
 describe("the mage's spec looks pass the guards on every clip (FS-1J1CB R11)", () => {
-  it.each(LOOKS)("%s keeps her legs inside the gown and the scapular, no exemption", (sheet, r) => {
+  it.each(FIGURES)("%s keeps her legs inside the gown and the scapular, no exemption", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
     expect(mirroredGarment(rig)).toBe(false);
     expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
@@ -120,6 +122,19 @@ describe("the mage's spec looks pass the guards on every clip (FS-1J1CB R11)", (
     const clips = legClearance(rig, poses);
     expect(Object.keys(clips ?? {}).sort()).toEqual(expect.arrayContaining(["idle", "walk", "run", "attack"]));
     expect(clearanceError(sheet, clips, { scale: r.scale, mirrored: false, known: new Map(), legacy: new Set() })).toBeNull();
+  });
+
+  // FS-JS7C8 § Change: The wizard's sprint and pointed cast R120: the camera sees no hip, thigh or
+  // knee through her gown on her own figure and each look, as the bake poses them, at rest and on
+  // every moving clip the sheet carries (clearance.test.mjs reads the same on a rebuilt base)
+  it.each(FIGURES)("%s shows no hip, thigh or knee through the cloth in any facing, at rest and on every moving clip", (sheet, r) => {
+    const { rig, poses } = characterPoses(r);
+    const anims = ["idle", "run", "walk", "walk_attack", "backpedal_attack"].filter((anim) => anim in r.animations);
+    expect(anims).toEqual(expect.arrayContaining(["idle", "run", "walk"]));
+    const seen = seenThroughCloth(rig, poses.filter((p) => anims.includes(p.anim)));
+    expect(seen.length).toBeGreaterThan(0);
+    const worst = seen.reduce((m, f) => (f.seen > m.seen ? f : m), { seen: 0 });
+    expect(worst.seen, `${sheet} ${worst.anim} frame ${worst.i}`).toBe(0);
   });
 
   it.each(LOOKS)("%s passes the cloak guard (she wears no cloak, so nothing to show through)", (sheet, r) => {

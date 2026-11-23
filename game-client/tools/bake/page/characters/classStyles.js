@@ -41,12 +41,13 @@ import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, RUNNING_CLAS
  * little more than the pump ({@link RUN_SCEPTRE_WRIST}), so it leans forward a little as the hand
  * rises and stands up as it falls, the orb ahead of the hand and of her face, at most about her
  * chin, and her hand crossing in at the front as the swords' do. Her run carries it under the
- * sprint's 20° lean (FS-JS7C8 § Change: The wizard's sprint and pointed cast R122, R123), the carry's
- * keys as they were: the lean lowers her chest, so the sceptre hand peaks at 0.56–0.59 H, under the
- * chest bone ({@link WIZARD_SPRINT_PEAK}; 0.61 H on the 10° lean), her tome hand's front comes
- * about 0.02 H under the chest bone, and the sceptre leans on with the trunk, 36.7–48.5° off
- * vertical (23.4–37.8° on the 10° lean), past {@link WIZARD_SPRINT_TILT}'s 45, its foot touching
- * the robe on the run's key 1: both escalated (classMotion.test.mjs `held`).
+ * sprint's 20° lean (FS-JS7C8 § Change: The wizard's sprint and pointed cast R122, R123), with the
+ * least change to the carry that keeps her look: the lean lowers her chest, so the sceptre hand peaks at
+ * 0.56–0.59 H, under the chest bone ({@link WIZARD_SPRINT_PEAK}; 0.61 H on the 10° lean), and her
+ * tome hand's front comes about 0.02 H under the chest bone; the lean would have tipped the sceptre
+ * to 48.5° off vertical and set the shaft's foot against her robe, so the wrist holds it back
+ * ({@link RUN_SCEPTRE}: 26.0–37.3°, {@link WIZARD_SPRINT_TILT}) and the arm stands a little further
+ * out ({@link SCEPTRE_RUN_OUT}).
  */
 const REST_ARM = [-0.05, 0, 0];
 const REST_ELBOW = [-0.12, 0, 0];
@@ -65,11 +66,27 @@ export const RUN_TIP_CEIL = 1.03;
 const RUN_CROSS = 0.3;
 /** How far in toward the midline the weapon hand comes at the front of the pump against the back (H). */
 export const RUN_CROSS_REACH = [0.05, 0.08];
-const RUN_SCEPTRE = [-0.1, 0, 0];
+/**
+ * The wizard's wrist in her run (rad, about x): the sceptre held back against the sprint's lean, so
+ * it leans in the world as it did on the shared run's 10° lean (FS-JS7C8 § Change: The wizard's
+ * sprint and pointed cast R122, W2: the lean tipped the kept carry's sceptre to 36.7–48.5° off
+ * vertical, past its band; it was −0.1, and the extra −0.2 takes back about the 10° the trunk now
+ * leans further: 26.0–37.3°, against 23.4–37.8° on the 10° lean). Held back so far it also keeps the
+ * Pyromancer's cage clear of her skull (1.31 skull radii at the nearest; −0.28 read 1.29, −0.2 1.27,
+ * under the 1.3 the focus guard asks, mageLooks.test.mjs).
+ */
+const RUN_SCEPTRE = [-0.3, 0, 0];
 const RUN_SCEPTRE_WRIST = [0, 1.2];
 /** The wizard's sceptre arm's share of the shared pump (RUN_ARM), and how far its centre is drawn back (rad). */
 const SCEPTRE_RUN_ARM = 0.76;
 const SCEPTRE_RUN_BACK = 0.25;
+/**
+ * How far her sceptre arm stands out from the body in the run (rad, the upper arm about z; − is
+ * out): under the sprint's lean the shaft's foot came against her robe on the run's key 1 (0.0006 H
+ * in; W2: the lean broke a guard), so the arm stands 0.02 rad further out than it did (−0.12), the
+ * foot 0.0028 H clear.
+ */
+const SCEPTRE_RUN_OUT = -0.14;
 /**
  * Where the wizard's sceptre hand peaks in her run (H): the lower chest, under the chest bone, which
  * the sprint's lean lowers (FS-JS7C8 § Change: The wizard's sprint and pointed cast R123 (i);
@@ -77,11 +94,11 @@ const SCEPTRE_RUN_BACK = 0.25;
  */
 export const WIZARD_SPRINT_PEAK = [0.56, 0.59];
 /**
- * The sceptre's band off vertical through her run's pump (degrees): reasonably upright, leaning on
- * with the trunk (R123 (ii); was 15–40 on the 10° lean). The FS measured 30–40.3° under the
- * sprint's lean; on her rig it reads 36.7–48.5°, escalated 2026-11-23 (I-JS7C8-27).
+ * The sceptre's band off vertical through her run's pump (degrees): reasonably upright, as on the
+ * shared run's 10° lean, the wrist taking back the sprint's (R123 (ii); measured 26.0–37.3°, inside
+ * the owner-approved 15–45; 23.4–37.8° on the 10° lean).
  */
-export const WIZARD_SPRINT_TILT = [15, 45];
+export const WIZARD_SPRINT_TILT = [24, 40];
 
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
@@ -328,7 +345,7 @@ export const WIZARD_STYLE = {
     arms: [1, SCEPTRE_RUN_ARM],
     wrist: RUN_SCEPTRE_WRIST,
     cross: [0, RUN_CROSS],
-    hold: pose({ upperArmL: [0, 0, 0.14], upperArmR: [SCEPTRE_RUN_BACK, 0, -0.12], handR: RUN_SCEPTRE }),
+    hold: pose({ upperArmL: [0, 0, 0.14], upperArmR: [SCEPTRE_RUN_BACK, 0, SCEPTRE_RUN_OUT], handR: RUN_SCEPTRE }),
     lean: SPRINT_LEAN,
     stride: WIZARD_SPRINT_STRIDE,
   },
