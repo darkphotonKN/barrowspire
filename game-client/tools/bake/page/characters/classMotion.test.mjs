@@ -786,6 +786,76 @@ describe.each(STAFFS.filter((s) => s.pointed))("the wizard's cast points $held a
   });
 });
 
+// FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R79–R81 (the owner,
+// 2026-11-23: 「攻擊時 不用像短杖要伸直 可以有一點前傾的角度因為長杖比較重的話不可能跟短杖一樣伸直攻擊」): her own
+// strike keys, the heavy staff pushed forward with the elbow bent, not reached out straight
+describe("the Spellwarden's heavy cast pushes the long staff forward, the elbow bent (FS-1J1CB § Change: The Spellwarden's long staff planted and swung heavy R79–R81)", () => {
+  const rig = rigOf(WIZARD_BUILD);
+  const pts = span(WARD_STAFF_SPAN);
+  const staff = riding(rig, "handR", gripAt(rig, "R"), {}, pts);
+  const grip = riding(rig, "handR", gripAt(rig, "R"), {}, [[0, 0, 0]])[0];
+  const keys = clipsFor(SPELLWARDEN_STYLE, WIZARD_SHEET.animations).attack;
+  const shared = clipsFor({ ...SPELLWARDEN_STYLE, attack: "staffCast" }, WIZARD_SHEET.animations).attack;
+
+  /** On key `i`: the staff (shoe to top) in degrees off vertical and, in plan, off the facing (+z); the elbow's bend; the grip's height against the hips' and the chest bone's. */
+  const measure = (i) => {
+    posed(rig, keys[i]);
+    const d = world(staff.at(-1)).sub(world(staff[0]));
+    const [sh, el, hand] = [at(rig, "upperArmR"), at(rig, "foreArmR"), at(rig, "handR")];
+    return {
+      vert: Math.acos(d.y / d.length()) * DEG,
+      plan: Math.abs(Math.atan2(d.x, d.z)) * DEG,
+      elbow: 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG,
+      grip: world(grip).y,
+      hips: at(rig, "hips").y,
+      chest: at(rig, "chest").y,
+    };
+  };
+  /** How far forward the trunk pitches on key `p` (rad): the spine's and the chest's own pitch. */
+  const pitch = (p) => (p.b.spine?.[0] ?? 0) + (p.b.chest?.[0] ?? 0);
+
+  it("keeps 7 keys, the staff cast's wind-up and settle (keys 0–2 and 6), and its glow on keys 3–5", () => {
+    expect(keys).toHaveLength(7);
+    for (const i of [0, 1, 2, 6]) expect(keys[i], `key ${i}`).toEqual(shared[i]);
+    expect(keys.slice(3, 6).map((p) => p.fx.glow)).toEqual([5, 3.6, 2.2]);
+    expect(SPELLWARDEN_STYLE.attack).not.toBe("staffCast");
+    expect(PYROMANCER_STYLE.attack).toBe("staffCast");
+  });
+
+  it.each([3, 4])("on key %i tips the staff's head toward the target 30–45° from vertical, within 15° of the facing in plan", (i) => {
+    const m = measure(i);
+    expect(m.vert, `from vertical @${i}`).toBeGreaterThanOrEqual(30);
+    expect(m.vert, `from vertical @${i}`).toBeLessThanOrEqual(45);
+    expect(m.plan, `plan @${i}`).toBeLessThanOrEqual(15);
+  });
+
+  it.each([3, 4])("on key %i bends the elbow 40–60°, the fist pushed forward between the waist and the lower chest", (i) => {
+    const m = measure(i);
+    expect(m.elbow, `elbow @${i}`).toBeGreaterThanOrEqual(40);
+    expect(m.elbow, `elbow @${i}`).toBeLessThanOrEqual(60);
+    expect(m.grip, `grip over the hips @${i}`).toBeGreaterThanOrEqual(m.hips);
+    expect(m.grip, `grip under the chest bone @${i}`).toBeLessThanOrEqual(m.chest);
+  });
+
+  it.each([3, 4, 5])("on key %i leans the trunk into the strike further than the staff cast does", (i) => {
+    expect(pitch(keys[i]), `key ${i}`).toBeGreaterThan(pitch(shared[i]));
+  });
+
+  it("eases the staff back toward upright on key 5: 15–30° from vertical, the elbow 50–70°", () => {
+    const m = measure(5);
+    expect(m.vert).toBeGreaterThanOrEqual(15);
+    expect(m.vert).toBeLessThanOrEqual(30);
+    expect(m.elbow).toBeGreaterThanOrEqual(50);
+    expect(m.elbow).toBeLessThanOrEqual(70);
+  });
+
+  it(`cocks the wrist at most CLEAVE_CARRY (${CLEAVE_CARRY} rad) on every key`, () => {
+    keys.forEach((p, i) => {
+      for (const a of p.b.handR ?? [0, 0, 0]) expect(Math.abs(a), `wrist @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY);
+    });
+  });
+});
+
 /**
  * How far the weapon turns between two poses (degrees): the angle between its line, pommel to tip
  * (`gear.weapon`), in one and in the other.

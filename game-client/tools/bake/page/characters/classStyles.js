@@ -475,7 +475,8 @@ export const WARD_PLANT_ARM = [
 ];
 export const SPELLWARDEN_STYLE = {
   ...WIZARD_STYLE,
-  attack: "staffCast",
+  // her heavy cast, the long staff pushed forward (clips.js `wardCast`)
+  attack: "wardCast",
   hold: WARD_HOLD,
   // the idle plants the staff ({@link WARD_PLANT}); the left arm as WARD_HOLD carries it
   idle: { hold: pose({ foreArmL: [-0.15, 0, 0] }) },

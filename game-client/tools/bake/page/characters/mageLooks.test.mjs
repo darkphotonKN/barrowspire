@@ -255,13 +255,14 @@ describe("the mage kit (FS-1J1CB §Change: Looks v2 R68, R69)", () => {
     const { WIZARD_STYLE, SPELLWARDEN_STYLE, PYROMANCER_STYLE } = await import("./classStyles.js");
     expect(looks.spellwarden.style).toBe(SPELLWARDEN_STYLE);
     expect(looks.pyromancer.style).toBe(PYROMANCER_STYLE);
-    // their cast the wizard's thrust as Looks v2 was made on it, before FS-JS7C8's pointed cast,
-    // which is the base wizard's alone (the owner, 2026-11-23: 「如果有改武器就套用main的」)
-    for (const s of [SPELLWARDEN_STYLE, PYROMANCER_STYLE]) {
-      expect(s).not.toBe(WIZARD_STYLE);
-      expect(WIZARD_STYLE.attack).toBe("cast");
-      expect(s.attack).toBe("staffCast");
-    }
+    // the Pyromancer's cast the wizard's thrust as Looks v2 was made on it, before FS-JS7C8's
+    // pointed cast, which is the base wizard's alone (the owner, 2026-11-23: 「如果有改武器就套用main的」);
+    // the Spellwarden's her own heavy cast on its wind-up and settle (FS-1J1CB § Change: The
+    // Spellwarden's long staff planted and swung heavy R79)
+    for (const s of [SPELLWARDEN_STYLE, PYROMANCER_STYLE]) expect(s).not.toBe(WIZARD_STYLE);
+    expect(WIZARD_STYLE.attack).toBe("cast");
+    expect(PYROMANCER_STYLE.attack).toBe("staffCast");
+    expect(SPELLWARDEN_STYLE.attack).toBe("wardCast");
   });
 });
 
