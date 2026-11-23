@@ -51,7 +51,7 @@ export interface PartyMemberFrameRow {
    */
   level?: number;
   /**
-   * The member's title, "Warrior · Berserker" (FS-E1ZDG §K.41), by the level's rule: on the player's
+   * The member's title, the spec name alone, "Berserker" (FS-E1ZDG §K.41, §Change: The specialization name replaces the class name), by the level's rule: on the player's
    * own row from their own state, on a teammate's only while this world's state lists them. None
    * before the pick.
    */

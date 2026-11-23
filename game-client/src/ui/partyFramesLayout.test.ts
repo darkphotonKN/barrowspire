@@ -377,12 +377,12 @@ describe("partyFrameRows: a row's title", () => {
     );
 
   it("carries the player's own title from their own state", () => {
-    expect(rowsOf()[0].title).toBe("Warrior · Berserker");
+    expect(rowsOf()[0].title).toBe("Berserker");
   });
 
   it("carries a same-world teammate's title", () => {
     const rows = rowsOf([seen("wren", { current_health: 30, max_health: 120, specialization: "shadow_ranger" })]);
-    expect(rows[1].title).toBe("Archer · Shadow Ranger");
+    expect(rows[1].title).toBe("Shadow Ranger");
   });
 
   it("gives a teammate elsewhere no title, whatever their broadcast says (§Edge States)", () => {

@@ -608,7 +608,7 @@ describe("GearOverlay stats panel (FS-HRH2J §C R24–30)", () => {
   it("should head the panel with the character's title, the class name alone before the pick", () => {
     const { overlay, shown } = statsOnStage();
     overlay.updateCharacter({ ...ignis, level: 20, specialization: "pyromancer" });
-    expect(shown()).toContain("MAGE · PYROMANCER");
+    expect(shown()).toContain("PYROMANCER");
     expect(shown()).not.toContain("MAGE");
     overlay.updateCharacter(ignis);
     expect(shown()).toContain("MAGE");

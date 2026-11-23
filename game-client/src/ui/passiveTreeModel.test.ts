@@ -179,6 +179,13 @@ describe("the passive tree's depths, lanes and header (FS-8RZ51 V23)", () => {
     expect(treeView(warrior({}, 0)).header).toBe("Warrior · 0 points");
   });
 
+  it("should head a specialized character's tree with the spec name, not the class (FS-E1ZDG §Change: The specialization name replaces the class name, N3)", () => {
+    expect(treeView({ ...warrior({}, 3), specialization: "berserker" }).header).toBe("Berserker · 3 points");
+    // an id the client does not know, or another class's, keeps the class (§Edge States)
+    expect(treeView({ ...warrior({}, 3), specialization: "paladin" }).header).toBe("Warrior · 3 points");
+    expect(treeView({ ...warrior({}, 3), specialization: "hunter" }).header).toBe("Warrior · 3 points");
+  });
+
   it("should read no points when the state carries none", () => {
     expect(treeView({ class: "mage" }).points).toBe(0);
   });
@@ -322,14 +329,14 @@ describe("the passive tree's tooltips (FS-8RZ51 R37, V26)", () => {
   });
 
   it.each([
-    ["warrior", "t6a", "Warrior · Guardian", "Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and refills your stamina."],
-    ["warrior", "t6b", "Warrior · Berserker", "Blood price: 33% less max HP for +25% attack speed and +10% damage; each slash that hits heals 1.5% of max HP."],
-    ["mage", "t6a", "Mage · Spellwarden", "Arcane Ward: a quarter of each hit's damage comes off your mana first, and magic hits deal 10% less."],
-    ["mage", "t6b", "Mage · Pyromancer", "Combustion: a fireball crit explodes for half its damage on every other monster within 60 px."],
-    ["archer", "t6a", "Archer · Hunter", "Split Shot: an arrow crit splits off a 60% arrow at the nearest other monster within 220 px."],
-    ["archer", "t6b", "Archer · Shadow Ranger", "Shadow Shot pierces every target in its line; each monster it hits refunds 8 stamina."],
-    ["mercenary", "t6a", "Mercenary · Duelist", "Quick riposte: your cut ripostes at 2 parry charges and spends only 2."],
-    ["mercenary", "t6b", "Mercenary · Sellsword", "Five parry charges and no riposte; each charge held gives +5% cut damage and +5% attack speed."],
+    ["warrior", "t6a", "Guardian", "Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and refills your stamina."],
+    ["warrior", "t6b", "Berserker", "Blood price: 33% less max HP for +25% attack speed and +10% damage; each slash that hits heals 1.5% of max HP."],
+    ["mage", "t6a", "Spellwarden", "Arcane Ward: a quarter of each hit's damage comes off your mana first, and magic hits deal 10% less."],
+    ["mage", "t6b", "Pyromancer", "Combustion: a fireball crit explodes for half its damage on every other monster within 60 px."],
+    ["archer", "t6a", "Hunter", "Split Shot: an arrow crit splits off a 60% arrow at the nearest other monster within 220 px."],
+    ["archer", "t6b", "Shadow Ranger", "Shadow Shot pierces every target in its line; each monster it hits refunds 8 stamina."],
+    ["mercenary", "t6a", "Duelist", "Quick riposte: your cut ripostes at 2 parry charges and spends only 2."],
+    ["mercenary", "t6b", "Sellsword", "Five parry charges and no riposte; each charge held gives +5% cut damage and +5% attack speed."],
   ])("should say what the %s's %s does after its title, the look a faint note last", (cls, slot, title, line) => {
     const source = { class: cls, level: 20, passive_ranks: held(cls, TO_M4), passive_points: 1 };
     const lines = tones(source, `${cls}.${slot}`);
@@ -343,7 +350,7 @@ describe("the passive tree's tooltips (FS-8RZ51 R37, V26)", () => {
   it("should keep the look's note last, after a reason, and never on the main line", () => {
     const source = warrior(held("warrior", ["r1", "r2", "ua1", "m1", "m2", "t3", "m3", "la1"]), 0, 19);
     expect(tones(source, "warrior.t6a").slice(3)).toEqual([
-      ["Grants the title Warrior · Guardian.", "grant"],
+      ["Grants the title Guardian.", "grant"],
       ["Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and refills your stamina.", "grant"],
       ["Not reachable yet: take Vitality first.", "reason"],
       ["Not reachable yet: reach level 20.", "reason"],

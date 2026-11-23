@@ -119,10 +119,10 @@ describe("characterSheet header and experience (FS-HRH2J R25–26)", () => {
     expect(xp).toEqual({ fraction: 0, text: null });
   });
 
-  // FS-E1ZDG §K.37, §K.41: the title in place of the class name, in the header's capitals
+  // FS-E1ZDG §K.41, §Change: The specialization name replaces the class name (N3): the spec name alone in the header's capitals
   it("should head a specialized character with their title, in capitals", () => {
     const berserker = { username: "Bram", class: "warrior", specialization: "berserker" };
-    expect(characterSheet(berserker, nothingWorn()).className).toBe("WARRIOR · BERSERKER");
+    expect(characterSheet(berserker, nothingWorn()).className).toBe("BERSERKER");
   });
 
   it("should head one with no spec, or one the client does not know, with the class name", () => {

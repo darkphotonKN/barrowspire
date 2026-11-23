@@ -1316,3 +1316,5 @@ Review and check
 - The ability bar's icons, the corner row and every other HUD icon: bronze under ADR-0080.
 - Any server, wire, golden or tree-rule change.
 - Saving a retune from the review page: it previews only.
+
+## Change: The specialization name replaces the class name → FS-E1ZDG

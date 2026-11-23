@@ -207,6 +207,18 @@ describe("the tree slot's worlds and state (FS-8RZ51 R33, R36, R41)", () => {
     expect(t.built[0].shown.at(-1)?.passive_points).toBe(1);
   });
 
+  it("should hand the tree the character's specialization, for the header's role name (FS-E1ZDG §Change: The specialization name replaces the class name, N3)", () => {
+    const t = onSlot();
+    t.bridge.report(aWorld("hub").report);
+    t.slot.show(t.bridge.world);
+    t.slot.toggle();
+
+    t.slot.hear({ kind: "seen", character: me(0) });
+    expect(t.built[0].shown.at(-1)?.specialization).toBeUndefined();
+    t.slot.hear({ kind: "seen", character: { ...me(0), specialization: "berserker" } });
+    expect(t.built[0].shown.at(-1)?.specialization).toBe("berserker");
+  });
+
   it("should keep the last character for the next world's tree", () => {
     const t = onSlot();
     t.bridge.report(aWorld("hub").report);

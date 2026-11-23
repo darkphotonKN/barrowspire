@@ -66,7 +66,7 @@ describe("NameplateTitle (FS-E1ZDG §K.41)", () => {
   it("should draw the player's title, smaller than the name, at the markers' depth", () => {
     const { scene, live } = stage();
     new NameplateTitle(scene, {}).show({ class: "warrior", specialization: "berserker" });
-    expect(live().map((t) => t.text)).toEqual(["Warrior · Berserker"]);
+    expect(live().map((t) => t.text)).toEqual(["Berserker"]);
     expect(live()[0].size).toBe(`${TITLE_LINE_PX}px`);
     expect(live()[0].depth).toBe(MARKER_DEPTH.name);
   });
@@ -120,7 +120,7 @@ describe("NameplateTitle (FS-E1ZDG §K.41)", () => {
     const title = new NameplateTitle(scene, {});
     title.show({ class: "warrior", specialization: "guardian" });
     title.show({ class: "warrior", specialization: "berserker" });
-    expect(live().map((t) => t.text)).toEqual(["Warrior · Berserker"]);
+    expect(live().map((t) => t.text)).toEqual(["Berserker"]);
     title.show({ class: "warrior" });
     expect(live()).toHaveLength(0);
     title.show({ class: "warrior", specialization: "guardian" });

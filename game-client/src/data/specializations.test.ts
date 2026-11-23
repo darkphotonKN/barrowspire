@@ -1,23 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { SPECIALIZATIONS, characterTitle, classLevelLine, nameplateTitle, specializationOf } from "./specializations";
+import { SPECIALIZATIONS, characterTitle, classLevelLine, nameplateTitle, roleName, specializationOf } from "./specializations";
 
-describe("characterTitle (FS-E1ZDG §K.37)", () => {
-  it("should join the class and the spec with a middle dot", () => {
-    expect(characterTitle("warrior", "berserker")).toBe("Warrior · Berserker");
-    expect(characterTitle("archer", "shadow_ranger")).toBe("Archer · Shadow Ranger");
+describe("roleName: the one name a role is shown by (FS-E1ZDG §Change: The specialization name replaces the class name, N1)", () => {
+  it.each([
+    ["warrior", "guardian", "Guardian"],
+    ["warrior", "berserker", "Berserker"],
+    ["mage", "spellwarden", "Spellwarden"],
+    ["mage", "pyromancer", "Pyromancer"],
+    ["archer", "hunter", "Hunter"],
+    ["archer", "shadow_ranger", "Shadow Ranger"],
+    ["mercenary", "duelist", "Duelist"],
+    ["mercenary", "sellsword", "Sellsword"],
+  ])("should name a %s holding %s by the spec alone, %s", (cls, spec, name) => {
+    expect(roleName(cls, spec)).toBe(name);
   });
 
-  it.each([
-    ["warrior", "guardian", "Warrior · Guardian"],
-    ["warrior", "berserker", "Warrior · Berserker"],
-    ["mage", "spellwarden", "Mage · Spellwarden"],
-    ["mage", "pyromancer", "Mage · Pyromancer"],
-    ["archer", "hunter", "Archer · Hunter"],
-    ["archer", "shadow_ranger", "Archer · Shadow Ranger"],
-    ["mercenary", "duelist", "Mercenary · Duelist"],
-    ["mercenary", "sellsword", "Mercenary · Sellsword"],
-  ])("should title a %s %s as %s", (cls, spec, title) => {
-    expect(characterTitle(cls, spec)).toBe(title);
+  it("should name a character by its class before the pick (N5)", () => {
+    expect(roleName("warrior", undefined)).toBe("Warrior");
+    expect(roleName("Archer", undefined)).toBe("Archer");
+  });
+
+  it("should name a character by its class for an id it does not know (§Edge States)", () => {
+    expect(roleName("warrior", "paladin")).toBe("Warrior");
+    expect(roleName("warrior", "toString")).toBe("Warrior");
+  });
+
+  it("should name a character by its class for a spec of another class (§Edge States)", () => {
+    expect(roleName("warrior", "pyromancer")).toBe("Warrior");
+  });
+
+  it("should name a class it does not know by its key in title case", () => {
+    expect(roleName("bard", undefined)).toBe("Bard");
+  });
+});
+
+describe("characterTitle: the spec name alone, once specialized (N2)", () => {
+  it("should be the spec's name, with no class word and no middle dot", () => {
+    expect(characterTitle("warrior", "berserker")).toBe("Berserker");
+    expect(characterTitle("archer", "shadow_ranger")).toBe("Shadow Ranger");
+    expect(characterTitle("mercenary", "sellsword")).not.toContain("·");
   });
 
   it("should give no title before the pick", () => {
@@ -54,9 +75,9 @@ describe("characterTitle (FS-E1ZDG §K.37)", () => {
   });
 });
 
-describe("classLevelLine: the main menu hero and the character list (FS-E1ZDG §K.40)", () => {
-  it("should show the title beside the level for a character with one", () => {
-    expect(classLevelLine("warrior", "berserker", 20)).toBe("WARRIOR · BERSERKER • LV.20");
+describe("classLevelLine: the main menu hero and the character list (FS-E1ZDG §K.40, N3)", () => {
+  it("should show the spec name alone beside the level once specialized (N3)", () => {
+    expect(classLevelLine("warrior", "berserker", 20)).toBe("BERSERKER • LV.20");
   });
 
   it("should show the class name alone beside the level before the pick", () => {
@@ -72,10 +93,10 @@ describe("classLevelLine: the main menu hero and the character list (FS-E1ZDG §
   });
 });
 
-describe("nameplateTitle (FS-E1ZDG §K.41, one rule for the three worlds)", () => {
-  it("should give the player's title line from the world state", () => {
-    expect(nameplateTitle({ class: "warrior", specialization: "berserker" })).toBe("Warrior · Berserker");
-    expect(nameplateTitle({ class: "Archer", specialization: "shadow_ranger" })).toBe("Archer · Shadow Ranger");
+describe("nameplateTitle (FS-E1ZDG §K.41, N3: one rule for the three worlds)", () => {
+  it("should give the player's title line, the spec name alone, from the world state", () => {
+    expect(nameplateTitle({ class: "warrior", specialization: "berserker" })).toBe("Berserker");
+    expect(nameplateTitle({ class: "Archer", specialization: "shadow_ranger" })).toBe("Shadow Ranger");
   });
 
   it("should give no line before the pick, for an unknown id, or for another class's", () => {

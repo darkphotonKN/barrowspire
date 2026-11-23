@@ -497,3 +497,104 @@ How each specialization landed (Kranti's pushback, 2026-11-21):
   automatically becomes the riposte (FS-MAMHR §E.23), so hoarding needs the riposte turned off.
   The numbers sit near the Berserker's on purpose: the Sellsword keeps full HP but must earn five
   parries every run and loses them on death.
+
+## Change: The specialization name replaces the class name
+Status: work-order
+Date: 2026-11-24
+
+> Kranti, 2026-11-24: "make it so that the specialization name is the core name shown every where,
+> not class, once its active." Scoped pre-answered the same day; every value below marked
+> **(charter default — reason: …)** is the owner's decision. A behaviour change on the titles
+> (§K); the thin line "Specialization titles → FS-E1ZDG" stands unchanged. It supersedes §K.37's
+> " · " format, §K.40's examples and §K.41's title words; that text is not edited. The passive
+> tree's header is FS-8RZ51's (R35, kept by its Tree v2 V23), which carries the stub
+> `## Change: The specialization name replaces the class name → FS-E1ZDG`.
+
+### Requirements
+
+N1. **The role name** *(charter default — reason: one rule cannot drift between surfaces)*. A
+    character's role is shown by one name: its specialization's display name (§A.1) when it holds
+    a known specialization of its own class, else its class's display name ("Warrior"). One
+    function in `game-client/src/data/specializations.ts`, `roleName(className, specialization)`,
+    decides it, and every surface below reads it. An unknown id or another class's id gives the
+    class name (§Edge States, as today). A class the client does not know shows its key in title
+    case, as today.
+N2. **The title is the specialization's name alone** *(charter default — reason: Kranti, "the
+    specialization name is the core name")*: "Berserker", "Shadow Ranger", no class word and no
+    " · ". A character has a title only once it holds a known specialization of its class
+    (`characterTitle` returns the role name then, nothing otherwise). §K.37's " · " format is
+    retired. A surface that sets its text in capitals keeps doing so ("BERSERKER").
+N3. **The surfaces** *(charter default)*, each reading N1 or N2:
+    - **Nameplates** (town, fields, runs; §K.41): a specialized player's title line under the name
+      reads the spec name alone, in that same line. An unspecialized player has no line, as today.
+    - **Party frames** (§K.41): the title line under a member's name reads the spec name alone,
+      by the same "whenever the state carries that member" rule.
+    - **The stats panel header** (the gear overlay's character sheet): the role name in capitals,
+      "BERSERKER", "WARRIOR" before the pick.
+    - **The main menu's hero and the character list** (§K.40): the role name in capitals beside
+      the level, "BERSERKER • LV.20", "WARRIOR • LV.5".
+    - **The passive tree's header** (FS-8RZ51 R35, V23): the role name, then the unspent points,
+      "Berserker · 3 points", "Warrior · 3 points" before the pick. The tree reads the
+      specialization from the same `character` of the gear "seen" message it already reads
+      (§K.41); no new bridge request.
+    - **The tier-6 node's tooltip** (FS-8RZ51 V26) names the title it grants in N2's words:
+      "Grants the title Berserker."
+N4. **Display only** *(charter default — reason: the class is the mechanic; only its name on screen
+    changes)*. The class still drives mechanics, art keys, sheet selection, copy lookups
+    (`abilityCopy(cls, specialization)`) and everything the server sees. No class id, no wire
+    field and no stored value changes.
+N5. **Before the pick nothing changes** *(charter default)*: every surface shows the class name
+    where it shows it today.
+N6. **The controls panel** names no class, only the class's ability (§L.43). It reads the
+    specialization from the stored character and can be stale until the roster reloads (a known
+    note from the earlier build) *(charter default — reason: out of this change's scope)*. Kept.
+N7. **The party panel keeps its class word** ("Warrior · village" under a member's name)
+    *(charter default — reason: its data is the party payload, which carries no specialization
+    (§K.41's v1 reason); showing it needs a server change or new wiring of the world's state into
+    the panel, both outside this change)*.
+
+### Acceptance Criteria
+
+- [ ] `roleName("warrior", "berserker")` is "Berserker"; `roleName("archer", "shadow_ranger")` is
+      "Shadow Ranger"; each of §A.1's eight gives its display name for its own class.
+- [ ] `roleName` gives the class name for no specialization, an unknown id ("paladin", an
+      `Object.prototype` key), and another class's id ("warrior", "pyromancer" → "Warrior").
+- [ ] `characterTitle("warrior", "berserker")` is "Berserker" and contains no " · "; it is absent
+      before the pick and for an unknown or another class's id.
+- [ ] A Berserker's nameplate title line reads "Berserker"; an unspecialized player has no line.
+- [ ] A Berserker's party frame title reads "Berserker".
+- [ ] The stats panel header reads "BERSERKER" for a Berserker and "WARRIOR" for a warrior with no
+      spec.
+- [ ] The main menu hero and the character list read "BERSERKER • LV.20" for a Berserker and
+      "WARRIOR • LV.5" for a warrior with no spec.
+- [ ] The passive tree header reads "Berserker · 3 points" for a Berserker and "Warrior · 3 points"
+      for a warrior with no spec; the tree redraws when the specialization it is handed changes.
+- [ ] The Berserker node's tooltip reads "Grants the title Berserker."
+- [ ] No class id, wire field, art key, sheet or copy lookup changes (`abilityCopy`,
+      `specializationOf` and the art selectors are untouched).
+- [ ] No string "Warrior · Berserker" (or any "Class · Spec" pair) is produced anywhere in
+      `src/`.
+- [ ] `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` pass.
+
+### Edge States
+
+- **Unknown specialization id** (a newer server, a corrupt read): the role name is the class name
+  and there is no title, so no nameplate line.
+- **Another class's id** on a character: the same.
+- **Unknown class** (a class the client does not ship): its key in title case ("Bard"), in
+  capitals where the surface sets capitals ("BARD • LV.3").
+- **The pick in town:** the next state carries `specialization`; the nameplate gains its line, the
+  stats header and the tree header switch to the spec name on that tick. The main menu reads the
+  character read, so it switches when the roster reloads.
+- **A teammate in another world:** their party frame shows no title until they share this world
+  (unchanged).
+- **The controls panel after the pick:** may name the unspecialized ability until the roster
+  reloads (N6, unchanged).
+
+### Out of Scope
+
+- Any server change, storing the specialization, a new wire field.
+- New art, a new look, a new font or style for the spec name.
+- The party panel (N7), chat, whispers, invites and the settlement record (§K.42).
+- The controls panel's staleness (N6).
+- Character creation and the landing page's class showcase: no character there holds a spec.

@@ -15,7 +15,7 @@ import { itemStats, type StatLine } from "@/marketplace/detail";
 import { atCap, progressOf, xpCount, xpFraction } from "./progress";
 import { RESOURCE_KINDS, type HudChannel } from "./resources";
 import { PASSIVE_NODES, nodeCopy, rankEffect, rankStats } from "@/data/passiveTree";
-import { characterTitle } from "@/data/specializations";
+import { roleName } from "@/data/specializations";
 
 /** What the panel reads off the player's own world state (R24); every number may be absent. */
 export type CharacterSource = Pick<PlayerState, "username" | "class"> &
@@ -39,7 +39,7 @@ export type CharacterSource = Pick<PlayerState, "username" | "class"> &
 
 /** The left panel, top to bottom. */
 export interface CharacterSheet {
-  /** The class's display name, as the menus show it, or the character's title where they hold a spec (FS-E1ZDG §K.41). */
+  /** The role name in capitals, as the menus show it: the spec's name where they hold one, else the class's (FS-E1ZDG §K.41, §Change: The specialization name replaces the class name). */
   className: string;
   name: string;
   /** The level; absent from the state means 1 (R25). */
@@ -75,8 +75,8 @@ export function characterSheet(
     : undefined;
   const progress = progressOf(player);
   return {
-    // the header sets its line in capitals, and keeps doing so for the title (FS-E1ZDG §K.37)
-    className: characterTitle(key, player.specialization)?.toUpperCase() ?? lore?.name ?? (player.class ?? "").toUpperCase(),
+    // the role name in capitals: the spec's name once specialized, else the class's (FS-E1ZDG §Change: The specialization name replaces the class name, N3)
+    className: roleName(player.class ?? "", player.specialization).toUpperCase(),
     name: player.username,
     level: progress?.level ?? 1,
     xp: !progress

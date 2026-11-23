@@ -203,8 +203,8 @@ export class UiTreeSlot {
   }
 }
 
-/** What the tree reads of the character the world handed (R41). */
+/** What the tree reads of the character the world handed (R41), its specialization for the header's role name (FS-E1ZDG §Change: The specialization name replaces the class name). */
 function treeSource(character: CharacterSource): TreeSource {
-  const { class: className, level, passive_ranks, passive_points } = character;
-  return { class: className, level, passive_ranks, passive_points };
+  const { class: className, level, passive_ranks, passive_points, specialization } = character;
+  return { class: className, level, passive_ranks, passive_points, specialization };
 }
