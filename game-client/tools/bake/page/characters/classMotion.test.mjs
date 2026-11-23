@@ -1,34 +1,72 @@
 // The playable classes' own motion on their own rigs and styles (classStyles.js): the run of
 // FS-JS7C8 R2 as each class carries it, the weapon kept out of the body and the head, and the
 // attack of FS-2325V § Change: The class attacks move with weight and cut deep.
+import { createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
-import { ATTACKS, ATTACK_TURN_LIMIT, RUN_ANIMATIONS, add, applyPose, clipsFor, groundPose, pose, runCycle, walkCycle } from "./clips.js";
+import {
+  ANIMATIONS,
+  ATTACK_TURN_LIMIT,
+  CLEAVE_CARRY,
+  RUN_ANIMATIONS,
+  RUN_ARM,
+  RUN_COUNTER,
+  RUN_ELBOW,
+  RUN_LEAN,
+  applyPose,
+  clipsFor,
+  groundPose,
+  pose,
+  runCycle,
+} from "./clips.js";
 import { attach, createRig, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
 import { boots, coif, hair, head, legs, shortBeard } from "./anatomy.js";
 import { VIEW_DIR } from "../projection.js";
 import { FACINGS, yawFor } from "../facing.js";
-import { footing, measurePace } from "./pace.js";
+import { GROUND_EPS, footing, measurePace } from "./pace.js";
+import { RUN_PACE } from "../../../../src/render/art/animationSelect";
 import {
+  ARCHER_BUILD,
+  ARCHER_SHEET,
+  ARCHER_STYLE,
+  BERSERKER_SHEET,
+  BERSERKER_STYLE,
+  KNIGHT_ATTACK_CLOTH,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
+  KNIGHT_SPRINT_STRIDE,
   KNIGHT_STYLE,
   MERCENARY_BUILD,
   MERCENARY_SHEET,
   MERCENARY_STYLE,
+  MERC_TRAILING_TURNS,
+  PYROMANCER_STYLE,
   RUN_BLADE_ELEV,
   RUN_CROSS_REACH,
   RUN_TIP_CEIL,
-  SCEPTRE_RUN_PEAK,
-  SCEPTRE_RUN_TILT,
   SCEPTRE_TILT,
+  SPELLWARDEN_STYLE,
+  SPRINT_LEAN,
+  SPRINT_RUN,
+  SPRINT_STEP,
   WIZARD_BUILD,
   WIZARD_SHEET,
+  WIZARD_SPRINT_PEAK,
+  WIZARD_SPRINT_STRIDE,
+  WIZARD_SPRINT_TILT,
   WIZARD_STYLE,
 } from "./classStyles.js";
 import { MERC_ANIMATIONS, parryClip } from "./clips.js";
 
 const DEG = 180 / Math.PI;
+
+/**
+ * The sha256 of a value's JSON, to hold keys byte for byte as a commit had them (main 970f2dc7 for
+ * the shared run's and the knight's, `2018f786` for the archer's run and sheet and the mercenary's
+ * other clips, `22cabd3a` for the mercenary's run and sheet and the wizard's idle, walk and death).
+ * A digest changes only when the keys do.
+ */
+const digest = (x) => createHash("sha256").update(JSON.stringify(x)).digest("hex");
 
 /** A class's rig as cast.js builds it, with the legs and boots every clip is grounded on. */
 function rigOf(build) {
@@ -149,9 +187,18 @@ function inBind(rig, bone, w) {
 }
 
 /**
+ * The head the guards read: an ellipsoid of the head's radius on the head bone, its centre and
+ * semi-axes in the head bone's bind space (H).
+ */
+function headEllipsoid(rig) {
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  return { centre: new THREE.Vector3(0, hy + 0.048, hz + 0.004), radii: new THREE.Vector3(r, r * 1.05, r * 1.08) };
+}
+
+/**
  * How deep a world point lies inside the body (H; negative outside): the torso, read on the bone
- * each part of it rides (the pelvis, the spine, the chest), and the head, an ellipsoid of the
- * head's radius on the head bone.
+ * each part of it rides (the pelvis, the spine, the chest), and the head ({@link headEllipsoid}).
  */
 function inside(rig, w) {
   const rings = torsoRings(rig);
@@ -175,10 +222,9 @@ function inside(rig, w) {
       deepest = Math.max(deepest, (1 - v) * Math.min(rx, rz));
     }
   }
-  const [, hhy, hhz] = J(rig, "head");
-  const h = inBind(rig, "head", w);
-  const r = rig.p.headR;
-  const head = (1 - Math.hypot(h.x / r, (h.y - hhy - 0.048) / (r * 1.05), (h.z - hhz - 0.004) / (r * 1.08))) * r;
+  const { centre, radii } = headEllipsoid(rig);
+  const h = inBind(rig, "head", w).sub(centre).divide(radii);
+  const head = (1 - h.length()) * radii.x;
   return { torso: deepest, head };
 }
 
@@ -202,15 +248,21 @@ function deepestCarry(rig, gear, frames) {
 }
 
 /**
- * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands) and
- * its weapon's rest in the idle and the walk: `point` down and forward (a blade's tip toward the
- * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
- * `low` names the arm that pumps only to the lower chest ({@link SCEPTRE_RUN_PEAK}): the wizard's
- * sceptre arm. `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
+ * The classes under test, each with its weapon's rest in the idle and the walk: `point` down and
+ * forward (a blade's tip toward the ground) or `upright` (the sceptre held up beside the leg,
+ * tilted forward and out, its head up). The ones whose run pumps a weapon arm
+ * ({@link RUN_CARRIERS}: the knight and the wizard, each on the sprint's lean) also name the
+ * arms that pump (`pump`, R2's elbow and reach bands); `low` names the arm that pumps only to the
+ * lower chest, peaking in `lowPeak` (H): the wizard's sceptre arm ({@link WIZARD_SPRINT_PEAK});
+ * `tilt` is the band her sceptre keeps off vertical in the run ({@link WIZARD_SPRINT_TILT}); and
+ * `freeFront` the band the other pumping hand's front height keeps against the chest bone (H), where
+ * the lean lowers it under the chest (her tome hand, his sword hand; a class without one pumps it
+ * between the chest bone and the shoulder). `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
  * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
- * the knight's 5° below to 12° above and the mercenary's 8° below to 10° above each raised about 15°,
- * then "戰士 傭兵 跑步時提劍的角度再提升15度": the knight's 9-26° and the mercenary's 7-24° raised about
- * 15° again).
+ * the knight's 5° below to 12° above raised about 15°, then "戰士 傭兵 跑步時提劍的角度再提升15度": the
+ * knight's 9-26° raised about 15° again). The mercenary runs the sprint instead (FS-JS7C8 § Change:
+ * The mercenary's sprint and trailing sword R96), so he names no pump and no blade band: his
+ * trailing sword, his free arm's pump and his pace are his sprint's own tests below.
  */
 const CLASSES = [
   {
@@ -220,6 +272,10 @@ const CLASSES = [
     sheet: KNIGHT_SHEET,
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
+    // recorded, not tuned away (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move
+    // clips retired R147): under the sprint's 20° lean his sword hand's front comes a little under
+    // the chest bone (measured 0.021 H under; 0.040 H over on the 10° lean)
+    freeFront: [-0.035, -0.01],
     rest: "point",
     runBlade: [23, 42],
   },
@@ -228,9 +284,7 @@ const CLASSES = [
     build: MERCENARY_BUILD,
     style: MERCENARY_STYLE,
     sheet: MERCENARY_SHEET,
-    pump: ["L", "R"],
     rest: "point",
-    runBlade: [21, 40],
   },
   {
     name: "wizard",
@@ -239,49 +293,30 @@ const CLASSES = [
     sheet: WIZARD_SHEET,
     pump: ["L", "R"],
     low: "R",
+    lowPeak: WIZARD_SPRINT_PEAK,
+    tilt: WIZARD_SPRINT_TILT,
+    // recorded, not tuned away (FS-JS7C8 § Change: The wizard's sprint and pointed cast R123 (iii)):
+    // under the sprint's 20° lean her tome hand peaks a little under the chest bone (measured 0.022 H under)
+    freeFront: [-0.035, -0.01],
     rest: "upright",
   },
 ];
 
-describe.each(CLASSES)("the $name's sheet at 1.5x with the run and the backward step (FS-JS7C8 slices 6–8, FS-HF0WW § Change: Class sheets at 1.5x R35)", ({ sheet }) => {
-  it("carries run, walk_attack over 0.75 walk cycles and backpedal_attack over 0.75, no standalone backpedal, at scale 1.5", () => {
-    expect(sheet.scale).toBe(1.5);
-    const a = sheet.animations;
-    expect(a.run).toEqual(RUN_ANIMATIONS.run);
-    expect(a.walk_attack.cycles).toBe(0.75);
-    expect(a.backpedal_attack).toMatchObject({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75 });
-    expect(a).not.toHaveProperty("backpedal");
-    expect(a.walk_attack.frames / a.walk_attack.fps).toBeCloseTo(a.attack.frames / a.attack.fps, 9);
-  });
-});
+/**
+ * The classes whose run pumps the weapon arm, each carry held on its own run under the sprint's
+ * lean: the knight's (§ Change: The knight's sprint, and the attack-on-the-move clips retired R144–
+ * R147, his wrist held back) and the wizard's (§ Change: The wizard's sprint and pointed cast R122,
+ * R123).
+ */
+const RUN_CARRIERS = CLASSES.filter(({ pump }) => pump);
 
-describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ name, build, style, pump, low, rest, runBlade }) => {
+describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-JS7C8 R2; § Change: The wizard's sprint and pointed cast R122, R123; § Change: The knight's sprint, and the attack-on-the-move clips retired R144–R147)", ({ name, build, style, pump, low, lowPeak, tilt, freeFront, rest, runBlade }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
   const pose8 = (f) => footing(rig, run, f);
 
-  it("leans the trunk about 10° and brings the head back level", () => {
-    applyPose(rig, pose());
-    rig.root.updateMatrixWorld(true);
-    const lean = () => {
-      const [h, n] = [at(rig, "hips"), at(rig, "neck")];
-      return Math.atan2(n.z - h.z, n.y - h.y) * DEG;
-    };
-    const pitch = () => {
-      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(rig.bones.head.matrixWorld);
-      return Math.atan2(-fwd.y, fwd.z) * DEG;
-    };
-    const [restLean, restPitch] = [lean(), pitch()];
-    for (const f of SAMPLES) {
-      pose8(f);
-      expect(lean() - restLean, `lean @${f}`).toBeGreaterThanOrEqual(8);
-      expect(lean() - restLean, `lean @${f}`).toBeLessThanOrEqual(12);
-      expect(Math.abs(pitch() - restPitch), `head @${f}`).toBeLessThanOrEqual(3);
-    }
-  });
-
-  it(`pumps its arms with the elbows bent about 90°, each ${low ? "free " : ""}hand to chest height and back past the hip`, () => {
+  it(`pumps its arms with the elbows bent about 90°, each ${low ? "free " : ""}hand to ${freeFront ? `its band against the chest bone (${freeFront.join(" to ")} H)` : "chest height"} and back past the hip`, () => {
     for (const s of pump) {
       const samples = SAMPLES.map((f) => {
         pose8(f);
@@ -296,7 +331,11 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
       const front = samples.reduce((a, b) => (b.hand.z - b.hips.z > a.hand.z - a.hips.z ? b : a));
       const back = samples.reduce((a, b) => (b.hand.z - b.hips.z < a.hand.z - a.hips.z ? b : a));
       // the wizard's sceptre arm pumps only to the lower chest (its own test below)
-      if (s !== low) {
+      if (s !== low && freeFront) {
+        const over = (front.hand.y - front.chest.y) / rig.H;
+        expect(over, `${s} front against the chest bone (H)`).toBeGreaterThanOrEqual(freeFront[0]);
+        expect(over, `${s} front against the chest bone (H)`).toBeLessThanOrEqual(freeFront[1]);
+      } else if (s !== low) {
         expect(front.hand.y, `${s} front`).toBeGreaterThan(front.chest.y);
         expect(front.hand.y, `${s} front`).toBeLessThan(front.shoulder.y);
       }
@@ -304,13 +343,17 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
     }
   });
 
-  // owner, 2026-11-12, of the sceptre in the run: "只是要合理的位置 但跑步時為什麼手會擺到肩膀"
+  // owner, 2026-11-12, of the sceptre in the run: "只是要合理的位置 但跑步時為什麼手會擺到肩膀"; the
+  // band restated under the sprint's lean, which lowers her chest (§ Change: The wizard's sprint and
+  // pointed cast R123 (i): was 0.61 ± 0.01 H on the 10° lean)
   if (low)
-    it(`pumps the sceptre hand only to the lower chest, peaking at SCEPTRE_RUN_PEAK (${SCEPTRE_RUN_PEAK} H)`, () => {
-      expect(SCEPTRE_RUN_PEAK).toBeGreaterThanOrEqual(0.6);
-      expect(SCEPTRE_RUN_PEAK).toBeLessThanOrEqual(0.62);
-      const peak = Math.max(...SAMPLES.map((f) => (pose8(f), at(rig, `hand${low}`).y / rig.H)));
-      expect(Math.abs(peak - SCEPTRE_RUN_PEAK), `the sceptre hand's peak ${peak.toFixed(3)} H`).toBeLessThanOrEqual(0.01);
+    it(`pumps the sceptre hand only to the lower chest, peaking at ${lowPeak?.join("–")} H, under the chest bone and the shoulder`, () => {
+      const top = SAMPLES.map((f) => (pose8(f), { hand: at(rig, `hand${low}`).y, chest: at(rig, "chest").y, shoulder: at(rig, `upperArm${low}`).y })).reduce((a, b) => (b.hand > a.hand ? b : a));
+      const peak = top.hand / rig.H;
+      expect(peak, `the sceptre hand's peak ${peak.toFixed(3)} H`).toBeGreaterThanOrEqual(lowPeak[0]);
+      expect(peak, `the sceptre hand's peak ${peak.toFixed(3)} H`).toBeLessThanOrEqual(lowPeak[1]);
+      expect(top.hand, "under the chest bone at its peak").toBeLessThan(top.chest);
+      expect(top.hand, "under the shoulder at its peak").toBeLessThan(top.shoulder);
     });
 
   // owner, 2026-11-12: "拿武器的動作有點怪 武器的位置似乎太高了 擺動的時候舉得太高", "跑步時也不用太高",
@@ -321,7 +364,7 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
   it(
     rest === "point"
       ? `carries the blade raised above level on every sample (RUN_BLADE_ELEV, ${RUN_BLADE_ELEV?.join(" to ")}° from level; the ${name}'s ${runBlade?.join(" to ")}°), its tip ahead of the hand and the body, under RUN_TIP_CEIL (${RUN_TIP_CEIL} H)`
-      : `carries the sceptre reasonably upright on every sample (SCEPTRE_RUN_TILT, ${SCEPTRE_RUN_TILT?.join("–")}° off vertical), the orb above the hand and ahead of it, clear of the robe`,
+      : "carries the sceptre up from the fist on every sample, the orb ahead of the hand (its band off vertical and the robe: the tests below)",
     () => {
       const gear = GEAR[name](rig);
       const tip = gear.weapon.at(-1);
@@ -344,15 +387,32 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
           // raised, the point now rises past the crown (the top of the head as \`inside\` models it),
           // but never past a ceiling a little above it (the head kept clear: the test below)
           expect(t.y / rig.H, `tip under RUN_TIP_CEIL @${f}`).toBeLessThan(RUN_TIP_CEIL);
-        } else {
-          expect(90 - elev, `sceptre off vertical @${f}`).toBeGreaterThanOrEqual(SCEPTRE_RUN_TILT[0]);
-          expect(90 - elev, `sceptre off vertical @${f}`).toBeLessThanOrEqual(SCEPTRE_RUN_TILT[1]);
-          for (const m of gear.weapon) expect(outsideRobe(rig, world(m)), `@${f}: the sceptre into the robe`).toBeGreaterThan(0);
-        }
+        } else expect(elev, `orb above the hand @${f}`).toBeGreaterThan(0);
         expect(d.z, `tip ahead of the hand @${f}`).toBeGreaterThan(0);
       }
     },
   );
+
+  if (rest === "upright") {
+    it(`leans the sceptre ${tilt?.join("–")}° off vertical on every sample`, () => {
+      const tip = GEAR[name](rig).weapon.at(-1);
+      for (const f of SAMPLES) {
+        pose8(f);
+        const d = world(tip).sub(at(rig, "handR"));
+        const off = 90 - Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+        expect(off, `sceptre off vertical @${f}`).toBeGreaterThanOrEqual(tilt[0]);
+        expect(off, `sceptre off vertical @${f}`).toBeLessThanOrEqual(tilt[1]);
+      }
+    });
+
+    it("keeps every sceptre point outside the robe on every sample", () => {
+      const gear = GEAR[name](rig);
+      for (const f of SAMPLES) {
+        pose8(f);
+        for (const m of gear.weapon) expect(outsideRobe(rig, world(m)), `@${f}: the sceptre into the robe`).toBeGreaterThan(0);
+      }
+    });
+  }
 
   // owner, 2026-11-12: "戰士 傭兵 跑步時提劍的角度再提升15度": raised, the point rises past the crown
   if (rest === "point")
@@ -453,29 +513,6 @@ describe.each(CLASSES)("the $name's fast run on its own rig and style (FS-JS7C8 
       }
     });
 
-  it("turns the shoulders 6.5–10° against the hips, and keeps the shared legs key for key", () => {
-    const yaw = (l, r) => {
-      const [a, b] = [at(rig, l), at(rig, r)];
-      return Math.atan2(b.z - a.z, a.x - b.x) * DEG;
-    };
-    const turn = Math.max(...SAMPLES.map((f) => (pose8(f), Math.abs(yaw("upperArmL", "upperArmR")))));
-    expect(turn).toBeGreaterThanOrEqual(6.5);
-    expect(turn).toBeLessThanOrEqual(10);
-    const plain = runCycle({ hold: pose() });
-    run.forEach((p, i) => {
-      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR"]) expect(p.b[bone], `${bone} @${i}`).toEqual(plain[i].b[bone]);
-      expect(p.body, `body @${i}`).toEqual(plain[i].body);
-    });
-  });
-
-  it("covers 180–220 world px/s on its legs, and its attacks on the move walk the legs at most 90", () => {
-    const pace = measurePace(rig, run, RUN_ANIMATIONS.run.fps);
-    expect(pace).toBeGreaterThanOrEqual(180);
-    expect(pace).toBeLessThanOrEqual(220);
-    // the walk's legs (backpedal_attack's are the same run backward) over 0.75 cycles of the 0.583 s swing
-    const walk = measurePace(rig, walkCycle(style), 10);
-    expect((walk * 0.8 * 0.75) / (7 / 12)).toBeLessThanOrEqual(90);
-  });
 });
 
 // owner, 2026-11-12: "站立時武器應該可以放下手微微下垂"
@@ -572,7 +609,8 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
   const rig = rigOf(build);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(["idle", "walk", "run"])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
+  // the wizard's cast too (FS-JS7C8 § Change: The wizard's sprint and pointed cast R126): it points the staff along the aim
+  it.each(["idle", "walk", "run", ...(name === "wizard" ? ["attack"] : [])])("on every key of %s the fist keeps its thumb side where the forearm has it", (anim) => {
     clips[anim].forEach((p, i) => {
       posed(rig, p);
       // the knuckles' axis (the hand's +x, about which the wrist cocks) in the forearm's frame: a
@@ -584,16 +622,167 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
   });
 });
 
+/**
+ * The clips a class's carry is held to: idle, walk, run and attack. No class sheet carries an
+ * attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, § Change:
+ * The wizard's sprint and pointed cast R131, § Change: The knight's sprint, and the
+ * attack-on-the-move clips retired R149), the knight the last (his sheet test, below).
+ */
+const CARRIED = ["idle", "walk", "run", "attack"];
+
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
   const gear = GEAR[name](rig);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"])("on every key of %s", (anim) => {
+  it.each(CARRIED.filter((anim) => anim in sheet.animations))("on every key of %s", (anim) => {
     expect(clips[anim], anim).toBeDefined();
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
     expect(d.head, `${anim}: into the head`).toBeLessThan(0);
+  });
+});
+
+/**
+ * The clips the wizard's staff guards read (FS-JS7C8 § Change: The wizard's sprint and pointed cast
+ * R128): the cast, which I-JS7C8-29 re-keys to point the staff along the aim.
+ */
+const STAFF_GUARDED = ["attack"];
+
+/**
+ * What the wizard's right hand holds, as points every 0.05 H at most along the grip frame's +z: her
+ * own sceptre ({@link GEAR}`.wizard`, butt −0.06 to the orb's top 0.29) and each look's own (FS-1J1CB
+ * § Change: Looks v2 R56, R57; integrated with FS-JS7C8 2026-11-23, where the v1 foci these guards
+ * first read were retired): the Spellwarden's warding staff (mageKit.js `STAFF`: the butt −0.46 to
+ * the cage's top 0.62) and the Pyromancer's brazier rod (mageKit.js `BRAZIER`: the pommel −0.084
+ * to the cage's top 0.388), each read on the style that holds it. mageKit.js's sizes, read here as
+ * GEAR reads gear.js's (both need the bake page's theme); their values are pinned to mageKit.js's
+ * own in mageLooks.test.mjs, which loads it.
+ */
+const WARD_STAFF_SPAN = [-0.46, 0.62];
+const BRAZIER_SPAN = [-0.084, 0.388];
+const span = ([from, to]) => along(from, to, Math.ceil((to - from) / 0.05));
+/**
+ * The wizard's staff guards read each of these on its own style's cast: the base's sceptre on the
+ * pointed cast, each look's staff on the staff cast (clips.js `staffCast`; the owner, 2026-11-23:
+ * 「如果有改武器就套用main的」). The pointing itself is the base wizard's alone (`pointed`).
+ */
+const STAFFS = [
+  { held: "the sceptre", style: WIZARD_STYLE, points: (rig) => GEAR.wizard(rig).weapon, pointed: true },
+  { held: "the Spellwarden's warding staff", style: SPELLWARDEN_STYLE, points: (rig) => riding(rig, "handR", gripAt(rig, "R"), {}, span(WARD_STAFF_SPAN)), pointed: false },
+  { held: "the Pyromancer's brazier rod", style: PYROMANCER_STYLE, points: (rig) => riding(rig, "handR", gripAt(rig, "R"), {}, span(BRAZIER_SPAN)), pointed: false },
+];
+
+/** On the pose the rig holds now: how deep any of the world points `pts` lies in the torso, in the head and inside the robe (H; negative outside). */
+function staffMeasure(rig, pts) {
+  const d = pts.map((w) => inside(rig, w));
+  return {
+    torso: Math.max(...d.map((x) => x.torso)),
+    head: Math.max(...d.map((x) => x.head)),
+    robe: Math.max(...pts.map((w) => -outsideRobe(rig, w))),
+  };
+}
+
+describe.each(STAFFS)("the wizard's staff guards on $held: out of the torso, the head and the robe (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128, R129)", ({ style, points }) => {
+  const rig = rigOf(WIZARD_BUILD);
+  const pts = points(rig);
+  const clips = clipsFor(style, WIZARD_SHEET.animations);
+
+  it("samples the haft every 0.05 H at most", () => {
+    posed(rig, clips.idle[0]);
+    const step = Math.max(...pts.slice(1).map((m, i) => world(m).distanceTo(world(pts[i])))) / rig.H;
+    expect(step).toBeLessThanOrEqual(0.05 + 1e-9);
+  });
+
+  it.each(STAFF_GUARDED)("on every key of %s, no point in the torso, the head or below the waist inside the robe", (anim) => {
+    clips[anim].forEach((p, i) => {
+      posed(rig, p);
+      const d = staffMeasure(rig, pts.map(world));
+      expect(d.torso, `${anim} @${i}: into the torso`).toBeLessThan(0);
+      expect(d.head, `${anim} @${i}: into the head`).toBeLessThan(0);
+      expect(d.robe, `${anim} @${i}: into the robe`).toBeLessThan(0);
+    });
+  });
+
+  // fixtures: the same points moved, on the cast's strike, must fail each check
+  const movedTo = (to) => {
+    const w = pts.map(world);
+    const mid = w.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(w.length);
+    return w.map((v) => v.clone().add(to.clone().sub(mid)));
+  };
+  it.each([
+    ["the torso", () => at(rig, "chest"), "torso"],
+    ["the head", () => at(rig, "head").add(new THREE.Vector3(0, 0.05 * rig.H, 0)), "head"],
+    ["the robe", () => at(rig, "hips").sub(new THREE.Vector3(0, 0.2 * rig.H, 0)), "robe"],
+  ])("finds the haft pushed into %s: its middle moved there reads inside", (_, to, part) => {
+    posed(rig, clips.attack[3]);
+    expect(staffMeasure(rig, pts.map(world))[part], "where she holds it").toBeLessThan(0);
+    expect(staffMeasure(rig, movedTo(to()))[part]).toBeGreaterThan(0);
+  });
+});
+
+/** The top of her skull (`inside`'s head, {@link headEllipsoid}), world, on the pose the rig holds now. */
+function crownOf(rig) {
+  const { centre, radii } = headEllipsoid(rig);
+  const bind = centre.add(new THREE.Vector3(0, radii.y, 0)).multiplyScalar(rig.H).sub(rig.bind.head);
+  return bind.applyMatrix4(rig.bones.head.matrixWorld);
+}
+
+/** The keys of the cast that point (R125): the strike and its carry through. */
+const POINTED = [3, 4];
+
+describe.each(STAFFS.filter((s) => s.pointed))("the wizard's cast points $held along the aim like a spell being cast (FS-JS7C8 § Change: The wizard's sprint and pointed cast R124–R126, R129; W4, E2 (b))", ({ style, points }) => {
+  const rig = rigOf(WIZARD_BUILD);
+  const pts = points(rig);
+  const [butt, top] = [pts[0], pts.at(-1)];
+  const keys = clipsFor(style, WIZARD_SHEET.animations).attack;
+
+  /** On key `i`: the staff (butt to top) in degrees, plan off the facing (+z) and from level (+ up), and the arm's measures. */
+  const measure = (i) => {
+    posed(rig, keys[i]);
+    const d = world(top).sub(world(butt));
+    const [sh, el, hand] = [at(rig, "upperArmR"), at(rig, "foreArmR"), at(rig, "handR")];
+    return {
+      plan: Math.abs(Math.atan2(d.x, d.z)) * DEG,
+      level: Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG,
+      arm: hand.clone().sub(sh).angleTo(d) * DEG,
+      elbow: 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG,
+      hand: hand.y,
+      chest: at(rig, "chest").y,
+      shoulder: sh.y,
+      top: world(top).y,
+    };
+  };
+
+  it.each(POINTED)("on key %i lays the staff within 10° of the facing in plan and 0–15° below level, the orb leading", (i) => {
+    const m = measure(i);
+    expect(m.plan, `plan @${i}`).toBeLessThanOrEqual(10);
+    expect(m.level, `from level @${i}`).toBeLessThanOrEqual(0);
+    expect(m.level, `from level @${i}`).toBeGreaterThanOrEqual(-15);
+  });
+
+  it.each(POINTED)("on key %i reaches the arm along it: the shoulder-to-hand line within 25° of the staff, the elbow bent at most 20°", (i) => {
+    const m = measure(i);
+    expect(m.arm, `arm to staff @${i}`).toBeLessThanOrEqual(25);
+    expect(m.elbow, `elbow @${i}`).toBeLessThanOrEqual(20);
+  });
+
+  it.each(POINTED)("on key %i holds the hand between the chest bone's height and the shoulder's, the orb not above the shoulder", (i) => {
+    const m = measure(i);
+    expect(m.hand, `hand over the chest bone @${i}`).toBeGreaterThanOrEqual(m.chest);
+    expect(m.hand, `hand under the shoulder @${i}`).toBeLessThanOrEqual(m.shoulder);
+    expect(m.top, `orb under the shoulder @${i}`).toBeLessThanOrEqual(m.shoulder);
+  });
+
+  it("never lifts the orb over her crown, on any key", () => {
+    keys.forEach((p, i) => {
+      posed(rig, p);
+      expect(world(top).y, `orb @${i}`).toBeLessThan(crownOf(rig).y);
+    });
+  });
+
+  it(`cocks the wrist at most CLEAVE_CARRY (${CLEAVE_CARRY} rad), the most any carry cocks, on every key`, () => {
+    keys.forEach((p, i) => expect(Math.abs((p.b.handR ?? [0])[0]), `wrist @${i}`).toBeLessThanOrEqual(CLEAVE_CARRY));
   });
 });
 
@@ -691,12 +880,6 @@ describe("the wizard's cast moves with weight (FS-2325V § Change: The class att
     // the character's left is +x
     expect((hand.x - shoulder.x) / rig.H).toBeGreaterThanOrEqual(0.08);
   });
-
-  it("is the one attack the walk_attack and backpedal_attack draw from the waist up", () => {
-    const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
-    for (const anim of ["walk_attack", "backpedal_attack"])
-      clips[anim].forEach((p, i) => expect(p.b.upperArmR, `${anim} @${i}`).toEqual(add(ATTACKS.cast()[Math.floor(i / 2)]).b.upperArmR));
-  });
 });
 
 /**
@@ -764,16 +947,17 @@ describe.each([
 describe("the knight's shield guards through the cut (FS-2325V § Change: The class attacks move with weight and cut deep R3, R10)", () => {
   const rig = rigOf(KNIGHT_BUILD);
   const gear = GEAR.knight(rig);
-  it("keeps the shield's centre before the chest and above the waist on every key of attack, walk_attack and backpedal_attack", () => {
+  // his sheets carry no attack on the move (FS-JS7C8 § Change: The knight's sprint, and the
+  // attack-on-the-move clips retired R149), so the cut is his attack alone
+  it("keeps the shield's centre before the chest and above the waist on every key of attack", () => {
     const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
-    for (const anim of ["attack", "walk_attack", "backpedal_attack"])
-      clips[anim]?.forEach((p, i) => {
-        posed(rig, p);
-        const c = world(gear.other[0]).divideScalar(rig.H);
-        const [chest, hips] = [at(rig, "chest").divideScalar(rig.H), at(rig, "hips").divideScalar(rig.H)];
-        expect(c.y, `${anim} @${i}: above the waist`).toBeGreaterThan(hips.y + 0.05);
-        expect(c.z, `${anim} @${i}: before the chest`).toBeGreaterThan(chest.z + 0.05);
-      });
+    clips.attack.forEach((p, i) => {
+      posed(rig, p);
+      const c = world(gear.other[0]).divideScalar(rig.H);
+      const [chest, hips] = [at(rig, "chest").divideScalar(rig.H), at(rig, "hips").divideScalar(rig.H)];
+      expect(c.y, `attack @${i}: above the waist`).toBeGreaterThan(hips.y + 0.05);
+      expect(c.z, `attack @${i}: before the chest`).toBeGreaterThan(chest.z + 0.05);
+    });
   });
 });
 
@@ -811,5 +995,547 @@ describe("the mercenary cuts wider and lighter than the knight (FS-2325V § Chan
     const frames = parryClip(MERCENARY_STYLE, MERC_ANIMATIONS.parry.frames);
     for (const [bone, want] of Object.entries({ upperArmR: [-0.81, -0.54, -0.03], handR: [-0.06, 1.01, -0.8], foreArmR: [-1.37, 0, 0] }))
       want.forEach((v, j) => expect(frames.at(-1).b[bone][j], bone).toBeCloseTo(v, 9));
+  });
+});
+
+/** The archer's rig as cast.js builds it: her build, her legs under the tunic and her boots, whose soles every clip is grounded on. */
+function archerRig() {
+  const rig = createRig(...ARCHER_BUILD);
+  const [, hy] = J(rig, "hips");
+  legs(rig, new THREE.MeshBasicMaterial(), { under: { top: hy + 0.02, bottom: hy - 0.14, rTop: [0.1, 0.077], rBottom: [0.112, 0.094] } });
+  boots(rig, new THREE.MeshBasicMaterial(), { top: 0.21 });
+  return rig;
+}
+
+/** The mercenary's rig as cast.js builds it: his build, his legs and his boots, whose soles every clip is grounded on. */
+function mercenaryRig() {
+  const rig = createRig(...MERCENARY_BUILD);
+  legs(rig, new THREE.MeshBasicMaterial());
+  boots(rig, new THREE.MeshBasicMaterial(), { top: 0.22 });
+  return rig;
+}
+
+/** The 32 samples over the sprint's cycle and its 8 baked keys. */
+const SPRINT_SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
+const KEYS = [0, 1, 2, 3, 4, 5, 6, 7];
+const range = (x) => Math.max(...x) - Math.min(...x);
+const mean = (x) => x.reduce((s, v) => s + v, 0) / x.length;
+const corr = (a, b) => {
+  const [ma, mb] = [mean(a), mean(b)];
+  const cov = a.reduce((s, v, i) => s + (v - ma) * (b[i] - mb), 0);
+  const sd = (x, mx) => Math.sqrt(x.reduce((s, v) => s + (v - mx) ** 2, 0));
+  return cov / (sd(a, ma) * sd(b, mb));
+};
+
+/**
+ * The classes that run the shared sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow
+ * R67–R70; § Change: The mercenary's sprint and trailing sword M1, R93, R94): its legs, its lean
+ * and its 16 fps, each on its own rig and under its own arms.
+ */
+const SPRINTERS = [
+  { name: "archer", rig: archerRig, style: ARCHER_STYLE, sheet: ARCHER_SHEET },
+  { name: "mercenary", rig: mercenaryRig, style: MERCENARY_STYLE, sheet: MERCENARY_SHEET },
+];
+
+describe("the sprint, one definition the archer and the mercenary share (FS-JS7C8 § Change: The mercenary's sprint and trailing sword M1, R93)", () => {
+  it("is 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, over its own legs and a lean twice the shared run's", () => {
+    expect(SPRINT_RUN).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(SPRINT_LEAN).toBe(0.48);
+    expect(SPRINT_LEAN).toBe(2 * RUN_LEAN);
+  });
+
+  it.each(SPRINTERS)("is what the $name's run reads: the legs, the lean and the run spec, by reference", ({ style, sheet }) => {
+    expect(style.run.legs).toBe(SPRINT_STEP);
+    expect(style.run.lean).toBe(SPRINT_LEAN);
+    expect(sheet.animations.run).toBe(SPRINT_RUN);
+  });
+});
+
+/**
+ * The classes whose run is the sprint's lean and cadence, each on its own rig and under its own
+ * arms: the sprinters on the sprint's legs, and the wizard and the knight (under both his styles)
+ * on the shared fast run's legs at a shorter stride each (§ Change: The wizard's sprint and pointed
+ * cast R117, R118; E1 (a): the sprint's knee drive came through her gown's front; § Change: The
+ * knight's sprint, and the attack-on-the-move clips retired R139, R140; E1 (a): its heel kick came
+ * through his hauberk's back). Only the sprint's legs drive the knee past the shared run's.
+ */
+const LEANED_RUNNERS = [
+  ...SPRINTERS,
+  { name: "wizard", rig: () => rigOf(WIZARD_BUILD), style: WIZARD_STYLE, sheet: WIZARD_SHEET },
+  { name: "knight", rig: () => rigOf(KNIGHT_BUILD), style: KNIGHT_STYLE, sheet: KNIGHT_SHEET },
+  { name: "Berserker", rig: () => rigOf(KNIGHT_BUILD), style: BERSERKER_STYLE, sheet: BERSERKER_SHEET },
+];
+
+describe.each(LEANED_RUNNERS)("the $name's sprint on its own rig and style (FS-JS7C8 § Change: The archer's sprint and low-ready bow R67, R69, R70; § Change: The mercenary's sprint and trailing sword R94; § Change: The wizard's sprint and pointed cast R118; § Change: The knight's sprint, and the attack-on-the-move clips retired R140)", ({ rig: build, style, sheet }) => {
+  const rig = build();
+  const run = clipsFor(style, sheet.animations).run;
+
+  it("leans the trunk about 20° from the hips, the head brought back to look ahead and held steady (R67, D1)", () => {
+    applyPose(rig, pose());
+    rig.root.updateMatrixWorld(true);
+    const lean = () => {
+      const [h, n] = [at(rig, "hips"), at(rig, "neck")];
+      return Math.atan2(n.z - h.z, n.y - h.y) * DEG;
+    };
+    const pitch = () => {
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(rig.bones.head.matrixWorld);
+      return Math.atan2(-fwd.y, fwd.z) * DEG;
+    };
+    const [restLean, restPitch] = [lean(), pitch()];
+    const leans = [];
+    const yaw = [];
+    const roll = [];
+    for (const f of SPRINT_SAMPLES) {
+      const { head } = footing(rig, run, f);
+      leans.push(lean() - restLean);
+      expect(Math.abs(pitch() - restPitch), `head pitch @${f}`).toBeLessThanOrEqual(3);
+      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(head);
+      const up = new THREE.Vector3(0, 1, 0).transformDirection(head);
+      yaw.push(Math.atan2(fwd.x, fwd.z));
+      roll.push(Math.atan2(up.x, up.y));
+    }
+    expect(mean(leans)).toBeGreaterThanOrEqual(19);
+    expect(mean(leans)).toBeLessThanOrEqual(21);
+    for (const [k, v] of leans.entries()) {
+      expect(v, `lean sample ${k}`).toBeGreaterThanOrEqual(18);
+      expect(v, `lean sample ${k}`).toBeLessThanOrEqual(22);
+    }
+    expect(range(yaw)).toBeLessThan(0.08);
+    expect(range(roll)).toBeLessThan(0.06);
+  });
+
+  // the sprint's legs only: the wizard's and the knight's knees are held to the shared run's (their own describes)
+  if (style.run.legs === SPRINT_STEP)
+    it("drives the swing knee higher than the shared run's 0.311 H and kicks the heel past its 1.45 rad fold (R69, D3)", () => {
+      // the shared run's knee peaks at 0.311 H on either rig: the sprint clears it by a visible margin
+      const knee = Math.max(
+        ...SPRINT_SAMPLES.map((f) => {
+          footing(rig, run, f);
+          return Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H;
+        }),
+      );
+      expect(knee).toBeGreaterThan(0.32);
+      expect(Math.max(...run.flatMap((p) => [p.b.shinL[0], p.b.shinR[0]]))).toBeGreaterThan(1.45);
+    });
+
+  it("keeps the flight and the bob, never softened: a flight frame each step, a foot planted in 4 keys, a lift of 0.045 H, a bob of 0.056–0.07 H (R69, D3)", () => {
+    for (const half of [KEYS.slice(0, 4), KEYS.slice(4)]) {
+      const flights = half.filter((f) => {
+        const { L, R } = footing(rig, run, f);
+        return Math.min(L.y, R.y) > 0.02;
+      });
+      expect(flights.length, `step ${half}`).toBeGreaterThanOrEqual(1);
+    }
+    const planted = KEYS.filter((f) => {
+      const { L, R } = footing(rig, run, f);
+      return Math.min(L.y, R.y) < GROUND_EPS;
+    });
+    expect(planted.length).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...run.map((p) => p.body.y ?? 0))).toBeGreaterThanOrEqual(0.045);
+    const hips = SPRINT_SAMPLES.map((f) => footing(rig, run, f).hips.y / rig.H);
+    expect(range(hips)).toBeGreaterThanOrEqual(0.056);
+    expect(range(hips)).toBeLessThan(0.07);
+  });
+
+  it("raises and lowers the pelvis once a step on the baked keys: two rises and two falls over the cycle, highest in each step's flight (R69)", () => {
+    // the 8 keys the bake draws, as the shared run's test reads them (clips.test.mjs)
+    const heights = KEYS.map((f) => footing(rig, run, f).hips.y);
+    const n = heights.length;
+    const peaks = KEYS.filter((_, i) => heights[i] > heights[(i + n - 1) % n] && heights[i] >= heights[(i + 1) % n]);
+    const dips = KEYS.filter((_, i) => heights[i] < heights[(i + n - 1) % n] && heights[i] <= heights[(i + 1) % n]);
+    expect([peaks.length, dips.length]).toEqual([2, 2]);
+    // one peak in each step (keys 0–3 and 4–7), at or next to that step's flight key (3 and 7)
+    for (const [k, flight] of [
+      [0, 3],
+      [1, 7],
+    ]) {
+      const f = peaks[k];
+      const d = Math.min(Math.abs(f - flight), 8 - Math.abs(f - flight));
+      expect(d, `step ${k} peak @${f}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("turns the shoulders against the hips with the stride, 6.5–10° each way (R70)", () => {
+    const lineYaw = (l, r) => {
+      const [a, b] = [at(rig, l), at(rig, r)];
+      return Math.atan2(b.z - a.z, a.x - b.x) * DEG;
+    };
+    const shoulders = [];
+    const hips = [];
+    for (const f of SPRINT_SAMPLES) {
+      footing(rig, run, f);
+      shoulders.push(lineYaw("upperArmL", "upperArmR"));
+      hips.push(lineYaw("thighL", "thighR"));
+    }
+    expect(corr(shoulders, hips)).toBeLessThan(-0.8);
+    const turn = Math.max(...shoulders.map(Math.abs));
+    expect(turn).toBeGreaterThanOrEqual(6.5);
+    expect(turn).toBeLessThanOrEqual(10);
+  });
+});
+
+/**
+ * The classes that run the sprint's lean and 16 fps over the shared fast run's legs at a shorter
+ * stride, not the sprint's own legs (E1 (a) for each): the wizard (FS-JS7C8 § Change: The wizard's
+ * sprint and pointed cast R115–R119, R131) and the knight's two styles on his one rig (§ Change:
+ * The knight's sprint, and the attack-on-the-move clips retired R138–R141, R149; cast.js `knight`:
+ * the base and the Guardian run KNIGHT_STYLE, the Berserker BERSERKER_STYLE). `plain` lists the
+ * clips whose specs are the shared ANIMATIONS' own (the knight's attack carries KNIGHT_ATTACK_CLOTH);
+ * `pace` and `knee` are the measures each was recorded at.
+ */
+const SHORT_SPRINTERS = [
+  {
+    name: "wizard",
+    build: WIZARD_BUILD,
+    style: WIZARD_STYLE,
+    sheet: WIZARD_SHEET,
+    stride: [WIZARD_SPRINT_STRIDE, 0.88],
+    clips: ["idle", "walk", "attack", "death", "run"],
+    plain: ["idle", "walk", "attack", "death"],
+    // her run on the 10° lean at 14 fps read 190.22; the sprint's legs' knee 0.335 came through her gown
+    pace: 194.21,
+    knee: 0.311,
+  },
+  {
+    name: "knight",
+    build: KNIGHT_BUILD,
+    style: KNIGHT_STYLE,
+    sheet: KNIGHT_SHEET,
+    stride: [KNIGHT_SPRINT_STRIDE, 0.84],
+    clips: ["idle", "walk", "attack", "death", "run"],
+    plain: ["idle", "walk", "death"],
+    // his run on the 10° lean at 14 fps read 197.67, the sprint's legs at 16 fps 198.84; their
+    // knee 0.335 folded his calf out through the hauberk's back
+    pace: 193.61,
+    knee: 0.31,
+  },
+  {
+    name: "Berserker",
+    build: KNIGHT_BUILD,
+    style: BERSERKER_STYLE,
+    sheet: BERSERKER_SHEET,
+    stride: [KNIGHT_SPRINT_STRIDE, 0.84],
+    clips: ["idle", "walk", "attack", "death", "run", "attack_offhand"],
+    plain: ["idle", "walk", "death"],
+    pace: 193.61,
+    knee: 0.31,
+  },
+];
+
+describe.each(SHORT_SPRINTERS)("the $name's sprint, the sprint's lean and 16 fps over the shared fast run's legs at a shorter stride (FS-JS7C8 E1 (a))", ({ build, style, sheet, stride: [stride, strideIs], clips: carried, plain: shared, pace: measured, knee: kneeAt }) => {
+  const rig = rigOf(build);
+  const spec = sheet.animations.run;
+  const run = clipsFor(style, sheet.animations).run;
+
+  it("carries its clips at 1.5x, in order, no attack on the move (R131, R149)", () => {
+    expect(sheet.scale).toBe(1.5);
+    expect(Object.keys(sheet.animations)).toEqual(carried);
+    for (const anim of shared) expect(sheet.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+  });
+
+  it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at its stride, not the sprint's legs (R116, R117, R138, R139)", () => {
+    expect(style.run.lean).toBe(SPRINT_LEAN);
+    expect(spec).toBe(SPRINT_RUN);
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(style.run).not.toHaveProperty("legs");
+    expect(stride).toBe(strideIs);
+    expect(style.run.stride).toBe(stride);
+    expect([style.run.knee ?? 1, style.run.lift ?? 1]).toEqual([1, 1]);
+    // the legs: the shared fast run's (RUN_STEP) with every thigh key scaled by the stride, the
+    // feet keeping their world angle, as on a plain style at that stride and lean
+    const plain = runCycle({ hold: pose() });
+    const atStride = runCycle({ hold: pose(), run: { stride, lean: SPRINT_LEAN } });
+    run.forEach((p, i) => {
+      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR", "spine", "chest", "neck"]) expect(p.b[bone], `${bone} @${i}`).toEqual(atStride[i].b[bone]);
+      expect(p.body, `body @${i}`).toEqual(atStride[i].body);
+      for (const t of ["thighL", "thighR"]) expect(p.b[t][0], `${t} @${i}`).toBeCloseTo(plain[i].b[t][0] * stride, 12);
+      for (const b of ["shinL", "shinR", "hips"]) expect(p.b[b], `${b} @${i}, the shared run's`).toEqual(plain[i].b[b]);
+    });
+  });
+
+  it("covers the ground at RUN_PACE at the sprint's 16 fps: within 1 px/s of 194 (R119, R141)", () => {
+    expect(RUN_PACE).toBe(194);
+    const pace = measurePace(rig, run, spec.fps);
+    expect(Math.abs(pace - RUN_PACE), `pace ${pace.toFixed(2)}`).toBeLessThan(1);
+    expect(pace, "as recorded").toBeCloseTo(measured, 1);
+  });
+
+  it("lifts the swing knee as high as the shared fast run does, at least 0.30 H, not the sprint's 0.32 (R118, R140)", () => {
+    const knee = Math.max(...SPRINT_SAMPLES.map((f) => (footing(rig, run, f), Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H)));
+    expect(knee).toBeGreaterThanOrEqual(0.3);
+    expect(knee, "as recorded").toBeCloseTo(kneeAt, 2);
+  });
+});
+
+describe("the wizard's other clips under her sprint (FS-JS7C8 § Change: The wizard's sprint and pointed cast R115)", () => {
+  it("keeps her idle, walk and death keys byte for byte as at 22cabd3a", () => {
+    const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
+    const want = {
+      idle: "2f82927bda6e6b5cb45d2ad98f76f40251a196837b3e9aae1091b7966fe153f1",
+      walk: "746ba76d1a2af89d94b8851e3b3c73b608d8a03d1c451257e68963f53516e07d",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+  });
+});
+
+describe("the knight's other clips under his sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R137)", () => {
+  it("keeps his idle, walk, attack and death keys byte for byte as at 23717cbb, his attack's cloth at KNIGHT_ATTACK_CLOTH", () => {
+    const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
+    const want = {
+      idle: "298c3295549d017d5dcf0fa80110e298dca3ab420f0f2b540be7cfdcadafb9c9",
+      walk: "f9650023e75bb65b43a24b759e49e50f0c4b353be4bad494c1146fa9f554726b",
+      attack: "38cac538efc977ed7b7068cbf2762b32d190365f7ac7466eb5a7c2eafcf28452",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+    expect(KNIGHT_ATTACK_CLOTH).toBe(0.5);
+    for (const anim of ["idle", "walk", "death"]) expect(KNIGHT_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+    expect(KNIGHT_SHEET.animations.attack).toEqual({ ...ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH });
+  });
+
+  it("keeps the Berserker's idle, walk, attack, death and attack_offhand keys byte for byte as at 23717cbb", () => {
+    const clips = clipsFor(BERSERKER_STYLE, BERSERKER_SHEET.animations);
+    const want = {
+      idle: "22a35f28716817f5d347a8ee84318db0f4431a22c7e63d590bdcf09441496550",
+      walk: "8bbffb3393941c59348862abf44914aebbab56c432ca2d8f322fd2f5cf856dde",
+      attack: "8a1d30a0b2da22ca1cd3f13912d29eee2a22ef5b56effd182952b6520939748f",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+      attack_offhand: "d779435498df0f25b6c9831c3116bb68ad4f0c215d3a0a1a175e4d9101f4d251",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+    expect(BERSERKER_SHEET.animations.attack_offhand).toEqual(BERSERKER_SHEET.animations.attack);
+  });
+});
+
+describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow R66–R71)", () => {
+  const rig = archerRig();
+  const spec = ARCHER_SHEET.animations.run;
+  const run = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations).run;
+
+  it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own with no attack on the move (R66, R68, R79)", () => {
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(ARCHER_SHEET.scale).toBe(1.5);
+    // idle, walk, attack, death and her run, in that order: no walk_attack, no backpedal_attack (D7, D8)
+    expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+  });
+
+  it("covers the ground at RUN_PACE at her 16 fps: the shorter stride holds the measured pace within 1 px/s of 194 (R68, D2)", () => {
+    expect(RUN_PACE).toBe(194);
+    expect(Math.abs(measurePace(rig, run, spec.fps) - RUN_PACE)).toBeLessThan(1);
+  });
+
+  it("leaves the shared run as on main key for key (R66; § Change: The mercenary's sprint and trailing sword R93; § Change: The wizard's sprint and pointed cast R115, R116; § Change: The knight's sprint, and the attack-on-the-move clips retired R137, R143)", () => {
+    expect([RUN_LEAN, RUN_ARM, RUN_ELBOW, RUN_COUNTER]).toEqual([0.24, 0.85, -1.57, 0.14]);
+    expect(RUN_ANIMATIONS).toEqual({ run: { frames: 8, fps: 14, loop: true, speed: 2.5 } });
+    // the shared run on a plain style: RUN_STEP and the shared keys, which clips.test.mjs also checks
+    // key for key. Its digest was taken with RUNNING_CLASS_ANIMATIONS until FS-JS7C8 R155 retired that set;
+    // the plain run's own keys read 3917fe5b… before and after.
+    expect(digest({ RUN_ANIMATIONS, plain: runCycle({ attack: "slash", hold: pose() }) })).toBe("369e8170db3cdc5dccb3d68f522afca0afc55caae70c294b7fcdca7abac6fb0f");
+    // the wizard's and the knight's "unchanged" digests retired with their runs (their other clips: their sprints' describes)
+  });
+
+  it("keeps her run keys and her sheet byte for byte as at 2018f786, now read from the shared sprint (§ Change: The mercenary's sprint and trailing sword R92, R93)", () => {
+    expect(digest(run), "her run keys").toBe("20fe48c323216e8d91686fa7e1b3324acb004bfe960e005089298da1213034de");
+    expect(digest(ARCHER_SHEET), "her sheet").toBe("e6c879218d09b0b82b07c10ad369e4c02513e1375d6b23621e3315f9203199e4");
+  });
+
+  it("leaves her idle, walk, attack and death keys as on main (R78)", () => {
+    const { idle, walk, attack, death } = clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations);
+    expect(digest({ idle, walk, attack, death })).toBe("dc90b9547a617074e84472f0d146587ec6a9f260fd5b55fce9d8dfbe7202ee54");
+  });
+});
+
+describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R92–R96, R103)", () => {
+  const rig = mercenaryRig();
+  const spec = MERCENARY_SHEET.animations.run;
+  const clips = clipsFor(MERCENARY_STYLE, MERCENARY_SHEET.animations);
+
+  it("runs the sprint's clip: 8 frames looping at 16 fps, speed 2.5, his parry kept, at 1.5x, no attack on the move (R94, R107)", () => {
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(MERCENARY_SHEET.scale).toBe(1.5);
+    expect(MERCENARY_SHEET.animations.parry).toEqual(MERC_ANIMATIONS.parry);
+    // idle, walk, attack, death, the parry and the sprint, in that order: no walk_attack, no backpedal_attack (M5)
+    expect(Object.keys(MERCENARY_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(MERCENARY_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+  });
+
+  // escalated 2026-11-23 (R95, option (a) until the owner picks): the shared keys at 16 fps read
+  // 196.58 world px/s on his rig, his legs a little longer than hers; held to the class band and
+  // within 3 px/s of RUN_PACE, not her 1
+  it("covers 180–220 world px/s at the sprint's 16 fps, within 3 px/s of RUN_PACE (R95)", () => {
+    expect(RUN_PACE).toBe(194);
+    const pace = measurePace(rig, clips.run, spec.fps);
+    expect(pace).toBeGreaterThanOrEqual(180);
+    expect(pace).toBeLessThanOrEqual(220);
+    expect(Math.abs(pace - RUN_PACE)).toBeLessThanOrEqual(3);
+  });
+
+  // his sheet as at 22cabd3a (§ Change: The wizard's sprint and pointed cast R115); his run keys as
+  // the owner's 2026-11-23 tune round left them, the trailing blade turned out (R158; at 22cabd3a
+  // 31a1826f…)
+  it("keeps his sheet byte for byte as at 22cabd3a and his run keys as R158's tune round left them (§ Change: The wizard's sprint and pointed cast R115)", () => {
+    expect(digest(clips.run), "his run keys").toBe("5863a592220b029b68bbb5f66d854eaa6f25b01effe3f5c1949f1a4e9fa43069");
+    expect(digest(MERCENARY_SHEET), "his sheet").toBe("93b4ca11a25c0b32c028759cae77673566b8884ac33116fe485516ee5e334a46");
+  });
+
+  it("leaves his idle, walk, attack, death and parry keys byte for byte as at 2018f786 (R103)", () => {
+    const want = {
+      idle: "b93c784529de8dec33796406d69366c579f33d5fead1ad91f55ccf8148be2c48",
+      walk: "248f6fbd833980c45f25fb817eebcaa71e375ae305b22cb8330e9d01b2f89205",
+      attack: "ef586ff78bf0fdd575e0a7e8969296dc496737e27b35b901acc11fa6e527d3d7",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+      parry: "6bebd4018f25caf3f167afe0ced5e8919ad4619e51f97da329cc193ccfc172a4",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+  });
+});
+
+/**
+ * The mercenary's trailing sword in his sprint (FS-JS7C8 § Change: The mercenary's sprint and
+ * trailing sword M2–M4, R97–R102; the owner: "右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作", then
+ * "不用抬高 可以往下垂 但不要拖地"), on his rig as cast.js builds it, over 32 samples of the cycle: the
+ * sword arm swung back behind him, nearly straight, the hand at the hip; the curved blade trailing
+ * behind, its point and its edge down, never on the ground; the arm swaying a little with the
+ * stride; the free arm pumping as the shared run's does.
+ */
+describe("the mercenary's trailing sword in the sprint (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R97–R102)", () => {
+  const rig = mercenaryRig();
+  const gear = GEAR.mercenary(rig);
+  const tip = gear.weapon.at(-1);
+  const run = clipsFor(MERCENARY_STYLE, MERCENARY_SHEET.animations).run;
+  /** The angle of a line from straight down in his sagittal plane (degrees, + back). */
+  const fromDown = (d) => Math.atan2(-d.z, -d.y) * DEG;
+  const bendAt = (sh, el, hand) => 180 - sh.clone().sub(el).angleTo(hand.clone().sub(el)) * DEG;
+  const samples = SPRINT_SAMPLES.map((f) => {
+    footing(rig, run, f);
+    rig.root.updateMatrixWorld(true);
+    const [hips, neck, chest, sh, el, hand, shL, elL, handL] = ["hips", "neck", "chest", "upperArmR", "foreArmR", "handR", "upperArmL", "foreArmL", "handL"].map((b) => at(rig, b));
+    const t = world(tip);
+    const d = t.clone().sub(hand);
+    // the edge: the grip frame's -y (gear.js `curvedSword`), the grip riding the hand unturned
+    const edge = new THREE.Vector3(0, -1, 0).transformDirection(rig.bones.handR.matrixWorld);
+    return {
+      f,
+      // the upper arm behind the hips-to-neck line (R97)
+      back: fromDown(el.clone().sub(sh)) - fromDown(hips.clone().sub(neck)),
+      bend: bendAt(sh, el, hand),
+      bendL: bendAt(shL, elL, handL),
+      hand: hand.clone().sub(hips).divideScalar(rig.H),
+      handL: handL.clone().sub(hips).divideScalar(rig.H),
+      handLOverChest: (handL.y - chest.y) / rig.H,
+      blade: Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG,
+      tipAhead: d.z,
+      tipBehindHips: (hips.z - t.z) / rig.H,
+      edge: -Math.asin(edge.y) * DEG,
+      lowest: Math.min(...gear.weapon.map((m) => world(m).y)) / rig.H,
+      // seen from above: how far out to his right (the model's −x) the hand-to-point line runs off
+      // straight back (−z) through the hand (R158), and the point's and the hand's reach to his right
+      plan: Math.atan2(-d.x, -d.z) * DEG,
+      tipOut: (hips.x - t.x) / rig.H,
+      handOut: (hips.x - hand.x) / rig.H,
+      weapon: gear.weapon.map(world),
+      free: [shL, elL, handL],
+    };
+  });
+
+  it("swings the sword arm 25–50° behind the trunk on every sample (30–45° on average), the elbow bent 0–20°, the hand within 0.06 H of the hips bone's height and behind it (R97)", () => {
+    for (const s of samples) {
+      expect(s.back, `arm back @${s.f}`).toBeGreaterThanOrEqual(25);
+      expect(s.back, `arm back @${s.f}`).toBeLessThanOrEqual(50);
+      expect(s.bend, `elbow @${s.f}`).toBeGreaterThanOrEqual(0);
+      expect(s.bend, `elbow @${s.f}`).toBeLessThanOrEqual(20);
+      expect(Math.abs(s.hand.y), `hand height against the hips bone @${s.f}`).toBeLessThanOrEqual(0.06);
+      expect(s.hand.z, `hand behind the hips bone @${s.f}`).toBeLessThan(0);
+    }
+    const m = mean(samples.map((s) => s.back));
+    expect(m).toBeGreaterThanOrEqual(30);
+    expect(m).toBeLessThanOrEqual(45);
+  });
+
+  it("trails the blade behind him, 15–45° below level, the point at least 0.3 H behind the hips bone and never ahead of the hand, the edge at least 30° below level (R98)", () => {
+    for (const s of samples) {
+      expect(s.blade, `blade @${s.f}`).toBeGreaterThanOrEqual(-45);
+      expect(s.blade, `blade @${s.f}`).toBeLessThanOrEqual(-15);
+      expect(s.tipAhead, `point behind the hand @${s.f}`).toBeLessThan(0);
+      expect(s.tipBehindHips, `point behind the hips bone @${s.f}`).toBeGreaterThanOrEqual(0.3);
+      expect(s.edge, `edge below level @${s.f}`).toBeGreaterThanOrEqual(30);
+    }
+  });
+
+  // the owner, 2026-11-23: "拖劍時我感覺劍體應該會往伸外 目前你是做成往內好像不太合理", "手的虎口是朝外的所以自然的話劍尖會偏外"
+  it("angles the blade out to his right, seen from above, 20–35° off straight back through the hand on every sample, the point further out than the hand (R158)", () => {
+    for (const s of samples) {
+      expect(s.plan, `outward from straight back @${s.f}`).toBeGreaterThanOrEqual(20);
+      expect(s.plan, `outward from straight back @${s.f}`).toBeLessThanOrEqual(35);
+      expect(s.tipOut, `the point further out than the hand @${s.f}`).toBeGreaterThan(s.handOut);
+    }
+  });
+
+  it("turns the edge down by turning the arm out about its length, the thumb-web out, never the fist on the forearm: the forearm's own turn within 1.6 rad, the hand cocked only in the swing (R98, R158)", () => {
+    const { foreArmR, handR } = MERCENARY_STYLE.run.hold.b;
+    expect(Math.abs(foreArmR[1])).toBeLessThanOrEqual(1.6);
+    expect([handR[1], handR[2]]).toEqual([0, 0]);
+    // the turn goes outward, the thumb-web out (R98 restated 2026-11-23): the shoulder turned out, the forearm supinated
+    expect(MERC_TRAILING_TURNS.twist, "the upper arm turned out about its length").toBeLessThan(0);
+    expect(foreArmR[1], "the forearm supinated").toBeLessThan(0);
+    // the normal-grip test (above, "holds the weapon in a normal grip") reads every key of his run
+  });
+
+  it("keys the sword arm as its three turns: back, then out past the rest's spread, then about its own length (MERC_TRAILING_TURNS), the one XYZ triple to the thousandth, less the rest", () => {
+    const { back, out, twist } = MERC_TRAILING_TURNS;
+    const rest = rig.rest.upperArmR;
+    expect([rest[0], rest[1]]).toEqual([0, 0]);
+    const turn = (axis, a) => new THREE.Quaternion().setFromAxisAngle(axis, a);
+    const q = turn(new THREE.Vector3(1, 0, 0), back)
+      .multiply(turn(new THREE.Vector3(0, 0, 1), rest[2] - out))
+      .multiply(turn(new THREE.Vector3(0, 1, 0), twist));
+    const e = new THREE.Euler().setFromQuaternion(q, "XYZ");
+    const key = MERCENARY_STYLE.run.hold.b.upperArmR;
+    [e.x, e.y, e.z - rest[2]].forEach((v, k) => expect(key[k], `upperArmR[${k}]`).toBeCloseTo(v, 3));
+  });
+
+  it("keeps the blade's centre line at least 0.06 H over the ground on every sample, its half width above that (R99)", () => {
+    // gear.js `curvedSword`: the blade 0.019 H wide; the guard on every mesh's edges is mercLooks.test.mjs's
+    for (const s of samples) expect(s.lowest - 0.0095, `the sword over the ground @${s.f}`).toBeGreaterThanOrEqual(0.06);
+  });
+
+  it("sways the trailing arm 12–26° peak to peak with the stride, furthest back as the free arm swings furthest forward (R100)", () => {
+    const backs = samples.map((s) => s.back);
+    expect(range(backs)).toBeGreaterThanOrEqual(12);
+    expect(range(backs)).toBeLessThanOrEqual(26);
+    const most = samples.reduce((a, b) => (b.back > a.back ? b : a));
+    const front = samples.reduce((a, b) => (b.handL.z > a.handL.z ? b : a));
+    expect(Math.abs(most.f - front.f), "the sword arm back with the free arm forward").toBeLessThanOrEqual(0.5);
+  });
+
+  it("pumps the free arm as the shared run does: the elbow 80–100° on every key, the hand back past the hip by 0.06 H, its front height under the chest bone recorded (R101)", () => {
+    const r = MERCENARY_STYLE.run;
+    expect([r.arms?.[0] ?? 1, r.elbow?.[0] ?? 1, r.cross?.[0] ?? 0, r.wrist?.[0] ?? 0]).toEqual([1, 1, 0, 0]);
+    expect([RUN_ARM, RUN_ELBOW]).toEqual([0.85, -1.57]);
+    for (const s of samples.filter((s) => Number.isInteger(s.f))) {
+      expect(s.bendL, `free elbow @${s.f}`).toBeGreaterThanOrEqual(80);
+      expect(s.bendL, `free elbow @${s.f}`).toBeLessThanOrEqual(100);
+    }
+    const front = samples.reduce((a, b) => (b.handL.z > a.handL.z ? b : a));
+    const back = samples.reduce((a, b) => (b.handL.z < a.handL.z ? b : a));
+    expect(-back.handL.z, "the free hand back past the hip").toBeGreaterThanOrEqual(0.06);
+    // recorded, not tuned away (R101): with the sprint's 20° lean the free hand peaks a little under
+    // the chest bone at the front of its pump (measured 0.027 H under), above the hips bone
+    expect(front.handLOverChest, "the free hand's front height against the chest bone (H)").toBeGreaterThanOrEqual(-0.04);
+    expect(front.handLOverChest, "the free hand's front height against the chest bone (H)").toBeLessThanOrEqual(-0.015);
+    expect(front.handL.y, "the free hand's front above the hips bone").toBeGreaterThan(0);
+  });
+
+  it("keeps the sword clear of the free arm by more than 0.06 × armR H on every sample (R102)", () => {
+    const reach = 0.06 * rig.p.armR;
+    for (const s of samples) {
+      const seg = s.free.slice(1).map((p, i) => new THREE.Line3(s.free[i], p));
+      for (const w of s.weapon) {
+        const near = Math.min(...seg.map((l) => l.closestPointToPoint(w, true, new THREE.Vector3()).distanceTo(w)));
+        expect(near / rig.H, `@${s.f}: the sword into the free arm`).toBeGreaterThan(reach);
+      }
+    }
   });
 });

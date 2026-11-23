@@ -127,7 +127,7 @@ describe("PlayerCombat cast (FS-2325V §E.4; FS-KYPQ9 §D)", () => {
   });
 
   it.each([
-    ["warrior", "dash", "dash", { charge: true, holdMs: CHARGE_MS }],
+    ["warrior", "dash", "dash", { holdMs: CHARGE_MS }],
     ["mage", "triple_fireball", "fireball", undefined],
   ] as const)("should cast a %s's special, %s", (cls, skill, effect, hold) => {
     const { combat, send, look } = combatOnStage();

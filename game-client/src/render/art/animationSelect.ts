@@ -8,7 +8,7 @@
  * the server already sends reaching zero.
  */
 
-import { facingFrom, movesAwayFrom, type Facing8 } from "@/render/iso/facing";
+import { facingFrom, type Facing8 } from "@/render/iso/facing";
 import { specializationOf } from "@/data/specializations";
 import { directionIndex } from "./manifest";
 
@@ -16,29 +16,20 @@ import { directionIndex } from "./manifest";
 export const CHARACTER_ANIMATIONS = ["idle", "walk", "attack", "death"] as const;
 /**
  * Those, the Mercenary's own guard (FS-MAMHR §G.35): the parry clip only his sheet carries,
- * raised into and then held on its last frame; and a class's attack on the move
- * (FS-HF0WW, FS-3V7GC): `walk_attack`, the attack from the waist up over the walk from the
- * waist down, lasting exactly as long as the attack, which the four classes' sheets carry; and
- * a demon's fire claw (FS-VHGE7 §D R31), which only the demons' sheets carry once baked; and
- * a class's `run` and `backpedal_attack` (FS-JS7C8 §A, §B), which a class sheet carries once
- * re-baked: the run while it moves and is not attacking, and the attack over legs stepping
- * backward while it attacks moving more than 90° from the aim. No sheet's standalone `backpedal`
- * is ever chosen (R45). And the Berserker's off-hand clips (FS-1J1CB §D R28): each swing clip
- * swung with the left hand, which only his sheet carries.
+ * raised into and then held on its last frame; a demon's fire claw (FS-VHGE7 §D R31), which only
+ * the demons' sheets carry once baked; a class's `run` (FS-JS7C8 §A), which every class sheet
+ * carries, played while it moves and is not attacking; and the Berserker's `attack_offhand`
+ * (FS-1J1CB §D R28), the attack swung with the left hand, which only his sheet carries. No sheet's
+ * standalone `backpedal` is ever chosen (FS-JS7C8 R45), and no class attacks on the move: the
+ * `walk_attack` and `backpedal_attack` clips were retired (FS-JS7C8 § Change: The knight's
+ * sprint, and the attack-on-the-move clips retired, R155).
  */
 export type CharacterAnimation =
   | (typeof CHARACTER_ANIMATIONS)[number]
   | "parry"
-  | "walk_attack"
   | "claw"
   | "run"
-  | "backpedal_attack"
-  | OffhandSwing;
-
-/** The clips an attack plays: standing, or on the move walking or stepping back from its aim. */
-type SwingClip = "attack" | "walk_attack" | "backpedal_attack";
-/** A swing clip swung with the left hand (FS-1J1CB R28): `attack_offhand` and the rest. */
-type OffhandSwing = `${SwingClip}_offhand`;
+  | "attack_offhand";
 
 /**
  * World px per second the walk clip covers at 1x: the stride the bake keyed, over one cycle at
@@ -54,13 +45,6 @@ export const WALK_PACE = 74;
  * this to it. At the server's 200 px/s the run plays at about 1.03x.
  */
 export const RUN_PACE = 194;
-/**
- * World px per second the backpedal legs cover at 1x, measured as {@link RUN_PACE} is, at their
- * authored 18 fps: 165.4 measured, backward. The client never plays them by it (FS-JS7C8 R45):
- * `backpedal_attack` plays at its authored rate. Kept here only while the bake's clips.test.mjs
- * imports it; the measure belongs to the bake (I-JS7C8-12), and this goes when that import does.
- */
-export const BACKPEDAL_PACE = 165;
 /** Below this drawn speed (world px/s) a player is standing, not walking: easing residue. */
 export const MOVING_SPEED = 20;
 /**
@@ -93,23 +77,11 @@ export interface CharacterState {
    * A swing started inside the stance plays over it; death over both.
    */
   guarding?: boolean;
-  /**
-   * The sheet carries `walk_attack` (the four classes', FS-HF0WW, FS-3V7GC): an attack drawn
-   * while the body moves keeps the legs walking instead of sliding the whole attack pose along.
-   * Without it, or during a charge's held pose, the attack plays as before.
-   */
-  walkAttack?: boolean;
   /** The sheet carries `run` (FS-JS7C8 §A): a moving class runs instead of walking. */
   run?: boolean;
   /**
-   * The sheet carries `backpedal_attack` (FS-JS7C8 §B): an attack on the move more than 90° from
-   * the aim steps backward rather than walking. Only where `walkAttack` holds (never a charge).
-   */
-  backpedalAttack?: boolean;
-  /**
    * The swing running is on the off hand (FS-1J1CB §D R29): the sheet carries the off-hand clips
-   * (only the Berserker's) and this swing is the left's. Whichever swing clip the attack plays,
-   * standing, walking or stepping back, plays its `_offhand` clip instead.
+   * (only the Berserker's) and this swing is the left's: the attack plays `attack_offhand`.
    */
   offhand?: boolean;
 }
@@ -128,16 +100,13 @@ export interface AnimationChoice {
  * its drawn movement (FS-JS7C8 §D R22); an attack faces its aim, death the facing it fell in, a
  * held aim the hold.
  *
- * Attacking while moving on a sheet that carries `walk_attack` plays that, turned the way the
- * attack would be (to the aim when known); moving more than 90° from that facing plays
- * `backpedal_attack` instead where the sheet carries it, the legs stepping back under a body
- * turned to the aim (FS-JS7C8 R9, R11). Moving and not attacking runs on a sheet that carries
- * `run`, walks on one that does not, turned to the movement either way: never a backward step
- * (R4, R45). An off-hand swing plays the same clip's `_offhand` (FS-1J1CB R29).
+ * An attack plays `attack`, moving or not, turned to the aim when known (FS-JS7C8 R155); an
+ * off-hand swing plays `attack_offhand` (FS-1J1CB R29). Moving and not attacking runs on a sheet
+ * that carries `run`, walks on one that does not, turned to the movement either way: never a
+ * backward step (R4, R45).
  */
 export function selectAnimation(state: CharacterState): AnimationChoice {
-  const { velocity, facing, attacking, dead, aim, holding, guarding, walkAttack, run, backpedalAttack, offhand } =
-    state;
+  const { velocity, facing, attacking, dead, aim, holding, guarding, run, offhand } = state;
   const speed = Math.hypot(velocity.vx, velocity.vy);
   const moving = speed >= MOVING_SPEED;
 
@@ -153,11 +122,7 @@ export function selectAnimation(state: CharacterState): AnimationChoice {
   const walking = moving ? facingFrom(velocity.vx, velocity.vy, facing) : facing;
   if (attacking) {
     const aimed = aim ? facingFrom(aim.x, aim.y, walking) : walking;
-    const swing = (clip: SwingClip) => choose(offhand ? `${clip}_offhand` : clip, aimed);
-    if (!moving || !walkAttack) return swing("attack");
-    // a sheet without the backward step keeps walk_attack at any angle (R11)
-    const back = backpedalAttack && movesAwayFrom(aimed, velocity.vx, velocity.vy);
-    return swing(back ? "backpedal_attack" : "walk_attack");
+    return choose(offhand ? "attack_offhand" : "attack", aimed);
   }
 
   // not directional (§C.10): he guards whichever way he is going

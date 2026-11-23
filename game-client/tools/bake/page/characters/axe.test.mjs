@@ -27,6 +27,7 @@ const { berserker } = await import("./warriorLooks.js");
 const { ATTACK_TURN_LIMIT, OFFHAND_OF, applyPose, clipsFor, groundPose } = await import("./clips.js");
 const { BERSERKER_SHEET, BERSERKER_STYLE } = await import("./classStyles.js");
 
+const THREE = await import("three");
 const DEG = 180 / Math.PI;
 
 /** The figure's axes by the hand that holds each. */
@@ -63,14 +64,48 @@ const axes = axesOf(rig);
 const specs = BERSERKER_SHEET.animations;
 const clips = clipsFor(style, specs);
 
+/**
+ * The attack clip the Berserker's sheet carries and its off-hand twin: `attack` and
+ * `attack_offhand` alone, no class carrying an attack on the move (FS-JS7C8 § Change: The
+ * knight's sprint, and the attack-on-the-move clips retired R149, R155).
+ */
+const TWINS = Object.entries(OFFHAND_OF).filter(([clip]) => clip in specs);
+
 /** The attack clips by the hand that swings each: the right's, and their off-hand twins the left's. */
-const SWINGS = Object.entries(OFFHAND_OF).flatMap(([clip, twin]) => [
+const SWINGS = TWINS.flatMap(([clip, twin]) => [
   [clip, "R"],
   [twin, "L"],
 ]);
 
-/** The frame a clip shows attack key `k` on (a 14-frame clip on the move holds each key two frames). */
-const frameOf = (anim, k) => Math.round((k * specs[anim].frames) / specs.attack.frames);
+/** How high an axe may come to the ground in a carry (H): the mercenary's sword's floor. */
+const AXE_FLOOR = 0.06;
+/**
+ * The floor each carry is held to (H). The run's is {@link AXE_FLOOR}: his sprint's carry
+ * (classStyles.js `BERSERKER_RUN_LIFT`) holds Looks v2's heavy axes (FS-1J1CB § Change: Looks v2
+ * R55) at 0.062 H at the lowest. The rest and the walk are Looks v2's own carry, untouched by
+ * FS-JS7C8, and its longer hafts hang lower than the old axes' 0.108 and 0.091 H: measured 0.018 H
+ * in the idle and 0.0017 H in the walk (keys 1 and 5), which Looks v2 holds by the head alone
+ * (over 0.03 H, below). Held here at those measures so they cannot sink further unseen; lifting
+ * them to the run's floor is a change to Looks v2's approved carry, the owner's call (integrated
+ * 2026-11-23).
+ */
+const AXE_FLOORS = { idle: 0.018, walk: 0.0015, run: AXE_FLOOR };
+
+/** The lowest point of either axe's mesh off the ground in pose `p`, grounded as the bake grounds it (H). */
+function lowestAxe(rig, axes, p) {
+  applyPose(rig, p);
+  groundPose(rig);
+  rig.root.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  let low = Infinity;
+  for (const axe of Object.values(axes))
+    axe.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) low = Math.min(low, v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).y);
+    });
+  return low / rig.H;
+}
 
 describe("the Berserker's axes (FS-1J1CB R2)", () => {
   it("dresses in the Berserker's own style, the cleave", () => {
@@ -127,8 +162,19 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
     });
   });
 
+  // the guideline's "never on the ground", as the mercenary's sword is held (classMotion.test.mjs
+  // R99): on the baked keys his heavy axes' lowest mesh points read 0.018 H in the idle, 0.0017 H in
+  // the walk and 0.062 H in the run (AXE_FLOORS)
+  it.each(Object.entries(AXE_FLOORS))("holds both axes off the ground on every frame of %s, at least %s H", (anim, floor) => {
+    clips[anim].forEach((p, i) => expect(lowestAxe(rig, axes, p), `${anim} @${i}`).toBeGreaterThanOrEqual(floor));
+  });
+
+  it("reads an axe on the ground: lying dead, his axes are under the floor", () => {
+    expect(Math.min(...clips.death.map((p) => lowestAxe(rig, axes, p)))).toBeLessThan(AXE_FLOOR);
+  });
+
   it.each(SWINGS)("leads the head's motion with the edge at the strike of %s (the %s hand)", (anim, side) => {
-    const [a, b, c] = [2, 3, 4].map((k) => read(rig, axes, clips[anim][frameOf(anim, k)])[side]);
+    const [a, b, c] = [2, 3, 4].map((k) => read(rig, axes, clips[anim][k])[side]);
     const v = c.at.clone().sub(a.at).normalize();
     expect(b.dir.dot(v), `${anim} ${side}`).toBeGreaterThan(0);
   });
@@ -150,7 +196,12 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
 });
 
 describe("the Berserker's off-hand clips (FS-1J1CB §D R28)", () => {
-  it.each(Object.entries(OFFHAND_OF))("twins %s as %s: the same frames, fps and loop", (clip, twin) => {
+  it("swings attack and attack_offhand alone (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149, R155)", () => {
+    expect(TWINS).toEqual([["attack", "attack_offhand"]]);
+    expect(Object.keys(specs).filter((anim) => anim.includes("attack"))).toEqual(["attack", "attack_offhand"]);
+  });
+
+  it.each(TWINS)("twins %s as %s: the same frames, fps and loop", (clip, twin) => {
     expect(specs[twin]).toEqual(specs[clip]);
     expect(clips[twin]).toHaveLength(specs[clip].frames);
   });
@@ -164,8 +215,8 @@ describe("the Berserker's off-hand clips (FS-1J1CB §D R28)", () => {
     expect(l.at.z).toBeCloseTo(r.at.z, 2);
   });
 
-  it("walks the off-hand attacks on the right-hand clips' own legs", () => {
-    for (const [clip, twin] of Object.entries(OFFHAND_OF))
+  it("stands the off-hand attack on the right-hand clip's own legs", () => {
+    for (const [clip, twin] of TWINS)
       clips[clip].forEach((p, i) => {
         for (const leg of ["thighL", "thighR", "shinL", "shinR", "footL", "footR", "hips"]) expect(clips[twin][i].b[leg], `${twin} @${i} ${leg}`).toEqual(p.b[leg]);
       });

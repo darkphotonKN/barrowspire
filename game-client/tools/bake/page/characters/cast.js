@@ -137,7 +137,8 @@ export function archer(look) {
   rig.hooks = [];
   const cloakO = opts("cloak", { length: 0.56, spread: 1.4, ragged: { teeth: 13, depth: 0.03, seed: 4 } });
   const quiverO = opts("quiver", ARCHER_QUIVER);
-  cloakBones(rig, { length: cloakO.cutFrom ?? cloakO.length, drag: 0.36, strap: quiverO.strap });
+  // a look may carry its cloak's drag (`cloak.drag`): the Shadow Ranger's (archerLooks.js)
+  cloakBones(rig, { length: cloakO.cutFrom ?? cloakO.length, drag: cloakO.drag ?? 0.36, strap: quiverO.strap });
   skirtBones(rig, { stiffness: 55 });
   d.bones(rig);
   const [, hy] = J(rig, "hips");
@@ -298,7 +299,8 @@ export function mercenary(look) {
   const { F, kit, piece, opts } = d;
   const rig = createRig(...MERCENARY_BUILD);
   rig.hooks = [];
-  skirtBones(rig, { stiffness: 55 });
+  // the coat's panel springs; a look may give a panel its own (the Duelist's robe, mercLooks.js)
+  skirtBones(rig, opts("skirtSprings", { stiffness: 55 }));
   d.bones(rig);
   const [, hy] = J(rig, "hips");
   const [, ny] = J(rig, "neck");
@@ -645,11 +647,11 @@ export function specRow(base, spec, look, { module, fn, ...sheet } = {}) {
  * no existing atlas reflows.
  */
 export const CAST = [
-  // The four classes (FS-HF0WW, FS-3V7GC): each with its attack layered over the walk
-  // (walk_attack), in its own group; each frame trimmed to its pixels (lib/trim.mjs). The archer
-  // runs, and steps back while attacking away from its aim (backpedal_attack) (FS-JS7C8: the first
-  // class re-baked, the owner's 2026-11-12 pick); each class moved to 1.5× (ADR-0076, the owner's
-  // 「感覺可以」) when it was re-baked with the run (FS-HF0WW § Change: Class sheets at 1.5x)
+  // The four classes (FS-HF0WW, FS-3V7GC), each in its own group; each frame trimmed to its
+  // pixels (lib/trim.mjs); each class moved to 1.5× (ADR-0076, the owner's 「感覺可以」) when it
+  // was re-baked with the run (FS-HF0WW § Change: Class sheets at 1.5x). Each now sprints and
+  // carries no attack on the move (FS-JS7C8 § Change: The knight's sprint, and the
+  // attack-on-the-move clips retired R149, R155)
   ...Object.keys(CLASS_ROWS).map((base) => classRow(base)),
   // the specialization looks (FS-1J1CB §A, R15): each its class re-dressed, alone in its own group
   specRow("knight", "guardian", guardian, { module: "warriorLooks", fn: "guardian" }),

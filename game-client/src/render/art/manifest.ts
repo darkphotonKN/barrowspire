@@ -360,9 +360,6 @@ function checkSheet(
         errors,
       );
 
-  if (isObject(animations) && animations.walk_attack !== undefined)
-    checkWalkAttack(at, animations, errors);
-
   if (sheet.light !== undefined) checkLight(`${at} light`, sheet.light, errors);
   if (sheet.mean !== undefined && !isRgb(sheet.mean))
     errors.push(`${at}: mean must be {r, g, b} integers within 0..255`);
@@ -381,33 +378,6 @@ function checkSheet(
 
   if (!isText(sheet.source)) errors.push(`${at}: source must be recorded`);
   if (!isText(sheet.licence)) errors.push(`${at}: licence must be recorded`);
-}
-
-/** An animation's length in seconds, or undefined when its fps or frames are unsound. */
-const clipSeconds = (anim: unknown): number | undefined =>
-  isObject(anim) &&
-  isFinite(anim.fps) &&
-  anim.fps > 0 &&
-  Array.isArray(anim.frames) &&
-  Array.isArray(anim.frames[0])
-    ? anim.frames[0].length / anim.fps
-    : undefined;
-
-/**
- * `walk_attack` plays in the window the client times from `attack` (FS-HF0WW), so it must last
- * exactly as long: frame count over fps the same.
- */
-function checkWalkAttack(at: string, animations: Json, errors: string[]) {
-  const walkAttack = clipSeconds(animations.walk_attack);
-  const attack = clipSeconds(animations.attack);
-  if (
-    walkAttack === undefined ||
-    attack === undefined ||
-    Math.abs(walkAttack - attack) > 1e-9
-  )
-    errors.push(
-      `${at}: walk_attack must last as long as attack (frame count / fps)`,
-    );
 }
 
 const isSheetScale = (v: unknown): v is number =>

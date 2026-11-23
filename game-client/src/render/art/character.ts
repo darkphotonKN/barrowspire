@@ -60,17 +60,13 @@ export interface AnimatedSprite {
 
 /** Which of the optional clips a sheet carries ({@link CharacterMotion}). */
 export interface SheetClips {
-  walkAttack?: boolean;
   run?: boolean;
-  backpedalAttack?: boolean;
-  /** The off-hand clips, `attack_offhand` and the rest (FS-1J1CB §D): only the Berserker's. */
+  /** The off-hand clip, `attack_offhand` (FS-1J1CB §D): only the Berserker's. */
   offhand?: boolean;
 }
 
 /** How a swing is drawn beyond its aim ({@link CharacterMotion.attack}). */
 export interface Swing {
-  /** A charge (the warrior's dash): the whole attack pose, never over the walk. */
-  charge?: boolean;
   /** Keep the attack pose this long (ms) if that is longer than the clip. */
   holdMs?: number;
 }
@@ -86,8 +82,6 @@ export class CharacterMotion {
   private aim?: Point;
   private holding?: Point;
   private guarding = false;
-  /** The swing running is a charge, its pose held past the clip: never split over the walk. */
-  private charging = false;
   /** Swings this motion has started: the even ones the right hand's, the odd the left's (FS-1J1CB R29). */
   private swings = 0;
   /** The swing running is on the off hand: the last {@link attack} took the left. */
@@ -96,11 +90,9 @@ export class CharacterMotion {
   private readonly clips: Required<SheetClips>;
 
   /**
-   * `clips.walkAttack`: the sheet carries the `walk_attack` clip (the four classes', FS-HF0WW,
-   * FS-3V7GC), so an attack drawn while moving keeps the legs walking. `clips.run` and
-   * `clips.backpedalAttack`: it carries those (FS-JS7C8), so a moving class runs, and steps
-   * backward while it attacks moving away from its aim. `clips.offhand`: it carries the off-hand
-   * clips (the Berserker's, FS-1J1CB §D), so each swing takes the other hand from the one before.
+   * `clips.run`: the sheet carries the `run` clip (FS-JS7C8 §A), so a moving class runs.
+   * `clips.offhand`: it carries `attack_offhand` (the Berserker's, FS-1J1CB §D), so each swing
+   * takes the other hand from the one before.
    */
   constructor(
     public facing: Facing8 = "se",
@@ -108,9 +100,7 @@ export class CharacterMotion {
     clips: SheetClips = {},
   ) {
     this.clips = {
-      walkAttack: clips.walkAttack ?? false,
       run: clips.run ?? false,
-      backpedalAttack: clips.backpedalAttack ?? false,
       offhand: clips.offhand ?? false,
     };
   }
@@ -120,18 +110,15 @@ export class CharacterMotion {
    * attack restarts the window: skill cooldowns are shorter than the clip, and every cast the
    * server receives should show a swing.
    *
-   * `swing.charge`: the swing is a charge (the warrior's dash), played whole as `attack` while
-   * the server carries the body, never split over the walk (FS-3V7GC R6). Told, not inferred from
-   * the hold's length: the charge (CHARGE_MS) is shorter than a class's attack.
-   * `swing.holdMs` keeps the attack pose for longer than the clip, its last frame held. A hold
-   * shorter than the clip changes nothing.
+   * `swing.holdMs` keeps the attack pose for longer than the clip, its last frame held: the
+   * warrior's charge, played as `attack` while the server carries the body. A hold shorter than
+   * the clip changes nothing.
    *
-   * On a sheet with the off-hand clips every attack, a charge and one cut short included, takes
+   * On a sheet with the off-hand clip every attack, a charge and one cut short included, takes
    * the other hand from the one before, the right first (FS-1J1CB R29).
    */
   attack(now: number, aim?: Point, swing: Swing = {}): void {
     this.attackEnds = now + Math.max(this.attackMs, swing.holdMs ?? 0);
-    this.charging = swing.charge ?? false;
     this.leftHand = this.clips.offhand && this.swings++ % 2 === 1;
     this.aim = aim && (aim.x !== 0 || aim.y !== 0) ? { ...aim } : undefined;
   }
@@ -170,7 +157,6 @@ export class CharacterMotion {
     this.aim = from.aim;
     this.holding = from.holding;
     this.guarding = from.guarding;
-    this.charging = from.charging;
   }
 
   /** One frame: `pos` is the world position just drawn, `deltaMs` the frame's length. */
@@ -195,9 +181,7 @@ export class CharacterMotion {
       aim: attacking ? this.aim : undefined,
       holding: this.holding,
       guarding: this.guarding,
-      walkAttack: this.clips.walkAttack && !this.charging,
       run: this.clips.run,
-      backpedalAttack: this.clips.backpedalAttack,
       offhand: this.leftHand,
     });
     this.facing = choice.facing;
@@ -248,9 +232,7 @@ export class CharacterAnimator {
         ? (attack.frames[0].length / attack.fps) * 1000
         : PLACEHOLDER_ATTACK_MS,
       {
-        walkAttack: this.carries("walk_attack"),
         run: this.carries("run"),
-        backpedalAttack: this.carries("backpedal_attack"),
         offhand: this.carries("attack_offhand"),
       },
     );
@@ -336,11 +318,11 @@ export class CharacterAnimator {
 
   /**
    * Plays the chosen clip. The same clip carries on (a finished attack, guard or death holds its
-   * last frame rather than replaying) unless a new attack or guard was started; a looping clip turning to a new facing keeps its place in the
-   * cycle, so a stride does not restart at every turn, and a swing that starts or stops moving, or
-   * crosses the 90° line from its aim, swaps between `attack`, `walk_attack` and
-   * `backpedal_attack` at the same point of the shot (FS-HF0WW R13, FS-JS7C8 R13). A clip continuing from
-   * another sheet (a re-dress, FS-VHGE7 §F R48) keeps its place too, a one-shot included.
+   * last frame rather than replaying) unless a new attack or guard was started; a looping clip
+   * turning to a new facing keeps its place in the cycle, so a stride does not restart at every
+   * turn. A clip continuing from another sheet (a re-dress, FS-VHGE7 §F R48) keeps its place too, a
+   * one-shot included, and so does an off-hand swing re-dressed onto a sheet whose motion swings the
+   * right hand (FS-1J1CB R30): it carries on as `attack` from as far through as it got.
    */
   show(sprite: AnimatedSprite, choice: AnimationChoice): void {
     const clip = this.clip(choice.animation);
@@ -360,8 +342,8 @@ export class CharacterAnimator {
       let startFrame = 0;
       if (current && from === clip && (this.loops(clip) || sheetOf(current.key) !== this.sheet))
         startFrame = Math.min(at, this.frameCount(clip) - 1);
-      // starting or stopping mid-swing (FS-HF0WW): the other swing clip carries on from
-      // as far through as this one got, rather than drawing the shot again from the start
+      // a swing re-dressed mid-shot onto the other hand's clip (FS-1J1CB R30): it carries on
+      // from as far through as this one got, rather than drawing the shot again from the start
       else if (current && from !== clip && from && this.swingClips.has(from) && this.swingClips.has(clip))
         startFrame = Math.min(
           this.frameCount(clip) - 1,
@@ -372,7 +354,7 @@ export class CharacterAnimator {
     anims.timeScale = choice.timeScale;
   }
 
-  /** The manifest clips one swing may play: the attack, and the attack on the move either way. */
+  /** The manifest clips one swing may play: the attack with either hand. */
   private get swingClips(): ReadonlySet<string> {
     return new Set([...SWINGS].map((a) => this.clip(a)));
   }
@@ -401,15 +383,5 @@ const animationOf = (key: string) => key.split("/")[1];
 /** `sheet/animation/direction` (library.ts `animationName`) → `sheet`. */
 const sheetOf = (key: string) => key.split("/")[0];
 
-/**
- * The clips an attack plays: standing, or on the move where the sheet carries it, walking or
- * stepping back from its aim (FS-JS7C8 R13), with either hand (FS-1J1CB R29).
- */
-const SWINGS: ReadonlySet<CharacterAnimation> = new Set([
-  "attack",
-  "walk_attack",
-  "backpedal_attack",
-  "attack_offhand",
-  "walk_attack_offhand",
-  "backpedal_attack_offhand",
-]);
+/** The clips an attack plays, moving or not: `attack`, with either hand (FS-1J1CB R29). */
+const SWINGS: ReadonlySet<CharacterAnimation> = new Set(["attack", "attack_offhand"]);

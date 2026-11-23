@@ -160,11 +160,12 @@ export function legs(rig, mat, o = {}) {
 /**
  * How far inside a garment's wall `legs({ under })` keeps a thigh (H; about 3.5–3.6 1x px on the
  * classes, H 1.92–2.0): one value for the four classes, the least (in 0.0025 steps) that keeps
- * every class's legs inside its garment in every clip, to the leg-clearance guard's one baked px (clearance.js). The 2x
- * wizard's walk and walk_attack set it (FS-3V7GC §C): her leading thigh and knee swing out
- * through the robe, which follows a thigh by only a fifth of its swing; at 0.0375 she shows 0.52
- * 1x px, past the half px a 2x sheet allows. Under the cloth, so no garment changes for it. (It
- * was 0.012, set by the 2x archer's walk, before the other classes were baked at 2x.)
+ * every class's legs inside its garment in every clip, to the leg-clearance guard's one baked px
+ * (clearance.js). The 2x wizard's walk sets it (FS-3V7GC §C; her attack on the move did too until
+ * FS-JS7C8 R155 retired it): her leading thigh and knee swing out through the robe, which follows a
+ * thigh by only a fifth of its swing; at 0.0375 she shows 0.52 1x px, past the half px a 2x sheet
+ * allows. Under the cloth, so no garment changes for it. (It was 0.012, set by the 2x archer's
+ * walk, before the other classes were baked at 2x.)
  */
 export const UNDER_CLEAR = 0.04;
 
@@ -497,7 +498,9 @@ export function bareFeet(rig, mat, o = {}) {
 
 /**
  * Adds a skirt's spring bones (front and back panels) under the hips. Call before any skinned
- * mesh is built; `skirt({ panels: true })` then weights its hem to them.
+ * mesh is built; `skirt({ panels: true })` then weights its hem to them. `stiffness` and `drag`
+ * set all four panels' springs; a panel's own options under its bone's name (`skirtB: { drag,
+ * limit }`) go over them for that panel alone (the Duelist's robe, mercLooks.js `ROBE_BACK_CARRY`).
  */
 export function skirtBones(rig, o = {}) {
   rig.addBone("skirtF", "hips", 0, -0.03, 0.05);
@@ -505,7 +508,7 @@ export function skirtBones(rig, o = {}) {
   rig.addBone("skirtL", "hips", 0.07, -0.03, 0);
   rig.addBone("skirtR", "hips", -0.07, -0.03, 0);
   for (const b of ["skirtF", "skirtB", "skirtL", "skirtR"])
-    spring(rig, b, { stiffness: o.stiffness ?? 45, damping: 7, drag: o.drag ?? 0.2, inertia: 1.1, limit: 0.8, gravity: 0.6 });
+    spring(rig, b, { stiffness: o.stiffness ?? 45, damping: 7, drag: o.drag ?? 0.2, inertia: 1.1, limit: 0.8, gravity: 0.6, ...o[b] });
 }
 
 /**
@@ -703,7 +706,10 @@ function skirtWeights(rig, o) {
  * skinned mesh is built. `strap` (per bone from the top, 1 free) holds the cloak's top to the back
  * under something strapped over it (the archer's quiver): that bone's drag and fling scale by it,
  * its stiffness by its inverse (at most 5x), so the cloth under the strap stays on the back and
- * the rest swings from there.
+ * the rest swings from there. `tilt` (per bone from the top, rad) hangs a link turned about the
+ * back's line, out to his left for a positive one. `clips` gives a clip options of its own by its
+ * name (`{ run: { strap, tilt } }`), over these, each link's spring worked out from them the same
+ * way (rig.js `spring` `clips`; the Duelist's half-cloak in the run, mercLooks.js).
  */
 export function cloakBones(rig, o = {}) {
   const [, ny] = J(rig, "neck");
@@ -713,17 +719,25 @@ export function cloakBones(rig, o = {}) {
   rig.addBone("cloak0", "chest", 0, ny - 0.02 - cy, -back);
   const seg = len / 4;
   for (let i = 1; i <= 3; i++) rig.addBone(`cloak${i}`, `cloak${i - 1}`, 0, -seg, -0.004);
-  for (let i = 0; i <= 3; i++) {
-    const held = o.strap?.[i] ?? 1;
-    spring(rig, `cloak${i}`, {
+  const link = (i, c) => {
+    const held = c.strap?.[i] ?? 1;
+    return {
       stiffness: (70 - i * 12) / Math.max(held, 0.2),
-      damping: 8,
-      drag: (o.drag ?? 0.32) * (0.5 + i * 0.35) * held,
+      drag: (c.drag ?? 0.32) * (0.5 + i * 0.35) * held,
       inertia: (0.8 + i * 0.25) * held,
+      ...(c.tilt && { rest: [0, 0, c.tilt[i] ?? 0] }),
+    };
+  };
+  for (let i = 0; i <= 3; i++) {
+    const clips = o.clips && Object.fromEntries(Object.entries(o.clips).map(([clip, c]) => [clip, link(i, { ...o, ...c })]));
+    spring(rig, `cloak${i}`, {
+      ...link(i, o),
+      damping: 8,
       limit: 1.0,
       gravity: i === 0 ? 0.25 : 0.85,
       drape: -0.3,
       axes: "xz",
+      clips,
     });
   }
 }

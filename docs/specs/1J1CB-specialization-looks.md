@@ -768,3 +768,36 @@ So keep that in mind."
 - New clips, new attack styles beyond a look's grip and hold re-keys, new sounds.
 - The base class looks, the menus and the party busts (R25: base look).
 - Any server change; the manifest's format; ADR-0088's loading; new palette tokens.
+
+### Integrated with FS-JS7C8, 2026-11-23
+
+The class sprints (FS-JS7C8) merged onto this change on `integrate/class-sprint-into-main`. The
+owner: 「如果有改武器就套用main的」, then 「Duelist 也改拖劍」. Looks v2's decisions it touched, each the
+smallest change, recorded in full in FS-JS7C8's "Integrated with Looks v2" notes:
+
+- The Spellwarden and the Pyromancer keep this change's carries, run carries and cast (R56, R57,
+  R62), as clips.js `staffCast`; the sprint's lean, stride and fps apply.
+- The Duelist (R60, R62): his run trails the long blade (the mercenary's sprint), the run wrist
+  re-key dropped, the trailing arm out 0.45 past the longer half-cloak; the robe's `legFollow`
+  0.5 → 0.8 so the sprint's knee drive stays inside it. His silhouette at rest is unchanged.
+- The Shadow Ranger (R59, R65): her cloak's drag 0.36 → 0.46 so the sprint's heel kick stays inside
+  it; her slim longbow's tip in the low ready stands over her cowl in n and ne by up to 0.030 H,
+  escalated to the owner.
+- The Berserker (R55): his heavy axes ride 0.32 rad higher at the wrist in the run only; his idle
+  and walk carry is untouched, its lowest axe points (0.018 and 0.0017 H) left to the owner.
+- The Guardian (R54): `GUARDIAN_SHIELD_LIFT` kept; his run is the knight's sprint.
+- Every look's frame box is this change's, unchanged.
+
+Again on 2026-11-23, after FS-JS7C8's outward trailing blade (R158): the Duelist's trailing arm is
+out 0.35 with the wrist cocked 1.32 (not 0.45 and 1.55), so the long hilt keeps R60's 0.052 H off
+his forearm; his blade then angles 38.8–50.5° out, past R158's band, escalated in FS-JS7C8.
+
+A third time, 2026-11-23, after FS-JS7C8 R159: in the run the Duelist's half-cloak is carried off
+his left shoulder (its top free, hung 0.3 and 0.2 rad out, its chain's drag 0.4 in the run alone;
+every other clip as this change hung it), and his trailing arm stands out only 0.08 with the wrist
+at 1.32: the blade 23.7–32.8° out, inside R158, the hilt at R60's 0.052 H. The Shadow Ranger's bow tip
+over her cowl and the Berserker's idle and walk axe floors are accepted as they are.
+
+## Change: The wizard's sprint and pointed cast → FS-JS7C8
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8
