@@ -2750,6 +2750,12 @@ His idle, walk, attack and death keys are untouched. So are his attack's cloth (
 his hauberk, surcoat, cloak and their springs. The archer's, the mercenary's and the wizard's sheets
 are untouched byte for byte.
 
+> **Edited in place on 2026-11-23 (review of I-JS7C8-35, still a work-order).** Requirement numbers
+> are kept. *Facts checked in code* (the dead code, K4) and the Edge State "The Berserker's hands"
+> said the mid-swing swap in `show` could no longer be reached. It can: a Berserker re-dressed mid
+> off-hand swing onto a sheet without `attack_offhand` (FS-1J1CB R30). Both lines now say so, and
+> the swap stays.
+
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
 - **K1. The shared sprint** (`SPRINT_STEP` legs, `SPRINT_LEAN` about 20°, `SPRINT_RUN` 16 fps),
@@ -2955,9 +2961,12 @@ The coordinator picked under the owner's standing word for this charter,
     `SheetClips.walkAttack` and `.backpedalAttack` (:62-68), `Swing.charge` and the `charging`
     field (:71-73, :90, :134, :173, :198), whose only effect is to gate `walkAttack`. The
     constructor's and the animator's flags (:108-116, :250-255), `SWINGS`' four retired entries
-    (:408-415), and the mid-swing swap between swing clips in `show` (:365-370, `swingClips`
-    :376-378). Once `attack` and `attack_offhand` are the only swing clips, a new swing always
-    replays from key 0 (`swingPending`), so that branch is never reached. The one caller of
+    (:408-415). The mid-swing swap between swing clips in `show` (:365-370, `swingClips`
+    :376-378) is not dead: a new swing replays from key 0 (`swingPending`), but a Berserker
+    re-dressed mid off-hand swing (specLooks.ts `redress`, `wearing`) onto a sheet without
+    `attack_offhand` swaps to that sheet's `attack` and keeps the swing's frame (FS-1J1CB R30,
+    character.test.ts "should carry an off-hand swing on as the new sheet's attack"). It stays. The
+    one caller of
     `charge` is `playerCombat.ts:242`. `manifest.ts`: `checkWalkAttack` (:363-364, :396-411).
   - Bake tool: clips.js `WALK_ATTACK_CYCLES` (:32), `RUN_WALK_ATTACK_CYCLES` (:41),
     `BACKPEDAL_ATTACK_CYCLES` (:50), `BACKPEDAL_ATTACK_SPEED` (:61), `withWalkAttack` (:76-84),
@@ -3229,9 +3238,10 @@ HITL:
 - **The charge.** The warrior's dash moves him while his attack plays, as today: it always played
   `attack` with its pose held (`holdMs`), never `walk_attack`. Retiring `charge` (R155) changes
   nothing drawn.
-- **The Berserker's hands.** Each swing takes the other hand (FS-1J1CB R29). With only `attack`
-  and `attack_offhand` left there is nothing to swap mid-swing, so a swing always starts from
-  key 0.
+- **The Berserker's hands.** Each swing takes the other hand (FS-1J1CB R29). A new swing always
+  starts from key 0. With only `attack` and `attack_offhand` left the one mid-swing swap is a
+  re-dress: a Berserker re-dressed mid off-hand swing onto a sheet without `attack_offhand` carries
+  on as its `attack` from the frame the swing had reached (FS-1J1CB R30), as today.
 - **Running into an attack.** The attack starts from its own key 0, so an attack started mid-run
   jumps from the run's carry to the wind-up, as today.
 - **Setting off and stopping.** His carry is the same in the run but for the wrist, so setting off
