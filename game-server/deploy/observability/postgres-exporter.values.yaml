@@ -1,0 +1,18 @@
+config:
+  datasource:
+    host: 10.6.0.3                 # Cloud SQL 的私有 IP
+    port: "5432"
+    user: metrics_exporter
+    passwordSecret:                # 密碼從 Secret 讀，不寫在這裡
+      name: postgres-exporter
+      key: password
+    database: postgres             # 連預設的 postgres 資料庫（ADR-0023：不用開例外）
+    sslmode: disable               # 跟各服務一樣（auth 的 DSN 也是 sslmode=disable）
+
+serviceMonitor:
+  enabled: true                    # 讓 Prometheus 自動來抓
+  interval: 30s
+
+resources:                         # Autopilot 一定要有 requests
+  requests: { cpu: 50m, memory: 64Mi }
+  limits:   { memory: 128Mi }

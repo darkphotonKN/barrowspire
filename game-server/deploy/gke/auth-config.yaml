@@ -15,3 +15,5 @@ data:
   RABBITMQ_PORT: "5672"
   OTEL_ENABLED: "true"
   GOMEMLIMIT: "115MiB"
+  # pprof on the pod's loopback only: reach it with kubectl port-forward, never via a Service
+  PPROF_ADDR: "127.0.0.1:6060"
