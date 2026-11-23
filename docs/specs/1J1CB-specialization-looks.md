@@ -500,3 +500,5 @@ idle only).
 - Recording the ADR (§C) and the vocabulary (domain-model): named here, done by their owners.
 
 ## Change: The wizard's sprint and pointed cast → FS-JS7C8
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8

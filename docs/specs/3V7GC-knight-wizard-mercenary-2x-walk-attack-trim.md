@@ -110,3 +110,5 @@ Nick approved all four classes at 2x with legs moving while attacking and frames
 - Removing the trimmed frames' sub-px offset at fractional render scales.
 - The legacy sheets on `KNOWN_CLIPPING`.
 - Any server or game-rule change: animation is presentation only (ADR-0020).
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8

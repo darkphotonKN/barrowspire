@@ -639,3 +639,5 @@ Date: 2026-11-12
 ## Change: The mercenary's sprint and trailing sword → FS-JS7C8
 
 ## Change: The wizard's sprint and pointed cast → FS-JS7C8
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8

@@ -2670,3 +2670,557 @@ HITL:
 - The fireball's start point and the 8-facing aim (Edge States).
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
+
+## Change: The knight's sprint, and the attack-on-the-move clips retired
+Status: work-order
+Date: 2026-11-23
+
+Promoted `--from-thread` on 2026-11-23 from the owner-approved charter "法師與戰士衝刺跑", its knight
+item (戰士, the knight class). The thread is the charter's locked decisions, so no interview was
+held. Every decision below is a **charter default approved by the owner** ("做好就接著做不用問我"),
+given with its reason. It lands here for the same reason the archer's, the mercenary's and the
+wizard's did: it changes the run (§A) and the attack-on-the-move clips (§B, R5), which this FS owns
+through `game-client/SPECIFICATION.md` "Run and backpedal animations". It also takes the last
+`walk_attack` off the sheets that FS-HF0WW's "Walk-and-attack animation" and FS-3V7GC R4–R6 built,
+and retires the clip for every class. FS-HF0WW, FS-3V7GC and FS-2325V (§ Change: The class attacks
+move with weight and cut deep, R3, R6, which name `walk_attack` and `backpedal_attack`) each carry a
+pointer stub to this section. So does FS-1J1CB (R9, R28: the Berserker's `walk_attack_offhand` and
+`backpedal_attack_offhand` go; `attack_offhand` stays). No new thin line and no new FS. Two thin
+lines change through `spec-update` (R156), never here.
+
+Code citations are against `23717cbb` (`feat/run-wizard-sprint`, the wizard's sheets re-baked and
+her slices recorded, I-JS7C8-27..30). Measures marked *measured* were read on his own rig and style
+(`rigOf(KNIGHT_BUILD)` as classMotion.test.mjs builds him, and each look's `CAST` row built and
+posed as the bake poses it, `poses.js` `characterPoses`; 32 samples over the run's cycle) by a
+throwaway script that is not committed. Frame boxes marked *measured* were read by that script
+replaying the bake's first pass (baker.js `bakeCharacter` :254-296, then frameBox.js `frameBox`,
+pad 0.06). It reproduces today's three manifest boxes and anchors exactly. Copies of
+classMotion.test.mjs, axe.test.mjs, warriorLooks.test.mjs, clearance.test.mjs, clips.test.mjs and
+castLooks.test.mjs were run with his style re-keyed as option (a) and the carry change below. Only
+the rows this change retires or restates failed (*Facts checked in code*).
+
+**Why (owner).**
+
+> 「做完後就接著做法師跟戰士的跑步 法師攻擊時法杖要伸直指向怪物像施法一樣 戰士暫時只要調跑步就好 一樣移除攻擊時前後走動的部分 做好就接著做不用問我」
+
+Once the mercenary is done, do the mage's and the warrior's runs. (The mage's staff points at the
+monster when she casts.) For the warrior, only the run for now. As before, remove the attack clips
+that step forward and back. When it is done, carry on without asking. For the archer, earlier:
+「跑步時可以更有衝刺感…想要有快一點的跑步感」, 「跑更快的話身體可能會更加前傾」; for the mercenary:
+「移動時也要像弓箭手跑的感覺」.
+
+**What it changes, for the knight's three sheets** (`char_knight_base`, `char_knight_guardian`,
+`char_knight_berserker`):
+
+- R2: his lean (about 10° → about 20°) and "the legs are slice 5's ... the 14 fps cadence
+  unchanged, key for key". After this no class runs the shared fast run's lean and cadence.
+- R3: his cadence becomes the sprint's (16 fps) over a shorter stride (*escalated*, E1 below: not
+  the sprint's own legs).
+- R2's blade carry: the wrist holds the blade back further under the lean (K2, said below). The
+  owner-tuned band (`RUN_BLADE_ELEV`, his 23–42°) is kept.
+- R5: "`walk_attack` stays on every class sheet" no longer holds for any class.
+- R8–R11, R13, R21: `backpedal_attack` and `walk_attack` leave his sheets, so their leg rules no
+  longer apply to any sheet.
+- R37, R41, R48: his contact sheet and the guideline lose those two clips.
+- FS-1J1CB R9, R28: the Berserker's sheet carries `attack_offhand` alone among the off-hand
+  twins.
+- `## Change: Attacking pins the attacker`, Out of Scope: "Retiring the attack-on-the-move clips
+  (`walk_attack`, `backpedal_attack`) and their leg-pace rules R10, R21" is done: the clips leave
+  the last sheets (K3), then their code goes (K4).
+- `## Change: The wizard's sprint and pointed cast`, Out of Scope: "The `walk_attack` and
+  `backpedal_attack` branches in `animationSelect.ts` and `character.ts`, and `BACKPEDAL_PACE`.
+  They go when the last class drops the clips": the knight is the last, so they go (K4).
+
+His idle, walk, attack and death keys are untouched. So are his attack's cloth (`KNIGHT_ATTACK_CLOTH`),
+his hauberk, surcoat, cloak and their springs. The archer's, the mercenary's and the wizard's sheets
+are untouched byte for byte.
+
+### Decisions (charter defaults, owner-approved 2026-11-23)
+
+- **K1. The shared sprint** (`SPRINT_STEP` legs, `SPRINT_LEAN` about 20°, `SPRINT_RUN` 16 fps),
+  his pace within 3 px/s of `RUN_PACE` 194, measured on his rig. If his cloak or leg guards fail on
+  the shared legs, the wizard's precedent applies: the sprint's lean and 16 fps over `RUN_STEP` at a
+  shorter stride that holds the pace. A garment carry like the Duelist's robe is taken instead if
+  that is the smaller change. Either way, it is escalated with numbers. *Reason:* the owner's 「一樣」
+  (as with the others). ***Escalated:** the shared legs push his calf out through the hauberk's back
+  by 4.86 px, and his pace there is 198.84 (E1).*
+- **K2. His run keeps today's carry**: the raised blade (`RUN_BLADE`, `RUN_WRIST`, `RUN_CROSS`, the
+  owner-tuned `RUN_BLADE_ELEV`, `RUN_TIP_CEIL`), the shield arm's hold, and the Berserker's two-axe
+  carry. Each is re-measured under the lean. A key changes only if the lean breaks a guard or a
+  band or a ceiling, and that is said. ***Said:** the lean drops the blade to 10.4–28.7° above
+  level, under `RUN_BLADE_ELEV`'s 20° and his own 23°. So the wrist holds it back: `RUN_BLADE` x
+  0.68 → 0.45, the least that puts it back inside his band (R146). The sword hand's front height
+  falls under the chest bone (0.021 H). That height is recorded, not tuned away, as the wizard's
+  tome hand was (R147).*
+- **K3. `walk_attack` and `backpedal_attack` leave his three sheets**, and the Berserker's
+  `walk_attack_offhand` and `backpedal_attack_offhand` go with them. `attack_offhand` stays. Idle,
+  walk, attack and death are unchanged. A sheet without them plays the standing attack (the
+  client's fallback, no code change).
+- **K4. Once no sheet carries them, the dead code is retired**: in the client, the attack-on-the-move
+  branches, types and flags and `BACKPEDAL_PACE`; in the bake tool, `withWalkAttack`, the
+  walk-attack and backpedal clip builders, their cycle and cloth constants, the `poses.js`
+  branches and the `OFFHAND_OF` entries. The tests that only tested them go too. Behaviour is
+  unchanged, because every sheet already lacks the clips. It is a separate slice, after the bake.
+- **K5. The frame box must not grow.** The attack-on-the-move clips leaving can only shrink it.
+  Any growth is escalated.
+- **K6. The owner sees the contact sheet** (ADR-0021 §5). Nothing waits on it.
+
+**Escalate (report back, don't route around):** a default the code contradicts; a guard that needs
+a look change; the frame box growing; the pace leaving its tolerance.
+
+### Escalated 2026-11-23 (to the coordinator, not routed around)
+
+**E1. The shared sprint's legs under his hauberk (K1), and his pace.** On his rig the shared
+sprint's legs fail the leg guard on all three looks, and his pace leaves K1's tolerance. *Measured*
+(the shared legs, lean and 16 fps, his carry as it is):
+
+- The leg guard (`clearance.js` `legClearance`) reads **4.86 px** at 1x on the run's key 1 (`down`;
+  4.83 on key 5), against the 1.5x limit of 0.667. It is the swing leg's lower calf (bind 0.073 H
+  up), folded up behind by the sprint's heel kick (`SPRINT_STEP.shinL` 1.8 at key 1) to 0.23 H off
+  the ground, 0.11 H behind the hips bone and 0.04 H off the centre line. It comes out through the
+  hauberk's back panel, which hangs to the knee (cast.js `knight`, `hauberk.bottom` `ky + 0.02`).
+  Key 0 (key 4) reads 1.50 (1.42) px, mid-shin (bind 0.146 H). The base, the Guardian (whose
+  surcoat lies over the hauberk) and the Berserker read the same. The cloak guard (`cloakClearance`)
+  reads 0 in the run on all three. The camera check (`seenThroughCloth`) sees nothing through the
+  cloth on any run key.
+- The hauberk's back panel is pushed back by the thigh alone (anatomy.js `pushPanels`: for a hem at
+  or above the knee, `swing` takes the thigh's angle and never the calf's), so nothing in the cut
+  follows a calf folded up under it. `legFollow` 0.75 → 0.85, 0.95 reads 5.53, 5.74 px.
+  `panelWeight` 0.3 → 0.45, 0.6 reads 2.29, 0.78 px. Each of these is also a look change in every
+  clip.
+- His pace on the shared legs at 16 fps is **198.84** world px/s, 4.84 over `RUN_PACE`, outside
+  K1's 3 px/s. His legs are longer than the others' (build 2.0, against the archer's 1.96 and the
+  mercenary's 1.98). Today he reads 197.67 at 14 fps, held only to the class band 180–220.
+
+The options:
+
+- **(a) Default (K1's first fallback, the wizard's precedent):** the sprint's lean (`SPRINT_LEAN`)
+  and clip (`SPRINT_RUN`: 16 fps, `speed` 2.5, both by reference) over the shared fast run's legs
+  (`RUN_STEP`) at a stride of **0.84** (`run.stride`), 16% shorter. The sprint's own stride is 12%
+  shorter. His legs need the extra 4% to hold the pace at 16 fps. *Measured* on all three looks: the
+  leg guard 0 px, the cloak guard 0 px, and nothing seen through the cloth on every run key. Pace
+  **193.61** (within 1 px/s of `RUN_PACE`, the archer's and the wizard's tolerance). Bob 0.064 H
+  (in the sprint's band). Knee peak 0.310 H (today's 0.311, under the sprint's 0.335). The frame box
+  is unchanged (R151). What it gives up is the sprint's higher knee drive and its heel kick. The
+  hauberk to the knee and the cloak to the calf hide part of both. It is the smallest change: no
+  garment, spring or other clip moves. `SPRINT_STEP` is not changed, and his run is not on it.
+  *Measured* by stride (16 fps): 0.82 → 189.51, 0.83 → 191.56, 0.84 → 193.61, 0.845 → 194.63,
+  0.85 → 195.65, 0.88 → 201.76 (the wizard's stride, 7.76 over), 1 → 225.91.
+- (b) The shared sprint's legs, with the hauberk's back carried out (the Duelist's precedent,
+  mercLooks.js `ROBE_BACK_CARRY`): the back panel's spring (`skirtB`) at `drag` 0.2 → 0.4 and
+  `limit` 0.8 → 1.1 reads 0.24 px (base, Berserker) and 0.22 (Guardian), under the limit. `drag` 0.6
+  and `limit` 1.2 read 0. But the knight's spring drags in every clip that moves. His attack carries
+  cloth (`KNIGHT_ATTACK_CLOTH` 0.5) and his death settles, unlike the Duelist's standing clips. So
+  the back panel swings further in the walk (*measured* `skirtB` 0.20 → 0.40 rad on every key), in
+  the attack (peak 0.24 → 0.35) and in the death (peak 0.26 → 0.58): a look change in clips this
+  item keeps out of scope. A run-only carry would need new spring code. His pace stays 198.84, so it
+  would also need his own fps (15.6 reads 193.87, not `SPRINT_RUN` by reference) or `SPRINT_STEP`
+  at his own stride (0.975 reads 194.38, the shared legs no longer key for key).
+- (c) The 20° lean over today's legs and cadence (14 fps). *Measured:* the guards 0 px, pace 197.67
+  (today's). No quicker cadence.
+
+### Facts checked in code (`23717cbb`)
+
+- **His sheets share one clip set and two styles.** `CLASS_ROWS.knight` (cast.js:596) is `{ build:
+  knight, sheet: KNIGHT_SHEET }`. `specRow` (cast.js:623) spreads it into the Guardian's row
+  (:655), and into the Berserker's with `animations: BERSERKER_SHEET.animations` (:656).
+  `KNIGHT_SHEET` (classStyles.js:122-125) is `{ animations: { ...RUNNING_CLASS_ANIMATIONS, attack:
+  { ...RUNNING_CLASS_ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH } }, scale: 1.5 }`.
+  `RUNNING_CLASS_ANIMATIONS` = `withWalkAttack({ ...ANIMATIONS, ...RUN_ANIMATIONS })`
+  (clips.js:106), and no other sheet reads it now. `BERSERKER_SHEET` (classStyles.js:155) =
+  `withOffhand(KNIGHT_SHEET.animations)`: `OFFHAND_OF` (clips.js:119) twins `attack`,
+  `walk_attack` and `backpedal_attack`, each only if the sheet has it (`withOffhand` :127-131).
+  `knight(look)` returns `d.finish(rig, KNIGHT_STYLE)` (cast.js:129), and look.js `finish` returns
+  `L.style ?? style` (look.js:76). So the Guardian (warriorLooks.js:65, no style) runs
+  `KNIGHT_STYLE`, and the Berserker (:109) runs `BERSERKER_STYLE` (classStyles.js:167-185), whose
+  run is its own two-axe carry (`arms` 0.6, `elbow` 0.45, `wrist` 0.6, both hands `CLEAVE_CARRY`,
+  :179-184) on the same legs and lean. `ARCHER_SHEET` (:275), `WIZARD_SHEET` (:327) and
+  `MERCENARY_SHEET` (:436) are built without `withWalkAttack`.
+- **His run today** (`KNIGHT_STYLE.run`, classStyles.js:142-148): `{ arms: [0.3, 1], elbow: [0.2,
+  1], wrist: RUN_WRIST, cross: [0, RUN_CROSS], hold: pose({ upperArmL: [-0.38, -0.85, 0.12],
+  foreArmL: [-1.25, 0, 0], upperArmR: [0, 0, -0.06], handR: RUN_BLADE }) }`, with no `lean`, `legs`
+  or `stride`, so it is `RUN_STEP` (clips.js:286-298) at `RUN_LEAN` 0.24 (:306). `RUN_BLADE` [0.68,
+  0, 0] (classStyles.js:59; only the knight reads it), `RUN_WRIST` [0, 0.85] (:60), `RUN_BLADE_ELEV`
+  [20, 50] (:62), `RUN_TIP_CEIL` 1.03 (:64), `RUN_CROSS` 0.3 (:66; the wizard reads it too),
+  `RUN_CROSS_REACH` [0.05, 0.08] (:68). His sheet's run is `RUN_ANIMATIONS.run`, 14 fps (clips.js:91-93).
+  It is tested in `CLASSES` (classMotion.test.mjs:258, his `runBlade` [23, 42] :267),
+  `SHARED_RUNNERS` (:298) and `RUN_CARRIERS` (:305): the sheet test (:307-317), the carry describe
+  (:319-522) and the fast-run describe (:524-578). The knight's sheet-and-clips digest is at
+  :1317, beside the shared run's (:1316).
+- **The sprint is shared already.** `SPRINT_LEAN` 0.48 (classStyles.js:203), `SPRINT_STEP`
+  (:221-229), `SPRINT_RUN` `{ ...RUN_ANIMATIONS.run, fps: 16 }` (:232), and `WIZARD_SPRINT_STRIDE`
+  0.88 (:317) over `RUN_STEP`. `runCycle` (clips.js:362-409) takes `run.lean`, `run.legs` and
+  `run.stride`. No new parameter is needed.
+- *Measured, his run today (14 fps, on his rig):* the hips-to-neck lean 9.96–10.26°; pace 197.67
+  world px/s; the pelvis 0.484–0.540 H (a bob of 0.055 H); 6 planted keys, flights on keys 3 and 7;
+  the knee's peak 0.311 H; the chest bone 0.613–0.668 H; the right shoulder 0.696–0.762 H; the head
+  bone 0.784–0.840 H. The blade is 24.1–40.5° above level, its tip 0.69–0.995 H off the ground and
+  0.34–0.57 H ahead of the hips bone. The sword hand is at 0.476–0.699 H, from 0.08 H behind to
+  0.26 H ahead of the hips bone, and crosses in 0.070 H, the blade 28.5° across the body. At the
+  front of the pump the hand stands 0.040 H over the chest bone and 0.040 H under the shoulder.
+- *Measured, the 20° lean under his kept carry* (the arms do not read the legs, so the same on (a),
+  (b) and (c)): lean 20.20–20.50°; the chest bone 0.607–0.670 H; the right shoulder 0.680–0.764 H;
+  the head bone 0.768–0.831 H (on (a)'s legs). The blade is **10.4–28.7°** above level, under
+  `RUN_BLADE_ELEV`'s 20 and his 23; its tip 0.59–0.86 H. The front hand is 0.021 H *under* the
+  chest bone. Copies of the tests fail on those two and on the rows this change retires. They pass
+  the tip ahead of the hand and the body, under `RUN_TIP_CEIL`, the blade off the shield (also at
+  the Guardian's 1.15x shield), clear of the free arm, never through or behind the head in the 8
+  facings, the cross-in (0.070 H) and the normal grip.
+- *Measured, the wrist held back* (`RUN_BLADE` x, on (a)'s legs; the blade above level by the
+  test's sampling): 0.5 → 20.6–38.9°; **0.45 → 23.4–41.7°**; 0.44 → 24.0–42.3°; 0.42 → 25.1–43.4°;
+  0.40 → 26.2–44.5°. At 0.45 the tip reaches 0.946 H (under 1.03) and stays 0.33–0.58 H ahead of the
+  hips. The blade lies 26.6° across the body at the front. Every carry test above passes but the
+  front hand's height. 0.45 is the largest x that keeps his whole band (23–42°). It takes the blade
+  back about 13°, against the trunk's further 10°, because the lean widens the pump's range.
+- **The Berserker under the lean.** axe.test.mjs (the edges forward and never turned up past 30° in
+  the run, the off-hand twins) passes with `BERSERKER_STYLE.run` re-keyed as (a). His axes'
+  guards are the leg and cloak guards above (warriorLooks.test.mjs), which read 0 in the run.
+- **His garments.** `knight()` (cast.js:96-130): the cloak to the calf (`cloakBones` length 0.64,
+  drag 0.34), the hauberk to the knee and open at the front (`legFollow` 0.75, `panels`,
+  `panelWeight` 0.3), the skirt springs at `stiffness` 55. The Guardian's surcoat lies over the
+  hauberk (warriorLooks.js `surcoat`). The Berserker's cloak is torn to 0.52 (`TORN`, :75). Today
+  every guard reads 0 on every clip of the three looks except the cloak in the walk: 0.21 px (base,
+  Guardian) and 0.56 px (Berserker) on key 5, under the 0.667 limit. That is unchanged by (a). His
+  cloak history: hanging still in the attack, his calf and boot came through by 7.6 px
+  (`KNIGHT_ATTACK_CLOTH`, classStyles.js:111-116). Dragged back at half a walk on the backward
+  step, his heels came through by 18.8 px (`BACKPEDAL_ATTACK_SPEED`, clips.js:53-61).
+- **His frame boxes** (`public/art/manifest.json`, 1.5x, trimmed). *Measured* by the replay, which
+  reproduces each:
+
+  | Sheet | Box (anchor) | Set by | Today's run alone | (a)'s run alone |
+  |---|---|---|---|---|
+  | `char_knight_base` | 276 × 228 (114, 168) | `attack` key 3 (`sw`, `ne`, `se`), key 2 (`s`) | 234 × 207 | 234 × 201 |
+  | `char_knight_guardian` | 276 × 228 (114, 168) | the same | 234 × 207 | 234 × 201 |
+  | `char_knight_berserker` | 267 × 240 (108, 183) | `attack` key 3 (`sw`, `se`), key 1 (`w`, `s`) | 192 × 168 | 174 × 168 |
+
+  `walk_attack` and `backpedal_attack` are `boxed` (clips.js:78) and never size the frame (poses.js
+  :46, baker.js:265). So dropping them cannot change a box, and (a)'s run sits inside the attack's.
+  (b)'s run alone is 243 × 201, inside too.
+- **His atlases today:** `knight-0` 3716 × 3056 (45.4 MB RGBA, PNG 7,352,196 B),
+  `knight_guardian-0` 2900 × 3968 (46.0 MB, 7,709,743 B), `knight_berserker-0` 4096 × 3840 (62.9 MB,
+  8,191,437 B) and `knight_berserker-1` 4096 × 1792 (29.4 MB, 4,055,125 B). Frames per facing: idle
+  6, walk 8, attack 7, death 7, run 8, `walk_attack` 14, `backpedal_attack` 14: 64. The Berserker
+  adds `attack_offhand` 7, `walk_attack_offhand` 14 and `backpedal_attack_offhand` 14: 99.
+- **No other sheet carries the clips.** In `public/art/manifest.json` only `char_knight_base`,
+  `char_knight_guardian` and `char_knight_berserker` carry `walk_attack` or `backpedal_attack`,
+  and only the Berserker carries their off-hand twins. No creature, boss or resident does. Once his
+  sheets drop them, nothing in the manifest does.
+- **Clip choice needs no client change for the drop.** `walkAttack` and `backpedalAttack` come from
+  what the sheet carries (character.ts:250-253). Without them `attack` (or `attack_offhand`) plays,
+  moving or not (animationSelect.ts:157). The warrior's charge already plays `attack`
+  (character.ts:198, `walkAttack && !charging`).
+- **The dead code once no sheet carries them** (K4):
+  - Client: `animationSelect.ts` `CharacterAnimation`'s `"walk_attack"` and `"backpedal_attack"`
+    (:28-36), `SwingClip` (:39), `OffhandSwing` (:41), `BACKPEDAL_PACE` (:57-63), whose comment
+    says clips.test.mjs imports it, though nothing does. Also `CharacterState.walkAttack`
+    (:96-101) and `.backpedalAttack` (:104-108), the moving-swing branch (:157-160), and the
+    `movesAwayFrom` import (:11; facing.ts:44-52, read nowhere else). In `character.ts`:
+    `SheetClips.walkAttack` and `.backpedalAttack` (:62-68), `Swing.charge` and the `charging`
+    field (:71-73, :90, :134, :173, :198), whose only effect is to gate `walkAttack`. The
+    constructor's and the animator's flags (:108-116, :250-255), `SWINGS`' four retired entries
+    (:408-415), and the mid-swing swap between swing clips in `show` (:365-370, `swingClips`
+    :376-378). Once `attack` and `attack_offhand` are the only swing clips, a new swing always
+    replays from key 0 (`swingPending`), so that branch is never reached. The one caller of
+    `charge` is `playerCombat.ts:242`. `manifest.ts`: `checkWalkAttack` (:363-364, :396-411).
+  - Bake tool: clips.js `WALK_ATTACK_CYCLES` (:32), `RUN_WALK_ATTACK_CYCLES` (:41),
+    `BACKPEDAL_ATTACK_CYCLES` (:50), `BACKPEDAL_ATTACK_SPEED` (:61), `withWalkAttack` (:76-84),
+    `CLASS_ANIMATIONS` (:99, read only by clips.test.mjs), `RUNNING_CLASS_ANIMATIONS` (:106),
+    `MERC_ANIMATIONS`'s `withWalkAttack` (:113-116; `MERCENARY_SHEET` reads only its `parry`),
+    `OFFHAND_OF`'s two retired entries (:119), `backpedalCycle` (:419-422), `attackOverLegs`
+    (:770-783), `walkAttackClip` (:788-790), `backpedalAttackClip` (:797-799), `offhandPoses`'
+    two retired entries (:818-820) and `clipsFor`'s (:883-884). `layerPoses`, `LOWER_BODY`,
+    `offhandPose`, `handless` and `RUN_ANIMATIONS` stay: `attack_offhand` and `SPRINT_RUN` read
+    them. Also poses.js' `walk_attack`/`backpedal_attack` cloth and calm branches (:20-31) and
+    `sizing: !spec.boxed` (:45-46); baker.js' `sizing` option and its `fit` check (:254-298);
+    main.js' `sizing` argument (:135); and the header notes of pace.js (:1-4) and contact.mjs
+    (:1-20).
+  - Tests that test only them: clips.test.mjs "attacking on the move" (:71-167) and "the run and the
+    backpedal" (:413-583, its walk_attack/backpedal rows); classMotion.test.mjs' knight's slash
+    under the attacks on the move (:937-959) and the shield's `walk_attack`/`backpedal_attack` keys
+    (:1006-1020); `CARRIED`'s two entries (:688); clearance.test.mjs `MOVING.knight` (:405),
+    `CLOAKED.knight` (:535) and the cloak controls built on `backpedal_attack` (:551-566);
+    axe.test.mjs' twins (:67-70, :131-151); warriorLooks.test.mjs (:41-46);
+    `animationSelect.test.ts` (`WALK_ATTACKERS` :504 and the moving-swing cases); `manifest.test.ts`
+    (`OWN_CLIPS.char_knight_base` :1280, `BACKPEDALLING` :1380-1392, the `walk_attack` duration
+    check :279-302); and `character.test.ts`'s walk-attack, backpedal and mid-swing swap cases.
+- *Estimate:* the cloak guard's must-fail controls (clearance.test.mjs:551-566) are built on
+  `backpedal_attack` with its old cloth. Once that clip goes, the guard needs a fixture of its own
+  to stay seen red. `KNIGHT_ATTACK_CLOTH`'s note gives one: the knight's attack with the cloak
+  hanging still (speed 0) read 7.6 px. Not re-measured at this tip.
+
+### Requirements
+
+#### His run: the sprint's lean and cadence (K1; E1)
+
+137. **The others' keys held first (K1).** Before anything moves, tests hold by digest, as they are
+     at `23717cbb`: the knight's idle, walk, attack and death keys (`clipsFor(KNIGHT_STYLE,
+     KNIGHT_SHEET.animations)`), the Berserker's idle, walk, attack, death and `attack_offhand` keys
+     (`clipsFor(BERSERKER_STYLE, BERSERKER_SHEET.animations)`), and `KNIGHT_ATTACK_CLOTH`. They sit
+     beside the archer's, the mercenary's and the wizard's digests (classMotion.test.mjs:1273-1281,
+     :1320-1329, :1356-1379) and the shared run's (:1316), which hold unchanged. The knight's sheet-and-clips digest
+     (:1317) goes, replaced by these. They stay green through every slice of this change.
+138. **The sprint read, not changed (K1).** `SPRINT_LEAN`, `SPRINT_STEP`, `SPRINT_RUN`, `RUN_STEP`,
+     `RUN_LEAN`, `RUN_ARM`, `RUN_ELBOW`, `RUN_COUNTER`, `RUN_ANIMATIONS` and `WIZARD_SPRINT_STRIDE`
+     keep their values. His run (`KNIGHT_STYLE.run`) and the Berserker's (`BERSERKER_STYLE.run`)
+     read `SPRINT_LEAN`, and his sheet's run is `SPRINT_RUN`, by reference. The Guardian takes them
+     through `KNIGHT_STYLE` and the Berserker's sheet through `withOffhand(KNIGHT_SHEET.animations)`.
+139. **His legs (E1, default (a)).** Both styles run the shared fast run's legs (`RUN_STEP`, no
+     `run.legs`) at a stride of 0.84 (`run.stride`), a named constant beside the wizard's (e.g.
+     `KNIGHT_SPRINT_STRIDE`), with the knee and the flight at 1. If the coordinator picks (b) or (c)
+     before I-JS7C8-33 starts, R139–R143 are restated first through write-a-spec.
+140. **His run, measured as the sprinters' are** (classMotion.test.mjs `LEANED_RUNNERS`, :1119-1227,
+     on `rigOf(KNIGHT_BUILD)`, under each style): the lean 19–21° on average and 18–22° on every
+     sample (*measured* 20.20–20.50); the head's pitch within 3° of rest, its yaw range under 0.08
+     rad and its roll under 0.06; a flight frame with both soles over 0.02 H in each step; a foot
+     planted in at least 4 of the 8 keys (*measured* 6); a lift of at least 0.045 H; a bob of at
+     least 0.056 H and under 0.07 H (*measured* 0.064); the pelvis rising and falling once a step,
+     highest at or next to each flight key; the shoulders against the hips (correlation below −0.8,
+     peaking at 6.5–10°). His knee is held to the shared run's (at least 0.30 H, *measured* 0.310),
+     not to the sprint's 0.32 (E1). *Measured:* a copy of the describe passes on both styles.
+141. **His pace (K1; E1).** Measured by `measurePace` at 16 fps on his rig, his run lies within
+     1 px/s of `RUN_PACE` (194) (*measured* 193.61). `RUN_PACE`, `animationSelect.ts` and the
+     server's 200 px/s do not change.
+142. **The garments pass, no exemption (K1).** On all three looks, on every clip their sheets carry:
+     the leg guard (`legClearance`, run at bake by `main.js` and by warriorLooks.test.mjs and
+     clearance.test.mjs) reads at most the 1.5x limit; the cloak guard (`cloakClearance`) reads at
+     most the same; and the camera sees no hip, thigh or knee through the cloth (`seenThroughCloth`).
+     Nothing is added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`. The hauberk, the surcoat, the
+     cloaks and their springs (`skirtBones` stiffness 55, `cloakBones` drag 0.34) are unchanged.
+     *Measured* under (a): 0 px, 0 px and nothing seen on every run key of the three looks. The
+     walk's cloak reads 0.21 px (base, Guardian) and 0.56 px (Berserker) as today. A look change a
+     guard would ask for is escalated (E1).
+143. **Retired for the knight:** R2's "the legs are slice 5's ... the 14 fps cadence unchanged, key
+     for key", the 10° lean, and the shared fast run's tests that name him: the sheet test
+     (classMotion.test.mjs:307-317), the fast-run describe (:524-578: the 10° lean, "the shared legs
+     key for key", the 14 fps pace and "its attacks on the move walk the legs at most 90") and his
+     "unchanged" digest (:1317). No class runs the shared fast run after this. `RUN_STEP` and
+     `RUN_LEAN` stay as constants (the wizard and the knight read `RUN_STEP`; `SPRINT_LEAN` is held
+     to twice `RUN_LEAN`). The shared run's plain-style digest (:1316) holds them.
+
+#### His carry under the lean (K2)
+
+144. **The carry is kept, but for the wrist (said, K2).** `KNIGHT_STYLE.run`'s `arms`, `elbow`,
+     `wrist` (`RUN_WRIST`), `cross` (`RUN_CROSS`), and its `hold`'s shield arm and `upperArmR` are
+     unchanged. So are his idle and walk `hold`. The blade's wrist key `RUN_BLADE` goes from [0.68,
+     0, 0] to **[0.45, 0, 0]**, the least that puts the blade back inside his band under the lean
+     (*Facts checked in code*). `RUN_BLADE` is the knight's alone. `RUN_BLADE_ELEV`, `RUN_TIP_CEIL`
+     and `RUN_CROSS_REACH` keep their values. The classStyles.js header (:23-36) says why.
+145. **The carry's tests hold on the new run** (the `RUN_CARRIERS` describe, :319-522, his row): the
+     sword-arm elbow bent 80–100° on every key; the hand back past the hip by at least 0.06 H; the
+     hand crossing in at the front by `RUN_CROSS_REACH` (*measured* 0.070 H), inside the chest's half
+     width, the blade 5–30° across the body (*measured* 26.6°); the blade clear of the free arm by
+     more than 0.06 × `armR` H; the blade off the shield's face (and off the Guardian's 1.15x shield,
+     *measured*); the blade never through the head nor behind it in the 8 facings; the tip ahead of
+     the hand and of the body; and the normal grip in the run (:670).
+146. **The blade's band, kept (K2).** On every sample the blade stands inside `RUN_BLADE_ELEV`
+     (20–50°) and his own 23–42° above level (*measured* 23.4–41.7°; today 24.1–40.5°; the kept
+     wrist under the lean 10.4–28.7°), its tip under `RUN_TIP_CEIL` (*measured* 0.946 H). Judged at
+     the contact sheet (R153).
+147. **The front hand's height, recorded (K2).** The 20° lean lowers his chest, so at the front of
+     the pump the sword hand stands 0.01–0.035 H under the chest bone (*measured* 0.021 H under).
+     This replaces "between the chest bone and the shoulder" for him (today 0.040 H over the chest
+     bone), as the wizard's tome hand (R123 (iii)) and the mercenary's free hand (R101) were: recorded,
+     not tuned away. Judged at the contact sheet.
+148. **The Berserker's carry, kept (K2).** `BERSERKER_STYLE.run`'s `arms`, `elbow`, `wrist` and
+     `hold` are unchanged. Under the lean each edge still faces forward and never turns up past 30°
+     in the run (axe.test.mjs, *measured* passing). The off-hand twin's keys still mirror the right
+     hand's over the same legs.
+
+#### The attack-on-the-move clips leave his sheets (K3)
+
+149. **His clip set (K3).** `char_knight_base` and `char_knight_guardian` carry `idle`, `walk`,
+     `attack`, `death` and `run`, in that order. `char_knight_berserker` carries those and
+     `attack_offhand`. **None carries `walk_attack`, `backpedal_attack`, `walk_attack_offhand` or
+     `backpedal_attack_offhand`.** `KNIGHT_SHEET` is built without `withWalkAttack` and without
+     `RUNNING_CLASS_ANIMATIONS`: `{ animations: { ...ANIMATIONS, attack: { ...ANIMATIONS.attack,
+     speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN }, scale: 1.5 }`. `BERSERKER_SHEET` stays
+     `withOffhand(KNIGHT_SHEET.animations)`. A test control that needs his old clips builds them
+     explicitly, as the archer's cloak control does (clearance.test.mjs:537-560), until R155
+     retires them. His idle, walk, attack and death keys match their `23717cbb` digests (R137).
+150. **Clip choice unchanged (K3).** `animationSelect.ts` and `character.ts` are not changed by the
+     drop. On his sheets `carries` finds no `walk_attack` or `backpedal_attack`, so an attacking
+     knight plays `attack` (the Berserker `attack` or `attack_offhand` by hand, R29) turned to his
+     aim, moving or not. The charge plays `attack` as today. Not attacking, he runs turned to his
+     movement (R4). A pinned knight stands (R49). In the latency gap at the pin's edges the
+     standing attack may slide a tick or two: accepted, as for the others.
+151. **The frame box (K5).** Each knight sheet's frame box and anchor is no larger than today's in
+     either dimension: 276 × 228 at (114, 168) for the base and the Guardian, and 267 × 240 at (108,
+     183) for the Berserker. *Measured* unchanged under (a): the attack sets every edge, and the new
+     run alone is 234 × 201 and 174 × 168. A box that would grow stops the bake before it commits
+     and is reported, never routed around.
+
+#### Bake, review and budget (K6)
+
+152. **One bake.** The three knight sheets are re-baked once with R137–R151 by the bake tool (`npm
+     run bake`), never drawn or edited by hand. `npm run bake -- --check` is clean afterwards. Only
+     `knight-0.png`, `knight_guardian-0.png`, the Berserker's page or pages and their manifest
+     entries change. **The archer's, the mercenary's and the wizard's manifest entries and atlases
+     are byte-identical**: their sheets' `animations`, frame boxes, anchors, crowns, and the
+     atlases' `sha256`. So is every creature's, boss's and resident's.
+153. **The contact sheet (K6).** For each of the three sheets: the new run beside `23717cbb`'s, 8
+     facings, at game scale and at ×2, with an animated preview playing the run at its fps × `200 /
+     RUN_PACE`. Also a ×4 detail of the blade at the front and the back of the pump in `e`, `ne` and
+     `n`, and of the hauberk's back over the calf on the run's keys 1 and 5. The regular contact
+     sheet, the looks' sheet and the dark-room strip show his clips without the attacks on the move.
+     The owner approves (ADR-0021 §5). Nothing waits on it. Tune rounds after it stay inside this
+     change.
+154. **The report.** From the bake, for each sheet: the atlas pages and dimensions before and after,
+     RGBA and PNG bytes before and after, the change in per cent, and the frame box before and after.
+     Before (`23717cbb`): `knight-0` 3716 × 3056 (45.4 MB, PNG 7,352,196 B), `knight_guardian-0` 2900
+     × 3968 (46.0 MB, 7,709,743 B), `knight_berserker-0` 4096 × 3840 (62.9 MB, 8,191,437 B) and `-1`
+     4096 × 1792 (29.4 MB, 4,055,125 B). *Estimate:* 64 → 36 frames a facing on the base and the
+     Guardian (−44%), about 25–26 MB RGBA each; 99 → 43 on the Berserker (−57%), about 40 MB,
+     perhaps on one page. The attacks on the move are wide frames, so the real fall may be larger.
+
+#### The attack-on-the-move code retired (K4)
+
+155. **After the bake, the dead code goes, behaviour unchanged (K4).** Once `public/art/manifest.json`
+     has no sheet carrying `walk_attack`, `backpedal_attack`, `walk_attack_offhand` or
+     `backpedal_attack_offhand` (R149), the code listed in *Facts checked in code* ("The dead code
+     once no sheet carries them") is removed:
+     - client: the two clip names and the swing types in `animationSelect.ts` (`SwingClip` goes;
+       the off-hand clip is `attack_offhand` alone), `CharacterState.walkAttack` and
+       `.backpedalAttack`, the moving-swing branch, `BACKPEDAL_PACE`, and `movesAwayFrom`
+       (facing.ts) with its tests if nothing else reads it. In `character.ts`: the two
+       `SheetClips` flags, `Swing.charge` and `charging`, the retired `SWINGS` entries, and the
+       mid-swing swap branch (and `swingClips`) if no remaining pair of clips reaches it.
+       `playerCombat.ts:242` then passes `{ holdMs: CHARGE_MS }` alone. `manifest.ts`'s
+       `checkWalkAttack` goes;
+     - bake tool: `withWalkAttack`, `CLASS_ANIMATIONS`, `RUNNING_CLASS_ANIMATIONS` (once nothing
+       reads it), the cycle and cloth constants, `backpedalCycle`, `attackOverLegs`,
+       `walkAttackClip`, `backpedalAttackClip`, the retired `OFFHAND_OF`, `offhandPoses` and
+       `clipsFor` entries, the poses.js branches and `boxed`/`sizing` (with baker.js' `sizing`
+       option and `fit` check and main.js' argument, once no clip is boxed). `MERC_ANIMATIONS`
+       keeps its parry spec without `withWalkAttack`. Comments and header notes that describe the
+       retired clips are reworded or dropped;
+     - tests that tested only the retired code go. A guard's rejection fixture built on a retired
+       clip is rebuilt on a kept clip, so the guard is still seen red (the cloak guard's: *estimate*,
+       the knight's attack with the cloak hanging still, *Facts checked in code*). Tests whose
+       subject stays (`attack_offhand`, the run, `layerPoses`, the charge's `holdMs`) are kept and
+       reworded;
+     - absence-shaped tests: no manifest sheet carries the four retired clip names
+       (`animationSelect.test.ts`, `manifest.test.ts`); `selectAnimation` with an attack while moving
+       returns `attack` (or `attack_offhand`) turned to the aim; the charge holds its pose for
+       `holdMs`.
+     Every manifest entry and atlas is byte-identical before and after this slice (`npm run bake --
+     --check` clean). `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` pass
+     in `game-client`.
+156. **The thin lines (via `spec-update`, not written here).** In `game-client/SPECIFICATION.md`
+     "### Presentation", at lock: "Walk-and-attack animation → FS-HF0WW" is struck and repointed at
+     this change (`- [ ] ~Walk-and-attack animation~ → removed FS-JS7C8`), and deleted, not checked,
+     when R155 ships (docs/specs/README.md *Removal: strike, then delete*). "Run and backpedal
+     animations → FS-JS7C8" is reworded with its pointer unchanged (e.g. "Class run animation"),
+     because the backpedal it names is gone while the run stays. FS-HF0WW's and FS-3V7GC's headers
+     still name the struck line. They are not edited (append-only): their pointer stubs lead here.
+157. **Docs.** `game-client/docs/design-guideline.md`'s character clip list says that the knight
+     runs with the sprint's lean and cadence on his own legs (the shared fast run's stride shortened
+     16%, the knee no higher than the shared run's), his blade carried raised as before, the wrist
+     held back under the lean. It says that no class carries an attack on the move: every class
+     plays its standing attack turned to its aim, moving or not. The dual-wielder line names
+     `attack_offhand` alone. The `tools/bake/lib/contact.mjs` header notes say the same. The
+     paragraph's "The knight keeps both until his own run is redone" goes.
+
+### Acceptance Criteria
+
+Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `clearance.test.mjs`,
+`warriorLooks.test.mjs`, `axe.test.mjs`, `castLooks.test.mjs`, on his rig and styles as cast.js
+builds him):
+
+- [ ] The archer's, the mercenary's and the wizard's run keys and sheets, the mercenary's and the
+      wizard's other clips, the shared run, and the knight's and the Berserker's idle, walk, attack,
+      death (and `attack_offhand`) keys match their `23717cbb` digests (R137, R138).
+- [ ] His sheet options carry exactly `idle`, `walk`, `attack`, `death`, `run`; the Berserker's add
+      `attack_offhand` alone; `run` is `SPRINT_RUN` by reference (8 frames, looping, 16 fps, `speed`
+      2.5); both styles read `SPRINT_LEAN` by reference and `RUN_STEP`'s legs at the named stride
+      0.84; the Guardian's row carries the same (R138, R139, R149).
+- [ ] His run under both styles: the lean 19–21° on average and 18–22° on every sample; the head
+      steady; a flight frame each step; 4 planted keys; a lift of at least 0.045 H; a bob of
+      0.056–0.07 H; the pelvis once a step; the shoulders counter-turning at 6.5–10°; the knee at
+      least 0.30 H (R140).
+- [ ] His pace at 16 fps within 1 px/s of `RUN_PACE`, which is still 194; the value recorded (R141).
+- [ ] The leg guard, the cloak guard and the seen-through-the-cloth check pass the three looks on
+      every clip they carry, with nothing added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`, the
+      garments and their springs unchanged (R142).
+- [ ] Only `RUN_BLADE` changes in his carry (x 0.68 → 0.45). The elbow, the hand back past the hip,
+      the cross-in, the blade across the body, clear of the free arm, off the shield (both
+      shields), never through or behind the head, the tip ahead and the normal grip pass on his run
+      (R144, R145).
+- [ ] The blade 23–42° above level on every sample (inside `RUN_BLADE_ELEV`), the tip under
+      `RUN_TIP_CEIL`. Seen red against the kept wrist under the lean (10.4–28.7°) (R146).
+- [ ] The front hand's height against the chest bone recorded in its band, 0.01–0.035 H under
+      (R147).
+- [ ] The Berserker's edges face forward and never turn up past 30° in the run (R148).
+- [ ] The shared fast run's knight rows are gone, and no class reads `RUNNING_CLASS_ANIMATIONS` for
+      its sheet (R143, R149).
+
+Manifest and client (`npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` in
+`game-client`):
+
+- [ ] In `public/art/manifest.json` the three knight sheets carry `idle`, `walk`, `attack`,
+      `death`, `run` (8 frames at 16 fps, looping, 8 facings), the Berserker's `attack_offhand`
+      too, at 1.5x and trimmed, and no `walk_attack`, `backpedal_attack`, `walk_attack_offhand`,
+      `backpedal_attack_offhand` or `backpedal` (R149).
+- [ ] The archer's, the mercenary's, the wizard's and every non-class manifest entry and atlas are
+      byte-identical to `23717cbb`'s (R152).
+- [ ] Each knight frame box and anchor equals today's or is smaller (R151). The report gives each
+      atlas's dimensions, RGBA and PNG bytes before and after, and the change in per cent (R154).
+- [ ] `npm run bake -- --check` is clean after the bake and again after the retirement.
+- [ ] After the retirement: none of the retired code names (R155) is left in `src/` or
+      `tools/bake/`; `selectAnimation` plays `attack` (or `attack_offhand`) for a moving attacker,
+      turned to the aim; the charge keeps its `holdMs`; every manifest entry and atlas is unchanged
+      by the retirement; each guard that lost its fixture has a new one that fails (R155).
+- [ ] The two thin lines are struck and reworded through `spec-update`, and the struck line is
+      deleted when the retirement ships (R156).
+- [ ] No file under `game-server/`, `game-client/src/api/generated` or any migration changes.
+
+HITL:
+
+- [ ] **The owner approves** the three knight sheets' new run beside `23717cbb`'s on the contact
+      sheet (ADR-0021 §5), or names a tune round (R153). Nothing else waits on it (K6).
+- [ ] **Browser check:** in a run and in the town, the knight, the Guardian and the Berserker run
+      at 200 px/s with the sprint's lean and cadence, the feet not visibly sliding, no leg through
+      the hauberk, the surcoat or the cloak, the blade carried raised. An attack while moving plays
+      the standing attack turned to the target (he stands in the pin); the warrior's charge holds
+      its pose as before; the Berserker alternates hands. No class ever shows `walk_attack` or
+      `backpedal_attack`, and a second player sees the same.
+
+### Edge States
+
+- **Attacking on the move.** The pin stands him (R49), so the attack shows standing, turned to the
+  aim. In the latency gap at the pin's edges the standing attack may slide a tick or two (K3,
+  accepted).
+- **The charge.** The warrior's dash moves him while his attack plays, as today: it always played
+  `attack` with its pose held (`holdMs`), never `walk_attack`. Retiring `charge` (R155) changes
+  nothing drawn.
+- **The Berserker's hands.** Each swing takes the other hand (FS-1J1CB R29). With only `attack`
+  and `attack_offhand` left there is nothing to swap mid-swing, so a swing always starts from
+  key 0.
+- **Running into an attack.** The attack starts from its own key 0, so an attack started mid-run
+  jumps from the run's carry to the wind-up, as today.
+- **Setting off and stopping.** His carry is the same in the run but for the wrist, so setting off
+  and stopping look as they do now, under a trunk that leans 10° further, the blade a little
+  higher in the hand.
+- **The hauberk at the back.** Under (a) the calf never folds up past the shared run's 1.45 rad,
+  so the hauberk's back hangs as today (R142). The ×4 detail shows it (R153).
+- **Gear move speed.** At +20% (240 px/s) his run plays at about 1.24x (about 19.8 fps), capped by
+  `MAX_WALK_SCALE` as today.
+- **Mixed parties.** After this every class sprints at 16 fps and none attacks on the move.
+- **Other players.** Others draw him from the same sheet, so they see the run and the standing
+  attack.
+- **A sheet from an older bake.** A manifest carrying `walk_attack` no longer plays it once R155
+  lands, and nothing checks its length. The baked manifest is committed with the client, so no
+  such sheet ships.
+- **The dark-room strip.** `contact-darkroom-knight` is regenerated with the new run, if the bake
+  writes one for him, as the others' were.
+
+### Out of Scope
+
+- The knight's idle, walk, attack and death keys, his attack's cloth, and any look change to the
+  hauberk, the surcoat, the cloaks, the shield or the axes (K1, E1), unless the coordinator picks
+  one.
+- The sprint's own legs for him (E1 (b)), unless picked; any change to `SPRINT_STEP`,
+  `SPRINT_LEAN`, `SPRINT_RUN` or `RUN_STEP` (R138). Changing them is escalated, not done.
+- Any change to the archer's, the mercenary's or the wizard's keys, carries or sheets (R137, R152).
+- A new attack, a walk-attack of any other shape, a transition clip, or a finer facing.
+- `RUN_PACE`, the server's move speed (200 px/s), the pin, the charge's server behaviour, and any
+  game-server change (the human lane).
