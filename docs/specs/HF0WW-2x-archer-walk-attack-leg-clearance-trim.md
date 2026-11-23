@@ -635,3 +635,5 @@ Date: 2026-11-12
   frames.
 
 ## Change: The archer's sprint and low-ready bow → FS-JS7C8
+
+## Change: The mercenary's sprint and trailing sword → FS-JS7C8

@@ -1511,3 +1511,470 @@ HITL:
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
 - Rewording the open browser check I-JS7C8-9, which still names every class's `walk_attack`.
+
+## Change: The mercenary's sprint and trailing sword
+Status: work-order
+Date: 2026-11-23
+
+Promoted `--from-thread` on 2026-11-23 from the owner-approved charter "傭兵衝刺跑". The thread is
+the charter's locked decisions, so no interview was held; every decision below is a **charter
+default approved by the owner**, given with its reason. It lands here for the reason the archer's
+did (`## Change: The archer's sprint and low-ready bow`): it changes the run (§A) and the
+attack-on-the-move clips (§B, R5) this FS owns through `game-client/SPECIFICATION.md` "Run and
+backpedal animations", and takes `walk_attack` off sheets FS-HF0WW's "Walk-and-attack animation"
+built, so FS-HF0WW carries a pointer stub to this section. No new thin line, no new FS. Code
+citations are against `2018f786` (`feat/run-archer-sprint`, the archer's sprint approved,
+I-JS7C8-19). Measures marked *measured* were read on his own rig and style (`cast.js`
+`mercenary`, each look's row in `CAST`, posed and grounded as the bake poses him, 32 samples
+over the cycle) by a throwaway script that is not committed.
+
+**Why (owner).**
+
+> 「換傭兵的動作 一樣拿掉攻擊時移動的部分 移動時也要像弓箭手跑的感覺 右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作」
+> 「不用抬高 可以往下垂 但不要拖地」
+
+Redo the mercenary next. As with the archer, the attack-on-the-move clips go. His run should feel
+like hers. With the sword in his right hand, he swings it back behind his body, the cooler move
+common RPGs use. Of the sword: it need not be raised; it can hang down, but it must not drag on
+the ground.
+
+**What it changes, for the mercenary's three sheets only** (`char_mercenary_base`,
+`char_mercenary_duelist`, `char_mercenary_sellsword`):
+
+- R2: his lean (about 10° → about 20°), his sword arm (the pump with the blade raised forward,
+  22–39° above level, crossing in at the front → the trailing sword), and "the legs are slice 5's
+  ... the 14 fps cadence unchanged, key for key". His free arm keeps R2's pump.
+- R3: his cadence and stride become the shared sprint's (16 fps, the archer's legs).
+- R5: "`walk_attack` stays on every class sheet" no longer holds for him; `walk` and `parry` do.
+- R8–R11, R13, R21: `backpedal_attack` and `walk_attack` leave his sheets, so their leg rules no
+  longer apply to him.
+- R37, R41, R48: his contact sheet and the guideline lose those two clips.
+- The archer's change: R66 ("the mercenary's run and clip set are unchanged key for key") and
+  its acceptance line "the mercenary's sheet options are deep-equal to main's" no longer hold;
+  her sprint's legs, lean and fps become a sprint the two classes share, her keys unchanged.
+- `## Change: Attacking pins the attacker`, Out of Scope: "Retiring the attack-on-the-move clips"
+  is done for his sheets too. The knight and the wizard stay out of scope.
+
+The knight and the wizard (and their looks) are untouched: their runs key for key, their
+`walk_attack` and `backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps. The archer's three sheets are
+untouched byte for byte.
+
+### Decisions (charter defaults, owner-approved 2026-11-23)
+
+- **M1. One sprint, shared.** The archer's sprint legs and rhythm (about 20° lean, 16 fps, a
+  stride about 12.4% shorter, knee drive, heel kick, the flight and the bob never reduced) become
+  a sprint the archer and the mercenary share. Her run keys stay byte-identical, held by digest
+  tests. His pace must stay within the shared `RUN_PACE` tolerance. *Reason:* the owner,
+  「移動時也要像弓箭手跑的感覺」. *See Escalated below:* on his rig the shared keys at 16 fps do not
+  fall within the archer's 1 px/s.
+- **M2. (owner override) The sword trails behind.** The right arm nearly straight, swung back about
+  30–45° behind the body, the hand at about hip height. The curved blade lies behind him with its
+  point hanging DOWN (not raised, not level or up) and its edge down. The point never touches the
+  ground or passes below it: a clear margin above the ground in every frame. *Reason:* the owner,
+  「右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作」, then 「不用抬高 可以往下垂 但不要拖地」. This is the
+  trailing-sword run common in action RPGs.
+- **M3. The trailing arm sways a little with the stride** (about ±10°). It is not frozen.
+- **M4. The free left arm pumps as today's run does.**
+- **M5. `walk_attack` and `backpedal_attack` leave the three sheets; `parry` stays.** Attacking on
+  the move plays the standing `cut` (the client's fallback, no code change). The slide in the
+  latency gap is accepted.
+- **M6. Blade, hilt and arm clear of everything they pass,** on all three looks: the legs, the
+  boots, the skirts (the coat's, the Duelist's robe panels), the Duelist's half-cloak and the
+  body. Committed tests guard it, sampling along mesh edges, each with a rejection fixture.
+- **M7. The frame box does not grow** against today's mercenary sheets. If it would, stop and
+  escalate.
+- **M8. The owner approves the contact sheet** (ADR-0021 §5). Tune rounds after it stay inside the
+  charter.
+- **M9. Built on branch `feat/run-merc-sprint`, from `feat/run-archer-sprint` `2018f786`.**
+
+**Escalate (report back, don't route around):** the guards force a look change; the pace leaves
+the `RUN_PACE` tolerance; the frame box would grow; a default that cannot be honoured.
+
+**Escalated 2026-11-23 (R95, not routed around).** M1's "the archer's sprint legs and rhythm,
+shared" and "his pace within the shared `RUN_PACE` tolerance" do not both hold if that tolerance is
+the 1 px/s the archer's run is held to (R68, classMotion.test.mjs:904-907). *Measured:* the
+shared keys (`ARCHER_SPRINT_STEP`, `ARCHER_SPRINT_LEAN`) on his rig read **196.58 world px/s at 16
+fps**, 2.58 over `RUN_PACE` 194 (+1.3%). Her rig reads 194.09. His legs are a little longer
+(build 1.98 against her 1.96). Today his own run already reads 195.46 at 14 fps, 1.46 over, held
+only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
+
+- **(a) Default, kept until the owner chooses:** the shared keys and 16 fps unchanged; his pace is
+  held to the class band 180–220 the code holds every class's own run to today, and within 3 px/s
+  of `RUN_PACE`. At 200 px/s the client plays his run at 200/194 ≈ 1.031x, so his planted feet
+  slide about 2.7 px/s (about 1.3%), against about 1.5 px/s today. Judged at the contact sheet and
+  the browser check.
+- (b) His run alone at about 15.79 fps (16 × 194 / 196.58), the legs still shared. The manifest
+  takes a fractional fps (manifest.ts:389-390, 454). He then steps about 1.3% slower than the
+  archer.
+- (c) His own stride scale (`run.stride` ≈ 0.987). That scales every thigh key, so his keys are no
+  longer hers and his knee drive drops a little; M1's "shared" holds only in name.
+
+### Facts checked in code (`2018f786`)
+
+- **His sheets share one clip set.** `CLASS_ROWS.mercenary` (cast.js:598) is `{ build: mercenary,
+  sheet: MERCENARY_SHEET }`, and `specRow` (cast.js:622) spreads it into the Duelist's and the
+  Sellsword's rows (cast.js:660-661). `MERCENARY_SHEET` (classStyles.js:318) is `{ animations:
+  RUNNING_MERC_ANIMATIONS, scale: 1.5 }`. `RUNNING_MERC_ANIMATIONS` = `withWalkAttack({
+  ...ANIMATIONS, parry, ...RUN_ANIMATIONS })` (clips.js:119). No other sheet uses it.
+  `MERC_ANIMATIONS` (clips.js:113, no run) is used only by tests (clips.test.mjs:48-90,
+  classMotion.test.mjs:50).
+- **The archer's sprint lives in her style today.** `ARCHER_SPRINT_LEAN` 0.48 (classStyles.js:165),
+  `ARCHER_SPRINT_STEP` (classStyles.js:182-190: her own `thighR`…`footL` and `lift` rows; `hipsZ`
+  and `chestZ` from `RUN_STEP`), and her run spec `{ ...RUN_ANIMATIONS.run, fps: 16 }` inside
+  `ARCHER_SHEET` (classStyles.js:233). `ARCHER_STYLE.run` (classStyles.js:248) passes them as
+  `lean` and `legs`. `runCycle` reads `style.run.legs` row by row over `RUN_STEP`
+  (clips.js:366-367). So the seam to share the sprint already exists; nothing in `clips.js` needs a
+  new parameter. The tests hold her run's lean, pace, knee, bob and shoulders
+  (classMotion.test.mjs:838-980) and her other clips by digest (:1000-1003), but **not her run
+  keys or her sheet options by digest**: R92 adds that guard before anything moves.
+- **His run today** (`MERCENARY_STYLE.run`, classStyles.js:334): `{ wrist: RUN_WRIST, cross: [0,
+  RUN_CROSS], hold: pose({ upperArmR: [0, 0, -0.1], handR: MERC_RUN_BLADE }) }`. Both arms pump at
+  `RUN_ARM` 0.85 with `RUN_ELBOW` −1.57 (clips.js:312, 318). The wrist takes back 0.85 of the
+  sword arm's pump (`RUN_WRIST`, classStyles.js:54), the arm turns in 0.3 at the front
+  (`RUN_CROSS`, :60), and `MERC_RUN_BLADE` [0.82, 0, 0] (:53) raises the blade. `RUN_BLADE_ELEV`
+  [20, 50] and `RUN_TIP_CEIL` 1.03 (:56, :58) are shared with the knight and stay. The
+  mercenary's test band is `runBlade: [21, 40]` (classMotion.test.mjs:248-256).
+- *Measured, his run today (14 fps):* the hips-to-neck lean 9.96–10.26° (10.11 mean); pace 195.46
+  world px/s; the same keys at 16 fps 223.38; the pelvis 0.485–0.540 H (a bob of 0.055 H); the
+  knee's peak 0.311 H; the chest bone 0.613–0.668 H; the right shoulder 0.696–0.763 H; the
+  sword hand 0.477–0.700 H, the free hand 0.476–0.695 H; the blade 22.5–39.1° above level, its
+  point 0.699–1.023 H high and 0.40–0.62 H ahead of the hips; the lowest point of the sword 0.402
+  H.
+- *Measured, the shared sprint on his rig* (`ARCHER_SPRINT_STEP` and `ARCHER_SPRINT_LEAN` under his
+  arms as they are, 16 fps): lean 20.20–20.50° (20.35 mean); pace **196.58**; bob 0.062 H; knee
+  peak 0.335 H; the pelvis 0.475–0.537 H; the chest bone 0.599–0.661 H; the right shoulder
+  0.672–0.756 H; the free hand 0.457–0.632 H.
+- *Measured, his idle* (the point down and forward, REST_BLADE, classStyles.js:46): the sword hand
+  0.430–0.438 H; the blade 30–35° below level; the point 0.131–0.179 H off the ground.
+- **His arm and sword** (bind, *measured*): the shoulder 0.740 H, the elbow 0.569, the wrist 0.420,
+  the hips bone 0.520; the upper arm 0.172 H, the forearm 0.150 H. `curvedSword` (gear.js:624): the
+  blade 0.46 H (`L`, gear.js:627) from 0.045 H past the grip point, the point 0.055 H off straight
+  toward the back, the pommel 0.046 H behind the grip. *Measured:* the point 0.515 H from the hand
+  bone; the whole sword 0.564 H along its axis (about 0.55 H pommel to point). H is 1.98 model
+  units, so 79.2 world px at 1x (pace.js:17, 40 world px a unit), and the sword is about 44 world
+  px.
+- **The edge.** The edge runs along the grip frame's −y (gear.js:619-621). With the hand turned only
+  in the swing plane (`handR` x, as every carry is keyed today), a blade swung down and back
+  past the vertical has its edge facing **up**. *Measured* on a trial carry (arm back about 0.6
+  rad, blade 26–30° below level): the edge's direction 62° above level. To bring the edge down,
+  the arm turns about its own length. *Measured:* about 2.6 rad of upper-arm and forearm twist
+  between them puts the edge 30–40° below level; about 3.0 rad puts it 26–63° below, less the
+  further the blade hangs. The fist is
+  not rolled on the forearm, so the normal-grip test (classMotion.test.mjs:592-605) still passes.
+  *Estimate:* a human shoulder turns in about 70° and a forearm pronates about 80–90°, so 2.6 rad
+  (about 150°) is near the end of a real arm's range. The forearm's skin tube and the Duelist's
+  wide sleeve twist with it.
+- *Estimate, from trial carries* (not committed; for the bake to settle): the upper arm swung back
+  about 0.55–0.65 rad in the leaning chest's frame puts it about 30–45° behind the trunk line and
+  the hand at 0.47–0.58 H, about the hips bone (0.475–0.537 H); twisted (R98) the hand sits lower,
+  0.47–0.51 H. The blade 25–45° below level then puts the point 0.12–0.35 H off the ground, about
+  0.5–0.67 H behind the hips and 0.05–0.4 H out to his right (less with the arm twisted). Hung straighter (55–60° below level), the point comes to 0.03–0.07 H: close to
+  dragging.
+- **What he wears where the sword goes** (mercLooks.js, cast.js): the base's coat skirts to
+  mid-thigh, split at the front, the sash knotted on the right (cast.js:334) and an empty scabbard
+  on the left (:339); the Duelist's half-cloak from the left shoulder across the back to right of
+  centre, down to the hip, on cloak bones (mercLooks.js:21-24, 49-89), his robe split at both sides
+  to mid-calf (:134) and wide sleeves flared at the forearm (:102); the Sellsword's spaulder on
+  the right shoulder riding the upper arm (:247) and a purse at the right hip (:220, :248). The
+  run's heel kick (`ARCHER_SPRINT_STEP` `shinL` up to 1.8 rad) folds the right heel up behind
+  his seat on the other step, under a trailing blade.
+- **Clip choice needs no client change.** A sheet without `walk_attack` plays `attack` moving or
+  not: `if (!moving || !walkAttack) return swing("attack")` (animationSelect.ts:157). `walkAttack`
+  and `backpedalAttack` come from what the sheet carries (character.ts:251-253, `carries`
+  character.ts:381). The parry is chosen on `guarding` (animationSelect.ts:164), apart from both.
+  `parryClip` raises from the idle's carry into `style.guard` (clips.js:826-841), so the run's
+  carry does not touch it.
+- **The tests that name his attack-on-the-move clips:** `animationSelect.test.ts:470`
+  (`WALK_ATTACKERS` includes `mercenary`); `manifest.test.ts:1281` (`OWN_CLIPS.char_mercenary_base`)
+  and :1284 (`RUNNING`, the `backpedal_attack` test); `clearance.test.mjs:332` (`SHEETS.mercenary`),
+  :399 and :466 (the mercenary through "both attacks on the move"), :538-544 (the cloakless control
+  reads his `backpedal_attack`); `mercLooks.test.mjs:86-95` and :115 (the clip list);
+  `classMotion.test.mjs:267-277` (the CLASSES sheet test), :279-500 (the shared fast run as he
+  carries it, including the raised blade, the head check, the cross-in and "attacks on the move walk
+  the legs at most 90"), :608-628 (the carry on `walk_attack` and `backpedal_attack`), and :996 (his
+  sheet and clips held by digest as "unchanged").
+- **His sheets today** (`public/art/manifest.json`, each one page, 1.5x, trimmed): frame box
+  **297 × 261** on all three, anchor (0.394, 0.770), crown 75. Clips per facing: idle 6, walk 8,
+  attack 7, death 7, parry 4, run 8, `walk_attack` 14, `backpedal_attack` 14: 68 frames. The run's
+  extent in the frame is x 30–270, y 39–246. The box is set by the attack (x 3–291, y 3–258), the
+  death (y to 261) and the attacks on the move (y from 0). Atlases: `mercenary-0` 3428 × 3280
+  (45.0 MB RGBA, PNG 5,992,571 B), `mercenary_duelist-0` 3508 × 3300 (46.3 MB, 6,291,293 B),
+  `mercenary_sellsword-0` 3032 × 3724 (45.2 MB, 5,976,696 B).
+
+### Requirements
+
+#### One sprint, shared (M1)
+
+92. **Her keys held first (M1).** Before anything moves, a test holds the archer's run keys
+    (`clipsFor(ARCHER_STYLE, ARCHER_SHEET.animations).run`) and `ARCHER_SHEET` by digest as they
+    are at `2018f786`, beside the digest her other clips already have (classMotion.test.mjs:1000).
+    It stays green through every slice of this change. The knight's and the wizard's digests
+    (classMotion.test.mjs:996) stay as they are.
+93. **The sprint in one place (M1).** The sprint's legs (`ARCHER_SPRINT_STEP`'s rows), its lean
+    (`ARCHER_SPRINT_LEAN`, 0.48) and its run spec (8 frames, looping, 16 fps, `speed` 2.5) are
+    defined once, named for the sprint rather than the archer, and read by both classes.
+    `ARCHER_STYLE.run` and `ARCHER_SHEET` read them, so her keys and sheet options are unchanged
+    (R92). `RUN_STEP`, `RUN_LEAN`, `RUN_ARM`, `RUN_ELBOW`, `RUN_COUNTER`, `RUN_ANIMATIONS` and
+    `RUNNING_CLASS_ANIMATIONS` keep their values, and the shared run's digest
+    (classMotion.test.mjs:995) holds. No new parameter goes into `runCycle`: `run.legs` and
+    `run.lean` carry it (clips.js:366-367).
+94. **His run is the sprint (M1).** The mercenary's run takes the sprint's legs, lean and 16 fps
+    run spec. Measured on his rig as the archer's are (classMotion.test.mjs:870-980): the lean
+    19–21° on average, 18–22° on every sample (*measured* 20.20–20.50); the head's pitch within 3°
+    of rest, its yaw range under 0.08 rad and its roll under 0.06; the swing knee's peak above
+    0.32 H (*measured* 0.335); the swing shin folded past 1.45 rad; a flight frame with both soles
+    over 0.02 H in each step, a foot planted in at least 4 of the 8 keys, a lift of at least 0.045
+    H; a bob of at least 0.056 H and under 0.07 H (*measured* 0.062); the pelvis rising and falling
+    once a step, highest at or next to each flight key; the shoulders against the hips
+    (correlation below −0.8, peaking at 6.5–10°).
+95. **His pace (M1; escalated).** Measured by `measurePace` at 16 fps on his rig and style, his run
+    lies within 180–220 world px/s (the band every class's own run is held to,
+    classMotion.test.mjs:492-495) and **within 3 px/s of `RUN_PACE` (194)**. *Measured:* 196.58.
+    `RUN_PACE`, `animationSelect.ts` and the server's 200 px/s do not change. **Escalated:** the
+    archer's tighter 1 px/s (R68) cannot hold on his rig with her keys and fps unchanged; option
+    (a) holds until the owner chooses, and (b) or (c) replaces this band if he picks one (see
+    *Escalated 2026-11-23*).
+96. **Retired for the mercenary:** R2's "the legs are slice 5's ... the 14 fps cadence unchanged, key
+    for key", the 10° lean, and his rows of the shared fast-run tests (classMotion.test.mjs:279-500:
+    the lean, the sword arm's pump bands, the raised blade and `runBlade`, the blade against the
+    head, the sword hand's cross-in, "the shared legs key for key", the 14 fps pace and the attacks
+    on the move). The knight and the wizard keep them. His free arm keeps its pump bands (R101).
+
+#### The trailing sword (M2, M3)
+
+97. **The arm back (M2).** On every sample of the run the right upper arm points down and behind
+    the trunk, its line (shoulder to elbow) **30–45° behind the hips-to-neck line on average over
+    the cycle, 25–50° on every sample**, measured in his sagittal plane. The elbow is nearly
+    straight: bent 0–20° on every sample. The hand sits at about hip height: **within 0.06 H of
+    the hips bone's height** on every sample, and behind the hips bone. *Estimate:* the upper arm
+    swung back about 0.55–0.65 rad in the chest's frame (`run.hold`), the pump's scale on that arm
+    small (R99). The bake measures it.
+98. **The blade behind, its point down, its edge down (M2).** On every sample: the line from the
+    hand to the point runs **15–45° below level** and back, the point behind the hips bone by at
+    least 0.3 H, never ahead of the hand; the edge (the grip frame's −y, gear.js `curvedSword`)
+    faces down, **its direction at least 30° below level**. The fist keeps its thumb side where the
+    forearm has it (the normal-grip test, classMotion.test.mjs:592-605, holds on his run): the
+    edge is brought down by turning the arm about its own length (the upper arm, the forearm, or
+    both), never by rolling the fist on the forearm. *Measured:* about 2.6 rad of turn between
+    the two gives 30–40° (see *The edge*). *Estimate:* split so that the forearm's own turn stays
+    within about 90° (1.6 rad), a forearm's pronation, with the rest at the shoulder.
+99. **Never on the ground (M2).** On every sample, and on every baked run frame of the three
+    looks, the lowest point of every mesh the sword carries (the blade, the cross, the knuckle-bow,
+    the grip, the pommel) stands **at least 0.06 H (about 4.8 world px at 1x) above the ground**.
+    That is the sprint's own flight lift (0.06 H, `ARCHER_SPRINT_STEP.lift`), under his idle's
+    0.131 H (*measured*). *Reason:* the owner, 「不要拖地」, and a margin that reads at game scale.
+100. **The sway (M3).** The trailing arm swings with the stride: the upper arm's angle behind the
+    trunk varies by **12–26° peak to peak over the cycle** (about ±6° to ±13°), back with the left
+    leg forward, as the shared pump's phase has it (clips.js:279, `swing`). It is never frozen.
+    The blade's angle may sway with it, inside R98's band. *Estimate:* the sword arm's `run.arms`
+    about 0.2 of the shared pump (`RUN_ARM` 0.85 × 0.2 ≈ 0.17 rad ≈ 10° each way), its
+    `run.elbow` near 0, its `run.cross` 0.
+101. **The free arm pumps (M4).** The left arm keeps today's run settings: `run.arms[0]` 1,
+    `run.elbow[0]` 1, `run.cross[0]` 0, `run.wrist[0]` 0, under `RUN_ARM` and `RUN_ELBOW`. On every
+    key its elbow bends 80–100°, and the hand swings back past the hip by at least 0.06 H. At the
+    front its height against the chest bone is measured and reported: the 20° lean lowers the
+    chest bone (*measured* 0.599–0.661 H against today's 0.613–0.668) and the hand (*measured* to
+    0.632 H). If the lean takes the hand under the chest bone at the front, that is reported for
+    the owner's contact sheet, not tuned away.
+102. **Out of the body and the head.** On every sample the sword (pommel to point) stays out of the
+    torso and the head, as the carry test measures it (classMotion.test.mjs:608-628, `inside`),
+    and clear of the free arm by more than 0.06 × `armR` H (:443-457). The run's carry is
+    `MERCENARY_STYLE.run.hold` plus the arm settings; his idle and walk `hold` are unchanged.
+103. **The rest is unchanged.** His idle, walk, attack (`cut`), death and parry keys are unchanged,
+    held by digest at `2018f786` (as R92 holds the archer's). `MERC_RUN_BLADE`, `RUN_WRIST` and
+    `RUN_CROSS` are no longer read by his run. `MERC_RUN_BLADE` goes if nothing else reads it;
+    `RUN_WRIST`, `RUN_CROSS`, `RUN_BLADE_ELEV`, `RUN_TIP_CEIL` and `RUN_CROSS_REACH` stay for the
+    knight. The classStyles.js header comment (:7-40) no longer describes the mercenary's run blade.
+
+#### Clear of everything it passes (M6)
+
+104. **The blade guard (M6).** On every baked run frame of the three looks, posed as the bake poses
+    them (`poses.js` `characterPoses`, the cloth skinned as posed): no point along any edge of the
+    sword's meshes (the blade, the fuller, the cross, the knuckle-bow, the grip, the pommel; sampled
+    at most 0.005 H apart, as archerLooks.test.mjs's bow guard samples, :266-296) lies inside a
+    leg, a boot, or a skirt (the base's coat, the Duelist's robe panels, the Sellsword's coat); and
+    no edge of them crosses the Duelist's half-cloak or the torso (segment against triangle,
+    skinned as posed). The same holds for the right arm's own pieces past the elbow (the hand, the
+    vambrace, the Duelist's sleeve) against the legs, the skirts and the half-cloak.
+105. **Rejection fixtures (M6).** Each check carries a fixture that must fail: the same sword moved
+    so its blade lies on the right thigh's axis, through the coat's back skirt, through the
+    half-cloak's back, and through the torso; the arm's pieces moved into the half-cloak. They are
+    built as archerLooks.test.mjs's are (:557-605).
+106. **No exemption.** The leg-clearance and cloak guards (`clearance.js`, run at bake by the page's
+    `main.js` and by `clearance.test.mjs`, `mercLooks.test.mjs`) pass all three sheets on every clip
+    they carry, with nothing added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`. If a guard can only
+    pass with a different look (a shorter cloak, a sleeve cut back, the spaulder moved), that is
+    escalated, never exempted or changed here.
+
+#### The attack-on-the-move clips leave his sheets (M5)
+
+107. **His clip set (M5).** The three mercenary sheets carry `idle`, `walk`, `attack`, `death`,
+    `parry` and `run`, in that order, and **no `walk_attack` and no `backpedal_attack`**. His clip
+    set is built without `withWalkAttack`. `walk` stays (FS-2325V §E.2). `parry` stays as it is: 4
+    frames at 24 fps, not looping. `RUNNING_MERC_ANIMATIONS` goes if nothing reads it; a test
+    control that needs his old clips builds them explicitly, as the archer's cloak control does
+    (`before`, clearance.test.mjs:529-536). The knight's and the wizard's sheets keep both clips.
+108. **Clip choice unchanged (M5).** `animationSelect.ts` and `character.ts` are not changed. On his
+    sheets `carries` finds no `walk_attack` or `backpedal_attack`, so an attacking mercenary plays
+    `cut` turned to his aim, moving or not (animationSelect.ts:157). Not attacking, he runs turned
+    to his movement (R4). Guarding, he plays `parry` (:164) as today. A pinned mercenary stands
+    (R49). In the latency gap at the pin's edges the standing `cut` may slide with the drawn
+    movement for a tick or two: accepted.
+
+#### Bake, review and budget (M7, M8)
+
+109. **One bake.** The three mercenary sheets are re-baked once with R92–R108 by the bake tool
+    (`npm run bake`), never drawn or edited by hand. `npm run bake -- --check` is clean afterwards.
+    Only `mercenary-0.png`, `mercenary_duelist-0.png`, `mercenary_sellsword-0.png` and their
+    manifest entries change. **The archer's, the knight's and the wizard's manifest entries and
+    atlases are byte-identical** (their sheets' `animations`, frame boxes, anchors, crowns and the
+    atlases' `sha256`).
+110. **The frame box (M7).** Each mercenary sheet's frame box is no larger than today's 297 × 261 in
+    either dimension. The trailing blade reaches further behind him than today's run (*estimate:*
+    about 0.55–0.8 H from the hips, about 65–95 sheet px at 1.5x (118.8 px an H), against the
+    anchor's 117 px from the frame's left and 180 px from its right), and the attacks on the move that leave set the box's top row. If the box
+    would grow, the bake stops and it is escalated, never routed around.
+111. **The contact sheet (M8).** For each of the three sheets, the new run beside `2018f786`'s run, 8
+    facings, at game scale and at ×2, with an animated preview playing each at its own fps times
+    its `speed / RUN_PACE` at 200 px/s. Also a ×4 detail of the sword and the right leg at the
+    frames where the blade sits lowest and nearest the heel kick. The regular contact sheet, the
+    looks' sheet and the dark-room strip show his clips without `walk_attack` and
+    `backpedal_attack`. The re-baked sheets merge only after the owner approves (ADR-0021 §5).
+    Tune rounds after that approval stay inside this change.
+112. **The report.** From the bake, for each of the three sheets: atlas pages and dimensions before
+    and after, RGBA bytes and PNG bytes before and after, the change in per cent, and the frame box
+    before and after. Before (`2018f786`): `mercenary-0` 3428 × 3280 (45.0 MB),
+    `mercenary_duelist-0` 3508 × 3300 (46.3 MB), `mercenary_sellsword-0` 3032 × 3724 (45.2 MB),
+    each 297 × 261. *Estimate:* 68 → 40 frames a facing (−41%), so about 25–27 MB each if the box
+    holds, about −55 MB resident over the three.
+113. **Docs.** `game-client/docs/design-guideline.md`'s character clip list (:284-310) says the
+     mercenary's run is the sprint the archer runs (about 20° forward, the quicker, shorter stride),
+     with the sword trailing behind him, the point down and off the ground, and that his sheets
+     carry no attack-on-the-move clips. The `tools/bake/lib/contact.mjs` header notes (:1-10) say
+     the same.
+
+### Acceptance Criteria
+
+Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `clearance.test.mjs`,
+`mercLooks.test.mjs`, `archerLooks.test.mjs`, on his rig and style as cast.js builds him):
+
+- [ ] The archer's run keys and `ARCHER_SHEET` match their `2018f786` digests. Her other clips'
+      digest, the shared run's digest, and the knight's and the wizard's sheet-and-clips digests
+      are unchanged (R92, R93).
+- [ ] The sprint's legs, lean and 16 fps run spec are defined once and read by both classes
+      (R93).
+- [ ] His sheet options carry exactly `idle`, `walk`, `attack`, `death`, `parry`, `run`. `run` is
+      8 frames, looping, at 16 fps, `speed` 2.5. The Duelist's and the Sellsword's rows carry the
+      same (R107).
+- [ ] His run: the lean 19–21° on average and 18–22° on every sample; the head steady; the knee
+      above 0.32 H; the shin past 1.45 rad; a flight frame each step; 4 planted keys; a lift of at
+      least 0.045 H; a bob of 0.056–0.07 H; the pelvis once a step; the shoulders
+      counter-turning at 6.5–10° (R94).
+- [ ] His pace at 16 fps lies within 180–220 and within 3 px/s of `RUN_PACE`, which is still 194;
+      the measured value is recorded (R95; replaced by the owner's pick if he makes one).
+- [ ] On every sample: the upper arm 25–50° behind the trunk line (30–45° on average), the elbow
+      bent 0–20°, the hand within 0.06 H of the hips bone's height and behind it (R97).
+- [ ] On every sample: the blade 15–45° below level and back, the point at least 0.3 H behind
+      the hips bone; the edge at least 30° below level; the normal-grip test passes on his run
+      (R98).
+- [ ] On every sample and every baked run frame of the three looks: every sword mesh's lowest
+      point at least 0.06 H above the ground (R99).
+- [ ] The trailing arm's angle varies 12–26° peak to peak over the cycle (R100).
+- [ ] The free arm: `arms[0]`, `elbow[0]` 1, elbow 80–100° on every key, the hand back past the
+      hip by at least 0.06 H; its front height against the chest bone is recorded (R101).
+- [ ] The sword is out of the torso and the head, and clear of the free arm, on every sample
+      (R102).
+- [ ] His idle, walk, attack, death and parry keys match their `2018f786` digests (R103).
+- [ ] On every baked run frame of the three looks: no sampled point of the sword inside a leg, a
+      boot or a skirt; no sword edge across the half-cloak or the torso; the arm's pieces past the
+      elbow clear of the legs, the skirts and the half-cloak. Each check's rejection fixture
+      fails (R104, R105).
+- [ ] The leg and cloak guards pass the three mercenary sheets on every clip they carry, with no
+      exemption added (R106).
+- [ ] The knight's and the wizard's run tests, and the shared run's tests (plain style, `RUN_STEP`
+      key for key, the 10° lean, the pump bands, `RUN_PACE` within 1 at 14 fps), pass unchanged.
+
+Manifest and client (`npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` in
+`game-client`):
+
+- [ ] In `public/art/manifest.json` the three mercenary sheets carry `idle`, `walk`, `attack`,
+      `death`, `parry`, `run` (8 frames at 16 fps, looping, 8 facings), at 1.5x and trimmed, and
+      no `walk_attack`, `backpedal_attack` or `backpedal` (R107).
+- [ ] The archer's, the knight's and the wizard's manifest entries and atlases are byte-identical
+      to `2018f786`'s (R109).
+- [ ] The shipped-sheet tests in `animationSelect.test.ts` and `manifest.test.ts` name the
+      mercenary without `walk_attack` and `backpedal_attack`, with `parry` and `run`; the knight
+      and the wizard keep both clips.
+- [ ] `animationSelect.ts` and `character.ts` are unchanged. On a sheet with `parry` and `run` and
+      no `walk_attack`, `selectAnimation` plays `attack` turned to the aim while attacking on the
+      move, `parry` while guarding, and `run` at `speed / RUN_PACE` otherwise (a test exists or is
+      added) (R108).
+- [ ] `npm run bake -- --check` is clean.
+- [ ] Each mercenary frame box is at most 297 × 261. The report gives each atlas's dimensions, RGBA
+      and PNG bytes before and after, and the change in per cent; none grows (R110, R112).
+- [ ] No file under `game-server/`, `game-client/src/api/generated` or any migration changes.
+
+HITL:
+
+- [ ] **The owner approves** the three mercenary sheets' new run beside `2018f786`'s on the contact
+      sheet (ADR-0021 §5), or names a tune round. He also picks how the pace is held (R95: (a),
+      (b) or (c)).
+- [ ] **Browser check:** in a run and in the town, the mercenary, the Duelist and the Sellsword run
+      at 200 px/s with the sprint's lean and cadence and the trailing sword, the feet not visibly
+      sliding and the point never on the ground. Attacking on the move plays the standing `cut`,
+      the parry still raises, and a second player sees the same.
+
+### Edge States
+
+- **Attacking on the move.** The pin stands him (R49), so `cut` shows standing. In the latency gap
+  at the pin's edges the standing cut may slide a tick or two with the drawn movement (M5,
+  accepted).
+- **Setting off and stopping.** The sword goes from the idle's point-down-forward carry to the
+  trailing carry on the run's first frame, and back on stopping, with no blend: about a 100–135°
+  turn of the blade in one frame (*estimate*: the idle's blade 30–35° below level ahead against
+  the run's 15–45° below level behind). Judged at the contact sheet and the browser check. A
+  transition clip is out of scope.
+- **Running into a cut.** The cut starts from `attack`'s own first key (out of the idle carry), so
+  the sword jumps from behind him to the wind-up. As above, judged in play.
+- **Guarding while running.** The parry raises from the idle's carry (clips.js:827), not from the
+  run's, so a parry started mid-run jumps from the trailing sword into the guard's first key.
+  This is the same kind of jump as running into a cut.
+- **Gear move speed.** At +20% (240 px/s) his run plays at about 1.24x (about 19.8 fps), capped by
+  `MAX_WALK_SCALE` as today. The foot slide under option (a) scales with it, about 1.3% of the
+  ground speed.
+- **The lowest frames.** The point is lowest where the pelvis is lowest in the bob and the arm
+  sways furthest back. R99 holds there on the baked frames, not only on the 32 samples.
+- **The heel kick under the blade.** On the other step the right heel folds up behind his seat
+  (the shin to 1.8 rad) as the trailing blade passes over it. R104's leg guard holds it. If only a
+  shorter heel kick would clear it, that changes the shared sprint, and so the archer: escalated.
+- **The three looks.** The Duelist's half-cloak flies back in the run's drag (`drag` 0.34,
+  mercLooks.js:173) toward a blade trailing on his right. The Sellsword's right spaulder rides
+  the upper arm and turns with its twist (R98), toward the chest or the back. The Duelist's wide
+  right sleeve flares at the forearm and turns with it. R104 guards each; a fix that would need a
+  look change is escalated.
+- **The arm's twist.** About 150° between the shoulder and the forearm is near the end of a real
+  arm's range (*estimate*). The forearm's skin tube may wrap visibly at the elbow or the wrist.
+  This is judged at the contact sheet at ×4. *Fallback, named for the owner:* the edge left
+  facing up (the hand turned only in the swing plane, no arm twist), the curve's back then down.
+- **Mixed parties.** Until the knight and the wizard are redone, they run at 14 fps on the shared
+  keys with `walk_attack`, while the archer and the mercenary sprint with neither
+  attack-on-the-move clip. Expected.
+- **Other players.** Others draw him from the same sheet, so they see the sprint and the trailing
+  sword.
+- **The dark-room strip.** `contact-darkroom-mercenary` is regenerated with the new run, if the
+  bake writes one for him, as the archer's was.
+
+### Out of Scope
+
+- The knight's and the wizard's runs and their looks' runs, and dropping their `walk_attack` and
+  `backpedal_attack`. Each comes when its own run is redone, after the owner has seen the
+  mercenary.
+- The `walk_attack` and `backpedal_attack` branches in `animationSelect.ts` and `character.ts`, and
+  `BACKPEDAL_PACE`. They go when the last class drops the clips.
+- The mercenary's idle, walk, attack (`cut`), death and parry; a parry or cut that starts from the
+  trailing carry; a transition clip between the carries.
+- Any change to the archer's sprint values, her carry or her sheets (R92). A change to the shared
+  sprint that would move her keys is escalated, not made.
+- A look change to the base, the Duelist or the Sellsword (escalated if the guards ask for one).
+- `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
+  lane).
