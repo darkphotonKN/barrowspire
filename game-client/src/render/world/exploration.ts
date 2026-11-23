@@ -1,8 +1,10 @@
 /**
  * Exploration of a dungeon floor (FS-SRA9J §B, ADR-0063; CONTEXT.md "Fog of war", "Region"): each
- * region's state, unexplored, explored or visible, from the party's living positions. Shared by the
- * party because every client reads every member's position from the same snapshot; nothing is sent
- * or stored for it, so a new floor map or a fresh scene starts over.
+ * region's state, unexplored, explored or visible, from the party's living positions and the
+ * regions within two walkable steps of them (FS-SRA9J §Change: Lighter fog and lit regions, F3–F6;
+ * ADR-0090 Decision 1). Shared by the party because every client reads every member's position
+ * from the same snapshot; nothing is sent or stored for it, so a new floor map or a fresh scene
+ * starts over.
  *
  * Pure: no Phaser. The fog layer, the fixed objects and the lights read it.
  */
@@ -14,33 +16,61 @@ import type { RegionGrid } from "./dungeon";
 /** How much of a region the party is shown (§B.2). */
 export type ExplorationState = "unexplored" | "explored" | "visible";
 
+/** A cell of the floor's grid, by column and row. */
+type Cell = { cx: number; cy: number };
+
 /**
- * The region a world point lies in (§B.7): that of its cell, or for a point on no walkable cell (a
- * body pressed against a wall's edge, a light hung on a wall) that of the walkable cell nearest it
- * among the eight around its cell, the shell being one cell deep. 0 for a point far from all.
+ * The cell a world point is taken to lie in (§B.7): its own when walkable, or for a point on no
+ * walkable cell (a body pressed against a wall's edge, a light hung on a wall) the walkable cell
+ * nearest it among the eight around its cell, the shell being one cell deep. None for a point far
+ * from all.
  */
-export function regionAt(grid: RegionGrid, p: Point): number {
+function cellAt(grid: RegionGrid, p: Point): Cell | undefined {
   const { cx, cy } = grid.cellOf(p);
-  const own = grid.region(cx, cy);
-  if (own) return own;
+  if (grid.region(cx, cy)) return { cx, cy };
   const c = grid.cell;
-  let best = 0;
+  let best: Cell | undefined;
   let nearest = Infinity;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
-      const id = grid.region(cx + dx, cy + dy);
-      if (!id) continue;
+      if (!grid.region(cx + dx, cy + dy)) continue;
       // from the point to the cell's square, 0 inside it
       const x0 = (cx + dx) * c;
       const y0 = (cy + dy) * c;
       const d = Math.hypot(Math.max(x0 - p.x, 0, p.x - x0 - c), Math.max(y0 - p.y, 0, p.y - y0 - c));
       if (d < nearest) {
         nearest = d;
-        best = id;
+        best = { cx: cx + dx, cy: cy + dy };
       }
     }
   return best;
 }
+
+/**
+ * The region a world point lies in (§B.7): that of its cell, or for a point on no walkable cell (a
+ * body pressed against a wall's edge, a light hung on a wall) that of the walkable cell nearest it
+ * among the eight around its cell, the shell being one cell deep. 0 for a point far from all.
+ */
+export function regionAt(grid: RegionGrid, p: Point): number {
+  const at = cellAt(grid, p);
+  return at ? grid.region(at.cx, at.cy) : 0;
+}
+
+/**
+ * How many steps from a member's cell a region is reached and so visible (FS-SRA9J §Change: Lighter
+ * fog and lit regions, F3; ADR-0090 Decision 1): a step goes north, south, west or east onto a
+ * walkable cell, so never through a wall and a diagonal cell only through a walkable cell beside
+ * both. Two steps is 160 px on floor 1.
+ */
+const REACH_STEPS = 2;
+
+/** The four steps from a cell (F3): diagonals are not steps. */
+const STEPS = [
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+] as const;
 
 /**
  * The most cells a corridor segment may have and still be seen with a neighbour rather than on its
@@ -135,7 +165,10 @@ export const SHOWN_WITHIN = 400;
 
 /**
  * Every region of one floor, by its exploration state (§B.2–§B.6), and which monsters and drop
- * piles the party is shown (§D).
+ * piles the party is shown (§D). A region is visible while a living, in-play member's cell reaches
+ * one of its cells within {@link REACH_STEPS} walkable steps (FS-SRA9J §Change: Lighter fog and lit
+ * regions, F3–F6; ADR-0090 Decision 1, amending ADR-0063 Decision 2's "visible"); the region a
+ * member stands in counts as before.
  */
 export class Exploration {
   /** By group root (a region, or a tiny segment's group): ever visible. */
@@ -145,20 +178,28 @@ export class Exploration {
   /** The party's living, in-play positions as last seen. */
   private party: readonly Point[] = [];
   private readonly group: Map<number, number>;
+  /**
+   * By cell index (cy × cols + cx): the group roots within reach of a member standing on that
+   * walkable cell (F6). They depend on the floor's cells alone, so each cell is walked the first
+   * time a member stands on it and only looked up after.
+   */
+  private readonly reach = new Map<number, readonly number[]>();
 
   constructor(private readonly grid: RegionGrid) {
     this.group = seenTogether(grid);
   }
 
   /**
-   * The party's living, in-play positions now (§B.3, §B.5): the regions they stand in are visible,
-   * every region ever visible stays explored (§B.4). True when any region changed state.
+   * The party's living, in-play positions now (§B.3, §B.5): the regions they stand in, and those
+   * their cells reach within two walkable steps (FS-SRA9J §Change: Lighter fog and lit regions, F3,
+   * F4; ADR-0090), are visible; every region ever visible stays explored (§B.4). True when any
+   * region changed state, so the fog and lights redraw only then (F6, §C.13).
    */
   see(positions: readonly Point[]): boolean {
     const now = new Set<number>();
     for (const p of positions) {
-      const id = regionAt(this.grid, p);
-      if (id) now.add(this.root(id));
+      const at = cellAt(this.grid, p);
+      if (at) for (const id of this.reached(at.cx, at.cy)) now.add(id);
     }
     const changed = now.size !== this.visible.size || [...now].some((id) => !this.visible.has(id));
     for (const id of now) this.explored.add(id);
@@ -183,6 +224,32 @@ export class Exploration {
     const root = this.root(region);
     if (this.visible.has(root)) return "visible";
     return this.explored.has(root) ? "explored" : "unexplored";
+  }
+
+  /** The group roots within reach of walkable cell (cx, cy), walked once per cell (F3, F6). */
+  private reached(cx: number, cy: number): readonly number[] {
+    const at = (x: number, y: number) => y * this.grid.cols + x;
+    const here = at(cx, cy);
+    const known = this.reach.get(here);
+    if (known) return known;
+    const roots = new Set([this.root(this.grid.region(cx, cy))]);
+    const walked = new Set([here]);
+    let frontier: Cell[] = [{ cx, cy }];
+    for (let step = 0; step < REACH_STEPS; step++) {
+      const next: Cell[] = [];
+      for (const c of frontier)
+        for (const [dx, dy] of STEPS) {
+          const [nx, ny] = [c.cx + dx, c.cy + dy];
+          if (!this.grid.walkable(nx, ny) || walked.has(at(nx, ny))) continue;
+          walked.add(at(nx, ny));
+          roots.add(this.root(this.grid.region(nx, ny)));
+          next.push({ cx: nx, cy: ny });
+        }
+      frontier = next;
+    }
+    const out = [...roots];
+    this.reach.set(here, out);
+    return out;
   }
 
   private root(region: number): number {

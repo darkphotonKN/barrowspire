@@ -698,8 +698,10 @@ describe("the fog layer (FS-SRA9J §C.13)", () => {
         tweens.finish();
       }
     for (let i = 0; i < 10; i++) shown();
-    // the first draw, then A, C, B each lit in turn
-    expect(fog.redraws).toBe(4);
+    // the first draw, then each change of what is within two walkable steps (FS-SRA9J §Change:
+    // Lighter fog and lit regions, F3): A; A and C, C's first cell (5, 2) two steps from cell 3;
+    // C alone from cell 7; C and B, B's doorway (11, 2) two steps from cell 9; B alone from cell 13
+    expect(fog.redraws).toBe(6);
     expect(images.length).toBeGreaterThan(0);
   });
 
