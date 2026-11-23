@@ -1694,10 +1694,10 @@ shoulder seems to break up; fix that too.
 
 After playing the outward blade the owner said:
 
-> 「左肩還是會破圖 跑步時就讓披風不要這貼 飛高一點吧」
+> 「左肩還是會破圖 跑步時就讓匹夫不要這貼 飛高一點吧」
 
 The left shoulder still breaks through. In the run, have the cape sit less close and fly a little
-higher.
+higher. (匹夫 is 披風, the cape, typed by its sound.)
 
 - **What it answers.** The left-shoulder escalation above: the Duelist's left upper arm, near the
   shoulder, comes out through his half-cloak on the run's keys 3–7. Not the cut widened (option
@@ -1988,7 +1988,7 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
     escalated, never exempted or changed here. *Escalated and decided 2026-11-23:* the leg guard on
     the Duelist's robe against the sprint's heel kick, answered by R114 (the owner, 「改 Duelist
     長袍」). *Decided again 2026-11-23:* the Duelist's left arm through his half-cloak in the run,
-    answered by R159 (the owner, 「跑步時就讓披風不要這貼 飛高一點吧」). Any other look change is
+    answered by R159 (the owner, 「跑步時就讓匹夫不要這貼 飛高一點吧」). Any other look change is
     still escalated.
 
 #### The attack-on-the-move clips leave his sheets (M5)
@@ -2069,7 +2069,7 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
 #### The Duelist's half-cloak in the run (owner change 2026-11-23)
 
 159. **The half-cloak carried off the shoulder in the run (owner change 2026-11-23, 「左肩還是會破圖
-     跑步時就讓披風不要這貼 飛高一點吧」).** On every baked run frame of the Duelist, no edge of his
+     跑步時就讓匹夫不要這貼 飛高一點吧」).** On every baked run frame of the Duelist, no edge of his
      left arm (the skin and the wide sleeve the left arm's bones carry most, the bracer and the
      fist) crosses his half-cloak; a fixture with the fist moved onto the cloak's back must fail.
      It is answered by the cloak's carry in the run alone: the chain's springs in the run let its
