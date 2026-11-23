@@ -10,8 +10,9 @@
  * and y down, drawn in the same 30 px box and fitted to its plate (`fitIcon`). Built to survive render
  * scale 1: no feature under about 3 px, no cut under the renderer's 1.6 px, no two cuts close enough to
  * read as one. The traversal four stand smallest, on round plates, so they keep inside the box's round
- * and are drawn bold. Data only: the overlay picks the ink (`TREE_INK`, or `GREYED` for a locked or
- * closed node). Tweak rounds from the owner's contact sheet land here.
+ * and are drawn bold. Data only: the overlay picks the ink by the node's state (`TREE_INK` open, the
+ * node's own hue's `treeLitInk` when held or at max, `GREYED` for a locked or closed node; FS-8RZ51
+ * §Change: A lit node glows in its own colour). Tweak rounds from the owner's contact sheet land here.
  */
 
 import { bend, oval, type KnockoutCut, type KnockoutPicture, type Pt } from "./knockout";

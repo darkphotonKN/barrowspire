@@ -1105,6 +1105,16 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   are not HUD icons. *(Added by
   [ADR-0080](../../docs/adr/0080-canvas-hud-icons-are-embossed-bronze-knockouts-from-one-shared-renderer.md),
   2026-11-14.)*
+  **One exception: the passive tree's node pictures.** They come from the same renderer, but an
+  open node's picture is the near-white vellum (`TREE_INK`, flat), and a held or max node's is its
+  own hue (`palette.treeHue`, see "Palette") with a light touch of bronze (`TREE_BRONZE_MIX`, 10%),
+  lit from above with its top lifted toward the hue's own light end, over a static halo in that hue
+  inside its plate; greyed stays greyed, and hover is the tree's ring, never a brighter picture.
+  A lit picture reads "on" by its colour and its glow, not by being lighter than the open ones.
+  Every other HUD icon, the corner row's Tree icon and the ability bar's icons among them, stays
+  bronze; a second icon wanting its own hue needs its own ADR. *(Added by
+  [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md),
+  2026-11-23.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

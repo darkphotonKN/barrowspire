@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { LIT_PLATE_ALPHA, LOCK_DEPTH, PICTURE_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, drawUnknownGlyph } from "./PassiveTreeOverlay";
-import { GREYED, TREE_INK } from "./knockout";
-import { PICTURE_MARGIN } from "./passiveIcons";
+import { LIT_PLATE_ALPHA, LOCK_DEPTH, PICTURE_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, TREE_HALO, drawUnknownGlyph, haloDiscAlpha, nodePicture } from "./PassiveTreeOverlay";
+import { GREYED, Knockout, TREE_INK, treeLitInk, type KnockoutInk } from "./knockout";
+import { PICTURE_MARGIN, fitIcon } from "./passiveIcons";
 import { treeLayout } from "./passiveTreeLayout";
 import { treeView, type TreeSource } from "./passiveTreeModel";
 import type { World } from "./uiBridge";
@@ -28,6 +28,8 @@ interface Made {
   fills?: [number, number][];
   /** Each path point drawn (`moveTo`, `lineTo`). */
   pts?: [number, number][];
+  /** Each filled circle's centre and radius, with the fill it was drawn in. */
+  circles?: { x: number; y: number; r: number; fill?: [number, number] }[];
   destroyed: boolean;
 }
 
@@ -47,6 +49,8 @@ function stage() {
         if (prop === "destroy") return () => [rec, ...(rec.children ?? [])].forEach((m) => (m.destroyed = true));
         if (prop === "lineStyle") return (_w: number, ink: number) => (rec.inks.push(ink), rec.ops.push(prop), self);
         if (prop === "fillStyle") return (ink: number, alpha = 1) => ((rec.fills ??= []).push([ink, alpha]), rec.ops.push(prop), self);
+        if (prop === "fillCircle")
+          return (x: number, y: number, r: number) => ((rec.circles ??= []).push({ x, y, r, fill: rec.fills?.at(-1) }), rec.ops.push(prop), self);
         if (prop === "moveTo" || prop === "lineTo") return (x: number, y: number) => ((rec.pts ??= []).push([x, y]), rec.ops.push(prop), self);
         return () => (rec.ops.push(prop), self);
       },
@@ -430,38 +434,39 @@ describe("the fallback glyph (FS-8RZ51 R42)", () => {
   });
 });
 
+/** The stand-in scene given what the game's has to make a knockout: each texture's tint and alpha recorded. */
+function texturing() {
+  const env = stage();
+  const images: { tints: number[]; alpha?: number; depth?: number }[] = [];
+  const chain = (rec: { tints: number[]; alpha?: number; depth?: number }, extra: Record<string, unknown> = {}): unknown => {
+    const self: unknown = new Proxy(extra, {
+      get: (t, prop: string) => {
+        if (prop in t) return t[prop];
+        if (prop === "setTint") return (...tints: number[]) => ((rec.tints = tints), self);
+        if (prop === "setAlpha") return (a: number) => ((rec.alpha = a), self);
+        if (prop === "setDepth") return (d: number) => ((rec.depth = d), self);
+        return () => self;
+      },
+    });
+    return self;
+  };
+  const scene = env.scene as unknown as Record<string, Record<string, unknown>>;
+  scene.make = { graphics: () => chain({ tints: [] }) };
+  scene.add.renderTexture = (_x: number, _y: number, width: number, height: number) => {
+    const rec = { tints: [] as number[] };
+    images.push(rec);
+    return chain(rec, { width, height, texture: {} });
+  };
+  scene.add.image = () => chain({ tints: [] });
+  scene.children = { moveBelow: () => {} };
+  return { ...env, images };
+}
+
 describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, I-8RZ51-11)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  /** The stand-in scene given what the game's has to make a knockout: each texture's tint and alpha recorded. */
-  function texturing() {
-    const env = stage();
-    const images: { tints: number[]; alpha?: number; depth?: number }[] = [];
-    const chain = (rec: { tints: number[]; alpha?: number; depth?: number }, extra: Record<string, unknown> = {}): unknown => {
-      const self: unknown = new Proxy(extra, {
-        get: (t, prop: string) => {
-          if (prop in t) return t[prop];
-          if (prop === "setTint") return (...tints: number[]) => ((rec.tints = tints), self);
-          if (prop === "setAlpha") return (a: number) => ((rec.alpha = a), self);
-          if (prop === "setDepth") return (d: number) => ((rec.depth = d), self);
-          return () => self;
-        },
-      });
-      return self;
-    };
-    const scene = env.scene as unknown as Record<string, Record<string, unknown>>;
-    scene.make = { graphics: () => chain({ tints: [] }) };
-    scene.add.renderTexture = (_x: number, _y: number, width: number, height: number) => {
-      const rec = { tints: [] as number[] };
-      images.push(rec);
-      return chain(rec, { width, height, texture: {} });
-    };
-    scene.add.image = () => chain({ tints: [] });
-    scene.children = { moveBelow: () => {} };
-    return { ...env, images };
-  }
 
   // the path to the specializations, and Guardian: Berserker is locked
   const GUARDIAN = { ...TO_M4, "warrior.t6a": 1 };
@@ -524,5 +529,144 @@ describe("the node pictures through the one renderer (FS-8RZ51 R40, I-8RZ51-10, 
     expect(fresh.images[0].alpha).toBe(TREE_INK.idle.alpha);
     expect(fresh.images[1].tints).toEqual([GREYED.idle.tint]);
     expect(fresh.images[1].alpha).toBe(GREYED.idle.alpha);
+  });
+});
+
+describe("a lit node's own colour and its glow (FS-8RZ51 §Change: A lit node glows in its own colour, I-8RZ51-22)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    viewport.set({ width: 1080, height: 720, renderScale: 1 });
+  });
+
+
+  function show(source: TreeSource, env = texturing()) {
+    const overlay = new PassiveTreeOverlay(env.scene, { world: "hub", dismiss: () => {}, spend: () => true });
+    overlay.show(source);
+    overlay.open();
+    const view = treeView(source);
+    const layout = treeLayout(viewport, view.nodes, view.links);
+    const plates = env.live().find((m) => m.kind === "container" && m.depth === TREE_DEPTH + 1)!.children!.filter((c) => c.kind === "graphics")[1];
+    const image = (id: string) => env.images[view.nodes.findIndex((n) => n.id === id)];
+    return { ...env, overlay, view, layout, plates, image };
+  }
+
+  /** The corner tints a knockout of `id`'s picture shows in `ink` on its plate, on a scene of its own. */
+  function inkOf(source: TreeSource, id: string, ink: KnockoutInk) {
+    const view = treeView(source);
+    const layout = treeLayout(viewport, view.nodes, view.links);
+    const i = view.nodes.findIndex((n) => n.id === id);
+    const plate = layout.plates[i].rect;
+    const env = texturing();
+    new Knockout({ scene: env.scene as never, depth: PICTURE_DEPTH, picture: fitIcon(nodePicture(view.nodes[i].icon)!, plate.width).picture, ink }).show(plate, false);
+    return env.images[0];
+  }
+
+  /** The halo's discs on the plate graphics: the circles drawn at the halo's alpha. */
+  const halos = (plates: { circles?: { x: number; y: number; r: number; fill?: [number, number] }[] }) =>
+    (plates.circles ?? []).filter((c) => c.fill?.[1] === haloDiscAlpha());
+
+  const TRUNK_HELD = warrior({ "warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1 });
+
+  it("should draw a held Vitality's picture in the health lit ink, lit from above at full alpha", () => {
+    const env = show(TRUNK_HELD);
+    const vitality = env.image("warrior.r1");
+    const want = inkOf(TRUNK_HELD, "warrior.r1", treeLitInk(palette.treeHue.health));
+    expect(vitality.tints).toEqual(want.tints);
+    expect(vitality.alpha).toBe(1);
+    // lit from above: its top and foot differ, and its top is not the near-white
+    expect(vitality.tints[0]).not.toBe(vitality.tints[2]);
+    expect(vitality.tints).not.toContain(palette.hudText);
+  });
+
+  it("should draw each held node in its own hue's ink, and an open one in the near-white tree ink, as today", () => {
+    const env = show(TRUNK_HELD);
+    for (const node of env.view.nodes.filter((n) => n.state === "held" || n.state === "max")) {
+      expect(env.image(node.id).tints, node.id).toEqual(inkOf(TRUNK_HELD, node.id, treeLitInk(palette.treeHue[node.hue!])).tints);
+    }
+    // Heavy Hand and m1 are open and spendable: V29's near-white, flat (the owner, 2026-11-23)
+    for (const id of ["warrior.t2a", "warrior.m1"]) {
+      expect(env.view.nodes.find((n) => n.id === id)!.state).toBe("available");
+      expect(env.image(id).tints).toEqual([TREE_INK.idle.tint]);
+      expect(env.image(id).alpha).toBe(TREE_INK.idle.alpha);
+    }
+  });
+
+  it("should draw a kicker the same at 1/3 as at 3/3", () => {
+    const at = (rank: number) => show(warrior({ ...TRUNK, "warrior.t2a": rank })).image("warrior.t2a");
+    const [one, three] = [at(1), at(3)];
+    expect(one.tints).toEqual(three.tints);
+    expect(one.alpha).toBe(three.alpha);
+    expect(one.tints).toEqual(inkOf(warrior({ ...TRUNK, "warrior.t2a": 1 }), "warrior.t2a", treeLitInk(palette.treeHue.power)).tints);
+  });
+
+  it("should draw a locked node greyed and unglowing whatever rank it holds", () => {
+    // the upper side a taken, and the upper side b's kicker holding a rank it cannot have: drawn locked
+    const env = show(warrior({ ...TRUNK, "warrior.t2b": 1 }));
+    const i = env.view.nodes.findIndex((n) => n.id === "warrior.t2b");
+    expect(env.view.nodes[i].state).toBe("locked");
+    expect(env.view.nodes[i].rank).toBe(1);
+    expect(env.image("warrior.t2b").tints).toEqual([GREYED.idle.tint]);
+    const { rect } = env.layout.plates[i];
+    expect(halos(env.plates).some((c) => c.x === rect.x + rect.width / 2 && c.y === rect.y + rect.height / 2)).toBe(false);
+  });
+
+  it("should glow each lit plate in its hue: stacked discs after its fill and edge, inside its edge line, brightest at the centre", () => {
+    const env = show(TRUNK_HELD);
+    const lit = env.view.nodes.map((n, i) => [n, env.layout.plates[i]] as const).filter(([n]) => n.state === "held" || n.state === "max");
+    expect(lit).toHaveLength(3);
+    const discs = halos(env.plates);
+    expect(discs).toHaveLength(3 * TREE_HALO.discs);
+    for (const [node, { rect }] of lit) {
+      const [cx, cy] = [rect.x + rect.width / 2, rect.y + rect.height / 2];
+      const mine = discs.filter((c) => c.x === cx && c.y === cy);
+      expect(mine, node.id).toHaveLength(TREE_HALO.discs);
+      for (const c of mine) expect(c.fill![0]).toBe(palette.treeHue[node.hue!]);
+      // inside the edge line (a max node's is 2 px wide), shrinking to 0.4 of the first
+      const radii = mine.map((c) => c.r);
+      expect(radii[0]).toBeLessThanOrEqual(rect.width / 2 - 1);
+      expect(radii.every((r, k) => k === 0 || r < radii[k - 1])).toBe(true);
+      expect(radii.at(-1)! / radii[0]).toBeCloseTo(TREE_HALO.inner, 6);
+    }
+    // the stacked discs come to about the halo's alpha at the centre
+    expect(1 - (1 - haloDiscAlpha()) ** TREE_HALO.discs).toBeCloseTo(TREE_HALO.alpha, 6);
+    // each plate's halo after its edge: the plates' ops run fill, fill, stroke, then the discs
+    const ops = env.plates.ops.filter((o) => o === "fillCircle" || o === "strokeCircle" || o === "fillRoundedRect" || o === "strokeRoundedRect");
+    const r1 = env.view.nodes.findIndex((n) => n.id === "warrior.r1");
+    expect(r1).toBe(0);
+    expect(ops.slice(0, 3 + TREE_HALO.discs)).toEqual(["fillCircle", "fillCircle", "strokeCircle", ...Array(TREE_HALO.discs).fill("fillCircle")]);
+  });
+
+  it("should glow no open or greyed node, and never in amber or the edge's brass", () => {
+    expect(halos(show(warrior()).plates)).toHaveLength(0);
+    expect(halos(show(warrior({}, 0)).plates)).toHaveLength(0);
+    for (const c of halos(show(TRUNK_HELD).plates)) {
+      expect([palette.interactable, palette.interactableBright, palette.frame, palette.frameBright]).not.toContain(c.fill![0]);
+    }
+  });
+
+  it("should draw a lit node's halo, and its lines in the lit tint, where the scene makes no textures", () => {
+    // the plain stand-in makes no textures: every picture falls back to its lines
+    const env = show(TRUNK_HELD, { ...stage(), images: [] });
+    expect(halos(env.plates)).toHaveLength(3 * TREE_HALO.discs);
+    for (const hue of ["health", "power", "speed"] as const) expect(env.plates.inks).toContain(treeLitInk(palette.treeHue[hue]).idle.tint);
+    // the open nodes' lines stay near-white, the closed ones faint
+    expect(env.plates.inks).toContain(palette.hudText);
+    expect(env.plates.inks).toContain(palette.hudFaint);
+  });
+
+  it("should change no picture under the pointer, ring it, and make no new picture", () => {
+    const env = show(TRUNK_HELD);
+    const before = env.images.map((t) => [...t.tints, t.alpha]);
+    const p = env.layout.plates[0].rect;
+    env.overlay.pointerMove(p.x + p.width / 2, p.y + p.height / 2);
+    expect(env.images.map((t) => [...t.tints, t.alpha])).toEqual(before);
+    expect(env.images).toHaveLength(before.length);
+    const ring = env.live().find((m) => m.kind === "graphics" && m.depth === LOCK_DEPTH + 1)!;
+    expect(ring.ops).toContain("strokeCircle");
+  });
+
+  it("should add no filter to anything it draws", () => {
+    const env = show(TRUNK_HELD);
+    for (const m of env.made) expect(m.ops.some((o) => /filter|glow/i.test(o)), m.kind).toBe(false);
   });
 });

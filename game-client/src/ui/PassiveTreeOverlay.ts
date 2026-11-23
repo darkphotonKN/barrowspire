@@ -12,8 +12,10 @@
  *
  * Node pictures (R40, V29): each node draws its picture (`nodePicture`: the tree's own from
  * `passiveIcons.ts`, the ability node its tree ability's from the ability bar's `ABILITY_ICONS`), fitted to
- * its plate (`fitIcon`), through the one knockout renderer (`Knockout`, ADR-0080), in the near-white
- * `TREE_INK` or, greyed, in `GREYED`, its lines where the scene cannot; a lit node's whole plate fill is lit
+ * its plate (`fitIcon`), through the one knockout renderer (`Knockout`, ADR-0080), inked by its state
+ * (§Change: A lit node glows in its own colour, ADR-0089): an open node in the near-white `TREE_INK`, a
+ * held or max node in its own hue's lit ink (`treeLitInk`) over a static halo in that hue, greyed in
+ * `GREYED`; its lines where the scene cannot, in the same ink. A lit node's whole plate fill is lit
  * in its edge's token. A locked node's lock mark is the padlock (`LOCK_ICON`) on a dark backing, drawn the
  * same way. A node the copy lacks draws the fallback glyph (`drawUnknownGlyph`) with its id as its name
  * (R42). Every colour is a palette token (ADR-0013, ADR-0025).
@@ -31,7 +33,7 @@ import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
 import { drawIconLines, type AbilityIcon } from "./abilityIcons";
 import { itemTipRow } from "./gearOverlayLayout";
 import { tipGround } from "./itemTip";
-import { GREYED, GREYED_ALPHA, Knockout, TREE_INK } from "./knockout";
+import { GREYED, GREYED_ALPHA, Knockout, TREE_INK, treeLitInk, type KnockoutInk } from "./knockout";
 import { LOCK_ICON, fitIcon, nodeIcon, type NodeIconKey } from "./passiveIcons";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
 import { drawPanelFrame, drawPanelTitle, lightClose, type FrameRect } from "./panelFrame";
@@ -88,6 +90,44 @@ function linkLine(link: LinkView): { color: number; alpha: number; width: number
 
 /** Whether a node draws greyed: closed, locked, or open with no point to take it (V25, §Edge States). */
 const greyed = (node: NodeView) => node.state === "locked" || node.state === "closed" || (node.state === "available" && !node.spendable);
+
+/**
+ * A lit node's hue (§Change: A lit node glows in its own colour, L1, L2): held or at max, so rank > 0,
+ * every rank alike; none for any other state, or for a node the copy gives none (R42). A locked node
+ * is never lit, whatever its rank: the model rules it locked first (V25).
+ */
+function litHue(node: NodeView): number | undefined {
+  return (node.state === "held" || node.state === "max") && node.hue ? palette.treeHue[node.hue] : undefined;
+}
+
+/** A node picture's ink by its state (L1): greyed, lit in its hue, or open in V29's near-white. */
+function pictureInk(node: NodeView): KnockoutInk {
+  if (greyed(node)) return GREYED;
+  const hue = litHue(node);
+  return hue === undefined ? TREE_INK : treeLitInk(hue);
+}
+
+/**
+ * A lit node's halo (L10): `discs` stacked discs in its hue, from just inside the plate's edge line down
+ * to `inner` of that radius, coming to about `alpha` at the centre. Tuned at the review page (L13).
+ */
+export const TREE_HALO = { discs: 4, inner: 0.4, alpha: 0.45 } as const;
+
+/** Each halo disc's alpha, so `discs` of them stacked come to `alpha` where they all overlap. */
+export function haloDiscAlpha(alpha: number = TREE_HALO.alpha, discs: number = TREE_HALO.discs): number {
+  return 1 - (1 - alpha) ** (1 / discs);
+}
+
+/**
+ * The halo behind a lit picture (L10, L11), on the plate's graphics `g` about (cx, cy): its first disc
+ * stops at `outer`, inside the edge line, and each after it is smaller, so the glow is brightest at the
+ * centre. Drawn once with the plate; never a filter, never redrawn per frame.
+ */
+function drawHalo(g: Phaser.GameObjects.Graphics, cx: number, cy: number, outer: number, hue: number): void {
+  const { discs, inner } = TREE_HALO;
+  g.fillStyle(hue, haloDiscAlpha());
+  for (let k = 0; k < discs; k++) g.fillCircle(cx, cy, outer * (1 - ((1 - inner) * k) / (discs - 1)));
+}
 
 /** A tip line's colour (R37): the held ranks marked in brass, a refusal's reason muted. */
 function tipColour(line: TipLine): number {
@@ -340,12 +380,16 @@ export class PassiveTreeOverlay implements TreePiece {
     };
     fill(palette.hudPanelDeep, 0.9);
     if (!dim) fill(edge.color, LIT_PLATE_ALPHA);
+    const [cx, cy] = [plate.x + plate.width / 2, plate.y + plate.height / 2];
     g.lineStyle(edge.width, edge.color, edge.alpha);
-    if (round) g.strokeCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
+    if (round) g.strokeCircle(cx, cy, plate.width / 2);
     else g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
     const picture = nodePicture(node.icon);
     if (picture) {
-      this.drawPicture(g, fitIcon(picture, plate.width), plate, dim, `the ${node.id} node`, PICTURE_DEPTH);
+      const hue = litHue(node);
+      // round on a square plate too, clear of its edge line
+      if (hue !== undefined) drawHalo(g, cx, cy, plate.width / 2 - edge.width, hue);
+      this.drawPicture(g, fitIcon(picture, plate.width), plate, pictureInk(node), `the ${node.id} node`, PICTURE_DEPTH);
       return;
     }
     drawUnknownGlyph(g, plate.x + plate.width / 2, plate.y + plate.height / 2, dim ? palette.hudFaint : palette.frame, dim ? GREYED_ALPHA : 0.9);
@@ -355,17 +399,16 @@ export class PassiveTreeOverlay implements TreePiece {
   private drawLock(g: Phaser.GameObjects.Graphics, box: FrameRect): void {
     g.fillStyle(palette.hudPanelDeep, 0.95);
     g.fillCircle(box.x + box.width / 2, box.y + box.height / 2, box.width / 2 + 1.5);
-    this.drawPicture(g, fitIcon(LOCK_ICON, box.width, 0), box, false, "a lock mark", LOCK_DEPTH);
+    this.drawPicture(g, fitIcon(LOCK_ICON, box.width, 0), box, TREE_INK, "a lock mark", LOCK_DEPTH);
   }
 
   /**
-   * `icon` on the box `at` as its knockout, in the tree ink or greyed, at `depth`; its lines on `g` where
-   * the knockout cannot stand, now or at a new render scale (ADR-0080 "Fallback").
+   * `icon` on the box `at` as its knockout in `ink`, at `depth`; its lines on `g` in that ink's idle tint
+   * and alpha where the knockout cannot stand, now or at a new render scale (ADR-0080 "Fallback"; L12).
    */
-  private drawPicture(g: Phaser.GameObjects.Graphics, icon: AbilityIcon, at: FrameRect, dim: boolean, name: string, depth: number): void {
-    const lines = () =>
-      drawIconLines(g, icon, at.x + at.width / 2, at.y + at.height / 2, dim ? palette.hudFaint : TREE_INK.idle.tint, dim ? GREYED_ALPHA : TREE_INK.idle.alpha);
-    const knockout = new Knockout({ scene: this.scene, depth, picture: icon.picture, ink: dim ? GREYED : TREE_INK, name, lost: lines });
+  private drawPicture(g: Phaser.GameObjects.Graphics, icon: AbilityIcon, at: FrameRect, ink: KnockoutInk, name: string, depth: number): void {
+    const lines = () => drawIconLines(g, icon, at.x + at.width / 2, at.y + at.height / 2, ink.idle.tint, ink.idle.alpha);
+    const knockout = new Knockout({ scene: this.scene, depth, picture: icon.picture, ink, name, lost: lines });
     this.knockouts.push(knockout);
     if (!knockout.show(at, false)) lines();
   }

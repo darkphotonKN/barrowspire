@@ -2080,6 +2080,9 @@ describe("HudCorner (FS-8RZ51 R32, R33: the Tree icon and its marker)", () => {
     const t = solid.textures[1];
     const f = cornerIconFrame("tree", viewport);
     expect([t.x, t.y]).toEqual([f.x + f.width / 2, f.y + f.height / 2]);
+    // bronze like the row: the tree's own hues are its node pictures' alone (ADR-0089)
+    expectLit(t, BRONZE);
+    expect(t.alpha).toBe(0.85);
   });
 
   it("should show the ember marker in lines while marked, and take it off at none", () => {
