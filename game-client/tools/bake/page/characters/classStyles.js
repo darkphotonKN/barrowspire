@@ -35,13 +35,18 @@ import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, RUNNING_CLAS
  * ({@link MERC_TRAILING_SWORD}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword).
  *
  * The wizard's sceptre arm pumps smaller ({@link SCEPTRE_RUN_ARM}) about a centre drawn back
- * ({@link SCEPTRE_RUN_BACK}), so her hand peaks at the lower chest ({@link SCEPTRE_RUN_PEAK}), not by
- * the shoulder (the shared pump's chest height, 0.70 H, sits just under this rig's shoulder at
- * 0.74); her tome arm keeps the full pump. The sceptre stands up from the fist ({@link RUN_SCEPTRE}),
- * the wrist taking back a little more than the pump ({@link RUN_SCEPTRE_WRIST}), so it leans
- * forward a little as the hand rises and stands up as it falls: 23–38° off vertical
- * ({@link SCEPTRE_RUN_TILT}), the orb ahead of the hand and of her face, at most about her chin, and
- * her hand crossing in at the front as the swords' do.
+ * ({@link SCEPTRE_RUN_BACK}), so her hand peaks at the lower chest, not by the shoulder (the shared
+ * pump's chest height, 0.70 H, sits just under this rig's shoulder at 0.74); her tome arm keeps the
+ * full pump. The sceptre stands up from the fist ({@link RUN_SCEPTRE}), the wrist taking back a
+ * little more than the pump ({@link RUN_SCEPTRE_WRIST}), so it leans forward a little as the hand
+ * rises and stands up as it falls, the orb ahead of the hand and of her face, at most about her
+ * chin, and her hand crossing in at the front as the swords' do. Her run carries it under the
+ * sprint's 20° lean (FS-JS7C8 § Change: The wizard's sprint and pointed cast R122, R123), the carry's
+ * keys as they were: the lean lowers her chest, so the sceptre hand peaks at 0.56–0.59 H, under the
+ * chest bone ({@link WIZARD_SPRINT_PEAK}; 0.61 H on the 10° lean), her tome hand's front comes
+ * about 0.02 H under the chest bone, and the sceptre leans on with the trunk, 36.7–48.5° off
+ * vertical (23.4–37.8° on the 10° lean), past {@link WIZARD_SPRINT_TILT}'s 45, its foot touching
+ * the robe on the run's key 1: both escalated (classMotion.test.mjs `held`).
  */
 const REST_ARM = [-0.05, 0, 0];
 const REST_ELBOW = [-0.12, 0, 0];
@@ -65,10 +70,18 @@ const RUN_SCEPTRE_WRIST = [0, 1.2];
 /** The wizard's sceptre arm's share of the shared pump (RUN_ARM), and how far its centre is drawn back (rad). */
 const SCEPTRE_RUN_ARM = 0.76;
 const SCEPTRE_RUN_BACK = 0.25;
-/** Where the wizard's sceptre hand peaks in the run (H): the lower chest, under the chest bone. */
-export const SCEPTRE_RUN_PEAK = 0.61;
-/** The sceptre's band off vertical through the run's pump (degrees): reasonably upright. */
-export const SCEPTRE_RUN_TILT = [15, 40];
+/**
+ * Where the wizard's sceptre hand peaks in her run (H): the lower chest, under the chest bone, which
+ * the sprint's lean lowers (FS-JS7C8 § Change: The wizard's sprint and pointed cast R123 (i);
+ * measured 0.574; was 0.61 ± 0.01 on the shared run's 10° lean).
+ */
+export const WIZARD_SPRINT_PEAK = [0.56, 0.59];
+/**
+ * The sceptre's band off vertical through her run's pump (degrees): reasonably upright, leaning on
+ * with the trunk (R123 (ii); was 15–40 on the 10° lean). The FS measured 30–40.3° under the
+ * sprint's lean; on her rig it reads 36.7–48.5°, escalated 2026-11-23 (I-JS7C8-27).
+ */
+export const WIZARD_SPRINT_TILT = [15, 45];
 
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
@@ -161,8 +174,9 @@ export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
  * and trailing sword M1, R93, the owner: "移動時也要像弓箭手跑的感覺"): its lean ({@link SPRINT_LEAN}),
  * its legs ({@link SPRINT_STEP}) and its clip at 16 fps ({@link SPRINT_RUN}), first keyed for the
  * archer (§ Change: The archer's sprint and low-ready bow) and defined here once, so each class's
- * `run` reads the same keys under its own arms. The knight and the wizard keep the shared fast run
- * (clips.js RUN_STEP, RUN_LEAN, RUN_ANIMATIONS).
+ * `run` reads the same keys under its own arms. The knight keeps the shared fast run (clips.js
+ * RUN_STEP, RUN_LEAN, RUN_ANIMATIONS); the wizard takes the sprint's lean and clip over the shared
+ * fast run's legs at a shorter stride ({@link WIZARD_SPRINT_STRIDE}).
  *
  * The sprint's forward lean (§ Change: The archer's sprint and low-ready bow R67, D1, the owner:
  * "跑更快的話身體可能會更加前傾"): twice the shared RUN_LEAN, tilting the hips-to-neck line about 20°
@@ -238,8 +252,8 @@ export const ARCHER_LOW_READY = pose(
  * shorter stride, so its measured pace stays at RUN_PACE, the cloth carried at the shared run's
  * speed ({@link SPRINT_RUN}). Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
  * no `walk_attack` and no `backpedal_attack`, and the client plays her `attack` moving or not. The
- * Hunter and the Shadow Ranger take it through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, the
- * wizard's, is not changed.
+ * Hunter and the Shadow Ranger take it through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, which
+ * the knight's sheet and the wizard's read, is not changed.
  */
 export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
@@ -275,10 +289,23 @@ export const ARCHER_QUIVER = { tilt: QUIVER_TILT, at: [-0.045, 0.03, -0.15], rx:
 export const WIZARD_BUILD = [1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88, hipW: 1.1, armR: 0.78, limbR: 0.84, headR: 0.059 }];
 
 /**
- * The wizard re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 7, FS-HF0WW
- * § Change: Class sheets at 1.5x R35).
+ * The wizard's stride in her run (FS-JS7C8 § Change: The wizard's sprint and pointed cast R117; E1
+ * (a)): the shared fast run's legs (clips.js RUN_STEP, every thigh key) at 0.88, 12% shorter as the
+ * sprint's stride is, so at the sprint's 16 fps her measured pace stays at RUN_PACE (194.21 world
+ * px/s). Not the sprint's own legs ({@link SPRINT_STEP}): their knee drive came out through her
+ * gown's front by 3.2 px at 1.5x, and no robe setting cleared it; on these legs her robe's guards
+ * read 0 px on all three looks. She gives up the sprint's higher knee and heel kick, which her
+ * ankle-length gown mostly hides.
  */
-export const WIZARD_SHEET = { animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 };
+export const WIZARD_SPRINT_STRIDE = 0.88;
+
+/**
+ * The wizard re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 7, FS-HF0WW
+ * § Change: Class sheets at 1.5x R35), her run the sprint's clip at 16 fps ({@link SPRINT_RUN};
+ * § Change: The wizard's sprint and pointed cast R116). The Spellwarden and the Pyromancer take it
+ * through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, the knight's, is not changed.
+ */
+export const WIZARD_SHEET = { animations: { ...RUNNING_CLASS_ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
 export const WIZARD_STYLE = {
   attack: "cast",
@@ -291,14 +318,19 @@ export const WIZARD_STYLE = {
     foreArmL: [-0.15, 0, 0],
   }),
   walk: { arms: [0.8, 0.4], lean: 0.05, stride: 0.95, wrist: WALK_WRIST },
-  // the run's carry (FS-JS7C8 R2): both arms pump from the shoulder, a little out from the body so
-  // the sceptre and the tome swing clear of the hips, the sceptre arm smaller and drawn back so its
-  // hand peaks at the lower chest, crossing in at the front; the sceptre up from the fist, its head ahead
+  // her run (FS-JS7C8 § Change: The wizard's sprint and pointed cast R116, R117): the trunk about
+  // 20° forward ({@link SPRINT_LEAN}) over the shared fast run's legs at a shorter stride
+  // ({@link WIZARD_SPRINT_STRIDE}). The carry (FS-JS7C8 R2), kept: both arms pump from the shoulder,
+  // a little out from the body so the sceptre and the tome swing clear of the hips, the sceptre arm
+  // smaller and drawn back so its hand peaks at the lower chest, crossing in at the front; the
+  // sceptre up from the fist, its head ahead
   run: {
     arms: [1, SCEPTRE_RUN_ARM],
     wrist: RUN_SCEPTRE_WRIST,
     cross: [0, RUN_CROSS],
     hold: pose({ upperArmL: [0, 0, 0.14], upperArmR: [SCEPTRE_RUN_BACK, 0, -0.12], handR: RUN_SCEPTRE }),
+    lean: SPRINT_LEAN,
+    stride: WIZARD_SPRINT_STRIDE,
   },
   idleExtra: () => pose({}, {}, { glow: 1 }),
 };

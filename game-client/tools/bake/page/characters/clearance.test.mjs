@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import { createRig, jointAt as J, mount } from "./rig.js";
 import { UNDER_CLEAR, belt, boots, cloak, cloakBones, legs, sash, skirt, skirtBones, torso } from "./anatomy.js";
-import { applyPose, clipsFor, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS, RUNNING_CLASS_ANIMATIONS } from "./clips.js";
+import { applyPose, clipsFor, groundPose, pose, simulateSprings, walkCycle, ANIMATIONS, RUN_LEAN, RUNNING_CLASS_ANIMATIONS } from "./clips.js";
 import {
   ARCHER_BUILD,
   ARCHER_QUIVER,
@@ -339,9 +339,10 @@ const SHEETS = { knight: KNIGHT_SHEET.animations, archer: ARCHER_SHEET.animation
  * with its springs as the bake page runs them (page/main.js `characterPoses`). `specs` stands in
  * for the sheet's clip specs (RUNNING_CLASS_ANIMATIONS), `gownSegs` for the gown's columns.
  */
-function dressed(cls, { cut = "now", specs = SHEETS[cls], gownSegs = 64, panelSegs } = {}) {
+function dressed(cls, { cut = "now", specs = SHEETS[cls], gownSegs = 64, panelSegs, style: own } = {}) {
   const openFront = (gap) => [Math.PI / 2 + gap, Math.PI / 2 + Math.PI * 2 - gap];
-  const [build, style] = { knight: [KNIGHT_BUILD, KNIGHT_STYLE], archer: [ARCHER_BUILD, ARCHER_STYLE], wizard: [WIZARD_BUILD, WIZARD_STYLE], mercenary: [MERCENARY_BUILD, MERCENARY_STYLE] }[cls];
+  const [build, sheetStyle] = { knight: [KNIGHT_BUILD, KNIGHT_STYLE], archer: [ARCHER_BUILD, ARCHER_STYLE], wizard: [WIZARD_BUILD, WIZARD_STYLE], mercenary: [MERCENARY_BUILD, MERCENARY_STYLE] }[cls];
+  const style = own ?? sheetStyle;
   const rig = createRig(...build);
   rig.hooks = [];
   if (cls === "knight") cloakBones(rig, { length: 0.64, drag: 0.34 });
@@ -502,8 +503,13 @@ describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法
       expect(overGarment(rig, posesOf(anim)), anim).toBeGreaterThan(-clearanceLimit(1.5));
   });
 
-  it("measures the scapular cut on the gown's rings but not its columns (the gown at 32 columns, the panel at 16 across its own arc): the panel dips under the gown's faces behind the knee in the run by more than a baked px", () => {
-    const { rig, posesOf } = dressed("wizard", { gownSegs: 32, panelSegs: 16 });
+  // a control on the measure, not on her sheet: her run now leans as the sprint does over a
+  // shorter stride (FS-JS7C8 § Change: The wizard's sprint and pointed cast R117), and on it the
+  // old cut's dip reads 0.59 px, under a baked px; fed her run as it was (the 10° lean at 14 fps,
+  // the full stride), it is still a cut the guard must catch, so the control builds that run
+  const RUN_BEFORE = { style: { ...WIZARD_STYLE, run: { ...WIZARD_STYLE.run, lean: RUN_LEAN, stride: 1 } }, specs: RUNNING_CLASS_ANIMATIONS };
+  it("measures the scapular cut on the gown's rings but not its columns (the gown at 32 columns, the panel at 16 across its own arc): the panel dips under the gown's faces behind the knee in her run as it was by more than a baked px", () => {
+    const { rig, posesOf } = dressed("wizard", { gownSegs: 32, panelSegs: 16, ...RUN_BEFORE });
     expect(overGarment(rig, posesOf("run"))).toBeLessThan(-clearanceLimit(1.5));
   });
 
