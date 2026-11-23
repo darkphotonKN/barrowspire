@@ -12,8 +12,10 @@
  *
  * Node pictures (R40, V29): each node draws its picture (`nodePicture`: the tree's own from
  * `passiveIcons.ts`, the ability node its tree ability's from the ability bar's `ABILITY_ICONS`), fitted to
- * its plate (`fitIcon`), through the one knockout renderer (`Knockout`, ADR-0080), in the near-white
- * `TREE_INK` or, greyed, in `GREYED`, its lines where the scene cannot; a lit node's whole plate fill is lit
+ * its plate (`fitIcon`), through the one knockout renderer (`Knockout`, ADR-0080), inked by its state
+ * (§Change: A lit node glows in its own colour, ADR-0089): an open node in the near-white `TREE_INK`, a
+ * held or max node in its own hue's lit ink (`treeLitInk`) over a static halo in that hue, greyed in
+ * `GREYED`; its lines where the scene cannot, in the same ink. A lit node's whole plate fill is lit
  * in its edge's token. A locked node's lock mark is the padlock (`LOCK_ICON`) on a dark backing, drawn the
  * same way. A node the copy lacks draws the fallback glyph (`drawUnknownGlyph`) with its id as its name
  * (R42). Every colour is a palette token (ADR-0013, ADR-0025).
@@ -27,11 +29,11 @@
 
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
+import { CANVAS_FONT, palette, toCss, type TreeHue } from "@/utils/canvasPalette";
 import { drawIconLines, type AbilityIcon } from "./abilityIcons";
 import { itemTipRow } from "./gearOverlayLayout";
 import { tipGround } from "./itemTip";
-import { GREYED, GREYED_ALPHA, Knockout, TREE_INK } from "./knockout";
+import { GREYED, GREYED_ALPHA, Knockout, TREE_BRONZE_MIX, TREE_INK, TREE_LIT_LIFT, treeLitInk, type KnockoutInk } from "./knockout";
 import { LOCK_ICON, fitIcon, nodeIcon, type NodeIconKey } from "./passiveIcons";
 import { GLYPH_LINE_W } from "./MailboxEnvelope";
 import { drawPanelFrame, drawPanelTitle, lightClose, type FrameRect } from "./panelFrame";
@@ -89,6 +91,62 @@ function linkLine(link: LinkView): { color: number; alpha: number; width: number
 /** Whether a node draws greyed: closed, locked, or open with no point to take it (V25, §Edge States). */
 const greyed = (node: NodeView) => node.state === "locked" || node.state === "closed" || (node.state === "available" && !node.spendable);
 
+/** A node's `r / max` ink: brass once it holds a rank, faint when greyed, muted otherwise (V25). */
+export const rankInk = (node: NodeView) => (node.rank > 0 ? palette.frameBright : greyed(node) ? palette.hudFaint : palette.hudLabel);
+
+/**
+ * A lit node's halo (L10): `discs` stacked discs in its hue, from just inside the plate's edge line down
+ * to `inner` of that radius, coming to about `alpha` at the centre. Tuned at the review page (L13).
+ */
+export const TREE_HALO = { discs: 4, inner: 0.4, alpha: 0.45 } as const;
+
+/**
+ * What a lit node is drawn with (§Change: A lit node glows in its own colour, L4, L7, L8, L10): each hue's
+ * colour, the light touch of bronze, the lift at the top, the halo. The tree draws `TREE_LOOK`; the review
+ * page (L13) hands another, a preview that is never saved.
+ */
+export interface TreeLook {
+  hues: Readonly<Record<TreeHue, number>>;
+  bronzeMix: number;
+  lift: number;
+  halo: { readonly discs: number; readonly inner: number; readonly alpha: number };
+}
+
+/** The tuned look: the palette's hues and the constants above. */
+export const TREE_LOOK: TreeLook = { hues: palette.treeHue, bronzeMix: TREE_BRONZE_MIX, lift: TREE_LIT_LIFT, halo: TREE_HALO };
+
+/**
+ * A lit node's hue (§Change: A lit node glows in its own colour, L1, L2): held or at max, so rank > 0,
+ * every rank alike; none for any other state, or for a node the copy gives none (R42). A locked node
+ * is never lit, whatever its rank: the model rules it locked first (V25).
+ */
+function litHue(node: NodeView, look: TreeLook): number | undefined {
+  return (node.state === "held" || node.state === "max") && node.hue ? look.hues[node.hue] : undefined;
+}
+
+/** A node picture's ink by its state (L1): greyed, lit in its hue, or open in V29's near-white. */
+function pictureInk(node: NodeView, look: TreeLook): KnockoutInk {
+  if (greyed(node)) return GREYED;
+  const hue = litHue(node, look);
+  return hue === undefined ? TREE_INK : treeLitInk(hue, look.bronzeMix, look.lift);
+}
+
+/** Each halo disc's alpha, so `discs` of them stacked come to `alpha` where they all overlap. */
+export function haloDiscAlpha(alpha: number = TREE_HALO.alpha, discs: number = TREE_HALO.discs): number {
+  return 1 - (1 - alpha) ** (1 / discs);
+}
+
+/**
+ * The halo behind a lit picture (L10, L11), on the plate's graphics `g` about (cx, cy): its first disc
+ * stops at `outer`, inside the edge line, and each after it is smaller, so the glow is brightest at the
+ * centre. Drawn once with the plate; never a filter, never redrawn per frame.
+ */
+function drawHalo(g: Phaser.GameObjects.Graphics, cx: number, cy: number, outer: number, hue: number, halo: TreeLook["halo"]): void {
+  const { discs, inner, alpha } = halo;
+  g.fillStyle(hue, haloDiscAlpha(alpha, discs));
+  for (let k = 0; k < discs; k++) g.fillCircle(cx, cy, outer * (1 - ((1 - inner) * k) / Math.max(1, discs - 1)));
+}
+
 /** A tip line's colour (R37): the held ranks marked in brass, a refusal's reason muted. */
 function tipColour(line: TipLine): number {
   if (line.tone === "name") return palette.frameBright;
@@ -117,6 +175,63 @@ export function drawUnknownGlyph(g: Pen, cx: number, cy: number, ink: number, al
   g.moveTo(cx - 8, cy - 8);
   g.lineTo(cx + 8, cy + 8);
   g.strokePath();
+}
+
+/**
+ * A node's plate on `g`, round for a traversal node (V23), its edge by its state, its whole fill lit when
+ * the node is (V29), a lit node's halo in its hue (L10), and its picture fitted to it in its state's ink,
+ * or the fallback glyph for a node the copy lacks (V25, R40, R42). Drawn in `look`, the tree's own unless
+ * the review page previews another (L13), so what is approved there is what ships. Returns the picture's
+ * knockout, for its owner to take down; none for the fallback glyph.
+ */
+export function drawNodePlate(
+  scene: Phaser.Scene,
+  g: Phaser.GameObjects.Graphics,
+  node: NodeView,
+  { rect: plate, round }: PlateLayout,
+  look: TreeLook = TREE_LOOK,
+): Knockout | undefined {
+  const edge = plateEdge(node);
+  const dim = greyed(node);
+  const fill = (color: number, alpha: number) => {
+    g.fillStyle(color, alpha);
+    if (round) g.fillCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
+    else g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
+  };
+  fill(palette.hudPanelDeep, 0.9);
+  if (!dim) fill(edge.color, LIT_PLATE_ALPHA);
+  const [cx, cy] = [plate.x + plate.width / 2, plate.y + plate.height / 2];
+  g.lineStyle(edge.width, edge.color, edge.alpha);
+  if (round) g.strokeCircle(cx, cy, plate.width / 2);
+  else g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
+  const picture = nodePicture(node.icon);
+  if (picture) {
+    const hue = litHue(node, look);
+    // round on a square plate too, clear of its edge line
+    if (hue !== undefined) drawHalo(g, cx, cy, plate.width / 2 - edge.width, hue, look.halo);
+    return drawPicture(scene, g, fitIcon(picture, plate.width), plate, pictureInk(node, look), `the ${node.id} node`, PICTURE_DEPTH);
+  }
+  drawUnknownGlyph(g, cx, cy, dim ? palette.hudFaint : palette.frame, dim ? GREYED_ALPHA : 0.9);
+  return undefined;
+}
+
+/**
+ * `icon` on the box `at` as its knockout in `ink`, at `depth`; its lines on `g` in that ink's idle tint
+ * and alpha where the knockout cannot stand, now or at a new render scale (ADR-0080 "Fallback"; L12).
+ */
+function drawPicture(
+  scene: Phaser.Scene,
+  g: Phaser.GameObjects.Graphics,
+  icon: AbilityIcon,
+  at: FrameRect,
+  ink: KnockoutInk,
+  name: string,
+  depth: number,
+): Knockout {
+  const lines = () => drawIconLines(g, icon, at.x + at.width / 2, at.y + at.height / 2, ink.idle.tint, ink.idle.alpha);
+  const knockout = new Knockout({ scene, depth, picture: icon.picture, ink, name, lost: lines });
+  if (!knockout.show(at, false)) lines();
+  return knockout;
 }
 
 /** What the overlay is built with in one world. */
@@ -289,10 +404,10 @@ export class PassiveTreeOverlay implements TreePiece {
     parts.push(lines, g);
     view.nodes.forEach((node, i) => {
       const plate = layout.plates[i];
-      this.drawPlate(g, node, plate);
+      const picture = drawNodePlate(this.scene, g, node, plate);
+      if (picture) this.knockouts.push(picture);
       const { rect } = plate;
-      const rankInk = node.rank > 0 ? palette.frameBright : greyed(node) ? palette.hudFaint : palette.hudLabel;
-      text(rect.x + rect.width / 2, rect.y + rect.height + TREE_RANK_GAP, `${node.rank} / ${node.maxRank}`, 10, rankInk, [0.5, 0]);
+      text(rect.x + rect.width / 2, rect.y + rect.height + TREE_RANK_GAP, `${node.rank} / ${node.maxRank}`, 10, rankInk(node), [0.5, 0]);
     });
     if (this.world !== "hub") text(layout.footer.x, layout.footer.y, SPENT_IN_TOWN, 11, palette.hudLabel);
     else this.spendFooter(g, layout, text);
@@ -325,49 +440,11 @@ export class PassiveTreeOverlay implements TreePiece {
     }
   }
 
-  /**
-   * A node's plate, round for a traversal node (V23), its edge by its state, its whole fill lit when the
-   * node is (V29), and its picture fitted to it, or the fallback glyph for a node the copy lacks (V25,
-   * R40, R42).
-   */
-  private drawPlate(g: Phaser.GameObjects.Graphics, node: NodeView, { rect: plate, round }: PlateLayout): void {
-    const edge = plateEdge(node);
-    const dim = greyed(node);
-    const fill = (color: number, alpha: number) => {
-      g.fillStyle(color, alpha);
-      if (round) g.fillCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
-      else g.fillRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
-    };
-    fill(palette.hudPanelDeep, 0.9);
-    if (!dim) fill(edge.color, LIT_PLATE_ALPHA);
-    g.lineStyle(edge.width, edge.color, edge.alpha);
-    if (round) g.strokeCircle(plate.x + plate.width / 2, plate.y + plate.height / 2, plate.width / 2);
-    else g.strokeRoundedRect(plate.x, plate.y, plate.width, plate.height, 4);
-    const picture = nodePicture(node.icon);
-    if (picture) {
-      this.drawPicture(g, fitIcon(picture, plate.width), plate, dim, `the ${node.id} node`, PICTURE_DEPTH);
-      return;
-    }
-    drawUnknownGlyph(g, plate.x + plate.width / 2, plate.y + plate.height / 2, dim ? palette.hudFaint : palette.frame, dim ? GREYED_ALPHA : 0.9);
-  }
-
   /** A locked node's lock mark in its `box` (V25, V29): the padlock on a dark disc that parts it from the plate's edge. */
   private drawLock(g: Phaser.GameObjects.Graphics, box: FrameRect): void {
     g.fillStyle(palette.hudPanelDeep, 0.95);
     g.fillCircle(box.x + box.width / 2, box.y + box.height / 2, box.width / 2 + 1.5);
-    this.drawPicture(g, fitIcon(LOCK_ICON, box.width, 0), box, false, "a lock mark", LOCK_DEPTH);
-  }
-
-  /**
-   * `icon` on the box `at` as its knockout, in the tree ink or greyed, at `depth`; its lines on `g` where
-   * the knockout cannot stand, now or at a new render scale (ADR-0080 "Fallback").
-   */
-  private drawPicture(g: Phaser.GameObjects.Graphics, icon: AbilityIcon, at: FrameRect, dim: boolean, name: string, depth: number): void {
-    const lines = () =>
-      drawIconLines(g, icon, at.x + at.width / 2, at.y + at.height / 2, dim ? palette.hudFaint : TREE_INK.idle.tint, dim ? GREYED_ALPHA : TREE_INK.idle.alpha);
-    const knockout = new Knockout({ scene: this.scene, depth, picture: icon.picture, ink: dim ? GREYED : TREE_INK, name, lost: lines });
-    this.knockouts.push(knockout);
-    if (!knockout.show(at, false)) lines();
+    this.knockouts.push(drawPicture(this.scene, g, fitIcon(LOCK_ICON, box.width, 0), box, TREE_INK, "a lock mark", LOCK_DEPTH));
   }
 
   /** The × lit under the pointer; the node under it ringed and its tooltip beside it (R37). */

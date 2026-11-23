@@ -131,6 +131,13 @@ describe("the passive tree's held nodes and points (FS-8RZ51 V25, R9)", () => {
     expect([n.rank, n.maxRank]).toEqual([1, 3]);
   });
 
+  it("should give a node its hue whatever its state or rank (L2, L5)", () => {
+    const hues = (source: TreeSource) => ["r1", "r2", "ua1", "ub1", "t2a", "t2b", "t6b"].map((s) => node(source, `warrior.${s}`).hue);
+    const want = ["health", "power", "speed", "movement", "power", "defence", "health"];
+    expect(hues(warrior())).toEqual(want);
+    expect(hues(warrior({ "warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1, "warrior.t2a": 2 }, 0))).toEqual(want);
+  });
+
   it("should change nothing in the view for a retired id in the ranks (R42, V21)", () => {
     const ranks = held("warrior", ["r1", "r2"]);
     expect(treeView(warrior({ ...ranks, "warrior.t1a": 2, "warrior.t4b": 1 }))).toEqual(treeView(warrior(ranks)));
@@ -242,6 +249,16 @@ describe("the rule over a tree that is only data (FS-8RZ51 V11)", () => {
       [1, "deep", "b"],
       [1, "deep", "c"],
       [2, undefined, undefined],
+    ]);
+  });
+
+  it("should carry each node's hue from its copy, and none for a node the copy lacks (L5, R42)", () => {
+    expect(nodesOf(warrior(), FIXTURE).map((n) => [n.id, n.hue])).toEqual([
+      ["warrior.t6a", "defence"],
+      ["warrior.xa", undefined],
+      ["warrior.xb", undefined],
+      ["warrior.xc", undefined],
+      ["warrior.end", undefined],
     ]);
   });
 

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { mix, palette, shade } from "@/utils/canvasPalette";
+import { mix, palette, shade, tint } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
-import { BRONZE, CUT_W, Knockout, bend, oval, type KnockoutPicture } from "./knockout";
+import { BRONZE, CUT_W, Knockout, TREE_BRONZE_MIX, TREE_INK, TREE_LIT_LIFT, bend, oval, treeLitInk, type KnockoutPicture } from "./knockout";
 
 // FS-7TQN4 R1, R2, R12–R15: the corner row's one knockout renderer, on a recording stand-in for the
 // Phaser scene. I-7TQN4-1. FS-S8Z2Y R1–R6: its drop shadow and its top-lit gradient. I-S8Z2Y-1.
@@ -194,12 +194,12 @@ function tintAt(t: Tex, y: number): number[] {
  * FS-S8Z2Y R4: the corner tints, the top two equal and the foot two equal, give `base` lifted 25%
  * toward the bright amber at the silhouette's top and shaded 20% at its foot, within 1 per channel.
  */
-function expectLit(t: Tex, base: number, top = TOP, foot = FOOT) {
+function expectLit(t: Tex, base: number, top = TOP, foot = FOOT, lift: { amount: number; toward: number } = { amount: 0.25, toward: palette.interactableBright }) {
   const [tl, tr, bl, br] = t.tints!;
   expect(tr).toBe(tl);
   expect(br).toBe(bl);
   const within = (got: number[], want: number) => got.forEach((c, i) => expect(Math.abs(c - rgb(want)[i])).toBeLessThanOrEqual(1));
-  within(tintAt(t, top), mix(base, palette.interactableBright, 0.25));
+  within(tintAt(t, top), mix(base, lift.toward, lift.amount));
   within(tintAt(t, foot), shade(base, 0.2));
 }
 
@@ -587,6 +587,16 @@ describe("Knockout (FS-S8Z2Y R4–R6: lit from above)", () => {
     knockout.destroy();
   });
 
+  it("should lift an ink's top as far and toward what the ink says, and its foot as every ink's (FS-8RZ51 §Change: A lit node glows, L8)", () => {
+    const env = stage();
+    const lift = { amount: 0.4, toward: palette.hudText };
+    const ink = { idle: { tint: palette.frame, alpha: 1 }, hover: { tint: palette.frame, alpha: 1 }, lift };
+    const knockout = new Knockout({ scene: env.scene, depth: 1000, picture: PICTURE, ink });
+    knockout.show(SLOT, false);
+    expectLit(env.textures[0], palette.frame, TOP, FOOT, lift);
+    knockout.destroy();
+  });
+
   it("should hold each corner's channels to 0–255 where the line carried out to the texture's edge runs past them", () => {
     const thin: KnockoutPicture = { silhouette: [[[-4, -1], [4, -1], [4, 1], [-4, 1]]], cuts: [] };
     const env = stage();
@@ -617,6 +627,26 @@ describe("knockout geometry helpers (FS-7TQN4 R1: one bend, one oval)", () => {
     expect(ps).toHaveLength(3);
     expect(ps[1][0]).toBeCloseTo(0, 12);
     expect(ps[1][1]).toBeCloseTo(1, 12);
+  });
+
+  it("should ink a lit tree picture in its hue with a light touch of bronze, lifted toward the hue's own light end, the same under the pointer (FS-8RZ51 §Change: A lit node glows, L7–L9)", () => {
+    expect(TREE_BRONZE_MIX).toBeGreaterThanOrEqual(0.1);
+    expect(TREE_BRONZE_MIX).toBeLessThanOrEqual(0.15);
+    expect(TREE_LIT_LIFT).toBeGreaterThan(0.25);
+    for (const hue of Object.values(palette.treeHue)) {
+      const ink = treeLitInk(hue);
+      const idle = { tint: mix(hue, BRONZE.idle.tint, TREE_BRONZE_MIX), alpha: 1 };
+      expect(ink).toEqual({ idle, hover: idle, lift: { amount: TREE_LIT_LIFT, toward: tint(hue, 0.5) } });
+      expect(ink.flat).toBeUndefined();
+    }
+    // the open node's ink stays V29's near-white (the owner, 2026-11-23)
+    expect(TREE_INK).toEqual({ idle: { tint: palette.hudText, alpha: 1 }, hover: { tint: palette.hudText, alpha: 1 }, flat: true });
+  });
+
+  it("should take a previewed bronze mix and lift in place of the tuned ones (the review page, L13)", () => {
+    const hue = palette.treeHue.mana;
+    const idle = { tint: mix(hue, BRONZE.idle.tint, 0.3), alpha: 1 };
+    expect(treeLitInk(hue, 0.3, 0.6)).toEqual({ idle, hover: idle, lift: { amount: 0.6, toward: tint(hue, 0.5) } });
   });
 
   it("should tint the row bronze, lifted toward the bright amber under the pointer", () => {

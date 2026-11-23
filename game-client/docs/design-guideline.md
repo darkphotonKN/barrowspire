@@ -137,6 +137,7 @@ and the two are not required to agree (ADR-0025).
 | **Blood / danger** | oxblood `#6e1f1f` |
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
+| **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, teal `#3aa0b0`, frost `#8ac2e6`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c2c8d0` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
 and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
@@ -146,6 +147,21 @@ dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, 
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
 One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
+
+**The passive tree's hues are for a lit tree picture only** (`palette.treeHue`, FS-8RZ51 §Change: A
+lit node glows in its own colour, [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md)):
+a held node's picture and its halo wear a hue by what the node gives, and nothing else reads them.
+Ten hues: health and fire reuse their channels (lifted oxblood, ember), a resource refund is bright
+brass lifted to a pale gold and turned a fifth toward teal, so its halo never reads as a plate's
+brass edge, and the seven bases above are the rest (power copper, defence steelBlue,
+mana teal, speed frost, movement verdigris, crit amethyst, the duel silver). Mana's teal is the tree's
+own, clearer than the mana bar's greyish necrotic, which stays the bar's. None is amber or arcane
+green, and none is one of fire's own three. Teal, frost and silver are starting values the owner
+tunes at the dev gallery's Tree colours page (FS-8RZ51 L13). Two of them sit near lines this page
+draws, so they are narrow on purpose:
+- **Frost** is a pale cold sky tone of modest chroma, never the neon cyan the rules below forbid.
+- **Amethyst** marks crit in the tree and is not umbra, which stays the Shadow Shot's and the Shadow
+  Ranger's gloom.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be
@@ -1092,6 +1108,16 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   are not HUD icons. *(Added by
   [ADR-0080](../../docs/adr/0080-canvas-hud-icons-are-embossed-bronze-knockouts-from-one-shared-renderer.md),
   2026-11-14.)*
+  **One exception: the passive tree's node pictures.** They come from the same renderer, but an
+  open node's picture is the near-white vellum (`TREE_INK`, flat), and a held or max node's is its
+  own hue (`palette.treeHue`, see "Palette") with a light touch of bronze (`TREE_BRONZE_MIX`, 10%),
+  lit from above with its top lifted toward the hue's own light end, over a static halo in that hue
+  inside its plate; greyed stays greyed, and hover is the tree's ring, never a brighter picture.
+  A lit picture reads "on" by its colour and its glow, not by being lighter than the open ones.
+  Every other HUD icon, the corner row's Tree icon and the ability bar's icons among them, stays
+  bronze; a second icon wanting its own hue needs its own ADR. *(Added by
+  [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md),
+  2026-11-23.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

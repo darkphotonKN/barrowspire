@@ -16,7 +16,7 @@
 
 import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
-import { mix, palette, shade } from "@/utils/canvasPalette";
+import { mix, palette, shade, tint } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
 import type { Rect } from "./hudCornerLayout";
 
@@ -76,12 +76,15 @@ export interface KnockoutPicture {
 
 /**
  * A knockout's tint and alpha, idle and under the pointer. It is lit from above unless `flat`: one
- * tint over the whole silhouette (the greyed Mailbox, FS-S8Z2Y R6).
+ * tint over the whole silhouette (the greyed Mailbox, FS-S8Z2Y R6). `lift` says how far its top is
+ * lifted, and toward what; an ink that sets none is lifted 0.25 toward the bright amber, as the row's
+ * bronze is (FS-8RZ51 §Change: A lit node glows in its own colour, L8).
  */
 export interface KnockoutInk {
   idle: { tint: number; alpha: number };
   hover: { tint: number; alpha: number };
   flat?: boolean;
+  lift?: { amount: number; toward: number };
 }
 
 /** The row's bronze idle, lifted toward the bright amber under the pointer (FS-7TQN4 R10). */
@@ -91,16 +94,38 @@ export const BRONZE: KnockoutInk = {
 };
 
 /**
- * The passive tree's pictures (FS-8RZ51 §Change: Tree v2 V29): near-white, the canvas's lightest vellum
- * (`palette.hudText`) whole and flat, so no lift toward the amber warms it, on the same drop shadow. The
- * tree marks hover with a ring, never a brighter picture. Only the tree wears it; the row and the
- * ability bar keep `BRONZE`.
+ * The passive tree's open pictures (FS-8RZ51 §Change: Tree v2 V29; kept for an open node by §Change: A
+ * lit node glows in its own colour, L1, L3): near-white, the canvas's lightest vellum (`palette.hudText`)
+ * whole and flat, so no lift toward the amber warms it, on the same drop shadow. The tree marks hover
+ * with a ring, never a brighter picture. Only the tree wears it; the row and the ability bar keep
+ * `BRONZE`.
  */
 export const TREE_INK: KnockoutInk = {
   idle: { tint: palette.hudText, alpha: 1 },
   hover: { tint: palette.hudText, alpha: 1 },
   flat: true,
 };
+
+/**
+ * How far a lit tree picture's hue is mixed toward the row's bronze (L7): a light touch, so the hue
+ * reads as itself (the owner, 2026-11-23: 「不是全部都用古銅色」) and the top-lit gradient carries the
+ * metal. Tunable within 0.10–0.15; the bronze is an orange and greys the cool hues, so the low end.
+ */
+export const TREE_BRONZE_MIX = 0.1;
+/** How far a lit tree picture's top is lifted toward its hue's own light end (L8), past the row's 0.25. */
+export const TREE_LIT_LIFT = 0.4;
+
+/**
+ * A lit tree node's picture in `hue` (FS-8RZ51 §Change: A lit node glows in its own colour, L7–L9;
+ * ADR-0089): the hue with a light touch of the row's bronze at full alpha, lit from above, its top
+ * lifted toward `tint(hue, 0.5)` rather than the amber, so the hue stays itself at the top. Hover is
+ * idle: the tree marks it with a ring. The review page (L13) previews another `bronzeMix` and `lift`;
+ * the tree draws the tuned ones.
+ */
+export function treeLitInk(hue: number, bronzeMix = TREE_BRONZE_MIX, lift = TREE_LIT_LIFT): KnockoutInk {
+  const idle = { tint: mix(hue, BRONZE.idle.tint, bronzeMix), alpha: 1 };
+  return { idle, hover: idle, lift: { amount: lift, toward: tint(hue, 0.5) } };
+}
 
 /**
  * The greyed knockout (ADR-0080 "Unavailable"): flat in the faint grey at 0.6, never brightening under
@@ -186,7 +211,7 @@ export class Knockout {
     const image = this.image!.setPosition(cx, cy).setAlpha(ink.alpha);
     if (this.deps.ink.flat) image.setTint(ink.tint);
     else {
-      const { top, foot } = topLit(ink.tint, this.span, f.height / 2);
+      const { top, foot } = topLit(ink.tint, this.deps.ink.lift, this.span, f.height / 2);
       image.setTint(top, top, foot, foot);
     }
     // the shadow never moves under the pointer (R3)
@@ -271,13 +296,18 @@ export class Knockout {
 }
 
 /**
- * The corner tints that light `base` from above (FS-S8Z2Y R4): lifted toward the bright amber at the
- * silhouette's top, shaded at its foot, in a straight line between, carried out to the texture's
- * top and foot `half` px from its middle, so the quad's own interpolation lays that line on the
- * silhouette. Each channel is rounded and held to 0–255.
+ * The corner tints that light `base` from above (FS-S8Z2Y R4): lifted at the silhouette's top (by
+ * `lift`, or toward the bright amber), shaded at its foot, in a straight line between, carried out to
+ * the texture's top and foot `half` px from its middle, so the quad's own interpolation lays that line
+ * on the silhouette. Each channel is rounded and held to 0–255.
  */
-function topLit(base: number, span: { top: number; foot: number }, half: number): { top: number; foot: number } {
-  const lit = mix(base, palette.interactableBright, LIFT);
+function topLit(
+  base: number,
+  lift: KnockoutInk["lift"],
+  span: { top: number; foot: number },
+  half: number,
+): { top: number; foot: number } {
+  const lit = mix(base, lift?.toward ?? palette.interactableBright, lift?.amount ?? LIFT);
   const dark = shade(base, SHADE);
   const at = (y: number) => {
     const u = (y - span.top) / (span.foot - span.top);

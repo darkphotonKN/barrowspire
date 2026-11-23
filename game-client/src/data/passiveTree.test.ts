@@ -3,6 +3,7 @@ import { ABILITY_ICONS } from "@/ui/abilityIcons";
 import { treeAbilityCopy } from "@/ui/abilityCopy";
 import { PASSIVE_ICONS, nodeIcon } from "@/ui/passiveIcons";
 import { PASSIVE_COPY, PASSIVE_NODES, classNodes, nodeCopy, primaryAttributes, rankEffect, rankStats } from "./passiveTree";
+import { palette, type TreeHue } from "@/utils/canvasPalette";
 import { SPECIALIZATIONS } from "./specializations";
 
 // FS-8RZ51 R6, R39, R42 and §Change: Tree v2 (V1, V12, V13): the client reads the tree's structure and
@@ -92,6 +93,32 @@ describe("the passive tree's copy against the golden (FS-8RZ51 R6, R39)", () => 
 
   it("should name each ability node as the ability bar names its class's tree ability (FS-04EEA R50)", () => {
     for (const node of PASSIVE_NODES.filter((n) => n.kind === "ability")) expect(PASSIVE_COPY[node.id].name, node.id).toBe(treeAbilityCopy(node.class)?.name);
+  });
+
+  it("should give every node of every class the hue L4's table gives its picture, and use every hue (§Change: A lit node glows in its own colour, L4, L5)", () => {
+    // L4's table, by node name: each name is one picture, the traversal four shared by every class
+    const L4: Record<TreeHue, string[]> = {
+      health: ["Vitality", "Bloodied Riposte", "Berserker"],
+      power: ["Might", "Heavy Hand", "Earthbreaker"],
+      fire: ["Kindling", "Wide Volley", "Searing", "Pyromancer"],
+      defence: ["Thick Skin", "Practiced Guard", "Guardian"],
+      mana: ["Deep Well", "Blink", "Spellwarden"],
+      speed: ["Haste", "Quick Draw", "Arrow Rain"],
+      movement: ["Fleetness", "Fleet Foot", "Hunter"],
+      crit: ["Bull Rush", "Eagle Eye", "Keen Edge", "Shadow Ranger"],
+      refund: ["Long Wind", "Hunter's Breath", "Steady Hand", "Sellsword"],
+      steel: ["Duelist", "Settle the Debt"],
+    };
+    const hueOf = new Map(Object.entries(L4).flatMap(([hue, names]) => names.map((name) => [name, hue] as const)));
+    // every name in the table is a node the copy draws, once
+    expect(hueOf.size).toBe(Object.values(L4).flat().length);
+    expect([...new Set(PASSIVE_NODES.map((n) => PASSIVE_COPY[n.id].name))].sort()).toEqual([...hueOf.keys()].sort());
+    for (const node of PASSIVE_NODES) {
+      const { name, hue } = PASSIVE_COPY[node.id];
+      expect(hue, `${node.id} (${name})`).toBe(hueOf.get(name));
+    }
+    // every hue the palette holds is worn, and the table names every one
+    expect(new Set(PASSIVE_NODES.map((n) => PASSIVE_COPY[n.id].hue))).toEqual(new Set(Object.keys(palette.treeHue)));
   });
 
   it("should have no copy for an id it does not know (R42)", () => {
