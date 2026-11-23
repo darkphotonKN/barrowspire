@@ -512,37 +512,47 @@ function rightArmTurned({ back, out, twist }) {
 
 /**
  * The trailing sword arm's three turns (rad; {@link MERC_TRAILING_SWORD}): a tune round edits these,
- * never the triple they make.
+ * never the triple they make. The twist is negative: the upper arm turned out about its length.
  */
-export const MERC_TRAILING_TURNS = { back: 0.5, out: 0.3, twist: 0.6 };
+export const MERC_TRAILING_TURNS = { back: 0.46, out: 0.22, twist: -0.6 };
 
 /**
  * The mercenary's trailing sword in his sprint (FS-JS7C8 § Change: The mercenary's sprint and
  * trailing sword M2, M3, R97–R102; the owner: "右手拿劍時把劍往身體後擺 像常見的rpg比較酷的動作", then
- * "不用抬高 可以往下垂 但不要拖地"): his run's `hold`, the sword arm's whole carry there. The arm swings
- * back behind the leaning trunk nearly straight, out a little from the hip, the hand at about the
- * hips bone's height; the curved blade lies behind him, its point hanging down and its edge
- * down, well off the ground. Keyed as three turns of the upper arm in the chest's frame: swung
- * back 0.5 rad, out 0.3 rad past the rest's 0.1, then turned 0.6 rad about its own length (the
- * shoulder's inward turn) ({@link MERC_TRAILING_TURNS}), held as the one Euler triple those make,
- * the bones' XYZ order, less the rest ({@link rightArmTurned}); the elbow a little bent (0.3 rad)
- * and the forearm pronated 1.6 rad, so the arm's 2.2 rad of turn brings the edge down while the fist stays square on the forearm (the normal grip); the
- * wrist cocks the blade back down past the vertical (1.0 rad). Out from the hip, the arm and the
- * Duelist's wide sleeve stay clear of his robe and of his half-cloak's hem, which the sprint
- * carries out behind (mercLooks.test.mjs). Measured on the rig over the cycle: the upper arm
- * 26.6–43.8° behind the trunk (35.4° on average), the elbow bent 16.6–17.8°, the hand 0.04 H under
- * to 0.05 H over the hips bone and 0.11–0.20 H behind it; the blade 22.3–28.6° below level, its
- * point 0.55–0.65 H behind the hips bone; the edge 34.6–46.0° below level; the blade's centre line
- * at least 0.22 H off the ground.
+ * "不用抬高 可以往下垂 但不要拖地", then "拖劍時我感覺劍體應該會往伸外 目前你是做成往內好像不太合理" and
+ * "手的虎口是朝外的所以自然的話劍尖會偏外", R158): his run's `hold`, the sword arm's whole carry there.
+ * The arm swings back behind the leaning trunk nearly straight, out a little from the hip, the
+ * hand at about the hips bone's height; the curved blade lies behind him and out to his right,
+ * its point hanging down and its edge down, well off the ground. Keyed as three turns of the
+ * upper arm in the chest's frame: swung back 0.46 rad, out 0.22 rad past the rest's 0.1, then
+ * turned 0.6 rad out about its own length (the shoulder's outward turn)
+ * ({@link MERC_TRAILING_TURNS}), held as the one Euler triple those make, the bones' XYZ order,
+ * less the rest ({@link rightArmTurned}); the elbow a little bent (0.1 rad) and the forearm
+ * supinated 1.6 rad, so the arm's 2.2 rad of turn faces the thumb-web out and brings the edge
+ * down while the fist stays square on the forearm (the normal grip); the wrist cocks the blade
+ * back down past the vertical (1.55 rad), only in the swing, so the blade leaves the fist outward
+ * and never by a sideways bend of the wrist. The same 2.2 rad turned in (the shoulder in, the
+ * forearm pronated) angled the blade in, 13.7–19.0° toward his left. Out 0.22 keeps the
+ * Duelist's wide right sleeve clear of his half-cloak's right hem, which the sprint carries out
+ * behind (at 0.15 or less it crossed it on the run's last key); the arm swung back a little less
+ * and swaying less ({@link MERC_TRAILING_SWAY}) keep the hand, which the outward turn lifts, at
+ * the hip (mercLooks.test.mjs). Measured on the rig over the cycle: seen from above the blade
+ * 25.4–34.2° out to his right of straight back through the hand (30.0° on average), its point
+ * 0.41–0.47 H right of the hips bone; the upper arm 26.1–39.8° behind the trunk (33.2° on
+ * average), the elbow bent 5.3–6.2°, the hand 0.03 H under to 0.058 H over the hips bone and
+ * 0.12–0.21 H behind it; the blade 28.9–42.7° below level, its point 0.43–0.61 H behind the hips
+ * bone; the edge 32.1–46.5° below level; the blade's centre line at least 0.118 H off the ground.
  */
-const MERC_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(MERC_TRAILING_TURNS), foreArmR: [-0.3, 1.6, 0], handR: [1, 0, 0] });
+const MERC_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(MERC_TRAILING_TURNS), foreArmR: [-0.1, -1.6, 0], handR: [1.55, 0, 0] });
 
 /**
  * The trailing arm's share of the shared pump (clips.js `runCycle`, RUN_ARM): with the chest's
- * counter-turn it sways the arm 17.2° peak to peak in his sagittal plane (M3's "about ±10°", R100's
- * 12–26°), furthest back as the free arm swings furthest forward and his right knee leads.
+ * counter-turn it sways the arm 13.7° peak to peak in his sagittal plane (M3's "about ±10°", R100's
+ * 12–26°), furthest back as the free arm swings furthest forward and his right knee leads. A tenth
+ * of the pump (17.2°) lifted the hand past R97's 0.06 H over the hips bone once the arm turned out
+ * (R158).
  */
-const MERC_TRAILING_SWAY = 0.1;
+const MERC_TRAILING_SWAY = 0.08;
 
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
@@ -598,16 +608,21 @@ export const MERCENARY_STYLE = {
 };
 
 /**
- * The Duelist's trailing sword arm's three turns (rad; {@link MERC_TRAILING_TURNS}): swung out 0.45
- * past the rest's spread, where the mercenary's is 0.3, the back swing and the twist his. Looks v2
- * let his half-cloak down to 0.42 H (from 0.27) and wider across his back, and the arm past the
- * elbow, trailing at the mercenary's 0.3, crossed it under the sprint's lean on run frame 6 (15
- * edges; 0.4 still 7 on frame 7, 0.42 the first clear). The long blade's other guards (the legs,
- * boots, robe, half-cloak, body, the pieces at the hips, the ground at 0.06 H) and its hilt clear of
- * the forearm (Looks v2 R60) hold; the base and the Sellsword keep the mercenary's.
+ * The Duelist's trailing sword arm (rad; {@link MERC_TRAILING_TURNS}, {@link MERC_TRAILING_SWORD}),
+ * his own under Looks v2's gear (integrated 2026-11-23): swung out 0.35 past the rest's spread,
+ * where the mercenary's is 0.22, the back swing, the twist and the forearm his; the wrist cocked
+ * 1.32 ({@link DUELIST_TRAILING_COCK}), where the mercenary's is 1.55. Looks v2 let his half-cloak
+ * down to 0.42 H (from 0.27) and wider across his back: at the mercenary's 0.22 the arm past the
+ * elbow crossed it on run frame 6 (11 edges), at 0.3 still on frame 7 (3); 0.35 is the first clear.
+ * His long hilt (Looks v2 R60, mercLooks.test.mjs: the butt more than 0.052 H off the forearm) sat
+ * 0.037 H off it at the mercenary's 1.55 cock; 1.32 holds it at 0.052. Less cocked, the blade
+ * angles further out: 38.8–50.5° out from straight back seen from above, past R158's 20–35°
+ * (the base's 25.5–33.9°), escalated to the owner. The long blade's other guards (the legs, boots,
+ * robe, half-cloak, body, the pieces at the hips, the ground at 0.06 H: its lowest 0.19 H) hold.
  */
-export const DUELIST_TRAILING_TURNS = { ...MERC_TRAILING_TURNS, out: 0.45 };
-const DUELIST_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(DUELIST_TRAILING_TURNS), foreArmR: MERC_TRAILING_SWORD.b.foreArmR, handR: MERC_TRAILING_SWORD.b.handR });
+export const DUELIST_TRAILING_TURNS = { ...MERC_TRAILING_TURNS, out: 0.35 };
+export const DUELIST_TRAILING_COCK = 1.32;
+const DUELIST_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(DUELIST_TRAILING_TURNS), foreArmR: MERC_TRAILING_SWORD.b.foreArmR, handR: [DUELIST_TRAILING_COCK, 0, 0] });
 /**
  * The Duelist's run (FS-1J1CB §Change: Looks v2 R60, R62), his own beside {@link MERCENARY_STYLE}.
  * Looks v2 carried the long-hilted blade (mercKit.js `longBlade`) as the mercenary then carried
@@ -616,7 +631,8 @@ const DUELIST_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(DUELIST_TRAILING
  * 「Duelist 也改拖劍」: he trails the sword as the base and the Sellsword do (the sprint's lean, legs
  * and 16 fps), so that re-key, written for the raised-blade pump, is dropped; the hilt keeps clear
  * of the forearm without it (mercLooks.test.mjs, the butt over 0.052 H off it on every pose). His
- * own in the run is the trailing arm swung out further ({@link DUELIST_TRAILING_TURNS}). The carry,
- * the walk, the cut and the parry are the mercenary's.
+ * own in the run is the trailing arm swung out further and the wrist cocked less
+ * ({@link DUELIST_TRAILING_TURNS}, {@link DUELIST_TRAILING_COCK}). The carry, the walk, the cut and
+ * the parry are the mercenary's.
  */
 export const DUELIST_STYLE = { ...MERCENARY_STYLE, run: { ...MERCENARY_STYLE.run, hold: DUELIST_TRAILING_SWORD } };

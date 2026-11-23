@@ -1372,8 +1372,11 @@ describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and
     expect(Math.abs(pace - RUN_PACE)).toBeLessThanOrEqual(3);
   });
 
-  it("keeps his run keys and his sheet byte for byte as at 22cabd3a (§ Change: The wizard's sprint and pointed cast R115)", () => {
-    expect(digest(clips.run), "his run keys").toBe("31a1826f18c215d1d670624171b4c619027f5a41e9cbb98f95c4747e1c8dedc2");
+  // his sheet as at 22cabd3a (§ Change: The wizard's sprint and pointed cast R115); his run keys as
+  // the owner's 2026-11-23 tune round left them, the trailing blade turned out (R158; at 22cabd3a
+  // 31a1826f…)
+  it("keeps his sheet byte for byte as at 22cabd3a and his run keys as R158's tune round left them (§ Change: The wizard's sprint and pointed cast R115)", () => {
+    expect(digest(clips.run), "his run keys").toBe("5863a592220b029b68bbb5f66d854eaa6f25b01effe3f5c1949f1a4e9fa43069");
     expect(digest(MERCENARY_SHEET), "his sheet").toBe("93b4ca11a25c0b32c028759cae77673566b8884ac33116fe485516ee5e334a46");
   });
 
@@ -1427,6 +1430,11 @@ describe("the mercenary's trailing sword in the sprint (FS-JS7C8 § Change: The 
       tipBehindHips: (hips.z - t.z) / rig.H,
       edge: -Math.asin(edge.y) * DEG,
       lowest: Math.min(...gear.weapon.map((m) => world(m).y)) / rig.H,
+      // seen from above: how far out to his right (the model's −x) the hand-to-point line runs off
+      // straight back (−z) through the hand (R158), and the point's and the hand's reach to his right
+      plan: Math.atan2(-d.x, -d.z) * DEG,
+      tipOut: (hips.x - t.x) / rig.H,
+      handOut: (hips.x - hand.x) / rig.H,
       weapon: gear.weapon.map(world),
       free: [shL, elL, handL],
     };
@@ -1456,10 +1464,22 @@ describe("the mercenary's trailing sword in the sprint (FS-JS7C8 § Change: The 
     }
   });
 
-  it("turns the edge down by turning the arm about its length, never the fist on the forearm: the forearm's own turn within 1.6 rad, the hand cocked only in the swing (R98)", () => {
+  // the owner, 2026-11-23: "拖劍時我感覺劍體應該會往伸外 目前你是做成往內好像不太合理", "手的虎口是朝外的所以自然的話劍尖會偏外"
+  it("angles the blade out to his right, seen from above, 20–35° off straight back through the hand on every sample, the point further out than the hand (R158)", () => {
+    for (const s of samples) {
+      expect(s.plan, `outward from straight back @${s.f}`).toBeGreaterThanOrEqual(20);
+      expect(s.plan, `outward from straight back @${s.f}`).toBeLessThanOrEqual(35);
+      expect(s.tipOut, `the point further out than the hand @${s.f}`).toBeGreaterThan(s.handOut);
+    }
+  });
+
+  it("turns the edge down by turning the arm out about its length, the thumb-web out, never the fist on the forearm: the forearm's own turn within 1.6 rad, the hand cocked only in the swing (R98, R158)", () => {
     const { foreArmR, handR } = MERCENARY_STYLE.run.hold.b;
     expect(Math.abs(foreArmR[1])).toBeLessThanOrEqual(1.6);
     expect([handR[1], handR[2]]).toEqual([0, 0]);
+    // the turn goes outward, the thumb-web out (R98 restated 2026-11-23): the shoulder turned out, the forearm supinated
+    expect(MERC_TRAILING_TURNS.twist, "the upper arm turned out about its length").toBeLessThan(0);
+    expect(foreArmR[1], "the forearm supinated").toBeLessThan(0);
     // the normal-grip test (above, "holds the weapon in a normal grip") reads every key of his run
   });
 

@@ -274,14 +274,16 @@ describe("the mercenary kit (FS-1J1CB §Change: Looks v2 R68, R69)", () => {
     // the cut, the carry, the walk and the parry are the mercenary's own; his run is the mercenary's
     // trailing sword (the owner, 2026-11-23: 「Duelist 也改拖劍」), Looks v2's run wrist re-key for the
     // raised-blade pump dropped, the trailing arm swung further out (classStyles.js
-    // DUELIST_TRAILING_TURNS)
+    // DUELIST_TRAILING_TURNS) and the wrist cocked less for the long hilt (DUELIST_TRAILING_COCK)
     for (const k of ["attack", "speed", "hold", "walk", "guard"]) expect(DUELIST_STYLE[k], k).toBe(MERCENARY_STYLE[k]);
     const { hold, ...rest } = DUELIST_STYLE.run;
     const { hold: mercHold, ...mercRest } = MERCENARY_STYLE.run;
     expect(rest).toEqual(mercRest);
     expect(DUELIST_STYLE.run.wrist).toBeUndefined();
+    // his own: the arm further out past the half-cloak, the wrist cocked less for the long hilt
     expect(hold.b.foreArmR).toEqual(mercHold.b.foreArmR);
-    expect(hold.b.handR).toEqual(mercHold.b.handR);
+    expect(hold.b.handR).toEqual([1.32, 0, 0]);
+    expect(mercHold.b.handR[0]).toBeGreaterThan(hold.b.handR[0]);
     expect(hold.b.upperArmR).not.toEqual(mercHold.b.upperArmR);
   });
 
@@ -720,10 +722,13 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
   // The arm past the elbow: the Duelist's right wide sleeve once lay under the robe's back panel on
   // run frames 1 and 6 (I-JS7C8-22: 0.0107 and 0.0021 H in), and the old pumping sword arm, under the
   // sprint's 20° lean, crossed his half-cloak on run frame 7 (6 edges). The trailing sword
-  // (classStyles.js `MERC_TRAILING_SWORD`), out from the hip, clears both on the base and the
-  // Sellsword. Integrated with Looks v2 (2026-11-23; the owner: 「Duelist 也改拖劍」), the Duelist
-  // trails his long blade too, the arm swung further out (classStyles.js `DUELIST_TRAILING_TURNS`)
-  // past his longer half-cloak.
+  // (classStyles.js `MERC_TRAILING_SWORD`), out from the hip, clears both: the arm past the elbow at
+  // least 0.089 H outside every leg, boot and skirt of the base's and the Sellsword's, no edge of it
+  // across the half-cloak. Turned out (R158), the arm must stand at least 0.22 rad out: at 0.15 or
+  // less the (pre-Looks v2) Duelist's sleeve near the elbow crossed the half-cloak's right hem on run
+  // frame 7 (2–9 edges). Integrated with Looks v2 (2026-11-23; the owner: 「Duelist 也改拖劍」), the
+  // Duelist trails his long blade too, the arm swung further out (classStyles.js
+  // `DUELIST_TRAILING_TURNS`) past his longer half-cloak.
   it.each(CASES)("%s %s: the arm past the elbow (the fist, the vambrace, the sleeve) inside no leg, boot or skirt (R104)", (sheet, anim, r) => {
     for (const f of frames(sheet, r, anim)) {
       expect(f.arm.solid.some((s) => s.least !== null), `frame ${f.i}: no leg, boot or skirt measured`).toBe(true);
