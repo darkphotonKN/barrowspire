@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { palette, tint } from "./canvasPalette";
+import { mix, palette, tint } from "./canvasPalette";
 import { BARROW, BARROW_HEX } from "./theme";
 
 // FS-PQ2TW §Change: Ash, the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): fire runs a temperature
@@ -92,7 +92,7 @@ describe("the passive tree's hues (FS-8RZ51 L4, L6)", () => {
       speed: BARROW_HEX.frost,
       movement: BARROW_HEX.verdigris,
       crit: BARROW_HEX.amethyst,
-      refund: tint(BARROW_HEX.brassBright, 0.5),
+      refund: mix(tint(BARROW_HEX.brassBright, 0.5), BARROW_HEX.teal, 0.2),
       steel: BARROW_HEX.silver,
     });
   });

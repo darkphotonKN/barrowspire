@@ -152,7 +152,8 @@ One exception, text only: a whisper's line in the chat window is drawn in umbra 
 lit node glows in its own colour, [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md)):
 a held node's picture and its halo wear a hue by what the node gives, and nothing else reads them.
 Ten hues: health and fire reuse their channels (lifted oxblood, ember), a resource refund is bright
-brass lifted to a pale gold, and the seven bases above are the rest (power copper, defence steelBlue,
+brass lifted to a pale gold and turned a fifth toward teal, so its halo never reads as a plate's
+brass edge, and the seven bases above are the rest (power copper, defence steelBlue,
 mana teal, speed frost, movement verdigris, crit amethyst, the duel silver). Mana's teal is the tree's
 own, clearer than the mana bar's greyish necrotic, which stays the bar's. None is amber or arcane
 green, and none is one of fire's own three. Teal, frost and silver are starting values the owner

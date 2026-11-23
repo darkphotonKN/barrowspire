@@ -434,6 +434,26 @@ describe("the fallback glyph (FS-8RZ51 R42)", () => {
   });
 });
 
+/** A colour in OKLab (Björn Ottosson's matrices, from sRGB). */
+function okLab(color: number): [number, number, number] {
+  const linear = (v: number) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+  const [r, g, b] = [(color >> 16) & 0xff, (color >> 8) & 0xff, color & 0xff].map(linear);
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s,
+  ];
+}
+
+/** How far apart two colours are in OKLab: about 0.02 is the least an eye tells apart. */
+function okLabDistance(a: number, b: number): number {
+  const [p, q] = [okLab(a), okLab(b)];
+  return Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+
 /** The stand-in scene given what the game's has to make a knockout: each texture's tint and alpha recorded. */
 function texturing() {
   const env = stage();
@@ -641,6 +661,17 @@ describe("a lit node's own colour and its glow (FS-8RZ51 §Change: A lit node gl
     expect(halos(show(warrior({}, 0)).plates)).toHaveLength(0);
     for (const c of halos(show(TRUNK_HELD).plates)) {
       expect([palette.interactable, palette.interactableBright, palette.frame, palette.frameBright]).not.toContain(c.fill![0]);
+    }
+  });
+
+  it("should glow every hue clear of the edge's brass and of amber, by a measured distance (L11)", () => {
+    // a halo stands in its hue (the test above) just inside a held plate's brass edge or a max plate's
+    // bright brass; it must not read as either, nor as amber. The floor is a little over the tightest
+    // pair the tree's own lit inks keep (health and fire, 5.7 OKLab units, ADR-0089).
+    const FLOOR = 0.06;
+    const near = { frame: palette.frame, frameBright: palette.frameBright, interactable: palette.interactable, interactableBright: palette.interactableBright };
+    for (const [hue, value] of Object.entries(palette.treeHue)) {
+      for (const [token, other] of Object.entries(near)) expect(okLabDistance(value, other), `${hue} against ${token}`).toBeGreaterThanOrEqual(FLOOR);
     }
   });
 
