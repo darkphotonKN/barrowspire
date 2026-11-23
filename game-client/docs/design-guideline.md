@@ -281,7 +281,7 @@ lit) while the player stands inside.
   hand 30–45° off vertical beside the leg, its head forward, a little out and under the shoulder
   (FS-JS7C8 R2). An attack starts from the carry and settles back to it: the weapon turns at most
   `ATTACK_TURN_LIMIT` (100°) a frame coming out of it and going back.
-  The playable classes add `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
+  The playable classes add `run` (the shared run's arms and carry: the
   arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
   past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
   head steady and looking ahead; a weapon in a pumping hand is held in a normal grip, a blade
@@ -294,8 +294,8 @@ lit) while the player stands inside.
   aim, moving or not (attacking pins the attacker). No sheet carries a standalone backpedal. No
   leg or boot ever shows through a cloak or a garment, and a quiver rides over the cloak, never
   sunk into it (FS-HF0WW). The archer's run is a sprint, the first class redone: the trunk
-  leaning about 20° forward from the hips, a quicker, shorter stride (16 fps against the others'
-  14, the pace held at the shared one) with the knee driven high and the heel kicked up behind, a
+  leaning about 20° forward from the hips, a quicker, shorter stride (16 fps, the pace held at the
+  shared one) with the knee driven high and the heel kicked up behind, a
   flight in each step and a bob never softer than the shared run's, the head steady and looking
   ahead; no arm pump, the bow held two-handed low in front at the ready (the left fist on the grip
   before the belly, the right hand on the braced string, no draw, no arrow), about 45° off

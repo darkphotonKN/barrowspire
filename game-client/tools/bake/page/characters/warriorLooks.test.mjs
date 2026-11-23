@@ -86,14 +86,14 @@ describe("the warrior's figures pass the guards on every clip (FS-1J1CB R11; FS-
   });
 
   // FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R142: the
-  // camera sees no hip, thigh or knee through the hauberk, the surcoat or the waist on his own
-  // figure and each look, as the bake poses them, at rest and on every moving clip the sheet
-  // carries (clearance.test.mjs reads the same on a rebuilt base)
-  it.each(FIGURES)("%s shows no hip, thigh or knee through the cloth in any facing, at rest and on every moving clip", (sheet, r) => {
+  // camera sees no hip, thigh or knee through the hauberk, the surcoat or the waist on each look,
+  // as the bake poses it, at rest and on every moving clip the sheet carries. His own figure is
+  // clearance.test.mjs's: its rebuilt base wears the same hauberk, legs, cloak and springs on
+  // KNIGHT_STYLE and KNIGHT_SHEET, with fewer parts to hide a leg, so it reads at least as much
+  it.each(LOOKS)("%s shows no hip, thigh or knee through the cloth in any facing, at rest and on every moving clip", (sheet, r) => {
     const { rig, poses } = characterPoses(r);
     const anims = MOVING.filter((anim) => anim in r.animations);
     expect(anims).toEqual(MOVING);
-    for (const anim of ["walk_attack", "backpedal_attack"]) expect(r.animations, `${sheet} ${anim}`).not.toHaveProperty(anim);
     const seen = seenThroughCloth(rig, poses.filter((p) => anims.includes(p.anim)));
     expect(seen.length).toBeGreaterThan(0);
     const worst = seen.reduce((m, f) => (f.seen > m.seen ? f : m), { seen: 0 });

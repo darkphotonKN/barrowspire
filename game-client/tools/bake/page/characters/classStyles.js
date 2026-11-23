@@ -173,6 +173,9 @@ export const SPRINT_RUN = { ...RUN_ANIMATIONS.run, fps: 16 };
  */
 export const KNIGHT_SPRINT_STRIDE = 0.84;
 
+/** His sprint's gait, shared by both his styles' runs: the sprint's lean at his stride. */
+const KNIGHT_SPRINT_GAIT = { lean: SPRINT_LEAN, stride: KNIGHT_SPRINT_STRIDE };
+
 /**
  * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
  * attack, `hold` is the carry added to idle, walk and run, `walk` and `run` scale those gaits); a
@@ -226,8 +229,7 @@ export const KNIGHT_STYLE = {
     wrist: RUN_WRIST,
     cross: [0, RUN_CROSS],
     hold: pose({ upperArmL: [-0.38, -0.85, 0.12], foreArmL: [-1.25, 0, 0], upperArmR: [0, 0, -0.06], handR: RUN_BLADE }),
-    lean: SPRINT_LEAN,
-    stride: KNIGHT_SPRINT_STRIDE,
+    ...KNIGHT_SPRINT_GAIT,
   },
 };
 
@@ -268,8 +270,7 @@ export const BERSERKER_STYLE = {
     elbow: [0.45, 0.45],
     wrist: [0.6, 0.6],
     hold: pose({ upperArmR: [0, 0, -0.12], upperArmL: [0, 0, 0.12], handR: [CLEAVE_CARRY, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }),
-    lean: SPRINT_LEAN,
-    stride: KNIGHT_SPRINT_STRIDE,
+    ...KNIGHT_SPRINT_GAIT,
   },
 };
 

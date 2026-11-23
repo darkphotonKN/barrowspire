@@ -1163,110 +1163,108 @@ describe.each(LEANED_RUNNERS)("the $name's sprint on its own rig and style (FS-J
   });
 });
 
-describe("the wizard's sprint (FS-JS7C8 § Change: The wizard's sprint and pointed cast R115–R119, R121)", () => {
-  const rig = rigOf(WIZARD_BUILD);
-  const spec = WIZARD_SHEET.animations.run;
-  const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
+/**
+ * The classes that run the sprint's lean and 16 fps over the shared fast run's legs at a shorter
+ * stride, not the sprint's own legs (E1 (a) for each): the wizard (FS-JS7C8 § Change: The wizard's
+ * sprint and pointed cast R115–R119, R131) and the knight's two styles on his one rig (§ Change:
+ * The knight's sprint, and the attack-on-the-move clips retired R138–R141, R149; cast.js `knight`:
+ * the base and the Guardian run KNIGHT_STYLE, the Berserker BERSERKER_STYLE). `plain` lists the
+ * clips whose specs are the shared ANIMATIONS' own (the knight's attack carries KNIGHT_ATTACK_CLOTH);
+ * `pace` and `knee` are the measures each was recorded at.
+ */
+const SHORT_SPRINTERS = [
+  {
+    name: "wizard",
+    build: WIZARD_BUILD,
+    style: WIZARD_STYLE,
+    sheet: WIZARD_SHEET,
+    stride: [WIZARD_SPRINT_STRIDE, 0.88],
+    clips: ["idle", "walk", "attack", "death", "run"],
+    plain: ["idle", "walk", "attack", "death"],
+    // her run on the 10° lean at 14 fps read 190.22; the sprint's legs' knee 0.335 came through her gown
+    pace: 194.21,
+    knee: 0.311,
+  },
+  {
+    name: "knight",
+    build: KNIGHT_BUILD,
+    style: KNIGHT_STYLE,
+    sheet: KNIGHT_SHEET,
+    stride: [KNIGHT_SPRINT_STRIDE, 0.84],
+    clips: ["idle", "walk", "attack", "death", "run"],
+    plain: ["idle", "walk", "death"],
+    // his run on the 10° lean at 14 fps read 197.67, the sprint's legs at 16 fps 198.84; their
+    // knee 0.335 folded his calf out through the hauberk's back
+    pace: 193.61,
+    knee: 0.31,
+  },
+  {
+    name: "Berserker",
+    build: KNIGHT_BUILD,
+    style: BERSERKER_STYLE,
+    sheet: BERSERKER_SHEET,
+    stride: [KNIGHT_SPRINT_STRIDE, 0.84],
+    clips: ["idle", "walk", "attack", "death", "run", "attack_offhand"],
+    plain: ["idle", "walk", "death"],
+    pace: 193.61,
+    knee: 0.31,
+  },
+];
 
-  it("carries idle, walk, attack, death and the sprint at 1.5x, in that order: no walk_attack, no backpedal_attack (R131)", () => {
-    expect(WIZARD_SHEET.scale).toBe(1.5);
-    expect(Object.keys(WIZARD_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
-    for (const anim of ["idle", "walk", "attack", "death"]) expect(WIZARD_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+describe.each(SHORT_SPRINTERS)("the $name's sprint, the sprint's lean and 16 fps over the shared fast run's legs at a shorter stride (FS-JS7C8 E1 (a))", ({ build, style, sheet, stride: [stride, strideIs], clips: carried, plain: shared, pace: measured, knee: kneeAt }) => {
+  const rig = rigOf(build);
+  const spec = sheet.animations.run;
+  const run = clipsFor(style, sheet.animations).run;
+
+  it("carries its clips at 1.5x, in order, no attack on the move (R131, R149)", () => {
+    expect(sheet.scale).toBe(1.5);
+    expect(Object.keys(sheet.animations)).toEqual(carried);
+    for (const anim of shared) expect(sheet.animations[anim], anim).toEqual(ANIMATIONS[anim]);
   });
 
-  it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at WIZARD_SPRINT_STRIDE, not the sprint's legs (R116, R117; E1 (a))", () => {
-    expect(WIZARD_STYLE.run.lean).toBe(SPRINT_LEAN);
+  it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at its stride, not the sprint's legs (R116, R117, R138, R139)", () => {
+    expect(style.run.lean).toBe(SPRINT_LEAN);
     expect(spec).toBe(SPRINT_RUN);
     expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
-    expect(WIZARD_STYLE.run).not.toHaveProperty("legs");
-    expect(WIZARD_SPRINT_STRIDE).toBe(0.88);
-    expect(WIZARD_STYLE.run.stride).toBe(WIZARD_SPRINT_STRIDE);
-    expect([WIZARD_STYLE.run.knee ?? 1, WIZARD_STYLE.run.lift ?? 1]).toEqual([1, 1]);
+    expect(style.run).not.toHaveProperty("legs");
+    expect(stride).toBe(strideIs);
+    expect(style.run.stride).toBe(stride);
+    expect([style.run.knee ?? 1, style.run.lift ?? 1]).toEqual([1, 1]);
     // the legs: the shared fast run's (RUN_STEP) with every thigh key scaled by the stride, the
     // feet keeping their world angle, as on a plain style at that stride and lean
     const plain = runCycle({ hold: pose() });
-    const atStride = runCycle({ hold: pose(), run: { stride: WIZARD_SPRINT_STRIDE, lean: SPRINT_LEAN } });
-    clips.run.forEach((p, i) => {
+    const atStride = runCycle({ hold: pose(), run: { stride, lean: SPRINT_LEAN } });
+    run.forEach((p, i) => {
       for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR", "spine", "chest", "neck"]) expect(p.b[bone], `${bone} @${i}`).toEqual(atStride[i].b[bone]);
       expect(p.body, `body @${i}`).toEqual(atStride[i].body);
-      for (const t of ["thighL", "thighR"]) expect(p.b[t][0], `${t} @${i}`).toBeCloseTo(plain[i].b[t][0] * WIZARD_SPRINT_STRIDE, 12);
+      for (const t of ["thighL", "thighR"]) expect(p.b[t][0], `${t} @${i}`).toBeCloseTo(plain[i].b[t][0] * stride, 12);
       for (const b of ["shinL", "shinR", "hips"]) expect(p.b[b], `${b} @${i}, the shared run's`).toEqual(plain[i].b[b]);
     });
   });
 
-  it("covers the ground at RUN_PACE at the sprint's 16 fps: within 1 px/s of 194 (R119)", () => {
+  it("covers the ground at RUN_PACE at the sprint's 16 fps: within 1 px/s of 194 (R119, R141)", () => {
     expect(RUN_PACE).toBe(194);
-    const pace = measurePace(rig, clips.run, spec.fps);
-    // measured 194.21 world px/s (her run on the 10° lean at 14 fps read 190.22)
+    const pace = measurePace(rig, run, spec.fps);
     expect(Math.abs(pace - RUN_PACE), `pace ${pace.toFixed(2)}`).toBeLessThan(1);
+    expect(pace, "as recorded").toBeCloseTo(measured, 1);
   });
 
-  it("lifts the swing knee as high as the shared fast run does, at least 0.30 H, not the sprint's 0.32 (R118; E1 (a))", () => {
-    const knee = Math.max(...SPRINT_SAMPLES.map((f) => (footing(rig, clips.run, f), Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H)));
-    // measured 0.311 H, the shared run's (the sprint's legs read 0.335 and came through her gown)
+  it("lifts the swing knee as high as the shared fast run does, at least 0.30 H, not the sprint's 0.32 (R118, R140)", () => {
+    const knee = Math.max(...SPRINT_SAMPLES.map((f) => (footing(rig, run, f), Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H)));
     expect(knee).toBeGreaterThanOrEqual(0.3);
+    expect(knee, "as recorded").toBeCloseTo(kneeAt, 2);
   });
+});
 
-  it("keeps her idle, walk and death keys byte for byte as at 22cabd3a (R115)", () => {
+describe("the wizard's other clips under her sprint (FS-JS7C8 § Change: The wizard's sprint and pointed cast R115)", () => {
+  it("keeps her idle, walk and death keys byte for byte as at 22cabd3a", () => {
+    const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
     const want = {
       idle: "2f82927bda6e6b5cb45d2ad98f76f40251a196837b3e9aae1091b7966fe153f1",
       walk: "746ba76d1a2af89d94b8851e3b3c73b608d8a03d1c451257e68963f53516e07d",
       death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
     };
     for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
-  });
-});
-
-/**
- * The knight's two styles on his one rig (cast.js `knight`: the base and the Guardian run
- * KNIGHT_STYLE, the Berserker BERSERKER_STYLE), each with its sheet.
- */
-const KNIGHTS = [
-  { name: "knight", style: KNIGHT_STYLE, sheet: KNIGHT_SHEET, clips: ["idle", "walk", "attack", "death", "run"] },
-  { name: "Berserker", style: BERSERKER_STYLE, sheet: BERSERKER_SHEET, clips: ["idle", "walk", "attack", "death", "run", "attack_offhand"] },
-];
-
-describe.each(KNIGHTS)("the $name's sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R138–R141; E1 (a))", ({ style, sheet, clips: carried }) => {
-  const rig = rigOf(KNIGHT_BUILD);
-  const spec = sheet.animations.run;
-  const run = clipsFor(style, sheet.animations).run;
-
-  it("carries idle, walk, attack, death and the sprint at 1.5x, in that order, the Berserker attack_offhand too: no walk_attack, no backpedal_attack, no off-hand twin of either (R149)", () => {
-    expect(sheet.scale).toBe(1.5);
-    expect(Object.keys(sheet.animations)).toEqual(carried);
-  });
-
-  it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at KNIGHT_SPRINT_STRIDE, not the sprint's legs (R138, R139)", () => {
-    expect(style.run.lean).toBe(SPRINT_LEAN);
-    expect(spec).toBe(SPRINT_RUN);
-    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
-    expect(style.run).not.toHaveProperty("legs");
-    expect(KNIGHT_SPRINT_STRIDE).toBe(0.84);
-    expect(style.run.stride).toBe(KNIGHT_SPRINT_STRIDE);
-    expect([style.run.knee ?? 1, style.run.lift ?? 1]).toEqual([1, 1]);
-    // the legs: the shared fast run's (RUN_STEP) with every thigh key scaled by the stride, the
-    // feet keeping their world angle, as on a plain style at that stride and lean
-    const plain = runCycle({ hold: pose() });
-    const atStride = runCycle({ hold: pose(), run: { stride: KNIGHT_SPRINT_STRIDE, lean: SPRINT_LEAN } });
-    run.forEach((p, i) => {
-      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR", "spine", "chest", "neck"]) expect(p.b[bone], `${bone} @${i}`).toEqual(atStride[i].b[bone]);
-      expect(p.body, `body @${i}`).toEqual(atStride[i].body);
-      for (const t of ["thighL", "thighR"]) expect(p.b[t][0], `${t} @${i}`).toBeCloseTo(plain[i].b[t][0] * KNIGHT_SPRINT_STRIDE, 12);
-      for (const b of ["shinL", "shinR", "hips"]) expect(p.b[b], `${b} @${i}, the shared run's`).toEqual(plain[i].b[b]);
-    });
-  });
-
-  it("covers the ground at RUN_PACE at the sprint's 16 fps: within 1 px/s of 194 (R141)", () => {
-    expect(RUN_PACE).toBe(194);
-    const pace = measurePace(rig, run, spec.fps);
-    // measured 193.61 world px/s (his run on the 10° lean at 14 fps read 197.67; the sprint's legs at 16 fps 198.84)
-    expect(Math.abs(pace - RUN_PACE), `pace ${pace.toFixed(2)}`).toBeLessThan(1);
-  });
-
-  it("lifts the swing knee as high as the shared fast run does, at least 0.30 H, not the sprint's 0.32 (R140; E1 (a))", () => {
-    const knee = Math.max(...SPRINT_SAMPLES.map((f) => (footing(rig, run, f), Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H)));
-    // measured 0.310 H (the sprint's legs read 0.335 and folded his calf out through the hauberk's back)
-    expect(knee).toBeGreaterThanOrEqual(0.3);
   });
 });
 

@@ -27,6 +27,7 @@ const { berserker } = await import("./warriorLooks.js");
 const { ATTACK_TURN_LIMIT, OFFHAND_OF, applyPose, clipsFor, groundPose } = await import("./clips.js");
 const { BERSERKER_SHEET, BERSERKER_STYLE } = await import("./classStyles.js");
 
+const THREE = await import("three");
 const DEG = 180 / Math.PI;
 
 /** The figure's axes by the hand that holds each. */
@@ -76,6 +77,25 @@ const SWINGS = TWINS.flatMap(([clip, twin]) => [
   [twin, "L"],
 ]);
 
+/** How high an axe may come to the ground in a carry (H): the mercenary's sword's floor. */
+const AXE_FLOOR = 0.06;
+
+/** The lowest point of either axe's mesh off the ground in pose `p`, grounded as the bake grounds it (H). */
+function lowestAxe(rig, axes, p) {
+  applyPose(rig, p);
+  groundPose(rig);
+  rig.root.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  let low = Infinity;
+  for (const axe of Object.values(axes))
+    axe.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) low = Math.min(low, v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).y);
+    });
+  return low / rig.H;
+}
+
 describe("the Berserker's axes (FS-1J1CB R2)", () => {
   it("dresses in the Berserker's own style, the cleave", () => {
     expect(style).toBe(BERSERKER_STYLE);
@@ -107,6 +127,17 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
         expect(Math.asin(e[side].dir.y) * DEG, `${anim} @${i} ${side}: elevation`).toBeLessThanOrEqual(30);
       }
     });
+  });
+
+  // the guideline's "never on the ground", as the mercenary's sword is held (classMotion.test.mjs
+  // R99): on the baked keys his axes' lowest mesh points read 0.108 H in the idle, 0.091 H in the
+  // walk and 0.081 H in the run
+  it.each(["idle", "walk", "run"])("holds both axes at least 0.06 H off the ground on every frame of %s", (anim) => {
+    clips[anim].forEach((p, i) => expect(lowestAxe(rig, axes, p), `${anim} @${i}`).toBeGreaterThanOrEqual(AXE_FLOOR));
+  });
+
+  it("reads an axe on the ground: lying dead, his axes are under the floor", () => {
+    expect(Math.min(...clips.death.map((p) => lowestAxe(rig, axes, p)))).toBeLessThan(AXE_FLOOR);
   });
 
   it.each(SWINGS)("leads the head's motion with the edge at the strike of %s (the %s hand)", (anim, side) => {
