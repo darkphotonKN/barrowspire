@@ -1078,6 +1078,83 @@ attack while stepping forward or back can go. A faster run leans further forward
 The knight, the wizard and the mercenary (and their looks) are untouched: their runs key for key,
 their `walk_attack` and `backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps.
 
+> **Edited in place on 2026-11-23 (owner change after the first bake, still a work-order).**
+> Requirement numbers are kept: R74, R75 and R76 read *Removed*, and the new ones are R87–R91. D4
+> and D5 are restated, D6 stands. See *Owner change, 2026-11-23: the bow canted left-high across
+> the front, an arrow nocked*. One default of that change could not be honoured with the others on
+> the Hunter (R90); it is escalated there, not routed around.
+
+### Owner change, 2026-11-23: the bow canted left-high across the front, an arrow nocked
+
+After seeing the first bake's contact sheet and playing it (`7e508fe8`, I-JS7C8-18), the owner
+said, in order:
+
+> 「跑步動作看起來可以 但拉弓的動作好像不太對 左手拿弓 右手拿箭的預備動作 放在身前 弓傾斜在身前」
+> 「弓好像要向左傾斜 現在是不是相反了 感覺是左手拿弓右手拿箭」
+> 「左高右低」
+> 「預備動作最好可以看到一根弓箭在上面預備」
+> 「輕輕靠在上面」
+> 「箭尾右手輕輕扣著就好」
+
+The run looks right. The bow carry does not: the ready position is the left hand holding the bow
+and the right hand holding an arrow, in front of the body, the bow tilted across the front. The bow
+should lean to her left, the opposite of the first bake (whose upper limb swung toward her right
+shoulder). Left high, right low. One arrow should be seen sitting on the bow, ready. It rests
+lightly on the bow. The right hand only lightly hooks the arrow's nock end.
+
+So the sprint itself (R66–R71: the lean, 16 fps, the legs, the pace, the bob) is **approved and
+kept key for key**. The carry is redone, read as an archer's low ready (coordinator's reading,
+charter defaults, each kept inside the charter):
+
+- **T1. The left hand holds the bow at the grip in front of the body, one arrow nocked on the
+  braced string and lying on the bow by the left fist; the right hand lightly at the nock, the
+  string not drawn.** The bow's own nocked arrow is reused (gear.js `longbow` `update(nock,
+  showArrow)`: the arrow from the string's rest point through the grip; cast.js `bowInHand` shows
+  it on `fx.arrow`). No new mesh, no draw. *Replaces* D5's "no arrow is nocked" and R74.
+- **T2. The bow canted across the front, left high and right low:** the upper limb and tip on her
+  own left and high, the lower limb and tip on her own right and low, crossing in front of her
+  toward the right leg and clear of it, in every facing (her left, not the screen's). Much more
+  inclined than the first bake's 44–52°: roughly 55–70° off vertical. The arrow points forward and
+  down toward the ground ahead, roughly 20–40° below level. *Replaces* D5's "about 45°, upper
+  limb forward and up, lower limb back and down" and R75, R76's cant.
+- **T3. The hands stay low,** the grip and the nock between the belly and the lower chest (D4),
+  and inside the shoulders; **the tip never draws above the head on screen in any facing** (the
+  first bake's Hunter tip drew above her hair in w/nw/sw); no arm pump (D6); the legs, lean, fps,
+  pace and bob unchanged.
+- **Clearances.** The bow, its string and the arrow clear the legs, the tunic, the boots, the
+  cloak and the quiver on all three looks, and the bow-and-arrow-against-cloak-and-quiver check is
+  a committed test (the first round's was an uncommitted script). The frame box does not grow
+  against main (R84): the forward-pointing arrow is the risk.
+
+**Escalated 2026-11-23 (R90, not routed around).** On the Hunter, whose hair tops out about 0.035
+H under the cowl of the base and the Shadow Ranger, the 0.8 H longbow canted left-high cannot keep
+its upper tip under her head on screen in the n and ne facings (where her own left points away
+from the camera) while it also stands roughly 55–70° off vertical (T2) and both hands stay inside
+the shoulders at the belly to the lower chest (T3, R72, R73). Measured on her posed run (32
+samples of each candidate, the bow following the chest's counter-turn, so its angle rocks about
+±6.5° over the cycle):
+
+- the bow 61–74° (about 68° on average), hands inside the shoulders at the belly: the base and the
+  Shadow Ranger keep the tip under the head by at least 0.003 H; the Hunter's tip draws up to
+  0.036 H (about 2.8 px at game scale) over her hair in n and ne;
+- the bow 72–85° (nearly level): every look clear;
+- the left hand carried past the right shoulder's line (the grip about 0.12 H right of her centre,
+  the left arm near straight), the bow 64–77°: every look clear;
+- the hands at the hips bone (under D4's belly), the bow 60–73°: every look clear, by 0.002 H.
+
+The owner picks one (or another rule for the Hunter's tip); until then R88's band and R90 hold
+the first option's numbers as written below and the change stays a work-order.
+
+**Seen on the first option's bake (2026-11-23, for the owner's judgment at the contact sheet).**
+The cant is her own left-high in the model, but the camera looks down 30° from her front-left in
+some facings and her back-right in others, so on screen a nearly level bow's depth outweighs its
+height: in s and se the bow reads about level, its screen-left end (her right, further from the
+camera) a little higher; in ne (her left away from the camera) it stands near upright in front of
+her; in e, n and nw it reads as a diagonal. A bow stood up nearer 45–55° would read left-high in
+more facings, and would put its tip over the head on screen in more of them (R90). The arrow reads
+as a bright line at game scale in every facing (R91).
+
+
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
 - **D1. The trunk leans about 20° (was about 10°)** on the hips-to-neck line. `steadyNeck` brings
@@ -1090,11 +1167,16 @@ their `walk_attack` and `backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps.
 - **D3. More knee drive and more heel kick. The flight and the bob are never reduced (at least
   today's).** *Reason:* a softer bob was tried and reverted on 2026-11-12 ("像浮在上面").
 - **D4. The two-handed low-ready bow in the run:** both hands hold the bow in front of the body,
-  the left on the grip and the right on the string, between the belly and the lower chest, under
-  today's pump peak (0.70 H). *Reason:* the owner, "雙手拿著弓放在身體前方 但不用抬太高".
-- **D5. The bow about 45° off vertical, upper limb forward and up, lower limb back and down,**
-  clear of the legs. The tip never goes above the head, and no arrow is nocked. *Reason:* the
-  smallest v1.
+  the left on the grip and the right at the nock of the nocked arrow (owner change 2026-11-23: was
+  "on the string"), between the belly and the lower chest, under today's pump peak (0.70 H).
+  *Reason:* the owner, "雙手拿著弓放在身體前方 但不用抬太高", and 2026-11-23 "左手拿弓 右手拿箭的預備動作
+  放在身前", "箭尾右手輕輕扣著就好".
+- **D5. (restated by the owner change of 2026-11-23)** The bow canted across the front of the body,
+  left high and right low, roughly 55–70° off vertical, one arrow nocked on the braced string and
+  resting on the bow, pointing forward and down; clear of the legs, the tunic, the boots, the
+  cloak and the quiver; the tip never above the head on screen. *Reason:* the owner, "弓傾斜在身前",
+  "左高右低", "預備動作最好可以看到一根弓箭在上面預備", "輕輕靠在上面". *Was (first bake):* about 45°,
+  upper limb forward and up, lower limb back and down, no arrow nocked, "the smallest v1".
 - **D6. No arm pump.** The hands only ride the trunk's turn and bob; the shoulders' counter-turn
   stays.
 - **D7. `walk_attack` and `backpedal_attack` leave the three archer sheets only.** The client
@@ -1214,7 +1296,7 @@ shared `RUN_PACE` tolerance without client code; a default that cannot be honour
 #### The low-ready bow (D4–D6)
 
 72. **Both hands in front (D4).** On every sample of the run the left hand holds the bow's grip and
-    the right hand is on the string, both in front of the trunk: each hand ahead of the chest bone
+    the right hand is at the nock (R87), both in front of the trunk: each hand ahead of the chest bone
     by more than the torso's half depth (0.094 × the rig's `torsoD` H, the measure
     clips.test.mjs:267 uses for the back) and inside the shoulders' width. The run's carry is
     `ARCHER_STYLE.run.hold` (the shared mechanism, clips.js:361). Her `hold` for the idle and the
@@ -1224,24 +1306,14 @@ shared `RUN_PACE` tolerance without client code; a default that cannot be honour
     (today's pump peak, 0.707 H measured). *On her rig today* (measured) that is about 0.53–0.67 H
     for the bones, so about 0.55–0.62 H for the hands; the lean (R67) lowers the chest bone, and
     the bake reads the bands off the posed rig.
-74. **The right hand on the string, no arrow (D4, D5).** The right hand's grip point lies on the
-    string's middle (the nocking point), within 0.02 H. The string is undrawn: braced straight
-    between the tips as at rest, the run's keys carrying no `fx.draw` and no `fx.arrow`, so no
-    arrow shows. With the string braced 0.075 H off the stave, the two hands sit close together,
-    the string side toward the body.
-75. **The bow's angle (D5).** The tip-to-tip line stands 35–55° off vertical on every sample
-    (about 45°). The upper tip is above the grip and ahead of it along the facing; the lower tip is
-    below the grip and behind it. The upper tip, horn nock caps included on the Hunter, stays
-    under the crown (the top of the meshes the head bone carries) on every sample, in all three
-    looks.
-76. **Clear of the legs (D5).** No point of the bow passes through a leg, a boot or the tunic on any
-    sample of the run (a new bake test: the stave against the leg and boot meshes, posed and
-    grounded as the bake poses them). **(charter default, under D5's "clear of the legs")** Where a
-    fore-and-aft tilt would bring the lower limb back through the legs' swing (see *Facts*), the
-    bow cants across the body, its lower limb passing outside a leg. The side and the cant are the
-    bake's, as far as the test and the guards allow; the owner judges them at the contact sheet.
-    *Reason:* at 45° a 0.8 H longbow's lower tip reaches about 0.28 H back from a grip held only
-    0.15–0.25 H ahead of the hips (an estimate).
+74. *Removed 2026-11-23 (the right hand on the braced string's middle with no arrow): an arrow is
+    nocked now and the right hand sits at its nock (R87).*
+75. *Removed 2026-11-23 (the bow 35–55° off vertical, the upper limb forward and up, the lower
+    limb back and down): the bow is canted left-high across the front (R88), the tip held under
+    the head on screen (R90).*
+76. *Removed 2026-11-23 (the bow clear of the legs, its lower limb canted out past a leg): the
+    clearances are R89's, which add the string's whole length, the arrow, the cloak and the
+    quiver.*
 77. **No pump (D6).** Each hand's position in the chest bone's frame moves no more than 0.02 H over
     the cycle: the hands ride the trunk's turn, lean and bob, and the arms do not swing.
 78. **The rest is unchanged.** Her idle, walk, attack and death keys are unchanged (her `attack`
@@ -1288,12 +1360,46 @@ shared `RUN_PACE` tolerance without client code; a default that cannot be honour
     box. A sheet that grows against main is escalated before merge.
 85. **Docs.** `game-client/docs/design-guideline.md`'s character clip list says the archer's run is
     a sprint (the trunk about 20° forward, a quicker, shorter stride with knee drive and heel kick,
-    the bow held two-handed low in front, about 45°) and that her sheets carry no
+    the bow held two-handed low in front, canted left-high across the front with an arrow nocked:
+    owner change 2026-11-23) and that her sheets carry no
     attack-on-the-move clips. The `tools/bake/lib/contact.mjs` header notes say the same.
 86. **The fallback (D2), named for the owner.** If at the contact sheet the owner reads 16 fps as
     shuffling, her cadence and stride go back to today's (14 fps and `RUN_STEP`'s leg keys, R69's
     knee drive and heel kick going with them), and the change is the posture alone: R67, R72–R77. R79
     holds either way. The owner chooses; it stays inside the charter.
+
+#### The low ready, as the owner changed it on 2026-11-23 (T1–T3)
+
+87. **An arrow nocked, the right hand lightly at its nock (T1).** Every run key carries
+    `fx.arrow` 1 and no `fx.draw` and no `fx.ik`, so the bow's own arrow (gear.js `longbow`) shows
+    on the braced, undrawn string, from the string's rest point through the grip, lying on the bow
+    by the left fist. The right hand's grip point (draw.js `drawGrip`) sits on the nock, within
+    0.02 H, on every sample: it hooks the nock end and does not pull. Her idle, walk, attack and
+    death keys are unchanged (R78), so the arrow shows in the run only. No mesh is added or
+    thickened.
+88. **The bow canted left-high across the front (T2).** On every sample the upper tip is on her
+    own left of the grip and above it, the lower tip on her own right and below it (her left is
+    the rig's +x, in every facing). The tip-to-tip line stands **about 68° off vertical on average
+    over the cycle (62–72°), 58–76° on every sample**: the hands ride the chest's counter-turn
+    (R77), so the bow rocks about ±6.5° with it. The arrow points forward and down, **20–40° below
+    level on every sample, its heading within 15° of the facing**. (The band is the escalated
+    first option; see *Escalated 2026-11-23*.)
+89. **Clear of everything it passes (T2, clearances).** On every baked run frame of the three
+    looks: no point along any edge of the bow, its string's two strands or the arrow (sampled at
+    most 0.005 H apart) lies inside a leg, a boot or the tunic; and no such edge crosses the cloak
+    or the quiver (segment against triangle, the cloak skinned as posed). Each check carries a
+    rejection fixture that must fail (the same bow moved into a thigh, onto the cloak's back,
+    onto the quiver's case). Nothing is added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`.
+90. **The tip never above the head on screen (T3).** In every one of the 8 facings, on every baked
+    run frame, no point of the bow or the arrow projects (projection.js: 30° elevation, 45°
+    azimuth) higher on screen than the highest point of the meshes the head bone carries.
+    **Escalated:** with R72, R73 and R88's band this holds on the base and the Shadow Ranger
+    (by at least 0.003 H) and not on the Hunter, whose tip draws up to 0.036 H over her hair in n
+    and ne. Until the owner chooses, the Hunter is held to "no more than 0.04 H over her head on
+    screen, in n and ne only", the others to R90 as written.
+91. **The arrow reads at game scale (T1, the owner: "預備動作最好可以看到一根弓箭在上面預備").** Judged
+    on the contact sheet at 1x: the facings in which the arrow is hidden behind the body or too
+    thin to read are named in the report, and a thicker arrow is proposed, not made.
 
 ### Acceptance Criteria
 
@@ -1314,11 +1420,16 @@ Bake (`npm test` in `game-client`: `clips.test.mjs`, `classMotion.test.mjs`,
 - [ ] Her shoulders counter-turn against the hips (correlation below −0.8, 6.5–10°).
 - [ ] On every sample: both hands ahead of the chest bone by more than 0.094 × `torsoD` H and
       inside the shoulders' width; each at least 0.05 H above the hips bone, no higher than the
-      chest bone and under 0.70 H; the right hand within 0.02 H of the string's middle; no
-      `fx.draw` and no `fx.arrow` on any run key.
-- [ ] On every sample: the bow 35–55° off vertical, its upper tip above and ahead of the grip and
-      under the crown (all three looks, the Hunter's nock caps included), its lower tip below and
-      behind the grip; no point of the bow through a leg, a boot or the tunic.
+      chest bone and under 0.70 H; the right hand within 0.02 H of the nock; `fx.arrow` 1 and no
+      `fx.draw` or `fx.ik` on any run key (R87).
+- [ ] On every sample: the upper tip on her left of the grip and above it, the lower tip on her
+      right and below it; the bow 58–76° off vertical, 62–72° on average; the arrow 20–40° below
+      level, heading within 15° of the facing (R88).
+- [ ] On every baked run frame of the three looks: no sampled point of the bow, string or arrow
+      inside a leg, a boot or the tunic, and no edge of them across the cloak or the quiver; each
+      check's rejection fixture fails (R89).
+- [ ] In every facing on every baked run frame, no point of the bow or arrow above the head on
+      screen, on the base and the Shadow Ranger; the Hunter as R90's escalation holds her.
 - [ ] Each hand moves no more than 0.02 H in the chest bone's frame over the cycle.
 - [ ] The shared run's tests (plain style, `RUN_STEP` key for key, the 10° lean, the pump bands,
       `RUN_PACE` within 1 at 14 fps) and the other classes' run tests pass unchanged.
@@ -1347,6 +1458,8 @@ HITL:
 
 - [ ] **The owner approves** the three archer sheets' new run beside main's on the contact sheet
       (ADR-0021 §5), or names the fallback (R86) or a tune round.
+- [ ] **The owner chooses** how the Hunter's tip is held (R90's escalation), and whether the arrow
+      reads at game scale in enough facings (R91).
 - [ ] **Browser check:** in a run and in the town, the archer, the Hunter and the Shadow Ranger run
       at 200 px/s with the sprint's lean and cadence and the low-ready bow, the feet not sliding.
       Attacking on the move plays the standing shot, and a second player sees the same.
@@ -1360,7 +1473,10 @@ HITL:
   the run's first frame, and back on stopping, with no blend: clips swap as every carry does today.
   Judged at the contact sheet and the browser check; a transition clip is out of scope.
 - **Running into a shot.** The shot starts from `attack`'s own first key (out of the idle carry),
-  so the bow jumps from the low-ready to the draw. As above, judged in play.
+  so the bow jumps from the low-ready to the draw, and the run's nocked arrow goes until the
+  attack nocks its own. As above, judged in play.
+- **Setting off and stopping, the arrow.** The arrow appears on the run's first frame and goes on
+  stopping, with the carry (no blend, as above).
 - **A Shadow Shot hold while moving.** She stands in idle turned to the held aim, as before; the
   release plays `attack`.
 - **Gear move speed.** At +20% (240 px/s) her run plays at about 1.24x (about 19.8 fps), capped by
@@ -1371,7 +1487,8 @@ HITL:
 - **Other players.** Others draw her from the same sheet, so they see the sprint and the low-ready
   bow; they never get her attack clips (Out of Scope of §A–§G, unchanged).
 - **The three looks.** The Hunter's pelt and jerkin and the Shadow Ranger's soot cloth ride the same
-  keys; the Hunter's horn nock caps lengthen the tips and count toward the crown check (R75).
+  keys; the Hunter's horn nock caps lengthen the tips and count toward the on-screen head check
+  (R90; was R75's crown check).
 - **The cloak and the quiver under a 20° lean.** The cloak hangs further off a leaning back, and
   the quiver tilts with the chest. If the guards then fail, or the bow passes through the cloak,
   and only a different look would fix it, that is escalated (see *Escalate*), never exempted.
@@ -1389,7 +1506,8 @@ HITL:
   `BACKPEDAL_PACE`: they go when the last class drops the clips.
 - The creature archers (the Bone, Ashen and Wight Archers): they have no `run` clip.
 - The archer's idle, walk, attack (the draw) and death.
-- A nocked arrow in the run, a drawn string, or a transition clip between the carries.
+- A drawn string in the run, a thicker arrow, or a transition clip between the carries. (A nocked
+  arrow in the run was out of scope until the owner change of 2026-11-23: R87.)
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
 - Rewording the open browser check I-JS7C8-9, which still names every class's `walk_attack`.
