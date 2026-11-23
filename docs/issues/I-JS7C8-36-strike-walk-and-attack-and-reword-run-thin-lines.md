@@ -60,3 +60,12 @@ movement" is left as it is: its loose wording is a follow-up outside this change
 Attacking pins the attacker, Follow-ups), and this issue does not ask for it. No FS `Status:` moved.
 
 Left open: step 2, deleting the struck line once I-JS7C8-35 has merged into main, via `spec-update`.
+
+## Built, step 2 (2026-11-23, agent, on `feat/run-spellwarden-staff`)
+
+The retirement (I-JS7C8-35) ships on main 4d56d258, so the struck line is deleted, never checked,
+through `spec-update`: `- [ ] ~Walk-and-attack animation~ → removed FS-JS7C8` is gone from
+`game-client/SPECIFICATION.md` "### Presentation". No other line changed. No FS header was edited:
+FS-HF0WW, which first owned the line, still owns three live lines there, so it is not retired and
+takes no `Superseded by:`; its header still names the deleted line, as step 1 left it. Status left
+as it was.
