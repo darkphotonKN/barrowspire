@@ -493,8 +493,10 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
   // run frames 1 and 6 (I-JS7C8-22: 0.0107 and 0.0021 H in), and the old pumping sword arm, under the
   // sprint's 20° lean, crossed his half-cloak on run frame 7 (6 edges). The trailing sword
   // (classStyles.js `MERC_TRAILING_SWORD`), out from the hip, clears both: the arm past the elbow at
-  // least 0.05 H outside every leg, boot and skirt of the Duelist and 0.086 H of the base's and the
-  // Sellsword's, no edge of it across the half-cloak.
+  // least 0.062 H outside every leg, boot and skirt of the Duelist and 0.089 H of the base's and the
+  // Sellsword's, no edge of it across the half-cloak. Turned out (R158), the arm must stand at least
+  // 0.22 rad out: at 0.15 or less the Duelist's sleeve near the elbow crossed the half-cloak's right
+  // hem on run frame 7 (2–9 edges).
   it.each(CASES)("%s %s: the arm past the elbow (the fist, the vambrace, the sleeve) inside no leg, boot or skirt (R104)", (sheet, anim, r) => {
     for (const f of frames(sheet, r, anim)) {
       expect(f.arm.solid.some((s) => s.least !== null), `frame ${f.i}: no leg, boot or skirt measured`).toBe(true);
