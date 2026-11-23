@@ -839,6 +839,12 @@ thrust out straight like a short one).
   square to the hand, so with the shoe on the ground the fist's grip is 0.46 H up the staff,
   about 0.45 H over the ground at the tilt asked for.
 - Her frame box is 300×255 at 1.5x (Looks v2).
+- The bake sizes one sheet's shadow map from that sheet's farthest pose: `baker.js`
+  `bakeCharacter` takes the greatest reach over every pose and facing of the sheet (`:259`,
+  `:281`) and squares the sun's shadow camera to it (`setShadowBox`, `:129`, `:298`). A pose
+  that reaches further or less far on any clip changes the shadow map's texel size for every clip
+  of the sheet, so a clip whose keys are byte-identical can still bake to different pixels: the
+  ground shadow and the shadow the figure receives on itself land on a shifted texel grid.
 
 ### Requirements
 
@@ -893,9 +899,10 @@ thrust out straight like a short one).
 
 **§O. What stays, the box, the bake, the review**
 
-83. **Walk, run and death unchanged**, pixel for pixel: her walk (`WARD_HOLD`), her run
-    (`WARD_RUN_HOLD` under the sprint) and her death (`WARD_DEATH`) keep their keys byte for byte,
-    and their baked frames are pixel-identical to main 4d56d258's.
+83. **Walk, run and death unchanged**: her walk (`WARD_HOLD`), her run (`WARD_RUN_HOLD` under the
+    sprint) and her death (`WARD_DEATH`) keep their keys byte for byte, and their baked frames
+    differ from main 4d56d258's only by the bake's shadow-map texel shift (see "Her other clips'
+    shadow drift, 2026-11-23" below).
 84. **The frame box does not grow** *(charter default — reason: Looks v2's box is the budget)*. Her
     sheet's frame stays within 300×255 at 1.5x. A pose that would grow it is escalated to the
     owner, not shipped.
@@ -924,8 +931,10 @@ thrust out straight like a short one).
       further than `staffCast`'s; on key 5 the staff is 15–30° from vertical, the elbow 50–70°.
 - [ ] On every attack frame the staff clears her head (≥ 1.3 skull radii), torso, gown, legs,
       boots, right forearm, sleeve and hand, and the ground.
-- [ ] Her walk, run and death keys are byte-identical to main 4d56d258's (digest), their baked
-      frames pixel-identical; the Pyromancer's and the base wizard's clips keep their bytes.
+- [ ] Her walk, run and death keys are byte-identical to main 4d56d258's (digest); their baked
+      frames differ from main's only by the shadow-map texel shift, within the measures recorded
+      in "Her other clips' shadow drift, 2026-11-23"; the Pyromancer's and the base wizard's clips
+      keep their bytes.
 - [ ] Her frame box is at most 300×255.
 - [ ] `git diff --stat public/art/` after the bake lists only her atlas pages and `manifest.json`,
       the manifest's diff only her entry; `npm run bake -- --check` is clean.
@@ -953,3 +962,22 @@ thrust out straight like a short one).
 - Her walk, run and death; the staff's model and its mount in the hand; the gown.
 - The cast's wind-up and settle keys (0–2, 6), its timing and the client's attack window.
 - Any runtime or server change; the manifest's format.
+
+### Her other clips' shadow drift, 2026-11-23
+
+The coordinator's ruling at the first review, the owner told: the drift is accepted. Her walk,
+run and death keep their keys byte for byte (digests against main 4d56d258), but after the
+re-bake their frames are not pixel-identical to main's. The only difference is the bake's
+shadow-map texel shift: `baker.js` sizes the sheet's shadow box from its farthest pose (Facts,
+above), and the planted idle and the heavy cast change that reach, so every clip of her sheet
+is shadowed on a shifted texel grid. Measured against main's sheet, every frame of each clip:
+
+| Clip | Pixels that differ | Largest channel step (of 255) | Opaque pixels' largest step |
+|---|---|---|---|
+| walk | 39,359 | 34 | 6 |
+| run | 44,586 | 36 | 12 |
+| death | 39,393 | 37 | 13 |
+
+Each clip's count includes 11k–17k opaque pixels: the shadow the figure receives on herself,
+shifted with the map. The rest are the ground shadow. R83 and its acceptance line are corrected
+above to say so.
