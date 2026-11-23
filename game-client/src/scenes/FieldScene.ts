@@ -773,7 +773,7 @@ export class FieldScene extends Phaser.Scene {
     // (FS-TQZ5J § Change: Phase 3, R52)
     if (me) this.ui.gear({ kind: "seen", carried: me, character: me });
     this.ui.gear({ kind: "level", level: me?.level });
-    this.piles?.sync(state.containers ?? [], me?.id);
+    this.piles?.sync(state.containers ?? [], me?.id, this.selfAt);
     if (this.selfAt) this.piles?.follow(this.selfAt);
 
     this.lastState = state;

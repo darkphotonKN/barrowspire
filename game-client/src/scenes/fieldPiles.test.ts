@@ -584,3 +584,165 @@ describe("FieldPiles open sounds, through the run's coffer view (FS-AND39 R5)", 
     expect(play).not.toHaveBeenCalled();
   });
 });
+
+describe("FieldPiles move close (FS-1D6BX § Change: The container view closes when its player moves)", () => {
+  /** One state as the field scene hands it on: the containers, then the own position. */
+  const state = (fp: FieldPiles, containers: ContainerState[], at?: { x: number; y: number }) => {
+    fp.sync(containers, ME, at);
+    if (at) fp.follow(at);
+  };
+
+  it("should close a drop pile's view on a state 5 px from the press position, nothing sent or said (R26, R27)", () => {
+    const { fp, satchel, send, notices } = piles();
+    state(fp, [pile("p", 30)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+
+    state(fp, [pile("p", 30)], { x: 3, y: 4 });
+    expect(satchel.entityId).toBeUndefined();
+    expect(satchel.closes).toEqual(["animated"]);
+    expect(send).not.toHaveBeenCalled();
+    expect(notices).toEqual([]);
+  });
+
+  it("should keep a drop pile's view open on a state 4 px from the press, and close it once drift adds up past 4 px (R29)", () => {
+    const { fp, satchel } = piles();
+    state(fp, [pile("p", 30)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+
+    state(fp, [pile("p", 30)], { x: 4, y: 0 });
+    expect(satchel.entityId).toBe("p");
+    state(fp, [pile("p", 30)], { x: 2, y: 0 });
+    state(fp, [pile("p", 30)], { x: 4, y: 0 });
+    expect(satchel.entityId).toBe("p");
+    state(fp, [pile("p", 30)], { x: 6, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should give a chest's view the position of the state that shows it open, not the press's (R27, A2, M2)", () => {
+    const { fp, satchel } = piles();
+    // a pile opened and shut earlier leaves no baseline behind
+    state(fp, [pile("p", 30), chest("c", 40)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+
+    state(fp, [chest("c", 40)], { x: 20, y: 0 });
+    fp.interact({ x: 20, y: 0 });
+    // walked on while the open was on the way: the open state is 8 px past the press
+    state(fp, [chest("c", 40, true, [item("a")])], { x: 28, y: 0 });
+    expect(satchel.entityId).toBe("c");
+    state(fp, [chest("c", 40, true, [item("a")])], { x: 32, y: 0 });
+    expect(satchel.entityId).toBe("c");
+
+    state(fp, [chest("c", 40, true, [item("a")])], { x: 33, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should give a chest's view its open state's position whether that state is followed before or after it syncs (M2)", () => {
+    const { fp, satchel } = piles();
+    const followFirst = (containers: ContainerState[], at: { x: number; y: number }) => {
+      fp.follow(at);
+      fp.sync(containers, ME, at);
+    };
+    followFirst([chest("c", 40)], { x: 20, y: 0 });
+    fp.interact({ x: 20, y: 0 });
+    followFirst([chest("c", 40, true, [item("a")])], { x: 28, y: 0 });
+    expect(satchel.entityId).toBe("c");
+    followFirst([chest("c", 40, true, [item("a")])], { x: 32, y: 0 });
+    expect(satchel.entityId).toBe("c");
+
+    followFirst([chest("c", 40, true, [item("a")])], { x: 33, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should close a sack's view opened on its open state once a later state is more than 4 px from it (R26, A3)", () => {
+    const { fp, satchel } = piles();
+    state(fp, [sack("s", 30)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    state(fp, [sack("s", 30, true, [item("a")])], { x: 6, y: 0 });
+    expect(satchel.entityId).toBe("s");
+
+    state(fp, [sack("s", 30, true, [item("a")])], { x: 6, y: 5 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should open the view again at once on E after a move closed it, with a new baseline (R30, A4)", () => {
+    const { fp, satchel } = piles();
+    state(fp, [pile("p", 30)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    state(fp, [pile("p", 30)], { x: 10, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+
+    fp.interact({ x: 10, y: 0 });
+    expect(satchel.entityId).toBe("p");
+    state(fp, [pile("p", 30)], { x: 10, y: 0 });
+    expect(satchel.entityId).toBe("p");
+    state(fp, [pile("p", 30)], { x: 15, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should open a chest's view again on E after a move closed it, from the new open state", () => {
+    const { fp, satchel, send } = piles();
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 0 });
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 6 });
+    expect(satchel.entityId).toBeUndefined();
+
+    fp.interact({ x: 0, y: 6 });
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 6 });
+    expect(satchel.entityId).toBe("c");
+    expect(send).toHaveBeenCalledTimes(2);
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 10 });
+    expect(satchel.entityId).toBe("c");
+  });
+
+  it("should give up a chest reached for and not yet open only by the window or PILE_REACH, never by a move (R31)", () => {
+    const { fp, satchel, wait } = piles();
+    // a pile's view opened at x 0 and shut by E: a reach is never judged against its baseline
+    state(fp, [pile("p", 10), chest("c", 40)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    fp.interact({ x: 40, y: 0 });
+    state(fp, [chest("c", 40)], { x: 20, y: 0 });
+    state(fp, [chest("c", 40, true, [item("a")])], { x: 30, y: 0 });
+    expect(satchel.entityId).toBe("c");
+
+    // the window still gives one up
+    state(fp, [chest("d", 40)], { x: 30, y: 0 });
+    fp.interact({ x: 30, y: 0 });
+    wait(CHEST_OPEN_WINDOW_MS + 1);
+    state(fp, [chest("d", 40, true, [item("a")])], { x: 30, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+
+  it("should keep the PILE_REACH close and the restock close as they were (R31)", () => {
+    const { fp, satchel, wait } = piles();
+    state(fp, [pile("p", 30)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    // past reach in one state: closed once, as before
+    state(fp, [pile("p", 30)], { x: 30 + PILE_REACH + 1, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+    expect(satchel.closes).toEqual(["animated"]);
+
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 0, y: 0 });
+    wait(CHEST_OPEN_WINDOW_MS + 1);
+    state(fp, [chest("c", 30, false, [])], { x: 0, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+    expect(satchel.closes).toEqual(["animated", "animated"]);
+  });
+
+  it("should take a chest's baseline from the next state with a position when its open state has none (M4)", () => {
+    const { fp, satchel } = piles();
+    state(fp, [chest("c", 30)], { x: 0, y: 0 });
+    fp.interact({ x: 0, y: 0 });
+    state(fp, [chest("c", 30, true, [item("a")])]);
+    expect(satchel.entityId).toBe("c");
+
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 10, y: 0 });
+    expect(satchel.entityId).toBe("c");
+    state(fp, [chest("c", 30, true, [item("a")])], { x: 15, y: 0 });
+    expect(satchel.entityId).toBeUndefined();
+  });
+});

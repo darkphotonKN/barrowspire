@@ -4,6 +4,7 @@ import type { Point } from "@/render/iso";
 import { pileAlpha, reservedForOther } from "@/render/world/dropPile";
 import { lootMessage } from "@/ui/ContainerView";
 import { lootRefusalCopy } from "./fieldRefusals";
+import { ViewBaseline } from "./viewMove";
 
 /**
  * A field's drop piles (FS-X2F2H §Requirements 56, 59): drawn as a run's, taken from through the
@@ -82,6 +83,8 @@ export class FieldPiles {
   private chestSeenOpen = false;
   /** A chest reached for, and until when its open is waited for ({@link CHEST_OPEN_WINDOW_MS}). */
   private reach: { id: string; until: number } | undefined;
+  /** Where the player stood as the open satchel opened: a pile's at the press, a chest's on its open state (M2). */
+  private readonly baseline = new ViewBaseline();
 
   constructor(
     private readonly stage: PileStage,
@@ -94,9 +97,11 @@ export class FieldPiles {
    * One state's containers are the whole truth: its drop piles holding anything (an emptied pile
    * has nothing to draw or take, as in a run), each as faint as its reservation says, and its
    * chests and sacks, each in the frame its `is_open` says, emptied or not. `me` is this client's
-   * member id, what `reserved_for` names.
+   * member id, what `reserved_for` names; `at` is this state's own `current_player.position`, the
+   * baseline of a chest's satchel this state opens (FS-1D6BX M2), and with none the next position
+   * {@link follow}ed becomes it (M4).
    */
-  sync(containers: readonly ContainerState[], me: string | undefined): void {
+  sync(containers: readonly ContainerState[], me: string | undefined, at?: Point): void {
     this.me = me;
     const shown = containers.filter((c) => !isPile(c) || c.items.length > 0);
     const present = new Set(shown.map((c) => c.entity_id));
@@ -108,7 +113,7 @@ export class FieldPiles {
     }
     for (const container of shown) this.draw(container, me);
 
-    this.followSatchel();
+    this.followSatchel(at);
   }
 
   /**
@@ -137,6 +142,7 @@ export class FieldPiles {
     }
     this.reach = undefined;
     this.satchel.open(near.entity_id, placedKind(near));
+    this.baseline.open(at);
     this.satchel.setItems(near.items);
     return true;
   }
@@ -163,10 +169,18 @@ export class FieldPiles {
   }
 
   /**
-   * The player has moved: the satchel closes once its pile or chest is out of reach, and a chest
-   * reached for and walked away from is no longer waited for.
+   * The player is at `at` in this state, the state's own `current_player.position`: an open
+   * satchel closes once they stand more than 4 px from where it opened (FS-1D6BX § Change: The
+   * container view closes when its player moves, R26, R29), or once its pile or chest is out of
+   * reach; a chest reached for and walked away from is no longer waited for. A reach is judged
+   * only by reach and its window, never by the move rule (R31). Before or after that state's
+   * {@link sync}, either: a chest's satchel takes its baseline from the `at` its open state synced.
    */
   follow(at: Point): void {
+    if (this.satchel.entityId !== undefined && this.baseline.observe(at)) {
+      this.shut();
+      return;
+    }
     const target = this.satchel.entityId ?? this.reach?.id;
     if (target === undefined) return;
     const pile = this.drawn.get(target)?.pile;
@@ -216,8 +230,8 @@ export class FieldPiles {
    * pile or chest is gone, its pile is someone else's, or its chest has restocked (seen open since
    * the reach, now shut, and the window passed); otherwise it shows what is in it.
    */
-  private followSatchel(): void {
-    this.followReach();
+  private followSatchel(at: Point | undefined): void {
+    this.followReach(at);
     const open = this.satchel.entityId;
     if (open === undefined) return;
     const shown = this.drawn.get(open)?.pile;
@@ -237,8 +251,11 @@ export class FieldPiles {
     }
   }
 
-  /** The chest reached for: its satchel opened once a state has it open; let go once its window passes. */
-  private followReach(): void {
+  /**
+   * The chest reached for: its satchel opened once a state has it open, at that state's `at`; let
+   * go once its window passes.
+   */
+  private followReach(at: Point | undefined): void {
     const reach = this.reach;
     if (!reach) return;
     const chest = this.drawn.get(reach.id)?.pile;
@@ -249,6 +266,7 @@ export class FieldPiles {
     if (chest.is_open && this.satchel.entityId !== reach.id) {
       this.satchel.open(reach.id, placedKind(chest));
       this.chestSeenOpen = false;
+      this.baseline.open(at);
     }
   }
 

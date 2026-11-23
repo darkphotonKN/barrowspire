@@ -6,6 +6,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -46,7 +47,7 @@ func openThrough(t *testing.T, s *Session, playerID, containerID uuid.UUID) erro
 	}
 	require.NotNil(t, timedOpenOf(delverEntity(t, s, playerID)), "the reach starts a timed open")
 	for range timedOpenTicks() + 1 {
-		s.advanceTimedOpens(1.0/float64(constants.GameFrameRate), s.EntityManager.GetAllEntities())
+		s.advanceTimedOpens(1.0/float64(constants.GameFrameRate), s.EntityManager.GetAllEntities(), nil)
 	}
 	return nil
 }
@@ -383,15 +384,20 @@ func TestTimedOpen_AHitThatCostsHealthCancels(t *testing.T) {
 	assertShutAndUnrolled(t, chest)
 }
 
-// A strike the mercenary parries costs no health and cancels nothing. R7, D4.
+// A strike the mercenary parries costs no health and cancels nothing. The
+// stance was raised on the tick before the reach, so the parry cast itself is
+// not made during the timed open (R28). R7, R33, D4, edge state "the parry
+// stance is already open at the reach".
 func TestTimedOpen_AParriedStrikeDoesNotCancel(t *testing.T) {
 	s, _ := containerSession(t, 100, 100)
 	merc, delver := placeDelver(t, s, "mercenary", 500, 500)
 	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+	tick(s) // the stance rises
 	reach(t, s, merc, chest.ID)
+	require.NotNil(t, timedOpenOf(delver), "a stance raised before the reach cancels nothing")
 	before := currentHealth(delver)
 
-	require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
 	strikeFrom(t, s, delver)
 	tick(s)
 
@@ -441,20 +447,30 @@ func TestTimedOpen_AHitOnTheLastTickCancels(t *testing.T) {
 
 // A hit cancels even when the same tick's kill heals the delver for more than
 // the hit cost: the hit is read from the combat, not from the health the tick
-// ends on. R7, D4.
+// ends on. The kill is a fireball the mage cast before the reach, landing a
+// tick after it, so no attack of theirs goes off on the hit's tick and it is
+// the hit alone that cancels (R7, not R28). R7, R30, D4, E3.
 func TestTimedOpen_AHitCancelsThoughAKillsHealOutweighsIt(t *testing.T) {
-	s, player := containerSession(t, 500, 500)
+	s, _ := containerSession(t, 100, 100)
+	player, delver := placeDelver(t, s, "mage", 500, 500)
 	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
-	delver := delverEntity(t, s, player)
 	wearing(t, s, delver, inHeadSlot, hollowCrown())
 	tick(s) // the gear seats
 	hurt(t, delver, 500, 1000)
-	reach(t, s, player, chest.ID)
+	ghoul := frailGhoul(s, 500, 545)
 
-	require.NoError(t, s.handleAttack(player, frailGhoul(s, 500, 545).ID))
+	// the fireball flies 350 px/s from the mage and lands within 32 px of the
+	// ghoul: on the second tick after the cast's, the one after the reach's
+	require.NoError(t, s.handleCastSkill(player, "fireball", 500, 545))
+	tick(s)
+	reach(t, s, player, chest.ID)
+	require.Greater(t, currentHealth(ghoul), 0, "the fireball is still in flight at the reach")
+	require.NotNil(t, timedOpenOf(delver))
+
 	strikeFrom(t, s, delver)
 	tick(s)
 
+	require.Zero(t, currentHealth(ghoul), "the fireball cast before the reach killed it")
 	require.Greater(t, currentHealth(delver), 500, "the kill healed more than the hit cost")
 	require.Less(t, currentHealth(delver), 540, "and the hit cost health")
 	assert.Nil(t, timedOpenOf(delver), "the hit cancels the timed open")
@@ -630,56 +646,25 @@ func TestTimedOpen_AfterACancelTheNextReachStartsFromZero(t *testing.T) {
 	assert.Empty(t, sent.to(player))
 }
 
-// Nothing but moving, a hit and leaving reach cancels: a delver who attacks,
-// casts an ability that leaves the body where it stands, or equips and
-// unequips, still has their timed open, and it completes on its 45th tick.
-// (A drink: TestTimedOpen_AHealDoesNotCancel.) R13, D9.
+// Nothing but moving, a hit, an attack or cast that goes off and leaving reach
+// cancels: a delver who equips and unequips still has their timed open, and it
+// completes on its 45th tick. (A drink: TestTimedOpen_AHealDoesNotCancel;
+// attacks and casts: TestTimedOpen_AnAttackThatGoesOffCancels and the tests
+// after it.) R13, R33, B2.
 func TestTimedOpen_NothingElseCancels(t *testing.T) {
-	acts := map[string]func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity){
-		"attacking": func(t *testing.T, s *Session, player uuid.UUID, _ *ecs.Entity) {
-			target := unarmoredTarget(s, 500, 545)
-			require.NoError(t, s.handleAttack(player, target.ID))
-			tick(s)
-			require.Less(t, currentHealth(target), 1000, "the attack landed")
-		},
-		"casting an ability that does not move the body": func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity) {
-			before := currentResource(delver)
-			require.NoError(t, s.handleCastSkill(player, "triple_fireball", 500, 900))
-			tick(s)
-			require.Less(t, currentResource(delver), before, "the cast was paid for")
-		},
-		"equipping and unequipping": func(t *testing.T, s *Session, _ uuid.UUID, delver *ecs.Entity) {
-			sword := carried(t, s, delver.ID, types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeWeapon, Name: "Sword"})
-			require.NoError(t, s.handleEquip(constants.ActionEquip, delver.ID, sword))
-			tick(s)
-			require.NoError(t, s.handleEquip(constants.ActionUnequip, delver.ID, sword))
-			tick(s)
-		},
-	}
-	classes := map[string]string{"casting an ability that does not move the body": "mage"}
-	for name, act := range acts {
-		t.Run(name, func(t *testing.T) {
-			class := classes[name]
-			if class == "" {
-				class = "warrior"
-			}
-			s, _ := containerSession(t, 100, 100)
-			player, delver := placeDelver(t, s, class, 500, 500)
-			chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
-			reach(t, s, player, chest.ID)
-			ticks(s, 5)
+	s, _ := containerSession(t, 100, 100)
+	player, delver := placeDelver(t, s, "warrior", 500, 500)
+	chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	reach(t, s, player, chest.ID)
+	ticks(s, 5)
 
-			act(t, s, player, delver)
+	sword := carried(t, s, delver.ID, types.ItemConfig{TemplateID: uuid.New(), ItemType: types.ItemTypeWeapon, Name: "Sword"})
+	require.NoError(t, s.handleEquip(constants.ActionEquip, delver.ID, sword))
+	tick(s)
+	require.NoError(t, s.handleEquip(constants.ActionUnequip, delver.ID, sword))
+	tick(s)
 
-			open := timedOpenOf(delver)
-			require.NotNil(t, open, "the timed open is still running")
-			left := timedOpenTicks() - int(math.Round(open.Elapsed*float64(constants.GameFrameRate)))
-			ticks(s, left)
-			assert.False(t, openable(t, chest).IsOpen, "shut on the 44th tick")
-			tick(s)
-			assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick")
-		})
-	}
+	assertRunsToTheEnd(t, s, delver, chest)
 }
 
 // A reach made while walking starts a timed open and loses it on the same
@@ -697,4 +682,419 @@ func TestTimedOpen_AReachMadeWhileWalkingIsCancelledOnItsOwnTick(t *testing.T) {
 	require.NoError(t, s.handleMove(player, 0, 0))
 	ticks(s, timedOpenTicks()+1)
 	assertShutAndUnrolled(t, chest)
+}
+
+// FS-MQYEX §Change: An attack cancels the timed open, Requirements 28–34.
+// I-MQYEX-7.
+
+// assertCancelledByTheAct is a timed open the act ended: none on the body,
+// the container shut and unrolled however long the delver then waits, and
+// nothing sent to them.
+func assertCancelledByTheAct(t *testing.T, s *Session, sent *recordingSender, player uuid.UUID, delver, chest *ecs.Entity) {
+	t.Helper()
+	assert.Nil(t, timedOpenOf(delver), "the act cancels the timed open")
+	ticks(s, timedOpenTicks()+1)
+	assertShutAndUnrolled(t, chest)
+	assert.Empty(t, sent.to(player), "nothing is sent for the cancel")
+}
+
+// A basic attack that goes off during a timed open cancels it, whether it
+// lands or hits nothing: the warrior's targeted strike, its slash into empty
+// ground and the mage's fireball into empty ground. R28, R32, E1.
+func TestTimedOpen_AnAttackThatGoesOffCancels(t *testing.T) {
+	tests := []struct {
+		name  string
+		class string
+		act   func(t *testing.T, s *Session, player uuid.UUID)
+	}{
+		{"a targeted attack that lands", "warrior", func(t *testing.T, s *Session, player uuid.UUID) {
+			target := unarmoredTarget(s, 500, 545)
+			require.NoError(t, s.handleAttack(player, target.ID))
+			tick(s)
+			require.Less(t, currentHealth(target), 1000, "the attack landed")
+		}},
+		{"a slash at nothing", "warrior", func(t *testing.T, s *Session, player uuid.UUID) {
+			require.NoError(t, s.handleCastSkill(player, "slash", 500, 900))
+			tick(s)
+		}},
+		{"a fireball at nothing", "mage", func(t *testing.T, s *Session, player uuid.UUID) {
+			require.NoError(t, s.handleCastSkill(player, "fireball", 500, 900))
+			tick(s)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _ := containerSession(t, 100, 100)
+			sent := &recordingSender{}
+			s.sender = sent
+			player, delver := placeDelver(t, s, tt.class, 500, 500)
+			chest, _ := s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+			reach(t, s, player, chest.ID)
+			ticks(s, 10)
+
+			tt.act(t, s, player)
+
+			assert.Equal(t, components.TransformComponent{X: 500, Y: 500}, *transformOf(t, delver), "the body stood still")
+			assertCancelledByTheAct(t, s, sent, player, delver, chest)
+		})
+	}
+}
+
+// attackRun is a run with a delver of the class, holding their tree ability's
+// node when withNode, standing at (500, 500) beside a shut chest, and someone
+// else far off.
+func attackRun(t *testing.T, class string, withNode bool) (s *Session, sent *recordingSender, player uuid.UUID, delver, chest *ecs.Entity) {
+	t.Helper()
+	s, _ = containerSession(t, 100, 100)
+	sent = &recordingSender{}
+	s.sender = sent
+	var ranks passivetree.Ranks
+	if withNode {
+		node, ok := passivetree.AbilityNode(class)
+		require.True(t, ok)
+		ranks = passivetree.Ranks{node.ID: 1}
+	}
+	player = uuid.New()
+	delver, ok := s.EntityManager.GetEntity(s.AddPlayer(player, types.CharacterInPlay{Name: "Delver", Class: class, PassiveRanks: ranks}, ""))
+	require.True(t, ok)
+	at := transformOf(t, delver)
+	at.X, at.Y = 500, 500
+	chest, _ = s.EntityManager.GetEntity(s.AddContainer(505, 500, components.ContainerKindChest))
+	return s, sent, player, delver, chest
+}
+
+// assertRunsToTheEnd is a timed open the act left running: it is still on the
+// body, the container shut until its 45th tick after the reach and open on it.
+func assertRunsToTheEnd(t *testing.T, s *Session, delver, chest *ecs.Entity) {
+	t.Helper()
+	open := timedOpenOf(delver)
+	require.NotNil(t, open, "the timed open is still running")
+	left := timedOpenTicks() - int(math.Round(open.Elapsed*float64(constants.GameFrameRate)))
+	ticks(s, left)
+	require.NotNil(t, timedOpenOf(delver), "still counting on the 44th tick")
+	assert.False(t, openable(t, chest).IsOpen, "shut on the 44th tick")
+	tick(s)
+	assert.True(t, openable(t, chest).IsOpen, "open on the 45th tick")
+}
+
+// A cast of the class ability, or of a tree ability held, that goes off during
+// a timed open cancels it, also when it hits nothing: the mage's triple
+// fireball, into a target and into empty ground, and a warrior's Earthbreaker
+// with nothing round them. R28, E1, E2.
+func TestTimedOpen_AnAbilityCastThatGoesOffCancels(t *testing.T) {
+	tests := []struct {
+		name     string
+		class    string
+		withNode bool
+		skill    string
+		target   bool
+	}{
+		{"the triple fireball into a target", "mage", false, "triple_fireball", true},
+		{"the triple fireball at nothing", "mage", false, "triple_fireball", false},
+		{"Earthbreaker with nothing round", "warrior", true, "earthbreaker", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, sent, player, delver, chest := attackRun(t, tt.class, tt.withNode)
+			reach(t, s, player, chest.ID)
+			ticks(s, 10)
+			before := currentResource(delver)
+			aimY := 900.0
+			if tt.target {
+				unarmoredTarget(s, 500, 560)
+				aimY = 560
+			}
+
+			require.NoError(t, s.handleCastSkill(player, tt.skill, 500, aimY))
+			tick(s)
+
+			require.Less(t, currentResource(delver), before, "the cast went off and was paid for")
+			assert.Equal(t, components.TransformComponent{X: 500, Y: 500}, *transformOf(t, delver), "the body stood still")
+			assertCancelledByTheAct(t, s, sent, player, delver, chest)
+		})
+	}
+}
+
+// A dash or a blink that goes off during a timed open cancels it once and
+// silently: the cast cancels on its own tick, and the move it makes is no
+// second cancel. The warrior's dash goes off on one tick and carries the body
+// from the next, so the timed open is already gone while the body still
+// stands at the reach; the mage's held Blink moves the body on the cast's own
+// tick. R6, R28, R32, edge state "a dash or blink".
+func TestTimedOpen_ADashOrBlinkCancelsOnce(t *testing.T) {
+	tests := []struct {
+		name      string
+		class     string
+		withNode  bool
+		skill     string
+		movesOnIt bool // the body moves on the cast's own tick
+	}{
+		{"a dash", "warrior", false, "dash", false},
+		{"a blink", "mage", true, "blink", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, sent, player, delver, chest := attackRun(t, tt.class, tt.withNode)
+			reach(t, s, player, chest.ID)
+			ticks(s, 10)
+			before := currentResource(delver)
+
+			require.NoError(t, s.handleCastSkill(player, tt.skill, 500, 700))
+			tick(s)
+
+			require.Less(t, currentResource(delver), before, "the cast went off and was paid for")
+			if tt.movesOnIt {
+				require.NotEqual(t, components.TransformComponent{X: 500, Y: 500}, *transformOf(t, delver), "the blink moved the body")
+			} else {
+				require.Equal(t, components.TransformComponent{X: 500, Y: 500}, *transformOf(t, delver), "the dash has not moved the body yet")
+			}
+			assertCancelledByTheAct(t, s, sent, player, delver, chest)
+		})
+	}
+}
+
+// An attack that kills the monster fighting the delver cancels the timed
+// open, whatever heal the kill brings: the attack went off (R28), and the
+// heal, a heal, neither cancels nor undoes the cancel (D4). The warrior wears
+// The Hollow Crown and strikes a ghoul one hit from death; the tick ends with
+// the ghoul dead and the delver healed above the health they took into it.
+// R28, R33, edge state "an attack that kills the player's attacker".
+func TestTimedOpen_AnAttackThatKillsCancelsWhateverTheHeal(t *testing.T) {
+	s, sent, player, delver, chest := attackRun(t, "warrior", false)
+	wearing(t, s, delver, inHeadSlot, hollowCrown())
+	tick(s) // the gear seats
+	hurt(t, delver, 500, 1000)
+	reach(t, s, player, chest.ID)
+	ticks(s, 10)
+	require.NotNil(t, timedOpenOf(delver))
+	ghoul := frailGhoul(s, 500, 545)
+	before := currentHealth(delver)
+
+	require.NoError(t, s.handleAttack(player, ghoul.ID))
+	tick(s)
+
+	require.Zero(t, currentHealth(ghoul), "the attack killed the ghoul")
+	require.Greater(t, currentHealth(delver), before, "the kill healed the delver")
+	assertCancelledByTheAct(t, s, sent, player, delver, chest)
+}
+
+// A mercenary's parry cast during a timed open that raises the stance cancels
+// it. R28.
+func TestTimedOpen_AParryThatRaisesTheStanceCancels(t *testing.T) {
+	s, sent, merc, delver, chest := attackRun(t, "mercenary", false)
+	reach(t, s, merc, chest.ID)
+	ticks(s, 10)
+
+	require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+	tick(s)
+
+	require.True(t, stanceOf(t, delver).Open, "the stance rose")
+	assertCancelledByTheAct(t, s, sent, merc, delver, chest)
+}
+
+// The pin never refuses a parry: a pinned mercenary's parry cast during a
+// timed open raises the stance and cancels it. R28, R29, edge state "a pinned
+// mercenary parries".
+func TestTimedOpen_APinnedMercenarysParryCancels(t *testing.T) {
+	s, sent, merc, delver, chest := attackRun(t, "mercenary", false)
+	reach(t, s, merc, chest.ID)
+	ticks(s, 10)
+	delver.AddComponent(&components.AttackPinComponent{Remaining: 10})
+
+	require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+	tick(s)
+
+	require.True(t, delver.HasComponent(ecs.ComponentTypeAttackPin), "still pinned")
+	require.True(t, stanceOf(t, delver).Open, "the stance rose")
+	assertCancelledByTheAct(t, s, sent, merc, delver, chest)
+}
+
+// A parry cast while the stance is open, or locked out, is refused and cancels
+// nothing: the timed open completes on its 45th tick. R29, edge state "the
+// parry stance is already open at the reach".
+func TestTimedOpen_AParryRefusedCancelsNothing(t *testing.T) {
+	t.Run("the stance is open", func(t *testing.T) {
+		s, _, merc, delver, chest := attackRun(t, "mercenary", false)
+		require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+		tick(s) // the stance rises before the reach
+		reach(t, s, merc, chest.ID)
+		require.True(t, stanceOf(t, delver).Open)
+
+		require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+		tick(s)
+
+		assertRunsToTheEnd(t, s, delver, chest)
+	})
+	t.Run("the stance is locked out", func(t *testing.T) {
+		s, _, merc, delver, chest := attackRun(t, "mercenary", false)
+		require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+		ticks(s, 10) // the stance closes on nothing and locks out
+		require.Greater(t, stanceOf(t, delver).LockoutRemaining, 0.0)
+		reach(t, s, merc, chest.ID)
+
+		require.NoError(t, s.handleCastSkill(merc, "parry", 0, 0))
+		tick(s)
+
+		require.False(t, stanceOf(t, delver).Open, "refused")
+		assertRunsToTheEnd(t, s, delver, chest)
+	})
+}
+
+// An attack or cast the combat refuses cancels nothing, and the timed open
+// completes on its 45th tick: on its cooldown, short of its cost, from a
+// pinned caster, a targeted attack with nothing in range, and a tree ability
+// whose node is not held. R29, E1.
+func TestTimedOpen_ARefusedAttackCancelsNothing(t *testing.T) {
+	tests := []struct {
+		name  string
+		class string
+		act   func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity)
+	}{
+		{"on its cooldown", "warrior", func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity) {
+			cc, _ := delver.GetComponent(ecs.ComponentTypeCooldown)
+			cc.(*components.CooldownComponent).Remaining[components.AttackTargeted] = 10
+			target := unarmoredTarget(s, 500, 545)
+			require.NoError(t, s.handleAttack(player, target.ID))
+			tick(s)
+			require.Equal(t, 1000, currentHealth(target), "refused")
+		}},
+		{"short of its cost", "mage", func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity) {
+			rc, _ := delver.GetComponent(ecs.ComponentTypeResource)
+			rc.(*components.ResourceComponent).Current = 0
+			require.NoError(t, s.handleCastSkill(player, "triple_fireball", 500, 900))
+			tick(s)
+			require.Empty(t, entityIDsWith(s, ecs.ComponentTypeProjectile), "refused")
+		}},
+		{"pinned", "warrior", func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity) {
+			delver.AddComponent(&components.AttackPinComponent{Remaining: 10})
+			target := unarmoredTarget(s, 500, 545)
+			require.NoError(t, s.handleAttack(player, target.ID))
+			tick(s)
+			require.Equal(t, 1000, currentHealth(target), "refused")
+		}},
+		{"a targeted attack with nothing in range", "warrior", func(t *testing.T, s *Session, player uuid.UUID, _ *ecs.Entity) {
+			target := unarmoredTarget(s, 500, 700)
+			require.NoError(t, s.handleAttack(player, target.ID))
+			tick(s)
+			require.Equal(t, 1000, currentHealth(target), "refused")
+		}},
+		{"a tree ability not held", "warrior", func(t *testing.T, s *Session, player uuid.UUID, delver *ecs.Entity) {
+			before := currentResource(delver)
+			require.NoError(t, s.handleCastSkill(player, "earthbreaker", 500, 900))
+			tick(s)
+			require.Equal(t, before, currentResource(delver), "refused")
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, sent, player, delver, chest := attackRun(t, tt.class, false)
+			reach(t, s, player, chest.ID)
+			ticks(s, 5)
+
+			tt.act(t, s, player, delver)
+
+			assertRunsToTheEnd(t, s, delver, chest)
+			assert.Empty(t, sent.to(player))
+		})
+	}
+}
+
+// An attack that goes off on the tick the timed open would complete cancels
+// it: the container stays shut. R31, B4.
+func TestTimedOpen_AnAttackOnTheLastTickCancels(t *testing.T) {
+	s, sent, player, delver, chest := attackRun(t, "warrior", false)
+	reach(t, s, player, chest.ID)
+	ticks(s, timedOpenTicks()-1)
+	require.NotNil(t, timedOpenOf(delver), "still counting on the 44th tick")
+
+	require.NoError(t, s.handleCastSkill(player, "slash", 500, 900))
+	tick(s)
+
+	assertCancelledByTheAct(t, s, sent, player, delver, chest)
+}
+
+// An attack applied on the reach's own tick, before the reach or after it in
+// arrival order, cancels that timed open: no timed open is left after the
+// tick, and nothing opens. R31, E4.
+func TestTimedOpen_AnAttackOnTheReachsOwnTickCancelsIt(t *testing.T) {
+	for _, attackFirst := range []bool{true, false} {
+		name := "the reach first"
+		if attackFirst {
+			name = "the attack first"
+		}
+		t.Run(name, func(t *testing.T) {
+			s, sent, player, delver, chest := attackRun(t, "warrior", false)
+			var reachErr, attackErr error
+			reachFor := func() { reachErr = s.handleInteract(player, chest.ID) }
+			attack := func() { attackErr = s.handleCastSkill(player, "slash", 500, 900) }
+			if attackFirst {
+				s.queueIntent(attack)
+				s.queueIntent(reachFor)
+			} else {
+				s.queueIntent(reachFor)
+				s.queueIntent(attack)
+			}
+
+			tick(s)
+
+			require.NoError(t, reachErr)
+			require.NoError(t, attackErr)
+			assert.NotContains(t, frameOf(t, s, types.WorldTypeRun, player)["current_player"], "timed_open")
+			assertCancelledByTheAct(t, s, sent, player, delver, chest)
+		})
+	}
+}
+
+// What a cast made before the reach still does during the timed open cancels
+// nothing: a fireball in flight landing on a target, and a held Arrow Rain's
+// volleys falling on one. The timed open completes on its 45th tick. R30, E3.
+func TestTimedOpen_AnEarlierCastStillAtWorkCancelsNothing(t *testing.T) {
+	tests := []struct {
+		name     string
+		class    string
+		withNode bool
+		skill    string
+		targetY  float64
+	}{
+		{"a fireball in flight", "mage", false, "fireball", 800},
+		{"an arrow rain falling", "archer", true, "arrow_rain", 700},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _, player, delver, chest := attackRun(t, tt.class, tt.withNode)
+			target := unarmoredTarget(s, 500, tt.targetY)
+			require.NoError(t, s.handleCastSkill(player, tt.skill, 500, tt.targetY))
+			tick(s)
+			reach(t, s, player, chest.ID)
+			require.Equal(t, 1000, currentHealth(target), "nothing has landed at the reach")
+
+			for i := 0; i < timedOpenTicks()-2 && currentHealth(target) == 1000; i++ {
+				tick(s)
+			}
+
+			require.Less(t, currentHealth(target), 1000, "the earlier cast landed during the timed open")
+			assertRunsToTheEnd(t, s, delver, chest)
+		})
+	}
+}
+
+// After an attack's cancel the delver may reach again at once: the new timed
+// open starts from zero and completes after the full 1.5 s. R32.
+func TestTimedOpen_AfterAnAttacksCancelTheNextReachStartsFromZero(t *testing.T) {
+	s, sent, player, delver, chest := attackRun(t, "warrior", false)
+	dt := 1.0 / float64(constants.GameFrameRate)
+	reach(t, s, player, chest.ID)
+	ticks(s, 30)
+	require.NoError(t, s.handleCastSkill(player, "slash", 500, 900))
+	tick(s)
+	require.Nil(t, timedOpenOf(delver))
+
+	releaseInteraction(s, chest.ID, player)
+	reach(t, s, player, chest.ID)
+
+	open := timedOpenOf(delver)
+	require.NotNil(t, open, "the next reach starts a timed open")
+	assert.InDelta(t, dt, open.Elapsed, 1e-9, "from zero")
+	assertRunsToTheEnd(t, s, delver, chest)
+	assert.Empty(t, sent.to(player))
 }

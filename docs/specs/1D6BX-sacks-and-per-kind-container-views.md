@@ -309,3 +309,133 @@ health closes it with no notice, and E opens it again at once.
 - Closing the gear and bag overlay, the menu or any other window on a hit.
 - The hurt flash, which keeps its own reading of the same record.
 - FS-MQYEX: the timed open, its cancel causes and the reach.
+
+## Change: The container view closes when its player moves
+Status: work-order
+Date: 2026-11-24
+
+Owner decision (Nick, 2026-11-24: "開寶箱後只要移動一步就要自動關寶箱"; the locked decisions
+approved "核准"). Written `--from-thread` under a charter run: the thread is the approved
+decisions, so no interview was held. It lands here because R16 is what changes: the view's close
+rules, the same in every face, are this FS's. [FS-MQYEX](MQYEX-timed-container-opening.md) owns
+the act of opening a shut container, its reach and that reach's own move rule (R26, D13), and is
+not changed. The model is § Change: The container view closes when its player is hit.
+
+Locked (charter defaults, owner-approved; each overridable):
+
+- **A1, charter default: "moves" is the local player's position more than 4 px from where they
+  stood when the view opened, whatever moved them** (a walk, a charge, a Blink, a shove).
+  *Reason:* a delver walks 200 px/s and the server ticks at 30 Hz, so one tick of walking is about
+  7 px and a single step closes the view; 4 px absorbs the server's small corrections.
+- **A2, charter default: the baseline is the position at the moment the view actually opens, not
+  the E press.** *Reason:* a reach's view opens on a later state than the press; measuring from
+  the press is FS-MQYEX D13's stale-state trap.
+- **A3, charter default: every world with a container view (runs and fields) and every face
+  (coffer, satchel, bone heap, a field's drop pile).** The 60 px rule stays as it is. *Reason:*
+  R16 keeps the close rules the same across faces, and the 60 px rule is already universal.
+- **A4, charter default: no notice. E opens the view again at once.** *Reason:* the container is
+  already open, so there is no timed open.
+- **A5, charter default: only the container view closes.** The gear and bag overlay and every
+  other window stay as they are. *Reason:* as the hit Change's L4.
+- **Bounds:** game-client only, no server or wire change.
+
+Derived here (the defaults are silent; each overridable):
+
+- **M1: the position is read from the states, `current_player.position`, never the drawn body.**
+  *Reason:* the run's drawn body eases toward the state's position (0.3 a frame) and trails a
+  walking body by about 8 px, still settling after a stop, so it would close a view opened
+  standing. A state is what the server moved, and one state of walking is A1's step.
+- **M2: the baseline is the own position in the last state seen when the view opens.** For a
+  container already open, E opens the view at once (FS-MQYEX R21), so that is the state held at
+  the press. For a reach it is the state that shows the container open, the state that opens the
+  view. In a field, a pile's view opens at the press and a chest's on the state that shows it
+  open (`FieldPiles`), each the same way. *Reason:* A2: each is where the body last stood, as the
+  client knows it, at the moment the view opens.
+- **M3: judged on each state, against a view open before it, by straight-line distance in world
+  px, strictly more than 4.** A view a state opens takes that state's position, so it never
+  closes on the state that opened it. *Reason:* states are where positions come from (M1), and
+  the hit rule is judged the same way, once per state.
+- **M4: a state with no own position judges nothing and keeps the baseline.** A view opened with
+  no position seen yet takes its baseline from the next state that has one. *Reason:* the smaller
+  rule, as the hit Change keeps the last health seen.
+
+### Requirements
+
+26. **A move closes the view.** In a run or a field world, when a state has the local player's
+    `current_player.position` more than 4 px, straight line in world px, from the view's
+    baseline, and the view is open, it closes, whichever face it wears. Nothing is sent and no
+    notice, sound or effect is added (A1, A4).
+27. **The baseline.** Each open takes its own: the own position in the last state seen when the
+    view opens (M2). A view opened again takes a new one.
+28. **Whatever moved them.** A walk, a charge, a Blink placed at once, a knock-back, a crowd push
+    or a wall push-out all count. The client asks only where the state has the body (A1).
+29. **Within 4 px nothing closes.** A state 4 px or less from the baseline leaves the view open.
+    The distance is always from the baseline, never from the state before, so drift that adds up
+    past 4 px closes it.
+30. **Opening again.** E on the container opens its view at once, as for any open container
+    (FS-MQYEX R21), with a new baseline. Nothing blocks or delays it after a move (A4).
+31. **Nothing else closes or changes.** The gear and bag overlay, the menu, chat and the party
+    panel are untouched (A5). A pending reach, the open bar and a running timed open are
+    untouched: FS-MQYEX R26 keeps judging the reach by its own rule. The view's other close rules
+    (60 px from the container, the container gone, a floor change, a hit in a run, Q, E) are as
+    they are. A view that is not open is not closed again.
+32. **Every world, every face, one rule.** Runs (`BarrowspireScene`) and field worlds
+    (`FieldPiles`) close by the same Phaser-free rule (A3). The hub has no container view and is
+    unchanged.
+33. **Client only.** The server, the wire and the generated client are unchanged.
+
+### Acceptance Criteria
+
+Client (`npm test`, `npm run lint`, `npx tsc --noEmit` in `game-client`). Run criteria go
+through the run scene's state handling, field criteria through `FieldPiles`:
+
+- [ ] Run: with the view open on a chest, a sack and a drop pile, a state with the own position 5 px from the baseline closes it; no notice is raised and nothing is sent.
+- [ ] Run: a state exactly 4 px from the baseline leaves the view open; states 2 px apart in one direction close it on the first past 4 px.
+- [ ] Run: a view E opens on an already-open container takes the position in the state held at the press; a view a reach's state opens takes that state's position and stays open on it, also when that position is more than 4 px from the one held at the press.
+- [ ] Run: a state that places the body at once (a Blink) and states of a charge close the view.
+- [ ] Run: the drawn body still easing toward the state's position, with no new state, leaves the view open.
+- [ ] Run: after a move closed it, E opens the view at once; a state at the same position leaves it open, and the next state more than 4 px from that position closes it.
+- [ ] Run: a state with no `current_player` (escaped) closes nothing and keeps the baseline.
+- [ ] Run: with the gear and bag overlay up, a move closes the view and leaves the overlay as it is.
+- [ ] Run: with no view open, a move during a pending reach or a timed open leaves the reach and the open bar to FS-MQYEX R26 exactly as before.
+- [ ] Run: the 60 px close and the hit close keep their tests green.
+- [ ] Field: a drop pile's view, opened at the press, closes on a state 5 px from the press position and stays on one 4 px from it.
+- [ ] Field: a chest's or sack's view, opened on the state that shows it open, takes that state's position; a later state more than 4 px from it closes it, and a `PILE_REACH` or restock close behaves as before.
+- [ ] Field: after a move closed it, E opens the view again at once, with a new baseline.
+- [ ] `game-server/` is not changed.
+
+Live check (owner, one browser): in a run, opening a coffer and taking one step closes it with no
+notice, E opens it again at once, and standing still keeps it open; in a field, a Forest clearing
+chest and a field drop pile do the same.
+
+### Edge States
+
+- **E pressed while still walking.** The next state has the body farther on: the view closes.
+  E opens it again once the player stands.
+- **E pressed within a round trip of letting go of the keys** (open question for the owner). The
+  server walks the body until the client's stop reaches it, so the state held at the press can be
+  a stride behind where the body stops. The next state may land more than 4 px on and close a
+  view opened standing; E opens it again. A2 does away with this for a reach, whose view opens on
+  a later state, but not for a container already open, whose view opens at the press.
+- **Pushed while looting** (a monster's knock-back, a crowd push, a wall push-out). Moved: the
+  view closes.
+- **Hit and moved in one state** (run). The view closes once.
+- **The player dies with the view open.** The killing hit closes it (the hit Change). The body
+  no longer moves, so nothing closes it again.
+- **Watching a teammate.** Only the own position is read, never the watched player's.
+- **Floor change.** The view closes as a floor change does; the new floor's position is never
+  compared with the old baseline.
+- **A dropped frame.** The next state is compared with the baseline: a move meanwhile closes the
+  view one state late.
+- **A reconnect.** The scene restarts with no view open; nothing carries over.
+- **A field chest restocks while its view is open.** Closes as today (`FieldPiles`).
+
+### Out of Scope
+
+- Closing an open view when the player attacks. An attack that moves the body (a charge, a
+  Blink) closes it by moving; one that stands still does not.
+- Any server, wire or generated-client change.
+- A notice, sound or effect on the close; a delay or lockout before E opens it again.
+- Closing the gear and bag overlay, the menu or any other window on a move.
+- The 60 px rule's distance, the hit rule, and FS-MQYEX's reach and timed open.
+- The hub.

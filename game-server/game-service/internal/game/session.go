@@ -838,10 +838,11 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
 
 	// timed opens count the tick, after its movement and combat and before a
-	// kill's heal can hide the combat's hit: each is cancelled or, its time
-	// passed, opens its container (FS-MQYEX §Requirements 4–10)
+	// kill's heal can hide the combat's hit: each is cancelled, its delver's
+	// attack or cast gone off among the causes, or, its time passed, opens its
+	// container (FS-MQYEX §Requirements 4–10, 28)
 	if timedOpens {
-		s.advanceTimedOpens(deltaTime, entities)
+		s.advanceTimedOpens(deltaTime, entities, s.combatSystem.Attackers())
 	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters

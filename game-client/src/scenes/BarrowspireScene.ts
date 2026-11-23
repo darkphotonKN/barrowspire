@@ -73,6 +73,7 @@ import {
 import { holdOneShots, type HeldMessages, type OneShotHandlers } from "./heldMessages";
 import { reachAfter, reachMade, type ReachSeen } from "./chestReach";
 import { type HealthSeen, costHealth, healthIn } from "./ownHealth";
+import { ViewBaseline } from "./viewMove";
 
 /**
  * What the server sends a run once, unasked: the exit unlocking, the run's end and this player's
@@ -840,6 +841,8 @@ export class BarrowspireScene extends Phaser.Scene {
    * Phase 3, R52, R53).
    */
   private readonly containerView = worldContainer(() => this.ui);
+  /** Where the player stood as the server had them when the view opened (FS-1D6BX R27, M2). */
+  private readonly viewBaseline = new ViewBaseline();
   /**
    * The shut container the player reached for, until the server answers: its coffer opens on the
    * state that shows it open, never before, so a refused reach shows no coffer (FS-KE075 §J R60).
@@ -2563,7 +2566,8 @@ export class BarrowspireScene extends Phaser.Scene {
       if (container.is_open && this.reaching === container.entity_id) {
         // the server opened what the player reached for: now its coffer shows (FS-KE075 §J R60)
         this.reaching = undefined;
-        this.containerView.open(container.entity_id, placedKind(container));
+        // this state is its baseline, so the state that opens the view never closes it (FS-1D6BX M3)
+        this.openContainerView(container.entity_id, placedKind(container));
       }
       if (
         container.is_open &&
@@ -3035,8 +3039,18 @@ export class BarrowspireScene extends Phaser.Scene {
       return;
     }
     // 開啟跳窗, wearing the face for its kind (FS-1D6BX §Requirements 15)
-    this.containerView.open(entityId, placedKind(container));
+    this.openContainerView(entityId, placedKind(container));
     if (container.items?.length > 0) this.containerView.setItems(container.items);
+  }
+
+  /**
+   * Opens the container view on `entityId`, its baseline the player's position in the last state
+   * seen: the one held at the press, or the one that shows a reached container open (FS-1D6BX
+   * R27, M2).
+   */
+  private openContainerView(entityId: string, kind: ContainerKind): void {
+    this.containerView.open(entityId, kind);
+    this.viewBaseline.open(this.lastGameState?.current_player?.position);
   }
 
   /**
@@ -3880,6 +3894,9 @@ export class BarrowspireScene extends Phaser.Scene {
         if (costHealth(this.ownHealth, health) && this.containerView?.isOpen) this.containerView.close();
         this.ownHealth = health;
       }
+      // a move closes it too, whatever moved the body: the state's position, never the drawn one,
+      // judged before this state's containers are read like the hit (FS-1D6BX R26, R28, M1, M3)
+      if (this.containerView?.isOpen && this.viewBaseline.observe(pos)) this.containerView.close();
     } else {
       // current_player is null — player has escaped
       this.hideOwnBody(true);

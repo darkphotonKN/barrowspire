@@ -8,6 +8,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
+	"github.com/google/uuid"
 )
 
 /**
@@ -72,15 +73,16 @@ func (s *Session) openContainer(container *ecs.Entity, openable *components.Open
 
 /**
 * advanceTimedOpens is a run's timed opens on its tick, after the tick's
-* movement and combat: one its delver moved, was hit or left reach of is
-* cancelled, the rest count the tick, and one whose time has passed opens its
-* container (FS-MQYEX §Requirements 4–10). The first to finish on a container
+* movement and combat: one its delver moved, was hit, attacked or left reach
+* of is cancelled, the rest count the tick, and one whose time has passed opens
+* its container (FS-MQYEX §Requirements 4–10, 28). attackers is the bodies whose
+* attack or cast went off in the tick's combat. The first to finish on a container
 * opens it, rolled once, for every delver who was opening it: the others'
 * timed opens end on the same tick (§Requirements 16–17). Nothing is sent, for
 * a cancel either: the next state shows the container open, or no timed open.
 **/
-func (s *Session) advanceTimedOpens(deltaTime float64, entities []*ecs.Entity) {
-	for _, done := range systems.NewTimedOpenSystem(s.EntityManager).Update(deltaTime, entities) {
+func (s *Session) advanceTimedOpens(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID) {
+	for _, done := range systems.NewTimedOpenSystem(s.EntityManager).Update(deltaTime, entities, attackers) {
 		container, ok := s.EntityManager.GetEntity(done.ContainerID)
 		if !ok {
 			continue

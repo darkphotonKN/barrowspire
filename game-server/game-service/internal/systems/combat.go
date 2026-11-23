@@ -3,6 +3,7 @@ package systems
 import (
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
@@ -91,6 +92,9 @@ type CombatSystem struct {
 	// per-tick scratch: the floor this tick resolves on, and the kills it made
 	floor int
 	kills []KillRecord
+	// attackers is what the last Update recorded as gone off, reset by the
+	// next one; Attackers hands out a copy
+	attackers []uuid.UUID
 }
 
 func NewCombatSystem(em *ecs.EntityManager, roll func() float64, playerDamage PlayerDamage, effects UniqueEffectTuning) *CombatSystem {
@@ -422,6 +426,7 @@ func SkillAttackKind(skillID string) (components.AttackKind, bool) {
 // a kill record for every monster a hit took to 0 on it, in resolution order.
 func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts []Impact) []KillRecord {
 	s.kills = nil
+	s.attackers = nil
 	s.floor = 1
 	if floor, ok := CurrentFloor(entities); ok {
 		s.floor = floor.Depth
@@ -462,7 +467,9 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 	// tick resolve with the stance open, whatever the entity order.
 	// FS-MAMHR §Requirements 12
 	for _, entity := range entities {
-		stepStance(entity, deltaTime)
+		if stepStance(entity, deltaTime) {
+			s.attackers = append(s.attackers, entity.ID)
+		}
 	}
 
 	for _, entity := range entities {
@@ -490,6 +497,20 @@ func (s *CombatSystem) Update(deltaTime float64, entities []*ecs.Entity, impacts
 	kills := s.kills
 	s.kills = nil
 	return kills
+}
+
+// Attackers is a copy of the bodies the last Update recorded an attack or cast
+// for: first each body whose parry cast raised its stance, once however many
+// were queued, in entity order; then the caster of each attack intent resolve
+// carried past every refusal, in resolution order, whether or not it hit
+// anything, once for each. That is the basic attack, the class ability and
+// every tree ability, and a monster's strike or shot; a monster ability,
+// resolved by landAbility, is not recorded. A refused intent is not among
+// them, and nor is what an earlier cast left behind: a projectile landing, an
+// Arrow Rain falling, a trail burning. FS-MQYEX §Change: An attack cancels the
+// timed open, R28–R30 and E1.
+func (s *CombatSystem) Attackers() []uuid.UUID {
+	return slices.Clone(s.attackers)
 }
 
 func tickCooldowns(entity *ecs.Entity, deltaTime float64) {
@@ -682,6 +703,8 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	case deliverRain:
 		s.startRain(attacker, at, intent.TargetX, intent.TargetY, spec)
 	}
+	// past every refusal: the cast goes off
+	s.attackers = append(s.attackers, attacker.ID)
 
 	// a new cast stops a charge in flight where the body stands; a new dash then
 	// starts afresh from there, never adding on what the old one had left
@@ -814,18 +837,19 @@ func (s *CombatSystem) strike(attacker *ecs.Entity, at *components.TransformComp
 // or locked out is refused: it neither opens, extends nor restarts anything.
 // Anyone else's parry cast is left to resolve, which finds no row for it and
 // does nothing. A mercenary out of play keeps their parry state as it is.
-// FS-MAMHR §Requirements 10–18.
-func stepStance(entity *ecs.Entity, deltaTime float64) {
+// It reports whether it raised the stance on this tick. FS-MAMHR
+// §Requirements 10–18.
+func stepStance(entity *ecs.Entity, deltaTime float64) (raised bool) {
 	pc, ok := entity.GetComponent(ecs.ComponentTypeParry)
 	if !ok || !canAct(entity) {
-		return
+		return false
 	}
 	stance := pc.(*components.ParryComponent)
 	runStanceClocks(stance, deltaTime, parryWindowOf(entity))
 
 	ic, ok := entity.GetComponent(ecs.ComponentTypeAttackIntent)
 	if !ok {
-		return
+		return false
 	}
 	intents := ic.(*components.AttackIntentComponent)
 	var rest []components.AttackIntent
@@ -836,9 +860,11 @@ func stepStance(entity *ecs.Entity, deltaTime float64) {
 		}
 		if !stance.Open && stance.LockoutRemaining == 0 {
 			stance.Open, stance.OpenFor, stance.Negated = true, 0, false
+			raised = true
 		}
 	}
 	intents.Pending = rest
+	return raised
 }
 
 // parryWindowOf is how long the entity's parry stance stays open: the
