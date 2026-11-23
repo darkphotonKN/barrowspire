@@ -339,10 +339,11 @@ export const WIZARD_STYLE = {
   walk: { arms: [0.8, 0.4], lean: 0.05, stride: 0.95, wrist: WALK_WRIST },
   // her run (FS-JS7C8 § Change: The wizard's sprint and pointed cast R116, R117): the trunk about
   // 20° forward ({@link SPRINT_LEAN}) over the shared fast run's legs at a shorter stride
-  // ({@link WIZARD_SPRINT_STRIDE}). The carry (FS-JS7C8 R2), kept: both arms pump from the shoulder,
-  // a little out from the body so the sceptre and the tome swing clear of the hips, the sceptre arm
-  // smaller and drawn back so its hand peaks at the lower chest, crossing in at the front; the
-  // sceptre up from the fist, its head ahead
+  // ({@link WIZARD_SPRINT_STRIDE}). The carry (FS-JS7C8 R2), kept but for two values the lean asked
+  // for (W2, R122: the sceptre arm further out, {@link SCEPTRE_RUN_OUT}, and the wrist held back,
+  // {@link RUN_SCEPTRE}): both arms pump from the shoulder, a little out from the body so the
+  // sceptre and the tome swing clear of the hips, the sceptre arm smaller and drawn back so its hand
+  // peaks at the lower chest, crossing in at the front; the sceptre up from the fist, its head ahead
   run: {
     arms: [1, SCEPTRE_RUN_ARM],
     wrist: RUN_SCEPTRE_WRIST,
