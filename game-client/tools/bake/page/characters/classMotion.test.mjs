@@ -32,6 +32,7 @@ import {
   ARCHER_BUILD,
   ARCHER_SHEET,
   ARCHER_STYLE,
+  FOCUS_STYLE,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
   KNIGHT_STYLE,
@@ -694,6 +695,73 @@ describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
     expect(d.head, `${anim}: into the head`).toBeLessThan(0);
+  });
+});
+
+/**
+ * The clips the wizard's staff guards read (FS-JS7C8 § Change: The wizard's sprint and pointed cast
+ * R128): the cast, which I-JS7C8-29 re-keys to point the staff along the aim.
+ */
+const STAFF_GUARDED = ["attack"];
+
+/**
+ * What the wizard's right hand holds, as points every 0.05 H at most along the grip frame's +z: her
+ * own sceptre ({@link GEAR}`.wizard`, butt −0.06 to the orb's top 0.29) and a look's focus (gear.js
+ * `focusHaft`: the knob at `FOCUS_BUTT` −0.2, 0.015 H round, to the ring's or the cage's top, about
+ * `FOCUS_TOP` 0.2 + 0.105), each read on the style that holds it (the looks' FOCUS_STYLE spreads
+ * hers). gear.js's sizes, read here as GEAR reads them (gear.js needs the bake page's theme).
+ */
+const [FOCUS_BUTT, FOCUS_TOP] = [-0.2, 0.2];
+const STAFFS = [
+  { held: "the sceptre", style: WIZARD_STYLE, points: (rig) => GEAR.wizard(rig).weapon },
+  { held: "a focus", style: FOCUS_STYLE, points: (rig) => riding(rig, "handR", gripAt(rig, "R"), {}, along(FOCUS_BUTT - 0.015, FOCUS_TOP + 0.105, 11)) },
+];
+
+/** On the pose the rig holds now: how deep any of the world points `pts` lies in the torso, in the head and inside the robe (H; negative outside). */
+function staffMeasure(rig, pts) {
+  const d = pts.map((w) => inside(rig, w));
+  return {
+    torso: Math.max(...d.map((x) => x.torso)),
+    head: Math.max(...d.map((x) => x.head)),
+    robe: Math.max(...pts.map((w) => -outsideRobe(rig, w))),
+  };
+}
+
+describe.each(STAFFS)("the wizard's staff guards on $held: out of the torso, the head and the robe (FS-JS7C8 § Change: The wizard's sprint and pointed cast R128, R129)", ({ style, points }) => {
+  const rig = rigOf(WIZARD_BUILD);
+  const pts = points(rig);
+  const clips = clipsFor(style, WIZARD_SHEET.animations);
+
+  it("samples the haft every 0.05 H at most", () => {
+    posed(rig, clips.idle[0]);
+    const step = Math.max(...pts.slice(1).map((m, i) => world(m).distanceTo(world(pts[i])))) / rig.H;
+    expect(step).toBeLessThanOrEqual(0.05 + 1e-9);
+  });
+
+  it.each(STAFF_GUARDED)("on every key of %s, no point in the torso, the head or below the waist inside the robe", (anim) => {
+    clips[anim].forEach((p, i) => {
+      posed(rig, p);
+      const d = staffMeasure(rig, pts.map(world));
+      expect(d.torso, `${anim} @${i}: into the torso`).toBeLessThan(0);
+      expect(d.head, `${anim} @${i}: into the head`).toBeLessThan(0);
+      expect(d.robe, `${anim} @${i}: into the robe`).toBeLessThan(0);
+    });
+  });
+
+  // fixtures: the same points moved, on the cast's strike, must fail each check
+  const movedTo = (to) => {
+    const w = pts.map(world);
+    const mid = w.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(w.length);
+    return w.map((v) => v.clone().add(to.clone().sub(mid)));
+  };
+  it.each([
+    ["the torso", () => at(rig, "chest"), "torso"],
+    ["the head", () => at(rig, "head").add(new THREE.Vector3(0, 0.05 * rig.H, 0)), "head"],
+    ["the robe", () => at(rig, "hips").sub(new THREE.Vector3(0, 0.2 * rig.H, 0)), "robe"],
+  ])("finds the haft pushed into %s: its middle moved there reads inside", (_, to, part) => {
+    posed(rig, clips.attack[3]);
+    expect(staffMeasure(rig, pts.map(world))[part], "where she holds it").toBeLessThan(0);
+    expect(staffMeasure(rig, movedTo(to()))[part]).toBeGreaterThan(0);
   });
 });
 
