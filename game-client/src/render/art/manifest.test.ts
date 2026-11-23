@@ -277,8 +277,11 @@ describe("validateManifest", () => {
   });
 
   // the clip's length check went with the clip (FS-JS7C8 § Change: The knight's sprint, and the
-  // attack-on-the-move clips retired R155, Edge States: a sheet from an older bake)
-  it("no longer reads a walk_attack's length: no sheet plays one", () => {
+  // attack-on-the-move clips retired R155). Kept: it is the one test of the Edge State "a sheet from
+  // an older bake" on the validator's side (nothing checks its length); the real manifest's lack of
+  // the clip (animationSelect.test.ts) and the animator not playing it (character.test.ts) are
+  // pinned elsewhere
+  it("should accept a sheet from an older bake whose walk_attack is longer than its attack: nothing checks its length", () => {
     const m = fixture();
     const clip = (n: number, f: number) => ({ fps: f, loop: false, frames: [Array(n).fill({ x: 0, y: 0 })] });
     Object.assign(m.sheets.door.animations, { attack: clip(7, 12), walk_attack: clip(8, 12) });
