@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-11-13
+Amended by: [ADR-0089](0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md) — the Colour and
+Hover clauses, for the passive tree's node pictures only (a lit node in its own hue, glowing)
 Scope: icons and badges drawn on the game canvas as HUD controls: the corner row today, and any
 HUD icon or badge added later. Not item icons (baked art, ADR-0020), not the web UI's Heroicons
 (ADR-0025), not the count badge's numerals or the minimap's marks.

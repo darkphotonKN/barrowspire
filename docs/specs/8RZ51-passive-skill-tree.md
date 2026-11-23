@@ -1051,3 +1051,236 @@ What changes:
 - The ability bar's icons and FS-E1ZDG's or FS-04EEA's own text (their "18 spent" wording is
   superseded here, since the pick's gate is this FS's, FS-E1ZDG §A R3).
 - Balancing: every number is a placeholder, tuned later under `Tunes FS-8RZ51`.
+
+## Change: A lit node glows in its own colour
+Status: work-order
+Date: 2026-11-23
+
+> Charter "天賦點亮上色", approved by Kranti, 2026-11-23. Every decision below is a *charter
+> default* the owner approved, with its reason. His ask, in his words: 「介面ui的tree天賦點亮後
+> 內容icon要跟著變亮 顏色可以根據內容是什麼加一些色彩 例如 法師第一個是Hardened Frame 是愛心 點亮後 愛心會是紅色的
+> 顏色配色可以模仿徽章的古銅質感有漸層 你再看看其他徽章適合搭配什麼顏色」, and on the charter: 「ok
+> 重點是激活後裡面要是有active發亮的」. ("Hardened Frame" is tree v1's name; in tree v2 the heart is
+> Vitality.) Decision: [ADR-0089](../adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md),
+> amending ADR-0080 for the tree's pictures only.
+>
+> **What this changes in § Change: Tree v2:** V29's **Ink** clause (one near-white ink for every
+> picture that is not greyed). **Unchanged:** V25's states and which of them are greyed, V29's lit
+> plate, its pictures and its lock mark, V24's links, every plate's shape, edge and fill, the hover
+> ring, the rank labels, the tooltips, and everything outside the overlay.
+>
+> **Lane:** game-client only, agent-authored. No server, wire or golden change.
+
+### Summary
+
+A node the character holds now looks switched on. Its picture takes a colour of its own, by what
+the node gives (a held Vitality's heart is red, a held Searing's flame ember), mixed with the badges'
+bronze and lit from above like them, and a soft halo of that colour glows behind it. A node open to
+take is plain bronze, a step dimmer; a closed or locked node stays greyed. So a glance tells what
+is held, what can be taken, and what each held node is for.
+
+### Requirements
+
+Numbered 1–14 below and cited as **L1–L14**.
+
+#### §L-A. Which ink a picture takes
+
+1. **Three inks, by the node's state** *(charter default T1 — reason: 「點亮後 內容icon要跟著變亮」)*:
+   - **greyed** (closed, locked, or available with no point to spend, as `greyed()` rules today):
+     `GREYED`, unchanged;
+   - **open** (available and spendable, rank 0): the HUD's plain bronze, `BRONZE`'s tint and its
+     top-lit gradient, at a lower alpha than a lit picture (starting at 0.8; `BRONZE` stands at 0.85);
+   - **lit** (held or max, so rank > 0): the node's own hue (L4–L6), at full alpha, plainly
+     brighter than open.
+
+   A node `passiveTreeModel` draws locked keeps the greyed ink whatever its rank: locked wins, as
+   V25 already rules (`passiveTreeModel.ts` decides `locked` before `held`).
+2. **Every rank above 0 wears the same colour** *(charter default T3 — reason: a smaller v1)*. A
+   kicker at 1/3 and at 3/3 look alike; the edge and the rank label still tell max from held (V25).
+3. **V29's near-white `TREE_INK` is retired.** No tree picture is drawn in it; the constant goes
+   with its last reader.
+
+#### §L-B. The hues
+
+4. **Ten hues, each a palette token** *(charter defaults T4 and T5 — reason: colour by what the
+   node gives; tokens only, ADR-0013)*. The charter's list named "nine" and gave ten; all ten are
+   kept. Starting values, retuned at the review page (L12):
+
+   | Hue | Meaning | Token (`palette.treeHue.*`) | Resolves from | Starting value | Nodes |
+   |---|---|---|---|---|---|
+   | crimson | health | `health` | `BARROW_HEX.oxbloodText` (reused: health's own colour, the HP bar's) | `#c96b5e` | Vitality, Bloodied Riposte, Berserker |
+   | copper | power | `power` | new `BARROW_HEX.copper` | `#d49274` | Might, Heavy Hand, Earthbreaker |
+   | ember | fire | `fire` | `BARROW_HEX.ember` (reused: the shared torch-and-fire token, not one of fire's own three) | `#c2611f` | Kindling, Wide Volley, Searing, Pyromancer |
+   | steel blue | defence | `defence` | new `BARROW_HEX.steelBlue` | `#5f82b8` | Thick Skin, Practiced Guard, Guardian |
+   | mana blue-green | mana | `mana` | `BARROW_HEX.necrotic` (reused: the mana bar's, `hudMana`) | `#688b8f` | Deep Well, Blink, Spellwarden |
+   | frost | speed | `speed` | new `BARROW_HEX.frost` | `#8cc4d0` | Haste, Quick Draw, Arrow Rain |
+   | verdigris | movement, evasion | `movement` | new `BARROW_HEX.verdigris` | `#5fa88a` | Fleetness, Fleet Foot, Hunter |
+   | amethyst | crit | `crit` | new `BARROW_HEX.amethyst` | `#a088cc` | Bull Rush, Eagle Eye, Keen Edge, Shadow Ranger |
+   | pale gold | resource refund | `refund` | derived, `tint(BARROW_HEX.brassBright, 0.5)`, no new base | `#cbb074` | Long Wind, Hunter's Breath, Steady Hand, Sellsword |
+   | silver | the duel | `steel` | new `BARROW_HEX.silver` | `#c4cad0` | Duelist, Settle the Debt |
+
+   The six new bases go into `BARROW` and `BARROW_HEX` (`src/utils/theme.ts`) and the guideline's
+   palette table, in that order (ADR-0013). `palette.treeHue` in `canvasPalette.ts` names them by
+   meaning. Nothing outside the tree's pictures reads them.
+5. **Which hue a node wears is presentation copy**, keyed by node id beside its name and icon
+   (`PassiveNodeCopy.hue` in `src/data/passiveTree.ts`, R39). The traversal four carry theirs in
+   `TRAVERSAL`, so every class's slots share them. `NodeView` carries the hue to the overlay. A node
+   the copy lacks has no hue and draws the fallback glyph as today (R42). A test pins the table
+   above: every node of every class has the hue listed, and every hue listed is used.
+6. **Never amber, never arcane green** *(charter default T5 — reason: amber means interactable,
+   arcane green allies and healing)*. No `palette.treeHue` value is, or resolves from, `amber`,
+   `amberBright`, `arcane` or `arcaneDeep`, and none is a fire-only token (`fireCore`, `fireHot`,
+   `fireDeep`; `theme.test.ts` already keeps those out of `palette`). Tests hold both.
+
+#### §L-C. The lit ink
+
+7. **Mixed with bronze, lit from above** *(charter default T2 — reason: 「模仿徽章的古銅質感有漸層」)*.
+   A lit ink's tint is its hue mixed toward `BRONZE`'s idle tint by `TREE_BRONZE_MIX`, starting at
+   0.35, and it is drawn through the renderer's own top-lit gradient (`topLit`), not flat, on the
+   same drop shadow.
+8. **A brighter highlight.** A lit ink lifts its top further than bronze's 0.25 (starting at 0.4),
+   and toward its hue's own light end, `tint(hue, 0.5)`, not toward the amber bronze lifts to, so a
+   hue stays itself at the top. `KnockoutInk` gains the optional fields that say this (how far, and
+   toward what); `topLit` reads them and keeps today's lift where an ink does not set them, so every
+   other icon draws exactly as before.
+9. **Hover does not change a picture** (V29). The tree marks hover with its ring; the lit and open
+   inks' `hover` equals their `idle`, and the overlay never redraws a picture under the pointer.
+
+#### §L-D. The glow
+
+10. **A lit picture glows** *(charter default T9 — reason: 「重點是激活後裡面要是有active發亮的」)*: a soft
+    halo in its hue stands behind the picture.
+    - **Where:** on the overlay's plate graphics, drawn after the plate's fill and edge and under
+      the picture (`PICTURE_DEPTH`), centred on the plate, inside it: its outer radius stops short of
+      the plate's edge line, so it never covers the edge that carries the state.
+    - **How:** a few stacked discs in the hue, each smaller and adding a little alpha, so it is
+      brightest at the centre and fades out (starting at 4 discs, from the plate's inner radius
+      down to 0.4 of it, about 0.45 alpha at the centre). Round on a round plate and on a square one.
+    - **Static:** drawn once with the plate, rebuilt only when the overlay rebuilds (R41). No
+      animation, no per-frame redraw, no Phaser filter (Phaser 4's Glow filter is a framebuffer pass
+      on every render, ADR-0089).
+    - **With the fallback:** because the halo is on the plate's graphics and not in the knockout's
+      texture, it shows the same where the scene makes no texture and the picture is drawn in lines.
+11. **It never reads as another state.** The halo shows only on a lit node, in that node's own hue
+    and never in amber or the edge's brass; the open and greyed states have none. A held node and a
+    max node glow alike; their edges and rank labels tell them apart (V25).
+
+#### §L-E. The fallback, the review page, the guideline
+
+12. **The line fallback is inked the same.** Where the knockout cannot stand, `drawIconLines`
+    draws in the state's ink: the lit ink's mixed tint at full alpha, the open bronze at its alpha,
+    the greyed faint, as today. A slot is never empty (ADR-0080).
+13. **A review page for the owner** *(charter default T7 — reason: the owner retunes single colours
+    there, inside the charter)*. A dev gallery family (FS-1819Q, `families.ts`), **Tree colours**:
+    - every class's nodes, each in its three states (greyed, open, lit) on its real plate, drawn by
+      the overlay's own plate and picture code, so what is approved is what ships;
+    - a render-scale switch, 1 and 2, the knockouts rebuilt at each;
+    - each hue's token name and current value beside its nodes, and a colour input per hue that
+      previews a retune live on the sheet. A preview is never saved: a retune the owner settles on is
+      written into `theme.ts` (or the derivation in `canvasPalette.ts`) as an ordinary edit under
+      this section;
+    - `TREE_BRONZE_MIX`, the lit lift and the halo's alpha shown with their values.
+14. **The guideline follows** (`game-client/docs/design-guideline.md`):
+    - the HUD icons rule names the exception: a lit passive-tree picture wears its own hue and glows
+      (ADR-0089); every other HUD icon stays bronze;
+    - the palette table lists the six new bases;
+    - two narrow notes, tree pictures only: **frost** is a pale, desaturated cold tone, not the
+      forbidden neon cyan; **amethyst** marks crit in the tree and is not umbra, which stays the
+      Shadow Shot's and the Shadow Ranger's gloom.
+
+### User Stories
+
+1. As a player, I want a node I hold to look lit, so that I can see my build at a glance.
+2. As a player, I want a held node's picture coloured by what it gives, so that I can tell my
+   health nodes from my crit nodes without reading tooltips.
+3. As a mage, I want my held Vitality's heart red, so that it reads as health, like my HP bar.
+4. As a player, I want a held node to glow from inside its plate, so that "active" is unmistakable.
+5. As a player, I want a node I could take now to stay plain bronze, so that I never mistake an
+   offer for something I hold.
+6. As a player, I want closed and locked nodes to stay grey, so that what I cannot take still reads
+   as out of reach.
+7. As a player, I want the colours to look like tinted bronze badges, so that the tree keeps the
+   game's old-metal look and never turns into plastic.
+8. As a player, I want no held node to look amber or ally-green, so that colour keeps meaning what
+   it means elsewhere in the game.
+9. As a player, I want a held kicker to look the same at every rank, with its edge telling max, so
+   that the tree stays calm.
+10. As a player on a small screen, I want each colour to read at render scale 1, so that I can tell
+    them apart without zooming.
+11. As a player in a browser that cannot draw the knockout textures, I want the line pictures and
+    the glow coloured the same, so that nothing is lost.
+12. As a player, I want hovering a node to keep its ring and leave its picture alone, so that hover
+    never looks like a state.
+13. As the owner, I want a page with every class's nodes in all three states at scale 1 and 2, so
+    that I can judge the colours where they will be seen.
+14. As the owner, I want to try a different colour for one hue on that page, so that I can retune
+    it without a round trip.
+15. As a developer, I want every hue to be a named palette token, so that the fence keeps raw hex
+    out and a retune is one edit.
+16. As a developer, I want the corner row, the ability bar and every other HUD icon untouched, so
+    that the exception stays the tree's alone.
+
+### Acceptance Criteria
+
+Inks
+- [ ] A held and a max node draw their picture in their hue's lit ink: the hue mixed toward
+      `BRONZE`'s tint by `TREE_BRONZE_MIX`, alpha 1, through the top-lit gradient with the lit lift
+      (test on the `Knockout` deps and the tints set).
+- [ ] An available, spendable node at rank 0 draws in the open bronze, its alpha under the lit
+      ink's. Closed, locked and available-without-points nodes draw `GREYED` (test, one per state).
+- [ ] A locked node holding a rank (inconsistent data) draws greyed with its lock mark.
+- [ ] A kicker at 1/3 and at 3/3 draws the same ink.
+- [ ] No tree picture is drawn in `TREE_INK`; the constant is gone.
+- [ ] Hovering a node changes no picture's tint or alpha; the ring shows as today.
+
+Hues
+- [ ] Every node of every class has the hue L4's table gives it (test over the golden's ids and
+      `PASSIVE_COPY`); every hue is used.
+- [ ] Every `palette.treeHue` value resolves from `BARROW_HEX`; none is amber, amberBright, arcane,
+      arcaneDeep or a fire-only token (test).
+- [ ] The six new bases are in `BARROW`, `BARROW_HEX` and the guideline's palette table.
+- [ ] `npm run lint:fence` passes: no raw hex outside `theme.ts`.
+
+Glow
+- [ ] A lit node's plate graphics draw the halo's discs in its hue, after the plate's fill and edge,
+      inside the plate's edge line; an open or greyed node draws none (test on the graphics' calls).
+- [ ] With the knockout unable to stand, the lit node still draws its halo, and its lines in the lit
+      tint (test with a stand-in scene that makes no textures).
+- [ ] Nothing in the overlay redraws per frame: the halo and pictures are drawn only on a rebuild
+      (the R41 key test still holds), and no filter is added to any tree object.
+
+Untouched
+- [ ] The ability bar's icons and the corner row's Tree icon still draw `BRONZE` (test).
+- [ ] Plates, links, the lock mark, rank labels and tooltips draw as before (the overlay's existing
+      tests pass unchanged).
+
+Review and check
+- [ ] The Tree colours gallery family shows every class's nodes in the three states at render scale
+      1 and 2, each hue named with its value, a live preview per hue. Kranti approves it (HITL).
+- [ ] Browser check (HITL): in town, the tree shows open nodes in bronze, held nodes coloured and
+      glowing, a spend turning a node from bronze to its colour at once.
+- [ ] `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` green.
+
+### Edge States
+
+- **A node the copy lacks** (R42): no picture, no hue, no halo; the fallback glyph as today.
+- **A spend in flight:** the node keeps its old ink until the state shows the new rank (R41,
+  `TreeSpend`); the spend's answer rebuilds the overlay, and the node turns from bronze to its hue
+  in one redraw.
+- **A refused spend:** nothing was held, so nothing lights.
+- **No points left:** an open node with no point becomes greyed (as today), so the tree's bronze
+  disappears and only held nodes keep colour.
+- **A render-scale change** while open: the knockouts rebuild at the new scale (ADR-0080); the
+  halo, on the plate graphics, is unaffected.
+- **The scene cannot make textures:** lines in the state's ink and the halo on the plate (L10, L12).
+- **Outside town:** viewing only (R38); the inks and glow are the same.
+
+### Out of Scope
+
+- New pictures or any change to a picture's shape, the plates, links, lock mark, hover ring, rank
+  labels or tooltips.
+- A colour per rank, an animated or pulsing glow, a glow on hover, a glow on the corner row's Tree
+  icon or its marker.
+- The ability bar's icons, the corner row and every other HUD icon: bronze under ADR-0080.
+- Any server, wire, golden or tree-rule change.
+- Saving a retune from the review page: it previews only.
