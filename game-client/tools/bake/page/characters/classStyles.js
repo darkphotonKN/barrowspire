@@ -190,6 +190,34 @@ export const ARCHER_SPRINT_STEP = {
 };
 
 /**
+ * The archer's carry in her sprint, the two-handed low-ready bow (FS-JS7C8 § Change: The archer's
+ * sprint and low-ready bow R72–R77; D4–D6, the owner: "拿弓的動作要有一種隨時備戰的感覺 要雙手拿著弓放在
+ * 身體前方 但不用抬太高"): her run's `hold`, the whole of her arms there (her run's pump is off), so
+ * each hand stays put in the chest's frame and only rides the trunk's turn, lean and bob. The left
+ * fist holds the grip in front of her belly on her centre line; the right hand holds the braced
+ * string at its middle, just behind the fist and a little over it, where the string lies (toward
+ * the bow wrist, gear.js `longbow`): no draw, no arrow. Measured on her rig over the cycle, the
+ * hands stand 0.55–0.63 H (the hips bone 0.48–0.54, the chest bone 0.60–0.66) and 0.17–0.20 H ahead
+ * of the chest bone. The stave stands 44–53° off vertical as the chest turns, its upper limb forward
+ * and up, swung 40° off the facing toward her right shoulder and under the crown, its lower limb
+ * back and down out to her left, past the left leg at about knee height (its tip 0.21–0.26 H left of
+ * her centre line), clear of the swinging knee, the boot and the tunic. The left side: the string
+ * lies toward the bow wrist, so with the lower limb out past the bow hand's own leg the wrist bends
+ * little (about 61° flexed, 10° turned) and the right hand reaches only to her centre; canted the
+ * other way, the lower limb would have to cross the right leg from a grip left of centre.
+ * Elbows bent about 90° at her sides. Solved once (a two-bone arm with a hinged elbow onto that grip
+ * and that string, at the sprint's mean trunk) and kept as keys, so the bake poses it like any
+ * other carry; the arm tests hold the measures (archerLooks.test.mjs).
+ */
+export const ARCHER_LOW_READY = pose({
+  upperArmL: [-0.76, -0.71, -0.07],
+  foreArmL: [-1.57, 0.27, 0],
+  handL: [1.06, 0, -0.17],
+  upperArmR: [-0.87, 0.75, 0.41],
+  foreArmR: [-1.61, 0, 0],
+});
+
+/**
  * The archer's sheet at 1.5x (ADR-0076): the running class's clips (FS-JS7C8), her run her own
  * sprint (§ Change: The archer's sprint and low-ready bow R68): 16 fps over a shorter stride, so its
  * measured pace stays at RUN_PACE, the cloth carried at the shared run's speed. A clip set of her
@@ -208,10 +236,9 @@ export const ARCHER_STYLE = {
   }),
   walk: { arms: [0.7, 1], lean: 0.06 },
   // her sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow): the trunk about 20°
-  // forward ({@link ARCHER_SPRINT_LEAN}) over her own legs ({@link ARCHER_SPRINT_STEP}). The arms
-  // are still the shared pump's, the bow arm's swing short and near straight (I-JS7C8-17 carries the
-  // bow two-handed instead)
-  run: { arms: [0.3, 1], elbow: [0.215, 1], lean: ARCHER_SPRINT_LEAN, legs: ARCHER_SPRINT_STEP },
+  // forward ({@link ARCHER_SPRINT_LEAN}) over her own legs ({@link ARCHER_SPRINT_STEP}), the bow
+  // carried two-handed at the low ready ({@link ARCHER_LOW_READY}): no pump, no elbow swing
+  run: { arms: [0, 0], elbow: [0, 0], hold: ARCHER_LOW_READY, lean: ARCHER_SPRINT_LEAN, legs: ARCHER_SPRINT_STEP },
 };
 
 /**

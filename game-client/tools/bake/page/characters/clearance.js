@@ -163,6 +163,31 @@ const _e1 = new THREE.Vector3();
 const _e2 = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _p = new THREE.Vector3();
+const _w = new THREE.Vector3();
+
+/**
+ * A tube's rings in the world as it is posed now (a mesh built by rig.js `tubeGeometry`, which
+ * records its ring layout), top ring to bottom, and each ring's centre: a skinned tube's carried
+ * by the ring's own weights (averaged over the ring, so it moves as the ring does), a rigid one's
+ * by the bone it rides. For {@link outside}: a garment's or a belt's, a leg's, a boot's.
+ */
+export function tubeNow(m) {
+  const { rows, cols, centres } = m.geometry.userData.tube;
+  const rings = [];
+  const mids = [];
+  for (let r = 0; r < rows; r++) {
+    const ring = [];
+    const mid = new THREE.Vector3();
+    for (let j = 0; j < cols; j++) {
+      const i = r * cols + j;
+      ring.push(m.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(m.matrixWorld));
+      if (m.isSkinnedMesh) mid.add(m.applyBoneTransform(i, _w.fromArray(centres[r])).applyMatrix4(m.matrixWorld));
+    }
+    rings.push(ring);
+    mids.push(m.isSkinnedMesh ? mid.divideScalar(cols) : mid.fromArray(centres[r]).applyMatrix4(m.matrixWorld));
+  }
+  return { rings, mids };
+}
 
 /**
  * The rig's garments (meshes `skirt` tags), the belts and sashes over them (meshes `belt` and
@@ -184,29 +209,7 @@ export function legsInGarments(rig) {
     if (o.isSkinnedMesh && o.userData.leg) legs.push(o);
   });
   if (!garments || !legs.length) return null;
-  const w = new THREE.Vector3();
   const at = (m, i) => m.getVertexPosition(i, new THREE.Vector3()).applyMatrix4(m.matrixWorld);
-
-  // a cover's rings in the world, top ring (the waistband) to hem, and each ring's centre: a
-  // skinned garment's carried by the ring's own weights (averaged over the ring it moves as the
-  // ring does), a belt's by the bone it rides
-  function ringsNow(m) {
-    const { rows, cols, centres } = m.geometry.userData.tube;
-    const rings = [];
-    const mids = [];
-    for (let r = 0; r < rows; r++) {
-      const ring = [];
-      const mid = new THREE.Vector3();
-      for (let j = 0; j < cols; j++) {
-        const i = r * cols + j;
-        ring.push(at(m, i));
-        if (m.isSkinnedMesh) mid.add(m.applyBoneTransform(i, w.fromArray(centres[r])).applyMatrix4(m.matrixWorld));
-      }
-      rings.push(ring);
-      mids.push(m.isSkinnedMesh ? mid.divideScalar(cols) : mid.fromArray(centres[r]).applyMatrix4(m.matrixWorld));
-    }
-    return { rings, mids };
-  }
 
   return {
     covers,
@@ -219,7 +222,7 @@ export function legsInGarments(rig) {
      */
     measure() {
       rig.root.updateMatrixWorld(true);
-      const now = covers.map(ringsNow);
+      const now = covers.map(tubeNow);
       const axis = new THREE.Vector3().setFromMatrixPosition(rig.bones.hips.matrixWorld);
       const out = [];
       for (const leg of legs) {
