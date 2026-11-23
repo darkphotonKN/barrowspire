@@ -219,3 +219,29 @@ func TestTimedOpen_TwoCompletingOnTheSameTickRollOnce(t *testing.T) {
 	assert.Nil(t, timedOpenOf(delverEntity(t, s, first)))
 	assert.Nil(t, timedOpenOf(delverEntity(t, s, second)))
 }
+
+// With two delvers opening one container, one whose attack goes off loses
+// their own timed open alone: the other's keeps counting and opens the
+// container on its 45th tick. FS-MQYEX §Change: An attack cancels the timed
+// open, R30, R32; edge state "two players at one container". I-MQYEX-7.
+func TestTimedOpen_OneAttackingCancelsOnlyTheirOwn(t *testing.T) {
+	s, first, second, chest := twoAtOneChest(t)
+	sent := &recordingSender{}
+	s.sender = sent
+	s.queueIntent(func() { require.NoError(t, s.handleInteract(first, chest.ID)) })
+	s.queueIntent(func() { require.NoError(t, s.handleInteract(second, chest.ID)) })
+	tick(s)
+	ticks(s, 10)
+	attacker, opener := delverEntity(t, s, first), delverEntity(t, s, second)
+
+	require.NoError(t, s.handleCastSkill(first, "slash", 100, 500))
+	tick(s)
+
+	assert.Nil(t, timedOpenOf(attacker), "the attacker's timed open is cancelled")
+	require.NotNil(t, timedOpenOf(opener), "the other's runs on")
+	ticks(s, timedOpenTicks()-12)
+	assert.False(t, openable(t, chest).IsOpen, "shut on the other's 44th tick")
+	tick(s)
+	assert.True(t, openable(t, chest).IsOpen, "the other's opens it on their 45th tick")
+	assert.Empty(t, sent.to(first), "nothing is sent for the cancel")
+}

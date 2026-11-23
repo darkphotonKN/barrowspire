@@ -2,6 +2,7 @@ package systems
 
 import (
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -22,7 +23,7 @@ type CompletedTimedOpen struct {
 
 /*
 TimedOpenSystem counts each delver's timed open, and cancels it.
-FS-MQYEX §Requirements 2, 4–14, 16.
+FS-MQYEX §Requirements 2, 4–14, 16, 28–33.
 
 A timed open starts at zero on the reach. Every tick from the one that applied
 the reach counts the tick's simulation time on it, and the first tick to find
@@ -32,9 +33,12 @@ completed one leaves the body and is reported; opening the container is the
 caller's.
 
 A timed open is cancelled on the tick that finds its delver out of play or gone
-from the world, their body not where it stood at the reach, health lost to the tick's combat, or the
-container out of reach or gone. A cancel is judged before the timer's end,
-leaves the body silently and is reported to nobody; nothing else cancels.
+from the world, their body not where it stood at the reach, health lost to the
+tick's combat, an attack or cast of theirs gone off in it, or the container out
+of reach or gone. A cancel is judged before the timer's end, leaves the body
+silently and is reported to nobody; nothing else cancels: not a drink, an
+equip, a take, a door, a parried strike, a heal, nor what a cast made before
+the reach still does.
 
 Any number of delvers may have a timed open on one container, each counted
 and cancelled on its own. The first to complete is the one reported, and every
@@ -86,8 +90,11 @@ func (s *TimedOpenSystem) MarkHealth(entities []*ecs.Entity) {
 // Update is the tick on every timed open, after the tick's movement and
 // combat: a cancelled one leaves the body, the rest count the tick, and the
 // ones that completed on it are reported, in the order of entities, one to a
-// container.
-func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity) []CompletedTimedOpen {
+// container. attackers is the bodies whose attack or cast went off in the
+// tick's combat (CombatSystem.Attackers): theirs is cancelled on this tick and
+// on no later one, and a body among them with no timed open is passed over.
+// FS-MQYEX §Change: An attack cancels the timed open, R28–R31.
+func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID) []CompletedTimedOpen {
 	var completed []CompletedTimedOpen
 	for _, entity := range entities {
 		oc, ok := entity.GetComponent(ecs.ComponentTypeTimedOpen)
@@ -97,7 +104,7 @@ func (s *TimedOpenSystem) Update(deltaTime float64, entities []*ecs.Entity) []Co
 		open := oc.(*components.TimedOpenComponent)
 		// a cancel is judged before the timer's end: one on the last tick
 		// opens nothing (§Requirements 10)
-		if s.cancelled(entity, open) {
+		if s.cancelled(entity, open, slices.Contains(attackers, entity.ID)) {
 			entity.RemoveComponent(ecs.ComponentTypeTimedOpen)
 			continue
 		}
@@ -137,8 +144,9 @@ func completedOn(completed []CompletedTimedOpen, containerID uuid.UUID) bool {
 }
 
 // cancelled is whether the tick's movement and combat left the delver's timed
-// open cancelled. FS-MQYEX §Requirements 6–9.
-func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOpenComponent) bool {
+// open cancelled; attacked is whether an attack or cast of theirs went off in
+// the tick's combat. FS-MQYEX §Requirements 6–9, 28.
+func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOpenComponent, attacked bool) bool {
 	// only a delver in play acts: one who died, escaped or was left behind
 	// has none
 	if !InPlay(delver) {
@@ -161,6 +169,10 @@ func (s *TimedOpenSystem) cancelled(delver *ecs.Entity, open *components.TimedOp
 		if hc.(*components.HealthComponent).CurrentHealth < open.HealthBeforeCombat {
 			return true
 		}
+	}
+	// an attack or cast of the delver's went off in the tick's combat
+	if attacked {
+		return true
 	}
 	// the container is out of reach, by the reach's own measure, or gone from
 	// the world, as it is after a floor change
