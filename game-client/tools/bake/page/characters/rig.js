@@ -561,7 +561,9 @@ export function mount(rig, boneName, at = [0, 0, 0], o = {}) {
  *   stiffness, damping: the spring; drag: lean back per unit of forward speed (rad·s/H);
  *   inertia: swing per unit of parent acceleration; limit: clamp in radians;
  *   gravity: 0 keeps the rest angle relative to the parent, 1 hangs straight down in the world;
- *   drape: extra angle toward the body while a corpse settles (a cloak lies on the back).
+ *   drape: extra angle toward the body while a corpse settles (a cloak lies on the back);
+ *   clips: a clip's own options by its name (`{ run: { drag, rest, ... } }`), over these for that
+ *   clip alone (clips.js `simulateSprings`; the Duelist's half-cloak in the run, mercLooks.js).
  */
 export function spring(rig, boneName, o = {}) {
   rig.springs.push({
@@ -575,5 +577,6 @@ export function spring(rig, boneName, o = {}) {
     drape: o.drape ?? 0,
     rest: o.rest ?? [0, 0, 0],
     axes: o.axes ?? "xz",
+    ...(o.clips && { clips: o.clips }),
   });
 }

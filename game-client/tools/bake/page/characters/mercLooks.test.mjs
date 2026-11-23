@@ -60,9 +60,9 @@ const { readFileSync } = await import("node:fs");
 const { CAST, mercenary } = await import("./cast.js");
 const { characterPoses } = await import("./poses.js");
 const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, outside, tubeNow } = await import("./clearance.js");
-const { OFFHAND_OF } = await import("./clips.js");
+const { OFFHAND_OF, pose, simulateSprings } = await import("./clips.js");
 const { createRig } = await import("./rig.js");
-const { skirtBones } = await import("./anatomy.js");
+const { cloakBones, skirtBones } = await import("./anatomy.js");
 // edgeGuards' `boneOf` (the bone's name) as `boneName`: this file's own `boneOf` returns the bone
 const { along, boneOf: boneName, cloakOf, crossings, edgesOf, leastOutside, legSolids, moved, segmentsOf, shown, trianglesOf } = await import("./edgeGuards.mjs");
 const { DUELIST_STYLE, MERCENARY_STYLE } = await import("./classStyles.js");
@@ -168,6 +168,58 @@ describe("the skirt's springs: the Duelist's back panel alone carried out furthe
   ])("keeps every panel of %s on the shared spring", (sheet, r) => {
     const { rig } = r.build();
     for (const b of PANELS) expect(springOf(rig, b), `${sheet} ${b}`).toMatchObject(SHARED);
+  });
+});
+
+describe("the half-cloak's springs: carried off the shoulder and out in the run alone (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R159)", () => {
+  const LINKS = ["cloak0", "cloak1", "cloak2", "cloak3"];
+  const springOf = (rig, bone) => rig.springs.find((s) => s.bone === bone);
+  /** A bare rig with a chest, a neck and a hips bone moving forward, for the cloak chain to hang on. */
+  const walking = (o) => {
+    const rig = createRig(1.98);
+    cloakBones(rig, o);
+    return rig;
+  };
+
+  it("gives a clip its own springs over the chain's (cloakBones' per-clip seam): the link's drag, fling, stiffness and hang worked out the same way from the clip's options", () => {
+    const rig = walking({ length: 0.27, drag: 0.34, strap: [0.5, 1, 1, 1], clips: { run: { strap: [1, 1, 1, 1], tilt: [0.4, 0.2] } } });
+    const top = springOf(rig, "cloak0");
+    expect(top).toMatchObject({ stiffness: 140, drag: 0.085, inertia: 0.4, rest: [0, 0, 0] });
+    expect(top.clips.run).toMatchObject({ stiffness: 70, drag: 0.17, inertia: 0.8, rest: [0, 0, 0.4] });
+    expect(springOf(rig, "cloak1").clips.run.rest).toEqual([0, 0, 0.2]);
+    for (const b of ["cloak2", "cloak3"]) expect(springOf(rig, b).clips.run.rest, b).toEqual([0, 0, 0]);
+    expect(Object.keys(top.clips)).toEqual(["run"]);
+  });
+
+  it("leaves a chain with no clip options as it was: no per-clip springs", () => {
+    const rig = walking({ length: 0.62, drag: 0.32 });
+    for (const b of LINKS) expect(springOf(rig, b).clips, b).toBeUndefined();
+  });
+
+  it("simulates a clip on its own springs and every other clip on the chain's", () => {
+    const frames = [pose({ chest: [0, 0, 0] }), pose({ chest: [0.3, 0, 0.2] })];
+    const spec = { fps: 8, loop: true, speed: 2.5 };
+    const plain = walking({ length: 0.27, drag: 0.34, strap: [0.5, 1, 1, 1] });
+    const carried = walking({ length: 0.27, drag: 0.34, strap: [0.5, 1, 1, 1], clips: { run: { strap: [1, 1, 1, 1], tilt: [0.4, 0.2] } } });
+    expect(simulateSprings(carried, frames, { ...spec, clip: "walk" })).toEqual(simulateSprings(plain, frames, { ...spec, clip: "walk" }));
+    expect(simulateSprings(carried, frames, spec)).toEqual(simulateSprings(plain, frames, spec));
+    const run = simulateSprings(carried, frames, { ...spec, clip: "run" });
+    expect(run).not.toEqual(simulateSprings(plain, frames, { ...spec, clip: "run" }));
+    // hung out to his left at the top
+    expect(run[0].cloak0[2]).toBeGreaterThan(0.2);
+  });
+
+  // integrated with Looks v2 (2026-11-23): his chain's drag is Looks v2's 0.26 (was 0.34); in the
+  // run it drags at 0.4 and its top hangs 0.3 out (mercLooks.js HALF_CLOAK_RUN)
+  it("carries the Duelist's half-cloak so in the run alone: its top let swing free and the top two links hung out to his left; every other clip on the chain as it was", () => {
+    const { rig } = row(DUELIST).build();
+    const held = [0.5, 1, 1, 1];
+    LINKS.forEach((b, i) => {
+      const s = springOf(rig, b);
+      expect(s, b).toMatchObject({ drag: 0.26 * (0.5 + i * 0.35) * held[i], limit: 1, rest: [0, 0, 0] });
+      expect(Object.keys(s.clips), b).toEqual(["run"]);
+      expect(s.clips.run, b).toMatchObject({ drag: 0.4 * (0.5 + i * 0.35), inertia: 0.8 + i * 0.25, rest: [0, 0, [0.3, 0.2, 0, 0][i]] });
+    });
   });
 });
 
@@ -871,5 +923,97 @@ describe("the mercenary's sword and sword arm clear of everything they pass (FS-
     const lame = middle(platesOn(rig, s)[0]);
     const chest = new THREE.Vector3().setFromMatrixPosition(rig.bones.chest.matrixWorld);
     expect(spaulderSunk(rig, moved(lameSegments(rig, s), chest.sub(lame)))).toBeGreaterThan(Math.max(...sunkOn(sheet, r, "attack", s)));
+  });
+});
+
+// The trailing blade's bands on the looks' own blades (FS-JS7C8 § Change: The mercenary's sprint and
+// trailing sword R98, R158; integrated with Looks v2 2026-11-23): classMotion.test.mjs holds the
+// base's sword on the rig; here each look's blade on its baked run frames, its line from the fist to
+// the point (`userData.axis`, mercKit.js). Seen from above out to his right of straight back 20–35°
+// (R158); below level 15–47°, R98's 45° restated to 47° for Looks v2's longer, heavier blades (the
+// Sellsword's broad falchion dips to 46.3° at the bottom of the sway; the ground margin, R99, is
+// unchanged).
+describe("each look's trailing blade keeps R158's outward band and R98's dip (FS-JS7C8 R98, R158)", () => {
+  const DEG = 180 / Math.PI;
+  it.each(LOOKS)("%s: on every run frame the blade runs 20–35° out from straight back and 15–47° below level", (sheet, r) => {
+    const { rig, poses } = characterPoses(r);
+    const [blade] = tagged(rig, sheet === DUELIST ? "longBlade" : "falchion");
+    const point = blade.userData.axis.at(-1);
+    const frames = poses.filter((p) => p.anim === "run");
+    expect(frames).toHaveLength(r.animations.run.frames);
+    for (const p of frames) {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      const hand = new THREE.Vector3().setFromMatrixPosition(rig.bones.handR.matrixWorld);
+      const d = new THREE.Vector3(0, point[0] * rig.H, point[1] * rig.H).applyMatrix4(blade.matrixWorld).sub(hand);
+      const plan = Math.atan2(-d.x, -d.z) * DEG;
+      const below = -Math.atan2(d.y, Math.hypot(d.x, d.z)) * DEG;
+      expect(plan, `frame ${p.i}: out from straight back`).toBeGreaterThanOrEqual(20);
+      expect(plan, `frame ${p.i}: out from straight back`).toBeLessThanOrEqual(35);
+      expect(below, `frame ${p.i}: below level`).toBeGreaterThanOrEqual(15);
+      expect(below, `frame ${p.i}: below level`).toBeLessThanOrEqual(47);
+    }
+  });
+});
+
+describe("the Duelist's left arm clear of his half-cloak in the run (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R159)", () => {
+  /** The bone carrying most of a skinned mesh's vertex `i`. */
+  const heaviest = (m, i) => {
+    const idx = m.geometry.attributes.skinIndex;
+    const wt = m.geometry.attributes.skinWeight;
+    let k = 0;
+    for (let j = 1; j < 4; j++) if (wt.getComponent(i, j) > wt.getComponent(i, k)) k = j;
+    return m.skeleton.bones[idx.getComponent(i, k)].name;
+  };
+  const LEFT_ARM = new Set(["upperArmL", "foreArmL", "handL"]);
+  /**
+   * The free (left) arm's pieces from the shoulder down, as edges: every edge of a skinned piece
+   * both of whose ends the left arm's bones carry most (the arm's skin, the wide sleeve over it),
+   * and the rigid ones riding them (the bracer, the fist).
+   */
+  const leftArmSegments = (rig) => {
+    const out = [];
+    rig.root.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.isSkinnedMesh) {
+        if (!o.userData.garment && !o.userData.cloak && !o.userData.leg) out.push(...edgesOf(o, (i) => LEFT_ARM.has(heaviest(o, i))));
+      } else if (LEFT_ARM.has(boneName(o))) out.push(...segmentsOf(o));
+    });
+    return out;
+  };
+  const r = LOOKS[0][1];
+  /** How many of the left arm's edges cross the half-cloak on each baked frame of `anim`. */
+  const crossingsOn = (anim) => {
+    const { rig, poses } = characterPoses(r);
+    return poses
+      .filter((p) => p.anim === anim)
+      .map((p) => {
+        p.apply();
+        rig.root.updateMatrixWorld(true);
+        return crossings(leftArmSegments(rig), trianglesOf(cloakOf(rig)));
+      });
+  };
+
+  // The sprint's free-arm pump drove his left upper arm, near the shoulder, out through the
+  // half-cloak on the run's keys 3–7 (0, 0, 0, 20, 80, 113, 52, 37 edges), madder patches on the
+  // slate cloak. In the run the cloak is carried off the shoulder and out (mercLooks.js
+  // `HALF_CLOAK_RUN`), so no edge of the arm crosses it on any key.
+  it("no edge of the left arm (the skin, the wide sleeve, the bracer, the fist) crosses the half-cloak on any run key", () => {
+    const counts = crossingsOn("run");
+    expect(counts).toHaveLength(r.animations.run.frames);
+    expect(counts).toEqual(counts.map(() => 0));
+  });
+
+  it("finds the left arm pushed into the half-cloak: the fist moved onto the cloak's back, the arm's edges cross it", () => {
+    const { rig, poses } = characterPoses(r);
+    poses.find((p) => p.anim === "run" && p.i === 0).apply();
+    rig.root.updateMatrixWorld(true);
+    const tris = trianglesOf(cloakOf(rig));
+    const t = tris[Math.floor(tris.length * 0.5)];
+    const at = t[0].clone().add(t[1]).add(t[2]).divideScalar(3);
+    const fist = new THREE.Vector3().setFromMatrixPosition(rig.bones.handL.matrixWorld);
+    const segs = leftArmSegments(rig);
+    expect(segs.length).toBeGreaterThan(0);
+    expect(crossings(moved(segs, at.sub(fist)), tris)).toBeGreaterThan(0);
   });
 });

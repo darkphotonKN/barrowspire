@@ -884,26 +884,29 @@ const _a = new THREE.Vector3();
  * Loops run three cycles and sample the last, so the loop closes; one-shots start from rest.
  * `speed` is the forward speed the walk implies (H per second), which drags cloth back;
  * `settle` lets cloth drape along a falling body; `calm` scales how hard fast moves fling it.
+ * `clip` names the clip, so a spring with options of its own for it (rig.js `spring` `clips`)
+ * swings on those.
  */
-export function simulateSprings(rig, frames, { fps, loop, speed = 0, settle = false, calm = 1 }) {
+export function simulateSprings(rig, frames, { fps, loop, speed = 0, settle = false, calm = 1, clip }) {
   if (rig.springs.length === 0) return frames.map(() => null);
+  const springs = rig.springs.map((s) => (s.clips?.[clip] ? { ...s, ...s.clips[clip] } : s));
   const n = frames.length;
   const state = {};
-  for (const s of rig.springs) state[s.bone] = { th: [...s.rest], om: [0, 0, 0], prev: null, vel: null };
+  for (const s of springs) state[s.bone] = { th: [...s.rest], om: [0, 0, 0], prev: null, vel: null };
   const out = new Array(n).fill(null);
   const cycles = loop ? 3 : 1;
   const total = (n / fps) * cycles + (loop ? 0 : 0.6);
   const pre = loop ? 0 : 0.6;
   const steps = Math.ceil(total / DT);
   let nextFrame = 0;
-  const angles = () => Object.fromEntries(rig.springs.map((s) => [s.bone, [...state[s.bone].th]]));
+  const angles = () => Object.fromEntries(springs.map((s) => [s.bone, [...state[s.bone].th]]));
   for (let k = 0; k <= steps; k++) {
     const t = k * DT;
     const ft = Math.max(0, t - pre) * fps;
     const f = loop ? ft % n : Math.min(n - 1, ft);
     applyPose(rig, sample(frames, f, loop), angles());
     rig.root.updateMatrixWorld(true);
-    for (const s of rig.springs) {
+    for (const s of springs) {
       const bone = rig.bones[s.bone];
       const st = state[s.bone];
       // a falling body: cloth drapes along it instead of swinging free

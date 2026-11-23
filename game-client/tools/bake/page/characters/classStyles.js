@@ -609,18 +609,19 @@ export const MERCENARY_STYLE = {
 
 /**
  * The Duelist's trailing sword arm (rad; {@link MERC_TRAILING_TURNS}, {@link MERC_TRAILING_SWORD}),
- * his own under Looks v2's gear (integrated 2026-11-23): swung out 0.35 past the rest's spread,
+ * his own under Looks v2's gear (integrated 2026-11-23): swung out 0.08 past the rest's spread,
  * where the mercenary's is 0.22, the back swing, the twist and the forearm his; the wrist cocked
- * 1.32 ({@link DUELIST_TRAILING_COCK}), where the mercenary's is 1.55. Looks v2 let his half-cloak
- * down to 0.42 H (from 0.27) and wider across his back: at the mercenary's 0.22 the arm past the
- * elbow crossed it on run frame 6 (11 edges), at 0.3 still on frame 7 (3); 0.35 is the first clear.
- * His long hilt (Looks v2 R60, mercLooks.test.mjs: the butt more than 0.052 H off the forearm) sat
- * 0.037 H off it at the mercenary's 1.55 cock; 1.32 holds it at 0.052. Less cocked, the blade
- * angles further out: 38.8–50.5° out from straight back seen from above, past R158's 20–35°
- * (the base's 25.5–33.9°), escalated to the owner. The long blade's other guards (the legs, boots,
- * robe, half-cloak, body, the pieces at the hips, the ground at 0.06 H: its lowest 0.19 H) hold.
+ * 1.32 ({@link DUELIST_TRAILING_COCK}), where the mercenary's is 1.55. His long hilt (Looks v2
+ * R60, mercLooks.test.mjs: the butt more than 0.052 H off the forearm) sat 0.037 H off it at the
+ * mercenary's 1.55 cock (1.40: 0.048); 1.32 holds it at 0.052. Less cocked, the long blade turns
+ * further out, so the arm stands in a little closer: seen from above the blade runs 23.7–32.8° out
+ * from straight back through the hand, inside R158's 20–35° (the base's 25.5–33.9°; at out 0.22,
+ * 31.7–42.2°). In the run his half-cloak is carried off the shoulder (mercLooks.js `HALF_CLOAK_RUN`),
+ * so the arm no longer needs to stand out past it (at 0.35 it once did). The long blade's other
+ * guards (the legs, boots, robe, half-cloak, body, the pieces at the hips, the ground at 0.06 H)
+ * hold; 16.8–36.1° below level.
  */
-export const DUELIST_TRAILING_TURNS = { ...MERC_TRAILING_TURNS, out: 0.35 };
+export const DUELIST_TRAILING_TURNS = { ...MERC_TRAILING_TURNS, out: 0.08 };
 export const DUELIST_TRAILING_COCK = 1.32;
 const DUELIST_TRAILING_SWORD = pose({ upperArmR: rightArmTurned(DUELIST_TRAILING_TURNS), foreArmR: MERC_TRAILING_SWORD.b.foreArmR, handR: [DUELIST_TRAILING_COCK, 0, 0] });
 /**

@@ -31,6 +31,24 @@ import { WEAR, bedroll, binding, cuffBand, falchion, falchionScabbard, longBlade
  */
 const HALF_CLOAK_HELD = [0.5, 1, 1, 1];
 
+/**
+ * How the half-cloak is carried in the run (FS-JS7C8 § Change: The mercenary's sprint and trailing
+ * sword R159, owner 2026-11-23: 「左肩還是會破圖 跑步時就讓匹夫不要這貼 飛高一點吧」): its top let
+ * swing free (`strap` 1, not `HALF_CLOAK_HELD`'s 0.5, so the collar link drags back and flings as a
+ * cloak hung free does) and its top two links hung turned out to his left (`tilt`, rad), so the
+ * cloth over the shoulder stands off it. Held close, the sprint's free-arm pump drove his left upper
+ * arm out through it on keys 3–7 (0, 0, 0, 20, 80, 113, 52, 37 edges). Every other clip keeps the
+ * chain as it was (cloakBones `clips`).
+ *
+ * Integrated with Looks v2 (2026-11-23): his half-cloak is Looks v2's, let down to 0.42 H and its
+ * chain's drag 0.26. At R159's tilt [0.4, 0.2] his left upper arm and forearm still crossed it on run
+ * keys 3 and 4 (52 and 36 edges); more tilt crossed it more (0.6, 0.3: 66, 54), none still crossed it
+ * (0, 0: 30, 32). In the run the chain drags back as R159's cloak did and a little more (`drag` 0.4;
+ * 0.34 left 12 edges, 0.38 7) and its top hangs 0.3 out (0.25–0.35 all clear at 0.4 drag): no edge
+ * of either arm crosses it on any run key.
+ */
+const HALF_CLOAK_RUN = { strap: [1, 1, 1, 1], tilt: [0.3, 0.2], drag: 0.4 };
+
 /** The half-cloak's length down the back, from the shoulder line (H): its bone chain's too. */
 const HALF_CLOAK = 0.42;
 
@@ -251,7 +269,7 @@ export const duelist = {
   mats: (F) => ({ torso: F.breeches, arms: F.duelistRobe, coat: F.duelistRobe, sash: F.duelistSlate }),
   opts: { coat: ROBE, skirtSprings: { skirtB: ROBE_BACK_CARRY } },
   omit: ["spaulder", "collar", "kneeCop"],
-  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.26, strap: HALF_CLOAK_HELD }),
+  bones: (rig) => cloakBones(rig, { length: HALF_CLOAK, drag: 0.26, strap: HALF_CLOAK_HELD, clips: { run: HALF_CLOAK_RUN } }),
   swap: {
     sash: (rig, { mat, o }) => woundSash(rig, mat, o),
     scabbard: (rig, { F }) => longScabbard(rig, { sheath: F.duelistSaya, iron: F.duelistIron, cord: F.duelistCord }, DUELIST_SCABBARD),
