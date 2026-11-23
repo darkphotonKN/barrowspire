@@ -643,6 +643,12 @@ describe("knockout geometry helpers (FS-7TQN4 R1: one bend, one oval)", () => {
     expect(TREE_INK).toEqual({ idle: { tint: palette.hudText, alpha: 1 }, hover: { tint: palette.hudText, alpha: 1 }, flat: true });
   });
 
+  it("should take a previewed bronze mix and lift in place of the tuned ones (the review page, L13)", () => {
+    const hue = palette.treeHue.mana;
+    const idle = { tint: mix(hue, BRONZE.idle.tint, 0.3), alpha: 1 };
+    expect(treeLitInk(hue, 0.3, 0.6)).toEqual({ idle, hover: idle, lift: { amount: 0.6, toward: tint(hue, 0.5) } });
+  });
+
   it("should tint the row bronze, lifted toward the bright amber under the pointer", () => {
     expect(BRONZE).toEqual({
       idle: { tint: mix(palette.frame, palette.interactable, 0.5), alpha: 0.85 },

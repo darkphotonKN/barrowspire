@@ -248,8 +248,8 @@ export const palette = {
   /**
    * The passive tree's hues (FS-8RZ51 §Change: A lit node glows in its own colour, L4–L6; ADR-0089):
    * the colour a lit node's picture and its halo wear, by what the node gives, never by its state.
-   * Health, fire and mana reuse their own channels (the HP bar's lifted oxblood, the shared ember,
-   * the mana bar's necrotic); a resource refund is the HUD's bright brass lifted to a pale gold; the
+   * Health and fire reuse their own channels (the HP bar's lifted oxblood, the shared ember); mana is
+   * the tree's own clearer teal, not the mana bar's greyish necrotic, which stays the bar's; a resource refund is the HUD's bright brass lifted to a pale gold; the
    * rest are the tree's own bases. Never amber (interactable), never arcane green (allies, healing),
    * never one of fire's own three (theme.test.ts). Read by the tree's pictures alone.
    */
@@ -258,7 +258,7 @@ export const palette = {
     power: BARROW_HEX.copper,
     fire: BARROW_HEX.ember,
     defence: BARROW_HEX.steelBlue,
-    mana: BARROW_HEX.necrotic,
+    mana: BARROW_HEX.teal,
     speed: BARROW_HEX.frost,
     movement: BARROW_HEX.verdigris,
     crit: BARROW_HEX.amethyst,

@@ -119,11 +119,12 @@ export const TREE_LIT_LIFT = 0.4;
  * A lit tree node's picture in `hue` (FS-8RZ51 §Change: A lit node glows in its own colour, L7–L9;
  * ADR-0089): the hue with a light touch of the row's bronze at full alpha, lit from above, its top
  * lifted toward `tint(hue, 0.5)` rather than the amber, so the hue stays itself at the top. Hover is
- * idle: the tree marks it with a ring.
+ * idle: the tree marks it with a ring. The review page (L13) previews another `bronzeMix` and `lift`;
+ * the tree draws the tuned ones.
  */
-export function treeLitInk(hue: number): KnockoutInk {
-  const idle = { tint: mix(hue, BRONZE.idle.tint, TREE_BRONZE_MIX), alpha: 1 };
-  return { idle, hover: idle, lift: { amount: TREE_LIT_LIFT, toward: tint(hue, 0.5) } };
+export function treeLitInk(hue: number, bronzeMix = TREE_BRONZE_MIX, lift = TREE_LIT_LIFT): KnockoutInk {
+  const idle = { tint: mix(hue, BRONZE.idle.tint, bronzeMix), alpha: 1 };
+  return { idle, hover: idle, lift: { amount: lift, toward: tint(hue, 0.5) } };
 }
 
 /**

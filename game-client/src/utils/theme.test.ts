@@ -75,10 +75,10 @@ describe("fire marks no interactable (design guideline, FS-PQ2TW)", () => {
 // FS-8RZ51 §Change: A lit node glows in its own colour (L4, L6; ADR-0089, ADR-0013): a lit tree
 // picture wears one of ten hues by what its node gives, each a palette token named by meaning.
 describe("the passive tree's hues (FS-8RZ51 L4, L6)", () => {
-  /** The six bases the tree's hues brought, each the same colour in both tables. */
-  const BASES = ["copper", "steelBlue", "frost", "verdigris", "amethyst", "silver"] as const;
+  /** The seven bases the tree's hues brought, each the same colour in both tables. */
+  const BASES = ["copper", "steelBlue", "teal", "frost", "verdigris", "amethyst", "silver"] as const;
 
-  it("should add its six bases to BARROW and BARROW_HEX as one colour each", () => {
+  it("should add its seven bases to BARROW and BARROW_HEX as one colour each", () => {
     for (const key of BASES) expect(Number.parseInt(BARROW[key].slice(1), 16), key).toBe(BARROW_HEX[key]);
   });
 
@@ -88,7 +88,7 @@ describe("the passive tree's hues (FS-8RZ51 L4, L6)", () => {
       power: BARROW_HEX.copper,
       fire: BARROW_HEX.ember,
       defence: BARROW_HEX.steelBlue,
-      mana: BARROW_HEX.necrotic,
+      mana: BARROW_HEX.teal,
       speed: BARROW_HEX.frost,
       movement: BARROW_HEX.verdigris,
       crit: BARROW_HEX.amethyst,
@@ -100,6 +100,12 @@ describe("the passive tree's hues (FS-8RZ51 L4, L6)", () => {
   it("should never be amber, arcane green or one of fire's own tokens (L6)", () => {
     const forbidden = (["amber", "amberBright", "arcane", "arcaneDeep", "fireCore", "fireHot", "fireDeep"] as const).map((k) => BARROW_HEX[k]);
     for (const [hue, value] of Object.entries(palette.treeHue)) expect(forbidden, hue).not.toContain(value);
+  });
+
+  it("should give mana a tree base of its own, the mana bar keeping necrotic (the coordinator's starting values, 2026-11-23)", () => {
+    expect(palette.treeHue.mana).not.toBe(BARROW_HEX.necrotic);
+    expect(palette.hudMana).toBe(BARROW_HEX.necrotic);
+    expect(BARROW_HEX.necrotic).toBe(0x688b8f);
   });
 
   it("should give each hue a colour of its own", () => {

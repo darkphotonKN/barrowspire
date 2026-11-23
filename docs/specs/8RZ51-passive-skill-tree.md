@@ -1071,6 +1071,16 @@ Date: 2026-11-23
 > colour, not whiter and not bronze for everything, so its bronze mix drops from 35% to a light touch
 > (10%, within 10–15%). L1, L3, L7, L12 and the criteria below are edited in place for it.
 >
+> **Coordinator note, 2026-11-23** (the owner wants each lit colour to suit its picture, not greyish; set
+> while building the review page, I-8RZ51-23): mana and speed take tree-only bases with more chroma, so
+> a held Deep Well, Blink or Spellwarden reads a clear arcane blue-teal and a held Haste, Quick Draw or
+> Arrow Rain a clearer pale sky blue. Mana gets a new base, `teal` `#3aa0b0`, in place of reusing
+> `necrotic`; the mana bar keeps `necrotic` unchanged. Speed's `frost` moves from `#8cc4d0` to `#8ac2e6`,
+> still pale and cold, never neon cyan. The duel's `silver` cools a touch, `#c4cad0` to `#c2c8d0`, so the
+> bronze mix leaves it a neutral metal rather than a warm grey. The ten stay distinct and off amber and
+> arcane green. These are starting points: the owner tunes them at the Tree colours page (L13). L4's
+> table, its count of new bases and the Hues criterion are edited in place for it.
+>
 > **What this changes in § Change: Tree v2:** V29's **Ink** clause (one near-white ink for every
 > picture that is not greyed), for lit nodes only. **Unchanged:** V25's states and which of them are greyed, V29's ink on open nodes, V29's lit
 > plate, its pictures and its lock mark, V24's links, every plate's shape, edge and fill, the hover
@@ -1121,14 +1131,14 @@ Numbered 1–14 below and cited as **L1–L14**.
    | copper | power | `power` | new `BARROW_HEX.copper` | `#d49274` | Might, Heavy Hand, Earthbreaker |
    | ember | fire | `fire` | `BARROW_HEX.ember` (reused: the shared torch-and-fire token, not one of fire's own three) | `#c2611f` | Kindling, Wide Volley, Searing, Pyromancer |
    | steel blue | defence | `defence` | new `BARROW_HEX.steelBlue` | `#5f82b8` | Thick Skin, Practiced Guard, Guardian |
-   | mana blue-green | mana | `mana` | `BARROW_HEX.necrotic` (reused: the mana bar's, `hudMana`) | `#688b8f` | Deep Well, Blink, Spellwarden |
-   | frost | speed | `speed` | new `BARROW_HEX.frost` | `#8cc4d0` | Haste, Quick Draw, Arrow Rain |
+   | mana blue-teal | mana | `mana` | new `BARROW_HEX.teal` (the tree's own; the mana bar keeps `necrotic`) | `#3aa0b0` | Deep Well, Blink, Spellwarden |
+   | frost | speed | `speed` | new `BARROW_HEX.frost` | `#8ac2e6` | Haste, Quick Draw, Arrow Rain |
    | verdigris | movement, evasion | `movement` | new `BARROW_HEX.verdigris` | `#5fa88a` | Fleetness, Fleet Foot, Hunter |
    | amethyst | crit | `crit` | new `BARROW_HEX.amethyst` | `#a088cc` | Bull Rush, Eagle Eye, Keen Edge, Shadow Ranger |
    | pale gold | resource refund | `refund` | derived, `tint(BARROW_HEX.brassBright, 0.5)`, no new base | `#cbb074` | Long Wind, Hunter's Breath, Steady Hand, Sellsword |
-   | silver | the duel | `steel` | new `BARROW_HEX.silver` | `#c4cad0` | Duelist, Settle the Debt |
+   | silver | the duel | `steel` | new `BARROW_HEX.silver` | `#c2c8d0` | Duelist, Settle the Debt |
 
-   The six new bases go into `BARROW` and `BARROW_HEX` (`src/utils/theme.ts`) and the guideline's
+   The seven new bases go into `BARROW` and `BARROW_HEX` (`src/utils/theme.ts`) and the guideline's
    palette table, in that order (ADR-0013). `palette.treeHue` in `canvasPalette.ts` names them by
    meaning. Nothing outside the tree's pictures reads them.
 5. **Which hue a node wears is presentation copy**, keyed by node id beside its name and icon
@@ -1195,7 +1205,7 @@ Numbered 1–14 below and cited as **L1–L14**.
 14. **The guideline follows** (`game-client/docs/design-guideline.md`):
     - the HUD icons rule names the exception: a lit passive-tree picture wears its own hue and glows
       (ADR-0089); every other HUD icon stays bronze;
-    - the palette table lists the six new bases;
+    - the palette table lists the seven new bases;
     - two narrow notes, tree pictures only: **frost** is a pale, desaturated cold tone, not the
       forbidden neon cyan; **amethyst** marks crit in the tree and is not umbra, which stays the
       Shadow Shot's and the Shadow Ranger's gloom.
@@ -1251,7 +1261,7 @@ Hues
       `PASSIVE_COPY`); every hue is used.
 - [ ] Every `palette.treeHue` value resolves from `BARROW_HEX`; none is amber, amberBright, arcane,
       arcaneDeep or a fire-only token (test).
-- [ ] The six new bases are in `BARROW`, `BARROW_HEX` and the guideline's palette table.
+- [ ] The seven new bases are in `BARROW`, `BARROW_HEX` and the guideline's palette table.
 - [ ] `npm run lint:fence` passes: no raw hex outside `theme.ts`.
 
 Glow

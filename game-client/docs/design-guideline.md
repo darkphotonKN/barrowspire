@@ -137,7 +137,7 @@ and the two are not required to agree (ADR-0025).
 | **Blood / danger** | oxblood `#6e1f1f` |
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
-| **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, frost `#8cc4d0`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c4cad0` |
+| **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, teal `#3aa0b0`, frost `#8ac2e6`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c2c8d0` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
 and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
@@ -151,12 +151,14 @@ One exception, text only: a whisper's line in the chat window is drawn in umbra 
 **The passive tree's hues are for a lit tree picture only** (`palette.treeHue`, FS-8RZ51 §Change: A
 lit node glows in its own colour, [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md)):
 a held node's picture and its halo wear a hue by what the node gives, and nothing else reads them.
-Ten hues: health, fire and mana reuse their channels (lifted oxblood, ember, necrotic), a resource
-refund is bright brass lifted to a pale gold, and the six bases above are the rest (power copper,
-defence steelBlue, speed frost, movement verdigris, crit amethyst, the duel silver). None is amber or
-arcane green, and none is one of fire's own three. Two of them sit near lines this page draws, so
-they are narrow on purpose:
-- **Frost** is a pale, desaturated cold tone, not the neon cyan the rules below forbid.
+Ten hues: health and fire reuse their channels (lifted oxblood, ember), a resource refund is bright
+brass lifted to a pale gold, and the seven bases above are the rest (power copper, defence steelBlue,
+mana teal, speed frost, movement verdigris, crit amethyst, the duel silver). Mana's teal is the tree's
+own, clearer than the mana bar's greyish necrotic, which stays the bar's. None is amber or arcane
+green, and none is one of fire's own three. Teal, frost and silver are starting values the owner
+tunes at the dev gallery's Tree colours page (FS-8RZ51 L13). Two of them sit near lines this page
+draws, so they are narrow on purpose:
+- **Frost** is a pale cold sky tone of modest chroma, never the neon cyan the rules below forbid.
 - **Amethyst** marks crit in the tree and is not umbra, which stays the Shadow Shot's and the Shadow
   Ranger's gloom.
 

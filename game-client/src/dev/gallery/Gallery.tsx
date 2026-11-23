@@ -11,11 +11,19 @@ const EffectsPanel = dynamic(() => import("./EffectsPanel"), {
   loading: () => <p className="text-sm text-text-muted">Loading effects...</p>,
 });
 
+// The tree's colours on a canvas of their own, in their own chunk (FS-8RZ51 §Change: A lit node glows
+// in its own colour, L13).
+const TreeColoursPanel = dynamic(() => import("./TreeColoursPanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading tree colours...</p>,
+});
+
 // One section per tracked family. Keyed by Family, so a family listed in families.ts with no
 // section here fails the typecheck.
 const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
   effects: { title: "Effects", Body: EffectsPanel },
   "item-icons": { title: "Item icons", Body: ItemIconGrid },
+  "tree-colours": { title: "Tree colours", Body: TreeColoursPanel },
 };
 
 export default function Gallery() {

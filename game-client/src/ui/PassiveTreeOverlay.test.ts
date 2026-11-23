@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { viewport } from "@/render/viewport";
 import { palette } from "@/utils/canvasPalette";
-import { LIT_PLATE_ALPHA, LOCK_DEPTH, PICTURE_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, TREE_HALO, drawUnknownGlyph, haloDiscAlpha, nodePicture } from "./PassiveTreeOverlay";
-import { GREYED, Knockout, TREE_INK, treeLitInk, type KnockoutInk } from "./knockout";
+import { LIT_PLATE_ALPHA, LOCK_DEPTH, PICTURE_DEPTH, NO_TREE, PassiveTreeOverlay, TREE_DEPTH, TREE_HALO, TREE_LOOK, drawNodePlate, drawUnknownGlyph, haloDiscAlpha, nodePicture } from "./PassiveTreeOverlay";
+import { GREYED, Knockout, TREE_BRONZE_MIX, TREE_INK, TREE_LIT_LIFT, treeLitInk, type KnockoutInk } from "./knockout";
 import { PICTURE_MARGIN, fitIcon } from "./passiveIcons";
 import { treeLayout } from "./passiveTreeLayout";
 import { treeView, type TreeSource } from "./passiveTreeModel";
@@ -668,5 +668,53 @@ describe("a lit node's own colour and its glow (FS-8RZ51 §Change: A lit node gl
   it("should add no filter to anything it draws", () => {
     const env = show(TRUNK_HELD);
     for (const m of env.made) expect(m.ops.some((o) => /filter|glow/i.test(o)), m.kind).toBe(false);
+  });
+});
+
+describe("one node's plate drawn with a previewed look (FS-8RZ51 §Change: A lit node glows in its own colour, L13; I-8RZ51-23)", () => {
+  const view = treeView(warrior({ "warrior.r1": 1, "warrior.r2": 1, "warrior.ua1": 1 }));
+  const layout = treeLayout(viewport, view.nodes, view.links);
+  /** A node, by id, with its plate. */
+  const nodeOf = (id: string) => {
+    const i = view.nodes.findIndex((n) => n.id === id);
+    return { node: view.nodes[i], plate: layout.plates[i] };
+  };
+  /** One node drawn on a fresh plate graphics with no textures, so its picture is in lines. */
+  const draw = (id: string, look = TREE_LOOK) => {
+    const env = stage();
+    const g = (env.scene as unknown as { add: { graphics(): unknown } }).add.graphics();
+    const { node, plate } = nodeOf(id);
+    drawNodePlate(env.scene, g as never, node, plate, look);
+    return env.made[0];
+  };
+
+  it("should draw the tree's tuned look by default", () => {
+    expect(TREE_LOOK).toEqual({ hues: palette.treeHue, bronzeMix: TREE_BRONZE_MIX, lift: TREE_LIT_LIFT, halo: TREE_HALO });
+    const plates = draw("warrior.r1");
+    expect(plates.inks).toContain(treeLitInk(palette.treeHue.health).idle.tint);
+    expect(plates.circles!.filter((c) => c.fill?.[0] === palette.treeHue.health)).toHaveLength(TREE_HALO.discs);
+  });
+
+  it("should recolour only the previewed hue's nodes, with the previewed mix and halo", () => {
+    const hue = palette.treeHue.mana;
+    const look = { ...TREE_LOOK, hues: { ...TREE_LOOK.hues, health: hue }, bronzeMix: 0.3, halo: { discs: 6, inner: 0.5, alpha: 0.7 } };
+    const vitality = draw("warrior.r1", look);
+    expect(vitality.inks).toContain(treeLitInk(hue, 0.3).idle.tint);
+    const discs = vitality.circles!.filter((c) => c.fill?.[0] === hue);
+    expect(discs).toHaveLength(6);
+    expect(discs[0].fill![1]).toBeCloseTo(haloDiscAlpha(0.7, 6), 9);
+    expect(discs.at(-1)!.r / discs[0].r).toBeCloseTo(0.5, 6);
+    // Might wears power: its token, under the previewed mix
+    const might = draw("warrior.r2", look);
+    expect(might.inks).toContain(treeLitInk(palette.treeHue.power, 0.3).idle.tint);
+    expect(might.circles!.filter((c) => c.fill?.[0] === palette.treeHue.power)).toHaveLength(6);
+  });
+
+  it("should leave an open and a greyed node's ink alone under any look", () => {
+    const look = { ...TREE_LOOK, hues: { ...TREE_LOOK.hues, power: palette.treeHue.mana } };
+    const open = draw("warrior.t2a", look);
+    expect(nodeOf("warrior.t2a").node.state).toBe("available");
+    expect(open.inks).toContain(TREE_INK.idle.tint);
+    expect(open.circles?.some((c) => c.fill?.[0] === palette.treeHue.mana)).toBeFalsy();
   });
 });
