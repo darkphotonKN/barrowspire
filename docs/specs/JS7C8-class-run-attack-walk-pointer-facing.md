@@ -1559,12 +1559,66 @@ The knight and the wizard (and their looks) are untouched: their runs key for ke
 `walk_attack` and `backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps. The archer's three sheets are
 untouched byte for byte.
 
+> **Edited in place on 2026-11-23 (owner change during I-JS7C8-21, still a work-order).**
+> Requirement numbers are kept. M1, M6 and R106 are restated, R114 is added, and the Out of Scope
+> line on look changes makes one exception. See *Owner change, 2026-11-23: the Duelist's robe
+> carried out behind over the heel kick*.
+
+### Owner change, 2026-11-23: the Duelist's robe carried out behind over the heel kick
+
+I-JS7C8-21 put the shared sprint under him (its legs, lean and 16 fps, his sword arm left as it
+was). The leg guard (`clearance.js` `legClearance`, `mercLooks.test.mjs` "keeps its legs inside its
+skirts on every clip") then failed on the Duelist alone: on the run's second key (`down`) his left
+lower leg, near the ankle (0.217 H up, 0.136 H behind the hips bone, near the centre line), came
+out through the robe's back panel by **3.62 px** at 1x (the limit 0.667). The base's coat and the
+Sellsword's read 0. *Measured:* it is the sprint's heel kick (`SPRINT_STEP.shinL` 1.4 at contact,
+1.8 in the down), not the lean (the shared legs under the sprint's lean read 0) and not the fps
+(14 fps reads 3.66). Shortening the kick cleared it only at about `shinL` ≤ 1.3 at contact and ≤ 1.6
+in the down (0.47 px), which moves the shared keys and so the archer's (M1). Asked to choose
+between his own smaller heel kick, smaller shared keys, or a change to the robe, the owner said:
+
+> 「改 Duelist 長袍」
+
+Change the Duelist's robe. So:
+
+- **The shared sprint is kept key for key** (M1): `SPRINT_STEP`, `SPRINT_LEAN`, `SPRINT_RUN`, the
+  archer's keys and sheet as their digests hold them.
+- **The Duelist's robe is changed, the least that clears the heel kick** (R114). In order of
+  preference: (i) the back panel carried out behind further in the run, the robe at rest as it was;
+  (ii) more flare to the back panel's cut; (iii) the back hem a little shorter. (i) is taken. It is
+  a look change on the Duelist only (FS-1J1CB R7's robe: its cut, its split, its length and its
+  rest are unchanged). The base's coat and the Sellsword's are untouched.
+- *Measured, the options* (the Duelist on the sprint, the leg guard's worst run frame, 1x px; the
+  back panel's hem, the centre of its last ring, H above the ground and behind the hips bone):
+  - as I-JS7C8-21 left it: run 3.62 px (key 1); hem at rest 0.171 H up, 0.118 H behind; in the run
+    0.156–0.254 H up, 0.133–0.189 H behind; in the walk 0.176–0.193 H up, 0.128–0.165 behind.
+  - (i) the back panel's spring (`skirtB`) drags further with his speed and may swing further:
+    `drag` 0.2 → 0.4, `limit` 0.8 → 1.1 rad. Run **0.23 px** (key 2), every other clip 0. Hem at rest
+    unchanged (0.171 H, 0.118 H behind); in the run 0.224–0.316 H up (about 0.06 H higher, about 5
+    world px at 1x), 0.172–0.219 H behind (about 0.03 H further back); in the walk 0.191–0.198 H up,
+    0.153–0.165 behind. Standing clips (idle, attack, death, parry) carry no speed, so they are as
+    before. Its neighbours (`drag` 0.38–0.5, `limit` 1.0–1.4) pass too; `drag` alone saturates at
+    the old limit (0.3–0.8 all read about 1.8 px), and `limit` 0.9 fails (0.71 px).
+  - (ii) the back panel's depth at the hem 0.132 → 0.145 or 0.16 H: 3.06 and 2.41 px, and the robe
+    at rest stands further out behind. The ring centres trailed back 0.04 or 0.06 H: 2.65 and 1.63
+    px, the hem at rest higher and further back.
+  - (iii) the back hem shortened to 0.18 or 0.20 H off the ground: 5.54 and 3.08 px.
+- *Measured, once it is under him:* the sprint's 20° lean also moves his sword arm (today's carry,
+  kept in I-JS7C8-21). The Duelist's right sleeve no longer lies inside the robe's back panel on the
+  run (it clears it by 0.004 H; I-JS7C8-22's must-fail entry for it went). The pumping arm swung
+  back on the run's last key (key 7) now crosses the Duelist's half-cloak (6 edges of the arm past
+  the elbow). It is held as a must-fail entry against today's carry (`mercLooks.test.mjs`
+  `TODAY_FAILS`), which I-JS7C8-23's trailing carry replaces and must clear (R102, R104). Never an
+  exemption, and not baked: the one bake (R109) comes after I-JS7C8-23.
+
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
 - **M1. One sprint, shared.** The archer's sprint legs and rhythm (about 20° lean, 16 fps, a
   stride about 12.4% shorter, knee drive, heel kick, the flight and the bob never reduced) become
   a sprint the archer and the mercenary share. Her run keys stay byte-identical, held by digest
-  tests. His pace must stay within the shared `RUN_PACE` tolerance. *Reason:* the owner,
+  tests, and so do the shared sprint's keys once he runs them: a guard the sprint fails on one of
+  his looks is answered by that look, not by the shared keys (the owner, 2026-11-23, 「改 Duelist
+  長袍」). His pace must stay within the shared `RUN_PACE` tolerance. *Reason:* the owner,
   「移動時也要像弓箭手跑的感覺」. *See Escalated below:* on his rig the shared keys at 16 fps do not
   fall within the archer's 1 px/s.
 - **M2. (owner override) The sword trails behind.** The right arm nearly straight, swung back about
@@ -1580,7 +1634,10 @@ untouched byte for byte.
   latency gap is accepted.
 - **M6. Blade, hilt and arm clear of everything they pass,** on all three looks: the legs, the
   boots, the skirts (the coat's, the Duelist's robe panels), the Duelist's half-cloak and the
-  body. Committed tests guard it, sampling along mesh edges, each with a rejection fixture.
+  body. Committed tests guard it, sampling along mesh edges, each with a rejection fixture. The
+  legs, under the sprint, stay inside the skirts as before (R106); where the shared sprint's heel
+  kick would come through the Duelist's robe, the robe is changed (R114), never the shared keys
+  (the owner, 2026-11-23, 「改 Duelist 長袍」).
 - **M7. The frame box does not grow** against today's mercenary sheets. If it would, stop and
   escalate.
 - **M8. The owner approves the contact sheet** (ADR-0021 §5). Tune rounds after it stay inside the
@@ -1804,7 +1861,9 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
     `main.js` and by `clearance.test.mjs`, `mercLooks.test.mjs`) pass all three sheets on every clip
     they carry, with nothing added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`. If a guard can only
     pass with a different look (a shorter cloak, a sleeve cut back, the spaulder moved), that is
-    escalated, never exempted or changed here.
+    escalated, never exempted or changed here. *Escalated and decided 2026-11-23:* the leg guard on
+    the Duelist's robe against the sprint's heel kick, answered by R114 (the owner, 「改 Duelist
+    長袍」). Any other look change is still escalated.
 
 #### The attack-on-the-move clips leave his sheets (M5)
 
@@ -1852,6 +1911,18 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
      with the sword trailing behind him, the point down and off the ground, and that his sheets
      carry no attack-on-the-move clips. The `tools/bake/lib/contact.mjs` header notes (:1-10) say
      the same.
+114. **The Duelist's robe over the heel kick (owner change 2026-11-23, 「改 Duelist 長袍」).** The
+     robe's back panel is carried out behind further in the run, so the sprint's heel kick stays
+     inside it: its spring (`skirtB`, anatomy.js `skirtBones`) drags back further with his speed
+     and may swing further than the shared skirt springs (`mercLooks.js` `ROBE_BACK_CARRY`;
+     *measured* `drag` 0.4, `limit` 1.1 rad, against the shared 0.2 and 0.8). The robe's cut (its
+     rings, its hem at 0.16 H, its split, its panels' weights) is unchanged, and so it hangs at rest
+     as it did: the back hem's centre 0.171 H up and 0.118 H behind the hips bone in the idle.
+     The leg guard passes every clip of the Duelist, the run at 0.23 px at worst (the limit
+     0.667 px at 1.5x) and the rest at 0. Only the Duelist's back panel changes: his front and
+     side panels, the base's coat and the Sellsword's keep the shared springs. *Measured,* the back
+     hem in the run 0.224–0.316 H up and 0.172–0.219 H behind (was 0.156–0.254 and 0.133–0.189), in
+     the walk 0.191–0.198 H up (was 0.176–0.193). Judged at the contact sheet (R111).
 
 ### Acceptance Criteria
 
@@ -1891,6 +1962,9 @@ Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `cl
       fails (R104, R105).
 - [ ] The leg and cloak guards pass the three mercenary sheets on every clip they carry, with no
       exemption added (R106).
+- [ ] The shared sprint's keys are unchanged under him (M1). The Duelist's robe back panel is carried
+      out behind in the run (`ROBE_BACK_CARRY`), its cut and its rest unchanged, and its leg guard
+      passes every clip (R114).
 - [ ] The knight's and the wizard's run tests, and the shared run's tests (plain style, `RUN_STEP`
       key for key, the 10° lean, the pump bands, `RUN_PACE` within 1 at 14 fps), pass unchanged.
 
@@ -1947,6 +2021,8 @@ HITL:
 - **The heel kick under the blade.** On the other step the right heel folds up behind his seat
   (the shin to 1.8 rad) as the trailing blade passes over it. R104's leg guard holds it. If only a
   shorter heel kick would clear it, that changes the shared sprint, and so the archer: escalated.
+  The same kick against the Duelist's robe was escalated on 2026-11-23 and answered by the robe
+  (R114), never the keys.
 - **The three looks.** The Duelist's half-cloak flies back in the run's drag (`drag` 0.34,
   mercLooks.js:173) toward a blade trailing on his right. The Sellsword's right spaulder rides
   the upper arm and turns with its twist (R98), toward the chest or the back. The Duelist's wide
@@ -1975,6 +2051,7 @@ HITL:
   trailing carry; a transition clip between the carries.
 - Any change to the archer's sprint values, her carry or her sheets (R92). A change to the shared
   sprint that would move her keys is escalated, not made.
-- A look change to the base, the Duelist or the Sellsword (escalated if the guards ask for one).
+- A look change to the base, the Duelist or the Sellsword (escalated if the guards ask for one),
+  except the Duelist's robe back panel carried out behind in the run (R114, the owner 2026-11-23).
 - `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
   lane).
