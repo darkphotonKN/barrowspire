@@ -25,12 +25,17 @@ import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, RUNNING_CLAS
  * then "戰士 傭兵 跑步時提劍的角度再提升15度") the knight's sword arm pumps about the chest like a
  * free arm (RUN_ARM, RUN_ELBOW). The wrist holds the blade forward along the forearm, raised above
  * level ({@link RUN_BLADE}), taking back most of the arm's pump ({@link RUN_WRIST}): the point ahead
- * of the hand, 24–41° above level ({@link RUN_BLADE_ELEV}; raised about 15° twice, the last time
+ * of the hand, 23–42° above level ({@link RUN_BLADE_ELEV}; raised about 15° twice, the last time
  * from 9–26°), lowest as the arm swings back. Raised so, the point rises past the crown, under
  * {@link RUN_TIP_CEIL}, and the blade never passes through the head or behind it. At the front of
  * the pump the upper arm turns in ({@link RUN_CROSS}, clips.js `run.cross`), so the hand crosses in
  * toward the midline before the torso, about 0.07 H ({@link RUN_CROSS_REACH}), the blade angled
- * about 28° across the body, and goes back out to the side behind. The mercenary no longer runs
+ * about 27° across the body, and goes back out to the side behind. His run carries it under the
+ * sprint's 20° lean (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips
+ * retired R144–R147), with the least change that keeps his band: the lean dropped the blade to
+ * 10.4–28.7° above level, so the wrist holds it back ({@link RUN_BLADE} x 0.68 → 0.45: 23.4–41.7°),
+ * and it lowers his chest, so the sword hand's front comes about 0.02 H under the chest bone
+ * (0.04 H over it on the 10° lean), recorded, not tuned away. The mercenary no longer runs
  * this carry: in his sprint his sword trails behind him, its point down
  * ({@link MERC_TRAILING_SWORD}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword).
  *
@@ -56,7 +61,14 @@ const REST_BLADE = [0.95, 0, 0];
 export const SCEPTRE_TILT = 40;
 const REST_SCEPTRE = [-0.68, -0.25, 0];
 const WALK_WRIST = [0, 0.7];
-const RUN_BLADE = [0.68, 0, 0];
+/**
+ * The knight's wrist in his run (rad, about x): the blade held forward along the forearm and raised
+ * against the sprint's lean (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move
+ * clips retired R144, R146; K2: the lean dropped the kept wrist's blade, 0.68, to 10.4–28.7° above
+ * level, under his band). 0.45 is the largest that keeps the whole of his 23–42°: measured
+ * 23.4–41.7° (24.1–40.5° on the 10° lean), the tip at most 0.946 H. The knight's alone.
+ */
+const RUN_BLADE = [0.45, 0, 0];
 const RUN_WRIST = [0, 0.85];
 /** The band a blade keeps in the run, degrees from level (+ up): raised, never back up to the old upright carry's 74–85° (was 5 to 35, and −10 to 20 before). */
 export const RUN_BLADE_ELEV = [20, 50];
@@ -101,99 +113,15 @@ export const WIZARD_SPRINT_PEAK = [0.56, 0.59];
 export const WIZARD_SPRINT_TILT = [24, 40];
 
 /**
- * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
- * attack, `hold` is the carry added to idle, walk and run, `walk` and `run` scale those gaits); a
- * sheet is the clips the class's sheet carries and the scale it is baked at (cast.js `CAST`).
- */
-export const KNIGHT_BUILD = [2.0, { shoulderW: 1.1, torsoW: 1.06 }];
-
-/**
- * How the knight's standing attack carries his cloak (simulateSprings, in walks, as
- * BACKPEDAL_ATTACK_SPEED): out behind as by half a walk. The slash's stance sets his right foot
- * back under the cloak as the cut settles, and hanging still the cloak let his calf and boot through
- * it by 7.6 px on the last key (clearance.js `cloakClearance`); half a walk holds it off the heel.
- */
-export const KNIGHT_ATTACK_CLOTH = 0.5;
-
-/**
- * The knight re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 6, FS-HF0WW
- * § Change: Class sheets at 1.5x R35), his attack's cloth carried by KNIGHT_ATTACK_CLOTH.
- */
-export const KNIGHT_SHEET = {
-  animations: { ...RUNNING_CLASS_ANIMATIONS, attack: { ...RUNNING_CLASS_ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH } },
-  scale: 1.5,
-};
-
-export const KNIGHT_STYLE = {
-  attack: "slash",
-  speed: 1,
-  hold: pose({
-    upperArmL: [-0.38, -0.85, 0.12],
-    foreArmL: [-1.25, 0, 0],
-    // the sword arm down at the side, the point toward the ground
-    upperArmR: [REST_ARM[0], 0, -0.12],
-    foreArmR: REST_ELBOW,
-    handR: REST_BLADE,
-  }),
-  walk: { arms: [0.2, 0.55], lean: 0.05 },
-  // the run's carry (FS-JS7C8 R2): the sword arm pumps free from the shoulder, a little out from
-  // the hip, crossing in at the front, the blade held forward about level; the shield arm keeps
-  // the shield up before the chest, bent about 90° and swinging short
-  run: {
-    arms: [0.3, 1],
-    elbow: [0.2, 1],
-    wrist: RUN_WRIST,
-    cross: [0, RUN_CROSS],
-    hold: pose({ upperArmL: [-0.38, -0.85, 0.12], foreArmL: [-1.25, 0, 0], upperArmR: [0, 0, -0.06], handR: RUN_BLADE }),
-  },
-};
-
-/**
- * The Berserker's sheet (FS-1J1CB R9, R28): the knight's clips, and the off-hand twin of each
- * attack (clips.js `withOffhand`), at the knight's 1.5x.
- */
-export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations), scale: 1.5 };
-
-/**
- * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a bearded axe
- * in each hand (gear.js `beardedAxe`), no shield. At rest both arms hang low and a little out, the
- * wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so the heads hang
- * forward of the legs with the edge facing forward and a little down (axe.test.mjs). In the walk
- * both wrists take back most of the arms' swing, so the axes sway without swinging up. In the run
- * both arms pump, shorter than a sword arm and bent less, the wrists holding the hafts forward and
- * down so the edges keep facing forward, never up. The cut is `cleave` (clips.js): wide, the free
- * arm swung back against it.
- */
-export const BERSERKER_STYLE = {
-  attack: "cleave",
-  speed: 1,
-  hold: pose({
-    upperArmR: [0.04, 0, -0.14],
-    foreArmR: [-0.04, 0, 0],
-    handR: [CLEAVE_CARRY, 0, 0],
-    upperArmL: [0.04, 0, 0.14],
-    foreArmL: [-0.04, 0, 0],
-    handL: [CLEAVE_CARRY, 0, 0],
-  }),
-  walk: { arms: [0.5, 0.5], wrist: [0.7, 0.7], lean: 0.05 },
-  run: {
-    arms: [0.6, 0.6],
-    elbow: [0.45, 0.45],
-    wrist: [0.6, 0.6],
-    hold: pose({ upperArmR: [0, 0, -0.12], upperArmL: [0, 0, 0.12], handR: [CLEAVE_CARRY, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }),
-  },
-};
-
-export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
-
-/**
  * The sprint, one run the archer and the mercenary share (FS-JS7C8 § Change: The mercenary's sprint
  * and trailing sword M1, R93, the owner: "移動時也要像弓箭手跑的感覺"): its lean ({@link SPRINT_LEAN}),
  * its legs ({@link SPRINT_STEP}) and its clip at 16 fps ({@link SPRINT_RUN}), first keyed for the
  * archer (§ Change: The archer's sprint and low-ready bow) and defined here once, so each class's
- * `run` reads the same keys under its own arms. The knight keeps the shared fast run (clips.js
- * RUN_STEP, RUN_LEAN, RUN_ANIMATIONS); the wizard takes the sprint's lean and clip over the shared
- * fast run's legs at a shorter stride ({@link WIZARD_SPRINT_STRIDE}).
+ * `run` reads the same keys under its own arms. The wizard and the knight take the sprint's lean
+ * and clip over the shared fast run's legs (clips.js RUN_STEP) at a shorter stride each
+ * ({@link WIZARD_SPRINT_STRIDE}, {@link KNIGHT_SPRINT_STRIDE}), so no class runs the shared fast
+ * run's lean and cadence (RUN_LEAN, RUN_ANIMATIONS) now. Defined ahead of the knight's style, which
+ * reads it.
  *
  * The sprint's forward lean (§ Change: The archer's sprint and low-ready bow R67, D1, the owner:
  * "跑更快的話身體可能會更加前傾"): twice the shared RUN_LEAN, tilting the hips-to-neck line about 20°
@@ -230,6 +158,118 @@ export const SPRINT_STEP = {
 
 /** The sprint's clip (R68): the shared run's 8 looping frames and its cloth speed 2.5, at 16 fps. */
 export const SPRINT_RUN = { ...RUN_ANIMATIONS.run, fps: 16 };
+
+/**
+ * The knight's stride in his run (FS-JS7C8 § Change: The knight's sprint, and the
+ * attack-on-the-move clips retired R139; E1 (a)), the Berserker's too: the shared fast run's legs
+ * (clips.js RUN_STEP, every thigh key) at 0.84, 16% shorter, so at the sprint's 16 fps his measured
+ * pace stays at RUN_PACE (193.61 world px/s; his legs are longer than the others', so he takes 4%
+ * more off than the sprint's 12%). Not the sprint's own legs ({@link SPRINT_STEP}): their heel kick
+ * folded his calf up behind and out through the hauberk's back panel by 4.86 px at 1x, on all
+ * three looks, and the Duelist-style carry that cleared it would swing that panel further in his
+ * walk, his attack and his death. On these legs the leg guard, the cloak guard and the camera check
+ * read 0 on all three looks. He gives up the sprint's higher knee and heel kick, which the hauberk
+ * to the knee and the cloak to the calf partly hide.
+ */
+export const KNIGHT_SPRINT_STRIDE = 0.84;
+
+/**
+ * A build is `createRig`'s height and proportions; a style feeds clips.js (`attack` names the
+ * attack, `hold` is the carry added to idle, walk and run, `walk` and `run` scale those gaits); a
+ * sheet is the clips the class's sheet carries and the scale it is baked at (cast.js `CAST`).
+ */
+export const KNIGHT_BUILD = [2.0, { shoulderW: 1.1, torsoW: 1.06 }];
+
+/**
+ * How the knight's standing attack carries his cloak (simulateSprings, in walks, as
+ * BACKPEDAL_ATTACK_SPEED): out behind as by half a walk. The slash's stance sets his right foot
+ * back under the cloak as the cut settles, and hanging still the cloak let his calf and boot through
+ * it by 7.6 px on the last key (clearance.js `cloakClearance`); half a walk holds it off the heel.
+ */
+export const KNIGHT_ATTACK_CLOTH = 0.5;
+
+/**
+ * The knight re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 6, FS-HF0WW
+ * § Change: Class sheets at 1.5x R35), his attack's cloth carried by KNIGHT_ATTACK_CLOTH, his run
+ * the sprint's clip at 16 fps ({@link SPRINT_RUN}; § Change: The knight's sprint, and the
+ * attack-on-the-move clips retired R138). It still carries `walk_attack` and `backpedal_attack`
+ * until his sheets are re-baked without them (R149).
+ */
+export const KNIGHT_SHEET = {
+  animations: { ...RUNNING_CLASS_ANIMATIONS, attack: { ...RUNNING_CLASS_ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN },
+  scale: 1.5,
+};
+
+export const KNIGHT_STYLE = {
+  attack: "slash",
+  speed: 1,
+  hold: pose({
+    upperArmL: [-0.38, -0.85, 0.12],
+    foreArmL: [-1.25, 0, 0],
+    // the sword arm down at the side, the point toward the ground
+    upperArmR: [REST_ARM[0], 0, -0.12],
+    foreArmR: REST_ELBOW,
+    handR: REST_BLADE,
+  }),
+  walk: { arms: [0.2, 0.55], lean: 0.05 },
+  // his run (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired
+  // R138, R139): the trunk about 20° forward ({@link SPRINT_LEAN}) over the shared fast run's legs
+  // at a shorter stride ({@link KNIGHT_SPRINT_STRIDE}). The carry (FS-JS7C8 R2), kept but for the
+  // wrist the lean asked for (K2, {@link RUN_BLADE}): the sword arm pumps free from the shoulder, a
+  // little out from the hip, crossing in at the front, the blade held forward and raised; the
+  // shield arm keeps the shield up before the chest, bent about 90° and swinging short
+  run: {
+    arms: [0.3, 1],
+    elbow: [0.2, 1],
+    wrist: RUN_WRIST,
+    cross: [0, RUN_CROSS],
+    hold: pose({ upperArmL: [-0.38, -0.85, 0.12], foreArmL: [-1.25, 0, 0], upperArmR: [0, 0, -0.06], handR: RUN_BLADE }),
+    lean: SPRINT_LEAN,
+    stride: KNIGHT_SPRINT_STRIDE,
+  },
+};
+
+/**
+ * The Berserker's sheet (FS-1J1CB R9, R28): the knight's clips, and the off-hand twin of each
+ * attack (clips.js `withOffhand`), at the knight's 1.5x.
+ */
+export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations), scale: 1.5 };
+
+/**
+ * The Berserker's carry and cut (FS-1J1CB R2), his own beside {@link KNIGHT_STYLE}: a bearded axe
+ * in each hand (gear.js `beardedAxe`), no shield. At rest both arms hang low and a little out, the
+ * wrists tipping each haft down and forward of the fist ({@link CLEAVE_CARRY}), so the heads hang
+ * forward of the legs with the edge facing forward and a little down (axe.test.mjs). In the walk
+ * both wrists take back most of the arms' swing, so the axes sway without swinging up. In the run
+ * both arms pump, shorter than a sword arm and bent less, the wrists holding the hafts forward and
+ * down so the edges keep facing forward, never up. The cut is `cleave` (clips.js): wide, the free
+ * arm swung back against it. His run is the knight's, the sprint's lean over the shared legs at
+ * {@link KNIGHT_SPRINT_STRIDE}, its carry unchanged (FS-JS7C8 § Change: The knight's sprint, and
+ * the attack-on-the-move clips retired R148).
+ */
+export const BERSERKER_STYLE = {
+  attack: "cleave",
+  speed: 1,
+  hold: pose({
+    upperArmR: [0.04, 0, -0.14],
+    foreArmR: [-0.04, 0, 0],
+    handR: [CLEAVE_CARRY, 0, 0],
+    upperArmL: [0.04, 0, 0.14],
+    foreArmL: [-0.04, 0, 0],
+    handL: [CLEAVE_CARRY, 0, 0],
+  }),
+  walk: { arms: [0.5, 0.5], wrist: [0.7, 0.7], lean: 0.05 },
+  run: {
+    arms: [0.6, 0.6],
+    elbow: [0.45, 0.45],
+    wrist: [0.6, 0.6],
+    hold: pose({ upperArmR: [0, 0, -0.12], upperArmL: [0, 0, 0.12], handR: [CLEAVE_CARRY, 0, 0], handL: [CLEAVE_CARRY, 0, 0] }),
+    lean: SPRINT_LEAN,
+    stride: KNIGHT_SPRINT_STRIDE,
+  },
+};
+
+export const ARCHER_BUILD = [1.96, { shoulderW: 1.0, torsoW: 0.98 }];
 
 /**
  * The archer's carry in her sprint, the two-handed low-ready bow (FS-JS7C8 § Change: The archer's

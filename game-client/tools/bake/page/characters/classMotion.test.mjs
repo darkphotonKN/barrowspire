@@ -21,7 +21,6 @@ import {
   groundPose,
   pose,
   runCycle,
-  walkCycle,
 } from "./clips.js";
 import { attach, createRig, gripAt, jointAt as J, mount, rigidTube } from "./rig.js";
 import { boots, coif, hair, head, legs, shortBeard } from "./anatomy.js";
@@ -33,9 +32,13 @@ import {
   ARCHER_BUILD,
   ARCHER_SHEET,
   ARCHER_STYLE,
+  BERSERKER_SHEET,
+  BERSERKER_STYLE,
   FOCUS_STYLE,
+  KNIGHT_ATTACK_CLOTH,
   KNIGHT_BUILD,
   KNIGHT_SHEET,
+  KNIGHT_SPRINT_STRIDE,
   KNIGHT_STYLE,
   MERCENARY_BUILD,
   MERCENARY_SHEET,
@@ -250,13 +253,13 @@ function deepestCarry(rig, gear, frames) {
  * The classes under test, each with its weapon's rest in the idle and the walk: `point` down and
  * forward (a blade's tip toward the ground) or `upright` (the sceptre held up beside the leg,
  * tilted forward and out, its head up). The ones whose run pumps a weapon arm
- * ({@link RUN_CARRIERS}: the knight on the shared fast run, the wizard on her sprint) also name the
+ * ({@link RUN_CARRIERS}: the knight and the wizard, each on the sprint's lean) also name the
  * arms that pump (`pump`, R2's elbow and reach bands); `low` names the arm that pumps only to the
  * lower chest, peaking in `lowPeak` (H): the wizard's sceptre arm ({@link WIZARD_SPRINT_PEAK});
  * `tilt` is the band her sceptre keeps off vertical in the run ({@link WIZARD_SPRINT_TILT}); and
  * `freeFront` the band the other pumping hand's front height keeps against the chest bone (H), where
- * the lean lowers it under the chest (her tome hand; a class without one pumps it between the
- * chest bone and the shoulder). `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
+ * the lean lowers it under the chest (her tome hand, his sword hand; a class without one pumps it
+ * between the chest bone and the shoulder). `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
  * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
  * the knight's 5° below to 12° above raised about 15°, then "戰士 傭兵 跑步時提劍的角度再提升15度": the
  * knight's 9-26° raised about 15° again). The mercenary runs the sprint instead (FS-JS7C8 § Change:
@@ -271,6 +274,10 @@ const CLASSES = [
     sheet: KNIGHT_SHEET,
     // the sword arm pumps; the shield arm carries the shield before him (its own swing, R2's last point)
     pump: ["R"],
+    // recorded, not tuned away (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move
+    // clips retired R147): under the sprint's 20° lean his sword hand's front comes a little under
+    // the chest bone (measured 0.021 H under; 0.040 H over on the 10° lean)
+    freeFront: [-0.035, -0.01],
     rest: "point",
     runBlade: [23, 42],
   },
@@ -298,33 +305,14 @@ const CLASSES = [
 ];
 
 /**
- * The classes that still run the shared fast run (FS-JS7C8 R2, R3: RUN_STEP's legs key for key at
- * 14 fps, the 10° lean): the knight. The mercenary sprints (FS-JS7C8 § Change: The mercenary's
- * sprint and trailing sword R94, R96), and the wizard runs the sprint's lean and cadence over the
- * shared legs at a shorter stride (§ Change: The wizard's sprint and pointed cast R117, R121).
- */
-const SHARED_RUNNERS = CLASSES.filter(({ name }) => name === "knight");
-
-/**
- * The classes whose run pumps the weapon arm, each carry held on its own run: the knight's on the
- * shared fast run, the wizard's under her sprint's lean (§ Change: The wizard's sprint and pointed
- * cast R122, R123, her carry kept).
+ * The classes whose run pumps the weapon arm, each carry held on its own run under the sprint's
+ * lean: the knight's (§ Change: The knight's sprint, and the attack-on-the-move clips retired R144–
+ * R147, his wrist held back) and the wizard's (§ Change: The wizard's sprint and pointed cast R122,
+ * R123).
  */
 const RUN_CARRIERS = CLASSES.filter(({ pump }) => pump);
 
-describe.each(SHARED_RUNNERS)("the $name's sheet at 1.5x with the run and the backward step (FS-JS7C8 slices 6–8, FS-HF0WW § Change: Class sheets at 1.5x R35)", ({ sheet }) => {
-  it("carries run, walk_attack over 0.75 walk cycles and backpedal_attack over 0.75, no standalone backpedal, at scale 1.5", () => {
-    expect(sheet.scale).toBe(1.5);
-    const a = sheet.animations;
-    expect(a.run).toEqual(RUN_ANIMATIONS.run);
-    expect(a.walk_attack.cycles).toBe(0.75);
-    expect(a.backpedal_attack).toMatchObject({ frames: 14, fps: 24, loop: false, boxed: true, cycles: 0.75 });
-    expect(a).not.toHaveProperty("backpedal");
-    expect(a.walk_attack.frames / a.walk_attack.fps).toBeCloseTo(a.attack.frames / a.attack.fps, 9);
-  });
-});
-
-describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-JS7C8 R2; § Change: The wizard's sprint and pointed cast R122, R123)", ({ name, build, style, pump, low, lowPeak, tilt, freeFront, rest, runBlade }) => {
+describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-JS7C8 R2; § Change: The wizard's sprint and pointed cast R122, R123; § Change: The knight's sprint, and the attack-on-the-move clips retired R144–R147)", ({ name, build, style, pump, low, lowPeak, tilt, freeFront, rest, runBlade }) => {
   const rig = rigOf(build);
   const run = runCycle(style);
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -527,57 +515,6 @@ describe.each(RUN_CARRIERS)("the $name's run carry on its own rig and style (FS-
       }
     });
 
-});
-
-describe.each(SHARED_RUNNERS)("the $name's fast run on its own rig and style (FS-JS7C8 R2, R3)", ({ build, style }) => {
-  const rig = rigOf(build);
-  const run = runCycle(style);
-  const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
-  const pose8 = (f) => footing(rig, run, f);
-
-  it("leans the trunk about 10° and brings the head back level", () => {
-    applyPose(rig, pose());
-    rig.root.updateMatrixWorld(true);
-    const lean = () => {
-      const [h, n] = [at(rig, "hips"), at(rig, "neck")];
-      return Math.atan2(n.z - h.z, n.y - h.y) * DEG;
-    };
-    const pitch = () => {
-      const fwd = new THREE.Vector3(0, 0, 1).transformDirection(rig.bones.head.matrixWorld);
-      return Math.atan2(-fwd.y, fwd.z) * DEG;
-    };
-    const [restLean, restPitch] = [lean(), pitch()];
-    for (const f of SAMPLES) {
-      pose8(f);
-      expect(lean() - restLean, `lean @${f}`).toBeGreaterThanOrEqual(8);
-      expect(lean() - restLean, `lean @${f}`).toBeLessThanOrEqual(12);
-      expect(Math.abs(pitch() - restPitch), `head @${f}`).toBeLessThanOrEqual(3);
-    }
-  });
-
-  it("turns the shoulders 6.5–10° against the hips, and keeps the shared legs key for key", () => {
-    const yaw = (l, r) => {
-      const [a, b] = [at(rig, l), at(rig, r)];
-      return Math.atan2(b.z - a.z, a.x - b.x) * DEG;
-    };
-    const turn = Math.max(...SAMPLES.map((f) => (pose8(f), Math.abs(yaw("upperArmL", "upperArmR")))));
-    expect(turn).toBeGreaterThanOrEqual(6.5);
-    expect(turn).toBeLessThanOrEqual(10);
-    const plain = runCycle({ hold: pose() });
-    run.forEach((p, i) => {
-      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR"]) expect(p.b[bone], `${bone} @${i}`).toEqual(plain[i].b[bone]);
-      expect(p.body, `body @${i}`).toEqual(plain[i].body);
-    });
-  });
-
-  it("covers 180–220 world px/s on its legs, and its attacks on the move walk the legs at most 90", () => {
-    const pace = measurePace(rig, run, RUN_ANIMATIONS.run.fps);
-    expect(pace).toBeGreaterThanOrEqual(180);
-    expect(pace).toBeLessThanOrEqual(220);
-    // the walk's legs (backpedal_attack's are the same run backward) over 0.75 cycles of the 0.583 s swing
-    const walk = measurePace(rig, walkCycle(style), 10);
-    expect((walk * 0.8 * 0.75) / (7 / 12)).toBeLessThanOrEqual(90);
-  });
 });
 
 // owner, 2026-11-12: "站立時武器應該可以放下手微微下垂"
@@ -1119,14 +1056,20 @@ describe("the sprint, one definition the archer and the mercenary share (FS-JS7C
 
 /**
  * The classes whose run is the sprint's lean and cadence, each on its own rig and under its own
- * arms: the sprinters on the sprint's legs, and the wizard on the shared fast run's legs at a
- * shorter stride (§ Change: The wizard's sprint and pointed cast R117, R118; E1 (a): the sprint's
- * knee drive came through her gown's front). Only the sprint's legs drive the knee past the shared
- * run's.
+ * arms: the sprinters on the sprint's legs, and the wizard and the knight (under both his styles)
+ * on the shared fast run's legs at a shorter stride each (§ Change: The wizard's sprint and pointed
+ * cast R117, R118; E1 (a): the sprint's knee drive came through her gown's front; § Change: The
+ * knight's sprint, and the attack-on-the-move clips retired R139, R140; E1 (a): its heel kick came
+ * through his hauberk's back). Only the sprint's legs drive the knee past the shared run's.
  */
-const LEANED_RUNNERS = [...SPRINTERS, { name: "wizard", rig: () => rigOf(WIZARD_BUILD), style: WIZARD_STYLE, sheet: WIZARD_SHEET }];
+const LEANED_RUNNERS = [
+  ...SPRINTERS,
+  { name: "wizard", rig: () => rigOf(WIZARD_BUILD), style: WIZARD_STYLE, sheet: WIZARD_SHEET },
+  { name: "knight", rig: () => rigOf(KNIGHT_BUILD), style: KNIGHT_STYLE, sheet: KNIGHT_SHEET },
+  { name: "Berserker", rig: () => rigOf(KNIGHT_BUILD), style: BERSERKER_STYLE, sheet: BERSERKER_SHEET },
+];
 
-describe.each(LEANED_RUNNERS)("the $name's sprint on its own rig and style (FS-JS7C8 § Change: The archer's sprint and low-ready bow R67, R69, R70; § Change: The mercenary's sprint and trailing sword R94; § Change: The wizard's sprint and pointed cast R118)", ({ rig: build, style, sheet }) => {
+describe.each(LEANED_RUNNERS)("the $name's sprint on its own rig and style (FS-JS7C8 § Change: The archer's sprint and low-ready bow R67, R69, R70; § Change: The mercenary's sprint and trailing sword R94; § Change: The wizard's sprint and pointed cast R118; § Change: The knight's sprint, and the attack-on-the-move clips retired R140)", ({ rig: build, style, sheet }) => {
   const rig = build();
   const run = clipsFor(style, sheet.animations).run;
 
@@ -1164,7 +1107,7 @@ describe.each(LEANED_RUNNERS)("the $name's sprint on its own rig and style (FS-J
     expect(range(roll)).toBeLessThan(0.06);
   });
 
-  // the sprint's legs only: the wizard's knee is held to the shared run's (her own describe)
+  // the sprint's legs only: the wizard's and the knight's knees are held to the shared run's (their own describes)
   if (style.run.legs === SPRINT_STEP)
     it("drives the swing knee higher than the shared run's 0.311 H and kicks the heel past its 1.45 rad fold (R69, D3)", () => {
       // the shared run's knee peaks at 0.311 H on either rig: the sprint clears it by a visible margin
@@ -1288,6 +1231,83 @@ describe("the wizard's sprint (FS-JS7C8 § Change: The wizard's sprint and point
   });
 });
 
+/**
+ * The knight's two styles on his one rig (cast.js `knight`: the base and the Guardian run
+ * KNIGHT_STYLE, the Berserker BERSERKER_STYLE), each with its sheet.
+ */
+const KNIGHTS = [
+  { name: "knight", style: KNIGHT_STYLE, sheet: KNIGHT_SHEET },
+  { name: "Berserker", style: BERSERKER_STYLE, sheet: BERSERKER_SHEET },
+];
+
+describe.each(KNIGHTS)("the $name's sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R138–R141; E1 (a))", ({ style, sheet }) => {
+  const rig = rigOf(KNIGHT_BUILD);
+  const spec = sheet.animations.run;
+  const run = clipsFor(style, sheet.animations).run;
+
+  it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at KNIGHT_SPRINT_STRIDE, not the sprint's legs (R138, R139)", () => {
+    expect(style.run.lean).toBe(SPRINT_LEAN);
+    expect(spec).toBe(SPRINT_RUN);
+    expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
+    expect(style.run).not.toHaveProperty("legs");
+    expect(KNIGHT_SPRINT_STRIDE).toBe(0.84);
+    expect(style.run.stride).toBe(KNIGHT_SPRINT_STRIDE);
+    expect([style.run.knee ?? 1, style.run.lift ?? 1]).toEqual([1, 1]);
+    // the legs: the shared fast run's (RUN_STEP) with every thigh key scaled by the stride, the
+    // feet keeping their world angle, as on a plain style at that stride and lean
+    const plain = runCycle({ hold: pose() });
+    const atStride = runCycle({ hold: pose(), run: { stride: KNIGHT_SPRINT_STRIDE, lean: SPRINT_LEAN } });
+    run.forEach((p, i) => {
+      for (const bone of ["hips", "thighL", "thighR", "shinL", "shinR", "footL", "footR", "spine", "chest", "neck"]) expect(p.b[bone], `${bone} @${i}`).toEqual(atStride[i].b[bone]);
+      expect(p.body, `body @${i}`).toEqual(atStride[i].body);
+      for (const t of ["thighL", "thighR"]) expect(p.b[t][0], `${t} @${i}`).toBeCloseTo(plain[i].b[t][0] * KNIGHT_SPRINT_STRIDE, 12);
+      for (const b of ["shinL", "shinR", "hips"]) expect(p.b[b], `${b} @${i}, the shared run's`).toEqual(plain[i].b[b]);
+    });
+  });
+
+  it("covers the ground at RUN_PACE at the sprint's 16 fps: within 1 px/s of 194 (R141)", () => {
+    expect(RUN_PACE).toBe(194);
+    const pace = measurePace(rig, run, spec.fps);
+    // measured 193.61 world px/s (his run on the 10° lean at 14 fps read 197.67; the sprint's legs at 16 fps 198.84)
+    expect(Math.abs(pace - RUN_PACE), `pace ${pace.toFixed(2)}`).toBeLessThan(1);
+  });
+
+  it("lifts the swing knee as high as the shared fast run does, at least 0.30 H, not the sprint's 0.32 (R140; E1 (a))", () => {
+    const knee = Math.max(...SPRINT_SAMPLES.map((f) => (footing(rig, run, f), Math.max(at(rig, "shinL").y, at(rig, "shinR").y) / rig.H)));
+    // measured 0.310 H (the sprint's legs read 0.335 and folded his calf out through the hauberk's back)
+    expect(knee).toBeGreaterThanOrEqual(0.3);
+  });
+});
+
+describe("the knight's other clips under his sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R137)", () => {
+  it("keeps his idle, walk, attack and death keys byte for byte as at 23717cbb, his attack's cloth at KNIGHT_ATTACK_CLOTH", () => {
+    const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
+    const want = {
+      idle: "298c3295549d017d5dcf0fa80110e298dca3ab420f0f2b540be7cfdcadafb9c9",
+      walk: "f9650023e75bb65b43a24b759e49e50f0c4b353be4bad494c1146fa9f554726b",
+      attack: "38cac538efc977ed7b7068cbf2762b32d190365f7ac7466eb5a7c2eafcf28452",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+    expect(KNIGHT_ATTACK_CLOTH).toBe(0.5);
+    for (const anim of ["idle", "walk", "death"]) expect(KNIGHT_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+    expect(KNIGHT_SHEET.animations.attack).toEqual({ ...ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH });
+  });
+
+  it("keeps the Berserker's idle, walk, attack, death and attack_offhand keys byte for byte as at 23717cbb", () => {
+    const clips = clipsFor(BERSERKER_STYLE, BERSERKER_SHEET.animations);
+    const want = {
+      idle: "22a35f28716817f5d347a8ee84318db0f4431a22c7e63d590bdcf09441496550",
+      walk: "8bbffb3393941c59348862abf44914aebbab56c432ca2d8f322fd2f5cf856dde",
+      attack: "8a1d30a0b2da22ca1cd3f13912d29eee2a22ef5b56effd182952b6520939748f",
+      death: "846462bfdff94d07f6a58294c2e12babdee123f4e2dedfba29b309289e1f0f5e",
+      attack_offhand: "d779435498df0f25b6c9831c3116bb68ad4f0c215d3a0a1a175e4d9101f4d251",
+    };
+    for (const [anim, d] of Object.entries(want)) expect(digest(clips[anim]), anim).toBe(d);
+    expect(BERSERKER_SHEET.animations.attack_offhand).toEqual(BERSERKER_SHEET.animations.attack);
+  });
+});
+
 describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-ready bow R66–R71)", () => {
   const rig = archerRig();
   const spec = ARCHER_SHEET.animations.run;
@@ -1307,7 +1327,7 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     expect(Math.abs(measurePace(rig, run, spec.fps) - RUN_PACE)).toBeLessThan(1);
   });
 
-  it("leaves the shared run, and the knight's sheet and clips, as on main key for key (R66; § Change: The mercenary's sprint and trailing sword R93; § Change: The wizard's sprint and pointed cast R115, R116)", () => {
+  it("leaves the shared run as on main key for key (R66; § Change: The mercenary's sprint and trailing sword R93; § Change: The wizard's sprint and pointed cast R115, R116; § Change: The knight's sprint, and the attack-on-the-move clips retired R137, R143)", () => {
     expect([RUN_LEAN, RUN_ARM, RUN_ELBOW, RUN_COUNTER]).toEqual([0.24, 0.85, -1.57, 0.14]);
     expect(RUN_ANIMATIONS).toEqual({ run: { frames: 8, fps: 14, loop: true, speed: 2.5 } });
     expect(RUNNING_CLASS_ANIMATIONS).toEqual({
@@ -1321,8 +1341,7 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     });
     // the shared run on a plain style: RUN_STEP and the shared keys, which clips.test.mjs also checks key for key
     expect(digest({ RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, plain: runCycle({ attack: "slash", hold: pose() }) })).toBe("61942c2885748ec4c0c0845b1730e8ddd9ebd17452255ffd2ae8c66eeff23874");
-    // the wizard's "unchanged" digest retired with her run (her idle, walk and death: her sprint's describe)
-    expect(digest({ sheet: KNIGHT_SHEET, clips: clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations) }), "knight").toBe("2003ed6258943506c9f149e513e21da6f4788f94211d14a544e813f5f318d48a");
+    // the wizard's and the knight's "unchanged" digests retired with their runs (their other clips: their sprints' describes)
   });
 
   it("keeps her run keys and her sheet byte for byte as at 2018f786, now read from the shared sprint (§ Change: The mercenary's sprint and trailing sword R92, R93)", () => {
