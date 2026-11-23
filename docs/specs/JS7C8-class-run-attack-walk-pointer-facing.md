@@ -2834,6 +2834,28 @@ The options:
 - (c) The 20° lean over today's legs and cadence (14 fps). *Measured:* the guards 0 px, pace 197.67
   (today's). No quicker cadence.
 
+### Decided 2026-11-23: E1 (a), K2 confirmed
+
+The coordinator picked under the owner's standing word for this charter,
+
+> 「做好就接著做不用問我」
+
+(when it is done, carry on without asking). The owner was not asked again.
+
+- **E1 → (a).** His run (`KNIGHT_STYLE.run`, and the Berserker's `BERSERKER_STYLE.run`) takes
+  `SPRINT_LEAN` and `SPRINT_RUN` (16 fps) by reference over the shared fast run's legs (`RUN_STEP`)
+  at a stride of 0.84 (*measured:* pace 193.61, within 1 px/s of `RUN_PACE`; the leg guard, the
+  cloak guard and the seen-through check 0 on all three looks). He gives up the sprint's higher knee
+  drive and its heel kick, which the hauberk to the knee and the cloak to the calf partly hide.
+  *Reason:* the shared legs push his calf 4.86 px through the hauberk's back panel, and the
+  Duelist-style carry (b) would swing the back panel further in his walk, his attack and his death,
+  clips this change keeps out of scope; (c) gives no quicker cadence. R139–R143 stand as written.
+  `SPRINT_STEP`, `SPRINT_LEAN`, `SPRINT_RUN` and `RUN_STEP` are unchanged.
+- **K2 confirmed.** `RUN_BLADE` x 0.68 → **0.45**, nothing else in his carry (*measured:* the blade
+  23.4–41.7° above level, inside his 23–42°; the tip at most 0.946 H, under `RUN_TIP_CEIL`). The
+  sword hand's front height under the chest bone is recorded as a band (0.01–0.035 H under,
+  *measured* 0.021 H), not tuned away (R146, R147 stand).
+
 ### Facts checked in code (`23717cbb`)
 
 - **His sheets share one clip set and two styles.** `CLASS_ROWS.knight` (cast.js:596) is `{ build:
