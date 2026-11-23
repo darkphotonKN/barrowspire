@@ -180,8 +180,9 @@ body is re-dressed mid-swing" (frame 3 to frame 3). Its comment now describes th
 
 **Left on purpose.** These name the retired clips, each saying they are gone, with an FS
 reference:
-- the absence tests in `animationSelect.test.ts`, `warriorLooks.test.mjs:96`, `classMotion.test.mjs`'
-  sheet-order tests and the older-bake fixture in `character.test.ts`;
+- the absence tests in `animationSelect.test.ts` and `classMotion.test.mjs`' sheet-order tests,
+  and the older-bake fixture in `character.test.ts` (`warriorLooks.test.mjs`' absence loop went
+  with the review fixes, d1ad6e48);
 - the doc comments in `animationSelect.ts`, `clips.js` and `classStyles.js`;
 - the `contact.mjs` header.
 
