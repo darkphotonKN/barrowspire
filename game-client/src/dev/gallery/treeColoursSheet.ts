@@ -7,9 +7,12 @@
  */
 
 import * as Phaser from "phaser";
+import { installCrispText } from "@/render/crispText";
+import { backingSize, fitGame, viewport } from "@/render/viewport";
 import { fitCamera } from "@/render/viewport/camera";
+import { onSceneEnd } from "@/scenes/sceneEnd";
 import { CANVAS_FONT, palette, toCss } from "@/utils/canvasPalette";
-import { BARROW_HEX } from "@/utils/theme";
+import { BARROW, BARROW_HEX } from "@/utils/theme";
 import type { Knockout } from "@/ui/knockout";
 import { drawPanelFrame, drawPanelTitle } from "@/ui/panelFrame";
 import { TREE_DEPTH, TREE_LOOK, drawNodePlate, rankInk, type TreeLook } from "@/ui/PassiveTreeOverlay";
@@ -36,6 +39,8 @@ export class TreeColoursScene extends Phaser.Scene {
     fitCamera(this.cameras.main);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
     this.started = true;
+    // a knockout watches the shared view until it is destroyed (ADR-0080): none outlives the sheet
+    onSceneEnd(this, () => this.dispose());
     this.draw();
   }
 
@@ -43,6 +48,16 @@ export class TreeColoursScene extends Phaser.Scene {
   preview(look: TreeLook): void {
     this.look = look;
     if (this.started) this.draw();
+  }
+
+  /**
+   * Takes the sheet down, every knockout with it, and draws nothing again until the scene starts.
+   * Its scene's end calls it; the panel calls it first, as Phaser ends a destroyed game's scenes only
+   * on a later step, after the page has its view back.
+   */
+  dispose(): void {
+    this.started = false;
+    this.clear();
   }
 
   private draw(): void {
@@ -87,4 +102,34 @@ export class TreeColoursScene extends Phaser.Scene {
     for (const p of this.parts) p.destroy();
     this.parts = [];
   }
+}
+
+/**
+ * The sheet's own game on `parent`, in the sheet's own view. `unmount` ends it and puts the page's
+ * view back.
+ */
+export function mountTreeColours(parent: HTMLElement): { sheet: TreeColoursScene; unmount(): void } {
+  const before = viewport.current();
+  viewport.set({ ...TREE_SHEET, renderScale: 1, cssScale: 1 });
+  installCrispText();
+  const sheet = new TreeColoursScene();
+  const backing = backingSize(viewport.current());
+  const game = new Phaser.Game({
+    type: Phaser.AUTO,
+    parent,
+    scale: { mode: Phaser.Scale.NONE, width: backing.width, height: backing.height, zoom: 1 },
+    backgroundColor: BARROW.pitch,
+    render: { roundPixels: true, antialias: true, pixelArt: false },
+    scene: [sheet],
+  });
+  const unfit = fitGame(game);
+  return {
+    sheet,
+    unmount: () => {
+      unfit();
+      sheet.dispose();
+      game.destroy(true);
+      viewport.set(before);
+    },
+  };
 }

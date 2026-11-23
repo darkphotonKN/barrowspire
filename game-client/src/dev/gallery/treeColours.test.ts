@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { classNodes } from "@/data/passiveTree";
+import { viewport } from "@/render/viewport";
 import { palette, toCss } from "@/utils/canvasPalette";
 import { GREYED, TREE_INK, treeLitInk } from "@/ui/knockout";
 import { TREE_HALO, TREE_LOOK, drawNodePlate, haloDiscAlpha } from "@/ui/PassiveTreeOverlay";
@@ -51,6 +52,19 @@ describe("the Tree colours review page (FS-8RZ51 L13)", () => {
         expect(e.plate.rect.width, e.node.id).toBe(PLATE_SIZE[e.node.kind]);
         expect(e.plate.round, e.node.id).toBe(e.node.kind === "traversal");
       }
+    }
+  });
+
+  it("should lay its plates the same whatever view the page is in", () => {
+    const page = viewport.current();
+    try {
+      const plates = () => SHEET_CLASSES.map((cls) => sheetEntries(cls).map((e) => e.plate));
+      viewport.set({ width: 1080, height: 720, renderScale: 1 });
+      const tall = plates();
+      viewport.set({ width: 1280, height: 400, renderScale: 2 });
+      expect(plates()).toEqual(tall);
+    } finally {
+      viewport.set(page);
     }
   });
 

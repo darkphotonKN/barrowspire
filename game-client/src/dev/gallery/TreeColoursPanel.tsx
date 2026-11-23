@@ -2,13 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import * as Phaser from "phaser";
-import { installCrispText } from "@/render/crispText";
-import { backingSize, fitGame, roundEveryObject, viewport } from "@/render/viewport";
+import { roundEveryObject, viewport } from "@/render/viewport";
 import { palette, toCss, type TreeHue } from "@/utils/canvasPalette";
-import { BARROW } from "@/utils/theme";
 import { TREE_LOOK, type TreeLook } from "@/ui/PassiveTreeOverlay";
 import { SHEET_CLASSES, colourOf, sheetEntries, withHue } from "./treeColours";
-import { TREE_SHEET, TreeColoursScene } from "./treeColoursSheet";
+import { TREE_SHEET, mountTreeColours, type TreeColoursScene } from "./treeColoursSheet";
 
 // Rounded as the game is (ADR-0057), whichever page loaded Phaser first.
 roundEveryObject(Phaser.GameObjects);
@@ -54,27 +52,11 @@ export default function TreeColoursPanel() {
 
   useEffect(() => {
     if (!host.current) return;
-    // the sheet's own view; the page's is put back when it goes
-    const before = viewport.current();
-    viewport.set({ ...TREE_SHEET, renderScale: 1, cssScale: 1 });
-    installCrispText();
-    const sheet = new TreeColoursScene();
+    const { sheet, unmount } = mountTreeColours(host.current);
     scene.current = sheet;
-    const backing = backingSize(viewport.current());
-    const game = new Phaser.Game({
-      type: Phaser.AUTO,
-      parent: host.current,
-      scale: { mode: Phaser.Scale.NONE, width: backing.width, height: backing.height, zoom: 1 },
-      backgroundColor: BARROW.pitch,
-      render: { roundPixels: true, antialias: true, pixelArt: false },
-      scene: [sheet],
-    });
-    const unfit = fitGame(game);
     return () => {
-      unfit();
       scene.current = null;
-      game.destroy(true);
-      viewport.set(before);
+      unmount();
     };
   }, []);
 

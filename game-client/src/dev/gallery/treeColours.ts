@@ -9,7 +9,7 @@
  */
 
 import { PASSIVE_NODES } from "@/data/passiveTree";
-import { viewport } from "@/render/viewport";
+import { LOGICAL_HEIGHT, LOGICAL_WIDTH } from "@/render/viewport";
 import type { TreeHue } from "@/utils/canvasPalette";
 import type { FrameRect } from "@/ui/panelFrame";
 import type { TreeLook } from "@/ui/PassiveTreeOverlay";
@@ -31,12 +31,19 @@ export interface SheetEntry {
 }
 
 /**
+ * The view each class's tree is laid in for the sheet: the game's starting view, fixed, so the sheet
+ * and its size never follow whatever view the page is in when it loads. Only each plate's size and
+ * shape are kept; the sheet moves every plate to its own column.
+ */
+const SHEET_VIEW = { width: LOGICAL_WIDTH, height: LOGICAL_HEIGHT } as const;
+
+/**
  * A class's entries: its traversal four first, each once (a slot shares its copy with the others of its
  * picture), then its kickers, its ability and its specializations, in the definition's order.
  */
 export function sheetEntries(cls: string): SheetEntry[] {
   const view = treeView({ class: cls });
-  const layout = treeLayout(viewport, view.nodes, view.links);
+  const layout = treeLayout(SHEET_VIEW, view.nodes, view.links);
   const byLook = new Map<string, SheetEntry & { ids: string[] }>();
   view.nodes.forEach((node, i) => {
     const key = node.kind === "traversal" ? `${node.icon}:${node.hue}` : node.id;
