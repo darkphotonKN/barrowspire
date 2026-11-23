@@ -2115,7 +2115,9 @@ untouched byte for byte.
 > **Edited in place on 2026-11-23 (the coordinator's picks on E1 and E2, still a work-order).**
 > Requirement numbers are kept. W1, W3 and W4 carry the picks; R117 and R130 are restated, and the
 > frame-box acceptance line with R130. See *Decided 2026-11-23: E1 (a), E2 (b)*, after the
-> escalations.
+> escalations. Edited again the same day (I-JS7C8-27, the lean broke a guard of her kept carry): W2
+> carries the change, R122 and R123 and their acceptance lines are restated. See *Decided
+> 2026-11-23: the carry changed under W2*.
 
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
@@ -2128,7 +2130,10 @@ untouched byte for byte.
   stride 0.88, her pace within 1 px/s of `RUN_PACE` (R117, R119).*
 - **W2. Her run keeps today's carry**, the sceptre or focus arm's smaller pump and the tome arm's
   full pump, re-measured under the 20° lean. The carry changes only if the lean breaks a guard or
-  puts the orb or her head over a ceiling, and that is said.
+  puts the orb or her head over a ceiling, and that is said. ***Said 2026-11-23 (I-JS7C8-27):** the
+  lean broke the sceptre-out-of-the-robe guard and tipped the sceptre past its band, so the carry
+  changed, the least that keeps her look: the arm a little further out, the wrist held back
+  (R122, R123).*
 - **W3. The robe.** The robe and leg guards pass in the run on all three looks with no exemption.
   If the sprint's heel kick or knee drive pokes through, the first fix is the robe's back carried
   out in the run (as the Duelist's `ROBE_BACK_CARRY`), the robe at rest unchanged. The shared legs
@@ -2258,6 +2263,36 @@ The coordinator picked on both escalations under the owner's standing word for t
   reported; any other growth (in height, or in width past the pointed cast's own need) escalates.
   *Reason:* the owner's 「法杖要伸直指向怪物像施法一樣」: an elbow bent about 45° (c) or the staff
   dropped about 25° (d) would not read as pointing at the monster.
+
+### Decided 2026-11-23: the carry changed under W2
+
+Built (I-JS7C8-27), her kept carry failed two of R122's and R123's checks under the sprint's lean.
+The 20° lean under her carry (*Facts checked in code*) had been measured wrong on both:
+
+- *Measured,* the kept carry over option (a)'s legs: the sceptre 36.7–48.5° off vertical by the
+  test's sampling (not 30–40.3°; 23.4–37.8° on the 10° lean), past R123's 45; and the shaft's foot
+  0.0006 H inside the robe (`outsideRobe`) on the run's key 1 (0.0033 H clear on the 10° lean).
+  The lean broke a guard, so W2 changes the carry, and says so.
+
+The coordinator, on the owner's standing word 「做好就接著做不用問我」, asked for the least change that
+restores her approved look: the wrist held back to keep today's sceptre lean, the arm out to clear
+the robe, first `RUN_SCEPTRE` x −0.28 with the arm out to `upperArmR` z −0.14, else z −0.13. So:
+
+- **The arm out:** her run's `hold` `upperArmR` z −0.12 → **−0.14** (`SCEPTRE_RUN_OUT`). *Measured:*
+  the robe 0.0027–0.0028 H clear (−0.13 read 0.0011), the peak unchanged.
+- **The wrist held back:** `RUN_SCEPTRE` x −0.1 → **−0.3**, about the 10° the trunk now leans
+  further taken back at the wrist. −0.28, the coordinator's first pick, put the Pyromancer's cage
+  1.294 skull radii from her skull on the run's key 0, under the 1.3 the focus guard asks
+  (`mageLooks.test.mjs` "each focus clears her head and the ground"); −0.13 with −0.28 read 1.293.
+  *Measured* by the wrist at z −0.14 (base, Spellwarden, Pyromancer, skull radii in the run): −0.2
+  1.365 / 1.394 / 1.272; −0.28 1.415 / 1.409 / 1.294; −0.29 1.428 / 1.416 / 1.301; **−0.3 1.442 /
+  1.425 / 1.311**; −0.32 1.474 / 1.441 / 1.336; the kept −0.1 1.453 / 1.457 / 1.351. −0.3 is the
+  least that clears it by more than a hair. The sceptre then leans **26.0–37.3°** off vertical,
+  today's on the 10° lean being 23.4–37.8°.
+- Nothing else in the carry moves: `arms`, `wrist`, `cross`, the tome arm's `hold`, her idle and
+  walk. The looks take it through `FOCUS_STYLE`.
+- The camera check (`seenThroughCloth`) now also runs, committed, on her own figure and each look
+  as the bake poses them (`mageLooks.test.mjs`): 0 vertex-facings at rest and on every moving clip.
 
 ### Facts checked in code (`22cabd3a`)
 
@@ -2404,8 +2439,12 @@ The coordinator picked on both escalations under the owner's standing word for t
 
 #### Her carry under the lean (W2)
 
-122. **The carry is kept.** `WIZARD_STYLE.run`'s `arms`, `wrist`, `cross` and `hold`, and her
-     idle and walk `hold`, are unchanged; the looks take them through `FOCUS_STYLE`. Her run's
+122. **The carry is kept, but for two keys (restated 2026-11-23, W2).** `WIZARD_STYLE.run`'s `arms`,
+     `wrist` and `cross`, and her idle and walk `hold`, are unchanged; in the run's `hold` the
+     sceptre arm stands out to `upperArmR` z −0.14 (`SCEPTRE_RUN_OUT`, was −0.12) and the wrist
+     holds the sceptre back to `RUN_SCEPTRE` x −0.3 (was −0.1), the least that clears the robe and
+     the Pyromancer's cage from her skull and keeps today's sceptre lean (see *Decided 2026-11-23:
+     the carry changed under W2*). The looks take them through `FOCUS_STYLE`. Her run's
      describe holds, on every sample: the sceptre-arm and tome-arm elbows bent 80–100° on every
      key; each hand back past the hip by at least 0.06 H; the sceptre hand crossing in at the front
      (`RUN_CROSS_REACH`, before the torso); the weapon clear of the free arm by more than 0.06 ×
@@ -2414,13 +2453,15 @@ The coordinator picked on both escalations under the owner's standing word for t
 123. **The bands the lean moves, restated, not tuned away (W2).** The 20° lean lowers her chest, so:
      (i) the sceptre hand peaks at 0.56–0.59 H (*measured* 0.574), under her chest bone's height and
      never at the shoulder, in place of `SCEPTRE_RUN_PEAK` 0.61 ± 0.01, which stays the knight-era
-     shared run's constant; (ii) the sceptre leans 15–45° off vertical on every sample (*measured*
-     30–40.3° by the test's sampling) in place of `SCEPTRE_RUN_TILT` 15–40°: the trunk leans 10°
-     further and the sceptre with it; (iii) the tome hand's front height against the chest bone is
+     shared run's constant; (ii) *restated 2026-11-23:* the sceptre leans 24–40° off vertical on
+     every sample (*measured* 26.0–37.3° by the test's sampling, the wrist taking back the trunk's
+     further 10°; 23.4–37.8° on the 10° lean), inside the owner-approved 15–45°, in place of
+     `SCEPTRE_RUN_TILT` 15–40° (`WIZARD_SPRINT_TILT`; the kept carry read 36.7–48.5°); (iii) the tome hand's front height against the chest bone is
      recorded (*measured* 0.022 H under it), not tuned away, as the mercenary's free hand was (R101).
-     No guard broke and no ceiling was crossed: the orb's top stands at 0.67–0.81 H, under her crown
-     (about 0.11 H over the head bone's 0.76–0.82 H), and nothing went into her head. So the carry is unchanged (W2). Each band is judged
-     at the contact sheet (R134).
+     As written this said no guard broke and the carry was unchanged; built, the kept carry broke the
+     sceptre-out-of-the-robe guard and the band in (ii), so W2 changed it (R122). Nothing goes into
+     her head, and each focus stays 1.3 skull radii from her skull. Each band is judged at the
+     contact sheet (R134).
 
 #### The pointed cast (W4; E2)
 
@@ -2538,10 +2579,11 @@ Bake (`npm test` in `game-client`: `classMotion.test.mjs`, `clips.test.mjs`, `cl
 - [ ] The leg guard, the seen-through-the-cloth check and the scapular-over-gown check pass the
       three looks on every clip they carry, with nothing added to `KNOWN_CLIPPING` or
       `MIRRORED_LEGACY`, the gown and its springs unchanged (R120).
-- [ ] Her carry's keys are unchanged; the elbows, the hands back past the hip, the cross-in, the
+- [ ] Her carry's keys are unchanged but the run's `upperArmR` z −0.14 and `RUN_SCEPTRE` x −0.3
+      (W2); the elbows, the hands back past the hip, the cross-in, the
       free-arm clearance, the orb ahead of the hand, the sceptre outside the robe, the carry out
       of the body and the head, and the normal grip pass on her run (R122).
-- [ ] The sceptre hand peaks at 0.56–0.59 H; the sceptre 15–45° off vertical on every sample; the
+- [ ] The sceptre hand peaks at 0.56–0.59 H; the sceptre 24–40° off vertical on every sample; the
       tome hand's front height recorded (R123).
 - [ ] The cast keeps 7 keys at 12 fps with the strike and the glow peak at key 3 (R124).
 - [ ] On keys 3 and 4: the staff within 10° of the facing in plan and 0–15° below level; the
