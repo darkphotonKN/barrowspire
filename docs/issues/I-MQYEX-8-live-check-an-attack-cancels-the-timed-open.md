@@ -3,7 +3,7 @@ id: I-MQYEX-8
 status: open
 implements: FS-MQYEX
 blocked_by: [I-MQYEX-7]
-labels: [blocked]
+labels: []
 title: "FS-MQYEX slice 8: the owner's in-game check that an attack or cast cancels the timed open (HITL, Nick)"
 ---
 Implements FS-MQYEX §Change: An attack cancels the timed open

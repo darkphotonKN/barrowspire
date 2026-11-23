@@ -1,6 +1,6 @@
 ---
 id: I-1D6BX-6
-status: open
+status: done
 implements: FS-1D6BX
 blocked_by: []
 labels: [ready-for-agent]
