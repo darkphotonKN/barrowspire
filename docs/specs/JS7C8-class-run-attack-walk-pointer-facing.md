@@ -1821,8 +1821,10 @@ only to the class band 180–220 (classMotion.test.mjs:492-495). The options:
     That is the sprint's own flight lift (0.06 H, `ARCHER_SPRINT_STEP.lift`), under his idle's
     0.131 H (*measured*). *Reason:* the owner, 「不要拖地」, and a margin that reads at game scale.
 100. **The sway (M3).** The trailing arm swings with the stride: the upper arm's angle behind the
-    trunk varies by **12–26° peak to peak over the cycle** (about ±6° to ±13°), back with the left
-    leg forward, as the shared pump's phase has it (clips.js:279, `swing`). It is never frozen.
+    trunk varies by **12–26° peak to peak over the cycle** (about ±6° to ±13°), in the shared
+    pump's phase (clips.js:279, `swing`): the natural opposite-arm-and-leg swing, the sword arm
+    furthest back where the free arm swings furthest forward and his right knee leads (about frame
+    7.5). It is never frozen.
     The blade's angle may sway with it, inside R98's band. *Estimate:* the sword arm's `run.arms`
     about 0.2 of the shared pump (`RUN_ARM` 0.85 × 0.2 ≈ 0.17 rad ≈ 10° each way), its
     `run.elbow` near 0, its `run.cross` 0.
