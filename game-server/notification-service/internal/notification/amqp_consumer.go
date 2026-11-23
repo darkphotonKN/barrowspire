@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 
 	pb "github.com/darkphotonKN/barrowspire-server/common/api/proto/events"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
-	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"google.golang.org/protobuf/proto"
 )
@@ -39,13 +39,6 @@ func GetEventRetryConfigs() []EventRetryConfig {
 			Exchange:   commonconstants.AuthEventsExchange,
 			WorkQueue:  commonconstants.NotificationMemberSignedUpQueue,
 			DLQKey:     commonconstants.NotificationMemberSignedupFailed,
-		},
-		{
-			EventType:  "game.ended",
-			RoutingKey: commonconstants.GameMatchEnded,
-			Exchange:   commonconstants.GameEventsExchange,
-			WorkQueue:  commonconstants.NotificationGameEndQueue,
-			DLQKey:     commonconstants.NotificationGameEndFailed,
 		},
 		{
 			EventType:  "member.verification_requested",
@@ -86,7 +79,6 @@ var MaxRetries = len(RetryLevels)
 type ConsumerService interface {
 	ProcessMemberSignedUp(ctx context.Context, payload *commonconstants.MemberSignedUpEventPayload) error
 	ProcessItemCreated(ctx context.Context, payload *pb.ItemCreatedEvent) error
-	ProcessGameEnded(ctx context.Context, eventID uuid.UUID, payload *pb.MatchEndedEvent) error
 	ProcessVerificationRequested(ctx context.Context, payload *commonconstants.MemberVerificationRequestedEventPayload) error
 }
 
@@ -129,7 +121,6 @@ func NewConsumer(service ConsumerService, letters LetterRequests, channel *amqp.
 func (c *Consumer) Listen() {
 	go c.consumeMemberSignedUp()
 	go c.consumeItemCreated()
-	go c.consumeGameEnded()
 	go c.consumeVerificationRequested()
 	go c.consumeLetterRequested()
 	slog.Info("Notification consumer listening for events...")
@@ -229,71 +220,6 @@ func (c *Consumer) handleMemberSignedUp(msg amqp.Delivery) {
 	err := c.service.ProcessMemberSignedUp(ctx, &payload)
 
 	c.handleResult(msg, err, retryCount, "member.signedup", payload.UserID)
-}
-
-// ==========================================
-// Consumer: Game Ended
-// ==========================================
-
-func (c *Consumer) consumeGameEnded() {
-	msgs, err := c.channel.Consume(
-		commonconstants.NotificationGameEndQueue,
-		"",    // consumer
-		false, // auto-ack
-		false, // exclusive
-		false, // no-local
-		false, // no-wait
-		nil,   // args
-	)
-	if err != nil {
-		slog.Error("Failed to register consumer", "error", err)
-		return
-	}
-
-	slog.Info("Started consuming game.ended events")
-
-	for msg := range msgs {
-		c.handleGameEnded(msg)
-	}
-}
-
-func (c *Consumer) handleGameEnded(msg amqp.Delivery) {
-	retryCount := getRetryCount(msg)
-
-	// The dedup key is the producer's outbox row id, stamped as MessageId. A
-	// delivery without a usable one is a producer bug retry cannot fix, and
-	// processing it would bypass dedup: dead-letter it before any work,
-	// field visit or not (FS-PJPNA Req 1, 3).
-	eventID, err := uuid.Parse(msg.MessageId)
-	if err != nil {
-		slog.Error("game ended message id is missing or not a uuid, dead-lettering it",
-			"message_id", msg.MessageId,
-			"error", err,
-		)
-		if nackErr := msg.Nack(false, false); nackErr != nil {
-			slog.Error("Failed to dead-letter game ended message", "message_id", msg.MessageId, "error", nackErr)
-		}
-		return
-	}
-
-	var payload pb.MatchEndedEvent
-	if err := proto.Unmarshal(msg.Body, &payload); err != nil {
-		slog.Error("Failed to parse MatchEndedEvent", "error", err)
-		msg.Nack(false, false)
-		return
-	}
-
-	slog.Info("Received game ended event",
-		"session_id", payload.SessionId,
-		"players_count", len(payload.Players),
-		"retry_count", retryCount,
-	)
-
-	ctx := context.Background()
-	err = c.service.ProcessGameEnded(ctx, eventID, &payload)
-
-	// Use session_id as identifier
-	c.handleResult(msg, err, retryCount, "game.ended", payload.SessionId)
 }
 
 // ==========================================
@@ -564,6 +490,11 @@ func SetupAMQPInfrastructure(channel *amqp.Channel) error {
 		return err
 	}
 
+	// 6. Retired Queues
+	if err := deleteRetiredQueues(channel); err != nil {
+		return err
+	}
+
 	slog.Info("✓ AMQP infrastructure ready")
 	return nil
 }
@@ -728,5 +659,40 @@ func setupWorkQueues(channel *amqp.Channel) error {
 		slog.Debug("✓ Work queue", "name", config.WorkQueue)
 	}
 
+	return nil
+}
+
+// ==========================================
+// 6. Retired Queues
+// ==========================================
+
+// RetiredEventTypes are events this service once consumed and no longer does.
+// match.ended still flows for other services; only this consumer stopped
+// reading it (match-result notifications retired with the move off matches).
+var RetiredEventTypes = []struct {
+	EventType string
+	WorkQueue string
+}{
+	{EventType: "game.ended", WorkQueue: commonconstants.NotificationGameEndQueue},
+}
+
+// deleteRetiredQueues removes a retired event's work queue and retry queues.
+// Left in place, a durable queue still bound to its exchange keeps collecting
+// every published event with nobody to read it. Deleting a queue that is
+// already gone succeeds, so this is safe on every boot.
+func deleteRetiredQueues(channel *amqp.Channel) error {
+	for _, retired := range RetiredEventTypes {
+		queues := []string{retired.WorkQueue}
+		for _, retry := range RetryLevels {
+			queues = append(queues, "retry."+retry.Level+"."+retired.EventType)
+		}
+		for _, q := range queues {
+			purged, err := channel.QueueDelete(q, false, false, false)
+			if err != nil {
+				return fmt.Errorf("delete retired queue %s: %w", q, err)
+			}
+			slog.Debug("✓ Retired queue removed", "name", q, "dropped_messages", purged)
+		}
+	}
 	return nil
 }
