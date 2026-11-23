@@ -858,12 +858,13 @@ describe("the archer's sprint (FS-JS7C8 § Change: The archer's sprint and low-r
     return cov / (sd(a, ma) * sd(b, mb));
   };
 
-  it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own (R66, R68)", () => {
+  it("is her own clip: 8 frames looping at 16 fps, the cloth carried at the run's speed 2.5, on a clip set of her own with no attack on the move (R66, R68, R79)", () => {
     expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
     expect(ARCHER_SHEET.animations).not.toBe(RUNNING_CLASS_ANIMATIONS);
     expect(ARCHER_SHEET.scale).toBe(1.5);
-    // every other clip spec as the running classes carry it (I-JS7C8-18 drops her attacks on the move)
-    for (const [anim, other] of Object.entries(RUNNING_CLASS_ANIMATIONS)) if (anim !== "run") expect(ARCHER_SHEET.animations[anim], anim).toEqual(other);
+    // idle, walk, attack, death and her run, in that order: no walk_attack, no backpedal_attack (D7, D8)
+    expect(Object.keys(ARCHER_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(ARCHER_SHEET.animations[anim], anim).toEqual(RUNNING_CLASS_ANIMATIONS[anim]);
   });
 
   it("leans her trunk about 20° from the hips, the head brought back to look ahead and held steady (R67, D1)", () => {

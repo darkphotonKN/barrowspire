@@ -234,6 +234,16 @@ describe("selectAnimation: the run, and the backward step only while attacking (
       { animation: "attack", facing: "n", direction: 6 },
     ],
     [
+      "a sheet with run and no attack on the move plays the whole attack, turned to the aim, while attacking on the move (the archer's, FS-JS7C8 R80)",
+      { ...swinging(aimNorth, south), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "a sheet with run and no attack on the move runs turned to its movement when not attacking (R80)",
+      { velocity: south, facing: "n", run: true },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
       "attacking while standing is the whole-body attack",
       { attacking: true, aim: aimNorth, ...full },
       { animation: "attack", facing: "n", direction: 6 },
@@ -291,6 +301,12 @@ describe("selectAnimation: the run, and the backward step only while attacking (
     expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
     expect(got.timeScale).toBeGreaterThanOrEqual(0.9);
     expect(got.timeScale).toBeLessThanOrEqual(1.1);
+  });
+
+  it("should play the run at speed / RUN_PACE on a sheet with run and no attack on the move (the archer's, R80)", () => {
+    const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, run: true }));
+    expect(got.animation).toBe("run");
+    expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
   });
 
   it("should cap the run's playback as the walk's for a burst", () => {
@@ -449,7 +465,11 @@ describe("the shipped character sheets", () => {
   const LOOK_SHEETS = Object.keys(manifest.sheets).filter((name) => /^char_(knight|archer|wizard|mercenary)_(?!base$)/.test(name));
   const CLASS_OR_LOOK = [...CLASS_SHEETS, ...LOOK_SHEETS];
 
-  it.each(CLASSES)(
+  // the archer's sheets dropped theirs with her sprint (FS-JS7C8 § Change: The archer's sprint and
+  // low-ready bow R79); the other three classes keep theirs
+  const WALK_ATTACKERS = ["warrior", "mage", "mercenary"];
+
+  it.each(WALK_ATTACKERS)(
     "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
     (cls) => {
       const { attack, walk_attack: walkAttack } = manifest.sheets[characterSheet(cls)].animations;
@@ -463,6 +483,19 @@ describe("the shipped character sheets", () => {
   it("should give walk_attack to the four classes and their spec looks alone, never a creature or a resident (FS-3V7GC)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
       if (!CLASS_OR_LOOK.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
+  });
+
+  it("should give the archer and her looks her five clips alone: no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)", () => {
+    const hers = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_archer_"));
+    expect(hers.sort()).toEqual(["char_archer_base", "char_archer_hunter", "char_archer_shadow_ranger"]);
+    for (const name of hers) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // her sprint: 8 frames looping at 16 fps, in the 8 facings (R68)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
   });
 
   // the four classes at 1.5x since their run re-bakes (FS-HF0WW § Change: Class sheets at 1.5x

@@ -509,9 +509,15 @@ describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法
  * "弓箭手後退攻擊 腳跟處也會穿過斗篷".
  */
 describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guard measures a leg through the cloth)", () => {
-  it.each(["knight", "archer"])("the %s's cloak stays outside the legs and boots at rest, through the walk, the run, the attack and both attacks on the move at 1.5x", (cls) => {
+  // the archer's sheets carry no attack on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
+  const CLOAKED = {
+    knight: ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"],
+    archer: ["idle", "walk", "run", "attack"],
+  };
+  it.each(Object.entries(CLOAKED))("the %s's cloak stays outside the legs and boots on every clip its sheet carries at 1.5x: %j", (cls, anims) => {
+    expect(anims.every((anim) => anim in SHEETS[cls])).toBe(true);
     const { rig, posesOf } = dressed(cls);
-    for (const anim of ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"]) {
+    for (const anim of anims) {
       const clips = cloakClearance(rig, posesOf(anim));
       expect(clips[anim].px, `${cls} ${anim} frame ${clips[anim].frame}`).toBeLessThanOrEqual(clearanceLimit(1.5));
     }
@@ -572,7 +578,8 @@ describe("the archer's quiver rides over her cloak (owner 2026-11-12: \"弓箭�
     expect(ARCHER_QUIVER.tilt).toBeLessThanOrEqual(20);
   });
 
-  it.each(["idle", "run", "walk", "attack", "walk_attack", "backpedal_attack", "death"])("keeps the whole case outside the cloak on every frame of %s, the fletching over the right shoulder", (anim) => {
+  // every clip her sheet carries: no attack on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
+  it.each(["idle", "run", "walk", "attack", "death"])("keeps the whole case outside the cloak on every frame of %s, the fletching over the right shoulder", (anim) => {
     for (const p of posesOf(anim)) {
       p.apply();
       rig.root.updateMatrixWorld(true);

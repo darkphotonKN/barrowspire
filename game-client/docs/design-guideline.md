@@ -297,7 +297,17 @@ lit) while the player stands inside.
   shows through a cloak or a garment, and a quiver rides over the cloak, never sunk into it
   (FS-HF0WW). A class with `run` walks the legs of each over 0.75 walk
   cycles, so neither outpaces the slowed ground; no sheet carries a standalone backpedal
-  (FS-JS7C8, the archer first). A class's attack moves the whole body: a wind-up opposite the
+  (FS-JS7C8, the archer first). The archer's run is a sprint, the first class redone: the trunk
+  leaning about 20° forward from the hips, a quicker, shorter stride (16 fps against the others'
+  14, the pace held at the shared one) with the knee driven high and the heel kicked up behind, a
+  flight in each step and a bob never softer than the shared run's, the head steady and looking
+  ahead; no arm pump, the bow held two-handed low in front at the ready (the left fist on the grip
+  before the belly, the right hand on the braced string, no draw, no arrow), about 45° off
+  vertical, its upper limb forward and up under the crown, its lower limb back and down outside the
+  left leg. Attacking no longer moves her (the pin), so her sheets, and her looks', carry no
+  `walk_attack` and no `backpedal_attack`: she plays `attack`, turned to her aim, moving or not.
+  The other classes keep both until their own runs are redone (FS-JS7C8 § Change: The archer's
+  sprint and low-ready bow). *(Amended with FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
   strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
   curve, fastest through the strike and eased at its ends, the weight onto the front foot, a
   follow-through and a recover, still 7 keys at 12 fps with the strike at key 3. A slash is a

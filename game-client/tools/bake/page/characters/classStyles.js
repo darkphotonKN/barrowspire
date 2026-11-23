@@ -2,7 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
-import { CLEAVE_CARRY, RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose, withOffhand } from "./clips.js";
+import { ANIMATIONS, CLEAVE_CARRY, RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose, withOffhand } from "./clips.js";
 
 /**
  * How the playable classes carry their weapon (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪
@@ -218,12 +218,15 @@ export const ARCHER_LOW_READY = pose({
 });
 
 /**
- * The archer's sheet at 1.5x (ADR-0076): the running class's clips (FS-JS7C8), her run her own
- * sprint (§ Change: The archer's sprint and low-ready bow R68): 16 fps over a shorter stride, so its
- * measured pace stays at RUN_PACE, the cloth carried at the shared run's speed. A clip set of her
- * own: RUNNING_CLASS_ANIMATIONS, the wizard's, is not changed.
+ * The archer's sheet at 1.5x (ADR-0076), a clip set of her own (FS-JS7C8 § Change: The archer's
+ * sprint and low-ready bow R79, D7, D8): the four, and her run, her own sprint (R68): 16 fps over a
+ * shorter stride, so its measured pace stays at RUN_PACE, the cloth carried at the shared run's
+ * speed. Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
+ * no `walk_attack` and no `backpedal_attack`, and the client plays her `attack` moving or not. The
+ * Hunter and the Shadow Ranger take it through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, the
+ * wizard's, is not changed.
  */
-export const ARCHER_SHEET = { animations: { ...RUNNING_CLASS_ANIMATIONS, run: { ...RUNNING_CLASS_ANIMATIONS.run, fps: 16 } }, scale: 1.5 };
+export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: { ...RUN_ANIMATIONS.run, fps: 16 } }, scale: 1.5 };
 
 export const ARCHER_STYLE = {
   attack: "shot",

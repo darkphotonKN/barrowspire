@@ -112,7 +112,8 @@ describe("the archer's spec looks pass the guards on every clip (FS-1J1CB R11)",
     expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
     expect(MIRRORED_LEGACY.has(sheet)).toBe(false);
     const clips = legClearance(rig, poses);
-    expect(Object.keys(clips ?? {}).sort()).toEqual(expect.arrayContaining(["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"]));
+    // her clips, no attack on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
+    expect(Object.keys(clips ?? {}).sort()).toEqual(["attack", "idle", "run", "walk"]);
     expect(clearanceError(sheet, clips, { scale: r.scale, mirrored: false, known: new Map(), legacy: new Set() })).toBeNull();
   });
 

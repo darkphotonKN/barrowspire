@@ -409,17 +409,6 @@ describe("the archer's draw stays on the aim line (FS-2325V § Change: The arche
     }
   });
 
-  it("holds on every frame of walk_attack, the shot's upper body over the walk", () => {
-    const at = archerBow();
-    clipsFor(archer, RUNNING_CLASS_ANIMATIONS).walk_attack.forEach((p, i) => expectOnTheAimLineInEveryFacing(at, p, `walk_attack frame ${i}`));
-  });
-
-  it("holds on every frame of backpedal_attack, the shot's upper body over the backpedal's legs (FS-JS7C8 R8)", () => {
-    const at = archerBow();
-    const frames = clipsFor(archer, RUNNING_CLASS_ANIMATIONS).backpedal_attack;
-    expect(frames).toHaveLength(14);
-    frames.forEach((p, i) => expectOnTheAimLineInEveryFacing(at, p, `backpedal_attack frame ${i}`));
-  });
 });
 
 describe("the run and the backpedal (FS-JS7C8 §A, §B)", () => {

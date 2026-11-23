@@ -1275,7 +1275,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
      */
     const OWN_CLIPS: Record<string, string[]> = {
       char_knight_base: ["run", "walk_attack", "backpedal_attack"],
-      char_archer_base: ["run", "walk_attack", "backpedal_attack"],
+      // her sprint dropped her attacks on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
+      char_archer_base: ["run"],
       char_wizard_base: ["run", "walk_attack", "backpedal_attack"],
       char_mercenary_base: ["parry", "run", "walk_attack", "backpedal_attack"],
     };
@@ -1374,7 +1375,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const dir of a.frames) expect(dir).toHaveLength(8);
     });
 
-    it.each(RUNNING)("gives %s backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", (name) => {
+    it.each(RUNNING)("gives %s no standalone backpedal (FS-JS7C8 R8)", (name) => {
+      expect(baked.sheets[name].animations).not.toHaveProperty("backpedal");
+    });
+
+    /** The running classes that still attack on the move: every one but the archer (FS-JS7C8 R79). */
+    const BACKPEDALLING = RUNNING.filter((name) => name !== "char_archer_base");
+
+    it.each(BACKPEDALLING)("gives %s backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", (name) => {
       const sheet = baked.sheets[name];
       expect(sheet.animations).not.toHaveProperty("backpedal");
       const a = sheet.animations.backpedal_attack;

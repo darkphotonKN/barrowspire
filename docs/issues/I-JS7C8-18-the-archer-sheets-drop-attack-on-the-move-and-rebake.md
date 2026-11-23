@@ -94,3 +94,35 @@ parties", "The dark-room strip".
   `clips.test.mjs`
 - `game-client/tools/bake/lib/contact.mjs` (notes; the comparison if written there)
 - `game-client/docs/design-guideline.md`
+
+## Built (2026-11-23, agent); waiting on the owner's contact sheet (I-JS7C8-19)
+
+`ARCHER_SHEET` is `{ ...ANIMATIONS, run: { ...RUN_ANIMATIONS.run, fps: 16 } }` at 1.5x, built
+without `withWalkAttack`; the Hunter and the Shadow Ranger take it through `specRow`.
+`animationSelect.ts` and `character.ts` are unchanged. One `npm run bake`; `npm run bake -- --check`
+reports no changes. The bake touched only `archer-0.png`, `archer_hunter-0.png`,
+`archer_shadow_ranger-0.png` and their manifest entries; every other sheet and atlas in
+`manifest.json` is byte-identical to main. The leg, cloak and quiver guards pass the three sheets
+with nothing added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`.
+
+| Atlas | Main 970f2dc7 | Now | RGBA |
+|---|---|---|---|
+| `archer-0` (1 page) | 2532 × 4060, 41.1 MB | 1960 × 2708, 21.2 MB | −48.4% |
+| `archer_hunter-0` (1 page) | 2636 × 3924, 41.4 MB | 1868 × 2840, 21.2 MB | −48.7% |
+| `archer_shadow_ranger-0` (1 page) | 2532 × 4060, 41.1 MB | 1960 × 2708, 21.2 MB | −48.4% |
+
+About −60 MB resident over the three. The frame box holds: 252 × 225 (base, Shadow Ranger) and
+252 × 231 (Hunter), anchors and crowns as on main. The run's own extent grew inside it (base
+x 45–198 → 39–228, y 48–201 → 33–204, in the sheet's px) but stays inside the box the other clips
+already set. Her idle, walk, attack and death frames keep main's trims.
+
+A throwaway check (not committed) intersected every edge of the bow's meshes with the cloak's and
+the quiver's triangles on the 8 baked run frames of all three looks: no crossing. Its control found
+the expected crossings of the grip through the left fist and the string through the right.
+
+The comparison for the owner (gitignored, in the worktree's `game-client/tools/bake/review/archer-sprint/`):
+`run-old-vs-new-1x.png` (game scale), `run-old-vs-new-2x.png` (×2), `run-old-vs-new-detail.png`
+(the baked px ×2), each the three sheets' main run beside the new, 8 facings × 8 frames, and
+`run-old-vs-new-anim.html`, each facing old | new, playing at its fps × 200 / 194. The regular,
+looks (`contact-looks-archer.png`) and dark-room (`contact-darkroom-archer.png`) sheets in
+`game-client/tools/bake/review/` are regenerated with her five clips.
