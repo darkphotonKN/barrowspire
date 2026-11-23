@@ -1064,8 +1064,15 @@ Date: 2026-11-23
 > Vitality.) Decision: [ADR-0089](../adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md),
 > amending ADR-0080 for the tree's pictures only.
 >
+> **Owner change, 2026-11-23** (same day, before any code drew it), asked whether open nodes should
+> go bronze: 「我說的是激活天賦後的圖示目前是暗的 要變成有顏色 但不是白一點 是要有圖案適合的配色 不是全部都用古銅色」. So
+> an open (rank-0) node keeps V29's near-white `TREE_INK` exactly as today, and charter default T1's
+> "open is plain bronze" is withdrawn; a lit node takes a colour that suits its picture, read as that
+> colour, not whiter and not bronze for everything, so its bronze mix drops from 35% to a light touch
+> (10%, within 10–15%). L1, L3, L7, L12 and the criteria below are edited in place for it.
+>
 > **What this changes in § Change: Tree v2:** V29's **Ink** clause (one near-white ink for every
-> picture that is not greyed). **Unchanged:** V25's states and which of them are greyed, V29's lit
+> picture that is not greyed), for lit nodes only. **Unchanged:** V25's states and which of them are greyed, V29's ink on open nodes, V29's lit
 > plate, its pictures and its lock mark, V24's links, every plate's shape, edge and fill, the hover
 > ring, the rank labels, the tooltips, and everything outside the overlay.
 >
@@ -1074,9 +1081,9 @@ Date: 2026-11-23
 ### Summary
 
 A node the character holds now looks switched on. Its picture takes a colour of its own, by what
-the node gives (a held Vitality's heart is red, a held Searing's flame ember), mixed with the badges'
-bronze and lit from above like them, and a soft halo of that colour glows behind it. A node open to
-take is plain bronze, a step dimmer; a closed or locked node stays greyed. So a glance tells what
+the node gives (a held Vitality's heart is red, a held Searing's flame ember), with a light touch of the
+badges' bronze and lit from above like them, and a soft halo of that colour glows behind it. A node
+open to take keeps today's near-white; a closed or locked node stays greyed. So a glance tells what
 is held, what can be taken, and what each held node is for.
 
 ### Requirements
@@ -1085,20 +1092,22 @@ Numbered 1–14 below and cited as **L1–L14**.
 
 #### §L-A. Which ink a picture takes
 
-1. **Three inks, by the node's state** *(charter default T1 — reason: 「點亮後 內容icon要跟著變亮」)*:
+1. **Three inks, by the node's state** *(charter default T1, as the owner corrected it the same day —
+   reason: 「點亮後 內容icon要跟著變亮」; 「是要有圖案適合的配色 不是全部都用古銅色」)*:
    - **greyed** (closed, locked, or available with no point to spend, as `greyed()` rules today):
      `GREYED`, unchanged;
-   - **open** (available and spendable, rank 0): the HUD's plain bronze, `BRONZE`'s tint and its
-     top-lit gradient, at a lower alpha than a lit picture (starting at 0.8; `BRONZE` stands at 0.85);
-   - **lit** (held or max, so rank > 0): the node's own hue (L4–L6), at full alpha, plainly
-     brighter than open.
+   - **open** (available and spendable, rank 0): V29's near-white `TREE_INK` (`palette.hudText`,
+     flat, alpha 1), exactly as today;
+   - **lit** (held or max, so rank > 0): the node's own hue (L4–L6), at full alpha. It reads more
+     alive than open by its colour, its lifted top and its glow, not by being lighter: vellum is the
+     canvas's lightest tone, and the owner asked for colour, 「不是白一點」.
 
    A node `passiveTreeModel` draws locked keeps the greyed ink whatever its rank: locked wins, as
    V25 already rules (`passiveTreeModel.ts` decides `locked` before `held`).
 2. **Every rank above 0 wears the same colour** *(charter default T3 — reason: a smaller v1)*. A
    kicker at 1/3 and at 3/3 look alike; the edge and the rank label still tell max from held (V25).
-3. **V29's near-white `TREE_INK` is retired.** No tree picture is drawn in it; the constant goes
-   with its last reader.
+3. **V29's near-white `TREE_INK` stays, for open nodes only.** No lit picture is drawn in it; the
+   constant is kept.
 
 #### §L-B. The hues
 
@@ -1134,17 +1143,20 @@ Numbered 1–14 below and cited as **L1–L14**.
 
 #### §L-C. The lit ink
 
-7. **Mixed with bronze, lit from above** *(charter default T2 — reason: 「模仿徽章的古銅質感有漸層」)*.
-   A lit ink's tint is its hue mixed toward `BRONZE`'s idle tint by `TREE_BRONZE_MIX`, starting at
-   0.35, and it is drawn through the renderer's own top-lit gradient (`topLit`), not flat, on the
-   same drop shadow.
+7. **A light touch of bronze, lit from above** *(charter default T2, as the owner corrected it —
+   reason: 「模仿徽章的古銅質感有漸層」, and 「不是全部都用古銅色」)*. A lit ink's tint is its hue mixed toward
+   `BRONZE`'s idle tint by `TREE_BRONZE_MIX`, 0.10 (tunable within 0.10–0.15: the bronze is an orange
+   and greys the cool hues, so the low end), and it is drawn through the renderer's own top-lit
+   gradient (`topLit`), not flat, on the same drop shadow. The gradient carries the metal's feel;
+   the mix only keeps the hue in its family.
 8. **A brighter highlight.** A lit ink lifts its top further than bronze's 0.25 (starting at 0.4),
    and toward its hue's own light end, `tint(hue, 0.5)`, not toward the amber bronze lifts to, so a
    hue stays itself at the top. `KnockoutInk` gains the optional fields that say this (how far, and
    toward what); `topLit` reads them and keeps today's lift where an ink does not set them, so every
    other icon draws exactly as before.
-9. **Hover does not change a picture** (V29). The tree marks hover with its ring; the lit and open
-   inks' `hover` equals their `idle`, and the overlay never redraws a picture under the pointer.
+9. **Hover does not change a picture** (V29). The tree marks hover with its ring; the lit inks'
+   `hover` equals their `idle` (as `TREE_INK`'s already does), and the overlay never redraws a
+   picture under the pointer.
 
 #### §L-D. The glow
 
@@ -1168,7 +1180,7 @@ Numbered 1–14 below and cited as **L1–L14**.
 #### §L-E. The fallback, the review page, the guideline
 
 12. **The line fallback is inked the same.** Where the knockout cannot stand, `drawIconLines`
-    draws in the state's ink: the lit ink's mixed tint at full alpha, the open bronze at its alpha,
+    draws in the state's ink: the lit ink's mixed tint at full alpha, the open near-white as today,
     the greyed faint, as today. A slot is never empty (ADR-0080).
 13. **A review page for the owner** *(charter default T7 — reason: the owner retunes single colours
     there, inside the charter)*. A dev gallery family (FS-1819Q, `families.ts`), **Tree colours**:
@@ -1195,12 +1207,13 @@ Numbered 1–14 below and cited as **L1–L14**.
    health nodes from my crit nodes without reading tooltips.
 3. As a mage, I want my held Vitality's heart red, so that it reads as health, like my HP bar.
 4. As a player, I want a held node to glow from inside its plate, so that "active" is unmistakable.
-5. As a player, I want a node I could take now to stay plain bronze, so that I never mistake an
-   offer for something I hold.
+5. As a player, I want a node I could take now to keep its plain near-white, so that I never mistake
+   an offer for something I hold.
 6. As a player, I want closed and locked nodes to stay grey, so that what I cannot take still reads
    as out of reach.
-7. As a player, I want the colours to look like tinted bronze badges, so that the tree keeps the
-   game's old-metal look and never turns into plastic.
+7. As a player, I want each held node's colour to read as its own colour, lit from above like the
+   badges' metal, so that the tree keeps the game's old-metal look without turning everything bronze
+   or plastic.
 8. As a player, I want no held node to look amber or ally-green, so that colour keeps meaning what
    it means elsewhere in the game.
 9. As a player, I want a held kicker to look the same at every rank, with its edge telling max, so
@@ -1226,11 +1239,11 @@ Inks
 - [ ] A held and a max node draw their picture in their hue's lit ink: the hue mixed toward
       `BRONZE`'s tint by `TREE_BRONZE_MIX`, alpha 1, through the top-lit gradient with the lit lift
       (test on the `Knockout` deps and the tints set).
-- [ ] An available, spendable node at rank 0 draws in the open bronze, its alpha under the lit
-      ink's. Closed, locked and available-without-points nodes draw `GREYED` (test, one per state).
+- [ ] An available, spendable node at rank 0 draws in `TREE_INK`, as today. Closed, locked and
+      available-without-points nodes draw `GREYED` (test, one per state).
 - [ ] A locked node holding a rank (inconsistent data) draws greyed with its lock mark.
 - [ ] A kicker at 1/3 and at 3/3 draws the same ink.
-- [ ] No tree picture is drawn in `TREE_INK`; the constant is gone.
+- [ ] No lit picture is drawn in `TREE_INK`; open pictures still are, and the constant stays.
 - [ ] Hovering a node changes no picture's tint or alpha; the ring shows as today.
 
 Hues
@@ -1257,18 +1270,18 @@ Untouched
 Review and check
 - [ ] The Tree colours gallery family shows every class's nodes in the three states at render scale
       1 and 2, each hue named with its value, a live preview per hue. Kranti approves it (HITL).
-- [ ] Browser check (HITL): in town, the tree shows open nodes in bronze, held nodes coloured and
-      glowing, a spend turning a node from bronze to its colour at once.
+- [ ] Browser check (HITL): in town, the tree shows open nodes near-white as today, held nodes
+      coloured and glowing, a spend turning a node from near-white to its colour at once.
 - [ ] `npm test`, `npm run lint`, `npm run lint:fence` and `npx tsc --noEmit` green.
 
 ### Edge States
 
 - **A node the copy lacks** (R42): no picture, no hue, no halo; the fallback glyph as today.
 - **A spend in flight:** the node keeps its old ink until the state shows the new rank (R41,
-  `TreeSpend`); the spend's answer rebuilds the overlay, and the node turns from bronze to its hue
-  in one redraw.
+  `TreeSpend`); the spend's answer rebuilds the overlay, and the node turns from near-white to its
+  hue in one redraw.
 - **A refused spend:** nothing was held, so nothing lights.
-- **No points left:** an open node with no point becomes greyed (as today), so the tree's bronze
+- **No points left:** an open node with no point becomes greyed (as today), so the tree's near-white
   disappears and only held nodes keep colour.
 - **A render-scale change** while open: the knockouts rebuild at the new scale (ADR-0080); the
   halo, on the plate graphics, is unaffected.
@@ -1277,6 +1290,7 @@ Review and check
 
 ### Out of Scope
 
+- Any change to an open node's ink (it stays V29's near-white).
 - New pictures or any change to a picture's shape, the plates, links, lock mark, hover ring, rank
   labels or tooltips.
 - A colour per rank, an animated or pulsing glow, a glow on hover, a glow on the corner row's Tree

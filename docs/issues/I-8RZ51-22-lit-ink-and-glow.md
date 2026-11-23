@@ -4,7 +4,7 @@ status: open
 implements: FS-8RZ51
 blocked_by: [I-8RZ51-21]
 labels: [blocked]
-title: "FS-8RZ51 slice 22: open nodes in bronze, lit nodes in their hue with a brighter highlight and a static glow (game-client)"
+title: "FS-8RZ51 slice 22: open nodes near-white as today, lit nodes in their hue with a brighter highlight and a static glow (game-client)"
 ---
 Implements FS-8RZ51 §Change: A lit node glows in its own colour, §L-A (L1–L3), §L-C (L7–L9), §L-D (L10, L11), §L-E (L12, L14's HUD icons rule)
 
@@ -15,10 +15,9 @@ Implements FS-8RZ51 §Change: A lit node glows in its own colour, §L-A (L1–L3
 - `game-client/src/ui/knockout.ts` and its test:
   - `KnockoutInk` gains optional lift fields (how far, toward what); `topLit` reads them and
     keeps the 0.25 lift toward `interactableBright` where an ink sets none;
-  - the open ink (`BRONZE`'s tint and gradient, alpha 0.8) and a lit ink per hue (the hue mixed
-    toward bronze by `TREE_BRONZE_MIX` 0.35, alpha 1, lifted 0.4 toward `tint(hue, 0.5)`), hover
-    equal to idle;
-  - `TREE_INK` removed
+  - a lit ink per hue (the hue mixed toward bronze by `TREE_BRONZE_MIX` 0.10, alpha 1, lifted 0.4
+    toward `tint(hue, 0.5)`), hover equal to idle;
+  - `TREE_INK` kept for open nodes (owner change, 2026-11-23: no open ink in bronze)
 - `game-client/src/ui/PassiveTreeOverlay.ts` and its test: the ink by state in `drawPlate` /
   `drawPicture`; the halo's stacked discs on the plate graphics after the fill and edge, inside
   the edge line, lit nodes only; the line fallback in the state's ink
@@ -27,8 +26,9 @@ Implements FS-8RZ51 §Change: A lit node glows in its own colour, §L-A (L1–L3
 
 ## What to Build
 
-- Greyed stays `GREYED`. Open (available, spendable, rank 0) is plain bronze, dimmer. Lit (held,
-  max) is its hue mixed with bronze through the top-lit gradient, brighter at the top, full alpha.
+- Greyed stays `GREYED`. Open (available, spendable, rank 0) stays `TREE_INK`, as today. Lit (held,
+  max) is its hue with a light touch of bronze through the top-lit gradient, brighter at the top,
+  full alpha.
   A locked node keeps greyed whatever its rank. Every rank above 0 the same.
 - A soft, static halo in the hue behind a lit picture, inside its plate: a few stacked discs,
   starting at 4, from the plate's inner radius to 0.4 of it, about 0.45 alpha at the centre. Drawn

@@ -4,7 +4,7 @@ status: open
 implements: FS-8RZ51
 blocked_by: [I-8RZ51-22, I-8RZ51-23]
 labels: [blocked]
-title: "FS-8RZ51 slice 24: browser check, open nodes bronze and held nodes coloured and glowing in the real tree (HITL)"
+title: "FS-8RZ51 slice 24: browser check, open nodes near-white and held nodes coloured and glowing in the real tree (HITL)"
 ---
 Implements FS-8RZ51 §Change: A lit node glows in its own colour, §Acceptance Criteria (browser check), §Edge States
 
@@ -16,9 +16,9 @@ no server or migration step.
 1. **The tree at rest.** In town, at 1280×720, P opens the tree for a character holding some
    ranks. Check that:
    - held and max nodes show their picture in their colour with a soft glow inside the plate;
-   - open nodes (a point to spend) are plain bronze, dimmer;
+   - open nodes (a point to spend) are near-white, as before;
    - closed and locked nodes are grey, the lock mark as before.
-2. **A spend.** Spend an open node: it turns from bronze to its colour and glows at once.
+2. **A spend.** Spend an open node: it turns from near-white to its colour and glows at once.
 3. **Colours by meaning.** A mage's held Vitality is red; a held Searing is ember; a held Deep
    Well is the mana bar's blue-green. Nothing held is amber or ally green.
 4. **Hover.** Hover a lit node: the ring shows, the picture does not change.

@@ -2,6 +2,8 @@
 
 Status: accepted
 Date: 2026-11-23
+Corrected: 2026-11-23, the same day, before this record was merged or shipped (see "The owner's
+correction" below). The text is edited in place for that reason alone; once merged it is append-only.
 Scope: `game-client` only: the inks of the passive tree overlay's node pictures
 (`src/ui/PassiveTreeOverlay.ts`, `src/ui/knockout.ts`), the tree's hue tokens (`src/utils/theme.ts`,
 `src/utils/canvasPalette.ts`) and the design guideline's HUD icons rule. Not the icons' shapes, the
@@ -27,11 +29,21 @@ the colours should copy the badges' bronze with its gradient). On the charter: �
 (the point is that once active, the inside glows). ("Hardened Frame" was tree v1's name; in tree v2
 the heart is Vitality.)
 
+**The owner's correction**, the same day, asked whether open (rank-0) nodes should turn bronze:
+「我說的是激活天賦後的圖示目前是暗的 要變成有顏色 但不是白一點 是要有圖案適合的配色 不是全部都用古銅色」 (what I mean is
+that a lit talent's picture is dark today; it must take colour, not just a whiter tone, a colour
+that suits the picture, not bronze for everything). So the open node is not his complaint and keeps
+V29's near-white; the lit node is, and its colour must read as its own hue, not as bronze tinted.
+The first text of this ADR turned open nodes bronze and mixed each hue 35% toward bronze; both are
+withdrawn here.
+
 What the tree draws today (FS-8RZ51 § Change: Tree v2, V29): every picture that is not greyed is the
 same near-white vellum (`TREE_INK`, `palette.hudText`, flat), whether the node is held or only
 open to take. A held node differs from an open one only by its plate's edge and fill. The owner reads
-that as "not lit": a talent the character holds should look switched on, and its colour should say
-what kind of talent it is.
+that as "dark": a talent the character holds should look switched on, and its colour should say
+what kind of talent it is. Vellum is the canvas's lightest tone and the target `tint()` lifts
+toward, so "brighter than near-white" cannot mean lighter; it has to mean coloured (chroma) and
+glowing.
 
 ADR-0080 says every canvas HUD icon is bronze. V29 already left that rule for the tree (vellum),
 without an ADR. This decision records the tree's inks as a whole, so the exception is written down
@@ -42,8 +54,12 @@ Forces:
 - **Colour is a readability channel** on the canvas (design guideline "Gameplay accent"). Amber means
   interactable; arcane green means safe and allies; health is red. A tree hue must not borrow any of
   those meanings it does not have.
-- **No neon** (guideline palette rules). The hues are mixed with bronze and carried by the same
-  top-lit gradient, so they read as tinted bronze badges, not plastic.
+- **No neon** (guideline palette rules). The hues carry a light touch of bronze and the same
+  top-lit gradient, so they read as coloured metal badges, not plastic, while each hue stays itself.
+- **Bronze greys the cool hues.** The HUD bronze is an orange; mixed into a blue, teal or violet it
+  cancels chroma. At 35% the defence blue lost about 28% of its chroma (OKLCH) and the tightest hue
+  pair (health and fire) sat 4.1 OKLab units apart; at 10% they sit 5.7 apart and the warm hues barely
+  move.
 - **The overlay draws once per change** (R41). A glow that animates, or that costs a filter pass on
   every frame the overlay stands, is not wanted for v1. Phaser 4's Glow filter
   (`FilterList#addGlow`) is a framebuffer pass each time its object renders, so it is rejected.
@@ -56,19 +72,20 @@ Recorded without adversarial review: the decisions are charter defaults the owne
 ## Decision
 
 **1. Canvas HUD icons stay embossed bronze knockouts from the one shared renderer** (ADR-0080). The
-one exception is the passive tree's node pictures, and only while a node is lit.
+one exception is the passive tree's node pictures: V29's near-white, recorded here, and, while a
+node is lit, its own hue.
 
 **2. A tree node's picture takes one of three inks, by its state:**
 
 - **Greyed** (closed, locked, or open with no point to take it): `GREYED`, as today.
-- **Open to take, rank 0** (available and spendable): the HUD's plain bronze (`BRONZE`'s tint and
-  gradient), a step dimmer than a lit picture. This replaces V29's near-white ink.
+- **Open to take, rank 0** (available and spendable): V29's near-white `TREE_INK`, unchanged.
 - **Lit** (held or max, rank > 0): its own hue. Every rank above 0 wears the same hue.
 
-**3. A hue is a palette token mixed with bronze.** The ink's tint is the hue mixed about 35% toward
-the HUD bronze, laid through the renderer's existing top-lit gradient, at full alpha. Its highlight
-is brighter than bronze's: the top is lifted further, toward the hue's own light end rather than
-toward amber, so the hue stays itself. Tokens only (ADR-0013): a hue reuses a token whose meaning
+**3. A lit ink is its hue, with a light touch of bronze.** The ink's tint is the hue mixed about 10%
+toward the HUD bronze (`TREE_BRONZE_MIX`, tunable within 10–15%), enough to sit in the metal family
+and no more, laid through the renderer's existing top-lit gradient, at full alpha. Its highlight is
+brighter than bronze's: the top is lifted further (0.4 against 0.25), toward the hue's own light end,
+`tint(hue, 0.5)`, rather than toward amber, so the hue stays itself at the top. Tokens only (ADR-0013): a hue reuses a token whose meaning
 matches it, and anything new is a token in `BARROW` / `BARROW_HEX` first. A tree hue is never amber
 and never arcane green.
 
@@ -90,14 +107,21 @@ picture under the pointer.
 ## Consequences
 
 - **The tree's pictures say what they are once held.** A held Vitality is red, a held Searing ember,
-  and an open node is plain bronze, so a glance tells held from open without reading the plates.
-- **V29's near-white ink is retired.** `TREE_INK` goes. An open node's bronze is less contrast on its
-  amber-lit plate than vellum was (about 2.9:1 against 4.7:1), which is the price of "lit means
-  coloured". The review page shows it, and the step can be tuned there.
-- **Ten hues, and some are close.** After the bronze mix, the warm hues (health, power, fire) and the
-  cool ones (defence, mana, speed, movement) sit about 9–11 ΔE00 apart in the tightest pairs within
-  one class. The pictures differ in shape too, but each hue is checked at render scale 1 on the review
-  page before it ships, and the owner may retune any single hue there.
+  and an open node stays near-white, so a glance tells held from open without reading the plates.
+- **V29's near-white ink stays, for open nodes only.** `TREE_INK` is kept; an open node keeps its
+  4.7:1 on its amber-lit plate.
+- **A lit picture is coloured, not lighter.** Most hues are darker than vellum (OKLCH L 0.61–0.82
+  against 0.81), so a lit node reads "on" by chroma and its glow, not by lightness. Three hues carry
+  less chroma than vellum itself (mana's reused necrotic, speed's frost, the duel's silver), so they
+  lean on their glow; the review page shows them, and a hue the owner finds dull is retuned there.
+- **Contrast is lower than vellum's.** On a held plate a lit ink's body stands 2.7–6.3:1 (its lifted
+  top 3.2–6.3:1), on a max plate 2.2–5.1:1; the warm and blue hues sit under the 3:1 non-text floor on
+  a max plate. Where the halo shows through the cuts at the centre the ink stands about 1.6–2.4:1
+  against it. That is the halo's price; its alpha is shown and tunable on the review page.
+- **Ten hues, and some are close.** After the 10% mix the tightest pairs are health and fire (5.7
+  OKLab units), speed and silver, defence and mana, power and refund (about 7). The pictures differ in
+  shape too, but each hue is checked at render scale 1 on the review page before it ships, and the
+  owner may retune any single hue there.
 - **Two of the hues touch guideline rules** and get a narrow note in the guideline: speed's pale
   frost is not the forbidden neon cyan, and crit's violet is not umbra, which stays the shadow's. Both
   are tree-picture hues only.
