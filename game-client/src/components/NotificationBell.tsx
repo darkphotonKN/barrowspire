@@ -4,17 +4,25 @@ import type { components } from "@/api/generated/schema";
 
 type Notification = components["schemas"]["Notification"];
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ComponentType, type SVGProps } from 'react';
+import {
+  BellIcon,
+  EnvelopeIcon,
+  MegaphoneIcon,
+  SparklesIcon,
+  TrophyIcon,
+  UsersIcon,
+} from '@heroicons/react/24/outline';
 import { apiClient } from '@/utils/api';
 import { useAuthStore } from '@/stores/authStore';
 
-
-// SVG Bell Icon
-const BellIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-  </svg>
-);
+// Line icons, never emoji (design guideline, Iconography).
+const TYPE_ICONS: Record<string, ComponentType<SVGProps<SVGSVGElement>>> = {
+  game: SparklesIcon,
+  achievement: TrophyIcon,
+  system: MegaphoneIcon,
+  friend: UsersIcon,
+};
 
 export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,9 +40,15 @@ export default function NotificationBell() {
       }
     }
 
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setIsOpen(false);
+    }
+
     document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
     };
   }, []);
 
@@ -89,20 +103,8 @@ export default function NotificationBell() {
     }
   };
 
-  const getNotificationIcon = (type: Notification['notification_type']) => {
-    switch (type) {
-      case 'game':
-        return '🎮';
-      case 'achievement':
-        return '🏆';
-      case 'system':
-        return '⚙️';
-      case 'friend':
-        return '👥';
-      default:
-        return '📬';
-    }
-  };
+  const iconFor = (type: Notification['notification_type']) =>
+    (type && TYPE_ICONS[type]) || EnvelopeIcon;
 
   const getTimeAgo = (
     // seconds/nanos are optional: the gateway emits protobuf omitempty, and the
@@ -143,20 +145,22 @@ export default function NotificationBell() {
   return (
     <div className="notification-bell" ref={dropdownRef}>
       <button
-        className="notification-bell-trigger"
+        className={`notification-bell-trigger ${isOpen ? 'open' : ''}`}
         onClick={() => setIsOpen(!isOpen)}
-        aria-label="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
       >
-        <BellIcon className="bell-icon" />
+        <BellIcon className="bell-icon" aria-hidden="true" />
         {unreadCount > 0 && (
           <span className="notification-count">{unreadCount > 99 ? '99+' : unreadCount}</span>
         )}
       </button>
 
       {isOpen && (
-        <div className="notification-dropdown">
+        <div className="header-popover notification-dropdown" role="dialog" aria-label="Notifications">
           <div className="notification-dropdown-header">
-            <h3>Notifications</h3>
+            <h3>Tidings</h3>
             {unreadCount > 0 && (
               <button className="mark-read-btn" onClick={handleMarkAllAsRead}>
                 Mark all read
@@ -165,323 +169,42 @@ export default function NotificationBell() {
           </div>
 
           <div className="notification-list">
-            {isLoading && notifications.length === 0 ? (
+            {notifications.length === 0 ? (
               <div className="notification-empty">
-                <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
-                <p style={{ margin: 0, color: 'var(--color-text-dim)' }}>Loading…</p>
-              </div>
-            ) : notifications.length === 0 ? (
-              <div className="notification-empty">
-                <div style={{ fontSize: '2rem', opacity: 0.3, marginBottom: '0.5rem' }}>🔔</div>
-                <p style={{ margin: 0, color: 'var(--color-text-dim)' }}>No notifications</p>
+                <BellIcon className="notification-empty-icon" aria-hidden="true" />
+                <p className="notification-empty-title">{isLoading ? 'Listening…' : 'No tidings'}</p>
+                {!isLoading && <p className="notification-empty-hint">Word from the barrow gathers here.</p>}
               </div>
             ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`notification-item ${notification.read ? '' : 'unread'}`}
-                  onClick={() => !notification.read && notification.id && handleMarkAsRead(notification.id)}
-                >
-                  <div className="notification-icon">
-                    {getNotificationIcon(notification.notification_type)}
-                  </div>
-                  <div className="notification-content">
-                    <div className="notification-header">
-                      <span className="notification-title">{notification.title}</span>
-                      <span className="notification-time">{notification.created_at ? getTimeAgo(notification.created_at) : ''}</span>
-                    </div>
-                    <p className="notification-message">{notification.message}</p>
-                  </div>
-                </div>
-              ))
+              notifications.map((notification) => {
+                const Icon = iconFor(notification.notification_type);
+                return (
+                  <button
+                    type="button"
+                    key={notification.id}
+                    className={`notification-item ${notification.read ? '' : 'unread'}`}
+                    onClick={() => !notification.read && notification.id && handleMarkAsRead(notification.id)}
+                  >
+                    <span className="notification-icon">
+                      <Icon aria-hidden="true" />
+                    </span>
+                    <span className="notification-content">
+                      <span className="notification-header">
+                        <span className="notification-title">{notification.title}</span>
+                        <span className="notification-time">
+                          {notification.created_at ? getTimeAgo(notification.created_at) : ''}
+                        </span>
+                      </span>
+                      <span className="notification-message">{notification.message}</span>
+                    </span>
+                    {!notification.read && <span className="notification-unread-dot" aria-label="Unread" />}
+                  </button>
+                );
+              })
             )}
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .notification-bell {
-          position: relative;
-        }
-
-        .notification-bell-trigger {
-          position: relative;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          width: 36px;
-          height: 36px;
-          background: transparent;
-          border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
-          border-radius: 6px;
-          color: var(--color-brass-bright);
-          cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .notification-bell-trigger:hover {
-          background: color-mix(in srgb, var(--color-brass) 5%, transparent);
-          border-color: var(--color-border-strong);
-          color: var(--color-text);
-          box-shadow:
-            0 0 20px color-mix(in srgb, var(--color-brass) 20%, transparent),
-            inset 0 0 20px color-mix(in srgb, var(--color-brass) 5%, transparent);
-          transform: translateY(-1px);
-        }
-
-        .bell-icon {
-          width: 18px;
-          height: 18px;
-          filter: drop-shadow(0 0 4px color-mix(in srgb, var(--color-brass) 30%, transparent));
-        }
-
-        .notification-count {
-          position: absolute;
-          top: -6px;
-          right: -6px;
-          min-width: 16px;
-          height: 16px;
-          padding: 0 4px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: linear-gradient(135deg, var(--color-brass) 0%, var(--color-brass-bright) 100%);
-          color: var(--color-bg-dark);
-          border-radius: 8px;
-          font-size: 9px;
-          font-weight: 800;
-          letter-spacing: 0.03em;
-          border: 1.5px solid var(--color-bg-dark);
-          box-shadow:
-            0 0 12px color-mix(in srgb, var(--color-brass) 60%, transparent),
-            0 2px 8px rgba(0, 0, 0, 0.4);
-          animation: emberPulse 2s ease-in-out infinite;
-        }
-
-        @keyframes emberPulse {
-          0%, 100% {
-            box-shadow:
-              0 0 12px color-mix(in srgb, var(--color-brass) 60%, transparent),
-              0 2px 8px rgba(0, 0, 0, 0.4);
-          }
-          50% {
-            box-shadow:
-              0 0 20px color-mix(in srgb, var(--color-brass) 90%, transparent),
-              0 2px 12px rgba(0, 0, 0, 0.6);
-          }
-        }
-
-        .notification-dropdown {
-          position: absolute;
-          top: calc(100% + 0.75rem);
-          right: 0;
-          width: 340px;
-          max-height: 480px;
-          background: linear-gradient(145deg, color-mix(in srgb, var(--color-bg-well) 97%, transparent) 0%, color-mix(in srgb, var(--color-bg-dropdown) 97%, transparent) 100%);
-          backdrop-filter: blur(24px) saturate(180%);
-          border: 1px solid color-mix(in srgb, var(--color-brass) 20%, transparent);
-          border-radius: 8px;
-          box-shadow:
-            0 0 0 1px color-mix(in srgb, var(--color-brass) 10%, transparent),
-            0 8px 32px rgba(0, 0, 0, 0.8);
-          animation: dropdownSlide 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-          overflow: hidden;
-        }
-
-        @keyframes dropdownSlide {
-          from {
-            opacity: 0;
-            transform: translateY(-12px) scale(0.96);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-
-        .notification-dropdown::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 1px;
-          background: linear-gradient(90deg,
-            transparent 0%,
-            color-mix(in srgb, var(--color-brass) 40%, transparent) 50%,
-            transparent 100%);
-        }
-
-        .notification-dropdown-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 0.875rem 1.125rem;
-          border-bottom: 1px solid color-mix(in srgb, var(--color-brass) 8%, transparent);
-          background: color-mix(in srgb, var(--color-brass) 2%, transparent);
-        }
-
-        .notification-dropdown-header h3 {
-          font-family: var(--font-heading);
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: var(--color-primary);
-          letter-spacing: 0.15em;
-          text-transform: uppercase;
-          margin: 0;
-          text-shadow: none;
-        }
-
-        .mark-read-btn {
-          background: transparent;
-          border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
-          color: var(--color-text-dim);
-          font-size: 0.65rem;
-          font-weight: 600;
-          cursor: pointer;
-          padding: 0.25rem 0.625rem;
-          border-radius: 4px;
-          transition: all 0.2s ease;
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
-        }
-
-        .mark-read-btn:hover {
-          background: color-mix(in srgb, var(--color-brass) 8%, transparent);
-          border-color: var(--color-border-strong);
-          color: var(--color-brass-bright);
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
-        }
-
-        .notification-list {
-          max-height: 400px;
-          overflow-y: auto;
-        }
-
-        .notification-list::-webkit-scrollbar {
-          width: 3px;
-        }
-
-        .notification-list::-webkit-scrollbar-track {
-          background: rgba(0, 0, 0, 0.2);
-        }
-
-        .notification-list::-webkit-scrollbar-thumb {
-          background: linear-gradient(180deg,
-            color-mix(in srgb, var(--color-brass) 30%, transparent) 0%,
-            color-mix(in srgb, var(--color-brass) 15%, transparent) 100%);
-          border-radius: 2px;
-        }
-
-        .notification-list::-webkit-scrollbar-thumb:hover {
-          background: linear-gradient(180deg,
-            color-mix(in srgb, var(--color-brass) 50%, transparent) 0%,
-            color-mix(in srgb, var(--color-brass) 25%, transparent) 100%);
-        }
-
-        .notification-empty {
-          padding: 3rem 1.5rem;
-          text-align: center;
-        }
-
-        .notification-item {
-          display: flex;
-          gap: 0.75rem;
-          padding: 0.875rem 1.125rem;
-          border-bottom: 1px solid color-mix(in srgb, var(--color-brass) 4%, transparent);
-          cursor: pointer;
-          transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-          position: relative;
-          background: transparent;
-        }
-
-        .notification-item:last-child {
-          border-bottom: none;
-        }
-
-        .notification-item.unread {
-          background: linear-gradient(90deg,
-            color-mix(in srgb, var(--color-brass) 4%, transparent) 0%,
-            color-mix(in srgb, var(--color-brass) 2%, transparent) 100%);
-        }
-
-        .notification-item.unread::before {
-          content: '';
-          position: absolute;
-          left: 0;
-          top: 0;
-          bottom: 0;
-          width: 2px;
-          background: linear-gradient(180deg,
-            var(--color-primary) 0%,
-            color-mix(in srgb, var(--color-brass) 40%, transparent) 100%);
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
-        }
-
-        .notification-item:hover {
-          background: linear-gradient(90deg,
-            color-mix(in srgb, var(--color-brass) 8%, transparent) 0%,
-            color-mix(in srgb, var(--color-brass) 4%, transparent) 100%);
-          border-color: color-mix(in srgb, var(--color-brass) 10%, transparent);
-        }
-
-        .notification-icon {
-          font-size: 1.125rem;
-          flex-shrink: 0;
-          width: 32px;
-          height: 32px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          background: color-mix(in srgb, var(--color-brass) 6%, transparent);
-          border-radius: 6px;
-          border: 1px solid color-mix(in srgb, var(--color-brass) 15%, transparent);
-          filter: drop-shadow(0 0 6px color-mix(in srgb, var(--color-brass) 20%, transparent));
-        }
-
-        .notification-content {
-          flex: 1;
-          min-width: 0;
-        }
-
-        .notification-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 0.5rem;
-          margin-bottom: 0.25rem;
-        }
-
-        .notification-title {
-          font-size: 0.8rem;
-          font-weight: 600;
-          color: var(--color-text);
-          letter-spacing: 0.01em;
-          line-height: 1.3;
-        }
-
-        .notification-time {
-          font-size: 0.65rem;
-          color: var(--color-text-muted);
-          white-space: nowrap;
-          flex-shrink: 0;
-          letter-spacing: 0.05em;
-          text-transform: uppercase;
-          font-weight: 500;
-        }
-
-        .notification-message {
-          font-size: 0.75rem;
-          color: var(--color-text-dim);
-          margin: 0;
-          line-height: 1.5;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-        }
-      `}</style>
     </div>
   );
 }
