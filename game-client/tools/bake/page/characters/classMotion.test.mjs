@@ -6,7 +6,6 @@ import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import {
   ANIMATIONS,
-  ATTACKS,
   ATTACK_TURN_LIMIT,
   CLEAVE_CARRY,
   RUNNING_CLASS_ANIMATIONS,
@@ -15,7 +14,6 @@ import {
   RUN_COUNTER,
   RUN_ELBOW,
   RUN_LEAN,
-  add,
   applyPose,
   clipsFor,
   groundPose,
@@ -625,12 +623,12 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
 });
 
 /**
- * The clips a class's carry is held to, those of them its sheet carries: the four and the attacks
- * on the move. The mercenary's and the wizard's sheets carry none on the move (FS-JS7C8 § Change:
- * The mercenary's sprint and trailing sword R107, § Change: The wizard's sprint and pointed cast
- * R131), so theirs are the four; the knight's sheet keeps both (his sheet test, above).
+ * The clips a class's carry is held to: idle, walk, run and attack. No class sheet carries an
+ * attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, § Change:
+ * The wizard's sprint and pointed cast R131, § Change: The knight's sprint, and the
+ * attack-on-the-move clips retired R149), the knight the last (his sheet test, below).
  */
-const CARRIED = ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"];
+const CARRIED = ["idle", "walk", "run", "attack"];
 
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
@@ -875,18 +873,6 @@ describe("the wizard's cast moves with weight (FS-2325V § Change: The class att
 });
 
 /**
- * Her sheets carry no attack on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast
- * R131), so the cast draws none; the knight's attacks on the move still draw his slash from the
- * waist up, key for key at twice the rate.
- */
-describe("the knight's slash is the one attack his walk_attack and backpedal_attack draw from the waist up", () => {
-  const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
-  it.each(["walk_attack", "backpedal_attack"])("%s", (anim) => {
-    clips[anim].forEach((p, i) => expect(p.b.upperArmR, `${anim} @${i}`).toEqual(add(ATTACKS[KNIGHT_STYLE.attack]()[Math.floor(i / 2)]).b.upperArmR));
-  });
-});
-
-/**
  * A slash (FS-2325V § Change: The class attacks move with weight and cut deep R1–R3, R10): the
  * blade's point, keyed on the class's rig and style, cutting a full diagonal from above the
  * character's right shoulder to below its left hip (its left is +x), the strike in the middle.
@@ -951,16 +937,17 @@ describe.each([
 describe("the knight's shield guards through the cut (FS-2325V § Change: The class attacks move with weight and cut deep R3, R10)", () => {
   const rig = rigOf(KNIGHT_BUILD);
   const gear = GEAR.knight(rig);
-  it("keeps the shield's centre before the chest and above the waist on every key of attack, walk_attack and backpedal_attack", () => {
+  // his sheets carry no attack on the move (FS-JS7C8 § Change: The knight's sprint, and the
+  // attack-on-the-move clips retired R149), so the cut is his attack alone
+  it("keeps the shield's centre before the chest and above the waist on every key of attack", () => {
     const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
-    for (const anim of ["attack", "walk_attack", "backpedal_attack"])
-      clips[anim]?.forEach((p, i) => {
-        posed(rig, p);
-        const c = world(gear.other[0]).divideScalar(rig.H);
-        const [chest, hips] = [at(rig, "chest").divideScalar(rig.H), at(rig, "hips").divideScalar(rig.H)];
-        expect(c.y, `${anim} @${i}: above the waist`).toBeGreaterThan(hips.y + 0.05);
-        expect(c.z, `${anim} @${i}: before the chest`).toBeGreaterThan(chest.z + 0.05);
-      });
+    clips.attack.forEach((p, i) => {
+      posed(rig, p);
+      const c = world(gear.other[0]).divideScalar(rig.H);
+      const [chest, hips] = [at(rig, "chest").divideScalar(rig.H), at(rig, "hips").divideScalar(rig.H)];
+      expect(c.y, `attack @${i}: above the waist`).toBeGreaterThan(hips.y + 0.05);
+      expect(c.z, `attack @${i}: before the chest`).toBeGreaterThan(chest.z + 0.05);
+    });
   });
 });
 
@@ -1236,14 +1223,19 @@ describe("the wizard's sprint (FS-JS7C8 § Change: The wizard's sprint and point
  * KNIGHT_STYLE, the Berserker BERSERKER_STYLE), each with its sheet.
  */
 const KNIGHTS = [
-  { name: "knight", style: KNIGHT_STYLE, sheet: KNIGHT_SHEET },
-  { name: "Berserker", style: BERSERKER_STYLE, sheet: BERSERKER_SHEET },
+  { name: "knight", style: KNIGHT_STYLE, sheet: KNIGHT_SHEET, clips: ["idle", "walk", "attack", "death", "run"] },
+  { name: "Berserker", style: BERSERKER_STYLE, sheet: BERSERKER_SHEET, clips: ["idle", "walk", "attack", "death", "run", "attack_offhand"] },
 ];
 
-describe.each(KNIGHTS)("the $name's sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R138–R141; E1 (a))", ({ style, sheet }) => {
+describe.each(KNIGHTS)("the $name's sprint (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R138–R141; E1 (a))", ({ style, sheet, clips: carried }) => {
   const rig = rigOf(KNIGHT_BUILD);
   const spec = sheet.animations.run;
   const run = clipsFor(style, sheet.animations).run;
+
+  it("carries idle, walk, attack, death and the sprint at 1.5x, in that order, the Berserker attack_offhand too: no walk_attack, no backpedal_attack, no off-hand twin of either (R149)", () => {
+    expect(sheet.scale).toBe(1.5);
+    expect(Object.keys(sheet.animations)).toEqual(carried);
+  });
 
   it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at KNIGHT_SPRINT_STRIDE, not the sprint's legs (R138, R139)", () => {
     expect(style.run.lean).toBe(SPRINT_LEAN);

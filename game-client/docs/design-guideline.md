@@ -101,7 +101,7 @@ The target is Ultima Online: realistic, gritty, dark Arthurian, warm where torch
 - **Eight facings.** Characters face one of eight world directions, taken from the velocity the
   client already renders: the local player's character, other players, folk and creatures alike,
   and standing keeps the last one. The pointer never turns a character; it only aims. An attack
-  faces its aim (and so do `walk_attack` and `backpedal_attack`), death keeps the facing it fell
+  faces its aim, death keeps the facing it fell
   in, and a Shadow Shot hold turns to the held aim. Nothing about facing is sent or received
   (FS-JS7C8 §D, §E). *(Amended with FS-JS7C8, owner change 2026-11-12.)*
 - **Occlusion: buildings stay closed, the cut-away is for the room you are in, trees fade.** From
@@ -281,8 +281,7 @@ lit) while the player stands inside.
   hand 30–45° off vertical beside the leg, its head forward, a little out and under the shoulder
   (FS-JS7C8 R2). An attack starts from the carry and settles back to it: the weapon turns at most
   `ATTACK_TURN_LIMIT` (100°) a frame coming out of it and going back.
-  The playable classes add `walk_attack` (the attack over a walk), and, once each is re-baked,
-  `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
+  The playable classes add `run` (a fast run, short of a sprint: the trunk leaning about 10° forward from the hips, the
   arms pumping against the legs with the elbows bent about 90°, the hands to chest height and back
   past the hip, the shoulders turning against the hips, a bounce with a flight in each step, the
   head steady and looking ahead; a weapon in a pumping hand is held in a normal grip, a blade
@@ -290,14 +289,11 @@ lit) while the player stands inside.
   sceptre reasonably upright from a hand that pumps only to the lower chest, 15-40° off vertical;
   at the front of the pump the weapon hand swings in across the front of the torso, a blade a
   little across the body, as a runner's arm crosses), played turned to the way the character
-  moves, and
-  `backpedal_attack` (the attack over the walk's legs run backward, played while attacking more
-  than 90° away from the aim: the same upright stance, pelvis height and stride as `walk_attack`,
-  no crouch, the feet stepping back, the cloak carried out behind the heels). No leg or boot ever
-  shows through a cloak or a garment, and a quiver rides over the cloak, never sunk into it
-  (FS-HF0WW). A class with `run` walks the legs of each over 0.75 walk
-  cycles, so neither outpaces the slowed ground; no sheet carries a standalone backpedal
-  (FS-JS7C8, the archer first). The archer's run is a sprint, the first class redone: the trunk
+  moves. No class carries an attack on the move: the `walk_attack` and `backpedal_attack` clips
+  (FS-HF0WW, FS-JS7C8 §B) are retired, and every class plays its standing attack turned to its
+  aim, moving or not (attacking pins the attacker). No sheet carries a standalone backpedal. No
+  leg or boot ever shows through a cloak or a garment, and a quiver rides over the cloak, never
+  sunk into it (FS-HF0WW). The archer's run is a sprint, the first class redone: the trunk
   leaning about 20° forward from the hips, a quicker, shorter stride (16 fps against the others'
   14, the pace held at the shared one) with the knee driven high and the heel kicked up behind, a
   flight in each step and a bob never softer than the shared run's, the head steady and looking
@@ -320,8 +316,14 @@ lit) while the player stands inside.
   reached out all but straight at chest-to-shoulder height, never over her head. Her sheets, and
   her looks', carry no `walk_attack` and no `backpedal_attack`: she plays the standing cast,
   turned to her aim, moving or not (FS-JS7C8 § Change: The wizard's sprint and pointed cast). The
-  knight keeps both until his own run is redone (FS-JS7C8 § Change: The archer's sprint and
-  low-ready bow). *(Amended with FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
+  knight is the last: he runs with the sprint's lean and its 16 fps cadence on his own legs (the
+  shared fast run's stride shortened 16%, the knee no higher than the shared run's, so his calf
+  never folds up out through the hauberk's back), his blade carried raised as before, the wrist
+  held back under the lean, the shield up before his chest; the Berserker's two axes are carried
+  as before. His sheets, and his looks', carry no `walk_attack` and no `backpedal_attack`: he
+  plays `attack` (the Berserker `attack` or `attack_offhand` by hand), turned to his aim, moving
+  or not (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired).
+  *(Amended with FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
   strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
   curve, fastest through the strike and eased at its ends, the weight onto the front foot, a
   follow-through and a recover, still 7 keys at 12 fps with the strike at key 3. A slash is a
@@ -330,8 +332,7 @@ lit) while the player stands inside.
   thrown out against it; the wizard thrusts her sceptre from the shoulder with her free hand
   opening (FS-2325V § Change: The class attacks move with weight and cut deep), and at the strike
   points it along the aim (FS-JS7C8 § Change: The wizard's sprint and pointed cast).
-  A dual-wielder's off-hand attack (`attack_offhand`, `walk_attack_offhand`,
-  `backpedal_attack_offhand`, the Berserker first) is baked from the attack's upper-body keys
+  A dual-wielder's off-hand attack (`attack_offhand`, the Berserker first) is baked from the attack's upper-body keys
   mirrored left for right, over the same legs, lit by the bake, with the same keys, fps and
   strike key; never a sprite flipped at runtime, which puts the baked key light on the wrong
   side. *(Amended at the owner's pick, 2026-11-21, FS-1J1CB.)* Folk and

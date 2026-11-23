@@ -3,7 +3,7 @@
 // the bake page's canvases and theme.
 
 import * as THREE from "three";
-import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose, withOffhand } from "./clips.js";
+import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, pose, withOffhand } from "./clips.js";
 
 /**
  * How the playable classes carry their weapon (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪
@@ -189,14 +189,17 @@ export const KNIGHT_BUILD = [2.0, { shoulderW: 1.1, torsoW: 1.06 }];
 export const KNIGHT_ATTACK_CLOTH = 0.5;
 
 /**
- * The knight re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 6, FS-HF0WW
- * § Change: Class sheets at 1.5x R35), his attack's cloth carried by KNIGHT_ATTACK_CLOTH, his run
- * the sprint's clip at 16 fps ({@link SPRINT_RUN}; § Change: The knight's sprint, and the
- * attack-on-the-move clips retired R138). It still carries `walk_attack` and `backpedal_attack`
- * until his sheets are re-baked without them (R149).
+ * The knight's sheet at 1.5x (FS-HF0WW § Change: Class sheets at 1.5x R35), a clip set of his own
+ * (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149): the
+ * four, his attack's cloth carried by KNIGHT_ATTACK_CLOTH, and his run, the sprint's clip at 16 fps
+ * ({@link SPRINT_RUN}, R138). Built without withWalkAttack and without RUNNING_CLASS_ANIMATIONS:
+ * attacking no longer moves him (the pin), so his sheets carry no `walk_attack` and no
+ * `backpedal_attack`, and the client plays his `attack` moving or not (R150). The Guardian takes
+ * it through cast.js `specRow`, the Berserker through {@link BERSERKER_SHEET}. He was the last
+ * class to carry them: no class sheet reads RUNNING_CLASS_ANIMATIONS now.
  */
 export const KNIGHT_SHEET = {
-  animations: { ...RUNNING_CLASS_ANIMATIONS, attack: { ...RUNNING_CLASS_ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN },
+  animations: { ...ANIMATIONS, attack: { ...ANIMATIONS.attack, speed: KNIGHT_ATTACK_CLOTH }, run: SPRINT_RUN },
   scale: 1.5,
 };
 
@@ -231,7 +234,9 @@ export const KNIGHT_STYLE = {
 
 /**
  * The Berserker's sheet (FS-1J1CB R9, R28): the knight's clips, and the off-hand twin of each
- * attack (clips.js `withOffhand`), at the knight's 1.5x.
+ * attack (clips.js `withOffhand`), at the knight's 1.5x. His one attack is `attack`, so its one
+ * twin is `attack_offhand` (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move
+ * clips retired R149).
  */
 export const BERSERKER_SHEET = { animations: withOffhand(KNIGHT_SHEET.animations), scale: 1.5 };
 
@@ -309,8 +314,7 @@ export const ARCHER_LOW_READY = pose(
  * shorter stride, so its measured pace stays at RUN_PACE, the cloth carried at the shared run's
  * speed ({@link SPRINT_RUN}). Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
  * no `walk_attack` and no `backpedal_attack`, and the client plays her `attack` moving or not. The
- * Hunter and the Shadow Ranger take it through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, which
- * the knight's sheet reads, is not changed.
+ * Hunter and the Shadow Ranger take it through cast.js `specRow`.
  */
 export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
@@ -362,7 +366,7 @@ export const WIZARD_SPRINT_STRIDE = 0.88;
  * sprint's clip at 16 fps ({@link SPRINT_RUN}, R116). Built without withWalkAttack: attacking no
  * longer moves her (the pin), so her sheets carry no `walk_attack` and no `backpedal_attack`, and
  * the client plays her cast moving or not (R132). The Spellwarden and the Pyromancer take it
- * through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, the knight's, is not changed.
+ * through cast.js `specRow`.
  */
 export const WIZARD_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 

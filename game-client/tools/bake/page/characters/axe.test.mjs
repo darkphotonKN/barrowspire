@@ -63,13 +63,20 @@ const axes = axesOf(rig);
 const specs = BERSERKER_SHEET.animations;
 const clips = clipsFor(style, specs);
 
+/**
+ * The attack clips the Berserker's sheet carries and their off-hand twins: `attack` and
+ * `attack_offhand` alone, his sheets carrying no attack on the move (FS-JS7C8 § Change: The
+ * knight's sprint, and the attack-on-the-move clips retired R149).
+ */
+const TWINS = Object.entries(OFFHAND_OF).filter(([clip]) => clip in specs);
+
 /** The attack clips by the hand that swings each: the right's, and their off-hand twins the left's. */
-const SWINGS = Object.entries(OFFHAND_OF).flatMap(([clip, twin]) => [
+const SWINGS = TWINS.flatMap(([clip, twin]) => [
   [clip, "R"],
   [twin, "L"],
 ]);
 
-/** The frame a clip shows attack key `k` on (a 14-frame clip on the move holds each key two frames). */
+/** The frame a clip shows attack key `k` on. */
 const frameOf = (anim, k) => Math.round((k * specs[anim].frames) / specs.attack.frames);
 
 describe("the Berserker's axes (FS-1J1CB R2)", () => {
@@ -128,7 +135,12 @@ describe("the Berserker's axes (FS-1J1CB R2)", () => {
 });
 
 describe("the Berserker's off-hand clips (FS-1J1CB §D R28)", () => {
-  it.each(Object.entries(OFFHAND_OF))("twins %s as %s: the same frames, fps and loop", (clip, twin) => {
+  it("swings attack and attack_offhand alone: no attack on the move, no off-hand twin of one (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)", () => {
+    expect(TWINS).toEqual([["attack", "attack_offhand"]]);
+    for (const anim of ["walk_attack", "backpedal_attack", "walk_attack_offhand", "backpedal_attack_offhand"]) expect(specs, anim).not.toHaveProperty(anim);
+  });
+
+  it.each(TWINS)("twins %s as %s: the same frames, fps and loop", (clip, twin) => {
     expect(specs[twin]).toEqual(specs[clip]);
     expect(clips[twin]).toHaveLength(specs[clip].frames);
   });
@@ -142,8 +154,8 @@ describe("the Berserker's off-hand clips (FS-1J1CB §D R28)", () => {
     expect(l.at.z).toBeCloseTo(r.at.z, 2);
   });
 
-  it("walks the off-hand attacks on the right-hand clips' own legs", () => {
-    for (const [clip, twin] of Object.entries(OFFHAND_OF))
+  it("stands the off-hand attack on the right-hand clip's own legs", () => {
+    for (const [clip, twin] of TWINS)
       clips[clip].forEach((p, i) => {
         for (const leg of ["thighL", "thighR", "shinL", "shinR", "footL", "footR", "hips"]) expect(clips[twin][i].b[leg], `${twin} @${i} ${leg}`).toEqual(p.b[leg]);
       });

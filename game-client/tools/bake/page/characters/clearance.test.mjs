@@ -397,12 +397,13 @@ function dressed(cls, { cut = "now", specs = SHEETS[cls], gownSegs = 64, panelSe
 }
 
 /**
- * The garmented classes' moving clips, as their sheets carry them: the mercenary's and the
- * wizard's carry no attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing
- * sword R107, § Change: The wizard's sprint and pointed cast R131).
+ * The garmented classes' moving clips, as their sheets carry them: none carries an attack on the
+ * move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, § Change: The wizard's
+ * sprint and pointed cast R131, § Change: The knight's sprint, and the attack-on-the-move clips
+ * retired R149).
  */
 const MOVING = {
-  knight: ["run", "walk", "walk_attack", "backpedal_attack"],
+  knight: ["run", "walk"],
   wizard: ["run", "walk"],
   mercenary: ["run", "walk"],
 };
@@ -531,9 +532,11 @@ describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法
  * "弓箭手後退攻擊 腳跟處也會穿過斗篷".
  */
 describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guard measures a leg through the cloth)", () => {
-  // the archer's sheets carry no attack on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
+  // the archer's sheets carry no attack on the move (FS-JS7C8 § Change: The archer's sprint and
+  // low-ready bow R79), nor the knight's (§ Change: The knight's sprint, and the attack-on-the-move
+  // clips retired R149)
   const CLOAKED = {
-    knight: ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"],
+    knight: ["idle", "walk", "run", "attack"],
     archer: ["idle", "walk", "run", "attack"],
   };
   it.each(Object.entries(CLOAKED))("the %s's cloak stays outside the legs and boots on every clip its sheet carries at 1.5x: %j", (cls, anims) => {
@@ -545,10 +548,11 @@ describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guar
     }
   });
 
-  // a control on the measure, not on a sheet: the archer's sheets no longer carry backpedal_attack
-  // (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79), but her cloak, fed the shared
-  // clip set's backward step with its old cloth (`before`), is still a cloak the guard must catch
-  // a heel through, so she stays beside the knight here
+  // a control on the measure, not on a sheet: the archer's and the knight's sheets no longer carry
+  // backpedal_attack (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79, § Change: The
+  // knight's sprint, and the attack-on-the-move clips retired R149), but each cloak, fed the shared
+  // clip set's backward step with its old cloth (`before`), built explicitly, is still a cloak the
+  // guard must catch a heel through (a fixture on a kept clip replaces it with the code, R155)
   it.each(["knight", "archer"])("reads the %s's cloak as it hung on the backward step before: pressed forward against the legs (the cloth dragged back at half a walk), the heels through it", (cls) => {
     const before = { ...RUNNING_CLASS_ANIMATIONS, backpedal_attack: { ...RUNNING_CLASS_ANIMATIONS.backpedal_attack, speed: -0.5 } };
     const { rig, posesOf } = dressed(cls, { specs: before });

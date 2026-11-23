@@ -1268,13 +1268,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
     ];
 
     /**
-     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35), every
-     * class's attack on the move (FS-HF0WW, FS-3V7GC), and a re-baked class's run and its attack
-     * over the backpedal's legs (FS-JS7C8 §A, §B: the archer first, then the wizard; no
-     * standalone backpedal).
+     * Clips a sheet carries beyond the four: the Mercenary's guard (FS-MAMHR §G.35) and a
+     * re-baked class's run (FS-JS7C8 §A; no standalone backpedal). No class carries an attack on
+     * the move now (FS-HF0WW's and FS-3V7GC's, retired by FS-JS7C8 § Change: The knight's sprint,
+     * and the attack-on-the-move clips retired R149).
      */
     const OWN_CLIPS: Record<string, string[]> = {
-      char_knight_base: ["run", "walk_attack", "backpedal_attack"],
+      // his sprint dropped his attacks on the move, the last class's (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)
+      char_knight_base: ["run"],
       // her sprint dropped her attacks on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
       char_archer_base: ["run"],
       // her sprint and pointed cast dropped her attacks on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)
@@ -1381,20 +1382,22 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(baked.sheets[name].animations).not.toHaveProperty("backpedal");
     });
 
-    /** The running class that still attacks on the move: the knight (FS-JS7C8 R79, R107, R131). */
-    const BACKPEDALLING = RUNNING.filter((name) => name === "char_knight_base");
-
-    it.each(BACKPEDALLING)("gives %s backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", (name) => {
+    /**
+     * The knight's frame box ceiling (FS-JS7C8 § Change: The knight's sprint, and the
+     * attack-on-the-move clips retired R151, K5): his box and anchor no larger than before the
+     * change in either dimension, so a tune round cannot grow either unseen.
+     */
+    const KNIGHT_BOX: [string, { width: number; height: number; x: number; y: number }][] = [
+      ["char_knight_base", { width: 276, height: 228, x: 114, y: 168 }],
+      ["char_knight_guardian", { width: 276, height: 228, x: 114, y: 168 }],
+      ["char_knight_berserker", { width: 267, height: 240, x: 108, y: 183 }],
+    ];
+    it.each(KNIGHT_BOX)("keeps %s's frame box and anchor within the pre-change ones (FS-JS7C8 R151, K5)", (name, max) => {
       const sheet = baked.sheets[name];
-      expect(sheet.animations).not.toHaveProperty("backpedal");
-      const a = sheet.animations.backpedal_attack;
-      const attack = sheet.animations.attack;
-      expect(a).toBeDefined();
-      expect(a.loop).toBe(false);
-      expect([a.frames[0].length, a.fps]).toEqual([14, 24]);
-      expect(a.frames[0].length / a.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
-      expect(a.frames).toHaveLength(8);
-      for (const dir of a.frames) expect(dir).toHaveLength(14);
+      expect(sheet.frameWidth, `${name} width`).toBeLessThanOrEqual(max.width);
+      expect(sheet.frameHeight, `${name} height`).toBeLessThanOrEqual(max.height);
+      expect(Math.round(sheet.anchor.x * sheet.frameWidth), `${name} anchor x`).toBeLessThanOrEqual(max.x);
+      expect(Math.round(sheet.anchor.y * sheet.frameHeight), `${name} anchor y`).toBeLessThanOrEqual(max.y);
     });
 
     /**

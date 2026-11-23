@@ -499,24 +499,13 @@ describe("the shipped character sheets", () => {
 
   // the archer's sheets dropped theirs with her sprint (FS-JS7C8 § Change: The archer's sprint and
   // low-ready bow R79), the mercenary's with his (§ Change: The mercenary's sprint and trailing
-  // sword R107), the wizard's with hers (§ Change: The wizard's sprint and pointed cast R131); the
-  // knight keeps his
-  const WALK_ATTACKERS = ["warrior"];
-
-  it.each(WALK_ATTACKERS)(
-    "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
-    (cls) => {
-      const { attack, walk_attack: walkAttack } = manifest.sheets[characterSheet(cls)].animations;
-      expect(walkAttack?.loop).toBe(false);
-      expect(walkAttack?.frames).toHaveLength(8);
-      // the client times the window by the attack clip, so the two must last alike
-      expect(walkAttack.frames[0].length / walkAttack.fps).toBeCloseTo(attack.frames[0].length / attack.fps, 9);
-    },
-  );
-
-  it("should give walk_attack to the four classes and their spec looks alone, never a creature or a resident (FS-3V7GC)", () => {
+  // sword R107), the wizard's with hers (§ Change: The wizard's sprint and pointed cast R131), and
+  // the knight's, the last, with his (§ Change: The knight's sprint, and the attack-on-the-move
+  // clips retired R149)
+  it("should give no sheet an attack on the move: no walk_attack, backpedal_attack or off-hand twin of either (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)", () => {
     for (const [name, sheet] of Object.entries(manifest.sheets))
-      if (!CLASS_OR_LOOK.includes(name)) expect(sheet.animations.walk_attack, name).toBeUndefined();
+      for (const clip of ["walk_attack", "backpedal_attack", "walk_attack_offhand", "backpedal_attack_offhand"])
+        expect(sheet.animations, `${name} ${clip}`).not.toHaveProperty(clip);
   });
 
   it("should give the archer and her looks her five clips alone: no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)", () => {
@@ -540,6 +529,20 @@ describe("the shipped character sheets", () => {
       expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // the shared sprint: 8 frames looping at 16 fps, in the 8 facings (R94)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
+  });
+
+  it("should give the knight and his looks his five clips, the Berserker attack_offhand too: no walk_attack, no backpedal_attack (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips retired R149)", () => {
+    const his = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_knight_"));
+    expect(his.sort()).toEqual(["char_knight_base", "char_knight_berserker", "char_knight_guardian"]);
+    for (const name of his) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      const five = ["idle", "walk", "attack", "death", "run"];
+      expect(Object.keys(animations), name).toEqual(name === "char_knight_berserker" ? [...five, "attack_offhand"] : five);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // the sprint's clip: 8 frames looping at 16 fps, in the 8 facings (R138)
       expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
       expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
     }
@@ -598,19 +601,17 @@ describe("the shipped character sheets", () => {
     expect(Object.keys(manifest.atlases).filter((k) => k.startsWith("characters-"))).toEqual([]);
   });
 
-  // the client picks the off hand by attack_offhand alone and plays the walking and backpedalling
-  // clips of the same hand, so a sheet with one carries all three, matched to the right hand's
-  it("should give the off-hand clips to the Berserker alone, all three, as long as the right hand's (FS-1J1CB R28)", () => {
+  // the client picks the off hand by attack_offhand, the one off-hand clip now that no sheet
+  // attacks on the move (FS-JS7C8 § Change: The knight's sprint, and the attack-on-the-move clips
+  // retired R149), matched to the right hand's
+  it("should give the off-hand attack to the Berserker alone, as long as the right hand's (FS-1J1CB R28)", () => {
     const withOffhand = Object.keys(manifest.sheets).filter((name) => manifest.sheets[name].animations.attack_offhand);
     expect(withOffhand).toEqual(["char_knight_berserker"]);
-    const clips = manifest.sheets.char_knight_berserker.animations;
-    for (const swing of ["attack", "walk_attack", "backpedal_attack"]) {
-      const left = clips[`${swing}_offhand`];
-      expect(left?.frames, swing).toHaveLength(8);
-      expect(left.fps, swing).toBe(clips[swing].fps);
-      expect(left.frames[0].length, swing).toBe(clips[swing].frames[0].length);
-      expect(left.loop, swing).toBe(false);
-    }
+    const { attack, attack_offhand: left } = manifest.sheets.char_knight_berserker.animations;
+    expect(left?.frames).toHaveLength(8);
+    expect(left.fps).toBe(attack.fps);
+    expect(left.frames[0].length).toBe(attack.frames[0].length);
+    expect(left.loop).toBe(false);
   });
 
   it("should give the mercenary alone the parry clip: raised once, its last frame held (FS-MAMHR §G.35)", () => {
