@@ -62,26 +62,64 @@ build that.
 
 ## Acceptance Criteria
 
-- [ ] RED first: the new digests are green against `23717cbb`. His sprint describe is red against
+- [x] RED first: the new digests are green against `23717cbb`. His sprint describe is red against
       today's run: lean 9.96–10.26° (needs a mean of 19–21°), 14 fps (needs 16), and pace 197.67 at
       14 fps (needs within 1 of 194 at 16). The blade test is red against the kept wrist under the
       lean (10.4–28.7°).
-- [ ] The archer's, the mercenary's and the wizard's run keys and sheets, their other clips, the
+- [x] The archer's, the mercenary's and the wizard's run keys and sheets, their other clips, the
       shared run, and the knight's and the Berserker's idle, walk, attack, death (and
       `attack_offhand`) keys match their digests.
-- [ ] Both runs read `SPRINT_LEAN` and `SPRINT_RUN` by reference, on `RUN_STEP` at the named stride
+- [x] Both runs read `SPRINT_LEAN` and `SPRINT_RUN` by reference, on `RUN_STEP` at the named stride
       0.84. `SPRINT_STEP`, `RUN_STEP` and the other shared constants are unchanged.
-- [ ] His run on his rig, under both styles: lean mean 19–21°, 18–22° on every sample; head pitch
+- [x] His run on his rig, under both styles: lean mean 19–21°, 18–22° on every sample; head pitch
       within 3°, yaw range < 0.08, roll < 0.06; a flight frame each step; ≥ 4 planted keys; lift ≥
       0.045 H; bob 0.056–0.07 H; the pelvis once a step; shoulders < −0.8 correlated, peaking at
       6.5–10°; knee ≥ 0.30 H.
-- [ ] His pace at 16 fps within 1 px/s of `RUN_PACE` 194 (*measured* 193.61); the value recorded here.
-- [ ] `RUN_BLADE` x is 0.45, and nothing else in his carry changes. The blade is 23–42° above level
+- [x] His pace at 16 fps within 1 px/s of `RUN_PACE` 194 (*measured* 193.61); the value recorded here.
+- [x] `RUN_BLADE` x is 0.45, and nothing else in his carry changes. The blade is 23–42° above level
       on every sample (*measured* 23.4–41.7°). The front hand's band is recorded. Every other carry
       test and axe.test.mjs pass.
-- [ ] The leg guard, the cloak guard and the seen-through check pass the three looks on every clip,
+- [x] The leg guard, the cloak guard and the seen-through check pass the three looks on every clip,
       with no exemption added.
-- [ ] `npm test` in `game-client` is green. No file outside `game-client/tools/bake/` changes.
+- [x] `npm test` in `game-client` is green. No file outside `game-client/tools/bake/` changes.
+
+## Built (2026-11-23, agent)
+
+E1 (a) as decided: `KNIGHT_STYLE.run` and `BERSERKER_STYLE.run` read `SPRINT_LEAN` and
+`KNIGHT_SPRINT_STRIDE` **0.84** over `RUN_STEP` (no `run.legs`), and his sheet's `run` is
+`SPRINT_RUN` by reference (`a125c245`). The Berserker takes it through `withOffhand` and the
+Guardian through `KNIGHT_STYLE`. `SPRINT_STEP`, `SPRINT_LEAN`, `SPRINT_RUN`, `RUN_STEP` and every
+other shared constant keep their values.
+
+- **Digests (R137).** Taken at `23717cbb` (`classMotion.test.mjs`): the knight's idle, walk,
+  attack and death keys, the Berserker's idle, walk, attack, death and `attack_offhand` keys, and
+  `KNIGHT_ATTACK_CLOTH` 0.5, beside the archer's, the mercenary's and the wizard's. The knight's
+  sheet-and-clips digest is retired. The shared run's plain-style digest stays. All stay green
+  through the I-JS7C8-34 bake.
+- **RED first.** Against the old run the sprint describe read lean 9.96–10.26° (needs 19–21° on
+  average), 14 fps (needs 16) and pace 197.67 at 14 fps. Under the lean the kept wrist's blade
+  read 10.4–28.7° above level (FS *measured*), under his 23–42°.
+- **His sprint, on his rig, under both styles.** Both join `LEANED_RUNNERS`: lean
+  **20.20–20.50°** (mean **20.35°**), the head steady, a flight frame each step, **6** planted keys,
+  bob **0.064 H**, the pelvis once a step, the shoulders counter-turning inside 6.5–10°. Knee peak
+  **0.310 H**, held to at least 0.30 (the sprint's legs read 0.335). The shared fast run's knight
+  rows, its describe and `SHARED_RUNNERS` are retired (R143).
+- **His pace (R141).** `measurePace` reads **193.61** world px/s at 16 fps, 0.39 under `RUN_PACE`
+  194 (the old run read 197.67 at 14 fps; the sprint's own legs 198.84).
+- **His carry (K2, R144–R148).** `RUN_BLADE` x 0.68 → **0.45**, nothing else. The blade is
+  **23.4–41.7°** above level on every sample, inside his 23–42 and `RUN_BLADE_ELEV`. The tip is at
+  most **0.946 H**, under `RUN_TIP_CEIL` 1.03. The sword hand's front is recorded as a band,
+  **0.01–0.035 H under** the chest bone (*measured* **0.021 H** under; 0.040 H over on the 10°
+  lean). The elbow, the hand back past the hip, the cross-in, the blade across, the free arm, both
+  shields, the head in 8 facings, the tip ahead and the normal grip pass. `axe.test.mjs` passes on
+  the Berserker's run: each edge forward, never up past 30°.
+- **The garments (R142).** The leg guard, the cloak guard and the camera check
+  (`seenThroughCloth`) run on all three figures as the bake poses them (`warriorLooks.test.mjs`),
+  at rest and on every moving clip: **0 px, 0 px, 0 seen**, against the 1.5x limit of 0.667 px.
+  `clearance.test.mjs` reads the same on a rebuilt base. Nothing was added to `KNOWN_CLIPPING` or
+  `MIRRORED_LEGACY`. The hauberk, the surcoat, the cloaks and their springs are unchanged.
+- No bake (that is I-JS7C8-34). The commit touches `classStyles.js`, `classMotion.test.mjs` and
+  `warriorLooks.test.mjs` only.
 
 ## Blocked By
 
