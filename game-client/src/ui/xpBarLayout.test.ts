@@ -52,13 +52,13 @@ describe("xpBarFrame: the piece's place (FS-77DVN §A)", () => {
     expect(XP_BAR_CLEARANCE).toBe(16);
   });
 
-  it("should centre a 188 px piece on 540 at 1080 and a 388 px one on 640 at 1280 (A.2)", () => {
+  it("should centre a 348 px piece on 540 at 1080 and a capped 480 px one on 640 at 1280 (A.2)", () => {
     const narrow = xpBarFrame(view(1080)).piece;
-    expect(narrow.width).toBe(188);
+    expect(narrow.width).toBe(348);
     expect(narrow.x + narrow.width / 2).toBe(540);
 
     const wide = xpBarFrame(view(1280)).piece;
-    expect(wide.width).toBe(388);
+    expect(wide.width).toBe(480);
     expect(wide.x + wide.width / 2).toBe(640);
   });
 
@@ -130,11 +130,11 @@ describe("xpBarFrame: the bar, the studs and the numerals (FS-77DVN §B)", () =>
     expect(numerals.right).toEqual({ x: studs.right.x + 6, y: centre });
   });
 
-  it("should give each end a fixed slot inside the piece, the bar the span between (B.8; 116 px at 1080)", () => {
+  it("should give each end a fixed slot inside the piece, the bar the span between (B.8; 276 px at 1080)", () => {
     const { piece, bar, numerals } = xpBarFrame(view(1080));
     expect(numerals.left.x).toBe(piece.x + XP_END_SLOT_W);
     expect(numerals.right.x).toBe(piece.x + piece.width - XP_END_SLOT_W);
-    expect(bar.width).toBe(116);
+    expect(bar.width).toBe(276);
   });
 
   it("should centre the bar under the piece", () => {

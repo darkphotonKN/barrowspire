@@ -57,8 +57,9 @@ export default function Header() {
 
         <div className="header-right">
           {isAuthenticated ? (
-            <div className="flex items-center gap-2">
+            <div className="header-account">
               <NotificationBell />
+              <span className="header-account-rule" aria-hidden="true" />
               <UserMenu />
             </div>
           ) : (

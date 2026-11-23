@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ChatEntry, ChatLine } from "@/stores/chatStore";
 import { contrastRatio } from "@/render/lighting/lighting";
 import { palette } from "@/utils/canvasPalette";
+import { cornerRowLeft } from "./hudCornerLayout";
 import {
   CHAT_CHANNEL_COLOUR,
   CHAT_VISIBLE_LINES,
+  CHAT_WINDOW_MARGIN,
   CHAT_WINDOW_W,
+  CHAT_WINDOW_X,
   chatEntryColour,
   chatNameSpan,
   CHAT_FOLD_W,
@@ -52,14 +55,22 @@ const system = (text: string): ChatEntry => ({
 });
 
 describe("chatWindowFrame (C18, C19: where the window sits and its shape)", () => {
-  it("should put the panel's bottom edge where the caller says and keep it 420 wide", () => {
+  it("should put the panel's bottom edge where the caller says and keep it 340 wide", () => {
     const frame = chatWindowFrame(10, 500);
 
     expect(frame.panel.x).toBe(10);
     expect(frame.panel.width).toBe(CHAT_WINDOW_W);
-    // widened from 360 at the user's ask, 2026-10-31
-    expect(frame.panel.width).toBe(420);
+    // narrowed from 420 to mirror the corner row, asked 2026-11-24
+    expect(frame.panel.width).toBe(340);
     expect(frame.panel.y + frame.panel.height).toBe(500);
+  });
+
+  it("should end as far in from the left as the corner icon row reaches in from the right", () => {
+    for (const view of [{ width: 1280, height: 720 }, { width: 1920, height: 1080 }]) {
+      const frame = chatWindowFrame(CHAT_WINDOW_X, view.height - CHAT_WINDOW_MARGIN);
+
+      expect(frame.panel.x + frame.panel.width).toBe(view.width - cornerRowLeft(view));
+    }
   });
 
   it("should stack the filter row above the messages and the input below them, inset inside the carved frame", () => {

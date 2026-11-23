@@ -51,7 +51,7 @@ export const ROW_BUTTON_PAD = 24;
 export const ROW_GAP = 8;
 /** How far the row keeps right of the open chat window where centring would bring it closer (R123). */
 const ROW_CHAT_CLEARANCE = 12;
-/** The left edge the row never goes under: 12 right of the open chat window, the same at every width (442). */
+/** The left edge the row never goes under: 12 right of the open chat window, the same at every width (362). */
 const ROW_MIN_LEFT = CHAT_WINDOW_X + CHAT_WINDOW_W + ROW_CHAT_CLEARANCE;
 
 /** A run button's width: its label's, as Phaser measures it, plus its padding each side (R122). */
@@ -147,7 +147,7 @@ export function switcherWidth(labelWidth: number): number {
 
 /**
  * Where the switcher "◄ <name> ►" stands (R159): `SWITCHER_GAP` over the spectate row, centred on
- * the row (on the view with no row), its left edge never under 442, 12 right of the open chat window (R123's
+ * the row (on the view with no row), its left edge never under 362, 12 right of the open chat window (R123's
  * rule). Whole px.
  */
 export function switcherRect(labelWidth: number, row: RowSpan | null, view: { width: number; height: number }): Rect {

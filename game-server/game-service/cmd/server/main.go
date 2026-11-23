@@ -13,8 +13,6 @@ import (
 	"syscall"
 	"time"
 
-	_ "net/http/pprof"
-
 	"github.com/darkphotonKN/barrowspire-server/common/broker"
 	commonconstants "github.com/darkphotonKN/barrowspire-server/common/constants"
 	commoninterceptor "github.com/darkphotonKN/barrowspire-server/common/interceptor"

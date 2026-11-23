@@ -7,12 +7,20 @@
 import type { ChatChannel, ChatEntry, ChatLine } from "@/stores/chatStore";
 import { palette } from "@/utils/canvasPalette";
 import { CHAT_SHOWN_CHANNELS } from "./chatInput";
+import { CORNER_ICON_GAP, CORNER_ICON_W, CORNER_ICONS, CORNER_MARGIN } from "./hudCornerLayout";
 
 /** The window's left edge and its gap from the canvas bottom, in every world (R18). */
 export const CHAT_WINDOW_X = 10;
 export const CHAT_WINDOW_MARGIN = 16;
-/** The window's width (R19). */
-export const CHAT_WINDOW_W = 420;
+/** How far the corner icon row reaches in from the view's right edge, margin included. */
+const CORNER_ROW_REACH =
+  CORNER_MARGIN + CORNER_ICONS.length * CORNER_ICON_W + (CORNER_ICONS.length - 1) * CORNER_ICON_GAP;
+/**
+ * The window's width (R19): its right edge mirrors the corner row's left end (the passive tree's
+ * plate), the same distance in from the left as the row reaches in from the right, so the bottom
+ * corners balance (asked 2026-11-24). Derived from the row, so it follows a seventh icon.
+ */
+export const CHAT_WINDOW_W = CORNER_ROW_REACH - CHAT_WINDOW_X;
 /** How many lines the message area shows at once (R19). */
 export const CHAT_VISIBLE_LINES = 8;
 /** One line's height at the window's 13px body serif. */
