@@ -461,8 +461,13 @@ a bare "the hub". Renaming the dispatcher was considered and not taken.
   three.
 - **Timed open** (FS-MQYEX): the time a player must stand at a shut chest or sack in a run before
   it opens. The server starts it on the reach, counts it on the tick, and ends it: it **completes**
-  (the container opens) or is **cancelled** (the player moved, was hit, or left reach; nothing
-  opens). Each player has their own. **Never "channel"** for this, though design talk calls it
+  (the container opens) or is **cancelled** (the player moved, was hit, left reach, or an attack
+  or cast of theirs went off; nothing opens). An attack or cast **goes off** when the tick resolves
+  it (as a **Resolved cast** is judged) past every refusal (cooldown, cost, pin, a target in
+  range, the tree ability held), or a parry raises the stance; "goes off" names that outcome of a
+  resolved cast, not a separate thing. A refused one, or what a cast made before the reach still
+  does (a projectile, a rain, a trail), cancels nothing (FS-MQYEX §Change: An attack cancels the
+  timed open). Each player has their own. **Never "channel"** for this, though design talk calls it
   one: here a channel is a field channel, a Redis channel or a chat channel (see **Channel**).
 
 ### The message hub (the other `hub`)

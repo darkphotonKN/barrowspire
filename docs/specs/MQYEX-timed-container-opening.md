@@ -386,3 +386,145 @@ Read in the code on 2026-11-11 (`feat/run-chest-open-channel`, cut from `fix/gua
 - Any change to FS-KE075 §J, to the per-player interact throttle, or to the per-container
   throttle for other targets.
 - HTTP, OpenAPI, proto, the generated client, any database, any other service.
+
+## Change: An attack cancels the timed open
+Status: work-order
+Date: 2026-11-24
+
+Owner decision (Nick, 2026-11-24: "在解鎖寶箱時如果攻擊也要中斷", while a chest is being unlocked,
+attacking should interrupt it; decisions approved "核准" 2026-11-24 under the charter). Written
+`--from-thread`: the thread is the owner's locked decisions, so no interview was held. This answers
+the open question D9 was flagged with, and **reverses D9 and §A R13 for attacks and skill casts**:
+from this change, moving, a hit that costs health, leaving reach and an attack or cast that goes
+off each cancel a timed open. Everything D9 named besides attacks and casts still cancels nothing.
+User story 19's "attack ... without losing my open", the server criterion "Attacking ... during a
+timed open do not cancel it" and the out-of-scope line "Cancelling on an attack, a cast" are
+replaced by this section for attacks and casts; their drink and equip halves stand.
+
+No ADR: none covers the timed open's cancel causes (ADR-0086 only places the open bar in the
+world), and which acts cancel is a rule of this capability, recorded here. The thin lines
+("Timed container opening", "Progress shown while a container opens") stay true and unchanged.
+
+Locked decisions (owner approved 2026-11-24; each folded as a charter default with its reason):
+
+- **B1, charter default: any attack or skill cast the server accepts cancels the timed open.**
+  The basic attack and every class ability, the merc's parry included. One the server refuses
+  (on cooldown, too little resource, the caster out of play) cancels nothing. *Reason:* judge the
+  effect, not the message, as D3 does for moving.
+- **B2, charter default: drinking, equipping, taking an item from an open container and using a
+  door still don't cancel.** *Reason:* the owner named attacks only.
+- **B3, charter default: the cancel is silent and private, like the others (R11).** The client is
+  unchanged: the open bar goes with the state (R23), and D13 already gives up a pending reach when
+  the timed open ends with the container still shut (R26). *Reason:* one cancel path on the
+  client, whatever the server's cause.
+- **B4, charter default: judged in R10's order.** On the tick an attack goes off, the cancel is
+  judged before completion, so an attack on the last tick opens nothing. *Reason:* the same rule
+  as a hit on the last tick (D6).
+
+Derived here (chosen by the charter run where the locked decisions were silent; each overridable):
+
+- **E1: "goes off" is the server's own acceptance, read from the tick's combat.** An attack or
+  cast goes off when the combat resolves it past every refusal and spends what it costs, starts
+  its cooldown or, for the parry, raises the stance. A targeted attack with nothing in range to
+  swing at, a pinned caster's attack, a tree ability whose node is not held, and a parry cast
+  while the stance is open or locked out are refused by today's rules and do nothing at all, so
+  they cancel nothing. An attack that goes off and hits nothing (a swing or a fireball into empty
+  ground) cancels. *Reason:* B1's "judge the effect": the combat already decides, on the tick,
+  which casts happen; an `attack` or `cast_skill` message only asks.
+- **E2: tree abilities count.** Earthbreaker, Blink, Arrow Rain and every other ability a
+  `cast_skill` names are class abilities under B1. *Reason:* the owner said "attacking"; the
+  tree's abilities are attacks the player chooses to make, like the class ability.
+- **E3: what an earlier cast left behind cancels nothing.** A projectile still in flight, a
+  falling arrow rain or a burning trail from a cast that went off before the reach is not an
+  attack on a later tick. *Reason:* the timed open asks what the player did while opening; an
+  effect already under way at the reach was not done at the chest.
+- **E4: an attack applied on the reach's own tick cancels it, whatever order the two arrived in.**
+  Both are applied at the start of the tick and the attack goes off in that tick's combat, after
+  the timed open has started. *Reason:* the same reading as "the reach is made while walking":
+  the tick's combat follows the tick's intents (R10).
+
+### Requirements
+
+28. **An attack or a cast cancels.** If, in a tick's combat, an attack or skill cast of the player's
+    goes off (E1), the player's timed open is cancelled. This holds for the basic attack, the class
+    ability, every tree ability (E2) and the mercenary's parry, whether or not it hits anything.
+29. **A refused one does not.** An attack or cast the combat refuses (on cooldown, too little
+    resource, a pinned caster's attack or cast other than the parry, the caster out of play, a
+    targeted attack with nothing in range, a tree ability not held, a parry while the stance is
+    open or locked out) cancels nothing. The pin never refuses a parry.
+30. **Only the player's own act on this timed open.** A projectile, arrow rain or burning trail from
+    a cast that went off before the reach cancels nothing (E3). Another player's attack cancels
+    nobody else's timed open (R11, R14).
+31. **Order on one tick.** R28 is judged with R6–R9: after the tick's movement and combat and
+    before R5. An attack that goes off on the tick the timed open would complete opens nothing
+    (B4). An attack applied on the reach's own tick cancels that timed open (E4).
+32. **Silent and private, as every cancel.** R11 holds: nothing opens, nothing is rolled, nothing
+    is sent, nobody else's timed open changes, and the player may reach again at once, from zero.
+33. **Nothing else cancels.** R13 now reads: drinking, equipping or unequipping, taking an item from
+    an open container and using a door leave the timed open running (B2). A parried strike and a
+    heal still cancel nothing (D4).
+34. **No other change.** No field, message, reply or wire change (R18–R20 hold). The hub and field
+    worlds have no timed opens (R1). The client is unchanged (B3): the bar and the reach follow
+    `timed_open` going absent as for every cancel.
+
+### Acceptance Criteria
+
+**Server (`go test` in `game-server/game-service`)**
+
+- [ ] During a timed open, a basic attack that lands cancels it; so does one that goes off and hits nothing. The container is shut and unrolled, and nothing is sent.
+- [ ] During a timed open, a cast of the class ability that leaves the body where it stands (the mage's triple fireball) cancels it, also when it hits nothing.
+- [ ] During a timed open, a tree ability that goes off cancels it.
+- [ ] During a mercenary's timed open, a parry cast that raises the stance cancels it; a parry cast while the stance is open, or locked out, cancels nothing.
+- [ ] An attack refused for its cooldown, for too little resource, or while the caster is pinned cancels nothing, and the timed open completes on its 45th tick.
+- [ ] A targeted attack with nothing in range cancels nothing.
+- [ ] An attack that goes off on the tick the timed open would complete cancels it: the container stays shut.
+- [ ] An attack applied on the same tick as the reach, before it and after it in arrival order, leaves no timed open after that tick.
+- [ ] A projectile from a cast made before the reach that lands during the timed open cancels nothing.
+- [ ] With two players at one container, one attacking cancels only their own; the other's completes.
+- [ ] After an attack's cancel, the same player's next reach starts from zero and completes after the full 1.5 s.
+- [ ] Drinking, and equipping and unequipping, during a timed open still do not cancel it.
+- [ ] A hit is still read from the combat when the kill that heals the player is not their own attack on that tick (the existing kill-heal case keeps proving R7, not R28).
+- [ ] `go test -race ./internal/game/... ./internal/systems/...` passes.
+
+**Client.** No change. Its existing tests for a cancelled timed open (R23, R26) cover the attack's.
+
+**Live check (one browser, one run)**
+
+- [ ] Reaching for a shut chest and attacking a monster, or casting, before the bar fills: the bar is gone, the chest stays shut, no notice; reaching again starts the bar from empty.
+- [ ] A mercenary's parry during the bar stops it the same way.
+- [ ] Drinking a potion during the bar leaves it running, and the chest opens.
+
+### Edge States
+
+- **Attack on the last tick.** Cancelled; the container stays shut (R31, B4).
+- **Attack and reach on one tick.** The timed open starts and is cancelled on that tick; no state
+  shows it. As "the reach is made while walking", the client's reach is pending until the player
+  is out of reach or the container leaves the state, and a teammate who opens it meanwhile opens
+  the player's view (R26, E4).
+- **Attacking at nothing.** A swing, fireball or arrow into empty ground goes off and cancels
+  (E1). A targeted attack at a monster out of range does nothing at all and cancels nothing.
+- **The attack is on cooldown.** Refused; nothing cancels. Mashing attack while opening cancels on
+  the first press that goes off.
+- **The parry stance is already open at the reach.** It stays open and cancels nothing; a strike
+  it negates costs no health and cancels nothing (D4). A new parry cast while it is open is
+  refused and cancels nothing; one cast after the lockout ends raises the stance and cancels.
+- **A cast made before the reach still at work.** A fireball in flight, an arrow rain falling or a
+  burning trail kills a monster during the timed open: nothing cancels (E3). A kill heal it brings
+  is a heal and cancels nothing (D4).
+- **A dash or blink.** It goes off and cancels by R28; it also moves the body (R6). One cancel,
+  silent.
+- **A pinned mercenary parries.** The pin refuses every cast but the parry. A parry cast while
+  pinned raises the stance, unless it is open or locked out, so it goes off and cancels (R28).
+- **Two players at one container.** One attacks and loses their own; the other's runs on (R30,
+  R14).
+- **An attack that kills the player's attacker.** The attack went off: cancelled, whatever the
+  heal it brings.
+
+### Out of Scope
+
+- Closing an already-open container view when the player attacks.
+- Any change to the client, the open bar, the reach or the notices.
+- Cancelling on a drink, an equip, a take from an open container or a door (B2).
+- A notice, sound or animation on the cancel.
+- Any change to combat itself: cooldowns, costs, the pin, the parry stance.
+- HTTP, OpenAPI, proto, the generated client, any database, the gateway, any other service.
