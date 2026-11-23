@@ -2112,13 +2112,20 @@ The knight (and his looks) is untouched: his run key for key, his `walk_attack` 
 `backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps. The archer's and the mercenary's sheets are
 untouched byte for byte.
 
+> **Edited in place on 2026-11-23 (the coordinator's picks on E1 and E2, still a work-order).**
+> Requirement numbers are kept. W1, W3 and W4 carry the picks; R117 and R130 are restated, and the
+> frame-box acceptance line with R130. See *Decided 2026-11-23: E1 (a), E2 (b)*, after the
+> escalations.
+
 ### Decisions (charter defaults, owner-approved 2026-11-23)
 
 - **W1. The shared sprint** (`SPRINT_STEP`, `SPRINT_LEAN` about 20°, `SPRINT_RUN` 16 fps); the
   archer's and the mercenary's keys and sheets unchanged, held by digest. Her pace within the
   shared tolerance used for the mercenary (option (a): within 3 px/s of `RUN_PACE` 194), measured
   on her rig. *Reason:* the owner's 「一樣」 (as with the others). ***Escalated:** the shared legs
-  fail her robe's guards and her pace. See Escalated 2026-11-23, E1.*
+  fail her robe's guards and her pace. See Escalated 2026-11-23, E1.* ***Decided 2026-11-23,
+  E1 (a):** her run takes the sprint's lean and 16 fps by reference over her own `RUN_STEP` legs at
+  stride 0.88, her pace within 1 px/s of `RUN_PACE` (R117, R119).*
 - **W2. Her run keeps today's carry**, the sceptre or focus arm's smaller pump and the tome arm's
   full pump, re-measured under the 20° lean. The carry changes only if the lean breaks a guard or
   puts the orb or her head over a ceiling, and that is said.
@@ -2128,6 +2135,8 @@ untouched byte for byte.
   never change. *Reason:* her robe has a clipping history (FS-HF0WW § Change: The guard measures a
   leg through the cloth: the knee through the gown, the waist, the black dots behind the knee).
   ***Escalated:** the poke is the knee drive at the front, which the back carry cannot reach (E1).*
+  ***Decided 2026-11-23, E1 (a):** she is not on the shared legs, so the gown is unchanged and the
+  guards pass with no exemption (R120).*
 - **W4. The pointed cast.** The cast is re-keyed: the sceptre (or focus) arm extends straight,
   the elbow nearly straight, toward the target, and the staff points along the aim like a spell
   being cast, at about chest-to-shoulder height, never over her head. The free hand may open or
@@ -2137,7 +2146,8 @@ untouched byte for byte.
   Spellwarden's and the Pyromancer's focuses point the same way. The staff and the focus stay
   clear of her body, robe and head. The frame box does not grow; if it would, escalate.
   *Reason:* the owner, 「法師攻擊時法杖要伸直指向怪物像施法一樣」. ***Escalated:** a straight arm along
-  the aim grows the box (E2).*
+  the aim grows the box (E2).* ***Decided 2026-11-23, E2 (b):** the cast points as written and the
+  box may grow in width by what the pointed cast needs, no more (R130).*
 - **W5. `walk_attack` and `backpedal_attack` leave her three sheets.** Idle, walk and death are
   unchanged. A sheet without them plays the standing cast (the client's fallback, no code change).
 - **W6. The owner sees the contact sheet** (ADR-0021 §5), but later slices and the charter's next
@@ -2179,7 +2189,7 @@ three looks (the shared legs, lean and 16 fps, her carry as it is):
 
 The options:
 
-- **(a) Default, kept until the coordinator picks:** the sprint's lean (`SPRINT_LEAN`) and its
+- **(a) Default, picked 2026-11-23 (see Decided below):** the sprint's lean (`SPRINT_LEAN`) and its
   clip (`SPRINT_RUN`: 16 fps, `speed` 2.5, both read by reference) over the shared fast run's legs
   (`RUN_STEP`) at a stride of **0.88** (`run.stride`, clips.js:363), so the stride is 12% shorter,
   as the sprint's is. *Measured* on all three looks: the leg guard 0 px and nothing seen through
@@ -2215,15 +2225,39 @@ base, the same point reads 249 wide at level, 231 at 15° below, and 231 without
 the orb at 0.44 H, about her hips, aimed at the ground a body length ahead) or the elbow bent about
 45° (213 × 183; 29° reads 228, 63° reads 204). The options:
 
-- **(a) Default, kept until the coordinator picks:** W4 as written, and the bake (R133) stops
+- (a) Default until the pick: W4 as written, and the bake (R133) stops
   before it commits a box wider than today's. The coordinator picks before then.
-- (b) Accept the wider box: about +18 px (1.5x) of width each, about +8%; the height holds. The
+- **(b) Picked 2026-11-23 (see Decided below):** accept the wider box: about +18 px (1.5x) of
+  width each, about +8%; the height holds. The
   frames are trimmed (lib/trim.mjs), so the atlas pays only for the pixels drawn; dropping the
   attacks on the move (R131) takes 28 of 64 frames a facing off.
 - (c) Hold the box with the elbow bent about 45°: the staff still along the aim, the hand nearer
   the chest. It is not "伸直".
 - (d) Hold the box with the staff about 25° below level: the arm straight, the orb about at her hips.
   It is not "chest to shoulder".
+
+### Decided 2026-11-23: E1 (a), E2 (b)
+
+The coordinator picked on both escalations under the owner's standing word for this charter,
+
+> 「做好就接著做不用問我」
+
+(when it is done, carry on without asking). The owner was not asked again.
+
+- **E1 → (a).** Her run takes `SPRINT_LEAN` and `SPRINT_RUN` (16 fps) by reference over her own
+  `RUN_STEP` legs at a stride of 0.88 (*measured:* pace about 194.21, the robe guards 0 px, nothing
+  seen through the cloth on all three looks). She gives up the sprint's higher knee drive and heel
+  kick, which the ankle-length gown mostly hides. *Reason:* the shared legs push the knee 3.2 px
+  through the gown's front, and no robe setting cleared it (E1's measures). (b) would need new rig
+  work and her own fps; (c) gives no quicker cadence. W1's pace tolerance tightens to the archer's
+  1 px/s (R119). `SPRINT_STEP`, `SPRINT_LEAN`, `SPRINT_RUN` and `RUN_STEP` are unchanged.
+- **E2 → (b).** The pointed cast as the owner asked it (the arm straight, the staff along the
+  facing, 0–15° below level, R125 unchanged), and the wider frame box is accepted (*measured:*
+  about +18 px of width at 1.5x; the frames are trimmed). The bake reports the new boxes and atlas
+  sizes (R135). The box may grow in width only by what the pointed cast needs, and that growth is
+  reported; any other growth (in height, or in width past the pointed cast's own need) escalates.
+  *Reason:* the owner's 「法杖要伸直指向怪物像施法一樣」: an elbow bent about 45° (c) or the staff
+  dropped about 25° (d) would not read as pointing at the monster.
 
 ### Facts checked in code (`22cabd3a`)
 
@@ -2339,8 +2373,8 @@ the orb at 0.44 H, about her hips, aimed at the ground a body length ahead) or t
      is `SPRINT_RUN`, by reference.
 117. **Her legs (E1, default (a)).** Her run is the shared fast run's legs (`RUN_STEP`, no
      `run.legs`) at a stride of 0.88 (`run.stride`, a named constant beside the sprint's, e.g.
-     `WIZARD_SPRINT_STRIDE`), the knee and the flight at 1. If the coordinator picks (b), this
-     requirement and R118–R120 are restated through write-a-spec before the slice is built.
+     `WIZARD_SPRINT_STRIDE`), the knee and the flight at 1. *Decided 2026-11-23:* E1 (a) is the
+     pick, so this requirement and R118–R120 stand as written.
 118. **Her run, measured as the sprinters' are** (classMotion.test.mjs:916-1020, on her rig): the
      lean 19–21° on average and 18–22° on every sample (*measured* 20.20–20.50); the head's pitch
      within 3° of rest, its yaw range under 0.08 rad and its roll under 0.06; a flight frame with
@@ -2437,10 +2471,14 @@ the orb at 0.44 H, about her hips, aimed at the ground a body length ahead) or t
      so pointed, the flame stands up out of a level cage. That is judged at the contact sheet
      (R134), not re-keyed.
 130. **The frame box (W4; E2).** Each wizard sheet's frame box is no larger than today's (222 × 192,
-     225 × 195, 225 × 198) in either dimension. Option (a) of E2 holds until the coordinator picks.
-     If the bake would grow a box, it stops before committing and that is reported, never routed
-     around. A pick of (b), (c) or (d) is recorded here through write-a-spec, and R125 or this
-     requirement is restated.
+     225 × 195, 225 × 198) in either dimension. *Restated 2026-11-23 (E2 (b), see Decided):* the
+     box keeps today's height or less, and may grow in width only by what the pointed cast needs
+     (*measured* about +18 px at 1.5x: 240, 243, 240 at 8° below level; at most 249 at level).
+     The bake reports each sheet's box before and after, and which pose and facing sets its width
+     (R135). A box that grows in height, or whose width is set by anything but the pointed cast
+     (without the cast the clips *measured* 201 wide, so a wider edge from another clip, the new
+     run among them, is growth the pick did not take), stops the bake before it commits and is
+     reported, never routed around.
 
 #### The attack-on-the-move clips leave her sheets (W5)
 
@@ -2533,8 +2571,9 @@ Manifest and client (`npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc 
       without `walk_attack` and `backpedal_attack`, with `run`; the knight keeps both clips.
 - [ ] `animationSelect.ts` and `character.ts` are unchanged (R132).
 - [ ] `npm run bake -- --check` is clean.
-- [ ] Each wizard frame box is at most today's (222 × 192, 225 × 195, 225 × 198), or as the
-      coordinator's E2 pick restates it. The report gives each atlas's dimensions, RGBA and PNG
+- [ ] Each wizard frame box is at most today's height (192, 195, 198), and wider than today's
+      (222, 225, 225) only by what the pointed cast needs, the growth reported with the pose and
+      facing that sets it (E2 (b), R130). The report gives each atlas's dimensions, RGBA and PNG
       bytes before and after, and the change in per cent (R130, R135).
 - [ ] No file under `game-server/`, `game-client/src/api/generated` or any migration changes.
 
