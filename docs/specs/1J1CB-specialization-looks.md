@@ -788,6 +788,10 @@ smallest change, recorded in full in FS-JS7C8's "Integrated with Looks v2" notes
 - The Guardian (R54): `GUARDIAN_SHIELD_LIFT` kept; his run is the knight's sprint.
 - Every look's frame box is this change's, unchanged.
 
+Again on 2026-11-23, after FS-JS7C8's outward trailing blade (R158): the Duelist's trailing arm is
+out 0.35 with the wrist cocked 1.32 (not 0.45 and 1.55), so the long hilt keeps R60's 0.052 H off
+his forearm; his blade then angles 38.8–50.5° out, past R158's band, escalated in FS-JS7C8.
+
 ## Change: The wizard's sprint and pointed cast → FS-JS7C8
 
 ## Change: The knight's sprint, and the attack-on-the-move clips retired → FS-JS7C8
