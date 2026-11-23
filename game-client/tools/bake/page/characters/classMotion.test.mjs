@@ -38,6 +38,7 @@ import {
   MERCENARY_BUILD,
   MERCENARY_SHEET,
   MERCENARY_STYLE,
+  MERC_TRAILING_TURNS,
   RUN_BLADE_ELEV,
   RUN_CROSS_REACH,
   RUN_TIP_CEIL,
@@ -234,16 +235,17 @@ function deepestCarry(rig, gear, frames) {
 }
 
 /**
- * The classes under test, each with the arms that pump in the run (R2's elbow and reach bands) and
- * its weapon's rest in the idle and the walk: `point` down and forward (a blade's tip toward the
- * ground) or `upright` (the sceptre held up beside the leg, tilted forward and out, its head up).
+ * The classes under test, each with its weapon's rest in the idle and the walk: `point` down and
+ * forward (a blade's tip toward the ground) or `upright` (the sceptre held up beside the leg,
+ * tilted forward and out, its head up). The ones that run the shared fast run
+ * ({@link SHARED_RUNNERS}) also name the arms that pump in it (`pump`, R2's elbow and reach bands);
  * `low` names the arm that pumps only to the lower chest ({@link SCEPTRE_RUN_PEAK}): the wizard's
  * sceptre arm. `runBlade` is the band a blade keeps in the run on that class's rig, degrees from
  * level (+ up), inside {@link RUN_BLADE_ELEV} (owner 2026-11-12: "騎士跟傭兵跑步時劍的角度可以再提起10到20度",
  * the knight's 5° below to 12° above raised about 15°, then "戰士 傭兵 跑步時提劍的角度再提升15度": the
- * knight's 9-26° raised about 15° again). The mercenary no longer runs the shared fast run: he runs
- * the sprint ({@link SHARED_RUNNERS}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword
- * R96), so his blade band, his pump and his pace are his sprint's own tests below.
+ * knight's 9-26° raised about 15° again). The mercenary runs the sprint instead (FS-JS7C8 § Change:
+ * The mercenary's sprint and trailing sword R96), so he names no pump and no blade band: his
+ * trailing sword, his free arm's pump and his pace are his sprint's own tests below.
  */
 const CLASSES = [
   {
@@ -261,7 +263,6 @@ const CLASSES = [
     build: MERCENARY_BUILD,
     style: MERCENARY_STYLE,
     sheet: MERCENARY_SHEET,
-    pump: ["L", "R"],
     rest: "point",
   },
   {
@@ -624,18 +625,19 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
 });
 
 /**
- * The clips a class's carry is held to: the four and its attacks on the move. The mercenary's
- * sheets carry none on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword
- * R107), so his are the four.
+ * The clips a class's carry is held to, those of them its sheet carries: the four and the attacks
+ * on the move. The mercenary's sheets carry none on the move (FS-JS7C8 § Change: The mercenary's
+ * sprint and trailing sword R107), so his are the four; the knight's and the wizard's sheets keep
+ * both (their sheet test, above).
  */
-const CARRIED = (name) => (name === "mercenary" ? ["idle", "walk", "run", "attack"] : ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"]);
+const CARRIED = ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"];
 
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
   const gear = GEAR[name](rig);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(CARRIED(name))("on every key of %s", (anim) => {
+  it.each(CARRIED.filter((anim) => anim in sheet.animations))("on every key of %s", (anim) => {
     expect(clips[anim], anim).toBeDefined();
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
@@ -1176,6 +1178,19 @@ describe("the mercenary's trailing sword in the sprint (FS-JS7C8 § Change: The 
     expect(Math.abs(foreArmR[1])).toBeLessThanOrEqual(1.6);
     expect([handR[1], handR[2]]).toEqual([0, 0]);
     // the normal-grip test (above, "holds the weapon in a normal grip") reads every key of his run
+  });
+
+  it("keys the sword arm as its three turns: back, then out past the rest's spread, then about its own length (MERC_TRAILING_TURNS), the one XYZ triple to the thousandth, less the rest", () => {
+    const { back, out, twist } = MERC_TRAILING_TURNS;
+    const rest = rig.rest.upperArmR;
+    expect([rest[0], rest[1]]).toEqual([0, 0]);
+    const turn = (axis, a) => new THREE.Quaternion().setFromAxisAngle(axis, a);
+    const q = turn(new THREE.Vector3(1, 0, 0), back)
+      .multiply(turn(new THREE.Vector3(0, 0, 1), rest[2] - out))
+      .multiply(turn(new THREE.Vector3(0, 1, 0), twist));
+    const e = new THREE.Euler().setFromQuaternion(q, "XYZ");
+    const key = MERCENARY_STYLE.run.hold.b.upperArmR;
+    [e.x, e.y, e.z - rest[2]].forEach((v, k) => expect(key[k], `upperArmR[${k}]`).toBeCloseTo(v, 3));
   });
 
   it("keeps the blade's centre line at least 0.06 H over the ground on every sample, its half width above that (R99)", () => {
