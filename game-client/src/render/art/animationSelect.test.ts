@@ -259,6 +259,16 @@ describe("selectAnimation: the run, and the backward step only while attacking (
       { animation: "run", facing: "s", direction: 2 },
     ],
     [
+      "the wizard's sheet (run, no attack on the move) plays the standing cast turned to the aim while attacking on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131, R132)",
+      { ...swinging(aimNorthEast, southWest), run: true },
+      { animation: "attack", facing: "ne", direction: 7 },
+    ],
+    [
+      "the wizard's sheet runs turned to her movement when not attacking (R132)",
+      { velocity: east, facing: "n", run: true },
+      { animation: "run", facing: "e", direction: 0 },
+    ],
+    [
       "attacking while standing is the whole-body attack",
       { attacking: true, aim: aimNorth, ...full },
       { animation: "attack", facing: "n", direction: 6 },
@@ -322,6 +332,13 @@ describe("selectAnimation: the run, and the backward step only while attacking (
     const got = selectAnimation(state({ velocity: { vx: 0, vy: -200 }, run: true }));
     expect(got.animation).toBe("run");
     expect(got.timeScale).toBeCloseTo(200 / RUN_PACE);
+  });
+
+  it("should play the wizard's sprint at speed / RUN_PACE and her cast at its authored rate on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R132)", () => {
+    const run = selectAnimation(state({ velocity: { vx: 200, vy: 0 }, run: true }));
+    expect([run.animation, run.timeScale]).toEqual(["run", 200 / RUN_PACE]);
+    const cast = selectAnimation(state({ ...swinging(aimNorth, { vx: 200, vy: 0 }), run: true }));
+    expect([cast.animation, cast.timeScale]).toEqual(["attack", 1]);
   });
 
   it("should cap the run's playback as the walk's for a burst", () => {
@@ -482,8 +499,9 @@ describe("the shipped character sheets", () => {
 
   // the archer's sheets dropped theirs with her sprint (FS-JS7C8 § Change: The archer's sprint and
   // low-ready bow R79), the mercenary's with his (§ Change: The mercenary's sprint and trailing
-  // sword R107); the knight and the wizard keep theirs
-  const WALK_ATTACKERS = ["warrior", "mage"];
+  // sword R107), the wizard's with hers (§ Change: The wizard's sprint and pointed cast R131); the
+  // knight keeps his
+  const WALK_ATTACKERS = ["warrior"];
 
   it.each(WALK_ATTACKERS)(
     "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
@@ -522,6 +540,19 @@ describe("the shipped character sheets", () => {
       expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // the shared sprint: 8 frames looping at 16 fps, in the 8 facings (R94)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
+  });
+
+  it("should give the wizard and her looks her five clips alone: no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)", () => {
+    const hers = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_wizard_"));
+    expect(hers.sort()).toEqual(["char_wizard_base", "char_wizard_pyromancer", "char_wizard_spellwarden"]);
+    for (const name of hers) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // the sprint's clip: 8 frames looping at 16 fps, in the 8 facings (R116)
       expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
       expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
     }

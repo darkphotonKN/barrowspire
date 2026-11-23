@@ -681,9 +681,9 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
 
 /**
  * The clips a class's carry is held to, those of them its sheet carries: the four and the attacks
- * on the move. The mercenary's sheets carry none on the move (FS-JS7C8 § Change: The mercenary's
- * sprint and trailing sword R107), so his are the four; the knight's and the wizard's sheets keep
- * both (their sheet test, above).
+ * on the move. The mercenary's and the wizard's sheets carry none on the move (FS-JS7C8 § Change:
+ * The mercenary's sprint and trailing sword R107, § Change: The wizard's sprint and pointed cast
+ * R131), so theirs are the four; the knight's sheet keeps both (his sheet test, above).
  */
 const CARRIED = ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"];
 
@@ -927,11 +927,17 @@ describe("the wizard's cast moves with weight (FS-2325V § Change: The class att
     // the character's left is +x
     expect((hand.x - shoulder.x) / rig.H).toBeGreaterThanOrEqual(0.08);
   });
+});
 
-  it("is the one attack the walk_attack and backpedal_attack draw from the waist up", () => {
-    const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
-    for (const anim of ["walk_attack", "backpedal_attack"])
-      clips[anim].forEach((p, i) => expect(p.b.upperArmR, `${anim} @${i}`).toEqual(add(ATTACKS.cast()[Math.floor(i / 2)]).b.upperArmR));
+/**
+ * Her sheets carry no attack on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast
+ * R131), so the cast draws none; the knight's attacks on the move still draw his slash from the
+ * waist up, key for key at twice the rate.
+ */
+describe("the knight's slash is the one attack his walk_attack and backpedal_attack draw from the waist up", () => {
+  const clips = clipsFor(KNIGHT_STYLE, KNIGHT_SHEET.animations);
+  it.each(["walk_attack", "backpedal_attack"])("%s", (anim) => {
+    clips[anim].forEach((p, i) => expect(p.b.upperArmR, `${anim} @${i}`).toEqual(add(ATTACKS[KNIGHT_STYLE.attack]()[Math.floor(i / 2)]).b.upperArmR));
   });
 });
 
@@ -1224,6 +1230,12 @@ describe("the wizard's sprint (FS-JS7C8 § Change: The wizard's sprint and point
   const rig = rigOf(WIZARD_BUILD);
   const spec = WIZARD_SHEET.animations.run;
   const clips = clipsFor(WIZARD_STYLE, WIZARD_SHEET.animations);
+
+  it("carries idle, walk, attack, death and the sprint at 1.5x, in that order: no walk_attack, no backpedal_attack (R131)", () => {
+    expect(WIZARD_SHEET.scale).toBe(1.5);
+    expect(Object.keys(WIZARD_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "run"]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(WIZARD_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
+  });
 
   it("reads the sprint's lean and its clip by reference, over the shared fast run's legs at WIZARD_SPRINT_STRIDE, not the sprint's legs (R116, R117; E1 (a))", () => {
     expect(WIZARD_STYLE.run.lean).toBe(SPRINT_LEAN);

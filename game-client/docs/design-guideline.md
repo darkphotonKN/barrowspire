@@ -312,16 +312,24 @@ lit) while the player stands inside.
   edge down, never on the ground (its lowest point at least 0.06 H up), swaying a little with the
   stride. His sheets, and his looks', carry no `walk_attack` and no `backpedal_attack`, and keep
   the `parry`: he plays `attack`, turned to his aim, moving or not (FS-JS7C8 § Change: The
-  mercenary's sprint and trailing sword). The knight and the wizard keep both until their own
-  runs are redone (FS-JS7C8 § Change: The archer's sprint and low-ready bow). *(Amended with
-  FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
+  mercenary's sprint and trailing sword). The wizard is the third: she runs with the sprint's
+  lean and its 16 fps cadence on her own legs (the shared fast run's stride shortened 12%, the
+  knee no higher than the shared run's, so it never comes through her gown), her sceptre or focus
+  carried as before, its arm a little further out and the wrist held back under the lean. Her cast
+  points the staff, or a look's focus, straight along the aim like a spell being cast, the arm
+  reached out all but straight at chest-to-shoulder height, never over her head. Her sheets, and
+  her looks', carry no `walk_attack` and no `backpedal_attack`: she plays the standing cast,
+  turned to her aim, moving or not (FS-JS7C8 § Change: The wizard's sprint and pointed cast). The
+  knight keeps both until his own run is redone (FS-JS7C8 § Change: The archer's sprint and
+  low-ready bow). *(Amended with FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
   strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
   curve, fastest through the strike and eased at its ends, the weight onto the front foot, a
   follow-through and a recover, still 7 keys at 12 fps with the strike at key 3. A slash is a
   full diagonal from above the right shoulder to below the left hip; the knight cuts compact
   behind a shield kept up before his chest, the mercenary wide, a drawing cut with his free hand
   thrown out against it; the wizard thrusts her sceptre from the shoulder with her free hand
-  opening (FS-2325V § Change: The class attacks move with weight and cut deep).
+  opening (FS-2325V § Change: The class attacks move with weight and cut deep), and at the strike
+  points it along the aim (FS-JS7C8 § Change: The wizard's sprint and pointed cast).
   A dual-wielder's off-hand attack (`attack_offhand`, `walk_attack_offhand`,
   `backpedal_attack_offhand`, the Berserker first) is baked from the attack's upper-body keys
   mirrored left for right, over the same legs, lit by the bake, with the same keys, fps and

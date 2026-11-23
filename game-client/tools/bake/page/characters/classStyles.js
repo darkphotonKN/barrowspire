@@ -270,7 +270,7 @@ export const ARCHER_LOW_READY = pose(
  * speed ({@link SPRINT_RUN}). Built without withWalkAttack: attacking no longer moves her (the pin), so her sheets carry
  * no `walk_attack` and no `backpedal_attack`, and the client plays her `attack` moving or not. The
  * Hunter and the Shadow Ranger take it through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, which
- * the knight's sheet and the wizard's read, is not changed.
+ * the knight's sheet reads, is not changed.
  */
 export const ARCHER_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
@@ -317,12 +317,14 @@ export const WIZARD_BUILD = [1.92, { shoulderW: 0.8, torsoW: 0.82, torsoD: 0.88,
 export const WIZARD_SPRINT_STRIDE = 0.88;
 
 /**
- * The wizard re-baked with the run and the backward step at 1.5x (FS-JS7C8 slice 7, FS-HF0WW
- * § Change: Class sheets at 1.5x R35), her run the sprint's clip at 16 fps ({@link SPRINT_RUN};
- * § Change: The wizard's sprint and pointed cast R116). The Spellwarden and the Pyromancer take it
+ * The wizard's sheet at 1.5x (FS-HF0WW § Change: Class sheets at 1.5x R35), a clip set of her own
+ * (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131): the four and her run, the
+ * sprint's clip at 16 fps ({@link SPRINT_RUN}, R116). Built without withWalkAttack: attacking no
+ * longer moves her (the pin), so her sheets carry no `walk_attack` and no `backpedal_attack`, and
+ * the client plays her cast moving or not (R132). The Spellwarden and the Pyromancer take it
  * through cast.js `specRow`. RUNNING_CLASS_ANIMATIONS, the knight's, is not changed.
  */
-export const WIZARD_SHEET = { animations: { ...RUNNING_CLASS_ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
+export const WIZARD_SHEET = { animations: { ...ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
 
 export const WIZARD_STYLE = {
   attack: "cast",

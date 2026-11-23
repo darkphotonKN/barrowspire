@@ -10,7 +10,12 @@
 // sprint with the sword trailing behind (the sword arm back, the hand at the hip, the curved blade
 // low behind him, its point and its edge down and off the ground) and carry no `walk_attack` and
 // no `backpedal_attack` (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, R113):
-// his clips are idle, walk, attack, death, parry and run. The tower interior sheets
+// his clips are idle, walk, attack, death, parry and run. The wizard and her looks show `run` as
+// the sprint's lean and 16 fps cadence on her own legs (the shared fast run's, at a 12% shorter
+// stride), her sceptre or focus carried as before, and `attack` as the pointed cast (the arm
+// reached out all but straight, the staff or focus along the aim at chest-to-shoulder height),
+// and carry no `walk_attack` and no `backpedal_attack` (FS-JS7C8 § Change: The wizard's sprint and
+// pointed cast R131, R136): her clips are idle, walk, attack, death and run. The tower interior sheets
 // (FS-8RBQY §D.7) follow the cast on the same sheet, one row per sheet, frames left to right.
 //
 // Written to tools/bake/review/ (gitignored) on every `npm run bake`, never by --check:

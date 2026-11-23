@@ -397,12 +397,13 @@ function dressed(cls, { cut = "now", specs = SHEETS[cls], gownSegs = 64, panelSe
 }
 
 /**
- * The garmented classes' moving clips, as their sheets carry them: the mercenary's carry no attack
- * on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107).
+ * The garmented classes' moving clips, as their sheets carry them: the mercenary's and the
+ * wizard's carry no attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing
+ * sword R107, § Change: The wizard's sprint and pointed cast R131).
  */
 const MOVING = {
   knight: ["run", "walk", "walk_attack", "backpedal_attack"],
-  wizard: ["run", "walk", "walk_attack", "backpedal_attack"],
+  wizard: ["run", "walk"],
   mercenary: ["run", "walk"],
 };
 
@@ -497,9 +498,12 @@ describe("no leg is seen through the cloth (FS-HF0WW § Change: The guard measur
 
 describe("the mage's scapular stays over her gown (2026-11-12: the owner's \"法袍後面小腿處的裙擺綠色區塊跑動時似乎會被黑色吃掉\")", () => {
   // then, of the dashes a baked px long left on the back panel in the run: "法師跑步時 膝蓋背後關節處 衣服綠色區塊會有黑點"
-  it("the black gown never comes out through the teal scapular by a baked px, at rest, through the run, the walk and both attacks on the move: the panel's columns are the gown's", () => {
+  // her sheets carry no attack on the move (FS-JS7C8 § Change: The wizard's sprint and pointed cast R131)
+  it("the black gown never comes out through the teal scapular by a baked px, at rest and through every moving clip her sheet carries: the panel's columns are the gown's", () => {
+    expect(SHEETS.wizard).not.toHaveProperty("walk_attack");
+    expect(SHEETS.wizard).not.toHaveProperty("backpedal_attack");
     const { rig, posesOf } = dressed("wizard");
-    for (const anim of ["idle", "run", "walk", "walk_attack", "backpedal_attack"])
+    for (const anim of ["idle", ...MOVING.wizard])
       expect(overGarment(rig, posesOf(anim)), anim).toBeGreaterThan(-clearanceLimit(1.5));
   });
 
