@@ -633,3 +633,5 @@ Date: 2026-11-12
   --check` reports no changes. **Awaiting the owner:** his sheet, old (round 1) beside new, idle
   and walk, 8 facings, an animated preview, and a 4x zoom of his legs and apron in the worst
   frames.
+
+## Change: The archer's sprint and low-ready bow → FS-JS7C8

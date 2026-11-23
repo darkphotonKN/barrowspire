@@ -1032,3 +1032,364 @@ no key pressed again; a click during the stand does nothing; the Mercenary's par
   SPECIFICATION.md`) reads loosely now; a reword with the pointer unchanged, via `spec-update`.
 - Open issue I-JS7C8-9 (the browser check) still tests "the slowed walk while attacking"; it needs
   rewording to carry this change's live check.
+
+## Change: The archer's sprint and low-ready bow
+Status: work-order
+Date: 2026-11-23
+
+Promoted `--from-thread` on 2026-11-23 from the owner-approved charter "弓箭手衝刺跑" (the owner:
+「核准」). The thread is the charter's locked decisions, so no interview was held; every decision
+below is a **charter default approved by the owner**, given with its reason. It lands here because
+it changes the run (§A) and the attack-on-the-move clips (§B, R5) this FS owns through
+`game-client/SPECIFICATION.md` "Run and backpedal animations". No new thin line, no new FS. It
+also takes `walk_attack` off the archer's sheets, which FS-HF0WW's "Walk-and-attack animation"
+built, so FS-HF0WW carries a pointer stub to this section. Code citations are against main
+`970f2dc7`; measures marked *measured* were read on the archer's own rig and style
+(`cast.js` `archer`, posed and grounded as the bake poses her, 32 samples over the cycle).
+
+**Why (owner).**
+
+> 「我想調整遊戲中人物的跑步動作 跑步時可以更有衝刺感 先調整弓箭手就好 我看完覺得可以再往下做其他角色
+> 目前的跑步方式有點太輕鬆的感覺 想要有快一點的跑步感 然後拿弓的動作要有一種隨時備戰的感覺要雙手拿著弓放在身體前方
+> 但不用抬太高 然後目前沒有移動攻擊 所以可以把攻擊往前或往後移動的動畫移除」
+> 「跑更快的話身體可能會更加前傾」
+
+The run should feel like a dash, not the easy run it is now; the archer first, the others after the
+owner has seen her. The bow is held ready: both hands, in front of the body, not raised high. And
+since attacking no longer moves (the pin, `## Change: Attacking pins the attacker`), the clips that
+attack while stepping forward or back can go. A faster run leans further forward.
+
+**What it changes, for the archer's three sheets only** (`char_archer_base`,
+`char_archer_hunter`, `char_archer_shadow_ranger`):
+
+- R2: the lean (about 10° → about 20°), the arms (the pump → the two-handed low-ready bow), the
+  bow arm's "short swing, the bow hanging along the side", and "the legs are slice 5's ... the 14
+  fps cadence unchanged, key for key".
+- R3: the cadence and the stride become hers (16 fps, a shorter stride); `RUN_PACE` stays the
+  measure, held as it is today.
+- R5: "`walk_attack` stays on every class sheet" no longer holds for them; `walk` still does.
+- R8–R11, R13, R21: `backpedal_attack` and `walk_attack` leave her sheets, so their leg rules and
+  the swaps between them no longer apply to her.
+- R37, R41, R48: her contact sheet and the guideline lose those two clips; her `attack` keeps
+  FS-2325V's aim line.
+- `## Change: Attacking pins the attacker`, Out of Scope: "Retiring the attack-on-the-move clips"
+  is done for her sheets. The other classes and their leg-pace rules R10, R21 stay out of scope.
+
+The knight, the wizard and the mercenary (and their looks) are untouched: their runs key for key,
+their `walk_attack` and `backpedal_attack`, `RUN_ANIMATIONS.run` at 14 fps.
+
+### Decisions (charter defaults, owner-approved 2026-11-23)
+
+- **D1. The trunk leans about 20° (was about 10°)** on the hips-to-neck line. `steadyNeck` brings
+  the head back so it still looks ahead. *Reason:* the owner, "跑更快的話身體可能會更加前傾".
+- **D2. Cadence 14 → 16 fps (about 15% faster), the stride about 12% shorter.** The measured pace
+  stays where it is, so the feet don't slide and the shared `RUN_PACE` (194) is untouched.
+  *Reason:* the server fixes the ground speed (200 px/s, unchanged), so a faster look has to be a
+  faster cadence over a shorter stride. *Fallback, named for the owner:* if 16 fps reads as
+  shuffling, keep today's cadence and stride and change the posture only (D1, D4–D6).
+- **D3. More knee drive and more heel kick. The flight and the bob are never reduced (at least
+  today's).** *Reason:* a softer bob was tried and reverted on 2026-11-12 ("像浮在上面").
+- **D4. The two-handed low-ready bow in the run:** both hands hold the bow in front of the body,
+  the left on the grip and the right on the string, between the belly and the lower chest, under
+  today's pump peak (0.70 H). *Reason:* the owner, "雙手拿著弓放在身體前方 但不用抬太高".
+- **D5. The bow about 45° off vertical, upper limb forward and up, lower limb back and down,**
+  clear of the legs. The tip never goes above the head, and no arrow is nocked. *Reason:* the
+  smallest v1.
+- **D6. No arm pump.** The hands only ride the trunk's turn and bob; the shoulders' counter-turn
+  stays.
+- **D7. `walk_attack` and `backpedal_attack` leave the three archer sheets only.** The client
+  already plays `attack` on a sheet without them, so no code changes. The tick or two of latency
+  gap at the pin's edges shows the standing attack sliding: accepted. The other classes drop
+  theirs when their own run is redone, and the `animationSelect.ts` branches go then.
+- **D8. The `walk` clip stays on the sheet** (every sheet must carry it, FS-2325V §E.2).
+- **D9. The owner approves the contact sheet** (ADR-0021 §5). Tune rounds after it stay inside the
+  charter.
+- **D10. Built on branch `feat/run-archer-sprint`, from main `970f2dc7`.**
+
+**Escalate (report back, don't route around):** the lean and the low-ready carry cannot pass the
+cloak, quiver or leg guards without changing the look; the archer's pace cannot be held within the
+shared `RUN_PACE` tolerance without client code; a default that cannot be honoured.
+
+**Facts checked in code (main `970f2dc7`):**
+
+- The three sheets share one clip set. `cast.js` `CLASS_ROWS.archer` (cast.js:596) is
+  `{ build: archer, sheet: ARCHER_SHEET }`, and `specRow` (cast.js:629) spreads `c.sheet` into the
+  Hunter's and the Shadow Ranger's rows (cast.js:657-658). `ARCHER_SHEET`
+  (classStyles.js:160) is `{ animations: RUNNING_CLASS_ANIMATIONS, scale: 1.5 }`. The wizard's
+  sheet uses the same `RUNNING_CLASS_ANIMATIONS` (classStyles.js:199), so the archer needs a clip set
+  of her own; the shared object must not change.
+- `RUNNING_CLASS_ANIMATIONS` = `withWalkAttack({ ...ANIMATIONS, ...RUN_ANIMATIONS })`
+  (clips.js:106). `withWalkAttack` (clips.js:76) adds `walk_attack` (and `backpedal_attack` on a
+  sheet with `run`). `RUN_ANIMATIONS.run` is `{ frames: 8, fps: 14, loop: true, speed: 2.5 }`
+  (clips.js:91-93), where `speed` is the cloth's carry in rig heights per second.
+- `runCycle(style)` (clips.js:361) reads `style.run`: `stride` scales every thigh key, `knee` every
+  shin key, `arms` and `elbow` the pump per arm, `lean` the trunk (default `RUN_LEAN`), `hold` the
+  run's carry in place of `style.hold`, plus `style.runExtra(i)`. `RUN_LEAN` 0.24 rad
+  (clips.js:309), four fifths at the spine. `RUN_ELBOW` −1.57 (clips.js:312), `RUN_ARM` 0.85
+  (clips.js:318), `RUN_COUNTER` 0.14 (clips.js:324). The legs are `RUN_STEP` (clips.js:289-299),
+  shared by every class: the swing thigh at most 0.52 rad forward, the swing shin folded at most
+  1.45 rad, the flight's lift 0.045 H. `stride` alone shortens the swing thigh too, so D2 and D3
+  pull against each other on a shared scale: the archer needs leg keys of her own.
+- `ARCHER_STYLE.run` is `{ arms: [0.3, 1], elbow: [0.215, 1] }` (classStyles.js:177): the bow arm
+  (left) swings short and near straight, the right arm pumps. `ARCHER_STYLE.speed` is 1.05.
+- *Measured on her run today:* the hips-to-neck lean 9.96–10.26°; the pelvis 0.484–0.540 H, a bob
+  of 0.056 H; the right hand 0.49–0.71 H (peak 0.707); the bow hand 0.40–0.47 H; the chest bone
+  0.61–0.67 H; the shoulder 0.70–0.76 H; the knee's peak height 0.236–0.311 H; the crown (the top of
+  the meshes the head bone carries) 0.944–0.999 H on the base and the Shadow Ranger's cowl, 0.909–0.964
+  on the Hunter's hair. Pace (`pace.js` `measurePace`, pace.js:90): 193.72 world px/s at 14 fps; the
+  same keys at 16 fps read 221.39; the walk reads 79.70 at 10 fps.
+- `RUN_PACE` = 194 (animationSelect.ts:56) is one constant for every class.
+  `clips.test.mjs` holds the shared run to it within 1 px/s (clips.test.mjs:689), on a plain style
+  over the archer's legs (clips.test.mjs:447). The client plays `run` at `speed / RUN_PACE`
+  (animationSelect.ts:170) and takes each clip's fps from the manifest
+  (`frameRate: anim.fps`, phaser.ts:548), so 16 fps needs no client code.
+- The longbow is 0.8 H tip to tip, gripped at its middle (`gear.js` `longbow`: `L = 0.4 * H`, the
+  tips at ±L, gear.js:284-291). The string runs between the tips, braced 0.075 H off the stave
+  (gear.js:285). `bowInHand` (cast.js:177) redraws the string to the right hand only while a clip
+  draws (`fx.draw`), and shows an arrow only on `fx.arrow` (cast.js:193). *Estimate:* at 45° each
+  tip stands about 0.28 H from the grip both up and across. A grip at 0.55–0.62 H puts the upper
+  tip at about 0.83–0.90 H, under the crown, and the lower tip at about knee height, about 0.28 H
+  back from the grip. Tilted fore and aft alone, the lower limb comes back through the legs' swing,
+  since today's hands reach only 0.15–0.25 H ahead of the hips. So "clear of the legs" (D5) means
+  the bow is also canted across the body, its lower limb passing outside a leg (R76).
+- A sheet without `walk_attack` plays `attack` while attacking, moving or not:
+  `if (!moving || !walkAttack) return swing("attack")` (animationSelect.ts:157). `walkAttack` and
+  `backpedalAttack` come from what the sheet carries (character.ts:251-253, `carries`
+  character.ts:381). The manifest check reads `walk_attack` only when it is there
+  (manifest.ts:363).
+- The tests that name the archer's attack-on-the-move clips read the committed manifest or her sheet
+  options: `animationSelect.test.ts` ("should give %s walk_attack", the archer among the four);
+  `manifest.test.ts` (`OWN_CLIPS.char_archer_base`, the `RUNNING` list's `backpedal_attack` test);
+  `clearance.test.mjs:331` (`SHEETS.archer` is `RUNNING_CLASS_ANIMATIONS`, and its clip lists);
+  `archerLooks.test.mjs:112`; `clips.test.mjs:412-421` (the aim line on her `walk_attack` and
+  `backpedal_attack`). `character.test.ts` uses its own fixture manifest, not the shipped one.
+- Atlases on main: `archer-0` 2532 × 4060 (41.1 MB RGBA), `archer_hunter-0` 2636 × 3924 (41.4 MB),
+  `archer_shadow_ranger-0` 2532 × 4060 (41.1 MB), one page each. Each sheet bakes 64 frames a
+  facing: idle 6, walk 8, attack 7, death 7, run 8, `walk_attack` 14, `backpedal_attack` 14.
+
+### Requirements
+
+#### The archer's sprint (D1–D3)
+
+66. **Scope (D7, D10).** Everything below applies to the archer's sheet options alone, so to her
+    three sheets (the Hunter and the Shadow Ranger take her clips through `specRow`). She gets a
+    clip set of her own in place of `RUNNING_CLASS_ANIMATIONS`, and her departures from the shared
+    run live in her style (`ARCHER_STYLE.run`, `runExtra`) or her own leg keys. `RUN_STEP`,
+    `RUN_LEAN`, `RUN_ARM`, `RUN_ELBOW`, `RUN_COUNTER`, `RUN_ANIMATIONS` and
+    `RUNNING_CLASS_ANIMATIONS` keep their values. The knight's, the wizard's and the mercenary's
+    runs and clip sets are unchanged key for key (the shared run's tests at clips.test.mjs:447 and
+    after, and classMotion.test.mjs, stay green as they are).
+67. **The lean (D1).** The archer's hips-to-neck line leans forward 19–21° on average over the
+    cycle, and 18–22° on every one of 32 samples, measured from her rest pose as the shared run's
+    lean is measured (clips.test.mjs:726). Today it is 9.96–10.26° (measured). Her head looks
+    ahead: its pitch within 3° of rest on every sample (as clips.test.mjs:744), its turn and roll
+    as steady as the shared run holds them (clips.test.mjs:680). *Estimate:* `run.lean` about 0.48
+    rad, twice the 0.24 that gives 10° on her rig. The bake measures it; the number is not guessed.
+68. **The cadence and the stride (D2).** Her `run` is 8 frames, looping, at **16 fps** (was 14),
+    its cloth carried at the shared run's `speed` 2.5 (the ground speed is unchanged). Her stride
+    is shortened so her run, measured by `measurePace` at 16 fps on her rig and style, lies **within
+    1 world px/s of `RUN_PACE` (194)**, the tolerance the shared run is held to today
+    (clips.test.mjs:689). `RUN_PACE`, `animationSelect.ts` and the server's 200 px/s do not change.
+    *Measured:* her keys read 221.39 at 16 fps, so the stride per cycle comes down from about 110.7
+    px to about 97, about 12.4% shorter (an estimate from the ratio; the bake holds the measure).
+    At 200 px/s she plays at about 1.03x: about 4.1 steps a second, against 3.6 today.
+69. **The knee drive and the heel kick (D3).** The swing leg drives its knee higher: the knee's
+    peak height over the cycle is above today's 0.311 H on her rig (measured). The heel kicks up
+    further behind: the swing shin's peak fold is more than `RUN_STEP`'s 1.45 rad. The shortened
+    stride never lowers either (R66: her own keys, not `stride` scaling the swing thigh). Each step
+    keeps a flight frame with both soles at least 0.02 H off the ground and a foot planted in at
+    least 4 of the 8 keys (as clips.test.mjs:617-619). The flight's lift is at least `RUN_STEP`'s
+    0.045 H. The pelvis rises and falls once a step, its bob at least today's 0.056 H (measured)
+    and under 0.07 H, the shared run's "never a hop" (clips.test.mjs:661-662). The amounts are the
+    bake's, judged by the owner at the contact sheet.
+70. **The shoulders (D6).** The shoulders keep turning against the hips with the stride: the
+    shoulder line's yaw anti-correlated with the hips' (below −0.8), peaking at 6.5–10° each way,
+    as the shared run's (clips.test.mjs:781-783). The pelvis turns with the stride as today.
+71. **Retired for the archer:** R2's "arms and legs swing in opposition", the pump's elbow (80–100°)
+    and reach (the hand to chest height, back past the hip) bands, the bow arm's "short swing and
+    near-straight elbow, so the bow hangs along the side" (the test at clips.test.mjs:635), and
+    "the legs are slice 5's ... the 14 fps cadence ... unchanged, key for key". They stay the
+    shared run's rules for the other classes.
+
+#### The low-ready bow (D4–D6)
+
+72. **Both hands in front (D4).** On every sample of the run the left hand holds the bow's grip and
+    the right hand is on the string, both in front of the trunk: each hand ahead of the chest bone
+    by more than the torso's half depth (0.094 × the rig's `torsoD` H, the measure
+    clips.test.mjs:267 uses for the back) and inside the shoulders' width. The run's carry is
+    `ARCHER_STYLE.run.hold` (the shared mechanism, clips.js:361). Her `hold` for the idle and the
+    walk is unchanged.
+73. **Not raised high (D4).** On every sample each hand sits at least 0.05 H above the hips bone
+    and no higher than the chest bone (the belly to the lower chest), and always under 0.70 H
+    (today's pump peak, 0.707 H measured). *On her rig today* (measured) that is about 0.53–0.67 H
+    for the bones, so about 0.55–0.62 H for the hands; the lean (R67) lowers the chest bone, and
+    the bake reads the bands off the posed rig.
+74. **The right hand on the string, no arrow (D4, D5).** The right hand's grip point lies on the
+    string's middle (the nocking point), within 0.02 H. The string is undrawn: braced straight
+    between the tips as at rest, the run's keys carrying no `fx.draw` and no `fx.arrow`, so no
+    arrow shows. With the string braced 0.075 H off the stave, the two hands sit close together,
+    the string side toward the body.
+75. **The bow's angle (D5).** The tip-to-tip line stands 35–55° off vertical on every sample
+    (about 45°). The upper tip is above the grip and ahead of it along the facing; the lower tip is
+    below the grip and behind it. The upper tip, horn nock caps included on the Hunter, stays
+    under the crown (the top of the meshes the head bone carries) on every sample, in all three
+    looks.
+76. **Clear of the legs (D5).** No point of the bow passes through a leg, a boot or the tunic on any
+    sample of the run (a new bake test: the stave against the leg and boot meshes, posed and
+    grounded as the bake poses them). **(charter default, under D5's "clear of the legs")** Where a
+    fore-and-aft tilt would bring the lower limb back through the legs' swing (see *Facts*), the
+    bow cants across the body, its lower limb passing outside a leg. The side and the cant are the
+    bake's, as far as the test and the guards allow; the owner judges them at the contact sheet.
+    *Reason:* at 45° a 0.8 H longbow's lower tip reaches about 0.28 H back from a grip held only
+    0.15–0.25 H ahead of the hips (an estimate).
+77. **No pump (D6).** Each hand's position in the chest bone's frame moves no more than 0.02 H over
+    the cycle: the hands ride the trunk's turn, lean and bob, and the arms do not swing.
+78. **The rest is unchanged.** Her idle, walk, attack and death keys are unchanged (her `attack`
+    keeps FS-2325V `## Change: The archer's draw stays on the aim line`). The low-ready is the run's
+    carry only.
+
+#### The attack-on-the-move clips leave her sheets (D7, D8)
+
+79. **Her clip set (D7, D8).** The archer's three sheets carry `idle`, `walk`, `attack`, `death`
+    and `run`, in that order, and **no `walk_attack` and no `backpedal_attack`**. Her clip set is
+    built without `withWalkAttack`. `walk` stays (R5's "`walk` on every class sheet" holds; it
+    never plays while `run` is there). For these sheets this replaces R5's "`walk_attack` stays on
+    every class sheet" and R8's `backpedal_attack`. The other classes' sheets and their looks keep
+    both clips.
+80. **Clip choice unchanged (D7).** `animationSelect.ts` and `character.ts` are not changed. On her
+    sheets `carries` finds no `walk_attack` or `backpedal_attack`, so an attacking archer plays
+    `attack` turned to her aim, moving or not (animationSelect.ts:157); not attacking, she runs
+    turned to her movement (R4). A pinned archer stands (R49) and her `attack` shows standing. In
+    the latency gap at the pin's edges the client may draw her moving while she attacks, and the
+    standing `attack` slides with the drawn movement for a tick or two: accepted.
+81. **Nothing else plays them.** A Shadow Shot release plays her `attack` as before. No path asks
+    her sheet for `walk_attack` or `backpedal_attack`, and the off-hand clips are the Berserker's
+    alone.
+
+#### Bake, review and budget (D9)
+
+82. **One bake.** The three archer sheets are re-baked once with R66–R79 by the bake tool
+    (`npm run bake`), never drawn or edited by hand. `npm run bake -- --check` is clean afterwards.
+    The leg-clearance, cloak and quiver guards (`clearance.js`, run at bake by the page's
+    `main.js` and by `clearance.test.mjs`, `archerLooks.test.mjs`) pass all three with no
+    exemption: nothing is added to `KNOWN_CLIPPING` or `MIRRORED_LEGACY`. The bow passes through
+    neither the cloak nor the quiver (judged on the contact sheet at ×2).
+83. **The contact sheet (D9).** For each of the three sheets, the new run beside main `970f2dc7`'s
+    run, 8 facings, at game scale and at ×2, with an animated preview playing each at its own fps
+    times its `speed / RUN_PACE` at 200 px/s. The regular contact sheet and the looks' sheet
+    (`contact-looks-archer`) show her clips without `walk_attack` and `backpedal_attack`. The
+    re-baked sheets merge only after the owner approves (ADR-0021 §5). Tune rounds after that
+    approval stay inside this change.
+84. **The report.** From the bake, for each of the three sheets: atlas pages and dimensions before
+    and after, RGBA bytes before and after, and the change in per cent. Before (main): `archer-0`
+    2532 × 4060 (41.1 MB), `archer_hunter-0` 2636 × 3924 (41.4 MB), `archer_shadow_ranger-0` 2532 ×
+    4060 (41.1 MB). *Estimate:* 64 → 36 frames a facing (−44%), so about 23–25 MB each if the frame
+    box holds, about −50 MB resident over the three. The bow across the body may widen the run's
+    box. A sheet that grows against main is escalated before merge.
+85. **Docs.** `game-client/docs/design-guideline.md`'s character clip list says the archer's run is
+    a sprint (the trunk about 20° forward, a quicker, shorter stride with knee drive and heel kick,
+    the bow held two-handed low in front, about 45°) and that her sheets carry no
+    attack-on-the-move clips. The `tools/bake/lib/contact.mjs` header notes say the same.
+86. **The fallback (D2), named for the owner.** If at the contact sheet the owner reads 16 fps as
+    shuffling, her cadence and stride go back to today's (14 fps and `RUN_STEP`'s leg keys, R69's
+    knee drive and heel kick going with them), and the change is the posture alone: R67, R72–R77. R79
+    holds either way. The owner chooses; it stays inside the charter.
+
+### Acceptance Criteria
+
+Bake (`npm test` in `game-client`: `clips.test.mjs`, `classMotion.test.mjs`,
+`clearance.test.mjs`, `archerLooks.test.mjs`, on the archer's rig and style as cast.js builds her):
+
+- [ ] The archer's sheet options carry exactly `idle`, `walk`, `attack`, `death`, `run`. `run` is
+      8 frames, looping, at 16 fps, `speed` 2.5. The Hunter's and the Shadow Ranger's rows carry
+      the same. The knight's, the wizard's and the mercenary's sheet options are deep-equal to
+      main's.
+- [ ] Her run's lean 19–21° on average, 18–22° on every sample; her head's pitch within 3° of rest
+      and as steady as the shared run's.
+- [ ] Her run's measured pace at 16 fps is within 1 px/s of `RUN_PACE` (194); `RUN_PACE` is still
+      194.
+- [ ] Her swing knee peaks above 0.311 H and her swing shin folds past 1.45 rad. A flight frame in
+      each step (both soles over 0.02 H), a foot planted in at least 4 keys, a lift of at least
+      0.045 H, a bob of at least 0.056 H and under 0.07 H.
+- [ ] Her shoulders counter-turn against the hips (correlation below −0.8, 6.5–10°).
+- [ ] On every sample: both hands ahead of the chest bone by more than 0.094 × `torsoD` H and
+      inside the shoulders' width; each at least 0.05 H above the hips bone, no higher than the
+      chest bone and under 0.70 H; the right hand within 0.02 H of the string's middle; no
+      `fx.draw` and no `fx.arrow` on any run key.
+- [ ] On every sample: the bow 35–55° off vertical, its upper tip above and ahead of the grip and
+      under the crown (all three looks, the Hunter's nock caps included), its lower tip below and
+      behind the grip; no point of the bow through a leg, a boot or the tunic.
+- [ ] Each hand moves no more than 0.02 H in the chest bone's frame over the cycle.
+- [ ] The shared run's tests (plain style, `RUN_STEP` key for key, the 10° lean, the pump bands,
+      `RUN_PACE` within 1 at 14 fps) and the other classes' run tests pass unchanged.
+- [ ] Her idle, walk, attack and death keys are deep-equal to main's.
+- [ ] The leg, cloak and quiver guards pass all three archer sheets on every clip they now carry,
+      with no exemption added.
+
+Manifest and client (`npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` in
+`game-client`):
+
+- [ ] In `public/art/manifest.json` the three archer sheets carry `idle`, `walk`, `attack`,
+      `death`, `run` (8 frames at 16 fps, looping, 8 facings), at 1.5x and trimmed, and no
+      `walk_attack`, `backpedal_attack` or `backpedal`. Every other class sheet and look is as on
+      main.
+- [ ] The shipped-sheet tests in `animationSelect.test.ts` and `manifest.test.ts` name the archer
+      without `walk_attack` and `backpedal_attack`, and the other three classes with them.
+- [ ] `animationSelect.ts` and `character.ts` are unchanged. `selectAnimation` on a sheet with
+      `run` and no `walk_attack` plays `attack` turned to the aim while attacking on the move, and
+      `run` at `speed / RUN_PACE` when not attacking (a test exists, or is added).
+- [ ] `npm run bake -- --check` is clean.
+- [ ] The bake's report gives each archer atlas's dimensions and RGBA bytes before and after, and
+      the change in per cent; none grows against main.
+- [ ] No file under `game-server/`, `game-client/src/api/generated` or any migration changes.
+
+HITL:
+
+- [ ] **The owner approves** the three archer sheets' new run beside main's on the contact sheet
+      (ADR-0021 §5), or names the fallback (R86) or a tune round.
+- [ ] **Browser check:** in a run and in the town, the archer, the Hunter and the Shadow Ranger run
+      at 200 px/s with the sprint's lean and cadence and the low-ready bow, the feet not sliding.
+      Attacking on the move plays the standing shot, and a second player sees the same.
+
+### Edge States
+
+- **Attacking on the move.** The pin stands her (R49), so `attack` shows standing. In the latency
+  gap at the pin's edges the standing shot may slide a tick or two with the drawn movement
+  (D7, accepted). A sheet still carrying `walk_attack` (any other class) behaves as today.
+- **Setting off and stopping.** The bow goes from the idle's carry at the side to the low-ready on
+  the run's first frame, and back on stopping, with no blend: clips swap as every carry does today.
+  Judged at the contact sheet and the browser check; a transition clip is out of scope.
+- **Running into a shot.** The shot starts from `attack`'s own first key (out of the idle carry),
+  so the bow jumps from the low-ready to the draw. As above, judged in play.
+- **A Shadow Shot hold while moving.** She stands in idle turned to the held aim, as before; the
+  release plays `attack`.
+- **Gear move speed.** At +20% (240 px/s) her run plays at about 1.24x (about 19.8 fps), capped by
+  `MAX_WALK_SCALE` as today. The pace match holds at any speed because playback scales with it.
+- **Mixed parties.** Until the other classes are redone, the knight, the wizard and the mercenary
+  run at 14 fps on the shared keys and keep `walk_attack`, while the archer sprints and has
+  neither attack-on-the-move clip. Expected.
+- **Other players.** Others draw her from the same sheet, so they see the sprint and the low-ready
+  bow; they never get her attack clips (Out of Scope of §A–§G, unchanged).
+- **The three looks.** The Hunter's pelt and jerkin and the Shadow Ranger's soot cloth ride the same
+  keys; the Hunter's horn nock caps lengthen the tips and count toward the crown check (R75).
+- **The cloak and the quiver under a 20° lean.** The cloak hangs further off a leaning back, and
+  the quiver tilts with the chest. If the guards then fail, or the bow passes through the cloak,
+  and only a different look would fix it, that is escalated (see *Escalate*), never exempted.
+- **The fallback (R86).** If the owner picks it, the pace is today's measure at 14 fps (193.7) and
+  R68's 16 fps no longer applies.
+- **The dark-room strip.** `contact-darkroom-archer` is regenerated with the new run; the owner
+  sees her back-facing frames there as today.
+
+### Out of Scope
+
+- The knight's, the wizard's and the mercenary's runs and their looks' runs, and dropping their
+  `walk_attack` and `backpedal_attack` (each when its own run is redone, after the owner has seen
+  the archer).
+- The `walk_attack` and `backpedal_attack` branches in `animationSelect.ts` and `character.ts`, and
+  `BACKPEDAL_PACE`: they go when the last class drops the clips.
+- The creature archers (the Bone, Ashen and Wight Archers): they have no `run` clip.
+- The archer's idle, walk, attack (the draw) and death.
+- A nocked arrow in the run, a drawn string, or a transition clip between the carries.
+- `RUN_PACE`, the server's move speed (200 px/s), the pin, and any game-server change (the human
+  lane).
+- Rewording the open browser check I-JS7C8-9, which still names every class's `walk_attack`.
