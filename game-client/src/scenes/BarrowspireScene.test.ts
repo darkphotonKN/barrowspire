@@ -1300,7 +1300,7 @@ describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {
       ),
     );
     const words = texts().map((t) => t.content);
-    expect(words).toEqual(expect.arrayContaining(["Warrior · Guardian", "Archer · Shadow Ranger"]));
+    expect(words).toEqual(expect.arrayContaining(["Guardian", "Shadow Ranger"]));
   });
 
   it("should draw no title line for a player with no spec", () => {

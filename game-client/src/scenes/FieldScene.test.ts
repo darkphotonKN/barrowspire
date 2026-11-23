@@ -3246,7 +3246,7 @@ describe("FieldScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
     place.call(field, entry("Ignis", { specialization: "pyromancer" }), true);
     place.call(field, entry("Wren"), false);
 
-    expect(texts).toEqual(["Ignis", "Mage · Pyromancer", "Wren"]);
+    expect(texts).toEqual(["Ignis", "Pyromancer", "Wren"]);
   });
 });
 

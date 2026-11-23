@@ -12,14 +12,15 @@
  * (V11). The server decides every spend again (R13, R17).
  */
 
-import { characterTitle } from "@/data/specializations";
+import { characterTitle, roleName } from "@/data/specializations";
 import { classNodes, nodeCopy, rankEffect, type PassiveExclusive, type PassiveNodeDef, type PassiveNodeKind } from "@/data/passiveTree";
 import type { TreeHue } from "@/utils/canvasPalette";
 import type { NodeIconKey } from "./passiveIcons";
 import type { CharacterSource } from "./characterSheet";
 
 /** What the tree reads of the player's own state (R41): every field may be absent. */
-export type TreeSource = Pick<CharacterSource, "class" | "level" | "passive_ranks" | "passive_points">;
+/** What the tree reads of the character: its class and ranks, and its specialization for the header's role name (FS-E1ZDG §Change: The specialization name replaces the class name). */
+export type TreeSource = Pick<CharacterSource, "class" | "level" | "passive_ranks" | "passive_points" | "specialization">;
 
 /**
  * A node's state (V25): held at max, held with more to take, available (reachable, its side not
@@ -84,7 +85,7 @@ export interface TreeView {
   /** Whether the golden knows the class: one it does not draws no nodes (R42). */
   known: boolean;
   points: number;
-  /** The class and the unspent points (R35): "Warrior · 3 points". */
+  /** The role name and the unspent points (R35; FS-E1ZDG §Change: The specialization name replaces the class name): "Warrior · 3 points", "Berserker · 3 points". */
   header: string;
   /** Every node, in the definition's order. */
   nodes: NodeView[];
@@ -116,7 +117,7 @@ export function treeView(source: TreeSource, nodes: readonly PassiveNodeDef[] = 
   return {
     known: nodes.length > 0,
     points,
-    header: `${capital(source.class)} · ${plural(points, "point")}`,
+    header: `${roleName(source.class, source.specialization)} · ${plural(points, "point")}`,
     nodes: views,
     links: linksOf(views, nodes),
   };

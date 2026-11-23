@@ -264,6 +264,14 @@ describe("the passive tree overlay's redraws (FS-8RZ51 R41)", () => {
     expect(words()).toContain("1 / 1");
   });
 
+  it("should redraw its header with the spec name as the specialization arrives, ranks and points unchanged (FS-E1ZDG §Change: The specialization name replaces the class name, N3)", () => {
+    const { overlay, words } = opened("hub", warrior({}, 3));
+    expect(words()).toContain("Warrior · 3 points");
+    overlay.show({ ...warrior({}, 3), specialization: "berserker" });
+    expect(words()).toContain("Berserker · 3 points");
+    expect(words()).not.toContain("Warrior · 3 points");
+  });
+
   it("should draw the last state it was handed as it opens", () => {
     const env = stage();
     const overlay = new PassiveTreeOverlay(env.scene, { world: "run", dismiss: () => {}, spend: () => true });

@@ -671,13 +671,13 @@ describe("PartyFrames: titles (FS-E1ZDG §K.41)", () => {
       current_player: { id: ME, current_health: 50, max_health: 100, level: 20, specialization: "pyromancer" },
       other_players: [{ id: "wren", current_health: 60, max_health: 120, level: 20, specialization: "hunter" }],
     });
-    expect(live()).toEqual(["Me", "Mage · Pyromancer", "Lv 20", "Wren", "Archer · Hunter", "Lv 20"]);
+    expect(live()).toEqual(["Me", "Pyromancer", "Lv 20", "Wren", "Hunter", "Lv 20"]);
     // under a teammate's name, at its left; the leader's crown stands on the name line alone
     const name = liveText("Wren")!;
-    const title = liveText("Archer · Hunter")!;
+    const title = liveText("Hunter")!;
     expect(title.x).toBe(name.x);
-    expect(liveText("Mage · Pyromancer")!.x).toBe(title.x);
-    expect(colourOf("Archer · Hunter")).toBe(toCss(palette.hudFaint));
+    expect(liveText("Pyromancer")!.x).toBe(title.x);
+    expect(colourOf("Hunter")).toBe(toCss(palette.hudFaint));
   });
 
   it("draws no title for a teammate elsewhere, nor before the pick", () => {
@@ -695,7 +695,7 @@ describe("PartyFrames: titles (FS-E1ZDG §K.41)", () => {
     store.getState().apply(update([member(ME, "Me", "archer")]));
     frames.show({ current_player: { id: ME, current_health: 50, max_health: 100 } });
     frames.show({ current_player: { id: ME, current_health: 50, max_health: 100, specialization: "hunter" } });
-    expect(live()).toEqual(["Me", "Archer · Hunter"]);
+    expect(live()).toEqual(["Me", "Hunter"]);
   });
 });
 

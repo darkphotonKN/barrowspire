@@ -622,14 +622,21 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   other players for now: teammates' health and resource live in the party frames (FS-CH21F R14).
   The player has no bar over their own head (FS-8AY7S).
 
-- **Title** (FS-E1ZDG): the class's display name and its specialization's, joined by " · "
-  ("Warrior · Berserker"), shown wherever the character appears. Built in the menus (the main
-  menu's hero and the character list, from the character read; I-E1ZDG-1); locked, not built in
-  a world: the nameplates' second line, the stats panel header and the party frames, which read
-  the world state (I-E1ZDG-2). A character with no specialization has no title and shows the
-  class name alone. Replaces `classLore`'s old second names (IRON GUARDIAN, ARCANE MASTER, SHADOW
-  RANGER, OATHLESS BLADE), which go entirely. Not a profile **rank** title ("Delver", "Warden"). The specialization itself
-  is game-service's term.
+- **Role name** (FS-E1ZDG § Change: The specialization name replaces the class name): the one
+  word a character's role is shown by: its specialization's name ("Berserker") once it holds a
+  known specialization of its own class, else its class's display name ("Warrior"). One rule,
+  `roleName` in `data/specializations.ts`, read by every surface that names the role: the main
+  menu's hero and the character list ("BERSERKER • LV.20"), the stats panel header, the passive
+  tree header ("Berserker · 3 points"). Display only: the class still drives mechanics, art, copy
+  lookups and the wire. Not the **title**, which exists only once specialized. Built in I-E1ZDG-11.
+- **Title** (FS-E1ZDG): the specialization's name alone ("Berserker"), shown wherever the
+  character appears once it holds one: the nameplates' second line, the party frames, the
+  tier-6 node's "Grants the title …". Was the class and the spec joined by " · " ("Warrior ·
+  Berserker") until FS-E1ZDG § Change: The specialization name replaces the class name. A
+  character with no specialization has no title (no nameplate line) and its **role name** is the
+  class name. Replaces `classLore`'s old second names (IRON GUARDIAN, ARCANE MASTER, SHADOW
+  RANGER, OATHLESS BLADE), which go entirely. Not a profile **rank** title ("Delver", "Warden").
+  The specialization itself is game-service's term.
 - **Heavy Shot** (FS-E1ZDG): the archer's right-click as the screen names it for every archer but
   a Shadow Ranger, whose reads **Shadow Shot**. Display only: the skill id stays `shadow_shot`.
 - **Aim line**: the line an archer sees while holding to aim Shadow Shot, faint until a release

@@ -6377,14 +6377,14 @@ describe("HubScene the nameplates' title line (FS-E1ZDG §K.41)", () => {
     const { hub, stage } = onStage();
     hub.placePlayer(entry("Bram", { specialization: "berserker" }), true);
     hub.placePlayer(entry("Wren", { class: "archer" }), false);
-    expect(words(stage.made)).toEqual(["Bram", "Warrior · Berserker", "Wren"]);
+    expect(words(stage.made)).toEqual(["Bram", "Berserker", "Wren"]);
   });
 
   it("should show the title from the next state after a pick in town", () => {
     const { hub, stage } = onStage();
     hub.placePlayer(entry("Bram"), true);
     hub.placePlayer(entry("Bram", { specialization: "guardian" }), true);
-    expect(words(stage.made)).toEqual(["Bram", "Warrior · Guardian"]);
+    expect(words(stage.made)).toEqual(["Bram", "Guardian"]);
   });
 });
 

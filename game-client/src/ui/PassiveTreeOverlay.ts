@@ -525,11 +525,11 @@ function inside(r: FrameRect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height;
 }
 
-/** What the tree draws from, as a key (R41). */
+/** What the tree draws from, as a key (R41): the specialization too, for the header's role name (FS-E1ZDG §Change: The specialization name replaces the class name). */
 function keyOf(source: TreeSource | undefined): string {
   if (!source) return "none";
   const ranks = Object.entries(source.passive_ranks ?? {}).sort(([a], [b]) => a.localeCompare(b));
-  return JSON.stringify([source.class, source.level ?? 1, source.passive_points ?? 0, ranks]);
+  return JSON.stringify([source.class, source.level ?? 1, source.passive_points ?? 0, ranks, source.specialization ?? ""]);
 }
 
 /** The tree for its world on `scene` (the UI scene), as `uiSceneTree.ts` keeps it. */
