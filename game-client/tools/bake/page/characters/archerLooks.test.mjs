@@ -5,8 +5,9 @@
 // head the shared face under brown hair; the Shadow Ranger is dyed through to soot. Plain
 // materials, named by the key they were cut from, stand in for the bake page's painted ones: the
 // checks read geometry and which cloth each piece is cut from. The run's two-handed low-ready bow
-// (FS-JS7C8 § Change: The archer's sprint and low-ready bow R72–R77) is checked here too, on all
-// three figures with the longbow on her hand as cast.js hangs it.
+// (FS-JS7C8 § Change: The archer's sprint and low-ready bow R72–R77, and the owner change of
+// 2026-11-23, R87–R90: canted left-high across the front, an arrow nocked) is checked here too, on
+// all three figures with the longbow on her hand as cast.js hangs it.
 
 import { describe, it, expect, vi } from "vitest";
 
@@ -53,7 +54,8 @@ const { characterPoses } = await import("./poses.js");
 const { KNOWN_CLIPPING, MIRRORED_LEGACY, clearanceError, cloakClearance, cloakClearanceError, legClearance, mirroredGarment, outside, throughCloth, tubeNow } = await import("./clearance.js");
 const { OFFHAND_OF, applyPose, clipsFor, groundPose, sample } = await import("./clips.js");
 const { BOW_BRACE, BOW_GRIP, drawGrip } = await import("./draw.js");
-const { K1 } = await import("../projection.js");
+const { AZIMUTH, ELEVATION, K1 } = await import("../projection.js");
+const { FACINGS, yawFor } = await import("../facing.js");
 
 const row = (sheet) => CAST.find((c) => c.sheet === sheet);
 const base = row("char_archer_base");
@@ -229,7 +231,7 @@ describe("the Shadow Ranger (FS-1J1CB R6)", () => {
   });
 });
 
-describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: The archer's sprint and low-ready bow R72–R77)", () => {
+describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: The archer's sprint and low-ready bow R72–R77, R87–R90)", () => {
   const FIGURES = [["char_archer_base", base], ...LOOKS];
   /** 32 samples over the 8-key cycle, as the FS measures her run. */
   const SAMPLES = Array.from({ length: 32 }, (_, k) => k / 4);
@@ -364,6 +366,8 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     for (let p = o.parent; p; p = p.parent) if (p.isBone) return p.name;
     return "";
   };
+  /** The bow's arrow (gear.js `longbow`): the group holding the steel head. */
+  const arrowOf = (bow) => bow.children.find((o) => o.isGroup && o.children.some((m) => m.isMesh && m.material.name === "F.steel")) ?? null;
   /** The top of the meshes the head bone carries (the cowl, or the Hunter's hair). */
   const crown = (rig) => {
     let top = -Infinity;
@@ -412,6 +416,7 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
           shoulders: [at(rig, "upperArmR").x / H, at(rig, "upperArmL").x / H],
           grip: onBow(0, -BOW_GRIP * H, 0),
           nock: onBow(0, BOW_BRACE * H, 0),
+          arrowShown: arrowOf(bow) !== null && shown(arrowOf(bow)),
           upper: tips[0],
           lower: tips[1],
           top: Math.max(...bowPoints(bow).map((v) => v.y)) / H,
@@ -423,12 +428,13 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
   }
   const RUNS = Object.fromEntries(FIGURES.map(([sheet, r]) => [sheet, runSamples(r)]));
 
-  it.each(FIGURES)("%s: no run key draws the string or nocks an arrow (R74)", (sheet) => {
+  it.each(FIGURES)("%s: every run key nocks an arrow on the undrawn string, and it shows on every sample (R87)", (sheet) => {
     for (const [i, p] of RUNS[sheet].run.entries()) {
+      expect(p.fx.arrow ?? 0, `key ${i} arrow`).toBe(1);
       expect(p.fx.draw ?? 0, `key ${i} draw`).toBe(0);
-      expect(p.fx.arrow ?? 0, `key ${i} arrow`).toBe(0);
       expect(p.fx.ik ?? 0, `key ${i} ik`).toBe(0);
     }
+    for (const s of RUNS[sheet].samples) expect(s.arrowShown, `@${s.f}`).toBe(true);
   });
 
   it.each(FIGURES)("%s: both hands in front of the trunk, inside the shoulders, from the belly to the lower chest, under 0.70 H (R72, R73)", (sheet) => {
@@ -450,7 +456,7 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
       }
   });
 
-  it.each(FIGURES)("%s: the right hand holds the braced string at its middle (R74)", (sheet) => {
+  it.each(FIGURES)("%s: the right hand lightly at the arrow's nock, on the braced string's middle (R87)", (sheet) => {
     for (const s of RUNS[sheet].samples) expect(s.pull.distanceTo(s.nock), `@${s.f}`).toBeLessThanOrEqual(0.02);
   });
 
@@ -463,19 +469,69 @@ describe("the archer's two-handed low-ready bow in the run (FS-JS7C8 § Change: 
     }
   });
 
-  it.each(FIGURES)("%s: the bow about 45° off vertical, the upper limb forward and up under the crown, the lower limb back and down (R75)", (sheet) => {
+  it.each(FIGURES)("%s: the bow canted left-high across the front, about 68° off vertical, the arrow forward and 20–40° down (R88)", (sheet) => {
+    const offs = [];
     for (const s of RUNS[sheet].samples) {
+      // her own left is the model's +x in every facing (the bake turns the whole model)
+      expect(s.upper.x, `@${s.f} upper tip on her left of the grip`).toBeGreaterThan(s.grip.x);
+      expect(s.upper.y, `@${s.f} upper tip above the grip`).toBeGreaterThan(s.grip.y);
+      expect(s.lower.x, `@${s.f} lower tip on her right of the grip`).toBeLessThan(s.grip.x);
+      expect(s.lower.y, `@${s.f} lower tip below the grip`).toBeLessThan(s.grip.y);
       const d = s.upper.clone().sub(s.lower);
       const off = (Math.acos(d.y / d.length()) * 180) / Math.PI;
-      expect(off, `@${s.f} off vertical`).toBeGreaterThanOrEqual(35);
-      expect(off, `@${s.f} off vertical`).toBeLessThanOrEqual(55);
-      expect(s.upper.y, `@${s.f} upper tip above the grip`).toBeGreaterThan(s.grip.y);
-      expect(s.upper.z, `@${s.f} upper tip ahead of the grip`).toBeGreaterThan(s.grip.z);
-      // every drawn point of the bow, the Hunter's horn caps included
-      expect(s.top, `@${s.f} the bow under the crown`).toBeLessThan(s.crown);
-      expect(s.lower.y, `@${s.f} lower tip below the grip`).toBeLessThan(s.grip.y);
-      expect(s.lower.z, `@${s.f} lower tip behind the grip`).toBeLessThan(s.grip.z);
+      offs.push(off);
+      expect(off, `@${s.f} off vertical`).toBeGreaterThanOrEqual(58);
+      expect(off, `@${s.f} off vertical`).toBeLessThanOrEqual(76);
+      // the arrow runs from the nock through the grip (gear.js longbow)
+      const a = s.grip.clone().sub(s.nock).normalize();
+      const down = (-Math.asin(a.y) * 180) / Math.PI;
+      expect(down, `@${s.f} arrow below level`).toBeGreaterThanOrEqual(20);
+      expect(down, `@${s.f} arrow below level`).toBeLessThanOrEqual(40);
+      // the facing she runs along is the model's +z (cast.js builds her facing it)
+      const heading = (Math.atan2(a.x, a.z) * 180) / Math.PI;
+      expect(Math.abs(heading), `@${s.f} arrow heading off the facing`).toBeLessThanOrEqual(15);
     }
+    const mean = offs.reduce((t, v) => t + v, 0) / offs.length;
+    expect(mean).toBeGreaterThanOrEqual(62);
+    expect(mean).toBeLessThanOrEqual(72);
+  });
+
+  /**
+   * How far under the head the bow and its arrow draw on screen, per facing, over the baked run
+   * frames (rig heights; negative when a point of them draws above the head): every drawn point
+   * against the highest of the meshes the head bone carries, along the camera's up (projection.js),
+   * the model turned to each facing as the bake turns it.
+   */
+  function screenMargins(r) {
+    const { rig, poses } = characterPoses(r);
+    const bow = bowFrame(rig);
+    const up = new THREE.Vector3(-Math.sin(ELEVATION) * Math.sin(AZIMUTH), Math.cos(ELEVATION), -Math.sin(ELEVATION) * Math.cos(AZIMUTH));
+    const out = Object.fromEntries(FACINGS.map((f) => [f, Infinity]));
+    for (const p of poses.filter((q) => q.anim === "run")) {
+      p.apply();
+      rig.root.updateMatrixWorld(true);
+      const bowPts = bowPoints(bow);
+      const headPts = [];
+      rig.bones.head.traverse((o) => {
+        if (!o.isMesh) return;
+        const pos = o.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) headPts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
+      });
+      for (const f of FACINGS) {
+        const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yawFor(f));
+        const top = (pts) => Math.max(...pts.map((v) => v.clone().applyQuaternion(q).dot(up)));
+        out[f] = Math.min(out[f], (top(headPts) - top(bowPts)) / rig.H);
+      }
+    }
+    return out;
+  }
+
+  it.each(FIGURES.filter(([sheet]) => sheet !== HUNTER))("%s: the tip never draws above the head on screen, in any facing (R90)", (sheet, r) => {
+    for (const [f, m] of Object.entries(screenMargins(r))) expect(m, `${f}: under the head on screen (H)`).toBeGreaterThanOrEqual(0);
+  });
+
+  it("the Hunter: her tip draws over her hair in n and ne only, by no more than 0.04 H, until the owner chooses (R90, escalated)", () => {
+    for (const [f, m] of Object.entries(screenMargins(row(HUNTER)))) expect(m, `${f}: under the head on screen (H)`).toBeGreaterThanOrEqual(f === "n" || f === "ne" ? -0.04 : 0);
   });
 
   it.each(FIGURES)("%s: no point of the bow, its string or its arrow passes through a leg, a boot or the tunic on any baked run frame (R76)", (sheet, r) => {
