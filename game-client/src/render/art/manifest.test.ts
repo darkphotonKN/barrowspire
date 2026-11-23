@@ -1278,7 +1278,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       // her sprint dropped her attacks on the move (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79)
       char_archer_base: ["run"],
       char_wizard_base: ["run", "walk_attack", "backpedal_attack"],
-      char_mercenary_base: ["parry", "run", "walk_attack", "backpedal_attack"],
+      // his sprint dropped his attacks on the move, the parry kept (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
+      char_mercenary_base: ["parry", "run"],
     };
     /** The class sheets re-baked with the run and the backward step, at 1.5x (FS-JS7C8 slices 12, 7, 6, 8). */
     const RUNNING = ["char_archer_base", "char_wizard_base", "char_knight_base", "char_mercenary_base"];
@@ -1379,8 +1380,8 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       expect(baked.sheets[name].animations).not.toHaveProperty("backpedal");
     });
 
-    /** The running classes that still attack on the move: every one but the archer (FS-JS7C8 R79). */
-    const BACKPEDALLING = RUNNING.filter((name) => name !== "char_archer_base");
+    /** The running classes that still attack on the move: the knight and the wizard (FS-JS7C8 R79, R107). */
+    const BACKPEDALLING = RUNNING.filter((name) => name !== "char_archer_base" && name !== "char_mercenary_base");
 
     it.each(BACKPEDALLING)("gives %s backpedal_attack as long as its attack, played once in the 8 facings, and no standalone backpedal (FS-JS7C8 R8)", (name) => {
       const sheet = baked.sheets[name];

@@ -306,8 +306,15 @@ lit) while the player stands inside.
   vertical, its upper limb forward and up under the crown, its lower limb back and down outside the
   left leg. Attacking no longer moves her (the pin), so her sheets, and her looks', carry no
   `walk_attack` and no `backpedal_attack`: she plays `attack`, turned to her aim, moving or not.
-  The other classes keep both until their own runs are redone (FS-JS7C8 § Change: The archer's
-  sprint and low-ready bow). *(Amended with FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
+  The mercenary is the second: he runs the archer's sprint (the same lean, legs and 16 fps), his
+  free arm pumping as the shared run's does, the sword arm swung back behind the trunk, nearly
+  straight, the hand at the hip, the curved blade trailing low behind him with its point and its
+  edge down, never on the ground (its lowest point at least 0.06 H up), swaying a little with the
+  stride. His sheets, and his looks', carry no `walk_attack` and no `backpedal_attack`, and keep
+  the `parry`: he plays `attack`, turned to his aim, moving or not (FS-JS7C8 § Change: The
+  mercenary's sprint and trailing sword). The knight and the wizard keep both until their own
+  runs are redone (FS-JS7C8 § Change: The archer's sprint and low-ready bow). *(Amended with
+  FS-JS7C8, owner change 2026-11-23.)* A class's attack moves the whole body: a wind-up opposite the
   strike with the weight back, the pelvis turning in before the chest and the arm, the weapon on a
   curve, fastest through the strike and eased at its ends, the weight onto the front foot, a
   follow-through and a recover, still 7 keys at 12 fps with the strike at key 3. A slash is a

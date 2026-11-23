@@ -244,6 +244,21 @@ describe("selectAnimation: the run, and the backward step only while attacking (
       { animation: "run", facing: "s", direction: 2 },
     ],
     [
+      "the mercenary's sheet (parry and run, no attack on the move) plays the whole attack turned to the aim while attacking on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, R108)",
+      { ...swinging(aimNorth, south), run: true },
+      { animation: "attack", facing: "n", direction: 6 },
+    ],
+    [
+      "the mercenary's sheet plays the parry while guarding on the move, turned the way he goes (R108)",
+      { guarding: true, velocity: south, facing: "w", run: true },
+      { animation: "parry", facing: "s", direction: 2 },
+    ],
+    [
+      "the mercenary's sheet runs turned to its movement when neither attacking nor guarding (R108)",
+      { velocity: south, facing: "n", run: true },
+      { animation: "run", facing: "s", direction: 2 },
+    ],
+    [
       "attacking while standing is the whole-body attack",
       { attacking: true, aim: aimNorth, ...full },
       { animation: "attack", facing: "n", direction: 6 },
@@ -466,8 +481,9 @@ describe("the shipped character sheets", () => {
   const CLASS_OR_LOOK = [...CLASS_SHEETS, ...LOOK_SHEETS];
 
   // the archer's sheets dropped theirs with her sprint (FS-JS7C8 § Change: The archer's sprint and
-  // low-ready bow R79); the other three classes keep theirs
-  const WALK_ATTACKERS = ["warrior", "mage", "mercenary"];
+  // low-ready bow R79), the mercenary's with his (§ Change: The mercenary's sprint and trailing
+  // sword R107); the knight and the wizard keep theirs
+  const WALK_ATTACKERS = ["warrior", "mage"];
 
   it.each(WALK_ATTACKERS)(
     "should give %s walk_attack: 8-way, played once, and exactly as long as its attack (FS-HF0WW, FS-3V7GC)",
@@ -493,6 +509,19 @@ describe("the shipped character sheets", () => {
       expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "run"]);
       expect([scale, trimmed], name).toEqual([1.5, true]);
       // her sprint: 8 frames looping at 16 fps, in the 8 facings (R68)
+      expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
+      expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
+    }
+  });
+
+  it("should give the mercenary and his looks his six clips alone: the parry kept, no walk_attack and no backpedal_attack (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)", () => {
+    const his = Object.keys(manifest.sheets).filter((name) => name.startsWith("char_mercenary_"));
+    expect(his.sort()).toEqual(["char_mercenary_base", "char_mercenary_duelist", "char_mercenary_sellsword"]);
+    for (const name of his) {
+      const { animations, scale, trimmed } = manifest.sheets[name];
+      expect(Object.keys(animations), name).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+      expect([scale, trimmed], name).toEqual([1.5, true]);
+      // the shared sprint: 8 frames looping at 16 fps, in the 8 facings (R94)
       expect([animations.run.fps, animations.run.loop], name).toEqual([16, true]);
       expect(animations.run.frames.map((dir) => dir.length), name).toEqual([8, 8, 8, 8, 8, 8, 8, 8]);
     }

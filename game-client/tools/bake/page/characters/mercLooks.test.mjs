@@ -93,7 +93,8 @@ describe("the mercenary's spec looks in the cast (FS-1J1CB R9, R15)", () => {
     expect(CAST.filter((c) => c.group === r.group)).toHaveLength(1);
     expect(r).toMatchObject({ scale: 1.5, trim: true, module: "mercLooks" });
     expect(Object.keys(r.animations)).toEqual(Object.keys(base.animations));
-    expect(Object.keys(r.animations)).toContain("parry");
+    // his six, the parry kept, no attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
+    expect(Object.keys(r.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
     for (const [anim, spec] of Object.entries(base.animations)) expect(r.animations[anim], `${sheet} ${anim}`).toEqual(spec);
     for (const t of Object.values(OFFHAND_OF)) expect(r.animations[t]).toBeUndefined();
   });
@@ -117,7 +118,8 @@ describe("the mercenary's spec looks pass the guards on every clip (FS-1J1CB R11
     expect(KNOWN_CLIPPING.has(sheet)).toBe(false);
     expect(MIRRORED_LEGACY.has(sheet)).toBe(false);
     const clips = legClearance(rig, poses);
-    expect(Object.keys(clips ?? {}).sort()).toEqual(["attack", "backpedal_attack", "idle", "parry", "run", "walk", "walk_attack"]);
+    // his clips, no attack on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107)
+    expect(Object.keys(clips ?? {}).sort()).toEqual(["attack", "idle", "parry", "run", "walk"]);
     expect(clearanceError(sheet, clips, { scale: r.scale, mirrored: false, known: new Map(), legacy: new Set() })).toBeNull();
   });
 

@@ -6,7 +6,11 @@
 // sprint (the trunk about 20° forward, a quicker, shorter stride with knee drive and heel kick,
 // the bow held two-handed low in front at about 45°) and carry no `walk_attack` and no
 // `backpedal_attack` (FS-JS7C8 § Change: The archer's sprint and low-ready bow R79, R85): her
-// clips are idle, walk, attack, death and run. The tower interior sheets
+// clips are idle, walk, attack, death and run. The mercenary and his looks show `run` as the same
+// sprint with the sword trailing behind (the sword arm back, the hand at the hip, the curved blade
+// low behind him, its point and its edge down and off the ground) and carry no `walk_attack` and
+// no `backpedal_attack` (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107, R113):
+// his clips are idle, walk, attack, death, parry and run. The tower interior sheets
 // (FS-8RBQY §D.7) follow the cast on the same sheet, one row per sheet, frames left to right.
 //
 // Written to tools/bake/review/ (gitignored) on every `npm run bake`, never by --check:

@@ -395,10 +395,21 @@ function dressed(cls, { cut = "now", specs = SHEETS[cls], gownSegs = 64, panelSe
   return { rig, posesOf };
 }
 
+/**
+ * The garmented classes' moving clips, as their sheets carry them: the mercenary's carry no attack
+ * on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107).
+ */
+const MOVING = {
+  knight: ["run", "walk", "walk_attack", "backpedal_attack"],
+  wizard: ["run", "walk", "walk_attack", "backpedal_attack"],
+  mercenary: ["run", "walk"],
+};
+
 describe("a leg is measured through the cloth where the cloth hangs (FS-HF0WW § Change: The guard measures a leg through the cloth)", () => {
-  it.each(["knight", "wizard", "mercenary"])("passes the %s's garment through the fast run, the walk and both attacks on the move at 1.5x", (cls) => {
+  it.each(Object.entries(MOVING))("passes the %s's garment through every moving clip its sheet carries at 1.5x: %j", (cls, anims) => {
+    expect(anims.every((anim) => anim in SHEETS[cls])).toBe(true);
     const { rig, posesOf } = dressed(cls);
-    for (const anim of ["run", "walk", "walk_attack", "backpedal_attack"]) {
+    for (const anim of anims) {
       const clips = legClearance(rig, posesOf(anim));
       expect(clips[anim]?.px ?? 0, `${cls} ${anim} frame ${clips[anim]?.frame}`).toBeLessThanOrEqual(clearanceLimit(1.5));
     }
@@ -463,9 +474,9 @@ function overGarment(rig, poses) {
 }
 
 describe("no leg is seen through the cloth (FS-HF0WW § Change: The guard measures a leg through the cloth, 2026-11-12: the owner's \"法師跑步會輕微破圖 膝蓋處會凸出衣服 腰部似乎也有一點\")", () => {
-  it.each(["knight", "wizard", "mercenary"])("the camera sees no hip, thigh or knee of the %s through the garment or the waist in any facing at rest, through the run, the walk and both attacks on the move", (cls) => {
+  it.each(Object.entries(MOVING))("the camera sees no hip, thigh or knee of the %s through the garment or the waist in any facing at rest and through every moving clip its sheet carries: %j", (cls, anims) => {
     const { rig, posesOf } = dressed(cls);
-    for (const anim of ["idle", "run", "walk", "walk_attack", "backpedal_attack"]) {
+    for (const anim of ["idle", ...anims]) {
       const worst = seenThroughCloth(rig, posesOf(anim)).reduce((m, f) => (f.seen > m.seen ? f : m), { seen: 0 });
       expect(worst.seen, `${cls} ${anim} frame ${worst.i}`).toBe(0);
     }
@@ -535,8 +546,12 @@ describe("no leg or boot comes out through a cloak (FS-HF0WW § Change: The guar
     expect(cloakClearanceError(`char_${cls}_base`, clips, { scale: 1.5 })).toMatch(new RegExp(`char_${cls}_base: a leg or boot shows through the cloak.*backpedal_attack frame \\d+ by`));
   });
 
+  // his sheets no longer carry backpedal_attack (FS-JS7C8 § Change: The mercenary's sprint and
+  // trailing sword R107), so the control reads his old one from the shared clip set, as the
+  // archer's `before` does above
   it("measures nothing on a rig without a cloak, and the mercenary's coat by the garment guard", () => {
-    const { rig, posesOf } = dressed("mercenary");
+    expect(SHEETS.mercenary).not.toHaveProperty("backpedal_attack");
+    const { rig, posesOf } = dressed("mercenary", { specs: RUNNING_CLASS_ANIMATIONS });
     expect(cloakClearance(rig, posesOf("backpedal_attack"))).toBeNull();
     expect(cloakClearanceError("char_mercenary_base", null, { scale: 1.5 })).toBeNull();
     const clips = legClearance(rig, posesOf("backpedal_attack"));

@@ -115,9 +115,6 @@ export const MERC_ANIMATIONS = withWalkAttack({
   parry: { frames: 4, fps: 24, loop: false },
 });
 
-/** The Mercenary's sheet re-baked with the run (FS-JS7C8 slice 8): his clips, the parry, and the running class's. */
-export const RUNNING_MERC_ANIMATIONS = withWalkAttack({ ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, ...RUN_ANIMATIONS });
-
 /** The attack clips a dual-wielder swings with either hand (FS-1J1CB §D R28). */
 export const OFFHAND_OF = { attack: "attack_offhand", walk_attack: "walk_attack_offhand", backpedal_attack: "backpedal_attack_offhand" };
 

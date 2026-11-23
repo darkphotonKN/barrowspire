@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { describe, it, expect } from "vitest";
 import * as THREE from "three";
 import {
+  ANIMATIONS,
   ATTACKS,
   ATTACK_TURN_LIMIT,
   RUNNING_CLASS_ANIMATIONS,
@@ -622,12 +623,19 @@ describe.each(CLASSES)("the $name holds the weapon in a normal grip, never turne
   });
 });
 
+/**
+ * The clips a class's carry is held to: the four and its attacks on the move. The mercenary's
+ * sheets carry none on the move (FS-JS7C8 § Change: The mercenary's sprint and trailing sword
+ * R107), so his are the four.
+ */
+const CARRIED = (name) => (name === "mercenary" ? ["idle", "walk", "run", "attack"] : ["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"]);
+
 describe.each(CLASSES)("the $name's carry stays out of the body and the head (FS-JS7C8 R2, FS-2325V § Change: The class attacks move with weight and cut deep R6)", ({ name, build, style, sheet }) => {
   const rig = rigOf(build);
   const gear = GEAR[name](rig);
   const clips = clipsFor(style, sheet.animations);
 
-  it.each(["idle", "walk", "run", "attack", "walk_attack", "backpedal_attack"])("on every key of %s", (anim) => {
+  it.each(CARRIED(name))("on every key of %s", (anim) => {
     expect(clips[anim], anim).toBeDefined();
     const d = deepestCarry(rig, gear, clips[anim]);
     expect(d.torso, `${anim}: into the torso`).toBeLessThan(0);
@@ -1064,10 +1072,13 @@ describe("the mercenary's sprint (FS-JS7C8 § Change: The mercenary's sprint and
   const spec = MERCENARY_SHEET.animations.run;
   const clips = clipsFor(MERCENARY_STYLE, MERCENARY_SHEET.animations);
 
-  it("runs the sprint's clip: 8 frames looping at 16 fps, speed 2.5, his parry kept, at 1.5x (R94)", () => {
+  it("runs the sprint's clip: 8 frames looping at 16 fps, speed 2.5, his parry kept, at 1.5x, no attack on the move (R94, R107)", () => {
     expect(spec).toEqual({ frames: 8, fps: 16, loop: true, speed: 2.5 });
     expect(MERCENARY_SHEET.scale).toBe(1.5);
     expect(MERCENARY_SHEET.animations.parry).toEqual(MERC_ANIMATIONS.parry);
+    // idle, walk, attack, death, the parry and the sprint, in that order: no walk_attack, no backpedal_attack (M5)
+    expect(Object.keys(MERCENARY_SHEET.animations)).toEqual(["idle", "walk", "attack", "death", "parry", "run"]);
+    for (const anim of ["idle", "walk", "attack", "death"]) expect(MERCENARY_SHEET.animations[anim], anim).toEqual(ANIMATIONS[anim]);
   });
 
   // escalated 2026-11-23 (R95, option (a) until the owner picks): the shared keys at 16 fps read

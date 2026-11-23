@@ -2,7 +2,7 @@
 // from their dress in cast.js so the clip tests can pose the real rig and style in Node, without
 // the bake page's canvases and theme.
 
-import { ANIMATIONS, CLEAVE_CARRY, RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, RUNNING_MERC_ANIMATIONS, pose, withOffhand } from "./clips.js";
+import { ANIMATIONS, CLEAVE_CARRY, MERC_ANIMATIONS, RUN_ANIMATIONS, RUNNING_CLASS_ANIMATIONS, pose, withOffhand } from "./clips.js";
 
 /**
  * How the playable classes carry their weapon (FS-JS7C8 R2, owner 2026-11-12: "拿武器的動作有點怪
@@ -350,11 +350,14 @@ const MERC_TRAILING_SWAY = 0.1;
 export const MERCENARY_BUILD = [1.98, { shoulderW: 1.14, torsoW: 1.07, torsoD: 1.04, hipW: 0.95, armR: 1.16, limbR: 1.1 }];
 
 /**
- * The mercenary re-baked with the run and the backward step at 1.5x, his parry kept (FS-JS7C8
- * slice 8, FS-HF0WW § Change: Class sheets at 1.5x R35), his run the sprint's clip at 16 fps
- * ({@link SPRINT_RUN}; FS-JS7C8 § Change: The mercenary's sprint and trailing sword R94).
+ * The mercenary's sheet at 1.5x (FS-HF0WW § Change: Class sheets at 1.5x R35), a clip set of his
+ * own (FS-JS7C8 § Change: The mercenary's sprint and trailing sword R107): the four, his parry
+ * (FS-MAMHR §H) and his run, the sprint's clip at 16 fps ({@link SPRINT_RUN}, R94). Built without
+ * withWalkAttack: attacking no longer moves him (the pin), so his sheets carry no `walk_attack`
+ * and no `backpedal_attack`, and the client plays his `attack` moving or not (R108). The Duelist
+ * and the Sellsword take it through cast.js `specRow`.
  */
-export const MERCENARY_SHEET = { animations: { ...RUNNING_MERC_ANIMATIONS, run: SPRINT_RUN }, scale: 1.5 };
+export const MERCENARY_SHEET = { animations: { ...ANIMATIONS, parry: MERC_ANIMATIONS.parry, run: SPRINT_RUN }, scale: 1.5 };
 
 export const MERCENARY_STYLE = {
   attack: "cut",
