@@ -79,6 +79,17 @@ export const BARROW = {
   rarityRuned: "#c07a3a",
   rarityFabled: "#d678c8",
 
+  // The passive tree's hues (FS-8RZ51 §Change: A lit node glows in its own colour, L4; ADR-0089): a lit
+  // tree picture's colour by what its node gives, mixed with the HUD's bronze where it is drawn. Read
+  // only through `palette.treeHue`, and only by the tree's pictures. Frost is a pale, desaturated cold
+  // tone, not neon cyan; amethyst is crit, not umbra (design guideline, "Palette").
+  copper: "#d49274", //     power
+  steelBlue: "#5f82b8", //  defence
+  frost: "#8cc4d0", //      speed
+  verdigris: "#5fa88a", //  movement, evasion
+  amethyst: "#a088cc", //   crit
+  silver: "#c4cad0", //     the duel
+
   // Menu chrome: Bone & Soot, the canvas menus' own values (ADR-0087; see the header). The
   // comments name the web token each held until 2026-11-21, which is also the swap-back table.
   // Read only by the canvas menus, through `palette.menu` in canvasPalette.ts.
@@ -136,6 +147,12 @@ export const BARROW_HEX = {
   rarityCommon: 0xa2946d,
   rarityRuned: 0xc07a3a,
   rarityFabled: 0xd678c8,
+  copper: 0xd49274,
+  steelBlue: 0x5f82b8,
+  frost: 0x8cc4d0,
+  verdigris: 0x5fa88a,
+  amethyst: 0xa088cc,
+  silver: 0xc4cad0,
   menuBone: 0xe9dfc9,
   menuBoneBright: 0xf6efdf,
   menuAsh: 0x8c8c84,

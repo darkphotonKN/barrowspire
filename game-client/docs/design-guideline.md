@@ -137,6 +137,7 @@ and the two are not required to agree (ADR-0025).
 | **Blood / danger** | oxblood `#6e1f1f` |
 | **Parchment / UI** | vellum `#cdbf9a`, darkened `#8a7d5c`, ink `#1c1712` |
 | **Brass** | `#9c7b3f`, `#c9a14e` |
+| **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, frost `#8cc4d0`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c4cad0` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
 and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
@@ -146,6 +147,18 @@ dark smoke vanishes over brown ground, so the shot reads by hue instead: a dim, 
 violet that no other channel uses. It is not a readability channel (see below), and it is never
 saturated or bright: a violet that glows like neon fails the rule below.
 One exception, text only: a whisper's line in the chat window is drawn in umbra lifted toward vellum (`palette.chatWhisper`, FS-WJGFJ R30), so a private word reads apart from every public one.
+
+**The passive tree's hues are for a lit tree picture only** (`palette.treeHue`, FS-8RZ51 §Change: A
+lit node glows in its own colour, [ADR-0089](../../docs/adr/0089-a-lit-passive-tree-node-draws-its-picture-in-its-own-hue-with-a-glow.md)):
+a held node's picture and its halo wear a hue by what the node gives, and nothing else reads them.
+Ten hues: health, fire and mana reuse their channels (lifted oxblood, ember, necrotic), a resource
+refund is bright brass lifted to a pale gold, and the six bases above are the rest (power copper,
+defence steelBlue, speed frost, movement verdigris, crit amethyst, the duel silver). None is amber or
+arcane green, and none is one of fire's own three. Two of them sit near lines this page draws, so
+they are narrow on purpose:
+- **Frost** is a pale, desaturated cold tone, not the neon cyan the rules below forbid.
+- **Amethyst** marks crit in the tree and is not umbra, which stays the Shadow Shot's and the Shadow
+  Ranger's gloom.
 
 **Fire's ramp is for fire effects only** (a burn, an ember, a spark; FS-PQ2TW): it never marks an
 interactable, which stays amber, and never stands in for a light source's colour. It may also be

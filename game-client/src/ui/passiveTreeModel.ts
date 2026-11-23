@@ -14,6 +14,7 @@
 
 import { characterTitle } from "@/data/specializations";
 import { classNodes, nodeCopy, rankEffect, type PassiveExclusive, type PassiveNodeDef, type PassiveNodeKind } from "@/data/passiveTree";
+import type { TreeHue } from "@/utils/canvasPalette";
 import type { NodeIconKey } from "./passiveIcons";
 import type { CharacterSource } from "./characterSheet";
 
@@ -61,6 +62,11 @@ export interface NodeView {
   ask?: string;
   /** The picture it draws (R40); none for a node the copy lacks, which draws the fallback glyph (R42). */
   icon?: NodeIconKey;
+  /**
+   * The hue its picture wears while lit (§Change: A lit node glows in its own colour, L5), whatever its
+   * state: the overlay decides when it shows. None for a node the copy lacks (R42).
+   */
+  hue?: TreeHue;
   tip: TipLine[];
 }
 
@@ -227,6 +233,7 @@ function nodeView(node: PassiveNodeDef, rule: TreeRule, points: number, source: 
   const unreached = rank > 0 ? undefined : rule.unreached(node);
   const state: NodeState = rank >= node.maxRank ? "max" : taken ? "locked" : rank > 0 ? "held" : unreached ? "closed" : "available";
   const spendable = (state === "available" || state === "held") && points >= 1;
+  const copy = nodeCopy(node.id);
   return {
     id: node.id,
     name: nameOf(node.id),
@@ -238,7 +245,8 @@ function nodeView(node: PassiveNodeDef, rule: TreeRule, points: number, source: 
     state,
     spendable,
     ask: spendable ? rule.ask(node) : undefined,
-    icon: nodeCopy(node.id)?.icon,
+    icon: copy?.icon,
+    hue: copy?.hue,
     tip: tipLines(node, rank, source, reasons(state, taken && rule.chosenName(taken), unreached, points, source.level)),
   };
 }

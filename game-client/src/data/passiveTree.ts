@@ -19,6 +19,7 @@
 
 import { TREE_ABILITY_COPY } from "@/ui/abilityCopy";
 import type { NodeIconKey } from "@/ui/passiveIcons";
+import type { TreeHue } from "@/utils/canvasPalette";
 import type { SpecializationId } from "./specializations";
 import golden from "./passiveTree.golden.json";
 
@@ -82,6 +83,11 @@ export interface PassiveNodeCopy {
    * ability bar (`ABILITY_ICONS`). Every node has one; a node id the copy lacks has no copy at all (R42).
    */
   icon: NodeIconKey;
+  /**
+   * The hue its picture wears while lit (§Change: A lit node glows in its own colour, L4, L5): by what the
+   * node gives, a key of `palette.treeHue`. Every node has one; a node id the copy lacks has none (R42).
+   */
+  hue: TreeHue;
   /** A specialization node's pick (FS-E1ZDG): its title's name. */
   specialization?: SpecializationId;
   /**
@@ -93,13 +99,14 @@ export interface PassiveNodeCopy {
 
 /**
  * The four traversal nodes, the same in every class (V13), each with its own picture (V29): Vitality
- * the heart and its pulse, Might the flexed arm, Haste the gust, Fleetness the bare foot in stride.
+ * the heart and its pulse, Might the flexed arm, Haste the gust, Fleetness the bare foot in stride;
+ * and each its hue (L5), so every class's slots share it.
  */
 const TRAVERSAL = {
-  vitality: { name: "Vitality", icon: "vitality" },
-  might: { name: "Might", icon: "might" },
-  haste: { name: "Haste", icon: "haste" },
-  fleetness: { name: "Fleetness", icon: "fleetness" },
+  vitality: { name: "Vitality", icon: "vitality", hue: "health" },
+  might: { name: "Might", icon: "might", hue: "power" },
+  haste: { name: "Haste", icon: "haste", hue: "speed" },
+  fleetness: { name: "Fleetness", icon: "fleetness", hue: "movement" },
 } as const satisfies Record<string, PassiveNodeCopy>;
 
 /** Which traversal node stands in each slot, the same for every class (V2's table). */
@@ -136,81 +143,90 @@ const traversal = (cls: string) => Object.fromEntries(Object.entries(TRAVERSAL_S
 /** Every node's presentation, by node id (R39). The golden's ids and these keys are one set (R6). */
 export const PASSIVE_COPY: Readonly<Record<string, PassiveNodeCopy>> = {
   ...traversal("warrior"),
-  "warrior.t2a": { name: "Heavy Hand", icon: "heavy_hand", kicker: "A slash that hits 2 or more monsters refunds 5 stamina." },
-  "warrior.t2b": { name: "Thick Skin", icon: "thick_skin", kicker: "While below half max HP, damage taken is 10% less." },
-  "warrior.t3": { name: TREE_ABILITY_COPY.warrior.name, icon: "earthbreaker", effect: "Slam the ground: hit and stun everything within 90 px for 1 s (0.5 s on a boss)." },
-  "warrior.t5a": { name: "Long Wind", icon: "long_wind", kicker: "A kill refunds 15 stamina." },
-  "warrior.t5b": { name: "Bull Rush", icon: "bull_rush", kicker: "Your first hit within 3 s of a dash ending is a sure crit." },
+  "warrior.t2a": { name: "Heavy Hand", icon: "heavy_hand", hue: "power", kicker: "A slash that hits 2 or more monsters refunds 5 stamina." },
+  "warrior.t2b": { name: "Thick Skin", icon: "thick_skin", hue: "defence", kicker: "While below half max HP, damage taken is 10% less." },
+  "warrior.t3": { name: TREE_ABILITY_COPY.warrior.name, icon: "earthbreaker", hue: "power", effect: "Slam the ground: hit and stun everything within 90 px for 1 s (0.5 s on a boss)." },
+  "warrior.t5a": { name: "Long Wind", icon: "long_wind", hue: "refund", kicker: "A kill refunds 15 stamina." },
+  "warrior.t5b": { name: "Bull Rush", icon: "bull_rush", hue: "crit", kicker: "Your first hit within 3 s of a dash ending is a sure crit." },
   "warrior.t6a": {
     name: "Guardian",
     icon: "guardian",
+    hue: "defence",
     specialization: "guardian",
     effect: "Last Stand: once per floor, a hit that would kill you leaves you at 1 HP and refills your stamina.",
   },
   "warrior.t6b": {
     name: "Berserker",
     icon: "berserker",
+    hue: "health",
     specialization: "berserker",
     effect: "Blood price: 33% less max HP for +25% attack speed and +10% damage; each slash that hits heals 1.5% of max HP.",
   },
 
   ...traversal("mage"),
-  "mage.t2a": { name: "Kindling", icon: "kindling", kicker: "A fireball crit refunds 5 mana." },
-  "mage.t2b": { name: "Deep Well", icon: "deep_well", kicker: "+25% mana regen." },
-  "mage.t3": { name: TREE_ABILITY_COPY.mage.name, icon: "blink", effect: "Teleport up to 180 px toward the cursor; walls stop you." },
-  "mage.t5a": { name: "Wide Volley", icon: "wide_volley", kicker: "The volley throws 5 fireballs, not 3." },
-  "mage.t5b": { name: "Searing", icon: "searing", kicker: "Fireballs pierce one more monster." },
+  "mage.t2a": { name: "Kindling", icon: "kindling", hue: "fire", kicker: "A fireball crit refunds 5 mana." },
+  "mage.t2b": { name: "Deep Well", icon: "deep_well", hue: "mana", kicker: "+25% mana regen." },
+  "mage.t3": { name: TREE_ABILITY_COPY.mage.name, icon: "blink", hue: "mana", effect: "Teleport up to 180 px toward the cursor; walls stop you." },
+  "mage.t5a": { name: "Wide Volley", icon: "wide_volley", hue: "fire", kicker: "The volley throws 5 fireballs, not 3." },
+  "mage.t5b": { name: "Searing", icon: "searing", hue: "fire", kicker: "Fireballs pierce one more monster." },
   "mage.t6a": {
     name: "Spellwarden",
     icon: "spellwarden",
+    hue: "mana",
     specialization: "spellwarden",
     effect: "Arcane Ward: a quarter of each hit's damage comes off your mana first, and magic hits deal 10% less.",
   },
   "mage.t6b": {
     name: "Pyromancer",
     icon: "pyromancer",
+    hue: "fire",
     specialization: "pyromancer",
     effect: "Combustion: a fireball crit explodes for half its damage on every other monster within 60 px.",
   },
 
   ...traversal("archer"),
-  "archer.t2a": { name: "Quick Draw", icon: "quick_draw", kicker: "Every 4th arrow pierces one more monster." },
-  "archer.t2b": { name: "Fleet Foot", icon: "fleet_foot", kicker: "Sidestep: 10% of monster strikes on you miss." },
-  "archer.t3": { name: TREE_ABILITY_COPY.archer.name, icon: "arrow_rain", effect: "Five volleys of arrows fall on a 70 px circle over 1.5 s." },
-  "archer.t5a": { name: "Eagle Eye", icon: "eagle_eye", kicker: "Every Shadow Shot is a sure crit." },
-  "archer.t5b": { name: "Hunter's Breath", icon: "hunters_breath", kicker: "A kill refunds Shadow Shot's cost." },
+  "archer.t2a": { name: "Quick Draw", icon: "quick_draw", hue: "speed", kicker: "Every 4th arrow pierces one more monster." },
+  "archer.t2b": { name: "Fleet Foot", icon: "fleet_foot", hue: "movement", kicker: "Sidestep: 10% of monster strikes on you miss." },
+  "archer.t3": { name: TREE_ABILITY_COPY.archer.name, icon: "arrow_rain", hue: "speed", effect: "Five volleys of arrows fall on a 70 px circle over 1.5 s." },
+  "archer.t5a": { name: "Eagle Eye", icon: "eagle_eye", hue: "crit", kicker: "Every Shadow Shot is a sure crit." },
+  "archer.t5b": { name: "Hunter's Breath", icon: "hunters_breath", hue: "refund", kicker: "A kill refunds Shadow Shot's cost." },
   "archer.t6a": {
     name: "Hunter",
     icon: "hunter",
+    hue: "movement",
     specialization: "hunter",
     effect: "Split Shot: an arrow crit splits off a 60% arrow at the nearest other monster within 220 px.",
   },
   "archer.t6b": {
     name: "Shadow Ranger",
     icon: "shadow_ranger",
+    hue: "crit",
     specialization: "shadow_ranger",
     effect: "Shadow Shot pierces every target in its line; each monster it hits refunds 8 stamina.",
   },
 
   ...traversal("mercenary"),
-  "mercenary.t2a": { name: "Keen Edge", icon: "keen_edge", kicker: "A cut on a monster in its wind-up is a sure crit." },
-  "mercenary.t2b": { name: "Practiced Guard", icon: "practiced_guard", kicker: "A strike parried in the first half of the window grants 2 parry charges." },
+  "mercenary.t2a": { name: "Keen Edge", icon: "keen_edge", hue: "crit", kicker: "A cut on a monster in its wind-up is a sure crit." },
+  "mercenary.t2b": { name: "Practiced Guard", icon: "practiced_guard", hue: "defence", kicker: "A strike parried in the first half of the window grants 2 parry charges." },
   "mercenary.t3": {
     name: TREE_ABILITY_COPY.mercenary.name,
     icon: "settle_the_debt",
+    hue: "steel",
     effect: "A flurry all round you that spends every parry charge, harder for each one.",
   },
-  "mercenary.t5a": { name: "Bloodied Riposte", icon: "bloodied_riposte", kicker: "A riposte that hits heals 5% of max HP, once per riposte." },
-  "mercenary.t5b": { name: "Steady Hand", icon: "steady_hand", kicker: "A cut that kills grants 1 parry charge." },
+  "mercenary.t5a": { name: "Bloodied Riposte", icon: "bloodied_riposte", hue: "health", kicker: "A riposte that hits heals 5% of max HP, once per riposte." },
+  "mercenary.t5b": { name: "Steady Hand", icon: "steady_hand", hue: "refund", kicker: "A cut that kills grants 1 parry charge." },
   "mercenary.t6a": {
     name: "Duelist",
     icon: "duelist",
+    hue: "steel",
     specialization: "duelist",
     effect: "Quick riposte: your cut ripostes at 2 parry charges and spends only 2.",
   },
   "mercenary.t6b": {
     name: "Sellsword",
     icon: "sellsword",
+    hue: "refund",
     specialization: "sellsword",
     effect: "Five parry charges and no riposte; each charge held gives +5% cut damage and +5% attack speed.",
   },

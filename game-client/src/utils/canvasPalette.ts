@@ -245,6 +245,27 @@ export const palette = {
     legendary: BARROW_HEX.rarityFabled,
   },
 
+  /**
+   * The passive tree's hues (FS-8RZ51 §Change: A lit node glows in its own colour, L4–L6; ADR-0089):
+   * the colour a lit node's picture and its halo wear, by what the node gives, never by its state.
+   * Health, fire and mana reuse their own channels (the HP bar's lifted oxblood, the shared ember,
+   * the mana bar's necrotic); a resource refund is the HUD's bright brass lifted to a pale gold; the
+   * rest are the tree's own bases. Never amber (interactable), never arcane green (allies, healing),
+   * never one of fire's own three (theme.test.ts). Read by the tree's pictures alone.
+   */
+  treeHue: {
+    health: BARROW_HEX.oxbloodText,
+    power: BARROW_HEX.copper,
+    fire: BARROW_HEX.ember,
+    defence: BARROW_HEX.steelBlue,
+    mana: BARROW_HEX.necrotic,
+    speed: BARROW_HEX.frost,
+    movement: BARROW_HEX.verdigris,
+    crit: BARROW_HEX.amethyst,
+    refund: tint(BARROW_HEX.brassBright, 0.5),
+    steel: BARROW_HEX.silver,
+  },
+
   // -- Light. The only warmth in the barrow.
   torch: BARROW_HEX.amber,
   torchCore: BARROW_HEX.amberBright,
@@ -411,6 +432,9 @@ export const palette = {
     danger: BARROW_HEX.menuDangerText,
   },
 } as const;
+
+/** One of the passive tree's hues (L4), by what a node gives: the key a node's copy names. */
+export type TreeHue = keyof typeof palette.treeHue;
 
 // ── Typography ────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { palette } from "./canvasPalette";
+import { palette, tint } from "./canvasPalette";
 import { BARROW, BARROW_HEX } from "./theme";
 
 // FS-PQ2TW §Change: Ash, the owner's "火的顏色有辦法擬真一點嗎" (2026-11-12): fire runs a temperature
@@ -70,4 +70,40 @@ describe("fire marks no interactable (design guideline, FS-PQ2TW)", () => {
     expect(colours(palette).filter(([, v]) => fire.includes(v as number)).map(([path]) => path)).toEqual([]);
   });
 
+});
+
+// FS-8RZ51 §Change: A lit node glows in its own colour (L4, L6; ADR-0089, ADR-0013): a lit tree
+// picture wears one of ten hues by what its node gives, each a palette token named by meaning.
+describe("the passive tree's hues (FS-8RZ51 L4, L6)", () => {
+  /** The six bases the tree's hues brought, each the same colour in both tables. */
+  const BASES = ["copper", "steelBlue", "frost", "verdigris", "amethyst", "silver"] as const;
+
+  it("should add its six bases to BARROW and BARROW_HEX as one colour each", () => {
+    for (const key of BASES) expect(Number.parseInt(BARROW[key].slice(1), 16), key).toBe(BARROW_HEX[key]);
+  });
+
+  it("should resolve each hue from the BARROW_HEX token L4 names", () => {
+    expect(palette.treeHue).toEqual({
+      health: BARROW_HEX.oxbloodText,
+      power: BARROW_HEX.copper,
+      fire: BARROW_HEX.ember,
+      defence: BARROW_HEX.steelBlue,
+      mana: BARROW_HEX.necrotic,
+      speed: BARROW_HEX.frost,
+      movement: BARROW_HEX.verdigris,
+      crit: BARROW_HEX.amethyst,
+      refund: tint(BARROW_HEX.brassBright, 0.5),
+      steel: BARROW_HEX.silver,
+    });
+  });
+
+  it("should never be amber, arcane green or one of fire's own tokens (L6)", () => {
+    const forbidden = (["amber", "amberBright", "arcane", "arcaneDeep", "fireCore", "fireHot", "fireDeep"] as const).map((k) => BARROW_HEX[k]);
+    for (const [hue, value] of Object.entries(palette.treeHue)) expect(forbidden, hue).not.toContain(value);
+  });
+
+  it("should give each hue a colour of its own", () => {
+    const values = Object.values(palette.treeHue);
+    expect(new Set(values).size).toBe(values.length);
+  });
 });
