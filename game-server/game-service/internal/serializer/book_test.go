@@ -103,3 +103,60 @@ func entityOf(t *testing.T, w *partyWorld, memberID uuid.UUID) uuid.UUID {
 	t.Fatalf("no body for %s", memberID)
 	return uuid.Nil
 }
+
+// FS-X2CMM §D, §F R32, R34. I-X2CMM-2.
+
+var magePages = []components.PageID{components.PageWitchlight, components.PageFarHand}
+
+// While casting, the owner's book carries the page, the time left and the
+// whole cast time; absent otherwise. FS-X2CMM §F R32.
+func TestFormatStateToClientState_TheOwnersCastInProgress(t *testing.T) {
+	em := ecs.NewEntityManager()
+	mage := uuid.New()
+	book := seatBook(seatWithResource(em, mage, "mage", components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150}, components.AttackTripleFireball), magePages...)
+
+	assert.NotContains(t, ownFrame(t, em, types.WorldTypeRun, mage)["book"], "casting", "absent while not casting")
+
+	book.Casting = &components.BookCasting{Page: components.PageWitchlight, Elapsed: 0.25, Total: 1}
+	got := ownFrame(t, em, types.WorldTypeRun, mage)["book"].(map[string]any)
+	assert.Equal(t, map[string]any{"page": "witchlight", "remaining": 0.75, "total": float64(1)}, got["casting"])
+}
+
+// addBookEffect sets a book effect of the kind down at (x, y).
+func addBookEffect(em *ecs.EntityManager, kind components.BookEffectKind, x, y, remaining float64) *ecs.Entity {
+	e := em.CreateEntity()
+	e.AddComponent(components.NewTransformComponent(x, y))
+	e.AddComponent(&components.BookEffectComponent{Kind: kind, Remaining: remaining})
+	return e
+}
+
+// Every recipient of the run is sent the floor's book effects, as {id, kind,
+// x, y, remaining}; none at all leaves the key out. FS-X2CMM §E R21, §F R34.
+func TestFormatStateToClientState_BookEffectsForEveryRecipient(t *testing.T) {
+	w := newPartyWorld()
+	_, before := wireFor(t, w.em, types.WorldTypeRun, w.wren)
+	assert.NotContains(t, before, "book_effects", "absent while none stands")
+
+	light := addBookEffect(w.em, components.BookEffectWitchlight, 300, 400, 12.5)
+	want := []any{map[string]any{"id": light.ID.String(), "kind": "witchlight", "x": float64(300), "y": float64(400), "remaining": 12.5}}
+	for _, recipient := range []uuid.UUID{w.wren, w.mage, w.stranger} {
+		_, frame := wireFor(t, w.em, types.WorldTypeRun, recipient)
+		assert.Equal(t, want, frame["book_effects"], recipient)
+	}
+}
+
+// On a dungeon floor a book effect is cut by distance, as a monster is: a
+// recipient far from it is not sent it. FS-X2CMM §F R34, FS-KE075 §G.
+func TestFormatStateToClientState_BookEffectsAreCutByDistance(t *testing.T) {
+	em := ecs.NewEntityManager()
+	onFloor(em, 1, 80)
+	near, far := uuid.New(), uuid.New()
+	addDelver(em, near, 100, 100, 100)
+	addDelver(em, far, 100+2*interestRadius, 100, 100)
+	addBookEffect(em, components.BookEffectWitchlight, 200, 100, 20)
+
+	_, nearFrame := wireFor(t, em, types.WorldTypeRun, near)
+	_, farFrame := wireFor(t, em, types.WorldTypeRun, far)
+	assert.Len(t, nearFrame["book_effects"], 1)
+	assert.NotContains(t, farFrame, "book_effects")
+}

@@ -422,6 +422,11 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			})
 		}
 
+		// -- Book effects (a run's witchlights; FS-X2CMM §F R34) --
+		if effect, ok := bookEffectState(entity); ok {
+			backendState.BookEffects = append(backendState.BookEffects, effect)
+		}
+
 		// -- Projectiles --
 		projComp, isProj := entity.GetComponent(ecs.ComponentTypeProjectile)
 		if isProj {
@@ -615,6 +620,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Tome:          backendState.Tome,
 		Altar:         backendState.Altar,
 		TomeCarried:   backendState.TomeCarried,
+		BookEffects:   backendState.BookEffects,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -623,6 +629,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		if centres := interestCentres(backendState, playerID); len(centres) > 0 {
 			state.Monsters = nearAny(backendState.Monsters, centres, monsterAt)
 			state.Containers = nearAny(backendState.Containers, centres, containerAt)
+			state.BookEffects = nearAny(backendState.BookEffects, centres, bookEffectAt)
 			// the tome is hidden: cut as a container is (FS-3103M §E R14)
 			if state.Tome != nil && !isNearAny(*state.Tome.Position, centres) {
 				state.Tome = nil
@@ -700,6 +707,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Stairs = fresh(state.Stairs)
 	state.Monsters = fresh(state.Monsters)
 	state.Trails = fresh(state.Trails)
+	state.BookEffects = fresh(state.BookEffects)
 	state.Gates = fresh(state.Gates)
 	// a sent frame keeps its own pointers; the next tick makes new ones
 	state.Tome = nil

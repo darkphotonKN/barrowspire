@@ -1,6 +1,9 @@
 package components
 
-import "github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+import (
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/google/uuid"
+)
 
 // PageID names a page of a class book. Each is a cast_skill id of its own,
 // mapped to no attack kind. FS-X2CMM §A R2, §B R9–R12.
@@ -60,8 +63,30 @@ type BookComponent struct {
 	Spent map[PageID]bool
 	// States is each timed book state on this delver, by its seconds left.
 	States map[BookStateName]float64
-	// Casting (the page being cast, its time left and total) joins here with
-	// cast time (FS-X2CMM §D).
+	// Casting is the page being cast, nil when none: one at a time (§D R19).
+	Casting *BookCasting
+}
+
+// BookCasting is a page cast in progress: accepted, not yet paid for, its
+// effect to come once its cast time has run out. Where the caster stood and
+// the health they took into the last combat are what a move or a hit is read
+// against, as a timed open's are (FS-MQYEX D3–D4). FS-X2CMM §D R16–R18.
+type BookCasting struct {
+	Page PageID
+	// Elapsed is the simulation seconds counted so far, 0 on the cast's tick;
+	// Total the page's cast time.
+	Elapsed, Total float64
+	// FromX, FromY is where the caster stood when the cast was taken.
+	FromX, FromY float64
+	// HealthBeforeCombat is the health the caster took into the last combat
+	// the cast saw: less than it afterwards is a hit that cost health.
+	HealthBeforeCombat int
+	// TargetX, TargetY is the cast's point (ground pages); TargetID its
+	// entity (ally and interactable pages), uuid.Nil when it named none.
+	TargetX, TargetY float64
+	TargetID         uuid.UUID
+	// CellSize is the floor's cell edge the cast was judged in.
+	CellSize float64
 }
 
 func (b *BookComponent) Type() ecs.ComponentType {

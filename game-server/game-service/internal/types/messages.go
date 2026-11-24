@@ -116,6 +116,9 @@ type ClientGameState struct {
 	Tome        *TomeState  `json:"tome,omitempty"`
 	Altar       *AltarState `json:"altar,omitempty"`
 	TomeCarried bool        `json:"tome_carried,omitempty"`
+	// BookEffects are a run's book effects on the floor (witchlights), cut
+	// by distance on a dungeon floor; absent when none. FS-X2CMM §F R34.
+	BookEffects []*BookEffectState `json:"book_effects,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -217,6 +220,8 @@ type BackendGameState struct {
 	Tome        *TomeState
 	Altar       *AltarState
 	TomeCarried bool
+	// BookEffects are the floor's book effects (FS-X2CMM §F R34)
+	BookEffects []*BookEffectState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

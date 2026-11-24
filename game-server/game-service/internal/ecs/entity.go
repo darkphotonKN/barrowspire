@@ -99,6 +99,8 @@ const (
 
 	// a delver's class book: its cooldowns, spent pages and states (FS-X2CMM §A)
 	ComponentTypeBook ComponentType = "Book"
+	// what a book ability leaves on the floor: a witchlight, a rune (FS-X2CMM §E)
+	ComponentTypeBookEffect ComponentType = "BookEffect"
 )
 
 type Entity struct {

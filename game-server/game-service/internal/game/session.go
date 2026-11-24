@@ -800,7 +800,7 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	systems.NewPotionSystem(s.EntityManager).Update(deltaTime, entities)
 
 	// book cooldowns and book states count down, the tick's casts included (FS-X2CMM §A R8)
-	systems.NewBookSystem().Update(deltaTime, entities)
+	systems.NewBookSystem(s.EntityManager).Update(deltaTime, entities)
 
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)
@@ -837,6 +837,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		systems.NewTimedOpenSystem(s.EntityManager).MarkHealth(entities)
 	}
 
+	// a book cast notes its caster's health too (FS-X2CMM §D R18)
+	s.markCasts(entities)
+
 	// combat
 	kills := s.combatSystem.Update(deltaTime, entities, impacts)
 
@@ -847,6 +850,8 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if timedOpens {
 		s.advanceTimedOpens(deltaTime, entities, s.combatSystem.Attackers())
 	}
+	// and book casts, by the same causes, or complete (FS-X2CMM §D R16–R18)
+	s.advanceCasts(deltaTime, entities, s.combatSystem.Attackers())
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters
 	if s.hasMonsters() {

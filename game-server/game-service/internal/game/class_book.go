@@ -59,13 +59,14 @@ func (s *Session) castPage(playerID uuid.UUID, page systems.BookPage, cast types
 		return
 	}
 
-	err := systems.NewBookSystem().Cast(systems.BookCast{
+	err := systems.NewBookSystem(s.EntityManager).Cast(systems.BookCast{
 		Caster:   caster,
 		Page:     page,
 		TargetX:  cast.TargetX,
 		TargetY:  cast.TargetY,
 		Target:   s.pageTarget(cast.TargetID),
 		CellSize: s.bookCellSize(),
+		Walkable: s.pageGround,
 	})
 	if err != nil {
 		slog.Debug("Refusing a book ability", "session_id", s.ID, "player_id", playerID, "page", page.ID, "reason", err)
@@ -95,4 +96,44 @@ func (s *Session) bookCellSize() float64 {
 		return floor.CellSize
 	}
 	return levelgen.DungeonFloor1Params.CellSize
+}
+
+// markCasts notes the health each casting delver takes into the tick's
+// combat, so a hit that costs any breaks the cast after it. Runs only: no
+// page is cast anywhere else. FS-X2CMM §D R18.
+func (s *Session) markCasts(entities []*ecs.Entity) {
+	if s.worldType != types.WorldTypeRun {
+		return
+	}
+	systems.NewBookSystem(s.EntityManager).MarkHealth(entities)
+}
+
+// advanceCasts counts the run's casts in progress on the tick, after its
+// movement and combat: each breaks, completes with its effect, or counts the
+// tick. attackers is the bodies whose attack or cast went off in the tick's
+// combat. Nothing is sent: the next state shows the cast gone, or its effect.
+// FS-X2CMM §D R16–R18.
+func (s *Session) advanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID) {
+	if s.worldType != types.WorldTypeRun {
+		return
+	}
+	systems.NewBookSystem(s.EntityManager).AdvanceCasts(deltaTime, entities, attackers, s.pageGround)
+}
+
+// pageGround is whether a ground page's point is ground a body could stand
+// on: a walkable cell of a dungeon floor, inside the bounds of a floor of
+// buildings, and in neither case inside a wall. FS-X2CMM §C R14.
+func (s *Session) pageGround(x, y float64) bool {
+	s.mu.RLock()
+	dungeon, width, height := s.dungeon, s.mapWidth, s.mapHeight
+	s.mu.RUnlock()
+
+	if dungeon != nil {
+		if dungeon.regionAt(x, y) == 0 {
+			return false
+		}
+	} else if x < 0 || y < 0 || x >= width || y >= height {
+		return false
+	}
+	return !systems.PointInWall(s.EntityManager.GetAllEntities(), x, y)
 }

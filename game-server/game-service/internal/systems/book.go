@@ -15,7 +15,9 @@ import (
 * A cast passes every gate in bookGates, in order, or is refused with no
 * effect, no cost and no cooldown. An instant page then pays its cost, starts
 * its book cooldown (or is spent) and has its effect, through the resolver its
-* page id names in pageResolvers. A page is offered exactly when it has a
+* page id names in pageResolvers. A page with a cast time starts casting
+* instead, and is paid for and has its effect when its cast completes
+* (book_casting.go). A page is offered exactly when it has a
 * resolver: the rest of the table is refused as a locked page is and never
 * sent. Book abilities start no pin, are not paced by worn attack speed and end
 * no charge. FS-X2CMM §A R4–R8, §K R59.
@@ -31,9 +33,7 @@ var (
 	ErrPageNotReady    = errors.New("page on its cooldown or spent")
 	ErrShortOfCost     = errors.New("caster short of the page's cost")
 	ErrBadPageTarget   = errors.New("target does not fit the page or is out of range")
-	// ErrCastTimeUnbuilt refuses a page with a cast time until casting is
-	// built (FS-X2CMM §D); no such page is offered before then.
-	ErrCastTimeUnbuilt = errors.New("page has a cast time")
+	ErrAlreadyCasting  = errors.New("caster already casting a page")
 )
 
 // BookCast is one page cast as the tick takes it: the page, its caster, and
@@ -48,15 +48,20 @@ type BookCast struct {
 	Target *ecs.Entity
 	// CellSize is the floor's cell edge in px, the unit of every range.
 	CellSize float64
+	// Walkable is whether a point is ground a body could stand on, not rock
+	// or a wall: a ground page's point must be (R14). Nil walks nowhere.
+	Walkable func(x, y float64) bool
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
-type pageResolver func(cast BookCast)
+// world is the caster's, for an effect that sets down an entity of its own.
+type pageResolver func(world *ecs.EntityManager, cast BookCast)
 
 // pageResolvers holds the effect of every offered page, by page id. A page is
 // added to the game by adding its resolver here. FS-X2CMM §K R59.
 var pageResolvers = map[components.PageID]pageResolver{
-	components.PageHardened: resolveHardened,
+	components.PageHardened:   resolveHardened,
+	components.PageWitchlight: resolveWitchlight,
 }
 
 // PageOffered is whether the server resolves the page: castable and sent.
@@ -68,28 +73,32 @@ func PageOffered(id components.PageID) bool {
 // bookGate refuses a cast that does not meet one condition of R4.
 type bookGate func(cast BookCast, book *components.BookComponent) error
 
-// bookGates are R4's conditions, in the order a cast meets them. "Already
-// casting a page" (R19) joins after the pin with cast time (§D).
+// bookGates are R4's conditions, in the order a cast meets them.
 var bookGates = []bookGate{
 	gateInBook,
 	gateUnlocked,
 	gateOffered,
 	gateInPlay,
 	gatePinned,
+	gateNotCasting,
 	gateReady,
 	gateCost,
 	gateTarget,
 }
 
-type BookSystem struct{}
+// BookSystem works on one world's books and the book effects on its floor.
+type BookSystem struct {
+	em *ecs.EntityManager
+}
 
-func NewBookSystem() *BookSystem {
-	return &BookSystem{}
+func NewBookSystem(em *ecs.EntityManager) *BookSystem {
+	return &BookSystem{em: em}
 }
 
 // Cast judges the cast against every gate and, for an instant page, resolves
 // it on this tick: its cost paid, its book cooldown started or its use spent,
-// its effect had. A refused cast changes nothing. FS-X2CMM §A R4–R6.
+// its effect had. A page with a cast time starts casting instead (§D R16). A
+// refused cast changes nothing. FS-X2CMM §A R4–R6.
 func (s *BookSystem) Cast(cast BookCast) error {
 	book, ok := bookOf(cast.Caster)
 	if !ok {
@@ -100,9 +109,9 @@ func (s *BookSystem) Cast(cast BookCast) error {
 			return err
 		}
 	}
-	// a page with a cast time starts casting here (FS-X2CMM §D R16)
 	if cast.Page.CastTime > 0 {
-		return ErrCastTimeUnbuilt
+		startCasting(cast, book)
+		return nil
 	}
 
 	s.resolve(cast, book)
@@ -121,14 +130,16 @@ func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
 	case cast.Page.Cooldown > 0:
 		book.Cooldowns[cast.Page.ID] = components.BookCooldown{Remaining: cast.Page.Cooldown, Total: cast.Page.Cooldown}
 	}
-	pageResolvers[cast.Page.ID](cast)
+	pageResolvers[cast.Page.ID](s.em, cast)
 }
 
 // Update runs every book down by the tick: its book cooldowns and its timed
-// states, each gone once its time is up. Simulation time, across floors.
-// FS-X2CMM §A R8.
+// states, each gone once its time is up, and the floor's book effects, each
+// taken from the world once its time is up. Simulation time; a book's across
+// floors. FS-X2CMM §A R8, §E R21.
 func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {
+		s.ageBookEffect(entity, deltaTime)
 		book, ok := bookOf(entity)
 		if !ok {
 			continue
@@ -151,13 +162,14 @@ func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 }
 
 // ReadyBookForNewFloor makes the delver's once-per-floor pages ready again as
-// the party climbs. Book cooldowns run on and once-per-delve pages stay spent.
-// FS-X2CMM §A R8.
+// the party climbs, and ends a cast in progress with nothing (§D R18). Book
+// cooldowns run on and once-per-delve pages stay spent. FS-X2CMM §A R8.
 func ReadyBookForNewFloor(entity *ecs.Entity) {
 	book, ok := bookOf(entity)
 	if !ok {
 		return
 	}
+	book.Casting = nil
 	for id := range book.Spent {
 		if page, ok := classBooks[id]; ok && page.Limit == PageLimitPerFloor {
 			delete(book.Spent, id)
@@ -232,7 +244,9 @@ func gateTarget(cast BookCast, _ *components.BookComponent) error {
 	case TargetSelf, TargetNone:
 		return nil
 	case TargetGround:
-		// the point's walkable cell is judged with the first ground page (R14)
+		if cast.Walkable == nil || !cast.Walkable(cast.TargetX, cast.TargetY) {
+			return ErrBadPageTarget
+		}
 		if !inPageRange(cast, cast.TargetX, cast.TargetY) {
 			return ErrBadPageTarget
 		}
@@ -277,7 +291,7 @@ const hardenedSeconds = 10.0
 
 // resolveHardened sets hardened on the warrior. Its trap and poison immunity
 // is wave 2 (R53).
-func resolveHardened(cast BookCast) {
+func resolveHardened(_ *ecs.EntityManager, cast BookCast) {
 	setBookState(cast.Caster, components.BookStateHardened, hardenedSeconds)
 }
 

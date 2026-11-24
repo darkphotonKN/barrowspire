@@ -1,11 +1,34 @@
 package types
 
+import "github.com/google/uuid"
+
 // BookState is a delver's class book as its owner is told it, in a run only:
 // the offered pages of their class's book, in book order, locked ones
 // included. FS-X2CMM §F R32.
 type BookState struct {
 	Pages []BookPageState `json:"pages"`
-	// casting ({page, remaining, total}) joins here with cast time (§D).
+	// Casting is the page the owner is casting; absent while none. §D, R32.
+	Casting *BookCastingState `json:"casting,omitempty"`
+}
+
+// BookCastingState is a cast in progress as its caster is told it: the page,
+// the seconds of cast time left and the whole cast time. FS-X2CMM §F R32.
+type BookCastingState struct {
+	Page      string  `json:"page"`
+	Remaining float64 `json:"remaining"`
+	Total     float64 `json:"total"`
+}
+
+// BookEffectState is a book effect on the floor as every recipient of the run
+// is told it: its entity id, its kind (witchlight, and later rune), where it
+// stands in px and its seconds left. A kind that shows more (a hound's
+// health) adds its own fields, absent on every other kind. FS-X2CMM §F R34.
+type BookEffectState struct {
+	ID        uuid.UUID `json:"id"`
+	Kind      string    `json:"kind"`
+	X         float64   `json:"x"`
+	Y         float64   `json:"y"`
+	Remaining float64   `json:"remaining"`
 }
 
 // BookPageState is one offered page as its owner is told it: Cost its whole

@@ -1,6 +1,7 @@
 package systems
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -96,7 +97,7 @@ func TestBookSystemCast_EachGateRefusesForItsReason(t *testing.T) {
 			pool, _ := bookPool(warrior)
 			before := pool.Current
 
-			assert.ErrorIs(t, NewBookSystem().Cast(cast), tt.want)
+			assert.ErrorIs(t, NewBookSystem(em).Cast(cast), tt.want)
 			assert.Equal(t, before, pool.Current, "no cost")
 			assert.Empty(t, bookOfT(t, warrior).States, "no effect")
 		})
@@ -111,11 +112,11 @@ func TestBookSystemCast_ALimitedPageIsSpent(t *testing.T) {
 	cast := hardenedCast(warrior)
 	cast.Page.Cooldown, cast.Page.Limit = 0, PageLimitPerFloor
 
-	require.NoError(t, NewBookSystem().Cast(cast))
+	require.NoError(t, NewBookSystem(em).Cast(cast))
 	book := bookOfT(t, warrior)
 	assert.True(t, book.Spent[components.PageHardened])
 	assert.Empty(t, book.Cooldowns)
-	assert.ErrorIs(t, NewBookSystem().Cast(cast), ErrPageNotReady)
+	assert.ErrorIs(t, NewBookSystem(em).Cast(cast), ErrPageNotReady)
 }
 
 // The target gate judges a cast's target against the page's kind and range,
@@ -162,7 +163,7 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cast := BookCast{Caster: caster, Page: tt.page, TargetX: tt.x, Target: tt.target, CellSize: testCell}
+			cast := BookCast{Caster: caster, Page: tt.page, TargetX: tt.x, Target: tt.target, CellSize: testCell, Walkable: anyGround}
 			err := gateTarget(cast, nil)
 			if tt.fits {
 				assert.NoError(t, err)
@@ -173,9 +174,11 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 	}
 }
 
-// Only pages with a resolver are offered: Hardened alone in this slice. §K R59.
+// Only pages with a resolver are offered: Hardened and Witchlight so far.
+// §K R59.
 func TestPageOffered_OnlyPagesWithAResolver(t *testing.T) {
+	offered := []components.PageID{components.PageHardened, components.PageWitchlight}
 	for _, id := range AllPageIDs() {
-		assert.Equal(t, id == components.PageHardened, PageOffered(id), id)
+		assert.Equal(t, slices.Contains(offered, id), PageOffered(id), id)
 	}
 }
