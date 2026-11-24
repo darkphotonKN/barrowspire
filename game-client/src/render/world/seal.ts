@@ -7,8 +7,9 @@
  *
  * The looks are `sealLooks.ts`'s; this set only places them. It drives the scene's objects through
  * {@link SealStage}, the narrow slice of Phaser it needs, so it is tested without a canvas, as
- * `StairsSet` and `SummoningSet` are. A detected secret door (also a barrier) is I-5FZ4J-10's and
- * draws nothing here yet.
+ * `StairsSet` and `SummoningSet` are. A detected secret door (also a barrier) draws its cracks as
+ * a decal over each wall piece of its face while it is shut, and is the Search target; open, it
+ * draws nothing here: the floor map re-sent with its cells walkable draws the doorway (R56).
  */
 
 import type { Point } from "@/render/iso/projection";
@@ -20,8 +21,9 @@ import {
   type SealPieceKind,
   type SealPieceState,
 } from "@/types/gameState";
-import { bridgeLook, gateLook, glowsWhileActive, pieceLooks, pitLook, type CellAxis, type SealLook } from "./sealLooks";
+import { bridgeLook, cracksLook, gateLook, glowsWhileActive, pieceLooks, pitLook, type CellAxis, type SealLook } from "./sealLooks";
 import { INTERACT_RANGE } from "./stairs";
+import type { WallPiece } from "./walls";
 
 /**
  * World px a second a block slides at: half a player's walk (the server's `DefaultSpeed` of 200 at
@@ -47,6 +49,12 @@ export interface SealGrid {
   walkable(cx: number, cy: number): boolean;
 }
 
+/**
+ * A wall piece of the floor as drawn: where it stands, what it sorts by, its axis and height. What a
+ * secret door's cracks are laid over, from the floor's wall plan (`dungeonWalls`).
+ */
+export type WallFace = Pick<WallPiece, "at" | "depthAt" | "axis" | "height">;
+
 /** Where a sprite sorts: on the ground under every body (a pit, a bridge, a plate), or standing among them. */
 export type SealBand = "ground" | "standing";
 
@@ -57,10 +65,12 @@ export interface SealStage<S extends { destroy(): void }> {
   stand(sprite: S, at: Point, layer: number): void;
   /** Light or put out the flame a piece's sheet declares: the seal's brazier while it is lit. */
   glow(sprite: S, at: Point, on: boolean): void;
+  /** A decal over a wall piece at its own spot, sorted just over it by `depthAt`: a secret door's cracks. */
+  decal(look: SealLook, at: Point, depthAt: Point): S;
 }
 
-/** What E reaches here (R52): a piece to work, or the shut gate. */
-export type SealTarget = { kind: SealPieceKind | "gate"; entityId: string };
+/** What E reaches here (R52): a piece to work, the shut gate, or a detected shut secret door to Search. */
+export type SealTarget = { kind: SealPieceKind | "gate" | "secret_door"; entityId: string };
 
 /** A shut gate as the minimap strokes it (R56): a cell of it, and its run through its cells' middle, in cell units. */
 export interface GateStroke {
@@ -92,6 +102,12 @@ interface DrawnBarrier<S> {
   axis: CellAxis;
 }
 
+interface DrawnDoor<S> {
+  cells: CellState[];
+  open: boolean;
+  drawn: DrawnCell<S>[];
+}
+
 /** Whether E has anything to do at a piece in this state. A plate and a block are pressed and pushed with the body. */
 function reachable(kind: SealPieceKind, active: boolean): boolean {
   switch (kind) {
@@ -114,18 +130,27 @@ const sameLook = (a: SealLook, b: SealLook) => a.sheet === b.sheet && a.frame ==
 export class SealSet<S extends { destroy(): void }> {
   private readonly pieces = new Map<string, DrawnPiece<S>>();
   private readonly barriers = new Map<string, DrawnBarrier<S>>();
+  private readonly doors = new Map<string, DrawnDoor<S>>();
   /** The grid the barriers were laid over: a new one (the floor map re-sent) lays them again. */
   private laidOver?: SealGrid;
+  /** The wall faces the secret doors' cracks were laid over: new ones (the walls rebuilt) lay them again. */
+  private crackedOver?: readonly WallFace[];
 
   constructor(private readonly stage: SealStage<S>) {}
 
   /**
    * Make the canvas match the broadcast. The barriers wait for the floor's `grid`, which places
-   * their cells; the pieces stand on their own positions.
+   * their cells, and a secret door's cracks for its wall `faces` too; the pieces stand on their own
+   * positions.
    */
-  sync(state: { seal_pieces?: SealPieceState[]; barriers?: BarrierState[] }, grid: SealGrid | undefined): void {
+  sync(
+    state: { seal_pieces?: SealPieceState[]; barriers?: BarrierState[] },
+    grid: SealGrid | undefined,
+    faces?: readonly WallFace[],
+  ): void {
     this.syncPieces(state.seal_pieces ?? []);
     this.syncBarriers(state.barriers ?? [], grid);
+    this.syncDoors(state.barriers ?? [], grid, faces);
   }
 
   /** A frame gone, `dtMs` long: each sliding block on toward its cell at the push speed. */
@@ -149,6 +174,8 @@ export class SealSet<S extends { destroy(): void }> {
     const grid = this.laidOver;
     for (const [entityId, b] of this.barriers)
       if (grid && b.kind === "gate" && !b.open) inReach.push({ target: { kind: "gate", entityId }, d: rectDistance(me, b.cells, grid.cell) });
+    for (const [entityId, door] of this.doors)
+      if (grid && !door.open) inReach.push({ target: { kind: "secret_door", entityId }, d: rectDistance(me, door.cells, grid.cell) });
     let best: { target: SealTarget; d: number } | undefined;
     for (const c of inReach) if (c.d < INTERACT_RANGE && (!best || c.d < best.d)) best = c;
     return best?.target ?? null;
@@ -159,7 +186,16 @@ export class SealSet<S extends { destroy(): void }> {
     const out: { sprite: S; pos: Point }[] = [];
     for (const p of this.pieces.values()) for (const sprite of p.sprites) out.push({ sprite, pos: p.pos });
     for (const b of this.barriers.values()) for (const { sprite, pos } of b.drawn) out.push({ sprite, pos });
+    for (const d of this.doors.values()) for (const { sprite, pos } of d.drawn) out.push({ sprite, pos });
     return out;
+  }
+
+  /** The sprites drawn for one listed entity: a piece's parts, a barrier's cells, a secret door's cracks. */
+  drawnFor(entityId: string): S[] {
+    const piece = this.pieces.get(entityId);
+    if (piece) return [...piece.sprites];
+    const drawn = this.barriers.get(entityId)?.drawn ?? this.doors.get(entityId)?.drawn ?? [];
+    return drawn.map((d) => d.sprite);
   }
 
   /** Every shut gate's run, for the minimap's wall stroke (R56). */
@@ -185,6 +221,7 @@ export class SealSet<S extends { destroy(): void }> {
   clear(): void {
     for (const p of this.pieces.values()) this.dropPiece(p);
     for (const b of this.barriers.values()) for (const { sprite } of b.drawn) sprite.destroy();
+    for (const d of this.doors.values()) for (const { sprite } of d.drawn) sprite.destroy();
     this.forget();
   }
 
@@ -192,7 +229,9 @@ export class SealSet<S extends { destroy(): void }> {
   forget(): void {
     this.pieces.clear();
     this.barriers.clear();
+    this.doors.clear();
     this.laidOver = undefined;
+    this.crackedOver = undefined;
   }
 
   private syncPieces(listed: SealPieceState[]): void {
@@ -304,6 +343,42 @@ export class SealSet<S extends { destroy(): void }> {
       });
       held.open = wire.open;
       held.axis = axis;
+    }
+  }
+
+  /**
+   * Each detected secret door, shut: its cracks over every wall piece standing in its cells (a
+   * piece's centre lies in its wall cell); open, none. Laid again over new faces or a new grid.
+   */
+  private syncDoors(listed: BarrierState[], grid: SealGrid | undefined, faces: readonly WallFace[] | undefined): void {
+    const drop = (d: DrawnDoor<S>) => d.drawn.forEach(({ sprite }) => sprite.destroy());
+    if (faces !== this.crackedOver || !grid) {
+      this.doors.forEach(drop);
+      this.doors.clear();
+      this.crackedOver = faces;
+    }
+    const doors = listed.filter((b) => knownBarrier(b.kind) === "secret_door");
+    const present = new Set(doors.map((b) => b.entity_id));
+    for (const [id, d] of this.doors) {
+      if (present.has(id)) continue;
+      drop(d);
+      this.doors.delete(id);
+    }
+    if (!grid || !faces) return;
+    for (const wire of doors) {
+      const held = this.doors.get(wire.entity_id);
+      if (held && held.open === wire.open && sameCells(held.cells, wire.cells)) continue;
+      if (held) drop(held);
+      const cells = new Set(wire.cells.map(cellKey));
+      const drawn = wire.open
+        ? []
+        : faces
+            .filter((f) => cells.has(`${Math.floor(f.at.x / grid.cell)},${Math.floor(f.at.y / grid.cell)}`))
+            .map((f) => {
+              const look = cracksLook(f.height, f.axis);
+              return { sprite: this.stage.decal(look, f.at, f.depthAt), pos: f.at, look };
+            });
+      this.doors.set(wire.entity_id, { cells: wire.cells, open: wire.open, drawn });
     }
   }
 }

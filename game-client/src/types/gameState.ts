@@ -63,6 +63,11 @@ export interface PublicPlayerState {
    * and it still rises at 3 parry charges, where the charge count does not move.
    */
   parries?: number;
+  /**
+   * Seconds of poison left (FS-5FZ4J §I R47): on every player's entry, so a teammate's bar can
+   * show it; absent when not poisoned, and always in the hub.
+   */
+  poisoned_for?: number;
 }
 
 /**
@@ -112,13 +117,21 @@ export interface CooldownState {
  * and how far along the server's own timer is. The client draws it and never times it.
  */
 export interface TimedOpenState {
-  /** The container being opened. */
+  /** The target being worked: a shut container, or a detected secret door (FS-5FZ4J §I R49). */
   entity_id: UUID;
+  /**
+   * What the timed interact is for (FS-5FZ4J §I R49): `open` a container, `search` a secret door,
+   * `pray` at the hallowed altar. Absent from a server before FS-5FZ4J, which only opened.
+   */
+  target_kind?: TimedTargetKind | (string & {});
   /** Simulation time counted so far, in seconds. */
   elapsed: number;
   /** The time it takes, in seconds. */
   duration: number;
 }
+
+/** What a timed interact does to its target (FS-5FZ4J §I R49). */
+export type TimedTargetKind = "open" | "search" | "pray";
 
 /** What a class resource is (FS-8AY7S req 17): mage mana, warrior/archer stamina, mercenary parry charges. */
 export type ResourceKind = "mana" | "stamina" | "parry_charges";
@@ -358,6 +371,31 @@ export interface BarrierState {
   open: boolean;
 }
 
+/** What a trap is (FS-5FZ4J §D R27, §I R46), by the server's names. */
+export type TrapKind = "spike_plate" | "dart_wall" | "fire_jet" | "tripwire" | "gas_vent";
+
+const TRAP_KINDS: readonly string[] = ["spike_plate", "dart_wall", "fire_jet", "tripwire", "gas_vent"] satisfies TrapKind[];
+
+/**
+ * One detected trap (FS-5FZ4J §I R46): an undetected one is sent to no one. `armed` is false while
+ * a fired trap waits to re-arm and for a spent tripwire; a gas vent is always armed, and its puff
+ * is `puffed_at`, the floor's simulation time of its last, absent before its first (R48).
+ * `revealed` is a book page's (FS-X2CMM), always false for now.
+ */
+export interface TrapState {
+  entity_id: UUID;
+  kind: TrapKind | (string & {});
+  cell: CellState;
+  armed: boolean;
+  revealed: boolean;
+  puffed_at?: number;
+}
+
+/** A trap's kind as this client draws it, or `null` for one it does not know, which draws nothing. */
+export function knownTrap(kind: string): TrapKind | null {
+  return TRAP_KINDS.includes(kind) ? (kind as TrapKind) : null;
+}
+
 /**
  * A seal piece's kind as this client draws it, or `null` for one it does not know, which draws
  * nothing: a newer server never breaks an older client's world (unlike a container, there is no
@@ -577,6 +615,8 @@ export interface ClientGameState {
   seal_pieces?: SealPieceState[];
   /** A sealed floor's gate and pits, and its detected secret doors, sent whole; absent anywhere else (R46). */
   barriers?: BarrierState[];
+  /** A dungeon floor's detected traps, sent whole; absent with none detected and anywhere else (R46). */
+  traps?: TrapState[];
   escaped_count: number; // Number of players who have escaped
 }
 

@@ -10,6 +10,7 @@ import {
   edgeHeight,
   edgeLit,
   isDungeon,
+  sameRegions,
   wallPlan,
   type DungeonMap,
   type EdgeRun,
@@ -607,6 +608,41 @@ describe("a dungeon floor's wall plan (FS-XK2B6 §A, §B, §I)", () => {
         );
       }
     });
+  });
+});
+
+describe("sameRegions: a floor map re-sent (FS-5FZ4J §J R56)", () => {
+  const a = [room(1, 1, 1, 4, 4), corridor(2, 5, 2, 5, 1)];
+  it("should hold the same regions in another order the same", () => expect(sameRegions(a, [...a].reverse())).toBe(true));
+  it("should tell a room added apart", () => expect(sameRegions(a, [...a, room(3, 11, 1, 3, 4)])).toBe(false));
+  it("should tell a corridor's cells changed apart", () => expect(sameRegions(a, [a[0], corridor(2, 5, 2, 6, 1)])).toBe(false));
+});
+
+describe("a shut secret door's cells in the wall plan (FS-5FZ4J §F R37, §J R51)", () => {
+  // room A over 1–4 × 1–4, a corridor over 5–10 × 2, room B (the hidden room) over 11–13 × 1–4.
+  // The server's walls are the whole floor's shell; with the door shut its map leaves B out and
+  // cuts the door's cell (10, 2) from the corridor: a cell no wall covers, facing the corridor.
+  const whole = floor(15, 6, [room(1, 1, 1, 4, 4), corridor(2, 5, 2, 6, 1), room(3, 11, 1, 3, 4)]);
+  const walls = serverWalls(whole);
+  const shut = floor(15, 6, [room(1, 1, 1, 4, 4), corridor(2, 5, 2, 5, 1)]);
+
+  it("should draw the cut cell as wall, facing the corridor's dead end, owned by a wall beside it", () => {
+    const plan = wallPlan(walls, shut, THICK);
+    const door = plan.edges.filter((e) => e.cx === 10 && e.cy === 2);
+    expect(door.map((e) => e.wallSide)).toEqual(["east"]);
+    const run = plan.runs.find((r) => r.wallSide === "east" && r.from.x === 10 * CELL && r.from.y <= 2 * CELL && r.to.y >= 3 * CELL);
+    expect(run).toBeDefined();
+    expect(walls.map((w) => w.entity_id)).toContain(run!.wallId);
+  });
+
+  it("should draw no face into the hidden room left out: its cells are as the void is", () => {
+    const plan = wallPlan(walls, shut, THICK);
+    expect(plan.edges.some((e) => e.cx >= 11)).toBe(false);
+  });
+
+  it("should draw the door open as a doorway once the map is whole: no wall on its cell", () => {
+    const plan = wallPlan(walls, whole, THICK);
+    expect(plan.edges.some((e) => e.cx === 10 && e.cy === 2)).toBe(false);
   });
 });
 

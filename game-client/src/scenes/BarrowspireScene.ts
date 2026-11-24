@@ -39,6 +39,7 @@ import { placeCard } from "@/ui/placeCard";
 import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
 import { SealWatch, sealReplyNotice } from "@/ui/sealLines";
+import { StatusWatch } from "@/ui/statusLines";
 import { SealWindowClock, type SealWindowView } from "@/ui/sealWindow";
 import {
   nextWatched,
@@ -142,7 +143,7 @@ import { SCENE_ART, type SceneGroups } from "@/render/art/sceneArt";
 import { SpecLooks, withOwnLook, type LookBodies } from "@/render/art/specLooks";
 import { FloorPoolArt } from "@/render/art/floorArt";
 import { drawTorchBar } from "@/ui/torchBar";
-import { drawOpenBar, openBarFraction } from "@/ui/openBar";
+import { drawOpenBar, openBarFraction, openBarLabel, openBarOver, openBarRect } from "@/ui/openBar";
 import type { ArtLibrary } from "@/render/art/library";
 import { CharacterAnimator } from "@/render/art/character";
 import { FOG_FLOOR_AMBIENT, HALO_DEPTH, LightMap, type LightSource } from "@/render/lighting";
@@ -238,10 +239,11 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SummoningSet, type SummoningLook, type SummoningTarget } from "@/render/world/altar";
-import { SEAL_GROUND_DEPTH, SealSet, type SealBand } from "@/render/world/seal";
+import { SEAL_GROUND_DEPTH, SealSet, type SealBand, type WallFace } from "@/render/world/seal";
 import type { SealLook } from "@/render/world/sealLooks";
+import { TrapSet } from "@/render/world/traps";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
-import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
+import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, sameRegions, wallPlan, type DungeonMap } from "@/render/world/dungeon";
 import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
 import { nearLights } from "@/render/world/floorLights";
@@ -353,6 +355,8 @@ const NAME_OVER_BAR_GAP = 2;
 interface TeammateBar {
   graphics: Phaser.GameObjects.Graphics;
   fill: number | null;
+  /** While the teammate is poisoned: the fill takes the poison tint (FS-5FZ4J §J R55). */
+  poisoned: boolean;
 }
 
 /**
@@ -438,6 +442,10 @@ interface DungeonFloor {
   mapName?: MinimapName;
   /** Its run dressing, piece by piece, for a container that turns out to stand by one (§H.47). */
   dressed: DressedPiece[];
+  /** Its wall pieces as planned, once its walls stand: what a secret door's cracks are laid over (FS-5FZ4J §J R51). */
+  faces?: readonly WallFace[];
+  /** The flames its wall pieces carry, once its walls stand: what a rebuild of its walls takes away (FS-5FZ4J §J R56). */
+  wallLights?: ReadonlySet<LightSource>;
 }
 
 /** A dressing piece on a dungeon floor: its sprites and flame, and whether it has given way. */
@@ -802,7 +810,22 @@ export class BarrowspireScene extends Phaser.Scene {
     show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
     stand: (sprite, at, layer) => this.standSealPiece(sprite, at, layer),
     glow: (sprite, at, on) => this.glowSealPiece(sprite, at, on),
+    decal: (look, at, depthAt) => this.addSealDecal(look, at, depthAt),
   });
+  /**
+   * A floor's detected traps, from state (FS-5FZ4J §J R51): baked props on the resident `sealed`
+   * group, faint while they wait, sprung at full strength when they fire.
+   */
+  private traps = new TrapSet<Phaser.GameObjects.Sprite>({
+    add: (look, at, alpha) => addProp(this, this.art, look.sheet, at, { animation: look.frame }).sprite.setAlpha(alpha),
+    show: (sprite, look, alpha) => {
+      showState(sprite, this.art, look.sheet, look.frame);
+      sprite.setAlpha(alpha);
+    },
+    spring: (sprite, look, settle) => this.springTrap(sprite, look, settle),
+  });
+  /** The player's own statuses against the previous broadcast, a first one the baseline (FS-5FZ4J §J R53). */
+  private statusWatch = new StatusWatch();
   /** The seal pieces laid on the ground, which keep the ground band as they stand. */
   private sealGround = new WeakSet<Phaser.GameObjects.Sprite>();
   /** The flame each seal brazier's sheet declares, by its sprite: lit only while the brazier is (I-5FZ4J-8). */
@@ -885,7 +908,7 @@ export class BarrowspireScene extends Phaser.Scene {
    * open bar drawn for it over the container (FS-MQYEX R22). Unset while no state carries one:
    * the bar only shows what the server counts, and never opens anything.
    */
-  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics };
+  private timedOpen?: { open: TimedOpenState; seenAt: number; bar: Phaser.GameObjects.Graphics; label?: Phaser.GameObjects.Text };
 
   /** The player's strike and casts, shared with the field scene (FS-X2F2H §Requirements 56). */
   private readonly combat = new PlayerCombat(
@@ -1173,6 +1196,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.summoning.forget();
     this.seal.forget();
     this.sealLights.clear();
+    this.traps.forget();
     this.trails.forget();
     this.walls.clear();
     this.serverDoors.clear();
@@ -1273,6 +1297,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.previousAltar = undefined;
     this.escapedPlayers = undefined;
     this.sealWatch.reset();
+    this.statusWatch.reset();
     this.sealWindow.reset();
     this.shownSealWindow = null;
   }
@@ -2622,38 +2647,70 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The open bar follows the state (FS-MQYEX R22, R23, R25): up while the player's own
-   * `timed_open` names a shut container drawn here, gone with no notice on a state that carries
-   * none, whether the container opened or the timed open was cancelled. Only `current_player` is
-   * read, never another player's entry, and nothing is drawn while spectating.
+   * `timed_open` names a target drawn here, gone with no notice on a state that carries none,
+   * whether the target gave or the timed interact was cancelled. A container's open stands over a
+   * shut container; a search over a detected shut secret door's cracks, labelled "Searching…", and
+   * a prayer likewise "Praying…" (FS-5FZ4J §I R49, §J R54). Only `current_player` is read, never
+   * another player's entry, and nothing is drawn while spectating.
    */
   private showTimedOpen(state: ClientGameState): void {
     const open = this.watchedPlayerId === undefined ? state.current_player?.timed_open : undefined;
-    const shut =
-      open &&
-      this.chests.has(open.entity_id) &&
-      state.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open);
-    if (!open || !shut) {
+    if (!open || this.timedTarget(open, state).length === 0) {
       this.timedOpen?.bar.destroy();
+      this.timedOpen?.label?.destroy();
       this.timedOpen = undefined;
       return;
     }
     const bar = this.timedOpen?.bar ?? this.add.graphics().setDepth(MARKER_DEPTH.bar).setName("open-bar");
-    this.timedOpen = { open, seenAt: this.time.now, bar };
+    const words = openBarLabel(open.target_kind);
+    let label = this.timedOpen?.label;
+    if (!words) {
+      label?.destroy();
+      label = undefined;
+    } else if (!label)
+      label = this.add
+        .text(0, 0, words, {
+          fontFamily: CANVAS_FONT.body,
+          fontSize: "11px",
+          color: toCss(palette.hudText),
+          stroke: toCss(palette.markerStroke),
+          strokeThickness: 3,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(MARKER_DEPTH.bar)
+        .setName("open-bar-label");
+    else label.setText(words);
+    this.timedOpen = { open, seenAt: this.time.now, bar, label };
     this.drawTimedOpen();
   }
 
   /**
+   * What the player's own timed interact works, as drawn here: a shut container's sprite, or what
+   * the seal drew for its target (a detected shut secret door's cracks); none while it is not drawn.
+   */
+  private timedTarget(open: TimedOpenState, state: ClientGameState | undefined): Phaser.GameObjects.Sprite[] {
+    const chest = this.chests.get(open.entity_id)?.sprite;
+    if (chest) return state?.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open) ? [chest] : [];
+    return this.seal.drawnFor(open.entity_id);
+  }
+
+  /**
    * Draws the open bar as it stands this frame: the state's fill, run on by the real time since
-   * that state so it reads smooth, never past full (R22). Hidden with its container's sprite.
+   * that state so it reads smooth, never past full (R22). Over its target's sprites, and hidden with
+   * them; its label just over it.
    */
   private drawTimedOpen(): void {
     if (!this.timedOpen) return;
-    const { open, seenAt, bar } = this.timedOpen;
-    const sprite = this.chests.get(open.entity_id)?.sprite;
-    bar.setVisible(!!sprite?.visible);
-    if (!sprite?.visible) return;
+    const { open, seenAt, bar, label } = this.timedOpen;
+    const shown = this.timedTarget(open, this.lastGameState).filter((sprite) => sprite.visible);
+    bar.setVisible(shown.length > 0);
+    label?.setVisible(shown.length > 0);
+    if (shown.length === 0) return;
     bar.clear();
-    drawOpenBar(bar, sprite.getBounds(), openBarFraction(open, this.time.now - seenAt));
+    const over = openBarOver(shown.map((sprite) => sprite.getBounds()));
+    drawOpenBar(bar, over, openBarFraction(open, this.time.now - seenAt));
+    const rect = openBarRect(over);
+    label?.setPosition(rect.x + rect.width / 2, rect.y - 2);
   }
 
   private updateEscapeDoors(escapeDoors: EscapeDoorState[]): void {
@@ -3989,6 +4046,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // a sealed floor's pieces, gate and pits, over its cell grid; its lines and the Braziers window
     // (FS-5FZ4J §J R51, R53)
     this.showSeal(state);
+    // its detected traps, and the player's own poison said (FS-5FZ4J §J R51, R53)
+    this.showHazards(state);
     this.updateFloorIndicator(state);
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
@@ -4060,7 +4119,18 @@ export class BarrowspireScene extends Phaser.Scene {
     const state = this.lastGameState;
     if (!state) return;
     const map = this.heldFloorMap(state.session_id);
-    if (!map || map.floor !== state.floor || this.builtFloor === map.floor) return;
+    if (!map || map.floor !== state.floor) return;
+    if (this.builtFloor === map.floor) {
+      // the floor map re-sent for the floor built: its cells drawn again, what is explored kept (FS-5FZ4J §J R56)
+      if (this.redrawsFloor(map)) {
+        this.redrawDungeon(map as FloorMap & DungeonMap);
+        // the barriers and the secret doors' cracks laid again over the new cells and wall faces
+        const dungeon = this.dungeon;
+        if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
+        this.explore(state);
+      }
+      return;
+    }
     this.standFloor(map);
     this.buildDressing(state);
     this.stampLights(state.floor);
@@ -4068,11 +4138,69 @@ export class BarrowspireScene extends Phaser.Scene {
     this.arrivalCard.built();
   }
 
-  /** The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43). */
+  /**
+   * The floor's size, its outer wall and its walls, from its map (FS-KE075 §H.42–§H.43); a dungeon
+   * floor's map re-sent with other cells (a secret door opened) draws its cells again (FS-5FZ4J §J R56).
+   */
   private standFloor(map: FloorMap): void {
+    if (this.redrawsFloor(map)) {
+      this.redrawDungeon(map as FloorMap & DungeonMap);
+      return;
+    }
     this.fitFloor(map);
     this.buildPerimeter();
     this.buildWalls(map);
+  }
+
+  /**
+   * Whether `map` is the built dungeon floor's own map re-sent with other regions (FS-5FZ4J §I R50,
+   * §J R56): a secret door opened, its hidden room and the door's cells now in it. The same regions
+   * again (a reconnect's map asked for anew) draw nothing again.
+   */
+  private redrawsFloor(map: FloorMap): boolean {
+    const dungeon = this.dungeon;
+    if (!dungeon || this.builtFloor !== map.floor || dungeon.floor !== map.floor || !isDungeon(map)) return false;
+    return !sameRegions(dungeon.grid.regions, map.regions);
+  }
+
+  /**
+   * The built dungeon floor drawn again from its map re-sent (FS-5FZ4J §J R56): its region grid, the
+   * ground under its cells, its walls and their flames, the fog and the minimap, all from the new
+   * cells, with every region already explored kept and the opened room unexplored until seen. What
+   * stands on the floor (its fixtures, dressing and lights) stays where it is; the dressing is shown
+   * by the new chunks and gated by the new fog. Its chunks are made again with the ground, walls and
+   * fog they show, so none of the old cells' pieces is left in them.
+   */
+  private redrawDungeon(map: FloorMap & DungeonMap): void {
+    const dungeon = this.dungeon!;
+    // the old cells' walls, their flames, and what was laid over them
+    this.walls.forEach((wall) => wall.pieces.forEach((piece) => piece.destroy()));
+    this.walls.clear();
+    this.occluders.prune();
+    const flames = dungeon.wallLights ?? new Set<LightSource>();
+    dungeon.lights = dungeon.lights.filter((l) => !flames.has(l.light.source));
+    for (const source of flames) if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
+    this.dropFog();
+    dungeon.minimap?.destroy();
+    dungeon.modeIcon?.destroy();
+    dungeon.mapName?.destroy();
+    dungeon.minimap = dungeon.modeIcon = dungeon.mapName = undefined;
+    // the new cells, the party's exploration carried onto them
+    const grid = new RegionGrid(map);
+    dungeon.grid = grid;
+    dungeon.seen = Exploration.carried(grid, dungeon.seen);
+    const view = dungeon.chunks.view;
+    dungeon.chunks = new ChunkVisibility(dungeon.chunks.grid);
+    // the ground under the new cells (its refit paints it), then the walls, fog and minimap on them
+    this.fitFloor(map);
+    this.floorWalls = map.walls;
+    this.buildDungeonWalls(map.walls);
+    for (const dressed of dungeon.dressed) this.standDressing(dungeon, dressed);
+    // every light keeps its chunk; the region it lights is the new grid's
+    for (const l of dungeon.lights) l.region = regionAt(grid, l.light.at ?? screenToWorld(l.at.x, l.at.y));
+    this.stampLights(map.floor);
+    if (view) dungeon.chunks.update(view);
+    this.lightNearChunks();
   }
 
   /** The floor's walls, from its map, once per floor (FS-KE075 §H.43). */
@@ -4159,6 +4287,9 @@ export class BarrowspireScene extends Phaser.Scene {
     const plan = wallPlan(walls, dungeon.grid, thickness);
     const planned = dungeonWalls(plan, dungeon.grid, look.seed, look.walls);
     const baked = addWallPieces(this, this.art, planned, look.seed, look.walls);
+    // what a secret door's cracks are laid over, and the flames a rebuild takes away (FS-5FZ4J §J R51, R56)
+    dungeon.faces = planned.pieces;
+    dungeon.wallLights = new Set(baked?.lights.map(({ source }) => source));
     // placeholder walls never had a shadow (FS-V8FT3 Out of Scope)
     if (baked) this.groundLayer?.shade(dungeonShadows(planned, thickness, dungeon.grid));
     // the fog of war over the floor, its walls' pieces under its gate (FS-SRA9J §C.11, §C.13), its
@@ -4576,6 +4707,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.seal.clear();
     this.sealLights.clear();
     this.sealWindow.reset();
+    this.traps.clear();
     // the old floor's projectiles land nowhere: no impact, body, trail or light (FS-KYPQ9 §B.9)
     this.projectiles?.clear();
     this.trails.clear();
@@ -4865,10 +4997,12 @@ export class BarrowspireScene extends Phaser.Scene {
         if (!bar) {
           const graphics = this.add.graphics();
           graphics.setDepth(MARKER_DEPTH.bar);
-          bar = { graphics, fill: null };
+          bar = { graphics, fill: null, poisoned: false };
           this.teammateHealthBars.set(playerData.id, bar);
         }
         bar.fill = teammateHealthFill(worldType, playerData);
+        // the poison tint while they are poisoned (FS-5FZ4J §J R55)
+        bar.poisoned = playerData.poisoned_for !== undefined;
       }
       this.markTeammate(playerData.id);
     });
@@ -4926,7 +5060,8 @@ export class BarrowspireScene extends Phaser.Scene {
    */
   private showSeal(state: ClientGameState): void {
     const dungeon = this.dungeon;
-    if (dungeon) this.seal.sync(state, dungeon.grid);
+    // a secret door's cracks over the wall pieces of its face (FS-5FZ4J §J R51)
+    if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
     for (const notice of this.sealWatch.see(state)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     const window = this.sealWindow.see(state.seal);
     const shown = this.shownSealWindow;
@@ -4986,6 +5121,43 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * A secret door's cracks over one wall piece of its face (FS-5FZ4J §J R51; I-5FZ4J-8: a decal at
+   * the piece's own spot): sorted just over the piece, and fading with it over the player when it is
+   * a full-height back piece, as the walls do.
+   */
+  private addSealDecal(look: SealLook, at: Point, depthAt: Point): Phaser.GameObjects.Sprite {
+    const { sprite } = addProp(this, this.art, look.sheet, at, { animation: look.frame });
+    sprite.setDepth(worldDepth(depthAt.x, depthAt.y, 2));
+    if (!look.frame.startsWith("front_")) this.occluders.add([sprite]);
+    return sprite;
+  }
+
+  /**
+   * A trap's spring (FS-5FZ4J §J R51): its sprung frame, or a gas vent's puff, at full strength;
+   * a puff settles back to the vent's faint armed frame once its clip has played.
+   */
+  private springTrap(sprite: Phaser.GameObjects.Sprite, look: SealLook, settle?: { look: SealLook; alpha: number }): void {
+    sprite.setAlpha(1);
+    showState(sprite, this.art, look.sheet, look.frame);
+    if (!settle) return;
+    sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      if (!sprite.active) return;
+      showState(sprite, this.art, settle.look.sheet, settle.look.frame);
+      sprite.setAlpha(settle.alpha);
+    });
+  }
+
+  /**
+   * A floor's hazards from this broadcast (FS-5FZ4J §J R51, R53): its detected traps over its cell
+   * grid, and the player's own statuses said as HUD notices against the previous broadcast.
+   */
+  private showHazards(state: ClientGameState): void {
+    this.traps.sync(state.traps, this.dungeon?.grid);
+    const me = this.watchedPlayerId === undefined ? state.current_player : null;
+    for (const notice of this.statusWatch.see(me)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+  }
+
+  /**
    * Strews the floor's run dressing once (FS-8RBQY §C.4–§C.5), kept out of everything its
    * broadcast puts on the floor. Never interactive, never in physics; a brazier's flame joins the
    * floor's fixed lights. Nothing for a theme without dressing or without its art.
@@ -5014,19 +5186,28 @@ export class BarrowspireScene extends Phaser.Scene {
       if (dungeon) {
         const dressed: DressedPiece = { piece, sprites: built.sprites, lights: built.lights, gone: false };
         dungeon.dressed.push(dressed);
-        for (const sprite of built.sprites) {
-          const part = {
-            setVisible: (visible: boolean) => sprite.setVisible(visible && !dressed.gone),
-            setTint: (tint: number) => sprite.setTint(tint),
-            clearTint: () => sprite.clearTint(),
-          };
-          dungeon.chunks.add(dungeon.fog?.gate(part, piece.at) ?? part, worldToScreen(piece.at.x, piece.at.y));
-        }
+        this.standDressing(dungeon, dressed);
       } else this.dressingAt.push(...built.sprites.map((sprite) => ({ sprite, pos: piece.at })));
       this.occluders.add(built.tall);
       built.lights.forEach((light) => this.queueLight("brazier", light, { at: piece.at }));
     }
     for (const c of state.containers ?? []) if (placedKind(c) !== "drop_pile") this.giveWay(c.position);
+  }
+
+  /**
+   * A dungeon floor's dressing piece shown by its ground chunk and gated by the floor's fog
+   * (FS-KE075 §H.45, FS-SRA9J §C.14), hidden for good once it has given way to a container.
+   */
+  private standDressing(dungeon: DungeonFloor, dressed: DressedPiece): void {
+    const at = dressed.piece.at;
+    for (const sprite of dressed.sprites) {
+      const part = {
+        setVisible: (visible: boolean) => sprite.setVisible(visible && !dressed.gone),
+        setTint: (tint: number) => sprite.setTint(tint),
+        clearTint: () => sprite.clearTint(),
+      };
+      dungeon.chunks.add(dungeon.fog?.gate(part, at) ?? part, worldToScreen(at.x, at.y));
+    }
   }
 
   /**
@@ -5284,6 +5465,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.stairs.placed(),
       ...this.summoning.placed(),
       ...this.seal.placed(),
+      ...this.traps.placed(),
       ...this.dressingAt,
     ])
       yield { parts: [sprite], at: pos };
@@ -5360,6 +5542,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.stairs.placed(),
       ...this.summoning.placed(),
       ...this.seal.placed(),
+      ...this.traps.placed(),
       ...this.dressingAt,
     ];
     for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
@@ -6037,6 +6220,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.previousAltar = undefined;
     this.escapedPlayers = undefined;
     this.sealWatch.reset();
+    this.statusWatch.reset();
   }
 
   /**
@@ -6318,7 +6502,7 @@ export class BarrowspireScene extends Phaser.Scene {
     g.fillRect(left - 1, top - 1, width + 2, height + 2);
     g.lineStyle(1, MARKER_BAR.rim, 0.9);
     g.strokeRect(left - 1, top - 1, width + 2, height + 2);
-    g.fillStyle(MARKER_BAR.hp, 1);
+    g.fillStyle(bar.poisoned ? palette.poisoned : MARKER_BAR.hp, 1);
     g.fillRect(left, top, Math.round(width * bar.fill), height);
     return top;
   }

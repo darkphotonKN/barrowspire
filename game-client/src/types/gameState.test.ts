@@ -9,6 +9,7 @@ import {
   placedKind,
   knownBarrier,
   knownSealPiece,
+  knownTrap,
   ClientGameState,
   ItemState,
   EquipmentSlot,
@@ -251,6 +252,55 @@ describe('a sealed floor on the wire (FS-5FZ4J §I R46)', () => {
     expect(knownSealPiece(kind)).toBeNull();
     expect(knownBarrier(kind)).toBeNull();
   });
+});
+
+describe('traps, poison and a search on the wire (FS-5FZ4J §I R46, R47, R49)', () => {
+  const base = {
+    session_id: 'session-1',
+    other_players: [],
+    items: [],
+    doors: [],
+    containers: [],
+    escape_doors: [],
+    switches: [],
+    escaped_count: 0,
+    world_type: 'run',
+    floor: 4,
+  };
+  const me = { id: 'p1', entity_id: 'e1', username: 'Wenna', class: 'warrior', position: { x: 1, y: 2 }, direction: { x: 0, y: 1 }, escape: false };
+
+  it('should keep traps with their puffs, a secret door, poisoned_for and the timed interact\'s target_kind as the server sends them', () => {
+    const wire = JSON.parse(
+      JSON.stringify({
+        ...base,
+        current_player: { ...me, poisoned_for: 4.5, timed_open: { entity_id: 'door-1', target_kind: 'search', elapsed: 0.5, duration: 2 } },
+        other_players: [{ ...me, id: 'p2', entity_id: 'e2', poisoned_for: 1.25 }],
+        traps: [
+          { entity_id: 'trap-1', kind: 'spike_plate', cell: { x: 3, y: 4 }, armed: true, revealed: false },
+          { entity_id: 'trap-2', kind: 'gas_vent', cell: { x: 6, y: 1 }, armed: true, revealed: false, puffed_at: 12.5 },
+        ],
+        barriers: [{ entity_id: 'door-1', kind: 'secret_door', cells: [{ x: 9, y: 2 }], open: false }],
+      }),
+    );
+    expect(isGameState(wire)).toBe(true);
+    const state = wire as ClientGameState;
+    expect(state.traps).toEqual([
+      { entity_id: 'trap-1', kind: 'spike_plate', cell: { x: 3, y: 4 }, armed: true, revealed: false },
+      { entity_id: 'trap-2', kind: 'gas_vent', cell: { x: 6, y: 1 }, armed: true, revealed: false, puffed_at: 12.5 },
+    ]);
+    expect(state.barriers?.[0]).toMatchObject({ kind: 'secret_door', open: false });
+    expect(state.current_player?.poisoned_for).toBe(4.5);
+    expect(state.other_players[0].poisoned_for).toBe(1.25);
+    expect(state.current_player?.timed_open?.target_kind).toBe('search');
+  });
+
+  it.each(['spike_plate', 'dart_wall', 'fire_jet', 'tripwire', 'gas_vent'])('should know the trap kind %s', (kind) =>
+    expect(knownTrap(kind)).toBe(kind),
+  );
+
+  it.each(['bear_trap', '', 'Gas_Vent'])('should read an unknown trap kind %j as none, drawing nothing', (kind) =>
+    expect(knownTrap(kind)).toBeNull(),
+  );
 });
 
 describe('placedKind (FS-1D6BX R12, D2)', () => {

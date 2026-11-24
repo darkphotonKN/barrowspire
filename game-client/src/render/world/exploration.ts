@@ -190,6 +190,24 @@ export class Exploration {
   }
 
   /**
+   * The party's exploration of a floor carried onto its floor map re-sent (FS-5FZ4J §J R56): every
+   * region `before` had explored stays explored and every one visible stays visible, by region id,
+   * until the next {@link see} reads the party on the new cells; a region new to the map (an opened
+   * hidden room) starts unexplored. Region ids are kept across a re-send.
+   */
+  static carried(grid: RegionGrid, before: Exploration): Exploration {
+    const after = new Exploration(grid);
+    for (const { id } of before.grid.regions) {
+      const state = before.state(id);
+      if (state === "unexplored") continue;
+      after.explored.add(after.root(id));
+      if (state === "visible") after.visible.add(after.root(id));
+    }
+    after.party = before.party;
+    return after;
+  }
+
+  /**
    * The party's living, in-play positions now (§B.3, §B.5): the regions they stand in, and those
    * their cells reach within two walkable steps (FS-SRA9J §Change: Lighter fog and lit regions, F3,
    * F4; ADR-0090), are visible; every region ever visible stays explored (§B.4). True when any

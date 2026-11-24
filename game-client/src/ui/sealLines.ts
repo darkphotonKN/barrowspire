@@ -40,7 +40,7 @@ export function sealKindName(kind: string): string {
 }
 
 /** The interact replies' reasons on a sealed floor that the HUD notice speaks for (§I R49). */
-export const SEAL_REPLY_REASONS = ["stairs_sealed", "gate_sealed", "lever_down", "lever_wrong", "mural", "shrine"] as const;
+export const SEAL_REPLY_REASONS = ["stairs_sealed", "gate_sealed", "lever_down", "lever_wrong", "mural", "shrine", "door_open"] as const;
 
 /** A lore shrine's three lines (R53), said in turn. */
 export const SHRINE_LINES = [
@@ -60,6 +60,8 @@ const REPLY_NOTICES: Record<(typeof SEAL_REPLY_REASONS)[number], (reply: Interac
     return glyphs.length ? { text: `The mural shows: ${glyphs.map(titled).join(", ")}.`, tone: "waiting" } : null;
   },
   shrine: (_, __, pick) => ({ text: SHRINE_LINES[((pick % 3) + 3) % 3], tone: "waiting" }),
+  // a secret door already open: E did nothing, and nothing is said (FS-5FZ4J §F R38)
+  door_open: () => null,
 };
 
 /** "Sealed. Lever Order holds it.", or plain "Sealed." with no seal in sight. */

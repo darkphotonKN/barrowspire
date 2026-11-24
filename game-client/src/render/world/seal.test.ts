@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BarrierState, SealPieceState } from "@/types/gameState";
 import { MIST_DEPTH } from "@/render/effects/mist";
 import { WORLD_DEPTH } from "@/render/iso/shapes";
-import { BLOCK_SLIDE_SPEED, SEAL_GROUND_DEPTH, SealSet, type SealBand, type SealGrid } from "./seal";
+import { BLOCK_SLIDE_SPEED, SEAL_GROUND_DEPTH, SealSet, type SealBand, type SealGrid, type WallFace } from "./seal";
 import type { SealLook } from "./sealLooks";
 import { INTERACT_RANGE } from "./stairs";
 
@@ -47,6 +47,20 @@ function recording() {
     glow: (piece, _at, on) => {
       piece.lit = on;
       piece.calls.push(on ? "light" : "dark");
+    },
+    decal: (look, at, depthAt) => {
+      const piece: Piece = {
+        look,
+        at,
+        band: "standing",
+        layer: -1,
+        calls: [`decal over ${depthAt.x},${depthAt.y}`],
+        lit: false,
+        destroyed: false,
+        destroy: () => void (piece.destroyed = true),
+      };
+      made.push(piece);
+      return piece;
     },
   });
   const live = () => made.filter((p) => !p.destroyed);
@@ -252,7 +266,7 @@ describe("SealSet: the gate, pits and the bridge (FS-5FZ4J §J R51)", () => {
     expect(made.map((p) => p.look)).toEqual(lane.map(() => ({ sheet: "bridge_cell", frame: "y" })));
   });
 
-  it("should draw nothing for a barrier kind it does not know, nor for a secret door here (slice 10's)", () => {
+  it("should draw nothing for a barrier kind it does not know", () => {
     const { set, made } = recording();
     set.sync({ barriers: [barrier({ kind: "portcullis", cells: [{ x: 1, y: 1 }] })] }, grid());
     expect(made).toHaveLength(0);
@@ -360,5 +374,87 @@ describe("SealSet: the hide rule and a floor's end", () => {
     set.forget();
     expect(made[2].destroyed).toBe(false);
     expect(set.placed()).toEqual([]);
+  });
+});
+
+describe("SealSet: a detected secret door (FS-5FZ4J §J R51, R52)", () => {
+  // the door's cell (6, 3) is rock while it is shut: a corridor runs north to south through it, so its
+  // wall plan shows a back piece on its north edge and a cut-away piece on its south edge, two tiles each
+  const door = (open = false) => barrier({ kind: "secret_door", cells: [{ x: 6, y: 3 }], open });
+  const floor = grid(["6,3"]);
+  const faces: WallFace[] = [
+    { at: { x: 500, y: 245 }, depthAt: { x: 480, y: 240 }, axis: "x", height: "back" },
+    { at: { x: 540, y: 245 }, depthAt: { x: 520, y: 240 }, axis: "x", height: "back" },
+    { at: { x: 500, y: 315 }, depthAt: { x: 500, y: 320 }, axis: "x", height: "front" },
+    { at: { x: 540, y: 315 }, depthAt: { x: 540, y: 320 }, axis: "x", height: "front" },
+    // a wall piece of another cell: no cracks
+    { at: { x: 100, y: 100 }, depthAt: { x: 100, y: 100 }, axis: "y", height: "back" },
+  ];
+
+  it("should lay its cracks over every wall piece of its face, by the piece's height and axis, sorted over it", () => {
+    const { set, live } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    expect(live().map((p) => [p.look.sheet, p.look.frame, p.at.x, p.at.y])).toEqual([
+      ["secret_cracks", "x", 500, 245],
+      ["secret_cracks", "x", 540, 245],
+      ["secret_cracks", "front_x", 500, 315],
+      ["secret_cracks", "front_x", 540, 315],
+    ]);
+    expect(live()[0].calls).toEqual(["decal over 480,240"]);
+  });
+
+  it("should wait for the floor's wall faces before laying cracks", () => {
+    const { set, made } = recording();
+    set.sync({ barriers: [door()] }, floor);
+    expect(made).toHaveLength(0);
+    set.sync({ barriers: [door()] }, floor, faces);
+    expect(made).toHaveLength(4);
+  });
+
+  it("should take its cracks away once it opens: the floor map re-sent draws it as a doorway", () => {
+    const { set, live } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    set.sync({ barriers: [door(true)] }, floor, faces);
+    expect(live()).toHaveLength(0);
+  });
+
+  it("should lay the cracks again over new wall faces, and none where the new faces have none", () => {
+    const { set, made, live } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    set.sync({ barriers: [door()] }, floor, faces.slice(2));
+    expect(made).toHaveLength(6);
+    expect(live().map((p) => p.look.frame)).toEqual(["front_x", "front_x"]);
+  });
+
+  it("should be the Search target while shut and in reach, measured to its cells, and none once open (R52)", () => {
+    const { set } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    const below = { x: centre(6, 3).x, y: 4 * CELL + INTERACT_RANGE - 1 };
+    expect(set.nearby(below)).toEqual({ kind: "secret_door", entityId: "secret_door-1" });
+    expect(set.nearby({ x: below.x, y: 4 * CELL + INTERACT_RANGE + 1 })).toBeNull();
+    set.sync({ barriers: [door(true)] }, floor, faces);
+    expect(set.nearby(below)).toBeNull();
+  });
+
+  it("should name what it drew for an entity, for the open bar to stand over: the door's cracks, a piece's sprites, nothing else", () => {
+    const { set } = recording();
+    set.sync({ seal_pieces: [piece({ kind: "lever", glyph: "key" })], barriers: [door()] }, floor, faces);
+    expect(set.drawnFor("secret_door-1").map((p) => p.look.frame)).toEqual(["x", "x", "front_x", "front_x"]);
+    expect(set.drawnFor("lever-1")).toHaveLength(2);
+    expect(set.drawnFor("nobody")).toEqual([]);
+  });
+
+  it("should list its cracks for the hide rule, and destroy them on clear", () => {
+    const { set, made } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    expect(set.placed().map(({ pos }) => pos)).toEqual(faces.slice(0, 4).map((f) => f.at));
+    set.clear();
+    expect(made.every((p) => p.destroyed)).toBe(true);
+  });
+
+  it("should not count a secret door among the shut gates the minimap strokes: the map draws it as wall already", () => {
+    const { set } = recording();
+    set.sync({ barriers: [door()] }, floor, faces);
+    expect(set.shutGates()).toEqual([]);
   });
 });

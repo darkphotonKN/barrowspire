@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { shippedManifest } from "@/render/art/artLoader.standin";
-import { GLYPHS, SEALED_SHEETS, bridgeLook, gateLook, pieceLooks, pitLook } from "./sealLooks";
+import { GLYPHS, SEALED_SHEETS, TRAP_FAINT, bridgeLook, cracksLook, gateLook, pieceLooks, pitLook, trapLook } from "./sealLooks";
 
 describe("the sealed floor's looks (FS-5FZ4J §J R51, §K R57)", () => {
   it("should name sheets and frames the shipped manifest bakes, on the resident sealed group", () => {
@@ -61,5 +61,30 @@ describe("the sealed floor's looks (FS-5FZ4J §J R51, §K R57)", () => {
 
   it("should know the glyphs the server's levers bear", () => {
     expect(GLYPHS).toEqual(["crow", "key", "flame", "eye", "serpent", "moon"]);
+  });
+
+  it.each(["spike_plate", "dart_wall", "fire_jet", "tripwire", "gas_vent"] as const)("should draw a %s trap armed, sprung, from its own sheet", (kind) => {
+    expect(trapLook(kind, "armed")).toEqual({ sheet: `trap_${kind}`, frame: "armed" });
+    expect(trapLook(kind, "sprung")).toEqual({ sheet: `trap_${kind}`, frame: "sprung" });
+    expect(SEALED_SHEETS[`trap_${kind}`]).toEqual(expect.arrayContaining(["armed", "sprung"]));
+  });
+
+  it("should puff a gas vent from its six-frame, unlooped puff (I-5FZ4J-8)", () => {
+    expect(trapLook("gas_vent", "puff")).toEqual({ sheet: "trap_gas_vent", frame: "puff" });
+    const puff = shippedManifest().sheets.trap_gas_vent.animations.puff;
+    expect(puff.frames[0]).toHaveLength(6);
+    expect(puff.loop).toBe(false);
+  });
+
+  it("should draw a listed trap faint: its armed frame at reduced alpha (R51)", () => {
+    expect(TRAP_FAINT).toBeGreaterThan(0);
+    expect(TRAP_FAINT).toBeLessThan(1);
+  });
+
+  it("should draw a secret door's cracks over a back wall piece by its axis, over a cut-away one by front_ and its axis", () => {
+    expect(cracksLook("back", "x")).toEqual({ sheet: "secret_cracks", frame: "x" });
+    expect(cracksLook("back", "y")).toEqual({ sheet: "secret_cracks", frame: "y" });
+    expect(cracksLook("front", "x")).toEqual({ sheet: "secret_cracks", frame: "front_x" });
+    expect(cracksLook("front", "y")).toEqual({ sheet: "secret_cracks", frame: "front_y" });
   });
 });

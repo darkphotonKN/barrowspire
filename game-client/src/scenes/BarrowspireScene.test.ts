@@ -60,7 +60,7 @@ const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
 const { MonsterRoster } = await import("@/render/creatures");
-const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
+const { MARKER_BAR, MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
 const { ARRIVAL_CARD } = await import("@/ui/arrivalCard");
@@ -83,6 +83,7 @@ const await_resourceHud = await import("@/ui/ResourceHud");
 const await_partyFramesLayout = await import("@/ui/partyFramesLayout");
 type MaskLook = import("@/render/world/blackoutMask").MaskLook;
 const await_iso = await import("@/render/iso");
+const { TRAP_FAINT } = await import("@/render/world/sealLooks");
 const INTERACTABLE_RADIUS = (await import("@/render/world/floorLights")).interactablePool({ x: 0, y: 0 }, 0).radius;
 const { useGameStore } = await import("@/stores/gameStore");
 const { mountGearPieces } = await import("@/ui/gearPieces");
@@ -1709,6 +1710,15 @@ describe("BarrowspireScene teammate health bars, switched on (FS-8AY7S req 27, 2
     expect(drawn(bar("ally")!.graphics)).not.toContain("fillRect");
   });
 
+  // FS-5FZ4J §J R55 (I-5FZ4J-10)
+  it("should draw a poisoned teammate's health fill in the poison tint while poisoned_for is set, and health's own after", () => {
+    const { run, bar } = barsOnStage();
+    run.handleGameStateUpdate(partyState(undefined, { ...player("ally", "Wenna", 160), poisoned_for: 4 } as ReturnType<typeof player>));
+    expect(bar("ally")!.graphics.last.fillStyle).toEqual([palette.poisoned, 1]);
+    run.handleGameStateUpdate(partyState());
+    expect(bar("ally")!.graphics.last.fillStyle).toEqual([MARKER_BAR.hp, 1]);
+  });
+
   it("should forget every bar on a restart", () => {
     const { run, bars } = barsOnStage();
     run.handleGameStateUpdate(partyState());
@@ -2418,6 +2428,20 @@ describe("BarrowspireScene resource bars (FS-8AY7S req 20–26)", () => {
     }
     // the resource bar sits under the health bar
     expect(label("Mana:")!.args[1] as number).toBeGreaterThan(label("Health:")!.args[1] as number);
+  });
+
+  // FS-5FZ4J §J R55 (I-5FZ4J-10)
+  it("should hand the HUD the health bar poisoned while poisoned_for is set, and plain once it runs out", () => {
+    const { run } = barsOnStage();
+    const hud = vi.spyOn((run as unknown as { ui: { hud(m: unknown): void } }).ui, "hud");
+    const healthOf = () => {
+      const bars = hud.mock.calls.map(([m]) => m as { kind: string; bars?: { channel: string; poisoned?: boolean }[] }).filter((m) => m.kind === "bars");
+      return bars.at(-1)?.bars?.find((b) => b.channel === "health");
+    };
+    run.handleGameStateUpdate(withMe({ ...me(), poisoned_for: 3 } as ReturnType<typeof me>));
+    expect(healthOf()?.poisoned).toBe(true);
+    run.handleGameStateUpdate(withMe(me()));
+    expect(healthOf()?.poisoned).toBeUndefined();
   });
 
   it("should label a stamina resource Stamina:, and parry charges Parry:", () => {
@@ -10223,7 +10247,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
   function dungeonStage(
     party: Partial<Party> = {},
     extra: Partial<GameState> = {},
-    { late = false, without }: { late?: boolean; without?: string } = {},
+    { late = false, without, map = dungeonMap }: { late?: boolean; without?: string; map?: typeof dungeonMap } = {},
   ) {
     const scene = sceneOnStage();
     const { stage } = scene;
@@ -10257,7 +10281,7 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       (run as unknown as { subscribeFloorMap(): void }).subscribeFloorMap();
       handle({ ...dungeonState(party), ...extra });
     }
-    useGameStore.getState().receiveFloorMap(dungeonMap as never);
+    useGameStore.getState().receiveFloorMap(map as never);
     if (!late) handle({ ...dungeonState(party), ...extra });
     /** Looks at a screen point: the camera's view centred on it, and what stands near it shown. */
     const look = (x: number, y: number) => {
@@ -12235,6 +12259,157 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       next({ seal: sealOf({ kind: "braziers" }) });
       const windows = hud.mock.calls.map(([m]) => m as { kind: string; window?: unknown }).filter((m) => m.kind === "window");
       expect(windows.map((m) => m.window)).toEqual([{ seconds: 10, fraction: 1 }, null]);
+    });
+  });
+
+  // FS-5FZ4J §J R51, R52, R54, R56 (I-5FZ4J-10): traps, a secret door and its hidden room, the floor map re-sent
+  describe("traps and a secret door (FS-5FZ4J §J)", () => {
+    type Region = (typeof dungeonMap.regions)[number];
+    interface HiddenRun {
+      bindRunInput(): void;
+      showNotification(text: string, backing: number): void;
+      dungeon: { grid: InstanceType<typeof RegionGrid>; seen: { state(id: number): string }; minimap?: unknown };
+      timedOpen?: { label?: Made };
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const inRoom = (p = ME) => ({ current_player: { ...player("me", "Aldric", 0), position: p } }) as Partial<Party>;
+    /** The hidden room: room 25, and the door the corridor cells next to it (4-adjacent), as the server's barrier. */
+    const HIDDEN = 25;
+    const cellsOf = (r: Region) => r.cells.flatMap((c) => Array.from({ length: c.w * c.h }, (_, i) => ({ x: c.x + (i % c.w), y: c.y + Math.floor(i / c.w) })));
+    const room = dungeonMap.regions.find((r) => r.id === HIDDEN)!;
+    const roomCells = new Set(cellsOf(room).map((c) => `${c.x},${c.y}`));
+    const doorCells = dungeonMap.regions
+      .filter((r) => r.kind === "corridor")
+      .flatMap(cellsOf)
+      .filter((c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => roomCells.has(`${c.x + dx},${c.y + dy}`)));
+    const doorKeys = new Set(doorCells.map((c) => `${c.x},${c.y}`));
+    /** The floor's map with the door shut: the room left out, the door's cells cut from their corridor (FS-5FZ4J §F R37). */
+    const shutMap = {
+      ...dungeonMap,
+      regions: dungeonMap.regions
+        .filter((r) => r.id !== HIDDEN)
+        .map((r) => (r.kind !== "corridor" ? r : { ...r, cells: cellsOf(r).filter((c) => !doorKeys.has(`${c.x},${c.y}`)).map((c) => ({ ...c, w: 1, h: 1 })) })),
+    };
+    const door = (open = false) => ({ entity_id: "door-1", kind: "secret_door", cells: doorCells, open });
+    const trap = (over: Record<string, unknown> = {}) => ({ entity_id: "trap-1", kind: "spike_plate", cell: { x: 32, y: 38 }, armed: true, revealed: false, ...over });
+    const hiddenStage = (party = inRoom()) => {
+      const staged = dungeonStage(party, { barriers: [door()] }, { map: shutMap });
+      const run = staged.run as unknown as HiddenRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      return { ...staged, run, notified };
+    };
+
+    it("should find the hidden room's door: corridor cells beside the room", () => {
+      expect(doorCells.length).toBeGreaterThan(0);
+    });
+
+    it("should draw a listed trap faint, and play its spring once when armed falls", () => {
+      const { stage, handle } = hiddenStage();
+      handle({ ...dungeonState(inRoom()), traps: [trap()] } as GameState);
+      const [drawnTrap] = drawn(stage.made, "trap_spike_plate/armed/");
+      expect(drawnTrap.last.setAlpha?.[0]).toBe(TRAP_FAINT);
+      handle({ ...dungeonState(inRoom()), traps: [trap({ armed: false })] } as GameState);
+      expect(String(drawnTrap.last.setTexture?.[1])).toMatch(/^trap_spike_plate\/sprung\//);
+      expect(drawnTrap.last.setAlpha?.[0]).toBe(1);
+      handle({ ...dungeonState(inRoom()), traps: [] } as GameState);
+      expect(drawnTrap.destroyed).toBe(true);
+    });
+
+    it("should draw the shut door's cell as wall with the cracks laid over it, and none where the map is whole", () => {
+      const { stage } = hiddenStage();
+      const cracks = drawn(stage.made, "secret_cracks/");
+      expect(cracks.length).toBeGreaterThan(0);
+      for (const c of cracks) {
+        const w = await_iso.screenToWorld(c.args[0] as number, c.args[1] as number);
+        expect(doorKeys.has(`${Math.floor(w.x / 80)},${Math.floor(w.y / 80)}`)).toBe(true);
+      }
+    });
+
+    it("should send one interact for the secret door E reaches, the Search (R52)", () => {
+      const { run } = hiddenStage();
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      // on a corridor cell beside the door's first cell
+      const beside = doorCells
+        .flatMap((c) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: c.x + dx, y: c.y + dy })))
+        .find((c) => run.dungeon.grid.walkable(c.x, c.y))!;
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos: at((beside.x + 0.5) * 80, (beside.y + 0.5) * 80),
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      expect(interacts).toEqual([[ActionType.Interact, { entity_id: "door-1" }]]);
+    });
+
+    it("should show the search's progress on the open bar over the cracks, labelled Searching… (R54)", () => {
+      const { run, stage, handle } = hiddenStage();
+      const me = { ...player("me", "Aldric", 0), position: ME, timed_open: { entity_id: "door-1", target_kind: "search", elapsed: 1, duration: 2 } };
+      handle({ ...dungeonState({ current_player: me } as Partial<Party>), barriers: [door()] } as GameState);
+      const bar = stage.made.find((m) => m.name === "open-bar" && !m.destroyed);
+      expect(bar).toBeDefined();
+      expect(run.timedOpen?.label?.args[2]).toBe("Searching…");
+      // the door opens: the bar and its label go
+      handle({ ...dungeonState(inRoom()), barriers: [door(true)] } as GameState);
+      expect(bar!.destroyed).toBe(true);
+      expect(stage.made.filter((m) => m.name === "open-bar-label").every((m) => m.destroyed)).toBe(true);
+    });
+
+    it("should draw the floor again from its map re-sent for the same floor: the room in, the door a doorway, what was explored kept (R56)", () => {
+      // the player stands in room 1, then in room 17: room 1 explored
+      const elsewhere = inRoom(at(31 * 80 + 40, 29 * 80 + 40));
+      const { run, stage, handle } = hiddenStage();
+      handle({ ...dungeonState(elsewhere), barriers: [door()] } as GameState);
+      expect(run.dungeon.seen.state(1)).toBe("explored");
+      const before = drawn(stage.made, "tower_wall_");
+      const minimap = run.dungeon.minimap;
+      const [roomCell] = cellsOf(room);
+      expect(run.dungeon.grid.walkable(roomCell.x, roomCell.y)).toBe(false);
+      // the door opened: the server sends the map whole again, then the door open
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap } as never);
+      handle({ ...dungeonState(elsewhere), barriers: [door(true)] } as GameState);
+      expect(run.dungeon.grid.walkable(roomCell.x, roomCell.y)).toBe(true);
+      expect(doorCells.every((c) => run.dungeon.grid.walkable(c.x, c.y))).toBe(true);
+      expect(before.every((m) => m.destroyed)).toBe(true);
+      expect(drawn(stage.made, "tower_wall_").length).toBeGreaterThan(1000);
+      expect(run.dungeon.minimap).toBeDefined();
+      expect(run.dungeon.minimap).not.toBe(minimap);
+      expect(run.dungeon.seen.state(1)).toBe("explored");
+      expect(run.dungeon.seen.state(17)).toBe("visible");
+      expect(run.dungeon.seen.state(HIDDEN)).toBe("unexplored");
+      expect(drawn(stage.made, "secret_cracks/")).toEqual([]);
+    });
+
+    it("should draw nothing again for the same map re-sent (a reconnect's ask)", () => {
+      const { stage, handle } = hiddenStage();
+      const walls = drawn(stage.made, "tower_wall_");
+      useGameStore.getState().receiveFloorMap({ ...shutMap } as never);
+      handle({ ...dungeonState(inRoom()), barriers: [door()] } as GameState);
+      expect(walls.some((m) => m.destroyed)).toBe(false);
+    });
+
+    it("should draw the floor again when the re-sent map comes after the snapshot, through the store", () => {
+      const { run, handle } = hiddenStage();
+      (run as unknown as { subscribeFloorMap(): void }).subscribeFloorMap();
+      handle({ ...dungeonState(inRoom()), barriers: [door(true)] } as GameState);
+      useGameStore.getState().receiveFloorMap({ ...dungeonMap } as never);
+      const [roomCell] = cellsOf(room);
+      expect(run.dungeon.grid.walkable(roomCell.x, roomCell.y)).toBe(true);
+      (run as unknown as { floorMapUnsubscribe?: () => void }).floorMapUnsubscribe?.();
+    });
+
+    it("should say Poisoned. once when the player is first poisoned, and not on a first broadcast", () => {
+      const poisoned = (s: number) => ({ current_player: { ...player("me", "Aldric", 0), position: ME, poisoned_for: s } }) as Partial<Party>;
+      const { notified, handle } = hiddenStage(poisoned(5));
+      handle({ ...dungeonState(poisoned(4)) } as GameState);
+      expect(notified).not.toHaveBeenCalled();
+      handle({ ...dungeonState(inRoom()) } as GameState);
+      handle({ ...dungeonState(poisoned(6)) } as GameState);
+      handle({ ...dungeonState(poisoned(5)) } as GameState);
+      expect(notified.mock.calls).toEqual([["Poisoned.", palette.damageBright]]);
     });
   });
 });

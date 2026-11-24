@@ -46,8 +46,9 @@ describe("the seal's reply lines (FS-5FZ4J §I R49, §J R53)", () => {
     for (const line of SHRINE_LINES) expect(line).not.toMatch(/delver/i);
   });
 
-  it("should say nothing at a lever already down, nor for a reply that is not the seal's", () => {
+  it("should say nothing at a lever already down or a secret door already open, nor for a reply that is not the seal's", () => {
     expect(sealReplyNotice({ success: false, message: "", reason: "lever_down" }, seal(), 0)).toBeNull();
+    expect(sealReplyNotice({ success: false, message: "the door stands open", reason: "door_open" }, seal(), 0)).toBeNull();
     expect(sealReplyNotice({ success: false, message: "too far", reason: "party_not_gathered" }, seal(), 0)).toBeNull();
     expect(sealReplyNotice({ success: false, message: "too far" }, seal(), 0)).toBeNull();
   });

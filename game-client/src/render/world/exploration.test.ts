@@ -340,3 +340,32 @@ describe("which monsters and drop piles the fog shows (FS-SRA9J §D.15, §D.16, 
     expect(seen.shows({ x: member.x, y: -150 })).toBe(true);
   });
 });
+
+describe("exploration carried onto a floor map re-sent for the same floor (FS-5FZ4J §J R56)", () => {
+  // the shut hidden room: room B (3) left out and the corridor's last cell (10, 2–3) cut, as the
+  // server sends the map while the secret door on it is shut; then the door open, the map whole
+  const shut = () => floor(17, 7, [room(A, 1, 1, 4, 4), corridor(C, 5, 2, 5, 2)]);
+
+  it("keeps every region already explored, and the region the party stands in visible, and adds the opened room unexplored", () => {
+    const before = new Exploration(shut());
+    before.see([mid(2, 2)]);
+    before.see([mid(7, 2)]);
+    const after = Exploration.carried(walk(), before);
+    expect([after.state(A), after.state(C), after.state(B)]).toEqual(["explored", "visible", "unexplored"]);
+  });
+
+  it("reads the party's next positions on the new cells: the room seen once a member reaches it", () => {
+    const before = new Exploration(shut());
+    before.see([mid(9, 2)]);
+    const after = Exploration.carried(walk(), before);
+    expect(after.see([mid(9, 2)])).toBe(true);
+    expect(after.state(B)).toBe("visible");
+  });
+
+  it("shows what stands near the party before the next positions come, as before", () => {
+    const before = new Exploration(shut());
+    before.see([mid(2, 2)]);
+    const after = Exploration.carried(walk(), before);
+    expect(after.shows({ x: mid(2, 2).x + SHOWN_WITHIN - 1, y: mid(2, 2).y })).toBe(true);
+  });
+});

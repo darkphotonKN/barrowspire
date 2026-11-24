@@ -1024,3 +1024,15 @@ describe("addWallPieces: planned pieces and posts as sprites (a dungeon floor's 
     expect(built.thickness).toBe(THICK);
   });
 });
+
+// FS-5FZ4J §J R56 (I-5FZ4J-10): a dungeon floor's walls drawn again let go of the pieces they destroyed.
+describe("Occluders.prune", () => {
+  it("should let go of the occluders destroyed since, and keep the rest", () => {
+    const sprite = (active: boolean) =>
+      ({ active, alpha: 1, depth: 0, getBounds: () => ({ x: 0, y: 0, width: 10, height: 10 }), setAlpha: vi.fn() }) as unknown as Phaser.GameObjects.Sprite;
+    const occluders = new Occluders();
+    occluders.add([sprite(true), sprite(false), sprite(true)]);
+    occluders.prune();
+    expect(occluders.size).toBe(2);
+  });
+});
