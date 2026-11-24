@@ -20,8 +20,10 @@ type BookCastingState struct {
 }
 
 // BookEffectState is a book effect on the floor as every recipient of the run
-// is told it: its entity id, its kind (witchlight, rune), where it stands in
-// px and its seconds left. A kind that shows more (a rune's catches, a
+// is told it: its entity id, its kind (witchlight, rune, draught), where it
+// stands in px and its seconds left. A draught has no time of its own (it
+// stands until drunk), so its remaining is always 0; its id is what an
+// interact names to drink it. A kind that shows more (a rune's catches, a
 // hound's health) adds its own fields, absent on every other kind.
 // FS-X2CMM §F R34.
 type BookEffectState struct {
@@ -48,7 +50,7 @@ type BookPageState struct {
 }
 
 // BookTimedState is a named state a book ability set on a delver (hardened,
-// and later afloat, trackers_eye, long_night), with its seconds left; on the
+// afloat, trackers_eye, long_night, draught), with its seconds left; on the
 // delver's own state and everyone else's. FS-X2CMM §F R34.
 type BookTimedState struct {
 	Name      string  `json:"name"`

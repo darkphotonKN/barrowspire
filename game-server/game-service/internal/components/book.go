@@ -49,6 +49,9 @@ const (
 	// monsters within 5 cells turn on the warrior, who takes 30 % less from
 	// every hit (R31). Never last_stand.
 	BookStateLongNight BookStateName = "long_night"
+	// BookStateDraught is on a delver for the 6 s a drunk draught heals them
+	// (R27); its heal is the book's Draught.
+	BookStateDraught BookStateName = "draught"
 )
 
 // BookCooldown is one page's book cooldown, in simulation seconds: Remaining
@@ -76,6 +79,16 @@ type BookComponent struct {
 	// LongNightReach is how far, in px, the warrior's Long Night turns
 	// monsters: its 5 cells in the cell of the floor it was cast on (R31).
 	LongNightReach float64
+	// Draught is the heal a drunk draught is giving, nil when none (R27).
+	Draught *DraughtHeal
+}
+
+// DraughtHeal is a drunk draught's heal over time: Amount the whole health it
+// gives, fixed at the drink, and Given what it has given so far. The time
+// left is the book's draught state. FS-X2CMM §E R27.
+type DraughtHeal struct {
+	Amount int
+	Given  int
 }
 
 // BookCasting is a page cast in progress: accepted, not yet paid for, its

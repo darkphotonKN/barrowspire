@@ -1907,6 +1907,11 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 		return ErrEntityNotFound
 	}
 
+	// an archer's draught is drunk, and gone (FS-X2CMM §E R27)
+	if systems.IsDraught(targetEntity) {
+		return s.drinkDraught(playerID, targetEntity)
+	}
+
 	// a reach for a run's shut chest or sack starts a timed open, and several
 	// delvers may have one on the same container: it neither checks nor takes
 	// the per-container hold below, or a second delver's reach would be

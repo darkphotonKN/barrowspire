@@ -15,7 +15,10 @@ const (
 	// BookEffectRune is the Binding Glyph page's rune (R24); its catch rides
 	// the same entity as a RuneComponent.
 	BookEffectRune BookEffectKind = "rune"
-	// draught and hound join here as their pages are built.
+	// BookEffectDraught is the Brew page's draught (R27): it has no time of
+	// its own, and stands until a delver drinks it or the floor ends.
+	BookEffectDraught BookEffectKind = "draught"
+	// hound joins here as its page is built.
 )
 
 // BookEffectComponent is a book effect: an entity of its own on the floor, at

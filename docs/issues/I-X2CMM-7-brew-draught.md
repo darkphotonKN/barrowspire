@@ -1,6 +1,6 @@
 ---
 id: I-X2CMM-7
-status: open
+status: done
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-2"]
 labels: [ready-for-agent]

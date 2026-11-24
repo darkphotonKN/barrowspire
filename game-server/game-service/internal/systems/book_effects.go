@@ -36,13 +36,16 @@ func SetDownBookEffect(world *ecs.EntityManager, kind components.BookEffectKind,
 }
 
 // ageBookEffect runs a book effect down by the tick and takes it from the
-// world once its time is up; anything else is passed over.
+// world once its time is up; a draught, and anything else, is passed over.
 func (s *BookSystem) ageBookEffect(entity *ecs.Entity, deltaTime float64) {
 	ec, ok := entity.GetComponent(ecs.ComponentTypeBookEffect)
 	if !ok {
 		return
 	}
 	effect := ec.(*components.BookEffectComponent)
+	if effect.Kind == components.BookEffectDraught {
+		return // no time of its own: it stands until drunk or the floor ends
+	}
 	if effect.Remaining -= deltaTime; effect.Remaining <= castEpsilon {
 		s.em.RemoveEntity(entity.ID)
 	}
