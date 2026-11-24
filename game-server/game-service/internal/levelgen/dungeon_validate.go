@@ -3,6 +3,7 @@ package levelgen
 import (
 	"fmt"
 	"reflect"
+	"slices"
 )
 
 // validateDungeon checks l against every dungeon layout rule for p (FS-KE075
@@ -82,6 +83,9 @@ func validateDungeon(p DungeonParams, l DungeonLayout) error {
 	if err := checkRoles(p, l, rects, open); err != nil {
 		return bad("roles: %v", err)
 	}
+	if err := checkBarred(p, l, rects, open, grid); err != nil {
+		return bad("barred rooms: %v", err)
+	}
 	start := rects[l.Roles.Start].centre()
 	walkable := 0
 	for _, o := range open {
@@ -119,31 +123,39 @@ func checkRooms(p DungeonParams, rooms []CellRect) error {
 	return nil
 }
 
-// checkEdges requires the connection graph to be exactly the spanning tree
-// then the shortest extra pairs, with every corridor's width in range.
+// checkEdges requires the connection graph to be exactly the spanning tree,
+// then round(ExtraEdgeShare x rooms) extra pairs taken shortest first from the
+// pairs not in the tree (some passed over, FS-5FZ4J §A R3), with every
+// corridor's width in range.
 func checkEdges(p DungeonParams, rooms []CellRect, edges []Edge) error {
-	tree, extra := connectionPairs(p, rooms)
-	if want := len(tree) + len(extra); len(edges) != want {
-		return fmt.Errorf("%d edges, want %d (%d tree, %d extra)", len(edges), want, len(tree), len(extra))
+	tree, rest := connectionPairs(rooms)
+	if want := len(tree) + extraEdges(p, len(rooms)); len(edges) != want {
+		return fmt.Errorf("%d edges, want %d (%d tree, %d extra)", len(edges), want, len(tree), extraEdges(p, len(rooms)))
 	}
-	if len(extra) != extraEdges(p, len(rooms)) {
-		return fmt.Errorf("%d extra pairs exist, want %d", len(extra), extraEdges(p, len(rooms)))
+	order := make(map[[2]int]int, len(rest))
+	for i, pr := range rest {
+		order[pr] = i
 	}
+	last := -1
 	for i, e := range edges {
-		var want [2]int
 		isExtra := i >= len(tree)
-		if isExtra {
-			want = extra[i-len(tree)]
-		} else {
-			want = tree[i]
-		}
+		pr := [2]int{e.A, e.B}
 		switch {
-		case [2]int{e.A, e.B} != want || e.Extra != isExtra:
-			return fmt.Errorf("edge %d joins %d-%d (extra %v), want %d-%d (extra %v)",
-				i, e.A, e.B, e.Extra, want[0], want[1], isExtra)
+		case e.Extra != isExtra:
+			return fmt.Errorf("edge %d extra %v, want %v", i, e.Extra, isExtra)
+		case !isExtra && pr != tree[i]:
+			return fmt.Errorf("edge %d joins %d-%d, want tree pair %d-%d", i, e.A, e.B, tree[i][0], tree[i][1])
 		case e.Width < p.CorridorWidth.Min || e.Width > p.CorridorWidth.Max:
 			return fmt.Errorf("edge %d is %d wide, want %d..%d", i, e.Width, p.CorridorWidth.Min, p.CorridorWidth.Max)
 		}
+		if !isExtra {
+			continue
+		}
+		at, ok := order[pr]
+		if !ok || at <= last {
+			return fmt.Errorf("extra edge %d joins %d-%d, not the next shortest pair outside the tree", i, e.A, e.B)
+		}
+		last = at
 	}
 	return nil
 }
@@ -260,12 +272,22 @@ func checkShell(p DungeonParams, walls []Rect, open []bool) error {
 }
 
 // checkRoles requires every role room to exist, the start room at least
-// StartMin a side, the switch, escape door and stairs in three different
-// rooms at or past the median distance, the treasure count in range, no room
-// with two roles, and every room's distance to be the walk from the start.
+// StartMin a side, the stairs, switch and escape door at or past the median
+// distance, the treasure count in range, no room with two roles or a role and
+// a barrier, and every room's distance to be the walk from the start; on a
+// floor with an escape door, its room the far free room farthest by walk from
+// the stairs (FS-5FZ4J §A R7), and on one without, no switch or escape door.
 func checkRoles(p DungeonParams, l DungeonLayout, rooms []CellRect, open []bool) error {
 	r := l.Roles
-	all := append([]int{r.Start, r.Switch, r.EscapeDoor, r.Stairs}, r.Treasure...)
+	all := append([]int{r.Start, r.Stairs}, r.Treasure...)
+	if p.EscapeDoor {
+		all = append(all, r.Switch, r.EscapeDoor)
+	} else if r.Switch != noRoom || r.EscapeDoor != noRoom {
+		return fmt.Errorf("switch %d and escape door %d on a floor with no escape door", r.Switch, r.EscapeDoor)
+	}
+	for _, h := range l.Hidden {
+		all = append(all, h.Room)
+	}
 	seen := make(map[int]bool, len(all))
 	for _, i := range all {
 		if i < 0 || i >= len(rooms) {
@@ -292,10 +314,87 @@ func checkRoles(p DungeonParams, l DungeonLayout, rooms []CellRect, open []bool)
 		}
 	}
 	median := medianDistance(dist, r.Start)
-	for _, i := range []int{r.Switch, r.EscapeDoor, r.Stairs} {
+	fixed := []int{r.Stairs}
+	if p.EscapeDoor {
+		fixed = append(fixed, r.Switch, r.EscapeDoor)
+	}
+	for _, i := range fixed {
 		if dist[i] < median {
 			return fmt.Errorf("role room %d is %d cells from the start, under the median %d", i, dist[i], median)
 		}
+	}
+	if !p.EscapeDoor {
+		return nil
+	}
+	var free []int
+	for i, d := range dist {
+		if d >= median && i != r.Start && i != r.Stairs && !slices.ContainsFunc(l.Hidden, func(h BarredRoom) bool { return h.Room == i }) {
+			free = append(free, i)
+		}
+	}
+	if want := free[farthestFrom(p.Cols, p.Rows, open, rooms, r.Stairs, free)]; r.EscapeDoor != want {
+		return fmt.Errorf("escape door in room %d, want room %d, the far room farthest from the stairs", r.EscapeDoor, want)
+	}
+	return nil
+}
+
+// checkBarred requires the stairs room to be the barrable room farthest from
+// the start, HiddenRooms other barrable rooms by room index, each barrier and
+// its segments as the layout's cells give them, every barrier shut to cut off
+// its own room and nothing else, no extra connection to a barred room, and
+// the Chasm flag to match the stairs room (FS-5FZ4J §A R2-R4, R8, §E R33, §F
+// R36).
+func checkBarred(p DungeonParams, l DungeonLayout, rooms []CellRect, open []bool, grid []int) error {
+	barrable := barrableRooms(p.Cols, p.Rows, rooms, l.Edges, open, l.Roles.Start)
+	dist := make([]int, len(l.Rooms))
+	for i, room := range l.Rooms {
+		dist[i] = room.Distance
+	}
+	at := farthestBarred(barrable, dist)
+	if at < 0 {
+		return fmt.Errorf("no room is a dead end")
+	}
+	want := func(room int) (BarredRoom, bool) {
+		for _, b := range barrable {
+			if b.Room == room {
+				return withBarrierSegments(p.Cols, grid, b), true
+			}
+		}
+		return BarredRoom{}, false
+	}
+	switch b, ok := want(l.Stairs.Room); {
+	case l.Stairs.Room != l.Roles.Stairs:
+		return fmt.Errorf("the stairs are barred in room %d but stand in room %d", l.Stairs.Room, l.Roles.Stairs)
+	case l.Stairs.Room != barrable[at].Room:
+		return fmt.Errorf("stairs room %d, want room %d, the farthest dead end", l.Stairs.Room, barrable[at].Room)
+	case !ok || !reflect.DeepEqual(l.Stairs, b):
+		return fmt.Errorf("stairs barrier %+v, want %+v", l.Stairs, b)
+	}
+	if len(l.Hidden) != p.HiddenRooms {
+		return fmt.Errorf("%d hidden rooms, want %d", len(l.Hidden), p.HiddenRooms)
+	}
+	for i, h := range l.Hidden {
+		b, ok := want(h.Room)
+		switch {
+		case !ok || !reflect.DeepEqual(h, b):
+			return fmt.Errorf("hidden room %+v is not a dead end behind %+v", h, b)
+		case i > 0 && h.Room <= l.Hidden[i-1].Room:
+			return fmt.Errorf("hidden rooms out of room order")
+		}
+	}
+	barred := append([]BarredRoom{l.Stairs}, l.Hidden...)
+	for _, e := range l.Edges {
+		for _, b := range barred {
+			if e.Extra && (e.A == b.Room || e.B == b.Room) {
+				return fmt.Errorf("extra edge %d-%d joins barred room %d", e.A, e.B, b.Room)
+			}
+		}
+	}
+	if !barredOff(p.Cols, p.Rows, open, centreIndex(p.Cols, rooms[l.Roles.Start]), rooms, barred) {
+		return fmt.Errorf("with every barrier shut, a barred room is reachable or another cell is cut off")
+	}
+	if want := chasmCapable(rooms[l.Stairs.Room], l.Stairs.Barrier); l.ChasmCapable != want {
+		return fmt.Errorf("chasm capable %v, want %v", l.ChasmCapable, want)
 	}
 	return nil
 }

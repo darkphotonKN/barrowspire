@@ -230,9 +230,10 @@ func TestNewRun_StartsOnTheFirstFloor(t *testing.T) {
 
 	assert.Equal(t, 1, currentFloor(t, s).Depth)
 
-	// floor 1 is a dungeon: its fixtures, and no buildings (FS-KE075 §B R10)
-	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), 1)
-	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeSwitch), 1)
+	// floor 1 is a dungeon: its stairs, no escape door or switch (FS-5FZ4J
+	// §A R6), and no buildings (FS-KE075 §B R10)
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor))
+	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeSwitch))
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1)
 	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "a dungeon floor has no doors")
 }

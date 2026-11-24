@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -94,13 +95,16 @@ func onlyEntity(t *testing.T, s *Session, componentType ecs.ComponentType) *ecs.
 	return e
 }
 
-// Every Spire floor is built from floor 1's parameter set: the generator takes
-// no depth. FS-M8CSE §C Requirements 12-13.
+// Every Spire floor is built from floor 1's parameter set, floors 2+ with an
+// escape door and switch and floor 1 without. FS-M8CSE §C Requirements 12-13,
+// FS-5FZ4J §A R6.
 func TestDungeonParams_EveryFloorIsFloor1s(t *testing.T) {
 	for depth := firstFloor; depth <= 10; depth++ {
 		params, isDungeon := dungeonParams(depth)
 		assert.True(t, isDungeon, "floor %d is a dungeon", depth)
-		assert.Equal(t, levelgen.DungeonFloor1Params, params, "floor %d", depth)
+		want := levelgen.DungeonFloor1Params
+		want.EscapeDoor = depth > firstFloor
+		assert.Equal(t, want, params, "floor %d", depth)
 	}
 }
 
@@ -128,7 +132,7 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 	}
 }
 
-// Floors above the first hold floor 1's 30-45 monsters besides their bosses,
+// Floors above the first hold floor 1's 15-25 monsters besides their bosses,
 // none in the start room. FS-M8CSE §C Requirement 12.
 func TestDungeonFloors_AboveTheFirstHoldTheFullPopulation(t *testing.T) {
 	for seed := uint64(1); seed <= 30; seed++ {
@@ -190,36 +194,49 @@ func failGeneration(s *Session) {
 	s.generateDungeon = (&failingGenerator{}).generate
 }
 
-// The switch, escape door and stairs each stand in their own role room, three
-// different rooms at least the median room's walk from the start, on walkable
-// cells off the doorways; each treasure room holds a chest. FS-KE075 §B
-// Requirements 12, 14, 15.
+// fixtureCase is one of a floor's fixed objects and the room it stands in.
+type fixtureCase struct {
+	what   string
+	kind   ecs.ComponentType
+	room   int
+	rw, rh float64
+}
+
+// assertFixturesPlaced checks each fixture stands alone in its own room, on
+// walkable cells off the doorways, never in the start room.
+func assertFixturesPlaced(t *testing.T, s *Session, seed uint64, fixtures []fixtureCase) {
+	t.Helper()
+	d := s.dungeon
+	rooms := map[int]bool{}
+	for _, f := range fixtures {
+		at := transformOf(t, onlyEntity(t, s, f.kind))
+		assert.Equal(t, f.room, roomOf(d, at.X, at.Y), "seed %d: the %s stands in its room", seed, f.what)
+		assert.True(t, d.stands(centredArea(at.X, at.Y, f.rw, f.rh), d.roomRegion(f.room), offDoorways),
+			"seed %d: the %s is on walkable cells off the doorways", seed, f.what)
+		rooms[f.room] = true
+	}
+	assert.Len(t, rooms, len(fixtures), "seed %d: each in its own room", seed)
+	assert.NotContains(t, rooms, d.layout.Roles.Start, "seed %d", seed)
+}
+
+// Floor 1 has its stairs in their room and no escape door or switch; each
+// treasure room holds a chest. FS-KE075 §B Requirements 12, 14, 15, FS-5FZ4J
+// §A R6.
 func TestDungeonFloor1_RolesPlaced(t *testing.T) {
 	for seed := uint64(1); seed <= 40; seed++ {
 		s, _ := dungeonRun(t, seed, 2, 0)
 		d := s.dungeon
 		roles := d.layout.Roles
 
-		fixtures := []struct {
-			what   string
-			kind   ecs.ComponentType
-			room   int
-			rw, rh float64
-		}{
-			{"escape door", ecs.ComponentTypeEscapeDoor, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius},
-			{"switch", ecs.ComponentTypeSwitch, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius},
+		assertFixturesPlaced(t, s, seed, []fixtureCase{
 			{"stairs", ecs.ComponentTypeStairs, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius},
-		}
-		rooms := map[int]bool{}
-		for _, f := range fixtures {
-			at := transformOf(t, onlyEntity(t, s, f.kind))
-			assert.Equal(t, f.room, roomOf(d, at.X, at.Y), "seed %d: the %s stands in its room", seed, f.what)
-			assert.True(t, d.stands(centredArea(at.X, at.Y, f.rw, f.rh), d.roomRegion(f.room), offDoorways),
-				"seed %d: the %s is on walkable cells off the doorways", seed, f.what)
-			rooms[f.room] = true
-		}
-		assert.Len(t, rooms, 3, "seed %d: three different rooms", seed)
-		assert.NotContains(t, rooms, roles.Start, "seed %d", seed)
+		})
+		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor), "seed %d: no escape door on floor 1", seed)
+		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeSwitch), "seed %d: no switch on floor 1", seed)
+		s.mu.RLock()
+		assert.Equal(t, uuid.Nil, s.exitDoorEntityID, "seed %d: no escape door for the switch handler", seed)
+		assert.Empty(t, s.switchEntityIDs, "seed %d", seed)
+		s.mu.RUnlock()
 
 		assert.GreaterOrEqual(t, len(roles.Treasure), 3, "seed %d", seed)
 		assert.LessOrEqual(t, len(roles.Treasure), 4, "seed %d", seed)
@@ -232,6 +249,85 @@ func TestDungeonFloor1_RolesPlaced(t *testing.T) {
 			assert.Equal(t, components.ContainerKindChest, chestsIn[room], "seed %d: treasure room %d holds a chest", seed, room)
 		}
 	}
+}
+
+// Floors 2+ have their escape door, switch and stairs each in their own role
+// room, the escape door's the far room farthest by walk from the stairs room.
+// FS-KE075 §B Requirements 12, 14, FS-5FZ4J §A R7.
+func TestDungeonFloor2_EscapeDoorFarFromTheStairs(t *testing.T) {
+	for seed := uint64(1); seed <= 20; seed++ {
+		s, _ := dungeonRun(t, seed, 2, 0)
+		require.NoError(t, s.regenerateFloor())
+		require.Equal(t, 2, currentFloor(t, s).Depth)
+		d := s.dungeon
+		roles := d.layout.Roles
+
+		assertFixturesPlaced(t, s, seed, []fixtureCase{
+			{"escape door", ecs.ComponentTypeEscapeDoor, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius},
+			{"switch", ecs.ComponentTypeSwitch, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius},
+			{"stairs", ecs.ComponentTypeStairs, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius},
+		})
+
+		// of the far rooms, none is a longer walk from the stairs room's centre
+		fromStairs := cellWalk(d, roomCentreCell(d, roles.Stairs))
+		median := medianRoomDistance(d)
+		for i, room := range d.layout.Rooms {
+			if i == roles.Start || i == roles.Stairs || room.Distance < median {
+				continue
+			}
+			assert.LessOrEqual(t, fromStairs[roomCentreCell(d, i)], fromStairs[roomCentreCell(d, roles.EscapeDoor)],
+				"seed %d: far room %d is farther from the stairs than the escape door's room %d", seed, i, roles.EscapeDoor)
+		}
+		s.mu.RLock()
+		assert.Equal(t, onlyEntity(t, s, ecs.ComponentTypeEscapeDoor).ID, s.exitDoorEntityID, "seed %d", seed)
+		assert.Equal(t, []uuid.UUID{onlyEntity(t, s, ecs.ComponentTypeSwitch).ID}, s.switchEntityIDs, "seed %d", seed)
+		s.mu.RUnlock()
+	}
+}
+
+// roomCentreCell is the index of room's centre cell on d.
+func roomCentreCell(d *dungeonFloor, room int) int {
+	r := d.layout.Rooms[room].Rect
+	return (r.Y+r.H/2)*d.layout.Cols + r.X + r.W/2
+}
+
+// medianRoomDistance is the upper median of the rooms' walks from the start,
+// the start room left out.
+func medianRoomDistance(d *dungeonFloor) int {
+	var ds []int
+	for i, room := range d.layout.Rooms {
+		if i != d.layout.Roles.Start {
+			ds = append(ds, room.Distance)
+		}
+	}
+	slices.Sort(ds)
+	return ds[len(ds)/2]
+}
+
+// cellWalk is the 4-neighbour walk in cells from cell from over d's walkable
+// cells, -1 where unreachable.
+func cellWalk(d *dungeonFloor, from int) []int {
+	cols, rows := d.layout.Cols, d.layout.Rows
+	dist := make([]int, len(d.region))
+	for i := range dist {
+		dist[i] = -1
+	}
+	dist[from] = 0
+	queue := []int{from}
+	for i := 0; i < len(queue); i++ {
+		c := queue[i]
+		x, y := c%cols, c/cols
+		for _, n := range [4][2]int{{x, y - 1}, {x + 1, y}, {x, y + 1}, {x - 1, y}} {
+			if n[0] < 0 || n[1] < 0 || n[0] >= cols || n[1] >= rows {
+				continue
+			}
+			if next := n[1]*cols + n[0]; d.region[next] != 0 && dist[next] < 0 {
+				dist[next] = dist[c] + 1
+				queue = append(queue, next)
+			}
+		}
+	}
+	return dist
 }
 
 // Floor 1 holds clamp(round(rooms / 2), 10, 14) containers: one chest per

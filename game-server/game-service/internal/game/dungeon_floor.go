@@ -27,11 +27,15 @@ import (
 **/
 
 // dungeonParams is the generator's parameter set for a run floor built as a
-// dungeon. Every Spire floor is one, on floor 1's set (FS-M8CSE §C R12-13); a
-// floor that needs its own set is a new parameter set here (ADR-0061 Decision
-// 2). A floor of buildings is now only what a failed generation leaves.
-func dungeonParams(_ int) (levelgen.DungeonParams, bool) {
-	return levelgen.DungeonFloor1Params, true
+// dungeon. Every Spire floor is one, on floor 1's set (FS-M8CSE §C R12-13), and
+// a sealed one: its stairs in a dead end (FS-5FZ4J §A). Floor 1 has no escape
+// door and no switch, floors 2+ have both (§A R6-R7). A floor that needs its
+// own set is a new parameter set here (ADR-0061 Decision 2). A floor of
+// buildings is now only what a failed generation leaves.
+func dungeonParams(depth int) (levelgen.DungeonParams, bool) {
+	p := levelgen.DungeonFloor1Params
+	p.EscapeDoor = depth > firstFloor
+	return p, true
 }
 
 // dungeonGenerator is the dungeon generator the floor build calls. A session
@@ -134,9 +138,11 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 }
 
 // dungeonFixtures is where a dungeon floor's escape door, switch and stairs
-// stand, found before anything is laid. stairs is unset on the top floor.
+// stand, found before anything is laid. stairs is unset on the top floor, the
+// escape door and switch on floor 1 (hasEscapeDoor false).
 type dungeonFixtures struct {
 	exitDoor, exitSwitch, stairs point
+	hasEscapeDoor                bool
 }
 
 // isTopFloor is whether depth is the floor the run's Spire height names (FS-M8CSE
@@ -151,17 +157,20 @@ func (s *Session) isTopFloor(depth int) bool {
 func (s *Session) hasStairs(depth int) bool { return !s.isTopFloor(depth) }
 
 // placeFixtures finds the escape door's, the switch's and the stairs' spots in
-// their rooms, each through the occupied-area check. An error when a room has
-// none: the layout cannot be laid (FS-KE075 §B R14).
+// their rooms, each through the occupied-area check; a floor whose roles have
+// no escape door (floor 1, FS-5FZ4J §A R6) places neither it nor the switch.
+// An error when a room has none: the layout cannot be laid (FS-KE075 §B R14).
 func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, error) {
 	roles := d.layout.Roles
-	var f dungeonFixtures
+	f := dungeonFixtures{hasEscapeDoor: roles.HasEscapeDoor()}
 	var ok bool
-	if f.exitDoor, ok = s.placeFixture(d, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
-		return f, fmt.Errorf("the escape door's room %d has no spot off its doorways", roles.EscapeDoor)
-	}
-	if f.exitSwitch, ok = s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
-		return f, fmt.Errorf("the switch's room %d has no spot off its doorways", roles.Switch)
+	if f.hasEscapeDoor {
+		if f.exitDoor, ok = s.placeFixture(d, roles.EscapeDoor, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
+			return f, fmt.Errorf("the escape door's room %d has no spot off its doorways", roles.EscapeDoor)
+		}
+		if f.exitSwitch, ok = s.placeFixture(d, roles.Switch, constants.ContainerWidthRadius, constants.ContainerHeightRadius); !ok {
+			return f, fmt.Errorf("the switch's room %d has no spot off its doorways", roles.Switch)
+		}
 	}
 	if s.hasStairs(depth) {
 		if f.stairs, ok = s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius); !ok {
@@ -171,8 +180,8 @@ func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, er
 	return f, nil
 }
 
-// layDungeon lays a dungeon floor out: its shell walls, then the switch,
-// escape door and stairs where they were found, then its containers. The party
+// layDungeon lays a dungeon floor out: its shell walls, then the switch and
+// escape door (floors 2+) and stairs where they were found, then its containers. The party
 // and the monsters come after, as on every floor.
 func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixtures) {
 	// the shell walls belong to no building: a floor map carries them with no
@@ -181,13 +190,18 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 		CreateWallEntity(s.EntityManager, WallConfig{X: wall.X, Y: wall.Y, Width: wall.W, Height: wall.H}, uuid.Nil)
 	}
 
-	exitDoor := CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{X: fixtures.exitDoor.x, Y: fixtures.exitDoor.y})
-	switchEntity := CreateSwitchEntity(s.EntityManager, SwitchConfig{X: fixtures.exitSwitch.x, Y: fixtures.exitSwitch.y, SwitchID: 1})
+	// floor 1 has neither (FS-5FZ4J §A R6): the switch handler then finds no
+	// door to unlock, and no floor's ids outlive it
+	exitDoorID, switchIDs := uuid.Nil, []uuid.UUID(nil)
+	if fixtures.hasEscapeDoor {
+		exitDoorID = CreateEscapeDoorEntity(s.EntityManager, EscapeConfig{X: fixtures.exitDoor.x, Y: fixtures.exitDoor.y}).ID
+		switchIDs = []uuid.UUID{CreateSwitchEntity(s.EntityManager, SwitchConfig{X: fixtures.exitSwitch.x, Y: fixtures.exitSwitch.y, SwitchID: 1}).ID}
+	}
 
 	// the switch handler reads these from the message goroutine
 	s.mu.Lock()
-	s.exitDoorEntityID = exitDoor.ID
-	s.switchEntityIDs = []uuid.UUID{switchEntity.ID}
+	s.exitDoorEntityID = exitDoorID
+	s.switchEntityIDs = switchIDs
 	s.mu.Unlock()
 
 	if s.hasStairs(depth) {

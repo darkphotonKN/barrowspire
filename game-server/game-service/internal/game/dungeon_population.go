@@ -26,8 +26,9 @@ import (
 * same spacing and delver exclusion as on any floor (spawnArea.valid).
 **/
 
-// spawnRole is what a dungeon monster was placed as. It decides which ones the
-// floor total may trim: never a hall pack or a treasure guard.
+// spawnRole is what a dungeon monster was placed as. It decides the order the
+// floor total trims in: ordinary rooms, corridors, then a hall pack's fodder
+// (never its leader), then treasure guards down to one a room.
 type spawnRole int
 
 const (
@@ -260,10 +261,12 @@ func (p *dungeonPopulation) corridors() {
 
 /**
 * holdTotal holds the floor's monsters to [DungeonMonstersMin,
-* DungeonMonstersMax] (FS-KE075 §C R18): below, single rolled monsters go to
-* random ordinary rooms, none past RoomMonstersTopUpMax; above, monsters are
-* removed from ordinary rooms, then corridors. Hall packs and treasure guards
-* are never trimmed.
+* DungeonMonstersMax] (FS-KE075 §C R18, FS-5FZ4J §D R21): below, single rolled
+* monsters go to random ordinary rooms, none past RoomMonstersTopUpMax; above,
+* monsters are removed from ordinary rooms, then corridors, then hall packs'
+* fodder, then treasure-guard packs, the last two room by room from the one
+* farthest from the start. A hall keeps its pack's leader and a treasure room
+* one guard, so every guarded chest keeps a guard.
 **/
 func (p *dungeonPopulation) holdTotal(ordinary []int) {
 	// the ordinary rooms a top-up may still go to
@@ -282,6 +285,13 @@ func (p *dungeonPopulation) holdTotal(ordinary []int) {
 	for _, role := range []spawnRole{spawnRoom, spawnCorridor} {
 		for len(p.spawns) > DungeonMonstersMax {
 			if !p.trimOne(role) {
+				break
+			}
+		}
+	}
+	for _, role := range []spawnRole{spawnHallPack, spawnTreasureGuard} {
+		for len(p.spawns) > DungeonMonstersMax {
+			if !p.trimPack(role) {
 				break
 			}
 		}
@@ -322,6 +332,44 @@ func (p *dungeonPopulation) trimOne(role spawnRole) bool {
 	i := of[p.rng.IntN(len(of))]
 	p.spawns = slices.Delete(p.spawns, i, i+1)
 	return true
+}
+
+/**
+* trimPack removes the last-placed monster of role from the room farthest from
+* the start that still holds more than one of them (the lower room index on a
+* tie); false when every room is down to one. A pack's leader is placed first,
+* so it is never the one removed, and the archer slots, placed next, go last.
+**/
+func (p *dungeonPopulation) trimPack(role spawnRole) bool {
+	held := map[int]int{}
+	for _, spawn := range p.spawns {
+		if spawn.role == role {
+			held[spawn.room]++
+		}
+	}
+	room := -1
+	for r, n := range held {
+		if n < 2 {
+			continue
+		}
+		far, best := p.floor.layout.Rooms[r].Distance, -1
+		if room >= 0 {
+			best = p.floor.layout.Rooms[room].Distance
+		}
+		if far > best || (far == best && r < room) {
+			room = r
+		}
+	}
+	if room < 0 {
+		return false
+	}
+	for i := len(p.spawns) - 1; i >= 0; i-- {
+		if p.spawns[i].role == role && p.spawns[i].room == room {
+			p.spawns = slices.Delete(p.spawns, i, i+1)
+			return true
+		}
+	}
+	return false
 }
 
 // inRoom is how many monsters are placed in room.

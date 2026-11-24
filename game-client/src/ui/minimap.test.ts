@@ -573,9 +573,9 @@ describe("the minimap's look (FS-56CKV §A)", () => {
   });
 
   describe("the walls' outline: walls are lines, openings are gaps (§A.5)", () => {
-    /** Corridor 36: two cell rects (9 × 2 and 4 × 1 under it), and room 20, which it opens on. */
-    const CORRIDOR = 36;
-    const NEXT_DOOR = 20;
+    /** The corridor through cell (11, 18): two cell rects (9 × 2 and 4 × 1 under it), and room 20, which it opens on. */
+    const CORRIDOR = grid.region(11, 18);
+    const NEXT_DOOR = grid.region(4, 21);
     type Outline = ReturnType<typeof regionOutline>;
     const regionOf = (id: number, on: RegionGrid = grid) => on.regions.find((r) => r.id === id)!;
     /** A run's sides: a closed loop's last point back to its first, an open run's not. */
@@ -748,11 +748,11 @@ describe("the minimap's look (FS-56CKV §A)", () => {
     it("should line every shown cell side facing a cell that is not walkable on the whole fixture floor, none missing, and none between two walkable cells", () => {
       const all = grid.regions.map((r) => r.id);
       const want = walls(all);
-      // the fixture floor's walls, counted apart from the minimap: 766 unit sides
-      expect(want.size).toBe(766);
+      // the fixture floor's walls, counted apart from the minimap: 768 unit sides
+      expect(want.size).toBe(768);
       const { runs, units } = outlined(all);
       // covered: every wall side once, none missing, none extra
-      expect(units).toHaveLength(766);
+      expect(units).toHaveLength(768);
       expect([...want].filter((u) => !units.includes(u))).toEqual([]);
       // no run on any of the floor's openings
       const open = openings();

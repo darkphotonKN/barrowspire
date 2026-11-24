@@ -501,7 +501,7 @@ describe("a floor's wall layout, as the fog sees it (FS-XK2B6 §F)", () => {
       const got = halves.flatMap(({ cx, cy, right }) => layout.slabs(cx, cy, right).map((s) => `${cx},${cy},${right},${s.axis},${s.height}`));
       const want = plan.edges.map((e) => `${e.cx},${e.cy},${HALF_OF[e.wallSide].right},${HALF_OF[e.wallSide].axis},${edgeHeight(e, grid)}`);
       expect(got.sort()).toEqual(want.sort());
-      expect(got).toHaveLength(766);
+      expect(got).toHaveLength(768);
     });
 
     it("stands each slab on its wall's centre line: half a thickness from its edge, in its wall cell", () => {
@@ -524,7 +524,7 @@ describe("a floor's wall layout, as the fog sees it (FS-XK2B6 §F)", () => {
 
     it("lays no fog over any drawn piece or post, from its foot to its top, with every region unexplored or under a scatter of states", () => {
       const { pieces, posts } = dungeonWalls(plan, grid, 41, MASONRY_WALLS);
-      expect(pieces).toHaveLength(2 * 766);
+      expect(pieces).toHaveLength(2 * 768);
       const scatter = (id: number): ExplorationState => (["unexplored", "explored", "visible"] as const)[id % 3];
       for (const state of [states({}), scatter]) {
         const at = veilsAt(fogOf(grid, state, fixtureWalls()));

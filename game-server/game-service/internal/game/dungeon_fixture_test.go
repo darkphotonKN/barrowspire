@@ -42,10 +42,14 @@ type stuckRand struct{}
 func (stuckRand) IntN(int) int     { return 0 }
 func (stuckRand) Float64() float64 { return 0 }
 
-// floor1Layout is the real generator's floor-1 layout for seed.
-func floor1Layout(t *testing.T, seed uint64) levelgen.DungeonLayout {
+// escapeFloorLayout is the real generator's layout for seed on a floor with an
+// escape door and switch (floors 2+, FS-5FZ4J §A R6): the scripted generator
+// lays it on whatever floor asks, so these tests reach every fixture.
+func escapeFloorLayout(t *testing.T, seed uint64) levelgen.DungeonLayout {
 	t.Helper()
-	l, err := levelgen.GenerateDungeon(levelgen.DungeonFloor1Params, seed)
+	p := levelgen.DungeonFloor1Params
+	p.EscapeDoor = true
+	l, err := levelgen.GenerateDungeon(p, seed)
 	require.NoError(t, err)
 	return l
 }
@@ -110,7 +114,7 @@ func offDoorwaysIn(d *dungeonFloor, at point, room int) bool {
 // Every random draw misses, yet the one free cell of the escape door's room is
 // found by searching the room: the door stands on it, off the doorways.
 func TestDungeonFloor1_FixtureDrawsMiss_TheRoomIsSearched(t *testing.T) {
-	layout := floor1Layout(t, 11)
+	layout := escapeFloorLayout(t, 11)
 	room := layout.Roles.EscapeDoor
 	r := layout.Rooms[room].Rect
 	// an inner cell, not the room's centre cell
@@ -130,9 +134,9 @@ func TestDungeonFloor1_FixtureDrawsMiss_TheRoomIsSearched(t *testing.T) {
 // build moves on to a fresh seed's layout, and the door stands off the
 // doorways there.
 func TestDungeonFloor1_FixtureRoomWithNoSpot_FreshSeedBuilt(t *testing.T) {
-	tight := floor1Layout(t, 11)
+	tight := escapeFloorLayout(t, 11)
 	tight = tightened(tight, tight.Roles.EscapeDoor, nil)
-	fresh := floor1Layout(t, 12)
+	fresh := escapeFloorLayout(t, 12)
 	gen := &scriptedGenerator{layouts: []levelgen.DungeonLayout{tight, fresh}}
 
 	s := runFrom(t, gen, seededSpawns(5))
@@ -148,7 +152,7 @@ func TestDungeonFloor1_FixtureRoomWithNoSpot_FreshSeedBuilt(t *testing.T) {
 // of buildings, and the run still starts with its way out and its way up.
 func TestDungeonFloor1_NoLayoutWithASpot_FloorOfBuildings(t *testing.T) {
 	log := capturedLog(t)
-	first, second := floor1Layout(t, 11), floor1Layout(t, 12)
+	first, second := escapeFloorLayout(t, 11), escapeFloorLayout(t, 12)
 	gen := &scriptedGenerator{layouts: []levelgen.DungeonLayout{
 		tightened(first, first.Roles.Switch, nil),
 		tightened(second, second.Roles.Stairs, nil),
