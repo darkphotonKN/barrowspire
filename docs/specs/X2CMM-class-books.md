@@ -84,6 +84,12 @@ Where the build settled what this FS left loose. Each is [derived] and overridab
 - **The ally `target_id`** is the teammate's player id (`other_players[].id`; self:
   `current_player.id`); entity ids are also accepted.
 - **Afloat refuses the parry** as the mercenary's class ability (R23).
+- **Each page entry also carries `cooldown_length`** (seconds; 0 for a limited page) **and
+  `limit`** (`floor` or `delve`, absent for a timed page), so the tip's cooldown words come from
+  the server and a retune needs no client change (the "server sends the book" decision).
+- **A spent page is drawn dim with a "spent" caption** (R38), not greyed: ADR-0094 keeps the
+  grey for locked pages only.
+- **The book is drawn in the client's book order** whatever order the pages arrive in.
 
 ## Requirements
 
