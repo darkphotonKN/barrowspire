@@ -1,9 +1,9 @@
 /**
  * The class books' presentation data (FS-X2CMM §G R37, §H R41; CONTEXT "Class book"): each class's book
  * by its title, its pages in book order, and each page's name, its one line, the Scars' line of where
- * the scar was earned, its target kind, how it recovers in words, and the reticle sizes slice 11 aims
- * with. Only what is presentation: the server sends the book itself (its offered pages, levels, costs
- * and cooldowns, R32), so a retune never needs this file (FS-Q18Q3 R1's rule).
+ * the scar was earned, its target kind, and the reticle slice 11 aims with. Only what is presentation:
+ * the server sends the book itself (its offered pages, levels, costs, cooldowns and their lengths or
+ * limits, R32), so a retune never needs this file (FS-Q18Q3 R1's rule).
  *
  * The words are the game's (barrow-delve: terse, grim) and stand here alone, so a rewrite, or a later
  * look of the book, never touches the panel or the casting.
@@ -16,9 +16,9 @@ export type TargetKind = "ground" | "ally" | "interactable" | "self" | "none";
 
 /**
  * One page as the book presents it. `name` is how the panel and its tip name it; a Scar's `scar` names
- * the scar it is, and `earned` says where it was earned (R37). `recovers` is the tip's cooldown words,
- * the wire carrying a cooldown's length only while it runs. `rangeCells` and `reticleCells` are the
- * reticle's (R41): how far from the player it may land, and the radius of the ring it draws, in cells.
+ * the scar it is, and `earned` says where it was earned (R37). `rangeCells`, `reticleCells` and
+ * `reticleShape` are the reticle's (R41): how far from the player it may land, the radius of the mark it
+ * draws, in cells, and what that mark is (a ring unless told otherwise).
  */
 export interface PageCopy {
   readonly id: PageId;
@@ -29,10 +29,14 @@ export interface PageCopy {
   readonly target: TargetKind;
   /** An ally page that may be cast on oneself (Levitate). */
   readonly allowsSelf?: boolean;
-  readonly recovers: string;
   readonly rangeCells?: number;
   readonly reticleCells?: number;
+  /** The armed reticle's mark: a ring, or the hound's paw. Absent, a ring. */
+  readonly reticleShape?: ReticleShape;
 }
+
+/** What an armed page's reticle lays on the ground (R41). */
+export type ReticleShape = "ring" | "paw";
 
 /** A body's ring, for a reticle laid under a teammate or an interactable (R41). */
 const BODY_RING = 0.6;
@@ -46,7 +50,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     name: "Witchlight",
     line: "A pale flame hung where you point. The dark gives back what it hid.",
     target: "ground",
-    recovers: "45 s",
     rangeCells: 8,
     reticleCells: 3,
   },
@@ -55,7 +58,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     name: "Far Hand",
     line: "Work a lever, a latch or a lid from across the room.",
     target: "interactable",
-    recovers: "30 s",
     rangeCells: 6,
     reticleCells: BODY_RING,
   },
@@ -65,7 +67,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     line: "Lift a companion, or yourself, off the cursed stone. The lifted strike no blow.",
     target: "ally",
     allowsSelf: true,
-    recovers: "90 s",
     rangeCells: 6,
     reticleCells: BODY_RING,
   },
@@ -74,7 +75,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     name: "Binding Glyph",
     line: "A rune cut into the floor. The first three to cross it stand fixed.",
     target: "ground",
-    recovers: "60 s",
     rangeCells: 6,
     reticleCells: 0.75,
   },
@@ -83,37 +83,33 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     name: "Recall",
     line: "Drag every living companion on the floor to your side.",
     target: "none",
-    recovers: "Once a floor",
   },
   trackers_eye: {
     id: "trackers_eye",
     name: "Tracker's Eye",
     line: "Read the stone as a hunter reads snow.",
     target: "none",
-    recovers: "60 s",
   },
   brew: {
     id: "brew",
     name: "Brew",
     line: "A draught set at your feet. Whoever drinks it mends.",
     target: "none",
-    recovers: "120 s",
   },
   call_the_hound: {
     id: "call_the_hound",
     name: "Call the Hound",
     line: "A lean grey hound answers, and bites what you would.",
     target: "ground",
-    recovers: "180 s",
     rangeCells: 4,
     reticleCells: 0.5,
+    reticleShape: "paw",
   },
   pick_the_lock: {
     id: "pick_the_lock",
     name: "Pick the Lock",
     line: "No lock was ever paid enough to hold.",
     target: "interactable",
-    recovers: "30 s",
     rangeCells: ADJACENT,
     reticleCells: BODY_RING,
   },
@@ -122,7 +118,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     name: "Strike a Deal",
     line: "Every band down here has a price. Name it.",
     target: "interactable",
-    recovers: "900 s",
     rangeCells: 4,
     reticleCells: BODY_RING,
   },
@@ -131,7 +126,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     name: "Take a Contract",
     line: "A name marked on this floor. Bring it down and be paid in blood.",
     target: "none",
-    recovers: "Once a delve",
   },
   heave: {
     id: "heave",
@@ -140,7 +134,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     earned: "Got under the portcullis at Harrow Gate, and held it while the rest crawled out.",
     line: "Shoulder a jammed gate or a fallen block aside.",
     target: "interactable",
-    recovers: "20 s",
     rangeCells: ADJACENT,
     reticleCells: BODY_RING,
   },
@@ -151,7 +144,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     earned: "Got in the stake pit under Low Cairn. The stakes broke first.",
     line: "Hide like boiled leather. The barrow's snares bite less.",
     target: "self",
-    recovers: "90 s",
   },
   long_night: {
     id: "long_night",
@@ -160,7 +152,6 @@ export const PAGE_COPY: Readonly<Record<PageId, PageCopy>> = {
     earned: "Got alone on the stair the night the cairn fell, until a dawn no one else saw.",
     line: "Every horror near turns on you, and its blows land lighter.",
     target: "self",
-    recovers: "120 s",
   },
 };
 

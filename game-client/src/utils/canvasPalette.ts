@@ -62,6 +62,22 @@ export function rgba(color: number, alpha: number): string {
 /** Slate warmed a little toward barrow earth: grey stone, neither cold nor brown. */
 const FALLBACK_STONE = mix(BARROW_HEX.slate, BARROW_HEX.barrowDeep, 0.3);
 
+/**
+ * The class book's pigments, `palette.bookPigment` (below): one table, so the book's world effects
+ * (`palette.bookEffect`) read their pigments through it and never from the tokens (ADR-0094).
+ */
+const BOOK_PIGMENT = {
+  verdigris: BARROW_HEX.pigmentVerdigris,
+  ochre: BARROW_HEX.pigmentOchre,
+  madder: BARROW_HEX.pigmentMadder,
+  lapis: BARROW_HEX.pigmentLapis,
+  bone: BARROW_HEX.pigmentBone,
+  /** A locked page's ground (ADR-0095): flat warm near-ink, what a dim page sinks toward. */
+  lockedGround: BARROW_HEX.pigmentLockedGround,
+  /** The rim under the pointer (ADR-0095): the HUD's bright brass. */
+  rimLit: BARROW_HEX.brassBright,
+};
+
 export const palette = {
   // -- Ground and structure. Barrow earth and cold stone; the world is
   //    lit only where a torch reaches it.
@@ -274,17 +290,7 @@ export const palette = {
    * blood madder, growth, beasts and cures verdigris), never by its class, and its picture is bone. Read by the page roundels (`src/ui/pageRoundel.ts`); the book's world effects read their own
    * names in `bookEffect`, below.
    */
-  bookPigment: {
-    verdigris: BARROW_HEX.pigmentVerdigris,
-    ochre: BARROW_HEX.pigmentOchre,
-    madder: BARROW_HEX.pigmentMadder,
-    lapis: BARROW_HEX.pigmentLapis,
-    bone: BARROW_HEX.pigmentBone,
-    /** A locked page's ground (ADR-0095): flat warm near-ink, what a dim page sinks toward. */
-    lockedGround: BARROW_HEX.pigmentLockedGround,
-    /** The rim under the pointer (ADR-0095): the HUD's bright brass. */
-    rimLit: BARROW_HEX.brassBright,
-  },
+  bookPigment: BOOK_PIGMENT,
   /**
    * The class book's leaf (FS-X2CMM R37): the vellum its page roundels lie on, a faint wash of the dark
    * vellum inside the windows' frame, and its hairline in the frame's brass. Read by `classBookStyle.ts`.
@@ -394,11 +400,11 @@ export const palette = {
    * heal rising in the health channel's lifted oxblood (guideline "Healing is not green").
    */
   bookEffect: {
-    witchlight: tint(BARROW_HEX.pigmentOchre, 0.35),
-    witchlightCore: BARROW_HEX.pigmentBone,
-    witchlightLight: tint(BARROW_HEX.pigmentOchre, 0.5),
-    rune: BARROW_HEX.pigmentMadder,
-    runeFlash: tint(BARROW_HEX.pigmentMadder, 0.45),
+    witchlight: tint(BOOK_PIGMENT.ochre, 0.35),
+    witchlightCore: BOOK_PIGMENT.bone,
+    witchlightLight: tint(BOOK_PIGMENT.ochre, 0.5),
+    rune: BOOK_PIGMENT.madder,
+    runeFlash: tint(BOOK_PIGMENT.madder, 0.45),
     draughtGlass: BARROW_HEX.slateLight,
     draughtLiquid: BARROW_HEX.oxblood,
     draughtShine: BARROW_HEX.oxbloodText,
@@ -407,7 +413,7 @@ export const palette = {
     hardened: BARROW_HEX.brass,
     longNight: BARROW_HEX.pitch,
     longNightEdge: BARROW_HEX.umbra,
-    trackersEye: BARROW_HEX.pigmentOchre,
+    trackersEye: BOOK_PIGMENT.ochre,
     draughtHeal: BARROW_HEX.oxbloodText,
   },
 
@@ -490,7 +496,7 @@ export const palette = {
     faint: BARROW_HEX.menuTextFaint,
     danger: BARROW_HEX.menuDangerText,
   },
-} as const;
+};
 
 /** One of the passive tree's hues (L4), by what a node gives: the key a node's copy names. */
 export type TreeHue = keyof typeof palette.treeHue;
@@ -531,7 +537,7 @@ export const CANVAS_FONT = {
   get body(): string {
     return cssFont("--font-body", "Georgia, serif");
   },
-} as const;
+};
 
 /** The floor below which blackletter may not be used, in px. */
 export const BLACKLETTER_MIN_PX = 28;

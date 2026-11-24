@@ -58,7 +58,7 @@ func (s *BookSystem) catchOnRune(entity *ecs.Entity, entities []*ecs.Entity) boo
 		ring.Caught = append(ring.Caught, held.entity.ID)
 	}
 
-	if len(ring.Caught) < runeCatches {
+	if !runeSpent(entity) {
 		return false
 	}
 	s.em.RemoveEntity(entity.ID)

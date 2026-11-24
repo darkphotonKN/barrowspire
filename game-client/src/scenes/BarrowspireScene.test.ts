@@ -1354,6 +1354,65 @@ describe("BarrowspireScene class book pages (FS-X2CMM §H R40–R44a)", () => {
     t.bridge.reportUi({ book: false });
     expect(t.bridge.world?.facts().armed).toBe(false);
   });
+
+  // I-X2CMM-23 item 9: every other way R41 names to disarm, nothing sent by any
+  const mage = (fields: { current_health?: number } = {}) =>
+    ({ ...player("me", "Aldric", 130, fields), class: "mage" }) as ReturnType<typeof player>;
+
+  it("should disarm on death", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.run.handleGameStateUpdate(partyState(mage({ current_health: 0 })));
+    expect(t.bridge.world?.facts().armed).toBe(false);
+    expect(t.casts()).toEqual([]);
+  });
+
+  it("should disarm on a floor change", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.run.handleGameStateUpdate({ ...partyState(mage()), floor: 2 } as GameState);
+    expect(t.bridge.world?.facts().armed).toBe(false);
+    expect(t.casts()).toEqual([]);
+  });
+
+  it("should disarm as the run ends", () => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    (t.run as unknown as FloorRun).endRun();
+    expect(t.bridge.world?.facts().armed).toBe(false);
+    expect(t.casts()).toEqual([]);
+  });
+
+  it.each([
+    ["the bag", { inventory: true }],
+    ["the character sheet", { character: true }],
+    ["the tree", { tree: true }],
+    ["the menu", { menuOpen: true }],
+  ])("should disarm as %s opens", (_, opened) => {
+    const t = bookStage();
+    t.bridge.request({ kind: "page", page: "witchlight" });
+    t.bridge.reportUi({ book: true, ...opened });
+    expect(t.bridge.world?.facts().armed).toBe(false);
+    expect(t.casts()).toEqual([]);
+  });
+
+  it("should hear the owner's own cast on the cast bar, and none while watching a teammate", () => {
+    const t = bookStage();
+    const castBar = (t.run as unknown as { castBar: { hear(casting: unknown, now: number): void } }).castBar;
+    const hear = vi.spyOn(castBar, "hear");
+    const casting = { page: "witchlight", remaining: 0.5, total: 1 };
+    const withCast = (me: ReturnType<typeof player>) =>
+      ({ ...partyState({ ...me, book: { pages: [], casting } } as ReturnType<typeof player>) }) as GameState;
+
+    t.run.handleGameStateUpdate(withCast(mage()));
+    expect(hear.mock.calls.at(-1)?.[0]).toEqual(casting);
+
+    t.run.handleGameStateUpdate(withCast(mage({ current_health: 0 })));
+    (t.run as unknown as { startWatching(): void }).startWatching();
+    expect((t.run as unknown as { watchedPlayerId?: string }).watchedPlayerId).toBe("ally");
+    t.run.handleGameStateUpdate(withCast(mage({ current_health: 0 })));
+    expect(hear.mock.calls.at(-1)?.[0]).toBeUndefined();
+  });
 });
 
 describe("BarrowspireScene co-op combat (FS-77AB6 req 39, 40)", () => {

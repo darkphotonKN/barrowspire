@@ -38,14 +38,29 @@ func bookState(book *components.BookComponent) *types.BookState {
 		}
 		cooldown := book.Cooldowns[id]
 		pages = append(pages, types.BookPageState{
-			ID:          string(id),
-			UnlockLevel: page.UnlockLevel,
-			Cost:        page.Cost,
-			Cooldown:    types.CooldownState{Remaining: cooldown.Remaining, Total: cooldown.Total},
-			Spent:       book.Spent[id],
+			ID:             string(id),
+			UnlockLevel:    page.UnlockLevel,
+			Cost:           page.Cost,
+			Cooldown:       types.CooldownState{Remaining: cooldown.Remaining, Total: cooldown.Total},
+			Spent:          book.Spent[id],
+			CooldownLength: page.Cooldown,
+			Limit:          pageLimitWord(page.Limit),
 		})
 	}
 	return &types.BookState{Pages: pages, Casting: castingState(book.Casting)}
+}
+
+// pageLimitWord is a page's limit as the wire words it: "floor", "delve",
+// or "" for a timed page (omitted).
+func pageLimitWord(limit systems.PageLimit) string {
+	switch limit {
+	case systems.PageLimitPerFloor:
+		return "floor"
+	case systems.PageLimitPerDelve:
+		return "delve"
+	default:
+		return ""
+	}
 }
 
 // castingState is a cast in progress as its caster is told it, nil when none.

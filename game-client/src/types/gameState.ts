@@ -97,8 +97,10 @@ export interface BookState {
 /**
  * One offered page as its owner is told it (FS-X2CMM §F R32): its id, the character level it unlocks
  * at, its whole cost in the class resource (0 for the mercenary's), its book cooldown (`{0, 0}` when
- * ready, FS-Q18Q3 R1), and whether a once-per-floor or once-per-delve use is spent. Mirrors Go
- * types.BookPageState.
+ * ready, FS-Q18Q3 R1), and whether a once-per-floor or once-per-delve use is spent. Its own terms come
+ * with it, so the tip words them and a retune needs no client change (Reconciled at review):
+ * `cooldown_length` its cooldown's seconds (0 for a limited page) and `limit` how often a limited page
+ * may be cast, absent for a timed one. Mirrors Go types.BookPageState.
  */
 export interface BookPageState {
   id: string;
@@ -106,7 +108,12 @@ export interface BookPageState {
   cost: number;
   cooldown: CooldownState;
   spent: boolean;
+  cooldown_length: number;
+  limit?: BookPageLimit;
 }
+
+/** How often a page without a cooldown may be cast: once a floor, or once a delve (FS-X2CMM §A R8). */
+export type BookPageLimit = "floor" | "delve";
 
 /** A cast in progress as its caster is told it (FS-X2CMM §D, R32): the page, seconds left, the whole cast time. */
 export interface BookCastingState {

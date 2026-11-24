@@ -1058,3 +1058,65 @@ describe("PlayerCombat book pages (FS-X2CMM §H R40–R42)", () => {
     expect(combat.armed).toBe(false);
   });
 });
+
+describe("PlayerCombat one aim at a time (FS-X2CMM R41; FS-04EEA R38 one hold at a time; I-X2CMM-23)", () => {
+  /** An archer holding Arrow Rain, with stamina to spare. */
+  const archer: ReturnType<CombatSelf> = {
+    passive_ranks: { "archer.t3": 1 },
+    tree_ability_cooldown: { remaining: 0, total: 12 },
+    resource: { kind: "stamina", current: 100, max: 100, ability_cost: 25, tree_ability_cost: 35 },
+  };
+  const near = { x: 220, y: 150 };
+
+  it("should disarm an armed page on 3 and raise no Arrow Rain circle, so its release sends nothing", () => {
+    const { combat, send, look } = combatOnStage(archer);
+    combat.pressPage("call_the_hound", me);
+
+    expect(combat.treeAbility("archer", me, near)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(look.endReticle).toHaveBeenCalledTimes(1);
+    expect(combat.rainAiming).toBe(false);
+    expect(look.rainAim).not.toHaveBeenCalled();
+    expect(combat.releaseTreeAbility("archer", me, near)).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should disarm an armed page on 3 for a class that casts at once, sending nothing", () => {
+    const { combat, send } = combatOnStage({
+      passive_ranks: { "mage.t3": 1 },
+      tree_ability_cooldown: { remaining: 0, total: 12 },
+      resource: { kind: "mana", current: 150, max: 150, ability_cost: 25, tree_ability_cost: 35 },
+    });
+    combat.pressPage("witchlight", me);
+
+    expect(combat.treeAbility("mage", me, near)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("should refuse a page pressed during an Arrow Rain aim, the aim kept and its release still sent", () => {
+    const { combat, send, look } = combatOnStage(archer);
+    combat.treeAbility("archer", me, near);
+
+    expect(combat.pressPage("call_the_hound", me)).toBe(false);
+    expect(combat.pressPage("trackers_eye", me)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(look.endReticle).not.toHaveBeenCalled();
+    expect(combat.rainAiming).toBe(true);
+    expect(combat.releaseTreeAbility("archer", me, near)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(ActionType.CastSkill, expect.objectContaining({ skill_id: "arrow_rain" }));
+  });
+
+  it("should refuse a page pressed during a Shadow Shot hold, sending nothing and arming nothing", () => {
+    const { combat, send } = combatOnStage(archer);
+    combat.cast("special", "archer", me, near);
+    expect(combat.aiming).toBe(true);
+
+    expect(combat.pressPage("call_the_hound", me)).toBe(false);
+    expect(combat.pressPage("trackers_eye", me)).toBe(false);
+    expect(combat.armed).toBe(false);
+    expect(combat.aiming).toBe(true);
+    expect(send).not.toHaveBeenCalled();
+  });
+});

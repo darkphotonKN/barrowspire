@@ -1,17 +1,17 @@
 /**
  * The class book as its panel draws it (FS-X2CMM §G R37, R38): the owner's book from their own state,
- * titled by class, the pages the server sent in the order it sent them (a page it has not sent is not
- * drawn, §K), each in its state from the wire and with its hover tip. Pure: the panel
+ * titled by class, the pages the server sent in the client's book order whatever order they arrive in (a
+ * page it has not sent is not drawn, §K), each in its state from the wire and with its hover tip. Pure: the panel
  * (`ClassBookPanel.ts`) draws it, the slot (`uiSceneBook.ts`) feeds it.
  *
- * The wire decides everything that is not presentation (R32): the unlock level, the cost, the cooldown
- * and the spent use. The client's own data (`src/data/classBooks.ts`) adds only the names, the lines and
- * the target kinds.
+ * The wire decides everything that is not presentation (R32): the unlock level, the cost, the cooldown,
+ * its length or limit, and the spent use. The client's own data (`src/data/classBooks.ts`) adds only the
+ * names, the lines, the target kinds and the book order.
  */
 
 import { PAGE_COPY, classBookOf, isPageId, type PageCopy } from "@/data/classBooks";
 import type { BookPageState, BookState, CooldownState, ResourceKind, ResourceState } from "@/types/gameState";
-import type { PageId } from "./pageIcons";
+import { PAGE_IDS, type PageId } from "./pageIcons";
 import type { PageState } from "./pageRoundel";
 
 /** What the book reads of the owner's state: their class, level, class resource and book. */
@@ -59,10 +59,12 @@ const RESOURCE_WORD: Readonly<Record<ResourceKind, string>> = {
   parry_charges: "parry charges",
 };
 
-/** The owner's book from their state; an absent book (an older server) is an empty one. */
+/** The owner's book from their state, in book order; an absent book (an older server) is an empty one. */
 export function bookView(source: BookSource | undefined): BookView {
   const book = classBookOf(source?.class);
-  const pages = (source?.book?.pages ?? []).flatMap((wire) => (isPageId(wire.id) ? [pageView(wire.id, wire, source)] : []));
+  const pages = (source?.book?.pages ?? [])
+    .flatMap((wire) => (isPageId(wire.id) ? [pageView(wire.id, wire, source)] : []))
+    .sort((a, b) => PAGE_IDS.indexOf(a.id) - PAGE_IDS.indexOf(b.id));
   return { title: book.title, pages, empty: pages.length === 0 ? book.empty : undefined };
 }
 
@@ -78,7 +80,7 @@ function pageView(id: PageId, wire: BookPageState, source: BookSource | undefine
   const why = locked
     ? `Unlocks at level ${wire.unlock_level}`
     : wire.spent
-      ? spentWords(copy)
+      ? spentWords(wire)
       : running
         ? `Recovers in ${Math.ceil(wire.cooldown.remaining)} s`
         : short
@@ -90,7 +92,7 @@ function pageView(id: PageId, wire: BookPageState, source: BookSource | undefine
     { text: copy.line, tone: "line" },
     ...(copy.earned ? [{ text: copy.earned, tone: "earned" as const }] : []),
     { text: wire.cost > 0 ? `Cost: ${wire.cost} ${word}`.trim() : "No cost", tone: "cost" },
-    { text: `Cooldown: ${copy.recovers}`, tone: "cost" },
+    { text: `Cooldown: ${cooldownWords(wire)}`, tone: "cost" },
     ...(why ? [{ text: why, tone: "why" as const }] : []),
   ];
   return {
@@ -104,9 +106,16 @@ function pageView(id: PageId, wire: BookPageState, source: BookSource | undefine
   };
 }
 
+/** A page's cooldown in the tip's words, from the wire: its seconds, or its limit ("Once a floor"). */
+function cooldownWords(wire: BookPageState): string {
+  if (wire.limit === "floor") return "Once a floor";
+  if (wire.limit === "delve") return "Once a delve";
+  return `${wire.cooldown_length} s`;
+}
+
 /** A spent page's why: until the floor turns, or for the rest of the delve. */
-function spentWords(copy: PageCopy): string {
-  return /floor/i.test(copy.recovers) ? "Spent until the next floor" : "Spent for this delve";
+function spentWords(wire: BookPageState): string {
+  return wire.limit === "floor" ? "Spent until the next floor" : "Spent for this delve";
 }
 
 /**

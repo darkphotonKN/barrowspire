@@ -222,3 +222,22 @@ func TestBookSystemUpdate_ARuneKeepsALongerStun(t *testing.T) {
 	assert.Equal(t, 6.0, monster(m).StunRemaining)
 	assert.Equal(t, 1, caught(t, r), "held all the same, so caught")
 }
+
+// A rune taken on its third catch is still among the tick's entities, so it
+// reads as expired from that catch on and is never sent again; one with
+// catches to spare is not. R24; I-X2CMM-23.
+func TestBookEffectExpired_ARuneWithItsThreeCatchesIsGone(t *testing.T) {
+	em := ecs.NewEntityManager()
+	books := NewBookSystem(em)
+	r := layRune(t, em, books)
+	rc, _ := r.GetComponent(ecs.ComponentTypeRune)
+	ring := rc.(*components.RuneComponent)
+
+	for range runeCatches - 1 {
+		ring.Caught = append(ring.Caught, em.CreateEntity().ID)
+	}
+	assert.False(t, BookEffectExpired(r), "two catches: still laid")
+
+	ring.Caught = append(ring.Caught, em.CreateEntity().ID)
+	assert.True(t, BookEffectExpired(r), "the third: gone this tick")
+}

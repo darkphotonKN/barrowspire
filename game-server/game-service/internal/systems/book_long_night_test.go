@@ -83,8 +83,8 @@ func TestMonsterAISystem_TheLongNightTurnsMonstersWithin5CellsOnTheWarrior(t *te
 }
 
 // A monster that comes within 5 cells while the night runs turns too, and one
-// turned holds the warrior as a retaliation is held: walked off past its
-// leash, it still chases them. R31.
+// turned is taunted, so its leash does not drop the warrior: walked off past
+// its leash, it still chases them. R31.
 func TestMonsterAISystem_TheLongNightTakesMonstersThatComeNearAndHoldsThem(t *testing.T) {
 	em, _, warrior, mate := nightField(t)
 	g := chasing(em, 7*testCell, mate)

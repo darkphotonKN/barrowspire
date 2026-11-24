@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { BookPageState, ResourceState } from "@/types/gameState";
 import { bookView, bookKey, type BookSource } from "./classBookModel";
 
-// FS-X2CMM §G R37, R38 (I-X2CMM-10): the book as the panel draws it, from the owner's state: titled by
-// class, the pages the server sent in its order, each page's state from the wire, and its hover tip.
+// FS-X2CMM §G R37, R38 (I-X2CMM-10, I-X2CMM-23): the book as the panel draws it, from the owner's state:
+// titled by class, the pages the server sent in the book's order, each page's state from the wire, and its
+// hover tip, its cooldown words from the wire.
 
 const page = (id: string, unlock_level: number, cost: number, over: Partial<BookPageState> = {}): BookPageState => ({
   id,
@@ -11,6 +12,7 @@ const page = (id: string, unlock_level: number, cost: number, over: Partial<Book
   cost,
   cooldown: { remaining: 0, total: 0 },
   spent: false,
+  cooldown_length: 0,
   ...over,
 });
 const mana = (current: number): ResourceState => ({ kind: "mana", current, max: 100, ability_cost: 10 });
@@ -22,11 +24,16 @@ const mage = (pages: BookPageState[], level = 20, resource: ResourceState | unde
 });
 
 describe("the class book's view (FS-X2CMM R37)", () => {
-  it("should title the book by class, and draw only the pages the server sent, in its order", () => {
+  it("should title the book by class, and draw only the pages the server sent", () => {
     const view = bookView(mage([page("witchlight", 2, 20), page("levitate", 9, 35)]));
     expect(view.title).toBe("Spellbook");
     expect(view.pages.map((p) => p.id)).toEqual(["witchlight", "levitate"]);
     expect(view.empty).toBeUndefined();
+  });
+
+  it("should draw the pages in the client's book order, whatever order they arrive in (Reconciled at review)", () => {
+    const view = bookView(mage([page("recall", 17, 50), page("witchlight", 2, 20), page("levitate", 9, 35)]));
+    expect(view.pages.map((p) => p.id)).toEqual(["witchlight", "levitate", "recall"]);
   });
 
   it("should skip a page the client has no picture or words for", () => {
@@ -65,7 +72,7 @@ describe("a page's state (FS-X2CMM R38)", () => {
     expect(p.cooldown).toEqual({ remaining: 12, total: 45 });
   });
 
-  it("should be greyed and captioned 'spent' while a once-per-floor use is spent", () => {
+  it("should be drawn dim, never greyed, and captioned 'spent' while a once-per-floor use is spent", () => {
     const p = stateOf(page("recall", 17, 50, { spent: true }));
     expect(p.state).toBe("dim");
     expect(p.spent).toBe(true);
@@ -91,7 +98,7 @@ describe("a page's hover tip (FS-X2CMM R37)", () => {
   const tipOf = (source: BookSource) => bookView(source).pages[0].tip.map((l) => l.text);
 
   it("should name the page, give its one line, its cost in the class resource and its cooldown", () => {
-    expect(tipOf(mage([page("witchlight", 2, 20)]))).toEqual([
+    expect(tipOf(mage([page("witchlight", 2, 20, { cooldown_length: 45 })]))).toEqual([
       "Witchlight",
       "A pale flame hung where you point. The dark gives back what it hid.",
       "Cost: 20 mana",
@@ -109,13 +116,26 @@ describe("a page's hover tip (FS-X2CMM R37)", () => {
 
   it("should say a page costs nothing where it does, and a once-a-floor page's limit", () => {
     expect(tipOf({ class: "mercenary", level: 20, book: { pages: [page("take_a_contract", 15, 0)] } })).toContain("No cost");
-    expect(tipOf(mage([page("recall", 17, 50)]))).toContain("Cooldown: Once a floor");
+    expect(tipOf(mage([page("recall", 17, 50, { limit: "floor" })]))).toContain("Cooldown: Once a floor");
+  });
+
+  it("should word the cooldown from the wire, so a retune needs no client change (Reconciled at review)", () => {
+    expect(tipOf(mage([page("witchlight", 2, 20, { cooldown_length: 50 })]))).toContain("Cooldown: 50 s");
+    expect(tipOf(mage([page("levitate", 9, 35, { cooldown_length: 90 })]))).toContain("Cooldown: 90 s");
+    const contract = { class: "mercenary", level: 20, book: { pages: [page("take_a_contract", 15, 0, { limit: "delve" })] } };
+    expect(tipOf(contract)).toContain("Cooldown: Once a delve");
+  });
+
+  it("should say how long a spent page stays spent by its limit", () => {
+    expect(tipOf(mage([page("recall", 17, 50, { limit: "floor", spent: true })])).at(-1)).toBe("Spent until the next floor");
+    const contract = { class: "mercenary", level: 20, book: { pages: [page("take_a_contract", 15, 0, { limit: "delve", spent: true })] } };
+    expect(tipOf(contract).at(-1)).toBe("Spent for this delve");
   });
 
   it("should end with why the page cannot be cast now", () => {
     expect(tipOf(mage([page("levitate", 9, 35)], 4)).at(-1)).toBe("Unlocks at level 9");
     expect(tipOf(mage([page("witchlight", 2, 20, { cooldown: { remaining: 11.2, total: 45 } })])).at(-1)).toBe("Recovers in 12 s");
-    expect(tipOf(mage([page("recall", 17, 50, { spent: true })])).at(-1)).toBe("Spent until the next floor");
+    expect(tipOf(mage([page("recall", 17, 50, { limit: "floor", spent: true })])).at(-1)).toBe("Spent until the next floor");
     expect(tipOf(mage([page("witchlight", 2, 20)], 20, mana(3))).at(-1)).toBe("Not enough mana");
   });
 });

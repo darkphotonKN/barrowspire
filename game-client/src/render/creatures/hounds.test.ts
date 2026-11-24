@@ -366,6 +366,40 @@ describe("HoundSet: the archer's hound drawn from the book effects (FS-X2CMM §I
     expect(sprites[0].destroyed).toBe(true);
   });
 
+  // I-X2CMM-23 item 12: a hound out of the state for a tick (the interest cut, a dropped frame) comes back whole
+  it("should come back at full alpha when it returns mid-fade, its bar shown and never taken away", () => {
+    const { set, sprites, bars, rings } = onStage();
+    set.sync([hound()]);
+    set.update(16);
+    set.sync([]);
+    set.update(HOUND_FADE_MS / 2);
+    expect(sprites[0].alpha).toBeLessThan(1);
+
+    set.sync([hound()]);
+    set.update(16);
+    expect([sprites[0].alpha, rings[0].alpha, bars[0].alpha]).toEqual([1, 1, 1]);
+    expect(bars[0].visible).toBe(true);
+    set.update(HOUND_FADE_MS);
+    expect(sprites[0].destroyed).toBe(false);
+    expect(set.size).toBe(1);
+  });
+
+  it("should stand again, not lie, when it returns alive mid-fade after a fall", () => {
+    const { set, sprites } = onStage();
+    set.sync([hound()]);
+    set.update(16);
+    set.sync([hound({ action: "dead", health: 0 })]);
+    set.update(16);
+    set.sync([]);
+    set.update(HOUND_FALL_MS + HOUND_FADE_MS / 2);
+    expect(sprites[0].alpha).toBeLessThan(1);
+
+    set.sync([hound()]);
+    set.update(16);
+    expect(sprites[0].alpha).toBe(1);
+    expect(playing(sprites[0])).toMatch(new RegExp(`^${HOUND_SHEET}/idle/`));
+  });
+
   it("should draw a new hound that replaces the old one (a new call), the old one fading", () => {
     const { set, sprites } = onStage();
     set.sync([hound({ id: "h1" })]);

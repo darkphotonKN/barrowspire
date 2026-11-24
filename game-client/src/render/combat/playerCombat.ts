@@ -269,10 +269,12 @@ export class PlayerCombat {
    * and no Shadow Shot hold is in progress; nothing on a key's auto-repeat (`repeat`). The archer's press sends
    * nothing: it starts the Arrow Rain aim, its circle drawn at `target` (R38), and {@link releaseTreeAbility}
    * casts. Whether the player may act at all (a menu open, resolved) is the scene's to decide before it asks.
-   * Whether it was sent or an aim begun.
+   * Whether it was sent or an aim begun. One aim at a time (FS-X2CMM R41): a press while a page is armed
+   * disarms it and does nothing else, as the right button does.
    */
   treeAbility(playerClass: string, me: Point, target: Point, repeat = false): boolean {
     if (repeat || this.hold.aiming || this.rain.aiming) return false;
+    if (this.disarm()) return false;
     const ability = treeAbilityOf(playerClass);
     if (ability === null) return false;
     const self = this.self();
@@ -339,10 +341,12 @@ export class PlayerCombat {
    * A ready page pressed in the class book (FS-X2CMM R40): a ground, ally or interactable page arms, and
    * its reticle is drawn from the next frame (`pageFrame`); a none or self page sends its one `cast_skill`
    * at once, from `me`, where the player stands. A pinned caster's cast is refused (FS-JS7C8 R62), so a
-   * none or self page sends nothing while the pin runs. Nothing of the effect is played (R42). Whether it
-   * was armed or sent.
+   * none or self page sends nothing while the pin runs. Nothing of the effect is played (R42). One aim at a
+   * time: a press during a Shadow Shot hold or an Arrow Rain aim is refused, the aim kept (FS-04EEA R38).
+   * Whether it was armed or sent.
    */
   pressPage(page: PageId, me: Point): boolean {
+    if (this.hold.aiming || this.rain.aiming) return false;
     // a none or self page held back by the pin changes nothing, an armed page included
     if (!pageArms(page) && this.pinned()) return false;
     const was = this.page.armed;

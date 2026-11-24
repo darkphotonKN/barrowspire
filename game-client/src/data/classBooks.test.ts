@@ -26,7 +26,6 @@ describe("the class books' data (FS-X2CMM R37)", () => {
       expect(page.id).toBe(id);
       expect(page.name.length).toBeGreaterThan(0);
       expect(page.line.length).toBeGreaterThan(0);
-      expect(page.recovers.length).toBeGreaterThan(0);
       expect(["ground", "ally", "interactable", "self", "none"]).toContain(page.target);
     }
   });
@@ -50,6 +49,11 @@ describe("the class books' data (FS-X2CMM R37)", () => {
     // Witchlight's 3-cell glow, the rune's 1.5 cells across (R41, R24)
     expect(PAGE_COPY.witchlight.reticleCells).toBe(3);
     expect(PAGE_COPY.binding_glyph.reticleCells).toBe(0.75);
+  });
+
+  it("should shape the hound's reticle as a paw mark by its data, every other aimed page a ring (R41)", () => {
+    expect(PAGE_COPY.call_the_hound.reticleShape).toBe("paw");
+    for (const id of PAGE_IDS) if (id !== "call_the_hound") expect(PAGE_COPY[id].reticleShape ?? "ring", id).toBe("ring");
   });
 
   it("should read the empty Ledger as the spec words it", () => {

@@ -191,6 +191,8 @@ export class HoundSet {
         this.views.set(state.id, this.create(state));
         continue;
       }
+      // back in the state mid-fade (it left the interest cut a tick): whole again, at full alpha
+      if (view.goneAt !== undefined) this.setAlpha(view, 1);
       view.goneAt = undefined;
       if (fallen(state) && view.fellAt === undefined) view.fellAt = this.clock;
       else if (!fallen(state)) view.fellAt = undefined;

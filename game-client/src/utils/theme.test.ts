@@ -154,6 +154,15 @@ describe("the class book's pigments (FS-X2CMM R45, ADR-0094)", () => {
     });
   });
 
+  // ADR-0094 (I-X2CMM-23): the book's world effects wear the same pigments as its pages, through one table
+  it("should ink the book's world effects from palette.bookPigment", () => {
+    expect(palette.bookEffect.rune).toBe(palette.bookPigment.madder);
+    expect(palette.bookEffect.runeFlash).toBe(tint(palette.bookPigment.madder, 0.45));
+    expect(palette.bookEffect.witchlight).toBe(tint(palette.bookPigment.ochre, 0.35));
+    expect(palette.bookEffect.witchlightCore).toBe(palette.bookPigment.bone);
+    expect(palette.bookEffect.trackersEye).toBe(palette.bookPigment.ochre);
+  });
+
   // ADR-0095 (I-X2CMM-24): a locked page lies on a flat warm near-ink ground, never coloured.
   it("should keep the locked ground a warm near-ink, one colour in both maps, darker than every pigment", () => {
     expect(Number.parseInt(BARROW.pigmentLockedGround.slice(1), 16)).toBe(BARROW_HEX.pigmentLockedGround);

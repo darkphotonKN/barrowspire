@@ -5,6 +5,7 @@ import (
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -23,8 +24,8 @@ func seatBook(delver *ecs.Entity, pages ...components.PageID) *components.BookCo
 var warriorPages = []components.PageID{components.PageHeave, components.PageHardened, components.PageLongNight}
 
 // In a run the owner is told the offered pages of their book, in book order,
-// with each one's unlock level, whole cost, book cooldown and spent flag; the
-// pages not offered are never sent. FS-X2CMM §F R32, §K R59.
+// with each one's unlock level, whole cost, book cooldown, spent flag and
+// cooldown length; the pages not offered are never sent. FS-X2CMM §F R32, §K R59.
 func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	em := ecs.NewEntityManager()
 	warrior := uuid.New()
@@ -35,9 +36,11 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	assert.Equal(t, map[string]any{"pages": []any{map[string]any{
 		"id": "hardened", "unlock_level": float64(9), "cost": float64(30),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
+		"cooldown_length": float64(90),
 	}, map[string]any{
 		"id": "long_night", "unlock_level": float64(15), "cost": float64(40),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
+		"cooldown_length": float64(120),
 	}}}, me["book"], "ready, {0, 0}; Heave (wave 2) never sent")
 
 	book.Cooldowns[components.PageHardened] = components.BookCooldown{Remaining: 45, Total: 90}
@@ -123,6 +126,33 @@ func TestFormatStateToClientState_TheOwnersCastInProgress(t *testing.T) {
 	book.Casting = &components.BookCasting{Page: components.PageWitchlight, Elapsed: 0.25, Total: 1}
 	got := ownFrame(t, em, types.WorldTypeRun, mage)["book"].(map[string]any)
 	assert.Equal(t, map[string]any{"page": "witchlight", "remaining": 0.75, "total": float64(1)}, got["casting"])
+}
+
+// Each page carries its cooldown length and, for a limited page, its limit,
+// from the class book, so the tip's words come from the server: a timed page
+// its seconds and no limit, a once-a-floor page 0 and "floor".
+// FS-X2CMM §F R32, "Reconciled at review". I-X2CMM-23.
+func TestFormatStateToClientState_EachPageCarriesItsCooldownLengthAndLimit(t *testing.T) {
+	em := ecs.NewEntityManager()
+	mage := uuid.New()
+	seatBook(seatWithResource(em, mage, "mage", mana(150, 150), components.AttackTripleFireball),
+		components.PageWitchlight, components.PageRecall)
+
+	pages := ownFrame(t, em, types.WorldTypeRun, mage)["book"].(map[string]any)["pages"].([]any)
+	require.Len(t, pages, 2)
+	witchlight, recall := pages[0].(map[string]any), pages[1].(map[string]any)
+	assert.Equal(t, float64(45), witchlight["cooldown_length"])
+	assert.NotContains(t, witchlight, "limit", "a timed page has no limit")
+	assert.Equal(t, float64(0), recall["cooldown_length"])
+	assert.Equal(t, "floor", recall["limit"])
+}
+
+// The wire's limit words: "floor", "delve", absent for a timed page.
+// FS-X2CMM "Reconciled at review". I-X2CMM-23.
+func TestPageLimitWord(t *testing.T) {
+	assert.Equal(t, "floor", pageLimitWord(systems.PageLimitPerFloor))
+	assert.Equal(t, "delve", pageLimitWord(systems.PageLimitPerDelve))
+	assert.Equal(t, "", pageLimitWord(systems.PageLimitNone))
 }
 
 // addBookEffect sets a book effect of the kind down at (x, y).
@@ -242,4 +272,16 @@ func TestFormatStateToClientState_ABookEffectWhoseTimeIsUpIsNotSent(t *testing.T
 	effects := frame["book_effects"].([]any)
 	require.Len(t, effects, 1)
 	assert.Equal(t, draught.ID.String(), effects[0].(map[string]any)["id"])
+}
+
+// A rune taken on its third catch is still among the tick's entities, and the
+// tick's state does not send it once more. FS-X2CMM §E R24, §F R34. I-X2CMM-23.
+func TestFormatStateToClientState_ARuneWithItsThreeCatchesIsNotSent(t *testing.T) {
+	w := newPartyWorld()
+	laid := addBookEffect(w.em, components.BookEffectRune, 300, 400, 12)
+	laid.AddComponent(&components.RuneComponent{Radius: 60, Caught: []uuid.UUID{uuid.New(), uuid.New(), uuid.New()}})
+
+	_, frame := wireFor(t, w.em, types.WorldTypeRun, w.wren)
+
+	assert.Empty(t, frame["book_effects"])
 }

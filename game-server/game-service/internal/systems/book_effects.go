@@ -70,14 +70,20 @@ func (s *BookSystem) ageBookEffect(entity *ecs.Entity, deltaTime float64) {
 	}
 }
 
-// BookEffectExpired is whether the entity is a book effect whose time is up:
-// taken from the world at the tick's start, yet still among the tick's
-// entities, so nothing that runs on them after (a hound's bite and heel, a
-// monster's quarry, the state sent) may count it. A draught has no time of its
-// own and never expires.
+// BookEffectExpired is whether the entity is a book effect that is gone: its
+// time up, or a rune that has caught its three. Either is taken from the world
+// during the tick yet still among the tick's entities, so nothing that runs on
+// them after (a hound's bite and heel, a monster's quarry, the state sent) may
+// count it. A draught has no time of its own and never expires.
 func BookEffectExpired(entity *ecs.Entity) bool {
 	ec, ok := entity.GetComponent(ecs.ComponentTypeBookEffect)
-	return ok && timeUp(ec.(*components.BookEffectComponent))
+	return ok && (timeUp(ec.(*components.BookEffectComponent)) || runeSpent(entity))
+}
+
+// runeSpent is whether the entity is a rune that has caught all it holds.
+func runeSpent(entity *ecs.Entity) bool {
+	rc, ok := entity.GetComponent(ecs.ComponentTypeRune)
+	return ok && len(rc.(*components.RuneComponent).Caught) >= runeCatches
 }
 
 // timeUp is whether a timed book effect has run its time out.

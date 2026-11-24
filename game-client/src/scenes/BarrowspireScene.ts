@@ -300,7 +300,10 @@ const CAMERA_MARGIN = 160;
 const STAIRS_POOL_INTENSITY = 0.85;
 /** The own body's key among the run's player bodies' spec looks: never a player id (FS-1J1CB R21). */
 const OWN_BODY = "self";
-/** A dungeon floor's cell, world px, before its map is in: the floor map's `cell_size` (FS-X2CMM R24). */
+/**
+ * A dungeon floor's cell, world px, before its map is in or where no dungeon grid stands: the floor map's
+ * `cell_size` and the server's own fallback for a page's range (`bookCellSize`, FS-X2CMM §B R12, R24).
+ */
 const DEFAULT_CELL = 80;
 /** A player's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
@@ -507,12 +510,6 @@ interface ArcherPalette {
 /** How a projectile is drawn in flight, shared with the field scene (FS-JTNPR req 20, 23). */
 export { projectileFlightOf };
 
-/**
- * A floor's cell edge, world px, where no dungeon grid stands: the server's own fallback for a page's range
- * (`bookCellSize`, FS-X2CMM §B R12).
- */
-const BOOK_CELL = 80;
-
 export class BarrowspireScene extends Phaser.Scene {
   /** The local player's sprite, drawn at the projection of `playerPos`. */
   private player?: Phaser.Physics.Arcade.Sprite;
@@ -525,6 +522,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private otherPlayers: Map<string, Phaser.Physics.Arcade.Sprite> = new Map();
   /** Eased world positions of other players; their sprites sit at the projection. */
   private otherPlayersPos: Map<string, Point> = new Map();
+  /** The bodies an armed page may snap to, as the last state left them (`seeAimAllies`). */
+  private aimAllies: readonly AimBody[] = [];
   private otherPlayersTargets: Map<string, { x: number; y: number }> =
     new Map();
 
@@ -1182,6 +1181,7 @@ export class BarrowspireScene extends Phaser.Scene {
 
     this.otherPlayers.clear();
     this.otherPlayersPos.clear();
+    this.aimAllies = [];
     this.otherPlayersTargets.clear();
     this.teammateHealthBars.clear();
     this.otherPlayersLegs.clear();
@@ -3814,26 +3814,32 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * The bodies an armed page may snap to, from this state (FS-X2CMM R41, §C R15): the player and every living,
+   * un-escaped teammate, by the id the server knows them by. Built once a state, not once a frame: each `at` is
+   * the drawn position the frames move in place, so the reticle follows the bodies between states.
+   */
+  private seeAimAllies(state: ClientGameState): void {
+    const me = state.current_player;
+    const allies: AimBody[] = me ? [{ id: me.id, at: this.playerPos ?? me.position, self: true }] : [];
+    for (const other of state.other_players ?? []) {
+      if (!resolved(other)) allies.push({ id: other.id, at: this.otherPlayersPos.get(other.id) ?? other.position });
+    }
+    this.aimAllies = allies;
+  }
+
+  /**
    * The run as an armed page reads it (FS-X2CMM R41): the player's drawn feet, the world point `cursor`, the
    * floor's cell, the living, un-escaped delvers where they are drawn (the player among them, by the id the
    * server knows them by, §C R15), and the walkable floor.
    */
   private aimScene(cursor: Point): AimScene {
-    const state = this.lastGameState;
-    const me = state?.current_player;
-    const from = this.playerPos ?? me?.position ?? cursor;
+    const from = this.playerPos ?? this.lastGameState?.current_player?.position ?? cursor;
     const grid = this.dungeon?.grid;
-    const allies: AimBody[] = [
-      ...(me ? [{ id: me.id, at: from, self: true }] : []),
-      ...(state?.other_players ?? [])
-        .filter((other) => !resolved(other))
-        .map((other) => ({ id: other.id, at: this.otherPlayersPos.get(other.id) ?? other.position })),
-    ];
     return {
       from,
       cursor,
-      cell: grid?.cell ?? BOOK_CELL,
-      allies,
+      cell: grid?.cell ?? DEFAULT_CELL,
+      allies: this.aimAllies,
       walkable: grid
         ? (p) => {
             const { cx, cy } = grid.cellOf(p);
@@ -4108,6 +4114,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // and the archers' hounds, which run, bite and fall (FS-X2CMM §I R47)
     this.hounds?.sync(state.book_effects);
     this.syncBookStates(state);
+    this.seeAimAllies(state);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
 

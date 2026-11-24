@@ -11,6 +11,7 @@
  * sent, and teammates never see it.
  */
 
+import { PAGE_COPY } from "@/data/classBooks";
 import { worldToScreen, type Point } from "@/render/iso/projection";
 import type { ArmedKind, Reticle } from "@/scenes/pageAim";
 import { palette } from "@/utils/canvasPalette";
@@ -53,9 +54,9 @@ function paw(centre: Point, radius: number): Point[][] {
   return [pad, ...toes];
 }
 
-/** The screen shapes a reticle lays: one ring, or the hound's paw (R41). */
+/** The screen shapes a reticle lays, by its page's `reticleShape`: one ring, or the hound's paw (R41). */
 export function reticleShapes(reticle: Reticle): Point[][] {
-  if (reticle.page === "call_the_hound") return paw(reticle.at, reticle.radius);
+  if (PAGE_COPY[reticle.page].reticleShape === "paw") return paw(reticle.at, reticle.radius);
   return [aimCirclePoints(reticle.at, reticle.radius)];
 }
 

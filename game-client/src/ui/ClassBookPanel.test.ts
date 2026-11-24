@@ -59,6 +59,7 @@ const page = (id: string, unlock_level: number, cost: number, over: Partial<Book
   cost,
   cooldown: { remaining: 0, total: 0 },
   spent: false,
+  cooldown_length: 0,
   ...over,
 });
 const mage = (pages: BookPageState[], level = 20): BookSource => ({
@@ -152,7 +153,7 @@ describe("the class book's pointer (FS-X2CMM R37, R39)", () => {
   });
 
   it("should show a page's name, line, cost and cooldown under the pointer, and take it away off it", () => {
-    const env = opened(mage([page("witchlight", 2, 20)]));
+    const env = opened(mage([page("witchlight", 2, 20, { cooldown_length: 45 })]));
     const m = env.middle(0);
     env.panel.pointerMove(m.x, m.y);
     expect(env.words()).toContain("Witchlight");
