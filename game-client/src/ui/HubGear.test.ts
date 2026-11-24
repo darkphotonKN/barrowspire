@@ -1001,6 +1001,24 @@ describe("HubGear moving items between bag and stash (FS-VPD8Y §F R38–42)", (
     expect(notice).not.toHaveBeenCalled();
   });
 
+  // the town holds its walk keys while stash mode is reported (§ Change: Opening the stash holds the
+  // player still, R45), so a move in flight must not end it: only closing the overlay does (R50)
+  it("should stay in stash mode while a move is in flight and after it answers (R50)", async () => {
+    const { gear, panel, api } = await stashOpen([
+      instance("b1", { location: "bag" }),
+    ]);
+    const pending = deferred<{ result: object }>();
+    api.moveItemInstance.mockReturnValueOnce(pending.promise);
+
+    expect(moveItem(panel, panel.inventory[0], "stash")).toBe(true);
+    expect(panel.status).toBe(GEAR_BUSY);
+    expect(gear.stashOpen()).toBe(true);
+    pending.resolve({ result: {} });
+    await settle();
+    expect(panel.status).toBeUndefined();
+    expect(gear.stashOpen()).toBe(true);
+  });
+
   it("should send a stash item to the bag (R38)", async () => {
     const { panel, api } = await stashOpen([
       instance("s1", { location: "stash" }),
