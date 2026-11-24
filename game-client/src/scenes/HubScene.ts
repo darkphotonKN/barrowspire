@@ -117,6 +117,7 @@ import {
   HUB_GATE_DRESSING,
   HUB_HEARTH,
   HUB_PATHS,
+  HUB_SIZE,
   HUB_SPIRE_FACADE,
   HUB_STALLS,
   HUB_WASHING_LINE,
@@ -125,6 +126,13 @@ import {
   type PropSpot,
 } from "@/render/world/hubKeepOut";
 import {
+  HUB_BELFRY,
+  HUB_GRAVEYARD,
+  HUB_GRAVEYARD_WALL,
+  HUB_WAYSIDE_CROSS,
+  type GraveyardPiece,
+} from "@/render/world/hubGraveyard";
+import {
   HUB_INDOOR_DRESSING,
   furnishingOf,
   partitionInside,
@@ -132,6 +140,7 @@ import {
   residentFacing,
   splitFurnishings,
   townHouseLook,
+  type RoofSet,
 } from "@/render/world/hubInteriors";
 import { OUTDOOR_GROUND, type GroundLook } from "@/render/world/ground";
 import { planChimney } from "@/render/world/roofs";
@@ -192,10 +201,6 @@ function easeToward(pos: Point, target: Point): void {
   pos.y = Phaser.Math.Linear(pos.y, target.y, POSITION_LERP);
 }
 
-const HUB_WIDTH = 2000;
-const HUB_HEIGHT = 1000;
-/** The town's size, as its minimap fits it (FS-P0HSP §B.5). */
-const HUB_SIZE = { width: HUB_WIDTH, height: HUB_HEIGHT } as const;
 /** Screen px of dark beyond the projected diamond the camera may show at the map edge. */
 const CAMERA_MARGIN = HUB_CAMERA_MARGIN;
 /**
@@ -716,11 +721,13 @@ export class HubScene extends Phaser.Scene {
   private fx?: EffectsRuntime;
   private occluders = new Occluders();
   /**
-   * Each house's roof, hidden while the player stands inside it (FS-2325V §C.3). `baked` is
-   * false for the placeholder roof drawn without roof art, which carries no chimney.
+   * Each house's roof, hidden while the player stands inside it (FS-2325V §C.3), in the roof set
+   * its look names (`set`). `baked` is false for the placeholder roof drawn without roof art,
+   * which carries no chimney.
    */
   private roofs: {
     house: House;
+    set: RoofSet;
     baked: boolean;
     parts: { setVisible(visible: boolean): unknown }[];
   }[] = [];
@@ -840,7 +847,7 @@ export class HubScene extends Phaser.Scene {
     this.ui = reportWorld(this, "hub", this.worldSide());
     // Clamped in projected space: the camera sees the diamond, and the dark beyond
     // its corners is the background colour. FS-2325V §A.3, §A.7.
-    const bounds = projectedBounds(HUB_WIDTH, HUB_HEIGHT, CAMERA_MARGIN);
+    const bounds = projectedBounds(HUB_SIZE.width, HUB_SIZE.height, CAMERA_MARGIN);
     boundCamera(this.cameras.main, bounds);
     this.cameras.main.setBackgroundColor(BARROW_HEX.pitch);
 
@@ -858,8 +865,8 @@ export class HubScene extends Phaser.Scene {
     // the edge at the gates and fading into the dark there (FS-0XMCP R18).
     this.groundLayer = GroundLayer.available(this.art, "hub")
       ? new GroundLayer(this, this.art, {
-          width: HUB_WIDTH,
-          height: HUB_HEIGHT,
+          width: HUB_SIZE.width,
+          height: HUB_SIZE.height,
           kind: "hub",
           paths: PATHS.map(([x, y, width, height]) => ({ x, y, width, height })),
           aprons: HUB_APRONS,
@@ -1536,10 +1543,10 @@ export class HubScene extends Phaser.Scene {
 
     const ground = this.add.graphics();
     ground.fillStyle(BARROW_HEX.charcoal, 1);
-    ground.fillRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
+    ground.fillRect(0, 0, HUB_SIZE.width, HUB_SIZE.height);
 
     ground.lineStyle(4, BARROW_HEX.brass, 0.4);
-    ground.strokeRect(0, 0, HUB_WIDTH, HUB_HEIGHT);
+    ground.strokeRect(0, 0, HUB_SIZE.width, HUB_SIZE.height);
     plane.surface.add(ground);
   }
 
@@ -1617,6 +1624,13 @@ export class HubScene extends Phaser.Scene {
     };
     const placeSpot = (s: PropSpot) =>
       place(s.sheet, s.at, s.index ?? 0, !!s.tall, { animation: s.animation });
+    /** A one-tile piece cut short at its far end (a fence's or a low wall's last): only `keep` shows. */
+    const trim = (sprite: Phaser.GameObjects.Sprite, name: string, axis: "x" | "y", keep: number) => {
+      const sheet = this.art.sheet(name);
+      if (keep >= 1 || !sheet) return;
+      const crop = trimCrop(axis, keep, { width: sheet.frameWidth, anchorX: sheet.anchor.x });
+      sprite.setCrop(crop.x, 0, crop.width, sheet.frameHeight);
+    };
     // Dressing with no placeholder draws nothing without its sheet (FS-KYPQ9 §A.9). The sheets
     // missing are gathered and said once, in one warning, after the scenery is laid.
     const unbaked: string[] = [];
@@ -1716,14 +1730,7 @@ export class HubScene extends Phaser.Scene {
         for (const seg of segments) {
           const sprite = place(seg.sheet, seg.at, 0, false);
           sprite.setDepth(worldDepth(seg.depthAt.x, seg.depthAt.y));
-          const sheet = this.art.sheet(seg.sheet);
-          if (seg.keep < 1 && sheet) {
-            const crop = trimCrop(seg.axis, seg.keep, {
-              width: sheet.frameWidth,
-              anchorX: sheet.anchor.x,
-            });
-            sprite.setCrop(crop.x, 0, crop.width, sheet.frameHeight);
-          }
+          trim(sprite, seg.sheet, seg.axis, seg.keep);
         }
         for (const at of posts) place("fence_post", at, 0, false, { layer: 1 });
         continue;
@@ -1844,6 +1851,26 @@ export class HubScene extends Phaser.Scene {
     };
     for (const spot of HUB_DRESSING) dress(spot);
 
+    // The graveyard, the belfry and the wayside cross (FS-R4MYX R27–R30, R41), dressing like the
+    // rest: a piece lying on another sorts over it, and the low wall is laid as a fence is, by tile,
+    // its last cut short.
+    const lay = (piece: GraveyardPiece): Phaser.GameObjects.Sprite | null => {
+      if (blocked(piece.at.x, piece.at.y, piece.r)) return null;
+      if (!this.art.has(piece.sheet)) {
+        skip(piece.sheet);
+        return null;
+      }
+      const sprite = placeSpot(piece);
+      if (piece.depthAt)
+        sprite.setDepth(worldDepth(piece.depthAt.x, piece.depthAt.y, piece.layer ?? 0));
+      return sprite;
+    };
+    for (const piece of [...HUB_GRAVEYARD, HUB_BELFRY, HUB_WAYSIDE_CROSS]) lay(piece);
+    for (const piece of HUB_GRAVEYARD_WALL) {
+      const sprite = lay(piece);
+      if (sprite) trim(sprite, piece.sheet, piece.animation, piece.keep);
+    }
+
     // The washing line hangs between its two posts and sorts by the span's
     // midpoint, so it goes up only where both posts stood.
     const { posts: linePosts, line } = HUB_WASHING_LINE;
@@ -1904,7 +1931,7 @@ export class HubScene extends Phaser.Scene {
         continue;
       }
       const { sprite } = addProp(this, this.art, spot.sheet, spot.at, { index: spot.index });
-      const past = Math.max(-spot.at.x, spot.at.x - HUB_WIDTH, -spot.at.y, spot.at.y - HUB_HEIGHT, 0);
+      const past = Math.max(-spot.at.x, spot.at.x - HUB_SIZE.width, -spot.at.y, spot.at.y - HUB_SIZE.height, 0);
       sprite.setTint(shade(BARROW_HEX.vellum, Math.min(EDGE_DUSK.most, past / EDGE_DUSK.over)));
       if (spot.tall) this.occluders.add([sprite]);
       this.outdoors.push({ parts: [sprite], at: spot.at });
@@ -1913,7 +1940,7 @@ export class HubScene extends Phaser.Scene {
     const facade = HUB_SPIRE_FACADE;
     if (this.art.has(facade.sheet)) {
       const { sprite, light } = addProp(this, this.art, facade.sheet, facade.at);
-      sprite.setDepth(worldDepth(-HUB_WIDTH, 0));
+      sprite.setDepth(worldDepth(-HUB_SIZE.width, 0));
       this.outdoors.push({ parts: [sprite], at: facade.at });
       if (light) this.addOutdoorLight(light, facade.at);
     } else skip(facade.sheet);
@@ -1950,6 +1977,8 @@ export class HubScene extends Phaser.Scene {
     for (const roof of this.roofs) {
       // the chimney stands on baked slope pieces; over a placeholder roof it would float
       if (!roof.baked) continue;
+      // a roof whose look has no chimney (the chapel's: no hearth to vent, FS-R4MYX R23)
+      if (!roof.set.chimney) continue;
       const spot = planChimney(roof.house, SCENERY_SEED);
       const { sprite } = addProp(this, this.art, "chimney", spot.at, { layer: CHIMNEY_LAYER });
       sprite.y -= spot.lift;
@@ -2482,10 +2511,14 @@ export class HubScene extends Phaser.Scene {
     const seed = worldSeed("hub");
     const loose = this.drawLooseWalls(walls.filter((w) => !w.house_id), seed);
 
-    // each house's walls in the sheets its look names (the Inn's carry no light of their own)
+    // each house's look, read once: its walls' sheets and its roof set (a drawn building's house is
+    // one of these, by id)
+    const looks = new Map(houses.map((house) => [house.id, townHouseLook(house)]));
+    const lookOf = (house: House) => looks.get(house.id)!;
+    // each house's walls in the sheets its look names (the Inn's and the chapel's carry no light of their own)
     const bySheets = new Map<WallSheets, WallState[]>();
     for (const house of houses) {
-      const { sheets } = townHouseLook(house);
+      const { sheets } = lookOf(house);
       bySheets.set(sheets, [...(bySheets.get(sheets) ?? []), ...walls.filter((w) => w.house_id === house.id)]);
     }
     const drawn = [...bySheets].map(([sheets, own]) => ({
@@ -2507,19 +2540,22 @@ export class HubScene extends Phaser.Scene {
     // ends by gables (ADR-0036), or without art a placeholder roof on a plane
     // lifted to the wall tops. Either covers the player from outside (§E.1).
     for (const house of houses) {
-      const roof = addRoof(this, this.art, house);
+      // in the roof set its look names: the chapel's slate, or the town's (FS-R4MYX R23)
+      const set = lookOf(house).roof;
+      const { prefix } = set;
+      const roof = addRoof(this, this.art, house, prefix);
       const own = walls.find((w) => w.house_id === house.id);
-      const gables = own ? addGables(this, this.art, house, Math.min(own.width, own.height)) : [];
+      const gables = own ? addGables(this, this.art, house, Math.min(own.width, own.height), prefix) : [];
       const top = [...(roof ?? []), ...gables];
       this.roofCover.push(...top.map(coverOf));
       if (roof) {
-        this.roofs.push({ house, baked: true, parts: top });
+        this.roofs.push({ house, set, baked: true, parts: top });
         continue;
       }
       const slab = this.placeholderRoof(house);
       const eave = { x: house.x - ROOF_EAVE, y: house.y - ROOF_EAVE, width: house.width + ROOF_EAVE * 2, height: house.height + ROOF_EAVE * 2 };
       this.roofCover.push(slabCover(slab, eave, WALL_HEIGHT));
-      this.roofs.push({ house, baked: false, parts: [slab, ...gables] });
+      this.roofs.push({ house, set, baked: false, parts: [slab, ...gables] });
     }
     const interiors = new Map<House, Interior>(houses.map((house) => [house, { house, parts: [], lights: [] }]));
     const trimmed = partitions.flatMap((wall) => {
@@ -2536,7 +2572,7 @@ export class HubScene extends Phaser.Scene {
     const baked = this.art.available && this.art.has("wall_back_plain_x");
     const wallTop = baked ? BAKE.WALL_BACK * BAKE.VPX : WALL_HEIGHT;
     this.view = new BuildingView(this, {
-      blackout: { wallTop: () => wallTop, reach: (HUB_WIDTH + HUB_HEIGHT) * 2 },
+      blackout: { wallTop: () => wallTop, reach: (HUB_SIZE.width + HUB_SIZE.height) * 2 },
       cover: () => this.roofCover,
       scenery: () => this.sceneryByFootprint(),
       occupants: () => this.occupants(),

@@ -13,8 +13,13 @@
 import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 
-/** The hub's size in world px (K7). */
-export const HUB_SIZE = { width: 2000, height: 1000 } as const;
+/**
+ * The hub's size in world px: game-service's HubMapWidth × HubMapHeight, grown south for the
+ * chapel and its graveyard (FS-R4MYX R1). The one hub size on the client (R22): K7, and
+ * HubScene's ground, camera, blackout and town minimap. `hubKeepOut.test.ts` holds it to the town
+ * golden's `mapSize`, which the server's golden test writes from those constants.
+ */
+export const HUB_SIZE = { width: 2000, height: 1700 } as const;
 
 /**
  * Screen px of dark beyond the projected diamond the camera may show at the map edge: the
@@ -37,7 +42,7 @@ export type GateDestination = "spire" | "forest" | "meadows";
  * and on past it where the ground goes on beyond (the trail and the road); the ground plan lays
  * only what lies on an apron or inside the map. A tile is dirt when its centre lies in a rect.
  *
- * Laid round the town's three buildings (FS-B0H2D R24), none of them across a room's floor:
+ * Laid round the town's buildings (FS-B0H2D R24), none of them across a room's floor:
  * - north lane `[950, 0, 100, 500]` runs between the Inn and the store to the Spire's steps;
  * - west trail runs in from the Forest gate (y 580: the great hall filled the old trail's lane)
  *   along the Inn's front, south of its eave, then steps down to the hearth's west arm;
@@ -59,26 +64,44 @@ export const HUB_APPROACHES: Record<GateDestination, PathRect[]> = {
 
 /**
  * A short trodden spur from each town building's door gap (FS-B0H2D R24) to the road in front:
- * as wide as the gap (a run door's width, FS-MMA2H R14), from its west jamb and its sill. Ground
- * paint only, telling a player the house is meant to be entered. In hub_map.go's order: the Inn,
- * the Quartermaster's store, the smithy. Kept by hand and held to the golden's door gaps by
- * `hubKeepOut.test.ts`: the store's and the smithy's gaps are centred, the Inn's stands at
- * x 525–605, against its partition (ADR-0073).
+ * as wide as the gap (a run door's width, FS-MMA2H R14), from its sill outward on its door face
+ * (FS-R4MYX R10): south of a south door from its west jamb, east of the chapel's east door from
+ * its north jamb. Ground paint only, telling a player the house is meant to be entered. In
+ * hub_map.go's order: the Inn, the Quartermaster's store, the smithy, the chapel. Kept by hand and
+ * held to the golden's door gaps by `hubKeepOut.test.ts`: the store's and the smithy's gaps are
+ * centred, the Inn's stands at x 525–605, against its partition (ADR-0073), the chapel's at
+ * y 1280–1360 in its east wall, its spur running to the chapel lane.
  */
 export const HUB_DOOR_SPURS: PathRect[] = [
   [525, 490, 80, 65],
   [1240, 390, 80, 30],
   [1590, 290, 80, 50],
+  [1580, 1280, 120, 80],
 ];
 
 /**
- * Trodden ground, joining the spawn to the people worth walking to, then the gates' approaches
- * and the town buildings' door spurs: [x, y, w, h].
+ * The trodden way to the chapel and its graveyard (FS-R4MYX R31), in the town's grown south: the
+ * hearth's east arm carried on east to the chapel lane, the lane south past the chapel's east
+ * side to the graveyard spur, the spur west along the chapel's south side, and the short path
+ * into the graveyard's gap. The chapel's door spur meets the lane (HUB_DOOR_SPURS). It goes round
+ * the chapel, never across it: the first layout's lane ran where the bigger chapel stands.
+ */
+const HUB_CHAPEL_WAY: PathRect[] = [
+  [1380, 660, 390, 70],
+  [1700, 730, 70, 875],
+  [490, 1555, 1280, 50],
+  [500, 1520, 70, 35],
+];
+
+/**
+ * Trodden ground, joining the spawn to the people worth walking to, then the way to the chapel,
+ * the gates' approaches and the town buildings' door spurs: [x, y, w, h].
  */
 export const HUB_PATHS: PathRect[] = [
   [940, 500, 130, 320],
   [700, 660, 360, 70],
   [1000, 660, 380, 70],
+  ...HUB_CHAPEL_WAY,
   ...Object.values(HUB_APPROACHES).flat(),
   ...HUB_DOOR_SPURS,
 ];
@@ -105,12 +128,16 @@ export const HUB_KEEP_OUT = {
   },
   /** K5: the hearth's gathering ground. */
   hearth: { at: { x: HUB_HEARTH[0], y: HUB_HEARTH[1] }, clearance: 80 },
-  /** K6: the residents' quarters, each wholly outside every town building (FS-B0H2D R7). */
+  /**
+   * K6: the residents' quarters, each wholly outside every town building (FS-B0H2D R7), held to
+   * the golden's `wanderRegions` (FS-R4MYX R40). The Woodcutter's and the Bellringer's lie in the
+   * field east of the chapel, in front of it on screen (R5, R39).
+   */
   wander: [
     { name: "Cottar", x: 560, y: 560, width: 180, height: 200 },
     { name: "Herbwife", x: 1260, y: 540, width: 240, height: 220 },
-    { name: "Woodcutter", x: 700, y: 820, width: 300, height: 140 },
-    { name: "Bellringer", x: 1180, y: 820, width: 280, height: 140 },
+    { name: "Woodcutter", x: 1780, y: 1000, width: 180, height: 160 },
+    { name: "Bellringer", x: 1780, y: 1240, width: 180, height: 160 },
   ],
   /**
    * K8: the gates (FS-0XMCP R2, R4), from hub_map.go (hubGates) and their range (GateRange,

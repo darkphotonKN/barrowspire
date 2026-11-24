@@ -49,6 +49,20 @@ const TYPES = [
     ground: "ground_flags",
     top: "cap",
   },
+  {
+    // the chapel (FS-R4MYX R42): its own whitewashed walls under its own slate roof set, whose
+    // apex gable pieces (frame 1, planGables' first) carry the rose window and the cross
+    title: "CHAPEL (whitewashed limestone, slate roof): exterior | back | front",
+    prefix: "chapel_",
+    exterior: ["plain", "lancet", "buttress"],
+    back: ["plain", "pillar"],
+    front: ["plain", "pillar"],
+    ground: "ground_flagstone",
+    top: "roof",
+    roof: "chapel_",
+    // its gables carry two frames: 0 the plain piece, 1 the apex piece laid against the ridge
+    apexFrame: true,
+  },
 ];
 const CLOSED = "closed: player outside (exterior pieces, back posts at every corner, roof and gables or cap, door + head)";
 const OPEN = "interior look: player inside (today's cut-away fronts, roof lifted or cap hidden, door open)";
@@ -133,9 +147,9 @@ function plan(type, closed) {
   for (let j = 0; j < D; j++) at(`${side(j + 1)}_y`, "variants", j, W, j + 0.5, W + j);
   // the doorway shows a door: shut from outside under the head that closes the wall over it, open
   // from inside (FS-9PN7X §B.5, amended 2026-11-03). A town door is shut with no lock; a Spire
-  // room's shows the server's state, here unlocked
+  // room's shows the server's state, here unlocked; the chapel's is a town door
   const mid = DOOR + GAP / 2;
-  at("door_x", closed ? (p === "" ? "shut" : "unlocked") : "open", 0, mid, D, mid + D);
+  at("door_x", closed ? (p === "tower_" ? "unlocked" : "shut") : "open", 0, mid, D, mid + D);
   if (closed) at(`${p}door_head_x`, "default", 0, mid, D, mid + D + 0.01);
   // posts at every corner and door jamb: back posts all round outside; inside, as tall as the
   // tallest wall they join
@@ -153,6 +167,7 @@ function plan(type, closed) {
   const knight = { x: DOOR + GAP + 2.2, y: D + 1.1 };
   items.push({ sheet: "char_knight_base", anim: "idle", index: 0, dir: 2, ...knight, depth: knight.x + knight.y, lift: 0 });
   if (closed && type.top === "roof") {
+    const r = type.roof ?? "";
     // planRoof for this house: ridge along x, 10 world px of eave
     const eave = 10 / 40;
     const cols = Math.ceil(W + 2 * eave - 1e-6);
@@ -161,10 +176,10 @@ function plan(type, closed) {
       const x = W / 2 + (i + 0.5 - cols / 2);
       for (let j = 0; j < rows; j++) {
         const lift = WALL_BACK + (rows - 1 - j) * ROOF_RISE;
-        at("roof_slope", "n", 0, x, D / 2 - (j + 0.5), 1e3 + x + D / 2 - (j + 0.5), lift);
-        at("roof_slope", "s", 0, x, D / 2 + (j + 0.5), 1e3 + x + D / 2 + (j + 0.5), lift);
+        at(`${r}roof_slope`, "n", 0, x, D / 2 - (j + 0.5), 1e3 + x + D / 2 - (j + 0.5), lift);
+        at(`${r}roof_slope`, "s", 0, x, D / 2 + (j + 0.5), 1e3 + x + D / 2 + (j + 0.5), lift);
       }
-      at("roof_ridge", "x", 0, x, D / 2, 1e3 + x + D / 2 + 0.01, WALL_BACK + rows * ROOF_RISE);
+      at(`${r}roof_ridge`, "x", 0, x, D / 2, 1e3 + x + D / 2 + 0.01, WALL_BACK + rows * ROOF_RISE);
     }
     // planGables for this house: at both ends of the ridge, each half laid outward from the ridge
     // in step with the roof's rows, the last pulled in to end on the side wall. Each sorts from a
@@ -181,7 +196,8 @@ function plan(type, closed) {
           const inner = Math.min(k, Math.max(0, reach - 1));
           const y = D / 2 + sign * (inner + 0.5);
           // drawn from its foot: its top edge starts a back wall's height up, on the roof's line
-          at("roof_gable_x", half, 0, end, y, end + y - 1.5, (rows - inner - 1) * ROOF_RISE);
+          // a roof set with an apex piece (frame 1) lays it against the ridge, k = 0
+          at(`${r}roof_gable_x`, half, k === 0 && type.apexFrame ? 1 : 0, end, y, end + y - 1.5, (rows - inner - 1) * ROOF_RISE);
         }
   }
   if (closed && type.top === "cap")
@@ -204,7 +220,7 @@ export function writeBuildingReview({ sheets, labels, theme }) {
       `${type.prefix}post_back`,
       ...type.front.map((k) => `${type.prefix}wall_front_${k}_x`),
       `${type.prefix}post_front`,
-      ...(type.top === "cap" ? ["tower_cap"] : ["roof_gable_x", "roof_gable_y"]),
+      ...(type.top === "cap" ? ["tower_cap"] : [`${type.roof ?? ""}roof_gable_x`, `${type.roof ?? ""}roof_gable_y`]),
     ];
     return { type, pieces };
   });

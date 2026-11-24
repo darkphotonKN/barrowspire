@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -68,9 +69,10 @@ var hubGates = []hubGate{
 
 // hubBuilding is one town building's footprint in the hub, and which one it is.
 //
-// Every town building can be walked into: a gap in its south wall and a room
-// inside, in this same world (FS-B0H2D §Requirements 1, 9). The name says which
-// room is which for a reader and for the tests; nothing at runtime reads it.
+// Every town building can be walked into: a gap in its door face and a room
+// inside, in this same world (FS-B0H2D §Requirements 1, 9; FS-R4MYX
+// §Requirements 6). The name says which room is which for a reader and for the
+// tests; nothing at runtime reads it.
 //
 // What stands inside a building, its furnishings here and its fixed residents in
 // hubFixedResidents, is placed in absolute world coordinates, not relative to
@@ -81,10 +83,44 @@ var hubGates = []hubGate{
 type hubBuilding struct {
 	Name       string
 	X, Y, W, H float64
-	// The wall dividing it into two halls; nil for an undivided building.
+	// The outer wall its street door is cut in; the zero value is south.
+	DoorFace hubDoorFace
+	// The wall dividing it into two halls; nil for an undivided building. Only
+	// a south door goes with one (tested).
 	Partition *hubPartition
 	// What stands inside, in absolute world coordinates.
 	Furnishings []hubFurnishing
+}
+
+// hubDoorFace is the outer wall a town building's street door is cut in. Both
+// face the camera in the iso view. Not the Inn's DoorOnEastFace, which says
+// where along its south wall the Inn's door stands. FS-R4MYX §Requirements 6.
+type hubDoorFace int
+
+const (
+	// hubDoorSouth is the default: a gap in the south wall, as a run house's.
+	hubDoorSouth hubDoorFace = iota
+	// hubDoorEast is a gap in the east wall, the south wall whole: the chapel's.
+	hubDoorEast
+)
+
+// String is the face as the town golden names it.
+func (f hubDoorFace) String() string {
+	switch f {
+	case hubDoorSouth:
+		return "south"
+	case hubDoorEast:
+		return "east"
+	default:
+		panic(unknownDoorFace(f))
+	}
+}
+
+// unknownDoorFace is the panic for a face that is neither south nor east: the
+// town's buildings are fixed map data, so one is a programming error, never a
+// south door by default.
+func unknownDoorFace(f hubDoorFace) string {
+	return fmt.Sprintf("hub: unknown door face %d", int(f))
 }
 
 // hubPartition is a wall of a town building's own, running north to south
@@ -118,16 +154,17 @@ type hubFurnishing struct {
 	X, Y, W, H float64
 }
 
-// The town's buildings, laid out by hand: the Quartermaster's store, the Inn and
-// the smithy.
+// The town's buildings, laid out by hand: the Quartermaster's store, the Inn,
+// the smithy and the chapel.
 //
 // Fixed, not scattered: a run randomises its map because every run is new, but
 // the hub is somewhere a delver returns to, and "in the Quartermaster's store"
-// has to mean the same thing tomorrow. All three stand north of the trails to
-// the Forest and the Meadows and clear of the walk to the Spire, so nothing
-// walls off the way out of town: a lane 240 px wide runs from the spawn to every
-// gate (tested in hub_map_test.go). Each south-wall door faces the town.
-// FS-B0H2D §Requirements 2-6.
+// has to mean the same thing tomorrow. The store, the Inn and the smithy stand
+// north of the trails to the Forest and the Meadows and clear of the walk to the
+// Spire, the chapel far south of all three trails, so nothing walls off the way
+// out of town: a lane 240 px wide runs from the spawn to every gate (tested in
+// hub_map_test.go). Each door faces the town. FS-B0H2D §Requirements 2-6;
+// FS-R4MYX §Requirements 2-5.
 var hubBuildings = []hubBuilding{
 	// the largest, filling the north-west, west of the walk to the Spire and
 	// above the Forest trail. A partition parts the great hall (west) from the
@@ -155,11 +192,29 @@ var hubBuildings = []hubBuilding{
 	{Name: "Smithy", X: 1480, Y: 50, W: 300, H: 240, Furnishings: []hubFurnishing{
 		{Kind: "forge", X: 1595, Y: 120, W: 70, H: 35},
 	}},
+	// in the ground the hub grew south, below the spawn and a little left of it
+	// on screen, far enough east that the graveyard lies screen-left of it
+	// where its roof hides none of it (FS-R4MYX §Requirements 4, 39); its door
+	// in its east wall, facing down-right on screen. The aisle runs west from
+	// the door, 100 wide, between three pews a side, each pew's back to the
+	// door, to the altar at the west end, with open floor between the altar and
+	// the first pews where the Confessor stands. Every pew stands free, 50 px
+	// clear all round (ADR-0070 Decision 5): 440 deep is the least that fits
+	// pews 100 long so (20 + 50 + 100 + 100 + 100 + 50 + 20)
+	{Name: "Chapel", X: 960, Y: 1100, W: 620, H: 440, DoorFace: hubDoorEast, Furnishings: []hubFurnishing{
+		{Kind: "pew", X: 1310, Y: 1170, W: 20, H: 100},
+		{Kind: "pew", X: 1380, Y: 1170, W: 20, H: 100},
+		{Kind: "pew", X: 1450, Y: 1170, W: 20, H: 100},
+		{Kind: "pew", X: 1310, Y: 1370, W: 20, H: 100},
+		{Kind: "pew", X: 1380, Y: 1370, W: 20, H: 100},
+		{Kind: "pew", X: 1450, Y: 1370, W: 20, H: 100},
+		{Kind: "altar", X: 1120, Y: 1280, W: 30, H: 80},
+	}},
 }
 
 const hubWallThickness = 20
 
-// hubDoorWidth is a town building's door gap, in its south wall and in its
+// hubDoorWidth is a town building's door gap, in its door face and in its
 // partition: a run house's door width. FS-MMA2H §Requirements 2.
 const hubDoorWidth = runDoorWidth
 
@@ -173,8 +228,10 @@ type hubResident struct {
 	Region     components.WanderRegion
 }
 
-// Their quarters sit in the open ground south of the town buildings, wholly
-// outside every one: a walk is a straight line between two points of a quarter,
+// Their quarters sit in the open ground south of the town buildings and east of
+// the chapel, wholly outside every one and in front of each on screen, so no
+// roof is drawn over anyone in them (FS-R4MYX §Requirements 39, the client's
+// test): a walk is a straight line between two points of a quarter,
 // so no resident ever crosses a door gap into a room (FS-B0H2D §Requirements 7).
 // They keep away from the spawn and the two function NPCs so nobody has to walk
 // through a crowd to reach the Elder: each quarter keeps a function NPC's
@@ -184,24 +241,29 @@ type hubResident struct {
 var hubResidents = []hubResident{
 	{Name: "Cottar", Appearance: "rust_trousers", Region: components.WanderRegion{X: 560, Y: 560, W: 180, H: 200}},
 	{Name: "Herbwife", Appearance: "green_skirt", Region: components.WanderRegion{X: 1260, Y: 540, W: 240, H: 220}},
-	{Name: "Woodcutter", Appearance: "slate_trousers", Region: components.WanderRegion{X: 700, Y: 820, W: 300, H: 140}},
-	{Name: "Bellringer", Appearance: "flax_skirt", Region: components.WanderRegion{X: 1180, Y: 820, W: 280, H: 140}},
+	// in the open field east of the chapel, in front of it on screen: their old
+	// quarters south of the spawn lay behind the chapel's roof (FS-R4MYX
+	// §Requirements 5, 39)
+	{Name: "Woodcutter", Appearance: "slate_trousers", Region: components.WanderRegion{X: 1780, Y: 1000, W: 180, H: 160}},
+	{Name: "Bellringer", Appearance: "flax_skirt", Region: components.WanderRegion{X: 1780, Y: 1240, W: 180, H: 160}},
 }
 
-// hubFixedResident is an ambient NPC who stands at one point indoors: no
-// quarter, no velocity, function "" (FS-B0H2D §Requirements 16).
+// hubFixedResident is an ambient NPC who stands at one point: no quarter, no
+// velocity, function "" (FS-B0H2D §Requirements 16). Indoors, but for the
+// mourners in the graveyard (FS-R4MYX §Requirements 16, 20).
 type hubFixedResident struct {
 	Name       string
 	Appearance string
 	X, Y       float64
 }
 
-// The people inside the town buildings. Names follow the town's role-names and
-// are exact: the client keys each one's lines and facing by name. Each stands
-// more than talk range from every wall of their building, so nobody outside
-// talks to them through one, and within talk range of ground a delver can walk
-// to from the door; the Alewife across her counter. FS-B0H2D §Requirements
-// 13, 14, 17, 18.
+// The people inside the town buildings, and the mourners outside the chapel.
+// Names follow the town's role-names and are exact: the client keys each one's
+// lines and facing by name. Each one indoors stands more than talk range from
+// every wall of their building, so nobody outside talks to them through one,
+// and within talk range of ground a delver can walk to from the door; the
+// Alewife across her counter. FS-B0H2D §Requirements 13, 14, 17, 18; FS-R4MYX
+// §Requirements 16, 17, 19, 20.
 var hubFixedResidents = []hubFixedResident{
 	// Inn, the taproom: behind the counter, on its far side from the door
 	{Name: "Alewife", Appearance: "flax_skirt", X: 765, Y: 260},
@@ -214,6 +276,22 @@ var hubFixedResidents = []hubFixedResident{
 	// Smithy: between the door and the forge, facing north to the forge (the
 	// client keeps the facing, FS-B0H2D §Requirements 25)
 	{Name: "Smith", Appearance: "rust_trousers", X: 1630, Y: 175},
+	// Chapel: the Confessor in front of the dais, on the open floor between the
+	// altar and the first pews at the head of the aisle, facing the east door
+	// down it, in a bespoke look of his own (FS-R4MYX §Requirements 17, 18); each
+	// worshipper in the bay west of their pew, near the aisle, facing the altar
+	{Name: "Confessor", Appearance: "confessor", X: 1205, Y: 1320},
+	{Name: "Penitent", Appearance: "rust_trousers", X: 1355, Y: 1255},
+	{Name: "Chandler", Appearance: "flax_skirt", X: 1425, Y: 1255},
+	{Name: "Goodwife", Appearance: "green_skirt", X: 1285, Y: 1385},
+	{Name: "Ploughman", Appearance: "slate_trousers", X: 1355, Y: 1385},
+	// Outdoors, the only fixed residents who are: the mourners at their graves
+	// screen-left of the chapel, more than talk range from its west wall. The server
+	// knows only their points; the graves are the client's dressing
+	// (FS-R4MYX §Requirements 20)
+	{Name: "Keener", Appearance: "flax_skirt", X: 520, Y: 1320},
+	{Name: "Widower", Appearance: "slate_trousers", X: 500, Y: 1200},
+	{Name: "Veteran", Appearance: "rust_trousers", X: 300, Y: 1380},
 }
 
 /**
@@ -258,33 +336,19 @@ func (s *Session) InitialHubMapObjects() {
 	)
 }
 
-// addHubBuilding walls a town building in, leaving a door gap in its south wall,
+// addHubBuilding walls a town building in, leaving a door gap in its door face,
 // divides it with its partition, and stands its furnishings inside.
 //
 // The same cut AddBuilding makes for a run house, a run door wide, centred
 // unless the building's partition takes it, but with nothing hung in it: a
 // town building is a shop, so there is nothing to open, lock or sync, and the hub keeps no Door component at all. Every wall,
 // partition and furnishings included, carries the building's house id, so the
-// client rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12.
+// client rebuilds the footprint from the walls. FS-B0H2D §Requirements 9, 10, 12;
+// FS-R4MYX §Requirements 6.
 func (s *Session) addHubBuilding(building hubBuilding) {
 	houseID := uuid.New()
-	westOfDoor := doorGapWest(building)
-	eastOfDoor := building.W - westOfDoor - hubDoorWidth
-	southY := building.Y + building.H - hubWallThickness
 
-	walls := []WallConfig{
-		// north
-		{X: building.X, Y: building.Y, Width: building.W, Height: hubWallThickness},
-		// west
-		{X: building.X, Y: building.Y, Width: hubWallThickness, Height: building.H},
-		// east
-		{X: building.X + building.W - hubWallThickness, Y: building.Y, Width: hubWallThickness, Height: building.H},
-		// south, either side of the door gap
-		{X: building.X, Y: southY, Width: westOfDoor, Height: hubWallThickness},
-		{X: building.X + westOfDoor + hubDoorWidth, Y: southY, Width: eastOfDoor, Height: hubWallThickness},
-	}
-
-	walls = append(walls, partitionWalls(building)...)
+	walls := append(outerWalls(building), partitionWalls(building)...)
 
 	for _, furnishing := range building.Furnishings {
 		walls = append(walls, WallConfig{X: furnishing.X, Y: furnishing.Y, Width: furnishing.W, Height: furnishing.H})
@@ -295,7 +359,74 @@ func (s *Session) addHubBuilding(building hubBuilding) {
 	}
 }
 
-// doorGapWest is how far a building's door gap stands from its west edge:
+// outerWalls is the five walls round a building: the north and west walls
+// whole, and of the south and east walls the one in its door face cut in two
+// either side of the door gap, the other whole.
+func outerWalls(building hubBuilding) []WallConfig {
+	gap := streetDoorGap(building)
+	eastX := building.X + building.W - hubWallThickness
+	southY := building.Y + building.H - hubWallThickness
+
+	walls := []WallConfig{
+		// north
+		{X: building.X, Y: building.Y, Width: building.W, Height: hubWallThickness},
+		// west
+		{X: building.X, Y: building.Y, Width: hubWallThickness, Height: building.H},
+	}
+
+	switch building.DoorFace {
+	case hubDoorSouth:
+		eastOfDoor := gap.X + gap.Width
+		return append(walls,
+			// east, whole
+			WallConfig{X: eastX, Y: building.Y, Width: hubWallThickness, Height: building.H},
+			// south, either side of the door gap
+			WallConfig{X: building.X, Y: southY, Width: gap.X - building.X, Height: hubWallThickness},
+			WallConfig{X: eastOfDoor, Y: southY, Width: building.X + building.W - eastOfDoor, Height: hubWallThickness},
+		)
+	case hubDoorEast:
+		southOfDoor := gap.Y + gap.Height
+		return append(walls,
+			// south, whole
+			WallConfig{X: building.X, Y: southY, Width: building.W, Height: hubWallThickness},
+			// east, either side of the door gap
+			WallConfig{X: eastX, Y: building.Y, Width: hubWallThickness, Height: gap.Y - building.Y},
+			WallConfig{X: eastX, Y: southOfDoor, Width: hubWallThickness, Height: building.Y + building.H - southOfDoor},
+		)
+	default:
+		panic(unknownDoorFace(building.DoorFace))
+	}
+}
+
+// streetDoorGap is a building's street door as cut: the rect of its door face's
+// wall left open between the two segments. A south door stands doorGapWest in
+// from the west edge; an east door is centred in the east wall.
+//
+// The WallConfig it returns is the opening itself, never a wall to create:
+// outerWalls walls either side of it, and the town golden records it as the
+// door.
+func streetDoorGap(building hubBuilding) WallConfig {
+	switch building.DoorFace {
+	case hubDoorSouth:
+		return WallConfig{
+			X:      building.X + doorGapWest(building),
+			Y:      building.Y + building.H - hubWallThickness,
+			Width:  hubDoorWidth,
+			Height: hubWallThickness,
+		}
+	case hubDoorEast:
+		return WallConfig{
+			X:      building.X + building.W - hubWallThickness,
+			Y:      building.Y + (building.H-hubDoorWidth)/2,
+			Width:  hubWallThickness,
+			Height: hubDoorWidth,
+		}
+	default:
+		panic(unknownDoorFace(building.DoorFace))
+	}
+}
+
+// doorGapWest is how far a south door gap stands from its building's west edge:
 // centred in the south wall, unless its partition takes the door against its
 // east face.
 func doorGapWest(building hubBuilding) float64 {
@@ -306,8 +437,8 @@ func doorGapWest(building hubBuilding) float64 {
 }
 
 // partitionWalls is a building's partition as walled: north edge to south edge,
-// either side of a centred door gap, the cut addHubBuilding makes in the south
-// wall. None for an undivided building.
+// either side of a centred door gap, the same cut addHubBuilding makes in its
+// door face's wall. None for an undivided building.
 func partitionWalls(building hubBuilding) []WallConfig {
 	if building.Partition == nil {
 		return nil

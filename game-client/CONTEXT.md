@@ -83,11 +83,22 @@ translation belongs to the surface that renders words.
   picked is its id, an equip is the item's id). Each window it holds stands a **ground**: an
   interactive rect that draws nothing, so a press on the window stops at the UI scene.
 - **Town building** — a building in town a player can walk into (FS-B0H2D): the Quartermaster's
-  store, the Inn, the smithy. Each has a gap in its south wall and no door. Drawn as a **house**
-  (rendering terms below); "town building" is the place, "house" the drawing.
+  store, the Inn, the smithy, the chapel (FS-R4MYX). Each has a gap in its **door face** and no
+  server door. Drawn as a **house** (rendering terms below); "town building" is the place,
+  "house" the drawing.
+- **Door face** — the outer wall a town building's door gap is in: south, or east for the chapel
+  (FS-R4MYX). Both face the camera. Thresholds, door spurs and the minimap's notch follow it.
 - **The Inn** — the town's tavern: one cozy room, the innkeeper behind a counter, patrons at three
   tables, a hearth. Nothing to buy, no rooms to rent, no upstairs.
-- **Innkeeper**, **patron**, **smith** — the people in the town buildings: game-service's **fixed
+- **The chapel** — the whitewashed stone church below the square (FS-R4MYX, owner feedback F6):
+  pews either side of an aisle from its east door to a **dais** at the west end, the altar on it;
+  the **Confessor** stands in front of the dais, at the aisle's head. Dim, lit by two candelabra.
+  Nothing offered there yet.
+- **Graveyard** — the ground screen-left of the chapel, where its roof hides none of it, behind a
+  low broken wall: headstones, fresh mounds, flowers, stone crosses, dead trees, and **mourners**
+  at the graves. All of it dressing but the mourners.
+- **Innkeeper**, **patron**, **smith**, **Confessor**, **worshipper**, **mourner** — the people in
+  the town buildings and the graveyard: game-service's **fixed
   residents** ([`game-service/CONTEXT.md`](../game-server/game-service/CONTEXT.md) "NPCs"),
   ambient NPCs that never move. Talkable, with lore lines written here, keyed by name; no sigil,
   no function. A patron is drawn at a stool by a table and never walks.
@@ -401,11 +412,16 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   sent to the server on entering. Leaving puts the roof back. "Inside" is the client's test on the
   player's world position (`insideHouse`), never server state.
 - **Furnishing**: a server wall inside a house that the client draws as furniture (the Inn's
-  long table, hall hearth, counter and tables, the smithy's forge) instead of as wall pieces. It
+  long table, hall hearth, counter and tables, the smithy's forge, the chapel's pews and altar)
+  instead of as wall pieces. It
   has collision, so it is **not dressing**, like a tree stand. Recognised by geometry: a wall of a
   house that touches none of the house's four edges. Chairs, stools, shelves, crates, kegs,
-  chests, candelabra, lanterns, paintings, plants, rugs and the anvil are **indoor dressing**:
-  dressing placed inside a house, with no collision.
+  chests, candelabra, lanterns, paintings, plants, rugs, the anvil, the lectern and the dais are
+  **indoor dressing**: dressing placed inside a house, with no collision.
+- **Dais**: the chapel's raised west end, drawn as a flat stone platform on the floor decal layer
+  (like a rug). The one indoor dressing allowed under a furnishing: the altar stands on it.
+- **Belfry**: the tall weathered bell frame by the chapel's door, under a bent iron cross. Outdoor
+  dressing, an occluder; it never rings.
 - **Partition**: a server wall of a house that reaches its edges end on, across the house (the
   Inn's, between its **great hall** and **taproom**; `isPartition`). It divides one house, one
   **Room** in this glossary's sense (one `house_id` wall group), into two halls; never call the
@@ -458,10 +474,15 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
 - **Building**: in this client, the drawn thing a group of server walls sharing a `house_id` makes,
   whatever the world calls it (a town building in the hub, a **room** in the Spire, a **house** in
   the exterior theme). Used where a rule holds for all of them (ADR-0036, FS-9PN7X).
-- **Building type**: a building's wall-piece material, which decides both of its looks. Today two:
-  **timber** (`TIMBER_WALLS`: town buildings, and the exterior theme's houses) and **masonry**
-  (`MASONRY_WALLS`: Spire rooms). Not a world theme: a world theme picks which building type its
-  walls use.
+- **Building type**: a building's wall-piece material, which decides both of its looks. Today
+  three: **timber** (`TIMBER_WALLS`: the town's other buildings, and the exterior theme's houses),
+  **masonry** (`MASONRY_WALLS`: Spire rooms) and the chapel's own (`CHAPEL_WALLS`: `chapel_`
+  pieces of whitewashed limestone, masonry-thick, unlit and capless, FS-R4MYX R23, R42). Not a
+  world theme: a world theme picks which building type its walls use.
+- **Roof set**: the baked pieces a town building's roof is laid from, named by a sheet prefix
+  (`RoofSet` in `hubInteriors.ts`, which also says whether a chimney stands on it): the town's
+  shingle `roof_` set with its chimney, or the chapel's slate `chapel_roof_` set with none. Cut
+  and sized alike, so `planRoof` and `planGables` lay either; a building's look names its set.
 - **Building exterior**: how a building is drawn while the player is outside it: a closed block,
   all four walls full height in its building type's outward surface, under a roof (timber) or a
   **stone cap** (masonry) that never fades. One per building type (ADR-0036, FS-9PN7X). Always
@@ -757,7 +778,7 @@ What the client draws of the Spire's roster and its bosses. The server owns the 
 | the Spire | — | the instance world | "escape run" (the instance) |
 | Gentle Meadows, the Forlorn Forest | — | `world_type` `field` | "field world" |
 | the town | — | `world_type` `hub` | "hub" |
-| the Inn, the store, the smithy | — | walls sharing a `house_id` | "enterable town building" |
+| the Inn, the store, the smithy, the chapel | — | walls sharing a `house_id` | "enterable town building" |
 | relic, plunder | `/api/items/*` | `items[]` | "loadout", "items" |
 | chest, sack, bone heap | — | `containers[].kind` `chest` / `sack` / `drop_pile` | "container" |
 | the party | — | `party_update`, `party_id` | "party" |

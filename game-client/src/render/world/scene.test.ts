@@ -6,14 +6,16 @@ import type { WallState } from "@/types/gameState";
 import { palette } from "@/utils/canvasPalette";
 import { BAKE } from "./bake";
 import { doorGaps, planBuildings } from "./buildingLooks";
+import { EAST_DOOR_WALLS } from "./eastDoor.fixture";
 import { screenToWorld, worldDepth, worldToScreen, type Point } from "@/render/iso";
-import { planGables } from "./roofs";
+import { GABLE_APEX, planGables } from "./roofs";
 import {
   GroundLayer,
   Occluders,
   PLACEHOLDER_STONE,
   addBuildings,
   addGables,
+  addRoof,
   addWallPieces,
   addWalls,
   showLook,
@@ -118,6 +120,8 @@ const recOf = (o: unknown) => (o as { rec: Made }).rec;
 const sheetOf = (o: unknown) => (recOf(o).args[3] as string | undefined)?.split("/")[0];
 /** The animation a stub sprite was made showing: a door's state frame. */
 const frameOf = (o: unknown) => (recOf(o).args[3] as string | undefined)?.split("/")[1];
+/** A stub sprite's frame index, as the library resolved it (wrapped onto the frames the sheet has). */
+const indexOf = (o: unknown) => Number((recOf(o).args[3] as string).split("/")[3]);
 
 const SHEET: Omit<ArtSheet, "animations"> = {
   atlas: "a",
@@ -134,15 +138,23 @@ const frames = (n: number) => ({
   frames: [Array.from({ length: n }, () => ({ x: 0, y: 0 }))],
 });
 
-/** A stub art library holding exactly the named sheets. */
-function library(names: readonly string[], logger = { warn: vi.fn() }) {
+/**
+ * A stub art library holding exactly the named sheets, its gable sheets `gableFrames` deep (one,
+ * as the town's timber gable is baked, unless a test asks for the chapel's two).
+ */
+function library(names: readonly string[], { logger = { warn: vi.fn() }, gableFrames = 1 } = {}) {
   const sheets: Record<string, ArtSheet> = {};
+  const gable = frames(gableFrames);
   for (const name of names)
     sheets[name] = {
       ...SHEET,
       animations: name.includes("gable")
-        ? { s: frames(1), n: frames(1), e: frames(1), w: frames(1) }
-        : name.includes("post") || name.includes("head")
+        ? { s: gable, n: gable, e: gable, w: gable }
+        : name.endsWith("roof_slope")
+          ? { s: frames(1), n: frames(1), e: frames(1), w: frames(1) }
+          : name.endsWith("roof_ridge")
+            ? { x: frames(1), y: frames(1) }
+            : name.includes("post") || name.includes("head")
           ? { default: frames(1) }
           : name.startsWith("door_")
             ? { locked: frames(1), unlocked: frames(1), open: frames(1), shut: frames(1) }
@@ -343,6 +355,58 @@ describe("addBuildings (FS-9PN7X §B)", () => {
   });
 });
 
+describe("addBuildings with the door in the east wall (FS-R4MYX §B R9)", () => {
+  const MASONRY_ART = [
+    ...["plain", "pillar", "sconce", "banner", "cobweb"].flatMap((k) =>
+      ["back", "front", "exterior"].flatMap((h) => ["x", "y"].map((a) => `tower_wall_${h}_${k}_${a}`)),
+    ),
+    "tower_post_back",
+    "tower_post_front",
+    "tower_cap",
+    "door_x",
+    "door_y",
+    "tower_door_head_x",
+    "tower_door_head_y",
+  ];
+  /** The gap's centre, where the door and its head stand, and its back corner, which they sort by. */
+  const at = worldToScreen(1130, 1210);
+  const depth = worldDepth(1120, 1170, 1);
+
+  it.each([
+    ["timber", TIMBER_WALLS, TIMBER_ART, "door_head_y"],
+    ["masonry", MASONRY_WALLS, MASONRY_ART, "tower_door_head_y"],
+  ] as const)("should hang a door_y in the gap, shut outside and open inside, under the %s head", (_, sheets, names, head) => {
+    const { scene } = stubScene();
+    const { art, logger } = library(names);
+    const [b] = addBuildings(scene, art, EAST_DOOR_WALLS, 1, { sheets, doors: doorGaps, logger });
+    const of = (parts: unknown[], sheet: string) => parts.filter((p) => sheetOf(p) === sheet);
+    expect(of(b.exterior, "door_y").map(frameOf)).toEqual(["shut"]);
+    expect(of(b.interior, "door_y").map(frameOf)).toEqual(["open"]);
+    expect(of(b.exterior, head)).toHaveLength(1);
+    expect(of([...b.shared, ...b.interior], head)).toEqual([]);
+    for (const part of [...of(b.exterior, "door_y"), ...of(b.interior, "door_y"), ...of(b.exterior, head)]) {
+      expect(recOf(part).args.slice(0, 2)).toEqual([at.x, at.y]);
+      expect(recOf(part).depth).toBe(depth);
+    }
+    // nothing on the x axis: the south wall is whole
+    expect([...b.shared, ...b.interior, ...b.exterior].map(sheetOf).some((s) => /door(_head)?_x$/.test(s ?? ""))).toBe(false);
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("should swing the placeholder door west into the building when open, and stand it in the gap shut", () => {
+    const { scene, made } = stubScene();
+    addBuildings(scene, ArtLibrary.empty({ warn: vi.fn() }), EAST_DOOR_WALLS, 1, { sheets: MASONRY_WALLS, doors: doorGaps });
+    const leaves = made
+      .filter((m) => m.kind === "graphics" && (m.calls.fillStyle ?? []).some(([c]) => c === palette.wallLight))
+      .flatMap((m) => m.calls.fillRect ?? []);
+    // shut: the gap itself; open: hinged on the north jamb, reaching 80 px in from the outer sill
+    expect(leaves).toEqual([
+      [1120, 1170, 20, 80],
+      [1060, 1170, 80, 20],
+    ]);
+  });
+});
+
 describe("addBuildings without art (FS-9PN7X §B.7)", () => {
   it("should close a building with full-height placeholder sides, a slab cap and a placeholder door, with no manifest", () => {
     const { scene, made } = stubScene();
@@ -449,11 +513,65 @@ describe("addGables (FS-9PN7X §B.3, ADR-0036)", () => {
     });
   });
 
+  it("should show the one-frame town gable's only frame for the apex piece too, never a frame 1", () => {
+    const { scene } = stubScene();
+    const parts = addGables(scene, library(["roof_gable_x", "roof_gable_y"]).art, house, 20);
+    const plan = planGables(house, 20);
+    expect(plan.filter((p) => p.index === GABLE_APEX)).toHaveLength(4);
+    expect(parts.map(indexOf)).toEqual(plan.map(() => 0));
+  });
+
   it("should draw no gables without their sheet or without a manifest", () => {
     const { scene, made } = stubScene();
     expect(addGables(scene, library(["roof_slope"]).art, house, 20)).toEqual([]);
     expect(addGables(scene, ArtLibrary.empty({ warn: () => {} }), house, 20)).toEqual([]);
     expect(made).toHaveLength(0);
+  });
+});
+
+describe("a roof set by its prefix (FS-R4MYX R23, R42: the chapel's slate roof)", () => {
+  const house = { id: "chapel", x: 960, y: 1100, width: 620, height: 440 };
+  const TOWN_ROOF = ["roof_slope", "roof_ridge", "roof_gable_x", "roof_gable_y"];
+  const CHAPEL_ROOF = TOWN_ROOF.map((s) => `chapel_${s}`);
+  /** The stub library, its gable sheets two frames deep as the chapel's are baked (plain, apex). */
+  const withApex = (names: readonly string[]) => library(names, { gableFrames: 2 }).art;
+
+  it("should lay the chapel's roof in its own sheets, where and as high as the town's set would stand", () => {
+    const { scene } = stubScene();
+    const chapel = addRoof(scene, withApex([...TOWN_ROOF, ...CHAPEL_ROOF]), house, "chapel_")!;
+    const town = addRoof(stubScene().scene, withApex([...TOWN_ROOF, ...CHAPEL_ROOF]), house)!;
+    expect(chapel).toHaveLength(town.length);
+    chapel.forEach((part, i) => {
+      expect(sheetOf(part)).toBe(`chapel_${sheetOf(town[i])}`);
+      expect(recOf(part).args.slice(0, 2)).toEqual(recOf(town[i]).args.slice(0, 2));
+      expect(recOf(part).depth).toBe(recOf(town[i]).depth);
+    });
+  });
+
+  it("should close the chapel's roof with its own gables, the apex frame against the ridge", () => {
+    const { scene } = stubScene();
+    const parts = addGables(scene, withApex(CHAPEL_ROOF), house, 20, "chapel_");
+    const plan = planGables(house, 20, "chapel_");
+    expect(parts).toHaveLength(plan.length);
+    parts.forEach((part, i) => {
+      expect(sheetOf(part)).toBe("chapel_roof_gable_x");
+      expect(indexOf(part)).toBe(plan[i].index);
+    });
+    expect(parts.filter((p) => indexOf(p) === GABLE_APEX)).toHaveLength(4);
+  });
+
+  it("should fall back to the placeholder roof and no gables without the chapel's set, never to the town's", () => {
+    const { scene, made } = stubScene();
+    const art = withApex(TOWN_ROOF);
+    expect(addRoof(scene, art, house, "chapel_")).toBeNull();
+    expect(addGables(scene, art, house, 20, "chapel_")).toEqual([]);
+    expect(made).toHaveLength(0);
+  });
+
+  it("should keep drawing the town's roof in the roof_ set", () => {
+    const parts = addRoof(stubScene().scene, withApex(TOWN_ROOF), house)!;
+    expect(parts.length).toBeGreaterThan(0);
+    expect(new Set(parts.map(sheetOf))).toEqual(new Set(["roof_slope", "roof_ridge"]));
   });
 });
 

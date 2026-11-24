@@ -6,8 +6,9 @@
  * `"<palette>_<build>"` (authored in the hub's map data). A build's sheet carries its first
  * palette as the plain `idle` / `walk` clips and every other palette in use as a variant,
  * `idle_<palette>` / `walk_<palette>` ({@link folkClip}), so one authored body serves every
- * resident of that build. Whatever does not resolve falls back to the default villager, never
- * to pixel art. Function NPCs are their own characters, whose role reads from the silhouette.
+ * resident of that build. A few residents are their own character instead, and their appearance
+ * names a bespoke sheet ({@link BESPOKE_FOLK_SHEETS}; FS-R4MYX R18). Whatever does not resolve
+ * falls back to the default villager, never to pixel art. Function NPCs are their own characters, whose role reads from the silhouette.
  *
  * Pure, so it is tested without a canvas; the scene plays the result through
  * `CharacterAnimator`, as it does a player.
@@ -26,6 +27,15 @@ export const FUNCTION_NPC_SHEETS: Record<
 > = {
   storyteller: DEFAULT_RESIDENT_SHEET,
   storekeeper: "folk_quartermaster",
+};
+
+/**
+ * The residents drawn from a sheet of their own rather than a build: their `appearance` names the
+ * look (FS-R4MYX R18, amending FS-2325V §G.2). Until the sheet is baked they are the default
+ * villager.
+ */
+export const BESPOKE_FOLK_SHEETS: Readonly<Record<string, string>> = {
+  confessor: "folk_confessor",
 };
 
 /** The clips a resident plays: they idle and walk, and never fight or fall. */
@@ -53,7 +63,13 @@ export function folkLook(
       : fallback;
   }
 
-  const [palette, build] = (npc.appearance ?? "").split("_");
+  const appearance = npc.appearance ?? "";
+  if (Object.hasOwn(BESPOKE_FOLK_SHEETS, appearance)) {
+    const bespoke = BESPOKE_FOLK_SHEETS[appearance];
+    return art.sheet(bespoke) ? { sheet: bespoke, variant: undefined } : fallback;
+  }
+
+  const [palette, build] = appearance.split("_");
   const sheet = build ? art.sheet(`folk_resident_${build}`) : undefined;
   if (!sheet) return fallback;
 

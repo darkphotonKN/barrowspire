@@ -3497,6 +3497,19 @@ describe("BarrowspireScene world theme (FS-8RBQY §A, §B)", () => {
     expect(run.buildings[0].roof).toHaveLength(1);
   });
 
+  it("should roof an exterior house with one placeholder, not piece by piece, when the art lacks roof_slope", () => {
+    const baked = themed("exterior", true).run;
+    baked.handleGameStateUpdate(floorState(1));
+    expect(baked.buildings[0].roof.length).toBeGreaterThan(1);
+
+    const { run } = themed("exterior");
+    const { roof_slope: _slope, ...sheets } = manifest.sheets as Record<string, unknown>;
+    run.art = new ArtLibrary({ ...manifest, sheets }, { warn: () => {} });
+    run.handleGameStateUpdate(floorState(1));
+    expect(run.buildings[0].roof).toHaveLength(1);
+    expect((run.buildings[0].roof[0] as Made).kind).not.toBe("sprite");
+  });
+
   it.each(["tower", "exterior"] as const)(
     "should darken the world outside a %s room the player enters, with the shared blackout (FS-9PN7X §D.5)",
     (theme) => {

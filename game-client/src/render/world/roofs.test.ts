@@ -6,6 +6,7 @@ import { BAKE } from "./bake";
 import { housesFrom, type House } from "./houses";
 import {
   CHIMNEY_POT,
+  GABLE_APEX,
   GABLE_FOOT,
   ROOF_EAVE,
   planChimney,
@@ -251,6 +252,56 @@ describe("planGables (FS-9PN7X, ADR-0036: a closed block shows no inside)", () =
     const h = houseOf(CASES[3]);
     expect(planGables({ ...h }, THICK)).toEqual(planGables(h, THICK));
   });
+});
+
+describe("a roof set's prefix (FS-R4MYX R23, R42: the chapel's slate roof)", () => {
+  // the chapel's footprint, ridge along x, and a hub house deeper than it is wide
+  const HOUSES: House[] = [
+    { id: "chapel", x: 960, y: 1100, width: 620, height: 440 },
+    { id: "deep", x: 1560, y: 420, width: 240, height: 300 },
+  ];
+  const unprefixed = (sheet: string) => sheet.replace(/^chapel_/, "");
+
+  it.each(HOUSES.map((h) => [h.id, h] as const))(
+    "should lay %s's chapel roof as the town's, piece for piece, in the chapel_roof_ sheets",
+    (_, house) => {
+      const town = planRoof(house);
+      const chapel = planRoof(house, "chapel_");
+      expect(chapel.map((p) => ({ ...p, sheet: unprefixed(p.sheet) }))).toEqual(town);
+      expect(new Set(chapel.map((p) => p.sheet))).toEqual(new Set(["chapel_roof_slope", "chapel_roof_ridge"]));
+    },
+  );
+
+  it.each(HOUSES.map((h) => [h.id, h] as const))(
+    "should close %s's chapel roof with the town's gables, piece for piece, in the chapel_roof_gable sheet",
+    (_, house) => {
+      const town = planGables(house, 20);
+      const chapel = planGables(house, 20, "chapel_");
+      expect(chapel.map((p) => ({ ...p, sheet: unprefixed(p.sheet) }))).toEqual(town);
+      const axis = house.width >= house.height ? "x" : "y";
+      expect(new Set(chapel.map((p) => p.sheet))).toEqual(new Set([`chapel_roof_gable_${axis}`]));
+    },
+  );
+
+  it("should keep the town's roof_ sheets without a prefix", () => {
+    const [chapel] = HOUSES;
+    expect(new Set(planRoof(chapel).map((p) => p.sheet))).toEqual(new Set(["roof_slope", "roof_ridge"]));
+    expect(new Set(planGables(chapel, 20).map((p) => p.sheet))).toEqual(new Set(["roof_gable_x"]));
+  });
+
+  it.each(HOUSES.map((h) => [h.id, h] as const))(
+    "should show the apex frame on %s's piece against the ridge in each half of each end, the plain frame elsewhere",
+    (_, house) => {
+      const gables = planGables(house, 20, "chapel_");
+      const alongX = house.width >= house.height;
+      const mid = alongX ? house.y + house.height / 2 : house.x + house.width / 2;
+      const across = (p: { at: { x: number; y: number } }) => Math.abs((alongX ? p.at.y : p.at.x) - mid);
+      const nearest = Math.min(...gables.map(across));
+      // two ends, two halves each: four apex pieces, the half-crosses meeting over the ridge
+      expect(gables.filter((g) => g.index === GABLE_APEX)).toHaveLength(4);
+      for (const g of gables) expect(g.index).toBe(across(g) === nearest ? GABLE_APEX : 0);
+    },
+  );
 });
 
 describe("planChimney (FS-KYPQ9 §A.6)", () => {

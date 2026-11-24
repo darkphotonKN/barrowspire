@@ -39,6 +39,7 @@ export const RESIDENT_ART_PAGES = [
   "archer-0",
   "architecture-0",
   "building-0",
+  "chapel-0",
   "containers-0",
   "forest-0",
   "fx-0",

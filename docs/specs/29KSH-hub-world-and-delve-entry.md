@@ -500,3 +500,5 @@ still needs `player_id`. Roll out game-service on every pod first, then the clie
 - Renaming `party_kick` / `party_transfer`'s `target_id` to the FS-R82NV name `player_id`: it is
   a target, and the server reads `target_id`.
 - Any other outbound field.
+
+## Change: The chapel and the graveyard → FS-R4MYX

@@ -655,14 +655,19 @@ export function addPerimeter(
   return built;
 }
 
-/** A house's roof as baked slope and ridge pieces, or null without a manifest. */
+/**
+ * A house's roof as baked slope and ridge pieces in the roof set `prefix` names (the town's `""`,
+ * the chapel's `"chapel_"`, FS-R4MYX R42), or null without a manifest or without that set's slope:
+ * the scene then lays the placeholder roof, never another set's.
+ */
 export function addRoof(
   scene: Phaser.Scene,
   art: ArtLibrary,
   house: House,
+  prefix = "",
 ): Phaser.GameObjects.Sprite[] | null {
-  if (!art.available) return null;
-  return planRoof(house).map((p) => {
+  if (!art.available || !art.has(`${prefix}roof_slope`)) return null;
+  return planRoof(house, prefix).map((p) => {
     const s = worldToScreen(p.at.x, p.at.y);
     const sprite = artSprite(scene, art, s.x, s.y - p.lift, p.sheet, {
       animation: p.animation,
@@ -675,19 +680,21 @@ export function addRoof(
  * The timber gables closing a roof's two ends (FS-9PN7X §B.3, ADR-0036), each piece on its foot
  * lifted to the roof's line and sorted behind the end wall it rises from, which hides its foot.
  * They are the roof's: shown and hidden with it, and never faded (§E.4). None without a manifest
- * or the gable sheets: the roof then stands open at its ends, as it did before them.
+ * or the gable sheets of the roof set `prefix` names: the roof then stands open at its ends, as it
+ * did before them.
  */
 export function addGables(
   scene: Phaser.Scene,
   art: ArtLibrary,
   house: House,
   wallThickness: number,
+  prefix = "",
 ): Phaser.GameObjects.Sprite[] {
-  const pieces = planGables(house, wallThickness);
+  const pieces = planGables(house, wallThickness, prefix);
   if (pieces.length === 0 || !art.has(pieces[0].sheet)) return [];
   return pieces.map((p) => {
     const s = worldToScreen(p.at.x, p.at.y);
-    const sprite = artSprite(scene, art, s.x, s.y - p.lift, p.sheet, { animation: p.animation });
+    const sprite = artSprite(scene, art, s.x, s.y - p.lift, p.sheet, { animation: p.animation, index: p.index });
     return sprite.setDepth(worldDepth(p.depthAt.x, p.depthAt.y));
   });
 }

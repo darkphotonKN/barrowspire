@@ -257,3 +257,5 @@ By eye (owner, browser):
 - A double-leaf door, an opening animation, new materials or tokens.
 - Any proto, WS message, api-gateway, OpenAPI, database or other-service change.
 - Any ADR beyond ADR-0073, which records D1 over ADR-0070 Decision 2.
+
+## Change: The chapel and the graveyard → FS-R4MYX

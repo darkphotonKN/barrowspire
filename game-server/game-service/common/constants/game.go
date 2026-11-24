@@ -325,9 +325,14 @@ const RunPlayerDamage = false
 
 // map setting
 // The hub world is its own size, larger than a run's map and larger than the
-// 1080x720 viewport, so it scrolls. FS-29KSH §Requirements 3.
+// 1080x720 viewport, so it scrolls. FS-29KSH §Requirements 3. 1700 deep since
+// the town grew south for the chapel and its graveyard, every older coordinate
+// kept: the smallest multiple of 100 that holds the chapel at the owner's bigger
+// size and the graveyard moved out from behind its roof (owner feedback F1, F3,
+// F5). FS-R4MYX §Requirements 1. The town golden carries both (mapSize), and the
+// client's HUB_SIZE is held to it. FS-R4MYX §Requirements 22.
 const HubMapWidth float64 = 2000
-const HubMapHeight float64 = 1000
+const HubMapHeight float64 = 1700
 
 // The fixed point every player enters and returns to. FS-29KSH §Requirements 22.
 const HubSpawnX float64 = 1000

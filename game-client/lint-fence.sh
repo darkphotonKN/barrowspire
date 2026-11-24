@@ -89,10 +89,18 @@ echo "→ a world scene must REJECT building the UI scene's pieces (FS-TQZ5J)"
 must_reject world-builds-ui.ts "The chat window is the UI scene's" "a world builds the UI scene's chat unchecked"
 must_reject world-builds-ui.ts "'UiSounds' import from '@/audio/uiSounds' is restricted" "a world makes its own interface player unchecked"
 
-echo "→ the interactable, nature and interior bake models must draw every colour from BARROW (ADR-0013)"
+echo "→ the interactable, nature, interior, chapel and chapel building bake models must draw every colour from BARROW (ADR-0013)"
 # the models are browser code the bake page serves, outside next lint's reach: grepped instead. The
 # others mix colours through rgb("token") and are not in the fence.
-FENCED_MODELS="tools/bake/page/models/interactables.js tools/bake/page/models/nature.js tools/bake/page/models/interior.js"
+FENCED_MODELS="tools/bake/page/models/interactables.js tools/bake/page/models/nature.js tools/bake/page/models/interior.js tools/bake/page/models/chapel.js tools/bake/page/models/chapelBuilding.js"
+# a misspelt or moved path would be skipped silently (grep's error is swallowed below): every
+# listed model must exist, or the fence fails
+for f in ${FENCED_MODELS}; do
+	if [ ! -f "${f}" ]; then
+		echo "❌ a fenced bake model is missing: ${f} (renamed or misspelt? the fence would skip it)"
+		exit 1
+	fi
+done
 models=$(grep -lE '#[0-9a-fA-F]{3,8}([^0-9a-zA-Z_]|$)|0x[0-9a-fA-F]{6}([^0-9a-zA-Z_]|$)|rgba?\(' ${FENCED_MODELS} 2>/dev/null || true)
 if printf 'const c = "#1c1613";\n' | grep -qE '#[0-9a-fA-F]{3,8}([^0-9a-zA-Z_]|$)'; then :; else
 	echo "❌ the bake model pattern matches nothing: it enforces nothing"

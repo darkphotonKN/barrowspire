@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BESPOKE_FOLK_SHEETS,
   DEFAULT_RESIDENT_SHEET,
   FUNCTION_NPC_SHEETS,
   folkClip,
@@ -63,6 +64,43 @@ describe("folkLook", () => {
     },
   );
 
+  describe("a bespoke folk sheet (FS-R4MYX R18)", () => {
+    const WITH_CONFESSOR = sheets({
+      folk_resident_trousers: ["idle", "walk"],
+      folk_confessor: ["idle", "walk"],
+    });
+
+    it("should draw the confessor from folk_confessor when the art has it", () => {
+      expect(folkLook(resident("confessor"), WITH_CONFESSOR)).toEqual({
+        sheet: "folk_confessor",
+        variant: undefined,
+      });
+    });
+
+    it("should draw the confessor as the default villager while the sheet is not baked", () => {
+      expect(folkLook(resident("confessor"), BAKED)).toEqual({
+        sheet: DEFAULT_RESIDENT_SHEET,
+        variant: undefined,
+      });
+    });
+
+    it("should take a bespoke sheet only for a look it names, not for any bare word", () => {
+      // folk_quartermaster is baked, but it is a function NPC's, not a resident's look
+      expect(folkLook(resident("quartermaster"), BAKED)).toEqual({
+        sheet: DEFAULT_RESIDENT_SHEET,
+        variant: undefined,
+      });
+      expect(BESPOKE_FOLK_SHEETS).toEqual({ confessor: "folk_confessor" });
+    });
+
+    it("should keep drawing builds and palettes as before beside it", () => {
+      expect(folkLook(resident("slate_trousers"), BAKED)).toEqual({
+        sheet: "folk_resident_trousers",
+        variant: "slate",
+      });
+    });
+  });
+
   it.each([
     ["storyteller", "folk_resident_trousers"],
     ["storekeeper", "folk_quartermaster"],
@@ -82,7 +120,10 @@ describe("folkLook", () => {
 
   it("should draw a function the client does not know as the default villager", () => {
     expect(
-      folkLook({ function: "ferryman" as "storyteller", appearance: "" }, BAKED),
+      folkLook(
+        { function: "ferryman" as "storyteller", appearance: "" },
+        BAKED,
+      ),
     ).toEqual({ sheet: DEFAULT_RESIDENT_SHEET, variant: undefined });
   });
 
@@ -107,8 +148,9 @@ describe("folkClip", () => {
   });
 });
 
-// Every appearance and function the hub sends today (read-only reference:
-// game-server/game-service/internal/game/hub_map.go, hubResidents and hubNPCs).
+// Every build appearance and function the hub sends today (read-only reference:
+// game-server/game-service/internal/game/hub_map.go, hubResidents and hubNPCs). The bespoke
+// `confessor` has its own test below: its sheet is baked (I-R4MYX-9), so it must not fall back.
 const HUB_RESIDENTS = [
   "rust_trousers",
   "green_skirt",
@@ -145,6 +187,17 @@ describe("the shipped hub folk (public/art/manifest.json)", () => {
     const looks = HUB_RESIDENTS.map((a) => folkLook(resident(a), art));
     const keys = looks.map((l) => `${l.sheet}:${l.variant ?? ""}`);
     expect(new Set(keys).size).toBe(HUB_RESIDENTS.length);
+  });
+
+  it("should resolve the confessor to the baked folk_confessor, not the fallback", () => {
+    // a misnamed bake (or a misnamed BESPOKE_FOLK_SHEETS entry) would quietly draw the villager
+    const look = folkLook(resident("confessor"), art);
+    expect(look).toEqual({ sheet: "folk_confessor", variant: undefined });
+    for (const clip of ["idle", "walk"])
+      expect(
+        manifest.sheets.folk_confessor.animations[clip],
+        clip,
+      ).toBeDefined();
   });
 
   it.each(HUB_FUNCTIONS)(

@@ -21,12 +21,13 @@ import type { Point, Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 import { housesFrom, onOutline, type House } from "./houses";
 import type { PropSpot } from "./hubKeepOut";
-import { TIMBER_WALLS, unlitSheets, type WallSheets } from "./walls";
+import { CHAPEL_WALLS, TIMBER_WALLS, unlitSheets, type WallSheets } from "./walls";
 
 /**
  * Whether a wall is a furnishing of its house: it touches none of the house's four outer edges
- * (FS-B0H2D R12, R19). A building wall always lies along one, the south wall's two segments
- * either side of the door gap included, and a partition reaches two of them end on.
+ * (FS-B0H2D R12, R19). A building wall always lies along one, the two segments either side of a
+ * door gap included (the south wall's, or the east wall's for an east door, FS-R4MYX R6), and a
+ * partition reaches two of them end on.
  */
 export function isFurnishing(wall: WallState, house: House): boolean {
   const { x, y } = wall.position;
@@ -90,7 +91,7 @@ export function partitionInside(wall: WallState, house: House): WallState {
     : { ...wall, position: { x: from, y }, width: to - from };
 }
 
-export type FurnishingKind = "long_table" | "hall_hearth" | "counter" | "table" | "forge";
+export type FurnishingKind = "long_table" | "hall_hearth" | "counter" | "table" | "forge" | "pew" | "altar";
 
 /** A furnishing as drawn: its server rect, the baked sheet and frame standing on it. */
 export interface Furnishing {
@@ -103,11 +104,17 @@ export interface Furnishing {
   tall: boolean;
 }
 
+/** A chapel pew: 20 × 100, long along y, low enough to see over (FS-R4MYX R12, owner feedback F1). */
+function pew(x: number, y: number): Furnishing {
+  return { kind: "pew", rect: { x, y, width: 20, height: 100 }, sheet: "pew", tall: false };
+}
+
 /**
  * The furnishings, from hub_map.go in its order: the Inn's long table (running north–south down
  * the great hall) and the hearth built into the great hall's north wall at its head, then the
  * taproom's counter (running north–south, its front to the west) and two tables, then the
- * smithy's forge. Each prop is baked to its rect (tools/bake/page/models/interior.js, hall.js),
+ * smithy's forge, then the chapel's six pews (long along y, backs to the east: three north of the
+ * aisle, three south) and its altar (FS-R4MYX R12). Each prop is baked to its rect (tools/bake/page/models/interior.js, hall.js, chapel.js),
  * so it covers what a player collides with and no more; one with no sheet yet stands as the
  * placeholder block (R19).
  */
@@ -118,6 +125,14 @@ export const HUB_FURNISHINGS: Furnishing[] = [
   { kind: "table", rect: { x: 600, y: 130, width: 30, height: 40 }, sheet: "inn_table", animation: "narrow", tall: false },
   { kind: "table", rect: { x: 600, y: 300, width: 45, height: 40 }, sheet: "inn_table", animation: "wide", tall: false },
   { kind: "forge", rect: { x: 1595, y: 120, width: 70, height: 35 }, sheet: "forge", tall: true },
+  pew(1310, 1170),
+  pew(1380, 1170),
+  pew(1450, 1170),
+  pew(1310, 1370),
+  pew(1380, 1370),
+  pew(1450, 1370),
+  // `chapel_altar`, never `altar`: that sheet is the run's Altar of Consecration
+  { kind: "altar", rect: { x: 1120, y: 1280, width: 30, height: 80 }, sheet: "chapel_altar", tall: false },
 ];
 
 /**
@@ -126,14 +141,24 @@ export const HUB_FURNISHINGS: Furnishing[] = [
  */
 export const HUB_INN: Rect = { x: 230, y: 50, width: 640, height: 440 };
 
+/**
+ * The chapel's footprint (hub_map.go hubBuildings; FS-R4MYX R2–R4), held to the golden by
+ * `hubInteriors.test.ts`: how the scene knows which house is the chapel, as `HUB_INN` the Inn.
+ */
+export const HUB_CHAPEL: Rect = { x: 960, y: 1100, width: 620, height: 440 };
+
+/** Whether a house stands on exactly this footprint. */
+const standsOn = (house: House, at: Rect): boolean =>
+  house.x === at.x && house.y === at.y && house.width === at.width && house.height === at.height;
+
 /** Whether a house is the Inn: its footprint is the Inn's, exactly. */
 export function isInn(house: House): boolean {
-  return (
-    house.x === HUB_INN.x &&
-    house.y === HUB_INN.y &&
-    house.width === HUB_INN.width &&
-    house.height === HUB_INN.height
-  );
+  return standsOn(house, HUB_INN);
+}
+
+/** Whether a house is the chapel: its footprint is the chapel's, exactly. */
+export function isChapel(house: House): boolean {
+  return standsOn(house, HUB_CHAPEL);
 }
 
 /** The Inn's floor: planks, where the flagstone of the other houses would be. */
@@ -146,19 +171,50 @@ export const INN_FLOOR = "ground_plank_floor";
  */
 const INN_WALLS = unlitSheets(TIMBER_WALLS);
 
-/** How a town building is built: the sheets its walls are cut in, and its own floor if it has one. */
+/**
+ * The roof a town building wears: the set its pieces are drawn from (`planRoof`'s prefix) and
+ * whether a chimney stands on it (FS-KYPQ9 §A.6).
+ */
+export interface RoofSet {
+  /** Before every roof sheet name: `""` for the town's `roof_` set, `"chapel_"` for the chapel's slate. */
+  prefix: string;
+  chimney: boolean;
+}
+
+/** The town's shingle roof with its chimney: what a house wears unless its look names another. */
+export const TOWN_ROOF: RoofSet = { prefix: "", chimney: true };
+
+/**
+ * How a town building is built: the sheets its walls are cut in, its roof set, and its own floor
+ * if it has one.
+ */
 export interface TownHouseLook {
   sheets: WallSheets;
   /** The floor sheet under it; absent, the town's flagstone. */
   floor?: string;
+  /** Its roof: `TOWN_ROOF`, or the set its own look names. */
+  roof: RoofSet;
 }
 
+const INN_LOOK: TownHouseLook = { sheets: INN_WALLS, floor: INN_FLOOR, roof: TOWN_ROOF };
 /**
- * A town building's look, the scene asks per house: the Inn's unlit timber and plank floor, and
- * plain timber on flagstone for every other house.
+ * The chapel (FS-R4MYX R23, R42): its own whitewashed walls (`CHAPEL_WALLS`, unlit and capless) on
+ * the town's flagstone, under its own slate roof with no chimney (a church has no hearth to vent).
+ * Its age is baked into the sheets, never tinted over them (owner feedback F6: a tint greyed the
+ * white walls).
+ */
+const CHAPEL_LOOK: TownHouseLook = { sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false } };
+const TOWN_LOOK: TownHouseLook = { sheets: TIMBER_WALLS, roof: TOWN_ROOF };
+
+/**
+ * A town building's look, the scene asks per house: the Inn's unlit timber and plank floor, the
+ * chapel's own material and slate roof on flagstone, and plain timber on flagstone for every
+ * other house.
  */
 export function townHouseLook(house: House): TownHouseLook {
-  return isInn(house) ? { sheets: INN_WALLS, floor: INN_FLOOR } : { sheets: TIMBER_WALLS };
+  if (isInn(house)) return INN_LOOK;
+  if (isChapel(house)) return CHAPEL_LOOK;
+  return TOWN_LOOK;
 }
 
 /** The mirror's entry for a furnishing wall, by its exact rect; undefined when it has none. */
@@ -291,8 +347,9 @@ const keg = (x: number, y: number, index: number): IndoorSpot => ({
 
 /**
  * Indoor dressing (R15): no collision, never interactable, each inside its house's inner area,
- * off every furnishing and the partition, and off its door's threshold (a gap-wide strip 80 px
- * in). Shelves and wall-hung pieces stand on the wall face they back onto. A patron stands at a
+ * off the partition and off its door's threshold (a gap-wide strip 80 px in on its door face), and
+ * off every furnishing unless it lies flat: a rug or the chapel's dais is floor, and a furnishing
+ * may stand on it (FS-R4MYX R14). Shelves and wall-hung pieces stand on the wall face they back onto. A patron stands at a
  * chair or stool beside the table they keep to (R26).
  */
 export const HUB_INDOOR_DRESSING: IndoorSpot[] = [
@@ -349,19 +406,43 @@ export const HUB_INDOOR_DRESSING: IndoorSpot[] = [
   crate(1528, 96),
   crate(1734, 242),
   barrel(1526, 242),
+  // the chapel (960, 1100, 620 × 440, its door east; FS-R4MYX R14): the altar's stone dais laid
+  // flat at the west end, the lectern by its north-east corner, and a candelabra either side of
+  // the altar, the room's only lights (R15); the Confessor stands on the floor east of the dais
+  { sheet: "dais", at: { x: 1105, y: 1320 }, r: 65, size: [130, 200], flat: true },
+  { sheet: "lectern", at: { x: 1190, y: 1250 }, r: 10, size: [20, 20] },
+  candelabra(1135, 1250),
+  candelabra(1135, 1390),
 ];
 
 /**
- * The fixed residents (hub_map.go hubFixedResidents): where they stand, the facing the client
- * keeps for them by name (R25), and the kind of furnishing they face, one of a kind in town. A
- * fixed resident never moves, so their facing cannot come from movement.
+ * What a fixed resident faces (FS-R4MYX R26): a furnishing of a kind, a grave in the graveyard
+ * (hubGraveyard.ts), which is dressing, not a furnishing, or their building's street door.
  */
-export const HUB_FIXED_RESIDENTS: { name: string; at: Point; facing: Facing8; faces: FurnishingKind }[] = [
+export type FacedThing = FurnishingKind | "grave" | "door";
+
+/**
+ * The fixed residents (hub_map.go hubFixedResidents): where they stand, the facing the client
+ * keeps for them by name (R25), and what they face: a furnishing kind that is one of its kind in
+ * town, a grave, or the door. A fixed resident never moves, so their facing cannot come from
+ * movement. The chapel's Confessor stands in front of the dais and faces east down the aisle to
+ * the door, its worshippers west to the altar and the graveyard's mourners west to their graves
+ * (FS-R4MYX R17, R26).
+ */
+export const HUB_FIXED_RESIDENTS: { name: string; at: Point; facing: Facing8; faces: FacedThing }[] = [
   { name: "Alewife", at: { x: 765, y: 260 }, facing: "w", faces: "counter" },
   { name: "Drover", at: { x: 418, y: 223 }, facing: "w", faces: "long_table" },
   { name: "Gravedigger", at: { x: 418, y: 319 }, facing: "w", faces: "long_table" },
   { name: "Pilgrim", at: { x: 336, y: 271 }, facing: "e", faces: "long_table" },
   { name: "Smith", at: { x: 1630, y: 175 }, facing: "n", faces: "forge" },
+  { name: "Confessor", at: { x: 1205, y: 1320 }, facing: "e", faces: "door" },
+  { name: "Penitent", at: { x: 1355, y: 1255 }, facing: "w", faces: "altar" },
+  { name: "Chandler", at: { x: 1425, y: 1255 }, facing: "w", faces: "altar" },
+  { name: "Goodwife", at: { x: 1285, y: 1385 }, facing: "w", faces: "altar" },
+  { name: "Ploughman", at: { x: 1355, y: 1385 }, facing: "w", faces: "altar" },
+  { name: "Keener", at: { x: 520, y: 1320 }, facing: "w", faces: "grave" },
+  { name: "Widower", at: { x: 500, y: 1200 }, facing: "w", faces: "grave" },
+  { name: "Veteran", at: { x: 300, y: 1380 }, facing: "w", faces: "grave" },
 ];
 
 /** A fixed resident's facing by name; undefined for anyone else, who keeps the default. */

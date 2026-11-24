@@ -378,7 +378,7 @@ export function roughBox(w, h, d, seed, amount = 0.18, seg = 3) {
 }
 
 /** A window onto a face texture: the part of it a sub-box spanning [xa, xb] × [ya, yb] covers. */
-function slice(t, xa, xb, ya, yb, L, H, bump = 1.5) {
+export function slice(t, xa, xb, ya, yb, L, H, bump = 1.5) {
   const cut = (src) => {
     const c = src.clone();
     c.repeat.set((xb - xa) / L, (yb - ya) / H);
@@ -396,18 +396,23 @@ function body(L, H, T, face, ends, top) {
 
 /**
  * A broken top course for a cut-away piece: stones of uneven height along the wall's top at
- * `y`, some missing, the rubble core showing between. Stays under `maxY`.
+ * `y`, some missing, the rubble core (`M.core`) showing between. Stays under `maxY`. Options:
+ * `gone` the draw a stone must beat to stand (0.45: a little over half are missing), and
+ * `stone(R)` each standing stone's material, drawing from the course's own stream if it picks
+ * (default `M.block`, no draw).
  */
-function brokenTop(g, L, T, y, maxY, seed, M) {
+export function brokenTop(g, L, T, y, maxY, seed, M, o = {}) {
   const R = rng(seed);
+  const gone = o.gone ?? 0.45;
+  const stone = o.stone ?? (() => M.block);
   g.add(part(new THREE.BoxGeometry(L, 0.04, T * 0.86), M.core, { y: y + 0.02 }));
   let x = -L / 2;
   while (x < L / 2 - 0.05) {
     const w = 0.16 + R() * 0.22;
     const ww = Math.min(w, L / 2 - x);
-    if (R() > 0.45) {
+    if (R() > gone) {
       const h = Math.min(maxY - y - 0.01, 0.03 + R() * 0.08);
-      g.add(part(roughBox(ww - 0.012, h, T * (0.8 + R() * 0.18), Math.floor(R() * 1000), 0.25), M.block, { x: x + ww / 2, y: y + h / 2 + 0.01, z: (R() - 0.5) * 0.03 }));
+      g.add(part(roughBox(ww - 0.012, h, T * (0.8 + R() * 0.18), Math.floor(R() * 1000), 0.25), stone(R), { x: x + ww / 2, y: y + h / 2 + 0.01, z: (R() - 0.5) * 0.03 }));
     }
     x += ww;
   }

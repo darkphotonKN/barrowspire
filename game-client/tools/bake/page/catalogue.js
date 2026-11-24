@@ -95,6 +95,30 @@ import {
   pottedPlant,
   rug,
 } from "./models/hall.js";
+import {
+  HEADSTONES,
+  WALL_STATES,
+  belfry,
+  chapelAltar,
+  dais,
+  graveFlowers,
+  graveMound,
+  graveyardWall,
+  headstone,
+  lectern,
+  pew,
+  stoneCross,
+  waysideCross,
+} from "./models/chapel.js";
+import {
+  chapelDoorHead,
+  chapelExterior,
+  chapelGable,
+  chapelPost,
+  chapelRoofRidge,
+  chapelRoofSlope,
+  chapelWall,
+} from "./models/chapelBuilding.js";
 import { CAST } from "./characters/cast.js";
 import { FOLK } from "./characters/folk.js";
 
@@ -718,6 +742,119 @@ function buildingSheets() {
   return sheets;
 }
 
+/**
+ * The chapel and its graveyard (FS-R4MYX §H R36, §I R41–R42), authored in code (ADR-0020, ADR-0021)
+ * and packed on their own atlas, `chapel`, so every existing atlas keeps its bytes (the `interior`
+ * group is held closed by manifest.test.ts, and the town's would reflow). The group is resident: no
+ * scene in SCENE_ART names it, so the hub draws it without a scene change. The chapel's altar is
+ * `chapel_altar`, since `altar` names the run's Altar of Consecration (FS-3103M). Reused, not
+ * re-baked: `candelabra` (the chapel's only light), `tree_dead`, `tree_dead_snag` and the door.
+ * Nothing here is lit. Variant frames are picked by index: a headstone's by its state's list in
+ * HEADSTONES, a wall tile's by WALL_STATES (models/chapel.js).
+ */
+function chapelSheets() {
+  const sheet = (name, fn, animations, opts = {}) => ({
+    name,
+    group: "chapel",
+    kind: "prop",
+    animations,
+    source: `authored: tools/bake/page/models/chapel.js#${fn}`,
+    ...opts,
+  });
+  const one = (build) => ({ default: still(build) });
+  return [
+    sheet("pew", "pew", one(pew)),
+    sheet("chapel_altar", "chapelAltar", one(chapelAltar)),
+    sheet("lectern", "lectern", one(lectern)),
+    // laid flat on the floor under the altar: no ground shadow, and a hair of pad, like the rug
+    sheet("dais", "dais", one(dais), { shadow: false, pad: 0.04 }),
+    sheet("belfry", "belfry", one(belfry)),
+    sheet(
+      "headstone",
+      "headstone",
+      Object.fromEntries(Object.entries(HEADSTONES).map(([state, list]) => [state, still(...list.map((_, i) => () => headstone(state, i)))])),
+      { pad: 0.06 },
+    ),
+    sheet("grave_flowers", "graveFlowers", { fresh: still(() => graveFlowers("fresh")), withered: still(() => graveFlowers("withered")) }, { pad: 0.05 }),
+    sheet("grave_mound", "graveMound", one(graveMound), { pad: 0.06 }),
+    sheet("stone_cross", "stoneCross", one(stoneCross)),
+    sheet(
+      "graveyard_wall",
+      "graveyardWall",
+      Object.fromEntries(["x", "y"].map((axis) => [axis, still(...WALL_STATES.map((state) => () => graveyardWall(axis, state)))])),
+      { pad: 0.06 },
+    ),
+    sheet("wayside_cross", "waysideCross", one(waysideCross)),
+  ];
+}
+
+/**
+ * The chapel's own building (FS-R4MYX §I R42, models/chapelBuilding.js), on the `chapel` atlas after
+ * its props (chapelSheets): whitewashed limestone walls, posts and door heads cut and framed as the
+ * tower's masonry pieces they stand in for (the same kinds' frame sizes, anchors and variant
+ * counts: seeds as the tower's), and a slate roof set cut as the town's `roof_` pieces, with the same animations, so planRoof and planGables lay it unchanged. A gable
+ * animation has two frames: the plain piece first (the town gable's one frame), then the apex
+ * piece planGables lays against the ridge (its first, k = 0), which carries its half of the rose
+ * window and of the cross finial. No stone cap and no lit kind (R23).
+ */
+function chapelBuildingSheets() {
+  const building = (name, fn, animations, opts = {}) => ({
+    name,
+    group: "chapel",
+    kind: "prop",
+    animations,
+    source: `authored: tools/bake/page/models/chapelBuilding.js#${fn}`,
+    ...opts,
+  });
+  const walls = [];
+  for (const [height, H, kinds] of [
+    ["back", WALL_BACK, ["plain", "pillar"]],
+    ["front", WALL_FRONT, ["plain", "pillar"]],
+  ]) {
+    for (const variant of kinds)
+      for (const axis of ["x", "y"])
+        walls.push(
+          building(
+            `chapel_wall_${height}_${variant}_${axis}`,
+            "chapelWall",
+            { variants: still(...[1, 6].map((seed) => () => chapelWall(H, variant, axis, seed + (H > 2 ? 0 : 2)))) },
+            PAINTED_SHADOW,
+          ),
+        );
+    walls.push(building(`chapel_post_${height}`, "chapelPost", { default: still(() => chapelPost(H)) }, PAINTED_SHADOW));
+  }
+  for (const axis of ["x", "y"]) {
+    for (const variant of ["plain", "lancet", "buttress"])
+      walls.push(
+        building(
+          `chapel_wall_exterior_${variant}_${axis}`,
+          "chapelExterior",
+          { variants: still(...[2, 7].map((seed) => () => chapelExterior(variant, axis, seed))) },
+          PAINTED_SHADOW,
+        ),
+      );
+    // the wall carried over a door gap: its shadow is the wall's, painted across the gap
+    walls.push(building(`chapel_door_head_${axis}`, "chapelDoorHead", { default: still(() => chapelDoorHead(axis)) }, PAINTED_SHADOW));
+  }
+  // the slate roof: laid on the walls, which carry their own shading, so no ground shadow
+  const roof = [
+    building("chapel_roof_slope", "chapelRoofSlope", Object.fromEntries(["s", "e", "n", "w"].map((f) => [f, still(() => chapelRoofSlope(f))])), { shadow: false }),
+    building("chapel_roof_ridge", "chapelRoofRidge", Object.fromEntries(["x", "y"].map((a) => [a, still(() => chapelRoofRidge(a))])), { shadow: false }),
+    ...[
+      ["x", ["s", "n"]],
+      ["y", ["e", "w"]],
+    ].map(([axis, halves]) =>
+      building(
+        `chapel_roof_gable_${axis}`,
+        "chapelGable",
+        Object.fromEntries(halves.map((h) => [h, still(() => chapelGable(axis, h), () => chapelGable(axis, h, true))])),
+        { shadow: false },
+      ),
+    ),
+  ];
+  return [...walls, ...roof];
+}
+
 export const CATALOGUE = [
   ...groundSheets(),
   ...natureSheets(),
@@ -736,4 +873,6 @@ export const CATALOGUE = [
   ...interiorSheets(),
   ...hallSheets(),
   ...buildingSheets(),
+  ...chapelSheets(),
+  ...chapelBuildingSheets(),
 ].map((s) => ({ licence: LICENCE, ...s }));

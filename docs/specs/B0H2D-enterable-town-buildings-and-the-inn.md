@@ -356,3 +356,5 @@ nothing is bought or sold. Tests guarantee clear lanes from the spawn to every g
 - Anything in `internal/matchmaker` or `internal/match_queue`, and stats.
 
 ## Change: Wider doors → FS-MMA2H
+
+## Change: The chapel and the graveyard → FS-R4MYX

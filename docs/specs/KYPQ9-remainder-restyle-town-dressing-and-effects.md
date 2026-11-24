@@ -693,3 +693,5 @@ P10. **One writer.** The canvas's default cursor is set in one place, the game's
   registered-symbol brand, so a Fast Refresh swap reuses the game's pointer look; the one-writer
   guard reads all of `src/` (components/ and app/ included) and also rejects `defaultCursor =` and
   `canvas.style.cursor =` writes outside `pointerLook.ts`.
+
+## Change: The chapel and the graveyard → FS-R4MYX

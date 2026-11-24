@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Point } from "@/render/iso/projection";
-import type { House } from "./houses";
+import { doorGaps, gapDoor } from "./buildingLooks";
+import { EAST_DOOR_WALLS } from "./eastDoor.fixture";
+import { housesFrom, type House } from "./houses";
 import { buildingAt, hidden, markerShown } from "./indoors";
 
 /**
@@ -40,6 +42,23 @@ describe("buildingAt (FS-9PN7X §A.2, §A.3)", () => {
 
   it("should find nothing among no buildings", () => {
     expect(buildingAt(IN_INN, [])).toBeUndefined();
+  });
+});
+
+describe("buildingAt with the door in the east wall (FS-R4MYX §B R9: the roof lifts over the gap)", () => {
+  const houses = housesFrom(EAST_DOOR_WALLS);
+  const [gap] = doorGaps(EAST_DOOR_WALLS);
+
+  it.each([
+    ["in the gap", gapDoor(gap, false).at],
+    ["on its outer sill", { x: 1140, y: 1210 }],
+    ["on its inner sill", { x: 1120, y: 1210 }],
+  ])("should put a player standing %s in the building", (_case, pos) => {
+    expect(buildingAt(pos, houses)).toBe(houses[0]);
+  });
+
+  it("should leave a player a step east of the sill on the street", () => {
+    expect(buildingAt({ x: 1141, y: 1210 }, houses)).toBeUndefined();
   });
 });
 

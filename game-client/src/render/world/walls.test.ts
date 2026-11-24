@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { TILE_WIDTH, WORLD_PX_PER_TILE } from "@/render/iso";
 import type { WallState } from "@/types/gameState";
+import { EAST_DOOR_WALLS } from "./eastDoor.fixture";
 import { housesFrom } from "./houses";
+import { BAKE } from "./bake";
 import {
+  CHAPEL_WALLS,
   INTERIOR_PARTITION,
   MASONRY_WALLS,
   TIMBER_WALLS,
@@ -165,6 +168,40 @@ describe("planWalls", () => {
     expect(heights((x, y) => x === 110 && y > 70)).toEqual(new Set(["back"])); // west
     expect(heights((x, y) => x === 390 && y > 70)).toEqual(new Set(["front"])); // east
     expect(heights((_, y) => y === 250)).toEqual(new Set(["front"])); // south
+  });
+});
+
+describe("planWalls with the door in the east wall (FS-R4MYX §B R9)", () => {
+  it.each([
+    ["timber", TIMBER_WALLS, ""],
+    ["masonry", MASONRY_WALLS, "tower_"],
+  ])("should post every corner and both jambs once, the east side's posts low (%s)", (_, sheets, prefix) => {
+    const { posts } = planWalls(EAST_DOOR_WALLS, 1, sheets);
+    const at = (x: number, y: number) => posts.filter((p) => p.at.x === x && p.at.y === y).map((p) => p.sheet);
+    expect(posts).toHaveLength(6);
+    expect(at(670, 1050)).toEqual([`${prefix}post_back`]); // NW
+    expect(at(1130, 1050)).toEqual([`${prefix}post_back`]); // NE: north (back) meets east (front)
+    expect(at(670, 1370)).toEqual([`${prefix}post_back`]); // SW: west (back) meets south (front)
+    expect(at(1130, 1370)).toEqual([`${prefix}post_front`]); // SE: east + south, both cut away
+    expect(at(1130, 1160)).toEqual([`${prefix}post_front`]); // the door's north jamb
+    expect(at(1130, 1260)).toEqual([`${prefix}post_front`]); // its south jamb
+  });
+
+  it("should cut both east segments into low y pieces on the wall's centreline, none reaching into the gap", () => {
+    const { pieces } = planWalls(EAST_DOOR_WALLS, 1, MASONRY_WALLS);
+    const east = pieces.filter((p) => p.at.x === 1130);
+    expect(east.length).toBeGreaterThan(0);
+    for (const p of east) {
+      expect(p.axis).toBe("y");
+      expect(p.sheet).toMatch(/^tower_wall_front_(plain|pillar)_y$/);
+    }
+    // 130 px a segment: three whole tiles and a quarter, the quarter at the segment's far end, so
+    // the north segment's last piece stops at the gap and the south segment's first starts there
+    const [north, south] = [EAST_DOOR_WALLS[3], EAST_DOOR_WALLS[4]].map((w) => east.filter((p) => p.wallId === w.entity_id));
+    expect(north.map((p) => p.keep)).toEqual([1, 1, 1, 0.25]);
+    expect(north.at(-1)!.at.y - T / 2 + 0.25 * T).toBeCloseTo(1170);
+    expect(south.map((p) => p.keep)).toEqual([1, 1, 1, 0.25]);
+    expect(south[0].at.y - T / 2).toBe(1250);
   });
 });
 
@@ -348,6 +385,41 @@ describe("planWalls by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47)"
   it("should name every lit kind of both materials, so none slips past the rule", () => {
     expect(MASONRY_WALLS.lit).toEqual(["sconce"]);
     expect(TIMBER_WALLS.lit).toEqual(["torch", "window"]);
+  });
+});
+
+describe("CHAPEL_WALLS, the chapel's own material (FS-R4MYX R23, R42)", () => {
+  const kinds = (table: readonly (readonly [number, string])[]) => table.map(([, kind]) => kind);
+
+  it("should name every piece and post `chapel_`, as thick as the masonry", () => {
+    expect(CHAPEL_WALLS.prefix).toBe("chapel_");
+    expect(CHAPEL_WALLS.thickness).toBe(BAKE.WALL_FOOT.masonry);
+    expect(thicknessPx(CHAPEL_WALLS)).toBe(thicknessPx(MASONRY_WALLS));
+  });
+
+  it("should be plain or pillar inside and plain, lancet or buttress on the outward face, each table closing at 100", () => {
+    expect(kinds(CHAPEL_WALLS.back)).toEqual(["plain", "pillar"]);
+    expect(kinds(CHAPEL_WALLS.front)).toEqual(["plain", "pillar"]);
+    expect(kinds(CHAPEL_WALLS.outward)).toEqual(["plain", "lancet", "buttress"]);
+    for (const table of [CHAPEL_WALLS.back, CHAPEL_WALLS.front, CHAPEL_WALLS.outward]) {
+      const shares = table.map(([share]) => share);
+      expect(shares.at(-1)).toBe(100);
+      expect([...shares].sort((a, b) => a - b)).toEqual(shares);
+    }
+  });
+
+  it("should carry no lit kind and no stone cap: the candelabra are its only light, and it wears a roof", () => {
+    expect(CHAPEL_WALLS.lit ?? []).toEqual([]);
+    expect(CHAPEL_WALLS.cap).toBeUndefined();
+  });
+
+  it("should cut an east-door building in the chapel's sheets, every kind turning up on its outward face", () => {
+    const { pieces, posts } = planWalls(EAST_DOOR_WALLS, 1, CHAPEL_WALLS);
+    for (const p of pieces) expect(p.sheet).toMatch(/^chapel_wall_(back|front)_(plain|pillar)_[xy]$/);
+    for (const p of posts) expect(p.sheet).toMatch(/^chapel_post_(back|front)$/);
+    const long = wall(0, 0, 40 * T, 20, "c");
+    const outward = new Set(cutExterior(long, 1, CHAPEL_WALLS).map((p) => p.sheet));
+    expect(outward).toEqual(new Set(["chapel_wall_exterior_plain_x", "chapel_wall_exterior_lancet_x", "chapel_wall_exterior_buttress_x"]));
   });
 });
 

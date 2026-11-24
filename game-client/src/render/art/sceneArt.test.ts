@@ -90,8 +90,8 @@ describe("the scene art table (FS-C4JWH §A)", () => {
 });
 
 describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
-  it("should hold the 19 resident pages and no scene-scoped one at boot", () => {
-    expect(RESIDENT_ART_PAGES).toHaveLength(19);
+  it("should hold the 20 resident pages and no scene-scoped one at boot", () => {
+    expect(RESIDENT_ART_PAGES).toHaveLength(20);
     expect(sorted(sceneAtlases(manifest, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
   });
 

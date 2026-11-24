@@ -355,3 +355,5 @@ gameserver test, ten players walking to the Spire's door lined up about 40 px ap
 about three were inside the 80 px range; the rest were refused. `TestQueueFindGameFlow` was
 changed to walk players to the door one at a time as a stopgap. Players on other pods (ghosts,
 FS-JEAVX) never collided, so the effect only showed among players on one pod.
+
+## Change: The chapel and the graveyard → FS-R4MYX

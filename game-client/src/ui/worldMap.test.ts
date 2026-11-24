@@ -115,6 +115,22 @@ describe("footprint (FS-P0HSP §B.8, §B.9)", () => {
   });
 });
 
+describe("footprint with the door in the east wall (FS-R4MYX §B R11)", () => {
+  it("should cut an east door as one notch in the building's east side, the gap's height, reaching in its depth", () => {
+    const house = { x: 660, y: 1040, width: 480, height: 340 };
+    expect(footprint(house, [{ side: "east", from: 1170, to: 1250 }], 34)).toEqual([
+      { x: 660, y: 1040 },
+      { x: 1140, y: 1040 },
+      { x: 1140, y: 1170 },
+      { x: 1106, y: 1170 },
+      { x: 1106, y: 1250 },
+      { x: 1140, y: 1250 },
+      { x: 1140, y: 1380 },
+      { x: 660, y: 1380 },
+    ]);
+  });
+});
+
 describe("notchDepth (FS-P0HSP §B.9)", () => {
   it.each([
     // the town's normal map, its enlarged and its overlay
