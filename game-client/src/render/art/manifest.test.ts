@@ -609,6 +609,38 @@ describe("the baked manifest (public/art/manifest.json)", () => {
 
   });
 
+  describe("the wandering merchant and the antidote's icon (FS-9JV5K §G R26)", () => {
+    const atlasGroup = (key: string) => key.replace(/-\d+$/, "");
+
+    it("bakes the merchant idle only, four frames at the folk's pace, looping, in eight facings", () => {
+      const sheet = baked.sheets.npc_merchant;
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual(["idle"]);
+      expect(sheet.animations.idle).toMatchObject({ fps: 3, loop: true });
+      expect(sheet.animations.idle.frames).toHaveLength(8);
+      for (const facing of sheet.animations.idle.frames) expect(facing).toHaveLength(4);
+      expect(sheet.source).toBe("authored: tools/bake/page/characters/folk.js#merchant");
+    });
+
+    it("packs him alone on a group of his own, scene-scoped, so no committed atlas reflows", () => {
+      expect(atlasGroup(baked.sheets.npc_merchant.atlas)).toBe("merchant");
+      expect(SCENE_SCOPED_GROUPS.has("merchant")).toBe(true);
+      const onGroup = Object.entries(baked.sheets as Record<string, { atlas: string }>)
+        .filter(([, s]) => atlasGroup(s.atlas) === "merchant")
+        .map(([n]) => n);
+      expect(onGroup).toEqual(["npc_merchant"]);
+    });
+
+    it("bakes the antidote's icon on the resident icons atlas, one still frame like the potions'", () => {
+      const icon = baked.sheets.icon_antidote;
+      const potion = baked.sheets.icon_potion_health;
+      expect(atlasGroup(icon.atlas)).toBe("icons");
+      expect([icon.frameWidth, icon.frameHeight]).toEqual([potion.frameWidth, potion.frameHeight]);
+      expect(icon.animations.default.frames).toEqual([[expect.any(Object)]]);
+      expect(icon.source).toBe("procedural: tools/bake/page/models/items.js#antidote");
+    });
+  });
+
   describe("the sealed floor's props (FS-5FZ4J §K R57)", () => {
     type PropSheet = {
       atlas: string;

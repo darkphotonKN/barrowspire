@@ -45,7 +45,7 @@ import { downscale } from "./lib/downscale.mjs";
 import { cropFrame, trimGrid, trimRect } from "./lib/trim.mjs";
 import { startServer } from "./lib/server.mjs";
 import { CLIENT_ROOT, loadLighting, loadManifestValidator, loadTheme } from "./lib/source.mjs";
-import { labelTexts, lineupSets, lookSets, outlineTexts, writeReview } from "./lib/contact.mjs";
+import { WARE_ICONS, labelTexts, lineupSets, lookSets, outlineTexts, writeReview } from "./lib/contact.mjs";
 import { darkRoom, darkestGround } from "./lib/darkRoom.mjs";
 import { buildingReviewTexts, writeBuildingReview } from "./lib/building.mjs";
 
@@ -76,7 +76,8 @@ async function launch() {
  * Spire's facade (FS-0XMCP §R15), then the Forlorn Forest's trees and dressing (FS-3QHQZ §C R30),
  * then the town buildings' furniture and fittings (FS-B0H2D §G R30), then the building exteriors
  * (FS-9PN7X §F.1), then the enlarged Inn's great hall and taproom, then the chapel and its graveyard
- * (FS-R4MYX §H R36), then the sealed floor's props (FS-5FZ4J §K R57).
+ * (FS-R4MYX §H R36), then the sealed floor's props (FS-5FZ4J §K R57), then the icons of the
+ * wandering merchant's wares (FS-9JV5K §G R26; he is in the cast, in eight facings).
  */
 const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.directions === 8),
@@ -88,6 +89,7 @@ const reviewSheets = (sheets) => [
   ...sheets.filter((x) => x.group === "hall"),
   ...sheets.filter((x) => x.group === "chapel"),
   ...sheets.filter((x) => x.group === "sealed"),
+  ...sheets.filter((x) => WARE_ICONS.includes(x.name)),
 ];
 
 async function bakeAll() {

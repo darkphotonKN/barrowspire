@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { composeDarkRoom, composeLooks, composeOutline, contactPages, lookSets, outlineTexts, writeReview } from "./contact.mjs";
+import { WARE_ICONS, composeDarkRoom, composeLooks, composeOutline, contactPages, lookSets, outlineTexts, writeReview } from "./contact.mjs";
 import { decodePng } from "./png.mjs";
 
 // a creature sheet as the bake hands it to the review: 8 facings, four clips of `n` frames
@@ -172,5 +172,51 @@ describe("the sealed floor's contact sheet (FS-5FZ4J §K R57, lib/contact.mjs)",
     const lit = [];
     for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === 200) lit.push(i);
     expect(lit).toHaveLength(4 * 8 * 8);
+  });
+});
+
+describe("the wandering merchant's contact sheet (FS-9JV5K §G R26, lib/contact.mjs)", () => {
+  // solid, opaque 4 x 4 frames, one grey per sheet, so each sheet's pixels can be counted apart
+  const frame = (v) => Buffer.from(Array.from({ length: 16 }, () => [v, v, v, 255]).flat()).toString("base64");
+  const still = (name, group, v) => ({
+    name,
+    group,
+    frameWidth: 4,
+    frameHeight: 4,
+    directions: 1,
+    animations: { default: { fps: 0, loop: false, frames: [[frame(v)]] } },
+  });
+  const merchant = {
+    name: "npc_merchant",
+    group: "merchant",
+    frameWidth: 4,
+    frameHeight: 4,
+    directions: 8,
+    animations: { idle: { fps: 3, loop: true, frames: Array.from({ length: 8 }, () => Array.from({ length: 4 }, () => frame(201))) } },
+  };
+
+  it("lists the icons of his wares, the antidote among the potions it must stand apart from", () => {
+    expect(WARE_ICONS).toEqual(["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote"]);
+  });
+
+  it("writes him, every facing of his idle, and the wares' icons at 2x, and nothing else", () => {
+    const dir = mkdtempSync(join(tmpdir(), "merchant-review-"));
+    const sheets = [merchant, ...WARE_ICONS.map((n) => still(n, "icons", 202)), still("icon_sword_t1", "icons", 203), still("chest", "props", 204)];
+    // the review page frames him from the manifest, as it does every sheet in the cast
+    const manifest = { sheets: { npc_merchant: { atlas: "merchant-0", animations: { idle: {} } } }, atlases: { "merchant-0": { image: "merchant-0.png" } } };
+    const files = writeReview({ sheets, facings: FACINGS, labels: new Map(), manifest, theme: THEME, dir });
+    const names = files.map((f) => f.slice(dir.length + 1));
+    expect(names).toContain("contact-merchant-2x.png");
+    const png = decodePng(readFileSync(join(dir, "contact-merchant-2x.png")));
+    const count = (v) => {
+      let n = 0;
+      for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === v) n++;
+      return n;
+    };
+    // 8 facings x 4 frames of him, the four wares once each, each frame 8 x 8 px at 2x
+    expect(count(201)).toBe(8 * 4 * 64);
+    expect(count(202)).toBe(4 * 64);
+    expect(count(203)).toBe(0);
+    expect(count(204)).toBe(0);
   });
 });

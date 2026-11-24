@@ -17,7 +17,7 @@
 
 import * as THREE from "three";
 import { materials } from "../materials.js";
-import { createRig, jointAt as J, mount } from "./rig.js";
+import { attach, createRig, jointAt as J, mount } from "./rig.js";
 import { fabrics, folkFabrics } from "./fabrics.js";
 import { FOLK_ANIMATIONS, pose } from "./clips.js";
 import {
@@ -37,6 +37,7 @@ import {
   neck,
   overTorso,
   shawl,
+  shortBeard,
   skirt,
   skirtBones,
   torso,
@@ -271,6 +272,212 @@ export function confessor() {
   };
   return { rig, style };
 }
+
+/**
+ * The peddler's frame pack (FS-9JV5K §G R26), rigid on the chest, standing off his back over the
+ * cloak: a canvas body under a leather flap, two straps round it, a madder blanket rolled across
+ * its top, an iron pan hung on its right side, two ash poles of its frame standing proud above it,
+ * and from the left pole an iron arm that hangs his lantern out beside his head. Built in model
+ * space (H units, bind pose); the shoulder straps come over his shoulders to his chest, where his
+ * hands hold them. Returns the lantern's glass, so a test can find where the light sits.
+ */
+function peddlerPack(rig, M, F) {
+  const H = rig.H;
+  const [, hy] = J(rig, "hips");
+  const [, ny] = J(rig, "neck");
+  const td = rig.p.torsoD;
+  const g = mount(rig, "chest");
+  const at = (geo, mat, x, y, z, o = {}) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x * H, y * H, z * H);
+    m.rotation.set(o.rx ?? 0, o.ry ?? 0, o.rz ?? 0);
+    g.add(m);
+    return m;
+  };
+  const tube = (points, r, mat) => {
+    const m = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points.map(([x, y, z]) => new THREE.Vector3(x * H, y * H, z * H))), 24, r * H, 6, false), mat);
+    g.add(m);
+    return m;
+  };
+
+  // the body: a deep sack of canvas, a little wider than his shoulders' line, from his belt to
+  // above his shoulders, its front off his back by the cloak's depth
+  const w = 0.25;
+  const front = -0.112 * td;
+  const d = 0.13;
+  const bottom = hy + 0.06;
+  const top = ny + 0.06;
+  const cz = front - d / 2;
+  const body = new THREE.BoxGeometry(w * H, (top - bottom) * H, d * H, 3, 4, 2);
+  // bellied: the canvas bulges out between its corners, so it reads stuffed, not boxed
+  const p = body.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const u = p.getX(i) / ((w / 2) * H);
+    const v = p.getY(i) / (((top - bottom) / 2) * H);
+    const s = 1 + 0.12 * (1 - u * u) * (1 - v * v * 0.6);
+    p.setZ(i, p.getZ(i) * s);
+    p.setX(i, p.getX(i) * (1 + 0.06 * (1 - v * v)));
+  }
+  body.computeVertexNormals();
+  at(body, F.merchantCanvas, 0, (top + bottom) / 2, cz);
+  // the flap over its top and down its back, in leather, with a brass buckle
+  at(new THREE.BoxGeometry((w + 0.012) * H, 0.014 * H, (d + 0.02) * H), F.leather, 0, top + 0.004, cz);
+  at(new THREE.BoxGeometry((w * 0.8) * H, 0.11 * H, 0.012 * H), F.leather, 0, top - 0.05, front - d - 0.012);
+  at(new THREE.BoxGeometry(0.03 * H, 0.03 * H, 0.012 * H), M.brass, 0, top - 0.1, front - d - 0.02);
+  // two straps round the body
+  for (const y of [bottom + 0.06, bottom + 0.17])
+    at(new THREE.BoxGeometry((w * 1.08) * H, 0.018 * H, (d * 1.22) * H), F.leatherDark, 0, y, cz);
+  // the frame's poles, up the back corners and proud of the top
+  for (const sx of [-1, 1]) at(new THREE.CylinderGeometry(0.009 * H, 0.01 * H, (top - bottom + 0.16) * H, 6), M.wood, sx * (w / 2 + 0.006), (top + bottom) / 2 + 0.07, front - d + 0.012);
+  // the blanket roll across the top, strapped down
+  const roll = at(new THREE.CylinderGeometry(0.04 * H, 0.04 * H, (w + 0.05) * H, 14), F.merchantBlanket, 0, top + 0.045, cz - 0.01, { rz: Math.PI / 2 });
+  roll.userData.roll = true;
+  for (const sx of [-1, 1]) at(new THREE.TorusGeometry(0.042 * H, 0.006 * H, 5, 14), F.leatherDark, sx * 0.07, top + 0.045, cz - 0.01, { ry: Math.PI / 2 });
+  // the pan, hung by its handle on the right side
+  at(new THREE.CylinderGeometry(0.055 * H, 0.05 * H, 0.016 * H, 16), M.iron, -(w / 2 + 0.024), bottom + 0.13, cz - 0.01, { rz: Math.PI / 2 });
+  at(new THREE.BoxGeometry(0.01 * H, 0.08 * H, 0.012 * H), M.iron, -(w / 2 + 0.024), bottom + 0.2, cz - 0.01);
+  // a coil of rope on the left side
+  at(new THREE.TorusGeometry(0.04 * H, 0.011 * H, 6, 16), F.cord, w / 2 + 0.016, bottom + 0.1, cz, { ry: Math.PI / 2 });
+  // the shoulder straps: from the pack's top over each shoulder and down his chest, back under
+  // the arm to the pack's foot
+  const chestZ = 0.086 * td;
+  for (const sx of [-1, 1])
+    tube(
+      [
+        [sx * 0.07, top - 0.03, front - 0.01],
+        [sx * 0.08, ny + 0.005, -0.02],
+        [sx * 0.082, ny - 0.035, chestZ * 0.8],
+        [sx * 0.085, ny - 0.1, chestZ + 0.006],
+        [sx * 0.1, hy + 0.13, chestZ * 0.6],
+        [sx * 0.11, hy + 0.09, -0.04],
+        [sx * 0.1, bottom + 0.02, front - 0.01],
+      ],
+      0.009,
+      F.leatherDark,
+    );
+
+  // the lantern's arm: from the top of the left pole, curving up and out over his left shoulder
+  const px = w / 2 + 0.006;
+  const py = top + 0.15;
+  const pz = front - d + 0.012;
+  const lx = px + 0.07;
+  const lz = 0.0;
+  // the arm and the lantern cast no shadow: so far out from him, theirs ran off as a stray thread
+  const hung = [];
+  hung.push(tube(
+    [
+      [px, py - 0.02, pz],
+      [px + 0.02, py + 0.02, pz + 0.03],
+      [lx - 0.01, py + 0.03, lz - 0.04],
+      [lx, py + 0.0, lz],
+    ],
+    0.008,
+    F.blackIron,
+  ));
+  // the lantern, hung from the arm's hook by its ring: lit glass in four iron posts under a cap
+  const s = 0.03;
+  const h = 0.068;
+  const ly = py - 0.025 - h / 2;
+  hung.push(at(new THREE.TorusGeometry(0.008 * H, 0.0022 * H, 4, 10), F.blackIron, lx, py - 0.008, lz));
+  const glass = at(new THREE.BoxGeometry(s * 1.5 * H, h * 0.8 * H, s * 1.5 * H), M.glass, lx, ly, lz);
+  hung.push(glass);
+  for (const [ox, oz] of [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ])
+    hung.push(at(new THREE.BoxGeometry(0.0045 * H, h * H, 0.0045 * H), F.blackIron, lx + ox * s * 0.8, ly, lz + oz * s * 0.8));
+  hung.push(at(new THREE.ConeGeometry(s * 1.3 * H, 0.026 * H, 4), F.blackIron, lx, ly + h / 2 + 0.012, lz, { ry: Math.PI / 4 }));
+  hung.push(at(new THREE.BoxGeometry(s * 1.8 * H, 0.006 * H, s * 1.8 * H), F.blackIron, lx, ly - h / 2, lz));
+  for (const m of hung) m.userData.noShadow = true;
+  return glass;
+}
+
+/**
+ * A wide-brimmed felt hat, the brim turned down a little at its edge and tipped back off the brow
+ * so the face shows under it from the camera's height.
+ */
+function wideHat(rig, mat, band) {
+  const H = rig.H;
+  const [, hy, hz] = J(rig, "head");
+  const r = rig.p.headR;
+  const at = [0, hy + 0.098, hz - 0.006];
+  const tip = { rx: -0.26 };
+  const brim = [
+    [0.9 * r, 0.004],
+    [1.35 * r, 0.002],
+    [1.75 * r, -0.006],
+    [1.82 * r, -0.012],
+    [1.75 * r, -0.016],
+    [1.35 * r, -0.006],
+    [0.9 * r, -0.004],
+  ].map(([x, y]) => new THREE.Vector2(x * H, y * H));
+  attach(rig, "head", new THREE.LatheGeometry(brim, 24), mat, at, tip);
+  const crown = [
+    [0, 0.072],
+    [0.62 * r, 0.07],
+    [0.9 * r, 0.05],
+    [1.0 * r, 0.0],
+  ].map(([x, y]) => new THREE.Vector2(x * H, y * H));
+  attach(rig, "head", new THREE.LatheGeometry(crown, 20), mat, at, tip);
+  attach(rig, "head", new THREE.CylinderGeometry(1.01 * r * H, 1.02 * r * H, 0.014 * H, 20, 1, true), band, [at[0], at[1] + 0.008, at[2]], tip);
+}
+
+/**
+ * The wandering merchant (FS-9JV5K §G R26): a stout, grizzled pedlar of the deep roads, in a
+ * road-dusted cloak ragged at the hem over an ochre jerkin and breeches, tall travel boots and a
+ * wide felt hat, bowed a little under a frame pack that stands above his shoulders, his lantern
+ * hung out over his left shoulder from its frame. His hands hold the pack's straps at his chest.
+ * He never walks, so he idles only.
+ */
+export function merchant() {
+  const M = materials();
+  const F = fabrics();
+  const rig = createRig(1.94, { shoulderW: 1.05, torsoW: 1.08, torsoD: 1.12, hipW: 1.05, limbR: 1.04, armR: 1.04 });
+  rig.hooks = [];
+  // the cloak's top is held to his back under the pack, the rest hangs free below it
+  cloakBones(rig, { length: 0.5, drag: 0.3, strap: [0.2, 0.35, 0.8, 1] });
+  skirtBones(rig, { stiffness: 60 });
+  const [, hy] = J(rig, "hips");
+
+  torso(rig, F.merchantJerkin);
+  neck(rig, F.skin);
+  // sleeves of undyed brown wool: pale linen ones read as bare arms at 1x
+  arms(rig, F.hunterWool);
+  hands(rig, F.skin);
+  head(rig, F.skin);
+  face(rig, F.face, F.browGrey);
+  hair(rig, F.hairGrey);
+  shortBeard(rig, F.hairGrey, { full: 1.25 });
+  wideHat(rig, F.felt, F.leatherDark);
+  const tunic = { top: hy + 0.02, bottom: hy - 0.15, rTop: [0.1, 0.078], rBottom: [0.118, 0.1] };
+  legs(rig, F.breeches, { under: tunic });
+  boots(rig, F.leather, { top: 0.19 });
+  skirt(rig, F.merchantJerkin, { ...tunic, legFollow: 0.7, panels: true, panelWeight: 0.3 });
+  belt(rig, F.leatherDark, M.brass, { pouch: true });
+  keyRing(rig, F, "R");
+  cloak(rig, F.merchantCloak, { length: 0.5, spread: 1.35, flare: 1.15, ragged: { teeth: 15, depth: 0.04, seed: 9 } });
+  peddlerPack(rig, M, F);
+
+  const style = {
+    speed: 0.7,
+    // both hands up at his chest on the pack's straps, the elbows in at his sides
+    hold: pose({
+      upperArmL: [0.3, 0, -0.04],
+      foreArmL: [-2.35, 0, 0],
+      upperArmR: [0.3, 0, 0.04],
+      foreArmR: [-2.35, 0, 0],
+    }),
+    walk: { stride: 0.7, arms: [0.1, 0.1], lean: 0.06, twist: 0.5 },
+    // bowed a little under the pack's weight
+    idle: { lean: 0.07 },
+  };
+  return { rig, style };
+}
+
+/** The merchant's sheet, on a group of its own fetched on demand (ADR-0071 Decision 6): idle only. */
+export const MERCHANT = [{ sheet: "npc_merchant", fn: "merchant", build: merchant, group: "merchant", animations: { idle: FOLK_ANIMATIONS.idle } }];
 
 /** The folk as manifest sheets: idle and walk only (FOLK_ANIMATIONS). */
 export const FOLK = [

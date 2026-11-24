@@ -375,6 +375,12 @@ export const palette = {
   goblinStandIn: tint(BARROW_HEX.arcane, 0.35),
   ogreStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.brass, 0.4), 0.4),
   darkWarriorStandIn: tint(BARROW_HEX.umbra, 0.3),
+  /**
+   * FS-9JV5K §G R26: the wandering merchant's stand-in until his own art lands, the mercenary's
+   * resident base sheet under a road-dust wash (the barrow's brown paled toward vellum), so his
+   * madder coat reads as a drab traveller's and not as a player's.
+   */
+  merchantStandIn: tint(mix(BARROW_HEX.barrowBrown, BARROW_HEX.vellumDark, 0.5), 0.45),
 
   // -- A monster ability's telegraph and impact (FS-C8VM7 §F R36): the hostile channel, drawn
   //    above the light-map. The edge in the HP bar's lifted oxblood, so the ring reads on a dark

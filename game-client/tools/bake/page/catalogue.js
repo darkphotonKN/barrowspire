@@ -144,7 +144,7 @@ import {
   chapelWall,
 } from "./models/chapelBuilding.js";
 import { CAST } from "./characters/cast.js";
-import { FOLK } from "./characters/folk.js";
+import { FOLK, MERCHANT } from "./characters/folk.js";
 
 export const LICENCE = "Barrowspire original work (procedural, no third-party assets)";
 const src = (file, fn) => `procedural: tools/bake/page/${file}#${fn}`;
@@ -462,6 +462,22 @@ function characterSheets() {
  */
 function folkSheets() {
   return FOLK.map((c) => ({
+    name: c.sheet,
+    group: c.group,
+    kind: "character",
+    build: c.build,
+    animations: c.animations,
+    source: `authored: tools/bake/page/characters/folk.js#${c.fn}`,
+  }));
+}
+
+/**
+ * The wandering merchant (FS-9JV5K §G R26): a townsfolk build on the same rig, idle only in eight
+ * facings, packed on a group of his own that the run fetches on demand the first time a state
+ * carries him (ADR-0071 Decision 6; src/render/art/sceneArt.ts `NPC_ART`).
+ */
+function merchantSheets() {
+  return MERCHANT.map((c) => ({
     name: c.sheet,
     group: c.group,
     kind: "character",
@@ -963,6 +979,7 @@ export const CATALOGUE = [
   ...iconSheets(),
   ...characterSheets(),
   ...folkSheets(),
+  ...merchantSheets(),
   ...fxSheets(),
   ...towerSheets(),
   ...spireSheets(),

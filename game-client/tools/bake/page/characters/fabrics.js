@@ -395,6 +395,14 @@ export const GEAR = {
   sellSteel: mix("slate", "slateLight", 0.55),
   sellLeather: mix(mix("barrowBrown", "barrowDeep", 0.5), "pitch", 0.15),
   sellBrass: mix("brass", "barrowBrown", 0.25),
+  // the wandering merchant (FS-9JV5K §G R26; folk.js `merchant`): a road-dusted cloak, the brown
+  // of the barrow paled toward the vellum of dry dust and cooled toward stone, over an ochre
+  // jerkin, his one warm colour; a pack of undyed canvas gone tan with handling, and a madder
+  // blanket rolled on top of it, so the pack's outline reads as his and not as more cloak
+  merchantCloak: mix(mix("barrowBrown", "slate", 0.45), "vellumDark", 0.22),
+  merchantJerkin: mix(mix("brass", "barrowBrown", 0.55), "barrowDeep", 0.2),
+  merchantCanvas: mix(mix("vellumDark", "barrowBrown", 0.45), "vellumFaint", 0.2),
+  merchantBlanket: mix(mix("ember", "oxblood", 0.5), "barrowDeep", 0.45),
 };
 
 /**
@@ -596,7 +604,11 @@ export function fabrics() {
     sellPlateDouble: mat(plate(GEAR.darkSteel, { dents: 0.8, rust: 0.35, dirt: 0.5, seed: 391 }), { metal: 0.7, rough: 0.52, side: D }),
     sellLeather: mat(leather(GEAR.sellLeather, { seed: 393, dirt: 0.55 }), { rough: 0.45 }),
     sellRoll: mat(wool(GEAR.sellSash, { seed: 397, dirt: 0.6 }), { normal: 1.4 }),
-    sellBrass: mat(plate(GEAR.sellBrass, { dents: 0.3, rust: 0, dirt: 0.45, seed: 395 }), { metal: 0.8, rough: 0.45 }),
+    merchantCloak: mat(wool(GEAR.merchantCloak, { seed: 421, dirt: 0.8 }), { side: D }),
+    merchantJerkin: mat(wool(GEAR.merchantJerkin, { seed: 423, dirt: 0.55 }), { side: D }),
+    merchantCanvas: mat(linen(GEAR.merchantCanvas, { seed: 425, dirt: 0.7 }), { rough: 0.9, normal: 1.3 }),
+    merchantBlanket: mat(wool(GEAR.merchantBlanket, { seed: 427, dirt: 0.5 }), { normal: 1.3 }),
+    sellBrass: mat(plate(GEAR.sellBrass,{ dents: 0.3, rust: 0, dirt: 0.45, seed: 395 }), { metal: 0.8, rough: 0.45 }),
     // the one painted face on every human (FS-67QQY R7), and brows from the hair (R10); a
     // character with no hair of its own takes browDark
     face: faceMaterial(),

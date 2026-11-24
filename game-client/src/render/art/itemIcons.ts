@@ -43,6 +43,8 @@ const PLAIN_ICONS = [
   "potion_health",
   "potion_mana",
   "vial_tonic",
+  // FS-9JV5K §G R26: the antidote, a slim stoppered vial apart from the round potions
+  "antidote",
   "coins",
   "gem",
   "scroll",
@@ -94,6 +96,8 @@ const ARMOR_ICONS: Record<string, GearIcon> = {
 
 /** Words in an item's name that pick an icon when its stats do not. First match wins. */
 const NAME_ICONS: [RegExp, GearIcon | PlainIcon][] = [
+  // FS-9JV5K §F R25: the ANTIDOTE template, by its name (its template code is not on the wire)
+  [/\bantidote\b/i, "antidote"],
   [/\b(ring|signet|band)\b/i, "ring"],
   [/\bscroll\b/i, "scroll"],
   [/\b(gold|coins?)\b/i, "coins"],

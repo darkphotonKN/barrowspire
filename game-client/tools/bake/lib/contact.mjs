@@ -36,6 +36,8 @@
 //   contact-building-2x.png    the building exteriors and stone cap at ×2 (FS-9PN7X §F)
 //   contact-hall-2x.png        the enlarged Inn's great hall and taproom at ×2
 //   contact-sealed-2x.png      the sealed floor's props, every state, at ×2 (FS-5FZ4J §K R57)
+//   contact-merchant-2x.png    the wandering merchant's idle in every facing and the icons of his
+//                              wares, the antidote beside the potions, at ×2 (FS-9JV5K §G R26)
 //   <LINEUPS file>             a family lineup per art slice at ×2 (FS-C8VM7 §H R48): one row per
 //                              sheet, each step beside the one below it, at key frames
 //   contact-looks-<class>.png  a class's baked spec looks beside the class (FS-1J1CB R12), at game
@@ -60,6 +62,12 @@ import { CLASS_STEMS, isLookSheet } from "./darkRoom.mjs";
 import { outlineFigures } from "./outline.mjs";
 
 export const REVIEW_DIR = join(CLIENT_ROOT, "tools", "bake", "review");
+
+/**
+ * The icons of the wandering merchant's wares (FS-9JV5K §G R26), drawn on his contact sheet: the
+ * antidote beside the health and mana potions and the tonic it must stand apart from.
+ */
+export const WARE_ICONS = ["icon_potion_health", "icon_potion_mana", "icon_vial_tonic", "icon_antidote"];
 
 const M = 16; // margin
 const LABEL_W = 44; // facing-name column
@@ -613,6 +621,12 @@ export function writeReview({ sheets, facings, labels, manifest, theme, lineups 
     const file = `contact-${group}-2x.png`;
     writeFileSync(join(dir, file), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push(file);
+  }
+  const merchant = sheets.filter((s) => s.group === "merchant" || WARE_ICONS.includes(s.name));
+  if (merchant.some((s) => s.group === "merchant")) {
+    const two = composeContact(merchant, facings, labels, theme, 2);
+    writeFileSync(join(dir, "contact-merchant-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
+    files.push("contact-merchant-2x.png");
   }
   for (const l of lineups) {
     const two = composeLineup(l.sheets, facings, labels, theme, 2);
