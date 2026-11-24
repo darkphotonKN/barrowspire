@@ -78,7 +78,18 @@ func bookEffectState(entity *ecs.Entity) (*types.BookEffectState, bool) {
 		X:         at.X,
 		Y:         at.Y,
 		Remaining: effect.Remaining,
+		Caught:    caughtOn(entity),
 	}, true
+}
+
+// caughtOn is how many monsters the book effect has caught: a rune's count,
+// 0 for anything else.
+func caughtOn(entity *ecs.Entity) int {
+	rc, ok := entity.GetComponent(ecs.ComponentTypeRune)
+	if !ok {
+		return 0
+	}
+	return len(rc.(*components.RuneComponent).Caught)
 }
 
 func bookEffectAt(e *types.BookEffectState) types.Position { return types.Position{X: e.X, Y: e.Y} }

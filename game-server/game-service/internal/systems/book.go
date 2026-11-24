@@ -60,9 +60,10 @@ type pageResolver func(world *ecs.EntityManager, cast BookCast)
 // pageResolvers holds the effect of every offered page, by page id. A page is
 // added to the game by adding its resolver here. FS-X2CMM §K R59.
 var pageResolvers = map[components.PageID]pageResolver{
-	components.PageHardened:   resolveHardened,
-	components.PageLevitate:   resolveLevitate,
-	components.PageWitchlight: resolveWitchlight,
+	components.PageBindingGlyph: resolveBindingGlyph,
+	components.PageHardened:     resolveHardened,
+	components.PageLevitate:     resolveLevitate,
+	components.PageWitchlight:   resolveWitchlight,
 }
 
 // PageOffered is whether the server resolves the page: castable and sent.
@@ -136,10 +137,15 @@ func (s *BookSystem) resolve(cast BookCast, book *components.BookComponent) {
 
 // Update runs every book down by the tick: its book cooldowns and its timed
 // states, each gone once its time is up, and the floor's book effects, each
-// taken from the world once its time is up. Simulation time; a book's across
-// floors. FS-X2CMM §A R8, §E R21.
+// taken from the world once its time is up. A rune first catches what stands
+// on it, and goes on its third catch. It runs before the monsters think, so a
+// monster caught stands from this tick. Simulation time; a book's across
+// floors. FS-X2CMM §A R8, §E R21, R24.
 func (s *BookSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	for _, entity := range entities {
+		if s.catchOnRune(entity, entities) {
+			continue // spent on its third catch, and gone
+		}
 		s.ageBookEffect(entity, deltaTime)
 		book, ok := bookOf(entity)
 		if !ok {

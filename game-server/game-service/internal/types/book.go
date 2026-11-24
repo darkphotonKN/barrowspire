@@ -20,15 +20,19 @@ type BookCastingState struct {
 }
 
 // BookEffectState is a book effect on the floor as every recipient of the run
-// is told it: its entity id, its kind (witchlight, and later rune), where it
-// stands in px and its seconds left. A kind that shows more (a hound's
-// health) adds its own fields, absent on every other kind. FS-X2CMM §F R34.
+// is told it: its entity id, its kind (witchlight, rune), where it stands in
+// px and its seconds left. A kind that shows more (a rune's catches, a
+// hound's health) adds its own fields, absent on every other kind.
+// FS-X2CMM §F R34.
 type BookEffectState struct {
 	ID        uuid.UUID `json:"id"`
 	Kind      string    `json:"kind"`
 	X         float64   `json:"x"`
 	Y         float64   `json:"y"`
 	Remaining float64   `json:"remaining"`
+	// Caught is how many monsters a rune has held so far, absent while none,
+	// so a client can flash it as the count climbs (R24, R47).
+	Caught int `json:"caught,omitempty"`
 }
 
 // BookPageState is one offered page as its owner is told it: Cost its whole

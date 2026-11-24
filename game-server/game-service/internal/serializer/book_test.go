@@ -160,3 +160,25 @@ func TestFormatStateToClientState_BookEffectsAreCutByDistance(t *testing.T) {
 	assert.Len(t, nearFrame["book_effects"], 1)
 	assert.NotContains(t, farFrame, "book_effects")
 }
+
+// A rune goes to every recipient as kind "rune", with how many monsters it has
+// caught once it has caught any, for the client's flash; a rune that has
+// caught none, and every other kind, leaves caught out. FS-X2CMM §E R24, §F
+// R34. I-X2CMM-4.
+func TestFormatStateToClientState_ARuneCarriesItsCatchCount(t *testing.T) {
+	w := newPartyWorld()
+	laid := addBookEffect(w.em, components.BookEffectRune, 300, 400, 30)
+	ring := &components.RuneComponent{Radius: 60}
+	laid.AddComponent(ring)
+
+	_, frame := wireFor(t, w.em, types.WorldTypeRun, w.wren)
+	assert.Equal(t, []any{map[string]any{"id": laid.ID.String(), "kind": "rune", "x": float64(300), "y": float64(400), "remaining": float64(30)}}, frame["book_effects"])
+
+	ring.Caught = []uuid.UUID{uuid.New(), uuid.New()}
+	for _, recipient := range []uuid.UUID{w.wren, w.mage, w.stranger} {
+		_, frame := wireFor(t, w.em, types.WorldTypeRun, recipient)
+		effects := frame["book_effects"].([]any)
+		require.Len(t, effects, 1, recipient)
+		assert.Equal(t, float64(2), effects[0].(map[string]any)["caught"], recipient)
+	}
+}

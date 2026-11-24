@@ -12,7 +12,10 @@ type BookEffectKind string
 const (
 	// BookEffectWitchlight is the Witchlight page's light (R21).
 	BookEffectWitchlight BookEffectKind = "witchlight"
-	// rune (R24) and the later kinds join here as their pages are built.
+	// BookEffectRune is the Binding Glyph page's rune (R24); its catch rides
+	// the same entity as a RuneComponent.
+	BookEffectRune BookEffectKind = "rune"
+	// draught and hound join here as their pages are built.
 )
 
 // BookEffectComponent is a book effect: an entity of its own on the floor, at
@@ -30,4 +33,18 @@ type BookEffectComponent struct {
 
 func (e *BookEffectComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypeBookEffect
+}
+
+// RuneComponent is a rune's catch, on the rune's own book effect entity: how
+// far its ring reaches from its centre and each monster it has held so far,
+// in the order caught. A monster is caught once per rune. FS-X2CMM §E R24.
+type RuneComponent struct {
+	// Radius is the ring's reach from the rune's centre, in px.
+	Radius float64
+	// Caught is each monster the rune has stunned.
+	Caught []uuid.UUID
+}
+
+func (r *RuneComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeRune
 }

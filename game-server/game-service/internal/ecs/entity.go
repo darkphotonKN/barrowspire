@@ -101,6 +101,8 @@ const (
 	ComponentTypeBook ComponentType = "Book"
 	// what a book ability leaves on the floor: a witchlight, a rune (FS-X2CMM §E)
 	ComponentTypeBookEffect ComponentType = "BookEffect"
+	// a rune's catch, on the rune's book effect (FS-X2CMM §E R24)
+	ComponentTypeRune ComponentType = "Rune"
 )
 
 type Entity struct {
