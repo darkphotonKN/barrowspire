@@ -4,7 +4,7 @@ status: open
 implements: FS-X2CMM
 blocked_by: ["I-X2CMM-13", "I-X2CMM-22"]
 labels: [ready-for-agent]
-title: "FS-X2CMM slice 23: client review fix round 1 (one aim at a time, no panel rebuild on state, server-sent cooldown words) and the used-up rune"
+title: "FS-X2CMM slice 23: client review fix round 1 (one aim at a time, server-sent cooldown words) and the used-up rune"
 ---
 Implements FS-X2CMM §F R32, §G R37–R38, §H R40–R41, §E R24
 
@@ -21,11 +21,9 @@ one server LOW from the server re-review. See FS-X2CMM "Reconciled at review" fo
    releasing 3 fires `arrow_rain` while the page is armed (FS-04EEA "one hold at a time"). Make
    them exclusive: pressing a page while a hold or rain aim runs is refused (or cancels it), and
    pressing 3 or the right button while armed disarms first. Test both orders.
-2. **No whole-panel rebuild on a state flip (MED).** `ClassBookPanel` keys its rebuild on
-   `bookKey`, which includes each page's state, so every cooldown end, cast or resource change
-   tears down and rebuilds every `PageRoundel` (several RenderTextures each). Key the rebuild on
-   title, emptiness, page ids and captions; on a state-only change redraw the pages in place
-   (`PageRoundel.show(box, state)`). Test that a state change does not rebuild.
+2. **No whole-panel rebuild on a state flip (MED).** Moved to the open tome (FS-X2CMM §Change:
+   Illuminated pages and the open tome, C7; I-X2CMM-25), which redraws the panel anyway. Not
+   done here.
 3. **Server-sent cooldown words (MED, spec).** Server: each `current_player.book.pages[]`
    entry gains `cooldown_length` (seconds; 0 for a limited page) and `limit` (`"floor"` |
    `"delve"`, omitted for a timed page), from the `classBooks` table (`internal/serializer/book.go`,
@@ -53,7 +51,7 @@ one server LOW from the server re-review. See FS-X2CMM "Reconciled at review" fo
 
 ## Acceptance Criteria
 
-- [ ] Each item fixed; tests for 1, 2, 3, 4, 9 and 11.
+- [ ] Each item fixed; tests for 1, 3, 4, 9 and 11.
 - [ ] Server: `make test` green, `go vet ./...` clean, `gofmt -l` clean on touched files.
 - [ ] Client: `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` green.
 
