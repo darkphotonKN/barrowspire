@@ -35,6 +35,7 @@
 //   contact-interior-2x.png    the town buildings' furniture and fittings at ×2 (FS-B0H2D §G R30)
 //   contact-building-2x.png    the building exteriors and stone cap at ×2 (FS-9PN7X §F)
 //   contact-hall-2x.png        the enlarged Inn's great hall and taproom at ×2
+//   contact-sealed-2x.png      the sealed floor's props, every state, at ×2 (FS-5FZ4J §K R57)
 //   <LINEUPS file>             a family lineup per art slice at ×2 (FS-C8VM7 §H R48): one row per
 //                              sheet, each step beside the one below it, at key frames
 //   contact-looks-<class>.png  a class's baked spec looks beside the class (FS-1J1CB R12), at game
@@ -605,7 +606,7 @@ export function writeReview({ sheets, facings, labels, manifest, theme, lineups 
     writeFileSync(join(dir, "contact-tower-2x.png"), encodePng(two.width, two.height, two.rgba, { fast: true }));
     files.push("contact-tower-2x.png");
   }
-  for (const group of ["spire", "forest", "interior", "building", "hall"]) {
+  for (const group of ["spire", "forest", "interior", "building", "hall", "sealed"]) {
     const set = sheets.filter((s) => s.group === group);
     if (!set.length) continue;
     const two = composeContact(set, facings, labels, theme, 2);

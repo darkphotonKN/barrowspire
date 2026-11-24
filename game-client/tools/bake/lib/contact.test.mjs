@@ -148,3 +148,29 @@ describe("the outline strip (FS-1J1CB §Change: Looks v2 R70, lib/contact.mjs)",
     ]);
   });
 });
+
+describe("the sealed floor's contact sheet (FS-5FZ4J §K R57, lib/contact.mjs)", () => {
+  // a one-direction prop sheet as the bake hands it over: each state one solid, opaque 4 x 4 frame
+  const frame = Buffer.from(Array.from({ length: 16 }, () => [200, 200, 200, 255]).flat()).toString("base64");
+  const prop = (name, group, states) => ({
+    name,
+    group,
+    frameWidth: 4,
+    frameHeight: 4,
+    directions: 1,
+    animations: Object.fromEntries(states.map((s) => [s, { fps: 0, loop: false, frames: [[frame]] }])),
+  });
+
+  it("writes the sealed group's props, every state, at 2x with the review", () => {
+    const dir = mkdtempSync(join(tmpdir(), "sealed-review-"));
+    const sheets = [prop("seal_lever", "sealed", ["up", "down"]), prop("gate_x", "sealed", ["shut", "open"]), prop("chest", "props", ["closed", "open"])];
+    const files = writeReview({ sheets, facings: FACINGS, labels: new Map(), manifest: { sheets: {} }, theme: THEME, dir });
+    const names = files.map((f) => f.slice(dir.length + 1));
+    expect(names).toContain("contact-sealed-2x.png");
+    const png = decodePng(readFileSync(join(dir, "contact-sealed-2x.png")));
+    // the two sealed sheets' four states at 2x, and nothing of the chest
+    const lit = [];
+    for (let i = 0; i < png.rgba.length; i += 4) if (png.rgba[i] === 200) lit.push(i);
+    expect(lit).toHaveLength(4 * 8 * 8);
+  });
+});

@@ -90,8 +90,8 @@ describe("the scene art table (FS-C4JWH §A)", () => {
 });
 
 describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
-  it("should hold the 20 resident pages and no scene-scoped one at boot", () => {
-    expect(RESIDENT_ART_PAGES).toHaveLength(20);
+  it("should hold the 21 resident pages and no scene-scoped one at boot", () => {
+    expect(RESIDENT_ART_PAGES).toHaveLength(21);
     expect(sorted(sceneAtlases(manifest, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
   });
 
@@ -100,6 +100,11 @@ describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
     expect(boot).toContain("summoning");
     expect(SCENE_SCOPED_GROUPS.has("summoning")).toBe(false);
     for (const group of VARIANT_GROUPS) expect(boot).not.toContain(group);
+  });
+
+  it("should keep the sealed floor's props resident, so the run draws them on any floor (FS-5FZ4J §K R57)", () => {
+    expect(sceneAtlases(manifest, RESIDENT_ART).map(atlasGroup)).toContain("sealed");
+    expect(SCENE_SCOPED_GROUPS.has("sealed")).toBe(false);
   });
 
   it.each([
