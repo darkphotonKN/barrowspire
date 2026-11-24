@@ -39,6 +39,7 @@ function onHud() {
     bar: piece("bar"),
     bars: piece("bars"),
     progress: piece("progress"),
+    window: piece("window"),
   };
   const slot = new UiHudSlot(bridge, build);
   const report = (world: World): WorldReport => {
@@ -86,7 +87,8 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     expect(HUD_PLACES.hub).toEqual({ progress: true });
     expect(HUD_PLACES.field).toEqual({ progress: true, bars: RESOURCE_HUD_AT.field, bar: true });
     expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
-    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true });
+    // FS-5FZ4J §J R53: a sealed floor's Braziers window counts down in a run alone
+    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true });
   });
 
   it.each([
@@ -126,6 +128,22 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     report(world);
     slot.hear(from(world, message));
     expect(built).toEqual([]);
+  });
+
+  // FS-5FZ4J §J R53: the Braziers window's countdown, a run's alone, built on the first window
+  it("should build the window's countdown in a run on its first window, hand it none between, and never in a field", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "window", window: null });
+    expect(built).toEqual([]);
+    slot.hear({ world: "run", kind: "window", window: { seconds: 12, fraction: 0.6 } });
+    slot.hear({ world: "run", kind: "window", window: null });
+    expect(built).toHaveLength(1);
+    expect(built[0].shown).toEqual([{ seconds: 12, fraction: 0.6 }, null]);
+    const field = onHud();
+    field.report("field");
+    field.slot.hear({ world: "field", kind: "window", window: { seconds: 3, fraction: 0.1 } });
+    expect(field.built).toEqual([]);
   });
 
   it("should draw nothing with no world reported", () => {

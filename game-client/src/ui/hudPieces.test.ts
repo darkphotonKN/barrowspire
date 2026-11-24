@@ -148,6 +148,7 @@ describe("the UI scene's HUD, mounted (FS-TQZ5J § Change: Batch 5, R67, R68)", 
       bar: () => ({ ...piece("bar")(), top: () => 612 }),
       bars: piece("bars"),
       progress: () => ({ ...piece("progress")(), cueOver: () => {} }),
+      window: piece("window"),
     };
     mountHud(scene, bridge, build);
     report("run");

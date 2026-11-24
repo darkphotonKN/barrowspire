@@ -7,6 +7,8 @@ import {
   getSlotDisplayName,
   isGameState,
   placedKind,
+  knownBarrier,
+  knownSealPiece,
   ClientGameState,
   ItemState,
   EquipmentSlot,
@@ -202,6 +204,52 @@ describe('isGameState (FS-F6F88 §State broadcast 26–27)', () => {
     expect(isGameState(hub)).toBe(true);
     expect(hub.floor).toBeUndefined();
     expect(hub.stairs).toBeUndefined();
+  });
+});
+
+describe('a sealed floor on the wire (FS-5FZ4J §I R46)', () => {
+  const base = {
+    session_id: 'session-1',
+    current_player: null,
+    other_players: [],
+    items: [],
+    doors: [],
+    containers: [],
+    escape_doors: [],
+    switches: [],
+    escaped_count: 0,
+  };
+
+  it('should keep seal, seal_pieces and barriers as the server sends them', () => {
+    const wire = JSON.parse(
+      JSON.stringify({
+        ...base,
+        world_type: 'run',
+        floor: 3,
+        seal: { kind: 'lever_order', stage: 1, stages: 2, broken: false, key_carried: true },
+        seal_pieces: [
+          { entity_id: 'lever-1', kind: 'lever', position: { x: 120, y: 200 }, cell: { x: 1, y: 2 }, glyph: 'crow', active: false },
+        ],
+        barriers: [{ entity_id: 'gate-1', kind: 'gate', cells: [{ x: 4, y: 7 }, { x: 5, y: 7 }], open: false }],
+      }),
+    );
+    expect(isGameState(wire)).toBe(true);
+    const state = wire as ClientGameState;
+    expect(state.seal).toEqual({ kind: 'lever_order', stage: 1, stages: 2, broken: false, key_carried: true });
+    expect(state.seal_pieces?.[0]).toMatchObject({ kind: 'lever', glyph: 'crow', cell: { x: 1, y: 2 }, active: false });
+    expect(state.barriers?.[0].cells).toEqual([{ x: 4, y: 7 }, { x: 5, y: 7 }]);
+  });
+
+  it.each(['lever', 'plate', 'block', 'brazier', 'stair_key', 'bridge_lever', 'mural', 'shrine'])(
+    'should know the piece kind %s',
+    (kind) => expect(knownSealPiece(kind)).toBe(kind),
+  );
+
+  it.each(['gate', 'secret_door', 'pit'])('should know the barrier kind %s', (kind) => expect(knownBarrier(kind)).toBe(kind));
+
+  it.each(['statue', '', 'Lever'])('should read an unknown piece or barrier kind %j as none, drawing nothing', (kind) => {
+    expect(knownSealPiece(kind)).toBeNull();
+    expect(knownBarrier(kind)).toBeNull();
   });
 });
 

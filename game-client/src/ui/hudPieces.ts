@@ -11,6 +11,7 @@ import { onSceneEnd } from "@/scenes/sceneEnd";
 import { AbilityBar } from "./AbilityBar";
 import { ProgressHud } from "./ProgressHud";
 import { ResourceHud } from "./ResourceHud";
+import { SealWindowHud } from "./SealWindowHud";
 import type { UiBridge } from "./uiBridge";
 import { UiHudSlot, hearHud, type HudBuild } from "./uiSceneHud";
 
@@ -20,6 +21,7 @@ export function hudPieces(scene: Phaser.Scene): HudBuild {
     bar: () => new AbilityBar(scene),
     bars: (at) => new ResourceHud(scene, at.x, at.y),
     progress: () => new ProgressHud(scene),
+    window: () => new SealWindowHud(scene),
   };
 }
 

@@ -38,6 +38,8 @@ import {
 import { placeCard } from "@/ui/placeCard";
 import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
+import { SealWatch, sealReplyNotice } from "@/ui/sealLines";
+import { SealWindowClock, type SealWindowView } from "@/ui/sealWindow";
 import {
   nextWatched,
   resolved,
@@ -236,6 +238,8 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SummoningSet, type SummoningLook, type SummoningTarget } from "@/render/world/altar";
+import { SEAL_GROUND_DEPTH, SealSet, type SealBand } from "@/render/world/seal";
+import type { SealLook } from "@/render/world/sealLooks";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
 import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
@@ -790,6 +794,28 @@ export class BarrowspireScene extends Phaser.Scene {
   });
 
   /**
+   * A sealed floor's seal pieces, gate and pits, from state (FS-5FZ4J §J R51): baked props on the
+   * resident `sealed` group, each in the frame its state names; a stone block slides each frame.
+   */
+  private seal = new SealSet<Phaser.GameObjects.Sprite>({
+    add: (look, at, band, layer) => this.addSealPiece(look, at, band, layer),
+    show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
+    stand: (sprite, at, layer) => this.standSealPiece(sprite, at, layer),
+    glow: (sprite, at, on) => this.glowSealPiece(sprite, at, on),
+  });
+  /** The seal pieces laid on the ground, which keep the ground band as they stand. */
+  private sealGround = new WeakSet<Phaser.GameObjects.Sprite>();
+  /** The flame each seal brazier's sheet declares, by its sprite: lit only while the brazier is (I-5FZ4J-8). */
+  private sealLights = new Map<Phaser.GameObjects.Sprite, LightSource>();
+  /** The seal's events against the previous broadcast, a first one the baseline (FS-5FZ4J §I R48, §J R53). */
+  private sealWatch = new SealWatch();
+  /** The Braziers window's countdown, and what the HUD was last handed (R53). */
+  private sealWindow = new SealWindowClock();
+  private shownSealWindow: SealWindowView | null = null;
+  /** The lore shrines read this run: the shrine's line turns with each (R53). */
+  private shrineReads = 0;
+
+  /**
    * Burning trails, from state (FS-4R9M9 req 56, 61): a ground bed and an additive glow each,
    * named for the trail they burn for.
    */
@@ -1145,6 +1171,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.switches.clear();
     this.stairs.forget();
     this.summoning.forget();
+    this.seal.forget();
+    this.sealLights.clear();
     this.trails.forget();
     this.walls.clear();
     this.serverDoors.clear();
@@ -1244,6 +1272,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.previousSwitchActivated = undefined;
     this.previousAltar = undefined;
     this.escapedPlayers = undefined;
+    this.sealWatch.reset();
+    this.sealWindow.reset();
+    this.shownSealWindow = null;
   }
 
   /**
@@ -3516,6 +3547,12 @@ export class BarrowspireScene extends Phaser.Scene {
         this.reachSummoning(summoned);
         return;
       }
+      // a seal piece to work, or the shut gate, refused or opened with the key (FS-5FZ4J §J R52)
+      const sealed = this.player && this.playerPos ? this.seal.nearby(this.playerPos) : null;
+      if (sealed) {
+        socketManager.sendMessage(ActionType.Interact, { entity_id: sealed.entityId });
+        return;
+      }
       // 檢查寶箱
       const nearbyChest = this.getNearbyChest();
       if (nearbyChest) {
@@ -3773,6 +3810,10 @@ export class BarrowspireScene extends Phaser.Scene {
       // the world's reply as a lore line, in the client's words where it has a reason (FS-XWHZP R16-R18)
       const line = loreForReply(payload);
       if (line) this.sayLore(line);
+      // a sealed floor's replies, as HUD notices in their tones (FS-5FZ4J §I R49, §J R53)
+      const notice = sealReplyNotice(payload, this.lastGameState?.seal, this.shrineReads);
+      if (payload.reason === "shrine") this.shrineReads++;
+      if (notice) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     });
 
     // A refused equip (FS-BDA7X req 32, 45): the server's words, as a refusal. The next state puts
@@ -3945,6 +3986,9 @@ export class BarrowspireScene extends Phaser.Scene {
     this.stairs.sync(state.stairs ?? []);
     // the tome while it lies here, the altar on its floor (FS-3103M §I R27)
     this.summoning.sync(state);
+    // a sealed floor's pieces, gate and pits, over its cell grid; its lines and the Braziers window
+    // (FS-5FZ4J §J R51, R53)
+    this.showSeal(state);
     this.updateFloorIndicator(state);
 
     // Run dressing, once the floor's static entities are known (FS-8RBQY §C.4–§C.5); then every
@@ -4308,7 +4352,8 @@ export class BarrowspireScene extends Phaser.Scene {
       ...[...this.escapeDoors.values()].map(({ pos }) => ({ kind: "escape-door" as const, at: pos })),
       ...[...this.stairs.placed()].map(({ pos }) => ({ kind: "stairs" as const, at: pos })),
     ];
-    minimap.show((id) => dungeon.seen.state(id), fixtures);
+    // a shut gate draws as a wall stroke (FS-5FZ4J §J R56)
+    minimap.show((id) => dungeon.seen.state(id), fixtures, this.seal.shutGates());
     minimap.party(this.partyDots(state.current_player, state.other_players));
   }
 
@@ -4526,6 +4571,11 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     this.stairs.clear();
     this.summoning.clear();
+    // the seal's pieces and barriers, their flames first; the watch keeps the floor left, so the
+    // next floor's seal is said on arrival (FS-5FZ4J §J R53)
+    this.seal.clear();
+    this.sealLights.clear();
+    this.sealWindow.reset();
     // the old floor's projectiles land nowhere: no impact, body, trail or light (FS-KYPQ9 §B.9)
     this.projectiles?.clear();
     this.trails.clear();
@@ -4870,6 +4920,72 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
+   * A sealed floor's seal from this broadcast (FS-5FZ4J §J R51, R53): its pieces, gate and pits,
+   * once the floor's cell grid stands; its events as HUD notices; the Braziers window's countdown,
+   * handed to the HUD only on a change.
+   */
+  private showSeal(state: ClientGameState): void {
+    const dungeon = this.dungeon;
+    if (dungeon) this.seal.sync(state, dungeon.grid);
+    for (const notice of this.sealWatch.see(state)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
+    const window = this.sealWindow.see(state.seal);
+    const shown = this.shownSealWindow;
+    if (window?.seconds === shown?.seconds && window?.fraction === shown?.fraction) return;
+    this.shownSealWindow = window;
+    this.ui.hud({ world: "run", kind: "window", window });
+  }
+
+  /**
+   * A seal piece or a barrier cell (FS-5FZ4J §J R51): its baked frame at its spot, sorted by its
+   * footprint as props are, or laid in the ground band under every body (a pit, a bridge, a plate).
+   * A gate piece fades over a player behind it, as the walls do; a seal brazier keeps its flame
+   * for when it is lit.
+   */
+  private addSealPiece(look: SealLook, at: Point, band: SealBand, layer: number): Phaser.GameObjects.Sprite {
+    const { sprite, light } = addProp(this, this.art, look.sheet, at, { animation: look.frame, layer });
+    if (band === "ground") {
+      sprite.setDepth(SEAL_GROUND_DEPTH);
+      this.sealGround.add(sprite);
+    }
+    if (look.sheet.startsWith("gate_")) this.occluders.add([sprite]);
+    if (light) this.sealLights.set(sprite, light);
+    return sprite;
+  }
+
+  private standSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, layer: number): void {
+    if (!this.sealGround.has(sprite)) {
+      standAt(sprite, at, layer);
+      return;
+    }
+    const s = worldToScreen(at.x, at.y);
+    sprite.setPosition(s.x, s.y);
+  }
+
+  /**
+   * A seal brazier's flame lit or put out (I-5FZ4J-8: its sheet's light burns only while it is
+   * lit): one of the floor's fixed lights, by its chunk and region, under the floor's cap.
+   */
+  private glowSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, on: boolean): void {
+    const source = this.sealLights.get(sprite);
+    const dungeon = this.dungeon;
+    if (!source || !dungeon) return;
+    const held = dungeon.lights.findIndex((l) => l.light.source === source);
+    if (held >= 0) dungeon.lights.splice(held, 1);
+    if (dungeon.lit.delete(source)) this.lightMap?.remove(source);
+    if (on) {
+      const screen = { x: source.x, y: source.y };
+      dungeon.lights.push({
+        kind: "brazier",
+        at: screen,
+        light: { source, at },
+        chunk: dungeon.chunks.grid.indexAt(screen),
+        region: regionAt(dungeon.grid, at),
+      });
+    }
+    this.lightNearChunks();
+  }
+
+  /**
    * Strews the floor's run dressing once (FS-8RBQY §C.4–§C.5), kept out of everything its
    * broadcast puts on the floor. Never interactive, never in physics; a brazier's flame joins the
    * floor's fixed lights. Nothing for a theme without dressing or without its art.
@@ -5167,6 +5283,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.switches.values(),
       ...this.stairs.placed(),
       ...this.summoning.placed(),
+      ...this.seal.placed(),
       ...this.dressingAt,
     ])
       yield { parts: [sprite], at: pos };
@@ -5242,6 +5359,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.switches.values(),
       ...this.stairs.placed(),
       ...this.summoning.placed(),
+      ...this.seal.placed(),
       ...this.dressingAt,
     ];
     for (const { sprite, pos } of placed) sprite.setVisible(!unseen(pos));
@@ -5913,11 +6031,12 @@ export class BarrowspireScene extends Phaser.Scene {
       );
     }
 
-    // the next broadcast is a baseline again (FS-XWHZP R23)
+    // the next broadcast is a baseline again (FS-XWHZP R23; FS-5FZ4J §I R48)
     this.previousEscapeDoorOpened = undefined;
     this.previousSwitchActivated = undefined;
     this.previousAltar = undefined;
     this.escapedPlayers = undefined;
+    this.sealWatch.reset();
   }
 
   /**
@@ -6057,6 +6176,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
 
     this.updateOtherPlayersSmooth(time, delta);
+    // a pushed stone block slides on toward its cell (FS-5FZ4J §J R51)
+    this.seal.step(delta);
     // the map overlay on the figure just drawn (FS-1SEF0 §C.14)
     this.followMapOverlay();
 

@@ -288,6 +288,90 @@ export interface AltarState {
   burned: boolean;
 }
 
+/** A cell's column and row on the floor map's grid (FS-5FZ4J §I R46). */
+export interface CellState {
+  x: number;
+  y: number;
+}
+
+/** What a seal is broken by (FS-5FZ4J §B R9, §I R46). Read off the wire as a string: a newer kind is named as sent. */
+export type SealKind = "lever_order" | "weighted_plates" | "hidden_key" | "chasm" | "braziers";
+
+/**
+ * A sealed floor's seal (FS-5FZ4J §I R46): the current, first unbroken seal's kind and 1-based
+ * stage, or the last one's once all are broken; `broken` once every seal of the floor is. Absent in
+ * the hub, a field, the top floor and on a floor of buildings.
+ */
+export interface SealState {
+  kind: SealKind | (string & {});
+  stage: number;
+  stages: number;
+  broken: boolean;
+  /** Seconds left while a Braziers window runs; absent otherwise (and from a server that has no Braziers yet). */
+  window_ends_in?: number;
+  /** Set while the party carries the floor's stair key; absent otherwise. */
+  key_carried?: boolean;
+}
+
+/** What a seal piece is (FS-5FZ4J §I R46). */
+export type SealPieceKind = "lever" | "plate" | "block" | "brazier" | "stair_key" | "bridge_lever" | "mural" | "shrine";
+
+const SEAL_PIECE_KINDS: readonly string[] = [
+  "lever",
+  "plate",
+  "block",
+  "brazier",
+  "stair_key",
+  "bridge_lever",
+  "mural",
+  "shrine",
+] satisfies SealPieceKind[];
+
+/**
+ * One seal piece (FS-5FZ4J §I R46): `active` a lever down, a plate held, a brazier lit, a bridge
+ * lowered, false for the others; `glyph` on a lever only. A stair key is listed while it lies, a
+ * shrine once its hidden room is open. `kind` may be one this client does not know: read it through
+ * {@link knownSealPiece}.
+ */
+export interface SealPieceState {
+  entity_id: UUID;
+  kind: SealPieceKind | (string & {});
+  position: Position;
+  cell: CellState;
+  glyph?: string;
+  active: boolean;
+}
+
+/** What a barrier is (FS-5FZ4J §I R46). */
+export type BarrierKind = "gate" | "secret_door" | "pit";
+
+const BARRIER_KINDS: readonly string[] = ["gate", "secret_door", "pit"] satisfies BarrierKind[];
+
+/**
+ * One barrier and the cells it covers (FS-5FZ4J §I R46): a gate and the pits always listed, a
+ * secret door only once detected. `open` a gate raised, a pit's lane bridged, a door found open.
+ */
+export interface BarrierState {
+  entity_id: UUID;
+  kind: BarrierKind | (string & {});
+  cells: CellState[];
+  open: boolean;
+}
+
+/**
+ * A seal piece's kind as this client draws it, or `null` for one it does not know, which draws
+ * nothing: a newer server never breaks an older client's world (unlike a container, there is no
+ * kind to stand in for it).
+ */
+export function knownSealPiece(kind: string): SealPieceKind | null {
+  return SEAL_PIECE_KINDS.includes(kind) ? (kind as SealPieceKind) : null;
+}
+
+/** A barrier's kind as this client draws it, or `null` for one it does not know, which draws nothing. */
+export function knownBarrier(kind: string): BarrierKind | null {
+  return BARRIER_KINDS.includes(kind) ? (kind as BarrierKind) : null;
+}
+
 // Wall state
 export interface WallState {
   house_id?: UUID;
@@ -487,6 +571,12 @@ export interface ClientGameState {
   altar?: AltarState;
   /** Set while the party carries the tome and has not burned it; absent otherwise (R14). */
   tome_carried?: boolean;
+  /** A sealed floor's seal; absent anywhere else (FS-5FZ4J §I R46). */
+  seal?: SealState;
+  /** A sealed floor's pieces, sent whole; absent anywhere else (R46). */
+  seal_pieces?: SealPieceState[];
+  /** A sealed floor's gate and pits, and its detected secret doors, sent whole; absent anywhere else (R46). */
+  barriers?: BarrierState[];
   escaped_count: number; // Number of players who have escaped
 }
 

@@ -12149,6 +12149,94 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
 
     });
   });
+
+  // FS-5FZ4J §J R51–R53, R56 (I-5FZ4J-9): a sealed floor's pieces, gate and pits, E at them, and its lines
+  describe("a sealed floor (FS-5FZ4J §J)", () => {
+    interface SealedRun {
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      bindRunInput(): void;
+      seal: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      ui: { hud(message: unknown): void };
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const inRoom = { current_player: { ...player("me", "Aldric", 0), position: ME } } as Partial<Party>;
+    const cellAt = (x: number, y: number) => at((x + 0.5) * 80, (y + 0.5) * 80);
+    const lever = (active = false) => ({ entity_id: "lever-1", kind: "lever", position: ME, cell: { x: 32, y: 38 }, glyph: "crow", active });
+    /** A mural far off, by the stairs, in a region the party has not seen. */
+    const mural = { entity_id: "mural-1", kind: "mural", position: at(1000, 1200), cell: { x: 12, y: 15 }, active: false };
+    const gate = { entity_id: "gate-1", kind: "gate", cells: [{ x: 30, y: 37 }], open: false };
+    const sealOf = (over: Partial<NonNullable<GameState["seal"]>> = {}) => ({ kind: "lever_order", stage: 1, stages: 1, broken: false, ...over });
+    const sealed = (over: Partial<GameState> = {}): Partial<GameState> => ({
+      seal: sealOf(),
+      seal_pieces: [lever(), mural],
+      barriers: [gate],
+      ...over,
+    });
+    const sealedStage = () => {
+      const staged = dungeonStage(inRoom, sealed());
+      const run = staged.run as unknown as SealedRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Partial<GameState> = {}) => staged.handle({ ...dungeonState(inRoom), ...sealed(over) });
+      return { ...staged, run, notified, next };
+    };
+
+    it("should draw each piece and gate cell from the sealed sheets in the frame its state names", () => {
+      const { stage, next } = sealedStage();
+      expect(drawn(stage.made, "seal_lever/up/")).toHaveLength(1);
+      expect(drawn(stage.made, "seal_lever/glyph_crow/")).toHaveLength(1);
+      expect(drawn(stage.made, "mural/default/")).toHaveLength(1);
+      const [shut] = drawn(stage.made, "gate_");
+      expect(String(shut.args[3])).toMatch(/^gate_[xy]\/shut\//);
+      const { x, y } = await_iso.worldToScreen(cellAt(30, 37).x, cellAt(30, 37).y);
+      expect(shut.args.slice(0, 2)).toEqual([x, y]);
+      next({ seal_pieces: [lever(true), mural], barriers: [{ ...gate, open: true }] });
+      const [pulled] = drawn(stage.made, "seal_lever/up/");
+      expect(String(pulled.last.setTexture?.[1])).toMatch(/^seal_lever\/down\//);
+      expect(String(shut.last.setTexture?.[1])).toMatch(/^gate_[xy]\/open\//);
+    });
+
+    it("should hide a piece standing in an unexplored region, and show the one where the player stands", () => {
+      const { run } = sealedStage();
+      run.checkBuildingStatus();
+      const shown = run.seal.placed().map(({ sprite, pos }) => [pos.x === ME.x ? "here" : pos.x === 1000 ? "far" : "gate", shownNow(sprite)]);
+      expect(shown).toContainEqual(["here", true]);
+      expect(shown).toContainEqual(["far", false]);
+    });
+
+    it("should send one interact for the lever E reaches", () => {
+      const { run } = sealedStage();
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos: ME,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      expect(interacts).toEqual([[ActionType.Interact, { entity_id: "lever-1" }]]);
+    });
+
+    it("should say the seal breaks on the broadcast it breaks, and nothing on the first", () => {
+      const { notified, next } = sealedStage();
+      expect(notified).not.toHaveBeenCalled();
+      next({ seal: sealOf({ broken: true }) });
+      next({ seal: sealOf({ broken: true }) });
+      expect(notified.mock.calls).toEqual([["The seal breaks.", palette.safe]]);
+    });
+
+    it("should hand the HUD the Braziers window's countdown while it runs, and none once it ends", () => {
+      const { run, next } = sealedStage();
+      const hud = vi.spyOn(run.ui, "hud");
+      next({ seal: sealOf({ kind: "braziers", window_ends_in: 10 }) });
+      next({ seal: sealOf({ kind: "braziers" }) });
+      const windows = hud.mock.calls.map(([m]) => m as { kind: string; window?: unknown }).filter((m) => m.kind === "window");
+      expect(windows.map((m) => m.window)).toEqual([{ seconds: 10, fraction: 1 }, null]);
+    });
+  });
 });
 
 // FS-PQ2TW §A R2, R5, R9; §B R11–R14; §C R19, R21, R22; FS-KE075 §H.41. I-PQ2TW-3: entering a run
@@ -12965,5 +13053,51 @@ describe("BarrowspireScene auras (FS-1J1CB R35)", () => {
       ["hidden", null, undefined, 916],
       ["dead", null, undefined, 916],
     ]);
+  });
+});
+
+// FS-5FZ4J §I R49, §J R53 (I-5FZ4J-9): a sealed floor's replies are HUD notices in their tones, never lore lines.
+describe("BarrowspireScene a sealed floor's replies (FS-5FZ4J §J R53)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function replying() {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    vi.spyOn(socketManager, "on").mockImplementation((action, cb) => void listeners.set(action, cb));
+    vi.spyOn(socketManager, "onError").mockImplementation(() => {});
+    vi.spyOn(socketManager, "off").mockImplementation(() => {});
+    vi.spyOn(socketManager, "isConnected").mockReturnValue(true);
+    vi.spyOn(socketManager, "onConnectionStatusChange").mockReturnValue(() => {});
+    vi.spyOn(socketManager, "onGameStateUpdate").mockReturnValue(() => {});
+    const run = new BarrowspireScene() as unknown as {
+      init(data?: object): void;
+      connectToServer(): void;
+      showNotification(text: string, backing: number): void;
+      lastGameState?: Partial<GameState>;
+    };
+    run.init({ sessionID: "run-a" });
+    const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+    const said = loreOf(run).said;
+    run.connectToServer();
+    return { run, notified, said, reply: (payload: unknown) => listeners.get("interact")?.(payload) };
+  }
+
+  it("should say a sealed stair's refusal by the seal's kind as a refused notice, and no lore line", () => {
+    const { run, notified, said, reply } = replying();
+    run.lastGameState = { seal: { kind: "hidden_key", stage: 1, stages: 1, broken: false } };
+    reply({ success: false, message: "the stairs are sealed", reason: "stairs_sealed" });
+    expect(notified.mock.calls).toEqual([["Sealed. The Hidden Key holds it.", palette.damageBright]]);
+    expect(said).not.toHaveBeenCalled();
+  });
+
+  it("should read the mural's glyphs, and turn the shrine's line with each reading", () => {
+    const { notified, reply } = replying();
+    reply({ success: true, reason: "mural", glyphs: ["eye", "key"] });
+    reply({ success: true, reason: "shrine" });
+    reply({ success: true, reason: "shrine" });
+    const [mural, first, second] = notified.mock.calls;
+    expect(mural).toEqual(["The mural shows: Eye, Key.", palette.hudPanel]);
+    expect(first[0]).not.toBe(second[0]);
   });
 });
