@@ -22,7 +22,9 @@ type ClassConfig struct {
 	// TreeAbility is the attack row the class's key 3 resolves to, once the
 	// character holds their tree's tier-3 node. FS-04EEA §A R2.
 	TreeAbility components.AttackKind
-	Skills      []components.SkillComponent
+	// Book is the class book's pages, in book order. FS-X2CMM §A R1.
+	Book   []components.PageID
+	Skills []components.SkillComponent
 	// Growth is what each level past the first adds. FS-BDA7X §Requirements 19.
 	Growth ClassGrowth
 }
@@ -131,6 +133,8 @@ func CreatePlayerEntity(em *ecs.EntityManager, config PlayerConfig) *ecs.Entity 
 	// attacks are requested here and resolved by the CombatSystem on the tick
 	entity.AddComponent(components.NewAttackIntentComponent())
 	entity.AddComponent(components.NewCooldownComponent())
+	// a fresh book with every page ready, so book cooldowns are per run (FS-X2CMM §A R8)
+	entity.AddComponent(components.NewBookComponent(config.Class.Book))
 
 	return entity
 }

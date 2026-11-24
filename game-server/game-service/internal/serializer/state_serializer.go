@@ -222,6 +222,7 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 				Inventory: inventory,
 				Equipment: equipmentState,
 			}
+			setBook(playerState, entity, worldType)
 			if next, ok := progression.NextLevelAt(int32(level)); ok {
 				playerState.NextLevelAt = &next
 			}

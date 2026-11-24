@@ -33,6 +33,9 @@ type PlayerState struct {
 	PublicPlayerState
 	Inventory []*ItemState    `json:"inventory"`
 	Equipment *EquipmentState `json:"equipment"`
+	// Book is the owner's class book, in a run only: never another player's,
+	// who is sent PublicPlayerState alone. FS-X2CMM §F R32–R33.
+	Book *BookState `json:"book,omitempty"`
 }
 
 // PublicPlayerState is what a player shows anyone in their world: who they
@@ -58,6 +61,9 @@ type PublicPlayerState struct {
 	// Specialization is the body's (systems.Specialization), public as the
 	// title is; absent before the pick. FS-E1ZDG §B R9.
 	Specialization string `json:"specialization,omitempty"`
+	// BookStates are the timed book states on the delver; absent when none.
+	// FS-X2CMM §F R34.
+	BookStates []BookTimedState `json:"book_states,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole

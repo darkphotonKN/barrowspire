@@ -632,7 +632,7 @@ func (s *Session) manageClientMessages() {
 				skillPayload := parsedPayload.(types.PlayerCastSkillPayload)
 
 				s.queueIntent(func() {
-					if err := s.handleCastSkill(playerID, skillPayload.SkillID, skillPayload.TargetX, skillPayload.TargetY); err != nil {
+					if err := s.castSkill(playerID, skillPayload); err != nil {
 						slog.Error("Failed to handle cast_skill", "error", err)
 					}
 				})
@@ -798,6 +798,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// drink cooldowns count down, the tick's drinks just applied included
 	// (FS-P9G8R §Requirements 9)
 	systems.NewPotionSystem(s.EntityManager).Update(deltaTime, entities)
+
+	// book cooldowns and book states count down, the tick's casts included (FS-X2CMM §A R8)
+	systems.NewBookSystem().Update(deltaTime, entities)
 
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)
@@ -986,6 +989,7 @@ var Classes = map[string]ClassConfig{
 		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
 		Ability:     components.AttackDash,
 		TreeAbility: components.AttackEarthbreaker,
+		Book:        warriorBook,
 		Skills:      []components.SkillComponent{{SkillName: "slash", Level: 1}},
 		Growth:      ClassGrowth{Strength: 2, Vitality: 2, MaxHealth: 12},
 	},
@@ -996,6 +1000,7 @@ var Classes = map[string]ClassConfig{
 		Resource:    components.ResourceComponent{Kind: components.ResourceMana, Current: 150, Max: 150, RegenPerSecond: 4},
 		Ability:     components.AttackTripleFireball,
 		TreeAbility: components.AttackBlink,
+		Book:        mageBook,
 		Skills:      []components.SkillComponent{{SkillName: "fireball", Level: 1}},
 		Growth:      ClassGrowth{Intelligence: 3, MaxHealth: 6, MaxMana: 10},
 	},
@@ -1006,6 +1011,7 @@ var Classes = map[string]ClassConfig{
 		Resource:    components.ResourceComponent{Kind: components.ResourceStamina, Current: 100, Max: 100, RegenPerSecond: 20},
 		Ability:     components.AttackShadowShot,
 		TreeAbility: components.AttackArrowRain,
+		Book:        archerBook,
 		Skills:      []components.SkillComponent{{SkillName: "power_shot", Level: 1}},
 		Growth:      ClassGrowth{Agility: 3, MaxHealth: 8},
 	},
@@ -1017,6 +1023,7 @@ var Classes = map[string]ClassConfig{
 		Resource:    components.ResourceComponent{Kind: components.ResourceParryCharges, Max: 3},
 		Ability:     components.AttackParry,
 		TreeAbility: components.AttackSettleTheDebt,
+		Book:        mercenaryBook,
 		Skills:      []components.SkillComponent{{SkillName: "cut", Level: 1}},
 		Growth:      ClassGrowth{Strength: 1, Agility: 2, MaxHealth: 10},
 	},
@@ -3589,6 +3596,8 @@ func (s *Session) settlePartyOnNewFloor(entities []*ecs.Entity) {
 
 		// a Guardian's Last Stand is ready again on every new floor (FS-E1ZDG R12)
 		entity.RemoveComponent(ecs.ComponentTypeLastStandSpent)
+		// and a once-per-floor page (FS-X2CMM §A R8)
+		systems.ReadyBookForNewFloor(entity)
 
 		if vc, ok := entity.GetComponent(ecs.ComponentTypeVelocity); ok {
 			velocity := vc.(*components.VelocityComponent)

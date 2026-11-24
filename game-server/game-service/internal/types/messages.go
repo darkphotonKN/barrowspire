@@ -327,11 +327,14 @@ func (m *Message) ParsePayload() (interface{}, error) {
 		skillID, _ := m.Payload["skill_id"].(string)
 		targetX, _ := m.Payload["target_x"].(float64)
 		targetY, _ := m.Payload["target_y"].(float64)
+		// a page aimed at an ally or an interactable names it (FS-X2CMM §C R13)
+		targetID, _ := m.Payload["target_id"].(string)
 
 		parsedPayload := PlayerCastSkillPayload{
-			SkillID: skillID,
-			TargetX: targetX,
-			TargetY: targetY,
+			SkillID:  skillID,
+			TargetX:  targetX,
+			TargetY:  targetY,
+			TargetID: targetID,
 		}
 
 		slog.Debug("payload of action cast_skill", "payload", parsedPayload)
@@ -367,4 +370,7 @@ type PlayerCastSkillPayload struct {
 	SkillID string  `json:"skill_id"`
 	TargetX float64 `json:"target_x"`
 	TargetY float64 `json:"target_y"`
+	// TargetID is the entity an ally or interactable page is aimed at; empty
+	// for every other cast. FS-X2CMM §C R13, §F R35.
+	TargetID string `json:"target_id,omitempty"`
 }

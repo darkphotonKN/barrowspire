@@ -96,6 +96,9 @@ const (
 	ComponentTypeTomePlan ComponentType = "TomePlan"
 	ComponentTypeTome     ComponentType = "Tome"
 	ComponentTypeAltar    ComponentType = "Altar"
+
+	// a delver's class book: its cooldowns, spent pages and states (FS-X2CMM §A)
+	ComponentTypeBook ComponentType = "Book"
 )
 
 type Entity struct {
