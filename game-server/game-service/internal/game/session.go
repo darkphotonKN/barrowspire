@@ -648,6 +648,25 @@ func (s *Session) manageClientMessages() {
 					}
 				})
 
+			case constants.ActionUseItem:
+				// A bag item used on the tick (an antidote). FS-9JV5K §D R17.
+				parsedPayload, err := msg.Message.ParsePayload()
+				if err != nil {
+					slog.Debug("Failed to parse use_item payload", "player_id", playerID, "error", err)
+					s.sendErrorToPlayer(playerID, msg.Message.Action, "failed to parse use_item request")
+					continue
+				}
+				usePayload := parsedPayload.(types.PlayerUseItemPayload)
+
+				itemEntityID, err := uuid.Parse(usePayload.ItemEntityID)
+				if err != nil {
+					// no id that is not an entity id is in anyone's bag
+					s.refuseUse(playerID, systems.ErrUseNotInBag)
+					continue
+				}
+
+				s.queueIntent(func() { s.useItem(playerID, itemEntityID) })
+
 			case constants.ActionEquip, constants.ActionUnequip:
 				slog.Debug("Before parsing action equip / unequip message payload",
 					"message_action", msg.Message.Action,

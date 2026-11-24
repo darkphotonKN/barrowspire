@@ -618,6 +618,16 @@ const (
 	ItemTypeRing ItemType = "ring"
 )
 
+// AntidoteName is the antidote's catalogue name. The template data the session
+// loads carries no item code, so the name is how the game knows an antidote:
+// a consumable keeps its base name whatever rarity it rolls. FS-9JV5K §D R16.
+const AntidoteName = "Antidote"
+
+// IsAntidote is whether an item of itemType named name is an antidote.
+func IsAntidote(itemType ItemType, name string) bool {
+	return itemType == ItemTypeConsumable && name == AntidoteName
+}
+
 type ArmorSlot string
 
 const (

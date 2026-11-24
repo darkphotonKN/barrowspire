@@ -344,6 +344,21 @@ func (m *Message) ParsePayload() (interface{}, error) {
 
 		return parsedPayload, nil
 
+	case constants.ActionUseItem:
+		// FS-9JV5K §D R17: the bag item to use
+		itemEntityID, err := m.requireString("item_entity_id")
+		if err != nil {
+			return nil, fmt.Errorf("parsing use_item payload: %w", err)
+		}
+
+		parsedPayload := PlayerUseItemPayload{
+			ItemEntityID: itemEntityID,
+		}
+
+		slog.Debug("payload of action use_item", "payload", parsedPayload)
+
+		return parsedPayload, nil
+
 	case constants.ActionCastSkill:
 		// Skill fields stay optional, as they were before: SkillSystem is a stub
 		// and nothing consumes them yet.
@@ -383,6 +398,11 @@ type PlayerSectionAttackPayload struct {
 }
 
 type PlayerEquipPayload struct {
+	ItemEntityID string `json:"item_entity_id"`
+}
+
+// PlayerUseItemPayload names the bag item to use. FS-9JV5K §D R17.
+type PlayerUseItemPayload struct {
 	ItemEntityID string `json:"item_entity_id"`
 }
 

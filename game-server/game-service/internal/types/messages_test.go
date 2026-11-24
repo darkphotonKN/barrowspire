@@ -27,6 +27,8 @@ func TestParsePayload_MalformedPayload_ErrorsWithoutPanicking(t *testing.T) {
 		{"equip, empty payload", constants.ActionEquip, map[string]interface{}{}},
 		{"equip, item_entity_id as number", constants.ActionEquip, map[string]interface{}{"item_entity_id": 7.0}},
 		{"unequip, empty payload", constants.ActionUnequip, map[string]interface{}{}},
+		{"use_item, empty payload", constants.ActionUseItem, map[string]interface{}{}},
+		{"use_item, item_entity_id as number", constants.ActionUseItem, map[string]interface{}{"item_entity_id": 7.0}},
 	}
 
 	for _, tt := range tests {
@@ -99,6 +101,16 @@ func TestParsePayload_ValidPayload_Parses(t *testing.T) {
 			},
 		},
 		{
+			// FS-9JV5K §D R17
+			name:    "use_item",
+			action:  constants.ActionUseItem,
+			payload: map[string]interface{}{"item_entity_id": "antidote-1"},
+			assert: func(t *testing.T, parsed interface{}) {
+				p := parsed.(PlayerUseItemPayload)
+				assert.Equal(t, "antidote-1", p.ItemEntityID)
+			},
+		},
+		{
 			// Skill fields stay optional, as they were before this change.
 			name:    "cast_skill with no fields",
 			action:  constants.ActionCastSkill,
@@ -167,6 +179,7 @@ func TestParsePayload_IgnoresPlayerIDIfSent(t *testing.T) {
 		{constants.ActionEquip, map[string]interface{}{"item_entity_id": "blade-1"}, PlayerEquipPayload{ItemEntityID: "blade-1"}},
 		{constants.ActionUnequip, map[string]interface{}{"item_entity_id": "blade-1"}, PlayerEquipPayload{ItemEntityID: "blade-1"}},
 		{constants.ActionCastSkill, map[string]interface{}{"skill_id": "dash"}, PlayerCastSkillPayload{SkillID: "dash"}},
+		{constants.ActionUseItem, map[string]interface{}{"item_entity_id": "antidote-1"}, PlayerUseItemPayload{ItemEntityID: "antidote-1"}},
 	}
 
 	for _, tt := range tests {
