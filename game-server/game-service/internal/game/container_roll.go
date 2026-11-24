@@ -38,14 +38,23 @@ func spawnedContainerKind(r lootRand) components.ContainerKind {
 // chest's odds (FS-1D6BX D2). FS-M8CSE §G R35.
 const containerKindGuardedTreasure components.ContainerKind = "guarded_treasure_chest"
 
+// containerKindBetterChest is what a hidden room's better chest rolls as: a
+// chest's roll a rarity step up. Roll-only, as containerKindGuardedTreasure
+// is: on the wire the chest stays a chest. FS-5FZ4J §F R39.
+const containerKindBetterChest components.ContainerKind = "better_chest"
+
 // containerKindOf is the kind the container rolls as: what it names, a chest
-// when it names none, and a chest marked at the build as guarded in a treasure
-// room rolls as containerKindGuardedTreasure.
+// when it names none, a better chest as containerKindBetterChest, and a chest
+// marked at the build as guarded in a treasure room rolls as
+// containerKindGuardedTreasure.
 func containerKindOf(container *ecs.Entity) components.ContainerKind {
 	kind := components.ContainerKindChest
 	if cc, ok := container.GetComponent(ecs.ComponentTypeContainer); ok {
 		if c, ok := cc.(*components.ContainerComponent); ok && c.Kind != "" {
 			kind = c.Kind
+		}
+		if c, ok := cc.(*components.ContainerComponent); ok && c.Better {
+			return containerKindBetterChest
 		}
 	}
 	if kind == components.ContainerKindChest && inGuardedTreasureRoom(container) {

@@ -46,6 +46,9 @@ type lootDrop struct {
 	Source       lootSource
 	NoRings      bool
 	FabledChance float64
+	// RaritySteps lifts the rolled rarity this many steps, capped at Runed,
+	// the highest a weighted roll gives: a better chest's (FS-5FZ4J §F R39)
+	RaritySteps int
 }
 
 // lootSource biases the rarity roll. FS-4R9M9 §Requirements 21.
@@ -109,6 +112,9 @@ func rollDrop(r lootRand, templates []lootTemplate, uniques []uniqueTemplate, ra
 		rarity, rolled = rarityByCode(rarities, rarityRuned)
 	} else {
 		rarity, rolled = pickRarity(r, rarities, rarityWeights(rarities, base.Config.ItemType, drop))
+		if rolled && drop.RaritySteps > 0 {
+			rarity = steppedRarity(rarities, rarity, drop.RaritySteps)
+		}
 	}
 
 	item := base.Config
@@ -358,6 +364,25 @@ func pickRarity(r lootRand, rarities []lootRarity, weights []float64) (lootRarit
 		x -= w
 	}
 	return picked, true
+}
+
+// rarityLadder is the weighted rarities from the lowest up; Fabled is its own
+// flat roll, never a step (FS-M8CSE §G R31).
+var rarityLadder = []string{rarityNormal, rarityUncommon, rarityRare, rarityRuned}
+
+// steppedRarity is rolled lifted steps up the ladder, capped at its top, or
+// at the highest step below it that rarities hold. FS-5FZ4J §F R39.
+func steppedRarity(rarities []lootRarity, rolled lootRarity, steps int) lootRarity {
+	from := slices.Index(rarityLadder, rolled.Code)
+	if from < 0 {
+		return rolled
+	}
+	for to := min(from+steps, len(rarityLadder)-1); to > from; to-- {
+		if rarity, ok := rarityByCode(rarities, rarityLadder[to]); ok {
+			return rarity
+		}
+	}
+	return rolled
 }
 
 func rarityByCode(rarities []lootRarity, code string) (lootRarity, bool) {

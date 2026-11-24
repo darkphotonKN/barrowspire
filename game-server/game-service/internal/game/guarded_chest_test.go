@@ -294,6 +294,10 @@ func TestGuardChests_OnlyATreasureRoomChestWithGuardsRollsAsOne(t *testing.T) {
 					hall++
 					assert.True(t, eligibleHall(d, room), "seed %d room %d", seed, room)
 					assert.Equal(t, components.ContainerKindChest, containerKindOf(c), "seed %d room %d: a hall chest rolls as a chest", seed, room)
+				case d.isHidden(room):
+					// a hidden room's better chest rolls a step up (FS-5FZ4J §F R39)
+					assert.Equal(t, containerKindBetterChest, containerKindOf(c), "seed %d room %d", seed, room)
+					assert.Equal(t, components.ContainerKindChest, stored)
 				default:
 					assert.Equal(t, stored, containerKindOf(c), "seed %d room %d: an unguarded container rolls as itself", seed, room)
 				}

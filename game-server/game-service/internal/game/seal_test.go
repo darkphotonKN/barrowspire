@@ -258,11 +258,22 @@ func TestSeal_DungeonTopFloorHasNone(t *testing.T) {
 	for depth := firstFloor; depth < testSpireHeight; depth++ {
 		require.NotNil(t, s.dungeon)
 		assert.Len(t, sealsOf(t, s), 1, "floor %d is sealed", depth)
-		assert.Len(t, entityIDsWith(s, ecs.ComponentTypeBarrier), 1, "floor %d has its gate", depth)
+		assert.Len(t, barriersOfKind(s, components.BarrierGate), 1, "floor %d has its gate", depth)
 		require.NoError(t, s.regenerateFloor())
 	}
 	require.NotNil(t, s.dungeon, "the top floor is a dungeon")
 	assert.Empty(t, sealsOf(t, s), "the top floor has no seal")
-	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeBarrier), "and no gate")
+	assert.Empty(t, barriersOfKind(s, components.BarrierGate), "and no gate")
 	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeSealPiece))
+}
+
+// barriersOfKind is every barrier of kind on the floor.
+func barriersOfKind(s *Session, kind components.BarrierKind) []*ecs.Entity {
+	var out []*ecs.Entity
+	for _, e := range s.EntityManager.GetAllEntities() {
+		if bc, ok := e.GetComponent(ecs.ComponentTypeBarrier); ok && bc.(*components.BarrierComponent).Kind == kind {
+			out = append(out, e)
+		}
+	}
+	return out
 }

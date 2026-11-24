@@ -428,13 +428,14 @@ func demonOddsOf(topFloor bool) demonOdds {
 /**
 * placeDungeonDemon stands a dungeon floor's demon in the room farthest from
 * the start, by walking distance, that has a valid spot, never the start room
-* (FS-KE075 §C R19). A guaranteed demon finding none tries again with the
+* (FS-KE075 §C R19) nor a hidden room (FS-5FZ4J §F R39). A guaranteed demon finding none tries again with the
 * delver exclusion relaxed, as placeDemon does. It reports the room it used,
 * -1 and false when skipped, so the blood demon can keep out of it
 * (FS-VHGE7 §A R10).
 **/
 func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon MonsterConfig, floor int, odds demonOdds) (int, bool) {
-	rooms := slices.DeleteFunc(d.roomsFarthestFirst(), func(room int) bool { return room == d.layout.Roles.Start })
+	// never a hidden room, which holds no monster (FS-5FZ4J §F R39)
+	rooms := slices.DeleteFunc(d.roomsFarthestFirst(), func(room int) bool { return room == d.layout.Roles.Start || d.isHidden(room) })
 
 	fits := []func(x, y float64) bool{area.valid}
 	if odds == demonGuaranteed {

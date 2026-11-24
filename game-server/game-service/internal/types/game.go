@@ -94,9 +94,11 @@ type ParryState struct {
 }
 
 // TimedOpenState is a delver's timed open as its owner is told it: the
-// container being opened and how far along it is. FS-MQYEX §Requirements 18.
+// target being worked, what for, and how far along it is. FS-MQYEX
+// §Requirements 18; target_kind open, search or pray, FS-5FZ4J §I R49.
 type TimedOpenState struct {
-	EntityID uuid.UUID `json:"entity_id"`
+	EntityID   uuid.UUID `json:"entity_id"`
+	TargetKind string    `json:"target_kind"`
 	// Elapsed is the seconds of simulation time counted so far.
 	Elapsed float64 `json:"elapsed"`
 	// Duration is the seconds it takes.
@@ -444,6 +446,9 @@ type SealState struct {
 	Stage  int    `json:"stage"`
 	Stages int    `json:"stages"`
 	Broken bool   `json:"broken"`
+	// KeyCarried is true while the party carries the floor's stair key
+	// (§E R32), absent otherwise
+	KeyCarried bool `json:"key_carried,omitempty"`
 }
 
 // SealPieceState is one seal piece: a lever's glyph, absent on the others;

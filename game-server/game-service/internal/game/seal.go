@@ -38,6 +38,7 @@ type sealKind interface {
 var sealKinds = map[components.SealKind]sealKind{
 	components.SealLeverOrder:     leverOrder{},
 	components.SealWeightedPlates: weightedPlates{},
+	components.SealHiddenKey:      hiddenKey{},
 }
 
 // sealWatcher is a kind the floor works itself, tick by tick, by what stands
@@ -98,19 +99,20 @@ const (
 	ReasonMural         = "mural"
 )
 
-// sealKindsFor is the kinds of the floor at depth's seals, in chain order.
-// Until the draw table lands the draw is ForcedSealKind on every floor; the
-// per-floor draw and the chain of floors 8-10 come with the other kinds
-// (FS-5FZ4J §B R9).
+// sealKindsFor is the kinds of the floor at depth's seals, in chain order,
+// drawn with the floor before its layout (drawFloor), so a Hidden Key gets its
+// hidden room. Until the draw table lands the draw is ForcedSealKind on every
+// floor; the per-floor draw and the chain of floors 8-10 come with the other
+// kinds (FS-5FZ4J §B R9).
 func sealKindsFor(_ int) []components.SealKind {
 	return []components.SealKind{ForcedSealKind}
 }
 
-// planSeals finds where every seal of the floor at depth stands; an error
-// when one cannot be placed, so the floor's next seed is tried (§H R45).
-func (s *Session) planSeals(depth int, d *dungeonFloor) ([]sealPlan, error) {
+// planSeals finds where each of kinds, the floor at depth's seals, stands; an
+// error when one cannot be placed, so the floor's next seed is tried (§H R45).
+func (s *Session) planSeals(depth int, d *dungeonFloor, kinds []components.SealKind) ([]sealPlan, error) {
 	var plans []sealPlan
-	for _, kind := range sealKindsFor(depth) {
+	for _, kind := range kinds {
 		rules, built := sealKinds[kind]
 		if !built {
 			return nil, fmt.Errorf("seal kind %q is not built", kind)
@@ -293,6 +295,11 @@ func (s *Session) workSealPiece(playerID uuid.UUID, delver *ecs.Entity, body *co
 	}
 	pc, _ := piece.GetComponent(ecs.ComponentTypeSealPiece)
 	w := pieceWork{playerID: playerID, delver: delver, piece: piece, pc: pc.(*components.SealPieceComponent)}
+	// a lore shrine belongs to no seal (FS-5FZ4J §F R39)
+	if w.pc.Kind == components.SealPieceShrine {
+		s.readShrine(playerID)
+		return nil
+	}
 
 	seal, ok := s.EntityManager.GetEntity(w.pc.Seal)
 	if !ok {
@@ -311,20 +318,29 @@ func (s *Session) workSealPiece(playerID uuid.UUID, delver *ecs.Entity, body *co
 
 /**
 * reachBarrier answers a delver's interact on a barrier, on the tick. A shut
-* gate is refused gate_sealed (FS-5FZ4J §B R13); it opens only with its seals.
-* An open one answers nothing. Reach is measured to the barrier's nearest
-* point: a gate is as wide as its corridor.
+* gate is refused gate_sealed (FS-5FZ4J §B R13); it opens only with its seals,
+* or breaks a Hidden Key seal whose key the party carries (§E R32). A secret
+* door is searched (§F R38). An open gate answers nothing. Reach is measured to
+* the barrier's nearest point: a gate is as wide as its corridor.
 **/
-func (s *Session) reachBarrier(playerID uuid.UUID, body *components.TransformComponent, barrier *ecs.Entity) error {
+func (s *Session) reachBarrier(playerID uuid.UUID, delver *ecs.Entity, body *components.TransformComponent, barrier *ecs.Entity) error {
+	// an undetected secret door is no target: the client has no id for it,
+	// and one sent anyway is not found (FS-5FZ4J §F R38)
+	if isSecretDoor(barrier) && !detected(barrier) {
+		return ErrEntityNotFound
+	}
 	if nx, ny := nearestOnRect(barrier, body.X, body.Y); !s.calcWithinDistance(body.X, body.Y, nx, ny) {
 		s.sendErrorToPlayer(playerID, string(commonconstants.ActionInteract), "too far away to interact")
 		return ErrOutOfRange
+	}
+	if isSecretDoor(barrier) {
+		return s.reachSecretDoor(playerID, delver, barrier)
 	}
 	if barrierOpen(barrier) {
 		return nil
 	}
 	bc, _ := barrier.GetComponent(ecs.ComponentTypeBarrier)
-	if bc.(*components.BarrierComponent).Kind == components.BarrierGate {
+	if bc.(*components.BarrierComponent).Kind == components.BarrierGate && !s.turnKey() {
 		s.sendRefusalToPlayer(playerID, string(commonconstants.ActionInteract),
 			"the gate is sealed", RefusalGateSealed, nil)
 	}

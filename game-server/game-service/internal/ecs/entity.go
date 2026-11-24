@@ -105,6 +105,10 @@ const (
 	ComponentTypeBarrier   ComponentType = "Barrier"
 	// a stone block's push and slide, beside its seal piece (FS-5FZ4J §C R19)
 	ComponentTypeStoneBlock ComponentType = "StoneBlock"
+	// what the party has not seen yet, a secret door or a trap, and what a
+	// shut secret door hides (FS-5FZ4J §F R37-R38, §D R30)
+	ComponentTypeDetectable ComponentType = "Detectable"
+	ComponentTypeConcealed  ComponentType = "Concealed"
 )
 
 type Entity struct {

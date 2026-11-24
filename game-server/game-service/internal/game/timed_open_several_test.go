@@ -67,7 +67,7 @@ func TestTimedOpen_TwoReachingForOneContainerBothStart(t *testing.T) {
 			for _, player := range []uuid.UUID{first, second} {
 				open := timedOpenOf(delverEntity(t, s, player))
 				require.NotNil(t, open, "each has a timed open of their own")
-				assert.Equal(t, chest.ID, open.ContainerID)
+				assert.Equal(t, chest.ID, open.TargetID)
 				assert.Empty(t, sent.to(player), "nobody is refused")
 			}
 			assert.False(t, targetReserved(s, chest.ID), "the container is held for nobody")

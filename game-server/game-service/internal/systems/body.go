@@ -8,7 +8,8 @@ import (
 /*
 BodyKind is what a body standing on a floor's ground counts as to it: who
 holds a plate, pushes a stone block, stands in a block's way (FS-5FZ4J §C
-R18-R19) and, later, fires a trap (§D R25). The ground asks a body's kind,
+R18-R19), detects a secret door or a trap (§F R38, §D R30) and, later, fires a
+trap (§D R25). The ground asks a body's kind,
 never whether it is a player, so a hired ally (FS-4EC7Z) joins by becoming a
 kind of its own here and answering Weighs; nothing else changes.
 */
@@ -47,3 +48,7 @@ func (k BodyKind) Weighs() bool { return k == BodyDelver }
 // Pushes is whether a body of this kind pushes a stone block it walks
 // against: a delver does, a monster never (FS-5FZ4J §C R19).
 func (k BodyKind) Pushes() bool { return k == BodyDelver }
+
+// Detects is whether a body of this kind detects a secret door or a trap it
+// comes near: a delver in play does, a monster never (FS-5FZ4J §F R38, §D R30).
+func (k BodyKind) Detects() bool { return k == BodyDelver }

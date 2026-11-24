@@ -32,10 +32,13 @@ func (k SealKind) HoldsGate() bool { return k != SealChasm }
 // SealComponent is one seal of a floor. Stage is its 1-based place in the
 // floor's chain (FS-5FZ4J §B R9). Broken is set once, for the whole party, and
 // never cleared (R11). What breaks it is its kind's rule, read off its pieces.
+// KeyCarried is a Hidden Key seal's: the party took its stair key, which is
+// floor state, not a bag item, and is gone with the floor (§E R32).
 type SealComponent struct {
-	Kind   SealKind
-	Stage  int
-	Broken bool
+	Kind       SealKind
+	Stage      int
+	Broken     bool
+	KeyCarried bool
 }
 
 func (s *SealComponent) Type() ecs.ComponentType {

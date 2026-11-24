@@ -28,6 +28,11 @@ func sealedFloors() []sealedFloor {
 		{"floor 2+, no hidden room", floor(true, 0)},
 		{"floor 2+, one hidden room", floor(true, 1)},
 		{"floor 2+, two hidden rooms", floor(true, 2)},
+		// the Hidden Key's room on top of a band's count, and the hallowed
+		// altar's on top of that (FS-5FZ4J §F R35, §E R32, §G R42)
+		{"floor 1, the Hidden Key's room", floor(false, 1)},
+		{"floor 6+, two hidden rooms and the key's", floor(true, 3)},
+		{"floor 6+, two hidden rooms, the key's and the altar's", floor(true, 4)},
 	}
 }
 

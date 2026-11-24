@@ -90,14 +90,16 @@ func (s *Session) layTomeAndAltar(depth int, d *dungeonFloor) {
 }
 
 // placeTomeRunObject stands one tome-run object, made by create, in the first
-// room drawn from those that are not the start room with a free spot for it.
+// room drawn from those that are neither the start room nor a hidden room with
+// a free spot for it.
 func (s *Session) placeTomeRunObject(d *dungeonFloor, what string, create func(*ecs.EntityManager, float64, float64) *ecs.Entity) {
 	rw := commonconstants.ContainerWidthRadius + containerPadding
 	rh := commonconstants.ContainerHeightRadius + containerPadding
 
 	rooms := make([]int, 0, len(d.layout.Rooms))
 	for room := range d.layout.Rooms {
-		if room != d.layout.Roles.Start {
+		// a hidden room holds only its own contents (FS-5FZ4J §F R39)
+		if room != d.layout.Roles.Start && !d.isHidden(room) {
 			rooms = append(rooms, room)
 		}
 	}

@@ -268,11 +268,12 @@ func TestDungeonFloor2_EscapeDoorFarFromTheStairs(t *testing.T) {
 			{"stairs", ecs.ComponentTypeStairs, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius},
 		})
 
-		// of the far rooms, none is a longer walk from the stairs room's centre
+		// of the far rooms, none is a longer walk from the stairs room's centre;
+		// a hidden room is never the escape door's (FS-5FZ4J §A R7)
 		fromStairs := cellWalk(d, roomCentreCell(d, roles.Stairs))
 		median := medianRoomDistance(d)
 		for i, room := range d.layout.Rooms {
-			if i == roles.Start || i == roles.Stairs || room.Distance < median {
+			if i == roles.Start || i == roles.Stairs || d.isHidden(i) || room.Distance < median {
 				continue
 			}
 			assert.LessOrEqual(t, fromStairs[roomCentreCell(d, i)], fromStairs[roomCentreCell(d, roles.EscapeDoor)],

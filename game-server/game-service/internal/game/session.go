@@ -839,6 +839,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if s.worldType == types.WorldTypeRun && s.navGrid != nil {
 		systems.NewStoneBlockSystem(s.navGrid).Update(deltaTime, entities)
 		s.watchSeals(entities)
+		// what a delver now stands near, a secret door or a trap, is seen by
+		// the party from this tick (FS-5FZ4J §F R38, §D R30)
+		systems.NewDetectionSystem(DetectionRadius).Update(entities)
 	}
 
 	// projectile
@@ -2027,7 +2030,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// --- a sealed floor's barriers and seal pieces (FS-5FZ4J §B-C) ---
 
 	if isBarrier {
-		return s.reachBarrier(playerID, playerTransform, targetEntity)
+		return s.reachBarrier(playerID, playerEntity, playerTransform, targetEntity)
 	}
 	if isSealPiece {
 		return s.workSealPiece(playerID, playerEntity, playerTransform, targetEntity)
@@ -2153,7 +2156,7 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 			// has passed. The container is not held (FS-MQYEX §Requirements 2, 15).
 			// A reach for the one they are already opening changes nothing; for
 			// another, it takes the first one's place (§Requirements 12)
-			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, TimedOpenDuration)
+			systems.NewTimedOpenSystem(s.EntityManager).Start(playerEntity, targetEntityID, components.TimedTargetOpen, TimedOpenDuration)
 		} else {
 			if err := s.openContainer(targetEntity, containerOpenable); err != nil {
 				return err

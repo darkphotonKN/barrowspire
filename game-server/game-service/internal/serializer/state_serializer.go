@@ -79,6 +79,12 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 	var seals []*components.SealComponent
 
 	for _, entity := range entities {
+		// what the party has not seen, and what a shut secret door hides,
+		// is sent to no one (FS-5FZ4J §F R37-R38, §D R30)
+		if unseen(entity) {
+			continue
+		}
+
 		// --- Floor (run-level entity; a hub has none) ---
 		if fc, hasFloor := entity.GetComponent(ecs.ComponentTypeFloor); hasFloor {
 			floor := fc.(*components.FloorComponent)
@@ -565,6 +571,16 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 	return backendState, nil
 }
 
+// unseen is whether entity is kept off the wire: undetected, or concealed in
+// a hidden room whose secret door is shut. FS-5FZ4J §F R37-R39, §D R30.
+func unseen(entity *ecs.Entity) bool {
+	if entity.HasComponent(ecs.ComponentTypeConcealed) {
+		return true
+	}
+	dc, detectable := entity.GetComponent(ecs.ComponentTypeDetectable)
+	return detectable && !dc.(*components.DetectableComponent).Detected
+}
+
 // sealState is the floor's seal on the wire: the first unbroken seal's kind
 // and stage, the last one's once every one is broken; nil with no seal.
 // FS-5FZ4J §I R46, R48.
@@ -578,10 +594,11 @@ func sealState(seals []*components.SealComponent) *types.SealState {
 		current = ordered[i]
 	}
 	return &types.SealState{
-		Kind:   string(current.Kind),
-		Stage:  current.Stage,
-		Stages: len(ordered),
-		Broken: !slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }),
+		Kind:       string(current.Kind),
+		Stage:      current.Stage,
+		Stages:     len(ordered),
+		Broken:     !slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }),
+		KeyCarried: slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return sc.KeyCarried }),
 	}
 }
 
@@ -893,7 +910,7 @@ func timedOpenState(entity *ecs.Entity) *types.TimedOpenState {
 		return nil
 	}
 	open := oc.(*components.TimedOpenComponent)
-	return &types.TimedOpenState{EntityID: open.ContainerID, Elapsed: open.Elapsed, Duration: open.Duration}
+	return &types.TimedOpenState{EntityID: open.TargetID, TargetKind: string(open.TargetKind), Elapsed: open.Elapsed, Duration: open.Duration}
 }
 
 // monsterState is a monster as the client draws it. One at no health lies dead,
