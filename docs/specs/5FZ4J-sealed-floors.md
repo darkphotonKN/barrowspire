@@ -33,6 +33,8 @@ developer force a tome.
    floor has no stairs and no seal; it keeps its boss and its escape door. A floor that falls back
    to a floor of buildings (FS-KE075 R17) has no seal, no traps, no hidden rooms and no respites,
    with a warning in the log (promotion default: the fallback is already rare and has no rooms).
+   **Amended 2026-11-25 (code review):** such a fallback floor keeps today's escape door and switch
+   even on floor 1 (an exception to R6): with no seal and no rooms it must never strand a party.
 2. **The stairs room is a dead end** (owner-approved proposal): it is entered through exactly one
    corridor, its **gate corridor**, and with that corridor's **gate** shut no walkable path from
    the start room reaches it. Of the rooms that satisfy this, the stairs room is the one at the
@@ -125,8 +127,14 @@ developer force a tome.
     for the time it takes them to walk half a cell (half walk speed, so 80 px at their speed / 2)
     **pushes** it one cell that way; it slides over that time. A push is refused (the block does
     not move, the delver is blocked) when the cell beyond is rock, a shell wall, a shut gate or
-    door, a secret door, a pit, another block, a body, or a plate a block already covers. Blocks
-    never move on their own; monsters never push them.
+    door, a secret door, a pit, another block, a body, or a plate a block already covers. Monsters
+    never push them. **Amended 2026-11-25 (code review, ADR-0092):** the original "blocks never
+    move on their own" let a solo player brick the seal by pushing blocks against a wall (a block
+    on the border row can never be pushed off it again), so two rules are added (promotion
+    default, recorded as a changed default): a push that would take a block **out of the plates
+    room's cells** is refused, and a block that is not on a plate, has not moved for **20 s** and
+    has no delver within 2 cells of it **slides back to its start cell** (at the push speed) when
+    that cell is free.
 20. **Plates and blocks are placed solvably.** Every plate and block stands on a cell at least one
     cell from the room's walls and doorways, no two on one cell, no block on a plate. The build
     checks, by a search over pushes, that every plate can be covered by some block; a placement
@@ -258,7 +266,9 @@ developer force a tome.
     once when the run is created (charter default): in **30%** of runs, on a floor drawn uniformly
     from 2 to height − 1, never the top; at most one a run; **50%** of the time inside a hidden room
     on that floor (R35), else in a random room that is not the start, stairs or a respite's room,
-    placed as the tome's altar is (FS-3103M R8–R9). Run-level state like the tome plan; never on
+    placed as the tome's altar is (FS-3103M R8–R9). (Amended 2026-11-25, code review: the tome and
+    the Altar of Consecration are kept out of respite rooms too, so a respite stays quiet.)
+    Run-level state like the tome plan; never on
     the wire as a plan (FS-M8CSE R5: its presence says "not the top floor", the same accepted leak
     as the Altar of Consecration's).
 43. **Praying** is a 2 s timed interact on the FS-MQYEX rules by any in-play delver. When it
@@ -291,12 +301,14 @@ developer force a tome.
       current (first unbroken) seal's kind, `lever_order | weighted_plates | hidden_key | chasm |
       braziers`, or the last one's once all are broken; `stage` is 1-based, `stages` 1 or 2;
       `broken` is true once every seal of the floor is broken. `window_ends_in` (seconds) is set
-      while a Braziers window runs; `key_carried` is true while the party carries the stair key.
+      while a Braziers window runs; `key_carried` is true while the party carries the stair key
+      and its seal is unbroken (amended 2026-11-25: false once the key has turned the gate).
     - `seal_pieces`: `[{ entity_id, kind, position, cell, glyph?, active }]`, `kind` one of
       `lever | plate | block | brazier | stair_key | bridge_lever | mural | shrine`. `active` is a
       lever down, a plate held, a brazier lit, a bridge lowered; false for the others. `glyph` on a
-      lever only. A stair key is listed while it lies. A shrine is listed once its hidden room is
-      open.
+      lever only. A stair key is listed while it lies **once its hidden room is open** (amended
+      2026-11-25: R37 wins, a listed key would locate the room). A shrine is listed once its hidden
+      room is open.
     - `barriers`: `[{ entity_id, kind, cells, open }]`, `kind` one of `gate | secret_door | pit`,
       `cells` the cells it covers. A gate and the pits are always listed; a secret door only once
       detected.
