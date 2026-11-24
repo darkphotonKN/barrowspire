@@ -301,6 +301,27 @@ describe('traps, poison and a search on the wire (FS-5FZ4J §I R46, R47, R49)', 
   it.each(['bear_trap', '', 'Gas_Vent'])('should read an unknown trap kind %j as none, drawing nothing', (kind) =>
     expect(knownTrap(kind)).toBeNull(),
   );
+
+  // FS-5FZ4J §I R46–R47 (I-5FZ4J-11): the respites and the Blessing, as game-service's types.FountainState,
+  // HallowedAltarState and PublicPlayerState.Blessed send them
+  it('should keep the fountain, the hallowed altar and blessed as the server sends them', () => {
+    const wire = JSON.parse(
+      JSON.stringify({
+        ...base,
+        current_player: { ...me, blessed: true, timed_open: { entity_id: 'altar-1', target_kind: 'pray', elapsed: 0.5, duration: 2 } },
+        other_players: [{ ...me, id: 'p2', entity_id: 'e2', blessed: true }],
+        fountain: { entity_id: 'fountain-1', position: { x: 400, y: 560 }, dry: false },
+        hallowed_altar: { entity_id: 'altar-1', position: { x: 880, y: 240 }, prayed: false },
+      }),
+    );
+    expect(isGameState(wire)).toBe(true);
+    const state = wire as ClientGameState;
+    expect(state.fountain).toEqual({ entity_id: 'fountain-1', position: { x: 400, y: 560 }, dry: false });
+    expect(state.hallowed_altar).toEqual({ entity_id: 'altar-1', position: { x: 880, y: 240 }, prayed: false });
+    expect(state.current_player?.blessed).toBe(true);
+    expect(state.other_players[0].blessed).toBe(true);
+    expect(state.current_player?.timed_open?.target_kind).toBe('pray');
+  });
 });
 
 describe('placedKind (FS-1D6BX R12, D2)', () => {

@@ -55,6 +55,8 @@ export const SEALED_SHEETS: Readonly<Record<string, readonly string[]>> = {
     ]),
   ),
   secret_cracks: ["x", "y", "front_x", "front_y"],
+  healing_fountain: ["full", "dry"],
+  hallowed_altar: ["dormant", "prayed"],
 };
 
 /**
@@ -106,4 +108,17 @@ export function trapLook(kind: TrapKind, frame: TrapFrame): SealLook {
 /** A secret door's cracks over one wall piece: `x`/`y` on a back piece, `front_x`/`front_y` on a cut-away one. */
 export function cracksLook(height: WallHeight, axis: WallAxis): SealLook {
   return { sheet: "secret_cracks", frame: height === "back" ? axis : `front_${axis}` };
+}
+
+/** The healing fountain, full or dry once its pool is spent (R51). Its sheet declares no light. */
+export function fountainLook(dry: boolean): SealLook {
+  return { sheet: "healing_fountain", frame: dry ? "dry" : "full" };
+}
+
+/**
+ * The hallowed altar, dormant or prayed (R51). Its sheet declares its candlelight, which burns only
+ * while it is dormant (I-5FZ4J-8): the candles are cold stubs once it is prayed at.
+ */
+export function hallowedAltarLook(prayed: boolean): SealLook {
+  return { sheet: "hallowed_altar", frame: prayed ? "prayed" : "dormant" };
 }

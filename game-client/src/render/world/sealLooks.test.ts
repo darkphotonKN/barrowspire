@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { shippedManifest } from "@/render/art/artLoader.standin";
-import { GLYPHS, SEALED_SHEETS, TRAP_FAINT, bridgeLook, cracksLook, gateLook, pieceLooks, pitLook, trapLook } from "./sealLooks";
+import {
+  GLYPHS,
+  SEALED_SHEETS,
+  TRAP_FAINT,
+  bridgeLook,
+  cracksLook,
+  fountainLook,
+  gateLook,
+  hallowedAltarLook,
+  pieceLooks,
+  pitLook,
+  trapLook,
+} from "./sealLooks";
 
 describe("the sealed floor's looks (FS-5FZ4J §J R51, §K R57)", () => {
   it("should name sheets and frames the shipped manifest bakes, on the resident sealed group", () => {
@@ -86,5 +98,24 @@ describe("the sealed floor's looks (FS-5FZ4J §J R51, §K R57)", () => {
     expect(cracksLook("back", "y")).toEqual({ sheet: "secret_cracks", frame: "y" });
     expect(cracksLook("front", "x")).toEqual({ sheet: "secret_cracks", frame: "front_x" });
     expect(cracksLook("front", "y")).toEqual({ sheet: "secret_cracks", frame: "front_y" });
+  });
+
+  // FS-5FZ4J §J R51 (I-5FZ4J-11): the respites, each two states framed together on the sealed group
+  it("should draw the healing fountain full or dry", () => {
+    expect(fountainLook(false)).toEqual({ sheet: "healing_fountain", frame: "full" });
+    expect(fountainLook(true)).toEqual({ sheet: "healing_fountain", frame: "dry" });
+    expect(SEALED_SHEETS.healing_fountain).toEqual(["full", "dry"]);
+  });
+
+  it("should draw the hallowed altar dormant until prayed at", () => {
+    expect(hallowedAltarLook(false)).toEqual({ sheet: "hallowed_altar", frame: "dormant" });
+    expect(hallowedAltarLook(true)).toEqual({ sheet: "hallowed_altar", frame: "prayed" });
+    expect(SEALED_SHEETS.hallowed_altar).toEqual(["dormant", "prayed"]);
+  });
+
+  it("should bake the hallowed altar's candlelight and no light for the fountain (I-5FZ4J-8)", () => {
+    const { sheets } = shippedManifest();
+    expect(sheets.hallowed_altar.light).toBeDefined();
+    expect(sheets.healing_fountain.light).toBeUndefined();
   });
 });

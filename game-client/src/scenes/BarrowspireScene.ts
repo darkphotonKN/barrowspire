@@ -40,6 +40,7 @@ import { tremble, type LoreLine } from "@/ui/loreLine";
 import { burnHeard, loreForEvent, loreForFall, loreForReply, newlyEscaped, turnedOn } from "@/ui/loreCopy";
 import { SealWatch, sealReplyNotice } from "@/ui/sealLines";
 import { StatusWatch } from "@/ui/statusLines";
+import { statusMarks } from "@/ui/statusMarks";
 import { SealWindowClock, type SealWindowView } from "@/ui/sealWindow";
 import {
   nextWatched,
@@ -239,7 +240,8 @@ import {
 } from "@/render/world";
 import { CHEST, chestFrame, paintChest } from "@/render/world/chest";
 import { SummoningSet, type SummoningLook, type SummoningTarget } from "@/render/world/altar";
-import { SEAL_GROUND_DEPTH, SealSet, type SealBand, type WallFace } from "@/render/world/seal";
+import { RespiteSet } from "@/render/world/respites";
+import { SEAL_GROUND_DEPTH, SealSet, type SealBand, type SealStage, type WallFace } from "@/render/world/seal";
 import type { SealLook } from "@/render/world/sealLooks";
 import { TrapSet } from "@/render/world/traps";
 import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/world/chunks";
@@ -805,13 +807,20 @@ export class BarrowspireScene extends Phaser.Scene {
    * A sealed floor's seal pieces, gate and pits, from state (FS-5FZ4J §J R51): baked props on the
    * resident `sealed` group, each in the frame its state names; a stone block slides each frame.
    */
-  private seal = new SealSet<Phaser.GameObjects.Sprite>({
+  private readonly sealStage: SealStage<Phaser.GameObjects.Sprite> = {
     add: (look, at, band, layer) => this.addSealPiece(look, at, band, layer),
     show: (sprite, look) => showState(sprite, this.art, look.sheet, look.frame),
     stand: (sprite, at, layer) => this.standSealPiece(sprite, at, layer),
     glow: (sprite, at, on) => this.glowSealPiece(sprite, at, on),
     decal: (look, at, depthAt) => this.addSealDecal(look, at, depthAt),
-  });
+  };
+  private seal = new SealSet<Phaser.GameObjects.Sprite>(this.sealStage);
+  /**
+   * A floor's healing fountain and the hallowed altar, from state (FS-5FZ4J §J R51, R52): baked props
+   * on the resident `sealed` group, drawn, stood and lit through the seal's own stage; the altar's
+   * candles burn while it is dormant.
+   */
+  private respites = new RespiteSet<Phaser.GameObjects.Sprite>(this.sealStage);
   /**
    * A floor's detected traps, from state (FS-5FZ4J §J R51): baked props on the resident `sealed`
    * group, faint while they wait, sprung at full strength when they fire.
@@ -1195,6 +1204,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.stairs.forget();
     this.summoning.forget();
     this.seal.forget();
+    this.respites.forget();
     this.sealLights.clear();
     this.traps.forget();
     this.trails.forget();
@@ -2685,13 +2695,15 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   /**
-   * What the player's own timed interact works, as drawn here: a shut container's sprite, or what
-   * the seal drew for its target (a detected shut secret door's cracks); none while it is not drawn.
+   * What the player's own timed interact works, as drawn here: a shut container's sprite, what the
+   * seal drew for its target (a detected shut secret door's cracks), or the hallowed altar being
+   * prayed at; none while it is not drawn.
    */
   private timedTarget(open: TimedOpenState, state: ClientGameState | undefined): Phaser.GameObjects.Sprite[] {
     const chest = this.chests.get(open.entity_id)?.sprite;
     if (chest) return state?.containers?.some((c) => c.entity_id === open.entity_id && !c.is_open) ? [chest] : [];
-    return this.seal.drawnFor(open.entity_id);
+    const sealed = this.seal.drawnFor(open.entity_id);
+    return sealed.length > 0 ? sealed : this.respites.drawnFor(open.entity_id);
   }
 
   /**
@@ -3608,6 +3620,12 @@ export class BarrowspireScene extends Phaser.Scene {
       const sealed = this.player && this.playerPos ? this.seal.nearby(this.playerPos) : null;
       if (sealed) {
         socketManager.sendMessage(ActionType.Interact, { entity_id: sealed.entityId });
+        return;
+      }
+      // the hallowed altar, to Pray at; never the fountain (FS-5FZ4J §J R52)
+      const respite = this.player && this.playerPos ? this.respites.nearby(this.playerPos) : null;
+      if (respite) {
+        socketManager.sendMessage(ActionType.Interact, { entity_id: respite.entityId });
         return;
       }
       // 檢查寶箱
@@ -4705,6 +4723,7 @@ export class BarrowspireScene extends Phaser.Scene {
     // the seal's pieces and barriers, their flames first; the watch keeps the floor left, so the
     // next floor's seal is said on arrival (FS-5FZ4J §J R53)
     this.seal.clear();
+    this.respites.clear();
     this.sealLights.clear();
     this.sealWindow.reset();
     this.traps.clear();
@@ -5062,6 +5081,8 @@ export class BarrowspireScene extends Phaser.Scene {
     const dungeon = this.dungeon;
     // a secret door's cracks over the wall pieces of its face (FS-5FZ4J §J R51)
     if (dungeon) this.seal.sync(state, dungeon.grid, dungeon.faces);
+    // the floor's fountain and the hallowed altar, its candles among the floor's lights (FS-5FZ4J §J R51)
+    if (dungeon) this.respites.sync(state);
     for (const notice of this.sealWatch.see(state)) this.showNotification(notice.text, NOTICE_BACKING[notice.tone]);
     const window = this.sealWindow.see(state.seal);
     const shown = this.shownSealWindow;
@@ -5098,7 +5119,8 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * A seal brazier's flame lit or put out (I-5FZ4J-8: its sheet's light burns only while it is
-   * lit): one of the floor's fixed lights, by its chunk and region, under the floor's cap.
+   * lit), or the hallowed altar's candles (only while it is dormant): one of the floor's fixed
+   * lights, by its chunk and region, under the floor's cap.
    */
   private glowSealPiece(sprite: Phaser.GameObjects.Sprite, at: Point, on: boolean): void {
     const source = this.sealLights.get(sprite);
@@ -5465,6 +5487,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.stairs.placed(),
       ...this.summoning.placed(),
       ...this.seal.placed(),
+      ...this.respites.placed(),
       ...this.traps.placed(),
       ...this.dressingAt,
     ])
@@ -5542,6 +5565,7 @@ export class BarrowspireScene extends Phaser.Scene {
       ...this.stairs.placed(),
       ...this.summoning.placed(),
       ...this.seal.placed(),
+      ...this.respites.placed(),
       ...this.traps.placed(),
       ...this.dressingAt,
     ];
@@ -5738,6 +5762,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // R68, R69; FS-Q18Q3 R41)
     this.ui.hud({ world: "run", kind: "bars", bars: own.bars });
     this.ui.hud({ world: "run", kind: "bar", bar: own.bar });
+    // the Blessing's mark beside the own health bar, while it holds (FS-5FZ4J §J R55)
+    this.ui.hud({ world: "run", kind: "marks", marks: statusMarks(state) });
     // the controls badge stands while the bar is live, so it goes at a death though the bar is held
     // (FS-84N1G R4; FS-Q18Q3 R42): told on each change
     const live = own.bar !== null && this.heldHud === undefined;

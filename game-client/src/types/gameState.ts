@@ -68,6 +68,11 @@ export interface PublicPlayerState {
    * show it; absent when not poisoned, and always in the hub.
    */
   poisoned_for?: number;
+  /**
+   * True while the player carries the hallowed altar's Blessing (FS-5FZ4J §I R47): on every player's
+   * entry, as poison is; absent when not, and always in the hub.
+   */
+  blessed?: boolean;
 }
 
 /**
@@ -299,6 +304,24 @@ export interface AltarState {
   entity_id: UUID;
   position: Position;
   burned: boolean;
+}
+
+/** A floor's healing fountain, sent whole on its floor; `dry` once its pool is spent (FS-5FZ4J §I R46). */
+export interface FountainState {
+  entity_id: UUID;
+  position: Position;
+  dry: boolean;
+}
+
+/**
+ * The hallowed altar on its floor, sent whole once reachable (listed only once its hidden room, if it
+ * stands in one, is open); `prayed` once a prayer at it completed (FS-5FZ4J §I R46). Never the Altar
+ * of Consecration's {@link AltarState}.
+ */
+export interface HallowedAltarState {
+  entity_id: UUID;
+  position: Position;
+  prayed: boolean;
 }
 
 /** A cell's column and row on the floor map's grid (FS-5FZ4J §I R46). */
@@ -617,6 +640,10 @@ export interface ClientGameState {
   barriers?: BarrierState[];
   /** A dungeon floor's detected traps, sent whole; absent with none detected and anywhere else (R46). */
   traps?: TrapState[];
+  /** A floor's healing fountain; absent with none and anywhere else (R46). */
+  fountain?: FountainState;
+  /** The hallowed altar on its floor once reachable; absent anywhere else (R46). */
+  hallowed_altar?: HallowedAltarState;
   escaped_count: number; // Number of players who have escaped
 }
 

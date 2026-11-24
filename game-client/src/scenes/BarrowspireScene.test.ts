@@ -2816,7 +2816,8 @@ describe("BarrowspireScene ability bar (FS-Q18Q3 §E, §G, §L)", () => {
     });
     run.handleGameStateUpdate(withMe(me()));
     expect(kinds).toContain("bar");
-    expect(kinds.filter((k) => !["bars", "bar", "progress"].includes(k))).toEqual([]);
+    // the status marks beside the health bar are the HUD's too (FS-5FZ4J §J R55)
+    expect(kinds.filter((k) => !["bars", "bar", "progress", "marks"].includes(k))).toEqual([]);
     expect(JSON.parse(JSON.stringify(bar))).toEqual(bar);
     expect(bar).toMatchObject({ potion: { count: 0, greyed: true } });
   });
@@ -12412,6 +12413,115 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       expect(notified.mock.calls).toEqual([["Poisoned.", palette.damageBright]]);
     });
   });
+
+  // FS-5FZ4J §J R51–R55 (I-5FZ4J-11): the healing fountain, the hallowed altar and Pray, and the Blessing
+  describe("the respites and the Blessing (FS-5FZ4J §J)", () => {
+    interface RespiteRun {
+      bindRunInput(): void;
+      checkBuildingStatus(): void;
+      showNotification(text: string, backing: number): void;
+      respites: { placed(): { sprite: Made; pos: { x: number; y: number } }[] };
+      dungeon: { lights: { light: { at?: { x: number; y: number } } }[] };
+      timedOpen?: { label?: Made };
+      ui: { hud(message: unknown): void };
+    }
+    /** This client's player in room 1, at (2560, 3080). */
+    const ME = at(2560, 3080);
+    const mine = (over: Record<string, unknown> = {}) =>
+      ({ current_player: { ...player("me", "Aldric", 0), position: ME, ...over } }) as Partial<Party>;
+    /** The altar where the player stands; the fountain far off past the stairs, in a region not yet seen. */
+    const altar = (prayed = false) => ({ entity_id: "altar-1", position: ME, prayed });
+    const fountain = (dry = false) => ({ entity_id: "fountain-1", position: at(1400, 1200), dry });
+    const respiteStage = (party = mine(), extra: Partial<GameState> = {}) => {
+      const staged = dungeonStage(party, { fountain: fountain(), hallowed_altar: altar(), ...extra });
+      const run = staged.run as unknown as RespiteRun;
+      const notified = vi.spyOn(run, "showNotification").mockImplementation(() => {});
+      const next = (over: Partial<GameState> = {}, me = mine()) =>
+        staged.handle({ ...dungeonState(me), fountain: fountain(), hallowed_altar: altar(), ...over } as GameState);
+      return { ...staged, run, notified, next };
+    };
+    const pressE = (run: RespiteRun, playerPos: { x: number; y: number }) => {
+      const sent = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const keyHandlers: Record<string, () => void> = {};
+      Object.assign(run, {
+        input: { setDefaultCursor: vi.fn(), keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) }, on: vi.fn() },
+        playerPos,
+      });
+      run.bindRunInput();
+      keyHandlers["keydown-E"]();
+      const interacts = sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+      sent.mockRestore();
+      return interacts;
+    };
+
+    it("should draw the fountain full and the altar dormant from the sealed sheets, then dry and prayed in place (R51)", () => {
+      const { stage, next } = respiteStage();
+      const [basin] = drawn(stage.made, "healing_fountain/full/");
+      const [stone] = drawn(stage.made, "hallowed_altar/dormant/");
+      expect(basin).toBeDefined();
+      expect(stone).toBeDefined();
+      next({ fountain: fountain(true), hallowed_altar: altar(true) });
+      expect(String(basin.last.setTexture?.[1])).toMatch(/^healing_fountain\/dry\//);
+      expect(String(stone.last.setTexture?.[1])).toMatch(/^hallowed_altar\/prayed\//);
+      expect(drawn(stage.made, "hallowed_altar/")).toHaveLength(1);
+    });
+
+    it("should light the altar's candles among the floor's lights while it is dormant, and put them out once prayed", () => {
+      const { run, next } = respiteStage();
+      const candles = () => run.dungeon.lights.filter((l) => l.light.at?.x === ME.x && l.light.at?.y === ME.y);
+      expect(candles()).toHaveLength(1);
+      next({ hallowed_altar: altar(true) });
+      expect(candles()).toHaveLength(0);
+    });
+
+    it("should hide a respite standing in an unexplored region, and show the one where the player stands", () => {
+      const { run } = respiteStage();
+      run.checkBuildingStatus();
+      const shown = run.respites.placed().map(({ sprite, pos }) => [pos.x === ME.x ? "here" : "far", shownNow(sprite)]);
+      expect(shown).toEqual([["far", false], ["here", true]]);
+    });
+
+    it("should send one interact for the dormant altar E reaches, the Pray (R52)", () => {
+      const { run } = respiteStage();
+      expect(pressE(run, ME)).toEqual([[ActionType.Interact, { entity_id: "altar-1" }]]);
+    });
+
+    it("should make neither the fountain nor a prayed altar an E target (R52)", () => {
+      const { run, next } = respiteStage();
+      next({ hallowed_altar: altar(true) });
+      expect(pressE(run, ME)).toEqual([]);
+      expect(pressE(run, at(1400, 1200))).toEqual([]);
+    });
+
+    it("should show the prayer's progress on the open bar over the altar, labelled Praying…, gone when it is prayed (R54)", () => {
+      const { run, stage, next } = respiteStage();
+      next({}, mine({ timed_open: { entity_id: "altar-1", target_kind: "pray", elapsed: 1, duration: 2 } }));
+      const bar = stage.made.find((m) => m.name === "open-bar" && !m.destroyed);
+      expect(bar).toBeDefined();
+      expect(run.timedOpen?.label?.args[2]).toBe("Praying…");
+      next({ hallowed_altar: altar(true) }, mine({ blessed: true }));
+      expect(bar!.destroyed).toBe(true);
+    });
+
+    it("should say Blessed. once when blessed turns true, and nothing on a first broadcast that finds it so (R53)", () => {
+      const first = respiteStage(mine({ blessed: true }));
+      first.next({}, mine({ blessed: true }));
+      expect(first.notified).not.toHaveBeenCalled();
+      const { notified, next } = respiteStage();
+      next({ hallowed_altar: altar(true) }, mine({ blessed: true }));
+      next({ hallowed_altar: altar(true) }, mine({ blessed: true }));
+      expect(notified.mock.calls).toEqual([["Blessed.", palette.safe]]);
+    });
+
+    it("should hand the UI scene the Blessing mark while blessed, and none without it (R55)", () => {
+      const { run, next } = respiteStage();
+      const hud = vi.spyOn(run.ui, "hud");
+      next({}, mine({ blessed: true }));
+      next({}, mine());
+      const marks = hud.mock.calls.map(([m]) => m as { kind: string; marks?: unknown }).filter((m) => m.kind === "marks");
+      expect(marks.map((m) => m.marks)).toEqual([["blessed"], []]);
+    });
+  });
 });
 
 // FS-PQ2TW §A R2, R5, R9; §B R11–R14; §C R19, R21, R22; FS-KE075 §H.41. I-PQ2TW-3: entering a run
@@ -13263,6 +13373,14 @@ describe("BarrowspireScene a sealed floor's replies (FS-5FZ4J §J R53)", () => {
     run.lastGameState = { seal: { kind: "hidden_key", stage: 1, stages: 1, broken: false } };
     reply({ success: false, message: "the stairs are sealed", reason: "stairs_sealed" });
     expect(notified.mock.calls).toEqual([["Sealed. The Hidden Key holds it.", palette.damageBright]]);
+    expect(said).not.toHaveBeenCalled();
+  });
+
+  // FS-5FZ4J §G R43 (I-5FZ4J-11)
+  it("should say nothing, notice or lore, for a hallowed altar already prayed at", () => {
+    const { notified, said, reply } = replying();
+    reply({ success: false, message: "the altar has been prayed at", reason: "altar_prayed" });
+    expect(notified).not.toHaveBeenCalled();
     expect(said).not.toHaveBeenCalled();
   });
 

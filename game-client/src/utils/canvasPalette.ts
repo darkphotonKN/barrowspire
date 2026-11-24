@@ -215,6 +215,12 @@ export const palette = {
    * never reads as arcane green's safe and friendly, nor as health's oxblood.
    */
   poisoned: mix(mix(BARROW_HEX.arcane, BARROW_HEX.brassBright, 0.45), BARROW_HEX.vellumDark, 0.35),
+  /**
+   * The Blessing's status mark (FS-5FZ4J §J R55): the hallowed altar's gold (I-5FZ4J-8), bright brass
+   * paled toward vellum, so it reads as a boon held, never as amber's "act on this" (the mark is only
+   * hovered) nor as arcane green's ally.
+   */
+  blessed: mix(BARROW_HEX.brassBright, BARROW_HEX.vellum, 0.35),
 
   /**
    * The chat window (FS-WJGFJ R30): one stream, told apart by colour. The user's hues mapped

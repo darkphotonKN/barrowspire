@@ -30,4 +30,25 @@ describe("StatusWatch: the player's statuses off the state (FS-5FZ4J §I R47–R
     expect(watch.see(null)).toEqual([]);
     expect(watch.see({ poisoned_for: 1 })).toEqual([]);
   });
+
+  // FS-5FZ4J §J R53 (I-5FZ4J-11)
+  it("should say Blessed. when blessed turns true, in the success tone (done), and not again while it holds", () => {
+    const watch = new StatusWatch();
+    watch.see({});
+    expect(watch.see({ blessed: true })).toEqual([{ text: "Blessed.", tone: "done" }]);
+    expect(watch.see({ blessed: true })).toEqual([]);
+  });
+
+  it("should say nothing on a first broadcast that finds the player already blessed (a reconnect)", () => {
+    const watch = new StatusWatch();
+    expect(watch.see({ blessed: true })).toEqual([]);
+    expect(watch.see({ blessed: true })).toEqual([]);
+  });
+
+  it("should say both, poison first, when both come on one broadcast", () => {
+    const watch = new StatusWatch();
+    watch.see({});
+    expect(watch.see({ poisoned_for: 6, blessed: true }).map((l) => l.text)).toEqual(["Poisoned.", "Blessed."]);
+  });
 });
+

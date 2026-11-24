@@ -54,6 +54,11 @@ export function hudBarFill(bar: Pick<HudBar, "channel" | "poisoned">): number {
   return bar.poisoned ? palette.poisoned : HUD_BAR_FILL[bar.channel];
 }
 
+/** The screen y of row `row`'s middle (0 is Health) on a panel whose top is `top`: what the status marks line up with. */
+export function resourceHudRowMiddle(top: number, row: number): number {
+  return top + PAD_Y + row * ROW_H + ROW_H / 2;
+}
+
 /** The panel's height for `rows` bars: what the party frames measure from. */
 export function resourceHudHeight(rows: number): number {
   return rows * ROW_H + PAD_Y * 2;

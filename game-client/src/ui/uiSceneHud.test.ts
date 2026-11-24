@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AbilityBarView } from "./abilityBarView";
 import { RESOURCE_HUD_AT } from "./ResourceHud";
+import { STATUS_MARKS_AT } from "./statusMarks";
 import { GameUiBridge, NO_FACTS, type World, type WorldReport } from "./uiBridge";
 import { HUD_PLACES, UiHudSlot, type HudBuild, type HudKind, type HudMessage } from "./uiSceneHud";
 
@@ -40,6 +41,7 @@ function onHud() {
     bars: piece("bars"),
     progress: piece("progress"),
     window: piece("window"),
+    marks: piece("marks"),
   };
   const slot = new UiHudSlot(bridge, build);
   const report = (world: World): WorldReport => {
@@ -88,7 +90,8 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     expect(HUD_PLACES.field).toEqual({ progress: true, bars: RESOURCE_HUD_AT.field, bar: true });
     expect(RESOURCE_HUD_AT.run).toEqual(RESOURCE_HUD_AT.field);
     // FS-5FZ4J §J R53: a sealed floor's Braziers window counts down in a run alone
-    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true });
+    // FS-5FZ4J §J R55: the status marks beside the run's own health bar, a run's alone
+    expect(HUD_PLACES.run).toEqual({ progress: true, bars: RESOURCE_HUD_AT.run, bar: true, window: true, marks: STATUS_MARKS_AT });
   });
 
   it.each([
@@ -143,6 +146,23 @@ describe("the UI scene's HUD slot (FS-TQZ5J § Change: Batch 5, R67–R69)", () 
     const field = onHud();
     field.report("field");
     field.slot.hear({ world: "field", kind: "window", window: { seconds: 3, fraction: 0.1 } });
+    expect(field.built).toEqual([]);
+  });
+
+  // FS-5FZ4J §J R55 (I-5FZ4J-11): the status marks, a run's alone, beside its own health bar
+  it("should build the status marks in a run, at their place, on the first marks, hand them none after, and never in a field", () => {
+    const { slot, built, report } = onHud();
+    report("run");
+    slot.hear({ world: "run", kind: "marks", marks: [] });
+    expect(built).toEqual([]);
+    slot.hear({ world: "run", kind: "marks", marks: ["blessed"] });
+    slot.hear({ world: "run", kind: "marks", marks: [] });
+    expect(built).toHaveLength(1);
+    expect(built[0].at).toEqual(STATUS_MARKS_AT);
+    expect(built[0].shown).toEqual([["blessed"], []]);
+    const field = onHud();
+    field.report("field");
+    field.slot.hear({ world: "field", kind: "marks", marks: ["blessed"] });
     expect(field.built).toEqual([]);
   });
 
