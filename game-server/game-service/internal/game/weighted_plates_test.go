@@ -345,13 +345,26 @@ func TestWeightedPlates_MonsterPathsRouteRoundABlock(t *testing.T) {
 	s, player, _ := platesRun(t, 7)
 	blocks := piecesOfKind(s, components.SealPieceBlock)
 	plates := piecesOfKind(s, components.SealPiecePlate)
-	block := blocks[0]
 	grid := s.navGrid
+	// a block with open ground on two opposite sides of it, not another
+	// block: across it one way or the other
+	block, dx, dy := blocks[0], 1, 0
+	for _, b := range blocks {
+		c := pieceOf(b).Cell
+		if grid.Walkable(c.X-1, c.Y) && grid.Walkable(c.X+1, c.Y) {
+			block, dx, dy = b, 1, 0
+			break
+		}
+		if grid.Walkable(c.X, c.Y-1) && grid.Walkable(c.X, c.Y+1) {
+			block, dx, dy = b, 0, 1
+			break
+		}
+	}
 	cols := s.dungeon.layout.Cols
 	index := func(c components.Cell) int { return c.Y*cols + c.X }
 
 	was := pieceOf(block).Cell
-	path, found := grid.Path(nil, index(offset(was, -1, 0)), index(offset(was, 1, 0)))
+	path, found := grid.Path(nil, index(offset(was, -dx, -dy)), index(offset(was, dx, dy)))
 	require.True(t, found, "a way round")
 	assert.NotContains(t, path, index(was), "the path goes round the block")
 

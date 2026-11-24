@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
@@ -138,6 +139,8 @@ func TestDungeonFloor1_FixtureRoomWithNoSpot_FreshSeedBuilt(t *testing.T) {
 	tight = tightened(tight, tight.Roles.EscapeDoor, nil)
 	fresh := escapeFloorLayout(t, 12)
 	gen := &scriptedGenerator{layouts: []levelgen.DungeonLayout{tight, fresh}}
+	// a seal that needs no hidden room: the scripted layouts have none
+	forceSeal(t, components.SealLeverOrder)
 
 	s := runFrom(t, gen, seededSpawns(5))
 

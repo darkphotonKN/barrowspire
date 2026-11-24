@@ -14,12 +14,16 @@ Each tick, a delver in play gains regen per second × tick seconds of their
 pool, stopping at max. The gain accrues in sub-units so no fraction is lost:
 at 30 Hz, 20/s is exactly 2/3 of a point a tick and reads 20 after 30 ticks.
 A pool with no regen never changes on its own; a delver out of play (dead,
-escaped, left behind) gains nothing.
+escaped, left behind) gains nothing. A blessed delver's regen is raised by
+BlessedRegenPercent more, summed beside the passive tree's bonus and never
+written into it (FS-5FZ4J §G R44).
 */
-type ResourceSystem struct{}
+type ResourceSystem struct {
+	BlessedRegenPercent float64
+}
 
-func NewResourceSystem() *ResourceSystem {
-	return &ResourceSystem{}
+func NewResourceSystem(blessedRegenPercent float64) *ResourceSystem {
+	return &ResourceSystem{BlessedRegenPercent: blessedRegenPercent}
 }
 
 func (s *ResourceSystem) Update(deltaTime float64, entities []*ecs.Entity) {
@@ -28,12 +32,17 @@ func (s *ResourceSystem) Update(deltaTime float64, entities []*ecs.Entity) {
 		if !ok || !InPlay(entity) {
 			continue
 		}
-		regenerate(rc.(*components.ResourceComponent), passiveBonus(entity).RegenPercent, deltaTime)
+		bonus := passiveBonus(entity).RegenPercent
+		if Blessed(entity) {
+			bonus += s.BlessedRegenPercent
+		}
+		regenerate(rc.(*components.ResourceComponent), bonus, deltaTime)
 	}
 }
 
 // regenerate gains the pool its regen for deltaTime, its base raised by
-// bonusPercent of itself (the passive tree's, FS-8RZ51 R26), accrued in
+// bonusPercent of itself (the passive tree's, FS-8RZ51 R26, and the
+// Blessing's, FS-5FZ4J §G R44), accrued in
 // sub-units so a bonus below a whole point is never rounded away.
 func regenerate(pool *components.ResourceComponent, bonusPercent, deltaTime float64) {
 	if pool.RegenPerSecond <= 0 {

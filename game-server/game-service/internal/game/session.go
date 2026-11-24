@@ -812,7 +812,7 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 
 	// class resources regenerate toward this tick's maxima, before any cast
 	// this tick is judged against them (FS-8AY7S §Requirements 5)
-	systems.NewResourceSystem().Update(deltaTime, entities)
+	systems.NewResourceSystem(BlessingRegenPercent).Update(deltaTime, entities)
 
 	// residents amble; a run has none, so this is the hub's alone
 	if s.worldType == types.WorldTypeHub {
@@ -873,10 +873,12 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 		s.advanceTimedOpens(deltaTime, entities, s.combatSystem.Attackers())
 	}
 
-	// poison takes its tick's health after the timed opens have judged the
-	// tick's hits, since it is none: it breaks no timed open, and a delver it
-	// brings to 0 is eliminated below as by any hit (FS-5FZ4J §D R29)
+	// a fountain heals, then poison takes its tick's health, both after the
+	// timed opens have judged the tick's hits, so a heal hides none and
+	// poison, being none, breaks no timed open; a delver poison brings to 0
+	// is eliminated below as by any hit (FS-5FZ4J §G R41, §D R29)
 	if s.worldType == types.WorldTypeRun {
+		systems.NewFountainSystem(FountainRadius, FountainPercentPerSecond).Update(deltaTime, entities)
 		systems.NewPoisonSystem(PoisonPercentPerSecond).Update(deltaTime, entities)
 	}
 
@@ -1981,12 +1983,14 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// a tome run's tome and altar (FS-3103M §D, §F)
 	isTome := targetEntity.HasComponent(ecs.ComponentTypeTome)
 	isAltar := targetEntity.HasComponent(ecs.ComponentTypeAltar)
+	// the hallowed altar, never the Altar of Consecration (FS-5FZ4J §G R43)
+	isHallowedAltar := targetEntity.HasComponent(ecs.ComponentTypeHallowedAltar)
 	// a sealed floor's barriers and seal pieces (FS-5FZ4J §B, §C); a barrier
 	// is a door to the walk, never one a delver toggles
 	isBarrier := targetEntity.HasComponent(ecs.ComponentTypeBarrier)
 	isSealPiece := targetEntity.HasComponent(ecs.ComponentTypeSealPiece)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isSealPiece {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isHallowedAltar && !isSealPiece {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -2035,6 +2039,9 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 	if isAltar {
 		return s.reachAltar(playerID, playerTransform, targetEntity)
+	}
+	if isHallowedAltar {
+		return s.reachHallowedAltar(playerID, playerEntity, playerTransform, targetEntity)
 	}
 
 	// --- a sealed floor's barriers and seal pieces (FS-5FZ4J §B-C) ---
@@ -3317,6 +3324,10 @@ func (s *Session) InitialSystems() {
 	if tomeFloor, altarFloor, ok := rollTomePlan(s.spawnRand, height, TomeRunChance); ok {
 		s.setTomePlan(tomeFloor, altarFloor)
 	}
+	// and the hallowed altar's beside it (FS-5FZ4J §G R42)
+	if floor, hidden, ok := rollHallowedAltarPlan(s.spawnRand, height, HallowedAltarRunChance); ok {
+		s.setHallowedAltarPlan(floor, hidden)
+	}
 }
 
 type PlaceArea struct {
@@ -3404,6 +3415,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 		s.layDungeon(depth, dungeon, fixtures)
 	} else {
 		s.warnTomeRunFallback(depth)
+		s.warnHallowedAltarFallback(depth)
 		s.layBuildings(depth)
 	}
 

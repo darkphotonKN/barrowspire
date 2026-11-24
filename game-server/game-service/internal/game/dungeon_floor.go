@@ -89,6 +89,9 @@ type dungeonFloor struct {
 	seals []sealPlan
 	// chasm is where a Chasm lies in the stairs room, nil with none (§E R33)
 	chasm *chasmGround
+	// respites are the floor's respite rooms and where their fixtures stand,
+	// held while it is planned (§G R40)
+	respites []respite
 }
 
 func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
@@ -123,7 +126,9 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 	// them: the generator is asked for as many hidden rooms as were drawn
 	// (FS-5FZ4J §F R35, §B R10)
 	alive := s.delversInPlay() + arriving
-	draw := s.drawFloor(depth, alive)
+	// the hallowed altar, standing hidden on this floor, asks for one more
+	// hidden room (FS-5FZ4J §G R42)
+	draw := s.drawFloor(depth, alive, s.hiddenAltarUses(depth)...)
 	params.HiddenRooms = len(draw.hidden)
 
 	for try := range dungeonGenerations {
@@ -159,6 +164,11 @@ func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dung
 			slog.Error("Dungeon floor not laid",
 				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
 			continue
+		}
+		// the fountain's room is held after the seals', so it is none of
+		// theirs (FS-5FZ4J §G R40, §H R45)
+		if draw.fountain {
+			s.planRespite(d, respiteFountain, constants.ContainerWidthRadius, constants.ContainerHeightRadius)
 		}
 		slog.Debug("Dungeon floor generated",
 			"sessionID", s.ID, "floor", depth, "seed", seed, "attempt", layout.Attempt, "rooms", len(layout.Rooms))
@@ -247,7 +257,8 @@ func (s *Session) placeStairs(d *dungeonFloor, seals []components.SealKind) (poi
 // layDungeon lays a dungeon floor out: its shell walls, then the switch and
 // escape door (floors 2+), the stairs, and the gate and seal pieces of a
 // sealed floor where they were found, its secret doors and hidden rooms'
-// contents, then its containers, the tome and altar, and its traps. The party
+// contents, its fountain, then its containers, the tome and altars, and its
+// traps. The party
 // and the monsters come after, as on every floor (FS-5FZ4J §H R45).
 func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixtures) {
 	// the shell walls belong to no building: a floor map carries them with no
@@ -275,11 +286,15 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 	}
 	s.laySeals(d, fixtures.seals)
 	s.layHiddenRooms(d)
+	// the fountain, before the containers (FS-5FZ4J §H R45)
+	s.layFountain(d)
 
 	s.layDungeonContainers(d)
 
-	// a tome run's tome or altar, after the containers (FS-3103M §C R8-R9)
+	// a tome run's tome or altar, and the hallowed altar when it stands in
+	// the open, after the containers (FS-3103M §C R8-R9, FS-5FZ4J §G R42)
 	s.layTomeAndAltar(depth, d)
+	s.layHallowedAltar(depth, d)
 
 	// the traps, last of the ground (FS-5FZ4J §H R45)
 	s.layTraps(depth, d)

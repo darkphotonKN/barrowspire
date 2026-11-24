@@ -112,6 +112,12 @@ const (
 	// a floor's traps and a delver's poison (FS-5FZ4J §D R23-R29)
 	ComponentTypeTrap   ComponentType = "Trap"
 	ComponentTypePoison ComponentType = "Poison"
+	// the respites: a floor's healing fountain, a run's hallowed altar plan,
+	// the altar itself and a delver's Blessing (FS-5FZ4J §G R40-R44)
+	ComponentTypeFountain          ComponentType = "Fountain"
+	ComponentTypeHallowedAltarPlan ComponentType = "HallowedAltarPlan"
+	ComponentTypeHallowedAltar     ComponentType = "HallowedAltar"
+	ComponentTypeBlessed           ComponentType = "Blessed"
 )
 
 type Entity struct {

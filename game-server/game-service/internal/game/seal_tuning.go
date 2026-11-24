@@ -5,7 +5,8 @@ import "github.com/darkphotonKN/barrowspire-server/game-service/internal/compone
 /*
 	Sealed floors' tunables, in one place (FS-5FZ4J §Requirements): the seal
 	kind a build is forced to, the Lever Order's lever counts and glyphs, an
-	ambush's size and a trap's hit factors.
+	ambush's size, a trap's hit factors, and the respites' odds and numbers
+	(the fountain, the hallowed altar and the Blessing).
 */
 
 // ForcedSealKind, when set, is every sealed floor's one seal in place of the
@@ -159,4 +160,40 @@ const (
 	BrazierCount      = 3
 	BrazierWindow     = 60.0
 	BrazierWindowSolo = 90.0
+)
+
+// FountainFloorChance is the chance a floor 2+ below the top holds a healing
+// fountain, drawn with its seals; 1 forces one onto every such floor in a
+// local build. FS-5FZ4J §G R40.
+var FountainFloorChance = 0.5
+
+// A fountain heals each delver in play within FountainRadius px, 2 cells of
+// 80 px, of its centre FountainPercentPerSecond of their max health a second,
+// from a pool of FountainPoolPercent of the highest max health among the
+// delvers in play at the floor's build. FS-5FZ4J §G R41.
+const (
+	FountainRadius           = 160.0
+	FountainPercentPerSecond = 4.0
+	FountainPoolPercent      = 150.0
+)
+
+// HallowedAltarRunChance is the chance a run holds a hallowed altar, rolled
+// once at its creation; 1 forces one into every run in a local build.
+// HallowedAltarHiddenShare is the share of those whose altar stands in a
+// hidden room of its floor. FS-5FZ4J §G R42.
+var (
+	HallowedAltarRunChance   = 0.3
+	HallowedAltarHiddenShare = 0.5
+)
+
+// PrayDuration is the seconds a prayer at the hallowed altar takes, on the
+// FS-MQYEX timed-open rules. FS-5FZ4J §G R43.
+const PrayDuration = 2.0
+
+// The Blessing: a blessed delver's kills roll their drop chance times
+// BlessingDropFactor, and their class resource regenerates
+// BlessingRegenPercent faster. FS-5FZ4J §G R44.
+const (
+	BlessingDropFactor   = 1.10
+	BlessingRegenPercent = 5.0
 )

@@ -28,7 +28,7 @@ func resourceOf(e *ecs.Entity) *components.ResourceComponent {
 
 // regenTicks runs the regen system n times at the given tick length.
 func regenTicks(em *ecs.EntityManager, n int, tick float64) {
-	sys := NewResourceSystem()
+	sys := NewResourceSystem(0)
 	for range n {
 		sys.Update(tick, em.GetAllEntities())
 	}

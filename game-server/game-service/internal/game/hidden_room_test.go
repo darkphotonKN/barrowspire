@@ -505,7 +505,8 @@ func TestHiddenRooms_PerFloor_DoorsAndContents(t *testing.T) {
 			d := s.dungeon
 			require.NotNil(t, d, "seed %d floor %d", seed, depth)
 			n := len(d.layout.Hidden)
-			assert.LessOrEqual(t, n, hiddenRoomMax(depth), "seed %d floor %d", seed, depth)
+			// the hallowed altar's room, when it stands hidden here, on top
+			assert.LessOrEqual(t, n, hiddenRoomMax(depth)+len(s.hiddenAltarUses(depth)), "seed %d floor %d", seed, depth)
 			seen[n] = true
 			doors := barriersOfKind(s, components.BarrierSecretDoor)
 			require.Len(t, doors, n, "seed %d floor %d: a door per hidden room", seed, depth)
@@ -524,7 +525,8 @@ func TestHiddenRooms_PerFloor_DoorsAndContents(t *testing.T) {
 }
 
 // assertHiddenRoomHoldsOnlyItsOwn checks a hidden room holds exactly one of a
-// better chest, a shrine or the stair key, concealed, and no monster.
+// better chest, a shrine, the stair key or the hallowed altar, concealed, and
+// no monster.
 func assertHiddenRoomHoldsOnlyItsOwn(t *testing.T, s *Session, h levelgen.BarredRoom, seed uint64, depth int) {
 	t.Helper()
 	held := 0
@@ -546,8 +548,12 @@ func assertHiddenRoomHoldsOnlyItsOwn(t *testing.T, s *Session, h levelgen.Barred
 			held++
 			continue
 		}
+		if e.HasComponent(ecs.ComponentTypeHallowedAltar) {
+			held++
+			continue
+		}
 		pc, ok := e.GetComponent(ecs.ComponentTypeSealPiece)
-		require.True(t, ok, "seed %d floor %d: a hidden room holds a chest, a shrine or the key", seed, depth)
+		require.True(t, ok, "seed %d floor %d: a hidden room holds a chest, a shrine, the key or the hallowed altar", seed, depth)
 		assert.Contains(t, []components.SealPieceKind{components.SealPieceShrine, components.SealPieceStairKey}, pc.(*components.SealPieceComponent).Kind)
 		held++
 	}

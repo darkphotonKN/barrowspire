@@ -125,6 +125,11 @@ type ClientGameState struct {
 	// Traps are a dungeon floor's detected traps, sent whole to every
 	// member; an undetected one is sent to no one. FS-5FZ4J §D R30, §I R46.
 	Traps []*TrapState `json:"traps,omitempty"`
+	// Fountain is the floor's healing fountain and HallowedAltar the hallowed
+	// altar on its floor once reachable, both sent whole; absent where there
+	// is none. FS-5FZ4J §I R46.
+	Fountain      *FountainState      `json:"fountain,omitempty"`
+	HallowedAltar *HallowedAltarState `json:"hallowed_altar,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -232,6 +237,9 @@ type BackendGameState struct {
 	Barriers   []*BarrierState
 	// Traps are a dungeon floor's detected traps (FS-5FZ4J §I R46)
 	Traps []*TrapState
+	// Fountain and HallowedAltar are a floor's respites (FS-5FZ4J §I R46)
+	Fountain      *FountainState
+	HallowedAltar *HallowedAltarState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

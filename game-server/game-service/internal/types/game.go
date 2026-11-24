@@ -61,6 +61,9 @@ type PublicPlayerState struct {
 	// PoisonedFor is the seconds of poison left, absent when not poisoned:
 	// public, so teammates' bars can show it. FS-5FZ4J §I R47.
 	PoisonedFor float64 `json:"poisoned_for,omitempty"`
+	// Blessed is true while the delver carries the hallowed altar's Blessing,
+	// absent when not: public, as poison is. FS-5FZ4J §I R47.
+	Blessed bool `json:"blessed,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
@@ -433,6 +436,23 @@ type AltarState struct {
 	EntityID uuid.UUID `json:"entity_id"`
 	Position *Position `json:"position"`
 	Burned   bool      `json:"burned"`
+}
+
+// FountainState is a floor's healing fountain: where it stands and whether
+// its pool is spent. FS-5FZ4J §I R46.
+type FountainState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Dry      bool      `json:"dry"`
+}
+
+// HallowedAltarState is the hallowed altar on its floor, once reachable:
+// prayed once a prayer at it completed. Never the Altar of Consecration's
+// AltarState. FS-5FZ4J §I R46.
+type HallowedAltarState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Position *Position `json:"position"`
+	Prayed   bool      `json:"prayed"`
 }
 
 // CellState is a cell's column and row on the floor map's grid.

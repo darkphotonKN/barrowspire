@@ -36,6 +36,9 @@ const (
 	hiddenChest hiddenUse = "chest"
 	// hiddenShrine is a lore shrine's room
 	hiddenShrine hiddenUse = "shrine"
+	// hiddenHallowedAltar is the hallowed altar's room, when it stands
+	// hidden (§G R42)
+	hiddenHallowedAltar hiddenUse = "hallowed_altar"
 )
 
 // The interact replies' reasons of a hidden room. FS-5FZ4J §I R49.
@@ -45,23 +48,26 @@ const (
 )
 
 // floorDraw is what a dungeon floor draws before its layout is generated:
-// its seals, in chain order (none on the top floor), and what each of its
-// hidden rooms holds, in the order the layout gives the rooms.
+// its seals, in chain order (none on the top floor), what each of its hidden
+// rooms holds, in the order the layout gives the rooms, and whether it holds
+// a fountain (§G R40).
 type floorDraw struct {
-	seals  []components.SealKind
-	hidden []hiddenUse
+	seals    []components.SealKind
+	hidden   []hiddenUse
+	fountain bool
 }
 
 // drawFloor draws the floor at depth's seals, for alive delvers alive at its
-// build (FS-5FZ4J §B R9-R10), and its hidden rooms. also is one more hidden
-// room for each use given: the hallowed altar's when it is placed hidden
-// (§G R42).
+// build (FS-5FZ4J §B R9-R10), its hidden rooms and whether it holds a
+// fountain (§G R40). also is one more hidden room for each use given: the
+// hallowed altar's when it is placed hidden (§G R42).
 func (s *Session) drawFloor(depth, alive int, also ...hiddenUse) floorDraw {
 	var draw floorDraw
 	if s.hasStairs(depth) {
 		draw.seals = sealKindsFor(s.spawnRand, depth, alive)
 	}
 	draw.hidden = hiddenRoomsFor(s.spawnRand, depth, draw.seals, also...)
+	draw.fountain = fountainFor(s.spawnRand, depth, s.isTopFloor(depth))
 	return draw
 }
 
@@ -88,7 +94,7 @@ func (s *Session) redrawChasm(alive int, draw floorDraw) floorDraw {
 		hidden = append(hidden, hiddenStairKey)
 		shuffle(s.spawnRand, hidden)
 	}
-	return floorDraw{seals: seals, hidden: hidden}
+	return floorDraw{seals: seals, hidden: hidden, fountain: draw.fountain}
 }
 
 // hiddenRoomMax is how many hidden rooms the floor at depth rolls at most.
@@ -159,8 +165,8 @@ func (d *dungeonFloor) isHidden(room int) bool {
 
 /**
 * layHiddenRooms stands each hidden room's secret door, shut and undetected,
-* and its contents: a better chest or a lore shrine (the Hidden Key's key is
-* its seal's piece, laid with the seals). Then everything standing in a hidden
+* and its contents: a better chest, a lore shrine or the hallowed altar (the
+* Hidden Key's key is its seal's piece, laid with the seals). Then everything standing in a hidden
 * room is concealed by its door. FS-5FZ4J §F R36-R39, §H R45. A room whose
 * contents find no spot holds nothing, loudly.
 **/
@@ -187,6 +193,13 @@ func (s *Session) layHiddenRooms(d *dungeonFloor) {
 				break
 			}
 			CreateSealPieceEntity(s.EntityManager, SealPieceConfig{Kind: components.SealPieceShrine, X: at.x, Y: at.y, Cell: d.cellOf(at)})
+		case hiddenHallowedAltar:
+			at, ok := s.placeFixture(d, h.Room, constants.ContainerWidthRadius, constants.ContainerHeightRadius)
+			if !ok {
+				slog.Warn("Hidden room holds nothing: no free spot", "sessionID", s.ID, "room", h.Room, "use", use)
+				break
+			}
+			CreateHallowedAltarEntity(s.EntityManager, at.x, at.y)
 		}
 		s.conceal(d, h.Room, door.ID)
 	}

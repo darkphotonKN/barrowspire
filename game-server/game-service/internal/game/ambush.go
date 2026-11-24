@@ -157,7 +157,8 @@ func (s *Session) ambushSpots(d *dungeonFloor, area *spawnArea, at point, n int)
 /**
 * ambushRooms is the rooms an ambush woken at at may spawn in, nearest first by
 * walk from at's cell to each room's centre cell: never at's own room, the
-* start room, the stairs room or a hidden room (FS-5FZ4J §B R14). A barrier's
+* start room, the stairs room, a hidden room or a respite room (FS-5FZ4J §B
+* R14, §D R21). A barrier's
 * cells are walked as ground: each shuts a dead end only, and those rooms are
 * left out.
 **/
@@ -165,6 +166,9 @@ func (d *dungeonFloor) ambushRooms(at point) []int {
 	barred := map[int]bool{d.layout.Roles.Start: true, d.layout.Roles.Stairs: true, d.roomAt(at.x, at.y): true}
 	for _, hidden := range d.layout.Hidden {
 		barred[hidden.Room] = true
+	}
+	for _, r := range d.respites {
+		barred[r.room] = true
 	}
 	dist := d.walkFrom(d.cellOf(at))
 	distance := map[int]int{}

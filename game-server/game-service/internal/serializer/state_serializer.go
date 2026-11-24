@@ -115,6 +115,31 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			continue
 		}
 
+		// --- A floor's respites (FS-5FZ4J §I R46); a hidden altar is unseen
+		// until its room opens ---
+		if fc, isFountain := entity.GetComponent(ecs.ComponentTypeFountain); isFountain {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.Fountain = &types.FountainState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: at.X, Y: at.Y},
+					Dry:      fc.(*components.FountainComponent).Dry,
+				}
+			}
+			continue
+		}
+		if hc, isHallowed := entity.GetComponent(ecs.ComponentTypeHallowedAltar); isHallowed {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				at := tc.(*components.TransformComponent)
+				backendState.HallowedAltar = &types.HallowedAltarState{
+					EntityID: entity.ID,
+					Position: &types.Position{X: at.X, Y: at.Y},
+					Prayed:   hc.(*components.HallowedAltarComponent).Prayed,
+				}
+			}
+			continue
+		}
+
 		// --- Player ---
 		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
 
@@ -258,6 +283,8 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			if left, poisoned := systems.PoisonedFor(entity); poisoned {
 				playerState.PoisonedFor = left
 			}
+			// and their Blessing (FS-5FZ4J §I R47)
+			playerState.Blessed = systems.Blessed(entity)
 
 			// a body in play is a centre of interest (FS-KE075 §G R37)
 			if systems.InPlay(entity) {
@@ -731,6 +758,9 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		SealPieces: backendState.SealPieces,
 		Barriers:   backendState.Barriers,
 		Traps:      backendState.Traps,
+		// a floor's respites, sent whole (FS-5FZ4J §I R46)
+		Fountain:      backendState.Fountain,
+		HallowedAltar: backendState.HallowedAltar,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -825,6 +855,8 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.SealPieces = fresh(state.SealPieces)
 	state.Barriers = fresh(state.Barriers)
 	state.Traps = fresh(state.Traps)
+	state.Fountain = nil
+	state.HallowedAltar = nil
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was

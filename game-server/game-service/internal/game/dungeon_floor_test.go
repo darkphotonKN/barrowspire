@@ -461,7 +461,8 @@ func TestDungeonFloors_ClimbedFloorMapCarriesItsOwnRegions(t *testing.T) {
 
 	assert.Equal(t, 2.0, payload["floor"])
 	assert.Equal(t, 80.0, payload["cell_size"])
-	raw, err := json.Marshal(s.dungeon.layout.Regions)
+	// the regions shown: a shut hidden room's are left out (FS-5FZ4J §F R37)
+	raw, err := json.Marshal(s.dungeon.shownRegions(s.EntityManager.GetAllEntities()))
 	require.NoError(t, err)
 	var want []any
 	require.NoError(t, json.Unmarshal(raw, &want))
@@ -597,7 +598,9 @@ func TestDungeonFloor1_FallbackOnlyOnError(t *testing.T) {
 	}
 	assert.NotContains(t, log.String(), `"level":"ERROR"`)
 
-	// the seed logged is the seed the layout came from
+	// the seed logged is the seed the layout came from, on floor 1's own
+	// parameters: a seal that asks for no hidden room
+	forceSeal(t, components.SealLeverOrder)
 	log.Reset()
 	s, _ := dungeonRun(t, 77, 1, 0)
 	var logged struct {

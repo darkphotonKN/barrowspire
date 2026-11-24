@@ -75,8 +75,9 @@ func (s *Session) openContainer(container *ecs.Entity, openable *components.Open
 * advanceTimedOpens is a run's timed opens on its tick, after the tick's
 * movement and combat: one its delver moved, was hit, attacked or left reach
 * of is cancelled, the rest count the tick, and one whose time has passed does
-* what its target kind says: opens its container, or opens the secret door it
-* searched (FS-MQYEX §Requirements 4–10, 28; FS-5FZ4J §F R38). attackers is
+* what its target kind says: opens its container, opens the secret door it
+* searched, or ends a prayer at the hallowed altar (FS-MQYEX §Requirements
+* 4–10, 28; FS-5FZ4J §F R38, §G R43). attackers is
 * the bodies whose attack or cast went off in the tick's combat. The first to
 * finish on a target completes it, once, for every delver who was working it:
 * the others' timed opens end on the same tick (§Requirements 16–17). Nothing
@@ -92,6 +93,8 @@ func (s *Session) advanceTimedOpens(deltaTime float64, entities []*ecs.Entity, a
 		switch done.TargetKind {
 		case components.TimedTargetSearch:
 			s.openSecretDoor(target)
+		case components.TimedTargetPray:
+			s.completePrayer(target)
 		default:
 			s.completeTimedContainerOpen(target, done.DelverEntityID)
 		}

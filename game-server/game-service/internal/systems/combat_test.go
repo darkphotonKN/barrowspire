@@ -908,7 +908,7 @@ func TestCombatSystem_FullStaminaHoldsFourDashes(t *testing.T) {
 	em := ecs.NewEntityManager()
 	warrior := delver(em, 100, 100)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
-	regen := NewResourceSystem()
+	regen := NewResourceSystem(0)
 	dashCooldown := attackTable[components.AttackDash].cooldown
 
 	// waitOut runs the world's ticks with no cast until the dash is off cooldown
@@ -951,7 +951,7 @@ func TestCombatSystem_ShadowShotNearlyEmptiesTheStaminaPool(t *testing.T) {
 	em := ecs.NewEntityManager()
 	archer := delver(em, 100, 100)
 	combat := NewCombatSystem(em, neverCrit, PlayerDamageOff, testUniqueEffects)
-	regen := NewResourceSystem()
+	regen := NewResourceSystem(0)
 	shoot := func() {
 		intend(archer, components.AttackIntent{Kind: components.AttackShadowShot, TargetX: 400, TargetY: 100})
 		combat.Update(worldTick, em.GetAllEntities(), nil)
