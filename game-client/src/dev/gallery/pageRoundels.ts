@@ -1,6 +1,7 @@
 /**
- * The Page roundels contact sheet's content and layout (FS-X2CMM §I R46, the art gate): all 14 pages,
- * each in its four looks side by side (ready, locked, recovering under a sweep at 40 %, hovered), at
+ * The Page roundels contact sheet's content and layout (FS-X2CMM §I R46, the art gate; §Change:
+ * Illuminated pages C2): all 14 pages, each in its five looks side by side (ready, locked, recovering
+ * under a sweep at 40 %, hovered, dim), at
  * the book's 44 px and the cast bar's 28 px, in two blocks of seven on the windows' panel. Pure, no
  * Phaser: the sheet (`pageRoundelsSheet.ts`) draws it through the real renderer (`PageRoundel`), so
  * what is approved is what ships.
@@ -11,8 +12,8 @@ import type { FrameRect } from "@/ui/panelFrame";
 import { PAGE_IDS, type PageId } from "@/ui/pageIcons";
 import { PAGE_ROUNDEL_SIZE, type PageState } from "@/ui/pageRoundel";
 
-/** The four looks the art gate asks for (R46). */
-export const SHEET_LOOKS = ["ready", "locked", "recovering", "hovered"] as const;
+/** The looks the art gate asks for (R46), and dim, short of its cost or spent (C2). */
+export const SHEET_LOOKS = ["ready", "locked", "recovering", "hovered", "dim"] as const;
 export type SheetLook = (typeof SHEET_LOOKS)[number];
 
 /** How a look is shown: the state, the pointer, and the sweep a recovering page wears (R46: 40 %). */
@@ -38,7 +39,7 @@ export interface SheetRow {
 }
 export interface SheetBlock {
   panel: FrameRect;
-  /** Each size's heading, over its four columns. */
+  /** Each size's heading, over its looks' columns. */
   groups: { size: number; x: number; y: number }[];
   /** Each column's look, over its first row, at each size. */
   heads: { look: SheetLook; size: number; x: number; y: number }[];

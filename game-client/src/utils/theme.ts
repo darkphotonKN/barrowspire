@@ -101,6 +101,9 @@ export const BARROW = {
   pigmentMadder: "#8f5048", //    binding and blood
   pigmentLapis: "#52699a", //     movement and air
   pigmentBone: "#ddd3bb", //      every page's highlights, never a main pigment
+  // A locked page's ground (FS-X2CMM §Change: Illuminated pages C1, ADR-0095): flat warm near-ink,
+  // never coloured. Read only through `palette.bookPigment.lockedGround`.
+  pigmentLockedGround: "#2a2320",
 
   // Menu chrome: Bone & Soot, the canvas menus' own values (ADR-0087; see the header). The
   // comments name the web token each held until 2026-11-21, which is also the swap-back table.
@@ -171,6 +174,7 @@ export const BARROW_HEX = {
   pigmentMadder: 0x8f5048,
   pigmentLapis: 0x52699a,
   pigmentBone: 0xddd3bb,
+  pigmentLockedGround: 0x2a2320,
   menuBone: 0xe9dfc9,
   menuBoneBright: 0xf6efdf,
   menuAsh: 0x8c8c84,

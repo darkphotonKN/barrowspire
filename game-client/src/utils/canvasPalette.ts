@@ -269,10 +269,9 @@ export const palette = {
   },
 
   /**
-   * The class book's pigments (FS-X2CMM R45, ADR-0094): a page roundel's picture wears one main
-   * pigment by what the page does (light and finding ochre, movement and air lapis, binding and blood
-   * madder, growth, beasts and cures verdigris), never by its class, with bone for its highlights and
-   * detail. Read by the page roundels (`src/ui/pageRoundel.ts`); the book's world effects read their own
+   * The class book's pigments (FS-X2CMM R45, ADR-0094, inked by ADR-0095): a page roundel's ground wears
+   * one main pigment by what the page does (light and finding ochre, movement and air lapis, binding and
+   * blood madder, growth, beasts and cures verdigris), never by its class, and its picture is bone. Read by the page roundels (`src/ui/pageRoundel.ts`); the book's world effects read their own
    * names in `bookEffect`, below.
    */
   bookPigment: {
@@ -281,6 +280,10 @@ export const palette = {
     madder: BARROW_HEX.pigmentMadder,
     lapis: BARROW_HEX.pigmentLapis,
     bone: BARROW_HEX.pigmentBone,
+    /** A locked page's ground (ADR-0095): flat warm near-ink, what a dim page sinks toward. */
+    lockedGround: BARROW_HEX.pigmentLockedGround,
+    /** The rim under the pointer (ADR-0095): the HUD's bright brass. */
+    rimLit: BARROW_HEX.brassBright,
   },
   /**
    * The class book's leaf (FS-X2CMM R37): the vellum its page roundels lie on, a faint wash of the dark
@@ -492,8 +495,11 @@ export const palette = {
 /** One of the passive tree's hues (L4), by what a node gives: the key a node's copy names. */
 export type TreeHue = keyof typeof palette.treeHue;
 
-/** A page's main pigment (R45): bone is every page's highlight, never a main one (ADR-0094). */
-export type BookPigment = Exclude<keyof typeof palette.bookPigment, "bone">;
+/**
+ * A page's main pigment (R45): bone is every page's picture, never a main one (ADR-0094, ADR-0095), and the
+ * locked ground and the lit rim are the roundel's, not a page's.
+ */
+export type BookPigment = Exclude<keyof typeof palette.bookPigment, "bone" | "lockedGround" | "rimLit">;
 
 // ── Typography ────────────────────────────────────────────────────────────
 

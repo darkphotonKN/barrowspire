@@ -149,7 +149,18 @@ describe("the class book's pigments (FS-X2CMM R45, ADR-0094)", () => {
       madder: BARROW_HEX.pigmentMadder,
       lapis: BARROW_HEX.pigmentLapis,
       bone: BARROW_HEX.pigmentBone,
+      lockedGround: BARROW_HEX.pigmentLockedGround,
+      rimLit: BARROW_HEX.brassBright,
     });
+  });
+
+  // ADR-0095 (I-X2CMM-24): a locked page lies on a flat warm near-ink ground, never coloured.
+  it("should keep the locked ground a warm near-ink, one colour in both maps, darker than every pigment", () => {
+    expect(Number.parseInt(BARROW.pigmentLockedGround.slice(1), 16)).toBe(BARROW_HEX.pigmentLockedGround);
+    const [r, , b] = rgb(BARROW_HEX.pigmentLockedGround);
+    expect(r).toBeGreaterThan(b);
+    expect(chroma(BARROW_HEX.pigmentLockedGround)).toBeLessThan(0.03);
+    for (const key of PIGMENTS) expect(lum(rgb(BARROW_HEX.pigmentLockedGround)), key).toBeLessThan(lum(rgb(BARROW_HEX[key])) - 40);
   });
 
   it("should saturate none past the barrow ramp's own ceiling, the tree's verdigris", () => {

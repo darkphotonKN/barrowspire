@@ -1,13 +1,17 @@
 /**
- * A class book page's roundel (FS-X2CMM §I R45, ADR-0094): a muted pigment glyph inside a
- * bronze-rimmed disc of dark ground. The one coloured family on the canvas HUD; every other HUD
- * icon stays a bronze knockout (ADR-0080).
+ * A class book page's roundel (FS-X2CMM §I R45, ADR-0094; inked as an illuminated initial by §Change:
+ * Illuminated pages C1 and ADR-0095): a bone picture on a ground of its page's pigment, in a bronze rim.
+ * The one coloured family on the canvas HUD; every other HUD icon stays a bronze knockout (ADR-0080).
  *
  * It is laid from four layers of the one shared knockout renderer (`Knockout`), so it keeps that
- * renderer's supersampling at twice the render scale and its rebuild on a render-scale change:
- * - the **ground**, a disc in `palette.ink`. Only this layer casts ADR-0080's drop shadow.
- * - the **body**, the glyph's picture in its page's main pigment, flat, its cuts through to the ground.
- * - the **bone**, the glyph's highlights and detail, flat, laid on the body.
+ * renderer's supersampling at twice the render scale and its rebuild on a render-scale change, and
+ * one light over its ground:
+ * - the **ground**, a flat disc, in a ready page's `shade(pigment, 0.35)`. Only it casts ADR-0080's drop shadow.
+ * - the **light**, over the ground: one white radial shared by every roundel of a size at a render scale,
+ *   whole at the centre top (cx 50 %, cy 35 %) and clear by the rim, tinted the pigment, so the ground
+ *   falls from the pigment to its shade.
+ * - the **body**, the glyph's picture in bone, flat, its cuts through to the ground.
+ * - the **bone** layer, the glyph's detail, flat, laid on the body in a dark of the pigment, so it reads as cuts.
  * - the **rim**, a ring in the HUD's bronze, lit from above as the knockouts are.
  *
  * A page's state changes only the inks the layers wear (`roundelInk`), never their textures. Where
@@ -17,6 +21,7 @@
  */
 
 import type Phaser from "phaser";
+import { viewport } from "@/render/viewport";
 import { mix, palette, shade, type BookPigment } from "@/utils/canvasPalette";
 import { ABILITY_ICON_SLOT, circle, drawIconLines, type AbilityIconPen } from "./abilityIcons";
 import type { Rect } from "./hudCornerLayout";
@@ -51,64 +56,77 @@ export interface PageIcon {
   glyph: PageGlyph;
 }
 
-/** The inks a roundel's layers wear in one state, idle and under the pointer. */
+/** The inks a roundel's layers wear in one state, idle and under the pointer: the light is its ground's. */
 export interface RoundelInk {
   ground: KnockoutInk;
+  light: KnockoutInk;
   body: KnockoutInk;
   bone: KnockoutInk;
   rim: KnockoutInk;
 }
 
-/** The ground's ink: the dark disc, whole, in every state. */
-const GROUND: KnockoutInk = {
-  idle: { tint: palette.ink, alpha: 1 },
-  hover: { tint: palette.ink, alpha: 1 },
-  flat: true,
-};
-/** How far a dim page's glyph sinks toward the ground (short of its cost: it dims, never brightens). */
-const DIM = 0.45;
-/** A glyph's alpha at rest; under the pointer it goes to 1 (ADR-0080 "Hover"). */
-const GLYPH_ALPHA = 0.92;
+/** How far a ready ground falls toward the pitch at its rim, and how dark its picture's detail is cut (ADR-0095). */
+const GROUND_SHADE = 0.35;
+const DETAIL_SHADE = 0.55;
+/** How far the ground's centre lifts toward bone under the pointer (ADR-0095 "Hovered"). */
+const HOVER_LIFT = 0.15;
+/** How far every layer of a dim page sinks toward the locked ground (short of its cost: it dims, never brightens). */
+export const ROUNDEL_DIM = 0.45;
 /** How far an unlit rim (a locked page's) is shaded, flat, with no top-lit gradient. */
 const UNLIT = 0.3;
 
 /** A flat ink of `tint` at `alpha`, the same under the pointer. */
 const still = (tint: number, alpha: number): KnockoutInk => ({ idle: { tint, alpha }, hover: { tint, alpha }, flat: true });
 
+/** `ink` at rest in every state, its tints sunk toward the locked ground by `sink` (0 leaves them be). */
+const sunk = (ink: KnockoutInk, sink: number): KnockoutInk => {
+  const idle = { tint: mix(ink.idle.tint, palette.bookPigment.lockedGround, sink), alpha: ink.idle.alpha };
+  return { ...ink, idle, hover: idle };
+};
+
 /**
- * The inks of a roundel in `pigment` in `state` (ADR-0094):
- * - **ready**: the glyph flat in its pigment and bone; the rim the HUD's bronze lit from above. Under
- *   the pointer the rim's tint lifts and every alpha goes to 1.
- * - **recovering**: as ready at rest, and it never lifts.
- * - **dim**: the glyph sunk toward the ground, and it never lifts.
- * - **locked**: the body flat in `hudFaint` at 0.6, the bone in the ground's ink so its detail reads
- *   as cuts (a greyed knockout, ADR-0080), the rim unlit. Never coloured, never lifted.
+ * The inks of a roundel in `pigment` in `state` (ADR-0095, amending ADR-0094's):
+ * - **ready**: the ground the pigment, falling from the centre top to `shade(pigment, 0.35)` at the rim;
+ *   the picture bone at 1, its detail `shade(pigment, 0.55)`; the rim the HUD's bronze lit from above.
+ *   Under the pointer the ground's centre lifts to `mix(pigment, bone, 0.15)` and the rim to brassBright.
+ * - **recovering**: as ready at rest, under its owner's sweep, and it never lifts.
+ * - **dim**: every layer of ready sunk toward the locked ground, and it never lifts.
+ * - **locked**: the flat warm near-ink ground, no light; the body flat in `hudFaint` at 0.6, the detail
+ *   the ground's colour so it reads as cuts (a greyed knockout, ADR-0080); the rim unlit. Never coloured,
+ *   never lifted.
  */
 export function roundelInk(pigment: BookPigment, state: PageState): RoundelInk {
-  const [main, bone] = [palette.bookPigment[pigment], palette.bookPigment.bone];
+  const { [pigment]: main, bone, lockedGround, rimLit } = palette.bookPigment;
   if (state === "locked")
     return {
-      ground: GROUND,
+      ground: still(lockedGround, 1),
+      light: still(lockedGround, 0),
       body: still(palette.hudFaint, GREYED_ALPHA),
-      bone: still(palette.ink, 1),
+      bone: still(lockedGround, 1),
       rim: still(shade(BRONZE.idle.tint, UNLIT), BRONZE.idle.alpha),
     };
-  if (state === "dim")
-    return {
-      ground: GROUND,
-      body: still(mix(main, palette.ink, DIM), GLYPH_ALPHA),
-      bone: still(mix(bone, palette.ink, DIM), GLYPH_ALPHA),
-      rim: { idle: BRONZE.idle, hover: BRONZE.idle },
-    };
-  const lifts = state === "ready";
-  const glyph = (tint: number): KnockoutInk => ({ idle: { tint, alpha: GLYPH_ALPHA }, hover: { tint, alpha: lifts ? 1 : GLYPH_ALPHA }, flat: true });
-  return { ground: GROUND, body: glyph(main), bone: glyph(bone), rim: { idle: BRONZE.idle, hover: lifts ? BRONZE.hover : BRONZE.idle } };
+  const ready: RoundelInk = {
+    ground: still(shade(main, GROUND_SHADE), 1),
+    light: { idle: { tint: main, alpha: 1 }, hover: { tint: mix(main, bone, HOVER_LIFT), alpha: 1 }, flat: true },
+    body: still(bone, 1),
+    bone: still(shade(main, DETAIL_SHADE), 1),
+    rim: { idle: BRONZE.idle, hover: { tint: rimLit, alpha: 1 } },
+  };
+  if (state === "ready") return ready;
+  const sink = state === "dim" ? ROUNDEL_DIM : 0;
+  return {
+    ground: sunk(ready.ground, sink),
+    light: sunk(ready.light, sink),
+    body: sunk(ready.body, sink),
+    bone: sunk(ready.bone, sink),
+    rim: sunk(ready.rim, sink),
+  };
 }
 
 /** A roundel's measures at `size`: its radius, its rim's width, the ground inside the rim, the glyph's scale. */
 export function roundelGeometry(size: number): { r: number; rim: number; inner: number; glyphScale: number } {
   const r = size / 2;
-  const rim = Math.max(2, size * 0.075);
+  const rim = Math.max(2, size * 0.08);
   const inner = r - rim;
   // the glyph's round (15 px in its 30 px box) kept a little inside the rim
   const glyphScale = (inner - size * 0.045) / (ABILITY_ICON_SLOT / 2);
@@ -146,13 +164,57 @@ export interface PageRoundelDeps {
 }
 
 /**
+ * Where the ground's light is whole, as a share of the size from the top (ADR-0095: cy 35 %), and how far
+ * it reaches. Tuned on the contact sheet (I-X2CMM-24): a shorter reach leaves the ground's lower third
+ * and its edge at the shade, which keeps an ochre ground off the bronze rim and its bone picture legible
+ * at 28 px; 0.5 washed ochre out.
+ */
+const LIGHT_AT = 0.35;
+const LIGHT_REACH = 0.32;
+/** How much finer than the render scale the light is painted, as the knockouts are. */
+const LIGHT_SUPERSAMPLE = 2;
+
+/**
+ * The key of the ground's light for a roundel of `size` at `renderScale`, painted on the scene's first
+ * ask and shared by every roundel of that size and scale: a white disc of the roundel's radius, whole at
+ * the centre top and clear `LIGHT_REACH` of the size away, eased so the fall is soft. Undefined where the
+ * scene makes no canvas textures: the ground then stands flat.
+ */
+function groundLight(scene: Phaser.Scene, size: number, renderScale: number): string | undefined {
+  const textures = scene.textures as Phaser.Textures.TextureManager | undefined;
+  if (typeof textures?.createCanvas !== "function") return undefined;
+  const px = Math.round(size * LIGHT_SUPERSAMPLE * renderScale);
+  const key = `page-roundel-light-${size}@${renderScale}`;
+  if (textures.exists(key)) return key;
+  const texture = textures.createCanvas(key, px, px);
+  if (!texture) return undefined;
+  const ctx = texture.getContext();
+  const [c, at] = [px / 2, px * LIGHT_AT];
+  const light = ctx.createRadialGradient(c, at, 0, c, at, px * LIGHT_REACH);
+  // smoothstep in eight steps, whole at the centre top, clear at the reach
+  for (let i = 0; i <= 8; i++) {
+    const u = i / 8;
+    light.addColorStop(u, `rgba(255, 255, 255, ${+(1 - u * u * (3 - 2 * u)).toFixed(4)})`);
+  }
+  ctx.fillStyle = light;
+  ctx.beginPath();
+  ctx.arc(c, c, c, 0, 2 * Math.PI);
+  ctx.fill();
+  texture.refresh();
+  return key;
+}
+
+/**
  * One page's roundel on a box: its four layers built once per render scale, then only moved and
- * inked. `show` says whether it stands; where it cannot, it takes every layer down, its owner draws
- * `drawPageLines`, and it never tries again.
+ * inked, and its ground's light laid just over its ground each time the ground is built. `show` says
+ * whether it stands; where it cannot, it takes every layer down, its owner draws `drawPageLines`, and
+ * it never tries again.
  */
 export class PageRoundel {
   /** Ground, body, bone, rim, each with the ink it wears: made in this order, so they stand in it at one depth. */
-  private readonly layers: { knockout: Knockout; ink: keyof RoundelInk }[];
+  private readonly layers: { knockout: Knockout; ink: Exclude<keyof RoundelInk, "light"> }[];
+  /** The ground's light, over the ground and under the body; none where the scene makes no canvas. */
+  private light?: Phaser.GameObjects.Image;
   private failed = false;
 
   constructor(private readonly deps: PageRoundelDeps) {
@@ -164,8 +226,18 @@ export class PageRoundel {
       this.fail();
       deps.lost?.();
     };
-    const layer = (picture: KnockoutPicture, ink: keyof RoundelInk) => ({
-      knockout: new Knockout({ scene, depth, picture, ink: GROUND, shadow: ink === "ground", lost, name: `${name}'s ${ink}` }),
+    const layer = (picture: KnockoutPicture, ink: Exclude<keyof RoundelInk, "light">) => ({
+      knockout: new Knockout({
+        scene,
+        depth,
+        picture,
+        ink: roundelInk(icon.pigment, "ready")[ink],
+        shadow: ink === "ground",
+        // the ground is built first, and again first at each render scale: its light goes just over it
+        built: ink === "ground" ? (ground) => this.lightOver(ground) : undefined,
+        lost,
+        name: `${name}'s ${ink}`,
+      }),
       ink,
     });
     this.layers = [
@@ -180,7 +252,11 @@ export class PageRoundel {
   show(f: Rect, state: PageState, hovered = false): boolean {
     if (this.failed) return false;
     const inks = roundelInk(this.deps.icon.pigment, state);
-    if (this.layers.every(({ knockout, ink }) => knockout.show(f, hovered, inks[ink]))) return true;
+    if (this.layers.every(({ knockout, ink }) => knockout.show(f, hovered, inks[ink]))) {
+      const { tint, alpha } = hovered ? inks.light.hover : inks.light.idle;
+      this.light?.setPosition(f.x + f.width / 2, f.y + f.height / 2).setTint(tint).setAlpha(alpha);
+      return true;
+    }
     this.fail();
     return false;
   }
@@ -188,6 +264,19 @@ export class PageRoundel {
   /** Takes every layer down and stops watching the view. */
   destroy(): void {
     for (const { knockout } of this.layers) knockout.destroy();
+    this.light?.destroy();
+    this.light = undefined;
+  }
+
+  /** Lays the ground's light, at the view's render scale, just over the newly built `ground`. */
+  private lightOver(ground: Phaser.GameObjects.RenderTexture): void {
+    const { scene, depth, size } = this.deps;
+    const key = groundLight(scene, size, viewport.renderScale);
+    if (!key) return;
+    if (this.light) this.light.setTexture(key);
+    else this.light = scene.add.image(ground.x, ground.y, key).setScrollFactor(0).setDepth(depth).setAlpha(0);
+    this.light.setDisplaySize(size, size);
+    scene.children.moveAbove(this.light as Phaser.GameObjects.GameObject, ground as Phaser.GameObjects.GameObject);
   }
 
   private fail(): void {
@@ -196,11 +285,14 @@ export class PageRoundel {
   }
 }
 
+/** The fallback's lines' alpha (ADR-0094 "Fallback", which ADR-0095 keeps). */
+const LINE_ALPHA = 0.92;
+
 /** The fallback's ink in `state`: the main pigment, sunk when dim, `hudFaint` at 0.6 when locked. */
 export function pageLineInk(pigment: BookPigment, state: PageState): { tint: number; alpha: number } {
   if (state === "locked") return { tint: palette.hudFaint, alpha: GREYED_ALPHA };
   const main = palette.bookPigment[pigment];
-  return state === "dim" ? { tint: mix(main, palette.ink, DIM), alpha: GLYPH_ALPHA } : { tint: main, alpha: GLYPH_ALPHA };
+  return state === "dim" ? { tint: mix(main, palette.ink, ROUNDEL_DIM), alpha: LINE_ALPHA } : { tint: main, alpha: LINE_ALPHA };
 }
 
 /**

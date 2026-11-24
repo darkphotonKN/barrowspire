@@ -1,5 +1,6 @@
 /**
- * The Page roundels sheet (FS-X2CMM §I R46, the art gate): every page in its four looks
+ * The Page roundels sheet (FS-X2CMM §I R46, the art gate; §Change: Illuminated pages C2, ADR-0095):
+ * every page in its five looks
  * (`pageRoundels.ts`), each drawn by the real renderer (`PageRoundel`), its sweep by `drawRoundelSweep`
  * and, where a roundel cannot stand, its lines by `drawPageLines`, on the windows' panel. Its own
  * canvas, drawn at the viewport's render scale; the roundels rebuild at each.

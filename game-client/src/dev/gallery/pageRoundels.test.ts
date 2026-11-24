@@ -3,10 +3,12 @@ import { PAGE_IDS } from "@/ui/pageIcons";
 import { PAGE_ROUNDEL_SIZE } from "@/ui/pageRoundel";
 import { SHEET_LOOKS, lookOf, sheetLayout } from "./pageRoundels";
 
-// FS-X2CMM §I R46 (I-X2CMM-9): the art gate's contact sheet holds all 14 roundels in their four looks.
+// FS-X2CMM §I R46 (I-X2CMM-9), §Change: Illuminated pages C2 (I-X2CMM-24): the art gate's contact sheet
+// holds all 14 roundels in their five looks.
 
 describe("the Page roundels sheet (FS-X2CMM R46)", () => {
-  it("should show every page once, in ready, locked, recovering and hovered, at 44 and 28 px", () => {
+  it("should show every page once, in ready, locked, recovering, hovered and dim, at 44 and 28 px", () => {
+    expect(SHEET_LOOKS).toEqual(["ready", "locked", "recovering", "hovered", "dim"]);
     const rows = sheetLayout().blocks.flatMap((b) => b.rows);
     expect(rows.map((r) => r.id)).toEqual([...PAGE_IDS]);
     for (const row of rows) {
@@ -40,5 +42,6 @@ describe("the Page roundels sheet (FS-X2CMM R46)", () => {
     expect(lookOf("recovering")).toEqual({ state: "recovering", hovered: false, swept: 0.4 });
     expect(lookOf("hovered")).toEqual({ state: "ready", hovered: true, swept: 0 });
     expect(lookOf("locked")).toEqual({ state: "locked", hovered: false, swept: 0 });
+    expect(lookOf("dim")).toEqual({ state: "dim", hovered: false, swept: 0 });
   });
 });
