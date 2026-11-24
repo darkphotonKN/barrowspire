@@ -70,3 +70,12 @@ FS-X2CMM §A R4–R8, §D R16–R18, §E R28–R31, §K R59.
 
 - RED: a monster taunted past its leash picks its target normally once the night lapses.
 - GREEN: the night's own hold marker.
+
+## Resolution
+
+- Items 1–7 and 9–11 fixed in 42b428f5; re-review confirmed each, with failing-without tests for 1, 2 and 9.
+- **Item 8, decided: left as is.** A monster may pick a hound as its target and spend an area
+  ability on it; the ability lands on delvers only. A guard needs a hound flag on `quarry` plus a
+  check in `abilityReady`, three edits across `monster_ai.go` and `monster_ability.go`, both
+  edited by the Spire branch, so it waits until that branch merges. FS-X2CMM "Reconciled at review"
+  records that monster area abilities strike delvers only.
