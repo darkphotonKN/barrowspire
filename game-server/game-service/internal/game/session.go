@@ -839,6 +839,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	if s.worldType == types.WorldTypeRun && s.navGrid != nil {
 		systems.NewStoneBlockSystem(s.navGrid).Update(deltaTime, entities)
 		s.watchSeals(entities)
+		// a trap a delver stepped onto fires, its hit queued for this tick's
+		// combat (FS-5FZ4J §D R25-R28)
+		s.springTraps(deltaTime, entities)
 		// what a delver now stands near, a secret door or a trap, is seen by
 		// the party from this tick (FS-5FZ4J §F R38, §D R30)
 		systems.NewDetectionSystem(DetectionRadius).Update(entities)
@@ -868,6 +871,13 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// container (FS-MQYEX §Requirements 4–10, 28)
 	if timedOpens {
 		s.advanceTimedOpens(deltaTime, entities, s.combatSystem.Attackers())
+	}
+
+	// poison takes its tick's health after the timed opens have judged the
+	// tick's hits, since it is none: it breaks no timed open, and a delver it
+	// brings to 0 is eliminated below as by any hit (FS-5FZ4J §D R29)
+	if s.worldType == types.WorldTypeRun {
+		systems.NewPoisonSystem(PoisonPercentPerSecond).Update(deltaTime, entities)
 	}
 
 	// monster death: the slain lie dead from this tick; the hub holds no monsters

@@ -122,6 +122,9 @@ type ClientGameState struct {
 	Seal       *SealState        `json:"seal,omitempty"`
 	SealPieces []*SealPieceState `json:"seal_pieces,omitempty"`
 	Barriers   []*BarrierState   `json:"barriers,omitempty"`
+	// Traps are a dungeon floor's detected traps, sent whole to every
+	// member; an undetected one is sent to no one. FS-5FZ4J §D R30, §I R46.
+	Traps []*TrapState `json:"traps,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -227,6 +230,8 @@ type BackendGameState struct {
 	Seal       *SealState
 	SealPieces []*SealPieceState
 	Barriers   []*BarrierState
+	// Traps are a dungeon floor's detected traps (FS-5FZ4J §I R46)
+	Traps []*TrapState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

@@ -46,6 +46,8 @@ func TestBodyKindOf_WhatTheGroundCounts(t *testing.T) {
 			assert.Equal(t, tc.want, kind)
 			assert.Equal(t, tc.weighs, kind.Weighs())
 			assert.Equal(t, tc.pushes, kind.Pushes())
+			// whoever weighs on a plate fires a trap (FS-5FZ4J §D R25)
+			assert.Equal(t, tc.weighs, kind.FiresTraps())
 		})
 	}
 }

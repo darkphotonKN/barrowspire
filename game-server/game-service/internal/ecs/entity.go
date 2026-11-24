@@ -109,6 +109,9 @@ const (
 	// shut secret door hides (FS-5FZ4J §F R37-R38, §D R30)
 	ComponentTypeDetectable ComponentType = "Detectable"
 	ComponentTypeConcealed  ComponentType = "Concealed"
+	// a floor's traps and a delver's poison (FS-5FZ4J §D R23-R29)
+	ComponentTypeTrap   ComponentType = "Trap"
+	ComponentTypePoison ComponentType = "Poison"
 )
 
 type Entity struct {

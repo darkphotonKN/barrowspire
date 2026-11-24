@@ -409,7 +409,14 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	// a sealed floor's gate, seals and their pieces (FS-5FZ4J §B)
 	sealed := len(entityIDsWith(s, ecs.ComponentTypeBarrier)) + len(entityIDsWith(s, ecs.ComponentTypeSeal)) +
 		len(entityIDsWith(s, ecs.ComponentTypeSealPiece))
-	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar + sealed
+	// a dungeon floor's traps (FS-5FZ4J §D R23); a floor of buildings has none
+	traps := len(entityIDsWith(s, ecs.ComponentTypeTrap))
+	if s.dungeon != nil {
+		assert.Equal(t, trapCount(currentFloor(t, s).Depth), traps, "the new floor's own traps")
+	} else {
+		assert.Zero(t, traps, "a floor of buildings has no traps")
+	}
+	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar + sealed + traps
 	assert.Equal(t, len(keep)+floorKinds, total, "nothing else is in the world")
 }
 

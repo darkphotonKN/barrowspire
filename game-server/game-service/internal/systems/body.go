@@ -52,3 +52,8 @@ func (k BodyKind) Pushes() bool { return k == BodyDelver }
 // Detects is whether a body of this kind detects a secret door or a trap it
 // comes near: a delver in play does, a monster never (FS-5FZ4J §F R38, §D R30).
 func (k BodyKind) Detects() bool { return k == BodyDelver }
+
+// FiresTraps is whether a body of this kind fires a trap it steps on, or
+// breathes a gas vent's cloud: a delver in play does, a monster never
+// (FS-5FZ4J §D R25, R28). A hired ally (FS-4EC7Z) will.
+func (k BodyKind) FiresTraps() bool { return k == BodyDelver }

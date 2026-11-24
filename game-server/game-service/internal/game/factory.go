@@ -360,6 +360,27 @@ func CreateSealPieceEntity(em *ecs.EntityManager, config SealPieceConfig) *ecs.E
 	return entity
 }
 
+// TrapConfig is one trap: its kind, the cell it lies on and that cell's
+// centre in px.
+type TrapConfig struct {
+	Kind components.TrapKind
+	Cell components.Cell
+	X, Y float64
+}
+
+// CreateTrapEntity lays one armed, undetected trap (FS-5FZ4J §D R23-R30). It
+// is no interact target. A tripwire carries the one ambush it wakes.
+func CreateTrapEntity(em *ecs.EntityManager, config TrapConfig) *ecs.Entity {
+	entity := em.CreateEntity()
+	entity.AddComponent(&components.TrapComponent{Kind: config.Kind, Cell: config.Cell, Armed: true})
+	entity.AddComponent(components.NewTransformComponent(config.X, config.Y))
+	entity.AddComponent(&components.DetectableComponent{Spots: []components.Spot{{X: config.X, Y: config.Y}}})
+	if config.Kind == components.TrapTripwire {
+		entity.AddComponent(&components.AmbushComponent{})
+	}
+	return entity
+}
+
 // CreateFunctionNPCEntity places an NPC who opens something.
 //
 // They never move, so they carry no velocity: only who they are, where they

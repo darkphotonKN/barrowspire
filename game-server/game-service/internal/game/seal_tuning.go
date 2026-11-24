@@ -97,3 +97,38 @@ const DetectionRadius = 160.0
 // SearchDuration is the seconds a search of a secret door takes, on the
 // FS-MQYEX timed-open rules. FS-5FZ4J §F R38.
 const SearchDuration = 2.0
+
+// A floor holds min(TrapCountBase + floor(depth / TrapCountEvery),
+// TrapCountMax) traps: 3 on floor 1, 8 from floor 10. FS-5FZ4J §D R23.
+const (
+	TrapCountBase  = 3
+	TrapCountEvery = 2
+	TrapCountMax   = 8
+)
+
+// A trap stands more than TrapStartClearCells cells from the start room, so
+// from every one of the party's start spots, and at least TrapSpacingCells
+// cells from every other trap. FS-5FZ4J §D R23.
+const (
+	TrapStartClearCells = 2
+	TrapSpacingCells    = 3
+)
+
+// TrapRearmAfter is the seconds a fired spike plate, dart wall or fire jet
+// takes to re-arm. FS-5FZ4J §D R25.
+const TrapRearmAfter = 10.0
+
+// A gas vent's cloud reaches GasVentRadius px, 2 cells, from its centre and
+// puffs every GasVentPuffEvery seconds while anyone stays in it. FS-5FZ4J §D
+// R28.
+const (
+	GasVentRadius    = 160.0
+	GasVentPuffEvery = 6.0
+)
+
+// Poison takes PoisonPercentPerSecond of a delver's max health a second for
+// PoisonDuration seconds. FS-5FZ4J §D R29.
+const (
+	PoisonDuration         = 60.0
+	PoisonPercentPerSecond = 1.0
+)

@@ -110,6 +110,10 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			backendState.Barriers = append(backendState.Barriers, barrierState(entity, bc.(*components.BarrierComponent)))
 			continue
 		}
+		if tc, isTrap := entity.GetComponent(ecs.ComponentTypeTrap); isTrap {
+			backendState.Traps = append(backendState.Traps, trapState(entity.ID, tc.(*components.TrapComponent)))
+			continue
+		}
 
 		// --- Player ---
 		pc, isPlayer := entity.GetComponent(ecs.ComponentTypePlayer)
@@ -249,6 +253,10 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 			}
 			if next, ok := progression.NextLevelAt(int32(level)); ok {
 				playerState.NextLevelAt = &next
+			}
+			// a delver's poison, public (FS-5FZ4J §I R47)
+			if left, poisoned := systems.PoisonedFor(entity); poisoned {
+				playerState.PoisonedFor = left
 			}
 
 			// a body in play is a centre of interest (FS-KE075 §G R37)
@@ -614,6 +622,22 @@ func sealPieceState(id uuid.UUID, piece *components.SealPieceComponent, at *comp
 	}
 }
 
+// trapState is one detected trap on the wire: never revealed in v1, a gas
+// vent's last puff once it has puffed. FS-5FZ4J §I R46, R48.
+func trapState(id uuid.UUID, trap *components.TrapComponent) *types.TrapState {
+	state := &types.TrapState{
+		EntityID: id,
+		Kind:     string(trap.Kind),
+		Cell:     types.CellState{X: trap.Cell.X, Y: trap.Cell.Y},
+		Armed:    trap.Armed,
+	}
+	if trap.Puffed {
+		puffedAt := trap.PuffedAt
+		state.PuffedAt = &puffedAt
+	}
+	return state
+}
+
 // barrierState is one barrier on the wire, open as its Openable says.
 // FS-5FZ4J §I R46.
 func barrierState(entity *ecs.Entity, barrier *components.BarrierComponent) *types.BarrierState {
@@ -701,6 +725,7 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Seal:       backendState.Seal,
 		SealPieces: backendState.SealPieces,
 		Barriers:   backendState.Barriers,
+		Traps:      backendState.Traps,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -794,6 +819,7 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Seal = nil
 	state.SealPieces = fresh(state.SealPieces)
 	state.Barriers = fresh(state.Barriers)
+	state.Traps = fresh(state.Traps)
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was

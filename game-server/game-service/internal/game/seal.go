@@ -172,12 +172,7 @@ func (s *Session) standBlock(d *dungeonFloor, piece *ecs.Entity) {
 // on the floor's grid.
 func (s *Session) layBarrier(d *dungeonFloor, kind components.BarrierKind, rect levelgen.CellRect) *ecs.Entity {
 	size := d.layout.CellSize
-	cells := make([]components.Cell, 0, rect.W*rect.H)
-	for y := rect.Y; y < rect.Y+rect.H; y++ {
-		for x := rect.X; x < rect.X+rect.W; x++ {
-			cells = append(cells, components.Cell{X: x, Y: y})
-		}
-	}
+	cells := cellsOf(rect)
 	barrier := CreateBarrierEntity(s.EntityManager, BarrierConfig{
 		Kind:   kind,
 		X:      float64(rect.X) * size,

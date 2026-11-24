@@ -58,6 +58,9 @@ type PublicPlayerState struct {
 	// Specialization is the body's (systems.Specialization), public as the
 	// title is; absent before the pick. FS-E1ZDG §B R9.
 	Specialization string `json:"specialization,omitempty"`
+	// PoisonedFor is the seconds of poison left, absent when not poisoned:
+	// public, so teammates' bars can show it. FS-5FZ4J §I R47.
+	PoisonedFor float64 `json:"poisoned_for,omitempty"`
 }
 
 // ResourceState is a delver's class resource as its owner is told it, in whole
@@ -470,6 +473,20 @@ type BarrierState struct {
 	Kind     string      `json:"kind"`
 	Cells    []CellState `json:"cells"`
 	Open     bool        `json:"open"`
+}
+
+// TrapState is one detected trap (FS-5FZ4J §I R46): armed false while a
+// fired trap waits to re-arm and for a spent tripwire, a gas vent always
+// armed; revealed by a book page (FS-X2CMM), always false in v1. PuffedAt is
+// a gas vent's last puff, in seconds of the floor's simulation time, absent
+// before its first; the client reads a puff off it rising (R48).
+type TrapState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Kind     string    `json:"kind"`
+	Cell     CellState `json:"cell"`
+	Armed    bool      `json:"armed"`
+	Revealed bool      `json:"revealed"`
+	PuffedAt *float64  `json:"puffed_at,omitempty"`
 }
 
 // GateState is a hub gate as the client sees it: where it goes, where it

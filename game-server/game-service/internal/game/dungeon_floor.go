@@ -200,8 +200,8 @@ func (s *Session) placeFixtures(depth int, d *dungeonFloor, seals []components.S
 // layDungeon lays a dungeon floor out: its shell walls, then the switch and
 // escape door (floors 2+), the stairs, and the gate and seal pieces of a
 // sealed floor where they were found, its secret doors and hidden rooms'
-// contents, then its containers. The party and the monsters come after, as on
-// every floor (FS-5FZ4J §H R45).
+// contents, then its containers, the tome and altar, and its traps. The party
+// and the monsters come after, as on every floor (FS-5FZ4J §H R45).
 func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixtures) {
 	// the shell walls belong to no building: a floor map carries them with no
 	// house (FS-KE075 §F R31); a wall's top-left is its position, as WallState's
@@ -233,6 +233,9 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 
 	// a tome run's tome or altar, after the containers (FS-3103M §C R8-R9)
 	s.layTomeAndAltar(depth, d)
+
+	// the traps, last of the ground (FS-5FZ4J §H R45)
+	s.layTraps(depth, d)
 }
 
 /**
