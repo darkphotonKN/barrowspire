@@ -589,3 +589,71 @@ No HTTP endpoints change. No inbound action is added.
   encounter groups, hired allies, contract marks): FS-5FZ4J and FS-4EC7Z build them.
 - Pages beyond the 14, and specialization variants of pages.
 - Sound for the pages (a later FS-AND39 change).
+
+## Change: Illuminated pages and the open tome
+
+> Status: work-order · Date: 2026-11-25 · Related ADRs: [ADR-0095](../adr/0095-class-book-page-icons-are-illuminated-bone-glyphs-on-their-pigment.md) (amends ADR-0094's inks)
+
+The owner compared variants of the page icons and the book panel (`/variants`, 2026-11-25,
+relayed by the coordinating session) and picked **Illuminated** icons and an **Open tome**
+panel. A look change only: casting, the bridge, the wire and the server are untouched. Styling
+only, so the `/code-review` gate is skipped for this section (the owner's standing art rule).
+
+### Requirements
+
+C1. **Illuminated roundels** (ADR-0095): the page's pigment fills the disc as a soft radial
+    (pigment at the centre top, `shade(pigment, 0.35)` at the rim), the picture's body is bone
+    and its detail `shade(pigment, 0.55)`; the bronze rim is a little thicker and lifts to
+    `brassBright` on hover; hovered lifts the ground's centre toward bone; locked is a flat warm
+    near-ink ground with a `hudFaint` body; dim sinks every layer; recovering is ready under the
+    sweep. The 14 pictures and the pigment-by-what-it-does mapping (R45) stay. Replaces R45's
+    and ADR-0094's inks.
+C2. **The contact sheet** (`docs/art/class-book-pages-contact-sheet.png`) is re-rendered in the
+    new inks, all 14 pages in their states and at render scales 1, 1.5 and 2.
+C3. **The open tome** replaces R37's panel: a two-page vellum spread in a dark leather border
+    (tokens: leather about `#3b2a1d`; vellum about `#c9b98f` at the outer edges to `#d8caa3` near
+    the middle; a gutter shadow about `#a89772` at the spine). It stands to one side of the
+    screen, not the middle, because the run goes on behind it.
+C4. **The left page**: the book's title in madder-brown ink, centred over a hairline rule; under
+    it one row per offered page in book order: a 28 px roundel, the page's name in dark ink
+    (about `#2c2118`), and its cost right-aligned in a muted brown (about `#5e4c34`). A locked row
+    is at about 55 % opacity and shows "Lv N" instead of the cost. A spent row shows "spent". The
+    hovered row has a soft `vellumDark` wash.
+C5. **The right page** replaces R37's hover tip: the hovered page in full: a 64 px roundel, its
+    name in madder-brown, its one line (and a Scar's earned-where line), then "cost · cast time ·
+    cooldown" (cooldown words from the wire's `cooldown_length` and `limit`), then an italic hint:
+    "Click to arm, then pick …" naming the target by the page's kind ("the ground", "an ally"),
+    "Click to cast." for none and self pages, or the reason it waits ("Recovering.", "Not enough
+    mana.", "Spent until the next floor.", "Learned at level N."). With no hover it shows the
+    first ready page, or a blank page.
+C6. **Clicking a row** arms or casts exactly as a click on a roundel did (R40). `K`, the corner
+    icon, Esc, × and stepping aside for other windows are unchanged (R36).
+C7. **A state flip redraws in place.** A page's state changing (a cooldown ending, a cast, the
+    resource crossing a cost) redraws its row and the right page; it never rebuilds the panel and
+    its roundel textures. (Was I-X2CMM-23 item 2.)
+C8. **The cast bar** keeps its 28 px roundel, in the new inks.
+C9. **The look stays swappable**: inks in `pageRoundel.ts`, the spread's tones and type in
+    `classBookStyle.ts`, its geometry in `classBookLayout.ts`, behind the panel's draw.
+
+### Acceptance Criteria
+
+- [ ] Roundels draw ADR-0095's inks in every state; the contact sheet is re-rendered.
+- [ ] The open tome draws the leather border, the vellum spread and gutter, the left page's rows
+      and the right page, at one side of the screen.
+- [ ] Hovering a row fills the right page; no hover shows the first ready page or a blank page.
+- [ ] Clicking a row arms or casts as before; K, the icon, Esc, × and stepping aside still work.
+- [ ] A state-only change redraws without rebuilding roundel textures.
+- [ ] Client suites green.
+
+### Edge States
+
+- **A book with no offered pages** (the Ledger in wave 1): the left page shows the title and the
+  "not yet written" line; the right page is blank.
+- **Every page locked:** the right page shows the first page with "Learned at level N."
+- **Small viewports** (1080 logical wide): the spread fits beside the ability bar and stays clear
+  of the corner row and chat.
+
+### Out of Scope
+
+- Any change to casting, the bridge, the wire or the server.
+- New pictures for the pages.

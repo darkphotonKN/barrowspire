@@ -6,6 +6,8 @@ Scope: `game-client`, the page icons of a class book (FS-X2CMM): the 14 pages of
 the Hunter's Journal, The Ledger and Scars, wherever a page is drawn (the book panel, the cast
 bar). Not the corner row, the ability bar or any other canvas HUD icon: those stay bronze
 knockouts (ADR-0080). Not item icons (ADR-0020).
+Amended by: [ADR-0095](0095-class-book-page-icons-are-illuminated-bone-glyphs-on-their-pigment.md) — the Roundel,
+Glyph, Locked and Hover clauses (illuminated: bone glyphs on a ground of their pigment)
 Amends: [ADR-0080](0080-canvas-hud-icons-are-embossed-bronze-knockouts-from-one-shared-renderer.md) —
 the Shape and Colour clauses, for class book page icons only
 Realized by: [FS-X2CMM](../specs/X2CMM-class-books.md)
