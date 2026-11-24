@@ -357,7 +357,7 @@ describe("planWalls by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47)"
   };
 
   it("should give each piece the rule's height where it stands, so one wall can be both", () => {
-    const { pieces } = planWalls([wall(0, 0, 400, 80)], 7, MASONRY_WALLS, rule);
+    const { pieces } = planWalls([wall(0, 0, 400, 80)], 7, MASONRY_WALLS, { rule: rule });
     for (const p of pieces) {
       expect(p.height).toBe(p.at.x < 200 ? "front" : "back");
       expect(p.sheet.startsWith(`tower_wall_${p.height}_`)).toBe(true);
@@ -366,7 +366,7 @@ describe("planWalls by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47)"
   });
 
   it("should post each end at the rule's height there", () => {
-    const { posts } = planWalls([wall(0, 0, 400, 80)], 7, MASONRY_WALLS, rule);
+    const { posts } = planWalls([wall(0, 0, 400, 80)], 7, MASONRY_WALLS, { rule: rule });
     expect(posts.map((p) => [p.at.x, p.sheet])).toEqual([
       [40, "tower_post_front"],
       [360, "tower_post_back"],
@@ -375,10 +375,10 @@ describe("planWalls by a piece rule (a dungeon floor, FS-KE075 §H.46–§H.47)"
 
   it("should draw no lit kind where the rule lets no light stand: a sconce there is plain", () => {
     // a long back wall at y = 400: no light may stand there
-    const dark = planWalls([wall(200, 400, 4000, 80)], 7, MASONRY_WALLS, rule).pieces;
+    const dark = planWalls([wall(200, 400, 4000, 80)], 7, MASONRY_WALLS, { rule: rule }).pieces;
     expect(dark.some((p) => p.sheet.includes("sconce"))).toBe(false);
     // the same wall north of y = 100 keeps today's share of sconces
-    const lit = planWalls([wall(200, 0, 4000, 80)], 7, MASONRY_WALLS, rule).pieces;
+    const lit = planWalls([wall(200, 0, 4000, 80)], 7, MASONRY_WALLS, { rule: rule }).pieces;
     expect(lit.some((p) => p.sheet.includes("sconce"))).toBe(true);
   });
 
@@ -423,6 +423,52 @@ describe("CHAPEL_WALLS, the chapel's own material (FS-R4MYX R23, R42)", () => {
   });
 });
 
+describe("fixed kinds (FS-R4MYX §Change: the chapel's windows match inside and out, W1)", () => {
+  // 5.5 tiles along x from 0: pieces at 20, 60, 100, 140, 180 and a trimmed one at 220
+  const w = wall(0, 0, 5.5 * T, 20, "c");
+  const fixed = { at: { 60: "lancet", 100: "buttress", 220: "lancet" }, rest: [[100, "plain"]] as const };
+
+  it("should give a piece its named kind where it stands, and hash the rest from the face's own table", () => {
+    const kinds = cutExterior(w, 7, CHAPEL_WALLS, fixed).map((p) => p.sheet);
+    expect(kinds).toEqual([
+      "chapel_wall_exterior_plain_x",
+      "chapel_wall_exterior_lancet_x",
+      "chapel_wall_exterior_buttress_x",
+      "chapel_wall_exterior_plain_x",
+      "chapel_wall_exterior_plain_x",
+      // trimmed: plain, whatever is named for it
+      "chapel_wall_exterior_plain_x",
+    ]);
+  });
+
+  it("should keep every piece's variant frame, place and trim as hashed without fixed kinds", () => {
+    const shape = (p: { index: number; at: unknown; keep: number; depthAt: unknown }) => [p.index, p.at, p.keep, p.depthAt];
+    expect(cutWall(w, "back", 7, CHAPEL_WALLS, fixed).map(shape)).toEqual(cutWall(w, "back", 7, CHAPEL_WALLS).map(shape));
+  });
+
+  it("should hash the unnamed pieces from the material's table when the face names no table of its own", () => {
+    const named = cutWall(w, "back", 7, CHAPEL_WALLS, { at: { 60: "lancet" } });
+    const hashed = cutWall(w, "back", 7, CHAPEL_WALLS);
+    expect(named[1].sheet).toBe("chapel_wall_back_lancet_x");
+    expect(named.filter((_, i) => i !== 1).map((p) => p.sheet)).toEqual(hashed.filter((_, i) => i !== 1).map((p) => p.sheet));
+  });
+
+  it("should leave planWalls as it was with no fixed kinds", () => {
+    expect(planWalls(EAST_DOOR_WALLS, 1, CHAPEL_WALLS, { fixed: undefined })).toEqual(planWalls(EAST_DOOR_WALLS, 1, CHAPEL_WALLS));
+  });
+
+  it("should read the fixed kinds by face and house side: the north wall's full-height inner face", () => {
+    const [house] = housesFrom(EAST_DOOR_WALLS);
+    const { pieces } = planWalls(EAST_DOOR_WALLS, 1, CHAPEL_WALLS, { fixed: { back: { north: { at: { [house.x + 60]: "lancet" } } } } });
+    const lancets = pieces.filter((p) => p.sheet.includes("_lancet_"));
+    expect(lancets.map((p) => [p.sheet, p.at])).toEqual([["chapel_wall_back_lancet_x", { x: house.x + 60, y: house.y + 10 }]]);
+  });
+
+  it("should refuse a piece rule and fixed kinds together: the rule replaces the house sides the kinds are read by", () => {
+    expect(() => planWalls(EAST_DOOR_WALLS, 1, CHAPEL_WALLS, { rule: INTERIOR_PARTITION, fixed: {} })).toThrow(/rule and fixed kinds/);
+  });
+});
+
 describe("unlitSheets (the Inn's walls: lit only by its hearth, candelabra and lanterns)", () => {
   const unlit = unlitSheets(TIMBER_WALLS);
 
@@ -456,7 +502,7 @@ describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", 
   const partition = [wall(505, 70, 20, 160, "inn"), wall(505, 310, 20, 160, "inn")];
 
   it("should cut it low, in masonry, with no sconce: the camera sees over it into both rooms", () => {
-    const { pieces, posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
+    const { pieces, posts } = planWalls(partition, 7, MASONRY_WALLS, { rule: INTERIOR_PARTITION });
     expect(pieces.length).toBeGreaterThan(0);
     for (const p of pieces) {
       expect(p.sheet).toMatch(/^tower_wall_front_(plain|pillar)_y$/);
@@ -466,7 +512,7 @@ describe("INTERIOR_PARTITION (the Inn's partition, drawn as interior masonry)", 
   });
 
   it("should post both jambs of its door gap", () => {
-    const { posts } = planWalls(partition, 7, MASONRY_WALLS, INTERIOR_PARTITION);
+    const { posts } = planWalls(partition, 7, MASONRY_WALLS, { rule: INTERIOR_PARTITION });
     const ys = posts.map((p) => p.at.y).sort((a, b) => a - b);
     // each segment's ends, inset by half its thickness: the gap's jambs at 220 and 320
     expect(ys).toEqual([80, 220, 320, 460]);

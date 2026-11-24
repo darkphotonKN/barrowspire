@@ -25,6 +25,11 @@
 //   graveyard_wall  one tile of low dry-stone along x or along y: whole or crumbled (WALL_STATES)
 //   wayside_cross   within 40 × 40 (r 20, R41): a tall weathered calvary cross on three steps by the
 //                   chapel's door and path, facing east; tall, an occluder
+//   chapel_crucifix wall-hung on a west wall, facing e, as hall.js's painting (W9): its back on the
+//                   wall's face, the origin a hair in front of it; 40 px along y, 68 px tall, centred
+//                   at the paintings' height (HUNG)
+//   chapel_mural    the same, a fresco on the plaster 64 px along y, 52 px tall (W10): two scenes by
+//                   index (MURALS)
 //
 // Dark fantasy and old: weathered, mossy, cracked stone, dead wood gone grey, rusted iron. Colour
 // stays in the bake's channels (design guideline "Gameplay accent"): nothing here is interactable
@@ -35,6 +40,7 @@ import { fbm, hash2, rng, smoothstep, vnoise, vnoise3 } from "../noise.js";
 import { mix, shade } from "../palette.js";
 import { materials, pixelTexture, plain, textured } from "../materials.js";
 import { part, rod, V3 } from "./util.js";
+import { hang, HUNG } from "./hall.js";
 
 /** World px to model units. */
 const u = (px) => px / 40;
@@ -48,6 +54,9 @@ export const HEADSTONES = {
 
 /** A graveyard wall tile's frames, in frame order. */
 export const WALL_STATES = ["whole", "crumbled"];
+
+/** The murals' scenes, in frame order: a haloed robed saint; the dead rising from their graves. */
+export const MURALS = ["saint", "rising"];
 
 // ── Palette (BARROW blends only) ─────────────────────────────────────────────────────────
 
@@ -76,6 +85,8 @@ const PEWTER = mix("slateLight", "slate", 0.35);
 /** The bell: bronze darkened and gone green at the lip. */
 const BRONZE = mix(mix(mix("brass", "barrowDeep", 0.6), "charcoal", 0.45), "necrotic", 0.2);
 const WAX = mix("vellum", "vellumDark", 0.4);
+/** Old linen, the crucifix figure's loincloth: its paint's last pale. */
+const LINEN = mix(mix("vellum", "vellumDark", 0.3), "vellumFaint", 0.2);
 /** The fresh posy: a muted red, the pale of old linen, dark leaves. Never amber. */
 const BLOOM_RED = mix("oxblood", "oxbloodText", 0.45);
 const BLOOM_PALE = mix("vellum", "vellumDark", 0.2);
@@ -84,6 +95,21 @@ const LEAF_DARK = mix("arcaneDeep", "charcoal", 0.25);
 const WITHERED = mix("barrowBrown", "vellumDark", 0.3);
 const WITHERED_HEAD = mix(mix("barrowDeep", "oxblood", 0.3), "barrowBrown", 0.3);
 const TWINE = mix("vellumFaint", "barrowBrown", 0.3);
+/** The crucifix: old oak gone near black, and its carved figure a paler wood, its paint flaked off. */
+const CROSS_WOOD = mix(mix("barrowDeep", "pitch", 0.4), "umber", 0.2);
+const CORPUS_WOOD = mix(mix("barrowBrown", "vellumDark", 0.4), "barrowDeep", 0.15);
+const CORPUS_PAINT = mix("vellum", "vellumDark", 0.35);
+/** Fresco: the lime plaster it is painted on, and the coarse brown-grey render under it. */
+const INTONACO = mix(mix("vellum", "vellumDark", 0.3), "slateLight", 0.08);
+const ARRICCIO = mix(mix("vellumFaint", "slate", 0.45), "barrowBrown", 0.15);
+/** Its earth pigments, faded: red ochre, yellow ochre, a cold blue-grey, a dark umber, bone. */
+const RED_OCHRE = mix(mix("oxblood", "barrowBrown", 0.35), "vellumDark", 0.15);
+const YELLOW_OCHRE = mix(mix("brass", "vellumDark", 0.45), "barrowBrown", 0.15);
+const AZURE = mix(mix("necrotic", "slate", 0.55), "umbra", 0.2);
+const NIGHT = mix(mix("umbra", "slate", 0.5), "charcoal", 0.35);
+const DARK_EARTH = mix("barrowDeep", "charcoal", 0.35);
+const BONE = mix(mix("vellum", "slateLight", 0.3), "necrotic", 0.12);
+const FLESH = mix(mix("vellum", "barrowBrown", 0.35), "oxbloodText", 0.08);
 
 // ── Materials ────────────────────────────────────────────────────────────────────────────
 
@@ -139,6 +165,7 @@ function chapelMaterials() {
     pewter: plain(PEWTER, { rough: 0.45, metal: 0.7 }),
     bronze: plain(BRONZE, { rough: 0.6, metal: 0.45, side: D }),
     wax: plain(WAX, { rough: 0.6 }),
+    linen: plain(LINEN, { rough: 0.95 }),
     bloomRed: plain(BLOOM_RED, { rough: 0.8 }),
     bloomPale: plain(BLOOM_PALE, { rough: 0.8 }),
     stem: plain(STEM, { rough: 0.85 }),
@@ -146,8 +173,222 @@ function chapelMaterials() {
     withered: plain(WITHERED, { rough: 1 }),
     witheredHead: plain(WITHERED_HEAD, { rough: 1, flat: true }),
     twine: plain(TWINE, { rough: 1 }),
+    // the crucifix's oak: grain running along each beam (v), split by a few dark checks, the arrises
+    // rubbed a little paler where hands have touched it for a century
+    crossWood: textured(
+      pixelTexture(32, 192, (x, y) => {
+        const grain = 0.78 + 0.3 * fbm(x / 2.2, y / 40, 841, 3) + 0.08 * vnoise(x / 0.9, y / 9, 842);
+        let c = shade(CROSS_WOOD, grain);
+        if (Math.abs(vnoise(x / 3.5, y / 70, 843) - 0.5) < 0.03) c = shade(c, 0.45);
+        return shade(c, 1 + 0.25 * (1 - smoothstep(0, 4, Math.min(x, 31 - x))));
+      }),
+      { rough: 0.8, bump: 0.7 },
+    ),
+    // the figure's carved wood, most of its paint gone: a pale flesh tone only in flakes
+    corpus: textured(
+      pixelTexture(64, 64, (x, y) => {
+        const c = shade(CORPUS_WOOD, 0.82 + 0.3 * fbm(x / 6, y / 14, 851, 3));
+        const kept = smoothstep(0.58, 0.64, fbm(x / 7, y / 7, 852, 3));
+        return mix(c, shade(CORPUS_PAINT, 0.9 + 0.15 * vnoise(x, y, 853)), 0.85 * kept);
+      }),
+      { rough: 0.75, bump: 0.5 },
+    ),
+    // the render under a fresco, where the painted plaster has fallen away
+    arriccio: textured(
+      pixelTexture(64, 64, (x, y) => shade(ARRICCIO, (0.78 + 0.3 * fbm(x / 5, y / 5, 861, 3)) * (vnoise(x / 1.2, y / 1.2, 862) > 0.85 ? 0.8 : 1))),
+      { rough: 1, bump: 1.2 },
+    ),
+    murals: MURALS.map((m) => textured(frescoTexture(m), { rough: 0.95, bump: 0.25 })),
   };
   return CHAPEL;
+}
+
+// ── Frescoes ─────────────────────────────────────────────────────────────────────────────
+
+/** The mural panel: its size in tile edges (64 × 52 world px), and its texture's pixels. */
+const MURAL_W = u(64);
+const MURAL_H = u(52);
+const FRESCO_W = 256;
+const FRESCO_H = Math.round((FRESCO_W * MURAL_H) / MURAL_W);
+
+/** How far (u, v) lies in from the panel's nearest edge, in panel heights. */
+const panelEdge = (u, v) => Math.min(u * (MURAL_W / MURAL_H), (1 - u) * (MURAL_W / MURAL_H), v, 1 - v);
+
+/** An ellipse test about (cu, cv), radii (ru, rv), in the panel's u/v. */
+const inEllipse = (u, v, cu, cv, ru, rv) => ((u - cu) / ru) ** 2 + ((v - cv) / rv) ** 2 < 1;
+
+/**
+ * Centuries on a fresco: the colour faded toward the plaster and blotched; candle soot darkening
+ * the top; a damp bloom at the foot; craquelure; and the paint flaked off in small patches, most of
+ * them toward the panel's edge, the plaster showing pale where it went.
+ */
+function frescoAge(c, u, v, s) {
+  c = mix(c, INTONACO, 0.22 + 0.2 * fbm(u * 5, v * 5, s));
+  c = shade(c, 1 - 0.26 * smoothstep(0.6, 1, v) * (0.6 + 0.4 * fbm(u * 3, v * 2, s + 1)));
+  c = mix(c, mix(INTONACO, "necrotic", 0.12), 0.3 * (1 - smoothstep(0, 0.22, v)) * fbm(u * 8, v * 4, s + 2));
+  const lose = 0.7 - 0.08 * (1 - smoothstep(0.08, 0.24, panelEdge(u, v)));
+  const flake = smoothstep(lose, lose + 0.025, fbm(u * 15, v * 12, s + 3, 3));
+  c = mix(c, shade(INTONACO, 0.95 + 0.1 * vnoise(u * 90, v * 90, s + 4)), flake);
+  const crack = Math.abs(vnoise(u * 7, v * 5, s + 5) - 0.5) < 0.01 || Math.abs(vnoise(u * 16, v * 13, s + 6) - 0.5) < 0.008;
+  return crack ? shade(c, 0.55) : c;
+}
+
+/** The painted border every panel has: a red ochre band and a yellow ochre line inside it. */
+function frescoBorder(c, u, v) {
+  const e = panelEdge(u, v);
+  if (e > 0.05 && e < 0.09) return RED_OCHRE;
+  if (e >= 0.09 && e < 0.102) return YELLOW_OCHRE;
+  return e <= 0.05 ? INTONACO : c;
+}
+
+// A scene paints a colour and names the region it lies in (a figure's part, or 0 for the ground):
+// frescoTexture draws the painter's dark contour wherever a figure's region meets another, so the
+// figures still read at the game's scale through the fading.
+
+/**
+ * The saint: a robed figure standing full length on a cold blue ground, a gilt-ochre halo about
+ * the head, hands joined in prayer, a dark mantle from one shoulder, on a dark earth floor, an
+ * inscription band across the foot.
+ */
+function saintFresco(u, v) {
+  let c = mix(AZURE, NIGHT, 0.45 * smoothstep(0.3, 0.9, v));
+  let r = 0;
+  if (v < 0.26) c = shade(DARK_EARTH, 0.95 + 0.2 * fbm(u * 10, v * 10, 871));
+  // the inscription band, its letters worn to marks
+  if (v > 0.12 && v < 0.2) {
+    c = mix(INTONACO, YELLOW_OCHRE, 0.3);
+    r = "band";
+    if (Math.abs(v - 0.16) < 0.017 && Math.floor(u * 40) % 3 !== 0 && u > 0.22 && u < 0.78) c = DARK_EARTH;
+  }
+  // the robe: a long bell from the shoulders to the floor, folds falling in it
+  const shoulder = 0.64;
+  const hem = 0.22;
+  if (v > hem && v < shoulder) {
+    const t = (shoulder - v) / (shoulder - hem);
+    const halfW = 0.085 + 0.085 * t;
+    const du = u - 0.5;
+    if (Math.abs(du) < halfW) {
+      const fold = 0.85 + 0.2 * Math.sin((du / halfW) * 8 + t * 1.5);
+      c = shade(RED_OCHRE, fold * 1.1);
+      r = "robe";
+      // the mantle: dark, from the left shoulder falling to the left of the hem
+      if (du < -halfW * 0.45 + t * halfW * 0.2) {
+        c = shade(mix(NIGHT, "umbraLight", 0.2), fold);
+        r = "mantle";
+      }
+    }
+  }
+  // the halo: a disc of ochre about the head
+  if (inEllipse(u, v, 0.5, 0.74, 0.1, 0.125)) {
+    c = YELLOW_OCHRE;
+    r = "halo";
+  }
+  // the head: a pale oval, eyes and the line of the mouth dark, hair dark at the crown
+  if (inEllipse(u, v, 0.5, 0.725, 0.047, 0.07)) {
+    c = FLESH;
+    r = "head";
+    if (v > 0.77) c = shade(DARK_EARTH, 1.3);
+    if (Math.abs(v - 0.733) < 0.01 && Math.abs(Math.abs(u - 0.5) - 0.019) < 0.009) c = DARK_EARTH;
+    if (Math.abs(v - 0.69) < 0.006 && Math.abs(u - 0.5) < 0.014) c = shade(RED_OCHRE, 0.7);
+  }
+  // the neck, and the joined hands before the chest
+  if (Math.abs(u - 0.5) < 0.02 && v > 0.635 && v < 0.665) {
+    c = FLESH;
+    r = "head";
+  }
+  if (inEllipse(u, v, 0.5, 0.52, 0.026, 0.055)) {
+    c = FLESH;
+    r = "hands";
+  }
+  return [c, r];
+}
+
+/** The risen: a body out of the ground to its hips at `cu`, `h` tall over the ground line `g`, arms raised. */
+function risen(u, v, cu, g, h) {
+  const w = h * 0.2;
+  if (inEllipse(u, v, cu, g + h * 0.78, w * 0.6, h * 0.12)) return "head";
+  if (v > g && v < g + h * 0.64 && Math.abs(u - cu) < w * (0.7 + 0.3 * ((v - g) / h))) return "body";
+  // the arms, raised in a V from the shoulders
+  for (const side of [-1, 1]) {
+    const t = (v - (g + h * 0.56)) / (h * 0.48);
+    if (t > 0 && t < 1 && Math.abs(u - (cu + side * (w * 0.85 + t * h * 0.28))) < w * 0.24) return "body";
+  }
+  return null;
+}
+
+/**
+ * The dead rising: under a dark sky with a sick pale band at the horizon, an angel blowing its
+ * trumpet over them, grey-green bodies climb out of the dark earth from their opened graves, the
+ * slabs pushed up beside them.
+ */
+function risingFresco(u, v) {
+  const horizon = 0.52 + 0.025 * Math.sin(u * 7);
+  let c = v > horizon ? mix(mix(BONE, AZURE, 0.55), NIGHT, smoothstep(0, 0.3, v - horizon)) : shade(DARK_EARTH, 0.8 + 0.3 * fbm(u * 9, v * 9, 881));
+  let r = 0;
+  // the angel over all: ochre wings spread, a pale robe, the trumpet's long line
+  for (const side of [-1, 1])
+    if (inEllipse(u, v, 0.5 + side * 0.12, 0.76, 0.12, 0.05 + 0.03 * Math.cos((u - 0.5) * 12))) {
+      c = shade(YELLOW_OCHRE, 1.15);
+      r = "wing";
+    }
+  if (inEllipse(u, v, 0.5, 0.71, 0.05, 0.1) && v < 0.76) {
+    c = mix(BONE, "vellum", 0.5);
+    r = "angel";
+  }
+  if (inEllipse(u, v, 0.5, 0.8, 0.026, 0.035)) {
+    c = FLESH;
+    r = "angelHead";
+  }
+  if (Math.abs(v - (0.8 - (u - 0.52) * 0.3)) < 0.012 && u > 0.52 && u < 0.72) {
+    c = YELLOW_OCHRE;
+    r = "trumpet";
+  }
+  // the open graves: dark pits, each slab pushed up and leaning at its head
+  const graves = [
+    [0.27, 0.36, 0.35, 0.3],
+    [0.73, 0.38, -0.35, 0.26],
+    [0.5, 0.22, 0.2, 0.32],
+  ];
+  for (const [cu, g, tilt] of graves) {
+    const su = u - (cu + 0.13);
+    const sv = v - (g + 0.06);
+    if (Math.abs(su * Math.cos(tilt) + sv * Math.sin(tilt)) < 0.022 && Math.abs(-su * Math.sin(tilt) + sv * Math.cos(tilt)) < 0.07) {
+      c = shade(mix(BONE, "slate", 0.35), 0.9);
+      r = "slab";
+    }
+    if (inEllipse(u, v, cu, g, 0.11, 0.035)) {
+      c = shade("pitch", 1.5);
+      r = "pit";
+    }
+  }
+  // the risen out of their pits, grey-green; and one more, standing, between them
+  for (const [cu, g, h] of [...graves.map(([cu, g, , h]) => [cu, g, h]), [0.13, 0.17, 0.3], [0.87, 0.2, 0.28]]) {
+    const limb = risen(u, v, cu, g, h);
+    if (limb) {
+      c = shade(mix(BONE, "necrotic", 0.25), 0.8 + 0.25 * smoothstep(0, 1, (v - g) / h));
+      r = `${limb}${cu}`;
+    }
+  }
+  return [c, r];
+}
+
+const FRESCOES = { saint: saintFresco, rising: risingFresco };
+
+/**
+ * A fresco's painted plaster, v up the panel (the texture's top row is the panel's top): the
+ * scene, a dark contour where a figure's region meets another, the painted border, then its age.
+ */
+function frescoTexture(which) {
+  const paint = FRESCOES[which];
+  const seed = 873 + MURALS.indexOf(which) * 10;
+  const at = (x, y) => paint((x + 0.5) / FRESCO_W, 1 - (y + 0.5) / FRESCO_H);
+  return pixelTexture(FRESCO_W, FRESCO_H, (x, y) => {
+    const [c, r] = at(x, y);
+    const contour = [at(x + 1.5, y), at(x, y + 1.5)].some(([, n]) => n !== r && (n || r));
+    const u = (x + 0.5) / FRESCO_W;
+    const v = 1 - (y + 0.5) / FRESCO_H;
+    return frescoAge(frescoBorder(contour ? shade(DARK_EARTH, 0.9) : c, u, v), u, v, seed);
+  });
 }
 
 /** The dais's flags: courses of large slabs, worn pale where feet go, cracked, dark-jointed. */
@@ -867,4 +1108,132 @@ export function waysideCross() {
     g.add(part(new THREE.CircleGeometry(0.02 + R() * 0.02, 8), C.lichen, { x: 0.077, y: armY + (R() - 0.5) * 0.08, z: (R() - 0.5) * (span - 0.1), ry: Math.PI / 2 }));
   mossFoot(g, R, 16, { rx: 0.44, rz: 0.44 });
   return g;
+}
+
+// ── The west wall's hung dressing (W9, W10) ──────────────────────────────────────────────
+
+/** The crucifix: its height and the arms' span, in tile edges (68 × 40 world px). */
+const CRUCIFIX_H = u(68);
+const CRUCIFIX_SPAN = u(40);
+const BEAM = 0.13;
+const BEAM_D = 0.08;
+
+/**
+ * A large old crucifix of dark oak (W9): a Latin cross with square terminals at its arms and its
+ * head, the wood checked and split, a titulus board over the head, and on it a carved
+ * figure, its arms raised a little on the beam, its head bowed to the north, its legs together on
+ * a footrest. The wood is worn and checked; the figure's paint is mostly gone, a pale flesh tone
+ * only in flakes. Built on a north wall facing s, its back on the wall's face, then turned to hang
+ * on the west wall facing east.
+ */
+export function chapelCrucifix() {
+  const M = materials();
+  const C = chapelMaterials();
+  const g = new THREE.Group();
+  const y0 = HUNG.y - CRUCIFIX_H / 2;
+  const top = HUNG.y + CRUCIFIX_H / 2;
+  const z = HUNG.back + BEAM_D / 2;
+  const front = HUNG.back + BEAM_D;
+  // the upright, and the crossbar halved into it (built tall and laid across, so its grain runs
+  // along it), both stopping under their terminals
+  const terminal = 0.16;
+  g.add(box(BEAM, CRUCIFIX_H - terminal, BEAM_D, C.crossWood, { y: y0 + (CRUCIFIX_H - terminal) / 2, z }));
+  const armY = top - 0.44;
+  const half = CRUCIFIX_SPAN / 2;
+  g.add(box(BEAM, CRUCIFIX_SPAN - 2 * terminal, BEAM_D - 0.012, C.crossWood, { y: armY, z: z + 0.002, rz: Math.PI / 2 }));
+  // the terminals: square blocks a little proud of the beams, at the head and both arms
+  for (const [x, y] of [
+    [0, top - terminal / 2],
+    [-(half - terminal / 2), armY],
+    [half - terminal / 2, armY],
+  ])
+    g.add(box(terminal, terminal, BEAM_D + 0.012, C.crossWood, { x, y, z: z + 0.006 }));
+  // a long check split down the upright's face, and one through the north arm (+x here, north once
+  // hung facing e)
+  g.add(box(0.008, 0.5, 0.004, C.incised, { x: -0.025, y: y0 + 0.45, z: front + 0.001, rz: 0.02 }));
+  g.add(box(0.22, 0.007, 0.004, C.incised, { x: 0.22, y: armY - 0.02, z: front - 0.0035, rz: -0.03 }));
+  // the foot of the upright, a little splayed
+  g.add(box(BEAM + 0.05, 0.1, BEAM_D + 0.01, C.crossWood, { y: y0 + 0.05, z: z + 0.005 }));
+  // the titulus over the head, its letters gone to a few dark marks
+  g.add(box(0.24, 0.085, 0.02, C.corpus, { y: top - terminal - 0.07, z: front + 0.01, rz: 0.03 }));
+  for (const dx of [-0.06, -0.02, 0.02, 0.06]) g.add(box(0.018, 0.04, 0.004, C.incised, { x: dx, y: top - terminal - 0.07, z: front + 0.022 }));
+  // the figure: carved in the round and pinned to the beam, its parts a hair proud of the cross
+  const fz = front + 0.035;
+  const headY = armY + 0.07;
+  const head = part(new THREE.SphereGeometry(0.058, 10, 8), C.corpus, { x: 0.025, y: headY, z: fz + 0.02, sx: 0.9, sz: 0.85 });
+  g.add(head);
+  // the crown of thorns about the bowed head
+  g.add(part(new THREE.TorusGeometry(0.058, 0.012, 4, 12), C.crossWood, { x: 0.025, y: headY + 0.03, z: fz + 0.02, rx: Math.PI / 2 - 0.3, rz: -0.25 }));
+  const neck = armY;
+  // the torso, a little flattened, sagging from the arms
+  g.add(part(new THREE.CylinderGeometry(0.075, 0.052, 0.32, 10), C.corpus, { y: neck - 0.17, z: fz, sz: 0.55 }));
+  // the loincloth knotted at the hip, the paint's last pale on it
+  g.add(part(new THREE.CylinderGeometry(0.06, 0.07, 0.11, 10), C.linen, { y: neck - 0.37, z: fz, sz: 0.6, rz: 0.08 }));
+  g.add(box(0.05, 0.1, 0.02, C.linen, { x: 0.065, y: neck - 0.42, z: fz + 0.01, rz: -0.2 }));
+  // the arms, raised a little along the beam to the nailed hands
+  for (const sx of [-1, 1]) {
+    const hand = V3(sx * (half - terminal - 0.08), armY + 0.065, fz - 0.01);
+    g.add(rod(V3(sx * 0.06, neck - 0.04, fz), hand, 0.028, 0.02, C.corpus, 6));
+    g.add(part(new THREE.SphereGeometry(0.025, 6, 5), C.corpus, { x: hand.x, y: hand.y, z: hand.z }));
+    g.add(part(new THREE.CylinderGeometry(0.01, 0.01, 0.03, 5), M.iron, { x: hand.x, y: hand.y, z: hand.z + 0.02, rx: Math.PI / 2 }));
+  }
+  // the legs together, the knees a little bent, the feet one over the other on the footrest
+  const hip = neck - 0.4;
+  const knee = V3(0.025, hip - 0.24, fz + 0.015);
+  const feet = V3(0, hip - 0.5, fz);
+  for (const sx of [-1, 1]) {
+    g.add(rod(V3(sx * 0.03, hip, fz), V3(knee.x + sx * 0.02, knee.y, knee.z), 0.034, 0.026, C.corpus, 6));
+    g.add(rod(V3(knee.x + sx * 0.018, knee.y, knee.z), V3(feet.x + sx * 0.008, feet.y, feet.z), 0.026, 0.018, C.corpus, 6));
+  }
+  g.add(part(new THREE.CylinderGeometry(0.01, 0.01, 0.03, 5), M.iron, { y: feet.y + 0.01, z: feet.z + 0.02, rx: Math.PI / 2 }));
+  g.add(box(0.13, 0.035, 0.07, C.crossWood, { y: feet.y - 0.04, z: front + 0.03 }));
+  return hang(g, "e");
+}
+
+/** A ragged outline round a w × h rectangle about its centre: `bite` the most it eats in, by noise. */
+function raggedRect(w, h, bite, s, n = 18) {
+  const pts = [];
+  const corners = [
+    [-w / 2, -h / 2],
+    [w / 2, -h / 2],
+    [w / 2, h / 2],
+    [-w / 2, h / 2],
+  ];
+  corners.forEach(([ax, ay], k) => {
+    const [bx, by] = corners[(k + 1) % 4];
+    // the inward normal of this side
+    const nx = -(by - ay);
+    const ny = bx - ax;
+    const len = Math.hypot(nx, ny);
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const d = bite * smoothstep(0.35, 0.85, fbm(k * 3.1 + t * 4, k, s, 3)) + bite * 0.25 * vnoise(k * 7 + t * 13, 1, s + 1);
+      pts.push(new THREE.Vector2(ax + (bx - ax) * t + (nx / len) * d, ay + (by - ay) * t + (ny / len) * d));
+    }
+  });
+  return new THREE.Shape(pts);
+}
+
+/**
+ * A fresco on the plaster (W10), faded and flaked, its paint layer broken away round the edge in
+ * ragged bites that show the coarse render under it, the render itself crumbled at its rim into the
+ * whitewash. `index` picks the scene (MURALS): the saint, or the dead rising. Built on a north wall
+ * facing s, laid on the wall's face, then turned to hang on the west wall facing east.
+ */
+export function chapelMural(index) {
+  const which = MURALS[index];
+  if (!which) throw new Error(`chapelMural: no mural ${index}`);
+  const C = chapelMaterials();
+  const g = new THREE.Group();
+  const s = 901 + index * 10;
+  // the render: a thin coat on the wall a little larger than the painted panel
+  const render = new THREE.ExtrudeGeometry(raggedRect(MURAL_W, MURAL_H, 0.03, s), { depth: 0.008, bevelEnabled: false });
+  g.add(part(render, C.arriccio, { y: HUNG.y, z: HUNG.back }));
+  // the painted plaster over it, mapped once across the panel, its edge bitten deeper
+  const paint = new THREE.ShapeGeometry(raggedRect(MURAL_W - 0.02, MURAL_H - 0.02, 0.07, s + 5));
+  const pos = paint.attributes.position;
+  const uv = paint.attributes.uv;
+  for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / MURAL_W + 0.5, pos.getY(i) / MURAL_H + 0.5);
+  g.add(part(paint, C.murals[index], { y: HUNG.y, z: HUNG.back + 0.012 }));
+  return hang(g, "e");
 }

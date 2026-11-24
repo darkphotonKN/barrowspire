@@ -45,8 +45,10 @@ vi.mock("../palette.js", () => ({
 }));
 
 const THREE = await import("three");
-const { chapelGable, OCULUS, FINIAL } = await import("./chapelBuilding.js");
+const chapelBuilding = await import("./chapelBuilding.js");
+const { chapelGable, OCULUS, FINIAL } = chapelBuilding;
 const { GABLE_TUCK, gableRake } = await import("./building.js");
+const { WALL_BACK, WALL_FRONT } = await import("./architecture.js");
 
 /** Every round of glass on a piece: the rose window's discs. */
 function roseGlass(piece) {
@@ -103,5 +105,84 @@ describe("the chapel's gable ends (FS-R4MYX R42)", () => {
     // tuck the gable reaches up into the roof
     const ridge = topAt(highAt * 0.5);
     expect(topOf(chapelGable(axis, half, true))).toBeCloseTo(ridge - GABLE_TUCK + FINIAL.height, 6);
+  });
+});
+
+// The lancet seen from inside (FS-R4MYX §Change: The chapel's windows match inside and out, W8): the
+// inner face of a back wall piece, pierced by the same pointed window the outward face carries, so
+// the window stands at the same height in both looks; its reveal splays wider into the room.
+describe("the chapel's inner lancet (FS-R4MYX W8)", () => {
+  const { chapelWall, chapelExterior, LANCET } = chapelBuilding;
+
+  /** The dark glass on a piece: its one flat lancet-shaped pane, by its world box. */
+  function glassOf(piece) {
+    piece.updateMatrixWorld(true);
+    const panes = [];
+    piece.traverse((o) => {
+      if (o.isMesh && o.visible && o.geometry.type === "ShapeGeometry") panes.push(new THREE.Box3().setFromObject(o, true));
+    });
+    return panes;
+  }
+  /** Every mesh's world box, drawn or a frame guide. */
+  const whole = (piece) => {
+    piece.updateMatrixWorld(true);
+    return new THREE.Box3().setFromObject(piece, true);
+  };
+  const EPS = 1e-6;
+
+  it.each(["x", "y"])("along %s, its glass is the outward lancet's own opening: the same sill, springing and half-width", (axis) => {
+    const inner = glassOf(chapelWall(WALL_BACK, "lancet", axis, 1));
+    const outer = glassOf(chapelExterior("lancet", axis, 2));
+    expect(inner).toHaveLength(1);
+    expect(outer).toHaveLength(1);
+    const [i] = inner;
+    const [o] = outer;
+    // up the wall: from the sill to the apex over the springing, both looks alike
+    expect(i.min.y).toBeCloseTo(LANCET.sill, 6);
+    expect(i.min.y).toBeCloseTo(o.min.y, 6);
+    expect(i.max.y).toBeCloseTo(o.max.y, 6);
+    // along the wall: the half-width either side of the piece's centre
+    const along = (b) => (axis === "x" ? [b.min.x, b.max.x] : [b.min.z, b.max.z]);
+    expect(along(i)[0]).toBeCloseTo(-LANCET.half, 6);
+    expect(along(i)[1]).toBeCloseTo(LANCET.half, 6);
+    expect(along(i)).toEqual(along(o).map((v) => expect.closeTo(v, 6)));
+  });
+
+  it.each(["x", "y"])("along %s, the glass is set back in the wall, its reveal splaying wider into the room", (axis) => {
+    const piece = chapelWall(WALL_BACK, "lancet", axis, 1);
+    const [glass] = glassOf(piece);
+    // the room side: +z for a wall along x (a north wall's inner face), +x along y (a west wall's)
+    const out = (b) => (axis === "x" ? b.max.z : b.max.x);
+    const plainFace = out(whole(chapelWall(WALL_BACK, "plain", axis, 1)));
+    expect(out(glass)).toBeLessThan(plainFace - 0.08);
+    // the reveal: the drawn surface round the opening, from the glass out to the face, wider and
+    // lower at the face than the glass
+    piece.updateMatrixWorld(true);
+    let reveal = null;
+    piece.traverse((o) => {
+      if (o.isMesh && o.userData.reveal) reveal = new THREE.Box3().setFromObject(o, true);
+    });
+    expect(reveal).not.toBeNull();
+    const along = (b) => (axis === "x" ? b.max.x - b.min.x : b.max.z - b.min.z);
+    expect(along(reveal)).toBeGreaterThan(along(glass) + 0.06);
+    expect(reveal.min.y).toBeLessThan(glass.min.y - 0.03);
+    expect(reveal.max.y).toBeGreaterThan(glass.max.y);
+    // no deeper than the wall: the window does not stand out of either face
+    expect(out(reveal)).toBeLessThanOrEqual(plainFace + EPS);
+  });
+
+  it.each(["x", "y"])("along %s, it stands inside the plain back piece's frame guide, so it frames exactly as chapel_wall_back_plain", (axis) => {
+    for (const seed of [1, 6]) {
+      const lancet = whole(chapelWall(WALL_BACK, "lancet", axis, seed));
+      const plainBox = whole(chapelWall(WALL_BACK, "plain", axis, seed));
+      for (const k of ["x", "y", "z"]) {
+        expect(lancet.min[k], `${axis} ${seed} min ${k}`).toBeCloseTo(plainBox.min[k], 6);
+        expect(lancet.max[k], `${axis} ${seed} max ${k}`).toBeCloseTo(plainBox.max[k], 6);
+      }
+    }
+  });
+
+  it("is a back piece only: a cut-away front wall carries no window (W7)", () => {
+    expect(() => chapelWall(WALL_FRONT, "lancet", "x", 3)).toThrow(/front/);
   });
 });

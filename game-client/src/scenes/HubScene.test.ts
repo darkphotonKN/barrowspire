@@ -68,6 +68,7 @@ const { chatWiring } = await import("@/ui/uiSceneChat");
 /** Whether the UI scene's chat may take the keys over the town (FS-TQZ5J § Change: Batch 6, R126). */
 const chatMayOpen = (hub: object) => chatWiring(uiSceneOn(hub, "hub", { row: false }).bridge).mayOpen();
 const { hubGearPiece } = await import("@/ui/uiSceneGear");
+const { UiTreeSlot } = await import("@/ui/uiSceneTree");
 const { NO_UI } = await import("@/ui/uiBridge");
 const { reportWorld } = await import("@/ui/uiBridge");
 const { letterPanelState } = await import("@/stores/letterPanelState");
@@ -706,6 +707,16 @@ function hubOnStage() {
     standAt(SPIRE_GATE.position);
   };
   return { hub, stage, keys, gear, ui, press, option, choice, label, talkTo, answer, standAt, atTheDoor };
+}
+
+/**
+ * The town's whole `update`, one frame a call, over figures too bare to ease and draw (as `talkTo`
+ * leaves them): its drawing passes stubbed, so what a frame sends and talks is what is read.
+ */
+function bareFrames(hub: object): () => void {
+  const drawing = ["easeTowardServerPositions", "updateBuildings", "hideWhoIsElsewhere", "followAuras", "showStashChest", "carryTheTorch"];
+  for (const pass of drawing) Object.assign(hub, { [pass]: vi.fn() });
+  return () => (hub as MenuHub).update(0, 16);
 }
 
 /** The hub's gates as the server sends them (FS-0XMCP §Requirements 2, 6). */
@@ -1452,6 +1463,332 @@ describe("HubScene ESC menu (FS-G4VMQ §Requirements 1–5, 19, 20)", () => {
   });
 });
 
+// FS-TQZ5J § Change: A conversation holds the player still, R141–R150 (owner, Nick: 「跟npc說話時調整成
+// 不能移動 不能做其他事情」): an NPC's card owns the movement keys as the menu does; the Spire door's panel
+// does not. I-TQZ5J-60.
+describe("HubScene a conversation holds the player still (FS-TQZ5J § Change: A conversation holds the player still, R141–R150)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** An NPC as the server sends it: a resident has no function. */
+  const npc = (id: string, name: string, fn: string, x = 10) =>
+    [id, { state: { entity_id: id, name, function: fn, position: { x, y: 0 } }, pos: { x, y: 0 }, target: { x, y: 0 } }] as const;
+
+  /** The player at the origin beside `who`, each frame the town's whole `update`, and every `move` it sends. */
+  function beside(who: ReturnType<typeof npc>) {
+    const env = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    env.hub.selfEntityID = "me";
+    env.hub.views = new Map([["me", { pos: { x: 0, y: 0 } }]]);
+    env.hub.npcs = new Map([who]);
+    const frame = bareFrames(env.hub);
+    const moves = () => send.mock.calls.filter(([action]) => action === ActionType.Move).map(([, payload]) => payload);
+    const talk = () => env.answer(env.keys.e);
+    /** Walking north: W held, its move sent. */
+    const striding = () => {
+      env.keys.w.isDown = true;
+      frame();
+      expect(moves().at(-1)).toEqual({ vx: 0, vy: -1 });
+    };
+    return { ...env, send, frame, moves, talk, striding };
+  }
+
+  /** Every movement key: WASD and the arrows. */
+  const movementKeys = (t: ReturnType<typeof beside>) => [
+    t.keys.w,
+    t.keys.a,
+    t.hub.wasd.down,
+    t.keys.d,
+    t.hub.cursors.up,
+    t.hub.cursors.down,
+    t.keys.left,
+    t.keys.right,
+  ];
+
+  it("should send one stop as an NPC's card opens over a stride, and no move while it is up (R141, R142)", () => {
+    const t = beside(npc("q", "Quartermaster", "storekeeper"));
+    t.striding();
+
+    t.talk();
+    expect(t.hub.dialogue).toBeDefined();
+    t.frame();
+    expect(t.moves()).toEqual([
+      { vx: 0, vy: -1 },
+      { vx: 0, vy: 0 },
+    ]);
+
+    // pressed, released and pressed again, each key, a frame each
+    for (const k of movementKeys(t)) {
+      k.isDown = true;
+      t.frame();
+      k.isDown = false;
+      t.frame();
+      k.isDown = true;
+      t.frame();
+    }
+    expect(t.moves()).toHaveLength(2);
+    expect(t.hub.dialogue).toBeDefined();
+  });
+
+  it.each([
+    ["a function NPC (the Quartermaster)", npc("q", "Smith", "storekeeper")],
+    // the Cottar wanders his region, the Drover stands at his spot (game-service hub_map.go)
+    ["a wandering resident (the Cottar)", npc("c", "Cottar", "")],
+    ["a fixed resident (the Drover)", npc("d", "Drover", "")],
+    ["the chapel's Confessor", npc("f", "Confessor", "")],
+  ])("should hold the player under %s's card (R141)", (_who, who) => {
+    const t = beside(who);
+    t.striding();
+    t.talk();
+    expect(t.hub.dialogue).toBeDefined();
+    t.frame();
+    expect(t.moves().at(-1)).toEqual({ vx: 0, vy: 0 });
+    const sent = t.moves().length;
+
+    t.keys.d.isDown = true;
+    t.frame();
+    t.keys.w.isDown = false;
+    t.frame();
+    expect(t.moves()).toHaveLength(sent);
+  });
+
+  it("should send no move across a telling's turned page (R141; Edge States: a page turned)", () => {
+    const t = beside(npc("a", "Alewife", ""));
+    t.striding();
+    t.talk();
+    t.frame();
+    expect(t.moves().at(-1)).toEqual({ vx: 0, vy: 0 });
+    const sent = t.moves().length;
+
+    // Go on: the page turns inside one pick, and the hold never lapses, the keys changed between turns
+    expect(t.choice("on")).toBeDefined();
+    t.answer(t.keys.e);
+    t.keys.w.isDown = false;
+    t.keys.d.isDown = true;
+    t.frame();
+    t.answer(t.keys.e);
+    t.frame();
+    expect(t.hub.dialogue).toBeDefined();
+    expect(t.moves()).toHaveLength(sent);
+  });
+
+  it("should send no stop for a still player opening a card, nor any move while it is up (R142)", () => {
+    const t = beside(npc("q", "Quartermaster", "storekeeper"));
+    // the visit's first frame says the body stands still
+    t.frame();
+    expect(t.moves()).toEqual([{ vx: 0, vy: 0 }]);
+
+    t.talk();
+    t.frame();
+    t.keys.w.isDown = true;
+    t.frame();
+    expect(t.moves()).toEqual([{ vx: 0, vy: 0 }]);
+  });
+
+  it.each([
+    ["Esc", (t: ReturnType<typeof beside>) => t.answer(t.keys.esc)],
+    ["Farewell pressed", (t: ReturnType<typeof beside>) => t.choice("farewell")?.handlers.pointerup()],
+    // the Quartermaster's card has no actionable row: E closes it (A2 R31)
+    ["E on a card with no actionable row", (t: ReturnType<typeof beside>) => t.answer(t.keys.e)],
+  ])("should walk on with W still held as the card closes by %s (R146, R147)", (_way, close) => {
+    const t = beside(npc("q", "Quartermaster", "storekeeper"));
+    t.striding();
+    t.talk();
+    t.frame();
+    expect(t.moves().at(-1)).toEqual({ vx: 0, vy: 0 });
+
+    close(t);
+    expect(t.hub.dialogue).toBeUndefined();
+    t.frame();
+    expect(t.moves().at(-1)).toEqual({ vx: 0, vy: -1 });
+  });
+
+  it("should keep the card up as a wandering resident walks out of talk range (R148)", () => {
+    const who = npc("c", "Cottar", "");
+    const t = beside(who);
+    t.talk();
+    expect(t.hub.dialogue).toBeDefined();
+
+    // the server walks him off, far past NPC_TALK_RANGE
+    Object.assign(who[1], { pos: { x: 600, y: 400 }, target: { x: 600, y: 400 } });
+    t.frame();
+    t.frame();
+    expect(t.hub.dialogue).toBeDefined();
+    expect(t.choice("leave")).toBeDefined();
+  });
+
+  it("should keep walking under the Spire door's panel, and close it on walking out (R143; FS-0XMCP R8–R10)", () => {
+    const t = beside(npc("q", "Quartermaster", "storekeeper", 400));
+    t.striding();
+
+    // the server walks the body into the gate: the door's panel opens over the stride, and no stop is sent
+    t.atTheDoor();
+    expect(t.choice("solo")).toBeDefined();
+    t.frame();
+    expect(t.moves()).toEqual([{ vx: 0, vy: -1 }]);
+
+    // the keys still steer under it
+    t.keys.w.isDown = false;
+    t.keys.d.isDown = true;
+    t.frame();
+    expect(t.moves()).toEqual([
+      { vx: 0, vy: -1 },
+      { vx: 1, vy: 0 },
+    ]);
+
+    t.standAt(AWAY);
+    expect(t.hub.dialogue).toBeUndefined();
+  });
+
+  // R143 through the door's own redraws: a refusal said in it, or a party standing changed, draws it
+  // again over itself (FS-BJNYC R20, R22), and the redrawn panel is still the door's
+  it.each([
+    ["a start_solo refused", (t: ReturnType<typeof queuedHubOnStage>) => t.refuse("start_solo", "Leave the queue first.")],
+    [
+      "the party standing changed",
+      () => usePartyStore.setState({ party: { party_id: "p", leader_id: "me", members: [{ player_id: "me", username: "Ash" }] } as never }),
+    ],
+  ])("should keep walking under the door's panel redrawn by %s, and close it on walking out (R143)", (_why, redraw) => {
+    const t = queuedHubOnStage();
+    const frame = bareFrames(t.hub);
+    const moves = () => t.send.mock.calls.filter(([action]) => action === ActionType.Move).map(([, payload]) => payload);
+    t.keys.w.isDown = true;
+    frame();
+    t.atTheDoor();
+    t.choice("solo")?.handlers.pointerup();
+    const panel = t.choice("solo");
+
+    redraw(t);
+    expect(t.choice("solo")).toBeDefined();
+    expect(t.choice("solo")).not.toBe(panel);
+    frame();
+    expect(moves()).toEqual([{ vx: 0, vy: -1 }]);
+
+    t.keys.w.isDown = false;
+    t.keys.d.isDown = true;
+    frame();
+    expect(moves()).toEqual([
+      { vx: 0, vy: -1 },
+      { vx: 1, vy: 0 },
+    ]);
+
+    t.standAt(AWAY);
+    expect(t.hub.dialogue).toBeUndefined();
+    usePartyStore.setState({ party: null });
+  });
+
+  // R144, R145: nothing else either. Every corner icon and toggle key under an NPC's card, the party
+  // panel opened before it left as it is
+  describe("nothing else answers under an NPC's card, and a window open before it stays (R144, R145)", () => {
+    type Plate = "menu" | "inventory" | "character" | "party";
+    function talkingInTown() {
+      const env = hubOnStage();
+      vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+      const heard = hearOn(env.hub as unknown as Record<string, unknown>);
+      const party = partyPanelOver(env.hub, "hub", (w) => partyPanelOn(w.blocked, w.opening, w.wrapper));
+      cornerRowOn(env.hub, "hub");
+      const mail = mailboxOver(env.hub);
+      const side = uiSceneOn(env.hub, "hub");
+      // the UI scene's passive tree on the town's bridge, as the UI scene mounts it (FS-8RZ51 R32)
+      let treeOpen = false;
+      const tree = new UiTreeSlot(side.bridge, () => ({
+        isOpen: () => treeOpen,
+        open: () => void (treeOpen = true),
+        close: () => void (treeOpen = false),
+        show: () => {},
+        pointerMove: () => {},
+        pointerDown: () => false,
+        owns: () => false,
+        refused: () => {},
+        relayout: () => {},
+        destroy: () => {},
+      }));
+      tree.show(side.bridge.world);
+      const pressIcon = (icon: Plate) => {
+        const f = cornerIconFrame(icon, viewport);
+        env.stage.made.find((m) => m.kind === "zone" && !m.destroyed && m.args[0] === f.x && m.args[1] === f.y)!.handlers.pointerdown();
+      };
+      // the party panel open first, then the card over it
+      party.pressT();
+      expect(party.panel.isOpen()).toBe(true);
+      env.talkTo("storekeeper");
+      expect(env.hub.dialogue).toBeDefined();
+      bareFrames(env.hub);
+      heard();
+      /** Every window and the menu as they stand, the card still up. */
+      const screen = () => ({
+        menu: menuOver(env.hub) !== undefined,
+        inventory: env.gear.open,
+        character: env.gear.character,
+        party: party.panel.isOpen(),
+        tree: tree.isOpen(),
+        card: env.choice("farewell") !== undefined,
+      });
+      return { ...env, heard, party, mail, tree, pressIcon, screen };
+    }
+    const HELD = { menu: false, inventory: false, character: false, party: true, tree: false, card: true };
+
+    it.each<Plate>(["menu", "inventory", "character", "party"])(
+      "should change nothing and play menu_error on the %s icon",
+      (icon) => {
+        const t = talkingInTown();
+        t.pressIcon(icon);
+        expect(t.screen()).toEqual(HELD);
+        expect(t.heard()).toEqual(["menu_error"]);
+      },
+    );
+
+    // the envelope's refusal plays menu_error in the envelope (MailboxEnvelope.test), the Tree icon's a
+    // toggle that changed nothing (uiSceneCorner.test): the town's part is that each is refused
+    it("should refuse the envelope, and the Tree icon's toggle and P", () => {
+      const t = talkingInTown();
+      expect(t.mail.blocked()).toBe(true);
+      t.tree.toggle();
+      t.tree.key();
+      expect(t.screen()).toEqual(HELD);
+    });
+
+    it("should change nothing on I, B, C or T, nor let Enter into chat", () => {
+      const t = talkingInTown();
+      t.press(t.keys.i);
+      t.press(t.keys.b);
+      t.press(t.keys.c);
+      t.party.pressT();
+      expect(t.screen()).toEqual(HELD);
+      expect(chatMayOpen(t.hub)).toBe(false);
+    });
+
+    it("should leave the party panel's toggle to it once the card closes: T then shuts it", () => {
+      const t = talkingInTown();
+      t.answer(t.keys.esc);
+      expect(t.hub.dialogue).toBeUndefined();
+      expect(t.party.panel.isOpen()).toBe(true);
+      t.party.pressT();
+      expect(t.party.panel.isOpen()).toBe(false);
+    });
+  });
+
+  // R149: left pressable, by design
+  it("should leave the invite prompt and the ready check shown under an NPC's card (R149)", () => {
+    const t = beside(npc("q", "Quartermaster", "storekeeper"));
+    const side = (t.hub.worldSide as () => import("@/ui/uiBridge").WorldSide)();
+    t.talk();
+    expect(t.hub.dialogue).toBeDefined();
+    expect(side.blockers().popups).toBe(false);
+  });
+
+  it("should leave the queue on Leave pressed under an NPC's card (R149; FS-0XMCP story 9)", () => {
+    const { reply, button, send, talkTo, hub } = queuedHubOnStage();
+    reply("queue_status", { current: 1, total: 2 });
+    talkTo("storekeeper");
+    expect(hub.dialogue).toBeDefined();
+
+    button()?.handlers.pointerup(AT_LEAVE);
+    expect(send).toHaveBeenCalledWith(ActionType.LeaveQueue, {});
+  });
+});
+
 // FS-R82NV § Change C2 and FS-3EBCA R6, R7: one Esc press, the Menu icon's, and the Character
 // icon's toggle under I's guards. I-3EBCA-1.
 describe("HubScene one Esc press and the corner row's presses (FS-R82NV § Change C2; FS-3EBCA R6, R7)", () => {
@@ -1748,18 +2085,34 @@ describe("HubScene the Spire gate trigger (FS-0XMCP §Requirements 10, 22)", () 
     expect(doorIsOpen(choice)).toBe(true);
   });
 
+  // An NPC's card holds the player still (FS-TQZ5J § Change: A conversation holds the player still,
+  // R141, R148): no key walks the body under it any more. What still moves it is the server: a stride
+  // in flight as the card opened, carried until its stop lands (Edge States), or a re-seat. Neither
+  // opens the door over the card, nor closes the card.
   it("should not stack over another dialogue, nor close it on walking out", () => {
-    const { hub, choice, standAt, talkTo } = hubOnStage();
+    const { hub, keys, choice, standAt, talkTo } = hubOnStage();
+    const send = vi.spyOn(socketManager, "sendMessage").mockImplementation(() => {});
+    const frame = bareFrames(hub);
     standAt(AWAY);
+    keys.w.isDown = true;
+    frame();
     talkTo("storekeeper");
+    frame();
+    expect(send).toHaveBeenLastCalledWith(ActionType.Move, { vx: 0, vy: 0 });
+    const sent = send.mock.calls.length;
 
+    // the stride in flight carries the body into the gate before its stop lands
     standAt(SPIRE_GATE.position);
+    frame();
     expect(choice("farewell")).toBeDefined();
     expect(choice("solo")).toBeUndefined();
 
+    // and the server seats it out again: the card stays, and W, still held, walks nothing
     standAt(AWAY);
+    frame();
     expect(hub.dialogue).toBeDefined();
     expect(choice("farewell")).toBeDefined();
+    expect(send.mock.calls.length).toBe(sent);
   });
 
   it("should open nothing at a field gate", () => {
@@ -3228,7 +3581,7 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         // the Inn's partition, low masonry, inside the Inn (R25)
         ...houses.flatMap((house) => {
           const inside = PARTITION_WALLS.filter((w) => w.house_id === house.id).map((w) => interiors.partitionInside(w, house));
-          return shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, INTERIOR_PARTITION), thicknessPx(MASONRY_WALLS), house);
+          return shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, { rule: INTERIOR_PARTITION }), thicknessPx(MASONRY_WALLS), house);
         }),
       ];
       const [handed] = ground.shade.mock.calls[0];
@@ -3257,14 +3610,14 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         const inside = PARTITION_WALLS.map((w) => interiors.partitionInside(w, inn));
         const drawn = [
           ...planWallShadows(planWalls([LOOSE], seed, MASONRY_WALLS), masonry),
-          ...shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, fullHeight), masonry, inn),
+          ...shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, { rule: fullHeight }), masonry, inn),
         ];
         for (const shape of drawn) expect(handed).toContain(corners(shape));
         // and not as the hub would have drawn them (a post's square is the same in either material)
         const same = new Set(drawn.map(corners));
         const planned = [
           ...planWallShadows(planWalls([LOOSE], seed), thicknessPx(TIMBER_WALLS)),
-          ...shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, INTERIOR_PARTITION), masonry, inn),
+          ...shadowsWithin(planWalls(inside, seed, MASONRY_WALLS, { rule: INTERIOR_PARTITION }), masonry, inn),
         ].filter((shape) => !same.has(corners(shape)));
         expect(planned.length).toBeGreaterThan(0);
         for (const shape of planned) expect(handed).not.toContain(corners(shape));
@@ -3443,6 +3796,24 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
         expect(room("chapel").parts, sheet).toContain(at(sheet).value.sprite);
     });
 
+    it("should hang the crucifix and the murals in the chapel's room, hidden under its roof and shown with it lifted (§Change: windows match, W13)", () => {
+      const { room, standIn } = town(BAKED);
+      const chapel = { id: "", ...interiors.HUB_CHAPEL };
+      const calls = vi.mocked(world.addProp).mock.calls;
+      const results = vi.mocked(world.addProp).mock.results;
+      const hung = calls.flatMap(([, , sheet, at], i) =>
+        (sheet === "chapel_crucifix" || sheet === "chapel_mural") && world.insideHouse(at, chapel) ? [results[i].value.sprite as Made] : [],
+      );
+      expect(hung).toHaveLength(3);
+      for (const sprite of hung) expect(room("chapel").parts).toContain(sprite);
+      expect(room("chapel").lights).toHaveLength(2);
+
+      standIn(IN_CHAPEL);
+      expect(hung.every((p) => p.visible)).toBe(true);
+      standIn(OUTDOORS);
+      expect(hung.every((p) => !p.visible)).toBe(true);
+    });
+
     it("should light its two candelabra only while its roof is lifted, its walls carrying no light (R15)", () => {
       const { hub, room, standIn } = town(BAKED);
       const lights = room("chapel").lights;
@@ -3496,6 +3867,23 @@ describe("HubScene the town buildings' interiors (FS-B0H2D R19–R22, R25)", () 
       // its outward face shows the church's bays, and its east door its pointed-arch head
       expect(walls).toEqual(expect.arrayContaining(["chapel_wall_exterior_lancet_y", "chapel_wall_exterior_buttress_x", "chapel_door_head_y"]));
       expect(partsOf(hub, "chapel").some((m) => /^tower_/.test(sheetOf(m)))).toBe(false);
+    });
+
+    it("should draw the chapel's walls with the kinds its look fixes: a north inner lancet at each south outward lancet's x (§Change: windows match, W1, W4)", () => {
+      town(BAKED);
+      const built = vi.mocked(world.addBuildings).mock.results.flatMap((r) => r.value as import("@/render/world").BuiltBuilding[]);
+      const b = built.find((x) => x.house.id === "chapel")!;
+      const lancetsX = (pieces: readonly { sheet: string; at: { x: number } }[], sheet: string) =>
+        pieces.filter((p) => p.sheet === sheet).map((p) => p.at.x);
+      const inside = lancetsX(b.plan.shared.pieces, "chapel_wall_back_lancet_x");
+      expect(inside).toEqual([...interiors.CHAPEL_NAVE_LANCETS]);
+      expect(lancetsX(b.plan.exterior.pieces, "chapel_wall_exterior_lancet_x")).toEqual(inside);
+      // drawn as baked: one sprite per inner lancet
+      expect(sprites(b.shared as unknown as Made[]).map(sheetOf).filter((s) => s === "chapel_wall_back_lancet_x")).toHaveLength(inside.length);
+      // no other house fixes any kind: no lancet and no buttress outside the chapel
+      for (const other of built.filter((x) => x.house.id !== "chapel"))
+        for (const look of [other.plan.shared, other.plan.interior, other.plan.exterior])
+          for (const p of look.pieces) expect(p.sheet).not.toMatch(/lancet|buttress/);
     });
 
     it("should roof the chapel in its own slate set, where the town's set would stand; the other houses keep roof_ (R23, R42)", () => {
@@ -5484,6 +5872,18 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
     ["chat typing", (hub) => uiSceneOn(hub, "hub", { row: false }).bridge.reportUi({ typing: true }), {}],
     ["the menu panel up", (hub) => menuUpOver(hub), {}],
     ["a dialogue card up", (hub) => void (hub.dialogue = {}), {}],
+    // the door's panel holds no movement, but every toggle stays refused under it (FS-TQZ5J § Change: A
+    // conversation holds the player still, R143, R144)
+    [
+      "the Spire door's panel up",
+      (hub) => {
+        const town = hub as unknown as MenuHub;
+        town.followGates(AWAY, HUB_GATES);
+        town.followGates(SPIRE_GATE.position, HUB_GATES);
+        expect(hub.doorOpen).toBe(true);
+      },
+      {},
+    ],
     ["the letter panel open", (hub) => void (hub.mailbox = { isOpen: () => true }), {}],
   ];
   it.each(GUARDS)("should change nothing on M with %s (§F.33)", (_what, arrange, event) => {
@@ -5515,6 +5915,8 @@ describe("HubScene the town's minimap modes (FS-P0HSP §F; I-P0HSP-3)", () => {
       const heard = hearOn(hub as Record<string, unknown>);
       render();
       arrange(hub as Record<string, unknown>);
+      // what the arranging played (the door's panel opening, dialog_open) is not M's
+      heard();
       pressM(event);
       expect(heard()).toEqual([]);
     });
@@ -5856,7 +6258,8 @@ describe("HubScene the windows give way to the letter panel and the menu (FS-3EB
     it("should leave the letter panel alone when a window refused by a dialogue opens nothing", () => {
       const t = town();
       t.letter.open = true;
-      (t.hub as unknown as Record<string, unknown>).dialogue = {};
+      // an NPC's card, as the town keeps it: who speaks is read each frame (FS-TQZ5J § Change: A conversation holds the player still, R141)
+      (t.hub as unknown as Record<string, unknown>).dialogue = { who: { name: "Keeper" } };
       t.press(t.keys.i);
       t.party.pressT();
       expect(t.shut()).toEqual({ ...NONE, letter: true });

@@ -18,9 +18,26 @@ vi.mock("../materials.js", async () => {
 vi.mock("../palette.js", () => ({ mix: () => [0, 0, 0], shade: () => [0, 0, 0], grey: () => [0, 0, 0] }));
 
 const THREE = await import("three");
-const { pew, chapelAltar, lectern, dais, belfry, headstone, graveFlowers, graveMound, stoneCross, graveyardWall, waysideCross, HEADSTONES, WALL_STATES } = await import(
-  "./chapel.js"
-);
+const {
+  pew,
+  chapelAltar,
+  lectern,
+  dais,
+  belfry,
+  headstone,
+  graveFlowers,
+  graveMound,
+  stoneCross,
+  graveyardWall,
+  waysideCross,
+  chapelCrucifix,
+  chapelMural,
+  HEADSTONES,
+  MURALS,
+  WALL_STATES,
+} = await import("./chapel.js");
+const { painting, HUNG } = await import("./hall.js");
+const { WALL_BACK } = await import("./architecture.js");
 
 /** World px to model units. */
 const u = (px) => px / 40;
@@ -187,5 +204,82 @@ describe("the chapel's and the graveyard's props stand on their footprints (FS-R
   it("raises a fresh mound long along x, the grave running east from its head (R28)", () => {
     const b = boxOf(graveMound());
     expect(b.x1 - b.x0).toBeGreaterThan(b.z1 - b.z0);
+  });
+});
+
+// The west wall's hung dressing behind the Confessor (FS-R4MYX §Change: The chapel's windows match
+// inside and out, W9, W10): a crucifix and two frescoes, hung as the Inn's paintings are on a west
+// wall (facing e, the back on the wall's face, the origin a hair in front of it), at their height.
+describe("the crucifix and the murals hang on the west wall as the paintings do (FS-R4MYX W9, W10)", () => {
+  /** The box of what a model draws, its frame guides left out. */
+  function drawnBox(obj) {
+    obj.updateMatrixWorld(true);
+    const b = new THREE.Box3();
+    obj.traverse((o) => {
+      if (o.isMesh && o.visible) b.union(new THREE.Box3().setFromObject(o, true));
+    });
+    return { x0: b.min.x, x1: b.max.x, y0: b.min.y, y1: b.max.y, z0: b.min.z, z1: b.max.z };
+  }
+  const centreY = (b) => (b.y0 + b.y1) / 2;
+  const HUNG_PIECES = [
+    ["chapel_crucifix", () => chapelCrucifix(), { across: 1.0, tall: 1.7 }],
+    ["chapel_mural 0 (the saint)", () => chapelMural(0), { across: 1.6, tall: 1.3 }],
+    ["chapel_mural 1 (the dead rising)", () => chapelMural(1), { across: 1.6, tall: 1.3 }],
+  ];
+
+  it.each(HUNG_PIECES)("%s hangs centred at the paintings' height, its top under the back wall's", (_name, build) => {
+    const paintingE = drawnBox(painting("e", "portrait"));
+    const b = drawnBox(build());
+    expect(centreY(b)).toBeCloseTo(HUNG.y, 1);
+    expect(centreY(b)).toBeCloseTo(centreY(paintingE), 1);
+    expect(b.y1).toBeLessThan(WALL_BACK - 0.1);
+  });
+
+  it.each(HUNG_PIECES)("%s faces east: its back on the west wall's face, broad along y, about its indicative size", (_name, build, { across, tall }) => {
+    const b = drawnBox(build());
+    // the back against the wall's face, behind the origin as a painting's is
+    expect(b.x0).toBeCloseTo(HUNG.back, 2);
+    expect(b.x1 - b.x0).toBeLessThan(0.3);
+    // broad along y (world), centred on the origin along the wall
+    expect(b.z1 - b.z0).toBeGreaterThan(across * 0.9);
+    expect(b.z1 - b.z0).toBeLessThan(across * 1.1);
+    expect((b.z0 + b.z1) / 2).toBeCloseTo(0, 1);
+    expect(b.y1 - b.y0).toBeGreaterThan(tall * 0.9);
+    expect(b.y1 - b.y0).toBeLessThan(tall * 1.1);
+  });
+
+  it.each(HUNG_PIECES)("%s holds the anchor at its floor origin, as a painting does, so the scene stands it on the wall's foot", (_name, build) => {
+    const g = build();
+    g.updateMatrixWorld(true);
+    const all = new THREE.Box3().setFromObject(g, true);
+    expect(all.min.y).toBeLessThanOrEqual(0);
+  });
+
+  it("reads as a cross: a tall upright and a crossbar spanning its arms along the wall, a figure proud of it", () => {
+    const g = chapelCrucifix();
+    g.updateMatrixWorld(true);
+    const meshes = [];
+    g.traverse((o) => {
+      if (o.isMesh && o.visible) meshes.push(new THREE.Box3().setFromObject(o, true));
+    });
+    const tallest = meshes.reduce((a, m) => (m.max.y - m.min.y > a.max.y - a.min.y ? m : a));
+    const widest = meshes.reduce((a, m) => (m.max.z - m.min.z > a.max.z - a.min.z ? m : a));
+    // the upright: much taller than it is broad
+    expect(tallest.max.y - tallest.min.y).toBeGreaterThan(5 * (tallest.max.z - tallest.min.z));
+    // the crossbar: in the upper part, much broader than tall
+    expect(widest.max.z - widest.min.z).toBeGreaterThan(5 * (widest.max.y - widest.min.y));
+    expect((widest.min.y + widest.max.y) / 2).toBeGreaterThan(centreY(drawnBox(g)));
+    // the carved figure stands out from the cross's face, toward the room
+    const face = tallest.max.x;
+    expect(meshes.some((m) => m.max.x > face + 0.02)).toBe(true);
+  });
+
+  // that the two frames paint different scenes is held on the baked pixels (manifest.test.ts)
+  it("names the murals' two scenes in frame order, on panels of one height, and refuses a third", () => {
+    expect(MURALS).toEqual(["saint", "rising"]);
+    const a = drawnBox(chapelMural(0));
+    const b = drawnBox(chapelMural(1));
+    expect(a.y1 - a.y0).toBeCloseTo(b.y1 - b.y0, 1);
+    expect(() => chapelMural(2)).toThrow(/mural/);
   });
 });

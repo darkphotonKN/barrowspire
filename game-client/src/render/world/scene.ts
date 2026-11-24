@@ -66,6 +66,7 @@ import {
   planWalls,
   thicknessPx,
   trimCrop,
+  type FixedKinds,
   type PieceRule,
   type WallPiece,
   type WallPost,
@@ -543,7 +544,7 @@ export function addWalls(
   rule?: PieceRule,
 ): BuiltWalls | null {
   if (!hasWallArt(art, sheets)) return null;
-  return addWallPieces(scene, art, planWalls(walls, seed, sheets, rule), seed, sheets);
+  return addWallPieces(scene, art, planWalls(walls, seed, sheets, { rule }), seed, sheets);
 }
 
 /**
@@ -762,6 +763,8 @@ export interface BuildingOptions {
   style?: BlockStyle;
   /** Where a missing sheet is reported, once per sheet per art library. */
   logger?: ArtLogger;
+  /** The kinds a building fixes, which both its looks read (the chapel's windows, FS-R4MYX W1); none by default. */
+  fixedOf?: (house: House) => FixedKinds | undefined;
 }
 
 /** The placeholder block a wall falls back to: stone, as the run scene's pre-art walls. */
@@ -888,7 +891,7 @@ export function addBuildings(
   // every gap is closed over its door from outside, whoever's door stands in it (§B.5 amended)
   const heads = doorGaps(walls);
 
-  return planBuildings(walls, seed, sheets).map((plan) => {
+  return planBuildings(walls, seed, sheets, options.fixedOf).map((plan) => {
     const own = walls.filter((w) => w.house_id === plan.house.id);
     const built: BuiltBuilding = {
       plan,

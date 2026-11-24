@@ -522,10 +522,16 @@ interface OpenDialogue {
   dialogue: Dialogue;
 }
 
-/** Who speaks: their name, and the figure the player walked up to, if they are one. */
+/**
+ * Who speaks: their name, the figure the player walked up to, if they are one, and whether it is the
+ * Spire's door, whose panel walking out of the gate closes and which holds no movement (FS-0XMCP R8–R10;
+ * FS-TQZ5J § Change: A conversation holds the player still, R143). Kept with the card, so every redraw
+ * and turned page of it says so itself.
+ */
 interface Speaker {
   name: string;
   entityId?: NPCState["entity_id"];
+  door?: true;
 }
 
 /**
@@ -633,8 +639,6 @@ export class HubScene extends Phaser.Scene {
    * solo start sent, or refused).
    */
   private dialogue?: OpenDialogue;
-  /** The open dialogue is the Spire door's panel, which walking out of the gate closes. */
-  private doorOpen = false;
   /**
    * The gate the player stands in, by their last server-reported position and the state's gates
    * (FS-0XMCP §Requirements 10, 22): the enter and leave edges are read against it.
@@ -964,6 +968,11 @@ export class HubScene extends Phaser.Scene {
   /** Whether the UI scene's menu slot is filled (FS-TQZ5J R10): the ESC menu, OPTIONS; every guard that read the town's own menu reads this. */
   private get menuOpen(): boolean {
     return this.ui.ui.menuOpen;
+  }
+
+  /** The open card is the Spire door's panel, as the card itself says (its speaker). */
+  private get doorOpen(): boolean {
+    return this.dialogue?.who.door === true;
   }
 
   /**
@@ -2054,14 +2063,18 @@ export class HubScene extends Phaser.Scene {
 
   /**
    * Sends velocity only when it changes, rather than every frame, and always on a visit's first
-   * frame, a stop included ({@link lastSent}). While the menu or the letter panel is open the keys
-   * are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40): they read as released, so a stride either
-   * interrupted is stopped once and nothing more is sent until it closes.
+   * frame, a stop included ({@link lastSent}). While the menu, the letter panel or an NPC's card is
+   * open the keys are theirs (FS-G4VMQ §Requirements 5, FS-1GZGD R40, FS-TQZ5J § Change: A
+   * conversation holds the player still, R141): they read as released, so a stride any of them
+   * interrupted is stopped once (the server holds the last velocity) and nothing more is sent until
+   * it closes, the keys held then walking on at once (R142, R147). The Spire door's panel holds
+   * nothing: it opens on walking into the gate and closes on walking out (R143).
    */
   private sendMovementIntent(): void {
     if (!this.cursors || !this.wasd) return;
 
-    const owned = this.menuOpen || !!this.mailbox?.isOpen();
+    const talking = !!this.dialogue && !this.doorOpen;
+    const owned = this.menuOpen || !!this.mailbox?.isOpen() || talking;
     const held = (k: Phaser.Input.Keyboard.Key) => !owned && k.isDown;
     const left = held(this.cursors.left) || held(this.wasd.left);
     const right = held(this.cursors.right) || held(this.wasd.right);
@@ -2318,8 +2331,7 @@ export class HubScene extends Phaser.Scene {
    */
   private openDoor(refusal?: string): void {
     this.closeDialogue();
-    this.showDialogue({ name: SPIRE_DOOR }, delveChoices(this.hubState(), refusal));
-    this.doorOpen = true;
+    this.showDialogue({ name: SPIRE_DOOR, door: true }, delveChoices(this.hubState(), refusal));
   }
 
   /**
@@ -2515,15 +2527,17 @@ export class HubScene extends Phaser.Scene {
     // one of these, by id)
     const looks = new Map(houses.map((house) => [house.id, townHouseLook(house)]));
     const lookOf = (house: House) => looks.get(house.id)!;
-    // each house's walls in the sheets its look names (the Inn's and the chapel's carry no light of their own)
+    // each house's walls in the sheets its look names (the Inn's and the chapel's carry no light of their own),
+    // and with the kinds it fixes, if any (the chapel's windows, FS-R4MYX W1)
     const bySheets = new Map<WallSheets, WallState[]>();
     for (const house of houses) {
       const { sheets } = lookOf(house);
       bySheets.set(sheets, [...(bySheets.get(sheets) ?? []), ...walls.filter((w) => w.house_id === house.id)]);
     }
+    const fixedOf = (house: House) => lookOf(house).fixed;
     const drawn = [...bySheets].map(([sheets, own]) => ({
       sheets,
-      buildings: addBuildings(this, this.art, own, seed, { doors: doorGaps, style: TIMBER_PLACEHOLDER, sheets }),
+      buildings: addBuildings(this, this.art, own, seed, { doors: doorGaps, style: TIMBER_PLACEHOLDER, sheets, fixedOf }),
     }));
     const buildings = drawn.flatMap((d) => d.buildings);
     for (const { house, lights } of buildings)
@@ -3054,7 +3068,6 @@ export class HubScene extends Phaser.Scene {
   private closeDialogue(): void {
     const open = this.dialogue;
     this.dialogue = undefined;
-    this.doorOpen = false;
     if (open) this.ui.closeDialogue();
   }
 

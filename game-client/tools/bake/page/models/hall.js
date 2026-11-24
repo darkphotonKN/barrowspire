@@ -95,6 +95,17 @@ function faced(g, facing) {
   return g;
 }
 
+/**
+ * Hangs a piece built facing s on a north wall (HUNG) and turns it to `facing`: an unseen mark at
+ * the floor origin, so its frame holds the anchor the scene stands it on, at the wall's foot.
+ */
+export function hang(g, facing) {
+  const foot = box(0.01, 0.01, 0.01, materials().black);
+  foot.visible = false;
+  g.add(foot);
+  return faced(g, facing);
+}
+
 // ── materials ────────────────────────────────────────────────────────────────────────
 
 /** Old varnish over a painted field: yellowed, darkened toward the edges, crazed. */
@@ -606,6 +617,16 @@ export function lantern(mount) {
 
 /** Painting sizes in metres, outer frame: [width, height], by canvas. */
 const PAINTING_SIZE = { portrait: [0.64, 0.84], moor: [1.04, 0.7], vanitas: [0.82, 0.66] };
+/** A painting's centre over the floor and its back behind the origin (the wall face), in metres. */
+const HANG_Y = 1.6;
+const HANG_BACK = -0.02;
+/**
+ * Where a wall-hung piece hangs, in model units (tile edges), built facing s as a painting is: its
+ * centre's height over the floor, and its back's z, on the wall's face a hair behind the origin.
+ * Anything else hung on a wall (the chapel's crucifix and murals) hangs by it, so it lines up with
+ * the paintings and the scene places it the same way.
+ */
+export const HUNG = { y: HANG_Y * S, back: HANG_BACK * S };
 
 /**
  * A dark oil in a carved frame of old gilt, hung on a wall with its top tipped forward a little,
@@ -617,7 +638,7 @@ export function painting(facing, which) {
   const [w, h] = PAINTING_SIZE[which];
   const f = 0.075;
   const pic = new THREE.Group();
-  pic.position.set(0, 1.6, -0.02);
+  pic.position.set(0, HANG_Y, HANG_BACK);
   pic.rotation.x = 0.05;
   // the frame: an outer moulding, a dark inner slip, then the canvas sunk behind
   for (const [x, y, fw, fh] of [
@@ -632,12 +653,7 @@ export function painting(facing, which) {
   pic.add(box(w - 2 * f + 0.02, h - 2 * f + 0.02, 0.012, H.canvasBack, { z: 0.012 }));
   pic.add(part(new THREE.PlaneGeometry(w - 2 * f + 0.01, h - 2 * f + 0.01), H.canvases[which], { z: 0.02 }));
   g.add(pic);
-  // an unseen mark at the floor origin, so the frame holds the anchor the scene stands it on
-  const foot = box(0.01, 0.01, 0.01, H.canvasBack);
-  foot.visible = false;
-  g.add(foot);
-  faced(g, facing);
-  return scaled(g, S);
+  return scaled(hang(g, facing), S);
 }
 
 // ── plants ─────────────────────────────────────────────────────────────────────────────
