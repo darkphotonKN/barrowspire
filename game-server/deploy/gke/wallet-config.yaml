@@ -14,3 +14,4 @@ data:
   TEMPORAL_NAMESPACE: "quickstart-barrowspire-f2c20954.xjqvw"
   OTEL_ENABLED: "false"
   GOMEMLIMIT: "115MiB"
+  PPROF_ADDR: "127.0.0.1:6060"

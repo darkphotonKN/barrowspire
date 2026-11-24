@@ -60,6 +60,8 @@ func main() {
 	}
 	defer commontracing.Close(shutdownTracing)
 
+	commontelemetry.ServePprof(commonhelpers.GetEnvString("PPROF_ADDR", ""))
+
 	// --- root context ---
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

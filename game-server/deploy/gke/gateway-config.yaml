@@ -20,3 +20,4 @@ data:
   STATS_ADDR: "stats-headless:7124"
   WALLET_ADDR: "wallet-headless:7128"
   CORS_ORIGINS: "https://barrowspire.app,https://www.barrowspire.app"
+  PPROF_ADDR: "127.0.0.1:6060"
