@@ -651,6 +651,10 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 	if attacker.HasComponent(ecs.ComponentTypeAttackPin) {
 		return
 	}
+	// an afloat delver is refused as if on cooldown too (FS-X2CMM §E R23)
+	if afloat(attacker) {
+		return
+	}
 
 	var cooldowns *components.CooldownComponent
 	if cc, ok := attacker.GetComponent(ecs.ComponentTypeCooldown); ok {
@@ -858,7 +862,8 @@ func stepStance(entity *ecs.Entity, deltaTime float64) (raised bool) {
 			rest = append(rest, intent)
 			continue
 		}
-		if !stance.Open && stance.LockoutRemaining == 0 {
+		// afloat refuses the class ability, the parry included (FS-X2CMM §E R23)
+		if !stance.Open && stance.LockoutRemaining == 0 && !afloat(entity) {
 			stance.Open, stance.OpenFor, stance.Negated = true, 0, false
 			raised = true
 		}

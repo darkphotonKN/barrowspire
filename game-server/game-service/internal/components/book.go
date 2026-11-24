@@ -39,8 +39,11 @@ type BookStateName string
 const (
 	// BookStateHardened is the Scar of the Pit's 10 s self state (R30).
 	BookStateHardened BookStateName = "hardened"
-	// afloat (R23), trackers_eye (R26) and long_night (R31) join here as
-	// their pages are built.
+	// BookStateAfloat is the 8 s state Levitate sets on its target: no
+	// attack, class ability or tree ability while it runs (R23).
+	BookStateAfloat BookStateName = "afloat"
+	// trackers_eye (R26) and long_night (R31) join here as their pages are
+	// built.
 )
 
 // BookCooldown is one page's book cooldown, in simulation seconds: Remaining

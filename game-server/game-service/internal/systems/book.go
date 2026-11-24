@@ -61,6 +61,7 @@ type pageResolver func(world *ecs.EntityManager, cast BookCast)
 // added to the game by adding its resolver here. FS-X2CMM §K R59.
 var pageResolvers = map[components.PageID]pageResolver{
 	components.PageHardened:   resolveHardened,
+	components.PageLevitate:   resolveLevitate,
 	components.PageWitchlight: resolveWitchlight,
 }
 
@@ -293,6 +294,29 @@ const hardenedSeconds = 10.0
 // is wave 2 (R53).
 func resolveHardened(_ *ecs.EntityManager, cast BookCast) {
 	setBookState(cast.Caster, components.BookStateHardened, hardenedSeconds)
+}
+
+// afloatSeconds is how long a Levitate keeps its target afloat (R23).
+const afloatSeconds = 8.0
+
+// resolveLevitate makes the cast's target afloat, the mage themself or an
+// ally; a second Levitate restarts the 8 s. Crossing chasms and not firing
+// traps are wave 2 (R51).
+func resolveLevitate(_ *ecs.EntityManager, cast BookCast) {
+	setBookState(cast.Target, components.BookStateAfloat, afloatSeconds)
+}
+
+// afloat is whether the delver is afloat: every attack row, the class ability
+// and the tree ability are refused while it runs; book abilities and the
+// potion are not (R23). The CombatSystem reads it where it refuses a pinned
+// cast (resolve) and where it raises the parry stance (stepStance).
+func afloat(entity *ecs.Entity) bool {
+	book, ok := bookOf(entity)
+	if !ok {
+		return false
+	}
+	_, on := book.States[components.BookStateAfloat]
+	return on
 }
 
 // setBookState sets (or restarts) a timed book state on a delver.

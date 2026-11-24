@@ -73,7 +73,10 @@ func (s *Session) castPage(playerID uuid.UUID, page systems.BookPage, cast types
 	}
 }
 
-// pageTarget is the entity a cast names, nil when it names none in this world.
+// pageTarget is the entity a cast names, nil when it names none in this world:
+// an entity id, or a delver's player id (the "id" every player state carries),
+// so an ally page names a teammate, or its caster, as the client knows them.
+// FS-X2CMM §C R13, R15.
 func (s *Session) pageTarget(targetID string) *ecs.Entity {
 	if targetID == "" {
 		return nil
@@ -82,7 +85,16 @@ func (s *Session) pageTarget(targetID string) *ecs.Entity {
 	if err != nil {
 		return nil
 	}
-	target, ok := s.EntityManager.GetEntity(id)
+	if target, ok := s.EntityManager.GetEntity(id); ok {
+		return target
+	}
+	s.mu.RLock()
+	entityID, isDelver := s.playerIDToEntitiesID[id]
+	s.mu.RUnlock()
+	if !isDelver {
+		return nil
+	}
+	target, ok := s.EntityManager.GetEntity(entityID)
 	if !ok {
 		return nil
 	}

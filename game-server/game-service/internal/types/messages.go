@@ -375,7 +375,9 @@ type PlayerCastSkillPayload struct {
 	SkillID string  `json:"skill_id"`
 	TargetX float64 `json:"target_x"`
 	TargetY float64 `json:"target_y"`
-	// TargetID is the entity an ally or interactable page is aimed at; empty
-	// for every other cast. FS-X2CMM §C R13, §F R35.
+	// TargetID is the entity an ally or interactable page is aimed at, by its
+	// entity id; an ally may be named by its player id ("id") instead, the
+	// caster's own for self. Empty for every other cast. FS-X2CMM §C R13,
+	// R15, §F R35.
 	TargetID string `json:"target_id,omitempty"`
 }
