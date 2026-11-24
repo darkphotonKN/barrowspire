@@ -35,7 +35,7 @@ export interface BookPiece {
   show(source: BookSource | undefined, heardAt: number): void;
   /** Each frame while open, on the slot's clock: a recovering page's sweep runs down (R38). */
   frame(now: number): void;
-  /** A move over the UI scene, logical units: its hover and tip (R37). */
+  /** A move over the UI scene, logical units: its hovered row, shown on its right page (C5). */
   pointerMove(x: number, y: number): void;
   /** A press over the UI scene, logical units: whether it was the book's. */
   pointerDown(x: number, y: number): boolean;

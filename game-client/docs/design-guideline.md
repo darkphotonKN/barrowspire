@@ -139,6 +139,7 @@ and the two are not required to agree (ADR-0025).
 | **Brass** | `#9c7b3f`, `#c9a14e` |
 | **Passive tree hues** (a lit tree picture only) | copper `#d49274`, steelBlue `#5f82b8`, teal `#3aa0b0`, frost `#8ac2e6`, verdigris `#5fa88a`, amethyst `#a088cc`, silver `#c2c8d0` |
 | **Book pigments** (a class book page roundel only) | pigmentVerdigris `#5b9a80`, pigmentOchre `#a88b52`, pigmentMadder `#8f5048`, pigmentLapis `#52699a`, pigmentBone `#ddd3bb` |
+| **Open tome** (the class book's panel only) | tomeLeather `#3b2a1d`, tomeVellumEdge `#c9b98f`, tomeVellumMiddle `#d8caa3`, tomeGutter `#a89772`, tomeInk `#2c2118`, tomeInkMuted `#5e4c34`, tomeInkMadder `#74392a` |
 
 **Umbra is narrow on purpose:** it is the archer's Shadow Shot (the bolt, its wake and gloom,
 and its aim arrow) and the Shadow Ranger's gloom (*Auras*), and nothing else. *(Amended at the
@@ -1146,6 +1147,19 @@ Where the bound and the message conflict — an end-of-run heading long enough t
   Page roundels card. *(Added by
   [ADR-0094](../../docs/adr/0094-class-book-page-icons-are-muted-pigment-glyphs-in-bronze-rimmed-roundels.md),
   2026-11-25.)*
+- **The class book is an open tome** (`src/ui/ClassBookPanel.ts`; look in `classBookStyle.ts`, geometry
+  in `classBookLayout.ts`): a two-page vellum spread in a dark leather binding with a blind-tooled line
+  and brass corner studs, at the view's right side under the top-right column, clear of the ability bar,
+  the chat and the corner row. The vellum falls from `tomeVellumMiddle` near the spine to
+  `tomeVellumEdge` outside, worn toward `tomeGutter` at its outer edges, with the gutter's shadow at the
+  fold. The left page: the book's title in madder-brown (`tomeInkMadder`, 17 px body serif) over a
+  hairline rule with a lozenge, and one row per page: a 28 px roundel, the name in `tomeInk`, the cost
+  right-aligned in `tomeInkMuted`; a locked row at 0.55 with "Lv N", a spent one "spent", the shown row
+  a soft `vellumDark` wash. The right page is the shown page in full (the hovered one, else the first
+  ready one): a 64 px roundel, the name in madder-brown, its line, "cost · cooldown" and an italic hint
+  in madder-brown. Body serif throughout (the blackletter bound). It replaces the windows' frame and the
+  item tip for the book. The dev gallery's Open tome card shows it on a sample book. *(Added by
+  FS-X2CMM §Change: Illuminated pages and the open tome, 2026-11-25.)*
 - **Buttons in the world:** beveled stone / wax-seal feel; brass accents; brass hover glow. (Menu
   buttons follow the Bone & Soot rule above.)
 - **Copy voice:** grim, terse. Players = **players**; enemy realm = the **Spire** / **Lich

@@ -33,6 +33,8 @@ export const BOOK_STYLE = {
     litAlpha: 0.6,
     /** A brass corner stud at each of the binding's corners, its radius and ink. */
     stud: { r: 3, ink: palette.frame, lit: palette.frameBright },
+    /** A blind-tooled line round the binding, this far in from its edge: pressed dark, lit under. */
+    tooled: { inset: 4, ink: TOME.leatherEdge, alpha: 0.8, lit: TOME.leatherLit, litAlpha: 0.35 },
   },
   vellum: {
     /** The page's fall from the spine outward, in this many bands. */
@@ -46,8 +48,11 @@ export const BOOK_STYLE = {
     /** The leaves under the top one, showing at the foot of each page: how many, and their ink. */
     leaves: 2,
     leafInk: TOME.gutter,
+    /** A page's outer edges, worn: the gutter's tone, strongest at the edge, over this many px. */
+    worn: { reach: 7, alpha: 0.32 },
   },
-  rule: { ink: TOME.title, alpha: 0.55 },
+  /** The title's hairline rule, and the lozenge at its middle. */
+  rule: { ink: TOME.title, alpha: 0.55, lozenge: 3 },
   /** A shown row's wash (C4): soft, of the dark vellum. */
   wash: { ink: TOME.wash, alpha: 0.32, radius: 3 },
   /** A locked row's words (C4). */
@@ -72,7 +77,7 @@ export const BOOK_STYLE = {
 
 type Pen = Pick<
   Phaser.GameObjects.Graphics,
-  "fillStyle" | "fillRect" | "fillRoundedRect" | "fillCircle" | "lineStyle" | "strokeRoundedRect" | "lineBetween"
+  "fillStyle" | "fillRect" | "fillRoundedRect" | "fillCircle" | "fillTriangle" | "lineStyle" | "strokeRoundedRect" | "lineBetween"
 >;
 
 /** The leather, the two pages and their gutter, the fold and the title's rule: everything still on the spread. */
@@ -85,6 +90,13 @@ export function drawTome(g: Pen, layout: TomeLayout): void {
   g.strokeRoundedRect(panel.x + 0.5, panel.y + 0.5, panel.width - 1, panel.height - 1, binding.radius);
   g.lineStyle(1, binding.lit, binding.litAlpha);
   g.lineBetween(panel.x + binding.radius, panel.y + 1.5, panel.x + panel.width - binding.radius, panel.y + 1.5);
+  const { inset, ink: tool, alpha: toolAlpha, lit: toolLit, litAlpha: toolLitAlpha } = binding.tooled;
+  const tooled = (dx: number, ink: number, alpha: number) => {
+    g.lineStyle(1, ink, alpha);
+    g.strokeRoundedRect(panel.x + inset + 0.5 + dx, panel.y + inset + 0.5 + dx, panel.width - 2 * inset - 1, panel.height - 2 * inset - 1, binding.radius - 3);
+  };
+  tooled(1, toolLit, toolLitAlpha);
+  tooled(0, tool, toolAlpha);
   // the leaves under the top one, a px apart at each page's foot, the spread's thickness
   for (let i = vellum.leaves; i >= 1; i--) {
     g.fillStyle(mix(vellum.leafInk, TOME.leatherEdge, 0.25 * i), 1);
@@ -111,6 +123,10 @@ export function drawTome(g: Pen, layout: TomeLayout): void {
   }
   g.lineStyle(1, rule.ink, rule.alpha);
   g.lineBetween(layout.rule.x1, layout.rule.y + 0.5, layout.rule.x2, layout.rule.y + 0.5);
+  const [cx, cy, d] = [Math.round((layout.rule.x1 + layout.rule.x2) / 2), layout.rule.y + 0.5, rule.lozenge];
+  g.fillStyle(rule.ink, 0.85);
+  g.fillTriangle(cx - d, cy, cx, cy - d, cx + d, cy);
+  g.fillTriangle(cx - d, cy, cx, cy + d, cx + d, cy);
 }
 
 /**
@@ -129,6 +145,15 @@ function drawPage(g: Pen, page: Rect, side: "left" | "right"): void {
     const x1 = Math.round(side === "right" ? page.x + (i + 1) * step : page.x + page.width - i * step);
     g.fillStyle(tone, 1);
     g.fillRect(x0, page.y, x1 - x0, page.height);
+  }
+  // the outer edges worn: the side away from the spine, the top and the foot
+  const { reach: wornReach, alpha: wornAlpha } = BOOK_STYLE.vellum.worn;
+  for (let d = 0; d < wornReach; d++) {
+    const t = 1 - d / wornReach;
+    g.fillStyle(TOME.gutter, wornAlpha * t * t);
+    g.fillRect(side === "left" ? page.x + d : page.x + page.width - d - 1, page.y, 1, page.height);
+    g.fillRect(page.x, page.y + d, page.width, 1);
+    g.fillRect(page.x, page.y + page.height - d - 1, page.width, 1);
   }
   for (let d = 0; d < reach; d++) {
     const t = 1 - d / reach;
