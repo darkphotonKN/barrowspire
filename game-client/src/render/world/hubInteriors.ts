@@ -17,11 +17,11 @@
 
 // by path, not the barrel: the barrel pulls in the Phaser drawing helpers
 import type { Facing8 } from "@/render/iso/facing";
-import type { Point, Rect } from "@/render/iso/projection";
+import { WORLD_PX_PER_TILE, type Point, type Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 import { housesFrom, onOutline, type House } from "./houses";
 import type { PropSpot } from "./hubKeepOut";
-import { CHAPEL_WALLS, TIMBER_WALLS, unlitSheets, type WallSheets } from "./walls";
+import { CHAPEL_WALLS, TIMBER_WALLS, unlitSheets, type FixedKinds, type VariantTable, type WallSheets } from "./walls";
 
 /**
  * Whether a wall is a furnishing of its house: it touches none of the house's four outer edges
@@ -194,17 +194,13 @@ export interface TownHouseLook {
   floor?: string;
   /** Its roof: `TOWN_ROOF`, or the set its own look names. */
   roof: RoofSet;
+  /** The kinds its walls fix by where each piece stands (FS-R4MYX W1); absent, every piece's kind is hashed. */
+  fixed?: FixedKinds;
 }
 
 const INN_LOOK: TownHouseLook = { sheets: INN_WALLS, floor: INN_FLOOR, roof: TOWN_ROOF };
-/**
- * The chapel (FS-R4MYX R23, R42): its own whitewashed walls (`CHAPEL_WALLS`, unlit and capless) on
- * the town's flagstone, under its own slate roof with no chimney (a church has no hearth to vent).
- * Its age is baked into the sheets, never tinted over them (owner feedback F6: a tint greyed the
- * white walls).
- */
-const CHAPEL_LOOK: TownHouseLook = { sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false } };
 const TOWN_LOOK: TownHouseLook = { sheets: TIMBER_WALLS, roof: TOWN_ROOF };
+// CHAPEL_LOOK stands after HUB_INDOOR_DRESSING: the kinds its walls fix read the hung dressing
 
 /**
  * A town building's look, the scene asks per house: the Inn's unlit timber and plank floor, the
@@ -316,6 +312,26 @@ const painting = (x: number, y: number, facing: "s" | "e", index: number): Indoo
   animation: facing,
   index,
 });
+/**
+ * The chapel's old wooden crucifix, hung on a west wall's inner face, facing east (FS-R4MYX W9,
+ * W12): 2 px off the face as a painting hangs, its 40 px along the wall.
+ */
+const crucifix = (x: number, y: number): IndoorSpot => ({
+  sheet: "chapel_crucifix",
+  at: { x, y },
+  r: 2,
+  size: [4, 40],
+  animation: "e",
+});
+/** A faded fresco on a west wall's inner face, facing east: index 0 the saint, 1 the dead rising (W10, W12). */
+const mural = (x: number, y: number, index: number): IndoorSpot => ({
+  sheet: "chapel_mural",
+  at: { x, y },
+  r: 2,
+  size: [4, 64],
+  animation: "e",
+  index,
+});
 const plant = (x: number, y: number, index: number): IndoorSpot => ({
   sheet: "potted_plant",
   at: { x, y },
@@ -408,12 +424,93 @@ export const HUB_INDOOR_DRESSING: IndoorSpot[] = [
   barrel(1526, 242),
   // the chapel (960, 1100, 620 × 440, its door east; FS-R4MYX R14): the altar's stone dais laid
   // flat at the west end, the lectern by its north-east corner, and a candelabra either side of
-  // the altar, the room's only lights (R15); the Confessor stands on the floor east of the dais
+  // the altar, the room's only lights (R15); the Confessor stands on the floor east of the dais.
+  // Behind him on the west wall, on the aisle's line, the crucifix, with a fresco either side of
+  // it, the saint to the north and the dead rising to the south (W12); none of them lit (W14)
   { sheet: "dais", at: { x: 1105, y: 1320 }, r: 65, size: [130, 200], flat: true },
   { sheet: "lectern", at: { x: 1190, y: 1250 }, r: 10, size: [20, 20] },
   candelabra(1135, 1250),
   candelabra(1135, 1390),
+  crucifix(982, 1320),
+  mural(982, 1210, 0),
+  mural(982, 1430, 1),
 ];
+
+/**
+ * The x of each of the nave's six bays (FS-R4MYX §Change: the chapel's windows match inside and
+ * out, W3, W4): a lancet on the south wall's outward face and one at the same x on the north
+ * wall's inner face, so the windows face each other across the nave. The pieces stand at
+ * 980 + 40k; the six mirror about the wall's middle (x 1270) to within half a tile, and none stands
+ * on the corner post's piece (980) or the trimmed one (1580) (W2).
+ */
+export const CHAPEL_NAVE_LANCETS: readonly number[] = [1060, 1140, 1220, 1300, 1380, 1460];
+
+/**
+ * The y of the east wall's lancets, one each side of the door gap (1280–1360) and mirrored about
+ * its centre to within half a tile (W5): clear of the post pieces (1120, 1380) and the trimmed
+ * ones (1280, 1540), and as far as that leaves from the belfry (1635, 1220) and the wayside cross
+ * (1635, 1480) on screen, which stand in front of the pieces at about y 1160 and 1420.
+ */
+export const CHAPEL_EAST_LANCETS: readonly number[] = [1200, 1460];
+
+const T = WORLD_PX_PER_TILE;
+/** The chapel's west wall's inner face: what its hung dressing stands on. */
+const CHAPEL_WEST_FACE = HUB_CHAPEL.x + 20;
+
+/**
+ * The y of the west wall's pieces behind its hung dressing (W6), from `HUB_INDOOR_DRESSING`: each
+ * piece (one tile of the west wall from the chapel's north edge, as the wall is cut) whose 40 px
+ * along the wall overlaps the footprint of something standing on the wall's inner face in the
+ * chapel, the crucifix and the murals. They are plain, so no pilaster shows through a hung piece.
+ */
+export const CHAPEL_WEST_BEHIND_HUNG: readonly number[] = (() => {
+  const hung = HUB_INDOOR_DRESSING.filter(
+    (s) => s.at.x - s.size[0] / 2 <= CHAPEL_WEST_FACE && s.at.y > HUB_CHAPEL.y && s.at.y < HUB_CHAPEL.y + HUB_CHAPEL.height,
+  );
+  const pieces = Array.from({ length: Math.ceil(HUB_CHAPEL.height / T) }, (_, k) => HUB_CHAPEL.y + (k + 0.5) * T);
+  return pieces.filter((y) => hung.some((s) => y - T / 2 < s.at.y + s.size[1] / 2 && s.at.y - s.size[1] / 2 < y + T / 2));
+})();
+
+const PLAIN_ONLY: VariantTable = [[100, "plain"]];
+
+/**
+ * The kinds the chapel's walls fix (W1–W7), as data: its bays on the south outward face, lancet
+ * and buttress alternating, a buttress outside the first and last lancet and every other piece
+ * plain; a lancet on the north inner face at each south lancet's x, its other pieces plain or
+ * pillar as hashed; a lancet each side of the door on the east outward face, the rest plain; and
+ * plain on the west inner face behind the hung dressing, no lancet anywhere on it. The cut-away
+ * south and east fronts are named nowhere, so they keep their plain-or-pillar table and never
+ * carry a lancet (W7).
+ */
+function chapelFixedKinds(): FixedKinds {
+  const named = (at: readonly number[], kind: string) => at.map((x) => [x, kind] as const);
+  const buttresses = [...new Set(CHAPEL_NAVE_LANCETS.flatMap((x) => [x - T, x + T]))];
+  return {
+    outward: {
+      south: {
+        at: Object.fromEntries([...named(buttresses, "buttress"), ...named(CHAPEL_NAVE_LANCETS, "lancet")]),
+        rest: PLAIN_ONLY,
+      },
+      east: { at: Object.fromEntries(named(CHAPEL_EAST_LANCETS, "lancet")), rest: PLAIN_ONLY },
+    },
+    back: {
+      north: { at: Object.fromEntries(named(CHAPEL_NAVE_LANCETS, "lancet")) },
+      west: { at: Object.fromEntries(named(CHAPEL_WEST_BEHIND_HUNG, "plain")) },
+    },
+  };
+}
+
+/**
+ * The chapel (FS-R4MYX R23, R42): its own whitewashed walls (`CHAPEL_WALLS`, unlit and capless) on
+ * the town's flagstone, under its own slate roof with no chimney (a church has no hearth to vent).
+ * Its age is baked into the sheets, never tinted over them (owner feedback F6: a tint greyed the
+ * white walls). Its walls fix their bays and the plain wall behind the hung dressing (W1–W7).
+ */
+const CHAPEL_LOOK: TownHouseLook = {
+  sheets: CHAPEL_WALLS,
+  roof: { prefix: "chapel_", chimney: false },
+  fixed: chapelFixedKinds(),
+};
 
 /**
  * What a fixed resident faces (FS-R4MYX R26): a furnishing of a kind, a grave in the graveyard

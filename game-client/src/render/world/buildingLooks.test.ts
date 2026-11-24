@@ -7,7 +7,9 @@ import { EAST_DOOR_WALLS } from "./eastDoor.fixture";
 import { housesFrom } from "./houses";
 import { townOutline } from "./hubTown.fixture";
 import { HUB_TOWN_GOLDEN } from "./hubTownGolden";
-import { MASONRY_WALLS, TIMBER_WALLS, planWalls } from "./walls";
+import { worldSeed } from "./ground";
+import { HUB_INDOOR_DRESSING, townHouseLook } from "./hubInteriors";
+import { MASONRY_WALLS, TIMBER_WALLS, planWalls, sideOf } from "./walls";
 
 const T = WORLD_PX_PER_TILE;
 const THICK = 20;
@@ -125,6 +127,210 @@ describe("planBuildings (FS-9PN7X §B.2)", () => {
 
   it("should plan the same buildings for the same walls on every client", () => {
     expect(planBuildings(walls, 3)).toEqual(plans);
+  });
+});
+
+describe("the town's other buildings beside the chapel's fixed kinds (FS-R4MYX §Change: windows match, W7)", () => {
+  /** FNV-1a over a string: a short, stable fingerprint of a whole plan. */
+  const fnv = (text: string) => {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    return h.toString(16).padStart(8, "0");
+  };
+  /** Every piece and post of a building, by look: what it is drawn as, where, and how much of it. */
+  const fingerprint = (plan: ReturnType<typeof planBuildings>[number]) =>
+    fnv(
+      JSON.stringify(
+        (["shared", "interior", "exterior"] as const).map((look) => [
+          plan[look].pieces.map((p) => [p.wallId, p.sheet, p.index, p.at, p.keep, p.depthAt]),
+          plan[look].posts.map((p) => [p.wallId, p.sheet, p.at]),
+        ]),
+      ),
+    );
+
+  /** The town's buildings but the chapel, by name, with their house ids. */
+  const others = TOWN.map((b, i) => ({ name: b.name, id: `b${i}` })).filter(({ name }) => name !== "Chapel");
+  const lookOf = (id: string) => townHouseLook(housesFrom(TOWN_WALLS.filter((w) => w.house_id === id))[0]);
+  /** Each house planned alone, in the sheets its look names, with no fixed kinds. */
+  const alone = (seed: number, id: string) => {
+    const own = TOWN_WALLS.filter((w) => w.house_id === id);
+    return planBuildings(own, seed, lookOf(id).sheets)[0];
+  };
+  /**
+   * Each house as the scene plans it (HubScene renderStructures): the town's walls grouped by the
+   * sheets each look names, each group planned in one go with every house's fixed kinds from its look.
+   */
+  const asTheSceneDoes = (seed: number, id: string) => {
+    const sheets = lookOf(id).sheets;
+    const group = TOWN_WALLS.filter((w) => lookOf(w.house_id!).sheets === sheets);
+    return planBuildings(group, seed, sheets, (h) => townHouseLook(h).fixed).find((p) => p.house.id === id)!;
+  };
+
+  // Pinned from the code at f9b572d3, before the chapel's fixed kinds landed: the Inn, the store
+  // and the smithy plan the same pieces (sheet and index) as then, planned alone or as the scene
+  // plans them. Keyed by name, so a failure says which house changed.
+  it.each([
+    ["alone", alone, 3, { Inn: "bebe208d", "Quartermaster's store": "ceae8ec4", Smithy: "a56cb400" }],
+    ["alone", alone, worldSeed("hub"), { Inn: "6b2f2bbe", "Quartermaster's store": "acacb694", Smithy: "456f7e53" }],
+    ["as the scene does", asTheSceneDoes, 3, { Inn: "bebe208d", "Quartermaster's store": "ceae8ec4", Smithy: "a56cb400" }],
+    ["as the scene does", asTheSceneDoes, worldSeed("hub"), { Inn: "6b2f2bbe", "Quartermaster's store": "acacb694", Smithy: "456f7e53" }],
+  ])("should plan every other building exactly as before, planned %s, seed %s", (_path, planOf, seed, before) => {
+    expect(others).toHaveLength(3);
+    const prints = Object.fromEntries(others.map(({ name, id }) => [name, fingerprint(planOf(seed, id))]));
+    expect(prints).toEqual(before);
+  });
+
+  it("should plan a Spire room in masonry exactly as before", () => {
+    const [room] = planBuildings(building(80, 60, 300, 200, "r"), 5, MASONRY_WALLS);
+    expect(fingerprint(room)).toBe("c77694f0");
+  });
+});
+
+describe("the chapel's fixed kinds: its window bays and the plain wall behind its hung dressing (FS-R4MYX §Change: windows match, W1–W7)", () => {
+  const CHAPEL = `b${TOWN.findIndex((b) => b.name === "Chapel")}`;
+  const OWN = TOWN_WALLS.filter((w) => w.house_id === CHAPEL);
+  /** The chapel as the scene plans it: its own material, the kinds its look fixes. */
+  const plan = (seed: number) => {
+    const [p] = planBuildings(OWN, seed, townHouseLook(housesFrom(OWN)[0]).sheets, (h) => townHouseLook(h).fixed);
+    return p;
+  };
+  const kindOf = (p: { sheet: string }) => p.sheet.split("_")[3];
+  /** The wall's centrelines: north y 1110, south 1530, west x 970, east 1570. */
+  const [NORTH, SOUTH, WEST, EAST] = [1110, 1530, 970, 1570];
+  const north = (seed: number) => plan(seed).shared.pieces.filter((p) => p.axis === "x" && p.at.y === NORTH);
+  const southOut = (seed: number) => plan(seed).exterior.pieces.filter((p) => p.axis === "x" && p.at.y === SOUTH);
+  const lancetsAlong = (pieces: readonly { sheet: string; at: { x: number; y: number }; axis: string }[]) =>
+    pieces.filter((p) => kindOf(p) === "lancet").map((p) => (p.axis === "x" ? p.at.x : p.at.y));
+
+  it.each([3, worldSeed("hub")])("should stand a north inner lancet at exactly each south outward lancet's x, seed %s (W4)", (seed) => {
+    const outside = lancetsAlong(southOut(seed));
+    expect(outside.length).toBeGreaterThan(0);
+    const inside = lancetsAlong(north(seed));
+    expect(new Set(inside)).toEqual(new Set(outside));
+    for (const p of north(seed).filter((q) => kindOf(q) === "lancet")) expect(p.sheet).toBe("chapel_wall_back_lancet_x");
+  });
+
+  it.each([3, worldSeed("hub")])(
+    "should draw every kind the chapel fixes on a planned piece of that face and side, as named, seed %s (W1)",
+    (seed) => {
+      // the keys are world places: a moved wall or door gap that left one on no piece would quietly drop it
+      const p = plan(seed);
+      const house = housesFrom(OWN)[0];
+      const fixed = townHouseLook(house).fixed!;
+      const looks = { back: p.shared, front: p.interior, outward: p.exterior };
+      const wallOf = new Map(OWN.map((w) => [w.entity_id, w]));
+      let named = 0;
+      for (const face of ["back", "front", "outward"] as const)
+        for (const [side, kinds] of Object.entries(fixed[face] ?? {}))
+          for (const [at, kind] of Object.entries(kinds.at)) {
+            named++;
+            const on = looks[face].pieces.filter(
+              (q) => sideOf(wallOf.get(q.wallId)!, house) === side && (q.axis === "x" ? q.at.x : q.at.y) === Number(at),
+            );
+            expect(on.map(kindOf), `${face} ${side} at ${at}`).toEqual([kind]);
+          }
+      expect(named).toBeGreaterThan(0);
+    },
+  );
+
+  it("should share one piece grid on the north and south walls: x 960–1580, a piece every 40 px from 980 (W4)", () => {
+    const xs = (pieces: readonly { at: { x: number } }[]) => pieces.map((p) => p.at.x);
+    expect(xs(north(3))).toEqual(xs(southOut(3)));
+    expect(xs(north(3))).toEqual(Array.from({ length: 16 }, (_, k) => 980 + 40 * k));
+  });
+
+  /** Every piece of a plan, in all three looks. */
+  const allPiecesOf = (p: ReturnType<typeof plan>) => [...p.shared.pieces, ...p.interior.pieces, ...p.exterior.pieces];
+  const allPieces = (seed: number) => allPiecesOf(plan(seed));
+  /** The posts every look stands. */
+  const allPosts = (seed: number) => {
+    const p = plan(seed);
+    return [...p.shared.posts, ...p.interior.posts, ...p.exterior.posts];
+  };
+
+  it("should fix every outward kind, the inner lancets and the plain pieces behind the hung dressing, whatever the seed (W1)", () => {
+    const [a, b] = [plan(3), plan(worldSeed("hub"))];
+    const fixed = (p: ReturnType<typeof plan>) => ({
+      outward: p.exterior.pieces.map((q) => [q.at, q.sheet]),
+      lancets: allPiecesOf(p).filter((q) => kindOf(q) === "lancet").map((q) => [q.at, q.sheet]),
+      behind: p.shared.pieces.filter((q) => q.at.x === WEST && behindHung(q)).map((q) => [q.at, q.sheet]),
+    });
+    expect(fixed(a)).toEqual(fixed(b));
+    // what the rule leaves open is hashed still: the variant frames, and the inner plain-or-pillar picks
+    expect(a.exterior.pieces.map((q) => q.index)).not.toEqual(b.exterior.pieces.map((q) => q.index));
+    const open = (p: ReturnType<typeof plan>) => p.shared.pieces.filter((q) => kindOf(q) !== "lancet" && !(q.at.x === WEST && behindHung(q)));
+    expect(new Set([...open(a), ...open(b)].map(kindOf))).toEqual(new Set(["plain", "pillar"]));
+  });
+
+  it.each([3, worldSeed("hub")])("should stand no lancet on a trimmed piece or on a piece holding a post, seed %s (W2)", (seed) => {
+    const lancets = allPieces(seed).filter((p) => kindOf(p) === "lancet");
+    expect(lancets.length).toBeGreaterThan(0);
+    for (const p of lancets) {
+      expect(p.keep, `${p.sheet} at ${p.at.x}, ${p.at.y}`).toBe(1);
+      const along = p.axis === "x" ? "x" : "y";
+      const across = p.axis === "x" ? "y" : "x";
+      const held = allPosts(seed).filter(
+        (q) => q.at[across] === p.at[across] && Math.abs(q.at[along] - p.at[along]) < T / 2,
+      );
+      expect(held, `${p.sheet} at ${p.at.x}, ${p.at.y}`).toEqual([]);
+    }
+  });
+
+  it("should alternate lancet and buttress along the south outward face, mirrored about x 1270 (W3)", () => {
+    const run = southOut(3).map((p) => ({ x: p.at.x, kind: kindOf(p) }));
+    const lancets = run.flatMap((p, i) => (p.kind === "lancet" ? [i] : []));
+    expect(lancets.length).toBeGreaterThan(1);
+    // exactly one buttress between neighbouring lancets, and one outside the first and the last
+    for (const [i, j] of lancets.slice(1).map((j, k) => [lancets[k], j])) {
+      expect(j - i).toBe(2);
+      expect(run[i + 1].kind).toBe("buttress");
+    }
+    expect(run[lancets[0] - 1].kind).toBe("buttress");
+    expect(run[lancets.at(-1)! + 1].kind).toBe("buttress");
+    // every other piece is plain
+    const flanking = new Set(lancets.flatMap((i) => [i - 1, i, i + 1]));
+    for (const [i, p] of run.entries()) if (!flanking.has(i)) expect(p.kind, `x ${p.x}`).toBe("plain");
+    // each lancet's mirror about the wall's middle has a lancet within half a tile
+    const xs = lancets.map((i) => run[i].x);
+    for (const x of xs) expect(Math.min(...xs.map((m) => Math.abs(m - (2 * 1270 - x)))), `x ${x}`).toBeLessThanOrEqual(T / 2);
+  });
+
+  it("should stand a lancet each side of the east door, none adjoining, mirrored about y 1320 (W5)", () => {
+    const east = plan(3).exterior.pieces.filter((p) => p.axis === "y" && p.at.x === EAST);
+    const segments = [...new Set(east.map((p) => p.wallId))];
+    expect(segments).toHaveLength(2);
+    const ys = lancetsAlong(east);
+    for (const id of segments) expect(lancetsAlong(east.filter((p) => p.wallId === id)).length, id).toBeGreaterThan(0);
+    for (const y of ys) {
+      expect(ys.filter((o) => Math.abs(o - y) === T), `y ${y}`).toEqual([]);
+      expect(Math.min(...ys.map((m) => Math.abs(m - (2 * 1320 - y)))), `y ${y}`).toBeLessThanOrEqual(T / 2);
+    }
+    for (const p of east.filter((q) => kindOf(q) !== "lancet")) expect(["plain", "buttress"]).toContain(kindOf(p));
+  });
+
+  /** The crucifix and murals on the west wall: their footprints along y. */
+  const HUNG = HUB_INDOOR_DRESSING.filter((s) => s.sheet === "chapel_crucifix" || s.sheet === "chapel_mural");
+  /** Whether a west piece's 40 px along the wall overlaps a hung piece's footprint. */
+  const behindHung = (p: { at: { y: number } }) =>
+    HUNG.some((s) => p.at.y - T / 2 < s.at.y + s.size[1] / 2 && s.at.y - s.size[1] / 2 < p.at.y + T / 2);
+
+  it("should stand no lancet on the west wall, and plain pieces behind the crucifix and murals, whatever the seed (W6)", () => {
+    expect(HUNG).toHaveLength(3);
+    // enough seeds that a hashed pillar behind a hung piece would turn up
+    for (const seed of [worldSeed("hub"), ...Array.from({ length: 24 }, (_, i) => i + 1)]) {
+      const west = plan(seed).shared.pieces.filter((p) => p.axis === "y" && p.at.x === WEST);
+      expect(west).toHaveLength(11);
+      expect(west.filter((p) => kindOf(p) === "lancet")).toEqual([]);
+      const behind = west.filter(behindHung);
+      expect(behind.length).toBeGreaterThan(0);
+      for (const p of behind) expect(p.sheet, `y ${p.at.y}, seed ${seed}`).toBe("chapel_wall_back_plain_y");
+    }
+  });
+
+  it.each([3, worldSeed("hub")])("should keep the cut-away south and east fronts plain or pillar, never a lancet, seed %s (W7)", (seed) => {
+    const fronts = plan(seed).interior.pieces;
+    expect(fronts.length).toBeGreaterThan(0);
+    for (const p of fronts) expect(p.sheet).toMatch(/^chapel_wall_front_(plain|pillar)_[xy]$/);
   });
 });
 

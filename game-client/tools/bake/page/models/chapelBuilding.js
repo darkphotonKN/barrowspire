@@ -8,6 +8,8 @@
 // Every piece stands in for one the client already lays, cut and sized as it is, so the client
 // swaps the prefix and nothing else:
 //   chapel_wall_{back,front}_{plain,pillar}_{x,y}   the tower's masonry partition pieces
+//   chapel_wall_back_lancet_{x,y}                   the back plain piece's frame: the lancet from
+//                                                    inside (W8)
 //   chapel_wall_exterior_{plain,lancet,buttress}_{x,y}  the tower's exterior pieces
 //   chapel_post_{back,front}                         the tower's corner piers
 //   chapel_door_head_{x,y}                           the tower's door heads
@@ -77,6 +79,9 @@ const GLASS_STAIN = [mix("pitch", "oxblood", 0.32), mix("pitch", "umbra", 0.4), 
 const LEAD = mix("slate", "charcoal", 0.25);
 
 // ── Textures ─────────────────────────────────────────────────────────────────────────────
+
+/** A window sill's grime run for `limewash`: `half` either side of the piece's middle, at height `y` (tile edges). */
+const sillUnder = (half, y) => ({ x0: Math.round(PX / 2 - half * PX), x1: Math.round(PX / 2 + half * PX), y: Math.round(y * PX) });
 
 /** A canvas texture's pixels. */
 const pixelsOf = (t) => t.image.getContext("2d").getImageData(0, 0, t.image.width, t.image.height).data;
@@ -282,6 +287,24 @@ function body(L, H, T, face, ends, top) {
   return part(new THREE.BoxGeometry(L, H, T), [ends, ends, top, top, face, face], { y: H / 2 });
 }
 
+/**
+ * A wall body as `body` builds it, pierced through by `hole` (a shape on its face, in the piece's
+ * x and height): `face` on its ±z sides, mapped once across the piece as the box's are, `edge` on
+ * its ends, top and the hole's sides.
+ */
+function piercedBody(L, H, T, hole, face, edge) {
+  const outline = new THREE.Shape([new THREE.Vector2(-L / 2, 0), new THREE.Vector2(L / 2, 0), new THREE.Vector2(L / 2, H), new THREE.Vector2(-L / 2, H)]);
+  outline.holes.push(hole);
+  const geo = new THREE.ExtrudeGeometry(outline, { depth: T, bevelEnabled: false, curveSegments: 1 });
+  geo.translate(0, 0, -T / 2);
+  // the faces (the extrusion's first group) take the face texture once across the piece
+  const [caps] = geo.groups;
+  const pos = geo.attributes.position;
+  const uv = geo.attributes.uv;
+  for (let i = caps.start; i < caps.start + caps.count; i++) uv.setXY(i, (pos.getX(i) + L / 2) / L, pos.getY(i) / H);
+  return part(geo, [face, edge]);
+}
+
 /** A box from a flat options object. */
 const box = (w, h, d, material, o = {}) => part(new THREE.BoxGeometry(w, h, d), material, o);
 
@@ -290,6 +313,18 @@ function slab(shape, depth, material, z) {
   const geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
   return part(geo, material, { z });
 }
+
+/**
+ * The lancet: half its opening's width, the arch radius, its sill and springing (tile edges). One
+ * opening for both looks: the outward face's window (chapelExterior) and the inner face's
+ * (chapelWall's `lancet`) stand at the same height (W8).
+ */
+export const LANCET = { half: 0.15, r: 0.36, sill: 1.05, spring: 2.42 };
+/**
+ * The inner lancet's reveal: how far the opening widens along the wall and drops at the sill from
+ * the glass to the room face, and how deep the glass is set in from that face (tile edges).
+ */
+const SPLAY = { side: 0.08, sill: 0.1, depth: 0.17 };
 
 // ── Gothic shapes ────────────────────────────────────────────────────────────────────────
 
@@ -316,14 +351,65 @@ function pointedArc(half, r, spring, n = 10) {
 /** The apex height of a pointed arch over its springing. */
 const archRise = (half, r) => Math.sqrt(r * r - (r - half) * (r - half));
 
+/**
+ * A lancet's outline as points, counter-clockwise seen from its face: the sill's two ends, then up
+ * the right jamb, over the pointed head and down to the left springing. Every lancet has as many
+ * points, so two outlines of one window pair up point for point (a reveal's loft).
+ */
+const lancetPoints = (half, r, sill, spring) => [[-half, sill], [half, sill], ...pointedArc(half, r, spring).reverse()];
+
 /** A closed lancet outline: sill, jambs, pointed head. */
 function lancetShape(half, r, sill, spring) {
+  const [first, ...rest] = lancetPoints(half, r, sill, spring);
   const s = new THREE.Shape();
-  s.moveTo(-half, sill);
-  s.lineTo(half, sill);
-  for (const [x, y] of pointedArc(half, r, spring).reverse()) s.lineTo(x, y);
+  s.moveTo(...first);
+  for (const [x, y] of rest) s.lineTo(x, y);
   s.closePath();
   return s;
+}
+
+/**
+ * The surface between two outlines of one opening (lancetPoints), `a` at depth `za` and `b` at
+ * `zb` toward +z: a window's reveal, its faces turned in toward the opening's axis and out toward
+ * +z. Its UVs are in tile edges round the outline and across the depth, so a texture keeps its
+ * scale.
+ */
+function loft(a, b, za, zb) {
+  const pos = [];
+  const uv = [];
+  const d = Math.abs(zb - za);
+  let s = 0;
+  for (let i = 0; i < a.length; i++) {
+    const j = (i + 1) % a.length;
+    const step = Math.hypot(a[j][0] - a[i][0], a[j][1] - a[i][1]);
+    const A0 = [a[i][0], a[i][1], za, s, 0];
+    const A1 = [a[j][0], a[j][1], za, s + step, 0];
+    const B0 = [b[i][0], b[i][1], zb, s, d];
+    const B1 = [b[j][0], b[j][1], zb, s + step, d];
+    for (const v of [A0, B0, A1, A1, B0, B1]) {
+      pos.push(v[0], v[1], v[2]);
+      uv.push(v[3], v[4]);
+    }
+    s += step;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/**
+ * A lancet's dark leaded glass on the plane `z`: the pane, and over it a lead mullion down the
+ * middle and two transom bars, the cames' iron. Unlit: dark glass, inside and out (R23, W14).
+ */
+function leadedGlass(g, C, z) {
+  const { half, r, sill, spring } = LANCET;
+  const rise = archRise(half, r);
+  const glassGeo = fitUV(new THREE.ShapeGeometry(lancetShape(half, r, sill, spring), 8));
+  g.add(part(glassGeo, C.glass, { z }));
+  g.add(box(0.018, spring + rise - sill - 0.04, 0.01, C.lead, { y: (sill + spring + rise) / 2, z: z + 0.008 }));
+  for (const ty of [sill + 0.45, sill + 0.9]) g.add(box(2 * half, 0.016, 0.01, C.lead, { y: ty, z: z + 0.008 }));
 }
 
 /**
@@ -359,19 +445,34 @@ function fitUV(geo) {
 /**
  * One tile of the chapel's inside wall: lime on stone, cleaner than the outside (no eaves grime, a
  * little damp at the foot). `variant` is plain | pillar (a plain whitewashed pilaster with a
- * dressed base and capital); `H` is the back (full) or front (cut-away) height.
+ * dressed base and capital) | lancet (back only: the outward face's window seen from inside, W8);
+ * `H` is the back (full) or front (cut-away) height.
  */
 export function chapelWall(H, variant, axis, seed) {
   const C = chapelBuildingMaterials();
   const back = H > 2;
+  const lancet = variant === "lancet";
+  if (lancet && !back) throw new Error("chapelWall: a lancet is a back piece only; the cut-away front wall carries no window (W7)");
   const Hp = Math.round(PX * H);
-  const tex = limewash(PX, Hp, { seed: seed + 100, damp: 0.45, tide: 0.5, patches: 1, lift: 1.02 });
+  const { half, r, sill, spring } = LANCET;
+  const sills = lancet ? [sillUnder(half + SPLAY.side, sill - SPLAY.sill)] : [];
+  // no fallen lime beside the opening, where a patch would leave a scrap on the jamb
+  const tex = limewash(PX, Hp, { seed: seed + 100, damp: 0.45, tide: 0.5, patches: lancet ? 0 : 1, lift: 1.02, sills });
   const face = stoneMat(tex, { bump: 0.8 });
   // a cut-away top course of lime-crusted stones, a few more standing than the tower's
   const crust = { gone: 0.4, stone: (R) => (R() > 0.35 ? C.lime : C.dressed) };
   const g = new THREE.Group();
   const top = back ? H : H - 0.14;
-  g.add(body(LENGTH, top, THICK, face, C.lime, C.lime));
+  if (lancet) {
+    // the wall pierced by the window's room-side outline, the reveal splaying in from it to the
+    // glass set deep in the wall, and the glass with its lead
+    const room = [half + SPLAY.side, r + SPLAY.side, sill - SPLAY.sill, spring];
+    g.add(piercedBody(LENGTH, H, THICK, lancetShape(...room), face, C.lime));
+    const reveal = part(loft(lancetPoints(half, r, sill, spring), lancetPoints(...room), FACE - SPLAY.depth, FACE), C.lime);
+    reveal.userData.reveal = true;
+    g.add(reveal);
+    leadedGlass(g, C, FACE - SPLAY.depth);
+  } else g.add(body(LENGTH, top, THICK, face, C.lime, C.lime));
   // a low dressed plinth along the foot, lifted a hair so the footprint stays the wall's
   g.add(part(roughBox(1.0, 0.2, 0.26, seed + 3, 0.03), C.dressed, { y: 0.03 + 0.1 }));
   if (back) g.add(box(LENGTH, 0.1, 0.26, C.lime, { y: H + 0.05 }));
@@ -389,9 +490,6 @@ export function chapelWall(H, variant, axis, seed) {
   return g;
 }
 
-/** The lancet: half its opening's width, the arch radius, its sill and springing (tile edges). */
-const LANCET = { half: 0.15, r: 0.36, sill: 1.05, spring: 2.42 };
-
 /**
  * One tile of the chapel's outside wall, full height: lime on stone, grime run down from the eaves,
  * damp, a tide line and moss at the foot, on a bare limestone plinth, under a dressed cornice.
@@ -405,7 +503,7 @@ export function chapelExterior(variant, axis, seed) {
   const Hp = Math.round(PX * H);
   const { half, r, sill, spring } = LANCET;
   const lancet = variant === "lancet";
-  const sills = lancet ? [{ x0: Math.round(PX / 2 - (half + 0.08) * PX), x1: Math.round(PX / 2 + (half + 0.08) * PX), y: Math.round((sill - 0.07) * PX) }] : [];
+  const sills = lancet ? [sillUnder(half + 0.08, sill - 0.07)] : [];
   const tex = limewash(PX, Hp, { seed: seed + 200, eaves: true, sills, damp: 0.5, moss: 0.45, patches: 2, tide: 0.6, east: axis === "y" });
   const face = stoneMat(tex, { bump: 0.9 });
   const g = new THREE.Group();
@@ -416,18 +514,13 @@ export function chapelExterior(variant, axis, seed) {
   // a dressed cornice under the eaves
   g.add(part(roughBox(1.0, 0.12, 0.27, seed + 5, 0.015), C.dressed, { y: H - 0.1 }));
   if (lancet) {
-    const rise = archRise(half, r);
-    // the dark glass, a hair proud of the lime
-    const glassGeo = fitUV(new THREE.ShapeGeometry(lancetShape(half, r, sill, spring), 8));
-    g.add(part(glassGeo, C.glass, { z: FACE + 0.004 }));
+    // the dark glass, a hair proud of the lime, and its lead
+    leadedGlass(g, C, FACE + 0.004);
     // the chamfered surround: an outline of dressed stone about the opening
     const sur = 0.055;
     const outer = lancetShape(half + sur, r + sur, sill - sur, spring);
     outer.holes.push(lancetShape(half, r, sill, spring));
     g.add(slab(outer, 0.03, C.dressed, FACE));
-    // a mullion of lead down the middle and a transom bar, the cames' iron
-    g.add(box(0.018, spring + rise - sill - 0.04, 0.01, C.lead, { y: (sill + spring + rise) / 2, z: FACE + 0.012 }));
-    for (const ty of [sill + 0.45, sill + 0.9]) g.add(box(2 * half, 0.016, 0.01, C.lead, { y: ty, z: FACE + 0.012 }));
     // the hood mould over the head, its label stops a little below the springing
     const stop = spring - 0.14;
     g.add(slab(archBand(half + 0.12, r + 0.12, half + 0.075, r + 0.075, spring, stop, stop), 0.05, C.dressed, FACE));

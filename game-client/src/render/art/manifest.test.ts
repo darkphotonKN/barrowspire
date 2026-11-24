@@ -13,6 +13,7 @@ import { BAKE } from "@/render/world/bake";
 import { castOffset } from "@/render/world/wallShadows";
 import { DIRECTION_ORDER, directionIndex, validateManifest } from "./manifest";
 import { SCENE_SCOPED_GROUPS } from "./sceneArt";
+import { decodePng } from "../../../tools/bake/lib/png.mjs";
 
 /** A minimal manifest that satisfies every rule. Each case below breaks one. */
 function fixture() {
@@ -1269,6 +1270,11 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["graveyard_wall", "graveyardWall", { x: 2, y: 2 }],
       // the wayside calvary by the chapel's door (R41)
       ["wayside_cross", "waysideCross", { default: 1 }],
+      // the west wall's hung dressing behind the Confessor, facing east as a painting on a west
+      // wall does (§Change: The chapel's windows match inside and out, W9, W10): the murals'
+      // frames by MURALS, the saint then the dead rising
+      ["chapel_crucifix", "chapelCrucifix", { e: 1 }],
+      ["chapel_mural", "chapelMural", { e: 2 }],
     ];
 
     // the chapel's own building (R42), authored in models/chapelBuilding.js: each piece by the
@@ -1289,6 +1295,9 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       ["chapel_door_head_y", "chapelDoorHead", "tower_door_head_y"],
       ["chapel_roof_slope", "chapelRoofSlope", "roof_slope"],
       ["chapel_roof_ridge", "chapelRoofRidge", "roof_ridge"],
+      // the lancet seen from inside (W8): a back piece, cut and framed exactly as the plain one
+      ["chapel_wall_back_lancet_x", "chapelWall", "chapel_wall_back_plain_x"],
+      ["chapel_wall_back_lancet_y", "chapelWall", "chapel_wall_back_plain_y"],
     ];
     const frameCounts = (s: Sheet) => Object.fromEntries(Object.entries(s.animations).map(([a, v]) => [a, v.frames[0].length]));
 
@@ -1322,14 +1331,14 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       },
     );
 
-    it("bakes two variants of every wall piece, as the tower's, and the inside kinds plain and pillar, the outside plain, lancet and buttress (R23)", () => {
+    it("bakes two variants of every wall piece, as the tower's, and the inside kinds plain and pillar (and a lancet on the back wall, W8), the outside plain, lancet and buttress (R23)", () => {
       for (const [name] of CHAPEL_BUILDING.filter(([n]) => n.startsWith("chapel_wall_"))) expect(frameCounts(sheet(name)), name).toEqual(variants);
       const kinds = (stem: string) =>
         Object.keys(baked.sheets)
           .filter((n) => n.startsWith(stem) && n.endsWith("_x"))
           .map((n) => n.slice(stem.length, -2))
           .sort();
-      expect(kinds("chapel_wall_back_")).toEqual(["pillar", "plain"]);
+      expect(kinds("chapel_wall_back_")).toEqual(["lancet", "pillar", "plain"]);
       expect(kinds("chapel_wall_front_")).toEqual(["pillar", "plain"]);
       expect(kinds("chapel_wall_exterior_")).toEqual(["buttress", "lancet", "plain"]);
       // no stone cap: the chapel has a roof
@@ -1360,6 +1369,35 @@ describe("the baked manifest (public/art/manifest.json)", () => {
       for (const [name, s] of Object.entries(baked.sheets) as [string, Sheet][])
         if (atlasGroup(s.atlas) === "chapel") expect(ours).toContain(name);
       expect(SCENE_SCOPED_GROUPS.has("chapel")).toBe(false);
+    });
+
+    it("hangs the crucifix and the murals as the paintings hang: wall-hung with no ground shadow, so each frame stays as wide right of its anchor as left (W9, W10)", () => {
+      // the key light (tools/bake/page/shadow.js KEY_LIGHT [-1, 2.83, 1]) throws a point h up to
+      // (+h/2.83, −h/2.83) in world x and y, screen right; the bake frames a shadowed sheet round
+      // its shadow too, so a piece hung 1.5 to 3.3 tiles up would reach some 40 to 75 px further
+      // right of its anchor than left. Without one, a panel along the wall frames about its anchor.
+      const right = (name: string) => (1 - sheet(name).anchor.x) * sheet(name).frameWidth;
+      const left = (name: string) => sheet(name).anchor.x * sheet(name).frameWidth;
+      for (const name of ["painting", "chapel_crucifix", "chapel_mural"]) expect(right(name) - left(name), name).toBeLessThanOrEqual(4);
+    });
+
+    it("paints the mural's two frames as two scenes: most of their opaque pixels differ (W10)", () => {
+      const s = sheet("chapel_mural");
+      const atlas = decodePng(readFileSync(join(__dirname, "../../../public/art", baked.atlases[s.atlas].image)));
+      const [a, b] = s.animations.e.frames[0] as { x: number; y: number }[];
+      let opaque = 0;
+      let differ = 0;
+      for (let y = 0; y < s.frameHeight; y++)
+        for (let x = 0; x < s.frameWidth; x++) {
+          const i = ((a.y + y) * atlas.width + a.x + x) * 4;
+          const j = ((b.y + y) * atlas.width + b.x + x) * 4;
+          if (atlas.rgba[i + 3] < 255 || atlas.rgba[j + 3] < 255) continue;
+          opaque++;
+          const d = Math.abs(atlas.rgba[i] - atlas.rgba[j]) + Math.abs(atlas.rgba[i + 1] - atlas.rgba[j + 1]) + Math.abs(atlas.rgba[i + 2] - atlas.rgba[j + 2]);
+          if (d > 24) differ++;
+        }
+      expect(opaque).toBeGreaterThan(1000);
+      expect(differ / opaque).toBeGreaterThan(0.5);
     });
 
     it("lights none of them: the chapel's light is the reused candelabra's (R15); its lancets and rose windows are dark glass (R23)", () => {

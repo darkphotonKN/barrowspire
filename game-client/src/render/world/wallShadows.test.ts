@@ -476,7 +476,7 @@ describe("walls inside a footprint (FS-V8FT3 §F R25)", () => {
   const PARTITION = wall(240, 110, 20, 180, "h");
 
   it("should cast a partition as a front wall, cut at its house's footprint", () => {
-    const plan = planWalls([PARTITION], 5, MASONRY_WALLS, INTERIOR_PARTITION);
+    const plan = planWalls([PARTITION], 5, MASONRY_WALLS, { rule: INTERIOR_PARTITION });
     const shapes = shadowsWithin(plan, MASONRY, HOUSE);
     expect(shapes.length).toBeGreaterThan(0);
     // its foot's east edge is x 254.8: a front wall's shadow ends 15.5 px east of it
@@ -489,7 +489,7 @@ describe("walls inside a footprint (FS-V8FT3 §F R25)", () => {
   });
 
   it("should leave a shape wholly inside the footprint as it is", () => {
-    const plan = planWalls([wall(240, 150, 20, 100, "h")], 5, MASONRY_WALLS, INTERIOR_PARTITION);
+    const plan = planWalls([wall(240, 150, 20, 100, "h")], 5, MASONRY_WALLS, { rule: INTERIOR_PARTITION });
     expect(shadowsWithin(plan, MASONRY, HOUSE).map(corners)).toEqual(planWallShadows(plan, MASONRY).map(corners));
   });
 

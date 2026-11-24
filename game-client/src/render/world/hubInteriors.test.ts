@@ -1,13 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { Facing8 } from "@/render/iso/facing";
-import type { Rect } from "@/render/iso/projection";
+import { worldToScreen, type Rect } from "@/render/iso/projection";
 import type { WallState } from "@/types/gameState";
 import { housesFrom, insideHouse, type House } from "./houses";
 import {
   HUB_FIXED_RESIDENTS,
   HUB_FURNISHINGS,
   HUB_INDOOR_DRESSING,
+  CHAPEL_WEST_BEHIND_HUNG,
   HUB_CHAPEL,
   HUB_INN,
   INN_FLOOR,
@@ -231,7 +232,24 @@ describe("townHouseLook, how each town building is built", () => {
     });
 
     it("should stand it on the town's flagstone, drawn as baked: no tint over any part (owner feedback F6)", () => {
-      expect(townHouseLook(chapel())).toEqual({ sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false } });
+      const { fixed, ...look } = townHouseLook(chapel());
+      expect(look).toEqual({ sheets: CHAPEL_WALLS, roof: { prefix: "chapel_", chimney: false } });
+      expect(fixed).toBeDefined();
+    });
+
+    it("should fix kinds on the chapel's walls, and on no other house's (FS-R4MYX §Change: windows match, W1, W7)", () => {
+      const { fixed } = townHouseLook(chapel());
+      expect(Object.keys(fixed!).sort()).toEqual(["back", "outward"]);
+      expect(Object.keys(fixed!.outward!).sort()).toEqual(["east", "south"]);
+      expect(Object.keys(fixed!.back!).sort()).toEqual(["north", "west"]);
+      // the cut-away fronts keep their plain-or-pillar table: no lancet indoors on the south or east wall
+      expect(fixed!.front).toBeUndefined();
+      for (const house of HOUSES.filter((h) => !isChapel(h))) expect(townHouseLook(house).fixed, house.id).toBeUndefined();
+    });
+
+    it("should derive the west wall's plain pieces from the hung dressing: every piece behind the crucifix and the murals (W6)", () => {
+      expect(CHAPEL_WEST_BEHIND_HUNG).toEqual([1160, 1200, 1240, 1320, 1400, 1440, 1480]);
+      expect(Object.keys(townHouseLook(chapel()).fixed!.back!.west!.at).map(Number)).toEqual([...CHAPEL_WEST_BEHIND_HUNG]);
     });
 
     it("should close its east door with the chapel's own pointed-arch head, chapel_door_head_y", () => {
@@ -387,14 +405,81 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
       expect(overlaps(footprint(s), rectOf(w)), w.entity_id).toBe(false);
   });
 
-  it("should dress the chapel with its dais, lectern and two candelabra, nothing else (FS-R4MYX R14)", () => {
+  it("should dress the chapel with its dais, lectern, two candelabra, the crucifix and two murals, nothing else (FS-R4MYX R14, amended by W12)", () => {
     const inChapel = HUB_INDOOR_DRESSING.filter((s) => insideHouse(s.at, { id: "", ...HUB_CHAPEL }));
     expect(inChapel.map((s) => [s.sheet, s.at, s.size])).toEqual([
       ["dais", { x: 1105, y: 1320 }, [130, 200]],
       ["lectern", { x: 1190, y: 1250 }, [20, 20]],
       ["candelabra", { x: 1135, y: 1250 }, [30, 30]],
       ["candelabra", { x: 1135, y: 1390 }, [30, 30]],
+      ["chapel_crucifix", { x: 982, y: 1320 }, [4, 40]],
+      ["chapel_mural", { x: 982, y: 1210 }, [4, 64]],
+      ["chapel_mural", { x: 982, y: 1430 }, [4, 64]],
     ]);
+  });
+
+  describe("the crucifix and the murals behind the Confessor (FS-R4MYX §Change: windows match, W12)", () => {
+    const chapel = HOUSES.find((h) => h.x === HUB_CHAPEL.x && h.y === HUB_CHAPEL.y)!;
+    const [crucifix] = HUB_INDOOR_DRESSING.filter((s) => s.sheet === "chapel_crucifix");
+    const murals = HUB_INDOOR_DRESSING.filter((s) => s.sheet === "chapel_mural");
+    const hung = [crucifix, ...murals];
+    /** The dais's centre: the aisle's line, where the Confessor stands before it. */
+    const DAIS_Y = HUB_INDOOR_DRESSING.find((s) => s.sheet === "dais")!.at.y;
+
+    it("should hang one crucifix facing east within 10 px of the dais's line, y 1320", () => {
+      expect(DAIS_Y).toBe(1320);
+      expect(crucifix).toBeDefined();
+      expect(crucifix.animation).toBe("e");
+      expect(Math.abs(crucifix.at.y - DAIS_Y)).toBeLessThanOrEqual(10);
+    });
+
+    it("should hang the saint north of it and the dead rising south, each 90–130 px from it along the wall", () => {
+      expect(murals.map((m) => m.index)).toEqual([0, 1]);
+      const [saint, rising] = murals;
+      expect(saint.at.y).toBeLessThan(crucifix.at.y);
+      expect(rising.at.y).toBeGreaterThan(crucifix.at.y);
+      for (const m of murals) {
+        expect(m.animation).toBe("e");
+        const apart = Math.abs(m.at.y - crucifix.at.y);
+        expect(apart, `mural ${m.index}`).toBeGreaterThanOrEqual(90);
+        expect(apart, `mural ${m.index}`).toBeLessThanOrEqual(130);
+      }
+    });
+
+    it("should hang all three on the west wall's inner face, inside y 1120–1520, none overlapping another", () => {
+      for (const s of hung) {
+        expect(homeOf(s)).toBe(chapel);
+        // 2 px off the face, as the Inn's west-wall paintings hang
+        expect(s.at.x - inner(chapel).x, s.sheet).toBe(2);
+        const f = footprint(s);
+        expect(f.y).toBeGreaterThanOrEqual(1120);
+        expect(f.y + f.height).toBeLessThanOrEqual(1520);
+      }
+      for (const [i, a] of hung.entries())
+        for (const b of hung.slice(i + 1)) expect(overlaps(footprint(a), footprint(b)), `${a.sheet} ${b.sheet}`).toBe(false);
+    });
+
+    it("should keep every frame of the three clear of the candelabra's and the lectern's on screen, as drawn", () => {
+      const manifest = JSON.parse(readFileSync(new URL("../../../public/art/manifest.json", import.meta.url), "utf8")) as {
+        sheets: Record<string, { frameWidth: number; frameHeight: number; anchor: { x: number; y: number } }>;
+      };
+      /** A sheet's frame on screen, drawn at its point by its anchor, as addProp draws it. */
+      const frame = (s: IndoorSpot): Rect => {
+        const sheet = manifest.sheets[s.sheet];
+        expect(sheet, s.sheet).toBeDefined();
+        const at = worldToScreen(s.at.x, s.at.y);
+        return {
+          x: at.x - sheet.anchor.x * sheet.frameWidth,
+          y: at.y - sheet.anchor.y * sheet.frameHeight,
+          width: sheet.frameWidth,
+          height: sheet.frameHeight,
+        };
+      };
+      const standing = HUB_INDOOR_DRESSING.filter((s) => (s.sheet === "candelabra" || s.sheet === "lectern") && homeOf(s) === chapel);
+      expect(standing).toHaveLength(3);
+      for (const a of hung)
+        for (const b of standing) expect(overlaps(frame(a), frame(b)), `${a.sheet}#${a.index ?? 0} over ${b.sheet} at ${b.at.x}, ${b.at.y}`).toBe(false);
+    });
   });
 
   it("should lay the chapel's dais flat on the floor, under the altar, and stand everything else upright", () => {
@@ -487,8 +572,9 @@ describe("indoor dressing (FS-B0H2D R15)", () => {
     }
   });
 
-  /** Hung on a wall, its bracket or frame well above a low wall's top: paintings and wall lanterns. */
-  const wallHung = (d: IndoorSpot) => d.sheet === "painting" || d.animation === "wall_s" || d.animation === "wall_e";
+  /** Hung on a wall, its bracket or frame well above a low wall's top: paintings, the chapel's crucifix and murals, and wall lanterns. */
+  const HUNG_SHEETS = ["painting", "chapel_crucifix", "chapel_mural"];
+  const wallHung = (d: IndoorSpot) => HUNG_SHEETS.includes(d.sheet) || d.animation === "wall_s" || d.animation === "wall_e";
 
   it("should hang every west-facing wall piece on its house's full-height west wall, never on the low partition (ADR-0036)", () => {
     const west = HUB_INDOOR_DRESSING.filter((d) => wallHung(d) && (d.animation === "e" || d.animation === "wall_e"));

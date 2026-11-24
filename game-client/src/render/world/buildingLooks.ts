@@ -24,7 +24,9 @@ import {
   cutExterior,
   heightOf,
   planWalls,
+  faceKinds,
   sideOf,
+  type FixedKinds,
   type WallAxis,
   type WallPiece,
   type WallPost,
@@ -60,15 +62,21 @@ export interface BuildingWalls {
  *
  * Posts are planned per building, as `planWalls` would post that building's walls alone, so a
  * corner two buildings share is posted by each and goes with either.
+ *
+ * `fixedOf` names the kinds a building fixes (the chapel's windows, FS-R4MYX W1), read by both
+ * looks alike: the shared back walls, the cut-away fronts and the outward faces. A building with
+ * none is hashed throughout, as every building was before.
  */
 export function planBuildings(
   walls: readonly WallState[],
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
+  fixedOf?: (house: House) => FixedKinds | undefined,
 ): BuildingWalls[] {
   return housesFrom(walls).map((house) => {
     const own = walls.filter((w) => w.house_id === house.id);
-    const { pieces, posts } = planWalls(own, seed, sheets);
+    const fixed = fixedOf?.(house);
+    const { pieces, posts } = planWalls(own, seed, sheets, { fixed });
     const fronts = own.filter((w) => heightOf(sideOf(w, house)) === "front");
     const isBack = (p: { height: string }) => p.height === "back";
     const lowPosts = posts.filter((p) => !isBack(p));
@@ -77,7 +85,7 @@ export function planBuildings(
       shared: { pieces: pieces.filter(isBack), posts: posts.filter(isBack) },
       interior: { pieces: pieces.filter((p) => !isBack(p)), posts: lowPosts },
       exterior: {
-        pieces: fronts.flatMap((w) => cutExterior(w, seed, sheets)),
+        pieces: fronts.flatMap((w) => cutExterior(w, seed, sheets, faceKinds(fixed, "outward", sideOf(w, house)))),
         posts: lowPosts.map((p) => ({
           ...p,
           sheet: `${sheets.prefix}post_back`,

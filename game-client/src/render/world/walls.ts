@@ -97,6 +97,41 @@ export interface PieceRule {
 /** Share of whole pieces of each kind, cumulative, in percent. The first kind is the plain one. */
 export type VariantTable = readonly (readonly [number, string])[];
 
+/** A face of a wall as a material draws it: the full-height or cut-away inner face, or the outward one. */
+export type WallFace = WallHeight | "outward";
+
+/**
+ * One face of one side of a building, some of its pieces' kinds fixed by where they stand
+ * (FS-R4MYX §Change: the chapel's windows match inside and out, W1): `at` names the kind of the
+ * piece centred at a place along its wall (world x on an x wall, y on a y wall); every other
+ * piece is hashed from `rest`, or from the material's own table for that face. A trimmed piece
+ * stays plain, whatever is named for it. The variant frame is hashed as on any piece.
+ */
+export interface FaceKinds {
+  at: Readonly<Record<number, string>>;
+  rest?: VariantTable;
+}
+
+/**
+ * A building's fixed kinds (W1), by face and by the house sides that face is drawn on: north and
+ * west walls stand full height (`back`), south and east are cut away inside (`front`) and stand
+ * full height outside (`outward`). The chapel's bays (its lancet rhythm) and the plain wall behind
+ * its hung dressing are written in them, where a hash could promise neither. Named by a
+ * building's look, never by its material, since the places are that building's own. A face or
+ * side with none is hashed.
+ */
+export interface FixedKinds {
+  back?: { north?: FaceKinds; west?: FaceKinds };
+  front?: { south?: FaceKinds; east?: FaceKinds };
+  outward?: { south?: FaceKinds; east?: FaceKinds };
+}
+
+/** The kinds a building fixes on one face of one side, if any. */
+export function faceKinds(fixed: FixedKinds | undefined, face: WallFace, side: HouseSide | undefined): FaceKinds | undefined {
+  const sides: Partial<Record<HouseSide, FaceKinds>> | undefined = fixed?.[face];
+  return side ? sides?.[side] : undefined;
+}
+
 /** The sheets one material draws server walls with, and how often each kind turns up. */
 export interface WallSheets {
   /** Before every piece and post sheet name: `""` for timber, `"tower_"` for masonry. */
@@ -177,8 +212,9 @@ export const MASONRY_WALLS: WallSheets = {
 /**
  * The chapel's own walls (FS-R4MYX R23, R42): whitewashed limestone, aged in the bake, as thick as
  * the masonry and cut as the masonry pieces they stand in for. Inside, plain or pillared; the
- * outward face (south and east) plain, a gothic lancet of dark glass, or a stepped buttress, about
- * a third each so the long walls read as bays. No kind carries a light (the two candelabra are the
+ * outward face (south and east) plain, a gothic lancet of dark glass, or a stepped buttress. The
+ * chapel's look fixes where its lancets and buttresses stand (its fixed kinds, FS-R4MYX W1); these
+ * shares hash only what a look leaves open. No kind carries a light (the two candelabra are the
  * only light, R15) and there is no stone cap: the chapel wears a pitched roof.
  */
 export const CHAPEL_WALLS: WallSheets = {
@@ -209,9 +245,10 @@ export function cutWall(
   height: WallHeight,
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
+  fixed?: FaceKinds,
 ): WallPiece[] {
   const look = { height, stem: `${sheets.prefix}wall_${height}`, kinds: sheets[height] };
-  return cut(w, seed, () => look);
+  return cut(w, seed, withFixed(look, fixed, axisOf(w)));
 }
 
 /**
@@ -223,9 +260,17 @@ export function cutExterior(
   w: WallState,
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
+  fixed?: FaceKinds,
 ): WallPiece[] {
   const look = { height: "back" as const, stem: `${sheets.prefix}wall_exterior`, kinds: sheets.outward };
-  return cut(w, seed, () => look);
+  return cut(w, seed, withFixed(look, fixed, axisOf(w)));
+}
+
+/** A face's look at each place along a wall: the kind fixed there if one is named, else hashed. */
+function withFixed(look: PieceLook, fixed: FaceKinds | undefined, axis: WallAxis): (at: Point) => PieceLook {
+  if (!fixed) return () => look;
+  const kinds = fixed.rest ?? look.kinds;
+  return (at) => ({ ...look, kinds, kind: fixed.at[Math.round(axis === "x" ? at.x : at.y)] });
 }
 
 /**
@@ -273,10 +318,10 @@ export const INTERIOR_PARTITION: PieceRule = {
   lit: () => false,
 };
 
-/** What a piece standing at a place is drawn as: its height, sheet stem and kinds. */
-type PieceLook = { height: WallHeight; stem: string; kinds: VariantTable };
+/** What a piece standing at a place is drawn as: its height, sheet stem and kinds, or its one fixed kind. */
+type PieceLook = { height: WallHeight; stem: string; kinds: VariantTable; kind?: string };
 
-/** A whole or trimmed tile of wall standing at `at`, its kind and variant hashed from that place. */
+/** A whole or trimmed tile of wall standing at `at`: its kind fixed by its look or hashed from that place, its variant hashed. */
 function pieceAt(
   wallId: string,
   axis: WallAxis,
@@ -284,10 +329,10 @@ function pieceAt(
   keep: number,
   depthAt: Point,
   seed: number,
-  { height, stem, kinds }: PieceLook,
+  { height, stem, kinds, kind: fixed }: PieceLook,
 ): WallPiece {
   const h = tileHash(Math.round(at.x), Math.round(at.y), seed);
-  const kind = keep < 1 ? kinds[0][1] : kinds.find(([cut]) => h % 100 < cut)![1];
+  const kind = keep < 1 ? kinds[0][1] : (fixed ?? kinds.find(([cut]) => h % 100 < cut)![1]);
   return { wallId, sheet: `${stem}_${kind}_${axis}`, height, index: h >>> 8, axis, at, keep, depthAt };
 }
 
@@ -330,25 +375,39 @@ function endsOf(w: WallState): [Point, Point] {
   ];
 }
 
+/** How `planWalls` decides its pieces beyond the house sides: a piece rule, or a building's fixed kinds. */
+export interface PlanWallsOptions {
+  /** Each piece's height and light by where it stands, in place of its house side's (a partition). */
+  rule?: PieceRule;
+  /** The kinds the walls' building fixes by face and side (the chapel's, FS-R4MYX W1). */
+  fixed?: FixedKinds;
+}
+
 /**
  * Every wall's pieces, and a post at every wall end: corners and door jambs, one post where
  * walls meet, as tall as the tallest wall it joins. With a piece rule, each piece and post takes
- * the rule's height where it stands instead of its house side's.
+ * the rule's height where it stands instead of its house side's. With a building's fixed kinds, a
+ * piece on a face and side they name takes its fixed kind there (FS-R4MYX W1); they are read by
+ * house side, which a rule replaces, so the two are never given together.
  */
 export function planWalls(
   walls: readonly WallState[],
   seed: number,
   sheets: WallSheets = TIMBER_WALLS,
-  rule?: PieceRule,
+  { rule, fixed }: PlanWallsOptions = {},
 ): { pieces: WallPiece[]; posts: WallPost[] } {
+  if (rule && fixed) throw new Error("planWalls: a piece rule and fixed kinds can't both decide a wall's pieces");
   const houses = new Map(housesFrom(walls).map((h) => [h.id, h]));
   const pieces: WallPiece[] = [];
   const posts = new Map<string, WallPost>();
 
   for (const w of walls) {
-    const side = heightOf(sideOf(w, w.house_id ? houses.get(w.house_id) : undefined));
+    const houseSide = sideOf(w, w.house_id ? houses.get(w.house_id) : undefined);
+    const side = heightOf(houseSide);
     const ends = endsOf(w);
-    pieces.push(...(rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets)));
+    pieces.push(
+      ...(rule ? cutByRule(w, seed, sheets, rule) : cutWall(w, side, seed, sheets, faceKinds(fixed, side, houseSide))),
+    );
     for (const at of ends) {
       const height = rule ? rule.height(at) : side;
       const key = `${Math.round(at.x)},${Math.round(at.y)}`;

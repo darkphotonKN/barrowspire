@@ -1019,7 +1019,7 @@ describe("addWallPieces: planned pieces and posts as sprites (a dungeon floor's 
     const { art } = library([...TOWER_ART, "tower_post_back", "tower_post_front"]);
     const walls = [wall(0, 0, 400, 20)];
     const built = addWalls(scene, art, walls, 7, MASONRY_WALLS, INTERIOR_PARTITION)!;
-    expect(built.plan).toEqual(planWalls(walls, 7, MASONRY_WALLS, INTERIOR_PARTITION));
+    expect(built.plan).toEqual(planWalls(walls, 7, MASONRY_WALLS, { rule: INTERIOR_PARTITION }));
     expect(built.plan.pieces.every((p) => p.height === "front")).toBe(true);
     expect(built.thickness).toBe(THICK);
   });

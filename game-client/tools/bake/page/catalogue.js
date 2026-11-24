@@ -97,9 +97,12 @@ import {
 } from "./models/hall.js";
 import {
   HEADSTONES,
+  MURALS,
   WALL_STATES,
   belfry,
   chapelAltar,
+  chapelCrucifix,
+  chapelMural,
   dais,
   graveFlowers,
   graveMound,
@@ -750,7 +753,7 @@ function buildingSheets() {
  * `chapel_altar`, since `altar` names the run's Altar of Consecration (FS-3103M). Reused, not
  * re-baked: `candelabra` (the chapel's only light), `tree_dead`, `tree_dead_snag` and the door.
  * Nothing here is lit. Variant frames are picked by index: a headstone's by its state's list in
- * HEADSTONES, a wall tile's by WALL_STATES (models/chapel.js).
+ * HEADSTONES, a wall tile's by WALL_STATES, a mural's by MURALS (models/chapel.js).
  */
 function chapelSheets() {
   const sheet = (name, fn, animations, opts = {}) => ({
@@ -785,6 +788,10 @@ function chapelSheets() {
       { pad: 0.06 },
     ),
     sheet("wayside_cross", "waysideCross", one(waysideCross)),
+    // hung on the west wall behind the Confessor, faced e as a painting on a west wall (W9, W10):
+    // wall-hung, so no ground shadow; the murals' frames by MURALS
+    sheet("chapel_crucifix", "chapelCrucifix", { e: still(chapelCrucifix) }, { shadow: false }),
+    sheet("chapel_mural", "chapelMural", { e: still(...MURALS.map((_, i) => () => chapelMural(i))) }, { shadow: false }),
   ];
 }
 
@@ -807,8 +814,9 @@ function chapelBuildingSheets() {
     ...opts,
   });
   const walls = [];
+  // the back wall alone carries the lancet seen from inside (W8): the cut-away front shows none (W7)
   for (const [height, H, kinds] of [
-    ["back", WALL_BACK, ["plain", "pillar"]],
+    ["back", WALL_BACK, ["plain", "pillar", "lancet"]],
     ["front", WALL_FRONT, ["plain", "pillar"]],
   ]) {
     for (const variant of kinds)

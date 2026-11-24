@@ -2148,3 +2148,164 @@ overlap UI pieces and leaves ADR-0086 Decision 2.3 for 1.3. The text above is no
   camera's shake (`LoreLines`' `tremor` option). The UI scene's camera never shakes, so the words and their
   dust, now on it, hold still while the world trembles under them; reduced motion still asks for none.
 
+## Change: A conversation holds the player still
+Status: shipped
+Date: 2026-11-24
+
+Scoped and promoted in one run under the owner's approved charter (2026-11-24), by `write-a-spec
+--from-thread` with no interview and no `challenge-me` pass. The owner, Nick: 「跟npc說話時調整成不能移動
+不能做其他事情」 (while talking to an NPC, the player can't move or do anything else). The charter's
+decisions are marked **[charter default]** with their reason; what the code forces (read on
+feat/hub-talk-hold-chapel-interior at f9b572d3) **[code]**; a default applied to a case the charter did
+not name, *Derived*, with its reason. A2's dialogue rules (R29–R32) and R17's Esc step are inherited, not
+restated. Numbered from R141.
+
+**Lane.** game-client only. No server, proto, gateway or manifest change, no wire change and no new
+message: FS-B0H2D R29 ("Talk stays client-side. No new message.") holds. **[charter default A6]**
+
+### Facts (verified 2026-11-24 at f9b572d3)
+
+- **Talking.** Client-only and town-only. `HubScene.offerConversation` answers E: inside the Spire gate
+  the door's panel (`greetAtDoor`), else the nearest in `NPC_TALK_RANGE`, an NPC (`openDialogue`) or the
+  stash chest (which opens the gear overlay's stash, not a dialogue). The card is the UI scene's
+  (`UiDialogueSlot`, A2 R29–R32). The town keeps `dialogue` (a card is open) and `doorOpen` (the open
+  card is the door's panel). **[code]**
+- **Movement.** `sendMovementIntent` runs first in each `update` and sends `move {vx, vy}` only when it
+  differs from `lastSent`. The keys read as released while `owned`, which is `menuOpen ||
+  mailbox.isOpen()`: a stride the menu interrupts is stopped by one `{0, 0}`, nothing is sent until the
+  menu closes, and then the keys still held send at once (HubScene.test "should send no move for WASD
+  while the menu is open, and stop a stride it interrupts"). An open dialogue is not in `owned`, so WASD
+  and the arrows walk under the card. **[code]**
+- **The server holds the last velocity.** game-service's `handleMove` sets the player's velocity
+  component, which stands until the next `move`. A client that only stops sending would leave the body
+  walking. **[code]**
+- **Refused under any open card today** (the door's panel included): the ESC menu (Esc closes the card
+  first, R17; `UiMenuSlot.pressMenu` returns under `blockers().dialogue`); I, B, C and the Inventory and
+  Character icons (`blockers().gear`); the passive tree's icon and P (`UiTreeSlot.toggle`,
+  `blockers().gear`); T and the Party icon (`blockers().party`, `UiCornerRow.refused`); the envelope
+  (`mailboxWiring`, `blockers().dialogue`); Enter into chat (`blockers().chat`); M (`minimapKeysOwned`);
+  the map mode icon's press (FS-56CKV § Change: Map mode icon, D5–D7), which is M's under M's guards:
+  the town builds the icon with `blocked: () => this.minimapKeysOwned()`, read by
+  `MinimapModeIcon.pointerDown`, and HubScene.test's D6 guard table pins it under a dialogue card
+  (corrected 2026-11-24, review of I-TQZ5J-60: the first draft listed it as not refused);
+  a field gate's and the dev gates' walk-in; the door's walk-in opening over another card; another talk
+  and the stash chest (E is the card's). A refused corner press plays `menu_error` and changes nothing
+  (`UiCornerRow.send`; FS-WDM0X § Change M10). **[code]**
+- **Not refused today:** movement. Also pressable under a card: the queue panel's Leave (a town press
+  at 1000), the party's invite prompt and ready check (`coversPopups` reads the menu, the gear overlay
+  and the letter panel, not the dialogue), and the rows of a window already open under the card (the
+  party panel, the character panel, the passive tree). **[code]**
+- **Walking away.** Walking out of range does not close an NPC's card (HubScene.test "should not stack
+  over another dialogue, nor close it on walking out", which places the body by server state). The
+  door's panel closes on walking out of the Spire gate (FS-0XMCP R8–R10). **[code]**
+- **FS-G4VMQ R5** reads "Movement keys are not sent while the menu is open (the menu owns the keyboard
+  the way the dialogue does)". Until this Change the parenthesis was not true of movement. **[code]**
+
+### Requirements
+
+141. **A conversation owns the movement keys.** While the town shows an NPC's card, WASD and the arrow
+     keys read as released, as under the menu and the letter panel. Every NPC's card holds: the function
+     NPCs, the wandering residents, the fixed residents and the town folk, the chapel's Confessor, its
+     worshippers and the mourners, and every page of a telling. A card the town shows through
+     `openDialogue`, and every page turned from it, is a conversation; the door's panel is not (R143).
+     **[charter default A1]** Reason: the owner's words, "不能移動" (can't move).
+142. **One stop, then nothing.** On the first frame the town reads its keys with a held card open, a
+     stride in progress is stopped by one `move {vx: 0, vy: 0}`. A player already still sends nothing,
+     since a move is sent only when it changes, as today. No `move` is sent while the card stays up,
+     whatever is pressed or released. **[charter default A1]** Reason: the server holds the last
+     velocity until a new `move` arrives (Facts), so a single stop is required, as the menu's rule sends
+     one.
+143. **The Spire door's panel is not held.** The door's panel, whether it opened on stepping into the
+     Spire gate or on E inside it, holds nothing: movement under it is as today, and walking out of the
+     gate still closes it (FS-0XMCP R8–R10). **[charter default A2]** Reason: the owner asked about NPCs.
+     The panel opens by walking into the gate, so holding it would trap a player who was only passing
+     through. A smaller v1.
+144. **Nothing else either.** Under any open card (the door's panel included, as today), everything the
+     Facts list as refused stays refused. Every corner icon (Menu, Inventory, Character, Party, Mailbox,
+     Tree) and every window or mode toggle (I, B, C, P, T, M, Enter into chat, and the map mode icon's
+     press) is refused. A refused corner press plays `menu_error` and changes nothing, as today's
+     refusals do. A refused key is spent: it does not act when the card closes. The map mode icon's
+     press is refused under a card as M is, today's behaviour: no mode step, and the press reaches
+     nothing else. It is pinned by HubScene.test's D6 guard table, which gains a Spire door's panel row.
+     **[charter default A3]** Reason: "不能做其他事情" (can't do anything else);
+     most of it is already true. The icon follows M because its press "is M's" (FS-56CKV D5–D7). *Derived*
+     for the door's panel: these refusals already apply to every card, and R143 exempts only movement.
+145. **A window already open stays as it is.** A card can open over the party panel, the character
+     panel or the passive tree (only the open inventory takes E, FS-HRH2J R10). That window is not closed
+     as the card opens, and its icon and key cannot toggle it while the card is up (R144). Esc steps the
+     card first, then the window (R17). **[charter default A3]** Reason: the charter keeps an open party
+     panel as it is. *Derived*: the character panel and the tree follow the party panel's rule, and the
+     rows inside an open window (the party panel's, the tree's spends) answer as today. Reason: they
+     are not toggles and the charter names none. A smaller v1, left to the owner's check (I-TQZ5J-61).
+146. **The ways out are unchanged.** Esc, the card's cancel row (Farewell, Leave, Not yet), E or Enter
+     on a card with no actionable row, or a row whose pick closes the card. Nothing new. **[charter
+     default A4]**
+147. **Walking on.** On the first frame after the card closes, the keys read as they are held. A player
+     still holding W walks on, its move sent at once, with no fresh press needed. **[charter default
+     A5]** Reason: the same as the menu's rule (Facts).
+148. **The world runs on.** A wandering resident keeps wandering while it talks, and its card stays up
+     wherever it walks, out of talk range included. The bust cut as the card opened stays. Other
+     players, the queue, chat lines arriving and the party's prompts go on behind the card. **[charter
+     default A6]**
+149. **Left pressable, by design.** The party's invite prompt and ready check stay shown and answerable
+     under a card. The queue panel's Leave stays pressable. *Derived.* Reason: each answers the server
+     and runs on its own clock (a ready check times out and holds the whole party: FS-BJNYC), and
+     leaving the queue from anywhere in the town is an owned story (FS-0XMCP story 9). The charter named
+     the keys and the toggles, not these. Left to the owner's check (I-TQZ5J-61).
+150. **FS-G4VMQ R5 comes true.** Its parenthesis, "the menu owns the keyboard the way the dialogue
+     does", now holds for movement as well. Its text is not edited. **[charter default A7]**
+
+### Acceptance Criteria
+
+- [ ] With W held, E at an NPC opens its card. The next frame sends one `move {vx: 0, vy: 0}`. Pressing,
+      releasing and pressing again any of WASD and the arrows sends no further `move` while the card is
+      up (a test written like the menu's).
+- [ ] The same holds for a wandering resident, a fixed resident, the Confessor and a telling's turned
+      page: no `move` is sent across the turn.
+- [ ] A still player opening a card sends no stop (no duplicate `{0, 0}`).
+- [ ] Closing the card by Esc, by Farewell pressed, or by E on a card with no actionable row, with W
+      still held: the next frame sends `{vx: 0, vy: -1}`.
+- [ ] The door's panel: walking into the gate with W held keeps walking (moves sent as today), and
+      walking out closes the panel. The FS-0XMCP door tests still pass: the walk-out one ("should not
+      stack over another dialogue, nor close it on walking out") is extended to the hold, its original
+      assertions kept.
+- [ ] Under an open NPC card, each corner icon's press changes nothing and plays `menu_error`. I, B, C,
+      P, T, M and Enter change nothing. The map mode icon's press steps no mode. A party panel open
+      before the card is still open after each press.
+- [ ] Under the door's panel, the map mode icon's press steps no mode either.
+- [ ] "should not stack over another dialogue, nor close it on walking out" still passes.
+- [ ] A resident walking out of talk range leaves its card up.
+- [ ] No game-server, proto or `ActionType` change in the diff.
+- [ ] Full client vitest, `tsc --noEmit`, `npm run lint` and `npm run lint:fence` pass.
+
+### Edge States
+
+- **A stride in flight as the card opens.** The body walks on until the stop reaches the server, about
+  one round trip, plus the frame in which E was read after the keys. If it crosses a gate edge in that
+  time, the Spire gate opens no door's panel over the card and a field gate's walk-in is refused, both
+  today's rules.
+- **A page turned** (a telling's Go on). Close-then-show happens inside one pick. The keys are read once
+  a frame, so the hold never lapses between pages and no `move` is sent.
+- **A staying pick** (a reply awaited). The card stays and so does the hold.
+- **The card closed by the town leaving** (a match found, a field's gate answered, Change character).
+  The next world's first frame sends its own move, as every visit does.
+- **The disconnect notice over a card.** The worlds are held (R5) and nothing is sent. Return to menu
+  closes the card with the town.
+- **Keys released while held.** The press is not seen. On close only what is held then counts (R147).
+  A browser blur that drops the keys leaves a still player.
+- **The server moving the body** (a re-seat, a spawn reset). Positions follow the server. The hold only
+  stops what the client sends.
+- **The door's panel then an NPC.** They cannot stack: E inside the gate is the door's, and the door
+  opens over no card.
+
+### Out of Scope
+
+- Turning the player to face the NPC, and the NPC pausing to talk.
+- Fields and runs: they have no NPCs.
+- The Spire door's panel's movement (R143).
+- The stash chest: it opens the gear overlay, under which walking stands (FS-HRH2J R7).
+- The rows inside a window already open under a card, the party's prompts and the queue's Leave (R145,
+  R149).
+- Mouse movement, attack, cast, potion and sprint: the town has none of them to hold.
+- Any change to the card's look, words, keys or sounds.
+
