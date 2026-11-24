@@ -765,7 +765,7 @@ FS-NCC9J slices add fan-out across pods, away and removal, and travel.
 - **Hardened** (FS-X2CMM) — the 10 s self state the Scar of the Pit sets on the warrior.
 - **Long Night** (FS-X2CMM) — the 6 s self state the Scar of the Long Night sets: monsters within
   5 cells turn on the warrior, who takes 30% less damage.
-- **Stun** (FS-04EEA) — server state on a monster, applied only by Earthbreaker: while it runs the
+- **Stun** (FS-04EEA; FS-X2CMM) — server state on a monster, applied by Earthbreaker and by a Binding Glyph's **rune**: while it runs the
   monster neither moves, strikes nor starts a wind-up, and a wind-up in progress ends with nothing
   landing; its cooldowns keep counting. A second stun takes the longer, never stacks. On the wire,
   monster `action: "stunned"`. Delvers are never stunned.
