@@ -39,6 +39,8 @@ type MonsterAISystem struct {
 	grid NavGrid
 	// cells is a wander pick's scratch
 	cells []int
+	// nights is this tick's warriors under the Long Night (book_long_night.go)
+	nights []longNight
 }
 
 /*
@@ -78,6 +80,7 @@ type quarry struct {
 // NOTE: this runs every game tick, before MovementSystem.
 func (s *MonsterAISystem) Update(deltaTime float64, entities []*ecs.Entity) {
 	delvers := quarries(entities)
+	s.nights = longNights(s.nights[:0], entities)
 
 	for _, entity := range entities {
 		mc, isMonster := entity.GetComponent(ecs.ComponentTypeEnemy)
@@ -117,6 +120,8 @@ func (s *MonsterAISystem) think(
 	// a stun runs out on its own clock, whatever else it does (FS-04EEA §C R15)
 	monster.StunRemaining = max(monster.StunRemaining-deltaTime, 0)
 
+	// the Long Night turns it on the warrior first (FS-X2CMM §E R31)
+	s.taunt(monster, at)
 	target, hunting := s.target(monster, at, delvers)
 
 	if monster.StunRemaining > stunEpsilon {

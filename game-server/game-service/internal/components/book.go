@@ -42,8 +42,13 @@ const (
 	// BookStateAfloat is the 8 s state Levitate sets on its target: no
 	// attack, class ability or tree ability while it runs (R23).
 	BookStateAfloat BookStateName = "afloat"
-	// trackers_eye (R26) and long_night (R31) join here as their pages are
-	// built.
+	// BookStateTrackersEye is Tracker's Eye's 15 s self state (R26). Its
+	// reveal is wave 2 (R49).
+	BookStateTrackersEye BookStateName = "trackers_eye"
+	// BookStateLongNight is the Scar of the Long Night's 6 s self state:
+	// monsters within 5 cells turn on the warrior, who takes 30 % less from
+	// every hit (R31). Never last_stand.
+	BookStateLongNight BookStateName = "long_night"
 )
 
 // BookCooldown is one page's book cooldown, in simulation seconds: Remaining
@@ -68,6 +73,9 @@ type BookComponent struct {
 	States map[BookStateName]float64
 	// Casting is the page being cast, nil when none: one at a time (§D R19).
 	Casting *BookCasting
+	// LongNightReach is how far, in px, the warrior's Long Night turns
+	// monsters: its 5 cells in the cell of the floor it was cast on (R31).
+	LongNightReach float64
 }
 
 // BookCasting is a page cast in progress: accepted, not yet paid for, its

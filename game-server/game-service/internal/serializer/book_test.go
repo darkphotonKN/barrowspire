@@ -35,7 +35,10 @@ func TestFormatStateToClientState_TheOwnersBookInARun(t *testing.T) {
 	assert.Equal(t, map[string]any{"pages": []any{map[string]any{
 		"id": "hardened", "unlock_level": float64(9), "cost": float64(30),
 		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
-	}}}, me["book"], "ready, {0, 0}")
+	}, map[string]any{
+		"id": "long_night", "unlock_level": float64(15), "cost": float64(40),
+		"cooldown": map[string]any{"remaining": float64(0), "total": float64(0)}, "spent": false,
+	}}}, me["book"], "ready, {0, 0}; Heave (wave 2) never sent")
 
 	book.Cooldowns[components.PageHardened] = components.BookCooldown{Remaining: 45, Total: 90}
 	me = ownFrame(t, em, types.WorldTypeRun, warrior)

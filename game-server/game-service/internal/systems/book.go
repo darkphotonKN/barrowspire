@@ -79,7 +79,9 @@ var pageResolvers = map[components.PageID]pageResolver{
 	components.PageBindingGlyph: resolveBindingGlyph,
 	components.PageHardened:     resolveHardened,
 	components.PageLevitate:     resolveLevitate,
+	components.PageLongNight:    resolveLongNight,
 	components.PageRecall:       resolveRecall,
+	components.PageTrackersEye:  resolveTrackersEye,
 	components.PageWitchlight:   resolveWitchlight,
 }
 
@@ -338,6 +340,15 @@ const hardenedSeconds = 10.0
 // is wave 2 (R53).
 func resolveHardened(_ *ecs.EntityManager, cast BookCast) {
 	setBookState(cast.Caster, components.BookStateHardened, hardenedSeconds)
+}
+
+// trackersEyeSeconds is how long Tracker's Eye lasts (R26).
+const trackersEyeSeconds = 15.0
+
+// resolveTrackersEye sets tracker's eye on the archer. Its reveal is wave 2
+// (R49).
+func resolveTrackersEye(_ *ecs.EntityManager, cast BookCast) {
+	setBookState(cast.Caster, components.BookStateTrackersEye, trackersEyeSeconds)
 }
 
 // afloatSeconds is how long a Levitate keeps its target afloat (R23).

@@ -1246,6 +1246,7 @@ func (s *CombatSystem) applyHit(attack components.AttackSnapshot, target *ecs.En
 		damage, crit = ResolveDamage(attack, s.mitigation(target), s.roll())
 	}
 	damage = damageTaken(target, health, damage)
+	damage = underLongNight(target, damage)
 	// the ward's mana share comes off first; only the HP share can be a
 	// killing blow (FS-E1ZDG Edge States)
 	toHealth := arcaneWard(target, damage)
