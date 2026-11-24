@@ -34,6 +34,8 @@ export type CharacterSource = Pick<PlayerState, "username" | "class"> &
       | "passive_points"
       // the header's title (FS-E1ZDG §K.41)
       | "specialization"
+      // the class book's, read by the book from the same character, in a run (FS-X2CMM R37, R38)
+      | "book"
     >
   >;
 

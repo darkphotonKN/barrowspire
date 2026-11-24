@@ -33,6 +33,8 @@ export function controlRows(className: string, specialization?: string): [string
     ["I / B", "Inventory"],
     ["C", "Character"],
     ["T", "Party"],
+    // the class book, in a run (FS-X2CMM R36)
+    ["K", "Class book"],
     ["ENTER", "Chat"],
     ["Q", "Close Panel"],
     ["LEFT CLICK", "Attack"],

@@ -23,6 +23,11 @@ describe("escapeStep (FS-R82NV § Change C2: one press closes one thing)", () =>
     ["the tree", { ...none, tree: true }, "tree"],
     ["the open menu, over the tree", { ...none, menu: true, tree: true }, "close-menu"],
     ["the controls panel, before every other step", { letter: true, menu: true, gear: true, party: true, controls: true }, "controls"],
+    // FS-X2CMM R36: the class book stands over the party panel, the tree and the gear overlay, under the menu
+    ["the book, over the party panel, the tree and the gear overlay", { ...none, book: true, party: true, tree: true, gear: true }, "book"],
+    ["the book", { ...none, book: true }, "book"],
+    ["the open menu, over the book", { ...none, menu: true, book: true }, "close-menu"],
+    ["the controls panel, before the book", { ...none, book: true, controls: true }, "controls"],
   ] as const)("should close %s", (_case, open, step) => {
     expect(escapeStep(open)).toBe(step);
   });

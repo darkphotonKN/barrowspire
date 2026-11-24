@@ -86,11 +86,14 @@ function onBridge() {
   const party = aPartyPanel();
   const gear = aGear();
   const tree = aTree();
+  // the UI scene's class book as the row reaches it (FS-X2CMM R36), as the tree is
+  const book = aTree();
   const { bridge, heard } = heardInterfaceSounds(undefined, {
     party: () => party.isOpen(),
     inventory: () => gear.inventory,
     character: () => gear.character,
     tree: () => tree.open,
+    book: () => book.open,
   });
   const built: BuiltRow[] = [];
   const menuPresses: number[] = [];
@@ -114,10 +117,11 @@ function onBridge() {
     party,
     gear,
     tree,
+    book,
   );
   const live = () => built.filter((b) => !b.destroyed);
   const press = (icon: CornerIcon) => live()[0].icons.find((spec) => spec.icon === icon)!.press?.();
-  return { bridge, heard, row, built, live, press, menuPresses, party, gear, tree };
+  return { bridge, heard, row, built, live, press, menuPresses, party, gear, tree, book };
 }
 
 const shape = (icons: CornerIconSpec[]) => icons.map(({ icon, greyed }) => (greyed ? `${icon} (greyed)` : icon));
@@ -130,16 +134,20 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
     row.show(bridge.world);
 
     expect(live()).toHaveLength(1);
-    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "tree"]);
+    // the class book's greyed outside a run (FS-X2CMM R36)
+    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "tree", "book (greyed)"]);
   });
 
-  it.each(["field", "run"] as const)("should build the same five in the %s, and the greyed Mailbox", (world) => {
+  it.each([
+    ["field", "book (greyed)"],
+    ["run", "book"],
+  ] as const)("should build the same in the %s, the book as %s, and the greyed Mailbox", (world, book) => {
     const { bridge, row, live } = onBridge();
     bridge.report(aWorld(world).report);
 
     row.show(bridge.world);
 
-    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "tree", "mail (greyed)"]);
+    expect(shape(live()[0].icons)).toEqual(["menu", "inventory", "character", "party", "tree", book, "mail (greyed)"]);
     expect(live()[0].icons.at(-1)!.press).toBeUndefined();
   });
 
@@ -161,7 +169,7 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
     }
     expect(built).toHaveLength(3);
     expect(live()).toEqual([]);
-    expect(built.map((b) => shape(b.icons).length)).toEqual([5, 6, 5]);
+    expect(built.map((b) => shape(b.icons).length)).toEqual([6, 7, 6]);
   });
 
   it("should rebuild on a report of another world, and keep the row standing on a report of the same one", () => {
@@ -176,7 +184,7 @@ describe("the UI scene's corner row, built from the world's report (FS-TQZ5J R13
 
     expect(built).toHaveLength(2);
     expect(built[0].destroyed).toBe(true);
-    expect(shape(live()[0].icons)).toHaveLength(5);
+    expect(shape(live()[0].icons)).toHaveLength(6);
   });
 
   it("should relay the row out on a new view, and take it down with the UI scene", () => {
@@ -239,6 +247,53 @@ describe("the UI scene's corner row's tree icon (FS-8RZ51 R32, R33)", () => {
     expect(built[1].marked).toBe(true);
     row.mark(false);
     expect(built[1].marked).toBe(false);
+  });
+});
+
+// FS-X2CMM R36 (I-X2CMM-10): the book icon toggles the UI scene's class book inside the scene's act, in a
+// run; greyed elsewhere, where its press plays the refusal alone
+describe("the UI scene's corner row's book icon (FS-X2CMM R36)", () => {
+  it("should toggle the UI scene's book inside its act in a run, the character panel's sounds playing (v1)", () => {
+    const { bridge, heard, row, press, book } = onBridge();
+    bridge.report(aWorld("run").report);
+    row.show(bridge.world);
+
+    press("book");
+    expect(book.open).toBe(true);
+    expect(heard()).toEqual(["character_open"]);
+    press("book");
+    expect(book.open).toBe(false);
+    expect(heard()).toEqual(["character_close"]);
+  });
+
+  it.each(["hub", "field"] as const)("should grey the book in the %s: no press, no hover, its refusal's menu_error alone", (world) => {
+    const { bridge, heard, row, live, book } = onBridge();
+    bridge.report(aWorld(world).report);
+    row.show(bridge.world);
+    const spec = live()[0].icons.find((s) => s.icon === "book")!;
+
+    expect(spec.greyed).toBe(true);
+    expect(spec.press).toBeUndefined();
+    expect(spec.hovered).toBeUndefined();
+    spec.refused?.();
+    expect(heard()).toEqual(["menu_error"]);
+    expect(book.toggles).toBe(0);
+  });
+
+  it("should refuse the book icon while the menu slot is filled, and play the refusal for a toggle that changes nothing", () => {
+    const { bridge, heard, row, press, book } = onBridge();
+    bridge.report(aWorld("run").report);
+    row.show(bridge.world);
+    bridge.reportUi({ menuOpen: true });
+
+    press("book");
+    expect(book.toggles).toBe(0);
+    expect(heard()).toEqual(["menu_error"]);
+
+    bridge.reportUi({ menuOpen: false });
+    book.refused = true;
+    press("book");
+    expect(heard()).toEqual(["menu_error"]);
   });
 });
 

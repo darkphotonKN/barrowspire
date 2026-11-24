@@ -98,11 +98,21 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
       tree.open = false;
     },
   };
+  // the UI scene's own class book (FS-X2CMM R36), open or shut
+  const book = { open: false, closes: 0 };
+  const bookSlot = {
+    isOpen: () => book.open,
+    close: () => {
+      book.closes++;
+      book.open = false;
+    },
+  };
   const { bridge, heard } = heardInterfaceSounds(undefined, {
     party: () => party.open,
     inventory: () => gear.inventory,
     character: () => gear.character,
     tree: () => tree.open,
+    book: () => book.open,
   });
   const drawn: Drawn[] = [];
   const stored = { level: 3 };
@@ -140,6 +150,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     party: panel,
     gear: gearSlot,
     tree: treeSlot,
+    book: bookSlot,
   });
   const live = () => drawn.filter((d) => !d.destroyed);
   const shown = () => live()[0];
@@ -152,7 +163,7 @@ function onBridge(fullscreen: OptionsPanelSpec["fullscreen"] = null) {
     const action = (spec.actions as Record<string, (() => void) | undefined>)[id] ?? spec.close;
     action();
   };
-  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party, gear, tree };
+  return { bridge, heard, slot, drawn, live, shown, rows, press, esc, row, stored, party, gear, tree, book };
 }
 
 describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)", () => {
@@ -269,6 +280,37 @@ describe("Esc's one step, the UI scene's (FS-TQZ5J R17; FS-R82NV § Change C2)",
     expect(t.slot.isOpen()).toBe(true);
     expect(t.tree.open).toBe(false);
     expect(t.heard()).toEqual(["settings_open"]);
+  });
+
+  // FS-X2CMM R36: the class book is the one on top of the party panel, the tree and the gear
+  it("should close the book before the party panel, opening no menu (FS-X2CMM R36)", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.book.open = true;
+    t.party.open = true;
+
+    t.esc();
+    expect([t.book.open, t.party.open]).toEqual([false, true]);
+    t.esc();
+    expect(t.party.open).toBe(false);
+    expect(t.slot.isOpen()).toBe(false);
+  });
+
+  it("should shut the book as the menu opens over it, and on the Menu icon after the run's end (FS-X2CMM R36; FS-3EBCA R17)", () => {
+    const t = onBridge();
+    t.bridge.report(aWorld("run").report);
+    t.book.open = true;
+    t.bridge.act(() => t.slot.pressMenu());
+    expect(t.slot.isOpen()).toBe(true);
+    expect(t.book.open).toBe(false);
+    expect(t.heard()).toEqual(["settings_open"]);
+
+    const ended = onBridge();
+    ended.bridge.report(aWorld("run", { ended: true }).report);
+    ended.book.open = true;
+    ended.slot.pressMenu();
+    expect(ended.book.open).toBe(false);
+    expect(ended.slot.isOpen()).toBe(false);
   });
 
   it("should shut the tree on the Menu icon after the run's end, opening no menu", () => {

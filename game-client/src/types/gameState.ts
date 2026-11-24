@@ -63,6 +63,66 @@ export interface PublicPlayerState {
    * and it still rises at 3 parry charges, where the charge count does not move.
    */
   parries?: number;
+  /**
+   * The timed states a book ability set on this delver (FS-X2CMM §F R34): hardened, and later afloat,
+   * trackers_eye and long_night, each with its seconds left, sorted by name. On `current_player` and every
+   * `other_players` entry alike; absent when none. Mirrors Go types.PublicPlayerState.BookStates.
+   */
+  book_states?: BookTimedState[];
+}
+
+/**
+ * A named state a book ability set on a delver, with its seconds left (FS-X2CMM §F R34). Mirrors Go
+ * types.BookTimedState. A name the client does not know is drawn as nothing.
+ */
+export interface BookTimedState {
+  name: string;
+  remaining: number;
+}
+
+/**
+ * The owner's class book (FS-X2CMM §F R32): in a run only, absent in the hub and the fields. Its pages
+ * are the ones the server can resolve, in book order, locked ones included; `[]` for an empty book.
+ * Never on an `other_players` entry (R33). Mirrors Go types.BookState.
+ */
+export interface BookState {
+  pages: BookPageState[];
+  /** The page being cast, while one is; absent otherwise (§D, R32). */
+  casting?: BookCastingState;
+}
+
+/**
+ * One offered page as its owner is told it (FS-X2CMM §F R32): its id, the character level it unlocks
+ * at, its whole cost in the class resource (0 for the mercenary's), its book cooldown (`{0, 0}` when
+ * ready, FS-Q18Q3 R1), and whether a once-per-floor or once-per-delve use is spent. Mirrors Go
+ * types.BookPageState.
+ */
+export interface BookPageState {
+  id: string;
+  unlock_level: number;
+  cost: number;
+  cooldown: CooldownState;
+  spent: boolean;
+}
+
+/** A cast in progress as its caster is told it (FS-X2CMM §D, R32): the page, seconds left, the whole cast time. */
+export interface BookCastingState {
+  page: string;
+  remaining: number;
+  total: number;
+}
+
+/**
+ * A book effect on the floor as every recipient of the run is told it (FS-X2CMM §F R34): its entity id,
+ * its kind (witchlight, and later rune), where it stands in px, its seconds left. A kind that shows more
+ * adds its own fields. Mirrors Go types.BookEffectState.
+ */
+export interface BookEffectState {
+  id: UUID;
+  kind: string;
+  x: number;
+  y: number;
+  remaining: number;
 }
 
 /**
@@ -95,6 +155,8 @@ export interface PlayerState extends PublicPlayerState {
   passive_ranks?: Record<string, number>;
   /** The unspent passive points, derived from the current level (FS-8RZ51 R7, R23). */
   passive_points?: number;
+  /** The owner's class book, in a run only (FS-X2CMM §F R32); never on an `other_players` entry (R33). */
+  book?: BookState;
 }
 
 /**
@@ -487,6 +549,8 @@ export interface ClientGameState {
   altar?: AltarState;
   /** Set while the party carries the tome and has not burned it; absent otherwise (R14). */
   tome_carried?: boolean;
+  /** The run's book effects on the floor (witchlights), for every recipient; absent when none (FS-X2CMM §F R34). */
+  book_effects?: BookEffectState[];
   escaped_count: number; // Number of players who have escaped
 }
 

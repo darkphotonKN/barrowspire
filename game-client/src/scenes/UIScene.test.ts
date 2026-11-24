@@ -224,6 +224,39 @@ vi.mock("@/ui/PassiveTreeOverlay", () => ({
   },
 }));
 
+// The class book's window itself is ClassBookPanel.test's: here a recording stand-in for what the UI scene
+// builds for the run (FS-X2CMM R36–R39), its wiring kept.
+const bookMounts = vi.hoisted(
+  () =>
+    [] as {
+      wiring: { dismiss(): void };
+      open: boolean;
+      shown: unknown[];
+      frames: number[];
+      log: string[];
+      ground: object;
+      destroyed: boolean;
+    }[],
+);
+vi.mock("@/ui/ClassBookPanel", () => ({
+  mountClassBook: (_scene: unknown, wiring: (typeof bookMounts)[number]["wiring"]) => {
+    const made = { wiring, open: false, shown: [] as unknown[], frames: [] as number[], log: [] as string[], ground: {}, destroyed: false };
+    bookMounts.push(made);
+    return {
+      isOpen: () => made.open,
+      open: () => void (made.open = true),
+      close: () => void (made.open = false),
+      show: (source: unknown) => void made.shown.push(source),
+      frame: (now: number) => void made.frames.push(now),
+      pointerMove: (x: number, y: number) => void made.log.push(`move ${x},${y}`),
+      pointerDown: (x: number, y: number) => (made.log.push(`down ${x},${y}`), true),
+      owns: (o: unknown) => o === made.ground,
+      relayout: () => {},
+      destroy: () => void (made.destroyed = true),
+    };
+  },
+}));
+
 // The lore line's dust is loreDust.test's: here a stand-in that plays nothing, so the UI scene's lore
 // lines need no art (FS-XWHZP R6, R7).
 vi.mock("@/render/effects/loreDust", () => ({
@@ -544,7 +577,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
     });
     scene.create();
     const live = () => zones.filter((z) => !z.destroyed);
-    const plate = (icon: "menu" | "inventory" | "character" | "party" | "mail" | "tree") => {
+    const plate = (icon: "menu" | "inventory" | "character" | "party" | "mail" | "tree" | "book") => {
       const f = cornerIconFrame(icon, viewport);
       return live().find((z) => z.x === f.x && z.y === f.y);
     };
@@ -580,9 +613,11 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
   it("should build the row of the world reported as it is created: the town's five, no Mailbox of its own", () => {
     const { live, plate } = created("hub");
 
-    // Menu, Inventory, Character, Party and the passive tree's Tree (FS-8RZ51 R32)
-    expect(live()).toHaveLength(5);
+    // Menu, Inventory, Character, Party, the passive tree's Tree (FS-8RZ51 R32) and the class book's Book,
+    // greyed outside a run (FS-X2CMM R36)
+    expect(live()).toHaveLength(6);
     expect(plate("tree")).toBeDefined();
+    expect(plate("book")).toBeDefined();
     expect(plate("mail")).toBeUndefined();
   });
 
@@ -593,7 +628,7 @@ describe("the UI scene's corner row (FS-TQZ5J R6, R13; I-TQZ5J-3)", () => {
 
     report("field");
 
-    expect(live()).toHaveLength(6);
+    expect(live()).toHaveLength(7);
     expect(plate("mail")).toBeDefined();
   });
 
@@ -1888,6 +1923,126 @@ describe("the UI scene's lore lines (FS-XWHZP; FS-TQZ5J § Change: Merge with ma
     bridge.lore(said("a"));
 
     expect(lore("a")).toEqual([]);
+  });
+});
+
+// FS-X2CMM §G R36–R39 (I-X2CMM-10): the class book on the UI scene, its K on the UI scene's keyboard in a run
+// only, its icon in the corner row, fed the gear's `seen` character, stepping aside for every other window
+describe("the UI scene's class book (FS-X2CMM R36–R39)", () => {
+  function created(world: "hub" | "field" | "run") {
+    gearMounts.length = 0;
+    treeMounts.length = 0;
+    bookMounts.length = 0;
+    const bridge = new GameUiBridge();
+    const held = new Map<string, unknown>();
+    const registry = { get: (key: string) => held.get(key), set: (key: string, value: unknown) => void held.set(key, value) };
+    lendUiBridge(registry, bridge);
+    const facts = { ...NO_FACTS };
+    const heard: { book?: boolean }[] = [];
+    const report = (w: "hub" | "field" | "run") =>
+      bridge.report({
+        world: w,
+        windows: () => ({ letter: false }),
+        blockers: () => ({ dialogue: false }),
+        facts: () => facts,
+        heardUi: (ui) => void heard.push({ book: ui.book }),
+        answer: () => {},
+      });
+    report(world);
+    const any = (): unknown => {
+      const self: unknown = new Proxy(() => self, { get: (_t, prop) => (prop === "then" ? undefined : () => self) });
+      return self;
+    };
+    const keyboard = Object.assign(new EventEmitter(), {
+      addKey: () => ({ isDown: false, justDown: false }),
+      removeKey: () => {},
+      addCapture: () => {},
+      removeCapture: () => {},
+    });
+    const input = Object.assign(new EventEmitter(), { keyboard, manager: { pointers: [] } });
+    const time = { now: 500, delayedCall: () => ({ remove: () => {} }) };
+    const scene = Object.assign(new UIScene(), {
+      registry,
+      events: new EventEmitter(),
+      sys: { settings: { status: 5 } },
+      game: {},
+      input,
+      cameras: { cameras: [] },
+      children: { list: [] },
+      add: new Proxy({}, { get: () => any }),
+      time,
+      tweens: { add: () => ({ remove: () => {} }) },
+      cache: { audio: { exists: () => false } },
+      sound: { locked: false, context: { state: "running" }, get: () => null, add: () => ({ play: () => true }) },
+    });
+    scene.create();
+    return { scene, bridge, report, keyboard, input, facts, heard, time };
+  }
+
+  it("should open and close the book on K in a run, reported in the UI's state, and tell the world so an aim ends", () => {
+    const { keyboard, bridge, heard } = created("run");
+    keyboard.emit("keydown-K");
+    expect(bookMounts[0].open).toBe(true);
+    expect(bridge.ui.book).toBe(true);
+    expect(heard.at(-1)?.book).toBe(true);
+    keyboard.emit("keydown-K");
+    expect(bookMounts[0].open).toBe(false);
+    expect(bridge.ui.book).toBe(false);
+  });
+
+  it.each(["hub", "field"] as const)("should build no book in the %s, and K does nothing there", (world) => {
+    const { keyboard, bridge } = created(world);
+    keyboard.emit("keydown-K");
+    expect(bookMounts).toEqual([]);
+    expect(bridge.ui.book).toBeFalsy();
+  });
+
+  it("should take no K while the player types in chat", () => {
+    const { keyboard, bridge } = created("run");
+    bridge.reportUi({ typing: true });
+    keyboard.emit("keydown-K");
+    expect(bookMounts[0].open).toBe(false);
+  });
+
+  it("should close the inventory as the book opens, and step aside as the inventory opens after it (R36)", () => {
+    const { keyboard, scene } = created("run");
+    keyboard.emit("keydown-I");
+    expect(gearMounts[0].inventory).toBe(true);
+    keyboard.emit("keydown-K");
+    expect([gearMounts[0].inventory, bookMounts[0].open]).toEqual([false, true]);
+    keyboard.emit("keydown-C");
+    scene.update();
+    expect([gearMounts[0].character, bookMounts[0].open]).toEqual([true, false]);
+  });
+
+  it("should hand the book the character the world hands the gear, and run its frame on the scene's clock", () => {
+    const { keyboard, bridge, scene, time } = created("run");
+    keyboard.emit("keydown-K");
+    bridge.gear({ kind: "seen", carried: {}, character: { username: "Ash", class: "mage", level: 4, book: { pages: [] } } as never });
+    expect(bookMounts[0].shown.at(-1)).toMatchObject({ class: "mage", level: 4, book: { pages: [] } });
+    time.now = 900;
+    scene.update();
+    expect(bookMounts[0].frames.at(-1)).toBe(900);
+  });
+
+  it("should close the book at the run's end, and refuse K after it", () => {
+    const { keyboard, bridge, facts } = created("run");
+    keyboard.emit("keydown-K");
+    bridge.endPopped();
+    expect(bookMounts[0].open).toBe(false);
+    facts.ended = true;
+    keyboard.emit("keydown-K");
+    expect(bookMounts[0].open).toBe(false);
+  });
+
+  it("should hand the open book a move and a press on its own ground, logical units", () => {
+    const { keyboard, input } = created("run");
+    vi.stubGlobal("document", { activeElement: null, documentElement: {} });
+    keyboard.emit("keydown-K");
+    input.emit("pointermove", { x: 30, y: 40 }, [bookMounts[0].ground]);
+    input.emit("pointerdown", { x: 30, y: 40, button: 0 }, [bookMounts[0].ground]);
+    vi.unstubAllGlobals();
+    expect(bookMounts[0].log).toEqual(["move 30,40", "down 30,40"]);
   });
 });
 

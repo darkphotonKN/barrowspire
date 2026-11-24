@@ -67,6 +67,11 @@ export interface MenuSlotDeps {
    */
   tree?: { isOpen(): boolean; close(): void };
   /**
+   * The UI scene's class book (FS-X2CMM R36): Esc's book step, the menu opening over it and the Menu
+   * icon after the run's end shut it. None, and there is none to shut.
+   */
+  book?: { isOpen(): boolean; close(): void };
+  /**
    * The UI scene's controls panel (FS-84N1G R17): Esc's first step, closed as the player's close (its
    * `dialog_cancel`). None, and there is none to close.
    */
@@ -200,10 +205,12 @@ export class UiMenuSlot {
       gear: this.deps.gear?.isOpen() ?? false,
       party: this.deps.party?.isOpen() ?? false,
       tree: this.deps.tree?.isOpen() ?? false,
+      book: this.deps.book?.isOpen() ?? false,
     });
     if (step === "controls") this.deps.controls?.dismiss();
     else if (step === "letter") this.ask({ kind: "close", window: "letter" });
     else if (step === "close-menu") this.filled?.panel.keys.dismiss();
+    else if (step === "book") this.closeBook();
     else if (step === "party") this.closeParty();
     else if (step === "tree") this.closeTree();
     else if (step === "gear") this.closeGear();
@@ -221,6 +228,7 @@ export class UiMenuSlot {
     const report = this.deps.bridge.world;
     if (!report || report.blockers().dialogue) return;
     if (report.facts().ended) {
+      this.closeBook();
       this.closeParty();
       this.closeTree();
       this.closeGear();
@@ -420,6 +428,7 @@ export class UiMenuSlot {
     // here, the world's windows as the world hears the UI's state
     this.deps.party?.close();
     this.deps.tree?.close();
+    this.deps.book?.close();
     this.deps.gear?.close();
     this.deps.bridge.reportUi({ menuOpen: true });
   }
@@ -427,6 +436,12 @@ export class UiMenuSlot {
   /** The UI scene's party panel shut (§ Change: Phase 2: the party, R39); the rows read the world again. */
   private closeParty(): void {
     this.deps.party?.close();
+    this.sync();
+  }
+
+  /** The UI scene's class book shut (FS-X2CMM R36); the rows read the world again. */
+  private closeBook(): void {
+    this.deps.book?.close();
     this.sync();
   }
 

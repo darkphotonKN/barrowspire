@@ -281,6 +281,11 @@ export const palette = {
     lapis: BARROW_HEX.pigmentLapis,
     bone: BARROW_HEX.pigmentBone,
   },
+  /**
+   * The class book's leaf (FS-X2CMM R37): the vellum its page roundels lie on, a faint wash of the dark
+   * vellum inside the windows' frame, and its hairline in the frame's brass. Read by `classBookStyle.ts`.
+   */
+  bookLeaf: BARROW_HEX.vellumDark,
 
   // -- Light. The only warmth in the barrow.
   torch: BARROW_HEX.amber,

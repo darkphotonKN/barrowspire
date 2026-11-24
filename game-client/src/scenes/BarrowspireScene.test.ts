@@ -1788,7 +1788,7 @@ describe("BarrowspireScene resolved player card and spectating (FS-QPDKN req 1, 
       // the recording camera is 800 x 600: the first of two about the centre (Leave beside it,
       // FS-GV8WN R25), lifted 200 px off the bottom edge's margin (asked 2026-11-02, Nick); at this narrow
       // view the row starts 12 right of the open chat window (FS-TQZ5J § Change: Batch 6, R123)
-      expect(x - w / 2).toBe(362);
+      expect(x - w / 2).toBe(418);
       expect(y + h / 2).toBe(600 - 16 - 200);
       expect(w).toBeGreaterThan(0);
     });
@@ -2120,7 +2120,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
   });
 
   // FS-TQZ5J § Change: Batch 6, R120–R124: WATCH, LEAVE, SETTLEMENT in 13 px bold letter-spaced 1, each
-  // button its label's width plus 24 a side; the row from 362 at this 800-wide view (layout B), the card's
+  // button its label's width plus 24 a side; the row from 418 at this 800-wide view (layout B), the card's
   // two centred on it 8 apart, the corner LEAVE's right edge on the corner margin
   describe("the run's buttons, re-laid off the chat (FS-TQZ5J § Change: Batch 6, R120–R124)", () => {
     const labelled = (stage: ReturnType<typeof leavingOnStage>, words: string) =>
@@ -2141,12 +2141,12 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       expect(labelled(out, "LEAVE THE BARROW")).toHaveLength(0);
     });
 
-    it("should make each button its label's width plus 24 a side, and stand the row from 362 at this view (R122, R123)", () => {
+    it("should make each button its label's width plus 24 a side, and stand the row from 418 at this view (R122, R123)", () => {
       const out = leavingOnStage(player("me", "Aldric", 130, escaped));
       const watch = box(out, "watch-the-delve");
       const leave = box(out, "leave-the-barrow");
       expect([watch.width, leave.width]).toEqual([104, 94]);
-      expect([watch.left, leave.left]).toEqual([362, 474]);
+      expect([watch.left, leave.left]).toEqual([418, 530]);
       expect([watch.height, leave.height]).toEqual([38, 38]);
     });
 
@@ -2161,13 +2161,13 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     });
 
     // FS-QPDKN § Change: The party death flow and the spectate switcher, R158: the corner LEAVE folds into the
-    // spectate row, its bottom 70 above the view's bottom, from 362 at this 800-wide view
+    // spectate row, its bottom 70 above the view's bottom, from 418 at this 800-wide view
     it("should stand the dead spectator's LEAVE in the spectate row, not in the corner (R158)", () => {
       const fallen = leavingOnStage(player("me", "Aldric", 130, dead));
       fallen.press("watch-the-delve");
       const leave = box(fallen, "leave-the-barrow");
       expect(leave.width).toBe(94);
-      expect(leave.left).toBe(362);
+      expect(leave.left).toBe(418);
       expect(leave.y + leave.height / 2).toBe(600 - 70);
       expect(labelled(fallen, "LEAVE")).toHaveLength(1);
     });
@@ -2243,7 +2243,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
     // view (FS-TQZ5J § Change: Batch 6, R123), its bottom 70 above the view's (FS-QPDKN § Change: The party
     // death flow and the spectate switcher, R158)
     const [x, y, w, h] = hit("leave-the-barrow")!.args as number[];
-    expect(x - w / 2).toBe(362);
+    expect(x - w / 2).toBe(418);
     expect(y + h / 2).toBe(600 - 70);
   });
 
@@ -2312,7 +2312,7 @@ describe("BarrowspireScene leave the barrow (FS-QPDKN req 2, 10, 13, 14; edge st
       );
       expect(watchLabels()).toHaveLength(0);
       expect(leaveLabels()).toHaveLength(1);
-      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(362 + 94 / 2);
+      expect((hit("leave-the-barrow")!.args as number[])[0]).toBe(418 + 94 / 2);
     });
 
     it("should keep Leave once the broadcast no longer sends an escaped player's own state", () => {
@@ -4511,9 +4511,9 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     const watch = hit("watch-the-delve")!.args as number[];
     const leave = hit("leave-the-barrow")!.args as number[];
     const record = hit("settlement")!.args as number[];
-    // the recording camera is 800 x 600: three buttons left to right 8 apart from 362, the open chat
+    // the recording camera is 800 x 600: three buttons left to right 8 apart from 418, the open chat
     // window's clearance at this narrow view, on the Watch button's line (FS-TQZ5J § Change: Batch 6, R123)
-    expect([watch, leave, record].map(([x, , w]) => x - w / 2)).toEqual([362, 474, 576]);
+    expect([watch, leave, record].map(([x, , w]) => x - w / 2)).toEqual([418, 530, 632]);
     expect([leave[1], record[1]]).toEqual([watch[1], watch[1]]);
     expect(record[1] + record[3] / 2).toBe(600 - 16 - 200);
   });
@@ -4526,7 +4526,7 @@ describe("BarrowspireScene settlement record (FS-GV8WN R21–R24)", () => {
     expect(hit("watch-the-delve")).toBeUndefined();
     const [leave, , leaveW] = hit("leave-the-barrow")!.args as number[];
     const [record, , recordW] = hit("settlement")!.args as number[];
-    expect([leave - leaveW / 2, record - recordW / 2]).toEqual([362, 464]);
+    expect([leave - leaveW / 2, record - recordW / 2]).toEqual([418, 520]);
   });
 
   // FS-QPDKN § Change: The party death flow and the spectate switcher, R154: no SETTLEMENT by the dead
@@ -5381,7 +5381,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       tick(me(escaped), ally());
       press("close-the-record");
       const rects = ["watch-the-delve", "leave-the-barrow", "settlement"].map((n) => hit(n)!.args as number[]);
-      expect(rects.map(([x, , w]) => x - w / 2)).toEqual([362, 474, 576]);
+      expect(rects.map(([x, , w]) => x - w / 2)).toEqual([418, 530, 632]);
       for (const [, y, , h] of rects) expect(y + h / 2).toBe(600 - 16 - 200);
     });
   });
@@ -5419,7 +5419,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       // LEAVE then SETTLEMENT, side by side, their bottom 70 above the view's (800 x 600 here)
       const leave = rect(env, "leave-the-barrow");
       const settle = rect(env, "settlement");
-      expect([leave.x, settle.x]).toEqual([362, 362 + 94 + 8]);
+      expect([leave.x, settle.x]).toEqual([418, 418 + 94 + 8]);
       expect([leave.y + leave.height, settle.y + settle.height]).toEqual([600 - 70, 600 - 70]);
       // the switcher 8 over them, naming the watched teammate; nothing at the top centre
       expect(names(env)).toEqual(["Wenna"]);
@@ -5608,7 +5608,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
 
     it.each([
       // the name alone, "Wenna" 35 wide on the stand-in, + 76 (the owner, 「觀看時中間名字不用顯示watching了」, 2026-11-14)
-      [1080, { leave: [417, 612], settle: [519, 612], switcher: [485, 576, 111] }],
+      [1080, { leave: [418, 612], settle: [520, 612], switcher: [486, 576, 111] }],
       [1280, { leave: [517, 612], settle: [619, 612], switcher: [585, 576, 111] }],
     ] as const)("should stand the row and the switcher at logical width %i as pinned, clear of the chat (R158, R159, R167)", (width, at) => {
       const env = watching();
@@ -5620,7 +5620,7 @@ describe("BarrowspireScene the party death flow (FS-QPDKN § Change: The party d
       expect([leave.x, leave.y, leave.width, leave.height]).toEqual([...at.leave, 94, 38]);
       expect([settle.x, settle.y, settle.width, settle.height]).toEqual([...at.settle, 144, 38]);
       expect([sw.x, sw.y, sw.width, sw.height]).toEqual([...at.switcher, 28]);
-      for (const r of [leave, settle, sw]) expect(r.x).toBeGreaterThanOrEqual(362);
+      for (const r of [leave, settle, sw]) expect(r.x).toBeGreaterThanOrEqual(418);
     });
 
     it("should take the row and the switcher down at the run's end, playing nothing", () => {

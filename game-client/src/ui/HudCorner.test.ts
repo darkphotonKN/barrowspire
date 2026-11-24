@@ -3,9 +3,11 @@ import type Phaser from "phaser";
 import { viewport } from "@/render/viewport";
 import { mix, palette, shade } from "@/utils/canvasPalette";
 import { TINT_IDENTITY } from "@/utils/theme";
-import { HudCorner, PARTY_BUSTS, drawBust, type BustDress, type CornerIconSpec } from "./HudCorner";
+import { HudCorner, PARTY_BUSTS, cornerPicture, drawBust, type BustDress, type CornerIconSpec } from "./HudCorner";
 import { cornerIconFrame } from "./hudCornerLayout";
-import { GLYPH_LINE_W, envelopeFlapPoint } from "./MailboxEnvelope";
+import { GLYPH_LINE_W, envelopeFlapPoint, envelopeKnockout } from "./MailboxEnvelope";
+import { GREYED_ALPHA } from "./knockout";
+import { CLASPED_BOOK, drawClaspedBookLines } from "./knockoutClaspedBook";
 
 // FS-3EBCA §A R3–R5, §B R6–R11. I-3EBCA-1: the corner row as a scene draws it, on a recording
 // stand-in for the Phaser scene.
@@ -2114,5 +2116,62 @@ describe("HudCorner (FS-8RZ51 R32, R33: the Tree icon and its marker)", () => {
     expect(env.graphics[1].strokes).toContain(palette.ember);
     env.corner.destroy();
     expect(env.graphics.every((g) => g.destroyed)).toBe(true);
+  });
+});
+
+// FS-X2CMM §G R36 (I-X2CMM-10): the class book's icon at the row's left end, a bronze knockout of a clasped
+// book; greyed outside a run as the Mailbox is outside the town, its own picture greyed, never the envelope.
+describe("HudCorner (FS-X2CMM R36: the Book icon)", () => {
+  const bookZone = (env: ReturnType<typeof setup>) => {
+    const f = cornerIconFrame("book", viewport);
+    return env.zones.find((z) => !z.destroyed && z.x === f.x && z.y === f.y)!;
+  };
+  const linesOfBook = (ink: number, alpha: number) => {
+    const calls: string[] = [];
+    const rec = new Proxy({}, { get: (_t, prop) => () => void calls.push(String(prop)) });
+    const f = cornerIconFrame("book", viewport);
+    drawClaspedBookLines(rec as never, f.x + f.width / 2, f.y + f.height / 2, ink, alpha);
+    // the stand-in records a line's style apart, as its strokes' inks and alphas
+    return calls.filter((c) => c !== "lineStyle");
+  };
+
+  it("should be the clasped book as a knockout, greyed or not, and the greyed Mailbox still the envelope", () => {
+    const f = cornerIconFrame("book", viewport);
+    expect(cornerPicture({ icon: "book" }, f)).toBe(CLASPED_BOOK);
+    expect(cornerPicture({ icon: "book", greyed: true }, f)).toBe(CLASPED_BOOK);
+    const mail = cornerIconFrame("mail", viewport);
+    expect(cornerPicture({ icon: "mail", greyed: true }, mail)).toEqual(envelopeKnockout(mail));
+  });
+
+  it("should draw the greyed Book as its own lines in the faint HUD tone where no texture can be made, never the envelope's", () => {
+    const env = setup([{ icon: "book", greyed: true }]);
+    const g = env.graphics.find((x) => !x.destroyed)!;
+    expect(g.strokes.length).toBeGreaterThan(0);
+    expect(g.strokes.every((s) => s === palette.hudFaint)).toBe(true);
+    expect(g.calls).toEqual(linesOfBook(palette.hudFaint, GREYED_ALPHA));
+  });
+
+  it("should draw the Book in the interactable amber's lines in a run, and press it", () => {
+    const press = vi.fn();
+    const env = setup([{ icon: "book", press }]);
+    const g = env.graphics.find((x) => !x.destroyed)!;
+    expect(g.calls).toEqual(linesOfBook(palette.interactable, 0.85));
+    bookZone(env).handlers.pointerdown();
+    expect(press).toHaveBeenCalledOnce();
+  });
+
+  it("should name itself \"Book (K)\" in a run and \"Book · runs only\" greyed, which answers its refusal alone", () => {
+    const live = setup([{ icon: "book", press: () => {} }]);
+    bookZone(live).handlers.pointerover();
+    expect(live.liveTexts().map((t) => t.words)).toContain("Book (K)");
+
+    const press = vi.fn();
+    const refused = vi.fn();
+    const env = setup([{ icon: "book", greyed: true, press, refused }]);
+    bookZone(env).handlers.pointerover();
+    expect(env.liveTexts().map((t) => t.words)).toContain("Book · runs only");
+    bookZone(env).handlers.pointerdown();
+    expect(press).not.toHaveBeenCalled();
+    expect(refused).toHaveBeenCalledOnce();
   });
 });

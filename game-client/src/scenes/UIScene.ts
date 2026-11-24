@@ -29,6 +29,8 @@ import { UiScenePointer } from "@/ui/uiScenePointer";
 import { UiGearSlot, type GearKey } from "@/ui/uiSceneGear";
 import { UiTreeSlot } from "@/ui/uiSceneTree";
 import { mountPassiveTree } from "@/ui/PassiveTreeOverlay";
+import { UiBookSlot, type BookOthers } from "@/ui/uiSceneBook";
+import { mountClassBook } from "@/ui/ClassBookPanel";
 import { passiveTreeCommands } from "@/ui/passiveTreeCommands";
 import { socketManager } from "@/utils/class/SocketManager";
 import { isTextEntry } from "@/ui/partyPanelLayout";
@@ -119,6 +121,8 @@ export class UIScene extends Phaser.Scene {
   private gear?: UiGearSlot;
   /** The passive tree, built for each world (FS-8RZ51 §G R32–R37). */
   private tree?: UiTreeSlot;
+  /** The class book, built for the run (FS-X2CMM §G R36–R39). */
+  private book?: UiBookSlot;
   /** The run's controls panel (FS-TQZ5J § Change: Phase 3, R50, R56). */
   private controls?: UiControlsSlot;
   /** The run's settlement record (FS-TQZ5J § Change: Phase 3, R57). */
@@ -150,6 +154,7 @@ export class UIScene extends Phaser.Scene {
       inventory: () => this.gear?.isInventoryOpen() ?? false,
       character: () => this.gear?.isCharacterOpen() ?? false,
       tree: () => this.tree?.isOpen() ?? false,
+      book: () => this.book?.isOpen() ?? false,
     });
     this.mountInterface(bridge);
     this.mountMailboxSlot(bridge);
@@ -174,12 +179,16 @@ export class UIScene extends Phaser.Scene {
     // draws, outside any action, so only the opened window's sound plays (FS-84N1G R16); before the
     // keys, so Esc never steps a panel this frame closes (R17)
     this.controls?.sync();
+    // the class book steps aside for a window opened since the last frame, and closes as the player is out
+    // of the delve, silently; its sweeps run down (FS-X2CMM R36, R38)
+    this.book?.sync();
+    this.book?.frame();
     this.readKeys();
     this.menu?.sync();
     this.pointer?.frame();
   }
 
-  /** Every window but the controls panel, open or not (FS-84N1G R16): the UI's own and the world's letter panel. */
+  /** Every window but the controls panel, open or not (FS-84N1G R16): the UI's own, the class book's and the world's letter panel. */
   private openWindows(): OpenWindows {
     const bridge = this.bridge();
     const ui = bridge?.ui;
@@ -192,7 +201,14 @@ export class UIScene extends Phaser.Scene {
       party: this.party?.isOpen() ?? false,
       record: this.record?.isOpen() ?? false,
       letter: bridge?.world?.windows().letter ?? false,
+      book: this.book?.isOpen() ?? false,
     };
+  }
+
+  /** Every window but the class book, open or not: what it steps aside for (FS-X2CMM R36). */
+  private bookOthers(): BookOthers {
+    const { book: _book, ...open } = this.openWindows();
+    return { ...open, tree: this.tree?.isOpen() ?? false, controls: this.controls?.isOpen() ?? false };
   }
 
   /**
@@ -270,6 +286,13 @@ export class UIScene extends Phaser.Scene {
       if (this.bridge()?.ui.typing || isTextEntry(focused as HTMLElement | null)) return;
       this.tree?.key();
     });
+    // the class book's K, the UI scene's alone, in a run only, uncaptured as P is, and no key while the player
+    // types in chat or a text field holds the focus (FS-X2CMM R36)
+    keyboard.on("keydown-K", () => {
+      const focused = typeof document === "undefined" ? null : document.activeElement;
+      if (this.bridge()?.ui.typing || isTextEntry(focused as HTMLElement | null)) return;
+      this.book?.key();
+    });
     // the town's keys while it stands, I, B and C captured as its `addKey` did; removed and let go as
     // it leaves, so a field's and the run's held keys repeat again (R56)
     const captured = [codes.I, codes.B, codes.C];
@@ -340,11 +363,13 @@ export class UIScene extends Phaser.Scene {
       const at = viewport.toLogical(p);
       this.gear?.pointerMove(at.x, at.y, over);
       this.tree?.pointerMove(at.x, at.y, over);
+      this.book?.pointerMove(at.x, at.y, over);
     });
     input.on("pointerdown", (p: Phaser.Input.Pointer, over: unknown[]) => {
       const at = viewport.toLogical(p);
       this.gear?.pointerDown(at.x, at.y, p.button === 0, over);
       this.tree?.pointerDown(at.x, at.y, over);
+      this.book?.pointerDown(at.x, at.y, over);
     });
     input.on("pointerout", (p: Phaser.Input.Pointer) => pointer.left(p));
   }
@@ -375,6 +400,8 @@ export class UIScene extends Phaser.Scene {
       gear: { isOpen: () => gear.isOpen(), close: () => void gear.close() },
       // Esc's tree step, between the party panel and the gear (FS-8RZ51 R36)
       tree: { isOpen: () => tree.isOpen(), close: () => void tree.close() },
+      // Esc's book step, over the party panel (FS-X2CMM R36)
+      book: { isOpen: () => book.isOpen(), close: () => void book.close() },
       // Esc's first step (FS-84N1G R17)
       controls: { isOpen: () => this.controls?.isOpen() ?? false, dismiss: () => this.controls?.dismiss() },
     });
@@ -398,6 +425,14 @@ export class UIScene extends Phaser.Scene {
       marker: (on) => corner.mark(on),
       commands: passiveTreeCommands(socketManager),
     });
+    // the class book for the run, fed the character the gear is, its opening closing the gear and the tree, its
+    // stepping aside read from every other window (FS-X2CMM R36–R39), timed on this scene's clock
+    const book = new UiBookSlot(bridge, (_world, wiring) => mountClassBook(this, wiring), {
+      gear: { close: () => gear.close() },
+      tree: { close: () => tree.close() },
+      others: () => this.bookOthers(),
+      now: () => this.time.now,
+    });
     const corner = new UiCornerRow(
       bridge,
       (icons) => new HudCorner(this, { icons }),
@@ -409,6 +444,7 @@ export class UIScene extends Phaser.Scene {
         toggle: (window) => gear.toggle(window),
       },
       { isOpen: () => tree.isOpen(), toggle: () => tree.toggle() },
+      { isOpen: () => book.isOpen(), toggle: () => book.toggle() },
     );
     // the run's settlement record, drawn from its data at its anchor (§ Change: Phase 3, R57), and its
     // controls panel, the UI scene's own (R56)
@@ -432,10 +468,12 @@ export class UIScene extends Phaser.Scene {
     this.party = party;
     this.gear = gear;
     this.tree = tree;
+    this.book = book;
     corner.show(bridge.world);
     // the container view's root first, so the gear overlay's objects, made at each open, draw over it
     gear.show(bridge.world);
     tree.show(bridge.world);
+    book.show(bridge.world);
     party.show(bridge.world);
     const stop = bridge.onWorld((report) => {
       menu.sync();
@@ -444,6 +482,7 @@ export class UIScene extends Phaser.Scene {
       corner.show(report);
       gear.show(report);
       tree.show(report);
+      book.show(report);
       party.show(report);
       record.world(report);
       controls.world(report);
@@ -457,12 +496,15 @@ export class UIScene extends Phaser.Scene {
       gear: (message) => {
         gear.hear(message);
         tree.hear(message);
+        // and the class book's (FS-X2CMM R37, R38)
+        book.hear(message);
       },
       container: (message) => gear.hearContainer(message),
       record: (shown) => record.show(shown, bridge.world?.world ?? null),
       endPopped: () => {
         gear.endPopped();
         tree.endPopped();
+        book.endPopped();
         controls.close();
       },
       abilityBar: (live) => this.badge?.abilityBar(live),
@@ -476,6 +518,7 @@ export class UIScene extends Phaser.Scene {
       party.relayout();
       gear.relayout();
       tree.relayout();
+      book.relayout();
       record.relayout();
       controls.relayout();
       badge.relayout();
@@ -490,12 +533,14 @@ export class UIScene extends Phaser.Scene {
       party.destroy();
       gear.destroy();
       tree.destroy();
+      book.destroy();
       record.destroy();
       controls.destroy();
       badge.destroy();
       this.badge = undefined;
       this.gear = undefined;
       this.tree = undefined;
+      this.book = undefined;
       this.controls = undefined;
       this.record = undefined;
       this.menu = undefined;

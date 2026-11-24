@@ -123,6 +123,8 @@ const UI_SCENE_PIECES = [
   ["@/ui/AbilityBar", "The ability bar is the UI scene's (FS-TQZ5J § Change: Batch 5, R67; FS-Q18Q3 R41)."],
   ["@/ui/PassiveTreeOverlay", "The passive tree is the UI scene's: no world builds it or binds P (FS-8RZ51 §G)."],
   ["@/ui/uiSceneTree", "The passive tree is the UI scene's: no world builds it or binds P (FS-8RZ51 §G)."],
+  ["@/ui/ClassBookPanel", "The class book is the UI scene's: no world builds it or binds K (FS-X2CMM §G)."],
+  ["@/ui/uiSceneBook", "The class book is the UI scene's: no world builds it or binds K (FS-X2CMM §G)."],
   ["@/ui/ResourceHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
   ["@/ui/ProgressHud", "The HUD pieces are the UI scene's (FS-TQZ5J § Change: Batch 5, R67)."],
   ["@/ui/HudCorner", "The corner row is the UI scene's (FS-TQZ5J R13, R15)."],

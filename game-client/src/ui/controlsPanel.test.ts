@@ -97,6 +97,13 @@ describe("the run's controls panel (FS-TQZ5J § Change: Phase 3, R50)", () => {
     expect(words).not.toContain("I");
   });
 
+  // FS-X2CMM R36 (I-X2CMM-10): the class book's key, after the party's
+  it("should list K for the class book, after T", () => {
+    const keys = controlRows("mage").map(([key]) => key);
+    expect(new Map(controlRows("mage")).get("K")).toBe("Class book");
+    expect(keys.indexOf("K")).toBe(keys.indexOf("T") + 1);
+  });
+
   it("should name the class's own ability on RIGHT CLICK, and the class ability for a class with none (FS-8AY7S req 30)", () => {
     const rows = new Map(controlRows("warrior"));
     expect(rows.get("RIGHT CLICK")).not.toBe("Class ability");

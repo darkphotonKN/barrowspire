@@ -114,7 +114,7 @@ export interface ControlsPiece {
 export type ControlsBuilder = (onClose: () => void) => ControlsPiece;
 
 /** The UI's windows other than the controls panel (FS-84N1G R16): a window left out of `OpenWindows` fails to compile. */
-export type UiWindow = "menu" | "inventory" | "character" | "stash" | "container" | "party" | "record" | "letter";
+export type UiWindow = "menu" | "inventory" | "character" | "stash" | "container" | "party" | "record" | "letter" | "book";
 
 /** Each of the UI's windows other than the controls panel, open or not (FS-84N1G R16). */
 export type OpenWindows = Readonly<Record<UiWindow, boolean>>;
@@ -129,6 +129,7 @@ export const NO_WINDOWS: OpenWindows = {
   party: false,
   record: false,
   letter: false,
+  book: false,
 };
 
 export class UiControlsSlot {

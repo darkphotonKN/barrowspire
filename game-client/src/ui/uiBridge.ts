@@ -43,7 +43,7 @@ export type World = WorldType;
  * Phase 2: the party, R39; § Change: Phase 3, R55). The interface sounds' rule reads them all
  * (FS-WDM0X S8).
  */
-export type WorldWindows = Readonly<Omit<WindowState, "menu" | "party" | "inventory" | "character" | "tree">>;
+export type WorldWindows = Readonly<Omit<WindowState, "menu" | "party" | "inventory" | "character" | "tree" | "book">>;
 
 /** Who speaks on a dialogue card (A2 R29): the name, the role under it, the frame the bust is cut from. */
 export interface DialogueSpeaker {
@@ -282,6 +282,8 @@ export interface UiState {
   readonly container?: string;
   /** The passive tree is open (FS-8RZ51 R36). */
   readonly tree?: boolean;
+  /** The class book is open, in a run only (FS-X2CMM R36). */
+  readonly book?: boolean;
   /**
    * The player is typing in the chat window (§ Change: Batch 6, R127): the world's keyboard is off, and
    * every world guard that read the window reads this.
@@ -319,7 +321,7 @@ export interface ShownRecord {
 
 /** The parts of the UI's state, as a key: two states with the same key are the same state. */
 const uiKey = (ui: UiState) =>
-  [ui.menuOpen, !!ui.inventory, !!ui.character, !!ui.stash, ui.container ?? "", !!ui.typing, !!ui.tree].join("|");
+  [ui.menuOpen, !!ui.inventory, !!ui.character, !!ui.stash, ui.container ?? "", !!ui.typing, !!ui.tree, !!ui.book].join("|");
 
 /**
  * What the UI scene draws for the worlds, told as the world says it (A2 R29, R33): its dialogue, or
@@ -751,8 +753,14 @@ export function worldContainer(ui: () => Pick<WorldUi, "ui" | "container">): Wor
 /**
  * Whether a gear panel opened between two of the UI's states (§ Change: Phase 3, R53): the world ends
  * a Shadow Shot hold as the inventory or the character panel opens (FS-JTNPR req 15), or the passive
- * tree, the gear overlay's family (FS-8RZ51 R36), so no world changes for it.
+ * tree, the gear overlay's family (FS-8RZ51 R36), or the class book (FS-X2CMM R36), so no world changes
+ * for them.
  */
 export function gearOpened(ui: UiState, was: UiState): boolean {
-  return (!!ui.inventory && !was.inventory) || (!!ui.character && !was.character) || (!!ui.tree && !was.tree);
+  return (
+    (!!ui.inventory && !was.inventory) ||
+    (!!ui.character && !was.character) ||
+    (!!ui.tree && !was.tree) ||
+    (!!ui.book && !was.book)
+  );
 }

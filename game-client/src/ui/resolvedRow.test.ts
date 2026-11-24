@@ -58,7 +58,7 @@ describe("resolvedRow", () => {
 });
 
 // FS-TQZ5J § Change: Batch 6, R122, R123, R136: each button its label's width plus 24 a side, the row
-// 8 apart, centred unless that comes within 12 of the open chat window, then from 362; never meeting it
+// 8 apart, centred unless that comes within 12 of the open chat window, then from 418 (362 before the corner row's seventh icon); never meeting it
 
 /** The labels' widths as Phaser measures them in the game's EB Garamond, 13 px bold, letter-spaced 1 (R122). */
 const LABEL = { watch: 56, leave: 46, settlement: 96 } as const;
@@ -95,9 +95,10 @@ describe("rowLefts (FS-TQZ5J § Change: Batch 6, R123: layout B)", () => {
     [["leave"], [[493, 587]]],
     [["settlement"], [[468, 612]]],
     [["watch", "leave"], [[437, 541], [549, 643]]],
-    [["leave", "settlement"], [[417, 511], [519, 663]]],
-    [["watch", "settlement"], [[412, 516], [524, 668]]],
-    [["watch", "leave", "settlement"], [[362, 466], [474, 568], [576, 720]]],
+    // the chat window widened with the corner row's seventh icon (FS-X2CMM R36): the row's least left is 418
+    [["leave", "settlement"], [[418, 512], [520, 664]]],
+    [["watch", "settlement"], [[418, 522], [530, 674]]],
+    [["watch", "leave", "settlement"], [[418, 522], [530, 624], [632, 776]]],
   ] as const)("should stand %o at 1080 as %o", (names, at) => {
     expect(spans([...names], 1080)).toEqual(at);
   });
@@ -148,7 +149,7 @@ describe("centredLefts (FS-TQZ5J § Change: Batch 6, R124: the card's buttons)",
 });
 
 // FS-QPDKN § Change: The party death flow and the spectate switcher, R158, R159, R167: the spectate row, LEAVE
-// and SETTLEMENT, their bottom 70 above the view's; the switcher 8 over it, centred on it, never under 362
+// and SETTLEMENT, their bottom 70 above the view's; the switcher 8 over it, centred on it, never under 418
 describe("the spectate row and the switcher (FS-QPDKN § Change: The party death flow and the spectate switcher)", () => {
   const SPECTATE_ROWS: RowButton[][] = [["leave"], ["leave", "settlement"]];
   const row = (names: RowButton[], width: number) => {
@@ -166,7 +167,7 @@ describe("the spectate row and the switcher (FS-QPDKN § Change: The party death
   });
 
   it.each([
-    [1080, ["leave", "settlement"], 452],
+    [1080, ["leave", "settlement"], 453],
     [1280, ["leave", "settlement"], 552],
     [1080, ["leave"], 452],
     [1280, ["leave"], 552],
@@ -175,8 +176,8 @@ describe("the spectate row and the switcher (FS-QPDKN § Change: The party death
     expect([sw.x, sw.width]).toEqual([x, 176]);
   });
 
-  it("should keep the switcher's left edge at 362 or right of it, and centre it on the view with no row", () => {
-    expect(switcherRect(400, row(["leave"], 1080).span, view(1080)).x).toBe(362);
+  it("should keep the switcher's left edge at 418 or right of it, and centre it on the view with no row", () => {
+    expect(switcherRect(400, row(["leave"], 1080).span, view(1080)).x).toBe(418);
     expect(switcherRect(100, null, view(1280)).x).toBe(640 - 88);
     expect(switcherWidth(99.2)).toBe(28 * 2 + 100 + 20);
   });

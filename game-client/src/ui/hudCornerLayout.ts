@@ -1,7 +1,7 @@
 /**
  * The corner row's geometry and words (FS-3EBCA §A R1, R2, R5; §C R13): the panel icons in the
  * bottom-right corner of every world, from the right edge leftward Menu, Inventory, Character,
- * Party, the Mailbox and the passive tree (FS-8RZ51 R32), each the envelope's plate, the same places in every world. Phaser-free, so the
+ * Party, the Mailbox, the passive tree (FS-8RZ51 R32) and the class book (FS-X2CMM R36), each the envelope's plate, the same places in every world. Phaser-free, so the
  * row is tested on its own; `HudCorner` and `MailboxEnvelope` draw into these rects.
  */
 
@@ -19,11 +19,12 @@ export interface CornerView {
   height: number;
 }
 
-export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail" | "tree";
+export type CornerIcon = "menu" | "inventory" | "character" | "party" | "mail" | "tree" | "book";
 
 /**
  * The row from the right edge leftward (R1; the owner's row of five, 2026-11-12), the passive tree's
- * sixth at its left end (FS-8RZ51 R32), so none of the five moves.
+ * sixth at its left end (FS-8RZ51 R32), so none of the five moves, and the class book's seventh after
+ * it (FS-X2CMM R36), so none of the six moves.
  */
 export const CORNER_ICONS: readonly CornerIcon[] = [
   "menu",
@@ -32,6 +33,7 @@ export const CORNER_ICONS: readonly CornerIcon[] = [
   "party",
   "mail",
   "tree",
+  "book",
 ];
 
 /**
@@ -95,9 +97,12 @@ export const CORNER_LABEL: Readonly<Record<CornerIcon, string>> = {
   party: "Party (T)",
   mail: "Mailbox",
   tree: "Tree (P)",
+  book: "Book (K)",
 };
 /** The greyed Mailbox outside the town (R9). */
 export const CORNER_LABEL_GREYED_MAIL = "Mailbox · town only";
+/** The greyed Book outside a run (FS-X2CMM R36): the pages answer the Spire's floors. */
+export const CORNER_LABEL_GREYED_BOOK = "Book · runs only";
 
 /** The label's bottom stands this far over its plate, and at least this far inside the right edge. */
 const LABEL_GAP = 6;
