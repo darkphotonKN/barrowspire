@@ -717,3 +717,273 @@ note above.)
   and escalate.
 - A contact-sheet approval step (the owner looks in the browser).
 - Anything in `internal/matchmaker`, `internal/match_queue`, stats.
+
+## Change: The chapel's windows match inside and out, and its west wall carries the crucifix
+Status: shipped
+Date: 2026-11-24
+
+> **Owner request (Nick, 2026-11-24), after the chapel shipped (f9b572d3):** "教堂再幫我在室內神父後面的牆壁
+> 放一些十字架或是壁畫 教堂室內室外窗戶要對的上". In English: put crosses or murals on the interior wall
+> behind the priest, and make the chapel's windows line up inside and out. Written `--from-thread`
+> with no interview: the charter's decisions B1–B4 are owner-approved defaults, each marked
+> **[charter default Bn]** with its reason. Where the charter left a point open, the smaller
+> reading was taken and marked **[v1 pick]** with its reason. Client only (game-client and its bake),
+> so the agent lane holds. Checked `docs/adr/`: nothing constrains wall-hung dressing on a back
+> wall (ADR-0036 asks only that it hang on a full-height wall, which the west wall is). ADR-0070
+> Decision 5 covers furnishings, and none is added.
+>
+> **What was wrong, as built.** `CHAPEL_WALLS` picks each piece's kind by a position hash
+> (`tileHash` in `walls.ts` `pieceAt`): the outward face (south and east, seen from outside) is
+> plain 40 / lancet 32 / buttress 28, and the inner faces are plain or pillar. Indoors, with the
+> roof lifted, the camera sees the north and west walls' inner faces at full height (back pieces)
+> and the south and east walls cut low (front pieces). So the lancets on the south exterior fall
+> wherever the hash puts them, and the north wall, the long wall seen inside, shows no window at all.
+>
+> **What this changes in the work order above:**
+> - R23: its hashed share of outward kinds no longer applies to the chapel (W1–W7).
+> - R14: its "the chapel has no other indoor dressing" no longer holds (W12).
+> - R42: its sheet list gains three (W8–W10).
+>
+> **Unchanged:** every other requirement, the layout, the furnishings, the people, the lights
+> (R15) and the server.
+
+### Summary
+
+The chapel's windows stop being scattered by a hash. Along its long south wall, outside, lancet and
+buttress now alternate in a fixed, symmetric rhythm. Inside, the north wall carries a lancet at the
+same x as each one on the south wall, so the nave reads as a row of bays with windows facing each
+other across it. The east wall keeps a lancet on each side of its door. Behind the Confessor, the
+west wall carries no window: a large, old wooden crucifix hangs there on the aisle's line, with a
+faded fresco on each side of it. No new light: the two candelabra still light the room alone.
+
+### Requirements
+
+Numbered 1–15 below and cited as **W1–W15**, separate from the work order's R1–R42.
+
+#### §W-A. Fixed window bays (game-client `walls.ts`, `buildingLooks.ts`)
+
+1. **The chapel's bays are fixed, not hashed [charter default B1].** A fixed bay rule, keyed on
+   where a piece stands along its wall, decides every outward piece's kind (plain, lancet,
+   buttress), where the inner lancets stand, and which inner pieces must be plain (W6). It does
+   not use `tileHash`. A church's windows are symmetric, and a hash cannot promise that the inside
+   matches the outside.
+   - What the rule leaves open is hashed as today: the plain-or-pillar choice on the other inner
+     pieces (W4, W6, W7) and every piece's variant frame (`index`), so the two baked variants of
+     a kind still vary.
+   - The rule may live on the material (`CHAPEL_WALLS`) or be a per-house bay rule that the
+     chapel's look names [developer's call, as the charter leaves it]. Either way, the interior
+     look and the building exterior (`planBuildings`'s `shared`, `interior` and `exterior`) read
+     the same rule.
+   - The **piece grid** is the one `cut` lays today: one tile (40 px) a piece from the wall
+     rect's start, the last piece trimmed where the length is not a whole number of tiles.
+2. **What no lancet stands on.** On every chapel wall, inner face or outward face, no lancet
+   stands on a trimmed piece (`keep < 1`, already plain), or on a piece whose span along its wall
+   holds a post (a corner post, or a jamb post at a door gap). So no lancet stands over a corner or
+   beside a door gap. Under the server's walls, these pieces are:
+   - on the north and south walls, the pieces at x 980 (holds the corner post at 970) and the
+     trimmed piece at x 1580;
+   - on the east wall, the pieces at y 1120 and 1380 (posts at 1110 and 1370) and the trimmed
+     pieces at y 1280 and 1540.
+3. **The south wall's outward face: lancet and buttress alternate, symmetric [charter default
+   B1].**
+   - No two lancets adjoin. Exactly one piece stands between two neighbouring lancets, and it is a
+     buttress.
+   - Next to the first and the last lancet, on their outer sides, stands a buttress. Every other
+     piece is plain.
+   - The pattern mirrors about the wall's middle (x 1270) to within half a tile: for every lancet
+     at x, a lancet stands within 20 px of 2 × 1270 − x. Exact mirroring cannot be done on this
+     grid, because piece centres sit at 980 + 40k.
+   - **Indicative** (it passes the rules; the developer may pick another that passes): lancets at
+     x 1060, 1140, 1220, 1300, 1380 and 1460; buttresses at x 1020, 1100, 1180, 1260, 1340, 1420
+     and 1500; plain at x 980, 1540 and 1580 (the last one trimmed). That is six bays.
+4. **The north wall's inner face: a lancet wherever the south wall has one [charter default B1,
+   B2].**
+   - Each south outward lancet has a north inner lancet (`chapel_wall_back_lancet_x`, W8) at the
+     same x, and every north inner lancet has a south outward lancet at its x.
+   - The north wall's other pieces keep the back table, plain or pillar, hashed as today (W1)
+     [v1 pick: the charter asks only that the windows match; pilasters
+     standing where the buttresses stand outside would be a further rule nobody asked for].
+   - The north and south walls share their x span (x 960–1580), so their piece grids line up.
+     This holds for the chapel as the golden lays it out, and a test pins it.
+5. **The east wall's outward face: a lancet on each side of the door [charter default B1].**
+   - Each of its two segments carries at least one lancet, under W2.
+   - No two lancets adjoin.
+   - The lancets mirror about the door gap's centre (y 1320) to within half a tile (20 px), as in
+     W3.
+   - The segments' other pieces are plain or buttress [developer's call].
+   - **Indicative:** one lancet at y 1200 and one at y 1460, everything else plain.
+6. **The west wall has no window [charter default B3].** Its inner face (back pieces, y-axis)
+   carries no lancet. The pieces whose span along the wall overlaps the crucifix's or a mural's
+   footprint (W12) are plain [v1 pick: a pilaster behind a hung piece would show through it]. The
+   rest keep the back table, as today.
+7. **Indoors, the south and east walls stay cut away, with no window [charter default B2].** Their
+   front pieces stay what they are today, plain or pillar, and carry no lancet: the cut
+   (`WALL_FRONT`, 1.1) falls at the outward lancet's sill (1.05, `LANCET` in
+   `chapelBuilding.js`), so a window there would show only a sliver a couple of screen pixels
+   high. See Edge States.
+   - Every other building's pieces are unchanged: the Inn, the store and the smithy, the Spire's
+     rooms and the dungeon floors draw the same sheet and index for every piece as before
+     (`TIMBER_WALLS` and `MASONRY_WALLS` keep their hashed tables).
+
+#### §W-B. The new sheets (game-client `tools/bake`)
+
+8. **`chapel_wall_back_lancet_{x,y}`: the lancet seen from inside [charter default B2].**
+   - What it shows: the inner face of a chapel wall, whitewashed and aged like
+     `chapel_wall_back_plain_*`, pierced by a pointed window with a splayed reveal (the jambs and
+     sill widening into the room) and dark leaded glass. It is unlit and declares no light.
+   - Its opening's sill, springing and half-width are the outward lancet's (`LANCET`), so the
+     window stands at the same height in both looks.
+   - Its frame size and anchor are exactly `chapel_wall_back_plain_*`'s, with two variants by
+     seed, as the other back pieces have. Shadow handling is that of the other chapel wall pieces
+     (`PAINTED_SHADOW`).
+   - `_y` is baked so the material stays whole along both axes. This Change lays it nowhere (W6)
+     [v1 pick: the charter names `{x,y}`, and a y-axis lancet is cheap to have ready].
+9. **`chapel_crucifix` [charter default B3].**
+   - What it shows: one large crucifix of dark wood, with a carved figure, aged: worn and cracked,
+     the figure's paint mostly gone.
+   - It hangs on a west wall's inner face, facing east (one animation, `e`). Its centre is at the
+     height the paintings hang (`hall.js` `painting`, at its scale), and its top is below the back
+     wall's top (`WALL_BACK`).
+   - **Indicative** size: about 1.0 tile edges across the arms and 1.7 tall, larger than a
+     painting.
+   - Shadow false, no light.
+10. **`chapel_mural`, two variants [charter default B3].**
+    - What it shows: faded fresco panels painted on the plaster, in the dark-fantasy register.
+      Variant 0 is a robed saint with a halo. Variant 1 is the dead rising from their graves. Both
+      have cracked plaster edges and flaked, muted colour from `BARROW`, never bright.
+    - They are faced `e` for a west wall's inner face, centred at the paintings' hang height, with
+      their top below `WALL_BACK`.
+    - **Indicative** size: about 1.6 tile edges across and 1.3 tall.
+    - Shadow false, no light.
+11. **The atlas [charter default B4].** The three new sheets go in the resident `chapel` group
+    (`chapelSheets` / `chapelBuildingSheets` in `catalogue.js`). They are authored in code
+    (ADR-0020, ADR-0021), with colours from `BARROW` and the whites mixed toward `vellum`.
+    - Every non-chapel atlas keeps its bytes. The `chapel` atlas reflows.
+    - `npm run bake -- --check` is clean after the commit.
+
+#### §W-C. The west wall's dressing (game-client `hubInteriors.ts`)
+
+12. **The crucifix and the murals hang behind the Confessor [charter default B3].** They are
+    `HUB_INDOOR_DRESSING` entries on the west wall's inner face (x 980), placed the way the Inn's
+    west-wall paintings are (2 px off the face).
+    - **Indicative:**
+      - the crucifix at (982, 1320), footprint 4 × 40 along y, on the dais's line and the aisle's;
+      - mural 0 at (982, 1210) and mural 1 at (982, 1430), each 4 × 64, about 110 px either side.
+    - The rules, as tests:
+      - the crucifix's y lies within 10 px of the dais's centre (y 1320);
+      - one mural stands north of the crucifix and one south, their centres 90–130 px from its
+        centre along the wall;
+      - all three lie inside the west wall's inner span (y 1120–1520), and none overlaps another
+        along the wall;
+      - each keeps R15 (inside the inner area, off the inner threshold, off every furnishing);
+      - on screen, no frame rect of the three (its manifest frame at its point, as drawn) overlaps
+        a candelabra's or the lectern's frame rect.
+    - Spec-time check by hand (2026-11-24, `worldToScreen`; the candelabra's and lectern's frames
+      from the manifest at f9b572d3; the new pieces by their indicative sizes, hung at the
+      painting's height): at the indicative spots, the nearest pair is mural 0 over the south candelabra
+      (1135, 1390). They share screen columns but are about 80 screen px apart vertically by
+      geometry, and the frames' padding uses up some of that, so the test decides. The crucifix
+      clears that candelabra's frame by a few screen px across and by about 35 px vertically.
+      The altar and the Confessor are clear too, though no rule asks it.
+    - R14 is amended: the chapel's indoor dressing is the dais, the lectern, the two candelabra,
+      the crucifix and the two murals.
+13. **They hide under the roof (R25).** Like all indoor dressing, they are hidden while the
+    chapel's roof is on and shown while it is lifted. No new rule: a test proves it for the new
+    sheets.
+
+#### §W-D. Bounds
+
+14. **No new light [charter default B4].** None of the three new sheets declares a light. The
+    lancets are dark glass, inside and out, and cast no light shaft. The two candelabra stay the
+    room's only lights (R15).
+15. **Client only [charter default B4].** No server, map, door, furnishing, NPC, golden or wire
+    change. `hubTown.golden.json` is untouched.
+
+### User Stories
+
+1. As a player outside the chapel, I want its long south wall to show windows and buttresses in a
+   steady rhythm, so that it reads as a church and not a house with scattered windows.
+2. As a player stepping inside, I want the long wall I see to show tall pointed windows, so that
+   the nave feels like a church.
+3. As a player who has walked round it, I want the windows inside to stand where the windows are
+   outside, so that the building makes sense.
+4. As a player, I want the east wall's windows on both sides of the door, so that the front of the
+   chapel is balanced.
+5. As a player walking up the aisle, I want a large crucifix on the wall behind the Confessor, so
+   that the head of the room reads as an altar end.
+6. As a player, I want faded frescoes on either side of the crucifix, so that the chapel feels old
+   and grim.
+7. As a player, I want the room still dim, lit only by the candelabra, so that the chapel keeps its
+   mood.
+8. As a player outside, I want none of this showing while the roof is on, so that the roof still
+   means something.
+9. As the owner, I want the windows' rhythm held by a test, so that a later change to the walls
+   can't scatter them again.
+10. As a developer, I want the bay rule to touch only the chapel, so that every other building
+    draws exactly as before.
+
+### Acceptance Criteria
+
+- [ ] Vitest (W1): planning the chapel with two different seeds gives the same outward kinds on
+      every piece, the same inner lancets and the same plain pieces behind the hung dressing; only
+      the frame indexes and the open plain-or-pillar choices may change.
+- [ ] Vitest (W2): no chapel lancet, inner or outward, on a trimmed piece or on a piece whose span
+      holds a post.
+- [ ] Vitest (W3): along the south outward face, no two lancets adjoin; each pair of neighbouring
+      lancets has exactly one buttress between them; a buttress stands beside the first and the
+      last lancet; the rest are plain; each lancet's mirror about x 1270 has a lancet within
+      20 px.
+- [ ] Vitest (W4): the north inner face's lancets stand at exactly the south outward lancets' x
+      values, the same set.
+- [ ] Vitest (W5): each east segment carries at least one lancet; no two adjoin; they mirror about
+      y 1320 within 20 px.
+- [ ] Vitest (W6, W7): no lancet on the west inner face, or on any front (cut-away) piece; the
+      west pieces behind the crucifix and the murals are plain.
+- [ ] Vitest (W7): the Inn's, the store's and the smithy's planned pieces (sheet and index) are
+      the same as before the change, for a fixed seed.
+- [ ] The manifest carries `chapel_wall_back_lancet_{x,y}`, framed as
+      `chapel_wall_back_plain_{x,y}`; `chapel_crucifix` (`e`); and `chapel_mural` (two variants,
+      `e`). All are in the `chapel` group, with no light and with shadow false for the hung pieces.
+      Every non-chapel atlas is byte-identical. `npm run bake -- --check` is clean.
+- [ ] Vitest (W12): the crucifix and the two murals are in `HUB_INDOOR_DRESSING` on the west
+      wall's inner face, under W12's rules; R15 holds; on screen none overlaps a candelabra or the
+      lectern.
+- [ ] Vitest (W13): they are hidden while the chapel's roof is on and shown while it is lifted.
+- [ ] No new light source in the chapel; no file under `game-server/` changes; the golden is
+      unchanged.
+- [ ] `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` pass.
+- [ ] Nick's browser look passes, or each finding is written back as an amendment or an issue.
+
+### Edge States
+
+- **The cut-away walls show no window from inside.** The south and east walls are cut at
+  `WALL_FRONT` (1.1), at the outward lancet's sill (1.05). Seen from inside they are plain, so
+  the south exterior's lancets have no inner counterpart drawn on the south wall itself. That is
+  correct for a cut-away: the north wall's lancets are the visible half of each bay.
+- **The belfry and the wayside cross stand in front of the east wall** ((1635, 1220) and (1635,
+  1480)). On screen they may cover part of an east lancet. No rule forbids it. The developer
+  prefers bays they leave clear, within W5, and the owner judges at the browser check.
+- **The trimmed pieces** (the south and north walls' last half tile, and each east segment's
+  last) are always plain, as today.
+- **A manifest without the new sheets** (an older checkout of the art against this code). The
+  dressing draws nothing (FS-KYPQ9 §A.9), and the north wall's lancet pieces draw the art
+  library's placeholder. Accepted, with no fallback code [v1 pick]: the art lands first (the
+  drawing slice is blocked by the bake) and ships with the client.
+- **No art at all.** The chapel's walls fall back to placeholder walls as before (R23). The bay
+  rule still runs, but the placeholders do not show kinds.
+- **A player standing at the west wall.** The crucifix and murals have no collision, as with all
+  dressing. The player is drawn in front of them, as in front of the Inn's paintings.
+- **The roof on.** None of the new pieces shows from outside (W13). The outward lancets are the
+  only windows seen from the street.
+
+### Out of Scope
+
+- Stained glass that glows, coloured light, light shafts, or any new light (W14).
+- Windows on the cut-away south and east walls indoors, or on the west wall.
+- Outward faces of the north and west walls (the camera never sees them, FS-9PN7X §B.2).
+- Pilasters matched to the buttresses inside (W4's v1 pick), or any other change to the inner
+  faces beyond the lancets and the plain pieces behind the hung dressing.
+- Any change to the layout, the dais, the altar, the candelabra, the lectern, the people or their
+  lines.
+- Any server, map, golden or wire change.
+- The talent reset and anything that hints at it (still a later FS).

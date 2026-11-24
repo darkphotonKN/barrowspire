@@ -416,12 +416,24 @@ layer they **stop at the pixel**: none of them appears on the wire or in game ru
   instead of as wall pieces. It
   has collision, so it is **not dressing**, like a tree stand. Recognised by geometry: a wall of a
   house that touches none of the house's four edges. Chairs, stools, shelves, crates, kegs,
-  chests, candelabra, lanterns, paintings, plants, rugs, the anvil, the lectern and the dais are
+  chests, candelabra, lanterns, paintings, plants, rugs, the anvil, the lectern, the dais, the
+  crucifix and the murals are
   **indoor dressing**: dressing placed inside a house, with no collision.
 - **Dais**: the chapel's raised west end, drawn as a flat stone platform on the floor decal layer
   (like a rug). The one indoor dressing allowed under a furnishing: the altar stands on it.
 - **Belfry**: the tall weathered bell frame by the chapel's door, under a bent iron cross. Outdoor
   dressing, an occluder; it never rings.
+- **Bay**: one lancet window in the chapel's fixed rhythm: a buttress on either side of it on the
+  south wall's outward face, and a lancet at the same x on the north wall's inner face (FS-R4MYX
+  §Change: The chapel's windows match inside and out). Written in the chapel's **fixed kinds**, never hashed.
+  A bay is a stretch of wall, never a **room** or a hall.
+- **Fixed kinds**: the wall-piece kinds a building's look fixes by where each piece stands, by face
+  (full-height inner, cut-away inner, outward) and house side, in place of the hash
+  (`FixedKinds`, `TownHouseLook.fixed`). The chapel's are its **bays** and the plain wall behind
+  its **crucifix** and **murals**. Every other piece, and every piece's variant frame, stays hashed.
+- **Crucifix** and **murals**: the wall-hung indoor dressing on the chapel's west wall, behind the
+  Confessor: one wooden crucifix on the aisle's line, with a faded fresco on each side of it.
+  Dressing, like the Inn's paintings, never a furnishing.
 - **Partition**: a server wall of a house that reaches its edges end on, across the house (the
   Inn's, between its **great hall** and **taproom**; `isPartition`). It divides one house, one
   **Room** in this glossary's sense (one `house_id` wall group), into two halls; never call the
