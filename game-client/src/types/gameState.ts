@@ -128,13 +128,24 @@ export interface BookEffectState {
   remaining: number;
   /** How many monsters a rune has caught so far, absent while none: it flashes as the count climbs (R24, R47). */
   caught?: number;
+  /** A hound's archer, by player id (R28, R34); absent on every other kind. */
+  owner_id?: string;
+  /** A hound's health and its max (R28, R34); absent on every other kind. */
+  health?: number;
+  max_health?: number;
+  /** What a hound is doing (R34, R47), which clip it plays; absent on every other kind. */
+  action?: HoundAction;
 }
 
 /**
- * The book effects the client draws (FS-X2CMM §E R21, R24, R27): a Witchlight's light, a Binding Glyph's
- * rune, a Brew's draught (an interactable: any delver drinks it with `interact` by its `id`).
+ * The book effects the client draws (FS-X2CMM §E R21, R24, R27, R28): a Witchlight's light, a Binding Glyph's
+ * rune, a Brew's draught (an interactable: any delver drinks it with `interact` by its `id`), the archer's
+ * hound (a body that moves, bites and falls, drawn apart from the rest: `src/render/creatures/hounds.ts`).
  */
-export type BookEffectKind = "witchlight" | "rune" | "draught";
+export type BookEffectKind = "witchlight" | "rune" | "draught" | "hound";
+
+/** What a hound is doing (FS-X2CMM R34): standing, running, biting, or fallen at 0 health. */
+export type HoundAction = "idle" | "run" | "bite" | "dead";
 
 /**
  * A player's own state, as `current_player` carries it: what they show, and their own bag and worn

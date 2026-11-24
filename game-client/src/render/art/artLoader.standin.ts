@@ -45,6 +45,7 @@ export const RESIDENT_ART_PAGES = [
   "fx-0",
   "ground-0",
   "hall-0",
+  "hound-0",
   "icons-0",
   "interior-0",
   "knight-0",

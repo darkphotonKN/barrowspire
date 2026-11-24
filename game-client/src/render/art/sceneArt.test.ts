@@ -90,8 +90,9 @@ describe("the scene art table (FS-C4JWH §A)", () => {
 });
 
 describe("a scene's atlas pages (FS-C4JWH §A R3, §B R6–R7)", () => {
-  it("should hold the 20 resident pages and no scene-scoped one at boot", () => {
-    expect(RESIDENT_ART_PAGES).toHaveLength(20);
+  // the archer's hound (FS-X2CMM R47) is a group no table names, so resident (§A R3)
+  it("should hold the 21 resident pages and no scene-scoped one at boot", () => {
+    expect(RESIDENT_ART_PAGES).toHaveLength(21);
     expect(sorted(sceneAtlases(manifest, RESIDENT_ART))).toEqual([...RESIDENT_ART_PAGES]);
   });
 
@@ -316,7 +317,8 @@ describe("every scene-scoped sheet a scene draws lies in its groups (FS-C4JWH §
     // fieldCombat is the field's (FieldScene's fieldCombatOnScene), for both fields in MET
     expect(using(/new MonsterRoster\(/)).toEqual(["scenes/BarrowspireScene.ts", "scenes/fieldCombat.ts"]);
     expect(using(/fieldCombatOnScene\(/)).toEqual(["scenes/FieldScene.ts", "scenes/fieldCombat.ts"]);
-    expect(using(/["`](folk|creature)_/)).toEqual(["render/art/hubFolk.ts", "render/creatures/monsters.ts"]);
+    // the archer's hound names its own sheet: on its resident group, so outside this check (FS-X2CMM R47)
+    expect(using(/["`](folk|creature)_/)).toEqual(["render/art/hubFolk.ts", "render/creatures/hounds.ts", "render/creatures/monsters.ts"]);
     expect(MET.map((s) => s.scene)).toEqual(["gentle_meadows", "forlorn_forest", "dev_test_room", "the run"]);
   });
 

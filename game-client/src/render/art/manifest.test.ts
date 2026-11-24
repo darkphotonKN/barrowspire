@@ -2257,7 +2257,57 @@ describe("the baked manifest (public/art/manifest.json)", () => {
         BoarSheet,
       ][])
         if (sheet.length !== undefined)
-          expect(BOARS.map(([n]) => n)).toContain(name);
+          expect([...BOARS.map(([n]) => n), "creature_hound_base"]).toContain(name);
+    });
+  });
+
+  describe("the archer's hound, on the quadruped rig (FS-X2CMM §I R47)", () => {
+    type HoundSheet = {
+      atlas: string;
+      directions: number;
+      crown?: number;
+      length?: number;
+      animations: Record<string, { fps: number; loop: boolean; frames: unknown[][] }>;
+      source: string;
+      licence: string;
+    };
+    const hound = (): HoundSheet => baked.sheets.creature_hound_base;
+    const playerCrown =
+      ["char_knight_base", "char_archer_base", "char_wizard_base"].reduce(
+        (n, name) => n + baked.sheets[name].crown,
+        0,
+      ) / 3;
+
+    it("has 8-way idle, walk (its run), attack (its bite) and death (its fall), idle and the run looping", () => {
+      const sheet = hound();
+      expect(sheet).toBeDefined();
+      expect(sheet.directions).toBe(8);
+      expect(Object.keys(sheet.animations)).toEqual(["idle", "walk", "attack", "death"]);
+      for (const a of Object.values(sheet.animations)) expect(a.frames).toHaveLength(8);
+      const a = sheet.animations;
+      expect([a.idle.loop, a.walk.loop, a.attack.loop, a.death.loop]).toEqual([true, true, false, false]);
+    });
+
+    it("is authored in code in characters/hound.js#hound, under the project's licence", () => {
+      expect(hound().source).toBe("authored: tools/bake/page/characters/hound.js#hound");
+      expect(hound().licence).toBe(baked.sheets.brazier.licence);
+    });
+
+    it("packs alone into its own hound group, resident as an unnamed group is, so no existing atlas reflows", () => {
+      expect(hound().atlas).toMatch(/^hound-\d+$/);
+      for (const [name, sheet] of Object.entries(baked.sheets) as [string, HoundSheet][])
+        if (/^hound-/.test(sheet.atlas)) expect(name).toBe("creature_hound_base");
+    });
+
+    it("is measured by its length, and stands well under a player: its head below a player's shoulder", () => {
+      expect(Number.isInteger(hound().length)).toBe(true);
+      expect(hound().crown as number).toBeLessThan(0.75 * playerCrown);
+    });
+
+    it("bites inside the server's 1 s between bites, and falls in under a second", () => {
+      const { attack, death } = hound().animations;
+      expect(attack.frames[0].length / attack.fps).toBeLessThan(1);
+      expect((death.frames[0].length / death.fps) * 1000).toBeLessThanOrEqual(800);
     });
   });
 

@@ -169,7 +169,9 @@ import { playDemonClaw } from "@/render/effects/demonClaw";
 import { StunTells } from "@/render/effects/stun";
 import { MARKER_BAR, MARKER_DEPTH, NameplateTitle, markerBase } from "@/render/markers";
 import {
+  HoundSet,
   MonsterRoster,
+  phaserHoundStage,
   phaserMonsterStage,
   type MonsterEffects,
   type MonsterTargeting,
@@ -1030,6 +1032,8 @@ export class BarrowspireScene extends Phaser.Scene {
   private readonly deathDust = new DeathDust();
   /** The run's monsters and corpses, from state (FS-77AB6 req 34–39). */
   private monsters?: MonsterRoster;
+  /** The archers' hounds, from the state's book effects, for every viewer (FS-X2CMM §I R47). */
+  private hounds?: HoundSet;
   /** The variant art a floor's pool names, fetched and evicted with the floor (FS-C8VM7 §G, ADR-0081). */
   private poolArt?: FloorPoolArt;
   /**
@@ -1207,6 +1211,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.summoning.forget();
     this.trails.forget();
     this.bookEffects.forget();
+    this.hounds?.forget();
     this.bookStates.forget();
     this.walls.clear();
     this.serverDoors.clear();
@@ -3354,6 +3359,7 @@ export class BarrowspireScene extends Phaser.Scene {
       this.monsterEffects,
       onDemand,
     );
+    this.hounds = new HoundSet(phaserHoundStage(this, TRAIL_BED_DEPTH), this.art);
     this.poolArt = new FloorPoolArt(onDemand, (group) => this.monsters?.redress(group));
     this.looks = new SpecLooks(this.art, onDemand, this.lookBodies(), this.artGroups);
 
@@ -4099,6 +4105,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the class book's witchlights, runes and draughts, and every body's book states, for every viewer
     // (FS-X2CMM §I R47): the broadcast is the whole truth
     this.bookEffects.sync(state.book_effects, this.time.now);
+    // and the archers' hounds, which run, bite and fall (FS-X2CMM §I R47)
+    this.hounds?.sync(state.book_effects);
     this.syncBookStates(state);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
@@ -4686,6 +4694,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.trails.clear();
     // the old floor's witchlights, runes and draughts go with it (FS-X2CMM §Edge "Floor change")
     this.bookEffects.clear();
+    // a hound does not climb (FS-X2CMM §Edge "Floor change")
+    this.hounds?.clear();
     this.monsters?.sync([]);
     this.lastHit.clear();
     this.bosses.clear();
@@ -5318,6 +5328,7 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     // the roster's and the runtime's objects are this scene's Phaser objects: its stage made them
     for (const m of this.monsters?.standing() ?? []) yield m as unknown as Occupant;
+    for (const h of this.hounds?.standing() ?? []) yield h as unknown as Occupant;
     for (const { sprite, pos } of [
       ...this.chests.values(),
       ...this.escapeDoors.values(),
@@ -5391,6 +5402,8 @@ export class BarrowspireScene extends Phaser.Scene {
       }
     });
     this.monsters?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
+    // a hound is a body that moves, hidden as a monster is (FS-X2CMM R47)
+    this.hounds?.hideWhere((at) => hiddenAt(at) || this.fogHides(at));
 
     for (const { sprite, pos, pile } of this.chests.values())
       sprite.setVisible(!hiddenAt(pos) && !(pile ? this.fogHides(pos) : this.unexplored(pos)));
@@ -6104,6 +6117,7 @@ export class BarrowspireScene extends Phaser.Scene {
     this.bookEffects.frame(time);
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
+    this.hounds?.update(delta);
     this.stunTells?.show(this.monsters?.stunned() ?? []);
     // skip all input/movement if player has escaped
     if (this.player && !this.player.visible) {

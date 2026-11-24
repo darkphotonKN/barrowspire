@@ -62,6 +62,7 @@ import {
 import { DEMON_ANIMATIONS, bloodDemon, demon } from "./demon.js";
 import { banshee, barrowThrall, blightborn, fadingEyes, ghost, phantom, plagueThrall, shade as shadeWraith, spireWraith, zombie } from "./forlorn.js";
 import { BOAR_ANIMATIONS, boar, eliteBoar } from "./boar.js";
+import { HOUND_ANIMATIONS, hound } from "./hound.js";
 import * as goblins from "./goblin.js";
 import { ogre, ogreMauler, ogreTyrant } from "./ogre.js";
 import { darkReaper, darkWarrior } from "./darkWarrior.js";
@@ -709,4 +710,6 @@ export const CAST = [
   // Gentle Meadows' boar and its elite (FS-X2F2H §H R61), on the quadruped rig, in their own group
   { sheet: "creature_boar_base", group: "wildlife", fn: "boar", module: "boar", build: boar, animations: BOAR_ANIMATIONS },
   { sheet: "creature_boar_elite", group: "wildlife", fn: "eliteBoar", module: "boar", build: eliteBoar, animations: BOAR_ANIMATIONS },
+  // the archer's hound (FS-X2CMM §I R47), on the quadruped rig, in a group of its own (resident: no scene table names it)
+  { sheet: "creature_hound_base", group: "hound", fn: "hound", module: "hound", build: hound, animations: HOUND_ANIMATIONS },
 ];

@@ -221,6 +221,8 @@ export class BookEffectSet<M extends LookMark> {
         if (this.runeFor?.cell !== cell) this.runeFor = { cell, look: runeLook(cell) };
         return this.runeFor.look;
       }
+      // a body that moves, bites and falls, drawn by its own set (src/render/creatures/hounds.ts)
+      case "hound":
       default:
         return undefined;
     }

@@ -59,7 +59,8 @@ const { MENU_CONTROLS } = await import("./MainMenuScene");
 const { PARRY_FLASH_MS } = await import("@/render/effects/parry");
 const { RIPOSTE_MS } = await import("@/render/effects/riposte");
 const { ArtLibrary } = await import("@/render/art/library");
-const { MonsterRoster } = await import("@/render/creatures");
+const { HoundSet, MonsterRoster, phaserHoundStage } = await import("@/render/creatures");
+const { TRAIL_BED_DEPTH } = await import("@/render/world");
 const { MARKER_DEPTH, markerBase } = await import("@/render/markers");
 const { CANVAS_FONT, palette, rgba, toCss } = await import("@/utils/canvasPalette");
 const { RESOURCE_HUD_AT } = await import("@/ui/ResourceHud");
@@ -592,6 +593,7 @@ interface FloorRun {
   art: unknown;
   input: unknown;
   monsters?: unknown;
+  hounds?: unknown;
   monsterTargeting: import("@/render/creatures").MonsterTargeting;
   lightMap?: unknown;
   projectiles?: unknown;
@@ -762,6 +764,19 @@ function sceneOnStage() {
     },
     run.art as InstanceType<typeof ArtLibrary>,
     run.monsterTargeting,
+  );
+  // the archers' hounds (FS-X2CMM §I R47), through the scene's own stage builder
+  run.hounds = new HoundSet(
+    phaserHoundStage(
+      {
+        add: {
+          sprite: (...args: unknown[]) => stage.make("sprite", args),
+          graphics: () => stage.make("graphics"),
+        },
+      } as never,
+      TRAIL_BED_DEPTH,
+    ),
+    run.art as InstanceType<typeof ArtLibrary>,
   );
   // made with the world theme's ambient, as the scene makes it; each later change recorded with
   // whether the floor's fog stood when it came (FS-SRA9J §Change: Lighter fog and lit regions, F8)
@@ -13144,6 +13159,19 @@ describe("BarrowspireScene the class book's world effects and states (FS-X2CMM �
     far.run.handleGameStateUpdate({ ...partyState(), book_effects: [effect("d1", "draught", 230)] } as GameState);
     far.pressE();
     expect(far.interacts().filter(([, p]) => (p as { entity_id: string }).entity_id === "d1")).toEqual([]);
+  });
+
+  // FS-X2CMM §I R47 (I-X2CMM-13): the hound is a body drawn by its own set (hounds.test.ts holds its rules)
+  it("should draw a hound from the state as a body with its bar and ring, not as a book effect's layers, and take it away with the floor", () => {
+    const { run, live, named } = bookOnStage();
+    const hound = { ...effect("h1", "hound", 400), owner_id: "me", health: 40, max_health: 40, action: "run" as const };
+    run.handleGameStateUpdate({ ...partyState(), book_effects: [hound] } as GameState);
+    expect(live("book:h1:")).toEqual([]);
+    expect(live("hound:").map((m) => (m as { name?: string }).name).sort()).toEqual(["hound:bar", "hound:body", "hound:ring"]);
+    expect(live("hound:ring")[0].depth).toBe(TRAIL_BED_DEPTH);
+
+    run.leaveFloor();
+    expect(named("hound:").every((m) => m.destroyed)).toBe(true);
   });
 
   it("should draw the player's and a teammate's book states on their bodies, and take them away when they go", () => {
