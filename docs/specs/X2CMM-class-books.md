@@ -65,6 +65,26 @@ notes were silent, are **[derived]** with their reason. Every one is overridable
   and one line on hover.
 - **Hired-ally and mark mechanics live in FS-4EC7Z [owner]**; this FS wires the pages to them.
 
+### Reconciled at review (2026-11-25, wave 1)
+
+Where the build settled what this FS left loose. Each is [derived] and overridable.
+
+- **Book effects, not "world effects".** Witchlights, runes, draughts and hounds go out as
+  `book_effects` entries (`{id, kind, x, y, remaining}`), cut per recipient by distance like
+  every run entity (ADR-0060; the interest radius is 20 cells, far past any page's reach). A
+  draught is a `book_effects` entry of kind `draught` drunk through the ordinary `interact`
+  action by its `id`, not an interactable; its `remaining` is 0 (it has no timer).
+- **Extra wire fields:** a rune's `caught` count (for the flash); a hound's `owner_id`,
+  `health`, `max_health` and `action` (`idle|run|bite|dead`); a `draught` delver state while a
+  drink heals.
+- **No delver's hit lands on a hound,** and monster area abilities strike delvers only; strikes
+  and shots from monsters do hit it.
+- **The draught's heal is drawn in the health colour, not green** (design guideline: "Healing is
+  not green").
+- **The ally `target_id`** is the teammate's player id (`other_players[].id`; self:
+  `current_player.id`); entity ids are also accepted.
+- **Afloat refuses the parry** as the mercenary's class ability (R23).
+
 ## Requirements
 
 ### §A. The book and its pages (game-service)
@@ -548,8 +568,8 @@ No HTTP endpoints change. No inbound action is added.
 |---|---|
 | `current_player.book` (new, run only) | `{pages: [{id, unlock_level, cost, cooldown: {remaining, total}, spent}], casting?: {page, remaining, total}}` |
 | `other_players[].book` | never sent |
-| delver state names (new values) | `afloat`, `hardened`, `long_night`, `trackers_eye`, on `current_player` and `other_players` |
-| world effects (new) | witchlights and runes `{id, kind, x, y, remaining}`; hounds `{id, owner_id, x, y, health, max_health, action}`; draughts as interactables |
+| `book_states` (new) | `[{name, remaining}]`, names `afloat`, `hardened`, `long_night`, `trackers_eye`, `draught`, on `current_player` and `other_players` |
+| `book_effects` (new, run) | `[{id, kind, x, y, remaining}]`, kinds `witchlight`, `rune` (+`caught`), `draught`, `hound` (+`owner_id`, `health`, `max_health`, `action`); cut per recipient by distance |
 
 ## Out of Scope
 
