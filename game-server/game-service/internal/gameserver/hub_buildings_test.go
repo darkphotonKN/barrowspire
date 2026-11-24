@@ -40,8 +40,9 @@ func wallsIn(entities []*ecs.Entity) []rect {
 
 // The hub is a place, not a field. Its buildings are fixed, because a delver has
 // to be able to say "in the Quartermaster's store" and be understood. Each is
-// walked into through an open gap in its south wall: nothing hangs in it.
-// FS-29KSH §Requirements 4, FS-B0H2D §Requirements 9.
+// walked into through an open gap in its door face, south or east: nothing
+// hangs in it. FS-29KSH §Requirements 4, FS-B0H2D §Requirements 9, FS-R4MYX
+// §Requirements 6.
 func TestHub_HasBuildings(t *testing.T) {
 	server := newTestServer(t, context.Background(), &MockAuthClient{}, NewMockQueueService(), &MockEventEmitter{}, &MockItemsClient{}, newFakeCharacters(), testPodID, testPodAddr, noopAnnouncer{})
 	hub, _ := server.HubSession()
@@ -102,7 +103,7 @@ func TestHub_EveryWallInABuilding_CarriesItsHouseID(t *testing.T) {
 		require.NotEqual(t, uuid.Nil, wall.HouseID, "a hub wall at (%.0f, %.0f) belongs to no building", at.X, at.Y)
 		houses[wall.HouseID] = append(houses[wall.HouseID], rect{X: at.X, Y: at.Y, W: wall.Width, H: wall.Height})
 	}
-	require.Len(t, houses, 3, "the town's buildings")
+	require.Len(t, houses, 4, "the town's buildings")
 
 	footprint := func(walls []rect) rect {
 		minX, minY, maxX, maxY := walls[0].X, walls[0].Y, walls[0].X+walls[0].W, walls[0].Y+walls[0].H
