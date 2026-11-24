@@ -184,6 +184,8 @@ export class Knockout {
   private readonly span: { top: number; foot: number };
   private builtAt = 0;
   private failed = false;
+  /** Hidden by its owner: a new render scale waits for its next `show` to draw it again. */
+  private hidden = false;
   private at?: { f: Rect; hovered: boolean; ink?: KnockoutInk };
   private readonly unwatch: () => void;
 
@@ -192,7 +194,7 @@ export class Knockout {
     this.span = { top: Math.min(...ys), foot: Math.max(...ys) };
     // the texture is drawn at the render scale, so a new one draws it again
     this.unwatch = viewport.onChange(() => {
-      if (!this.image || !this.at || this.builtAt === viewport.renderScale) return;
+      if (!this.image || !this.at || this.hidden || this.builtAt === viewport.renderScale) return;
       if (!this.show(this.at.f, this.at.hovered, this.at.ink)) this.deps.lost?.();
     });
   }
@@ -217,6 +219,11 @@ export class Knockout {
     const worn = ink ?? this.deps.ink;
     const { tint, alpha } = hovered ? worn.hover : worn.idle;
     const [cx, cy] = [f.x + f.width / 2, f.y + f.height / 2];
+    if (this.hidden) {
+      this.hidden = false;
+      this.image?.setVisible(true);
+      this.shadow?.setVisible(true);
+    }
     const image = this.image!.setPosition(cx, cy).setAlpha(alpha);
     if (worn.flat) image.setTint(tint);
     else {
@@ -226,6 +233,13 @@ export class Knockout {
     // the shadow never moves under the pointer (R3)
     this.shadow?.setPosition(cx + SHADOW.dx, cy + SHADOW.dy);
     return true;
+  }
+
+  /** Hides it, its texture kept: the next `show` stands it again (a class book's right page, C7). */
+  hide(): void {
+    this.hidden = true;
+    this.image?.setVisible(false);
+    this.shadow?.setVisible(false);
   }
 
   /** Takes its texture down and stops watching the view. */

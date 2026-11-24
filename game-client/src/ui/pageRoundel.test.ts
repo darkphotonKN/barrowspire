@@ -109,8 +109,8 @@ function stage(makes = true, canvases = false) {
   /** The canvas textures the scene holds, by key, each with the radial stops painted on it. */
   const painted = new Map<string, { width: number; stops: [number, string][] }>();
   const moves: string[] = [];
-  const textures: { width: number; tints?: number[]; alpha?: number; x?: number; destroyed: boolean }[] = [];
-  const images: { tints?: number[]; alpha?: number; x?: number; texture?: string; destroyed: boolean }[] = [];
+  const textures: { width: number; tints?: number[]; alpha?: number; x?: number; visible?: boolean; destroyed: boolean }[] = [];
+  const images: { tints?: number[]; alpha?: number; x?: number; texture?: string; visible?: boolean; destroyed: boolean }[] = [];
   const graphics = (): unknown => {
     const self: unknown = new Proxy({}, { get: () => () => self });
     return self;
@@ -126,6 +126,7 @@ function stage(makes = true, canvases = false) {
       setPosition: (x: number) => ((t.x = x), self),
       setTint: (...c: number[]) => ((t.tints = c.length === 1 ? [c[0], c[0], c[0], c[0]] : c), self),
       setAlpha: (a: number) => ((t.alpha = a), self),
+      setVisible: (v: boolean) => ((t.visible = v), self),
       draw: () => self,
       erase: () => self,
       render: () => self,
@@ -140,6 +141,7 @@ function stage(makes = true, canvases = false) {
     for (const m of ["setScrollFactor", "setDepth", "setScale", "setTintMode", "setDisplaySize"]) self[m] = () => self;
     self.setPosition = (x: number) => ((i.x = x), self);
     self.setAlpha = (a: number) => ((i.alpha = a), self);
+    self.setVisible = (v: boolean) => ((i.visible = v), self);
     self.setTexture = (k: string) => ((i.texture = k), self);
     self.setTint = (...c: number[]) => ((i.tints = c), self);
     self.destroy = () => void (i.destroyed = true);
@@ -244,6 +246,32 @@ describe("PageRoundel (FS-X2CMM R45, ADR-0094, ADR-0095: four layers of the shar
     a.destroy();
     b.destroy();
     expect(lights.every((l) => l.destroyed)).toBe(true);
+  });
+
+  it("should hide with its textures kept, and stand again on its next show, building nothing (§Change: the open tome C7)", () => {
+    const env = stage(true, true);
+    const roundel = new PageRoundel({ scene: env.scene, depth: 1000, icon: ICON, size: PAGE_ROUNDEL_SIZE.tomePage });
+    const box = { ...BOX, width: 64, height: 64 };
+    roundel.show(box, "ready");
+    roundel.hide();
+    expect([...env.textures, ...env.images].every((o) => o.visible === false && !o.destroyed)).toBe(true);
+    // a new render scale while hidden builds nothing until it is shown again
+    viewport.set({ width: 1080, height: 720, renderScale: 2 });
+    expect(env.textures).toHaveLength(4);
+    roundel.show(box, "dim");
+    expect(env.textures.filter((t) => !t.destroyed)).toHaveLength(4);
+    expect(env.textures.filter((t) => !t.destroyed).every((t) => t.visible !== false)).toBe(true);
+    expect(env.images.filter((i) => !i.destroyed).every((i) => i.visible !== false)).toBe(true);
+    roundel.destroy();
+  });
+
+  it("should draw at the open tome's 64 px as at any size, its rim and glyph fitted to it", () => {
+    const env = stage();
+    const roundel = new PageRoundel({ scene: env.scene, depth: 1000, icon: ICON, size: PAGE_ROUNDEL_SIZE.tomePage });
+    expect(roundel.show({ ...BOX, width: 64, height: 64 }, "ready")).toBe(true);
+    expect(env.textures.map((t) => t.width)).toEqual(Array(4).fill(128));
+    expect(roundelGeometry(PAGE_ROUNDEL_SIZE.tomePage).rim).toBeCloseTo(64 * 0.08, 6);
+    roundel.destroy();
   });
 
   it("should stand on a flat ground where the scene makes no canvas for the light", () => {

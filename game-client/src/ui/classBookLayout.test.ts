@@ -1,66 +1,94 @@
 import { describe, expect, it } from "vitest";
 import { abilityBarFrame } from "./abilityBarLayout";
-import { BOOK_LAYOUT, bookLayout, pageAt } from "./classBookLayout";
-import { PANEL_TITLE_BAND } from "./panelFrame";
+import { CHAT_WINDOW_MARGIN, CHAT_WINDOW_X, chatWindowFrame } from "./chatWindowLayout";
+import { TOME_LAYOUT, bookLayout, rowAt } from "./classBookLayout";
+import { cornerRowLeft, cornerIconFrame } from "./hudCornerLayout";
+import { MINIMAP } from "./minimap";
 import { PAGE_ROUNDEL_SIZE } from "./pageRoundel";
+import { TOP_RIGHT_LINE, topRightCorner } from "./topRightColumn";
 
-// FS-X2CMM §G R36, R37, R39 (I-X2CMM-10): where the book stands and its roundels in it. Over the ability
-// bar, centred, clear of the player in the middle of the view, so walking stays free with it open.
+// FS-X2CMM §G R36, R39 and §Change: Illuminated pages and the open tome C3–C5, Edge States (I-X2CMM-25):
+// where the open tome stands and what is on its two pages. At the view's right side, clear of the
+// player in the middle, the ability bar, the chat, the corner row and the top-right column.
 
-const VIEW = { width: 1080, height: 720 };
+const overlaps = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-describe("the class book's layout (FS-X2CMM R37)", () => {
-  it("should stand centred over the ability bar, its foot clear of the bar's top", () => {
-    const { panel } = bookLayout(VIEW, 5);
-    expect(panel.x + panel.width / 2).toBeCloseTo(VIEW.width / 2, 0);
-    expect(panel.y + panel.height).toBe(abilityBarFrame(VIEW).top - BOOK_LAYOUT.overBar);
-    // the player stands in the view's middle: the book stays under them
-    expect(panel.y).toBeGreaterThan(VIEW.height / 2);
+describe("the open tome's place (C3, Edge States: small viewports)", () => {
+  it.each([1080, 1280])("should stand at the right side of a view %i wide, clear of everything the run keeps on screen", (width) => {
+    const view = { width, height: 720 };
+    const { panel } = bookLayout(view, 5);
+    // to one side: the player in the view's middle stays clear of it
+    expect(panel.x).toBeGreaterThan(view.width / 2 + 40);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(view.width - 10);
+    expect(overlaps(panel, abilityBarFrame(view).row)).toBe(false);
+    expect(overlaps(panel, chatWindowFrame(CHAT_WINDOW_X, view.height - CHAT_WINDOW_MARGIN).panel)).toBe(false);
+    // over the corner row, with room for its hover label (about 20 px over a plate)
+    const corner = cornerIconFrame("menu", view);
+    expect(panel.y + panel.height).toBeLessThan(corner.y - 24);
+    expect(panel.x + panel.width).toBeGreaterThan(cornerRowLeft(view));
+    // under the top-right column: the minimap, the floor line and the escaped count
+    const column = topRightCorner(view, { ...MINIMAP, mode: "normal" });
+    const line = 12 + 2 * TOP_RIGHT_LINE.padding.y;
+    expect(panel.y).toBeGreaterThanOrEqual(column.below + 2 * line + TOP_RIGHT_LINE.gap);
+  });
+});
+
+describe("the open tome's pages (C4, C5)", () => {
+  const VIEW = { width: 1080, height: 720 };
+
+  it("should put two pages of one size side by side in the binding, the spine between them", () => {
+    const { panel, left, right, spine } = bookLayout(VIEW, 3);
+    expect(left.width).toBe(right.width);
+    expect(right.x).toBe(left.x + left.width);
+    expect(spine).toBe(right.x);
+    expect(left.x - panel.x).toBe(TOME_LAYOUT.border);
+    expect(panel.x + panel.width - (right.x + right.width)).toBe(TOME_LAYOUT.border);
   });
 
-  it("should lay a page's roundel at the book's size in one row, in book order, under the title band", () => {
-    const { panel, pages } = bookLayout(VIEW, 5);
-    expect(pages).toHaveLength(5);
-    for (const p of pages) {
-      expect(p.width).toBe(PAGE_ROUNDEL_SIZE.book);
-      expect(p.height).toBe(PAGE_ROUNDEL_SIZE.book);
-      expect(p.y).toBeGreaterThanOrEqual(panel.y + PANEL_TITLE_BAND);
-      expect(p.x).toBeGreaterThanOrEqual(panel.x);
-      expect(p.x + p.width).toBeLessThanOrEqual(panel.x + panel.width);
-    }
-    const xs = pages.map((p) => p.x);
-    expect([...xs].sort((a, b) => a - b)).toEqual(xs);
-    expect(new Set(pages.map((p) => p.y)).size).toBe(1);
+  it("should centre the title over its rule on the left page", () => {
+    const { title, rule, left } = bookLayout(VIEW, 3);
+    expect(title.x).toBe(Math.round((rule.x1 + rule.x2) / 2));
+    expect(title.y).toBeLessThan(rule.y);
+    expect(rule.x1).toBeGreaterThan(left.x);
+    expect(rule.x2).toBeLessThan(left.x + left.width);
   });
 
-  it("should centre a short book's row in its leaf, and wrap past a row's pages", () => {
-    const three = bookLayout(VIEW, 3);
-    const mid = (three.pages[0].x + three.pages[2].x + three.pages[2].width) / 2;
-    expect(mid).toBeCloseTo(three.leaf.x + three.leaf.width / 2, 0);
-    const seven = bookLayout(VIEW, BOOK_LAYOUT.columns + 2);
-    expect(new Set(seven.pages.map((p) => p.y)).size).toBe(2);
-  });
-
-  it("should put each page's caption under its roundel, inside the leaf", () => {
-    const { pages, captions, leaf } = bookLayout(VIEW, 3);
-    captions.forEach((c, i) => {
-      expect(c.x).toBe(pages[i].x + pages[i].width / 2);
-      expect(c.y).toBeGreaterThan(pages[i].y + pages[i].height);
-      expect(c.y).toBeLessThan(leaf.y + leaf.height);
+  it("should lay one row per page under the rule in book order, a 28 px roundel, the name after it, the mark right-aligned", () => {
+    const { rows, rule, left } = bookLayout(VIEW, 5);
+    expect(rows).toHaveLength(5);
+    rows.forEach((row, i) => {
+      expect(row.roundel.width).toBe(PAGE_ROUNDEL_SIZE.tomeRow);
+      expect(row.box.y).toBeGreaterThan(rule.y);
+      if (i > 0) expect(row.box.y).toBe(rows[i - 1].box.y + rows[i - 1].box.height);
+      expect(row.name.x).toBeGreaterThan(row.roundel.x + row.roundel.width);
+      expect(row.mark.x).toBeGreaterThan(row.name.x + 80);
+      expect(row.box.y + row.box.height).toBeLessThanOrEqual(left.y + left.height);
+      expect(row.box.x + row.box.width).toBeLessThanOrEqual(left.x + left.width);
     });
   });
 
-  it("should keep an empty book's panel at its least width, its line in the leaf's middle", () => {
-    const { panel, pages, empty, leaf } = bookLayout(VIEW, 0);
-    expect(pages).toEqual([]);
-    expect(panel.width).toBe(BOOK_LAYOUT.minWidth);
-    expect(empty).toEqual({ x: leaf.x + leaf.width / 2, y: leaf.y + leaf.height / 2 });
+  it("should stand the right page's 64 px roundel at its top, centred over its words", () => {
+    const { leaf, right } = bookLayout(VIEW, 3);
+    expect(leaf.roundel.width).toBe(PAGE_ROUNDEL_SIZE.tomePage);
+    expect(leaf.roundel.x + leaf.roundel.width / 2).toBe(leaf.x);
+    expect(leaf.top).toBeGreaterThan(leaf.roundel.y + leaf.roundel.height);
+    expect(leaf.x - leaf.wrap / 2).toBeGreaterThan(right.x);
+    expect(leaf.x + leaf.wrap / 2).toBeLessThan(right.x + right.width);
   });
 
-  it("should find the page under a point, and none off every roundel", () => {
+  it("should put the × in the right page's top corner", () => {
+    const { close, right } = bookLayout(VIEW, 3);
+    expect(close.x + close.width).toBeLessThanOrEqual(right.x + right.width);
+    expect(close.x).toBeGreaterThan(right.x + right.width / 2);
+    expect(close.y).toBeGreaterThanOrEqual(right.y);
+  });
+
+  it("should find the row under a point, and none off every row", () => {
     const layout = bookLayout(VIEW, 3);
-    const p = layout.pages[1];
-    expect(pageAt(layout, p.x + p.width / 2, p.y + p.height / 2)).toBe(1);
-    expect(pageAt(layout, layout.panel.x + 2, layout.panel.y + 2)).toBe(-1);
+    const { box } = layout.rows[1];
+    expect(rowAt(layout, box.x + 4, box.y + box.height / 2)).toBe(1);
+    expect(rowAt(layout, layout.right.x + 20, box.y + 4)).toBe(-1);
+    expect(rowAt(layout, layout.panel.x + 2, layout.panel.y + 2)).toBe(-1);
   });
 });

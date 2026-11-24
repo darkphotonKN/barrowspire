@@ -292,10 +292,26 @@ export const palette = {
    */
   bookPigment: BOOK_PIGMENT,
   /**
-   * The class book's leaf (FS-X2CMM R37): the vellum its page roundels lie on, a faint wash of the dark
-   * vellum inside the windows' frame, and its hairline in the frame's brass. Read by `classBookStyle.ts`.
+   * The class book's open tome (FS-X2CMM §Change: Illuminated pages and the open tome, C3–C5): a
+   * two-page vellum spread in a dark leather binding, the vellum falling from its middle tone near the
+   * spine to its edge tone at the outer edges, a gutter shadow at the fold, and its inks: dark ink for a
+   * page's name, a muted brown for costs and hints, madder-brown for the title and the shown page's
+   * name. A row under the pointer takes a soft wash of the dark vellum. Read by `classBookStyle.ts`.
    */
-  bookLeaf: BARROW_HEX.vellumDark,
+  bookTome: {
+    leather: BARROW_HEX.tomeLeather,
+    /** The binding's edge and the pages' outline: the leather deepened. */
+    leatherEdge: shade(BARROW_HEX.tomeLeather, 0.45),
+    /** The binding's top-lit rim. */
+    leatherLit: mix(BARROW_HEX.tomeLeather, BARROW_HEX.tomeVellumEdge, 0.18),
+    vellumEdge: BARROW_HEX.tomeVellumEdge,
+    vellumMiddle: BARROW_HEX.tomeVellumMiddle,
+    gutter: BARROW_HEX.tomeGutter,
+    ink: BARROW_HEX.tomeInk,
+    inkMuted: BARROW_HEX.tomeInkMuted,
+    title: BARROW_HEX.tomeInkMadder,
+    wash: BARROW_HEX.vellumDark,
+  },
 
   // -- Light. The only warmth in the barrow.
   torch: BARROW_HEX.amber,

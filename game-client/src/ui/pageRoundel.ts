@@ -28,8 +28,12 @@ import type { Rect } from "./hudCornerLayout";
 import { BRONZE, GREYED_ALPHA, Knockout, type KnockoutCut, type KnockoutInk, type KnockoutPicture, type Pt } from "./knockout";
 import type { Point } from "./xpBarLayout";
 
-/** The roundel's sizes, in logical px (R45; ADR-0094: about 44 px in the book, 28 on the cast bar). */
-export const PAGE_ROUNDEL_SIZE = { book: 44, castBar: 28 } as const;
+/**
+ * The roundel's sizes, in logical px (R45; ADR-0094: about 44 px in the book, 28 on the cast bar). The
+ * open tome (§Change: Illuminated pages and the open tome C4, C5) draws a page at 28 px in its row and
+ * at 64 px on its right page; 44 stays the contact sheet's book size.
+ */
+export const PAGE_ROUNDEL_SIZE = { book: 44, castBar: 28, tomeRow: 28, tomePage: 64 } as const;
 
 /**
  * A page's states as a roundel shows them (CONTEXT "Page roundel"): **ready**; **recovering**, its
@@ -254,11 +258,17 @@ export class PageRoundel {
     const inks = roundelInk(this.deps.icon.pigment, state);
     if (this.layers.every(({ knockout, ink }) => knockout.show(f, hovered, inks[ink]))) {
       const { tint, alpha } = hovered ? inks.light.hover : inks.light.idle;
-      this.light?.setPosition(f.x + f.width / 2, f.y + f.height / 2).setTint(tint).setAlpha(alpha);
+      this.light?.setPosition(f.x + f.width / 2, f.y + f.height / 2).setTint(tint).setAlpha(alpha).setVisible(true);
       return true;
     }
     this.fail();
     return false;
+  }
+
+  /** Hides every layer, their textures kept: the next `show` stands it again, nothing rebuilt (C7). */
+  hide(): void {
+    for (const { knockout } of this.layers) knockout.hide();
+    this.light?.setVisible(false);
   }
 
   /** Takes every layer down and stops watching the view. */

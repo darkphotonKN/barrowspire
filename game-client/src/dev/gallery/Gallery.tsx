@@ -24,6 +24,12 @@ const PageRoundelsPanel = dynamic(() => import("./PageRoundelsPanel"), {
   loading: () => <p className="text-sm text-text-muted">Loading page roundels...</p>,
 });
 
+// The class book's open tome, on a sample book at its place in a run (FS-X2CMM §Change: the open tome).
+const OpenTomePanel = dynamic(() => import("./OpenTomePanel"), {
+  ssr: false,
+  loading: () => <p className="text-sm text-text-muted">Loading the open tome...</p>,
+});
+
 // One section per tracked family. Keyed by Family, so a family listed in families.ts with no
 // section here fails the typecheck.
 const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
@@ -31,6 +37,7 @@ const SECTIONS: Record<Family, { title: string; Body: ComponentType }> = {
   "item-icons": { title: "Item icons", Body: ItemIconGrid },
   "tree-colours": { title: "Tree colours", Body: TreeColoursPanel },
   "page-roundels": { title: "Page roundels", Body: PageRoundelsPanel },
+  "open-tome": { title: "Open tome", Body: OpenTomePanel },
 };
 
 export default function Gallery() {
