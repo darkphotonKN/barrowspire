@@ -21,9 +21,9 @@ Implements FS-X2CMM §I
 
 ## Acceptance Criteria
 
-- [ ] The hound is drawn at its state position with the right action and goes when it does.
-- [ ] The hound's baked sheets and its contact sheet exist.
-- [ ] Client suites green.
+- [x] The hound is drawn at its state position with the right action and goes when it does.
+- [x] The hound's baked sheets and its contact sheet exist.
+- [x] Client suites green.
 
 ## Blocked By
 

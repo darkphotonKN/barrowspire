@@ -46,12 +46,18 @@ one server LOW from the server re-review. See FS-X2CMM "Reconciled at review" fo
     the tick's snapshot and is broadcast once more; treat a rune with 3 catches as gone in
     `BookEffectExpired` (or equivalent). Also fix the stale "as a retaliation is held" comment in
     `book_long_night_test.go`. Test it.
-12. **Hound slice findings**, if the review of I-X2CMM-13 adds any, are listed here by the
-    coordinator before this issue starts.
+12. **Hound comes back mid-fade (MED, from the review of I-X2CMM-13).** In
+    `src/render/creatures/hounds.ts` (~194), a hound that leaves the state and returns while
+    fading has `goneAt` cleared but keeps its faded alpha on sprite, ring and bar. Reset alpha to 1
+    (and the fall handling) when it returns. Test "returns mid-fade at full alpha".
+13. **The hound atlas stays resident (decided, not changed).** Scoping the `hound` group to the
+    run means changing FS-C4JWH R4's pinned scene table, outside this feature. Left resident
+    (about one 2028×1292 atlas at boot); recorded in FS-X2CMM "Reconciled at review" as a
+    follow-up for FS-C4JWH. Nothing to build here.
 
 ## Acceptance Criteria
 
-- [ ] Each item fixed; tests for 1, 3, 4, 9 and 11.
+- [ ] Each item fixed; tests for 1, 3, 4, 9, 11 and 12.
 - [ ] Server: `make test` green, `go vet ./...` clean, `gofmt -l` clean on touched files.
 - [ ] Client: `npm test`, `npm run lint`, `npm run lint:fence`, `npx tsc --noEmit` green.
 

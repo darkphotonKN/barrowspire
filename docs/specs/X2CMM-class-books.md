@@ -90,6 +90,8 @@ Where the build settled what this FS left loose. Each is [derived] and overridab
 - **A spent page is drawn dim with a "spent" caption** (R38), not greyed: ADR-0094 keeps the
   grey for locked pages only.
 - **The book is drawn in the client's book order** whatever order the pages arrive in.
+- **The hound's atlas is resident** (loaded at boot, ADR-0059's default for a group no scene table
+  names): naming it in the run's row would change FS-C4JWH R4's table. A follow-up for FS-C4JWH.
 
 ## Requirements
 
