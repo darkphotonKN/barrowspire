@@ -10,6 +10,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/google/uuid"
 )
 
@@ -39,26 +40,29 @@ var sealKinds = map[components.SealKind]sealKind{
 	components.SealLeverOrder:     leverOrder{},
 	components.SealWeightedPlates: weightedPlates{},
 	components.SealHiddenKey:      hiddenKey{},
+	components.SealBraziers:       braziers{},
+	components.SealChasm:          chasm{},
 }
 
-// sealWatcher is a kind the floor works itself, tick by tick, by what stands
-// on its pieces rather than by an interact: Weighted Plates (FS-5FZ4J §C R18).
+// sealWatcher is a kind the floor works itself, tick by tick, rather than by
+// an interact alone: Weighted Plates by what stands on its pieces (FS-5FZ4J
+// §C R18), Braziers by its window's clock (§E R34).
 type sealWatcher interface {
-	// watch reads the floor's entities this tick for one of its seals, broken
-	// or not.
-	watch(s *Session, seal *ecs.Entity, sc *components.SealComponent, entities []*ecs.Entity)
+	// watch reads the floor's entities this tick, dt seconds long, for one of
+	// its seals, broken or not.
+	watch(s *Session, dt float64, seal *ecs.Entity, sc *components.SealComponent, entities []*ecs.Entity)
 }
 
 // watchSeals has every seal of a kind the floor works itself watch its
-// pieces, after the walk and the blocks' pushes (FS-5FZ4J §C R18).
-func (s *Session) watchSeals(entities []*ecs.Entity) {
+// pieces, after the walk and the blocks' pushes (FS-5FZ4J §C R18, §E R34).
+func (s *Session) watchSeals(dt float64, entities []*ecs.Entity) {
 	for _, e := range entities {
 		sc, ok := e.GetComponent(ecs.ComponentTypeSeal)
 		if !ok {
 			continue
 		}
 		if w, watches := sealKinds[sc.(*components.SealComponent).Kind].(sealWatcher); watches {
-			w.watch(s, e, sc.(*components.SealComponent), entities)
+			w.watch(s, dt, e, sc.(*components.SealComponent), entities)
 		}
 	}
 }
@@ -99,13 +103,37 @@ const (
 	ReasonMural         = "mural"
 )
 
-// sealKindsFor is the kinds of the floor at depth's seals, in chain order,
-// drawn with the floor before its layout (drawFloor), so a Hidden Key gets its
-// hidden room. Until the draw table lands the draw is ForcedSealKind on every
-// floor; the per-floor draw and the chain of floors 8-10 come with the other
-// kinds (FS-5FZ4J §B R9).
-func sealKindsFor(_ int) []components.SealKind {
-	return []components.SealKind{ForcedSealKind}
+/**
+* sealKindsFor is the kinds of the floor at depth's seals, in chain order,
+* drawn with the floor before its layout (drawFloor), so a Hidden Key gets its
+* hidden room (FS-5FZ4J §B R9): one from sealBandLow on floors up to
+* SealLowFloorsMax, one from all five up to SealMidFloorsMax, and above, two
+* chained, the first from sealChainFirst and the second from all five but the
+* first's kind. Each is drawn uniformly from rng, the session's spawn source.
+* With alive, the delvers alive at the floor's build, at one, a two-body kind
+* never rolls (R10). ForcedSealKind, when set, is every floor's one seal.
+**/
+func sealKindsFor(rng populationRand, depth, alive int) []components.SealKind {
+	if ForcedSealKind != "" {
+		return []components.SealKind{ForcedSealKind}
+	}
+	switch {
+	case depth <= SealLowFloorsMax:
+		return []components.SealKind{drawSealKind(rng, sealBandLow, alive)}
+	case depth <= SealMidFloorsMax:
+		return []components.SealKind{drawSealKind(rng, sealBandAll, alive)}
+	}
+	first := drawSealKind(rng, sealChainFirst, alive)
+	return []components.SealKind{first, drawSealKind(rng, sealBandAll, alive, first)}
+}
+
+// drawSealKind is one kind drawn uniformly from set, less but and, with one
+// delver alive, less every two-body kind (FS-5FZ4J §B R9-R10).
+func drawSealKind(rng populationRand, set []components.SealKind, alive int, but ...components.SealKind) components.SealKind {
+	kinds := slices.DeleteFunc(slices.Clone(set), func(k components.SealKind) bool {
+		return slices.Contains(but, k) || (alive <= 1 && twoBodyKinds[k])
+	})
+	return kinds[rng.IntN(len(kinds))]
 }
 
 // planSeals finds where each of kinds, the floor at depth's seals, stands; an
@@ -127,10 +155,12 @@ func (s *Session) planSeals(depth int, d *dungeonFloor, kinds []components.SealK
 }
 
 /**
-* laySeals lays a sealed floor's gate, when a seal holds it, and its seals and
-* their pieces where they were planned (FS-5FZ4J §A R4, §H R45). The gate is
-* shut from the start: its cells are blocked on the floor's grid before any
-* monster paths over it (§D R22).
+* laySeals lays a sealed floor's gate, when a seal holds it, its seals, the
+* first stage's pieces where they were planned, and its chasm's pits and
+* ledge (FS-5FZ4J §A R4, §H R45). A later stage's pieces are laid only when
+* the stage before it breaks (§B R9). The gate is shut from the start: its
+* cells are blocked on the floor's grid before any monster paths over it
+* (§D R22).
 **/
 func (s *Session) laySeals(d *dungeonFloor, plans []sealPlan) {
 	if len(plans) == 0 {
@@ -141,20 +171,68 @@ func (s *Session) laySeals(d *dungeonFloor, plans []sealPlan) {
 	}
 	for stage, plan := range plans {
 		seal := CreateSealEntity(s.EntityManager, plan.kind, stage+1)
-		for _, piece := range plan.pieces {
-			entity := CreateSealPieceEntity(s.EntityManager, SealPieceConfig{
-				Seal:  seal.ID,
-				Kind:  piece.kind,
-				X:     piece.at.x,
-				Y:     piece.at.y,
-				Cell:  d.cellOf(piece.at),
-				Glyph: piece.glyph,
-				Turn:  piece.turn,
-				Wakes: piece.wakes,
-			})
-			if piece.kind == components.SealPieceBlock {
-				s.standBlock(d, entity)
+		if stage == 0 {
+			s.layPieces(d, seal.ID, plan.pieces)
+		}
+	}
+	s.layChasm(d)
+}
+
+// layPieces stands seal's planned pieces. One laid in a hidden room whose
+// secret door is still shut is concealed by it, as the room's contents are
+// (FS-5FZ4J §F R37): a chained Hidden Key's key, laid after the build.
+func (s *Session) layPieces(d *dungeonFloor, seal uuid.UUID, pieces []plannedPiece) {
+	for _, piece := range pieces {
+		entity := CreateSealPieceEntity(s.EntityManager, SealPieceConfig{
+			Seal:  seal,
+			Kind:  piece.kind,
+			X:     piece.at.x,
+			Y:     piece.at.y,
+			Cell:  d.cellOf(piece.at),
+			Glyph: piece.glyph,
+			Turn:  piece.turn,
+			Wakes: piece.wakes,
+		})
+		if piece.kind == components.SealPieceBlock {
+			s.standBlock(d, entity)
+		}
+		if door := s.shutSecretDoorOf(d, d.roomAt(piece.at.x, piece.at.y)); door != nil {
+			entity.AddComponent(&components.ConcealedComponent{By: door.ID})
+		}
+	}
+}
+
+// shutSecretDoorOf is room's secret door while it is shut, nil when room is
+// no hidden room or its door stands open.
+func (s *Session) shutSecretDoorOf(d *dungeonFloor, room int) *ecs.Entity {
+	i := slices.IndexFunc(d.layout.Hidden, func(h levelgen.BarredRoom) bool { return h.Room == room })
+	if i < 0 {
+		return nil
+	}
+	cells := cellsOf(d.layout.Hidden[i].Barrier)
+	for _, e := range s.EntityManager.GetAllEntities() {
+		if bc, ok := e.GetComponent(ecs.ComponentTypeBarrier); ok && slices.Equal(bc.(*components.BarrierComponent).Cells, cells) {
+			if barrierOpen(e) {
+				return nil
 			}
+			return e
+		}
+	}
+	return nil
+}
+
+// layNextStage lays the pieces of the seal chained after stage, on the tick
+// stage breaks (FS-5FZ4J §B R9); nothing when stage is the floor's last.
+func (s *Session) layNextStage(stage int) {
+	d := s.dungeon
+	if d == nil || stage >= len(d.seals) {
+		return
+	}
+	for _, e := range s.EntityManager.GetAllEntities() {
+		if sc, ok := e.GetComponent(ecs.ComponentTypeSeal); ok && sc.(*components.SealComponent).Stage == stage+1 {
+			s.layPieces(d, e.ID, d.seals[stage].pieces)
+			slog.Info("Chained seal's pieces laid", "sessionID", s.ID, "kind", d.seals[stage].kind, "stage", stage+1)
+			return
 		}
 	}
 }
@@ -220,6 +298,17 @@ func (d *dungeonFloor) cellOf(p point) components.Cell {
 	return components.Cell{X: int(math.Floor(p.x / size)), Y: int(math.Floor(p.y / size))}
 }
 
+// delversInPlay is how many delvers are in play on the floor.
+func (s *Session) delversInPlay() int {
+	n := 0
+	for _, e := range s.EntityManager.GetAllEntities() {
+		if systems.InPlay(e) {
+			n++
+		}
+	}
+	return n
+}
+
 // seals is every seal of the floor.
 func (s *Session) seals() []*components.SealComponent {
 	var seals []*components.SealComponent
@@ -247,8 +336,9 @@ func (s *Session) gateHeld() bool {
 
 /**
 * breakSeal breaks a seal, once and for good, for the whole party; the state
-* says so, not a reply (FS-5FZ4J §B R11, §I R48). The floor's gate opens on
-* the tick its last gate-holding seal breaks (R13).
+* says so, not a reply (FS-5FZ4J §B R11, §I R48). The seal chained after it
+* has its pieces laid on that tick (R9), and the floor's gate opens on the
+* tick its last gate-holding seal breaks (R13).
 **/
 func (s *Session) breakSeal(seal *ecs.Entity) {
 	sc, ok := seal.GetComponent(ecs.ComponentTypeSeal)
@@ -257,6 +347,7 @@ func (s *Session) breakSeal(seal *ecs.Entity) {
 	}
 	sc.(*components.SealComponent).Broken = true
 	slog.Info("Seal broken", "sessionID", s.ID, "kind", sc.(*components.SealComponent).Kind)
+	s.layNextStage(sc.(*components.SealComponent).Stage)
 
 	if s.gateHeld() {
 		return

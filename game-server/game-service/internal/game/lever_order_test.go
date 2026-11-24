@@ -50,6 +50,7 @@ func pull(t *testing.T, s *Session, playerID uuid.UUID, piece *ecs.Entity) {
 // permutation of them, and one mural in another room; no piece stands in the
 // start room or the stairs room. Checked over many seeds.
 func TestLeverOrder_Floor1_ThreeLeversAndAMuralInRoomsOfTheirOwn(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	for seed := uint64(1); seed <= 40; seed++ {
 		s, _ := dungeonRun(t, seed, 1, 0)
 		require.NotNil(t, s.dungeon, "seed %d", seed)
@@ -104,6 +105,7 @@ func TestLeverCount_ByFloor(t *testing.T) {
 // last breaks the seal, which opens the gate and the stairs, and the party
 // climbs.
 func TestLeverOrder_InTurnPullsStayDown_TheLastBreaksTheSealAndOpensTheWayUp(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	c := newSealedClimb(t)
 	levers := leversInTurn(t, c.s)
 
@@ -133,6 +135,7 @@ func TestLeverOrder_InTurnPullsStayDown_TheLastBreaksTheSealAndOpensTheWayUp(t *
 // FS-5FZ4J §C R16, §I R49: a lever already down refuses quietly, lever_down,
 // and nothing changes.
 func TestLeverOrder_LeverAlreadyDown_RefusesLeverDown(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	s, player, sender := sealedRun(t, 7)
 	first := leversInTurn(t, s)[0]
 	pull(t, s, player, first)
@@ -151,6 +154,7 @@ func TestLeverOrder_LeverAlreadyDown_RefusesLeverDown(t *testing.T) {
 // FS-5FZ4J §C R15, §I R49: the mural answers mural with the levers' glyphs
 // in the order they are pulled, and wakes nothing.
 func TestLeverOrder_Mural_AnswersTheGlyphsInOrder(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	s, player, sender := sealedRun(t, 7)
 	var want []interface{}
 	for _, lever := range leversInTurn(t, s) {
@@ -187,6 +191,7 @@ func toAnys(v interface{}) []interface{} {
 // every lever of the seal back up; the reply is lever_wrong. The order starts
 // again: the first lever pulled in turn then stays down.
 func TestLeverOrder_OutOfTurn_DartHitsThePullerAndEveryLeverResets(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	s, player, sender := sealedRun(t, 7)
 	for _, m := range monstersInWorld(s.EntityManager) {
 		s.EntityManager.RemoveEntity(m.ID)

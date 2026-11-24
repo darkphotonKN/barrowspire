@@ -91,6 +91,7 @@ func eligibleHall(d *dungeonFloor, room int) bool {
 // trim takes. FS-KE075 §C R18; FS-B4SG9 §B R16, §Edge States "Elite hall
 // archer"; FS-C8VM7 §C R22-R23.
 func TestDungeonPopulation_EveryHallHoldsATrollPack(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	halls, eliteArchers, whole := 0, 0, 0
 	for seed := uint64(1); seed <= floor1Builds; seed++ {
 		s, _ := dungeonRun(t, seed, 4, 0)
@@ -628,6 +629,7 @@ func populationArea(t *testing.T, s *Session) spawnArea {
 // start room, and takes the first room of its search with a valid spot.
 // FS-VHGE7 §A R10; §Edge States "Both demons on one floor".
 func TestPlaceDungeonBloodDemon_NeverSharesTheDemonsRoom(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	forceBloodDemon(t, 0) // the built floor brings none of its own
 	for seed := uint64(1); seed <= 100; seed++ {
 		s, ids := dungeonRun(t, seed, 4, 0)

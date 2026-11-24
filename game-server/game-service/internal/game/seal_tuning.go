@@ -8,13 +8,32 @@ import "github.com/darkphotonKN/barrowspire-server/game-service/internal/compone
 	ambush's size and a trap's hit factors.
 */
 
-// ForcedSealKind, when set, is every sealed floor's seal kind in place of the
+// ForcedSealKind, when set, is every sealed floor's one seal in place of the
 // draw, as TomeRunChance lets a developer force a tome (FS-5FZ4J
-// §Requirements, FS-3103M R5). Lever Order, Weighted Plates and the Hidden Key
-// are built so far, and the draw is forced to Lever Order (tests force the
-// others); the per-floor draw table and the chain land with the other kinds
-// (§B R9).
-var ForcedSealKind = components.SealLeverOrder
+// §Requirements, FS-3103M R5). Unset, the floor draws (§B R9). A forced Chasm
+// is never redrawn: a layout whose stairs room cannot hold it fails, and the
+// floor's next seed is tried.
+var ForcedSealKind components.SealKind
+
+// The seal draw's floor bands: one seal from sealBandLow on floors up to
+// SealLowFloorsMax, one from all five up to SealMidFloorsMax, two chained
+// above. FS-5FZ4J §B R9.
+const (
+	SealLowFloorsMax = 3
+	SealMidFloorsMax = 7
+)
+
+// The seal draw's sets, by band and place in the chain. FS-5FZ4J §B R9.
+var (
+	sealBandLow    = []components.SealKind{components.SealLeverOrder, components.SealWeightedPlates, components.SealHiddenKey}
+	sealBandAll    = []components.SealKind{components.SealLeverOrder, components.SealWeightedPlates, components.SealHiddenKey, components.SealChasm, components.SealBraziers}
+	sealChainFirst = []components.SealKind{components.SealLeverOrder, components.SealWeightedPlates, components.SealHiddenKey, components.SealBraziers}
+)
+
+// twoBodyKinds are the kinds that need two bodies at once: none rolls when
+// one delver is alive at the floor's build (FS-5FZ4J §B R10, ADR-0092). No v1
+// kind does; a test marks one to hold the rule.
+var twoBodyKinds = map[components.SealKind]bool{}
 
 // Lever Order's levers: LeverCountLow on floors up to LeverLowFloorsMax, else
 // LeverCountMin..LeverCountMax drawn uniformly. FS-5FZ4J §C R15.
@@ -131,4 +150,13 @@ const (
 const (
 	PoisonDuration         = 60.0
 	PoisonPercentPerSecond = 1.0
+)
+
+// Braziers: BrazierCount braziers, each in a room of its own; the window the
+// first lighting starts is BrazierWindow seconds, BrazierWindowSolo when one
+// delver is in play at that moment. FS-5FZ4J §E R34.
+const (
+	BrazierCount      = 3
+	BrazierWindow     = 60.0
+	BrazierWindowSolo = 90.0
 )

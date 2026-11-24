@@ -170,7 +170,7 @@ func TestWeightedPlates_PlacementSearch_PassesOnEverySeed(t *testing.T) {
 			s.spawnRand = seededSpawns(seed)
 			s.objectOccupiedPlaceAreas = nil
 
-			fixtures, err := s.placeFixtures(depth, d, sealKindsFor(depth))
+			fixtures, err := s.placeFixtures(depth, d, sealKindsFor(s.spawnRand, depth, 1))
 			require.NoError(t, err, "floor %d seed %d: the plates fit", depth, seed)
 			require.Len(t, fixtures.seals, 1)
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/darkphotonKN/barrowspire-server/game-service/common/constants"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
@@ -70,8 +71,9 @@ func dungeonContainers(rooms int) int {
 
 // dungeonFloor is one dungeon floor's layout as the floor build and the
 // placements read it: the generator's output, plus each cell's region and
-// whether it is a doorway. It is built once per floor and never written
-// after, so any goroutine may read it.
+// whether it is a doorway, and where its seals stand. It is built once per
+// floor, its seals found before it is published, and never written after, so
+// any goroutine may read it.
 type dungeonFloor struct {
 	layout levelgen.DungeonLayout
 	// region is each cell's region id, row by row; 0 is rock.
@@ -81,6 +83,12 @@ type dungeonFloor struct {
 	// hidden is what each of the layout's hidden rooms holds, by its place
 	// in layout.Hidden, as the floor drew it (FS-5FZ4J §F R35, R39)
 	hidden []hiddenUse
+	// seals are the floor's seals in chain order, where their pieces stand:
+	// a later stage's pieces are laid when the stage before it breaks
+	// (FS-5FZ4J §B R9)
+	seals []sealPlan
+	// chasm is where a Chasm lies in the stairs room, nil with none (§E R33)
+	chasm *chasmGround
 }
 
 func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
@@ -105,15 +113,17 @@ func newDungeonFloor(layout levelgen.DungeonLayout) *dungeonFloor {
 * plays (ADR-0061 Decision 13, FS-M8CSE §C R15). Nothing is laid yet; a seed
 * that fails leaves nothing behind.
 **/
-func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixtures) {
+func (s *Session) generateDungeonFloor(depth, arriving int) (*dungeonFloor, dungeonFixtures) {
 	params, isDungeon := dungeonParams(depth)
 	if !isDungeon {
 		return nil, dungeonFixtures{}
 	}
-	// the floor's seals and hidden rooms are drawn once, before its layout:
-	// the generator is asked for as many hidden rooms as were drawn (FS-5FZ4J
-	// §F R35)
-	draw := s.drawFloor(depth)
+	// the floor's seals and hidden rooms are drawn once, before its layout,
+	// for the delvers alive at its build, the members still arriving among
+	// them: the generator is asked for as many hidden rooms as were drawn
+	// (FS-5FZ4J §F R35, §B R10)
+	alive := s.delversInPlay() + arriving
+	draw := s.drawFloor(depth, alive)
 	params.HiddenRooms = len(draw.hidden)
 
 	for try := range dungeonGenerations {
@@ -125,6 +135,20 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 			slog.Error("Dungeon floor not generated",
 				"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
 			continue
+		}
+		if draw.chasmMisfits(layout) {
+			// a stairs room too small for its drawn Chasm: the Chasm is drawn
+			// again (FS-5FZ4J §E R33); a Hidden Key in its place asks for its
+			// key's room, on a layout of the same seed
+			draw = s.redrawChasm(alive, draw)
+			if len(draw.hidden) != params.HiddenRooms {
+				params.HiddenRooms = len(draw.hidden)
+				if layout, err = s.generateDungeon(params, seed); err != nil {
+					slog.Error("Dungeon floor not generated",
+						"sessionID", s.ID, "floor", depth, "seed", seed, "try", try+1, "error", err)
+					continue
+				}
+			}
 		}
 		d := newDungeonFloor(layout)
 		d.hidden = draw.hidden
@@ -186,15 +210,38 @@ func (s *Session) placeFixtures(depth int, d *dungeonFloor, seals []components.S
 		}
 	}
 	if s.hasStairs(depth) {
-		if f.stairs, ok = s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius); !ok {
-			return f, fmt.Errorf("the stairs' room %d has no spot off its doorways", roles.Stairs)
-		}
 		var err error
+		if f.stairs, err = s.placeStairs(d, seals); err != nil {
+			return f, err
+		}
 		if f.seals, err = s.planSeals(depth, d, seals); err != nil {
 			return f, err
 		}
+		d.seals = f.seals
 	}
 	return f, nil
+}
+
+// placeStairs finds the stairs' spot in their room; past the chasm when a
+// seal of the floor is a Chasm, which is found first (FS-5FZ4J §E R33).
+func (s *Session) placeStairs(d *dungeonFloor, seals []components.SealKind) (point, error) {
+	room := d.layout.Roles.Stairs
+	if !slices.Contains(seals, components.SealChasm) {
+		at, ok := s.placeFixture(d, room, constants.StairsWidthRadius, constants.StairsHeightRadius)
+		if !ok {
+			return at, fmt.Errorf("the stairs' room %d has no spot off its doorways", room)
+		}
+		return at, nil
+	}
+	var err error
+	if d.chasm, err = s.digChasm(d); err != nil {
+		return point{}, err
+	}
+	at, ok := s.placeOnStairsSide(d, d.chasm, constants.StairsWidthRadius, constants.StairsHeightRadius)
+	if !ok {
+		return at, fmt.Errorf("the stairs' room %d has no spot past its chasm", room)
+	}
+	return at, nil
 }
 
 // layDungeon lays a dungeon floor out: its shell walls, then the switch and

@@ -34,11 +34,14 @@ func (k SealKind) HoldsGate() bool { return k != SealChasm }
 // never cleared (R11). What breaks it is its kind's rule, read off its pieces.
 // KeyCarried is a Hidden Key seal's: the party took its stair key, which is
 // floor state, not a bag item, and is gone with the floor (§E R32).
+// WindowLeft is a Braziers seal's: the seconds left of the window its first
+// lighting started, 0 while none runs (§E R34).
 type SealComponent struct {
 	Kind       SealKind
 	Stage      int
 	Broken     bool
 	KeyCarried bool
+	WindowLeft float64
 }
 
 func (s *SealComponent) Type() ecs.ComponentType {

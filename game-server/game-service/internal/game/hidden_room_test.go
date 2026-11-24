@@ -497,6 +497,7 @@ func countsOf(m map[int]int) []int {
 * concealed.
 **/
 func TestHiddenRooms_PerFloor_DoorsAndContents(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	seen := map[int]bool{}
 	for seed := uint64(1); seed <= 12; seed++ {
 		s, _ := dungeonRun(t, seed, 1, 0)

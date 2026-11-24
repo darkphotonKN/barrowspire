@@ -601,13 +601,18 @@ func sealState(seals []*components.SealComponent) *types.SealState {
 	if i := slices.IndexFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }); i >= 0 {
 		current = ordered[i]
 	}
-	return &types.SealState{
+	state := &types.SealState{
 		Kind:       string(current.Kind),
 		Stage:      current.Stage,
 		Stages:     len(ordered),
 		Broken:     !slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }),
 		KeyCarried: slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return sc.KeyCarried }),
 	}
+	// a Braziers window runs on the current seal alone (§E R34)
+	if !current.Broken && current.WindowLeft > 0 {
+		state.WindowEndsIn = current.WindowLeft
+	}
+	return state
 }
 
 // sealPieceState is one seal piece on the wire. FS-5FZ4J §I R46.

@@ -337,6 +337,7 @@ func TestTraps_Floor1_PlacementRulesOverASeedSweep(t *testing.T) {
 // FS-5FZ4J §D R23: floor 10 lays 8 by the same rules; a floor change builds
 // new traps (§D R31).
 func TestTraps_Floor10_EightByTheRules(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	for seed := uint64(1); seed <= 12; seed++ {
 		s, _ := dungeonRun(t, seed, 1, 0)
 		floor := currentFloor(t, s)

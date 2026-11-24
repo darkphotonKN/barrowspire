@@ -78,7 +78,7 @@ func (weightedPlates) work(*Session, pieceWork) {}
 * or the one whose push brought the block there; and on the first tick every
 * plate is held at once the seal breaks (R17).
 **/
-func (weightedPlates) watch(s *Session, seal *ecs.Entity, sc *components.SealComponent, entities []*ecs.Entity) {
+func (weightedPlates) watch(s *Session, _ float64, seal *ecs.Entity, sc *components.SealComponent, entities []*ecs.Entity) {
 	plates := platesOf(seal, entities)
 	if len(plates) == 0 {
 		return
@@ -308,6 +308,14 @@ func (s *Session) quietRooms(d *dungeonFloor) map[int]bool {
 	quiet := map[int]bool{}
 	for _, h := range d.layout.Hidden {
 		quiet[h.Room] = true
+	}
+	// a chained Weighted Plates' room, before its pieces are laid
+	for _, plan := range d.seals {
+		for _, piece := range plan.pieces {
+			if piece.kind == components.SealPiecePlate {
+				quiet[d.roomAt(piece.at.x, piece.at.y)] = true
+			}
+		}
 	}
 	for _, e := range s.EntityManager.GetAllEntities() {
 		pc, ok := e.GetComponent(ecs.ComponentTypeSealPiece)

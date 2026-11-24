@@ -450,6 +450,7 @@ func dist(ax, ay, bx, by float64) float64 { return math.Hypot(ax-bx, ay-by) }
 // A climbed floor's map carries the cell size and regions of its own layout,
 // not the floor below's. FS-M8CSE §C Requirement 14.
 func TestDungeonFloors_ClimbedFloorMapCarriesItsOwnRegions(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	s, _ := dungeonRun(t, 9, 2, 0)
 	require.NoError(t, s.regenerateFloor())
 	require.NotNil(t, s.dungeon)

@@ -452,6 +452,9 @@ type SealState struct {
 	// KeyCarried is true while the party carries the floor's stair key
 	// (§E R32), absent otherwise
 	KeyCarried bool `json:"key_carried,omitempty"`
+	// WindowEndsIn is the seconds left of a Braziers window while one runs
+	// (§E R34), absent otherwise
+	WindowEndsIn float64 `json:"window_ends_in,omitempty"`
 }
 
 // SealPieceState is one seal piece: a lever's glyph, absent on the others;

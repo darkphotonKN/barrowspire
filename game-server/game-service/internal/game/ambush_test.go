@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/components"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,7 @@ func newMonsters(s *Session, before []*ecs.Entity) []*ecs.Entity {
 // MonsterDelverExclusion from the delver and hunting the puller. Pulled again
 // after a reset, that lever wakes nothing.
 func TestAmbush_FirstInTurnPullWakesOnePack_ASecondWakesNothing(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	for _, seed := range []uint64{3, 7, 11, 19} {
 		s, player, _ := sealedRun(t, seed)
 		d := s.dungeon

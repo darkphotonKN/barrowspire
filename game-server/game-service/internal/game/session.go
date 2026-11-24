@@ -838,7 +838,7 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// R17-R19, §D R22)
 	if s.worldType == types.WorldTypeRun && s.navGrid != nil {
 		systems.NewStoneBlockSystem(s.navGrid).Update(deltaTime, entities)
-		s.watchSeals(entities)
+		s.watchSeals(deltaTime, entities)
 		// a trap a delver stepped onto fires, its hit queued for this tick's
 		// combat (FS-5FZ4J §D R25-R28)
 		s.springTraps(deltaTime, entities)
@@ -3395,7 +3395,7 @@ func (s *Session) buildFloor(depth int, expected []types.CharacterInPlay) {
 
 	// a dungeon floor's layout and where its fixtures stand, or nil for a
 	// floor of buildings, a generation that failed included (FS-KE075 §B R17)
-	dungeon, fixtures := s.generateDungeonFloor(depth)
+	dungeon, fixtures := s.generateDungeonFloor(depth, len(expected))
 
 	// the map is the floor's own size, before anything is placed on it
 	s.setFloorLayout(depth, dungeon)

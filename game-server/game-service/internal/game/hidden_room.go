@@ -52,16 +52,43 @@ type floorDraw struct {
 	hidden []hiddenUse
 }
 
-// drawFloor draws the floor at depth's seals and hidden rooms. also is one
-// more hidden room for each use given: the hallowed altar's when it is
-// placed hidden (§G R42).
-func (s *Session) drawFloor(depth int, also ...hiddenUse) floorDraw {
+// drawFloor draws the floor at depth's seals, for alive delvers alive at its
+// build (FS-5FZ4J §B R9-R10), and its hidden rooms. also is one more hidden
+// room for each use given: the hallowed altar's when it is placed hidden
+// (§G R42).
+func (s *Session) drawFloor(depth, alive int, also ...hiddenUse) floorDraw {
 	var draw floorDraw
 	if s.hasStairs(depth) {
-		draw.seals = sealKindsFor(depth)
+		draw.seals = sealKindsFor(s.spawnRand, depth, alive)
 	}
 	draw.hidden = hiddenRoomsFor(s.spawnRand, depth, draw.seals, also...)
 	return draw
+}
+
+// chasmMisfits is whether the draw has a Chasm that layout's stairs room
+// cannot hold, and may draw again: a forced Chasm never is (FS-5FZ4J §E R33).
+func (draw floorDraw) chasmMisfits(layout levelgen.DungeonLayout) bool {
+	return !layout.ChasmCapable && ForcedSealKind == "" && slices.Contains(draw.seals, components.SealChasm)
+}
+
+/**
+* redrawChasm draws the draw's Chasm again, from all five kinds but the Chasm
+* and the floor's other seal's kind, as the band would (FS-5FZ4J §B R9, §E
+* R33); a Hidden Key drawn in its place adds its key's hidden room.
+**/
+func (s *Session) redrawChasm(alive int, draw floorDraw) floorDraw {
+	seals := slices.Clone(draw.seals)
+	for i, kind := range seals {
+		if kind == components.SealChasm {
+			seals[i] = drawSealKind(s.spawnRand, sealBandAll, alive, seals...)
+		}
+	}
+	hidden := slices.Clone(draw.hidden)
+	if slices.Contains(seals, components.SealHiddenKey) && !slices.Contains(hidden, hiddenStairKey) {
+		hidden = append(hidden, hiddenStairKey)
+		shuffle(s.spawnRand, hidden)
+	}
+	return floorDraw{seals: seals, hidden: hidden}
 }
 
 // hiddenRoomMax is how many hidden rooms the floor at depth rolls at most.

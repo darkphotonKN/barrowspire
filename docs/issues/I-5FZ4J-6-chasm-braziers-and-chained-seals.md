@@ -1,6 +1,6 @@
 ---
 id: I-5FZ4J-6
-status: open
+status: done
 implements: FS-5FZ4J
 blocked_by: [I-5FZ4J-5]
 labels: [ready-for-agent]

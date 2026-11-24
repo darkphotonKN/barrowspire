@@ -212,6 +212,7 @@ func TestMapKeepOut_CoversSealPiecesAndTheGate(t *testing.T) {
 // has no seal, no gate and no pieces, and its stairs climb; the top floor has
 // no stairs and no seal; a sealed floor's state carries all three keys.
 func TestSeal_OnlyOnASealedDungeonFloor(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	c := newSealedClimb(t)
 	s := c.s
 	ser := serializer.NewStateSerializer(s.EntityManager, nil)
@@ -254,6 +255,7 @@ func TestSeal_OnlyOnASealedDungeonFloor(t *testing.T) {
 // FS-5FZ4J §A R1, R4: a dungeon top floor has no stairs, so no seal and no
 // gate; every floor below it is sealed.
 func TestSeal_DungeonTopFloorHasNone(t *testing.T) {
+	forceSeal(t, components.SealLeverOrder)
 	s, _ := dungeonRun(t, 5, 1, 0)
 	for depth := firstFloor; depth < testSpireHeight; depth++ {
 		require.NotNil(t, s.dungeon)
