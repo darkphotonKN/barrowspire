@@ -495,3 +495,18 @@ func TestGrid_SetWalkable_ShutsAndOpensAPath(t *testing.T) {
 
 	g.SetWalkable(-1, 9, false) // off the grid: ignored
 }
+
+// FS-5FZ4J §C R19: whether a cell is walkable is read by its column and row,
+// as a shut barrier or a stone block left it; a cell off the grid is not.
+func TestGrid_Walkable_ReadsTheCellByColumnAndRow(t *testing.T) {
+	g, _ := gridOf(t,
+		"#..",
+		"...",
+	)
+	assert.False(t, g.Walkable(0, 0), "rock")
+	assert.True(t, g.Walkable(1, 0))
+	g.SetWalkable(1, 0, false)
+	assert.False(t, g.Walkable(1, 0), "shut by a block")
+	assert.False(t, g.Walkable(-1, 0), "off the grid")
+	assert.False(t, g.Walkable(3, 1), "off the grid")
+}

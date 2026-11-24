@@ -250,8 +250,8 @@ func (s *Session) placeFixture(d *dungeonFloor, room int, rw, rh float64) (point
 /**
 * layDungeonContainers places the floor's containers (FS-KE075 §B R15): a
 * chest in each treasure room, then one per room, a chest or at today's sack
-* share a sack, in rooms drawn from those that are neither the start nor a
-* treasure room, until the floor holds clamp(round(rooms / 2), 10, 14). A room
+* share a sack, in rooms drawn from those that are neither the start, a
+* treasure room nor a quiet room (FS-5FZ4J §C R17), until the floor holds clamp(round(rooms / 2), 10, 14). A room
 * with no free spot is passed over for the next one drawn.
 **/
 func (s *Session) layDungeonContainers(d *dungeonFloor) {
@@ -265,7 +265,8 @@ func (s *Session) layDungeonContainers(d *dungeonFloor) {
 		}
 	}
 
-	taken := map[int]bool{roles.Start: true}
+	taken := s.quietRooms(d)
+	taken[roles.Start] = true
 	for _, room := range roles.Treasure {
 		taken[room] = true
 	}

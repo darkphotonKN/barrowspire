@@ -10,9 +10,9 @@ import "github.com/darkphotonKN/barrowspire-server/game-service/internal/compone
 
 // ForcedSealKind, when set, is every sealed floor's seal kind in place of the
 // draw, as TomeRunChance lets a developer force a tome (FS-5FZ4J
-// §Requirements, FS-3103M R5). Lever Order is the only kind built so far, so
-// the draw is forced to it; the per-floor draw table and the chain land with
-// the other kinds (§B R9).
+// §Requirements, FS-3103M R5). Lever Order and Weighted Plates are built so
+// far, and the draw is forced to Lever Order (a test forces Weighted Plates);
+// the per-floor draw table and the chain land with the other kinds (§B R9).
 var ForcedSealKind = components.SealLeverOrder
 
 // Lever Order's levers: LeverCountLow on floors up to LeverLowFloorsMax, else
@@ -27,6 +27,27 @@ const (
 // LeverGlyphs are the glyphs a floor's levers bear, drawn without repeats.
 // FS-5FZ4J §C R15.
 var LeverGlyphs = []string{"crow", "key", "flame", "eye", "serpent", "moon"}
+
+// Weighted Plates' plates: PlateCountLow on floors up to PlateLowFloorsMax,
+// else PlateCountMin..PlateCountMax drawn uniformly, and as many stone blocks
+// as plates. FS-5FZ4J §C R17.
+const (
+	PlateLowFloorsMax = 3
+	PlateCountLow     = 2
+	PlateCountMin     = 2
+	PlateCountMax     = 3
+)
+
+// A Weighted Plates room is at least PlateRoomLong x PlateRoomShort cells,
+// either way round. FS-5FZ4J §C R17.
+const (
+	PlateRoomLong  = 6
+	PlateRoomShort = 5
+)
+
+// PlatePlacementDraws is how many placements of its plates and blocks a room
+// is drawn before it is passed over for another. FS-5FZ4J §C R20.
+const PlatePlacementDraws = 40
 
 // An ambush is AmbushSizeMin..AmbushSizeMax monsters, drawn uniformly.
 // FS-5FZ4J §B R14.

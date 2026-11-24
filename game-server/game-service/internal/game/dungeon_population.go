@@ -67,7 +67,8 @@ type dungeonPopulation struct {
 * creates them. Halls and treasure rooms come first, so their packs find room
 * before the rolled monsters crowd the floor; the total is then held to its
 * bounds, and only then is anything created. area.placed ends holding exactly
-* the monsters created, so the demon after keeps clear of them. A chest in a
+* the monsters created, so the demon after keeps clear of them. A quiet room,
+* a Weighted Plates room, holds none (FS-5FZ4J §C R17). A chest in a
 * room of guards then waits on them (FS-KE075 §J). Dark Warriors past the
 * floor's cap are recast once the total is held (FS-C8VM7 §C R24).
 **/
@@ -75,10 +76,11 @@ func (s *Session) populateDungeon(d *dungeonFloor, area *spawnArea, pool floorPo
 	p := &dungeonPopulation{session: s.ID, floor: d, area: area, rng: s.spawnRand, pool: pool, level: level, depth: depth}
 	roles := d.layout.Roles
 
+	quiet := s.quietRooms(d)
 	var ordinary []int
 	for room := range d.layout.Rooms {
 		switch {
-		case room == roles.Start:
+		case room == roles.Start, quiet[room]:
 		case slices.Contains(roles.Treasure, room):
 			p.treasureGuards(room)
 		case d.isHall(room):
@@ -454,12 +456,15 @@ func (s *Session) placeDungeonDemon(d *dungeonFloor, area *spawnArea, demon Mons
 
 /**
 * placeDungeonBloodDemon stands a dungeon floor's blood demon in the first room
-* of its search (bloodDemonRooms) with a valid spot. It is never guaranteed, so
+* of its search (bloodDemonRooms), never a quiet room (FS-5FZ4J §C R17), with
+* a valid spot. It is never guaranteed, so
 * there is no relaxed pass: with no room it is skipped with a warning.
 * demonRoom is the room the demon stands in, -1 with none. FS-VHGE7 §A R10.
 **/
 func (s *Session) placeDungeonBloodDemon(d *dungeonFloor, area *spawnArea, blood MonsterConfig, floor, demonRoom int) {
-	if _, ok := s.placeInRooms(d, area, blood, d.bloodDemonRooms(demonRoom), area.valid); !ok {
+	quiet := s.quietRooms(d)
+	rooms := slices.DeleteFunc(d.bloodDemonRooms(demonRoom), func(room int) bool { return quiet[room] })
+	if _, ok := s.placeInRooms(d, area, blood, rooms, area.valid); !ok {
 		slog.Warn("Blood demon skipped: no valid spawn point on the dungeon floor",
 			"sessionID", s.ID, "floor", floor, "archetype", blood.Archetype)
 	}

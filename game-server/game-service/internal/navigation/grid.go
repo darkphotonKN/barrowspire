@@ -15,7 +15,8 @@ Cells are numbered row by row, y*cols + x. A cell's walls are whole cells of
 rock (ADR-0061), so a body that overlaps only walkable cells touches no wall.
 
 A cell's walkability changes only where a barrier stands on it, a shut gate
-or a secret door, and only through SetWalkable (FS-5FZ4J §D R22). Path reuses
+or a secret door, or a stone block, and only through SetWalkable (FS-5FZ4J §D
+R22). Path reuses
 one search's scratch, and SetWalkable writes the cells: a Grid is used by one
 goroutine at a time, the tick's.
 */
@@ -44,6 +45,10 @@ func (g *Grid) SetWalkable(x, y int, walkable bool) {
 	}
 	g.walkable[y*g.cols+x] = walkable
 }
+
+// Walkable is whether the cell at column x, row y is on the grid and ground:
+// neither rock nor shut by a barrier or a stone block (FS-5FZ4J §C R19).
+func (g *Grid) Walkable(x, y int) bool { return g.ground(x, y) }
 
 // Cell is the walkable cell holding (x, y); false on rock or off the grid. A
 // point on a shared edge is in the cell right of it or below it.

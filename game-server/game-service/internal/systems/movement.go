@@ -27,7 +27,8 @@ import (
 // a run, once per floor (FS-KE075 §E R28–29). It is built here, on the tick,
 // because the first floor is built on another goroutine while the loop already
 // runs (gameserver.CreateGameSession); a set changed by anything else, a wall
-// added mid-floor included, is caught the same way.
+// added mid-floor included, is caught the same way. A stone block is no wall
+// to it: blocks move, so they are tested live beside it (FS-5FZ4J §C R19).
 type MovementSystem struct {
 	MapWidth, MapHeight float64
 	PlayersPassThrough  bool
@@ -144,7 +145,9 @@ func (s *MovementSystem) update(deltaTime float64, entities []*ecs.Entity, again
 
 	}
 
-	blockers := against(wallEntities, doorEntities)
+	// a floor's stone blocks move, so the walk tests them live beside the
+	// static index (FS-5FZ4J §C R19)
+	blockers := withStoneBlocks(against(wallEntities, doorEntities), entities)
 
 	for _, entity := range movers {
 		targetEntity := entity
@@ -270,7 +273,7 @@ func (s *MovementSystem) Reach(entities []*ecs.Entity, fromX, fromY, toX, toY fl
 	}
 	dx, dy = dx*share, dy*share
 
-	blockers := s.wallIndexOf(wallsAndDoors(entities))
+	blockers := withStoneBlocks(s.wallIndexOf(wallsAndDoors(entities)), entities)
 	legs := max(1, int(math.Ceil(length*share/reachStep)))
 	legX, legY := dx/float64(legs), dy/float64(legs)
 

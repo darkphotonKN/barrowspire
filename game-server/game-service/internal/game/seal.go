@@ -36,7 +36,30 @@ type sealKind interface {
 
 // sealKinds are the kinds built, by kind. FS-5FZ4J §B R9.
 var sealKinds = map[components.SealKind]sealKind{
-	components.SealLeverOrder: leverOrder{},
+	components.SealLeverOrder:     leverOrder{},
+	components.SealWeightedPlates: weightedPlates{},
+}
+
+// sealWatcher is a kind the floor works itself, tick by tick, by what stands
+// on its pieces rather than by an interact: Weighted Plates (FS-5FZ4J §C R18).
+type sealWatcher interface {
+	// watch reads the floor's entities this tick for one of its seals, broken
+	// or not.
+	watch(s *Session, seal *ecs.Entity, sc *components.SealComponent, entities []*ecs.Entity)
+}
+
+// watchSeals has every seal of a kind the floor works itself watch its
+// pieces, after the walk and the blocks' pushes (FS-5FZ4J §C R18).
+func (s *Session) watchSeals(entities []*ecs.Entity) {
+	for _, e := range entities {
+		sc, ok := e.GetComponent(ecs.ComponentTypeSeal)
+		if !ok {
+			continue
+		}
+		if w, watches := sealKinds[sc.(*components.SealComponent).Kind].(sealWatcher); watches {
+			w.watch(s, e, sc.(*components.SealComponent), entities)
+		}
+	}
 }
 
 // plannedPiece is one piece of a seal, where it will stand, not laid yet.
@@ -76,9 +99,9 @@ const (
 )
 
 // sealKindsFor is the kinds of the floor at depth's seals, in chain order.
-// While Lever Order is the only kind built the draw is ForcedSealKind on every
-// floor; the per-floor draw and the chain of floors 8-10 come with the other
-// kinds (FS-5FZ4J §B R9).
+// Until the draw table lands the draw is ForcedSealKind on every floor; the
+// per-floor draw and the chain of floors 8-10 come with the other kinds
+// (FS-5FZ4J §B R9).
 func sealKindsFor(_ int) []components.SealKind {
 	return []components.SealKind{ForcedSealKind}
 }
@@ -117,7 +140,7 @@ func (s *Session) laySeals(d *dungeonFloor, plans []sealPlan) {
 	for stage, plan := range plans {
 		seal := CreateSealEntity(s.EntityManager, plan.kind, stage+1)
 		for _, piece := range plan.pieces {
-			CreateSealPieceEntity(s.EntityManager, SealPieceConfig{
+			entity := CreateSealPieceEntity(s.EntityManager, SealPieceConfig{
 				Seal:  seal.ID,
 				Kind:  piece.kind,
 				X:     piece.at.x,
@@ -127,8 +150,20 @@ func (s *Session) laySeals(d *dungeonFloor, plans []sealPlan) {
 				Turn:  piece.turn,
 				Wakes: piece.wakes,
 			})
+			if piece.kind == components.SealPieceBlock {
+				s.standBlock(d, entity)
+			}
 		}
 	}
+}
+
+// standBlock makes a laid piece a stone block, one cell in size, and shuts
+// its cell on the floor's grid: monster paths go round it while it stands
+// there (FS-5FZ4J §C R19, §D R22).
+func (s *Session) standBlock(d *dungeonFloor, piece *ecs.Entity) {
+	piece.AddComponent(&components.StoneBlockComponent{Size: d.layout.CellSize})
+	pc, _ := piece.GetComponent(ecs.ComponentTypeSealPiece)
+	s.setWalkable([]components.Cell{pc.(*components.SealPieceComponent).Cell}, false)
 }
 
 // layBarrier stands a shut barrier of kind over rect's cells and blocks them

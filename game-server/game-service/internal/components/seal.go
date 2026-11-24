@@ -116,3 +116,31 @@ type BarrierComponent struct {
 func (b *BarrierComponent) Type() ecs.ComponentType {
 	return ecs.ComponentTypeBarrier
 }
+
+/*
+StoneBlockComponent is a stone block's, beside its SealPieceComponent of kind
+block: a cell-sized blocker a delver pushes one cell at a time (FS-5FZ4J §C
+R19). Its place is its Transform, the block's centre, mid-slide while it
+slides; the cell it stands on, or slides to, is its piece's Cell. Size is its
+side, one cell's.
+
+A push builds while one face is walked against along one axis: PushX, PushY is
+its unit step and Pushed how far it has built, 0 to 1. Once it is built the
+block's cell moves on, and it slides there from FromX, FromY over SlideFor
+seconds, Slid of them gone. PushedBy is the delver whose push last moved it.
+*/
+type StoneBlockComponent struct {
+	Size float64
+
+	PushX, PushY int
+	Pushed       float64
+	PushedBy     uuid.UUID
+
+	Sliding        bool
+	FromX, FromY   float64
+	Slid, SlideFor float64
+}
+
+func (b *StoneBlockComponent) Type() ecs.ComponentType {
+	return ecs.ComponentTypeStoneBlock
+}

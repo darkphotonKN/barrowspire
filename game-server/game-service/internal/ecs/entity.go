@@ -103,6 +103,8 @@ const (
 	ComponentTypeSealPiece ComponentType = "SealPiece"
 	ComponentTypeAmbush    ComponentType = "Ambush"
 	ComponentTypeBarrier   ComponentType = "Barrier"
+	// a stone block's push and slide, beside its seal piece (FS-5FZ4J §C R19)
+	ComponentTypeStoneBlock ComponentType = "StoneBlock"
 )
 
 type Entity struct {

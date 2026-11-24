@@ -833,6 +833,14 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	s.mu.RUnlock()
 	s.movementSystem.Update(deltaTime, entities)
 
+	// a dungeon floor's stone blocks take the walk's pushes and slide, over
+	// its grid, and its plates weigh what then stands on them (FS-5FZ4J §C
+	// R17-R19, §D R22)
+	if s.worldType == types.WorldTypeRun && s.navGrid != nil {
+		systems.NewStoneBlockSystem(s.navGrid).Update(deltaTime, entities)
+		s.watchSeals(entities)
+	}
+
 	// projectile
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
 	impacts := projectileSys.Update(deltaTime, entities)
