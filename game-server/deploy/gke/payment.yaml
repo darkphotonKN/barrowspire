@@ -9,7 +9,7 @@ spec:
     spec:
       containers:
         - name: payment
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/payment:6fcd619c
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/payment:f9b85fe2
           # payment listens on gRPC only (Stripe webhooks arrive via the gateway as gRPC).
           ports:
             - { containerPort: 7134, name: grpc }

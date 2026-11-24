@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: wallet
-          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/wallet:6fcd619c
+          image: asia-east1-docker.pkg.dev/barrowspire-512613/barrowspire/wallet:f9b85fe2
           ports:
             - { containerPort: 7128, name: grpc }
             - { containerPort: 8203, name: metrics }
