@@ -135,6 +135,16 @@ function seenTogether(grid: RegionGrid): Map<number, number> {
   return out;
 }
 
+/**
+ * A lit point (FS-X2CMM R48): a light the fog treats as seen around, as if a delver stood there, out to
+ * `cells` cells: the regions within that many walkable steps of its cell are visible while it burns, and a
+ * monster or drop pile within that many cells' px of it is shown. A witchlight is one.
+ */
+export interface LitPoint {
+  at: Point;
+  cells: number;
+}
+
 /** A party member as the snapshot sends one: where they stand, their health, whether they escaped. */
 interface Member {
   position: Point;
@@ -177,13 +187,15 @@ export class Exploration {
   private visible = new Set<number>();
   /** The party's living, in-play positions as last seen. */
   private party: readonly Point[] = [];
+  /** The lit points as last seen (FS-X2CMM R48). */
+  private lit: readonly LitPoint[] = [];
   private readonly group: Map<number, number>;
   /**
-   * By cell index (cy × cols + cx): the group roots within reach of a member standing on that
-   * walkable cell (F6). They depend on the floor's cells alone, so each cell is walked the first
-   * time a member stands on it and only looked up after.
+   * By reach in steps, then cell index (cy × cols + cx): the group roots within that many steps of
+   * that walkable cell (F6). They depend on the floor's cells alone, so each cell is walked the first
+   * time a member (or a lit point, FS-X2CMM R48) stands on it and only looked up after.
    */
-  private readonly reach = new Map<number, readonly number[]>();
+  private readonly reach = new Map<number, Map<number, readonly number[]>>();
 
   constructor(private readonly grid: RegionGrid) {
     this.group = seenTogether(grid);
@@ -192,31 +204,37 @@ export class Exploration {
   /**
    * The party's living, in-play positions now (§B.3, §B.5): the regions they stand in, and those
    * their cells reach within two walkable steps (FS-SRA9J §Change: Lighter fog and lit regions, F3,
-   * F4; ADR-0090), are visible; every region ever visible stays explored (§B.4). True when any
-   * region changed state, so the fog and lights redraw only then (F6, §C.13).
+   * F4; ADR-0090), are visible, and so are those within each lit point's cells of it (FS-X2CMM R48);
+   * every region ever visible stays explored (§B.4). True when any region changed state, so the fog
+   * and lights redraw only then (F6, §C.13).
    */
-  see(positions: readonly Point[]): boolean {
+  see(positions: readonly Point[], lit: readonly LitPoint[] = []): boolean {
     const now = new Set<number>();
-    for (const p of positions) {
+    const reach = (p: Point, steps: number) => {
       const at = cellAt(this.grid, p);
-      if (at) for (const id of this.reached(at.cx, at.cy)) now.add(id);
-    }
+      if (at) for (const id of this.reached(at.cx, at.cy, steps)) now.add(id);
+    };
+    for (const p of positions) reach(p, REACH_STEPS);
+    for (const l of lit) reach(l.at, l.cells);
     const changed = now.size !== this.visible.size || [...now].some((id) => !this.visible.has(id));
     for (const id of now) this.explored.add(id);
     this.visible = now;
     this.party = positions.map((p) => ({ x: p.x, y: p.y }));
+    this.lit = lit.map((l) => ({ at: { x: l.at.x, y: l.at.y }, cells: l.cells }));
     return changed;
   }
 
   /**
    * Whether a monster or drop pile at world point `at` is shown (§D.15, §D.16): it stands in a
    * visible region, or within {@link SHOWN_WITHIN} px of a position the latest {@link see} was
-   * given, whatever its region's state. Nothing is shown before the party is first seen.
+   * given, or within a lit point's cells of it (FS-X2CMM R48), whatever its region's state. Nothing
+   * is shown before the party is first seen.
    */
   shows(at: Point): boolean {
     const id = regionAt(this.grid, at);
     if (id && this.visible.has(this.root(id))) return true;
-    return this.party.some((p) => Math.hypot(p.x - at.x, p.y - at.y) <= SHOWN_WITHIN);
+    const near = (p: Point, within: number) => Math.hypot(p.x - at.x, p.y - at.y) <= within;
+    return this.party.some((p) => near(p, SHOWN_WITHIN)) || this.lit.some((l) => near(l.at, l.cells * this.grid.cell));
   }
 
   /** A region's state; unexplored for one never seen. */
@@ -226,16 +244,18 @@ export class Exploration {
     return this.explored.has(root) ? "explored" : "unexplored";
   }
 
-  /** The group roots within reach of walkable cell (cx, cy), walked once per cell (F3, F6). */
-  private reached(cx: number, cy: number): readonly number[] {
+  /** The group roots within `steps` of walkable cell (cx, cy), walked once per cell and reach (F3, F6). */
+  private reached(cx: number, cy: number, steps: number): readonly number[] {
     const at = (x: number, y: number) => y * this.grid.cols + x;
     const here = at(cx, cy);
-    const known = this.reach.get(here);
+    let byCell = this.reach.get(steps);
+    if (!byCell) this.reach.set(steps, (byCell = new Map()));
+    const known = byCell.get(here);
     if (known) return known;
     const roots = new Set([this.root(this.grid.region(cx, cy))]);
     const walked = new Set([here]);
     let frontier: Cell[] = [{ cx, cy }];
-    for (let step = 0; step < REACH_STEPS; step++) {
+    for (let step = 0; step < steps; step++) {
       const next: Cell[] = [];
       for (const c of frontier)
         for (const [dx, dy] of STEPS) {
@@ -248,7 +268,7 @@ export class Exploration {
       frontier = next;
     }
     const out = [...roots];
-    this.reach.set(here, out);
+    byCell.set(here, out);
     return out;
   }
 

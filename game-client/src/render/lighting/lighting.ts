@@ -20,6 +20,11 @@ import type { WorldKind } from "@/render/world/ground";
 import { palette } from "@/utils/canvasPalette";
 import { BARROW_HEX } from "@/utils/theme";
 
+/** Above world objects (the 100–101 band), below effects (140–160), names, the vignette and HUD. */
+export const LIGHTMAP_DEPTH = 135;
+/** Flame halos: above the light-map, so a flame reads as the source of its own pool. */
+export const HALO_DEPTH = 136;
+
 export interface LightSource {
   /** Screen-space position in the camera's world (a projected point, before scroll). */
   x: number;

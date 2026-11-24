@@ -95,7 +95,7 @@ export const BARROW = {
   // The class book's pigments (FS-X2CMM R45, ADR-0094): a page's picture is painted in one main
   // pigment by what the page does, with bone for its highlights. Muted mineral tones, none past
   // verdigris's chroma; ochre kept off amber (interactable), madder off oxblood (damage). Read only
-  // through `palette.bookPigment`, and only by the page roundels.
+  // through `palette.bookPigment` (the page roundels) and `palette.bookEffect` (the book's world effects, R47).
   pigmentVerdigris: "#5b9a80", // growth, beasts and cures
   pigmentOchre: "#a88b52", //     light and finding
   pigmentMadder: "#8f5048", //    binding and blood

@@ -272,7 +272,8 @@ export const palette = {
    * The class book's pigments (FS-X2CMM R45, ADR-0094): a page roundel's picture wears one main
    * pigment by what the page does (light and finding ochre, movement and air lapis, binding and blood
    * madder, growth, beasts and cures verdigris), never by its class, with bone for its highlights and
-   * detail. Read by the page roundels alone (`src/ui/pageRoundel.ts`).
+   * detail. Read by the page roundels (`src/ui/pageRoundel.ts`); the book's world effects read their own
+   * names in `bookEffect`, below.
    */
   bookPigment: {
     verdigris: BARROW_HEX.pigmentVerdigris,
@@ -381,6 +382,31 @@ export const palette = {
   reticleFill: BARROW_HEX.vellumDark,
   reticleAlly: BARROW_HEX.arcane,
   reticleInteractable: BARROW_HEX.amber,
+  /**
+   * The book's world effects and delver states (FS-X2CMM §I R47), drawn for every viewer, each look in its
+   * own file. The witchlight a warm globe of light-and-finding ochre lifted toward bone, its pool the same
+   * warmth (never amber: nothing to act on); the rune binding madder; the draught a flask of the health
+   * potion's oxblood, its pool the interactable channel's own amber; afloat's shadow pitch; hardened a dull
+   * bronze; the long night a pitch ring edged in umbra; tracker's eye a faint ochre ring; the draught's
+   * heal rising in the health channel's lifted oxblood (guideline "Healing is not green").
+   */
+  bookEffect: {
+    witchlight: tint(BARROW_HEX.pigmentOchre, 0.35),
+    witchlightCore: BARROW_HEX.pigmentBone,
+    witchlightLight: tint(BARROW_HEX.pigmentOchre, 0.5),
+    rune: BARROW_HEX.pigmentMadder,
+    runeFlash: tint(BARROW_HEX.pigmentMadder, 0.45),
+    draughtGlass: BARROW_HEX.slateLight,
+    draughtLiquid: BARROW_HEX.oxblood,
+    draughtShine: BARROW_HEX.oxbloodText,
+    draughtStopper: BARROW_HEX.brass,
+    afloatShadow: BARROW_HEX.pitch,
+    hardened: BARROW_HEX.brass,
+    longNight: BARROW_HEX.pitch,
+    longNightEdge: BARROW_HEX.umbra,
+    trackersEye: BARROW_HEX.pigmentOchre,
+    draughtHeal: BARROW_HEX.oxbloodText,
+  },
 
   // -- Hostile wash (FS-77AB6 req 38): a multiply tint over a creature's
   //    baked sprite, from the oxblood family. Lifted toward vellum so they

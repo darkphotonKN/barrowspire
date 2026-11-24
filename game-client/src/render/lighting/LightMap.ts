@@ -12,16 +12,16 @@ import * as Phaser from "phaser";
 import type { Point } from "@/render/iso";
 import { viewRect } from "@/render/viewport";
 import {
+  HALO_DEPTH,
+  LIGHTMAP_DEPTH,
   PLAYER_TORCH,
   cullInto,
   flickerAt,
   type LightSource,
 } from "./lighting";
 
-/** Above world objects (the 100–101 band), below effects (140–160), names, the vignette and HUD. */
-export const LIGHTMAP_DEPTH = 135;
-/** Flame halos: above the light-map, so a flame reads as the source of its own pool. */
-export const HALO_DEPTH = 136;
+// the depths are the pure module's, so a Phaser-free caller (the dev gallery's cards) reads them too
+export { HALO_DEPTH, LIGHTMAP_DEPTH };
 
 const TEXTURE_KEY = "lightmap";
 const FALLOFF_KEY = "lightmap:falloff";

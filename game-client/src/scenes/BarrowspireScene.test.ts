@@ -781,6 +781,8 @@ function sceneOnStage() {
     },
     clear: () => lights.splice(0),
     clearTransient: () => {},
+    // a short-lived pool (a book effect's, FS-X2CMM R47): kept off the fixed lights' list
+    addTransient: (spec: object) => ({ ...spec, alive: true, remove: () => {} }),
     get ambient() {
       return lit.ambient;
     },
@@ -11009,6 +11011,20 @@ describe("BarrowspireScene dungeon floor look (FS-KE075 §H.44–§H.47)", () =>
       });
     });
 
+    // FS-X2CMM §I R48 (I-X2CMM-12): a witchlight lifts every viewer's fog in its cells, as a delver would,
+    // and what it lit stays explored once it goes
+    it("should lift the fog round a witchlight in the state, no member near, and leave its region explored when it goes", () => {
+      const { run, handle } = stageIn(inRoom);
+      const doorRegion = regionAt(grid, placedAt.door);
+      const light = { id: "w1", kind: "witchlight", x: placedAt.door.x, y: placedAt.door.y, remaining: 20 };
+      handle({ ...dungeonState(inRoom), book_effects: [light] } as GameState);
+      run.checkBuildingStatus();
+      expect(run.dungeon!.seen.state(doorRegion)).toBe("visible");
+      expect(shownNow(run.escapeDoors.get("e1")!.sprite)).toBe(true);
+      handle(dungeonState(inRoom));
+      expect(run.dungeon!.seen.state(doorRegion)).toBe("explored");
+    });
+
     it("should start a new dungeon floor unexplored, the party's regions visible at once", () => {
       const { run, handle } = stageIn(inRoom);
       const stairsRoom = regionAt(grid, placedAt.stairs);
@@ -13065,5 +13081,81 @@ describe("BarrowspireScene auras (FS-1J1CB R35)", () => {
       ["hidden", null, undefined, 916],
       ["dead", null, undefined, 916],
     ]);
+  });
+});
+
+// FS-X2CMM §I R47–R48 (I-X2CMM-12): the run draws the book's witchlights, runes and draughts and every body's
+// book states from the state, for every viewer; E drinks a draught in reach by its id; a witchlight lifts the
+// fog (exploration.test.ts, bookEffects.test.ts and bookStates.test.ts hold the rules).
+describe("BarrowspireScene the class book's world effects and states (FS-X2CMM §I R47–R48)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Effect = import("@/types/gameState").BookEffectState;
+  const effect = (id: string, kind: string, x: number, y = 300): Effect => ({ id, kind, x, y, remaining: 10 });
+
+  function bookOnStage() {
+    const stage = onStage();
+    const run = stage.run as unknown as FloorRun & { bindRunInput(): void; leaveFloor(): void };
+    const keyHandlers: Record<string, () => void> = {};
+    Object.assign(run, {
+      input: {
+        setDefaultCursor: vi.fn(),
+        keyboard: { on: (event: string, fn: () => void) => (keyHandlers[event] = fn) },
+        on: vi.fn(),
+      },
+    });
+    run.bindRunInput();
+    const named = (prefix: string) =>
+      stage.stage.made.filter((m) => String((m as { name?: string }).name ?? "").startsWith(prefix));
+    const live = (prefix: string) => named(prefix).filter((m) => !m.destroyed);
+    const interacts = () => stage.sent.mock.calls.filter(([a]) => a === ActionType.Interact);
+    return { ...stage, run, named, live, interacts, pressE: () => keyHandlers["keydown-E"]() };
+  }
+
+  it("should draw a witchlight, a rune and a draught from the state, and take each away the state it goes", () => {
+    const { run, live, named } = bookOnStage();
+    run.handleGameStateUpdate({
+      ...partyState(),
+      book_effects: [effect("w1", "witchlight", 400), effect("r1", "rune", 500), effect("d1", "draught", 600)],
+    } as GameState);
+    expect(live("book:w1:").map((m) => (m as { name?: string }).name)).toEqual(["book:w1:body", "book:w1:halo"]);
+    expect(live("book:r1:").map((m) => (m as { name?: string }).name)).toEqual(["book:r1:ground", "book:r1:halo"]);
+    expect(live("book:d1:").map((m) => (m as { name?: string }).name)).toEqual(["book:d1:body"]);
+
+    run.handleGameStateUpdate({ ...partyState(), book_effects: [effect("r1", "rune", 500)] } as GameState);
+    expect(named("book:w1:").every((m) => m.destroyed)).toBe(true);
+    expect(named("book:d1:").every((m) => m.destroyed)).toBe(true);
+    expect(live("book:r1:")).toHaveLength(2);
+
+    run.leaveFloor();
+    expect(named("book:r1:").every((m) => m.destroyed)).toBe(true);
+  });
+
+  it("should drink a draught within the interact reach with E, by its id, and send nothing for one past it", () => {
+    const near = bookOnStage();
+    near.run.handleGameStateUpdate({ ...partyState(), book_effects: [effect("d1", "draught", 140)] } as GameState);
+    near.pressE();
+    expect(near.interacts()).toEqual([[ActionType.Interact, { entity_id: "d1" }]]);
+    vi.restoreAllMocks();
+
+    const far = bookOnStage();
+    far.run.handleGameStateUpdate({ ...partyState(), book_effects: [effect("d1", "draught", 230)] } as GameState);
+    far.pressE();
+    expect(far.interacts().filter(([, p]) => (p as { entity_id: string }).entity_id === "d1")).toEqual([]);
+  });
+
+  it("should draw the player's and a teammate's book states on their bodies, and take them away when they go", () => {
+    const { run, live, named } = bookOnStage();
+    const me = { ...player("me", "Aldric", 130), book_states: [{ name: "afloat", remaining: 8 }] };
+    const ally = { ...player("ally", "Wenna", 160), book_states: [{ name: "hardened", remaining: 10 }] };
+    run.handleGameStateUpdate(partyState(me, ally));
+    expect(live("book:self:afloat:")).toHaveLength(1);
+    expect(live("book:ally:hardened:")).toHaveLength(1);
+
+    run.handleGameStateUpdate(partyState(player("me", "Aldric", 130), player("ally", "Wenna", 160)));
+    expect(named("book:self:afloat:").every((m) => m.destroyed)).toBe(true);
+    expect(named("book:ally:hardened:").every((m) => m.destroyed)).toBe(true);
   });
 });

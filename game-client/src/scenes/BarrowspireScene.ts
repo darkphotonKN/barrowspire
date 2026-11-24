@@ -24,6 +24,7 @@ import {
   type FloorMap,
   DoorState,
   ProjectileState,
+  type BookTimedState,
 } from "@/types/gameState";
 import { ArrivalCard, cardLeaves } from "@/ui/arrivalCard";
 import { lootMessage } from "@/ui/ContainerView";
@@ -244,6 +245,8 @@ import { CHUNK_MAX, ChunkGrid, ChunkVisibility, DUNGEON_CHUNK } from "@/render/w
 import { RegionGrid, dressingRooms, dungeonWalls, isDungeon, wallPlan } from "@/render/world/dungeon";
 import { buildingWallShadows, dungeonShadows } from "@/render/world/wallShadows";
 import { Exploration, partyPositions, regionAt } from "@/render/world/exploration";
+import { BookEffectSet, litPoints, type BookEffectLight } from "@/render/world/bookEffects";
+import { BookStateMarks } from "@/render/world/bookStates";
 import { nearLights } from "@/render/world/floorLights";
 import { Fog, wallLayout } from "@/render/world/fog";
 import { dressingStandsBy, planRoomDressing, type DressingPiece } from "@/render/world/runDressing";
@@ -295,6 +298,8 @@ const CAMERA_MARGIN = 160;
 const STAIRS_POOL_INTENSITY = 0.85;
 /** The own body's key among the run's player bodies' spec looks: never a player id (FS-1J1CB R21). */
 const OWN_BODY = "self";
+/** A dungeon floor's cell, world px, before its map is in: the floor map's `cell_size` (FS-X2CMM R24). */
+const DEFAULT_CELL = 80;
 /** A player's footprint, in world px: the server's `PlayerRadius`. */
 const PLAYER_FOOTPRINT_RADIUS = 20;
 /**
@@ -816,6 +821,35 @@ export class BarrowspireScene extends Phaser.Scene {
     glowShown: (trail) => !this.underRoof(trail.from) && !this.underRoof(trail.to),
   });
 
+  /**
+   * The class book's world effects, from state (FS-X2CMM §I R47): a witchlight's globe and its halo over the
+   * light-map, with its pool; a rune's ring on the floor and its flash; a draught's flask in an amber pool.
+   */
+  private bookEffects = new BookEffectSet<Phaser.GameObjects.Graphics>({
+    layer: (id, kind, at) => {
+      const g = this.add.graphics().setName(`book:${id}:${kind}`);
+      if (kind === "ground") return g.setDepth(TRAIL_BED_DEPTH);
+      if (kind === "body") return g.setDepth(worldDepth(at.x, at.y, 1));
+      return g.setDepth(HALO_DEPTH).setBlendMode(Phaser.BlendModes.ADD);
+    },
+    light: (spec): BookEffectLight =>
+      this.lightMap?.addTransient(spec) ?? { ...spec, remove: () => undefined },
+    cell: () => this.dungeon?.grid.cell ?? DEFAULT_CELL,
+    reducedMotion: prefersReducedMotion(),
+  });
+
+  /**
+   * The class book's states on every body, from state (FS-X2CMM §I R47): afloat's shadow and lift, hardened's
+   * sheen, the long night's ring, tracker's eye's ring, the draught's heal, each on its body's drawn feet.
+   */
+  private bookStates = new BookStateMarks<Phaser.GameObjects.Graphics>({
+    layer: (body, state, kind) => {
+      const g = this.add.graphics().setName(`book:${body}:${state}:${kind}`);
+      return kind === "ground" ? g.setDepth(TRAIL_BED_DEPTH) : g;
+    },
+    reducedMotion: prefersReducedMotion(),
+  });
+
   // 牆壁 (從後端同步) — baked wall pieces and posts (FS-2325V §C.2), or the
   // placeholder blocks without a manifest; either way, one-tile pieces sorted by footprint.
   // A room's walls are drawn with their room (`rooms`), so they hold no pieces here: only the
@@ -1172,6 +1206,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.stairs.forget();
     this.summoning.forget();
     this.trails.forget();
+    this.bookEffects.forget();
+    this.bookStates.forget();
     this.walls.clear();
     this.serverDoors.clear();
     this.serverBuildingsCreated = false;
@@ -3559,6 +3595,12 @@ export class BarrowspireScene extends Phaser.Scene {
         this.reachSummoning(summoned);
         return;
       }
+      // a draught on the floor, drunk by interacting with it (FS-X2CMM R27, R47)
+      const draught = this.playerPos ? this.bookEffects.nearbyDraught(this.playerPos) : null;
+      if (draught) {
+        socketManager.sendMessage(ActionType.Interact, { entity_id: draught });
+        return;
+      }
       // 檢查寶箱
       const nearbyChest = this.getNearbyChest();
       if (nearbyChest) {
@@ -4054,6 +4096,10 @@ export class BarrowspireScene extends Phaser.Scene {
     // fixed light built this broadcast goes through the floor's budget, once (§C.6)
     if (floorMap) this.buildDressing(state);
     this.stampLights(state.floor);
+    // the class book's witchlights, runes and draughts, and every body's book states, for every viewer
+    // (FS-X2CMM §I R47): the broadcast is the whole truth
+    this.bookEffects.sync(state.book_effects, this.time.now);
+    this.syncBookStates(state);
     // what the party has explored of a dungeon floor, from this broadcast (FS-SRA9J §B)
     this.explore(state);
 
@@ -4421,14 +4467,15 @@ export class BarrowspireScene extends Phaser.Scene {
 
   /**
    * The party's exploration of a dungeon floor from this broadcast's living positions
-   * (FS-SRA9J §B), and, when a region's state changed, the fog and the floor's lights redrawn
+   * (FS-SRA9J §B) and its witchlights (FS-X2CMM R48), and, when a region's state changed, the fog and the floor's lights redrawn
    * for it (§C.12, §C.13); then the minimap from it (§E.23). Nothing before the floor's walls
    * stand, nor on a floor of buildings.
    */
   private explore(state: ClientGameState): void {
     const dungeon = this.dungeon;
     if (!dungeon?.fog) return;
-    if (dungeon.seen.see(partyPositions(state))) {
+    // a witchlight lifts the fog in its cells as a delver would, for every viewer (FS-X2CMM R48)
+    if (dungeon.seen.see(partyPositions(state), litPoints(state.book_effects))) {
       dungeon.fog.show((id) => dungeon.seen.state(id));
       this.lightNearChunks();
     }
@@ -4637,6 +4684,8 @@ export class BarrowspireScene extends Phaser.Scene {
     // the old floor's projectiles land nowhere: no impact, body, trail or light (FS-KYPQ9 §B.9)
     this.projectiles?.clear();
     this.trails.clear();
+    // the old floor's witchlights, runes and draughts go with it (FS-X2CMM §Edge "Floor change")
+    this.bookEffects.clear();
     this.monsters?.sync([]);
     this.lastHit.clear();
     this.bosses.clear();
@@ -5361,6 +5410,8 @@ export class BarrowspireScene extends Phaser.Scene {
     }
     this.projectiles?.hideWhere(unseen);
     this.fx?.hideWhere(unseen);
+    // the book's world effects lie where they were set down, hidden as a fixed thing is (FS-X2CMM R47)
+    this.bookEffects.hideWhere(unseen);
   }
 
   private createUI(): void {
@@ -6049,6 +6100,8 @@ export class BarrowspireScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    // the book's world effects, and their pools, where their looks hang them this frame (FS-X2CMM R47)
+    this.bookEffects.frame(time);
     this.updateLighting(time, delta);
     this.monsters?.update(delta);
     this.stunTells?.show(this.monsters?.stunned() ?? []);
@@ -6143,6 +6196,8 @@ export class BarrowspireScene extends Phaser.Scene {
         lerpFactor,
       );
       standAt(this.player, this.playerPos, 1);
+      // afloat draws the body raised a little over its feet (FS-X2CMM R47)
+      this.player.y -= this.bookStates.lift(OWN_BODY, time, this.playerAnim?.crown);
       this.playerLegs?.setDepth(worldDepth(this.playerPos.x, this.playerPos.y, 2));
       // the charge's dust is kicked where the body is drawn, never where it is predicted to land
       this.charge?.follow(this.playerPos);
@@ -6174,6 +6229,8 @@ export class BarrowspireScene extends Phaser.Scene {
     this.checkBuildingStatus();
     // after the hide rule, so an aura hides in the frame its body does (FS-1J1CB R35)
     this.followAuras(time);
+    // and the book's states, likewise (FS-X2CMM R47)
+    this.followBookStates(time);
     this.updateTargetFrame(delta);
 
     // the open bar fills on between states (FS-MQYEX R22)
@@ -6203,6 +6260,35 @@ export class BarrowspireScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Every body's book states from this state (FS-X2CMM §I R47): the player's own and each teammate's, on
+   * `current_player` and `other_players` alike; a body gone from the state loses its marks.
+   */
+  private syncBookStates(state: ClientGameState): void {
+    const me = state.current_player;
+    const bodies: (readonly [string, BookTimedState[] | undefined])[] = (state.other_players ?? []).map(
+      (p) => [p.id, p.book_states] as const,
+    );
+    if (me) bodies.push([OWN_BODY, me.book_states]);
+    this.bookStates.sync(bodies, this.time.now);
+  }
+
+  /**
+   * Every body's book states on its drawn feet (FS-X2CMM R47), hidden with its body (the blackout, an
+   * escape) and from the death clip, as its aura is.
+   */
+  private followBookStates(time: number): void {
+    if (this.player && this.playerPos) {
+      const alive = this.player.visible && !isDead(this.lastGameState?.current_player);
+      this.bookStates.follow(OWN_BODY, alive ? this.playerPos : null, this.playerAnim?.crown, time);
+    }
+    for (const [playerId, sprite] of this.otherPlayers) {
+      const pos = this.otherPlayersPos.get(playerId);
+      const alive = sprite.visible && (this.otherPlayersPrevHp.get(playerId) ?? 1) > 0;
+      this.bookStates.follow(playerId, alive && pos ? pos : null, this.otherPlayersAnim.get(playerId)?.crown, time);
+    }
+  }
+
   private updateOtherPlayersSmooth(time: number, delta: number): void {
     const lerpFactor = 0.3;
     this.otherPlayers.forEach((sprite, playerId) => {
@@ -6216,6 +6302,8 @@ export class BarrowspireScene extends Phaser.Scene {
         pos.x = Phaser.Math.Linear(pos.x, target.x, lerpFactor);
         pos.y = Phaser.Math.Linear(pos.y, target.y, lerpFactor);
         standAt(sprite, pos, 1);
+        // afloat draws the body raised a little over its feet (FS-X2CMM R47)
+        sprite.y -= this.bookStates.lift(playerId, time, this.otherPlayersAnim.get(playerId)?.crown);
 
         // A rival on a baked sheet walks, idles and dies in it, off the position just
         // drawn. Their attacks are not known to this client, so they never swing.

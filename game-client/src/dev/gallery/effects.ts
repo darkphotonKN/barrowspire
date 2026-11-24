@@ -49,6 +49,12 @@ import { playSlash } from "@/render/effects/slash";
 import { ChimneySmoke } from "@/render/effects/smoke";
 import { StunTells } from "@/render/effects/stun";
 import { FOREST_LOOK } from "@/render/world/fieldLook";
+import { worldDepth } from "@/render/iso/shapes";
+import { HALO_DEPTH } from "@/render/lighting/lighting";
+import { BookEffectSet } from "@/render/world/bookEffects";
+import { BookStateMarks } from "@/render/world/bookStates";
+import type { LayerKind } from "@/render/world/bookLook";
+import { TRAIL_BED_DEPTH } from "@/render/world/trails";
 import type { ItemState, MonsterAbilityKind } from "@/types/gameState";
 import { ArrivalCard, cardLeaves, type CardLeave } from "@/ui/arrivalCard";
 import { CONTAINER_VIEW_DEPTH, satchelIcon } from "@/ui/ContainerView";
@@ -126,6 +132,56 @@ const STUN_LIFT_FALLBACK = 80;
 
 /** A frame's step, in ms, for a demo that drives its own frames. */
 const FRAME_MS = 33;
+
+/** How long a class book card holds its effect or state: long enough to see it bob, pulse or rise. */
+const BOOK_HOLD_MS = 4800;
+
+/** A book layer's graphics, at its depth and blend as the run makes it (FS-X2CMM R47). */
+function bookLayer(s: Stage, kind: LayerKind | "front", at: Point): Phaser.GameObjects.Graphics {
+  const g = s.scene.add.graphics();
+  if (kind === "ground") return g.setDepth(TRAIL_BED_DEPTH);
+  if (kind === "halo") return g.setDepth(HALO_DEPTH).setBlendMode("ADD");
+  return g.setDepth(worldDepth(at.x, at.y, 1));
+}
+
+/**
+ * A book effect laid at the figure's aim as a run lays it from the state (FS-X2CMM R47), its look driven by
+ * its own clock; `caughtAt` are the ms a rune's catch count climbs at.
+ */
+function playBookEffect(s: Stage, kind: string, caughtAt: readonly number[] = []): void {
+  const set = new BookEffectSet<Phaser.GameObjects.Graphics>({
+    layer: (_id, layer, at) => bookLayer(s, layer, at),
+    light: (spec) => s.lights.addTransient(spec),
+    cell: () => 80,
+    reducedMotion: prefersReducedMotion(),
+  });
+  const effect = { id: s.owner, kind, x: s.aim.x, y: s.aim.y, remaining: 20 };
+  set.sync([effect], s.now());
+  caughtAt.forEach((ms, i) => s.later(ms, () => set.sync([{ ...effect, caught: i + 1 }], s.now())));
+  for (let t = 0; t <= BOOK_HOLD_MS; t += FRAME_MS) s.later(t, () => set.frame(s.now()));
+  s.later(BOOK_HOLD_MS + FRAME_MS, () => set.clear());
+}
+
+/** A book state on the figure as a run draws it on a body from the state (FS-X2CMM R47); afloat lifts it. */
+function playBookState(s: Stage, name: string, who = "mage"): void {
+  const crown = s.wear(who);
+  const marks = new BookStateMarks<Phaser.GameObjects.Graphics>({
+    layer: (_body, _state, kind) => bookLayer(s, kind, s.at),
+    reducedMotion: prefersReducedMotion(),
+  });
+  marks.sync([[s.owner, [{ name, remaining: 10 }]]], s.now());
+  const feetY = worldToScreen(s.at.x, s.at.y).y;
+  for (let t = 0; t <= BOOK_HOLD_MS; t += FRAME_MS)
+    s.later(t, () => {
+      s.figure.setY(Math.round(feetY - marks.lift(s.owner, s.now(), crown)));
+      marks.follow(s.owner, s.at, crown, s.now());
+    });
+  s.later(BOOK_HOLD_MS + FRAME_MS, () => {
+    marks.clear();
+    s.figure.setY(Math.round(feetY));
+    s.wear("mage");
+  });
+}
 
 /**
  * The creature the stun tell is shown over, as a run draws it over a stunned monster (FS-04EEA R49): the
@@ -615,5 +671,46 @@ export const EFFECT_CARDS: EffectCard[] = [
     name: "Thrown dagger (hostile)",
     // the flight only: the throw is the goblin's attack clip (FS-C8VM7 §F R38)
     demo: (s) => s.fly("thrown_dagger"),
+  },
+  // the class book's world effects and delver states (FS-X2CMM §I R47), each its own look
+  {
+    module: "witchlight",
+    name: "Witchlight: a warm globe bobbing over its point, with its pool",
+    demo: (s) => playBookEffect(s, "witchlight"),
+  },
+  {
+    module: "rune",
+    name: "Binding Glyph's rune: a madder ring, pulsing, flashing on each of three catches",
+    demo: (s) => playBookEffect(s, "rune", [BOOK_HOLD_MS / 4, BOOK_HOLD_MS / 2, (BOOK_HOLD_MS * 3) / 4]),
+  },
+  {
+    module: "draught",
+    name: "Brew's draught: a stoppered flask in the interactable's pool",
+    demo: (s) => playBookEffect(s, "draught"),
+  },
+  {
+    module: "afloat",
+    name: "Afloat (Levitate): lifted a little, a soft shadow below",
+    demo: (s) => playBookState(s, "afloat"),
+  },
+  {
+    module: "hardened",
+    name: "Hardened (on the warrior): a dull bronze sheen",
+    demo: (s) => playBookState(s, "hardened", "warrior"),
+  },
+  {
+    module: "longNight",
+    name: "The Long Night (on the warrior): a dark ring at the feet",
+    demo: (s) => playBookState(s, "long_night", "warrior"),
+  },
+  {
+    module: "trackersEye",
+    name: "Tracker's Eye (on the archer): a faint ochre ring",
+    demo: (s) => playBookState(s, "trackers_eye", "archer"),
+  },
+  {
+    module: "draughtHeal",
+    name: "A draught's heal: a faint rise of health's own colour",
+    demo: (s) => playBookState(s, "draught"),
   },
 ];

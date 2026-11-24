@@ -64,8 +64,8 @@ export interface PublicPlayerState {
    */
   parries?: number;
   /**
-   * The timed states a book ability set on this delver (FS-X2CMM §F R34): hardened, and later afloat,
-   * trackers_eye and long_night, each with its seconds left, sorted by name. On `current_player` and every
+   * The timed states a book ability set on this delver (FS-X2CMM §F R34): afloat, draught (healing after a
+   * drink), hardened, long_night and trackers_eye, each with its seconds left, sorted by name. On `current_player` and every
    * `other_players` entry alike; absent when none. Mirrors Go types.PublicPlayerState.BookStates.
    */
   book_states?: BookTimedState[];
@@ -79,6 +79,9 @@ export interface BookTimedState {
   name: string;
   remaining: number;
 }
+
+/** The book states the client draws on a delver (FS-X2CMM §E R23, R26, R27, R30, R31; §I R47). */
+export type BookStateName = "afloat" | "draught" | "hardened" | "long_night" | "trackers_eye";
 
 /**
  * The owner's class book (FS-X2CMM §F R32): in a run only, absent in the hub and the fields. Its pages
@@ -114,8 +117,8 @@ export interface BookCastingState {
 
 /**
  * A book effect on the floor as every recipient of the run is told it (FS-X2CMM §F R34): its entity id,
- * its kind (witchlight, and later rune), where it stands in px, its seconds left. A kind that shows more
- * adds its own fields. Mirrors Go types.BookEffectState.
+ * its kind ({@link BookEffectKind}; a kind the client does not know is drawn as nothing), where it stands in
+ * px, its seconds left. A kind that shows more adds its own fields. Mirrors Go types.BookEffectState.
  */
 export interface BookEffectState {
   id: UUID;
@@ -123,7 +126,15 @@ export interface BookEffectState {
   x: number;
   y: number;
   remaining: number;
+  /** How many monsters a rune has caught so far, absent while none: it flashes as the count climbs (R24, R47). */
+  caught?: number;
 }
+
+/**
+ * The book effects the client draws (FS-X2CMM §E R21, R24, R27): a Witchlight's light, a Binding Glyph's
+ * rune, a Brew's draught (an interactable: any delver drinks it with `interact` by its `id`).
+ */
+export type BookEffectKind = "witchlight" | "rune" | "draught";
 
 /**
  * A player's own state, as `current_player` carries it: what they show, and their own bag and worn
@@ -549,7 +560,7 @@ export interface ClientGameState {
   altar?: AltarState;
   /** Set while the party carries the tome and has not burned it; absent otherwise (R14). */
   tome_carried?: boolean;
-  /** The run's book effects on the floor (witchlights), for every recipient; absent when none (FS-X2CMM §F R34). */
+  /** The run's book effects on the floor (witchlights, runes, draughts), for every recipient; absent when none (FS-X2CMM §F R34). */
   book_effects?: BookEffectState[];
   escaped_count: number; // Number of players who have escaped
 }
