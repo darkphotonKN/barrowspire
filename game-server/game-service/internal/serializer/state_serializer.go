@@ -3,6 +3,7 @@ package serializer
 import (
 	"context"
 	"math"
+	"slices"
 	"sync"
 
 	"github.com/darkphotonKN/barrowspire-server/common/passivetree"
@@ -74,6 +75,8 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 
 	// a tome run's plan, on the run-level entity (FS-3103M §B R7)
 	var plan *components.TomePlanComponent
+	// a sealed floor's seals (FS-5FZ4J §I R46)
+	var seals []*components.SealComponent
 
 	for _, entity := range entities {
 		// --- Floor (run-level entity; a hub has none) ---
@@ -84,6 +87,22 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		}
 		if pc, hasPlan := entity.GetComponent(ecs.ComponentTypeTomePlan); hasPlan {
 			plan = pc.(*components.TomePlanComponent)
+		}
+
+		// --- A sealed floor's seals, pieces and barriers (FS-5FZ4J §I R46) ---
+		if sc, isSeal := entity.GetComponent(ecs.ComponentTypeSeal); isSeal {
+			seals = append(seals, sc.(*components.SealComponent))
+			continue
+		}
+		if pc, isPiece := entity.GetComponent(ecs.ComponentTypeSealPiece); isPiece {
+			if tc, hasTransform := entity.GetComponent(ecs.ComponentTypeTransform); hasTransform {
+				backendState.SealPieces = append(backendState.SealPieces, sealPieceState(entity.ID, pc.(*components.SealPieceComponent), tc.(*components.TransformComponent)))
+			}
+			continue
+		}
+		if bc, isBarrier := entity.GetComponent(ecs.ComponentTypeBarrier); isBarrier {
+			backendState.Barriers = append(backendState.Barriers, barrierState(entity, bc.(*components.BarrierComponent)))
+			continue
 		}
 
 		// --- Player ---
@@ -541,8 +560,55 @@ func (s *StateSerializer) SerializeBackendState(ctx context.Context, sessionID u
 		}
 		backendState.TomeCarried = plan.Carried && !plan.Burned
 	}
+	backendState.Seal = sealState(seals)
 
 	return backendState, nil
+}
+
+// sealState is the floor's seal on the wire: the first unbroken seal's kind
+// and stage, the last one's once every one is broken; nil with no seal.
+// FS-5FZ4J §I R46, R48.
+func sealState(seals []*components.SealComponent) *types.SealState {
+	if len(seals) == 0 {
+		return nil
+	}
+	ordered := slices.SortedFunc(slices.Values(seals), func(a, b *components.SealComponent) int { return a.Stage - b.Stage })
+	current := ordered[len(ordered)-1]
+	if i := slices.IndexFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }); i >= 0 {
+		current = ordered[i]
+	}
+	return &types.SealState{
+		Kind:   string(current.Kind),
+		Stage:  current.Stage,
+		Stages: len(ordered),
+		Broken: !slices.ContainsFunc(ordered, func(sc *components.SealComponent) bool { return !sc.Broken }),
+	}
+}
+
+// sealPieceState is one seal piece on the wire. FS-5FZ4J §I R46.
+func sealPieceState(id uuid.UUID, piece *components.SealPieceComponent, at *components.TransformComponent) *types.SealPieceState {
+	return &types.SealPieceState{
+		EntityID: id,
+		Kind:     string(piece.Kind),
+		Position: &types.Position{X: at.X, Y: at.Y},
+		Cell:     types.CellState{X: piece.Cell.X, Y: piece.Cell.Y},
+		Glyph:    piece.Glyph,
+		Active:   piece.Active,
+	}
+}
+
+// barrierState is one barrier on the wire, open as its Openable says.
+// FS-5FZ4J §I R46.
+func barrierState(entity *ecs.Entity, barrier *components.BarrierComponent) *types.BarrierState {
+	cells := make([]types.CellState, len(barrier.Cells))
+	for i, c := range barrier.Cells {
+		cells[i] = types.CellState{X: c.X, Y: c.Y}
+	}
+	open := false
+	if oc, ok := entity.GetComponent(ecs.ComponentTypeOpenable); ok {
+		open = oc.(*components.OpenableComponent).IsOpen
+	}
+	return &types.BarrierState{EntityID: entity.ID, Kind: string(barrier.Kind), Cells: cells, Open: open}
 }
 
 func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGameState, playerID uuid.UUID) *types.ClientGameState {
@@ -614,6 +680,10 @@ func (s *StateSerializer) FormatStateToClientState(backendState *types.BackendGa
 		Tome:          backendState.Tome,
 		Altar:         backendState.Altar,
 		TomeCarried:   backendState.TomeCarried,
+		// a sealed floor's landmarks, sent whole (FS-5FZ4J §I R46)
+		Seal:       backendState.Seal,
+		SealPieces: backendState.SealPieces,
+		Barriers:   backendState.Barriers,
 	}
 
 	// on a dungeon floor each recipient is sent only what lies near it
@@ -704,6 +774,9 @@ func (s *StateSerializer) RestBackendStatePool(state *types.BackendGameState) {
 	state.Tome = nil
 	state.Altar = nil
 	state.TomeCarried = false
+	state.Seal = nil
+	state.SealPieces = fresh(state.SealPieces)
+	state.Barriers = fresh(state.Barriers)
 }
 
 // fresh is an empty list on new memory as large as the old, or nil if it was

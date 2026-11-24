@@ -18,6 +18,8 @@ import (
 // returns that monster.
 func provokeFarthest(t *testing.T, s *Session, playerID uuid.UUID) *components.MonsterComponent {
 	t.Helper()
+	// the gate open, so the stairs room's monsters path out too (FS-5FZ4J §D R22)
+	breakSeals(t, s)
 	d := delverEntity(t, s, playerID)
 	at := transformOf(t, d)
 

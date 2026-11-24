@@ -235,7 +235,7 @@ func TestNewRun_StartsOnTheFirstFloor(t *testing.T) {
 	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeEscapeDoor))
 	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeSwitch))
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeStairs), 1)
-	assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "a dungeon floor has no doors")
+	assert.Empty(t, buildingDoorIDs(s), "a dungeon floor has no building doors, only its gate")
 }
 
 // party is a run with two delvers on it: one carrying a weapon from their
@@ -370,7 +370,7 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	}
 
 	// counted by kind
-	doors := len(entityIDsWith(s, ecs.ComponentTypeDoor))
+	doors := len(buildingDoorIDs(s))
 	walls := len(entityIDsWith(s, ecs.ComponentTypeWall))
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypePlayer), 2, "delvers")
 	assert.Len(t, entityIDsWith(s, ecs.ComponentTypeItem), len(p.carriedItemIDs), "only carried items")
@@ -406,7 +406,10 @@ func assertOnlyNewFloorAndPersistent(t *testing.T, p *party, previousFloor map[u
 	tomeAndAltar := len(entityIDsWith(s, ecs.ComponentTypeTome)) + len(entityIDsWith(s, ecs.ComponentTypeAltar))
 
 	total := len(s.EntityManager.GetAllEntities())
-	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar
+	// a sealed floor's gate, seals and their pieces (FS-5FZ4J §B)
+	sealed := len(entityIDsWith(s, ecs.ComponentTypeBarrier)) + len(entityIDsWith(s, ecs.ComponentTypeSeal)) +
+		len(entityIDsWith(s, ecs.ComponentTypeSealPiece))
+	floorKinds := doors + walls + 2 + len(entityIDsWith(s, ecs.ComponentTypeContainer)) + monsters + stairs + tomeAndAltar + sealed
 	assert.Equal(t, len(keep)+floorKinds, total, "nothing else is in the world")
 }
 

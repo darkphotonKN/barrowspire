@@ -223,11 +223,13 @@ func ordinaryRoom(d *dungeonFloor, room int) bool {
 // On floor 1, about 1 in 4 of the ordinary rooms' fodder rolls, top-ups
 // included, are Bone Archers, the pool's ranged member; the brute share
 // stands and the three fodder share the rest evenly. FS-B4SG9 §B R15;
-// FS-C8VM7 §C R21-R22.
+// FS-C8VM7 §C R21-R22. Twice the usual builds: with 15-25 monsters a floor
+// (FS-5FZ4J §D R21) one thousand hold too few ordinary-room rolls for a 0.02
+// band on a third.
 func TestDungeonPopulation_Floor1RoomGhoulsAreBoneArchersAtTheirShare(t *testing.T) {
 	counts := map[components.MonsterArchetype]int{}
 	all := 0
-	for seed := uint64(1); seed <= floor1Builds; seed++ {
+	for seed := uint64(1); seed <= 2*floor1Builds; seed++ {
 		s, _ := dungeonRun(t, seed, 4, 0)
 		for _, m := range floor1Monsters(t, s) {
 			if m.monster.Boss || !ordinaryRoom(s.dungeon, m.room) {

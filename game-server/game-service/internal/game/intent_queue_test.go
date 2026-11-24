@@ -119,6 +119,8 @@ func TestSession_HandlersConcurrentWithTheTick_AttackEquipAndLootAllLand(t *test
 func TestSession_LootAndEquipDuringAFloorChange_NothingCarriedIsLost(t *testing.T) {
 	for run := range 10 {
 		s, _ := lootedRunWithSender(t)
+		// a broken seal, so the stairs answer the climb (FS-5FZ4J §B R12)
+		breakSeals(t, s)
 		stairsIDs := entityIDsWith(s, ecs.ComponentTypeStairs)
 		require.Len(t, stairsIDs, 1, "run %d", run)
 		stairs, _ := s.EntityManager.GetEntity(stairsIDs[0])
@@ -155,6 +157,8 @@ func TestSession_LootAndEquipDuringAFloorChange_NothingCarriedIsLost(t *testing.
 // I-77AB6-11.
 func TestSession_RefusalsFromTheTick_AreUnchanged(t *testing.T) {
 	s, dispatcher := lootedRunWithSender(t)
+	// a broken seal, so the stairs answer with the gather refusal (FS-5FZ4J §B R12)
+	breakSeals(t, s)
 	stairsIDs := entityIDsWith(s, ecs.ComponentTypeStairs)
 	require.Len(t, stairsIDs, 1)
 	stairs, _ := s.EntityManager.GetEntity(stairsIDs[0])

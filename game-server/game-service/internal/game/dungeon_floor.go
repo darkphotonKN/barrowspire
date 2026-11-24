@@ -137,12 +137,14 @@ func (s *Session) generateDungeonFloor(depth int) (*dungeonFloor, dungeonFixture
 	return nil, dungeonFixtures{}
 }
 
-// dungeonFixtures is where a dungeon floor's escape door, switch and stairs
-// stand, found before anything is laid. stairs is unset on the top floor, the
-// escape door and switch on floor 1 (hasEscapeDoor false).
+// dungeonFixtures is where a dungeon floor's escape door, switch, stairs and
+// seals stand, found before anything is laid. stairs and seals are unset on
+// the top floor, the escape door and switch on floor 1 (hasEscapeDoor false).
 type dungeonFixtures struct {
 	exitDoor, exitSwitch, stairs point
 	hasEscapeDoor                bool
+	// seals are the floor's seals, in chain order (FS-5FZ4J §B R9)
+	seals []sealPlan
 }
 
 // isTopFloor is whether depth is the floor the run's Spire height names (FS-M8CSE
@@ -158,8 +160,10 @@ func (s *Session) hasStairs(depth int) bool { return !s.isTopFloor(depth) }
 
 // placeFixtures finds the escape door's, the switch's and the stairs' spots in
 // their rooms, each through the occupied-area check; a floor whose roles have
-// no escape door (floor 1, FS-5FZ4J §A R6) places neither it nor the switch.
-// An error when a room has none: the layout cannot be laid (FS-KE075 §B R14).
+// no escape door (floor 1, FS-5FZ4J §A R6) places neither it nor the switch. A
+// floor with stairs is sealed: its seals' pieces are found last (FS-5FZ4J §A
+// R1, §H R45). An error when a room has none: the layout cannot be laid
+// (FS-KE075 §B R14).
 func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, error) {
 	roles := d.layout.Roles
 	f := dungeonFixtures{hasEscapeDoor: roles.HasEscapeDoor()}
@@ -176,13 +180,18 @@ func (s *Session) placeFixtures(depth int, d *dungeonFloor) (dungeonFixtures, er
 		if f.stairs, ok = s.placeFixture(d, roles.Stairs, constants.StairsWidthRadius, constants.StairsHeightRadius); !ok {
 			return f, fmt.Errorf("the stairs' room %d has no spot off its doorways", roles.Stairs)
 		}
+		var err error
+		if f.seals, err = s.planSeals(depth, d); err != nil {
+			return f, err
+		}
 	}
 	return f, nil
 }
 
 // layDungeon lays a dungeon floor out: its shell walls, then the switch and
-// escape door (floors 2+) and stairs where they were found, then its containers. The party
-// and the monsters come after, as on every floor.
+// escape door (floors 2+), the stairs, and the gate and seal pieces of a
+// sealed floor where they were found, then its containers. The party and the
+// monsters come after, as on every floor (FS-5FZ4J §H R45).
 func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixtures) {
 	// the shell walls belong to no building: a floor map carries them with no
 	// house (FS-KE075 §F R31); a wall's top-left is its position, as WallState's
@@ -207,6 +216,7 @@ func (s *Session) layDungeon(depth int, d *dungeonFloor, fixtures dungeonFixture
 	if s.hasStairs(depth) {
 		CreateStairsEntity(s.EntityManager, StairsConfig{X: fixtures.stairs.x, Y: fixtures.stairs.y})
 	}
+	s.laySeals(d, fixtures.seals)
 
 	s.layDungeonContainers(d)
 

@@ -430,6 +430,43 @@ type AltarState struct {
 	Burned   bool      `json:"burned"`
 }
 
+// CellState is a cell's column and row on the floor map's grid.
+type CellState struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+// SealState is a sealed floor's seal: the current, first unbroken seal's kind
+// and stage, or the last one's once all are broken; stages is how many the
+// floor chains; broken is set once every one is. FS-5FZ4J §I R46, R48.
+type SealState struct {
+	Kind   string `json:"kind"`
+	Stage  int    `json:"stage"`
+	Stages int    `json:"stages"`
+	Broken bool   `json:"broken"`
+}
+
+// SealPieceState is one seal piece: a lever's glyph, absent on the others;
+// active a lever down, a plate held, a brazier lit, a bridge lowered.
+// FS-5FZ4J §I R46.
+type SealPieceState struct {
+	EntityID uuid.UUID `json:"entity_id"`
+	Kind     string    `json:"kind"`
+	Position *Position `json:"position"`
+	Cell     CellState `json:"cell"`
+	Glyph    string    `json:"glyph,omitempty"`
+	Active   bool      `json:"active"`
+}
+
+// BarrierState is one barrier, a gate, a secret door or a pit, and the cells
+// it covers. FS-5FZ4J §I R46.
+type BarrierState struct {
+	EntityID uuid.UUID   `json:"entity_id"`
+	Kind     string      `json:"kind"`
+	Cells    []CellState `json:"cells"`
+	Open     bool        `json:"open"`
+}
+
 // GateState is a hub gate as the client sees it: where it goes, where it
 // stands and how close counts. Its arrival point is server-only. FS-0XMCP
 // §Requirements 6.

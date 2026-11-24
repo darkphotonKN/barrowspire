@@ -42,6 +42,8 @@ func TestMonsterNavigation_Floor2_FarthestMonstersReachTheDelver(t *testing.T) {
 func assertFarthestMonstersReach(t *testing.T, s *Session, delver uuid.UUID, seed uint64) {
 	t.Helper()
 	const far = 5
+	// the gate open, so the stairs room's monsters path out too (FS-5FZ4J §D R22)
+	breakSeals(t, s)
 	d := delverEntity(t, s, delver)
 	at := transformOf(t, d)
 

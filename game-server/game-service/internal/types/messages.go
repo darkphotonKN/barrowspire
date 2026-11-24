@@ -116,6 +116,12 @@ type ClientGameState struct {
 	Tome        *TomeState  `json:"tome,omitempty"`
 	Altar       *AltarState `json:"altar,omitempty"`
 	TomeCarried bool        `json:"tome_carried,omitempty"`
+	// Seal, SealPieces and Barriers are a sealed floor's, sent whole every
+	// tick; absent in the hub, a field, on the top floor and on a floor of
+	// buildings, which have none. FS-5FZ4J §I R46.
+	Seal       *SealState        `json:"seal,omitempty"`
+	SealPieces []*SealPieceState `json:"seal_pieces,omitempty"`
+	Barriers   []*BarrierState   `json:"barriers,omitempty"`
 }
 
 // CurrentPlayerState is the recipient's own player state: what every player
@@ -217,6 +223,10 @@ type BackendGameState struct {
 	Tome        *TomeState
 	Altar       *AltarState
 	TomeCarried bool
+	// Seal, SealPieces and Barriers are a sealed floor's (FS-5FZ4J §I R46)
+	Seal       *SealState
+	SealPieces []*SealPieceState
+	Barriers   []*BarrierState
 	// CellSize is the edge of the cell grid the floor is built on, from its
 	// FloorComponent: above 0 on a dungeon floor, whose monsters and
 	// containers are cut per recipient by distance. FS-KE075 §G R36.

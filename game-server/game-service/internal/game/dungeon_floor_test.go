@@ -128,7 +128,7 @@ func TestDungeonFloors_SizeAndCellSizeOnEveryFloor(t *testing.T) {
 		assert.NotEqual(t, previous, s.dungeon.layout.Seed, "floor %d has a layout of its own", depth)
 		assert.Equal(t, [2]float64{5760, 3840}, [2]float64{s.mapWidth, s.mapHeight}, "floor %d", depth)
 		assert.Equal(t, 80.0, currentFloor(t, s).CellSize, "floor %d", depth)
-		assert.Empty(t, entityIDsWith(s, ecs.ComponentTypeDoor), "floor %d has no buildings", depth)
+		assert.Empty(t, buildingDoorIDs(s), "floor %d has no buildings", depth)
 	}
 }
 

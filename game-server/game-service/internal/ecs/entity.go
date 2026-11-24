@@ -96,6 +96,13 @@ const (
 	ComponentTypeTomePlan ComponentType = "TomePlan"
 	ComponentTypeTome     ComponentType = "Tome"
 	ComponentTypeAltar    ComponentType = "Altar"
+
+	// a sealed floor's seals, their pieces, what a piece's first work wakes
+	// and the barriers the seals hold shut (FS-5FZ4J §B, §C, §A R4)
+	ComponentTypeSeal      ComponentType = "Seal"
+	ComponentTypeSealPiece ComponentType = "SealPiece"
+	ComponentTypeAmbush    ComponentType = "Ambush"
+	ComponentTypeBarrier   ComponentType = "Barrier"
 )
 
 type Entity struct {

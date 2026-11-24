@@ -21,6 +21,7 @@ import (
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/ecs"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/levelgen"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/messaging"
+	"github.com/darkphotonKN/barrowspire-server/game-service/internal/navigation"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/systems"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/types"
 	"github.com/darkphotonKN/barrowspire-server/game-service/internal/utils"
@@ -198,6 +199,16 @@ type Session struct {
 	// monsters come from (FS-C8VM7 §C R19). Set by each floor's population
 	// under mu; the floor map reads it under mu (§G R40).
 	floorPool floorPool
+	// navGrid is the current dungeon floor's cell grid, the one its monster AI
+	// paths over and its movement system's straight moves read, nil on a floor
+	// of buildings and in every other world. Its cells change as a barrier
+	// shuts or opens (FS-5FZ4J §D R22). The tick's alone, and the floor
+	// build's, which holds buildMu as a tick does.
+	navGrid *navigation.Grid
+	// trapHits are hits a trap or a seal piece dealt this tick, waiting for
+	// the combat: they land through the one damage path (FS-5FZ4J §C R16, §D
+	// R26). The tick's alone.
+	trapHits []systems.Impact
 	// generateDungeon builds a dungeon floor's layout from its parameters and
 	// seed: levelgen.GenerateDungeon, injected so a test can make it fail
 	// (FS-KE075 §B R17).
@@ -825,6 +836,9 @@ func (s *Session) step(deltaTime float64, entities []*ecs.Entity) {
 	// projectile
 	projectileSys := systems.NewProjectileSystem(s.EntityManager, s.playerDamage)
 	impacts := projectileSys.Update(deltaTime, entities)
+	// a trap's or a seal piece's hits land beside the projectiles', through the
+	// one damage path (FS-5FZ4J §C R16, §D R26)
+	impacts = append(impacts, s.takeTrapHits()...)
 
 	// only a run has timed opens (FS-MQYEX §Requirements 1). They note the
 	// health their delvers take into the combat, so a hit that costs any is
@@ -1946,8 +1960,12 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	// a tome run's tome and altar (FS-3103M §D, §F)
 	isTome := targetEntity.HasComponent(ecs.ComponentTypeTome)
 	isAltar := targetEntity.HasComponent(ecs.ComponentTypeAltar)
+	// a sealed floor's barriers and seal pieces (FS-5FZ4J §B, §C); a barrier
+	// is a door to the walk, never one a delver toggles
+	isBarrier := targetEntity.HasComponent(ecs.ComponentTypeBarrier)
+	isSealPiece := targetEntity.HasComponent(ecs.ComponentTypeSealPiece)
 
-	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar {
+	if !isDoorEntity && !isContainerEntity && !isSwitch && !isEscapeDoor && !isItemEntity && !isStairs && !isTome && !isAltar && !isSealPiece {
 		slog.Debug("Entity type did not match any interactable entity", "targetEntityID", targetEntityID)
 		return fmt.Errorf("entity type did not match any interactable entity")
 	}
@@ -1996,6 +2014,15 @@ func (s *Session) handleInteract(playerID uuid.UUID, targetEntityID uuid.UUID) e
 	}
 	if isAltar {
 		return s.reachAltar(playerID, playerTransform, targetEntity)
+	}
+
+	// --- a sealed floor's barriers and seal pieces (FS-5FZ4J §B-C) ---
+
+	if isBarrier {
+		return s.reachBarrier(playerID, playerTransform, targetEntity)
+	}
+	if isSealPiece {
+		return s.workSealPiece(playerID, playerEntity, playerTransform, targetEntity)
 	}
 
 	// --- door entity ---
@@ -2321,6 +2348,13 @@ func (s *Session) climbStairs(playerID uuid.UUID, playerTransform *components.Tr
 		slog.Debug("Stairs out of range for interaction", "targetID", stairs.ID, "playerID", playerID)
 		s.sendErrorToPlayer(playerID, string(constants.ActionInteract), "too far away to interact")
 		return ErrOutOfRange
+	}
+
+	// a sealed floor's stairs refuse, and nothing else happens (FS-5FZ4J §B R12)
+	if s.sealHolds() {
+		s.sendRefusalToPlayer(playerID, string(constants.ActionInteract), "the stairs are sealed",
+			RefusalStairsSealed, nil)
+		return nil
 	}
 
 	missing := s.delversAwayFrom(at.X, at.Y)
@@ -3386,12 +3420,18 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 	s.dungeon = dungeon
 	s.mu.Unlock()
 
-	// only the tick reads the AI, and a floor build holds buildMu as a tick does
-	s.monsterAISystem = newMonsterAI(s.monsterRoll, dungeon)
-	// a straight move reads the floor's cells; a floor of buildings has none
-	s.movementSystem.Grid = nil
+	// only the tick reads the AI, and a floor build holds buildMu as a tick
+	// does. The AI and a straight move read one grid, so a barrier opening
+	// opens it to both on the same tick (FS-5FZ4J §D R22); a floor of
+	// buildings has none
+	s.navGrid = nil
 	if dungeon != nil {
-		s.movementSystem.Grid = dungeon.navGrid()
+		s.navGrid = dungeon.navGrid()
+	}
+	s.monsterAISystem = newMonsterAI(s.monsterRoll, s.navGrid)
+	s.movementSystem.Grid = nil
+	if s.navGrid != nil {
+		s.movementSystem.Grid = s.navGrid
 	}
 
 	if floor, ok := systems.CurrentFloor(s.EntityManager.GetAllEntities()); ok {
@@ -3400,14 +3440,14 @@ func (s *Session) setFloorLayout(depth int, dungeon *dungeonFloor) {
 }
 
 // newMonsterAI is the monster AI for a floor, rolling from roll: on a dungeon
-// floor it paths over the floor's cells; on any other (nil) it steers
+// floor it paths over the floor's grid; on any other (nil) it steers
 // straight, as a fallback floor of buildings and the fields do (FS-M8CSE §C
 // R14-15, ADR-0062).
-func newMonsterAI(roll func() float64, dungeon *dungeonFloor) *systems.MonsterAISystem {
-	if dungeon == nil {
+func newMonsterAI(roll func() float64, grid *navigation.Grid) *systems.MonsterAISystem {
+	if grid == nil {
 		return systems.NewMonsterAISystem(roll, nil)
 	}
-	return systems.NewMonsterAISystem(roll, dungeon.navGrid())
+	return systems.NewMonsterAISystem(roll, grid)
 }
 
 /**

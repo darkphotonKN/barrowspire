@@ -166,7 +166,17 @@ type climb struct {
 	delvers []uuid.UUID // player ids
 }
 
+// Its floor's seals are broken (FS-5FZ4J §B R11), so the stairs answer the
+// climb; newSealedClimb keeps them.
 func newClimb(t *testing.T) *climb {
+	t.Helper()
+	c := newSealedClimb(t)
+	breakSeals(t, c.s)
+	return c
+}
+
+// newSealedClimb is a climb whose floor's seals still hold.
+func newSealedClimb(t *testing.T) *climb {
 	t.Helper()
 	s := newRun(t, &countingItemsClient{})
 	sender := &recordingSender{}
@@ -388,6 +398,7 @@ func TestStairs_ClimbingNeverEndsTheRun_AndEscapeWorksOnEveryFloor(t *testing.T)
 		s.endSessionCh = make(chan bool, 1)
 
 		for depth := 1; depth < escapeFloor; depth++ {
+			breakSeals(t, s)
 			for _, playerID := range c.delvers {
 				c.standAtStairs(t, playerID)
 			}
