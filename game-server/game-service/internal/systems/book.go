@@ -12,7 +12,8 @@ import (
 * The BookSystem judges and resolves book abilities, and runs down what they
 * leave on a delver's book: its book cooldowns and its timed book states.
 *
-* A cast passes every gate in bookGates, in order, or is refused with no
+* A cast passes every gate in bookGates, in order, then its page's own in
+* pageGates (Recall's someone to pull), or is refused with no
 * effect, no cost and no cooldown. An instant page then pays its cost, starts
 * its book cooldown (or is spent) and has its effect, through the resolver its
 * page id names in pageResolvers. A page with a cast time starts casting
@@ -34,6 +35,7 @@ var (
 	ErrShortOfCost     = errors.New("caster short of the page's cost")
 	ErrBadPageTarget   = errors.New("target does not fit the page or is out of range")
 	ErrAlreadyCasting  = errors.New("caster already casting a page")
+	ErrNoOneToPull     = errors.New("no teammate in play to recall")
 )
 
 // BookCast is one page cast as the tick takes it: the page, its caster, and
@@ -48,9 +50,23 @@ type BookCast struct {
 	Target *ecs.Entity
 	// CellSize is the floor's cell edge in px, the unit of every range.
 	CellSize float64
+	BookWorld
+}
+
+// BookWorld is what a page reads of its world past the entities: the floor's
+// ground and how a body moves over it. The session's; a test's stand-in.
+type BookWorld struct {
 	// Walkable is whether a point is ground a body could stand on, not rock
 	// or a wall: a ground page's point must be (R14). Nil walks nowhere.
 	Walkable func(x, y float64) bool
+	// Ground is where a straight move from the caster lands, as a blink's
+	// does: Recall stands a teammate only where it reaches (R25). Nil lands
+	// nowhere.
+	Ground Ground
+	// EndCharge ends a body's charge in flight where it stands, as a blink
+	// does before it moves its caster (CombatSystem.EndCharge). Nil only
+	// stops it.
+	EndCharge func(entity *ecs.Entity)
 }
 
 // pageResolver has a page's effect, once its cast is accepted and paid for.
@@ -63,6 +79,7 @@ var pageResolvers = map[components.PageID]pageResolver{
 	components.PageBindingGlyph: resolveBindingGlyph,
 	components.PageHardened:     resolveHardened,
 	components.PageLevitate:     resolveLevitate,
+	components.PageRecall:       resolveRecall,
 	components.PageWitchlight:   resolveWitchlight,
 }
 
@@ -88,6 +105,16 @@ var bookGates = []bookGate{
 	gateTarget,
 }
 
+// pageGate refuses a cast that does not meet a condition one page adds to
+// R4's, judged with the world in hand.
+type pageGate func(world *ecs.EntityManager, cast BookCast) error
+
+// pageGates are the conditions a page adds, judged after bookGates at the
+// cast and again at its completion (R17).
+var pageGates = map[components.PageID]pageGate{
+	components.PageRecall: gateSomeoneToPull,
+}
+
 // BookSystem works on one world's books and the book effects on its floor.
 type BookSystem struct {
 	em *ecs.EntityManager
@@ -111,12 +138,23 @@ func (s *BookSystem) Cast(cast BookCast) error {
 			return err
 		}
 	}
+	if err := s.ownGate(cast); err != nil {
+		return err
+	}
 	if cast.Page.CastTime > 0 {
 		startCasting(cast, book)
 		return nil
 	}
 
 	s.resolve(cast, book)
+	return nil
+}
+
+// ownGate judges the cast against its page's own condition, if it has one.
+func (s *BookSystem) ownGate(cast BookCast) error {
+	if gate, ok := pageGates[cast.Page.ID]; ok {
+		return gate(s.em, cast)
+	}
 	return nil
 }
 

@@ -19,7 +19,7 @@ const runePoint = 3 * testCell
 func bindingGlyphCast(em *ecs.EntityManager, x float64) (*ecs.Entity, BookCast) {
 	mage := bookDelver(em, "mage", 13, 0, 0, components.PageBindingGlyph)
 	page, _ := BookPageOf(string(components.PageBindingGlyph))
-	return mage, BookCast{Caster: mage, Page: page, TargetX: x, CellSize: testCell, Walkable: anyGround}
+	return mage, BookCast{Caster: mage, Page: page, TargetX: x, CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround}}
 }
 
 // layRune casts Binding Glyph at the rune point and counts the cast through
@@ -29,9 +29,9 @@ func layRune(t *testing.T, em *ecs.EntityManager, books *BookSystem) *ecs.Entity
 	t.Helper()
 	_, cast := bindingGlyphCast(em, runePoint)
 	require.NoError(t, books.Cast(cast))
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, anyGround)
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
 	for range ticksOf(2.5) {
-		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, anyGround)
+		books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
 	}
 	r := runeOf(em)
 	require.NotNil(t, r, "the rune is laid")
@@ -67,7 +67,7 @@ func TestBookSystemCast_BindingGlyphLaysARuneAfterItsCastTime(t *testing.T) {
 	books := NewBookSystem(em)
 
 	require.NoError(t, books.Cast(cast))
-	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, anyGround)
+	books.AdvanceCasts(castTick, em.GetAllEntities(), nil, BookWorld{Walkable: anyGround})
 	castTicks(books, em, ticksOf(2.5)-1)
 	assert.Nil(t, runeOf(em), "no rune before 2.5 s")
 

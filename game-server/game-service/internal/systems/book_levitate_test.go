@@ -94,7 +94,7 @@ func TestCombatSystem_AfloatOverTheDelverAttacksAgain(t *testing.T) {
 func levitateCast(em *ecs.EntityManager, target func(mage *ecs.Entity) *ecs.Entity) (*ecs.Entity, BookCast) {
 	mage := bookDelver(em, "mage", 9, 0, 0, components.PageLevitate)
 	page, _ := BookPageOf(string(components.PageLevitate))
-	return mage, BookCast{Caster: mage, Page: page, Target: target(mage), CellSize: testCell, Walkable: anyGround}
+	return mage, BookCast{Caster: mage, Page: page, Target: target(mage), CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround}}
 }
 
 // A completed Levitate makes its target afloat for 8 s, then it runs out; the

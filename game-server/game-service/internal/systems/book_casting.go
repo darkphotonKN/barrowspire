@@ -84,8 +84,9 @@ func (s *BookSystem) MarkHealth(entities []*ecs.Entity) {
 // movement and combat: a broken one ends with nothing, one whose cast time
 // has run out completes (R17), the rest count the tick. attackers is the
 // bodies whose attack or cast went off in the tick's combat
-// (CombatSystem.Attackers); walkable judges a ground page's point again.
-func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, walkable func(x, y float64) bool) {
+// (CombatSystem.Attackers); world is the floor a completed page has its
+// effect on, a ground page's point judged again on it.
+func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, attackers []uuid.UUID, world BookWorld) {
 	for _, entity := range entities {
 		book, ok := bookOf(entity)
 		if !ok || book.Casting == nil {
@@ -98,7 +99,7 @@ func (s *BookSystem) AdvanceCasts(deltaTime float64, entities []*ecs.Entity, att
 		}
 		if casting.Elapsed >= casting.Total-castEpsilon {
 			book.Casting = nil
-			s.complete(entity, book, casting, walkable)
+			s.complete(entity, book, casting, world)
 			continue
 		}
 		casting.Elapsed += deltaTime
@@ -126,21 +127,21 @@ func (s *BookSystem) castBroken(caster *ecs.Entity, casting *components.BookCast
 }
 
 // complete judges the page's cost and target once more, the target within
-// range plus one cell, and, if they hold, pays for the page and has its
-// effect; if not, the cast ends with nothing (R17).
-func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, walkable func(x, y float64) bool) {
+// range plus one cell, and the page's own conditions, and, if they hold, pays
+// for the page and has its effect; if not, the cast ends with nothing (R17).
+func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent, casting *components.BookCasting, world BookWorld) {
 	page, ok := classBooks[casting.Page]
 	if !ok {
 		return
 	}
 	cast := BookCast{
-		Caster:   caster,
-		Page:     page,
-		TargetX:  casting.TargetX,
-		TargetY:  casting.TargetY,
-		Target:   s.castTarget(casting.TargetID),
-		CellSize: casting.CellSize,
-		Walkable: walkable,
+		Caster:    caster,
+		Page:      page,
+		TargetX:   casting.TargetX,
+		TargetY:   casting.TargetY,
+		Target:    s.castTarget(casting.TargetID),
+		CellSize:  casting.CellSize,
+		BookWorld: world,
 	}
 	recheck := cast
 	recheck.Page.RangeCells += castRangeSlackCells
@@ -148,6 +149,9 @@ func (s *BookSystem) complete(caster *ecs.Entity, book *components.BookComponent
 		if gate(recheck, book) != nil {
 			return
 		}
+	}
+	if s.ownGate(cast) != nil {
+		return
 	}
 	s.resolve(cast, book)
 }

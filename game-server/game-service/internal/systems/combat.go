@@ -712,7 +712,7 @@ func (s *CombatSystem) resolve(attacker *ecs.Entity, intent components.AttackInt
 
 	// a new cast stops a charge in flight where the body stands; a new dash then
 	// starts afresh from there, never adding on what the old one had left
-	s.endCharge(attacker)
+	s.EndCharge(attacker)
 	if spec.delivery == deliverMovement {
 		startCharge(attacker, at, intent.TargetX, intent.TargetY)
 	}
@@ -750,7 +750,7 @@ func (s *CombatSystem) blink(caster *ecs.Entity, at *components.TransformCompone
 	if math.Hypot(x-at.X, y-at.Y) <= dashEpsilon {
 		return false
 	}
-	s.endCharge(caster)
+	s.EndCharge(caster)
 	at.X, at.Y = x, y
 	return true
 }
@@ -1054,13 +1054,13 @@ func (s *CombatSystem) settleCharge(entity *ecs.Entity) {
 		return
 	}
 	if dc.(*components.DashComponent).Remaining <= dashEpsilon {
-		s.endCharge(entity)
+		s.EndCharge(entity)
 	}
 }
 
-// endCharge ends the entity's charge, if one is in flight, where it stands, and
+// EndCharge ends the entity's charge, if one is in flight, where it stands, and
 // lays an Ashwalk wearer's trail along the path it actually travelled.
-func (s *CombatSystem) endCharge(entity *ecs.Entity) {
+func (s *CombatSystem) EndCharge(entity *ecs.Entity) {
 	dc, ok := entity.GetComponent(ecs.ComponentTypeDash)
 	if !ok {
 		return

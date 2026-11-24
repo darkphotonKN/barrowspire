@@ -163,7 +163,7 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cast := BookCast{Caster: caster, Page: tt.page, TargetX: tt.x, Target: tt.target, CellSize: testCell, Walkable: anyGround}
+			cast := BookCast{Caster: caster, Page: tt.page, TargetX: tt.x, Target: tt.target, CellSize: testCell, BookWorld: BookWorld{Walkable: anyGround}}
 			err := gateTarget(cast, nil)
 			if tt.fits {
 				assert.NoError(t, err)
@@ -174,10 +174,10 @@ func TestGateTarget_JudgesTheTargetByKindAndRange(t *testing.T) {
 	}
 }
 
-// Only pages with a resolver are offered: Hardened, Witchlight, Levitate and
-// Binding Glyph so far. §K R59.
+// Only pages with a resolver are offered: Hardened, Witchlight, Levitate,
+// Binding Glyph and Recall so far. §K R59.
 func TestPageOffered_OnlyPagesWithAResolver(t *testing.T) {
-	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph}
+	offered := []components.PageID{components.PageHardened, components.PageWitchlight, components.PageLevitate, components.PageBindingGlyph, components.PageRecall}
 	for _, id := range AllPageIDs() {
 		assert.Equal(t, slices.Contains(offered, id), PageOffered(id), id)
 	}
